@@ -1,0 +1,28 @@
+version: 1
+components:
+  domain:
+    role: core
+    paths:
+      - internal/domain/**
+  app:
+    role: usecase
+    paths:
+      - internal/app/**
+  ports:
+    role: ports
+    paths:
+      - internal/ports/**
+  adapters:
+    role: adapter
+    paths:
+      - internal/adapters/**
+  entrypoints:
+    role: entrypoint
+    paths:
+      - cmd/**
+  generated:
+    role: ignore
+    paths:
+      - gen/**
+      - '**/mocks/**'
+      - '**/*_templ.go'
