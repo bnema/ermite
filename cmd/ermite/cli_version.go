@@ -104,4 +104,5 @@ var featureUse = map[string]string{
 	client.FeatureEventsResume:  "`ermite watch` uses to resume after a reconnection: events during an outage may be missed",
 	client.FeatureMergeRequests: "`ermite mr` needs: the commands will fail on this server",
 	client.FeatureSigningKey:    "`ermite signing-key show` needs: the command will fail on this server",
+	client.FeatureSession:       "`ermite web login` needs: the command will fail on this server",
 }

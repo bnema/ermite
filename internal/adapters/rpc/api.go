@@ -27,7 +27,7 @@ const MaxRequestBytes = 1 << 20
 
 // Features are the optional capabilities of the contract that this server
 // implements, as GetVersion lists them.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "signing_key"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "signing_key", "session"}
 
 // Authenticator turns a token secret into a principal, or
 // domain.ErrUnauthenticated. app.Auth fits.
@@ -52,6 +52,8 @@ type Config struct {
 	// it with the other adapters that authenticate, so that a client has one
 	// budget of failures.
 	Limiter *clientlimit.Limiter
+	// Sessions are the owner's web sessions; nil serves no SessionService.
+	Sessions *app.Sessions
 }
 
 // API is the set of Connect handlers of the contract.
@@ -80,6 +82,9 @@ func New(cfg Config) *API {
 	mux.Handle(ermiteconnect.NewEventServiceHandler(&eventService{cfg.Events}, opts...))
 	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, key: cfg.SigningKey}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
+	if cfg.Sessions != nil {
+		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{cfg.Sessions}, opts...))
+	}
 	return &API{handler: mux}
 }
 

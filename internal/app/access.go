@@ -75,10 +75,12 @@ func scopeAccess(p domain.Principal, repo domain.Repo, scope domain.Scope) error
 }
 
 // authorOf names who acts, for the author of a merge request or a comment: the
-// label of the token, "root" for the root token, "owner" for any other caller
-// (a web session).
+// label of the token, "root" for the root token, "owner" for the owner signed
+// in on the web and for any other caller without a label.
 func authorOf(p domain.Principal) string {
 	switch {
+	case p.IsOwner():
+		return "owner"
 	case p.IsRoot():
 		return "root"
 	case p.TokenLabel() != "":

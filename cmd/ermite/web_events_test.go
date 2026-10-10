@@ -333,8 +333,8 @@ func TestWebEventsTopics(t *testing.T) {
 		}
 		assert.Equal(t, want, h.status("GET", path, nil), path)
 	}
-	// POST is not allowed.
-	assert.Equal(t, http.StatusMethodNotAllowed, h.status("POST", "/-/events?topic=home", nil))
+	// POST is not allowed: a browser POST without Origin and session is a 403.
+	assert.Equal(t, http.StatusForbidden, h.status("POST", "/-/events?topic=home", nil))
 }
 
 // The pages connect to the stream of their topic.

@@ -31,6 +31,8 @@ type clients struct {
 	event  ermiteconnect.EventServiceClient
 	server ermiteconnect.ServerServiceClient
 	mr     ermiteconnect.MergeRequestServiceClient
+
+	session ermiteconnect.SessionServiceClient
 }
 
 // bearerTransport adds the Authorization header of a secret, if any.
@@ -77,6 +79,8 @@ func newClientsOn(hc connect.HTTPClient, base string, opts ...connect.ClientOpti
 		event:  ermiteconnect.NewEventServiceClient(hc, base, opts...),
 		server: ermiteconnect.NewServerServiceClient(hc, base, opts...),
 		mr:     ermiteconnect.NewMergeRequestServiceClient(hc, base, opts...),
+
+		session: ermiteconnect.NewSessionServiceClient(hc, base, opts...),
 	}
 }
 

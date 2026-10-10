@@ -23,7 +23,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -62,12 +64,22 @@ type Config struct {
 	Version string
 	// Now is the clock of relative dates; time.Now when nil.
 	Now func() time.Time
+	// Sessions signs the owner in (ADR 0018). Without it there are no login
+	// routes and every visitor is anonymous.
+	Sessions SessionAuth
+	// Limiter counts the failed logins; required with Sessions. Share it with
+	// the API and Git, so that a client has one budget of failures.
+	Limiter FailureLimiter
+	// TrustedProxies are the networks allowed to set X-Forwarded-For, to find
+	// the address of the client that fails a login.
+	TrustedProxies []netip.Prefix
 }
 
 // Server serves the pages. It is an http.Handler.
 type Server struct {
 	cfg      Config
 	instance string
+	origin   string // scheme://host of the public URL, what a POST must come from
 	assets   *assetSet
 	md       *markdown
 	mux      *http.ServeMux
@@ -89,7 +101,13 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("web: load assets: %w", err)
 	}
-	s := &Server{cfg: cfg, instance: u.Host, assets: assets, md: newMarkdown()}
+	if cfg.Sessions != nil && cfg.Limiter == nil {
+		return nil, errors.New("web: sessions need a failure limiter")
+	}
+	s := &Server{
+		cfg: cfg, instance: u.Host, assets: assets, md: newMarkdown(),
+		origin: originOf(u),
+	}
 	s.mux = s.routes()
 	return s, nil
 }
@@ -100,6 +118,11 @@ func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+StaticPrefix, s.assets.serve)
 	mux.HandleFunc("GET /-/events", s.events)
+	if s.cfg.Sessions != nil {
+		mux.HandleFunc("GET "+loginPrefix+"{nonce}", s.loginConfirm)
+		mux.HandleFunc("POST "+loginPrefix+"{nonce}", s.loginPost)
+		mux.HandleFunc("POST /-/logout", s.logout)
+	}
 	mux.HandleFunc("GET /{$}", s.page(s.home))
 	mux.HandleFunc("GET /{repo}", s.page(s.summary))
 	mux.HandleFunc("GET /{repo}/{$}", s.page(s.summary))
@@ -117,6 +140,10 @@ func (s *Server) routes() *http.ServeMux {
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r = s.withSession(w, r)
+	if !s.gate(w, r) {
+		return
+	}
 	s.mux.ServeHTTP(w, r)
 }
 
@@ -146,14 +173,18 @@ func (s *Server) write(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	if err := c.Render(ctx, &buf); err != nil {
 		// The error page itself failed: a bare answer is all that is left.
 		log := zerowrap.FromCtx(ctx)
-		log.Error().Err(err).Str("path", r.URL.Path).Msg("render page")
+		log.Error().Err(err).Str("path", logPath(r.URL.Path)).Msg("render page")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
-	// Public pages: the browser and any proxy revalidate each time.
-	h.Set("Cache-Control", "no-cache")
+	// Public pages: the browser and any proxy revalidate each time. A page
+	// rendered for the owner is private and never stored; a handler that set
+	// its own Cache-Control keeps it.
+	if h.Get("Cache-Control") == "" {
+		cacheHeaders(ctx, h, "no-cache", sessionCache)
+	}
 	w.WriteHeader(status)
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(buf.Bytes())
@@ -173,7 +204,7 @@ func (s *Server) fail(ctx context.Context, w http.ResponseWriter, r *http.Reques
 	default:
 		id := requestID()
 		log := zerowrap.FromCtx(ctx)
-		log.Error().Err(err).Str("request_id", id).Str("path", r.URL.Path).Msg("web request failed")
+		log.Error().Err(err).Str("request_id", id).Str("path", logPath(r.URL.Path)).Msg("web request failed")
 		s.write(ctx, w, r, http.StatusInternalServerError, s.errorPage(id))
 	}
 }
@@ -235,4 +266,19 @@ func (s *Server) errorPage(id string) templ.Component {
 		},
 		Back: []Link{{Label: "home", Href: "/"}},
 	})
+}
+
+// originOf is the origin of a URL as a browser writes it in the Origin
+// header: scheme and host in lower case, the port only when it is not the
+// default of the scheme.
+func originOf(u *url.URL) string {
+	scheme, host, port := strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), u.Port()
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	defaultPort := (scheme == "http" && port == "80") || (scheme == "https" && port == "443")
+	if port != "" && !defaultPort {
+		host += ":" + port
+	}
+	return scheme + "://" + host
 }

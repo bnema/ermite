@@ -179,3 +179,11 @@ type StatePage struct {
 	Clone *Clone
 	Back  []Link
 }
+
+// LoginPage is the confirmation of a login link: a form with one button.
+type LoginPage struct {
+	Title  string
+	Lines  []string
+	Action string // where the form posts
+	Button string
+}

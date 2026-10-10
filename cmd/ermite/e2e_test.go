@@ -110,13 +110,17 @@ func TestRoutes(t *testing.T) {
 	} {
 		assert.Equal(t, 404, h.status("GET", path, nil), path)
 	}
-	assert.Equal(t, 405, h.status("POST", "/pub.git/info/refs?service=git-upload-pack", nil))
+	// A POST no Git route owns falls to the web, whose gate refuses it (a
+	// browser POST needs an Origin and a session, ADR 0018).
+	assert.Equal(t, 403, h.status("POST", "/pub.git/info/refs?service=git-upload-pack", nil))
 	// The web owns GET on every other path: a GET of a POST-only Git route
 	// is its 404 page, not a 405.
 	assert.Equal(t, 404, h.status("GET", "/pub.git/git-upload-pack", nil))
 	assert.Equal(t, 200, h.status("GET", "/", nil), "the home page")
 	assert.Equal(t, 200, h.status("GET", "/pub", nil), "the summary page")
-	assert.Equal(t, 405, h.status("POST", "/", nil))
+	// A browser POST needs an Origin and a session (ADR 0018): refused
+	// before the router sees it.
+	assert.Equal(t, 403, h.status("POST", "/", nil))
 	assert.Equal(t, 200, h.status("GET", "/-/health", nil), "internal routes are intact")
 	assert.Equal(t, 200, h.status("GET", "/pub.git/info/refs?service=git-upload-pack", nil))
 	// Anonymous receive-pack is a challenge even for a public repository.

@@ -291,3 +291,11 @@ func TestSignOutEverywhereEndsSessions(t *testing.T) {
 	_, err = f.sessions.Verify(ctx, c)
 	assert.NoError(t, err, "a new session works")
 }
+
+// The owner signed in on the web signs what it writes as "owner", where root
+// signs as "root" although both hold every right.
+func TestAuthorOfOwnerSession(t *testing.T) {
+	assert.Equal(t, "owner", app.AuthorOf(domain.Owner()))
+	assert.Equal(t, "root", app.AuthorOf(domain.Root()))
+	assert.Equal(t, "ci", app.AuthorOf(domain.TokenPrincipal(domain.Token{Label: "ci", Scopes: domain.AllScopes()})))
+}

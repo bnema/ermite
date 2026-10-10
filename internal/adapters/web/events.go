@@ -163,7 +163,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	hdr := w.Header()
 	hdr.Set("Content-Type", "text/event-stream")
-	hdr.Set("Cache-Control", "no-cache, no-transform")
+	cacheHeaders(ctx, hdr, "no-cache, no-transform", sessionCache+", no-transform")
 	hdr.Set("X-Accel-Buffering", "no")
 	_ = rc.SetWriteDeadline(time.Now().Add(writeWindow))
 	w.WriteHeader(http.StatusOK)
@@ -211,6 +211,11 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-tick.C:
+			// A stream opened by the owner ends when the session does
+			// (sign out everywhere, expiry): the page reconnects as it can.
+			if SignedIn(ctx) && !s.sessionStillValid(ctx, r) {
+				return
+			}
 			if out.raw(": heartbeat\n\n") != nil {
 				return
 			}

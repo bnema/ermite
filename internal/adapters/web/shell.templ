@@ -119,6 +119,12 @@ templ Statusbar(l Layout) {
 		}
 		<span class="st-flash" aria-live="polite" :text="document.body.dataset.flash || ''"></span>
 		<span class="st-hints">{ l.Status.Hints }</span>
+		if SignedIn(ctx) {
+			<form class="st-owner" method="post" action="/-/logout">
+				<span>owner</span>
+				<button type="submit" title="sign out of this browser">[sign out]</button>
+			</form>
+		}
 		@Footer(l)
 		@Live(l)
 		if l.Status.Cursor {

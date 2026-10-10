@@ -17,11 +17,13 @@ const (
 	FeatureMergeRequests = "merge_requests"
 	// FeatureSigningKey is ServerService.GetSigningKey (`ermite signing-key`).
 	FeatureSigningKey = "signing_key"
+	// FeatureSession is SessionService (`ermite web login`, `web logout`).
+	FeatureSession = "session"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureSigningKey}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureSigningKey, FeatureSession}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

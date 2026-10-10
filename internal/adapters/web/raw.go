@@ -59,7 +59,7 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 	// Revalidated every time, even at a full commit id: a repository can turn
 	// private, and a shared cache must not keep serving its files (AC2). The
 	// ETag keeps the revalidation cheap.
-	h.Set("Cache-Control", "no-cache")
+	cacheHeaders(ctx, h, "no-cache", sessionCache)
 	if match := r.Header.Get("If-None-Match"); match != "" && h.Get("ETag") != "" && match == h.Get("ETag") {
 		w.WriteHeader(http.StatusNotModified)
 		return

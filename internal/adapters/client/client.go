@@ -70,6 +70,11 @@ func (c *Client) Tokens() ermiteconnect.TokenServiceClient {
 	return ermiteconnect.NewTokenServiceClient(c.http, c.base, c.opts...)
 }
 
+// Sessions returns the SessionService client.
+func (c *Client) Sessions() ermiteconnect.SessionServiceClient {
+	return ermiteconnect.NewSessionServiceClient(c.http, c.base, c.opts...)
+}
+
 // Events returns the EventService client.
 func (c *Client) Events() ermiteconnect.EventServiceClient {
 	return ermiteconnect.NewEventServiceClient(c.http, c.base, c.opts...)

@@ -62,6 +62,9 @@
     & h1 { margin-bottom: var(--lh); }
     & .code { display: inline-block; min-width: 6ch; }
     & .state-back { margin-top: var(--lh); display: flex; gap: 2ch; }
+    & .state-act { margin-top: var(--lh); }
+    & .state-act button { color: var(--ink-hi); font-weight: bold; }
+    & .state-act button:hover { text-decoration: underline; }
   }
   .clone {
     margin: var(--lh) 0 0; border: 1px solid var(--rule); padding: 0 1ch;

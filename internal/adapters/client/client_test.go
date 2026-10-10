@@ -140,9 +140,9 @@ func TestMissingFeatures(t *testing.T) {
 	assert.Empty(t, client.MissingFeatures(client.UsedFeatures()))
 	assert.Equal(t,
 		[]string{client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureSigningKey},
-		client.MissingFeatures([]string{client.FeatureRepoUpdate, "other"}))
+		client.MissingFeatures([]string{client.FeatureRepoUpdate, client.FeatureSession, "other"}))
 	assert.Equal(t, []string{client.FeatureSigningKey}, client.MissingFeatures([]string{
-		client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests,
+		client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureSession,
 	}))
 	assert.Equal(t, client.UsedFeatures(), client.MissingFeatures(nil))
 }

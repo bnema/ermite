@@ -2,6 +2,8 @@
 
 package app
 
+import "bnema.dev/ermite/internal/domain"
+
 // Idle reports whether nothing is pending or running: tests wait for it
 // instead of sleeping.
 func (m *Maintainer) Idle() bool {
@@ -9,3 +11,6 @@ func (m *Maintainer) Idle() bool {
 	defer m.mu.Unlock()
 	return len(m.entries) == 0
 }
+
+// AuthorOf exposes authorOf to the tests.
+func AuthorOf(p domain.Principal) string { return authorOf(p) }

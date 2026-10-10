@@ -156,3 +156,20 @@ templ State(l Layout, p StatePage) {
 		</section>
 	}
 }
+
+// Login asks the owner to confirm a login link. Opening the link consumes
+// nothing; only this form does. It is a state page with a button.
+templ Login(l Layout, p LoginPage) {
+	@Shell(l, nil) {
+		<section class="state" aria-labelledby="state-title">
+			<h1 id="state-title"><span class="code">login</span> { p.Title }</h1>
+			for _, line := range p.Lines {
+				<p class="dim">{ line }</p>
+			}
+			<form class="state-act" method="post" action={ templ.SafeURL(p.Action) }>
+				<button type="submit">{ p.Button }</button>
+			</form>
+			<p class="state-back"><a href="/">home</a></p>
+		</section>
+	}
+}

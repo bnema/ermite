@@ -69,6 +69,7 @@ type forge struct {
 	// ServerService.GetSigningKey.
 	MergeRequests *app.MergeRequests
 	SigningKey    *app.SigningKey
+	Sessions      *app.Sessions
 	EventLog      *app.Events
 	API           *rpc.API
 	Bus           ports.EventBus
@@ -187,7 +188,13 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	})
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 
-	// One budget of failed authentications per client, for Git and the API.
+	f.Sessions, err = app.NewSessions(ctx, store.Sessions(), clock, cfg.PublicURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// One budget of failed authentications per client, for Git, the API and
+	// the web login.
 	limiter := clientlimit.NewLimiter(nil)
 	f.API = rpc.New(rpc.Config{
 		Auth:           f.Auth,
@@ -197,6 +204,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Events:         f.EventLog,
 		MergeRequests:  f.MergeRequests,
 		SigningKey:     f.SigningKey,
+		Sessions:       f.Sessions,
 		Version:        serverVersion(),
 		TrustedProxies: cfg.TrustedProxies,
 		Limiter:        limiter,
@@ -216,7 +224,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	for _, p := range githttp.Patterns {
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
 	}
-	site, err := newWeb(cfg, f.API)
+	site, err := newWeb(cfg, f.API, f.Sessions, limiter)
 	if err != nil {
 		return nil, fmt.Errorf("web: %w", err)
 	}

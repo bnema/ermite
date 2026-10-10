@@ -55,6 +55,10 @@
     & .st-live::before { content: "○ "; }
     & .st-live[data-state="live"] { color: var(--bar-ink); }
     & .st-live[data-state="live"]::before { content: "● "; }
+    & .st-owner { flex: none; display: flex; gap: 1ch; }
+    & .st-owner span { color: var(--bar-ink); }
+    & .st-owner button { color: var(--bar-dim); }
+    & .st-owner button:hover { color: #fff; text-decoration: underline; }
     & .st-pos { min-width: 7ch; text-align: right; color: var(--bar-ink); }
   }
 
