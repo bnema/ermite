@@ -10,7 +10,7 @@ tool (
 )
 
 require (
-	bnema.dev/ermite-api v0.0.0-20261010102055-dca0ed73accf
+	bnema.dev/ermite-api v0.0.0-20261010105752-6c7e2b344114
 	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
 	connectrpc.com/connect v1.21.0
 	github.com/bnema/zerowrap v1.4.1

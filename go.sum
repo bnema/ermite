@@ -1,5 +1,5 @@
-bnema.dev/ermite-api v0.0.0-20261010102055-dca0ed73accf h1:ahMUlE+KHDcKXJgxkERaHsfxD4+RCtInTNySaFmKpZw=
-bnema.dev/ermite-api v0.0.0-20261010102055-dca0ed73accf/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
+bnema.dev/ermite-api v0.0.0-20261010105752-6c7e2b344114 h1:s0to/hhxAz0JRgSgSFgric+gH+WXl1ZuDjZQ17/r9og=
+bnema.dev/ermite-api v0.0.0-20261010105752-6c7e2b344114/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
 bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3 h1:PVTDOWTg9JJZrnJznTHSCB1Vcc+x2n6zMgZkKiFwvuw=
 bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3/go.mod h1:5Tb7lsUx00GVtTC6rGRWG9JbBMKlZ8hi/klP8L/DcEA=
 buf.build/gen/go/bufbuild/bufplugin/protocolbuffers/go v1.36.12-20260722160903-4d94f3df3a7b.2 h1:z5+rVknD0AvorY/QV9cb3ohUXw4E7HvxU4+2JUH6EHU=
