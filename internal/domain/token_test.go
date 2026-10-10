@@ -48,8 +48,8 @@ func TestPrincipalScopes(t *testing.T) {
 	tok := domain.Token{ID: "t1", Scopes: []domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, Repos: []domain.RepoName{a}}
 	p := domain.TokenPrincipal(tok)
 
-	assert.Equal(t, domain.PrincipalToken, p.Kind())
-	assert.Equal(t, "token", p.Kind().String())
+	assert.True(t, p.IsToken())
+	assert.Equal(t, "token", p.Label())
 	assert.Equal(t, "t1", p.TokenID())
 	assert.False(t, p.IsRoot())
 	assert.False(t, p.IsAnonymous())
@@ -73,8 +73,8 @@ func TestPrincipalScopes(t *testing.T) {
 	assert.True(t, domain.Root().Allows(domain.ScopeTokenAdmin, a))
 	assert.False(t, domain.Anonymous().HasScope(domain.ScopeRepoRead))
 	assert.False(t, domain.Anonymous().Allows(domain.ScopeRepoRead, a))
-	assert.Equal(t, "root", domain.Root().Kind().String())
-	assert.Equal(t, "anonymous", domain.Anonymous().Kind().String())
+	assert.Equal(t, "root", domain.Root().Label())
+	assert.Equal(t, "anonymous", domain.Anonymous().Label())
 }
 
 func mustName(t *testing.T, s string) domain.RepoName {

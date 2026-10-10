@@ -256,7 +256,7 @@ func TestAuthenticate(t *testing.T) {
 		f.store.EXPECT().Touch(ctx, "t1", now).Return(nil)
 		p, err := f.auth.Authenticate(ctx, secret)
 		require.NoError(t, err)
-		assert.Equal(t, domain.PrincipalToken, p.Kind())
+		assert.True(t, p.IsToken())
 		assert.Equal(t, "t1", p.TokenID())
 		assert.True(t, p.Allows(domain.ScopeRepoWrite, name(t, "a")))
 		assert.False(t, p.Allows(domain.ScopeRepoWrite, name(t, "b")))

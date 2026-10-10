@@ -101,7 +101,7 @@ func (t *Tokens) Create(ctx context.Context, p domain.Principal, params CreateTo
 		log.Info().
 			Str("token_id", tok.ID).Str("label", tok.Label).
 			Int("scopes", len(tok.Scopes)).Int("repos", len(tok.Repos)).
-			Str("created_by", p.Kind().String()).Str("created_by_token", p.TokenID()).
+			Str("created_by", p.Label()).Str("created_by_token", p.TokenID()).
 			Msg("token created")
 		return CreatedToken{Token: tok, Secret: secret}, nil
 	}
@@ -205,7 +205,7 @@ func (t *Tokens) Revoke(ctx context.Context, p domain.Principal, id string) erro
 		return err
 	}
 	log := zerowrap.FromCtx(ctx)
-	log.Info().Str("token_id", id).Str("revoked_by", p.Kind().String()).Str("revoked_by_token", p.TokenID()).Msg("token revoked")
+	log.Info().Str("token_id", id).Str("revoked_by", p.Label()).Str("revoked_by_token", p.TokenID()).Msg("token revoked")
 	return nil
 }
 
