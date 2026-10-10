@@ -1,0 +1,37 @@
+# Development server with hot reload: `docker compose up`, then http://localhost:7341.
+# The module is built on its own (no go.work), like CI. Private modules bnema.dev/ermite-*
+# are fetched from git.bnema.dev, which the container reaches through the host's DNS and routes.
+services:
+  ermite:
+    build:
+      dockerfile_inline: |
+        FROM golang:1.27-alpine
+        RUN apk add --no-cache git git-daemon
+    working_dir: /src
+    command: ["go", "tool", "air", "-c", ".air.toml"]
+    ports:
+      - "127.0.0.1:7341:7341"
+    environment:
+      CGO_ENABLED: "0"
+      GOWORK: "off"
+      GOTOOLCHAIN: local
+      GOPRIVATE: bnema.dev/ermite*
+      # The mounted .git of a worktree points outside the container.
+      GOFLAGS: -buildvcs=false
+      ERMITE_DATA_DIR: /data
+      ERMITE_ADDR: ":7341"
+      ERMITE_PUBLIC_URL: http://localhost:7341
+      # Development placeholder, not a secret: the port is bound to the loopback.
+      ERMITE_ADMIN_TOKEN: dev-only-admin-token-do-not-use-0123456789
+      ERMITE_LOG_FORMAT: console
+      ERMITE_LOG_LEVEL: debug
+    volumes:
+      - .:/src
+      - go-mod:/go/pkg/mod
+      - go-build:/root/.cache/go-build
+      - data:/data
+
+volumes:
+  go-mod:
+  go-build:
+  data:

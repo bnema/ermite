@@ -1,0 +1,25 @@
+# Hot reload for `docker compose up` (see compose.yaml). Run from the module root.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # templ files are generated when the module pins templ as a tool (web UI);
+  # until then this is a no-op, so the same config works before and after.
+  pre_cmd = ["if grep -q 'a-h/templ' go.mod; then go tool templ generate; fi"]
+  cmd = "go build -o ./tmp/ermite ./cmd/ermite"
+  entrypoint = ["./tmp/ermite", "serve"]
+  include_ext = ["go", "templ"]
+  exclude_dir = ["gen", "tmp", "scripts", "proto", ".git", ".worktrees"]
+  # *_templ.go is the output of templ generate: a .templ change triggers the
+  # rebuild, the generated Go file does not trigger a second one.
+  exclude_regex = ["_test\\.go", "_templ\\.go"]
+  # Let the server finish in-flight requests, then stop it.
+  send_interrupt = true
+  kill_delay = "2s"
+  delay = 300
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true
