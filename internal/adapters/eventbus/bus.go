@@ -22,11 +22,7 @@ type Bus struct {
 	buffer int
 
 	mu   sync.Mutex
-	subs map[*subscriber]struct{}
-}
-
-type subscriber struct {
-	ch chan domain.Event
+	subs map[chan domain.Event]struct{}
 }
 
 // New builds a bus whose subscribers buffer DefaultBuffer events.
@@ -35,7 +31,7 @@ func New() *Bus { return NewWithBuffer(DefaultBuffer) }
 // NewWithBuffer builds a bus whose subscribers buffer n events (at least 2,
 // so that a gap marker and the event that follows it fit).
 func NewWithBuffer(n int) *Bus {
-	return &Bus{buffer: max(n, 2), subs: make(map[*subscriber]struct{})}
+	return &Bus{buffer: max(n, 2), subs: make(map[chan domain.Event]struct{})}
 }
 
 // Publish delivers ev to every subscriber. A subscriber whose buffer is full
@@ -44,9 +40,9 @@ func NewWithBuffer(n int) *Bus {
 func (b *Bus) Publish(_ context.Context, ev domain.Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for s := range b.subs {
+	for ch := range b.subs {
 		select {
-		case s.ch <- ev:
+		case ch <- ev:
 			continue
 		default:
 		}
@@ -55,36 +51,28 @@ func (b *Bus) Publish(_ context.Context, ev domain.Event) {
 	drain:
 		for {
 			select {
-			case <-s.ch:
+			case <-ch:
 			default:
 				break drain
 			}
 		}
-		s.ch <- domain.EventGap{}
-		s.ch <- ev
+		ch <- domain.EventGap{}
+		ch <- ev
 	}
 }
 
 // Subscribe registers a subscriber until ctx ends, then closes its channel.
 func (b *Bus) Subscribe(ctx context.Context) <-chan domain.Event {
-	s := &subscriber{ch: make(chan domain.Event, b.buffer)}
+	ch := make(chan domain.Event, b.buffer)
 	b.mu.Lock()
-	b.subs[s] = struct{}{}
+	b.subs[ch] = struct{}{}
 	b.mu.Unlock()
 
-	go func() {
-		<-ctx.Done()
+	context.AfterFunc(ctx, func() {
 		b.mu.Lock()
-		delete(b.subs, s)
-		close(s.ch)
+		delete(b.subs, ch)
+		close(ch)
 		b.mu.Unlock()
-	}()
-	return s.ch
-}
-
-// Subscribers returns the number of live subscribers, for tests.
-func (b *Bus) Subscribers() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.subs)
+	})
+	return ch
 }
