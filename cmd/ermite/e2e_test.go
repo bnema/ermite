@@ -91,7 +91,8 @@ func TestAC1AnonymousCloneAndPrivateRepo(t *testing.T) {
 	require.NoError(t, err, out)
 }
 
-// Only the smart HTTP routes exist; the rest of the repository tree is 404.
+// Only the smart HTTP routes exist under a repository's .git URL; the rest of
+// the repository tree is the 404 page of the web.
 func TestRoutes(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	h.publicRepo("pub", "a")
@@ -102,8 +103,7 @@ func TestRoutes(t *testing.T) {
 		"/pub.git/info/refs", // dumb protocol: no service
 		"/pub.git/info/refs?service=git-bogus",
 		"/pub.git/config",
-		"/pub/tree/main",
-		"/",
+		"/pub/tree/main", // a page of a later phase
 		"/-/nothing",
 		"/Bad.git/info/refs?service=git-upload-pack",
 		"/..%2f..%2fetc/info/refs?service=git-upload-pack",
@@ -111,7 +111,12 @@ func TestRoutes(t *testing.T) {
 		assert.Equal(t, 404, h.status("GET", path, nil), path)
 	}
 	assert.Equal(t, 405, h.status("POST", "/pub.git/info/refs?service=git-upload-pack", nil))
-	assert.Equal(t, 405, h.status("GET", "/pub.git/git-upload-pack", nil))
+	// The web owns GET on every other path: a GET of a POST-only Git route
+	// is its 404 page, not a 405.
+	assert.Equal(t, 404, h.status("GET", "/pub.git/git-upload-pack", nil))
+	assert.Equal(t, 200, h.status("GET", "/", nil), "the home page")
+	assert.Equal(t, 200, h.status("GET", "/pub", nil), "the summary page")
+	assert.Equal(t, 405, h.status("POST", "/", nil))
 	assert.Equal(t, 200, h.status("GET", "/-/health", nil), "internal routes are intact")
 	assert.Equal(t, 200, h.status("GET", "/pub.git/info/refs?service=git-upload-pack", nil))
 	// Anonymous receive-pack is a challenge even for a public repository.

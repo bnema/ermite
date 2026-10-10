@@ -2,7 +2,7 @@
 
 A single-user Git forge in one Go binary. ermite hosts bare repositories, serves clone and push over HTTPS, and shows them in a read-only web interface.
 
-Status: early development. `ermite serve` serves Git over HTTP (clone, fetch, push) and answers `GET /-/health`. There is no web interface or token command yet.
+Status: early development. `ermite serve` serves Git over HTTP (clone, fetch, push), answers `GET /-/health`, and serves the read-only web: the home list, the summary of a repository (README, clone URL, facts, recent commits) and its refs. Tree, file, commit and live pages are still to come.
 
 ## Run
 

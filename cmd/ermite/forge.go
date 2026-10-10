@@ -19,6 +19,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/adapters/rpc"
+	"bnema.dev/ermite/internal/adapters/web"
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/config"
@@ -175,10 +176,15 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Limiter:        limiter,
 		MaxBodyBytes:   maxBody,
 	})
-	routes := make([]httpserver.Route, 0, len(githttp.Patterns))
+	routes := make([]httpserver.Route, 0, len(githttp.Patterns)+len(web.Patterns))
 	for _, p := range githttp.Patterns {
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
 	}
+	site, err := newWeb(cfg, f.API)
+	if err != nil {
+		return nil, fmt.Errorf("web: %w", err)
+	}
+	routes = append(routes, webRoutes(site)...)
 	f.server = httpserver.New(httpserver.Config{
 		Addr:         cfg.Addr,
 		HealthChecks: []httpserver.Check{store.Check, httpserver.DirWritable(cfg.DataDir)},
