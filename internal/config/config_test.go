@@ -153,3 +153,42 @@ func TestTokenLengthCountsCharacters(t *testing.T) {
 	_, err = config.Load(lookup(valid(map[string]string{config.EnvAdminToken: strings.Repeat("é", 31)})))
 	assert.Error(t, err)
 }
+
+func TestLoadCommitterDefaults(t *testing.T) {
+	c, err := config.Load(lookup(valid(nil)))
+	require.NoError(t, err)
+	assert.Equal(t, "ermite", c.CommitterName)
+	assert.Equal(t, "ermite@git.example.com", c.CommitterEmail, "the host of the public URL, without port or path")
+
+	c, err = config.Load(lookup(valid(map[string]string{config.EnvPublicURL: "http://localhost:7341/"})))
+	require.NoError(t, err)
+	assert.Equal(t, "ermite@localhost", c.CommitterEmail)
+}
+
+func TestLoadCommitterFromTheEnvironment(t *testing.T) {
+	c, err := config.Load(lookup(valid(map[string]string{
+		config.EnvCommitterName:  " Forge Bot ",
+		config.EnvCommitterEmail: "bot@example.org",
+	})))
+	require.NoError(t, err)
+	assert.Equal(t, "Forge Bot", c.CommitterName)
+	assert.Equal(t, "bot@example.org", c.CommitterEmail)
+}
+
+func TestLoadRejectsBadCommitter(t *testing.T) {
+	for name, env := range map[string]map[string]string{
+		"name with an angle bracket":  {config.EnvCommitterName: "Bot <x>"},
+		"name with a line break":      {config.EnvCommitterName: "Bot\nCo-authored-by: x"},
+		"name not utf-8":              {config.EnvCommitterName: "\xff"},
+		"email without an @":          {config.EnvCommitterEmail: "bot"},
+		"email with a space":          {config.EnvCommitterEmail: "a b@example.org"},
+		"email with an angle bracket": {config.EnvCommitterEmail: "<bot@example.org>"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := config.Load(lookup(valid(env)))
+			var ce *config.Error
+			require.ErrorAs(t, err, &ce)
+			assert.Contains(t, ce.Problems[0], "ERMITE_COMMITTER_")
+		})
+	}
+}

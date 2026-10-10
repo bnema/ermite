@@ -28,6 +28,10 @@ const (
 	EnvSourceURL      = "ERMITE_SOURCE_URL"
 	EnvLogLevel       = "ERMITE_LOG_LEVEL"
 	EnvLogFormat      = "ERMITE_LOG_FORMAT"
+	// EnvCommitterName and EnvCommitterEmail name the committer of the
+	// commits ermite creates (squash merges, ADR 0022).
+	EnvCommitterName  = "ERMITE_COMMITTER_NAME"
+	EnvCommitterEmail = "ERMITE_COMMITTER_EMAIL"
 )
 
 // Defaults.
@@ -36,6 +40,8 @@ const (
 	DefaultGit       = "git"
 	DefaultLogLevel  = "info"
 	DefaultLogFormat = "json"
+	// DefaultCommitterName is the committer name of the commits ermite creates.
+	DefaultCommitterName = "ermite"
 )
 
 // MinAdminTokenLen is the shortest accepted admin token, in characters.
@@ -62,6 +68,10 @@ type Config struct {
 	LogLevel string
 	// LogFormat is json or console.
 	LogFormat string
+	// CommitterName and CommitterEmail are recorded as the committer of the
+	// commits ermite creates. The email defaults to "ermite@<host of
+	// PublicURL>".
+	CommitterName, CommitterEmail string
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -167,10 +177,44 @@ func Load(get func(string) string) (Config, error) {
 		bad(EnvLogFormat, "must be json or console (got %q)", get(EnvLogFormat))
 	}
 
+	c.CommitterName = strings.TrimSpace(get(EnvCommitterName))
+	if c.CommitterName == "" {
+		c.CommitterName = DefaultCommitterName
+	} else if err := validateIdentity(c.CommitterName); err != nil {
+		bad(EnvCommitterName, "%v", err)
+	}
+	c.CommitterEmail = strings.TrimSpace(get(EnvCommitterEmail))
+	switch {
+	case c.CommitterEmail != "":
+		if err := validateIdentity(c.CommitterEmail); err != nil {
+			bad(EnvCommitterEmail, "%v", err)
+		} else if !strings.Contains(c.CommitterEmail, "@") || strings.ContainsAny(c.CommitterEmail, " \t") {
+			bad(EnvCommitterEmail, "must be an email address such as ermite@example.org")
+		}
+	case publicOK:
+		u, _ := url.Parse(c.PublicURL)
+		c.CommitterEmail = "ermite@" + u.Hostname()
+	}
+
 	if len(problems) > 0 {
 		return Config{}, &Error{Problems: problems}
 	}
 	return c, nil
+}
+
+// validateIdentity accepts a name or an email address for a Git identity: valid
+// UTF-8 without control characters or the angle brackets and line breaks that
+// Git does not allow in an identity.
+func validateIdentity(s string) error {
+	if !utf8.ValidString(s) {
+		return fmt.Errorf("must be valid UTF-8")
+	}
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || r == '<' || r == '>' {
+			return fmt.Errorf("must not contain control characters, '<' or '>'")
+		}
+	}
+	return nil
 }
 
 func validateAddr(addr string) error {
