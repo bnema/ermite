@@ -20,6 +20,7 @@ import (
 
 	"bnema.dev/ermite/internal/adapters/gitcli"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/readertest"
 )
 
 // alive reports whether a process still exists. The adapter collects its
@@ -43,17 +44,17 @@ func TestCatFileProcessIsReusedAndStopsWhenIdle(t *testing.T) {
 	// The default idle timeout (60 s) never fires during the test: the hooks
 	// do what the timers would, deterministically.
 	g, data := newReader(t, nil)
-	h := newHistory(t, data)
+	h := readertest.NewHistory(t, data)
 
 	assert.Empty(t, g.CatFilePIDs(), "nothing runs before the first read")
-	_, err := g.ResolveRevision(ctx, h.name, domain.Revision{})
+	_, err := g.ResolveRevision(ctx, h.Name, domain.Revision{})
 	require.NoError(t, err)
 	pids := g.CatFilePIDs()
 	require.Len(t, pids, 1)
 	require.True(t, alive(pids[0]))
 
 	for range 5 {
-		_, err = g.GetTree(ctx, h.name, domain.Revision{}, domain.TreePath{}, false)
+		_, err = g.GetTree(ctx, h.Name, domain.Revision{}, domain.TreePath{}, false)
 		require.NoError(t, err)
 	}
 	assert.Equal(t, pids, g.CatFilePIDs(), "one long-lived process serves every request")
@@ -68,7 +69,7 @@ func TestCatFileProcessIsReusedAndStopsWhenIdle(t *testing.T) {
 	requireGone(t, pids...)
 
 	// The next request starts a new one.
-	_, err = g.ResolveRevision(ctx, h.name, domain.Revision{})
+	_, err = g.ResolveRevision(ctx, h.Name, domain.Revision{})
 	require.NoError(t, err)
 	next := g.CatFilePIDs()
 	require.Len(t, next, 1)
@@ -78,8 +79,8 @@ func TestCatFileProcessIsReusedAndStopsWhenIdle(t *testing.T) {
 func TestCatFileIdleTimerStopsAnUnusedProcess(t *testing.T) {
 	ctx := context.Background()
 	g, data := newReader(t, func(c *gitcli.Config) { c.CatFileIdle = 20 * time.Millisecond })
-	h := newHistory(t, data)
-	_, err := g.ResolveRevision(ctx, h.name, domain.Revision{})
+	h := readertest.NewHistory(t, data)
+	_, err := g.ResolveRevision(ctx, h.Name, domain.Revision{})
 	require.NoError(t, err)
 	pids := g.CatFilePIDs()
 	require.Eventually(t, func() bool { return len(g.CatFilePIDs()) == 0 }, 5*time.Second, 5*time.Millisecond)
@@ -89,17 +90,17 @@ func TestCatFileIdleTimerStopsAnUnusedProcess(t *testing.T) {
 func TestCloseStopsEveryProcess(t *testing.T) {
 	ctx := context.Background()
 	g, data := newReader(t, nil) // default idle: 60 s, so only Close can stop them
-	h := newHistory(t, data)
-	f2 := newFixtureRepo(t, data, "second")
-	f2.write("x", "x").commit("x")
-	big := newFixtureRepo(t, data, "bigone")
-	big.writeBytes("big", randomBytes(600<<10, 1)).commit("big")
+	h := readertest.NewHistory(t, data)
+	f2 := readertest.NewFixture(t, data, "second")
+	f2.Write("x", "x").Commit("x")
+	big := readertest.NewFixture(t, data, "bigone")
+	big.WriteBytes("big", readertest.RandomBytes(600<<10, 1)).Commit("big")
 
-	_, err := g.ResolveRevision(ctx, h.name, domain.Revision{})
+	_, err := g.ResolveRevision(ctx, h.Name, domain.Revision{})
 	require.NoError(t, err)
-	_, err = g.ResolveRevision(ctx, f2.name, domain.Revision{})
+	_, err = g.ResolveRevision(ctx, f2.Name, domain.Revision{})
 	require.NoError(t, err)
-	_, rc, err := g.OpenBlob(ctx, big.name, domain.Revision{}, tpath(t, "big"))
+	_, rc, err := g.OpenBlob(ctx, big.Name, domain.Revision{}, readertest.TreePath(t, "big"))
 	require.NoError(t, err)
 	_ = rc // left open on purpose: Close must stop its process too
 
@@ -115,9 +116,9 @@ func TestCloseStopsEveryProcess(t *testing.T) {
 	requireGone(t, pids...)
 	assert.Empty(t, g.CatFilePIDs())
 
-	_, err = g.ResolveRevision(ctx, h.name, domain.Revision{})
+	_, err = g.ResolveRevision(ctx, h.Name, domain.Revision{})
 	assert.ErrorIs(t, err, gitcli.ErrClosed)
-	_, _, err = g.OpenBlob(ctx, big.name, domain.Revision{}, tpath(t, "big"))
+	_, _, err = g.OpenBlob(ctx, big.Name, domain.Revision{}, readertest.TreePath(t, "big"))
 	assert.ErrorIs(t, err, gitcli.ErrClosed)
 	assert.NoError(t, g.Close(ctx), "Close is idempotent")
 	_, err = io.Copy(io.Discard, rc)
@@ -131,9 +132,9 @@ func TestPoolIsBounded(t *testing.T) {
 	g, data := newReader(t, func(c *gitcli.Config) { c.MaxCatFiles = 2 })
 	var names []domain.RepoName
 	for i := range 6 {
-		f := newFixtureRepo(t, data, fmt.Sprintf("r%d", i))
-		f.write("x", "x").commit("x")
-		names = append(names, f.name)
+		f := readertest.NewFixture(t, data, fmt.Sprintf("r%d", i))
+		f.Write("x", "x").Commit("x")
+		names = append(names, f.Name)
 	}
 	var seen []int
 	for _, n := range names {
@@ -158,9 +159,9 @@ func TestPoolIsBounded(t *testing.T) {
 func TestPoolRestartsAfterProcessDeath(t *testing.T) {
 	ctx := context.Background()
 	g, data := newReader(t, nil)
-	h := newHistory(t, data)
+	h := readertest.NewHistory(t, data)
 
-	_, err := g.ResolveRevision(ctx, h.name, domain.Revision{})
+	_, err := g.ResolveRevision(ctx, h.Name, domain.Revision{})
 	require.NoError(t, err)
 	old := g.CatFilePIDs()
 	require.Len(t, old, 1)
@@ -168,9 +169,9 @@ func TestPoolRestartsAfterProcessDeath(t *testing.T) {
 	requireGone(t, old[0])
 
 	// The request that finds the dead process succeeds on a fresh one.
-	got, err := g.ResolveRevision(ctx, h.name, domain.Revision{})
+	got, err := g.ResolveRevision(ctx, h.Name, domain.Revision{})
 	require.NoError(t, err)
-	assert.Equal(t, h.merge, got.CommitID.String())
+	assert.Equal(t, h.Merge, got.CommitID.String())
 	now := g.CatFilePIDs()
 	require.Len(t, now, 1)
 	assert.NotEqual(t, old, now)
@@ -179,7 +180,7 @@ func TestPoolRestartsAfterProcessDeath(t *testing.T) {
 func TestConcurrentReadsAreSerializedPerProcess(t *testing.T) {
 	ctx := context.Background()
 	g, data := newReader(t, nil)
-	h := newHistory(t, data)
+	h := readertest.NewHistory(t, data)
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 24*10)
@@ -188,13 +189,13 @@ func TestConcurrentReadsAreSerializedPerProcess(t *testing.T) {
 			for j := range 10 {
 				switch (i + j) % 4 {
 				case 0:
-					res, err := g.ResolveRevision(ctx, h.name, rev(t, "feature/x"))
-					if err == nil && res.CommitID.String() != h.side {
+					res, err := g.ResolveRevision(ctx, h.Name, readertest.Rev(t, "feature/x"))
+					if err == nil && res.CommitID.String() != h.Side {
 						err = fmt.Errorf("resolved %s", res.CommitID)
 					}
 					errs <- err
 				case 1:
-					info, rc, err := g.OpenBlob(ctx, h.name, domain.Revision{}, tpath(t, "b.txt"))
+					info, rc, err := g.OpenBlob(ctx, h.Name, domain.Revision{}, readertest.TreePath(t, "b.txt"))
 					if err == nil {
 						var body []byte
 						body, err = io.ReadAll(rc)
@@ -205,13 +206,13 @@ func TestConcurrentReadsAreSerializedPerProcess(t *testing.T) {
 					}
 					errs <- err
 				case 2:
-					tree, err := g.GetTree(ctx, h.name, rev(t, "v2"), tpath(t, "d"), false)
+					tree, err := g.GetTree(ctx, h.Name, readertest.Rev(t, "v2"), readertest.TreePath(t, "d"), false)
 					if err == nil && len(tree.Entries) != 2 {
 						err = fmt.Errorf("tree of %d entries", len(tree.Entries))
 					}
 					errs <- err
 				default:
-					_, err := g.ResolveRefPath(ctx, h.name, "feature/x/d/f")
+					_, err := g.ResolveRefPath(ctx, h.Name, "feature/x/d/f")
 					errs <- err
 				}
 			}
@@ -227,7 +228,7 @@ func TestConcurrentReadsAreSerializedPerProcess(t *testing.T) {
 
 func TestCancelledRequestDoesNotPoisonTheProcess(t *testing.T) {
 	g, data := newReader(t, nil)
-	h := newHistory(t, data)
+	h := readertest.NewHistory(t, data)
 
 	// Many requests, some with a context that dies at a random point. Whatever
 	// state a killed process was in, later requests must get right answers.
@@ -236,10 +237,10 @@ func TestCancelledRequestDoesNotPoisonTheProcess(t *testing.T) {
 		wg.Go(func() {
 			for j := range 20 {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Duration((i*7+j*3)%5)*time.Millisecond)
-				res, err := g.ResolveRevision(ctx, h.name, rev(t, "v2"))
+				res, err := g.ResolveRevision(ctx, h.Name, readertest.Rev(t, "v2"))
 				cancel()
 				if err == nil {
-					assert.Equal(t, h.c2, res.CommitID.String())
+					assert.Equal(t, h.C2, res.CommitID.String())
 				} else {
 					assert.True(t, errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled), "%v", err)
 				}
@@ -247,18 +248,18 @@ func TestCancelledRequestDoesNotPoisonTheProcess(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	res, err := g.ResolveRevision(context.Background(), h.name, rev(t, "v2"))
+	res, err := g.ResolveRevision(context.Background(), h.Name, readertest.Rev(t, "v2"))
 	require.NoError(t, err)
-	assert.Equal(t, h.c2, res.CommitID.String())
+	assert.Equal(t, h.C2, res.CommitID.String())
 }
 
 func TestBlobStreamStopsWhenContextEndsOrReaderCloses(t *testing.T) {
 	g, data := newReader(t, nil)
-	f := newFixtureRepo(t, data, "bigone")
-	f.writeBytes("big", randomBytes(2<<20, 3)).commit("big")
+	f := readertest.NewFixture(t, data, "bigone")
+	f.WriteBytes("big", readertest.RandomBytes(2<<20, 3)).Commit("big")
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, rc, err := g.OpenBlob(ctx, f.name, domain.Revision{}, tpath(t, "big"))
+	_, rc, err := g.OpenBlob(ctx, f.Name, domain.Revision{}, readertest.TreePath(t, "big"))
 	require.NoError(t, err)
 	pids := g.BlobStreamPIDs()
 	require.Len(t, pids, 1)
@@ -273,7 +274,7 @@ func TestBlobStreamStopsWhenContextEndsOrReaderCloses(t *testing.T) {
 	assert.Equal(t, 0, g.BlobStreams())
 
 	// Closing early stops the process as well.
-	_, rc, err = g.OpenBlob(context.Background(), f.name, domain.Revision{}, tpath(t, "big"))
+	_, rc, err = g.OpenBlob(context.Background(), f.Name, domain.Revision{}, readertest.TreePath(t, "big"))
 	require.NoError(t, err)
 	pids = g.BlobStreamPIDs()
 	require.Len(t, pids, 1)
@@ -284,7 +285,7 @@ func TestBlobStreamStopsWhenContextEndsOrReaderCloses(t *testing.T) {
 	// A context that is already cancelled starts nothing.
 	cctx, cancel2 := context.WithCancel(context.Background())
 	cancel2()
-	_, _, err = g.OpenBlob(cctx, f.name, domain.Revision{}, tpath(t, "big"))
+	_, _, err = g.OpenBlob(cctx, f.Name, domain.Revision{}, readertest.TreePath(t, "big"))
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, 0, g.BlobStreams())
 }
@@ -299,18 +300,18 @@ func TestOpenBlobStreams50MiB(t *testing.T) {
 	}
 	ctx := context.Background()
 	g, data := newReader(t, nil)
-	f := newFixtureRepo(t, data, "huge")
+	f := readertest.NewFixture(t, data, "huge")
 	const size = 50 << 20
-	content := randomBytes(size, 42)
+	content := readertest.RandomBytes(size, 42)
 	want := sha256.Sum256(content)
-	f.writeBytes("huge.bin", content).commit("huge")
+	f.WriteBytes("huge.bin", content).Commit("huge")
 	content = nil //nolint:ineffassign // let the 50 MiB go before measuring
 
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 
-	info, rc, err := g.OpenBlob(ctx, f.name, domain.Revision{}, tpath(t, "huge.bin"))
+	info, rc, err := g.OpenBlob(ctx, f.Name, domain.Revision{}, readertest.TreePath(t, "huge.bin"))
 	require.NoError(t, err)
 	assert.Equal(t, int64(size), info.Size)
 	assert.True(t, info.Binary)
@@ -383,10 +384,10 @@ func TestExecSemaphoreBoundsOneShotCommands(t *testing.T) {
 func TestBlobStreamsAreBounded(t *testing.T) {
 	ctx := context.Background()
 	g, data := newReader(t, func(c *gitcli.Config) { c.MaxBlobStreams = 2 })
-	f := newFixtureRepo(t, data, "bigone")
-	f.writeBytes("big", randomBytes(600<<10, 5)).commit("big")
+	f := readertest.NewFixture(t, data, "bigone")
+	f.WriteBytes("big", readertest.RandomBytes(600<<10, 5)).Commit("big")
 	open := func() (io.ReadCloser, error) {
-		_, rc, err := g.OpenBlob(ctx, f.name, domain.Revision{}, tpath(t, "big"))
+		_, rc, err := g.OpenBlob(ctx, f.Name, domain.Revision{}, readertest.TreePath(t, "big"))
 		return rc, err
 	}
 

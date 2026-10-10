@@ -235,6 +235,8 @@ func (g *Git) ResolveRevision(ctx context.Context, repo domain.RepoName, rev dom
 // tag, full ref name, HEAD; a single segment may also be a commit id), longest
 // first, with up to one `cat-file` request per candidate on the repository's
 // process. At most domain.MaxRefPathTries segments are tried.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter the split is domain.SplitRefPath; this only runs it on a cat-file connection
 func (g *Git) ResolveRefPath(ctx context.Context, repo domain.RepoName, path string) (domain.RefPath, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
