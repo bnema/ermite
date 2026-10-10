@@ -20,9 +20,18 @@ components:
     role: entrypoint
     paths:
       - cmd/**
+  config:
+    role: entrypoint
+    paths:
+      - internal/config/**
   generated:
     role: ignore
     paths:
       - gen/**
       - '**/mocks/**'
       - '**/*_templ.go'
+mocking:
+  generatedMockPaths:
+    - internal/ports/mocks/**
+  generatedMockNamePatterns:
+    - '{{Interface}}'

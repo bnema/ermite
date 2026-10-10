@@ -1,0 +1,13 @@
+# Mocks of the ports. Regenerate with: go generate ./internal/ports
+template: testify
+packages:
+  bnema.dev/ermite/internal/ports:
+    config:
+      dir: "{{.InterfaceDir}}/mocks"
+      pkgname: mocks
+      filename: "{{.InterfaceName}}.go"
+      structname: "{{.InterfaceName}}"
+    interfaces:
+      RepoMetaStore:
+      GitRepos:
+      Clock:
