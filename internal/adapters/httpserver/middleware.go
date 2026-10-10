@@ -46,6 +46,17 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return s.ResponseWriter.Write(b)
 }
 
+// Flush lets streaming handlers (Connect server streams require an
+// http.Flusher) push their messages out as they are written.
+func (s *statusRecorder) Flush() {
+	if s.status == 0 {
+		s.status = http.StatusOK
+	}
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // Unwrap lets http.ResponseController reach Flush and friends.
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 

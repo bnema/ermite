@@ -24,6 +24,7 @@ type fixture struct {
 	meta  *mocks.RepoMetaStore
 	git   *mocks.GitRepos
 	clock *mocks.Clock
+	bus   *mocks.EventBus
 	repos *app.Repos
 }
 
@@ -33,9 +34,10 @@ func newFixture(t *testing.T) *fixture {
 		meta:  mocks.NewRepoMetaStore(t),
 		git:   mocks.NewGitRepos(t),
 		clock: mocks.NewClock(t),
+		bus:   mocks.NewEventBus(t),
 	}
 	f.clock.EXPECT().Now().Return(now).Maybe()
-	f.repos = app.NewRepos(f.meta, f.git, f.clock)
+	f.repos = app.NewRepos(f.meta, f.git, f.bus, f.clock)
 	return f
 }
 
@@ -57,6 +59,7 @@ func TestCreate(t *testing.T) {
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
 		f.meta.EXPECT().Create(ctx, want).Return(nil)
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
+		f.bus.EXPECT().Publish(ctx, domain.RepoCreated{Repo: n, Visibility: domain.VisibilityPrivate, At: now}).Return().Once()
 
 		got, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: n, Description: "d"})
 		require.NoError(t, err)
@@ -86,6 +89,7 @@ func TestCreate(t *testing.T) {
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
 		f.meta.EXPECT().Create(ctx, mock.Anything).Return(nil)
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
 		_, err := f.repos.Create(ctx, tokenPrincipal(domain.ScopeRepoWrite, "tools"), app.CreateParams{Name: n})
 		require.NoError(t, err)
 	})

@@ -51,7 +51,7 @@ func newPushFixture(t *testing.T) *pushFixture {
 		sched:  &scheduler{},
 	}
 	f.clock.EXPECT().Now().Return(now).Maybe()
-	repos := app.NewRepos(f.meta, f.git, f.clock)
+	repos := app.NewRepos(f.meta, f.git, f.bus, f.clock)
 	auth := app.NewAuth(domain.HashTokenSecret(rootSecret), f.tokens, f.clock)
 	f.pushes = app.NewPushes(f.meta, repos, f.git, f.bus, f.clock, f.sched, auth)
 	return f

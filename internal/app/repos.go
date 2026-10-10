@@ -19,12 +19,14 @@ import (
 type Repos struct {
 	meta  ports.RepoMetaStore
 	git   ports.GitRepos
+	bus   ports.EventBus
 	clock ports.Clock
 }
 
-// NewRepos builds the repository use cases over their ports.
-func NewRepos(meta ports.RepoMetaStore, git ports.GitRepos, clock ports.Clock) *Repos {
-	return &Repos{meta: meta, git: git, clock: clock}
+// NewRepos builds the repository use cases over their ports. Changes are
+// published on bus.
+func NewRepos(meta ports.RepoMetaStore, git ports.GitRepos, bus ports.EventBus, clock ports.Clock) *Repos {
+	return &Repos{meta: meta, git: git, bus: bus, clock: clock}
 }
 
 // CreateParams are the settings of a new repository.
@@ -35,7 +37,7 @@ type CreateParams struct {
 	Visibility domain.Visibility
 }
 
-// Create makes a repository: it stages a bare repository, records the
+// Create makes a repository and publishes RepoCreated: it stages a bare repository, records the
 // metadata (which fails with domain.ErrAlreadyExists if the name is taken,
 // also when a concurrent Create wins) and publishes the directory. A failure
 // after the metadata is written removes it again and discards the staged
@@ -52,6 +54,9 @@ func (r *Repos) Create(ctx context.Context, p domain.Principal, params CreatePar
 	}
 	if !canWrite(p, params.Name) {
 		return domain.Repo{}, domain.ErrForbidden
+	}
+	if err := validateDescription(params.Description); err != nil {
+		return domain.Repo{}, err
 	}
 	vis := params.Visibility
 	if vis == "" {
@@ -93,6 +98,7 @@ func (r *Repos) Create(ctx context.Context, p domain.Principal, params CreatePar
 		return domain.Repo{}, fmt.Errorf("publish repository %q: %w", repo.Name, err)
 	}
 	log.Info().Str("repo", repo.Name.String()).Str("visibility", vis.String()).Msg("repository created")
+	r.bus.Publish(ctx, domain.RepoCreated{Repo: repo.Name, Visibility: repo.Visibility, At: repo.CreatedAt})
 	return repo, nil
 }
 

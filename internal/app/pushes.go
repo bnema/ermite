@@ -49,7 +49,7 @@ func NewPushes(meta ports.RepoMetaStore, repos *Repos, git ports.GitRepos, bus p
 
 // Open decides whether the principal may push to the repository and, with
 // create, creates it when it does not exist yet (private, published as
-// RepoCreated). create is for the first request of a push only.
+// RepoCreated by Repos.Create). create is for the first request of a push only.
 //
 // Anonymous callers get domain.ErrUnauthenticated. A repository the caller
 // cannot read and cannot write, or a missing one it may not create, answers
@@ -70,11 +70,10 @@ func (u *Pushes) Open(ctx context.Context, p domain.Principal, name domain.RepoN
 	if !create || !canWrite(p, name) {
 		return domain.ErrNotFound
 	}
-	repo, err = u.repos.Create(ctx, p, CreateParams{Name: name, Visibility: domain.VisibilityPrivate})
+	_, err = u.repos.Create(ctx, p, CreateParams{Name: name, Visibility: domain.VisibilityPrivate})
 	switch {
 	case err == nil:
-		u.bus.Publish(ctx, domain.RepoCreated{Repo: repo.Name, Visibility: repo.Visibility, At: repo.CreatedAt})
-		return nil
+		return nil // Create published RepoCreated
 	case errors.Is(err, domain.ErrAlreadyExists):
 		// A concurrent first push won the race: this one pushes to its repository.
 		repo, gerr := u.meta.Get(ctx, name)

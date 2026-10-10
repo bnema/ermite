@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/bnema/zerowrap"
@@ -18,7 +19,9 @@ import (
 	"bnema.dev/ermite/internal/adapters/githttp"
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/kvstore"
+	"bnema.dev/ermite/internal/adapters/rpc"
 	"bnema.dev/ermite/internal/app"
+	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/config"
 	"bnema.dev/ermite/internal/ports"
 )
@@ -36,6 +39,8 @@ type options struct {
 	maintenanceDelay time.Duration
 	// maxBodyBytes overrides the limit of a push body when positive.
 	maxBodyBytes int64
+	// eventBuffer overrides app.DefaultEventBuffer when positive.
+	eventBuffer int
 }
 
 // forge is the wired server: every adapter and use case, ready to serve.
@@ -45,14 +50,28 @@ type forge struct {
 	server *httpserver.Server
 	hooks  *githttp.HookServer
 	maint  *app.Maintainer
+	git    *gitcli.Git
 
-	// Repos, Tokens, Pushes and Events are exposed for tests and for the
-	// phases that add the API.
-	Repos  *app.Repos
-	Tokens *app.Tokens
-	Auth   *app.Auth
-	Pushes *app.Pushes
-	Events ports.EventBus
+	// The use cases and the API are exposed for tests and for the phases
+	// that add the web.
+	Repos    *app.Repos
+	Tokens   *app.Tokens
+	Auth     *app.Auth
+	Pushes   *app.Pushes
+	Browse   *app.Browse
+	EventLog *app.Events
+	API      *rpc.API
+	Events   ports.EventBus
+}
+
+// serverVersion is the version GetVersion reports: the module version of the
+// build, or "devel" for an untagged one.
+func serverVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return "devel"
+	}
+	return info.Main.Version
 }
 
 // newForge opens the metadata store, resets run/, checks git, reconciles the repositories,
@@ -86,6 +105,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		maxBody = opts.maxBodyBytes
 	}
 	git := gitcli.New(gitcli.Config{Bin: cfg.Git, DataDir: cfg.DataDir, Path: path, MaxReceiveBytes: maxBody})
+	f.git = git
 	gitVersion, err := git.CheckVersion(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%s=%q: %w", config.EnvGit, cfg.Git, err)
@@ -96,7 +116,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 
 	clock := systemClock{}
-	f.Repos = app.NewRepos(store, git, clock)
+	f.Events = eventbus.New()
+	f.Repos = app.NewRepos(store, git, f.Events, clock)
 	report, err := f.Repos.Reconcile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("reconcile repositories: %w", err)
@@ -109,7 +130,6 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 
 	f.Tokens = app.NewTokens(store.Tokens(), clock)
 	f.Auth = app.NewAuth(cfg.AdminTokenHash, store.Tokens(), clock)
-	f.Events = eventbus.New()
 	f.maint = app.NewMaintainer(ctx, git, opts.maintenanceDelay)
 	f.Pushes = app.NewPushes(store, f.Repos, git, f.Events, clock, f.maint, f.Auth)
 
@@ -127,6 +147,22 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		return nil, err
 	}
 
+	f.Browse = app.NewBrowse(store, git)
+	f.EventLog = app.NewEvents(ctx, f.Repos, f.Events, opts.eventBuffer, clock)
+
+	// One budget of failed authentications per client, for Git and the API.
+	limiter := clientlimit.NewLimiter(nil)
+	f.API = rpc.New(rpc.Config{
+		Auth:           f.Auth,
+		Repos:          f.Repos,
+		Tokens:         f.Tokens,
+		Browse:         f.Browse,
+		Events:         f.EventLog,
+		Version:        serverVersion(),
+		TrustedProxies: cfg.TrustedProxies,
+		Limiter:        limiter,
+	})
+
 	gh := githttp.New(githttp.Config{
 		Auth:           f.Auth,
 		Repos:          f.Repos,
@@ -134,6 +170,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Backend:        git,
 		Hooks:          f.hooks,
 		TrustedProxies: cfg.TrustedProxies,
+		Limiter:        limiter,
 		MaxBodyBytes:   maxBody,
 	})
 	routes := make([]httpserver.Route, 0, len(githttp.Patterns))
@@ -144,6 +181,10 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Addr:         cfg.Addr,
 		HealthChecks: []httpserver.Check{store.Check, httpserver.DirWritable(cfg.DataDir)},
 		Routes:       routes,
+		API:          f.API.Handler(),
+		// Event streams never end by themselves: close them when the
+		// shutdown begins, or it would wait for them until its timeout.
+		OnShutdown: []func(){func() { f.EventLog.Close(context.WithoutCancel(ctx)) }},
 	})
 	return f, nil
 }
@@ -178,11 +219,21 @@ func (f *forge) Serve(ctx context.Context, ln net.Listener) error {
 	return errors.Join(httpErr, <-hookErr)
 }
 
-// Close releases what newForge opened. It is safe to call twice.
+// Close releases what newForge opened. It is safe to call twice. Call it after
+// the HTTP server stopped: it stops the event log and the long-lived Git
+// processes of the read side, which requests in flight may still use.
 func (f *forge) Close(ctx context.Context) {
 	log := zerowrap.FromCtx(ctx)
 	if f.hooks != nil {
 		f.hooks.Close(ctx)
+	}
+	if f.EventLog != nil {
+		f.EventLog.Close(ctx)
+	}
+	if f.git != nil {
+		if err := f.git.Close(ctx); err != nil {
+			log.Error().Err(err).Msg("close git reader")
+		}
 	}
 	if f.maint != nil {
 		f.maint.Close(ctx)

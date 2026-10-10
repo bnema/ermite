@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package rpc
+
+import (
+	"context"
+
+	"connectrpc.com/connect"
+
+	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/app"
+)
+
+// eventService implements ermiteconnect.EventServiceHandler.
+type eventService struct{ events *app.Events }
+
+// Watch streams events until the client goes away or the server stops. The
+// stream ends with success in both cases: the contract has no error for
+// "server is shutting down".
+func (s *eventService) Watch(ctx context.Context, req *connect.Request[pb.WatchRequest], stream *connect.ServerStream[pb.WatchResponse]) error {
+	params := app.WatchParams{
+		Topics: req.Msg.GetTopics(), ResumeAfter: req.Msg.GetResumeAfter(),
+		// A client's call returns when the response begins: send the headers
+		// now, not with the first event, which may be far away.
+		Ready: startedFunc(ctx),
+	}
+	err := s.events.Watch(ctx, caller(ctx), params, func(we app.WatchEvent) error {
+		ev := watchEventToPB(we)
+		if ev == nil {
+			return nil
+		}
+		return stream.Send(&pb.WatchResponse{Event: ev})
+	})
+	return connectError(ctx, err)
+}

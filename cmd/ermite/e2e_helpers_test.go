@@ -44,6 +44,8 @@ type harnessOpts struct {
 	hookExe string
 	// maxBody overrides the limit of a push body when positive.
 	maxBody int64
+	// eventBuffer overrides the size of the event ring when positive.
+	eventBuffer int
 }
 
 // newHarness starts a forge. The data directory is short: the hook socket
@@ -77,7 +79,7 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	if hookExe == "" {
 		hookExe = binary(t)
 	}
-	f, err := newForge(ctx, cfg, options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody})
+	f, err := newForge(ctx, cfg, options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody, eventBuffer: o.eventBuffer})
 	require.NoError(t, err)
 
 	h := &harness{t: t, forge: f, data: data, logs: logs, ctx: ctx, cancel: cancel, hooksDone: make(chan error, 1)}
@@ -88,6 +90,9 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 
 	h.home = t.TempDir()
 	t.Cleanup(func() {
+		// Event streams never end by themselves: the real server closes them
+		// when its shutdown begins, the test server needs the same push.
+		f.EventLog.Close(context.WithoutCancel(ctx))
 		h.srv.Close()
 		cancel()
 		select {

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"bnema.dev/ermite/internal/adapters/eventbus"
 	"bnema.dev/ermite/internal/adapters/gitcli"
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/app"
@@ -45,7 +46,7 @@ func TestCreateConcurrentSameNameRealAdapters(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close(context.Background())) })
 
-	repos := app.NewRepos(store, git, fixedClock{})
+	repos := app.NewRepos(store, git, eventbus.New(), fixedClock{})
 	n := name(t, "tools")
 
 	const workers = 8

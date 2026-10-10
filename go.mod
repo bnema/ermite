@@ -10,7 +10,9 @@ tool (
 )
 
 require (
+	bnema.dev/ermite-api v0.0.0-20261010060753-a137f54f984a
 	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
+	connectrpc.com/connect v1.21.0
 	github.com/bnema/zerowrap v1.4.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
@@ -35,7 +37,6 @@ require (
 	buf.build/go/standard v0.1.1-0.20260325175353-2b287e071df5 // indirect
 	cel.dev/cel-go v0.32.0 // indirect
 	cel.dev/expr v0.25.3 // indirect
-	connectrpc.com/connect v1.20.0 // indirect
 	connectrpc.com/otelconnect v0.9.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect

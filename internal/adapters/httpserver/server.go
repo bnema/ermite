@@ -40,12 +40,23 @@ type Config struct {
 	HealthChecks []Check
 	// Routes are added to the router next to /-/health.
 	Routes []Route
+	// API serves the ConnectRPC API under /-/api/ (the prefix is stripped, so
+	// it sees "/ermite.RepoService/ListRepos"). Nil serves none.
+	API http.Handler
+	// OnShutdown functions run, each in its own goroutine, when the graceful
+	// shutdown begins. Use them to end long-lived responses such as event
+	// streams, which the shutdown would otherwise wait for.
+	OnShutdown []func()
 }
+
+// APIPrefix is where the API is mounted.
+const APIPrefix = "/-/api"
 
 // Server is the HTTP server of ermite.
 type Server struct {
-	addr    string
-	handler http.Handler
+	addr       string
+	handler    http.Handler
+	onShutdown []func()
 }
 
 // New builds the server and its routes.
@@ -54,10 +65,13 @@ func New(cfg Config) *Server {
 	// "GET" patterns also match HEAD; other methods get 405 with Allow, and
 	// unknown paths get 404.
 	mux.HandleFunc("GET /-/health", healthHandler(cfg.HealthChecks))
+	if cfg.API != nil {
+		mux.Handle(APIPrefix+"/", http.StripPrefix(APIPrefix, cfg.API))
+	}
 	for _, r := range cfg.Routes {
 		mux.Handle(r.Pattern, r.Handler)
 	}
-	return &Server{addr: cfg.Addr, handler: withRequestLog(withSecurityHeaders(mux))}
+	return &Server{addr: cfg.Addr, handler: withRequestLog(withSecurityHeaders(mux)), onShutdown: cfg.OnShutdown}
 }
 
 // Handler returns the root handler, for tests.
@@ -85,6 +99,10 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		// No read or write timeout: Git clones and pushes can be long.
+	}
+
+	for _, f := range s.onShutdown {
+		srv.RegisterOnShutdown(f)
 	}
 
 	errc := make(chan error, 1)
