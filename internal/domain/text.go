@@ -59,7 +59,8 @@ func (t MRTitle) IsZero() bool { return t.s == "" }
 
 // PlainText is a validated multi-line plain text, such as a description or a
 // comment: valid UTF-8, at most MaxTextLen characters, line breaks allowed,
-// no other control character, no bidirectional override or isolate character.
+// no other control character, no U+2028 or U+2029, no bidirectional mark,
+// override or isolate character.
 // The zero value is the empty text.
 type PlainText struct{ s string }
 
@@ -103,6 +104,8 @@ func textProblem(s string, multiline bool, maxLen int) string {
 			}
 		case unicode.IsControl(r):
 			return fmt.Sprintf("contains the control character U+%04X", r)
+		case r == '\u2028' || r == '\u2029':
+			return fmt.Sprintf("contains the line or paragraph separator U+%04X", r)
 		case isBidiControl(r):
 			return fmt.Sprintf("contains the bidirectional override or isolate character U+%04X", r)
 		}
@@ -110,11 +113,12 @@ func textProblem(s string, multiline bool, maxLen int) string {
 	return ""
 }
 
-// isBidiControl reports whether r is a bidirectional embedding, override or
-// isolate character (U+202A to U+202E, U+2066 to U+2069), which can make text
-// read differently from how it is stored.
+// isBidiControl reports whether r is a bidirectional mark, embedding, override
+// or isolate character (U+200E, U+200F, U+061C, U+202A to U+202E, U+2066 to
+// U+2069), which can make text read differently from how it is stored.
 func isBidiControl(r rune) bool {
-	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
+	return r == 0x200e || r == 0x200f || r == 0x061c ||
+		(r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
 }
 
 // FieldViolation names a request field that breaks a rule.

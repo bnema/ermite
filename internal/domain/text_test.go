@@ -39,6 +39,11 @@ func TestParseMRTitle(t *testing.T) {
 		{"bidi embedding", "a\u202ab", "U+202A"},
 		{"bidi isolate", "a\u2066b", "U+2066"},
 		{"bidi pop isolate", "a\u2069b", "U+2069"},
+		{"line separator", "a\u2028b", "U+2028"},
+		{"paragraph separator", "a\u2029b", "U+2029"},
+		{"left-to-right mark", "a\u200eb", "U+200E"},
+		{"right-to-left mark", "a\u200fb", "U+200F"},
+		{"arabic letter mark", "a\u061cb", "U+061C"},
 		{"zero width joiner is plain text", "a\u200db", ""},
 	}
 	for _, tc := range tests {
@@ -78,7 +83,12 @@ func TestParsePlainText(t *testing.T) {
 		{"bidi override", "x\u202ey", "U+202E"},
 		{"bidi left-to-right isolate", "x\u2066y", "U+2066"},
 		{"bidi first strong isolate", "x\u2068y", "U+2068"},
-		{"left-to-right mark is plain text", "x\u200ey", ""},
+		{"line separator", "x\u2028y", "U+2028"},
+		{"paragraph separator", "x\u2029y", "U+2029"},
+		{"left-to-right mark", "x\u200ey", "U+200E"},
+		{"right-to-left mark", "x\u200fy", "U+200F"},
+		{"arabic letter mark", "x\u061cy", "U+061C"},
+		{"zero width joiner is plain text", "x\u200dy", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
