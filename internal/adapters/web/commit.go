@@ -41,6 +41,16 @@ type CommitPage struct {
 	Files              []DiffFile
 	// Note says the diff is incomplete.
 	Note string
+	DiffView
+	// Invisible is true when some line holds an invisible character, shown as a
+	// marker.
+	Invisible bool
+}
+
+// DiffView is how a page lays its diff out: the layouts in the page and the
+// way to switch between them. The commit page and the merge request pages
+// share it.
+type DiffView struct {
 	// View is the layout shown: "unified" or "split". Pinned is true when the
 	// URL chose it, which then wins over the choice remembered by the browser.
 	View   string
@@ -50,9 +60,33 @@ type CommitPage struct {
 	Both                   bool
 	ShowUnified, ShowSplit bool
 	UnifiedHref, SplitHref string
-	// Invisible is true when some line holds an invisible character, shown as a
-	// marker.
-	Invisible bool
+}
+
+// newDiffView reads ?view= and decides which layouts a diff of that many
+// lines sends; the links switch to the other layout.
+func newDiffView(r *http.Request, lines int, unifiedHref, splitHref string) DiffView {
+	v := DiffView{View: "unified", UnifiedHref: unifiedHref, SplitHref: splitHref}
+	switch r.URL.Query().Get("view") {
+	case "split":
+		v.View, v.Pinned = "split", true
+	case "unified":
+		v.Pinned = true
+	}
+	v.Both = lines <= bothViewsLines
+	v.ShowUnified, v.ShowSplit = v.Both || v.View == "unified", v.Both || v.View == "split"
+	return v
+}
+
+// diffLines counts the lines of the hunks of files, and tells whether some
+// line holds a marker.
+func diffLines(files []DiffFile) (lines int, invisible bool) {
+	for _, f := range files {
+		for _, h := range f.Hunks {
+			lines += len(h.Lines)
+			invisible = invisible || slices.ContainsFunc(h.Lines, hasMarker)
+		}
+	}
+	return lines, invisible
 }
 
 // commit shows a commit: its message, its totals, the changed files and the
@@ -87,7 +121,6 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 		Adds:   int(stats.GetAdditions()),
 		Dels:   int(stats.GetDeletions()),
 		Files:  diffFiles(res.Msg.GetDiff().GetFiles()),
-		View:   "unified",
 	}
 	if cm := person(c.GetCommitter(), now); cm != p.Author || c.GetCommitter().GetEmail() != c.GetAuthor().GetEmail() {
 		p.Committer = &cm
@@ -107,23 +140,10 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 	}
 	p.Note = diffNote(res.Msg.GetDiff(), len(p.Files), p.NFiles)
 
-	lines := 0
-	for _, f := range p.Files {
-		for _, h := range f.Hunks {
-			lines += len(h.Lines)
-			p.Invisible = p.Invisible || slices.ContainsFunc(h.Lines, hasMarker)
-		}
-	}
-	switch r.URL.Query().Get("view") {
-	case "split":
-		p.View, p.Pinned = "split", true
-	case "unified":
-		p.Pinned = true
-	}
-	p.Both = lines <= bothViewsLines
-	p.ShowUnified, p.ShowSplit = p.Both || p.View == "unified", p.Both || p.View == "split"
+	lines, invisible := diffLines(p.Files)
+	p.Invisible = invisible
 	base := repoHref(d.name(), "commit", c.GetId())
-	p.UnifiedHref, p.SplitHref = base+"?view=unified", base+"?view=split"
+	p.DiffView = newDiffView(r, lines, base+"?view=unified", base+"?view=split")
 
 	l := s.repoLayout(ctx, d, "commits")
 	l.Title = p.Short + " " + p.Subject + " · " + d.name() + " · " + s.instance

@@ -283,11 +283,11 @@ func Commit(l Layout, p CommitPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = viewLink(p, "unified", "[u]nified", "u", p.UnifiedHref).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = viewLink(p.DiffView, "unified", "[u]nified", "u", p.UnifiedHref).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = viewLink(p, "split", "[d] split", "d", p.SplitHref).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = viewLink(p.DiffView, "split", "[d] split", "d", p.SplitHref).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -376,7 +376,7 @@ func Commit(l Layout, p CommitPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, f := range p.Files {
-				templ_7745c5c3_Err = DiffFileView(f, p).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = DiffFileView(f, p.DiffView).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -432,7 +432,7 @@ func Commit(l Layout, p CommitPage) templ.Component {
 // viewLink is a button of the diff tools. It is a link, so that the split
 // layout works without JavaScript; with it, and when both layouts are in the
 // page, a click only flips the layout.
-func viewLink(p CommitPage, view, label, key, href string) templ.Component {
+func viewLink(p DiffView, view, label, key, href string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -881,7 +881,7 @@ func FileList(files []DiffFile) templ.Component {
 // unified and the split tables are both in it; #diffs[data-diff] shows one.
 // Every changed line keeps its +/- marker, so a change is never conveyed by
 // colour alone.
-func DiffFileView(f DiffFile, p CommitPage) templ.Component {
+func DiffFileView(f DiffFile, p DiffView) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

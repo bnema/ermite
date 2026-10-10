@@ -53,8 +53,8 @@ templ Commit(l Layout, p CommitPage) {
 		<div class="diff-tools" role="toolbar" aria-label="Diff view">
 			<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 			<span class="grow"></span>
-			@viewLink(p, "unified", "[u]nified", "u", p.UnifiedHref)
-			@viewLink(p, "split", "[d] split", "d", p.SplitHref)
+			@viewLink(p.DiffView, "unified", "[u]nified", "u", p.UnifiedHref)
+			@viewLink(p.DiffView, "split", "[d] split", "d", p.SplitHref)
 			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))">[x] collapse all</button>
 		</div>
 		if p.Invisible {
@@ -78,7 +78,7 @@ templ Commit(l Layout, p CommitPage) {
 			}
 		>
 			for _, f := range p.Files {
-				@DiffFileView(f, p)
+				@DiffFileView(f, p.DiffView)
 			}
 			if len(p.Files) == 0 {
 				<p class="note">no changed files{ " " }
@@ -96,7 +96,7 @@ templ Commit(l Layout, p CommitPage) {
 // viewLink is a button of the diff tools. It is a link, so that the split
 // layout works without JavaScript; with it, and when both layouts are in the
 // page, a click only flips the layout.
-templ viewLink(p CommitPage, view, label, key, href string) {
+templ viewLink(p DiffView, view, label, key, href string) {
 	<a
 		href={ templ.SafeURL(href) }
 		class="vbtn"
@@ -151,7 +151,7 @@ templ FileList(files []DiffFile) {
 // unified and the split tables are both in it; #diffs[data-diff] shows one.
 // Every changed line keeps its +/- marker, so a change is never conveyed by
 // colour alone.
-templ DiffFileView(f DiffFile, p CommitPage) {
+templ DiffFileView(f DiffFile, p DiffView) {
 	<details
 		class="dfile"
 		id={ f.ID }
