@@ -114,14 +114,14 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 			p.Invisible = p.Invisible || slices.ContainsFunc(h.Lines, hasMarker)
 		}
 	}
-	p.Both = lines <= bothViewsLines
-	p.ShowUnified, p.ShowSplit = p.Both || p.View == "unified", p.Both || p.View == "split"
 	switch r.URL.Query().Get("view") {
 	case "split":
 		p.View, p.Pinned = "split", true
 	case "unified":
 		p.Pinned = true
 	}
+	p.Both = lines <= bothViewsLines
+	p.ShowUnified, p.ShowSplit = p.Both || p.View == "unified", p.Both || p.View == "split"
 	base := repoHref(d.name(), "commit", c.GetId())
 	p.UnifiedHref, p.SplitHref = base+"?view=unified", base+"?view=split"
 

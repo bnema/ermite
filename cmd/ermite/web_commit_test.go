@@ -3,6 +3,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -132,6 +135,33 @@ func TestWebCommit(t *testing.T) {
 		assert.Equal(t, 404, st)
 		assert.Equal(t, normalise(missing), normalise(body))
 	})
+}
+
+// Over 4,000 lines only one layout is sent, the one the URL asks for.
+func TestWebCommitLargeDiffView(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	h.seed("large", domain.VisibilityPublic)
+	wt := h.workTree("main", "README")
+	var lines strings.Builder
+	for i := range 1500 {
+		fmt.Fprintf(&lines, "line %d\n", i)
+	}
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		require.NoError(t, os.WriteFile(filepath.Join(wt, name), []byte(lines.String()), 0o644))
+	}
+	h.mustGit(wt, "add", ".")
+	h.mustGit(wt, "commit", "-q", "-m", "three big files")
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/large.git"), "main")
+	sha := strings.TrimSpace(h.mustGit(wt, "rev-parse", "HEAD"))
+
+	_, _, unified := h.get("/large/commit/" + sha)
+	assert.True(t, strings.Contains(unified, `<table class="dt uni"`), "unified by default")
+	assert.False(t, strings.Contains(unified, `<table class="dt spl"`), "one layout only")
+
+	_, _, split := h.get("/large/commit/" + sha + "?view=split")
+	assert.True(t, strings.Contains(split, `<table class="dt spl"`), "the split layout is sent")
+	assert.False(t, strings.Contains(split, `<table class="dt uni"`), "and only it")
+	assert.True(t, strings.Contains(split, `<div id="diffs" data-view="split">`))
 }
 
 // AC2: the commit pages of a private repository are the 404 page of a
