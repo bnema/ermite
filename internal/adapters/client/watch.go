@@ -134,6 +134,12 @@ func retryable(err error) bool {
 	if !errors.As(err, &ce) {
 		return true
 	}
+	// A connection cut in the middle of a stream is reported by Connect as an
+	// invalid_argument "incomplete envelope" error that the server never sent.
+	// Only an invalid_argument that came over the wire (a bad topic) is final.
+	if ce.Code() == connect.CodeInvalidArgument && !connect.IsWireError(err) {
+		return true
+	}
 	switch ce.Code() {
 	case connect.CodeUnavailable, connect.CodeUnknown, connect.CodeInternal, connect.CodeDeadlineExceeded,
 		connect.CodeAborted, connect.CodeResourceExhausted, connect.CodeCanceled:

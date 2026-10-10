@@ -58,6 +58,14 @@ func (c *Client) Describe(err error) error {
 	case connect.CodeAlreadyExists:
 		text = with("already exists")
 	case connect.CodeInvalidArgument:
+		if !connect.IsWireError(err) {
+			// Raised by the client library: the answer was cut or garbled.
+			text = "the connection to " + c.cfg.URL + " broke or the answer was malformed"
+			if msg != "" {
+				text += ": " + msg
+			}
+			break
+		}
 		text = with("invalid request")
 	case connect.CodeFailedPrecondition:
 		text = with("precondition failed")

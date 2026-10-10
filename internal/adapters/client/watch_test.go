@@ -5,6 +5,8 @@ package client_test
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -204,4 +206,33 @@ func TestWatchResumesFromGivenID(t *testing.T) {
 	c := start(t, f, client.Config{})
 	_ = c.Watch(t.Context(), client.WatchOptions{ResumeAfter: "abc"}, func(*ermite.Event) error { return nil })
 	assert.Equal(t, "abc", first)
+}
+
+// A connection cut mid-stream surfaces as a client-side invalid_argument; it
+// must be retried, unlike an invalid_argument the server sent.
+func TestWatchRetriesCutConnections(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			// Announce a frame and hang up before sending it.
+			w.Header().Set("Content-Type", "application/connect+proto")
+			_, _ = w.Write([]byte{0, 0, 0, 0, 9})
+			return
+		}
+		cancel()
+	}))
+	defer srv.Close()
+	c, err := client.New(client.Config{URL: srv.URL})
+	require.NoError(t, err)
+	var notices []string
+	require.NoError(t, c.Watch(ctx, client.WatchOptions{
+		Sleep:    (&sleeps{}).sleep,
+		OnNotice: func(m string) { notices = append(notices, m) },
+	}, func(*ermite.Event) error { return nil }))
+	assert.GreaterOrEqual(t, calls, 2, "retried")
+	require.NotEmpty(t, notices)
+	assert.Contains(t, notices[0], "connection lost")
 }
