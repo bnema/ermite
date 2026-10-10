@@ -187,9 +187,10 @@ type eventOut struct {
 		OldID string `json:"old_id"`
 		NewID string `json:"new_id"`
 	} `json:"ref_updates"`
+	MergeRequest *mrOut `json:"merge_request"`
 }
 
-var repoKeys = []string{"created_at", "default_branch", "description", "name", "pushed_at", "visibility"}
+var repoKeys = []string{"created_at", "default_branch", "description", "failing_checks_block", "merge_modes", "name", "pushed_at", "visibility"}
 
 // AC6: the CLI end to end against a real forge.
 func TestAC6CLIEndToEnd(t *testing.T) {
@@ -323,7 +324,7 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	ver := decode[versionOut](t, res.stdout)
 	assert.Equal(t, c.url, ver.Server.URL)
 	assert.NotEmpty(t, ver.Server.Version)
-	assert.ElementsMatch(t, []string{"repo.update", "events.resume"}, ver.Server.Features)
+	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "signing_key"}, ver.Server.Features)
 	assert.Equal(t, []string{}, ver.Server.MissingFeatures)
 	stdout, stderr, code = c.bin(t, secret, "version")
 	require.Equal(t, 0, code, stderr)

@@ -13,6 +13,9 @@ import (
 	"bnema.dev/ermite-api/gen/ermite"
 )
 
+// allFeatures are the features this client uses.
+var allFeatures = []string{"repo.update", "events.resume", "merge_requests", "signing_key"}
+
 func versionFake(features ...string) *fakeAPI {
 	return &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
 		return &ermite.GetVersionResponse{Version: "v0.4.0", Features: features}, nil
@@ -29,18 +32,18 @@ func TestVersionClientOnlyWithoutURL(t *testing.T) {
 }
 
 func TestVersionWithServer(t *testing.T) {
-	f := versionFake("repo.update", "events.resume")
+	f := versionFake(allFeatures...)
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "version").ok(t)
-	assert.Equal(t, "client    ermite v0.0.1\nserver    v0.4.0 at "+url+"\nfeatures  repo.update, events.resume\n", res.stdout)
+	assert.Equal(t, "client    ermite v0.0.1\nserver    v0.4.0 at "+url+"\nfeatures  repo.update, events.resume, merge_requests, signing_key\n", res.stdout)
 	assert.Empty(t, res.stderr, "no warning when every feature is there")
 
 	res = runCLI(t, envFor(url), "", "version", "--json").ok(t)
-	assert.JSONEq(t, `{"client":{"version":"v0.0.1"},"server":{"url":"`+url+`","version":"v0.4.0","features":["repo.update","events.resume"],"missing_features":[]}}`, res.stdout)
+	assert.JSONEq(t, `{"client":{"version":"v0.0.1"},"server":{"url":"`+url+`","version":"v0.4.0","features":["repo.update","events.resume","merge_requests","signing_key"],"missing_features":[]}}`, res.stdout)
 }
 
 func TestVersionWarnsAboutMissingFeatures(t *testing.T) {
-	f := versionFake("repo.update")
+	f := versionFake("repo.update", "merge_requests", "signing_key")
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "version").ok(t)
 	assert.Contains(t, res.stdout, "v0.4.0")
@@ -48,7 +51,7 @@ func TestVersionWarnsAboutMissingFeatures(t *testing.T) {
 	assert.NotContains(t, res.stderr, "repo.update")
 
 	res = runCLI(t, envFor(url), "", "version", "--json").ok(t)
-	assert.JSONEq(t, `{"client":{"version":"v0.0.1"},"server":{"url":"`+url+`","version":"v0.4.0","features":["repo.update"],"missing_features":["events.resume"]}}`, res.stdout)
+	assert.JSONEq(t, `{"client":{"version":"v0.0.1"},"server":{"url":"`+url+`","version":"v0.4.0","features":["repo.update","merge_requests","signing_key"],"missing_features":["events.resume"]}}`, res.stdout)
 	assert.Contains(t, res.stderr, "events.resume", "the warning also goes to stderr with --json")
 
 	f = versionFake()
@@ -68,7 +71,7 @@ func TestVersionServerFailureStillShowsClient(t *testing.T) {
 }
 
 func TestVersionWorksWithoutToken(t *testing.T) {
-	f := versionFake("repo.update", "events.resume")
+	f := versionFake(allFeatures...)
 	runCLI(t, map[string]string{"ERMITE_URL": f.serve(t)}, "", "version").ok(t)
 	assert.Empty(t, f.header[0].Values("Authorization"))
 }

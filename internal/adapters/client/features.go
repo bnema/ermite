@@ -13,11 +13,15 @@ const (
 	// FeatureEventsResume is EventService.Watch with resume_after, which
 	// `ermite watch` uses to continue after a reconnection.
 	FeatureEventsResume = "events.resume"
+	// FeatureMergeRequests is MergeRequestService (`ermite mr`).
+	FeatureMergeRequests = "merge_requests"
+	// FeatureSigningKey is ServerService.GetSigningKey (`ermite signing-key`).
+	FeatureSigningKey = "signing_key"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureSigningKey}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

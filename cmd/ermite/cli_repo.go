@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -31,16 +32,25 @@ type jsonRepo struct {
 	DefaultBranch string  `json:"default_branch"`
 	CreatedAt     *string `json:"created_at"`
 	PushedAt      *string `json:"pushed_at"`
+	// MergeModes are the allowed merge modes ("fast-forward", "squash").
+	MergeModes         []string `json:"merge_modes"`
+	FailingChecksBlock bool     `json:"failing_checks_block"`
 }
 
 func toJSONRepo(r *ermite.Repo) jsonRepo {
+	modes := []string{}
+	for _, m := range r.GetSettings().GetAllowedMergeModes() {
+		modes = append(modes, modeName(m))
+	}
 	return jsonRepo{
-		Name:          r.GetName(),
-		Description:   r.GetDescription(),
-		Visibility:    visibilityName(r.GetVisibility()),
-		DefaultBranch: r.GetDefaultBranch(),
-		CreatedAt:     jsonTime(r.GetCreatedAt()),
-		PushedAt:      jsonTime(r.GetPushedAt()),
+		MergeModes:         modes,
+		FailingChecksBlock: r.GetSettings().GetFailingChecksBlock(),
+		Name:               r.GetName(),
+		Description:        r.GetDescription(),
+		Visibility:         visibilityName(r.GetVisibility()),
+		DefaultBranch:      r.GetDefaultBranch(),
+		CreatedAt:          jsonTime(r.GetCreatedAt()),
+		PushedAt:           jsonTime(r.GetPushedAt()),
 	}
 }
 
@@ -69,7 +79,8 @@ func parseVisibility(s string) (ermite.Visibility, error) {
 const jsonRepoHelp = `
 JSON fields of a repository (--json): name, description, visibility ("public" or
 "private"), default_branch, created_at and pushed_at (RFC 3339 UTC; pushed_at is
-null until the first push).`
+null until the first push), merge_modes (array of the allowed merge modes, "fast-forward" and/or
+"squash") and failing_checks_block (whether a failing check prevents a merge).`
 
 func newRepoCmd(env *cliEnv) *cobra.Command {
 	repo := &cobra.Command{
@@ -171,6 +182,7 @@ func printRepo(w io.Writer, r *ermite.Repo) error {
 	if desc == "" {
 		desc = "-"
 	}
+	modes := toJSONRepo(r).MergeModes
 	return fields(w, [][2]string{
 		{"name", r.GetName()},
 		{"visibility", visibilityName(r.GetVisibility())},
@@ -178,6 +190,8 @@ func printRepo(w io.Writer, r *ermite.Repo) error {
 		{"description", desc},
 		{"created", shortTime(r.GetCreatedAt(), "-")},
 		{"last push", shortTime(r.GetPushedAt(), "never")},
+		{"merge modes", orDash(strings.Join(modes, ", "))},
+		{"failing checks block", strconv.FormatBool(r.GetSettings().GetFailingChecksBlock())},
 	})
 }
 
@@ -253,21 +267,31 @@ func buildCreateRepo(name, description, visibility string) (*ermite.CreateRepoRe
 
 func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	var description, visibility, defaultBranch string
+	var mergeModes []string
+	var failingChecksBlock bool
 	cmd := &cobra.Command{
 		Use:   "edit <name>",
-		Short: "Change a repository's description, visibility or default branch",
+		Short: "Change a repository's description, visibility, default branch or merge settings",
 		Long: "Change the fields given as flags and leave the others alone; --description \"\" clears the\n" +
-			"description. The default branch must already exist. Needs the repo:admin scope." + jsonRepoHelp,
+			"description. The default branch must already exist. --merge-modes lists the modes a merge request\n" +
+			"may be merged with (fast-forward, squash; default for a new repository: both), and\n" +
+			"--failing-checks-block says whether a failing check prevents a merge (there are no checks yet).\n" +
+			"Needs the repo:admin scope." + jsonRepoHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
 	cmd.Flags().StringVar(&description, "description", "", "new description (empty clears it)")
 	cmd.Flags().StringVar(&visibility, "visibility", "", "new visibility: public or private")
 	cmd.Flags().StringVar(&defaultBranch, "default-branch", "", "short name of the new default branch")
+	cmd.Flags().StringSliceVar(&mergeModes, "merge-modes", nil, "allowed merge modes, comma-separated: fast-forward, squash")
+	cmd.Flags().BoolVar(&failingChecksBlock, "failing-checks-block", true, "a failing check prevents a merge (--failing-checks-block=false to allow it)")
 	_ = cmd.RegisterFlagCompletionFunc("visibility", visibilityCompletion)
+	_ = cmd.RegisterFlagCompletionFunc("merge-modes", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{modeFastForward, modeSquash}, cobra.ShellCompDirectiveNoFileComp
+	})
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		req, err := buildUpdateRepo(cmd, args[0], description, visibility, defaultBranch)
+		req, err := buildUpdateRepo(cmd, args[0], description, visibility, defaultBranch, mergeModes, failingChecksBlock)
 		if err != nil {
 			return err
 		}
@@ -286,7 +310,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 
 // buildUpdateRepo maps the flags of `repo edit` to the request: only the flags
 // the user passed go into the update mask.
-func buildUpdateRepo(cmd *cobra.Command, name, description, visibility, defaultBranch string) (*ermite.UpdateRepoRequest, error) {
+func buildUpdateRepo(cmd *cobra.Command, name, description, visibility, defaultBranch string, mergeModes []string, failingChecksBlock bool) (*ermite.UpdateRepoRequest, error) {
 	req := &ermite.UpdateRepoRequest{Repo: name}
 	var paths []string
 	if cmd.Flags().Changed("description") {
@@ -309,8 +333,30 @@ func buildUpdateRepo(cmd *cobra.Command, name, description, visibility, defaultB
 		req.DefaultBranch = branch
 		paths = append(paths, "default_branch")
 	}
+	if cmd.Flags().Changed("merge-modes") {
+		var modes []ermite.MergeMode
+		for _, m := range mergeModes {
+			mode, err := parseMode(m)
+			if err != nil {
+				return nil, err
+			}
+			modes = append(modes, mode)
+		}
+		if len(modes) == 0 {
+			return nil, errors.New("--merge-modes must name at least one mode: fast-forward, squash")
+		}
+		req.Settings = &ermite.RepoSettings{AllowedMergeModes: modes}
+		paths = append(paths, "settings.allowed_merge_modes")
+	}
+	if cmd.Flags().Changed("failing-checks-block") {
+		if req.Settings == nil {
+			req.Settings = &ermite.RepoSettings{}
+		}
+		req.Settings.FailingChecksBlock = failingChecksBlock
+		paths = append(paths, "settings.failing_checks_block")
+	}
 	if len(paths) == 0 {
-		return nil, errors.New("nothing to change: give at least one of --description, --visibility, --default-branch")
+		return nil, errors.New("nothing to change: give at least one of --description, --visibility, --default-branch, --merge-modes, --failing-checks-block")
 	}
 	req.UpdateMask = &fieldmaskpb.FieldMask{Paths: paths}
 	return req, nil

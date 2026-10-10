@@ -75,6 +75,11 @@ func (c *Client) Events() ermiteconnect.EventServiceClient {
 	return ermiteconnect.NewEventServiceClient(c.http, c.base, c.opts...)
 }
 
+// MergeRequests returns the MergeRequestService client.
+func (c *Client) MergeRequests() ermiteconnect.MergeRequestServiceClient {
+	return ermiteconnect.NewMergeRequestServiceClient(c.http, c.base, c.opts...)
+}
+
 // Server returns the ServerService client.
 func (c *Client) Server() ermiteconnect.ServerServiceClient {
 	return ermiteconnect.NewServerServiceClient(c.http, c.base, c.opts...)

@@ -30,6 +30,7 @@ type clients struct {
 	token  ermiteconnect.TokenServiceClient
 	event  ermiteconnect.EventServiceClient
 	server ermiteconnect.ServerServiceClient
+	mr     ermiteconnect.MergeRequestServiceClient
 }
 
 // bearerTransport adds the Authorization header of a secret, if any.
@@ -75,6 +76,7 @@ func newClientsOn(hc connect.HTTPClient, base string, opts ...connect.ClientOpti
 		token:  ermiteconnect.NewTokenServiceClient(hc, base, opts...),
 		event:  ermiteconnect.NewEventServiceClient(hc, base, opts...),
 		server: ermiteconnect.NewServerServiceClient(hc, base, opts...),
+		mr:     ermiteconnect.NewMergeRequestServiceClient(hc, base, opts...),
 	}
 }
 

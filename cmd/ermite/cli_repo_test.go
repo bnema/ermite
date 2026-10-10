@@ -18,10 +18,15 @@ var (
 	repoAlpha = &ermite.Repo{
 		Name: "alpha", Description: "The first one", Visibility: ermite.Visibility_VISIBILITY_PUBLIC,
 		DefaultBranch: "main", CreatedAt: ts("2026-01-02T03:04:05Z"), PushedAt: ts("2026-03-04T05:06:07Z"),
+		Settings: &ermite.RepoSettings{
+			AllowedMergeModes:  []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_FAST_FORWARD, ermite.MergeMode_MERGE_MODE_SQUASH},
+			FailingChecksBlock: true,
+		},
 	}
 	repoBeta = &ermite.Repo{
 		Name: "beta", Visibility: ermite.Visibility_VISIBILITY_PRIVATE,
 		DefaultBranch: "trunk", CreatedAt: ts("2026-02-02T00:00:00Z"),
+		Settings: &ermite.RepoSettings{AllowedMergeModes: []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_SQUASH}},
 	}
 )
 
@@ -49,8 +54,8 @@ func TestRepoListJSON(t *testing.T) {
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "list", "--json").ok(t)
 	assert.JSONEq(t, `[
-		{"name":"alpha","description":"The first one","visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z"},
-		{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null}
+		{"name":"alpha","description":"The first one","visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true},
+		{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}
 	]`, res.stdout)
 }
 
@@ -88,17 +93,19 @@ func TestRepoShow(t *testing.T) {
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "repo", "show", "alpha").ok(t)
 	assert.Equal(t, ""+
-		"name            alpha\n"+
-		"visibility      public\n"+
-		"default branch  main\n"+
-		"description     The first one\n"+
-		"created         2026-01-02 03:04\n"+
-		"last push       2026-03-04 05:06\n", res.stdout)
+		"name                  alpha\n"+
+		"visibility            public\n"+
+		"default branch        main\n"+
+		"description           The first one\n"+
+		"created               2026-01-02 03:04\n"+
+		"last push             2026-03-04 05:06\n"+
+		"merge modes           fast-forward, squash\n"+
+		"failing checks block  true\n", res.stdout)
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.GetRepoRequest).GetRepo())
 
 	res = runCLI(t, envFor(url), "", "repo", "show", "alpha", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"alpha","description":"The first one","visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"alpha","description":"The first one","visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true}`, res.stdout)
 }
 
 func TestRepoShowNeedsOneArg(t *testing.T) {
@@ -151,7 +158,7 @@ func TestRepoCreateJSON(t *testing.T) {
 		return &ermite.CreateRepoResponse{Repo: repoBeta}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "create", "beta", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null}`, res.stdout)
+	assert.JSONEq(t, `{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}`, res.stdout)
 }
 
 func TestRepoEditMask(t *testing.T) {
@@ -172,6 +179,16 @@ func TestRepoEditMask(t *testing.T) {
 		}},
 		{"default branch", []string{"--default-branch", "refs/heads/dev"}, []string{"default_branch"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
 			assert.Equal(t, "dev", r.GetDefaultBranch())
+		}},
+		{"merge modes", []string{"--merge-modes", "squash,ff"}, []string{"settings.allowed_merge_modes"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
+			assert.Equal(t, []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_SQUASH, ermite.MergeMode_MERGE_MODE_FAST_FORWARD}, r.GetSettings().GetAllowedMergeModes())
+		}},
+		{"failing checks do not block", []string{"--failing-checks-block=false"}, []string{"settings.failing_checks_block"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
+			assert.False(t, r.GetSettings().GetFailingChecksBlock())
+			assert.Empty(t, r.GetSettings().GetAllowedMergeModes())
+		}},
+		{"failing checks block", []string{"--failing-checks-block"}, []string{"settings.failing_checks_block"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
+			assert.True(t, r.GetSettings().GetFailingChecksBlock())
 		}},
 		{"all", []string{"--default-branch", "dev", "--visibility", "private", "--description", "d"},
 			[]string{"description", "visibility", "default_branch"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {}},
@@ -202,6 +219,8 @@ func TestRepoEditRejects(t *testing.T) {
 		{[]string{"repo", "edit", "alpha"}, "nothing to change"},
 		{[]string{"repo", "edit", "alpha", "--visibility", "x"}, "invalid visibility"},
 		{[]string{"repo", "edit", "alpha", "--default-branch", " "}, "must not be empty"},
+		{[]string{"repo", "edit", "alpha", "--merge-modes", "rebase"}, "invalid merge mode"},
+		{[]string{"repo", "edit", "alpha", "--merge-modes", ""}, "at least one mode"},
 	} {
 		res := runCLI(t, envFor(url), "", tt.args...)
 		require.Error(t, res.err)

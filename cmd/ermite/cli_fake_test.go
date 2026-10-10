@@ -28,6 +28,7 @@ type fakeAPI struct {
 	ermiteconnect.UnimplementedTokenServiceHandler
 	ermiteconnect.UnimplementedServerServiceHandler
 	ermiteconnect.UnimplementedEventServiceHandler
+	ermiteconnect.UnimplementedMergeRequestServiceHandler
 
 	mu     sync.Mutex
 	calls  []string      // procedure names, in order
@@ -44,6 +45,16 @@ type fakeAPI struct {
 	revokeToken func(*ermite.RevokeTokenRequest) (*ermite.RevokeTokenResponse, error)
 	getVersion  func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error)
 	watch       func(context.Context, *ermite.WatchRequest, *connect.ServerStream[ermite.WatchResponse]) error
+
+	createMR      func(*ermite.CreateMergeRequestRequest) (*ermite.CreateMergeRequestResponse, error)
+	listMR        func(*ermite.ListMergeRequestsRequest) (*ermite.ListMergeRequestsResponse, error)
+	getMR         func(*ermite.GetMergeRequestRequest) (*ermite.GetMergeRequestResponse, error)
+	addComment    func(*ermite.AddCommentRequest) (*ermite.AddCommentResponse, error)
+	resolveCmt    func(*ermite.ResolveCommentRequest) (*ermite.ResolveCommentResponse, error)
+	closeMR       func(*ermite.CloseMergeRequestRequest) (*ermite.CloseMergeRequestResponse, error)
+	mergeMR       func(*ermite.MergeMergeRequestRequest) (*ermite.MergeMergeRequestResponse, error)
+	markRead      func(*ermite.MarkReadRequest) (*ermite.MarkReadResponse, error)
+	getSigningKey func(*ermite.GetSigningKeyRequest) (*ermite.GetSigningKeyResponse, error)
 }
 
 func (f *fakeAPI) record(name string, h http.Header, req any) {
@@ -99,6 +110,33 @@ func (f *fakeAPI) RevokeToken(_ context.Context, r *connect.Request[ermite.Revok
 func (f *fakeAPI) GetVersion(_ context.Context, r *connect.Request[ermite.GetVersionRequest]) (*connect.Response[ermite.GetVersionResponse], error) {
 	return respond(f, "GetVersion", r, f.getVersion)
 }
+func (f *fakeAPI) CreateMergeRequest(_ context.Context, r *connect.Request[ermite.CreateMergeRequestRequest]) (*connect.Response[ermite.CreateMergeRequestResponse], error) {
+	return respond(f, "CreateMergeRequest", r, f.createMR)
+}
+func (f *fakeAPI) ListMergeRequests(_ context.Context, r *connect.Request[ermite.ListMergeRequestsRequest]) (*connect.Response[ermite.ListMergeRequestsResponse], error) {
+	return respond(f, "ListMergeRequests", r, f.listMR)
+}
+func (f *fakeAPI) GetMergeRequest(_ context.Context, r *connect.Request[ermite.GetMergeRequestRequest]) (*connect.Response[ermite.GetMergeRequestResponse], error) {
+	return respond(f, "GetMergeRequest", r, f.getMR)
+}
+func (f *fakeAPI) AddComment(_ context.Context, r *connect.Request[ermite.AddCommentRequest]) (*connect.Response[ermite.AddCommentResponse], error) {
+	return respond(f, "AddComment", r, f.addComment)
+}
+func (f *fakeAPI) ResolveComment(_ context.Context, r *connect.Request[ermite.ResolveCommentRequest]) (*connect.Response[ermite.ResolveCommentResponse], error) {
+	return respond(f, "ResolveComment", r, f.resolveCmt)
+}
+func (f *fakeAPI) CloseMergeRequest(_ context.Context, r *connect.Request[ermite.CloseMergeRequestRequest]) (*connect.Response[ermite.CloseMergeRequestResponse], error) {
+	return respond(f, "CloseMergeRequest", r, f.closeMR)
+}
+func (f *fakeAPI) MergeMergeRequest(_ context.Context, r *connect.Request[ermite.MergeMergeRequestRequest]) (*connect.Response[ermite.MergeMergeRequestResponse], error) {
+	return respond(f, "MergeMergeRequest", r, f.mergeMR)
+}
+func (f *fakeAPI) MarkRead(_ context.Context, r *connect.Request[ermite.MarkReadRequest]) (*connect.Response[ermite.MarkReadResponse], error) {
+	return respond(f, "MarkRead", r, f.markRead)
+}
+func (f *fakeAPI) GetSigningKey(_ context.Context, r *connect.Request[ermite.GetSigningKeyRequest]) (*connect.Response[ermite.GetSigningKeyResponse], error) {
+	return respond(f, "GetSigningKey", r, f.getSigningKey)
+}
 func (f *fakeAPI) Watch(ctx context.Context, r *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
 	f.record("Watch", r.Header(), r.Msg)
 	if f.watch == nil {
@@ -119,6 +157,8 @@ func (f *fakeAPI) serve(t *testing.T) string {
 	p, h = ermiteconnect.NewServerServiceHandler(f)
 	mount(p, h)
 	p, h = ermiteconnect.NewEventServiceHandler(f)
+	mount(p, h)
+	p, h = ermiteconnect.NewMergeRequestServiceHandler(f)
 	mount(p, h)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

@@ -95,7 +95,7 @@ func TestWatchNDJSON(t *testing.T) {
 		assert.True(t, json.Valid([]byte(sc.Text())), "one JSON value per line: %s", sc.Text())
 	}
 	require.Len(t, lines, 5)
-	assert.JSONEq(t, `{"id":"1","time":"2026-10-10T12:00:00Z","type":"repo_created","repo":"beta","repository":{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null}}`, lines[0])
+	assert.JSONEq(t, `{"id":"1","time":"2026-10-10T12:00:00Z","type":"repo_created","repo":"beta","repository":{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}}`, lines[0])
 	assert.JSONEq(t, `{"id":"3","time":"2026-10-10T12:00:00Z","type":"pushed","repo":"alpha","ref_updates":[
 		{"ref":"refs/heads/main","old_id":"1111111111111111","new_id":"2222222222222222"},
 		{"ref":"refs/heads/new","old_id":"","new_id":"3333333333333333"},
@@ -146,4 +146,56 @@ func TestWatchPermanentErrorIsFriendly(t *testing.T) {
 func TestWatchRejectsTooManyArgs(t *testing.T) {
 	res := runCLI(t, envFor("http://127.0.0.1:1"), "", "watch", "a", "b")
 	require.Error(t, res.err)
+}
+
+func TestWatchMergeRequestEvents(t *testing.T) {
+	cmt := &ermite.Comment{Id: "2", Author: "agent-7", Path: "a.txt", Line: 5, Side: ermite.DiffSide_DIFF_SIDE_NEW, Text: "why?"}
+	events := []*ermite.WatchResponse{
+		evt("1", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestOpened{MergeRequestOpened: &ermite.MergeRequestOpened{MergeRequest: mrOne}}
+		}),
+		evt("2", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_CommentAdded{CommentAdded: &ermite.CommentAdded{Repo: "alpha", Number: 1, Comment: cmt}}
+		}),
+		evt("3", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestMerged{MergeRequestMerged: &ermite.MergeRequestMerged{MergeRequest: mrOne}}
+		}),
+		evt("4", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestClosed{MergeRequestClosed: &ermite.MergeRequestClosed{MergeRequest: mrOne}}
+		}),
+	}
+	f := &fakeAPI{watch: finishing(events)}
+	url := f.serve(t)
+
+	res := runCLI(t, envFor(url), "", "watch")
+	require.Error(t, res.err)
+	assert.Equal(t, ""+
+		"2026-10-10T12:00:00Z  merge_request_opened  alpha!1 feat/x -> main\n"+
+		"2026-10-10T12:00:00Z  comment_added  alpha!1 by agent-7\n"+
+		"2026-10-10T12:00:00Z  merge_request_merged  alpha!1 feat/x -> main\n"+
+		"2026-10-10T12:00:00Z  merge_request_closed  alpha!1 feat/x -> main\n", res.stdout)
+
+	res = runCLI(t, envFor(url), "", "watch", "--json")
+	lines := strings.Split(strings.TrimSpace(res.stdout), "\n")
+	require.Len(t, lines, 4)
+	assert.Equal(t, "merge_request_opened", decode[eventOut](t, lines[0]).Type)
+	opened := decode[eventOut](t, lines[0])
+	assert.Equal(t, "alpha", opened.Repo)
+	require.NotNil(t, opened.MergeRequest)
+	assert.EqualValues(t, 1, opened.MergeRequest.Number)
+	assert.Equal(t, headA, opened.MergeRequest.HeadID)
+	var added struct {
+		Type    string     `json:"type"`
+		Repo    string     `json:"repo"`
+		Number  int64      `json:"number"`
+		Comment commentOut `json:"comment"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(lines[1]), &added))
+	assert.Equal(t, "comment_added", added.Type)
+	assert.Equal(t, "alpha", added.Repo)
+	assert.EqualValues(t, 1, added.Number)
+	assert.Equal(t, "a.txt", added.Comment.Path)
+	assert.Equal(t, "new", added.Comment.Side)
+	assert.Equal(t, "merge_request_merged", decode[eventOut](t, lines[2]).Type)
+	assert.Equal(t, "merge_request_closed", decode[eventOut](t, lines[3]).Type)
 }

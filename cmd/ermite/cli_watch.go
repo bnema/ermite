@@ -24,6 +24,11 @@ type jsonEvent struct {
 	Repo       string          `json:"repo,omitempty"`
 	Repository *jsonRepo       `json:"repository,omitempty"`
 	RefUpdates []jsonRefUpdate `json:"ref_updates,omitempty"`
+	// MergeRequest is set for the merge_request_* events, Number and Comment
+	// for comment_added.
+	MergeRequest *jsonMergeRequest `json:"merge_request,omitempty"`
+	Number       int64             `json:"number,omitempty"`
+	Comment      *jsonComment      `json:"comment,omitempty"`
 }
 
 type jsonRefUpdate struct {
@@ -39,6 +44,11 @@ const (
 	eventRepoDeleted = "repo_deleted"
 	eventPushed      = "pushed"
 	eventGap         = "gap"
+
+	eventMROpened     = "merge_request_opened"
+	eventMRMerged     = "merge_request_merged"
+	eventMRClosed     = "merge_request_closed"
+	eventCommentAdded = "comment_added"
 )
 
 // toJSONEvent maps an event; ok is false for kinds this client does not know,
@@ -60,6 +70,18 @@ func toJSONEvent(ev *ermite.Event) (jsonEvent, bool) {
 		for _, u := range k.Pushed.GetRefUpdates() {
 			out.RefUpdates = append(out.RefUpdates, jsonRefUpdate{Ref: u.GetRef(), OldID: u.GetOldId(), NewID: u.GetNewId()})
 		}
+	case *ermite.Event_MergeRequestOpened:
+		m := toJSONMergeRequest(k.MergeRequestOpened.GetMergeRequest())
+		out.Type, out.Repo, out.MergeRequest = eventMROpened, m.Repo, &m
+	case *ermite.Event_MergeRequestMerged:
+		m := toJSONMergeRequest(k.MergeRequestMerged.GetMergeRequest())
+		out.Type, out.Repo, out.MergeRequest = eventMRMerged, m.Repo, &m
+	case *ermite.Event_MergeRequestClosed:
+		m := toJSONMergeRequest(k.MergeRequestClosed.GetMergeRequest())
+		out.Type, out.Repo, out.MergeRequest = eventMRClosed, m.Repo, &m
+	case *ermite.Event_CommentAdded:
+		c := toJSONComment(k.CommentAdded.GetComment())
+		out.Type, out.Repo, out.Number, out.Comment = eventCommentAdded, k.CommentAdded.GetRepo(), k.CommentAdded.GetNumber(), &c
 	case *ermite.Event_Gap:
 		out.Type = eventGap
 	default:
@@ -88,6 +110,10 @@ func eventLine(e jsonEvent) string {
 			parts = append(parts, refUpdateText(u))
 		}
 		detail = e.Repo + " " + strings.Join(parts, ", ")
+	case eventMROpened, eventMRMerged, eventMRClosed:
+		detail = fmt.Sprintf("%s!%d %s -> %s", e.Repo, e.MergeRequest.Number, e.MergeRequest.SourceBranch, e.MergeRequest.TargetBranch)
+	case eventCommentAdded:
+		detail = fmt.Sprintf("%s!%d by %s", e.Repo, e.Number, e.Comment.Author)
 	case eventGap:
 		detail = "events were lost, reload what you display"
 	}
@@ -115,15 +141,19 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "watch [repo]",
 		Short: "Print repository events as they happen",
-		Long: "Print one line per event (repository created, updated or deleted, refs pushed) for every\n" +
+		Long: "Print one line per event (repository created, updated or deleted, refs pushed, merge requests\n" +
+			"opened, merged or closed, comments added) for every\n" +
 			"repository you can see, or only for [repo]. It runs until interrupted. When the connection drops it\n" +
 			"reconnects with a growing delay and resumes after the last event it printed; if the server no longer\n" +
 			"has that event it prints a gap event: reload what you display. Connection notices go to standard\n" +
 			"error.\n\n" +
 			"--json prints one JSON object per line (NDJSON). Fields: id, time (RFC 3339 UTC), type\n" +
-			"(repo_created, repo_updated, repo_deleted, pushed or gap) and, depending on the type, repo (name),\n" +
-			"repository (the repository fields of `repo show --json`) and ref_updates (array of ref, old_id,\n" +
-			"new_id; an empty id means the ref was created or deleted). Unknown event types are skipped.",
+			"(repo_created, repo_updated, repo_deleted, pushed, merge_request_opened, merge_request_merged,\n" +
+			"merge_request_closed, comment_added or gap) and, depending on the type, repo (name),\n" +
+			"repository (the repository fields of `repo show --json`), ref_updates (array of ref, old_id,\n" +
+			"new_id; an empty id means the ref was created or deleted), merge_request (the fields of\n" +
+			"`mr show --json`) and, for comment_added, number (of the merge request) and comment. Unknown\n" +
+			"event types are skipped.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}

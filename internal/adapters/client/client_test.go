@@ -138,7 +138,12 @@ func TestDescribeBoundsLongMessages(t *testing.T) {
 
 func TestMissingFeatures(t *testing.T) {
 	assert.Empty(t, client.MissingFeatures(client.UsedFeatures()))
-	assert.Equal(t, []string{client.FeatureEventsResume}, client.MissingFeatures([]string{client.FeatureRepoUpdate, "other"}))
+	assert.Equal(t,
+		[]string{client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureSigningKey},
+		client.MissingFeatures([]string{client.FeatureRepoUpdate, "other"}))
+	assert.Equal(t, []string{client.FeatureSigningKey}, client.MissingFeatures([]string{
+		client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests,
+	}))
 	assert.Equal(t, client.UsedFeatures(), client.MissingFeatures(nil))
 }
 
