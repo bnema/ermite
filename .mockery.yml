@@ -12,6 +12,7 @@ packages:
       GitRepos:
       Clock:
       TokenStore:
+      SessionStore:
       GitBackend:
       EventBus:
       RepoReader:

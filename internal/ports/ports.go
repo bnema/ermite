@@ -265,6 +265,20 @@ type CommitSigner interface {
 	Sign(payload []byte) (string, error)
 }
 
+// SessionStore keeps what the browser sessions of the owner (ADR 0018) need
+// to survive a restart: the key that signs them and the epoch that voids them.
+type SessionStore interface {
+	// Key returns the 32-byte secret that signs the session cookies. The first
+	// call on an empty store generates and stores it; a restart keeps it.
+	Key(ctx context.Context) ([]byte, error)
+	// Epoch returns the current epoch, 0 until the first BumpEpoch. A session
+	// is valid only while its epoch is the current one.
+	Epoch(ctx context.Context) (uint64, error)
+	// BumpEpoch increments the epoch, which ends every session, and returns
+	// the new value.
+	BumpEpoch(ctx context.Context) (uint64, error)
+}
+
 // EventBus fans events out to in-process subscribers.
 type EventBus interface {
 	// Publish hands the event to every subscriber without blocking. A

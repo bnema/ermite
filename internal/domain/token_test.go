@@ -82,3 +82,26 @@ func mustName(t *testing.T, s string) domain.RepoName {
 	require.NoError(t, err)
 	return n
 }
+
+func TestOwnerPrincipal(t *testing.T) {
+	o := domain.Owner()
+	assert.Equal(t, "owner", o.Label())
+	assert.True(t, o.IsOwner())
+	assert.False(t, domain.Root().IsOwner())
+	assert.True(t, o.IsRoot(), "the owner has the rights of root")
+	assert.True(t, o.HasScope(domain.ScopeMRMerge))
+	assert.True(t, o.Allows(domain.ScopeRepoRead, mustName(t, "any")))
+	assert.False(t, o.IsAnonymous())
+	assert.Empty(t, o.TokenID())
+}
+
+func TestHasOwnerRights(t *testing.T) {
+	a := mustName(t, "a")
+	all := domain.AllScopes()
+	assert.True(t, domain.Root().HasOwnerRights())
+	assert.True(t, domain.Owner().HasOwnerRights())
+	assert.False(t, domain.Anonymous().HasOwnerRights())
+	assert.True(t, domain.TokenPrincipal(domain.Token{Scopes: all}).HasOwnerRights())
+	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[1:]}).HasOwnerRights(), "a scope short")
+	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all, Repos: []domain.RepoName{a}}).HasOwnerRights(), "limited to a repository")
+}

@@ -15,10 +15,12 @@ const (
 	kindAnonymous principalKind = iota
 	kindRoot
 	kindToken
+	kindOwner
 )
 
 // Principal is the authenticated identity of a caller: nobody, the root
-// token, or a stored token with its scopes and repositories.
+// token, the owner signed in on the web, or a stored token with its scopes
+// and repositories.
 type Principal struct {
 	kind      principalKind
 	tokenID   string
@@ -34,6 +36,11 @@ func Anonymous() Principal { return Principal{kind: kindAnonymous} }
 // Root returns the principal of the admin token holder.
 func Root() Principal { return Principal{kind: kindRoot} }
 
+// Owner returns the principal of the owner's web session (ADR 0018): the
+// rights of root, labelled "owner" in logs and messages. Only the web
+// middleware creates it, for a valid session cookie; no secret maps to it.
+func Owner() Principal { return Principal{kind: kindOwner} }
+
 // TokenPrincipal returns the principal of the holder of a stored token.
 func TokenPrincipal(t Token) Principal {
 	return Principal{
@@ -47,19 +54,43 @@ func TokenPrincipal(t Token) Principal {
 }
 
 // Label names the kind of principal for logs and messages: "anonymous",
-// "root" or "token".
+// "root", "owner" or "token".
 func (p Principal) Label() string {
 	switch p.kind {
 	case kindRoot:
 		return "root"
+	case kindOwner:
+		return "owner"
 	case kindToken:
 		return "token"
 	}
 	return "anonymous"
 }
 
-// IsRoot reports whether p may do everything.
-func (p Principal) IsRoot() bool { return p.kind == kindRoot }
+// IsRoot reports whether p may do everything: the root token, or the owner
+// signed in on the web.
+func (p Principal) IsRoot() bool { return p.kind == kindRoot || p.kind == kindOwner }
+
+// HasOwnerRights reports whether p is the owner: root, the owner's web
+// session, or a stored token that holds every scope and is not limited to a
+// list of repositories. It decides who may manage browser sessions.
+func (p Principal) HasOwnerRights() bool {
+	if p.IsRoot() {
+		return true
+	}
+	if p.kind != kindToken || len(p.repos) > 0 {
+		return false
+	}
+	for _, s := range AllScopes() {
+		if !slices.Contains(p.scopes, s) {
+			return false
+		}
+	}
+	return true
+}
+
+// IsOwner reports whether p is the owner signed in on the web.
+func (p Principal) IsOwner() bool { return p.kind == kindOwner }
 
 // IsAnonymous reports whether p has no credentials.
 func (p Principal) IsAnonymous() bool { return p.kind == kindAnonymous }
@@ -77,11 +108,11 @@ func (p Principal) Repos() []RepoName { return slices.Clone(p.repos) }
 // ExpiresAt returns the expiry of a stored token; zero means none.
 func (p Principal) ExpiresAt() time.Time { return p.expiresAt }
 
-// HasScope reports whether p holds the scope, for some repository. Root holds
-// every scope; anonymous none.
+// HasScope reports whether p holds the scope, for some repository. Root and
+// the owner hold every scope; anonymous none.
 func (p Principal) HasScope(s Scope) bool {
 	switch p.kind {
-	case kindRoot:
+	case kindRoot, kindOwner:
 		return true
 	case kindToken:
 		return slices.Contains(p.scopes, s)

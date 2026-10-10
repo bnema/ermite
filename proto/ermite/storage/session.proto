@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of the web sessions (ADR 0018).
+
+syntax = "proto3";
+
+package ermite.storage;
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// SessionKey is stored under the key "session/key": the HS256 secret that
+// signs the session cookies, generated on first start. Rotating it signs
+// everyone out.
+message SessionKey {
+  // 32 random bytes.
+  bytes key = 1;
+}
+
+// SessionEpoch is stored under the key "session/epoch". A session is valid
+// only while its epoch claim equals it; "sign out everywhere" increments it.
+// Absent means 0.
+message SessionEpoch {
+  uint64 epoch = 1;
+}
