@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>commits · diffs · example.test</title>
+<link rel="stylesheet" href="/-/static/css/ermite.HASH.css">
+<script src="/-/static/js/htmx.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/hx-live.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/hx-sse.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/ermite.HASH.js" defer>
+</script>
+</head>
+<body data-ref="main" data-sha="SHA40" data-sel="">
+<a class="skip" href="#main">skip to content</a>
+<header class="bar top">
+<a class="blk" href="/" data-g="h" title="home (g h)">example.test</a>
+<span class="fade" aria-hidden="true">
+</span>
+<nav class="crumbs" aria-label="Path">
+<ol>
+<li>
+<a href="/diffs">diffs</a>
+</li>
+<li>
+<a href="/diffs/commits/main">commits</a>
+</li>
+<li>
+<a href="/diffs/commits/main" aria-current="page">main</a>
+</li>
+</ol>
+</nav>
+<nav class="secs" aria-label="Sections">
+<ul>
+<li>
+<a href="/diffs" data-key="s" aria-keyshortcuts="g s">summary</a>
+</li>
+<li>
+<a href="/diffs/tree/main" data-key="t" aria-keyshortcuts="g t">tree</a>
+</li>
+<li>
+<a href="/diffs/commits/main" data-key="c" aria-keyshortcuts="g c" aria-current="page">commits</a>
+</li>
+<li>
+<a href="/diffs/refs" data-key="r" aria-keyshortcuts="g r">refs</a>
+</li>
+</ul>
+</nav>
+<button type="button" class="ref" aria-haspopup="dialog" aria-controls="panel-refs" aria-keyshortcuts="b" title="switch ref (b)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-refs'))">main<span class="sha">@SHA7</span>
+</button>
+</header>
+<div class="work has-rail">
+<main id="main" tabindex="-1" data-y="0" hx-on:scroll="this.dataset.y = Math.round(this.scrollTop / 60)">
+<div class="filter">
+<label for="commit-filter">filter&gt;</label>
+<input id="commit-filter" type="search" data-filter placeholder="subject, sha or author  ( / )" autocomplete="off" hx-on:input="let t = this.value.toLowerCase(); q('.days tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
+      q('.days section').arr().forEach(s => s.hidden = !s.querySelector('tr:not([hidden])'));
+      let first = q('.days tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '.days tr')">
+</div>
+<div class="days" id="commits-head">
+<section aria-label="2026-02-08">
+<h2 class="rule-h">
+<span>2026-02-08</span>
+</h2>
+<table class="list commits" aria-label="Commits">
+<tbody data-rows>
+<tr id="c-SHA7" data-cursor>
+<td class="cur" aria-hidden="true">
+</td>
+<td class="c-sha mute">SHA7</td>
+<td class="c-subject">
+<a href="/diffs/commit/SHA40">add a very large file</a>
+<span class="tagged">[main]</span>
+</td>
+<td class="c-who dim">T</td>
+<td class="c-when nowrap dim">
+<time datetime="STAMP" title="STAMP">AGO</time>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section aria-label="2026-02-07">
+<h2 class="rule-h">
+<span>2026-02-07</span>
+</h2>
+<table class="list commits" aria-label="Commits">
+<tbody data-rows>
+<tr id="c-SHA7">
+<td class="cur" aria-hidden="true">
+</td>
+<td class="c-sha mute">SHA7</td>
+<td class="c-subject">
+<a href="/diffs/commit/SHA40">add evil.go</a>
+</td>
+<td class="c-who dim">T</td>
+<td class="c-when nowrap dim">
+<time datetime="STAMP" title="STAMP">AGO</time>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section aria-label="2026-02-06">
+<h2 class="rule-h">
+<span>2026-02-06</span>
+</h2>
+<table class="list commits" aria-label="Commits">
+<tbody data-rows>
+<tr id="c-SHA7">
+<td class="cur" aria-hidden="true">
+</td>
+<td class="c-sha mute">SHA7</td>
+<td class="c-subject">
+<a href="/diffs/commit/SHA40">merge the side branch</a>
+<span class="tagged">(merge)</span>
+</td>
+<td class="c-who dim">T</td>
+<td class="c-when nowrap dim">
+<time datetime="STAMP" title="STAMP">AGO</time>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section aria-label="2026-02-05">
+<h2 class="rule-h">
+<span>2026-02-05</span>
+</h2>
+<table class="list commits" aria-label="Commits">
+<tbody data-rows>
+<tr id="c-SHA7">
+<td class="cur" aria-hidden="true">
+</td>
+<td class="c-sha mute">SHA7</td>
+<td class="c-subject">
+<a href="/diffs/commit/SHA40">work on the side</a>
+<span class="tagged">[side]</span>
+</td>
+<td class="c-who dim">T</td>
+<td class="c-when nowrap dim">
+<time datetime="STAMP" title="STAMP">AGO</time>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section aria-label="2026-02-04">
+<h2 class="rule-h">
+<span>2026-02-04</span>
+</h2>
+<table class="list commits" aria-label="Commits">
+<tbody data-rows>
+<tr id="c-SHA7">
+<td class="cur" aria-hidden="true">
+</td>
+<td class="c-sha mute">SHA7</td>
+<td class="c-subject">
+<a href="/diffs/commit/SHA40">change a binary file</a>
+</td>
+<td class="c-who dim">T</td>
+<td class="c-when nowrap dim">
+<time datetime="STAMP" title="STAMP">AGO</time>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section aria-label="2026-02-03">
+<h2 class="rule-h">
+<span>2026-02-03</span>
+</h2>
+<table class="list commits" aria-label="Commits">
+<tbody data-rows>
+<tr id="c-SHA7">
+<td class="cur" aria-hidden="true">
+</td>
+<td class="c-sha mute">SHA7</td>
+<td class="c-subject">
+<a href="/diffs/commit/SHA40">rename a file and delete another</a>
+</td>
+<td class="c-who dim">T</td>
+<td class="c-when nowrap dim">
+<time datetime="STAMP" title="STAMP">AGO</time>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section aria-label="2026-02-02">
+<h2 class="rule-h">
+<span>2026-02-02</span>
+</h2>
+<table class="list commits" aria-label="Commits">
+<tbody data-rows>
+<tr id="c-SHA7">
+<td class="cur" aria-hidden="true">
+</td>
+<td class="c-sha mute">SHA7</td>
+<td class="c-subject">
+<a href="/diffs/commit/SHA40">modify a file and make a script executable</a>
+<span class="tagged">[tag: v1.0.0]</span>
+</td>
+<td class="c-who dim">T</td>
+<td class="c-when nowrap dim">
+<time datetime="STAMP" title="STAMP">AGO</time>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section aria-label="2026-02-01">
+<h2 class="rule-h">
+<span>2026-02-01</span>
+</h2>
+<table class="list commits" aria-label="Commits">
+<tbody data-rows>
+<tr id="c-SHA7">
+<td class="cur" aria-hidden="true">
+</td>
+<td class="c-sha mute">SHA7</td>
+<td class="c-subject">
+<a href="/diffs/commit/SHA40">root: the first files</a>
+</td>
+<td class="c-who dim">T</td>
+<td class="c-when nowrap dim">
+<time datetime="STAMP" title="STAMP">AGO</time>
+</td>
+</tr>
+</tbody>
+</table>
+</section>
+</div>
+</main>
+<aside class="rail" aria-label="Context">
+<details class="rail-d" open data-init="" hx-live="if (!data.init) { data.init = '1'; this.open = matchMedia('(min-width: 1100px)').matches }">
+<summary>history · refs on this page</summary>
+<section aria-labelledby="r-hist">
+<h2 id="r-hist">history</h2>
+<dl class="kv">
+<dt>ref</dt>
+<dd>main</dd>
+<dt>on page</dt>
+<dd>8</dd>
+</dl>
+</section>
+<section aria-labelledby="r-refs">
+<h2 id="r-refs">refs on this page</h2>
+<nav class="outline" aria-label="Refs on this page">
+<a href="#c-SHA7">branch main</a>
+<a href="#c-SHA7">branch side</a>
+<a href="#c-SHA7">tag v1.0.0</a>
+</nav>
+</section>
+</details>
+</aside>
+</div>
+<dialog id="panel-help" class="panel" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
+<div class="panel-head">
+<span>keys</span>
+<button type="button" hx-on:click="closest('dialog').close()">[esc] close</button>
+</div>
+<dl class="keys">
+<div>
+<dt>
+<kbd>j</kbd>
+<kbd>k</kbd>
+</dt>
+<dd>move cursor down / up</dd>
+</div>
+<div>
+<dt>
+<kbd>enter</kbd>
+</dt>
+<dd>open row under cursor</dd>
+</div>
+<div>
+<dt>
+<kbd>g</kbd>
+<kbd>g</kbd> / <kbd>G</kbd>
+</dt>
+<dd>first / last row</dd>
+</div>
+<div>
+<dt>
+<kbd>/</kbd>
+</dt>
+<dd>focus the filter</dd>
+</div>
+<div>
+<dt>
+<kbd>g h</kbd>
+<kbd>g t</kbd>
+</dt>
+<dd>go home / tree</dd>
+</div>
+<div>
+<dt>
+<kbd>g c</kbd>
+<kbd>g r</kbd>
+</dt>
+<dd>go commits / refs</dd>
+</div>
+<div>
+<dt>
+<kbd>b</kbd>
+</dt>
+<dd>switch ref (branches, tags)</dd>
+</div>
+<div>
+<dt>
+<kbd>:</kbd>
+<kbd>f</kbd>
+</dt>
+<dd>go to: section, ref, file, repo</dd>
+</div>
+<div>
+<dt>
+<kbd>y</kbd>
+</dt>
+<dd>permalink: ref becomes the full sha</dd>
+</div>
+<div>
+<dt>
+<kbd>s</kbd>
+<kbd>t</kbd>
+<kbd>c</kbd>
+<kbd>r</kbd>
+</dt>
+<dd>repo sections (when shown)</dd>
+</div>
+<div>
+<dt>
+<kbd>d</kbd>
+<kbd>u</kbd>
+<kbd>x</kbd>
+</dt>
+<dd>commit: split / unified / collapse all</dd>
+</div>
+<div>
+<dt>
+<kbd>esc</kbd>
+</dt>
+<dd>close panel</dd>
+</div>
+</dl>
+</dialog>
+<dialog id="panel-refs" class="panel" aria-label="Switch ref" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
+<div class="panel-head">
+<label for="refs-filter">ref&gt;</label>
+<input id="refs-filter" type="search" placeholder="filter branches and tags" autocomplete="off" data-pick hx-on:input="let t = this.value.toLowerCase(); q('#panel-refs li').arr().forEach(li => li.hidden = !li.textContent.toLowerCase().includes(t))">
+<button type="button" hx-on:click="closest('dialog').close()">[esc] close</button>
+</div>
+<div class="panel-cols" data-picklist>
+<section aria-label="Branches">
+<h2>branches <span class="mute">2</span>
+</h2>
+<ul>
+<li>
+<a href="/diffs/tree/main" aria-current="true">
+<span class="mark" aria-hidden="true">●</span>main</a>
+</li>
+<li>
+<a href="/diffs/tree/side">
+<span class="mark" aria-hidden="true">&nbsp;</span>side</a>
+</li>
+</ul>
+</section>
+<section aria-label="Tags">
+<h2>tags <span class="mute">1</span>
+</h2>
+<ul>
+<li>
+<a href="/diffs/tree/v1.0.0">
+<span class="mark" aria-hidden="true">&nbsp;</span>v1.0.0</a>
+</li>
+</ul>
+</section>
+</div>
+</dialog>
+<dialog id="panel-cmd" class="panel" aria-label="Go to" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
+<div class="panel-head">
+<label for="cmd-q" class="hi">:</label>
+<input id="cmd-q" type="search" placeholder="section, ref, file or repo" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="let t = this.value.toLowerCase().trim();
+        q('#cmd-list > li').arr().forEach(li => li.hidden = !li.dataset.k.includes(t));
+        let first = q('#cmd-list > li:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '#cmd-list > li')" hx-on:keydown="let vis = q('#cmd-list > li:not([hidden])').arr();
+        let i = vis.findIndex(li => li.hasAttribute('data-cursor'));
+        let step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+        if (step) { event.preventDefault(); let n = vis[Math.max(0, Math.min(vis.length - 1, i + step))]; n && (q(n).take('data-cursor', '#cmd-list > li'), n.scrollIntoView({ block: 'nearest' })) }
+        else if (event.key === 'Enter') { event.preventDefault(); vis[Math.max(i, 0)]?.querySelector('a').click() }">
+<button type="button" hx-on:click="closest('dialog').close()">[esc] close</button>
+</div>
+<ul id="cmd-list" class="cmd-list">
+<li data-k="go home" data-cursor>
+<a href="/" tabindex="-1">
+<span class="k">go</span>home</a>
+</li>
+<li data-k="section summary">
+<a href="/diffs" tabindex="-1">
+<span class="k">section</span>summary</a>
+</li>
+<li data-k="section tree">
+<a href="/diffs/tree/main" tabindex="-1">
+<span class="k">section</span>tree</a>
+</li>
+<li data-k="section commits">
+<a href="/diffs/commits/main" tabindex="-1">
+<span class="k">section</span>commits</a>
+</li>
+<li data-k="section refs">
+<a href="/diffs/refs" tabindex="-1">
+<span class="k">section</span>refs</a>
+</li>
+<li data-k="branch main">
+<a href="/diffs/tree/main" tabindex="-1">
+<span class="k">branch</span>main</a>
+</li>
+<li data-k="branch side">
+<a href="/diffs/tree/side" tabindex="-1">
+<span class="k">branch</span>side</a>
+</li>
+<li data-k="tag v1.0.0">
+<a href="/diffs/tree/v1.0.0" tabindex="-1">
+<span class="k">tag</span>v1.0.0</a>
+</li>
+<li data-k="repo long">
+<a href="/long" tabindex="-1">
+<span class="k">repo</span>long</a>
+</li>
+</ul>
+</dialog>
+<footer class="bar status" aria-label="Status">
+<span class="mode">commits</span>
+<span class="st-ctx">main · 8 commits</span>
+<button type="button" class="st-cmd" aria-haspopup="dialog" aria-controls="panel-cmd" aria-keyshortcuts=":" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-cmd'))">
+<span class="hi">:</span> go to…</button>
+<span class="st-flash" aria-live="polite" :text="document.body.dataset.flash || ''">
+</span>
+<span class="st-hints">j/k move · enter open · / filter · ? help</span>
+<span class="st-src">
+<span class="st-ver">ermite devel · </span>
+<a href="http://example.test/ermite" rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
+</span>
+<span class="st-live" data-state="offline" role="status" title="not connected to the event stream">offline</span>
+<span class="st-pos num" title="cursor position" :text="(() => { let all = q('[data-rows] > :not([hidden])').arr(); let i = all.findIndex(r => r.hasAttribute('data-cursor')); return (i + 1) + '/' + all.length })()">1/8</span>
+</footer>
+<div id="keys" hidden hx-on="k-j from:body -> ((d) => {
+           if (q('dialog[open]').count) return;
+           let rows = q('[data-rows] > :not([hidden])').arr();
+           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
+           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
+           let n = rows[Math.max(0, Math.min(rows.length - 1, i + d))];
+           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' })
+         })(1);
+         k-k from:body -> ((d) => {
+           if (q('dialog[open]').count) return;
+           let rows = q('[data-rows] > :not([hidden])').arr();
+           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
+           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
+           let n = rows[Math.max(0, Math.min(rows.length - 1, i + d))];
+           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' })
+         })(-1);
+         k-top from:body -> q('[data-rows] > :not([hidden])').arr()[0]?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 0), q('#main').arr()[0].scrollTo(0, 0));
+         k-bottom from:body -> q('[data-rows] > :not([hidden])').arr().at(-1)?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 1e9), q('#main').arr()[0].scrollTo(0, 1e9));
+         k-open from:body -> q('dialog[open]').count || document.querySelector('[data-cursor] a')?.click();
+         k-esc from:body -> q('dialog[open]').arr().forEach(d => d.close());
+         k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].show();
+         k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].show(), q('#refs-filter').arr()[0].focus());
+         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].show(); q('#cmd-q').arr()[0].focus();
+         k-filter from:body -> q('[data-filter]').arr()[0]?.focus();
+         k-gh from:body -> document.querySelector('.top a[data-g=h]')?.click();
+         k-gt from:body -> document.querySelector('.secs [data-key=t]')?.click();
+         k-gc from:body -> document.querySelector('.secs [data-key=c]')?.click();
+         k-gr from:body -> document.querySelector('.secs [data-key=r]')?.click();
+         k-s from:body -> document.querySelector('.secs [data-key=s]')?.click();
+         k-t from:body -> document.querySelector('.secs [data-key=t]')?.click();
+         k-c from:body -> document.querySelector('.secs [data-key=c]')?.click();
+         k-r from:body -> document.querySelector('.secs [data-key=r]')?.click();
+         k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split');
+         k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified');
+         k-collapse from:body -> q('[data-file]').arr().forEach(d => d.open = false);
+         k-permalink from:body -> {
+           let b = document.body.dataset;
+           if (!b.sha) { b.flash = 'no ref to pin on this page'; await timeout('2s'); b.flash = ''; return }
+           history.replaceState(null, '', location.pathname.replace('/' + b.ref + '/', '/' + b.sha + '/') + location.hash);
+           navigator.clipboard?.writeText(location.href);
+           b.flash = 'permalink ' + b.sha.slice(0, 7) + ' copied'; await timeout('2s'); b.flash = ''
+         }">
+</div>
+</body>
+</html>

@@ -1,0 +1,83 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Commits is the history of a ref, or of a path at a ref: the commits of the
+// page grouped by day, and the way to the older ones.
+templ Commits(l Layout, p CommitsPage) {
+	@Shell(l, commitsRail(p)) {
+		<div class="filter">
+			<label for="commit-filter">filter&gt;</label>
+			<input
+				id="commit-filter"
+				type="search"
+				data-filter
+				placeholder="subject, sha or author  ( / )"
+				autocomplete="off"
+				hx-on:input="let t = this.value.toLowerCase(); q('.days tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
+      q('.days section').arr().forEach(s => s.hidden = !s.querySelector('tr:not([hidden])'));
+      let first = q('.days tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '.days tr')"
+			/>
+		</div>
+		if p.Path != "" {
+			<p class="lede dim">history of <code>{ p.Path }</code> at { p.Ref }</p>
+		}
+		<div class="days" id="commits-head">
+			for _, g := range p.Days {
+				<section aria-label={ g.Day }>
+					<h2 class="rule-h"><span>{ g.Day }</span></h2>
+					@CommitRows(g.Rows)
+				</section>
+			}
+		</div>
+		if len(p.Days) == 0 {
+			<p class="lede dim">no commits.</p>
+		}
+		if p.Older != "" || p.Newest != "" {
+			<nav class="pager" aria-label="Pages">
+				if p.Newest != "" {
+					<a href={ templ.SafeURL(p.Newest) }>← newest</a>
+				} else {
+					<span class="mute">← newest</span>
+				}
+				if p.Older != "" {
+					<a href={ templ.SafeURL(p.Older) } rel="next">older →</a>
+				} else {
+					<span class="mute">older →</span>
+				}
+			</nav>
+		}
+	}
+}
+
+templ commitsRail(p CommitsPage) {
+	<section aria-labelledby="r-hist">
+		<h2 id="r-hist">history</h2>
+		<dl class="kv">
+			<dt>ref</dt>
+			<dd>{ p.Ref }</dd>
+			<dt>on page</dt>
+			<dd>{ itoa(p.Count) }</dd>
+			if p.Path != "" {
+				<dt>path</dt>
+				<dd>{ p.Path }</dd>
+			}
+			if p.Open != nil {
+				<dt>file</dt>
+				<dd><a href={ templ.SafeURL(p.Open.Href) }>{ p.Open.Label }</a></dd>
+			}
+		</dl>
+	</section>
+	<section aria-labelledby="r-refs">
+		<h2 id="r-refs">refs on this page</h2>
+		if len(p.Refs) > 0 {
+			<nav class="outline" aria-label="Refs on this page">
+				for _, r := range p.Refs {
+					<a href={ templ.SafeURL(r.Href) }>{ r.Label }</a>
+				}
+			</nav>
+		} else {
+			<p class="dim">no tag or branch head here</p>
+		}
+	</section>
+}

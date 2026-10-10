@@ -98,6 +98,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /{repo}", s.page(s.summary))
 	mux.HandleFunc("GET /{repo}/{$}", s.page(s.summary))
 	mux.HandleFunc("GET /{repo}/refs", s.page(s.refs))
+	mux.HandleFunc("GET /{repo}/commits", s.page(s.commits))
+	mux.HandleFunc("GET /{repo}/commits/{rest...}", s.page(s.commits))
 	mux.HandleFunc("GET /{repo}/{rest...}", s.page(s.notFound))
 	return mux
 }
