@@ -25,6 +25,11 @@ const MaxMergeRequestCommits = 100
 // retry is a read and a write of ermite-kv, cheap enough for a bound this high.
 const maxWriteRetries = 32
 
+// MaxCommentsPerMergeRequest is the most comments a merge request holds. Past
+// it AddComment fails with domain.ErrResourceExhausted (resource_exhausted in
+// the API). Comments are never deleted, so the limit counts the ones ever added.
+const MaxCommentsPerMergeRequest = 1000
+
 const mrTokenPrefix = "mp1:"
 
 // MergeRequests are the merge request use cases (ADR 0017): review, comment,
@@ -469,7 +474,8 @@ type AddCommentParams struct {
 // mr:write. The text must follow the rules of ADR 0017 and not be blank; a
 // comment on a line must name a line of the current diff of the request (see
 // domain.Diff.HasLine), else the call fails with domain.ErrInvalid. A request
-// that is not open gives domain.ErrPreconditionFailed.
+// that is not open gives domain.ErrPreconditionFailed, and one that already
+// holds MaxCommentsPerMergeRequest comments domain.ErrResourceExhausted.
 func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params AddCommentParams) (domain.Comment, error) {
 	repo, err := m.writable(ctx, p, name, domain.ScopeMRWrite)
 	if err != nil {
@@ -514,6 +520,9 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 
 	var c domain.Comment
 	for range maxWriteRetries {
+		if mr.CommentSeq >= MaxCommentsPerMergeRequest {
+			return domain.Comment{}, fmt.Errorf("%w: !%d already has %d comments", domain.ErrResourceExhausted, number, MaxCommentsPerMergeRequest)
+		}
 		c = domain.Comment{
 			ID: mr.CommentSeq + 1, Author: authorOf(p), Path: params.Path, Line: params.Line, Side: params.Side,
 			CommitID: mr.HeadID, Text: text, CreatedAt: m.clock.Now().UTC(),

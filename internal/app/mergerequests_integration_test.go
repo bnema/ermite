@@ -1250,3 +1250,30 @@ func TestMergeRecordsAPush(t *testing.T) {
 		})
 	}
 }
+
+// GO-008: a merge request holds at most MaxCommentsPerMergeRequest comments.
+func TestCommentsPerMergeRequestAreBounded(t *testing.T) {
+	r := newMRRig(t)
+	r.seed()
+	r.feature("feat")
+	mr := r.open("feat")
+	for i := range app.MaxCommentsPerMergeRequest {
+		_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, app.AddCommentParams{Text: fmt.Sprintf("c%d", i)})
+		require.NoError(t, err, "comment %d", i+1)
+	}
+	_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, app.AddCommentParams{Text: "one too many"})
+	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
+	d, err := r.mrs.Get(r.ctx, root, r.repo, mr.Number, false)
+	require.NoError(t, err)
+	assert.Len(t, d.Comments, app.MaxCommentsPerMergeRequest)
+
+	// Resolving still works, and another request has its own budget.
+	_, err = r.mrs.ResolveComment(r.ctx, mrW, r.repo, mr.Number, 1, true)
+	require.NoError(t, err)
+	r.sh("checkout", "-q", "-B", "other", "main")
+	r.commit(author, "o.txt", "o\n", "other")
+	r.push("other")
+	other := r.open("other")
+	_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, other.Number, app.AddCommentParams{Text: "fine"})
+	require.NoError(t, err)
+}
