@@ -1,0 +1,12 @@
+# Keep the build context to the sources.
+.git
+.worktrees
+.forgejo
+.air.toml
+compose.yaml
+Dockerfile
+.dockerignore
+/ermite
+/tmp
+/dist
+tmp

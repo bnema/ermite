@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"time"
 
 	"github.com/bnema/zerowrap"
@@ -69,11 +68,10 @@ type forge struct {
 // serverVersion is the version GetVersion reports: the module version of the
 // build, or "devel" for an untagged one.
 func serverVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
-		return "devel"
+	if v := buildVersion(); v != "(devel)" {
+		return v
 	}
-	return info.Main.Version
+	return "devel"
 }
 
 // newForge opens the metadata store, resets run/, checks git, reconciles the repositories,
