@@ -152,9 +152,9 @@ func TestWatchStopsOnPermanentErrors(t *testing.T) {
 
 func TestWatchReturnsHandlerError(t *testing.T) {
 	f := &fake{}
-	f.watch = func(_ context.Context, _ *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
+	f.watch = func(ctx context.Context, _ *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
 		_ = st.Send(pushed("e1"))
-		<-time.After(time.Second)
+		<-ctx.Done()
 		return nil
 	}
 	c := start(t, f, client.Config{})
