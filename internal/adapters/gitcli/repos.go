@@ -42,7 +42,10 @@ func (g *Git) Stage(ctx context.Context) (ports.StagedID, error) {
 
 	_, err := g.run(ctx, "init", "--quiet", "--bare", "--object-format=sha1", "--ref-format=files", "--initial-branch=main", dir)
 	if err == nil {
-		for _, kv := range [][2]string{{"repack.writeBitmaps", "true"}, {"core.commitGraph", "true"}} {
+		// changedPathsVersion=2: the Bloom filters of the commit-graph hash
+		// like v2, which has no signed/unsigned char ambiguity (readers on
+		// other platforms agree with the writer).
+		for _, kv := range [][2]string{{"repack.writeBitmaps", "true"}, {"core.commitGraph", "true"}, {"commitGraph.changedPathsVersion", "2"}} {
 			if _, err = g.run(ctx, "-C", dir, "config", "--local", kv[0], kv[1]); err != nil {
 				break
 			}
@@ -174,6 +177,9 @@ func (g *Git) Trash(ctx context.Context, name domain.RepoName) error {
 		// by directory, so the stale process cannot answer for a new repository
 		// before it is dropped here.
 		g.cat.forget(src)
+		if fn := g.onTrash.Load(); fn != nil {
+			(*fn)(src)
+		}
 		if err := syncDir(g.reposDir()); err != nil {
 			return fmt.Errorf("trash repository %q: %w", name, err)
 		}
@@ -222,9 +228,21 @@ func syncDir(dir string) error {
 	return f.Sync()
 }
 
+// RepoDir returns the directory of the repository, repos/<name>.git below the
+// data directory. It does not check that it exists.
+func RepoDir(dataDir string, name domain.RepoName) string {
+	return filepath.Join(dataDir, "repos", name.String()+gitSuffix)
+}
+
+// OnTrash registers fn, which Trash calls with the directory the repository
+// had, after it moved it away. Another reader of the repository (the
+// ermitegit adapter) uses it to drop what it holds open. Call it once while
+// wiring, before the adapter serves.
+func (g *Git) OnTrash(fn func(dir string)) { g.onTrash.Store(&fn) }
+
 // repoDir returns repos/<name>.git, or domain.ErrNotFound if it is missing.
 func (g *Git) repoDir(name domain.RepoName) (string, error) {
-	dir := filepath.Join(g.reposDir(), name.String()+gitSuffix)
+	dir := RepoDir(g.dataDir, name)
 	fi, err := os.Stat(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

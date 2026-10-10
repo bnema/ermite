@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -61,6 +62,8 @@ type Git struct {
 	backend string     // git-http-backend, resolved on first use
 
 	cat *catPool // long-lived cat-file processes of the read side
+
+	onTrash atomic.Pointer[func(dir string)] // see OnTrash
 
 	exec  chan struct{} // slots of the one-shot processes, see Config.MaxExec
 	blobs chan struct{} // slots of the blob streams, see Config.MaxBlobStreams

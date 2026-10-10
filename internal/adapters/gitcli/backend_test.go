@@ -4,6 +4,7 @@ package gitcli_test
 
 import (
 	"context"
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -181,4 +182,80 @@ func TestDefaultBranchAndMaintain(t *testing.T) {
 	require.NoError(t, g.Maintain(ctx, n))
 	assert.FileExists(t, filepath.Join(dir, "objects", "info", "commit-graphs", "commit-graph-chain"))
 	assert.ErrorIs(t, g.Maintain(ctx, name(t, "ghost")), domain.ErrNotFound)
+}
+
+// bloomVersions returns the Bloom filter hash version (BDAT chunk) of every
+// layer of the commit-graph chain of the repository.
+func bloomVersions(t *testing.T, dir string) []uint32 {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "objects", "info", "commit-graphs", "graph-*.graph"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	var out []uint32
+	for _, f := range files {
+		d, err := os.ReadFile(f)
+		require.NoError(t, err)
+		chunks := int(d[6])
+		found := false
+		for i := range chunks {
+			row := 8 + 12*i
+			if string(d[row:row+4]) == "BDAT" {
+				off := binary.BigEndian.Uint64(d[row+4 : row+12])
+				out = append(out, binary.BigEndian.Uint32(d[off:off+4]))
+				found = true
+			}
+		}
+		require.True(t, found, "%s has no Bloom filters", f)
+	}
+	return out
+}
+
+// New repositories write v2 Bloom filters (no signed/unsigned char ambiguity),
+// and Maintain keeps writing v2: on top of a v2 chain, and over a v1 chain that
+// an older ermite or a plain git left behind.
+func TestMaintainWritesBloomFiltersV2(t *testing.T) {
+	ctx := context.Background()
+	g, data := newGit(t)
+	n := name(t, "bloom")
+	id, err := g.Stage(ctx)
+	require.NoError(t, err)
+	require.NoError(t, g.Publish(ctx, id, n))
+	dir := filepath.Join(data, "repos", "bloom.git")
+
+	wt := t.TempDir()
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_AUTHOR_NAME=T", "GIT_AUTHOR_EMAIL=t@x", "GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@x"}
+	run := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir, cmd.Env = dir, env
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	run(wt, "init", "-q", "--initial-branch=main")
+	commit := func(i int) {
+		require.NoError(t, os.WriteFile(filepath.Join(wt, "f"), []byte(strings.Repeat("x", i+1)), 0o644))
+		run(wt, "add", "f")
+		run(wt, "commit", "-q", "-m", "c")
+		run(wt, "push", "-q", dir, "main")
+	}
+
+	commit(0)
+	commit(1)
+	require.NoError(t, g.Maintain(ctx, n))
+	assert.Equal(t, []uint32{2}, bloomVersions(t, dir))
+
+	// A v1 chain written by a git that was not configured for v2.
+	run(dir, "-c", "commitGraph.changedPathsVersion=1", "commit-graph", "write", "--reachable", "--changed-paths", "--split=replace")
+	require.Equal(t, []uint32{1}, bloomVersions(t, dir))
+	commit(2)
+	require.NoError(t, g.Maintain(ctx, n))
+	for _, v := range bloomVersions(t, dir) {
+		assert.Equal(t, uint32(2), v, "Maintain does not leave v1 filters in the chain")
+	}
+	commit(3)
+	require.NoError(t, g.Maintain(ctx, n))
+	for _, v := range bloomVersions(t, dir) {
+		assert.Equal(t, uint32(2), v)
+	}
+	run(dir, "commit-graph", "verify")
 }

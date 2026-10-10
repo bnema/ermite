@@ -193,6 +193,8 @@ func TestStagePublish(t *testing.T) {
 	assert.Equal(t, "files", gitOut(t, staged, "rev-parse", "--show-ref-format"))
 	assert.Equal(t, "true", gitOut(t, staged, "config", "--local", "repack.writeBitmaps"))
 	assert.Equal(t, "true", gitOut(t, staged, "config", "--local", "core.commitGraph"))
+	assert.Equal(t, "2", gitOut(t, staged, "config", "--local", "commitGraph.changedPathsVersion"),
+		"v2 Bloom filters: no signed/unsigned char ambiguity")
 	assert.Equal(t, "refs/heads/main", gitOut(t, staged, "symbolic-ref", "HEAD"))
 
 	n := name(t, "tools")
