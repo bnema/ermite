@@ -104,18 +104,53 @@ func writeJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
-// clean makes a server-provided string safe for a terminal: control
-// characters (escape sequences, line breaks) are replaced.
-func clean(s string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r == '\t' || r == '\n' || r == '\r':
-			return ' '
-		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0):
-			return '?'
+// clean makes a server-provided string safe for a terminal.
+func clean(s string) string { return client.Clean(s) }
+
+// collect reads every page: fetch gets the page token and returns the items
+// and the next page token ("" at the end).
+func collect[T any](ctx context.Context, fetch func(token string) ([]T, string, error)) ([]T, error) {
+	var all []T
+	token := ""
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		return r
-	}, s)
+		items, next, err := fetch(token)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, items...)
+		if next == "" {
+			return all, nil
+		}
+		token = next
+	}
+}
+
+// complete builds a shell completion: it opens a client (silently giving up
+// on any failure), lists with a 3 s timeout and keeps the entries whose
+// first element starts with the prefix.
+func complete[T any](env *cliEnv, cmd *cobra.Command, prefix string,
+	list func(context.Context, *client.Client) ([]T, error), entry func(T) (key, text string),
+) []string {
+	c, err := env.client(cmd, false)
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(env.ctx(cmd), 3*time.Second)
+	defer cancel()
+	items, err := list(ctx, c)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, it := range items {
+		if k, text := entry(it); strings.HasPrefix(k, prefix) {
+			out = append(out, k+"\t"+text)
+		}
+	}
+	return out
 }
 
 // table prints aligned columns under upper-case headers.

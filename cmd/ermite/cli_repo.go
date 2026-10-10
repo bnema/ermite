@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -87,19 +86,13 @@ func newRepoCmd(env *cliEnv) *cobra.Command {
 
 // listRepos reads every page of repositories.
 func listRepos(ctx context.Context, c *client.Client) ([]*ermite.Repo, error) {
-	var repos []*ermite.Repo
-	token := ""
-	for {
+	return collect(ctx, func(token string) ([]*ermite.Repo, string, error) {
 		res, err := c.Repos().ListRepos(ctx, connect.NewRequest(&ermite.ListReposRequest{PageToken: token}))
 		if err != nil {
-			return nil, c.Describe(err)
+			return nil, "", c.Describe(err)
 		}
-		repos = append(repos, res.Msg.GetRepos()...)
-		token = res.Msg.GetNextPageToken()
-		if token == "" {
-			return repos, nil
-		}
-	}
+		return res.Msg.GetRepos(), res.Msg.GetNextPageToken(), nil
+	})
 }
 
 // completeRepoNames completes the first argument with repository names. Any
@@ -109,36 +102,28 @@ func completeRepoNames(env *cliEnv) func(*cobra.Command, []string, string) ([]st
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		names, err := repoNames(env.ctx(cmd), env, cmd, toComplete)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		return names, cobra.ShellCompDirectiveNoFileComp
+		return repoNames(env, cmd, toComplete), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
-func repoNames(ctx context.Context, env *cliEnv, cmd *cobra.Command, prefix string) ([]string, error) {
-	c, err := env.client(cmd, false)
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	repos, err := listRepos(ctx, c)
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for _, r := range repos {
-		if strings.HasPrefix(r.GetName(), prefix) {
-			desc := visibilityName(r.GetVisibility())
-			if d := clean(r.GetDescription()); d != "" {
-				desc += ", " + d
-			}
-			names = append(names, r.GetName()+"\t"+desc)
+// repoNames lists the repository names starting with prefix, with their
+// visibility and description as completion hints.
+func repoNames(env *cliEnv, cmd *cobra.Command, prefix string) []string {
+	return complete(env, cmd, prefix, listRepos, func(r *ermite.Repo) (string, string) {
+		desc := visibilityName(r.GetVisibility())
+		if d := clean(r.GetDescription()); d != "" {
+			desc += ", " + d
 		}
+		return r.GetName(), desc
+	})
+}
+
+// outputRepo prints a repository as JSON or as fields.
+func outputRepo(cmd *cobra.Command, r *ermite.Repo, asJSON bool) error {
+	if asJSON {
+		return writeJSON(cmd.OutOrStdout(), toJSONRepo(r))
 	}
-	return names, nil
+	return printRepo(cmd.OutOrStdout(), r)
 }
 
 func newRepoListCmd(env *cliEnv) *cobra.Command {
@@ -214,10 +199,7 @@ func newRepoShowCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return c.Describe(err)
 		}
-		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONRepo(res.Msg.GetRepo()))
-		}
-		return printRepo(cmd.OutOrStdout(), res.Msg.GetRepo())
+		return outputRepo(cmd, res.Msg.GetRepo(), *asJSON)
 	}
 	return cmd
 }
@@ -226,7 +208,6 @@ func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 	var (
 		description string
 		visibility  string
-		private     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -237,11 +218,10 @@ func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&description, "description", "", "one-line description")
 	cmd.Flags().StringVar(&visibility, "visibility", visibilityPrivate, "visibility: public or private")
-	cmd.Flags().BoolVar(&private, "private", false, "create a private repository (the default; same as --visibility private)")
 	_ = cmd.RegisterFlagCompletionFunc("visibility", visibilityCompletion)
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		req, err := buildCreateRepo(cmd, args[0], description, visibility, private)
+		req, err := buildCreateRepo(args[0], description, visibility)
 		if err != nil {
 			return err
 		}
@@ -253,10 +233,7 @@ func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return c.Describe(err)
 		}
-		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONRepo(res.Msg.GetRepo()))
-		}
-		return printRepo(cmd.OutOrStdout(), res.Msg.GetRepo())
+		return outputRepo(cmd, res.Msg.GetRepo(), *asJSON)
 	}
 	return cmd
 }
@@ -266,16 +243,10 @@ func visibilityCompletion(*cobra.Command, []string, string) ([]string, cobra.She
 }
 
 // buildCreateRepo maps the flags of `repo create` to the request.
-func buildCreateRepo(cmd *cobra.Command, name, description, visibility string, private bool) (*ermite.CreateRepoRequest, error) {
+func buildCreateRepo(name, description, visibility string) (*ermite.CreateRepoRequest, error) {
 	vis, err := parseVisibility(visibility)
 	if err != nil {
 		return nil, err
-	}
-	if private {
-		if cmd.Flags().Changed("visibility") && vis != ermite.Visibility_VISIBILITY_PRIVATE {
-			return nil, errors.New("--private conflicts with --visibility " + visibilityPublic)
-		}
-		vis = ermite.Visibility_VISIBILITY_PRIVATE
 	}
 	return &ermite.CreateRepoRequest{Name: name, Description: description, Visibility: vis}, nil
 }
@@ -308,10 +279,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return c.Describe(err)
 		}
-		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONRepo(res.Msg.GetRepo()))
-		}
-		return printRepo(cmd.OutOrStdout(), res.Msg.GetRepo())
+		return outputRepo(cmd, res.Msg.GetRepo(), *asJSON)
 	}
 	return cmd
 }

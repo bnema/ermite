@@ -114,9 +114,7 @@ func TestRepoCreateMapsFlags(t *testing.T) {
 		desc string
 	}{
 		{"default is private", []string{"x"}, ermite.Visibility_VISIBILITY_PRIVATE, ""},
-		{"--private", []string{"x", "--private"}, ermite.Visibility_VISIBILITY_PRIVATE, ""},
 		{"--visibility public", []string{"x", "--visibility", "public", "--description", "d d"}, ermite.Visibility_VISIBILITY_PUBLIC, "d d"},
-		{"--visibility private --private", []string{"x", "--visibility", "private", "--private"}, ermite.Visibility_VISIBILITY_PRIVATE, ""},
 		{"case insensitive", []string{"x", "--visibility", "Public"}, ermite.Visibility_VISIBILITY_PUBLIC, ""},
 	}
 	for _, tt := range tests {
@@ -140,7 +138,6 @@ func TestRepoCreateRejectsBadFlagsWithoutCalling(t *testing.T) {
 	url := f.serve(t)
 	for _, args := range [][]string{
 		{"repo", "create", "x", "--visibility", "secret"},
-		{"repo", "create", "x", "--visibility", "public", "--private"},
 	} {
 		res := runCLI(t, envFor(url), "", args...)
 		require.Error(t, res.err, "%v", args)

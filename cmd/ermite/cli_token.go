@@ -97,11 +97,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 		return client.ScopeNames(client.AllScopes()), cobra.ShellCompDirectiveNoFileComp
 	})
 	_ = cmd.RegisterFlagCompletionFunc("repo", func(c *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		names, err := repoNames(env.ctx(c), env, c, toComplete)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		return names, cobra.ShellCompDirectiveNoFileComp
+		return repoNames(env, c, toComplete), cobra.ShellCompDirectiveNoFileComp
 	})
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -169,19 +165,13 @@ func printCreatedToken(cmd *cobra.Command, res *ermite.CreateTokenResponse, asJS
 }
 
 func listTokens(ctx context.Context, c *client.Client) ([]*ermite.Token, error) {
-	var tokens []*ermite.Token
-	page := ""
-	for {
+	return collect(ctx, func(page string) ([]*ermite.Token, string, error) {
 		res, err := c.Tokens().ListTokens(ctx, connect.NewRequest(&ermite.ListTokensRequest{PageToken: page}))
 		if err != nil {
-			return nil, c.Describe(err)
+			return nil, "", c.Describe(err)
 		}
-		tokens = append(tokens, res.Msg.GetTokens()...)
-		page = res.Msg.GetNextPageToken()
-		if page == "" {
-			return tokens, nil
-		}
-	}
+		return res.Msg.GetTokens(), res.Msg.GetNextPageToken(), nil
+	})
 }
 
 func newTokenListCmd(env *cliEnv) *cobra.Command {
@@ -238,22 +228,9 @@ func newTokenRevokeCmd(env *cliEnv) *cobra.Command {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
-			c, err := env.client(cmd, false)
-			if err != nil {
-				return nil, cobra.ShellCompDirectiveNoFileComp
-			}
-			ctx, cancel := context.WithTimeout(env.ctx(cmd), 3*time.Second)
-			defer cancel()
-			tokens, err := listTokens(ctx, c)
-			if err != nil {
-				return nil, cobra.ShellCompDirectiveNoFileComp
-			}
-			var ids []string
-			for _, t := range tokens {
-				if strings.HasPrefix(t.GetId(), toComplete) {
-					ids = append(ids, t.GetId()+"\t"+clean(t.GetLabel()))
-				}
-			}
+			ids := complete(env, cmd, toComplete, listTokens, func(t *ermite.Token) (string, string) {
+				return t.GetId(), clean(t.GetLabel())
+			})
 			return ids, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
