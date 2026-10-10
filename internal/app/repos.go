@@ -41,13 +41,17 @@ type CreateParams struct {
 // after the metadata is written removes it again and discards the staged
 // repository.
 //
-// Only root may create; anonymous callers get domain.ErrUnauthenticated.
+// The principal needs repo:write on the name: anonymous callers get
+// domain.ErrUnauthenticated, other callers without it domain.ErrForbidden.
 func (r *Repos) Create(ctx context.Context, p domain.Principal, params CreateParams) (domain.Repo, error) {
-	if !canCreate(p) {
-		return domain.Repo{}, domain.ErrUnauthenticated
-	}
 	if params.Name.IsZero() {
 		return domain.Repo{}, fmt.Errorf("%w: empty name", domain.ErrInvalidName)
+	}
+	if p.IsAnonymous() {
+		return domain.Repo{}, domain.ErrUnauthenticated
+	}
+	if !canWrite(p, params.Name) {
+		return domain.Repo{}, domain.ErrForbidden
 	}
 	vis := params.Visibility
 	if vis == "" {

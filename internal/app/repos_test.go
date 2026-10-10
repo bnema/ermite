@@ -69,6 +69,27 @@ func TestCreate(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
 	})
 
+	t.Run("token without repo:write or outside its list is forbidden", func(t *testing.T) {
+		for _, p := range []domain.Principal{
+			tokenPrincipal(domain.ScopeRepoRead),
+			tokenPrincipal(domain.ScopeRepoWrite, "other"),
+		} {
+			f := newFixture(t)
+			_, err := f.repos.Create(ctx, p, app.CreateParams{Name: name(t, "tools")})
+			assert.ErrorIs(t, err, domain.ErrForbidden)
+		}
+	})
+
+	t.Run("token with repo:write creates", func(t *testing.T) {
+		f := newFixture(t)
+		n := name(t, "tools")
+		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
+		f.meta.EXPECT().Create(ctx, mock.Anything).Return(nil)
+		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
+		_, err := f.repos.Create(ctx, tokenPrincipal(domain.ScopeRepoWrite, "tools"), app.CreateParams{Name: n})
+		require.NoError(t, err)
+	})
+
 	t.Run("zero name is invalid", func(t *testing.T) {
 		f := newFixture(t)
 		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{})
@@ -143,6 +164,18 @@ func TestCreate(t *testing.T) {
 	})
 }
 
+func tokenPrincipal(s domain.Scope, repos ...string) domain.Principal {
+	tok := domain.Token{ID: "t", Scopes: []domain.Scope{s}}
+	for _, r := range repos {
+		n, err := domain.ParseRepoName(r)
+		if err != nil {
+			panic(err)
+		}
+		tok.Repos = append(tok.Repos, n)
+	}
+	return domain.TokenPrincipal(tok)
+}
+
 func TestGetAndListAccess(t *testing.T) {
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
@@ -158,6 +191,12 @@ func TestGetAndListAccess(t *testing.T) {
 		{"anonymous cannot see private", domain.Anonymous(), priv, domain.ErrNotFound},
 		{"root reads public", domain.Root(), pub, nil},
 		{"root reads private", domain.Root(), priv, nil},
+		{"token with repo:read reads private", tokenPrincipal(domain.ScopeRepoRead), priv, nil},
+		{"token limited to the repo reads private", tokenPrincipal(domain.ScopeRepoRead, "priv"), priv, nil},
+		{"token limited to another repo cannot see private", tokenPrincipal(domain.ScopeRepoRead, "other"), priv, domain.ErrNotFound},
+		{"token without repo:read cannot see private", tokenPrincipal(domain.ScopeRepoWrite), priv, domain.ErrNotFound},
+		{"token without repo:read reads public", tokenPrincipal(domain.ScopeRepoWrite), pub, nil},
+		{"token limited to another repo reads public", tokenPrincipal(domain.ScopeRepoRead, "other"), pub, nil},
 	}
 	for _, tt := range tests {
 		t.Run("get/"+tt.name, func(t *testing.T) {
