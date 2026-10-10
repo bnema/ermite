@@ -24,7 +24,7 @@ type scheduler struct {
 	names []domain.RepoName
 }
 
-func (s *scheduler) Schedule(n domain.RepoName) {
+func (s *scheduler) Schedule(_ context.Context, n domain.RepoName) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.names = append(s.names, n)
@@ -35,6 +35,7 @@ type pushFixture struct {
 	git    *mocks.GitRepos
 	bus    *mocks.EventBus
 	clock  *mocks.Clock
+	tokens *mocks.TokenStore
 	sched  *scheduler
 	pushes *app.Pushes
 }
@@ -42,15 +43,17 @@ type pushFixture struct {
 func newPushFixture(t *testing.T) *pushFixture {
 	t.Helper()
 	f := &pushFixture{
-		meta:  mocks.NewRepoMetaStore(t),
-		git:   mocks.NewGitRepos(t),
-		bus:   mocks.NewEventBus(t),
-		clock: mocks.NewClock(t),
-		sched: &scheduler{},
+		meta:   mocks.NewRepoMetaStore(t),
+		git:    mocks.NewGitRepos(t),
+		bus:    mocks.NewEventBus(t),
+		clock:  mocks.NewClock(t),
+		tokens: mocks.NewTokenStore(t),
+		sched:  &scheduler{},
 	}
 	f.clock.EXPECT().Now().Return(now).Maybe()
 	repos := app.NewRepos(f.meta, f.git, f.clock)
-	f.pushes = app.NewPushes(f.meta, repos, f.git, f.bus, f.clock, f.sched)
+	auth := app.NewAuth(domain.HashTokenSecret(rootSecret), f.tokens, f.clock)
+	f.pushes = app.NewPushes(f.meta, repos, f.git, f.bus, f.clock, f.sched, auth)
 	return f
 }
 
@@ -66,25 +69,24 @@ func TestPushesOpen(t *testing.T) {
 	pub := domain.Repo{Name: n, Visibility: domain.VisibilityPublic}
 
 	tests := []struct {
-		name    string
-		p       domain.Principal
-		repo    *domain.Repo // nil: missing
-		create  bool
-		want    error
-		created bool
+		name   string
+		p      domain.Principal
+		repo   *domain.Repo // nil: missing
+		create bool
+		want   error
 	}{
-		{"anonymous", domain.Anonymous(), &pub, false, domain.ErrUnauthenticated, false},
-		{"root, existing", domain.Root(), &priv, false, nil, false},
-		{"writer, existing", tokenPrincipal(domain.ScopeRepoWrite), &priv, false, nil, false},
-		{"writer limited to the repo", tokenPrincipal(domain.ScopeRepoWrite, "tools"), &priv, false, nil, false},
-		{"writer limited to another repo, private", tokenPrincipal(domain.ScopeRepoWrite, "other"), &priv, false, domain.ErrNotFound, false},
-		{"writer limited to another repo, public", tokenPrincipal(domain.ScopeRepoWrite, "other"), &pub, false, domain.ErrForbidden, false},
-		{"reader of a private repo", tokenPrincipal(domain.ScopeRepoRead), &priv, false, domain.ErrForbidden, false},
-		{"reader of a public repo", tokenPrincipal(domain.ScopeRepoRead), &pub, false, domain.ErrForbidden, false},
-		{"token with no relevant scope, private", tokenPrincipal(domain.ScopeMRWrite), &priv, false, domain.ErrNotFound, false},
-		{"missing, no create", domain.Root(), nil, false, domain.ErrNotFound, false},
-		{"missing, reader may not create", tokenPrincipal(domain.ScopeRepoRead), nil, true, domain.ErrNotFound, false},
-		{"missing, writer limited elsewhere", tokenPrincipal(domain.ScopeRepoWrite, "other"), nil, true, domain.ErrNotFound, false},
+		{"anonymous", domain.Anonymous(), &pub, false, domain.ErrUnauthenticated},
+		{"root, existing", domain.Root(), &priv, false, nil},
+		{"writer, existing", tokenPrincipal(domain.ScopeRepoWrite), &priv, false, nil},
+		{"writer limited to the repo", tokenPrincipal(domain.ScopeRepoWrite, "tools"), &priv, false, nil},
+		{"writer limited to another repo, private", tokenPrincipal(domain.ScopeRepoWrite, "other"), &priv, false, domain.ErrNotFound},
+		{"writer limited to another repo, public", tokenPrincipal(domain.ScopeRepoWrite, "other"), &pub, false, domain.ErrForbidden},
+		{"reader of a private repo", tokenPrincipal(domain.ScopeRepoRead), &priv, false, domain.ErrForbidden},
+		{"reader of a public repo", tokenPrincipal(domain.ScopeRepoRead), &pub, false, domain.ErrForbidden},
+		{"token with no relevant scope, private", tokenPrincipal(domain.ScopeMRWrite), &priv, false, domain.ErrNotFound},
+		{"missing, no create", domain.Root(), nil, false, domain.ErrNotFound},
+		{"missing, reader may not create", tokenPrincipal(domain.ScopeRepoRead), nil, true, domain.ErrNotFound},
+		{"missing, writer limited elsewhere", tokenPrincipal(domain.ScopeRepoWrite, "other"), nil, true, domain.ErrNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -96,15 +98,13 @@ func TestPushesOpen(t *testing.T) {
 					f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 				}
 			}
-			repo, created, err := f.pushes.Open(ctx, tt.p, n, tt.create)
+			// The bus mock expects no Publish: nothing is created here.
+			err := f.pushes.Open(ctx, tt.p, n, tt.create)
 			if tt.want != nil {
 				assert.ErrorIs(t, err, tt.want)
-				assert.False(t, created)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.created, created)
-			assert.Equal(t, n, repo.Name)
 		})
 	}
 
@@ -117,10 +117,7 @@ func TestPushesOpen(t *testing.T) {
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
 		f.bus.EXPECT().Publish(ctx, domain.RepoCreated{Repo: n, Visibility: domain.VisibilityPrivate, At: now}).Return()
 
-		repo, created, err := f.pushes.Open(ctx, tokenPrincipal(domain.ScopeRepoWrite, "tools"), n, true)
-		require.NoError(t, err)
-		assert.True(t, created)
-		assert.Equal(t, want, repo)
+		require.NoError(t, f.pushes.Open(ctx, tokenPrincipal(domain.ScopeRepoWrite, "tools"), n, true))
 	})
 
 	t.Run("a concurrent first push wins: this one pushes to its repository", func(t *testing.T) {
@@ -131,17 +128,15 @@ func TestPushesOpen(t *testing.T) {
 		f.git.EXPECT().Discard(mock.Anything, ports.StagedID("s1")).Return(nil)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Once()
 
-		repo, created, err := f.pushes.Open(ctx, domain.Root(), n, true)
-		require.NoError(t, err)
-		assert.False(t, created)
-		assert.Equal(t, priv, repo)
+		// The bus mock expects no Publish: the repository was not created here.
+		require.NoError(t, f.pushes.Open(ctx, domain.Root(), n, true))
 	})
 
 	t.Run("store failure", func(t *testing.T) {
 		f := newPushFixture(t)
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, boom)
-		_, _, err := f.pushes.Open(ctx, domain.Root(), n, true)
+		err := f.pushes.Open(ctx, domain.Root(), n, true)
 		assert.ErrorIs(t, err, boom)
 	})
 
@@ -150,7 +145,7 @@ func TestPushesOpen(t *testing.T) {
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID(""), boom)
-		_, _, err := f.pushes.Open(ctx, domain.Root(), n, true)
+		err := f.pushes.Open(ctx, domain.Root(), n, true)
 		assert.ErrorIs(t, err, boom)
 	})
 }
@@ -158,13 +153,52 @@ func TestPushesOpen(t *testing.T) {
 func TestPushesCheck(t *testing.T) {
 	ctx := context.Background()
 	n := name(t, "tools")
-	f := newPushFixture(t)
 	ups := []domain.RefUpdate{{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/main"}}
+	writer := domain.TokenPrincipal(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite), Repos: names(t, "tools")})
+	reader := domain.TokenPrincipal(domain.Token{ID: "r1", Scopes: scopes(domain.ScopeRepoRead)})
 
-	require.NoError(t, f.pushes.Check(ctx, domain.Root(), n, ups))
-	require.NoError(t, f.pushes.Check(ctx, tokenPrincipal(domain.ScopeRepoWrite, "tools"), n, ups))
-	assert.ErrorIs(t, f.pushes.Check(ctx, tokenPrincipal(domain.ScopeRepoRead), n, ups), domain.ErrRejected)
-	assert.ErrorIs(t, f.pushes.Check(ctx, domain.Anonymous(), n, ups), domain.ErrRejected)
+	t.Run("root is always valid and needs no lookup", func(t *testing.T) {
+		f := newPushFixture(t) // the token store mock expects no call
+		require.NoError(t, f.pushes.Check(ctx, domain.Root(), n, ups))
+	})
+
+	t.Run("a writer whose token still exists", func(t *testing.T) {
+		f := newPushFixture(t)
+		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite)}, nil)
+		require.NoError(t, f.pushes.Check(ctx, writer, n, ups))
+	})
+
+	t.Run("a token revoked during the push is rejected", func(t *testing.T) {
+		f := newPushFixture(t)
+		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{}, domain.ErrNotFound)
+		assert.ErrorIs(t, f.pushes.Check(ctx, writer, n, ups), domain.ErrRejected)
+	})
+
+	t.Run("a token that expired during the push is rejected", func(t *testing.T) {
+		f := newPushFixture(t)
+		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite), ExpiresAt: now.Add(-time.Second)}, nil)
+		assert.ErrorIs(t, f.pushes.Check(ctx, writer, n, ups), domain.ErrRejected)
+	})
+
+	t.Run("a store failure fails closed", func(t *testing.T) {
+		f := newPushFixture(t)
+		boom := errors.New("boom")
+		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{}, boom)
+		err := f.pushes.Check(ctx, writer, n, ups)
+		require.ErrorIs(t, err, boom)
+		assert.NotErrorIs(t, err, domain.ErrRejected, "an internal failure, not a refusal")
+	})
+
+	t.Run("a token without write access is rejected", func(t *testing.T) {
+		f := newPushFixture(t)
+		f.tokens.EXPECT().Get(ctx, "r1").Return(domain.Token{ID: "r1", Scopes: scopes(domain.ScopeRepoRead)}, nil)
+		assert.ErrorIs(t, f.pushes.Check(ctx, reader, n, ups), domain.ErrRejected)
+	})
+
+	t.Run("anonymous is rejected", func(t *testing.T) {
+		f := newPushFixture(t)
+		assert.ErrorIs(t, f.pushes.Check(ctx, domain.Anonymous(), n, ups), domain.ErrRejected)
+	})
 }
 
 func TestPushesRecord(t *testing.T) {
@@ -209,6 +243,23 @@ func TestPushesRecord(t *testing.T) {
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
 	})
 
+	t.Run("a repository deleted before the default branch step is not an error", func(t *testing.T) {
+		f := newPushFixture(t)
+		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
+		f.git.EXPECT().DefaultBranch(ctx, n).Return("", false, domain.ErrNotFound)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
+		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
+	})
+
+	t.Run("a repository deleted before HEAD is set is not an error", func(t *testing.T) {
+		f := newPushFixture(t)
+		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
+		f.git.EXPECT().DefaultBranch(ctx, n).Return("trunk", false, nil)
+		f.git.EXPECT().SetDefaultBranch(ctx, n, "main").Return(domain.ErrNotFound)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
+		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
+	})
+
 	t.Run("every step runs when one fails", func(t *testing.T) {
 		f := newPushFixture(t)
 		boom := errors.New("boom")
@@ -218,17 +269,6 @@ func TestPushesRecord(t *testing.T) {
 		err := f.pushes.Record(ctx, p, n, ups)
 		assert.ErrorIs(t, err, boom)
 		assert.Equal(t, []domain.RepoName{n}, f.sched.names, "maintenance still scheduled")
-	})
-
-	t.Run("nil scheduler is allowed", func(t *testing.T) {
-		f := newPushFixture(t)
-		repos := app.NewRepos(f.meta, f.git, f.clock)
-		pushes := app.NewPushes(f.meta, repos, f.git, f.bus, f.clock, nil)
-		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n}, nil)
-		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil)
-		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
-		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
-		require.NoError(t, pushes.Record(ctx, p, n, ups))
 	})
 }
 

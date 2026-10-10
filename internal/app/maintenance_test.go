@@ -41,7 +41,7 @@ func TestMaintainerDebounces(t *testing.T) {
 	defer m.Close(ctx)
 
 	for range 10 {
-		m.Schedule(n)
+		m.Schedule(ctx, n)
 	}
 	time.Sleep(10 * time.Millisecond)
 	assert.Equal(t, int32(0), runs.Load(), "waits for the delay")
@@ -49,7 +49,7 @@ func TestMaintainerDebounces(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	assert.Equal(t, int32(1), runs.Load(), "a burst makes one run")
 
-	m.Schedule(n)
+	m.Schedule(ctx, n)
 	waitFor(t, func() bool { return runs.Load() == 2 }, "a second burst, a second run")
 }
 
@@ -80,11 +80,11 @@ func TestMaintainerOneRunAtATimePerRepo(t *testing.T) {
 	m := app.NewMaintainer(ctx, git, 10*time.Millisecond)
 	defer m.Close(ctx)
 
-	m.Schedule(n)
+	m.Schedule(ctx, n)
 	waitFor(t, func() bool { return runs.Load() == 1 }, "first run to start")
-	m.Schedule(n) // during the run: queues exactly one more
-	m.Schedule(n)
-	m.Schedule(other)
+	m.Schedule(ctx, n) // during the run: queues exactly one more
+	m.Schedule(ctx, n)
+	m.Schedule(ctx, other)
 	waitFor(t, otherRan.Load, "another repository is not blocked")
 	time.Sleep(60 * time.Millisecond)
 	assert.Equal(t, int32(1), runs.Load(), "the second run waits for the first")
@@ -108,9 +108,9 @@ func TestMaintainerFailureIsLoggedNotFatal(t *testing.T) {
 	})
 	m := app.NewMaintainer(ctx, git, 5*time.Millisecond)
 	defer m.Close(ctx)
-	m.Schedule(n)
+	m.Schedule(ctx, n)
 	waitFor(t, func() bool { return runs.Load() == 1 }, "run")
-	m.Schedule(n)
+	m.Schedule(ctx, n)
 	waitFor(t, func() bool { return runs.Load() == 2 }, "later runs still happen")
 }
 
@@ -121,10 +121,10 @@ func TestMaintainerClose(t *testing.T) {
 	t.Run("pending runs are dropped", func(t *testing.T) {
 		git := mocks.NewGitRepos(t) // no Maintain expected
 		m := app.NewMaintainer(ctx, git, time.Hour)
-		m.Schedule(n)
+		m.Schedule(ctx, n)
 		m.Close(ctx)
-		m.Schedule(n) // after Close: ignored
-		m.Close(ctx)  // twice is fine
+		m.Schedule(ctx, n) // after Close: ignored
+		m.Close(ctx)       // twice is fine
 	})
 
 	t.Run("a run in progress is cancelled and awaited", func(t *testing.T) {
@@ -138,7 +138,7 @@ func TestMaintainerClose(t *testing.T) {
 			return ctx.Err()
 		})
 		m := app.NewMaintainer(ctx, git, time.Millisecond)
-		m.Schedule(n)
+		m.Schedule(ctx, n)
 		<-started
 		done := make(chan struct{})
 		go func() { m.Close(ctx); close(done) }()
@@ -162,7 +162,7 @@ func TestMaintainerConcurrentSchedule(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range 50 {
-				m.Schedule(name(t, string(rune('a'+i%3))))
+				m.Schedule(ctx, name(t, string(rune('a'+i%3))))
 				time.Sleep(100 * time.Microsecond)
 			}
 		}()

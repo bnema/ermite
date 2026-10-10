@@ -274,13 +274,7 @@ func TestAC3CreateOnPush(t *testing.T) {
 // statusAuth is status with the token as Basic credentials.
 func (h *harness) statusAuth(method, path, secret string) int {
 	h.t.Helper()
-	req, err := http.NewRequest(method, h.url(path), nil)
-	require.NoError(h.t, err)
-	req.SetBasicAuth("x", secret)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(h.t, err)
-	_ = resp.Body.Close()
-	return resp.StatusCode
+	return h.status(method, path, http.Header{"Authorization": {"Basic " + base64.StdEncoding.EncodeToString([]byte("x:"+secret))}})
 }
 
 // AC4: hooks fail closed, and post-receive records exactly what was pushed.
@@ -292,7 +286,7 @@ func TestAC4HooksFailClosed(t *testing.T) {
 	before := h.bareGit("proj", "rev-parse", "main")
 
 	// The hook socket goes away: pre-receive cannot ask ermite and rejects.
-	h.forge.hooks.Close()
+	h.forge.hooks.Close(h.ctx)
 	select {
 	case <-h.hooksDone:
 	case <-time.After(5 * time.Second):
@@ -600,7 +594,7 @@ func TestAC8TokenCreationThroughTheForge(t *testing.T) {
 }
 
 // Large pushes arrive chunked (git's http.postBuffer is 1 MiB): the handler
-// spools them. Hooks, a path with quotes in the hook executable, and the
+// streams them to Git. Hooks, a path with quotes in the hook executable, and the
 // debounced maintenance are exercised on the way.
 func TestLargePushHookPathQuotingAndMaintenance(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "it's a \"dir\" with spaces")
@@ -651,6 +645,41 @@ func TestLargePushHookPathQuotingAndMaintenance(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(conf), "hooksPath")
 	assert.NotContains(t, string(conf), "receivepack")
+}
+
+// A chunked push has no declared length, so the limit cuts the body off while
+// it streams: the push fails and no ref moves. A small push, which git sends
+// with a Content-Length, is refused up front.
+func TestPushOverTheBodyLimitFailsAndMovesNoRef(t *testing.T) {
+	const limit = 256 << 10
+	h := newHarness(t, harnessOpts{maxBody: limit})
+	small := h.workTree("main", "a")
+	out, err := h.git(small, "push", "-q", h.urlAuth(adminToken, "/proj.git"), "main")
+	require.NoError(t, err, "a push under the limit works\n"+out)
+	before := h.bareGit("proj", "rev-parse", "main")
+
+	big := make([]byte, 3<<20) // over postBuffer: git sends it chunked
+	_, err = rand.Read(big)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(small, "big.bin"), big, 0o644))
+	h.mustGit(small, "add", "big.bin")
+	h.mustGit(small, "commit", "-q", "-m", "big")
+
+	out, err = h.git(small, "push", h.urlAuth(adminToken, "/proj.git"), "main")
+	require.Error(t, err, "a chunked push over the limit fails\n"+out)
+	assert.Equal(t, before, h.bareGit("proj", "rev-parse", "main"), "no ref moved")
+
+	// A new branch of the same objects fails the same way and is not created.
+	h.mustGit(small, "branch", "other")
+	out, err = h.git(small, "push", h.urlAuth(adminToken, "/proj.git"), "other")
+	require.Error(t, err, out)
+	assert.Empty(t, h.bareGit("proj", "for-each-ref", "refs/heads/other"))
+
+	// With a declared length (postBuffer raised above the pack) it is a 413.
+	out, err = h.git(small, "-c", "http.postBuffer=104857600", "push", h.urlAuth(adminToken, "/proj.git"), "main")
+	require.Error(t, err, out)
+	assert.Contains(t, out, "413")
+	assert.Equal(t, before, h.bareGit("proj", "rev-parse", "main"))
 }
 
 // receive.fsckObjects is on: a push with a malformed object is refused, and
@@ -724,8 +753,7 @@ func TestBuiltBinaryPushAndClone(t *testing.T) {
 	run := func(dir string, args ...string) string {
 		c := exec.Command("git", args...)
 		c.Dir = dir
-		c.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
-			"GIT_TERMINAL_PROMPT=0", "GIT_AUTHOR_NAME=T", "GIT_AUTHOR_EMAIL=t@x", "GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@x"}
+		c.Env = clientEnv(home)
 		out, err := c.CombinedOutput()
 		require.NoError(t, err, "git %v\n%s\nserver logs:\n%s", args, out, logs.String())
 		return string(out)

@@ -41,6 +41,8 @@ type fakeHooks struct {
 	calls    []call
 	checkErr error
 	recErr   error
+	// onRecord, when set, runs inside Record with its context.
+	onRecord func(ctx context.Context)
 }
 
 func (f *fakeHooks) Check(_ context.Context, p domain.Principal, n domain.RepoName, u []domain.RefUpdate) error {
@@ -50,11 +52,15 @@ func (f *fakeHooks) Check(_ context.Context, p domain.Principal, n domain.RepoNa
 	return f.checkErr
 }
 
-func (f *fakeHooks) Record(_ context.Context, p domain.Principal, n domain.RepoName, u []domain.RefUpdate) error {
+func (f *fakeHooks) Record(ctx context.Context, p domain.Principal, n domain.RepoName, u []domain.RefUpdate) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, call{"record", p, n, u})
-	return f.recErr
+	err, on := f.recErr, f.onRecord
+	f.mu.Unlock()
+	if on != nil {
+		on(ctx)
+	}
+	return err
 }
 
 func (f *fakeHooks) last() call {
@@ -78,7 +84,7 @@ func startHooks(t *testing.T, h githttp.PushHooks) (*githttp.HookServer, string)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "hook.sock")
 	s := githttp.NewHookServer(sock, h)
-	require.NoError(t, s.Listen())
+	require.NoError(t, s.Listen(context.Background()))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Serve(ctx) }()
@@ -125,13 +131,13 @@ func TestHookServerReplacesStaleSocketFile(t *testing.T) {
 	sock := filepath.Join(dir, "hook.sock")
 	require.NoError(t, os.WriteFile(sock, []byte("stale"), 0o600))
 	s := githttp.NewHookServer(sock, &fakeHooks{})
-	require.NoError(t, s.Listen())
-	s.Close()
+	require.NoError(t, s.Listen(context.Background()))
+	s.Close(context.Background())
 }
 
 func TestHookServerRejectsTooLongSocketPath(t *testing.T) {
 	s := githttp.NewHookServer("/"+strings.Repeat("a", 120)+"/hook.sock", &fakeHooks{})
-	err := s.Listen()
+	err := s.Listen(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "too long")
 }
@@ -140,8 +146,8 @@ func TestHookProtocol(t *testing.T) {
 	fh := &fakeHooks{}
 	srv, sock := startHooks(t, fh)
 	p := domain.TokenPrincipal(domain.Token{ID: "tok1", Scopes: []domain.Scope{domain.ScopeRepoWrite}})
-	tokenA, releaseA := srv.Register(repoName(t, "alpha"), p)
-	tokenB, releaseB := srv.Register(repoName(t, "beta"), domain.Root())
+	tokenA, releaseA := srv.Register(context.Background(), repoName(t, "alpha"), p)
+	tokenB, releaseB := srv.Register(context.Background(), repoName(t, "beta"), domain.Root())
 	assert.NotEqual(t, tokenA, tokenB)
 	assert.Len(t, tokenA, 64)
 
@@ -208,7 +214,7 @@ func TestHookProtocol(t *testing.T) {
 	})
 
 	t.Run("malformed requests are refused", func(t *testing.T) {
-		tok, rel := srv.Register(repoName(t, "gamma"), domain.Root())
+		tok, rel := srv.Register(context.Background(), repoName(t, "gamma"), domain.Root())
 		defer rel()
 		before := len(fh.calls)
 		for _, line := range []string{
@@ -233,6 +239,60 @@ func TestHookProtocol(t *testing.T) {
 	})
 }
 
+// A shutdown while a push is being recorded must not drop the recording: the
+// push is already in the repository.
+func TestHookRecordSurvivesShutdown(t *testing.T) {
+	fh := &fakeHooks{}
+	started, proceed := make(chan struct{}), make(chan struct{})
+	var cancelled, hasDeadline bool
+	var ctxMu sync.Mutex
+	fh.onRecord = func(ctx context.Context) {
+		close(started)
+		<-proceed
+		ctxMu.Lock()
+		defer ctxMu.Unlock()
+		cancelled = ctx.Err() != nil
+		_, hasDeadline = ctx.Deadline()
+	}
+
+	dir, err := os.MkdirTemp("", "hk")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "hook.sock")
+	srv := githttp.NewHookServer(sock, fh)
+	require.NoError(t, srv.Listen(context.Background()))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ctx) }()
+
+	tok, rel := srv.Register(context.Background(), repoName(t, "alpha"), domain.Root())
+	defer rel()
+	replies := make(chan githttp.HookReply, 1)
+	go func() {
+		replies <- raw(t, sock, `{"token":"`+tok+`","hook":"post-receive","updates":[]}`)
+	}()
+	<-started
+	cancel() // the server is shutting down while Record runs
+	close(proceed)
+
+	select {
+	case r := <-replies:
+		assert.True(t, r.OK)
+	case <-time.After(5 * time.Second):
+		t.Fatal("no reply")
+	}
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("hook server did not stop")
+	}
+	ctxMu.Lock()
+	defer ctxMu.Unlock()
+	assert.False(t, cancelled, "Record is not cancelled by the shutdown")
+	assert.True(t, hasDeadline, "but it is bounded")
+}
+
 func TestHookConcurrentTokens(t *testing.T) {
 	fh := &fakeHooks{}
 	srv, sock := startHooks(t, fh)
@@ -242,7 +302,7 @@ func TestHookConcurrentTokens(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			name := repoName(t, "r"+string(rune('a'+i)))
-			tok, rel := srv.Register(name, domain.Root())
+			tok, rel := srv.Register(context.Background(), name, domain.Root())
 			defer rel()
 			r := raw(t, sock, `{"token":"`+tok+`","hook":"post-receive","updates":[{"old":"`+domain.ZeroOID+`","new":"`+oidB+`","ref":"refs/heads/x"}]}`)
 			assert.True(t, r.OK)
@@ -260,7 +320,7 @@ func TestRunHook(t *testing.T) {
 	ctx := context.Background()
 	fh := &fakeHooks{}
 	srv, sock := startHooks(t, fh)
-	tok, rel := srv.Register(repoName(t, "alpha"), domain.Root())
+	tok, rel := srv.Register(context.Background(), repoName(t, "alpha"), domain.Root())
 	defer rel()
 	input := domain.ZeroOID + " " + oidA + " refs/heads/main\n" + oidA + " " + oidB + " refs/heads/dev\n"
 

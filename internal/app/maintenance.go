@@ -23,7 +23,8 @@ const MaintenanceDelay = 5 * time.Second
 // Schedule during a run queues exactly one more run.
 //
 // Its goroutines use the logger of the context given to NewMaintainer and
-// live until Close.
+// live until Close. A run is cancelled by Close, and Git bounds it otherwise
+// (gitcli applies its command timeout to a context without deadline).
 type Maintainer struct {
 	git   ports.GitRepos
 	delay time.Duration
@@ -53,7 +54,7 @@ func NewMaintainer(ctx context.Context, git ports.GitRepos, delay time.Duration)
 }
 
 // Schedule queues maintenance of the repository.
-func (m *Maintainer) Schedule(name domain.RepoName) {
+func (m *Maintainer) Schedule(ctx context.Context, name domain.RepoName) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -65,6 +66,8 @@ func (m *Maintainer) Schedule(name domain.RepoName) {
 		e = &maintEntry{}
 		m.entries[name] = e
 		m.arm(name, e)
+		log := zerowrap.FromCtx(ctx)
+		log.Debug().Str("repo", name.String()).Dur("delay", m.delay).Msg("repository maintenance scheduled")
 	case e.running:
 		e.again = true
 	}

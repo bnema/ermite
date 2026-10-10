@@ -33,6 +33,10 @@ type PushHooks interface {
 // readTimeout bounds how long a connection may take to send its request line.
 const readTimeout = 30 * time.Second
 
+// recordTimeout bounds the post-receive recording of a push, which outlives
+// the shutdown of the server.
+const recordTimeout = 30 * time.Second
+
 type hookEntry struct {
 	repo      domain.RepoName
 	principal domain.Principal
@@ -65,16 +69,15 @@ func (s *HookServer) Socket() string { return s.path }
 
 // Register binds a fresh random token to the repository and principal of a
 // push. The returned release revokes it.
-func (s *HookServer) Register(repo domain.RepoName, p domain.Principal) (string, func()) {
+func (s *HookServer) Register(ctx context.Context, repo domain.RepoName, p domain.Principal) (string, func()) {
 	var raw [32]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		// No entropy: hand out a token that matches nothing, so the hooks fail closed.
-		return "unavailable", func() {}
-	}
+	_, _ = rand.Read(raw[:]) // never fails
 	token := hex.EncodeToString(raw[:])
 	s.mu.Lock()
 	s.tokens[token] = hookEntry{repo: repo, principal: p}
 	s.mu.Unlock()
+	log := zerowrap.FromCtx(ctx)
+	log.Debug().Str("repo", repo.String()).Str("token_id", p.TokenID()).Msg("hook token registered")
 	return token, func() {
 		s.mu.Lock()
 		delete(s.tokens, token)
@@ -91,7 +94,7 @@ func (s *HookServer) lookup(token string) (hookEntry, bool) {
 
 // Listen creates the socket with mode 0600 (replacing a stale file) and
 // returns once it accepts connections. Serve then handles them.
-func (s *HookServer) Listen() error {
+func (s *HookServer) Listen(ctx context.Context) error {
 	// sun_path holds 108 bytes on Linux, 104 on the BSDs and macOS.
 	if len(s.path) >= 100 {
 		return fmt.Errorf("hook socket path is too long for a Unix socket (%d bytes, limit about 100): %s; use a shorter %s", len(s.path), s.path, "ERMITE_DATA_DIR")
@@ -110,6 +113,8 @@ func (s *HookServer) Listen() error {
 	s.connMu.Lock()
 	s.ln = ln
 	s.connMu.Unlock()
+	log := zerowrap.FromCtx(ctx)
+	log.Debug().Str("socket", s.path).Msg("hook socket created")
 	return nil
 }
 
@@ -164,7 +169,9 @@ func (s *HookServer) Serve(ctx context.Context) error {
 }
 
 // Close stops listening and drops the connections in progress.
-func (s *HookServer) Close() {
+func (s *HookServer) Close(ctx context.Context) {
+	log := zerowrap.FromCtx(ctx)
+	log.Debug().Str("socket", s.path).Msg("closing hook socket")
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	if s.ln != nil {
@@ -221,7 +228,11 @@ func (s *HookServer) handle(ctx context.Context, conn net.Conn) {
 			s.reply(ctx, conn, HookReply{Message: "ermite: push refused: internal error"})
 		}
 	case HookPostReceive:
-		if err := s.hooks.Record(ctx, entry.principal, entry.repo, updates); err != nil {
+		// The push is already in the repository: recording it must not be
+		// dropped because the server is shutting down.
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+		defer cancel()
+		if err := s.hooks.Record(rctx, entry.principal, entry.repo, updates); err != nil {
 			rlog.Error().Err(err).Msg("post-receive recording failed")
 			s.reply(ctx, conn, HookReply{OK: true, Message: "ermite: the push succeeded but recording it failed"})
 			return

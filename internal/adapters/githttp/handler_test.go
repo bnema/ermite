@@ -63,14 +63,14 @@ type fakePushes struct {
 	err   error
 }
 
-func (f *fakePushes) Open(_ context.Context, p domain.Principal, n domain.RepoName, create bool) (domain.Repo, bool, error) {
+func (f *fakePushes) Open(_ context.Context, p domain.Principal, _ domain.RepoName, create bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, create)
 	if p.IsAnonymous() {
-		return domain.Repo{}, false, domain.ErrUnauthenticated
+		return domain.ErrUnauthenticated
 	}
-	return domain.Repo{Name: n}, false, f.err
+	return f.err
 }
 
 type fakeTokens struct {
@@ -79,7 +79,7 @@ type fakeTokens struct {
 	repo     domain.RepoName
 }
 
-func (f *fakeTokens) Register(r domain.RepoName, _ domain.Principal) (string, func()) {
+func (f *fakeTokens) Register(_ context.Context, r domain.RepoName, _ domain.Principal) (string, func()) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.repo = r
@@ -88,11 +88,13 @@ func (f *fakeTokens) Register(r domain.RepoName, _ domain.Principal) (string, fu
 func (f *fakeTokens) Socket() string { return "/run/hook.sock" }
 
 // cgiScript is a stand-in for git-http-backend: it answers with the
-// environment and the body it received.
+// environment and the body it received. Like Git, it reads the whole request
+// before it answers (net/http cannot read a request body once the response
+// has started).
 func cgiScript(t *testing.T) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "backend")
-	body := "#!/bin/sh\nprintf 'Content-Type: text/plain\\r\\n\\r\\n'\nenv | sort\nprintf '\\n--body--\\n'\ncat\n"
+	body := "#!/bin/sh\nin=$(mktemp)\ncat > \"$in\"\nprintf 'Content-Type: text/plain\\r\\n\\r\\n'\nenv | sort\nprintf '\\n--body--\\n'\ncat \"$in\"\nrm -f \"$in\"\n"
 	require.NoError(t, os.WriteFile(p, []byte(body), 0o755))
 	return p
 }
@@ -104,7 +106,6 @@ type rig struct {
 	backend *mocks.GitBackend
 	hooks   *fakeTokens
 	auth    *fakeAuth
-	tmp     string
 
 	pushFlags  []bool
 	backendErr error
@@ -112,10 +113,9 @@ type rig struct {
 
 func newRig(t *testing.T, mut func(*githttp.Config)) *rig {
 	t.Helper()
-	r := &rig{pushes: &fakePushes{}, backend: mocks.NewGitBackend(t), hooks: &fakeTokens{}, auth: &fakeAuth{}, tmp: t.TempDir()}
+	r := &rig{pushes: &fakePushes{}, backend: mocks.NewGitBackend(t), hooks: &fakeTokens{}, auth: &fakeAuth{}}
 	cfg := githttp.Config{
 		Auth: r.auth, Repos: fakeRepos{}, Pushes: r.pushes, Backend: r.backend, Hooks: r.hooks,
-		TempDir: r.tmp,
 	}
 	script := cgiScript(t)
 	r.backend.EXPECT().HTTPBackend(mock.Anything, mock.Anything).RunAndReturn(
@@ -254,6 +254,9 @@ func TestHandlerBackendEnvironment(t *testing.T) {
 		"Git-Protocol":        "version=2",
 		"Content-Type":        "application/x-git-receive-pack-request",
 		"X-Forwarded-For":     "1.2.3.4",
+		"X-Auth-Token":        "arbitrary-header-secret",
+		"Accept":              "application/x-git-upload-pack-result",
+		"User-Agent":          "git/2.50",
 	}
 
 	// A read: no hook environment.
@@ -272,6 +275,8 @@ func TestHandlerBackendEnvironment(t *testing.T) {
 	assert.NotContains(t, e, "HTTP_AUTHORIZATION")
 	assert.NotContains(t, e, "HTTP_PROXY_AUTHORIZATION")
 	assert.NotContains(t, e, "HTTP_COOKIE")
+	assert.Equal(t, "application/x-git-upload-pack-result", e["HTTP_ACCEPT"])
+	assert.Equal(t, "git/2.50", e["HTTP_USER_AGENT"])
 	assert.Equal(t, []bool{false}, r.pushFlags)
 
 	// A receive-pack POST gets the hook environment and releases the token.
@@ -286,6 +291,9 @@ func TestHandlerBackendEnvironment(t *testing.T) {
 	assert.Equal(t, "8", e["CONTENT_LENGTH"])
 	assert.True(t, strings.HasSuffix(body, "\n--body--\nPACKDATA"), "the body reaches the backend")
 	assert.NotContains(t, body, "root-secret")
+	assert.NotContains(t, body, "arbitrary-header-secret", "only allowlisted headers reach the backend, and so its hooks")
+	assert.NotContains(t, e, "HTTP_X_AUTH_TOKEN")
+	assert.NotContains(t, e, "HTTP_X_FORWARDED_FOR")
 	assert.Equal(t, 1, r.hooks.released, "the hook token is revoked when the request ends")
 	assert.Equal(t, "pub", r.hooks.repo.String())
 
@@ -300,7 +308,7 @@ func TestHandlerNormalizesRepositoryPath(t *testing.T) {
 	assert.Equal(t, "/pub.git/info/refs", envOf(body)["PATH_INFO"], "the backend always sees <name>.git")
 }
 
-func TestHandlerChunkedBodyIsSpooled(t *testing.T) {
+func TestHandlerChunkedBodyIsStreamed(t *testing.T) {
 	r := newRig(t, nil)
 	payload := strings.Repeat("x", 300_000)
 	// An io.Reader of unknown length makes the client send chunked.
@@ -308,26 +316,89 @@ func TestHandlerChunkedBodyIsSpooled(t *testing.T) {
 	code, out, _ := r.do(t, "POST", "/pub.git/git-upload-pack", "", "", body, map[string]string{"Content-Type": "application/x-git-upload-pack-request"})
 	require.Equal(t, 200, code)
 	e := envOf(out)
-	assert.Equal(t, "300000", e["CONTENT_LENGTH"], "the length is known to the backend")
+	assert.NotContains(t, e, "CONTENT_LENGTH", "the length is unknown to the backend: the body is streamed, not buffered")
+	assert.NotContains(t, e, "HTTP_TRANSFER_ENCODING")
 	_, got, _ := strings.Cut(out, "\n--body--\n")
-	assert.Equal(t, payload, got)
-	entries, err := os.ReadDir(r.tmp)
-	require.NoError(t, err)
-	assert.Empty(t, entries, "spool files are removed")
+	assert.Equal(t, len(payload), len(got))
+	assert.True(t, payload == got, "the body arrives intact")
 }
 
 func TestHandlerBodyLimit(t *testing.T) {
 	r := newRig(t, func(c *githttp.Config) { c.MaxBodyBytes = 1000 })
 	big := strings.Repeat("x", 5000)
-	code, _, _ := r.do(t, "POST", "/pub.git/git-upload-pack", "", "", strings.NewReader(big), nil)
+	code, _, _ := r.do(t, "POST", "/pub.git/git-receive-pack", "u", "root-secret", strings.NewReader(big), nil)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, code, "declared length over the limit")
-	code, _, _ = r.do(t, "POST", "/pub.git/git-upload-pack", "", "", io.MultiReader(strings.NewReader(big)), nil)
-	assert.Equal(t, http.StatusRequestEntityTooLarge, code, "chunked body over the limit")
-	code, _, _ = r.do(t, "POST", "/pub.git/git-upload-pack", "", "", strings.NewReader("ok"), nil)
+
+	// A chunked body has no declared length: it is cut off at the limit, so
+	// the backend sees at most the limit and never the rest.
+	code, out, _ := r.do(t, "POST", "/pub.git/git-receive-pack", "u", "root-secret", io.MultiReader(strings.NewReader(big)), nil)
+	_, got, _ := strings.Cut(out, "\n--body--\n")
+	assert.LessOrEqual(t, len(got), 1000, "the body is cut off at the limit (status %d)", code)
+	assert.NotEqual(t, big, got)
+
+	code, _, _ = r.do(t, "POST", "/pub.git/git-receive-pack", "u", "root-secret", strings.NewReader("ok"), nil)
 	assert.Equal(t, 200, code)
-	entries, err := os.ReadDir(r.tmp)
-	require.NoError(t, err)
-	assert.Empty(t, entries)
+}
+
+func TestHandlerUploadPackBodyIsBoundedBelowThePushLimit(t *testing.T) {
+	r := newRig(t, nil) // the push limit is 4 GiB
+	big := strings.NewReader(strings.Repeat("x", 64<<20+1))
+	code, _, _ := r.do(t, "POST", "/pub.git/git-upload-pack", "", "", big, nil)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, code, "a fetch request is a short list of wants")
+}
+
+func TestHandlerServiceQuery(t *testing.T) {
+	r := newRig(t, nil)
+	for _, q := range []string{
+		"service=git-upload-pack&service=git-receive-pack",
+		"service=git-upload-pack&service=git-upload-pack",
+		"service=git-upload-pack&service=",
+		"service=",
+	} {
+		code, _, _ := r.do(t, "GET", "/pub.git/info/refs?"+q, "u", "root-secret", nil, nil)
+		assert.Equal(t, 404, code, q)
+	}
+	// Other parameters do not reach the backend; the service is rebuilt.
+	code, body, _ := r.do(t, "GET", "/pub.git/info/refs?x=1&service=git-upload-pack&y=%0a", "", "", nil, nil)
+	require.Equal(t, 200, code)
+	assert.Equal(t, "service=git-upload-pack", envOf(body)["QUERY_STRING"])
+}
+
+func TestHandlerGitProtocolHeader(t *testing.T) {
+	r := newRig(t, nil)
+	tests := []struct {
+		value string
+		want  string
+	}{
+		{"version=2", "version=2"},
+		{"version=1", "version=1"},
+		{"version=2:object-format=sha1", "version=2:object-format=sha1"},
+		{"VERSION=2", ""},
+		{"version=2;rm", ""},
+		{"version", ""},
+		{"version=2:", ""},
+		{"a=b c", ""},
+		{"version=" + strings.Repeat("2", 200), ""},
+	}
+	for _, tt := range tests {
+		_, body, _ := r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "", "", nil, map[string]string{"Git-Protocol": tt.value})
+		e := envOf(body)
+		if tt.want == "" {
+			assert.NotContains(t, e, "HTTP_GIT_PROTOCOL", tt.value)
+		} else {
+			assert.Equal(t, tt.want, e["HTTP_GIT_PROTOCOL"], tt.value)
+		}
+	}
+}
+
+func TestHandlerDoesNotInheritTheProcessEnvironment(t *testing.T) {
+	t.Setenv("LD_LIBRARY_PATH", "/evil/lib")
+	t.Setenv("ERMITE_ADMIN_TOKEN", "must-not-leak")
+	r := newRig(t, nil)
+	_, body, _ := r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "", "", nil, nil)
+	e := envOf(body)
+	assert.Empty(t, e["LD_LIBRARY_PATH"], "net/http/cgi inherits it by default")
+	assert.NotContains(t, body, "must-not-leak")
 }
 
 func TestHandlerBackendFailure(t *testing.T) {

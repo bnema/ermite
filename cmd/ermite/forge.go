@@ -23,6 +23,10 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
+// maxReceiveBytes bounds the body of a push, both at the HTTP handler and in
+// Git (receive.maxInputSize).
+const maxReceiveBytes = githttp.DefaultMaxBodyBytes
+
 // options are the parts of the wiring that tests replace.
 type options struct {
 	// hookExe is the executable the hook scripts exec; empty means this
@@ -30,6 +34,8 @@ type options struct {
 	hookExe string
 	// maintenanceDelay overrides app.MaintenanceDelay when positive.
 	maintenanceDelay time.Duration
+	// maxBodyBytes overrides the limit of a push body when positive.
+	maxBodyBytes int64
 }
 
 // forge is the wired server: every adapter and use case, ready to serve.
@@ -75,7 +81,11 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if path == "" {
 		path = "/usr/local/bin:/usr/bin:/bin"
 	}
-	git := gitcli.New(gitcli.Config{Bin: cfg.Git, DataDir: cfg.DataDir, Path: path})
+	maxBody := maxReceiveBytes
+	if opts.maxBodyBytes > 0 {
+		maxBody = opts.maxBodyBytes
+	}
+	git := gitcli.New(gitcli.Config{Bin: cfg.Git, DataDir: cfg.DataDir, Path: path, MaxReceiveBytes: maxBody})
 	gitVersion, err := git.CheckVersion(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%s=%q: %w", config.EnvGit, cfg.Git, err)
@@ -101,7 +111,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.Auth = app.NewAuth(cfg.AdminTokenHash, store.Tokens(), clock)
 	f.Events = eventbus.New()
 	f.maint = app.NewMaintainer(ctx, git, opts.maintenanceDelay)
-	f.Pushes = app.NewPushes(store, f.Repos, git, f.Events, clock, f.maint)
+	f.Pushes = app.NewPushes(store, f.Repos, git, f.Events, clock, f.maint, f.Auth)
 
 	exe := opts.hookExe
 	if exe == "" {
@@ -113,7 +123,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		return nil, err
 	}
 	f.hooks = githttp.NewHookServer(filepath.Join(cfg.DataDir, "run", "hook.sock"), f.Pushes)
-	if err := f.hooks.Listen(); err != nil {
+	if err := f.hooks.Listen(ctx); err != nil {
 		return nil, err
 	}
 
@@ -124,7 +134,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Backend:        git,
 		Hooks:          f.hooks,
 		TrustedProxies: cfg.TrustedProxies,
-		TempDir:        filepath.Join(cfg.DataDir, "run", "tmp"),
+		MaxBodyBytes:   maxBody,
 	})
 	routes := make([]httpserver.Route, 0, len(githttp.Patterns))
 	for _, p := range githttp.Patterns {
@@ -172,7 +182,7 @@ func (f *forge) Serve(ctx context.Context, ln net.Listener) error {
 func (f *forge) Close(ctx context.Context) {
 	log := zerowrap.FromCtx(ctx)
 	if f.hooks != nil {
-		f.hooks.Close()
+		f.hooks.Close(ctx)
 	}
 	if f.maint != nil {
 		f.maint.Close(ctx)

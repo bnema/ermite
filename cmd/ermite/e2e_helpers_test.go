@@ -42,6 +42,8 @@ type harnessOpts struct {
 	maintenance    time.Duration
 	// hookExe is the executable the hook scripts exec; empty builds ermite.
 	hookExe string
+	// maxBody overrides the limit of a push body when positive.
+	maxBody int64
 }
 
 // newHarness starts a forge. The data directory is short: the hook socket
@@ -75,7 +77,7 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	if hookExe == "" {
 		hookExe = binary(t)
 	}
-	f, err := newForge(ctx, cfg, options{hookExe: hookExe, maintenanceDelay: o.maintenance})
+	f, err := newForge(ctx, cfg, options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody})
 	require.NoError(t, err)
 
 	h := &harness{t: t, forge: f, data: data, logs: logs, ctx: ctx, cancel: cancel, hooksDone: make(chan error, 1)}
@@ -112,14 +114,12 @@ func (h *harness) name(s string) domain.RepoName {
 	return n
 }
 
-// git runs the git client in dir with an isolated configuration.
-func (h *harness) git(dir string, args ...string) (string, error) {
-	h.t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = []string{
+// clientEnv is the complete environment of the git client in tests: nothing
+// of the machine's configuration, a fixed identity and locale.
+func clientEnv(home string) []string {
+	return []string{
 		"PATH=" + os.Getenv("PATH"),
-		"HOME=" + h.home,
+		"HOME=" + home,
 		"GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_TERMINAL_PROMPT=0",
@@ -127,10 +127,12 @@ func (h *harness) git(dir string, args ...string) (string, error) {
 		"GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@example.test",
 		"LC_ALL=C",
 	}
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	err := cmd.Run()
-	return out.String(), err
+}
+
+// git runs the git client in dir with an isolated configuration.
+func (h *harness) git(dir string, args ...string) (string, error) {
+	h.t.Helper()
+	return h.gitEnv(nil, dir, args...)
 }
 
 func (h *harness) mustGit(dir string, args ...string) string {
@@ -187,16 +189,7 @@ func (h *harness) gitEnv(extra []string, dir string, args ...string) (string, er
 	h.t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append([]string{
-		"PATH=" + os.Getenv("PATH"),
-		"HOME=" + h.home,
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_AUTHOR_NAME=T", "GIT_AUTHOR_EMAIL=t@example.test",
-		"GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@example.test",
-		"LC_ALL=C",
-	}, extra...)
+	cmd.Env = append(clientEnv(h.home), extra...)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()

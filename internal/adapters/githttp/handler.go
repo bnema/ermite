@@ -9,16 +9,14 @@ package githttp
 import (
 	"context"
 	"errors"
-	"io"
 	"log"
 	"math"
 	"net/http"
 	"net/http/cgi"
 	"net/netip"
-	"os"
+	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/bnema/zerowrap"
 
@@ -37,6 +35,11 @@ var Patterns = []string{
 // DefaultMaxBodyBytes bounds a request body (a push) when Config.MaxBodyBytes
 // is zero.
 const DefaultMaxBodyBytes int64 = 4 << 30
+
+// uploadPackMaxBody bounds the body of git-upload-pack, which is only a list
+// of wants and haves: git http-backend buffers it whole when its length is
+// unknown, so it must stay small whatever Config.MaxBodyBytes says.
+const uploadPackMaxBody int64 = 64 << 20
 
 // Names of the environment variables that carry the hook callback settings
 // from ermite, through git, to the hook process.
@@ -70,7 +73,7 @@ type Repos interface {
 // domain.ErrForbidden for one it can see but not write. With create, a missing
 // repository the principal may write is created. app.Pushes fits.
 type Pushes interface {
-	Open(ctx context.Context, p domain.Principal, name domain.RepoName, create bool) (repo domain.Repo, created bool, err error)
+	Open(ctx context.Context, p domain.Principal, name domain.RepoName, create bool) error
 }
 
 // HookTokens hands out the per-request tokens the hooks of a push present
@@ -78,7 +81,7 @@ type Pushes interface {
 type HookTokens interface {
 	// Register binds a new token to the repository and principal of a push.
 	// release revokes it and must be called when the request ends.
-	Register(repo domain.RepoName, p domain.Principal) (token string, release func())
+	Register(ctx context.Context, repo domain.RepoName, p domain.Principal) (token string, release func())
 	// Socket is the path of the hook socket.
 	Socket() string
 }
@@ -89,17 +92,14 @@ type Config struct {
 	Repos   Repos
 	Pushes  Pushes
 	Backend ports.GitBackend
-	// Hooks provides hook tokens for pushes. Nil runs pushes without hook
-	// environment (tests of the handler alone).
+	// Hooks provides hook tokens for pushes. It is required.
 	Hooks HookTokens
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one.
 	Limiter *Limiter
-	// TempDir holds request bodies that arrive chunked, which CGI cannot
-	// stream. Empty uses the system temporary directory.
-	TempDir string
-	// MaxBodyBytes bounds a request body; 0 means DefaultMaxBodyBytes.
+	// MaxBodyBytes bounds the body of a push; 0 means DefaultMaxBodyBytes.
+	// The body of a fetch is bounded by 64 MiB at most.
 	MaxBodyBytes int64
 }
 
@@ -145,9 +145,13 @@ func parseRoute(r *http.Request) (route, int) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			return route{}, http.StatusMethodNotAllowed
 		}
-		switch svc := r.URL.Query().Get("service"); svc {
-		case serviceUpload, serviceReceive:
-			rt.service = svc
+		// Exactly one service value: a repeated parameter is ambiguous, and
+		// what is handed to the backend is rebuilt from this one anyway.
+		switch svcs := r.URL.Query()["service"]; {
+		case len(svcs) != 1:
+			return route{}, http.StatusNotFound
+		case svcs[0] == serviceUpload, svcs[0] == serviceReceive:
+			rt.service = svcs[0]
 		default:
 			return route{}, http.StatusNotFound
 		}
@@ -164,8 +168,6 @@ func parseRoute(r *http.Request) (route, int) {
 
 // ServeHTTP implements http.Handler.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	rec := &recorder{ResponseWriter: w}
 	var rt route
 	var name domain.RepoName
 	var principal domain.Principal
@@ -174,13 +176,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Debug().
 			Str("repo", name.String()).
 			Str("service", rt.service).
-			Int("status", rec.code()).
-			Dur("duration", time.Since(start)).
 			Str("principal", principal.Label()).
 			Str("token_id", principal.TokenID()).
 			Msg("git request")
 	}()
-	w = rec
 
 	rt, status := parseRoute(r)
 	if status != 0 {
@@ -216,12 +215,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if rt.push() {
 		// Only the first request of a push may create the repository.
-		_, _, err = h.cfg.Pushes.Open(ctx, principal, name, rt.suffix == "info/refs")
+		err = h.cfg.Pushes.Open(ctx, principal, name, rt.suffix == "info/refs")
 	} else {
 		_, err = h.cfg.Repos.Get(ctx, principal, name)
 	}
 	if err != nil {
-		h.denied(r.Context(), w, principal, err)
+		h.denied(ctx, w, principal, err)
 		return
 	}
 
@@ -295,39 +294,21 @@ func challenge(w http.ResponseWriter) {
 
 func notFound(w http.ResponseWriter) { http.Error(w, "not found", http.StatusNotFound) }
 
-// recorder remembers the status code of a response and keeps Flush working.
-type recorder struct {
-	http.ResponseWriter
-	status int
+// gitProtocolRe is what the Git-Protocol header may carry: colon-separated
+// key=value pairs such as "version=2". Git passes it on as GIT_PROTOCOL to
+// its subprocesses, so anything else is dropped.
+var gitProtocolRe = regexp.MustCompile(`^[a-z0-9._-]+=[a-z0-9._-]+(:[a-z0-9._-]+=[a-z0-9._-]+)*$`)
+
+// maxGitProtocolLen bounds the Git-Protocol header.
+const maxGitProtocolLen = 128
+
+// inheritedEnv are the variables net/http/cgi copies from the ermite process
+// on some platforms (osDefaultInheritEnv). Setting them empty keeps the
+// environment of the process out of Git and its hooks.
+var inheritedEnv = []string{
+	"LD_LIBRARY_PATH=", "LD_LIBRARYN32_PATH=", "LD_LIBRARY64_PATH=",
+	"LD_LIBRARY_PATH_32=", "LD_LIBRARY_PATH_64=", "DYLD_LIBRARY_PATH=", "SHLIB_PATH=",
 }
-
-func (r *recorder) WriteHeader(code int) {
-	if r.status == 0 {
-		r.status = code
-	}
-	r.ResponseWriter.WriteHeader(code)
-}
-
-func (r *recorder) Write(b []byte) (int, error) {
-	if r.status == 0 {
-		r.status = http.StatusOK
-	}
-	return r.ResponseWriter.Write(b)
-}
-
-func (r *recorder) code() int {
-	if r.status == 0 {
-		return http.StatusOK
-	}
-	return r.status
-}
-
-// Unwrap lets http.ResponseController reach Flush.
-func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
-
-// sensitiveHeaders never reach the Git process: CGI would put them in its
-// environment, which the hooks inherit.
-var sensitiveHeaders = []string{"Authorization", "Proxy-Authorization", "Cookie"}
 
 // serveBackend runs git http-backend for an authorized request.
 func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route, name domain.RepoName, p domain.Principal) {
@@ -340,15 +321,14 @@ func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route,
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	env := be.Env
-	if rt.suffix == serviceReceive && h.cfg.Hooks != nil {
-		token, release := h.cfg.Hooks.Register(name, p)
+	env := append(append([]string(nil), be.Env...), inheritedEnv...)
+	if rt.suffix == serviceReceive {
+		token, release := h.cfg.Hooks.Register(ctx, name, p)
 		defer release()
 		env = append(env, EnvHookSocket+"="+h.cfg.Hooks.Socket(), EnvHookToken+"="+token)
 	}
 
-	req, cleanup, status := h.backendRequest(w, r, rt, name)
-	defer cleanup()
+	req, status := h.backendRequest(w, r, rt, name)
 	if status != 0 {
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -363,54 +343,51 @@ func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route,
 	}).ServeHTTP(w, req)
 }
 
-// backendRequest builds the request handed to CGI: the path names the
-// directory of the repository, credentials are removed, and a body of unknown
-// length (chunked, which CGI refuses) is spooled to a temporary file so that
-// its length is known. status is non-zero when the request must be refused;
-// cleanup is always safe to call.
-func (h *Handler) backendRequest(w http.ResponseWriter, r *http.Request, rt route, name domain.RepoName) (req *http.Request, cleanup func(), status int) {
-	cleanup = func() {}
+// bodyLimit is the largest request body accepted for the route.
+func (h *Handler) bodyLimit(rt route) int64 {
+	if rt.push() {
+		return h.maxBody
+	}
+	return min(h.maxBody, uploadPackMaxBody)
+}
+
+// backendRequest builds the request handed to CGI. The path names the
+// directory of the repository, the query is rebuilt from the validated
+// service, and the headers are rebuilt from an allowlist: CGI turns every
+// header into an environment variable of Git and of its hooks, so nothing
+// else (credentials, cookies, forwarding headers, anything arbitrary) goes
+// through. The body is streamed and cut off at the limit; a body of unknown
+// length (chunked, which CGI refuses) is passed on with its length unknown.
+// status is non-zero when the request must be refused.
+func (h *Handler) backendRequest(w http.ResponseWriter, r *http.Request, rt route, name domain.RepoName) (req *http.Request, status int) {
+	limit := h.bodyLimit(rt)
+	if r.ContentLength > limit {
+		return nil, http.StatusRequestEntityTooLarge
+	}
 	req = r.Clone(r.Context())
 	req.URL.Path = "/" + name.String() + ".git/" + rt.suffix
 	req.URL.RawPath = ""
-	for _, k := range sensitiveHeaders {
-		req.Header.Del(k)
-	}
-	if r.ContentLength > h.maxBody {
-		return nil, cleanup, http.StatusRequestEntityTooLarge
-	}
-	if r.ContentLength >= 0 && len(r.TransferEncoding) == 0 {
-		req.Body = http.MaxBytesReader(w, r.Body, h.maxBody)
-		return req, cleanup, 0
+	req.URL.RawQuery = ""
+	if rt.suffix == "info/refs" {
+		req.URL.RawQuery = "service=" + rt.service
 	}
 
-	f, err := os.CreateTemp(h.cfg.TempDir, "body-*")
-	if err != nil {
-		logger := zerowrap.FromCtx(r.Context())
-		logger.Error().Err(err).Msg("spool request body")
-		return nil, cleanup, http.StatusInternalServerError
-	}
-	cleanup = func() {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-	}
-	n, err := io.Copy(f, http.MaxBytesReader(w, r.Body, h.maxBody))
-	if err != nil {
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
-			return nil, cleanup, http.StatusRequestEntityTooLarge
+	req.Header = make(http.Header, 5)
+	for _, k := range []string{"Content-Type", "Content-Encoding", "Accept", "User-Agent"} {
+		if v := r.Header.Get(k); v != "" {
+			req.Header.Set(k, v)
 		}
-		return nil, cleanup, http.StatusBadRequest
 	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		logger := zerowrap.FromCtx(r.Context())
-		logger.Error().Err(err).Msg("spool request body")
-		return nil, cleanup, http.StatusInternalServerError
+	if v := r.Header.Get("Git-Protocol"); v != "" && len(v) <= maxGitProtocolLen && gitProtocolRe.MatchString(v) {
+		req.Header.Set("Git-Protocol", v)
 	}
-	req.Body = f
-	req.ContentLength = n
-	req.TransferEncoding = nil
-	return req, cleanup, 0
+
+	req.Body = http.MaxBytesReader(w, r.Body, limit)
+	if r.ContentLength < 0 || len(r.TransferEncoding) > 0 {
+		req.ContentLength = -1
+		req.TransferEncoding = nil
+	}
+	return req, 0
 }
 
 // logWriter sends what the Git process (or the CGI layer) writes to its
