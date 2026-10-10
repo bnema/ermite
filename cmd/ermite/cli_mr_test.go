@@ -271,12 +271,11 @@ func TestMRResolveMergeAndClose(t *testing.T) {
 	assert.Equal(t, headA, m.GetHeadId())
 	assert.EqualValues(t, 1, m.GetNumber())
 
-	// Without --head the CLI reads it, and says so.
-	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--json").ok(t)
-	assert.Contains(t, res.stderr, "no --head given")
+	// The default mode is a fast-forward.
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--head", headA, "--json").ok(t)
 	assert.Equal(t, "merged", decode[mrOut](t, res.stdout).State)
 	calls, reqs = f.snapshot()
-	assert.Equal(t, []string{"GetMergeRequest", "MergeMergeRequest"}, calls[3:])
+	assert.Equal(t, "MergeMergeRequest", calls[len(calls)-1])
 	m = reqs[len(reqs)-1].(*ermite.MergeMergeRequestRequest)
 	assert.Equal(t, ermite.MergeMode_MERGE_MODE_FAST_FORWARD, m.GetMode(), "fast-forward by default")
 	assert.Equal(t, headA, m.GetHeadId())
@@ -287,17 +286,27 @@ func TestMRResolveMergeAndClose(t *testing.T) {
 	assert.Equal(t, "closed", decode[mrOut](t, res.stdout).State)
 }
 
-func TestMRMergeWithoutHeadWhenTheBranchIsGone(t *testing.T) {
-	gone := proto.Clone(mrOne).(*ermite.MergeRequest)
-	gone.HeadId = ""
-	f := &fakeAPI{getMR: func(*ermite.GetMergeRequestRequest) (*ermite.GetMergeRequestResponse, error) {
-		return &ermite.GetMergeRequestResponse{MergeRequest: gone}, nil
-	}}
-	res := runCLI(t, envFor(f.serve(t)), "", "mr", "merge", "alpha", "1")
-	require.Error(t, res.err)
-	assert.Contains(t, res.err.Error(), "no longer exists")
+// ADR 0017: the merge is of the commit that was reviewed, so --head is
+// required, and the CLI does not fill it in from the live head.
+func TestMRMergeNeedsTheHead(t *testing.T) {
+	f := &fakeAPI{}
+	url := f.serve(t)
+	for _, args := range [][]string{
+		{"mr", "merge", "alpha", "1"},
+		{"mr", "merge", "alpha", "1", "--squash"},
+		{"mr", "merge", "alpha", "1", "--head", "  "},
+	} {
+		res := runCLI(t, envFor(url), "", args...)
+		require.Error(t, res.err, args)
+		assert.Contains(t, res.err.Error(), "--head is required")
+		assert.Contains(t, res.err.Error(), "ermite mr show alpha 1", "tells where to get the head")
+	}
 	calls, _ := f.snapshot()
-	assert.Equal(t, []string{"GetMergeRequest"}, calls)
+	assert.Empty(t, calls, "nothing reaches the server")
+
+	res := runCLI(t, envFor(url), "", "mr", "merge", "--help").ok(t)
+	assert.Contains(t, res.stdout, "(required)")
+	assert.NotContains(t, res.stdout, "default: the current head")
 }
 
 func TestMRErrorsAreFriendly(t *testing.T) {

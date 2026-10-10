@@ -750,35 +750,31 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			"as only parent, signed by the server's key (see `ermite signing-key show`). The target must be an\n" +
 			"ancestor of the head, else rebase the branch and push it again; the repository settings may allow\n" +
 			"only one of the modes.\n\n" +
-			"The server merges only if the source branch still points to the head you reviewed. --head gives\n" +
-			"that commit (the head of `mr show`, a full id). Without it the CLI reads the current head and merges\n" +
-			"that, which skips the safeguard: pass --head when others may push to the branch. Needs the\n" +
+			"The server merges only if the source branch still points to the head you reviewed, so --head is\n" +
+			"required: give the full id of the head that `ermite mr show <repo> <number>` printed when you\n" +
+			"reviewed the change. If the branch moved since, the merge is refused: review again. Needs the\n" +
 			"mr:merge scope." + jsonMRHelp,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
 	cmd.Flags().BoolVar(&squash, "squash", false, "squash the branch into one signed commit instead of a fast-forward")
-	cmd.Flags().StringVar(&head, "head", "", "full id of the head you reviewed (default: the current head)")
+	cmd.Flags().StringVar(&head, "head", "", "full id of the head you reviewed, from `ermite mr show` (required)")
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		n, err := parseNumber(args[1])
 		if err != nil {
 			return err
 		}
+		head = strings.TrimSpace(head)
+		if head == "" {
+			return fmt.Errorf("--head is required: run `ermite mr show %s %d` and give the head id it prints, "+
+				"so that only the commit you reviewed is merged", args[0], n)
+		}
 		c, err := env.client(cmd, true)
 		if err != nil {
 			return err
 		}
 		ctx := env.ctx(cmd)
-		head = strings.TrimSpace(head)
-		if head == "" {
-			cur, err := currentHead(ctx, c, args[0], n)
-			if err != nil {
-				return err
-			}
-			head = cur
-			noticef(cmd, "merging %s!%d at %s (no --head given)", clean(args[0]), n, head)
-		}
 		mode := ermite.MergeMode_MERGE_MODE_FAST_FORWARD
 		if squash {
 			mode = ermite.MergeMode_MERGE_MODE_SQUASH
@@ -798,19 +794,6 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 		return err
 	}
 	return cmd
-}
-
-// currentHead reads the head of a merge request from the server.
-func currentHead(ctx context.Context, c *client.Client, repo string, n int64) (string, error) {
-	res, err := c.MergeRequests().GetMergeRequest(ctx, connect.NewRequest(&ermite.GetMergeRequestRequest{Repo: repo, Number: n}))
-	if err != nil {
-		return "", c.Describe(err)
-	}
-	head := res.Msg.GetMergeRequest().GetHeadId()
-	if head == "" {
-		return "", errors.New("the source branch no longer exists: nothing to merge")
-	}
-	return head, nil
 }
 
 func newMRCloseCmd(env *cliEnv) *cobra.Command {
