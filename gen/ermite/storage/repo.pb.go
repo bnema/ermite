@@ -200,6 +200,113 @@ func (x *SchemaVersion) GetVersion() uint32 {
 	return 0
 }
 
+// Token is stored under the key "token/<id>"; the key "tokenhash/<hex>" maps
+// the SHA-256 of the secret back to the id.
+type Token struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Label string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	// SHA-256 of the secret, 32 bytes.
+	Hash []byte `protobuf:"bytes,3,opt,name=hash,proto3" json:"hash,omitempty"`
+	// Scopes in their text form, such as "repo:read". Never empty.
+	Scopes []string `protobuf:"bytes,4,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	// Repository names the token is limited to; empty means every repository.
+	Repos []string `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"`
+	// Unset for a token that never expires.
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Unset until the token is first used.
+	LastUsedAt    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Token) Reset() {
+	*x = Token{}
+	mi := &file_ermite_storage_repo_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Token) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Token) ProtoMessage() {}
+
+func (x *Token) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_repo_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Token.ProtoReflect.Descriptor instead.
+func (*Token) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_repo_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Token) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Token) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *Token) GetHash() []byte {
+	if x != nil {
+		return x.Hash
+	}
+	return nil
+}
+
+func (x *Token) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+func (x *Token) GetRepos() []string {
+	if x != nil {
+		return x.Repos
+	}
+	return nil
+}
+
+func (x *Token) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *Token) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Token) GetLastUsedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastUsedAt
+	}
+	return nil
+}
+
 var File_ermite_storage_repo_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_repo_proto_rawDesc = "" +
@@ -215,7 +322,19 @@ const file_ermite_storage_repo_proto_rawDesc = "" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x127\n" +
 	"\tpushed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bpushedAt\")\n" +
 	"\rSchemaVersion\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\rR\aversion*W\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\"\xa3\x02\n" +
+	"\x05Token\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x12\n" +
+	"\x04hash\x18\x03 \x01(\fR\x04hash\x12\x16\n" +
+	"\x06scopes\x18\x04 \x03(\tR\x06scopes\x12\x14\n" +
+	"\x05repos\x18\x05 \x03(\tR\x05repos\x129\n" +
+	"\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
+	"\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12<\n" +
+	"\flast_used_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastUsedAt*W\n" +
 	"\n" +
 	"Visibility\x12\x1a\n" +
 	"\x16VISIBILITY_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -235,22 +354,26 @@ func file_ermite_storage_repo_proto_rawDescGZIP() []byte {
 }
 
 var file_ermite_storage_repo_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ermite_storage_repo_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_ermite_storage_repo_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_ermite_storage_repo_proto_goTypes = []any{
 	(Visibility)(0),               // 0: ermite.storage.Visibility
 	(*Repo)(nil),                  // 1: ermite.storage.Repo
 	(*SchemaVersion)(nil),         // 2: ermite.storage.SchemaVersion
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*Token)(nil),                 // 3: ermite.storage.Token
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_ermite_storage_repo_proto_depIdxs = []int32{
 	0, // 0: ermite.storage.Repo.visibility:type_name -> ermite.storage.Visibility
-	3, // 1: ermite.storage.Repo.created_at:type_name -> google.protobuf.Timestamp
-	3, // 2: ermite.storage.Repo.pushed_at:type_name -> google.protobuf.Timestamp
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 1: ermite.storage.Repo.created_at:type_name -> google.protobuf.Timestamp
+	4, // 2: ermite.storage.Repo.pushed_at:type_name -> google.protobuf.Timestamp
+	4, // 3: ermite.storage.Token.expires_at:type_name -> google.protobuf.Timestamp
+	4, // 4: ermite.storage.Token.created_at:type_name -> google.protobuf.Timestamp
+	4, // 5: ermite.storage.Token.last_used_at:type_name -> google.protobuf.Timestamp
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_repo_proto_init() }
@@ -264,7 +387,7 @@ func file_ermite_storage_repo_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_repo_proto_rawDesc), len(file_ermite_storage_repo_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

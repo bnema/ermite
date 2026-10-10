@@ -12,10 +12,16 @@ var (
 	ErrInvalidName = errors.New("invalid repository name")
 	// ErrInvalidVisibility means a visibility value is neither public nor private.
 	ErrInvalidVisibility = errors.New("invalid visibility")
+	// ErrInvalidScope means a scope is not one of the known scopes.
+	ErrInvalidScope = errors.New("invalid scope")
+	// ErrInvalidToken means the settings of a token are not acceptable.
+	ErrInvalidToken = errors.New("invalid token")
 	// ErrAlreadyExists means the entity to create already exists.
 	ErrAlreadyExists = errors.New("already exists")
 	// ErrUnauthenticated means the operation needs credentials the caller lacks.
 	ErrUnauthenticated = errors.New("unauthenticated")
+	// ErrForbidden means the caller is known but may not do this.
+	ErrForbidden = errors.New("forbidden")
 	// ErrConflict means a concurrent change prevented the operation.
 	ErrConflict = errors.New("conflict")
 )

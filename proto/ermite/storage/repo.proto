@@ -32,3 +32,21 @@ message Repo {
 message SchemaVersion {
   uint32 version = 1;
 }
+
+// Token is stored under the key "token/<id>"; the key "tokenhash/<hex>" maps
+// the SHA-256 of the secret back to the id.
+message Token {
+  string id = 1;
+  string label = 2;
+  // SHA-256 of the secret, 32 bytes.
+  bytes hash = 3;
+  // Scopes in their text form, such as "repo:read". Never empty.
+  repeated string scopes = 4;
+  // Repository names the token is limited to; empty means every repository.
+  repeated string repos = 5;
+  // Unset for a token that never expires.
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp created_at = 7;
+  // Unset until the token is first used.
+  google.protobuf.Timestamp last_used_at = 8;
+}

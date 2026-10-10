@@ -62,6 +62,25 @@ type GitRepos interface {
 	Trash(ctx context.Context, name domain.RepoName) error
 }
 
+// TokenStore keeps the stored tokens and the index from secret hash to token.
+// The secret itself is never stored.
+type TokenStore interface {
+	// Create stores the token and its hash index in one write. It returns
+	// domain.ErrAlreadyExists if the id or the hash is taken.
+	Create(ctx context.Context, token domain.Token) error
+	// FindByHash returns the token whose secret has that hash, or
+	// domain.ErrNotFound.
+	FindByHash(ctx context.Context, hash domain.TokenHash) (domain.Token, error)
+	// List returns every token, oldest first.
+	List(ctx context.Context) ([]domain.Token, error)
+	// Revoke removes the token and its hash index in one write, or returns
+	// domain.ErrNotFound.
+	Revoke(ctx context.Context, id string) error
+	// Touch records that the token was used at the given time. It returns
+	// domain.ErrNotFound if the token is gone.
+	Touch(ctx context.Context, id string, at time.Time) error
+}
+
 // Clock tells the time.
 type Clock interface {
 	Now() time.Time
