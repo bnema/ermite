@@ -115,8 +115,54 @@ func TestGate(t *testing.T) {
 	assert.Equal(t, 303, do(link, "https://forge.example", ""), "login needs the link, not a session")
 	assert.Equal(t, 404, do("/-/login/"+strings.Repeat("b", 43), "https://forge.example", ""))
 	assert.Equal(t, 1, lim.fails, "one failed login counted")
-	assert.Equal(t, 404, do("/-/login/x", "https://forge.example", ""))
-	assert.Equal(t, 2, lim.fails, "a malformed link counts too")
+	assert.Equal(t, 403, do("/-/login/x", "https://forge.example", ""), "a malformed link is not a login")
+}
+
+// GO-001: the exemption of the login POST is decided on the escaped path, the
+// one the router matches, and on exactly loginPrefix + nonce. An encoded slash
+// must not turn another route into a "login".
+func TestGateLoginExemptionIsExact(t *testing.T) {
+	sess := &fakeSessions{valid: "tok"}
+	lim := &countingLimiter{}
+	srv, err := New(Config{
+		Repos: failing{err: errors.New("x")}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
+		MergeRequests: ermiteconnect.NewMergeRequestServiceClient(http.DefaultClient, "http://unused.invalid"),
+		PublicURL:     "https://forge.example", Sessions: sess, Limiter: lim,
+	})
+	require.NoError(t, err)
+	post := func(target, cookie string) int {
+		req := httptest.NewRequest(http.MethodPost, target, nil)
+		req.Header.Set("Origin", "https://forge.example")
+		if cookie != "" {
+			req.AddCookie(&http.Cookie{Name: CookieName, Value: cookie})
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	nonce := strings.Repeat("a", 43)
+	for _, target := range []string{
+		"/-%2Flogin%2Fx/merge-requests/1/close",
+		"/-%2flogin%2fx/merge-requests/1/close",
+		"/-%2Flogin%2F" + nonce + "/merge-requests/1/close",
+		"/-/login%2F" + nonce,
+		"/-/login/" + nonce + "/merge-requests/1/close",
+		"/-/login/" + nonce + "/",
+		"/-/login/" + nonce + "%2Fx",
+		"/-/login/" + nonce + "%2F..%2Fx",
+		"/-/login/%2e%2e/x/merge-requests/1/close",
+		"/-/login/x/../../x/merge-requests/1/close",
+		"/-/login/",
+		"/-/login/%61" + nonce[1:],
+		"/-/login//" + nonce,
+		"/%2D/login/" + nonce,
+	} {
+		assert.Equal(t, http.StatusForbidden, post(target, ""), target)
+	}
+	assert.Empty(t, sess.used, "no link was used")
+
+	assert.Equal(t, http.StatusSeeOther, post("/-/login/"+nonce, ""), "a valid link still logs in")
+	assert.Equal(t, []string{nonce}, sess.used)
 }
 
 // A session check that cannot be made fails closed (anonymous) and keeps the
@@ -165,4 +211,7 @@ func TestNoSessionsNoRoutes(t *testing.T) {
 func TestLogPathHidesLinks(t *testing.T) {
 	assert.Equal(t, "/-/login/…", logPath("/-/login/"+strings.Repeat("a", 43)))
 	assert.Equal(t, "/demo/tree", logPath("/demo/tree"))
+	for _, p := range []string{"//-/login/secret", "/x/../-/login/secret", "/-/login/secret/more", "/-/./login/secret"} {
+		assert.Equal(t, "/-/login/…", logPath(p), p)
+	}
 }

@@ -4,6 +4,7 @@ package httpserver
 
 import (
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -65,9 +66,11 @@ func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter 
 // the path is a secret.
 const loginPathPrefix = "/-/login/"
 
-// loggedPath is the path of a request as the log may show it.
+// loggedPath is the path of a request as the log may show it. The check is
+// wide on purpose: a path that only reaches the link after cleaning
+// ("/x/../-/login/…", "//-/login/…") or holds the prefix further in is cut too.
 func loggedPath(p string) string {
-	if strings.HasPrefix(p, loginPathPrefix) {
+	if strings.HasPrefix(path.Clean(p), loginPathPrefix) || strings.Contains(p, loginPathPrefix) {
 		return loginPathPrefix + "…"
 	}
 	return p

@@ -141,6 +141,19 @@ func TestRequestLog(t *testing.T) {
 	assert.Empty(t, quiet.String())
 }
 
+// The secret of a login link never reaches the request log, whatever shape
+// the path takes.
+func TestRequestLogCutsLoginLinks(t *testing.T) {
+	var buf syncBuffer
+	ctx := zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf}))
+	h := httpserver.New(httpserver.Config{}).Handler()
+	for _, target := range []string{"/-/login/sEcReT", "//-/login/sEcReT", "/x/../-/login/sEcReT", "/-/login/sEcReT/more", "/-/./login/sEcReT"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(ctx, "POST", target, nil))
+	}
+	assert.NotContains(t, buf.String(), "sEcReT")
+	assert.Contains(t, buf.String(), "/-/login/…")
+}
+
 func TestDirWritable(t *testing.T) {
 	dir := t.TempDir()
 	check := httpserver.DirWritable(dir)

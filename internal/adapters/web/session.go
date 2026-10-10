@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -88,9 +90,11 @@ func cacheHeaders(ctx context.Context, h http.Header, public, private string) {
 }
 
 // logPath is the path of a request as the log may show it: a login link is
-// a secret.
+// a secret. The decoded path is given, so the check is wide on purpose: a
+// path that only reaches the link after cleaning ("/x/../-/login/…",
+// "//-/login/…") or that holds the prefix further in is cut too.
 func logPath(p string) string {
-	if strings.HasPrefix(p, loginPrefix) {
+	if strings.HasPrefix(path.Clean(p), loginPrefix) || strings.Contains(p, loginPrefix) {
 		return loginPrefix + "…"
 	}
 	return p
@@ -100,7 +104,7 @@ func logPath(p string) string {
 // makes the request the owner's. A cookie that is not valid is cleared. A
 // request without a cookie is untouched.
 func (s *Server) withSession(w http.ResponseWriter, r *http.Request) *http.Request {
-	if s.cfg.Sessions == nil || strings.HasPrefix(r.URL.Path, StaticPrefix) {
+	if s.cfg.Sessions == nil || strings.HasPrefix(r.URL.EscapedPath(), StaticPrefix) {
 		return r
 	}
 	c, err := r.Cookie(CookieName)
@@ -160,11 +164,20 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request) bool {
 		denyForbidden(w)
 		return false
 	}
-	if !SignedIn(r.Context()) && !strings.HasPrefix(r.URL.Path, loginPrefix) {
+	if !SignedIn(r.Context()) && (r.Method != http.MethodPost || !isLoginPath(r.URL)) {
 		denyForbidden(w)
 		return false
 	}
 	return true
+}
+
+// isLoginPath tells whether u is exactly a login link: loginPrefix, a nonce of
+// the right shape and nothing after it. It looks at the escaped path, which is
+// what the router matches: the decoded path would let "/-%2Flogin%2Fx/..." pass
+// for a link while the router sends it to another route.
+func isLoginPath(u *url.URL) bool {
+	nonce, ok := strings.CutPrefix(u.EscapedPath(), loginPrefix)
+	return ok && validNonce(nonce)
 }
 
 func denyForbidden(w http.ResponseWriter) {

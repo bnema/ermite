@@ -171,9 +171,15 @@ func TestWebLoginEndToEnd(t *testing.T) {
 		assert.Equal(t, "no-store", g.hdr.Get("Cache-Control"))
 		assert.Contains(t, g.body, "login link not valid")
 		r := b.do("POST", p, map[string]string{"Origin": publicOrigin}, "")
-		assert.Equal(t, 404, r.status, p)
-		assert.Equal(t, g.body, r.body, "no detail tells why")
 		assert.Nil(t, r.cookie(sessionCookie))
+		if validNonceShape(p) {
+			assert.Equal(t, 404, r.status, p)
+			assert.Equal(t, g.body, r.body, "no detail tells why")
+		} else {
+			// Not even the shape of a link: the gate refuses it, as it does
+			// any POST without a session.
+			assert.Equal(t, 403, r.status, p)
+		}
 	}
 
 	// Signed in: private repositories show on every page, headers say private.
@@ -269,6 +275,11 @@ func TestWebLoginEndToEnd(t *testing.T) {
 	fresh := c.signIn(t)
 	assert.Equal(t, 200, b.get("/secret", as(fresh)).status)
 	assert.Equal(t, 404, b.get("/secret", as(token)).status)
+}
+
+// validNonceShape tells whether a login path ends in 43 characters of base64url.
+func validNonceShape(p string) bool {
+	return len(strings.TrimPrefix(p, "/-/login/")) == 43
 }
 
 // cookieInterceptor makes a Connect client send the session cookie, as a
