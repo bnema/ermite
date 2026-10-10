@@ -2,7 +2,7 @@
 
 A single-user Git forge in one Go binary. ermite hosts bare repositories, serves clone and push over HTTPS, and shows them in a read-only web interface.
 
-Status: early development, not usable yet. `ermite serve` starts, opens its metadata store, reconciles the repositories on disk and answers `GET /-/health`.
+Status: early development. `ermite serve` serves Git over HTTP (clone, fetch, push) and answers `GET /-/health`. There is no web interface or token command yet.
 
 ## Run
 
@@ -26,6 +26,17 @@ ermite serve
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
 
 `ermite version` prints the version.
+
+## Git over HTTP
+
+```sh
+git clone http://git.example.com/<repo>.git          # public repositories need no credentials
+git push http://u:<token>@git.example.com/<repo>.git main
+```
+
+Use the admin token (`ERMITE_ADMIN_TOKEN`) or a stored token as the password; the username is ignored. Store it in a Git credential helper rather than in the URL. Pushing to a new name creates a private repository. Repository names are lowercase, `[a-z0-9._-]`. TLS is terminated by your proxy; list its network in `ERMITE_TRUSTED_PROXIES` so that failed-login limits see the real client address (`X-Forwarded-For`).
+
+The server keeps its runtime files in `$ERMITE_DATA_DIR/run/` (the hook socket and scripts that git calls on each push); the hook socket path must stay under about 100 bytes.
 
 ## Build
 
