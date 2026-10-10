@@ -20,6 +20,7 @@ type liveStream struct {
 	view string // "summary", "refs" or "commits"
 	ref  string // commits: the branch listed
 	head string // commits: the commit listed first
+	n    string // mr: the number of the merge request shown
 }
 
 // renderFragment renders a component to the data of an event.
@@ -103,7 +104,21 @@ func (l *liveStream) repoPage(ctx context.Context, ev *pb.Event) ([]fragment, er
 			return gap, nil // the description, the default branch
 		}
 		return nil, nil
+	case *pb.Event_MergeRequestOpened:
+		return l.mrNotice(ctx, k.MergeRequestOpened.GetMergeRequest().GetNumber(), "a merge request was opened — reload")
+	case *pb.Event_MergeRequestMerged:
+		return l.mrNotice(ctx, k.MergeRequestMerged.GetMergeRequest().GetNumber(), "this merge request was merged — reload")
+	case *pb.Event_MergeRequestClosed:
+		return l.mrNotice(ctx, k.MergeRequestClosed.GetMergeRequest().GetNumber(), "this merge request was closed — reload")
+	case *pb.Event_CommentAdded:
+		return l.mrNotice(ctx, k.CommentAdded.GetNumber(), "a comment was added — reload")
 	case *pb.Event_Pushed:
+		switch l.view {
+		case "mr":
+			return l.mrPushed(ctx, k.Pushed)
+		case "mrs":
+			return nil, nil
+		}
 		switch l.view {
 		case "refs":
 			return l.refs(ctx)
@@ -206,3 +221,42 @@ func newCommits(count string, n int) string {
 
 // isFullID reports whether s is a full commit id.
 func isFullID(s string) bool { return len(s) == 40 && isCommitID(s) }
+
+// mrNotice tells a merge request page that something happened to the request
+// it shows, or the list that its content changed. Only a fixed sentence is sent:
+// the text of a comment or a title never leaves through the stream.
+func (l *liveStream) mrNotice(ctx context.Context, number int64, text string) ([]fragment, error) {
+	switch l.view {
+	case "mrs":
+		text = "merge requests changed — reload"
+		return l.notice(ctx, text, mrBase(l.repo))
+	case "mr":
+		if strconv.FormatInt(number, 10) != l.n {
+			return nil, nil
+		}
+		return l.notice(ctx, text, mrHref(l.repo, number))
+	}
+	return nil, nil
+}
+
+// mrPushed announces a push to the source branch of the merge request shown.
+func (l *liveStream) mrPushed(ctx context.Context, p *pb.Pushed) ([]fragment, error) {
+	if l.ref == "" {
+		return nil, nil
+	}
+	for _, u := range p.GetRefUpdates() {
+		if u.GetRef() == "refs/heads/"+l.ref {
+			n, err := strconv.ParseInt(l.n, 10, 64)
+			if err != nil {
+				return nil, nil
+			}
+			return l.notice(ctx, "the branch changed — reload", mrHref(l.repo, n))
+		}
+	}
+	return nil, nil
+}
+
+func (l *liveStream) notice(ctx context.Context, text, href string) ([]fragment, error) {
+	f, err := renderFragment(ctx, "mr-notice", MRNotice(text, href))
+	return []fragment{f}, err
+}

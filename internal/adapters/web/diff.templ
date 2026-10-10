@@ -175,11 +175,17 @@ templ DiffFileView(f DiffFile, p DiffView) {
 								<tr class="hunk"><td colspan="4">{ h.Header }</td></tr>
 								for _, ln := range h.Lines {
 									<tr class={ ln.Kind }>
-										<td class="ln">{ ln.Old }</td>
-										<td class="ln">{ ln.New }</td>
+										<td class="ln">@gutter(ln.Old, ln.OldHref)</td>
+										<td class="ln">@gutter(ln.New, ln.NewHref)</td>
 										<td class="m">{ ln.Mark }</td>
 										<td class="tx">@codeLine(ln)</td>
 									</tr>
+									if len(ln.Notes) > 0 || ln.Form != nil {
+										<tr class="fnote">
+											<td colspan="3"></td>
+											<td>@lineNotes(ln.Notes, ln.Form, "")</td>
+										</tr>
+									}
 								}
 							</tbody>
 						}
@@ -195,6 +201,11 @@ templ DiffFileView(f DiffFile, p DiffView) {
 										@splitSide(row.L, true)
 										@splitSide(row.R, false)
 									</tr>
+									if notes, form := row.Notes(), row.Form(); len(notes) > 0 || form != nil {
+										<tr class="fnote">
+											<td colspan="6">@lineNotes(notes, form, "-s")</td>
+										</tr>
+									}
 								}
 							</tbody>
 						}
@@ -223,12 +234,22 @@ templ splitSide(ln *DiffLine, old bool) {
 	} else {
 		<td class={ "ln", ln.Kind }>
 			if old {
-				{ ln.Old }
+				@gutter(ln.Old, ln.OldHref)
 			} else {
-				{ ln.New }
+				@gutter(ln.New, ln.NewHref)
 			}
 		</td>
 		<td class={ "m", ln.Kind }>{ ln.Mark }</td>
 		<td class={ "tx", ln.Kind }>@codeLine(*ln)</td>
+	}
+}
+
+// gutter is a line number of the gutter. On a merge request that can be
+// commented on, it links to the form that comments on that line.
+templ gutter(n, href string) {
+	if href != "" {
+		<a href={ templ.SafeURL(href) } title="comment on this line">{ n }</a>
+	} else {
+		{ n }
 	}
 }

@@ -26,6 +26,8 @@ import (
 //	GET /-/events?topic=home
 //	GET /-/events?topic=repo:<name>&view=summary|refs
 //	GET /-/events?topic=repo:<name>&view=commits&ref=<branch>&head=<sha>
+//	GET /-/events?topic=repo:<name>&view=mrs
+//	GET /-/events?topic=repo:<name>&view=mr&n=<number>&ref=<source branch>
 //
 // topic is the Watch topic. view says which fragments of a repository the
 // page shows, so that the server renders only those (summary when absent).
@@ -43,6 +45,8 @@ import (
 //	refs-list       data: <tbody id="ref-rows">…</tbody>, and again with
 //	                <dl id="refs-kv">…</dl>, the facts of the rail
 //	commits-head    data: <div id="commits-head">N new commits — reload</div>
+//	mr-notice       data: <div id="mr-notice">…</div>, on the merge request pages:
+//	                something changed, with the link that reloads the page
 //	gap             data: gap; events were lost, or what the page shows is gone or
 //	                changed: the page fetches itself again (ermiteLive in ermite.js)
 //
@@ -172,7 +176,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head")}
+	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n")}
 	handle := func(m recvd) bool {
 		if m.err != nil {
 			if ctx.Err() == nil && connect.CodeOf(m.err) != connect.CodeCanceled {

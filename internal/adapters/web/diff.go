@@ -31,11 +31,47 @@ type DiffLine struct {
 	Old, New string // line numbers, "" when the side has none
 	Segs     []Seg
 	NoEOL    bool // the side ends without a line break
+	// OldHref and NewHref link the line number of a side to the comment form
+	// of that side; they are set on a merge request that can be commented on.
+	OldHref, NewHref string
+	// Notes are the comments of a merge request on this line, and Form the
+	// form to write one, when the reader asked for it.
+	Notes []CommentView
+	Form  *CommentForm
+
+	// oldN and newN are the line numbers of the sides, 0 for none.
+	oldN, newN int
 }
 
 // SplitRow pairs a deleted line (left) with an added one (right); a context
 // line fills both sides.
 type SplitRow struct{ L, R *DiffLine }
+
+// Notes are the comments under a row of the split view: those of its left
+// line, then those of its right line; a context line, on both sides, counts
+// once.
+func (r SplitRow) Notes() []CommentView {
+	switch {
+	case r.L == nil && r.R == nil:
+		return nil
+	case r.L == nil:
+		return r.R.Notes
+	case r.R == nil || r.L == r.R:
+		return r.L.Notes
+	}
+	return append(append([]CommentView(nil), r.L.Notes...), r.R.Notes...)
+}
+
+// Form is the comment form of the row, nil when there is none.
+func (r SplitRow) Form() *CommentForm {
+	switch {
+	case r.R != nil && r.R.Form != nil:
+		return r.R.Form
+	case r.L != nil:
+		return r.L.Form
+	}
+	return nil
+}
 
 // DiffHunk is a changed region.
 type DiffHunk struct {
@@ -50,8 +86,11 @@ type Bar struct{ Add, Del, Rest string }
 
 // DiffFile is one changed file.
 type DiffFile struct {
-	ID       string
-	Status   string // A D M R C T
+	ID     string
+	Status string // A D M R C T
+	// Key is the path comments name: the new path, the old path of a deleted
+	// file. It is not fit to display (Path is).
+	Key      string
 	Path     string // display path, "old → new" for a rename
 	Add, Del int
 	Bar      Bar
@@ -185,7 +224,7 @@ func hunkHeader(h *pb.Hunk) string {
 
 // diffLine converts a line of the API.
 func diffLine(l *pb.Line) DiffLine {
-	dl := DiffLine{Segs: segments(l.GetText()), NoEOL: l.GetNoNewlineAtEof()}
+	dl := DiffLine{Segs: segments(l.GetText()), NoEOL: l.GetNoNewlineAtEof(), oldN: int(l.GetOldNumber()), newN: int(l.GetNewNumber())}
 	switch l.GetKind() {
 	case pb.LineKind_LINE_KIND_ADDITION:
 		dl.Kind, dl.Mark, dl.New = "add", "+", lineNumber(l.GetNewNumber())
@@ -214,8 +253,10 @@ func diffFiles(files []*pb.FileDiff) []DiffFile {
 			// (binary, truncated) stays closed under its note.
 			Open: len(f.GetHunks()) > 0 && !f.GetTruncated(),
 		}
+		df.Key = f.GetNewPath()
 		switch f.GetStatus() {
 		case pb.FileStatus_FILE_STATUS_DELETED:
+			df.Key = f.GetOldPath()
 			df.Path = visibleText(f.GetOldPath())
 		case pb.FileStatus_FILE_STATUS_RENAMED, pb.FileStatus_FILE_STATUS_COPIED:
 			df.Path = visibleText(f.GetOldPath()) + " → " + visibleText(f.GetNewPath())

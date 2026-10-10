@@ -49,6 +49,9 @@
 <li>
 <a href="/diffs/refs" data-key="r" aria-keyshortcuts="g r">refs</a>
 </li>
+<li>
+<a href="/diffs/merge-requests" data-key="m" aria-keyshortcuts="g m">merge requests</a>
+</li>
 </ul>
 </nav>
 <button type="button" class="ref" aria-haspopup="dialog" aria-controls="panel-refs" aria-keyshortcuts="b" title="switch ref (b)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-refs'))">detached<span class="sha">@SHA7</span>
@@ -361,11 +364,24 @@
 </div>
 <div>
 <dt>
+<kbd>m</kbd>
+<kbd>g m</kbd>
+</dt>
+<dd>merge requests (when shown)</dd>
+</div>
+<div>
+<dt>
 <kbd>d</kbd>
 <kbd>u</kbd>
 <kbd>x</kbd>
 </dt>
-<dd>commit: split / unified / collapse all</dd>
+<dd>diff: split / unified / collapse all</dd>
+</div>
+<div>
+<dt>
+<kbd>n</kbd>
+</dt>
+<dd>merge request: next note in the diff</dd>
 </div>
 <div>
 <dt>
@@ -441,6 +457,10 @@
 <a href="/diffs/refs" tabindex="-1">
 <span class="k">section</span>refs</a>
 </li>
+<li data-k="section merge requests">
+<a href="/diffs/merge-requests" tabindex="-1">
+<span class="k">section</span>merge requests</a>
+</li>
 <li data-k="branch main">
 <a href="/diffs/tree/main" tabindex="-1">
 <span class="k">branch</span>main</a>
@@ -501,6 +521,13 @@
          k-t from:body -> document.querySelector('.secs [data-key=t]')?.click();
          k-c from:body -> document.querySelector('.secs [data-key=c]')?.click();
          k-r from:body -> document.querySelector('.secs [data-key=r]')?.click();
+         k-m from:body -> document.querySelector('.secs [data-key=m]')?.click();
+         k-gm from:body -> document.querySelector('.secs [data-key=m]')?.click();
+         k-next from:body -> {
+           let ns = q('#diffs .cmt').arr(); if (!ns.length) return;
+           let i = ns.findIndex(n => n.getBoundingClientRect().top > innerHeight / 3);
+           let n = ns[i < 0 ? 0 : i]; n.closest('details') && (n.closest('details').open = true); n.scrollIntoView({ block: 'center' })
+         };
          k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split');
          k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified');
          k-collapse from:body -> q('[data-file]').arr().forEach(d => d.open = false);

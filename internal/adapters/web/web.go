@@ -49,6 +49,9 @@ type Config struct {
 	// Repos and Git are the API clients the pages are built from.
 	Repos ermiteconnect.RepoServiceClient
 	Git   ermiteconnect.GitServiceClient
+	// MergeRequests is the client of the merge request pages (ADR 0017).
+	// Without it there are no such pages, nor section for them.
+	MergeRequests ermiteconnect.MergeRequestServiceClient
 	// Events is the client of the event stream behind /-/events. Without
 	// it the pages are not live and the route answers 404.
 	Events ermiteconnect.EventServiceClient
@@ -134,6 +137,20 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /{repo}/tree/{rest...}", s.page(s.tree))
 	mux.HandleFunc("GET /{repo}/blob/{rest...}", s.page(s.blob))
 	mux.HandleFunc("GET /{repo}/raw/{rest...}", s.raw)
+	if s.cfg.MergeRequests != nil {
+		mux.HandleFunc("GET /{repo}/merge-requests", s.page(s.mrList))
+		mux.HandleFunc("GET /{repo}/merge-requests/{$}", s.page(s.mrList))
+		mux.HandleFunc("GET /{repo}/merge-requests/{n}", s.page(s.mrShow))
+		mux.HandleFunc("GET /{repo}/merge-requests/{n}/since", s.page(s.mrSince))
+		mux.HandleFunc("GET /{repo}/compare/{rest...}", s.page(s.compare))
+		// The writes: POST only, behind the gate (ServeHTTP).
+		mux.HandleFunc("POST /{repo}/merge-requests", s.mrAction(s.mrCreate))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments", s.mrAction(s.mrComment))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/resolve", s.mrAction(s.mrResolve))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/merge", s.mrAction(s.mrMerge))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/close", s.mrAction(s.mrClose))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/read", s.mrAction(s.mrRead))
+	}
 	mux.HandleFunc("GET /{repo}/{rest...}", s.page(s.notFound))
 	return mux
 }

@@ -27,12 +27,13 @@ import (
 func newWeb(cfg config.Config, api *rpc.API, sessions *app.Sessions, limiter *clientlimit.Limiter) (http.Handler, error) {
 	hc := api.InProcessClient()
 	srv, err := web.New(web.Config{
-		Repos:     ermiteconnect.NewRepoServiceClient(hc, rpc.InProcessURL),
-		Git:       ermiteconnect.NewGitServiceClient(hc, rpc.InProcessURL),
-		Events:    ermiteconnect.NewEventServiceClient(hc, rpc.InProcessURL),
-		PublicURL: cfg.PublicURL,
-		SourceURL: cfg.SourceURL,
-		Version:   serverVersion(),
+		Repos:         ermiteconnect.NewRepoServiceClient(hc, rpc.InProcessURL),
+		Git:           ermiteconnect.NewGitServiceClient(hc, rpc.InProcessURL),
+		MergeRequests: ermiteconnect.NewMergeRequestServiceClient(hc, rpc.InProcessURL),
+		Events:        ermiteconnect.NewEventServiceClient(hc, rpc.InProcessURL),
+		PublicURL:     cfg.PublicURL,
+		SourceURL:     cfg.SourceURL,
+		Version:       serverVersion(),
 
 		Sessions:       webSessions{sessions},
 		Limiter:        limiter,

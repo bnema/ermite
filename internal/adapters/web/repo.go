@@ -107,6 +107,9 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		mk("c", "ommits", repoHref(d.name(), "commits", def), "commits"),
 		mk("r", "efs", repoHref(d.name(), "refs"), "refs"),
 	}
+	if s.cfg.MergeRequests != nil {
+		l.Sections = append(l.Sections, mk("m", "erge requests", mrBase(d.name()), "merge-requests"))
+	}
 	l.Crumbs = []Crumb{{Label: d.name(), Href: repoHref(d.name()), Current: section == "summary"}}
 
 	l.Cmd = append(l.Cmd, CmdItem{Kind: "go", Label: "home", Href: "/"})

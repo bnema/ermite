@@ -4,8 +4,8 @@
 // (cursor, panels, filters, permalink) is declared in templates/components/keys.tmpl with hx-on + hx-live.
 (() => {
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
-    s: 's', t: 't', c: 'c', r: 'r', p: 'p', n: 'next', d: 'split', u: 'unified', x: 'collapse', Enter: 'open', Escape: 'esc' };
-  const goto = { h: 'gh', t: 'gt', c: 'gc', r: 'gr', p: 'gp', g: 'top' };
+    s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', d: 'split', u: 'unified', x: 'collapse', Enter: 'open', Escape: 'esc' };
+  const goto = { h: 'gh', t: 'gt', c: 'gc', r: 'gr', m: 'gm', g: 'top' };
   let pending = 0;
   const fire = (name) => document.body.dispatchEvent(new CustomEvent('k-' + name, { bubbles: false }));
   addEventListener('keydown', (e) => {

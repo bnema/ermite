@@ -78,8 +78,8 @@ func TestPairLines(t *testing.T) {
 	assert.Equal(t, []pair{
 		{" c", " c"}, {"-d1", "+a1"}, {"-d2", ""}, {"-d3", ""}, {" c2", " c2"}, {"", "+a2"}, {"", "+a3"},
 	}, got)
-	assert.Equal(t, DiffLine{Kind: "del", Mark: "-", Old: "2", Segs: []Seg{{Text: "d1"}}}, ls[1])
-	assert.Equal(t, DiffLine{Kind: "add", Mark: "+", New: "2", Segs: []Seg{{Text: "a1"}}}, ls[4])
+	assert.Equal(t, DiffLine{Kind: "del", Mark: "-", Old: "2", Segs: []Seg{{Text: "d1"}}, oldN: 2}, ls[1])
+	assert.Equal(t, DiffLine{Kind: "add", Mark: "+", New: "2", Segs: []Seg{{Text: "a1"}}, newN: 2}, ls[4])
 }
 
 func TestChangeBar(t *testing.T) {

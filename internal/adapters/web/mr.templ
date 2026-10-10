@@ -1,0 +1,506 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+import "strings"
+
+// MRList is the list of the merge requests of a repository: the open ones,
+// then the merged and closed ones.
+templ MRList(l Layout, p MRListPage) {
+	@Shell(l, mrListRail(p)) {
+		if p.Live {
+			<div id="mr-notice"></div>
+		}
+		<div class="filter">
+			<label for="mr-filter">filter&gt;</label>
+			<input
+				id="mr-filter"
+				type="search"
+				data-filter
+				placeholder="title, branch, author or state  ( / )"
+				autocomplete="off"
+				hx-on:input="let t = this.value.toLowerCase(); q('.mrs tbody tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
+      let first = q('.mrs tbody tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '.mrs tbody tr')"
+			/>
+		</div>
+		if p.Newest == "" {
+			<h2 class="rule-h"><span>open</span><span>{ itoa(len(p.Open)) }</span></h2>
+			@mrRows(p.Open, "Open merge requests")
+			if len(p.Open) == 0 {
+				<p class="lede dim">no open merge requests.</p>
+			}
+			if p.OpenNote != "" {
+				<p class="note">{ p.OpenNote }</p>
+			}
+		}
+		<h2 class="rule-h"><span>merged and closed</span><span>{ itoa(len(p.Done)) }</span></h2>
+		@mrRows(p.Done, "Merged and closed merge requests")
+		if len(p.Done) == 0 {
+			<p class="lede dim">nothing merged or closed yet.</p>
+		}
+		if p.Older != "" || p.Newest != "" {
+			<nav class="pager" aria-label="Pages">
+				if p.Newest != "" {
+					<a href={ templ.SafeURL(p.Newest) }>← newest</a>
+				} else {
+					<span class="mute">← newest</span>
+				}
+				if p.Older != "" {
+					<a href={ templ.SafeURL(p.Older) } rel="next">older →</a>
+				} else {
+					<span class="mute">older →</span>
+				}
+			</nav>
+		}
+	}
+}
+
+templ mrRows(rows []MRRow, label string) {
+	if len(rows) > 0 {
+		<table class="list mrs" aria-label={ label }>
+			<tbody data-rows>
+				for _, m := range rows {
+					<tr data-cursor?={ m.Cursor } data-state={ m.State }>
+						<td class="cur" aria-hidden="true"></td>
+						<td class="c-n mute">{ m.Number }</td>
+						<td class="c-state">{ m.State }</td>
+						<td class="c-subject"><a href={ templ.SafeURL(m.Href) }>{ m.Title }</a> <span class="mute">{ m.Branches }</span></td>
+						<td class="c-who dim">{ m.Author }</td>
+						<td class="c-when nowrap dim">
+							if m.WhenAt != "" {
+								<time datetime={ m.WhenAt } title={ m.WhenAt }>{ m.When }</time>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+templ mrListRail(p MRListPage) {
+	<section aria-labelledby="r-states">
+		<h2 id="r-states">states</h2>
+		<dl class="kv">
+			<dt>open</dt>
+			<dd>awaits review</dd>
+			<dt>merged</dt>
+			<dd>the target took the branch</dd>
+			<dt>closed</dt>
+			<dd>refused, branch kept</dd>
+		</dl>
+	</section>
+	<section aria-labelledby="r-new">
+		<h2 id="r-new">open one</h2>
+		if len(p.Branches) > 0 {
+			<p class="dim">compare a branch with { p.Default }:</p>
+			<nav class="outline" aria-label="Branches">
+				for _, b := range p.Branches {
+					<a href={ templ.SafeURL(b.Href) }>{ b.Name }</a>
+				}
+			</nav>
+		} else {
+			<p class="dim">there is no other branch to merge yet.</p>
+		}
+		@CloneBlock(p.CLI)
+	</section>
+}
+
+// MergeRequest is a merge request: its facts, its description, the diff with
+// the notes under their lines, the general comments; and in the rail the merge
+// form, the checks, the settings, the commits and the files.
+templ MergeRequest(l Layout, p MRPage) {
+	@Shell(l, mrRail(p)) {
+		<header class="show mr-h">
+			<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
+			<dl class="kv show-kv">
+				<dt>state</dt>
+				<dd class="mr-state" data-state={ p.State }>
+					{ p.State }
+					if p.MergedShort != "" {
+						{ " · " }<a href={ templ.SafeURL(p.MergedHref) }>{ p.MergedShort }</a>{ " · " + p.MergeMode }
+					}
+				</dd>
+				<dt>branch</dt>
+				<dd>
+					@branchLink(p.Source, p.SourceHref)
+					{ " → " }
+					@branchLink(p.Target, p.TargetHref)
+				</dd>
+				<dt>opened</dt>
+				<dd>
+					{ p.Opened.Name }
+					if p.Opened.WhenAt != "" {
+						{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
+					}
+				</dd>
+				if p.UpdatedAt != "" {
+					<dt>updated</dt>
+					<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
+				}
+			</dl>
+		</header>
+		<div id="mr-notice"></div>
+		if len(p.Desc) > 0 {
+			<p class="mr-desc">@userText(p.Desc)</p>
+		}
+		if p.Since != nil {
+			<nav class="since" aria-label="Diff range">
+				<a
+					href={ templ.SafeURL(p.Since.AllHref) }
+					if !p.Since.Current {
+						aria-current="page"
+					}
+				>all changes <span class="mute">vs { p.Target }</span></a>
+				<a
+					href={ templ.SafeURL(p.Since.SinceHref) }
+					if p.Since.Current {
+						aria-current="page"
+					}
+				>since your last read <span class="mute">{ p.Since.ReadShort } → { p.Since.HeadShort }</span></a>
+			</nav>
+		}
+		if p.SinceNote != "" {
+			<p class="notice">{ p.SinceNote }</p>
+		}
+		<div class="diff-tools" role="toolbar" aria-label="Diff view">
+			<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
+			<span class="grow"></span>
+			@viewLink(p.DiffView, "unified", "[u]nified", "u", p.UnifiedHref)
+			@viewLink(p.DiffView, "split", "[d] split", "d", p.SplitHref)
+			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))">[x] collapse all</button>
+		</div>
+		if p.Invisible {
+			<p class="notice">
+				this diff holds invisible characters (direction controls, zero-width characters). They are shown as
+				<span class="inv">&lt;U+XXXX&gt;</span> markers, never applied.
+			</p>
+		}
+		if p.Note != "" {
+			<p class="notice">{ p.Note }</p>
+		}
+		<div
+			id="diffs"
+			if p.Both {
+				data-diff={ p.View }
+			} else {
+				data-view={ p.View }
+			}
+			if p.Both && !p.Pinned {
+				hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff"
+			}
+		>
+			for _, f := range p.Files {
+				@DiffFileView(f, p.DiffView)
+			}
+			if len(p.Files) == 0 {
+				<p class="note">no changed files.</p>
+			}
+		</div>
+		<h2 class="rule-h" id="comments"><span>comments</span><span>{ itoa(p.NUnresolved) } open / { itoa(p.NComments) }</span></h2>
+		for _, c := range p.Loose {
+			@commentView(c, "")
+		}
+		for _, c := range p.General {
+			@commentView(c, "")
+		}
+		if p.NComments == 0 {
+			<p class="dim">no comments yet.</p>
+		}
+		if p.GeneralForm != nil {
+			@commentForm(*p.GeneralForm, "")
+		}
+	}
+}
+
+templ branchLink(name, href string) {
+	if href != "" {
+		<a href={ templ.SafeURL(href) }>{ name }</a>
+	} else {
+		{ name }
+	}
+}
+
+// lineNotes are the comments under a line of the diff, and the form to write
+// one when the reader asked for it. The diff is in the page twice (unified and
+// split); the suffix keeps the ids unique, the unified table having none.
+templ lineNotes(notes []CommentView, form *CommentForm, suffix string) {
+	for _, c := range notes {
+		@commentView(c, suffix)
+	}
+	if form != nil {
+		@commentForm(*form, suffix)
+	}
+}
+
+// commentView is a note: a ruled block, under its line in the diff or in the
+// list of comments. The text is plain: escaped, its line breaks kept, its
+// http(s) addresses linked.
+templ commentView(c CommentView, suffix string) {
+	<div class="cmt" id={ "c" + c.ID + suffix } data-resolved={ boolText(c.Resolved) }>
+		<p class="c-head">
+			<span class="c-who">{ c.Author }</span>
+			if c.WhenAt != "" {
+				{ " " }<time class="mute" datetime={ c.WhenAt } title={ c.Abs }>{ c.When }</time>
+			}
+			if c.Resolved {
+				{ " " }<span class="c-state">resolved</span>
+			}
+			if c.Outdated {
+				{ " " }<span class="c-state" title="written on an earlier head; the line may have moved">outdated</span>
+			}
+			if c.Where != "" {
+				{ " " }<span class="c-where mute">{ c.Where }</span>
+			}
+		</p>
+		<p class="c-text">@userText(c.Parts)</p>
+		if c.Resolve != nil {
+			<form class="c-act" method="post" action={ templ.SafeURL(c.Resolve.Action) }>
+				<input type="hidden" name="resolved" value={ boolText(c.Resolve.Value) }/>
+				<button type="submit">{ c.Resolve.Label }</button>
+			</form>
+		}
+	</div>
+}
+
+func boolText(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// commentForm writes a comment, general or on a line.
+templ commentForm(f CommentForm, suffix string) {
+	<form class="cform" method="post" action={ templ.SafeURL(f.Action) }>
+		<label for={ f.ID + suffix }>{ f.Title }</label>
+		<textarea
+			id={ f.ID + suffix }
+			name="text"
+			rows="3"
+			maxlength="8000"
+			required
+			placeholder="plain text, 8000 characters at most"
+			if f.Focus {
+				autofocus
+			}
+		></textarea>
+		if f.Path != "" {
+			<input type="hidden" name="path" value={ f.Path }/>
+			<input type="hidden" name="line" value={ f.Line }/>
+			<input type="hidden" name="side" value={ f.Side }/>
+		}
+		<div class="f-btns">
+			<button type="submit" class="f-main">[comment]</button>
+			if f.Cancel != "" {
+				<a href={ templ.SafeURL(f.Cancel) }>[cancel]</a>
+			}
+		</div>
+	</form>
+}
+
+templ mrRail(p MRPage) {
+	if p.Box != nil {
+		@mergeBox(p)
+	}
+	<section aria-labelledby="r-checks">
+		<h2 id="r-checks">checks <span>0</span></h2>
+		<p class="dim">no checks</p>
+		<p class="mute">there is no CI yet: nothing blocks the merge.</p>
+	</section>
+	<section aria-labelledby="r-settings">
+		<h2 id="r-settings">settings</h2>
+		<dl class="kv">
+			<dt>modes</dt>
+			<dd>{ strings.Join(p.Modes, ", ") }</dd>
+			<dt>checks</dt>
+			<dd>
+				if p.ChecksBlock {
+					failing ones block the merge
+				} else {
+					do not block the merge
+				}
+			</dd>
+		</dl>
+	</section>
+	<section aria-labelledby="r-commits">
+		<h2 id="r-commits">commits <span>{ itoa(len(p.Commits)) }</span></h2>
+		<ul class="pcommits">
+			for _, c := range p.Commits {
+				<li data-new?={ c.New }>
+					<a href={ templ.SafeURL(c.Href) }>{ c.Short }</a>
+					<span class="s">{ c.Subject }</span>
+					<span class="mute">
+						{ c.Author }
+						if c.WhenAt != "" {
+							{ " · " }<time datetime={ c.WhenAt }>{ c.When }</time>
+						}
+						if c.New {
+							{ " · new" }
+						}
+					</span>
+				</li>
+			}
+		</ul>
+		if len(p.Commits) == 0 {
+			<p class="dim">no commit to merge.</p>
+		}
+		if p.CommitsNote != "" {
+			<p class="note">{ p.CommitsNote }</p>
+		}
+	</section>
+	<section aria-labelledby="r-files">
+		<h2 id="r-files">files <span>{ itoa(len(p.Files)) }</span></h2>
+		@FileList(p.Files)
+	</section>
+}
+
+// mergeBox is the first block of the rail of an open request, for the owner:
+// the merge form (it carries the head that was read), the terminal lines, and
+// the other things one does with the request.
+templ mergeBox(p MRPage) {
+	<section class="decide" aria-labelledby="r-merge" data-state="open">
+		<h2 id="r-merge">merge</h2>
+		<dl class="kv">
+			<dt>head</dt>
+			<dd>
+				if p.Box.HeadGone {
+					gone: the source branch was deleted
+				} else {
+					{ p.HeadShort }
+				}
+			</dd>
+			<dt>into</dt>
+			<dd>{ p.Target }</dd>
+		</dl>
+		if !p.Box.HeadGone {
+			<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.MergeAction) }>
+				<input type="hidden" name="head_id" value={ p.Box.Head }/>
+				<label class="sr" for="merge-mode">merge mode</label>
+				<select id="merge-mode" name="mode">
+					for _, m := range p.Box.Modes {
+						<option value={ m.Value }>{ m.Label }</option>
+					}
+				</select>
+				<div class="d-btns">
+					<button type="submit" class="d-main">[merge]</button>
+				</div>
+			</form>
+		}
+		<div class="d-btns">
+			if p.Box.CanMarkRead {
+				<form method="post" action={ templ.SafeURL(p.Box.ReadAction) }>
+					<input type="hidden" name="head_id" value={ p.Box.Head }/>
+					<button type="submit" title="the next visit can show only what changed after this head">[mark read]</button>
+				</form>
+			}
+			<form method="post" action={ templ.SafeURL(p.Box.CloseAction) }>
+				<button type="submit" title="close without merging; the branch is kept">[close]</button>
+			</form>
+		</div>
+		if !p.Box.HeadGone {
+			<p class="mute d-or">or from a terminal</p>
+			@CloneBlock(p.Box.CLI)
+		}
+	</section>
+}
+
+// Compare is a branch against the default branch: the commits it is ahead by,
+// its diff when the API can give one, and the form that opens a merge request.
+templ Compare(l Layout, p ComparePage) {
+	@Shell(l, compareRail(p)) {
+		<header class="show mr-h">
+			<h1>{ p.Source } → { p.Target }</h1>
+			<dl class="kv show-kv">
+				<dt>branch</dt>
+				<dd><a href={ templ.SafeURL(p.SourceHref) }>{ p.Source }</a></dd>
+				<dt>target</dt>
+				<dd><a href={ templ.SafeURL(p.TargetHref) }>{ p.Target }</a></dd>
+				<dt>ahead</dt>
+				<dd>{ p.AheadText }</dd>
+			</dl>
+		</header>
+		if p.Note != "" {
+			<p class="notice">{ p.Note }</p>
+		}
+		if p.Existing != nil {
+			<p class="notice">an open merge request already covers these branches: <a href={ templ.SafeURL(p.Existing.Href) }>{ p.Existing.Label }</a></p>
+		}
+		if p.Create != nil {
+			<form class="cform create" method="post" action={ templ.SafeURL(p.Create.Action) }>
+				<input type="hidden" name="source" value={ p.Create.Source }/>
+				<input type="hidden" name="target" value={ p.Create.Target }/>
+				<label for="mr-title">title</label>
+				<input id="mr-title" name="title" type="text" maxlength="120" required value={ p.Create.Title } autocomplete="off"/>
+				<label for="mr-desc">description</label>
+				<textarea id="mr-desc" name="description" rows="4" maxlength="8000" placeholder="plain text, optional"></textarea>
+				<div class="f-btns">
+					<button type="submit" class="f-main">[create merge request]</button>
+				</div>
+			</form>
+		}
+		if p.HasDiff {
+			<div class="diff-tools" role="toolbar" aria-label="Diff view">
+				<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
+				<span class="grow"></span>
+				@viewLink(p.DiffView, "unified", "[u]nified", "u", p.UnifiedHref)
+				@viewLink(p.DiffView, "split", "[d] split", "d", p.SplitHref)
+				<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))">[x] collapse all</button>
+			</div>
+			if p.Invisible {
+				<p class="notice">
+					this diff holds invisible characters (direction controls, zero-width characters). They are shown as
+					<span class="inv">&lt;U+XXXX&gt;</span> markers, never applied.
+				</p>
+			}
+			<div
+				id="diffs"
+				if p.Both {
+					data-diff={ p.View }
+				} else {
+					data-view={ p.View }
+				}
+				if p.Both && !p.Pinned {
+					hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff"
+				}
+			>
+				for _, f := range p.Files {
+					@DiffFileView(f, p.DiffView)
+				}
+			</div>
+		}
+	}
+}
+
+templ compareRail(p ComparePage) {
+	<section aria-labelledby="r-ahead">
+		<h2 id="r-ahead">commits <span>{ itoa(len(p.Ahead)) }</span></h2>
+		<ul class="pcommits">
+			for _, c := range p.Ahead {
+				<li>
+					<a href={ templ.SafeURL(c.CHref) }>{ c.Short }</a>
+					<span class="s">{ c.Subject }</span>
+					<span class="mute">
+						{ c.Author }
+						if c.WhenAt != "" {
+							{ " · " }<time datetime={ c.WhenAt }>{ c.When }</time>
+						}
+					</span>
+				</li>
+			}
+		</ul>
+		if len(p.Ahead) == 0 {
+			<p class="dim">no commit ahead of { p.Target }.</p>
+		}
+	</section>
+	if p.HasDiff {
+		<section aria-labelledby="r-files">
+			<h2 id="r-files">files <span>{ itoa(len(p.Files)) }</span></h2>
+			@FileList(p.Files)
+		</section>
+	}
+	<section aria-labelledby="r-cli">
+		<h2 id="r-cli">from a terminal</h2>
+		@CloneBlock(p.CLI)
+	</section>
+}

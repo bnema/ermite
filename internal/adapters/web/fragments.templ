@@ -68,6 +68,14 @@ templ CommitsBanner(text, href string) {
 	</div>
 }
 
+// MRNotice tells a merge request page that it is out of date. The empty slot
+// of the page has the same id, so the first notice replaces it.
+templ MRNotice(text, href string) {
+	<div id="mr-notice" class="live-banner" role="status">
+		<a href={ templ.SafeURL(href) }>{ text }</a>
+	</div>
+}
+
 // Live is the connection state of the event stream, in the status bar.
 // Without a stream it reads "offline" and does nothing. The events of the
 // stream are fragments that ermiteLive (ermite.js) swaps in the page.
@@ -83,7 +91,7 @@ templ Live(l Layout) {
 			:title="data.state === 'live' ? 'receiving updates over SSE' : 'not connected to the event stream'"
 			hx-on="htmx:sse:after:connection -> data.state = 'live';
            htmx:sse:close, htmx:sse:error -> data.state = 'offline';
-           home-list, repo-last-push, refs-list, commits-head -> ermiteLive.swap(event.detail.data);
+           home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);
            gap -> ermiteLive.reload()"
 		>offline</span>
 	} else {
