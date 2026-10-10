@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/adapters/githttp"
+	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
@@ -410,8 +411,8 @@ func TestHandlerBackendFailure(t *testing.T) {
 }
 
 func TestHandlerLimiter(t *testing.T) {
-	r := newRig(t, func(c *githttp.Config) { c.Limiter = githttp.NewLimiter(nil) })
-	for i := range githttp.MaxFailures {
+	r := newRig(t, func(c *githttp.Config) { c.Limiter = clientlimit.NewLimiter(nil) })
+	for i := range clientlimit.MaxFailures {
 		code, _, _ := r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "u", "wrong", nil, nil)
 		require.Equal(t, 401, code, i)
 	}
@@ -432,7 +433,7 @@ func TestHandlerLimiterTrustedProxyViaConfig(t *testing.T) {
 	r := newRig(t, func(c *githttp.Config) {
 		c.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}
 	})
-	for range githttp.MaxFailures {
+	for range clientlimit.MaxFailures {
 		r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "u", "wrong", nil, map[string]string{"X-Forwarded-For": "198.51.100.1"})
 	}
 	code, _, _ := r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "", "", nil, map[string]string{"X-Forwarded-For": "198.51.100.1"})

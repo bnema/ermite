@@ -20,6 +20,7 @@ import (
 
 	"github.com/bnema/zerowrap"
 
+	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
@@ -97,7 +98,7 @@ type Config struct {
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one.
-	Limiter *Limiter
+	Limiter *clientlimit.Limiter
 	// MaxBodyBytes bounds the body of a push; 0 means DefaultMaxBodyBytes.
 	// The body of a fetch is bounded by 64 MiB at most.
 	MaxBodyBytes int64
@@ -106,7 +107,7 @@ type Config struct {
 // Handler serves the smart HTTP routes of Patterns.
 type Handler struct {
 	cfg     Config
-	limiter *Limiter
+	limiter *clientlimit.Limiter
 	maxBody int64
 }
 
@@ -114,7 +115,7 @@ type Handler struct {
 func New(cfg Config) *Handler {
 	h := &Handler{cfg: cfg, limiter: cfg.Limiter, maxBody: cfg.MaxBodyBytes}
 	if h.limiter == nil {
-		h.limiter = NewLimiter(nil)
+		h.limiter = clientlimit.NewLimiter(nil)
 	}
 	if h.maxBody <= 0 {
 		h.maxBody = DefaultMaxBodyBytes
@@ -194,7 +195,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	log := zerowrap.FromCtx(ctx)
-	addr := ClientAddr(r, h.cfg.TrustedProxies)
+	addr := clientlimit.ClientAddr(r, h.cfg.TrustedProxies)
 	if blocked, wait := h.limiter.Blocked(ctx, addr); blocked {
 		log.Warn().Str("client", addr).Msg("too many failed authentications, request blocked")
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))

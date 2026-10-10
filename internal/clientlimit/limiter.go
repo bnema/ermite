@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package githttp
+// Package clientlimit counts failed authentications per client address and
+// finds the address of a request behind trusted proxies. The HTTP adapters
+// that authenticate callers (smart HTTP, the API) share it.
+package clientlimit
 
 import (
 	"context"

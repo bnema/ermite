@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-package githttp
+package clientlimit
 
 // MaxTracked is the bound on the addresses a Limiter remembers.
 const MaxTracked = maxTracked
