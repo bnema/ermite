@@ -144,7 +144,7 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 			Topics:   topics,
 			Backoff:  env.backoff,
 			Sleep:    env.sleep,
-			OnNotice: func(msg string) { noticef(cmd, "%s", msg) },
+			OnNotice: func(msg string) { noticef(cmd, "%s", clean(msg)) },
 		}
 		return c.Watch(ctx, opts, func(ev *ermite.Event) error {
 			e, ok := toJSONEvent(ev)

@@ -74,11 +74,11 @@ func ParseURL(raw string) (*url.URL, error) {
 	case u.User != nil:
 		return nil, errors.New("must not contain credentials: use ERMITE_TOKEN for the token")
 	case u.Scheme != "http" && u.Scheme != "https":
-		return nil, fmt.Errorf("%q is not an http(s) URL: it must start with http:// or https://", raw)
+		return nil, errors.New("not an http(s) URL: it must start with http:// or https://")
 	case u.Hostname() == "":
-		return nil, fmt.Errorf("%q has no host", raw)
+		return nil, errors.New("the URL has no host")
 	case u.RawQuery != "" || u.ForceQuery || u.Fragment != "":
-		return nil, fmt.Errorf("%q must not contain a query or a fragment", raw)
+		return nil, errors.New("the URL must not contain a query or a fragment")
 	}
 	u.Scheme = strings.ToLower(u.Scheme)
 	u.Path = strings.TrimRight(u.Path, "/")

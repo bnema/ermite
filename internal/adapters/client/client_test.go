@@ -141,3 +141,16 @@ func TestMissingFeatures(t *testing.T) {
 	assert.Equal(t, []string{client.FeatureEventsResume}, client.MissingFeatures([]string{client.FeatureRepoUpdate, "other"}))
 	assert.Equal(t, client.UsedFeatures(), client.MissingFeatures(nil))
 }
+
+func TestDescribeStripsTerminalControls(t *testing.T) {
+	c, err := client.New(client.Config{URL: "http://srv.test", Token: "t"})
+	require.NoError(t, err)
+	msg := "bad\x1b]0;pwn\x07 name \u202egpj.exe \u2066x\u2069"
+	got := c.Describe(connect.NewError(connect.CodeInvalidArgument, errors.New(msg))).Error()
+	assert.NotContains(t, got, "\x1b")
+	assert.NotContains(t, got, "\x07")
+	assert.NotContains(t, got, "\u202e")
+	assert.NotContains(t, got, "\u2066")
+	assert.NotContains(t, got, "\u2069")
+	assert.Contains(t, got, "bad?]0;pwn? name ?gpj.exe ?x?")
+}

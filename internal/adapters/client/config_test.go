@@ -67,3 +67,12 @@ func TestInsecureTokenWarning(t *testing.T) {
 		assert.NotContains(t, w, tt.token+"_", "never echo the token")
 	}
 }
+
+func TestParseURLErrorsDoNotEchoInput(t *testing.T) {
+	for _, raw := range []string{"user:s3cret@host", "s3cret.example.com", "http://", "https://h/?k=s3cret", "http://[s3cret"} {
+		_, err := client.ParseURL(raw)
+		require.Error(t, err, raw)
+		assert.NotContains(t, err.Error(), "s3cret", raw)
+		assert.NotContains(t, err.Error(), "user:", raw)
+	}
+}

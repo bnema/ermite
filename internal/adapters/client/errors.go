@@ -93,9 +93,25 @@ func (c *Client) Describe(err error) error {
 	return &Error{msg: text, err: err}
 }
 
+// Clean makes a server-provided string safe for a terminal: line breaks and
+// tabs become spaces; other control characters (escape sequences) and bidi
+// override or isolate characters are replaced by "?".
+func Clean(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n' || r == '\r':
+			return ' '
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0),
+			r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069:
+			return '?'
+		}
+		return r
+	}, s)
+}
+
 // oneLine collapses whitespace and bounds the length of a server message.
 func oneLine(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
+	s = strings.Join(strings.Fields(Clean(s)), " ")
 	if len(s) > maxMessage {
 		s = strings.ToValidUTF8(s[:maxMessage], "") + "…"
 	}
