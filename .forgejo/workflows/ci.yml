@@ -33,6 +33,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Git is at least 2.45
+        run: |
+          git --version
+          v=$(git --version | sed -E 's/^git version ([0-9]+)\.([0-9]+).*/\1 \2/')
+          set -- $v
+          if [ "$1" -lt 2 ] || { [ "$1" -eq 2 ] && [ "$2" -lt 45 ]; }; then
+            echo "git 2.45 or newer is required" >&2
+            exit 1
+          fi
       - name: Verify tidy
         run: |
           go mod tidy
