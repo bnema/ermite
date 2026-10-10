@@ -49,11 +49,13 @@ func (g *Git) Stage(ctx context.Context) (ports.StagedID, error) {
 	}
 	if err != nil {
 		if rerr := os.RemoveAll(dir); rerr != nil {
-			zerowrap.Ctx(ctx).Error().Err(rerr).Str("dir", dir).Msg("remove failed staging directory")
+			log := zerowrap.FromCtx(ctx)
+			log.Error().Err(rerr).Str("dir", dir).Msg("remove failed staging directory")
 		}
 		return "", fmt.Errorf("stage repository: %w", err)
 	}
-	zerowrap.Ctx(ctx).Debug().Str("staged", string(id)).Msg("repository staged")
+	log := zerowrap.FromCtx(ctx)
+	log.Debug().Str("staged", string(id)).Msg("repository staged")
 	return id, nil
 }
 
@@ -71,10 +73,14 @@ func (g *Git) Publish(ctx context.Context, id ports.StagedID, name domain.RepoNa
 		}
 		return fmt.Errorf("publish repository %q: %w", name, err)
 	}
+	log := zerowrap.FromCtx(ctx)
+	// The rename succeeded: the repository exists under its final name. A
+	// failed sync only weakens crash durability; returning an error here
+	// would make the caller roll back the metadata of a published directory.
 	if err := syncDir(g.reposDir()); err != nil {
-		return fmt.Errorf("publish repository %q: %w", name, err)
+		log.Warn().Err(err).Str("repo", name.String()).Msg("sync repositories directory after publish")
 	}
-	zerowrap.Ctx(ctx).Debug().Str("repo", name.String()).Msg("repository published")
+	log.Debug().Str("repo", name.String()).Msg("repository published")
 	return nil
 }
 
@@ -105,7 +111,8 @@ func (g *Git) PurgeStaging(ctx context.Context) error {
 		if err := os.RemoveAll(filepath.Join(g.stagingDir(), e.Name())); err != nil {
 			return fmt.Errorf("remove staging leftover %s: %w", e.Name(), err)
 		}
-		zerowrap.Ctx(ctx).Info().Str("entry", e.Name()).Msg("removed staging leftover")
+		log := zerowrap.FromCtx(ctx)
+		log.Info().Str("entry", e.Name()).Msg("removed staging leftover")
 	}
 	return nil
 }
@@ -160,7 +167,8 @@ func (g *Git) Trash(ctx context.Context, name domain.RepoName) error {
 		if err := syncDir(g.reposDir()); err != nil {
 			return fmt.Errorf("trash repository %q: %w", name, err)
 		}
-		zerowrap.Ctx(ctx).Info().Str("repo", name.String()).Str("trash", filepath.Base(dst)).Msg("repository moved to trash")
+		log := zerowrap.FromCtx(ctx)
+		log.Info().Str("repo", name.String()).Str("trash", filepath.Base(dst)).Msg("repository moved to trash")
 		return nil
 	}
 	return fmt.Errorf("trash repository %q: no free name in trash", name)
