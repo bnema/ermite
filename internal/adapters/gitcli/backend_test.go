@@ -1,0 +1,160 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package gitcli_test
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"bnema.dev/ermite/internal/adapters/gitcli"
+	"bnema.dev/ermite/internal/domain"
+)
+
+func envMap(env []string) map[string]string {
+	m := map[string]string{}
+	for _, e := range env {
+		k, v, _ := strings.Cut(e, "=")
+		m[k] = v
+	}
+	return m
+}
+
+func TestHTTPBackendEnvironment(t *testing.T) {
+	ctx := context.Background()
+	g, data := newGit(t)
+
+	read, err := g.HTTPBackend(ctx, false)
+	require.NoError(t, err)
+	execPath, err := exec.Command("git", "--exec-path").Output()
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(strings.TrimSpace(string(execPath)), "git-http-backend"), read.Path)
+	assert.Equal(t, filepath.Join(data, "repos"), read.Dir)
+
+	e := envMap(read.Env)
+	assert.Equal(t, "1", e["GIT_CONFIG_NOSYSTEM"])
+	assert.Equal(t, filepath.Join(data, "run", "git-home"), e["HOME"])
+	assert.Equal(t, "0", e["GIT_TERMINAL_PROMPT"])
+	assert.Equal(t, filepath.Join(data, "repos"), e["GIT_PROJECT_ROOT"])
+	assert.Equal(t, "1", e["GIT_HTTP_EXPORT_ALL"])
+	assert.NotContains(t, e, "REMOTE_USER", "a read is not a push")
+
+	conf := map[string]string{}
+	for i := range 10 {
+		k, ok := e["GIT_CONFIG_KEY_"+string(rune('0'+i))]
+		if !ok {
+			assert.Equal(t, string(rune('0'+i)), e["GIT_CONFIG_COUNT"], "count matches the keys")
+			break
+		}
+		conf[k] = e["GIT_CONFIG_VALUE_"+string(rune('0'+i))]
+	}
+	assert.Equal(t, map[string]string{
+		"core.hooksPath":         filepath.Join(data, "run", "hooks"),
+		"receive.fsckObjects":    "true",
+		"uploadpack.allowFilter": "true",
+	}, conf)
+
+	push, err := g.HTTPBackend(ctx, true)
+	require.NoError(t, err)
+	pe := envMap(push.Env)
+	assert.Equal(t, "owner", pe["REMOTE_USER"])
+	assert.Equal(t, "4", pe["GIT_CONFIG_COUNT"])
+	found := false
+	for i := range 4 {
+		if pe["GIT_CONFIG_KEY_"+string(rune('0'+i))] == "http.receivepack" {
+			assert.Equal(t, "true", pe["GIT_CONFIG_VALUE_"+string(rune('0'+i))])
+			found = true
+		}
+	}
+	assert.True(t, found, "http.receivepack only for a push")
+
+	// Nothing from the caller's environment leaks.
+	t.Setenv("GIT_DIR", "/leak")
+	again, err := g.HTTPBackend(ctx, true)
+	require.NoError(t, err)
+	assert.NotContains(t, envMap(again.Env), "GIT_DIR")
+
+	// The slice is the caller's: appending does not corrupt the next call.
+	_ = append(read.Env, "X=1")
+	third, err := g.HTTPBackend(ctx, false)
+	require.NoError(t, err)
+	assert.NotContains(t, envMap(third.Env), "X")
+}
+
+func TestHTTPBackendMissing(t *testing.T) {
+	data := t.TempDir()
+	script := writeScript(t, `case "$1" in --exec-path) echo "`+data+`/nowhere";; *) echo "git version 2.50.0";; esac`)
+	g := gitcli.New(gitcli.Config{Bin: script, DataDir: data, Path: "/usr/bin:/bin"})
+	_, err := g.HTTPBackend(context.Background(), false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "git-http-backend")
+
+	// A non-executable file is refused too.
+	require.NoError(t, os.MkdirAll(filepath.Join(data, "exec"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(data, "exec", "git-http-backend"), []byte("x"), 0o644))
+	script = writeScript(t, `echo "`+data+`/exec"`)
+	g = gitcli.New(gitcli.Config{Bin: script, DataDir: data, Path: "/usr/bin:/bin"})
+	_, err = g.HTTPBackend(context.Background(), false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not an executable")
+}
+
+func TestDefaultBranchAndMaintain(t *testing.T) {
+	ctx := context.Background()
+	g, data := newGit(t)
+	n := name(t, "tools")
+	id, err := g.Stage(ctx)
+	require.NoError(t, err)
+	require.NoError(t, g.Publish(ctx, id, n))
+	dir := filepath.Join(data, "repos", "tools.git")
+
+	branch, exists, err := g.DefaultBranch(ctx, n)
+	require.NoError(t, err)
+	assert.Equal(t, "main", branch)
+	assert.False(t, exists, "no commit yet")
+
+	_, _, err = g.DefaultBranch(ctx, name(t, "ghost"))
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	// Put a commit on "dev" through a work tree.
+	wt := t.TempDir()
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_AUTHOR_NAME=T", "GIT_AUTHOR_EMAIL=t@x", "GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@x"}
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir, cmd.Env = wt, env
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	run("init", "-q", "--initial-branch=dev")
+	require.NoError(t, os.WriteFile(filepath.Join(wt, "f"), []byte("x"), 0o644))
+	run("add", "f")
+	run("commit", "-q", "-m", "one")
+	run("push", "-q", dir, "dev")
+
+	_, exists, err = g.DefaultBranch(ctx, n)
+	require.NoError(t, err)
+	assert.False(t, exists, "HEAD still points to main")
+
+	require.NoError(t, g.SetDefaultBranch(ctx, n, "dev"))
+	branch, exists, err = g.DefaultBranch(ctx, n)
+	require.NoError(t, err)
+	assert.Equal(t, "dev", branch)
+	assert.True(t, exists)
+	assert.Equal(t, "refs/heads/dev", gitOut(t, dir, "symbolic-ref", "HEAD"))
+
+	for _, bad := range []string{"", "-x", "a b", "a..b"} {
+		assert.Error(t, g.SetDefaultBranch(ctx, n, bad), bad)
+	}
+	assert.ErrorIs(t, g.SetDefaultBranch(ctx, name(t, "ghost"), "dev"), domain.ErrNotFound)
+
+	require.NoError(t, g.Maintain(ctx, n))
+	assert.FileExists(t, filepath.Join(dir, "objects", "info", "commit-graphs", "commit-graph-chain"))
+	assert.ErrorIs(t, g.Maintain(ctx, name(t, "ghost")), domain.ErrNotFound)
+}

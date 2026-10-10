@@ -60,6 +60,34 @@ type GitRepos interface {
 	// Trash moves the repository directory to the trash, where it can be
 	// recovered by hand. It returns domain.ErrNotFound if there is none.
 	Trash(ctx context.Context, name domain.RepoName) error
+	// DefaultBranch returns the branch HEAD points to (without refs/heads/)
+	// and whether that branch exists. It returns domain.ErrNotFound if there
+	// is no such repository.
+	DefaultBranch(ctx context.Context, name domain.RepoName) (branch string, exists bool, err error)
+	// SetDefaultBranch points HEAD to the branch, which need not exist yet.
+	SetDefaultBranch(ctx context.Context, name domain.RepoName, branch string) error
+	// Maintain refreshes the commit-graph of the repository.
+	Maintain(ctx context.Context, name domain.RepoName) error
+}
+
+// HTTPBackend tells how to run `git http-backend` for one request.
+type HTTPBackend struct {
+	// Path is the git-http-backend executable.
+	Path string
+	// Dir is the working directory of the process.
+	Dir string
+	// Env is the complete environment of the process: the isolated Git
+	// environment, GIT_PROJECT_ROOT and the Git configuration of the request
+	// (GIT_CONFIG_COUNT/KEY/VALUE). The caller may append to it.
+	Env []string
+}
+
+// GitBackend provides the Git side of smart HTTP.
+type GitBackend interface {
+	// HTTPBackend returns how to run git http-backend. For a push it also
+	// enables http.receivepack and sets REMOTE_USER; a read request cannot
+	// reach receive-pack.
+	HTTPBackend(ctx context.Context, push bool) (HTTPBackend, error)
 }
 
 // TokenStore keeps the stored tokens and the index from secret hash to token.
@@ -79,6 +107,17 @@ type TokenStore interface {
 	// Touch records that the token was used at the given time. It returns
 	// domain.ErrNotFound if the token is gone.
 	Touch(ctx context.Context, id string, at time.Time) error
+}
+
+// EventBus fans events out to in-process subscribers.
+type EventBus interface {
+	// Publish hands the event to every subscriber without blocking. A
+	// subscriber that cannot keep up loses events and receives a
+	// domain.EventGap.
+	Publish(ctx context.Context, ev domain.Event)
+	// Subscribe returns a channel of events published from now on. The
+	// channel is closed when ctx ends.
+	Subscribe(ctx context.Context) <-chan domain.Event
 }
 
 // Clock tells the time.

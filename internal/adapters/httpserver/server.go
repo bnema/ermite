@@ -2,7 +2,7 @@
 
 // Package httpserver is the HTTP entry of ermite: the router, the security
 // headers, the request log and the graceful shutdown. Routes are added here
-// as the other adapters arrive; for now it serves /-/health.
+// as the other adapters arrive: /-/health and the routes given in Config.
 package httpserver
 
 import (
@@ -24,12 +24,22 @@ const ShutdownTimeout = 10 * time.Second
 // Check reports whether a dependency works. A nil result means healthy.
 type Check func(ctx context.Context) error
 
+// Route mounts a handler on the router.
+type Route struct {
+	// Pattern is a net/http.ServeMux pattern, such as "GET /{repo}/info/refs".
+	// It must not overlap the /-/ routes of the server.
+	Pattern string
+	Handler http.Handler
+}
+
 // Config configures a Server.
 type Config struct {
 	// Addr is the listen address, "host:port".
 	Addr string
 	// HealthChecks run on every GET /-/health; one failure answers 503.
 	HealthChecks []Check
+	// Routes are added to the router next to /-/health.
+	Routes []Route
 }
 
 // Server is the HTTP server of ermite.
@@ -44,6 +54,9 @@ func New(cfg Config) *Server {
 	// "GET" patterns also match HEAD; other methods get 405 with Allow, and
 	// unknown paths get 404.
 	mux.HandleFunc("GET /-/health", healthHandler(cfg.HealthChecks))
+	for _, r := range cfg.Routes {
+		mux.Handle(r.Pattern, r.Handler)
+	}
 	return &Server{addr: cfg.Addr, handler: withRequestLog(withSecurityHeaders(mux))}
 }
 

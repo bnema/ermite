@@ -48,6 +48,78 @@ func (_m *GitRepos) EXPECT() *GitRepos_Expecter {
 	return &GitRepos_Expecter{mock: &_m.Mock}
 }
 
+// DefaultBranch provides a mock function for the type GitRepos
+func (_mock *GitRepos) DefaultBranch(ctx context.Context, name domain.RepoName) (string, bool, error) {
+	ret := _mock.Called(ctx, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DefaultBranch")
+	}
+
+	var r0 string
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) (string, bool, error)); ok {
+		return returnFunc(ctx, name)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) string); ok {
+		r0 = returnFunc(ctx, name)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName) bool); ok {
+		r1 = returnFunc(ctx, name)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName) error); ok {
+		r2 = returnFunc(ctx, name)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// GitRepos_DefaultBranch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DefaultBranch'
+type GitRepos_DefaultBranch_Call struct {
+	*mock.Call
+}
+
+// DefaultBranch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name domain.RepoName
+func (_e *GitRepos_Expecter) DefaultBranch(ctx any, name any) *GitRepos_DefaultBranch_Call {
+	return &GitRepos_DefaultBranch_Call{Call: _e.mock.On("DefaultBranch", ctx, name)}
+}
+
+func (_c *GitRepos_DefaultBranch_Call) Run(run func(ctx context.Context, name domain.RepoName)) *GitRepos_DefaultBranch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *GitRepos_DefaultBranch_Call) Return(branch string, exists bool, err error) *GitRepos_DefaultBranch_Call {
+	_c.Call.Return(branch, exists, err)
+	return _c
+}
+
+func (_c *GitRepos_DefaultBranch_Call) RunAndReturn(run func(ctx context.Context, name domain.RepoName) (string, bool, error)) *GitRepos_DefaultBranch_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Discard provides a mock function for the type GitRepos
 func (_mock *GitRepos) Discard(ctx context.Context, id ports.StagedID) error {
 	ret := _mock.Called(ctx, id)
@@ -165,6 +237,63 @@ func (_c *GitRepos_List_Call) RunAndReturn(run func(ctx context.Context) (ports.
 	return _c
 }
 
+// Maintain provides a mock function for the type GitRepos
+func (_mock *GitRepos) Maintain(ctx context.Context, name domain.RepoName) error {
+	ret := _mock.Called(ctx, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Maintain")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) error); ok {
+		r0 = returnFunc(ctx, name)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// GitRepos_Maintain_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Maintain'
+type GitRepos_Maintain_Call struct {
+	*mock.Call
+}
+
+// Maintain is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name domain.RepoName
+func (_e *GitRepos_Expecter) Maintain(ctx any, name any) *GitRepos_Maintain_Call {
+	return &GitRepos_Maintain_Call{Call: _e.mock.On("Maintain", ctx, name)}
+}
+
+func (_c *GitRepos_Maintain_Call) Run(run func(ctx context.Context, name domain.RepoName)) *GitRepos_Maintain_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *GitRepos_Maintain_Call) Return(err error) *GitRepos_Maintain_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *GitRepos_Maintain_Call) RunAndReturn(run func(ctx context.Context, name domain.RepoName) error) *GitRepos_Maintain_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Publish provides a mock function for the type GitRepos
 func (_mock *GitRepos) Publish(ctx context.Context, id ports.StagedID, name domain.RepoName) error {
 	ret := _mock.Called(ctx, id, name)
@@ -275,6 +404,69 @@ func (_c *GitRepos_PurgeStaging_Call) Return(err error) *GitRepos_PurgeStaging_C
 }
 
 func (_c *GitRepos_PurgeStaging_Call) RunAndReturn(run func(ctx context.Context) error) *GitRepos_PurgeStaging_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetDefaultBranch provides a mock function for the type GitRepos
+func (_mock *GitRepos) SetDefaultBranch(ctx context.Context, name domain.RepoName, branch string) error {
+	ret := _mock.Called(ctx, name, branch)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetDefaultBranch")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string) error); ok {
+		r0 = returnFunc(ctx, name, branch)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// GitRepos_SetDefaultBranch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetDefaultBranch'
+type GitRepos_SetDefaultBranch_Call struct {
+	*mock.Call
+}
+
+// SetDefaultBranch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name domain.RepoName
+//   - branch string
+func (_e *GitRepos_Expecter) SetDefaultBranch(ctx any, name any, branch any) *GitRepos_SetDefaultBranch_Call {
+	return &GitRepos_SetDefaultBranch_Call{Call: _e.mock.On("SetDefaultBranch", ctx, name, branch)}
+}
+
+func (_c *GitRepos_SetDefaultBranch_Call) Run(run func(ctx context.Context, name domain.RepoName, branch string)) *GitRepos_SetDefaultBranch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *GitRepos_SetDefaultBranch_Call) Return(err error) *GitRepos_SetDefaultBranch_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *GitRepos_SetDefaultBranch_Call) RunAndReturn(run func(ctx context.Context, name domain.RepoName, branch string) error) *GitRepos_SetDefaultBranch_Call {
 	_c.Call.Return(run)
 	return _c
 }

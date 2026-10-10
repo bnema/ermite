@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,6 +35,9 @@ type Git struct {
 	bin     string
 	dataDir string
 	env     []string
+
+	mu      sync.Mutex // guards backend
+	backend string     // git-http-backend, resolved on first use
 }
 
 // New builds an adapter. It does not run git: call CheckVersion.

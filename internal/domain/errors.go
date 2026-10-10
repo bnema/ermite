@@ -22,6 +22,8 @@ var (
 	ErrUnauthenticated = errors.New("unauthenticated")
 	// ErrForbidden means the caller is known but may not do this.
 	ErrForbidden = errors.New("forbidden")
+	// ErrRejected means a push was refused by policy.
+	ErrRejected = errors.New("rejected")
 	// ErrConflict means a concurrent change prevented the operation.
 	ErrConflict = errors.New("conflict")
 )

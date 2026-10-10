@@ -211,3 +211,74 @@ func syncDir(dir string) error {
 	defer func() { _ = f.Close() }()
 	return f.Sync()
 }
+
+// repoDir returns repos/<name>.git, or domain.ErrNotFound if it is missing.
+func (g *Git) repoDir(name domain.RepoName) (string, error) {
+	dir := filepath.Join(g.reposDir(), name.String()+gitSuffix)
+	fi, err := os.Stat(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", domain.ErrNotFound
+		}
+		return "", fmt.Errorf("repository %q: %w", name, err)
+	}
+	if !fi.IsDir() {
+		return "", domain.ErrNotFound
+	}
+	return dir, nil
+}
+
+const headsPrefix = "refs/heads/"
+
+// DefaultBranch reads HEAD with `git symbolic-ref` and checks the branch with
+// `git for-each-ref`.
+func (g *Git) DefaultBranch(ctx context.Context, name domain.RepoName) (string, bool, error) {
+	dir, err := g.repoDir(name)
+	if err != nil {
+		return "", false, err
+	}
+	out, err := g.run(ctx, "-C", dir, "symbolic-ref", "--quiet", "HEAD")
+	if err != nil {
+		return "", false, fmt.Errorf("read HEAD of %q: %w", name, err)
+	}
+	ref := strings.TrimSpace(out)
+	branch, ok := strings.CutPrefix(ref, headsPrefix)
+	if !ok {
+		return "", false, fmt.Errorf("HEAD of %q points outside refs/heads: %q", name, ref)
+	}
+	out, err = g.run(ctx, "-C", dir, "for-each-ref", "--count=1", "--format=%(refname)", ref)
+	if err != nil {
+		return "", false, fmt.Errorf("look up %s in %q: %w", ref, name, err)
+	}
+	return branch, strings.TrimSpace(out) == ref, nil
+}
+
+// SetDefaultBranch runs `git symbolic-ref HEAD refs/heads/<branch>`.
+func (g *Git) SetDefaultBranch(ctx context.Context, name domain.RepoName, branch string) error {
+	dir, err := g.repoDir(name)
+	if err != nil {
+		return err
+	}
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("invalid branch name %q", branch)
+	}
+	if _, err := g.run(ctx, "check-ref-format", "--branch", branch); err != nil {
+		return fmt.Errorf("invalid branch name %q: %w", branch, err)
+	}
+	if _, err := g.run(ctx, "-C", dir, "symbolic-ref", "HEAD", headsPrefix+branch); err != nil {
+		return fmt.Errorf("set HEAD of %q: %w", name, err)
+	}
+	return nil
+}
+
+// Maintain runs `git commit-graph write --reachable --changed-paths --split`.
+func (g *Git) Maintain(ctx context.Context, name domain.RepoName) error {
+	dir, err := g.repoDir(name)
+	if err != nil {
+		return err
+	}
+	if _, err := g.run(ctx, "-C", dir, "commit-graph", "write", "--reachable", "--changed-paths", "--split"); err != nil {
+		return fmt.Errorf("maintain %q: %w", name, err)
+	}
+	return nil
+}
