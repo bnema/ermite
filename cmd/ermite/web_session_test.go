@@ -127,7 +127,9 @@ func TestWebLoginEndToEnd(t *testing.T) {
 		p := b.get(path, nil)
 		assert.Equal(t, 200, p.status)
 		assert.Equal(t, "no-store", p.hdr.Get("Cache-Control"))
-		assert.Equal(t, "no-referrer", p.hdr.Get("Referrer-Policy"))
+		// Only the origin leaves the page; no-referrer would make the browser
+		// send Origin: null on the sign-in POST.
+		assert.Equal(t, "strict-origin", p.hdr.Get("Referrer-Policy"))
 		assert.Contains(t, p.body, `method="post"`)
 		assert.Contains(t, p.body, `action="`+path+`"`)
 		assert.Nil(t, p.cookie(sessionCookie), "a GET sets no session")

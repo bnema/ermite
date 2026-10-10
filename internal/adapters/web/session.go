@@ -193,11 +193,13 @@ func validNonce(s string) bool {
 const nonceLen = 43
 
 // secretPage writes a page of the login flow: never cached, and its address,
-// which holds the link, is not sent along when the visitor follows a link.
+// which holds the link, is never sent along: strict-origin sends only the
+// origin. no-referrer would also turn the Origin of the sign-in POST into
+// "null" in browsers, which the POST gate refuses.
 func (s *Server) secretPage(w http.ResponseWriter, r *http.Request, status int, c templ.Component) {
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
-	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Referrer-Policy", "strict-origin")
 	s.write(r.Context(), w, r, status, c)
 }
 
