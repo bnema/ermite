@@ -69,6 +69,10 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	if o.trustedProxies != "" {
 		env[config.EnvTrustedProxies] = o.trustedProxies
 	}
+	// The suite runs with either reader: ERMITE_GIT_READER=cli go test ./cmd/ermite
+	if r := os.Getenv(config.EnvGitReader); r != "" {
+		env[config.EnvGitReader] = r
+	}
 	cfg, err := config.Load(func(k string) string { return env[k] })
 	require.NoError(t, err)
 

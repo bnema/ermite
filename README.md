@@ -21,6 +21,7 @@ ermite serve
 | `ERMITE_ADDR` | `:7341` | listen address |
 | `ERMITE_TRUSTED_PROXIES` | empty | comma-separated CIDRs |
 | `ERMITE_GIT` | `git` | git 2.45 or newer |
+| `ERMITE_GIT_READER` | `ermite-git` | `ermite-git` reads refs, trees, blobs and history with the [ermite-git](https://git.bnema.dev/bnema/ermite-git) library where it is faster than the `git` binary and falls back to `git` elsewhere and for repositories it does not read; `cli` uses the `git` binary for every read (the escape hatch if a read looks wrong: set it and restart) |
 | `ERMITE_SOURCE_URL` | `$ERMITE_PUBLIC_URL/ermite` | link to the source (AGPL) |
 | `ERMITE_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |

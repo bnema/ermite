@@ -15,6 +15,7 @@ import (
 
 	"github.com/bnema/zerowrap"
 
+	"bnema.dev/ermite/internal/adapters/ermitegit"
 	"bnema.dev/ermite/internal/adapters/eventbus"
 	"bnema.dev/ermite/internal/adapters/gitcli"
 	"bnema.dev/ermite/internal/adapters/githttp"
@@ -57,6 +58,8 @@ type forge struct {
 	hooks  *githttp.HookServer
 	maint  *app.Maintainer
 	git    *gitcli.Git
+	// reader is the ermite-git reader when ERMITE_GIT_READER selects it.
+	reader *ermitegit.Adapter
 
 	// The use cases and the API are exposed for tests and for the phases
 	// that add the web.
@@ -166,7 +169,17 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		return nil, err
 	}
 
-	f.Browse = app.NewBrowse(store, git)
+	var reader ports.RepoReader = git
+	if cfg.GitReader == config.GitReaderErmiteGit {
+		f.reader = ermitegit.New(ermitegit.Config{
+			Fallback: git,
+			RepoDir:  func(name domain.RepoName) string { return gitcli.RepoDir(cfg.DataDir, name) },
+		})
+		git.OnTrash(f.reader.Forget)
+		reader = f.reader
+	}
+	log.Info().Str("reader", cfg.GitReader).Msg("git reader selected")
+	f.Browse = app.NewBrowse(store, reader)
 	f.EventLog = app.NewEvents(ctx, f.Repos, f.Bus, clock, app.EventsConfig{
 		Size: opts.eventBuffer, Auth: f.Auth, RevalidateEvery: opts.revalidateEvery,
 	})
@@ -282,6 +295,9 @@ func (f *forge) Close(ctx context.Context) {
 	}
 	if f.EventLog != nil {
 		f.EventLog.Close(ctx)
+	}
+	if f.reader != nil {
+		f.reader.Close()
 	}
 	if f.git != nil {
 		if err := f.git.Close(ctx); err != nil {

@@ -44,6 +44,7 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "/var/lib/ermite", c.DataDir)
 	assert.Equal(t, "https://git.example.com", c.PublicURL)
 	assert.Equal(t, "git", c.Git)
+	assert.Equal(t, "ermite-git", c.GitReader, "ermite-git reads by default")
 	assert.Equal(t, "https://git.example.com/ermite", c.SourceURL)
 	assert.Equal(t, "info", c.LogLevel)
 	assert.Equal(t, "json", c.LogFormat)
@@ -58,6 +59,7 @@ func TestLoadAllValues(t *testing.T) {
 		config.EnvPublicURL:      "http://localhost:7341/",
 		config.EnvTrustedProxies: "10.1.2.3/8, fd00::1/8",
 		config.EnvGit:            "/usr/local/bin/git",
+		config.EnvGitReader:      " CLI ",
 		config.EnvSourceURL:      "https://forge.example.org/src/",
 		config.EnvLogLevel:       "DEBUG",
 		config.EnvLogFormat:      "Console",
@@ -68,6 +70,7 @@ func TestLoadAllValues(t *testing.T) {
 	assert.Equal(t, "http://localhost:7341", c.PublicURL)
 	assert.Equal(t, []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("fd00::/8")}, c.TrustedProxies)
 	assert.Equal(t, "/usr/local/bin/git", c.Git)
+	assert.Equal(t, "cli", c.GitReader)
 	assert.Equal(t, "https://forge.example.org/src", c.SourceURL)
 	assert.Equal(t, "debug", c.LogLevel)
 	assert.Equal(t, "console", c.LogFormat)
@@ -105,6 +108,8 @@ func TestLoadProblems(t *testing.T) {
 		{"port too big", map[string]string{config.EnvAddr: ":70000"}, config.EnvAddr, "port"},
 		{"bad cidr", map[string]string{config.EnvTrustedProxies: "10.0.0.1"}, config.EnvTrustedProxies, "CIDR"},
 		{"empty cidr entry", map[string]string{config.EnvTrustedProxies: "10.0.0.0/8,,"}, config.EnvTrustedProxies, "empty"},
+		{"bad git reader", map[string]string{config.EnvGitReader: "libgit2"}, config.EnvGitReader, "cli or ermite-git"},
+		{"git reader typo", map[string]string{config.EnvGitReader: "ermite_git"}, config.EnvGitReader, `"ermite_git"`},
 		{"bad source url", map[string]string{config.EnvSourceURL: "nope"}, config.EnvSourceURL, "scheme"},
 		{"bad level", map[string]string{config.EnvLogLevel: "loud"}, config.EnvLogLevel, "trace, debug"},
 		{"bad format", map[string]string{config.EnvLogFormat: "xml"}, config.EnvLogFormat, "json or console"},
@@ -190,5 +195,16 @@ func TestLoadRejectsBadCommitter(t *testing.T) {
 			require.ErrorAs(t, err, &ce)
 			assert.Contains(t, ce.Problems[0], "ERMITE_COMMITTER_")
 		})
+	}
+}
+
+func TestLoadGitReader(t *testing.T) {
+	for in, want := range map[string]string{
+		"": config.GitReaderErmiteGit, "ermite-git": config.GitReaderErmiteGit, "ERMITE-GIT": config.GitReaderErmiteGit,
+		"cli": config.GitReaderCLI, "Cli": config.GitReaderCLI,
+	} {
+		c, err := config.Load(lookup(valid(map[string]string{config.EnvGitReader: in})))
+		require.NoError(t, err, in)
+		assert.Equal(t, want, c.GitReader, in)
 	}
 }

@@ -25,6 +25,7 @@ const (
 	EnvAdminToken     = "ERMITE_ADMIN_TOKEN"
 	EnvTrustedProxies = "ERMITE_TRUSTED_PROXIES"
 	EnvGit            = "ERMITE_GIT"
+	EnvGitReader      = "ERMITE_GIT_READER"
 	EnvSourceURL      = "ERMITE_SOURCE_URL"
 	EnvLogLevel       = "ERMITE_LOG_LEVEL"
 	EnvLogFormat      = "ERMITE_LOG_FORMAT"
@@ -38,10 +39,20 @@ const (
 const (
 	DefaultAddr      = ":7341"
 	DefaultGit       = "git"
+	DefaultGitReader = GitReaderErmiteGit
 	DefaultLogLevel  = "info"
 	DefaultLogFormat = "json"
 	// DefaultCommitterName is the committer name of the commits ermite creates.
 	DefaultCommitterName = "ermite"
+)
+
+// Values of ERMITE_GIT_READER.
+const (
+	// GitReaderCLI reads repositories with the git binary only.
+	GitReaderCLI = "cli"
+	// GitReaderErmiteGit reads them with the ermite-git library where it is
+	// proven faster, and with the git binary elsewhere.
+	GitReaderErmiteGit = "ermite-git"
 )
 
 // MinAdminTokenLen is the shortest accepted admin token, in characters.
@@ -62,6 +73,8 @@ type Config struct {
 	TrustedProxies []netip.Prefix
 	// Git is the git executable, a name or a path.
 	Git string
+	// GitReader is GitReaderCLI or GitReaderErmiteGit.
+	GitReader string
 	// SourceURL is the link to the source of the running version.
 	SourceURL string
 	// LogLevel is one of trace, debug, info, warn, error.
@@ -146,6 +159,15 @@ func Load(get func(string) string) (Config, error) {
 	c.Git = get(EnvGit)
 	if c.Git == "" {
 		c.Git = DefaultGit
+	}
+
+	c.GitReader = strings.ToLower(strings.TrimSpace(get(EnvGitReader)))
+	switch c.GitReader {
+	case "":
+		c.GitReader = DefaultGitReader
+	case GitReaderCLI, GitReaderErmiteGit:
+	default:
+		bad(EnvGitReader, "must be %s or %s (got %q)", GitReaderCLI, GitReaderErmiteGit, get(EnvGitReader))
 	}
 
 	switch raw := get(EnvSourceURL); {
