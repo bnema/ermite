@@ -309,6 +309,8 @@ func TestTokenRPCs(t *testing.T) {
 		"no scope":          {Label: "x"},
 		"unspecified scope": {Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_UNSPECIFIED}},
 		"empty label":       {Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}},
+		"reserved owner":    {Label: "owner", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}},
+		"reserved root":     {Label: " Root ", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}},
 		"expired":           {Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}, ExpiresAt: timestamppb.New(time.Now().Add(-time.Hour))},
 		"bad repository":    {Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}, Repos: []string{"Bad Name"}},
 	} {

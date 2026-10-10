@@ -49,6 +49,17 @@ func names(t *testing.T, ss ...string) []domain.RepoName {
 	return out
 }
 
+// Labels that only contain a reserved word are fine.
+func TestTokensCreateAllowsLabelsNearReserved(t *testing.T) {
+	ctx := context.Background()
+	for _, label := range []string{"owner2", "my owner", "roots", "ow ner", "root-ci"} {
+		f := newTokenFixture(t)
+		f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
+		_, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: label, Scopes: scopes(domain.ScopeRepoRead)})
+		assert.NoError(t, err, label)
+	}
+}
+
 func TestTokensCreate(t *testing.T) {
 	ctx := context.Background()
 
@@ -116,6 +127,11 @@ func TestTokensCreate(t *testing.T) {
 		{"empty label", app.CreateTokenParams{Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
 		{"long label", app.CreateTokenParams{Label: strings.Repeat("x", 101), Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
 		{"bad utf8 label", app.CreateTokenParams{Label: "\xff", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved owner", app.CreateTokenParams{Label: "owner", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved root", app.CreateTokenParams{Label: "root", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved, upper case", app.CreateTokenParams{Label: "OWNER", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved, mixed case", app.CreateTokenParams{Label: "Root", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved, padded", app.CreateTokenParams{Label: " \towner \n", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
 		{"no scopes", app.CreateTokenParams{Label: "x"}, domain.ErrInvalidToken},
 		{"unknown scope", app.CreateTokenParams{Label: "x", Scopes: scopes("nope")}, domain.ErrInvalidScope},
 		{"past expiry", app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: now}, domain.ErrInvalidToken},
@@ -351,7 +367,7 @@ func TestTokensAdminReach(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, all, got)
 		f.store.EXPECT().Get(ctx, "x").Return(all[0], nil)
-		f.store.EXPECT().Revoke(ctx, "x").Return(nil) // root has no limits
+		f.store.EXPECT().Revoke(ctx, "x").Return(nil)     // root has no limits
 		f.sessions.EXPECT().BumpEpoch(ctx).Return(1, nil) // "x" has owner rights
 		require.NoError(t, f.tokens.Revoke(ctx, domain.Root(), "x"))
 	})

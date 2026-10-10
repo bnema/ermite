@@ -83,7 +83,9 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 			"  agent  repo:write, mr:write\n" +
 			"  ci     repo:read\n" +
 			"A token cannot be more powerful than the one that creates it. --repo limits it to the named\n" +
-			"repositories (default: all). --expires takes 30d, 2w, 12h or a date; default: never." + jsonTokenHelp,
+			"repositories (default: all). --expires takes 30d, 2w, 12h or a date; default: never.\n\n" +
+			"The label is free text of up to 100 bytes, except \"owner\" and \"root\" (in any case): they are\n" +
+			"what the audit trail shows for the admin token and the web owner, so the server refuses them." + jsonTokenHelp,
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&preset, "preset", "", "scope preset: "+strings.Join(client.PresetNames, ", "))

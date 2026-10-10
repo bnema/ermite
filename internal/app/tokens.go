@@ -24,6 +24,12 @@ import (
 // MaxTokenLabelLen is the longest token label, in bytes.
 const MaxTokenLabelLen = 100
 
+// reservedTokenLabels cannot label a token: they are what the audit trail
+// (author of a merge, "created_by" in the log) shows for the admin token and
+// for the owner signed in on the web, so a token with one of them would pass
+// for the owner.
+var reservedTokenLabels = []string{"owner", "root"}
+
 // touchInterval is how often last_used_at of a token is written at most.
 const touchInterval = time.Minute
 
@@ -66,7 +72,9 @@ type CreatedToken struct {
 // holds, the repositories must lie within its list (a limited token cannot
 // create an unlimited one) and the expiry must not outlast its own. Violations
 // give domain.ErrForbidden. Root has no such limits. Invalid settings give
-// domain.ErrInvalidToken, an unknown scope domain.ErrInvalidScope.
+// domain.ErrInvalidToken (this includes the labels "owner" and "root", which
+// are reserved, in any case and around spaces), an unknown scope
+// domain.ErrInvalidScope.
 func (t *Tokens) Create(ctx context.Context, p domain.Principal, params CreateTokenParams) (CreatedToken, error) {
 	if p.IsAnonymous() {
 		return CreatedToken{}, domain.ErrUnauthenticated
@@ -108,6 +116,11 @@ func (t *Tokens) Create(ctx context.Context, p domain.Principal, params CreateTo
 func buildToken(params CreateTokenParams, now time.Time) (domain.Token, error) {
 	if params.Label == "" || len(params.Label) > MaxTokenLabelLen || !utf8.ValidString(params.Label) {
 		return domain.Token{}, fmt.Errorf("%w: label must be 1 to %d bytes of UTF-8", domain.ErrInvalidToken, MaxTokenLabelLen)
+	}
+	for _, r := range reservedTokenLabels {
+		if strings.EqualFold(strings.TrimSpace(params.Label), r) {
+			return domain.Token{}, fmt.Errorf("%w: label %q is reserved", domain.ErrInvalidToken, r)
+		}
 	}
 	if len(params.Scopes) == 0 {
 		return domain.Token{}, fmt.Errorf("%w: at least one scope is required", domain.ErrInvalidToken)
