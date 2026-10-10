@@ -56,10 +56,9 @@ func readKey(repo domain.RepoName, n int64) []byte {
 }
 func seqKey(repo domain.RepoName) []byte { return []byte(seqPrefix + repo.String()) }
 
-// mergeRequestKeys lists every key that belongs to the repository's merge
-// requests.
-func (s *Store) mergeRequestKeys(ctx context.Context, repo domain.RepoName) [][]byte {
-	snap := s.db.Snapshot(ctx)
+// mergeRequestKeys lists every key of the snapshot that belongs to the
+// repository's merge requests.
+func mergeRequestKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]byte {
 	var keys [][]byte
 	for _, p := range []string{mrRepoPrefix(repo), commentPrefix + repo.String() + "/", readPrefix + repo.String() + "/"} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
@@ -72,12 +71,34 @@ func (s *Store) mergeRequestKeys(ctx context.Context, repo domain.RepoName) [][]
 	return keys
 }
 
+// guardRepo makes the batch depend on the repository: it requires the
+// repository key to be at the version just read and rewrites it, which gives it
+// a new version. Every write that adds a key under the repository's merge
+// requests (a request, a comment, a read position) goes through it, so that
+//
+//   - such a write fails with domain.ErrNotFound once the repository is deleted,
+//     and leaves no key that a repository created again under the name would
+//     inherit;
+//   - Store.Delete, which requires the version of the repository key it listed
+//     the keys at, notices a write that got in after the listing and lists again.
+//
+// It returns domain.ErrNotFound when the repository does not exist.
+func (m *MergeRequests) guardRepo(ctx context.Context, b *kv.Batch, repo domain.RepoName) error {
+	item, ok := m.db.Get(ctx, repoKey(repo))
+	if !ok {
+		return domain.ErrNotFound
+	}
+	b.RequireVersion(repoKey(repo), item.Version)
+	b.Put(repoKey(repo), item.Value)
+	return nil
+}
+
 // Create takes the next number of the repository from mrseq/<repo> and stores
 // the merge request under it, in one batch that requires the sequence to be
 // unchanged since it was read: two concurrent creations never share a number.
-// The batch also requires the repository to be unchanged since it was read, so
-// that a repository deleted meanwhile is not left with a stray merge request
-// (a push recording pushed_at makes it retry). A missing repository gives
+// The batch also requires the repository to be unchanged since it was read and
+// rewrites it (see guardRepo), so that a repository deleted meanwhile is not
+// left with a stray merge request (a push recording pushed_at makes it retry). A missing repository gives
 // domain.ErrNotFound.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
@@ -103,6 +124,7 @@ func (m *MergeRequests) Create(ctx context.Context, mr domain.MergeRequest) (dom
 		}
 		var b kv.Batch
 		b.RequireVersion(repoKey(mr.Repo), repoItem.Version)
+		b.Put(repoKey(mr.Repo), repoItem.Value) // see guardRepo
 		if ok {
 			b.RequireVersion(seqKey(mr.Repo), item.Version)
 		} else {
@@ -202,7 +224,8 @@ func (m *MergeRequests) GetComment(ctx context.Context, repo domain.RepoName, nu
 }
 
 // SaveComment writes the comment and the merge request in one batch, each with
-// its version precondition (absent for a new comment).
+// its version precondition (absent for a new comment), and requires the
+// repository to exist (see guardRepo): domain.ErrNotFound otherwise.
 func (m *MergeRequests) SaveComment(ctx context.Context, mr domain.MergeRequest, c domain.Comment) error {
 	mrVal, err := encodeMergeRequest(mr)
 	if err != nil {
@@ -216,6 +239,9 @@ func (m *MergeRequests) SaveComment(ctx context.Context, mr domain.MergeRequest,
 		return fmt.Errorf("save comment on %d of %q: read the merge request first: %w", mr.Number, mr.Repo, domain.ErrConflict)
 	}
 	var b kv.Batch
+	if err := m.guardRepo(ctx, &b, mr.Repo); err != nil {
+		return err
+	}
 	b.RequireVersion(mrKey(mr.Repo, mr.Number), mr.Version)
 	b.Put(mrKey(mr.Repo, mr.Number), mrVal)
 	if c.Version == 0 {
@@ -246,17 +272,30 @@ func (m *MergeRequests) GetRead(ctx context.Context, repo domain.RepoName, numbe
 	return id, nil
 }
 
-// SetRead writes mrread/<repo>/<number>.
+// SetRead writes mrread/<repo>/<number>. The repository must exist (see
+// guardRepo): domain.ErrNotFound otherwise.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter retries a write that lost a race with the repository key: a storage concern, no policy
 func (m *MergeRequests) SetRead(ctx context.Context, repo domain.RepoName, number int64, head domain.ObjectID) error {
 	if head.IsZero() {
 		return fmt.Errorf("%w: empty read position", domain.ErrInvalidObjectID)
 	}
-	var b kv.Batch
-	b.Put(readKey(repo, number), []byte(head.String()))
-	if _, err := m.db.Apply(ctx, &b); err != nil {
-		return fmt.Errorf("record read position of %d in %q: %w", number, repo, err)
+	for range createTries {
+		var b kv.Batch
+		if err := m.guardRepo(ctx, &b, repo); err != nil {
+			return err
+		}
+		b.Put(readKey(repo, number), []byte(head.String()))
+		_, err := m.db.Apply(ctx, &b)
+		if errors.Is(err, kv.ErrConflict) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("record read position of %d in %q: %w", number, repo, err)
+		}
+		return nil
 	}
-	return nil
+	return fmt.Errorf("record read position of %d in %q: %w", number, repo, domain.ErrConflict)
 }
 
 func encodeMergeRequest(mr domain.MergeRequest) ([]byte, error) {

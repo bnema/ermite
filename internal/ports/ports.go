@@ -190,7 +190,9 @@ type TokenStore interface {
 
 // MergeRequestStore keeps the merge requests of the repositories, their
 // comments and the read position of the reviewer. A repository has no entry
-// until its first merge request; the store does not check that it exists.
+// until its first merge request. Create, SaveComment and SetRead return
+// domain.ErrNotFound when the repository does not exist, so that deleting a
+// repository leaves nothing for one created again under its name.
 type MergeRequestStore interface {
 	// Create stores the merge request under the next number of its
 	// repository, which it sets, and returns it. Numbers start at 1 and are
@@ -219,7 +221,8 @@ type MergeRequestStore interface {
 	// GetRead returns the head the reviewer last marked read, or the zero
 	// ObjectID when there is none.
 	GetRead(ctx context.Context, repo domain.RepoName, number int64) (domain.ObjectID, error)
-	// SetRead records the head the reviewer has read.
+	// SetRead records the head the reviewer has read. It returns
+	// domain.ErrNotFound when the repository does not exist.
 	SetRead(ctx context.Context, repo domain.RepoName, number int64, head domain.ObjectID) error
 }
 

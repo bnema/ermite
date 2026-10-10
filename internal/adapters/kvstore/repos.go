@@ -94,6 +94,10 @@ func (s *Store) Update(ctx context.Context, repo domain.Repo) error {
 // last one, which also removes the repository.
 const deleteChunk = 1000
 
+// deleteTries bounds the listings of Delete: a listing is repeated when a merge
+// request write got in after it.
+const deleteTries = 32
+
 // Delete removes the repository and everything keyed to it: its merge
 // requests, their comments and read positions, and its number sequence. The
 // Git data is moved to the trash by the caller; the merge requests are not
@@ -103,28 +107,49 @@ const deleteChunk = 1000
 //
 // The merge request keys go first, in chunks, and the repository key goes with
 // the last chunk: a delete that fails half way leaves the repository, which
-// the caller can delete again.
+// the caller can delete again. The last batch requires the repository key to
+// be at the version the keys were listed at. Every write of a merge request key
+// rewrites the repository key (see MergeRequests.guardRepo), so a write that
+// got in after the listing makes the batch fail and the keys are listed again,
+// and a write after the batch finds no repository: no key outlives the
+// repository to attach itself to a repository created again.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter chunked delete under a version precondition: a storage concern, no policy
 func (s *Store) Delete(ctx context.Context, name domain.RepoName) error {
-	keys := s.mergeRequestKeys(ctx, name)
-	for len(keys) > deleteChunk {
+	for range deleteTries {
+		snap := s.db.Snapshot(ctx)
+		repoItem, repoOK := snap.Get(ctx, repoKey(name))
+		keys := mergeRequestKeys(ctx, snap, name)
+		for len(keys) > deleteChunk {
+			var b kv.Batch
+			for _, k := range keys[:deleteChunk] {
+				b.Delete(k)
+			}
+			if _, err := s.db.Apply(ctx, &b); err != nil {
+				return fmt.Errorf("delete merge requests of %q: %w", name, err)
+			}
+			keys = keys[deleteChunk:]
+		}
 		var b kv.Batch
-		for _, k := range keys[:deleteChunk] {
+		if repoOK {
+			b.RequireVersion(repoKey(name), repoItem.Version)
+		} else {
+			b.RequireAbsent(repoKey(name))
+		}
+		for _, k := range keys {
 			b.Delete(k)
 		}
-		if _, err := s.db.Apply(ctx, &b); err != nil {
-			return fmt.Errorf("delete merge requests of %q: %w", name, err)
+		b.Delete(repoKey(name))
+		_, err := s.db.Apply(ctx, &b)
+		if errors.Is(err, kv.ErrConflict) {
+			continue
 		}
-		keys = keys[deleteChunk:]
+		if err != nil {
+			return fmt.Errorf("delete repository %q: %w", name, err)
+		}
+		return nil
 	}
-	var b kv.Batch
-	for _, k := range keys {
-		b.Delete(k)
-	}
-	b.Delete(repoKey(name))
-	if _, err := s.db.Apply(ctx, &b); err != nil {
-		return fmt.Errorf("delete repository %q: %w", name, err)
-	}
-	return nil
+	return fmt.Errorf("delete repository %q: %w", name, domain.ErrConflict)
 }
 
 func encodeRepo(r domain.Repo) ([]byte, error) {

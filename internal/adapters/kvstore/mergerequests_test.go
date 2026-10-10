@@ -4,6 +4,7 @@ package kvstore_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -319,6 +320,89 @@ func TestDeleteDropsTheMergeRequestsOfTheRepository(t *testing.T) {
 	again, err := mrs.Create(ctx, newMR(t, n, "fresh"))
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), again.Number)
+}
+
+// TestWritesAfterDeleteLeaveNothing: a comment or a read position written for
+// a repository that was deleted meanwhile is refused, so that a repository
+// created again under the name does not inherit it (GO-002).
+func TestWritesAfterDeleteLeaveNothing(t *testing.T) {
+	ctx := context.Background()
+	s, mrs, n := repoWithMRs(t)
+	mr, err := mrs.Create(ctx, newMR(t, n, "t"))
+	require.NoError(t, err)
+
+	require.NoError(t, s.Delete(ctx, n))
+
+	mr.CommentSeq = 1
+	assert.ErrorIs(t, mrs.SaveComment(ctx, mr, newComment(t, 1, "late")), domain.ErrNotFound)
+	assert.ErrorIs(t, mrs.SetRead(ctx, n, mr.Number, oid('a')), domain.ErrNotFound)
+	_, err = mrs.Create(ctx, newMR(t, n, "late"))
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: n, CreatedAt: created, Visibility: domain.VisibilityPublic}))
+	assertNoMergeRequestKeys(t, mrs, n)
+}
+
+func assertNoMergeRequestKeys(t *testing.T, mrs *kvstore.MergeRequests, n domain.RepoName) {
+	t.Helper()
+	ctx := context.Background()
+	list, err := mrs.List(ctx, n)
+	require.NoError(t, err)
+	assert.Empty(t, list, "merge requests")
+	comments, err := mrs.ListComments(ctx, n, 1)
+	require.NoError(t, err)
+	assert.Empty(t, comments, "comments")
+	read, err := mrs.GetRead(ctx, n, 1)
+	require.NoError(t, err)
+	assert.True(t, read.IsZero(), "read position")
+}
+
+// TestDeleteRacingWithWrites: writes racing with Delete either land before it
+// and are deleted, or are refused after it; nothing is left for a repository
+// created again under the name.
+func TestDeleteRacingWithWrites(t *testing.T) {
+	ctx := context.Background()
+	for round := range 20 {
+		s, mrs, n := repoWithMRs(t)
+		mr, err := mrs.Create(ctx, newMR(t, n, "t"))
+		require.NoError(t, err)
+
+		var wg sync.WaitGroup
+		for w := range 4 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := range 30 {
+					if w%2 == 0 {
+						err := mrs.SetRead(ctx, n, mr.Number, oid('a'))
+						if err != nil {
+							assert.ErrorIs(t, err, domain.ErrNotFound)
+							return
+						}
+						continue
+					}
+					cur, err := mrs.Get(ctx, n, mr.Number)
+					if err != nil {
+						return
+					}
+					cur.CommentSeq = int64(w*1000 + i + 1)
+					err = mrs.SaveComment(ctx, cur, newComment(t, cur.CommentSeq, "note"))
+					if err != nil && !assert.True(t, errors.Is(err, domain.ErrConflict) || errors.Is(err, domain.ErrNotFound), "round %d: %v", round, err) {
+						return
+					}
+				}
+			}()
+		}
+		delErr := s.Delete(ctx, n)
+		wg.Wait()
+		require.NoError(t, delErr)
+
+		require.NoError(t, s.Create(ctx, domain.Repo{Name: n, CreatedAt: created, Visibility: domain.VisibilityPublic}))
+		assertNoMergeRequestKeys(t, mrs, n)
+		again, err := mrs.Create(ctx, newMR(t, n, "fresh"))
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), again.Number)
+	}
 }
 
 func TestDeleteManyMergeRequests(t *testing.T) {
