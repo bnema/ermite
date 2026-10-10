@@ -16,10 +16,13 @@ func main() {
 	}
 }
 
-func version() string {
+// buildVersion is the module version stamped into the binary.
+func buildVersion() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info.Main.Version == "" {
-		return "ermite (devel)"
+		return "(devel)"
 	}
-	return "ermite " + info.Main.Version
+	return info.Main.Version
 }
+
+func version() string { return "ermite " + buildVersion() }

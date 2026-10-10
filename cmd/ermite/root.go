@@ -3,33 +3,29 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
 func newRootCmd() *cobra.Command {
-	root := &cobra.Command{
-		Use:           "ermite",
-		Short:         "A single-user Git forge",
-		SilenceUsage:  true,
-		SilenceErrors: true, // main prints the error once
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
-	}
-	root.AddCommand(newServeCmd(), newVersionCmd(), newHookCmd())
-	return root
+	return newRootCmdWith(defaultCLIEnv())
 }
 
-func newVersionCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the version",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), version())
-			return err
-		},
+// newRootCmdWith builds the command tree around env, which the remote commands
+// use to reach the environment, the clock and the build version.
+func newRootCmdWith(env *cliEnv) *cobra.Command {
+	root := &cobra.Command{
+		Use:   "ermite",
+		Short: "A single-user Git forge",
+		Long: "ermite is a single-user Git forge: `ermite serve` runs the server, the other commands\n" +
+			"drive a running server over its API.\n\n" +
+			"Remote commands read ERMITE_URL (the server address, http:// or https://) and\n" +
+			"ERMITE_TOKEN (a bearer token, see `ermite token create`) from the environment.",
+		SilenceUsage:  true,
+		SilenceErrors: true, // main prints the error once
 	}
+	root.AddCommand(
+		newServeCmd(), newHookCmd(),
+		newVersionCmd(env), newRepoCmd(env), newTokenCmd(env), newWatchCmd(env),
+	)
+	return root
 }
