@@ -65,6 +65,8 @@ type Layout struct {
 	Read      bool   // prose page: content capped at the reading measure
 	// Live connects the status bar to the event stream (/-/events).
 	Live bool
+	// LiveURL is the stream the page follows, with its query.
+	LiveURL string
 }
 
 // Link is a plain label + href pair.
@@ -81,6 +83,8 @@ type HomeRow struct {
 	Branch   string
 	Tag      string
 	Cursor   bool
+	// Fresh marks a row that a push just updated (live updates only).
+	Fresh bool
 }
 
 // SortCol is a column header of the home list; it links to its sort order.

@@ -22,7 +22,10 @@ templ Commits(l Layout, p CommitsPage) {
 		if p.Path != "" {
 			<p class="lede dim">history of <code>{ p.Path }</code> at { p.Ref }</p>
 		}
-		<div class="days" id="commits-head">
+		if p.Live {
+			<div id="commits-head"></div>
+		}
+		<div class="days">
 			for _, g := range p.Days {
 				<section aria-label={ g.Day }>
 					<h2 class="rule-h"><span>{ g.Day }</span></h2>

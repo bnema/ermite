@@ -19,6 +19,24 @@ func (s *Server) refs(ctx context.Context, r *http.Request) (templ.Component, in
 	if err != nil {
 		return nil, 0, err
 	}
+	p := s.refsPage(ctx, d)
+
+	l := s.repoLayout(ctx, d, "refs")
+	l.Title = "refs · " + d.name() + " · " + s.instance
+	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=refs")
+	l.Crumbs[0].Current = false
+	l.Crumbs = append(l.Crumbs, Crumb{Label: "refs", Current: true})
+	l.Status = Status{
+		Mode: "refs", Context: plural(len(p.Branches), "branch", "branches") + " · " + plural(len(p.Tags), "tag", "tags"),
+		Hints: "j/k move · enter open · / filter · ? help", Cursor: true, Count: len(p.Branches) + len(p.Tags),
+	}
+	l.HasRail, l.RailSum = true, "refs · legend"
+	return Refs(l, p), http.StatusOK, nil
+}
+
+// refsPage is the content of the refs page, which the live updates of the
+// page render again.
+func (s *Server) refsPage(ctx context.Context, d *repoData) RefsPage {
 	all := append(append([]*pb.Ref(nil), d.branches...), d.tags...)
 	commits := s.commitsOf(ctx, d.name(), all)
 
@@ -45,17 +63,7 @@ func (s *Server) refs(ctx context.Context, r *http.Request) (templ.Component, in
 	if d.cut {
 		p.Note = "this repository has more refs than are listed here."
 	}
-
-	l := s.repoLayout(ctx, d, "refs")
-	l.Title = "refs · " + d.name() + " · " + s.instance
-	l.Crumbs[0].Current = false
-	l.Crumbs = append(l.Crumbs, Crumb{Label: "refs", Current: true})
-	l.Status = Status{
-		Mode: "refs", Context: plural(len(p.Branches), "branch", "branches") + " · " + plural(len(p.Tags), "tag", "tags"),
-		Hints: "j/k move · enter open · / filter · ? help", Cursor: true, Count: len(p.Branches) + len(p.Tags),
-	}
-	l.HasRail, l.RailSum = true, "refs · legend"
-	return Refs(l, p), http.StatusOK, nil
+	return p
 }
 
 func (s *Server) refRow(d *repoData, r *pb.Ref, commits map[string]refCommit, isDefault, cursor bool) RefRow {

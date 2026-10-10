@@ -20,6 +20,7 @@ func newWeb(cfg config.Config, api *rpc.API) (http.Handler, error) {
 	srv, err := web.New(web.Config{
 		Repos:     ermiteconnect.NewRepoServiceClient(hc, rpc.InProcessURL),
 		Git:       ermiteconnect.NewGitServiceClient(hc, rpc.InProcessURL),
+		Events:    ermiteconnect.NewEventServiceClient(hc, rpc.InProcessURL),
 		PublicURL: cfg.PublicURL,
 		SourceURL: cfg.SourceURL,
 		Version:   serverVersion(),

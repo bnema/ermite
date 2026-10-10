@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// The fragments of the live updates (events.go). Each is a top-level element
+// with an id: the page swaps the element that has the same id.
+
+// FactValue is the value of a fact; its id, when it has one, is the target of
+// the live updates ("last push").
+templ FactValue(f Fact) {
+	<dd
+		if f.ID != "" {
+			id={ f.ID }
+		}
+	>
+		if f.Time != "" {
+			<time datetime={ f.Time }>{ f.Val }</time>
+		} else {
+			{ f.Val }
+		}
+	</dd>
+}
+
+// RepoGone replaces the row of a repository that is deleted or not visible
+// any more; the page removes the element.
+templ RepoGone(id string) {
+	<tr id={ id } data-gone hidden></tr>
+}
+
+// RefsBody is the rows of the refs table.
+templ RefsBody(p RefsPage) {
+	<tbody id="ref-rows" data-rows>
+		for _, b := range p.Branches {
+			@refRow("branch", b)
+		}
+		for _, t := range p.Tags {
+			@refRow("tag", t)
+		}
+	</tbody>
+}
+
+// RefsKV is the facts of the rail of the refs page.
+templ RefsKV(p RefsPage) {
+	<dl class="kv" id="refs-kv">
+		<dt>default</dt>
+		<dd>{ p.Default }</dd>
+		<dt>branches</dt>
+		<dd>{ itoa(len(p.Branches)) }</dd>
+		<dt>tags</dt>
+		<dd>{ itoa(len(p.Tags)) }</dd>
+		if p.Latest != "" {
+			<dt>latest tag</dt>
+			<dd>{ p.Latest }</dd>
+		}
+	</dl>
+}
+
+// CommitsSlot is the place of the banner of the commits page, empty.
+templ CommitsSlot() {
+	<div id="commits-head"></div>
+}
+
+// CommitsBanner announces new commits on the branch the page lists. It links
+// to the first page of the branch.
+templ CommitsBanner(text, href string) {
+	<div id="commits-head" class="live-banner" role="status">
+		<a href={ templ.SafeURL(href) }>{ text }</a>
+	</div>
+}
+
+// Live is the connection state of the event stream, in the status bar.
+// Without a stream it reads "offline" and does nothing. The events of the
+// stream are fragments that ermiteLive (ermite.js) swaps in the page.
+templ Live(l Layout) {
+	if l.Live && l.LiveURL != "" {
+		<span
+			class="st-live"
+			data-state="offline"
+			role="status"
+			hx-sse:connect={ l.LiveURL }
+			hx-swap="none"
+			:text="data.state"
+			:title="data.state === 'live' ? 'receiving updates over SSE' : 'not connected to the event stream'"
+			hx-on="htmx:sse:after:connection -> data.state = 'live';
+           htmx:sse:close, htmx:sse:error -> data.state = 'offline';
+           home-list, repo-last-push, refs-list, commits-head -> ermiteLive.swap(event.detail.data);
+           gap -> ermiteLive.reload()"
+		>offline</span>
+	} else {
+		<span class="st-live" data-state="offline" role="status" title="not connected to the event stream">offline</span>
+	}
+}

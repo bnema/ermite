@@ -47,6 +47,12 @@ type Config struct {
 	// Repos and Git are the API clients the pages are built from.
 	Repos ermiteconnect.RepoServiceClient
 	Git   ermiteconnect.GitServiceClient
+	// Events is the client of the event stream behind /-/events. Without
+	// it the pages are not live and the route answers 404.
+	Events ermiteconnect.EventServiceClient
+	// Heartbeat is how often an idle event stream gets a comment line;
+	// DefaultHeartbeat when zero.
+	Heartbeat time.Duration
 	// PublicURL is the base URL of the instance, without a trailing slash:
 	// the clone URLs are built on it, and its host is the instance name.
 	PublicURL string
@@ -94,6 +100,7 @@ func New(cfg Config) (*Server, error) {
 func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+StaticPrefix, s.assets.serve)
+	mux.HandleFunc("GET /-/events", s.events)
 	mux.HandleFunc("GET /{$}", s.page(s.home))
 	mux.HandleFunc("GET /{repo}", s.page(s.summary))
 	mux.HandleFunc("GET /{repo}/{$}", s.page(s.summary))

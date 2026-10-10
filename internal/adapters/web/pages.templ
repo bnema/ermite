@@ -92,14 +92,7 @@ templ Refs(l Layout, p RefsPage) {
 			<thead>
 				<tr><th class="cur"></th><th class="c-kind">kind</th><th class="c-name">name</th><th class="c-sha">commit</th><th class="c-sub">subject</th><th class="c-when">date</th></tr>
 			</thead>
-			<tbody id="ref-rows" data-rows>
-				for _, b := range p.Branches {
-					@refRow("branch", b)
-				}
-				for _, t := range p.Tags {
-					@refRow("tag", t)
-				}
-			</tbody>
+			@RefsBody(p)
 		</table>
 		if p.Note != "" {
 			<p class="note">{ p.Note }</p>
@@ -136,18 +129,7 @@ templ refRow(kind string, r RefRow) {
 templ refsRail(p RefsPage) {
 	<section aria-labelledby="r-refs">
 		<h2 id="r-refs">refs</h2>
-		<dl class="kv">
-			<dt>default</dt>
-			<dd>{ p.Default }</dd>
-			<dt>branches</dt>
-			<dd>{ itoa(len(p.Branches)) }</dd>
-			<dt>tags</dt>
-			<dd>{ itoa(len(p.Tags)) }</dd>
-			if p.Latest != "" {
-				<dt>latest tag</dt>
-				<dd>{ p.Latest }</dd>
-			}
-		</dl>
+		@RefsKV(p)
 	</section>
 	<section aria-labelledby="r-legend">
 		<h2 id="r-legend">legend</h2>

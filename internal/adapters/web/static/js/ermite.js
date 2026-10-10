@@ -30,3 +30,37 @@
   // PageUp/PageDown and space scroll the content without a click first.
   if (!location.hash) document.getElementById('main')?.focus({ preventScroll: true });
 })();
+
+// ermiteLive applies the fragments of the event stream (/-/events, see
+// internal/adapters/web/events.go). A fragment is a top-level element with an
+// id: it replaces the element of the page that has the same id. A fragment
+// marked data-gone removes it; a row of a repository the home page does not
+// list yet is added at the top of the list. A gap, which says the page may
+// have missed events or that what it shows changed, reloads the page.
+window.ermiteLive = (() => {
+  let reloading = false;
+  return {
+    swap(html) {
+      const t = document.createElement('template');
+      t.innerHTML = html;
+      for (const el of t.content.children) {
+        const old = el.id && document.getElementById(el.id);
+        if (el.hasAttribute('data-gone')) { old?.remove(); continue; }
+        if (!old) {
+          const rows = document.getElementById('repo-rows');
+          if (rows && el.id.startsWith('repo-')) { rows.prepend(el); window.htmx?.process(el); }
+          continue;
+        }
+        if (old.hasAttribute('data-cursor')) el.setAttribute('data-cursor', '');
+        if (old.hidden && old.tagName === 'TR') el.hidden = true;
+        old.replaceWith(el);
+        window.htmx?.process(el);
+      }
+    },
+    reload() {
+      if (reloading) return;
+      reloading = true;
+      setTimeout(() => location.reload(), 300);
+    },
+  };
+})();

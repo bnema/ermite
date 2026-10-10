@@ -119,7 +119,7 @@ templ Statusbar(l Layout) {
 		<span class="st-flash" aria-live="polite" :text="document.body.dataset.flash || ''"></span>
 		<span class="st-hints">{ l.Status.Hints }</span>
 		@Footer(l)
-		@Live(l.Live)
+		@Live(l)
 		if l.Status.Cursor {
 			<span
 				class="st-pos num"
@@ -134,25 +134,4 @@ templ Statusbar(l Layout) {
 // which the AGPL §13 asks every user of the service to be offered.
 templ Footer(l Layout) {
 	<span class="st-src"><span class="st-ver">ermite { l.Version } · </span><a href={ templ.SafeURL(l.SourceURL) } rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a></span>
-}
-
-// Live is the connection state of the event stream. Without the stream it
-// reads "offline" and does nothing.
-templ Live(on bool) {
-	if on {
-		<span
-			class="st-live"
-			data-state="offline"
-			role="status"
-			hx-sse:connect="/-/events"
-			hx-swap="none"
-			:text="data.state"
-			:title="data.state === 'live' ? 'receiving pushes over SSE' : 'not connected to the event stream'"
-			hx-on="htmx:sse:after:connection -> data.state = 'live';
-           htmx:sse:close, htmx:sse:error -> data.state = 'offline';
-           push -> for (let el of new DOMParser().parseFromString('<template>' + event.detail.data + '</template>', 'text/html').querySelector('template').content.children) q('#' + el.id).insert('replace', el.outerHTML)"
-		>offline</span>
-	} else {
-		<span class="st-live" data-state="offline" role="status" title="not connected to the event stream">offline</span>
-	}
 }

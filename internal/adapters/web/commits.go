@@ -40,6 +40,8 @@ type CommitsPage struct {
 	Open *Link
 	// Refs are the branch heads and tags among the commits of this page.
 	Refs []Link
+	// Live is true when the page announces new commits of its branch.
+	Live bool
 }
 
 // revSel is what the URL of a history page selects.
@@ -126,6 +128,11 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 
 	l := s.repoLayout(ctx, d, "commits")
 	s.setRef(&l, sel)
+	if d.isBranchHead(sel) && token == "" && sel.path == "" && len(cs) > 0 {
+		// The first page of a branch announces the commits pushed to it.
+		p.Live = true
+		l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=commits&ref="+url.QueryEscape(sel.name)+"&head="+sel.rev)
+	}
 	l.Crumbs = commitsCrumbs(d, sel)
 	if sel.path == "" {
 		l.Title = "commits · " + d.name() + " · " + s.instance

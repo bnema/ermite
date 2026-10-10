@@ -61,7 +61,9 @@
       q('.days section').arr().forEach(s => s.hidden = !s.querySelector('tr:not([hidden])'));
       let first = q('.days tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '.days tr')">
 </div>
-<div class="days" id="commits-head">
+<div id="commits-head">
+</div>
+<div class="days">
 <section aria-label="2026-03-26">
 <h2 class="rule-h">
 <span>2026-03-26</span>
@@ -1085,7 +1087,10 @@
 <span class="st-ver">ermite devel · </span>
 <a href="http://example.test/ermite" rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
 </span>
-<span class="st-live" data-state="offline" role="status" title="not connected to the event stream">offline</span>
+<span class="st-live" data-state="offline" role="status" hx-sse:connect="/-/events?topic=repo%3Along&amp;view=commits&amp;ref=main&amp;head=SHA40" hx-swap="none" :text="data.state" :title="data.state === 'live' ? 'receiving updates over SSE' : 'not connected to the event stream'" hx-on="htmx:sse:after:connection -> data.state = 'live';
+           htmx:sse:close, htmx:sse:error -> data.state = 'offline';
+           home-list, repo-last-push, refs-list, commits-head -> ermiteLive.swap(event.detail.data);
+           gap -> ermiteLive.reload()">offline</span>
 <span class="st-pos num" title="cursor position" :text="(() => { let all = q('[data-rows] > :not([hidden])').arr(); let i = all.findIndex(r => r.hasAttribute('data-cursor')); return (i + 1) + '/' + all.length })()">1/50</span>
 </footer>
 <div id="keys" hidden hx-on="k-j from:body -> ((d) => {

@@ -139,7 +139,7 @@
 <summary>refs · legend</summary>
 <section aria-labelledby="r-refs">
 <h2 id="r-refs">refs</h2>
-<dl class="kv">
+<dl class="kv" id="refs-kv">
 <dt>default</dt>
 <dd>main</dd>
 <dt>branches</dt>
@@ -354,7 +354,10 @@
 <span class="st-ver">ermite devel · </span>
 <a href="http://example.test/ermite" rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
 </span>
-<span class="st-live" data-state="offline" role="status" title="not connected to the event stream">offline</span>
+<span class="st-live" data-state="offline" role="status" hx-sse:connect="/-/events?topic=repo%3Ademo&amp;view=refs" hx-swap="none" :text="data.state" :title="data.state === 'live' ? 'receiving updates over SSE' : 'not connected to the event stream'" hx-on="htmx:sse:after:connection -> data.state = 'live';
+           htmx:sse:close, htmx:sse:error -> data.state = 'offline';
+           home-list, repo-last-push, refs-list, commits-head -> ermiteLive.swap(event.detail.data);
+           gap -> ermiteLive.reload()">offline</span>
 <span class="st-pos num" title="cursor position" :text="(() => { let all = q('[data-rows] > :not([hidden])').arr(); let i = all.findIndex(r => r.hasAttribute('data-cursor')); return (i + 1) + '/' + all.length })()">1/4</span>
 </footer>
 <div id="keys" hidden hx-on="k-j from:body -> ((d) => {

@@ -78,6 +78,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 
 	l := s.repoLayout(ctx, d, "summary")
 	l.Title = d.name() + " · " + s.instance
+	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=summary")
 	l.Status = Status{
 		Mode: "summary", Context: plural(len(commits.Msg.GetCommits()), "recent commit", "recent commits"),
 		Hints: "j/k move · enter open · b ref · y permalink · ? help", Cursor: true, Count: len(p.Recent),
@@ -92,13 +93,8 @@ const maxTagDates = 20
 
 // facts are the key/value rows of the rail.
 func (s *Server) facts(ctx context.Context, d *repoData, now time.Time) []Fact {
-	last := Fact{Key: "last push", Val: "never", ID: "last-push-" + d.name()}
-	if t := d.repo.GetPushedAt(); t.IsValid() && t.GetSeconds() != 0 {
-		last.Val = ago(now, t.AsTime()) + " · " + absolute(t.AsTime())
-		last.Time = rfc3339(t.AsTime())
-	}
 	fs := []Fact{
-		last,
+		lastPushFact(d.repo, now),
 		{Key: "branch", Val: d.head.GetShortName() + " · " + plural(len(d.branches), "branch", "branches")},
 	}
 	if n := len(d.tags); n > 0 {
@@ -114,6 +110,17 @@ func (s *Server) facts(ctx context.Context, d *repoData, now time.Time) []Fact {
 		fs = append(fs, Fact{Key: "created", Val: absolute(c.AsTime()), Time: rfc3339(c.AsTime())})
 	}
 	return fs
+}
+
+// lastPushFact is the "last push" fact of a repository; the live updates
+// render it again.
+func lastPushFact(r *pb.Repo, now time.Time) Fact {
+	last := Fact{Key: "last push", Val: "never", ID: "last-push-" + r.GetName()}
+	if t := r.GetPushedAt(); t.IsValid() && t.GetSeconds() != 0 {
+		last.Val = ago(now, t.AsTime()) + " · " + absolute(t.AsTime())
+		last.Time = rfc3339(t.AsTime())
+	}
+	return last
 }
 
 // latestTag is the tag whose commit is the newest.

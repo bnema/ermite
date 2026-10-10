@@ -7,17 +7,7 @@ templ Facts(facts []Fact) {
 	<dl class="kv">
 		for _, f := range facts {
 			<dt>{ f.Key }</dt>
-			<dd
-				if f.ID != "" {
-					id={ f.ID }
-				}
-			>
-				if f.Time != "" {
-					<time datetime={ f.Time }>{ f.Val }</time>
-				} else {
-					{ f.Val }
-				}
-			</dd>
+			@FactValue(f)
 		}
 	</dl>
 }
@@ -45,7 +35,12 @@ templ CloneBlock(c Clone) {
 templ HomeRowView(r HomeRow) {
 	<tr id={ r.ID } data-cursor?={ r.Cursor }>
 		<td class="cur" aria-hidden="true"></td>
-		<td class="c-name"><a href={ templ.SafeURL(r.Href) }>{ r.Name }</a></td>
+		<td class="c-name">
+			<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+			if r.Fresh {
+				<span class="tagged">● new push</span>
+			}
+		</td>
 		<td class="c-desc dim">{ r.Desc }</td>
 		<td class="c-when nowrap">
 			<time
