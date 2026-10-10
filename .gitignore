@@ -2,3 +2,6 @@
 /ermite
 /tmp/
 /dist/
+
+# local worktrees
+.worktrees/
