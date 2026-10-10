@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"bnema.dev/ermite/internal/adapters/gitcli"
 )
 
 const adminToken = "0123456789abcdef0123456789abcdef-secret"
@@ -178,8 +181,13 @@ func TestServeMissingGitNamesVariable(t *testing.T) {
 }
 
 func TestServeHealthAndSigterm(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
 		t.Skip("git not found")
+	}
+	probe := gitcli.New(gitcli.Config{Bin: gitBin, DataDir: t.TempDir(), Path: os.Getenv("PATH")})
+	if _, err := probe.CheckVersion(context.Background()); err != nil {
+		t.Skipf("git is not usable by ermite: %v", err)
 	}
 	data := t.TempDir()
 	// State from a previous run: run/ is recreated, an orphan repository is

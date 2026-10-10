@@ -118,4 +118,3 @@ func DirWritable(dir string) Check {
 		return nil
 	}
 }
-

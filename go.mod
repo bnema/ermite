@@ -12,6 +12,7 @@ tool (
 require (
 	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
 	github.com/bnema/zerowrap v1.4.1
+	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sys v0.49.0
 	google.golang.org/protobuf v1.36.12
@@ -96,7 +97,6 @@ require (
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
