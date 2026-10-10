@@ -62,12 +62,11 @@ type UpdateParams struct {
 // repository, and publishes RepoUpdated. The principal needs repo:admin on it
 // (see adminAccess for what the others learn). At least one field must be set,
 // else domain.ErrInvalid. A default branch that does not exist gives
-// domain.ErrPreconditionFailed; HEAD is only moved after every check passed.
+// domain.ErrPreconditionFailed; nothing is written before every check passed.
+// The metadata is written first, then HEAD, and RepoUpdated is published after
+// both (see the comment on the writes for the partial state).
 func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.RepoName, params UpdateParams) (domain.Repo, error) {
-	if name.IsZero() {
-		return domain.Repo{}, fmt.Errorf("%w: empty name", domain.ErrInvalidName)
-	}
-	repo, err := r.meta.Get(ctx, name)
+	repo, err := lookupRepo(ctx, r.meta, name)
 	if err != nil {
 		return domain.Repo{}, err
 	}
@@ -100,14 +99,19 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 		}
 	}
 
-	if params.DefaultBranch != nil {
-		if err := r.git.SetDefaultBranch(ctx, name, *params.DefaultBranch); err != nil {
-			return domain.Repo{}, fmt.Errorf("set default branch of %q: %w", name, err)
-		}
-	}
+	// Metadata first, then HEAD. The two writes are not atomic: when moving
+	// HEAD fails after the metadata was stored, the call fails with the
+	// description and visibility already changed, and no RepoUpdated is
+	// published for that partial state. The branch was checked above, so the
+	// remaining causes are a vanished repository or an I/O failure.
 	if params.Description != nil || params.Visibility != nil {
 		if repo, err = r.updateMeta(ctx, name, params); err != nil {
 			return domain.Repo{}, err
+		}
+	}
+	if params.DefaultBranch != nil {
+		if err := r.git.SetDefaultBranch(ctx, name, *params.DefaultBranch); err != nil {
+			return domain.Repo{}, fmt.Errorf("set default branch of %q: %w", name, err)
 		}
 	}
 
@@ -154,10 +158,7 @@ func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params Upd
 // adminAccess). A repository whose directory is already gone, left by a
 // delete that failed half way, loses its metadata.
 func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.RepoName) error {
-	if name.IsZero() {
-		return fmt.Errorf("%w: empty name", domain.ErrInvalidName)
-	}
-	repo, err := r.meta.Get(ctx, name)
+	repo, err := lookupRepo(ctx, r.meta, name)
 	if err != nil {
 		return err
 	}

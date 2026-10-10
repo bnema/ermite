@@ -17,14 +17,6 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
-// Page sizes of the listings.
-const (
-	// DefaultPageSize is the page size when the caller gives none.
-	DefaultPageSize = 50
-	// MaxPageSize is the largest page; a larger request is lowered to it.
-	MaxPageSize = 100
-)
-
 // Browse are the read use cases over the Git data of a repository: refs,
 // trees, blobs, history and commits. Every method applies the access rule
 // first: a repository the principal may not read, or that does not exist,
@@ -41,10 +33,7 @@ func NewBrowse(meta ports.RepoMetaStore, reader ports.RepoReader) *Browse {
 
 // authorize returns nil if p may read the repository.
 func (b *Browse) authorize(ctx context.Context, p domain.Principal, name domain.RepoName) error {
-	if name.IsZero() {
-		return fmt.Errorf("%w: empty name", domain.ErrInvalidName)
-	}
-	repo, err := b.meta.Get(ctx, name)
+	repo, err := lookupRepo(ctx, b.meta, name)
 	if err != nil {
 		return err
 	}
@@ -52,17 +41,6 @@ func (b *Browse) authorize(ctx context.Context, p domain.Principal, name domain.
 		return domain.ErrNotFound
 	}
 	return nil
-}
-
-// pageSize applies the default and the maximum.
-func pageSize(n int) (int, error) {
-	switch {
-	case n < 0:
-		return 0, fmt.Errorf("%w: %d", domain.ErrInvalidPageSize, n)
-	case n == 0:
-		return DefaultPageSize, nil
-	}
-	return min(n, MaxPageSize), nil
 }
 
 // ListRefsParams selects the refs to list.
@@ -117,21 +95,16 @@ func (b *Browse) ListRefs(ctx context.Context, p domain.Principal, repo domain.R
 		return RefPage{}, err
 	}
 
-	var page RefPage
+	var wanted []domain.Ref
 	for _, r := range all {
-		if len(params.Kinds) > 0 && !slices.Contains(params.Kinds, r.Kind) {
-			continue
+		if len(params.Kinds) == 0 || slices.Contains(params.Kinds, r.Kind) {
+			wanted = append(wanted, r)
 		}
-		if after != nil && !refAfter(r, *after) {
-			continue
-		}
-		if len(page.Refs) == size {
-			last := page.Refs[len(page.Refs)-1]
-			page.NextPageToken = encodeRefToken(last)
-			break
-		}
-		page.Refs = append(page.Refs, r)
 	}
+	var page RefPage
+	page.Refs, page.NextPageToken = pageAfter(wanted, size,
+		func(r domain.Ref) bool { return after == nil || refAfter(r, *after) },
+		encodeRefToken)
 	return page, nil
 }
 
@@ -152,7 +125,6 @@ type refCursor struct {
 const (
 	refTokenPrefix    = "r1:"
 	commitTokenPrefix = "c1:"
-	maxTokenLen       = 1024
 )
 
 func encodeRefToken(last domain.Ref) string {
@@ -174,17 +146,6 @@ func decodeRefToken(tok string) (*refCursor, error) {
 		return nil, fmt.Errorf("%w: refs", domain.ErrInvalidPageToken)
 	}
 	return &refCursor{kind: k, name: name}, nil
-}
-
-func decodeToken(tok, prefix string) (string, bool) {
-	if len(tok) > maxTokenLen {
-		return "", false
-	}
-	raw, err := base64.RawURLEncoding.DecodeString(tok)
-	if err != nil {
-		return "", false
-	}
-	return strings.CutPrefix(string(raw), prefix)
 }
 
 // ResolveRevision turns a revision into the commit it designates.
@@ -296,7 +257,7 @@ func decodeCommitToken(tok string, path domain.TreePath) (domain.ObjectID, int, 
 	}
 	head, err := domain.ParseObjectID(parts[0])
 	skip, err2 := strconv.Atoi(parts[1])
-	if err != nil || err2 != nil || skip < 0 || parts[2] != pathDigest(path) {
+	if err != nil || err2 != nil || skip < 0 || skip > MaxCommitSkip || parts[2] != pathDigest(path) {
 		return domain.ObjectID{}, 0, bad
 	}
 	return head, skip, nil

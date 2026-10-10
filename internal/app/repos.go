@@ -109,10 +109,20 @@ func (r *Repos) discard(ctx context.Context, id ports.StagedID) {
 	}
 }
 
+// lookupRepo reads the metadata of a repository: domain.ErrInvalidName for the
+// zero name, domain.ErrNotFound for a missing repository. Access rules are the
+// caller's.
+func lookupRepo(ctx context.Context, meta ports.RepoMetaStore, name domain.RepoName) (domain.Repo, error) {
+	if name.IsZero() {
+		return domain.Repo{}, fmt.Errorf("%w: empty name", domain.ErrInvalidName)
+	}
+	return meta.Get(ctx, name)
+}
+
 // Get returns a repository. A repository the principal may not read answers
 // domain.ErrNotFound, like a missing one.
 func (r *Repos) Get(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error) {
-	repo, err := r.meta.Get(ctx, name)
+	repo, err := lookupRepo(ctx, r.meta, name)
 	if err != nil {
 		return domain.Repo{}, err
 	}

@@ -16,7 +16,61 @@ import (
 const (
 	repoTokenPrefix  = "rp1:"
 	tokenTokenPrefix = "tp1:"
+
+	// maxTokenLen bounds a page token before it is decoded.
+	maxTokenLen = 1024
 )
+
+// Page sizes of the listings.
+const (
+	// DefaultPageSize is the page size when the caller gives none.
+	DefaultPageSize = 50
+	// MaxPageSize is the largest page; a larger request is lowered to it.
+	MaxPageSize = 100
+)
+
+// MaxCommitSkip bounds how deep into a history a page token may point: each
+// page walks the history from its start with `git log --skip`.
+const MaxCommitSkip = 100_000
+
+// pageSize applies the default and the maximum.
+func pageSize(n int) (int, error) {
+	switch {
+	case n < 0:
+		return 0, fmt.Errorf("%w: %d", domain.ErrInvalidPageSize, n)
+	case n == 0:
+		return DefaultPageSize, nil
+	}
+	return min(n, MaxPageSize), nil
+}
+
+func decodeToken(tok, prefix string) (string, bool) {
+	if len(tok) > maxTokenLen {
+		return "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(tok)
+	if err != nil {
+		return "", false
+	}
+	return strings.CutPrefix(string(raw), prefix)
+}
+
+// pageAfter returns the first size items of the ordered items that satisfy
+// after (nil keeps all of them) and, when more follow, the token of the last
+// one returned. Tokens name the last item, so items that appear or disappear
+// between two pages never shift the others.
+func pageAfter[T any](items []T, size int, after func(T) bool, token func(T) string) (page []T, next string) {
+	for _, it := range items {
+		if after != nil && !after(it) {
+			continue
+		}
+		if len(page) == size {
+			return page, token(page[size-1])
+		}
+		page = append(page, it)
+	}
+	return page, ""
+}
 
 // RepoPage is a page of repositories ordered by name.
 type RepoPage struct {
@@ -43,16 +97,9 @@ func (r *Repos) ListPage(ctx context.Context, p domain.Principal, size int, toke
 		return RepoPage{}, err
 	}
 	var page RepoPage
-	for _, repo := range all {
-		if after != "" && repo.Name.String() <= after {
-			continue
-		}
-		if len(page.Repos) == n {
-			page.NextPageToken = encodeRepoToken(page.Repos[n-1].Name)
-			break
-		}
-		page.Repos = append(page.Repos, repo)
-	}
+	page.Repos, page.NextPageToken = pageAfter(all, n,
+		func(repo domain.Repo) bool { return after == "" || repo.Name.String() > after },
+		func(repo domain.Repo) string { return encodeRepoToken(repo.Name) })
 	return page, nil
 }
 
@@ -102,16 +149,9 @@ func (t *Tokens) ListPage(ctx context.Context, p domain.Principal, size int, tok
 		return strings.Compare(b.ID, a.ID)
 	})
 	var page TokenPage
-	for _, tok := range all {
-		if after != nil && !tokenAfter(tok, *after) {
-			continue
-		}
-		if len(page.Tokens) == n {
-			page.NextPageToken = encodeTokenCursor(page.Tokens[n-1])
-			break
-		}
-		page.Tokens = append(page.Tokens, tok)
-	}
+	page.Tokens, page.NextPageToken = pageAfter(all, n,
+		func(tok domain.Token) bool { return after == nil || tokenAfter(tok, *after) },
+		encodeTokenCursor)
 	return page, nil
 }
 
