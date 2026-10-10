@@ -59,18 +59,32 @@ func TestVersionLess(t *testing.T) {
 	assert.False(t, gitcli.Version{Major: 3}.Less(min))
 }
 
-// newGit prepares a data dir and an adapter; it skips when git is missing.
+// unusable skips the test, or fails it in CI so that CI cannot pass vacuously.
+func unusable(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("CI") != "" {
+		t.Fatalf(format, args...)
+	}
+	t.Skipf(format, args...)
+}
+
+// newGit prepares a data dir and an adapter. Without a usable git (2.45 or
+// newer) it skips locally and fails when CI is set.
 func newGit(t *testing.T) (*gitcli.Git, string) {
 	t.Helper()
 	bin, err := exec.LookPath("git")
 	if err != nil {
-		t.Skip("git not found")
+		unusable(t, "git not found")
 	}
 	data := t.TempDir()
 	for _, d := range []string{"repos/.staging", "trash", "run/git-home", "kv"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(data, d), 0o700))
 	}
-	return gitcli.New(gitcli.Config{Bin: bin, DataDir: data, Path: os.Getenv("PATH")}), data
+	g := gitcli.New(gitcli.Config{Bin: bin, DataDir: data, Path: os.Getenv("PATH")})
+	if _, err := g.CheckVersion(context.Background()); err != nil {
+		unusable(t, "git is not usable by ermite: %v", err)
+	}
+	return g, data
 }
 
 func name(t *testing.T, s string) domain.RepoName {
@@ -97,7 +111,7 @@ func writeScript(t *testing.T, body string) string {
 func TestCheckVersionRejects(t *testing.T) {
 	ctx := context.Background()
 	data := t.TempDir()
-	cfg := func(bin string) gitcli.Config { return gitcli.Config{Bin: bin, DataDir: data, Path: "/usr/bin:/bin"} }
+	cfg := func(bin string) gitcli.Config { return gitcli.Config{Bin: bin, DataDir: data, Path: os.Getenv("PATH")} }
 
 	t.Run("too old", func(t *testing.T) {
 		_, err := gitcli.New(cfg(writeScript(t, `echo "git version 2.44.9"`))).CheckVersion(ctx)
@@ -131,7 +145,7 @@ func TestIsolatedEnvironment(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/leak")
 	t.Setenv("SECRET_TOKEN", "leak")
 
-	g := gitcli.New(gitcli.Config{Bin: script, DataDir: data, Path: "/usr/bin:/bin"})
+	g := gitcli.New(gitcli.Config{Bin: script, DataDir: data, Path: os.Getenv("PATH")})
 	_, err := g.CheckVersion(ctx)
 	require.NoError(t, err)
 
@@ -145,7 +159,8 @@ func TestIsolatedEnvironment(t *testing.T) {
 	assert.Equal(t, "1", got["GIT_CONFIG_NOSYSTEM"])
 	assert.Equal(t, filepath.Join(data, "run", "git-home"), got["HOME"])
 	assert.Equal(t, "0", got["GIT_TERMINAL_PROMPT"])
-	assert.Equal(t, "/usr/bin:/bin", got["PATH"])
+	assert.Equal(t, os.Getenv("PATH"), got["PATH"])
+	assert.Equal(t, "C", got["LC_ALL"])
 	for k, v := range got {
 		assert.NotContains(t, v, "leak", k)
 		switch k {
@@ -265,7 +280,7 @@ func TestStageFailureLeavesNothing(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(data, "repos", ".staging"), 0o700))
 	// A git that creates the directory and then fails.
 	script := writeScript(t, `for last; do :; done; mkdir -p "$last"; echo nope >&2; exit 1`)
-	g := gitcli.New(gitcli.Config{Bin: script, DataDir: data, Path: "/usr/bin:/bin"})
+	g := gitcli.New(gitcli.Config{Bin: script, DataDir: data, Path: os.Getenv("PATH")})
 	_, err := g.Stage(ctx)
 	require.Error(t, err)
 	entries, rerr := os.ReadDir(filepath.Join(data, "repos", ".staging"))

@@ -17,11 +17,8 @@ import (
 
 const token = "0123456789abcdef0123456789abcdef" // 32 chars
 
-func lookup(env map[string]string) func(string) (string, bool) {
-	return func(k string) (string, bool) {
-		v, ok := env[k]
-		return v, ok
-	}
+func lookup(env map[string]string) func(string) string {
+	return func(k string) string { return env[k] }
 }
 
 func valid(overrides map[string]string) map[string]string {

@@ -84,7 +84,7 @@ func (r *Repos) Create(ctx context.Context, p domain.Principal, params CreatePar
 		}
 		r.discard(cleanup, id)
 		if errors.Is(err, domain.ErrAlreadyExists) {
-			return domain.Repo{}, fmt.Errorf("repository %q: %w", repo.Name, domain.ErrAlreadyExists)
+			return domain.Repo{}, fmt.Errorf("repository %q: directory %w", repo.Name, domain.ErrAlreadyExists)
 		}
 		return domain.Repo{}, fmt.Errorf("publish repository %q: %w", repo.Name, err)
 	}

@@ -37,7 +37,7 @@ func newServeCmd() *cobra.Command {
 
 // serve wires the adapters and runs the server until SIGINT or SIGTERM.
 func serve(ctx context.Context) error {
-	cfg, err := config.Load(os.LookupEnv)
+	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return err
 	}

@@ -23,7 +23,9 @@ type RepoMetaStore interface {
 	Get(ctx context.Context, name domain.RepoName) (domain.Repo, error)
 	// List returns every repository ordered by name.
 	List(ctx context.Context) ([]domain.Repo, error)
-	// Update replaces the stored repository, or returns domain.ErrNotFound.
+	// Update replaces the stored repository. It returns domain.ErrNotFound if
+	// there is none and domain.ErrConflict if another write changed the
+	// stored repository since it was read.
 	Update(ctx context.Context, repo domain.Repo) error
 	// Delete removes the repository. Deleting a missing one is not an error.
 	Delete(ctx context.Context, name domain.RepoName) error

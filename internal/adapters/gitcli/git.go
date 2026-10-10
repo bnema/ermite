@@ -20,6 +20,7 @@ import (
 // environment: the caller passes what it needs.
 type Config struct {
 	// Bin is the git executable: a name looked up in the process PATH, or a path.
+	// It is required; the default belongs to the configuration.
 	Bin string
 	// DataDir is the data root (absolute). repos/, repos/.staging/ and
 	// trash/ below it must exist; run/git-home/ is the HOME of git.
@@ -37,11 +38,7 @@ type Git struct {
 
 // New builds an adapter. It does not run git: call CheckVersion.
 func New(cfg Config) *Git {
-	bin := cfg.Bin
-	if bin == "" {
-		bin = "git"
-	}
-	return &Git{bin: bin, dataDir: cfg.DataDir, env: buildEnv(cfg.DataDir, cfg.Path)}
+	return &Git{bin: cfg.Bin, dataDir: cfg.DataDir, env: buildEnv(cfg.DataDir, cfg.Path)}
 }
 
 // buildEnv returns the complete environment of every git invocation. Nothing

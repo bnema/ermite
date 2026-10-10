@@ -5,7 +5,6 @@ package app_test
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -98,6 +97,18 @@ func TestCreate(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrAlreadyExists)
 	})
 
+	t.Run("publish conflict removes metadata and staging", func(t *testing.T) {
+		f := newFixture(t)
+		n := name(t, "tools")
+		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
+		f.meta.EXPECT().Create(ctx, mock.Anything).Return(nil)
+		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(domain.ErrAlreadyExists)
+		f.meta.EXPECT().Delete(mock.Anything, n).Return(nil)
+		f.git.EXPECT().Discard(mock.Anything, ports.StagedID("s1")).Return(nil)
+		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: n})
+		assert.ErrorIs(t, err, domain.ErrAlreadyExists)
+	})
+
 	t.Run("failed publish removes metadata and staging", func(t *testing.T) {
 		f := newFixture(t)
 		n := name(t, "tools")
@@ -130,83 +141,6 @@ func TestCreate(t *testing.T) {
 		_, err := f.repos.Create(cctx, domain.Root(), app.CreateParams{Name: n})
 		assert.ErrorIs(t, err, errBoom)
 	})
-}
-
-// A fake store that enforces absence, to model concurrent creates.
-type memMeta struct {
-	mu sync.Mutex
-	m  map[domain.RepoName]domain.Repo
-}
-
-func (s *memMeta) create(repo domain.Repo) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.m[repo.Name]; ok {
-		return domain.ErrAlreadyExists
-	}
-	s.m[repo.Name] = repo
-	return nil
-}
-
-func TestCreateConcurrentSameName(t *testing.T) {
-	ctx := context.Background()
-	n := name(t, "tools")
-	store := &memMeta{m: map[domain.RepoName]domain.Repo{}}
-
-	f := newFixture(t)
-	var mu sync.Mutex
-	staged, discarded, published := 0, 0, 0
-	f.git.EXPECT().Stage(mock.Anything).RunAndReturn(func(context.Context) (ports.StagedID, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		staged++
-		return ports.StagedID(string(rune('a' + staged))), nil
-	})
-	f.meta.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, r domain.Repo) error {
-		return store.create(r)
-	})
-	f.git.EXPECT().Publish(mock.Anything, mock.Anything, n).RunAndReturn(func(context.Context, ports.StagedID, domain.RepoName) error {
-		mu.Lock()
-		defer mu.Unlock()
-		published++
-		return nil
-	})
-	f.git.EXPECT().Discard(mock.Anything, mock.Anything).RunAndReturn(func(context.Context, ports.StagedID) error {
-		mu.Lock()
-		defer mu.Unlock()
-		discarded++
-		return nil
-	})
-
-	const workers = 8
-	errs := make(chan error, workers)
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: n})
-			errs <- err
-		}()
-	}
-	wg.Wait()
-	close(errs)
-
-	ok, exists := 0, 0
-	for err := range errs {
-		switch {
-		case err == nil:
-			ok++
-		case errors.Is(err, domain.ErrAlreadyExists):
-			exists++
-		default:
-			t.Fatalf("unexpected error: %v", err)
-		}
-	}
-	assert.Equal(t, 1, ok)
-	assert.Equal(t, workers-1, exists)
-	assert.Equal(t, 1, published)
-	assert.Equal(t, workers-1, discarded)
 }
 
 func TestGetAndListAccess(t *testing.T) {

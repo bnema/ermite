@@ -86,6 +86,32 @@ func freeAddr(t *testing.T) string {
 	return addr
 }
 
+// unusedAddr is a valid address no test listens on: serve fails before it
+// listens when it is used.
+const unusedAddr = "127.0.0.1:1"
+
+// requireGit returns a git usable by ermite. Locally the test is skipped
+// without one; in CI (CI set) it fails, so that CI cannot pass vacuously.
+func requireGit(t *testing.T) string {
+	t.Helper()
+	unusable := func(format string, args ...any) {
+		t.Helper()
+		if os.Getenv("CI") != "" {
+			t.Fatalf(format, args...)
+		}
+		t.Skipf(format, args...)
+	}
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		unusable("git not found")
+	}
+	probe := gitcli.New(gitcli.Config{Bin: gitBin, DataDir: t.TempDir(), Path: os.Getenv("PATH")})
+	if _, err := probe.CheckVersion(context.Background()); err != nil {
+		unusable("git is not usable by ermite: %v", err)
+	}
+	return gitBin
+}
+
 func baseEnv() []string {
 	return []string{"PATH=" + os.Getenv("PATH")}
 }
@@ -149,7 +175,7 @@ func TestServeGitTooOldNamesVariable(t *testing.T) {
 		"ERMITE_DATA_DIR="+data,
 		"ERMITE_PUBLIC_URL=http://localhost",
 		"ERMITE_ADMIN_TOKEN="+adminToken,
-		"ERMITE_ADDR="+freeAddr(t),
+		"ERMITE_ADDR="+unusedAddr,
 		"ERMITE_GIT="+script,
 	)
 	var out bytes.Buffer
@@ -168,7 +194,7 @@ func TestServeMissingGitNamesVariable(t *testing.T) {
 		"ERMITE_DATA_DIR="+t.TempDir(),
 		"ERMITE_PUBLIC_URL=http://localhost",
 		"ERMITE_ADMIN_TOKEN="+adminToken,
-		"ERMITE_ADDR="+freeAddr(t),
+		"ERMITE_ADDR="+unusedAddr,
 		"ERMITE_GIT=/nonexistent/git",
 	)
 	var out bytes.Buffer
@@ -181,14 +207,7 @@ func TestServeMissingGitNamesVariable(t *testing.T) {
 }
 
 func TestServeHealthAndSigterm(t *testing.T) {
-	gitBin, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not found")
-	}
-	probe := gitcli.New(gitcli.Config{Bin: gitBin, DataDir: t.TempDir(), Path: os.Getenv("PATH")})
-	if _, err := probe.CheckVersion(context.Background()); err != nil {
-		t.Skipf("git is not usable by ermite: %v", err)
-	}
+	requireGit(t)
 	data := t.TempDir()
 	// State from a previous run: run/ is recreated, an orphan repository is
 	// registered, a staging leftover is removed.
@@ -273,4 +292,67 @@ func TestServeHealthAndSigterm(t *testing.T) {
 
 	_, err = http.Get(base + "/-/health")
 	assert.Error(t, err, "the port is closed")
+}
+
+func TestSecondServeLeavesRunDirUntouched(t *testing.T) {
+	requireGit(t)
+	data := t.TempDir()
+	addr := freeAddr(t)
+	env := append(baseEnv(),
+		"ERMITE_ADDR="+addr,
+		"ERMITE_DATA_DIR="+data,
+		"ERMITE_PUBLIC_URL=http://"+addr,
+		"ERMITE_ADMIN_TOKEN="+adminToken,
+	)
+
+	first := exec.Command(binary(t), "serve")
+	first.Env = env
+	var firstLogs syncBuffer
+	first.Stdout, first.Stderr = &firstLogs, &firstLogs
+	require.NoError(t, first.Start())
+	exited := make(chan error, 1)
+	go func() { exited <- first.Wait() }()
+	t.Cleanup(func() { _ = first.Process.Kill() })
+
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		resp, err := http.Get("http://" + addr + "/-/health")
+		if err == nil {
+			_ = resp.Body.Close()
+			break
+		}
+		select {
+		case werr := <-exited:
+			t.Fatalf("first server exited: %v\n%s", werr, firstLogs.String())
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("health never answered: %v\n%s", err, firstLogs.String())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	marker := filepath.Join(data, "run", "marker")
+	require.NoError(t, os.WriteFile(marker, []byte("keep"), 0o600))
+
+	second := exec.Command(binary(t), "serve")
+	second.Env = append(env[:len(env):len(env)], "ERMITE_ADDR="+freeAddr(t))
+	var out bytes.Buffer
+	second.Stdout, second.Stderr = &out, &out
+	err := second.Run()
+	var exit *exec.ExitError
+	require.True(t, errors.As(err, &exit), "second serve must fail, got %v\n%s", err, out.String())
+	assert.NotZero(t, exit.ExitCode())
+
+	got, rerr := os.ReadFile(marker)
+	require.NoError(t, rerr, "run/ must be untouched by the second serve")
+	assert.Equal(t, "keep", string(got))
+	assert.DirExists(t, filepath.Join(data, "run", "git-home"))
+
+	require.NoError(t, first.Process.Signal(syscall.SIGTERM))
+	select {
+	case <-exited:
+	case <-time.After(15 * time.Second):
+		t.Fatal("first server did not stop")
+	}
 }

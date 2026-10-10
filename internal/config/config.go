@@ -81,14 +81,10 @@ func (e *Error) Error() string {
 }
 
 // Load reads the configuration through lookup, which returns the value of a
-// variable and whether it is set (os.LookupEnv fits). An empty value counts as
+// variable, or "" when it is unset (os.Getenv fits). An empty value counts as
 // unset. All problems are reported together in an *Error. Messages name the
 // variable and never contain the admin token.
-func Load(lookup func(string) (string, bool)) (Config, error) {
-	get := func(key string) string {
-		v, _ := lookup(key)
-		return v
-	}
+func Load(get func(string) string) (Config, error) {
 	var problems []string
 	bad := func(key, format string, args ...any) {
 		problems = append(problems, key+": "+fmt.Sprintf(format, args...))

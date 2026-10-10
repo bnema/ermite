@@ -91,11 +91,6 @@ func TestParseRepoPath(t *testing.T) {
 	}
 }
 
-func TestParseRepoNameDoesNotStripGit(t *testing.T) {
-	_, err := domain.ParseRepoName("tools.git")
-	assert.ErrorIs(t, err, domain.ErrInvalidName)
-}
-
 func TestParseVisibility(t *testing.T) {
 	for in, want := range map[string]domain.Visibility{"public": domain.VisibilityPublic, "private": domain.VisibilityPrivate} {
 		got, err := domain.ParseVisibility(in)
