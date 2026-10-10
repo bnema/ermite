@@ -28,6 +28,9 @@ type Config struct {
 	DataDir string
 	// Path is the PATH given to git, which it uses to find its helpers.
 	Path string
+	// MaxReceiveBytes is the largest pack a push may send
+	// (receive.maxInputSize); zero leaves Git unlimited.
+	MaxReceiveBytes int64
 }
 
 // Git is the git CLI adapter for ports.GitRepos.
@@ -35,6 +38,7 @@ type Git struct {
 	bin     string
 	dataDir string
 	env     []string
+	maxRecv int64
 
 	mu      sync.Mutex // guards backend
 	backend string     // git-http-backend, resolved on first use
@@ -42,7 +46,7 @@ type Git struct {
 
 // New builds an adapter. It does not run git: call CheckVersion.
 func New(cfg Config) *Git {
-	return &Git{bin: cfg.Bin, dataDir: cfg.DataDir, env: buildEnv(cfg.DataDir, cfg.Path)}
+	return &Git{bin: cfg.Bin, dataDir: cfg.DataDir, env: buildEnv(cfg.DataDir, cfg.Path), maxRecv: cfg.MaxReceiveBytes}
 }
 
 // buildEnv returns the complete environment of every git invocation. Nothing

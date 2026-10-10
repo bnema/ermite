@@ -33,6 +33,7 @@ func HooksDir(dataDir string) string { return filepath.Join(dataDir, "run", "hoo
 //	receive.fsckObjects=true
 //	uploadpack.allowFilter=true
 //	http.receivepack=true            (push only)
+//	receive.maxInputSize=<max>       (push only, when configured)
 //
 // A push also gets REMOTE_USER=owner.
 func (g *Git) HTTPBackend(ctx context.Context, push bool) (ports.HTTPBackend, error) {
@@ -47,6 +48,9 @@ func (g *Git) HTTPBackend(ctx context.Context, push bool) (ports.HTTPBackend, er
 	}
 	if push {
 		conf = append(conf, [2]string{"http.receivepack", "true"})
+		if g.maxRecv > 0 {
+			conf = append(conf, [2]string{"receive.maxInputSize", strconv.FormatInt(g.maxRecv, 10)})
+		}
 	}
 	env := append([]string(nil), g.env...)
 	env = append(env,

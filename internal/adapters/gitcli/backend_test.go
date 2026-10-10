@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,6 +25,41 @@ func envMap(env []string) map[string]string {
 		m[k] = v
 	}
 	return m
+}
+
+// backendConf returns the GIT_CONFIG_KEY/VALUE pairs of a backend environment
+// and checks that GIT_CONFIG_COUNT matches them.
+func backendConf(e map[string]string) map[string]string {
+	conf := map[string]string{}
+	n := 0
+	for {
+		k, ok := e["GIT_CONFIG_KEY_"+strconv.Itoa(n)]
+		if !ok {
+			break
+		}
+		conf[k] = e["GIT_CONFIG_VALUE_"+strconv.Itoa(n)]
+		n++
+	}
+	if e["GIT_CONFIG_COUNT"] != strconv.Itoa(n) {
+		panic("GIT_CONFIG_COUNT does not match the keys")
+	}
+	return conf
+}
+
+func TestHTTPBackendReceiveMaxInputSize(t *testing.T) {
+	ctx := context.Background()
+	_, data := newGit(t)
+	bin, err := exec.LookPath("git")
+	require.NoError(t, err)
+	g := gitcli.New(gitcli.Config{Bin: bin, DataDir: data, Path: os.Getenv("PATH"), MaxReceiveBytes: 4 << 30})
+
+	push, err := g.HTTPBackend(ctx, true)
+	require.NoError(t, err)
+	assert.Equal(t, "4294967296", backendConf(envMap(push.Env))["receive.maxInputSize"])
+
+	read, err := g.HTTPBackend(ctx, false)
+	require.NoError(t, err)
+	assert.NotContains(t, backendConf(envMap(read.Env)), "receive.maxInputSize", "a fetch does not receive a pack")
 }
 
 func TestHTTPBackendEnvironment(t *testing.T) {
@@ -45,34 +81,22 @@ func TestHTTPBackendEnvironment(t *testing.T) {
 	assert.Equal(t, "1", e["GIT_HTTP_EXPORT_ALL"])
 	assert.NotContains(t, e, "REMOTE_USER", "a read is not a push")
 
-	conf := map[string]string{}
-	for i := range 10 {
-		k, ok := e["GIT_CONFIG_KEY_"+string(rune('0'+i))]
-		if !ok {
-			assert.Equal(t, string(rune('0'+i)), e["GIT_CONFIG_COUNT"], "count matches the keys")
-			break
-		}
-		conf[k] = e["GIT_CONFIG_VALUE_"+string(rune('0'+i))]
-	}
 	assert.Equal(t, map[string]string{
 		"core.hooksPath":         filepath.Join(data, "run", "hooks"),
 		"receive.fsckObjects":    "true",
 		"uploadpack.allowFilter": "true",
-	}, conf)
+	}, backendConf(e))
 
 	push, err := g.HTTPBackend(ctx, true)
 	require.NoError(t, err)
 	pe := envMap(push.Env)
 	assert.Equal(t, "owner", pe["REMOTE_USER"])
-	assert.Equal(t, "4", pe["GIT_CONFIG_COUNT"])
-	found := false
-	for i := range 4 {
-		if pe["GIT_CONFIG_KEY_"+string(rune('0'+i))] == "http.receivepack" {
-			assert.Equal(t, "true", pe["GIT_CONFIG_VALUE_"+string(rune('0'+i))])
-			found = true
-		}
-	}
-	assert.True(t, found, "http.receivepack only for a push")
+	assert.Equal(t, map[string]string{
+		"core.hooksPath":         filepath.Join(data, "run", "hooks"),
+		"receive.fsckObjects":    "true",
+		"uploadpack.allowFilter": "true",
+		"http.receivepack":       "true",
+	}, backendConf(pe), "http.receivepack only for a push; no size limit unless configured")
 
 	// Nothing from the caller's environment leaks.
 	t.Setenv("GIT_DIR", "/leak")
