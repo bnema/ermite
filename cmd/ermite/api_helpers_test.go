@@ -162,19 +162,6 @@ func (s *stream) next(t *testing.T, d time.Duration) *pb.Event {
 	return nil
 }
 
-// quiet fails if an event arrives within d.
-func (s *stream) quiet(t *testing.T, d time.Duration) {
-	t.Helper()
-	select {
-	case ev, ok := <-s.events:
-		if ok {
-			t.Fatalf("unexpected event: %v", ev)
-		}
-		t.Fatalf("the stream ended: %v", s.err)
-	case <-time.After(d):
-	}
-}
-
 // readBlob reads a whole GetBlob stream and returns its messages.
 func readBlob(ctx context.Context, c *clients, req *pb.GetBlobRequest) ([]*pb.GetBlobResponse, error) {
 	st, err := c.git.GetBlob(ctx, connect.NewRequest(req))

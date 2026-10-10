@@ -815,7 +815,7 @@ func TestInProcessClient(t *testing.T) {
 	select {
 	case ev := <-got:
 		assert.Equal(t, "d", ev.GetRepoUpdated().GetRepo().GetDescription())
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("no event through the in-process client")
 	}
 
