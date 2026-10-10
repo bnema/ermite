@@ -56,12 +56,10 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 	if etag := b.info.GetId(); etag != "" {
 		h.Set("ETag", `"`+etag+`"`)
 	}
-	// A commit named in full never changes; a branch or a tag moves.
-	if t.detached && len(t.rev) == 40 {
-		h.Set("Cache-Control", "public, max-age=31536000, immutable")
-	} else {
-		h.Set("Cache-Control", "no-cache")
-	}
+	// Revalidated every time, even at a full commit id: a repository can turn
+	// private, and a shared cache must not keep serving its files (AC2). The
+	// ETag keeps the revalidation cheap.
+	h.Set("Cache-Control", "no-cache")
 	if match := r.Header.Get("If-None-Match"); match != "" && h.Get("ETag") != "" && match == h.Get("ETag") {
 		w.WriteHeader(http.StatusNotModified)
 		return

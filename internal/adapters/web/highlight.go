@@ -8,6 +8,7 @@ import (
 	"html"
 	"html/template"
 	"path"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -78,12 +79,26 @@ func highlight(name, src string) codeView {
 // input can be slow, and the page then shows the file as plain text.
 const highlightBudget = 10 * time.Second
 
+// lexSlots bounds the lexers running at once, those left to finish after
+// their budget included: hostile files requested over and over cannot pile
+// up CPU-bound goroutines.
+var lexSlots = make(chan struct{}, runtime.GOMAXPROCS(0))
+
 // highlightCtx is highlight with a time budget and the cancellation of ctx.
 // A lexer cannot be interrupted, so one that overruns is left to finish on
 // its own (its regexps have their own timeout) and its result is dropped.
+// When every lexing slot is taken the file is shown as plain text.
 func highlightCtx(ctx context.Context, name, src string) codeView {
+	select {
+	case lexSlots <- struct{}{}:
+	default:
+		return highlightPlain(src)
+	}
 	done := make(chan codeView, 1)
-	go func() { done <- highlight(name, src) }()
+	go func() {
+		defer func() { <-lexSlots }()
+		done <- highlight(name, src)
+	}()
 	select {
 	case v := <-done:
 		return v

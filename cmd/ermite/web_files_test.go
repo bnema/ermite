@@ -212,11 +212,8 @@ func TestWebRaw(t *testing.T) {
 			assert.Equal(t, "default-src 'none'; sandbox", hdr.Get("Content-Security-Policy"))
 			assert.Equal(t, "DENY", hdr.Get("X-Frame-Options"))
 			assert.Equal(t, strconv.Itoa(len(body)), hdr.Get("Content-Length"))
-			if strings.Contains(tt.path, sha) {
-				assert.Equal(t, "public, max-age=31536000, immutable", hdr.Get("Cache-Control"))
-			} else {
-				assert.Equal(t, "no-cache", hdr.Get("Cache-Control"), "a branch or a tag moves")
-			}
+			// Even at a full commit id: the repository can turn private.
+			assert.Equal(t, "no-cache", hdr.Get("Cache-Control"))
 		})
 	}
 
