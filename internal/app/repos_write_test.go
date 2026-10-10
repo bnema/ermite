@@ -80,14 +80,28 @@ func TestUpdate(t *testing.T) {
 		assert.Equal(t, []string{"meta", "head", "event"}, order)
 	})
 
-	t.Run("a HEAD that cannot move fails the call and publishes nothing", func(t *testing.T) {
+	t.Run("a HEAD that cannot move after the metadata was stored still publishes, then fails", func(t *testing.T) {
+		f := newFixture(t)
+		boom := errors.New("boom")
+		pub := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Description: "old"}
+		f.meta.EXPECT().Get(ctx, n).Return(pub, nil)
+		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
+		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil)
+		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").Return(boom)
+		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{
+			Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPublic,
+		}).Return().Once()
+		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{Visibility: ptr(domain.VisibilityPrivate), DefaultBranch: ptr("dev")})
+		assert.ErrorIs(t, err, boom)
+	})
+
+	t.Run("a HEAD that cannot move with no metadata change publishes nothing", func(t *testing.T) {
 		f := newFixture(t)
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
-		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil)
 		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").Return(boom)
-		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{Description: ptr("x"), DefaultBranch: ptr("dev")})
+		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{DefaultBranch: ptr("dev")})
 		assert.ErrorIs(t, err, boom)
 	})
 

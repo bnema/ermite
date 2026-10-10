@@ -64,7 +64,8 @@ type UpdateParams struct {
 // else domain.ErrInvalid. A default branch that does not exist gives
 // domain.ErrPreconditionFailed; nothing is written before every check passed.
 // The metadata is written first, then HEAD, and RepoUpdated is published after
-// both (see the comment on the writes for the partial state).
+// both. When only the HEAD move fails, RepoUpdated is still published for the
+// stored metadata and the HEAD error is returned.
 func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.RepoName, params UpdateParams) (domain.Repo, error) {
 	repo, err := lookupRepo(ctx, r.meta, name)
 	if err != nil {
@@ -101,18 +102,25 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	}
 
 	// Metadata first, then HEAD. The two writes are not atomic: when moving
-	// HEAD fails after the metadata was stored, the call fails with the
-	// description and visibility already changed, and no RepoUpdated is
-	// published for that partial state. The branch was checked above, so the
-	// remaining causes are a vanished repository or an I/O failure.
+	// HEAD fails after the metadata was stored, the stored change is still
+	// published as RepoUpdated (a repository made private must be withdrawn
+	// from the watchers) and the call then fails with the HEAD error. The
+	// branch was checked above, so the remaining causes are a vanished
+	// repository or an I/O failure.
+	metaDone := false
 	if params.Description != nil || params.Visibility != nil {
 		if repo, err = r.updateMeta(ctx, name, params); err != nil {
 			return domain.Repo{}, err
 		}
+		metaDone = true
 	}
+	var headErr error
 	if params.DefaultBranch != nil {
 		if err := r.git.SetDefaultBranch(ctx, name, *params.DefaultBranch); err != nil {
-			return domain.Repo{}, fmt.Errorf("set default branch of %q: %w", name, err)
+			headErr = fmt.Errorf("set default branch of %q: %w", name, err)
+			if !metaDone {
+				return domain.Repo{}, headErr
+			}
 		}
 	}
 
@@ -128,6 +136,9 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 		Repo: name, At: r.clock.Now().UTC(),
 		Visibility: repo.Visibility, Previous: before.Visibility, CreatedAt: repo.CreatedAt,
 	})
+	if headErr != nil {
+		return domain.Repo{}, headErr
+	}
 	return repo, nil
 }
 
