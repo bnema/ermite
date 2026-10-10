@@ -143,9 +143,16 @@ func (s *Server) readme(ctx context.Context, d *repoData, ref string) (*rendered
 	if err != nil {
 		return nil, err
 	}
+	return s.readmeIn(ctx, d.name(), d.head.GetCommitId(), ref, "", tree.Msg.GetEntries())
+}
+
+// readmeIn picks the README among the entries of the directory dir ("" for
+// the root) of the commit rev, reads it and renders it. Links in it are
+// relative to dir, on the ref ref. It is nil when the directory has none.
+func (s *Server) readmeIn(ctx context.Context, repo, rev, ref, dir string, entries []*pb.TreeEntry) (*renderedReadme, error) {
 	var best *pb.TreeEntry
 	rank := len(readmeNames)
-	for _, e := range tree.Msg.GetEntries() {
+	for _, e := range entries {
 		if e.GetKind() != pb.EntryKind_ENTRY_KIND_FILE && e.GetKind() != pb.EntryKind_ENTRY_KIND_EXECUTABLE {
 			continue
 		}
@@ -163,7 +170,7 @@ func (s *Server) readme(ctx context.Context, d *repoData, ref string) (*rendered
 		rd.Note = best.GetName() + " is too large to show here (" + humanSize(best.GetSize()) + ")."
 		return &renderedReadme{readme: rd}, nil
 	}
-	body, binary, err := s.readBlob(ctx, d.name(), d.head.GetCommitId(), best.GetPath(), maxReadmeBytes)
+	body, binary, err := s.readBlob(ctx, repo, rev, best.GetPath(), maxReadmeBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -173,13 +180,13 @@ func (s *Server) readme(ctx context.Context, d *repoData, ref string) (*rendered
 	}
 	name := strings.ToLower(best.GetName())
 	if strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".markdown") {
-		h, outline, err := s.md.render(body, d.name(), ref, "")
+		h, outline, err := s.md.render(body, repo, ref, dir)
 		if err == nil {
 			rd.HTML = h
 			return &renderedReadme{readme: rd, outline: outline}, nil
 		}
 		log := zerowrap.FromCtx(ctx)
-		log.Warn().Err(err).Str("repo", d.name()).Msg("render README, showing plain text")
+		log.Warn().Err(err).Str("repo", repo).Msg("render README, showing plain text")
 	}
 	rd.HTML = template.HTML("<pre>" + html.EscapeString(string(body)) + "</pre>") // #nosec G203 -- escaped
 	return &renderedReadme{readme: rd}, nil
