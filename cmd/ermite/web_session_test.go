@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -280,6 +281,66 @@ func TestWebLoginEndToEnd(t *testing.T) {
 // validNonceShape tells whether a login path ends in 43 characters of base64url.
 func validNonceShape(p string) bool {
 	return len(strings.TrimPrefix(p, "/-/login/")) == 43
+}
+
+// tokenID finds the id of the stored token with that secret, by listing them
+// as root and matching the hash.
+func (c *cliHarness) tokenID(t *testing.T, secret string) string {
+	t.Helper()
+	all, err := c.forge.Tokens.List(c.ctx, domain.Root())
+	require.NoError(t, err)
+	for _, tok := range all {
+		if tok.Hash == domain.HashTokenSecret(secret) {
+			return tok.ID
+		}
+	}
+	t.Fatal("token not found")
+	return ""
+}
+
+// GO-003: a session opened with a link made by an expiring token ends with the
+// token, and revoking a token with owner rights signs every browser out; any
+// other token leaves the sessions alone.
+func TestWebRevokingAnOwnerTokenSignsEveryoneOut(t *testing.T) {
+	c := newCLIHarness(t)
+	c.seed("secret", domain.VisibilityPrivate, "notes.txt")
+	b := browser{c.harness}
+
+	// The cap: a link made by a token that expires in an hour gives a cookie,
+	// and a session, of an hour.
+	soon, err := c.forge.Tokens.Create(c.ctx, domain.Root(), app.CreateTokenParams{
+		Label: "soon", Scopes: domain.AllScopes(), ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	res := c.cli(t, soon.Secret, "web", "login").ok(t)
+	login := b.do("POST", loginPath(t, res.stdout), map[string]string{"Origin": publicOrigin}, "")
+	require.Equal(t, http.StatusSeeOther, login.status, login.body)
+	ck := login.cookie(sessionCookie)
+	require.NotNil(t, ck)
+	assert.InDelta(t, 3600, ck.MaxAge, 5, "the cookie lasts as long as the token")
+	claims := jwt.MapClaims{}
+	_, _, err = jwt.NewParser().ParseUnverified(ck.Value, claims)
+	require.NoError(t, err)
+	exp, err := claims.GetExpirationTime()
+	require.NoError(t, err)
+	assert.WithinDuration(t, soon.Token.ExpiresAt, exp.Time, 2*time.Second)
+
+	// Revoking a token that cannot own the forge keeps the sessions.
+	session := c.signIn(t)
+	partial := c.token(domain.AllScopes()[:8])
+	c.cli(t, adminToken, "token", "revoke", c.tokenID(t, partial)).ok(t)
+	assert.Equal(t, 200, b.get("/secret", as(session)).status)
+	assert.Equal(t, 200, b.get("/secret", as(ck.Value)).status)
+
+	// Revoking one that can signs everyone out, whatever token made the link.
+	res = c.cli(t, adminToken, "token", "revoke", c.tokenID(t, soon.Secret)).ok(t)
+	assert.Contains(t, res.stdout, "revoked")
+	assert.Equal(t, 404, b.get("/secret", as(session)).status)
+	assert.Equal(t, 404, b.get("/secret", as(ck.Value)).status)
+
+	// The help says so.
+	help := c.cli(t, adminToken, "token", "revoke", "--help").ok(t)
+	assert.Contains(t, help.stdout+help.stderr, "signs every browser out")
 }
 
 // cookieInterceptor makes a Connect client send the session cookie, as a

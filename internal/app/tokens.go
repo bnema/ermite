@@ -29,13 +29,15 @@ const touchInterval = time.Minute
 
 // Tokens are the use cases that manage stored tokens.
 type Tokens struct {
-	store ports.TokenStore
-	clock ports.Clock
+	store    ports.TokenStore
+	clock    ports.Clock
+	sessions ports.SessionStore
 }
 
-// NewTokens builds the token use cases over their ports.
-func NewTokens(store ports.TokenStore, clock ports.Clock) *Tokens {
-	return &Tokens{store: store, clock: clock}
+// NewTokens builds the token use cases over their ports. sessions is where
+// revoking a token with owner rights ends every web session (see Revoke).
+func NewTokens(store ports.TokenStore, clock ports.Clock, sessions ports.SessionStore) *Tokens {
+	return &Tokens{store: store, clock: clock, sessions: sessions}
 }
 
 // CreateTokenParams are the settings of a new token.
@@ -194,24 +196,36 @@ func (t *Tokens) List(ctx context.Context, p domain.Principal) ([]domain.Token, 
 // token:admin and returns domain.ErrNotFound for an unknown id, and also for
 // a token more powerful than the principal (the no-escalation rule of
 // Create), so that it does not show itself. Root may revoke any token.
+//
+// A token that has owner rights (HasOwnerRights: every scope, no repository
+// list) could open web sessions, so revoking it also signs every browser out,
+// as `ermite web logout --all` does: web sessions are not tied to the token
+// that opened them. The revocation holds even if signing out fails, which is
+// then reported as an error.
 func (t *Tokens) Revoke(ctx context.Context, p domain.Principal, id string) error {
 	if err := requireTokenAdmin(p); err != nil {
 		return err
 	}
-	if !p.IsRoot() {
-		tok, err := t.store.Get(ctx, id)
-		if err != nil {
-			return err
-		}
-		if checkNoEscalation(p, tok) != nil {
-			return domain.ErrNotFound
-		}
+	tok, err := t.store.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !p.IsRoot() && checkNoEscalation(p, tok) != nil {
+		return domain.ErrNotFound
 	}
 	if err := t.store.Revoke(ctx, id); err != nil {
 		return err
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("token_id", id).Str("revoked_by", p.Label()).Str("revoked_by_token", p.TokenID()).Msg("token revoked")
+	if !domain.TokenPrincipal(tok).HasOwnerRights() {
+		return nil
+	}
+	epoch, err := t.sessions.BumpEpoch(ctx)
+	if err != nil {
+		return fmt.Errorf("token %s revoked, but signing out the web sessions failed: %w", id, err)
+	}
+	log.Info().Str("token_id", id).Uint64("epoch", epoch).Msg("every web session signed out: the revoked token had owner rights")
 	return nil
 }
 

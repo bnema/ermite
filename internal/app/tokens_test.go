@@ -20,19 +20,20 @@ import (
 )
 
 type tokenFixture struct {
-	store  *mocks.TokenStore
-	clock  *mocks.Clock
-	tokens *app.Tokens
-	auth   *app.Auth
+	store    *mocks.TokenStore
+	clock    *mocks.Clock
+	sessions *mocks.SessionStore
+	tokens   *app.Tokens
+	auth     *app.Auth
 }
 
 var rootSecret = "root-secret-0123456789abcdef0123456789"
 
 func newTokenFixture(t *testing.T) *tokenFixture {
 	t.Helper()
-	f := &tokenFixture{store: mocks.NewTokenStore(t), clock: mocks.NewClock(t)}
+	f := &tokenFixture{store: mocks.NewTokenStore(t), clock: mocks.NewClock(t), sessions: mocks.NewSessionStore(t)}
 	f.clock.EXPECT().Now().Return(now).Maybe()
-	f.tokens = app.NewTokens(f.store, f.clock)
+	f.tokens = app.NewTokens(f.store, f.clock, f.sessions)
 	f.auth = app.NewAuth(domain.HashTokenSecret(rootSecret), f.store, f.clock)
 	return f
 }
@@ -216,14 +217,64 @@ func TestTokensListRevoke(t *testing.T) {
 
 	t.Run("revoke", func(t *testing.T) {
 		f := newTokenFixture(t)
-		f.store.EXPECT().Get(ctx, "a").Return(domain.Token{ID: "a", Scopes: scopes(domain.ScopeTokenAdmin)}, nil).Once()
+		f.store.EXPECT().Get(ctx, "a").Return(domain.Token{ID: "a", Scopes: scopes(domain.ScopeTokenAdmin)}, nil).Twice()
+		f.store.EXPECT().Get(ctx, "zz").Return(domain.Token{}, domain.ErrNotFound).Once()
 		f.store.EXPECT().Revoke(ctx, "a").Return(nil).Twice()
-		f.store.EXPECT().Revoke(ctx, "zz").Return(domain.ErrNotFound).Once()
 		require.NoError(t, f.tokens.Revoke(ctx, tokenAdmin, "a"))
 		require.NoError(t, f.tokens.Revoke(ctx, domain.Root(), "a"))
 		assert.ErrorIs(t, f.tokens.Revoke(ctx, domain.Root(), "zz"), domain.ErrNotFound)
 		assert.ErrorIs(t, f.tokens.Revoke(ctx, writer, "a"), domain.ErrForbidden)
 		assert.ErrorIs(t, f.tokens.Revoke(ctx, domain.Anonymous(), "a"), domain.ErrUnauthenticated)
+	})
+}
+
+// GO-003b: revoking a token with owner rights signs every browser out (the
+// session epoch is bumped); revoking any other token does not.
+func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
+	ctx := context.Background()
+	ownerTok := domain.Token{ID: "own", Scopes: domain.AllScopes()}
+
+	for name, tc := range map[string]struct {
+		tok    domain.Token
+		by     domain.Principal
+		bumped bool
+	}{
+		"every scope, by root":         {ownerTok, domain.Root(), true},
+		"every scope, by an owner key": {ownerTok, domain.TokenPrincipal(domain.Token{ID: "adm", Scopes: domain.AllScopes()}), true},
+		"one scope short":              {domain.Token{ID: "p", Scopes: domain.AllScopes()[1:]}, domain.Root(), false},
+		"repo list":                    {domain.Token{ID: "l", Scopes: domain.AllScopes(), Repos: names(t, "a")}, domain.Root(), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newTokenFixture(t)
+			f.store.EXPECT().Get(ctx, tc.tok.ID).Return(tc.tok, nil)
+			f.store.EXPECT().Revoke(ctx, tc.tok.ID).Return(nil)
+			if tc.bumped {
+				f.sessions.EXPECT().BumpEpoch(ctx).Return(1, nil).Once()
+			}
+			require.NoError(t, f.tokens.Revoke(ctx, tc.by, tc.tok.ID))
+		})
+	}
+
+	t.Run("a revoke that fails bumps nothing", func(t *testing.T) {
+		f := newTokenFixture(t)
+		f.store.EXPECT().Get(ctx, "own").Return(ownerTok, nil)
+		f.store.EXPECT().Revoke(ctx, "own").Return(errors.New("kv down"))
+		assert.Error(t, f.tokens.Revoke(ctx, domain.Root(), "own"))
+	})
+
+	t.Run("a token out of reach is not revoked and bumps nothing", func(t *testing.T) {
+		f := newTokenFixture(t)
+		limited := domain.TokenPrincipal(domain.Token{ID: "adm", Scopes: scopes(domain.ScopeTokenAdmin)})
+		f.store.EXPECT().Get(ctx, "own").Return(ownerTok, nil)
+		assert.ErrorIs(t, f.tokens.Revoke(ctx, limited, "own"), domain.ErrNotFound)
+	})
+
+	t.Run("a failure to sign out is reported once the token is revoked", func(t *testing.T) {
+		f := newTokenFixture(t)
+		f.store.EXPECT().Get(ctx, "own").Return(ownerTok, nil)
+		f.store.EXPECT().Revoke(ctx, "own").Return(nil)
+		f.sessions.EXPECT().BumpEpoch(ctx).Return(0, errors.New("kv down"))
+		assert.ErrorContains(t, f.tokens.Revoke(ctx, domain.Root(), "own"), "signing out")
 	})
 }
 
@@ -299,7 +350,9 @@ func TestTokensAdminReach(t *testing.T) {
 		got, err := f.tokens.List(ctx, domain.Root())
 		require.NoError(t, err)
 		assert.Equal(t, all, got)
-		f.store.EXPECT().Revoke(ctx, "x").Return(nil) // no Get: root has no limits
+		f.store.EXPECT().Get(ctx, "x").Return(all[0], nil)
+		f.store.EXPECT().Revoke(ctx, "x").Return(nil) // root has no limits
+		f.sessions.EXPECT().BumpEpoch(ctx).Return(1, nil) // "x" has owner rights
 		require.NoError(t, f.tokens.Revoke(ctx, domain.Root(), "x"))
 	})
 

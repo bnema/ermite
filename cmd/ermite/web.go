@@ -51,11 +51,25 @@ func newWeb(cfg config.Config, api *rpc.API, sessions *app.Sessions, limiter *cl
 type webSessions struct{ *app.Sessions }
 
 func (s webSessions) Login(ctx context.Context, nonce string) (string, time.Duration, error) {
-	token, _, err := s.Sessions.Login(ctx, nonce)
+	token, expiresAt, err := s.Sessions.Login(ctx, nonce)
 	if errors.Is(err, domain.ErrUnauthenticated) {
 		return "", 0, web.ErrLinkRejected
 	}
-	return token, app.SessionTTL, err
+	if err != nil {
+		return "", 0, err
+	}
+	// The cookie lasts as long as the session, which the expiry of the token
+	// that made the link may cut short. The session token carries its own
+	// expiry, so a cookie that outlives it by under a second is harmless.
+	// The expiry is truncated to the second, hence the slack on the full TTL.
+	lifetime := app.SessionTTL
+	if d := time.Until(expiresAt); d < app.SessionTTL-time.Second {
+		lifetime = d.Round(time.Second)
+	}
+	if lifetime < time.Second {
+		return "", 0, web.ErrLinkRejected
+	}
+	return token, lifetime, nil
 }
 
 func (s webSessions) Verify(ctx context.Context, token string) (context.Context, bool, error) {

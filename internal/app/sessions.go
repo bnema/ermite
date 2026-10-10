@@ -56,7 +56,15 @@ type Sessions struct {
 	key       []byte
 
 	mu    sync.Mutex
-	links map[[sha256.Size]byte]time.Time // by hash of the nonce, to the expiry
+	links map[[sha256.Size]byte]pendingLink // by hash of the nonce
+}
+
+// pendingLink is a login link that waits to be used.
+type pendingLink struct {
+	expires time.Time
+	// sessionCap is the latest moment the session it opens may last until: the
+	// expiry of the token that created the link. Zero means no cap.
+	sessionCap time.Time
 }
 
 // NewSessions builds the session use cases and loads the signing key, which
@@ -67,7 +75,7 @@ func NewSessions(ctx context.Context, store ports.SessionStore, clock ports.Cloc
 	if err != nil {
 		return nil, fmt.Errorf("load session key: %w", err)
 	}
-	return &Sessions{store: store, clock: clock, publicURL: publicURL, key: key, links: map[[sha256.Size]byte]time.Time{}}, nil
+	return &Sessions{store: store, clock: clock, publicURL: publicURL, key: key, links: map[[sha256.Size]byte]pendingLink{}}, nil
 }
 
 // requireOwner is the access rule of the session API: root, or a stored token
@@ -83,7 +91,9 @@ func requireOwner(p domain.Principal) error {
 }
 
 // CreateLoginLink makes a link valid for LoginLinkTTL and usable once. Only
-// the owner may. It gives domain.ErrResourceExhausted when MaxPendingLoginLinks
+// the owner may. The session the link opens never outlives the token that
+// created it: it is capped at that token's expiry (no cap for root, or a token
+// that never expires). It gives domain.ErrResourceExhausted when MaxPendingLoginLinks
 // links wait. The nonce is never logged.
 func (s *Sessions) CreateLoginLink(ctx context.Context, p domain.Principal) (LoginLink, error) {
 	if err := requireOwner(p); err != nil {
@@ -98,8 +108,8 @@ func (s *Sessions) CreateLoginLink(ctx context.Context, p domain.Principal) (Log
 	exp := now.Add(LoginLinkTTL)
 
 	s.mu.Lock()
-	for h, e := range s.links {
-		if !now.Before(e) {
+	for h, l := range s.links {
+		if !now.Before(l.expires) {
 			delete(s.links, h)
 		}
 	}
@@ -107,7 +117,7 @@ func (s *Sessions) CreateLoginLink(ctx context.Context, p domain.Principal) (Log
 		s.mu.Unlock()
 		return LoginLink{}, fmt.Errorf("%w: %d login links are already pending, use one or wait a minute", domain.ErrResourceExhausted, MaxPendingLoginLinks)
 	}
-	s.links[sha256.Sum256([]byte(nonce))] = exp
+	s.links[sha256.Sum256([]byte(nonce))] = pendingLink{expires: exp, sessionCap: p.ExpiresAt()}
 	s.mu.Unlock()
 
 	log := zerowrap.FromCtx(ctx)
@@ -121,24 +131,26 @@ func (s *Sessions) LoginLinkValid(nonce string) bool {
 	h := sha256.Sum256([]byte(nonce))
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	exp, ok := s.links[h]
-	return ok && s.clock.Now().Before(exp)
+	l, ok := s.links[h]
+	return ok && s.clock.Now().Before(l.expires)
 }
 
 // Login consumes the link and opens a session: it returns the signed session
 // token, for the cookie, and when it expires. A link that is unknown, expired
 // or already used gives domain.ErrUnauthenticated, whatever the reason. The
-// nonce and the token are never logged.
+// nonce and the token are never logged. The session lasts SessionTTL, or until
+// the expiry of the token that created the link when that comes first; a link
+// whose token has expired since gives domain.ErrUnauthenticated.
 func (s *Sessions) Login(ctx context.Context, nonce string) (token string, expiresAt time.Time, err error) {
 	h := sha256.Sum256([]byte(nonce))
 	s.mu.Lock()
-	exp, ok := s.links[h]
+	l, ok := s.links[h]
 	delete(s.links, h) // single use, also when expired
 	s.mu.Unlock()
-	if !ok || !s.clock.Now().Before(exp) {
+	if !ok || !s.clock.Now().Before(l.expires) {
 		return "", time.Time{}, domain.ErrUnauthenticated
 	}
-	token, expiresAt, err = s.issue(ctx)
+	token, expiresAt, err = s.issue(ctx, l.sessionCap)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -154,13 +166,20 @@ type sessionClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (s *Sessions) issue(ctx context.Context) (string, time.Time, error) {
+// issue signs a session for SessionTTL, cut at capAt unless that is zero.
+func (s *Sessions) issue(ctx context.Context, capAt time.Time) (string, time.Time, error) {
 	epoch, err := s.store.Epoch(ctx)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("read session epoch: %w", err)
 	}
 	now := s.clock.Now().UTC()
 	exp := now.Add(SessionTTL)
+	if !capAt.IsZero() && capAt.Before(exp) {
+		exp = capAt.UTC()
+	}
+	if !exp.Truncate(time.Second).After(now) {
+		return "", time.Time{}, domain.ErrUnauthenticated
+	}
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, sessionClaims{
 		Epoch: &epoch,
 		RegisteredClaims: jwt.RegisteredClaims{

@@ -172,6 +172,62 @@ func TestLoginLinkLifecycle(t *testing.T) {
 	assert.True(t, f.sessions.LoginLinkValid(b))
 }
 
+// GO-003a: the session of a link made with a token never outlives that token;
+// root and a token that never expires leave it at SessionTTL.
+func TestSessionIsCappedByTheTokenThatMadeTheLink(t *testing.T) {
+	ctx := context.Background()
+	f := newSessionFixture(t)
+	tokenExpiring := func(in time.Duration) domain.Principal {
+		return domain.TokenPrincipal(domain.Token{ID: "t", Scopes: domain.AllScopes(), ExpiresAt: f.clock.Now().Add(in)})
+	}
+	login := func(p domain.Principal) (string, time.Time, error) {
+		link, err := f.sessions.CreateLoginLink(ctx, p)
+		require.NoError(t, err)
+		return f.sessions.Login(ctx, strings.TrimPrefix(link.URL, "https://forge.example/-/login/"))
+	}
+	start := f.clock.Now()
+
+	for name, tc := range map[string]struct {
+		p    domain.Principal
+		want time.Time
+	}{
+		"root":                {domain.Root(), start.Add(app.SessionTTL)},
+		"owner session":       {domain.Owner(), start.Add(app.SessionTTL)},
+		"never expires":       {allScopeToken(), start.Add(app.SessionTTL)},
+		"expires sooner":      {tokenExpiring(2 * time.Hour), start.Add(2 * time.Hour)},
+		"expires later":       {tokenExpiring(48 * time.Hour), start.Add(app.SessionTTL)},
+		"expires exactly TTL": {tokenExpiring(app.SessionTTL), start.Add(app.SessionTTL)},
+	} {
+		tok, exp, err := login(tc.p)
+		require.NoError(t, err, name)
+		assert.Equal(t, tc.want, exp, name)
+		_, err = f.sessions.Verify(ctx, tok)
+		assert.NoError(t, err, name)
+		// The session token itself carries the cap as its exp claim.
+		var c claims
+		_, _, err = jwt.NewParser().ParseUnverified(tok, &c)
+		require.NoError(t, err, name)
+		assert.Equal(t, tc.want, c.ExpiresAt.UTC(), name)
+	}
+
+	// It stops working when the token would have.
+	tok, _, err := login(tokenExpiring(2 * time.Hour))
+	require.NoError(t, err)
+	f.clock.advance(2*time.Hour - time.Second)
+	_, err = f.sessions.Verify(ctx, tok)
+	assert.NoError(t, err)
+	f.clock.advance(time.Second)
+	_, err = f.sessions.Verify(ctx, tok)
+	assert.ErrorIs(t, err, domain.ErrUnauthenticated, "the token expired, so did the session")
+
+	// A token that expires before the link is used opens nothing.
+	link, err := f.sessions.CreateLoginLink(ctx, tokenExpiring(30*time.Second))
+	require.NoError(t, err)
+	f.clock.advance(31 * time.Second)
+	_, _, err = f.sessions.Login(ctx, strings.TrimPrefix(link.URL, "https://forge.example/-/login/"))
+	assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+}
+
 // A single use also holds under concurrent confirmations.
 func TestLoginLinkConsumedOnceConcurrently(t *testing.T) {
 	f := newSessionFixture(t)

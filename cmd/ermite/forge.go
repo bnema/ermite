@@ -147,7 +147,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Int("invalid_dirs", len(report.InvalidDirs)).
 		Msg("repositories reconciled")
 
-	f.Tokens = app.NewTokens(store.Tokens(), clock)
+	f.Tokens = app.NewTokens(store.Tokens(), clock, store.Sessions())
 	f.Auth = app.NewAuth(cfg.AdminTokenHash, store.Tokens(), clock)
 	f.maint = app.NewMaintainer(ctx, git, opts.maintenanceDelay)
 	f.Pushes = app.NewPushes(store, f.Repos, git, f.Bus, clock, f.maint, f.Auth)
