@@ -6,6 +6,7 @@ package ports
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -68,6 +69,69 @@ type GitRepos interface {
 	SetDefaultBranch(ctx context.Context, name domain.RepoName, branch string) error
 	// Maintain refreshes the commit-graph of the repository.
 	Maintain(ctx context.Context, name domain.RepoName) error
+}
+
+// CommitQuery selects a page of history.
+type CommitQuery struct {
+	// Revision is where the history starts; the zero value is HEAD.
+	Revision domain.Revision
+	// Path restricts the history to the commits that changed this file or
+	// directory; the root means the whole history.
+	Path domain.TreePath
+	// Skip is the number of commits of the listing to leave out. A caller that
+	// pages passes the commit it got in CommitPage.Head as Revision and the
+	// number of commits already read, so that every page walks the same
+	// history even when the revision moves.
+	Skip int
+	// Limit is the number of commits wanted, 1 to MaxCommitLimit.
+	Limit int
+}
+
+// MaxCommitLimit is the most commits one CommitQuery may ask for.
+const MaxCommitLimit = 1000
+
+// CommitPage is a page of history, newest first.
+type CommitPage struct {
+	// Head is the commit the revision resolved to.
+	Head domain.ObjectID
+	// Commits has at most Limit commits.
+	Commits []domain.Commit
+	// HasMore tells that commits follow the last one.
+	HasMore bool
+}
+
+// RepoReader reads the Git data of repositories: refs, trees, blobs, history
+// and diffs. A repository that has no directory gives domain.ErrNotFound; so
+// do an unknown revision, an empty repository (which has no commit) and a
+// path that does not exist at the revision.
+type RepoReader interface {
+	// ListRefs returns HEAD, then the branches, then the tags, the last two
+	// ordered by name. HEAD is always listed: when its branch does not exist
+	// yet its ShortName and ids are empty.
+	ListRefs(ctx context.Context, repo domain.RepoName) ([]domain.Ref, error)
+	// ResolveRevision turns a revision into the commit it designates. A name
+	// that is both a branch and a tag means the branch.
+	ResolveRevision(ctx context.Context, repo domain.RepoName, rev domain.Revision) (domain.ResolvedRevision, error)
+	// ResolveRefPath splits a path such as "feature/x/dir/file" into the
+	// longest leading part that names a branch or a tag and the rest. When no
+	// ref matches, the first segment may be a commit id (full, or abbreviated
+	// to MinAbbrevLen or more). It returns domain.ErrNotFound if nothing
+	// matches.
+	ResolveRefPath(ctx context.Context, repo domain.RepoName, path string) (domain.RefPath, error)
+	// GetTree lists the directory at path. With includeLastCommit, the first
+	// domain.MaxLastCommitEntries entries get their last commit. It returns
+	// domain.ErrNotDirectory if path names something else.
+	GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error)
+	// OpenBlob returns the description of the file at path and a reader of its
+	// content, which streams without holding the whole file in memory. The
+	// caller must close the reader. It returns domain.ErrNotFile if path names
+	// something else.
+	OpenBlob(ctx context.Context, repo domain.RepoName, rev domain.Revision, path domain.TreePath) (domain.BlobInfo, io.ReadCloser, error)
+	// ListCommits returns a page of history.
+	ListCommits(ctx context.Context, repo domain.RepoName, q CommitQuery) (CommitPage, error)
+	// GetCommit returns a commit with its statistics and its diff against the
+	// first parent, bounded by limits.
+	GetCommit(ctx context.Context, repo domain.RepoName, rev domain.Revision, limits domain.DiffLimits) (domain.CommitDetail, error)
 }
 
 // HTTPBackend tells how to run `git http-backend` for one request.

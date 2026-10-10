@@ -31,6 +31,11 @@ type Config struct {
 	// MaxReceiveBytes is the largest pack a push may send
 	// (receive.maxInputSize); zero leaves Git unlimited.
 	MaxReceiveBytes int64
+	// CatFileIdle is how long a repository's long-lived `git cat-file`
+	// process may stay unused before it is stopped. Zero means 60 seconds.
+	CatFileIdle time.Duration
+	// MaxCatFiles bounds the long-lived cat-file processes. Zero means 16.
+	MaxCatFiles int
 }
 
 // Git is the git CLI adapter for ports.GitRepos.
@@ -42,12 +47,23 @@ type Git struct {
 
 	mu      sync.Mutex // guards backend
 	backend string     // git-http-backend, resolved on first use
+
+	cat *catPool // long-lived cat-file processes of the read side
 }
 
 // New builds an adapter. It does not run git: call CheckVersion.
 func New(cfg Config) *Git {
-	return &Git{bin: cfg.Bin, dataDir: cfg.DataDir, env: buildEnv(cfg.DataDir, cfg.Path), maxRecv: cfg.MaxReceiveBytes}
+	env := buildEnv(cfg.DataDir, cfg.Path)
+	return &Git{
+		bin: cfg.Bin, dataDir: cfg.DataDir, env: env, maxRecv: cfg.MaxReceiveBytes,
+		cat: newCatPool(cfg.Bin, env, cfg.CatFileIdle, cfg.MaxCatFiles),
+	}
 }
+
+// Close stops the long-lived git processes of the read side and waits for
+// them, until ctx ends. Reads after Close fail with ErrClosed. Close is
+// idempotent; the adapter's write side keeps working.
+func (g *Git) Close(ctx context.Context) error { return g.cat.close(ctx) }
 
 // buildEnv returns the complete environment of every git invocation. Nothing
 // else is passed: no GIT_* variable, no user HOME, no locale.
@@ -85,9 +101,9 @@ func (g *Git) run(ctx context.Context, args ...string) (string, error) {
 		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && msg != "" {
-			return "", fmt.Errorf("git %s: %w: %s", args[0], err, msg)
+			return "", fmt.Errorf("git %s: %w: %s", subcommand(args), err, msg)
 		}
-		return "", fmt.Errorf("git %s: %w", args[0], err)
+		return "", fmt.Errorf("git %s: %w", subcommand(args), err)
 	}
 	return stdout.String(), nil
 }
