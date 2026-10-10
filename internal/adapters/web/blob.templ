@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+import "html/template"
+
+// Blob is a file: its title with the actions, the notice of a state (too
+// large, binary, empty), the code, the rendered Markdown with its source
+// under a fold, or the image; the rail holds the facts, the last change, the
+// outline and the line selection.
+templ Blob(l Layout, p BlobPage) {
+	@Shell(l, blobRail(p)) {
+		<h1 class="file-h">
+			<span>{ p.Name }</span>
+			<span class="acts"><a href={ templ.SafeURL(p.RawHref) }>raw</a> <a href={ templ.SafeURL(p.HistHref) }>history</a> <a href={ templ.SafeURL(p.DirHref) }>dir</a></span>
+		</h1>
+		if p.Notice != "" {
+			<p class="notice" role="note">{ p.Notice }</p>
+		}
+		if p.Image {
+			<p class="img-view"><img src={ p.RawHref } alt={ p.Name }/></p>
+		}
+		if p.Rendered != nil {
+			@ReadmeView(*p.Rendered)
+		}
+		if p.HasCode {
+			if p.Rendered != nil {
+				<details class="source">
+					<summary>source</summary>
+					@CodeView(p.Code)
+				</details>
+			} else {
+				@CodeView(p.Code)
+			}
+		}
+	}
+}
+
+// CodeView is the highlighted lines with a link on each number. A click on a
+// number selects the line, shift-click extends the selection to a range; the
+// URL hash (#L10 or #L10-L24) is the state, so a page loaded with a hash is
+// painted the same way. body[data-sel] feeds the status bar and the rail.
+templ CodeView(h template.HTML) {
+	<pre
+		class="chroma code"
+		data-anchor=""
+		hx-on:click="let a = event.target.closest('a.ln'); if (!a) return; event.preventDefault();
+    let n = +a.textContent; if (!event.shiftKey || !data.anchor) data.anchor = n;
+    let lo = Math.min(+data.anchor, n), hi = Math.max(+data.anchor, n);
+    history.replaceState(null, '', '#L' + lo + (hi > lo ? '-L' + hi : '')); trigger('sel')"
+		hx-on:sel="let m = location.hash.match(/^#L(\d+)(?:-L(\d+))?$/); let lo = m ? +m[1] : 0, hi = m ? +(m[2] || m[1]) : 0;
+    q('.line in this').arr().forEach(l => { let k = +l.id.slice(1); l.classList.toggle('sel', k >= lo && k <= hi) });
+    document.body.dataset.sel = lo ? 'L' + lo + (hi > lo ? '-L' + hi + ' · ' + (hi - lo + 1) + ' lines' : '') : '';
+    if (lo && event.detail?.scroll) document.getElementById('L' + lo)?.scrollIntoView({ block: 'center' })"
+		hx-live="if (!data.ready) { data.ready = '1'; trigger('sel', { scroll: true }) }"
+		data-ready=""
+	><code>@templ.Raw(string(h))</code></pre>
+}
+
+templ blobRail(p BlobPage) {
+	<section aria-labelledby="r-file">
+		<h2 id="r-file">file</h2>
+		@Facts(p.Facts)
+	</section>
+	if p.Last != nil {
+		<section aria-labelledby="r-last">
+			<h2 id="r-last">last change <a href={ templ.SafeURL(p.HistHref) }>history</a></h2>
+			<p><a href={ templ.SafeURL(p.Last.CHref) }>{ p.Last.Short }</a> { p.Last.Subject }</p>
+			<p class="dim">
+				{ p.Last.Author } ·
+				if p.Last.WhenAt != "" {
+					<time datetime={ p.Last.WhenAt } title={ p.Last.WhenAt }>{ p.Last.When }</time>
+				}
+			</p>
+		</section>
+	}
+	if len(p.Outline) > 0 {
+		<section aria-labelledby="r-outline">
+			<h2 id="r-outline">outline</h2>
+			@Outline(p.Outline)
+		</section>
+	}
+	if p.HasCode {
+		<section aria-labelledby="r-sel">
+			<h2 id="r-sel">selection</h2>
+			<p :text="document.body.dataset.sel || 'none · click a line number, shift-click extends'">none · click a line number, shift-click extends</p>
+			<p class="dim">y copies a permalink pinned to the commit sha</p>
+		</section>
+	}
+}
