@@ -25,7 +25,22 @@ ermite serve
 | `ERMITE_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
 
-`ermite version` prints the version.
+`ermite version` prints the version (and the server's when `ERMITE_URL` is set).
+
+## Remote CLI
+
+The same binary drives a running server over its API. It reads `ERMITE_URL` (the server address, `http://` or `https://`) and `ERMITE_TOKEN` (a bearer token; optional for public reads). A token sent over plain `http://` to a host that is not loopback triggers a warning on every call.
+
+```sh
+export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...
+ermite repo list | show <name> | create <name> [--description …] [--visibility public] | edit <name> [--description …] [--visibility …] [--default-branch …] | delete <name> [--yes]
+ermite token create <label> [--preset cli|agent|ci] [--scope repo:read …] [--repo name …] [--expires 30d]   # prints the secret once
+ermite token list | revoke <id>
+ermite version                  # client and server, warns about missing server features
+ermite watch [repo] [--json]    # follows events, reconnects and resumes
+```
+
+`--json` on `repo list|show|create|edit`, `token create|list` and `version` prints stable field names, listed in each command's `--help`; `watch --json` prints one object per line. Errors are one line on standard error (`ermite: …`) and exit status 1. `ermite completion bash|zsh|fish` prints a shell completion script that completes repository names from the server.
 
 ## Git over HTTP
 
