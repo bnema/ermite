@@ -1,0 +1,548 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package main
+
+import (
+	"html"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"bnema.dev/ermite/internal/app"
+	"bnema.dev/ermite/internal/domain"
+)
+
+// mrRepo is a public repository "proj" with README.md on main and a branch
+// feat/search that is one commit ahead of it (search.go, three lines).
+type mrRepo struct {
+	*cliHarness
+	wt, url string
+}
+
+func newMRRepo(t *testing.T, vis domain.Visibility) *mrRepo {
+	t.Helper()
+	c := newCLIHarness(t)
+	_, err := c.forge.Repos.Create(c.ctx, domain.Root(), createParams(c.harness, "proj", vis))
+	require.NoError(t, err)
+	r := &mrRepo{cliHarness: c, wt: c.workTree("main", "README.md"), url: c.urlAuth(adminToken, "/proj.git")}
+	c.mustGit(r.wt, "push", "-q", r.url, "main")
+	c.mustGit(r.wt, "checkout", "-q", "-b", "feat/search")
+	c.writeFile(r.wt, "search.go", []byte("package search\n\nfunc Find() {}\n"))
+	c.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+	return r
+}
+
+func (r *mrRepo) headOf(branch string) string { return r.bareGit("proj", "rev-parse", branch) }
+
+// form posts url-encoded values as the signed-in owner, from this site.
+func (b browser) form(path, token string, values url.Values) page {
+	b.h.t.Helper()
+	return b.do("POST", path, post(token), values.Encode())
+}
+
+var reHeadField = regexp.MustCompile(`name="head_id" value="([0-9a-f]{40})"`)
+
+// formHead reads the head the merge form of a page carries.
+func formHead(t *testing.T, body string) string {
+	t.Helper()
+	m := reHeadField.FindStringSubmatch(body)
+	require.Len(t, m, 2, "the page has a merge form")
+	return m[1]
+}
+
+// AC7: the pages as an anonymous visitor sees them on a public repository:
+// read-only, no forms, public cache headers; the same pages signed in carry
+// the forms and the private headers.
+func TestWebMergeRequestPagesRender(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+
+	// The compare page: anonymous reads, the owner gets the form.
+	anon := b.get("/proj/compare/feat/search", nil)
+	require.Equal(t, 200, anon.status, anon.body)
+	assert.Equal(t, "no-cache", anon.hdr.Get("Cache-Control"))
+	assert.Empty(t, anon.hdr.Values("Vary"))
+	assert.Contains(t, anon.body, "feat/search")
+	assert.Contains(t, anon.body, "package search</td>", "the diff of the single commit")
+	assert.NotContains(t, anon.body, "<form class=\"cform create\"")
+	assert.NotContains(t, anon.body, `<form class="cform create"`)
+	assertNoInline(t, anon.body)
+	owner := b.get("/proj/compare/feat/search", as(token))
+	require.Equal(t, 200, owner.status)
+	assert.Equal(t, "private, no-store", owner.hdr.Get("Cache-Control"))
+	assert.Contains(t, owner.hdr.Values("Vary"), "Cookie")
+	assert.Contains(t, owner.body, `<form class="cform create" method="post" action="/proj/merge-requests">`)
+	assert.Contains(t, owner.body, `name="source" value="feat/search"`)
+	assert.Contains(t, owner.body, `name="target" value="main"`)
+	assert.Equal(t, 404, b.get("/proj/compare/nope", nil).status)
+	assert.Equal(t, 404, b.get("/proj/compare/main/extra", nil).status)
+	main := b.get("/proj/compare/main", nil)
+	assert.Equal(t, 200, main.status)
+	assert.Contains(t, main.body, "nothing to compare")
+
+	// An empty list, with the way to start one.
+	list := b.get("/proj/merge-requests", nil)
+	require.Equal(t, 200, list.status)
+	assert.Contains(t, list.body, "no open merge requests")
+	assert.Contains(t, list.body, `href="/proj/compare/feat/search"`)
+	assert.Contains(t, list.body, `data-key="m"`, "the section of the nav")
+	assert.NotContains(t, strings.ToLower(list.body), "proposal")
+
+	// Open one from the compare page.
+	res := b.form("/proj/merge-requests", token, url.Values{
+		"source": {"feat/search"}, "target": {"main"}, "title": {"Add <b>search</b>"},
+		"description": {"Finds things.\r\nSee https://example.org/spec) and javascript:alert(1)"},
+	})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Equal(t, "/proj/merge-requests/1", res.hdr.Get("Location"))
+	assert.Equal(t, "no-store", res.hdr.Get("Cache-Control"))
+	head := r.headOf("feat/search")
+
+	// The same pair twice is refused with a page, and nothing is created.
+	dup := b.form("/proj/merge-requests", token, url.Values{"source": {"feat/search"}, "target": {"main"}, "title": {"dup"}})
+	assert.Equal(t, http.StatusConflict, dup.status)
+	assert.Equal(t, "no-store", dup.hdr.Get("Cache-Control"))
+	assert.Contains(t, dup.body, "already exists")
+	bad := b.form("/proj/merge-requests", token, url.Values{"source": {"feat/search"}, "target": {"main"}, "title": {"bidi\u202etitle"}})
+	assert.Equal(t, http.StatusBadRequest, bad.status)
+	assert.NotContains(t, bad.body, "\u202e")
+
+	// The compare page now points at it.
+	assert.Contains(t, b.get("/proj/compare/feat/search", as(token)).body, `href="/proj/merge-requests/1"`)
+	assert.NotContains(t, b.get("/proj/compare/feat/search", as(token)).body, `<form class="cform create"`)
+
+	// The list.
+	list = b.get("/proj/merge-requests", nil)
+	assert.Contains(t, list.body, `<a href="/proj/merge-requests/1">Add &lt;b&gt;search&lt;/b&gt;</a>`)
+	assert.Contains(t, list.body, "feat/search → main")
+	assert.Equal(t, "no-cache", list.hdr.Get("Cache-Control"))
+	assertNoInline(t, list.body)
+	assert.Equal(t, "private, no-store", b.get("/proj/merge-requests", as(token)).hdr.Get("Cache-Control"))
+
+	// The page, anonymous: read-only.
+	mr := b.get("/proj/merge-requests/1", nil)
+	require.Equal(t, 200, mr.status, mr.body)
+	assert.Equal(t, "no-cache", mr.hdr.Get("Cache-Control"))
+	assert.Empty(t, mr.hdr.Values("Vary"))
+	assert.Contains(t, mr.body, "<h1><span class=\"mute\">!1</span> Add &lt;b&gt;search&lt;/b&gt;</h1>")
+	assert.NotContains(t, mr.body, "<b>search</b>")
+	assert.Contains(t, mr.body, "feat/search")
+	assert.Contains(t, mr.body, "package search</td>")
+	assert.Contains(t, mr.body, "no checks")
+	assert.Contains(t, mr.body, "fast-forward, squash")
+	assert.Contains(t, mr.body, `<a href="https://example.org/spec" rel="noopener nofollow ugc">https://example.org/spec</a>)`, "the address is linked, not its closing bracket")
+	assert.NotContains(t, mr.body, `href="javascript:`)
+	assert.Contains(t, mr.body, "Finds things.\nSee ", "line breaks are kept")
+	assert.NotContains(t, mr.body, "<form", "an anonymous visitor gets no form")
+	assert.NotContains(t, mr.body, "ermite mr merge", "nor the merge line")
+	assert.NotContains(t, mr.body, "[merge]")
+	assert.Contains(t, mr.body, `href="/proj/commit/`+head+`"`, "the commits are in the rail")
+	assert.NotContains(t, strings.ToLower(mr.body), "proposal")
+	assertNoInline(t, mr.body)
+	assert.Equal(t, 404, b.get("/proj/merge-requests/1/since", nil).status, "the read position is the owner's")
+	assert.Equal(t, 404, b.get("/proj/merge-requests/9", nil).status)
+	assert.Equal(t, 404, b.get("/proj/merge-requests/01", nil).status)
+	assert.Equal(t, 404, b.get("/proj/merge-requests/x", nil).status)
+
+	// Signed in: forms, the merge box with the head and the CLI lines.
+	own := b.get("/proj/merge-requests/1", as(token))
+	require.Equal(t, 200, own.status)
+	assert.Equal(t, "private, no-store", own.hdr.Get("Cache-Control"))
+	assert.Contains(t, own.hdr.Values("Vary"), "Cookie")
+	assert.Equal(t, head, formHead(t, own.body))
+	assert.Contains(t, own.body, `action="/proj/merge-requests/1/merge"`)
+	assert.Contains(t, own.body, `<option value="fast-forward">`)
+	assert.Contains(t, own.body, `<option value="squash">`)
+	assert.Contains(t, own.body, "ermite mr merge proj 1 --head "+head)
+	assert.Contains(t, own.body, "ermite mr merge proj 1 --head "+head+" --squash")
+	assert.Contains(t, own.body, `action="/proj/merge-requests/1/comments"`)
+	assert.Contains(t, own.body, `action="/proj/merge-requests/1/close"`)
+	assert.Contains(t, own.body, `href="/proj/merge-requests/1?on=new:1:search.go#f`, "line numbers link to their form")
+	assertNoInline(t, own.body)
+
+	// Reading is safe: GET marked nothing as read.
+	assert.NotContains(t, own.body, "since your last read")
+	show := r.cli(t, adminToken, "mr", "show", "proj", "1", "--json").ok(t)
+	assert.Contains(t, show.stdout, `"last_read_id": ""`)
+}
+
+// A private repository is invisible to the anonymous visitor on every merge
+// request page, and the owner sees it.
+func TestWebMergeRequestPrivate(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPrivate)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Secret plan").ok(t)
+
+	missing := b.get("/nothere/merge-requests/1", nil)
+	for _, p := range []string{
+		"/proj/merge-requests", "/proj/merge-requests/1", "/proj/merge-requests/1/since", "/proj/compare/feat/search",
+	} {
+		got := b.get(p, nil)
+		assert.Equal(t, 404, got.status, p)
+		assert.NotContains(t, got.body, "Secret plan", p)
+		assert.NotContains(t, got.body, "search.go", p)
+	}
+	assert.Equal(t, missing.body, b.get("/proj/merge-requests/1", nil).body, "same page as a missing repository")
+	assert.Equal(t, 404, b.get("/-/events?topic=repo:proj&view=mrs", nil).status)
+
+	for _, p := range []string{"/proj/merge-requests", "/proj/merge-requests/1", "/proj/merge-requests/1/since", "/proj/compare/feat/search"} {
+		got := b.get(p, as(token))
+		assert.Equal(t, 200, got.status, p)
+		assert.Equal(t, "private, no-store", got.hdr.Get("Cache-Control"), p)
+		assert.Contains(t, got.hdr.Values("Vary"), "Cookie", p)
+	}
+	assert.Contains(t, b.get("/proj/merge-requests", as(token)).body, "Secret plan")
+}
+
+// AC2: every write needs the session and an Origin of this site.
+func TestWebMergeRequestWritesNeedSessionAndOrigin(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "t").ok(t)
+	head := r.headOf("feat/search")
+
+	paths := map[string]string{
+		"/proj/merge-requests":                      "source=feat/search&target=main&title=x",
+		"/proj/merge-requests/1/comments":           "text=hello",
+		"/proj/merge-requests/1/comments/1/resolve": "resolved=true",
+		"/proj/merge-requests/1/merge":              "mode=fast-forward&head_id=" + head,
+		"/proj/merge-requests/1/close":              "",
+		"/proj/merge-requests/1/read":               "head_id=" + head,
+	}
+	for path, body := range paths {
+		noOrigin := b.do("POST", path, as(token), body)
+		assert.Equal(t, 403, noOrigin.status, path+" without Origin")
+		assert.Equal(t, "no-store", noOrigin.hdr.Get("Cache-Control"))
+		foreign := b.do("POST", path, map[string]string{"Cookie": sessionCookie + "=" + token, "Origin": "https://evil.example"}, body)
+		assert.Equal(t, 403, foreign.status, path+" foreign Origin")
+		anon := b.do("POST", path, map[string]string{"Origin": publicOrigin}, body)
+		assert.Equal(t, 403, anon.status, path+" without a session")
+	}
+	// Nothing happened.
+	out := r.cli(t, "", "mr", "show", "proj", "1", "--json").ok(t).stdout
+	assert.Contains(t, out, `"state": "open"`)
+	assert.NotContains(t, out, "hello")
+	assert.Equal(t, "", strings.TrimSpace(r.bareGit("proj", "rev-list", "main..feat/search", "--not", "feat/search")))
+
+	// A GET on a write route is not a page.
+	assert.Equal(t, 404, b.get("/proj/merge-requests/1/merge", as(token)).status)
+	assert.Equal(t, 404, b.get("/proj/merge-requests/1/close", as(token)).status)
+}
+
+var reNoteID = regexp.MustCompile(`id="c(\d+)"`)
+
+// The review of one request, in the browser's words: a note on a line, a
+// general one, resolve, since the last read after a push, a stale head, the
+// fast-forward merge.
+func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Add search").ok(t)
+	head1 := r.headOf("feat/search")
+	base := "/proj/merge-requests/1"
+
+	// The form of a line, then the note under that line.
+	line := b.get(base+"?on=new:3:search.go", as(token))
+	require.Equal(t, 200, line.status)
+	assert.Contains(t, line.body, `<form class="cform"`)
+	assert.Contains(t, line.body, `name="path" value="search.go"`)
+	assert.Contains(t, line.body, `name="line" value="3"`)
+	assert.Contains(t, line.body, `name="side" value="new"`)
+	assert.Equal(t, 0, strings.Count(b.get(base+"?on=new:99:search.go", as(token)).body, `name="line" value="99"`), "a line the diff lacks has no form")
+	assert.Equal(t, 0, strings.Count(b.get(base+"?on=new:3:search.go", nil).body, `<form`), "nor for a visitor")
+
+	res := b.form(base+"/comments", token, url.Values{"text": {"Why <i>empty</i>?\r\nSee https://example.org/a."}, "path": {"search.go"}, "line": {"3"}, "side": {"new"}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Equal(t, base+"#c1", res.hdr.Get("Location"))
+	assert.Equal(t, "no-store", res.hdr.Get("Cache-Control"))
+	res = b.form(base+"/comments", token, url.Values{"text": {"Looks fine overall."}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Equal(t, base+"#c2", res.hdr.Get("Location"))
+
+	anon := b.get(base, nil)
+	i := strings.Index(anon.body, `<tr class="fnote">`)
+	require.GreaterOrEqual(t, i, 0, "a note row under the line")
+	note := anon.body[i:]
+	assert.Less(t, strings.Index(note, "Why &lt;i&gt;empty&lt;/i&gt;?"), strings.Index(note, "</tr>"), "the note sits in the row under its line")
+	assert.Contains(t, anon.body, `<a href="https://example.org/a" rel="noopener nofollow ugc">https://example.org/a</a>.`)
+	assert.NotContains(t, anon.body, "<i>empty</i>")
+	assert.Contains(t, anon.body, "Looks fine overall.")
+	assert.Equal(t, 2, len(reNoteID.FindAllString(anon.body, -1)))
+	assert.NotContains(t, anon.body, "[resolve]", "a visitor cannot resolve")
+
+	// A comment that breaks a rule is refused with the rule, nothing is lost.
+	bad := b.form(base+"/comments", token, url.Values{"text": {"ok"}, "path": {"search.go"}, "line": {"99"}, "side": {"new"}})
+	assert.Equal(t, http.StatusBadRequest, bad.status)
+	assert.Equal(t, "no-store", bad.hdr.Get("Cache-Control"))
+	assert.Contains(t, bad.body, "search.go")
+	bad = b.form(base+"/comments", token, url.Values{"text": {"x"}, "path": {"search.go"}, "line": {"zz"}, "side": {"new"}})
+	assert.Equal(t, http.StatusBadRequest, bad.status)
+	bad = b.form(base+"/comments", token, url.Values{"text": {"x"}, "path": {"search.go"}, "line": {"3"}, "side": {"sideways"}})
+	assert.Equal(t, http.StatusBadRequest, bad.status)
+	bad = b.form(base+"/comments", token, url.Values{"text": {"evil\u202etext"}})
+	assert.Equal(t, http.StatusBadRequest, bad.status)
+	assert.NotContains(t, bad.body, "\u202e")
+	assert.Equal(t, 404, b.form("/proj/merge-requests/9/comments", token, url.Values{"text": {"x"}}).status)
+
+	// Resolve and unresolve.
+	own := b.get(base, as(token))
+	assert.Contains(t, own.body, `action="/proj/merge-requests/1/comments/1/resolve"`)
+	res = b.form(base+"/comments/1/resolve", token, url.Values{"resolved": {"true"}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Equal(t, base+"#c1", res.hdr.Get("Location"))
+	own = b.get(base, as(token))
+	assert.Contains(t, own.body, `data-resolved="true"`)
+	assert.Contains(t, own.body, "[unresolve]")
+	assert.Equal(t, http.StatusSeeOther, b.form(base+"/comments/1/resolve", token, url.Values{"resolved": {"false"}}).status)
+	assert.Equal(t, http.StatusBadRequest, b.form(base+"/comments/1/resolve", token, url.Values{"resolved": {"maybe"}}).status)
+	assert.Equal(t, 404, b.form(base+"/comments/42/resolve", token, url.Values{"resolved": {"true"}}).status)
+
+	// Mark read, then push: the since page shows the new change only.
+	assert.Contains(t, own.body, `action="/proj/merge-requests/1/read"`)
+	res = b.form(base+"/read", token, url.Values{"head_id": {head1}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.NotContains(t, b.get(base, as(token)).body, "[mark read]", "the head is the one that was read")
+	r.writeFile(r.wt, "extra.txt", []byte("extra\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+	head2 := r.headOf("feat/search")
+
+	all := b.get(base, as(token))
+	assert.Contains(t, all.body, `href="/proj/merge-requests/1/since"`)
+	assert.Contains(t, all.body, "since your last read")
+	assert.Contains(t, all.body, "<li data-new>", "the commit pushed since is marked")
+	assert.Contains(t, all.body, "[mark read]")
+	assert.Contains(t, all.body, "outdated", "the notes were written on the earlier head")
+	since := b.get(base+"/since", as(token))
+	require.Equal(t, 200, since.status, since.body)
+	assert.Equal(t, "private, no-store", since.hdr.Get("Cache-Control"))
+	assert.Contains(t, since.body, "changes since "+head1[:7])
+	assert.Contains(t, since.body, "extra</td>")
+	assert.NotContains(t, since.body, "package search</td>", "only what changed after the read head")
+	assert.Contains(t, since.body, "Why &lt;i&gt;empty&lt;/i&gt;?", "the notes are listed below, their lines are not in this diff")
+	assert.Contains(t, since.body, "search.go:3 (new)")
+	assert.NotContains(t, since.body, `<form class="cform"`, "no comment form on this diff")
+
+	// The merge form of the page the owner read carries that head: the push
+	// that came after is not merged unseen.
+	stale := b.form(base+"/merge", token, url.Values{"mode": {"fast-forward"}, "head_id": {head1}})
+	assert.Equal(t, http.StatusConflict, stale.status)
+	assert.Equal(t, "no-store", stale.hdr.Get("Cache-Control"))
+	assert.Contains(t, stale.body, "branch moved")
+	assert.NotEqual(t, head2, r.headOf("main"))
+	assert.Equal(t, http.StatusBadRequest, b.form(base+"/merge", token, url.Values{"mode": {"rebase"}, "head_id": {head2}}).status)
+	assert.Equal(t, http.StatusBadRequest, b.form(base+"/merge", token, url.Values{"mode": {"squash"}, "head_id": {"abc"}}).status)
+
+	// Fast-forward with the head that was read.
+	fresh := b.get(base, as(token))
+	require.Equal(t, head2, formHead(t, fresh.body))
+	res = b.form(base+"/merge", token, url.Values{"mode": {"fast-forward"}, "head_id": {formHead(t, fresh.body)}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Equal(t, base, res.hdr.Get("Location"))
+	assert.Equal(t, head2, r.headOf("main"), "the target moved to the head")
+
+	done := b.get(base, nil)
+	assert.Contains(t, done.body, "merged")
+	assert.Contains(t, done.body, "fast-forward")
+	assert.Contains(t, done.body, `href="/proj/commit/`+head2+`"`)
+	assert.NotContains(t, done.body, "<form")
+	assert.NotContains(t, b.get(base, as(token)).body, "[merge]", "nothing to merge any more")
+	// Writes on a merged request are refused with a page.
+	late := b.form(base+"/comments", token, url.Values{"text": {"too late"}})
+	assert.Equal(t, http.StatusConflict, late.status)
+	assert.Equal(t, http.StatusConflict, b.form(base+"/close", token, nil).status)
+	list := b.get("/proj/merge-requests", nil)
+	assert.Contains(t, list.body, "merged and closed")
+	assert.Regexp(t, `(?s)merged and closed.*Add search`, list.body)
+}
+
+// Squash and close, and the order of the list: open first, then the decided.
+func TestWebMergeRequestSquashCloseAndList(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	head := r.headOf("feat/search")
+	main0 := r.headOf("main")
+
+	// Open from compare with a description; the merge form squashes.
+	res := b.form("/proj/merge-requests", token, url.Values{
+		"source": {"feat/search"}, "target": {"main"}, "title": {"Squash me"}, "description": {""},
+	})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	res = b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"squash"}, "head_id": {head}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	merged := r.headOf("main")
+	assert.NotEqual(t, head, merged, "squash makes a new commit")
+	assert.Equal(t, main0, r.bareGit("proj", "rev-parse", "main^"), "on top of the old target")
+	assert.Contains(t, r.bareGit("proj", "cat-file", "-p", "main"), "gpgsig", "signed by the instance key")
+	page := b.get("/proj/merge-requests/1", nil)
+	assert.Contains(t, page.body, "squash")
+	assert.Contains(t, page.body, `href="/proj/commit/`+merged+`"`)
+
+	// A second request: closed.
+	r.mustGit(r.wt, "checkout", "-q", "-b", "feat/other", "main")
+	r.mustGit(r.wt, "pull", "-q", r.url, "main")
+	r.writeFile(r.wt, "other.go", []byte("package other\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/other")
+	r.mustGit(r.wt, "checkout", "-q", "-b", "feat/third", "feat/other")
+	r.writeFile(r.wt, "third.go", []byte("package third\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/third")
+	for _, title := range []struct{ src, title string }{{"feat/other", "Other change"}, {"feat/third", "Third change"}} {
+		res = b.form("/proj/merge-requests", token, url.Values{"source": {title.src}, "target": {"main"}, "title": {title.title}})
+		require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	}
+	res = b.form("/proj/merge-requests/2/close", token, nil)
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Equal(t, "/proj/merge-requests/2", res.hdr.Get("Location"))
+	assert.Equal(t, "no-store", res.hdr.Get("Cache-Control"))
+	closed := b.get("/proj/merge-requests/2", nil)
+	assert.Contains(t, closed.body, `data-state="closed"`)
+	assert.NotContains(t, closed.body, "<form")
+	assert.Equal(t, http.StatusConflict, b.form("/proj/merge-requests/2/close", token, nil).status, "closing twice says so")
+
+	// Open one first, then merged and closed ones, newest first within each.
+	list := b.get("/proj/merge-requests", nil).body
+	third, squash, other := strings.Index(list, "Third change"), strings.Index(list, "Squash me"), strings.Index(list, "Other change")
+	require.True(t, third >= 0 && squash >= 0 && other >= 0, list)
+	assert.Less(t, third, squash, "the open request comes first")
+	assert.Less(t, third, other)
+	assert.Less(t, strings.Index(list, ">open<"), strings.Index(list, "merged and closed"))
+	assert.Less(t, other, squash, "newest first among the decided")
+
+	// A compare page of a branch that is behind says so.
+	r.mustGit(r.wt, "checkout", "-q", "-b", "feat/stale", main0)
+	r.writeFile(r.wt, "stale.go", []byte("package stale\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/stale")
+	stale := b.get("/proj/compare/feat/stale", nil)
+	assert.Equal(t, 200, stale.status)
+	assert.Contains(t, stale.body, "has moved on")
+}
+
+// The comment limit of the API is a message, not a crash.
+func TestWebMergeRequestLimitIsFriendly(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "t").ok(t)
+	for i := 0; i < 1000; i++ {
+		_, err := r.forge.MergeRequests.AddComment(r.ctx, domain.Root(), r.name("proj"), 1, app.AddCommentParams{Text: "n"})
+		require.NoError(t, err)
+	}
+	full := b.form("/proj/merge-requests/1/comments", token, url.Values{"text": {"one more"}})
+	assert.Equal(t, http.StatusConflict, full.status)
+	assert.Contains(t, full.body, "limit reached")
+	assert.Contains(t, full.body, "1000 comments")
+	assert.Equal(t, "no-store", full.hdr.Get("Cache-Control"))
+}
+
+// Text is escaped everywhere and invisible characters are shown as markers.
+func TestWebMergeRequestEscapesText(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	res := b.form("/proj/merge-requests", token, url.Values{
+		"source": {"feat/search"}, "target": {"main"}, "title": {`"><script>alert(1)</script>`},
+		"description": {"<img src=x onerror=alert(1)>\nhttp://x.test/\"onmouseover=\"alert(1)"},
+	})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	r.cli(t, adminToken, "mr", "comment", "proj", "1", "-m", "<script>x</script> & more").ok(t)
+	for _, tok := range []string{"", token} {
+		var h map[string]string
+		if tok != "" {
+			h = as(tok)
+		}
+		body := b.get("/proj/merge-requests/1", h).body
+		assert.NotContains(t, body, "<script>alert")
+		assert.NotContains(t, body, "<img src=x")
+		assert.NotContains(t, body, "<script>x</script>")
+		assert.Contains(t, html.UnescapeString(body), `"><script>alert(1)</script>`)
+		assert.Contains(t, body, "&lt;script&gt;x&lt;/script&gt; &amp; more")
+		assertNoInline(t, body)
+		assert.NotContains(t, body, `onmouseover="alert`, "an address stops at a quote")
+	}
+}
+
+// The merge request pages learn of changes over the event stream: a fixed
+// sentence and a link, never the text of a comment or a title.
+func TestWebMergeRequestEvents(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	list := r.sse("topic=repo:proj&view=mrs", "")
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Secret <title>").ok(t)
+	ev := list.next(t, watchWait)
+	assert.Equal(t, "mr-notice", ev.name)
+	assert.Contains(t, ev.data, `<div id="mr-notice" class="live-banner" role="status">`)
+	assert.Contains(t, ev.data, `href="/proj/merge-requests"`)
+	assert.NotContains(t, ev.data, "Secret")
+
+	one := r.sse("topic=repo:proj&view=mr&n=1&ref=feat/search", "")
+	other := r.sse("topic=repo:proj&view=mr&n=2&ref=feat/other", "")
+	r.cli(t, adminToken, "mr", "comment", "proj", "1", "-m", "private words").ok(t)
+	ev = one.next(t, watchWait)
+	assert.Equal(t, "mr-notice", ev.name)
+	assert.Contains(t, ev.data, "a comment was added")
+	assert.Contains(t, ev.data, `href="/proj/merge-requests/1"`)
+	assert.NotContains(t, ev.data, "private words")
+
+	r.writeFile(r.wt, "more.txt", []byte("more\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+	ev = one.next(t, watchWait)
+	assert.Contains(t, ev.data, "the branch changed")
+
+	r.cli(t, adminToken, "mr", "close", "proj", "1").ok(t)
+	assert.Contains(t, one.next(t, watchWait).data, "was closed")
+
+	// A page of another request hears nothing of this one.
+	for drained := false; !drained; {
+		select {
+		case ev := <-other.events:
+			if !ev.comment && ev.name != "" {
+				t.Fatalf("unexpected event %+v", ev)
+			}
+		default:
+			drained = true
+		}
+	}
+	assert.Contains(t, r.get1("/proj/merge-requests/1"), `hx-sse:connect="/-/events?topic=repo%3Aproj&amp;view=mr&amp;n=1&amp;ref=feat%2Fsearch"`)
+}
+
+func (r *mrRepo) get1(path string) string {
+	r.t.Helper()
+	_, _, body := r.get(path)
+	return body
+}
+
+// A rewritten branch that dropped the commit the owner read says so, and shows
+// the whole change.
+func TestWebMergeRequestSinceAfterForcePush(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "t").ok(t)
+	base := "/proj/merge-requests/1"
+
+	nothing := b.get(base+"/since", as(token))
+	assert.Equal(t, 200, nothing.status)
+	assert.Contains(t, nothing.body, "nothing was marked read yet")
+
+	head1 := r.headOf("feat/search")
+	require.Equal(t, http.StatusSeeOther, b.form(base+"/read", token, url.Values{"head_id": {head1}}).status)
+	assert.Equal(t, http.StatusBadRequest, b.form(base+"/read", token, url.Values{"head_id": {strings.Repeat("0", 40)}}).status, "not a commit of the repository")
+	r.mustGit(r.wt, "reset", "-q", "--hard", "main")
+	r.writeFile(r.wt, "other.txt", []byte("o\n"))
+	r.mustGit(r.wt, "push", "-q", "--force", r.url, "feat/search")
+	r.bareGit("proj", "reflog", "expire", "--expire=now", "--all")
+	r.bareGit("proj", "gc", "-q", "--prune=now")
+
+	lost := b.get(base+"/since", as(token))
+	require.Equal(t, 200, lost.status)
+	assert.Contains(t, lost.body, "is gone, the branch was rewritten")
+	assert.Contains(t, lost.body, "other.txt", "the whole change is shown")
+}
