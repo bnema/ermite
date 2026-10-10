@@ -224,6 +224,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	for _, p := range githttp.Patterns {
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
 	}
+	warnSessionsNeedHTTPS(ctx, cfg.PublicURL)
 	site, err := newWeb(cfg, f.API, f.Sessions, limiter)
 	if err != nil {
 		return nil, fmt.Errorf("web: %w", err)

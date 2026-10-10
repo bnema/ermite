@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/bnema/zerowrap"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -510,4 +511,48 @@ func TestWebOwnerIsLabelledInLogs(t *testing.T) {
 	token := c.signIn(t)
 	browser{c.harness}.get("/secret", as(token))
 	assert.Contains(t, c.logs.String(), `"principal":"owner"`)
+}
+
+// GO-004: a Secure cookie is kept by browsers only from https (or a loopback
+// host), so an http public URL on another host cannot sign anyone in.
+func TestSessionsNeedHTTPS(t *testing.T) {
+	for in, want := range map[string]bool{
+		"http://forge.example":        true,
+		"http://forge.example:8080":   true,
+		"HTTP://Forge.Example":        true,
+		"http://10.0.0.5:3000":        true,
+		"http://192.168.1.2":          true,
+		"http://[2001:db8::1]:3000":   true,
+		"http://localhost.example":    true,
+		"http://127.0.0.1.example":    true,
+		"http://example.test":         true,
+		"https://forge.example":       false,
+		"https://localhost":           false,
+		"http://localhost":            false,
+		"http://LOCALHOST:3000":       false,
+		"http://127.0.0.1:3000":       false,
+		"http://127.1.2.3":            false,
+		"http://[::1]:3000":           false,
+		"http://[::ffff:127.0.0.1]:1": false,
+		"":                            false,
+	} {
+		assert.Equal(t, want, sessionsNeedHTTPS(in), in)
+	}
+}
+
+// The warning is logged once at startup, with the harness's http://example.test
+// as public URL, and the server starts all the same.
+func TestStartupWarnsWhenSignInCannotWork(t *testing.T) {
+	c := newCLIHarness(t)
+	logs := c.logs.String()
+	assert.Contains(t, logs, "browser sign-in cannot work")
+	assert.Contains(t, logs, `"level":"warn"`)
+
+	var buf syncBuffer
+	ctx := zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &buf}))
+	warnSessionsNeedHTTPS(ctx, "https://forge.example")
+	warnSessionsNeedHTTPS(ctx, "http://127.0.0.1:3000")
+	assert.Empty(t, buf.String(), "no warning for https or loopback")
+	warnSessionsNeedHTTPS(ctx, "http://forge.example")
+	assert.Contains(t, buf.String(), "ERMITE_PUBLIC_URL")
 }

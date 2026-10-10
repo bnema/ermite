@@ -7,7 +7,11 @@ import (
 	"errors"
 	"net/http"
 	"net/netip"
+	"net/url"
+	"strings"
 	"time"
+
+	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/adapters/httpserver"
@@ -43,6 +47,36 @@ func newWeb(cfg config.Config, api *rpc.API, sessions *app.Sessions, limiter *cl
 		return nil, err
 	}
 	return asPrincipal(domain.Anonymous(), cfg.TrustedProxies, srv), nil
+}
+
+// sessionsNeedHTTPS reports whether browser sign-in cannot work on this public
+// URL: the session cookie is Secure (and __Host-), which a browser keeps only
+// from https, except on a loopback host (localhost, 127.0.0.0/8, ::1), where
+// browsers treat http as secure.
+func sessionsNeedHTTPS(publicURL string) bool {
+	u, err := url.Parse(publicURL)
+	if err != nil || !strings.EqualFold(u.Scheme, "http") {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" {
+		return false
+	}
+	ip, err := netip.ParseAddr(host)
+	return err != nil || !ip.Unmap().IsLoopback()
+}
+
+// warnSessionsNeedHTTPS tells the operator, at startup, that web sign-in will
+// not work on an http public URL. It does not stop the server: the pages,
+// the API and Git do not need the cookie.
+func warnSessionsNeedHTTPS(ctx context.Context, publicURL string) {
+	if !sessionsNeedHTTPS(publicURL) {
+		return
+	}
+	log := zerowrap.FromCtx(ctx)
+	log.Warn().Str("public_url", publicURL).Msg(
+		"browser sign-in cannot work: " + config.EnvPublicURL + " is http:// on a host that is not loopback, " +
+			"and the session cookie is Secure (__Host-), so browsers drop it; serve the site over https")
 }
 
 // webSessions adapts the session use cases to web.SessionAuth: a valid token
