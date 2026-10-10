@@ -47,6 +47,12 @@ func serve(ctx context.Context) error {
 	ctx = zerowrap.WithCtx(ctx, log)
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Restore the default signal handling as soon as the first signal
+	// arrives, so a second one kills the process during the shutdown.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 
 	log.Info().Str("version", version()).Str("addr", cfg.Addr).Str("data_dir", cfg.DataDir).Msg("starting")
 
@@ -63,6 +69,10 @@ func serve(ctx context.Context) error {
 			log.Error().Err(cerr).Msg("close metadata store")
 		}
 	}()
+	// The kv store holds the directory lock: only now is run/ ours to reset.
+	if err := resetRunDir(cfg.DataDir); err != nil {
+		return err
+	}
 
 	path := os.Getenv("PATH")
 	if path == "" {
