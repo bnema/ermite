@@ -32,16 +32,16 @@ type codeView struct {
 
 // highlight renders src, the content of the file name, for the code view.
 // The language comes from the file name. Whatever goes wrong while lexing
-// (no lexer, a lexer error or timeout) degrades to plain text: the source is
-// never lost or altered. Characters that can mislead a reader (bidi
-// controls, invisible and control characters) are replaced by visible
-// markers.
-func highlight(name, src string) codeView {
+// (no lexer, a lexer error, panic or timeout, ctx done) degrades to plain
+// text: the source is never lost or altered. Characters that can mislead a
+// reader (bidi controls, invisible and control characters) are replaced by
+// visible markers.
+func highlight(ctx context.Context, name, src string) codeView {
 	src = normaliseText(src)
 	var lines [][]chroma.Token
 	lang := ""
 	if lx := lexerFor(name); lx != nil {
-		if toks, ok := tokenise(lx, src); ok {
+		if toks, ok := tokenise(ctx, lx, src); ok {
 			lines, lang = chroma.SplitTokensIntoLines(toks), lx.Config().Name
 		}
 	}
@@ -79,37 +79,28 @@ func highlight(name, src string) codeView {
 // input can be slow, and the page then shows the file as plain text.
 const highlightBudget = 10 * time.Second
 
-// lexSlots bounds the lexers running at once, those left to finish after
-// their budget included: hostile files requested over and over cannot pile
-// up CPU-bound goroutines.
+// lexSlots bounds the lexers running at once: hostile files requested over
+// and over cannot take every CPU.
 var lexSlots = make(chan struct{}, runtime.GOMAXPROCS(0))
 
-// highlightCtx is highlight with a time budget and the cancellation of ctx.
-// A lexer cannot be interrupted, so one that overruns is left to finish on
-// its own (its regexps have their own timeout) and its result is dropped.
-// When every lexing slot is taken the file is shown as plain text.
+// highlightCtx is highlight with a time budget and the cancellation of ctx:
+// the lexer stops at the next token once either is over, and the file is
+// shown as plain text. When every lexing slot is taken the file is shown as
+// plain text right away.
 func highlightCtx(ctx context.Context, name, src string) codeView {
 	select {
 	case lexSlots <- struct{}{}:
+		defer func() { <-lexSlots }()
 	default:
 		return highlightPlain(src)
 	}
-	done := make(chan codeView, 1)
-	go func() {
-		defer func() { <-lexSlots }()
-		done <- highlight(name, src)
-	}()
-	select {
-	case v := <-done:
-		return v
-	case <-ctx.Done():
-	case <-time.After(highlightBudget):
-	}
-	return highlightPlain(src)
+	ctx, cancel := context.WithTimeout(ctx, highlightBudget)
+	defer cancel()
+	return highlight(ctx, name, src)
 }
 
 // highlightPlain is the code view of src with no language.
-func highlightPlain(src string) codeView { return highlight("", src) }
+func highlightPlain(src string) codeView { return highlight(context.Background(), "", src) }
 
 // maxViewLines bounds the lines of the code view: every line costs about a
 // hundred bytes of HTML, and a megabyte of line feeds must not become a
@@ -146,15 +137,27 @@ func lexerFor(name string) chroma.Lexer {
 	return chroma.Coalesce(lx)
 }
 
-// tokenise lexes src. It reports false when the tokens do not add up to the
-// source, which is what a lexer that gave up half-way (its regexp timeout)
-// leaves behind. A lexer may add a final line feed (EnsureNL), nothing else.
-func tokenise(lx chroma.Lexer, src string) ([]chroma.Token, bool) {
+// tokenise lexes src, one token at a time so that it stops once ctx is done.
+// It reports false then, when the lexer panics (chroma lexers can, on odd
+// input), and when the tokens do not add up to the source, which is what a
+// lexer that gave up half-way (its regexp timeout) leaves behind. A lexer
+// may add a final line feed (EnsureNL), nothing else.
+func tokenise(ctx context.Context, lx chroma.Lexer, src string) (toks []chroma.Token, ok bool) {
+	defer func() {
+		if recover() != nil {
+			toks, ok = nil, false
+		}
+	}()
 	it, err := lx.Tokenise(&chroma.TokeniseOptions{State: "root", EnsureLF: true}, src)
 	if err != nil {
 		return nil, false
 	}
-	toks := it.Tokens()
+	for t := it(); t != chroma.EOF; t = it() {
+		if len(toks)%256 == 0 && ctx.Err() != nil {
+			return nil, false
+		}
+		toks = append(toks, t)
+	}
 	if strings.TrimRight(joinTokens(toks), "\n") != strings.TrimRight(src, "\n") {
 		return nil, false
 	}

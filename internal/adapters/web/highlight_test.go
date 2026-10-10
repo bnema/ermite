@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/chroma/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -14,7 +15,7 @@ import (
 )
 
 func TestHighlightLines(t *testing.T) {
-	v := highlight("a.go", "package main\n\nfunc main() {}\n")
+	v := highlight(context.Background(), "a.go", "package main\n\nfunc main() {}\n")
 	assert.Equal(t, 3, v.lines)
 	assert.Equal(t, "Go", v.lang)
 	h := string(v.html)
@@ -23,20 +24,20 @@ func TestHighlightLines(t *testing.T) {
 	assert.NotContains(t, h, "style=")
 
 	// No final line feed, CRLF and lone CR are lines too.
-	assert.Equal(t, 2, highlight("x.txt", "a\nb").lines)
-	assert.Equal(t, 3, highlight("x.txt", "a\r\nb\rc").lines)
-	assert.Equal(t, 0, highlight("x.txt", "").lines)
+	assert.Equal(t, 2, highlight(context.Background(), "x.txt", "a\nb").lines)
+	assert.Equal(t, 3, highlight(context.Background(), "x.txt", "a\r\nb\rc").lines)
+	assert.Equal(t, 0, highlight(context.Background(), "x.txt", "").lines)
 }
 
 func TestHighlightFallbackIsPlainAndEscaped(t *testing.T) {
-	v := highlight("unknown.zzz", "<script>alert(1)</script> & \"q\"\n")
+	v := highlight(context.Background(), "unknown.zzz", "<script>alert(1)</script> & \"q\"\n")
 	assert.Equal(t, "", v.lang)
 	h := string(v.html)
 	assert.Contains(t, h, "&lt;script&gt;alert(1)&lt;/script&gt; &amp; &#34;q&#34;")
 	assert.NotContains(t, h, "<script>")
 
 	// Invalid UTF-8 is replaced, not passed on.
-	assert.Contains(t, string(highlight("x.txt", "a\xffb\n").html), "a\uFFFDb")
+	assert.Contains(t, string(highlight(context.Background(), "x.txt", "a\xffb\n").html), "a\uFFFDb")
 }
 
 func TestHighlightMarksInvisibleCharacters(t *testing.T) {
@@ -44,17 +45,17 @@ func TestHighlightMarksInvisibleCharacters(t *testing.T) {
 		0x202E: "U+202E", 0x2066: "U+2066", 0x2069: "U+2069", 0x200B: "U+200B", 0xFEFF: "U+FEFF",
 		0x0000: "U+0000", 0x001B: "U+001B", 0x2028: "U+2028", 0x3164: "U+3164", 0x1F: "U+001F",
 	} {
-		h := string(highlight("x.go", "a"+string(r)+"b\n").html)
+		h := string(highlight(context.Background(), "x.go", "a"+string(r)+"b\n").html)
 		assert.NotContains(t, h, string(r), cp)
 		assert.Contains(t, h, "&lt;"+cp+"&gt;</span>", cp)
 		assert.Contains(t, h, `<span class="ctl" title="`+cp+" ", cp)
 	}
 	// A tab and ordinary non-ASCII text are left alone.
-	h := string(highlight("x.txt", "\tcafé 日本\n").html)
+	h := string(highlight(context.Background(), "x.txt", "\tcafé 日本\n").html)
 	assert.Contains(t, h, "\tcafé 日本")
 	assert.NotContains(t, h, "ctl")
 	// Inside a token of a lexer too.
-	h = string(highlight("x.go", "x := \"a\u202eb\"\n").html)
+	h = string(highlight(context.Background(), "x.go", "x := \"a\u202eb\"\n").html)
 	assert.NotContains(t, h, "\u202e")
 	assert.Contains(t, h, "&lt;U+202E&gt;")
 }
@@ -76,7 +77,7 @@ func TestHighlightKeepsTheSource(t *testing.T) {
 		"Dockerfile": "FROM alpine\nRUN echo hi\n",
 	}
 	for name, src := range srcs {
-		v := highlight(name, src)
+		v := highlight(context.Background(), name, src)
 		var text strings.Builder
 		for _, l := range strings.Split(string(v.html), "\n") {
 			l = strings.TrimSpace(l)
@@ -103,7 +104,21 @@ func TestHighlightCtxCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	v := highlightCtx(ctx, "a.go", "package a\n")
-	assert.Equal(t, 1, v.lines, "a cancelled context still gives the plain text, or the highlighted one")
+	assert.Equal(t, 1, v.lines, "a cancelled context gives the plain text")
+	assert.Empty(t, v.lang, "the lexer stopped")
+}
+
+// panicLexer is a lexer that panics while lexing, as chroma lexers can.
+type panicLexer struct{ chroma.Lexer }
+
+func (panicLexer) Tokenise(*chroma.TokeniseOptions, string) (chroma.Iterator, error) {
+	return func() chroma.Token { panic("lexer bug") }, nil
+}
+
+func TestTokeniseRecoversFromALexerPanic(t *testing.T) {
+	toks, ok := tokenise(context.Background(), panicLexer{}, "x\n")
+	assert.False(t, ok)
+	assert.Nil(t, toks)
 }
 
 func TestSniffImage(t *testing.T) {
