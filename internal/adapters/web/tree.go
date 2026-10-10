@@ -107,7 +107,7 @@ func fileCrumbs(repo, kind string, t target) []Crumb {
 	segs := strings.Split(t.path, "/")
 	for i, seg := range segs {
 		last := i == len(segs)-1
-		c := Crumb{Label: markedText(seg), Current: last}
+		c := Crumb{Label: visibleText(seg), Current: last}
 		if !last || kind == "tree" {
 			c.Href = repoHref(repo, "tree", t.name, strings.Join(segs[:i+1], "/"))
 		} else {
@@ -166,7 +166,7 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	p := TreePage{}
 	l := s.repoLayout(ctx, d, "tree")
 	for i, e := range entries {
-		row := TreeRow{Glyph: "·", Name: markedText(e.GetName()), Size: humanSize(e.GetSize()), Cursor: i == 0}
+		row := TreeRow{Glyph: "·", Name: visibleText(e.GetName()), Size: humanSize(e.GetSize()), Cursor: i == 0}
 		switch e.GetKind() {
 		case pb.EntryKind_ENTRY_KIND_DIRECTORY:
 			row.Glyph, row.Name, row.Size = "▾", row.Name+"/", "-"
@@ -179,11 +179,11 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 		default:
 			row.Href = repoHref(d.name(), "blob", t.name, e.GetPath())
 			if len(l.Cmd) < maxFileTargets {
-				l.Cmd = append(l.Cmd, CmdItem{Kind: "file", Label: markedText(e.GetPath()), Href: row.Href})
+				l.Cmd = append(l.Cmd, CmdItem{Kind: "file", Label: visibleText(e.GetPath()), Href: row.Href})
 			}
 		}
 		if c := e.GetLastCommit(); c != nil {
-			row.Subject, row.Author = markedText(c.GetSummary()), c.GetAuthor().GetName()
+			row.Subject, row.Author = visibleText(c.GetSummary()), c.GetAuthor().GetName()
 			row.CHref = repoHref(d.name(), "commit", c.GetId())
 			if ts := c.GetCommitter().GetTime(); ts.IsValid() {
 				row.When, row.WhenAt = ago(now, ts.AsTime()), rfc3339(ts.AsTime())
@@ -210,7 +210,7 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	if t.path == "" {
 		l.Title = "tree · " + d.name() + " · " + s.instance
 	} else {
-		l.Title = markedText(t.path) + " · " + d.name() + " · " + s.instance
+		l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
 	}
 	l.Status = Status{
 		Mode: "tree", Context: "tree · " + plural(len(entries), "entry", "entries"),

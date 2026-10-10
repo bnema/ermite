@@ -123,7 +123,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	}
 	size := b.info.GetSize()
 	p := BlobPage{
-		Name:     markedText(name),
+		Name:     visibleText(name),
 		RawHref:  repoHref(d.name(), "raw", t.name, t.path),
 		HistHref: repoHref(d.name(), "commits", t.name, t.path),
 		DirHref:  repoHref(d.name(), "tree", t.name, dir),
@@ -187,7 +187,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	l := s.repoLayout(ctx, d, "tree")
 	pinRef(&l, t)
 	l.Crumbs = fileCrumbs(d.name(), "blob", t)
-	l.Title = markedText(t.path) + " · " + d.name() + " · " + s.instance
+	l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
 	l.Status = Status{
 		Mode: "blob", Context: p.Name,
 		Hints: "click a line number · y permalink · ? help", Blob: p.HasCode,
@@ -207,7 +207,7 @@ func (s *Server) lastChange(ctx context.Context, repo string, t target) *CommitR
 	}
 	c := res.Msg.GetCommits()[0]
 	row := &CommitRow{
-		Short: short(c.GetId()), Subject: markedText(c.GetSummary()), Author: c.GetAuthor().GetName(),
+		Short: short(c.GetId()), Subject: visibleText(c.GetSummary()), Author: c.GetAuthor().GetName(),
 		CHref: repoHref(repo, "commit", c.GetId()),
 	}
 	if ts := c.GetCommitter().GetTime(); ts.IsValid() {

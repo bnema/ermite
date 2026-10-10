@@ -204,20 +204,6 @@ var invisibleNames = map[rune]string{
 	0xFEFF: "byte order mark",
 }
 
-// isInvisible reports whether r changes how code reads without being seen:
-// the bidirectional controls of "Trojan Source" attacks (CVE-2021-42574) and
-// the other format characters, the controls, the line and paragraph
-// separators and the blank Hangul fillers. A tab is ordinary.
-func isInvisible(r rune) bool {
-	switch r {
-	case '\t', '\n':
-		return false
-	case 0x115F, 0x1160, 0x3164, 0xFFA0:
-		return true
-	}
-	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
-}
-
 // codePoint is "U+202E".
 func codePoint(r rune) string { return fmt.Sprintf("U+%04X", r) }
 
@@ -237,7 +223,7 @@ func invisibleName(r rune) string {
 // </span>. The character itself is never output.
 func writeMarked(b *strings.Builder, s string) {
 	for {
-		i := strings.IndexFunc(s, isInvisible)
+		i := strings.IndexFunc(s, invisible)
 		if i < 0 {
 			b.WriteString(html.EscapeString(s))
 			return
@@ -248,21 +234,4 @@ func writeMarked(b *strings.Builder, s string) {
 		b.WriteString(`<span class="ctl" title="` + cp + ` ` + invisibleName(r) + `">&lt;` + cp + `&gt;</span>`)
 		s = s[i+size:]
 	}
-}
-
-// markedText is s as plain text with each invisible character replaced by
-// its <U+XXXX> marker, for names and paths shown outside the code view.
-func markedText(s string) string {
-	if !strings.ContainsFunc(s, isInvisible) {
-		return s
-	}
-	var b strings.Builder
-	for _, r := range s {
-		if isInvisible(r) {
-			b.WriteString("<" + codePoint(r) + ">")
-		} else {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }

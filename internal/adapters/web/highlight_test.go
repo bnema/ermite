@@ -59,11 +59,6 @@ func TestHighlightMarksInvisibleCharacters(t *testing.T) {
 	assert.Contains(t, h, "&lt;U+202E&gt;")
 }
 
-func TestMarkedText(t *testing.T) {
-	assert.Equal(t, "plain.go", markedText("plain.go"))
-	assert.Equal(t, "a<U+202E>b", markedText("a\u202eb"))
-}
-
 // The lexers do not lose or add characters: the text of the lines is the
 // source, whatever the language.
 func TestHighlightKeepsTheSource(t *testing.T) {
