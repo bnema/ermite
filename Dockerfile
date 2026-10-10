@@ -7,10 +7,12 @@
 # The modules bnema.dev/ermite-* are private and resolve through git.bnema.dev, which is
 # reachable from the NetBird network only. The build container uses the host's DNS and
 # routes, so on a NetBird host it needs nothing more. Behind a different route (CI), set
-#   --build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/ [--add-host git.bnema.dev:<ip>]
+#   --build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/ --network host
 # to fetch the modules over that URL instead of https://git.bnema.dev/.
+#
+# Base images are pinned to an Alpine minor release; bump them on purpose.
 
-FROM golang:1.27-alpine AS build
+FROM golang:1.27-alpine3.24 AS build
 RUN apk add --no-cache git
 ENV CGO_ENABLED=0 GOWORK=off GOTOOLCHAIN=local GOPRIVATE=bnema.dev/ermite*
 ARG GIT_REWRITE_BASE=
@@ -25,9 +27,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -buildvcs=false -ldflags "-s -w -X main.stamped=${VERSION}" \
       -o /out/ermite ./cmd/ermite
 
-FROM alpine:3
-# git-daemon provides git-http-backend on alpine.
-RUN apk add --no-cache git git-daemon ca-certificates \
+FROM alpine:3.24
+# git-daemon provides git-http-backend on alpine. tini runs as PID 1: it forwards signals
+# to ermite and reaps the git processes that detach from pushes (auto maintenance).
+RUN apk add --no-cache git git-daemon ca-certificates tini \
  && adduser -D -u 10001 -h /home/ermite ermite \
  && mkdir /data \
  && chown ermite:ermite /data
@@ -37,5 +40,5 @@ USER ermite
 WORKDIR /data
 VOLUME /data
 EXPOSE 7341
-ENTRYPOINT ["/usr/local/bin/ermite"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/ermite"]
 CMD ["serve"]

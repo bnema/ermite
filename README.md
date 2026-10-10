@@ -57,11 +57,12 @@ The server keeps its runtime files in `$ERMITE_DATA_DIR/run/` (the hook socket a
 
 ```sh
 docker build --build-arg VERSION="$(git describe --tags --always --dirty)" -t ermite .
-docker run -d -p 7341:7341 -v ermite-data:/data \
-  -e ERMITE_PUBLIC_URL=http://localhost:7341 -e ERMITE_ADMIN_TOKEN="$(head -c 32 /dev/urandom | base64)" ermite
+token=$(head -c 32 /dev/urandom | base64)   # keep it: it is the root credential
+docker run -d -p 127.0.0.1:7341:7341 -v ermite-data:/data \
+  -e ERMITE_PUBLIC_URL=http://localhost:7341 -e ERMITE_ADMIN_TOKEN="$token" ermite
 ```
 
-The image is alpine with git, runs as uid 10001 and keeps its data in the `/data` volume. Logs are JSON by default. The build fetches `bnema.dev/ermite-*` from `git.bnema.dev`, so the host must reach it (NetBird); the build container uses the host's DNS and routes. Behind another route, pass `--build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/` (and `--add-host`), as the CI job does.
+The image is alpine with git, runs as uid 10001 and keeps its data in the `/data` volume. Logs are JSON by default. The build fetches `bnema.dev/ermite-*` from `git.bnema.dev`, so the host must reach it (NetBird); the build container uses the host's DNS and routes. Behind another route, pass `--build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/` with `--network host`, as the CI job does.
 
 ## Develop with compose
 
@@ -69,7 +70,7 @@ The image is alpine with git, runs as uid 10001 and keeps its data in the `/data
 docker compose up
 ```
 
-Serves on `http://localhost:7341` with the development admin token in `compose.yaml`. The source is mounted and [air](https://github.com/air-verse/air) (`go tool air`, `.air.toml`) rebuilds and restarts the server on each change to a `.go` or `.templ` file; the module and build caches and the data live in named volumes. `docker compose down -v` removes them.
+Serves on `http://localhost:7341` with the development admin token in `compose.yaml`. The source is mounted and [air](https://github.com/air-verse/air) (`go tool air`, `.air.toml`) rebuilds and restarts the server on each change to a `.go` or `.templ` file; the module and build caches and the data live in named volumes. `docker compose down -v` removes them. The dev container runs as root, which maps to your user under rootless Docker.
 
 ## Build
 

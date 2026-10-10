@@ -10,3 +10,7 @@ Dockerfile
 /tmp
 /dist
 tmp
+/data
+.env*
+*.pem
+*.key

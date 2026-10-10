@@ -112,6 +112,7 @@ jobs:
       # git.bnema.dev through the host's /etc/hosts (127.0.0.1, see vps-infra
       # homelab/igor/ci-runner) and reaches Forgejo on :8088. Podman's Docker API rejects
       # the classic builder's --add-host encoding, so host networking is used instead.
+      # Acceptable because only trusted branches of this repo trigger CI (no fork PRs).
       - name: Build the image
         run: |
           docker build \
@@ -121,5 +122,5 @@ jobs:
             -t ermite:ci .
       - name: Smoke test
         run: |
-          docker run --rm ermite:ci version
+          docker run --rm ermite:ci version | tee /dev/stderr | grep -qF "ermite $(git describe --tags --always --dirty)"
           docker run --rm --entrypoint git ermite:ci --version
