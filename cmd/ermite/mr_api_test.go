@@ -26,7 +26,7 @@ type mrRig struct {
 	wt                         string
 	head                       string
 	anon, root, reader, writer *clients
-	merger, noScope            *clients
+	merger, noScope, agent     *clients
 }
 
 func newMRRig(t *testing.T, vis domain.Visibility) *mrRig {
@@ -47,7 +47,9 @@ func newMRRig(t *testing.T, vis domain.Visibility) *mrRig {
 	r.reader = h.api(h.token(scopes(domain.ScopeRepoRead)))
 	r.writer = h.api(h.token(scopes(domain.ScopeRepoRead, domain.ScopeMRWrite)))
 	r.merger = h.api(h.token(scopes(domain.ScopeRepoRead, domain.ScopeMRWrite, domain.ScopeMRMerge)))
-	r.noScope = h.api(h.token(scopes(domain.ScopeMRWrite, domain.ScopeMRMerge)))
+	// noScope holds neither repo:read nor an mr scope; agent is the agent preset.
+	r.noScope = h.api(h.token(scopes(domain.ScopeRepoWrite)))
+	r.agent = h.api(h.token(scopes(domain.ScopeRepoWrite, domain.ScopeMRWrite)))
 	return r
 }
 
@@ -123,6 +125,16 @@ func TestMergeRequestAccessOverTheAPI(t *testing.T) {
 		if name == "MergeMergeRequest" {
 			assert.Equal(t, "permission_denied", codeName(call(r.writer)), "mr:write does not merge")
 		}
+	}
+
+	// GO-001: the agent preset has no repo:read, yet mr:write is enough to write
+	// merge requests on the private repository; it still does not read them nor merge.
+	assert.Equal(t, "invalid_argument", codeName(writes["CreateMergeRequest"](r.agent)), "create sees the repository: the branch is what is wrong")
+	assert.Equal(t, "ok", codeName(writes["AddComment"](r.agent)), "AddComment agent")
+	assert.Equal(t, "ok", codeName(writes["MarkRead"](r.agent)), "MarkRead agent")
+	assert.Equal(t, "not_found", codeName(writes["MergeMergeRequest"](r.agent)), "mr:merge is not held: the repository stays hidden")
+	for name, call := range reads {
+		assert.Equal(t, "not_found", codeName(call(r.agent)), name+" agent: repo:write does not read")
 	}
 
 	// Public: anonymous reads, and writing asks for credentials.

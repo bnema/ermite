@@ -31,7 +31,8 @@ const mrTokenPrefix = "mp1:"
 // close and merge a branch. Reading needs the access of reading the
 // repository: a repository the principal may not read, a missing one and an
 // unknown number all answer domain.ErrNotFound. Writing needs mr:write, and
-// merging mr:merge, on the repository (see scopeAccess).
+// merging mr:merge, on the repository (see scopeAccess), and that scope also
+// makes a private repository visible for the action (see writable).
 type MergeRequests struct {
 	meta      ports.RepoMetaStore
 	store     ports.MergeRequestStore
@@ -90,7 +91,9 @@ func (m *MergeRequests) lockRepo(ctx context.Context, name domain.RepoName) (unl
 	}
 }
 
-// readable looks the repository up and applies the read rule.
+// readable looks the repository up and applies the read rule: reading merge
+// requests needs the access of reading the repository (canRead). repo:write
+// alone does not read them, as it does not fetch a private repository either.
 func (m *MergeRequests) readable(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error) {
 	repo, err := lookupRepo(ctx, m.meta, name)
 	if err != nil {
@@ -102,11 +105,20 @@ func (m *MergeRequests) readable(ctx context.Context, p domain.Principal, name d
 	return repo, nil
 }
 
-// writable is readable plus the scope.
+// writable looks the repository up for an action that needs a merge request
+// scope. A principal whose token holds that scope on the repository sees the
+// repository for this action even without repo:read, so that the agent preset
+// (repo:write, mr:write) can open a request on the private repository it just
+// pushed. A principal with neither repo:read nor the scope, and an unknown
+// repository, still get domain.ErrNotFound; one that can read the repository
+// but lacks the scope gets the error of scopeAccess.
 func (m *MergeRequests) writable(ctx context.Context, p domain.Principal, name domain.RepoName, scope domain.Scope) (domain.Repo, error) {
-	repo, err := m.readable(ctx, p, name)
+	repo, err := lookupRepo(ctx, m.meta, name)
 	if err != nil {
 		return domain.Repo{}, err
+	}
+	if !canRead(p, repo) && !p.Allows(scope, name) {
+		return domain.Repo{}, domain.ErrNotFound
 	}
 	if err := scopeAccess(p, repo, scope); err != nil {
 		return domain.Repo{}, err

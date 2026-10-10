@@ -194,6 +194,9 @@ func writer(scopes ...domain.Scope) domain.Principal {
 }
 
 var (
+	// agent is the agent preset: it pushes and writes merge requests, and has
+	// no repo:read.
+	agent  = writer(domain.ScopeRepoWrite, domain.ScopeMRWrite)
 	reader = writer(domain.ScopeRepoRead)
 	mrW    = writer(domain.ScopeRepoRead, domain.ScopeMRWrite)
 	mrM    = writer(domain.ScopeRepoRead, domain.ScopeMRWrite, domain.ScopeMRMerge)
@@ -318,7 +321,7 @@ func TestMergeRequestAccess(t *testing.T) {
 		},
 	}
 	for what, call := range reads {
-		for who, p := range map[string]domain.Principal{"anonymous": domain.Anonymous(), "no repo:read": noScope, "token of another repo": otherRepo} {
+		for who, p := range map[string]domain.Principal{"anonymous": domain.Anonymous(), "no repo:read": noScope, "agent, no repo:read": agent, "token of another repo": otherRepo} {
 			assert.ErrorIs(t, call(p), domain.ErrNotFound, "%s by %s on a private repository", what, who)
 		}
 		assert.NoError(t, call(reader), what+" with repo:read")
@@ -361,14 +364,20 @@ func TestMergeRequestAccess(t *testing.T) {
 			scope = domain.ScopeMRMerge
 		}
 		assert.ErrorIs(t, call(domain.Anonymous()), domain.ErrNotFound, "%s: anonymous cannot see the private repository", what)
-		assert.ErrorIs(t, call(noScope), domain.ErrNotFound, "%s: no repo:read", what)
+		assert.ErrorIs(t, call(noScope), domain.ErrNotFound, "%s: no repo:read and not the scope", what)
 		assert.ErrorIs(t, call(otherRepo), domain.ErrNotFound, "%s: another repository's token", what)
 		assert.ErrorIs(t, call(reader), domain.ErrForbidden, "%s: reading is not writing", what)
 		if scope == domain.ScopeMRMerge {
 			assert.ErrorIs(t, call(mrW), domain.ErrForbidden, "mr:write does not merge")
+			assert.ErrorIs(t, call(agent), domain.ErrNotFound, "no repo:read and not mr:merge: the repository stays hidden")
 			continue
 		}
-		// With the scope the call gets past access (and fails on its subject).
+		// With the scope the call gets past access (and fails on its subject),
+		// with or without repo:read (GO-001; TestAgentPresetWorksOnItsPrivateRepository
+		// shows the calls that succeed, as some of these fail with not found on
+		// their subject).
+		assert.NotErrorIs(t, call(agent), domain.ErrForbidden, what+": the agent preset")
+		assert.NotErrorIs(t, call(agent), domain.ErrUnauthenticated, what+": the agent preset")
 		assert.NotErrorIs(t, call(mrW), domain.ErrForbidden, what)
 		assert.NotErrorIs(t, call(mrW), domain.ErrUnauthenticated, what)
 	}
@@ -1175,4 +1184,43 @@ func TestSigningKeyInfo(t *testing.T) {
 	assert.True(t, strings.HasPrefix(info.Key.Fingerprint, "SHA256:"))
 	assert.Equal(t, "ermite@git.example.org "+info.Key.AuthorizedKey, info.AllowedSigners())
 	assert.Equal(t, domain.Identity{Name: "ermite", Email: "ermite@git.example.org"}, info.Committer)
+}
+
+// GO-001: the agent preset (repo:write, mr:write) has no repo:read, yet it
+// opens, comments on, resolves, marks read and closes merge requests on the
+// private repository it pushed to. Reading them still needs repo:read.
+func TestAgentPresetWorksOnItsPrivateRepository(t *testing.T) {
+	r := newMRRig(t) // proj is private
+	r.seed()
+	head := r.feature("feat")
+
+	mr, err := r.mrs.Create(r.ctx, agent, r.repo, app.CreateMergeRequestParams{Title: "From the agent", Source: "feat"})
+	require.NoError(t, err)
+	assert.Equal(t, head, mr.HeadID)
+	assert.Equal(t, "agent-1", mr.Author)
+
+	c, err := r.mrs.AddComment(r.ctx, agent, r.repo, mr.Number, app.AddCommentParams{Text: "note"})
+	require.NoError(t, err)
+	_, err = r.mrs.ResolveComment(r.ctx, agent, r.repo, mr.Number, c.ID, true)
+	require.NoError(t, err)
+	_, err = r.mrs.MarkRead(r.ctx, agent, r.repo, mr.Number, domain.ObjectID{})
+	require.NoError(t, err)
+
+	// repo:write alone does not read merge requests.
+	_, err = r.mrs.List(r.ctx, agent, r.repo, app.ListMergeRequestsParams{})
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+	_, err = r.mrs.Get(r.ctx, agent, r.repo, mr.Number, false)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	closed, err := r.mrs.Close(r.ctx, agent, r.repo, mr.Number)
+	require.NoError(t, err)
+	assert.Equal(t, domain.MRStateClosed, closed.State)
+
+	// An unknown repository is not found whatever the scopes.
+	_, err = r.mrs.Create(r.ctx, agent, name(t, "ghost"), app.CreateMergeRequestParams{Title: "t", Source: "feat"})
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+	// A token limited to other repositories does not get the scope here.
+	elsewhere := domain.TokenPrincipal(domain.Token{ID: "e", Scopes: []domain.Scope{domain.ScopeRepoWrite, domain.ScopeMRWrite}, Repos: []domain.RepoName{name(t, "else")}})
+	_, err = r.mrs.Create(r.ctx, elsewhere, r.repo, app.CreateMergeRequestParams{Title: "t", Source: "feat"})
+	assert.ErrorIs(t, err, domain.ErrNotFound)
 }

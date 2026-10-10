@@ -80,7 +80,7 @@ func TestMergeRequestsCLIEndToEnd(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	secret := strings.TrimSpace(stdout)
 	agent := strings.TrimSpace(func() string {
-		out, errOut, code := c.bin(t, adminToken, "token", "create", "agent-7", "--preset", "agent", "--scope", "repo:read")
+		out, errOut, code := c.bin(t, adminToken, "token", "create", "agent-7", "--preset", "agent")
 		require.Equal(t, 0, code, errOut)
 		return out
 	}())
@@ -297,7 +297,7 @@ func TestMergeRequestsOfAPrivateRepositoryAreNotFound(t *testing.T) {
 	c.mustGit(wt, "push", "-q", c.urlAuth(adminToken, "/secret.git"), "main", "feat")
 	c.cli(t, adminToken, "mr", "create", "secret", "--source", "feat", "--title", "t").ok(t)
 
-	unscoped := c.token([]domain.Scope{domain.ScopeMRWrite, domain.ScopeMRMerge})
+	unscoped := c.token([]domain.Scope{domain.ScopeRepoWrite})
 	otherRepo := c.token([]domain.Scope{domain.ScopeRepoRead, domain.ScopeMRWrite}, "elsewhere")
 	for who, secret := range map[string]string{"anonymous": "", "no repo:read": unscoped, "token of another repository": otherRepo} {
 		for _, args := range [][]string{
