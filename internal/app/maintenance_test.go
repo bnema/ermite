@@ -5,6 +5,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -37,16 +38,16 @@ func TestMaintainerDebounces(t *testing.T) {
 		runs.Add(1)
 		return nil
 	})
-	m := app.NewMaintainer(ctx, git, 50*time.Millisecond)
+	m := app.NewMaintainer(ctx, git, 200*time.Millisecond)
 	defer m.Close(ctx)
 
 	for range 10 {
 		m.Schedule(ctx, n)
 	}
-	time.Sleep(10 * time.Millisecond)
 	assert.Equal(t, int32(0), runs.Load(), "waits for the delay")
 	waitFor(t, func() bool { return runs.Load() == 1 }, "one run")
-	time.Sleep(150 * time.Millisecond)
+	// Idle: nothing is pending or running, so no second run is coming.
+	waitFor(t, m.Idle, "the maintainer to be idle")
 	assert.Equal(t, int32(1), runs.Load(), "a burst makes one run")
 
 	m.Schedule(ctx, n)
@@ -86,13 +87,12 @@ func TestMaintainerOneRunAtATimePerRepo(t *testing.T) {
 	m.Schedule(ctx, n)
 	m.Schedule(ctx, other)
 	waitFor(t, otherRan.Load, "another repository is not blocked")
-	time.Sleep(60 * time.Millisecond)
 	assert.Equal(t, int32(1), runs.Load(), "the second run waits for the first")
 
 	release <- struct{}{} // finish first run
 	waitFor(t, func() bool { return runs.Load() == 2 }, "queued run")
 	release <- struct{}{}
-	time.Sleep(60 * time.Millisecond)
+	waitFor(t, m.Idle, "the maintainer to be idle")
 	assert.Equal(t, int32(2), runs.Load(), "exactly one queued run")
 	assert.Equal(t, int32(1), maxConcurrent.Load())
 }
@@ -163,7 +163,7 @@ func TestMaintainerConcurrentSchedule(t *testing.T) {
 			defer wg.Done()
 			for range 50 {
 				m.Schedule(ctx, name(t, string(rune('a'+i%3))))
-				time.Sleep(100 * time.Microsecond)
+				runtime.Gosched()
 			}
 		}()
 	}
