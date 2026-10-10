@@ -18,7 +18,7 @@ func newRootCmd() *cobra.Command {
 			DisableDefaultCmd: true,
 		},
 	}
-	root.AddCommand(newServeCmd(), newVersionCmd())
+	root.AddCommand(newServeCmd(), newVersionCmd(), newHookCmd())
 	return root
 }
 
