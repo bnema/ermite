@@ -1,0 +1,312 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package app
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"slices"
+	"strconv"
+	"strings"
+
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+)
+
+// Page sizes of the listings.
+const (
+	// DefaultPageSize is the page size when the caller gives none.
+	DefaultPageSize = 50
+	// MaxPageSize is the largest page; a larger request is lowered to it.
+	MaxPageSize = 100
+)
+
+// Browse are the read use cases over the Git data of a repository: refs,
+// trees, blobs, history and commits. Every method applies the access rule
+// first: a repository the principal may not read, or that does not exist,
+// answers domain.ErrNotFound before the Git reader is touched.
+type Browse struct {
+	meta   ports.RepoMetaStore
+	reader ports.RepoReader
+}
+
+// NewBrowse builds the read use cases over their ports.
+func NewBrowse(meta ports.RepoMetaStore, reader ports.RepoReader) *Browse {
+	return &Browse{meta: meta, reader: reader}
+}
+
+// authorize returns nil if p may read the repository.
+func (b *Browse) authorize(ctx context.Context, p domain.Principal, name domain.RepoName) error {
+	if name.IsZero() {
+		return fmt.Errorf("%w: empty name", domain.ErrInvalidName)
+	}
+	repo, err := b.meta.Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !canRead(p, repo) {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// pageSize applies the default and the maximum.
+func pageSize(n int) (int, error) {
+	switch {
+	case n < 0:
+		return 0, fmt.Errorf("%w: %d", domain.ErrInvalidPageSize, n)
+	case n == 0:
+		return DefaultPageSize, nil
+	}
+	return min(n, MaxPageSize), nil
+}
+
+// ListRefsParams selects the refs to list.
+type ListRefsParams struct {
+	// Kinds restricts the result; empty means every kind.
+	Kinds []domain.RefKind
+	// PageSize is 0 for the default, and lowered to MaxPageSize.
+	PageSize int
+	// PageToken is the NextPageToken of the previous page, or empty.
+	PageToken string
+}
+
+// RefPage is a page of refs.
+type RefPage struct {
+	Refs []domain.Ref
+	// NextPageToken is empty on the last page.
+	NextPageToken string
+}
+
+func kindRank(k domain.RefKind) int {
+	switch k {
+	case domain.RefKindHead:
+		return 0
+	case domain.RefKindBranch:
+		return 1
+	}
+	return 2
+}
+
+// ListRefs lists HEAD, the branches and the tags, in that order, then by
+// name. The page token names the last ref of the previous page, so refs that
+// appear or disappear between two pages never shift the others.
+func (b *Browse) ListRefs(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListRefsParams) (RefPage, error) {
+	size, err := pageSize(params.PageSize)
+	if err != nil {
+		return RefPage{}, err
+	}
+	for _, k := range params.Kinds {
+		if k != domain.RefKindHead && k != domain.RefKindBranch && k != domain.RefKindTag {
+			return RefPage{}, fmt.Errorf("%w: %q", domain.ErrInvalidRefKind, k)
+		}
+	}
+	after, err := decodeRefToken(params.PageToken)
+	if err != nil {
+		return RefPage{}, err
+	}
+	if err := b.authorize(ctx, p, repo); err != nil {
+		return RefPage{}, err
+	}
+	all, err := b.reader.ListRefs(ctx, repo)
+	if err != nil {
+		return RefPage{}, err
+	}
+
+	var page RefPage
+	for _, r := range all {
+		if len(params.Kinds) > 0 && !slices.Contains(params.Kinds, r.Kind) {
+			continue
+		}
+		if after != nil && !refAfter(r, *after) {
+			continue
+		}
+		if len(page.Refs) == size {
+			last := page.Refs[len(page.Refs)-1]
+			page.NextPageToken = encodeRefToken(last)
+			break
+		}
+		page.Refs = append(page.Refs, r)
+	}
+	return page, nil
+}
+
+// refAfter reports whether r sorts after the ref the token names.
+func refAfter(r domain.Ref, last refCursor) bool {
+	if kr, lr := kindRank(r.Kind), kindRank(last.kind); kr != lr {
+		return kr > lr
+	}
+	return r.Name > last.name
+}
+
+// refCursor is the decoded page token of ListRefs.
+type refCursor struct {
+	kind domain.RefKind
+	name string
+}
+
+const (
+	refTokenPrefix    = "r1:"
+	commitTokenPrefix = "c1:"
+	maxTokenLen       = 1024
+)
+
+func encodeRefToken(last domain.Ref) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(refTokenPrefix + string(last.Kind) + ":" + last.Name))
+}
+
+// decodeRefToken returns nil for the empty token.
+func decodeRefToken(tok string) (*refCursor, error) {
+	if tok == "" {
+		return nil, nil
+	}
+	raw, ok := decodeToken(tok, refTokenPrefix)
+	if !ok {
+		return nil, fmt.Errorf("%w: refs", domain.ErrInvalidPageToken)
+	}
+	kind, name, ok := strings.Cut(raw, ":")
+	k := domain.RefKind(kind)
+	if !ok || name == "" || (k != domain.RefKindHead && k != domain.RefKindBranch && k != domain.RefKindTag) {
+		return nil, fmt.Errorf("%w: refs", domain.ErrInvalidPageToken)
+	}
+	return &refCursor{kind: k, name: name}, nil
+}
+
+func decodeToken(tok, prefix string) (string, bool) {
+	if len(tok) > maxTokenLen {
+		return "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(tok)
+	if err != nil {
+		return "", false
+	}
+	return strings.CutPrefix(string(raw), prefix)
+}
+
+// ResolveRevision turns a revision into the commit it designates.
+func (b *Browse) ResolveRevision(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.ResolvedRevision, error) {
+	if err := b.authorize(ctx, p, repo); err != nil {
+		return domain.ResolvedRevision{}, err
+	}
+	return b.reader.ResolveRevision(ctx, repo, rev)
+}
+
+// ResolveRefPath splits a path such as "feature/x/dir/file" into the longest
+// leading ref and the path inside it.
+func (b *Browse) ResolveRefPath(ctx context.Context, p domain.Principal, repo domain.RepoName, path string) (domain.RefPath, error) {
+	if err := b.authorize(ctx, p, repo); err != nil {
+		return domain.RefPath{}, err
+	}
+	return b.reader.ResolveRefPath(ctx, repo, path)
+}
+
+// GetTree lists a directory at a revision. With includeLastCommit, entries get
+// their last commit, for at most domain.MaxLastCommitEntries of them.
+func (b *Browse) GetTree(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error) {
+	if err := b.authorize(ctx, p, repo); err != nil {
+		return domain.Tree{}, err
+	}
+	return b.reader.GetTree(ctx, repo, rev, path, includeLastCommit)
+}
+
+// OpenBlob returns the description of a file and a reader of its content. The
+// caller closes the reader.
+func (b *Browse) OpenBlob(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, path domain.TreePath) (domain.BlobInfo, io.ReadCloser, error) {
+	if err := b.authorize(ctx, p, repo); err != nil {
+		return domain.BlobInfo{}, nil, err
+	}
+	return b.reader.OpenBlob(ctx, repo, rev, path)
+}
+
+// ListCommitsParams selects a page of history.
+type ListCommitsParams struct {
+	// Revision is where the history starts; the zero value is HEAD. Ignored
+	// when PageToken is set: the token pins the commit the first page started
+	// from, so every page walks the same history even if a branch moves.
+	Revision domain.Revision
+	// Path limits the history to the commits that changed it. It must be the
+	// same on every page of a listing.
+	Path domain.TreePath
+	// PageSize is 0 for the default, and lowered to MaxPageSize.
+	PageSize int
+	// PageToken is the NextPageToken of the previous page, or empty.
+	PageToken string
+}
+
+// CommitPage is a page of history, newest first.
+type CommitPage struct {
+	Commits []domain.Commit
+	// NextPageToken is empty on the last page.
+	NextPageToken string
+}
+
+// ListCommits returns a page of history. The page token holds the commit the
+// listing started from, how many commits were already returned and a digest
+// of the path; a token used with another path is invalid.
+func (b *Browse) ListCommits(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListCommitsParams) (CommitPage, error) {
+	size, err := pageSize(params.PageSize)
+	if err != nil {
+		return CommitPage{}, err
+	}
+	q := ports.CommitQuery{Revision: params.Revision, Path: params.Path, Limit: size}
+	if params.PageToken != "" {
+		head, skip, err := decodeCommitToken(params.PageToken, params.Path)
+		if err != nil {
+			return CommitPage{}, err
+		}
+		q.Revision, q.Skip = domain.RevisionOf(head), skip
+	}
+	if err := b.authorize(ctx, p, repo); err != nil {
+		return CommitPage{}, err
+	}
+	res, err := b.reader.ListCommits(ctx, repo, q)
+	if err != nil {
+		return CommitPage{}, err
+	}
+	out := CommitPage{Commits: res.Commits}
+	if res.HasMore {
+		out.NextPageToken = encodeCommitToken(res.Head, q.Skip+len(res.Commits), params.Path)
+	}
+	return out, nil
+}
+
+func pathDigest(path domain.TreePath) string {
+	sum := sha256.Sum256([]byte(path.String()))
+	return hex.EncodeToString(sum[:6])
+}
+
+func encodeCommitToken(head domain.ObjectID, skip int, path domain.TreePath) string {
+	raw := commitTokenPrefix + head.String() + ":" + strconv.Itoa(skip) + ":" + pathDigest(path)
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeCommitToken(tok string, path domain.TreePath) (domain.ObjectID, int, error) {
+	bad := fmt.Errorf("%w: commits", domain.ErrInvalidPageToken)
+	raw, ok := decodeToken(tok, commitTokenPrefix)
+	if !ok {
+		return domain.ObjectID{}, 0, bad
+	}
+	parts := strings.Split(raw, ":")
+	if len(parts) != 3 {
+		return domain.ObjectID{}, 0, bad
+	}
+	head, err := domain.ParseObjectID(parts[0])
+	skip, err2 := strconv.Atoi(parts[1])
+	if err != nil || err2 != nil || skip < 0 || parts[2] != pathDigest(path) {
+		return domain.ObjectID{}, 0, bad
+	}
+	return head, skip, nil
+}
+
+// GetCommit returns a commit with its statistics and its diff against the
+// first parent, within the default diff limits.
+func (b *Browse) GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.CommitDetail, error) {
+	if err := b.authorize(ctx, p, repo); err != nil {
+		return domain.CommitDetail{}, err
+	}
+	return b.reader.GetCommit(ctx, repo, rev, domain.DefaultDiffLimits())
+}
