@@ -180,7 +180,10 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	if err != nil {
 		v.AddErr("description", err)
 	}
-	source, target := m.checkBranches(ctx, name, params, &v)
+	source, target, err := m.checkBranches(ctx, name, params, &v)
+	if err != nil {
+		return domain.MergeRequest{}, err
+	}
 	if err := v.Err(); err != nil {
 		return domain.MergeRequest{}, err
 	}
@@ -224,7 +227,11 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 
 // checkBranches validates the branches of a new request and returns them, with
 // the default branch filled in for the target.
-func (m *MergeRequests) checkBranches(ctx context.Context, name domain.RepoName, params CreateMergeRequestParams, v *domain.Violations) (source, target string) {
+//
+// Only a branch that does not exist is a violation. Any other failure to read
+// Git is returned as an error, so that it is logged and masked, not shown in
+// the field violations.
+func (m *MergeRequests) checkBranches(ctx context.Context, name domain.RepoName, params CreateMergeRequestParams, v *domain.Violations) (source, target string, err error) {
 	source, target = params.Source, params.Target
 	if source == "" {
 		v.Add("source_branch", "is required")
@@ -235,8 +242,8 @@ func (m *MergeRequests) checkBranches(ctx context.Context, name domain.RepoName,
 	if target == "" {
 		def, exists, err := m.repos.DefaultBranch(ctx, name)
 		switch {
-		case err != nil:
-			v.Add("target_branch", "cannot be read: "+err.Error())
+		case err != nil: // includes domain.ErrNotFound: the repository is gone
+			return "", "", fmt.Errorf("read the default branch of %q: %w", name, err)
 		case !exists:
 			v.Add("target_branch", fmt.Sprintf("is empty and the default branch %q does not exist", def))
 		default:
@@ -248,7 +255,7 @@ func (m *MergeRequests) checkBranches(ctx context.Context, name domain.RepoName,
 	}
 	if source != "" && source == target {
 		v.Add("target_branch", "must differ from source_branch")
-		return source, target
+		return source, target, nil
 	}
 	for _, b := range []struct{ field, name string }{{"source_branch", source}, {"target_branch", target}} {
 		if b.name == "" {
@@ -258,10 +265,10 @@ func (m *MergeRequests) checkBranches(ctx context.Context, name domain.RepoName,
 		if errors.Is(err, domain.ErrNotFound) {
 			v.Add(b.field, fmt.Sprintf("branch %q does not exist", b.name))
 		} else if err != nil {
-			v.Add(b.field, "cannot be read: "+err.Error())
+			return "", "", fmt.Errorf("read branch %q of %q: %w", b.name, name, err)
 		}
 	}
-	return source, target
+	return source, target, nil
 }
 
 // ListMergeRequestsParams selects a page of merge requests.
@@ -737,8 +744,12 @@ func (m *MergeRequests) Merge(ctx context.Context, p domain.Principal, name doma
 		return domain.MergeRequest{}, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
 	}
 	// The settings are read again under the lock: a change applies at once.
-	if current, err := m.meta.Get(ctx, name); err == nil {
-		repo = current
+	repo, err = m.meta.Get(ctx, name)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.MergeRequest{}, err // deleted meanwhile
+		}
+		return domain.MergeRequest{}, fmt.Errorf("get repository %q: %w", name, err)
 	}
 	settings := repo.Settings
 	if settings.IsZero() {
