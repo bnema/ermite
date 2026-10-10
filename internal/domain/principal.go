@@ -25,6 +25,7 @@ type Principal struct {
 	scopes    []Scope
 	repos     []RepoName
 	expiresAt time.Time
+	label     string
 }
 
 // Anonymous returns the principal of a caller without credentials.
@@ -41,6 +42,7 @@ func TokenPrincipal(t Token) Principal {
 		scopes:    slices.Clone(t.Scopes),
 		repos:     slices.Clone(t.Repos),
 		expiresAt: t.ExpiresAt,
+		label:     t.Label,
 	}
 }
 
@@ -98,3 +100,7 @@ func (p Principal) Allows(s Scope, repo RepoName) bool {
 	}
 	return true
 }
+
+// TokenLabel returns the label of the stored token, or "" for other
+// principals.
+func (p Principal) TokenLabel() string { return p.label }

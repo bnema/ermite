@@ -111,6 +111,56 @@ type PushEvent struct {
 // EventKind implements Event.
 func (PushEvent) EventKind() string { return "repo.pushed" }
 
+// MergeRequestOpened is published when a merge request is opened.
+type MergeRequestOpened struct {
+	MergeRequest MergeRequest
+	At           time.Time
+	// Visibility and CreatedAt are those of the repository when the event
+	// was published, like PushEvent's.
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (MergeRequestOpened) EventKind() string { return "mr.opened" }
+
+// MergeRequestMerged is published when a merge request was merged, before the
+// PushEvent of the target branch.
+type MergeRequestMerged struct {
+	MergeRequest MergeRequest
+	At           time.Time
+	Visibility   Visibility
+	CreatedAt    time.Time
+}
+
+// EventKind implements Event.
+func (MergeRequestMerged) EventKind() string { return "mr.merged" }
+
+// MergeRequestClosed is published when a merge request was closed without
+// merging.
+type MergeRequestClosed struct {
+	MergeRequest MergeRequest
+	At           time.Time
+	Visibility   Visibility
+	CreatedAt    time.Time
+}
+
+// EventKind implements Event.
+func (MergeRequestClosed) EventKind() string { return "mr.closed" }
+
+// CommentAdded is published when a comment was added to a merge request.
+type CommentAdded struct {
+	Repo       RepoName
+	Number     int64
+	Comment    Comment
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (CommentAdded) EventKind() string { return "mr.comment_added" }
+
 // EventGap tells a subscriber that it missed events because it was too slow;
 // it must refresh its whole view.
 type EventGap struct{}

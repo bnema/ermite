@@ -472,3 +472,19 @@ type DiffLimits struct {
 func DefaultDiffLimits() DiffLimits {
 	return DiffLimits{MaxFiles: 300, MaxFileLines: 2000, MaxTotalLines: 20000, MaxTotalBytes: 8 << 20}
 }
+
+// ParseBranchName validates s as the short name of a branch ("feat/x"), with
+// the syntax rules of ParseRevision, and rejects a full ref name, which would
+// not be short.
+func ParseBranchName(s string) (string, error) {
+	switch {
+	case s == "":
+		return "", fmt.Errorf("%w: empty branch name", ErrInvalidRevision)
+	case strings.HasPrefix(s, "refs/"):
+		return "", fmt.Errorf("%w: %q: give the short name of the branch", ErrInvalidRevision, s)
+	}
+	if reason := refNameProblem(s); reason != "" {
+		return "", fmt.Errorf("%w: %q: %s", ErrInvalidRevision, s, reason)
+	}
+	return s, nil
+}

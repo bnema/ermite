@@ -28,7 +28,10 @@ type RepoMetaStore interface {
 	// there is none and domain.ErrConflict if another write changed the
 	// stored repository since it was read.
 	Update(ctx context.Context, repo domain.Repo) error
-	// Delete removes the repository. Deleting a missing one is not an error.
+	// Delete removes the repository and everything keyed to it: its merge
+	// requests, their comments and read positions, and its number sequence.
+	// A repository created again under the same name starts empty, with its
+	// numbers starting at 1. Deleting a missing one is not an error.
 	Delete(ctx context.Context, name domain.RepoName) error
 }
 
@@ -183,6 +186,83 @@ type TokenStore interface {
 	// Touch records that the token was used at the given time. It returns
 	// domain.ErrNotFound if the token is gone.
 	Touch(ctx context.Context, id string, at time.Time) error
+}
+
+// MergeRequestStore keeps the merge requests of the repositories, their
+// comments and the read position of the reviewer. A repository has no entry
+// until its first merge request; the store does not check that it exists.
+type MergeRequestStore interface {
+	// Create stores the merge request under the next number of its
+	// repository, which it sets, and returns it. Numbers start at 1 and are
+	// never reused, even by a concurrent Create.
+	Create(ctx context.Context, mr domain.MergeRequest) (domain.MergeRequest, error)
+	// Get returns the merge request, or domain.ErrNotFound. Its Version
+	// tells Update which state it was read at.
+	Get(ctx context.Context, repo domain.RepoName, number int64) (domain.MergeRequest, error)
+	// List returns every merge request of the repository, highest number
+	// first.
+	List(ctx context.Context, repo domain.RepoName) ([]domain.MergeRequest, error)
+	// Update replaces the stored merge request. It returns domain.ErrNotFound
+	// if there is none and domain.ErrConflict if another write changed it
+	// since mr was read.
+	Update(ctx context.Context, mr domain.MergeRequest) error
+	// ListComments returns the comments of the merge request, oldest first.
+	ListComments(ctx context.Context, repo domain.RepoName, number int64) ([]domain.Comment, error)
+	// GetComment returns one comment, or domain.ErrNotFound.
+	GetComment(ctx context.Context, repo domain.RepoName, number int64, id int64) (domain.Comment, error)
+	// SaveComment writes a comment and the merge request it belongs to in one
+	// batch: a new comment (Version 0) must not exist yet, an existing one
+	// must be unchanged since it was read, and so must mr. It returns
+	// domain.ErrConflict otherwise. The caller sets mr.CommentSeq and the
+	// comment's ID for a new comment, and mr.UpdatedAt.
+	SaveComment(ctx context.Context, mr domain.MergeRequest, c domain.Comment) error
+	// GetRead returns the head the reviewer last marked read, or the zero
+	// ObjectID when there is none.
+	GetRead(ctx context.Context, repo domain.RepoName, number int64) (domain.ObjectID, error)
+	// SetRead records the head the reviewer has read.
+	SetRead(ctx context.Context, repo domain.RepoName, number int64, head domain.ObjectID) error
+}
+
+// MergeGit is what merge requests need from the Git repositories beyond
+// RepoReader. Every method returns domain.ErrNotFound when the repository has
+// no directory.
+type MergeGit interface {
+	// BranchHead returns the commit refs/heads/<branch> points to, or
+	// domain.ErrNotFound when there is no such branch.
+	BranchHead(ctx context.Context, repo domain.RepoName, branch string) (domain.ObjectID, error)
+	// HasCommit reports whether the repository holds that commit.
+	HasCommit(ctx context.Context, repo domain.RepoName, id domain.ObjectID) (bool, error)
+	// MergeBase returns the best common ancestor of two commits, or
+	// domain.ErrNotFound when they share no history.
+	MergeBase(ctx context.Context, repo domain.RepoName, a, b domain.ObjectID) (domain.ObjectID, error)
+	// IsAncestor reports whether ancestor is reachable from descendant, a
+	// commit being its own ancestor.
+	IsAncestor(ctx context.Context, repo domain.RepoName, ancestor, descendant domain.ObjectID) (bool, error)
+	// ListRange returns the commits reachable from head and not from exclude
+	// ("exclude..head"), newest first, at most limit; more is true when the
+	// range holds more. A zero exclude means the whole history of head.
+	ListRange(ctx context.Context, repo domain.RepoName, exclude, head domain.ObjectID, limit int) (commits []domain.Commit, more bool, err error)
+	// DiffCommits returns the statistics and the diff from commit base to
+	// commit head (renames detected), bounded by limits.
+	DiffCommits(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID, limits domain.DiffLimits) (domain.DiffStats, domain.Diff, error)
+	// CommitTree returns the tree of a commit.
+	CommitTree(ctx context.Context, repo domain.RepoName, id domain.ObjectID) (domain.ObjectID, error)
+	// WriteCommit stores a commit object, given as the text of the object,
+	// and returns its id.
+	WriteCommit(ctx context.Context, repo domain.RepoName, object []byte) (domain.ObjectID, error)
+	// UpdateBranch moves refs/heads/<branch> from old to new. It returns
+	// domain.ErrConflict when the branch no longer points to old.
+	UpdateBranch(ctx context.Context, repo domain.RepoName, branch string, old, new domain.ObjectID) error
+}
+
+// CommitSigner signs the commits ermite creates (ADR 0022). The private key
+// never leaves it.
+type CommitSigner interface {
+	// PublicKey returns the public key and its fingerprint.
+	PublicKey() domain.SigningPublicKey
+	// Sign signs the text of a commit object and returns the armored SSH
+	// signature (namespace "git") to put in its gpgsig header.
+	Sign(payload []byte) (string, error)
 }
 
 // EventBus fans events out to in-process subscribers.
