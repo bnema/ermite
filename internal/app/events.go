@@ -166,8 +166,26 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 			return bufferedEvent{} // repository unknown at publish time: nobody is told
 		}
 		return bufferedEvent{known: true, vis: ev.Visibility, created: ev.CreatedAt}
+	case domain.MergeRequestOpened:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.MergeRequestMerged:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.MergeRequestClosed:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.CommentAdded:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	}
 	return bufferedEvent{known: true}
+}
+
+// repoSnapshot is the snapshot of an event that carries the visibility and the
+// creation time of its repository; a zero creation time means the repository
+// was unknown when it was published, and nobody is told.
+func repoSnapshot(vis domain.Visibility, created time.Time) bufferedEvent {
+	if created.IsZero() {
+		return bufferedEvent{}
+	}
+	return bufferedEvent{known: true, vis: vis, created: created}
 }
 
 func (e *Events) append(ctx context.Context, ev domain.Event) {
@@ -253,7 +271,9 @@ type WatchEvent struct {
 	// Gap tells that events were lost: the caller must reload what it shows.
 	// Event is nil then.
 	Gap bool
-	// Event is a domain.RepoCreated, RepoUpdated, RepoDeleted or PushEvent.
+	// Event is a domain.RepoCreated, RepoUpdated, RepoDeleted, PushEvent,
+	// MergeRequestOpened, MergeRequestMerged, MergeRequestClosed or
+	// CommentAdded.
 	Event domain.Event
 	// Repo is the state of the repository at delivery, for RepoCreated and
 	// RepoUpdated.
@@ -482,6 +502,14 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 	case domain.RepoUpdated:
 		return e.deliverRepo(ctx, w, ev.Repo, true, be, out, send)
 	case domain.PushEvent:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.MergeRequestOpened:
+		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
+	case domain.MergeRequestMerged:
+		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
+	case domain.MergeRequestClosed:
+		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
+	case domain.CommentAdded:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	}
 	return nil // an event this version does not stream

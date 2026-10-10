@@ -2,7 +2,11 @@
 
 package app
 
-import "bnema.dev/ermite/internal/domain"
+import (
+	"fmt"
+
+	"bnema.dev/ermite/internal/domain"
+)
 
 // canRead is the access rule for reading a repository, the single place that
 // decides it: root reads everything, anyone reads a public repository, and a
@@ -54,4 +58,31 @@ func canManageTokens(p domain.Principal) bool {
 // visibility, description or default branch: repo:admin on it.
 func canAdmin(p domain.Principal, name domain.RepoName) bool {
 	return p.Allows(domain.ScopeRepoAdmin, name)
+}
+
+// scopeAccess is the access rule for an action that needs a scope on a
+// repository the caller can already read, such as mr:write or mr:merge:
+// unauthenticated for an anonymous caller, forbidden for one without the scope
+// on this repository.
+func scopeAccess(p domain.Principal, repo domain.Repo, scope domain.Scope) error {
+	switch {
+	case p.Allows(scope, repo.Name):
+		return nil
+	case p.IsAnonymous():
+		return domain.ErrUnauthenticated
+	}
+	return fmt.Errorf("%w: this needs the %s scope on %s", domain.ErrForbidden, scope, repo.Name)
+}
+
+// authorOf names who acts, for the author of a merge request or a comment: the
+// label of the token, "root" for the root token, "owner" for any other caller
+// (a web session).
+func authorOf(p domain.Principal) string {
+	switch {
+	case p.IsRoot():
+		return "root"
+	case p.TokenLabel() != "":
+		return p.TokenLabel()
+	}
+	return "owner"
 }

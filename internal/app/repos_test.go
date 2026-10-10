@@ -55,7 +55,7 @@ func TestCreate(t *testing.T) {
 	t.Run("success is private by default", func(t *testing.T) {
 		f := newFixture(t)
 		n := name(t, "tools")
-		want := domain.Repo{Name: n, Description: "d", Visibility: domain.VisibilityPrivate, CreatedAt: now}
+		want := domain.Repo{Name: n, Description: "d", Visibility: domain.VisibilityPrivate, CreatedAt: now, Settings: domain.DefaultRepoSettings()}
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
 		f.meta.EXPECT().Create(ctx, want).Return(nil)
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
@@ -275,7 +275,7 @@ func TestReconcile(t *testing.T) {
 			{Name: ghost, Visibility: domain.VisibilityPublic},
 			{Name: kept, Visibility: domain.VisibilityPublic},
 		}, nil)
-		f.meta.EXPECT().Create(ctx, domain.Repo{Name: orphan, Visibility: domain.VisibilityPrivate, CreatedAt: now}).Return(nil)
+		f.meta.EXPECT().Create(ctx, domain.Repo{Name: orphan, Visibility: domain.VisibilityPrivate, CreatedAt: now, Settings: domain.DefaultRepoSettings()}).Return(nil)
 
 		rep, err := f.repos.Reconcile(ctx)
 		require.NoError(t, err)

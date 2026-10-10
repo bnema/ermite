@@ -70,6 +70,7 @@ func (r *Repos) Create(ctx context.Context, p domain.Principal, params CreatePar
 		Description: params.Description,
 		Visibility:  vis,
 		CreatedAt:   r.clock.Now().UTC(),
+		Settings:    domain.DefaultRepoSettings(),
 	}
 
 	log := zerowrap.FromCtx(ctx)
@@ -200,6 +201,7 @@ func (r *Repos) Reconcile(ctx context.Context) (ReconcileReport, error) {
 			Name:       name,
 			Visibility: domain.VisibilityPrivate,
 			CreatedAt:  r.clock.Now().UTC(),
+			Settings:   domain.DefaultRepoSettings(),
 		}
 		if err := r.meta.Create(ctx, repo); err != nil && !errors.Is(err, domain.ErrAlreadyExists) {
 			return rep, fmt.Errorf("register repository %q: %w", name, err)

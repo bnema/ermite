@@ -112,7 +112,7 @@ func TestPushesOpen(t *testing.T) {
 		f := newPushFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
-		want := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, CreatedAt: now}
+		want := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, CreatedAt: now, Settings: domain.DefaultRepoSettings()}
 		f.meta.EXPECT().Create(ctx, want).Return(nil)
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
 		f.bus.EXPECT().Publish(ctx, domain.RepoCreated{Repo: n, Visibility: domain.VisibilityPrivate, At: now}).Return()

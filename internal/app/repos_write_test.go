@@ -27,7 +27,7 @@ func TestUpdate(t *testing.T) {
 	t.Run("description and visibility are stored and RepoUpdated is published", func(t *testing.T) {
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
-		want := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Description: "new"}
+		want := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Description: "new", Settings: domain.DefaultRepoSettings()}
 		f.meta.EXPECT().Update(ctx, want).Return(nil)
 		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{
 			Repo: n, At: now, Visibility: domain.VisibilityPublic, Previous: domain.VisibilityPrivate,
