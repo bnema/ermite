@@ -166,7 +166,13 @@ func (g *Git) Trash(ctx context.Context, name domain.RepoName) error {
 			return fmt.Errorf("trash repository %q: %w", name, err)
 		}
 		// A cat-file process of the old directory must not serve a repository
-		// created later under the same name.
+		// created later under the same name. This runs after the rename, not
+		// before: a rename that fails leaves the repository where it was, with
+		// its process still serving it, and a process dropped first would only
+		// be started again by the next read. Reads between the rename and the
+		// forget find no directory (repoDir fails first), and the pool is keyed
+		// by directory, so the stale process cannot answer for a new repository
+		// before it is dropped here.
 		g.cat.forget(src)
 		if err := syncDir(g.reposDir()); err != nil {
 			return fmt.Errorf("trash repository %q: %w", name, err)
@@ -232,25 +238,21 @@ func (g *Git) repoDir(name domain.RepoName) (string, error) {
 	return dir, nil
 }
 
-const headsPrefix = "refs/heads/"
-
-// DefaultBranch reads HEAD with `git symbolic-ref` and checks the branch with
-// `git for-each-ref`.
+// DefaultBranch reads HEAD and checks the branch with `git for-each-ref`.
 func (g *Git) DefaultBranch(ctx context.Context, name domain.RepoName) (string, bool, error) {
 	dir, err := g.repoDir(name)
 	if err != nil {
 		return "", false, err
 	}
-	out, err := g.run(ctx, "-C", dir, "symbolic-ref", "--quiet", "HEAD")
+	ref, err := readHead(dir)
 	if err != nil {
 		return "", false, fmt.Errorf("read HEAD of %q: %w", name, err)
 	}
-	ref := strings.TrimSpace(out)
-	branch, ok := strings.CutPrefix(ref, headsPrefix)
+	branch, ok := strings.CutPrefix(ref, headsRefPrefix)
 	if !ok {
 		return "", false, fmt.Errorf("HEAD of %q points outside refs/heads: %q", name, ref)
 	}
-	out, err = g.run(ctx, "-C", dir, "for-each-ref", "--count=1", "--format=%(refname)", ref)
+	out, err := g.run(ctx, "-C", dir, "for-each-ref", "--count=1", "--format=%(refname)", ref)
 	if err != nil {
 		return "", false, fmt.Errorf("look up %s in %q: %w", ref, name, err)
 	}
@@ -267,7 +269,7 @@ func (g *Git) HasBranch(ctx context.Context, name domain.RepoName, branch string
 	if err != nil {
 		return false, err
 	}
-	ref := headsPrefix + branch
+	ref := headsRefPrefix + branch
 	if branch == "" || strings.HasPrefix(branch, "-") {
 		return false, nil
 	}
@@ -286,23 +288,17 @@ func (g *Git) HasBranch(ctx context.Context, name domain.RepoName, branch string
 }
 
 // HeadBranch reads the HEAD file of the bare repository (files ref backend).
+// It is empty when HEAD is detached.
 func (g *Git) HeadBranch(_ context.Context, name domain.RepoName) (string, error) {
 	dir, err := g.repoDir(name)
 	if err != nil {
 		return "", err
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "HEAD"))
+	ref, err := readHead(dir)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", domain.ErrNotFound
-		}
 		return "", fmt.Errorf("read HEAD of %q: %w", name, err)
 	}
-	ref, ok := strings.CutPrefix(strings.TrimSpace(string(raw)), "ref: ")
-	if !ok {
-		return "", nil // detached
-	}
-	return strings.TrimPrefix(ref, headsPrefix), nil
+	return strings.TrimPrefix(ref, headsRefPrefix), nil
 }
 
 // SetDefaultBranch runs `git symbolic-ref HEAD refs/heads/<branch>`.
@@ -317,7 +313,7 @@ func (g *Git) SetDefaultBranch(ctx context.Context, name domain.RepoName, branch
 	if _, err := g.run(ctx, "check-ref-format", "--branch", branch); err != nil {
 		return fmt.Errorf("invalid branch name %q: %w", branch, err)
 	}
-	if _, err := g.run(ctx, "-C", dir, "symbolic-ref", "HEAD", headsPrefix+branch); err != nil {
+	if _, err := g.run(ctx, "-C", dir, "symbolic-ref", "HEAD", headsRefPrefix+branch); err != nil {
 		return fmt.Errorf("set HEAD of %q: %w", name, err)
 	}
 	return nil

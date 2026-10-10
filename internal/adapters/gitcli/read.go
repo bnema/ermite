@@ -8,11 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -26,9 +27,6 @@ const (
 	tagsRefPrefix  = "refs/tags/"
 	// maxRefLine bounds a line of for-each-ref.
 	maxRefLine = 16 * 1024
-	// lastCommitWorkers is how many `git log -1` run at once for the last
-	// commits of a directory.
-	lastCommitWorkers = 8
 )
 
 // notFound reports whether err means a missing object.
@@ -50,7 +48,7 @@ func (g *Git) ListRefs(ctx context.Context, repo domain.RepoName) ([]domain.Ref,
 	var raws []raw
 	args := readArgs(dir, "for-each-ref",
 		"--format=%(refname)%00%(objectname)%00%(objecttype)%00%(*objectname)%00%(*objecttype)",
-		"refs/heads/", "refs/tags/")
+		headsRefPrefix, tagsRefPrefix)
 	err = g.pipe(ctx, args, func(r *bufio.Reader) error {
 		lr := newLineReader(r, maxRefLine)
 		for {
@@ -126,7 +124,7 @@ func (g *Git) ListRefs(ctx context.Context, repo domain.RepoName) ([]domain.Ref,
 	}
 
 	head := domain.Ref{Name: "HEAD", Kind: domain.RefKindHead}
-	target, err := g.headTarget(ctx, dir)
+	target, err := readHead(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read HEAD of %q: %w", repo, err)
 	}
@@ -138,17 +136,23 @@ func (g *Git) ListRefs(ctx context.Context, repo domain.RepoName) ([]domain.Ref,
 	return append([]domain.Ref{head}, refs...), nil
 }
 
-// headTarget returns the ref HEAD points to, or "" if HEAD is detached.
-func (g *Git) headTarget(ctx context.Context, dir string) (string, error) {
-	out, err := g.run(ctx, readArgs(dir, "symbolic-ref", "--quiet", "HEAD")...)
+// readHead returns the ref HEAD of the bare repository in dir points to, or
+// "" if HEAD is detached. It reads the HEAD file (the repositories use the
+// files ref backend), which is what `git symbolic-ref HEAD` would answer
+// without starting a process. A missing file is domain.ErrNotFound.
+func readHead(dir string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, "HEAD"))
 	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return "", nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", domain.ErrNotFound
 		}
-		return "", err
+		return "", fmt.Errorf("read HEAD: %w", err)
 	}
-	return strings.TrimSpace(out), nil
+	ref, ok := strings.CutPrefix(strings.TrimSpace(string(raw)), "ref: ")
+	if !ok {
+		return "", nil // a commit id: detached
+	}
+	return ref, nil
 }
 
 // revCandidate is one way to read a revision as a commit.
@@ -157,27 +161,31 @@ type revCandidate struct {
 	ref  string // full ref name it stands for, "" for ids and HEAD
 }
 
-// candidates lists, in order, how a revision is tried: the branch, then the
-// tag, then (for "HEAD", full ref names, ids and abbreviations) as written.
-// Other forms Git understands, such as "main~2" or "FETCH_HEAD", are not
-// revisions of ermite.
+// candidates lists, in order, how a revision is tried. A full object id is an
+// object id first: a branch or a tag that happens to be named like a commit
+// must not redirect a link to that commit; refs are tried only when no such
+// object exists. Otherwise it is the branch, then the tag, then (for "HEAD",
+// full ref names and abbreviations) as written. Other forms Git understands,
+// such as "main~2" or "FETCH_HEAD", are not revisions of ermite.
 func candidates(rev domain.Revision) []revCandidate {
 	s := rev.String()
 	switch {
 	case rev.IsHead() || s == "HEAD":
 		return []revCandidate{{spec: "HEAD^{commit}"}}
 	}
-	out := []revCandidate{
+	refs := []revCandidate{
 		{spec: headsRefPrefix + s + "^{commit}", ref: headsRefPrefix + s},
 		{spec: tagsRefPrefix + s + "^{commit}", ref: tagsRefPrefix + s},
 	}
 	switch {
+	case rev.IsObjectID():
+		return append([]revCandidate{{spec: s + "^{commit}"}}, refs...)
 	case strings.HasPrefix(s, "refs/"):
-		out = append(out, revCandidate{spec: s + "^{commit}", ref: s})
-	case rev.IsObjectID() || rev.IsAbbrevID():
-		out = append(out, revCandidate{spec: s + "^{commit}"})
+		return append(refs, revCandidate{spec: s + "^{commit}", ref: s})
+	case rev.IsAbbrevID():
+		return append(refs, revCandidate{spec: s + "^{commit}"})
 	}
-	return out
+	return refs
 }
 
 // resolve resolves rev on an open cat-file connection.
@@ -357,6 +365,9 @@ func (g *Git) GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revi
 		return strings.Compare(a.Name, b.Name)
 	})
 
+	if len(tree.Entries) > domain.MaxTreeEntries {
+		tree.Entries, tree.Truncated = tree.Entries[:domain.MaxTreeEntries], true
+	}
 	if includeLast {
 		if err := g.fillLastCommits(ctx, dir, &tree); err != nil {
 			return domain.Tree{}, fmt.Errorf("last commits of %q in %q: %w", path, repo, err)
@@ -398,54 +409,25 @@ func parseTreeEntry(rec string, parent domain.TreePath) (domain.TreeEntry, error
 }
 
 // fillLastCommits sets the last commit of the first MaxLastCommitEntries
-// entries with `git log -1 <commit> -- <path>`, a few at a time. Git answers
-// each from the commit-graph and its changed-path filters when they exist.
-// Entries beyond the bound are left without one and the tree says so.
+// entries with `git log -1 <commit> -- <path>`, one after the other. Git
+// answers each from the commit-graph and its changed-path filters when they
+// exist. Every command takes a slot of the exec semaphore, so a large
+// directory cannot use more than its share of the processes the server may
+// run. Entries beyond the bound are left without one and the tree says so.
 func (g *Git) fillLastCommits(ctx context.Context, dir string, tree *domain.Tree) error {
 	n := len(tree.Entries)
 	if n > domain.MaxLastCommitEntries {
 		n = domain.MaxLastCommitEntries
 		tree.LastCommitsOmitted = true
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		firstErr error
-		jobs     = make(chan int)
-	)
-	for range min(lastCommitWorkers, n) {
-		wg.Go(func() {
-			for i := range jobs {
-				c, err := g.lastCommit(ctx, dir, tree.CommitID, tree.Entries[i].Path)
-				mu.Lock()
-				if err != nil && firstErr == nil {
-					firstErr = err
-					cancel()
-				}
-				if err == nil {
-					tree.Entries[i].LastCommit = &c
-				}
-				mu.Unlock()
-			}
-		})
-	}
-feed:
 	for i := range n {
-		select {
-		case jobs <- i:
-		case <-ctx.Done():
-			break feed
+		c, err := g.lastCommit(ctx, dir, tree.CommitID, tree.Entries[i].Path)
+		if err != nil {
+			return err
 		}
+		tree.Entries[i].LastCommit = &c
 	}
-	close(jobs)
-	wg.Wait()
-	if firstErr != nil {
-		return firstErr
-	}
-	return ctx.Err()
+	return nil
 }
 
 // lastCommit returns the newest commit reachable from head that changed path;

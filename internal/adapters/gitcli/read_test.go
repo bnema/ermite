@@ -5,6 +5,7 @@ package gitcli_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -653,4 +654,64 @@ func TestHostileRevisionAndPathStayLiteral(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 	var pe *domain.InvalidNameError
 	assert.False(t, errors.As(err, &pe))
+}
+
+// A full object id is an object id before it is a ref: a branch or a tag
+// named like a commit must not redirect a link to that commit.
+func TestResolveRevisionObjectIDBeatsRefs(t *testing.T) {
+	ctx := context.Background()
+	g, data := newReader(t, nil)
+	h := newHistory(t, data)
+
+	// Git itself warns about these refs and prefers the object id.
+	h.git("-c", "advice.objectNameWarning=false", "branch", h.c1, h.c3)
+	h.git("-c", "advice.objectNameWarning=false", "tag", h.c2, h.c3)
+
+	got, err := g.ResolveRevision(ctx, h.name, rev(t, h.c1))
+	require.NoError(t, err)
+	assert.Equal(t, h.c1, got.CommitID.String(), "the commit, not the branch of the same name")
+	assert.Empty(t, got.Ref)
+
+	got, err = g.ResolveRevision(ctx, h.name, rev(t, h.c2))
+	require.NoError(t, err)
+	assert.Equal(t, h.c2, got.CommitID.String(), "the commit, not the tag of the same name")
+
+	// An abbreviation is still a name first, as before.
+	h.git("branch", "abc1234", h.c3)
+	if !strings.HasPrefix(h.c1, "abc1234") {
+		got, err = g.ResolveRevision(ctx, h.name, rev(t, "abc1234"))
+		require.NoError(t, err)
+		assert.Equal(t, h.c3, got.CommitID.String())
+		assert.Equal(t, "refs/heads/abc1234", got.Ref)
+	}
+
+	// The ref is used when no object has that id.
+	ghost := strings.Repeat("ab", 20)
+	h.git("-c", "advice.objectNameWarning=false", "branch", ghost, h.c3)
+	got, err = g.ResolveRevision(ctx, h.name, rev(t, ghost))
+	require.NoError(t, err)
+	assert.Equal(t, h.c3, got.CommitID.String())
+	assert.Equal(t, "refs/heads/"+ghost, got.Ref)
+}
+
+func TestGetTreeIsBounded(t *testing.T) {
+	ctx := context.Background()
+	g, data := newReader(t, nil)
+	f := newFixtureRepo(t, data, "wide")
+	n := domain.MaxTreeEntries + 7
+	for i := range n {
+		f.write(fmt.Sprintf("d/f%05d", i), "x")
+	}
+	f.commit("wide")
+
+	tree, err := g.GetTree(ctx, f.name, domain.Revision{}, tpath(t, "d"), false)
+	require.NoError(t, err)
+	assert.True(t, tree.Truncated)
+	require.Len(t, tree.Entries, domain.MaxTreeEntries)
+	assert.Equal(t, "f00000", tree.Entries[0].Name, "the first entries in order")
+	assert.Equal(t, fmt.Sprintf("f%05d", domain.MaxTreeEntries-1), tree.Entries[domain.MaxTreeEntries-1].Name)
+
+	small, err := g.GetTree(ctx, f.name, domain.Revision{}, domain.TreePath{}, false)
+	require.NoError(t, err)
+	assert.False(t, small.Truncated)
 }
