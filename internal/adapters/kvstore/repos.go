@@ -90,9 +90,36 @@ func (s *Store) Update(ctx context.Context, repo domain.Repo) error {
 	return nil
 }
 
-// Delete removes the repository; a missing one is not an error.
+// deleteChunk is how many merge request keys one batch deletes before the
+// last one, which also removes the repository.
+const deleteChunk = 1000
+
+// Delete removes the repository and everything keyed to it: its merge
+// requests, their comments and read positions, and its number sequence. The
+// Git data is moved to the trash by the caller; the merge requests are not
+// kept anywhere, like the repository metadata, so a repository created again
+// under the same name starts clean, with its numbers starting at 1. A missing
+// repository is not an error.
+//
+// The merge request keys go first, in chunks, and the repository key goes with
+// the last chunk: a delete that fails half way leaves the repository, which
+// the caller can delete again.
 func (s *Store) Delete(ctx context.Context, name domain.RepoName) error {
+	keys := s.mergeRequestKeys(ctx, name)
+	for len(keys) > deleteChunk {
+		var b kv.Batch
+		for _, k := range keys[:deleteChunk] {
+			b.Delete(k)
+		}
+		if _, err := s.db.Apply(ctx, &b); err != nil {
+			return fmt.Errorf("delete merge requests of %q: %w", name, err)
+		}
+		keys = keys[deleteChunk:]
+	}
 	var b kv.Batch
+	for _, k := range keys {
+		b.Delete(k)
+	}
 	b.Delete(repoKey(name))
 	if _, err := s.db.Apply(ctx, &b); err != nil {
 		return fmt.Errorf("delete repository %q: %w", name, err)
@@ -111,12 +138,23 @@ func encodeRepo(r domain.Repo) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	settings := r.Settings
+	if settings.IsZero() {
+		// Settings are always stored explicitly, so that a later change of
+		// the defaults never alters a stored repository.
+		settings = domain.DefaultRepoSettings()
+	}
+	pbSettings, err := encodeSettings(settings)
+	if err != nil {
+		return nil, err
+	}
 	pb := &storagepb.Repo{
 		Name:        r.Name.String(),
 		Description: r.Description,
 		Visibility:  vis,
 		CreatedAt:   encodeTime(r.CreatedAt),
 		PushedAt:    encodeTime(r.PushedAt),
+		Settings:    pbSettings,
 	}
 	return mustMarshal(pb), nil
 }
@@ -136,6 +174,7 @@ func decodeRepo(val []byte) (domain.Repo, error) {
 		Visibility:  decodeVisibility(pb.GetVisibility()),
 		CreatedAt:   decodeTime(pb.GetCreatedAt()),
 		PushedAt:    decodeTime(pb.GetPushedAt()),
+		Settings:    decodeSettings(pb.GetSettings()),
 	}, nil
 }
 

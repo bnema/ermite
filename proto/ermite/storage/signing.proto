@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of ermite: the commit signing key.
+
+syntax = "proto3";
+
+package ermite.storage;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// SigningKey is stored under the key "signing/key". The seed is the private
+// key: it must never be logged.
+message SigningKey {
+  // The 32-byte seed of an ed25519 key.
+  bytes seed = 1;
+  google.protobuf.Timestamp created_at = 2;
+}

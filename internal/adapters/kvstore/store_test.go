@@ -42,8 +42,8 @@ func TestCreateGetListUpdateDelete(t *testing.T) {
 	ctx := context.Background()
 	s := openStore(t, t.TempDir())
 
-	b := domain.Repo{Name: name(t, "b"), Description: "second", Visibility: domain.VisibilityPublic, CreatedAt: created}
-	a := domain.Repo{Name: name(t, "a"), Visibility: domain.VisibilityPrivate, CreatedAt: created, PushedAt: created.Add(time.Hour)}
+	b := domain.Repo{Name: name(t, "b"), Description: "second", Visibility: domain.VisibilityPublic, CreatedAt: created, Settings: domain.DefaultRepoSettings()}
+	a := domain.Repo{Name: name(t, "a"), Visibility: domain.VisibilityPrivate, CreatedAt: created, PushedAt: created.Add(time.Hour), Settings: domain.DefaultRepoSettings()}
 	require.NoError(t, s.Create(ctx, b))
 	require.NoError(t, s.Create(ctx, a))
 
@@ -129,7 +129,7 @@ func TestPersistsAcrossReopen(t *testing.T) {
 	dir := t.TempDir()
 	s, err := kvstore.Open(ctx, dir)
 	require.NoError(t, err)
-	r := domain.Repo{Name: name(t, "keep"), Visibility: domain.VisibilityPublic, CreatedAt: created}
+	r := domain.Repo{Name: name(t, "keep"), Visibility: domain.VisibilityPublic, CreatedAt: created, Settings: domain.DefaultRepoSettings()}
 	require.NoError(t, s.Create(ctx, r))
 	require.NoError(t, s.Close(ctx))
 

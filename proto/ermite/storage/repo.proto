@@ -6,6 +6,7 @@ syntax = "proto3";
 
 package ermite.storage;
 
+import "ermite/storage/merge_request.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
@@ -26,6 +27,9 @@ message Repo {
   google.protobuf.Timestamp created_at = 4;
   // Unset until the first push.
   google.protobuf.Timestamp pushed_at = 5;
+  // Unset on repositories stored before merge requests: they read as the
+  // default settings.
+  RepoSettings settings = 6;
 }
 
 // SchemaVersion is stored under the key "meta/schema".

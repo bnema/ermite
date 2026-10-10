@@ -85,7 +85,10 @@ type Repo struct {
 	Visibility  Visibility             `protobuf:"varint,3,opt,name=visibility,proto3,enum=ermite.storage.Visibility" json:"visibility,omitempty"`
 	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// Unset until the first push.
-	PushedAt      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=pushed_at,json=pushedAt,proto3" json:"pushed_at,omitempty"`
+	PushedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=pushed_at,json=pushedAt,proto3" json:"pushed_at,omitempty"`
+	// Unset on repositories stored before merge requests: they read as the
+	// default settings.
+	Settings      *RepoSettings `protobuf:"bytes,6,opt,name=settings,proto3" json:"settings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -151,6 +154,13 @@ func (x *Repo) GetCreatedAt() *timestamppb.Timestamp {
 func (x *Repo) GetPushedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.PushedAt
+	}
+	return nil
+}
+
+func (x *Repo) GetSettings() *RepoSettings {
+	if x != nil {
+		return x.Settings
 	}
 	return nil
 }
@@ -311,7 +321,7 @@ var File_ermite_storage_repo_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_repo_proto_rawDesc = "" +
 	"\n" +
-	"\x19ermite/storage/repo.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xec\x01\n" +
+	"\x19ermite/storage/repo.proto\x12\x0eermite.storage\x1a\"ermite/storage/merge_request.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa6\x02\n" +
 	"\x04Repo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12:\n" +
@@ -320,7 +330,8 @@ const file_ermite_storage_repo_proto_rawDesc = "" +
 	"visibility\x129\n" +
 	"\n" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x127\n" +
-	"\tpushed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bpushedAt\")\n" +
+	"\tpushed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bpushedAt\x128\n" +
+	"\bsettings\x18\x06 \x01(\v2\x1c.ermite.storage.RepoSettingsR\bsettings\")\n" +
 	"\rSchemaVersion\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\"\xa3\x02\n" +
 	"\x05Token\x12\x0e\n" +
@@ -361,19 +372,21 @@ var file_ermite_storage_repo_proto_goTypes = []any{
 	(*SchemaVersion)(nil),         // 2: ermite.storage.SchemaVersion
 	(*Token)(nil),                 // 3: ermite.storage.Token
 	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(*RepoSettings)(nil),          // 5: ermite.storage.RepoSettings
 }
 var file_ermite_storage_repo_proto_depIdxs = []int32{
 	0, // 0: ermite.storage.Repo.visibility:type_name -> ermite.storage.Visibility
 	4, // 1: ermite.storage.Repo.created_at:type_name -> google.protobuf.Timestamp
 	4, // 2: ermite.storage.Repo.pushed_at:type_name -> google.protobuf.Timestamp
-	4, // 3: ermite.storage.Token.expires_at:type_name -> google.protobuf.Timestamp
-	4, // 4: ermite.storage.Token.created_at:type_name -> google.protobuf.Timestamp
-	4, // 5: ermite.storage.Token.last_used_at:type_name -> google.protobuf.Timestamp
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	5, // 3: ermite.storage.Repo.settings:type_name -> ermite.storage.RepoSettings
+	4, // 4: ermite.storage.Token.expires_at:type_name -> google.protobuf.Timestamp
+	4, // 5: ermite.storage.Token.created_at:type_name -> google.protobuf.Timestamp
+	4, // 6: ermite.storage.Token.last_used_at:type_name -> google.protobuf.Timestamp
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_repo_proto_init() }
@@ -381,6 +394,7 @@ func file_ermite_storage_repo_proto_init() {
 	if File_ermite_storage_repo_proto != nil {
 		return
 	}
+	file_ermite_storage_merge_request_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of ermite: merge requests.
+
+syntax = "proto3";
+
+package ermite.storage;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// MergeMode is how a merge request is merged.
+enum MergeMode {
+  MERGE_MODE_UNSPECIFIED = 0;
+  MERGE_MODE_FAST_FORWARD = 1;
+  MERGE_MODE_SQUASH = 2;
+}
+
+// RepoSettings are the merge settings of a repository, stored inside Repo.
+message RepoSettings {
+  // Never empty once stored.
+  repeated MergeMode allowed_merge_modes = 1;
+  bool failing_checks_block = 2;
+}
+
+// MergeRequestState is where a merge request is in its life.
+enum MergeRequestState {
+  MERGE_REQUEST_STATE_UNSPECIFIED = 0;
+  MERGE_REQUEST_STATE_OPEN = 1;
+  MERGE_REQUEST_STATE_MERGED = 2;
+  MERGE_REQUEST_STATE_CLOSED = 3;
+}
+
+// DiffSide is the side of a diff a comment is attached to.
+enum DiffSide {
+  // A general comment.
+  DIFF_SIDE_UNSPECIFIED = 0;
+  DIFF_SIDE_OLD = 1;
+  DIFF_SIDE_NEW = 2;
+}
+
+// MergeRequest is stored under the key "mr/<repo>/<number:010d>".
+message MergeRequest {
+  int64 number = 1;
+  string title = 2;
+  string description = 3;
+  string source_branch = 4;
+  string target_branch = 5;
+  MergeRequestState state = 6;
+  // Label of the token that opened it.
+  string author = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  // Head of the source branch when the request was merged or closed; empty
+  // while it is open (the head is read from Git then).
+  string head_id = 10;
+  // Merge base of the target and the head when the request was merged or
+  // closed, so that its diff stays readable after the merge.
+  string base_id = 11;
+  string merged_commit_id = 12;
+  MergeMode merge_mode = 13;
+  // Last comment id handed out for this request.
+  int64 comment_seq = 14;
+}
+
+// Comment is stored under the key "mrc/<repo>/<number:010d>/<id:010d>".
+message Comment {
+  int64 id = 1;
+  string author = 2;
+  string path = 3;
+  int32 line = 4;
+  DiffSide side = 5;
+  string commit_id = 6;
+  string text = 7;
+  bool resolved = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// Sequence is stored under the key "mrseq/<repo>": the last merge request
+// number handed out for the repository.
+message Sequence {
+  int64 last = 1;
+}
