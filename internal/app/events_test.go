@@ -474,7 +474,7 @@ func TestWatchEndsWhenTheTokenExpires(t *testing.T) {
 	// The rig's clock stands at now: this token expired at now.
 	p := tokenWith("tok", now)
 	w := r.watch(context.Background(), p, app.WatchParams{})
-	r.push(pub, 1)
+	r.push(pub, 1) // whether or not the watch had started, it ends unauthenticated
 	select {
 	case err := <-w.done:
 		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -502,6 +502,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 		r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: time.Hour})
 		pub := r.repo("pub", domain.VisibilityPublic)
 		w := r.watch(context.Background(), tokenWith("tok", time.Time{}), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() == 1 }, 5*time.Second, time.Millisecond)
 		for i := range 20 {
 			r.push(pub, i)
 		}
@@ -516,6 +517,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 		pub := r.repo("pub", domain.VisibilityPublic)
 		a := r.watch(context.Background(), domain.Anonymous(), app.WatchParams{})
 		b := r.watch(context.Background(), domain.Root(), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() == 2 }, 5*time.Second, time.Millisecond)
 		r.push(pub, 1)
 		a.next(t)
 		b.next(t)

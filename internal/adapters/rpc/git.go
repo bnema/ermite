@@ -75,6 +75,9 @@ func (s *gitService) GetTree(ctx context.Context, req *connect.Request[pb.GetTre
 		CommitId: tree.CommitID.String(),
 		TreeId:   tree.ID.String(),
 		Entries:  make([]*pb.TreeEntry, 0, len(tree.Entries)),
+
+		LastCommitsTruncated: tree.LastCommitsOmitted,
+		Truncated:            tree.Truncated,
 	}
 	for _, e := range tree.Entries {
 		out.Entries = append(out.Entries, treeEntryToPB(e))

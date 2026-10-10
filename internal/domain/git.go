@@ -316,7 +316,13 @@ type Tree struct {
 	// LastCommitsOmitted is true when last commits were asked for and the
 	// reader gave only the first entries (MaxLastCommitEntries) one.
 	LastCommitsOmitted bool
+	// Truncated is true when the directory has more than MaxTreeEntries
+	// entries: Entries holds the first ones in the documented order.
+	Truncated bool
 }
+
+// MaxTreeEntries bounds the entries of a listed directory.
+const MaxTreeEntries = 5000
 
 // MaxLastCommitEntries bounds the entries of one directory that get a last
 // commit: each costs a history lookup.

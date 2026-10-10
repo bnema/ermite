@@ -61,6 +61,36 @@ func TestUpdate(t *testing.T) {
 		assert.Equal(t, priv, got)
 	})
 
+	t.Run("metadata is written before HEAD moves, and the event follows both", func(t *testing.T) {
+		f := newFixture(t)
+		var order []string
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
+		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
+		f.meta.EXPECT().Update(ctx, mock.Anything).RunAndReturn(func(context.Context, domain.Repo) error {
+			order = append(order, "meta")
+			return nil
+		})
+		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").RunAndReturn(func(context.Context, domain.RepoName, string) error {
+			order = append(order, "head")
+			return nil
+		})
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Run(func(context.Context, domain.Event) { order = append(order, "event") }).Return().Once()
+		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{Description: ptr("x"), DefaultBranch: ptr("dev")})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"meta", "head", "event"}, order)
+	})
+
+	t.Run("a HEAD that cannot move fails the call and publishes nothing", func(t *testing.T) {
+		f := newFixture(t)
+		boom := errors.New("boom")
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
+		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
+		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil)
+		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").Return(boom)
+		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{Description: ptr("x"), DefaultBranch: ptr("dev")})
+		assert.ErrorIs(t, err, boom)
+	})
+
 	t.Run("a missing branch is a failed precondition and HEAD stays", func(t *testing.T) {
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)

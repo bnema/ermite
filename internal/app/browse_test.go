@@ -4,8 +4,10 @@ package app_test
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -322,6 +324,30 @@ func TestListCommitsPaging(t *testing.T) {
 			_, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, params)
 			assert.ErrorIs(t, err, domain.ErrInvalidPageToken, "%+v", params)
 		}
+	})
+
+	t.Run("a token cannot skip deeper than the cap", func(t *testing.T) {
+		f := newBrowseFixture(t)
+		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil).Maybe()
+		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).
+			Return(ports.CommitPage{Head: oid("a"), Commits: []domain.Commit{{ID: oid("b")}}, HasMore: true}, nil).Once()
+		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: p})
+		require.NoError(t, err)
+		raw, err := base64.RawURLEncoding.DecodeString(page.NextPageToken)
+		require.NoError(t, err)
+		parts := strings.Split(string(raw), ":") // c1:<head>:<skip>:<path digest>
+		require.Len(t, parts, 4)
+		withSkip := func(n int) string {
+			parts[2] = strconv.Itoa(n)
+			return base64.RawURLEncoding.EncodeToString([]byte(strings.Join(parts, ":")))
+		}
+
+		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.MatchedBy(func(q ports.CommitQuery) bool { return q.Skip == app.MaxCommitSkip })).
+			Return(ports.CommitPage{Head: oid("a")}, nil).Once()
+		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: p, PageToken: withSkip(app.MaxCommitSkip)})
+		require.NoError(t, err, "the cap itself is allowed")
+		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: p, PageToken: withSkip(app.MaxCommitSkip + 1)})
+		assert.ErrorIs(t, err, domain.ErrInvalidPageToken)
 	})
 
 	t.Run("page size", func(t *testing.T) {

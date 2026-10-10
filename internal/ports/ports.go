@@ -127,7 +127,8 @@ type RepoReader interface {
 	// to MinAbbrevLen or more). It returns domain.ErrNotFound if nothing
 	// matches.
 	ResolveRefPath(ctx context.Context, repo domain.RepoName, path string) (domain.RefPath, error)
-	// GetTree lists the directory at path. With includeLastCommit, the first
+	// GetTree lists the directory at path, at most domain.MaxTreeEntries
+	// entries (Tree.Truncated tells). With includeLastCommit, the first
 	// domain.MaxLastCommitEntries entries get their last commit. It returns
 	// domain.ErrNotDirectory if path names something else.
 	GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error)
