@@ -196,7 +196,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := zerowrap.FromCtx(ctx)
 	addr := ClientAddr(r, h.cfg.TrustedProxies)
-	if blocked, wait := h.limiter.Blocked(addr); blocked {
+	if blocked, wait := h.limiter.Blocked(ctx, addr); blocked {
 		log.Warn().Str("client", addr).Msg("too many failed authentications, request blocked")
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
 		http.Error(w, "too many failed authentications", http.StatusTooManyRequests)
@@ -239,7 +239,7 @@ func (h *Handler) authenticate(r *http.Request, addr string) (domain.Principal, 
 	p, err := h.cfg.Auth.Authenticate(r.Context(), secret)
 	if err != nil {
 		if errors.Is(err, domain.ErrUnauthenticated) {
-			h.limiter.Fail(addr)
+			h.limiter.Fail(r.Context(), addr)
 			log := zerowrap.FromCtx(r.Context())
 			log.Debug().Str("client", addr).Msg("invalid credentials")
 		}

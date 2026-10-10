@@ -3,15 +3,20 @@
 package githttp_test
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/adapters/githttp"
 )
+
+var bg = context.Background()
 
 type fakeClock struct{ t time.Time }
 
@@ -22,26 +27,26 @@ func TestLimiter(t *testing.T) {
 	l := githttp.NewLimiter(clk.now)
 
 	for range githttp.MaxFailures - 1 {
-		l.Fail("1.2.3.4")
+		l.Fail(bg, "1.2.3.4")
 	}
-	blocked, _ := l.Blocked("1.2.3.4")
+	blocked, _ := l.Blocked(bg, "1.2.3.4")
 	assert.False(t, blocked, "9 failures do not block")
 
-	l.Fail("1.2.3.4")
-	blocked, wait := l.Blocked("1.2.3.4")
+	l.Fail(bg, "1.2.3.4")
+	blocked, wait := l.Blocked(bg, "1.2.3.4")
 	assert.True(t, blocked, "10 failures block")
 	assert.Equal(t, githttp.Window, wait)
 
-	other, _ := l.Blocked("5.6.7.8")
+	other, _ := l.Blocked(bg, "5.6.7.8")
 	assert.False(t, other, "another address is not affected")
 
 	clk.t = clk.t.Add(githttp.Window - time.Second)
-	blocked, wait = l.Blocked("1.2.3.4")
+	blocked, wait = l.Blocked(bg, "1.2.3.4")
 	assert.True(t, blocked)
 	assert.Equal(t, time.Second, wait)
 
 	clk.t = clk.t.Add(time.Second)
-	blocked, _ = l.Blocked("1.2.3.4")
+	blocked, _ = l.Blocked(bg, "1.2.3.4")
 	assert.False(t, blocked, "free once the window passed")
 	assert.Zero(t, l.Tracked(), "expired entries are pruned")
 }
@@ -50,28 +55,117 @@ func TestLimiterSlidingWindow(t *testing.T) {
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := githttp.NewLimiter(clk.now)
 	for range 5 {
-		l.Fail("a")
+		l.Fail(bg, "a")
 	}
 	clk.t = clk.t.Add(githttp.Window - time.Minute)
 	for range 5 {
-		l.Fail("a")
+		l.Fail(bg, "a")
 	}
-	blocked, wait := l.Blocked("a")
+	blocked, wait := l.Blocked(bg, "a")
 	assert.True(t, blocked)
 	assert.Equal(t, time.Minute, wait, "free when the oldest of the last ten leaves")
 
 	clk.t = clk.t.Add(time.Minute)
-	blocked, _ = l.Blocked("a")
+	blocked, _ = l.Blocked(bg, "a")
 	assert.False(t, blocked, "five old failures expired, five remain")
+}
+
+func TestLimiterOneAddressStaysSmall(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
+	l := githttp.NewLimiter(clk.now)
+	for range 5000 {
+		l.Fail(bg, "x")
+	}
+	blocked, _ := l.Blocked(bg, "x")
+	assert.True(t, blocked)
+	assert.Equal(t, 1, l.Tracked())
 }
 
 func TestLimiterBoundsMemory(t *testing.T) {
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := githttp.NewLimiter(clk.now)
-	for range 5000 {
-		l.Fail("x")
+	for i := range githttp.MaxTracked + 5000 {
+		clk.t = clk.t.Add(time.Microsecond) // distinct, increasing last failures
+		l.Fail(bg, fmt.Sprintf("10.%d.%d.%d", i>>16&255, i>>8&255, i&255))
 	}
-	blocked, _ := l.Blocked("x")
+	assert.LessOrEqual(t, l.Tracked(), githttp.MaxTracked)
+
+	// The oldest were evicted, the newest kept.
+	last := githttp.MaxTracked + 5000 - 1
+	for range githttp.MaxFailures - 1 {
+		l.Fail(bg, fmt.Sprintf("10.%d.%d.%d", last>>16&255, last>>8&255, last&255))
+	}
+	blocked, _ := l.Blocked(bg, fmt.Sprintf("10.%d.%d.%d", last>>16&255, last>>8&255, last&255))
+	assert.True(t, blocked, "a recent address keeps its failures")
+	l.Fail(bg, "10.0.0.0")
+	blocked, _ = l.Blocked(bg, "10.0.0.0")
+	assert.False(t, blocked)
+}
+
+func TestLimiterSweepsExpiredEntriesOncePerInterval(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
+	l := githttp.NewLimiter(clk.now)
+	for i := range 100 {
+		l.Fail(bg, fmt.Sprintf("192.0.2.%d", i))
+	}
+	require.Equal(t, 100, l.Tracked())
+
+	clk.t = clk.t.Add(githttp.Window + time.Second)
+	l.Fail(bg, "198.51.100.1") // first call past the interval: sweeps
+	assert.Equal(t, 1, l.Tracked(), "expired entries are gone")
+}
+
+// The per-failure cost stays flat with a full table: the guard against an
+// O(n) pass per Fail.
+func BenchmarkLimiterFailAtMaxTracked(b *testing.B) {
+	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
+	l := githttp.NewLimiter(clk.now)
+	keys := make([]string, githttp.MaxTracked)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("10.%d.%d.%d", i>>16&255, i>>8&255, i&255)
+		clk.t = clk.t.Add(time.Microsecond)
+		l.Fail(bg, keys[i])
+	}
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		clk.t = clk.t.Add(time.Microsecond)
+		l.Fail(bg, fmt.Sprintf("172.%d.%d.%d", i>>16&255, i>>8&255, i&255))
+		l.Blocked(bg, keys[i%len(keys)])
+	}
+}
+
+func TestLimiterGroupsIPv6By64(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
+	l := githttp.NewLimiter(clk.now)
+
+	// Ten different addresses of one /64 count together.
+	for i := range githttp.MaxFailures {
+		l.Fail(bg, fmt.Sprintf("2001:db8:1:2::%x", i+1))
+	}
+	assert.Equal(t, 1, l.Tracked())
+	for _, addr := range []string{"2001:db8:1:2::ffff", "2001:db8:1:2:aaaa:bbbb:cccc:dddd"} {
+		blocked, _ := l.Blocked(bg, addr)
+		assert.True(t, blocked, addr)
+	}
+	// Another /64, and another family, are not affected.
+	for _, addr := range []string{"2001:db8:1:3::1", "198.51.100.1"} {
+		blocked, _ := l.Blocked(bg, addr)
+		assert.False(t, blocked, addr)
+	}
+}
+
+func TestLimiterIPv4StaysPerAddress(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
+	l := githttp.NewLimiter(clk.now)
+	for range githttp.MaxFailures {
+		l.Fail(bg, "203.0.113.5")
+	}
+	blocked, _ := l.Blocked(bg, "203.0.113.5")
+	assert.True(t, blocked)
+	blocked, _ = l.Blocked(bg, "203.0.113.6")
+	assert.False(t, blocked, "a neighbouring IPv4 address is a different client")
+	// IPv4-mapped IPv6 is the IPv4 address.
+	blocked, _ = l.Blocked(bg, "::ffff:203.0.113.5")
 	assert.True(t, blocked)
 }
 
