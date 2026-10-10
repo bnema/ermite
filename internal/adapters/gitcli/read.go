@@ -11,7 +11,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -232,49 +231,21 @@ func (g *Git) ResolveRevision(ctx context.Context, repo domain.RepoName, rev dom
 	return res, nil
 }
 
-// maxRefPathTries bounds the number of leading segments tried as a ref name.
-const maxRefPathTries = 32
-
 // ResolveRefPath tries the leading segments of path as a revision (branch,
 // tag, full ref name, HEAD; a single segment may also be a commit id), longest
 // first, with up to one `cat-file` request per candidate on the repository's
-// process. At most 32 segments are tried.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port
+// process. At most domain.MaxRefPathTries segments are tried.
 func (g *Git) ResolveRefPath(ctx context.Context, repo domain.RepoName, path string) (domain.RefPath, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
 		return domain.RefPath{}, err
 	}
-	path = strings.Trim(path, "/")
-	segs := strings.Split(path, "/")
-	if path == "" || slices.Contains(segs, "") {
-		return domain.RefPath{}, fmt.Errorf("path %q: %w", path, domain.ErrNotFound)
-	}
 	var out domain.RefPath
-	err = g.cat.do(ctx, dir, func(c *catConn) error {
-		out = domain.RefPath{}
-		for n := min(len(segs), maxRefPathTries); n >= 1; n-- {
-			name := strings.Join(segs[:n], "/")
-			rev, err := domain.ParseRevision(name)
-			if err != nil {
-				continue
-			}
-			res, err := resolve(c, rev)
-			if errors.Is(err, domain.ErrNotFound) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			rest, err := domain.ParseTreePath(strings.Join(segs[n:], "/"))
-			if err != nil {
-				return err
-			}
-			out = domain.RefPath{Name: name, Ref: res.Ref, CommitID: res.CommitID, Rest: rest}
-			return nil
-		}
-		return fmt.Errorf("path %q: %w", path, domain.ErrNotFound)
+	err = g.cat.do(ctx, dir, func(c *catConn) (err error) {
+		out, err = domain.SplitRefPath(path, func(rev domain.Revision) (domain.ResolvedRevision, error) {
+			return resolve(c, rev)
+		})
+		return err
 	})
 	if err != nil {
 		return domain.RefPath{}, fmt.Errorf("resolve path %q in %q: %w", path, repo, err)
@@ -355,20 +326,8 @@ func (g *Git) GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revi
 	if err != nil {
 		return domain.Tree{}, fmt.Errorf("list tree %q of %q: %w", path, repo, err)
 	}
-	slices.SortStableFunc(tree.Entries, func(a, b domain.TreeEntry) int {
-		ad, bd := a.Kind == domain.EntryDirectory, b.Kind == domain.EntryDirectory
-		switch {
-		case ad && !bd:
-			return -1
-		case !ad && bd:
-			return 1
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
-
-	if len(tree.Entries) > domain.MaxTreeEntries {
-		tree.Entries, tree.Truncated = tree.Entries[:domain.MaxTreeEntries], true
-	}
+	domain.SortTreeEntries(tree.Entries)
+	tree.BoundTree()
 	if includeLast {
 		if err := g.fillLastCommits(ctx, dir, &tree); err != nil {
 			return domain.Tree{}, fmt.Errorf("last commits of %q in %q: %w", path, repo, err)
@@ -538,8 +497,7 @@ func readCommit(r *bufio.Reader) (domain.Commit, error) {
 	if c.Committer, err = signature(f[5], f[6], f[7]); err != nil {
 		return domain.Commit{}, fmt.Errorf("git log: committer of %s: %w", id, err)
 	}
-	c.Message = strings.TrimRight(strings.ToValidUTF8(f[8], "\uFFFD"), "\n")
-	c.Summary, _, _ = strings.Cut(c.Message, "\n")
+	c.Message, c.Summary = domain.SplitCommitMessage(f[8])
 	return c, nil
 }
 
@@ -549,8 +507,8 @@ func signature(name, email, unix string) (domain.Signature, error) {
 		return domain.Signature{}, err
 	}
 	return domain.Signature{
-		Name:  strings.ToValidUTF8(name, "\uFFFD"),
-		Email: strings.ToValidUTF8(email, "\uFFFD"),
+		Name:  domain.ValidGitText(name),
+		Email: domain.ValidGitText(email),
 		Time:  time.Unix(sec, 0).UTC(),
 	}, nil
 }
@@ -559,8 +517,8 @@ func signature(name, email, unix string) (domain.Signature, error) {
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port
 func (g *Git) ListCommits(ctx context.Context, repo domain.RepoName, q ports.CommitQuery) (ports.CommitPage, error) {
-	if q.Limit < 1 || q.Limit > ports.MaxCommitLimit || q.Skip < 0 {
-		return ports.CommitPage{}, fmt.Errorf("list commits: %w: limit %d, skip %d", domain.ErrInvalidPageSize, q.Limit, q.Skip)
+	if err := q.Validate(); err != nil {
+		return ports.CommitPage{}, err
 	}
 	dir, err := g.repoDir(repo)
 	if err != nil {

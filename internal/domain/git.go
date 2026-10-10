@@ -5,6 +5,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -487,4 +488,64 @@ func ParseBranchName(s string) (string, error) {
 		return "", fmt.Errorf("%w: %q: %s", ErrInvalidRevision, s, reason)
 	}
 	return s, nil
+}
+
+// MaxRefPathTries bounds the number of leading segments of a path tried as a
+// ref name by SplitRefPath.
+const MaxRefPathTries = 32
+
+// SplitRefPath splits a path such as "feature/x/dir/file" into the longest
+// leading part that resolve accepts as a revision and the rest. resolve
+// reports domain.ErrNotFound for a name that is not a revision; any other
+// error stops the search. At most MaxRefPathTries leading segments are tried.
+// It returns ErrNotFound if nothing matches.
+func SplitRefPath(path string, resolve func(Revision) (ResolvedRevision, error)) (RefPath, error) {
+	path = strings.Trim(path, "/")
+	segs := strings.Split(path, "/")
+	if path == "" || slices.Contains(segs, "") {
+		return RefPath{}, fmt.Errorf("path %q: %w", path, ErrNotFound)
+	}
+	for n := min(len(segs), MaxRefPathTries); n >= 1; n-- {
+		name := strings.Join(segs[:n], "/")
+		rev, err := ParseRevision(name)
+		if err != nil {
+			continue
+		}
+		res, err := resolve(rev)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return RefPath{}, err
+		}
+		rest, err := ParseTreePath(strings.Join(segs[n:], "/"))
+		if err != nil {
+			return RefPath{}, err
+		}
+		return RefPath{Name: name, Ref: res.Ref, CommitID: res.CommitID, Rest: rest}, nil
+	}
+	return RefPath{}, fmt.Errorf("path %q: %w", path, ErrNotFound)
+}
+
+// SortTreeEntries orders the entries of a directory as the port promises:
+// directories first, then the other entries, each group by name.
+func SortTreeEntries(entries []TreeEntry) {
+	slices.SortStableFunc(entries, func(a, b TreeEntry) int {
+		ad, bd := a.Kind == EntryDirectory, b.Kind == EntryDirectory
+		switch {
+		case ad && !bd:
+			return -1
+		case !ad && bd:
+			return 1
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+}
+
+// BoundTree keeps the first MaxTreeEntries entries of t and sets Truncated
+// when there were more.
+func (t *Tree) BoundTree() {
+	if len(t.Entries) > MaxTreeEntries {
+		t.Entries, t.Truncated = t.Entries[:MaxTreeEntries], true
+	}
 }

@@ -6,6 +6,7 @@ package ports
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -101,6 +102,15 @@ type CommitQuery struct {
 
 // MaxCommitLimit is the most commits one CommitQuery may ask for.
 const MaxCommitLimit = 1000
+
+// Validate checks the page size and the offset of the query. It returns an
+// error matching domain.ErrInvalidPageSize.
+func (q CommitQuery) Validate() error {
+	if q.Limit < 1 || q.Limit > MaxCommitLimit || q.Skip < 0 {
+		return fmt.Errorf("list commits: %w: limit %d, skip %d", domain.ErrInvalidPageSize, q.Limit, q.Skip)
+	}
+	return nil
+}
 
 // CommitPage is a page of history, newest first.
 type CommitPage struct {

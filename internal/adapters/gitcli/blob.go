@@ -9,11 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
-	"path"
-	"strings"
 	"sync"
 
 	"bnema.dev/ermite/internal/domain"
@@ -77,7 +74,7 @@ func (g *Git) OpenBlob(ctx context.Context, repo domain.RepoName, rev domain.Rev
 	info := domain.BlobInfo{ID: id, Path: p.String(), Size: h.Size, Mode: h.Mode}
 
 	if data != nil || h.Size == 0 {
-		fillMedia(&info, data)
+		info.SniffContent(data)
 		return info, io.NopCloser(bytes.NewReader(data)), nil
 	}
 
@@ -90,7 +87,7 @@ func (g *Git) OpenBlob(ctx context.Context, repo domain.RepoName, rev domain.Rev
 		_ = s.Close()
 		return domain.BlobInfo{}, nil, fmt.Errorf("blob %q of %q: %w", p, repo, ctxOr(ctx, err))
 	}
-	fillMedia(&info, head)
+	info.SniffContent(head)
 	return info, s, nil
 }
 
@@ -99,42 +96,6 @@ func ctxOr(ctx context.Context, err error) error {
 		return cerr
 	}
 	return err
-}
-
-// fillMedia sets Binary and MediaType from the first bytes of the content.
-func fillMedia(info *domain.BlobInfo, content []byte) {
-	head := content[:min(len(content), domain.BinarySniffLen)]
-	info.Binary = bytes.IndexByte(head, 0) >= 0
-	info.MediaType = mediaType(info.Path, head, info.Binary)
-}
-
-// textTypes maps the extensions whose media type is more precise than what
-// the content shows. It is fixed here so that the answer does not depend on the
-// MIME tables of the host.
-var textTypes = map[string]string{
-	".html": "text/html", ".htm": "text/html", ".css": "text/css",
-	".js": "text/javascript", ".mjs": "text/javascript",
-	".json": "application/json", ".xml": "application/xml",
-	".svg": "image/svg+xml", ".md": "text/markdown", ".csv": "text/csv",
-}
-
-// mediaType guesses a media type without parameters. What the content shows
-// (images, archives, PDF…) wins; for plain text the file name may refine it
-// from textTypes, but a name never makes binary content text.
-func mediaType(name string, head []byte, binary bool) string {
-	sniffed, _, _ := strings.Cut(http.DetectContentType(head), ";")
-	switch {
-	case binary && strings.HasPrefix(sniffed, "text/"):
-		return "application/octet-stream"
-	case sniffed != "text/plain" && sniffed != "text/xml" && sniffed != "application/octet-stream":
-		return sniffed
-	case binary:
-		return "application/octet-stream"
-	}
-	if t, ok := textTypes[strings.ToLower(path.Ext(name))]; ok {
-		return t
-	}
-	return "text/plain"
 }
 
 // blobStream is the content of a blob read from its own git process.
