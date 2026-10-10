@@ -39,6 +39,7 @@ type mrRig struct {
 	store  *kvstore.Store
 	git    *gitcli.Git
 	bus    *eventbus.Bus
+	sched  *scheduler
 	events <-chan domain.Event
 	work   string
 	repo   domain.RepoName
@@ -74,7 +75,7 @@ func newMRRig(t *testing.T) *mrRig {
 	bus := eventbus.NewWithBuffer(1024)
 	committer := domain.Identity{Name: "ermite", Email: "ermite@git.example.org"}
 	r := &mrRig{
-		t: t, ctx: ctx, data: data, store: store, git: git, bus: bus, events: bus.Subscribe(ctx),
+		t: t, ctx: ctx, data: data, store: store, git: git, bus: bus, sched: &scheduler{}, events: bus.Subscribe(ctx),
 		repos: app.NewRepos(store, git, bus, fixedClock{}),
 		key:   app.NewSigningKey(signer, committer),
 		work:  t.TempDir(),
@@ -82,7 +83,7 @@ func newMRRig(t *testing.T) *mrRig {
 	}
 	r.mrs = app.NewMergeRequests(app.MergeRequestsConfig{
 		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
-		Committer: committer, Bus: bus, Clock: fixedClock{},
+		Committer: committer, Bus: bus, Clock: fixedClock{}, Maint: r.sched,
 	})
 	_, err = r.repos.Create(ctx, root, app.CreateParams{Name: r.repo, Visibility: domain.VisibilityPrivate})
 	require.NoError(t, err)
@@ -1223,4 +1224,29 @@ func TestAgentPresetWorksOnItsPrivateRepository(t *testing.T) {
 	elsewhere := domain.TokenPrincipal(domain.Token{ID: "e", Scopes: []domain.Scope{domain.ScopeRepoWrite, domain.ScopeMRWrite}, Repos: []domain.RepoName{name(t, "else")}})
 	_, err = r.mrs.Create(r.ctx, elsewhere, r.repo, app.CreateMergeRequestParams{Title: "t", Source: "feat"})
 	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+// GO-006: a merge moves the target branch, so it records pushed_at and queues
+// the maintenance of the repository, as a push does.
+func TestMergeRecordsAPush(t *testing.T) {
+	for _, mode := range []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash} {
+		t.Run(string(mode), func(t *testing.T) {
+			r := newMRRig(t)
+			r.seed()
+			head := r.feature("feat")
+			mr := r.open("feat")
+			before, err := r.repos.Get(r.ctx, root, r.repo)
+			require.NoError(t, err)
+			require.True(t, before.PushedAt.IsZero(), "no push recorded yet")
+			assert.Empty(t, r.sched.names)
+
+			_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{Mode: mode, HeadID: head})
+			require.NoError(t, err)
+
+			after, err := r.repos.Get(r.ctx, root, r.repo)
+			require.NoError(t, err)
+			assert.Equal(t, now, after.PushedAt)
+			assert.Equal(t, []domain.RepoName{r.repo}, r.sched.names, "maintenance queued")
+		})
+	}
 }

@@ -184,7 +184,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.SigningKey = app.NewSigningKey(signer, committer)
 	f.MergeRequests = app.NewMergeRequests(app.MergeRequestsConfig{
 		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
-		Committer: committer, Bus: f.Bus, Clock: clock,
+		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
 	})
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 

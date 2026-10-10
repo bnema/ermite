@@ -42,6 +42,7 @@ type MergeRequests struct {
 	committer domain.Identity
 	bus       ports.EventBus
 	clock     ports.Clock
+	maint     MaintenanceScheduler
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -61,13 +62,15 @@ type MergeRequestsConfig struct {
 	Committer domain.Identity
 	Bus       ports.EventBus
 	Clock     ports.Clock
+	// Maint queues the maintenance that follows a merge, as it does a push.
+	Maint MaintenanceScheduler
 }
 
 // NewMergeRequests builds the merge request use cases.
 func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 	return &MergeRequests{
 		meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
-		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock,
+		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
 }
@@ -788,6 +791,7 @@ func (m *MergeRequests) Merge(ctx context.Context, p domain.Principal, name doma
 	if err != nil {
 		return domain.MergeRequest{}, err
 	}
+	m.recordPush(ctx, name) // the target moved, whatever happens next
 	mr, err = m.markMerged(ctx, name, number, mode, tip, head, merged)
 	if err != nil {
 		return domain.MergeRequest{}, err
@@ -803,6 +807,19 @@ func (m *MergeRequests) Merge(ctx context.Context, p domain.Principal, name doma
 		Updates: []domain.RefUpdate{{Old: tip.String(), New: merged.String(), Ref: "refs/heads/" + mr.Target}},
 	})
 	return mr, nil
+}
+
+// recordPush does for a merge what Pushes.Record does for a push, as the merge
+// moved a branch: it sets pushed_at and queues the maintenance of the
+// repository. The target already moved, so a failure is logged, not returned,
+// and the caller giving up does not stop it.
+func (m *MergeRequests) recordPush(ctx context.Context, name domain.RepoName) {
+	ctx = context.WithoutCancel(ctx)
+	if _, err := touchPushedAt(ctx, m.meta, name, m.clock.Now().UTC()); err != nil {
+		log := zerowrap.FromCtx(ctx)
+		log.Error().Err(err).Str("repo", name.String()).Msg("record pushed_at after a merge")
+	}
+	m.maint.Schedule(ctx, name)
 }
 
 // moveTarget moves the target branch from tip to the head (fast-forward) or to

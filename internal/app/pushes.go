@@ -126,7 +126,7 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	now := u.clock.Now().UTC()
 	var errs []error
 
-	repo, err := u.touchPushedAt(ctx, name, now)
+	repo, err := touchPushedAt(ctx, u.meta, name, now)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -147,10 +147,11 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 
 // touchPushedAt stores pushed_at, retrying when another write got in between.
 // A repository deleted meanwhile is not an error. It returns the repository
-// as read, or the zero value when it is unknown.
-func (u *Pushes) touchPushedAt(ctx context.Context, name domain.RepoName, now time.Time) (domain.Repo, error) {
+// as read, or the zero value when it is unknown. A push (Pushes.Record) and a
+// merge, which moves a branch too, both record through it.
+func touchPushedAt(ctx context.Context, meta ports.RepoMetaStore, name domain.RepoName, now time.Time) (domain.Repo, error) {
 	for range pushRetries {
-		repo, err := u.meta.Get(ctx, name)
+		repo, err := meta.Get(ctx, name)
 		if errors.Is(err, domain.ErrNotFound) {
 			return domain.Repo{}, nil
 		}
@@ -161,7 +162,7 @@ func (u *Pushes) touchPushedAt(ctx context.Context, name domain.RepoName, now ti
 			return repo, nil // a later push already recorded
 		}
 		repo.PushedAt = now
-		err = u.meta.Update(ctx, repo)
+		err = meta.Update(ctx, repo)
 		if errors.Is(err, domain.ErrConflict) {
 			continue
 		}

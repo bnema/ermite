@@ -38,7 +38,7 @@ func newMRUnit(t *testing.T) *mrUnit {
 	clock.EXPECT().Now().Return(now).Maybe()
 	u.mrs = app.NewMergeRequests(app.MergeRequestsConfig{
 		Meta: u.meta, Store: u.store, Repos: u.repos, Git: u.git,
-		Signer: mocks.NewCommitSigner(t), Bus: mocks.NewEventBus(t), Clock: clock,
+		Signer: mocks.NewCommitSigner(t), Bus: mocks.NewEventBus(t), Clock: clock, Maint: &scheduler{},
 	})
 	return u
 }
