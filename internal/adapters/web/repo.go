@@ -7,8 +7,10 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 )
@@ -74,6 +76,11 @@ func (s *Server) loadRepo(ctx context.Context, name string) (*repoData, error) {
 		d.head = d.branches[0]
 	}
 	return d, nil
+}
+
+// allRefs is the branches then the tags.
+func (d *repoData) allRefs() []*pb.Ref {
+	return append(append([]*pb.Ref(nil), d.branches...), d.tags...)
 }
 
 // name is the repository name.
@@ -170,12 +177,9 @@ func (s *Server) commitsOf(ctx context.Context, repo string, refs []*pb.Ref) map
 			res, err := s.cfg.Git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: repo, Revision: id, PageSize: 1}))
 			var rc refCommit
 			if err == nil && len(res.Msg.GetCommits()) == 1 {
-				c := res.Msg.GetCommits()[0]
-				rc.short, rc.subject = short(c.GetId()), c.GetSummary()
-				if t := c.GetCommitter().GetTime(); t.IsValid() {
-					rc.at = t.GetSeconds()
-					rc.when, rc.whenAt = ago(now, t.AsTime()), rfc3339(t.AsTime())
-				}
+				row := commitRow(repo, res.Msg.GetCommits()[0], now)
+				rc.short, rc.subject, rc.when, rc.whenAt = row.Short, row.Subject, row.When, row.WhenAt
+				rc.at = res.Msg.GetCommits()[0].GetCommitter().GetTime().GetSeconds()
 			}
 			mu.Lock()
 			out[id] = rc
@@ -184,6 +188,28 @@ func (s *Server) commitsOf(ctx context.Context, repo string, refs []*pb.Ref) map
 	}
 	wg.Wait()
 	return out
+}
+
+// whenOf is the relative and the machine form of a time; both are "" when
+// the time is unknown.
+func whenOf(now time.Time, ts *timestamppb.Timestamp) (when, at string) {
+	if !ts.IsValid() {
+		return "", ""
+	}
+	return ago(now, ts.AsTime()), rfc3339(ts.AsTime())
+}
+
+// commitRow is the row every list of commits starts from: the short id, the
+// subject, the author and the date of the committer, all fit to display. The
+// caller adds what is specific to its list.
+func commitRow(repo string, c *pb.Commit, now time.Time) CommitRow {
+	row := CommitRow{
+		Short: short(c.GetId()), Subject: visibleText(c.GetSummary()),
+		CHref:  repoHref(repo, "commit", c.GetId()),
+		Author: visibleText(c.GetAuthor().GetName()), Merge: len(c.GetParentIds()) > 1,
+	}
+	row.When, row.WhenAt = whenOf(now, c.GetCommitter().GetTime())
+	return row
 }
 
 // namesAt maps commit ids to the names of the refs that designate them.

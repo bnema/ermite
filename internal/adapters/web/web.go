@@ -94,9 +94,8 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// routes is the router of the web. The pages of the next phases (tree, blob,
-// raw, commits, commit, events) are added here; until then they, and any
-// other path, answer with the 404 page.
+// routes is the router of the web. Any path that is not a page is the 404
+// page.
 func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+StaticPrefix, s.assets.serve)

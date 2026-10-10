@@ -57,14 +57,8 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 	}
 	branchesAt, tagsAt := namesAt(d.branches), namesAt(d.tags)
 	for i, c := range commits.Msg.GetCommits() {
-		row := CommitRow{
-			Short: short(c.GetId()), Subject: c.GetSummary(), CHref: repoHref(d.name(), "commit", c.GetId()),
-			Author: c.GetAuthor().GetName(), Merge: len(c.GetParentIds()) > 1,
-			Branches: branchesAt[c.GetId()], Tags: tagsAt[c.GetId()], Cursor: i == 0,
-		}
-		if t := c.GetCommitter().GetTime(); t.IsValid() {
-			row.When, row.WhenAt = ago(now, t.AsTime()), rfc3339(t.AsTime())
-		}
+		row := commitRow(d.name(), c, now)
+		row.Branches, row.Tags, row.Cursor = branchesAt[c.GetId()], tagsAt[c.GetId()], i == 0
 		p.Recent = append(p.Recent, row)
 	}
 

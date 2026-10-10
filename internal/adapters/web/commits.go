@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/a-h/templ"
@@ -44,50 +43,6 @@ type CommitsPage struct {
 	Live bool
 }
 
-// revSel is what the URL of a history page selects.
-type revSel struct {
-	rev  string // what the API is asked for: a commit id
-	name string // what the page shows
-	path string // the path limit, "" for none
-	// detached is true when a commit id, not a ref, was named.
-	detached bool
-}
-
-// isCommitID reports whether s can be a commit id or an abbreviation of one:
-// 7 to 40 lowercase hexadecimal digits.
-func isCommitID(s string) bool {
-	if len(s) < 7 || len(s) > 40 {
-		return false
-	}
-	for _, c := range []byte(s) {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
-}
-
-// selectRev reads "<ref>[/<path>]" or "<commit>[/<path>]". The ref is the
-// longest prefix that names a branch or a tag; an empty rest selects the head.
-func (d *repoData) selectRev(rest string) (revSel, bool) {
-	rest = strings.Trim(rest, "/")
-	if rest == "" {
-		if d.head == nil {
-			return revSel{}, false
-		}
-		return revSel{rev: d.head.GetCommitId(), name: d.head.GetShortName()}, true
-	}
-	all := append(append([]*pb.Ref(nil), d.branches...), d.tags...)
-	if ref, p, ok := resolveRef(all, rest); ok && ref.GetCommitId() != "" {
-		return revSel{rev: ref.GetCommitId(), name: ref.GetShortName(), path: p}, true
-	}
-	first, p, _ := strings.Cut(rest, "/")
-	if isCommitID(first) {
-		return revSel{rev: first, name: first, path: p, detached: true}, true
-	}
-	return revSel{}, false
-}
-
 // commits lists the history of a ref, newest first, a page at a time, with
 // an optional path to limit it to. The page token of the API travels in the
 // "page" query parameter.
@@ -96,7 +51,7 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 	if err != nil {
 		return nil, 0, err
 	}
-	sel, ok := d.selectRev(r.PathValue("rest"))
+	sel, ok := d.locate(r.PathValue("rest"))
 	if !ok {
 		return nil, 0, errNotFound
 	}
@@ -127,13 +82,13 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 	}
 
 	l := s.repoLayout(ctx, d, "commits")
-	s.setRef(&l, sel)
+	pinRef(&l, sel)
 	if d.isBranchHead(sel) && token == "" && sel.path == "" && len(cs) > 0 {
 		// The first page of a branch announces the commits pushed to it.
 		p.Live = true
 		l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=commits&ref="+url.QueryEscape(sel.name)+"&head="+sel.rev)
 	}
-	l.Crumbs = commitsCrumbs(d, sel)
+	l.Crumbs = pathCrumbs(d.name(), "commits", sel)
 	if sel.path == "" {
 		l.Title = "commits · " + d.name() + " · " + s.instance
 	} else {
@@ -154,56 +109,16 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 	return Commits(l, p), http.StatusOK, nil
 }
 
-// setRef points the ref switcher of the layout at what the page shows.
-func (s *Server) setRef(l *Layout, sel revSel) {
-	if sel.detached {
-		l.Ref, l.RefPath, l.Short, l.SHA = "detached", "", short(sel.rev), ""
-		if len(sel.rev) == 40 {
-			l.SHA = sel.rev
-		}
-		return
-	}
-	l.Ref, l.RefPath, l.SHA, l.Short = sel.name, sel.name, sel.rev, short(sel.rev)
-}
-
-// commitsCrumbs is the path in the top bar: repo, commits, ref, then the
-// directories of the path, each of which links to its tree.
-func commitsCrumbs(d *repoData, sel revSel) []Crumb {
-	home := repoHref(d.name(), "commits", sel.name)
-	cs := []Crumb{
-		{Label: d.name(), Href: repoHref(d.name())},
-		{Label: "commits", Href: home},
-		{Label: sel.name, Href: home, Current: sel.path == ""},
-	}
-	if sel.path == "" {
-		return cs
-	}
-	segs := strings.Split(sel.path, "/")
-	for i, seg := range segs {
-		last := i == len(segs)-1
-		c := Crumb{Label: visibleText(seg), Current: last}
-		if !last {
-			c.Href = repoHref(d.name(), "tree", sel.name, strings.Join(segs[:i+1], "/"))
-		}
-		cs = append(cs, c)
-	}
-	return cs
-}
-
 // fillDays groups the commits of a page by day and lists the refs among them.
 func (s *Server) fillDays(p *CommitsPage, d *repoData, cs []*pb.Commit) {
 	now := s.cfg.Now()
 	branchesAt, tagsAt := namesAt(d.branches), namesAt(d.tags)
 	for i, c := range cs {
-		row := CommitRow{
-			ID: "c-" + short(c.GetId()), Short: short(c.GetId()), Subject: visibleText(c.GetSummary()),
-			CHref:  repoHref(d.name(), "commit", c.GetId()),
-			Author: visibleText(c.GetAuthor().GetName()), Merge: len(c.GetParentIds()) > 1,
-			Branches: branchesAt[c.GetId()], Tags: tagsAt[c.GetId()], Cursor: i == 0,
-		}
+		row := commitRow(d.name(), c, now)
+		row.ID, row.Cursor = "c-"+row.Short, i == 0
+		row.Branches, row.Tags = branchesAt[c.GetId()], tagsAt[c.GetId()]
 		day := "unknown date"
 		if t := c.GetCommitter().GetTime(); t.IsValid() {
-			row.When, row.WhenAt = ago(now, t.AsTime()), rfc3339(t.AsTime())
 			day = t.AsTime().UTC().Format("2006-01-02")
 		}
 		if n := len(p.Days); n == 0 || p.Days[n-1].Day != day {
@@ -223,7 +138,7 @@ func (s *Server) fillDays(p *CommitsPage, d *repoData, cs []*pb.Commit) {
 // pathLink finds what the path of a history is at the ref: a directory
 // (tree) or a file (blob). It is nil when the path is not there, a deleted
 // file for one, or when the listing fails: the link is a convenience.
-func (s *Server) pathLink(ctx context.Context, d *repoData, sel revSel) *Link {
+func (s *Server) pathLink(ctx context.Context, d *repoData, sel target) *Link {
 	dir := path.Dir(sel.path)
 	if dir == "." {
 		dir = ""

@@ -318,17 +318,3 @@ func liveURL(topic, query string) string {
 	}
 	return u
 }
-
-// isBranchHead reports whether sel is a branch at its tip, as opposed to a
-// tag or a commit id.
-func (d *repoData) isBranchHead(sel revSel) bool {
-	if sel.detached || !isFullID(sel.rev) {
-		return false
-	}
-	for _, b := range d.branches {
-		if b.GetShortName() == sel.name && b.GetCommitId() == sel.rev {
-			return true
-		}
-	}
-	return false
-}

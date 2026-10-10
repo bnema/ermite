@@ -153,8 +153,9 @@ func (p CommitPage) totals() string {
 // person converts a signature.
 func person(s *pb.Signature, now time.Time) Person {
 	p := Person{Name: visibleText(s.GetName())}
+	p.When, p.WhenAt = whenOf(now, s.GetTime())
 	if t := s.GetTime(); t.IsValid() {
-		p.When, p.WhenAt, p.Abs = ago(now, t.AsTime()), rfc3339(t.AsTime()), absolute(t.AsTime())
+		p.Abs = absolute(t.AsTime())
 	}
 	return p
 }

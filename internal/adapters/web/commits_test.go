@@ -3,11 +3,15 @@
 package web
 
 import (
+	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 )
 
 func TestIsCommitID(t *testing.T) {
@@ -19,32 +23,46 @@ func TestIsCommitID(t *testing.T) {
 	}
 }
 
-func TestSelectRev(t *testing.T) {
+// The ref switcher marks the ref the page shows, whatever the page: a tag, a
+// branch other than the default one, or none for a commit.
+func TestPinRefMarksCurrent(t *testing.T) {
 	b, tag := pb.RefKind_REF_KIND_BRANCH, pb.RefKind_REF_KIND_TAG
-	d := &repoData{branches: []*pb.Ref{ref(b, "main"), ref(b, "feature/x")}, tags: []*pb.Ref{ref(tag, "v1")}}
+	d := &repoData{
+		repo:     &pb.Repo{Name: "demo", DefaultBranch: "main"},
+		branches: []*pb.Ref{ref(b, "main"), ref(b, "side")},
+		tags:     []*pb.Ref{ref(tag, "v1")},
+	}
 	d.head = d.branches[0]
-	tests := []struct {
-		in       string
-		want     revSel
-		wantOK   bool
-		describe string
-	}{
-		{"", revSel{rev: "c-main", name: "main"}, true, "head"},
-		{"main", revSel{rev: "c-main", name: "main"}, true, "branch"},
-		{"main/docs/a.md", revSel{rev: "c-main", name: "main", path: "docs/a.md"}, true, "path"},
-		{"feature/x/src", revSel{rev: "c-feature/x", name: "feature/x", path: "src"}, true, "ref with a slash"},
-		{"v1", revSel{rev: "c-v1", name: "v1"}, true, "tag"},
-		{"abcdef0123/x.go", revSel{rev: "abcdef0123", name: "abcdef0123", path: "x.go", detached: true}, true, "commit id"},
-		{"nope", revSel{}, false, "unknown"},
-		{"feature", revSel{}, false, "a prefix of a ref is not a ref"},
-	}
-	for _, tt := range tests {
-		got, ok := d.selectRev(tt.in)
-		assert.Equal(t, tt.wantOK, ok, tt.describe)
-		if ok {
-			assert.Equal(t, tt.want, got, tt.describe)
+	s, err := New(Config{
+		Repos: failing{err: errors.New("no list")}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
+		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
+	})
+	require.NoError(t, err)
+	current := func(items []RefItem) (names []string) {
+		for _, it := range items {
+			if it.Current {
+				names = append(names, it.Name)
+			}
 		}
+		return names
 	}
-	_, ok := (&repoData{}).selectRev("")
-	assert.False(t, ok, "an empty repository has no history")
+	for _, tt := range []struct {
+		rest        string
+		heads, tags []string
+		ref, short  string
+	}{
+		{"", []string{"main"}, nil, "main", "c-main"},
+		{"v1", nil, []string{"v1"}, "v1", "c-v1"},
+		{"side", []string{"side"}, nil, "side", "c-side"},
+		{"abcdef0123", nil, nil, "detached", "abcdef0"},
+	} {
+		tg, ok := d.locate(tt.rest)
+		require.True(t, ok, tt.rest)
+		l := s.repoLayout(t.Context(), d, "commits")
+		pinRef(&l, tg)
+		assert.Equal(t, tt.heads, current(l.Heads), tt.rest)
+		assert.Equal(t, tt.tags, current(l.Tags), tt.rest)
+		assert.Equal(t, tt.ref, l.Ref, tt.rest)
+		assert.Equal(t, tt.short, l.Short, tt.rest)
+	}
 }

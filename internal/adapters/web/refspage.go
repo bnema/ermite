@@ -37,8 +37,7 @@ func (s *Server) refs(ctx context.Context, r *http.Request) (templ.Component, in
 // refsPage is the content of the refs page, which the live updates of the
 // page render again.
 func (s *Server) refsPage(ctx context.Context, d *repoData) RefsPage {
-	all := append(append([]*pb.Ref(nil), d.branches...), d.tags...)
-	commits := s.commitsOf(ctx, d.name(), all)
+	commits := s.commitsOf(ctx, d.name(), d.allRefs())
 
 	def := d.repo.GetDefaultBranch()
 	p := RefsPage{Default: def}

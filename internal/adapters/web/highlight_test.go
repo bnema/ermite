@@ -163,20 +163,20 @@ func TestLocate(t *testing.T) {
 	empty := &repoData{}
 	_, ok := empty.locate("")
 	assert.False(t, ok, "an empty repository has no head")
-	require.True(t, looksLikeCommit(strings.Repeat("a", 40)))
-	assert.False(t, looksLikeCommit(strings.Repeat("a", 41)))
-	assert.False(t, looksLikeCommit("abcdef"))
+	require.True(t, isCommitID(strings.Repeat("a", 40)))
+	assert.False(t, isCommitID(strings.Repeat("a", 41)))
+	assert.False(t, isCommitID("abcdef"))
 }
 
 func TestFileCrumbs(t *testing.T) {
-	cs := fileCrumbs("demo", "blob", target{name: "feature/x", path: "src/a.go"})
+	cs := pathCrumbs("demo", "blob", target{name: "feature/x", path: "src/a.go"})
 	require.Len(t, cs, 5)
 	assert.Equal(t, "/demo/tree/feature/x/src", cs[3].Href)
 	assert.Equal(t, "/demo/blob/feature/x/src/a.go", cs[4].Href)
 	assert.True(t, cs[4].Current)
-	cs = fileCrumbs("demo", "tree", target{name: "main", path: "src"})
+	cs = pathCrumbs("demo", "tree", target{name: "main", path: "src"})
 	assert.Equal(t, "/demo/tree/main/src", cs[3].Href)
-	assert.Equal(t, "a<U+202E>b", fileCrumbs("demo", "tree", target{name: "main", path: "a\u202eb"})[3].Label)
+	assert.Equal(t, "a<U+202E>b", pathCrumbs("demo", "tree", target{name: "main", path: "a\u202eb"})[3].Label)
 }
 
 func stripTags(s string) string {

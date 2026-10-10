@@ -186,7 +186,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 
 	l := s.repoLayout(ctx, d, "tree")
 	pinRef(&l, t)
-	l.Crumbs = fileCrumbs(d.name(), "blob", t)
+	l.Crumbs = pathCrumbs(d.name(), "blob", t)
 	l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
 	l.Status = Status{
 		Mode: "blob", Context: p.Name,
@@ -205,15 +205,8 @@ func (s *Server) lastChange(ctx context.Context, repo string, t target) *CommitR
 	if err != nil || len(res.Msg.GetCommits()) != 1 {
 		return nil
 	}
-	c := res.Msg.GetCommits()[0]
-	row := &CommitRow{
-		Short: short(c.GetId()), Subject: visibleText(c.GetSummary()), Author: c.GetAuthor().GetName(),
-		CHref: repoHref(repo, "commit", c.GetId()),
-	}
-	if ts := c.GetCommitter().GetTime(); ts.IsValid() {
-		row.When, row.WhenAt = ago(s.cfg.Now(), ts.AsTime()), rfc3339(ts.AsTime())
-	}
-	return row
+	row := commitRow(repo, res.Msg.GetCommits()[0], s.cfg.Now())
+	return &row
 }
 
 // isMarkdown says whether a file name is a Markdown file.
