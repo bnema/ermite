@@ -48,10 +48,7 @@ type harnessOpts struct {
 // lives in it and Unix socket paths are limited to about 100 bytes.
 func newHarness(t *testing.T, o harnessOpts) *harness {
 	t.Helper()
-	gitBin, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not found")
-	}
+	gitBin := requireGit(t)
 	data, err := os.MkdirTemp("", "ermite")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(data) })

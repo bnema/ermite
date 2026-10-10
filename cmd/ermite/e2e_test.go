@@ -691,10 +691,7 @@ func TestFsckRejectsMalformedObjects(t *testing.T) {
 // The built binary end to end: `ermite serve` as a process, its hook scripts
 // exec'ing the same binary, and a real git client pushing and cloning.
 func TestBuiltBinaryPushAndClone(t *testing.T) {
-	gitBin, err := exec.LookPath("git")
-	if err != nil {
-		t.Skip("git not found")
-	}
+	gitBin := requireGit(t)
 	data, err := os.MkdirTemp("", "ermite")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(data) })
