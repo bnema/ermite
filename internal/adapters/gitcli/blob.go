@@ -147,13 +147,25 @@ type blobStream struct {
 	read int64
 	stop func() bool // detaches the ctx watcher
 
-	done chan struct{} // closed when the process has been collected
-	once sync.Once
+	done    chan struct{} // closed when the process has been collected
+	once    sync.Once
+	release func() // gives the stream slot back
 }
 
+// startBlobStream starts the process of a blob stream. The process is counted
+// against Config.MaxBlobStreams from its start until the stream is closed (or
+// the process is collected); there is no queue: a full table is refused with
+// domain.ErrResourceExhausted.
 func (g *Git) startBlobStream(ctx context.Context, dir string, id domain.ObjectID, size int64) (*blobStream, error) {
+	select {
+	case g.blobs <- struct{}{}:
+	default:
+		return nil, fmt.Errorf("too many blob streams open: %w", domain.ErrResourceExhausted)
+	}
+	release := func() { <-g.blobs }
 	pr, pw, err := os.Pipe()
 	if err != nil {
+		release()
 		return nil, fmt.Errorf("start git cat-file: %w", err)
 	}
 	cmd := exec.Command(g.bin, readArgs(dir, "cat-file", "blob", id.String())...)
@@ -163,12 +175,13 @@ func (g *Git) startBlobStream(ctx context.Context, dir string, id domain.ObjectI
 	if err := cmd.Start(); err != nil {
 		_ = pr.Close()
 		_ = pw.Close()
+		release()
 		return nil, fmt.Errorf("start git cat-file: %w", err)
 	}
 	_ = pw.Close()
 	s := &blobStream{
 		pool: g.cat, cmd: cmd, pipe: pr, r: bufio.NewReaderSize(pr, 64*1024),
-		size: size, done: make(chan struct{}),
+		size: size, done: make(chan struct{}), release: release,
 	}
 	go s.reap()
 	if err := g.cat.addStream(s); err != nil {
@@ -179,8 +192,11 @@ func (g *Git) startBlobStream(ctx context.Context, dir string, id domain.ObjectI
 	return s, nil
 }
 
+// reap collects the process and, with it, the stream slot: a process that is
+// gone no longer counts, whether or not the reader was closed.
 func (s *blobStream) reap() {
 	_ = s.cmd.Wait()
+	s.release()
 	close(s.done)
 }
 

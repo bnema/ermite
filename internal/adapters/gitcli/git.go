@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,16 @@ type Config struct {
 	CatFileIdle time.Duration
 	// MaxCatFiles bounds the long-lived cat-file processes. Zero means 16.
 	MaxCatFiles int
+	// MaxExec bounds the one-shot git processes that run at once (every
+	// command but the long-lived cat-file processes and the blob streams);
+	// callers beyond it wait for a slot until their context ends. Zero means
+	// max(4, 2*GOMAXPROCS).
+	MaxExec int
+	// MaxBlobStreams bounds the open blob streams, each of which holds a git
+	// process until its reader is closed. Streams beyond it are refused with
+	// domain.ErrResourceExhausted rather than queued: a slow reader could hold
+	// a slot for long. Zero means 32.
+	MaxBlobStreams int
 }
 
 // Git is the git CLI adapter for ports.GitRepos.
@@ -49,14 +60,31 @@ type Git struct {
 	backend string     // git-http-backend, resolved on first use
 
 	cat *catPool // long-lived cat-file processes of the read side
+
+	exec  chan struct{} // slots of the one-shot processes, see Config.MaxExec
+	blobs chan struct{} // slots of the blob streams, see Config.MaxBlobStreams
 }
+
+// Defaults of the process bounds.
+const defaultMaxBlobStreams = 32
+
+func defaultMaxExec() int { return max(4, 2*runtime.GOMAXPROCS(0)) }
 
 // New builds an adapter. It does not run git: call CheckVersion.
 func New(cfg Config) *Git {
 	env := buildEnv(cfg.DataDir, cfg.Path)
+	maxExec, maxBlobs := cfg.MaxExec, cfg.MaxBlobStreams
+	if maxExec <= 0 {
+		maxExec = defaultMaxExec()
+	}
+	if maxBlobs <= 0 {
+		maxBlobs = defaultMaxBlobStreams
+	}
 	return &Git{
 		bin: cfg.Bin, dataDir: cfg.DataDir, env: env, maxRecv: cfg.MaxReceiveBytes,
-		cat: newCatPool(cfg.Bin, env, cfg.CatFileIdle, cfg.MaxCatFiles),
+		cat:   newCatPool(cfg.Bin, env, cfg.CatFileIdle, cfg.MaxCatFiles),
+		exec:  make(chan struct{}, maxExec),
+		blobs: make(chan struct{}, maxBlobs),
 	}
 }
 
@@ -80,6 +108,18 @@ func buildEnv(dataDir, path string) []string {
 // commandTimeout bounds one git invocation when ctx has no deadline.
 const commandTimeout = 2 * time.Minute
 
+// acquireExec takes a slot of the one-shot processes, waiting until ctx ends.
+// The wait counts against the deadline of ctx, so a saturated server answers a
+// request with its deadline rather than hanging it.
+func (g *Git) acquireExec(ctx context.Context) (release func(), err error) {
+	select {
+	case g.exec <- struct{}{}:
+		return func() { <-g.exec }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 // run executes git with args in the isolated environment and returns stdout.
 func (g *Git) run(ctx context.Context, args ...string) (string, error) {
 	if _, ok := ctx.Deadline(); !ok {
@@ -87,6 +127,11 @@ func (g *Git) run(ctx context.Context, args ...string) (string, error) {
 		ctx, cancel = context.WithTimeout(ctx, commandTimeout)
 		defer cancel()
 	}
+	release, err := g.acquireExec(ctx)
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w", subcommand(args), err)
+	}
+	defer release()
 	cmd := exec.CommandContext(ctx, g.bin, args...)
 	cmd.Env = g.env
 	cmd.Dir = g.dataDir

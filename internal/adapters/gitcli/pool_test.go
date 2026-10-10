@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"runtime"
 	"sync"
 	"syscall"
@@ -39,7 +40,9 @@ func requireGone(t *testing.T, pids ...int) {
 
 func TestCatFileProcessIsReusedAndStopsWhenIdle(t *testing.T) {
 	ctx := context.Background()
-	g, data := newReader(t, func(c *gitcli.Config) { c.CatFileIdle = 300 * time.Millisecond })
+	// The default idle timeout (60 s) never fires during the test: the hooks
+	// do what the timers would, deterministically.
+	g, data := newReader(t, nil)
 	h := newHistory(t, data)
 
 	assert.Empty(t, g.CatFilePIDs(), "nothing runs before the first read")
@@ -55,16 +58,13 @@ func TestCatFileProcessIsReusedAndStopsWhenIdle(t *testing.T) {
 	}
 	assert.Equal(t, pids, g.CatFilePIDs(), "one long-lived process serves every request")
 
-	// Use keeps it alive past the idle timeout...
-	for range 4 {
-		time.Sleep(150 * time.Millisecond)
-		_, err = g.ResolveRevision(ctx, h.name, domain.Revision{})
-		require.NoError(t, err)
-	}
+	// A timer armed before the last use is stale: use keeps the process alive.
+	g.FireStaleIdleTimers()
 	assert.Equal(t, pids, g.CatFilePIDs())
 
-	// ...and idleness stops it.
-	require.Eventually(t, func() bool { return len(g.CatFilePIDs()) == 0 }, 5*time.Second, 10*time.Millisecond)
+	// The timer of the last use stops it once nobody used it since.
+	g.FireIdleTimers()
+	require.Empty(t, g.CatFilePIDs())
 	requireGone(t, pids...)
 
 	// The next request starts a new one.
@@ -73,6 +73,17 @@ func TestCatFileProcessIsReusedAndStopsWhenIdle(t *testing.T) {
 	next := g.CatFilePIDs()
 	require.Len(t, next, 1)
 	assert.NotEqual(t, pids, next)
+}
+
+func TestCatFileIdleTimerStopsAnUnusedProcess(t *testing.T) {
+	ctx := context.Background()
+	g, data := newReader(t, func(c *gitcli.Config) { c.CatFileIdle = 20 * time.Millisecond })
+	h := newHistory(t, data)
+	_, err := g.ResolveRevision(ctx, h.name, domain.Revision{})
+	require.NoError(t, err)
+	pids := g.CatFilePIDs()
+	require.Eventually(t, func() bool { return len(g.CatFilePIDs()) == 0 }, 5*time.Second, 5*time.Millisecond)
+	requireGone(t, pids...)
 }
 
 func TestCloseStopsEveryProcess(t *testing.T) {
@@ -334,4 +345,63 @@ func TestOpenBlobStreams50MiB(t *testing.T) {
 	growth := int64(peak) - int64(before.HeapAlloc)
 	assert.Less(t, growth, int64(8<<20), "heap growth while streaming 50 MiB: %d", growth)
 	t.Logf("streamed %d MiB: allocated %d KiB, peak heap growth %d KiB", size>>20, allocated>>10, growth>>10)
+}
+
+// The one-shot git commands share a bounded number of slots: a burst of
+// requests waits for a slot, and gives up with its context.
+func TestExecSemaphoreBoundsOneShotCommands(t *testing.T) {
+	ctx := context.Background()
+	gate := t.TempDir() + "/gate"
+	// A git that blocks until the gate file exists.
+	script := writeScript(t, `while [ ! -e `+gate+` ]; do sleep 0.01; done; echo "git version 2.50.0"`)
+	g := gitcli.New(gitcli.Config{Bin: script, DataDir: t.TempDir(), Path: os.Getenv("PATH"), MaxExec: 2})
+	size, taken := g.ExecSlots()
+	require.Equal(t, 2, size)
+	require.Zero(t, taken)
+
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() { _, err := g.CheckVersion(ctx); errs <- err }()
+	}
+	require.Eventually(t, func() bool { _, taken := g.ExecSlots(); return taken == 2 }, 5*time.Second, time.Millisecond)
+
+	// A third waits and gives up with its deadline: it never started git.
+	short, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	_, err := g.CheckVersion(short)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	require.NoError(t, os.WriteFile(gate, nil, 0o600))
+	for range 2 {
+		<-errs // their outcome is the version check's, not the subject
+	}
+	require.Eventually(t, func() bool { _, taken := g.ExecSlots(); return taken == 0 }, 5*time.Second, time.Millisecond)
+}
+
+// Open blob streams are bounded; a refused stream leaves nothing behind and a
+// closed one frees its slot.
+func TestBlobStreamsAreBounded(t *testing.T) {
+	ctx := context.Background()
+	g, data := newReader(t, func(c *gitcli.Config) { c.MaxBlobStreams = 2 })
+	f := newFixtureRepo(t, data, "bigone")
+	f.writeBytes("big", randomBytes(600<<10, 5)).commit("big")
+	open := func() (io.ReadCloser, error) {
+		_, rc, err := g.OpenBlob(ctx, f.name, domain.Revision{}, tpath(t, "big"))
+		return rc, err
+	}
+
+	a, err := open()
+	require.NoError(t, err)
+	b, err := open()
+	require.NoError(t, err)
+	_, err = open()
+	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
+	assert.Equal(t, 2, g.BlobStreams())
+
+	require.NoError(t, a.Close())
+	c, err := open()
+	require.NoError(t, err, "a closed stream frees its slot")
+	require.NoError(t, b.Close())
+	require.NoError(t, c.Close())
+	assert.Zero(t, g.BlobStreams())
 }

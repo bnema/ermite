@@ -40,6 +40,11 @@ func (g *Git) pipe(ctx context.Context, args []string, fn func(*bufio.Reader) er
 		ctx, cancel = context.WithTimeout(ctx, commandTimeout)
 		defer cancel()
 	}
+	release, err := g.acquireExec(ctx)
+	if err != nil {
+		return fmt.Errorf("git %s: %w", subcommand(args), err)
+	}
+	defer release()
 	base := ctx
 	ctx, cancel := context.WithCancel(base)
 	defer cancel()
