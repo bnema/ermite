@@ -184,6 +184,12 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			}
 			return false
 		}
+		// An owner's stream ends when the session does, before it sends
+		// anything more: an event can carry what only the owner may see, and
+		// waiting for the next heartbeat would leave a window.
+		if SignedIn(ctx) && !s.sessionStillValid(ctx, r) {
+			return false
+		}
 		rctx, rcancel := context.WithTimeout(ctx, requestTimeout)
 		frags, err := st.render(rctx, m.ev)
 		rcancel()

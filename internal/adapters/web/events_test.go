@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -62,6 +63,7 @@ type fakeEvents struct {
 	closed  atomic.Int32
 	resume  atomic.Value
 	release chan struct{}
+	push    chan *pb.Event // events sent on demand, after the fixed ones
 }
 
 func (f *fakeEvents) Watch(ctx context.Context, req *connect.Request[pb.WatchRequest], st *connect.ServerStream[pb.WatchResponse]) error {
@@ -77,11 +79,18 @@ func (f *fakeEvents) Watch(ctx context.Context, req *connect.Request[pb.WatchReq
 			return err
 		}
 	}
-	select {
-	case <-ctx.Done():
-	case <-f.release:
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-f.release:
+			return nil
+		case ev := <-f.push:
+			if err := st.Send(&pb.WatchResponse{Event: ev}); err != nil {
+				return err
+			}
+		}
 	}
-	return nil
 }
 
 // repoOK answers every GetRepo with a public repository.
@@ -97,6 +106,12 @@ func (repoOK) GetRepo(_ context.Context, req *connect.Request[pb.GetRepoRequest]
 // than the heartbeat, like a server that sets one.
 func eventsServer(t *testing.T, f *fakeEvents, beat time.Duration, writeTimeout time.Duration) *httptest.Server {
 	t.Helper()
+	return eventsServerWith(t, f, beat, writeTimeout, nil)
+}
+
+// eventsServerWith is eventsServer with sessions, when sess is not nil.
+func eventsServerWith(t *testing.T, f *fakeEvents, beat time.Duration, writeTimeout time.Duration, sess SessionAuth) *httptest.Server {
+	t.Helper()
 	api := http.NewServeMux()
 	api.Handle(ermiteconnect.NewEventServiceHandler(f))
 	api.Handle(ermiteconnect.NewRepoServiceHandler(repoOK{}))
@@ -108,7 +123,7 @@ func eventsServer(t *testing.T, f *fakeEvents, beat time.Duration, writeTimeout 
 		Git:       ermiteconnect.NewGitServiceClient(backend.Client(), backend.URL),
 		Events:    ermiteconnect.NewEventServiceClient(backend.Client(), backend.URL),
 		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
-		Heartbeat: beat,
+		Heartbeat: beat, Sessions: sess, Limiter: limiterFor(sess),
 	})
 	require.NoError(t, err)
 	ts := httptest.NewUnstartedServer(srv)
@@ -259,4 +274,86 @@ func TestRepoUpdatedReloadsSummaryAndRefs(t *testing.T) {
 			assert.Empty(t, got, view)
 		}
 	}
+}
+
+func limiterFor(sess SessionAuth) FailureLimiter {
+	if sess == nil {
+		return nil
+	}
+	return &countingLimiter{}
+}
+
+// revocable is a SessionAuth whose one session ends when the test says so, like
+// SignOutEverywhere does.
+type revocable struct {
+	fakeSessions
+	ended atomic.Bool
+}
+
+func (r *revocable) Verify(ctx context.Context, tok string) (context.Context, bool, error) {
+	return ctx, tok == r.valid && !r.ended.Load(), nil
+}
+
+// GO-002: the stream of the owner is checked before each event is sent, not
+// only on the heartbeat: after the session ended, the next event is not sent
+// and the stream ends.
+func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
+	f := &fakeEvents{release: make(chan struct{}), push: make(chan *pb.Event)}
+	sess := &revocable{fakeSessions: fakeSessions{valid: "tok"}}
+	ts := eventsServerWith(t, f, time.Hour, 0, sess) // no heartbeat in the test
+	resp, cancel := open(t, ts, "topic=home", map[string]string{"Cookie": CookieName + "=tok"})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Cache-Control"), "private")
+	// Without the check the stream would stay open: bound the read.
+	defer time.AfterFunc(5*time.Second, cancel).Stop()
+	rd := bufio.NewReader(resp.Body)
+
+	line := func() string {
+		s, err := rd.ReadString('\n')
+		if err != nil {
+			return "EOF"
+		}
+		return strings.TrimRight(s, "\n")
+	}
+	// The stream is up; a first event goes through while the session lives.
+	require.Equal(t, ": connected", line())
+	line()
+	f.push <- &pb.Event{Id: "b-1", Kind: &pb.Event_Gap{Gap: &pb.Gap{}}}
+	var seen []string
+	for l := line(); l != "data: gap"; l = line() {
+		seen = append(seen, l)
+		require.NotEqual(t, "EOF", l)
+	}
+	assert.Contains(t, seen, "id: b-1")
+
+	// Signed out everywhere: the next event is not sent, the stream ends.
+	sess.ended.Store(true)
+	select {
+	case f.push <- &pb.Event{Id: "b-2", Kind: &pb.Event_Gap{Gap: &pb.Gap{}}}:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the event was not delivered to the web")
+	}
+	rest, _ := io.ReadAll(rd)
+	assert.NotContains(t, string(rest), "b-2", "nothing is sent after the session ended")
+	require.Eventually(t, func() bool { return f.closed.Load() == 1 }, 5*time.Second, time.Millisecond, "the watch is closed")
+}
+
+// A visitor's stream does not depend on sessions: events keep flowing.
+func TestEventsVisitorStreamIgnoresSessions(t *testing.T) {
+	f := &fakeEvents{release: make(chan struct{}), push: make(chan *pb.Event)}
+	sess := &revocable{fakeSessions: fakeSessions{valid: "tok"}}
+	sess.ended.Store(true)
+	ts := eventsServerWith(t, f, time.Hour, 0, sess)
+	resp, _ := open(t, ts, "topic=home", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	f.push <- &pb.Event{Id: "b-1", Kind: &pb.Event_Gap{Gap: &pb.Gap{}}}
+	sc := bufio.NewScanner(resp.Body)
+	found := false
+	for sc.Scan() {
+		if sc.Text() == "id: b-1" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
 }
