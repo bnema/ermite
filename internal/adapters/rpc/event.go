@@ -21,8 +21,9 @@ func (s *eventService) Watch(ctx context.Context, req *connect.Request[pb.WatchR
 	params := app.WatchParams{
 		Topics: req.Msg.GetTopics(), ResumeAfter: req.Msg.GetResumeAfter(),
 		// A client's call returns when the response begins: send the headers
-		// now, not with the first event, which may be far away.
-		Ready: startedFunc(ctx),
+		// now, not with the first event, which may be far away. Connect flushes
+		// them for a nil message. A failure shows on the first real send.
+		Ready: func() { _ = stream.Send(nil) },
 	}
 	err := s.events.Watch(ctx, caller(ctx), params, func(we app.WatchEvent) error {
 		ev := watchEventToPB(we)

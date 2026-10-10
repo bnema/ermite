@@ -14,16 +14,16 @@ import (
 )
 
 // repoService implements ermiteconnect.RepoServiceHandler.
-type repoService struct{ cfg Config }
+type repoService struct{ repos *app.Repos }
 
 func (s *repoService) ListRepos(ctx context.Context, req *connect.Request[pb.ListReposRequest]) (*connect.Response[pb.ListReposResponse], error) {
-	page, err := s.cfg.Repos.ListPage(ctx, caller(ctx), int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+	page, err := s.repos.ListPage(ctx, caller(ctx), int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 	out := &pb.ListReposResponse{NextPageToken: page.NextPageToken, Repos: make([]*pb.Repo, 0, len(page.Repos))}
 	for _, repo := range page.Repos {
-		view, err := s.cfg.Repos.View(ctx, repo)
+		view, err := s.repos.View(ctx, repo)
 		if err != nil {
 			return nil, connectError(ctx, err)
 		}
@@ -37,11 +37,11 @@ func (s *repoService) GetRepo(ctx context.Context, req *connect.Request[pb.GetRe
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	repo, err := s.cfg.Repos.Get(ctx, caller(ctx), name)
+	repo, err := s.repos.Get(ctx, caller(ctx), name)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return respondRepo(ctx, s.cfg.Repos, repo, func(r *pb.Repo) *pb.GetRepoResponse { return &pb.GetRepoResponse{Repo: r} })
+	return respondRepo(ctx, s.repos, repo, func(r *pb.Repo) *pb.GetRepoResponse { return &pb.GetRepoResponse{Repo: r} })
 }
 
 func (s *repoService) CreateRepo(ctx context.Context, req *connect.Request[pb.CreateRepoRequest]) (*connect.Response[pb.CreateRepoResponse], error) {
@@ -53,13 +53,13 @@ func (s *repoService) CreateRepo(ctx context.Context, req *connect.Request[pb.Cr
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	repo, err := s.cfg.Repos.Create(ctx, caller(ctx), app.CreateParams{
+	repo, err := s.repos.Create(ctx, caller(ctx), app.CreateParams{
 		Name: name, Description: req.Msg.GetDescription(), Visibility: vis,
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return respondRepo(ctx, s.cfg.Repos, repo, func(r *pb.Repo) *pb.CreateRepoResponse { return &pb.CreateRepoResponse{Repo: r} })
+	return respondRepo(ctx, s.repos, repo, func(r *pb.Repo) *pb.CreateRepoResponse { return &pb.CreateRepoResponse{Repo: r} })
 }
 
 func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.UpdateRepoRequest]) (*connect.Response[pb.UpdateRepoResponse], error) {
@@ -71,11 +71,11 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	repo, err := s.cfg.Repos.Update(ctx, caller(ctx), name, params)
+	repo, err := s.repos.Update(ctx, caller(ctx), name, params)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return respondRepo(ctx, s.cfg.Repos, repo, func(r *pb.Repo) *pb.UpdateRepoResponse { return &pb.UpdateRepoResponse{Repo: r} })
+	return respondRepo(ctx, s.repos, repo, func(r *pb.Repo) *pb.UpdateRepoResponse { return &pb.UpdateRepoResponse{Repo: r} })
 }
 
 // updateParams maps the field mask of an update. The mask must name at least
@@ -115,7 +115,7 @@ func (s *repoService) DeleteRepo(ctx context.Context, req *connect.Request[pb.De
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	if err := s.cfg.Repos.Delete(ctx, caller(ctx), name); err != nil {
+	if err := s.repos.Delete(ctx, caller(ctx), name); err != nil {
 		return nil, connectError(ctx, err)
 	}
 	return connect.NewResponse(&pb.DeleteRepoResponse{}), nil

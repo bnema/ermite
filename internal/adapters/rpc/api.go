@@ -53,7 +53,6 @@ type Config struct {
 
 // API is the set of Connect handlers of the contract.
 type API struct {
-	cfg     Config
 	handler http.Handler
 }
 
@@ -62,8 +61,6 @@ func New(cfg Config) *API {
 	if cfg.Limiter == nil {
 		cfg.Limiter = clientlimit.NewLimiter(nil)
 	}
-	a := &API{cfg: cfg}
-
 	opts := []connect.HandlerOption{
 		connect.WithInterceptors(newInterceptor(cfg)),
 		connect.WithReadMaxBytes(MaxRequestBytes),
@@ -74,28 +71,12 @@ func New(cfg Config) *API {
 		}),
 	}
 	mux := http.NewServeMux()
-	for _, mount := range []func() (string, http.Handler){
-		func() (string, http.Handler) {
-			return ermiteconnect.NewRepoServiceHandler(&repoService{cfg: cfg}, opts...)
-		},
-		func() (string, http.Handler) {
-			return ermiteconnect.NewGitServiceHandler(&gitService{browse: cfg.Browse}, opts...)
-		},
-		func() (string, http.Handler) {
-			return ermiteconnect.NewTokenServiceHandler(&tokenService{tokens: cfg.Tokens}, opts...)
-		},
-		func() (string, http.Handler) {
-			return ermiteconnect.NewEventServiceHandler(&eventService{events: cfg.Events}, opts...)
-		},
-		func() (string, http.Handler) {
-			return ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version}, opts...)
-		},
-	} {
-		path, h := mount()
-		mux.Handle(path, h)
-	}
-	a.handler = withStreamStart(mux)
-	return a
+	mux.Handle(ermiteconnect.NewRepoServiceHandler(&repoService{cfg.Repos}, opts...))
+	mux.Handle(ermiteconnect.NewGitServiceHandler(&gitService{cfg.Browse}, opts...))
+	mux.Handle(ermiteconnect.NewTokenServiceHandler(&tokenService{cfg.Tokens}, opts...))
+	mux.Handle(ermiteconnect.NewEventServiceHandler(&eventService{cfg.Events}, opts...))
+	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{cfg.Version}, opts...))
+	return &API{handler: mux}
 }
 
 // Handler returns the handler of all services. Its paths are the procedure
@@ -108,27 +89,4 @@ func (a *API) Handler() http.Handler { return a.handler }
 func caller(ctx context.Context) domain.Principal {
 	p, _ := domain.PrincipalFromContext(ctx)
 	return p
-}
-
-type startedKey struct{}
-
-// withStreamStart gives the handlers a way to send the response headers
-// before the first message of a stream (see startedFunc).
-func withStreamStart(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := func() {
-			w.WriteHeader(http.StatusOK)
-			_ = http.NewResponseController(w).Flush()
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), startedKey{}, start)))
-	})
-}
-
-// startedFunc returns the function that sends the response headers at once.
-// A Connect client returns from a streaming call only when the headers have
-// arrived; a stream that may stay silent for a long time (Watch) must send
-// them first. Connect has set all the headers by the time a handler runs.
-func startedFunc(ctx context.Context) func() {
-	start, _ := ctx.Value(startedKey{}).(func())
-	return start
 }
