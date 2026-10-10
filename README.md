@@ -1,8 +1,8 @@
 # ermite
 
-A single-user Git forge in one Go binary. ermite hosts bare repositories, serves clone and push over HTTPS, and shows them in a read-only web interface.
+A single-user Git forge in one Go binary. ermite hosts bare repositories, serves clone and push over HTTPS, reviews branches as merge requests, and shows everything in a web interface with live updates.
 
-Status: early development. `ermite serve` serves Git over HTTP (clone, fetch, push), answers `GET /-/health`, and serves the read-only web: the home list, the summary of a repository (README, clone URL, facts, recent commits) and its refs. Tree, file, commit and live pages are still to come.
+Status: early development. `ermite serve` serves Git over HTTP (clone, fetch, push), the API, `GET /-/health`, and the web: repositories, tree, files, commits, refs and merge requests. Visitors read public repositories; the owner signs in with a one-time link from the CLI to see private ones and to review and merge.
 
 ## Run
 
@@ -24,6 +24,8 @@ ermite serve
 | `ERMITE_SOURCE_URL` | `$ERMITE_PUBLIC_URL/ermite` | link to the source (AGPL) |
 | `ERMITE_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
+| `ERMITE_COMMITTER_NAME` | `ermite` | committer of squash merges |
+| `ERMITE_COMMITTER_EMAIL` | `ermite@<public host>` | committer email of squash merges |
 
 `ermite version` prints the version (and the server's when `ERMITE_URL` is set).
 
@@ -36,6 +38,12 @@ export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...
 ermite repo list | show <name> | create <name> [--description …] [--visibility public] | edit <name> [--description …] [--visibility …] [--default-branch …] | delete <name> [--yes]
 ermite token create <label> [--preset cli|agent|ci] [--scope repo:read …] [--repo name …] [--expires 30d]   # prints the secret once
 ermite token list | revoke <id>
+ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
+ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | resolve <repo> <n> <comment>
+ermite mr merge <repo> <n> --head <id> [--squash] | close <repo> <n>
+ermite web login                # prints a one-time sign-in link (60 s)
+ermite web logout --all         # signs every browser out
+ermite signing-key show         # public key and allowed_signers line of squash commits
 ermite version                  # client and server, warns about missing server features
 ermite watch [repo] [--json]    # follows events, reconnects and resumes
 ```
@@ -50,6 +58,14 @@ git push http://u:<token>@git.example.com/<repo>.git main
 ```
 
 Use the admin token (`ERMITE_ADMIN_TOKEN`) or a stored token as the password; the username is ignored. Store it in a Git credential helper rather than in the URL. Pushing to a new name creates a private repository. Repository names are lowercase, `[a-z0-9._-]`. TLS is terminated by your proxy; list its network in `ERMITE_TRUSTED_PROXIES` so that failed-login limits see the real client address (`X-Forwarded-For`).
+
+## Merge requests
+
+A merge request proposes a branch for its target (the default branch unless set). The merge is refused when the branch moved since the reviewed head (`--head`) or when the target is not an ancestor of it. Fast-forward moves the target; squash writes one commit signed by the server's SSH key (`ermite signing-key show` prints the `allowed_signers` line for `git verify-commit`). `ermite repo edit --merge-modes` limits the modes per repository. Tokens need `mr:write` to open and comment, and `mr:merge` to merge.
+
+## Web sign-in
+
+`ermite web login`, run with the admin token or a token with every scope, prints a link that works once within 60 seconds. Opening it and confirming sets a session cookie for 12 hours (never longer than the token that asked for the link). It needs `https` in `ERMITE_PUBLIC_URL` (except on localhost). Browser writes require the session and an `Origin` equal to `ERMITE_PUBLIC_URL`. `ermite web logout --all`, or revoking a token with every scope, ends every session.
 
 The server keeps its runtime files in `$ERMITE_DATA_DIR/run/` (the hook socket and scripts that git calls on each push); the hook socket path must stay under about 100 bytes.
 
