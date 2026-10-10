@@ -26,4 +26,11 @@ var (
 	ErrRejected = errors.New("rejected")
 	// ErrConflict means a concurrent change prevented the operation.
 	ErrConflict = errors.New("conflict")
+	// ErrInvalid means an argument of a use case is not acceptable and no
+	// more specific error says why: an empty update, an unknown topic, a
+	// description that breaks the rules.
+	ErrInvalid = errors.New("invalid argument")
+	// ErrPreconditionFailed means the state of the forge does not allow the
+	// operation, for example a default branch that does not exist.
+	ErrPreconditionFailed = errors.New("failed precondition")
 )

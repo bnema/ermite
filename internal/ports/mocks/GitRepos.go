@@ -177,6 +177,144 @@ func (_c *GitRepos_Discard_Call) RunAndReturn(run func(ctx context.Context, id p
 	return _c
 }
 
+// HasBranch provides a mock function for the type GitRepos
+func (_mock *GitRepos) HasBranch(ctx context.Context, name domain.RepoName, branch string) (bool, error) {
+	ret := _mock.Called(ctx, name, branch)
+
+	if len(ret) == 0 {
+		panic("no return value specified for HasBranch")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string) (bool, error)); ok {
+		return returnFunc(ctx, name, branch)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string) bool); ok {
+		r0 = returnFunc(ctx, name, branch)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, string) error); ok {
+		r1 = returnFunc(ctx, name, branch)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// GitRepos_HasBranch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasBranch'
+type GitRepos_HasBranch_Call struct {
+	*mock.Call
+}
+
+// HasBranch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name domain.RepoName
+//   - branch string
+func (_e *GitRepos_Expecter) HasBranch(ctx any, name any, branch any) *GitRepos_HasBranch_Call {
+	return &GitRepos_HasBranch_Call{Call: _e.mock.On("HasBranch", ctx, name, branch)}
+}
+
+func (_c *GitRepos_HasBranch_Call) Run(run func(ctx context.Context, name domain.RepoName, branch string)) *GitRepos_HasBranch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *GitRepos_HasBranch_Call) Return(b bool, err error) *GitRepos_HasBranch_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *GitRepos_HasBranch_Call) RunAndReturn(run func(ctx context.Context, name domain.RepoName, branch string) (bool, error)) *GitRepos_HasBranch_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// HeadBranch provides a mock function for the type GitRepos
+func (_mock *GitRepos) HeadBranch(ctx context.Context, name domain.RepoName) (string, error) {
+	ret := _mock.Called(ctx, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for HeadBranch")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) (string, error)); ok {
+		return returnFunc(ctx, name)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) string); ok {
+		r0 = returnFunc(ctx, name)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName) error); ok {
+		r1 = returnFunc(ctx, name)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// GitRepos_HeadBranch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HeadBranch'
+type GitRepos_HeadBranch_Call struct {
+	*mock.Call
+}
+
+// HeadBranch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name domain.RepoName
+func (_e *GitRepos_Expecter) HeadBranch(ctx any, name any) *GitRepos_HeadBranch_Call {
+	return &GitRepos_HeadBranch_Call{Call: _e.mock.On("HeadBranch", ctx, name)}
+}
+
+func (_c *GitRepos_HeadBranch_Call) Run(run func(ctx context.Context, name domain.RepoName)) *GitRepos_HeadBranch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *GitRepos_HeadBranch_Call) Return(s string, err error) *GitRepos_HeadBranch_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *GitRepos_HeadBranch_Call) RunAndReturn(run func(ctx context.Context, name domain.RepoName) (string, error)) *GitRepos_HeadBranch_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // List provides a mock function for the type GitRepos
 func (_mock *GitRepos) List(ctx context.Context) (ports.RepoDirs, error) {
 	ret := _mock.Called(ctx)

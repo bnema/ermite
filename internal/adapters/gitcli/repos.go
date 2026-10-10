@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -164,6 +165,9 @@ func (g *Git) Trash(ctx context.Context, name domain.RepoName) error {
 		if err != nil {
 			return fmt.Errorf("trash repository %q: %w", name, err)
 		}
+		// A cat-file process of the old directory must not serve a repository
+		// created later under the same name.
+		g.cat.forget(src)
 		if err := syncDir(g.reposDir()); err != nil {
 			return fmt.Errorf("trash repository %q: %w", name, err)
 		}
@@ -251,6 +255,54 @@ func (g *Git) DefaultBranch(ctx context.Context, name domain.RepoName) (string, 
 		return "", false, fmt.Errorf("look up %s in %q: %w", ref, name, err)
 	}
 	return branch, strings.TrimSpace(out) == ref, nil
+}
+
+// HasBranch checks refs/heads/<branch> with `git for-each-ref` after
+// `git check-ref-format`, which rejects the glob characters for-each-ref
+// would otherwise interpret.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter port method name only
+func (g *Git) HasBranch(ctx context.Context, name domain.RepoName, branch string) (bool, error) {
+	dir, err := g.repoDir(name)
+	if err != nil {
+		return false, err
+	}
+	ref := headsPrefix + branch
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return false, nil
+	}
+	if _, err := g.run(ctx, "check-ref-format", ref); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return false, nil
+		}
+		return false, err
+	}
+	out, err := g.run(ctx, "-C", dir, "for-each-ref", "--format=%(refname)", ref)
+	if err != nil {
+		return false, fmt.Errorf("look up %s in %q: %w", ref, name, err)
+	}
+	return strings.TrimSpace(out) == ref, nil
+}
+
+// HeadBranch reads the HEAD file of the bare repository (files ref backend).
+func (g *Git) HeadBranch(_ context.Context, name domain.RepoName) (string, error) {
+	dir, err := g.repoDir(name)
+	if err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "HEAD"))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", domain.ErrNotFound
+		}
+		return "", fmt.Errorf("read HEAD of %q: %w", name, err)
+	}
+	ref, ok := strings.CutPrefix(strings.TrimSpace(string(raw)), "ref: ")
+	if !ok {
+		return "", nil // detached
+	}
+	return strings.TrimPrefix(ref, headsPrefix), nil
 }
 
 // SetDefaultBranch runs `git symbolic-ref HEAD refs/heads/<branch>`.

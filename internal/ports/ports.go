@@ -65,6 +65,15 @@ type GitRepos interface {
 	// and whether that branch exists. It returns domain.ErrNotFound if there
 	// is no such repository.
 	DefaultBranch(ctx context.Context, name domain.RepoName) (branch string, exists bool, err error)
+	// HasBranch reports whether refs/heads/<branch> exists. A name that
+	// cannot be a branch does not exist. It returns domain.ErrNotFound if
+	// there is no such repository.
+	HasBranch(ctx context.Context, name domain.RepoName, branch string) (bool, error)
+	// HeadBranch returns the short name of the branch HEAD points to, whether
+	// or not that branch exists, and "" when HEAD is detached. It reads no
+	// refs, so it is cheap enough for a listing. It returns
+	// domain.ErrNotFound if there is no such repository.
+	HeadBranch(ctx context.Context, name domain.RepoName) (string, error)
 	// SetDefaultBranch points HEAD to the branch, which need not exist yet.
 	SetDefaultBranch(ctx context.Context, name domain.RepoName, branch string) error
 	// Maintain refreshes the commit-graph of the repository.

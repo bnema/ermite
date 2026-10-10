@@ -60,6 +60,27 @@ type RepoCreated struct {
 // EventKind implements Event.
 func (RepoCreated) EventKind() string { return "repo.created" }
 
+// RepoUpdated is published when the metadata of a repository, or its default
+// branch, changed. The new state is read from the repository.
+type RepoUpdated struct {
+	Repo RepoName
+	At   time.Time
+}
+
+// EventKind implements Event.
+func (RepoUpdated) EventKind() string { return "repo.updated" }
+
+// RepoDeleted is published after a repository was deleted. It records the
+// visibility the repository had, which decides who may be told.
+type RepoDeleted struct {
+	Repo       RepoName
+	Visibility Visibility
+	At         time.Time
+}
+
+// EventKind implements Event.
+func (RepoDeleted) EventKind() string { return "repo.deleted" }
+
 // PushEvent is published after a push has been accepted.
 type PushEvent struct {
 	Repo    RepoName

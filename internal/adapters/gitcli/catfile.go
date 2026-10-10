@@ -273,6 +273,15 @@ func (p *catPool) startLocked(ctx context.Context, dir string) (*catProc, error)
 	return cp, nil
 }
 
+// forget kills the process of the repository in dir, if any.
+func (p *catPool) forget(dir string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if cp := p.procs[dir]; cp != nil {
+		p.dropLocked(cp)
+	}
+}
+
 // close kills every process and waits, until ctx ends, for them to be
 // collected. Later requests fail with ErrClosed.
 func (p *catPool) close(ctx context.Context) error {
