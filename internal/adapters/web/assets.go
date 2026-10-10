@@ -22,7 +22,7 @@ const StaticPrefix = "/-/static/"
 // Assets are the URLs of the assets a page loads. Their names carry a hash of
 // the content, so they can be cached for ever.
 type Assets struct {
-	CSS, HTMX, Live, SSE, App string
+	CSS, HTMX, Live, SSE, App, Icon string
 }
 
 // asset is one embedded file under its content-hashed name.
@@ -84,6 +84,12 @@ func loadAssets() (*assetSet, error) {
 		}
 		sc.set(&s.urls, put("js", sc.file, b, "text/javascript; charset=utf-8"))
 	}
+
+	icon, err := staticFS.ReadFile("static/icon.svg")
+	if err != nil {
+		return nil, err
+	}
+	s.urls.Icon = put("img", "icon.svg", icon, "image/svg+xml")
 	return s, nil
 }
 

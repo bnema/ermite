@@ -27,7 +27,7 @@
     & ol { list-style: decimal; }
     & li > ul, & li > ol, & li > p { margin-top: 0; }
     & pre { padding: 0 1ch; border-left: 1px solid var(--ink-mute); overflow-x: auto; font-size: var(--fs-code); line-height: var(--lh-code); }
-    & :not(pre) > code { border-bottom: 1px dotted var(--ink-mute); }
+    & :not(pre) > code { border-bottom: 1px dotted var(--ink-mute); overflow-wrap: anywhere; }
     & blockquote { padding-left: 2ch; border-left: 1px solid var(--rule); color: var(--ink-dim); }
     & table { border-collapse: collapse; display: block; overflow-x: auto; }
     & th, & td { padding: 0 2ch 0 0; white-space: nowrap; vertical-align: top; }

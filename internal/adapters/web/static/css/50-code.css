@@ -111,6 +111,10 @@
   }
   .rail p + p { margin-top: 0; }
   .rail section > p { overflow-wrap: anywhere; }
+  @media (max-width: 700px) {
+    /* the name takes what the fixed columns leave */
+    .list.tree .c-name, .list.refs .c-name { width: auto; }
+  }
 }
 
 @layer components {
