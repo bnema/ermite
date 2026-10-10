@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>SHA7 add evil.go · diffs · example.test</title>
+<link rel="stylesheet" href="/-/static/css/ermite.HASH.css">
+<script src="/-/static/js/htmx.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/hx-live.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/hx-sse.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/ermite.HASH.js" defer>
+</script>
+</head>
+<body data-ref="" data-sha="SHA40" data-sel="">
+<a class="skip" href="#main">skip to content</a>
+<header class="bar top">
+<a class="blk" href="/" data-g="h" title="home (g h)">example.test</a>
+<span class="fade" aria-hidden="true">
+</span>
+<nav class="crumbs" aria-label="Path">
+<ol>
+<li>
+<a href="/diffs">diffs</a>
+</li>
+<li>
+<a href="/diffs/commits/main">commit</a>
+</li>
+<li>
+<span aria-current="page">SHA7</span>
+</li>
+</ol>
+</nav>
+<nav class="secs" aria-label="Sections">
+<ul>
+<li>
+<a href="/diffs" data-key="s" aria-keyshortcuts="g s">summary</a>
+</li>
+<li>
+<a href="/diffs/tree/main" data-key="t" aria-keyshortcuts="g t">tree</a>
+</li>
+<li>
+<a href="/diffs/commits/main" data-key="c" aria-keyshortcuts="g c" aria-current="page">commits</a>
+</li>
+<li>
+<a href="/diffs/refs" data-key="r" aria-keyshortcuts="g r">refs</a>
+</li>
+</ul>
+</nav>
+<button type="button" class="ref" aria-haspopup="dialog" aria-controls="panel-refs" aria-keyshortcuts="b" title="switch ref (b)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-refs'))">main<span class="sha">@SHA7</span>
+</button>
+</header>
+<div class="work has-rail">
+<main id="main" tabindex="-1" data-y="0" hx-on:scroll="this.dataset.y = Math.round(this.scrollTop / 60)">
+<header class="show">
+<h1>add evil.go</h1>
+<pre class="msg">looks &lt;U+202E&gt;fine&lt;U+202C&gt;</pre>
+<dl class="kv show-kv">
+<dt>commit</dt>
+<dd>SHA40</dd>
+<dt>author</dt>
+<dd>T  · <time datetime="STAMP" title="STAMP">AGO</time> · STAMP</dd>
+<dt>parent</dt>
+<dd>
+<a href="/diffs/commit/SHA40">SHA7</a>
+</dd>
+</dl>
+</header>
+<div class="diff-tools" role="toolbar" aria-label="Diff view">
+<span class="dim">1 file · <span class="plus">+8</span>
+<span class="minus">-0</span>
+</span>
+<span class="grow">
+</span>
+<a href="/diffs/commit/SHA40?view=unified" class="vbtn" data-view="unified" aria-keyshortcuts="u" aria-current="true" hx-on:click="event.preventDefault(); document.body.dispatchEvent(new CustomEvent('k-' + this.dataset.view))" :aria-current="q(&#39;#diffs&#39;).attr[&#39;data-diff&#39;] === &#39;unified&#39; ? &#39;true&#39; : false">[u]nified</a>
+<a href="/diffs/commit/SHA40?view=split" class="vbtn" data-view="split" aria-keyshortcuts="d" hx-on:click="event.preventDefault(); document.body.dispatchEvent(new CustomEvent('k-' + this.dataset.view))" :aria-current="q(&#39;#diffs&#39;).attr[&#39;data-diff&#39;] === &#39;split&#39; ? &#39;true&#39; : false">[d] split</a>
+<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))">[x] collapse all</button>
+</div>
+<p class="notice">this diff holds invisible characters (direction controls, zero-width characters). They are shown as <span class="inv">&lt;U+XXXX&gt;</span> markers, never applied.</p>
+<div id="diffs" data-diff="unified" hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff">
+<details class="dfile" id="f1" data-file open>
+<summary>
+<span class="st">A</span>
+<span class="p">evil.go</span>
+<span class="plus">+8</span>
+<span class="minus">-0</span>
+</summary>
+<div class="dscroll">
+<table class="dt uni" aria-label="evil.go, unified">
+<tbody>
+<tr class="hunk">
+<td colspan="4">@@ -0,0 +1,8 @@</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">1</td>
+<td class="m">+</td>
+<td class="tx">package evil</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">2</td>
+<td class="m">+</td>
+<td class="tx">
+</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">3</td>
+<td class="m">+</td>
+<td class="tx">func admin(user string) bool {</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">4</td>
+<td class="m">+</td>
+<td class="tx">	if user == &#34;user<span class="inv" title="invisible character">&lt;U+202E&gt;</span>
+<span class="inv" title="invisible character">&lt;U+2066&gt;</span>// check<span class="inv" title="invisible character">&lt;U+2069&gt;</span>
+<span class="inv" title="invisible character">&lt;U+2066&gt;</span>&#34; {</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">5</td>
+<td class="m">+</td>
+<td class="tx">		return true // z<span class="inv" title="invisible character">&lt;U+200B&gt;</span>w</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">6</td>
+<td class="m">+</td>
+<td class="tx">	}</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">7</td>
+<td class="m">+</td>
+<td class="tx">	return false</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">8</td>
+<td class="m">+</td>
+<td class="tx">}</td>
+</tr>
+</tbody>
+</table>
+<table class="dt spl" aria-label="evil.go, split">
+<tbody>
+<tr class="hunk">
+<td colspan="6">@@ -0,0 +1,8 @@</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">1</td>
+<td class="m add">+</td>
+<td class="tx add">package evil</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">2</td>
+<td class="m add">+</td>
+<td class="tx add">
+</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">3</td>
+<td class="m add">+</td>
+<td class="tx add">func admin(user string) bool {</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">4</td>
+<td class="m add">+</td>
+<td class="tx add">	if user == &#34;user<span class="inv" title="invisible character">&lt;U+202E&gt;</span>
+<span class="inv" title="invisible character">&lt;U+2066&gt;</span>// check<span class="inv" title="invisible character">&lt;U+2069&gt;</span>
+<span class="inv" title="invisible character">&lt;U+2066&gt;</span>&#34; {</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">5</td>
+<td class="m add">+</td>
+<td class="tx add">		return true // z<span class="inv" title="invisible character">&lt;U+200B&gt;</span>w</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">6</td>
+<td class="m add">+</td>
+<td class="tx add">	}</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">7</td>
+<td class="m add">+</td>
+<td class="tx add">	return false</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">8</td>
+<td class="m add">+</td>
+<td class="tx add">}</td>
+</tr>
+</tbody>
+</table>
+</div>
+</details>
+</div>
+</main>
+<aside class="rail" aria-label="Context">
+<details class="rail-d" open data-init="" hx-live="if (!data.init) { data.init = '1'; this.open = matchMedia('(min-width: 1100px)').matches }">
+<summary>1 changed file</summary>
+<section aria-labelledby="r-files">
+<h2 id="r-files">files <span>1</span>
+</h2>
+<ol class="files" aria-label="Changed files">
+<li>
+<a href="#f1" :aria-current="(() =&gt; { let all = q(&#39;.dfile&#39;).arr(); let cur = all.filter(f =&gt; f.getBoundingClientRect().top &lt; innerHeight / 3).at(-1) || all[0]; return cur?.id === &#39;f1&#39; ? &#39;true&#39; : false })()" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
+<span class="st" title="A">A</span>
+<span class="p" title="evil.go">evil.go</span>
+<span class="n">
+<span class="plus">+8</span>
+<span class="minus">-0</span>
+</span>
+<span class="b" aria-hidden="true">
+<span class="plus">++++++++++</span>
+<span class="minus">
+</span>
+</span>
+</a>
+</li>
+</ol>
+</section>
+</details>
+</aside>
+</div>
+<dialog id="panel-help" class="panel" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
+<div class="panel-head">
+<span>keys</span>
+<button type="button" hx-on:click="closest('dialog').close()">[esc] close</button>
+</div>
+<dl class="keys">
+<div>
+<dt>
+<kbd>j</kbd>
+<kbd>k</kbd>
+</dt>
+<dd>move cursor down / up</dd>
+</div>
+<div>
+<dt>
+<kbd>enter</kbd>
+</dt>
+<dd>open row under cursor</dd>
+</div>
+<div>
+<dt>
+<kbd>g</kbd>
+<kbd>g</kbd> / <kbd>G</kbd>
+</dt>
+<dd>first / last row</dd>
+</div>
+<div>
+<dt>
+<kbd>/</kbd>
+</dt>
+<dd>focus the filter</dd>
+</div>
+<div>
+<dt>
+<kbd>g h</kbd>
+<kbd>g t</kbd>
+</dt>
+<dd>go home / tree</dd>
+</div>
+<div>
+<dt>
+<kbd>g c</kbd>
+<kbd>g r</kbd>
+</dt>
+<dd>go commits / refs</dd>
+</div>
+<div>
+<dt>
+<kbd>b</kbd>
+</dt>
+<dd>switch ref (branches, tags)</dd>
+</div>
+<div>
+<dt>
+<kbd>:</kbd>
+<kbd>f</kbd>
+</dt>
+<dd>go to: section, ref, file, repo</dd>
+</div>
+<div>
+<dt>
+<kbd>y</kbd>
+</dt>
+<dd>permalink: ref becomes the full sha</dd>
+</div>
+<div>
+<dt>
+<kbd>s</kbd>
+<kbd>t</kbd>
+<kbd>c</kbd>
+<kbd>r</kbd>
+</dt>
+<dd>repo sections (when shown)</dd>
+</div>
+<div>
+<dt>
+<kbd>d</kbd>
+<kbd>u</kbd>
+<kbd>x</kbd>
+</dt>
+<dd>commit: split / unified / collapse all</dd>
+</div>
+<div>
+<dt>
+<kbd>esc</kbd>
+</dt>
+<dd>close panel</dd>
+</div>
+</dl>
+</dialog>
+<dialog id="panel-refs" class="panel" aria-label="Switch ref" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
+<div class="panel-head">
+<label for="refs-filter">ref&gt;</label>
+<input id="refs-filter" type="search" placeholder="filter branches and tags" autocomplete="off" data-pick hx-on:input="let t = this.value.toLowerCase(); q('#panel-refs li').arr().forEach(li => li.hidden = !li.textContent.toLowerCase().includes(t))">
+<button type="button" hx-on:click="closest('dialog').close()">[esc] close</button>
+</div>
+<div class="panel-cols" data-picklist>
+<section aria-label="Branches">
+<h2>branches <span class="mute">2</span>
+</h2>
+<ul>
+<li>
+<a href="/diffs/tree/main" aria-current="true">
+<span class="mark" aria-hidden="true">●</span>main</a>
+</li>
+<li>
+<a href="/diffs/tree/side">
+<span class="mark" aria-hidden="true">&nbsp;</span>side</a>
+</li>
+</ul>
+</section>
+<section aria-label="Tags">
+<h2>tags <span class="mute">1</span>
+</h2>
+<ul>
+<li>
+<a href="/diffs/tree/v1.0.0">
+<span class="mark" aria-hidden="true">&nbsp;</span>v1.0.0</a>
+</li>
+</ul>
+</section>
+</div>
+</dialog>
+<dialog id="panel-cmd" class="panel" aria-label="Go to" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
+<div class="panel-head">
+<label for="cmd-q" class="hi">:</label>
+<input id="cmd-q" type="search" placeholder="section, ref, file or repo" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="let t = this.value.toLowerCase().trim();
+        q('#cmd-list > li').arr().forEach(li => li.hidden = !li.dataset.k.includes(t));
+        let first = q('#cmd-list > li:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '#cmd-list > li')" hx-on:keydown="let vis = q('#cmd-list > li:not([hidden])').arr();
+        let i = vis.findIndex(li => li.hasAttribute('data-cursor'));
+        let step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+        if (step) { event.preventDefault(); let n = vis[Math.max(0, Math.min(vis.length - 1, i + step))]; n && (q(n).take('data-cursor', '#cmd-list > li'), n.scrollIntoView({ block: 'nearest' })) }
+        else if (event.key === 'Enter') { event.preventDefault(); vis[Math.max(i, 0)]?.querySelector('a').click() }">
+<button type="button" hx-on:click="closest('dialog').close()">[esc] close</button>
+</div>
+<ul id="cmd-list" class="cmd-list">
+<li data-k="go home" data-cursor>
+<a href="/" tabindex="-1">
+<span class="k">go</span>home</a>
+</li>
+<li data-k="section summary">
+<a href="/diffs" tabindex="-1">
+<span class="k">section</span>summary</a>
+</li>
+<li data-k="section tree">
+<a href="/diffs/tree/main" tabindex="-1">
+<span class="k">section</span>tree</a>
+</li>
+<li data-k="section commits">
+<a href="/diffs/commits/main" tabindex="-1">
+<span class="k">section</span>commits</a>
+</li>
+<li data-k="section refs">
+<a href="/diffs/refs" tabindex="-1">
+<span class="k">section</span>refs</a>
+</li>
+<li data-k="branch main">
+<a href="/diffs/tree/main" tabindex="-1">
+<span class="k">branch</span>main</a>
+</li>
+<li data-k="branch side">
+<a href="/diffs/tree/side" tabindex="-1">
+<span class="k">branch</span>side</a>
+</li>
+<li data-k="tag v1.0.0">
+<a href="/diffs/tree/v1.0.0" tabindex="-1">
+<span class="k">tag</span>v1.0.0</a>
+</li>
+</ul>
+</dialog>
+<footer class="bar status" aria-label="Status">
+<span class="mode">commit</span>
+<span class="st-ctx">SHA7 · 1 file · +8 -0</span>
+<button type="button" class="st-cmd" aria-haspopup="dialog" aria-controls="panel-cmd" aria-keyshortcuts=":" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-cmd'))">
+<span class="hi">:</span> go to…</button>
+<span class="st-flash" aria-live="polite" :text="document.body.dataset.flash || ''">
+</span>
+<span class="st-hints">d split · u unified · x collapse all · ? help</span>
+<span class="st-src">
+<span class="st-ver">ermite devel · </span>
+<a href="http://example.test/ermite" rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
+</span>
+<span class="st-live" data-state="offline" role="status" title="not connected to the event stream">offline</span>
+</footer>
+<div id="keys" hidden hx-on="k-j from:body -> ((d) => {
+           if (q('dialog[open]').count) return;
+           let rows = q('[data-rows] > :not([hidden])').arr();
+           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
+           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
+           let n = rows[Math.max(0, Math.min(rows.length - 1, i + d))];
+           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' })
+         })(1);
+         k-k from:body -> ((d) => {
+           if (q('dialog[open]').count) return;
+           let rows = q('[data-rows] > :not([hidden])').arr();
+           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
+           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
+           let n = rows[Math.max(0, Math.min(rows.length - 1, i + d))];
+           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' })
+         })(-1);
+         k-top from:body -> q('[data-rows] > :not([hidden])').arr()[0]?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 0), q('#main').arr()[0].scrollTo(0, 0));
+         k-bottom from:body -> q('[data-rows] > :not([hidden])').arr().at(-1)?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 1e9), q('#main').arr()[0].scrollTo(0, 1e9));
+         k-open from:body -> q('dialog[open]').count || document.querySelector('[data-cursor] a')?.click();
+         k-esc from:body -> q('dialog[open]').arr().forEach(d => d.close());
+         k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].show();
+         k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].show(), q('#refs-filter').arr()[0].focus());
+         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].show(); q('#cmd-q').arr()[0].focus();
+         k-filter from:body -> q('[data-filter]').arr()[0]?.focus();
+         k-gh from:body -> document.querySelector('.top a[data-g=h]')?.click();
+         k-gt from:body -> document.querySelector('.secs [data-key=t]')?.click();
+         k-gc from:body -> document.querySelector('.secs [data-key=c]')?.click();
+         k-gr from:body -> document.querySelector('.secs [data-key=r]')?.click();
+         k-s from:body -> document.querySelector('.secs [data-key=s]')?.click();
+         k-t from:body -> document.querySelector('.secs [data-key=t]')?.click();
+         k-c from:body -> document.querySelector('.secs [data-key=c]')?.click();
+         k-r from:body -> document.querySelector('.secs [data-key=r]')?.click();
+         k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split');
+         k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified');
+         k-collapse from:body -> q('[data-file]').arr().forEach(d => d.open = false);
+         k-permalink from:body -> {
+           let b = document.body.dataset;
+           if (!b.sha) { b.flash = 'no ref to pin on this page'; await timeout('2s'); b.flash = ''; return }
+           history.replaceState(null, '', location.pathname.replace('/' + b.ref + '/', '/' + b.sha + '/') + location.hash);
+           navigator.clipboard?.writeText(location.href);
+           b.flash = 'permalink ' + b.sha.slice(0, 7) + ' copied'; await timeout('2s'); b.flash = ''
+         }">
+</div>
+</body>
+</html>

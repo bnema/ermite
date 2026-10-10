@@ -1,0 +1,13 @@
+@layer components {
+  /* an invisible character in code, shown instead of applied (Trojan Source) */
+  .inv {
+    color: var(--red); font-weight: bold; font-size: var(--fs-s);
+    outline: 1px solid var(--red); outline-offset: -1px; padding: 0 .25ch;
+  }
+  .eol { color: var(--ink-mute); padding-left: 1ch; user-select: none; }
+  /* the layout links of the diff tools read as the buttons of the mockup */
+  .diff-tools a.vbtn { color: var(--ink-dim); text-decoration: none; }
+  .diff-tools a.vbtn:hover { color: var(--ink); text-decoration: underline; }
+  .diff-tools a.vbtn[aria-current="true"] { color: var(--ink-hi); font-weight: bold; }
+  .diff-tools a.vbtn[aria-current="true"]::before { content: "▸"; }
+}

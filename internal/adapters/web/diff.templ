@@ -1,0 +1,234 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Commit is a commit: the message and facts, the diff tools, the diff.
+templ Commit(l Layout, p CommitPage) {
+	@Shell(l, commitRail(p)) {
+		<header class="show">
+			<h1>{ p.Subject }</h1>
+			if p.Body != "" {
+				<pre class="msg">{ p.Body }</pre>
+			}
+			<dl class="kv show-kv">
+				<dt>commit</dt>
+				<dd>{ p.SHA }</dd>
+				<dt>author</dt>
+				<dd>@personView(p.Author)</dd>
+				if p.Committer != nil {
+					<dt>committer</dt>
+					<dd>@personView(*p.Committer)</dd>
+				}
+				<dt>
+					if p.Merge {
+						merge of
+					} else {
+						parent
+					}
+				</dt>
+				<dd>
+					if p.Root {
+						none (root commit)
+					}
+					for i, par := range p.Parents {
+						if i > 0 {
+							{ " + " }
+						}
+						<a href={ templ.SafeURL(par.Href) }>{ par.Label }</a>
+					}
+					if p.Merge {
+						{ " · diff against the first parent" }
+					}
+				</dd>
+				if len(p.Refs) > 0 {
+					<dt>refs</dt>
+					<dd>
+						for _, r := range p.Refs {
+							[{ r }]{ " " }
+						}
+					</dd>
+				}
+			</dl>
+		</header>
+		<div class="diff-tools" role="toolbar" aria-label="Diff view">
+			<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
+			<span class="grow"></span>
+			@viewLink(p, "unified", "[u]nified", "u", p.UnifiedHref)
+			@viewLink(p, "split", "[d] split", "d", p.SplitHref)
+			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))">[x] collapse all</button>
+		</div>
+		if p.Invisible {
+			<p class="notice">
+				this diff holds invisible characters (direction controls, zero-width characters). They are shown as
+				<span class="inv">&lt;U+XXXX&gt;</span> markers, never applied.
+			</p>
+		}
+		if p.Note != "" {
+			<p class="notice">{ p.Note }</p>
+		}
+		<div
+			id="diffs"
+			if p.Both {
+				data-diff={ p.View }
+			} else {
+				data-view={ p.View }
+			}
+			if p.Both && !p.Pinned {
+				hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff"
+			}
+		>
+			for _, f := range p.Files {
+				@DiffFileView(f, p)
+			}
+			if len(p.Files) == 0 {
+				<p class="note">no changed files{ " " }
+					if p.Merge {
+						against the first parent.
+					} else {
+						in this commit.
+					}
+				</p>
+			}
+		</div>
+	}
+}
+
+// viewLink is a button of the diff tools. It is a link, so that the split
+// layout works without JavaScript; with it, and when both layouts are in the
+// page, a click only flips the layout.
+templ viewLink(p CommitPage, view, label, key, href string) {
+	<a
+		href={ templ.SafeURL(href) }
+		class="vbtn"
+		data-view={ view }
+		aria-keyshortcuts={ key }
+		if p.View == view {
+			aria-current="true"
+		}
+		if p.Both {
+			hx-on:click="event.preventDefault(); document.body.dispatchEvent(new CustomEvent('k-' + this.dataset.view))"
+			:aria-current={ "q('#diffs').attr['data-diff'] === '" + view + "' ? 'true' : false" }
+		}
+	>{ label }</a>
+}
+
+templ personView(pr Person) {
+	{ pr.Name }
+	if pr.WhenAt != "" {
+		{ " · " }<time datetime={ pr.WhenAt } title={ pr.Abs }>{ pr.When }</time>{ " · " + pr.Abs }
+	}
+}
+
+templ commitRail(p CommitPage) {
+	<section aria-labelledby="r-files">
+		<h2 id="r-files">files <span>{ itoa(len(p.Files)) }</span></h2>
+		@FileList(p.Files)
+	</section>
+}
+
+// FileList is the table of contents of a diff: status letter, path, +n -m
+// and an ASCII bar. The row of the file in view is marked.
+templ FileList(files []DiffFile) {
+	<ol class="files" aria-label="Changed files">
+		for _, f := range files {
+			<li>
+				<a
+					href={ templ.SafeURL("#" + f.ID) }
+					:aria-current={ "(() => { let all = q('.dfile').arr(); let cur = all.filter(f => f.getBoundingClientRect().top < innerHeight / 3).at(-1) || all[0]; return cur?.id === '" + f.ID + "' ? 'true' : false })()" }
+					hx-on:click="document.getElementById(this.hash.slice(1)).open = true"
+				>
+					<span class="st" title={ f.Status }>{ f.Status }</span>
+					<span class="p" title={ f.Path }>{ f.Path }</span>
+					<span class="n"><span class="plus">+{ itoa(f.Add) }</span> <span class="minus">-{ itoa(f.Del) }</span></span>
+					<span class="b" aria-hidden="true"><span class="plus">{ f.Bar.Add }</span><span class="minus">{ f.Bar.Del }</span>{ f.Bar.Rest }</span>
+				</a>
+			</li>
+		}
+	</ol>
+}
+
+// DiffFileView is one file of the diff: a <details> (per-file collapse). The
+// unified and the split tables are both in it; #diffs[data-diff] shows one.
+// Every changed line keeps its +/- marker, so a change is never conveyed by
+// colour alone.
+templ DiffFileView(f DiffFile, p CommitPage) {
+	<details
+		class="dfile"
+		id={ f.ID }
+		data-file
+		if f.Open {
+			open
+		}
+	>
+		<summary>
+			<span class="st">{ f.Status }</span>{ " " }<span class="p">{ f.Path }</span>{ " " }<span class="plus">+{ itoa(f.Add) }</span>{ " " }<span class="minus">-{ itoa(f.Del) }</span>
+			if f.Note != "" {
+				{ " " }<span class="note">{ f.Note }</span>
+			}
+		</summary>
+		if len(f.Hunks) > 0 {
+			<div class="dscroll">
+				if p.ShowUnified {
+					<table class="dt uni" aria-label={ f.Path + ", unified" }>
+						for _, h := range f.Hunks {
+							<tbody>
+								<tr class="hunk"><td colspan="4">{ h.Header }</td></tr>
+								for _, ln := range h.Lines {
+									<tr class={ ln.Kind }>
+										<td class="ln">{ ln.Old }</td>
+										<td class="ln">{ ln.New }</td>
+										<td class="m">{ ln.Mark }</td>
+										<td class="tx">@codeLine(ln)</td>
+									</tr>
+								}
+							</tbody>
+						}
+					</table>
+				}
+				if p.ShowSplit {
+					<table class="dt spl" aria-label={ f.Path + ", split" }>
+						for _, h := range f.Hunks {
+							<tbody>
+								<tr class="hunk"><td colspan="6">{ h.Header }</td></tr>
+								for _, row := range h.Split {
+									<tr>
+										@splitSide(row.L, true)
+										@splitSide(row.R, false)
+									</tr>
+								}
+							</tbody>
+						}
+					</table>
+				}
+			</div>
+		} else {
+			<p class="note pad">
+				if f.Note != "" {
+					{ f.Note }
+				} else {
+					no textual change.
+				}
+			</p>
+		}
+	</details>
+}
+
+// splitSide is one half of a row of the split view; a side without a line is
+// an empty cell.
+templ splitSide(ln *DiffLine, old bool) {
+	if ln == nil {
+		<td class="ln none"></td>
+		<td class="m none"></td>
+		<td class="tx none"></td>
+	} else {
+		<td class={ "ln", ln.Kind }>
+			if old {
+				{ ln.Old }
+			} else {
+				{ ln.New }
+			}
+		</td>
+		<td class={ "m", ln.Kind }>{ ln.Mark }</td>
+		<td class={ "tx", ln.Kind }>@codeLine(*ln)</td>
+	}
+}
