@@ -357,3 +357,15 @@ func TestEventsVisitorStreamIgnoresSessions(t *testing.T) {
 	}
 	assert.True(t, found)
 }
+
+// GO-006: a stream opened with an invalid cookie is anonymous, and its headers
+// say the answer must not be stored and varies on the cookie.
+func TestEventsInvalidCookieStream(t *testing.T) {
+	f := &fakeEvents{release: make(chan struct{})}
+	ts := eventsServerWith(t, f, time.Hour, 0, &fakeSessions{valid: "tok"})
+	resp, _ := open(t, ts, "topic=home", map[string]string{"Cookie": CookieName + "=bad"})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "no-store, no-transform", resp.Header.Get("Cache-Control"))
+	assert.Contains(t, resp.Header.Values("Vary"), "Cookie")
+	assert.Contains(t, resp.Header.Get("Set-Cookie"), "Max-Age=0")
+}

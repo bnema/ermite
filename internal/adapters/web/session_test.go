@@ -190,6 +190,65 @@ func TestWithSessionFailsClosed(t *testing.T) {
 	assert.True(t, SignedIn(srv.withSession(httptest.NewRecorder(), req).Context()))
 }
 
+// GO-006: the answer to a request with an invalid cookie is not cached and
+// varies on Cookie, and nothing later in the request undoes it: the page
+// writer, the raw file handler and the event stream keep it.
+func TestInvalidCookieAnswerIsNotCached(t *testing.T) {
+	sess := &fakeSessions{valid: "tok"}
+	srv, _ := newSessionServer(t, sess, "https://forge.example")
+
+	// withSession alone.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "bad"})
+	rec := httptest.NewRecorder()
+	srv.withSession(rec, req)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	assert.Equal(t, []string{"Cookie"}, rec.Header().Values("Vary"))
+	assert.Contains(t, rec.Header().Get("Set-Cookie"), "Max-Age=0")
+
+	// A check that cannot be made keeps the cookie and the headers as they are.
+	broken, _ := newSessionServer(t, &fakeSessions{valid: "tok", err: errors.New("kv down")}, "https://forge.example")
+	rec = httptest.NewRecorder()
+	broken.withSession(rec, req)
+	assert.Empty(t, rec.Header().Values("Cache-Control"))
+	assert.Empty(t, rec.Header().Values("Vary"))
+
+	// No cookie, a valid cookie: untouched by withSession.
+	rec = httptest.NewRecorder()
+	srv.withSession(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	assert.Empty(t, rec.Header().Values("Cache-Control"))
+	assert.Empty(t, rec.Header().Values("Vary"))
+
+	// The page writer, a 404 and a 500 included, does not replace it.
+	for _, target := range []string{"/", "/nope/refs", "/x/tree/main"} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.AddCookie(&http.Cookie{Name: CookieName, Value: "bad"})
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"), target)
+		assert.Equal(t, []string{"Cookie"}, rec.Header().Values("Vary"), target)
+		assert.Contains(t, rec.Header().Get("Set-Cookie"), "Max-Age=0", target)
+	}
+
+	// The shared helper keeps no-store for a visitor, and replaces it for the
+	// owner (whose answer is private anyway).
+	h := http.Header{"Cache-Control": {"no-store"}, "Vary": {"Accept, cookie"}}
+	cacheHeaders(context.Background(), h, "no-cache", sessionCache)
+	assert.Equal(t, []string{"no-store"}, h.Values("Cache-Control"))
+	assert.Equal(t, []string{"Accept, cookie"}, h.Values("Vary"), "no second Vary: Cookie")
+	owner := context.WithValue(context.Background(), signedInKey{}, struct{}{})
+	cacheHeaders(owner, h, "no-cache", sessionCache)
+	assert.Equal(t, []string{sessionCache}, h.Values("Cache-Control"))
+
+	// Static assets are not touched by sessions at all, cookie or not.
+	req = httptest.NewRequest(http.MethodGet, StaticPrefix+"nope", nil)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "bad"})
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	assert.Empty(t, rec.Header().Values("Set-Cookie"))
+	assert.Empty(t, rec.Header().Values("Vary"))
+}
+
 // Without sessions configured there is no login route and no cookie is read.
 func TestNoSessionsNoRoutes(t *testing.T) {
 	srv, err := New(Config{

@@ -168,6 +168,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	hdr := w.Header()
 	hdr.Set("Content-Type", "text/event-stream")
 	cacheHeaders(ctx, hdr, "no-cache, no-transform", sessionCache+", no-transform")
+	if hdr.Get("Cache-Control") == noStore { // an invalid cookie was cleared
+		hdr.Set("Cache-Control", noStore+", no-transform")
+	}
 	hdr.Set("X-Accel-Buffering", "no")
 	_ = rc.SetWriteDeadline(time.Now().Add(writeWindow))
 	w.WriteHeader(http.StatusOK)

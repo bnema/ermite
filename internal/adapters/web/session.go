@@ -80,13 +80,35 @@ const sessionCache = "private, no-store"
 
 // cacheHeaders sets Cache-Control: public for a visitor, and for the owner
 // the private variant with Vary: Cookie.
+//
+// A response that already carries no-store is kept as it is: withSession sets
+// it when it clears an invalid cookie, and a later public Cache-Control must
+// not undo it.
 func cacheHeaders(ctx context.Context, h http.Header, public, private string) {
 	if SignedIn(ctx) {
 		h.Set("Cache-Control", private)
-		h.Add("Vary", "Cookie")
+		varyCookie(h)
+		return
+	}
+	if h.Get("Cache-Control") == noStore {
 		return
 	}
 	h.Set("Cache-Control", public)
+}
+
+// noStore is the Cache-Control of an answer no cache may keep.
+const noStore = "no-store"
+
+// varyCookie adds Vary: Cookie unless the header already says so.
+func varyCookie(h http.Header) {
+	for _, v := range h.Values("Vary") {
+		for f := range strings.SplitSeq(v, ",") {
+			if t := strings.TrimSpace(f); t == "*" || strings.EqualFold(t, "Cookie") {
+				return
+			}
+		}
+	}
+	h.Add("Vary", "Cookie")
 }
 
 // logPath is the path of a request as the log may show it: a login link is
@@ -120,7 +142,12 @@ func (s *Server) withSession(w http.ResponseWriter, r *http.Request) *http.Reque
 		log.Error().Err(err).Msg("check web session")
 		return r
 	case !ok:
+		// The answer depends on a cookie that is gone now: no cache keeps it
+		// for another visitor, and none serves it for a request with a cookie.
 		http.SetCookie(w, s.cookie("", -1))
+		h := w.Header()
+		h.Set("Cache-Control", noStore)
+		varyCookie(h)
 		return r
 	}
 	return r.WithContext(context.WithValue(owner, signedInKey{}, struct{}{}))
