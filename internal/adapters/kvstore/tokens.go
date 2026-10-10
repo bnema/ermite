@@ -69,6 +69,18 @@ func (s *Tokens) Create(ctx context.Context, t domain.Token) error {
 	return nil
 }
 
+// Get reads token/<id>.
+func (s *Tokens) Get(ctx context.Context, id string) (domain.Token, error) {
+	if !validTokenID(id) {
+		return domain.Token{}, domain.ErrNotFound
+	}
+	item, ok := s.db.Get(ctx, tokenKey(id))
+	if !ok {
+		return domain.Token{}, domain.ErrNotFound
+	}
+	return decodeToken(item.Value)
+}
+
 // FindByHash resolves the hash index, then reads the token.
 func (s *Tokens) FindByHash(ctx context.Context, hash domain.TokenHash) (domain.Token, error) {
 	snap := s.db.Snapshot(ctx) // one snapshot: the index and the token agree

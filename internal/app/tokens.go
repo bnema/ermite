@@ -143,7 +143,9 @@ func buildToken(params CreateTokenParams, now time.Time) (domain.Token, error) {
 	return tok, nil
 }
 
-// checkNoEscalation enforces that tok is within the rights of its creator.
+// checkNoEscalation enforces that tok is within the rights of p: every scope
+// held by p, the repositories within its list and the expiry not beyond its
+// own. Root has no limits.
 func checkNoEscalation(p domain.Principal, tok domain.Token) error {
 	if p.IsRoot() {
 		return nil
@@ -171,19 +173,39 @@ func checkNoEscalation(p domain.Principal, tok domain.Token) error {
 	return nil
 }
 
-// List returns the stored tokens, oldest first. It needs token:admin.
+// List returns the stored tokens the principal could have created, oldest
+// first: those whose scopes, repositories and expiry lie within its own (the
+// no-escalation rule of Create). Root sees every token. It needs token:admin.
 func (t *Tokens) List(ctx context.Context, p domain.Principal) ([]domain.Token, error) {
 	if err := requireTokenAdmin(p); err != nil {
 		return nil, err
 	}
-	return t.store.List(ctx)
+	all, err := t.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if p.IsRoot() {
+		return all, nil
+	}
+	return slices.DeleteFunc(all, func(tok domain.Token) bool { return checkNoEscalation(p, tok) != nil }), nil
 }
 
 // Revoke deletes a stored token; it stops working at once. It needs
-// token:admin and returns domain.ErrNotFound for an unknown id.
+// token:admin and returns domain.ErrNotFound for an unknown id, and also for
+// a token more powerful than the principal (the no-escalation rule of
+// Create), so that it does not show itself. Root may revoke any token.
 func (t *Tokens) Revoke(ctx context.Context, p domain.Principal, id string) error {
 	if err := requireTokenAdmin(p); err != nil {
 		return err
+	}
+	if !p.IsRoot() {
+		tok, err := t.store.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if checkNoEscalation(p, tok) != nil {
+			return domain.ErrNotFound
+		}
 	}
 	if err := t.store.Revoke(ctx, id); err != nil {
 		return err
@@ -229,6 +251,31 @@ type Auth struct {
 // admin token.
 func NewAuth(rootHash domain.TokenHash, tokens ports.TokenStore, clock ports.Clock) *Auth {
 	return &Auth{root: rootHash, tokens: tokens, clock: clock}
+}
+
+// Revalidate checks that the holder of a principal obtained earlier is still
+// authorized: root always is; a stored token must still exist and not have
+// expired. It gives domain.ErrUnauthenticated otherwise, and any error of the
+// store as it is, so that callers fail closed. It is for long operations that
+// outlive the request that authenticated them, such as a push.
+func (a *Auth) Revalidate(ctx context.Context, p domain.Principal) error {
+	if p.IsRoot() {
+		return nil
+	}
+	if p.IsAnonymous() {
+		return domain.ErrUnauthenticated
+	}
+	tok, err := a.tokens.Get(ctx, p.TokenID())
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.ErrUnauthenticated
+	}
+	if err != nil {
+		return fmt.Errorf("find token: %w", err)
+	}
+	if tok.Expired(a.clock.Now().UTC()) {
+		return domain.ErrUnauthenticated
+	}
+	return nil
 }
 
 // Authenticate resolves a token secret to its principal: root when it is the

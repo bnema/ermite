@@ -117,6 +117,25 @@ func TestTokensRevokeKeepsIndexConsistent(t *testing.T) {
 	assert.Len(t, list, 2)
 }
 
+func TestTokensGet(t *testing.T) {
+	ctx := context.Background()
+	ts := openStore(t, t.TempDir()).Tokens()
+	tok := newToken(t, "t1", "s1")
+	require.NoError(t, ts.Create(ctx, tok))
+
+	got, err := ts.Get(ctx, "t1")
+	require.NoError(t, err)
+	assert.Equal(t, tok, got)
+
+	for _, id := range []string{"gone", "", "../t1"} {
+		_, err = ts.Get(ctx, id)
+		assert.ErrorIs(t, err, domain.ErrNotFound, id)
+	}
+	require.NoError(t, ts.Revoke(ctx, "t1"))
+	_, err = ts.Get(ctx, "t1")
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
 func TestTokensTouch(t *testing.T) {
 	ctx := context.Background()
 	s := openStore(t, t.TempDir())

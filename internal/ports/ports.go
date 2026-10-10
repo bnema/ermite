@@ -96,6 +96,8 @@ type TokenStore interface {
 	// Create stores the token and its hash index in one write. It returns
 	// domain.ErrAlreadyExists if the id or the hash is taken.
 	Create(ctx context.Context, token domain.Token) error
+	// Get returns the token with that id, or domain.ErrNotFound.
+	Get(ctx context.Context, id string) (domain.Token, error)
 	// FindByHash returns the token whose secret has that hash, or
 	// domain.ErrNotFound.
 	FindByHash(ctx context.Context, hash domain.TokenHash) (domain.Token, error)

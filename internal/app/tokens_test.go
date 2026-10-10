@@ -196,12 +196,12 @@ func TestTokensCreateNoEscalation(t *testing.T) {
 
 func TestTokensListRevoke(t *testing.T) {
 	ctx := context.Background()
-	tokenAdmin := domain.TokenPrincipal(domain.Token{Scopes: scopes(domain.ScopeTokenAdmin)})
+	tokenAdmin := domain.TokenPrincipal(domain.Token{ID: "adm", Scopes: scopes(domain.ScopeTokenAdmin)})
 	writer := domain.TokenPrincipal(domain.Token{Scopes: scopes(domain.ScopeRepoWrite)})
 
-	t.Run("list", func(t *testing.T) {
+	t.Run("list for the admin token and root", func(t *testing.T) {
 		f := newTokenFixture(t)
-		want := []domain.Token{{ID: "a"}}
+		want := []domain.Token{{ID: "a", Scopes: scopes(domain.ScopeTokenAdmin)}}
 		f.store.EXPECT().List(ctx).Return(want, nil).Twice()
 		for _, p := range []domain.Principal{domain.Root(), tokenAdmin} {
 			got, err := f.tokens.List(ctx, p)
@@ -216,12 +216,141 @@ func TestTokensListRevoke(t *testing.T) {
 
 	t.Run("revoke", func(t *testing.T) {
 		f := newTokenFixture(t)
-		f.store.EXPECT().Revoke(ctx, "a").Return(nil).Once()
+		f.store.EXPECT().Get(ctx, "a").Return(domain.Token{ID: "a", Scopes: scopes(domain.ScopeTokenAdmin)}, nil).Once()
+		f.store.EXPECT().Revoke(ctx, "a").Return(nil).Twice()
 		f.store.EXPECT().Revoke(ctx, "zz").Return(domain.ErrNotFound).Once()
 		require.NoError(t, f.tokens.Revoke(ctx, tokenAdmin, "a"))
+		require.NoError(t, f.tokens.Revoke(ctx, domain.Root(), "a"))
 		assert.ErrorIs(t, f.tokens.Revoke(ctx, domain.Root(), "zz"), domain.ErrNotFound)
 		assert.ErrorIs(t, f.tokens.Revoke(ctx, writer, "a"), domain.ErrForbidden)
 		assert.ErrorIs(t, f.tokens.Revoke(ctx, domain.Anonymous(), "a"), domain.ErrUnauthenticated)
+	})
+}
+
+// A token admin sees and revokes only the tokens it could have created: the
+// no-escalation rule of Create, applied to scopes, repositories and expiry.
+func TestTokensAdminReach(t *testing.T) {
+	ctx := context.Background()
+	exp := now.Add(48 * time.Hour)
+	admin := func(repos []domain.RepoName, expires time.Time, extra ...domain.Scope) domain.Principal {
+		return domain.TokenPrincipal(domain.Token{
+			ID:        "caller",
+			Scopes:    append(scopes(domain.ScopeTokenAdmin, domain.ScopeRepoRead, domain.ScopeRepoWrite), extra...),
+			Repos:     repos,
+			ExpiresAt: expires,
+		})
+	}
+	tok := func(id string, sc []domain.Scope, repos []domain.RepoName, expires time.Time) domain.Token {
+		return domain.Token{ID: id, Scopes: sc, Repos: repos, ExpiresAt: expires}
+	}
+	rw := scopes(domain.ScopeRepoRead, domain.ScopeRepoWrite)
+	ab, a := names(t, "a", "b"), names(t, "a")
+
+	tests := []struct {
+		name   string
+		caller domain.Principal
+		target domain.Token
+		within bool
+	}{
+		{"fewer scopes", admin(nil, time.Time{}), tok("t", scopes(domain.ScopeRepoRead), nil, time.Time{}), true},
+		{"the same rights", admin(ab, exp), tok("t", rw, ab, exp), true},
+		{"a scope the caller lacks", admin(nil, time.Time{}), tok("t", scopes(domain.ScopeRepoRead, domain.ScopeRepoAdmin), nil, time.Time{}), false},
+		{"root-only reach: a token:admin caller cannot reach a mr:merge token", admin(nil, time.Time{}), tok("t", scopes(domain.ScopeMRMerge), nil, time.Time{}), false},
+		{"unlimited token, limited caller", admin(a, time.Time{}), tok("t", rw, nil, time.Time{}), false},
+		{"repo outside the caller's list", admin(a, time.Time{}), tok("t", rw, ab, time.Time{}), false},
+		{"repo inside the caller's list", admin(ab, time.Time{}), tok("t", rw, a, time.Time{}), true},
+		{"limited token, unlimited caller", admin(nil, time.Time{}), tok("t", rw, ab, time.Time{}), true},
+		{"never expires, caller expires", admin(nil, exp), tok("t", rw, nil, time.Time{}), false},
+		{"expires later than the caller", admin(nil, exp), tok("t", rw, nil, exp.Add(time.Hour)), false},
+		{"expires sooner than the caller", admin(nil, exp), tok("t", rw, nil, exp.Add(-time.Hour)), true},
+		{"expiring token, caller never expires", admin(nil, time.Time{}), tok("t", rw, nil, exp), true},
+	}
+	for _, tt := range tests {
+		t.Run("list: "+tt.name, func(t *testing.T) {
+			f := newTokenFixture(t)
+			other := tok("other", scopes(domain.ScopeRepoRead), nil, time.Time{})
+			f.store.EXPECT().List(ctx).Return([]domain.Token{tt.target, other}, nil)
+			got, err := f.tokens.List(ctx, tt.caller)
+			require.NoError(t, err)
+			if !tt.within {
+				// Only the token that is within reach of every caller shows.
+				assert.NotContains(t, got, tt.target)
+				return
+			}
+			assert.Contains(t, got, tt.target)
+		})
+		t.Run("revoke: "+tt.name, func(t *testing.T) {
+			f := newTokenFixture(t)
+			f.store.EXPECT().Get(ctx, "t").Return(tt.target, nil)
+			if tt.within {
+				f.store.EXPECT().Revoke(ctx, "t").Return(nil)
+				require.NoError(t, f.tokens.Revoke(ctx, tt.caller, "t"))
+				return
+			}
+			// Not leaked: the same answer as for a token that does not exist, and nothing is deleted.
+			assert.ErrorIs(t, f.tokens.Revoke(ctx, tt.caller, "t"), domain.ErrNotFound)
+		})
+	}
+
+	t.Run("root lists and revokes everything", func(t *testing.T) {
+		f := newTokenFixture(t)
+		all := []domain.Token{tok("x", domain.AllScopes(), nil, time.Time{}), tok("y", scopes(domain.ScopeMRMerge), a, exp)}
+		f.store.EXPECT().List(ctx).Return(all, nil)
+		got, err := f.tokens.List(ctx, domain.Root())
+		require.NoError(t, err)
+		assert.Equal(t, all, got)
+		f.store.EXPECT().Revoke(ctx, "x").Return(nil) // no Get: root has no limits
+		require.NoError(t, f.tokens.Revoke(ctx, domain.Root(), "x"))
+	})
+
+	t.Run("an unknown id is not found for everyone", func(t *testing.T) {
+		f := newTokenFixture(t)
+		f.store.EXPECT().Get(ctx, "nope").Return(domain.Token{}, domain.ErrNotFound)
+		assert.ErrorIs(t, f.tokens.Revoke(ctx, admin(nil, time.Time{}), "nope"), domain.ErrNotFound)
+	})
+
+	t.Run("a store failure on the lookup is returned", func(t *testing.T) {
+		f := newTokenFixture(t)
+		boom := errors.New("boom")
+		f.store.EXPECT().Get(ctx, "t").Return(domain.Token{}, boom)
+		assert.ErrorIs(t, f.tokens.Revoke(ctx, admin(nil, time.Time{}), "t"), boom)
+	})
+}
+
+func TestAuthRevalidate(t *testing.T) {
+	ctx := context.Background()
+	p := domain.TokenPrincipal(domain.Token{ID: "t1", Scopes: scopes(domain.ScopeRepoWrite)})
+
+	t.Run("root is always valid", func(t *testing.T) {
+		f := newTokenFixture(t)
+		require.NoError(t, f.auth.Revalidate(ctx, domain.Root()))
+	})
+	t.Run("anonymous is not", func(t *testing.T) {
+		f := newTokenFixture(t)
+		assert.ErrorIs(t, f.auth.Revalidate(ctx, domain.Anonymous()), domain.ErrUnauthenticated)
+	})
+	t.Run("a stored token that exists", func(t *testing.T) {
+		f := newTokenFixture(t)
+		f.store.EXPECT().Get(ctx, "t1").Return(domain.Token{ID: "t1", ExpiresAt: now.Add(time.Hour)}, nil)
+		require.NoError(t, f.auth.Revalidate(ctx, p))
+	})
+	t.Run("revoked", func(t *testing.T) {
+		f := newTokenFixture(t)
+		f.store.EXPECT().Get(ctx, "t1").Return(domain.Token{}, domain.ErrNotFound)
+		assert.ErrorIs(t, f.auth.Revalidate(ctx, p), domain.ErrUnauthenticated)
+	})
+	t.Run("expired", func(t *testing.T) {
+		f := newTokenFixture(t)
+		f.store.EXPECT().Get(ctx, "t1").Return(domain.Token{ID: "t1", ExpiresAt: now}, nil)
+		assert.ErrorIs(t, f.auth.Revalidate(ctx, p), domain.ErrUnauthenticated)
+	})
+	t.Run("a store failure is an error, not a pass", func(t *testing.T) {
+		f := newTokenFixture(t)
+		boom := errors.New("boom")
+		f.store.EXPECT().Get(ctx, "t1").Return(domain.Token{}, boom)
+		err := f.auth.Revalidate(ctx, p)
+		require.ErrorIs(t, err, boom)
+		assert.NotErrorIs(t, err, domain.ErrUnauthenticated)
 	})
 }
 
