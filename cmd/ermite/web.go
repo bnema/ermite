@@ -4,11 +4,13 @@ package main
 
 import (
 	"net/http"
+	"net/netip"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/rpc"
 	"bnema.dev/ermite/internal/adapters/web"
+	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/config"
 	"bnema.dev/ermite/internal/domain"
 )
@@ -28,15 +30,18 @@ func newWeb(cfg config.Config, api *rpc.API) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asPrincipal(domain.Anonymous(), srv), nil
+	return asPrincipal(domain.Anonymous(), cfg.TrustedProxies, srv), nil
 }
 
-// asPrincipal runs next with p as the caller of every request: the API calls
-// the web makes carry it (rpc.API.InProcessClient). Browsers are anonymous
-// until the web login of P5b brings a session.
-func asPrincipal(p domain.Principal, next http.Handler) http.Handler {
+// asPrincipal runs next with p as the caller of every request, attributed to
+// the browser's address: the API calls the web makes carry both
+// (rpc.API.InProcessClient), so the per-client limits of the API count each
+// visitor. Browsers are anonymous until the web login of P5b brings a session.
+func asPrincipal(p domain.Principal, trusted []netip.Prefix, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(domain.ContextWithPrincipal(r.Context(), p)))
+		ctx := domain.ContextWithPrincipal(r.Context(), p)
+		ctx = rpc.ContextWithClient(ctx, clientlimit.ClientAddr(r, trusted))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

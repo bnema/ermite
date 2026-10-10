@@ -376,6 +376,23 @@ func TestWebEventsEndOnShutdown(t *testing.T) {
 	require.Eventually(t, func() bool { return h.forge.EventLog.Watchers() == 0 }, 5*time.Second, 5*time.Millisecond)
 }
 
+// The web counts each visitor against the API's limit of streams per client:
+// one address cannot take every watch slot of the forge.
+func TestWebEventsLimitPerVisitor(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	for range app.MaxWatchersPerClient {
+		h.sse("topic=home", "")
+	}
+	req, err := http.NewRequestWithContext(h.ctx, http.MethodGet, h.url("/-/events?topic=home"), nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.NotEmpty(t, resp.Header.Get("Retry-After"))
+	assert.Equal(t, app.MaxWatchersPerClient, h.forge.EventLog.Watchers())
+}
+
 // A visitor that goes away frees its watch.
 func TestWebEventsClientDisconnect(t *testing.T) {
 	h := newHarness(t, harnessOpts{})

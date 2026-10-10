@@ -89,8 +89,18 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 
 type clientKey struct{}
 
-// clientFromContext returns the normalized address of the client of a network
-// call; empty for an in-process call.
+// ContextWithClient attributes the in-process calls made with ctx to the
+// client at addr (clientlimit.ClientAddr of the browser's request), so that
+// the per-client limits of the API, such as the event streams one, apply to
+// each visitor of the web rather than to the web as a whole. A network call
+// is always attributed to its own peer: the interceptor overwrites it.
+func ContextWithClient(ctx context.Context, addr string) context.Context {
+	return context.WithValue(ctx, clientKey{}, clientlimit.Key(addr))
+}
+
+// clientFromContext returns the normalized address of the client of a call:
+// its peer for a network call, the one given to ContextWithClient for an
+// in-process call, empty when there is none.
 func clientFromContext(ctx context.Context) string {
 	c, _ := ctx.Value(clientKey{}).(string)
 	return c

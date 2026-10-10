@@ -236,8 +236,9 @@ type WatchParams struct {
 	// receive only new events.
 	ResumeAfter string
 	// Client identifies where the watch comes from, for the limit per client
-	// (MaxWatchersPerClient): an opaque key such as a normalized address. Empty
-	// for callers in this process, which only count against MaxWatchers.
+	// (MaxWatchersPerClient): an opaque key such as a normalized address; the
+	// web passes its visitor's. Empty only for callers with no client, which
+	// count against MaxWatchers alone.
 	Client string
 	// Ready, when not nil, is called once the topics are valid and the watch
 	// is registered: events published from then on are not missed. Nothing is
