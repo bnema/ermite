@@ -53,6 +53,24 @@ Use the admin token (`ERMITE_ADMIN_TOKEN`) or a stored token as the password; th
 
 The server keeps its runtime files in `$ERMITE_DATA_DIR/run/` (the hook socket and scripts that git calls on each push); the hook socket path must stay under about 100 bytes.
 
+## Run with Docker
+
+```sh
+docker build --build-arg VERSION="$(git describe --tags --always --dirty)" -t ermite .
+docker run -d -p 7341:7341 -v ermite-data:/data \
+  -e ERMITE_PUBLIC_URL=http://localhost:7341 -e ERMITE_ADMIN_TOKEN="$(head -c 32 /dev/urandom | base64)" ermite
+```
+
+The image is alpine with git, runs as uid 10001 and keeps its data in the `/data` volume. Logs are JSON by default. The build fetches `bnema.dev/ermite-*` from `git.bnema.dev`, so the host must reach it (NetBird); the build container uses the host's DNS and routes. Behind another route, pass `--build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/` (and `--add-host`), as the CI job does.
+
+## Develop with compose
+
+```sh
+docker compose up
+```
+
+Serves on `http://localhost:7341` with the development admin token in `compose.yaml`. The source is mounted and [air](https://github.com/air-verse/air) (`go tool air`, `.air.toml`) rebuilds and restarts the server on each change to a `.go` or `.templ` file; the module and build caches and the data live in named volumes. `docker compose down -v` removes them.
+
 ## Build
 
 ```sh

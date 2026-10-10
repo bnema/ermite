@@ -94,3 +94,30 @@ jobs:
           go generate ./internal/ports
           git diff --exit-code -- internal/ports/mocks/
           test -z "$(git status --porcelain -- internal/ports/mocks/)"
+
+  image:
+    name: Image
+    # Build only, nothing is pushed. The arch job container gets the runner's rootless
+    # Podman socket as /var/run/docker.sock (docker_host in ci-runner/config.yml), so the
+    # docker CLI builds through Podman.
+    runs-on: arch
+    steps:
+      - name: System packages
+        run: pacman -Syu --noconfirm --needed git docker
+      - uses: actions/checkout@v6
+        with:
+          # git describe needs the tags for the image version.
+          fetch-depth: 0
+      # The build container is a nested container: it reaches Forgejo on the host loopback
+      # the same way the job container does (10.0.2.2, see vps-infra homelab/igor/ci-runner).
+      - name: Build the image
+        run: |
+          docker build \
+            --add-host git.bnema.dev:10.0.2.2 \
+            --build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/ \
+            --build-arg VERSION="$(git describe --tags --always --dirty)" \
+            -t ermite:ci .
+      - name: Smoke test
+        run: |
+          docker run --rm ermite:ci version
+          docker run --rm --entrypoint git ermite:ci --version
