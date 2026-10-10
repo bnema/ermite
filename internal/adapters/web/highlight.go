@@ -3,11 +3,14 @@
 package web
 
 import (
+	"context"
+	"fmt"
 	"html"
 	"html/template"
 	"path"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -15,10 +18,10 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 )
 
-// code is a source file ready for the code view: one <span class="line"> per
+// codeView is a source file ready for the code view: one <span class="line"> per
 // line, each with its number as an anchor, tokens as chroma CSS classes (the
-// colours are in static/css/55-chroma.css, no inline style).
-type code struct {
+// colours are in static/css/56-chroma.css, no inline style).
+type codeView struct {
 	html  template.HTML
 	lines int
 	// lang is the name of the language the file was highlighted as, "" for
@@ -32,7 +35,7 @@ type code struct {
 // never lost or altered. Characters that can mislead a reader (bidi
 // controls, invisible and control characters) are replaced by visible
 // markers.
-func highlight(name, src string) code {
+func highlight(name, src string) codeView {
 	src = normaliseText(src)
 	var lines [][]chroma.Token
 	lang := ""
@@ -68,8 +71,30 @@ func highlight(name, src string) code {
 	}
 	// #nosec G203 -- every piece of the source goes through writeMarked, which
 	// escapes it; the rest is markup and class names of this file.
-	return code{html: template.HTML(b.String()), lines: len(lines), lang: lang}
+	return codeView{html: template.HTML(b.String()), lines: len(lines), lang: lang}
 }
+
+// highlightBudget bounds the time spent lexing one file: a lexer on hostile
+// input can be slow, and the page then shows the file as plain text.
+const highlightBudget = 10 * time.Second
+
+// highlightCtx is highlight with a time budget and the cancellation of ctx.
+// A lexer cannot be interrupted, so one that overruns is left to finish on
+// its own (its regexps have their own timeout) and its result is dropped.
+func highlightCtx(ctx context.Context, name, src string) codeView {
+	done := make(chan codeView, 1)
+	go func() { done <- highlight(name, src) }()
+	select {
+	case v := <-done:
+		return v
+	case <-ctx.Done():
+	case <-time.After(highlightBudget):
+	}
+	return highlightPlain(src)
+}
+
+// highlightPlain is the code view of src with no language.
+func highlightPlain(src string) codeView { return highlight("", src) }
 
 // maxViewLines bounds the lines of the code view: every line costs about a
 // hundred bytes of HTML, and a megabyte of line feeds must not become a
@@ -108,22 +133,17 @@ func lexerFor(name string) chroma.Lexer {
 
 // tokenise lexes src. It reports false when the tokens do not add up to the
 // source, which is what a lexer that gave up half-way (its regexp timeout)
-// leaves behind.
+// leaves behind. A lexer may add a final line feed (EnsureNL), nothing else.
 func tokenise(lx chroma.Lexer, src string) ([]chroma.Token, bool) {
 	it, err := lx.Tokenise(&chroma.TokeniseOptions{State: "root", EnsureLF: true}, src)
 	if err != nil {
 		return nil, false
 	}
 	toks := it.Tokens()
-	n := 0
-	for _, t := range toks {
-		n += len(t.Value)
+	if strings.TrimRight(joinTokens(toks), "\n") != strings.TrimRight(src, "\n") {
+		return nil, false
 	}
-	if strings.TrimRight(src, "\n") == "" {
-		return nil, n == len(src) || n == len(src)+1
-	}
-	// A lexer may add a final line feed (EnsureNL) but nothing else.
-	return toks, len(strings.TrimRight(joinTokens(toks), "\n")) == len(strings.TrimRight(src, "\n"))
+	return toks, true
 }
 
 func joinTokens(toks []chroma.Token) string {
@@ -159,13 +179,14 @@ func tokenClass(t chroma.TokenType) string {
 	return chroma.StandardTypes[t]
 }
 
-// misleading are the characters, other than the controls, that the code
-// view shows as markers instead of itself: the bidirectional controls of
-// "Trojan Source" attacks (CVE-2021-42574) and the characters with no
-// glyph.
-var misleading = map[rune]string{
+// invisibleNames name the characters of the code view that are shown as
+// markers, for the tooltip. Any other invisible character is called by its
+// category.
+var invisibleNames = map[rune]string{
 	0x061C: "arabic letter mark",
 	0x200B: "zero width space",
+	0x200C: "zero width non-joiner",
+	0x200D: "zero width joiner",
 	0x200E: "left-to-right mark",
 	0x200F: "right-to-left mark",
 	0x202A: "left-to-right embedding",
@@ -173,51 +194,75 @@ var misleading = map[rune]string{
 	0x202C: "pop directional formatting",
 	0x202D: "left-to-right override",
 	0x202E: "right-to-left override",
+	0x2028: "line separator",
+	0x2029: "paragraph separator",
 	0x2060: "word joiner",
 	0x2066: "left-to-right isolate",
 	0x2067: "right-to-left isolate",
 	0x2068: "first strong isolate",
 	0x2069: "pop directional isolate",
-	0xFEFF: "zero width no-break space (byte order mark)",
+	0xFEFF: "byte order mark",
 }
 
-// markerName says whether r is shown as a marker, and how it is called.
-// Tab is ordinary; the line feed never reaches here.
-func markerName(r rune) (string, bool) {
-	if n, ok := misleading[r]; ok {
-		return n, true
+// isInvisible reports whether r changes how code reads without being seen:
+// the bidirectional controls of "Trojan Source" attacks (CVE-2021-42574) and
+// the other format characters, the controls, the line and paragraph
+// separators and the blank Hangul fillers. A tab is ordinary.
+func isInvisible(r rune) bool {
+	switch r {
+	case '\t', '\n':
+		return false
+	case 0x115F, 0x1160, 0x3164, 0xFFA0:
+		return true
 	}
-	switch {
-	case r == '\t':
-		return "", false
-	case r == 0x2028 || r == 0x2029:
-		return "line or paragraph separator", true
-	case unicode.IsControl(r):
-		return "control character", true
-	}
-	return "", false
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
 }
 
-func isMarked(r rune) bool { _, ok := markerName(r); return ok }
+// codePoint is "U+202E".
+func codePoint(r rune) string { return fmt.Sprintf("U+%04X", r) }
 
-// writeMarked writes s escaped for HTML, with each misleading character
-// replaced by <span class="ctl" title="U+202E right-to-left override">
-// &lt;U+202E&gt;</span>. The character itself is not output.
+// invisibleName is what the tooltip of a marker says.
+func invisibleName(r rune) string {
+	if n, ok := invisibleNames[r]; ok {
+		return n
+	}
+	if unicode.IsControl(r) {
+		return "control character"
+	}
+	return "invisible character"
+}
+
+// writeMarked writes s escaped for HTML, each invisible character replaced
+// by <span class="ctl" title="U+202E right-to-left override">&lt;U+202E&gt;
+// </span>. The character itself is never output.
 func writeMarked(b *strings.Builder, s string) {
 	for {
-		i := strings.IndexFunc(s, isMarked)
+		i := strings.IndexFunc(s, isInvisible)
 		if i < 0 {
 			b.WriteString(html.EscapeString(s))
 			return
 		}
 		b.WriteString(html.EscapeString(s[:i]))
 		r, size := utf8.DecodeRuneInString(s[i:])
-		name, _ := markerName(r)
-		code := "U+" + strings.ToUpper(strconv.FormatInt(int64(r)+0x10000, 16)[1:])
-		if r > 0xFFFF {
-			code = "U+" + strings.ToUpper(strconv.FormatInt(int64(r), 16))
-		}
-		b.WriteString(`<span class="ctl" title="` + code + ` ` + name + `">&lt;` + code + `&gt;</span>`)
+		cp := codePoint(r)
+		b.WriteString(`<span class="ctl" title="` + cp + ` ` + invisibleName(r) + `">&lt;` + cp + `&gt;</span>`)
 		s = s[i+size:]
 	}
+}
+
+// markedText is s as plain text with each invisible character replaced by
+// its <U+XXXX> marker, for names and paths shown outside the code view.
+func markedText(s string) string {
+	if !strings.ContainsFunc(s, isInvisible) {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if isInvisible(r) {
+			b.WriteString("<" + codePoint(r) + ">")
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

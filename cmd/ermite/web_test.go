@@ -119,7 +119,7 @@ func TestWebGolden(t *testing.T) {
 		{"refs", "/demo/refs", 200},
 		{"empty", "/quiet", 200},
 		{"not-found", "/nope", 404},
-		{"not-found-page", "/demo/tree/main", 404},
+		{"not-found-page", "/demo/nowhere/main", 404},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			status, hdr, body := h.get(tt.path)

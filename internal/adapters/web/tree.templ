@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Tree is a directory: the filter, the entries with their last commit, the
+// notes on what is left out, and the README of the directory below.
+templ Tree(l Layout, p TreePage) {
+	@Shell(l, nil) {
+		<div class="filter">
+			<label for="tree-filter">filter&gt;</label>
+			<input
+				id="tree-filter"
+				type="search"
+				data-filter
+				placeholder="this directory  ( / )"
+				autocomplete="off"
+				hx-on:input="let t = this.value.toLowerCase(); q('#tree-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#tree-rows > tr:not([hidden])')"
+			/>
+		</div>
+		<table class="list tree" aria-label="Entries">
+			<thead>
+				<tr><th class="cur"></th><th class="c-kind"></th><th class="c-name">name</th><th class="c-size">size</th><th class="c-sub">last commit</th><th class="c-who">author</th><th class="c-when">date</th></tr>
+			</thead>
+			<tbody id="tree-rows" data-rows>
+				for _, r := range p.Rows {
+					@TreeRowView(r)
+				}
+			</tbody>
+		</table>
+		if len(p.Rows) == 0 {
+			<p class="lede dim">this directory is empty.</p>
+		}
+		for _, n := range p.Notes {
+			<p class="note">{ n }</p>
+		}
+		if p.Readme != nil {
+			<h2 class="rule-h"><span>{ p.Readme.Name }</span></h2>
+			@ReadmeView(*p.Readme)
+		}
+	}
+}
+
+// TreeRowView is one entry of a directory. Glyph: ▾ directory, @ symbolic
+// link, + submodule, · file.
+templ TreeRowView(r TreeRow) {
+	<tr data-cursor?={ r.Cursor }>
+		<td class="cur" aria-hidden="true"></td>
+		<td class="c-kind" aria-hidden="true">{ r.Glyph }</td>
+		<td class="c-name">
+			if r.Href != "" {
+				<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+			} else {
+				{ r.Name }
+			}
+		</td>
+		<td class="c-size num dim">{ r.Size }</td>
+		<td class="c-sub dim">
+			if r.CHref != "" {
+				<a href={ templ.SafeURL(r.CHref) }>{ r.Subject }</a>
+			}
+		</td>
+		<td class="c-who dim">{ r.Author }</td>
+		<td class="c-when nowrap dim">
+			if r.WhenAt != "" {
+				<time datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
+			}
+		</td>
+	</tr>
+}

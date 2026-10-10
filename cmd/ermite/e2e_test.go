@@ -103,7 +103,7 @@ func TestRoutes(t *testing.T) {
 		"/pub.git/info/refs", // dumb protocol: no service
 		"/pub.git/info/refs?service=git-bogus",
 		"/pub.git/config",
-		"/pub/tree/main", // a page of a later phase
+		"/pub/events/main", // no such page
 		"/-/nothing",
 		"/Bad.git/info/refs?service=git-upload-pack",
 		"/..%2f..%2fetc/info/refs?service=git-upload-pack",
