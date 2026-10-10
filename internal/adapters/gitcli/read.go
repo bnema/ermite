@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -409,25 +410,65 @@ func parseTreeEntry(rec string, parent domain.TreePath) (domain.TreeEntry, error
 }
 
 // fillLastCommits sets the last commit of the first MaxLastCommitEntries
-// entries with `git log -1 <commit> -- <path>`, one after the other. Git
-// answers each from the commit-graph and its changed-path filters when they
-// exist. Every command takes a slot of the exec semaphore, so a large
-// directory cannot use more than its share of the processes the server may
-// run. Entries beyond the bound are left without one and the tree says so.
+// entries with `git log -1 <commit> -- <path>`, run by a small pool of
+// workers: min(4, max(1, MaxExec/2)) at most. Git answers each from the
+// commit-graph and its changed-path filters when they exist. Every command
+// takes a slot of the exec semaphore on its own (the workers hold none), so a
+// large directory cannot use more than its share of the processes the server
+// may run. Each worker writes its own entry, so the result does not depend on
+// the scheduling; the first error stops the others and is returned. Entries
+// beyond the bound are left without one and the tree says so.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter fills the tree with git output; the bound comes from the port
 func (g *Git) fillLastCommits(ctx context.Context, dir string, tree *domain.Tree) error {
 	n := len(tree.Entries)
 	if n > domain.MaxLastCommitEntries {
 		n = domain.MaxLastCommitEntries
 		tree.LastCommitsOmitted = true
 	}
-	for i := range n {
-		c, err := g.lastCommit(ctx, dir, tree.CommitID, tree.Entries[i].Path)
-		if err != nil {
-			return err
-		}
-		tree.Entries[i].LastCommit = &c
+	workers := min(4, max(1, cap(g.exec)/2), n)
+	if workers == 0 {
+		return nil
 	}
-	return nil
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		firstErr error
+	)
+	next := make(chan int)
+	for range workers {
+		wg.Go(func() {
+			for i := range next {
+				c, err := g.lastCommit(ctx, dir, tree.CommitID, tree.Entries[i].Path)
+				if err != nil {
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = err
+						cancel()
+					}
+					mu.Unlock()
+					continue
+				}
+				tree.Entries[i].LastCommit = &c
+			}
+		})
+	}
+feed:
+	for i := range n {
+		select {
+		case next <- i:
+		case <-ctx.Done():
+			break feed
+		}
+	}
+	close(next)
+	wg.Wait()
+	if firstErr != nil {
+		return firstErr
+	}
+	return ctx.Err()
 }
 
 // lastCommit returns the newest commit reachable from head that changed path;
