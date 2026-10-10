@@ -127,7 +127,7 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 
 	l := s.repoLayout(ctx, d, "commits")
 	l.Title = p.Short + " " + p.Subject + " · " + d.name() + " · " + s.instance
-	l.SHA, l.RefPath = c.GetId(), ""
+	pinRef(&l, target{rev: c.GetId(), name: p.Short, detached: true})
 	history := repoHref(d.name())
 	if d.head != nil {
 		history = repoHref(d.name(), "commits", d.head.GetShortName())

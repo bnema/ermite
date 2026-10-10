@@ -99,7 +99,7 @@ func (l *liveStream) repoPage(ctx context.Context, ev *pb.Event) ([]fragment, er
 			return gap, nil // no longer visible
 		case err != nil:
 			return nil, err
-		case l.view == "summary":
+		case l.view == "summary", l.view == "refs":
 			return gap, nil // the description, the default branch
 		}
 		return nil, nil
@@ -166,6 +166,11 @@ func (l *liveStream) banner(ctx context.Context, p *pb.Pushed) ([]fragment, erro
 		if err != nil {
 			return nil, err
 		}
+		// The count is approximate for a history with merges: the log is
+		// ordered by date, not as "head..tip", so commits that are not new may
+		// be counted before the head is met. And one page of the log being
+		// all that is read, "100+" cannot be told from a rewritten branch
+		// whose old head is further back: the API has no "is ancestor".
 		n, found := 0, false
 		for _, c := range res.Msg.GetCommits() {
 			if c.GetId() == l.head {

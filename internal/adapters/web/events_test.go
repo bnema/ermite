@@ -232,3 +232,31 @@ func TestEventsOffWithoutClient(t *testing.T) {
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/-/events?topic=home", nil))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+// A change of the repository (its default branch, say) makes the pages that
+// show it load themselves again: the summary and the refs page, whose rows
+// and marks depend on it. The commits page shows a branch, not the default.
+func TestRepoUpdatedReloadsSummaryAndRefs(t *testing.T) {
+	api := http.NewServeMux()
+	api.Handle(ermiteconnect.NewRepoServiceHandler(repoOK{}))
+	backend := httptest.NewServer(api)
+	t.Cleanup(backend.Close)
+	srv, err := New(Config{
+		Repos:     ermiteconnect.NewRepoServiceClient(backend.Client(), backend.URL),
+		Git:       ermiteconnect.NewGitServiceClient(backend.Client(), backend.URL),
+		PublicURL: "https://forge.example",
+	})
+	require.NoError(t, err)
+
+	ev := &pb.Event{Kind: &pb.Event_RepoUpdated{RepoUpdated: &pb.RepoUpdated{Repo: &pb.Repo{Name: "x"}}}}
+	for view, wantGap := range map[string]bool{"summary": true, "refs": true, "commits": false} {
+		ls := &liveStream{s: srv, repo: "x", view: view}
+		got, err := ls.render(t.Context(), ev)
+		require.NoError(t, err, view)
+		if wantGap {
+			assert.Equal(t, gap, got, view)
+		} else {
+			assert.Empty(t, got, view)
+		}
+	}
+}
