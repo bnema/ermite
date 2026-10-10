@@ -56,9 +56,6 @@ func (p Principal) Label() string {
 	return "anonymous"
 }
 
-// IsToken reports whether p holds a stored token.
-func (p Principal) IsToken() bool { return p.kind == kindToken }
-
 // IsRoot reports whether p may do everything.
 func (p Principal) IsRoot() bool { return p.kind == kindRoot }
 

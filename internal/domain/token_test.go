@@ -48,7 +48,6 @@ func TestPrincipalScopes(t *testing.T) {
 	tok := domain.Token{ID: "t1", Scopes: []domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, Repos: []domain.RepoName{a}}
 	p := domain.TokenPrincipal(tok)
 
-	assert.True(t, p.IsToken())
 	assert.Equal(t, "token", p.Label())
 	assert.Equal(t, "t1", p.TokenID())
 	assert.False(t, p.IsRoot())

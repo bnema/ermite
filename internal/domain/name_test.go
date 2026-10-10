@@ -109,5 +109,4 @@ func TestPrincipal(t *testing.T) {
 	assert.False(t, zero.IsRoot())
 	assert.True(t, domain.Root().IsRoot())
 	assert.Equal(t, "anonymous", domain.Anonymous().Label())
-	assert.False(t, domain.Root().IsToken())
 }

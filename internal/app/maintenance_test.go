@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
@@ -170,5 +169,4 @@ func TestMaintainerConcurrentSchedule(t *testing.T) {
 	}
 	wg.Wait()
 	m.Close(ctx)
-	require.True(t, true)
 }

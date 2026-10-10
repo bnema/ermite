@@ -22,7 +22,6 @@ import (
 
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
-	"bnema.dev/ermite/internal/ports"
 )
 
 func scopes(s ...domain.Scope) []domain.Scope { return s }
@@ -598,7 +597,6 @@ func TestAC8TokenCreationThroughTheForge(t *testing.T) {
 	assert.Equal(t, admin.Token.ID, list[0].ID)
 	_, err = h.forge.store.Tokens().FindByHash(ctx, child.Token.Hash)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
-	var _ ports.TokenStore = h.forge.store.Tokens()
 }
 
 // Large pushes arrive chunked (git's http.postBuffer is 1 MiB): the handler

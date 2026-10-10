@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -81,16 +82,9 @@ func (t *Tokens) Create(ctx context.Context, p domain.Principal, params CreateTo
 	}
 
 	for range 3 {
-		secret, err := newSecret()
-		if err != nil {
-			return CreatedToken{}, err
-		}
-		id, err := newTokenID()
-		if err != nil {
-			return CreatedToken{}, err
-		}
-		tok.ID, tok.Hash = id, domain.HashTokenSecret(secret)
-		err = t.store.Create(ctx, tok)
+		secret := newSecret()
+		tok.ID, tok.Hash = newTokenID(), domain.HashTokenSecret(secret)
+		err := t.store.Create(ctx, tok)
 		if errors.Is(err, domain.ErrAlreadyExists) {
 			continue // a random id or secret collided: practically never
 		}
@@ -145,18 +139,8 @@ func buildToken(params CreateTokenParams, now time.Time) (domain.Token, error) {
 			tok.Repos = append(tok.Repos, r)
 		}
 	}
-	slices.SortFunc(tok.Repos, func(a, b domain.RepoName) int { return compareNames(a, b) })
+	slices.SortFunc(tok.Repos, func(a, b domain.RepoName) int { return strings.Compare(a.String(), b.String()) })
 	return tok, nil
-}
-
-func compareNames(a, b domain.RepoName) int {
-	switch {
-	case a.String() < b.String():
-		return -1
-	case a.String() > b.String():
-		return 1
-	}
-	return 0
 }
 
 // checkNoEscalation enforces that tok is within the rights of its creator.
@@ -219,22 +203,19 @@ func requireTokenAdmin(p domain.Principal) error {
 	return nil
 }
 
-// newSecret returns "ermite_" and 32 random bytes in base64url.
-func newSecret() (string, error) {
+// newSecret returns "ermite_" and 32 random bytes in base64url. crypto/rand
+// does not fail: it aborts the program if the system has no entropy.
+func newSecret() string {
 	var raw [32]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", fmt.Errorf("random token secret: %w", err)
-	}
-	return domain.TokenSecretPrefix + base64.RawURLEncoding.EncodeToString(raw[:]), nil
+	_, _ = rand.Read(raw[:])
+	return domain.TokenSecretPrefix + base64.RawURLEncoding.EncodeToString(raw[:])
 }
 
 // newTokenID returns 16 hex characters.
-func newTokenID() (string, error) {
+func newTokenID() string {
 	var raw [8]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", fmt.Errorf("random token id: %w", err)
-	}
-	return hex.EncodeToString(raw[:]), nil
+	_, _ = rand.Read(raw[:])
+	return hex.EncodeToString(raw[:])
 }
 
 // Auth authenticates secrets presented by callers.
