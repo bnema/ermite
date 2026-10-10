@@ -73,6 +73,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	if err := adminAccess(p, repo); err != nil {
 		return domain.Repo{}, err
 	}
+	before := repo
 	if params.Description == nil && params.Visibility == nil && params.DefaultBranch == nil {
 		return domain.Repo{}, fmt.Errorf("%w: nothing to update", domain.ErrInvalid)
 	}
@@ -123,7 +124,10 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 		Bool("default_branch", params.DefaultBranch != nil).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).
 		Msg("repository updated")
-	r.bus.Publish(ctx, domain.RepoUpdated{Repo: name, At: r.clock.Now().UTC()})
+	r.bus.Publish(ctx, domain.RepoUpdated{
+		Repo: name, At: r.clock.Now().UTC(),
+		Visibility: repo.Visibility, Previous: before.Visibility, CreatedAt: repo.CreatedAt,
+	})
 	return repo, nil
 }
 
@@ -176,6 +180,6 @@ func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.Repo
 		return fmt.Errorf("delete metadata of %q: %w", name, err)
 	}
 	log.Info().Str("repo", name.String()).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("repository deleted")
-	r.bus.Publish(ctx, domain.RepoDeleted{Repo: name, Visibility: repo.Visibility, At: r.clock.Now().UTC()})
+	r.bus.Publish(ctx, domain.RepoDeleted{Repo: name, Visibility: repo.Visibility, At: r.clock.Now().UTC(), CreatedAt: repo.CreatedAt})
 	return nil
 }

@@ -77,6 +77,11 @@ func limiterKey(addr string) string {
 	return netip.PrefixFrom(a, ipv6Prefix).Masked().String()
 }
 
+// Key returns the identity under which a client address is counted, by the
+// limiter and by the other per-client limits: an IPv4 address, or the /64
+// network of an IPv6 address.
+func Key(addr string) string { return limiterKey(addr) }
+
 // Blocked reports whether addr has used up its failures, and how long until
 // it may try again.
 func (l *Limiter) Blocked(_ context.Context, addr string) (bool, time.Duration) {

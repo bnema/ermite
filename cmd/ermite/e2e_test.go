@@ -210,7 +210,7 @@ func TestAC2PushAuthorization(t *testing.T) {
 // AC3: first push creates a private repository with HEAD on the pushed branch.
 func TestAC3CreateOnPush(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
-	events := h.forge.Events.Subscribe(h.ctx)
+	events := h.forge.Bus.Subscribe(h.ctx)
 
 	// Only "dev" is pushed: HEAD (initially main) moves to it.
 	wt := h.workTree("dev", "a")
@@ -316,7 +316,7 @@ func TestAC4HooksUnknownTokenAndMissingBinary(t *testing.T) {
 
 func TestAC4PostReceiveAttribution(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
-	events := h.forge.Events.Subscribe(h.ctx)
+	events := h.forge.Bus.Subscribe(h.ctx)
 
 	// Two repositories, pushed at the same time with different refs.
 	const n = 4

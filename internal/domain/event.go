@@ -62,9 +62,18 @@ func (RepoCreated) EventKind() string { return "repo.created" }
 
 // RepoUpdated is published when the metadata of a repository, or its default
 // branch, changed. The new state is read from the repository.
+//
+// The visibility fields tell who could read the repository before and after
+// the change, and CreatedAt tells which repository of that name it was (a
+// name can be deleted and created again): the event stream decides who may be
+// told from them.
 type RepoUpdated struct {
 	Repo RepoName
 	At   time.Time
+	// Visibility is the visibility after the change, Previous the one before.
+	Visibility, Previous Visibility
+	// CreatedAt is the creation time of the repository.
+	CreatedAt time.Time
 }
 
 // EventKind implements Event.
@@ -76,6 +85,8 @@ type RepoDeleted struct {
 	Repo       RepoName
 	Visibility Visibility
 	At         time.Time
+	// CreatedAt is the creation time of the repository that was deleted.
+	CreatedAt time.Time
 }
 
 // EventKind implements Event.

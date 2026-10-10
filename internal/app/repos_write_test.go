@@ -29,7 +29,9 @@ func TestUpdate(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
 		want := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Description: "new"}
 		f.meta.EXPECT().Update(ctx, want).Return(nil)
-		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{Repo: n, At: now}).Return().Once()
+		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{
+			Repo: n, At: now, Visibility: domain.VisibilityPublic, Previous: domain.VisibilityPrivate,
+		}).Return().Once()
 
 		got, err := f.repos.Update(ctx, admin, n, app.UpdateParams{
 			Description: ptr("new"), Visibility: ptr(domain.VisibilityPublic),

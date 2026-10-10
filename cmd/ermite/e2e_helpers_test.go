@@ -46,6 +46,8 @@ type harnessOpts struct {
 	maxBody int64
 	// eventBuffer overrides the size of the event ring when positive.
 	eventBuffer int
+	// revalidateEvery overrides how often a watcher's token is re-checked.
+	revalidateEvery time.Duration
 }
 
 // newHarness starts a forge. The data directory is short: the hook socket
@@ -79,7 +81,7 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	if hookExe == "" {
 		hookExe = binary(t)
 	}
-	f, err := newForge(ctx, cfg, options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody, eventBuffer: o.eventBuffer})
+	f, err := newForge(ctx, cfg, options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody, eventBuffer: o.eventBuffer, revalidateEvery: o.revalidateEvery})
 	require.NoError(t, err)
 
 	h := &harness{t: t, forge: f, data: data, logs: logs, ctx: ctx, cancel: cancel, hooksDone: make(chan error, 1)}

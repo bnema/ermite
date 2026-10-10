@@ -41,6 +41,8 @@ type options struct {
 	maxBodyBytes int64
 	// eventBuffer overrides app.DefaultEventBuffer when positive.
 	eventBuffer int
+	// revalidateEvery overrides app.DefaultRevalidateEvery when not zero.
+	revalidateEvery time.Duration
 }
 
 // forge is the wired server: every adapter and use case, ready to serve.
@@ -61,7 +63,7 @@ type forge struct {
 	Browse   *app.Browse
 	EventLog *app.Events
 	API      *rpc.API
-	Events   ports.EventBus
+	Bus      ports.EventBus
 }
 
 // serverVersion is the version GetVersion reports: the module version of the
@@ -116,8 +118,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 
 	clock := systemClock{}
-	f.Events = eventbus.New()
-	f.Repos = app.NewRepos(store, git, f.Events, clock)
+	f.Bus = eventbus.New()
+	f.Repos = app.NewRepos(store, git, f.Bus, clock)
 	report, err := f.Repos.Reconcile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("reconcile repositories: %w", err)
@@ -131,7 +133,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.Tokens = app.NewTokens(store.Tokens(), clock)
 	f.Auth = app.NewAuth(cfg.AdminTokenHash, store.Tokens(), clock)
 	f.maint = app.NewMaintainer(ctx, git, opts.maintenanceDelay)
-	f.Pushes = app.NewPushes(store, f.Repos, git, f.Events, clock, f.maint, f.Auth)
+	f.Pushes = app.NewPushes(store, f.Repos, git, f.Bus, clock, f.maint, f.Auth)
 
 	exe := opts.hookExe
 	if exe == "" {
@@ -148,7 +150,9 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 
 	f.Browse = app.NewBrowse(store, git)
-	f.EventLog = app.NewEvents(ctx, f.Repos, f.Events, opts.eventBuffer, clock)
+	f.EventLog = app.NewEvents(ctx, f.Repos, f.Bus, clock, app.EventsConfig{
+		Size: opts.eventBuffer, Auth: f.Auth, RevalidateEvery: opts.revalidateEvery,
+	})
 
 	// One budget of failed authentications per client, for Git and the API.
 	limiter := clientlimit.NewLimiter(nil)

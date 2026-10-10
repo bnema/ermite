@@ -50,6 +50,8 @@ func codeOf(err error) (connect.Code, bool) {
 		return connect.CodeFailedPrecondition, true
 	case errors.Is(err, domain.ErrConflict):
 		return connect.CodeAborted, true
+	case errors.Is(err, domain.ErrResourceExhausted):
+		return connect.CodeResourceExhausted, true
 	}
 	for _, invalid := range invalidErrors {
 		if errors.Is(err, invalid) {

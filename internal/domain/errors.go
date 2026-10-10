@@ -33,4 +33,7 @@ var (
 	// ErrPreconditionFailed means the state of the forge does not allow the
 	// operation, for example a default branch that does not exist.
 	ErrPreconditionFailed = errors.New("failed precondition")
+	// ErrResourceExhausted means a limit of the server is reached, for example
+	// the number of event watchers; the caller may retry later.
+	ErrResourceExhausted = errors.New("resource exhausted")
 )

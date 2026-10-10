@@ -16,10 +16,13 @@ type eventService struct{ events *app.Events }
 
 // Watch streams events until the client goes away or the server stops. The
 // stream ends with success in both cases: the contract has no error for
-// "server is shutting down".
+// "server is shutting down". It ends with unauthenticated when the token of
+// the caller is revoked or expires, and a caller that has too many streams
+// open gets resource_exhausted.
 func (s *eventService) Watch(ctx context.Context, req *connect.Request[pb.WatchRequest], stream *connect.ServerStream[pb.WatchResponse]) error {
 	params := app.WatchParams{
 		Topics: req.Msg.GetTopics(), ResumeAfter: req.Msg.GetResumeAfter(),
+		Client: clientFromContext(ctx),
 		// A client's call returns when the response begins: send the headers
 		// now, not with the first event, which may be far away. Connect flushes
 		// them for a nil message. A failure shows on the first real send.

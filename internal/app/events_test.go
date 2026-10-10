@@ -19,23 +19,63 @@ import (
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
+// fakeAuth is the Revalidator of the rig: tokens are valid until revoked.
+type fakeAuth struct {
+	mu      sync.Mutex
+	revoked map[string]bool
+	calls   int
+}
+
+func (a *fakeAuth) Revalidate(_ context.Context, p domain.Principal) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.calls++
+	if a.revoked[p.TokenID()] {
+		return domain.ErrUnauthenticated
+	}
+	return nil
+}
+
+func (a *fakeAuth) revoke(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.revoked == nil {
+		a.revoked = map[string]bool{}
+	}
+	a.revoked[id] = true
+}
+
+func (a *fakeAuth) count() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.calls
+}
+
 // eventRig is an Events use case fed by a channel the test writes to.
 type eventRig struct {
 	t      *testing.T
 	meta   *mocks.RepoMetaStore
 	git    *mocks.GitRepos
 	feed   chan domain.Event
+	auth   *fakeAuth
 	events *app.Events
 }
 
 func newEventRig(t *testing.T, size int) *eventRig {
+	t.Helper()
+	return newEventRigConfig(t, app.EventsConfig{Size: size})
+}
+
+func newEventRigConfig(t *testing.T, cfg app.EventsConfig) *eventRig {
 	t.Helper()
 	r := &eventRig{
 		t:    t,
 		meta: mocks.NewRepoMetaStore(t),
 		git:  mocks.NewGitRepos(t),
 		feed: make(chan domain.Event, 4096),
+		auth: &fakeAuth{},
 	}
+	cfg.Auth = r.auth
 	bus := mocks.NewEventBus(t)
 	bus.EXPECT().Subscribe(mock.Anything).RunAndReturn(func(ctx context.Context) <-chan domain.Event {
 		go func() { <-ctx.Done(); close(r.feed) }()
@@ -45,7 +85,7 @@ func newEventRig(t *testing.T, size int) *eventRig {
 	clock.EXPECT().Now().Return(now).Maybe()
 	r.git.EXPECT().HeadBranch(mock.Anything, mock.Anything).Return("main", nil).Maybe()
 	repos := app.NewRepos(r.meta, r.git, bus, clock)
-	r.events = app.NewEvents(context.Background(), repos, bus, size, clock)
+	r.events = app.NewEvents(context.Background(), repos, bus, clock, cfg)
 	t.Cleanup(func() { r.events.Close(context.Background()) })
 	return r
 }
@@ -92,12 +132,20 @@ func (w *watcher) next(t *testing.T) app.WatchEvent {
 	return app.WatchEvent{}
 }
 
-func (w *watcher) none(t *testing.T) {
+// sentinelOID marks the push events that only prove the ones before them were
+// handled.
+var sentinelOID = fmt.Sprintf("%040x", 0xfeed)
+
+// quiet proves that the watcher got nothing since its last read: it pushes an
+// event on n, which the watcher may see, and requires it to be the next one.
+// Events reach a watcher in order, so anything sent before would show up first.
+func (w *watcher) quiet(t *testing.T, r *eventRig, n domain.RepoName) {
 	t.Helper()
-	select {
-	case e := <-w.got:
-		t.Fatalf("unexpected event %+v", e)
-	case <-time.After(100 * time.Millisecond):
+	r.feed <- domain.PushEvent{Repo: n, Updates: []domain.RefUpdate{{Old: domain.ZeroOID, New: sentinelOID, Ref: "refs/heads/sentinel"}}, At: now}
+	e := w.next(t)
+	push, ok := e.Event.(domain.PushEvent)
+	if !ok || len(push.Updates) != 1 || push.Updates[0].New != sentinelOID {
+		t.Fatalf("expected nothing before the sentinel, got %+v", e)
 	}
 }
 
@@ -121,7 +169,7 @@ func TestWatchLiveAndFiltered(t *testing.T) {
 	for name, w := range map[string]*watcher{"anonymous": anon, "scoped": scoped} {
 		e := w.next(t)
 		assert.Equal(t, pub, e.Event.(domain.PushEvent).Repo, name)
-		w.none(t)
+		w.quiet(t, r, pub)
 	}
 	first, second := root.next(t), root.next(t)
 	assert.Equal(t, priv, first.Event.(domain.PushEvent).Repo)
@@ -130,7 +178,7 @@ func TestWatchLiveAndFiltered(t *testing.T) {
 	assert.NotEqual(t, first.ID, second.ID)
 
 	assert.Equal(t, priv, onlyPriv.next(t).Event.(domain.PushEvent).Repo)
-	onlyPriv.none(t)
+	onlyPriv.quiet(t, r, priv)
 }
 
 func TestWatchRechecksAccessPerEvent(t *testing.T) {
@@ -155,7 +203,7 @@ func TestWatchRechecksAccessPerEvent(t *testing.T) {
 	vis = domain.VisibilityPrivate
 	mu.Unlock()
 	r.push(n, 2)
-	w.none(t)
+	w.quiet(t, r, r.repo("open", domain.VisibilityPublic)) // push 2 is not delivered to anonymous
 }
 
 func TestWatchResumeAndGap(t *testing.T) {
@@ -176,21 +224,8 @@ func TestWatchResumeAndGap(t *testing.T) {
 	}
 	require.Len(t, ids, 20)
 
-	t.Run("resume replays the buffered events after the id, then goes live", func(t *testing.T) {
-		w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[16]})
-		for _, want := range ids[17:] {
-			e := w.next(t)
-			assert.False(t, e.Gap)
-			assert.Equal(t, want, e.ID)
-		}
-		w.none(t)
-	})
-
-	t.Run("resume at the last event replays nothing", func(t *testing.T) {
-		w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[19]})
-		w.none(t)
-	})
-
+	// The subtests that read the state of the ring come first: the ones that
+	// need a sentinel add events to it.
 	t.Run("an id that fell out of the buffer gives a gap, then the oldest buffered event", func(t *testing.T) {
 		// 20 events were taken, the buffer holds the last 8: ids[12] is the
 		// oldest still present; ids[0] is long gone.
@@ -215,13 +250,27 @@ func TestWatchResumeAndGap(t *testing.T) {
 		assert.True(t, w.next(t).Gap)
 	})
 
-	t.Run("a resumed watch goes live after the replay", func(t *testing.T) {
-		w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[19]})
-		w.none(t)
+	t.Run("resume replays the buffered events after the id, then goes live", func(t *testing.T) {
+		w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[16]})
+		for _, want := range ids[17:] {
+			e := w.next(t)
+			assert.False(t, e.Gap)
+			assert.Equal(t, want, e.ID)
+		}
+		// Nothing else was replayed: the next event is the one pushed now.
+		r.push(n, 98)
+		live := w.next(t)
+		assert.False(t, live.Gap)
+		assert.NotContains(t, ids, live.ID)
+		ids = append(ids, live.ID)
+	})
+
+	t.Run("resume at the last event replays nothing, then goes live", func(t *testing.T) {
+		w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[len(ids)-1]})
 		r.push(n, 99)
 		e := w.next(t)
 		assert.False(t, e.Gap)
-		assert.NotEmpty(t, e.ID)
+		assert.NotContains(t, ids, e.ID, "the first event is the new one, nothing was replayed")
 	})
 }
 
@@ -314,14 +363,24 @@ func TestWatchSlowWatcherGetsAGap(t *testing.T) {
 			return nil
 		})
 	}()
-	require.Eventually(t, func() bool { return r.events.Watchers() == 1 }, 5*time.Second, time.Millisecond)
+	// A second, fast watcher tells when the use case has taken every event:
+	// it receives them in order.
+	fast := r.watch(context.Background(), domain.Root(), app.WatchParams{})
+	require.Eventually(t, func() bool { return r.events.Watchers() == 2 }, 5*time.Second, time.Millisecond)
 	r.push(n, 0)
 	<-blocked
 	for i := 1; i < 30; i++ {
 		r.push(n, i)
 	}
-	// Wait for the use case to have taken them all (it does not block).
-	time.Sleep(100 * time.Millisecond)
+	// The ring holds four events: the fast watcher may get a gap, but it ends
+	// on the last push, which proves the use case took all of them.
+	last := fmt.Sprintf("%040x", 29+1)
+	for {
+		e := fast.next(t)
+		if p, ok := e.Event.(domain.PushEvent); ok && p.Updates[0].New == last {
+			break
+		}
+	}
 	close(release)
 
 	require.Eventually(t, func() bool {
@@ -349,7 +408,7 @@ func TestEventsRepoPayloads(t *testing.T) {
 	require.Eventually(t, func() bool { return r.events.Watchers() == 2 }, 5*time.Second, time.Millisecond)
 
 	r.feed <- domain.RepoCreated{Repo: pub, Visibility: domain.VisibilityPublic, At: now}
-	r.feed <- domain.RepoUpdated{Repo: pub, At: now}
+	r.feed <- domain.RepoUpdated{Repo: pub, At: now, Visibility: domain.VisibilityPublic, Previous: domain.VisibilityPublic}
 	// A deleted repository cannot be read any more: its visibility decides.
 	r.feed <- domain.RepoDeleted{Repo: priv, Visibility: domain.VisibilityPrivate, At: now}
 	r.feed <- domain.RepoDeleted{Repo: pub, Visibility: domain.VisibilityPublic, At: now}
@@ -364,5 +423,280 @@ func TestEventsRepoPayloads(t *testing.T) {
 	assert.Equal(t, priv, root.next(t).Event.(domain.RepoDeleted).Repo)
 	assert.Equal(t, pub, root.next(t).Event.(domain.RepoDeleted).Repo)
 	assert.Equal(t, pub, anon.next(t).Event.(domain.RepoDeleted).Repo, "the private deletion was skipped")
-	anon.none(t)
+	anon.quiet(t, r, pub)
+}
+
+// tokenWith builds the principal of a stored token with an id and an expiry.
+func tokenWith(id string, expires time.Time, repos ...string) domain.Principal {
+	tok := domain.Token{ID: id, Scopes: []domain.Scope{domain.ScopeRepoRead}, ExpiresAt: expires}
+	for _, r := range repos {
+		n, err := domain.ParseRepoName(r)
+		if err != nil {
+			panic(err)
+		}
+		tok.Repos = append(tok.Repos, n)
+	}
+	return domain.TokenPrincipal(tok)
+}
+
+func TestWatchEndsWhenTheTokenIsRevoked(t *testing.T) {
+	// Asking at every turn keeps the test independent of the clock.
+	r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: -1})
+	pub := r.repo("pub", domain.VisibilityPublic)
+	priv := r.repo("priv", domain.VisibilityPrivate)
+	p := tokenWith("tok", time.Time{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	w := r.watch(ctx, p, app.WatchParams{})
+	require.Eventually(t, func() bool { return r.events.Watchers() == 1 }, 5*time.Second, time.Millisecond)
+	r.push(pub, 1)
+	w.next(t)
+
+	r.auth.revoke("tok")
+	r.push(priv, 2) // would be delivered to a token that may read priv
+	select {
+	case err := <-w.done:
+		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch of a revoked token did not end")
+	}
+	select {
+	case e := <-w.got:
+		t.Fatalf("an event was sent after the revocation: %+v", e)
+	default:
+	}
+}
+
+func TestWatchEndsWhenTheTokenExpires(t *testing.T) {
+	r := newEventRig(t, 0)
+	pub := r.repo("pub", domain.VisibilityPublic)
+	// The rig's clock stands at now: this token expired at now.
+	p := tokenWith("tok", now)
+	w := r.watch(context.Background(), p, app.WatchParams{})
+	r.push(pub, 1)
+	select {
+	case err := <-w.done:
+		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch of an expired token did not end")
+	}
+	assert.Empty(t, w.got)
+}
+
+func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
+	t.Run("a quiet forge still notices a revocation", func(t *testing.T) {
+		r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: 10 * time.Millisecond})
+		w := r.watch(context.Background(), tokenWith("tok", time.Time{}), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() == 1 }, 5*time.Second, time.Millisecond)
+		r.auth.revoke("tok")
+		select {
+		case err := <-w.done:
+			assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+		case <-time.After(5 * time.Second):
+			t.Fatal("an idle watch of a revoked token did not end")
+		}
+	})
+
+	t.Run("the answer is kept between checks", func(t *testing.T) {
+		r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: time.Hour})
+		pub := r.repo("pub", domain.VisibilityPublic)
+		w := r.watch(context.Background(), tokenWith("tok", time.Time{}), app.WatchParams{})
+		for i := range 20 {
+			r.push(pub, i)
+		}
+		for range 20 {
+			w.next(t)
+		}
+		assert.Zero(t, r.auth.count(), "no store lookup within the interval")
+	})
+
+	t.Run("root and anonymous never ask", func(t *testing.T) {
+		r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: -1})
+		pub := r.repo("pub", domain.VisibilityPublic)
+		a := r.watch(context.Background(), domain.Anonymous(), app.WatchParams{})
+		b := r.watch(context.Background(), domain.Root(), app.WatchParams{})
+		r.push(pub, 1)
+		a.next(t)
+		b.next(t)
+		assert.Zero(t, r.auth.count())
+	})
+}
+
+func TestWatchLimits(t *testing.T) {
+	noop := func(app.WatchEvent) error { return nil }
+
+	t.Run("too many topics", func(t *testing.T) {
+		r := newEventRig(t, 0)
+		r.repo("pub", domain.VisibilityPublic)
+		ok := make([]string, app.MaxWatchTopics)
+		for i := range ok {
+			ok[i] = "home"
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // returns at once once the topics are accepted
+		assert.NoError(t, r.events.Watch(ctx, domain.Root(), app.WatchParams{Topics: ok}, noop))
+		err := r.events.Watch(context.Background(), domain.Root(), app.WatchParams{Topics: append(ok, "home")}, noop)
+		assert.ErrorIs(t, err, domain.ErrInvalid)
+	})
+
+	t.Run("total watchers", func(t *testing.T) {
+		r := newEventRig(t, 0)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		for range app.MaxWatchers {
+			r.watch(ctx, domain.Root(), app.WatchParams{})
+		}
+		require.Eventually(t, func() bool { return r.events.Watchers() == app.MaxWatchers }, 5*time.Second, time.Millisecond)
+		err := r.events.Watch(ctx, domain.Root(), app.WatchParams{}, noop)
+		assert.ErrorIs(t, err, domain.ErrResourceExhausted)
+		assert.Equal(t, app.MaxWatchers, r.events.Watchers(), "a refused watch is not counted")
+
+		cancel() // all end; a new one is accepted again
+		require.Eventually(t, func() bool { return r.events.Watchers() == 0 }, 5*time.Second, time.Millisecond)
+		again, stop := context.WithCancel(context.Background())
+		stop()
+		assert.NoError(t, r.events.Watch(again, domain.Root(), app.WatchParams{}, noop))
+	})
+
+	t.Run("watchers per client", func(t *testing.T) {
+		r := newEventRig(t, 0)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		for range app.MaxWatchersPerClient {
+			r.watch(ctx, domain.Root(), app.WatchParams{Client: "198.51.100.1"})
+		}
+		require.Eventually(t, func() bool { return r.events.Watchers() == app.MaxWatchersPerClient }, 5*time.Second, time.Millisecond)
+
+		err := r.events.Watch(ctx, domain.Root(), app.WatchParams{Client: "198.51.100.1"}, noop)
+		assert.ErrorIs(t, err, domain.ErrResourceExhausted)
+
+		// Another client, and callers in process, are not affected.
+		r.watch(ctx, domain.Root(), app.WatchParams{Client: "198.51.100.2"})
+		r.watch(ctx, domain.Root(), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() == app.MaxWatchersPerClient+2 }, 5*time.Second, time.Millisecond)
+
+		cancel()
+		require.Eventually(t, func() bool { return r.events.Watchers() == 0 }, 5*time.Second, time.Millisecond)
+		again, stop := context.WithCancel(context.Background())
+		stop()
+		assert.NoError(t, r.events.Watch(again, domain.Root(), app.WatchParams{Client: "198.51.100.1"}, noop), "the slots were released")
+	})
+}
+
+// repoAt declares a repository whose metadata the test changes.
+type liveRepo struct {
+	mu   sync.Mutex
+	repo domain.Repo
+}
+
+func (l *liveRepo) set(f func(*domain.Repo)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	f(&l.repo)
+}
+
+func (r *eventRig) liveRepo(s string, vis domain.Visibility, created time.Time) (*liveRepo, domain.RepoName) {
+	n := name(r.t, s)
+	l := &liveRepo{repo: domain.Repo{Name: n, Visibility: vis, CreatedAt: created}}
+	r.meta.EXPECT().Get(mock.Anything, n).RunAndReturn(func(context.Context, domain.RepoName) (domain.Repo, error) {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		return l.repo, nil
+	}).Maybe()
+	return l, n
+}
+
+func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	t.Run("a repository made public does not reveal what happened while it was private", func(t *testing.T) {
+		r := newEventRig(t, 0)
+		l, n := r.liveRepo("secret", domain.VisibilityPrivate, now)
+		root := r.watch(ctx, domain.Root(), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() >= 1 }, 5*time.Second, time.Millisecond)
+		r.push(n, 1)
+		r.push(n, 2)
+		root.next(t)
+		root.next(t) // both are buffered now
+
+		l.set(func(repo *domain.Repo) { repo.Visibility = domain.VisibilityPublic })
+		r.feed <- domain.RepoUpdated{Repo: n, At: now, Visibility: domain.VisibilityPublic, Previous: domain.VisibilityPrivate, CreatedAt: now}
+		root.next(t)
+		r.push(n, 3) // public era
+
+		// An anonymous caller that resumes with an id nobody issued gets what
+		// is buffered, filtered: the public update and the public push, not the
+		// pushes of the private era.
+		anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{ResumeAfter: "bogus"})
+		assert.True(t, anon.next(t).Gap)
+		upd := anon.next(t)
+		require.IsType(t, domain.RepoUpdated{}, upd.Event)
+		push := anon.next(t)
+		require.IsType(t, domain.PushEvent{}, push.Event)
+		assert.Equal(t, fmt.Sprintf("%040x", 3+1), push.Event.(domain.PushEvent).Updates[0].New)
+		anon.quiet(t, r, n)
+	})
+
+	t.Run("a repository deleted and created again does not inherit old events", func(t *testing.T) {
+		r := newEventRig(t, 0)
+		first := now.Add(-time.Hour)
+		l, n := r.liveRepo("again", domain.VisibilityPublic, first)
+		root := r.watch(ctx, domain.Root(), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() >= 1 }, 5*time.Second, time.Millisecond)
+		r.push(n, 1)
+		root.next(t)
+
+		l.set(func(repo *domain.Repo) { repo.CreatedAt = now }) // deleted, created again
+		r.push(n, 2)
+		root.next(t)
+
+		anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{ResumeAfter: "bogus"})
+		assert.True(t, anon.next(t).Gap)
+		e := anon.next(t)
+		require.IsType(t, domain.PushEvent{}, e.Event)
+		assert.Equal(t, fmt.Sprintf("%040x", 2+1), e.Event.(domain.PushEvent).Updates[0].New, "only the push to the new repository")
+		anon.quiet(t, r, n)
+	})
+
+	t.Run("a repository made private tells those who could read it, once", func(t *testing.T) {
+		r := newEventRig(t, 0)
+		l, n := r.liveRepo("hide", domain.VisibilityPublic, now)
+		anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
+		reader := r.watch(ctx, tokenPrincipal(domain.ScopeRepoRead, "hide"), app.WatchParams{})
+		other := r.watch(ctx, tokenPrincipal(domain.ScopeRepoRead, "elsewhere"), app.WatchParams{})
+		root := r.watch(ctx, domain.Root(), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() >= 4 }, 5*time.Second, time.Millisecond)
+
+		l.set(func(repo *domain.Repo) { repo.Visibility = domain.VisibilityPrivate })
+		r.feed <- domain.RepoUpdated{Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPublic, CreatedAt: now}
+
+		for name, w := range map[string]*watcher{"anonymous": anon, "reader": reader, "other": other, "root": root} {
+			e := w.next(t)
+			up, ok := e.Event.(domain.RepoUpdated)
+			require.True(t, ok, name)
+			assert.Equal(t, n, up.Repo, name)
+			require.NotNil(t, e.Repo, name)
+			assert.Equal(t, domain.VisibilityPrivate, e.Repo.Visibility, name)
+			assert.Empty(t, e.Repo.Description, "nothing but the name and the visibility", name)
+		}
+
+		// Later events of the repository reach those who may read it now, only.
+		r.push(n, 1)
+		assert.IsType(t, domain.PushEvent{}, reader.next(t).Event)
+		assert.IsType(t, domain.PushEvent{}, root.next(t).Event)
+		anon.quiet(t, r, r.repo("open", domain.VisibilityPublic))
+		other.quiet(t, r, r.repo("open2", domain.VisibilityPublic))
+	})
+
+	t.Run("a private repository that never was public stays hidden", func(t *testing.T) {
+		r := newEventRig(t, 0)
+		_, n := r.liveRepo("closed", domain.VisibilityPrivate, now)
+		anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() >= 1 }, 5*time.Second, time.Millisecond)
+		r.feed <- domain.RepoUpdated{Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPrivate, CreatedAt: now}
+		r.push(n, 1)
+		anon.quiet(t, r, r.repo("open", domain.VisibilityPublic))
+	})
 }

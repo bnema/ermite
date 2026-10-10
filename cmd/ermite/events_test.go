@@ -18,6 +18,8 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/adapters/rpc"
+	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -316,4 +318,59 @@ func TestServeShutdownEndsWatchStreams(t *testing.T) {
 	assert.Less(t, time.Since(start), 8*time.Second, "shutdown did not wait for its timeout")
 	assert.NotContains(t, logs.String(), `"level":"error"`, "no error logged:\n%s", logs.String())
 	assert.False(t, errors.Is(err, context.Canceled))
+}
+
+// A token that is revoked while its Watch is open ends the stream with
+// unauthenticated, and the private events that follow never reach it.
+func TestWatchEndsWhenTheTokenIsRevoked(t *testing.T) {
+	h := newHarness(t, harnessOpts{revalidateEvery: 20 * time.Millisecond})
+	h.seed("priv", domain.VisibilityPrivate)
+	created, err := h.forge.Tokens.Create(h.ctx, domain.Root(), app.CreateTokenParams{
+		Label: "watcher", Scopes: scopes(domain.ScopeRepoRead),
+	})
+	require.NoError(t, err)
+	w := h.watch(h.api(created.Secret), "")
+	wt := h.workTree("main", "a.txt")
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/priv.git"), "main")
+	assert.Equal(t, "priv", w.next(t, 5*time.Second).GetPushed().GetRepo(), "the token may read priv")
+
+	require.NoError(t, h.forge.Tokens.Revoke(h.ctx, domain.Root(), created.Token.ID))
+	h.writeFile(wt, "b.txt", []byte("b\n"))
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/priv.git"), "main")
+
+	select {
+	case <-w.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream of a revoked token did not end")
+	}
+	assert.Equal(t, "unauthenticated", codeName(w.err))
+	for ev := range w.events {
+		t.Fatalf("an event reached the revoked token: %v", ev)
+	}
+}
+
+// Watch refuses too many topics, and too many streams from one client.
+func TestWatchLimits(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	api := h.api(adminToken)
+
+	topics := make([]string, app.MaxWatchTopics+1)
+	for i := range topics {
+		topics[i] = "home"
+	}
+	assert.Equal(t, "invalid_argument", codeName(watchErr(h.ctx, api, topics...)))
+
+	for range app.MaxWatchersPerClient {
+		h.watch(api, "")
+	}
+	require.Eventually(t, func() bool { return h.forge.EventLog.Watchers() == app.MaxWatchersPerClient }, 5*time.Second, time.Millisecond)
+	assert.Equal(t, "resource_exhausted", codeName(watchErr(h.ctx, api)))
+	// A stream of another client address is not affected (the harness trusts
+	// the loopback proxy only when configured: use the in-process caller).
+	inProc := newClientsOn(h.forge.API.InProcessClient(), rpc.InProcessURL)
+	ctx, cancel := context.WithCancel(domain.ContextWithPrincipal(h.ctx, domain.Root()))
+	defer cancel()
+	st, err := inProc.event.Watch(ctx, connect.NewRequest(&pb.WatchRequest{}))
+	require.NoError(t, err)
+	_ = st.Close()
 }
