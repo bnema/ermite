@@ -30,9 +30,12 @@ var errInternal = errors.New("internal error")
 // limiter; a client that used up its failures gets resource_exhausted (429 on
 // the Connect protocol) whatever it presents, like on the Git routes.
 //
-// A context that already carries a principal (domain.ContextWithPrincipal) is
-// trusted as it is: that is how the web calls the handlers in process. Such a
-// context cannot come from the network.
+// A call made through InProcessClient is trusted with the principal its
+// context carries: that is how the web calls the handlers in process. What
+// marks it is a value only the in-process transport can put in the context
+// (see inProcessKey); a principal in the context of a network request, say one
+// put there by a server's base context, is ignored and the request is
+// authenticated from its headers.
 type interceptor struct {
 	auth    Authenticator
 	limiter *clientlimit.Limiter
@@ -45,16 +48,22 @@ func newInterceptor(cfg Config) *interceptor {
 
 // authenticate returns the context to run the call in.
 func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr string, h http.Header) (context.Context, error) {
-	if _, ok := domain.PrincipalFromContext(ctx); ok {
-		return ctx, nil
+	if inProcess(ctx) {
+		if _, ok := domain.PrincipalFromContext(ctx); ok {
+			return ctx, nil
+		}
 	}
+	// Whatever the context carried, the caller is anonymous until proven
+	// otherwise.
+	ctx = domain.ContextWithPrincipal(ctx, domain.Anonymous())
 	if procedure == ermiteconnect.ServerServiceGetVersionProcedure {
 		// It needs no authentication, so that a client can check compatibility
 		// first, even with a token that has expired.
-		return domain.ContextWithPrincipal(ctx, domain.Anonymous()), nil
+		return ctx, nil
 	}
 	log := zerowrap.FromCtx(ctx)
 	addr := clientlimit.ClientAddr(&http.Request{RemoteAddr: peerAddr, Header: h}, i.trusted)
+	ctx = context.WithValue(ctx, clientKey{}, clientlimit.Key(addr))
 	if blocked, wait := i.limiter.Blocked(ctx, addr); blocked {
 		log.Warn().Str("client", addr).Msg("too many failed authentications, api request blocked")
 		err := connect.NewError(connect.CodeResourceExhausted, errors.New("too many failed authentications"))
@@ -64,7 +73,7 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 
 	secret, present := bearer(h)
 	if !present {
-		return domain.ContextWithPrincipal(ctx, domain.Anonymous()), nil
+		return ctx, nil
 	}
 	p, err := i.auth.Authenticate(ctx, secret)
 	switch {
@@ -76,6 +85,15 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 		return ctx, connectError(ctx, err)
 	}
 	return domain.ContextWithPrincipal(ctx, p), nil
+}
+
+type clientKey struct{}
+
+// clientFromContext returns the normalized address of the client of a network
+// call; empty for an in-process call.
+func clientFromContext(ctx context.Context) string {
+	c, _ := ctx.Value(clientKey{}).(string)
+	return c
 }
 
 // bearer extracts the secret of an "Authorization: Bearer" header. present is

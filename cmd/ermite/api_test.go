@@ -8,7 +8,9 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -827,4 +829,35 @@ func TestInProcessClient(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	assert.NotContains(t, string(body), `"priv"`)
+}
+
+// A principal in the base context of the HTTP server does not authenticate
+// requests: only the in-process transport can mark a context as trusted, and
+// requests from the network are judged by their headers.
+func TestNetworkRequestsIgnoreAPrincipalInTheContext(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	h.seed("pub", domain.VisibilityPublic, "README.md")
+	h.seed("priv", domain.VisibilityPrivate, "README.md")
+
+	srv := httptest.NewUnstartedServer(h.forge.API.Handler())
+	srv.Config.BaseContext = func(net.Listener) context.Context {
+		return domain.ContextWithPrincipal(h.ctx, domain.Root())
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	list := func(secret string) []string {
+		c := newClients(srv.URL, secret)
+		resp, err := c.repo.ListRepos(h.ctx, connect.NewRequest(&pb.ListReposRequest{}))
+		require.NoError(t, err)
+		var out []string
+		for _, r := range resp.Msg.GetRepos() {
+			out = append(out, r.GetName())
+		}
+		return out
+	}
+	assert.Equal(t, []string{"pub"}, list(""), "anonymous by its headers, not root by its context")
+	assert.Equal(t, []string{"priv", "pub"}, list(adminToken))
+	_, err := newClients(srv.URL, "").repo.CreateRepo(h.ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "nope"}))
+	assert.Equal(t, "unauthenticated", codeName(err))
 }

@@ -3,6 +3,7 @@
 package rpc
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"sync"
@@ -29,7 +30,7 @@ const InProcessURL = "http://" + inProcessHost
 // (domain.ContextWithPrincipal), anonymous when there is none; the
 // Authorization header is ignored. This is the identity of the web (P5):
 // anonymous for visitors, the owner for a session. Only code in this process
-// can put a principal in a context, which is why the interceptor trusts it.
+// can put the marker that makes the interceptor trust it.
 // Unary and server-streaming calls work, with all the codecs; the request
 // log and the error mapping are those of remote calls.
 func (a *API) InProcessClient() *http.Client {
@@ -37,6 +38,16 @@ func (a *API) InProcessClient() *http.Client {
 }
 
 type inProcessTransport struct{ h http.Handler }
+
+// inProcessKey marks the context of a call made through InProcessClient. It is
+// unexported, so that nothing outside this package, and nothing that comes
+// from the network, can make the interceptor trust a principal.
+type inProcessKey struct{}
+
+func inProcess(ctx context.Context) bool {
+	_, ok := ctx.Value(inProcessKey{}).(struct{})
+	return ok
+}
 
 // RoundTrip serves req with the handler in a goroutine, and returns once the
 // handler wrote its status. The body of the response is a pipe the handler
@@ -47,7 +58,7 @@ func (t inProcessTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if !ok {
 		p = domain.Anonymous()
 	}
-	sreq := req.Clone(domain.ContextWithPrincipal(ctx, p))
+	sreq := req.Clone(context.WithValue(domain.ContextWithPrincipal(ctx, p), inProcessKey{}, struct{}{}))
 	sreq.RemoteAddr = "in-process"
 	sreq.RequestURI = req.URL.RequestURI()
 	if sreq.Body == nil {
