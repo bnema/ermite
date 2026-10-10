@@ -108,12 +108,14 @@ jobs:
         with:
           # git describe needs the tags for the image version.
           fetch-depth: 0
-      # The build container is a nested container: it reaches Forgejo on the host loopback
-      # the same way the job container does (10.0.2.2, see vps-infra homelab/igor/ci-runner).
+      # The build runs in Podman on the runner host. With the host network it resolves
+      # git.bnema.dev through the host's /etc/hosts (127.0.0.1, see vps-infra
+      # homelab/igor/ci-runner) and reaches Forgejo on :8088. Podman's Docker API rejects
+      # the classic builder's --add-host encoding, so host networking is used instead.
       - name: Build the image
         run: |
           docker build \
-            --add-host git.bnema.dev:10.0.2.2 \
+            --network host \
             --build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/ \
             --build-arg VERSION="$(git describe --tags --always --dirty)" \
             -t ermite:ci .
