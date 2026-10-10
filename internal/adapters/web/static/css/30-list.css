@@ -1,0 +1,73 @@
+@layer components {
+  /* plain-text tables with a ▸ row cursor */
+  .list {
+    width: 100%; table-layout: fixed;
+    & th { color: var(--ink-mute); font-weight: normal; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+    & th a { text-decoration: none; }
+    & th a:hover { text-decoration: underline; color: var(--ink); }
+    & th[aria-sort="ascending"], & th[aria-sort="descending"] { color: var(--ink); font-weight: bold; }
+    & td, & th { padding-right: 2ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    & .cur { width: 2ch; padding: 0; }
+    & tbody tr[data-cursor] { background: var(--row); }
+    & tbody tr[data-cursor] .cur::before { content: "▸"; font-weight: bold; }
+    & tbody tr:hover { background: var(--row); }
+    & tbody tr[hidden] { display: none; }
+    & td > a { text-decoration: none; }
+    & tr:hover td > a:first-child, & tr[data-cursor] td > a:first-child { text-decoration: underline; }
+    & .c-sub { color: var(--ink-dim); }
+    & .c-sub .refs { color: var(--ink); }
+  }
+
+  .home {
+    & .c-name { width: 24ch; font-weight: bold; }
+    & th.c-name { font-weight: normal; }
+    & th.c-name[aria-sort] { font-weight: bold; }
+    & .c-desc { width: auto; }
+    & .c-when { width: 13ch; }
+    & .c-ref { width: 10ch; }
+    & .c-lang { width: 12ch; padding-right: 0; }
+  }
+  .list.tree {
+    & .c-kind { width: 2ch; color: var(--ink-mute); padding-right: 0; }
+    & .c-name { width: 34ch; }
+    & .c-size { width: 9ch; text-align: right; padding-right: 3ch; }
+    & .c-when { width: 11ch; }
+    & .c-sub { width: auto; }
+    & .c-who { width: 12ch; }
+  }
+  .list.commits, .list.refs {
+    & .c-sha { width: 8ch; }
+    & .c-who { width: 12ch; }
+    & .c-when { width: 11ch; }
+  }
+
+  /* filter line (home, tree, commits) */
+  .filter {
+    display: flex; gap: 1ch; height: var(--lh); margin: var(--lh) 0 0;
+    & label { color: var(--ink-mute); }
+    & input { flex: 1; min-width: 0; }
+    & input::placeholder { color: var(--ink-mute); opacity: 1; }
+  }
+
+  /* headings inside pages read as pager section rules */
+  .rule-h {
+    display: flex; gap: 1ch; margin: var(--lh) 0 0; color: var(--ink-dim);
+    &::after { content: ""; flex: 1; align-self: center; border-top: 1px solid var(--rule); }
+    & > :first-child { font-weight: bold; color: var(--ink); }
+  }
+
+  /* empty / 404 / error */
+  .state {
+    margin-top: var(--lh); max-width: var(--measure);
+    & h1 { margin-bottom: var(--lh); }
+    & .code { display: inline-block; min-width: 6ch; }
+    & .state-back { margin-top: var(--lh); display: flex; gap: 2ch; }
+  }
+  .clone {
+    margin: var(--lh) 0 0; border: 1px solid var(--rule); padding: 0 1ch;
+    & .clone-line { display: flex; gap: 1ch; align-items: baseline; }
+    & code { flex: 1; min-width: 0; overflow-x: auto; white-space: pre; }
+    & .copy { color: var(--ink-dim); white-space: nowrap; min-width: 9ch; text-align: right; }
+    & .copy:hover { color: var(--ink); text-decoration: underline; }
+  }
+}

@@ -1,0 +1,281 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+import (
+	"bytes"
+	"html/template"
+	"net/url"
+	"path"
+	"strings"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
+)
+
+// headingIDPrefix keeps the ids of README headings apart from the ids of the
+// page (main, keys, cmd-list…): a heading must not be able to take one.
+const headingIDPrefix = "md-"
+
+// markdown renders the Markdown of a repository. Its output is safe to put in
+// a page: raw HTML is dropped, and links and images follow the policy below.
+//
+// Link policy:
+//   - http and https links are kept, with rel="nofollow noopener noreferrer";
+//   - relative links and links to the root of the repository are rewritten to
+//     the blob route of the ref being viewed, never above the repository root;
+//   - #fragments point at the (prefixed) heading ids;
+//   - everything else (javascript:, data:, vbscript:, file:, mailto:,
+//     protocol-relative //host, empty targets…) loses its link: the text stays;
+//   - images are never loaded (the CSP forbids other origins, and the design
+//     shows an image as its alt text): each becomes <span class="alt">[alt]</span>.
+type markdown struct {
+	md goldmark.Markdown
+}
+
+func newMarkdown() *markdown {
+	return &markdown{md: goldmark.New(
+		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+		goldmark.WithRendererOptions(
+			renderer.WithNodeRenderers(util.Prioritized(altRenderer{}, 100)),
+			// No html.WithUnsafe(): raw HTML blocks and inline tags are dropped.
+			// Table alignment as an align attribute: the CSP forbids style="".
+			extension.WithTableCellAlignMethod(extension.TableCellAlignAttribute),
+		),
+	)}
+}
+
+// render turns source into HTML and the outline of its headings. repo and ref
+// are where relative links point; dir is the directory of the Markdown file
+// in the repository, "" for the root.
+func (m *markdown) render(source []byte, repo, ref, dir string) (template.HTML, []Heading, error) {
+	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{inner: parser.NewContext().IDs()}))
+	doc := m.md.Parser().Parse(text.NewReader(source), parser.WithContext(pc))
+	pol := linkPolicy{repo: repo, ref: ref, dir: dir, source: source}
+	pol.apply(doc)
+
+	var buf bytes.Buffer
+	if err := m.md.Renderer().Render(&buf, source, doc); err != nil {
+		return "", nil, err
+	}
+	// #nosec G203 -- goldmark without WithUnsafe escapes text and drops raw
+	// HTML; linkPolicy has removed every URL it does not allow.
+	return template.HTML(buf.String()), outline(doc, source), nil
+}
+
+// prefixedIDs prefixes the heading ids that goldmark generates.
+type prefixedIDs struct{ inner parser.IDs }
+
+func (p *prefixedIDs) Generate(value []byte, kind ast.NodeKind) []byte {
+	return append([]byte(headingIDPrefix), p.inner.Generate(value, kind)...)
+}
+
+func (p *prefixedIDs) Put(value []byte) { p.inner.Put(value) }
+
+// outline lists the headings of a document in order.
+func outline(doc ast.Node, source []byte) []Heading {
+	var out []Heading
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		h, ok := n.(*ast.Heading)
+		if !ok || !entering {
+			return ast.WalkContinue, nil
+		}
+		id, _ := h.AttributeString("id")
+		idb, _ := id.([]byte)
+		out = append(out, Heading{Level: h.Level, ID: string(idb), Text: plainText(h, source)})
+		return ast.WalkSkipChildren, nil
+	})
+	return out
+}
+
+// plainText is the text of a node without markup.
+func plainText(n ast.Node, source []byte) string {
+	var b strings.Builder
+	_ = ast.Walk(n, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch t := c.(type) {
+		case *ast.Text:
+			b.Write(t.Value(source))
+			if t.SoftLineBreak() || t.HardLineBreak() {
+				b.WriteByte(' ')
+			}
+		case *ast.String:
+			b.Write(t.Value)
+		}
+		return ast.WalkContinue, nil
+	})
+	return strings.TrimSpace(b.String())
+}
+
+// linkPolicy applies the link and image policy to a parsed document.
+type linkPolicy struct {
+	repo, ref, dir string
+	source         []byte
+}
+
+func (p linkPolicy) apply(doc ast.Node) {
+	// Collect first, change after: the walk must not see the tree move.
+	var links, images, autos []ast.Node
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n.(type) {
+		case *ast.Link:
+			links = append(links, n)
+		case *ast.Image:
+			images = append(images, n)
+		case *ast.AutoLink:
+			autos = append(autos, n)
+		}
+		return ast.WalkContinue, nil
+	})
+	for _, n := range images {
+		p.image(n.(*ast.Image))
+	}
+	for _, n := range links {
+		l := n.(*ast.Link)
+		dest, kind := p.target(string(l.Destination))
+		if kind == dropped {
+			unwrap(l)
+			continue
+		}
+		l.Destination = []byte(dest)
+		l.Title = nil
+		if kind == external {
+			l.SetAttributeString("rel", []byte("nofollow noopener noreferrer"))
+		}
+	}
+	for _, n := range autos {
+		a := n.(*ast.AutoLink)
+		if a.AutoLinkType == ast.AutoLinkURL && isWebURL(string(a.URL(p.source))) {
+			a.SetAttributeString("rel", []byte("nofollow noopener noreferrer"))
+			continue
+		}
+		// An email address or another scheme: the label as plain text.
+		a.Parent().ReplaceChild(a.Parent(), a, ast.NewString(append([]byte(nil), a.Label(p.source)...)))
+	}
+}
+
+// unwrap replaces a node by its children.
+func unwrap(n ast.Node) {
+	parent := n.Parent()
+	for c := n.FirstChild(); c != nil; c = n.FirstChild() {
+		parent.InsertBefore(parent, n, c)
+	}
+	parent.RemoveChild(parent, n)
+}
+
+// image replaces an image by its alt text.
+func (p linkPolicy) image(img *ast.Image) {
+	alt := plainText(img, p.source)
+	if alt == "" {
+		alt = "image"
+	}
+	img.Parent().ReplaceChild(img.Parent(), img, &altSpan{alt: alt})
+}
+
+type linkKind int
+
+const (
+	dropped linkKind = iota
+	external
+	internal
+)
+
+// target applies the link policy to a destination.
+func (p linkPolicy) target(dest string) (string, linkKind) {
+	dest = strings.TrimSpace(dest)
+	if dest == "" || strings.ContainsAny(dest, "\x00\r\n\t\\") {
+		return "", dropped
+	}
+	if strings.HasPrefix(dest, "#") {
+		frag := strings.ToLower(strings.TrimPrefix(dest, "#"))
+		if frag == "" || strings.ContainsAny(frag, " \"'<>") {
+			return "", dropped
+		}
+		return "#" + headingIDPrefix + frag, internal
+	}
+	if strings.HasPrefix(dest, "//") {
+		return "", dropped
+	}
+	u, err := url.Parse(dest)
+	if err != nil {
+		return "", dropped
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		if u.Host == "" {
+			return "", dropped
+		}
+		return u.String(), external
+	case "":
+	default:
+		return "", dropped
+	}
+	if u.Host != "" || u.Opaque != "" || u.Path == "" {
+		return "", dropped
+	}
+	// A path in the repository: from the directory of the file, or from the
+	// root when it starts with a slash. path.Clean on a rooted path never
+	// leaves the root, so ../../ cannot climb out of the repository.
+	var rel string
+	if strings.HasPrefix(u.Path, "/") {
+		rel = path.Clean(u.Path)
+	} else {
+		rel = path.Clean("/" + path.Join(p.dir, u.Path))
+	}
+	rel = strings.TrimPrefix(rel, "/")
+	href := repoHref(p.repo)
+	if rel != "" {
+		href = repoHref(p.repo, "blob", p.ref, rel)
+	}
+	if u.Fragment != "" {
+		href += "#" + url.PathEscape(u.Fragment)
+	}
+	return href, internal
+}
+
+func isWebURL(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	sc := strings.ToLower(u.Scheme)
+	return sc == "http" || sc == "https"
+}
+
+// kindAlt is the kind of altSpan.
+var kindAlt = ast.NewNodeKind("AltSpan")
+
+// altSpan stands for an image: its alt text, in a span the stylesheet styles.
+type altSpan struct {
+	ast.BaseInline
+	alt string
+}
+
+func (n *altSpan) Kind() ast.NodeKind { return kindAlt }
+
+func (n *altSpan) Dump(source []byte, level int) { ast.DumpHelper(n, source, level, nil, nil) }
+
+// altRenderer renders altSpan nodes.
+type altRenderer struct{}
+
+func (altRenderer) RegisterFuncs(r renderer.NodeRendererFuncRegisterer) {
+	r.Register(kindAlt, func(w util.BufWriter, _ []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			_, _ = w.WriteString(`<span class="alt">[`)
+			_, _ = w.Write(util.EscapeHTML([]byte(n.(*altSpan).alt)))
+			_, _ = w.WriteString(`]</span>`)
+		}
+		return ast.WalkContinue, nil
+	})
+}

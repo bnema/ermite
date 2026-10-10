@@ -1,0 +1,12 @@
+@layer components {
+  /* AGPL §13: the version and the link to the source sit in the status bar, always visible */
+  .status .st-src {
+    flex: none;
+    & a { color: var(--bar-ink); text-decoration: underline; text-decoration-color: var(--bar-dim); text-underline-offset: 3px; }
+    & a:hover { color: #fff; text-decoration-color: currentColor; }
+  }
+  @media (max-width: 700px) {
+    .status .st-ver { display: none; }
+    .status .st-hints { display: none; }
+  }
+}

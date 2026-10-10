@@ -1,0 +1,114 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Facts is a key/value block on an 11ch key column.
+templ Facts(facts []Fact) {
+	<dl class="kv">
+		for _, f := range facts {
+			<dt>{ f.Key }</dt>
+			<dd
+				if f.ID != "" {
+					id={ f.ID }
+				}
+			>
+				if f.Time != "" {
+					<time datetime={ f.Time }>{ f.Val }</time>
+				} else {
+					{ f.Val }
+				}
+			</dd>
+		}
+	</dl>
+}
+
+// CloneBlock is a block of copyable shell lines; each has its own [copy]
+// button, whose label says "copied" for 1.5 s.
+templ CloneBlock(c Clone) {
+	<div class="clone" id={ c.ID }>
+		for _, line := range c.Lines {
+			<div class="clone-line">
+				<span class="mute" aria-hidden="true">$ </span><code>{ line }</code>
+				<button
+					type="button"
+					class="copy"
+					data-label="[copy]"
+					aria-label={ "copy: " + line }
+					hx-on:click="navigator.clipboard?.writeText(closest('.clone-line').querySelector('code').textContent); this.textContent = '[copied]'; await timeout('1500ms'); this.textContent = this.dataset.label"
+				>[copy]</button>
+			</div>
+		}
+	</div>
+}
+
+// HomeRow is one row of the home list. Its id is the target of SSE swaps.
+templ HomeRowView(r HomeRow) {
+	<tr id={ r.ID } data-cursor?={ r.Cursor }>
+		<td class="cur" aria-hidden="true"></td>
+		<td class="c-name"><a href={ templ.SafeURL(r.Href) }>{ r.Name }</a></td>
+		<td class="c-desc dim">{ r.Desc }</td>
+		<td class="c-when nowrap">
+			<time
+				if r.PushedAt != "" {
+					datetime={ r.PushedAt }
+				}
+			>{ r.Pushed }</time>
+		</td>
+		<td class="c-ref">{ r.Branch }</td>
+	</tr>
+}
+
+// Outline is the README outline; levels indent by 2ch, the h1 is bold.
+templ Outline(headings []Heading) {
+	<nav class="outline" aria-label="Outline">
+		for _, h := range headings {
+			<a class={ "l" + itoa(h.Level) } href={ templ.SafeURL("#" + h.ID) }>{ h.Text }</a>
+		}
+	</nav>
+}
+
+// ReadmeView is a rendered README. Its HTML comes from the Markdown
+// renderer, which drops raw HTML and filters URLs.
+templ ReadmeView(r Readme) {
+	<article class="prose" aria-label={ r.Name }>
+		if r.Note != "" {
+			<p class="dim">{ r.Note }</p>
+		} else {
+			@templ.Raw(r.HTML)
+		}
+	</article>
+}
+
+// CommitRows is a cursor table of commits: sha, subject with inline refs,
+// author, relative date (absolute in the title).
+templ CommitRows(rows []CommitRow) {
+	<table class="list commits" aria-label="Commits">
+		<tbody data-rows>
+			for _, c := range rows {
+				<tr
+					if c.ID != "" {
+						id={ c.ID }
+					}
+					data-cursor?={ c.Cursor }
+				>
+					<td class="cur" aria-hidden="true"></td>
+					<td class="c-sha mute">{ c.Short }</td>
+					<td class="c-subject">
+						<a href={ templ.SafeURL(c.CHref) }>{ c.Subject }</a>
+						if c.Merge {
+							<span class="tagged">(merge)</span>
+						}
+						for _, b := range c.Branches {
+							<span class="tagged">[{ b }]</span>
+						}
+						for _, t := range c.Tags {
+							<span class="tagged">[tag: { t }]</span>
+						}
+					</td>
+					<td class="c-who dim">{ c.Author }</td>
+					<td class="c-when nowrap dim"><time datetime={ c.WhenAt } title={ c.WhenAt }>{ c.When }</time></td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}

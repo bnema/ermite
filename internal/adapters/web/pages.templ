@@ -1,0 +1,176 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Home is the repository list.
+templ Home(l Layout, p HomePage) {
+	@Shell(l, nil) {
+		<div class="filter">
+			<label for="home-filter">filter&gt;</label>
+			<input
+				id="home-filter"
+				type="search"
+				data-filter
+				placeholder="name or description  ( / )"
+				autocomplete="off"
+				hx-on:input="let t = this.value.toLowerCase(); q('#repo-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#repo-rows > tr:not([hidden])')"
+			/>
+		</div>
+		<table class="list home" aria-label="Repositories">
+			<thead>
+				<tr>
+					<th class="cur"></th>
+					for _, c := range p.Cols {
+						<th class={ c.Class } aria-sort={ c.Dir }>
+							<a href={ templ.SafeURL(c.Href) }>
+								{ c.Label }
+								if c.Mark != "" {
+									<span aria-hidden="true">{ c.Mark }</span>
+								}
+							</a>
+						</th>
+					}
+				</tr>
+			</thead>
+			<tbody id="repo-rows" data-rows>
+				for _, r := range p.Rows {
+					@HomeRowView(r)
+				}
+			</tbody>
+		</table>
+		if len(p.Rows) == 0 {
+			<p class="lede dim">no repositories yet.</p>
+		}
+	}
+}
+
+// Summary is the summary of a repository: the README reads in the main
+// column at the reading measure; what one acts on sits in the rail.
+templ Summary(l Layout, p SummaryPage) {
+	@Shell(l, summaryRail(p)) {
+		if p.Desc != "" {
+			<p class="lede">{ p.Desc }</p>
+		}
+		if p.Readme != nil {
+			<h2 class="rule-h"><span>{ p.Readme.Name }</span></h2>
+			@ReadmeView(*p.Readme)
+		}
+	}
+}
+
+templ summaryRail(p SummaryPage) {
+	<section aria-labelledby="r-clone"><h2 id="r-clone">clone</h2>@CloneBlock(p.Clone)
+</section>
+	<section aria-labelledby="r-facts"><h2 id="r-facts">facts</h2>@Facts(p.Facts)
+</section>
+	if len(p.Recent) > 0 {
+		<section aria-labelledby="r-recent"><h2 id="r-recent">recent commits <a href={ templ.SafeURL(p.AllHref) }>all</a></h2>@CommitRows(p.Recent)
+</section>
+	}
+	if len(p.Outline) > 0 && p.Readme != nil {
+		<section aria-labelledby="r-outline"><h2 id="r-outline">{ p.Readme.Name }</h2>@Outline(p.Outline)
+</section>
+	}
+}
+
+// Refs lists the branches and tags of a repository.
+templ Refs(l Layout, p RefsPage) {
+	@Shell(l, refsRail(p)) {
+		<div class="filter">
+			<label for="ref-filter">filter&gt;</label>
+			<input
+				id="ref-filter"
+				type="search"
+				data-filter
+				placeholder="branch or tag  ( / )"
+				autocomplete="off"
+				hx-on:input="let t = this.value.toLowerCase(); q('#ref-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
+      let first = q('#ref-rows > tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '#ref-rows > tr')"
+			/>
+		</div>
+		<table class="list refs" aria-label="Branches and tags">
+			<thead>
+				<tr><th class="cur"></th><th class="c-kind">kind</th><th class="c-name">name</th><th class="c-sha">commit</th><th class="c-sub">subject</th><th class="c-when">date</th></tr>
+			</thead>
+			<tbody id="ref-rows" data-rows>
+				for _, b := range p.Branches {
+					@refRow("branch", b)
+				}
+				for _, t := range p.Tags {
+					@refRow("tag", t)
+				}
+			</tbody>
+		</table>
+		if p.Note != "" {
+			<p class="note">{ p.Note }</p>
+		}
+	}
+}
+
+templ refRow(kind string, r RefRow) {
+	<tr data-cursor?={ r.Cursor }>
+		<td class="cur" aria-hidden="true"></td>
+		<td class="c-kind mute">{ kind }</td>
+		<td class="c-name">
+			<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+			if r.Default {
+				<span class="tagged">*</span>
+			}
+		</td>
+		<td class="c-sha">
+			if r.CHref != "" {
+				<a href={ templ.SafeURL(r.CHref) }>{ r.Short }</a>
+			} else {
+				{ r.Short }
+			}
+		</td>
+		<td class="c-sub">{ r.Subject }</td>
+		<td class="c-when dim">
+			if r.WhenAt != "" {
+				<time datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
+			}
+		</td>
+	</tr>
+}
+
+templ refsRail(p RefsPage) {
+	<section aria-labelledby="r-refs">
+		<h2 id="r-refs">refs</h2>
+		<dl class="kv">
+			<dt>default</dt>
+			<dd>{ p.Default }</dd>
+			<dt>branches</dt>
+			<dd>{ itoa(len(p.Branches)) }</dd>
+			<dt>tags</dt>
+			<dd>{ itoa(len(p.Tags)) }</dd>
+			if p.Latest != "" {
+				<dt>latest tag</dt>
+				<dd>{ p.Latest }</dd>
+			}
+		</dl>
+	</section>
+	<section aria-labelledby="r-legend">
+		<h2 id="r-legend">legend</h2>
+		<dl class="kv"><dt>*</dt><dd>default branch</dd></dl>
+	</section>
+}
+
+// State is a 404, 500 or empty-repository page inside the normal shell.
+templ State(l Layout, p StatePage) {
+	@Shell(l, nil) {
+		<section class="state" aria-labelledby="state-title">
+			<h1 id="state-title"><span class="code">{ p.Code }</span> { p.Title }</h1>
+			for _, line := range p.Lines {
+				<p class="dim">{ line }</p>
+			}
+			if p.Clone != nil {
+				@CloneBlock(*p.Clone)
+			}
+			<p class="state-back">
+				for _, b := range p.Back {
+					<a href={ templ.SafeURL(b.Href) }>{ b.Label }</a>
+				}
+			</p>
+		</section>
+	}
+}

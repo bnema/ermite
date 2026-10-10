@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Keys is the keyboard map. ermite.js turns keys into k-<name> events on
+// <body>; this element (hx-on + hx-live helpers) is the only place that
+// reacts to them.
+templ Keys() {
+	<div
+		id="keys"
+		hidden
+		hx-on="k-j from:body -> ((d) => {
+           if (q('dialog[open]').count) return;
+           let rows = q('[data-rows] > :not([hidden])').arr();
+           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
+           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
+           let n = rows[Math.max(0, Math.min(rows.length - 1, i + d))];
+           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' })
+         })(1);
+         k-k from:body -> ((d) => {
+           if (q('dialog[open]').count) return;
+           let rows = q('[data-rows] > :not([hidden])').arr();
+           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
+           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
+           let n = rows[Math.max(0, Math.min(rows.length - 1, i + d))];
+           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' })
+         })(-1);
+         k-top from:body -> q('[data-rows] > :not([hidden])').arr()[0]?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 0), q('#main').arr()[0].scrollTo(0, 0));
+         k-bottom from:body -> q('[data-rows] > :not([hidden])').arr().at(-1)?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 1e9), q('#main').arr()[0].scrollTo(0, 1e9));
+         k-open from:body -> q('dialog[open]').count || document.querySelector('[data-cursor] a')?.click();
+         k-esc from:body -> q('dialog[open]').arr().forEach(d => d.close());
+         k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].show();
+         k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].show(), q('#refs-filter').arr()[0].focus());
+         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].show(); q('#cmd-q').arr()[0].focus();
+         k-filter from:body -> q('[data-filter]').arr()[0]?.focus();
+         k-gh from:body -> document.querySelector('.top a[data-g=h]')?.click();
+         k-gt from:body -> document.querySelector('.secs [data-key=t]')?.click();
+         k-gc from:body -> document.querySelector('.secs [data-key=c]')?.click();
+         k-gr from:body -> document.querySelector('.secs [data-key=r]')?.click();
+         k-s from:body -> document.querySelector('.secs [data-key=s]')?.click();
+         k-t from:body -> document.querySelector('.secs [data-key=t]')?.click();
+         k-c from:body -> document.querySelector('.secs [data-key=c]')?.click();
+         k-r from:body -> document.querySelector('.secs [data-key=r]')?.click();
+         k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split');
+         k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified');
+         k-collapse from:body -> q('[data-file]').arr().forEach(d => d.open = false);
+         k-permalink from:body -> {
+           let b = document.body.dataset;
+           if (!b.sha) { b.flash = 'no ref to pin on this page'; await timeout('2s'); b.flash = ''; return }
+           history.replaceState(null, '', location.pathname.replace('/' + b.ref + '/', '/' + b.sha + '/') + location.hash);
+           navigator.clipboard?.writeText(location.href);
+           b.flash = 'permalink ' + b.sha.slice(0, 7) + ' copied'; await timeout('2s'); b.flash = ''
+         }"
+	></div>
+}

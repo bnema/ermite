@@ -1,0 +1,41 @@
+@layer components {
+  /* bottom panels above the status bar (help, ref switcher, ":" command line) */
+  .panel {
+    position: fixed; inset: auto 0 var(--bar-h) 0; margin: 0; width: 100%; z-index: 15;
+    background: var(--paper); color: var(--ink);
+    border-top: 2px solid var(--ink);
+    max-height: min(46dvh, 28rem); overflow: auto; overscroll-behavior: contain;
+    padding: 0 var(--pad) var(--lh);
+    &:not([open]) { display: none; }
+    & .panel-head {
+      position: sticky; top: 0; background: var(--paper); display: flex; gap: 1ch;
+      align-items: baseline; height: calc(var(--lh) + 6px); padding-top: 4px;
+      border-bottom: 1px solid var(--rule); margin-bottom: 4px;
+      & input { flex: 1; min-width: 0; outline-offset: 2px; }
+      & button { margin-left: auto; color: var(--ink-dim); white-space: nowrap; }
+      & button:hover { color: var(--ink); text-decoration: underline; }
+      & .hi { font-weight: bold; }
+    }
+    & .panel-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(34ch, 1fr)); column-gap: 3ch; }
+    & .panel-cols h2 { color: var(--ink-dim); font-weight: normal; }
+    & li a { display: block; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    & li a:hover, & li a:focus-visible { background: var(--sel); }
+    & li a[aria-current] { font-weight: bold; }
+    & .mark { display: inline-block; width: 2ch; }
+  }
+  .cmd-list {
+    columns: 34ch; column-gap: 3ch;
+    & li { break-inside: avoid; }
+    & li[data-cursor] a { background: var(--row); }
+    & li[data-cursor] a::before { content: "▸"; position: absolute; margin-left: -1.5ch; }
+    & a { padding-left: 1.5ch; }
+    & .k { display: inline-block; width: 8ch; color: var(--ink-mute); }
+  }
+  .keys {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(46ch, 1fr)); column-gap: 3ch;
+    & > div { display: grid; grid-template-columns: 14ch 1fr; }
+    & dt { white-space: nowrap; }
+    & dd { color: var(--ink-dim); }
+    & kbd { border: 1px solid var(--rule); padding: 0 .6ch; }
+  }
+}

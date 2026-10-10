@@ -1,0 +1,158 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Shell is the page: head, the two bars, the work area (content and rail),
+// the overlays and the key map. The content is the children.
+templ Shell(l Layout, rail templ.Component) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="color-scheme" content="light dark"/>
+			<title>{ l.Title }</title>
+			<link rel="stylesheet" href={ templ.SafeURL(l.Assets.CSS) }/>
+			<script src={ l.Assets.HTMX } defer></script>
+			<script src={ l.Assets.Live } defer></script>
+			<script src={ l.Assets.SSE } defer></script>
+			<script src={ l.Assets.App } defer></script>
+		</head>
+		<body data-ref={ l.RefPath } data-sha={ l.SHA } data-sel="">
+			<a class="skip" href="#main">skip to content</a>
+			@Topbar(l)
+			<div class={ "work", templ.KV("has-rail", l.HasRail), templ.KV("read", l.Read) }>
+				<main id="main" tabindex="-1" data-y="0" hx-on:scroll="this.dataset.y = Math.round(this.scrollTop / 60)">
+					{ children... }
+				</main>
+				if l.HasRail && rail != nil {
+					<aside class="rail" aria-label="Context">
+						<details class="rail-d" open data-init="" hx-live="if (!data.init) { data.init = '1'; this.open = matchMedia('(min-width: 1100px)').matches }">
+							<summary>{ l.RailSum }</summary>
+							@rail
+						</details>
+					</aside>
+				}
+			</div>
+			@OverlayHelp()
+			@OverlayRefs(l)
+			@OverlayCmd(l.Cmd)
+			@Statusbar(l)
+			@Keys()
+		</body>
+	</html>
+}
+
+// Topbar is the top bar, neferbar style: the one accent block (instance)
+// fading into the black bar, the path, the repo sections, the ref switcher.
+templ Topbar(l Layout) {
+	<header class="bar top">
+		<a class="blk" href="/" data-g="h" title="home (g h)">{ l.Instance }</a><span class="fade" aria-hidden="true"></span>
+		<nav class="crumbs" aria-label="Path">
+			<ol>
+				for _, c := range l.Crumbs {
+					<li>
+						if c.Href != "" {
+							<a
+								href={ templ.SafeURL(c.Href) }
+								if c.Current {
+									aria-current="page"
+								}
+							>{ c.Label }</a>
+						} else {
+							<span aria-current="page">{ c.Label }</span>
+						}
+					</li>
+				}
+			</ol>
+		</nav>
+		if len(l.Sections) > 0 {
+			<nav class="secs" aria-label="Sections">
+				<ul>
+					for _, s := range l.Sections {
+						<li>
+							<a
+								href={ templ.SafeURL(s.Href) }
+								data-key={ s.Key }
+								aria-keyshortcuts={ "g " + s.Key }
+								if s.Current {
+									aria-current="page"
+								}
+							>{ s.Key }{ s.Post }</a>
+						</li>
+					}
+				</ul>
+			</nav>
+		}
+		if l.Ref != "" {
+			<button
+				type="button"
+				class="ref"
+				aria-haspopup="dialog"
+				aria-controls="panel-refs"
+				aria-keyshortcuts="b"
+				title="switch ref (b)"
+				hx-on:click="document.body.dispatchEvent(new CustomEvent('k-refs'))"
+			>{ l.Ref }<span class="sha">{ "@" + l.Short }</span></button>
+		}
+	</header>
+}
+
+// Statusbar is the bottom bar: mode, context, the ":" command prompt, the
+// source link (AGPL §13), hints, live state and the cursor position. Plain
+// text only: the top bar carries the accent.
+templ Statusbar(l Layout) {
+	<footer class="bar status" aria-label="Status">
+		<span class="mode">{ l.Status.Mode }</span>
+		<span class="st-ctx">{ l.Status.Context }</span>
+		<button
+			type="button"
+			class="st-cmd"
+			aria-haspopup="dialog"
+			aria-controls="panel-cmd"
+			aria-keyshortcuts=":"
+			hx-on:click="document.body.dispatchEvent(new CustomEvent('k-cmd'))"
+		><span class="hi">:</span> go to…</button>
+		if l.Status.Blob {
+			<span class="st-sel" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y permalink' : 'click a line number · shift-click extends'">click a line number · shift-click extends</span>
+		}
+		<span class="st-flash" aria-live="polite" :text="document.body.dataset.flash || ''"></span>
+		<span class="st-hints">{ l.Status.Hints }</span>
+		@Footer(l)
+		@Live(l.Live)
+		if l.Status.Cursor {
+			<span
+				class="st-pos num"
+				title="cursor position"
+				:text="(() => { let all = q('[data-rows] > :not([hidden])').arr(); let i = all.findIndex(r => r.hasAttribute('data-cursor')); return (i + 1) + '/' + all.length })()"
+			>{ cursorText(l.Status.Count) }</span>
+		}
+	</footer>
+}
+
+// Footer is the version and the link to the source of the running version,
+// which the AGPL §13 asks every user of the service to be offered.
+templ Footer(l Layout) {
+	<span class="st-src"><span class="st-ver">ermite { l.Version } · </span><a href={ templ.SafeURL(l.SourceURL) } rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a></span>
+}
+
+// Live is the connection state of the event stream. Without the stream it
+// reads "offline" and does nothing.
+templ Live(on bool) {
+	if on {
+		<span
+			class="st-live"
+			data-state="offline"
+			role="status"
+			hx-sse:connect="/-/events"
+			hx-swap="none"
+			:text="data.state"
+			:title="data.state === 'live' ? 'receiving pushes over SSE' : 'not connected to the event stream'"
+			hx-on="htmx:sse:after:connection -> data.state = 'live';
+           htmx:sse:close, htmx:sse:error -> data.state = 'offline';
+           push -> for (let el of new DOMParser().parseFromString('<template>' + event.detail.data + '</template>', 'text/html').querySelector('template').content.children) q('#' + el.id).insert('replace', el.outerHTML)"
+		>offline</span>
+	} else {
+		<span class="st-live" data-state="offline" role="status" title="not connected to the event stream">offline</span>
+	}
+}

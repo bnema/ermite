@@ -1,0 +1,129 @@
+@layer components {
+  /* page title for a file: name, then its actions as plain words */
+  .file-h {
+    display: flex; gap: 2ch; align-items: baseline; margin-top: var(--lh);
+    padding-bottom: 2px; border-bottom: 1px solid var(--rule);
+    & .acts { margin-left: auto; font-weight: normal; display: flex; gap: 2ch; }
+  }
+  .notice { margin-top: var(--lh); border-left: 2px solid var(--ink); padding-left: 1ch; max-width: var(--measure); }
+  .note { color: var(--ink-dim); }
+  .pad { padding: 0 1ch; }
+
+  /* source view: gutter numbers are links (selectable lines), lines span the full width */
+  .code {
+    margin: var(--lh) calc(var(--pad) * -1) 0; overflow-x: auto;
+    font-size: var(--fs-code); line-height: var(--lh-code);
+    & code { display: grid; min-width: max-content; }
+    & .line { padding-right: var(--pad); border-left: 2px solid transparent; }
+    & .line:hover { background: var(--row); }
+    & .line.sel { background: var(--sel); border-left-color: var(--focus); }
+    & .ln {
+      display: inline-block; width: 8ch; padding-right: 2ch; text-align: right; /* 8ch: a multiple of tab-size, so tabs after the gutter keep their width */
+      color: var(--ink-mute); text-decoration: none; user-select: none;
+    }
+    & .ln:hover, & .sel .ln { color: var(--ink-hi); }
+  }
+  .source { margin-top: var(--lh); & > summary { color: var(--ink-dim); } }
+
+  /* commit header, like `git show` */
+  .show {
+    margin-top: var(--lh);
+    & h1 { max-width: var(--measure); }
+    & .msg { margin-top: var(--lh); white-space: pre-wrap; max-width: var(--measure); color: var(--ink-dim); }
+    & .show-kv { margin-top: var(--lh); }
+    & .show-kv dd { white-space: normal; }
+  }
+  .diff-tools {
+    display: flex; gap: 2ch; align-items: baseline; margin-top: var(--lh);
+    position: sticky; top: var(--stick); z-index: 5; background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    & .grow { flex: 1; }
+    & button { color: var(--ink-dim); }
+    & button:hover { color: var(--ink); text-decoration: underline; }
+    & button[aria-pressed="true"] { color: var(--ink-hi); font-weight: bold; }
+    & button[aria-pressed="true"]::before { content: "▸"; }
+  }
+
+  /* one file of a diff */
+  .dfile {
+    margin-top: var(--lh); scroll-margin-top: calc(var(--stick) + var(--lh) + 4px);
+    & > summary {
+      position: sticky; top: calc(var(--stick) + var(--lh) + 1px); z-index: 4;
+      background: var(--paper-alt); border: 1px solid var(--rule); padding: 0 1ch;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style: none;
+    }
+    & > summary::-webkit-details-marker { display: none; }
+    & > summary::before { content: "▸ "; }
+    &[open] > summary::before { content: "▾ "; }
+    & .st { font-weight: bold; }
+    & .p { font-weight: bold; }
+    & > .note { border: 1px solid var(--rule); border-top: 0; }
+  }
+  .dt {
+    width: max-content; min-width: 100%;
+    font-size: var(--fs-code); line-height: var(--lh-code);
+    & td { padding: 0; vertical-align: top; }
+    & .ln { width: 6ch; min-width: 6ch; padding-right: 1ch; text-align: right; color: var(--ink-mute); user-select: none; }
+    & .m { width: 2ch; text-align: center; user-select: none; color: var(--ink-dim); }
+    & .tx { white-space: pre; }
+    & .hunk td { color: var(--ink-mute); background: var(--paper-alt); padding: 0 1ch; }
+    & .add, & tr.add td { background: var(--add); }
+    & .del, & tr.del td { background: var(--del); }
+    & .add.m, & tr.add .m { color: var(--teal); font-weight: bold; }
+    & .del.m, & tr.del .m { color: var(--red); font-weight: bold; }
+    & tr.add .ln, & .ln.add { color: var(--teal); }
+    & tr.del .ln, & .ln.del { color: var(--red); }
+    & .none { background: var(--paper-alt); }
+  }
+  .dscroll { overflow-x: auto; border: 1px solid var(--rule); border-top: 0; }
+  .spl { width: 100%; table-layout: fixed; & .tx { overflow: hidden; text-overflow: ellipsis; } & .ln { width: 6ch; } & .m { width: 2ch; } }
+  #diffs[data-diff="unified"] .spl, #diffs[data-diff="split"] .uni { display: none; }
+
+  /* diff table of contents in the rail */
+  .files {
+    & a { display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; column-gap: 1ch; text-decoration: none; }
+    & a:hover .p { text-decoration: underline; }
+    & a[aria-current="true"] { background: var(--row); font-weight: bold; }
+    & .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+    & .n { color: var(--ink-dim); font-size: var(--fs-s); }
+    & .b { grid-column: 2 / -1; color: var(--ink-mute); font-size: var(--fs-s); letter-spacing: .1ch; line-height: 1; padding-bottom: 4px; }
+  }
+
+  @media (max-width: 700px) {
+    .diff-tools { flex-wrap: wrap; column-gap: 1ch; }
+    .diff-tools .grow { flex-basis: 100%; height: 0; }
+    .show-kv dd { overflow-wrap: anywhere; }
+    .file-h .acts { gap: 1ch; }
+  }
+  .pager { display: flex; gap: 3ch; justify-content: center; margin-top: var(--lh); }
+  .days section[hidden] { display: none; }
+  .list.refs {
+    & .c-kind { width: 8ch; }
+    & .c-name { width: 34ch; }
+    & .c-info { width: 11ch; }
+    & .c-sha { width: 9ch; }
+    & .c-sub { width: auto; }
+  }
+  .rail .list.commits {
+    & .c-who { display: none; }
+    & .c-sha { width: 8ch; }
+    & .c-when { width: 9ch; padding-right: 0; text-align: right; }
+  }
+  .rail p + p { margin-top: 0; }
+  .rail section > p { overflow-wrap: anywhere; }
+}
+
+@layer components {
+  .gallery section { margin-top: calc(var(--lh) * 2); }
+  .gallery .rule-h > :last-child { font-weight: normal; color: var(--ink-mute); order: 2; }
+  .gallery .rule-h::after { order: 1; }
+  .gallery .files { max-width: var(--rail); }
+  .linkish { text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+  .linkish:hover { text-decoration-color: currentColor; }
+}
+
+@layer components {
+  /* counts and bars: + in teal, - in red, everywhere a change is summarised */
+  .plus { color: var(--teal); }
+  .minus { color: var(--red); }
+}

@@ -1,0 +1,68 @@
+@layer reset, tokens, base, components, utilities;
+
+/* Palette: the neferbar "mono" theme, black and grays only.
+   Page surfaces follow the OS theme; the two bars stay black in both themes,
+   like neferbar under a light or a dark terminal. */
+@layer tokens {
+  :root {
+    color-scheme: light dark;
+
+    /* page */
+    --paper:     light-dark(#f2f2f2, #000000);
+    --paper-alt: light-dark(#e8e8e8, #0c0c0c);
+    --row:       light-dark(#dddddd, #1a1a1a);
+    --sel:       light-dark(#cbcbcb, #303030);
+    --ink:       light-dark(#161616, #d0d0d0);
+    --ink-hi:    light-dark(#000000, #ffffff);
+    --ink-dim:   light-dark(#4a4a4a, #9a9a9a);
+    --ink-mute:  light-dark(#5c5c5c, #8a8a8a);
+    --rule:      light-dark(#bcbcbc, #303030);
+    --focus:     light-dark(#000000, #ffffff);
+
+    /* bars (neferbar mono.conf: background, foreground, color4 accent, color0 ink) */
+    --bar:       #000000;
+    --bar-ink:   #d0d0d0;
+    --bar-dim:   #8a8a8a;
+    --accent:    #c8c8c8;
+    --on-accent: #000000;
+    /* lib.sh fade(): four cells from the accent to the bar, each pulled halfway to the bar */
+    --fade-1: #505050;
+    --fade-2: #3c3c3c;
+    --fade-3: #282828;
+    --fade-4: #141414;
+
+    /* Colour, sparingly, from the owner's Despair theme: only code and diffs carry hue.
+       Dark values are Despair's own; light values are the same hues darkened to AA on --paper. */
+    --teal:    light-dark(#2f6b6b, #7db5b5); /* Despair bright teal: keywords, additions */
+    --teal-2:  light-dark(#355f5f, #5a8585); /* slate teal: types, numbers */
+    --red:     light-dark(#a8404b, #d96c75); /* soft red: deletions */
+    --rose:    light-dark(#6b6570, #a7a2a9); /* rose quartz: strings */
+
+    --syn-plain:   var(--ink);
+    --syn-keyword: var(--teal);
+    --syn-string:  var(--rose);
+    --syn-comment: light-dark(#5c5f63, #6a6e73);
+    --syn-number:  var(--teal-2);
+    --syn-func:    var(--ink-hi);
+    --syn-type:    var(--teal-2);
+    --syn-punct:   var(--ink-dim);
+
+    /* diff rows: the line keeps the normal ink; the hue is in a faint row tint and the marker */
+    --add:     light-dark(#d8e5e5, #121919);
+    --del:     light-dark(#eedadc, #231113);
+
+    /* one family (the neferbar font when installed), three sizes, two weights */
+    --font: "Adwaita Mono", "AdwaitaMono Nerd Font Mono", ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+    --fs: 14px;
+    --fs-code: 13px;
+    --fs-s: 12px;
+    --lh: 20px;
+    --lh-code: 18px;
+
+    --pad: 2ch;
+    --bar-h: 20px; /* one text line, like neferbar: no padding above or below */
+    --stick: var(--bar-h); /* top offset of sticky headers inside the content (0 in the app shell) */
+    --measure: 80ch;
+    --rail: 40ch;
+  }
+}

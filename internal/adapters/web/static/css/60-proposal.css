@@ -1,0 +1,93 @@
+@layer components {
+  /* proposals: the decision gate. Hue only where it carries a verdict:
+     check state (pass teal, fail red) and open high/medium findings (red). */
+  .criteria {
+    margin-top: calc(var(--lh) / 2); max-width: var(--measure);
+    & li { padding-left: 4ch; text-indent: -4ch; }
+    & .ck { color: var(--teal); font-weight: bold; }
+    & li[data-met="false"] .ck { color: var(--red); }
+    & .mute { font-size: var(--fs-s); overflow-wrap: anywhere; }
+  }
+  .prop-h .show-kv { margin-top: 0; }
+  .prop-h + .rule-h { margin-top: var(--lh); }
+
+  .since {
+    display: flex; flex-wrap: wrap; column-gap: 3ch; margin-top: var(--lh);
+    & a { text-decoration: none; color: var(--ink-dim); }
+    & a:hover { color: var(--ink); text-decoration: underline; }
+    & a[aria-current] { color: var(--ink-hi); font-weight: bold; }
+    & a[aria-current]::before { content: "▸ "; }
+    & .mute { font-weight: normal; }
+  }
+
+  /* decision block: first thing in the rail */
+  .decide {
+    & .d-state { font-weight: bold; color: var(--ink-hi); text-transform: uppercase; letter-spacing: .1ch; }
+    &[data-state="ready"] .d-state::before { content: "● "; color: var(--teal); }
+    &[data-state="accepted"] .d-state::before { content: "✓ "; color: var(--teal); }
+    &[data-state="refused"] .d-state::before { content: "✗ "; color: var(--red); }
+    & p + p { margin-top: 0; }
+    & .kv { grid-template-columns: 9ch minmax(0, 1fr); }
+    & .kv dd { white-space: normal; }
+    & .d-acts { margin-top: calc(var(--lh) / 2); }
+    & textarea {
+      display: block; width: 100%; resize: vertical; font: inherit; color: inherit;
+      background: var(--paper-alt); border: 1px solid var(--rule); padding: 0 1ch;
+    }
+    & textarea::placeholder { color: var(--ink-mute); opacity: 1; }
+    & .d-btns { display: flex; gap: 2ch; margin-top: 4px; }
+    & .d-btns button { color: var(--ink-dim); }
+    & .d-btns button:hover { color: var(--ink); text-decoration: underline; }
+    & .d-btns .d-main { background: var(--ink); color: var(--paper); font-weight: bold; padding: 0 1ch; }
+    & .d-btns .d-main:hover { background: var(--ink-hi); text-decoration: none; }
+    & .d-or { margin-top: calc(var(--lh) / 2); }
+    & .clone { margin-top: 0; }
+    & .clone code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  }
+  .closed { margin-top: calc(var(--lh) / 2); & > summary { color: var(--ink-dim); } }
+
+  .checks li { display: grid; grid-template-columns: 5ch minmax(0, 1fr) auto; column-gap: 1ch; }
+  .checks .c-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .checks .c-st { font-weight: bold; color: var(--teal); }
+  .checks [data-state="fail"] .c-st { color: var(--red); }
+  .checks [data-state="run"] .c-st { color: var(--ink-dim); }
+
+  .pcommits li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pcommits li[data-new] { background: var(--row); }
+  .pcommits .s { color: var(--ink); }
+
+  /* a finding: a ruled note, in the rail and under its line in the diff */
+  .finding {
+    border-left: 2px solid var(--ink); padding-left: 1ch; margin-top: calc(var(--lh) / 2);
+    & p { white-space: normal; }
+    & .f-sev { font-weight: bold; text-transform: uppercase; }
+    & .f-state { color: var(--ink-dim); }
+    & .f-where { font-size: var(--fs-s); overflow-wrap: anywhere; }
+    & .f-reason { color: var(--ink-dim); }
+    &[data-state="open"][data-sev="high"], &[data-state="open"][data-sev="medium"] { border-left-color: var(--red); }
+    &[data-state="open"][data-sev="high"] .f-sev, &[data-state="open"][data-sev="medium"] .f-sev { color: var(--red); }
+    &[data-state="fixed"], &[data-state="dismissed"] { border-left-color: var(--rule); }
+    &[data-state="fixed"] .f-text, &[data-state="dismissed"] .f-text { color: var(--ink-dim); }
+    &[data-state="fixed"] .f-sev, &[data-state="dismissed"] .f-sev { font-weight: normal; color: var(--ink-mute); }
+  }
+  .dt .fnote td { background: var(--paper-alt); padding: 2px 0 4px; white-space: normal; }
+  .dt .fnote .finding { margin: 0; max-width: var(--measure); font-size: var(--fs); line-height: var(--lh); }
+  .dfile .fcount { color: var(--red); font-weight: bold; }
+
+  .list.props {
+    & .c-n { width: 5ch; }
+    & .c-state { width: 18ch; }
+    & .c-subject { overflow: hidden; text-overflow: ellipsis; }
+    & .c-chk { width: 6ch; }
+    & .c-fnd { width: 9ch; }
+    & .c-who { width: 12ch; }
+    & .c-when { width: 9ch; }
+    & tr[data-state="ready"] .c-state { font-weight: bold; }
+    & tr[data-state="ready"] .c-state::before { content: "● "; color: var(--teal); }
+  }
+  .rail code { border-bottom: 1px dotted var(--ink-mute); }
+
+  @media (max-width: 700px) {
+    .list.props .c-chk, .list.props .c-fnd { display: none; }
+  }
+}
