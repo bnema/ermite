@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -122,6 +123,11 @@ func (g *Git) acquireExec(ctx context.Context) (release func(), err error) {
 
 // run executes git with args in the isolated environment and returns stdout.
 func (g *Git) run(ctx context.Context, args ...string) (string, error) {
+	return g.runInput(ctx, nil, args...)
+}
+
+// runInput is run with the given standard input; nil means none.
+func (g *Git) runInput(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, commandTimeout)
@@ -136,6 +142,7 @@ func (g *Git) run(ctx context.Context, args ...string) (string, error) {
 	cmd.Env = g.env
 	cmd.Dir = g.dataDir
 	cmd.WaitDelay = 5 * time.Second
+	cmd.Stdin = stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

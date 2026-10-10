@@ -55,19 +55,31 @@ func (g *Git) GetCommit(ctx context.Context, repo domain.RepoName, rev domain.Re
 	if len(commit.Parents) > 0 {
 		base = commit.Parents[0].String()
 	}
-
 	detail := domain.CommitDetail{Commit: commit}
-	args := readArgs(dir, "diff-tree", "-r", "-M", "-z", "--raw", "--numstat", "-p", "-U3",
-		"--no-ext-diff", "--no-textconv", "--no-color", "--end-of-options", base, commit.ID.String())
-	err = g.pipe(ctx, args, func(r *bufio.Reader) error {
-		var err error
-		detail.Diff, detail.Stats, err = readDiff(r, limits)
-		return err
-	})
+	detail.Stats, detail.Diff, err = g.diffTrees(ctx, dir, base, commit.ID.String(), limits)
 	if err != nil {
 		return domain.CommitDetail{}, fmt.Errorf("diff of %s in %q: %w", commit.ID, repo, err)
 	}
 	return detail, nil
+}
+
+// diffTrees reads the diff from base to head, two commit ids or tree ids.
+func (g *Git) diffTrees(ctx context.Context, dir, base, head string, limits domain.DiffLimits) (domain.DiffStats, domain.Diff, error) {
+	var (
+		diff  domain.Diff
+		stats domain.DiffStats
+	)
+	args := readArgs(dir, "diff-tree", "-r", "-M", "-z", "--raw", "--numstat", "-p", "-U3",
+		"--no-ext-diff", "--no-textconv", "--no-color", "--end-of-options", base, head)
+	err := g.pipe(ctx, args, func(r *bufio.Reader) error {
+		var err error
+		diff, stats, err = readDiff(r, limits)
+		return err
+	})
+	if err != nil {
+		return domain.DiffStats{}, domain.Diff{}, err
+	}
+	return stats, diff, nil
 }
 
 // rawEntry is one file of the diff: a `--raw` record and its `--numstat`.
