@@ -217,7 +217,7 @@ func TestPushesRecord(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, n).Return(repo, nil)
 		f.meta.EXPECT().Update(ctx, domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, CreatedAt: repo.CreatedAt, PushedAt: now}).Return(nil)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
-		f.bus.EXPECT().Publish(ctx, domain.PushEvent{Repo: n, Updates: ups, At: now}).Return()
+		f.bus.EXPECT().Publish(ctx, domain.PushEvent{Repo: n, Updates: ups, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt}).Return()
 
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
 		assert.Equal(t, []domain.RepoName{n}, f.sched.names)

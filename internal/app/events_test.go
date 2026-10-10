@@ -93,13 +93,23 @@ func newEventRigConfig(t *testing.T, cfg app.EventsConfig) *eventRig {
 // repo declares a repository the rig knows.
 func (r *eventRig) repo(s string, vis domain.Visibility) domain.RepoName {
 	n := name(r.t, s)
-	r.meta.EXPECT().Get(mock.Anything, n).Return(domain.Repo{Name: n, Visibility: vis}, nil).Maybe()
+	r.meta.EXPECT().Get(mock.Anything, n).Return(domain.Repo{Name: n, Visibility: vis, CreatedAt: now}, nil).Maybe()
 	return n
 }
 
+// pushEvent builds the PushEvent the Pushes use case would publish now: it
+// carries the repository as the store answers at this moment.
+func (r *eventRig) pushEvent(n domain.RepoName, oid, ref string) domain.PushEvent {
+	repo, err := r.meta.Get(context.Background(), n)
+	require.NoError(r.t, err)
+	return domain.PushEvent{
+		Repo: n, Updates: []domain.RefUpdate{{Old: domain.ZeroOID, New: oid, Ref: ref}}, At: now,
+		Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
+	}
+}
+
 func (r *eventRig) push(n domain.RepoName, i int) {
-	oid := fmt.Sprintf("%040x", i+1)
-	r.feed <- domain.PushEvent{Repo: n, Updates: []domain.RefUpdate{{Old: domain.ZeroOID, New: oid, Ref: "refs/heads/main"}}, At: now}
+	r.feed <- r.pushEvent(n, fmt.Sprintf("%040x", i+1), "refs/heads/main")
 }
 
 // watcher is a running Watch.
@@ -141,7 +151,7 @@ var sentinelOID = fmt.Sprintf("%040x", 0xfeed)
 // Events reach a watcher in order, so anything sent before would show up first.
 func (w *watcher) quiet(t *testing.T, r *eventRig, n domain.RepoName) {
 	t.Helper()
-	r.feed <- domain.PushEvent{Repo: n, Updates: []domain.RefUpdate{{Old: domain.ZeroOID, New: sentinelOID, Ref: "refs/heads/sentinel"}}, At: now}
+	r.feed <- r.pushEvent(n, sentinelOID, "refs/heads/sentinel")
 	e := w.next(t)
 	push, ok := e.Event.(domain.PushEvent)
 	if !ok || len(push.Updates) != 1 || push.Updates[0].New != sentinelOID {
@@ -189,7 +199,7 @@ func TestWatchRechecksAccessPerEvent(t *testing.T) {
 	r.meta.EXPECT().Get(mock.Anything, n).RunAndReturn(func(context.Context, domain.RepoName) (domain.Repo, error) {
 		mu.Lock()
 		defer mu.Unlock()
-		return domain.Repo{Name: n, Visibility: vis}, nil
+		return domain.Repo{Name: n, Visibility: vis, CreatedAt: now}, nil
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -408,7 +418,7 @@ func TestEventsRepoPayloads(t *testing.T) {
 	require.Eventually(t, func() bool { return r.events.Watchers() == 2 }, 5*time.Second, time.Millisecond)
 
 	r.feed <- domain.RepoCreated{Repo: pub, Visibility: domain.VisibilityPublic, At: now}
-	r.feed <- domain.RepoUpdated{Repo: pub, At: now, Visibility: domain.VisibilityPublic, Previous: domain.VisibilityPublic}
+	r.feed <- domain.RepoUpdated{Repo: pub, At: now, Visibility: domain.VisibilityPublic, Previous: domain.VisibilityPublic, CreatedAt: now}
 	// A deleted repository cannot be read any more: its visibility decides.
 	r.feed <- domain.RepoDeleted{Repo: priv, Visibility: domain.VisibilityPrivate, At: now}
 	r.feed <- domain.RepoDeleted{Repo: pub, Visibility: domain.VisibilityPublic, At: now}
@@ -700,5 +710,58 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 		r.feed <- domain.RepoUpdated{Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPrivate, CreatedAt: now}
 		r.push(n, 1)
 		anon.quiet(t, r, r.repo("open", domain.VisibilityPublic))
+	})
+}
+
+// TestPushEventsKeepTheirSnapshot: a push is told by the repository as it was
+// when published, not as the store says when the feeder gets to it.
+func TestPushEventsKeepTheirSnapshot(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tests := []struct {
+		name     string
+		swap     func(repo *domain.Repo)
+		rootSees bool // the repository is still the one the push is about
+	}{
+		{"made public before the feeder appends", func(repo *domain.Repo) { repo.Visibility = domain.VisibilityPublic }, true},
+		{"recreated before the feeder appends", func(repo *domain.Repo) {
+			repo.Visibility = domain.VisibilityPublic
+			repo.CreatedAt = now.Add(time.Hour)
+		}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newEventRig(t, 0)
+			l, n := r.liveRepo("secret", domain.VisibilityPrivate, now)
+			anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
+			root := r.watch(ctx, domain.Root(), app.WatchParams{})
+			require.Eventually(t, func() bool { return r.events.Watchers() >= 2 }, 5*time.Second, time.Millisecond)
+
+			// Published while private; the store changes before the feeder
+			// can have looked at it: the event is built, then the state is
+			// swapped, and only then is it handed to the feeder.
+			ev := r.pushEvent(n, fmt.Sprintf("%040x", 1), "refs/heads/main")
+			l.set(tt.swap)
+			r.feed <- ev
+			if tt.rootSees {
+				root.next(t)
+			}
+
+			anon.quiet(t, r, r.repo("open", domain.VisibilityPublic))
+
+			late := r.watch(ctx, domain.Anonymous(), app.WatchParams{ResumeAfter: "bogus"})
+			assert.True(t, late.next(t).Gap)
+			late.quiet(t, r, r.repo("open2", domain.VisibilityPublic))
+		})
+	}
+
+	t.Run("a push of an unknown repository is told to nobody", func(t *testing.T) {
+		r := newEventRig(t, 0)
+		n := r.repo("ghost", domain.VisibilityPublic)
+		root := r.watch(ctx, domain.Root(), app.WatchParams{})
+		require.Eventually(t, func() bool { return r.events.Watchers() >= 1 }, 5*time.Second, time.Millisecond)
+		r.feed <- domain.PushEvent{Repo: n, Visibility: domain.VisibilityPublic, At: now}
+		root.quiet(t, r, n)
 	})
 }

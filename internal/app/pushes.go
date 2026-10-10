@@ -126,13 +126,17 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	now := u.clock.Now().UTC()
 	var errs []error
 
-	if err := u.touchPushedAt(ctx, name, now); err != nil {
+	repo, err := u.touchPushedAt(ctx, name, now)
+	if err != nil {
 		errs = append(errs, err)
 	}
 	if err := u.fixDefaultBranch(ctx, name, updates); err != nil {
 		errs = append(errs, err)
 	}
-	u.bus.Publish(ctx, domain.PushEvent{Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now})
+	u.bus.Publish(ctx, domain.PushEvent{
+		Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now,
+		Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
+	})
 	u.maint.Schedule(ctx, name)
 	log.Info().
 		Str("repo", name.String()).Int("refs", len(updates)).
@@ -142,18 +146,19 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 }
 
 // touchPushedAt stores pushed_at, retrying when another write got in between.
-// A repository deleted meanwhile is not an error.
-func (u *Pushes) touchPushedAt(ctx context.Context, name domain.RepoName, now time.Time) error {
+// A repository deleted meanwhile is not an error. It returns the repository
+// as read, or the zero value when it is unknown.
+func (u *Pushes) touchPushedAt(ctx context.Context, name domain.RepoName, now time.Time) (domain.Repo, error) {
 	for range pushRetries {
 		repo, err := u.meta.Get(ctx, name)
 		if errors.Is(err, domain.ErrNotFound) {
-			return nil
+			return domain.Repo{}, nil
 		}
 		if err != nil {
-			return fmt.Errorf("get repository %q: %w", name, err)
+			return domain.Repo{}, fmt.Errorf("get repository %q: %w", name, err)
 		}
 		if !now.After(repo.PushedAt) {
-			return nil // a later push already recorded
+			return repo, nil // a later push already recorded
 		}
 		repo.PushedAt = now
 		err = u.meta.Update(ctx, repo)
@@ -161,14 +166,14 @@ func (u *Pushes) touchPushedAt(ctx context.Context, name domain.RepoName, now ti
 			continue
 		}
 		if errors.Is(err, domain.ErrNotFound) {
-			return nil
+			return domain.Repo{}, nil
 		}
 		if err != nil {
-			return fmt.Errorf("update repository %q: %w", name, err)
+			return repo, fmt.Errorf("update repository %q: %w", name, err)
 		}
-		return nil
+		return repo, nil
 	}
-	return fmt.Errorf("update pushed_at of %q: %w", name, domain.ErrConflict)
+	return domain.Repo{}, fmt.Errorf("update pushed_at of %q: %w", name, domain.ErrConflict)
 }
 
 // fixDefaultBranch points HEAD to a branch that exists when it points to a

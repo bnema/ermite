@@ -93,10 +93,19 @@ type RepoDeleted struct {
 func (RepoDeleted) EventKind() string { return "repo.deleted" }
 
 // PushEvent is published after a push has been accepted.
+//
+// It carries the visibility and the creation time of the repository as read
+// when the push was recorded, so the event stream does not read them later,
+// when the repository may have changed or been recreated. A zero CreatedAt
+// means the repository was unknown: the event is not delivered.
 type PushEvent struct {
 	Repo    RepoName
 	Updates []RefUpdate
 	At      time.Time
+	// Visibility is the visibility of the repository at publish time.
+	Visibility Visibility
+	// CreatedAt is the creation time of the repository that was pushed to.
+	CreatedAt time.Time
 }
 
 // EventKind implements Event.

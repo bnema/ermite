@@ -152,8 +152,7 @@ func (e *Events) feed(ctx context.Context, sub <-chan domain.Event) {
 }
 
 // snapshot records the visibility and the generation of the repository an
-// event is about. The events of the repository lifecycle carry them; for a
-// push the repository is read now.
+// event is about. Every event of the repository carries them.
 func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 	switch ev := ev.(type) {
 	case domain.RepoCreated:
@@ -163,15 +162,10 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 	case domain.RepoDeleted:
 		return bufferedEvent{known: true, vis: ev.Visibility, created: ev.CreatedAt}
 	case domain.PushEvent:
-		repo, err := lookupRepo(ctx, e.repos.meta, ev.Repo)
-		if err != nil {
-			if !errors.Is(err, domain.ErrNotFound) {
-				log := zerowrap.FromCtx(ctx)
-				log.Error().Err(err).Str("repo", ev.Repo.String()).Msg("read repository of a buffered event")
-			}
-			return bufferedEvent{} // gone, or unknown: nobody is told
+		if ev.CreatedAt.IsZero() {
+			return bufferedEvent{} // repository unknown at publish time: nobody is told
 		}
-		return bufferedEvent{known: true, vis: repo.Visibility, created: repo.CreatedAt}
+		return bufferedEvent{known: true, vis: ev.Visibility, created: ev.CreatedAt}
 	}
 	return bufferedEvent{known: true}
 }
