@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/bnema/zerowrap"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
 	"bnema.dev/ermite/internal/domain"
 )
@@ -24,7 +25,9 @@ func connectError(ctx context.Context, err error) error {
 		return err
 	}
 	if code, ok := codeOf(err); ok {
-		return connect.NewError(code, err)
+		ce := connect.NewError(code, err)
+		addFieldDetail(ce, err)
+		return ce
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Error().Err(err).Msg("api request failed")
@@ -67,5 +70,21 @@ var invalidErrors = []error{
 	domain.ErrInvalidScope, domain.ErrInvalidToken,
 	domain.ErrInvalidObjectID, domain.ErrInvalidRevision, domain.ErrInvalidPath,
 	domain.ErrInvalidPageToken, domain.ErrInvalidPageSize, domain.ErrInvalidRefKind,
-	domain.ErrNotDirectory, domain.ErrNotFile,
+	domain.ErrNotDirectory, domain.ErrNotFile, domain.ErrInvalidText,
+}
+
+// addFieldDetail attaches the fields a request was rejected for as a
+// BadRequest detail, when err carries them.
+func addFieldDetail(ce *connect.Error, err error) {
+	var fe *domain.InvalidFieldsError
+	if !errors.As(err, &fe) {
+		return
+	}
+	br := &errdetails.BadRequest{}
+	for _, f := range fe.Fields {
+		br.FieldViolations = append(br.FieldViolations, &errdetails.BadRequest_FieldViolation{Field: f.Field, Description: f.Reason})
+	}
+	if d, derr := connect.NewErrorDetail(br); derr == nil {
+		ce.AddDetail(d)
+	}
 }

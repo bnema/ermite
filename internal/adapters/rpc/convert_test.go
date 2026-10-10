@@ -3,12 +3,19 @@
 package rpc
 
 import (
+	"context"
+	"fmt"
 	"testing"
+	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -132,4 +139,184 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 			return false
 		})
 	})
+}
+
+func TestMergeModeMappers(t *testing.T) {
+	for _, m := range domain.MergeModes() {
+		got := mergeModeToPB(m)
+		assert.NotEqual(t, pb.MergeMode_MERGE_MODE_UNSPECIFIED, got, m)
+		back, err := mergeModeFromPB(got)
+		require.NoError(t, err, m)
+		assert.Equal(t, m, back)
+	}
+	// Unspecified in a merge request is the default mode, left to the use case;
+	// in the settings it is refused.
+	m, err := mergeModeFromPB(pb.MergeMode_MERGE_MODE_UNSPECIFIED)
+	require.NoError(t, err)
+	assert.Empty(t, m)
+	_, err = mergeModesFromPB([]pb.MergeMode{pb.MergeMode_MERGE_MODE_UNSPECIFIED})
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+	_, err = mergeModeFromPB(pb.MergeMode(99))
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+	// Every mode of the contract is known.
+	for v := range pb.MergeMode_name {
+		if pb.MergeMode(v) != pb.MergeMode_MERGE_MODE_UNSPECIFIED {
+			_, err := mergeModeFromPB(pb.MergeMode(v))
+			assert.NoError(t, err, pb.MergeMode(v))
+		}
+	}
+}
+
+func TestMergeRequestEnumMappers(t *testing.T) {
+	for _, s := range []domain.MRState{domain.MRStateOpen, domain.MRStateMerged, domain.MRStateClosed} {
+		got := mergeRequestStateToPB(s)
+		assert.NotEqual(t, pb.MergeRequestState_MERGE_REQUEST_STATE_UNSPECIFIED, got, s)
+		back, err := mergeRequestStateFromPB(got)
+		require.NoError(t, err, s)
+		assert.Equal(t, s, back)
+	}
+	all, err := mergeRequestStateFromPB(pb.MergeRequestState_MERGE_REQUEST_STATE_UNSPECIFIED)
+	require.NoError(t, err)
+	assert.Empty(t, all, "unspecified means every state")
+	_, err = mergeRequestStateFromPB(99)
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+
+	for _, s := range []domain.DiffSide{domain.SideOld, domain.SideNew, domain.SideNone} {
+		back, err := diffSideFromPB(diffSideToPB(s))
+		require.NoError(t, err, s)
+		assert.Equal(t, s, back)
+	}
+	assert.Equal(t, pb.DiffSide_DIFF_SIDE_UNSPECIFIED, diffSideToPB(domain.SideNone), "a general comment")
+	_, err = diffSideFromPB(99)
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+}
+
+func TestCommentID(t *testing.T) {
+	assert.EqualValues(t, 7, commentID("7"))
+	for _, bad := range []string{"", "0", "-1", "07", "+7", "x", "7 ", "9223372036854775808"} {
+		assert.Zero(t, commentID(bad), "%q names no comment", bad)
+	}
+}
+
+func TestRepoToPBAlwaysHasSettings(t *testing.T) {
+	// A repository value without settings (never stored with them) reads as the defaults.
+	r := repoToPB(app.RepoView{Repo: domain.Repo{Name: mustName(t, "x")}})
+	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH}, r.GetSettings().GetAllowedMergeModes())
+	assert.True(t, r.GetSettings().GetFailingChecksBlock())
+
+	custom := domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}}
+	r = repoToPB(app.RepoView{Repo: domain.Repo{Name: mustName(t, "x"), Settings: custom}})
+	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}, r.GetSettings().GetAllowedMergeModes())
+	assert.False(t, r.GetSettings().GetFailingChecksBlock())
+}
+
+func mustName(t *testing.T, s string) domain.RepoName {
+	t.Helper()
+	n, err := domain.ParseRepoName(s)
+	require.NoError(t, err)
+	return n
+}
+
+func TestUpdateParamsSettingsPaths(t *testing.T) {
+	msg := func(paths ...string) *pb.UpdateRepoRequest {
+		return &pb.UpdateRepoRequest{
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
+			Settings: &pb.RepoSettings{
+				AllowedMergeModes:  []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH},
+				FailingChecksBlock: true,
+			},
+		}
+	}
+	p, err := updateParams(msg("settings"))
+	require.NoError(t, err)
+	require.NotNil(t, p.AllowedMergeModes)
+	assert.Equal(t, []domain.MergeMode{domain.MergeModeSquash}, *p.AllowedMergeModes)
+	require.NotNil(t, p.FailingChecksBlock)
+	assert.True(t, *p.FailingChecksBlock)
+
+	p, err = updateParams(msg("settings.allowed_merge_modes"))
+	require.NoError(t, err)
+	assert.NotNil(t, p.AllowedMergeModes)
+	assert.Nil(t, p.FailingChecksBlock, "not named: left alone")
+
+	p, err = updateParams(msg("settings.failing_checks_block"))
+	require.NoError(t, err)
+	assert.Nil(t, p.AllowedMergeModes)
+	assert.NotNil(t, p.FailingChecksBlock)
+
+	// Modes named with nothing to take them from are an empty list, which the use case refuses.
+	p, err = updateParams(&pb.UpdateRepoRequest{UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"settings.allowed_merge_modes"}}})
+	require.NoError(t, err)
+	require.NotNil(t, p.AllowedMergeModes)
+	assert.Empty(t, *p.AllowedMergeModes)
+
+	_, err = updateParams(msg("settings.other"))
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+}
+
+func TestConnectErrorCarriesTheFieldsOfARejection(t *testing.T) {
+	var v domain.Violations
+	v.Add("title", "must be one line")
+	v.Add("source_branch", "does not exist")
+	err := connectError(context.Background(), fmt.Errorf("create: %w", v.Err()))
+	var ce *connect.Error
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, connect.CodeInvalidArgument, ce.Code())
+	require.Len(t, ce.Details(), 1)
+	val, derr := ce.Details()[0].Value()
+	require.NoError(t, derr)
+	br, ok := val.(*errdetails.BadRequest)
+	require.True(t, ok)
+	require.Len(t, br.GetFieldViolations(), 2)
+	assert.Equal(t, "title", br.GetFieldViolations()[0].GetField())
+	assert.Equal(t, "must be one line", br.GetFieldViolations()[0].GetDescription())
+
+	// Other errors carry no detail, and a text error alone is invalid_argument.
+	err = connectError(context.Background(), domain.ErrNotFound)
+	require.ErrorAs(t, err, &ce)
+	assert.Empty(t, ce.Details())
+	_, perr := domain.ParsePlainText("\x07")
+	err = connectError(context.Background(), perr)
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, connect.CodeInvalidArgument, ce.Code())
+}
+
+func TestWatchEventToPBMergeRequestEvents(t *testing.T) {
+	repo := mustName(t, "proj")
+	title, err := domain.ParseMRTitle("Add x")
+	require.NoError(t, err)
+	mr := domain.MergeRequest{Repo: repo, Number: 4, Title: title, Source: "feat", Target: "main", State: domain.MRStateMerged, MergeMode: domain.MergeModeSquash}
+	at := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+
+	for name, tc := range map[string]struct {
+		ev   domain.Event
+		pick func(*pb.Event) *pb.MergeRequest
+	}{
+		"opened": {domain.MergeRequestOpened{MergeRequest: mr, At: at}, func(e *pb.Event) *pb.MergeRequest { return e.GetMergeRequestOpened().GetMergeRequest() }},
+		"merged": {domain.MergeRequestMerged{MergeRequest: mr, At: at}, func(e *pb.Event) *pb.MergeRequest { return e.GetMergeRequestMerged().GetMergeRequest() }},
+		"closed": {domain.MergeRequestClosed{MergeRequest: mr, At: at}, func(e *pb.Event) *pb.MergeRequest { return e.GetMergeRequestClosed().GetMergeRequest() }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := watchEventToPB(app.WatchEvent{ID: "e1", Event: tc.ev})
+			require.NotNil(t, got)
+			assert.Equal(t, "e1", got.GetId())
+			assert.Equal(t, at, got.GetTime().AsTime())
+			m := tc.pick(got)
+			require.NotNil(t, m)
+			assert.Equal(t, "proj", m.GetRepo())
+			assert.EqualValues(t, 4, m.GetNumber())
+			assert.Equal(t, "Add x", m.GetTitle())
+			assert.Equal(t, pb.MergeMode_MERGE_MODE_SQUASH, m.GetMergeMode())
+		})
+	}
+
+	c := domain.Comment{ID: 9, Author: "root", Path: "a.txt", Line: 3, Side: domain.SideOld, CreatedAt: at}
+	got := watchEventToPB(app.WatchEvent{ID: "e2", Event: domain.CommentAdded{Repo: repo, Number: 4, Comment: c, At: at}})
+	added := got.GetCommentAdded()
+	require.NotNil(t, added)
+	assert.Equal(t, "proj", added.GetRepo())
+	assert.EqualValues(t, 4, added.GetNumber())
+	assert.Equal(t, "9", added.GetComment().GetId())
+	assert.Equal(t, pb.DiffSide_DIFF_SIDE_OLD, added.GetComment().GetSide())
+	assert.EqualValues(t, 3, added.GetComment().GetLine())
 }

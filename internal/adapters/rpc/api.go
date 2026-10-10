@@ -27,7 +27,7 @@ const MaxRequestBytes = 1 << 20
 
 // Features are the optional capabilities of the contract that this server
 // implements, as GetVersion lists them.
-var Features = []string{"repo.update", "events.resume"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "signing_key"}
 
 // Authenticator turns a token secret into a principal, or
 // domain.ErrUnauthenticated. app.Auth fits.
@@ -37,12 +37,15 @@ type Authenticator interface {
 
 // Config configures the API.
 type Config struct {
-	Auth    Authenticator
-	Repos   *app.Repos
-	Tokens  *app.Tokens
-	Browse  *app.Browse
-	Events  *app.Events
-	Version string
+	Auth   Authenticator
+	Repos  *app.Repos
+	Tokens *app.Tokens
+	Browse *app.Browse
+	Events *app.Events
+	// MergeRequests serves MergeRequestService, SigningKey GetSigningKey.
+	MergeRequests *app.MergeRequests
+	SigningKey    *app.SigningKey
+	Version       string
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one. Share
@@ -75,7 +78,8 @@ func New(cfg Config) *API {
 	mux.Handle(ermiteconnect.NewGitServiceHandler(&gitService{cfg.Browse}, opts...))
 	mux.Handle(ermiteconnect.NewTokenServiceHandler(&tokenService{cfg.Tokens}, opts...))
 	mux.Handle(ermiteconnect.NewEventServiceHandler(&eventService{cfg.Events}, opts...))
-	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{cfg.Version}, opts...))
+	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, key: cfg.SigningKey}, opts...))
+	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
 	return &API{handler: mux}
 }
 

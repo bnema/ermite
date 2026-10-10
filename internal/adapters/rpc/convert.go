@@ -56,6 +56,10 @@ func visibilityFromPB(v pb.Visibility) (domain.Visibility, error) {
 }
 
 func repoToPB(v app.RepoView) *pb.Repo {
+	settings := v.Settings
+	if settings.IsZero() {
+		settings = domain.DefaultRepoSettings()
+	}
 	return &pb.Repo{
 		Name:          v.Name.String(),
 		Description:   v.Description,
@@ -63,7 +67,57 @@ func repoToPB(v app.RepoView) *pb.Repo {
 		DefaultBranch: v.DefaultBranch,
 		CreatedAt:     timestamp(v.CreatedAt),
 		PushedAt:      timestamp(v.PushedAt),
+		Settings:      settingsToPB(settings),
 	}
+}
+
+func settingsToPB(s domain.RepoSettings) *pb.RepoSettings {
+	out := &pb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock}
+	for _, m := range s.AllowedMergeModes {
+		out.AllowedMergeModes = append(out.AllowedMergeModes, mergeModeToPB(m))
+	}
+	return out
+}
+
+func mergeModeToPB(m domain.MergeMode) pb.MergeMode {
+	switch m {
+	case domain.MergeModeFastForward:
+		return pb.MergeMode_MERGE_MODE_FAST_FORWARD
+	case domain.MergeModeSquash:
+		return pb.MergeMode_MERGE_MODE_SQUASH
+	}
+	return pb.MergeMode_MERGE_MODE_UNSPECIFIED
+}
+
+// mergeModeFromPB maps a mode of a merge request: unspecified is the empty
+// domain.MergeMode, which the use case reads as fast-forward.
+func mergeModeFromPB(m pb.MergeMode) (domain.MergeMode, error) {
+	switch m {
+	case pb.MergeMode_MERGE_MODE_UNSPECIFIED:
+		return "", nil
+	case pb.MergeMode_MERGE_MODE_FAST_FORWARD:
+		return domain.MergeModeFastForward, nil
+	case pb.MergeMode_MERGE_MODE_SQUASH:
+		return domain.MergeModeSquash, nil
+	}
+	return "", fmt.Errorf("%w: merge mode %v", domain.ErrInvalid, m)
+}
+
+// mergeModesFromPB maps the allowed modes of the settings, where unspecified
+// is rejected.
+func mergeModesFromPB(in []pb.MergeMode) ([]domain.MergeMode, error) {
+	out := make([]domain.MergeMode, 0, len(in))
+	for _, m := range in {
+		mode, err := mergeModeFromPB(m)
+		if err != nil {
+			return nil, err
+		}
+		if mode == "" {
+			return nil, fmt.Errorf("%w: MERGE_MODE_UNSPECIFIED is not a merge mode", domain.ErrInvalid)
+		}
+		out = append(out, mode)
+	}
+	return out, nil
 }
 
 var scopeToPB = map[domain.Scope]pb.Scope{
@@ -265,20 +319,28 @@ func fileDiffToPB(f domain.FileDiff) *pb.FileDiff {
 	return out
 }
 
-func commitDetailToPB(d domain.CommitDetail) *pb.GetCommitResponse {
-	out := &pb.GetCommitResponse{
-		Commit: commitToPB(d.Commit),
-		Stats: &pb.DiffStats{
-			FilesChanged: int32(d.Stats.FilesChanged),
-			Additions:    int32(d.Stats.Additions),
-			Deletions:    int32(d.Stats.Deletions),
-		},
-		Diff: &pb.Diff{Truncated: d.Diff.Truncated},
+func diffStatsToPB(s domain.DiffStats) *pb.DiffStats {
+	return &pb.DiffStats{
+		FilesChanged: int32(s.FilesChanged),
+		Additions:    int32(s.Additions),
+		Deletions:    int32(s.Deletions),
 	}
-	for _, f := range d.Diff.Files {
-		out.Diff.Files = append(out.Diff.Files, fileDiffToPB(f))
+}
+
+func diffToPB(d domain.Diff) *pb.Diff {
+	out := &pb.Diff{Truncated: d.Truncated}
+	for _, f := range d.Files {
+		out.Files = append(out.Files, fileDiffToPB(f))
 	}
 	return out
+}
+
+func commitDetailToPB(d domain.CommitDetail) *pb.GetCommitResponse {
+	return &pb.GetCommitResponse{
+		Commit: commitToPB(d.Commit),
+		Stats:  diffStatsToPB(d.Stats),
+		Diff:   diffToPB(d.Diff),
+	}
 }
 
 // oidToPB turns the zero object id of a ref update (no object) into "".
@@ -317,6 +379,18 @@ func watchEventToPB(we app.WatchEvent) *pb.Event {
 	case domain.PushEvent:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_Pushed{Pushed: &pb.Pushed{Repo: ev.Repo.String(), RefUpdates: refUpdatesToPB(ev.Updates)}}
+	case domain.MergeRequestOpened:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MergeRequestOpened{MergeRequestOpened: &pb.MergeRequestOpened{MergeRequest: mergeRequestToPB(ev.MergeRequest)}}
+	case domain.MergeRequestMerged:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MergeRequestMerged{MergeRequestMerged: &pb.MergeRequestMerged{MergeRequest: mergeRequestToPB(ev.MergeRequest)}}
+	case domain.MergeRequestClosed:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MergeRequestClosed{MergeRequestClosed: &pb.MergeRequestClosed{MergeRequest: mergeRequestToPB(ev.MergeRequest)}}
+	case domain.CommentAdded:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_CommentAdded{CommentAdded: &pb.CommentAdded{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}
 	default:
 		return nil
 	}

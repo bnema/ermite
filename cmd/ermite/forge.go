@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net"
@@ -19,10 +21,12 @@ import (
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/adapters/rpc"
+	"bnema.dev/ermite/internal/adapters/sshsig"
 	"bnema.dev/ermite/internal/adapters/web"
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/config"
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -56,14 +60,27 @@ type forge struct {
 
 	// The use cases and the API are exposed for tests and for the phases
 	// that add the web.
-	Repos    *app.Repos
-	Tokens   *app.Tokens
-	Auth     *app.Auth
-	Pushes   *app.Pushes
-	Browse   *app.Browse
-	EventLog *app.Events
-	API      *rpc.API
-	Bus      ports.EventBus
+	Repos  *app.Repos
+	Tokens *app.Tokens
+	Auth   *app.Auth
+	Pushes *app.Pushes
+	Browse *app.Browse
+	// MergeRequests and SigningKey serve MergeRequestService and
+	// ServerService.GetSigningKey.
+	MergeRequests *app.MergeRequests
+	SigningKey    *app.SigningKey
+	EventLog      *app.Events
+	API           *rpc.API
+	Bus           ports.EventBus
+}
+
+// newSigningSeed makes the seed of a new ed25519 signing key.
+func newSigningSeed() ([]byte, error) {
+	seed := make([]byte, ed25519.SeedSize)
+	if _, err := rand.Read(seed); err != nil {
+		return nil, err
+	}
+	return seed, nil
 }
 
 // serverVersion is the version GetVersion reports: the module version of the
@@ -153,6 +170,23 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Size: opts.eventBuffer, Auth: f.Auth, RevalidateEvery: opts.revalidateEvery,
 	})
 
+	// The instance signing key (ADR 0022): generated on the first start.
+	seed, err := store.SigningSeed(ctx, newSigningSeed, clock.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	signer, err := sshsig.New(seed)
+	if err != nil {
+		return nil, err
+	}
+	committer := domain.Identity{Name: cfg.CommitterName, Email: cfg.CommitterEmail}
+	f.SigningKey = app.NewSigningKey(signer, committer)
+	f.MergeRequests = app.NewMergeRequests(app.MergeRequestsConfig{
+		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
+		Committer: committer, Bus: f.Bus, Clock: clock,
+	})
+	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
+
 	// One budget of failed authentications per client, for Git and the API.
 	limiter := clientlimit.NewLimiter(nil)
 	f.API = rpc.New(rpc.Config{
@@ -161,6 +195,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Tokens:         f.Tokens,
 		Browse:         f.Browse,
 		Events:         f.EventLog,
+		MergeRequests:  f.MergeRequests,
+		SigningKey:     f.SigningKey,
 		Version:        serverVersion(),
 		TrustedProxies: cfg.TrustedProxies,
 		Limiter:        limiter,

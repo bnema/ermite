@@ -79,7 +79,9 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 }
 
 // updateParams maps the field mask of an update. The mask must name at least
-// one of "description", "visibility" and "default_branch" and nothing else.
+// one of "description", "visibility", "default_branch", "settings",
+// "settings.allowed_merge_modes" and "settings.failing_checks_block", and
+// nothing else.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter maps the field mask of the contract to the optional fields of the use case; no rule is decided here
 func updateParams(msg *pb.UpdateRepoRequest) (app.UpdateParams, error) {
@@ -103,6 +105,17 @@ func updateParams(msg *pb.UpdateRepoRequest) (app.UpdateParams, error) {
 			params.Visibility = &vis
 		case "default_branch":
 			params.DefaultBranch = new(msg.GetDefaultBranch())
+		case "settings", "settings.allowed_merge_modes", "settings.failing_checks_block":
+			if path != "settings.failing_checks_block" {
+				modes, err := mergeModesFromPB(msg.GetSettings().GetAllowedMergeModes())
+				if err != nil {
+					return params, err
+				}
+				params.AllowedMergeModes = &modes
+			}
+			if path != "settings.allowed_merge_modes" {
+				params.FailingChecksBlock = new(msg.GetSettings().GetFailingChecksBlock())
+			}
 		default:
 			return params, fmt.Errorf("%w: unknown path %q in update_mask", domain.ErrInvalid, path)
 		}

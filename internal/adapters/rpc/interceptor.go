@@ -56,9 +56,10 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 	// Whatever the context carried, the caller is anonymous until proven
 	// otherwise.
 	ctx = domain.ContextWithPrincipal(ctx, domain.Anonymous())
-	if procedure == ermiteconnect.ServerServiceGetVersionProcedure {
-		// It needs no authentication, so that a client can check compatibility
-		// first, even with a token that has expired.
+	if procedure == ermiteconnect.ServerServiceGetVersionProcedure || procedure == ermiteconnect.ServerServiceGetSigningKeyProcedure {
+		// GetVersion needs no authentication, so that a client can check
+		// compatibility first, even with a token that has expired. The signing
+		// key is public: whoever verifies a commit needs it.
 		return ctx, nil
 	}
 	log := zerowrap.FromCtx(ctx)
