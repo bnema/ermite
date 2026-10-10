@@ -58,6 +58,8 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
+      - name: Generated templ code is up to date
+        run: scripts/templ-drift.sh
       - run: go vet ./...
       - run: go test -race ./...
       - name: Architecture
