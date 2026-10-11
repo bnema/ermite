@@ -89,7 +89,7 @@ The image is alpine with git, runs as uid 10001 and keeps its data in the `/data
 docker compose up
 ```
 
-Serves on `http://localhost:7341` with the development admin token in `compose.yaml`. The source is mounted and [air](https://github.com/air-verse/air) (`go tool air`, `.air.toml`) rebuilds and restarts the server on each change to a `.go` or `.templ` file; the module and build caches and the data live in named volumes. `docker compose down -v` removes them. The dev container runs as root, which maps to your user under rootless Docker.
+Serves on `http://localhost:7341` with the development admin token in `compose.yaml`. The source is mounted and [air](https://github.com/air-verse/air) (`go tool air`, `.air.toml`) rebuilds and restarts the server on each change to a `.go` or `.templ` file or an embedded web asset; the module and build caches and the data live in named volumes. `docker compose down -v` removes them. The dev container runs as root, which maps to your user under rootless Docker.
 
 ## Build
 
