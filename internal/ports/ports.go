@@ -84,6 +84,17 @@ type GitRepos interface {
 	Maintain(ctx context.Context, name domain.RepoName) error
 }
 
+// RepoFreshener is implemented by a RepoReader that keeps repositories open
+// between reads. The use cases that write to a repository (a push, the
+// maintenance that follows it) call Refresh so that the reader picks the change
+// up at once instead of when its own timer says so. It is optional: reads
+// stay correct without it.
+type RepoFreshener interface {
+	// Refresh tells the reader that the repository changed on disk. It does
+	// not fail: a reader that cannot refresh finds out on its next read.
+	Refresh(ctx context.Context, name domain.RepoName)
+}
+
 // CommitQuery selects a page of history.
 type CommitQuery struct {
 	// Revision is where the history starts; the zero value is HEAD.

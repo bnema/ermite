@@ -97,6 +97,21 @@ func TestMaintainerOneRunAtATimePerRepo(t *testing.T) {
 	assert.Equal(t, int32(1), maxConcurrent.Load())
 }
 
+func TestMaintainerTellsTheReaderAfterARun(t *testing.T) {
+	ctx := context.Background()
+	n := name(t, "tools")
+	for _, failure := range []error{nil, errors.New("boom")} {
+		git := mocks.NewGitRepos(t)
+		git.EXPECT().Maintain(mockAny, n).Return(failure)
+		fresh := &freshener{}
+		m := app.NewMaintainer(ctx, git, time.Millisecond).WithFreshener(fresh)
+		m.Schedule(ctx, n)
+		waitFor(t, func() bool { return len(fresh.seen()) == 1 }, "the reader to be told")
+		m.Close(ctx)
+		assert.Equal(t, []domain.RepoName{n}, fresh.seen())
+	}
+}
+
 func TestMaintainerFailureIsLoggedNotFatal(t *testing.T) {
 	ctx := context.Background()
 	n := name(t, "tools")

@@ -30,6 +30,24 @@ func (s *scheduler) Schedule(_ context.Context, n domain.RepoName) {
 	s.names = append(s.names, n)
 }
 
+// freshener records the repositories it was told changed.
+type freshener struct {
+	mu    sync.Mutex
+	names []domain.RepoName
+}
+
+func (f *freshener) Refresh(_ context.Context, n domain.RepoName) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.names = append(f.names, n)
+}
+
+func (f *freshener) seen() []domain.RepoName {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]domain.RepoName(nil), f.names...)
+}
+
 type pushFixture struct {
 	meta   *mocks.RepoMetaStore
 	git    *mocks.GitRepos
@@ -221,6 +239,18 @@ func TestPushesRecord(t *testing.T) {
 
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
 		assert.Equal(t, []domain.RepoName{n}, f.sched.names)
+	})
+
+	t.Run("tells the reader that the repository changed", func(t *testing.T) {
+		f := newPushFixture(t)
+		fresh := &freshener{}
+		f.pushes.WithFreshener(fresh)
+		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n}, nil)
+		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil)
+		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
+		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
+		assert.Equal(t, []domain.RepoName{n}, fresh.seen())
 	})
 
 	t.Run("pushed_at retries after a conflict and never goes backwards", func(t *testing.T) {

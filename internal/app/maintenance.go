@@ -27,6 +27,7 @@ const MaintenanceDelay = 5 * time.Second
 // (gitcli applies its command timeout to a context without deadline).
 type Maintainer struct {
 	git   ports.GitRepos
+	fresh ports.RepoFreshener // nil: the reader needs no telling
 	delay time.Duration
 	ctx   context.Context
 	stop  context.CancelFunc
@@ -51,6 +52,14 @@ func NewMaintainer(ctx context.Context, git ports.GitRepos, delay time.Duration)
 	}
 	run, stop := context.WithCancel(context.WithoutCancel(ctx))
 	return &Maintainer{git: git, delay: delay, ctx: run, stop: stop, entries: make(map[domain.RepoName]*maintEntry)}
+}
+
+// WithFreshener makes every run tell the reader, when it ends, that the
+// repository changed: the commit-graph it wrote is for the reader to pick up.
+// Call it before the first Schedule; it returns m.
+func (m *Maintainer) WithFreshener(f ports.RepoFreshener) *Maintainer {
+	m.fresh = f
+	return m
 }
 
 // Schedule queues maintenance of the repository.
@@ -97,6 +106,9 @@ func (m *Maintainer) run(name domain.RepoName, e *maintEntry) {
 		log.Warn().Err(err).Str("repo", name.String()).Msg("repository maintenance failed")
 	} else {
 		log.Debug().Str("repo", name.String()).Dur("duration", time.Since(start)).Msg("repository maintained")
+	}
+	if m.fresh != nil {
+		m.fresh.Refresh(m.ctx, name) // whatever the outcome: git may have written something
 	}
 
 	m.mu.Lock()

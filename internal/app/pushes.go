@@ -38,6 +38,7 @@ type Pushes struct {
 	clock ports.Clock
 	maint MaintenanceScheduler
 	auth  Revalidator
+	fresh ports.RepoFreshener // nil: the reader needs no telling
 }
 
 // NewPushes builds the push use cases. Every argument is required: auth
@@ -45,6 +46,13 @@ type Pushes struct {
 // queues the maintenance that follows a push.
 func NewPushes(meta ports.RepoMetaStore, repos *Repos, git ports.GitRepos, bus ports.EventBus, clock ports.Clock, maint MaintenanceScheduler, auth Revalidator) *Pushes {
 	return &Pushes{meta: meta, repos: repos, git: git, bus: bus, clock: clock, maint: maint, auth: auth}
+}
+
+// WithFreshener makes Record tell the reader that a repository changed, so that
+// it serves the push at once. Call it before the first push; it returns u.
+func (u *Pushes) WithFreshener(f ports.RepoFreshener) *Pushes {
+	u.fresh = f
+	return u
 }
 
 // Open decides whether the principal may push to the repository and, with
@@ -118,8 +126,8 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 }
 
 // Record is the post-receive step of an accepted push: it sets pushed_at,
-// repairs HEAD when it points to a missing branch, publishes a PushEvent and
-// schedules maintenance. Every step runs even when an earlier one fails; the
+// repairs HEAD when it points to a missing branch, tells the reader that the
+// repository changed, publishes a PushEvent and schedules maintenance. Every step runs even when an earlier one fails; the
 // failures are returned together and the push itself is not affected.
 func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error {
 	log := zerowrap.FromCtx(ctx)
@@ -132,6 +140,9 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	}
 	if err := u.fixDefaultBranch(ctx, name, updates); err != nil {
 		errs = append(errs, err)
+	}
+	if u.fresh != nil {
+		u.fresh.Refresh(ctx, name)
 	}
 	u.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now,
