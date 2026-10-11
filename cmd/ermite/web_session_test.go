@@ -115,7 +115,7 @@ func TestWebLoginEndToEnd(t *testing.T) {
 	assert.Contains(t, home.body, "pub")
 	assert.NotContains(t, home.body, "secret")
 	assert.Equal(t, "no-cache", home.hdr.Get("Cache-Control"))
-	assert.Empty(t, home.hdr.Values("Vary"))
+	assert.Equal(t, []string{"Accept-Encoding"}, home.hdr.Values("Vary"), "no Cookie in the Vary of a public page")
 	assert.NotContains(t, home.body, `action="/-/logout"`)
 	assert.Equal(t, 404, b.get("/secret", nil).status)
 

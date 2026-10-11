@@ -205,9 +205,35 @@ func (s *Server) write(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	if h.Get("Cache-Control") == "" {
 		cacheHeaders(ctx, h, "no-cache", sessionCache)
 	}
+	body := buf.Bytes()
+	// Whether the body is sent gzipped follows from its size and the request
+	// alone, so that the tag is known before the compression is spent.
+	gz := len(body) >= minCompress && acceptsGzip(r.Header) &&
+		!noTransform(h) && h.Get("Content-Encoding") == ""
+	addVary(h, "Accept-Encoding")
+	readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
+	// A page that may be stored gets a validator: the browser then
+	// revalidates with If-None-Match and a page that did not change costs a
+	// 304. A no-store page (the owner's) is never revalidated.
+	if readOnly && status == http.StatusOK && h.Get("ETag") == "" && !hasCacheDirective(h, noStore) {
+		tag := pageETag(body, SignedIn(ctx), gz)
+		h.Set("ETag", tag)
+		if etagMatches(strings.Join(r.Header.Values("If-None-Match"), ","), tag) {
+			h.Del("Content-Type")
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+	if gz {
+		if z, err := gzipPage(body); err == nil && len(z) < len(body) {
+			body = z
+			h.Set("Content-Encoding", "gzip")
+		}
+	}
+	h.Set("Content-Length", itoa(len(body)))
 	w.WriteHeader(status)
 	if r.Method != http.MethodHead {
-		_, _ = w.Write(buf.Bytes())
+		_, _ = w.Write(body)
 	}
 }
 

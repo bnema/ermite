@@ -226,7 +226,7 @@ func TestInvalidCookieAnswerIsNotCached(t *testing.T) {
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
 		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"), target)
-		assert.Equal(t, []string{"Cookie"}, rec.Header().Values("Vary"), target)
+		assert.Equal(t, []string{"Cookie", "Accept-Encoding"}, rec.Header().Values("Vary"), target)
 		assert.Contains(t, rec.Header().Get("Set-Cookie"), "Max-Age=0", target)
 	}
 
