@@ -7,6 +7,15 @@
           { "href_matches": "/*" },
           { "not": { "href_matches": "/-/*" } },
           { "not": { "href_matches": "/*/raw/*" } },
+          { "not": { "href_matches": "/*/tree" } },
+          { "not": { "href_matches": "/*/tree/*" } },
+          { "not": { "href_matches": "/*/blob/*" } },
+          { "not": { "href_matches": "/*/commit/*" } },
+          { "not": { "href_matches": "/*/commits" } },
+          { "not": { "href_matches": "/*/commits/*" } },
+          { "not": { "href_matches": "/*/compare/*" } },
+          { "not": { "href_matches": "/*/refs" } },
+          { "not": { "href_matches": "/*/merge-requests/*/since" } },
           { "not": { "selector_matches": "[rel~=nofollow]" } }
         ]
       },

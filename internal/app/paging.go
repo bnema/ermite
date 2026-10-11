@@ -27,6 +27,14 @@ const (
 	DefaultPageSize = 50
 	// MaxPageSize is the largest page; a larger request is lowered to it.
 	MaxPageSize = 100
+	// MaxRepoPageSize is the largest page of ListRepos. A repository list is
+	// one scan of the metadata whatever the page, so a caller that wants the
+	// whole list (the web pages) asks for it in one page rather than in
+	// several scans.
+	MaxRepoPageSize = 1000
+	// MaxRefPageSize is the largest page of ListRefs, for the same reason:
+	// each page of refs runs the whole for-each-ref again.
+	MaxRefPageSize = 1000
 )
 
 // MaxCommitSkip bounds how deep into a history a page token may point: each
@@ -34,14 +42,17 @@ const (
 const MaxCommitSkip = 100_000
 
 // pageSize applies the default and the maximum.
-func pageSize(n int) (int, error) {
+func pageSize(n int) (int, error) { return pageSizeUpTo(n, MaxPageSize) }
+
+// pageSizeUpTo applies the default and the given maximum.
+func pageSizeUpTo(n, most int) (int, error) {
 	switch {
 	case n < 0:
 		return 0, fmt.Errorf("%w: %d", domain.ErrInvalidPageSize, n)
 	case n == 0:
 		return DefaultPageSize, nil
 	}
-	return min(n, MaxPageSize), nil
+	return min(n, most), nil
 }
 
 func decodeToken(tok, prefix string) (string, bool) {
@@ -80,11 +91,11 @@ type RepoPage struct {
 }
 
 // ListPage returns a page of the repositories the principal may read, ordered
-// by name. size is 0 for DefaultPageSize and lowered to MaxPageSize; the page
+// by name. size is 0 for DefaultPageSize and lowered to MaxRepoPageSize; the page
 // token names the last repository of the previous page, so repositories that
 // appear or disappear between two pages never shift the others.
 func (r *Repos) ListPage(ctx context.Context, p domain.Principal, size int, token string) (RepoPage, error) {
-	n, err := pageSize(size)
+	n, err := pageSizeUpTo(size, MaxRepoPageSize)
 	if err != nil {
 		return RepoPage{}, err
 	}

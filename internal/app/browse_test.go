@@ -241,8 +241,8 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 	t.Run("default and maximum page size", func(t *testing.T) {
 		var many []domain.Ref
 		many = append(many, ref(domain.RefKindHead, "HEAD"))
-		for i := range 250 {
-			many = append(many, ref(domain.RefKindTag, fmt.Sprintf("refs/tags/t%03d", i)))
+		for i := range app.MaxRefPageSize + 100 {
+			many = append(many, ref(domain.RefKindTag, fmt.Sprintf("refs/tags/t%04d", i)))
 		}
 		b := setup(t, many)
 		page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{})
@@ -253,7 +253,8 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 		b = setup(t, many)
 		page, err = b.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{PageSize: 100000})
 		require.NoError(t, err)
-		assert.Len(t, page.Refs, app.MaxPageSize)
+		assert.Len(t, page.Refs, app.MaxRefPageSize, "a page holds up to MaxRefPageSize refs")
+		assert.NotEmpty(t, page.NextPageToken)
 	})
 
 	t.Run("bad input never reaches the reader", func(t *testing.T) {

@@ -65,7 +65,7 @@ func (b *Browse) authorize(ctx context.Context, p domain.Principal, name domain.
 type ListRefsParams struct {
 	// Kinds restricts the result; empty means every kind.
 	Kinds []domain.RefKind
-	// PageSize is 0 for the default, and lowered to MaxPageSize.
+	// PageSize is 0 for the default, and lowered to MaxRefPageSize.
 	PageSize int
 	// PageToken is the NextPageToken of the previous page, or empty.
 	PageToken string
@@ -92,7 +92,7 @@ func kindRank(k domain.RefKind) int {
 // name. The page token names the last ref of the previous page, so refs that
 // appear or disappear between two pages never shift the others.
 func (b *Browse) ListRefs(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListRefsParams) (RefPage, error) {
-	size, err := pageSize(params.PageSize)
+	size, err := pageSizeUpTo(params.PageSize, MaxRefPageSize)
 	if err != nil {
 		return RefPage{}, err
 	}

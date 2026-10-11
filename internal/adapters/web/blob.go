@@ -78,6 +78,10 @@ func (b *blobStream) close() { _ = b.stream.Close() }
 
 // fill reads from the stream until buf holds n bytes or the content ends.
 func (b *blobStream) fill(n int) error {
+	// One allocation for the whole content, not the doublings of append.
+	if cap(b.buf) < n {
+		b.buf = append(make([]byte, 0, n), b.buf...)
+	}
 	for len(b.buf) < n && b.stream.Receive() {
 		b.buf = append(b.buf, b.stream.Msg().GetChunk()...)
 	}

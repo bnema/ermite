@@ -218,3 +218,36 @@ func normSpace(s string) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+func TestTokensMatch(t *testing.T) {
+	toks := func(vs ...string) []chroma.Token {
+		var out []chroma.Token
+		for _, v := range vs {
+			out = append(out, chroma.Token{Type: chroma.Text, Value: v})
+		}
+		return out
+	}
+	for _, tt := range []struct {
+		name string
+		toks []chroma.Token
+		src  string
+		want bool
+	}{
+		{"same pieces", toks("ab", "c\n", "d"), "abc\nd", true},
+		{"lexer added a final line feed", toks("a\n", "b", "\n"), "a\nb", true},
+		{"source ends with line feeds", toks("a", "\n"), "a\n\n", true},
+		{"empty", nil, "", true},
+		{"empty tokens", toks("", ""), "\n", true},
+		{"only line feeds", toks("\n\n"), "", true},
+		{"token differs", toks("a", "x"), "ab", false},
+		{"tokens stop short", toks("a"), "ab", false},
+		{"tokens go past the source", toks("abc"), "ab", false},
+		{"extra text after the source", toks("ab", "\nx"), "ab", false},
+		{"lexer dropped a line", toks("a\n", "c"), "a\nb\nc", false},
+		{"unicode", toks("é", "日本"), "é日本", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tokensMatch(tt.toks, tt.src))
+		})
+	}
+}

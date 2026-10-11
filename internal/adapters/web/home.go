@@ -18,16 +18,20 @@ import (
 // maxRepos bounds the repositories one page lists.
 const maxRepos = 1000
 
-// pageSize is the page size asked from the list RPCs: the largest the API
-// accepts.
+// pageSize is the page size asked from the commit lists: the largest the API
+// accepts for them.
 const pageSize = 100
 
 // listRepos reads the repositories the visitor may see, ordered by name.
+// Every page of ListRepos scans the whole repository list and reads the HEAD
+// of each repository of the page, so the list is asked in one page of up to
+// maxRepos: one scan in the common case, whatever the API cap is (a lower
+// one only means more pages, followed by their token).
 func (s *Server) listRepos(ctx context.Context) ([]*pb.Repo, error) {
 	var repos []*pb.Repo
 	token := ""
 	for len(repos) < maxRepos {
-		res, err := s.cfg.Repos.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{PageSize: pageSize, PageToken: token}))
+		res, err := s.cfg.Repos.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{PageSize: maxRepos, PageToken: token}))
 		if err != nil {
 			return nil, err
 		}

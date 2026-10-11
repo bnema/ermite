@@ -5,6 +5,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -209,6 +210,34 @@ func TestView(t *testing.T) {
 	v, err = f.repos.View(ctx, repo)
 	require.NoError(t, err, "a missing directory has no default branch")
 	assert.Empty(t, v.DefaultBranch)
+}
+
+func TestListPageSizes(t *testing.T) {
+	ctx := context.Background()
+	var all []domain.Repo
+	for i := range app.MaxRepoPageSize + 10 {
+		all = append(all, domain.Repo{Name: name(t, fmt.Sprintf("r%04d", i)), Visibility: domain.VisibilityPublic})
+	}
+	for _, tt := range []struct {
+		name string
+		size int
+		want int
+		more bool
+	}{
+		{"default", 0, app.DefaultPageSize, true},
+		{"within the maximum", 500, 500, true},
+		{"the maximum", app.MaxRepoPageSize, app.MaxRepoPageSize, true},
+		{"lowered to the maximum", app.MaxRepoPageSize * 10, app.MaxRepoPageSize, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.meta.EXPECT().List(ctx).Return(all, nil)
+			page, err := f.repos.ListPage(ctx, domain.Anonymous(), tt.size, "")
+			require.NoError(t, err)
+			assert.Len(t, page.Repos, tt.want)
+			assert.Equal(t, tt.more, page.NextPageToken != "")
+		})
+	}
 }
 
 func TestListPage(t *testing.T) {

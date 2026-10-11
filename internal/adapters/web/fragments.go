@@ -5,7 +5,10 @@ package web
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strconv"
+	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/a-h/templ"
@@ -121,7 +124,7 @@ func (l *liveStream) repoPage(ctx context.Context, ev *pb.Event) ([]fragment, er
 		}
 		switch l.view {
 		case "refs":
-			return l.refs(ctx)
+			return l.refs(ctx, ev.GetId())
 		case "commits":
 			return l.banner(ctx, k.Pushed)
 		}
@@ -140,19 +143,125 @@ func (l *liveStream) lastPush(ctx context.Context) ([]fragment, error) {
 	return []fragment{f}, err
 }
 
-// refs is the table of the refs page and the facts of its rail.
-func (l *liveStream) refs(ctx context.Context) ([]fragment, error) {
-	d, err := l.s.loadRepo(ctx, l.repo)
-	if err != nil {
-		return nil, err
+// refs is the table of the refs page and the facts of its rail. The fragments
+// of one event are built once for all the watchers of the repository that
+// see the same things (see fanout); eventID names the event.
+func (l *liveStream) refs(ctx context.Context, eventID string) ([]fragment, error) {
+	key := fanKey{srv: l.s, repo: l.repo, event: eventID, owner: SignedIn(ctx)}
+	return refsFan.do(ctx, key, func() ([]fragment, error) {
+		d, err := l.s.loadRepo(ctx, l.repo)
+		if err != nil {
+			return nil, err
+		}
+		p := l.s.refsPage(ctx, d)
+		body, err := renderFragment(ctx, "refs-list", RefsBody(p))
+		if err != nil {
+			return nil, err
+		}
+		kv, err := renderFragment(ctx, "refs-list", RefsKV(p))
+		return []fragment{body, kv}, err
+	})
+}
+
+const (
+	// fanTTL is how long the fragments of an event are kept for the watchers
+	// that are told of it a little later than the first.
+	fanTTL = 2 * time.Second
+	// fanMax bounds the events kept; past it an event is built for each
+	// watcher, as without sharing.
+	fanMax = 64
+)
+
+// fanKey says which watchers may share the fragments of an event: those of
+// the same repository, for the same event, and of the same class. The class
+// is anonymous or owner (a session is the owner's alone, ADR 0018): what is
+// built as the owner can show what an anonymous visitor may not see, so the
+// two never share an entry.
+type fanKey struct {
+	srv         *Server // events of two servers never share
+	repo, event string
+	owner       bool
+}
+
+type fanEntry struct {
+	done  chan struct{} // closed once frags or err is set
+	frags []fragment
+	err   error
+	at    time.Time // when it was built; zero while it is
+}
+
+// refsFan shares the fragments of the refs page between the watchers of a
+// push. It is a variable of the package, not a field of Server, only because
+// keys carry the server; entries are few and short-lived.
+var refsFan fanout
+
+// fanout builds the fragments of an event once for the many watchers that
+// receive it: a push to a repository that 256 pages watch would otherwise
+// load the refs and the commits they designate 256 times. The zero value is
+// ready. A failure is never kept: the next watcher builds it again.
+type fanout struct {
+	mu sync.Mutex
+	m  map[fanKey]*fanEntry
+}
+
+// do returns the fragments of key, built by build when nobody has or is
+// building them. build runs with the context of the watcher that calls it,
+// which is of the class of the key; a watcher whose builder failed (its
+// request was cancelled, say) does not fail the others, they build again.
+func (f *fanout) do(ctx context.Context, key fanKey, build func() ([]fragment, error)) ([]fragment, error) {
+	if key.event == "" {
+		return build() // no event to share by
 	}
-	p := l.s.refsPage(ctx, d)
-	body, err := renderFragment(ctx, "refs-list", RefsBody(p))
-	if err != nil {
-		return nil, err
+	for range 3 {
+		f.mu.Lock()
+		now := time.Now()
+		for k, e := range f.m {
+			if !e.at.IsZero() && now.Sub(e.at) > fanTTL {
+				delete(f.m, k)
+			}
+		}
+		e, shared := f.m[key]
+		if !shared {
+			if len(f.m) >= fanMax {
+				f.mu.Unlock()
+				return build()
+			}
+			if f.m == nil {
+				f.m = make(map[fanKey]*fanEntry)
+			}
+			e = &fanEntry{done: make(chan struct{})}
+			f.m[key] = e
+		}
+		f.mu.Unlock()
+
+		if !shared {
+			return f.lead(key, e, build)
+		}
+		select {
+		case <-e.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if e.err == nil {
+			return e.frags, nil
+		}
 	}
-	kv, err := renderFragment(ctx, "refs-list", RefsKV(p))
-	return []fragment{body, kv}, err
+	return build()
+}
+
+// lead builds the entry that the caller registered.
+func (f *fanout) lead(key fanKey, e *fanEntry, build func() ([]fragment, error)) (frags []fragment, err error) {
+	err = errors.New("web: fragments were not built") // a panic of build
+	defer func() {
+		f.mu.Lock()
+		e.frags, e.err, e.at = frags, err, time.Now()
+		if err != nil && f.m[key] == e {
+			delete(f.m, key)
+		}
+		f.mu.Unlock()
+		close(e.done)
+	}()
+	return build()
 }
 
 // banner tells the commits page how many commits its branch got since the

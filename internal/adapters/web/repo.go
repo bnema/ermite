@@ -42,10 +42,13 @@ func (s *Server) loadRepo(ctx context.Context, name string) (*repoData, error) {
 		return nil, err
 	}
 	d := &repoData{repo: res.Msg.GetRepo()}
+	// Each page of ListRefs runs the whole for-each-ref again: the refs are
+	// asked in one page of up to maxRefs (the API lowers it to its cap, and
+	// the token then leads to the rest).
 	token, n := "", 0
 	for {
 		page, err := s.cfg.Git.ListRefs(ctx, connect.NewRequest(&pb.ListRefsRequest{
-			Repo: name, PageSize: pageSize, PageToken: token,
+			Repo: name, PageSize: maxRefs, PageToken: token,
 			Kinds: []pb.RefKind{pb.RefKind_REF_KIND_BRANCH, pb.RefKind_REF_KIND_TAG},
 		}))
 		if err != nil {

@@ -14,7 +14,7 @@ content-hashed names. Nothing is fetched at runtime.
 | `static/fonts/atkinson-next.woff2`, `atkinson-next-italic.woff2` | Atkinson Hyperlegible Next, variable weight, latin subset (SIL OFL 1.1, `static/fonts/OFL-next.txt`) | Google Fonts | `18b2a1a39a2fa298b0ba5390aca68462669826c90925656f1c1f6796e0e1bbaf`, `4a5037bfaf6680f40147407407ec09fa42925774bde809a579283d27f9f08106` |
 | `static/fonts/atkinson-mono.woff2` | Atkinson Hyperlegible Mono, variable weight, latin subset (SIL OFL 1.1, `static/fonts/OFL-mono.txt`) | Google Fonts | `2706b1ee4f452e744ea91f7e4908cbde9c5d35521bf5ffffc71a382a2de89613` |
 | `static/icons/*.svg` | interface icons, used as CSS masks; `brand.svg` is a grey picture shown as is | written here | |
-| `static/rules.json` | speculation rules: prefetch same-origin pages on hover (`Speculation-Rules` header) | written here | |
+| `static/rules.json` | speculation rules: prefetch the light same-origin pages on hover (`Speculation-Rules` header); the heavy ones (tree, blob, commit, commits, compare, refs, raw, MR "since") are excluded, each costs several Git reads on the server | written here | |
 
 The three htmx files are the exact files the approved mockup was built with.
 To upgrade, replace the file, update the checksum here, and run the web tests
