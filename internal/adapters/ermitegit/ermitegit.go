@@ -23,9 +23,9 @@
 // commit-graph and notice a repository that stopped being supported: at once
 // when ermite itself wrote (the push and the maintenance tell it through
 // Refresh), and as a safety net at most once per Config.RefreshEvery for each
-// repository while it is read, by one reader at a time. A stat-based Refresh
-// is 20 µs and 34 allocations, too much to pay on every read of a method that
-// itself costs 20 µs.
+// repository while it is read, by one reader at a time. A Refresh
+// stats the files of the repository, too much to pay on every read of a
+// method that itself costs 2 µs.
 //
 // Memory: the cache of open repositories is bounded (LRU) and drops the ones
 // idle longer than Config.IdleTTL; each repository holds at most
