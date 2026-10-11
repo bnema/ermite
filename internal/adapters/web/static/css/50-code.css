@@ -79,7 +79,14 @@
     & .none { background: var(--paper-alt); }
   }
   .dscroll { overflow-x: auto; background: var(--bg-surface); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--r) var(--r); }
-  .spl { width: 100%; table-layout: fixed; & .tx { overflow: hidden; text-overflow: ellipsis; } & .ln { width: 6ch; } & .m { width: 2ch; } }
+  /* split: a fixed layout takes its widths from the colgroup (the first row is
+     the hunk header, which spans all columns); long lines wrap in their half */
+  .spl {
+    width: 100%; table-layout: fixed;
+    & .c-ln { width: 7ch; } & .c-m { width: 2.5ch; }
+    & .tx, & .hunk td { white-space: pre-wrap; overflow-wrap: anywhere; }
+    & td.ln:nth-child(4) { border-left: 1px solid var(--border); }
+  }
   #diffs[data-diff="unified"] .spl, #diffs[data-diff="split"] .uni { display: none; }
 
   /* diff table of contents in the rail */

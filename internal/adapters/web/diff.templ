@@ -193,6 +193,7 @@ templ DiffFileView(f DiffFile, p DiffView) {
 				}
 				if p.ShowSplit {
 					<table class="dt spl" aria-label={ f.Path + ", split" }>
+						<colgroup><col class="c-ln"/><col class="c-m"/><col/><col class="c-ln"/><col class="c-m"/><col/></colgroup>
 						for _, h := range f.Hunks {
 							<tbody>
 								<tr class="hunk"><td colspan="6">{ h.Header }</td></tr>

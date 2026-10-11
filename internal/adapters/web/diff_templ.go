@@ -1196,7 +1196,7 @@ func DiffFileView(f DiffFile, p DiffView) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "\"><colgroup><col class=\"c-ln\"><col class=\"c-m\"><col><col class=\"c-ln\"><col class=\"c-m\"><col></colgroup> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1208,7 +1208,7 @@ func DiffFileView(f DiffFile, p DiffView) templ.Component {
 					var templ_7745c5c3_Var63 string
 					templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(h.Header)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 198, Col: 51}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 199, Col: 51}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 					if templ_7745c5c3_Err != nil {
@@ -1273,7 +1273,7 @@ func DiffFileView(f DiffFile, p DiffView) templ.Component {
 				var templ_7745c5c3_Var64 string
 				templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(f.Note)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 218, Col: 13}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 219, Col: 13}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 				if templ_7745c5c3_Err != nil {
@@ -1389,7 +1389,7 @@ func splitSide(ln *DiffLine, old bool) templ.Component {
 			var templ_7745c5c3_Var70 string
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(ln.Mark)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 242, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 243, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 			if templ_7745c5c3_Err != nil {
@@ -1465,7 +1465,7 @@ func gutter(n, href string) templ.Component {
 			var templ_7745c5c3_Var74 templ.SafeURL
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(href))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 251, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 252, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {
@@ -1478,7 +1478,7 @@ func gutter(n, href string) templ.Component {
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(n)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 251, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 252, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -1492,7 +1492,7 @@ func gutter(n, href string) templ.Component {
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(n)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 253, Col: 5}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 254, Col: 5}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 			if templ_7745c5c3_Err != nil {
