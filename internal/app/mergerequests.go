@@ -188,6 +188,14 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	if err != nil {
 		v.AddErr("description", err)
 	}
+	// Under the lock, so that two requests for the same pair cannot both pass
+	// the check for an existing one, and a merge that deletes its source
+	// cannot remove a branch between its check here and the creation.
+	unlock, err := m.lockRepo(ctx, name)
+	if err != nil {
+		return domain.MergeRequest{}, err
+	}
+	defer unlock()
 	source, target, err := m.checkBranches(ctx, name, params, &v)
 	if err != nil {
 		return domain.MergeRequest{}, err
@@ -195,14 +203,6 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	if err := v.Err(); err != nil {
 		return domain.MergeRequest{}, err
 	}
-
-	// Under the lock, so that two requests for the same pair cannot both pass
-	// the check for an existing one.
-	unlock, err := m.lockRepo(ctx, name)
-	if err != nil {
-		return domain.MergeRequest{}, err
-	}
-	defer unlock()
 	existing, err := m.store.List(ctx, name)
 	if err != nil {
 		return domain.MergeRequest{}, fmt.Errorf("list merge requests of %q: %w", name, err)
@@ -413,6 +413,16 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 	head := mr.HeadID
 	if head.IsZero() {
 		return d, nil // the source branch is gone: no commits, no diff
+	}
+	if !mr.IsOpen() {
+		// After a squash the reviewed commits are only reachable from the
+		// source branch; once it is deleted, gc may prune them.
+		switch ok, err := m.git.HasCommit(ctx, name, head); {
+		case err != nil:
+			return MergeRequestDetail{}, err
+		case !ok:
+			return d, nil // the reviewed commits are gone: no commits, no diff
+		}
 	}
 	if d.Commits, d.CommitsTruncated, err = m.git.ListRange(ctx, name, exclude, head, MaxMergeRequestCommits); err != nil {
 		return MergeRequestDetail{}, err
@@ -860,7 +870,8 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 
 // checkDeletable refuses to delete the source branch of mr when it is the
 // default branch or the source or target of another open request. It runs
-// under the merge lock, which also guards the creation of requests.
+// under the merge lock, which Create also holds while it checks its branches
+// and stores the request.
 func (m *MergeRequests) checkDeletable(ctx context.Context, name domain.RepoName, mr domain.MergeRequest) error {
 	def, _, err := m.repos.DefaultBranch(ctx, name)
 	if err != nil {

@@ -112,6 +112,46 @@ func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
 	})
 }
 
+// After a squash with deletion, gc may prune the reviewed commits: the merged
+// request still reads, without commits or diff.
+func TestSquashMergedRequestReadsAfterItsCommitsArePruned(t *testing.T) {
+	r := newMRRig(t)
+	r.seed()
+	head := r.feature("feat")
+	mr := r.open("feat")
+	res, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{Mode: domain.MergeModeSquash, HeadID: head, DeleteSource: true})
+	require.NoError(t, err)
+	require.True(t, res.SourceDeleted)
+
+	r.run(r.bare(), r.env(author), "reflog", "expire", "--expire=now", "--all")
+	r.run(r.bare(), r.env(author), "gc", "-q", "--prune=now")
+	ok, err := r.git.HasCommit(r.ctx, r.repo, head)
+	require.NoError(t, err)
+	require.False(t, ok, "the reviewed commits are pruned")
+
+	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+	require.NoError(t, err)
+	assert.Equal(t, domain.MRStateMerged, d.MergeRequest.State)
+	assert.Equal(t, res.MergedCommitID, d.MergeRequest.MergedCommitID)
+	assert.Empty(t, d.Commits)
+	assert.Empty(t, d.Diff.Files)
+	assert.True(t, d.DiffBaseID.IsZero())
+}
+
+// A request opened on a branch a merge is deleting waits for the merge lock
+// and then sees the branch is gone.
+func TestCreateAfterAMergeDeletedTheBranch(t *testing.T) {
+	r := newMRRig(t)
+	r.seed()
+	head := r.feature("feat")
+	mr := r.open("feat")
+	_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, DeleteSource: true})
+	require.NoError(t, err)
+	_, err = r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "late", Source: "feat"})
+	require.ErrorIs(t, err, domain.ErrInvalid)
+	assert.Contains(t, fieldsOf(t, err), "source_branch")
+}
+
 // movingGit pushes to the source branch between the merge and the deletion.
 type movingGit struct {
 	*gitcli.Git
