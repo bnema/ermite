@@ -176,6 +176,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			RepoDir:  func(name domain.RepoName) string { return gitcli.RepoDir(cfg.DataDir, name) },
 		})
 		git.OnTrash(f.reader.Forget)
+		f.maint.WithFreshener(f.reader)
+		f.Pushes.WithFreshener(f.reader)
 		reader = f.reader
 	}
 	log.Info().Str("reader", cfg.GitReader).Msg("git reader selected")
