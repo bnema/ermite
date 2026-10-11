@@ -87,9 +87,13 @@ type Routes struct {
 	ResolveRefPath        Backend
 	// GetTree is a directory listing without last commits.
 	GetTree Backend
-	// GetTreeLastCommits is a listing with the last commit of each entry.
+	// GetTreeLastCommits is the listing of the root with the last commit of
+	// each entry.
 	GetTreeLastCommits Backend
-	OpenBlob           Backend
+	// GetTreeSubdirLastCommits is the same for a subdirectory, which costs a
+	// much longer history walk (195 ms with git on lazygit).
+	GetTreeSubdirLastCommits Backend
+	OpenBlob                 Backend
 	// ListCommits is a page of history of a revision.
 	ListCommits Backend
 	// ListCommitsPath is a page of the history of a file or a directory.
@@ -99,7 +103,7 @@ type Routes struct {
 // AllRoutes returns routes that send every method to b. The tests and the
 // benchmarks use it to exercise a backend whatever the production routes are.
 func AllRoutes(b Backend) Routes {
-	return Routes{b, b, b, b, b, b, b, b, b}
+	return Routes{b, b, b, b, b, b, b, b, b, b}
 }
 
 // Config configures an Adapter.
@@ -320,7 +324,10 @@ func (a *Adapter) GetTree(ctx context.Context, repo domain.RepoName, rev domain.
 	cli := func() (domain.Tree, error) { return a.cli.GetTree(ctx, repo, rev, path, includeLastCommit) }
 	route := a.routes.GetTree
 	if includeLastCommit {
-		route = a.routes.GetTreeLastCommits
+		route = a.routes.GetTreeSubdirLastCommits
+		if path.IsRoot() {
+			route = a.routes.GetTreeLastCommits
+		}
 	}
 	if route == CLI {
 		return cli()

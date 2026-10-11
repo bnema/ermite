@@ -24,11 +24,29 @@ import (
 type Browse struct {
 	meta   ports.RepoMetaStore
 	reader ports.RepoReader
+	// history keeps the answers about a commit designated by its full id (a
+	// tree with the last commit of its entries, the latest commit of a path):
+	// they never change, and computing them costs a history walk. Nil
+	// disables it.
+	history *historyCache
 }
 
-// NewBrowse builds the read use cases over their ports.
+// NewBrowse builds the read use cases over their ports, with a history cache
+// of the default bounds.
 func NewBrowse(meta ports.RepoMetaStore, reader ports.RepoReader) *Browse {
-	return &Browse{meta: meta, reader: reader}
+	return &Browse{
+		meta: meta, reader: reader,
+		history: newHistoryCache(DefaultHistoryCacheEntries, DefaultHistoryCacheBytes),
+	}
+}
+
+// WithHistoryCache replaces the bounds of the history cache: at most
+// maxEntries answers and about maxBytes of memory, least recently used first
+// out. A bound that is not positive disables the cache. Call it before the
+// first request.
+func (b *Browse) WithHistoryCache(maxEntries int, maxBytes int64) *Browse {
+	b.history = newHistoryCache(maxEntries, maxBytes)
+	return b
 }
 
 // authorize returns nil if p may read the repository.
@@ -171,7 +189,22 @@ func (b *Browse) GetTree(ctx context.Context, p domain.Principal, repo domain.Re
 	if err := b.authorize(ctx, p, repo); err != nil {
 		return domain.Tree{}, err
 	}
-	return b.reader.GetTree(ctx, repo, rev, path, includeLastCommit)
+	// The last commits are the costly part (a history walk per entry) and
+	// depend only on the commit and the path: cache them once the revision is
+	// a full commit id. A name or HEAD can move, so it is never a key.
+	if !includeLastCommit || !rev.IsObjectID() {
+		return b.reader.GetTree(ctx, repo, rev, path, includeLastCommit)
+	}
+	key := historyKey{repo: repo, rev: rev.String(), path: path.String(), kind: kindTreeLast}
+	if e, ok := b.history.get(key); ok {
+		return cloneTree(e.tree), nil
+	}
+	tree, err := b.reader.GetTree(ctx, repo, rev, path, true)
+	if err != nil {
+		return domain.Tree{}, err
+	}
+	b.history.put(treeEntry(key, tree))
+	return tree, nil
 }
 
 // OpenBlob returns the description of a file and a reader of its content. The
@@ -224,7 +257,7 @@ func (b *Browse) ListCommits(ctx context.Context, p domain.Principal, repo domai
 	if err := b.authorize(ctx, p, repo); err != nil {
 		return CommitPage{}, err
 	}
-	res, err := b.reader.ListCommits(ctx, repo, q)
+	res, err := b.listCommits(ctx, repo, q)
 	if err != nil {
 		return CommitPage{}, err
 	}
@@ -233,6 +266,25 @@ func (b *Browse) ListCommits(ctx context.Context, p domain.Principal, repo domai
 		out.NextPageToken = encodeCommitToken(res.Head, q.Skip+len(res.Commits), params.Path)
 	}
 	return out, nil
+}
+
+// listCommits asks the reader, through the history cache for the first
+// commit of a path at a full commit id (the "last change" of a file): that
+// answer is immutable.
+func (b *Browse) listCommits(ctx context.Context, repo domain.RepoName, q ports.CommitQuery) (ports.CommitPage, error) {
+	if q.Limit != 1 || q.Skip != 0 || !q.Revision.IsObjectID() {
+		return b.reader.ListCommits(ctx, repo, q)
+	}
+	key := historyKey{repo: repo, rev: q.Revision.String(), path: q.Path.String(), kind: kindPage, limit: q.Limit}
+	if e, ok := b.history.get(key); ok {
+		return clonePage(e.page), nil
+	}
+	res, err := b.reader.ListCommits(ctx, repo, q)
+	if err != nil {
+		return ports.CommitPage{}, err
+	}
+	b.history.put(pageEntry(key, res))
+	return res, nil
 }
 
 func pathDigest(path domain.TreePath) string {
