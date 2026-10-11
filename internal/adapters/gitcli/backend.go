@@ -32,6 +32,8 @@ func HooksDir(dataDir string) string { return filepath.Join(dataDir, "run", "hoo
 //	core.hooksPath=<data>/run/hooks
 //	receive.fsckObjects=true
 //	uploadpack.allowFilter=true
+//	pack.threads=1
+//	pack.windowMemory=256m
 //	http.receivepack=true            (push only)
 //	receive.maxInputSize=<max>       (push only, when configured)
 //
@@ -45,6 +47,11 @@ func (g *Git) HTTPBackend(ctx context.Context, push bool) (ports.HTTPBackend, er
 		{"core.hooksPath", HooksDir(g.dataDir)},
 		{"receive.fsckObjects", "true"},
 		{"uploadpack.allowFilter", "true"},
+		// pack-objects defaults to one thread per CPU and an unbounded delta
+		// window; with several backends at once that is the memory and CPU
+		// of the host. The backends are bounded by the handler instead.
+		{"pack.threads", "1"},
+		{"pack.windowMemory", "256m"},
 	}
 	if push {
 		conf = append(conf, [2]string{"http.receivepack", "true"})

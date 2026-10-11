@@ -7,16 +7,21 @@
 package githttp
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"io"
 	"log"
 	"math"
 	"net/http"
 	"net/http/cgi"
 	"net/netip"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/bnema/zerowrap"
 
@@ -102,13 +107,48 @@ type Config struct {
 	// MaxBodyBytes bounds the body of a push; 0 means DefaultMaxBodyBytes.
 	// The body of a fetch is bounded by 64 MiB at most.
 	MaxBodyBytes int64
+	// MaxUploadPacks bounds the git-upload-pack backends (fetches, clones,
+	// and the ref advertisement that precedes them) running at once; 0 means
+	// 2*GOMAXPROCS.
+	MaxUploadPacks int
+	// MaxReceivePacks bounds the git-receive-pack backends (pushes) running
+	// at once; 0 means max(2, GOMAXPROCS/2).
+	MaxReceivePacks int
+	// MaxPerClient bounds the backends running at once for one client (see
+	// clientlimit.Key); 0 means DefaultMaxPerClient.
+	MaxPerClient int
 }
+
+// Bounds on the git http-backend processes and on how long a client may take
+// to send a request body.
+const (
+	// DefaultMaxPerClient is the backends one client may run at once.
+	DefaultMaxPerClient = 4
+
+	// retryAfter is the Retry-After, in seconds, of a request refused because
+	// the backends are busy.
+	retryAfter = "5"
+
+	// fetchBodyTimeout is the whole time a client has to send the body of a
+	// fetch, which is small (64 MiB at most).
+	fetchBodyTimeout = 60 * time.Second
+	// pushIdleTimeout is how long a push may go without sending a byte. A
+	// push is bounded by its size, not by its duration, so the deadline moves
+	// forward with every read.
+	pushIdleTimeout = 2 * time.Minute
+)
 
 // Handler serves the smart HTTP routes of Patterns.
 type Handler struct {
 	cfg     Config
 	limiter *clientlimit.Limiter
 	maxBody int64
+
+	upload, receive chan struct{} // slots of the backends, per service
+
+	mu      sync.Mutex     // guards clients
+	clients map[string]int // backends running, per clientlimit.Key
+	perCli  int
 }
 
 // New builds a Handler.
@@ -120,6 +160,11 @@ func New(cfg Config) *Handler {
 	if h.maxBody <= 0 {
 		h.maxBody = DefaultMaxBodyBytes
 	}
+	procs := runtime.GOMAXPROCS(0)
+	h.upload = make(chan struct{}, cmp.Or(cfg.MaxUploadPacks, 2*procs))
+	h.receive = make(chan struct{}, cmp.Or(cfg.MaxReceivePacks, max(2, procs/2)))
+	h.perCli = cmp.Or(cfg.MaxPerClient, DefaultMaxPerClient)
+	h.clients = make(map[string]int)
 	return h
 }
 
@@ -225,7 +270,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.serveBackend(w, r, rt, name, principal)
+	h.serveBackend(w, r, rt, name, principal, clientlimit.Key(addr))
 }
 
 // authenticate reads the credentials of the request. No credentials is the
@@ -311,10 +356,63 @@ var inheritedEnv = []string{
 	"LD_LIBRARY_PATH_32=", "LD_LIBRARY_PATH_64=", "DYLD_LIBRARY_PATH=", "SHLIB_PATH=",
 }
 
+// acquire takes a backend slot for the client and the service of rt, or
+// answers 429 (the client already runs its share) or 503 (the server runs all
+// it can) with a Retry-After and reports false.
+//
+// It never waits. A backend can run for minutes, so a queue would only trade
+// a refusal for a held connection and goroutine, and let a burst of requests
+// pile up behind slow clones. Git does not retry by itself, but the refusal is
+// cheap and says when to come back. release must be called when ok.
+func (h *Handler) acquire(ctx context.Context, w http.ResponseWriter, rt route, client string) (release func(), ok bool) {
+	logger := zerowrap.FromCtx(ctx)
+	refuse := func(status int, msg string) {
+		w.Header().Set("Retry-After", retryAfter)
+		http.Error(w, msg, status)
+	}
+
+	h.mu.Lock()
+	if h.clients[client] >= h.perCli {
+		h.mu.Unlock()
+		logger.Warn().Str("client", client).Msg("too many git requests in progress for the client")
+		refuse(http.StatusTooManyRequests, "too many requests in progress")
+		return nil, false
+	}
+	h.clients[client]++
+	h.mu.Unlock()
+	releaseClient := func() {
+		h.mu.Lock()
+		if h.clients[client]--; h.clients[client] <= 0 {
+			delete(h.clients, client)
+		}
+		h.mu.Unlock()
+	}
+
+	slots := h.upload
+	if rt.push() {
+		slots = h.receive
+	}
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots; releaseClient() }, true
+	default:
+		releaseClient()
+		logger.Warn().Str("service", rt.service).Msg("all git backends busy, request refused")
+		refuse(http.StatusServiceUnavailable, "server busy")
+		return nil, false
+	}
+}
+
 // serveBackend runs git http-backend for an authorized request.
-func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route, name domain.RepoName, p domain.Principal) {
+func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route, name domain.RepoName, p domain.Principal, client string) {
 	ctx := r.Context()
 	logger := zerowrap.FromCtx(ctx)
+
+	release, ok := h.acquire(ctx, w, rt, client)
+	if !ok {
+		return
+	}
+	defer release()
 
 	be, err := h.cfg.Backend.HTTPBackend(ctx, rt.push())
 	if err != nil {
@@ -324,8 +422,8 @@ func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route,
 	}
 	env := append(append([]string(nil), be.Env...), inheritedEnv...)
 	if rt.suffix == serviceReceive {
-		token, release := h.cfg.Hooks.Register(ctx, name, p)
-		defer release()
+		token, revoke := h.cfg.Hooks.Register(ctx, name, p)
+		defer revoke()
 		env = append(env, EnvHookSocket+"="+h.cfg.Hooks.Socket(), EnvHookToken+"="+token)
 	}
 
@@ -383,12 +481,49 @@ func (h *Handler) backendRequest(w http.ResponseWriter, r *http.Request, rt rout
 		req.Header.Set("Git-Protocol", v)
 	}
 
-	req.Body = http.MaxBytesReader(w, r.Body, limit)
+	body := &deadlineBody{
+		ReadCloser: http.MaxBytesReader(w, r.Body, limit),
+		rc:         http.NewResponseController(w),
+	}
+	if rt.push() {
+		body.idle = pushIdleTimeout
+	} else {
+		body.until = time.Now().Add(fetchBodyTimeout)
+	}
+	req.Body = body
 	if r.ContentLength < 0 || len(r.TransferEncoding) > 0 {
 		req.ContentLength = -1
 		req.TransferEncoding = nil
 	}
 	return req, 0
+}
+
+// deadlineBody bounds the time a client takes to send a request body, which
+// the server's own timeouts leave unbounded: a client that stalls would hold a
+// backend slot and its process forever. Until the body ends, the connection
+// read deadline is until, or when that is zero, idle after the last read. At
+// the end of the body the deadline is lifted again, so that it does not cut
+// the connection while the response is still being written.
+type deadlineBody struct {
+	io.ReadCloser
+	rc    *http.ResponseController
+	idle  time.Duration // moves the deadline forward at each read, if non-zero
+	until time.Time     // fixed deadline, when idle is zero
+}
+
+func (b *deadlineBody) Read(p []byte) (int, error) {
+	d := b.until
+	if b.idle > 0 {
+		d = time.Now().Add(b.idle)
+	}
+	// Not every ResponseWriter can set a deadline (HTTP/2 can, wrappers
+	// might not): then the body is simply not bounded here.
+	_ = b.rc.SetReadDeadline(d)
+	n, err := b.ReadCloser.Read(p)
+	if err != nil {
+		_ = b.rc.SetReadDeadline(time.Time{})
+	}
+	return n, err
 }
 
 // logWriter sends what the Git process (or the CGI layer) writes to its
