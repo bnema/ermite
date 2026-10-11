@@ -28,23 +28,23 @@
     color-scheme: light dark;
 
     /* surfaces, bottom to top */
-    --bg-canvas: light-dark(#f3f3f3, #0c0c0c); /* the page */
-    --bg-inset:  light-dark(#f8f8f8, #080808); /* code, fields: sunk into a surface */
-    --bg-surface:light-dark(#ffffff, #141414); /* cards, header, rail blocks */
-    --bg-raised: light-dark(#ececec, #1d1d1d); /* hover, buttons, panel rows */
-    --bg-strong: light-dark(#dedede, #292929); /* selected row, pressed button */
-    --bg-overlay:light-dark(#ffffff, #171717); /* dialogs */
-    --backdrop:  light-dark(rgb(0 0 0 / .25), rgb(0 0 0 / .6));
+    --bg-canvas: light-dark(#f3f3f3, #050505); /* the page */
+    --bg-inset:  light-dark(#f8f8f8, #020202); /* code, fields: sunk into a surface */
+    --bg-surface:light-dark(#ffffff, #0c0c0c); /* cards, header, rail blocks */
+    --bg-raised: light-dark(#ececec, #151515); /* hover, buttons, panel rows */
+    --bg-strong: light-dark(#dedede, #212121); /* selected row, pressed button */
+    --bg-overlay:light-dark(#ffffff, #0f0f0f); /* dialogs */
+    --backdrop:  light-dark(rgb(0 0 0 / .25), rgb(0 0 0 / .7));
 
-    --border:        light-dark(#dddddd, #242424);
-    --border-strong: light-dark(#c2c2c2, #383838);
+    --border:        light-dark(#dddddd, #1c1c1c);
+    --border-strong: light-dark(#c2c2c2, #303030);
 
     --ink:      light-dark(#1b1b1b, #d6d6d6);
     --ink-hi:   light-dark(#000000, #fafafa);
     --ink-dim:  light-dark(#4d4d4d, #a3a3a3);
     --ink-mute: light-dark(#616161, #8c8c8c);
     --focus:    light-dark(#000000, #ffffff);
-    --on-ink:   light-dark(#ffffff, #0c0c0c); /* text on a filled ink button */
+    --on-ink:   light-dark(#ffffff, #050505); /* text on a filled ink button */
 
     /* Colour, sparingly, from the owner's Despair theme: only code, diffs and
        verdicts carry hue. Light values are the same hues darkened to AA. */
@@ -62,8 +62,8 @@
     --syn-type:    var(--teal-2);
     --syn-punct:   var(--ink-dim);
 
-    --add: light-dark(#dcebeb, #111b1b);
-    --del: light-dark(#f2dfe1, #231315);
+    --add: light-dark(#dcebeb, #0c1616);
+    --del: light-dark(#f2dfe1, #1d0e10);
 
     --font: "Atkinson Hyperlegible Next", system-ui, sans-serif;
     --mono: "Atkinson Hyperlegible Mono", ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
