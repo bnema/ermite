@@ -15,3 +15,13 @@ packages:
     config: *mocks
   bnema.dev/ermite/internal/app:
     config: *mocks
+  bnema.dev/ermite-api/gen/ermite/ermiteconnect:
+    config:
+      include-auto-generated: true
+      dir: internal/adapters/web/mocks
+      pkgname: mocks
+      filename: "{{.InterfaceName}}.go"
+      structname: "{{.InterfaceName}}"
+    interfaces:
+      GitServiceClient:
+      RepoServiceClient:

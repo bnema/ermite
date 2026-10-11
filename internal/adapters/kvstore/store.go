@@ -58,9 +58,21 @@ func (s *Store) Close(ctx context.Context) error {
 
 // Check reports whether the database accepts writes. It returns the failure
 // once ermite-kv is closed or failed, and writes nothing.
+//
+// ermite-kv has no state accessor, and an empty batch sent through Apply would
+// queue behind the writes in progress. Apply looks at the state of the database
+// before it looks at its context, though, and an ended context stops it before
+// the writer channel: Apply on a cancelled context therefore answers ErrClosed
+// or ErrFailed when the database is stopped, and context.Canceled when it is
+// healthy, without waiting for the writer.
 func (s *Store) Check(ctx context.Context) error {
-	var b kv.Batch // no ops: only the state of the database is checked
-	if _, err := s.db.Apply(ctx, &b); err != nil {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	probe, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	cancel()
+	var b kv.Batch
+	if _, err := s.db.Apply(probe, &b); err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("ermite-kv: %w", err)
 	}
 	return nil

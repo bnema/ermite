@@ -144,6 +144,12 @@ func TestCheck(t *testing.T) {
 	s, err := kvstore.Open(ctx, t.TempDir())
 	require.NoError(t, err)
 	require.NoError(t, s.Check(ctx))
+
+	// The caller's own cancellation is reported, not mistaken for health.
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	assert.ErrorIs(t, s.Check(cancelled), context.Canceled)
+
 	require.NoError(t, s.Close(ctx))
 	assert.ErrorIs(t, s.Check(ctx), kv.ErrClosed)
 }

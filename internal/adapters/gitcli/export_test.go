@@ -2,7 +2,12 @@
 
 package gitcli
 
-import "sort"
+import (
+	"context"
+	"sort"
+
+	"bnema.dev/ermite/internal/domain"
+)
 
 // CatFilePIDs returns the process ids of the live long-lived cat-file
 // processes, for the tests of the pool.
@@ -10,8 +15,10 @@ func (g *Git) CatFilePIDs() []int {
 	g.cat.mu.Lock()
 	defer g.cat.mu.Unlock()
 	var pids []int
-	for _, cp := range g.cat.procs {
-		pids = append(pids, cp.cmd.Process.Pid)
+	for _, procs := range g.cat.procs {
+		for _, cp := range procs {
+			pids = append(pids, cp.cmd.Process.Pid)
+		}
 	}
 	sort.Ints(pids)
 	return pids
@@ -44,8 +51,10 @@ func (g *Git) FireIdleTimers() {
 		gen uint64
 	}
 	var all []armed
-	for _, cp := range g.cat.procs {
-		all = append(all, armed{cp, cp.gen})
+	for _, procs := range g.cat.procs {
+		for _, cp := range procs {
+			all = append(all, armed{cp, cp.gen})
+		}
 	}
 	g.cat.mu.Unlock()
 	for _, a := range all {
@@ -62,8 +71,10 @@ func (g *Git) FireStaleIdleTimers() {
 		gen uint64
 	}
 	var all []armed
-	for _, cp := range g.cat.procs {
-		all = append(all, armed{cp, cp.gen - 1})
+	for _, procs := range g.cat.procs {
+		for _, cp := range procs {
+			all = append(all, armed{cp, cp.gen - 1})
+		}
 	}
 	g.cat.mu.Unlock()
 	for _, a := range all {
@@ -74,3 +85,25 @@ func (g *Git) FireStaleIdleTimers() {
 // ExecSlots returns the size of the one-shot process semaphore and how many
 // slots are taken.
 func (g *Git) ExecSlots() (size, taken int) { return cap(g.exec), len(g.exec) }
+
+// HoldCatFile runs fn while holding a cat-file process of the repository, as
+// a request in flight would.
+func (g *Git) HoldCatFile(ctx context.Context, repo domain.RepoName, fn func()) error {
+	dir, err := g.repoDir(repo)
+	if err != nil {
+		return err
+	}
+	return g.cat.do(ctx, dir, func(*catConn) error { fn(); return nil })
+}
+
+// CatFileWaiting returns the number of requests that wait for a cat-file
+// process.
+func (g *Git) CatFileWaiting() int {
+	g.cat.mu.Lock()
+	defer g.cat.mu.Unlock()
+	n := 0
+	for _, q := range g.cat.waiters {
+		n += len(q)
+	}
+	return n
+}

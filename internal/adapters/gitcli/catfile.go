@@ -11,6 +11,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,27 +37,40 @@ func (e *procError) Unwrap() error { return e.err }
 const (
 	defaultIdleTimeout  = 60 * time.Second
 	defaultMaxProcesses = 16
+	// maxProcsPerRepo bounds the processes one repository may hold. A
+	// popular repository spawns more than one only under contention.
+	maxProcsPerRepo = 4
 )
 
-// catPool keeps one long-lived `git cat-file --batch-command` per repository.
+// catPool keeps long-lived `git cat-file --batch-command` processes, a few per
+// repository.
 //
-//   - Access to one process is serialized: one request in flight at a time.
+//   - A process serves one request at a time. A request takes an idle process
+//     of the repository; if all are busy and the repository holds fewer than
+//     perRepo, a new one is started (so a repository nobody reads
+//     concurrently keeps a single process); otherwise the request waits, in
+//     order, for a process to be released.
 //   - A process nobody used for the idle timeout is killed.
-//   - At most max processes are kept. Starting another one first evicts the
-//     least recently used idle process; a process that is in use is never
-//     evicted, so the bound is soft when more than max repositories are read
-//     at the same moment.
+//   - At most max processes are kept, all repositories together. Starting
+//     another one first evicts the least recently used idle process; a
+//     process that is in use is never evicted. When none can be evicted, a
+//     repository that has a process waits for it, and one that has none starts
+//     one anyway, so the bound is soft only when more than max repositories
+//     are read at the same moment.
 //   - A process that fails, or whose request was cancelled (its output is then
 //     in an unknown state), is killed and dropped; the next request starts a
 //     fresh one, and a request that hit a dead process is retried once.
 type catPool struct {
-	bin  string
-	env  []string
-	idle time.Duration
-	max  int
+	bin     string
+	env     []string
+	idle    time.Duration
+	max     int // processes, all repositories together
+	perRepo int // processes of one repository
 
 	mu      sync.Mutex
-	procs   map[string]*catProc
+	procs   map[string][]*catProc // by repository directory
+	total   int                   // live processes in procs
+	waiters map[string][]chan *catProc
 	streams map[*blobStream]struct{} // one-shot blob processes, see OpenBlob
 	closed  bool
 	wg      sync.WaitGroup // reapers of started processes
@@ -71,11 +85,10 @@ type catProc struct {
 	in     io.WriteCloser
 	out    *bufio.Reader
 	stderr *tailBuffer
-	sem    chan struct{} // capacity 1: the request in flight
 
-	broken bool // set by the holder of sem on a protocol error
+	broken bool // set by the holder on a protocol error
 
-	users    int // requests waiting for or holding sem
+	busy     bool // a request holds the process
 	lastUsed time.Time
 	timer    *time.Timer
 	gen      uint64
@@ -90,13 +103,14 @@ func newCatPool(bin string, env []string, idle time.Duration, maxProcs int) *cat
 		maxProcs = defaultMaxProcesses
 	}
 	return &catPool{
-		bin: bin, env: env, idle: idle, max: maxProcs,
-		procs:   make(map[string]*catProc),
+		bin: bin, env: env, idle: idle, max: maxProcs, perRepo: min(maxProcsPerRepo, maxProcs),
+		procs:   make(map[string][]*catProc),
+		waiters: make(map[string][]chan *catProc),
 		streams: make(map[*blobStream]struct{}),
 	}
 }
 
-// do runs fn with exclusive use of the cat-file process of the repository in
+// do runs fn with exclusive use of a cat-file process of the repository in
 // dir, starting it if needed. fn must not keep the connection after returning.
 func (p *catPool) do(ctx context.Context, dir string, fn func(*catConn) error) error {
 	for attempt := 0; ; attempt++ {
@@ -132,7 +146,6 @@ func (p *catPool) run(ctx context.Context, cp *catProc, fn func(*catConn) error)
 		err = ctx.Err()
 	}
 	p.release(cp, cp.broken || cancelled)
-	<-cp.sem
 	return err
 }
 
@@ -142,58 +155,149 @@ func (p *catPool) isClosed() bool {
 	return p.closed
 }
 
+// acquire returns a process of dir that no other request uses.
 func (p *catPool) acquire(ctx context.Context, dir string) (*catProc, error) {
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		p.mu.Lock()
 		if p.closed {
 			p.mu.Unlock()
 			return nil, ErrClosed
 		}
-		cp := p.procs[dir]
-		if cp == nil {
-			var err error
-			if cp, err = p.startLocked(ctx, dir); err != nil {
-				p.mu.Unlock()
-				return nil, err
-			}
+		cp, wait, err := p.takeLocked(ctx, dir)
+		if err != nil {
+			p.mu.Unlock()
+			return nil, err
 		}
-		cp.users++
-		cp.gen++
-		if cp.timer != nil {
-			cp.timer.Stop()
-			cp.timer = nil
+		if cp != nil {
+			p.mu.Unlock()
+			return cp, nil
 		}
+		p.waiters[dir] = append(p.waiters[dir], wait)
 		p.mu.Unlock()
 
 		select {
-		case cp.sem <- struct{}{}:
+		case cp := <-wait:
+			if cp == nil {
+				continue // the processes changed: look again
+			}
+			p.mu.Lock()
+			dead := cp.dead
+			p.mu.Unlock()
+			if !dead {
+				return cp, nil
+			}
+			p.release(cp, false) // dropped between the hand-over and now
 		case <-ctx.Done():
-			p.release(cp, false)
+			p.mu.Lock()
+			if !p.unqueueLocked(dir, wait) {
+				// A process was handed over meanwhile: pass it on.
+				p.mu.Unlock()
+				if cp := <-wait; cp != nil {
+					p.release(cp, false)
+				}
+			} else {
+				p.mu.Unlock()
+			}
 			return nil, ctx.Err()
 		}
-		p.mu.Lock()
-		dead := cp.dead
-		p.mu.Unlock()
-		if !dead {
-			return cp, nil
-		}
-		// Dropped while we waited for our turn.
-		<-cp.sem
-		p.release(cp, false)
 	}
 }
 
-// release ends one use of cp. A broken process is dropped; an unused one
-// starts its idle countdown.
+// takeLocked marks an idle process of dir busy and returns it, starting one
+// when none is idle and the repository may have more. Otherwise it returns the
+// channel to wait on.
+func (p *catPool) takeLocked(ctx context.Context, dir string) (*catProc, chan *catProc, error) {
+	var best *catProc // the most recently used idle one, so that the others idle out
+	for _, c := range p.procs[dir] {
+		if !c.busy && (best == nil || c.lastUsed.After(best.lastUsed)) {
+			best = c
+		}
+	}
+	if best == nil {
+		own := len(p.procs[dir])
+		if own < p.perRepo && (p.makeRoomLocked() || own == 0) {
+			var err error
+			if best, err = p.startLocked(ctx, dir); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	if best == nil {
+		return nil, make(chan *catProc, 1), nil
+	}
+	best.busy = true
+	best.gen++
+	if best.timer != nil {
+		best.timer.Stop()
+		best.timer = nil
+	}
+	return best, nil, nil
+}
+
+// makeRoomLocked evicts least recently used idle processes until another one
+// fits, and reports whether it does.
+func (p *catPool) makeRoomLocked() bool {
+	for p.total >= p.max {
+		var victim *catProc
+		for _, procs := range p.procs {
+			for _, c := range procs {
+				if !c.busy && (victim == nil || c.lastUsed.Before(victim.lastUsed)) {
+					victim = c
+				}
+			}
+		}
+		if victim == nil {
+			return false
+		}
+		victim.log.Debug().Str("dir", victim.dir).Msg("cat-file pool full, evicting the least recently used")
+		p.dropLocked(victim)
+	}
+	return true
+}
+
+// unqueueLocked removes a waiter and reports whether it was still queued.
+func (p *catPool) unqueueLocked(dir string, wait chan *catProc) bool {
+	q := p.waiters[dir]
+	for i, w := range q {
+		if w == wait {
+			q = append(q[:i:i], q[i+1:]...)
+			if len(q) == 0 {
+				delete(p.waiters, dir)
+			} else {
+				p.waiters[dir] = q
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// release ends one use of cp. A broken process is dropped. A working one goes
+// to the request that waited longest, or else starts its idle countdown.
 func (p *catPool) release(cp *catProc, broken bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	cp.users--
-	if broken {
+	if broken || cp.dead {
+		cp.busy = false
 		p.dropLocked(cp)
 		return
 	}
-	if cp.users == 0 && !cp.dead && !p.closed {
+	if q := p.waiters[cp.dir]; len(q) > 0 && !p.closed {
+		w := q[0]
+		if len(q) == 1 {
+			delete(p.waiters, cp.dir)
+		} else {
+			p.waiters[cp.dir] = q[1:]
+		}
+		cp.gen++
+		w <- cp // stays busy: handed over
+		return
+	}
+	cp.busy = false
+	if !p.closed {
 		cp.lastUsed = time.Now()
 		gen := cp.gen
 		cp.timer = time.AfterFunc(p.idle, func() { p.expire(cp, gen) })
@@ -204,7 +308,7 @@ func (p *catPool) release(cp *catProc, broken bool) {
 func (p *catPool) expire(cp *catProc, gen uint64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if cp.gen != gen || cp.users != 0 || cp.dead {
+	if cp.gen != gen || cp.busy || cp.dead {
 		return
 	}
 	cp.log.Debug().Str("dir", cp.dir).Msg("cat-file idle, stopping")
@@ -212,14 +316,24 @@ func (p *catPool) expire(cp *catProc, gen uint64) {
 }
 
 // dropLocked removes cp from the pool and kills it. The reaper goroutine
-// collects the process.
+// collects the process. Requests waiting for the repository look again.
 func (p *catPool) dropLocked(cp *catProc) {
 	if cp.dead {
 		return
 	}
 	cp.dead = true
-	if p.procs[cp.dir] == cp {
+	procs := p.procs[cp.dir]
+	for i, c := range procs {
+		if c == cp {
+			procs = append(procs[:i:i], procs[i+1:]...)
+			p.total--
+			break
+		}
+	}
+	if len(procs) == 0 {
 		delete(p.procs, cp.dir)
+	} else {
+		p.procs[cp.dir] = procs
 	}
 	if cp.timer != nil {
 		cp.timer.Stop()
@@ -227,22 +341,13 @@ func (p *catPool) dropLocked(cp *catProc) {
 	}
 	_ = cp.in.Close()
 	_ = cp.cmd.Process.Kill()
+	for _, w := range p.waiters[cp.dir] {
+		w <- nil
+	}
+	delete(p.waiters, cp.dir)
 }
 
 func (p *catPool) startLocked(ctx context.Context, dir string) (*catProc, error) {
-	for len(p.procs) >= p.max {
-		var victim *catProc
-		for _, c := range p.procs {
-			if c.users == 0 && (victim == nil || c.lastUsed.Before(victim.lastUsed)) {
-				victim = c
-			}
-		}
-		if victim == nil {
-			break // all in use: exceed the bound rather than block
-		}
-		victim.log.Debug().Str("dir", victim.dir).Msg("cat-file pool full, evicting the least recently used")
-		p.dropLocked(victim)
-	}
 	cmd := exec.Command(p.bin, "--git-dir="+dir, "--no-replace-objects", "--no-optional-locks", "cat-file", "--batch-command="+catFormat, "-Z")
 	cmd.Env = p.env
 	cmd.Dir = filepath.Dir(dir)
@@ -261,9 +366,10 @@ func (p *catPool) startLocked(ctx context.Context, dir string) (*catProc, error)
 	}
 	cp := &catProc{
 		dir: dir, log: zerowrap.FromCtx(ctx), cmd: cmd, in: in, out: bufio.NewReaderSize(stdout, 64*1024),
-		stderr: stderr, sem: make(chan struct{}, 1), lastUsed: time.Now(),
+		stderr: stderr, lastUsed: time.Now(),
 	}
-	p.procs[dir] = cp
+	p.procs[dir] = append(p.procs[dir], cp)
+	p.total++
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -273,11 +379,11 @@ func (p *catPool) startLocked(ctx context.Context, dir string) (*catProc, error)
 	return cp, nil
 }
 
-// forget kills the process of the repository in dir, if any.
+// forget kills the processes of the repository in dir, if any.
 func (p *catPool) forget(dir string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if cp := p.procs[dir]; cp != nil {
+	for _, cp := range slices.Clone(p.procs[dir]) {
 		p.dropLocked(cp)
 	}
 }
@@ -287,8 +393,10 @@ func (p *catPool) forget(dir string) {
 func (p *catPool) close(ctx context.Context) error {
 	p.mu.Lock()
 	p.closed = true
-	for _, cp := range p.procs {
-		p.dropLocked(cp)
+	for _, procs := range p.procs {
+		for _, cp := range slices.Clone(procs) {
+			p.dropLocked(cp)
+		}
 	}
 	streams := make([]*blobStream, 0, len(p.streams))
 	for s := range p.streams {

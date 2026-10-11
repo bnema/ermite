@@ -177,7 +177,7 @@ func TestPoolRestartsAfterProcessDeath(t *testing.T) {
 	assert.NotEqual(t, old, now)
 }
 
-func TestConcurrentReadsAreSerializedPerProcess(t *testing.T) {
+func TestConcurrentReadsAreCorrectAndBounded(t *testing.T) {
 	ctx := context.Background()
 	g, data := newReader(t, nil)
 	h := readertest.NewHistory(t, data)
@@ -223,7 +223,8 @@ func TestConcurrentReadsAreSerializedPerProcess(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	assert.Len(t, g.CatFilePIDs(), 1, "one process for one repository")
+	assert.NotEmpty(t, g.CatFilePIDs())
+	assert.LessOrEqual(t, len(g.CatFilePIDs()), 4, "a repository holds a bounded number of processes")
 }
 
 func TestCancelledRequestDoesNotPoisonTheProcess(t *testing.T) {
@@ -405,4 +406,167 @@ func TestBlobStreamsAreBounded(t *testing.T) {
 	require.NoError(t, b.Close())
 	require.NoError(t, c.Close())
 	assert.Zero(t, g.BlobStreams())
+}
+
+// hold runs HoldCatFile in the background and returns once the process is
+// held. The returned func releases it and waits for the request to end.
+func hold(t *testing.T, g *gitcli.Git, repo domain.RepoName) (release func()) {
+	t.Helper()
+	held, free, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- g.HoldCatFile(context.Background(), repo, func() { close(held); <-free })
+	}()
+	select {
+	case <-held:
+	case err := <-done:
+		require.NoError(t, err)
+		t.Fatal("the request ended before it held a process")
+	}
+	var once sync.Once
+	release = func() {
+		once.Do(func() { close(free); require.NoError(t, <-done) })
+	}
+	t.Cleanup(release)
+	return release
+}
+
+// A request in flight does not make the others of the repository wait: they
+// get a process of their own, started only because of the contention.
+func TestConcurrentReadsOnOneRepoDoNotSerialize(t *testing.T) {
+	ctx := context.Background()
+	g, data := newReader(t, nil)
+	h := readertest.NewHistory(t, data)
+
+	_, err := g.ResolveRevision(ctx, h.Name, domain.Revision{})
+	require.NoError(t, err)
+	require.Len(t, g.CatFilePIDs(), 1, "no contention, one process")
+
+	release := hold(t, g, h.Name)
+	// The slow request holds the only process; this one must not wait for it
+	// (it would block forever: the holder is released after).
+	res, err := g.ResolveRevision(ctx, h.Name, domain.Revision{})
+	require.NoError(t, err)
+	assert.Equal(t, h.Merge, res.CommitID.String())
+	pids := g.CatFilePIDs()
+	assert.Len(t, pids, 2, "the contention started a second process")
+	assert.Zero(t, g.CatFileWaiting())
+
+	release()
+	// Both stay for reuse until they idle out.
+	assert.Equal(t, pids, g.CatFilePIDs())
+	g.FireIdleTimers()
+	assert.Empty(t, g.CatFilePIDs())
+	requireGone(t, pids...)
+}
+
+func TestCatFileProcessBounds(t *testing.T) {
+	tests := []struct {
+		name string
+		max  int // Config.MaxCatFiles
+		// holds are the repositories, by index, whose process a request holds.
+		holds []int
+		// extra is the repository of one more request, which must wait.
+		extra       int
+		wantProcs   int
+		wantWaiting int
+	}{
+		{name: "per repository cap", max: 16, holds: []int{0, 0, 0, 0}, extra: 0, wantProcs: 4, wantWaiting: 1},
+		{name: "global cap, repository with a process waits", max: 3, holds: []int{0, 0, 1}, extra: 1, wantProcs: 3, wantWaiting: 1},
+		{name: "global cap lower than the per repository cap", max: 2, holds: []int{0, 0}, extra: 0, wantProcs: 2, wantWaiting: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g, data := newReader(t, func(c *gitcli.Config) { c.MaxCatFiles = tt.max })
+			var names []domain.RepoName
+			for i := range 2 {
+				f := readertest.NewFixture(t, data, fmt.Sprintf("r%d", i))
+				f.Write("x", "x").Commit("x")
+				names = append(names, f.Name)
+			}
+			var releases []func()
+			for _, i := range tt.holds {
+				releases = append(releases, hold(t, g, names[i]))
+			}
+			assert.Len(t, g.CatFilePIDs(), tt.wantProcs)
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := g.ResolveRevision(context.Background(), names[tt.extra], domain.Revision{})
+				done <- err
+			}()
+			require.Eventually(t, func() bool { return g.CatFileWaiting() == tt.wantWaiting }, 5*time.Second, time.Millisecond)
+			assert.Len(t, g.CatFilePIDs(), tt.wantProcs, "a waiting request starts nothing")
+			select {
+			case err := <-done:
+				t.Fatalf("the request did not wait: %v", err)
+			default:
+			}
+
+			// A process released to a waiter serves it, without a new process.
+			for k, i := range tt.holds {
+				if i == tt.extra {
+					releases[k]()
+					break
+				}
+			}
+			require.NoError(t, <-done)
+			assert.LessOrEqual(t, len(g.CatFilePIDs()), tt.wantProcs)
+			assert.Zero(t, g.CatFileWaiting())
+		})
+	}
+}
+
+// A waiting request gives up with its context and leaves nothing queued.
+func TestWaitingForAProcessEndsWithTheContext(t *testing.T) {
+	g, data := newReader(t, func(c *gitcli.Config) { c.MaxCatFiles = 1 })
+	h := readertest.NewHistory(t, data)
+	release := hold(t, g, h.Name)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { _, err := g.ResolveRevision(ctx, h.Name, domain.Revision{}); done <- err }()
+	require.Eventually(t, func() bool { return g.CatFileWaiting() == 1 }, 5*time.Second, time.Millisecond)
+	cancel()
+	assert.ErrorIs(t, <-done, context.Canceled)
+	assert.Zero(t, g.CatFileWaiting())
+	assert.Len(t, g.CatFilePIDs(), 1)
+
+	release()
+	_, err := g.ResolveRevision(context.Background(), h.Name, domain.Revision{})
+	require.NoError(t, err, "the process survived the abandoned wait")
+}
+
+// The bound counts processes, not repositories: idle processes of several
+// repositories are evicted to make room.
+func TestPoolBoundCountsProcessesAcrossRepositories(t *testing.T) {
+	ctx := context.Background()
+	g, data := newReader(t, func(c *gitcli.Config) { c.MaxCatFiles = 3 })
+	var names []domain.RepoName
+	for i := range 4 {
+		f := readertest.NewFixture(t, data, fmt.Sprintf("r%d", i))
+		f.Write("x", "x").Commit("x")
+		names = append(names, f.Name)
+	}
+	// Repository 0 grows to three processes.
+	releases := []func(){hold(t, g, names[0]), hold(t, g, names[0]), hold(t, g, names[0])}
+	require.Len(t, g.CatFilePIDs(), 3)
+	for _, r := range releases {
+		r()
+	}
+	before := g.CatFilePIDs()
+
+	for _, n := range names[1:] {
+		_, err := g.ResolveRevision(ctx, n, domain.Revision{})
+		require.NoError(t, err)
+		assert.LessOrEqual(t, len(g.CatFilePIDs()), 3)
+	}
+	live := map[int]bool{}
+	for _, p := range g.CatFilePIDs() {
+		live[p] = true
+	}
+	for _, p := range before {
+		if !live[p] {
+			requireGone(t, p)
+		}
+	}
 }
