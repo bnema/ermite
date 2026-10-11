@@ -52,10 +52,20 @@ func errClass(err error) string {
 		return "invalid page size"
 	case errors.Is(err, domain.ErrInvalidPath):
 		return "invalid path"
+	case errors.Is(err, domain.ErrInvalidObjectID):
+		return "invalid object id"
+	case errors.Is(err, domain.ErrInvalidRevision):
+		return "invalid revision"
+	case errors.Is(err, domain.ErrInvalidPageToken):
+		return "invalid page token"
+	case errors.Is(err, domain.ErrInvalidRefKind):
+		return "invalid ref kind"
+	case errors.Is(err, domain.ErrInvalid):
+		return "invalid argument"
 	case errors.Is(err, context.Canceled):
 		return "canceled"
 	}
-	return "other" // the messages of two readers differ
+	return "other" // outside the domain errors: the messages of two readers differ
 }
 
 // Queries are the questions put to both readers about one repository.
