@@ -9,40 +9,44 @@ templ Keys() {
 	<div
 		id="keys"
 		hidden
-		hx-on="k-j from:body -> ((d) => {
+		hx-on="k-j from:body -> (async (d) => {
            if (q('dialog[open]').count) return;
            let rows = q('[data-rows] > :not([hidden])').arr();
            if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
            let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
-           let n = rows[Math.max(0, Math.min(rows.length - 1, i + d))];
-           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' })
+           let j = Math.max(0, Math.min(rows.length - 1, i + d)), n = rows[j];
+           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' });
+           let b = document.body.dataset, mark = (j + 1) + '/' + rows.length; b.nav = mark;
+           await timeout('1500ms'); if (b.nav === mark) b.nav = ''
          })(1);
-         k-k from:body -> ((d) => {
+         k-k from:body -> (async (d) => {
            if (q('dialog[open]').count) return;
            let rows = q('[data-rows] > :not([hidden])').arr();
            if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
            let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
-           let n = rows[Math.max(0, Math.min(rows.length - 1, i + d))];
-           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' })
+           let j = Math.max(0, Math.min(rows.length - 1, i + d)), n = rows[j];
+           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' });
+           let b = document.body.dataset, mark = (j + 1) + '/' + rows.length; b.nav = mark;
+           await timeout('1500ms'); if (b.nav === mark) b.nav = ''
          })(-1);
          k-top from:body -> q('[data-rows] > :not([hidden])').arr()[0]?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 0), q('#main').arr()[0].scrollTo(0, 0));
          k-bottom from:body -> q('[data-rows] > :not([hidden])').arr().at(-1)?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 1e9), q('#main').arr()[0].scrollTo(0, 1e9));
          k-open from:body -> q('dialog[open]').count || document.querySelector('[data-cursor] a')?.click();
          k-esc from:body -> q('dialog[open]').arr().forEach(d => d.close());
-         k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].show();
-         k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].show(), q('#refs-filter').arr()[0].focus());
-         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].show(); q('#cmd-q').arr()[0].focus();
+         k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].showModal();
+         k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].showModal(), q('#refs-filter').arr()[0].focus());
+         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].showModal(); q('#cmd-q').arr()[0].focus();
          k-filter from:body -> q('[data-filter]').arr()[0]?.focus();
-         k-gh from:body -> document.querySelector('.top a[data-g=h]')?.click();
-         k-gt from:body -> document.querySelector('.secs [data-key=t]')?.click();
-         k-gc from:body -> document.querySelector('.secs [data-key=c]')?.click();
-         k-gr from:body -> document.querySelector('.secs [data-key=r]')?.click();
-         k-s from:body -> document.querySelector('.secs [data-key=s]')?.click();
-         k-t from:body -> document.querySelector('.secs [data-key=t]')?.click();
-         k-c from:body -> document.querySelector('.secs [data-key=c]')?.click();
-         k-r from:body -> document.querySelector('.secs [data-key=r]')?.click();
-         k-m from:body -> document.querySelector('.secs [data-key=m]')?.click();
-         k-gm from:body -> document.querySelector('.secs [data-key=m]')?.click();
+         k-gh from:body -> document.querySelector('.brand')?.click();
+         k-gt from:body -> document.querySelector('.tabs [data-key=t]')?.click();
+         k-gc from:body -> document.querySelector('.tabs [data-key=c]')?.click();
+         k-gr from:body -> document.querySelector('.tabs [data-key=r]')?.click();
+         k-s from:body -> document.querySelector('.tabs [data-key=s]')?.click();
+         k-t from:body -> document.querySelector('.tabs [data-key=t]')?.click();
+         k-c from:body -> document.querySelector('.tabs [data-key=c]')?.click();
+         k-r from:body -> document.querySelector('.tabs [data-key=r]')?.click();
+         k-m from:body -> document.querySelector('.tabs [data-key=m]')?.click();
+         k-gm from:body -> document.querySelector('.tabs [data-key=m]')?.click();
          k-next from:body -> {
            let ns = q('#diffs .cmt').arr(); if (!ns.length) return;
            let i = ns.findIndex(n => n.getBoundingClientRect().top > innerHeight / 3);

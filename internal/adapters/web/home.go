@@ -109,17 +109,6 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 	l := s.base()
 	l.Title = s.instance
 	l.Live, l.LiveURL = true, liveURL("home", "")
-	l.Sections = []Section{{Key: "h", Post: "ome", Href: "/", Current: true}}
-	dir := "▲"
-	if desc {
-		dir = "▼"
-	}
-	l.Status = Status{
-		Mode:    "home",
-		Context: plural(len(repos), "repo", "repos") + " · sort " + key + " " + dir,
-		Hints:   "j/k move · enter open · / filter · ? help",
-		Cursor:  true, Count: len(repos),
-	}
 	l.Cmd = append([]CmdItem{{Kind: "go", Label: "home", Href: "/"}}, repoCmds(repos, "")...)
 	return Home(l, p), http.StatusOK, nil
 }

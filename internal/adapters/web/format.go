@@ -10,14 +10,6 @@ import (
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-// cursorText is the initial text of the cursor position in the status bar.
-func cursorText(n int) string {
-	if n == 0 {
-		return "0/0"
-	}
-	return "1/" + itoa(n)
-}
-
 // ago renders a short relative date: now, 5m ago, 3h ago, 12d ago, 5mo ago,
 // 2y ago.
 func ago(now, t time.Time) string {

@@ -141,7 +141,7 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	assert.Contains(t, mr.body, "Finds things.\nSee ", "line breaks are kept")
 	assert.NotContains(t, mr.body, "<form", "an anonymous visitor gets no form")
 	assert.NotContains(t, mr.body, "ermite mr merge", "nor the merge line")
-	assert.NotContains(t, mr.body, "[merge]")
+	assert.NotContains(t, mr.body, ">Merge</button>")
 	assert.Contains(t, mr.body, `href="/proj/commit/`+head+`"`, "the commits are in the rail")
 	assert.NotContains(t, strings.ToLower(mr.body), "proposal")
 	assertNoInline(t, mr.body)
@@ -303,7 +303,7 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Equal(t, base+"#c1", res.hdr.Get("Location"))
 	own = b.get(base, as(token))
 	assert.Contains(t, own.body, `data-resolved="true"`)
-	assert.Contains(t, own.body, "[unresolve]")
+	assert.Contains(t, own.body, ">Unresolve</button>")
 	assert.Equal(t, http.StatusSeeOther, b.form(base+"/comments/1/resolve", token, url.Values{"resolved": {"false"}}).status)
 	assert.Equal(t, http.StatusBadRequest, b.form(base+"/comments/1/resolve", token, url.Values{"resolved": {"maybe"}}).status)
 	assert.Equal(t, 404, b.form(base+"/comments/42/resolve", token, url.Values{"resolved": {"true"}}).status)
@@ -312,7 +312,7 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Contains(t, own.body, `action="/proj/merge-requests/1/read"`)
 	res = b.form(base+"/read", token, url.Values{"head_id": {head1}})
 	require.Equal(t, http.StatusSeeOther, res.status, res.body)
-	assert.NotContains(t, b.get(base, as(token)).body, "[mark read]", "the head is the one that was read")
+	assert.NotContains(t, b.get(base, as(token)).body, ">Mark read</button>", "the head is the one that was read")
 	r.writeFile(r.wt, "extra.txt", []byte("extra\n"))
 	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
 	head2 := r.headOf("feat/search")
@@ -321,7 +321,7 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Contains(t, all.body, `href="/proj/merge-requests/1/since"`)
 	assert.Contains(t, all.body, "since your last read")
 	assert.Contains(t, all.body, "<li data-new>", "the commit pushed since is marked")
-	assert.Contains(t, all.body, "[mark read]")
+	assert.Contains(t, all.body, ">Mark read</button>")
 	assert.Contains(t, all.body, "outdated", "the notes were written on the earlier head")
 	since := b.get(base+"/since", as(token))
 	require.Equal(t, 200, since.status, since.body)
@@ -356,14 +356,14 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Contains(t, done.body, "fast-forward")
 	assert.Contains(t, done.body, `href="/proj/commit/`+head2+`"`)
 	assert.NotContains(t, done.body, "<form")
-	assert.NotContains(t, b.get(base, as(token)).body, "[merge]", "nothing to merge any more")
+	assert.NotContains(t, b.get(base, as(token)).body, ">Merge</button>", "nothing to merge any more")
 	// Writes on a merged request are refused with a page.
 	late := b.form(base+"/comments", token, url.Values{"text": {"too late"}})
 	assert.Equal(t, http.StatusConflict, late.status)
 	assert.Equal(t, http.StatusConflict, b.form(base+"/close", token, nil).status)
 	list := b.get("/proj/merge-requests", nil)
-	assert.Contains(t, list.body, "merged and closed")
-	assert.Regexp(t, `(?s)merged and closed.*Add search`, list.body)
+	assert.Contains(t, list.body, "Merged and closed")
+	assert.Regexp(t, `(?s)Merged and closed.*Add search`, list.body)
 }
 
 // Squash and close, and the order of the list: open first, then the decided.
@@ -418,7 +418,7 @@ func TestWebMergeRequestSquashCloseAndList(t *testing.T) {
 	require.True(t, third >= 0 && squash >= 0 && other >= 0, list)
 	assert.Less(t, third, squash, "the open request comes first")
 	assert.Less(t, third, other)
-	assert.Less(t, strings.Index(list, ">open<"), strings.Index(list, "merged and closed"))
+	assert.Less(t, strings.Index(list, ">Open<"), strings.Index(list, "Merged and closed"))
 	assert.Less(t, other, squash, "newest first among the decided")
 
 	// A compare page of a branch that is behind says so.

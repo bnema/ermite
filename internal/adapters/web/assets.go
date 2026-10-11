@@ -23,6 +23,10 @@ const StaticPrefix = "/-/static/"
 // the content, so they can be cached for ever.
 type Assets struct {
 	CSS, HTMX, Live, SSE, App, Icon string
+	// Font is the UI font, preloaded by every page.
+	Font string
+	// Rules is the speculation rules file named by the Speculation-Rules header.
+	Rules string
 }
 
 // asset is one embedded file under its content-hashed name.
@@ -49,8 +53,16 @@ var scripts = []struct {
 	{"ermite.js", func(a *Assets, u string) { a.App = u }},
 }
 
+// sheetAssets are the files the stylesheet references as url(<dir>/<file>):
+// fonts and icons (pages hold no inline SVG; icons are CSS masks).
+var sheetAssets = []struct{ glob, typ string }{
+	{"static/fonts/*.woff2", "font/woff2"},
+	{"static/icons/*.svg", "image/svg+xml"},
+}
+
 // loadAssets hashes the embedded files. The stylesheet is the concatenation
-// of static/css/*.css in name order, as in the mockup.
+// of static/css/*.css in name order; its url(<dir>/<file>) references become
+// the hashed URLs of the files of sheetAssets.
 func loadAssets() (*assetSet, error) {
 	s := &assetSet{byName: map[string]asset{}}
 	put := func(dir, file string, body []byte, typ string) string {
@@ -59,6 +71,26 @@ func loadAssets() (*assetSet, error) {
 		name := dir + "/" + strings.TrimSuffix(file, ext) + "." + hex.EncodeToString(sum[:6]) + ext
 		s.byName[name] = asset{body: body, typ: typ}
 		return StaticPrefix + name
+	}
+
+	var refs []string
+	for _, sa := range sheetAssets {
+		files, err := fs.Glob(staticFS, sa.glob)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range files {
+			b, err := staticFS.ReadFile(f)
+			if err != nil {
+				return nil, err
+			}
+			dir := path.Base(path.Dir(f))
+			u := put(dir, path.Base(f), b, sa.typ)
+			refs = append(refs, "url("+dir+"/"+path.Base(f)+")", "url("+u+")")
+			if f == "static/fonts/atkinson-next.woff2" {
+				s.urls.Font = u
+			}
+		}
 	}
 
 	files, err := fs.Glob(staticFS, "static/css/*.css")
@@ -75,7 +107,14 @@ func loadAssets() (*assetSet, error) {
 		css.WriteString("/* " + path.Base(f) + " */\n")
 		css.Write(b)
 	}
-	s.urls.CSS = put("css", "ermite.css", []byte(css.String()), "text/css; charset=utf-8")
+	sheet := strings.NewReplacer(refs...).Replace(css.String())
+	s.urls.CSS = put("css", "ermite.css", []byte(sheet), "text/css; charset=utf-8")
+
+	rules, err := staticFS.ReadFile("static/rules.json")
+	if err != nil {
+		return nil, err
+	}
+	s.urls.Rules = put("rules", "rules.json", rules, "application/speculationrules+json")
 
 	for _, sc := range scripts {
 		b, err := staticFS.ReadFile("static/js/" + sc.file)

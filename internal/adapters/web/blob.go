@@ -188,11 +188,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	pinRef(&l, t)
 	l.Crumbs = pathCrumbs(d.name(), "blob", t)
 	l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
-	l.Status = Status{
-		Mode: "blob", Context: p.Name,
-		Hints: "click a line number · y permalink · ? help", Blob: p.HasCode,
-	}
-	l.HasRail, l.Read, l.RailSum = true, p.Rendered != nil, "file · last change · selection"
+	l.HasRail = true
 	return Blob(l, p), http.StatusOK, nil
 }
 

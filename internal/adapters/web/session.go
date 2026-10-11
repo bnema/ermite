@@ -251,12 +251,12 @@ func (s *Server) loginConfirm(w http.ResponseWriter, r *http.Request) {
 		s.secretPage(w, r, http.StatusNotFound, s.loginRejectedPage())
 		return
 	}
-	l := s.stateLayout("sign in", "sign in · confirm", []Crumb{{Label: "-"}, {Label: "sign in"}})
+	l := s.stateLayout("sign in", []Crumb{{Label: "sign in", Current: true}})
 	s.secretPage(w, r, http.StatusOK, Login(l, LoginPage{
 		Title:  "sign in as the owner",
 		Lines:  []string{"this browser will be signed in for 12 hours.", "only confirm if you ran `ermite web login` just now."},
 		Action: loginPrefix + nonce,
-		Button: "[sign in]",
+		Button: "Sign in",
 	}))
 }
 
@@ -310,7 +310,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 // stateOnly is a state page with a title and two lines, for the login flow.
 func (s *Server) stateOnly(crumb, code, title string, lines ...string) templ.Component {
-	l := s.stateLayout(title, code+" · "+title, []Crumb{{Label: "-"}, {Label: crumb}})
+	l := s.stateLayout(title, []Crumb{{Label: crumb, Current: true}})
 	return State(l, StatePage{Code: code, Title: title, Lines: lines, Back: []Link{{Label: "home", Href: "/"}}})
 }
 

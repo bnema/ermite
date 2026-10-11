@@ -44,7 +44,7 @@ templ Commit(l Layout, p CommitPage) {
 					<dt>refs</dt>
 					<dd>
 						for _, r := range p.Refs {
-							[{ r }]{ " " }
+							<span class="pill">{ r }</span>
 						}
 					</dd>
 				}
@@ -53,9 +53,9 @@ templ Commit(l Layout, p CommitPage) {
 		<div class="diff-tools" role="toolbar" aria-label="Diff view">
 			<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 			<span class="grow"></span>
-			@viewLink(p.DiffView, "unified", "[u]nified", "u", p.UnifiedHref)
-			@viewLink(p.DiffView, "split", "[d] split", "d", p.SplitHref)
-			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))">[x] collapse all</button>
+			@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
+			@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
+			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd>x</kbd></button>
 		</div>
 		if p.Invisible {
 			<p class="notice">
@@ -99,7 +99,7 @@ templ Commit(l Layout, p CommitPage) {
 templ viewLink(p DiffView, view, label, key, href string) {
 	<a
 		href={ templ.SafeURL(href) }
-		class="vbtn"
+		class="btn vbtn"
 		data-view={ view }
 		aria-keyshortcuts={ key }
 		if p.View == view {
@@ -109,7 +109,7 @@ templ viewLink(p DiffView, view, label, key, href string) {
 			hx-on:click="event.preventDefault(); document.body.dispatchEvent(new CustomEvent('k-' + this.dataset.view))"
 			:aria-current={ "q('#diffs').attr['data-diff'] === '" + view + "' ? 'true' : false" }
 		}
-	>{ label }</a>
+	>{ label }<kbd>{ key }</kbd></a>
 }
 
 templ personView(pr Person) {
@@ -121,7 +121,7 @@ templ personView(pr Person) {
 
 templ commitRail(p CommitPage) {
 	<section aria-labelledby="r-files">
-		<h2 id="r-files">files <span>{ itoa(len(p.Files)) }</span></h2>
+		<h2 id="r-files">Files <span class="count">{ itoa(len(p.Files)) }</span></h2>
 		@FileList(p.Files)
 	</section>
 }

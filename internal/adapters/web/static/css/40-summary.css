@@ -1,38 +1,49 @@
 @layer components {
-  .lede { margin-top: var(--lh); max-width: var(--measure); }
+  .lede { max-width: var(--measure); color: var(--ink-dim); font-size: 16px; }
 
-  /* key/value facts, aligned on a 12ch key column */
+  /* key/value facts */
   .facts {
-    margin-top: var(--lh); display: grid; grid-template-columns: repeat(auto-fill, minmax(38ch, 1fr)); column-gap: 3ch;
-    & > div { display: grid; grid-template-columns: 12ch 1fr; min-width: 0; }
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); column-gap: var(--s5);
+    & > div { display: grid; grid-template-columns: 120px 1fr; min-width: 0; }
     & dt { color: var(--ink-mute); }
     & dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
 
-  .tagged { color: var(--ink); font-weight: bold; white-space: nowrap; }
+  .tagged { color: var(--ink); font-weight: 700; white-space: nowrap; }
   .list.commits .c-subject { overflow: hidden; text-overflow: ellipsis; }
 
-  /* markdown, rendered from the fixture */
+  .readme .prose { padding: var(--s5) var(--s6) var(--s6); }
+
+  /* rendered Markdown */
   .prose {
-    max-width: var(--measure); margin-top: var(--lh);
-    & h1, & h2, & h3, & h4 { margin: var(--lh) 0 0; }
-    & h1::before { content: "# "; color: var(--ink-mute); }
-    & h2::before { content: "## "; color: var(--ink-mute); }
-    & h3::before { content: "### "; color: var(--ink-mute); }
-    & h4::before { content: "#### "; color: var(--ink-mute); }
+    max-width: var(--measure); line-height: 1.65; overflow-wrap: break-word;
+    & h1, & h2, & h3, & h4 { margin: 1.6em 0 0; }
+    & h1 { font-size: 26px; line-height: 34px; padding-bottom: var(--s2); border-bottom: 1px solid var(--border); }
+    & h2 { font-size: 20px; line-height: 28px; padding-bottom: var(--s1); border-bottom: 1px solid var(--border); }
+    & h3 { font-size: 17px; }
     & > :first-child { margin-top: 0; }
-    & p, & ul, & ol, & pre, & table, & blockquote { margin-top: var(--lh); }
-    & ul { list-style: none; & > li::before { content: "- "; color: var(--ink-mute); margin-left: -2ch; } }
-    & ul, & ol { padding-left: 2ch; }
+    & p, & ul, & ol, & pre, & table, & blockquote { margin-top: var(--s4); }
+    & ul { list-style: disc; }
+    & ul, & ol { padding-left: var(--s5); }
     & ol { list-style: decimal; }
-    & li > ul, & li > ol, & li > p { margin-top: 0; }
-    & pre { padding: 0 1ch; border-left: 1px solid var(--ink-mute); overflow-x: auto; font-size: var(--fs-code); line-height: var(--lh-code); }
-    & :not(pre) > code { border-bottom: 1px dotted var(--ink-mute); overflow-wrap: anywhere; }
-    & blockquote { padding-left: 2ch; border-left: 1px solid var(--rule); color: var(--ink-dim); }
-    & table { border-collapse: collapse; display: block; overflow-x: auto; }
-    & th, & td { padding: 0 2ch 0 0; white-space: nowrap; vertical-align: top; }
-    & th { border-bottom: 1px solid var(--rule); }
-    & hr { margin: var(--lh) 0; }
+    & li + li { margin-top: var(--s1); }
+    & li::marker { color: var(--ink-mute); }
+    & li > ul, & li > ol, & li > p { margin-top: var(--s1); }
+    & pre {
+      padding: var(--s3) var(--s4); overflow-x: auto;
+      background: var(--bg-inset); border: 1px solid var(--border); border-radius: var(--r-s);
+      font-size: var(--fs-code); line-height: var(--lh-code);
+    }
+    & :not(pre) > code {
+      padding: 1px 5px; font-size: .88em; overflow-wrap: anywhere;
+      background: var(--bg-raised); border: 1px solid var(--border); border-radius: 4px;
+    }
+    & blockquote { padding-left: var(--s4); border-left: 3px solid var(--border-strong); color: var(--ink-dim); }
+    & table { display: block; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-s); font-size: var(--fs-s); line-height: 20px; }
+    & th, & td { padding: 6px var(--s3); white-space: nowrap; vertical-align: top; border-top: 1px solid var(--border); }
+    & th { background: var(--bg-raised); border-top: 0; font-weight: 700; }
+    & td code { white-space: nowrap; }
+    & hr { margin: var(--s5) 0; }
     & .alt { color: var(--ink-mute); }
     & img { display: none; }
   }

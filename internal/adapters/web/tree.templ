@@ -7,12 +7,12 @@ package web
 templ Tree(l Layout, p TreePage) {
 	@Shell(l, nil) {
 		<div class="filter">
-			<label for="tree-filter">filter&gt;</label>
+			<label for="tree-filter" class="sr">filter</label>
 			<input
 				id="tree-filter"
 				type="search"
 				data-filter
-				placeholder="this directory  ( / )"
+				placeholder="Filter this directory…"
 				autocomplete="off"
 				hx-on:input="let t = this.value.toLowerCase(); q('#tree-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#tree-rows > tr:not([hidden])')"
 			/>
@@ -34,8 +34,7 @@ templ Tree(l Layout, p TreePage) {
 			<p class="note">{ n }</p>
 		}
 		if p.Readme != nil {
-			<h2 class="rule-h"><span>{ p.Readme.Name }</span></h2>
-			@ReadmeView(*p.Readme)
+			@ReadmeCard(*p.Readme)
 		}
 	}
 }

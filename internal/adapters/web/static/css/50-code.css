@@ -1,17 +1,21 @@
 @layer components {
   /* page title for a file: name, then its actions as plain words */
   .file-h {
-    display: flex; gap: 2ch; align-items: baseline; margin-top: var(--lh);
-    padding-bottom: 2px; border-bottom: 1px solid var(--rule);
-    & .acts { margin-left: auto; font-weight: normal; display: flex; gap: 2ch; }
+    display: flex; gap: var(--s4); align-items: center; flex-wrap: wrap; font-size: 18px;
+    & > span:first-child { overflow-wrap: anywhere; }
+    & .acts { margin-left: auto; display: flex; gap: var(--s2); }
   }
-  .notice { margin-top: var(--lh); border-left: 2px solid var(--ink); padding-left: 1ch; max-width: var(--measure); }
-  .note { color: var(--ink-dim); }
-  .pad { padding: 0 1ch; }
+  .notice {
+    padding: var(--s3) var(--s4); max-width: var(--measure); font-size: var(--fs-s);
+    background: var(--bg-surface); border: 1px solid var(--border-strong); border-left: 3px solid var(--ink-hi); border-radius: var(--r-s);
+  }
+  .note { color: var(--ink-dim); font-size: var(--fs-s); }
+  .pad { padding: var(--s3) var(--s4); }
 
   /* source view: gutter numbers are links (selectable lines), lines span the full width */
   .code {
-    margin: var(--lh) calc(var(--pad) * -1) 0; overflow-x: auto;
+    overflow-x: auto; padding: var(--s3) 0; font-family: var(--mono);
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
     font-size: var(--fs-code); line-height: var(--lh-code);
     & code { display: grid; min-width: max-content; }
     & .line { padding-right: var(--pad); border-left: 2px solid transparent; }
@@ -23,44 +27,43 @@
     }
     & .ln:hover, & .sel .ln { color: var(--ink-hi); }
   }
-  .source { margin-top: var(--lh); & > summary { color: var(--ink-dim); } }
+  .source > summary { color: var(--ink-dim); font-size: var(--fs-s); }
+  .source[open] > summary { margin-bottom: var(--s3); }
+  .img-view { padding: var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
 
   /* commit header, like `git show` */
   .show {
-    margin-top: var(--lh);
-    & h1 { max-width: var(--measure); }
-    & .msg { margin-top: var(--lh); white-space: pre-wrap; max-width: var(--measure); color: var(--ink-dim); }
-    & .show-kv { margin-top: var(--lh); }
-    & .show-kv dd { white-space: normal; }
+    padding: var(--s5); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
+    & h1 { max-width: var(--measure); overflow-wrap: anywhere; }
+    & .msg { margin-top: var(--s3); white-space: pre-wrap; max-width: var(--measure); color: var(--ink-dim); font-size: var(--fs-s); }
+    & .show-kv { margin-top: var(--s4); }
+    & .show-kv dd { white-space: normal; overflow-wrap: anywhere; }
   }
   .diff-tools {
-    display: flex; gap: 2ch; align-items: baseline; margin-top: var(--lh);
-    position: sticky; top: var(--stick); z-index: 5; background: var(--paper);
-    border-bottom: 1px solid var(--rule);
+    display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap;
+    position: sticky; top: var(--hdr-h, 0px); z-index: 5; padding: var(--s2) 0; background: var(--bg-canvas);
     & .grow { flex: 1; }
-    & button { color: var(--ink-dim); }
-    & button:hover { color: var(--ink); text-decoration: underline; }
-    & button[aria-pressed="true"] { color: var(--ink-hi); font-weight: bold; }
-    & button[aria-pressed="true"]::before { content: "▸"; }
   }
 
   /* one file of a diff */
   .dfile {
-    margin-top: var(--lh); scroll-margin-top: calc(var(--stick) + var(--lh) + 4px);
+    margin-top: var(--s3); scroll-margin-top: calc(var(--hdr-h, 0px) + 56px);
     & > summary {
-      position: sticky; top: calc(var(--stick) + var(--lh) + 1px); z-index: 4;
-      background: var(--paper-alt); border: 1px solid var(--rule); padding: 0 1ch;
+      position: sticky; top: calc(var(--hdr-h, 0px) + 48px); z-index: 4;
+      background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r) var(--r) 0 0; padding: var(--s2) var(--s3);
+      font-family: var(--mono); font-size: var(--fs-s);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style: none;
     }
+    &:not([open]) > summary { border-radius: var(--r); }
     & > summary::-webkit-details-marker { display: none; }
     & > summary::before { content: "▸ "; }
     &[open] > summary::before { content: "▾ "; }
     & .st { font-weight: bold; }
     & .p { font-weight: bold; }
-    & > .note { border: 1px solid var(--rule); border-top: 0; }
+    & > .note { border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--r) var(--r); background: var(--bg-surface); }
   }
   .dt {
-    width: max-content; min-width: 100%;
+    width: max-content; min-width: 100%; font-family: var(--mono);
     font-size: var(--fs-code); line-height: var(--lh-code);
     & td { padding: 0; vertical-align: top; }
     & .ln { width: 6ch; min-width: 6ch; padding-right: 1ch; text-align: right; color: var(--ink-mute); user-select: none; }
@@ -75,13 +78,15 @@
     & tr.del .ln, & .ln.del { color: var(--red); }
     & .none { background: var(--paper-alt); }
   }
-  .dscroll { overflow-x: auto; border: 1px solid var(--rule); border-top: 0; }
+  .dscroll { overflow-x: auto; background: var(--bg-surface); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--r) var(--r); }
   .spl { width: 100%; table-layout: fixed; & .tx { overflow: hidden; text-overflow: ellipsis; } & .ln { width: 6ch; } & .m { width: 2ch; } }
   #diffs[data-diff="unified"] .spl, #diffs[data-diff="split"] .uni { display: none; }
 
   /* diff table of contents in the rail */
   .files {
-    & a { display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; column-gap: 1ch; text-decoration: none; }
+    font-size: var(--fs-s);
+    & a { display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; column-gap: var(--s2); padding: 2px var(--s2); margin: 0 calc(-1 * var(--s2)); border-radius: 4px; text-decoration: none; font-family: var(--mono); }
+    & a:hover { background: var(--bg-raised); }
     & a:hover .p { text-decoration: underline; }
     & a[aria-current="true"] { background: var(--row); font-weight: bold; }
     & .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
@@ -90,26 +95,30 @@
   }
 
   @media (max-width: 700px) {
-    .diff-tools { flex-wrap: wrap; column-gap: 1ch; }
     .diff-tools .grow { flex-basis: 100%; height: 0; }
-    .show-kv dd { overflow-wrap: anywhere; }
-    .file-h .acts { gap: 1ch; }
+    .file-h .acts { margin-left: 0; }
   }
-  .pager { display: flex; gap: 3ch; justify-content: center; margin-top: var(--lh); }
+  .pager { display: flex; gap: var(--s3); justify-content: center; }
   .days section[hidden] { display: none; }
   .list.refs {
-    & .c-kind { width: 8ch; }
-    & .c-name { width: 34ch; }
-    & .c-info { width: 11ch; }
-    & .c-sha { width: 9ch; }
+    & .c-kind { width: 80px; color: var(--ink-mute); }
+    & .c-name { width: 32%; font-family: var(--mono); font-size: var(--fs-s); }
+    & .c-sha { width: 96px; }
     & .c-sub { width: auto; }
   }
+  /* the commit table inside a rail block: no frame of its own */
   .rail .list.commits {
+    border: 0; border-radius: 0; background: none;
+    & td { height: 34px; padding: 0 var(--s2); }
+    & td.cur { width: 3px; padding: 0; }
+    & td:nth-child(2) { padding-left: var(--s3); }
+    & td:last-child { padding-right: var(--s4); }
     & .c-who { display: none; }
-    & .c-sha { width: 8ch; }
-    & .c-when { width: 9ch; padding-right: 0; text-align: right; }
+    & .c-sha { width: 72px; }
+    & .c-subject { font-size: var(--fs-s); }
+    & .c-subject .pill { display: none; }
+    & .c-when { width: 70px; text-align: right; }
   }
-  .rail p + p { margin-top: 0; }
   .rail section > p { overflow-wrap: anywhere; }
   @media (max-width: 700px) {
     /* the name takes what the fixed columns leave */
@@ -118,7 +127,7 @@
 }
 
 @layer components {
-  .gallery section { margin-top: calc(var(--lh) * 2); }
+  .gallery section { margin-top: var(--s6); }
   .gallery .rule-h > :last-child { font-weight: normal; color: var(--ink-mute); order: 2; }
   .gallery .rule-h::after { order: 1; }
   .gallery .files { max-width: var(--rail); }

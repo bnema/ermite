@@ -73,11 +73,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 	l := s.repoLayout(ctx, d, "summary")
 	l.Title = d.name() + " · " + s.instance
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=summary")
-	l.Status = Status{
-		Mode: "summary", Context: plural(len(commits.Msg.GetCommits()), "recent commit", "recent commits"),
-		Hints: "j/k move · enter open · b ref · y permalink · ? help", Cursor: true, Count: len(p.Recent),
-	}
-	l.HasRail, l.Read, l.RailSum = true, true, "clone · facts · recent commits · outline"
+	l.HasRail = true
 	return Summary(l, p), http.StatusOK, nil
 }
 

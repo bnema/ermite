@@ -2,8 +2,9 @@
 
 package web
 
-// Shell is the page: head, the two bars, the work area (content and rail),
-// the overlays and the key map. The content is the children.
+// Shell is the page: head, the header, the work area (content and rail), the
+// footer, the hint badge, the overlays and the key map. The content is the
+// children.
 templ Shell(l Layout, rail templ.Component) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -13,132 +14,143 @@ templ Shell(l Layout, rail templ.Component) {
 			<meta name="color-scheme" content="light dark"/>
 			<title>{ l.Title }</title>
 			<link rel="icon" type="image/svg+xml" href={ templ.SafeURL(l.Assets.Icon) }/>
+			<link rel="preload" href={ templ.SafeURL(l.Assets.Font) } as="font" type="font/woff2" crossorigin/>
 			<link rel="stylesheet" href={ templ.SafeURL(l.Assets.CSS) }/>
 			<script src={ l.Assets.HTMX } defer></script>
 			<script src={ l.Assets.Live } defer></script>
 			<script src={ l.Assets.SSE } defer></script>
 			<script src={ l.Assets.App } defer></script>
 		</head>
-		<body data-ref={ l.RefPath } data-sha={ l.SHA } data-sel="">
+		<body data-ref={ l.RefPath } data-sha={ l.SHA } data-sel="" data-nav="">
 			<a class="skip" href="#main">skip to content</a>
-			@Topbar(l)
-			<div class={ "work", templ.KV("has-rail", l.HasRail), templ.KV("read", l.Read) }>
-				<main id="main" tabindex="-1" data-y="0" hx-on:scroll="this.dataset.y = Math.round(this.scrollTop / 60)">
+			@Header(l)
+			<div class={ "work", templ.KV("has-rail", l.HasRail && rail != nil) }>
+				<main id="main" tabindex="-1">
 					{ children... }
 				</main>
 				if l.HasRail && rail != nil {
 					<aside class="rail" aria-label="Context">
-						<details class="rail-d" open data-init="" hx-live="if (!data.init) { data.init = '1'; this.open = matchMedia('(min-width: 1100px)').matches }">
-							<summary>{ l.RailSum }</summary>
-							@rail
-						</details>
+						@rail
 					</aside>
 				}
 			</div>
+			@Footer(l)
+			@Hint(l)
 			@OverlayHelp()
 			@OverlayRefs(l)
 			@OverlayCmd(l.Cmd)
-			@Statusbar(l)
 			@Keys()
 		</body>
 	</html>
 }
 
-// Topbar is the top bar, neferbar style: the one accent block (instance)
-// fading into the black bar, the path, the repo sections, the ref switcher.
-templ Topbar(l Layout) {
-	<header class="bar top">
-		<a class="blk" href="/" data-g="h" title="home (g h)">{ l.Instance }</a><span class="fade" aria-hidden="true"></span>
-		<nav class="crumbs" aria-label="Path">
-			<ol>
-				for _, c := range l.Crumbs {
-					<li>
-						if c.Href != "" {
-							<a
-								href={ templ.SafeURL(c.Href) }
-								if c.Current {
-									aria-current="page"
+// Header is the page header: the instance, the path, the ref switcher, the
+// "go to" palette and the owner; inside a repository, the tabs below.
+templ Header(l Layout) {
+	<header class="hdr">
+		<div class="hdr-top">
+			<a class="brand" href="/" data-g="h" title="home (g h)">
+				<span class="brand-mark" aria-hidden="true"></span>
+				<span>{ l.Instance }</span>
+			</a>
+			if len(l.Crumbs) > 0 {
+				<nav class="crumbs" aria-label="Path">
+					<ol>
+						for _, c := range l.Crumbs {
+							<li>
+								if c.Href != "" {
+									<a
+										href={ templ.SafeURL(c.Href) }
+										if c.Current {
+											aria-current="page"
+										}
+									>{ c.Label }</a>
+								} else {
+									<span aria-current="page">{ c.Label }</span>
 								}
-							>{ c.Label }</a>
-						} else {
-							<span aria-current="page">{ c.Label }</span>
+							</li>
 						}
-					</li>
+					</ol>
+				</nav>
+			}
+			<div class="hdr-acts">
+				if l.Ref != "" {
+					<button
+						type="button"
+						class="btn ref"
+						aria-haspopup="dialog"
+						aria-controls="panel-refs"
+						aria-keyshortcuts="b"
+						title="switch branch or tag (b)"
+						hx-on:click="document.body.dispatchEvent(new CustomEvent('k-refs'))"
+					>
+						<span class="ico i-branch" aria-hidden="true"></span>
+						<span class="ref-name">{ l.Ref }</span>
+						<span class="sha">{ l.Short }</span>
+					</button>
 				}
-			</ol>
-		</nav>
+				<button
+					type="button"
+					class="btn search"
+					aria-haspopup="dialog"
+					aria-controls="panel-cmd"
+					aria-keyshortcuts="Control+K :"
+					title="go to a section, ref, file or repo (ctrl k or :)"
+					hx-on:click="document.body.dispatchEvent(new CustomEvent('k-cmd'))"
+				>
+					<span class="ico i-search" aria-hidden="true"></span>
+					<span class="search-label">Go to…</span>
+					<kbd>ctrl k</kbd>
+				</button>
+				<button type="button" class="btn icon" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" title="keyboard shortcuts (?)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-help'))">?</button>
+				if SignedIn(ctx) {
+					<form class="owner" method="post" action="/-/logout">
+						<span class="owner-badge" title="signed in as the owner">owner</span>
+						<button type="submit" class="btn" title="sign out of this browser">Sign out</button>
+					</form>
+				}
+			</div>
+		</div>
 		if len(l.Sections) > 0 {
-			<nav class="secs" aria-label="Sections">
+			<nav class="tabs" aria-label="Sections">
 				<ul>
 					for _, s := range l.Sections {
 						<li>
 							<a
 								href={ templ.SafeURL(s.Href) }
 								data-key={ s.Key }
-								aria-keyshortcuts={ "g " + s.Key }
+								aria-keyshortcuts={ s.Key }
 								if s.Current {
 									aria-current="page"
 								}
-							>{ s.Key }{ s.Post }</a>
+							>{ s.Label }<kbd aria-hidden="true">{ s.Key }</kbd></a>
 						</li>
 					}
 				</ul>
 			</nav>
 		}
-		if l.Ref != "" {
-			<button
-				type="button"
-				class="ref"
-				aria-haspopup="dialog"
-				aria-controls="panel-refs"
-				aria-keyshortcuts="b"
-				title="switch ref (b)"
-				hx-on:click="document.body.dispatchEvent(new CustomEvent('k-refs'))"
-			>{ l.Ref }<span class="sha">{ "@" + l.Short }</span></button>
-		}
 	</header>
-}
-
-// Statusbar is the bottom bar: mode, context, the ":" command prompt, the
-// source link (AGPL §13), hints, live state and the cursor position. Plain
-// text only: the top bar carries the accent.
-templ Statusbar(l Layout) {
-	<footer class="bar status" aria-label="Status">
-		<span class="mode">{ l.Status.Mode }</span>
-		<span class="st-ctx">{ l.Status.Context }</span>
-		<button
-			type="button"
-			class="st-cmd"
-			aria-haspopup="dialog"
-			aria-controls="panel-cmd"
-			aria-keyshortcuts=":"
-			hx-on:click="document.body.dispatchEvent(new CustomEvent('k-cmd'))"
-		><span class="hi">:</span> go to…</button>
-		if l.Status.Blob {
-			<span class="st-sel" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y permalink' : 'click a line number · shift-click extends'">click a line number · shift-click extends</span>
-		}
-		<span class="st-flash" aria-live="polite" :text="document.body.dataset.flash || ''"></span>
-		<span class="st-hints">{ l.Status.Hints }</span>
-		if SignedIn(ctx) {
-			<form class="st-owner" method="post" action="/-/logout">
-				<span>owner</span>
-				<button type="submit" title="sign out of this browser">[sign out]</button>
-			</form>
-		}
-		@Footer(l)
-		@Live(l)
-		if l.Status.Cursor {
-			<span
-				class="st-pos num"
-				title="cursor position"
-				:text="(() => { let all = q('[data-rows] > :not([hidden])').arr(); let i = all.findIndex(r => r.hasAttribute('data-cursor')); return (i + 1) + '/' + all.length })()"
-			>{ cursorText(l.Status.Count) }</span>
-		}
-	</footer>
 }
 
 // Footer is the version and the link to the source of the running version,
 // which the AGPL §13 asks every user of the service to be offered.
 templ Footer(l Layout) {
-	<span class="st-src"><span class="st-ver">ermite { l.Version } · </span><a href={ templ.SafeURL(l.SourceURL) } rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a></span>
+	<footer class="foot">
+		<span>ermite { l.Version }</span>
+		<a href={ templ.SafeURL(l.SourceURL) } rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
+		<span class="foot-keys"><kbd>?</kbd> keyboard shortcuts</span>
+	</footer>
+}
+
+// Hint is the floating badge at the bottom right. It shows only what the
+// keyboard just did or what needs attention: the row position while j/k
+// move, the selected lines of a file, a flash message (permalink copied) and
+// a lost event stream. Empty, it takes no room.
+templ Hint(l Layout) {
+	<div class="hint" role="status" aria-live="polite">
+		<span class="hint-nav" :text="document.body.dataset.nav || ''"></span>
+		<span class="hint-sel" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y permalink' : ''"></span>
+		<span class="hint-flash" :text="document.body.dataset.flash || ''"></span>
+		@Live(l)
+	</div>
 }

@@ -7,12 +7,12 @@ package web
 templ Commits(l Layout, p CommitsPage) {
 	@Shell(l, commitsRail(p)) {
 		<div class="filter">
-			<label for="commit-filter">filter&gt;</label>
+			<label for="commit-filter" class="sr">filter</label>
 			<input
 				id="commit-filter"
 				type="search"
 				data-filter
-				placeholder="subject, sha or author  ( / )"
+				placeholder="Filter by subject, sha or author…"
 				autocomplete="off"
 				hx-on:input="let t = this.value.toLowerCase(); q('.days tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
       q('.days section').arr().forEach(s => s.hidden = !s.querySelector('tr:not([hidden])'));
@@ -39,14 +39,14 @@ templ Commits(l Layout, p CommitsPage) {
 		if p.Older != "" || p.Newest != "" {
 			<nav class="pager" aria-label="Pages">
 				if p.Newest != "" {
-					<a href={ templ.SafeURL(p.Newest) }>← newest</a>
+					<a class="btn" href={ templ.SafeURL(p.Newest) }>← Newest</a>
 				} else {
-					<span class="mute">← newest</span>
+					<span class="btn" aria-disabled="true">← Newest</span>
 				}
 				if p.Older != "" {
-					<a href={ templ.SafeURL(p.Older) } rel="next">older →</a>
+					<a class="btn" href={ templ.SafeURL(p.Older) } rel="next">Older →</a>
 				} else {
-					<span class="mute">older →</span>
+					<span class="btn" aria-disabled="true">Older →</span>
 				}
 			</nav>
 		}
@@ -55,7 +55,7 @@ templ Commits(l Layout, p CommitsPage) {
 
 templ commitsRail(p CommitsPage) {
 	<section aria-labelledby="r-hist">
-		<h2 id="r-hist">history</h2>
+		<h2 id="r-hist">History</h2>
 		<dl class="kv">
 			<dt>ref</dt>
 			<dd>{ p.Ref }</dd>
@@ -72,7 +72,7 @@ templ commitsRail(p CommitsPage) {
 		</dl>
 	</section>
 	<section aria-labelledby="r-refs">
-		<h2 id="r-refs">refs on this page</h2>
+		<h2 id="r-refs">Refs on this page</h2>
 		if len(p.Refs) > 0 {
 			<nav class="outline" aria-label="Refs on this page">
 				for _, r := range p.Refs {

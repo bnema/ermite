@@ -12,19 +12,19 @@ templ MRList(l Layout, p MRListPage) {
 			<div id="mr-notice"></div>
 		}
 		<div class="filter">
-			<label for="mr-filter">filter&gt;</label>
+			<label for="mr-filter" class="sr">filter</label>
 			<input
 				id="mr-filter"
 				type="search"
 				data-filter
-				placeholder="title, branch, author or state  ( / )"
+				placeholder="Filter by title, branch, author or state…"
 				autocomplete="off"
 				hx-on:input="let t = this.value.toLowerCase(); q('.mrs tbody tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
       let first = q('.mrs tbody tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '.mrs tbody tr')"
 			/>
 		</div>
 		if p.Newest == "" {
-			<h2 class="rule-h"><span>open</span><span>{ itoa(len(p.Open)) }</span></h2>
+			<h2 class="rule-h"><span>Open</span><span class="count">{ itoa(len(p.Open)) }</span></h2>
 			@mrRows(p.Open, "Open merge requests")
 			if len(p.Open) == 0 {
 				<p class="lede dim">no open merge requests.</p>
@@ -33,7 +33,7 @@ templ MRList(l Layout, p MRListPage) {
 				<p class="note">{ p.OpenNote }</p>
 			}
 		}
-		<h2 class="rule-h"><span>merged and closed</span><span>{ itoa(len(p.Done)) }</span></h2>
+		<h2 class="rule-h"><span>Merged and closed</span><span class="count">{ itoa(len(p.Done)) }</span></h2>
 		@mrRows(p.Done, "Merged and closed merge requests")
 		if len(p.Done) == 0 {
 			<p class="lede dim">nothing merged or closed yet.</p>
@@ -41,14 +41,14 @@ templ MRList(l Layout, p MRListPage) {
 		if p.Older != "" || p.Newest != "" {
 			<nav class="pager" aria-label="Pages">
 				if p.Newest != "" {
-					<a href={ templ.SafeURL(p.Newest) }>← newest</a>
+					<a class="btn" href={ templ.SafeURL(p.Newest) }>← Newest</a>
 				} else {
-					<span class="mute">← newest</span>
+					<span class="btn" aria-disabled="true">← Newest</span>
 				}
 				if p.Older != "" {
-					<a href={ templ.SafeURL(p.Older) } rel="next">older →</a>
+					<a class="btn" href={ templ.SafeURL(p.Older) } rel="next">Older →</a>
 				} else {
-					<span class="mute">older →</span>
+					<span class="btn" aria-disabled="true">Older →</span>
 				}
 			</nav>
 		}
@@ -80,7 +80,7 @@ templ mrRows(rows []MRRow, label string) {
 
 templ mrListRail(p MRListPage) {
 	<section aria-labelledby="r-states">
-		<h2 id="r-states">states</h2>
+		<h2 id="r-states">States</h2>
 		<dl class="kv">
 			<dt>open</dt>
 			<dd>awaits review</dd>
@@ -91,7 +91,7 @@ templ mrListRail(p MRListPage) {
 		</dl>
 	</section>
 	<section aria-labelledby="r-new">
-		<h2 id="r-new">open one</h2>
+		<h2 id="r-new">Open one</h2>
 		if len(p.Branches) > 0 {
 			<p class="dim">compare a branch with { p.Default }:</p>
 			<nav class="outline" aria-label="Branches">
@@ -166,9 +166,9 @@ templ MergeRequest(l Layout, p MRPage) {
 		<div class="diff-tools" role="toolbar" aria-label="Diff view">
 			<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 			<span class="grow"></span>
-			@viewLink(p.DiffView, "unified", "[u]nified", "u", p.UnifiedHref)
-			@viewLink(p.DiffView, "split", "[d] split", "d", p.SplitHref)
-			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))">[x] collapse all</button>
+			@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
+			@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
+			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd>x</kbd></button>
 		</div>
 		if p.Invisible {
 			<p class="notice">
@@ -197,7 +197,7 @@ templ MergeRequest(l Layout, p MRPage) {
 				<p class="note">no changed files.</p>
 			}
 		</div>
-		<h2 class="rule-h" id="comments"><span>comments</span><span>{ itoa(p.NUnresolved) } open / { itoa(p.NComments) }</span></h2>
+		<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(p.NUnresolved) } open / { itoa(p.NComments) }</span></h2>
 		for _, c := range p.Loose {
 			@commentView(c, "")
 		}
@@ -257,7 +257,7 @@ templ commentView(c CommentView, suffix string) {
 		if c.Resolve != nil {
 			<form class="c-act" method="post" action={ templ.SafeURL(c.Resolve.Action) }>
 				<input type="hidden" name="resolved" value={ boolText(c.Resolve.Value) }/>
-				<button type="submit">{ c.Resolve.Label }</button>
+				<button type="submit" class="btn">{ c.Resolve.Label }</button>
 			</form>
 		}
 	</div>
@@ -291,9 +291,9 @@ templ commentForm(f CommentForm, suffix string) {
 			<input type="hidden" name="side" value={ f.Side }/>
 		}
 		<div class="f-btns">
-			<button type="submit" class="f-main">[comment]</button>
+			<button type="submit" class="btn primary">Comment</button>
 			if f.Cancel != "" {
-				<a href={ templ.SafeURL(f.Cancel) }>[cancel]</a>
+				<a class="btn" href={ templ.SafeURL(f.Cancel) }>Cancel</a>
 			}
 		</div>
 	</form>
@@ -304,12 +304,12 @@ templ mrRail(p MRPage) {
 		@mergeBox(p)
 	}
 	<section aria-labelledby="r-checks">
-		<h2 id="r-checks">checks <span>0</span></h2>
+		<h2 id="r-checks">Checks <span class="count">0</span></h2>
 		<p class="dim">no checks</p>
 		<p class="mute">there is no CI yet: nothing blocks the merge.</p>
 	</section>
 	<section aria-labelledby="r-settings">
-		<h2 id="r-settings">settings</h2>
+		<h2 id="r-settings">Settings</h2>
 		<dl class="kv">
 			<dt>modes</dt>
 			<dd>{ strings.Join(p.Modes, ", ") }</dd>
@@ -324,7 +324,7 @@ templ mrRail(p MRPage) {
 		</dl>
 	</section>
 	<section aria-labelledby="r-commits">
-		<h2 id="r-commits">commits <span>{ itoa(len(p.Commits)) }</span></h2>
+		<h2 id="r-commits">Commits <span class="count">{ itoa(len(p.Commits)) }</span></h2>
 		<ul class="pcommits">
 			for _, c := range p.Commits {
 				<li data-new?={ c.New }>
@@ -350,7 +350,7 @@ templ mrRail(p MRPage) {
 		}
 	</section>
 	<section aria-labelledby="r-files">
-		<h2 id="r-files">files <span>{ itoa(len(p.Files)) }</span></h2>
+		<h2 id="r-files">Files <span class="count">{ itoa(len(p.Files)) }</span></h2>
 		@FileList(p.Files)
 	</section>
 }
@@ -360,7 +360,7 @@ templ mrRail(p MRPage) {
 // the other things one does with the request.
 templ mergeBox(p MRPage) {
 	<section class="decide" aria-labelledby="r-merge" data-state="open">
-		<h2 id="r-merge">merge</h2>
+		<h2 id="r-merge">Merge</h2>
 		<dl class="kv">
 			<dt>head</dt>
 			<dd>
@@ -386,7 +386,7 @@ templ mergeBox(p MRPage) {
 					<label class="d-check"><input type="checkbox" name="delete_branch" value="1"/> delete { p.Source } after the merge</label>
 				}
 				<div class="d-btns">
-					<button type="submit" class="d-main">[merge]</button>
+					<button type="submit" class="btn primary">Merge</button>
 				</div>
 			</form>
 		}
@@ -394,11 +394,11 @@ templ mergeBox(p MRPage) {
 			if p.Box.CanMarkRead {
 				<form method="post" action={ templ.SafeURL(p.Box.ReadAction) }>
 					<input type="hidden" name="head_id" value={ p.Box.Head }/>
-					<button type="submit" title="the next visit can show only what changed after this head">[mark read]</button>
+					<button type="submit" title="the next visit can show only what changed after this head" class="btn">Mark read</button>
 				</form>
 			}
 			<form method="post" action={ templ.SafeURL(p.Box.CloseAction) }>
-				<button type="submit" title="close without merging; the branch is kept">[close]</button>
+				<button type="submit" title="close without merging; the branch is kept" class="btn danger">Close</button>
 			</form>
 		</div>
 		if !p.Box.HeadGone {
@@ -438,7 +438,7 @@ templ Compare(l Layout, p ComparePage) {
 				<label for="mr-desc">description</label>
 				<textarea id="mr-desc" name="description" rows="4" maxlength="8000" placeholder="plain text, optional"></textarea>
 				<div class="f-btns">
-					<button type="submit" class="f-main">[create merge request]</button>
+					<button type="submit" class="btn primary">Create merge request</button>
 				</div>
 			</form>
 		}
@@ -446,9 +446,9 @@ templ Compare(l Layout, p ComparePage) {
 			<div class="diff-tools" role="toolbar" aria-label="Diff view">
 				<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 				<span class="grow"></span>
-				@viewLink(p.DiffView, "unified", "[u]nified", "u", p.UnifiedHref)
-				@viewLink(p.DiffView, "split", "[d] split", "d", p.SplitHref)
-				<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))">[x] collapse all</button>
+				@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
+				@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
+				<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd>x</kbd></button>
 			</div>
 			if p.Invisible {
 				<p class="notice">
@@ -477,7 +477,7 @@ templ Compare(l Layout, p ComparePage) {
 
 templ compareRail(p ComparePage) {
 	<section aria-labelledby="r-ahead">
-		<h2 id="r-ahead">commits <span>{ itoa(len(p.Ahead)) }</span></h2>
+		<h2 id="r-ahead">Commits <span class="count">{ itoa(len(p.Ahead)) }</span></h2>
 		<ul class="pcommits">
 			for _, c := range p.Ahead {
 				<li>
@@ -498,12 +498,12 @@ templ compareRail(p ComparePage) {
 	</section>
 	if p.HasDiff {
 		<section aria-labelledby="r-files">
-			<h2 id="r-files">files <span>{ itoa(len(p.Files)) }</span></h2>
+			<h2 id="r-files">Files <span class="count">{ itoa(len(p.Files)) }</span></h2>
 			@FileList(p.Files)
 		</section>
 	}
 	<section aria-labelledby="r-cli">
-		<h2 id="r-cli">from a terminal</h2>
+		<h2 id="r-cli">From a terminal</h2>
 		@CloneBlock(p.CLI)
 	</section>
 }

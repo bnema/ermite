@@ -21,11 +21,11 @@ templ CloneBlock(c Clone) {
 				<span class="mute" aria-hidden="true">$ </span><code>{ line }</code>
 				<button
 					type="button"
-					class="copy"
-					data-label="[copy]"
+					class="btn copy"
+					data-label="Copy"
 					aria-label={ "copy: " + line }
-					hx-on:click="navigator.clipboard?.writeText(closest('.clone-line').querySelector('code').textContent); this.textContent = '[copied]'; await timeout('1500ms'); this.textContent = this.dataset.label"
-				>[copy]</button>
+					hx-on:click="navigator.clipboard?.writeText(closest('.clone-line').querySelector('code').textContent); this.textContent = 'Copied'; await timeout('1500ms'); this.textContent = this.dataset.label"
+				>Copy</button>
 			</div>
 		}
 	</div>
@@ -38,7 +38,7 @@ templ HomeRowView(r HomeRow) {
 		<td class="c-name">
 			<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
 			if r.Fresh {
-				<span class="tagged">● new push</span>
+				<span class="pill new">new push</span>
 			}
 		</td>
 		<td class="c-desc dim">{ r.Desc }</td>
@@ -60,6 +60,17 @@ templ Outline(headings []Heading) {
 			<a class={ "l" + itoa(h.Level) } href={ templ.SafeURL("#" + h.ID) }>{ h.Text }</a>
 		}
 	</nav>
+}
+
+// ReadmeCard is a README in a card whose header names the file.
+templ ReadmeCard(r Readme) {
+	<section class="card readme" aria-labelledby="readme-h">
+		<h2 class="card-h" id="readme-h">
+			<span class="ico i-file" aria-hidden="true"></span>
+			{ r.Name }
+		</h2>
+		@ReadmeView(r)
+	</section>
 }
 
 // ReadmeView is a rendered README. Its HTML comes from the Markdown
@@ -91,13 +102,13 @@ templ CommitRows(rows []CommitRow) {
 					<td class="c-subject">
 						<a href={ templ.SafeURL(c.CHref) }>{ c.Subject }</a>
 						if c.Merge {
-							<span class="tagged">(merge)</span>
+							<span class="pill">merge</span>
 						}
 						for _, b := range c.Branches {
-							<span class="tagged">[{ b }]</span>
+							<span class="pill">{ b }</span>
 						}
 						for _, t := range c.Tags {
-							<span class="tagged">[tag: { t }]</span>
+							<span class="pill tag"><span class="sr">tag </span>{ t }</span>
 						}
 					</td>
 					<td class="c-who dim">{ c.Author }</td>

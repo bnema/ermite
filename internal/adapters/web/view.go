@@ -7,29 +7,19 @@ import "html/template"
 // View models handed to the templ components. Components only loop and
 // branch on these; the handlers build them from the API messages.
 
-// Crumb is one segment of the path in the top bar.
+// Crumb is one segment of the path in the header.
 type Crumb struct {
 	Label   string
 	Href    string
 	Current bool
 }
 
-// Section is a repository section in the top bar, reached by its key.
+// Section is a repository tab under the header, reached by its key.
 type Section struct {
 	Key     string // mnemonic key
-	Post    string // rest of the label after the key
+	Label   string
 	Href    string
 	Current bool
-}
-
-// Status is the content of the bottom bar.
-type Status struct {
-	Mode    string // "home", "summary", "refs"…
-	Context string // "3 repos · sort push ▼"
-	Hints   string // "j/k move · enter open · ? help"
-	Cursor  bool   // show the row cursor position n/N
-	Blob    bool   // show the selected line range
-	Count   int    // number of rows under the cursor
 }
 
 // RefItem is a branch or tag in the ref switcher.
@@ -50,10 +40,9 @@ type Layout struct {
 	SourceURL string
 	Assets    Assets
 	Crumbs    []Crumb
-	Ref       string // ref shown in the top bar, "" outside a repo view
+	Ref       string // ref shown in the header, "" outside a repo view
 	Short     string // short sha shown after the ref
 	Sections  []Section
-	Status    Status
 	Repo      string
 	SHA       string // full sha of the ref, for the permalink key
 	RefPath   string // the URL segment that `y` rewrites: the ref name
@@ -61,9 +50,7 @@ type Layout struct {
 	Tags      []RefItem
 	Cmd       []CmdItem
 	HasRail   bool
-	RailSum   string // the rail as one line when it folds above the content (< 1100px)
-	Read      bool   // prose page: content capped at the reading measure
-	// Live connects the status bar to the event stream (/-/events).
+	// Live connects the page to the event stream (/-/events).
 	Live bool
 	// LiveURL is the stream the page follows, with its query.
 	LiveURL string

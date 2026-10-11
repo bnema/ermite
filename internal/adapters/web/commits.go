@@ -94,18 +94,7 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 	} else {
 		l.Title = "history of " + visibleText(sel.path) + " · " + d.name() + " · " + s.instance
 	}
-	what := plural(len(cs), "commit", "commits")
-	if p.Older != "" {
-		what += " · more"
-	}
-	if p.Path != "" {
-		what = "history of " + p.Path + " · " + what
-	}
-	l.Status = Status{
-		Mode: "commits", Context: sel.name + " · " + what,
-		Hints: "j/k move · enter open · / filter · ? help", Cursor: true, Count: len(cs),
-	}
-	l.HasRail, l.RailSum = true, "history · refs on this page"
+	l.HasRail = true
 	return Commits(l, p), http.StatusOK, nil
 }
 

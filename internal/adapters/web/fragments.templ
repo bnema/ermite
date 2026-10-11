@@ -76,25 +76,22 @@ templ MRNotice(text, href string) {
 	</div>
 }
 
-// Live is the connection state of the event stream, in the status bar.
-// Without a stream it reads "offline" and does nothing. The events of the
-// stream are fragments that ermiteLive (ermite.js) swaps in the page.
+// Live is the connection to the event stream, in the hint badge. It shows
+// only once a connection was lost: a page that never connected, or that is
+// live, says nothing. The events of the stream are fragments that ermiteLive
+// (ermite.js) swaps in the page. A page without a stream renders nothing.
 templ Live(l Layout) {
 	if l.Live && l.LiveURL != "" {
 		<span
-			class="st-live"
-			data-state="offline"
-			role="status"
+			class="hint-live"
+			data-state="connecting"
 			hx-sse:connect={ l.LiveURL }
 			hx-swap="none"
-			:text="data.state"
-			:title="data.state === 'live' ? 'receiving updates over SSE' : 'not connected to the event stream'"
+			:text="data.state === 'offline' ? 'live updates paused' : ''"
 			hx-on="htmx:sse:after:connection -> data.state = 'live';
            htmx:sse:close, htmx:sse:error -> data.state = 'offline';
            home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);
            gap -> ermiteLive.reload()"
-		>offline</span>
-	} else {
-		<span class="st-live" data-state="offline" role="status" title="not connected to the event stream">offline</span>
+		></span>
 	}
 }

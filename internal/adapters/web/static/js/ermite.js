@@ -9,6 +9,8 @@
   let pending = 0;
   const fire = (name) => document.body.dispatchEvent(new CustomEvent('k-' + name, { bubbles: false }));
   addEventListener('keydown', (e) => {
+    // ctrl k / cmd k opens the palette from anywhere, inputs included.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); pending = 0; return fire('cmd'); }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const typing = e.target.closest('input, textarea, select, [contenteditable]');
     if (e.key === 'Escape') { pending = 0; if (typing) e.target.blur(); return fire('esc'); }

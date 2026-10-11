@@ -6,12 +6,12 @@ package web
 templ Home(l Layout, p HomePage) {
 	@Shell(l, nil) {
 		<div class="filter">
-			<label for="home-filter">filter&gt;</label>
+			<label for="home-filter" class="sr">filter</label>
 			<input
 				id="home-filter"
 				type="search"
 				data-filter
-				placeholder="name or description  ( / )"
+				placeholder="Filter repositories…"
 				autocomplete="off"
 				hx-on:input="let t = this.value.toLowerCase(); q('#repo-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#repo-rows > tr:not([hidden])')"
 			/>
@@ -52,23 +52,22 @@ templ Summary(l Layout, p SummaryPage) {
 			<p class="lede">{ p.Desc }</p>
 		}
 		if p.Readme != nil {
-			<h2 class="rule-h"><span>{ p.Readme.Name }</span></h2>
-			@ReadmeView(*p.Readme)
+			@ReadmeCard(*p.Readme)
 		}
 	}
 }
 
 templ summaryRail(p SummaryPage) {
-	<section aria-labelledby="r-clone"><h2 id="r-clone">clone</h2>@CloneBlock(p.Clone)
+	<section aria-labelledby="r-clone"><h2 id="r-clone">Clone</h2>@CloneBlock(p.Clone)
 </section>
-	<section aria-labelledby="r-facts"><h2 id="r-facts">facts</h2>@Facts(p.Facts)
+	<section aria-labelledby="r-facts"><h2 id="r-facts">About</h2>@Facts(p.Facts)
 </section>
 	if len(p.Recent) > 0 {
-		<section aria-labelledby="r-recent"><h2 id="r-recent">recent commits <a href={ templ.SafeURL(p.AllHref) }>all</a></h2>@CommitRows(p.Recent)
+		<section aria-labelledby="r-recent"><h2 id="r-recent">Recent commits <a href={ templ.SafeURL(p.AllHref) }>View all</a></h2>@CommitRows(p.Recent)
 </section>
 	}
 	if len(p.Outline) > 0 && p.Readme != nil {
-		<section aria-labelledby="r-outline"><h2 id="r-outline">{ p.Readme.Name }</h2>@Outline(p.Outline)
+		<section aria-labelledby="r-outline"><h2 id="r-outline">On this page</h2>@Outline(p.Outline)
 </section>
 	}
 }
@@ -77,12 +76,12 @@ templ summaryRail(p SummaryPage) {
 templ Refs(l Layout, p RefsPage) {
 	@Shell(l, refsRail(p)) {
 		<div class="filter">
-			<label for="ref-filter">filter&gt;</label>
+			<label for="ref-filter" class="sr">filter</label>
 			<input
 				id="ref-filter"
 				type="search"
 				data-filter
-				placeholder="branch or tag  ( / )"
+				placeholder="Filter branches and tags…"
 				autocomplete="off"
 				hx-on:input="let t = this.value.toLowerCase(); q('#ref-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
       let first = q('#ref-rows > tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '#ref-rows > tr')"
@@ -107,7 +106,7 @@ templ refRow(kind string, r RefRow) {
 		<td class="c-name">
 			<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
 			if r.Default {
-				<span class="tagged">*</span>
+				<span class="pill">default</span>
 			}
 		</td>
 		<td class="c-sha">
@@ -128,12 +127,8 @@ templ refRow(kind string, r RefRow) {
 
 templ refsRail(p RefsPage) {
 	<section aria-labelledby="r-refs">
-		<h2 id="r-refs">refs</h2>
+		<h2 id="r-refs">Overview</h2>
 		@RefsKV(p)
-	</section>
-	<section aria-labelledby="r-legend">
-		<h2 id="r-legend">legend</h2>
-		<dl class="kv"><dt>*</dt><dd>default branch</dd></dl>
 	</section>
 }
 
@@ -141,7 +136,8 @@ templ refsRail(p RefsPage) {
 templ State(l Layout, p StatePage) {
 	@Shell(l, nil) {
 		<section class="state" aria-labelledby="state-title">
-			<h1 id="state-title"><span class="code">{ p.Code }</span> { p.Title }</h1>
+			<p class="eyebrow">{ p.Code }</p>
+			<h1 id="state-title">{ p.Title }</h1>
 			for _, line := range p.Lines {
 				<p class="dim">{ line }</p>
 			}
@@ -162,14 +158,14 @@ templ State(l Layout, p StatePage) {
 templ Login(l Layout, p LoginPage) {
 	@Shell(l, nil) {
 		<section class="state" aria-labelledby="state-title">
-			<h1 id="state-title"><span class="code">login</span> { p.Title }</h1>
+			<h1 id="state-title">{ p.Title }</h1>
 			for _, line := range p.Lines {
 				<p class="dim">{ line }</p>
 			}
 			<form class="state-act" method="post" action={ templ.SafeURL(p.Action) }>
-				<button type="submit">{ p.Button }</button>
+				<button type="submit" class="btn primary">{ p.Button }</button>
 			</form>
-			<p class="state-back"><a href="/">home</a></p>
+			<p class="state-back"><a href="/">Back to home</a></p>
 		</section>
 	}
 }

@@ -1,90 +1,86 @@
 @layer components {
   /* merge requests: the review page. Hue only where it carries a verdict. */
   .mr-h .show-kv { margin-top: 0; }
-  .mr-h + * { margin-top: var(--lh); }
+
   .mr-state[data-state="open"]::before { content: "● "; color: var(--teal); }
   .mr-state[data-state="merged"]::before { content: "✓ "; color: var(--teal); }
   .mr-state[data-state="closed"]::before { content: "✗ "; color: var(--red); }
-  .mr-desc { margin-top: var(--lh); max-width: var(--measure); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .mr-desc { max-width: var(--measure); white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--s4) var(--s5); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
   .mr-desc a, .c-text a { text-decoration: underline; }
 
   .since {
-    display: flex; flex-wrap: wrap; column-gap: 3ch; margin-top: var(--lh);
-    & a { text-decoration: none; color: var(--ink-dim); }
-    & a:hover { color: var(--ink); text-decoration: underline; }
-    & a[aria-current] { color: var(--ink-hi); font-weight: bold; }
-    & a[aria-current]::before { content: "▸ "; }
-    & .mute { font-weight: normal; }
+    display: inline-flex; flex-wrap: wrap; gap: var(--s1); padding: var(--s1);
+    background: var(--bg-raised); border-radius: var(--r-s);
+    & a { padding: var(--s1) var(--s3); border-radius: 4px; text-decoration: none; color: var(--ink-dim); font-size: var(--fs-s); }
+    & a:hover { color: var(--ink-hi); }
+    & a[aria-current] { color: var(--ink-hi); font-weight: 700; background: var(--bg-surface); box-shadow: 0 0 0 1px var(--border-strong); }
+    & .mute { font-weight: 400; font-family: var(--mono); }
   }
 
   /* merge block: first thing in the rail */
   .decide {
-    & .d-acts { margin-top: calc(var(--lh) / 2); }
+    border-color: var(--border-strong) !important;
     & select {
-      display: block; width: 100%; font: inherit; color: inherit; background: var(--paper-alt);
-      border: 1px solid var(--rule); border-radius: 0; padding: 0 1ch;
+      display: block; width: 100%; height: 36px; padding: 0 var(--s3);
+      font: inherit; color: inherit; background: var(--bg-inset);
+      border: 1px solid var(--border-strong); border-radius: var(--r-s);
     }
-    & .d-check { display: block; margin-top: 4px; color: var(--ink-dim); cursor: pointer; }
-    & .d-check input { accent-color: var(--ink); margin: 0 1ch 0 0; vertical-align: middle; }
-    & .d-btns { display: flex; gap: 2ch; margin-top: 4px; flex-wrap: wrap; }
-    & .d-btns button { color: var(--ink-dim); }
-    & .d-btns button:hover { color: var(--ink); text-decoration: underline; }
-    & .d-btns .d-main { background: var(--ink); color: var(--paper); font-weight: bold; padding: 0 1ch; }
-    & .d-btns .d-main:hover { background: var(--ink-hi); text-decoration: none; }
-    & .d-or { margin-top: calc(var(--lh) / 2); }
+    & .d-check { display: flex; gap: var(--s2); align-items: center; margin-top: var(--s2); color: var(--ink-dim); font-size: var(--fs-s); cursor: pointer; }
+    & .d-check input { accent-color: var(--ink-hi); margin: 0; }
+    & .d-btns { display: flex; gap: var(--s2); margin-top: var(--s3); flex-wrap: wrap; }
+    & .d-btns .primary { flex: 1; justify-content: center; }
+    & .d-or { font-size: var(--fs-s); }
     & .clone { margin-top: 0; }
     & .clone code { white-space: pre-wrap; overflow-wrap: anywhere; }
   }
 
-  .pcommits li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pcommits li[data-new] { background: var(--row); }
+  .pcommits { font-size: var(--fs-s); display: grid; gap: var(--s1); }
+  .pcommits li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px var(--s2); margin: 0 calc(-1 * var(--s2)); border-radius: 4px; }
+  .pcommits li a { font-family: var(--mono); }
+  .pcommits li[data-new] { background: var(--bg-raised); }
   .pcommits .s { color: var(--ink); }
-  .rail code { border-bottom: 1px dotted var(--ink-mute); }
+
 
   /* a note: a ruled block, under its line in the diff and in the list of comments */
   .cmt {
-    border-left: 2px solid var(--ink); padding-left: 1ch; margin-top: calc(var(--lh) / 2); max-width: var(--measure);
-    white-space: normal;
+    padding: var(--s3) var(--s4); margin-top: var(--s3); max-width: var(--measure);
+    background: var(--bg-surface); border: 1px solid var(--border); border-left: 3px solid var(--ink-hi); border-radius: var(--r-s);
+    white-space: normal; font-family: var(--font); font-size: var(--fs-s); line-height: 22px;
     & p { white-space: normal; }
     & .c-who { font-weight: bold; }
     & .c-state { color: var(--ink-dim); }
     & .c-text { white-space: pre-wrap; overflow-wrap: anywhere; }
     & .c-where { font-size: var(--fs-s); overflow-wrap: anywhere; }
-    & .c-act button { color: var(--ink-dim); }
-    & .c-act button:hover { color: var(--ink); text-decoration: underline; }
-    &[data-resolved="true"] { border-left-color: var(--rule); }
+    & .c-act { margin-top: var(--s2); }
+    & .c-act button { height: 26px; font-size: var(--fs-xs); }
+    &[data-resolved="true"] { border-left-color: var(--border-strong); }
     &[data-resolved="true"] .c-text { color: var(--ink-dim); }
   }
-  .dt .fnote td { background: var(--paper-alt); padding: 2px 0 4px; white-space: normal; }
-  .dt .fnote .cmt, .dt .fnote .cform { margin: 0; font-size: var(--fs); line-height: var(--lh); }
-  .dt .fnote .cmt + .cmt, .dt .fnote .cmt + .cform { margin-top: calc(var(--lh) / 2); }
+  .dt .fnote td { background: var(--bg-canvas); padding: var(--s2) var(--s3); white-space: normal; }
+  .dt .fnote .cmt, .dt .fnote .cform { margin: 0; }
+  .dt .fnote .cmt + .cmt, .dt .fnote .cmt + .cform { margin-top: var(--s2); }
   .ln a { color: inherit; text-decoration: none; }
   .ln a:hover, .ln a:focus-visible { text-decoration: underline; color: var(--ink-hi); }
 
   /* the forms: a comment, a new merge request */
   .cform {
-    display: grid; gap: 2px; margin-top: var(--lh); max-width: var(--measure);
-    & label { color: var(--ink-dim); }
+    display: grid; gap: var(--s2); margin-top: var(--s3); max-width: var(--measure);
+    font-family: var(--font); font-size: var(--fs-s);
+    & label { color: var(--ink-dim); font-weight: 600; }
     & textarea, & input[type="text"] {
-      display: block; width: 100%; font: inherit; color: inherit; resize: vertical;
-      background: var(--paper-alt); border: 1px solid var(--rule); border-radius: 0; padding: 0 1ch;
+      display: block; width: 100%; font: inherit; font-size: var(--fs); color: inherit; resize: vertical;
+      background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: var(--r-s); padding: var(--s2) var(--s3);
     }
     & textarea::placeholder { color: var(--ink-mute); opacity: 1; }
-    & .f-btns { display: flex; gap: 2ch; align-items: baseline; margin-top: 4px; }
-    & .f-btns a { color: var(--ink-dim); }
-    & .f-btns button { color: var(--ink-dim); }
-    & .f-btns button:hover { color: var(--ink); text-decoration: underline; }
-    & .f-btns .f-main { background: var(--ink); color: var(--paper); font-weight: bold; padding: 0 1ch; }
-    & .f-btns .f-main:hover { background: var(--ink-hi); text-decoration: none; }
+    & .f-btns { display: flex; gap: var(--s2); align-items: center; margin-top: var(--s1); }
   }
-  .cform.create { margin-top: var(--lh); }
 
   .list.mrs {
-    & .c-n { width: 5ch; }
-    & .c-state { width: 9ch; }
+    & .c-n { width: 64px; }
+    & .c-state { width: 110px; }
     & .c-subject { overflow: hidden; text-overflow: ellipsis; }
-    & .c-who { width: 12ch; }
-    & .c-when { width: 11ch; }
+    & .c-who { width: 140px; }
+    & .c-when { width: 100px; }
     & tr[data-state="open"] .c-state { font-weight: bold; }
     & tr[data-state="open"] .c-state::before { content: "● "; color: var(--teal); }
     & tr[data-state="merged"] .c-state::before { content: "✓ "; color: var(--teal); }

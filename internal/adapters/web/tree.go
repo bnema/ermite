@@ -103,9 +103,5 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	} else {
 		l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
 	}
-	l.Status = Status{
-		Mode: "tree", Context: "tree · " + plural(len(entries), "entry", "entries"),
-		Hints: "j/k move · enter open · / filter · b ref · ? help", Cursor: true, Count: len(p.Rows),
-	}
 	return Tree(l, p), http.StatusOK, nil
 }

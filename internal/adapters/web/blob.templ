@@ -12,7 +12,7 @@ templ Blob(l Layout, p BlobPage) {
 	@Shell(l, blobRail(p)) {
 		<h1 class="file-h">
 			<span>{ p.Name }</span>
-			<span class="acts"><a href={ templ.SafeURL(p.RawHref) }>raw</a> <a href={ templ.SafeURL(p.HistHref) }>history</a> <a href={ templ.SafeURL(p.DirHref) }>dir</a></span>
+			<span class="acts"><a class="btn" href={ templ.SafeURL(p.RawHref) }>Raw</a><a class="btn" href={ templ.SafeURL(p.HistHref) }>History</a><a class="btn" href={ templ.SafeURL(p.DirHref) }>Folder</a></span>
 		</h1>
 		if p.Notice != "" {
 			<p class="notice" role="note">{ p.Notice }</p>
@@ -39,7 +39,7 @@ templ Blob(l Layout, p BlobPage) {
 // CodeView is the highlighted lines with a link on each number. A click on a
 // number selects the line, shift-click extends the selection to a range; the
 // URL hash (#L10 or #L10-L24) is the state, so a page loaded with a hash is
-// painted the same way. body[data-sel] feeds the status bar and the rail.
+// painted the same way. body[data-sel] feeds the hint badge and the rail.
 templ CodeView(h template.HTML) {
 	<pre
 		class="chroma code"
@@ -59,12 +59,12 @@ templ CodeView(h template.HTML) {
 
 templ blobRail(p BlobPage) {
 	<section aria-labelledby="r-file">
-		<h2 id="r-file">file</h2>
+		<h2 id="r-file">File</h2>
 		@Facts(p.Facts)
 	</section>
 	if p.Last != nil {
 		<section aria-labelledby="r-last">
-			<h2 id="r-last">last change <a href={ templ.SafeURL(p.HistHref) }>history</a></h2>
+			<h2 id="r-last">Last change <a href={ templ.SafeURL(p.HistHref) }>History</a></h2>
 			<p><a href={ templ.SafeURL(p.Last.CHref) }>{ p.Last.Short }</a> { p.Last.Subject }</p>
 			<p class="dim">
 				{ p.Last.Author } ·
@@ -76,13 +76,13 @@ templ blobRail(p BlobPage) {
 	}
 	if len(p.Outline) > 0 {
 		<section aria-labelledby="r-outline">
-			<h2 id="r-outline">outline</h2>
+			<h2 id="r-outline">On this page</h2>
 			@Outline(p.Outline)
 		</section>
 	}
 	if p.HasCode {
 		<section aria-labelledby="r-sel">
-			<h2 id="r-sel">selection</h2>
+			<h2 id="r-sel">Selection</h2>
 			<p :text="document.body.dataset.sel || 'none · click a line number, shift-click extends'">none · click a line number, shift-click extends</p>
 			<p class="dim">y copies a permalink pinned to the commit sha</p>
 		</section>

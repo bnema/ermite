@@ -116,7 +116,7 @@ func TestWebLoginEndToEnd(t *testing.T) {
 	assert.NotContains(t, home.body, "secret")
 	assert.Equal(t, "no-cache", home.hdr.Get("Cache-Control"))
 	assert.Empty(t, home.hdr.Values("Vary"))
-	assert.NotContains(t, home.body, "sign out")
+	assert.NotContains(t, home.body, `action="/-/logout"`)
 	assert.Equal(t, 404, b.get("/secret", nil).status)
 
 	// The CLI asks for a link and prints it; stderr says when it ends.
@@ -198,7 +198,7 @@ func TestWebLoginEndToEnd(t *testing.T) {
 	}
 	home = b.get("/", as(token))
 	assert.Contains(t, home.body, "secret")
-	assert.Contains(t, home.body, `<form class="st-owner" method="post" action="/-/logout">`)
+	assert.Contains(t, home.body, `<form class="owner" method="post" action="/-/logout">`)
 	assert.Contains(t, b.get("/secret/blob/main/notes.txt", as(token)).body, "notes.txt")
 	raw := b.get("/secret/raw/main/notes.txt", as(token))
 	assert.Equal(t, 200, raw.status)

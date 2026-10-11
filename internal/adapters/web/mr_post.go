@@ -109,7 +109,7 @@ func (s *Server) reject(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	if back == "" {
 		back = "/"
 	}
-	l := s.stateLayout(title, itoa(status)+" · "+title, []Crumb{{Label: "-"}, {Label: title}})
+	l := s.stateLayout(title, []Crumb{{Label: title, Current: true}})
 	w.Header().Set("Cache-Control", "no-store")
 	s.write(ctx, w, r, status, State(l, StatePage{
 		Code: itoa(status), Title: title,

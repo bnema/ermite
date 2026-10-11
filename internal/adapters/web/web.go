@@ -196,6 +196,9 @@ func (s *Server) write(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	}
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
+	// Links on this origin are prefetched on hover, so a click shows the page
+	// at once. Every GET page is safe to load (nothing is marked read on GET).
+	h.Set("Speculation-Rules", `"`+s.assets.urls.Rules+`"`)
 	// Public pages: the browser and any proxy revalidate each time. A page
 	// rendered for the owner is private and never stored; a handler that set
 	// its own Cache-Control keeps it.
@@ -253,18 +256,16 @@ func (s *Server) base() Layout {
 }
 
 // stateLayout is the layout of a state page: only the way home.
-func (s *Server) stateLayout(title, context string, crumbs []Crumb) Layout {
+func (s *Server) stateLayout(title string, crumbs []Crumb) Layout {
 	l := s.base()
 	l.Title = title + " · " + s.instance
 	l.Crumbs = crumbs
-	l.Sections = []Section{{Key: "h", Post: "ome", Href: "/"}}
-	l.Status = Status{Mode: "state", Context: context, Hints: "g h home · ? help"}
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
 	return l
 }
 
 func (s *Server) notFoundPage() templ.Component {
-	l := s.stateLayout("404", "404 · not found", []Crumb{{Label: "-"}, {Label: "404"}})
+	l := s.stateLayout("404", []Crumb{{Label: "not found", Current: true}})
 	return State(l, StatePage{
 		Code: "404", Title: "not found",
 		Lines: []string{"no such page, ref or path.", "check the URL, or start from the repo list."},
@@ -273,7 +274,7 @@ func (s *Server) notFoundPage() templ.Component {
 }
 
 func (s *Server) errorPage(id string) templ.Component {
-	l := s.stateLayout("error", "500 · internal error", []Crumb{{Label: "-"}, {Label: "error"}})
+	l := s.stateLayout("error", []Crumb{{Label: "error", Current: true}})
 	return State(l, StatePage{
 		Code: "500", Title: "internal error",
 		Lines: []string{

@@ -6,23 +6,22 @@ import "strings"
 
 // OverlayHelp is the keyboard map panel.
 templ OverlayHelp() {
-	<dialog id="panel-help" class="panel" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
-		<div class="panel-head"><span>keys</span><button type="button" hx-on:click="closest('dialog').close()">[esc] close</button></div>
+	<dialog id="panel-help" class="panel modal" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
+		<div class="panel-head"><h2>Keyboard shortcuts</h2><button type="button" class="panel-x" hx-on:click="closest('dialog').close()"><kbd>esc</kbd> close</button></div>
 		<dl class="keys">
-			<div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>move cursor down / up</dd></div>
-			<div><dt><kbd>enter</kbd></dt><dd>open row under cursor</dd></div>
-			<div><dt><kbd>g</kbd> <kbd>g</kbd> / <kbd>G</kbd></dt><dd>first / last row</dd></div>
-			<div><dt><kbd>/</kbd></dt><dd>focus the filter</dd></div>
-			<div><dt><kbd>g h</kbd> <kbd>g t</kbd></dt><dd>go home / tree</dd></div>
-			<div><dt><kbd>g c</kbd> <kbd>g r</kbd></dt><dd>go commits / refs</dd></div>
-			<div><dt><kbd>b</kbd></dt><dd>{ "switch" } ref (branches, tags)</dd></div>
-			<div><dt><kbd>:</kbd> <kbd>f</kbd></dt><dd>go to: section, ref, file, repo</dd></div>
-			<div><dt><kbd>y</kbd></dt><dd>permalink: ref becomes the full sha</dd></div>
-			<div><dt><kbd>s</kbd> <kbd>t</kbd> <kbd>c</kbd> <kbd>r</kbd></dt><dd>repo sections (when shown)</dd></div>
-			<div><dt><kbd>m</kbd> <kbd>g m</kbd></dt><dd>merge requests (when shown)</dd></div>
+			<div><dt><kbd>ctrl k</kbd> <kbd>:</kbd></dt><dd>go to a section, branch, tag, file or repository</dd></div>
+			<div><dt><kbd>?</kbd></dt><dd>this list</dd></div>
+			<div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>move the row cursor down / up</dd></div>
+			<div><dt><kbd>enter</kbd></dt><dd>open the row under the cursor</dd></div>
+			<div><dt><kbd>g g</kbd> <kbd>G</kbd></dt><dd>first / last row</dd></div>
+			<div><dt><kbd>/</kbd></dt><dd>filter the list</dd></div>
+			<div><dt><kbd>b</kbd></dt><dd>{ "switch" } branch or tag</dd></div>
+			<div><dt><kbd>s</kbd> <kbd>t</kbd> <kbd>c</kbd> <kbd>r</kbd> <kbd>m</kbd></dt><dd>tabs: summary, files, commits, branches &amp; tags, merge requests</dd></div>
+			<div><dt><kbd>g h</kbd></dt><dd>home</dd></div>
+			<div><dt><kbd>y</kbd></dt><dd>copy a permalink pinned to the commit</dd></div>
 			<div><dt><kbd>d</kbd> <kbd>u</kbd> <kbd>x</kbd></dt><dd>diff: split / unified / collapse all</dd></div>
 			<div><dt><kbd>n</kbd></dt><dd>merge request: next note in the diff</dd></div>
-			<div><dt><kbd>esc</kbd></dt><dd>close panel</dd></div>
+			<div><dt><kbd>esc</kbd></dt><dd>close a dialog, leave a field</dd></div>
 		</dl>
 	</dialog>
 }
@@ -30,22 +29,22 @@ templ OverlayHelp() {
 // OverlayRefs is the ref switcher. It exists only inside a repository.
 templ OverlayRefs(l Layout) {
 	if l.Ref != "" {
-		<dialog id="panel-refs" class="panel" aria-label="Switch ref" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
+		<dialog id="panel-refs" class="panel modal" aria-label="Switch ref" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 			<div class="panel-head">
-				<label for="refs-filter">ref&gt;</label>
+				<label for="refs-filter" class="sr">filter branches and tags</label>
 				<input
 					id="refs-filter"
 					type="search"
-					placeholder="filter branches and tags"
+					placeholder="Switch branch or tag…"
 					autocomplete="off"
 					data-pick
 					hx-on:input="let t = this.value.toLowerCase(); q('#panel-refs li').arr().forEach(li => li.hidden = !li.textContent.toLowerCase().includes(t))"
 				/>
-				<button type="button" hx-on:click="closest('dialog').close()">[esc] close</button>
+				<button type="button" class="panel-x" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
 			</div>
 			<div class="panel-cols" data-picklist>
 				<section aria-label="Branches">
-					<h2>branches <span class="mute">{ itoa(len(l.Heads)) }</span></h2>
+					<h2>Branches <span class="count">{ itoa(len(l.Heads)) }</span></h2>
 					<ul>
 						for _, r := range l.Heads {
 							@refItem(r)
@@ -53,7 +52,7 @@ templ OverlayRefs(l Layout) {
 					</ul>
 				</section>
 				<section aria-label="Tags">
-					<h2>tags <span class="mute">{ itoa(len(l.Tags)) }</span></h2>
+					<h2>Tags <span class="count">{ itoa(len(l.Tags)) }</span></h2>
 					<ul>
 						for _, r := range l.Tags {
 							@refItem(r)
@@ -87,13 +86,13 @@ templ refItem(r RefItem) {
 // OverlayCmd is the ":" command line: one filterable list mixing sections,
 // refs, files of this directory and repos.
 templ OverlayCmd(items []CmdItem) {
-	<dialog id="panel-cmd" class="panel" aria-label="Go to" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())">
+	<dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 		<div class="panel-head">
-			<label for="cmd-q" class="hi">:</label>
+			<label for="cmd-q" class="sr">go to</label>
 			<input
 				id="cmd-q"
 				type="search"
-				placeholder="section, ref, file or repo"
+				placeholder="Go to a section, branch, tag, file or repository…"
 				autocomplete="off"
 				spellcheck="false"
 				aria-controls="cmd-list"
@@ -106,12 +105,13 @@ templ OverlayCmd(items []CmdItem) {
         if (step) { event.preventDefault(); let n = vis[Math.max(0, Math.min(vis.length - 1, i + step))]; n && (q(n).take('data-cursor', '#cmd-list > li'), n.scrollIntoView({ block: 'nearest' })) }
         else if (event.key === 'Enter') { event.preventDefault(); vis[Math.max(i, 0)]?.querySelector('a').click() }"
 			/>
-			<button type="button" hx-on:click="closest('dialog').close()">[esc] close</button>
+			<button type="button" class="panel-x" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
 		</div>
-		<ul id="cmd-list" class="cmd-list">
+		<ul id="cmd-list" class="cmd-list" role="listbox" aria-label="Targets">
 			for i, c := range items {
-				<li data-k={ strings.ToLower(c.Kind + " " + c.Label) } data-cursor?={ i == 0 }><a href={ templ.SafeURL(c.Href) } tabindex="-1"><span class="k">{ c.Kind }</span>{ c.Label }</a></li>
+				<li data-k={ strings.ToLower(c.Kind + " " + c.Label) } data-cursor?={ i == 0 }><a href={ templ.SafeURL(c.Href) } tabindex="-1"><span class="lbl">{ c.Label }</span><span class="k">{ c.Kind }</span></a></li>
 			}
 		</ul>
+		<p class="panel-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>enter</kbd> open</span><span><kbd>esc</kbd> close</span></p>
 	</dialog>
 }

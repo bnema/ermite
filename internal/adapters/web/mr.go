@@ -377,12 +377,7 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 		p.Live = true
 		l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mrs")
 	}
-	rows := len(p.Open) + len(p.Done)
-	l.Status = Status{
-		Mode: "merge requests", Context: itoa(len(p.Open)) + " open · " + itoa(len(p.Done)) + " decided",
-		Hints: "j/k move · enter open · / filter · ? help", Cursor: true, Count: rows,
-	}
-	l.HasRail, l.RailSum = true, "states · open one"
+	l.HasRail = true
 	return MRList(l, p), http.StatusOK, nil
 }
 
@@ -557,11 +552,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	}
 	p.Live = true
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.GetSourceBranch()))
-	l.Status = Status{
-		Mode: "merge request", Context: p.Number + " · " + p.Source + " → " + p.Target + " · " + p.State,
-		Hints: "n next note · d split · u unified · x collapse all · ? help",
-	}
-	l.HasRail, l.RailSum = true, "merge · checks · commits · files"
+	l.HasRail = true
 	return MergeRequest(l, p), http.StatusOK, nil
 }
 
@@ -714,9 +705,9 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []*pb.C
 			}
 		}
 		if canWrite {
-			v.Resolve = &ResolveForm{Action: resolveAction(c.GetId()), Value: !c.GetResolved(), Label: "[resolve]"}
+			v.Resolve = &ResolveForm{Action: resolveAction(c.GetId()), Value: !c.GetResolved(), Label: "Resolve"}
 			if c.GetResolved() {
-				v.Resolve.Label = "[unresolve]"
+				v.Resolve.Label = "Unresolve"
 			}
 		}
 		switch {

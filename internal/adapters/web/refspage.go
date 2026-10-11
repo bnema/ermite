@@ -26,11 +26,7 @@ func (s *Server) refs(ctx context.Context, r *http.Request) (templ.Component, in
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=refs")
 	l.Crumbs[0].Current = false
 	l.Crumbs = append(l.Crumbs, Crumb{Label: "refs", Current: true})
-	l.Status = Status{
-		Mode: "refs", Context: plural(len(p.Branches), "branch", "branches") + " · " + plural(len(p.Tags), "tag", "tags"),
-		Hints: "j/k move · enter open · / filter · ? help", Cursor: true, Count: len(p.Branches) + len(p.Tags),
-	}
-	l.HasRail, l.RailSum = true, "refs · legend"
+	l.HasRail = true
 	return Refs(l, p), http.StatusOK, nil
 }
 

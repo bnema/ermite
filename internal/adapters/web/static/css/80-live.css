@@ -1,6 +1,9 @@
 @layer components {
   /* live updates: the banner of new commits, an empty slot takes no room */
   #commits-head:empty { display: none; }
-  .live-banner { margin: var(--lh) 0; padding: 0 1ch; background: var(--row); font-weight: bold; }
-  .live-banner a { color: var(--ink); }
+  .live-banner {
+    padding: var(--s3) var(--s4); font-weight: 700;
+    background: var(--bg-surface); border: 1px solid var(--border-strong); border-left: 3px solid var(--teal); border-radius: var(--r-s);
+  }
+  .live-banner a { color: var(--ink-hi); }
 }

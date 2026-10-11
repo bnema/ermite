@@ -439,9 +439,10 @@ func MRNotice(text, href string) templ.Component {
 	})
 }
 
-// Live is the connection state of the event stream, in the status bar.
-// Without a stream it reads "offline" and does nothing. The events of the
-// stream are fragments that ermiteLive (ermite.js) swaps in the page.
+// Live is the connection to the event stream, in the hint badge. It shows
+// only once a connection was lost: a page that never connected, or that is
+// live, says nothing. The events of the stream are fragments that ermiteLive
+// (ermite.js) swaps in the page. A page without a stream renders nothing.
 func Live(l Layout) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -464,7 +465,7 @@ func Live(l Layout) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if l.Live && l.LiveURL != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span class=\"st-live\" data-state=\"offline\" role=\"status\" hx-sse:connect=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span class=\"hint-live\" data-state=\"connecting\" hx-sse:connect=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -477,12 +478,7 @@ func Live(l Layout) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" hx-swap=\"none\" :text=\"data.state\" :title=\"data.state === 'live' ? 'receiving updates over SSE' : 'not connected to the event stream'\" hx-on=\"htmx:sse:after:connection -> data.state = 'live';\n           htmx:sse:close, htmx:sse:error -> data.state = 'offline';\n           home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);\n           gap -> ermiteLive.reload()\">offline</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<span class=\"st-live\" data-state=\"offline\" role=\"status\" title=\"not connected to the event stream\">offline</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" hx-swap=\"none\" :text=\"data.state === 'offline' ? 'live updates paused' : ''\" hx-on=\"htmx:sse:after:connection -> data.state = 'live';\n           htmx:sse:close, htmx:sse:error -> data.state = 'offline';\n           home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);\n           gap -> ermiteLive.reload()\"></span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

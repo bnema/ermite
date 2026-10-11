@@ -157,17 +157,8 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 		{Label: "commit", Href: history},
 		{Label: p.Short, Current: true},
 	}
-	l.Status = Status{
-		Mode: "commit", Context: p.Short + " · " + p.totals(),
-		Hints: "d split · u unified · x collapse all · ? help",
-	}
-	l.HasRail, l.RailSum = true, plural(len(p.Files), "changed file", "changed files")
+	l.HasRail = true
 	return Commit(l, p), http.StatusOK, nil
-}
-
-// totals is "3 files · +12 -4".
-func (p CommitPage) totals() string {
-	return plural(p.NFiles, "file", "files") + " · +" + itoa(p.Adds) + " -" + itoa(p.Dels)
 }
 
 // person converts a signature.

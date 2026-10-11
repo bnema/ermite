@@ -122,7 +122,7 @@ func (h *harness) longRepo(name string) {
 	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/"+name+".git"), "main")
 }
 
-var reOlder = regexp.MustCompile(`<a href="([^"]+)" rel="next">`)
+var reOlder = regexp.MustCompile(`<a class="btn" href="([^"]+)" rel="next">`)
 
 // unescape undoes the HTML escaping of an attribute value.
 func unescape(s string) string { return strings.ReplaceAll(s, "&amp;", "&") }
@@ -174,12 +174,12 @@ func TestWebCommits(t *testing.T) {
 		assert.Equal(t, 50, strings.Count(first, `class="c-sha mute"`), "a page lists 50 commits")
 		assert.Contains(t, first, "commit number 51")
 		assert.NotContains(t, first, "commit number 1<", "the oldest are on the next page")
-		assert.Contains(t, first, "<span class=\"mute\">← newest</span>")
+		assert.Contains(t, first, `<span class="btn" aria-disabled="true">← Newest</span>`)
 		second := unescape(reOlder.FindStringSubmatch(first)[1])
 		page2 := get(second, 200)
 		assert.Equal(t, 2, strings.Count(page2, `class="c-sha mute"`))
-		assert.Contains(t, page2, `href="/long/commits/main">← newest</a>`)
-		assert.Contains(t, page2, "<span class=\"mute\">older →</span>")
+		assert.Contains(t, page2, `href="/long/commits/main">← Newest</a>`)
+		assert.Contains(t, page2, `<span class="btn" aria-disabled="true">Older →</span>`)
 		get("/long/commits/main?page=garbage", 404)
 	})
 
@@ -196,8 +196,8 @@ func TestWebCommits(t *testing.T) {
 		assert.Contains(t, get("/diffs/commits/v1.0.0", 200), "modify a file")
 		assert.Contains(t, get("/diffs/commits/side", 200), "work on the side")
 		assert.Contains(t, get("/diffs/commits/"+f.modify[:10], 200), "modify a file")
-		assert.Contains(t, get("/diffs/commits/main", 200), `[tag: v1.0.0]`)
-		assert.Contains(t, get("/diffs/commits/main", 200), `(merge)`)
+		assert.Contains(t, get("/diffs/commits/main", 200), `<span class="pill tag"><span class="sr">tag </span>v1.0.0</span>`)
+		assert.Contains(t, get("/diffs/commits/main", 200), `<span class="pill">merge</span>`)
 		get("/diffs/commits/nope", 404)
 		get("/diffs/commits/mai", 404)
 		get("/nope/commits/main", 404)

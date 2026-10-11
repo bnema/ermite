@@ -1,68 +1,96 @@
 @layer reset, tokens, base, components, utilities;
 
-/* Palette: the neferbar "mono" theme, black and grays only.
-   Page surfaces follow the OS theme; the two bars stay black in both themes,
-   like neferbar under a light or a dark terminal. */
+/* Fonts: Atkinson Hyperlegible Next for the interface, Atkinson Hyperlegible
+   Mono for titles, code, shas, refs and keys. Both are embedded (static/fonts,
+   SIL OFL 1.1), latin subset, variable weight. The asset loader turns the
+   relative font and icon references into hashed URLs. */
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  src: url(fonts/atkinson-next.woff2) format("woff2");
+  font-weight: 200 800; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  src: url(fonts/atkinson-next-italic.woff2) format("woff2");
+  font-weight: 200 800; font-style: italic; font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible Mono";
+  src: url(fonts/atkinson-mono.woff2) format("woff2");
+  font-weight: 200 800; font-style: normal; font-display: swap;
+}
+
+/* Palette: grays only, in four surface levels, so that blocks read apart
+   without hue. Dark: each level is lighter than the one below it; light: each
+   is whiter. Hue is kept for code, diffs and verdicts. */
 @layer tokens {
   :root {
     color-scheme: light dark;
 
-    /* page */
-    --paper:     light-dark(#f2f2f2, #000000);
-    --paper-alt: light-dark(#e8e8e8, #0c0c0c);
-    --row:       light-dark(#dddddd, #1a1a1a);
-    --sel:       light-dark(#cbcbcb, #303030);
-    --ink:       light-dark(#161616, #d0d0d0);
-    --ink-hi:    light-dark(#000000, #ffffff);
-    --ink-dim:   light-dark(#4a4a4a, #9a9a9a);
-    --ink-mute:  light-dark(#5c5c5c, #8a8a8a);
-    --rule:      light-dark(#bcbcbc, #303030);
-    --focus:     light-dark(#000000, #ffffff);
+    /* surfaces, bottom to top */
+    --bg-canvas: light-dark(#f3f3f3, #0c0c0c); /* the page */
+    --bg-inset:  light-dark(#f8f8f8, #080808); /* code, fields: sunk into a surface */
+    --bg-surface:light-dark(#ffffff, #141414); /* cards, header, rail blocks */
+    --bg-raised: light-dark(#ececec, #1d1d1d); /* hover, buttons, panel rows */
+    --bg-strong: light-dark(#dedede, #292929); /* selected row, pressed button */
+    --bg-overlay:light-dark(#ffffff, #171717); /* dialogs */
+    --backdrop:  light-dark(rgb(0 0 0 / .25), rgb(0 0 0 / .6));
 
-    /* bars (neferbar mono.conf: background, foreground, color4 accent, color0 ink) */
-    --bar:       #000000;
-    --bar-ink:   #d0d0d0;
-    --bar-dim:   #8a8a8a;
-    --accent:    #c8c8c8;
-    --on-accent: #000000;
-    /* lib.sh fade(): four cells from the accent to the bar, each pulled halfway to the bar */
-    --fade-1: #505050;
-    --fade-2: #3c3c3c;
-    --fade-3: #282828;
-    --fade-4: #141414;
+    --border:        light-dark(#dddddd, #242424);
+    --border-strong: light-dark(#c2c2c2, #383838);
 
-    /* Colour, sparingly, from the owner's Despair theme: only code and diffs carry hue.
-       Dark values are Despair's own; light values are the same hues darkened to AA on --paper. */
-    --teal:    light-dark(#2f6b6b, #7db5b5); /* Despair bright teal: keywords, additions */
-    --teal-2:  light-dark(#355f5f, #5a8585); /* slate teal: types, numbers */
-    --red:     light-dark(#a8404b, #d96c75); /* soft red: deletions */
-    --rose:    light-dark(#6b6570, #a7a2a9); /* rose quartz: strings */
+    --ink:      light-dark(#1b1b1b, #d6d6d6);
+    --ink-hi:   light-dark(#000000, #fafafa);
+    --ink-dim:  light-dark(#4d4d4d, #a3a3a3);
+    --ink-mute: light-dark(#616161, #8c8c8c);
+    --focus:    light-dark(#000000, #ffffff);
+    --on-ink:   light-dark(#ffffff, #0c0c0c); /* text on a filled ink button */
+
+    /* Colour, sparingly, from the owner's Despair theme: only code, diffs and
+       verdicts carry hue. Light values are the same hues darkened to AA. */
+    --teal:    light-dark(#2f6b6b, #7db5b5);
+    --teal-2:  light-dark(#355f5f, #5a8585);
+    --red:     light-dark(#a8404b, #d96c75);
+    --rose:    light-dark(#6b6570, #a7a2a9);
 
     --syn-plain:   var(--ink);
     --syn-keyword: var(--teal);
     --syn-string:  var(--rose);
-    --syn-comment: light-dark(#5c5f63, #6a6e73);
+    --syn-comment: light-dark(#5c5f63, #6e7277);
     --syn-number:  var(--teal-2);
     --syn-func:    var(--ink-hi);
     --syn-type:    var(--teal-2);
     --syn-punct:   var(--ink-dim);
 
-    /* diff rows: the line keeps the normal ink; the hue is in a faint row tint and the marker */
-    --add:     light-dark(#d8e5e5, #121919);
-    --del:     light-dark(#eedadc, #231113);
+    --add: light-dark(#dcebeb, #111b1b);
+    --del: light-dark(#f2dfe1, #231315);
 
-    /* one family (the neferbar font when installed), three sizes, two weights */
-    --font: "Adwaita Mono", "AdwaitaMono Nerd Font Mono", ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
-    --fs: 14px;
+    --font: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+    --mono: "Atkinson Hyperlegible Mono", ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+    --fs: 15px;
     --fs-code: 13px;
-    --fs-s: 12px;
-    --lh: 20px;
-    --lh-code: 18px;
+    --fs-s: 13px;
+    --fs-xs: 12px;
+    --lh: 24px;
+    --lh-code: 20px;
 
-    --pad: 2ch;
-    --bar-h: 20px; /* one text line, like neferbar: no padding above or below */
-    --stick: var(--bar-h); /* top offset of sticky headers inside the content (0 in the app shell) */
-    --measure: 80ch;
-    --rail: 40ch;
+    /* spacing scale */
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+    --r: 8px;   /* cards, dialogs */
+    --r-s: 6px; /* buttons, fields */
+
+    --pad: var(--s5);
+    --stick: 0px;     /* top offset of sticky headers inside the content */
+    --measure: 80ch;  /* reading width of prose */
+    --rail: 340px;
+    --page: 1320px;
+    --shadow: 0 1px 2px rgb(0 0 0 / .06), 0 8px 32px rgb(0 0 0 / .18);
+
+    /* names used by the code, diff and merge request sheets */
+    --paper: var(--bg-canvas);
+    --paper-alt: var(--bg-raised);
+    --row: var(--bg-raised);
+    --sel: var(--bg-strong);
+    --rule: var(--border);
   }
 }

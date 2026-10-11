@@ -165,7 +165,7 @@ func hasName(items []RefItem, name string) bool {
 	return false
 }
 
-// pathCrumbs is the path in the top bar: repo, kind ("tree", "blob" or
+// pathCrumbs is the path in the header: repo, kind ("tree", "blob" or
 // "commits"), ref, then the segments of the path. The directories link to
 // their tree; the last segment links to the file for a blob, and to nothing
 // for a history.

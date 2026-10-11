@@ -184,6 +184,7 @@ var (
 	reStyleAttr    = regexp.MustCompile(`(?i)\sstyle\s*=`)
 	reStyleTag     = regexp.MustCompile(`(?i)<style\b`)
 	reImport       = regexp.MustCompile(`(?i)@import|url\(`)
+	reCSSURL       = regexp.MustCompile(`url\(\s*([^)]*?)\s*\)`)
 )
 
 // assertNoInline checks the page has no inline script, style element or
@@ -231,13 +232,29 @@ func TestWebContentSecurity(t *testing.T) {
 			assert.Equal(t, "public, max-age=31536000, immutable", ah.Get("Cache-Control"), m[1])
 			assert.Equal(t, "nosniff", ah.Get("X-Content-Type-Options"), m[1])
 			assert.NotEmpty(t, ab)
-			assert.False(t, reImport.MatchString(ab) && strings.HasSuffix(m[1], ".css"), "%s imports or loads a URL", m[1])
+			if strings.HasSuffix(m[1], ".css") {
+				// The sheet loads its fonts and icons from here, and nothing else.
+				assert.NotContains(t, ab, "@import", m[1])
+				for _, u := range reCSSURL.FindAllStringSubmatch(ab, -1) {
+					assert.True(t, strings.HasPrefix(u[1], "/-/static/"), "%s loads %s", m[1], u[1])
+					st, _, _ := h.get(u[1])
+					assert.Equal(t, 200, st, u[1])
+				}
+			}
 		}
 	}
 
 	// The footer links to the source (AGPL §13).
-	_, _, body := h.get("/")
+	_, hdr, body := h.get("/")
 	assert.Contains(t, body, `<a href="http://example.test/ermite"`)
+
+	// Pages name their speculation rules (prefetch on hover), a static file.
+	rules := strings.Trim(hdr.Get("Speculation-Rules"), `"`)
+	require.True(t, strings.HasPrefix(rules, "/-/static/rules/rules."), rules)
+	st, rh, rb := h.get(rules)
+	assert.Equal(t, 200, st)
+	assert.Equal(t, "application/speculationrules+json", rh.Get("Content-Type"))
+	assert.Contains(t, rb, `"prefetch"`)
 
 	// Unknown, stale or traversing asset names are 404s.
 	for _, p := range []string{"/-/static/css/ermite.000000000000.css", "/-/static/css/ermite.css", "/-/static/", "/-/static/../x", "/-/static/js/"} {

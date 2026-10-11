@@ -19,7 +19,7 @@ import (
 )
 
 // Live updates. A page that can change under the eyes of its reader opens
-// GET /-/events (the Live component of the status bar). The handler follows
+// GET /-/events (the Live component of the hint badge). The handler follows
 // EventService.Watch as the visitor of the request and turns each event into
 // the HTML fragments the page shows, sent as Server-Sent Events:
 //

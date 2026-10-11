@@ -6,6 +6,7 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,23 +99,23 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		l.Ref, l.RefPath = def, def
 		l.SHA, l.Short = d.head.GetCommitId(), short(d.head.GetCommitId())
 	}
-	mk := func(key, post, href, id string) Section {
-		return Section{Key: key, Post: post, Href: href, Current: section == id}
+	mk := func(key, label, href, id string) Section {
+		return Section{Key: key, Label: label, Href: href, Current: section == id}
 	}
 	l.Sections = []Section{
-		mk("s", "ummary", repoHref(d.name()), "summary"),
-		mk("t", "ree", repoHref(d.name(), "tree", def), "tree"),
-		mk("c", "ommits", repoHref(d.name(), "commits", def), "commits"),
-		mk("r", "efs", repoHref(d.name(), "refs"), "refs"),
+		mk("s", "Summary", repoHref(d.name()), "summary"),
+		mk("t", "Files", repoHref(d.name(), "tree", def), "tree"),
+		mk("c", "Commits", repoHref(d.name(), "commits", def), "commits"),
+		mk("r", "Branches & tags", repoHref(d.name(), "refs"), "refs"),
 	}
 	if s.cfg.MergeRequests != nil {
-		l.Sections = append(l.Sections, mk("m", "erge requests", mrBase(d.name()), "merge-requests"))
+		l.Sections = append(l.Sections, mk("m", "Merge requests", mrBase(d.name()), "merge-requests"))
 	}
 	l.Crumbs = []Crumb{{Label: d.name(), Href: repoHref(d.name()), Current: section == "summary"}}
 
 	l.Cmd = append(l.Cmd, CmdItem{Kind: "go", Label: "home", Href: "/"})
 	for _, sec := range l.Sections {
-		l.Cmd = append(l.Cmd, CmdItem{Kind: "section", Label: sec.Key + sec.Post, Href: sec.Href})
+		l.Cmd = append(l.Cmd, CmdItem{Kind: "section", Label: strings.ToLower(sec.Label), Href: sec.Href})
 	}
 	if l.Ref != "" {
 		for _, b := range d.branches {
@@ -233,7 +234,6 @@ func (s *Server) emptyState(ctx context.Context, d *repoData) (Layout, StatePage
 	l.Title = d.name() + " · " + s.instance
 	l.Sections = nil
 	l.Cmd = slices.DeleteFunc(l.Cmd, func(c CmdItem) bool { return c.Kind == "section" })
-	l.Status = Status{Mode: "empty", Context: "empty repository · 0 commits", Hints: "g h home · ? help"}
 	branch := d.repo.GetDefaultBranch()
 	return l, StatePage{
 		Code: "empty", Title: d.name() + " is empty",

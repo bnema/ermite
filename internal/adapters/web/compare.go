@@ -132,11 +132,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 		Crumb{Label: "compare", Current: false},
 		Crumb{Label: p.Source, Current: true},
 	)
-	l.Status = Status{
-		Mode: "compare", Context: p.Source + " → " + p.Target + " · " + p.AheadText,
-		Hints: "d split · u unified · x collapse all · ? help",
-	}
-	l.HasRail, l.RailSum = true, "commits · files"
+	l.HasRail = true
 	return Compare(l, p), http.StatusOK, nil
 }
 
