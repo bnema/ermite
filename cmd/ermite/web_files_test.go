@@ -439,7 +439,7 @@ func TestWebPaths(t *testing.T) {
 	assert.Equal(t, "no-cache", gz.hdr.Get("Cache-Control"))
 	assert.Equal(t, "Accept-Encoding", gz.hdr.Get("Vary"))
 	etag := gz.hdr.Get("ETag")
-	assert.Equal(t, `"paths-`+sha+`"`, etag)
+	assert.Equal(t, `"paths-`+sha+`-gz"`, etag)
 	got := decodeList(t, gunzip(t, gz.body))
 	assert.Equal(t, want, got.Paths, "git ls-tree -r order")
 	assert.False(t, got.Truncated)
@@ -449,13 +449,16 @@ func TestWebPaths(t *testing.T) {
 	require.Equal(t, 200, plain.status)
 	assert.Empty(t, plain.hdr.Get("Content-Encoding"))
 	assert.Equal(t, want, decodeList(t, plain.body).Paths)
-	assert.Equal(t, etag, plain.hdr.Get("ETag"))
+	assert.Equal(t, `"paths-`+sha+`"`, plain.hdr.Get("ETag"), "another variant, another validator")
 
 	// Revalidation: 304, still through the access rule.
 	nm := raw(map[string]string{"If-None-Match": etag, "Accept-Encoding": "gzip"})
 	assert.Equal(t, http.StatusNotModified, nm.status)
 	assert.Empty(t, nm.body)
 	assert.Equal(t, "no-cache", nm.hdr.Get("Cache-Control"))
+	nm = raw(map[string]string{"If-None-Match": plain.hdr.Get("ETag")})
+	assert.Equal(t, http.StatusNotModified, nm.status, "identity validator, identity body")
+	assert.Equal(t, 200, raw(map[string]string{"If-None-Match": etag}).status, "the gzip validator does not match the plain body")
 	assert.Equal(t, 200, raw(map[string]string{"If-None-Match": `"paths-other"`}).status)
 
 	// Only a full commit id: abbreviations, refs, upper case and unknown ids.

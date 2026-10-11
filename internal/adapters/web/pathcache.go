@@ -5,7 +5,10 @@ package web
 import (
 	"container/list"
 	"context"
+	"runtime/debug"
 	"sync"
+
+	"github.com/bnema/zerowrap"
 )
 
 const (
@@ -21,7 +24,7 @@ const (
 // entry is right for every repository and every visitor; who may read it is
 // decided before the cache is asked (Server.paths).
 //
-// Concurrent misses for one commit share a single build.
+// Concurrent misses for one commit of one repository share a single build.
 type pathCache struct {
 	mu       sync.Mutex
 	budget   int
@@ -29,7 +32,7 @@ type pathCache struct {
 	max      int        // largest entry kept
 	lru      *list.List // of *pathEntry, most recently used first
 	byID     map[string]*list.Element
-	building map[string]*pathBuild
+	building map[string]*pathBuild // by repository and commit
 }
 
 type pathEntry struct {
@@ -98,44 +101,54 @@ func (c *pathCache) putLocked(id string, body []byte) {
 }
 
 // load returns the list of a commit: from the cache, or from build, which
-// runs once however many callers ask at the same time. The caller that
-// starts the build runs it; the others wait for it, or for their own ctx.
-func (c *pathCache) load(ctx context.Context, id string, build func() ([]byte, error)) ([]byte, error) {
+// runs once however many callers of a repository ask at the same time. The
+// build runs in its own goroutine, so no caller is held by it: each one,
+// the one that started it included, waits for the build or for its own ctx.
+//
+// Builds in progress are keyed by repository and commit, though the cache is
+// keyed by commit only: a failure of one repository (the commit is missing
+// there, its access rule changed) must not be handed to the requests of
+// another one that would have succeeded.
+func (c *pathCache) load(ctx context.Context, repo, id string, build func() ([]byte, error)) ([]byte, error) {
+	key := repo + "\x00" + id // a repository name has no NUL
 	c.mu.Lock()
 	if b, ok := c.getLocked(id); ok {
 		c.mu.Unlock()
 		return b, nil
 	}
-	if f, ok := c.building[id]; ok {
-		c.mu.Unlock()
-		select {
-		case <-f.done:
-			return f.body, f.err
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	f, ok := c.building[key]
+	if !ok {
+		f = &pathBuild{done: make(chan struct{})}
+		c.building[key] = f
+		go c.run(ctx, key, id, f, build)
 	}
-	f := &pathBuild{done: make(chan struct{})}
-	c.building[id] = f
 	c.mu.Unlock()
+	select {
+	case <-f.done:
+		return f.body, f.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 
+// run executes a build and publishes it. A panic of build is logged and
+// handed to the waiters as errBuildPanicked: it cannot propagate, since
+// nobody above this goroutine could recover it and it would end the process.
+func (c *pathCache) run(ctx context.Context, key, id string, f *pathBuild, build func() ([]byte, error)) {
 	defer func() {
-		// Also on a panic of build: nobody waits for ever.
 		if r := recover(); r != nil {
-			f.err = errBuildPanicked
-			c.finish(id, f)
-			panic(r)
+			f.body, f.err = nil, errBuildPanicked
+			zerowrap.Ctx(ctx).Error().Interface("panic", r).Str("stack", string(debug.Stack())).Msg("path list build panicked")
 		}
+		c.finish(key, id, f)
 	}()
 	f.body, f.err = build()
-	c.finish(id, f)
-	return f.body, f.err
 }
 
 // finish publishes a build: stored when it worked, then released to the waiters.
-func (c *pathCache) finish(id string, f *pathBuild) {
+func (c *pathCache) finish(key, id string, f *pathBuild) {
 	c.mu.Lock()
-	delete(c.building, id)
+	delete(c.building, key)
 	if f.err == nil {
 		c.putLocked(id, f.body)
 	}

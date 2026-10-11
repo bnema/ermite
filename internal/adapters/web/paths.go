@@ -33,7 +33,9 @@ type pathList struct {
 // changes for it, but who may read it does, so every request is authorized
 // first (ResolveRevision runs the access rule) and only then served from the
 // cache of lists. Caching follows raw: a visitor revalidates every time, with
-// an ETag that makes it a 304; the owner's copy is private and never stored.
+// an ETag that makes it a 304 (answered before the list is loaded, so it never
+// waits for a build); the owner's copy is private and never stored. The ETag
+// differs for the gzip and the plain variant.
 func (s *Server) paths(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
@@ -53,25 +55,46 @@ func (s *Server) paths(w http.ResponseWriter, r *http.Request) {
 		s.fail(ctx, w, r, errNotFound)
 		return
 	}
-	body, err := s.pathCache.load(ctx, sha, func() ([]byte, error) { return s.buildPaths(ctx, repo, sha) })
+
+	// The validator names the variant that would be served: the gzip bytes
+	// and the plain JSON are different representations.
+	gz := acceptsGzip(r.Header.Get("Accept-Encoding"))
+	etag := `"paths-` + sha + `"`
+	if gz {
+		etag = `"paths-` + sha + `-gz"`
+	}
+	// Revalidated every time, as raw is: a repository can turn private, and a
+	// shared cache must not keep serving its files. The ETag keeps it cheap.
+	validators := func(h http.Header) {
+		h.Set("Vary", "Accept-Encoding")
+		h.Set("ETag", etag)
+		cacheHeaders(ctx, h, "no-cache", sessionCache)
+	}
+	// Access is settled: a revalidation is answered without the list, so it
+	// never waits for a build.
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		validators(w.Header())
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	body, err := s.pathCache.load(ctx, repo, sha, func() ([]byte, error) { return s.buildPaths(ctx, repo, sha) })
 	if err != nil {
 		s.fail(ctx, w, r, err)
 		return
+	}
+	var plain *gzip.Reader
+	if !gz {
+		if plain, err = gzip.NewReader(bytes.NewReader(body)); err != nil {
+			s.fail(ctx, w, r, err)
+			return
+		}
 	}
 
 	h := w.Header()
 	h.Set("Content-Type", "application/json")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Vary", "Accept-Encoding")
-	h.Set("ETag", `"paths-`+sha+`"`)
-	// Revalidated every time, as raw is: a repository can turn private, and a
-	// shared cache must not keep serving its files. The ETag keeps it cheap.
-	cacheHeaders(ctx, h, "no-cache", sessionCache)
-	if etagMatches(r.Header.Get("If-None-Match"), h.Get("ETag")) {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	if acceptsGzip(r.Header.Get("Accept-Encoding")) {
+	validators(h)
+	if gz {
 		h.Set("Content-Encoding", "gzip")
 		h.Set("Content-Length", strconv.Itoa(len(body)))
 		w.WriteHeader(http.StatusOK)
@@ -80,14 +103,9 @@ func (s *Server) paths(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	zr, err := gzip.NewReader(bytes.NewReader(body))
-	if err != nil {
-		s.fail(ctx, w, r, err)
-		return
-	}
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
-		_, _ = io.Copy(w, zr)
+		_, _ = io.Copy(w, plain)
 	}
 }
 
@@ -119,7 +137,12 @@ func (s *Server) buildPaths(ctx context.Context, repo, sha string) ([]byte, erro
 	if err := zw.Close(); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	// Not buf.Bytes(): the buffer's spare capacity would stay in the cache
+	// without being counted in its budget. (bytes.Clone may round the
+	// capacity up, so the copy is exact.)
+	body := make([]byte, buf.Len())
+	copy(body, buf.Bytes())
+	return body, nil
 }
 
 // acceptsGzip reports whether an Accept-Encoding header allows gzip.
