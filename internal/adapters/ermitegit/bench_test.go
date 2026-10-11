@@ -182,12 +182,21 @@ func BenchmarkRepoReader(b *testing.B) {
 			return
 		}},
 	}
+	// Each method runs three ways, for both readers: warm (the repository is
+	// open, one caller), cold (the repository is closed before every call: the
+	// price of the first read after the idle TTL, an eviction or a restart) and
+	// parallel (b.RunParallel: the contention of the cache and of the library).
+	// The CLI reader keeps no repository open, so its cold run is its warm run.
 	for _, m := range methods {
 		b.Run(m.name, func(b *testing.B) {
 			for _, ad := range []struct {
 				name string
 				r    ports.RepoReader
-			}{{"cli", g}, {"ermitegit", a}} {
+				cold func() // closes what the reader holds open
+			}{
+				{"cli", g, func() {}},
+				{"ermitegit", a, func() { a.Forget(t.dir) }},
+			} {
 				b.Run(ad.name, func(b *testing.B) {
 					require.NoError(b, m.run(ad.r)) // warm-up: processes, caches, graph
 					b.ReportAllocs()
@@ -197,6 +206,30 @@ func BenchmarkRepoReader(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
+				})
+				b.Run(ad.name+"_cold", func(b *testing.B) {
+					require.NoError(b, m.run(ad.r))
+					b.ReportAllocs()
+					b.ResetTimer()
+					for b.Loop() {
+						ad.cold()
+						if err := m.run(ad.r); err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+				b.Run(ad.name+"_parallel", func(b *testing.B) {
+					require.NoError(b, m.run(ad.r))
+					b.ReportAllocs()
+					b.ResetTimer()
+					b.RunParallel(func(pb *testing.PB) {
+						for pb.Next() {
+							if err := m.run(ad.r); err != nil {
+								b.Error(err)
+								return
+							}
+						}
+					})
 				})
 			}
 		})
