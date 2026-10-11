@@ -50,6 +50,8 @@ type Layout struct {
 	Tags      []RefItem
 	Cmd       []CmdItem
 	HasRail   bool
+	// Lede is a line above the content and the rail, so both start level.
+	Lede string
 	// Live connects the page to the event stream (/-/events).
 	Live bool
 	// LiveURL is the stream the page follows, with its query.
@@ -133,7 +135,6 @@ type CommitRow struct {
 
 // SummaryPage is the repository summary.
 type SummaryPage struct {
-	Desc    string
 	Facts   []Fact
 	Clone   Clone
 	Recent  []CommitRow

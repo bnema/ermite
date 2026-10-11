@@ -25,6 +25,9 @@ templ Shell(l Layout, rail templ.Component) {
 			<a class="skip" href="#main">skip to content</a>
 			@Header(l)
 			<div class={ "work", templ.KV("has-rail", l.HasRail && rail != nil) }>
+				if l.Lede != "" {
+					<p class="lede work-lede">{ l.Lede }</p>
+				}
 				<main id="main" tabindex="-1">
 					{ children... }
 				</main>

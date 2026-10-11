@@ -108,6 +108,7 @@
   }
   .work.has-rail { grid-template-columns: minmax(0, 1fr) var(--rail); }
   .rail { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
+  .work-lede { grid-column: 1 / -1; margin-bottom: calc(-1 * var(--s2)); }
   main > * + * { margin-top: var(--s4); }
 
   /* blocks: a surface with a header; rail sections are blocks too */

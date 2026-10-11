@@ -4,9 +4,9 @@ package web
 
 import (
 	"crypto/sha256"
-	"errors"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"net/http"
 	"path"

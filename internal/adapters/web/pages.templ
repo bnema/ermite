@@ -48,9 +48,6 @@ templ Home(l Layout, p HomePage) {
 // column at the reading measure; what one acts on sits in the rail.
 templ Summary(l Layout, p SummaryPage) {
 	@Shell(l, summaryRail(p)) {
-		if p.Desc != "" {
-			<p class="lede">{ p.Desc }</p>
-		}
 		if p.Readme != nil {
 			@ReadmeCard(*p.Readme)
 		}

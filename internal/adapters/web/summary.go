@@ -44,7 +44,6 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 	now := s.cfg.Now()
 
 	p := SummaryPage{
-		Desc:    d.repo.GetDescription(),
 		AllHref: repoHref(d.name(), "commits", ref),
 		Clone:   Clone{ID: "clone-" + d.name(), Lines: []string{"git clone " + s.cloneURL(d.name())}},
 	}
@@ -74,6 +73,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 	l.Title = d.name() + " · " + s.instance
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=summary")
 	l.HasRail = true
+	l.Lede = d.repo.GetDescription()
 	return Summary(l, p), http.StatusOK, nil
 }
 
