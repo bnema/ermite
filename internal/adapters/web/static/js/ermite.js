@@ -66,8 +66,9 @@
     edge(last) {
       const rows = visibleRows();
       const row = last ? rows.at(-1) : rows[0];
-      if (row) row.scrollIntoView({ block: 'nearest' });
-      else scrollPage(last ? 1e9 : 0);
+      if (!row) return scrollPage(last ? 1e9 : 0);
+      setCursor(row, $$('[data-rows] > [data-cursor]'));
+      row.scrollIntoView({ block: 'nearest' });
     },
     open() {
       if (!$('dialog[open]')) $('[data-cursor] a')?.click();
@@ -99,17 +100,22 @@
     // cursor) and, optionally, the groups to hide when they have no row left
     // (data-groups). The cursor goes to the first row left.
     filter(input) {
-      const sel = input.dataset.filter || input.dataset.pick;
-      const t = input.value.toLowerCase();
-      const rows = $$(sel);
-      for (const r of rows) r.hidden = !r.textContent.toLowerCase().includes(t);
-      if (input.dataset.groups) {
-        for (const g of $$(input.dataset.groups)) g.hidden = !rows.some((r) => !r.hidden && g.contains(r));
-      }
+      const rows = ermite.hide(input);
       if (input.dataset.filter) {
         const first = rows.find((r) => !r.hidden);
         for (const r of rows) r.toggleAttribute('data-cursor', r === first);
       }
+    },
+    // hide applies the text of a filter input to its rows and groups, without
+    // moving the cursor, and returns the rows.
+    hide(input) {
+      const t = input.value.toLowerCase();
+      const rows = $$(input.dataset.filter || input.dataset.pick);
+      for (const r of rows) r.hidden = !r.textContent.toLowerCase().includes(t);
+      if (input.dataset.groups) {
+        for (const g of $$(input.dataset.groups)) g.hidden = !rows.some((r) => !r.hidden && g.contains(r));
+      }
+      return rows;
     },
     // The "go to" palette.
     cmdFilter(input) {
@@ -163,7 +169,11 @@
     async permalink() {
       const b = body().dataset;
       if (!b.sha) return flash('no ref to pin on this page');
-      history.replaceState(null, '', location.pathname.replace('/' + b.ref + '/', '/' + b.sha + '/') + location.hash);
+      const enc = (b.ref || '').split('/').map(encodeURIComponent).join('/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // The ref follows the repository and the route: /<repo>/<tree|blob|commits>/<ref>.
+      const path = enc ? location.pathname.replace(new RegExp('^(/[^/]+/[^/]+/)' + enc + '(?=/|$)'), '$1' + b.sha) : location.pathname;
+      if (path === location.pathname) return flash('this page has no ref to pin');
+      history.replaceState(null, '', path + location.hash);
       try {
         await navigator.clipboard.writeText(location.href);
         flash('permalink ' + b.sha.slice(0, 7) + ' copied');
@@ -198,6 +208,7 @@
   // "g t" is the key "t": the tabs have one event each.
   const goto = { h: 'gh', t: 't', c: 'c', r: 'r', m: 'm', g: 'top' };
   let pending = 0;
+  let pendingTimer = 0;
   addEventListener('keydown', (e) => {
     const typing = e.target.closest('input, textarea, select, [contenteditable]');
     // ctrl k / cmd k opens the palette; in a field only cmd k, so that the
@@ -216,7 +227,7 @@
       if (name) { e.preventDefault(); ermite.fire(name); }
       return;
     }
-    if (e.key === 'g') { pending = 1; setTimeout(() => (pending = 0), 1200); return; }
+    if (e.key === 'g') { pending = 1; clearTimeout(pendingTimer); pendingTimer = setTimeout(() => (pending = 0), 1200); return; }
     const name = single[e.key];
     if (!name) return;
     if (e.key !== 'Enter' || !$('dialog[open]')) e.preventDefault();
@@ -243,17 +254,19 @@
   if (!location.hash) document.getElementById('main')?.focus({ preventScroll: true });
 
   // 4. The table of contents of a diff marks the file in view: the last file
-  // whose top is above the first third of the window (the first file when none
-  // is). One observer watches the files against that band; a file has passed
-  // the line when it is in the band or wholly above it. It reports only when a
-  // file enters or leaves the band, so a scroll costs nothing in between.
+  // in the top third of the window, else the last file whose top is above that
+  // line (the first file when none is). One observer tracks the files in the
+  // band; it reports only when a file enters or leaves it, so a scroll costs
+  // nothing in between, and a jump that skips the band is caught by the scan.
   const files = $$('.dfile');
   const links = new Map($$('.files a[href^="#"]').map((a) => [a.hash.slice(1), a]));
   if (files.length && links.size && 'IntersectionObserver' in window) {
-    const passed = new Set();
+    const inBand = new Set();
     let current = null;
     const mark = () => {
-      const f = files.findLast((x) => passed.has(x)) ?? files[0];
+      const f = files.findLast((x) => inBand.has(x))
+        ?? files.findLast((x) => x.getBoundingClientRect().top < innerHeight / 3)
+        ?? files[0];
       if (f === current) return;
       links.get(current?.id)?.removeAttribute('aria-current');
       links.get(f.id)?.setAttribute('aria-current', 'true');
@@ -261,9 +274,8 @@
     };
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
-        const line = e.rootBounds ? e.rootBounds.bottom : innerHeight / 3;
-        if (e.isIntersecting || e.boundingClientRect.top < line) passed.add(e.target);
-        else passed.delete(e.target);
+        if (e.isIntersecting) inBand.add(e.target);
+        else inBand.delete(e.target);
       }
       mark();
     }, { rootMargin: '0px 0px -67% 0px' });
@@ -296,7 +308,9 @@ window.ermiteLive = (() => {
     swap(html) {
       const t = document.createElement('template');
       t.innerHTML = html;
-      for (const el of t.content.children) {
+      const cursor = document.querySelector('[data-rows] > [data-cursor]');
+      const cursorKey = cursor?.id || cursor?.querySelector('a')?.getAttribute('href');
+      for (const el of [...t.content.children]) {
         const old = el.id && document.getElementById(el.id);
         if (el.hasAttribute('data-gone')) { old?.remove(); continue; }
         if (!old) {
@@ -306,10 +320,18 @@ window.ermiteLive = (() => {
         }
         if (old.hasAttribute('data-slot')) { old.replaceChildren(...el.childNodes); continue; }
         if (old.hasAttribute('data-cursor')) el.setAttribute('data-cursor', '');
-        if (old.hidden && old.tagName === 'TR') el.hidden = true;
         old.replaceWith(el);
         window.htmx?.process(el);
       }
+      // The rows may have changed under an active filter: apply it again and
+      // keep the cursor on its row while that row is still shown.
+      for (const input of document.querySelectorAll('input[data-filter]')) {
+        if (input.value) window.ermite?.hide(input);
+      }
+      if (!cursorKey) return;
+      const rows = [...document.querySelectorAll('[data-rows] > *')];
+      const back = rows.find((r) => !r.hidden && (r.id === cursorKey || r.querySelector('a')?.getAttribute('href') === cursorKey));
+      if (back) for (const r of rows) r.toggleAttribute('data-cursor', r === back);
     },
     reload() {
       if (reloading) return;
