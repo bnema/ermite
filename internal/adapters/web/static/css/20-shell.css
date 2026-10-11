@@ -20,6 +20,7 @@
   .i-branch { --i: url(icons/branch.svg); }
   .i-search { --i: url(icons/search.svg); }
   .i-file { --i: url(icons/file.svg); }
+  .i-tag { --i: url(icons/tag.svg); }
 
   .pill {
     display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2); margin-left: var(--s1);
@@ -123,6 +124,16 @@
   .rail section > :not(h2) { margin: var(--s3) var(--s4); }
   .rail section > .list { margin: var(--s2) 0; }
   .rail section > p + p { margin-top: calc(-1 * var(--s2)); }
+  .rail h2 .count + a { margin-left: auto; }
+
+  /* newest tag in the summary rail */
+  .latest-tag {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); font-size: var(--fs-s);
+    & .tag-name { display: inline-flex; align-items: center; gap: 6px; font: 700 var(--fs) / 20px var(--mono); color: var(--ink-hi); text-decoration: none; }
+    & .tag-name:hover { text-decoration: underline; }
+    & time { margin-left: auto; }
+    & .tag-sub { flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
 
   .kv {
     display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--s4); row-gap: var(--s1);

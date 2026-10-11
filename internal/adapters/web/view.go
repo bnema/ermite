@@ -141,6 +141,17 @@ type SummaryPage struct {
 	Readme  *Readme
 	Outline []Heading
 	AllHref string
+	// Latest is the newest tag, nil when the repository has none.
+	Latest *LatestTag
+}
+
+// LatestTag is the newest tag of a repository, shown in the summary rail.
+// Name is empty when there are too many tags to date them; Count and
+// RefsHref still lead to the full list.
+type LatestTag struct {
+	Name, Href, Subject, When, WhenAt string
+	Count                             int
+	RefsHref                          string
 }
 
 // RefRow is a branch or a tag in the refs table.

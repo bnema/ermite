@@ -59,6 +59,21 @@ templ summaryRail(p SummaryPage) {
 </section>
 	<section aria-labelledby="r-facts"><h2 id="r-facts">About</h2>@Facts(p.Facts)
 </section>
+	if p.Latest != nil {
+		<section aria-labelledby="r-tag">
+			<h2 id="r-tag">Tags <span class="count">{ itoa(p.Latest.Count) }</span> <a href={ templ.SafeURL(p.Latest.RefsHref) }>View all</a></h2>
+			if p.Latest.Name != "" {
+				<div class="latest-tag">
+					<a class="tag-name" href={ templ.SafeURL(p.Latest.Href) }><span class="ico i-tag" aria-hidden="true"></span>{ p.Latest.Name }</a>
+					<span class="pill">latest</span>
+					<time class="dim" datetime={ p.Latest.WhenAt } title={ p.Latest.WhenAt }>{ p.Latest.When }</time>
+					if p.Latest.Subject != "" {
+						<p class="tag-sub dim">{ p.Latest.Subject }</p>
+					}
+				</div>
+			}
+		</section>
+	}
 	if len(p.Recent) > 0 {
 		<section aria-labelledby="r-recent"><h2 id="r-recent">Recent commits <a href={ templ.SafeURL(p.AllHref) }>View all</a></h2>@CommitRows(p.Recent)
 </section>

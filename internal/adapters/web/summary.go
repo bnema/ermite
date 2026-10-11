@@ -61,7 +61,8 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 		p.Recent = append(p.Recent, row)
 	}
 
-	p.Facts = s.facts(ctx, d, now)
+	p.Facts = s.facts(d, now)
+	p.Latest = s.latest(ctx, d)
 
 	if rd, err := s.readme(ctx, d, ref); err != nil {
 		return nil, 0, err
@@ -78,23 +79,30 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 }
 
 // maxTagDates is the most tags whose commit dates are read to name the
-// latest one; with more, the fact shows the count only.
+// latest one; with more, the rail shows the count only.
 const maxTagDates = 20
 
+// latest is the newest tag of the repository for the rail, nil without tags.
+func (s *Server) latest(ctx context.Context, d *repoData) *LatestTag {
+	n := len(d.tags)
+	if n == 0 {
+		return nil
+	}
+	lt := &LatestTag{Count: n, RefsHref: repoHref(d.name(), "refs")}
+	if n <= maxTagDates {
+		if name, c := latestTag(d.tags, s.commitsOf(ctx, d.name(), d.tags)); name != "" {
+			lt.Name, lt.Href = name, repoHref(d.name(), "tree", name)
+			lt.Subject, lt.When, lt.WhenAt = c.subject, c.when, c.whenAt
+		}
+	}
+	return lt
+}
+
 // facts are the key/value rows of the rail.
-func (s *Server) facts(ctx context.Context, d *repoData, now time.Time) []Fact {
+func (s *Server) facts(d *repoData, now time.Time) []Fact {
 	fs := []Fact{
 		lastPushFact(d.repo, now),
 		{Key: "branch", Val: d.head.GetShortName() + " · " + plural(len(d.branches), "branch", "branches")},
-	}
-	if n := len(d.tags); n > 0 {
-		val := plural(n, "tag", "tags")
-		if n <= maxTagDates {
-			if name, c := latestTag(d.tags, s.commitsOf(ctx, d.name(), d.tags)); name != "" {
-				val = name + " · " + c.when + " · " + val
-			}
-		}
-		fs = append(fs, Fact{Key: "tag", Val: val})
 	}
 	if c := d.repo.GetCreatedAt(); c.IsValid() {
 		fs = append(fs, Fact{Key: "created", Val: absolute(c.AsTime()), Time: rfc3339(c.AsTime())})

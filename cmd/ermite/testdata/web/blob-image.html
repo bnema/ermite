@@ -211,7 +211,7 @@
 <kbd>u</kbd>
 <kbd>x</kbd>
 </dt>
-<dd>diff: split / unified / collapse all</dd>
+<dd>diff: split / unified / collapse or expand all</dd>
 </div>
 <div>
 <dt>
@@ -385,9 +385,9 @@
            let i = ns.findIndex(n => n.getBoundingClientRect().top > innerHeight / 3);
            let n = ns[i < 0 ? 0 : i]; n.closest('details') && (n.closest('details').open = true); n.scrollIntoView({ block: 'center' })
          };
-         k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split');
-         k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified');
-         k-collapse from:body -> q('[data-file]').arr().forEach(d => d.open = false);
+         k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split'); q('[data-file]').arr().forEach(d => d.open = true);
+         k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified'); q('[data-file]').arr().forEach(d => d.open = true);
+         k-collapse from:body -> { let fs = q('[data-file]').arr(), open = !fs.some(d => d.open); fs.forEach(d => d.open = open) };
          k-permalink from:body -> {
            let b = document.body.dataset;
            if (!b.sha) { b.flash = 'no ref to pin on this page'; await timeout('2s'); b.flash = ''; return }

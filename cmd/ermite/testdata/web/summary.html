@@ -127,13 +127,24 @@
 </dd>
 <dt>branch</dt>
 <dd>main · 2 branches</dd>
-<dt>tag</dt>
-<dd>v0.2.0 · AGO · 2 tags</dd>
 <dt>created</dt>
 <dd>
 <time datetime="STAMP">STAMP</time>
 </dd>
 </dl>
+</section>
+<section aria-labelledby="r-tag">
+<h2 id="r-tag">Tags <span class="count">2</span>
+<a href="/demo/refs">View all</a>
+</h2>
+<div class="latest-tag">
+<a class="tag-name" href="/demo/tree/v0.2.0">
+<span class="ico i-tag" aria-hidden="true">
+</span>v0.2.0</a>
+<span class="pill">latest</span>
+<time class="dim" datetime="STAMP" title="STAMP">AGO</time>
+<p class="tag-sub dim">add main.go</p>
+</div>
 </section>
 <section aria-labelledby="r-recent">
 <h2 id="r-recent">Recent commits <a href="/demo/commits/main">View all</a>
@@ -281,7 +292,7 @@
 <kbd>u</kbd>
 <kbd>x</kbd>
 </dt>
-<dd>diff: split / unified / collapse all</dd>
+<dd>diff: split / unified / collapse or expand all</dd>
 </div>
 <div>
 <dt>
@@ -471,9 +482,9 @@
            let i = ns.findIndex(n => n.getBoundingClientRect().top > innerHeight / 3);
            let n = ns[i < 0 ? 0 : i]; n.closest('details') && (n.closest('details').open = true); n.scrollIntoView({ block: 'center' })
          };
-         k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split');
-         k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified');
-         k-collapse from:body -> q('[data-file]').arr().forEach(d => d.open = false);
+         k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split'); q('[data-file]').arr().forEach(d => d.open = true);
+         k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified'); q('[data-file]').arr().forEach(d => d.open = true);
+         k-collapse from:body -> { let fs = q('[data-file]').arr(), open = !fs.some(d => d.open); fs.forEach(d => d.open = open) };
          k-permalink from:body -> {
            let b = document.body.dataset;
            if (!b.sha) { b.flash = 'no ref to pin on this page'; await timeout('2s'); b.flash = ''; return }
