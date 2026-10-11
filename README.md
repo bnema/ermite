@@ -49,6 +49,8 @@ ermite version                  # client and server, warns about missing server 
 ermite watch [repo] [--json]    # follows events, reconnects and resumes
 ```
 
+An agent skill describing the CLI and the forge lives in [`skills/ermite`](skills/ermite/SKILL.md); link or copy that folder into your agent's skills directory.
+
 `--json` on `repo list|show|create|edit`, `token create|list` and `version` prints stable field names, listed in each command's `--help`; `watch --json` prints one object per line. Errors are one line on standard error (`ermite: …`) and exit status 1. `ermite completion bash|zsh|fish` prints a shell completion script that completes repository names from the server.
 
 ## Git over HTTP
