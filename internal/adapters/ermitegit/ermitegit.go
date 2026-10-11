@@ -100,6 +100,18 @@ type Routes struct {
 	ListCommitsPath Backend
 }
 
+// tree picks the route of a directory listing.
+func (r Routes) tree(path domain.TreePath, lastCommits bool) Backend {
+	switch {
+	case !lastCommits:
+		return r.GetTree
+	case path.IsRoot():
+		return r.GetTreeLastCommits
+	default:
+		return r.GetTreeSubdirLastCommits
+	}
+}
+
 // AllRoutes returns routes that send every method to b. The tests and the
 // benchmarks use it to exercise a backend whatever the production routes are.
 func AllRoutes(b Backend) Routes {
@@ -322,14 +334,7 @@ func (a *Adapter) ResolveRefPath(ctx context.Context, repo domain.RepoName, path
 // GetTree lists a directory.
 func (a *Adapter) GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error) {
 	cli := func() (domain.Tree, error) { return a.cli.GetTree(ctx, repo, rev, path, includeLastCommit) }
-	route := a.routes.GetTree
-	if includeLastCommit {
-		route = a.routes.GetTreeSubdirLastCommits
-		if path.IsRoot() {
-			route = a.routes.GetTreeLastCommits
-		}
-	}
-	if route == CLI {
+	if a.routes.tree(path, includeLastCommit) == CLI {
 		return cli()
 	}
 	return serve(ctx, a, repo, func(r *git.Repo) (domain.Tree, error) {
