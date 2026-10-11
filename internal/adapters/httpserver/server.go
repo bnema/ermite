@@ -36,7 +36,12 @@ type Route struct {
 type Config struct {
 	// Addr is the listen address, "host:port".
 	Addr string
-	// HealthChecks run on every GET /-/health; one failure answers 503.
+	// PublicURL is the public base URL of the server. When it is https://,
+	// every response carries Strict-Transport-Security.
+	PublicURL string
+	// HealthChecks run on GET /-/health, at most once per healthCacheTTL
+	// (the answer is cached, the endpoint being unauthenticated); one
+	// failure answers 503.
 	HealthChecks []Check
 	// Routes are added to the router next to /-/health.
 	Routes []Route
@@ -71,7 +76,7 @@ func New(cfg Config) *Server {
 	for _, r := range cfg.Routes {
 		mux.Handle(r.Pattern, r.Handler)
 	}
-	return &Server{addr: cfg.Addr, handler: withRequestLog(withSecurityHeaders(mux)), onShutdown: cfg.OnShutdown}
+	return &Server{addr: cfg.Addr, handler: withRequestLog(withSecurityHeaders(mux, isHTTPS(cfg.PublicURL))), onShutdown: cfg.OnShutdown}
 }
 
 // Handler returns the root handler, for tests.

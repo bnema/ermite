@@ -207,7 +207,7 @@ func TestWebContentSecurity(t *testing.T) {
 	h.webRepo("demo")
 	h.seed("quiet", domain.VisibilityPublic)
 
-	const csp = "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'"
+	const csp = "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
 	for _, p := range []string{"/", "/demo", "/demo/refs", "/quiet", "/nope", "/demo/commits/main"} {
 		status, hdr, body := h.get(p)
 		assert.Contains(t, []int{200, 404}, status, p)

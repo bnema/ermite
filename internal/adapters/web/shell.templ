@@ -16,6 +16,7 @@ templ Shell(l Layout, rail templ.Component) {
 			<link rel="icon" type="image/svg+xml" href={ templ.SafeURL(l.Assets.Icon) }/>
 			<link rel="preload" href={ templ.SafeURL(l.Assets.Font) } as="font" type="font/woff2" crossorigin/>
 			<link rel="stylesheet" href={ templ.SafeURL(l.Assets.CSS) }/>
+			<meta name="htmx-config" content='{"history":false,"includeIndicatorCSS":false,"extensions":"sse, hx-live"}'/>
 			<script src={ l.Assets.HTMX } defer></script>
 			<script src={ l.Assets.Live } defer></script>
 			<script src={ l.Assets.SSE } defer></script>

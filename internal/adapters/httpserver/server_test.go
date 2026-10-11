@@ -14,7 +14,9 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/zerowrap"
@@ -25,7 +27,7 @@ import (
 )
 
 var securityHeaders = map[string]string{
-	"Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'",
+	"Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
 	"X-Frame-Options":         "DENY",
 	"X-Content-Type-Options":  "nosniff",
 	"Referrer-Policy":         "same-origin",
@@ -71,6 +73,79 @@ func TestHealth(t *testing.T) {
 			}
 			for k, v := range securityHeaders {
 				assert.Equal(t, v, rec.Header().Get(k), "%s on %s", k, tt.name)
+			}
+		})
+	}
+}
+
+func TestHealthIsCached(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var calls atomic.Int32
+		var failing atomic.Bool
+		check := httpserver.Check(func(context.Context) error {
+			calls.Add(1)
+			if failing.Load() {
+				return errors.New("down")
+			}
+			return nil
+		})
+		h := httpserver.New(httpserver.Config{HealthChecks: []httpserver.Check{check}}).Handler()
+
+		steps := []struct {
+			name       string
+			sleep      time.Duration
+			fail       bool
+			wantStatus int
+			wantCalls  int32
+		}{
+			{"first request runs the checks", 0, false, 200, 1},
+			{"a burst reuses the result", 4 * time.Second, true, 200, 1},
+			{"after the TTL the checks run again", time.Second, true, 503, 2},
+			{"a failure is cached too", time.Second, false, 503, 2},
+			{"and recovers after the TTL", 4 * time.Second, false, 200, 3},
+		}
+		for _, st := range steps {
+			time.Sleep(st.sleep)
+			failing.Store(st.fail)
+			rec := do(t, h, "GET", "/-/health")
+			assert.Equal(t, st.wantStatus, rec.Code, st.name)
+			assert.Equal(t, st.wantCalls, calls.Load(), st.name)
+		}
+	})
+}
+
+func TestHealthConcurrentRequestsShareOneRun(t *testing.T) {
+	var calls atomic.Int32
+	check := httpserver.Check(func(context.Context) error { calls.Add(1); return nil })
+	h := httpserver.New(httpserver.Config{HealthChecks: []httpserver.Check{check}}).Handler()
+
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() { assert.Equal(t, 200, do(t, h, "GET", "/-/health").Code) })
+	}
+	wg.Wait()
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+func TestStrictTransportSecurity(t *testing.T) {
+	tests := []struct {
+		name      string
+		publicURL string
+		want      string
+	}{
+		{"https", "https://forge.example.com", "max-age=31536000"},
+		{"https uppercase scheme", "HTTPS://forge.example.com", "max-age=31536000"},
+		{"http", "http://forge.example.com", ""},
+		{"http loopback", "http://127.0.0.1:7341", ""},
+		{"unset", "", ""},
+		{"garbage", "://%", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := httpserver.New(httpserver.Config{PublicURL: tt.publicURL}).Handler()
+			for _, target := range []string{"/-/health", "/nope"} {
+				rec := do(t, h, "GET", target)
+				assert.Equal(t, tt.want, rec.Header().Get("Strict-Transport-Security"), target)
 			}
 		})
 	}

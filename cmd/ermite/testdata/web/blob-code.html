@@ -8,6 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="/-/static/img/icon.HASH.svg">
 <link rel="preload" href="/-/static/fonts/atkinson-next.HASH.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/-/static/css/ermite.HASH.css">
+<meta name="htmx-config" content='{"history":false,"includeIndicatorCSS":false,"extensions":"sse, hx-live"}'>
 <script src="/-/static/js/htmx.min.HASH.js" defer>
 </script>
 <script src="/-/static/js/hx-live.min.HASH.js" defer>
@@ -100,7 +101,7 @@
     q('.line in this').arr().forEach(l => { let k = +l.id.slice(1); l.classList.toggle('sel', k >= lo && k <= hi) });
     document.body.dataset.sel = lo ? 'L' + lo + (hi > lo ? '-L' + hi + ' · ' + (hi - lo + 1) + ' lines' : '') : '';
     if (lo && event.detail?.scroll) document.getElementById('L' + lo)?.scrollIntoView({ block: 'center' })" hx-live="if (!data.ready) { data.ready = '1'; trigger('sel', { scroll: true }) }" data-ready="">
-<code>
+<code hx-ignore>
 <span class="line" id="L1">
 <a class="ln" href="#L1">1</a>
 <span class="kn">package</span>

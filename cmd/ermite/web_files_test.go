@@ -305,7 +305,7 @@ func TestWebFilesContentSecurity(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	h.webFilesRepo("files")
 
-	const csp = "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'"
+	const csp = "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
 	for _, p := range []string{
 		"/files/tree/main", "/files/tree/main/docs", "/files/blob/main/main.go", "/files/blob/main/docs/guide.md",
 		"/files/blob/main/pic.png", "/files/blob/main/logo.svg", "/files/blob/main/evil.go", "/files/blob/main/big.txt",

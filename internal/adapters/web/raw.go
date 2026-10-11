@@ -81,7 +81,7 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 		// Headers are gone: all that is left is to cut the answer short, so
 		// that the client sees it is incomplete.
 		log := zerowrap.FromCtx(ctx)
-		log.Error().Err(err).Str("repo", repo).Str("path", r.URL.Path).Msg("raw stream failed")
+		log.Error().Err(err).Str("repo", repo).Str("path", logPath(r.URL.Path)).Msg("raw stream failed")
 		panic(http.ErrAbortHandler)
 	}
 }

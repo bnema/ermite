@@ -247,6 +247,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	routes = append(routes, webRoutes(site)...)
 	f.server = httpserver.New(httpserver.Config{
 		Addr:         cfg.Addr,
+		PublicURL:    cfg.PublicURL,
 		HealthChecks: []httpserver.Check{store.Check, httpserver.DirWritable(cfg.DataDir)},
 		Routes:       routes,
 		API:          f.API.Handler(),
