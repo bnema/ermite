@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,7 +34,12 @@ var gzipWriters = sync.Pool{New: func() any {
 func gzipPage(b []byte) ([]byte, error) {
 	var out bytes.Buffer
 	zw := gzipWriters.Get().(*gzip.Writer)
-	defer gzipWriters.Put(zw)
+	defer func() {
+		// Drop the reference to out, so a pooled writer does not keep the
+		// last page alive.
+		zw.Reset(io.Discard)
+		gzipWriters.Put(zw)
+	}()
 	zw.Reset(&out)
 	if _, err := zw.Write(b); err != nil {
 		return nil, err

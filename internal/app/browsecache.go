@@ -22,13 +22,16 @@ const (
 // historyKey names an answer that depends only on immutable data: a commit
 // designated by its full id, the path inside it, and for a page of history
 // where it starts and how long it is. The repository is part of the key so
-// that an answer is never served across a name.
+// that an answer is never served across a name, and so is its creation time
+// (in nanoseconds): a repository deleted and created again under the same
+// name is another repository, whose commit ids must not hit the old answers.
 type historyKey struct {
-	repo  domain.RepoName
-	rev   string // full commit id
-	path  string
-	kind  historyKind
-	limit int
+	repo    domain.RepoName
+	created int64
+	rev     string // full commit id
+	path    string
+	kind    historyKind
+	limit   int
 }
 
 type historyKind uint8

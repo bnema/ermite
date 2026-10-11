@@ -147,8 +147,8 @@ func (l *liveStream) lastPush(ctx context.Context) ([]fragment, error) {
 // of one event are built once for all the watchers of the repository that
 // see the same things (see fanout); eventID names the event.
 func (l *liveStream) refs(ctx context.Context, eventID string) ([]fragment, error) {
-	key := fanKey{srv: l.s, repo: l.repo, event: eventID, owner: SignedIn(ctx)}
-	return refsFan.do(ctx, key, func() ([]fragment, error) {
+	key := fanKey{repo: l.repo, event: eventID, owner: SignedIn(ctx)}
+	return l.s.refsFan.do(ctx, key, func() ([]fragment, error) {
 		d, err := l.s.loadRepo(ctx, l.repo)
 		if err != nil {
 			return nil, err
@@ -178,7 +178,6 @@ const (
 // built as the owner can show what an anonymous visitor may not see, so the
 // two never share an entry.
 type fanKey struct {
-	srv         *Server // events of two servers never share
 	repo, event string
 	owner       bool
 }
@@ -189,11 +188,6 @@ type fanEntry struct {
 	err   error
 	at    time.Time // when it was built; zero while it is
 }
-
-// refsFan shares the fragments of the refs page between the watchers of a
-// push. It is a variable of the package, not a field of Server, only because
-// keys carry the server; entries are few and short-lived.
-var refsFan fanout
 
 // fanout builds the fragments of an event once for the many watchers that
 // receive it: a push to a repository that 256 pages watch would otherwise

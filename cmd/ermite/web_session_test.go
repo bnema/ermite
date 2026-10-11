@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -557,4 +558,33 @@ func TestStartupWarnsWhenSignInCannotWork(t *testing.T) {
 	assert.Empty(t, buf.String(), "no warning for https or loopback")
 	warnSessionsNeedHTTPS(ctx, "http://forge.example")
 	assert.Contains(t, buf.String(), "ERMITE_PUBLIC_URL")
+}
+
+func TestWarnSharedClientKey(t *testing.T) {
+	t.Parallel()
+	proxies := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
+	tests := []struct {
+		name    string
+		trusted []netip.Prefix
+		cap     int
+		warns   bool
+	}{
+		{"no proxy, cap active", nil, 4, true},
+		{"proxies trusted", proxies, 4, false},
+		{"no proxy, no cap", nil, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf syncBuffer
+			ctx := zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &buf}))
+			warnSharedClientKey(ctx, tt.trusted, tt.cap)
+			if !tt.warns {
+				assert.Empty(t, buf.String())
+				return
+			}
+			assert.Contains(t, buf.String(), `"level":"warn"`)
+			assert.Contains(t, buf.String(), "ERMITE_TRUSTED_PROXIES")
+		})
+	}
 }

@@ -49,16 +49,26 @@ func (b *Browse) WithHistoryCache(maxEntries int, maxBytes int64) *Browse {
 	return b
 }
 
-// authorize returns nil if p may read the repository.
-func (b *Browse) authorize(ctx context.Context, p domain.Principal, name domain.RepoName) error {
+// authorize returns the repository if p may read it. The caller uses it to
+// tell a repository from a later one created under the same name.
+func (b *Browse) authorize(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error) {
 	repo, err := lookupRepo(ctx, b.meta, name)
 	if err != nil {
-		return err
+		return domain.Repo{}, err
 	}
 	if !canRead(p, repo) {
-		return domain.ErrNotFound
+		return domain.Repo{}, domain.ErrNotFound
 	}
-	return nil
+	return repo, nil
+}
+
+// repoEpoch identifies one life of a repository name: its creation time in
+// nanoseconds, 0 if unknown.
+func repoEpoch(r domain.Repo) int64 {
+	if r.CreatedAt.IsZero() {
+		return 0
+	}
+	return r.CreatedAt.UnixNano()
 }
 
 // ListRefsParams selects the refs to list.
@@ -105,7 +115,7 @@ func (b *Browse) ListRefs(ctx context.Context, p domain.Principal, repo domain.R
 	if err != nil {
 		return RefPage{}, err
 	}
-	if err := b.authorize(ctx, p, repo); err != nil {
+	if _, err := b.authorize(ctx, p, repo); err != nil {
 		return RefPage{}, err
 	}
 	all, err := b.reader.ListRefs(ctx, repo)
@@ -168,7 +178,7 @@ func decodeRefToken(tok string) (*refCursor, error) {
 
 // ResolveRevision turns a revision into the commit it designates.
 func (b *Browse) ResolveRevision(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.ResolvedRevision, error) {
-	if err := b.authorize(ctx, p, repo); err != nil {
+	if _, err := b.authorize(ctx, p, repo); err != nil {
 		return domain.ResolvedRevision{}, err
 	}
 	return b.reader.ResolveRevision(ctx, repo, rev)
@@ -177,7 +187,7 @@ func (b *Browse) ResolveRevision(ctx context.Context, p domain.Principal, repo d
 // ResolveRefPath splits a path such as "feature/x/dir/file" into the longest
 // leading ref and the path inside it.
 func (b *Browse) ResolveRefPath(ctx context.Context, p domain.Principal, repo domain.RepoName, path string) (domain.RefPath, error) {
-	if err := b.authorize(ctx, p, repo); err != nil {
+	if _, err := b.authorize(ctx, p, repo); err != nil {
 		return domain.RefPath{}, err
 	}
 	return b.reader.ResolveRefPath(ctx, repo, path)
@@ -186,7 +196,8 @@ func (b *Browse) ResolveRefPath(ctx context.Context, p domain.Principal, repo do
 // GetTree lists a directory at a revision. With includeLastCommit, entries get
 // their last commit, for at most domain.MaxLastCommitEntries of them.
 func (b *Browse) GetTree(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error) {
-	if err := b.authorize(ctx, p, repo); err != nil {
+	r, err := b.authorize(ctx, p, repo)
+	if err != nil {
 		return domain.Tree{}, err
 	}
 	// The last commits are the costly part (a history walk per entry) and
@@ -195,7 +206,7 @@ func (b *Browse) GetTree(ctx context.Context, p domain.Principal, repo domain.Re
 	if !includeLastCommit || !rev.IsObjectID() {
 		return b.reader.GetTree(ctx, repo, rev, path, includeLastCommit)
 	}
-	key := historyKey{repo: repo, rev: rev.String(), path: path.String(), kind: kindTreeLast}
+	key := historyKey{repo: repo, created: repoEpoch(r), rev: rev.String(), path: path.String(), kind: kindTreeLast}
 	if e, ok := b.history.get(key); ok {
 		return cloneTree(e.tree), nil
 	}
@@ -210,7 +221,7 @@ func (b *Browse) GetTree(ctx context.Context, p domain.Principal, repo domain.Re
 // OpenBlob returns the description of a file and a reader of its content. The
 // caller closes the reader.
 func (b *Browse) OpenBlob(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, path domain.TreePath) (domain.BlobInfo, io.ReadCloser, error) {
-	if err := b.authorize(ctx, p, repo); err != nil {
+	if _, err := b.authorize(ctx, p, repo); err != nil {
 		return domain.BlobInfo{}, nil, err
 	}
 	return b.reader.OpenBlob(ctx, repo, rev, path)
@@ -254,10 +265,11 @@ func (b *Browse) ListCommits(ctx context.Context, p domain.Principal, repo domai
 		}
 		q.Revision, q.Skip = domain.RevisionOf(head), skip
 	}
-	if err := b.authorize(ctx, p, repo); err != nil {
+	r, err := b.authorize(ctx, p, repo)
+	if err != nil {
 		return CommitPage{}, err
 	}
-	res, err := b.listCommits(ctx, repo, q)
+	res, err := b.listCommits(ctx, r, q)
 	if err != nil {
 		return CommitPage{}, err
 	}
@@ -271,11 +283,12 @@ func (b *Browse) ListCommits(ctx context.Context, p domain.Principal, repo domai
 // listCommits asks the reader, through the history cache for the first
 // commit of a path at a full commit id (the "last change" of a file): that
 // answer is immutable.
-func (b *Browse) listCommits(ctx context.Context, repo domain.RepoName, q ports.CommitQuery) (ports.CommitPage, error) {
+func (b *Browse) listCommits(ctx context.Context, r domain.Repo, q ports.CommitQuery) (ports.CommitPage, error) {
+	repo := r.Name
 	if q.Limit != 1 || q.Skip != 0 || !q.Revision.IsObjectID() {
 		return b.reader.ListCommits(ctx, repo, q)
 	}
-	key := historyKey{repo: repo, rev: q.Revision.String(), path: q.Path.String(), kind: kindPage, limit: q.Limit}
+	key := historyKey{repo: r.Name, created: repoEpoch(r), rev: q.Revision.String(), path: q.Path.String(), kind: kindPage, limit: q.Limit}
 	if e, ok := b.history.get(key); ok {
 		return clonePage(e.page), nil
 	}
@@ -318,7 +331,7 @@ func decodeCommitToken(tok string, path domain.TreePath) (domain.ObjectID, int, 
 // GetCommit returns a commit with its statistics and its diff against the
 // first parent, within the default diff limits.
 func (b *Browse) GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.CommitDetail, error) {
-	if err := b.authorize(ctx, p, repo); err != nil {
+	if _, err := b.authorize(ctx, p, repo); err != nil {
 		return domain.CommitDetail{}, err
 	}
 	return b.reader.GetCommit(ctx, repo, rev, domain.DefaultDiffLimits())

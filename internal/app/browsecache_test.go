@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -15,6 +16,7 @@ import (
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func treePath(t *testing.T, s string) domain.TreePath {
@@ -99,6 +101,57 @@ func TestGetTreeLastCommitCacheKey(t *testing.T) {
 			_, err := f.browse.GetTree(ctx, domain.Anonymous(), k.repo.Name, k.rev, k.path, true)
 			require.NoError(t, err)
 		}
+	}
+}
+
+// TestHistoryCacheNotServedAcrossRecreate: a repository deleted and created
+// again under the same name does not get the answers of the old one for a
+// commit id they both could hold.
+func TestHistoryCacheNotServedAcrossRecreate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rev, dir := domain.RevisionOf(oid("a")), treePath(t, "d")
+	n := name(t, "pub")
+	old := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, CreatedAt: created}
+	again := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, CreatedAt: created.Add(time.Hour)}
+
+	tests := []struct {
+		name string
+		call func(b *app.Browse) error
+		// expect registers the reader call of the old repository (answers)
+		// and of the new one (not found).
+		expect func(r *mocks.RepoReader)
+	}{
+		{"tree with last commits", func(b *app.Browse) error {
+			_, err := b.GetTree(ctx, domain.Anonymous(), n, rev, dir, true)
+			return err
+		}, func(r *mocks.RepoReader) {
+			r.EXPECT().GetTree(mock.Anything, n, rev, dir, true).Return(treeWithLast("b"), nil).Once()
+			r.EXPECT().GetTree(mock.Anything, n, rev, dir, true).Return(domain.Tree{}, domain.ErrNotFound).Once()
+		}},
+		{"last change of a path", func(b *app.Browse) error {
+			_, err := b.ListCommits(ctx, domain.Anonymous(), n, app.ListCommitsParams{Revision: rev, Path: dir, PageSize: 1})
+			return err
+		}, func(r *mocks.RepoReader) {
+			q := ports.CommitQuery{Revision: rev, Path: dir, Limit: 1}
+			r.EXPECT().ListCommits(mock.Anything, n, q).Return(ports.CommitPage{
+				Head: oid("a"), Commits: []domain.Commit{{ID: oid("c")}},
+			}, nil).Once()
+			r.EXPECT().ListCommits(mock.Anything, n, q).Return(ports.CommitPage{}, domain.ErrNotFound).Once()
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newBrowseFixture(t)
+			f.meta.EXPECT().Get(mock.Anything, n).Return(old, nil).Twice() // warm, hit
+			f.meta.EXPECT().Get(mock.Anything, n).Return(again, nil).Once()
+			tc.expect(f.reader)
+			require.NoError(t, tc.call(f.browse))
+			require.NoError(t, tc.call(f.browse)) // served from the cache
+			assert.ErrorIs(t, tc.call(f.browse), domain.ErrNotFound)
+		})
 	}
 }
 

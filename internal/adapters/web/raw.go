@@ -8,13 +8,9 @@ import (
 	"net/http"
 	"path"
 	"strconv"
-	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/bnema/zerowrap"
-
-	pb "bnema.dev/ermite-api/gen/ermite"
 )
 
 // rawTimeout bounds the stream of one file to the visitor.
@@ -34,17 +30,6 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 	t, repo, err := s.rawTarget(ctx, r)
 	if err != nil {
 		s.fail(ctx, w, r, err)
-		return
-	}
-	// A revalidation of an unchanged file ends here, before the content is
-	// opened: for a large blob, opening starts a Git process.
-	if match := r.Header.Get("If-None-Match"); match != "" && s.rawUnchanged(ctx, repo, t, match) {
-		h := w.Header()
-		h.Set("ETag", match)
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Content-Security-Policy", rawCSP)
-		cacheHeaders(ctx, h, "no-cache", sessionCache)
-		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	b, err := s.openBlob(ctx, repo, t)
@@ -78,7 +63,10 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 	}
 	// Revalidated every time, even at a full commit id: a repository can turn
 	// private, and a shared cache must not keep serving its files (AC2). The
-	// ETag keeps the revalidation cheap.
+	// ETag spares the body: the blob id comes with the first message of
+	// the stream, and a match ends the answer there. No cheaper call gives the
+	// id of the blob at a path: a tree listing of its directory costs more
+	// than opening a small file.
 	cacheHeaders(ctx, h, "no-cache", sessionCache)
 	if match := r.Header.Get("If-None-Match"); match != "" && h.Get("ETag") != "" && match == h.Get("ETag") {
 		w.WriteHeader(http.StatusNotModified)
@@ -117,32 +105,6 @@ func (s *Server) rawTarget(ctx context.Context, r *http.Request) (target, string
 		return target{}, "", errNotFound
 	}
 	return t, d.name(), nil
-}
-
-// rawUnchanged reports whether match is the ETag of the file, which is the id
-// of its blob. The id comes from the entry of the file in its directory, so
-// nothing of the content is read. Any doubt (the entry is not found, the
-// listing is cut, the call fails) answers false: the file is then opened and
-// the real outcome, error included, follows.
-func (s *Server) rawUnchanged(ctx context.Context, repo string, t target, match string) bool {
-	dir, _ := path.Split(t.path)
-	res, err := s.cfg.Git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{
-		Repo: repo, Revision: t.rev, Path: strings.TrimSuffix(dir, "/"),
-	}))
-	if err != nil {
-		return false
-	}
-	for _, e := range res.Msg.GetEntries() {
-		if e.GetPath() != t.path {
-			continue
-		}
-		switch e.GetKind() {
-		case pb.EntryKind_ENTRY_KIND_FILE, pb.EntryKind_ENTRY_KIND_EXECUTABLE, pb.EntryKind_ENTRY_KIND_SYMLINK:
-			return e.GetId() != "" && match == `"`+e.GetId()+`"`
-		}
-		return false
-	}
-	return false
 }
 
 // rawType is the Content-Type of a file and whether it is an attachment.

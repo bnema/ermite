@@ -240,6 +240,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
 	}
 	warnSessionsNeedHTTPS(ctx, cfg.PublicURL)
+	warnSharedClientKey(ctx, cfg.TrustedProxies, githttp.DefaultMaxPerClient)
 	site, err := newWeb(cfg, f.API, f.Sessions, limiter)
 	if err != nil {
 		return nil, fmt.Errorf("web: %w", err)

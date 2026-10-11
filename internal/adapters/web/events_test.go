@@ -20,6 +20,7 @@ import (
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/adapters/web/mocks"
 )
 
 func TestFormatEvent(t *testing.T) {
@@ -293,15 +294,12 @@ func limiterFor(sess SessionAuth) FailureLimiter {
 	return &countingLimiter{}
 }
 
-// revocable is a SessionAuth whose one session ends when the test says so, like
-// SignOutEverywhere does.
-type revocable struct {
-	fakeSessions
-	ended atomic.Bool
-}
-
-func (r *revocable) Verify(ctx context.Context, tok string) (context.Context, bool, error) {
-	return ctx, tok == r.valid && !r.ended.Load(), nil
+// newRevocable is a SessionAuth whose one session ends when the test sets
+// ended, like SignOutEverywhere does.
+func newRevocable(t *testing.T, valid string) (*mocks.SessionAuth, *atomic.Bool) {
+	t.Helper()
+	var ended atomic.Bool
+	return newVerifier(t, valid, func(tok string) (bool, error) { return tok == valid && !ended.Load(), nil }), &ended
 }
 
 // GO-002: the stream of the owner is checked before each event is sent, not
@@ -310,7 +308,7 @@ func (r *revocable) Verify(ctx context.Context, tok string) (context.Context, bo
 func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
 	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{}), push: make(chan *pb.Event)}
-	sess := &revocable{fakeSessions: fakeSessions{valid: "tok"}}
+	sess, ended := newRevocable(t, "tok")
 	ts := eventsServerWith(t, f, time.Hour, 0, sess) // no heartbeat in the test
 	resp, cancel := open(t, ts, "topic=home", map[string]string{"Cookie": CookieName + "=tok"})
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -338,7 +336,7 @@ func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
 	assert.Contains(t, seen, "id: b-1")
 
 	// Signed out everywhere: the next event is not sent, the stream ends.
-	sess.ended.Store(true)
+	ended.Store(true)
 	select {
 	case f.push <- &pb.Event{Id: "b-2", Kind: &pb.Event_Gap{Gap: &pb.Gap{}}}:
 	case <-time.After(5 * time.Second):
@@ -353,8 +351,8 @@ func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
 func TestEventsVisitorStreamIgnoresSessions(t *testing.T) {
 	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{}), push: make(chan *pb.Event)}
-	sess := &revocable{fakeSessions: fakeSessions{valid: "tok"}}
-	sess.ended.Store(true)
+	sess, ended := newRevocable(t, "tok")
+	ended.Store(true)
 	ts := eventsServerWith(t, f, time.Hour, 0, sess)
 	resp, _ := open(t, ts, "topic=home", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -375,7 +373,7 @@ func TestEventsVisitorStreamIgnoresSessions(t *testing.T) {
 func TestEventsInvalidCookieStream(t *testing.T) {
 	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{})}
-	ts := eventsServerWith(t, f, time.Hour, 0, &fakeSessions{valid: "tok"})
+	ts := eventsServerWith(t, f, time.Hour, 0, newSessions(t, "tok"))
 	resp, _ := open(t, ts, "topic=home", map[string]string{"Cookie": CookieName + "=bad"})
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "no-store, no-transform", resp.Header.Get("Cache-Control"))

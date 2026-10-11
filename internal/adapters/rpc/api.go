@@ -49,9 +49,12 @@ type Config struct {
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one. Share
 	// it with the other adapters that authenticate, so that a client has one
-	// budget of failures.
+	// budget of failures. Leave it unset rather than assigning a typed nil
+	// pointer (a nil *T in the interface is not nil, and would be called).
 	Limiter FailureLimiter
 	// Sessions are the owner's web sessions; nil serves no SessionService.
+	// Leave it unset rather than assigning a typed nil pointer (a nil *T in
+	// the interface is not nil, and the service would be served and called).
 	Sessions Sessions
 }
 

@@ -17,6 +17,8 @@ packages:
     config: *mocks
   bnema.dev/ermite/internal/app:
     config: *mocks
+  bnema.dev/ermite/internal/adapters/web:
+    config: *mocks
   bnema.dev/ermite-api/gen/ermite/ermiteconnect:
     config:
       include-auto-generated: true

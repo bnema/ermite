@@ -86,6 +86,9 @@ type Server struct {
 	assets   *assetSet
 	md       *markdown
 	mux      *http.ServeMux
+	// refsFan shares the fragments of the refs page between the watchers of
+	// a push; entries are few and short-lived.
+	refsFan fanout
 }
 
 // New builds the web handler.

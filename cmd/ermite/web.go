@@ -79,6 +79,23 @@ func warnSessionsNeedHTTPS(ctx context.Context, publicURL string) {
 			"and the session cookie is Secure (__Host-), so browsers drop it; serve the site over https")
 }
 
+// warnSharedClientKey tells the operator, at startup, that without trusted
+// proxies every request is attributed to the address of its TCP peer. Behind a
+// reverse proxy that is the proxy: all the clients then share one key, and so
+// one cap on the Git backends running at once (maxPerClient) and one budget of
+// failed authentications. The keying is unchanged; the fix is to list the
+// proxy networks.
+func warnSharedClientKey(ctx context.Context, trusted []netip.Prefix, maxPerClient int) {
+	if len(trusted) > 0 || maxPerClient <= 0 {
+		return
+	}
+	log := zerowrap.FromCtx(ctx)
+	log.Warn().Int("max_git_backends_per_client", maxPerClient).Msg(
+		config.EnvTrustedProxies + " is not set: clients are told apart by their TCP peer address only. " +
+			"Behind a reverse proxy, all clients share the proxy's address, so one cap of concurrent Git " +
+			"requests and one budget of failed authentications; set it to the proxy networks")
+}
+
 // webSessions adapts the session use cases to web.SessionAuth: a valid token
 // gives the context of the owner, whose principal the API calls of the page
 // carry (rpc.API.InProcessClient).
