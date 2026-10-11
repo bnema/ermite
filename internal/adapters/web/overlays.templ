@@ -7,7 +7,7 @@ import "strings"
 // OverlayHelp is the keyboard map panel.
 templ OverlayHelp() {
 	<dialog id="panel-help" class="panel modal" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
-		<div class="panel-head"><h2>Keyboard shortcuts</h2><button type="button" class="panel-x" hx-on:click="closest('dialog').close()"><kbd>esc</kbd> close</button></div>
+		<div class="panel-head"><h2>Keyboard shortcuts</h2><button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd> close</button></div>
 		<dl class="keys">
 			<div><dt><kbd>ctrl k</kbd> <kbd>:</kbd></dt><dd>go to a section, branch, tag, file or repository</dd></div>
 			<div><dt><kbd>?</kbd></dt><dd>this list</dd></div>
@@ -40,7 +40,7 @@ templ OverlayRefs(l Layout) {
 					data-pick
 					hx-on:input="let t = this.value.toLowerCase(); q('#panel-refs li').arr().forEach(li => li.hidden = !li.textContent.toLowerCase().includes(t))"
 				/>
-				<button type="button" class="panel-x" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
+				<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
 			</div>
 			<div class="panel-cols" data-picklist>
 				<section aria-label="Branches">
@@ -105,9 +105,9 @@ templ OverlayCmd(items []CmdItem) {
         if (step) { event.preventDefault(); let n = vis[Math.max(0, Math.min(vis.length - 1, i + step))]; n && (q(n).take('data-cursor', '#cmd-list > li'), n.scrollIntoView({ block: 'nearest' })) }
         else if (event.key === 'Enter') { event.preventDefault(); vis[Math.max(i, 0)]?.querySelector('a').click() }"
 			/>
-			<button type="button" class="panel-x" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
+			<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
 		</div>
-		<ul id="cmd-list" class="cmd-list" role="listbox" aria-label="Targets">
+		<ul id="cmd-list" class="cmd-list" aria-label="Targets">
 			for i, c := range items {
 				<li data-k={ strings.ToLower(c.Kind + " " + c.Label) } data-cursor?={ i == 0 }><a href={ templ.SafeURL(c.Href) } tabindex="-1"><span class="lbl">{ c.Label }</span><span class="k">{ c.Kind }</span></a></li>
 			}

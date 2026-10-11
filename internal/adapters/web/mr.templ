@@ -168,7 +168,7 @@ templ MergeRequest(l Layout, p MRPage) {
 			<span class="grow"></span>
 			@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
 			@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
-			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd>x</kbd></button>
+			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd aria-hidden="true">x</kbd></button>
 		</div>
 		if p.Invisible {
 			<p class="notice">
@@ -448,7 +448,7 @@ templ Compare(l Layout, p ComparePage) {
 				<span class="grow"></span>
 				@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
 				@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
-				<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd>x</kbd></button>
+				<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd aria-hidden="true">x</kbd></button>
 			</div>
 			if p.Invisible {
 				<p class="notice">

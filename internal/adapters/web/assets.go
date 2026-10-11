@@ -4,6 +4,7 @@ package web
 
 import (
 	"crypto/sha256"
+	"errors"
 	"embed"
 	"encoding/hex"
 	"io/fs"
@@ -106,6 +107,9 @@ func loadAssets() (*assetSet, error) {
 		}
 		css.WriteString("/* " + path.Base(f) + " */\n")
 		css.Write(b)
+	}
+	if s.urls.Font == "" {
+		return nil, errors.New("web: the UI font static/fonts/atkinson-next.woff2 is missing")
 	}
 	sheet := strings.NewReplacer(refs...).Replace(css.String())
 	s.urls.CSS = put("css", "ermite.css", []byte(sheet), "text/css; charset=utf-8")

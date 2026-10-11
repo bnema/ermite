@@ -49,7 +49,7 @@
   .brand {
     display: flex; align-items: center; gap: var(--s2); flex: none;
     font: 700 var(--fs) / 1 var(--mono); color: var(--ink-hi); text-decoration: none;
-    & span { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    & .brand-name { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     &:hover { text-decoration: none; }
   }
   .brand-mark {
@@ -174,7 +174,8 @@
   @media (max-width: 720px) {
     :root { --pad: var(--s4); }
     .hdr-top { gap: var(--s3); height: 52px; }
-    .brand span { display: none; }
+    .brand-name { display: none; }
+    .crumbs li:not(:last-child) { display: none; }
     .ref .sha, .owner-badge, .hdr-acts .icon { display: none; }
     .ref { max-width: 16ch; }
     .work { padding-top: var(--s4); }

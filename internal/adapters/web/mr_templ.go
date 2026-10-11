@@ -974,7 +974,7 @@ func MergeRequest(l Layout, p MRPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<button type=\"button\" aria-keyshortcuts=\"x\" hx-on:click=\"document.body.dispatchEvent(new CustomEvent('k-collapse'))\" class=\"btn\">Collapse all<kbd>x</kbd></button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<button type=\"button\" aria-keyshortcuts=\"x\" hx-on:click=\"document.body.dispatchEvent(new CustomEvent('k-collapse'))\" class=\"btn\">Collapse all<kbd aria-hidden=\"true\">x</kbd></button></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2444,7 +2444,7 @@ func Compare(l Layout, p ComparePage) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "<button type=\"button\" aria-keyshortcuts=\"x\" hx-on:click=\"document.body.dispatchEvent(new CustomEvent('k-collapse'))\" class=\"btn\">Collapse all<kbd>x</kbd></button></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 217, "<button type=\"button\" aria-keyshortcuts=\"x\" hx-on:click=\"document.body.dispatchEvent(new CustomEvent('k-collapse'))\" class=\"btn\">Collapse all<kbd aria-hidden=\"true\">x</kbd></button></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

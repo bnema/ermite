@@ -9,12 +9,16 @@
   let pending = 0;
   const fire = (name) => document.body.dispatchEvent(new CustomEvent('k-' + name, { bubbles: false }));
   addEventListener('keydown', (e) => {
-    // ctrl k / cmd k opens the palette from anywhere, inputs included.
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); pending = 0; return fire('cmd'); }
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const typing = e.target.closest('input, textarea, select, [contenteditable]');
+    // ctrl k / cmd k opens the palette; in a field only cmd k, so that the
+    // field keeps ctrl k (kill to end of line on macOS).
+    if ((e.metaKey || (e.ctrlKey && !typing)) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') { e.preventDefault(); pending = 0; return fire('cmd'); }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Escape') { pending = 0; if (typing) e.target.blur(); return fire('esc'); }
     if (typing) return;
+    // An open dialog takes only the keys that move between dialogs: the page
+    // behind it does not react (scripted clicks would go through inert).
+    if (document.querySelector('dialog[open]') && !['?', 'b', ':', 'f', 'Enter'].includes(e.key)) { pending = 0; return; }
     if (e.key === 'Enter' && e.target.closest('a, button, summary')) return;
     if (pending) {
       const name = goto[e.key];

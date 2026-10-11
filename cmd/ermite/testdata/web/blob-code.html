@@ -24,7 +24,7 @@
 <a class="brand" href="/" data-g="h" title="home (g h)">
 <span class="brand-mark" aria-hidden="true">
 </span>
-<span>example.test</span>
+<span class="brand-name">example.test</span>
 </a>
 <nav class="crumbs" aria-label="Path">
 <ol>
@@ -53,9 +53,9 @@
 <span class="ico i-search" aria-hidden="true">
 </span>
 <span class="search-label">Go to…</span>
-<kbd>ctrl k</kbd>
+<kbd aria-hidden="true">ctrl k</kbd>
 </button>
-<button type="button" class="btn icon" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" title="keyboard shortcuts (?)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-help'))">?</button>
+<button type="button" class="btn icon" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-help'))">?</button>
 </div>
 </div>
 <nav class="tabs" aria-label="Sections">
@@ -202,7 +202,7 @@
 <dialog id="panel-help" class="panel modal" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 <div class="panel-head">
 <h2>Keyboard shortcuts</h2>
-<button type="button" class="panel-x" hx-on:click="closest('dialog').close()">
+<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd> close</button>
 </div>
 <dl class="keys">
@@ -299,7 +299,7 @@
 <div class="panel-head">
 <label for="refs-filter" class="sr">filter branches and tags</label>
 <input id="refs-filter" type="search" placeholder="Switch branch or tag…" autocomplete="off" data-pick hx-on:input="let t = this.value.toLowerCase(); q('#panel-refs li').arr().forEach(li => li.hidden = !li.textContent.toLowerCase().includes(t))">
-<button type="button" class="panel-x" hx-on:click="closest('dialog').close()">
+<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd>
 </button>
 </div>
@@ -340,11 +340,11 @@
         let step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
         if (step) { event.preventDefault(); let n = vis[Math.max(0, Math.min(vis.length - 1, i + step))]; n && (q(n).take('data-cursor', '#cmd-list > li'), n.scrollIntoView({ block: 'nearest' })) }
         else if (event.key === 'Enter') { event.preventDefault(); vis[Math.max(i, 0)]?.querySelector('a').click() }">
-<button type="button" class="panel-x" hx-on:click="closest('dialog').close()">
+<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd>
 </button>
 </div>
-<ul id="cmd-list" class="cmd-list" role="listbox" aria-label="Targets">
+<ul id="cmd-list" class="cmd-list" aria-label="Targets">
 <li data-k="go home" data-cursor>
 <a href="/" tabindex="-1">
 <span class="lbl">home</span>

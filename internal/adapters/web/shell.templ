@@ -51,7 +51,7 @@ templ Header(l Layout) {
 		<div class="hdr-top">
 			<a class="brand" href="/" data-g="h" title="home (g h)">
 				<span class="brand-mark" aria-hidden="true"></span>
-				<span>{ l.Instance }</span>
+				<span class="brand-name">{ l.Instance }</span>
 			</a>
 			if len(l.Crumbs) > 0 {
 				<nav class="crumbs" aria-label="Path">
@@ -66,7 +66,11 @@ templ Header(l Layout) {
 										}
 									>{ c.Label }</a>
 								} else {
-									<span aria-current="page">{ c.Label }</span>
+									<span
+										if c.Current {
+											aria-current="page"
+										}
+									>{ c.Label }</span>
 								}
 							</li>
 						}
@@ -100,9 +104,9 @@ templ Header(l Layout) {
 				>
 					<span class="ico i-search" aria-hidden="true"></span>
 					<span class="search-label">Go to…</span>
-					<kbd>ctrl k</kbd>
+					<kbd aria-hidden="true">ctrl k</kbd>
 				</button>
-				<button type="button" class="btn icon" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" title="keyboard shortcuts (?)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-help'))">?</button>
+				<button type="button" class="btn icon" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-help'))">?</button>
 				if SignedIn(ctx) {
 					<form class="owner" method="post" action="/-/logout">
 						<span class="owner-badge" title="signed in as the owner">owner</span>

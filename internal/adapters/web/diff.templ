@@ -55,7 +55,7 @@ templ Commit(l Layout, p CommitPage) {
 			<span class="grow"></span>
 			@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
 			@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
-			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd>x</kbd></button>
+			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd aria-hidden="true">x</kbd></button>
 		</div>
 		if p.Invisible {
 			<p class="notice">
@@ -109,7 +109,7 @@ templ viewLink(p DiffView, view, label, key, href string) {
 			hx-on:click="event.preventDefault(); document.body.dispatchEvent(new CustomEvent('k-' + this.dataset.view))"
 			:aria-current={ "q('#diffs').attr['data-diff'] === '" + view + "' ? 'true' : false" }
 		}
-	>{ label }<kbd>{ key }</kbd></a>
+	>{ label }<kbd aria-hidden="true">{ key }</kbd></a>
 }
 
 templ personView(pr Person) {
