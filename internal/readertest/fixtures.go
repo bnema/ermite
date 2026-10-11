@@ -4,9 +4,13 @@ package readertest
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/domain"
 )
@@ -57,6 +61,7 @@ func Cases() []Case {
 		{"large blobs", buildLarge},
 		{"names and messages", buildNames},
 		{"refs", buildRefs},
+		{"dangling ref", buildDangling},
 		{"submodule", buildSubmodule},
 		{"wide directory", buildWide},
 		{"detached HEAD", func(t *testing.T, data string) *Fixture {
@@ -194,6 +199,11 @@ func buildNames(t *testing.T, data string) *Fixture {
 	f.Git("-c", "user.name=Zoë <Ünï>", "commit", "--quiet", "--author=Zoë Ünï <zoe@example.org>", "-m", strings.Repeat("long ", 400))
 	f.Write("héllo wörld.txt", "x\n").Write("tab\tname.txt", "t\n").Write("-dash", "d\n")
 	f.Commit("names")
+	// Git trims the trailing whitespace of a name when it writes a commit but
+	// shows one that has some as it is read: the readers must agree on it.
+	head, tree := f.Git("rev-parse", "HEAD"), f.Git("rev-parse", "HEAD^{tree}")
+	f.Git("update-ref", "refs/heads/main", f.WriteObject("commit", "tree "+tree+"\nparent "+head+"\n"+
+		"author Ada\t <a@b> 1767268860 +0000\ncommitter Grace \t\r <g@b> 1767268860 +0000\n\nraw names\n"))
 	f.Maintain()
 	return f
 }
@@ -228,6 +238,19 @@ func buildRefs(t *testing.T, data string) *Fixture {
 	f.Git("branch", "loose-after-pack", c3)
 	f.Git("tag", "loose-tag", c1)
 	f.Git("branch", "-f", "same", c3) // loose overrides the packed one
+	return f
+}
+
+// buildDangling has a loose branch and a loose tag whose objects do not exist,
+// next to sound refs. git lists them, and fails when it must follow them.
+func buildDangling(t *testing.T, data string) *Fixture {
+	f := NewFixture(t, data, "dangling")
+	f.Write("a.txt", "1\n")
+	f.Commit("one")
+	ghost := strings.Repeat("0123456789", 4)
+	for _, ref := range []string{"refs/heads/ghost", "refs/tags/ghost"} {
+		require.NoError(t, os.WriteFile(filepath.Join(f.Bare, filepath.FromSlash(ref)), []byte(ghost+"\n"), 0o644))
+	}
 	return f
 }
 

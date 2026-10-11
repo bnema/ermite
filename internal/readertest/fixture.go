@@ -70,6 +70,18 @@ func (f *Fixture) Git(args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// WriteObject stores a raw object of the given type (commit, tag...) built by
+// hand, for what git itself refuses to write, and returns its id.
+func (f *Fixture) WriteObject(typ, content string) string {
+	f.T.Helper()
+	cmd := exec.Command("git", "hash-object", "-w", "-t", typ, "--stdin")
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + f.Work, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_DIR=" + f.Bare}
+	cmd.Stdin = strings.NewReader(content)
+	out, err := cmd.CombinedOutput()
+	require.NoError(f.T, err, "git hash-object: %s", out)
+	return strings.TrimSpace(string(out))
+}
+
 // Path returns the path of a file of the work tree.
 func (f *Fixture) Path(p string) string { return filepath.Join(f.Work, filepath.FromSlash(p)) }
 

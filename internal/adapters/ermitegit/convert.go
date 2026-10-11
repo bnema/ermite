@@ -53,6 +53,12 @@ func listRefs(r *git.Repo) ([]domain.Ref, error) {
 				}
 			case errors.Is(err, git.ErrWrongType):
 				// A tag of a tree or a blob has no commit.
+			case errors.Is(err, git.ErrNotFound):
+				// The ref exists and its object does not: the repository is
+				// damaged, which is not a missing repository or revision, so
+				// the error must not match domain.ErrNotFound (gitcli fails
+				// the same way). %v hides git.ErrNotFound from mapErr.
+				return nil, fmt.Errorf("ref %s points to a missing object: %v", ref.Name, err)
 			default:
 				return nil, fmt.Errorf("follow %s: %w", ref.Name, err)
 			}
@@ -388,6 +394,9 @@ func convertCommit(c *git.Commit) (domain.Commit, error) {
 	}
 	end := [5]int{}
 	for i, f := range [...][]byte{c.Author.Name, c.Author.Email, c.Committer.Name, c.Committer.Email, c.Message} {
+		if i == 0 || i == 2 {
+			f = trimNameRight(f)
+		}
 		buf = append(buf, f...)
 		end[i] = len(buf)
 	}
@@ -418,6 +427,10 @@ func convertCommit(c *git.Commit) (domain.Commit, error) {
 	out.Message, out.Summary = domain.SplitCommitMessage(text[end[3]:])
 	return out, nil
 }
+
+// trimNameRight drops the trailing whitespace of a name the way git does (the
+// library trims spaces only).
+func trimNameRight(b []byte) []byte { return bytes.TrimRight(b, " \t\r\n") }
 
 func isUTF8Label(b []byte) bool {
 	return bytes.EqualFold(b, []byte("utf-8")) || bytes.EqualFold(b, []byte("utf8"))

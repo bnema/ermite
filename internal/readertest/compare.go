@@ -55,7 +55,7 @@ func errClass(err error) string {
 	case errors.Is(err, context.Canceled):
 		return "canceled"
 	}
-	return "other: " + err.Error()
+	return "other" // the messages of two readers differ
 }
 
 // Queries are the questions put to both readers about one repository.
@@ -116,7 +116,7 @@ func Derive(t testing.TB, dir string, b Budget) Queries {
 	var commits []string
 	{
 		// An empty repository has no commit: rev-list --all prints nothing.
-		cmd := exec.Command("git", "--git-dir="+dir, "rev-list", "--all")
+		cmd := exec.Command("git", "--git-dir="+dir, "rev-list", "--all", "--missing=allow-any")
 		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null"}
 		out, err := cmd.Output()
 		require.NoError(t, err)
