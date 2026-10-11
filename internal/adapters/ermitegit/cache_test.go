@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/zerowrap"
@@ -207,56 +208,129 @@ func TestEncodedCommitIsServedByGit(t *testing.T) {
 	assert.Equal(t, "café", got.Commits[0].Message)
 }
 
+// The idle tests run in a synctest bubble: the clock is fake, so IdleTTL is the
+// production one and the boundaries are exact. The sweeper ticks every
+// IdleTTL/4 from the creation of the adapter and closes what has been idle for
+// more than IdleTTL, so a repository last used at t is closed at the first tick
+// after t+IdleTTL, which is t+IdleTTL+IdleTTL/4 here (no time passes while the
+// fixtures are built: the bubble's clock only moves when everything sleeps).
+const idleTTL = ermitegit.DefaultIdleTTL
+
 // A repository that nobody reads for IdleTTL is closed, without a goroutine
 // per repository.
 func TestIdleRepositoriesAreClosed(t *testing.T) {
-	ctx := context.Background()
-	a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = 80 * time.Millisecond })
-	f := commitOf(t, data, "idle")
-	_, err := a.ListRefs(ctx, f.Name)
-	require.NoError(t, err)
-	require.Equal(t, 1, a.OpenRepos())
-	require.Eventually(t, func() bool { return a.OpenRepos() == 0 }, 5*time.Second, 10*time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = idleTTL })
+		f := commitOf(t, data, "idle")
+		_, err := a.ListRefs(ctx, f.Name)
+		require.NoError(t, err)
+		require.Equal(t, 1, a.OpenRepos())
 
-	// It opens again on the next read.
-	_, err = a.ListRefs(ctx, f.Name)
-	require.NoError(t, err)
-	assert.Equal(t, 1, a.OpenRepos())
+		synctest.Sleep(idleTTL) // idle for exactly the TTL: not more
+		assert.Equal(t, 1, a.OpenRepos(), "not idle for more than the TTL yet")
+		synctest.Sleep(idleTTL/4 - time.Nanosecond)
+		assert.Equal(t, 1, a.OpenRepos(), "the sweeper has not ticked yet")
+		synctest.Sleep(time.Nanosecond)
+		assert.Equal(t, 0, a.OpenRepos(), "closed by the first sweep after the TTL")
+
+		// It opens again on the next read.
+		_, err = a.ListRefs(ctx, f.Name)
+		require.NoError(t, err)
+		assert.Equal(t, 1, a.OpenRepos())
+	})
+}
+
+// A read keeps the repository open: the TTL counts from the last use.
+func TestReadsKeepARepositoryOpen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = idleTTL })
+		f := commitOf(t, data, "busy")
+		for range 10 {
+			_, err := a.ListRefs(ctx, f.Name)
+			require.NoError(t, err)
+			synctest.Sleep(idleTTL / 2)
+			require.Equal(t, 1, a.OpenRepos(), "used within the TTL")
+		}
+		synctest.Sleep(idleTTL)
+		assert.Equal(t, 0, a.OpenRepos(), "closed once nobody reads it")
+	})
 }
 
 // A Refresh after a write is not a read: a repository pushed to but never read
 // still closes after IdleTTL.
 func TestRefreshIsNotAUse(t *testing.T) {
-	ctx := context.Background()
-	a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = 80 * time.Millisecond })
-	f := commitOf(t, data, "pushed")
-	_, err := a.ListRefs(ctx, f.Name)
-	require.NoError(t, err)
-	start := time.Now()
-	for time.Since(start) < 5*time.Second && a.OpenRepos() == 1 {
-		a.Refresh(ctx, f.Name)
-		time.Sleep(20 * time.Millisecond)
-	}
-	assert.Equal(t, 0, a.OpenRepos(), "refreshes kept an unread repository open")
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = idleTTL })
+		f := commitOf(t, data, "pushed")
+		_, err := a.ListRefs(ctx, f.Name)
+		require.NoError(t, err)
+		// A push every 30 seconds, until the sweep that follows the TTL.
+		for elapsed := time.Duration(0); elapsed < idleTTL+idleTTL/4; elapsed += 30 * time.Second {
+			require.Equal(t, 1, a.OpenRepos(), "open after %v", elapsed)
+			a.Refresh(ctx, f.Name)
+			synctest.Sleep(30 * time.Second)
+		}
+		assert.Equal(t, 0, a.OpenRepos(), "refreshes kept an unread repository open")
+	})
 }
 
 // The idle close does not cut a blob stream the reader still holds: the library
 // keeps the stream valid after Close.
 func TestIdleCloseDoesNotCutAStream(t *testing.T) {
-	ctx := context.Background()
-	a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = 50 * time.Millisecond })
-	f := readertest.NewFixture(t, data, "stream")
-	content := readertest.RandomBytes(3<<20, 12)
-	f.WriteBytes("big.bin", content)
-	f.Commit("big")
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = idleTTL })
+		f := readertest.NewFixture(t, data, "stream")
+		content := readertest.RandomBytes(3<<20, 12)
+		f.WriteBytes("big.bin", content)
+		f.Commit("big")
 
-	_, rc, err := a.OpenBlob(ctx, f.Name, domain.Revision{}, readertest.TreePath(t, "big.bin"))
-	require.NoError(t, err)
-	require.Eventually(t, func() bool { return a.OpenRepos() == 0 }, 5*time.Second, 10*time.Millisecond)
-	got, err := io.ReadAll(rc)
-	require.NoError(t, err)
-	require.NoError(t, rc.Close())
-	assert.True(t, bytes.Equal(content, got))
+		_, rc, err := a.OpenBlob(ctx, f.Name, domain.Revision{}, readertest.TreePath(t, "big.bin"))
+		require.NoError(t, err)
+		synctest.Sleep(idleTTL + idleTTL/4)
+		require.Equal(t, 0, a.OpenRepos())
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		assert.True(t, bytes.Equal(content, got))
+	})
+}
+
+// A repository ermite-git could not read is served by git for UnsupportedRetry,
+// then opened again: a repack, or the removal of a replace ref, can make it
+// readable. The commit-graph of the history fixture is mapped only while the
+// library has the repository open.
+func TestUnsupportedRepositoryIsTriedAgainAfterTheRetryDelay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), nil)
+		h := readertest.NewHistory(t, data)
+		h.Maintain()
+		alternates := filepath.Join(h.Bare, "objects", "info", "alternates")
+		require.NoError(t, os.WriteFile(alternates, []byte(filepath.Join(t.TempDir(), "objects")+"\n"), 0o644))
+		read := func() {
+			t.Helper()
+			// ListRefs: git's answer is a one-shot command, where ListCommits
+			// would start a long-lived cat-file process, whose pipes keep the
+			// bubble from ever being idle.
+			_, err := a.ListRefs(ctx, h.Name)
+			require.NoError(t, err)
+		}
+
+		read()
+		require.False(t, mapped(t, h.Bare), "unsupported: served by git")
+		require.NoError(t, os.Remove(alternates)) // readable now
+
+		synctest.Sleep(ermitegit.UnsupportedRetry)
+		read()
+		assert.False(t, mapped(t, h.Bare), "still served by git: the delay is not over")
+		synctest.Sleep(time.Nanosecond)
+		read()
+		assert.True(t, mapped(t, h.Bare), "tried again once the delay is over")
+	})
 }
 
 // mapped reports whether the process maps a file under dir (Linux).

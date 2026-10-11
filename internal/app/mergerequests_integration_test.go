@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -202,14 +201,17 @@ func (r *mrRig) open(branch string) domain.MergeRequest {
 	return mr
 }
 
-// drain returns the events published so far.
+// drain returns the events published so far. The use cases publish on the bus
+// from the calling goroutine, and the bus delivers into the buffer of the
+// subscriber before Publish returns: whatever a returned call published is
+// already in the channel.
 func (r *mrRig) drain() []domain.Event {
 	var out []domain.Event
 	for {
 		select {
 		case ev := <-r.events:
 			out = append(out, ev)
-		case <-time.After(20 * time.Millisecond):
+		default:
 			return out
 		}
 	}
