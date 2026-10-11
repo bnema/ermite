@@ -13,7 +13,7 @@ import (
 )
 
 // tokenService implements ermiteconnect.TokenServiceHandler.
-type tokenService struct{ tokens *app.Tokens }
+type tokenService struct{ tokens Tokens }
 
 func (s *tokenService) CreateToken(ctx context.Context, req *connect.Request[pb.CreateTokenRequest]) (*connect.Response[pb.CreateTokenResponse], error) {
 	params := app.CreateTokenParams{

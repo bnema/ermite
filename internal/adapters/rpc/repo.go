@@ -14,7 +14,7 @@ import (
 )
 
 // repoService implements ermiteconnect.RepoServiceHandler.
-type repoService struct{ repos *app.Repos }
+type repoService struct{ repos Repos }
 
 func (s *repoService) ListRepos(ctx context.Context, req *connect.Request[pb.ListReposRequest]) (*connect.Response[pb.ListReposResponse], error) {
 	page, err := s.repos.ListPage(ctx, caller(ctx), int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
@@ -135,7 +135,7 @@ func (s *repoService) DeleteRepo(ctx context.Context, req *connect.Request[pb.De
 }
 
 // respondRepo adds the default branch to repo and wraps it in a response.
-func respondRepo[T any](ctx context.Context, repos *app.Repos, repo domain.Repo, wrap func(*pb.Repo) *T) (*connect.Response[T], error) {
+func respondRepo[T any](ctx context.Context, repos Repos, repo domain.Repo, wrap func(*pb.Repo) *T) (*connect.Response[T], error) {
 	view, err := repos.View(ctx, repo)
 	if err != nil {
 		return nil, connectError(ctx, err)

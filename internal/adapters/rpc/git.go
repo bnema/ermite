@@ -19,7 +19,7 @@ import (
 const BlobChunkSize = 64 << 10
 
 // gitService implements ermiteconnect.GitServiceHandler.
-type gitService struct{ browse *app.Browse }
+type gitService struct{ browse Browse }
 
 // target is the repository and revision most requests start with.
 func target(repo, revision string) (domain.RepoName, domain.Revision, error) {

@@ -16,7 +16,6 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
 )
@@ -38,22 +37,22 @@ type Authenticator interface {
 // Config configures the API.
 type Config struct {
 	Auth   Authenticator
-	Repos  *app.Repos
-	Tokens *app.Tokens
-	Browse *app.Browse
-	Events *app.Events
+	Repos  Repos
+	Tokens Tokens
+	Browse Browse
+	Events Events
 	// MergeRequests serves MergeRequestService, SigningKey GetSigningKey.
-	MergeRequests *app.MergeRequests
-	SigningKey    *app.SigningKey
+	MergeRequests MergeRequests
+	SigningKey    SigningKey
 	Version       string
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one. Share
 	// it with the other adapters that authenticate, so that a client has one
 	// budget of failures.
-	Limiter *clientlimit.Limiter
+	Limiter FailureLimiter
 	// Sessions are the owner's web sessions; nil serves no SessionService.
-	Sessions *app.Sessions
+	Sessions Sessions
 }
 
 // API is the set of Connect handlers of the contract.

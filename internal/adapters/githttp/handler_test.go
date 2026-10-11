@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -489,4 +490,32 @@ func TestHandlerBearerAndMalformedAuthorization(t *testing.T) {
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestHandlerUsesTheFailureLimiter(t *testing.T) {
+	path := "/pub.git/info/refs?service=git-upload-pack"
+	t.Run("a blocked client is refused before authentication", func(t *testing.T) {
+		limiter := ghmocks.NewFailureLimiter(t)
+		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(true, 3*time.Second).Once()
+		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
+		code, _, hdr := r.do(t, "GET", path, "u", "root-secret", nil, nil)
+		assert.Equal(t, 429, code)
+		assert.Equal(t, "3", hdr.Get("Retry-After"))
+		assert.Zero(t, r.authenticateCalls())
+	})
+	t.Run("an invalid secret is recorded as a failure", func(t *testing.T) {
+		limiter := ghmocks.NewFailureLimiter(t)
+		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(false, time.Duration(0)).Once()
+		limiter.EXPECT().Fail(mock.Anything, "127.0.0.1").Once()
+		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
+		code, _, _ := r.do(t, "GET", path, "u", "wrong", nil, nil)
+		assert.Equal(t, 401, code)
+	})
+	t.Run("a valid secret is not a failure", func(t *testing.T) {
+		limiter := ghmocks.NewFailureLimiter(t)
+		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(false, time.Duration(0)).Once()
+		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
+		code, _, _ := r.do(t, "GET", path, "u", "root-secret", nil, nil)
+		assert.Equal(t, 200, code)
+	})
 }

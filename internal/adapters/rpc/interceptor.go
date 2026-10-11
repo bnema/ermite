@@ -38,7 +38,7 @@ var errInternal = errors.New("internal error")
 // authenticated from its headers.
 type interceptor struct {
 	auth    Authenticator
-	limiter *clientlimit.Limiter
+	limiter FailureLimiter
 	trusted []netip.Prefix
 }
 

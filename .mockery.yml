@@ -13,6 +13,8 @@ packages:
     config: *mocks
   bnema.dev/ermite/internal/adapters/githttp:
     config: *mocks
+  bnema.dev/ermite/internal/adapters/rpc:
+    config: *mocks
   bnema.dev/ermite/internal/app:
     config: *mocks
   bnema.dev/ermite-api/gen/ermite/ermiteconnect:

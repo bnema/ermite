@@ -9,13 +9,12 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
 )
 
 // serverService implements ermiteconnect.ServerServiceHandler.
 type serverService struct {
 	version string
-	key     *app.SigningKey
+	key     SigningKey
 }
 
 func (s *serverService) GetVersion(context.Context, *connect.Request[pb.GetVersionRequest]) (*connect.Response[pb.GetVersionResponse], error) {

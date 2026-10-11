@@ -12,7 +12,7 @@ import (
 )
 
 // eventService implements ermiteconnect.EventServiceHandler.
-type eventService struct{ events *app.Events }
+type eventService struct{ events Events }
 
 // Watch streams events until the client goes away or the server stops. The
 // stream ends with success in both cases: the contract has no error for

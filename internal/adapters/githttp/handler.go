@@ -92,6 +92,13 @@ type HookTokens interface {
 	Socket() string
 }
 
+// FailureLimiter counts the failed authentications per client, with the other
+// adapters that authenticate. *clientlimit.Limiter fits.
+type FailureLimiter interface {
+	Blocked(ctx context.Context, addr string) (bool, time.Duration)
+	Fail(ctx context.Context, addr string)
+}
+
 // Config configures a Handler.
 type Config struct {
 	Auth    Authenticator
@@ -103,7 +110,7 @@ type Config struct {
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one.
-	Limiter *clientlimit.Limiter
+	Limiter FailureLimiter
 	// MaxBodyBytes bounds the body of a push; 0 means DefaultMaxBodyBytes.
 	// The body of a fetch is bounded by 64 MiB at most.
 	MaxBodyBytes int64
@@ -141,7 +148,7 @@ const (
 // Handler serves the smart HTTP routes of Patterns.
 type Handler struct {
 	cfg     Config
-	limiter *clientlimit.Limiter
+	limiter FailureLimiter
 	maxBody int64
 
 	upload, receive chan struct{} // slots of the backends, per service

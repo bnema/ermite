@@ -15,7 +15,7 @@ import (
 )
 
 // mergeRequestService implements ermiteconnect.MergeRequestServiceHandler.
-type mergeRequestService struct{ mrs *app.MergeRequests }
+type mergeRequestService struct{ mrs MergeRequests }
 
 func mergeRequestStateToPB(s domain.MRState) pb.MergeRequestState {
 	switch s {
