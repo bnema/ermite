@@ -13,7 +13,7 @@ tool (
 
 require (
 	bnema.dev/ermite-api v0.0.0-20261010155050-303f037eb5ed
-	bnema.dev/ermite-git v0.0.0-20261010222615-ea9bcf1dbea0
+	bnema.dev/ermite-git v0.0.0-20261011010712-5228465d7a80
 	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
 	connectrpc.com/connect v1.21.0
 	github.com/a-h/templ v0.3.1020
