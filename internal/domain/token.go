@@ -27,7 +27,7 @@ const (
 	ScopeRepoAdmin Scope = "repo:admin"
 	// ScopeMRWrite creates, comments on and closes merge requests.
 	ScopeMRWrite Scope = "mr:write"
-	// ScopeMRMerge merges.
+	// ScopeMRMerge merges, and deletes the merged source branch on request.
 	ScopeMRMerge Scope = "mr:merge"
 	// ScopeCIWrite re-runs or cancels CI runs.
 	ScopeCIWrite Scope = "ci:write"

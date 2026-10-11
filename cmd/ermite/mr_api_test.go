@@ -365,6 +365,34 @@ func TestMergeModeNotAllowedOverTheAPI(t *testing.T) {
 	assert.Equal(t, r.bareGit("proj", "rev-parse", "main"), r.bareGit("proj", "rev-parse", "feat~2"), "main did not move")
 }
 
+// delete_source_branch reaches the merge and the response says what happened;
+// deleting the default branch is a failed precondition.
+func TestMergeDeletesTheSourceOverTheAPI(t *testing.T) {
+	r := newMRRig(t, domain.VisibilityPublic)
+	_, err := r.create(r.writer)
+	require.NoError(t, err)
+	res, err := r.merger.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+		Repo: "proj", Number: 1, HeadId: r.head, DeleteSourceBranch: true,
+	}))
+	require.NoError(t, err)
+	assert.True(t, res.Msg.GetSourceBranchDeleted())
+	assert.Empty(t, r.bareGit("proj", "for-each-ref", "refs/heads/feat"))
+
+	// The default branch as a source: refused before anything changes.
+	r.bareGit("proj", "branch", "old", "main~1")
+	main := r.bareGit("proj", "rev-parse", "main")
+	_, err = r.root.mr.CreateMergeRequest(r.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+		Repo: "proj", Title: "back", SourceBranch: "main", TargetBranch: "old",
+	}))
+	require.NoError(t, err)
+	_, err = r.merger.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+		Repo: "proj", Number: 2, HeadId: main, DeleteSourceBranch: true,
+	}))
+	assert.Equal(t, "failed_precondition", codeName(err))
+	assert.Equal(t, main, r.bareGit("proj", "rev-parse", "main"))
+	assert.NotEqual(t, main, r.bareGit("proj", "rev-parse", "old"), "not merged")
+}
+
 // The signing key needs no authentication, whatever the credentials, and keeps
 // its shape.
 func TestGetSigningKey(t *testing.T) {

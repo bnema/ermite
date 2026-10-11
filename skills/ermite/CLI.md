@@ -40,7 +40,7 @@ Scopes:
 | `repo:write` | push, create a repository |
 | `repo:admin` | delete a repository, change visibility, description, default branch, merge settings |
 | `mr:write` | open, comment on, resolve, close, mark read |
-| `mr:merge` | merge |
+| `mr:merge` | merge, and delete the merged source branch with `--delete-branch` |
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
 

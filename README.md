@@ -64,7 +64,7 @@ Use the admin token (`ERMITE_ADMIN_TOKEN`) or a stored token as the password; th
 
 ## Merge requests
 
-A merge request proposes a branch for its target (the default branch unless set). The merge is refused when the branch moved since the reviewed head (`--head`) or when the target is not an ancestor of it. Fast-forward moves the target; squash writes one commit signed by the server's SSH key (`ermite signing-key show` prints the `allowed_signers` line for `git verify-commit`). `ermite repo edit --merge-modes` limits the modes per repository. Tokens need `mr:write` to open and comment, and `mr:merge` to merge.
+A merge request proposes a branch for its target (the default branch unless set). The merge is refused when the branch moved since the reviewed head (`--head`) or when the target is not an ancestor of it. Fast-forward moves the target; squash writes one commit signed by the server's SSH key (`ermite signing-key show` prints the `allowed_signers` line for `git verify-commit`). `ermite repo edit --merge-modes` limits the modes per repository. `--delete-branch` (a checkbox on the web) deletes the source branch after the merge, unless it is the default branch or another open request uses it. Tokens need `mr:write` to open and comment, and `mr:merge` to merge (and delete the merged branch).
 
 ## Web sign-in
 

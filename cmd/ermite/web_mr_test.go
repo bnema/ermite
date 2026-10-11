@@ -430,6 +430,35 @@ func TestWebMergeRequestSquashCloseAndList(t *testing.T) {
 	assert.Contains(t, stale.body, "has moved on")
 }
 
+// The box offers no deletion for the default branch; a fast-forward with the
+// box checked deletes the source.
+func TestWebMergeDeleteBranchBox(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	// old is an orphan branch: main can be proposed to it, and main stays an
+	// ancestor of feat/search so that it fast-forwards.
+	r.mustGit(r.wt, "checkout", "-q", "--orphan", "old")
+	r.writeFile(r.wt, "old.txt", []byte("old\n")) // commits
+	r.mustGit(r.wt, "push", "-q", r.url, "old")
+
+	for _, mr := range []url.Values{
+		{"source": {"feat/search"}, "target": {"main"}, "title": {"Search"}},
+		{"source": {"main"}, "target": {"old"}, "title": {"Back"}},
+	} {
+		require.Equal(t, http.StatusSeeOther, b.form("/proj/merge-requests", token, mr).status)
+	}
+	assert.NotContains(t, b.get("/proj/merge-requests/2", as(token)).body, `name="delete_branch"`, "never for the default branch")
+
+	one := b.get("/proj/merge-requests/1", as(token))
+	res := b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"fast-forward"}, "head_id": {formHead(t, one.body)}, "delete_branch": {"1"}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Empty(t, r.bareGit("proj", "for-each-ref", "refs/heads/feat/search"))
+	done := b.get("/proj/merge-requests/1", nil)
+	assert.Equal(t, 200, done.status, "the merged page reads without its branch")
+	assert.NotContains(t, done.body, `href="/proj/tree/feat/search"`, "no link to a gone branch")
+}
+
 // The comment limit of the API is a message, not a crash.
 func TestWebMergeRequestLimitIsFriendly(t *testing.T) {
 	r := newMRRepo(t, domain.VisibilityPublic)
