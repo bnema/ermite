@@ -8,8 +8,9 @@ tmp_dir = "tmp"
   pre_cmd = ["if grep -q 'a-h/templ' go.mod; then go tool templ generate; fi"]
   cmd = "go build -o ./tmp/ermite ./cmd/ermite"
   entrypoint = ["./tmp/ermite", "serve"]
-  include_ext = ["go", "templ"]
-  exclude_dir = ["gen", "tmp", "scripts", "proto", ".git", ".worktrees"]
+  # The web assets are embedded (go:embed static), so they need a rebuild too.
+  include_ext = ["go", "templ", "css", "js", "svg", "json", "woff2"]
+  exclude_dir = ["gen", "tmp", "scripts", "proto", ".git", ".worktrees", "cmd/ermite/testdata"]
   # *_templ.go is the output of templ generate: a .templ change triggers the
   # rebuild, the generated Go file does not trigger a second one.
   exclude_regex = ["_test\\.go", "_templ\\.go"]
