@@ -27,7 +27,7 @@ const MaxRequestBytes = 1 << 20
 
 // Features are the optional capabilities of the contract that this server
 // implements, as GetVersion lists them.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths"}
 
 // Authenticator turns a token secret into a principal, or
 // domain.ErrUnauthenticated. app.Auth fits.

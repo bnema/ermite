@@ -68,6 +68,40 @@ func newAccessRig(t *testing.T) *accessRig {
 // every principal in a stable order.
 var allPrincipals = []string{pAnon, pRoot, pReader, pLimited, pNoScope, pBad}
 
+// TestListPathsRPC: the owner lists public and private repositories, an
+// anonymous caller sees the private one as missing, and so is a bad revision.
+func TestListPathsRPC(t *testing.T) {
+	r := newAccessRig(t)
+	r.seed("pub", domain.VisibilityPublic, "README.md", "docs/a.txt")
+	r.seed("priv", domain.VisibilityPrivate, "README.md")
+	ctx := r.ctx
+	root, anon := r.who[pRoot], r.who[pAnon]
+
+	list := func(c *clients, repo, rev string) (*pb.ListPathsResponse, error) {
+		resp, err := c.git.ListPaths(ctx, connect.NewRequest(&pb.ListPathsRequest{Repo: repo, Revision: rev}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+
+	pub, err := list(root, "pub", "")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"README.md", "docs/a.txt"}, pub.GetPaths())
+	assert.NotEmpty(t, pub.GetCommitId())
+	assert.NotEmpty(t, pub.GetTreeId())
+	assert.False(t, pub.GetTruncated())
+
+	priv, err := list(root, "priv", "")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"README.md"}, priv.GetPaths())
+
+	_, err = list(anon, "priv", "")
+	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+	_, err = list(root, "pub", "nope")
+	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+}
+
 // TestAC2ReadAccess: every read RPC on a public repository, a private one and
 // one inside the limited token's list.
 func TestAC2ReadAccess(t *testing.T) {
@@ -88,6 +122,10 @@ func TestAC2ReadAccess(t *testing.T) {
 		},
 		"GetTree": func(c *clients, repo string) error {
 			_, err := c.git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{Repo: repo}))
+			return err
+		},
+		"ListPaths": func(c *clients, repo string) error {
+			_, err := c.git.ListPaths(ctx, connect.NewRequest(&pb.ListPathsRequest{Repo: repo}))
 			return err
 		},
 		"GetBlob": func(c *clients, repo string) error {
@@ -158,7 +196,7 @@ func TestAC2ReadAccess(t *testing.T) {
 		for _, who := range allPrincipals {
 			resp, err := r.who[who].server.GetVersion(ctx, connect.NewRequest(&pb.GetVersionRequest{}))
 			require.NoError(t, err, who)
-			assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session"}, resp.Msg.GetFeatures(), who)
+			assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths"}, resp.Msg.GetFeatures(), who)
 			assert.NotEmpty(t, resp.Msg.GetVersion())
 		}
 	})

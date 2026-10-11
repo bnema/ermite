@@ -85,9 +85,22 @@ func (s *gitService) GetTree(ctx context.Context, req *connect.Request[pb.GetTre
 	return connect.NewResponse(out), nil
 }
 
-// ListPaths is not served yet.
-func (s *gitService) ListPaths(context.Context, *connect.Request[pb.ListPathsRequest]) (*connect.Response[pb.ListPathsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ListPaths is not implemented"))
+// ListPaths lists the paths of every file of a revision.
+func (s *gitService) ListPaths(ctx context.Context, req *connect.Request[pb.ListPathsRequest]) (*connect.Response[pb.ListPathsResponse], error) {
+	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	list, err := s.browse.ListPaths(ctx, caller(ctx), name, rev)
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.ListPathsResponse{
+		CommitId:  list.CommitID.String(),
+		TreeId:    list.TreeID.String(),
+		Paths:     list.Paths,
+		Truncated: list.Truncated,
+	}), nil
 }
 
 // GetBlob streams the blob in chunks of BlobChunkSize. The first message
