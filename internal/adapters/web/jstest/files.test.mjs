@@ -1,5 +1,5 @@
 // Tests of the pure core of the file finder (static/js/files.js). Run with
-//   node --test internal/adapters/web/jstest/
+//   node --test 'internal/adapters/web/jstest/*.test.mjs'
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -232,4 +232,120 @@ test('performance on 100,000 paths (AC6)', () => {
   console.log(`AC6 cold 'e': ${cold.toFixed(1)} ms; cold 'inthand': ${cold2.toFixed(1)} ms; 'tree h' with positions of the hits: ${withPos.toFixed(1)} ms (target < 30, asserted < 300)`);
   assert.ok(build < 1500, 'index ' + build);
   assert.ok(Math.max(worst, cold, cold2, withPos) < 300, 'query ' + Math.max(worst, cold, cold2, withPos));
+});
+
+// ---- a brute-force reference of the scoring --------------------------------
+
+// The reference tries every placement of the term in the path and scores it by
+// the documented rules; the DP of files.js must find the same best score.
+function refBonus(orig, j) {
+  if (j === 0) return 10;
+  const p = orig[j - 1];
+  const c = orig[j];
+  if (p === '/') return 10;
+  if ('_-. '.includes(p)) return 8;
+  const upper = c >= 'A' && c <= 'Z';
+  const lower = c >= 'a' && c <= 'z';
+  if (p >= 'a' && p <= 'z' && upper) return 7;
+  if (p >= '0' && p <= '9' && (upper || lower)) return 7;
+  return 0;
+}
+
+function refPlacement(orig, pos) {
+  let score = 0;
+  pos.forEach((j, i) => {
+    const b = refBonus(orig, j);
+    score += 16 + (i === 0 ? 2 * b : b);
+    if (i > 0) {
+      const gap = j - pos[i - 1] - 1;
+      score += gap === 0 ? Math.max(b, 4) : -(gap + 2);
+    }
+  });
+  return score;
+}
+
+// refBest is the best score of the placements of t at or after from (null: none).
+function refBest(orig, lower, t, from) {
+  let best = null;
+  const go = (i, start, pos) => {
+    if (i === t.length) {
+      const sc = refPlacement(orig, pos);
+      if (best === null || sc > best) best = sc;
+      return;
+    }
+    for (let j = start; j < lower.length; j++) if (lower[j] === t[i]) go(i + 1, j + 1, [...pos, j]);
+  };
+  go(0, from, []);
+  return best;
+}
+
+function refTerm(orig, t, isLast) {
+  const lower = orig.replace(/[A-Z]/g, (c) => c.toLowerCase());
+  const all = refBest(orig, lower, t, 0);
+  if (all === null) return null;
+  if (!isLast) return all;
+  const base = orig.lastIndexOf('/') + 1;
+  let best = all;
+  if (base === 0) best += 24;
+  else {
+    const r = refBest(orig, lower, t, base);
+    if (r !== null && r + 24 > best) best = r + 24;
+  }
+  if (lower.startsWith(t, base)) best += 16;
+  return best;
+}
+
+test('search and positions agree with a brute-force reference', () => {
+  let seed = 12345;
+  const rnd = (n) => {
+    seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+    return Math.floor((seed / 0x80000000) * n);
+  };
+  const alphabet = 'abcabcABC//..__-1';
+  const paths = new Set();
+  while (paths.size < 3000) {
+    let p = '';
+    for (let n = 1 + rnd(14); n > 0; n--) p += alphabet[rnd(alphabet.length)];
+    paths.add(p);
+  }
+  const list = Array.from(paths);
+  const x = F.index(list);
+  const queries = [];
+  for (let n = 0; n < 40; n++) {
+    let q = '';
+    for (let k = 1 + rnd(3); k > 0; k--) q += 'abc/._-1'[rnd(8)];
+    queries.push(q);
+  }
+  for (let n = 0; n < 20; n++) queries.push('ab'[rnd(2)] + 'c/.'[rnd(3)] + ' ' + 'abc'[rnd(3)] + 'a_'[rnd(2)]);
+  let compared = 0;
+  for (const q of queries) {
+    const terms = q.split(/\s+/).filter(Boolean);
+    const res = F.search(x, q, list.length);
+    const got = new Map(res.hits.map((h) => [h.i, h.score]));
+    for (let i = 0; i < list.length; i++) {
+      let total = 0;
+      for (let n = 0; n < terms.length && total !== null; n++) {
+        const sc = refTerm(list[i], terms[n], n === terms.length - 1);
+        total = sc === null ? null : total + sc;
+      }
+      if (total === null) {
+        assert.ok(!got.has(i), `${q}: ${list[i]} cannot match`);
+        continue;
+      }
+      assert.equal(got.get(i), total, `${q}: score of ${list[i]}`);
+      compared++;
+      if (terms.length === 1) {
+        // The positions are a placement of the term that scores the best.
+        const pos = F.positions(x, i, q);
+        assert.equal(pos.map((j) => list[i][j]).join('').toLowerCase(), terms[0], `${q}: characters of ${list[i]}`);
+        const lower = list[i].toLowerCase();
+        const base = list[i].lastIndexOf('/') + 1;
+        const all = refBest(list[i], lower, terms[0], 0);
+        const inBase = base === 0 ? null : refBest(list[i], lower, terms[0], base);
+        const want = inBase !== null && inBase + 24 > all ? inBase : all;
+        assert.equal(refPlacement(list[i], pos), want, `${q}: placement of ${list[i]}`);
+      }
+    }
+  }
+  assert.ok(compared > 2000, 'compared ' + compared);
 });

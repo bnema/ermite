@@ -17,11 +17,18 @@ window.ermiteTree = (() => {
     if (kind) kind.textContent = open ? '▾' : '▸';
   }
 
-  // collapse hides every row under tr.
+  // collapse hides every row under tr. The cursor of a row it hides moves to
+  // tr, so it never rests on a row that cannot be seen.
   function collapse(tr, a) {
     setOpen(tr, a, false);
     const d = depthOf(tr);
-    for (let r = tr.nextElementSibling; r && depthOf(r) > d; r = r.nextElementSibling) r.hidden = true;
+    for (let r = tr.nextElementSibling; r && depthOf(r) > d; r = r.nextElementSibling) {
+      r.hidden = true;
+      if (r.hasAttribute('data-cursor')) {
+        r.removeAttribute('data-cursor');
+        tr.setAttribute('data-cursor', '');
+      }
+    }
   }
 
   // expand shows the rows under tr that no collapsed directory between hides.
@@ -46,15 +53,21 @@ window.ermiteTree = (() => {
       const t = document.createElement('template');
       t.innerHTML = await res.text();
       const d = depthOf(tr) + 1;
-      const rows = Array.from(t.content.children);
+      const rows = Array.from(t.content.children).filter((r) => r.tagName === 'TR');
+      if (!rows.length) throw new Error('no rows');
+      // An ancestor closed while the request was out: tr is hidden, and its
+      // rows come in hidden, for the expand of that ancestor to show.
+      const covered = tr.hidden;
       for (const r of rows) {
         r.dataset.depth = String(d);
         r.style.setProperty('--depth', String(d));
+        if (covered) r.hidden = true;
       }
       tr.after(...rows);
       tr.dataset.loaded = '1';
       tr.removeAttribute('aria-busy');
-      expand(tr, a);
+      if (covered) setOpen(tr, a, true);
+      else expand(tr, a);
     } catch (e) {
       location.href = a.href;
     }
@@ -375,6 +388,8 @@ window.ermiteFinder = (() => {
   const loads = new Map(); // URL -> promise of {idx, truncated}
   let rendered = null; // the result the finder list shows
   let frame = 0;
+  let treeCursor = null; // the row of the tree that had the cursor when the results came
+  let pendingEnter = null; // the value of the field at an Enter pressed before its results
 
   // load fetches the path list of the page once and indexes it.
   function load() {
@@ -402,11 +417,23 @@ window.ermiteFinder = (() => {
     }
   }
 
+  const isHigh = (c) => c >= 0xd800 && c <= 0xdbff;
+  const isLow = (c) => c >= 0xdc00 && c <= 0xdfff;
+
+  // runs appends text[from, to) to parent, the marked characters in <mark>. A
+  // surrogate pair is marked whole or not at all, so it is never split.
   function runs(parent, text, from, to, marks) {
+    const marked = (j) => {
+      if (marks.has(j)) return true;
+      const c = text.charCodeAt(j);
+      if (isLow(c) && isHigh(text.charCodeAt(j - 1))) return marks.has(j - 1);
+      if (isHigh(c) && isLow(text.charCodeAt(j + 1))) return marks.has(j + 1);
+      return false;
+    };
     for (let j = from; j < to;) {
-      const m = marks.has(j);
+      const m = marked(j);
       let e = j;
-      while (e < to && marks.has(e) === m) e++;
+      while (e < to && marked(e) === m) e++;
       const part = text.slice(j, e);
       if (m) {
         const mk = document.createElement('mark');
@@ -448,6 +475,7 @@ window.ermiteFinder = (() => {
     const path = res.idx.paths[hit.i];
     const li = document.createElement('li');
     li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', 'false');
     li.id = 'finder-o' + n;
     const a = document.createElement('a');
     a.href = blobHref(path);
@@ -459,14 +487,21 @@ window.ermiteFinder = (() => {
 
   const status = (text) => { $('finder-status').textContent = text; };
 
+  // setActive makes li the active option (null: none) of the listbox.
   function setActive(el, li) {
-    if (li) el.setAttribute('aria-activedescendant', li.id);
-    else el.removeAttribute('aria-activedescendant');
+    $('finder-list').querySelectorAll(':scope > li[aria-selected="true"]').forEach((o) => o.setAttribute('aria-selected', 'false'));
+    if (li) {
+      li.setAttribute('aria-selected', 'true');
+      el.setAttribute('aria-activedescendant', li.id);
+    } else {
+      el.removeAttribute('aria-activedescendant');
+    }
   }
 
   // showTree: no query, the directory again, with j/k and Enter on its rows.
   function showTree(el) {
     rendered = null;
+    pendingEnter = null;
     $('finder').hidden = true;
     $('tree-view').hidden = false;
     el.setAttribute('aria-expanded', 'false');
@@ -476,8 +511,11 @@ window.ermiteFinder = (() => {
     list.replaceChildren();
     const rows = $('tree-rows');
     rows.setAttribute('data-rows', '');
+    const keep = treeCursor;
+    treeCursor = null;
     if (!rows.querySelector(':scope > tr[data-cursor]')) {
-      rows.querySelector(':scope > tr:not([hidden])')?.setAttribute('data-cursor', '');
+      const row = keep && keep.parentElement === rows && !keep.hidden ? keep : rows.querySelector(':scope > tr:not([hidden])');
+      row?.setAttribute('data-cursor', '');
     }
   }
 
@@ -488,12 +526,16 @@ window.ermiteFinder = (() => {
     el.setAttribute('aria-expanded', 'true');
     const rows = $('tree-rows');
     rows.removeAttribute('data-rows');
-    rows.querySelectorAll(':scope > tr[data-cursor]').forEach((r) => r.removeAttribute('data-cursor'));
+    rows.querySelectorAll(':scope > tr[data-cursor]').forEach((r) => {
+      treeCursor = r;
+      r.removeAttribute('data-cursor');
+    });
     $('finder-list').setAttribute('data-rows', '');
   }
 
   async function run(el) {
     const q = el.value;
+    if (pendingEnter !== null && pendingEnter !== q) pendingEnter = null; // the field moved on
     if (!q.trim()) return showTree(el);
     showResults(el);
     if (!rendered) status('loading the file list…');
@@ -501,10 +543,18 @@ window.ermiteFinder = (() => {
     try {
       loaded = await load();
     } catch (e) {
-      if (el.value === q) status('could not load the file list');
+      if (el.value === q) {
+        pendingEnter = null;
+        status('could not load the file list');
+      }
       return;
     }
-    if (el.value !== q || !loaded) return; // the field changed during the wait
+    if (el.value !== q) return; // the field changed during the wait
+    if (!loaded) {
+      pendingEnter = null;
+      status('file search is not available here');
+      return;
+    }
     const res = search(loaded.idx, q, 50, rendered);
     const items = res.hits.map((h, n) => option(res, h, n));
     const list = $('finder-list');
@@ -515,6 +565,9 @@ window.ermiteFinder = (() => {
     let msg = res.all.length === 0 ? 'no file matches' : res.all.length + (res.all.length === 1 ? ' file matches' : ' files match');
     if (loaded.truncated) msg += ' · only the first 100,000 files are searched';
     status(msg);
+    const open = pendingEnter === q;
+    pendingEnter = null;
+    if (open) items[0]?.querySelector('a').click();
   }
 
   function palette(el) {
@@ -565,6 +618,7 @@ window.ermiteFinder = (() => {
     index, search, positions, visible, load, palette, input,
     // key moves the cursor of the results, opens one, or clears the field.
     key(el, e) {
+      if (e.isComposing) return; // the Enter or Escape of an input method is its own
       const results = !$('finder').hidden;
       if (e.key === 'Escape') {
         el.value = '';
@@ -585,6 +639,7 @@ window.ermiteFinder = (() => {
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (rendered && rendered.q === el.value) cur?.querySelector('a')?.click();
+        else pendingEnter = el.value; // the results are stale: run opens the top hit
       }
     },
   };
