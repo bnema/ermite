@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -261,4 +262,25 @@ func TestWebContentSecurity(t *testing.T) {
 		st, _, _ := h.get(p)
 		assert.Equal(t, 404, st, p)
 	}
+}
+
+// The summary rail names the newest tag; with more tags than it dates, it
+// gives their count instead of an empty block.
+func TestWebSummaryLatestTag(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	h.webRepo("demo")
+	_, _, body := h.get("/demo")
+	assert.Contains(t, body, `<a class="tag-name" href="/demo/tree/v0.2.0">`)
+	assert.Contains(t, body, `<p class="tag-sub dim">add main.go</p>`)
+
+	h.seed("many", domain.VisibilityPublic, "a.txt")
+	wt := t.TempDir()
+	h.mustGit(wt, "clone", "-q", h.urlAuth(adminToken, "/many.git"), ".")
+	for i := range 21 {
+		h.mustGit(wt, "tag", "t"+strconv.Itoa(i))
+	}
+	h.mustGit(wt, "push", "-q", "--tags", "origin")
+	_, _, body = h.get("/many")
+	assert.NotContains(t, body, `class="latest-tag"`)
+	assert.Contains(t, body, `<p class="dim">21 tags</p>`)
 }

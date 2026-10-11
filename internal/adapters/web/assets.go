@@ -128,7 +128,8 @@ func loadAssets() (*assetSet, error) {
 		sc.set(&s.urls, put("js", sc.file, b, "text/javascript; charset=utf-8"))
 	}
 
-	icon, err := staticFS.ReadFile("static/icon.svg")
+	// The favicon is the brand picture of the header.
+	icon, err := staticFS.ReadFile("static/icons/brand.svg")
 	if err != nil {
 		return nil, err
 	}

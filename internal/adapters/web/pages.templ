@@ -71,6 +71,8 @@ templ summaryRail(p SummaryPage) {
 						<p class="tag-sub dim">{ p.Latest.Subject }</p>
 					}
 				</div>
+			} else {
+				<p class="dim">{ plural(p.Latest.Count, "tag", "tags") }</p>
 			}
 		</section>
 	}

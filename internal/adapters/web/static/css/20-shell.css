@@ -124,7 +124,6 @@
   .rail section > :not(h2) { margin: var(--s3) var(--s4); }
   .rail section > .list { margin: var(--s2) 0; }
   .rail section > p + p { margin-top: calc(-1 * var(--s2)); }
-  .rail h2 .count + a { margin-left: auto; }
 
   /* newest tag in the summary rail */
   .latest-tag {

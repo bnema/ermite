@@ -589,8 +589,16 @@
            let i = ns.findIndex(n => n.getBoundingClientRect().top > innerHeight / 3);
            let n = ns[i < 0 ? 0 : i]; n.closest('details') && (n.closest('details').open = true); n.scrollIntoView({ block: 'center' })
          };
-         k-split from:body -> q('[data-diff]').attr['data-diff'] = 'split'; sessionStorage.setItem('diff', 'split'); q('[data-file]').arr().forEach(d => d.open = true);
-         k-unified from:body -> q('[data-diff]').attr['data-diff'] = 'unified'; sessionStorage.setItem('diff', 'unified'); q('[data-file]').arr().forEach(d => d.open = true);
+         k-split from:body -> {
+           let el = q('[data-diff]').arr()[0]; if (!el) return;
+           el.dataset.diff = 'split'; sessionStorage.setItem('diff', 'split');
+           q('[data-file]').arr().filter(d => d.querySelector('.dt')).forEach(d => d.open = true)
+         };
+         k-unified from:body -> {
+           let el = q('[data-diff]').arr()[0]; if (!el) return;
+           el.dataset.diff = 'unified'; sessionStorage.setItem('diff', 'unified');
+           q('[data-file]').arr().filter(d => d.querySelector('.dt')).forEach(d => d.open = true)
+         };
          k-collapse from:body -> { let fs = q('[data-file]').arr(), open = !fs.some(d => d.open); fs.forEach(d => d.open = open) };
          k-permalink from:body -> {
            let b = document.body.dataset;
