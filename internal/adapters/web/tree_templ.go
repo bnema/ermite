@@ -10,7 +10,7 @@ package web
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// Tree is a directory: the filter, the entries with their last commit, the
+// Tree is a directory: the file finder, the entries with their last commit, the
 // notes on what is left out, and the README of the directory below.
 func Tree(l Layout, p TreePage) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -45,7 +45,7 @@ func Tree(l Layout, p TreePage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"filter\"><label for=\"tree-filter\" class=\"sr\">filter</label> <input id=\"tree-filter\" type=\"search\" data-filter placeholder=\"Filter this directory…\" autocomplete=\"off\" hx-on:input=\"let t = this.value.toLowerCase(); q('#tree-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#tree-rows > tr:not([hidden])')\"></div><table class=\"list tree\" aria-label=\"Entries\"><thead><tr><th class=\"cur\"></th><th class=\"c-kind\"></th><th class=\"c-name\">name</th><th class=\"c-size\">size</th><th class=\"c-sub\">last commit</th><th class=\"c-who\">author</th><th class=\"c-when\">date</th></tr></thead> <tbody id=\"tree-rows\" data-rows hx-on:click=\"ermiteTree.click(event)\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"filter\"><label for=\"finder-q\" class=\"sr\">find a file</label> <input id=\"finder-q\" type=\"search\" data-filter role=\"combobox\" aria-autocomplete=\"list\" aria-controls=\"finder-list\" aria-expanded=\"false\" placeholder=\"Find a file…\" autocomplete=\"off\" spellcheck=\"false\" hx-on:focus=\"ermiteFinder.load()\" hx-on:input=\"ermiteFinder.input(this)\" hx-on:keydown=\"ermiteFinder.key(this, event)\"></div><div id=\"finder\" hidden><p id=\"finder-status\" class=\"dim\" aria-live=\"polite\"></p><ul id=\"finder-list\" class=\"cmd-list\" role=\"listbox\" aria-label=\"Files\"></ul></div><div id=\"tree-view\"><table class=\"list tree\" aria-label=\"Entries\"><thead><tr><th class=\"cur\"></th><th class=\"c-kind\"></th><th class=\"c-name\">name</th><th class=\"c-size\">size</th><th class=\"c-sub\">last commit</th><th class=\"c-who\">author</th><th class=\"c-when\">date</th></tr></thead> <tbody id=\"tree-rows\" data-rows hx-on:click=\"ermiteTree.click(event)\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -71,7 +71,7 @@ func Tree(l Layout, p TreePage) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(n)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 32, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 44, Col: 23}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -82,15 +82,15 @@ func Tree(l Layout, p TreePage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
 			if p.Readme != nil {
 				templ_7745c5c3_Err = ReadmeCard(*p.Readme).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
 			}
 			return nil
 		})
@@ -140,7 +140,7 @@ func TreeRows(p TreePage) templ.Component {
 			var templ_7745c5c3_Var5 templ.SafeURL
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(p.More))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 48, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 61, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -196,7 +196,7 @@ func TreeRowView(r TreeRow) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(r.Glyph)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 58, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 71, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -214,7 +214,7 @@ func TreeRowView(r TreeRow) templ.Component {
 			var templ_7745c5c3_Var8 templ.SafeURL
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(r.Href))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 62, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 75, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -232,7 +232,7 @@ func TreeRowView(r TreeRow) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(r.Expand)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 64, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 77, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 				if templ_7745c5c3_Err != nil {
@@ -250,7 +250,7 @@ func TreeRowView(r TreeRow) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(r.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 67, Col: 13}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 80, Col: 13}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -264,7 +264,7 @@ func TreeRowView(r TreeRow) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(r.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 69, Col: 12}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 82, Col: 12}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -278,7 +278,7 @@ func TreeRowView(r TreeRow) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(r.Size)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 72, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 85, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -296,7 +296,7 @@ func TreeRowView(r TreeRow) templ.Component {
 			var templ_7745c5c3_Var13 templ.SafeURL
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(r.CHref))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 75, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 88, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -309,7 +309,7 @@ func TreeRowView(r TreeRow) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(r.Subject)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 75, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 88, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -327,7 +327,7 @@ func TreeRowView(r TreeRow) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(r.Author)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 78, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 91, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -345,7 +345,7 @@ func TreeRowView(r TreeRow) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(r.WhenAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 81, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 94, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
@@ -358,7 +358,7 @@ func TreeRowView(r TreeRow) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(r.WhenAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 81, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 94, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
@@ -371,7 +371,7 @@ func TreeRowView(r TreeRow) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(r.When)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 81, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/tree.templ`, Line: 94, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {

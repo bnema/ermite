@@ -74,6 +74,15 @@
     &:focus-within::after { display: none; }
   }
 
+  /* file finder: the results replace the tree while the field has a query */
+  #finder {
+    margin-top: var(--s3);
+    & #finder-status { margin-bottom: var(--s2); font-size: var(--fs-s); }
+  }
+  .cmd-list .dir { color: var(--ink-dim); }
+  .cmd-list strong { color: var(--ink-hi); font-weight: 700; }
+  .cmd-list mark { background: none; color: var(--teal); font-weight: 700; text-decoration: underline; }
+
   /* section headings inside a page */
   .rule-h {
     display: flex; align-items: center; gap: var(--s2); margin-top: var(--s5);

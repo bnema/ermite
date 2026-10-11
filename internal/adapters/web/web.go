@@ -85,7 +85,9 @@ type Server struct {
 	origin   string // scheme://host of the public URL, what a POST must come from
 	assets   *assetSet
 	md       *markdown
-	mux      *http.ServeMux
+	// pathCache holds the path lists the file finder fetches.
+	pathCache *pathCache
+	mux       *http.ServeMux
 }
 
 // New builds the web handler.
@@ -109,7 +111,8 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{
 		cfg: cfg, instance: u.Host, assets: assets, md: newMarkdown(),
-		origin: originOf(u),
+		pathCache: newPathCache(pathCacheBytes, pathEntryMax),
+		origin:    originOf(u),
 	}
 	s.mux = s.routes()
 	return s, nil
@@ -137,6 +140,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /{repo}/tree/{rest...}", s.page(s.tree))
 	mux.HandleFunc("GET /{repo}/blob/{rest...}", s.page(s.blob))
 	mux.HandleFunc("GET /{repo}/raw/{rest...}", s.raw)
+	mux.HandleFunc("GET /{repo}/paths/{sha}", s.paths)
 	if s.cfg.MergeRequests != nil {
 		mux.HandleFunc("GET /{repo}/merge-requests", s.page(s.mrList))
 		mux.HandleFunc("GET /{repo}/merge-requests/{$}", s.page(s.mrList))

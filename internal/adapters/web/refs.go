@@ -139,6 +139,7 @@ func pinRef(l *Layout, t target) {
 		if len(t.rev) == 40 {
 			l.SHA = t.rev
 		}
+		l.setFinder(l.Repo, l.SHA, t.rev)
 		for i := range l.Heads {
 			l.Heads[i].Current = false
 		}
@@ -148,12 +149,26 @@ func pinRef(l *Layout, t target) {
 		return
 	}
 	l.Ref, l.RefPath, l.SHA, l.Short = t.name, t.name, t.rev, short(t.rev)
+	l.setFinder(l.Repo, t.rev, t.name)
 	for i := range l.Heads {
 		l.Heads[i].Current = l.Heads[i].Name == t.name
 	}
 	for i := range l.Tags {
 		l.Tags[i].Current = l.Tags[i].Name == t.name && !hasName(l.Heads, t.name)
 	}
+}
+
+// setFinder points the file finder at a commit: the list of its paths when sha
+// is a full commit id, and the blob pages of ref (a ref name or a commit id)
+// its results open. Without a full id there is nothing to search and the
+// page has no finder data.
+func (l *Layout) setFinder(repo, sha, ref string) {
+	l.PathsURL, l.BlobBase = "", ""
+	if repo == "" || ref == "" || !isFullID(sha) {
+		return
+	}
+	l.PathsURL = repoHref(repo, "paths", sha)
+	l.BlobBase = repoHref(repo, "blob", ref)
 }
 
 func hasName(items []RefItem, name string) bool {
