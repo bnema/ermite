@@ -155,20 +155,34 @@ func ParseTreePath(s string) (TreePath, error) {
 	if s == "" {
 		return TreePath{}, nil
 	}
+	if why := treePathProblem(s); why != "" {
+		return TreePath{}, fmt.Errorf("%w: %q: %s", ErrInvalidPath, truncate(s), why)
+	}
+	return TreePath{s: s}, nil
+}
+
+// IsAddressablePath reports whether s is a non-root path that ParseTreePath
+// accepts as it is (no trailing slash). It allocates nothing.
+func IsAddressablePath(s string) bool {
+	return s != "" && treePathProblem(s) == ""
+}
+
+// treePathProblem returns why s cannot be a non-root tree path, or "".
+func treePathProblem(s string) string {
 	if len(s) > maxTreePathLen || !utf8.ValidString(s) {
-		return TreePath{}, fmt.Errorf("%w: %q: too long or not valid UTF-8", ErrInvalidPath, truncate(s))
+		return "too long or not valid UTF-8"
 	}
 	for _, c := range s {
 		if c < 0x20 || c == 0x7f {
-			return TreePath{}, fmt.Errorf("%w: %q: control character", ErrInvalidPath, truncate(s))
+			return "control character"
 		}
 	}
 	for part := range strings.SplitSeq(s, "/") {
 		if part == "" || part == "." || part == ".." {
-			return TreePath{}, fmt.Errorf("%w: %q: empty, . or .. component", ErrInvalidPath, truncate(s))
+			return "empty, . or .. component"
 		}
 	}
-	return TreePath{s: s}, nil
+	return ""
 }
 
 func truncate(s string) string {
@@ -324,6 +338,25 @@ type Tree struct {
 
 // MaxTreeEntries bounds the entries of a listed directory.
 const MaxTreeEntries = 5000
+
+// MaxPathEntries bounds the paths ListPaths returns.
+const MaxPathEntries = 100_000
+
+// MaxPathBytes bounds the total bytes of the paths ListPaths returns.
+const MaxPathBytes = 8 << 20
+
+// PathList is the recursive list of the file paths of a revision.
+type PathList struct {
+	// CommitID is the commit the revision resolved to.
+	CommitID ObjectID
+	// TreeID is the root tree of that commit.
+	TreeID ObjectID
+	// Paths are the paths of the files and symbolic links, in tree order (the
+	// order of `git ls-tree -r`).
+	Paths []string
+	// Truncated is true when more paths exist than the ones in Paths.
+	Truncated bool
+}
 
 // MaxLastCommitEntries bounds the entries of one directory that get a last
 // commit: each costs a history lookup.

@@ -80,6 +80,16 @@ func TestParseTreePath(t *testing.T) {
 	}
 }
 
+func TestIsAddressablePath(t *testing.T) {
+	for _, ok := range []string{"a", "a/b.txt", "dir/ünï.go", "a b/c", ".github/ci.yml"} {
+		assert.True(t, domain.IsAddressablePath(ok), "%q", ok)
+	}
+	for _, bad := range []string{"", "/", "a/", "/a", "a//b", "a/../b", "./a", "..", "tab\tname", "a\nb", "a\x00b", "a\x7fb", "\xff", "a/\xfe/b", strings.Repeat("a", 4097)} {
+		assert.False(t, domain.IsAddressablePath(bad), "%q", bad)
+	}
+	assert.True(t, domain.IsAddressablePath(strings.Repeat("a", 4096)))
+}
+
 func TestEntryKindOf(t *testing.T) {
 	tests := map[uint32]domain.EntryKind{
 		0o100644: domain.EntryFile,

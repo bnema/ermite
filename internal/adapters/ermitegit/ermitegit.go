@@ -315,6 +315,11 @@ func (a *Adapter) ResolveRefPath(ctx context.Context, repo domain.RepoName, path
 	}, cli)
 }
 
+// ListPaths is not implemented yet.
+func (a *Adapter) ListPaths(_ context.Context, _ domain.RepoName, _ domain.Revision, _, _ int) (domain.PathList, error) {
+	return domain.PathList{}, errors.ErrUnsupported
+}
+
 // GetTree lists a directory.
 func (a *Adapter) GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error) {
 	cli := func() (domain.Tree, error) { return a.cli.GetTree(ctx, repo, rev, path, includeLastCommit) }

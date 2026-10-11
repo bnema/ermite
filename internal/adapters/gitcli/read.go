@@ -288,6 +288,11 @@ func (g *Git) lookup(ctx context.Context, dir string, rev domain.Revision, path 
 	return obj, err
 }
 
+// ListPaths is not implemented yet.
+func (g *Git) ListPaths(_ context.Context, _ domain.RepoName, _ domain.Revision, _, _ int) (domain.PathList, error) {
+	return domain.PathList{}, errors.ErrUnsupported
+}
+
 // GetTree lists a directory with `git ls-tree -z -l`.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port

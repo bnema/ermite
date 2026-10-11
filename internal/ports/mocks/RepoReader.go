@@ -283,6 +283,90 @@ func (_c *RepoReader_ListCommits_Call) RunAndReturn(run func(ctx context.Context
 	return _c
 }
 
+// ListPaths provides a mock function for the type RepoReader
+func (_mock *RepoReader) ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Revision, maxPaths int, maxBytes int) (domain.PathList, error) {
+	ret := _mock.Called(ctx, repo, rev, maxPaths, maxBytes)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListPaths")
+	}
+
+	var r0 domain.PathList
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.Revision, int, int) (domain.PathList, error)); ok {
+		return returnFunc(ctx, repo, rev, maxPaths, maxBytes)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.Revision, int, int) domain.PathList); ok {
+		r0 = returnFunc(ctx, repo, rev, maxPaths, maxBytes)
+	} else {
+		r0 = ret.Get(0).(domain.PathList)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.Revision, int, int) error); ok {
+		r1 = returnFunc(ctx, repo, rev, maxPaths, maxBytes)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RepoReader_ListPaths_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListPaths'
+type RepoReader_ListPaths_Call struct {
+	*mock.Call
+}
+
+// ListPaths is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - rev domain.Revision
+//   - maxPaths int
+//   - maxBytes int
+func (_e *RepoReader_Expecter) ListPaths(ctx any, repo any, rev any, maxPaths any, maxBytes any) *RepoReader_ListPaths_Call {
+	return &RepoReader_ListPaths_Call{Call: _e.mock.On("ListPaths", ctx, repo, rev, maxPaths, maxBytes)}
+}
+
+func (_c *RepoReader_ListPaths_Call) Run(run func(ctx context.Context, repo domain.RepoName, rev domain.Revision, maxPaths int, maxBytes int)) *RepoReader_ListPaths_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 domain.Revision
+		if args[2] != nil {
+			arg2 = args[2].(domain.Revision)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *RepoReader_ListPaths_Call) Return(pathList domain.PathList, err error) *RepoReader_ListPaths_Call {
+	_c.Call.Return(pathList, err)
+	return _c
+}
+
+func (_c *RepoReader_ListPaths_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, rev domain.Revision, maxPaths int, maxBytes int) (domain.PathList, error)) *RepoReader_ListPaths_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListRefs provides a mock function for the type RepoReader
 func (_mock *RepoReader) ListRefs(ctx context.Context, repo domain.RepoName) ([]domain.Ref, error) {
 	ret := _mock.Called(ctx, repo)

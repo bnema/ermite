@@ -85,6 +85,11 @@ func (s *gitService) GetTree(ctx context.Context, req *connect.Request[pb.GetTre
 	return connect.NewResponse(out), nil
 }
 
+// ListPaths is not served yet.
+func (s *gitService) ListPaths(context.Context, *connect.Request[pb.ListPathsRequest]) (*connect.Response[pb.ListPathsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ListPaths is not implemented"))
+}
+
 // GetBlob streams the blob in chunks of BlobChunkSize. The first message
 // carries the metadata and the first chunk.
 func (s *gitService) GetBlob(ctx context.Context, req *connect.Request[pb.GetBlobRequest], stream *connect.ServerStream[pb.GetBlobResponse]) error {
