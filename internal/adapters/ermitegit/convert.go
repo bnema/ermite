@@ -100,11 +100,10 @@ func (r resolved) domain() (domain.ResolvedRevision, error) {
 // peelRef reads a ref and peels it to a commit. ok is false when the ref does
 // not exist or does not lead to a commit.
 func peelRef(r *git.Repo, name string) (_ git.ObjectID, ok bool, _ error) {
-	id, err := r.ResolveRef(name)
-	if errors.Is(err, git.ErrNotFound) {
-		return git.ObjectID{}, false, nil
-	}
-	if err != nil {
+	// LookupRefID allocates nothing on a miss, which is the common case of the
+	// candidates of resolveRevision (heads/x, then tags/x, then refs/...).
+	id, found, err := r.LookupRefID(name)
+	if err != nil || !found {
 		return git.ObjectID{}, false, err
 	}
 	return peelID(r, id)
