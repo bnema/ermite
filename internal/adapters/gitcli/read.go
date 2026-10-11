@@ -303,7 +303,7 @@ func (g *Git) ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Re
 	}
 	treeID, err := domain.ParseObjectID(obj.info.ID)
 	if err != nil {
-		return domain.PathList{}, err
+		return domain.PathList{}, fmt.Errorf("paths of %q: %w", repo, err)
 	}
 	list := domain.PathList{CommitID: obj.commit, TreeID: treeID}
 	size := 0
@@ -330,7 +330,8 @@ func (g *Git) ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Re
 				return errStop
 			}
 			size += len(path)
-			list.Paths = append(list.Paths, path)
+			// A copy: path would keep the whole "<mode> <type> <id>\t" entry alive.
+			list.Paths = append(list.Paths, strings.Clone(path))
 		}
 	})
 	if err != nil {
