@@ -55,7 +55,7 @@ templ Commit(l Layout, p CommitPage) {
 			<span class="grow"></span>
 			@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
 			@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
-			<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">Collapse all<kbd aria-hidden="true">x</kbd></button>
+			@collapseButton()
 		</div>
 		if p.Invisible {
 			<p class="notice">
@@ -110,6 +110,14 @@ templ viewLink(p DiffView, view, label, key, href string) {
 			:aria-current={ "q('#diffs').attr['data-diff'] === '" + view + "' ? 'true' : false" }
 		}
 	>{ label }<kbd aria-hidden="true">{ key }</kbd></a>
+}
+
+// collapseButton folds every file of the diff, or opens them all again when
+// none is open; its label follows the state.
+templ collapseButton() {
+	<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">
+		<span hx-live="this.textContent = q('[data-file][open]').count || !q('[data-file]').count ? 'Collapse all' : 'Expand all'">Collapse all</span><kbd aria-hidden="true">x</kbd>
+	</button>
 }
 
 templ personView(pr Person) {
