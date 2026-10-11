@@ -100,9 +100,10 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 
 // featureUse says what breaks without a feature, for the version warning.
 var featureUse = map[string]string{
-	client.FeatureRepoUpdate:    "`ermite repo edit` needs: the command will fail on this server",
-	client.FeatureEventsResume:  "`ermite watch` uses to resume after a reconnection: events during an outage may be missed",
-	client.FeatureMergeRequests: "`ermite mr` needs: the commands will fail on this server",
-	client.FeatureSigningKey:    "`ermite signing-key show` needs: the command will fail on this server",
-	client.FeatureSession:       "`ermite web login` needs: the command will fail on this server",
+	client.FeatureRepoUpdate:        "`ermite repo edit` needs: the command will fail on this server",
+	client.FeatureEventsResume:      "`ermite watch` uses to resume after a reconnection: events during an outage may be missed",
+	client.FeatureMergeRequests:     "`ermite mr` needs: the commands will fail on this server",
+	client.FeatureMergeDeleteBranch: "`ermite mr merge --delete-branch` needs: the merge works but the branch is kept",
+	client.FeatureSigningKey:        "`ermite signing-key show` needs: the command will fail on this server",
+	client.FeatureSession:           "`ermite web login` needs: the command will fail on this server",
 }

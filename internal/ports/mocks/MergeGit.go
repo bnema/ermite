@@ -191,6 +191,75 @@ func (_c *MergeGit_CommitTree_Call) RunAndReturn(run func(ctx context.Context, r
 	return _c
 }
 
+// DeleteBranch provides a mock function for the type MergeGit
+func (_mock *MergeGit) DeleteBranch(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID) error {
+	ret := _mock.Called(ctx, repo, branch, old)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteBranch")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string, domain.ObjectID) error); ok {
+		r0 = returnFunc(ctx, repo, branch, old)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MergeGit_DeleteBranch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteBranch'
+type MergeGit_DeleteBranch_Call struct {
+	*mock.Call
+}
+
+// DeleteBranch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - branch string
+//   - old domain.ObjectID
+func (_e *MergeGit_Expecter) DeleteBranch(ctx any, repo any, branch any, old any) *MergeGit_DeleteBranch_Call {
+	return &MergeGit_DeleteBranch_Call{Call: _e.mock.On("DeleteBranch", ctx, repo, branch, old)}
+}
+
+func (_c *MergeGit_DeleteBranch_Call) Run(run func(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID)) *MergeGit_DeleteBranch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 domain.ObjectID
+		if args[3] != nil {
+			arg3 = args[3].(domain.ObjectID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeGit_DeleteBranch_Call) Return(err error) *MergeGit_DeleteBranch_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MergeGit_DeleteBranch_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID) error) *MergeGit_DeleteBranch_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DiffCommits provides a mock function for the type MergeGit
 func (_mock *MergeGit) DiffCommits(ctx context.Context, repo domain.RepoName, base domain.ObjectID, head domain.ObjectID, limits domain.DiffLimits) (domain.DiffStats, domain.Diff, error) {
 	ret := _mock.Called(ctx, repo, base, head, limits)

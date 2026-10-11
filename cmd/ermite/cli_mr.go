@@ -115,6 +115,12 @@ type jsonMergeRequest struct {
 	MergeMode      string  `json:"merge_mode"`
 }
 
+// jsonMerged is the output of `mr merge --json`.
+type jsonMerged struct {
+	jsonMergeRequest
+	SourceBranchDeleted bool `json:"source_branch_deleted"`
+}
+
 func toJSONMergeRequest(m *ermite.MergeRequest) jsonMergeRequest {
 	return jsonMergeRequest{
 		Repo: m.GetRepo(), Number: m.GetNumber(), Title: m.GetTitle(), Description: m.GetDescription(),
@@ -740,7 +746,7 @@ func newMRResolveCmd(env *cliEnv) *cobra.Command {
 }
 
 func newMRMergeCmd(env *cliEnv) *cobra.Command {
-	var squash bool
+	var squash, deleteBranch bool
 	var head string
 	cmd := &cobra.Command{
 		Use:   "merge <repo> <number>",
@@ -753,12 +759,17 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			"The server merges only if the source branch still points to the head you reviewed, so --head is\n" +
 			"required: give the full id of the head that `ermite mr show <repo> <number>` printed when you\n" +
 			"reviewed the change. If the branch moved since, the merge is refused: review again. Needs the\n" +
-			"mr:merge scope." + jsonMRHelp,
+			"mr:merge scope.\n\n" +
+			"--delete-branch deletes the source branch after the merge. The merge is refused when the branch\n" +
+			"is the default branch or used by another open merge request. If the deletion fails after the\n" +
+			"merge, the merge stands, the branch is kept and a warning goes to standard error." + jsonMRHelp +
+			"\n--json adds source_branch_deleted (true when the branch was deleted).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
 	cmd.Flags().BoolVar(&squash, "squash", false, "squash the branch into one signed commit instead of a fast-forward")
 	cmd.Flags().StringVar(&head, "head", "", "full id of the head you reviewed, from `ermite mr show` (required)")
+	cmd.Flags().BoolVar(&deleteBranch, "delete-branch", false, "delete the source branch after the merge")
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		n, err := parseNumber(args[1])
@@ -780,17 +791,25 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			mode = ermite.MergeMode_MERGE_MODE_SQUASH
 		}
 		res, err := c.MergeRequests().MergeMergeRequest(ctx, connect.NewRequest(&ermite.MergeMergeRequestRequest{
-			Repo: args[0], Number: n, Mode: mode, HeadId: head,
+			Repo: args[0], Number: n, Mode: mode, HeadId: head, DeleteSourceBranch: deleteBranch,
 		}))
 		if err != nil {
 			return c.Describe(err)
 		}
 		m := res.Msg.GetMergeRequest()
+		deleted := res.Msg.GetSourceBranchDeleted()
+		if deleteBranch && !deleted {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "ermite: warning: the branch %s was kept (it moved after the merge, or the server cannot delete it)\n",
+				clean(m.GetSourceBranch()))
+		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONMergeRequest(m))
+			return writeJSON(cmd.OutOrStdout(), jsonMerged{jsonMergeRequest: toJSONMergeRequest(m), SourceBranchDeleted: deleted})
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "merged %s!%d into %s (%s) at %s\n", clean(m.GetRepo()), m.GetNumber(),
 			clean(m.GetTargetBranch()), modeName(m.GetMergeMode()), shortID(m.GetMergedCommitId()))
+		if err == nil && deleted {
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted branch %s\n", clean(m.GetSourceBranch()))
+		}
 		return err
 	}
 	return cmd

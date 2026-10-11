@@ -15,6 +15,9 @@ const (
 	FeatureEventsResume = "events.resume"
 	// FeatureMergeRequests is MergeRequestService (`ermite mr`).
 	FeatureMergeRequests = "merge_requests"
+	// FeatureMergeDeleteBranch is MergeMergeRequest with delete_source_branch
+	// (`ermite mr merge --delete-branch`).
+	FeatureMergeDeleteBranch = "merge_requests.delete_branch"
 	// FeatureSigningKey is ServerService.GetSigningKey (`ermite signing-key`).
 	FeatureSigningKey = "signing_key"
 	// FeatureSession is SessionService (`ermite web login`, `web logout`).
@@ -23,7 +26,7 @@ const (
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureSigningKey, FeatureSession}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

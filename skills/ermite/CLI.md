@@ -55,7 +55,7 @@ A token can never grant more than the token that creates it. `--repo` (repeatabl
 | `mr show <repo> <n> [--diff] [--since-last-read] [--mark-read] [--json]` | `mr:write` for `--mark-read` | commits, changed files and comments; `--diff` adds hunks with line numbers |
 | `mr comment <repo> <n> -m TEXT\|- [--path P --line N --side old\|new]` | `mr:write` | the line must be in the current diff; a deleted file uses its old path |
 | `mr resolve <repo> <n> <comment-id> [--undo]` | `mr:write` | doing it twice is not an error |
-| `mr merge <repo> <n> --head <full-id> [--squash]` | `mr:merge` | refused if the branch moved or the target is not an ancestor of the head |
+| `mr merge <repo> <n> --head <full-id> [--squash] [--delete-branch]` | `mr:merge` | refused if the branch moved or the target is not an ancestor of the head; `--delete-branch` deletes the source after the merge (refused for the default branch or a branch another open request uses; JSON adds `source_branch_deleted`) |
 | `mr close <repo> <n>` | `mr:write` | a closed merge request cannot be reopened |
 
 Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `target_branch`, `state`, `author` (token label), `created_at`, `updated_at`, `head_id`, `merged_commit_id`, `merge_mode`. `mr show --json` adds `commits`, `diff_base_id`, `stats`, `files` (with `hunks` under `--diff`: `kind`, `old_number`, `new_number`, `text`), `comments`, `last_read_id`, `last_read_lost`.

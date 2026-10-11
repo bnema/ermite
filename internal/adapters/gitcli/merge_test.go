@@ -206,3 +206,28 @@ func TestWriteCommitAndUpdateBranch(t *testing.T) {
 	err = g.UpdateBranch(ctx, name(t, "missing"), "main", id, m.mainTip)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
+
+func TestDeleteBranch(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	m := newMergeFixture(t, data)
+	m.f.Git("pack-refs", "--all") // the ref is in packed-refs too
+
+	// The old value is a precondition.
+	err := g.DeleteBranch(ctx, m.f.Name, "feat", m.mainTip)
+	assert.ErrorIs(t, err, domain.ErrConflict, "feat is not at main")
+	assert.Equal(t, m.featTip.String(), m.f.Git("rev-parse", "refs/heads/feat"))
+
+	require.NoError(t, g.DeleteBranch(ctx, m.f.Name, "feat", m.featTip))
+	_, err = g.BranchHead(ctx, m.f.Name, "feat")
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+	assert.Empty(t, m.f.Git("for-each-ref", "refs/heads/feat"), "gone from packed-refs too")
+
+	err = g.DeleteBranch(ctx, m.f.Name, "feat", m.featTip)
+	assert.ErrorIs(t, err, domain.ErrConflict, "already gone")
+	err = g.DeleteBranch(ctx, m.f.Name, "refs/heads/main", m.mainTip)
+	assert.Error(t, err, "only short branch names")
+	assert.Equal(t, m.mainTip.String(), m.f.Git("rev-parse", "refs/heads/main"))
+	err = g.DeleteBranch(ctx, name(t, "missing"), "main", m.mainTip)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}

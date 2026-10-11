@@ -205,9 +205,10 @@ func (s *Server) mrClose(ctx context.Context, r *http.Request) (string, string, 
 	return back, back, nil
 }
 
-// mrMerge is POST /<repo>/merge-requests/<n>/merge. The form carries the mode
-// and the head the owner was shown (head_id): the server merges only if the
-// branch still points to it.
+// mrMerge is POST /<repo>/merge-requests/<n>/merge. The form carries the mode,
+// the head the owner was shown (head_id): the server merges only if the
+// branch still points to it, and delete_branch when the owner asked to delete
+// the source branch after the merge.
 func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
@@ -226,6 +227,7 @@ func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, 
 	}
 	if _, err := s.cfg.MergeRequests.MergeMergeRequest(ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
 		Repo: repo, Number: n, Mode: mode, HeadId: r.PostFormValue("head_id"),
+		DeleteSourceBranch: r.PostFormValue("delete_branch") == "1",
 	})); err != nil {
 		return "", back, err
 	}

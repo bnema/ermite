@@ -41,7 +41,7 @@ ermite token create <label> [--preset cli|agent|ci] [--scope repo:read …] [--r
 ermite token list | revoke <id>
 ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
 ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | resolve <repo> <n> <comment>
-ermite mr merge <repo> <n> --head <id> [--squash] | close <repo> <n>
+ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
 ermite web login                # prints a one-time sign-in link (60 s)
 ermite web logout --all         # signs every browser out
 ermite signing-key show         # public key and allowed_signers line of squash commits

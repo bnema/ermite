@@ -277,6 +277,9 @@ type MergeGit interface {
 	// UpdateBranch moves refs/heads/<branch> from old to new. It returns
 	// domain.ErrConflict when the branch no longer points to old.
 	UpdateBranch(ctx context.Context, repo domain.RepoName, branch string, old, new domain.ObjectID) error
+	// DeleteBranch deletes refs/heads/<branch> if it still points to old. It
+	// returns domain.ErrConflict when the branch moved or is gone.
+	DeleteBranch(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID) error
 }
 
 // CommitSigner signs the commits ermite creates (ADR 0022). The private key

@@ -309,6 +309,38 @@ func TestMRMergeNeedsTheHead(t *testing.T) {
 	assert.NotContains(t, res.stdout, "default: the current head")
 }
 
+func TestMRMergeDeleteBranch(t *testing.T) {
+	merged := proto.Clone(mrOne).(*ermite.MergeRequest)
+	merged.State = ermite.MergeRequestState_MERGE_REQUEST_STATE_MERGED
+	merged.MergedCommitId, merged.MergeMode = headA, ermite.MergeMode_MERGE_MODE_FAST_FORWARD
+	deleted := true
+	f := &fakeAPI{mergeMR: func(*ermite.MergeMergeRequestRequest) (*ermite.MergeMergeRequestResponse, error) {
+		return &ermite.MergeMergeRequestResponse{MergeRequest: merged, SourceBranchDeleted: deleted}, nil
+	}}
+	url := f.serve(t)
+
+	res := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--head", headA, "--delete-branch").ok(t)
+	assert.Equal(t, "merged alpha!1 into main (fast-forward) at "+headA[:10]+"\ndeleted branch feat/x\n", res.stdout)
+	assert.Empty(t, res.stderr)
+	_, reqs := f.snapshot()
+	assert.True(t, reqs[0].(*ermite.MergeMergeRequestRequest).GetDeleteSourceBranch())
+
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--head", headA, "--delete-branch", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"source_branch_deleted": true`)
+
+	// The merge stands when the branch is kept: a warning, no failure.
+	deleted = false
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--head", headA, "--delete-branch").ok(t)
+	assert.Equal(t, "merged alpha!1 into main (fast-forward) at "+headA[:10]+"\n", res.stdout)
+	assert.Contains(t, res.stderr, "ermite: warning: the branch feat/x was kept")
+
+	// Without the flag nothing is asked and nothing is said.
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--head", headA).ok(t)
+	assert.Empty(t, res.stderr)
+	_, reqs = f.snapshot()
+	assert.False(t, reqs[len(reqs)-1].(*ermite.MergeMergeRequestRequest).GetDeleteSourceBranch())
+}
+
 func TestMRErrorsAreFriendly(t *testing.T) {
 	f := &fakeAPI{
 		listMR: func(*ermite.ListMergeRequestsRequest) (*ermite.ListMergeRequestsResponse, error) {

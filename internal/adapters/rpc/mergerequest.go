@@ -245,11 +245,15 @@ func (s *mergeRequestService) MergeMergeRequest(ctx context.Context, req *connec
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mr, err := s.mrs.Merge(ctx, caller(ctx), name, req.Msg.GetNumber(), app.MergeParams{Mode: mode, HeadID: head})
+	res, err := s.mrs.Merge(ctx, caller(ctx), name, req.Msg.GetNumber(), app.MergeParams{
+		Mode: mode, HeadID: head, DeleteSource: req.Msg.GetDeleteSourceBranch(),
+	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.MergeMergeRequestResponse{MergeRequest: mergeRequestToPB(mr)}), nil
+	return connect.NewResponse(&pb.MergeMergeRequestResponse{
+		MergeRequest: mergeRequestToPB(res.MergeRequest), SourceBranchDeleted: res.SourceDeleted,
+	}), nil
 }
 
 func (s *mergeRequestService) MarkRead(ctx context.Context, req *connect.Request[pb.MarkReadRequest]) (*connect.Response[pb.MarkReadResponse], error) {

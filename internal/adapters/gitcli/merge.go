@@ -235,3 +235,29 @@ func (g *Git) UpdateBranch(ctx context.Context, repo domain.RepoName, branch str
 	}
 	return fmt.Errorf("update branch %q of %q: %w", branch, repo, err)
 }
+
+// DeleteBranch runs `git update-ref -d refs/heads/<branch> <old>`, which takes
+// the ref lock and refuses when the ref is not at old. A failure is told from
+// a moved or deleted branch by reading the branch again.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter maps a refused update-ref to the conflict error of the port
+func (g *Git) DeleteBranch(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID) error {
+	dir, err := g.repoDir(repo)
+	if err != nil {
+		return err
+	}
+	if _, err := domain.ParseBranchName(branch); err != nil {
+		return fmt.Errorf("delete branch of %q: %w", repo, err)
+	}
+	_, err = g.run(ctx, "--git-dir="+dir, "update-ref", "-d", headsRefPrefix+branch, old.String())
+	if err == nil {
+		return nil
+	}
+	switch cur, herr := g.BranchHead(ctx, repo, branch); {
+	case errors.Is(herr, domain.ErrNotFound):
+		return fmt.Errorf("branch %q of %q is gone: %w", branch, repo, domain.ErrConflict)
+	case herr == nil && cur != old:
+		return fmt.Errorf("branch %q of %q is at %s, not %s: %w", branch, repo, cur, old, domain.ErrConflict)
+	}
+	return fmt.Errorf("delete branch %q of %q: %w", branch, repo, err)
+}

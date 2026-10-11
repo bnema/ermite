@@ -147,6 +147,9 @@ type MergeBox struct {
 	CLI      Clone
 	// CanMarkRead is true when the head differs from the one last read.
 	CanMarkRead bool
+	// CanDeleteBranch offers to delete the source after the merge: it is not
+	// the default branch. The server checks again, with the open requests.
+	CanDeleteBranch bool
 }
 
 // ModeOption is a merge mode the repository allows.
@@ -528,7 +531,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	p.Invisible = invisible
 	p.DiffView = newDiffView(r, lines, self+"?view=unified", self+"?view=split")
 	if signed && open {
-		p.Box = s.mergeBox(d, n, head, lastRead)
+		p.Box = s.mergeBox(d, n, m.GetSourceBranch(), head, lastRead)
 	}
 	if canWrite {
 		p.GeneralForm = &CommentForm{
@@ -573,11 +576,12 @@ func (d *repoData) hasBranch(name string) bool {
 }
 
 // mergeBox is what the owner can do with an open request.
-func (s *Server) mergeBox(d *repoData, n int64, head, lastRead string) *MergeBox {
+func (s *Server) mergeBox(d *repoData, n int64, source, head, lastRead string) *MergeBox {
 	b := &MergeBox{
 		MergeAction: mrHref(d.name(), n, "merge"), CloseAction: mrHref(d.name(), n, "close"),
 		ReadAction: mrHref(d.name(), n, "read"), Head: head, HeadGone: head == "",
-		CanMarkRead: head != "" && head != lastRead,
+		CanMarkRead:     head != "" && head != lastRead,
+		CanDeleteBranch: source != d.repo.GetDefaultBranch(),
 	}
 	ff, sq := false, false
 	if st := d.repo.GetSettings(); st != nil {

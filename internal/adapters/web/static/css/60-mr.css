@@ -24,6 +24,8 @@
       display: block; width: 100%; font: inherit; color: inherit; background: var(--paper-alt);
       border: 1px solid var(--rule); border-radius: 0; padding: 0 1ch;
     }
+    & .d-check { display: block; margin-top: 4px; color: var(--ink-dim); cursor: pointer; }
+    & .d-check input { accent-color: var(--ink); margin: 0 1ch 0 0; vertical-align: middle; }
     & .d-btns { display: flex; gap: 2ch; margin-top: 4px; flex-wrap: wrap; }
     & .d-btns button { color: var(--ink-dim); }
     & .d-btns button:hover { color: var(--ink); text-decoration: underline; }

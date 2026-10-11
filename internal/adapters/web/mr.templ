@@ -382,6 +382,9 @@ templ mergeBox(p MRPage) {
 						<option value={ m.Value }>{ m.Label }</option>
 					}
 				</select>
+				if p.Box.CanDeleteBranch {
+					<label class="d-check"><input type="checkbox" name="delete_branch" value="1"/> delete { p.Source } after the merge</label>
+				}
 				<div class="d-btns">
 					<button type="submit" class="d-main">[merge]</button>
 				</div>
