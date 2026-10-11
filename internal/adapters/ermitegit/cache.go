@@ -25,7 +25,22 @@ const DefaultMaxRepos = 64
 
 // DefaultRefreshEvery is how long a repository goes without a Refresh when
 // Config.RefreshEvery is zero. See Config.RefreshEvery for what depends on it.
-const DefaultRefreshEvery = time.Second
+// A write that goes through ermite refreshes the repository at once (see
+// Adapter.Refresh), so this is only the safety net for the other writers.
+const DefaultRefreshEvery = 5 * time.Second
+
+// DefaultIdleTTL is how long a repository may go unused before it is closed,
+// when Config.IdleTTL is zero.
+const DefaultIdleTTL = 10 * time.Minute
+
+// DefaultDeltaCacheSize is the budget of the cache of delta bases of each open
+// repository when Config.DeltaCacheSize is zero (the library's own is 32 MiB).
+const DefaultDeltaCacheSize = 8 << 20
+
+// DefaultMaxObjectSize is the largest object a repository holds in memory when
+// Config.MaxObjectSize is zero (the library's own is 128 MiB). A bigger one
+// is read by the wrapped reader.
+const DefaultMaxObjectSize = 16 << 20
 
 // unsupportedRetry is how long a repository that ermite-git cannot read is
 // served by git before Open is tried again (a repack, or the removal of a
@@ -46,9 +61,10 @@ type entry struct {
 
 	refreshed atomic.Int64 // unix nanoseconds of the last Refresh
 
-	elem    *list.Element
-	users   int
-	dropped bool // out of the cache: close when the last user is done
+	elem     *list.Element
+	users    int
+	lastUsed time.Time // of the last get or release: the LRU is ordered by it
+	dropped  bool      // out of the cache: close when the last user is done
 }
 
 // opened is what git.Open answered for an entry.
@@ -69,25 +85,100 @@ type handle struct {
 func (h *handle) release() { h.c.release(h.e) }
 
 // cache is a bounded LRU of open repositories keyed by directory. A repository
-// leaves it by eviction, by Forget (the directory was deleted) or because the
-// directory is no longer the same one (checked on each use through its
-// inode); it is closed once the reads that use it are done.
+// leaves it by eviction, by idling longer than the TTL, by Forget (the
+// directory was deleted) or because the directory is no longer the same one
+// (checked on each use through its inode); it is closed once the reads that
+// use it are done, by the goroutine that made it leave or that was the last
+// to use it.
 type cache struct {
 	max          int
 	refreshEvery time.Duration
+	idleTTL      time.Duration // <= 0: never
+	openOpts     []git.Option
 	onUnsupport  func(ctx context.Context, dir string, name domain.RepoName, cause error)
 
 	mu      sync.Mutex
 	entries map[string]*entry
 	lru     *list.List // front = most recently used
+	doomed  []*entry   // dropped without users: closed by unlock
 	closed  bool
+
+	stop    chan struct{} // closed by close; ends the sweeper
+	swept   sync.WaitGroup
+	stopped sync.Once
 }
 
-func newCache(max int, refreshEvery time.Duration, onUnsupport func(context.Context, string, domain.RepoName, error)) *cache {
-	if max <= 0 {
-		max = DefaultMaxRepos
+// cacheConfig is what newCache needs.
+type cacheConfig struct {
+	max          int
+	refreshEvery time.Duration
+	idleTTL      time.Duration
+	openOpts     []git.Option
+	onUnsupport  func(context.Context, string, domain.RepoName, error)
+}
+
+func newCache(cfg cacheConfig) *cache {
+	if cfg.max <= 0 {
+		cfg.max = DefaultMaxRepos
 	}
-	return &cache{max: max, refreshEvery: refreshEvery, onUnsupport: onUnsupport, entries: make(map[string]*entry), lru: list.New()}
+	c := &cache{
+		max: cfg.max, refreshEvery: cfg.refreshEvery, idleTTL: cfg.idleTTL, openOpts: cfg.openOpts,
+		onUnsupport: cfg.onUnsupport, entries: make(map[string]*entry), lru: list.New(), stop: make(chan struct{}),
+	}
+	if c.idleTTL > 0 {
+		c.swept.Add(1)
+		go c.sweeper()
+	}
+	return c
+}
+
+// sweeper closes the repositories that idle past the TTL. It is the only
+// goroutine of the cache, whatever the number of repositories, and close ends
+// it.
+func (c *cache) sweeper() {
+	defer c.swept.Done()
+	tick := time.NewTicker(max(c.idleTTL/4, time.Millisecond))
+	defer tick.Stop()
+	for {
+		select {
+		case <-c.stop:
+			return
+		case now := <-tick.C:
+			c.sweep(now)
+		}
+	}
+}
+
+// sweep drops the entries nobody used since now-idleTTL. The LRU is ordered by
+// lastUsed, so the walk from the back stops at the first recent entry; one
+// that is in use is not idle and stays.
+func (c *cache) sweep(now time.Time) {
+	c.mu.Lock()
+	for el := c.lru.Back(); el != nil; {
+		prev := el.Prev()
+		e := el.Value.(*entry)
+		if now.Sub(e.lastUsed) <= c.idleTTL {
+			break
+		}
+		if e.users == 0 {
+			c.dropLocked(e)
+		}
+		el = prev
+	}
+	c.unlock()
+}
+
+// unlock releases the mutex, then closes what was dropped without users while
+// it was held: in the calling goroutine, so that when close returns the
+// mappings are released, and not under the mutex, since Close takes the
+// repository's own.
+func (c *cache) unlock() {
+	doomed := c.doomed
+	c.doomed = nil
+	c.mu.Unlock()
+	for _, e := range doomed {
+		e.closeRepo()
+	}
 }
 
 // get returns the entry of dir, opened and refreshed, or a nil repo when
@@ -108,7 +199,7 @@ func (c *cache) get(ctx context.Context, name domain.RepoName, dir string) (*han
 
 	c.mu.Lock()
 	if c.closed {
-		c.mu.Unlock()
+		c.unlock()
 		return nil, ErrClosed
 	}
 	e := c.entries[dir]
@@ -125,7 +216,8 @@ func (c *cache) get(ctx context.Context, name domain.RepoName, dir string) (*han
 		c.lru.MoveToFront(e.elem)
 	}
 	e.users++
-	c.mu.Unlock()
+	e.lastUsed = time.Now()
+	c.unlock()
 
 	h := &handle{c: c, e: e}
 	e.once.Do(func() { c.open(ctx, name, e) })
@@ -151,20 +243,26 @@ func (c *cache) get(ctx context.Context, name domain.RepoName, dir string) (*han
 }
 
 // refresh calls Refresh on the repository of e unless one ran less than
-// refreshEvery ago (a negative interval refreshes on every read). The library
-// reads loose refs live, stat-checks packed-refs on each ref read and rescans
-// the packs when an object is missing, so a read sees a push whether or not
-// Refresh ran; Refresh is what drops replaced packs, picks up a new
+// refreshEvery ago (a negative interval refreshes on every read). Of the reads
+// that find it due, one wins a compare-and-swap on the time of the last
+// Refresh and runs it; the others go on with the snapshot they have. The
+// library reads loose refs live, stat-checks packed-refs on each ref read and
+// rescans the packs when an object is missing, so a read sees a push whether
+// or not Refresh ran; Refresh is what drops replaced packs, picks up a new
 // commit-graph and notices that the repository became unsupported.
 func (c *cache) refresh(e *entry, repo *git.Repo) error {
+	if c.refreshEvery < 0 {
+		return repo.Refresh()
+	}
 	now := time.Now().UnixNano()
-	if c.refreshEvery >= 0 && now-e.refreshed.Load() < int64(c.refreshEvery) {
+	last := e.refreshed.Load()
+	if now-last < int64(c.refreshEvery) || !e.refreshed.CompareAndSwap(last, now) {
 		return nil
 	}
 	if err := repo.Refresh(); err != nil {
+		e.refreshed.CompareAndSwap(now, last) // the next read tries again
 		return err
 	}
-	e.refreshed.Store(now)
 	return nil
 }
 
@@ -178,10 +276,11 @@ func (e *entry) stale() bool {
 // open runs git.Open once per entry; concurrent users wait in Once.Do.
 func (c *cache) open(ctx context.Context, name domain.RepoName, e *entry) {
 	op := &opened{at: time.Now()}
-	repo, err := git.Open(e.dir)
+	repo, err := git.Open(e.dir, c.openOpts...)
 	switch {
 	case err == nil:
 		op.repo = repo
+		e.refreshed.Store(op.at.UnixNano()) // just opened: nothing to refresh yet
 	case errors.Is(err, git.ErrUnsupported):
 		c.onUnsupport(ctx, e.dir, name, err)
 	default:
@@ -204,10 +303,10 @@ func mapOpenErr(err error) error {
 func (c *cache) markUnsupported(ctx context.Context, name domain.RepoName, e *entry, cause error) {
 	c.onUnsupport(ctx, e.dir, name, cause)
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	defer c.unlock()
 	if c.entries[e.dir] == e {
 		c.dropLocked(e)
-		n := &entry{dir: e.dir, ino: e.ino, dev: e.dev}
+		n := &entry{dir: e.dir, ino: e.ino, dev: e.dev, lastUsed: time.Now()}
 		n.once.Do(func() { n.opened.Store(&opened{at: time.Now()}) }) // no repo, no error: unsupported
 		n.elem = c.lru.PushFront(n)
 		c.entries[e.dir] = n
@@ -222,14 +321,53 @@ func (h *handle) fallBack(ctx context.Context, name domain.RepoName, cause error
 	h.c.markUnsupported(ctx, name, h.e, cause)
 }
 
+// peek returns a handle on the open repository of dir, or nil when the cache
+// has none (it opens nothing and does not count as a use).
+func (c *cache) peek(dir string) *handle {
+	c.mu.Lock()
+	defer c.unlock()
+	e := c.entries[dir]
+	if c.closed || e == nil {
+		return nil
+	}
+	if op := e.opened.Load(); op == nil || op.repo == nil {
+		return nil
+	}
+	e.users++
+	return &handle{c: c, e: e, repo: e.opened.Load().repo}
+}
+
+// refreshNow runs Refresh on the open repository of dir, if the cache has it,
+// whatever the time of the last one.
+func (c *cache) refreshNow(ctx context.Context, name domain.RepoName, dir string) error {
+	h := c.peek(dir)
+	if h == nil {
+		return nil
+	}
+	defer h.release()
+	if err := h.repo.Refresh(); err != nil {
+		if errors.Is(err, git.ErrUnsupported) {
+			h.fallBack(ctx, name, err)
+			return nil
+		}
+		return fmt.Errorf("refresh repository %q: %w", name, err)
+	}
+	h.e.refreshed.Store(time.Now().UnixNano())
+	return nil
+}
+
 func (c *cache) release(e *entry) {
 	c.mu.Lock()
 	e.users--
-	closeNow := e.dropped && e.users == 0
-	c.mu.Unlock()
-	if closeNow {
-		e.closeRepo()
+	if e.dropped {
+		if e.users == 0 {
+			c.doomed = append(c.doomed, e)
+		}
+	} else {
+		e.lastUsed = time.Now() // a long read is a use, up to its end
+		c.lru.MoveToFront(e.elem)
 	}
+	c.unlock()
 }
 
 // closeRepo closes the repository of an entry that left the cache and has no
@@ -241,8 +379,9 @@ func (e *entry) closeRepo() {
 	}
 }
 
-// dropLocked removes e from the cache. The caller holds the mutex. The
-// repository is closed by the last user (or by the caller if it has none).
+// dropLocked removes e from the cache. The caller holds the mutex and gives it
+// up with unlock, which closes the repository if e has no user; else the last
+// user closes it on release.
 func (c *cache) dropLocked(e *entry) {
 	if e.dropped {
 		return
@@ -251,7 +390,7 @@ func (c *cache) dropLocked(e *entry) {
 	c.lru.Remove(e.elem)
 	delete(c.entries, e.dir)
 	if e.users == 0 {
-		go e.closeRepo() // not under the mutex: Close takes the repo's own
+		c.doomed = append(c.doomed, e)
 	}
 }
 
@@ -265,7 +404,7 @@ func (c *cache) evictLocked() {
 // forgetEntry drops e if it is still the entry of its directory.
 func (c *cache) forgetEntry(e *entry) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	defer c.unlock()
 	if c.entries[e.dir] == e {
 		c.dropLocked(e)
 	}
@@ -274,16 +413,20 @@ func (c *cache) forgetEntry(e *entry) {
 // forget drops the entry of dir.
 func (c *cache) forget(dir string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	defer c.unlock()
 	if e := c.entries[dir]; e != nil {
 		c.dropLocked(e)
 	}
 }
 
-// close drops every entry; later gets fail with ErrClosed.
+// close drops every entry; later gets fail with ErrClosed. The repositories
+// nobody uses are closed when it returns; the others when their last reader
+// is done. It ends the sweeper and waits for it.
 func (c *cache) close() {
+	c.stopped.Do(func() { close(c.stop) })
+	c.swept.Wait()
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	defer c.unlock()
 	c.closed = true
 	for _, e := range c.entries {
 		c.dropLocked(e)

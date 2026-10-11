@@ -19,12 +19,19 @@
 // whichever path made it, because the library reads refs from disk on each
 // call (loose refs always, packed-refs after a stat) and rescans the packs
 // when an object is missing (TestFreshness proves it with no Refresh at all).
-// The adapter still calls Refresh, at most once per Config.RefreshEvery for
-// each repository, to release replaced packs, pick up a new commit-graph and
-// notice a repository that stopped being supported; a stat-based Refresh is
-// 20 µs and 34 allocations, too much to pay on every read of a method that
-// itself costs 20 µs. The cache of open repositories is bounded (LRU);
-// gitcli's Trash tells the adapter to drop a deleted repository (see Forget).
+// The adapter still calls Refresh to release replaced packs, pick up a new
+// commit-graph and notice a repository that stopped being supported: at once
+// when ermite itself wrote (the push and the maintenance tell it through
+// Refresh), and as a safety net at most once per Config.RefreshEvery for each
+// repository while it is read, by one reader at a time. A stat-based Refresh
+// is 20 µs and 34 allocations, too much to pay on every read of a method that
+// itself costs 20 µs.
+//
+// Memory: the cache of open repositories is bounded (LRU) and drops the ones
+// idle longer than Config.IdleTTL; each repository holds at most
+// Config.DeltaCacheSize of delta bases and reads objects up to
+// Config.MaxObjectSize into memory. gitcli's Trash tells the adapter to drop
+// a deleted repository (see Forget).
 package ermitegit
 
 import (
@@ -42,7 +49,10 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
-var _ ports.RepoReader = (*Adapter)(nil)
+var (
+	_ ports.RepoReader    = (*Adapter)(nil)
+	_ ports.RepoFreshener = (*Adapter)(nil)
+)
 
 // ErrClosed is returned by reads after Close.
 var ErrClosed = errors.New("ermitegit: reader is closed")
@@ -107,6 +117,18 @@ type Config struct {
 	RefreshEvery time.Duration
 	// MaxRepos bounds the repositories kept open; zero means DefaultMaxRepos.
 	MaxRepos int
+	// IdleTTL is how long a repository may go unused before it is closed.
+	// Zero means DefaultIdleTTL; a negative value keeps repositories open
+	// until evicted.
+	IdleTTL time.Duration
+	// DeltaCacheSize is the budget in bytes of the cache of delta bases of
+	// each open repository. Zero means DefaultDeltaCacheSize; a negative value
+	// disables the cache.
+	DeltaCacheSize int64
+	// MaxObjectSize is the size in bytes above which an object that must be
+	// held in memory is read by the wrapped reader instead. Zero means
+	// DefaultMaxObjectSize.
+	MaxObjectSize int64
 	// Routes overrides DefaultRoutes when not nil.
 	Routes *Routes
 }
@@ -132,8 +154,24 @@ func New(cfg Config) *Adapter {
 	if refreshEvery == 0 {
 		refreshEvery = DefaultRefreshEvery
 	}
+	idleTTL := cfg.IdleTTL
+	if idleTTL == 0 {
+		idleTTL = DefaultIdleTTL
+	}
+	deltaCache := cfg.DeltaCacheSize
+	if deltaCache == 0 {
+		deltaCache = DefaultDeltaCacheSize
+	}
+	maxObject := cfg.MaxObjectSize
+	if maxObject == 0 {
+		maxObject = DefaultMaxObjectSize
+	}
 	a := &Adapter{cli: cfg.Fallback, dirOf: cfg.RepoDir, routes: routes}
-	a.cache = newCache(cfg.MaxRepos, refreshEvery, a.logUnsupported)
+	a.cache = newCache(cacheConfig{
+		max: cfg.MaxRepos, refreshEvery: refreshEvery, idleTTL: idleTTL,
+		openOpts:    []git.Option{git.WithDeltaCacheSize(deltaCache), git.WithMaxObjectSize(maxObject)},
+		onUnsupport: a.logUnsupported,
+	})
 	return a
 }
 
@@ -146,6 +184,17 @@ func (a *Adapter) Close() { a.cache.close() }
 func (a *Adapter) Forget(dir string) {
 	a.cache.forget(dir)
 	a.logged.Delete(dir)
+}
+
+// Refresh tells the adapter that ermite wrote to the repository (a push, the
+// maintenance): the library refreshes it now, if it is open, instead of at the
+// next read after RefreshEvery. A repository that is not open has nothing to
+// refresh. A failure is logged, not returned: reads do not depend on it.
+func (a *Adapter) Refresh(ctx context.Context, repo domain.RepoName) {
+	if err := a.cache.refreshNow(ctx, repo, a.dirOf(repo)); err != nil {
+		log := zerowrap.FromCtx(ctx)
+		log.Warn().Err(err).Str("repo", repo.String()).Msg("refresh of the open repository failed")
+	}
 }
 
 // OpenRepos returns the number of repositories in the cache, for tests.

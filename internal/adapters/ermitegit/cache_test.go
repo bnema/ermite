@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/assert"
@@ -203,4 +205,104 @@ func TestEncodedCommitIsServedByGit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
 	assert.Equal(t, "café", got.Commits[0].Message)
+}
+
+// A repository that nobody reads for IdleTTL is closed, without a goroutine
+// per repository.
+func TestIdleRepositoriesAreClosed(t *testing.T) {
+	ctx := context.Background()
+	a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = 80 * time.Millisecond })
+	f := commitOf(t, data, "idle")
+	_, err := a.ListRefs(ctx, f.Name)
+	require.NoError(t, err)
+	require.Equal(t, 1, a.OpenRepos())
+	require.Eventually(t, func() bool { return a.OpenRepos() == 0 }, 5*time.Second, 10*time.Millisecond)
+
+	// It opens again on the next read.
+	_, err = a.ListRefs(ctx, f.Name)
+	require.NoError(t, err)
+	assert.Equal(t, 1, a.OpenRepos())
+}
+
+// The idle close does not cut a blob stream the reader still holds: the library
+// keeps the stream valid after Close.
+func TestIdleCloseDoesNotCutAStream(t *testing.T) {
+	ctx := context.Background()
+	a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = 50 * time.Millisecond })
+	f := readertest.NewFixture(t, data, "stream")
+	content := readertest.RandomBytes(3<<20, 12)
+	f.WriteBytes("big.bin", content)
+	f.Commit("big")
+
+	_, rc, err := a.OpenBlob(ctx, f.Name, domain.Revision{}, readertest.TreePath(t, "big.bin"))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return a.OpenRepos() == 0 }, 5*time.Second, 10*time.Millisecond)
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.NoError(t, rc.Close())
+	assert.True(t, bytes.Equal(content, got))
+}
+
+// mapped reports whether the process maps a file under dir (Linux).
+func mapped(t *testing.T, dir string) bool {
+	t.Helper()
+	maps, err := os.ReadFile("/proc/self/maps")
+	if err != nil {
+		t.Skip("no /proc/self/maps")
+	}
+	return bytes.Contains(maps, []byte(dir))
+}
+
+// Close releases the mappings before it returns, not later from another
+// goroutine.
+func TestCloseReleasesMappingsSynchronously(t *testing.T) {
+	ctx := context.Background()
+	a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), nil)
+	h := readertest.NewHistory(t, data)
+	h.Maintain()
+	_, err := a.ListCommits(ctx, h.Name, ports.CommitQuery{Limit: 5})
+	require.NoError(t, err)
+	require.True(t, mapped(t, h.Bare), "the commit-graph is mapped while the repository is open")
+	a.Close()
+	assert.False(t, mapped(t, h.Bare), "Close returned with the mappings still there")
+}
+
+// Forget (a deleted repository) also closes before it returns.
+func TestForgetReleasesMappingsSynchronously(t *testing.T) {
+	ctx := context.Background()
+	a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), nil)
+	h := readertest.NewHistory(t, data)
+	h.Maintain()
+	_, err := a.ListCommits(ctx, h.Name, ports.CommitQuery{Limit: 5})
+	require.NoError(t, err)
+	require.True(t, mapped(t, h.Bare))
+	a.Forget(h.Bare)
+	assert.False(t, mapped(t, h.Bare))
+}
+
+// Refresh, called after a write of ermite, makes the library notice at once
+// what the throttled read path would not for an hour.
+func TestRefreshAfterAWrite(t *testing.T) {
+	var logs bytes.Buffer
+	log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &logs})
+	ctx := zerowrap.WithCtx(context.Background(), log)
+	a, g, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.RefreshEvery = time.Hour })
+	h := readertest.NewHistory(t, data)
+
+	a.Refresh(ctx, h.Name) // not open: nothing to do
+	assert.Equal(t, 0, a.OpenRepos())
+	_, err := a.ListRefs(ctx, h.Name)
+	require.NoError(t, err)
+
+	h.Git("replace", h.C2, h.C3) // the repository stops being readable by the library
+	a.Refresh(ctx, h.Name)
+	assert.Contains(t, logs.String(), "served by git", "Refresh noticed the replace ref")
+	want, err := g.ListRefs(ctx, h.Name)
+	require.NoError(t, err)
+	got, err := a.ListRefs(ctx, h.Name)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+
+	a.Close()
+	a.Refresh(ctx, h.Name) // after Close: no-op
 }
