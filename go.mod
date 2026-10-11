@@ -12,7 +12,7 @@ tool (
 )
 
 require (
-	bnema.dev/ermite-api v0.0.0-20261010155050-303f037eb5ed
+	bnema.dev/ermite-api v0.0.0-20261011052945-e9394b717bc2
 	bnema.dev/ermite-git v0.1.0
 	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
 	connectrpc.com/connect v1.21.0
