@@ -1,7 +1,7 @@
 bnema.dev/ermite-api v0.0.0-20261010155050-303f037eb5ed h1:JtPA+6SU8PThRFwOaFVLnscyBhNE9ObT5nJBzi6t+HQ=
 bnema.dev/ermite-api v0.0.0-20261010155050-303f037eb5ed/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
-bnema.dev/ermite-git v0.0.0-20261011010712-5228465d7a80 h1:M5AQ+6UGxrD+Slf0fI1GAwZvTEp5i3KoRPy7Vn5zers=
-bnema.dev/ermite-git v0.0.0-20261011010712-5228465d7a80/go.mod h1:m9d4VYHm28mrY6VxVqWQMRIsadGq80FeLub/nrZX6Cg=
+bnema.dev/ermite-git v0.1.0 h1:8GNhQDj0MxyvrI4kHewZ9k0rT86e9348T3BJ49WHfmI=
+bnema.dev/ermite-git v0.1.0/go.mod h1:m9d4VYHm28mrY6VxVqWQMRIsadGq80FeLub/nrZX6Cg=
 bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3 h1:PVTDOWTg9JJZrnJznTHSCB1Vcc+x2n6zMgZkKiFwvuw=
 bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3/go.mod h1:5Tb7lsUx00GVtTC6rGRWG9JbBMKlZ8hi/klP8L/DcEA=
 buf.build/gen/go/bufbuild/bufplugin/protocolbuffers/go v1.36.12-20260722160903-4d94f3df3a7b.2 h1:z5+rVknD0AvorY/QV9cb3ohUXw4E7HvxU4+2JUH6EHU=
