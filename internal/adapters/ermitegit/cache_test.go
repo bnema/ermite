@@ -224,6 +224,22 @@ func TestIdleRepositoriesAreClosed(t *testing.T) {
 	assert.Equal(t, 1, a.OpenRepos())
 }
 
+// A Refresh after a write is not a read: a repository pushed to but never read
+// still closes after IdleTTL.
+func TestRefreshIsNotAUse(t *testing.T) {
+	ctx := context.Background()
+	a, _, data := newAdapter(t, ermitegit.AllRoutes(ermitegit.ErmiteGit), func(c *ermitegit.Config) { c.IdleTTL = 80 * time.Millisecond })
+	f := commitOf(t, data, "pushed")
+	_, err := a.ListRefs(ctx, f.Name)
+	require.NoError(t, err)
+	start := time.Now()
+	for time.Since(start) < 5*time.Second && a.OpenRepos() == 1 {
+		a.Refresh(ctx, f.Name)
+		time.Sleep(20 * time.Millisecond)
+	}
+	assert.Equal(t, 0, a.OpenRepos(), "refreshes kept an unread repository open")
+}
+
 // The idle close does not cut a blob stream the reader still holds: the library
 // keeps the stream valid after Close.
 func TestIdleCloseDoesNotCutAStream(t *testing.T) {

@@ -80,9 +80,10 @@ type handle struct {
 	c    *cache
 	e    *entry
 	repo *git.Repo
+	peek bool // from peek: its release is not a use
 }
 
-func (h *handle) release() { h.c.release(h.e) }
+func (h *handle) release() { h.c.release(h.e, !h.peek) }
 
 // cache is a bounded LRU of open repositories keyed by directory. A repository
 // leaves it by eviction, by idling longer than the TTL, by Forget (the
@@ -334,7 +335,7 @@ func (c *cache) peek(dir string) *handle {
 		return nil
 	}
 	e.users++
-	return &handle{c: c, e: e, repo: e.opened.Load().repo}
+	return &handle{c: c, e: e, repo: e.opened.Load().repo, peek: true}
 }
 
 // refreshNow runs Refresh on the open repository of dir, if the cache has it,
@@ -356,14 +357,14 @@ func (c *cache) refreshNow(ctx context.Context, name domain.RepoName, dir string
 	return nil
 }
 
-func (c *cache) release(e *entry) {
+func (c *cache) release(e *entry, use bool) {
 	c.mu.Lock()
 	e.users--
 	if e.dropped {
 		if e.users == 0 {
 			c.doomed = append(c.doomed, e)
 		}
-	} else {
+	} else if use {
 		e.lastUsed = time.Now() // a long read is a use, up to its end
 		c.lru.MoveToFront(e.elem)
 	}
