@@ -63,6 +63,7 @@ func Cases() []Case {
 		{"refs", buildRefs},
 		{"dangling ref", buildDangling},
 		{"submodule", buildSubmodule},
+		{"paths", buildPaths},
 		{"wide directory", buildWide},
 		{"detached HEAD", func(t *testing.T, data string) *Fixture {
 			h := NewHistory(t, data)
@@ -261,6 +262,23 @@ func buildSubmodule(t *testing.T, data string) *Fixture {
 	f.Commit("base")
 	f.Git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("ab", 20)+",vendor/mod")
 	f.Git("commit", "--quiet", "-m", "add submodule")
+	f.Maintain()
+	return f
+}
+
+// buildPaths has what ListPaths must order and skip: nested directories whose
+// names sort around "/" (a/b/c.txt, a/b.txt, a-b.txt), an executable, a
+// symlink, a submodule, and a name with a tab that no address can carry. The
+// tag v1 points at the commit.
+func buildPaths(t *testing.T, data string) *Fixture {
+	f := NewFixture(t, data, "paths")
+	f.Write("a/b/c.txt", "c\n").Write("a/b.txt", "b\n").Write("a-b.txt", "ab\n").Write("z.txt", "z\n")
+	f.Write("run.sh", "#!/bin/sh\n").Chmod("run.sh", 0o755).Symlink("z.txt", "link")
+	f.Write("tab\tname.txt", "t\n").Write("d/e/f/deep.txt", "d\n").Write("héllo wörld.txt", "h\n")
+	f.Commit("base")
+	f.Git("update-index", "--add", "--cacheinfo", "160000,"+strings.Repeat("ab", 20)+",vendor/mod")
+	f.Git("commit", "--quiet", "-m", "add submodule")
+	f.Git("tag", "v1")
 	f.Maintain()
 	return f
 }

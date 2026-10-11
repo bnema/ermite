@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	git "bnema.dev/ermite-git"
@@ -324,6 +325,115 @@ func getTree(ctx context.Context, r *git.Repo, rev domain.Revision, path domain.
 		}
 	}
 	return tree, nil
+}
+
+// pathChunk is the size of the blocks that hold the bytes of the paths.
+const pathChunk = 32 << 10
+
+// pathWalker lists the files below a tree, depth first, in tree order.
+type pathWalker struct {
+	ctx      context.Context
+	r        *git.Repo
+	maxPaths int
+	maxBytes int
+
+	// paths are the paths kept. Their bytes live in chunks: a chunk is filled
+	// by a strings.Builder, so a path is read back as a string without a copy,
+	// and a full chunk is left to the paths that point into it instead of
+	// being grown and copied.
+	paths     []string
+	chunk     strings.Builder
+	prefix    []byte // "dir/sub/" of the directory being read
+	size      int    // bytes of the paths kept
+	truncated bool
+	bad       error
+}
+
+// listPaths lists the files and symbolic links of a revision recursively.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter converts ermite-git values into domain values; the limits and the orders come from domain
+func listPaths(ctx context.Context, r *git.Repo, rev domain.Revision, maxPaths, maxBytes int) (domain.PathList, error) {
+	commit, root, err := commitTree(r, rev)
+	if err != nil {
+		return domain.PathList{}, err
+	}
+	treeID, err := domainID(root)
+	if err != nil {
+		return domain.PathList{}, err
+	}
+	w := &pathWalker{ctx: ctx, r: r, maxPaths: maxPaths, maxBytes: maxBytes}
+	if err := w.walk(root); err != nil {
+		return domain.PathList{}, err
+	}
+	list := domain.PathList{CommitID: commit, TreeID: treeID, Truncated: w.truncated}
+	list.Paths = w.paths
+	return list, nil
+}
+
+// walk lists one directory. The recursion is inside the callback of ReadTree,
+// where the entries of a subdirectory come at the place of the subdirectory,
+// like in `git ls-tree -r`; the callback can only say stop, so the reasons to
+// stop are kept in the walker. Every ReadTree takes its own pooled buffer, so
+// the nesting is safe.
+func (w *pathWalker) walk(tree git.ObjectID) error {
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
+	err := w.r.ReadTree(tree, func(e git.Entry) bool {
+		switch {
+		case e.Mode.IsGitlink():
+			return true
+		case e.Mode.IsTree():
+			mark := len(w.prefix)
+			w.prefix = append(w.prefix, e.Name...)
+			// The paths below a directory that is not addressable are not
+			// either: this also bounds the depth of the recursion.
+			if !domain.IsAddressablePath(string(w.prefix)) {
+				w.prefix = w.prefix[:mark]
+				return true
+			}
+			w.prefix = append(w.prefix, '/')
+			err := w.walk(e.ID)
+			w.prefix = w.prefix[:mark]
+			if err != nil {
+				w.bad = err
+				return false
+			}
+			return !w.truncated
+		case e.Mode.IsRegular(), e.Mode.IsSymlink():
+			return w.add(e.Name)
+		}
+		w.bad = fmt.Errorf("unknown mode %o of %q", uint32(e.Mode), e.Name)
+		return false
+	})
+	if err == nil {
+		err = w.bad
+	}
+	return err
+}
+
+// add lists the file name of the current directory, and says whether the walk
+// goes on.
+func (w *pathWalker) add(name []byte) bool {
+	n := len(w.prefix) + len(name)
+	if w.chunk.Cap()-w.chunk.Len() < n {
+		w.chunk = strings.Builder{}
+		w.chunk.Grow(max(pathChunk, n))
+	}
+	start := w.chunk.Len()
+	w.chunk.Write(w.prefix)
+	w.chunk.Write(name)
+	path := w.chunk.String()[start:]
+	switch {
+	case !domain.IsAddressablePath(path):
+	case len(w.paths) >= w.maxPaths || w.size+n > w.maxBytes:
+		w.truncated = true
+		return false
+	default:
+		w.size += n
+		w.paths = append(w.paths, path)
+	}
+	return true
 }
 
 // fillLastCommits sets the last commit of the first MaxLastCommitEntries

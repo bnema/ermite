@@ -288,9 +288,55 @@ func (g *Git) lookup(ctx context.Context, dir string, rev domain.Revision, path 
 	return obj, err
 }
 
-// ListPaths is not implemented yet.
-func (g *Git) ListPaths(_ context.Context, _ domain.RepoName, _ domain.Revision, _, _ int) (domain.PathList, error) {
-	return domain.PathList{}, errors.ErrUnsupported
+// ListPaths lists the files and symbolic links of a revision with
+// `git ls-tree -r -z`, in its order, up to the bounds of the port.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port
+func (g *Git) ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Revision, maxPaths, maxBytes int) (domain.PathList, error) {
+	dir, err := g.repoDir(repo)
+	if err != nil {
+		return domain.PathList{}, err
+	}
+	obj, err := g.lookup(ctx, dir, rev, domain.TreePath{})
+	if err != nil {
+		return domain.PathList{}, fmt.Errorf("paths of %q: %w", repo, err)
+	}
+	treeID, err := domain.ParseObjectID(obj.info.ID)
+	if err != nil {
+		return domain.PathList{}, err
+	}
+	list := domain.PathList{CommitID: obj.commit, TreeID: treeID}
+	size := 0
+	err = g.pipe(ctx, readArgs(dir, "ls-tree", "-r", "-z", treeID.String()), func(r *bufio.Reader) error {
+		for {
+			tok, err := readToken(r)
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			meta, path, ok := strings.Cut(tok, "\t")
+			if !ok {
+				return fmt.Errorf("malformed ls-tree entry %q", tok)
+			}
+			// meta is "<mode> <type> <id>": a submodule is a commit.
+			_, rest, _ := strings.Cut(meta, " ")
+			if typ, _, _ := strings.Cut(rest, " "); typ == "commit" || !domain.IsAddressablePath(path) {
+				continue
+			}
+			if len(list.Paths) >= maxPaths || size+len(path) > maxBytes {
+				list.Truncated = true
+				return errStop
+			}
+			size += len(path)
+			list.Paths = append(list.Paths, path)
+		}
+	})
+	if err != nil {
+		return domain.PathList{}, fmt.Errorf("paths of %q: %w", repo, err)
+	}
+	return list, nil
 }
 
 // GetTree lists a directory with `git ls-tree -z -l`.

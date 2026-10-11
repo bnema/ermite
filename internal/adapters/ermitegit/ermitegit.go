@@ -94,12 +94,14 @@ type Routes struct {
 	ListCommits Backend
 	// ListCommitsPath is a page of the history of a file or a directory.
 	ListCommitsPath Backend
+	// ListPaths is the recursive list of the file paths of a revision.
+	ListPaths Backend
 }
 
 // AllRoutes returns routes that send every method to b. The tests and the
 // benchmarks use it to exercise a backend whatever the production routes are.
 func AllRoutes(b Backend) Routes {
-	return Routes{b, b, b, b, b, b, b, b, b}
+	return Routes{b, b, b, b, b, b, b, b, b, b}
 }
 
 // Config configures an Adapter.
@@ -315,9 +317,19 @@ func (a *Adapter) ResolveRefPath(ctx context.Context, repo domain.RepoName, path
 	}, cli)
 }
 
-// ListPaths is not implemented yet.
-func (a *Adapter) ListPaths(_ context.Context, _ domain.RepoName, _ domain.Revision, _, _ int) (domain.PathList, error) {
-	return domain.PathList{}, errors.ErrUnsupported
+// ListPaths lists the file and symbolic link paths of a revision.
+func (a *Adapter) ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Revision, maxPaths, maxBytes int) (domain.PathList, error) {
+	cli := func() (domain.PathList, error) { return a.cli.ListPaths(ctx, repo, rev, maxPaths, maxBytes) }
+	if a.routes.ListPaths == CLI {
+		return cli()
+	}
+	return serve(ctx, a, repo, func(r *git.Repo) (domain.PathList, error) {
+		list, err := listPaths(ctx, r, rev, maxPaths, maxBytes)
+		if err != nil {
+			return domain.PathList{}, fmt.Errorf("paths of %q: %w", repo, err)
+		}
+		return list, nil
+	}, cli)
 }
 
 // GetTree lists a directory.
