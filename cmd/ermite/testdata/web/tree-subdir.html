@@ -16,6 +16,8 @@
 </script>
 <script src="/-/static/js/ermite.HASH.js" defer>
 </script>
+<script src="/-/static/js/files.HASH.js" defer>
+</script>
 </head>
 <body data-ref="main" data-sha="SHA40" data-sel="" data-nav="">
 <a class="skip" href="#main">skip to content</a>
@@ -103,7 +105,7 @@
 <th class="c-when">date</th>
 </tr>
 </thead>
-<tbody id="tree-rows" data-rows>
+<tbody id="tree-rows" data-rows hx-on:click="ermiteTree.click(event)">
 <tr data-cursor>
 <td class="cur" aria-hidden="true">
 </td>
@@ -361,18 +363,6 @@
 <a href="/files/tree/v1.0" tabindex="-1">
 <span class="lbl">v1.0</span>
 <span class="k">tag</span>
-</a>
-</li>
-<li data-k="file docs/readme.md">
-<a href="/files/blob/main/docs/README.md" tabindex="-1">
-<span class="lbl">docs/README.md</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file docs/guide.md">
-<a href="/files/blob/main/docs/guide.md" tabindex="-1">
-<span class="lbl">docs/guide.md</span>
-<span class="k">file</span>
 </a>
 </li>
 </ul>

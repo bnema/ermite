@@ -16,6 +16,8 @@
 </script>
 <script src="/-/static/js/ermite.HASH.js" defer>
 </script>
+<script src="/-/static/js/files.HASH.js" defer>
+</script>
 </head>
 <body data-ref="main" data-sha="SHA40" data-sel="" data-nav="">
 <a class="skip" href="#main">skip to content</a>
@@ -100,13 +102,13 @@
 <th class="c-when">date</th>
 </tr>
 </thead>
-<tbody id="tree-rows" data-rows>
+<tbody id="tree-rows" data-rows hx-on:click="ermiteTree.click(event)">
 <tr data-cursor>
 <td class="cur" aria-hidden="true">
 </td>
-<td class="c-kind" aria-hidden="true">▾</td>
+<td class="c-kind" aria-hidden="true">▸</td>
 <td class="c-name">
-<a href="/files/tree/main/docs">docs/</a>
+<a href="/files/tree/main/docs" data-expand="/files/tree/main/docs?rows" aria-expanded="false">docs/</a>
 </td>
 <td class="c-size num dim">-</td>
 <td class="c-sub dim">
@@ -120,9 +122,9 @@
 <tr>
 <td class="cur" aria-hidden="true">
 </td>
-<td class="c-kind" aria-hidden="true">▾</td>
+<td class="c-kind" aria-hidden="true">▸</td>
 <td class="c-name">
-<a href="/files/tree/main/src">src/</a>
+<a href="/files/tree/main/src" data-expand="/files/tree/main/src?rows" aria-expanded="false">src/</a>
 </td>
 <td class="c-size num dim">-</td>
 <td class="c-sub dim">
@@ -566,84 +568,6 @@
 <a href="/files/tree/v1.0" tabindex="-1">
 <span class="lbl">v1.0</span>
 <span class="k">tag</span>
-</a>
-</li>
-<li data-k="file readme.md">
-<a href="/files/blob/main/README.md" tabindex="-1">
-<span class="lbl">README.md</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file big.txt">
-<a href="/files/blob/main/big.txt" tabindex="-1">
-<span class="lbl">big.txt</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file data.bin">
-<a href="/files/blob/main/data.bin" tabindex="-1">
-<span class="lbl">data.bin</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file empty.txt">
-<a href="/files/blob/main/empty.txt" tabindex="-1">
-<span class="lbl">empty.txt</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file evil.go">
-<a href="/files/blob/main/evil.go" tabindex="-1">
-<span class="lbl">evil.go</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file fake.jpg">
-<a href="/files/blob/main/fake.jpg" tabindex="-1">
-<span class="lbl">fake.jpg</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file fake.png">
-<a href="/files/blob/main/fake.png" tabindex="-1">
-<span class="lbl">fake.png</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file lines.txt">
-<a href="/files/blob/main/lines.txt" tabindex="-1">
-<span class="lbl">lines.txt</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file logo.svg">
-<a href="/files/blob/main/logo.svg" tabindex="-1">
-<span class="lbl">logo.svg</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file main.go">
-<a href="/files/blob/main/main.go" tabindex="-1">
-<span class="lbl">main.go</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file notes.txt">
-<a href="/files/blob/main/notes.txt" tabindex="-1">
-<span class="lbl">notes.txt</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file page.html">
-<a href="/files/blob/main/page.html" tabindex="-1">
-<span class="lbl">page.html</span>
-<span class="k">file</span>
-</a>
-</li>
-<li data-k="file pic.png">
-<a href="/files/blob/main/pic.png" tabindex="-1">
-<span class="lbl">pic.png</span>
-<span class="k">file</span>
 </a>
 </li>
 </ul>

@@ -214,7 +214,7 @@ func refItem(r RefItem) templ.Component {
 }
 
 // OverlayCmd is the ":" command line: one filterable list mixing sections,
-// refs, files of this directory and repos.
+// refs and repos.
 func OverlayCmd(items []CmdItem) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

@@ -84,7 +84,7 @@ templ refItem(r RefItem) {
 }
 
 // OverlayCmd is the ":" command line: one filterable list mixing sections,
-// refs, files of this directory and repos.
+// refs and repos.
 templ OverlayCmd(items []CmdItem) {
 	<dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 		<div class="panel-head">

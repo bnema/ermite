@@ -21,10 +21,8 @@ templ Tree(l Layout, p TreePage) {
 			<thead>
 				<tr><th class="cur"></th><th class="c-kind"></th><th class="c-name">name</th><th class="c-size">size</th><th class="c-sub">last commit</th><th class="c-who">author</th><th class="c-when">date</th></tr>
 			</thead>
-			<tbody id="tree-rows" data-rows>
-				for _, r := range p.Rows {
-					@TreeRowView(r)
-				}
+			<tbody id="tree-rows" data-rows hx-on:click="ermiteTree.click(event)">
+				@TreeRows(p)
 			</tbody>
 		</table>
 		if len(p.Rows) == 0 {
@@ -39,15 +37,34 @@ templ Tree(l Layout, p TreePage) {
 	}
 }
 
-// TreeRowView is one entry of a directory. Glyph: ▾ directory, @ symbolic
-// link, + submodule, · file.
+// TreeRows is the rows of a directory alone: what files.js inserts under a
+// directory it opens in place. When the directory has more entries than are
+// listed, the last row links to its page.
+templ TreeRows(p TreePage) {
+	for _, r := range p.Rows {
+		@TreeRowView(r)
+	}
+	if p.More != "" {
+		<tr class="tree-more"><td colspan="7"><a href={ templ.SafeURL(p.More) }>more entries: open the directory</a></td></tr>
+	}
+}
+
+// TreeRowView is one entry of a directory. Glyph: ▸ directory (▾ once opened
+// in place), @ symbolic link, + submodule, · file. A directory link carries
+// data-expand, the URL of its rows.
 templ TreeRowView(r TreeRow) {
 	<tr data-cursor?={ r.Cursor }>
 		<td class="cur" aria-hidden="true"></td>
 		<td class="c-kind" aria-hidden="true">{ r.Glyph }</td>
 		<td class="c-name">
 			if r.Href != "" {
-				<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+				<a
+					href={ templ.SafeURL(r.Href) }
+					if r.Expand != "" {
+						data-expand={ r.Expand }
+						aria-expanded="false"
+					}
+				>{ r.Name }</a>
 			} else {
 				{ r.Name }
 			}

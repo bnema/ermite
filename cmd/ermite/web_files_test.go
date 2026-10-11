@@ -100,6 +100,48 @@ func TestWebFilesGolden(t *testing.T) {
 	}
 }
 
+// AC1, AC2, AC7: ?rows answers the entries of a directory as table rows only,
+// for the Files view to insert under the directory; a private repository is
+// the 404 of a missing one.
+func TestWebTreeRows(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	h.webFilesRepo("files")
+	h.seed("secret-sauce", domain.VisibilityPrivate, "dir/a.txt")
+
+	// The page links its directories to their rows.
+	_, _, page := h.get("/files/tree/main")
+	assert.Contains(t, page, `href="/files/tree/main/docs" data-expand="/files/tree/main/docs?rows" aria-expanded="false"`)
+	assert.Contains(t, page, `<script src="/-/static/js/files.`)
+	assert.NotContains(t, page, "main.go</span>", "the palette lists no file")
+
+	status, hdr, body := h.get("/files/tree/main/docs?rows")
+	require.Equal(t, 200, status)
+	assert.Equal(t, "no-cache", hdr.Get("Cache-Control"))
+	assert.Contains(t, hdr.Get("Content-Type"), "text/html")
+	assert.NotContains(t, body, "<html")
+	assert.NotContains(t, body, "<table")
+	assert.Equal(t, 2, strings.Count(body, "<tr"), "one row per entry")
+	assert.Contains(t, body, `<a href="/files/blob/main/docs/README.md">README.md</a>`)
+	assert.Contains(t, body, `<a href="/files/blob/main/docs/guide.md">guide.md</a>`)
+	assert.NotContains(t, body, "data-cursor", "the cursor stays on the page")
+	assertNoInline(t, body)
+
+	// A subdirectory row can be opened in turn.
+	_, _, body = h.get("/files/tree/main/src?rows")
+	assert.Contains(t, body, `href="/files/tree/main/src/lib" data-expand="/files/tree/main/src/lib?rows" aria-expanded="false"`)
+	assert.Contains(t, body, "▸")
+	_, _, body = h.get("/files/tree/main/src/lib?rows")
+	assert.Contains(t, body, `href="/files/blob/main/src/lib/util.go"`)
+	assert.NotContains(t, body, "data-expand")
+
+	// Not found, and private as anonymous: the 404 page, nothing of the rows.
+	for _, p := range []string{"/files/tree/main/nope?rows", "/secret-sauce/tree/main/dir?rows", "/secret-sauce/tree/main?rows"} {
+		status, _, body = h.get(p)
+		assert.Equal(t, 404, status, p)
+		assert.NotContains(t, body, "a.txt", p)
+	}
+}
+
 // Ref names with a slash are found by their longest prefix, and a commit id
 // works where a ref does.
 func TestWebFilesRefs(t *testing.T) {
