@@ -127,8 +127,9 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 
 // Record is the post-receive step of an accepted push: it sets pushed_at,
 // repairs HEAD when it points to a missing branch, tells the reader that the
-// repository changed, publishes a PushEvent and schedules maintenance. Every step runs even when an earlier one fails; the
-// failures are returned together and the push itself is not affected.
+// repository changed, publishes a PushEvent and schedules maintenance. Every
+// step runs even when an earlier one fails; the failures are returned together
+// and the push itself is not affected.
 func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error {
 	log := zerowrap.FromCtx(ctx)
 	now := u.clock.Now().UTC()

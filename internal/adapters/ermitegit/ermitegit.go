@@ -22,10 +22,10 @@
 // The adapter still calls Refresh to release replaced packs, pick up a new
 // commit-graph and notice a repository that stopped being supported: at once
 // when ermite itself wrote (the push and the maintenance tell it through
-// Refresh), and as a safety net at most once per Config.RefreshEvery for each
-// repository while it is read, by one reader at a time. A Refresh
-// stats the files of the repository, too much to pay on every read of a
-// method that itself costs 2 µs.
+// Refresh; a merge request merge waits for its maintenance), and as a safety
+// net at most once per Config.RefreshEvery for each repository while it is
+// read, by one reader at a time. A Refresh stats the files of the repository,
+// too much to pay on every read of a method that itself costs 2 µs.
 //
 // Memory: the cache of open repositories is bounded (LRU) and drops the ones
 // idle longer than Config.IdleTTL; each repository holds at most
@@ -127,7 +127,8 @@ type Config struct {
 	DeltaCacheSize int64
 	// MaxObjectSize is the size in bytes above which an object that must be
 	// held in memory is read by the wrapped reader instead. Zero means
-	// DefaultMaxObjectSize.
+	// DefaultMaxObjectSize; a negative value means the library default
+	// (128 MiB).
 	MaxObjectSize int64
 	// Routes overrides DefaultRoutes when not nil.
 	Routes *Routes
