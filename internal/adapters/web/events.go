@@ -51,7 +51,10 @@ import (
 //	                changed: the page fetches itself again (ermiteLive in ermite.js)
 //
 // The data of an event is one fragment, a top-level element with an id, one
-// "data:" line per line of HTML; the page swaps the element that has that id.
+// "data:" line per line of HTML; the page swaps the element that has that id
+// (ermiteLive.swap). The slots of the banners (commits-head, mr-notice) are
+// status regions that stay in the page: only their children are replaced, so
+// that a screen reader announces the banner.
 // An event that changes nothing on the page is still sent as an id alone, so
 // that a reconnection resumes after it.
 

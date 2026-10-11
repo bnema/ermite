@@ -70,6 +70,8 @@
 }
 
 @layer utilities {
+  /* what does nothing without scripts waits for ermite.js, which sets html.js */
+  html:not(.js) [data-js], html:not(.js) .filter { display: none; }
   .dim { color: var(--ink-dim); }
   .mute { color: var(--ink-mute); }
   .nowrap { white-space: nowrap; }

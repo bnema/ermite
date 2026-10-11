@@ -10,10 +10,10 @@ templ Home(l Layout, p HomePage) {
 			<input
 				id="home-filter"
 				type="search"
-				data-filter
+				data-filter="#repo-rows > tr"
 				placeholder="Filter repositories…"
 				autocomplete="off"
-				hx-on:input="let t = this.value.toLowerCase(); q('#repo-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#repo-rows > tr:not([hidden])')"
+				hx-on:input="ermite.filter(this)"
 			/>
 		</div>
 		<table class="list home" aria-label="Repositories">
@@ -94,11 +94,10 @@ templ Refs(l Layout, p RefsPage) {
 			<input
 				id="ref-filter"
 				type="search"
-				data-filter
+				data-filter="#ref-rows > tr"
 				placeholder="Filter branches and tags…"
 				autocomplete="off"
-				hx-on:input="let t = this.value.toLowerCase(); q('#ref-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
-      let first = q('#ref-rows > tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '#ref-rows > tr')"
+				hx-on:input="ermite.filter(this)"
 			/>
 		</div>
 		<table class="list refs" aria-label="Branches and tags">

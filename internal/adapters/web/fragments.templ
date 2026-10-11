@@ -55,31 +55,40 @@ templ RefsKV(p RefsPage) {
 	</dl>
 }
 
-// CommitsSlot is the place of the banner of the commits page, empty.
-templ CommitsSlot() {
-	<div id="commits-head"></div>
+// LiveSlot is the place of a live banner, empty: a status region that stays
+// in the page. The live updates (ermiteLive in ermite.js) replace its children,
+// never the element, so that a screen reader announces the new banner (a
+// region that is inserted with its content is not announced).
+templ LiveSlot(id string) {
+	<div id={ id } class="live-slot" role="status" data-slot></div>
+}
+
+// liveBanner is the slot with its banner: a link that reloads or opens the
+// page. Only the children of the element reach the page that has the slot.
+templ liveBanner(id, text, href string) {
+	<div id={ id } class="live-slot" role="status" data-slot><a href={ templ.SafeURL(href) }>{ text }</a></div>
 }
 
 // CommitsBanner announces new commits on the branch the page lists. It links
 // to the first page of the branch.
 templ CommitsBanner(text, href string) {
-	<div id="commits-head" class="live-banner" role="status">
-		<a href={ templ.SafeURL(href) }>{ text }</a>
-	</div>
+	@liveBanner("commits-head", text, href)
 }
 
-// MRNotice tells a merge request page that it is out of date. The empty slot
-// of the page has the same id, so the first notice replaces it.
+// MRNotice tells a merge request page that it is out of date, or the list that
+// its content changed.
 templ MRNotice(text, href string) {
-	<div id="mr-notice" class="live-banner" role="status">
-		<a href={ templ.SafeURL(href) }>{ text }</a>
-	</div>
+	@liveBanner("mr-notice", text, href)
 }
 
 // Live is the connection to the event stream, in the hint badge. It shows
 // only once a connection was lost: a page that never connected, or that is
 // live, says nothing. The events of the stream are fragments that ermiteLive
 // (ermite.js) swaps in the page. A page without a stream renders nothing.
+//
+// hx-sse retries a lost connection for ever, with a growing delay. A refusal
+// that will not change (404: the repository is gone or hidden; 401) is handled
+// by ermiteLive.error, which has the page fetch itself again.
 templ Live(l Layout) {
 	if l.Live && l.LiveURL != "" {
 		<span
@@ -90,6 +99,8 @@ templ Live(l Layout) {
 			:text="data.state === 'offline' ? 'live updates paused' : ''"
 			hx-on="htmx:sse:after:connection -> data.state = 'live';
            htmx:sse:close, htmx:sse:error -> data.state = 'offline';
+           htmx:sse:error -> ermiteLive.error(event.detail.status);
+           htmx:sse:before:connection -> ermiteLive.gate(event);
            home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);
            gap -> ermiteLive.reload()"
 		></span>

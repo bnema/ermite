@@ -45,7 +45,7 @@ func Tree(l Layout, p TreePage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"filter\"><label for=\"tree-filter\" class=\"sr\">filter</label> <input id=\"tree-filter\" type=\"search\" data-filter placeholder=\"Filter this directory…\" autocomplete=\"off\" hx-on:input=\"let t = this.value.toLowerCase(); q('#tree-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#tree-rows > tr:not([hidden])')\"></div><table class=\"list tree\" aria-label=\"Entries\"><thead><tr><th class=\"cur\"></th><th class=\"c-kind\"></th><th class=\"c-name\">name</th><th class=\"c-size\">size</th><th class=\"c-sub\">last commit</th><th class=\"c-who\">author</th><th class=\"c-when\">date</th></tr></thead> <tbody id=\"tree-rows\" data-rows>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"filter\"><label for=\"tree-filter\" class=\"sr\">filter</label> <input id=\"tree-filter\" type=\"search\" data-filter=\"#tree-rows > tr\" placeholder=\"Filter this directory…\" autocomplete=\"off\" hx-on:input=\"ermite.filter(this)\"></div><table class=\"list tree\" aria-label=\"Entries\"><thead><tr><th class=\"cur\"></th><th class=\"c-kind\"></th><th class=\"c-name\">name</th><th class=\"c-size\">size</th><th class=\"c-sub\">last commit</th><th class=\"c-who\">author</th><th class=\"c-when\">date</th></tr></thead> <tbody id=\"tree-rows\" data-rows>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

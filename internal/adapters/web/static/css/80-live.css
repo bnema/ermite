@@ -1,9 +1,12 @@
 @layer components {
-  /* live updates: the banner of new commits, an empty slot takes no room */
-  #commits-head:empty { display: none; }
-  .live-banner {
+  /* live updates: a slot is a status region that stays in the page; its banner
+     comes and goes as its content. Empty, it is out of the way but still in the
+     accessibility tree (display: none would drop the region, and the next banner
+     would not be announced). */
+  .live-slot:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .live-slot:not(:empty) {
     padding: var(--s3) var(--s4); font-weight: 700;
     background: var(--bg-surface); border: 1px solid var(--border-strong); border-left: 3px solid var(--teal); border-radius: var(--r-s);
   }
-  .live-banner a { color: var(--ink-hi); }
+  .live-slot a { color: var(--ink-hi); }
 }

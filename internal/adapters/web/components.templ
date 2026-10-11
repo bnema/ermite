@@ -22,9 +22,10 @@ templ CloneBlock(c Clone) {
 				<button
 					type="button"
 					class="btn copy"
+					data-js
 					data-label="Copy"
 					aria-label={ "copy: " + line }
-					hx-on:click="navigator.clipboard?.writeText(closest('.clone-line').querySelector('code').textContent); this.textContent = 'Copied'; await timeout('1500ms'); this.textContent = this.dataset.label"
+					hx-on:click="ermite.copy(this)"
 				>Copy</button>
 			</div>
 		}

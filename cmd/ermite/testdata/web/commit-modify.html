@@ -41,19 +41,19 @@
 </ol>
 </nav>
 <div class="hdr-acts">
-<button type="button" class="btn ref" aria-haspopup="dialog" aria-controls="panel-refs" aria-keyshortcuts="b" title="switch branch or tag (b)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-refs'))">
+<a class="btn ref" href="/diffs/refs" data-fire="refs" aria-keyshortcuts="b" title="switch branch or tag (b)">
 <span class="ico i-branch" aria-hidden="true">
 </span>
 <span class="ref-name">detached</span>
 <span class="sha">SHA7</span>
-</button>
-<button type="button" class="btn search" aria-haspopup="dialog" aria-controls="panel-cmd" aria-keyshortcuts="Control+K :" title="go to a section, ref, file or repo (ctrl k or :)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-cmd'))">
+</a>
+<button type="button" class="btn search" data-js aria-haspopup="dialog" aria-controls="panel-cmd" aria-keyshortcuts="Control+K :" title="go to a section, ref, file or repo (ctrl k or :)" data-fire="cmd">
 <span class="ico i-search" aria-hidden="true">
 </span>
 <span class="search-label">Go to…</span>
 <kbd aria-hidden="true">ctrl k</kbd>
 </button>
-<button type="button" class="btn icon" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-help'))">?</button>
+<button type="button" class="btn icon" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)">?</button>
 </div>
 </div>
 <nav class="tabs" aria-label="Sections">
@@ -108,11 +108,11 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 </span>
 <span class="grow">
 </span>
-<a href="/diffs/commit/SHA40?view=unified" class="btn vbtn" data-view="unified" aria-keyshortcuts="u" aria-current="true" hx-on:click="event.preventDefault(); document.body.dispatchEvent(new CustomEvent('k-' + this.dataset.view))" :aria-current="q(&#39;#diffs&#39;).attr[&#39;data-diff&#39;] === &#39;unified&#39; ? &#39;true&#39; : false">Unified<kbd aria-hidden="true">u</kbd>
+<a href="/diffs/commit/SHA40?view=unified" class="btn vbtn" data-view="unified" aria-keyshortcuts="u" aria-current="true" data-fire="unified" :aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false">Unified<kbd aria-hidden="true">u</kbd>
 </a>
-<a href="/diffs/commit/SHA40?view=split" class="btn vbtn" data-view="split" aria-keyshortcuts="d" hx-on:click="event.preventDefault(); document.body.dispatchEvent(new CustomEvent('k-' + this.dataset.view))" :aria-current="q(&#39;#diffs&#39;).attr[&#39;data-diff&#39;] === &#39;split&#39; ? &#39;true&#39; : false">Split<kbd aria-hidden="true">d</kbd>
+<a href="/diffs/commit/SHA40?view=split" class="btn vbtn" data-view="split" aria-keyshortcuts="d" data-fire="split" :aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false">Split<kbd aria-hidden="true">d</kbd>
 </a>
-<button type="button" aria-keyshortcuts="x" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-collapse'))" class="btn">
+<button type="button" aria-keyshortcuts="x" data-js data-fire="collapse" class="btn">
 <span hx-live="this.textContent = q('[data-file][open]').count || !q('[data-file]').count ? 'Collapse all' : 'Expand all'">Collapse all</span>
 <kbd aria-hidden="true">x</kbd>
 </button>
@@ -276,7 +276,7 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 </h2>
 <ol class="files" aria-label="Changed files">
 <li>
-<a href="#f1" :aria-current="(() =&gt; { let all = q(&#39;.dfile&#39;).arr(); let cur = all.filter(f =&gt; f.getBoundingClientRect().top &lt; innerHeight / 3).at(-1) || all[0]; return cur?.id === &#39;f1&#39; ? &#39;true&#39; : false })()" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
+<a href="#f1" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
 <span class="st" title="M">M</span>
 <span class="p" title="a.txt">a.txt</span>
 <span class="n">
@@ -290,7 +290,7 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 </a>
 </li>
 <li>
-<a href="#f2" :aria-current="(() =&gt; { let all = q(&#39;.dfile&#39;).arr(); let cur = all.filter(f =&gt; f.getBoundingClientRect().top &lt; innerHeight / 3).at(-1) || all[0]; return cur?.id === &#39;f2&#39; ? &#39;true&#39; : false })()" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
+<a href="#f2" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
 <span class="st" title="M">M</span>
 <span class="p" title="run.sh">run.sh</span>
 <span class="n">
@@ -421,7 +421,7 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 <dialog id="panel-refs" class="panel modal" aria-label="Switch ref" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 <div class="panel-head">
 <label for="refs-filter" class="sr">filter branches and tags</label>
-<input id="refs-filter" type="search" placeholder="Switch branch or tag…" autocomplete="off" data-pick hx-on:input="let t = this.value.toLowerCase(); q('#panel-refs li').arr().forEach(li => li.hidden = !li.textContent.toLowerCase().includes(t))">
+<input id="refs-filter" type="search" placeholder="Switch branch or tag…" autocomplete="off" data-pick="#panel-refs li" hx-on:input="ermite.filter(this)">
 <button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd>
 </button>
@@ -456,13 +456,7 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 <dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 <div class="panel-head">
 <label for="cmd-q" class="sr">go to</label>
-<input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="let t = this.value.toLowerCase().trim();
-        q('#cmd-list > li').arr().forEach(li => li.hidden = !li.dataset.k.includes(t));
-        let first = q('#cmd-list > li:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '#cmd-list > li')" hx-on:keydown="let vis = q('#cmd-list > li:not([hidden])').arr();
-        let i = vis.findIndex(li => li.hasAttribute('data-cursor'));
-        let step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
-        if (step) { event.preventDefault(); let n = vis[Math.max(0, Math.min(vis.length - 1, i + step))]; n && (q(n).take('data-cursor', '#cmd-list > li'), n.scrollIntoView({ block: 'nearest' })) }
-        else if (event.key === 'Enter') { event.preventDefault(); vis[Math.max(i, 0)]?.querySelector('a').click() }">
+<input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="ermite.cmdFilter(this)" hx-on:keydown="ermite.cmdKey(event)">
 <button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd>
 </button>
@@ -533,67 +527,27 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 <kbd>esc</kbd> close</span>
 </p>
 </dialog>
-<div id="keys" hidden hx-on="k-j from:body -> (async (d) => {
-           if (q('dialog[open]').count) return;
-           let rows = q('[data-rows] > :not([hidden])').arr();
-           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
-           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
-           let j = Math.max(0, Math.min(rows.length - 1, i + d)), n = rows[j];
-           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' });
-           let b = document.body.dataset, mark = (j + 1) + '/' + rows.length; b.nav = mark;
-           await timeout('1500ms'); if (b.nav === mark) b.nav = ''
-         })(1);
-         k-k from:body -> (async (d) => {
-           if (q('dialog[open]').count) return;
-           let rows = q('[data-rows] > :not([hidden])').arr();
-           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
-           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
-           let j = Math.max(0, Math.min(rows.length - 1, i + d)), n = rows[j];
-           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' });
-           let b = document.body.dataset, mark = (j + 1) + '/' + rows.length; b.nav = mark;
-           await timeout('1500ms'); if (b.nav === mark) b.nav = ''
-         })(-1);
-         k-top from:body -> q('[data-rows] > :not([hidden])').arr()[0]?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 0), q('#main').arr()[0].scrollTo(0, 0));
-         k-bottom from:body -> q('[data-rows] > :not([hidden])').arr().at(-1)?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 1e9), q('#main').arr()[0].scrollTo(0, 1e9));
-         k-open from:body -> q('dialog[open]').count || document.querySelector('[data-cursor] a')?.click();
-         k-esc from:body -> q('dialog[open]').arr().forEach(d => d.close());
-         k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].showModal();
-         k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].showModal(), q('#refs-filter').arr()[0].focus());
-         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].showModal(); q('#cmd-q').arr()[0].focus();
-         k-filter from:body -> q('[data-filter]').arr()[0]?.focus();
-         k-gh from:body -> document.querySelector('.brand')?.click();
-         k-gt from:body -> document.querySelector('.tabs [data-key=t]')?.click();
-         k-gc from:body -> document.querySelector('.tabs [data-key=c]')?.click();
-         k-gr from:body -> document.querySelector('.tabs [data-key=r]')?.click();
-         k-s from:body -> document.querySelector('.tabs [data-key=s]')?.click();
-         k-t from:body -> document.querySelector('.tabs [data-key=t]')?.click();
-         k-c from:body -> document.querySelector('.tabs [data-key=c]')?.click();
-         k-r from:body -> document.querySelector('.tabs [data-key=r]')?.click();
-         k-m from:body -> document.querySelector('.tabs [data-key=m]')?.click();
-         k-gm from:body -> document.querySelector('.tabs [data-key=m]')?.click();
-         k-next from:body -> {
-           let ns = q('#diffs .cmt').arr(); if (!ns.length) return;
-           let i = ns.findIndex(n => n.getBoundingClientRect().top > innerHeight / 3);
-           let n = ns[i < 0 ? 0 : i]; n.closest('details') && (n.closest('details').open = true); n.scrollIntoView({ block: 'center' })
-         };
-         k-split from:body -> {
-           let el = q('[data-diff]').arr()[0]; if (!el) return;
-           el.dataset.diff = 'split'; sessionStorage.setItem('diff', 'split');
-           q('[data-file]').arr().filter(d => d.querySelector('.dt')).forEach(d => d.open = true)
-         };
-         k-unified from:body -> {
-           let el = q('[data-diff]').arr()[0]; if (!el) return;
-           el.dataset.diff = 'unified'; sessionStorage.setItem('diff', 'unified');
-           q('[data-file]').arr().filter(d => d.querySelector('.dt')).forEach(d => d.open = true)
-         };
-         k-collapse from:body -> { let fs = q('[data-file]').arr(), open = !fs.some(d => d.open); fs.forEach(d => d.open = open) };
-         k-permalink from:body -> {
-           let b = document.body.dataset;
-           if (!b.sha) { b.flash = 'no ref to pin on this page'; await timeout('2s'); b.flash = ''; return }
-           history.replaceState(null, '', location.pathname.replace('/' + b.ref + '/', '/' + b.sha + '/') + location.hash);
-           navigator.clipboard?.writeText(location.href);
-           b.flash = 'permalink ' + b.sha.slice(0, 7) + ' copied'; await timeout('2s'); b.flash = ''
-         }">
+<div id="keys" hidden hx-on="k-j from:body -> ermite.move(1);
+         k-k from:body -> ermite.move(-1);
+         k-top from:body -> ermite.edge(false);
+         k-bottom from:body -> ermite.edge(true);
+         k-open from:body -> ermite.open();
+         k-esc from:body -> ermite.closeDialogs();
+         k-help from:body -> ermite.dialog('panel-help');
+         k-refs from:body -> ermite.dialog('panel-refs', 'refs-filter');
+         k-cmd from:body -> ermite.dialog('panel-cmd', 'cmd-q');
+         k-filter from:body -> ermite.focusFilter();
+         k-gh from:body -> ermite.go('.brand');
+         k-s from:body -> ermite.tab('s');
+         k-t from:body -> ermite.tab('t');
+         k-c from:body -> ermite.tab('c');
+         k-r from:body -> ermite.tab('r');
+         k-m from:body -> ermite.tab('m');
+         k-next from:body -> ermite.nextNote();
+         k-split from:body -> ermite.layout('split');
+         k-unified from:body -> ermite.layout('unified');
+         k-collapse from:body -> ermite.collapse();
+         k-permalink from:body -> ermite.permalink()">
 </div>
 </body>
 </html>

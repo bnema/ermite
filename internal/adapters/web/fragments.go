@@ -312,7 +312,7 @@ func (l *liveStream) banner(ctx context.Context, p *pb.Pushed) ([]fragment, erro
 			text = "the branch was rewritten — reload"
 		}
 	}
-	c := CommitsSlot()
+	c := LiveSlot("commits-head")
 	if text != "" {
 		c = CommitsBanner(text, repoHref(l.repo, "commits", l.ref))
 	}

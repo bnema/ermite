@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"github.com/a-h/templ"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func renderToString(t *testing.T, c templ.Component) string {
+	t.Helper()
+	var b bytes.Buffer
+	require.NoError(t, c.Render(t.Context(), &b))
+	return b.String()
+}
+
+// A live banner is the content of a status region that stays in the page: the
+// empty slot of the page and the fragment of the stream are the same element
+// (same id, role and marker), so that ermiteLive can replace the children and
+// leave the region where a screen reader watches it.
+func TestLiveSlotsAreStableStatusRegions(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		c    templ.Component
+		id   string
+		text string
+	}{
+		{"empty commits slot", LiveSlot("commits-head"), "commits-head", ""},
+		{"empty mr slot", LiveSlot("mr-notice"), "mr-notice", ""},
+		{"commits banner", CommitsBanner("2 new commits — reload", "/x/commits/main"), "commits-head", "2 new commits — reload"},
+		{"mr notice", MRNotice("a comment was added — reload", "/x/merge-requests/1"), "mr-notice", "a comment was added — reload"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := renderToString(t, tt.c)
+			assert.True(t, strings.HasPrefix(got, `<div id="`+tt.id+`" class="live-slot" role="status" data-slot>`), got)
+			if tt.text == "" {
+				assert.True(t, strings.HasSuffix(got, "data-slot></div>"), "an empty slot has no child: %s", got)
+			} else {
+				assert.Contains(t, got, tt.text)
+			}
+			assert.True(t, strings.HasSuffix(got, "</div>"), got)
+		})
+	}
+}
+
+// The header's refs button is a link to the refs page, which the script turns
+// into the dialog; the filters and the buttons that need scripts are marked.
+func TestShellDegradesWithoutScripts(t *testing.T) {
+	l := Layout{Repo: "demo", Ref: "main", Short: "abc1234", Assets: Assets{}}
+	got := renderToString(t, Header(l))
+	assert.Contains(t, got, `<a class="btn ref" href="/demo/refs" data-fire="refs"`)
+	assert.NotContains(t, got, "hx-on:click", "no handler is inlined in the header")
+	for _, want := range []string{`class="btn search" data-js`, `class="btn icon" data-js data-fire="help"`} {
+		assert.Contains(t, got, want)
+	}
+}
+
+// Data reaches the scripts through data-* attributes, never spliced into an
+// attribute that is evaluated.
+func TestDiffControlsPassDataThroughAttributes(t *testing.T) {
+	files := renderToString(t, FileList([]DiffFile{{ID: "f1'x", Path: "a.go", Status: "M"}}))
+	assert.NotContains(t, files, ":aria-current", "the file in view is marked by ermite.js")
+	assert.NotContains(t, files, "f1'x'", "no id is spliced into a script")
+
+	link := renderToString(t, viewLink(DiffView{Both: true, View: "split"}, "split", "Split", "d", "?view=split"))
+	assert.Contains(t, link, `data-fire="split"`)
+	assert.Contains(t, link, `this.dataset.view`)
+	assert.NotContains(t, link, "=== 'split'")
+}

@@ -11,10 +11,10 @@ templ Tree(l Layout, p TreePage) {
 			<input
 				id="tree-filter"
 				type="search"
-				data-filter
+				data-filter="#tree-rows > tr"
 				placeholder="Filter this directory…"
 				autocomplete="off"
-				hx-on:input="let t = this.value.toLowerCase(); q('#tree-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#tree-rows > tr:not([hidden])')"
+				hx-on:input="ermite.filter(this)"
 			/>
 		</div>
 		<table class="list tree" aria-label="Entries">

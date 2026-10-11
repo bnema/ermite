@@ -9,18 +9,17 @@ import "strings"
 templ MRList(l Layout, p MRListPage) {
 	@Shell(l, mrListRail(p)) {
 		if p.Live {
-			<div id="mr-notice"></div>
+			@LiveSlot("mr-notice")
 		}
 		<div class="filter">
 			<label for="mr-filter" class="sr">filter</label>
 			<input
 				id="mr-filter"
 				type="search"
-				data-filter
+				data-filter=".mrs tbody tr"
 				placeholder="Filter by title, branch, author or state…"
 				autocomplete="off"
-				hx-on:input="let t = this.value.toLowerCase(); q('.mrs tbody tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
-      let first = q('.mrs tbody tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '.mrs tbody tr')"
+				hx-on:input="ermite.filter(this)"
 			/>
 		</div>
 		if p.Newest == "" {
@@ -140,7 +139,7 @@ templ MergeRequest(l Layout, p MRPage) {
 				}
 			</dl>
 		</header>
-		<div id="mr-notice"></div>
+		@LiveSlot("mr-notice")
 		if len(p.Desc) > 0 {
 			<p class="mr-desc">@userText(p.Desc)</p>
 		}

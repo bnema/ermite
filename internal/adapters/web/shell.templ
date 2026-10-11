@@ -83,34 +83,33 @@ templ Header(l Layout) {
 			}
 			<div class="hdr-acts">
 				if l.Ref != "" {
-					<button
-						type="button"
+					<a
 						class="btn ref"
-						aria-haspopup="dialog"
-						aria-controls="panel-refs"
+						href={ templ.SafeURL(repoHref(l.Repo, "refs")) }
+						data-fire="refs"
 						aria-keyshortcuts="b"
 						title="switch branch or tag (b)"
-						hx-on:click="document.body.dispatchEvent(new CustomEvent('k-refs'))"
 					>
 						<span class="ico i-branch" aria-hidden="true"></span>
 						<span class="ref-name">{ l.Ref }</span>
 						<span class="sha">{ l.Short }</span>
-					</button>
+					</a>
 				}
 				<button
 					type="button"
 					class="btn search"
+					data-js
 					aria-haspopup="dialog"
 					aria-controls="panel-cmd"
 					aria-keyshortcuts="Control+K :"
 					title="go to a section, ref, file or repo (ctrl k or :)"
-					hx-on:click="document.body.dispatchEvent(new CustomEvent('k-cmd'))"
+					data-fire="cmd"
 				>
 					<span class="ico i-search" aria-hidden="true"></span>
 					<span class="search-label">Go to…</span>
 					<kbd aria-hidden="true">ctrl k</kbd>
 				</button>
-				<button type="button" class="btn icon" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)" hx-on:click="document.body.dispatchEvent(new CustomEvent('k-help'))">?</button>
+				<button type="button" class="btn icon" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)">?</button>
 				if SignedIn(ctx) {
 					<form class="owner" method="post" action="/-/logout">
 						<span class="owner-badge" title="signed in as the owner">owner</span>

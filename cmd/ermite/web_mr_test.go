@@ -511,7 +511,7 @@ func TestWebMergeRequestEvents(t *testing.T) {
 	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Secret <title>").ok(t)
 	ev := list.next(t, watchWait)
 	assert.Equal(t, "mr-notice", ev.name)
-	assert.Contains(t, ev.data, `<div id="mr-notice" class="live-banner" role="status">`)
+	assert.Contains(t, ev.data, `<div id="mr-notice" class="live-slot" role="status" data-slot>`)
 	assert.Contains(t, ev.data, `href="/proj/merge-requests"`)
 	assert.NotContains(t, ev.data, "Secret")
 

@@ -162,7 +162,7 @@ func TestWebEventsRepoFragments(t *testing.T) {
 	refs := h.sse("topic=repo:x&view=refs", "")
 
 	_, _, page := h.get("/x/commits/main")
-	require.Contains(t, page, `<div id="commits-head">`, "the slot of the banner")
+	require.Contains(t, page, `<div id="commits-head" class="live-slot" role="status" data-slot>`, "the slot of the banner, a status region that stays in the page")
 	m := regexp.MustCompile(`hx-sse:connect="([^"]+)"`).FindStringSubmatch(page)
 	require.Len(t, m, 2, "the commits page is live")
 	url := html.UnescapeString(m[1])
