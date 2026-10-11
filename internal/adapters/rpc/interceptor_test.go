@@ -30,6 +30,7 @@ func bearerHeader(v string) http.Header {
 }
 
 func TestInterceptorAuthenticate(t *testing.T) {
+	t.Parallel()
 	const procedure = ermiteconnect.RepoServiceListReposProcedure
 	tests := []struct {
 		name      string
@@ -67,6 +68,7 @@ func TestInterceptorAuthenticate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			auth := mocks.NewAuthenticator(t)
 			limiter := mocks.NewFailureLimiter(t)
 			if tt.wantLimit {
@@ -110,6 +112,7 @@ func TestInterceptorAuthenticate(t *testing.T) {
 }
 
 func TestInterceptorIgnoresForwardedForFromUntrustedPeer(t *testing.T) {
+	t.Parallel()
 	limiter := mocks.NewFailureLimiter(t)
 	limiter.EXPECT().Blocked(mock.Anything, "203.0.113.7").Return(false, time.Duration(0)).Once()
 	h := bearerHeader("")

@@ -72,6 +72,7 @@ func allScopeToken(repos ...domain.RepoName) domain.Principal {
 // Only the owner creates a link: root, or a token with every scope and no
 // repository list.
 func TestLoginLinkIsOwnerOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newSessionFixture(t)
 	partial := domain.TokenPrincipal(domain.Token{ID: "p", Scopes: domain.AllScopes()[:8]})
@@ -113,6 +114,7 @@ func mustRepo(t *testing.T, s string) domain.RepoName {
 // AC1: checking a link does not use it; logging in uses it once; an expired or
 // replayed link fails.
 func TestLoginLinkLifecycle(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newSessionFixture(t)
 
@@ -155,6 +157,7 @@ func TestLoginLinkLifecycle(t *testing.T) {
 // GO-003a: the session of a link made with a token never outlives that token;
 // root and a token that never expires leave it at SessionTTL.
 func TestSessionIsCappedByTheTokenThatMadeTheLink(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newSessionFixture(t)
 	tokenExpiring := func(in time.Duration) domain.Principal {
@@ -210,6 +213,7 @@ func TestSessionIsCappedByTheTokenThatMadeTheLink(t *testing.T) {
 
 // A single use also holds under concurrent confirmations.
 func TestLoginLinkConsumedOnceConcurrently(t *testing.T) {
+	t.Parallel()
 	f := newSessionFixture(t)
 	nonce := f.nonce(t)
 	var wg sync.WaitGroup
@@ -231,6 +235,7 @@ func TestLoginLinkConsumedOnceConcurrently(t *testing.T) {
 }
 
 func TestLoginLinksAreBounded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newSessionFixture(t)
 	for range app.MaxPendingLoginLinks {
@@ -259,6 +264,7 @@ type claims struct {
 // AC1: a valid session is the owner; none, alg none, another algorithm, another
 // key, an old epoch, expiry, a missing claim and garbage are rejected.
 func TestSessionTokenVerification(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newSessionFixture(t)
 	now := f.clock.Now()
@@ -308,6 +314,7 @@ func TestSessionTokenVerification(t *testing.T) {
 }
 
 func TestSignOutEverywhereEndsSessions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newSessionFixture(t)
 	a, _, err := f.sessions.Login(ctx, f.nonce(t))
@@ -331,6 +338,7 @@ func TestSignOutEverywhereEndsSessions(t *testing.T) {
 // The owner signed in on the web signs what it writes as "owner", where root
 // signs as "root" although both hold every right.
 func TestAuthorOfOwnerSession(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "owner", app.AuthorOf(domain.Owner()))
 	assert.Equal(t, "root", app.AuthorOf(domain.Root()))
 	assert.Equal(t, "ci", app.AuthorOf(domain.TokenPrincipal(domain.Token{Label: "ci", Scopes: domain.AllScopes()})))

@@ -206,7 +206,7 @@ func envOf(body string) map[string]string {
 }
 
 func TestHandlerRoutesAndStatuses(t *testing.T) {
-	r := newRig(t, nil)
+	t.Parallel()
 	tests := []struct {
 		name   string
 		method string
@@ -235,6 +235,8 @@ func TestHandlerRoutesAndStatuses(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRig(t, nil) // a rig per subtest: its mocks record without locking
 			user := ""
 			if tt.pass != "" {
 				user = "whatever" // the username is ignored
@@ -251,6 +253,7 @@ func TestHandlerRoutesAndStatuses(t *testing.T) {
 }
 
 func TestHandlerPushAuthorizationAnswers(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	get := func() int {
 		code, _, _ := r.do(t, "GET", "/p.git/info/refs?service=git-receive-pack", "u", "root-secret", nil, nil)
@@ -282,6 +285,7 @@ type errBoom struct{}
 func (errBoom) Error() string { return "boom with /internal/detail" }
 
 func TestHandlerBackendEnvironment(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	hdr := map[string]string{
 		"Cookie":              "session=secret",
@@ -338,12 +342,14 @@ func TestHandlerBackendEnvironment(t *testing.T) {
 }
 
 func TestHandlerNormalizesRepositoryPath(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	_, body, _ := r.do(t, "GET", "/pub/info/refs?service=git-upload-pack", "", "", nil, nil)
 	assert.Equal(t, "/pub.git/info/refs", envOf(body)["PATH_INFO"], "the backend always sees <name>.git")
 }
 
 func TestHandlerChunkedBodyIsStreamed(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	payload := strings.Repeat("x", 300_000)
 	// An io.Reader of unknown length makes the client send chunked.
@@ -359,6 +365,7 @@ func TestHandlerChunkedBodyIsStreamed(t *testing.T) {
 }
 
 func TestHandlerBodyLimit(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, func(c *githttp.Config) { c.MaxBodyBytes = 1000 })
 	big := strings.Repeat("x", 5000)
 	code, _, _ := r.do(t, "POST", "/pub.git/git-receive-pack", "u", "root-secret", strings.NewReader(big), nil)
@@ -376,6 +383,7 @@ func TestHandlerBodyLimit(t *testing.T) {
 }
 
 func TestHandlerUploadPackBodyIsBoundedBelowThePushLimit(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil) // the push limit is 4 GiB
 	big := strings.NewReader(strings.Repeat("x", 64<<20+1))
 	code, _, _ := r.do(t, "POST", "/pub.git/git-upload-pack", "", "", big, nil)
@@ -383,6 +391,7 @@ func TestHandlerUploadPackBodyIsBoundedBelowThePushLimit(t *testing.T) {
 }
 
 func TestHandlerServiceQuery(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	for _, q := range []string{
 		"service=git-upload-pack&service=git-receive-pack",
@@ -400,6 +409,7 @@ func TestHandlerServiceQuery(t *testing.T) {
 }
 
 func TestHandlerGitProtocolHeader(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	tests := []struct {
 		value string
@@ -437,6 +447,7 @@ func TestHandlerDoesNotInheritTheProcessEnvironment(t *testing.T) {
 }
 
 func TestHandlerBackendFailure(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	r.backendErr = io.ErrUnexpectedEOF
 	code, body, _ := r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "", "", nil, nil)
@@ -445,6 +456,7 @@ func TestHandlerBackendFailure(t *testing.T) {
 }
 
 func TestHandlerLimiter(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, func(c *githttp.Config) { c.Limiter = clientlimit.NewLimiter(nil) })
 	for i := range clientlimit.MaxFailures {
 		code, _, _ := r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "u", "wrong", nil, nil)
@@ -460,6 +472,7 @@ func TestHandlerLimiter(t *testing.T) {
 }
 
 func TestHandlerLimiterTrustedProxyViaConfig(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, func(c *githttp.Config) {
 		c.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}
 	})
@@ -473,6 +486,7 @@ func TestHandlerLimiterTrustedProxyViaConfig(t *testing.T) {
 }
 
 func TestHandlerBearerAndMalformedAuthorization(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	path := "/priv.git/info/refs?service=git-upload-pack"
 	code, _, _ := r.do(t, "GET", path, "", "", nil, map[string]string{"Authorization": "Bearer reader-secret"})
@@ -493,8 +507,10 @@ func TestHandlerBearerAndMalformedAuthorization(t *testing.T) {
 }
 
 func TestHandlerUsesTheFailureLimiter(t *testing.T) {
+	t.Parallel()
 	path := "/pub.git/info/refs?service=git-upload-pack"
 	t.Run("a blocked client is refused before authentication", func(t *testing.T) {
+		t.Parallel()
 		limiter := ghmocks.NewFailureLimiter(t)
 		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(true, 3*time.Second).Once()
 		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
@@ -504,6 +520,7 @@ func TestHandlerUsesTheFailureLimiter(t *testing.T) {
 		assert.Zero(t, r.authenticateCalls())
 	})
 	t.Run("an invalid secret is recorded as a failure", func(t *testing.T) {
+		t.Parallel()
 		limiter := ghmocks.NewFailureLimiter(t)
 		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(false, time.Duration(0)).Once()
 		limiter.EXPECT().Fail(mock.Anything, "127.0.0.1").Once()
@@ -512,6 +529,7 @@ func TestHandlerUsesTheFailureLimiter(t *testing.T) {
 		assert.Equal(t, 401, code)
 	})
 	t.Run("a valid secret is not a failure", func(t *testing.T) {
+		t.Parallel()
 		limiter := ghmocks.NewFailureLimiter(t)
 		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(false, time.Duration(0)).Once()
 		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })

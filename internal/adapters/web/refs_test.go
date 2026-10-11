@@ -16,6 +16,7 @@ func ref(kind pb.RefKind, short string) *pb.Ref {
 
 // AC3: a ref with slashes is found by the longest matching prefix.
 func TestResolveRef(t *testing.T) {
+	t.Parallel()
 	b, tag := pb.RefKind_REF_KIND_BRANCH, pb.RefKind_REF_KIND_TAG
 	refs := []*pb.Ref{
 		ref(b, "main"), ref(b, "feature"), ref(b, "feature/x"), ref(b, "feature/x/y"), ref(tag, "v1/rc"),
@@ -39,6 +40,7 @@ func TestResolveRef(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
 			r, rest, ok := resolveRef(refs, tt.path)
 			assert.Equal(t, tt.ok, ok)
 			if !ok {
@@ -52,6 +54,7 @@ func TestResolveRef(t *testing.T) {
 }
 
 func TestRepoHref(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "/demo", repoHref("demo"))
 	assert.Equal(t, "/demo/tree/feature/x/a%20b/c%23.go", repoHref("demo", "tree", "feature/x", "a b/c#.go"))
 	assert.Equal(t, "/demo/blob/main/%3Fq", repoHref("demo", "blob", "main", "", "?q"))

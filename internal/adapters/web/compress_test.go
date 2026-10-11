@@ -22,6 +22,7 @@ import (
 )
 
 func TestAcceptsGzip(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		header []string
@@ -47,6 +48,7 @@ func TestAcceptsGzip(t *testing.T) {
 		{"substring is not a coding", []string{"gzipped"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			h := http.Header{}
 			for _, v := range tc.header {
 				h.Add("Accept-Encoding", v)
@@ -57,6 +59,7 @@ func TestAcceptsGzip(t *testing.T) {
 }
 
 func TestEtagMatches(t *testing.T) {
+	t.Parallel()
 	const tag = `"abc"`
 	for _, tc := range []struct {
 		name, header, etag string
@@ -77,12 +80,14 @@ func TestEtagMatches(t *testing.T) {
 		{"comma in a tag", `"a,b", "abc"`, tag, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, etagMatches(tc.header, tc.etag))
 		})
 	}
 }
 
 func TestPageETag(t *testing.T) {
+	t.Parallel()
 	body := []byte("<html>x</html>")
 	a := pageETag(body, false, false)
 	assert.Equal(t, a, pageETag(body, false, false), "stable")
@@ -113,6 +118,7 @@ func gunzip(t *testing.T, b []byte) string {
 
 // write: gzip by size and Accept-Encoding, validators, 304.
 func TestWritePage(t *testing.T) {
+	t.Parallel()
 	big := "<p>" + strings.Repeat("ermite page ", 400) + "</p>"
 	small := "<p>tiny</p>"
 
@@ -137,6 +143,7 @@ func TestWritePage(t *testing.T) {
 		{"no-transform: untouched", "GET", "gzip", big, 200, "no-transform", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			srv := newBareServer(t)
 			rec := httptest.NewRecorder()
 			r := httptest.NewRequestWithContext(context.Background(), tc.method, "/", nil)
@@ -172,6 +179,7 @@ func TestWritePage(t *testing.T) {
 }
 
 func TestWritePageConditional(t *testing.T) {
+	t.Parallel()
 	big := "<p>" + strings.Repeat("ermite page ", 400) + "</p>"
 	srv := newBareServer(t)
 	do := func(ae, inm string) *http.Response {
@@ -207,6 +215,7 @@ func TestWritePageConditional(t *testing.T) {
 		{"stale", "", `"stale"`, 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			res := do(tc.ae, tc.inm)
 			assert.Equal(t, tc.want, res.StatusCode)
 			b, _ := io.ReadAll(res.Body)
@@ -225,6 +234,7 @@ func TestWritePageConditional(t *testing.T) {
 
 // The owner's page is private and never revalidated, whatever the client sends.
 func TestWritePageOwnerHasNoValidator(t *testing.T) {
+	t.Parallel()
 	srv := newBareServer(t)
 	ctx := context.WithValue(context.Background(), signedInKey{}, struct{}{})
 	rec := httptest.NewRecorder()
@@ -240,6 +250,7 @@ func TestWritePageOwnerHasNoValidator(t *testing.T) {
 
 // The assets: gzip once at load, chosen by Accept-Encoding, not for fonts.
 func TestAssetsGzip(t *testing.T) {
+	t.Parallel()
 	srv := newBareServer(t)
 	get := func(url, ae string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -265,6 +276,7 @@ func TestAssetsGzip(t *testing.T) {
 		{"font never", u.Font, "gzip", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			rec := get(tc.url, tc.ae)
 			require.Equal(t, 200, rec.Code)
 			assert.Equal(t, "public, max-age=31536000, immutable", rec.Header().Get("Cache-Control"))
@@ -305,6 +317,7 @@ func TestAssetsGzip(t *testing.T) {
 
 // The event stream is never compressed, even for a client that accepts gzip.
 func TestEventsNotCompressed(t *testing.T) {
+	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{})}
 	ts := eventsServer(t, f, 20*time.Millisecond, 0)
 	resp, _ := open(t, ts, "topic=home", map[string]string{"Accept-Encoding": "gzip"})

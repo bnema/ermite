@@ -15,6 +15,7 @@ import (
 )
 
 func TestIsCommitID(t *testing.T) {
+	t.Parallel()
 	for _, s := range []string{"abcdef0", "0123456789abcdef0123456789abcdef01234567"} {
 		assert.True(t, isCommitID(s), s)
 	}
@@ -26,6 +27,7 @@ func TestIsCommitID(t *testing.T) {
 // The ref switcher marks the ref the page shows, whatever the page: a tag, a
 // branch other than the default one, or none for a commit.
 func TestPinRefMarksCurrent(t *testing.T) {
+	t.Parallel()
 	b, tag := pb.RefKind_REF_KIND_BRANCH, pb.RefKind_REF_KIND_TAG
 	d := &repoData{
 		repo:     &pb.Repo{Name: "demo", DefaultBranch: "main"},

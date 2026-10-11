@@ -14,6 +14,7 @@ import (
 // Plain text stays text; only http(s) addresses become links, without the
 // punctuation that ends a sentence; invisible characters are marked.
 func TestPlainParts(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, in string
 		want     []TextPart
@@ -32,6 +33,7 @@ func TestPlainParts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, plainParts(tt.in))
 		})
 	}
@@ -39,12 +41,14 @@ func TestPlainParts(t *testing.T) {
 
 // userText escapes the text and the address, and marks the link as untrusted.
 func TestUserTextEscapes(t *testing.T) {
+	t.Parallel()
 	var b bytes.Buffer
 	require.NoError(t, userText(plainParts(`<b>x</b> & http://x.test/?a=1&b=2`)).Render(context.Background(), &b))
 	assert.Equal(t, `&lt;b&gt;x&lt;/b&gt; &amp; <a href="http://x.test/?a=1&amp;b=2" rel="noopener nofollow ugc">http://x.test/?a=1&amp;b=2</a>`, b.String())
 }
 
 func TestParseOn(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, &lineRef{side: "new", line: 12, path: "a/b:c.go"}, parseOn("new:12:a/b:c.go"))
 	assert.Equal(t, &lineRef{side: "old", line: 1, path: "x"}, parseOn("old:1:x"))
 	for _, s := range []string{"", "new", "new:12", "new:12:", "new:0:x", "new:-1:x", "new:x:y", "up:1:x", "new::x"} {
@@ -53,6 +57,7 @@ func TestParseOn(t *testing.T) {
 }
 
 func TestShellWord(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "feat/search", shellWord("feat/search"))
 	assert.Equal(t, `'a b'`, shellWord("a b"))
 	assert.Equal(t, `'it'\''s'`, shellWord("it's"))
@@ -61,6 +66,7 @@ func TestShellWord(t *testing.T) {
 
 // The notes of a split row: a context line counts once.
 func TestSplitRowNotes(t *testing.T) {
+	t.Parallel()
 	a, b := CommentView{ID: "1"}, CommentView{ID: "2"}
 	ctx := &DiffLine{Notes: []CommentView{a}}
 	assert.Equal(t, []CommentView{a}, SplitRow{ctx, ctx}.Notes())

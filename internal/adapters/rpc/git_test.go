@@ -17,6 +17,7 @@ import (
 )
 
 func TestGitServiceGetTree(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		req      *pb.GetTreeRequest
@@ -32,6 +33,7 @@ func TestGitServiceGetTree(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			browse := mocks.NewBrowse(t)
 			if tt.wantCall {
 				browse.EXPECT().GetTree(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything, mock.Anything, false).
@@ -49,6 +51,7 @@ func TestGitServiceGetTree(t *testing.T) {
 }
 
 func TestGitServiceListRefs(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		req      *pb.ListRefsRequest
@@ -64,6 +67,7 @@ func TestGitServiceListRefs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			browse := mocks.NewBrowse(t)
 			if tt.wantCall {
 				browse.EXPECT().ListRefs(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).
@@ -81,28 +85,33 @@ func TestGitServiceListRefs(t *testing.T) {
 }
 
 func TestGitServiceGetCommitAndResolveRevision(t *testing.T) {
+	t.Parallel()
 	invalid := []struct{ name, repo, rev string }{
 		{"invalid repo", "../x", "main"},
 		{"invalid revision", "demo", "a b"},
 	}
 	for _, tt := range invalid {
 		t.Run("GetCommit "+tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := (&gitService{mocks.NewBrowse(t)}).GetCommit(ownerCtx(), connect.NewRequest(&pb.GetCommitRequest{Repo: tt.repo, Revision: tt.rev}))
 			requireCode(t, connect.CodeInvalidArgument, err)
 		})
 		t.Run("ResolveRevision "+tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := (&gitService{mocks.NewBrowse(t)}).ResolveRevision(ownerCtx(), connect.NewRequest(&pb.ResolveRevisionRequest{Repo: tt.repo, Revision: tt.rev}))
 			requireCode(t, connect.CodeInvalidArgument, err)
 		})
 	}
 
 	t.Run("GetCommit not found", func(t *testing.T) {
+		t.Parallel()
 		browse := mocks.NewBrowse(t)
 		browse.EXPECT().GetCommit(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).Return(domain.CommitDetail{}, domain.ErrNotFound).Once()
 		_, err := (&gitService{browse}).GetCommit(ownerCtx(), connect.NewRequest(&pb.GetCommitRequest{Repo: "demo", Revision: "main"}))
 		requireCode(t, connect.CodeNotFound, err)
 	})
 	t.Run("ResolveRevision ok", func(t *testing.T) {
+		t.Parallel()
 		browse := mocks.NewBrowse(t)
 		browse.EXPECT().ResolveRevision(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).
 			Return(domain.ResolvedRevision{Ref: "refs/heads/main"}, nil).Once()
@@ -113,6 +122,7 @@ func TestGitServiceGetCommitAndResolveRevision(t *testing.T) {
 }
 
 func TestGitServiceListCommits(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		req      *pb.ListCommitsRequest
@@ -127,6 +137,7 @@ func TestGitServiceListCommits(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			browse := mocks.NewBrowse(t)
 			if tt.wantCall {
 				browse.EXPECT().ListCommits(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).
@@ -144,6 +155,7 @@ func TestGitServiceListCommits(t *testing.T) {
 
 // GetBlob validates before it opens anything or touches the stream.
 func TestGitServiceGetBlobRejectsBadInput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		req  *pb.GetBlobRequest
@@ -154,6 +166,7 @@ func TestGitServiceGetBlobRejectsBadInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := (&gitService{mocks.NewBrowse(t)}).GetBlob(ownerCtx(), connect.NewRequest(tt.req), nil)
 			requireCode(t, connect.CodeInvalidArgument, err)
 		})

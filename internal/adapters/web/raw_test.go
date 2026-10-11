@@ -22,6 +22,7 @@ const blobID = "0123456789abcdef0123456789abcdef01234567"
 // A revalidation of an unchanged file is answered from the tree entry, before
 // the content is opened; anything else opens the file.
 func TestRawChecksETagBeforeOpeningTheBlob(t *testing.T) {
+	t.Parallel()
 	entry := func(kind pb.EntryKind, id string) *pb.TreeEntry {
 		return &pb.TreeEntry{Name: "big.bin", Path: "docs/big.bin", Kind: kind, Id: id}
 	}
@@ -82,6 +83,7 @@ func TestRawChecksETagBeforeOpeningTheBlob(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repos := mocks.NewRepoServiceClient(t)
 			git := mocks.NewGitServiceClient(t)
 			repos.EXPECT().GetRepo(mock.Anything, mock.Anything).

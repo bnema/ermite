@@ -16,6 +16,7 @@ import (
 )
 
 func TestServerServiceGetVersion(t *testing.T) {
+	t.Parallel()
 	svc := &serverService{version: "v1.2.3", key: mocks.NewSigningKey(t)}
 	resp, err := svc.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
 	require.NoError(t, err)
@@ -28,6 +29,7 @@ func TestServerServiceGetVersion(t *testing.T) {
 }
 
 func TestServerServiceGetSigningKey(t *testing.T) {
+	t.Parallel()
 	key := mocks.NewSigningKey(t)
 	key.EXPECT().Info().Return(domain.SigningKeyInfo{
 		Key:       domain.SigningPublicKey{AuthorizedKey: "ssh-ed25519 AAAA", Fingerprint: "SHA256:xyz"},

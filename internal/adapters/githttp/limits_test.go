@@ -114,6 +114,7 @@ func (g *gatedRig) open() {
 }
 
 func TestHandlerBackendLimits(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		cfg   func(*githttp.Config)
@@ -187,6 +188,7 @@ func TestHandlerBackendLimits(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := newGatedRig(t, func(c *githttp.Config) {
 				c.MaxUploadPacks, c.MaxReceivePacks, c.MaxPerClient = 8, 8, 8
 				tt.cfg(c)
@@ -210,6 +212,7 @@ func TestHandlerBackendLimits(t *testing.T) {
 }
 
 func TestHandlerBackendSlotsAreReleased(t *testing.T) {
+	t.Parallel()
 	g := newGatedRig(t, func(c *githttp.Config) {
 		c.MaxUploadPacks, c.MaxReceivePacks, c.MaxPerClient = 1, 1, 1
 	})
@@ -230,6 +233,7 @@ func TestHandlerBackendSlotsAreReleased(t *testing.T) {
 }
 
 func TestHandlerBackendFailureReleasesSlots(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, func(c *githttp.Config) { c.MaxUploadPacks, c.MaxPerClient = 1, 1 })
 	r.backendErr = context.DeadlineExceeded
 	for range 3 {
@@ -251,6 +255,7 @@ func (d *deadlineRecorder) SetReadDeadline(t time.Time) error {
 }
 
 func TestHandlerBodyReadDeadline(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		path string
@@ -262,6 +267,7 @@ func TestHandlerBodyReadDeadline(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			r := newRig(t, nil)
 			req := httptest.NewRequest(http.MethodPost, tt.path, stringsReader("payload"))
 			req.SetBasicAuth("u", "root-secret")

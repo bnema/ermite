@@ -20,12 +20,14 @@ import (
 func ptr[T any](v T) *T { return &v }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	n := name(t, "tools")
 	priv := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, Description: "old"}
 	admin := tokenPrincipal(domain.ScopeRepoAdmin, "tools")
 
 	t.Run("description and visibility are stored and RepoUpdated is published", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
 		want := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Description: "new", Settings: domain.DefaultRepoSettings()}
@@ -42,6 +44,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("a lost race on the metadata is retried", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.meta.EXPECT().Update(ctx, mock.Anything).Return(domain.ErrConflict).Once()
@@ -52,6 +55,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("the default branch is checked, then HEAD moves", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
@@ -63,6 +67,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("metadata is written before HEAD moves, and the event follows both", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		var order []string
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
@@ -82,6 +87,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("a HEAD that cannot move after the metadata was stored still publishes, then fails", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		boom := errors.New("boom")
 		pub := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Description: "old"}
@@ -97,6 +103,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("a HEAD that cannot move with no metadata change publishes nothing", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
@@ -107,6 +114,7 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("a missing branch is a failed precondition and HEAD stays", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.git.EXPECT().HasBranch(ctx, n, "nope").Return(false, nil)
@@ -146,6 +154,7 @@ func TestUpdate(t *testing.T) {
 	}
 	for _, tt := range access {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.meta.EXPECT().Get(ctx, n).Return(tt.repo, nil)
 			_, err := f.repos.Update(ctx, tt.p, n, app.UpdateParams{Description: ptr("x")})
@@ -156,6 +165,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	t.Run("a missing repository is not found", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		_, err := f.repos.Update(ctx, domain.Root(), n, app.UpdateParams{Description: ptr("x")})
@@ -164,11 +174,13 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	n := name(t, "tools")
 	priv := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate}
 
 	t.Run("trash, forget the metadata, publish RepoDeleted with the visibility", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.git.EXPECT().Trash(ctx, n).Return(nil)
@@ -178,6 +190,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	t.Run("a directory already gone still loses its metadata", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.git.EXPECT().Trash(ctx, n).Return(domain.ErrNotFound)
@@ -187,6 +200,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	t.Run("a failed move keeps the metadata", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
@@ -196,6 +210,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestView(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	n := name(t, "tools")
 	repo := domain.Repo{Name: n}
@@ -213,6 +228,7 @@ func TestView(t *testing.T) {
 }
 
 func TestListPageSizes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var all []domain.Repo
 	for i := range app.MaxRepoPageSize + 10 {
@@ -230,6 +246,7 @@ func TestListPageSizes(t *testing.T) {
 		{"lowered to the maximum", app.MaxRepoPageSize * 10, app.MaxRepoPageSize, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.meta.EXPECT().List(ctx).Return(all, nil)
 			page, err := f.repos.ListPage(ctx, domain.Anonymous(), tt.size, "")
@@ -241,6 +258,7 @@ func TestListPageSizes(t *testing.T) {
 }
 
 func TestListPage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var all []domain.Repo
 	for _, s := range []string{"a", "b", "c", "d", "e"} {

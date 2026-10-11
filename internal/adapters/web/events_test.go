@@ -23,6 +23,7 @@ import (
 )
 
 func TestFormatEvent(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "event: home-list\nid: b-1\ndata: <tr id=\"x\">\ndata:   <td>1</td>\ndata: </tr>\n\n",
 		formatEvent("b-1", "home-list", "<tr id=\"x\">\n  <td>1</td>\n</tr>", true), "one data line per line")
 	assert.Equal(t, "event: gap\ndata: gap\n\n", formatEvent("", "gap", "gap", true))
@@ -32,6 +33,7 @@ func TestFormatEvent(t *testing.T) {
 }
 
 func TestParseTopic(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{"home": "", "repo:x": "x", "repo:a.b-c": "a.b-c"} {
 		repo, ok := parseTopic(in)
 		assert.True(t, ok, in)
@@ -44,11 +46,13 @@ func TestParseTopic(t *testing.T) {
 }
 
 func TestLiveURL(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "/-/events?topic=home", liveURL("home", ""))
 	assert.Equal(t, "/-/events?topic=repo%3Ax&view=refs", liveURL("repo:x", "view=refs"))
 }
 
 func TestNewCommitsText(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "1 new commit — reload", newCommits("1", 1))
 	assert.Equal(t, "3 new commits — reload", newCommits("3", 3))
 	assert.Equal(t, "100+ new commits — reload", newCommits("100+", 2))
@@ -150,6 +154,7 @@ func open(t *testing.T, ts *httptest.Server, query string, hdr map[string]string
 // An idle stream gets a comment every heartbeat, and the write timeout of the
 // server does not end it.
 func TestEventsHeartbeatSurvivesWriteTimeout(t *testing.T) {
+	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{})}
 	ts := eventsServer(t, f, 40*time.Millisecond, 100*time.Millisecond)
 	resp, cancel := open(t, ts, "topic=home", nil)
@@ -173,6 +178,7 @@ func TestEventsHeartbeatSurvivesWriteTimeout(t *testing.T) {
 // The id of the event, its name and the lines of its data come through; the
 // Last-Event-ID header is the resume point; a Gap becomes a gap event.
 func TestEventsStreamsEventsAndResumes(t *testing.T) {
+	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{}), events: []*pb.Event{
 		{Id: "b-7", Kind: &pb.Event_Pushed{Pushed: &pb.Pushed{Repo: "x"}}},
 		{Kind: &pb.Event_Gap{Gap: &pb.Gap{}}},
@@ -195,6 +201,7 @@ func TestEventsStreamsEventsAndResumes(t *testing.T) {
 
 // Too many watchers is a 503 the browser can retry, not a stream.
 func TestEventsResourceExhausted(t *testing.T) {
+	t.Parallel()
 	f := &fakeEvents{err: connect.NewError(connect.CodeResourceExhausted, errors.New("too many watchers"))}
 	ts := eventsServer(t, f, time.Hour, 0)
 	resp, _ := open(t, ts, "topic=home", nil)
@@ -213,6 +220,7 @@ func TestEventsResourceExhausted(t *testing.T) {
 // The handler returns, and the watch it opened ends, when the visitor goes
 // away or the API ends the stream.
 func TestEventsNoLeak(t *testing.T) {
+	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{})}
 	ts := eventsServer(t, f, time.Hour, 0)
 
@@ -237,6 +245,7 @@ func TestEventsNoLeak(t *testing.T) {
 }
 
 func TestEventsOffWithoutClient(t *testing.T) {
+	t.Parallel()
 	srv, err := New(Config{
 		Repos:     ermiteconnect.NewRepoServiceClient(http.DefaultClient, "http://x.invalid"),
 		Git:       ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://x.invalid"),
@@ -252,6 +261,7 @@ func TestEventsOffWithoutClient(t *testing.T) {
 // show it load themselves again: the summary and the refs page, whose rows
 // and marks depend on it. The commits page shows a branch, not the default.
 func TestRepoUpdatedReloadsSummaryAndRefs(t *testing.T) {
+	t.Parallel()
 	api := http.NewServeMux()
 	api.Handle(ermiteconnect.NewRepoServiceHandler(repoOK{}))
 	backend := httptest.NewServer(api)
@@ -298,6 +308,7 @@ func (r *revocable) Verify(ctx context.Context, tok string) (context.Context, bo
 // only on the heartbeat: after the session ended, the next event is not sent
 // and the stream ends.
 func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
+	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{}), push: make(chan *pb.Event)}
 	sess := &revocable{fakeSessions: fakeSessions{valid: "tok"}}
 	ts := eventsServerWith(t, f, time.Hour, 0, sess) // no heartbeat in the test
@@ -340,6 +351,7 @@ func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
 
 // A visitor's stream does not depend on sessions: events keep flowing.
 func TestEventsVisitorStreamIgnoresSessions(t *testing.T) {
+	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{}), push: make(chan *pb.Event)}
 	sess := &revocable{fakeSessions: fakeSessions{valid: "tok"}}
 	sess.ended.Store(true)
@@ -361,6 +373,7 @@ func TestEventsVisitorStreamIgnoresSessions(t *testing.T) {
 // GO-006: a stream opened with an invalid cookie is anonymous, and its headers
 // say the answer must not be stored and varies on the cookie.
 func TestEventsInvalidCookieStream(t *testing.T) {
+	t.Parallel()
 	f := &fakeEvents{release: make(chan struct{})}
 	ts := eventsServerWith(t, f, time.Hour, 0, &fakeSessions{valid: "tok"})
 	resp, _ := open(t, ts, "topic=home", map[string]string{"Cookie": CookieName + "=bad"})

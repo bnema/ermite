@@ -36,6 +36,7 @@ func recv(t *testing.T, ch <-chan domain.Event) domain.Event {
 }
 
 func TestFanOut(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -52,6 +53,7 @@ func TestFanOut(t *testing.T) {
 }
 
 func TestOnlyEventsFromSubscription(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -66,6 +68,7 @@ func TestOnlyEventsFromSubscription(t *testing.T) {
 }
 
 func TestSlowSubscriberGetsGapAndDoesNotBlock(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -99,6 +102,7 @@ func TestSlowSubscriberGetsGapAndDoesNotBlock(t *testing.T) {
 }
 
 func TestUnsubscribeOnContext(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		b := eventbus.New()
 		ctx, cancel := context.WithCancel(context.Background())
@@ -120,6 +124,7 @@ func TestUnsubscribeOnContext(t *testing.T) {
 }
 
 func TestConcurrentPublishSubscribe(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		b := eventbus.NewWithBuffer(8)
 		ctx, cancel := context.WithCancel(context.Background())

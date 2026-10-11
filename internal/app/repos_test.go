@@ -49,10 +49,12 @@ func name(t *testing.T, s string) domain.RepoName {
 }
 
 func TestCreate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	errBoom := errors.New("boom")
 
 	t.Run("success is private by default", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		n := name(t, "tools")
 		want := domain.Repo{Name: n, Description: "d", Visibility: domain.VisibilityPrivate, CreatedAt: now, Settings: domain.DefaultRepoSettings()}
@@ -67,6 +69,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("anonymous is refused before anything runs", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		_, err := f.repos.Create(ctx, domain.Anonymous(), app.CreateParams{Name: name(t, "tools")})
 		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -84,6 +87,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("token with repo:write creates", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		n := name(t, "tools")
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
@@ -95,18 +99,21 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("zero name is invalid", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{})
 		assert.ErrorIs(t, err, domain.ErrInvalidName)
 	})
 
 	t.Run("unknown visibility is invalid", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: name(t, "tools"), Visibility: "secret"})
 		assert.ErrorIs(t, err, domain.ErrInvalidVisibility)
 	})
 
 	t.Run("stage failure stores nothing", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.git.EXPECT().Stage(ctx).Return("", errBoom)
 		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: name(t, "tools")})
@@ -114,6 +121,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("existing name discards the staged repository", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
 		f.meta.EXPECT().Create(ctx, mock.Anything).Return(domain.ErrAlreadyExists)
@@ -123,6 +131,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("publish conflict removes metadata and staging", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		n := name(t, "tools")
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
@@ -135,6 +144,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("failed publish removes metadata and staging", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		n := name(t, "tools")
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
@@ -147,6 +157,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("cleanup survives a canceled context", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		n := name(t, "tools")
 		cctx, cancel := context.WithCancel(ctx)
@@ -181,6 +192,7 @@ func tokenPrincipal(s domain.Scope, repos ...string) domain.Principal {
 }
 
 func TestGetAndListAccess(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	priv := domain.Repo{Name: name(t, "priv"), Visibility: domain.VisibilityPrivate}
@@ -204,6 +216,7 @@ func TestGetAndListAccess(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run("get/"+tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.meta.EXPECT().Get(ctx, tt.get.Name).Return(tt.get, nil)
 			got, err := f.repos.Get(ctx, tt.principal, tt.get.Name)
@@ -218,6 +231,7 @@ func TestGetAndListAccess(t *testing.T) {
 	}
 
 	t.Run("get missing is not found", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(domain.Repo{}, domain.ErrNotFound)
 		_, err := f.repos.Get(ctx, domain.Root(), pub.Name)
@@ -225,6 +239,7 @@ func TestGetAndListAccess(t *testing.T) {
 	})
 
 	t.Run("private missing and hidden look the same", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, priv.Name).Return(priv, nil)
 		_, errHidden := f.repos.Get(ctx, domain.Anonymous(), priv.Name)
@@ -243,6 +258,7 @@ func TestGetAndListAccess(t *testing.T) {
 	}
 	for _, tt := range listTests {
 		t.Run("list/"+tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newFixture(t)
 			f.meta.EXPECT().List(ctx).Return([]domain.Repo{priv, pub}, nil)
 			got, err := f.repos.List(ctx, tt.principal)
@@ -252,6 +268,7 @@ func TestGetAndListAccess(t *testing.T) {
 	}
 
 	t.Run("list error", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		boom := errors.New("boom")
 		f.meta.EXPECT().List(ctx).Return(nil, boom)
@@ -261,9 +278,11 @@ func TestGetAndListAccess(t *testing.T) {
 }
 
 func TestReconcile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("registers orphan dir as private, reports missing dir, skips invalid", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		orphan, kept, ghost := name(t, "orphan"), name(t, "kept"), name(t, "ghost")
 		f.git.EXPECT().PurgeStaging(ctx).Return(nil)
@@ -285,6 +304,7 @@ func TestReconcile(t *testing.T) {
 	})
 
 	t.Run("purge failure stops", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		boom := errors.New("boom")
 		f.git.EXPECT().PurgeStaging(ctx).Return(boom)
@@ -293,6 +313,7 @@ func TestReconcile(t *testing.T) {
 	})
 
 	t.Run("register failure stops", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t)
 		boom := errors.New("boom")
 		orphan := name(t, "orphan")

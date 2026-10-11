@@ -23,7 +23,9 @@ import (
 // UNSPECIFIED, and the mappers that have an inverse round-trip. A value added
 // to the domain and forgotten here would reach clients as "not set".
 func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
+	t.Parallel()
 	t.Run("visibility", func(t *testing.T) {
+		t.Parallel()
 		for _, v := range []domain.Visibility{domain.VisibilityPublic, domain.VisibilityPrivate} {
 			got := visibilityToPB(v)
 			assert.NotEqual(t, pb.Visibility_VISIBILITY_UNSPECIFIED, got, v)
@@ -37,6 +39,7 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 	})
 
 	t.Run("scope", func(t *testing.T) {
+		t.Parallel()
 		for _, s := range domain.AllScopes() {
 			got, ok := scopeToPB[s]
 			require.True(t, ok, "scope %s has no counterpart in the contract", s)
@@ -58,6 +61,7 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 	})
 
 	t.Run("ref kind", func(t *testing.T) {
+		t.Parallel()
 		for _, k := range []domain.RefKind{domain.RefKindHead, domain.RefKindBranch, domain.RefKindTag} {
 			got := refKindToPB(k)
 			assert.NotEqual(t, pb.RefKind_REF_KIND_UNSPECIFIED, got, k)
@@ -70,6 +74,7 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 	})
 
 	t.Run("entry kind", func(t *testing.T) {
+		t.Parallel()
 		seen := map[pb.EntryKind]domain.EntryKind{}
 		for _, k := range []domain.EntryKind{
 			domain.EntryFile, domain.EntryExecutable, domain.EntryDirectory, domain.EntrySymlink, domain.EntrySubmodule,
@@ -82,6 +87,7 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 	})
 
 	t.Run("file status", func(t *testing.T) {
+		t.Parallel()
 		seen := map[pb.FileStatus]domain.FileStatus{}
 		for _, s := range []domain.FileStatus{
 			domain.FileAdded, domain.FileDeleted, domain.FileModified, domain.FileRenamed, domain.FileCopied, domain.FileTypeChanged,
@@ -94,6 +100,7 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 	})
 
 	t.Run("line kind", func(t *testing.T) {
+		t.Parallel()
 		seen := map[pb.LineKind]domain.LineKind{}
 		for _, k := range []domain.LineKind{domain.LineContext, domain.LineAddition, domain.LineDeletion} {
 			got := lineKindToPB(k)
@@ -106,6 +113,7 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 	// Every value of the contract except UNSPECIFIED is produced by some value
 	// of the domain: nothing in the contract is unreachable.
 	t.Run("the contract has no value the domain cannot produce", func(t *testing.T) {
+		t.Parallel()
 		produced := func(names map[int32]string, from func(v int32) bool) {
 			for v, n := range names {
 				if v == 0 {
@@ -142,6 +150,7 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 }
 
 func TestMergeModeMappers(t *testing.T) {
+	t.Parallel()
 	for _, m := range domain.MergeModes() {
 		got := mergeModeToPB(m)
 		assert.NotEqual(t, pb.MergeMode_MERGE_MODE_UNSPECIFIED, got, m)
@@ -168,6 +177,7 @@ func TestMergeModeMappers(t *testing.T) {
 }
 
 func TestMergeRequestEnumMappers(t *testing.T) {
+	t.Parallel()
 	for _, s := range []domain.MRState{domain.MRStateOpen, domain.MRStateMerged, domain.MRStateClosed} {
 		got := mergeRequestStateToPB(s)
 		assert.NotEqual(t, pb.MergeRequestState_MERGE_REQUEST_STATE_UNSPECIFIED, got, s)
@@ -192,6 +202,7 @@ func TestMergeRequestEnumMappers(t *testing.T) {
 }
 
 func TestCommentID(t *testing.T) {
+	t.Parallel()
 	assert.EqualValues(t, 7, commentID("7"))
 	for _, bad := range []string{"", "0", "-1", "07", "+7", "x", "7 ", "9223372036854775808"} {
 		assert.Zero(t, commentID(bad), "%q names no comment", bad)
@@ -199,6 +210,7 @@ func TestCommentID(t *testing.T) {
 }
 
 func TestRepoToPBAlwaysHasSettings(t *testing.T) {
+	t.Parallel()
 	// A repository value without settings (never stored with them) reads as the defaults.
 	r := repoToPB(app.RepoView{Repo: domain.Repo{Name: mustName(t, "x")}})
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH}, r.GetSettings().GetAllowedMergeModes())
@@ -218,6 +230,7 @@ func mustName(t *testing.T, s string) domain.RepoName {
 }
 
 func TestUpdateParamsSettingsPaths(t *testing.T) {
+	t.Parallel()
 	msg := func(paths ...string) *pb.UpdateRepoRequest {
 		return &pb.UpdateRepoRequest{
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
@@ -255,6 +268,7 @@ func TestUpdateParamsSettingsPaths(t *testing.T) {
 }
 
 func TestConnectErrorCarriesTheFieldsOfARejection(t *testing.T) {
+	t.Parallel()
 	var v domain.Violations
 	v.Add("title", "must be one line")
 	v.Add("source_branch", "does not exist")
@@ -282,6 +296,7 @@ func TestConnectErrorCarriesTheFieldsOfARejection(t *testing.T) {
 }
 
 func TestWatchEventToPBMergeRequestEvents(t *testing.T) {
+	t.Parallel()
 	repo := mustName(t, "proj")
 	title, err := domain.ParseMRTitle("Add x")
 	require.NoError(t, err)
@@ -297,6 +312,7 @@ func TestWatchEventToPBMergeRequestEvents(t *testing.T) {
 		"closed": {domain.MergeRequestClosed{MergeRequest: mr, At: at}, func(e *pb.Event) *pb.MergeRequest { return e.GetMergeRequestClosed().GetMergeRequest() }},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			got := watchEventToPB(app.WatchEvent{ID: "e1", Event: tc.ev})
 			require.NotNil(t, got)
 			assert.Equal(t, "e1", got.GetId())

@@ -16,6 +16,7 @@ import (
 // textCases are the rules shared by every text; multi says whether line breaks
 // are allowed.
 func TestParseMRTitle(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		in     string
@@ -48,6 +49,7 @@ func TestParseMRTitle(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := domain.ParseMRTitle(tc.in)
 			if tc.reason == "" {
 				require.NoError(t, err)
@@ -64,6 +66,7 @@ func TestParseMRTitle(t *testing.T) {
 }
 
 func TestParsePlainText(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		in     string
@@ -92,6 +95,7 @@ func TestParsePlainText(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := domain.ParsePlainText(tc.in)
 			if tc.reason == "" {
 				require.NoError(t, err)
@@ -107,6 +111,7 @@ func TestParsePlainText(t *testing.T) {
 }
 
 func TestPlainTextIsBlank(t *testing.T) {
+	t.Parallel()
 	for in, blank := range map[string]bool{"": true, " \n\n ": true, "x": false, " x ": false} {
 		got, err := domain.ParsePlainText(in)
 		require.NoError(t, err)
@@ -115,6 +120,7 @@ func TestPlainTextIsBlank(t *testing.T) {
 }
 
 func TestViolations(t *testing.T) {
+	t.Parallel()
 	var v domain.Violations
 	require.NoError(t, v.Err())
 

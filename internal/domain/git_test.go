@@ -13,6 +13,7 @@ import (
 )
 
 func TestParseObjectID(t *testing.T) {
+	t.Parallel()
 	good := strings.Repeat("ab12", 10)
 	id, err := domain.ParseObjectID(good)
 	require.NoError(t, err)
@@ -27,6 +28,7 @@ func TestParseObjectID(t *testing.T) {
 }
 
 func TestParseRevision(t *testing.T) {
+	t.Parallel()
 	valid := []string{
 		"", "main", "feature/x", "refs/heads/feature/x", "v1.0.0", "HEAD",
 		"abc1234", strings.Repeat("a", 40), "release-2026.10", "café",
@@ -47,6 +49,7 @@ func TestParseRevision(t *testing.T) {
 }
 
 func TestRevisionKinds(t *testing.T) {
+	t.Parallel()
 	head, _ := domain.ParseRevision("")
 	assert.True(t, head.IsHead())
 	full, _ := domain.ParseRevision(strings.Repeat("a", 40))
@@ -64,6 +67,7 @@ func TestRevisionKinds(t *testing.T) {
 }
 
 func TestParseTreePath(t *testing.T) {
+	t.Parallel()
 	root, err := domain.ParseTreePath("")
 	require.NoError(t, err)
 	assert.True(t, root.IsRoot())
@@ -81,6 +85,7 @@ func TestParseTreePath(t *testing.T) {
 }
 
 func TestEntryKindOf(t *testing.T) {
+	t.Parallel()
 	tests := map[uint32]domain.EntryKind{
 		0o100644: domain.EntryFile,
 		0o100664: domain.EntryFile,
@@ -97,5 +102,6 @@ func TestEntryKindOf(t *testing.T) {
 }
 
 func TestDefaultDiffLimits(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, domain.DiffLimits{MaxFiles: 300, MaxFileLines: 2000, MaxTotalLines: 20000, MaxTotalBytes: 8 << 20}, domain.DefaultDiffLimits())
 }

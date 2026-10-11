@@ -13,6 +13,7 @@ import (
 // The speculation rules prefetch the light pages and leave the heavy ones
 // (several Git reads each) to a click.
 func TestSpeculationRulesSkipHeavyPages(t *testing.T) {
+	t.Parallel()
 	raw, err := staticFS.ReadFile("static/rules.json")
 	require.NoError(t, err)
 	var rules struct {

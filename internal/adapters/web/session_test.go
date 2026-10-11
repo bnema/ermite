@@ -57,6 +57,7 @@ func newSessionServer(t *testing.T, sess SessionAuth, publicURL string) (*Server
 }
 
 func TestOriginOf(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"https://forge.example":         "https://forge.example",
 		"https://Forge.Example/":        "https://forge.example",
@@ -75,6 +76,7 @@ func TestOriginOf(t *testing.T) {
 }
 
 func TestValidNonce(t *testing.T) {
+	t.Parallel()
 	assert.True(t, validNonce(strings.Repeat("aZ09-_", 7)+"a"))
 	for _, n := range []string{"", "short", strings.Repeat("a", 44), strings.Repeat("a", 42) + "=", strings.Repeat("a", 42) + "/", strings.Repeat("é", 22)} {
 		assert.False(t, validNonce(n), n)
@@ -84,6 +86,7 @@ func TestValidNonce(t *testing.T) {
 // The gate: a POST needs the Origin of the public URL, whatever Host says, and
 // a session unless it is the login.
 func TestGate(t *testing.T) {
+	t.Parallel()
 	srv, lim := newSessionServer(t, &fakeSessions{valid: "tok"}, "https://forge.example")
 	do := func(path, origin, cookie string) int {
 		req := httptest.NewRequest(http.MethodPost, path, nil)
@@ -122,6 +125,7 @@ func TestGate(t *testing.T) {
 // one the router matches, and on exactly loginPrefix + nonce. An encoded slash
 // must not turn another route into a "login".
 func TestGateLoginExemptionIsExact(t *testing.T) {
+	t.Parallel()
 	sess := &fakeSessions{valid: "tok"}
 	lim := &countingLimiter{}
 	srv, err := New(Config{
@@ -168,6 +172,7 @@ func TestGateLoginExemptionIsExact(t *testing.T) {
 // A session check that cannot be made fails closed (anonymous) and keeps the
 // cookie; a check that says no clears it.
 func TestWithSessionFailsClosed(t *testing.T) {
+	t.Parallel()
 	broken := &fakeSessions{valid: "tok", err: errors.New("kv down")}
 	srv, _ := newSessionServer(t, broken, "https://forge.example")
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -194,6 +199,7 @@ func TestWithSessionFailsClosed(t *testing.T) {
 // varies on Cookie, and nothing later in the request undoes it: the page
 // writer, the raw file handler and the event stream keep it.
 func TestInvalidCookieAnswerIsNotCached(t *testing.T) {
+	t.Parallel()
 	sess := &fakeSessions{valid: "tok"}
 	srv, _ := newSessionServer(t, sess, "https://forge.example")
 
@@ -251,6 +257,7 @@ func TestInvalidCookieAnswerIsNotCached(t *testing.T) {
 
 // Without sessions configured there is no login route and no cookie is read.
 func TestNoSessionsNoRoutes(t *testing.T) {
+	t.Parallel()
 	srv, err := New(Config{
 		Repos: failing{err: errors.New("x")}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
 		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
@@ -268,6 +275,7 @@ func TestNoSessionsNoRoutes(t *testing.T) {
 }
 
 func TestLogPathHidesLinks(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "/-/login/…", logPath("/-/login/"+strings.Repeat("a", 43)))
 	assert.Equal(t, "/demo/tree", logPath("/demo/tree"))
 	for _, p := range []string{"//-/login/secret", "/x/../-/login/secret", "/-/login/secret/more", "/-/./login/secret"} {

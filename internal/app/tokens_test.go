@@ -51,6 +51,7 @@ func names(t *testing.T, ss ...string) []domain.RepoName {
 
 // Labels that only contain a reserved word are fine.
 func TestTokensCreateAllowsLabelsNearReserved(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	tests := []struct{ name, label string }{
 		{"digit suffix", "owner2"},
@@ -61,6 +62,7 @@ func TestTokensCreateAllowsLabelsNearReserved(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newTokenFixture(t)
 			f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
 			_, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: tt.label, Scopes: scopes(domain.ScopeRepoRead)})
@@ -70,9 +72,11 @@ func TestTokensCreateAllowsLabelsNearReserved(t *testing.T) {
 }
 
 func TestTokensCreate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("root creates a token with a well-formed secret", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		var stored domain.Token
 		f.store.EXPECT().Create(ctx, mock.Anything).Run(func(_ context.Context, tok domain.Token) { stored = tok }).Return(nil)
@@ -102,6 +106,7 @@ func TestTokensCreate(t *testing.T) {
 	})
 
 	t.Run("secrets are unique", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
 		a, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
@@ -113,6 +118,7 @@ func TestTokensCreate(t *testing.T) {
 	})
 
 	t.Run("retries on a collision", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Create(ctx, mock.Anything).Return(domain.ErrAlreadyExists).Once()
 		f.store.EXPECT().Create(ctx, mock.Anything).Return(nil).Once()
@@ -121,6 +127,7 @@ func TestTokensCreate(t *testing.T) {
 	})
 
 	t.Run("store failure", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		boom := errors.New("boom")
 		f.store.EXPECT().Create(ctx, mock.Anything).Return(boom)
@@ -148,6 +155,7 @@ func TestTokensCreate(t *testing.T) {
 	}
 	for _, tt := range invalid {
 		t.Run("invalid/"+tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newTokenFixture(t)
 			_, err := f.tokens.Create(ctx, domain.Root(), tt.params)
 			assert.ErrorIs(t, err, tt.want)
@@ -156,6 +164,7 @@ func TestTokensCreate(t *testing.T) {
 }
 
 func TestTokensCreateNoEscalation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	exp := now.Add(time.Hour)
 	admin := func(repos []domain.RepoName, expires time.Time, extra ...domain.Scope) domain.Principal {
@@ -204,6 +213,7 @@ func TestTokensCreateNoEscalation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newTokenFixture(t)
 			if tt.want == nil {
 				f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
@@ -221,11 +231,13 @@ func TestTokensCreateNoEscalation(t *testing.T) {
 }
 
 func TestTokensListRevoke(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	tokenAdmin := domain.TokenPrincipal(domain.Token{ID: "adm", Scopes: scopes(domain.ScopeTokenAdmin)})
 	writer := domain.TokenPrincipal(domain.Token{Scopes: scopes(domain.ScopeRepoWrite)})
 
 	t.Run("list for the admin token and root", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		want := []domain.Token{{ID: "a", Scopes: scopes(domain.ScopeTokenAdmin)}}
 		f.store.EXPECT().List(ctx).Return(want, nil).Twice()
@@ -241,6 +253,7 @@ func TestTokensListRevoke(t *testing.T) {
 	})
 
 	t.Run("revoke", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Get(ctx, "a").Return(domain.Token{ID: "a", Scopes: scopes(domain.ScopeTokenAdmin)}, nil).Twice()
 		f.store.EXPECT().Get(ctx, "zz").Return(domain.Token{}, domain.ErrNotFound).Once()
@@ -256,6 +269,7 @@ func TestTokensListRevoke(t *testing.T) {
 // GO-003b: revoking a token with owner rights signs every browser out (the
 // session epoch is bumped); revoking any other token does not.
 func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ownerTok := domain.Token{ID: "own", Scopes: domain.AllScopes()}
 
@@ -270,6 +284,7 @@ func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
 		"repo list":                    {domain.Token{ID: "l", Scopes: domain.AllScopes(), Repos: names(t, "a")}, domain.Root(), false},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := newTokenFixture(t)
 			f.store.EXPECT().Get(ctx, tc.tok.ID).Return(tc.tok, nil)
 			f.store.EXPECT().Revoke(ctx, tc.tok.ID).Return(nil)
@@ -281,6 +296,7 @@ func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
 	}
 
 	t.Run("a revoke that fails bumps nothing", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Get(ctx, "own").Return(ownerTok, nil)
 		f.store.EXPECT().Revoke(ctx, "own").Return(errors.New("kv down"))
@@ -288,6 +304,7 @@ func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
 	})
 
 	t.Run("a token out of reach is not revoked and bumps nothing", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		limited := domain.TokenPrincipal(domain.Token{ID: "adm", Scopes: scopes(domain.ScopeTokenAdmin)})
 		f.store.EXPECT().Get(ctx, "own").Return(ownerTok, nil)
@@ -295,6 +312,7 @@ func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
 	})
 
 	t.Run("a failure to sign out is reported once the token is revoked", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Get(ctx, "own").Return(ownerTok, nil)
 		f.store.EXPECT().Revoke(ctx, "own").Return(nil)
@@ -306,6 +324,7 @@ func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
 // A token admin sees and revokes only the tokens it could have created: the
 // no-escalation rule of Create, applied to scopes, repositories and expiry.
 func TestTokensAdminReach(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	exp := now.Add(48 * time.Hour)
 	admin := func(repos []domain.RepoName, expires time.Time, extra ...domain.Scope) domain.Principal {
@@ -343,6 +362,7 @@ func TestTokensAdminReach(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run("list: "+tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newTokenFixture(t)
 			other := tok("other", scopes(domain.ScopeRepoRead), nil, time.Time{})
 			f.store.EXPECT().List(ctx).Return([]domain.Token{tt.target, other}, nil)
@@ -356,6 +376,7 @@ func TestTokensAdminReach(t *testing.T) {
 			assert.Contains(t, got, tt.target)
 		})
 		t.Run("revoke: "+tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newTokenFixture(t)
 			f.store.EXPECT().Get(ctx, "t").Return(tt.target, nil)
 			if tt.within {
@@ -369,6 +390,7 @@ func TestTokensAdminReach(t *testing.T) {
 	}
 
 	t.Run("root lists and revokes everything", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		all := []domain.Token{tok("x", domain.AllScopes(), nil, time.Time{}), tok("y", scopes(domain.ScopeMRMerge), a, exp)}
 		f.store.EXPECT().List(ctx).Return(all, nil)
@@ -382,12 +404,14 @@ func TestTokensAdminReach(t *testing.T) {
 	})
 
 	t.Run("an unknown id is not found for everyone", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Get(ctx, "nope").Return(domain.Token{}, domain.ErrNotFound)
 		assert.ErrorIs(t, f.tokens.Revoke(ctx, admin(nil, time.Time{}), "nope"), domain.ErrNotFound)
 	})
 
 	t.Run("a store failure on the lookup is returned", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		boom := errors.New("boom")
 		f.store.EXPECT().Get(ctx, "t").Return(domain.Token{}, boom)
@@ -396,33 +420,40 @@ func TestTokensAdminReach(t *testing.T) {
 }
 
 func TestAuthRevalidate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	p := domain.TokenPrincipal(domain.Token{ID: "t1", Scopes: scopes(domain.ScopeRepoWrite)})
 
 	t.Run("root is always valid", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		require.NoError(t, f.auth.Revalidate(ctx, domain.Root()))
 	})
 	t.Run("anonymous is not", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		assert.ErrorIs(t, f.auth.Revalidate(ctx, domain.Anonymous()), domain.ErrUnauthenticated)
 	})
 	t.Run("a stored token that exists", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Get(ctx, "t1").Return(domain.Token{ID: "t1", ExpiresAt: now.Add(time.Hour)}, nil)
 		require.NoError(t, f.auth.Revalidate(ctx, p))
 	})
 	t.Run("revoked", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Get(ctx, "t1").Return(domain.Token{}, domain.ErrNotFound)
 		assert.ErrorIs(t, f.auth.Revalidate(ctx, p), domain.ErrUnauthenticated)
 	})
 	t.Run("expired", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Get(ctx, "t1").Return(domain.Token{ID: "t1", ExpiresAt: now}, nil)
 		assert.ErrorIs(t, f.auth.Revalidate(ctx, p), domain.ErrUnauthenticated)
 	})
 	t.Run("a store failure is an error, not a pass", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		boom := errors.New("boom")
 		f.store.EXPECT().Get(ctx, "t1").Return(domain.Token{}, boom)
@@ -433,6 +464,7 @@ func TestAuthRevalidate(t *testing.T) {
 }
 
 func TestAuthenticate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	secret := "ermite_stored-secret"
 	hash := domain.HashTokenSecret(secret)
@@ -442,6 +474,7 @@ func TestAuthenticate(t *testing.T) {
 	}
 
 	t.Run("root", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		p, err := f.auth.Authenticate(ctx, rootSecret)
 		require.NoError(t, err)
@@ -449,6 +482,7 @@ func TestAuthenticate(t *testing.T) {
 	})
 
 	t.Run("empty and unknown secrets", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		_, err := f.auth.Authenticate(ctx, "")
 		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -458,6 +492,7 @@ func TestAuthenticate(t *testing.T) {
 	})
 
 	t.Run("stored token first use touches", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().FindByHash(ctx, hash).Return(tok, nil)
 		f.store.EXPECT().Touch(ctx, "t1", now).Return(nil)
@@ -469,6 +504,7 @@ func TestAuthenticate(t *testing.T) {
 	})
 
 	t.Run("touch at most once a minute", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		recent := tok
 		recent.LastUsedAt = now.Add(-30 * time.Second)
@@ -486,6 +522,7 @@ func TestAuthenticate(t *testing.T) {
 	})
 
 	t.Run("touch failure does not fail authentication", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().FindByHash(ctx, hash).Return(tok, nil)
 		f.store.EXPECT().Touch(ctx, "t1", now).Return(errors.New("disk"))
@@ -494,6 +531,7 @@ func TestAuthenticate(t *testing.T) {
 	})
 
 	t.Run("expired", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		exp := tok
 		exp.ExpiresAt = now
@@ -503,6 +541,7 @@ func TestAuthenticate(t *testing.T) {
 	})
 
 	t.Run("store error is not an authentication failure", func(t *testing.T) {
+		t.Parallel()
 		f := newTokenFixture(t)
 		boom := errors.New("boom")
 		f.store.EXPECT().FindByHash(ctx, hash).Return(domain.Token{}, boom)

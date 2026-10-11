@@ -17,6 +17,7 @@ import (
 )
 
 func TestTokenServiceCreateToken(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		req      *pb.CreateTokenRequest
@@ -33,6 +34,7 @@ func TestTokenServiceCreateToken(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tokens := mocks.NewTokens(t)
 			if tt.wantCall {
 				tokens.EXPECT().Create(mock.Anything, domain.Owner(), mock.Anything).
@@ -51,6 +53,7 @@ func TestTokenServiceCreateToken(t *testing.T) {
 }
 
 func TestTokenServiceCreateTokenPassesParams(t *testing.T) {
+	t.Parallel()
 	tokens := mocks.NewTokens(t)
 	tokens.EXPECT().Create(mock.Anything, domain.Owner(), mock.MatchedBy(func(p app.CreateTokenParams) bool {
 		return p.Label == "ci" && len(p.Scopes) == 1 && len(p.Repos) == 1 && p.Repos[0].String() == "demo"
@@ -62,6 +65,7 @@ func TestTokenServiceCreateTokenPassesParams(t *testing.T) {
 }
 
 func TestTokenServiceRevokeToken(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		usecase  error
@@ -73,6 +77,7 @@ func TestTokenServiceRevokeToken(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tokens := mocks.NewTokens(t)
 			tokens.EXPECT().Revoke(mock.Anything, domain.Owner(), "t1").Return(tt.usecase).Once()
 			_, err := (&tokenService{tokens}).RevokeToken(ownerCtx(), connect.NewRequest(&pb.RevokeTokenRequest{Id: "t1"}))
@@ -86,6 +91,7 @@ func TestTokenServiceRevokeToken(t *testing.T) {
 }
 
 func TestTokenServiceListTokens(t *testing.T) {
+	t.Parallel()
 	tokens := mocks.NewTokens(t)
 	tokens.EXPECT().ListPage(mock.Anything, domain.Owner(), 5, "tok").
 		Return(app.TokenPage{Tokens: []domain.Token{{ID: "a"}, {ID: "b"}}, NextPageToken: "n"}, nil).Once()

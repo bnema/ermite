@@ -17,6 +17,7 @@ import (
 // characters are shown as markers; ordinary text, tabs and non-Latin letters
 // are not touched.
 func TestSegmentsShowInvisibleCharacters(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, in string
 		want     []Seg
@@ -35,6 +36,7 @@ func TestSegmentsShowInvisibleCharacters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, segments(tt.in))
 		})
 	}
@@ -51,6 +53,7 @@ func line(kind pb.LineKind, oldN, newN int32, text string) *pb.Line {
 // context fills both sides; the extra lines of the longer run have an empty
 // opposite side.
 func TestPairLines(t *testing.T) {
+	t.Parallel()
 	ctx, add, del := pb.LineKind_LINE_KIND_CONTEXT, pb.LineKind_LINE_KIND_ADDITION, pb.LineKind_LINE_KIND_DELETION
 	var ls []DiffLine
 	for _, l := range []*pb.Line{
@@ -83,6 +86,7 @@ func TestPairLines(t *testing.T) {
 }
 
 func TestChangeBar(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, Bar{Rest: "··········"}, changeBar(0, 0, 0))
 	assert.Equal(t, Bar{Add: "++++++++++"}, changeBar(100, 0, 100))
 	assert.Equal(t, Bar{Add: "+++++", Del: "-----", Rest: ""}, changeBar(50, 50, 100))
@@ -91,6 +95,7 @@ func TestChangeBar(t *testing.T) {
 }
 
 func TestFileNotes(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "binary file: no text diff", fileNote(&pb.FileDiff{Binary: true, Status: pb.FileStatus_FILE_STATUS_MODIFIED}))
 	assert.Equal(t, "mode 100644 → 100755", fileNote(&pb.FileDiff{Status: pb.FileStatus_FILE_STATUS_MODIFIED, OldMode: 0o100644, NewMode: 0o100755}))
 	assert.Empty(t, fileNote(&pb.FileDiff{Status: pb.FileStatus_FILE_STATUS_ADDED, NewMode: 0o100644}), "an added file has no mode change")
@@ -99,6 +104,7 @@ func TestFileNotes(t *testing.T) {
 }
 
 func TestDiffFilesPaths(t *testing.T) {
+	t.Parallel()
 	fs := diffFiles([]*pb.FileDiff{
 		{Status: pb.FileStatus_FILE_STATUS_ADDED, NewPath: "a.go", Additions: 1, Hunks: []*pb.Hunk{{Lines: []*pb.Line{line(pb.LineKind_LINE_KIND_ADDITION, 0, 1, "x")}}}},
 		{Status: pb.FileStatus_FILE_STATUS_DELETED, OldPath: "b.go", Deletions: 1},
@@ -117,6 +123,7 @@ func TestDiffFilesPaths(t *testing.T) {
 // A code cell holds exactly the text: escaped, with markers, and nothing
 // added between the pieces (the cell keeps its white space).
 func TestCodeLine(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
 	ln := diffLine(&pb.Line{Kind: pb.LineKind_LINE_KIND_ADDITION, NewNumber: 1, Text: "a <b> \u202e c  d", NoNewlineAtEof: true})
 	require.NoError(t, codeLine(ln).Render(context.Background(), &b))

@@ -14,6 +14,7 @@ import (
 )
 
 func TestParseRepoName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		in         string
 		valid      bool
@@ -45,6 +46,7 @@ func TestParseRepoName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
 			n, err := domain.ParseRepoName(tt.in)
 			if tt.valid {
 				require.NoError(t, err)
@@ -66,6 +68,7 @@ func TestParseRepoName(t *testing.T) {
 }
 
 func TestParseRepoPath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		in    string
 		want  string
@@ -80,6 +83,7 @@ func TestParseRepoPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
 			n, err := domain.ParseRepoPath(tt.in)
 			if !tt.valid {
 				assert.ErrorIs(t, err, domain.ErrInvalidName)
@@ -92,6 +96,7 @@ func TestParseRepoPath(t *testing.T) {
 }
 
 func TestParseVisibility(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]domain.Visibility{"public": domain.VisibilityPublic, "private": domain.VisibilityPrivate} {
 		got, err := domain.ParseVisibility(in)
 		require.NoError(t, err)
@@ -104,6 +109,7 @@ func TestParseVisibility(t *testing.T) {
 }
 
 func TestPrincipal(t *testing.T) {
+	t.Parallel()
 	var zero domain.Principal
 	assert.True(t, zero.IsAnonymous())
 	assert.False(t, zero.IsRoot())

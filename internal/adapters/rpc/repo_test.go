@@ -39,6 +39,7 @@ func requireCode(t *testing.T, want connect.Code, err error) {
 }
 
 func TestRepoServiceGetRepo(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("disk on fire")
 	tests := []struct {
 		name     string
@@ -58,6 +59,7 @@ func TestRepoServiceGetRepo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repos := mocks.NewRepos(t)
 			if tt.wantCall {
 				repo := domain.Repo{Name: mustRepoName(t, "demo"), Description: "d", Visibility: domain.VisibilityPublic}
@@ -83,6 +85,7 @@ func TestRepoServiceGetRepo(t *testing.T) {
 }
 
 func TestRepoServiceCreateRepo(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		req      *pb.CreateRepoRequest
@@ -98,6 +101,7 @@ func TestRepoServiceCreateRepo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repos := mocks.NewRepos(t)
 			if tt.wantCall {
 				repo := domain.Repo{Name: mustRepoName(t, "demo"), Visibility: domain.VisibilityPrivate}
@@ -121,6 +125,7 @@ func TestRepoServiceCreateRepo(t *testing.T) {
 }
 
 func TestRepoServiceUpdateRepoValidatesMask(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		req      *pb.UpdateRepoRequest
@@ -164,6 +169,7 @@ func TestRepoServiceUpdateRepoValidatesMask(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repos := mocks.NewRepos(t)
 			if tt.wantCall {
 				repo := domain.Repo{Name: mustRepoName(t, "demo"), Description: "new"}
@@ -184,6 +190,7 @@ func TestRepoServiceUpdateRepoValidatesMask(t *testing.T) {
 }
 
 func TestRepoServiceDeleteRepo(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		repo     string
@@ -198,6 +205,7 @@ func TestRepoServiceDeleteRepo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			repos := mocks.NewRepos(t)
 			if tt.wantCall {
 				repos.EXPECT().Delete(mock.Anything, domain.Owner(), mustRepoName(t, tt.repo)).Return(tt.usecase).Once()
@@ -213,7 +221,9 @@ func TestRepoServiceDeleteRepo(t *testing.T) {
 }
 
 func TestRepoServiceListRepos(t *testing.T) {
+	t.Parallel()
 	t.Run("pages and views every repo", func(t *testing.T) {
+		t.Parallel()
 		repos := mocks.NewRepos(t)
 		a := domain.Repo{Name: mustRepoName(t, "a")}
 		b := domain.Repo{Name: mustRepoName(t, "b")}
@@ -234,6 +244,7 @@ func TestRepoServiceListRepos(t *testing.T) {
 		"unauthenticated": {domain.ErrUnauthenticated, connect.CodeUnauthenticated},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			repos := mocks.NewRepos(t)
 			repos.EXPECT().ListPage(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(app.RepoPage{}, tc.err).Once()
 			_, err := (&repoService{repos}).ListRepos(ownerCtx(), connect.NewRequest(&pb.ListReposRequest{}))

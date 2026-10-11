@@ -35,6 +35,7 @@ func treeWithLast(c string) domain.Tree {
 // TestGetTreeLastCommitCache covers which GetTree calls are served from the
 // cache: only the ones with last commits at a full commit id.
 func TestGetTreeLastCommitCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	full := domain.RevisionOf(oid("a"))
@@ -55,6 +56,7 @@ func TestGetTreeLastCommitCache(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			f := newBrowseFixture(t)
 			f.meta.EXPECT().Get(mock.Anything, pub.Name).Return(pub, nil)
 			f.reader.EXPECT().GetTree(mock.Anything, pub.Name, tc.rev, dir, tc.includeLast).
@@ -69,6 +71,7 @@ func TestGetTreeLastCommitCache(t *testing.T) {
 }
 
 func TestGetTreeLastCommitCacheKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pubA := domain.Repo{Name: name(t, "a"), Visibility: domain.VisibilityPublic}
 	pubB := domain.Repo{Name: name(t, "b"), Visibility: domain.VisibilityPublic}
@@ -102,6 +105,7 @@ func TestGetTreeLastCommitCacheKey(t *testing.T) {
 // TestGetTreeCacheKeepsAccessRule: a hit never skips the access check, and an
 // error is not cached.
 func TestGetTreeCacheKeepsAccessRule(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	priv := domain.Repo{Name: name(t, "priv"), Visibility: domain.VisibilityPrivate}
 	rev, dir := domain.RevisionOf(oid("a")), treePath(t, "d")
@@ -122,6 +126,7 @@ func TestGetTreeCacheKeepsAccessRule(t *testing.T) {
 // TestGetTreeCacheReturnsCopies: a caller that edits its tree does not alter
 // what the next one gets.
 func TestGetTreeCacheReturnsCopies(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	rev, dir := domain.RevisionOf(oid("a")), treePath(t, "d")
@@ -143,6 +148,7 @@ func TestGetTreeCacheReturnsCopies(t *testing.T) {
 // TestHistoryCacheBounds: the entry bound and the byte bound evict the least
 // recently used answer.
 func TestHistoryCacheBounds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	paths := []string{"p0", "p1", "p2"}
@@ -167,6 +173,7 @@ func TestHistoryCacheBounds(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			f := newBrowseFixture(t)
 			f.browse.WithHistoryCache(tc.entries, tc.bytes)
 			f.meta.EXPECT().Get(mock.Anything, pub.Name).Return(pub, nil)
@@ -212,6 +219,7 @@ func TestHistoryCacheBounds(t *testing.T) {
 // TestListCommitsLastChangeCache: the latest commit of a path at a full
 // commit id is cached; every other page shape is not.
 func TestListCommitsLastChangeCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	full := domain.RevisionOf(oid("a"))
@@ -234,6 +242,7 @@ func TestListCommitsLastChangeCache(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			f := newBrowseFixture(t)
 			f.meta.EXPECT().Get(mock.Anything, pub.Name).Return(pub, nil)
 			q := ports.CommitQuery{Revision: tc.rev, Path: tc.path, Limit: tc.size}
@@ -252,6 +261,7 @@ func TestListCommitsLastChangeCache(t *testing.T) {
 	}
 
 	t.Run("a following page is not cached", func(t *testing.T) {
+		t.Parallel()
 		f := newBrowseFixture(t)
 		f.meta.EXPECT().Get(mock.Anything, pub.Name).Return(pub, nil)
 		f.reader.EXPECT().ListCommits(mock.Anything, pub.Name, ports.CommitQuery{Revision: full, Path: file, Limit: 1}).
@@ -269,6 +279,7 @@ func TestListCommitsLastChangeCache(t *testing.T) {
 }
 
 func TestHistoryCacheConcurrent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	f := newBrowseFixture(t)

@@ -52,6 +52,7 @@ const (
 )
 
 func TestPushesOpen(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	n := name(t, "tools")
 	priv := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate}
@@ -79,6 +80,7 @@ func TestPushesOpen(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newPushFixture(t)
 			if !tt.p.IsAnonymous() {
 				if tt.repo != nil {
@@ -98,6 +100,7 @@ func TestPushesOpen(t *testing.T) {
 	}
 
 	t.Run("creates a private repository and publishes RepoCreated", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
@@ -110,6 +113,7 @@ func TestPushesOpen(t *testing.T) {
 	})
 
 	t.Run("a concurrent first push wins: this one pushes to its repository", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound).Once()
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
@@ -122,6 +126,7 @@ func TestPushesOpen(t *testing.T) {
 	})
 
 	t.Run("store failure", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, boom)
@@ -130,6 +135,7 @@ func TestPushesOpen(t *testing.T) {
 	})
 
 	t.Run("create failure is returned and nothing is published", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
@@ -140,6 +146,7 @@ func TestPushesOpen(t *testing.T) {
 }
 
 func TestPushesCheck(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	n := name(t, "tools")
 	ups := []domain.RefUpdate{{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/main"}}
@@ -147,29 +154,34 @@ func TestPushesCheck(t *testing.T) {
 	reader := domain.TokenPrincipal(domain.Token{ID: "r1", Scopes: scopes(domain.ScopeRepoRead)})
 
 	t.Run("root is always valid and needs no lookup", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t) // the token store mock expects no call
 		require.NoError(t, f.pushes.Check(ctx, domain.Root(), n, ups))
 	})
 
 	t.Run("a writer whose token still exists", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite)}, nil)
 		require.NoError(t, f.pushes.Check(ctx, writer, n, ups))
 	})
 
 	t.Run("a token revoked during the push is rejected", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{}, domain.ErrNotFound)
 		assert.ErrorIs(t, f.pushes.Check(ctx, writer, n, ups), domain.ErrRejected)
 	})
 
 	t.Run("a token that expired during the push is rejected", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite), ExpiresAt: now.Add(-time.Second)}, nil)
 		assert.ErrorIs(t, f.pushes.Check(ctx, writer, n, ups), domain.ErrRejected)
 	})
 
 	t.Run("a store failure fails closed", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		boom := errors.New("boom")
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{}, boom)
@@ -179,18 +191,21 @@ func TestPushesCheck(t *testing.T) {
 	})
 
 	t.Run("a token without write access is rejected", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "r1").Return(domain.Token{ID: "r1", Scopes: scopes(domain.ScopeRepoRead)}, nil)
 		assert.ErrorIs(t, f.pushes.Check(ctx, reader, n, ups), domain.ErrRejected)
 	})
 
 	t.Run("anonymous is rejected", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		assert.ErrorIs(t, f.pushes.Check(ctx, domain.Anonymous(), n, ups), domain.ErrRejected)
 	})
 }
 
 func TestPushesRecord(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	n := name(t, "tools")
 	p := tokenPrincipal(domain.ScopeRepoWrite)
@@ -201,6 +216,7 @@ func TestPushesRecord(t *testing.T) {
 	}
 
 	t.Run("sets pushed_at, publishes the exact updates, schedules maintenance", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		repo := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, CreatedAt: now.Add(-time.Hour)}
@@ -213,6 +229,7 @@ func TestPushesRecord(t *testing.T) {
 	})
 
 	t.Run("tells the reader that the repository changed", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		fresh := mocks.NewRepoFreshener(t)
@@ -226,6 +243,7 @@ func TestPushesRecord(t *testing.T) {
 	})
 
 	t.Run("pushed_at retries after a conflict and never goes backwards", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		repo := domain.Repo{Name: n}
@@ -239,6 +257,7 @@ func TestPushesRecord(t *testing.T) {
 	})
 
 	t.Run("a deleted repository is not an error", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
@@ -248,6 +267,7 @@ func TestPushesRecord(t *testing.T) {
 	})
 
 	t.Run("a repository deleted before the default branch step is not an error", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
@@ -257,6 +277,7 @@ func TestPushesRecord(t *testing.T) {
 	})
 
 	t.Run("a repository deleted before HEAD is set is not an error", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
@@ -267,6 +288,7 @@ func TestPushesRecord(t *testing.T) {
 	})
 
 	t.Run("every step runs when one fails", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		boom := errors.New("boom")
@@ -279,6 +301,7 @@ func TestPushesRecord(t *testing.T) {
 }
 
 func TestPushesDefaultBranchRule(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	n := name(t, "tools")
 	p := domain.Root()
@@ -303,6 +326,7 @@ func TestPushesDefaultBranchRule(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := newPushFixture(t)
 			f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 			f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n, PushedAt: now}, nil)
@@ -316,6 +340,7 @@ func TestPushesDefaultBranchRule(t *testing.T) {
 	}
 
 	t.Run("set failure is reported", func(t *testing.T) {
+		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		boom := errors.New("boom")

@@ -51,6 +51,7 @@ func serve(t *testing.T, err error, path string) (*httptest.ResponseRecorder, st
 // Errors of the API: not found (and an invalid name) are the 404 page, any
 // other is the 500 page with an id that the log carries.
 func TestErrorPages(t *testing.T) {
+	t.Parallel()
 	rec, logs := serve(t, connect.NewError(connect.CodeNotFound, errors.New("repository not found")), "/gone")
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Contains(t, rec.Body.String(), "not found")
@@ -76,6 +77,7 @@ func TestErrorPages(t *testing.T) {
 }
 
 func TestNewValidates(t *testing.T) {
+	t.Parallel()
 	_, err := New(Config{PublicURL: "https://forge.example"})
 	assert.Error(t, err, "clients are required")
 	git := ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://x.invalid")

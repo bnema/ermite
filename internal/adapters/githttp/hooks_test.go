@@ -79,6 +79,7 @@ func raw(t *testing.T, sock, line string) githttp.HookReply {
 }
 
 func TestHookSocketMode(t *testing.T) {
+	t.Parallel()
 	_, sock := startHooks(t, ghmocks.NewPushHooks(t))
 	fi, err := os.Stat(sock)
 	require.NoError(t, err)
@@ -87,6 +88,7 @@ func TestHookSocketMode(t *testing.T) {
 }
 
 func TestHookServerReplacesStaleSocketFile(t *testing.T) {
+	t.Parallel()
 	dir, err := os.MkdirTemp("", "hk")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(dir) }()
@@ -98,6 +100,7 @@ func TestHookServerReplacesStaleSocketFile(t *testing.T) {
 }
 
 func TestHookServerRejectsTooLongSocketPath(t *testing.T) {
+	t.Parallel()
 	s := githttp.NewHookServer("/"+strings.Repeat("a", 120)+"/hook.sock", ghmocks.NewPushHooks(t))
 	err := s.Listen(context.Background())
 	require.Error(t, err)
@@ -198,6 +201,7 @@ func TestHookProtocol(t *testing.T) {
 // A shutdown while a push is being recorded must not drop the recording: the
 // push is already in the repository.
 func TestHookRecordSurvivesShutdown(t *testing.T) {
+	t.Parallel()
 	hooks := ghmocks.NewPushHooks(t)
 	started, proceed := make(chan struct{}), make(chan struct{})
 	var cancelled, hasDeadline bool
@@ -252,6 +256,7 @@ func TestHookRecordSurvivesShutdown(t *testing.T) {
 }
 
 func TestHookConcurrentTokens(t *testing.T) {
+	t.Parallel()
 	hooks := ghmocks.NewPushHooks(t)
 	srv, sock := startHooks(t, hooks)
 	var wg sync.WaitGroup
@@ -358,6 +363,7 @@ func TestRunHook(t *testing.T) {
 }
 
 func TestWriteHookScripts(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "run", "hooks")
 	exe := "/opt/it's here/\"ermite\" $HOME `x`/ermite"
 	require.NoError(t, githttp.WriteHookScripts(dir, exe))
@@ -384,6 +390,7 @@ func TestWriteHookScripts(t *testing.T) {
 
 // The shell really passes the awkward path and the arguments through.
 func TestHookScriptExecsTheBinaryWithQuotedPath(t *testing.T) {
+	t.Parallel()
 	base := filepath.Join(t.TempDir(), "it's a \"dir\" $X `y` ; z")
 	require.NoError(t, os.MkdirAll(base, 0o755))
 	exe := filepath.Join(base, "fake ermite")

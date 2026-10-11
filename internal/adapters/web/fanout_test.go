@@ -22,6 +22,7 @@ import (
 func frag(s string) []fragment { return []fragment{{event: "refs-list", html: s}} }
 
 func TestFanoutBuildsOncePerKey(t *testing.T) {
+	t.Parallel()
 	srvA, srvB := &Server{}, &Server{}
 	base := fanKey{srv: srvA, repo: "x", event: "b-1"}
 	for _, tt := range []struct {
@@ -37,6 +38,7 @@ func TestFanoutBuildsOncePerKey(t *testing.T) {
 		{"no event id: nothing to share by", []fanKey{{srv: srvA, repo: "x"}, {srv: srvA, repo: "x"}}, 2},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var f fanout
 			var built atomic.Int32
 			for _, k := range tt.keys {
@@ -54,6 +56,7 @@ func TestFanoutBuildsOncePerKey(t *testing.T) {
 }
 
 func TestFanoutConcurrentWatchersShareOneBuild(t *testing.T) {
+	t.Parallel()
 	var f fanout
 	var built atomic.Int32
 	release := make(chan struct{})
@@ -80,6 +83,7 @@ func TestFanoutConcurrentWatchersShareOneBuild(t *testing.T) {
 }
 
 func TestFanoutFailureIsNotKept(t *testing.T) {
+	t.Parallel()
 	var f fanout
 	key := fanKey{srv: &Server{}, repo: "x", event: "b-1"}
 	_, err := f.do(context.Background(), key, func() ([]fragment, error) { return nil, errors.New("boom") })
@@ -90,6 +94,7 @@ func TestFanoutFailureIsNotKept(t *testing.T) {
 }
 
 func TestFanoutWaiterStopsWithItsContext(t *testing.T) {
+	t.Parallel()
 	var f fanout
 	key := fanKey{srv: &Server{}, repo: "x", event: "b-1"}
 	started, release := make(chan struct{}), make(chan struct{})
@@ -109,6 +114,7 @@ func TestFanoutWaiterStopsWithItsContext(t *testing.T) {
 }
 
 func TestFanoutIsBounded(t *testing.T) {
+	t.Parallel()
 	var f fanout
 	srv := &Server{}
 	for i := range fanMax + 10 {
@@ -202,6 +208,7 @@ func TestLiveRefsSharesAPushBetweenWatchers(t *testing.T) {
 
 // The refs are asked in one page of up to maxRefs.
 func TestLoadRepoAsksTheRefsInOnePage(t *testing.T) {
+	t.Parallel()
 	api := &refsAPI{}
 	s := refsServer(t, api)
 	d, err := s.loadRepo(context.Background(), "x")

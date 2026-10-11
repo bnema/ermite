@@ -16,8 +16,10 @@ import (
 
 // A merge can delete its source branch; the push event carries both refs.
 func TestMergeDeletesTheSourceBranch(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash} {
 		t.Run(string(mode), func(t *testing.T) {
+			t.Parallel()
 			r := newMRRig(t)
 			main := r.seed()
 			head := r.feature("feat")
@@ -47,6 +49,7 @@ func TestMergeDeletesTheSourceBranch(t *testing.T) {
 	}
 
 	t.Run("without the option the branch stays", func(t *testing.T) {
+		t.Parallel()
 		r := newMRRig(t)
 		r.seed()
 		head := r.feature("feat")
@@ -61,7 +64,9 @@ func TestMergeDeletesTheSourceBranch(t *testing.T) {
 // Deleting the source is refused before the merge when the branch is still
 // needed: nothing changes.
 func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
+	t.Parallel()
 	t.Run("another open request uses it as its source", func(t *testing.T) {
+		t.Parallel()
 		r := newMRRig(t)
 		main := r.seed()
 		head := r.feature("feat")
@@ -82,6 +87,7 @@ func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
 	})
 
 	t.Run("another open request targets it", func(t *testing.T) {
+		t.Parallel()
 		r := newMRRig(t)
 		r.seed()
 		head := r.feature("feat")
@@ -97,6 +103,7 @@ func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
 	})
 
 	t.Run("the default branch", func(t *testing.T) {
+		t.Parallel()
 		r := newMRRig(t)
 		main := r.seed()
 		r.sh("checkout", "-q", "-B", "old", "main~1")
@@ -115,6 +122,7 @@ func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
 // After a squash with deletion, gc may prune the reviewed commits: the merged
 // request still reads, without commits or diff.
 func TestSquashMergedRequestReadsAfterItsCommitsArePruned(t *testing.T) {
+	t.Parallel()
 	r := newMRRig(t)
 	r.seed()
 	head := r.feature("feat")
@@ -141,6 +149,7 @@ func TestSquashMergedRequestReadsAfterItsCommitsArePruned(t *testing.T) {
 // A request opened on a branch a merge is deleting waits for the merge lock
 // and then sees the branch is gone.
 func TestCreateAfterAMergeDeletedTheBranch(t *testing.T) {
+	t.Parallel()
 	r := newMRRig(t)
 	r.seed()
 	head := r.feature("feat")
@@ -165,6 +174,7 @@ func (g movingGit) DeleteBranch(ctx context.Context, repo domain.RepoName, branc
 
 // A branch that moves after the merge is kept: the merge stands.
 func TestMergeKeepsASourceThatMovedAfterTheMerge(t *testing.T) {
+	t.Parallel()
 	r := newMRRig(t)
 	r.seed()
 	head := r.feature("feat")

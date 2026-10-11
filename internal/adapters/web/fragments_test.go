@@ -24,6 +24,7 @@ func renderToString(t *testing.T, c templ.Component) string {
 // (same id, role and marker), so that ermiteLive can replace the children and
 // leave the region where a screen reader watches it.
 func TestLiveSlotsAreStableStatusRegions(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name string
 		c    templ.Component
@@ -36,6 +37,7 @@ func TestLiveSlotsAreStableStatusRegions(t *testing.T) {
 		{"mr notice", MRNotice("a comment was added — reload", "/x/merge-requests/1"), "mr-notice", "a comment was added — reload"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := renderToString(t, tt.c)
 			assert.True(t, strings.HasPrefix(got, `<div id="`+tt.id+`" class="live-slot" role="status" data-slot>`), got)
 			if tt.text == "" {
@@ -51,6 +53,7 @@ func TestLiveSlotsAreStableStatusRegions(t *testing.T) {
 // The header's refs button is a link to the refs page, which the script turns
 // into the dialog; the filters and the buttons that need scripts are marked.
 func TestShellDegradesWithoutScripts(t *testing.T) {
+	t.Parallel()
 	l := Layout{Repo: "demo", Ref: "main", Short: "abc1234", Assets: Assets{}}
 	got := renderToString(t, Header(l))
 	assert.Contains(t, got, `<a class="btn ref" href="/demo/refs" data-fire="refs"`)
@@ -63,6 +66,7 @@ func TestShellDegradesWithoutScripts(t *testing.T) {
 // Data reaches the scripts through data-* attributes, never spliced into an
 // attribute that is evaluated.
 func TestDiffControlsPassDataThroughAttributes(t *testing.T) {
+	t.Parallel()
 	files := renderToString(t, FileList([]DiffFile{{ID: "f1'x", Path: "a.go", Status: "M"}}))
 	assert.NotContains(t, files, ":aria-current", "the file in view is marked by ermite.js")
 	assert.NotContains(t, files, "f1'x'", "no id is spliced into a script")

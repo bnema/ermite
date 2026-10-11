@@ -13,6 +13,7 @@ import (
 )
 
 func TestNewRefUpdate(t *testing.T) {
+	t.Parallel()
 	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
 
 	u, err := domain.NewRefUpdate(domain.ZeroOID, a, "refs/heads/main")
@@ -46,6 +47,7 @@ func TestNewRefUpdate(t *testing.T) {
 }
 
 func TestEventKinds(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "repo.created", domain.RepoCreated{}.EventKind())
 	assert.Equal(t, "repo.pushed", domain.PushEvent{}.EventKind())
 	assert.Equal(t, "gap", domain.EventGap{}.EventKind())

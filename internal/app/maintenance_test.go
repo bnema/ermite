@@ -25,6 +25,7 @@ import (
 // hangs is reported as a bubble deadlock instead of a timeout.
 
 func TestMaintainerDebounces(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		n := name(t, "tools")
@@ -56,6 +57,7 @@ func TestMaintainerDebounces(t *testing.T) {
 }
 
 func TestMaintainerOneRunAtATimePerRepo(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		n, other := name(t, "tools"), name(t, "other")
@@ -107,8 +109,10 @@ func TestMaintainerOneRunAtATimePerRepo(t *testing.T) {
 }
 
 func TestMaintainerTellsTheReaderAfterARun(t *testing.T) {
+	t.Parallel()
 	for label, failure := range map[string]error{"success": nil, "failure": errors.New("boom")} {
 		t.Run(label, func(t *testing.T) {
+			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				ctx := context.Background()
 				n := name(t, "tools")
@@ -132,6 +136,7 @@ func TestMaintainerTellsTheReaderAfterARun(t *testing.T) {
 }
 
 func TestMaintainerFailureIsLoggedNotFatal(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		n := name(t, "tools")
@@ -153,10 +158,12 @@ func TestMaintainerFailureIsLoggedNotFatal(t *testing.T) {
 }
 
 func TestMaintainerClose(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	n := name(t, "tools")
 
 	t.Run("pending runs are dropped", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			git := mocks.NewGitRepos(t) // no Maintain expected
 			m := app.NewMaintainer(ctx, git, app.MaintenanceDelay)
@@ -169,6 +176,7 @@ func TestMaintainerClose(t *testing.T) {
 	})
 
 	t.Run("a run in progress is cancelled and awaited", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			git := mocks.NewGitRepos(t)
 			var cancelled atomic.Bool
@@ -188,6 +196,7 @@ func TestMaintainerClose(t *testing.T) {
 }
 
 func TestMaintainerConcurrentSchedule(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		git := mocks.NewGitRepos(t)

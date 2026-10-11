@@ -15,6 +15,7 @@ import (
 )
 
 func TestHighlightLines(t *testing.T) {
+	t.Parallel()
 	v := highlight(context.Background(), "a.go", "package main\n\nfunc main() {}\n")
 	assert.Equal(t, 3, v.lines)
 	assert.Equal(t, "Go", v.lang)
@@ -30,6 +31,7 @@ func TestHighlightLines(t *testing.T) {
 }
 
 func TestHighlightFallbackIsPlainAndEscaped(t *testing.T) {
+	t.Parallel()
 	v := highlight(context.Background(), "unknown.zzz", "<script>alert(1)</script> & \"q\"\n")
 	assert.Equal(t, "", v.lang)
 	h := string(v.html)
@@ -41,6 +43,7 @@ func TestHighlightFallbackIsPlainAndEscaped(t *testing.T) {
 }
 
 func TestHighlightMarksInvisibleCharacters(t *testing.T) {
+	t.Parallel()
 	for r, cp := range map[rune]string{
 		0x202E: "U+202E", 0x2066: "U+2066", 0x2069: "U+2069", 0x200B: "U+200B", 0xFEFF: "U+FEFF",
 		0x0000: "U+0000", 0x001B: "U+001B", 0x2028: "U+2028", 0x3164: "U+3164", 0x1F: "U+001F",
@@ -63,6 +66,7 @@ func TestHighlightMarksInvisibleCharacters(t *testing.T) {
 // The lexers do not lose or add characters: the text of the lines is the
 // source, whatever the language.
 func TestHighlightKeepsTheSource(t *testing.T) {
+	t.Parallel()
 	srcs := map[string]string{
 		"a.go":       "package a\n\nvar s = `multi\nline`\n// end",
 		"b.py":       "def f():\n    '''doc\n    string'''\n    return 1\n",
@@ -93,6 +97,7 @@ func TestHighlightKeepsTheSource(t *testing.T) {
 }
 
 func TestFirstLinesAndCount(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "a\nb\n", firstLines("a\nb\nc\n", 2))
 	assert.Equal(t, "a\nb", firstLines("a\nb", 5))
 	assert.Equal(t, 3, countLines([]byte("a\nb\nc")))
@@ -101,6 +106,7 @@ func TestFirstLinesAndCount(t *testing.T) {
 }
 
 func TestHighlightCtxCancelled(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	v := highlightCtx(ctx, "a.go", "package a\n")
@@ -116,12 +122,14 @@ func (panicLexer) Tokenise(*chroma.TokeniseOptions, string) (chroma.Iterator, er
 }
 
 func TestTokeniseRecoversFromALexerPanic(t *testing.T) {
+	t.Parallel()
 	toks, ok := tokenise(context.Background(), panicLexer{}, "x\n")
 	assert.False(t, ok)
 	assert.Nil(t, toks)
 }
 
 func TestSniffImage(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "image/png", sniffImage([]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")))
 	assert.Equal(t, "image/gif", sniffImage([]byte("GIF89a....")))
 	assert.Equal(t, "image/jpeg", sniffImage([]byte("\xff\xd8\xff\xe0\x00\x10JFIF")))
@@ -132,6 +140,7 @@ func TestSniffImage(t *testing.T) {
 }
 
 func TestLocate(t *testing.T) {
+	t.Parallel()
 	b, tag := pb.RefKind_REF_KIND_BRANCH, pb.RefKind_REF_KIND_TAG
 	d := &repoData{
 		branches: []*pb.Ref{ref(b, "main"), ref(b, "feature/x")},
@@ -169,6 +178,7 @@ func TestLocate(t *testing.T) {
 }
 
 func TestFileCrumbs(t *testing.T) {
+	t.Parallel()
 	cs := pathCrumbs("demo", "blob", target{name: "feature/x", path: "src/a.go"})
 	require.Len(t, cs, 5)
 	assert.Equal(t, "/demo/tree/feature/x/src", cs[3].Href)
@@ -220,6 +230,7 @@ func normSpace(s string) string {
 }
 
 func TestTokensMatch(t *testing.T) {
+	t.Parallel()
 	toks := func(vs ...string) []chroma.Token {
 		var out []chroma.Token
 		for _, v := range vs {
@@ -247,6 +258,7 @@ func TestTokensMatch(t *testing.T) {
 		{"unicode", toks("é", "日本"), "é日本", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, tokensMatch(tt.toks, tt.src))
 		})
 	}

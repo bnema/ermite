@@ -106,6 +106,7 @@ func browseOps() []browseOp {
 // not found; stored tokens need repo:read on the repository; and the Git
 // reader is never reached when access is refused.
 func TestBrowseAccess(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	priv := domain.Repo{Name: name(t, "priv"), Visibility: domain.VisibilityPrivate}
@@ -129,6 +130,7 @@ func TestBrowseAccess(t *testing.T) {
 		for _, pr := range principals {
 			for _, repo := range []domain.Repo{pub, priv} {
 				t.Run(op.name+"/"+pr.name+"/"+repo.Name.String(), func(t *testing.T) {
+					t.Parallel()
 					f := newBrowseFixture(t)
 					f.meta.EXPECT().Get(ctx, repo.Name).Return(repo, nil)
 					allowed := pr.pub
@@ -149,12 +151,14 @@ func TestBrowseAccess(t *testing.T) {
 			}
 		}
 		t.Run(op.name+"/missing repository", func(t *testing.T) {
+			t.Parallel()
 			f := newBrowseFixture(t)
 			f.meta.EXPECT().Get(ctx, name(t, "nope")).Return(domain.Repo{}, domain.ErrNotFound)
 			err := op.call(f.browse, ctx, domain.Root(), name(t, "nope"))
 			assert.ErrorIs(t, err, domain.ErrNotFound)
 		})
 		t.Run(op.name+"/zero name", func(t *testing.T) {
+			t.Parallel()
 			f := newBrowseFixture(t)
 			err := op.call(f.browse, ctx, domain.Root(), domain.RepoName{})
 			assert.ErrorIs(t, err, domain.ErrInvalidName)
@@ -163,6 +167,7 @@ func TestBrowseAccess(t *testing.T) {
 }
 
 func TestBrowseHidesPrivateOnReaderErrors(t *testing.T) {
+	t.Parallel()
 	// A reader error is passed through for a caller who may read.
 	ctx := context.Background()
 	f := newBrowseFixture(t)
@@ -178,6 +183,7 @@ func ref(kind domain.RefKind, name string) domain.Ref {
 }
 
 func TestListRefsPagingAndKinds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	all := []domain.Ref{
@@ -258,6 +264,7 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 	})
 
 	t.Run("bad input never reaches the reader", func(t *testing.T) {
+		t.Parallel()
 		f := newBrowseFixture(t)
 		for _, params := range []app.ListRefsParams{
 			{PageSize: -1},
@@ -278,11 +285,13 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 }
 
 func TestListCommitsPaging(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	p := mustPath(t, "d/f")
 
 	t.Run("first page asks for one more than the page and returns a token", func(t *testing.T) {
+		t.Parallel()
 		f := newBrowseFixture(t)
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil)
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, ports.CommitQuery{Path: p, Limit: 10}).
@@ -308,6 +317,7 @@ func TestListCommitsPaging(t *testing.T) {
 	})
 
 	t.Run("a token is bound to its path and must be well formed", func(t *testing.T) {
+		t.Parallel()
 		f := newBrowseFixture(t)
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil)
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).
@@ -328,6 +338,7 @@ func TestListCommitsPaging(t *testing.T) {
 	})
 
 	t.Run("a token cannot skip deeper than the cap", func(t *testing.T) {
+		t.Parallel()
 		f := newBrowseFixture(t)
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil).Maybe()
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).
@@ -352,6 +363,7 @@ func TestListCommitsPaging(t *testing.T) {
 	})
 
 	t.Run("page size", func(t *testing.T) {
+		t.Parallel()
 		f := newBrowseFixture(t)
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil).Times(2)
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, ports.CommitQuery{Limit: app.DefaultPageSize}).Return(ports.CommitPage{}, nil)

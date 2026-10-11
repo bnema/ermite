@@ -49,10 +49,12 @@ func newMRUnit(t *testing.T) *mrUnit {
 // GO-004: a failure to read Git is an error for the log, not a field violation
 // that would show its text to the caller.
 func TestCreateReturnsGitFailuresAsErrors(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("fatal: /srv/ermite/repos/proj.git: permission denied")
 	params := app.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "main"}
 
 	t.Run("reading a branch", func(t *testing.T) {
+		t.Parallel()
 		u := newMRUnit(t)
 		u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
 		u.git.EXPECT().BranchHead(mock.Anything, u.repo.Name, "feat").Return(domain.ObjectID{}, boom)
@@ -64,6 +66,7 @@ func TestCreateReturnsGitFailuresAsErrors(t *testing.T) {
 	})
 
 	t.Run("reading the default branch", func(t *testing.T) {
+		t.Parallel()
 		u := newMRUnit(t)
 		u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
 		u.repos.EXPECT().DefaultBranch(mock.Anything, u.repo.Name).Return("", false, boom)
@@ -74,6 +77,7 @@ func TestCreateReturnsGitFailuresAsErrors(t *testing.T) {
 	})
 
 	t.Run("a branch that does not exist stays a violation", func(t *testing.T) {
+		t.Parallel()
 		u := newMRUnit(t)
 		u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
 		u.git.EXPECT().BranchHead(mock.Anything, u.repo.Name, "feat").Return(domain.ObjectID{}, domain.ErrNotFound)
@@ -91,12 +95,14 @@ func someID(t *testing.T) domain.ObjectID {
 // GO-003: the settings are read again under the merge lock; a failure of that
 // read is returned, and a repository deleted meanwhile is not found.
 func TestMergeReturnsTheFailureToReadTheSettings(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("kv: closed")
 	for label, tc := range map[string]struct{ err, want error }{
 		"read failure":      {boom, boom},
 		"deleted meanwhile": {domain.ErrNotFound, domain.ErrNotFound},
 	} {
 		t.Run(label, func(t *testing.T) {
+			t.Parallel()
 			u := newMRUnit(t)
 			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil).Once()
 			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(domain.Repo{}, tc.err).Once()

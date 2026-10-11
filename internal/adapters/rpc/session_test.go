@@ -18,6 +18,7 @@ import (
 )
 
 func TestSessionServiceCreateLoginLink(t *testing.T) {
+	t.Parallel()
 	exp := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	tests := []struct {
 		name     string
@@ -30,6 +31,7 @@ func TestSessionServiceCreateLoginLink(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			sessions := mocks.NewSessions(t)
 			sessions.EXPECT().CreateLoginLink(mock.Anything, domain.Owner()).
 				Return(app.LoginLink{URL: "https://x/-/login/n", ExpiresAt: exp}, tt.usecase).Once()
@@ -46,6 +48,7 @@ func TestSessionServiceCreateLoginLink(t *testing.T) {
 }
 
 func TestSessionServiceSignOutEverywhere(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		usecase  error
@@ -56,6 +59,7 @@ func TestSessionServiceSignOutEverywhere(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			sessions := mocks.NewSessions(t)
 			sessions.EXPECT().SignOutEverywhere(mock.Anything, domain.Owner()).Return(tt.usecase).Once()
 			_, err := (&sessionService{sessions}).SignOutEverywhere(ownerCtx(), connect.NewRequest(&pb.SignOutEverywhereRequest{}))

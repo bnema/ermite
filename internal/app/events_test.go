@@ -142,6 +142,7 @@ func (w *watcher) quiet(t *testing.T, r *eventRig, n domain.RepoName) {
 }
 
 func TestWatchLiveAndFiltered(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		r := newEventRig(t, 0)
 		pub := r.repo("pub", domain.VisibilityPublic)
@@ -177,6 +178,7 @@ func TestWatchLiveAndFiltered(t *testing.T) {
 }
 
 func TestWatchRechecksAccessPerEvent(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		r := newEventRig(t, 0)
 		n := name(t, "flip")
@@ -205,6 +207,7 @@ func TestWatchRechecksAccessPerEvent(t *testing.T) {
 }
 
 func TestWatchResumeAndGap(t *testing.T) {
+	t.Parallel()
 	const size = 8
 	// Each subtest gets its own bubble and a fresh run of 20 events recorded
 	// through a first watcher; the ring then holds the last 8.
@@ -227,6 +230,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 	}
 
 	t.Run("an id that fell out of the buffer gives a gap, then the oldest buffered event", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r, _, ctx, ids := setup(t)
 			// 20 events were taken, the buffer holds the last 8: ids[12] is the
@@ -242,6 +246,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 	})
 
 	t.Run("an unknown id gives a gap", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r, _, ctx, _ := setup(t)
 			for _, id := range []string{"nonsense", "zz-1", "-", "0-0"} {
@@ -252,6 +257,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 	})
 
 	t.Run("an id of a later run is a gap, not a newer event", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r, _, ctx, _ := setup(t)
 			w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: "otherboot-999"})
@@ -260,6 +266,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 	})
 
 	t.Run("resume replays the buffered events after the id, then goes live", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r, n, ctx, ids := setup(t)
 			w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[16]})
@@ -277,6 +284,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 	})
 
 	t.Run("resume at the last event replays nothing, then goes live", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r, n, ctx, ids := setup(t)
 			w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[len(ids)-1]})
@@ -289,6 +297,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 }
 
 func TestWatchTopicErrors(t *testing.T) {
+	t.Parallel()
 	r := newEventRig(t, 0)
 	r.repo("pub", domain.VisibilityPublic)
 	r.repo("priv", domain.VisibilityPrivate)
@@ -310,7 +319,9 @@ func TestWatchTopicErrors(t *testing.T) {
 }
 
 func TestWatchEndsCleanly(t *testing.T) {
+	t.Parallel()
 	t.Run("on context cancellation", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRig(t, 0)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -330,6 +341,7 @@ func TestWatchEndsCleanly(t *testing.T) {
 	})
 
 	t.Run("on Close", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRig(t, 0)
 			w := r.watch(context.Background(), domain.Root(), app.WatchParams{})
@@ -348,6 +360,7 @@ func TestWatchEndsCleanly(t *testing.T) {
 	})
 
 	t.Run("a failing send ends the watch with its error", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRig(t, 0)
 			n := r.repo("pub", domain.VisibilityPublic)
@@ -365,6 +378,7 @@ func TestWatchEndsCleanly(t *testing.T) {
 }
 
 func TestWatchSlowWatcherGetsAGap(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		const size = 4
 		r := newEventRig(t, size)
@@ -423,6 +437,7 @@ func TestWatchSlowWatcherGetsAGap(t *testing.T) {
 }
 
 func TestEventsRepoPayloads(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		r := newEventRig(t, 0)
 		pub := r.repo("pub", domain.VisibilityPublic)
@@ -468,6 +483,7 @@ func tokenWith(id string, expires time.Time, repos ...string) domain.Principal {
 }
 
 func TestWatchEndsWhenTheTokenIsRevoked(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Asking at every turn keeps the test independent of the clock.
 		r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: -1})
@@ -501,6 +517,7 @@ func TestWatchEndsWhenTheTokenIsRevoked(t *testing.T) {
 }
 
 func TestWatchEndsWhenTheTokenExpires(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		r := newEventRig(t, 0)
 		pub := r.repo("pub", domain.VisibilityPublic)
@@ -520,7 +537,9 @@ func TestWatchEndsWhenTheTokenExpires(t *testing.T) {
 }
 
 func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
+	t.Parallel()
 	t.Run("a quiet forge still notices a revocation", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRigConfig(t, app.EventsConfig{}) // the production default interval
 			w := r.watch(context.Background(), tokenWith("tok", time.Time{}), app.WatchParams{})
@@ -546,6 +565,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 	})
 
 	t.Run("the answer is kept between checks", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: time.Hour})
 			pub := r.repo("pub", domain.VisibilityPublic)
@@ -568,6 +588,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 	})
 
 	t.Run("root and anonymous never ask", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: -1})
 			pub := r.repo("pub", domain.VisibilityPublic)
@@ -584,9 +605,11 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 }
 
 func TestWatchLimits(t *testing.T) {
+	t.Parallel()
 	noop := func(app.WatchEvent) error { return nil }
 
 	t.Run("too many topics", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRig(t, 0)
 			r.repo("pub", domain.VisibilityPublic)
@@ -603,6 +626,7 @@ func TestWatchLimits(t *testing.T) {
 	})
 
 	t.Run("total watchers", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRig(t, 0)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -626,6 +650,7 @@ func TestWatchLimits(t *testing.T) {
 	})
 
 	t.Run("watchers per client", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRig(t, 0)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -679,7 +704,9 @@ func (r *eventRig) liveRepo(s string, vis domain.Visibility, created time.Time) 
 }
 
 func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
+	t.Parallel()
 	t.Run("a repository made public does not reveal what happened while it was private", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -713,6 +740,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 	})
 
 	t.Run("a repository deleted and created again does not inherit old events", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -739,6 +767,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 	})
 
 	t.Run("a repository made private tells those who could read it, once", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -774,6 +803,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 	})
 
 	t.Run("a private repository that never was public stays hidden", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -792,6 +822,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 // TestPushEventsKeepTheirSnapshot: a push is told by the repository as it was
 // when published, not as the store says when the feeder gets to it.
 func TestPushEventsKeepTheirSnapshot(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		swap     func(repo *domain.Repo)
@@ -805,6 +836,7 @@ func TestPushEventsKeepTheirSnapshot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
@@ -835,6 +867,7 @@ func TestPushEventsKeepTheirSnapshot(t *testing.T) {
 	}
 
 	t.Run("a push of an unknown repository is told to nobody", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
