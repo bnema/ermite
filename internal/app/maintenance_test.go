@@ -103,12 +103,14 @@ func TestMaintainerTellsTheReaderAfterARun(t *testing.T) {
 	for _, failure := range []error{nil, errors.New("boom")} {
 		git := mocks.NewGitRepos(t)
 		git.EXPECT().Maintain(mockAny, n).Return(failure)
-		fresh := &freshener{}
+		told := make(chan struct{}, 2)
+		fresh := mocks.NewRepoFreshener(t)
+		fresh.EXPECT().Refresh(mockAny, n).Run(func(context.Context, domain.RepoName) { told <- struct{}{} }).Return().Once()
 		m := app.NewMaintainer(ctx, git, time.Millisecond).WithFreshener(fresh)
 		m.Schedule(ctx, n)
-		waitFor(t, func() bool { return len(fresh.seen()) == 1 }, "the reader to be told")
+		waitFor(t, func() bool { return len(told) == 1 }, "the reader to be told")
 		m.Close(ctx)
-		assert.Equal(t, []domain.RepoName{n}, fresh.seen())
+		assert.Len(t, told, 1, "told exactly once")
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/adapters/eventbus"
@@ -23,8 +24,27 @@ import (
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/adapters/sshsig"
 	"bnema.dev/ermite/internal/app"
+	appmocks "bnema.dev/ermite/internal/app/mocks"
 	"bnema.dev/ermite/internal/domain"
 )
+
+// queuedRepos records the repositories whose maintenance was queued.
+type queuedRepos struct {
+	mu sync.Mutex
+	rs []domain.RepoName
+}
+
+func (q *queuedRepos) add(_ context.Context, n domain.RepoName) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.rs = append(q.rs, n)
+}
+
+func (q *queuedRepos) names() []domain.RepoName {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return append([]domain.RepoName(nil), q.rs...)
+}
 
 // mrRig runs the merge request use cases over the real adapters: a data
 // directory with ermite-kv and bare repositories, and a work tree to push
@@ -39,7 +59,8 @@ type mrRig struct {
 	store  *kvstore.Store
 	git    *gitcli.Git
 	bus    *eventbus.Bus
-	sched  *scheduler
+	sched  *appmocks.MaintenanceScheduler
+	queued *queuedRepos
 	events <-chan domain.Event
 	work   string
 	repo   domain.RepoName
@@ -74,8 +95,12 @@ func newMRRig(t *testing.T) *mrRig {
 	require.NoError(t, err)
 	bus := eventbus.NewWithBuffer(1024)
 	committer := domain.Identity{Name: "ermite", Email: "ermite@git.example.org"}
+	sched := appmocks.NewMaintenanceScheduler(t)
+	queued := &queuedRepos{}
+	sched.EXPECT().Schedule(mock.Anything, mock.Anything).Run(queued.add).Return().Maybe()
 	r := &mrRig{
-		t: t, ctx: ctx, data: data, store: store, git: git, bus: bus, sched: &scheduler{}, events: bus.Subscribe(ctx),
+		sched: sched, queued: queued,
+		t: t, ctx: ctx, data: data, store: store, git: git, bus: bus, events: bus.Subscribe(ctx),
 		repos: app.NewRepos(store, git, bus, fixedClock{}),
 		key:   app.NewSigningKey(signer, committer),
 		work:  t.TempDir(),
@@ -1238,7 +1263,7 @@ func TestMergeRecordsAPush(t *testing.T) {
 			before, err := r.repos.Get(r.ctx, root, r.repo)
 			require.NoError(t, err)
 			require.True(t, before.PushedAt.IsZero(), "no push recorded yet")
-			assert.Empty(t, r.sched.names)
+			assert.Empty(t, r.queued.names())
 
 			_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{Mode: mode, HeadID: head})
 			require.NoError(t, err)
@@ -1246,7 +1271,7 @@ func TestMergeRecordsAPush(t *testing.T) {
 			after, err := r.repos.Get(r.ctx, root, r.repo)
 			require.NoError(t, err)
 			assert.Equal(t, now, after.PushedAt)
-			assert.Equal(t, []domain.RepoName{r.repo}, r.sched.names, "maintenance queued")
+			assert.Equal(t, []domain.RepoName{r.repo}, r.queued.names(), "maintenance queued")
 		})
 	}
 }

@@ -6,70 +6,50 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-// memSessions is an in-memory ports.SessionStore.
-type memSessions struct {
-	mu    sync.Mutex
-	key   []byte
-	epoch uint64
-}
-
-func (m *memSessions) Key(context.Context) ([]byte, error) { return m.key, nil }
-func (m *memSessions) Epoch(context.Context) (uint64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.epoch, nil
-}
-
-func (m *memSessions) BumpEpoch(context.Context) (uint64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.epoch++
-	return m.epoch, nil
-}
-
-// testClock is a clock the test moves.
-type testClock struct {
-	mu sync.Mutex
-	t  time.Time
-}
-
-func (c *testClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.t
-}
-
-func (c *testClock) advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.t = c.t.Add(d)
-}
-
 type sessionFixture struct {
-	store    *memSessions
-	clock    *testClock
+	store    *mocks.SessionStore
+	clock    *mocks.Clock
+	at       atomic.Pointer[time.Time] // what the clock reads; the test moves it
 	sessions *app.Sessions
 	key      []byte
+}
+
+// advance moves the clock forward by d.
+func (f *sessionFixture) advance(d time.Duration) {
+	next := f.at.Load().Add(d)
+	f.at.Store(&next)
 }
 
 func newSessionFixture(t *testing.T) *sessionFixture {
 	t.Helper()
 	f := &sessionFixture{
-		store: &memSessions{key: []byte("0123456789abcdef0123456789abcdef")},
-		clock: &testClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)},
+		store: mocks.NewSessionStore(t),
+		clock: mocks.NewClock(t),
+		key:   []byte("0123456789abcdef0123456789abcdef"),
 	}
-	f.key = f.store.key
+	start := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
+	f.at.Store(&start)
+	f.clock.EXPECT().Now().RunAndReturn(func() time.Time { return *f.at.Load() }).Maybe()
+
+	var epoch atomic.Uint64
+	f.store.EXPECT().Key(mock.Anything).Return(f.key, nil).Maybe()
+	f.store.EXPECT().Epoch(mock.Anything).RunAndReturn(func(context.Context) (uint64, error) { return epoch.Load(), nil }).Maybe()
+	f.store.EXPECT().BumpEpoch(mock.Anything).RunAndReturn(func(context.Context) (uint64, error) { return epoch.Add(1), nil }).Maybe()
+
 	s, err := app.NewSessions(context.Background(), f.store, f.clock, "https://forge.example")
 	require.NoError(t, err)
 	f.sessions = s
@@ -155,7 +135,7 @@ func TestLoginLinkLifecycle(t *testing.T) {
 
 	// Expired.
 	nonce = f.nonce(t)
-	f.clock.advance(app.LoginLinkTTL)
+	f.advance(app.LoginLinkTTL)
 	assert.False(t, f.sessions.LoginLinkValid(nonce))
 	_, _, err = f.sessions.Login(ctx, nonce)
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated, "expired")
@@ -213,17 +193,17 @@ func TestSessionIsCappedByTheTokenThatMadeTheLink(t *testing.T) {
 	// It stops working when the token would have.
 	tok, _, err := login(tokenExpiring(2 * time.Hour))
 	require.NoError(t, err)
-	f.clock.advance(2*time.Hour - time.Second)
+	f.advance(2*time.Hour - time.Second)
 	_, err = f.sessions.Verify(ctx, tok)
 	assert.NoError(t, err)
-	f.clock.advance(time.Second)
+	f.advance(time.Second)
 	_, err = f.sessions.Verify(ctx, tok)
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated, "the token expired, so did the session")
 
 	// A token that expires before the link is used opens nothing.
 	link, err := f.sessions.CreateLoginLink(ctx, tokenExpiring(30*time.Second))
 	require.NoError(t, err)
-	f.clock.advance(31 * time.Second)
+	f.advance(31 * time.Second)
 	_, _, err = f.sessions.Login(ctx, strings.TrimPrefix(link.URL, "https://forge.example/-/login/"))
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated)
 }
@@ -259,7 +239,7 @@ func TestLoginLinksAreBounded(t *testing.T) {
 	_, err := f.sessions.CreateLoginLink(ctx, domain.Root())
 	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
 
-	f.clock.advance(app.LoginLinkTTL)
+	f.advance(app.LoginLinkTTL)
 	_, err = f.sessions.CreateLoginLink(ctx, domain.Root())
 	assert.NoError(t, err, "expired links make room")
 }
@@ -322,7 +302,7 @@ func TestSessionTokenVerification(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Expiry after the session lifetime; and the epoch ends every session.
-	f.clock.advance(app.SessionTTL)
+	f.advance(app.SessionTTL)
 	_, err = f.sessions.Verify(ctx, token)
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated, "expired after 12 h")
 }

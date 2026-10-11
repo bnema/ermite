@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/app"
+	appmocks "bnema.dev/ermite/internal/app/mocks"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
@@ -36,9 +37,11 @@ func newMRUnit(t *testing.T) *mrUnit {
 	}
 	clock := mocks.NewClock(t)
 	clock.EXPECT().Now().Return(now).Maybe()
+	sched := appmocks.NewMaintenanceScheduler(t)
+	sched.EXPECT().Schedule(mock.Anything, mock.Anything).Return().Maybe()
 	u.mrs = app.NewMergeRequests(app.MergeRequestsConfig{
 		Meta: u.meta, Store: u.store, Repos: u.repos, Git: u.git,
-		Signer: mocks.NewCommitSigner(t), Bus: mocks.NewEventBus(t), Clock: clock, Maint: &scheduler{},
+		Signer: mocks.NewCommitSigner(t), Bus: mocks.NewEventBus(t), Clock: clock, Maint: sched,
 	})
 	return u
 }

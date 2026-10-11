@@ -52,11 +52,20 @@ func names(t *testing.T, ss ...string) []domain.RepoName {
 // Labels that only contain a reserved word are fine.
 func TestTokensCreateAllowsLabelsNearReserved(t *testing.T) {
 	ctx := context.Background()
-	for _, label := range []string{"owner2", "my owner", "roots", "ow ner", "root-ci"} {
-		f := newTokenFixture(t)
-		f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
-		_, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: label, Scopes: scopes(domain.ScopeRepoRead)})
-		assert.NoError(t, err, label)
+	tests := []struct{ name, label string }{
+		{"digit suffix", "owner2"},
+		{"prefixed with a word", "my owner"},
+		{"plural", "roots"},
+		{"split word", "ow ner"},
+		{"hyphenated", "root-ci"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newTokenFixture(t)
+			f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
+			_, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: tt.label, Scopes: scopes(domain.ScopeRepoRead)})
+			assert.NoError(t, err)
+		})
 	}
 }
 

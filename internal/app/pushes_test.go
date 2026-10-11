@@ -5,7 +5,6 @@ package app_test
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,39 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/app"
+	appmocks "bnema.dev/ermite/internal/app/mocks"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
-
-type scheduler struct {
-	mu    sync.Mutex
-	names []domain.RepoName
-}
-
-func (s *scheduler) Schedule(_ context.Context, n domain.RepoName) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.names = append(s.names, n)
-}
-
-// freshener records the repositories it was told changed.
-type freshener struct {
-	mu    sync.Mutex
-	names []domain.RepoName
-}
-
-func (f *freshener) Refresh(_ context.Context, n domain.RepoName) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.names = append(f.names, n)
-}
-
-func (f *freshener) seen() []domain.RepoName {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]domain.RepoName(nil), f.names...)
-}
 
 type pushFixture struct {
 	meta   *mocks.RepoMetaStore
@@ -54,7 +25,7 @@ type pushFixture struct {
 	bus    *mocks.EventBus
 	clock  *mocks.Clock
 	tokens *mocks.TokenStore
-	sched  *scheduler
+	sched  *appmocks.MaintenanceScheduler
 	pushes *app.Pushes
 }
 
@@ -66,7 +37,7 @@ func newPushFixture(t *testing.T) *pushFixture {
 		bus:    mocks.NewEventBus(t),
 		clock:  mocks.NewClock(t),
 		tokens: mocks.NewTokenStore(t),
-		sched:  &scheduler{},
+		sched:  appmocks.NewMaintenanceScheduler(t),
 	}
 	f.clock.EXPECT().Now().Return(now).Maybe()
 	repos := app.NewRepos(f.meta, f.git, f.bus, f.clock)
@@ -231,6 +202,7 @@ func TestPushesRecord(t *testing.T) {
 
 	t.Run("sets pushed_at, publishes the exact updates, schedules maintenance", func(t *testing.T) {
 		f := newPushFixture(t)
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		repo := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, CreatedAt: now.Add(-time.Hour)}
 		f.meta.EXPECT().Get(ctx, n).Return(repo, nil)
 		f.meta.EXPECT().Update(ctx, domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, CreatedAt: repo.CreatedAt, PushedAt: now}).Return(nil)
@@ -238,23 +210,24 @@ func TestPushesRecord(t *testing.T) {
 		f.bus.EXPECT().Publish(ctx, domain.PushEvent{Repo: n, Updates: ups, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt}).Return()
 
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
-		assert.Equal(t, []domain.RepoName{n}, f.sched.names)
 	})
 
 	t.Run("tells the reader that the repository changed", func(t *testing.T) {
 		f := newPushFixture(t)
-		fresh := &freshener{}
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
+		fresh := mocks.NewRepoFreshener(t)
+		fresh.EXPECT().Refresh(ctx, n).Return().Once()
 		f.pushes.WithFreshener(fresh)
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n}, nil)
 		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
-		assert.Equal(t, []domain.RepoName{n}, fresh.seen())
 	})
 
 	t.Run("pushed_at retries after a conflict and never goes backwards", func(t *testing.T) {
 		f := newPushFixture(t)
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		repo := domain.Repo{Name: n}
 		f.meta.EXPECT().Get(ctx, n).Return(repo, nil).Once()
 		f.meta.EXPECT().Update(ctx, mock.Anything).Return(domain.ErrConflict).Once()
@@ -267,6 +240,7 @@ func TestPushesRecord(t *testing.T) {
 
 	t.Run("a deleted repository is not an error", func(t *testing.T) {
 		f := newPushFixture(t)
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
@@ -275,6 +249,7 @@ func TestPushesRecord(t *testing.T) {
 
 	t.Run("a repository deleted before the default branch step is not an error", func(t *testing.T) {
 		f := newPushFixture(t)
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("", false, domain.ErrNotFound)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
@@ -283,6 +258,7 @@ func TestPushesRecord(t *testing.T) {
 
 	t.Run("a repository deleted before HEAD is set is not an error", func(t *testing.T) {
 		f := newPushFixture(t)
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("trunk", false, nil)
 		f.git.EXPECT().SetDefaultBranch(ctx, n, "main").Return(domain.ErrNotFound)
@@ -292,13 +268,13 @@ func TestPushesRecord(t *testing.T) {
 
 	t.Run("every step runs when one fails", func(t *testing.T) {
 		f := newPushFixture(t)
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, boom)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("", false, boom)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
 		err := f.pushes.Record(ctx, p, n, ups)
 		assert.ErrorIs(t, err, boom)
-		assert.Equal(t, []domain.RepoName{n}, f.sched.names, "maintenance still scheduled")
 	})
 }
 
@@ -328,6 +304,7 @@ func TestPushesDefaultBranchRule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newPushFixture(t)
+			f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 			f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n, PushedAt: now}, nil)
 			f.git.EXPECT().DefaultBranch(ctx, n).Return(tt.head, tt.exists, nil)
 			if tt.want != "" {
@@ -340,6 +317,7 @@ func TestPushesDefaultBranchRule(t *testing.T) {
 
 	t.Run("set failure is reported", func(t *testing.T) {
 		f := newPushFixture(t)
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		boom := errors.New("boom")
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n, PushedAt: now}, nil)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", false, nil)

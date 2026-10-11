@@ -15,50 +15,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/app"
+	appmocks "bnema.dev/ermite/internal/app/mocks"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-// fakeAuth is the Revalidator of the rig: tokens are valid until revoked.
-type fakeAuth struct {
-	mu      sync.Mutex
-	revoked map[string]bool
-	calls   int
-}
-
-func (a *fakeAuth) Revalidate(_ context.Context, p domain.Principal) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.calls++
-	if a.revoked[p.TokenID()] {
-		return domain.ErrUnauthenticated
-	}
-	return nil
-}
-
-func (a *fakeAuth) revoke(id string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.revoked == nil {
-		a.revoked = map[string]bool{}
-	}
-	a.revoked[id] = true
-}
-
-func (a *fakeAuth) count() int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.calls
-}
-
 // eventRig is an Events use case fed by a channel the test writes to.
 type eventRig struct {
-	t      *testing.T
-	meta   *mocks.RepoMetaStore
-	git    *mocks.GitRepos
-	feed   chan domain.Event
-	auth   *fakeAuth
-	events *app.Events
+	t       *testing.T
+	meta    *mocks.RepoMetaStore
+	git     *mocks.GitRepos
+	feed    chan domain.Event
+	auth    *appmocks.Revalidator
+	revoked sync.Map // token IDs revoked by the test
+	events  *app.Events
 }
 
 func newEventRig(t *testing.T, size int) *eventRig {
@@ -73,8 +43,15 @@ func newEventRigConfig(t *testing.T, cfg app.EventsConfig) *eventRig {
 		meta: mocks.NewRepoMetaStore(t),
 		git:  mocks.NewGitRepos(t),
 		feed: make(chan domain.Event, 4096),
-		auth: &fakeAuth{},
+		auth: appmocks.NewRevalidator(t),
 	}
+	// Tokens are valid until the test revokes them.
+	r.auth.EXPECT().Revalidate(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, p domain.Principal) error {
+		if _, gone := r.revoked.Load(p.TokenID()); gone {
+			return domain.ErrUnauthenticated
+		}
+		return nil
+	}).Maybe()
 	cfg.Auth = r.auth
 	bus := mocks.NewEventBus(t)
 	bus.EXPECT().Subscribe(mock.Anything).RunAndReturn(func(ctx context.Context) <-chan domain.Event {
@@ -463,7 +440,7 @@ func TestWatchEndsWhenTheTokenIsRevoked(t *testing.T) {
 	r.push(pub, 1)
 	w.next(t)
 
-	r.auth.revoke("tok")
+	r.revoked.Store("tok", true)
 	r.push(priv, 2) // would be delivered to a token that may read priv
 	select {
 	case err := <-w.done:
@@ -499,7 +476,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 		r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: 10 * time.Millisecond})
 		w := r.watch(context.Background(), tokenWith("tok", time.Time{}), app.WatchParams{})
 		require.Eventually(t, func() bool { return r.events.Watchers() == 1 }, 5*time.Second, time.Millisecond)
-		r.auth.revoke("tok")
+		r.revoked.Store("tok", true)
 		select {
 		case err := <-w.done:
 			assert.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -519,7 +496,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 		for range 20 {
 			w.next(t)
 		}
-		assert.Zero(t, r.auth.count(), "no store lookup within the interval")
+		r.auth.AssertNotCalled(t, "Revalidate", mock.Anything, mock.Anything) // no store lookup within the interval
 	})
 
 	t.Run("root and anonymous never ask", func(t *testing.T) {
@@ -531,7 +508,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 		r.push(pub, 1)
 		a.next(t)
 		b.next(t)
-		assert.Zero(t, r.auth.count())
+		r.auth.AssertNotCalled(t, "Revalidate", mock.Anything, mock.Anything)
 	})
 }
 

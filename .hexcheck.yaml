@@ -16,6 +16,11 @@ components:
     role: adapter
     paths:
       - internal/adapters/**
+  clientlimit:
+    # Per-client HTTP rate limiting: infrastructure shared by the HTTP adapters.
+    role: adapter
+    paths:
+      - internal/clientlimit/**
   entrypoints:
     role: entrypoint
     paths:
@@ -30,8 +35,37 @@ components:
       - gen/**
       - '**/mocks/**'
       - '**/*_templ.go'
+  readertest:
+    # Test-only fixtures and conformance suite for ports.RepoReader.
+    role: ignore
+    paths:
+      - internal/readertest/**
+rules:
+  no-adapter-imports-in-core: error
+  no-infra-imports-in-usecase: error
+  no-framework-types-in-core: error
+  no-infra-types-in-ports: error
+  no-adapter-to-adapter-imports: warn
+  suspicious-business-logic-in-adapter: warn
+  no-local-fakes-for-ports: warn
+  missing-generated-mock-for-port: warn
+  prefer-generated-mocks: warn
 mocking:
   generatedMockPaths:
     - internal/ports/mocks/**
+    - internal/app/mocks/**
+    - internal/adapters/*/mocks/**
   generatedMockNamePatterns:
     - '{{Interface}}'
+allow:
+  # clientlimit is a shared infrastructure library, not a sibling adapter: the
+  # HTTP adapters that rate-limit clients import it by design.
+  - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/githttp/**
+    reason: rate-limits Git clients with internal/clientlimit
+  - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/rpc/**
+    reason: rate-limits API clients with internal/clientlimit
+  - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/web/**
+    reason: rate-limits login attempts with internal/clientlimit

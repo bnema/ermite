@@ -34,41 +34,55 @@ func envFor(url string) map[string]string {
 	return map[string]string{"ERMITE_URL": url, "ERMITE_TOKEN": "ermite_tok"}
 }
 
-func TestRepoListTable(t *testing.T) {
-	f := &fakeAPI{listRepos: func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error) {
-		return &ermite.ListReposResponse{Repos: []*ermite.Repo{repoAlpha, repoBeta}}, nil
-	}}
-	res := runCLI(t, envFor(f.serve(t)), "", "repo", "list").ok(t)
-	assert.Equal(t, ""+
-		"NAME   VISIBILITY  BRANCH  LAST PUSH         DESCRIPTION\n"+
-		"alpha  public      main    2026-03-04 05:06  The first one\n"+
-		"beta   private     trunk   never             \n", res.stdout)
-	assert.Empty(t, res.stderr)
-	assert.Equal(t, "Bearer ermite_tok", f.header[0].Get("Authorization"))
-	assert.Equal(t, "ermite/v0.0.1 (cli)", f.header[0].Get("User-Agent"))
-}
-
-func TestRepoListJSON(t *testing.T) {
-	f := &fakeAPI{listRepos: func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error) {
-		return &ermite.ListReposResponse{Repos: []*ermite.Repo{repoAlpha, repoBeta}}, nil
-	}}
-	res := runCLI(t, envFor(f.serve(t)), "", "repo", "list", "--json").ok(t)
-	assert.JSONEq(t, `[
-		{"name":"alpha","description":"The first one","visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true},
-		{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}
-	]`, res.stdout)
-}
-
-func TestRepoListEmpty(t *testing.T) {
-	f := &fakeAPI{listRepos: func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error) {
-		return &ermite.ListReposResponse{}, nil
-	}}
-	url := f.serve(t)
-	res := runCLI(t, envFor(url), "", "repo", "list").ok(t)
-	assert.Empty(t, res.stdout)
-	assert.Equal(t, "ermite: no repositories\n", res.stderr)
-	res = runCLI(t, envFor(url), "", "repo", "list", "--json").ok(t)
-	assert.Equal(t, "[]\n", res.stdout, "an empty list is [] not null")
+func TestRepoList(t *testing.T) {
+	both := []*ermite.Repo{repoAlpha, repoBeta}
+	tests := []struct {
+		name       string
+		repos      []*ermite.Repo
+		args       []string
+		wantStdout string
+		wantJSON   bool // compare stdout as JSON rather than byte for byte
+		wantStderr string
+	}{
+		{
+			name: "table", repos: both, args: []string{"repo", "list"},
+			wantStdout: "" +
+				"NAME   VISIBILITY  BRANCH  LAST PUSH         DESCRIPTION\n" +
+				"alpha  public      main    2026-03-04 05:06  The first one\n" +
+				"beta   private     trunk   never             \n",
+		},
+		{
+			name: "json", repos: both, args: []string{"repo", "list", "--json"}, wantJSON: true,
+			wantStdout: `[
+				{"name":"alpha","description":"The first one","visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true},
+				{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}
+			]`,
+		},
+		{
+			name: "empty, table", args: []string{"repo", "list"},
+			wantStderr: "ermite: no repositories\n",
+		},
+		{
+			name: "empty, json is [] not null", args: []string{"repo", "list", "--json"},
+			wantStdout: "[]\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &fakeAPI{listRepos: func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error) {
+				return &ermite.ListReposResponse{Repos: tt.repos}, nil
+			}}
+			res := runCLI(t, envFor(f.serve(t)), "", tt.args...).ok(t)
+			if tt.wantJSON {
+				assert.JSONEq(t, tt.wantStdout, res.stdout)
+			} else {
+				assert.Equal(t, tt.wantStdout, res.stdout)
+			}
+			assert.Equal(t, tt.wantStderr, res.stderr)
+			assert.Equal(t, "Bearer ermite_tok", f.header[0].Get("Authorization"))
+			assert.Equal(t, "ermite/v0.0.1 (cli)", f.header[0].Get("User-Agent"))
+		})
+	}
 }
 
 func TestRepoListFollowsPages(t *testing.T) {

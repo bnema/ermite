@@ -1,22 +1,17 @@
-# Mocks of the ports. Regenerate with: go generate ./internal/ports
+# Mocks of the ports and of the consumer-side interfaces of the adapters and
+# the use cases. Regenerate with: go generate ./internal/ports
 template: testify
+_anchors:
+  mocks: &mocks
+    dir: "{{.InterfaceDir}}/mocks"
+    pkgname: mocks
+    filename: "{{.InterfaceName}}.go"
+    structname: "{{.InterfaceName}}"
+    all: true
 packages:
   bnema.dev/ermite/internal/ports:
-    config:
-      dir: "{{.InterfaceDir}}/mocks"
-      pkgname: mocks
-      filename: "{{.InterfaceName}}.go"
-      structname: "{{.InterfaceName}}"
-    interfaces:
-      RepoMetaStore:
-      GitRepos:
-      Clock:
-      TokenStore:
-      SessionStore:
-      GitBackend:
-      EventBus:
-      RepoReader:
-      MergeRequestStore:
-      MergeGit:
-      CommitSigner:
-      RepoFreshener:
+    config: *mocks
+  bnema.dev/ermite/internal/adapters/githttp:
+    config: *mocks
+  bnema.dev/ermite/internal/app:
+    config: *mocks
