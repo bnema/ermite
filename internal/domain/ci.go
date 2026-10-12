@@ -237,6 +237,9 @@ type CIJob struct {
 	// A job that is not planned has not been expanded yet.
 	Planned    bool
 	MatrixJSON string
+	// ContextsJSON is the JSON object of contexts given to the runner, computed
+	// when the job is planned.
+	ContextsJSON string
 	// ComboTotal is the number of instances of the job's matrix.
 	ComboTotal int
 	// TimeoutMinutes is the timeout of the job, at least 1.
@@ -546,3 +549,41 @@ type JobUpdated struct {
 
 // EventKind implements Event.
 func (JobUpdated) EventKind() string { return "ci.job_updated" }
+
+// CheckState is the combined state of the checks of a commit.
+type CheckState string
+
+// Combined check states.
+const (
+	// CheckStateNone: the commit has no check.
+	CheckStateNone CheckState = ""
+	// CheckStatePending: a check is queued or in progress, none has failed.
+	CheckStatePending CheckState = "pending"
+	// CheckStateFailure: a check failed (or needs an action), whatever the others.
+	CheckStateFailure CheckState = "failure"
+	// CheckStateSuccess: every check passed.
+	CheckStateSuccess CheckState = "success"
+)
+
+// CombineChecks reduces the checks of a commit to one state, the one the
+// merge rule uses too: a failed check makes the commit failing even while
+// others are pending; else a pending check makes it pending; else it is a
+// success.
+func CombineChecks(checks []CICheck) CheckState {
+	if len(checks) == 0 {
+		return CheckStateNone
+	}
+	pending := false
+	for _, c := range checks {
+		switch {
+		case c.Status != CICompleted:
+			pending = true
+		case !c.Conclusion.PassesMerge():
+			return CheckStateFailure
+		}
+	}
+	if pending {
+		return CheckStatePending
+	}
+	return CheckStateSuccess
+}

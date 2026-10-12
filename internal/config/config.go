@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -33,6 +34,11 @@ const (
 	// commits ermite creates (squash merges, ADR 0022).
 	EnvCommitterName  = "ERMITE_COMMITTER_NAME"
 	EnvCommitterEmail = "ERMITE_COMMITTER_EMAIL"
+	// EnvOwner is the owner login CI shows in the github context
+	// ("<owner>/<repo>"); it follows the rules of repository names.
+	EnvOwner = "ERMITE_OWNER"
+	// EnvCILogRetention is how long CI runs, jobs, checks and logs are kept.
+	EnvCILogRetention = "ERMITE_CI_LOG_RETENTION"
 )
 
 // Defaults.
@@ -44,6 +50,10 @@ const (
 	DefaultLogFormat = "json"
 	// DefaultCommitterName is the committer name of the commits ermite creates.
 	DefaultCommitterName = "ermite"
+	// DefaultOwner is the owner login when ERMITE_OWNER is not set.
+	DefaultOwner = "owner"
+	// DefaultCIRetention is the retention of CI data.
+	DefaultCIRetention = 90 * 24 * time.Hour
 )
 
 // Values of ERMITE_GIT_READER.
@@ -85,6 +95,10 @@ type Config struct {
 	// commits ermite creates. The email defaults to "ermite@<host of
 	// PublicURL>".
 	CommitterName, CommitterEmail string
+	// Owner is the owner login of the github context of CI runs.
+	Owner string
+	// CIRetention is how long CI data is kept.
+	CIRetention time.Duration
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -218,10 +232,67 @@ func Load(get func(string) string) (Config, error) {
 		c.CommitterEmail = "ermite@" + u.Hostname()
 	}
 
+	c.Owner = strings.TrimSpace(get(EnvOwner))
+	if c.Owner == "" {
+		c.Owner = DefaultOwner
+	} else if err := validateOwner(c.Owner); err != nil {
+		bad(EnvOwner, "%v", err)
+	}
+
+	c.CIRetention = DefaultCIRetention
+	if raw := strings.TrimSpace(get(EnvCILogRetention)); raw != "" {
+		d, err := parseRetention(raw)
+		if err != nil {
+			bad(EnvCILogRetention, "%v", err)
+		} else {
+			c.CIRetention = d
+		}
+	}
+
 	if len(problems) > 0 {
 		return Config{}, &Error{Problems: problems}
 	}
 	return c, nil
+}
+
+// validateOwner applies the rules of repository names (lowercase letters,
+// digits, '.', '_' and '-', at most 100 characters, no leading or trailing
+// '.'), which config cannot import from the domain.
+func validateOwner(s string) error {
+	if len(s) > 100 {
+		return fmt.Errorf("must be at most 100 characters")
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '_' && r != '-' {
+			return fmt.Errorf("must follow the rules of repository names: a-z, 0-9, '.', '_', '-' (got %q)", s)
+		}
+	}
+	if strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".") || strings.Contains(s, "..") {
+		return fmt.Errorf("must not start or end with '.' nor contain '..' (got %q)", s)
+	}
+	return nil
+}
+
+// parseRetention reads a duration in days ("90d") or in Go's syntax ("720h"),
+// at least one hour.
+func parseRetention(raw string) (time.Duration, error) {
+	var d time.Duration
+	if days, ok := strings.CutSuffix(raw, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil || n < 1 || n > 36500 {
+			return 0, fmt.Errorf("must be a number of days such as 90d (got %q)", raw)
+		}
+		d = time.Duration(n) * 24 * time.Hour
+	} else {
+		var err error
+		if d, err = time.ParseDuration(raw); err != nil {
+			return 0, fmt.Errorf("must be a duration such as 90d or 720h (got %q)", raw)
+		}
+	}
+	if d < time.Hour {
+		return 0, fmt.Errorf("must be at least one hour (got %q)", raw)
+	}
+	return d, nil
 }
 
 // validateIdentity accepts a name or an email address for a Git identity: valid

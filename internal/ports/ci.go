@@ -92,9 +92,20 @@ type CIStore interface {
 	RemoveRunner(ctx context.Context, id string) (domain.CIRunner, error)
 }
 
-// CIChecksReader is the read side of the checks, for the merge rule.
+// CIRunCleaner is what repository deletion needs from CI: the runs of the
+// repository before its records go, and the removal of their logs after.
+// *usecase.CI implements it.
+type CIRunCleaner interface {
+	RunIDs(ctx context.Context, repo domain.RepoName) ([]int64, error)
+	RemoveLogs(ctx context.Context, runIDs []int64) error
+}
+
+// CIChecksReader is the read side of the checks, for the merge rule and the
+// pages that show them. *usecase.CI implements it.
 type CIChecksReader interface {
-	ListChecks(ctx context.Context, repo domain.RepoName, sha string, limit int) (checks []domain.CICheck, more bool, err error)
+	// CommitChecks returns the checks of a commit, at most 1,000, without
+	// access control (the caller has checked it).
+	CommitChecks(ctx context.Context, repo domain.RepoName, sha string) ([]domain.CICheck, error)
 }
 
 // CILogRef names the log of one execution of a job.
@@ -262,7 +273,7 @@ type JobCancel struct {
 // RunnerService is what runners call. The secret is the bearer secret of the
 // call: the runner token for FetchJob, the job token for the other calls.
 // A bad secret is domain.ErrUnauthenticated; a job token of another job than
-// the one named is domain.ErrForbidden. *usecase.CIRunner implements it.
+// the one named is domain.ErrForbidden. *usecase.CI implements it.
 type RunnerService interface {
 	Register(ctx context.Context, p domain.Principal, params RegisterRunnerParams) (RegisteredRunner, error)
 	FetchJob(ctx context.Context, secret string, params FetchJobParams) (FetchJobResult, error)
@@ -271,12 +282,6 @@ type RunnerService interface {
 	Heartbeat(ctx context.Context, secret, jobID string) error
 	WatchJob(ctx context.Context, secret, jobID string, send func(JobSignal) error) error
 	CompleteJob(ctx context.Context, secret string, params CompleteJobParams) (CompleteJobResult, error)
-}
-
-// RunStep is a step with its place in the log.
-type RunStep struct {
-	domain.CIStep
-	LogEnd int64
 }
 
 // JobView is a job as owners see it.
@@ -288,7 +293,7 @@ type JobView struct {
 	RunnerGone bool
 }
 
-// Steps returns the steps with their log ranges.
+// StepRanges returns where the lines of every step are in the log.
 func (v JobView) StepRanges() []domain.StepRange { return domain.StepRanges(v.Steps, v.Lines) }
 
 // ListRunsParams select a page of runs.
@@ -322,9 +327,29 @@ type JobLogLine struct {
 	domain.CILogLine
 }
 
+// GetJobLogParams select the log to stream.
+type GetJobLogParams struct {
+	JobID string
+	// Attempt is the attempt of the job, 0 for the latest.
+	Attempt int32
+	Offset  int64
+	Follow  bool
+	// Client identifies where the call comes from, for the limit of streams
+	// per client; empty counts against the total only.
+	Client string
+}
+
+// CheckView is a check with what owners need to read it.
+type CheckView struct {
+	domain.CICheck
+	// WaitingForRunner is set for a queued check whose job no registered
+	// runner can take (no runner has all its labels).
+	WaitingForRunner bool
+}
+
 // ChecksResult are the checks of a commit.
 type ChecksResult struct {
-	Checks    []domain.CICheck
+	Checks    []CheckView
 	Truncated bool
 }
 
@@ -341,12 +366,12 @@ type RunnerView struct {
 	Busy     bool
 }
 
-// RunService is the owner side of CI. *usecase.CIRuns implements it.
+// RunService is the owner side of CI. *usecase.CI implements it.
 type RunService interface {
 	ListRuns(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListRunsParams) (RunPage, error)
 	GetRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, attempt int32) (RunDetail, error)
 	GetJob(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32) (JobView, error)
-	GetJobLog(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, offset int64, follow bool, send func(LogBatch) error) error
+	GetJobLog(ctx context.Context, p domain.Principal, repo domain.RepoName, params GetJobLogParams, send func(LogBatch) error) error
 	CancelRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64) (domain.CIRun, error)
 	RerunRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, failedOnly bool) (domain.CIRun, error)
 	ListChecks(ctx context.Context, p domain.Principal, repo domain.RepoName, sha string) (ChecksResult, error)

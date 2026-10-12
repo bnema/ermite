@@ -161,9 +161,13 @@ message CIJob {
   // re-run of the failed jobs is copied with the run attempt of the re-run and
   // keeps its own attempt.
   int32 run_attempt = 38;
+  // The contexts JSON given to the runner, computed when the job is planned
+  // (needs outputs are final then).
+  string contexts_json = 39;
 }
 
-// CICheck is stored under "check/<repo>/<sha>/<job id>".
+// CICheck is stored under "check/<repo>/<sha>/<id>": the id of its job, or
+// "run-<run id>" for a run that failed without a job (invalid workflow file).
 message CICheck {
   string id = 1;
   string repo = 2;

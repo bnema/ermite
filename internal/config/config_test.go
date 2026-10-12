@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -206,5 +207,50 @@ func TestLoadGitReader(t *testing.T) {
 		c, err := config.Load(lookup(valid(map[string]string{config.EnvGitReader: in})))
 		require.NoError(t, err, in)
 		assert.Equal(t, want, c.GitReader, in)
+	}
+}
+
+func TestOwnerAndCIRetention(t *testing.T) {
+	base := map[string]string{
+		config.EnvDataDir: "/data", config.EnvPublicURL: "https://forge.example.org",
+		config.EnvAdminToken: "0123456789abcdef0123456789abcdef",
+	}
+	load := func(extra map[string]string) (config.Config, error) {
+		env := map[string]string{}
+		for k, v := range base {
+			env[k] = v
+		}
+		for k, v := range extra {
+			env[k] = v
+		}
+		return config.Load(func(k string) string { return env[k] })
+	}
+
+	c, err := load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Owner != "owner" || c.CIRetention != 90*24*time.Hour {
+		t.Fatalf("defaults: owner %q, retention %v", c.Owner, c.CIRetention)
+	}
+
+	c, err = load(map[string]string{config.EnvOwner: "bnema", config.EnvCILogRetention: "30d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Owner != "bnema" || c.CIRetention != 30*24*time.Hour {
+		t.Fatalf("set: owner %q, retention %v", c.Owner, c.CIRetention)
+	}
+	if c, err = load(map[string]string{config.EnvCILogRetention: "48h"}); err != nil || c.CIRetention != 48*time.Hour {
+		t.Fatalf("go duration: %v, %v", c.CIRetention, err)
+	}
+
+	for _, extra := range []map[string]string{
+		{config.EnvOwner: "Bad Name"}, {config.EnvOwner: ".dot"},
+		{config.EnvCILogRetention: "soon"}, {config.EnvCILogRetention: "0d"}, {config.EnvCILogRetention: "10m"},
+	} {
+		if _, err := load(extra); err == nil {
+			t.Errorf("%v: want an error", extra)
+		}
 	}
 }

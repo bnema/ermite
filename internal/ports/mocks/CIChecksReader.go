@@ -47,55 +47,48 @@ func (_m *CIChecksReader) EXPECT() *CIChecksReader_Expecter {
 	return &CIChecksReader_Expecter{mock: &_m.Mock}
 }
 
-// ListChecks provides a mock function for the type CIChecksReader
-func (_mock *CIChecksReader) ListChecks(ctx context.Context, repo domain.RepoName, sha string, limit int) ([]domain.CICheck, bool, error) {
-	ret := _mock.Called(ctx, repo, sha, limit)
+// CommitChecks provides a mock function for the type CIChecksReader
+func (_mock *CIChecksReader) CommitChecks(ctx context.Context, repo domain.RepoName, sha string) ([]domain.CICheck, error) {
+	ret := _mock.Called(ctx, repo, sha)
 
 	if len(ret) == 0 {
-		panic("no return value specified for ListChecks")
+		panic("no return value specified for CommitChecks")
 	}
 
 	var r0 []domain.CICheck
-	var r1 bool
-	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string, int) ([]domain.CICheck, bool, error)); ok {
-		return returnFunc(ctx, repo, sha, limit)
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string) ([]domain.CICheck, error)); ok {
+		return returnFunc(ctx, repo, sha)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string, int) []domain.CICheck); ok {
-		r0 = returnFunc(ctx, repo, sha, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string) []domain.CICheck); ok {
+		r0 = returnFunc(ctx, repo, sha)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]domain.CICheck)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, string, int) bool); ok {
-		r1 = returnFunc(ctx, repo, sha, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, string) error); ok {
+		r1 = returnFunc(ctx, repo, sha)
 	} else {
-		r1 = ret.Get(1).(bool)
+		r1 = ret.Error(1)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, string, int) error); ok {
-		r2 = returnFunc(ctx, repo, sha, limit)
-	} else {
-		r2 = ret.Error(2)
-	}
-	return r0, r1, r2
+	return r0, r1
 }
 
-// CIChecksReader_ListChecks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListChecks'
-type CIChecksReader_ListChecks_Call struct {
+// CIChecksReader_CommitChecks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CommitChecks'
+type CIChecksReader_CommitChecks_Call struct {
 	*mock.Call
 }
 
-// ListChecks is a helper method to define mock.On call
+// CommitChecks is a helper method to define mock.On call
 //   - ctx context.Context
 //   - repo domain.RepoName
 //   - sha string
-//   - limit int
-func (_e *CIChecksReader_Expecter) ListChecks(ctx any, repo any, sha any, limit any) *CIChecksReader_ListChecks_Call {
-	return &CIChecksReader_ListChecks_Call{Call: _e.mock.On("ListChecks", ctx, repo, sha, limit)}
+func (_e *CIChecksReader_Expecter) CommitChecks(ctx any, repo any, sha any) *CIChecksReader_CommitChecks_Call {
+	return &CIChecksReader_CommitChecks_Call{Call: _e.mock.On("CommitChecks", ctx, repo, sha)}
 }
 
-func (_c *CIChecksReader_ListChecks_Call) Run(run func(ctx context.Context, repo domain.RepoName, sha string, limit int)) *CIChecksReader_ListChecks_Call {
+func (_c *CIChecksReader_CommitChecks_Call) Run(run func(ctx context.Context, repo domain.RepoName, sha string)) *CIChecksReader_CommitChecks_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -109,26 +102,21 @@ func (_c *CIChecksReader_ListChecks_Call) Run(run func(ctx context.Context, repo
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		var arg3 int
-		if args[3] != nil {
-			arg3 = args[3].(int)
-		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
 }
 
-func (_c *CIChecksReader_ListChecks_Call) Return(checks []domain.CICheck, more bool, err error) *CIChecksReader_ListChecks_Call {
-	_c.Call.Return(checks, more, err)
+func (_c *CIChecksReader_CommitChecks_Call) Return(cIChecks []domain.CICheck, err error) *CIChecksReader_CommitChecks_Call {
+	_c.Call.Return(cIChecks, err)
 	return _c
 }
 
-func (_c *CIChecksReader_ListChecks_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, sha string, limit int) ([]domain.CICheck, bool, error)) *CIChecksReader_ListChecks_Call {
+func (_c *CIChecksReader_CommitChecks_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, sha string) ([]domain.CICheck, error)) *CIChecksReader_CommitChecks_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -730,7 +730,10 @@ type CIJob struct {
 	// Attempt of the run this record belongs to; it is the key. A job kept by a
 	// re-run of the failed jobs is copied with the run attempt of the re-run and
 	// keeps its own attempt.
-	RunAttempt    int32 `protobuf:"varint,38,opt,name=run_attempt,json=runAttempt,proto3" json:"run_attempt,omitempty"`
+	RunAttempt int32 `protobuf:"varint,38,opt,name=run_attempt,json=runAttempt,proto3" json:"run_attempt,omitempty"`
+	// The contexts JSON given to the runner, computed when the job is planned
+	// (needs outputs are final then).
+	ContextsJson  string `protobuf:"bytes,39,opt,name=contexts_json,json=contextsJson,proto3" json:"contexts_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1024,7 +1027,15 @@ func (x *CIJob) GetRunAttempt() int32 {
 	return 0
 }
 
-// CICheck is stored under "check/<repo>/<sha>/<job id>".
+func (x *CIJob) GetContextsJson() string {
+	if x != nil {
+		return x.ContextsJson
+	}
+	return ""
+}
+
+// CICheck is stored under "check/<repo>/<sha>/<id>": the id of its job, or
+// "run-<run id>" for a run that failed without a job (invalid workflow file).
 type CICheck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1321,7 +1332,7 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
 	"\fcompleted_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x1b\n" +
 	"\tlog_start\x18\a \x01(\x03R\blogStart\x12\x1b\n" +
-	"\thas_lines\x18\t \x01(\bR\bhasLines\"\xef\v\n" +
+	"\thas_lines\x18\t \x01(\bR\bhasLines\"\x94\f\n" +
 	"\x05CIJob\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\x03R\x05runId\x12\x18\n" +
@@ -1370,7 +1381,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x13cancel_requested_at\x18# \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAt\x12\x18\n" +
 	"\aplanned\x18% \x01(\bR\aplanned\x12\x1f\n" +
 	"\vrun_attempt\x18& \x01(\x05R\n" +
-	"runAttempt\x1a:\n" +
+	"runAttempt\x12#\n" +
+	"\rcontexts_json\x18' \x01(\tR\fcontextsJson\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe5\x03\n" +

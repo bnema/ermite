@@ -211,16 +211,16 @@ func (_c *RunService_GetJob_Call) RunAndReturn(run func(ctx context.Context, p d
 }
 
 // GetJobLog provides a mock function for the type RunService
-func (_mock *RunService) GetJobLog(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, offset int64, follow bool, send func(ports.LogBatch) error) error {
-	ret := _mock.Called(ctx, p, repo, jobID, attempt, offset, follow, send)
+func (_mock *RunService) GetJobLog(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.GetJobLogParams, send func(ports.LogBatch) error) error {
+	ret := _mock.Called(ctx, p, repo, params, send)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetJobLog")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string, int32, int64, bool, func(ports.LogBatch) error) error); ok {
-		r0 = returnFunc(ctx, p, repo, jobID, attempt, offset, follow, send)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, ports.GetJobLogParams, func(ports.LogBatch) error) error); ok {
+		r0 = returnFunc(ctx, p, repo, params, send)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -236,16 +236,13 @@ type RunService_GetJobLog_Call struct {
 //   - ctx context.Context
 //   - p domain.Principal
 //   - repo domain.RepoName
-//   - jobID string
-//   - attempt int32
-//   - offset int64
-//   - follow bool
+//   - params ports.GetJobLogParams
 //   - send func(ports.LogBatch) error
-func (_e *RunService_Expecter) GetJobLog(ctx any, p any, repo any, jobID any, attempt any, offset any, follow any, send any) *RunService_GetJobLog_Call {
-	return &RunService_GetJobLog_Call{Call: _e.mock.On("GetJobLog", ctx, p, repo, jobID, attempt, offset, follow, send)}
+func (_e *RunService_Expecter) GetJobLog(ctx any, p any, repo any, params any, send any) *RunService_GetJobLog_Call {
+	return &RunService_GetJobLog_Call{Call: _e.mock.On("GetJobLog", ctx, p, repo, params, send)}
 }
 
-func (_c *RunService_GetJobLog_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, offset int64, follow bool, send func(ports.LogBatch) error)) *RunService_GetJobLog_Call {
+func (_c *RunService_GetJobLog_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.GetJobLogParams, send func(ports.LogBatch) error)) *RunService_GetJobLog_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -259,25 +256,13 @@ func (_c *RunService_GetJobLog_Call) Run(run func(ctx context.Context, p domain.
 		if args[2] != nil {
 			arg2 = args[2].(domain.RepoName)
 		}
-		var arg3 string
+		var arg3 ports.GetJobLogParams
 		if args[3] != nil {
-			arg3 = args[3].(string)
+			arg3 = args[3].(ports.GetJobLogParams)
 		}
-		var arg4 int32
+		var arg4 func(ports.LogBatch) error
 		if args[4] != nil {
-			arg4 = args[4].(int32)
-		}
-		var arg5 int64
-		if args[5] != nil {
-			arg5 = args[5].(int64)
-		}
-		var arg6 bool
-		if args[6] != nil {
-			arg6 = args[6].(bool)
-		}
-		var arg7 func(ports.LogBatch) error
-		if args[7] != nil {
-			arg7 = args[7].(func(ports.LogBatch) error)
+			arg4 = args[4].(func(ports.LogBatch) error)
 		}
 		run(
 			arg0,
@@ -285,9 +270,6 @@ func (_c *RunService_GetJobLog_Call) Run(run func(ctx context.Context, p domain.
 			arg2,
 			arg3,
 			arg4,
-			arg5,
-			arg6,
-			arg7,
 		)
 	})
 	return _c
@@ -298,7 +280,7 @@ func (_c *RunService_GetJobLog_Call) Return(err error) *RunService_GetJobLog_Cal
 	return _c
 }
 
-func (_c *RunService_GetJobLog_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, offset int64, follow bool, send func(ports.LogBatch) error) error) *RunService_GetJobLog_Call {
+func (_c *RunService_GetJobLog_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.GetJobLogParams, send func(ports.LogBatch) error) error) *RunService_GetJobLog_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -26,7 +26,7 @@ import (
 //	run/<repo>/<id:020d>                 CIRun
 //	runsrc/<id:020d>                     CIRunSource
 //	job/<run:020d>/<attempt:010d>/<id>   CIJob
-//	check/<repo>/<sha>/<job id>          CICheck
+//	check/<repo>/<sha>/<check id>        CICheck
 //	runseq                               Sequence: last run id
 //	runnum/<repo>/<workflow path>        Sequence: last run number
 //	runner/<id>, runnername/<name>, runnertoken/<hash>
@@ -83,8 +83,8 @@ func jobKey(runID int64, attempt int32, id string) []byte { return []byte(jobRef
 func checksPrefix(repo domain.RepoName, sha string) string {
 	return checkPrefix + repo.String() + "/" + sha + "/"
 }
-func checkKey(repo domain.RepoName, sha, jobID string) []byte {
-	return []byte(checksPrefix(repo, sha) + jobID)
+func checkKey(repo domain.RepoName, sha, id string) []byte {
+	return []byte(checksPrefix(repo, sha) + id)
 }
 func runNumKey(repo domain.RepoName, workflow string) []byte {
 	return []byte(runNumPrefix + repo.String() + "/" + workflow)
@@ -294,7 +294,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		Labels: j.Labels, Needs: j.Needs, RunnerId: j.RunnerID, RunnerName: j.RunnerName,
 		Isolation: encodeIsolation(j.Isolation), Steps: steps,
 		CreatedAt: encodeTime(j.CreatedAt), StartedAt: encodeTime(j.StartedAt), CompletedAt: encodeTime(j.CompletedAt),
-		Index: int32(j.Index), Combo: int32(j.Combo), MatrixJson: j.MatrixJSON, ComboTotal: int32(j.ComboTotal), //nolint:gosec // bounded by the 256 job limit
+		Index: int32(j.Index), Combo: int32(j.Combo), MatrixJson: j.MatrixJSON, ContextsJson: j.ContextsJSON, ComboTotal: int32(j.ComboTotal), //nolint:gosec // bounded by the 256 job limit
 		TimeoutMinutes: j.TimeoutMinutes, FailFast: j.FailFast, MaxParallel: int32(j.MaxParallel), //nolint:gosec // validated at planning
 		Outputs: j.Outputs, ReadyAt: encodeTime(j.ReadyAt), AssignedAt: encodeTime(j.AssignedAt),
 		AckedAt: encodeTime(j.AckedAt), AssignCancels: int32(j.AssignCancels), //nolint:gosec // at most 3
@@ -323,7 +323,7 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 		Error: pb.GetError(), Labels: pb.GetLabels(), Needs: pb.GetNeeds(), RunnerID: pb.GetRunnerId(), RunnerName: pb.GetRunnerName(),
 		Isolation: decodeIsolation(pb.GetIsolation()),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), StartedAt: decodeTime(pb.GetStartedAt()), CompletedAt: decodeTime(pb.GetCompletedAt()),
-		Index: int(pb.GetIndex()), Combo: int(pb.GetCombo()), Planned: pb.GetPlanned(), MatrixJSON: pb.GetMatrixJson(),
+		Index: int(pb.GetIndex()), Combo: int(pb.GetCombo()), Planned: pb.GetPlanned(), MatrixJSON: pb.GetMatrixJson(), ContextsJSON: pb.GetContextsJson(),
 		ComboTotal: int(pb.GetComboTotal()), TimeoutMinutes: pb.GetTimeoutMinutes(), FailFast: pb.GetFailFast(),
 		MaxParallel: int(pb.GetMaxParallel()), Outputs: pb.GetOutputs(),
 		TokenValidUntil: decodeTime(pb.GetTokenValidUntil()), ReadyAt: decodeTime(pb.GetReadyAt()),
@@ -490,7 +490,7 @@ func (c *CI) stageRecords(ctx context.Context, b *kv.Batch, w ports.CIWrite) (gu
 	// Checks are derived from the jobs, written in the same batch and under
 	// the lock of their run: they are upserted without a precondition.
 	for _, ck := range w.Checks {
-		b.Put(checkKey(ck.Repo, ck.Sha, ck.JobID), encodeCheck(ck))
+		b.Put(checkKey(ck.Repo, ck.Sha, ck.ID), encodeCheck(ck))
 	}
 	return guarded, nil
 }
