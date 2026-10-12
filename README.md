@@ -28,11 +28,34 @@ ermite serve
 | `ERMITE_COMMITTER_NAME` | `ermite` | committer of squash merges |
 | `ERMITE_COMMITTER_EMAIL` | `ermite@<public host>` | committer email of squash merges |
 
-`ermite version` prints the version (and the server's when `ERMITE_URL` is set).
+`ermite version` prints the version (and the server's when a server URL is configured, see Remote CLI).
 
 ## Remote CLI
 
 The same binary drives a running server over its API. It reads `ERMITE_URL` (the server address, `http://` or `https://`) and `ERMITE_TOKEN` (a bearer token; optional for public reads). A token sent over plain `http://` to a host that is not loopback triggers a warning on every call.
+
+Each setting comes from the environment or from a config file, the environment first:
+
+| Setting | Environment | Config file key |
+|---|---|---|
+| server address | `ERMITE_URL` | `url` |
+| bearer token (optional for public reads) | `ERMITE_TOKEN` | `token.cmd`, a command that prints it |
+
+The file is `~/.config/ermite/config` (`$XDG_CONFIG_HOME/ermite/config` when set; `ERMITE_CONFIG` names another file). It holds no secret: `token.cmd` is a command line that fetches the token from your secret manager (pass, gopass, op, bw, secret-tool, …).
+
+```ini
+# ~/.config/ermite/config
+url       = https://git.example.com
+token.cmd = pass show ermite/token
+```
+
+```sh
+ermite config set url https://git.example.com
+ermite config set token.cmd 'pass show ermite/token'   # or: gopass show -o ermite/token, op read op://vault/ermite/token, secret-tool lookup service ermite
+ermite config show                                      # path and stored values; unset removes a key
+```
+
+`token.cmd` runs with `sh -c` (`cmd /C` on Windows) only when a command needs the token, at most once per run, with your environment and terminal (so a pinentry or biometric prompt works). It must print the token alone on one line, in under 4 KiB, within 60 seconds. It is not run when `ERMITE_TOKEN` is set, nor by `ermite version` or `ermite config`, and not when the config file is writable by other users. A failure is reported in one line without its output. A token sent over plain `http://` to a host that is not loopback triggers a warning on every call.
 
 ```sh
 export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...
@@ -45,6 +68,7 @@ ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <rep
 ermite web login                # prints a one-time sign-in link (60 s)
 ermite web logout --all         # signs every browser out
 ermite signing-key show         # public key and allowed_signers line of squash commits
+ermite config show | set <url|token.cmd> <value> | unset <key>   # the CLI config file
 ermite version                  # client and server, warns about missing server features
 ermite watch [repo] [--json]    # follows events, reconnects and resumes
 ```

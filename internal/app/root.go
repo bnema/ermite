@@ -18,8 +18,13 @@ func newRootCmdWith(env *cliEnv) *cobra.Command {
 		Short: "A single-user Git forge",
 		Long: "ermite is a single-user Git forge: `ermite serve` runs the server, the other commands\n" +
 			"drive a running server over its API.\n\n" +
-			"Remote commands read ERMITE_URL (the server address, http:// or https://) and\n" +
-			"ERMITE_TOKEN (a bearer token, see `ermite token create`) from the environment.",
+			"Remote commands need the server address (http:// or https://) and, except for public reads,\n" +
+			"a bearer token (see `ermite token create`). Each comes from, in order:\n\n" +
+			"  ERMITE_URL / ERMITE_TOKEN                    the environment\n" +
+			"  url / token.cmd in ~/.config/ermite/config   the config file (ERMITE_CONFIG selects another)\n\n" +
+			"token.cmd is a command line that prints the token, run only when a command needs it, so the\n" +
+			"token stays in your secret manager (pass, gopass, op, bw, secret-tool…), never in the file.\n" +
+			"See `ermite config --help`.",
 		SilenceUsage:  true,
 		SilenceErrors: true, // cmd/ermite prints the error once
 	}

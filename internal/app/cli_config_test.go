@@ -127,3 +127,12 @@ func TestConfigHelpShowsAnExample(t *testing.T) {
 	assert.Contains(t, res.stdout, "pass show ermite/token")
 	assert.Contains(t, res.stdout, "https://git.example.com")
 }
+func TestConfigHelpDocumentsTheFile(t *testing.T) {
+	res := runCLI(t, nil, "", "--help").ok(t)
+	for _, s := range []string{"ERMITE_URL", "ERMITE_TOKEN", "token.cmd", "ERMITE_CONFIG", "ermite config"} {
+		assert.Contains(t, res.stdout, s)
+	}
+	res = runCLI(t, nil, "", "config", "--help").ok(t)
+	assert.Contains(t, res.stdout, "pass show ermite/token")
+	assert.Contains(t, res.stdout, "https://git.example.com")
+}
