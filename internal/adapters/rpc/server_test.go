@@ -21,15 +21,16 @@ import (
 
 func TestServerServiceGetVersion(t *testing.T) {
 	t.Parallel()
-	svc := &serverService{version: "v1.2.3", features: slices.Clone(Features), key: mocks.NewSigningKeyService(t)}
+	advertised := []string{"one", "two"}
+	svc := &serverService{version: "v1.2.3", features: advertised, key: mocks.NewSigningKeyService(t)}
 	resp, err := svc.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
 	require.NoError(t, err)
 	assert.Equal(t, "v1.2.3", resp.Msg.GetVersion())
-	assert.Equal(t, Features, resp.Msg.GetFeatures())
+	assert.Equal(t, []string{"one", "two"}, resp.Msg.GetFeatures())
 
 	// The caller gets a copy: changing it does not change what is advertised.
 	resp.Msg.Features[0] = "tampered"
-	assert.NotEqual(t, "tampered", Features[0])
+	assert.Equal(t, []string{"one", "two"}, advertised)
 }
 
 func TestServerServiceGetSigningKey(t *testing.T) {
@@ -62,7 +63,6 @@ func TestAPIListsPasskeysFeatureWhenAvailable(t *testing.T) {
 		return resp.Msg.GetFeatures()
 	}
 	assert.Equal(t, Features, list(Config{}))
-	assert.NotContains(t, list(Config{}), "passkeys")
 	got := list(Config{Passkeys: mocks.NewPasskeyService(t)})
 	assert.Equal(t, append(slices.Clone(Features), "passkeys"), got)
 	assert.NotContains(t, Features, "passkeys", "the shared list is not modified")
