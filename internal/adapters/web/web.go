@@ -65,6 +65,10 @@ type Config struct {
 	// Heartbeat is how often an idle event stream gets a comment line;
 	// DefaultHeartbeat when zero.
 	Heartbeat time.Duration
+	// Owner is the owner login the GitHub-shaped URLs of CI show
+	// (<server>/<owner>/<repo>/...). A GET of such a URL that is not a page
+	// by itself is redirected to /<repo>/.... Empty: no redirect.
+	Owner string
 	// PublicURL is the base URL of the instance, without a trailing slash:
 	// the clone URLs are built on it, and its host is the instance name.
 	PublicURL string
@@ -184,7 +188,7 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun", s.ciAction(s.runRerun(false)))
 		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun-failed", s.ciAction(s.runRerun(true)))
 	}
-	mux.HandleFunc("GET /{repo}/{rest...}", s.page(s.notFound))
+	mux.HandleFunc(catchAll, s.page(s.notFound))
 	return mux
 }
 
@@ -197,7 +201,41 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.gate(w, r) {
 		return
 	}
+	if to, ok := s.ownerRedirect(r); ok {
+		http.Redirect(w, r, to, http.StatusPermanentRedirect)
+		return
+	}
 	s.mux.ServeHTTP(w, r)
+}
+
+// catchAll is the pattern of the paths that are no page.
+const catchAll = "GET /{repo}/{rest...}"
+
+// ownerRedirect maps /<owner>/<repo>[.git][/rest] to /<repo>[.git][/rest]: the
+// URLs that the github context of CI shows (html_url, commit and compare
+// URLs, clone_url) have the owner of the instance in front, like GitHub's. A
+// path is only redirected when it would be a 404 otherwise, so that a
+// repository named like the owner keeps its own pages.
+func (s *Server) ownerRedirect(r *http.Request) (string, bool) {
+	if s.cfg.Owner == "" || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+		return "", false
+	}
+	first, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.EscapedPath(), "/"), "/")
+	if !ok || first != s.cfg.Owner || rest == "" {
+		return "", false
+	}
+	repo, _, _ := strings.Cut(rest, "/")
+	if _, err := domain.ParseRepoName(strings.TrimSuffix(repo, ".git")); err != nil {
+		return "", false
+	}
+	if _, pattern := s.mux.Handler(r); pattern != catchAll {
+		return "", false
+	}
+	to := "/" + rest
+	if r.URL.RawQuery != "" {
+		to += "?" + r.URL.RawQuery
+	}
+	return to, true
 }
 
 // handler builds a page. It returns the component and its status, or an

@@ -4,7 +4,6 @@ package usecase
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +16,8 @@ import (
 
 	"github.com/bnema/zerowrap"
 
+	"bnema.dev/ermite-actions/expr"
+	"bnema.dev/ermite-actions/template"
 	"bnema.dev/ermite-actions/workflow"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -122,7 +123,7 @@ type pushFacts struct {
 	update  domain.RefUpdate
 	commit  domain.ObjectID // the commit the ref points to, tags followed
 	head    domain.Commit
-	commits []domain.Commit // oldest first, at most maxPushCommits (branches only)
+	commits []domain.Commit // oldest first, at most maxPushCommits
 	forced  bool
 	created bool
 	files   []string
@@ -168,6 +169,10 @@ func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tag
 			Ref: u.Ref, Created: facts.created, ChangedFiles: facts.files, FilesTruncated: facts.filesTruncated, TagCount: tagCount,
 		}):
 		default:
+			if problem := c.matrixProblem(ctx, repo, t, facts, f.path, wf); problem != "" {
+				errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, problem))
+				continue
+			}
 			errs = append(errs, c.startRun(ctx, repo, t, facts, f.path, string(f.content), wf))
 		}
 	}
@@ -190,14 +195,29 @@ func (c *CI) collect(ctx context.Context, repo domain.RepoName, u domain.RefUpda
 	}
 	f.commit = res.CommitID
 	if isTag {
-		cs, _, err := c.cfg.Git.ListRange(ctx, repo, domain.ObjectID{}, f.commit, 1)
+		// Recorded (push-tag, skip-directive-tag): the event of a tag carries
+		// the commits that the default branch does not have, like a created
+		// branch, newest as head_commit. No file list: paths filters are not
+		// evaluated for tags.
+		base := c.defaultBase(ctx, repo, "", f.commit)
+		cs, _, err := c.cfg.Git.ListRange(ctx, repo, base, f.commit, ports.MaxCommitLimit)
 		if err != nil {
 			return f, fmt.Errorf("read the commit of the tag: %w", err)
 		}
 		if len(cs) == 0 {
-			return f, fmt.Errorf("read the commit of the tag: %w", domain.ErrNotFound)
+			cs, _, err = c.cfg.Git.ListRange(ctx, repo, domain.ObjectID{}, f.commit, 1)
+			if err != nil {
+				return f, fmt.Errorf("read the commit of the tag: %w", err)
+			}
+			if len(cs) == 0 {
+				return f, fmt.Errorf("read the commit of the tag: %w", domain.ErrNotFound)
+			}
+			f.head = cs[0]
+			return f, nil
 		}
 		f.head = cs[0]
+		f.commits = slices.Clone(cs[:min(len(cs), maxPushCommits)])
+		slices.Reverse(f.commits)
 		return f, nil
 	}
 
@@ -385,8 +405,10 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 			Title: firstLine(f.head.Message), Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
 			Status: domain.CIQueued, CreatedAt: now,
 		}
+		githubJSON := c.githubJSON(ctx, repo, run, f)
+		run.Title = c.runTitle(ctx, wf, githubJSON, run.Title)
 		d := ports.CIRunDraft{Run: run, Source: domain.CIRunSource{
-			Repo: repo.Name, WorkflowYAML: yaml, GithubJSON: c.githubJSON(ctx, repo, run, f, wf),
+			Repo: repo.Name, WorkflowYAML: yaml, GithubJSON: githubJSON,
 		}}
 		for i, j := range wf.Jobs {
 			job := domain.CIJob{
@@ -416,7 +438,59 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 	return c.advanceRun(ctx, draft.Run.ID)
 }
 
-// --- the github context ---
+// runTitle is the title of a run, GitHub's display_title: the run-name
+// evaluated with the github, inputs and vars contexts (the contexts the
+// schema allows there), else the first line of the head commit message. A
+// run-name that does not evaluate, or that evaluates to nothing, falls back to
+// the commit message, and the failure is logged.
+func (c *CI) runTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, commitTitle string) string {
+	if wf.RunName == nil {
+		return commitTitle
+	}
+	gh, err := expr.FromJSON([]byte(githubJSON))
+	if err != nil {
+		return commitTitle
+	}
+	env := template.Env{Contexts: map[string]expr.Value{
+		"github": gh, "inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
+	}}
+	name, err := template.EvaluateString(ctx, wf.RunName, env)
+	if err != nil {
+		log := zerowrap.FromCtx(ctx)
+		log.Warn().Err(err).Msg("ci run-name does not evaluate: the run is titled with the commit message")
+		return commitTitle
+	}
+	if name = firstLine(name); name == "" {
+		return commitTitle
+	}
+	return name
+}
+
+// matrixProblem evaluates the strategy of the jobs that can be evaluated
+// before the run starts (those that read no needs output) and returns the
+// error text when a matrix produces more configurations than GitHub allows:
+// GitHub then fails the run with no job, like an invalid workflow file
+// (recorded: matrix-over-256). Other strategy errors stay job failures, found
+// when the job is planned.
+func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath string, wf *workflow.Workflow) string {
+	probe := domain.CIRun{Repo: repo.Name, Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor, WorkflowPath: wfPath, WorkflowName: wf.Name, CreatedAt: c.now()}
+	gh, err := expr.FromJSON([]byte(c.githubJSON(ctx, repo, probe, f)))
+	if err != nil {
+		return ""
+	}
+	env := template.Env{Contexts: map[string]expr.Value{
+		"github": gh, "needs": expr.NewDictionary(), "inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
+	}}
+	for _, j := range wf.Jobs {
+		if _, err := j.EvaluateStrategy(ctx, env); err != nil && strings.Contains(err.Error(), "which exceeds the maximum of") {
+			// ermite-actions' configurationLimitError is not exported.
+			return wfPath + ": " + err.Error()
+		}
+	}
+	return ""
+}
+
+// --- the github context (see ci_github.go) ---
 
 // shortID is the 12-character form of an object id that GitHub puts in the
 // compare URL of a push.
@@ -431,82 +505,4 @@ func shortID(id string) string {
 // (at least 1).
 func (c *CI) retentionDays() int {
 	return max(int(c.cfg.Retention/(24*time.Hour)), 1)
-}
-
-type obj = map[string]any
-
-func person(name, email string) obj { return obj{"name": name, "email": email} }
-
-func (c *CI) commitJSON(ctx context.Context, repo domain.Repo, cm domain.Commit) obj {
-	ts := cm.Committer.Time.UTC().Format(time.RFC3339)
-	tree := ""
-	if id, err := c.cfg.Git.CommitTree(ctx, repo.Name, cm.ID); err == nil {
-		tree = id.String()
-	}
-	return obj{
-		"id": cm.ID.String(), "tree_id": tree, "distinct": true, "message": cm.Message, "timestamp": ts,
-		"url":       c.cfg.PublicURL + "/" + repo.Name.String() + "/commit/" + cm.ID.String(),
-		"author":    obj{"name": cm.Author.Name, "email": cm.Author.Email, "username": ""},
-		"committer": obj{"name": cm.Committer.Name, "email": cm.Committer.Email, "username": ""},
-		"added":     []string{}, "removed": []string{}, "modified": []string{},
-	}
-}
-
-// githubJSON builds the "github" context of the run as GitHub does for a push
-// (the job-dependent keys are added when a job is planned). Values that
-// GitHub's documentation does not settle are marked for the recordings.
-//
-// Checked against the recordings of ermite-conformance (push-branch-create,
-// push-tag, push-force, ctx-github-names): ids and counters are strings, so is
-// retention_days; "compare" has 12-character ids, the commit page for a created
-// ref and "<before>...<after>" for an update; repository.default_branch and
-// master_branch are the default branch.
-//
-// TODO(verify with recording): the empty added/removed/modified lists of the
-// push commits.
-func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun, f pushFacts, wf *workflow.Workflow) string {
-	full := c.cfg.Owner + "/" + repo.Name.String()
-	refName, refType := strings.TrimPrefix(run.Ref, "refs/heads/"), "branch"
-	if f.isTag {
-		refName, refType = strings.TrimPrefix(run.Ref, "refs/tags/"), "tag"
-	}
-	repoURL := c.cfg.PublicURL + "/" + repo.Name.String()
-	before := f.update.Old
-	if f.created {
-		before = domain.ZeroOID
-	}
-	compare := repoURL + "/compare/" + shortID(before) + "..." + shortID(f.update.New)
-	if f.created {
-		compare = repoURL + "/commit/" + shortID(f.update.New)
-	}
-	commits := make([]any, 0, len(f.commits))
-	for _, cm := range f.commits {
-		commits = append(commits, c.commitJSON(ctx, repo, cm))
-	}
-	event := obj{
-		"ref": run.Ref, "before": before, "after": f.update.New, "created": f.created, "deleted": false, "forced": f.forced,
-		"base_ref": nil, "compare": compare, "commits": commits, "head_commit": c.commitJSON(ctx, repo, f.head),
-		"pusher": person(run.Actor, ""),
-		"repository": obj{
-			"name": repo.Name.String(), "full_name": full, "private": repo.Visibility == domain.VisibilityPrivate,
-			"owner": obj{"login": c.cfg.Owner, "name": c.cfg.Owner}, "html_url": repoURL, "clone_url": repoURL + ".git",
-			"default_branch": f.defaultBranch, "master_branch": f.defaultBranch, "url": repoURL,
-		},
-		"sender": obj{"login": run.Actor, "type": "User"},
-	}
-	wfRef := full + "/" + run.WorkflowPath + "@" + run.Ref
-	gh := obj{
-		"event_name": "push", "event": event, "ref": run.Ref, "ref_name": refName, "ref_type": refType, "ref_protected": false,
-		"sha": run.Sha, "repository": full, "repository_owner": c.cfg.Owner, "repositoryUrl": repoURL + ".git",
-		"actor": run.Actor, "triggering_actor": run.Actor, "workflow": run.WorkflowName, "workflow_ref": wfRef,
-		"workflow_sha": run.Sha, "run_id": strconv.FormatInt(run.ID, 10), "run_number": strconv.FormatInt(run.Number, 10),
-		"server_url": c.cfg.PublicURL, "api_url": c.cfg.PublicURL + "/-/github/api/v3",
-		"graphql_url": c.cfg.PublicURL + "/-/github/api/graphql", "retention_days": strconv.Itoa(c.retentionDays()),
-		"head_ref": "", "base_ref": "",
-	}
-	b, err := json.Marshal(gh)
-	if err != nil {
-		return "{}"
-	}
-	return string(b)
 }

@@ -245,6 +245,11 @@ type CIJob struct {
 	// TimeoutMinutes is the timeout of the job, at least 1.
 	TimeoutMinutes int32
 	FailFast       bool
+	// ContinueOnError is the job's continue-on-error, evaluated when the job is
+	// planned: its failure leaves the run, its siblings and the jobs that
+	// need it unaffected (needs.<job>.result is success). The conclusion of
+	// the job itself stays failure.
+	ContinueOnError bool
 	// MaxParallel is the max-parallel of the strategy, 0 for no limit.
 	MaxParallel int
 	Outputs     map[string]string
