@@ -98,6 +98,17 @@ go build ./cmd/ermite
 go test ./...
 ```
 
+## Architecture
+
+`cmd/ermite` (entry point, calls `app.Run`) → `internal/app` (CLI and composition root: builds the adapters and wires them to the use cases) → `internal/usecase` (use cases), `internal/ports` (interfaces and parameter types that cross layers), `internal/domain` (pure values and rules) and `internal/adapters` (Git, KV store, HTTP, API, web, client implementations of the ports).
+
+- `internal/usecase` imports only `internal/domain` and `internal/ports`.
+- Adapters import `internal/domain`, `internal/ports` and the shared `internal/clientlimit`; never a use case, `internal/app` or another adapter.
+- `internal/ports` imports only `internal/domain`; `internal/domain` imports nothing from the module.
+- `internal/config` (environment parsing) is used by `internal/app` only.
+
+`internal/boundary/boundary_test.go` enforces these import rules on production files; `hexcheck` (`.hexcheck.yaml`) checks the layering of types and behaviour. The release version is stamped with `-ldflags "-X bnema.dev/ermite/internal/app.stamped=<version>"`.
+
 ## Develop
 
 Tools are pinned in `go.mod`:

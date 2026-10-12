@@ -12,31 +12,31 @@ import (
 )
 
 // The interfaces below are the use cases as the inbound adapters (the API,
-// Git over HTTP, the web) and the entrypoint see them. The types of package
-// app implement them, each assertion being made in app; the mocks in
+// Git over HTTP, the web) and the composition root see them. The types of package
+// usecase implement them, each assertion being made in usecase; the mocks in
 // ports/mocks stand in for them in the tests of the adapters.
 
 // AuthService turns the secret of a request into a principal. It returns
-// domain.ErrUnauthenticated for a secret that is not valid. *app.Auth
+// domain.ErrUnauthenticated for a secret that is not valid. *usecase.Auth
 // implements it.
 type AuthService interface {
 	Authenticate(ctx context.Context, secret string) (domain.Principal, error)
 }
 
 // Revalidator confirms that a principal obtained earlier is still
-// authorized. *app.Auth implements it.
+// authorized. *usecase.Auth implements it.
 type Revalidator interface {
 	Revalidate(ctx context.Context, p domain.Principal) error
 }
 
 // RepoLookup is the read side of a single repository. A repository the
-// principal may not read is domain.ErrNotFound. *app.Repos implements it, as
+// principal may not read is domain.ErrNotFound. *usecase.Repos implements it, as
 // part of RepoService.
 type RepoLookup interface {
 	Get(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error)
 }
 
-// RepoService is the repository use cases the API serves. *app.Repos
+// RepoService is the repository use cases the API serves. *usecase.Repos
 // implements it.
 type RepoService interface {
 	RepoLookup
@@ -47,7 +47,7 @@ type RepoService interface {
 	Delete(ctx context.Context, p domain.Principal, name domain.RepoName) error
 }
 
-// TokenService is the access token use cases the API serves. *app.Tokens
+// TokenService is the access token use cases the API serves. *usecase.Tokens
 // implements it.
 type TokenService interface {
 	Create(ctx context.Context, p domain.Principal, params CreateTokenParams) (CreatedToken, error)
@@ -55,7 +55,7 @@ type TokenService interface {
 	Revoke(ctx context.Context, p domain.Principal, id string) error
 }
 
-// BrowseService is the read side of a repository's content. *app.Browse
+// BrowseService is the read side of a repository's content. *usecase.Browse
 // implements it.
 type BrowseService interface {
 	ListRefs(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListRefsParams) (RefPage, error)
@@ -66,12 +66,12 @@ type BrowseService interface {
 	GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.CommitDetail, error)
 }
 
-// EventService streams the events of the forge. *app.Events implements it.
+// EventService streams the events of the forge. *usecase.Events implements it.
 type EventService interface {
 	Watch(ctx context.Context, p domain.Principal, params WatchParams, send func(WatchEvent) error) error
 }
 
-// MergeRequestService is the merge request use cases. *app.MergeRequests
+// MergeRequestService is the merge request use cases. *usecase.MergeRequests
 // implements it.
 type MergeRequestService interface {
 	Create(ctx context.Context, p domain.Principal, name domain.RepoName, params CreateMergeRequestParams) (domain.MergeRequest, error)
@@ -85,13 +85,13 @@ type MergeRequestService interface {
 }
 
 // SigningKeyService tells which key signs the commits of the forge.
-// *app.SigningKey implements it.
+// *usecase.SigningKey implements it.
 type SigningKeyService interface {
 	Info() domain.SigningKeyInfo
 }
 
 // SessionService is the owner's web session use cases the API serves.
-// *app.Sessions implements it.
+// *usecase.Sessions implements it.
 type SessionService interface {
 	CreateLoginLink(ctx context.Context, p domain.Principal) (LoginLink, error)
 	SignOutEverywhere(ctx context.Context, p domain.Principal) error
@@ -102,7 +102,7 @@ type SessionService interface {
 var ErrLinkRejected = errors.New("login link rejected")
 
 // WebSessionService is the session side of the use cases, as the web needs
-// it. The entrypoint implements it over *app.Sessions.
+// it. The composition root implements it over *usecase.Sessions.
 type WebSessionService interface {
 	// LoginLinkValid reports whether the link is pending, without using it.
 	LoginLinkValid(nonce string) bool
@@ -120,14 +120,14 @@ type WebSessionService interface {
 // for an anonymous caller, domain.ErrNotFound for a repository the caller may
 // not write and cannot see (or that is missing and may not be created),
 // domain.ErrForbidden for one it can see but not write. With create, a
-// missing repository the principal may write is created. *app.Pushes
+// missing repository the principal may write is created. *usecase.Pushes
 // implements it.
 type PushService interface {
 	Open(ctx context.Context, p domain.Principal, name domain.RepoName, create bool) error
 }
 
 // PushHookService is what the hook socket asks of the use cases.
-// *app.Pushes implements it.
+// *usecase.Pushes implements it.
 type PushHookService interface {
 	// Check decides a push before Git applies it; an error matching
 	// domain.ErrRejected refuses it, any other error refuses it as a failure.
@@ -136,7 +136,7 @@ type PushHookService interface {
 	Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error
 }
 
-// MaintenanceScheduler queues repository maintenance. *app.Maintainer
+// MaintenanceScheduler queues repository maintenance. *usecase.Maintainer
 // implements it.
 type MaintenanceScheduler interface {
 	Schedule(ctx context.Context, name domain.RepoName)

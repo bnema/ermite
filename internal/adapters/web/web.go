@@ -4,10 +4,10 @@
 // showcase, rendered with templ from the data of the ermite API.
 //
 // The package is a client of the API like any other. It talks to the
-// generated ermite-api Connect clients, which cmd binds in process to the
+// generated ermite-api Connect clients, which internal/app binds in process to the
 // handlers of the rpc adapter (ADR 0020), and it knows nothing of the use
 // cases or the domain. Who the visitor is comes with the request context, set
-// by the middleware cmd puts in front of the handler: anonymous in P5. The
+// by the middleware internal/app puts in front of the handler: anonymous in P5. The
 // API then shows public repositories only; a private repository is
 // indistinguishable from a missing one, here as everywhere.
 //

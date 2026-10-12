@@ -4,10 +4,10 @@ components:
     role: core
     paths:
       - internal/domain/**
-  app:
+  usecase:
     role: usecase
     paths:
-      - internal/app/**
+      - internal/usecase/**
   ports:
     role: ports
     paths:
@@ -22,9 +22,17 @@ components:
     paths:
       - internal/clientlimit/**
   entrypoints:
+    # cmd/ermite only calls app.Run.
     role: entrypoint
     paths:
       - cmd/**
+  app:
+    # Composition root and CLI: builds the adapters and wires them to the use
+    # cases. hexcheck has no dedicated bootstrap role; entrypoint is the
+    # closest.
+    role: entrypoint
+    paths:
+      - internal/app/**
   config:
     role: entrypoint
     paths:
@@ -40,9 +48,10 @@ components:
     role: ignore
     paths:
       - internal/readertest/**
-# Cross-layer contracts live in ports: adapters and app import ports and domain,
-# never each other. hexcheck has no rule for an adapter importing app (only the
-# reverse, no-infra-imports-in-usecase), so that direction is kept by review.
+# Cross-layer contracts live in ports: adapters and use cases import ports and
+# domain, never each other. hexcheck has no rule for an adapter importing a use
+# case or internal/app; internal/boundary/boundary_test.go enforces the full
+# import matrix.
 rules:
   no-adapter-imports-in-core: error
   no-infra-imports-in-usecase: error

@@ -2,7 +2,7 @@
 
 // Package rpc serves the ermite API contract (bnema.dev/ermite-api) with
 // ConnectRPC: handlers that map the messages of the contract to the use cases
-// of app and back, the interceptor that authenticates callers, and the error
+// of usecase and back, the interceptor that authenticates callers, and the error
 // mapping. The same handlers serve remote clients over HTTP and the web in
 // process (see InProcessClient).
 package rpc

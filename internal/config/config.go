@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package config parses and validates the server configuration from the
-// environment. It is an entrypoint helper: only cmd imports it, and it never
+// environment. It is a composition-root helper: only internal/app imports it, and it never
 // reads the process environment itself, the caller passes a lookup function.
 package config
 
