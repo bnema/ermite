@@ -245,7 +245,7 @@ func runShell(ctx context.Context, line string, timeout time.Duration) (string, 
 	case err != nil:
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return "", errors.New(exit.ProcessState.String())
+			return "", errors.New(exit.String())
 		}
 		return "", err
 	case out.over:
