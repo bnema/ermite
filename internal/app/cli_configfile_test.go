@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -308,17 +309,100 @@ func TestRunShellReportsFailuresWithoutOutput(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses sh")
 	}
-	_, err := runShell(t.Context(), "echo s3cret; exit 3")
+	_, err := runShell(t.Context(), "echo s3cret; exit 3", time.Minute)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exit status 3")
 	assert.NotContains(t, err.Error(), "s3cret")
 
-	_, err = runShell(t.Context(), "head -c 5000 /dev/zero | tr '\\0' a")
+	_, err = runShell(t.Context(), "head -c 5000 /dev/zero | tr '\\0' a", time.Minute)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "more than 4096 bytes")
 	assert.NotContains(t, err.Error(), "aaa")
 
-	out, err := runShell(t.Context(), "echo ermite_ok")
+	out, err := runShell(t.Context(), "echo ermite_ok", time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, "ermite_ok\n", out)
+}
+
+func TestTokenCmdTimesOut(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	f := listFake()
+	env := testEnv(t, nil)
+	writeConfigFile(t, env, "url = "+f.serve(t)+"\ntoken.cmd = exec sleep 30\n", 0o600)
+	env.runTokenCmd = nil
+	env.tokenTimeout = 100 * time.Millisecond
+
+	start := time.Now()
+	res := runCLIWith(t, env, "", "repo", "list")
+	require.Error(t, res.err)
+	assert.Equal(t, "token.cmd failed: timed out after 100ms", res.err.Error())
+	assert.Less(t, time.Since(start), 10*time.Second)
+}
+
+func TestTokenCmdGetsNoInputWithoutATerminal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	// under `go test` stdin is the null device or a pipe, never a terminal
+	require.False(t, stdinIsTerminal())
+	out, err := runShell(t.Context(), "cat; echo done", time.Minute)
+	require.NoError(t, err)
+	assert.Equal(t, "done\n", out, "the command read nothing")
+}
+
+func TestTokenCmdRefusedWhenDirectoryIsWritableByOthers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no Unix permission bits")
+	}
+	env := testEnv(t, nil)
+	path := writeConfigFile(t, env, "url = http://ermite.invalid:1\ntoken.cmd = get-token\n", 0o600)
+	dir := filepath.Dir(path)
+	require.NoError(t, os.Chmod(dir, 0o777))
+	ran := tokenCmdStub(env, "ermite_cmd", nil)
+
+	res := runCLIWith(t, env, "", "repo", "list")
+	require.Error(t, res.err)
+	assert.Equal(t, "config directory "+dir+" is writable by others: token.cmd not run", res.err.Error())
+	assert.Empty(t, *ran)
+
+	t.Run("sticky directory is fine", func(t *testing.T) {
+		require.NoError(t, os.Chmod(dir, 0o777|os.ModeSticky))
+		f := listFake()
+		env := testEnvAt(t, path)
+		require.NoError(t, os.WriteFile(path, []byte("url = "+f.serve(t)+"\ntoken.cmd = get-token\n"), 0o600))
+		tokenCmdStub(env, "ermite_cmd", nil)
+		runCLIWith(t, env, "", "repo", "list").ok(t)
+	})
+}
+
+func TestTokenCmdRefusedWhenFileIsOwnedByAnotherUser(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() != 0 {
+		t.Skip("needs root to give a file away")
+	}
+	env := testEnv(t, nil)
+	path := writeConfigFile(t, env, "url = http://ermite.invalid:1\ntoken.cmd = get-token\n", 0o600)
+	require.NoError(t, os.Chown(path, 65534, -1))
+	ran := tokenCmdStub(env, "ermite_cmd", nil)
+
+	res := runCLIWith(t, env, "", "repo", "list")
+	require.Error(t, res.err)
+	assert.Equal(t, "config file "+path+" is owned by another user: token.cmd not run", res.err.Error())
+	assert.Empty(t, *ran)
+}
+
+func TestTokenCmdFollowsASymlinkedConfigFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+	f := listFake()
+	env := testEnv(t, nil)
+	real := writeConfigFile(t, env, "url = "+f.serve(t)+"\ntoken.cmd = get-token\n", 0o600)
+	link := filepath.Join(t.TempDir(), "dotfile-link")
+	require.NoError(t, os.Symlink(real, link))
+	tokenCmdStub(env, "ermite_cmd", nil)
+	env.configPath = func() (string, error) { return link, nil }
+	runCLIWith(t, env, "", "repo", "list").ok(t)
+	assert.Equal(t, "Bearer ermite_cmd", lastAuth(f))
 }

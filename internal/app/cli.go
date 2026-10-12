@@ -38,12 +38,15 @@ type cliEnv struct {
 	// runTokenCmd runs the token.cmd command line and returns its raw standard
 	// output; nil means running it with the system shell. Tests replace it.
 	runTokenCmd func(ctx context.Context, cmd string) (string, error)
+	// tokenTimeout bounds the default runTokenCmd; zero means 60 s.
+	tokenTimeout time.Duration
 
 	// The config file is read at most once and token.cmd run at most once per
 	// process, and only when a command needs them (see cli_configfile.go).
 	fileOnce  sync.Once
 	file      *cliFile
 	filePath  string
+	fileTrust error // why token.cmd must not run from this file, if so
 	fileErr   error
 	tokenOnce sync.Once
 	token     string

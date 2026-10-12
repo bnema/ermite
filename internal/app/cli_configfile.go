@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -57,7 +57,12 @@ func (e *cliEnv) path() (string, error) {
 
 // readFile reads the config file, once per process. A missing file, or no
 // place to look for it, gives an empty one. Problems in the file are warnings
-// on stderr, printed once, and only when warn is set.
+// on stderr, printed once, and only when warn is set. The path is returned
+// even when reading fails.
+//
+// The file is opened once: what is parsed and what requirePrivate vets (see
+// fetchToken) are the same file, so token.cmd cannot come from a file that was
+// swapped after the check.
 func (e *cliEnv) readFile(cmd *cobra.Command, warn bool) (*cliFile, string, error) {
 	e.fileOnce.Do(func() {
 		p, err := e.path()
@@ -68,11 +73,12 @@ func (e *cliEnv) readFile(cmd *cobra.Command, warn bool) (*cliFile, string, erro
 			return
 		}
 		e.filePath = p
-		f, warnings, err := kvconf.Load[cliFile](p, kvconf.Options{})
+		f, warnings, trust, err := loadConfigFile(p)
 		if err != nil {
 			e.fileErr = fmt.Errorf("config: %w", err)
 			return
 		}
+		e.fileTrust = trust
 		if warn {
 			for _, w := range warnings {
 				warnf(cmd, "config: %s", w)
@@ -81,6 +87,40 @@ func (e *cliEnv) readFile(cmd *cobra.Command, warn bool) (*cliFile, string, erro
 		e.file = f
 	})
 	return e.file, e.filePath, e.fileErr
+}
+
+// loadConfigFile parses the file at path (missing: empty). trust is nil when
+// token.cmd may be run from this file, else the reason why not.
+func loadConfigFile(path string) (f *cliFile, warnings []kvconf.Warning, trust, err error) {
+	h, err := openConfig(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return &cliFile{}, nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer h.Close() //nolint:errcheck // read only
+	info, err := h.Stat()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, nil, fmt.Errorf("%s: %w", path, kvconf.ErrNotRegular)
+	}
+	trust = checkPrivate(path, info)
+	data, err := io.ReadAll(io.LimitReader(h, kvconf.DefaultMaxBytes+1))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(data) > kvconf.DefaultMaxBytes {
+		return nil, nil, nil, fmt.Errorf("%s: %w", path, kvconf.ErrTooLarge)
+	}
+	f = &cliFile{}
+	warnings, err = kvconf.Unmarshal(data, f, kvconf.Options{})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return f, warnings, trust, nil
 }
 
 // resolveURL is ERMITE_URL if set, else the url of the config file, else "".
@@ -112,7 +152,7 @@ func (e *cliEnv) resolveToken(cmd *cobra.Command, warn, runCmd bool) (string, er
 // the command fetches belongs to the server of the file, and must not be sent
 // to another one.
 func (e *cliEnv) tokenFromCmd(cmd *cobra.Command, warn bool) (string, error) {
-	f, path, err := e.readFile(cmd, warn)
+	f, _, err := e.readFile(cmd, warn)
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +167,7 @@ func (e *cliEnv) tokenFromCmd(cmd *cobra.Command, warn bool) (string, error) {
 			}
 			return
 		}
-		e.token, e.tokenErr = e.fetchToken(e.ctx(cmd), path, line)
+		e.token, e.tokenErr = e.fetchToken(e.ctx(cmd), line)
 	})
 	return e.token, e.tokenErr
 }
@@ -149,13 +189,13 @@ func (e *cliEnv) urlIsFromFile(f *cliFile) bool {
 
 // fetchToken runs token.cmd. Neither its output nor its error text reach the
 // caller's messages: the output is the secret.
-func (e *cliEnv) fetchToken(ctx context.Context, path, line string) (string, error) {
-	if err := requirePrivate(path); err != nil {
-		return "", err
+func (e *cliEnv) fetchToken(ctx context.Context, line string) (string, error) {
+	if e.fileTrust != nil {
+		return "", e.fileTrust
 	}
 	run := e.runTokenCmd
 	if run == nil {
-		run = runShell
+		run = e.shell
 	}
 	out, err := run(ctx, line)
 	if err != nil {
@@ -171,37 +211,37 @@ func (e *cliEnv) fetchToken(ctx context.Context, path, line string) (string, err
 	return out, nil
 }
 
-// requirePrivate refuses a config file other users can write: they could
-// change token.cmd into any command. Windows has no such mode bits.
-func requirePrivate(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil
+// shell runs a token.cmd command line, with the timeout of the environment.
+func (e *cliEnv) shell(ctx context.Context, line string) (string, error) {
+	timeout := e.tokenTimeout
+	if timeout <= 0 {
+		timeout = tokenCmdTimeout
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("config: %w", err)
-	}
-	if info.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("config file %s is writable by others: token.cmd not run", path)
-	}
-	return nil
+	return runShell(ctx, line, timeout)
 }
 
-// runShell runs line with the system shell. Standard input and error are the
-// terminal's, so a pinentry or a biometric prompt works; standard output is
+// runShell runs line with the system shell. Standard error is the terminal's,
+// and so is standard input when it is a terminal, so a pinentry or a biometric
+// prompt works; a script or an agent gets no input. Standard output is
 // captured, up to tokenCmdMaxOutput bytes. The environment is the process's.
-func runShell(ctx context.Context, line string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, tokenCmdTimeout)
+func runShell(ctx context.Context, line string, timeout time.Duration) (string, error) {
+	parent := ctx
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	c := shellCommand(ctx, line)
 	out := &cappedBuffer{max: tokenCmdMaxOutput}
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, out, os.Stderr
+	c.Stdout, c.Stderr = out, os.Stderr
+	if stdinIsTerminal() {
+		c.Stdin = os.Stdin
+	} // else nil: the command reads os.DevNull
 	// Do not wait forever for a background process that kept the pipe open.
 	c.WaitDelay = 2 * time.Second
 	err := c.Run()
 	switch {
+	case parent.Err() != nil:
+		return "", errors.New("interrupted")
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return "", fmt.Errorf("timed out after %s", tokenCmdTimeout)
+		return "", fmt.Errorf("timed out after %s", timeout)
 	case err != nil:
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
@@ -212,6 +252,17 @@ func runShell(ctx context.Context, line string) (string, error) {
 		return "", fmt.Errorf("printed more than %d bytes", tokenCmdMaxOutput)
 	}
 	return out.buf.String(), nil
+}
+
+// stdinIsTerminal reports whether standard input is a terminal: a character
+// device other than the null device.
+func stdinIsTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	null, err := os.Stat(os.DevNull)
+	return err != nil || !os.SameFile(fi, null)
 }
 
 // cappedBuffer keeps the first max bytes written and notes an overflow.
