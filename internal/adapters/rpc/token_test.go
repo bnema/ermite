@@ -64,6 +64,37 @@ func TestTokenServiceCreateTokenPassesParams(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestTokenServiceBranchPrefixes(t *testing.T) {
+	t.Parallel()
+	tokens := mocks.NewTokenService(t)
+	tokens.EXPECT().Create(mock.Anything, domain.Owner(), mock.MatchedBy(func(p ports.CreateTokenParams) bool {
+		return assert.ObjectsAreEqual([]string{"agent/claude/", "bot/"}, p.BranchPrefixes)
+	})).Return(ports.CreatedToken{
+		Token:  domain.Token{ID: "t1", BranchPrefixes: []string{"agent/claude/", "bot/"}},
+		Secret: "s",
+	}, nil).Once()
+	resp, err := (&tokenService{tokens}).CreateToken(ownerCtx(), connect.NewRequest(&pb.CreateTokenRequest{
+		Label: "ci", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_WRITE}, BranchPrefixes: []string{"agent/claude/", "bot/"},
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"agent/claude/", "bot/"}, resp.Msg.GetToken().GetBranchPrefixes())
+
+	// A malformed prefix is the use case's invalid_token: invalid_argument.
+	tokens.EXPECT().Create(mock.Anything, domain.Owner(), mock.Anything).Return(ports.CreatedToken{}, domain.ErrInvalidToken).Once()
+	_, err = (&tokenService{tokens}).CreateToken(ownerCtx(), connect.NewRequest(&pb.CreateTokenRequest{
+		Label: "ci", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_WRITE}, BranchPrefixes: []string{"agent"},
+	}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+
+	// Listing returns them too; a token without any has none.
+	tokens.EXPECT().ListPage(mock.Anything, domain.Owner(), 0, "").
+		Return(ports.TokenPage{Tokens: []domain.Token{{ID: "a", BranchPrefixes: []string{"x/"}}, {ID: "b"}}}, nil).Once()
+	list, err := (&tokenService{tokens}).ListTokens(ownerCtx(), connect.NewRequest(&pb.ListTokensRequest{}))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"x/"}, list.Msg.GetTokens()[0].GetBranchPrefixes())
+	assert.Empty(t, list.Msg.GetTokens()[1].GetBranchPrefixes())
+}
+
 func TestTokenServiceRevokeToken(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

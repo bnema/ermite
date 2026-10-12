@@ -42,6 +42,80 @@ func TestTokenCreateMapsFlags(t *testing.T) {
 	assert.NotContains(t, res.stderr, "SECRETVALUE")
 }
 
+func TestTokenCreateBranchPrefixes(t *testing.T) {
+	echo := func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
+		return &ermite.CreateTokenResponse{
+			Token: &ermite.Token{
+				Id: "tok1", Label: r.GetLabel(), Scopes: r.GetScopes(), BranchPrefixes: r.GetBranchPrefixes(),
+				CreatedAt: ts("2026-10-10T12:00:00Z"),
+			},
+			Secret: "ermite_S",
+		}, nil
+	}
+
+	t.Run("maps the repeatable flag, trims and drops duplicates", func(t *testing.T) {
+		f := &fakeAPI{createToken: echo}
+		res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "claude", "--preset", "agent", "--repo", "alpha",
+			"--branch-prefix", "agent/claude/", "--branch-prefix", " bot/ ", "--branch-prefix", "agent/claude/").ok(t)
+		_, reqs := f.snapshot()
+		assert.Equal(t, []string{"agent/claude/", "bot/"}, reqs[0].(*ermite.CreateTokenRequest).GetBranchPrefixes())
+		assert.Equal(t, "ermite_S\n", res.stdout)
+		assert.Contains(t, res.stderr, "branches")
+		assert.Contains(t, res.stderr, "agent/claude/, bot/")
+	})
+
+	t.Run("without the flag the token shows every branch", func(t *testing.T) {
+		f := &fakeAPI{createToken: echo}
+		res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "ci").ok(t)
+		_, reqs := f.snapshot()
+		assert.Empty(t, reqs[0].(*ermite.CreateTokenRequest).GetBranchPrefixes())
+		assert.Regexp(t, `branches\s+all`, res.stderr)
+	})
+
+	t.Run("json", func(t *testing.T) {
+		f := &fakeAPI{createToken: echo}
+		res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "l", "--scope", "repo:write", "--branch-prefix", "a/", "--json").ok(t)
+		assert.JSONEq(t, `{"id":"tok1","label":"l","scopes":["repo:write"],"repos":[],"branch_prefixes":["a/"],"expires_at":null,"created_at":"2026-10-10T12:00:00Z","last_used_at":null,"secret":"ermite_S"}`, res.stdout)
+	})
+
+	t.Run("a server that ignores the field does not hand out an unlimited token", func(t *testing.T) {
+		f := &fakeAPI{createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
+			return &ermite.CreateTokenResponse{
+				Token:  &ermite.Token{Id: "tok9", Label: r.GetLabel(), Scopes: r.GetScopes(), CreatedAt: ts("2026-10-10T12:00:00Z")},
+				Secret: "ermite_UNLIMITED",
+			}, nil
+		}}
+		res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "agent", "--branch-prefix", "agent/x/")
+		require.Error(t, res.err)
+		assert.Contains(t, res.err.Error(), "without the requested branch prefixes")
+		assert.Contains(t, res.err.Error(), "ermite token revoke tok9")
+		assert.NotContains(t, res.stdout, "UNLIMITED")
+		assert.NotContains(t, res.stderr, "UNLIMITED")
+		assert.NotContains(t, res.err.Error(), "UNLIMITED")
+	})
+}
+
+func TestTokenListBranchPrefixes(t *testing.T) {
+	f := &fakeAPI{listTokens: func(*ermite.ListTokensRequest) (*ermite.ListTokensResponse, error) {
+		return &ermite.ListTokensResponse{Tokens: []*ermite.Token{
+			{Id: "t2", Label: "claude", Scopes: []ermite.Scope{ermite.Scope_SCOPE_REPO_WRITE}, BranchPrefixes: []string{"agent/claude/", "bot/"}, CreatedAt: ts("2026-10-01T00:00:00Z")},
+			{Id: "t1", Label: "ci", Scopes: []ermite.Scope{ermite.Scope_SCOPE_REPO_READ}, CreatedAt: ts("2026-09-01T00:00:00Z")},
+		}}, nil
+	}}
+	url := f.serve(t)
+	res := runCLI(t, envFor(url), "", "token", "list").ok(t)
+	assert.Equal(t, ""+
+		"ID  LABEL   SCOPES      REPOS  BRANCHES            EXPIRES  LAST USED\n"+
+		"t2  claude  repo:write  all    agent/claude/,bot/  never    never\n"+
+		"t1  ci      repo:read   all    all                 never    never\n", res.stdout)
+
+	res = runCLI(t, envFor(url), "", "token", "list", "--json").ok(t)
+	assert.JSONEq(t, `[
+		{"id":"t2","label":"claude","scopes":["repo:write"],"repos":[],"branch_prefixes":["agent/claude/","bot/"],"expires_at":null,"created_at":"2026-10-01T00:00:00Z","last_used_at":null},
+		{"id":"t1","label":"ci","scopes":["repo:read"],"repos":[],"branch_prefixes":[],"expires_at":null,"created_at":"2026-09-01T00:00:00Z","last_used_at":null}
+	]`, res.stdout)
+}
+
 func TestTokenCreatePresetExpansionOnTheWire(t *testing.T) {
 	for preset, want := range map[string][]ermite.Scope{
 		"agent": {ermite.Scope_SCOPE_REPO_WRITE, ermite.Scope_SCOPE_MR_WRITE},
@@ -70,7 +144,7 @@ func TestTokenCreateJSON(t *testing.T) {
 		}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "l", "--scope", "repo:read", "--json").ok(t)
-	assert.JSONEq(t, `{"id":"tok1","label":"l","scopes":["repo:read"],"repos":[],"expires_at":null,"created_at":"2026-10-10T12:00:00Z","last_used_at":null,"secret":"ermite_S"}`, res.stdout)
+	assert.JSONEq(t, `{"id":"tok1","label":"l","scopes":["repo:read"],"repos":[],"branch_prefixes":[],"expires_at":null,"created_at":"2026-10-10T12:00:00Z","last_used_at":null,"secret":"ermite_S"}`, res.stdout)
 	assert.Empty(t, res.stderr)
 }
 
@@ -106,14 +180,14 @@ func TestTokenList(t *testing.T) {
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "token", "list").ok(t)
 	assert.Equal(t, ""+
-		"ID  LABEL   SCOPES                REPOS       EXPIRES           LAST USED\n"+
-		"t2  laptop  repo:read,repo:write  alpha,beta  2027-01-01 00:00  2026-10-09 08:30\n"+
-		"t1  ci      repo:read             all         never             never\n", res.stdout)
+		"ID  LABEL   SCOPES                REPOS       BRANCHES  EXPIRES           LAST USED\n"+
+		"t2  laptop  repo:read,repo:write  alpha,beta  all       2027-01-01 00:00  2026-10-09 08:30\n"+
+		"t1  ci      repo:read             all         all       never             never\n", res.stdout)
 
 	res = runCLI(t, envFor(url), "", "token", "list", "--json").ok(t)
 	assert.JSONEq(t, `[
-		{"id":"t2","label":"laptop","scopes":["repo:read","repo:write"],"repos":["alpha","beta"],"expires_at":"2027-01-01T00:00:00Z","created_at":"2026-10-01T00:00:00Z","last_used_at":"2026-10-09T08:30:00Z"},
-		{"id":"t1","label":"ci","scopes":["repo:read"],"repos":[],"expires_at":null,"created_at":"2026-09-01T00:00:00Z","last_used_at":null}
+		{"id":"t2","label":"laptop","scopes":["repo:read","repo:write"],"repos":["alpha","beta"],"branch_prefixes":[],"expires_at":"2027-01-01T00:00:00Z","created_at":"2026-10-01T00:00:00Z","last_used_at":"2026-10-09T08:30:00Z"},
+		{"id":"t1","label":"ci","scopes":["repo:read"],"repos":[],"branch_prefixes":[],"expires_at":null,"created_at":"2026-09-01T00:00:00Z","last_used_at":null}
 	]`, res.stdout)
 	assert.NotContains(t, res.stdout, "secret")
 }
