@@ -360,7 +360,8 @@ func assertNoMergeRequestKeys(t *testing.T, mrs *kvstore.MergeRequests, n domain
 // TestDeleteRacingWithWrites: writes racing with Delete either land before it
 // and are deleted, or are refused (not found after it, or a conflict when the
 // retries run out under this contention); nothing is left for a repository
-// created again under the name.
+// created again under the name. Delete itself may report a conflict under the
+// same contention and is then called again.
 func TestDeleteRacingWithWrites(t *testing.T) {
 	ctx := context.Background()
 	for round := range 20 {
@@ -394,7 +395,15 @@ func TestDeleteRacingWithWrites(t *testing.T) {
 				}
 			}()
 		}
-		delErr := s.Delete(ctx, n)
+		// Delete gives up with a conflict when the writers keep rewriting the
+		// repository key for deleteTries listings in a row; it is documented as
+		// safe to call again, as a caller does.
+		var delErr error
+		for range 20 {
+			if delErr = s.Delete(ctx, n); !errors.Is(delErr, domain.ErrConflict) {
+				break
+			}
+		}
 		wg.Wait()
 		require.NoError(t, delErr)
 
