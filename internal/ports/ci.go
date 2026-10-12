@@ -1,0 +1,354 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package ports
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"bnema.dev/ermite/internal/domain"
+)
+
+// CIRunDraft is what CreateRun stores: a run with its source, its jobs and
+// their checks, built once the store has chosen the ids.
+type CIRunDraft struct {
+	Run    domain.CIRun
+	Source domain.CIRunSource
+	Jobs   []domain.CIJob
+	Checks []domain.CICheck
+}
+
+// CIWrite is a set of records written in one atomic batch. A record with
+// Version 0 must not exist yet; any other must be unchanged since it was read.
+// Apply returns domain.ErrConflict otherwise and domain.ErrNotFound when the
+// repository no longer exists.
+type CIWrite struct {
+	Runs   []domain.CIRun
+	Jobs   []domain.CIJob
+	Checks []domain.CICheck
+}
+
+// CIStore keeps CI runs, jobs and checks. The store derives its own indexes
+// (the queue of ready jobs, the active jobs, the open runs, the job tokens)
+// from the records it writes.
+type CIStore interface {
+	// CreateRun takes the next run id and the next number of the workflow in
+	// the repository (both never reused), calls build with them and stores
+	// the draft it returns, in one batch that fails with domain.ErrNotFound
+	// once the repository is deleted. The records come back with their
+	// versions.
+	CreateRun(ctx context.Context, repo domain.RepoName, workflowPath string, build func(id, number int64) CIRunDraft) (CIRunDraft, error)
+	// Apply writes the records in one batch and returns the version they all
+	// have afterwards.
+	Apply(ctx context.Context, w CIWrite) (version uint64, err error)
+	// GetRun returns the run, or domain.ErrNotFound.
+	GetRun(ctx context.Context, repo domain.RepoName, id int64) (domain.CIRun, error)
+	// GetRunSource returns what the run was planned from, or
+	// domain.ErrNotFound. It is how a run is found from its id alone.
+	GetRunSource(ctx context.Context, runID int64) (domain.CIRunSource, error)
+	// ListRuns returns the runs of the repository with an id below before (0
+	// for no bound), newest first, at most limit.
+	ListRuns(ctx context.Context, repo domain.RepoName, before int64, limit int) ([]domain.CIRun, error)
+	// RunIDs returns the ids of the runs of the repository.
+	RunIDs(ctx context.Context, repo domain.RepoName) ([]int64, error)
+	// ListOpenRuns returns the runs that have not completed.
+	ListOpenRuns(ctx context.Context) ([]domain.CIRun, error)
+	// GetJob returns a job of a run at an attempt of the run, or
+	// domain.ErrNotFound.
+	GetJob(ctx context.Context, runID int64, runAttempt int32, jobID string) (domain.CIJob, error)
+	// ListJobs returns the jobs of a run at an attempt, ordered by index then
+	// combination.
+	ListJobs(ctx context.Context, runID int64, runAttempt int32) ([]domain.CIJob, error)
+	// FindJobByToken returns the job whose current token has that hash and
+	// whose token is still valid at now, or domain.ErrNotFound.
+	FindJobByToken(ctx context.Context, hash domain.TokenHash, now time.Time) (domain.CIJob, error)
+	// ListReadyJobs returns the jobs that wait for a runner, oldest first, at
+	// most limit.
+	ListReadyJobs(ctx context.Context, limit int) ([]domain.CIJob, error)
+	// ListActiveJobs returns the jobs given to a runner and not over.
+	ListActiveJobs(ctx context.Context) ([]domain.CIJob, error)
+	// ListChecks returns the checks of a commit, at most limit; more is true
+	// when there are more.
+	ListChecks(ctx context.Context, repo domain.RepoName, sha string, limit int) (checks []domain.CICheck, more bool, err error)
+	// Sweep removes the runs completed before the time, with their jobs,
+	// checks and sources (not their numbers), and returns their ids so that
+	// the logs can go too.
+	Sweep(ctx context.Context, before time.Time) ([]int64, error)
+	// CreateRunner stores the runner and the index of its token. A name in use
+	// is domain.ErrAlreadyExists, or with replace the old runner is removed in
+	// the same batch and returned.
+	CreateRunner(ctx context.Context, r domain.CIRunner, replace bool) (removed []domain.CIRunner, err error)
+	// GetRunner returns the runner, or domain.ErrNotFound.
+	GetRunner(ctx context.Context, id string) (domain.CIRunner, error)
+	// FindRunnerByToken returns the runner whose token has that hash, or
+	// domain.ErrNotFound.
+	FindRunnerByToken(ctx context.Context, hash domain.TokenHash) (domain.CIRunner, error)
+	// ListRunners returns every runner ordered by name.
+	ListRunners(ctx context.Context) ([]domain.CIRunner, error)
+	// RemoveRunner removes the runner and its token, or returns
+	// domain.ErrNotFound.
+	RemoveRunner(ctx context.Context, id string) (domain.CIRunner, error)
+}
+
+// CIChecksReader is the read side of the checks, for the merge rule.
+type CIChecksReader interface {
+	ListChecks(ctx context.Context, repo domain.RepoName, sha string, limit int) (checks []domain.CICheck, more bool, err error)
+}
+
+// CILogRef names the log of one execution of a job.
+type CILogRef struct {
+	RunID   int64
+	JobID   string
+	Attempt int32
+}
+
+// ErrCILogLimit is returned by CILogStore.Append when the lines do not fit in
+// the log limit; nothing was appended.
+var ErrCILogLimit = errors.New("log limit reached")
+
+// ErrCILogGap wraps domain.ErrOutOfRange when an offset is above the count.
+type ErrCILogGap struct{ Count int64 }
+
+// Error implements error.
+func (e *ErrCILogGap) Error() string {
+	return "out of range: the log holds lines up to the offset of " + itoa(e.Count)
+}
+
+// Is makes errors.Is(err, domain.ErrOutOfRange) true.
+func (e *ErrCILogGap) Is(target error) bool { return target == domain.ErrOutOfRange }
+
+func itoa(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+	var b [20]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(b[i:])
+}
+
+// CILogStore keeps the logs of the jobs: append-only files, one line per log
+// line, never in the metadata store. Lines are numbered from 0.
+type CILogStore interface {
+	// Append appends the lines at offset (the number of the first line), with
+	// the idempotence of AppendLog: lines already stored are skipped, a gap is
+	// an *ErrCILogGap. It returns the number of lines after the call and how
+	// many of the request were new. A log that would exceed limit bytes gets
+	// nothing and ErrCILogLimit.
+	Append(ctx context.Context, ref CILogRef, offset int64, lines []domain.CILogLine, limit int64) (next int64, added int, err error)
+	// AppendForced appends lines whatever the limit (the last line of a log
+	// that reached it).
+	AppendForced(ctx context.Context, ref CILogRef, lines []domain.CILogLine) (next int64, err error)
+	// Count returns the number of lines held, 0 for a log that does not exist.
+	Count(ctx context.Context, ref CILogRef) (int64, error)
+	// Read returns lines from the one numbered from, at most maxLines lines and
+	// about maxBytes of text. It returns domain.ErrNotFound when the log does
+	// not exist and domain.ErrOutOfRange when from is above the count.
+	Read(ctx context.Context, ref CILogRef, from int64, maxLines, maxBytes int) ([]domain.CILogLine, error)
+	// Changed returns a channel that is closed at the next append to the log.
+	Changed(ref CILogRef) <-chan struct{}
+	// Reset empties the log.
+	Reset(ctx context.Context, ref CILogRef) error
+	// RemoveRuns deletes the logs of the runs.
+	RemoveRuns(ctx context.Context, runIDs []int64) error
+	// RunIDs lists the runs that have a log directory, for the orphan sweep.
+	RunIDs(ctx context.Context) ([]int64, error)
+}
+
+// WorkflowTrigger starts the workflows that match pushed refs. OnPush only
+// queues the work and returns: planning happens in the background and its
+// errors never reach the push.
+type WorkflowTrigger interface {
+	OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal)
+}
+
+// CIGit is what planning needs from Git beyond RepoReader and MergeGit.
+type CIGit interface {
+	// ChangedPaths returns the paths changed from base to head (a zero base
+	// means the empty tree), in the order of the diff and without renames
+	// detection, at most max; truncated is true when there were more.
+	ChangedPaths(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID, max int) (paths []string, truncated bool, err error)
+}
+
+// --- inbound ---
+
+// RegisterRunnerParams describe a runner to register.
+type RegisterRunnerParams struct {
+	Name      string
+	Labels    []string
+	Version   string
+	Isolation domain.CIIsolation
+	Arch, OS  string
+	Replace   bool
+}
+
+// RegisteredRunner is a new runner with its secret, shown once.
+type RegisteredRunner struct {
+	Runner domain.CIRunner
+	Token  string
+}
+
+// RunnerJob is a job given to a runner.
+type RunnerJob struct {
+	Job          domain.CIJob
+	Token        string
+	Repo         domain.RepoName
+	Sha, Ref     string
+	WorkflowPath string
+	WorkflowYAML string
+}
+
+// FetchJobParams selects the job a runner asks for.
+type FetchJobParams struct {
+	Labels []string
+	PollID string
+}
+
+// FetchJobResult is the answer of a poll.
+type FetchJobResult struct {
+	Job *RunnerJob
+	// RetryAfter is how long the runner waits before polling again.
+	RetryAfter time.Duration
+}
+
+// StepUpdate is the state of one step as a runner reports it.
+type StepUpdate struct {
+	Number      int32
+	Name        string
+	State       domain.CIStepState
+	Conclusion  domain.CIConclusion
+	StartedAt   time.Time
+	CompletedAt time.Time
+}
+
+// CompleteJobParams end a job.
+type CompleteJobParams struct {
+	JobID          string
+	Conclusion     domain.CIConclusion
+	Outputs        map[string]string
+	RunnerShutdown bool
+	Steps          []StepUpdate
+}
+
+// CompleteJobResult is the stored result of a job.
+type CompleteJobResult struct {
+	Conclusion domain.CIConclusion
+	Error      string
+	Applied    bool
+}
+
+// JobSignal is one message of WatchJob.
+type JobSignal struct {
+	Keepalive bool
+	// Cancel is set for a cancel request.
+	Cancel *JobCancel
+	// Ended is set when the job has ended.
+	Ended *domain.JobEndedError
+}
+
+// JobCancel is a cancel request for a running job.
+type JobCancel struct {
+	Reason      domain.CICancelReason
+	Message     string
+	RequestedAt time.Time
+}
+
+// RunnerService is what runners call. The secret is the bearer secret of the
+// call: the runner token for FetchJob, the job token for the other calls.
+// A bad secret is domain.ErrUnauthenticated; a job token of another job than
+// the one named is domain.ErrForbidden. *usecase.CIRunner implements it.
+type RunnerService interface {
+	Register(ctx context.Context, p domain.Principal, params RegisterRunnerParams) (RegisteredRunner, error)
+	FetchJob(ctx context.Context, secret string, params FetchJobParams) (FetchJobResult, error)
+	UpdateJob(ctx context.Context, secret, jobID string, steps []StepUpdate) error
+	AppendLog(ctx context.Context, secret, jobID string, step int32, offset int64, lines []domain.CILogLine) (next int64, err error)
+	Heartbeat(ctx context.Context, secret, jobID string) error
+	WatchJob(ctx context.Context, secret, jobID string, send func(JobSignal) error) error
+	CompleteJob(ctx context.Context, secret string, params CompleteJobParams) (CompleteJobResult, error)
+}
+
+// RunStep is a step with its place in the log.
+type RunStep struct {
+	domain.CIStep
+	LogEnd int64
+}
+
+// JobView is a job as owners see it.
+type JobView struct {
+	domain.CIJob
+	// Lines is the number of lines of its log now.
+	Lines int64
+	// RunnerGone is set when the runner of the job was removed since.
+	RunnerGone bool
+}
+
+// Steps returns the steps with their log ranges.
+func (v JobView) StepRanges() []domain.StepRange { return domain.StepRanges(v.Steps, v.Lines) }
+
+// ListRunsParams select a page of runs.
+type ListRunsParams struct {
+	PageSize  int
+	PageToken string
+}
+
+// RunPage is a page of runs, newest first.
+type RunPage struct {
+	Runs          []domain.CIRun
+	NextPageToken string
+}
+
+// RunDetail is a run with its jobs.
+type RunDetail struct {
+	Run           domain.CIRun
+	Jobs          []JobView
+	LatestAttempt int32
+}
+
+// LogBatch is a message of a log stream: consecutive lines from Offset.
+type LogBatch struct {
+	Offset int64
+	Lines  []JobLogLine
+}
+
+// JobLogLine is a log line with its step.
+type JobLogLine struct {
+	Step int32
+	domain.CILogLine
+}
+
+// ChecksResult are the checks of a commit.
+type ChecksResult struct {
+	Checks    []domain.CICheck
+	Truncated bool
+}
+
+// RunnerPage is a page of runners.
+type RunnerPage struct {
+	Runners       []RunnerView
+	NextPageToken string
+}
+
+// RunnerView is a runner with what is known of it now.
+type RunnerView struct {
+	domain.CIRunner
+	LastSeen time.Time
+	Busy     bool
+}
+
+// RunService is the owner side of CI. *usecase.CIRuns implements it.
+type RunService interface {
+	ListRuns(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListRunsParams) (RunPage, error)
+	GetRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, attempt int32) (RunDetail, error)
+	GetJob(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32) (JobView, error)
+	GetJobLog(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, offset int64, follow bool, send func(LogBatch) error) error
+	CancelRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64) (domain.CIRun, error)
+	RerunRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, failedOnly bool) (domain.CIRun, error)
+	ListChecks(ctx context.Context, p domain.Principal, repo domain.RepoName, sha string) (ChecksResult, error)
+	ListRunners(ctx context.Context, p domain.Principal, size int, token string) (RunnerPage, error)
+	RemoveRunner(ctx context.Context, p domain.Principal, id string) error
+}

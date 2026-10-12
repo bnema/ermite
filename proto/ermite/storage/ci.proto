@@ -1,0 +1,194 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of ermite: CI runs, jobs, checks and
+// runners (ADR 0025). Logs are not stored here: they are files under
+// $ERMITE_DATA_DIR/ci/logs.
+
+syntax = "proto3";
+
+package ermite.storage;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// CIStatus is where a run, a job or a check is in its life.
+enum CIStatus {
+  CI_STATUS_UNSPECIFIED = 0;
+  CI_STATUS_QUEUED = 1;
+  CI_STATUS_IN_PROGRESS = 2;
+  CI_STATUS_COMPLETED = 3;
+}
+
+// CIConclusion is how a run, a job, a step or a check ended.
+enum CIConclusion {
+  CI_CONCLUSION_UNSPECIFIED = 0;
+  CI_CONCLUSION_SUCCESS = 1;
+  CI_CONCLUSION_FAILURE = 2;
+  CI_CONCLUSION_CANCELLED = 3;
+  CI_CONCLUSION_SKIPPED = 4;
+  CI_CONCLUSION_TIMED_OUT = 5;
+  CI_CONCLUSION_NEUTRAL = 6;
+  CI_CONCLUSION_ACTION_REQUIRED = 7;
+}
+
+// CIStepState is where a step is in its life.
+enum CIStepState {
+  CI_STEP_STATE_UNSPECIFIED = 0;
+  CI_STEP_STATE_PENDING = 1;
+  CI_STEP_STATE_IN_PROGRESS = 2;
+  CI_STEP_STATE_COMPLETED = 3;
+}
+
+// CIJobPhase is where a job is for the server.
+enum CIJobPhase {
+  CI_JOB_PHASE_UNSPECIFIED = 0;
+  // Waits for the jobs it needs, or for a free max-parallel slot.
+  CI_JOB_PHASE_WAITING = 1;
+  // Planned and waiting for a runner.
+  CI_JOB_PHASE_READY = 2;
+  // Given to a runner that has not acknowledged it yet.
+  CI_JOB_PHASE_ASSIGNED = 3;
+  // Acknowledged by its runner.
+  CI_JOB_PHASE_RUNNING = 4;
+  // Over.
+  CI_JOB_PHASE_ENDED = 5;
+}
+
+// CIIsolation is how a runner isolates jobs.
+enum CIIsolation {
+  CI_ISOLATION_UNSPECIFIED = 0;
+  CI_ISOLATION_VM = 1;
+  CI_ISOLATION_CONTAINER_SYSBOX = 2;
+  CI_ISOLATION_CONTAINER_PRIVILEGED = 3;
+}
+
+// CIRun is stored under "run/<repo>/<id:020d>".
+message CIRun {
+  string repo = 1;
+  int64 id = 2;
+  int64 number = 3;
+  int32 attempt = 4;
+  string workflow_path = 5;
+  string workflow_name = 6;
+  string title = 7;
+  string event = 8;
+  string ref = 9;
+  string sha = 10;
+  string actor = 11;
+  CIStatus status = 12;
+  CIConclusion conclusion = 13;
+  string error = 14;
+  google.protobuf.Timestamp created_at = 15;
+  google.protobuf.Timestamp started_at = 16;
+  google.protobuf.Timestamp completed_at = 17;
+  bool cancel_requested = 20;
+  google.protobuf.Timestamp cancel_requested_at = 21;
+}
+
+// CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned
+// from, kept apart so that listing runs does not decode it.
+message CIRunSource {
+  int64 run_id = 4;
+  // The workflow file at sha, as is.
+  string workflow_yaml = 1;
+  // The "github" context of the run as JSON, without "job" and "run_attempt".
+  string github_json = 2;
+  // Repository of the run: the key of the run record is run/<repo>/<id>, and
+  // the runner side knows a run by its id only.
+  string repo = 3;
+}
+
+// CIStep is a step of a job.
+message CIStep {
+  int32 number = 1;
+  string name = 2;
+  CIStepState state = 3;
+  CIConclusion conclusion = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp completed_at = 6;
+  // Number of the first log line of the step; meaningful with has_lines. The
+  // end of a step is the start of the next step that has lines, or the line
+  // count of the job: it is never stored.
+  int64 log_start = 7;
+  bool has_lines = 9;
+}
+
+// CIJob is stored under "job/<run_id:020d>/<run_attempt:010d>/<job id>".
+message CIJob {
+  string id = 1;
+  int64 run_id = 2;
+  // Attempt in which the job executed (the one of its log).
+  int32 attempt = 3;
+  string repo = 4;
+  string key = 5;
+  string name = 6;
+  CIJobPhase phase = 7;
+  CIConclusion conclusion = 8;
+  string error = 9;
+  repeated string labels = 10;
+  repeated string needs = 11;
+  string runner_id = 12;
+  string runner_name = 13;
+  CIIsolation isolation = 14;
+  repeated CIStep steps = 15;
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp started_at = 17;
+  google.protobuf.Timestamp completed_at = 18;
+  // Position of the job in the workflow file, and of the instance in its
+  // matrix. A combo of -1 is a job whose matrix is not expanded yet.
+  int32 index = 19;
+  int32 combo = 20;
+  string matrix_json = 21;
+  // Number of instances of the job's matrix, for the strategy context.
+  int32 combo_total = 22;
+  int32 timeout_minutes = 23;
+  bool fail_fast = 24;
+  int32 max_parallel = 25;
+  map<string, string> outputs = 26;
+  bytes token_hash = 27;
+  google.protobuf.Timestamp ready_at = 28;
+  google.protobuf.Timestamp assigned_at = 29;
+  google.protobuf.Timestamp acked_at = 30;
+  int32 assign_cancels = 31;
+  google.protobuf.Timestamp token_valid_until = 32;
+  int32 cancel_reason = 33;
+  string cancel_message = 34;
+  google.protobuf.Timestamp cancel_requested_at = 35;
+  // Set when the job is planned: runs-on, name and contexts are evaluated.
+  bool planned = 37;
+  // Attempt of the run this record belongs to; it is the key. A job kept by a
+  // re-run of the failed jobs is copied with the run attempt of the re-run and
+  // keeps its own attempt.
+  int32 run_attempt = 38;
+}
+
+// CICheck is stored under "check/<repo>/<sha>/<job id>".
+message CICheck {
+  string id = 1;
+  string repo = 2;
+  string sha = 3;
+  string name = 4;
+  CIStatus status = 5;
+  CIConclusion conclusion = 6;
+  int64 run_id = 7;
+  string job_id = 8;
+  int32 attempt = 9;
+  string workflow_name = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp started_at = 12;
+  google.protobuf.Timestamp completed_at = 13;
+}
+
+// CIRunner is stored under "runner/<id>".
+message CIRunner {
+  string id = 1;
+  string name = 2;
+  repeated string labels = 3;
+  CIIsolation isolation = 4;
+  string version = 5;
+  string arch = 6;
+  string os = 7;
+  google.protobuf.Timestamp registered_at = 8;
+  bytes token_hash = 9;
+}

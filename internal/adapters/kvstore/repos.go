@@ -99,7 +99,8 @@ const deleteChunk = 1000
 const deleteTries = 32
 
 // Delete removes the repository and everything keyed to it: its merge
-// requests, their comments and read positions, and its number sequence. The
+// requests, their comments and read positions, and its number sequence, and
+// its CI runs, jobs, checks and run numbers. The
 // Git data is moved to the trash by the caller; the merge requests are not
 // kept anywhere, like the repository metadata, so a repository created again
 // under the same name starts clean, with its numbers starting at 1. A missing
@@ -119,7 +120,7 @@ func (s *Store) Delete(ctx context.Context, name domain.RepoName) error {
 	for range deleteTries {
 		snap := s.db.Snapshot(ctx)
 		repoItem, repoOK := snap.Get(ctx, repoKey(name))
-		keys := mergeRequestKeys(ctx, snap, name)
+		keys := append(mergeRequestKeys(ctx, snap, name), ciKeys(ctx, snap, name)...)
 		for len(keys) > deleteChunk {
 			var b kv.Batch
 			for _, k := range keys[:deleteChunk] {
