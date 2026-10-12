@@ -111,7 +111,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{
 		cfg: cfg, instance: u.Host, assets: assets, md: newMarkdown(),
-		pathCache: newPathCache(pathCacheBytes, pathEntryMax),
+		pathCache: newPathCache(pathCacheBytes, pathBuilds),
 		origin:    originOf(u),
 	}
 	s.mux = s.routes()
