@@ -11,19 +11,18 @@ templ Commits(l Layout, p CommitsPage) {
 			<input
 				id="commit-filter"
 				type="search"
-				data-filter
+				data-filter=".days tr"
+				data-groups=".days section"
 				placeholder="Filter by subject, sha or author…"
 				autocomplete="off"
-				hx-on:input="let t = this.value.toLowerCase(); q('.days tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t));
-      q('.days section').arr().forEach(s => s.hidden = !s.querySelector('tr:not([hidden])'));
-      let first = q('.days tr:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '.days tr')"
+				hx-on:input="ermite.filter(this)"
 			/>
 		</div>
 		if p.Path != "" {
 			<p class="lede dim">history of <code>{ p.Path }</code> at { p.Ref }</p>
 		}
 		if p.Live {
-			<div id="commits-head"></div>
+			@LiveSlot("commits-head")
 		}
 		<div class="days">
 			for _, g := range p.Days {

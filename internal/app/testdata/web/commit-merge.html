@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>SHA7 merge the side branch · diffs · example.test</title>
+<link rel="icon" type="image/svg+xml" href="/-/static/img/icon.HASH.svg">
+<link rel="preload" href="/-/static/fonts/atkinson-next.HASH.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/-/static/css/ermite.HASH.css">
+<meta name="htmx-config" content='{"history":false,"includeIndicatorCSS":false,"extensions":"sse, hx-live"}'>
+<script src="/-/static/js/htmx.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/hx-live.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/hx-sse.min.HASH.js" defer>
+</script>
+<script src="/-/static/js/ermite.HASH.js" defer>
+</script>
+<script src="/-/static/js/files.HASH.js" defer>
+</script>
+</head>
+<body data-ref="" data-sha="SHA40" data-sel="" data-nav="" data-paths="/diffs/paths/SHA40" data-blob="/diffs/blob/SHA40">
+<a class="skip" href="#main">skip to content</a>
+<header class="hdr">
+<div class="hdr-top">
+<a class="brand" href="/" data-g="h" title="home (g h)">
+<span class="brand-mark" aria-hidden="true">
+</span>
+<span class="brand-name">example.test</span>
+</a>
+<nav class="crumbs" aria-label="Path">
+<ol>
+<li>
+<a href="/diffs">diffs</a>
+</li>
+<li>
+<a href="/diffs/commits/main">commit</a>
+</li>
+<li>
+<span aria-current="page">SHA7</span>
+</li>
+</ol>
+</nav>
+<div class="hdr-acts">
+<a class="btn ref" href="/diffs/refs" data-fire="refs" aria-keyshortcuts="b" title="switch branch or tag (b)">
+<span class="ico i-branch" aria-hidden="true">
+</span>
+<span class="ref-name">detached</span>
+<span class="sha">SHA7</span>
+</a>
+<button type="button" class="btn search" data-js aria-haspopup="dialog" aria-controls="panel-cmd" aria-keyshortcuts="Control+K :" title="go to a section, ref, file or repo (ctrl k or :)" data-fire="cmd">
+<span class="ico i-search" aria-hidden="true">
+</span>
+<span class="search-label">Go to…</span>
+<kbd aria-hidden="true">ctrl k</kbd>
+</button>
+<button type="button" class="btn icon" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)">?</button>
+</div>
+</div>
+<nav class="tabs" aria-label="Sections">
+<ul>
+<li>
+<a href="/diffs" data-key="s" aria-keyshortcuts="s">Summary<kbd aria-hidden="true">s</kbd>
+</a>
+</li>
+<li>
+<a href="/diffs/tree/main" data-key="t" aria-keyshortcuts="t">Files<kbd aria-hidden="true">t</kbd>
+</a>
+</li>
+<li>
+<a href="/diffs/commits/main" data-key="c" aria-keyshortcuts="c" aria-current="page">Commits<kbd aria-hidden="true">c</kbd>
+</a>
+</li>
+<li>
+<a href="/diffs/refs" data-key="r" aria-keyshortcuts="r">Branches &amp; tags<kbd aria-hidden="true">r</kbd>
+</a>
+</li>
+<li>
+<a href="/diffs/merge-requests" data-key="m" aria-keyshortcuts="m">Merge requests<kbd aria-hidden="true">m</kbd>
+</a>
+</li>
+</ul>
+</nav>
+</header>
+<div class="work has-rail">
+<main id="main" tabindex="-1">
+<header class="show">
+<h1>merge the side branch</h1>
+<dl class="kv show-kv">
+<dt>commit</dt>
+<dd>SHA40</dd>
+<dt>author</dt>
+<dd>T  · <time datetime="STAMP" title="STAMP">AGO</time> · STAMP</dd>
+<dt>merge of</dt>
+<dd>
+<a href="/diffs/commit/SHA40">SHA7</a>  +  <a href="/diffs/commit/SHA40">SHA7</a>  · diff against the first parent</dd>
+</dl>
+</header>
+<div class="diff-tools" role="toolbar" aria-label="Diff view">
+<span class="dim">1 file · <span class="plus">+1</span>
+<span class="minus">-0</span>
+</span>
+<span class="grow">
+</span>
+<a href="/diffs/commit/SHA40?view=unified" class="btn vbtn" data-view="unified" aria-keyshortcuts="u" aria-current="true" data-fire="unified" :aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false">Unified<kbd aria-hidden="true">u</kbd>
+</a>
+<a href="/diffs/commit/SHA40?view=split" class="btn vbtn" data-view="split" aria-keyshortcuts="d" data-fire="split" :aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false">Split<kbd aria-hidden="true">d</kbd>
+</a>
+<button type="button" aria-keyshortcuts="x" data-js data-fire="collapse" class="btn">
+<span hx-live="this.textContent = q('[data-file][open]').count || !q('[data-file]').count ? 'Collapse all' : 'Expand all'">Collapse all</span>
+<kbd aria-hidden="true">x</kbd>
+</button>
+</div>
+<div id="diffs" data-diff="unified" hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff">
+<details class="dfile" id="f1" data-file open>
+<summary>
+<span class="st">A</span>
+<span class="p">side.txt</span>
+<span class="plus">+1</span>
+<span class="minus">-0</span>
+</summary>
+<div class="dscroll">
+<table class="dt uni" aria-label="side.txt, unified">
+<tbody>
+<tr class="hunk">
+<td colspan="4">@@ -0,0 +1,1 @@</td>
+</tr>
+<tr class="add">
+<td class="ln">
+</td>
+<td class="ln">1</td>
+<td class="m">+</td>
+<td class="tx">from the side</td>
+</tr>
+</tbody>
+</table>
+<table class="dt spl" aria-label="side.txt, split">
+<colgroup>
+<col class="c-ln">
+<col class="c-m">
+<col>
+<col class="c-ln">
+<col class="c-m">
+<col>
+</colgroup>
+<tbody>
+<tr class="hunk">
+<td colspan="6">@@ -0,0 +1,1 @@</td>
+</tr>
+<tr>
+<td class="ln none">
+</td>
+<td class="m none">
+</td>
+<td class="tx none">
+</td>
+<td class="ln add">1</td>
+<td class="m add">+</td>
+<td class="tx add">from the side</td>
+</tr>
+</tbody>
+</table>
+</div>
+</details>
+</div>
+</main>
+<aside class="rail" aria-label="Context">
+<section aria-labelledby="r-files">
+<h2 id="r-files">Files <span class="count">1</span>
+</h2>
+<ol class="files" aria-label="Changed files">
+<li>
+<a href="#f1" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
+<span class="st" title="A">A</span>
+<span class="p" title="side.txt">side.txt</span>
+<span class="n">
+<span class="plus">+1</span>
+<span class="minus">-0</span>
+</span>
+<span class="b" aria-hidden="true">
+<span class="plus">++++++++++</span>
+<span class="minus">
+</span>
+</span>
+</a>
+</li>
+</ol>
+</section>
+</aside>
+</div>
+<footer class="foot">
+<span>ermite devel</span>
+<a href="http://example.test/ermite" rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
+<span class="foot-keys">
+<kbd>?</kbd> keyboard shortcuts</span>
+</footer>
+<div class="hint" role="status" aria-live="polite">
+<span class="hint-nav" :text="document.body.dataset.nav || ''">
+</span>
+<span class="hint-sel" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y permalink' : ''">
+</span>
+<span class="hint-flash" :text="document.body.dataset.flash || ''">
+</span>
+</div>
+<dialog id="panel-help" class="panel modal" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
+<div class="panel-head">
+<h2>Keyboard shortcuts</h2>
+<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
+<kbd>esc</kbd> close</button>
+</div>
+<dl class="keys">
+<div>
+<dt>
+<kbd>ctrl k</kbd>
+<kbd>:</kbd>
+</dt>
+<dd>go to a section, branch, tag, file or repository</dd>
+</div>
+<div>
+<dt>
+<kbd>?</kbd>
+</dt>
+<dd>this list</dd>
+</div>
+<div>
+<dt>
+<kbd>j</kbd>
+<kbd>k</kbd>
+</dt>
+<dd>move the row cursor down / up</dd>
+</div>
+<div>
+<dt>
+<kbd>enter</kbd>
+</dt>
+<dd>open the row under the cursor</dd>
+</div>
+<div>
+<dt>
+<kbd>g g</kbd>
+<kbd>G</kbd>
+</dt>
+<dd>first / last row</dd>
+</div>
+<div>
+<dt>
+<kbd>/</kbd>
+</dt>
+<dd>filter the list; on Files, find a file in the repository</dd>
+</div>
+<div>
+<dt>
+<kbd>b</kbd>
+</dt>
+<dd>switch branch or tag</dd>
+</div>
+<div>
+<dt>
+<kbd>s</kbd>
+<kbd>t</kbd>
+<kbd>c</kbd>
+<kbd>r</kbd>
+<kbd>m</kbd>
+</dt>
+<dd>tabs: summary, files, commits, branches &amp; tags, merge requests</dd>
+</div>
+<div>
+<dt>
+<kbd>g h</kbd>
+</dt>
+<dd>home</dd>
+</div>
+<div>
+<dt>
+<kbd>y</kbd>
+</dt>
+<dd>copy a permalink pinned to the commit</dd>
+</div>
+<div>
+<dt>
+<kbd>d</kbd>
+<kbd>u</kbd>
+<kbd>x</kbd>
+</dt>
+<dd>diff: split / unified / collapse or expand all</dd>
+</div>
+<div>
+<dt>
+<kbd>n</kbd>
+</dt>
+<dd>merge request: next note in the diff</dd>
+</div>
+<div>
+<dt>
+<kbd>esc</kbd>
+</dt>
+<dd>close a dialog, leave a field</dd>
+</div>
+</dl>
+</dialog>
+<dialog id="panel-refs" class="panel modal" aria-label="Switch ref" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
+<div class="panel-head">
+<label for="refs-filter" class="sr">filter branches and tags</label>
+<input id="refs-filter" type="search" placeholder="Switch branch or tag…" autocomplete="off" data-pick="#panel-refs li" hx-on:input="ermite.filter(this)">
+<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
+<kbd>esc</kbd>
+</button>
+</div>
+<div class="panel-cols" data-picklist>
+<section aria-label="Branches">
+<h2>Branches <span class="count">2</span>
+</h2>
+<ul>
+<li>
+<a href="/diffs/tree/main">
+<span class="mark" aria-hidden="true">&nbsp;</span>main</a>
+</li>
+<li>
+<a href="/diffs/tree/side">
+<span class="mark" aria-hidden="true">&nbsp;</span>side</a>
+</li>
+</ul>
+</section>
+<section aria-label="Tags">
+<h2>Tags <span class="count">1</span>
+</h2>
+<ul>
+<li>
+<a href="/diffs/tree/v1.0.0">
+<span class="mark" aria-hidden="true">&nbsp;</span>v1.0.0</a>
+</li>
+</ul>
+</section>
+</div>
+</dialog>
+<dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:close="ermiteFinder.paletteClose()" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
+<div class="panel-head">
+<label for="cmd-q" class="sr">go to</label>
+<input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="ermite.cmdFilter(this); ermiteFinder.palette(this)" hx-on:keydown="ermite.cmdKey(event)">
+<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
+<kbd>esc</kbd>
+</button>
+</div>
+<ul id="cmd-list" class="cmd-list" aria-label="Targets">
+<li data-k="go home" data-cursor>
+<a href="/" tabindex="-1">
+<span class="lbl">home</span>
+<span class="k">go</span>
+</a>
+</li>
+<li data-k="section summary">
+<a href="/diffs" tabindex="-1">
+<span class="lbl">summary</span>
+<span class="k">section</span>
+</a>
+</li>
+<li data-k="section files">
+<a href="/diffs/tree/main" tabindex="-1">
+<span class="lbl">files</span>
+<span class="k">section</span>
+</a>
+</li>
+<li data-k="section commits">
+<a href="/diffs/commits/main" tabindex="-1">
+<span class="lbl">commits</span>
+<span class="k">section</span>
+</a>
+</li>
+<li data-k="section branches &amp; tags">
+<a href="/diffs/refs" tabindex="-1">
+<span class="lbl">branches &amp; tags</span>
+<span class="k">section</span>
+</a>
+</li>
+<li data-k="section merge requests">
+<a href="/diffs/merge-requests" tabindex="-1">
+<span class="lbl">merge requests</span>
+<span class="k">section</span>
+</a>
+</li>
+<li data-k="branch main">
+<a href="/diffs/tree/main" tabindex="-1">
+<span class="lbl">main</span>
+<span class="k">branch</span>
+</a>
+</li>
+<li data-k="branch side">
+<a href="/diffs/tree/side" tabindex="-1">
+<span class="lbl">side</span>
+<span class="k">branch</span>
+</a>
+</li>
+<li data-k="tag v1.0.0">
+<a href="/diffs/tree/v1.0.0" tabindex="-1">
+<span class="lbl">v1.0.0</span>
+<span class="k">tag</span>
+</a>
+</li>
+</ul>
+<p class="panel-foot">
+<span>
+<kbd>↑</kbd>
+<kbd>↓</kbd> move</span>
+<span>
+<kbd>enter</kbd> open</span>
+<span>
+<kbd>esc</kbd> close</span>
+</p>
+</dialog>
+<div id="keys" hidden hx-on="k-j from:body -> ermite.move(1);
+         k-k from:body -> ermite.move(-1);
+         k-top from:body -> ermite.edge(false);
+         k-bottom from:body -> ermite.edge(true);
+         k-open from:body -> ermite.open();
+         k-esc from:body -> ermite.closeDialogs();
+         k-help from:body -> ermite.dialog('panel-help');
+         k-refs from:body -> ermite.dialog('panel-refs', 'refs-filter');
+         k-cmd from:body -> ermite.dialog('panel-cmd', 'cmd-q'); ermiteFinder.load();
+         k-filter from:body -> ermite.focusFilter();
+         k-gh from:body -> ermite.go('.brand');
+         k-s from:body -> ermite.tab('s');
+         k-t from:body -> ermite.tab('t');
+         k-c from:body -> ermite.tab('c');
+         k-r from:body -> ermite.tab('r');
+         k-m from:body -> ermite.tab('m');
+         k-next from:body -> ermite.nextNote();
+         k-split from:body -> ermite.layout('split');
+         k-unified from:body -> ermite.layout('unified');
+         k-collapse from:body -> ermite.collapse();
+         k-permalink from:body -> ermite.permalink()">
+</div>
+</body>
+</html>

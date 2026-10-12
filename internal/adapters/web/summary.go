@@ -7,15 +7,16 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 	"github.com/bnema/zerowrap"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // maxReadmeBytes is the largest README that is rendered in the page; a
@@ -40,7 +41,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 		l, st := s.emptyState(ctx, d)
 		return State(l, st), http.StatusOK, nil
 	}
-	ref := d.head.GetShortName()
+	ref := d.head.ShortName
 	now := s.cfg.Now()
 
 	p := SummaryPage{
@@ -48,16 +49,15 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 		Clone:   Clone{ID: "clone-" + d.name(), Lines: []string{"git clone " + s.cloneURL(d.name())}},
 	}
 
-	commits, err := s.cfg.Git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{
-		Repo: d.name(), Revision: d.head.GetCommitId(), PageSize: recentCommits,
-	}))
+	commits, err := s.commitList(ctx, d.repo.Name, d.head.CommitID.String(), "", recentCommits, "")
 	if err != nil {
 		return nil, 0, err
 	}
 	branchesAt, tagsAt := namesAt(d.branches), namesAt(d.tags)
-	for i, c := range commits.Msg.GetCommits() {
+	for i, c := range commits.Commits {
+		id := c.ID.String()
 		row := commitRow(d.name(), c, now)
-		row.Branches, row.Tags, row.Cursor = branchesAt[c.GetId()], tagsAt[c.GetId()], i == 0
+		row.Branches, row.Tags, row.Cursor = branchesAt[id], tagsAt[id], i == 0
 		p.Recent = append(p.Recent, row)
 	}
 
@@ -74,7 +74,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 	l.Title = d.name() + " · " + s.instance
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=summary")
 	l.HasRail = true
-	l.Lede = d.repo.GetDescription()
+	l.Lede = d.repo.Description
 	return Summary(l, p), http.StatusOK, nil
 }
 
@@ -90,7 +90,7 @@ func (s *Server) latest(ctx context.Context, d *repoData) *LatestTag {
 	}
 	lt := &LatestTag{Count: n, RefsHref: repoHref(d.name(), "refs")}
 	if n <= maxTagDates {
-		if name, c := latestTag(d.tags, s.commitsOf(ctx, d.name(), d.tags)); name != "" {
+		if name, c := latestTag(d.tags, s.commitsOf(ctx, d.repo.Name, d.tags)); name != "" {
 			lt.Name, lt.Href = name, repoHref(d.name(), "tree", name)
 			lt.Subject, lt.When, lt.WhenAt = c.subject, c.when, c.whenAt
 		}
@@ -102,33 +102,33 @@ func (s *Server) latest(ctx context.Context, d *repoData) *LatestTag {
 func (s *Server) facts(d *repoData, now time.Time) []Fact {
 	fs := []Fact{
 		lastPushFact(d.repo, now),
-		{Key: "branch", Val: d.head.GetShortName() + " · " + plural(len(d.branches), "branch", "branches")},
+		{Key: "branch", Val: d.head.ShortName + " · " + plural(len(d.branches), "branch", "branches")},
 	}
-	if c := d.repo.GetCreatedAt(); c.IsValid() {
-		fs = append(fs, Fact{Key: "created", Val: absolute(c.AsTime()), Time: rfc3339(c.AsTime())})
+	if c := d.repo.CreatedAt; !c.IsZero() {
+		fs = append(fs, Fact{Key: "created", Val: absolute(c), Time: rfc3339(c)})
 	}
 	return fs
 }
 
 // lastPushFact is the "last push" fact of a repository; the live updates
 // render it again.
-func lastPushFact(r *pb.Repo, now time.Time) Fact {
-	last := Fact{Key: "last push", Val: "never", ID: "last-push-" + r.GetName()}
-	if t := r.GetPushedAt(); t.IsValid() && t.GetSeconds() != 0 {
-		last.Val = ago(now, t.AsTime()) + " · " + absolute(t.AsTime())
-		last.Time = rfc3339(t.AsTime())
+func lastPushFact(r ports.RepoView, now time.Time) Fact {
+	last := Fact{Key: "last push", Val: "never", ID: "last-push-" + r.Name.String()}
+	if t := r.PushedAt; !t.IsZero() {
+		last.Val = ago(now, t) + " · " + absolute(t)
+		last.Time = rfc3339(t)
 	}
 	return last
 }
 
 // latestTag is the tag whose commit is the newest.
-func latestTag(tags []*pb.Ref, commits map[string]refCommit) (string, refCommit) {
+func latestTag(tags []domain.Ref, commits map[string]refCommit) (string, refCommit) {
 	var name string
 	var best refCommit
 	for _, t := range tags {
-		c, ok := commits[t.GetCommitId()]
+		c, ok := commits[t.CommitID.String()]
 		if ok && c.short != "" && (name == "" || c.at > best.at) {
-			name, best = t.GetShortName(), c
+			name, best = t.ShortName, c
 		}
 	}
 	return name, best
@@ -142,27 +142,31 @@ type renderedReadme struct {
 
 // readme finds the README at the root of the tree of the head commit, reads
 // it and renders it. It is nil when the repository has none. Rendering
-// problems degrade to plain text; only API failures are errors.
+// problems degrade to plain text; only use case failures are errors.
 func (s *Server) readme(ctx context.Context, d *repoData, ref string) (*renderedReadme, error) {
-	tree, err := s.cfg.Git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{Repo: d.name(), Revision: d.head.GetCommitId()}))
+	rev := d.head.CommitID.String()
+	tree, err := s.getTree(ctx, d.repo.Name, rev, "", false)
 	if err != nil {
 		return nil, err
 	}
-	return s.readmeIn(ctx, d.name(), d.head.GetCommitId(), ref, "", tree.Msg.GetEntries())
+	return s.readmeIn(ctx, d.repo.Name, rev, ref, "", tree.Entries)
 }
 
 // readmeIn picks the README among the entries of the directory dir ("" for
 // the root) of the commit rev, reads it and renders it. Links in it are
 // relative to dir, on the ref ref. It is nil when the directory has none.
-func (s *Server) readmeIn(ctx context.Context, repo, rev, ref, dir string, entries []*pb.TreeEntry) (*renderedReadme, error) {
-	var best *pb.TreeEntry
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter picks the README among the entries of a directory to show; display only
+func (s *Server) readmeIn(ctx context.Context, repo domain.RepoName, rev, ref, dir string, entries []domain.TreeEntry) (*renderedReadme, error) {
+	var best *domain.TreeEntry
 	rank := len(readmeNames)
-	for _, e := range entries {
-		if e.GetKind() != pb.EntryKind_ENTRY_KIND_FILE && e.GetKind() != pb.EntryKind_ENTRY_KIND_EXECUTABLE {
+	for i := range entries {
+		e := &entries[i]
+		if e.Kind != domain.EntryFile && e.Kind != domain.EntryExecutable {
 			continue
 		}
 		for i, n := range readmeNames {
-			if i < rank && strings.EqualFold(e.GetName(), n) {
+			if i < rank && strings.EqualFold(e.Name, n) {
 				best, rank = e, i
 			}
 		}
@@ -170,53 +174,50 @@ func (s *Server) readmeIn(ctx context.Context, repo, rev, ref, dir string, entri
 	if best == nil {
 		return nil, nil
 	}
-	rd := &Readme{Name: best.GetName()}
-	if best.GetSize() > maxReadmeBytes {
-		rd.Note = best.GetName() + " is too large to show here (" + humanSize(best.GetSize()) + ")."
+	rd := &Readme{Name: best.Name}
+	if best.Size > maxReadmeBytes {
+		rd.Note = best.Name + " is too large to show here (" + humanSize(best.Size) + ")."
 		return &renderedReadme{readme: rd}, nil
 	}
-	body, binary, err := s.readBlob(ctx, repo, rev, best.GetPath(), maxReadmeBytes)
+	body, binary, err := s.readBlob(ctx, repo, rev, best.Path, maxReadmeBytes)
 	if err != nil {
 		return nil, err
 	}
 	if binary {
-		rd.Note = best.GetName() + " is not text."
+		rd.Note = best.Name + " is not text."
 		return &renderedReadme{readme: rd}, nil
 	}
-	name := strings.ToLower(best.GetName())
+	name := strings.ToLower(best.Name)
 	if strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".markdown") {
-		h, outline, err := s.md.render(body, repo, ref, dir)
+		h, outline, err := s.md.render(body, repo.String(), ref, dir)
 		if err == nil {
 			rd.HTML = h
 			return &renderedReadme{readme: rd, outline: outline}, nil
 		}
 		log := zerowrap.FromCtx(ctx)
-		log.Warn().Err(err).Str("repo", repo).Msg("render README, showing plain text")
+		log.Warn().Err(err).Str("repo", repo.String()).Msg("render README, showing plain text")
 	}
 	rd.HTML = template.HTML("<pre>" + html.EscapeString(string(body)) + "</pre>") // #nosec G203 -- escaped
 	return &renderedReadme{readme: rd}, nil
 }
 
-// readBlob reads a file through the GetBlob stream, at most limit bytes. It
-// reports a binary file without its content.
-func (s *Server) readBlob(ctx context.Context, repo, rev, path string, limit int64) (body []byte, binary bool, err error) {
-	stream, err := s.cfg.Git.GetBlob(ctx, connect.NewRequest(&pb.GetBlobRequest{Repo: repo, Revision: rev, Path: path}))
+// readBlob reads a file, at most limit bytes. It reports a binary file
+// without its content.
+func (s *Server) readBlob(ctx context.Context, repo domain.RepoName, rev, path string, limit int64) (body []byte, binary bool, err error) {
+	info, rc, err := s.openBlobAt(ctx, repo, rev, path)
 	if err != nil {
 		return nil, false, err
 	}
-	defer func() { _ = stream.Close() }()
-	for stream.Receive() {
-		m := stream.Msg()
-		if m.GetInfo().GetBinary() {
-			return nil, true, nil
-		}
-		body = append(body, m.GetChunk()...)
-		if int64(len(body)) > limit {
-			return body[:limit], false, nil
-		}
+	defer func() { _ = rc.Close() }()
+	if info.Binary {
+		return nil, true, nil
 	}
-	if err := stream.Err(); err != nil {
+	body, err = io.ReadAll(io.LimitReader(rc, limit+1))
+	if err != nil {
 		return nil, false, err
+	}
+	if int64(len(body)) > limit {
+		return body[:limit], false, nil
 	}
 	return body, false, nil
 }

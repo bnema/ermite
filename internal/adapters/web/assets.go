@@ -34,6 +34,9 @@ type Assets struct {
 type asset struct {
 	body []byte
 	typ  string
+	// gz is the gzip form of body, compressed once at load; nil when the type
+	// is already compressed or gzip does not make the body smaller.
+	gz []byte
 }
 
 // assetSet is the embedded files by hashed URL path (under StaticPrefix).
@@ -71,7 +74,13 @@ func loadAssets() (*assetSet, error) {
 		sum := sha256.Sum256(body)
 		ext := path.Ext(file)
 		name := dir + "/" + strings.TrimSuffix(file, ext) + "." + hex.EncodeToString(sum[:6]) + ext
-		s.byName[name] = asset{body: body, typ: typ}
+		a := asset{body: body, typ: typ}
+		if compressible(typ) {
+			if z, err := gzipBest(body); err == nil && len(z) < len(body) {
+				a.gz = z
+			}
+		}
+		s.byName[name] = a
 		return StaticPrefix + name
 	}
 
@@ -149,8 +158,25 @@ func (s *assetSet) serve(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Content-Type", a.typ)
 	h.Set("Cache-Control", "public, max-age=31536000, immutable")
-	h.Set("Content-Length", itoa(len(a.body)))
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(a.body)
+	body := a.body
+	if a.gz != nil {
+		addVary(h, "Accept-Encoding")
+		if acceptsGzip(r.Header) {
+			body = a.gz
+			h.Set("Content-Encoding", "gzip")
+		}
 	}
+	h.Set("Content-Length", itoa(len(body)))
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(body)
+	}
+}
+
+// compressible tells whether a content type is worth gzip: text and
+// structured text. Fonts (woff2) and raster images are compressed already.
+func compressible(typ string) bool {
+	mt, _, _ := strings.Cut(typ, ";")
+	mt = strings.TrimSpace(strings.ToLower(mt))
+	return strings.HasPrefix(mt, "text/") || mt == "image/svg+xml" ||
+		mt == "application/javascript" || strings.HasSuffix(mt, "+json") || strings.HasSuffix(mt, "/json")
 }

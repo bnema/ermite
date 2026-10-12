@@ -13,6 +13,7 @@ import (
 )
 
 func TestScopes(t *testing.T) {
+	t.Parallel()
 	all := domain.AllScopes()
 	assert.Len(t, all, 9)
 	for _, s := range all {
@@ -27,6 +28,7 @@ func TestScopes(t *testing.T) {
 }
 
 func TestHashTokenSecret(t *testing.T) {
+	t.Parallel()
 	h := domain.HashTokenSecret("ermite_abc")
 	assert.Equal(t, h, domain.HashTokenSecret("ermite_abc"))
 	assert.NotEqual(t, h, domain.HashTokenSecret("ermite_abd"))
@@ -36,6 +38,7 @@ func TestHashTokenSecret(t *testing.T) {
 }
 
 func TestTokenExpired(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
 	assert.False(t, domain.Token{}.Expired(now), "no expiry never expires")
 	assert.False(t, domain.Token{ExpiresAt: now.Add(time.Second)}.Expired(now))
@@ -44,6 +47,7 @@ func TestTokenExpired(t *testing.T) {
 }
 
 func TestPrincipalScopes(t *testing.T) {
+	t.Parallel()
 	a, b := mustName(t, "a"), mustName(t, "b")
 	tok := domain.Token{ID: "t1", Scopes: []domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, Repos: []domain.RepoName{a}}
 	p := domain.TokenPrincipal(tok)
@@ -84,6 +88,7 @@ func mustName(t *testing.T, s string) domain.RepoName {
 }
 
 func TestOwnerPrincipal(t *testing.T) {
+	t.Parallel()
 	o := domain.Owner()
 	assert.Equal(t, "owner", o.Label())
 	assert.True(t, o.IsOwner())
@@ -96,6 +101,7 @@ func TestOwnerPrincipal(t *testing.T) {
 }
 
 func TestHasOwnerRights(t *testing.T) {
+	t.Parallel()
 	a := mustName(t, "a")
 	all := domain.AllScopes()
 	assert.True(t, domain.Root().HasOwnerRights())

@@ -3,6 +3,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"html"
@@ -109,7 +110,7 @@ const maxViewLines = 20000
 
 // countLines is the number of lines of src, as the code view numbers them.
 func countLines(src []byte) int {
-	n := strings.Count(string(src), "\n")
+	n := bytes.Count(src, []byte{'\n'})
 	if len(src) > 0 && src[len(src)-1] != '\n' {
 		n++
 	}
@@ -158,18 +159,35 @@ func tokenise(ctx context.Context, lx chroma.Lexer, src string) (toks []chroma.T
 		}
 		toks = append(toks, t)
 	}
-	if strings.TrimRight(joinTokens(toks), "\n") != strings.TrimRight(src, "\n") {
+	if !tokensMatch(toks, src) {
 		return nil, false
 	}
 	return toks, true
 }
 
-func joinTokens(toks []chroma.Token) string {
-	var b strings.Builder
+// tokensMatch reports whether the values of the tokens, joined, are src but
+// for the line feeds that end either: it compares piece by piece, where
+// joining the tokens first would copy the whole file.
+func tokensMatch(toks []chroma.Token, src string) bool {
+	want := strings.TrimRight(src, "\n")
+	pos := 0
 	for _, t := range toks {
-		b.WriteString(t.Value)
+		v := t.Value
+		rest := want[pos:]
+		if len(v) <= len(rest) {
+			if rest[:len(v)] != v {
+				return false
+			}
+			pos += len(v)
+			continue
+		}
+		// The token reaches past the end of the source: only line feeds may.
+		if v[:len(rest)] != rest || strings.Trim(v[len(rest):], "\n") != "" {
+			return false
+		}
+		pos = len(want)
 	}
-	return b.String()
+	return pos == len(want)
 }
 
 // splitSource splits plain text into lines, without the empty element after

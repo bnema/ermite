@@ -4,10 +4,10 @@ components:
     role: core
     paths:
       - internal/domain/**
-  app:
+  usecase:
     role: usecase
     paths:
-      - internal/app/**
+      - internal/usecase/**
   ports:
     role: ports
     paths:
@@ -16,10 +16,23 @@ components:
     role: adapter
     paths:
       - internal/adapters/**
+  clientlimit:
+    # Per-client HTTP rate limiting: infrastructure shared by the HTTP adapters.
+    role: adapter
+    paths:
+      - internal/clientlimit/**
   entrypoints:
+    # cmd/ermite only calls app.Run.
     role: entrypoint
     paths:
       - cmd/**
+  app:
+    # Composition root and CLI: builds the adapters and wires them to the use
+    # cases. hexcheck has no dedicated bootstrap role; entrypoint is the
+    # closest.
+    role: entrypoint
+    paths:
+      - internal/app/**
   config:
     role: entrypoint
     paths:
@@ -30,8 +43,39 @@ components:
       - gen/**
       - '**/mocks/**'
       - '**/*_templ.go'
+  readertest:
+    # Test-only fixtures and conformance suite for ports.RepoReader.
+    role: ignore
+    paths:
+      - internal/readertest/**
+# Cross-layer contracts live in ports: adapters and use cases import ports and
+# domain, never each other. hexcheck has no rule for an adapter importing a use
+# case or internal/app; internal/boundary/boundary_test.go enforces the full
+# import matrix.
+rules:
+  no-adapter-imports-in-core: error
+  no-infra-imports-in-usecase: error
+  no-framework-types-in-core: error
+  no-infra-types-in-ports: error
+  no-adapter-to-adapter-imports: warn
+  suspicious-business-logic-in-adapter: warn
+  no-local-fakes-for-ports: warn
+  missing-generated-mock-for-port: warn
+  prefer-generated-mocks: warn
 mocking:
   generatedMockPaths:
     - internal/ports/mocks/**
   generatedMockNamePatterns:
     - '{{Interface}}'
+allow:
+  # clientlimit is a shared infrastructure library, not a sibling adapter: the
+  # HTTP adapters that rate-limit clients import it by design.
+  - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/githttp/**
+    reason: rate-limits Git clients with internal/clientlimit
+  - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/rpc/**
+    reason: rate-limits API clients with internal/clientlimit
+  - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/web/**
+    reason: rate-limits login attempts with internal/clientlimit

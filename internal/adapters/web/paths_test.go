@@ -6,168 +6,211 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-// pathsGit is a Git client that resolves any revision to itself and counts
-// the lists it builds.
-type pathsGit struct {
-	ermiteconnect.GitServiceClient
-	lists atomic.Int32
-	paths []string // the list; a.go and b/c.go when nil
-}
+// pathsSHA is the commit the path list tests ask for.
+var pathsSHA = strings.Repeat("a", 40)
 
-func (g *pathsGit) ResolveRevision(_ context.Context, req *connect.Request[pb.ResolveRevisionRequest]) (*connect.Response[pb.ResolveRevisionResponse], error) {
-	return connect.NewResponse(&pb.ResolveRevisionResponse{CommitId: req.Msg.GetRevision()}), nil
-}
-
-func (g *pathsGit) ListPaths(_ context.Context, req *connect.Request[pb.ListPathsRequest]) (*connect.Response[pb.ListPathsResponse], error) {
-	g.lists.Add(1)
-	paths := g.paths
-	if paths == nil {
-		paths = []string{"a.go", "b/c.go"}
+// pathsBrowse resolves any full id to itself and lists a.go and b/c.go (or
+// paths) for the commit, as the anonymous visitor. lists is how many times
+// the list may be built: 0 means ListPaths must not be called.
+func pathsBrowse(t testing.TB, lists int, paths []string) *mocks.BrowseService {
+	t.Helper()
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ResolveRevision(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything).RunAndReturn(
+		func(_ context.Context, _ domain.Principal, _ domain.RepoName, rev domain.Revision) (domain.ResolvedRevision, error) {
+			return domain.ResolvedRevision{CommitID: objectID(t, rev.String())}, nil
+		}).Maybe()
+	if lists > 0 {
+		if paths == nil {
+			paths = []string{"a.go", "b/c.go"}
+		}
+		browse.EXPECT().ListPaths(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything).Return(
+			domain.PathList{CommitID: objectID(t, pathsSHA), Paths: paths}, nil).Times(lists)
 	}
-	return connect.NewResponse(&pb.ListPathsResponse{CommitId: req.Msg.GetRevision(), Paths: paths}), nil
+	return browse
+}
+
+func getPaths(srv *Server, sha string, hdr map[string]string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/r/paths/"+sha, nil)
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	return rec
 }
 
 // A revalidation is answered after the access check and before the list is
-// loaded: it never builds. Each variant has its own validator.
+// loaded: it never builds (the mock has no ListPaths to answer). Each variant
+// has its own validator.
 func TestPathsRevalidationDoesNotBuild(t *testing.T) {
-	git := &pathsGit{}
-	srv, err := New(Config{
-		Repos: failing{}, Git: git,
-		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
-	})
-	require.NoError(t, err)
-	sha := strings.Repeat("a", 40)
-	get := func(hdr map[string]string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, "/r/paths/"+sha, nil)
-		for k, v := range hdr {
-			req.Header.Set(k, v)
-		}
-		rec := httptest.NewRecorder()
-		srv.ServeHTTP(rec, req)
-		return rec
-	}
-	gzTag, plainTag := `"paths-`+sha+`-gz"`, `"paths-`+sha+`"`
-
-	for _, tt := range []struct{ name, ae, inm string }{
+	t.Parallel()
+	gzTag, plainTag := `"paths-`+pathsSHA+`-gz"`, `"paths-`+pathsSHA+`"`
+	tests := []struct{ name, ae, inm string }{
 		{"gzip", "gzip", gzTag},
 		{"identity", "", plainTag},
 		{"weak", "gzip", "W/" + gzTag},
 		{"any", "", "*"},
-	} {
-		rec := get(map[string]string{"Accept-Encoding": tt.ae, "If-None-Match": tt.inm})
-		assert.Equal(t, http.StatusNotModified, rec.Code, tt.name)
-		assert.Empty(t, rec.Body.String(), tt.name)
-		assert.Equal(t, "no-cache", rec.Header().Get("Cache-Control"), tt.name)
-		assert.Equal(t, "Accept-Encoding", rec.Header().Get("Vary"), tt.name)
-		assert.NotEmpty(t, rec.Header().Get("ETag"), tt.name)
 	}
-	assert.Zero(t, git.lists.Load(), "a 304 never builds")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: pathsBrowse(t, 0, nil)})
+			rec := getPaths(srv, pathsSHA, map[string]string{"Accept-Encoding": tt.ae, "If-None-Match": tt.inm})
+			assert.Equal(t, http.StatusNotModified, rec.Code)
+			assert.Empty(t, rec.Body.String())
+			assert.Equal(t, "no-cache", rec.Header().Get("Cache-Control"))
+			assert.Equal(t, "Accept-Encoding", rec.Header().Get("Vary"))
+			assert.NotEmpty(t, rec.Header().Get("ETag"))
+		})
+	}
+}
 
-	// The validator of the other variant does not match.
-	assert.Equal(t, http.StatusOK, get(map[string]string{"Accept-Encoding": "gzip", "If-None-Match": plainTag}).Code)
-	assert.Equal(t, http.StatusOK, get(map[string]string{"If-None-Match": gzTag}).Code)
-	assert.EqualValues(t, 1, git.lists.Load(), "built once, then cached")
+// The list is built once, then served from the cache, in the variant the
+// client accepts; the validator of the other variant does not match.
+func TestPathsServesAndCaches(t *testing.T) {
+	t.Parallel()
+	gzTag, plainTag := `"paths-`+pathsSHA+`-gz"`, `"paths-`+pathsSHA+`"`
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: pathsBrowse(t, 1, nil)})
 
-	rec := get(map[string]string{"Accept-Encoding": "gzip"})
+	assert.Equal(t, http.StatusOK, getPaths(srv, pathsSHA, map[string]string{"Accept-Encoding": "gzip", "If-None-Match": plainTag}).Code)
+	assert.Equal(t, http.StatusOK, getPaths(srv, pathsSHA, map[string]string{"If-None-Match": gzTag}).Code)
+
+	rec := getPaths(srv, pathsSHA, map[string]string{"Accept-Encoding": "gzip"})
 	assert.Equal(t, gzTag, rec.Header().Get("ETag"))
 	assert.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	zr, err := gzip.NewReader(rec.Body)
 	require.NoError(t, err)
 	out, err := io.ReadAll(zr)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"paths":["a.go","b/c.go"],"truncated":false}`, string(out))
 
-	rec = get(nil)
+	rec = getPaths(srv, pathsSHA, nil)
 	assert.Equal(t, plainTag, rec.Header().Get("ETag"))
 	assert.Empty(t, rec.Header().Get("Content-Encoding"))
 	assert.JSONEq(t, `{"paths":["a.go","b/c.go"],"truncated":false}`, rec.Body.String())
 }
 
-// The cached list holds no spare capacity.
-func TestBuildPathsCachesATightBody(t *testing.T) {
-	srv, err := New(Config{Repos: failing{}, Git: &pathsGit{}, PublicURL: "https://forge.example"})
-	require.NoError(t, err)
-	body, err := srv.buildPaths(context.Background(), "r", strings.Repeat("a", 40))
-	require.NoError(t, err)
-	assert.Equal(t, len(body), cap(body))
-}
-
-func TestAcceptsGzip(t *testing.T) {
-	for _, tt := range []struct {
-		header string
-		want   bool
+// The commit is checked as the caller of the request, and only a full id that
+// resolves to itself is served.
+func TestPathsRefusals(t *testing.T) {
+	t.Parallel()
+	other := strings.Repeat("b", 40)
+	tests := []struct {
+		name    string
+		sha     string
+		resolve func() (domain.ResolvedRevision, error)
+		want    int
 	}{
-		{"", false},
-		{"gzip", true},
-		{"GZip", true},
-		{"deflate, gzip", true},
-		{"deflate, br", false},
-		{"gzip;q=0", false},
-		{"gzip; q=0", false},
-		{"gzip;q=0.0", false},
-		{"gzip ; q = 0", false},
-		{"gzip;q=0.5", true},
-		{"gzip;q=1", true},
-		{"identity, gzip;q=0", false},
-		{"gzip;q=0, deflate", false},
-		{"gzip;q=bad", true},
-		{"x-gzip", false},
-		// A wildcard is not read: the finder asks for gzip by name, and the
-		// plain body is always right.
-		{"*", false},
-	} {
-		assert.Equal(t, tt.want, acceptsGzip(tt.header), "%q", tt.header)
+		{"not a full id", "main", nil, http.StatusNotFound},
+		{"abbreviated id", "aaaaaaa", nil, http.StatusNotFound},
+		{"commit not found or refused to the caller", pathsSHA, func() (domain.ResolvedRevision, error) { return domain.ResolvedRevision{}, domain.ErrNotFound }, http.StatusNotFound},
+		{"a ref named like a commit", pathsSHA, func() (domain.ResolvedRevision, error) {
+			return domain.ResolvedRevision{CommitID: objectID(t, other)}, nil
+		}, http.StatusNotFound},
+		{"backend failure", pathsSHA, func() (domain.ResolvedRevision, error) {
+			return domain.ResolvedRevision{}, errors.New("boom")
+		}, http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			browse := mocks.NewBrowseService(t)
+			if tt.resolve != nil {
+				browse.EXPECT().ResolveRevision(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything).RunAndReturn(
+					func(context.Context, domain.Principal, domain.RepoName, domain.Revision) (domain.ResolvedRevision, error) {
+						return tt.resolve()
+					})
+			}
+			srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: browse})
+			assert.Equal(t, tt.want, getPaths(srv, tt.sha, nil).Code)
+		})
 	}
 }
 
-func TestEtagMatches(t *testing.T) {
-	const tag = `"paths-x"`
-	for _, tt := range []struct {
-		header string
-		want   bool
+// The list is built as the caller of the request: a failure of the use case
+// is the answer.
+func TestPathsListFailure(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		err  error
+		want int
 	}{
-		{"", false},
-		{tag, true},
-		{"W/" + tag, true},
-		{`"other"`, false},
-		{`"a", ` + tag, true},
-		{`"a",` + tag + `,"b"`, true},
-		{`"a", W/` + tag, true},
-		{`"a", "b"`, false},
-		{"*", true},
-		{`"a", *`, true},
-		{`"paths-x-gz"`, false},
-		{`w/` + tag, false},
-	} {
-		assert.Equal(t, tt.want, etagMatches(tt.header, tag), "%q", tt.header)
+		{"not found", domain.ErrNotFound, http.StatusNotFound},
+		{"other", errors.New("boom"), http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			browse := pathsBrowse(t, 0, nil)
+			browse.EXPECT().ListPaths(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything).Return(domain.PathList{}, tt.err)
+			srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: browse})
+			assert.Equal(t, tt.want, getPaths(srv, pathsSHA, nil).Code)
+		})
 	}
 }
 
-// A path is not HTML: "<", ">" and "&" are not escaped in the JSON.
-func TestBuildPathsDoesNotEscapeHTML(t *testing.T) {
-	git := &pathsGit{paths: []string{"a&b/<c>.go"}}
-	srv, err := New(Config{Repos: failing{}, Git: git, PublicURL: "https://forge.example"})
-	require.NoError(t, err)
-	body, err := srv.buildPaths(context.Background(), "r", strings.Repeat("a", 40))
-	require.NoError(t, err)
-	zr, err := gzip.NewReader(bytes.NewReader(body))
-	require.NoError(t, err)
-	out, err := io.ReadAll(zr)
-	require.NoError(t, err)
-	assert.Contains(t, string(out), `"a&b/<c>.go"`)
+// The cached list holds no spare capacity; the truncation is reported; a path
+// is not HTML, so "<", ">" and "&" are not escaped in the JSON.
+func TestBuildPaths(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		paths     []string
+		truncated bool
+		want      string
+	}{
+		{"plain", []string{"a.go", "b/c.go"}, false, `{"paths":["a.go","b/c.go"],"truncated":false}`},
+		{"empty", nil, false, `{"paths":[],"truncated":false}`},
+		{"truncated", []string{"a.go"}, true, `{"paths":["a.go"],"truncated":true}`},
+		{"html characters", []string{"a&b/<c>.go"}, false, `{"paths":["a&b/<c>.go"],"truncated":false}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			browse := mocks.NewBrowseService(t)
+			browse.EXPECT().ListPaths(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything).Return(
+				domain.PathList{CommitID: objectID(t, pathsSHA), Paths: tt.paths, Truncated: tt.truncated}, nil)
+			srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: browse})
+			ctx := domain.ContextWithPrincipal(context.Background(), domain.Anonymous())
+			body, err := srv.buildPaths(ctx, repoName(t, "r"), pathsSHA)
+			require.NoError(t, err)
+			assert.Equal(t, len(body), cap(body))
+			zr, err := gzip.NewReader(bytes.NewReader(body))
+			require.NoError(t, err)
+			out, err := io.ReadAll(zr)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, strings.TrimSpace(string(out)))
+		})
+	}
 }
+
+// A list that answers for another commit than the one asked is refused.
+func TestBuildPathsWrongCommit(t *testing.T) {
+	t.Parallel()
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListPaths(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		domain.PathList{CommitID: objectID(t, strings.Repeat("b", 40))}, nil)
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: browse})
+	_, err := srv.buildPaths(context.Background(), repoName(t, "r"), pathsSHA)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+var _ ports.BrowseService = (*mocks.BrowseService)(nil)

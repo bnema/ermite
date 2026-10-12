@@ -10,13 +10,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // Trojan Source (ADR 0017): direction controls, zero-width and control
 // characters are shown as markers; ordinary text, tabs and non-Latin letters
 // are not touched.
 func TestSegmentsShowInvisibleCharacters(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, in string
 		want     []Seg
@@ -35,6 +36,7 @@ func TestSegmentsShowInvisibleCharacters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, segments(tt.in))
 		})
 	}
@@ -43,17 +45,18 @@ func TestSegmentsShowInvisibleCharacters(t *testing.T) {
 	assert.Equal(t, "l1\nl<U+200B>2", messageText("l1\r\nl\u200b2\n\n"))
 }
 
-func line(kind pb.LineKind, oldN, newN int32, text string) *pb.Line {
-	return &pb.Line{Kind: kind, OldNumber: oldN, NewNumber: newN, Text: text}
+func line(kind domain.LineKind, oldN, newN int, text string) domain.Line {
+	return domain.Line{Kind: kind, OldNumber: oldN, NewNumber: newN, Text: text}
 }
 
 // The split view lines a run of deletions up with the additions after it;
 // context fills both sides; the extra lines of the longer run have an empty
 // opposite side.
 func TestPairLines(t *testing.T) {
-	ctx, add, del := pb.LineKind_LINE_KIND_CONTEXT, pb.LineKind_LINE_KIND_ADDITION, pb.LineKind_LINE_KIND_DELETION
+	t.Parallel()
+	ctx, add, del := domain.LineContext, domain.LineAddition, domain.LineDeletion
 	var ls []DiffLine
-	for _, l := range []*pb.Line{
+	for _, l := range []domain.Line{
 		line(ctx, 1, 1, "c"),
 		line(del, 2, 0, "d1"), line(del, 3, 0, "d2"), line(del, 4, 0, "d3"),
 		line(add, 0, 2, "a1"),
@@ -83,6 +86,7 @@ func TestPairLines(t *testing.T) {
 }
 
 func TestChangeBar(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, Bar{Rest: "··········"}, changeBar(0, 0, 0))
 	assert.Equal(t, Bar{Add: "++++++++++"}, changeBar(100, 0, 100))
 	assert.Equal(t, Bar{Add: "+++++", Del: "-----", Rest: ""}, changeBar(50, 50, 100))
@@ -91,19 +95,41 @@ func TestChangeBar(t *testing.T) {
 }
 
 func TestFileNotes(t *testing.T) {
-	assert.Equal(t, "binary file: no text diff", fileNote(&pb.FileDiff{Binary: true, Status: pb.FileStatus_FILE_STATUS_MODIFIED}))
-	assert.Equal(t, "mode 100644 → 100755", fileNote(&pb.FileDiff{Status: pb.FileStatus_FILE_STATUS_MODIFIED, OldMode: 0o100644, NewMode: 0o100755}))
-	assert.Empty(t, fileNote(&pb.FileDiff{Status: pb.FileStatus_FILE_STATUS_ADDED, NewMode: 0o100644}), "an added file has no mode change")
-	assert.Equal(t, "renamed, 90% similar", fileNote(&pb.FileDiff{Status: pb.FileStatus_FILE_STATUS_RENAMED, Similarity: 90, OldMode: 0o100644, NewMode: 0o100644}))
-	assert.Contains(t, fileNote(&pb.FileDiff{Truncated: true, Additions: 2500}), "too large")
+	t.Parallel()
+	tests := []struct {
+		name string
+		file domain.FileDiff
+		want string // a substring; empty means no note at all
+		eq   bool   // want is the whole note
+	}{
+		{"binary", domain.FileDiff{Binary: true, Status: domain.FileModified}, "binary file: no text diff", true},
+		{"mode change", domain.FileDiff{Status: domain.FileModified, OldMode: 0o100644, NewMode: 0o100755}, "mode 100644 → 100755", true},
+		{"an added file has no mode change", domain.FileDiff{Status: domain.FileAdded, NewMode: 0o100644}, "", true},
+		{"rename", domain.FileDiff{Status: domain.FileRenamed, Similarity: 90, OldMode: 0o100644, NewMode: 0o100644}, "renamed, 90% similar", true},
+		{"copy", domain.FileDiff{Status: domain.FileCopied, Similarity: 80}, "copied, 80% similar", true},
+		{"type change", domain.FileDiff{Status: domain.FileTypeChanged}, "type changed", true},
+		{"truncated", domain.FileDiff{Truncated: true, Additions: 2500}, "too large", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := fileNote(tt.file)
+			if tt.eq {
+				assert.Equal(t, tt.want, got)
+				return
+			}
+			assert.Contains(t, got, tt.want)
+		})
+	}
 }
 
 func TestDiffFilesPaths(t *testing.T) {
-	fs := diffFiles([]*pb.FileDiff{
-		{Status: pb.FileStatus_FILE_STATUS_ADDED, NewPath: "a.go", Additions: 1, Hunks: []*pb.Hunk{{Lines: []*pb.Line{line(pb.LineKind_LINE_KIND_ADDITION, 0, 1, "x")}}}},
-		{Status: pb.FileStatus_FILE_STATUS_DELETED, OldPath: "b.go", Deletions: 1},
-		{Status: pb.FileStatus_FILE_STATUS_RENAMED, OldPath: "c\u202e.go", NewPath: "d.go"},
-		{Status: pb.FileStatus_FILE_STATUS_MODIFIED, NewPath: "big.go", Truncated: true, Additions: 3000},
+	t.Parallel()
+	fs := diffFiles([]domain.FileDiff{
+		{Status: domain.FileAdded, NewPath: "a.go", Additions: 1, Hunks: []domain.Hunk{{Lines: []domain.Line{line(domain.LineAddition, 0, 1, "x")}}}},
+		{Status: domain.FileDeleted, OldPath: "b.go", Deletions: 1},
+		{Status: domain.FileRenamed, OldPath: "c\u202e.go", NewPath: "d.go"},
+		{Status: domain.FileModified, NewPath: "big.go", Truncated: true, Additions: 3000},
 	})
 	assert.Equal(t, "a.go", fs[0].Path)
 	assert.True(t, fs[0].Open)
@@ -117,8 +143,9 @@ func TestDiffFilesPaths(t *testing.T) {
 // A code cell holds exactly the text: escaped, with markers, and nothing
 // added between the pieces (the cell keeps its white space).
 func TestCodeLine(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
-	ln := diffLine(&pb.Line{Kind: pb.LineKind_LINE_KIND_ADDITION, NewNumber: 1, Text: "a <b> \u202e c  d", NoNewlineAtEof: true})
+	ln := diffLine(domain.Line{Kind: domain.LineAddition, NewNumber: 1, Text: "a <b> \u202e c  d", NoNewlineAtEOF: true})
 	require.NoError(t, codeLine(ln).Render(context.Background(), &b))
 	assert.Equal(t, `a &lt;b&gt; <span class="inv" title="invisible character">&lt;U+202E&gt;</span> c  d`+
 		`<span class="eol" title="no newline at end of file">`+noEOL+`</span>`, b.String())

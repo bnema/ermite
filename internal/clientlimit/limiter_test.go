@@ -23,6 +23,7 @@ type fakeClock struct{ t time.Time }
 func (c *fakeClock) now() time.Time { return c.t }
 
 func TestLimiter(t *testing.T) {
+	t.Parallel()
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := clientlimit.NewLimiter(clk.now)
 
@@ -52,6 +53,7 @@ func TestLimiter(t *testing.T) {
 }
 
 func TestLimiterSlidingWindow(t *testing.T) {
+	t.Parallel()
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := clientlimit.NewLimiter(clk.now)
 	for range 5 {
@@ -71,6 +73,7 @@ func TestLimiterSlidingWindow(t *testing.T) {
 }
 
 func TestLimiterOneAddressStaysSmall(t *testing.T) {
+	t.Parallel()
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := clientlimit.NewLimiter(clk.now)
 	for range 5000 {
@@ -82,6 +85,7 @@ func TestLimiterOneAddressStaysSmall(t *testing.T) {
 }
 
 func TestLimiterBoundsMemory(t *testing.T) {
+	t.Parallel()
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := clientlimit.NewLimiter(clk.now)
 	for i := range clientlimit.MaxTracked + 5000 {
@@ -103,6 +107,7 @@ func TestLimiterBoundsMemory(t *testing.T) {
 }
 
 func TestLimiterSweepsExpiredEntriesOncePerInterval(t *testing.T) {
+	t.Parallel()
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := clientlimit.NewLimiter(clk.now)
 	for i := range 100 {
@@ -135,6 +140,7 @@ func BenchmarkLimiterFailAtMaxTracked(b *testing.B) {
 }
 
 func TestLimiterGroupsIPv6By64(t *testing.T) {
+	t.Parallel()
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := clientlimit.NewLimiter(clk.now)
 
@@ -155,6 +161,7 @@ func TestLimiterGroupsIPv6By64(t *testing.T) {
 }
 
 func TestLimiterIPv4StaysPerAddress(t *testing.T) {
+	t.Parallel()
 	clk := &fakeClock{t: time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)}
 	l := clientlimit.NewLimiter(clk.now)
 	for range clientlimit.MaxFailures {
@@ -170,6 +177,7 @@ func TestLimiterIPv4StaysPerAddress(t *testing.T) {
 }
 
 func TestClientAddr(t *testing.T) {
+	t.Parallel()
 	trusted := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("fd00::/8")}
 	tests := []struct {
 		name    string
@@ -194,6 +202,7 @@ func TestClientAddr(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			r := &http.Request{RemoteAddr: tt.remote, Header: http.Header{}}
 			for _, v := range tt.xff {
 				r.Header.Add("X-Forwarded-For", v)

@@ -18,6 +18,7 @@ import (
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 var errInternal = errors.New("internal error")
@@ -30,15 +31,12 @@ var errInternal = errors.New("internal error")
 // limiter; a client that used up its failures gets resource_exhausted (429 on
 // the Connect protocol) whatever it presents, like on the Git routes.
 //
-// A call made through InProcessClient is trusted with the principal its
-// context carries: that is how the web calls the handlers in process. What
-// marks it is a value only the in-process transport can put in the context
-// (see inProcessKey); a principal in the context of a network request, say one
-// put there by a server's base context, is ignored and the request is
-// authenticated from its headers.
+// A principal in the context of a network request, say one put there by a
+// server's base context, is ignored and the request is authenticated from its
+// headers.
 type interceptor struct {
-	auth    Authenticator
-	limiter *clientlimit.Limiter
+	auth    ports.AuthService
+	limiter ports.FailureLimiter
 	trusted []netip.Prefix
 }
 
@@ -48,11 +46,6 @@ func newInterceptor(cfg Config) *interceptor {
 
 // authenticate returns the context to run the call in.
 func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr string, h http.Header) (context.Context, error) {
-	if inProcess(ctx) {
-		if _, ok := domain.PrincipalFromContext(ctx); ok {
-			return ctx, nil
-		}
-	}
 	// Whatever the context carried, the caller is anonymous until proven
 	// otherwise.
 	ctx = domain.ContextWithPrincipal(ctx, domain.Anonymous())
@@ -90,18 +83,8 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 
 type clientKey struct{}
 
-// ContextWithClient attributes the in-process calls made with ctx to the
-// client at addr (clientlimit.ClientAddr of the browser's request), so that
-// the per-client limits of the API, such as the event streams one, apply to
-// each visitor of the web rather than to the web as a whole. A network call
-// is always attributed to its own peer: the interceptor overwrites it.
-func ContextWithClient(ctx context.Context, addr string) context.Context {
-	return context.WithValue(ctx, clientKey{}, clientlimit.Key(addr))
-}
-
 // clientFromContext returns the normalized address of the client of a call:
-// its peer for a network call, the one given to ContextWithClient for an
-// in-process call, empty when there is none.
+// its peer, empty when there is none.
 func clientFromContext(ctx context.Context) string {
 	c, _ := ctx.Value(clientKey{}).(string)
 	return c

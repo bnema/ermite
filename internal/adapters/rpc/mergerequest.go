@@ -10,12 +10,12 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // mergeRequestService implements ermiteconnect.MergeRequestServiceHandler.
-type mergeRequestService struct{ mrs *app.MergeRequests }
+type mergeRequestService struct{ mrs ports.MergeRequestService }
 
 func mergeRequestStateToPB(s domain.MRState) pb.MergeRequestState {
 	switch s {
@@ -129,7 +129,7 @@ func (s *mergeRequestService) CreateMergeRequest(ctx context.Context, req *conne
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mr, err := s.mrs.Create(ctx, caller(ctx), name, app.CreateMergeRequestParams{
+	mr, err := s.mrs.Create(ctx, caller(ctx), name, ports.CreateMergeRequestParams{
 		Title: req.Msg.GetTitle(), Description: req.Msg.GetDescription(),
 		Source: req.Msg.GetSourceBranch(), Target: req.Msg.GetTargetBranch(),
 	})
@@ -148,7 +148,7 @@ func (s *mergeRequestService) ListMergeRequests(ctx context.Context, req *connec
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	page, err := s.mrs.List(ctx, caller(ctx), name, app.ListMergeRequestsParams{
+	page, err := s.mrs.List(ctx, caller(ctx), name, ports.ListMergeRequestsParams{
 		State: state, PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken(),
 	})
 	if err != nil {
@@ -197,7 +197,7 @@ func (s *mergeRequestService) AddComment(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	c, err := s.mrs.AddComment(ctx, caller(ctx), name, req.Msg.GetNumber(), app.AddCommentParams{
+	c, err := s.mrs.AddComment(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.AddCommentParams{
 		Path: req.Msg.GetPath(), Line: int(req.Msg.GetLine()), Side: side, Text: req.Msg.GetText(),
 	})
 	if err != nil {
@@ -245,7 +245,7 @@ func (s *mergeRequestService) MergeMergeRequest(ctx context.Context, req *connec
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	res, err := s.mrs.Merge(ctx, caller(ctx), name, req.Msg.GetNumber(), app.MergeParams{
+	res, err := s.mrs.Merge(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.MergeParams{
 		Mode: mode, HeadID: head, DeleteSource: req.Msg.GetDeleteSourceBranch(),
 	})
 	if err != nil {

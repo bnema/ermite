@@ -9,10 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // bothViewsLines is the largest diff, in lines, that is sent in both the
@@ -91,6 +90,8 @@ func diffLines(files []DiffFile) (lines int, invisible bool) {
 
 // commit shows a commit: its message, its totals, the changed files and the
 // diff against the first parent. ?view=split selects the split layout.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter builds the commit page from the use case results; no rule is decided here
 func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	sha := r.PathValue("sha")
 	if !isCommitID(sha) {
@@ -100,57 +101,55 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 	if err != nil {
 		return nil, 0, err
 	}
-	res, err := s.cfg.Git.GetCommit(ctx, connect.NewRequest(&pb.GetCommitRequest{Repo: d.name(), Revision: sha}))
+	res, err := s.getCommit(ctx, d.repo.Name, sha)
 	if err != nil {
 		return nil, 0, err
 	}
-	c := res.Msg.GetCommit()
-	if c == nil {
-		return nil, 0, errNotFound
-	}
-	stats := res.Msg.GetStats()
+	c := res.Commit
+	cid := c.ID.String()
 	now := s.cfg.Now()
 
 	p := CommitPage{
-		SHA: c.GetId(), Short: short(c.GetId()),
-		Subject: visibleText(c.GetSummary()), Body: commitBody(c),
-		Author: person(c.GetAuthor(), now),
-		Merge:  len(c.GetParentIds()) > 1,
-		Root:   len(c.GetParentIds()) == 0,
-		NFiles: int(stats.GetFilesChanged()),
-		Adds:   int(stats.GetAdditions()),
-		Dels:   int(stats.GetDeletions()),
-		Files:  diffFiles(res.Msg.GetDiff().GetFiles()),
+		SHA: cid, Short: short(cid),
+		Subject: visibleText(c.Summary), Body: commitBody(c),
+		Author: person(c.Author, now),
+		Merge:  len(c.Parents) > 1,
+		Root:   len(c.Parents) == 0,
+		NFiles: res.Stats.FilesChanged,
+		Adds:   res.Stats.Additions,
+		Dels:   res.Stats.Deletions,
+		Files:  diffFiles(res.Diff.Files),
 	}
-	if cm := person(c.GetCommitter(), now); cm != p.Author || c.GetCommitter().GetEmail() != c.GetAuthor().GetEmail() {
+	if cm := person(c.Committer, now); cm != p.Author || c.Committer.Email != c.Author.Email {
 		p.Committer = &cm
 	}
-	for _, id := range c.GetParentIds() {
+	for _, pid := range c.Parents {
+		id := pid.String()
 		p.Parents = append(p.Parents, Link{Label: short(id), Href: repoHref(d.name(), "commit", id)})
 	}
 	for _, b := range d.branches {
-		if b.GetCommitId() == c.GetId() {
-			p.Refs = append(p.Refs, b.GetShortName())
+		if b.CommitID.String() == cid {
+			p.Refs = append(p.Refs, b.ShortName)
 		}
 	}
 	for _, t := range d.tags {
-		if t.GetCommitId() == c.GetId() {
-			p.Refs = append(p.Refs, "tag: "+t.GetShortName())
+		if t.CommitID.String() == cid {
+			p.Refs = append(p.Refs, "tag: "+t.ShortName)
 		}
 	}
-	p.Note = diffNote(res.Msg.GetDiff(), len(p.Files), p.NFiles)
+	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
 
 	lines, invisible := diffLines(p.Files)
 	p.Invisible = invisible
-	base := repoHref(d.name(), "commit", c.GetId())
+	base := repoHref(d.name(), "commit", cid)
 	p.DiffView = newDiffView(r, lines, base+"?view=unified", base+"?view=split")
 
 	l := s.repoLayout(ctx, d, "commits")
 	l.Title = p.Short + " " + p.Subject + " · " + d.name() + " · " + s.instance
-	pinRef(&l, target{rev: c.GetId(), name: p.Short, detached: true})
+	pinRef(&l, target{rev: cid, name: p.Short, detached: true})
 	history := repoHref(d.name())
 	if d.head != nil {
-		history = repoHref(d.name(), "commits", d.head.GetShortName())
+		history = repoHref(d.name(), "commits", d.head.ShortName)
 	}
 	l.Crumbs = []Crumb{
 		{Label: d.name(), Href: repoHref(d.name())},
@@ -162,25 +161,25 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 }
 
 // person converts a signature.
-func person(s *pb.Signature, now time.Time) Person {
-	p := Person{Name: visibleText(s.GetName())}
-	p.When, p.WhenAt = whenOf(now, s.GetTime())
-	if t := s.GetTime(); t.IsValid() {
-		p.Abs = absolute(t.AsTime())
+func person(s domain.Signature, now time.Time) Person {
+	p := Person{Name: visibleText(s.Name)}
+	p.When, p.WhenAt = whenOf(now, s.Time)
+	if !s.Time.IsZero() {
+		p.Abs = absolute(s.Time)
 	}
 	return p
 }
 
 // commitBody is the message without its first line, for display.
-func commitBody(c *pb.Commit) string {
-	msg := strings.ReplaceAll(c.GetMessage(), "\r\n", "\n")
+func commitBody(c domain.Commit) string {
+	msg := strings.ReplaceAll(c.Message, "\r\n", "\n")
 	_, body, _ := strings.Cut(msg, "\n")
 	return messageText(strings.TrimSpace(body))
 }
 
 // diffNote says what is missing from an incomplete diff, "" for a complete one.
-func diffNote(d *pb.Diff, shown, total int) string {
-	if !d.GetTruncated() {
+func diffNote(d domain.Diff, shown, total int) string {
+	if !d.Truncated {
 		return ""
 	}
 	var parts []string
@@ -188,8 +187,8 @@ func diffNote(d *pb.Diff, shown, total int) string {
 		parts = append(parts, plural(total-shown, "file is", "files are")+" not listed")
 	}
 	cut := 0
-	for _, f := range d.GetFiles() {
-		if f.GetTruncated() {
+	for _, f := range d.Files {
+		if f.Truncated {
 			cut++
 		}
 	}

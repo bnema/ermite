@@ -9,7 +9,7 @@ import (
 
 	"github.com/a-h/templ"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // refs lists the branches and the tags of a repository with the commit each
@@ -33,27 +33,27 @@ func (s *Server) refs(ctx context.Context, r *http.Request) (templ.Component, in
 // refsPage is the content of the refs page, which the live updates of the
 // page render again.
 func (s *Server) refsPage(ctx context.Context, d *repoData) RefsPage {
-	commits := s.commitsOf(ctx, d.name(), d.allRefs())
+	commits := s.commitsOf(ctx, d.repo.Name, d.allRefs())
 
-	def := d.repo.GetDefaultBranch()
+	def := d.repo.DefaultBranch
 	p := RefsPage{Default: def}
-	branches := append([]*pb.Ref(nil), d.branches...)
+	branches := append([]domain.Ref(nil), d.branches...)
 	sort.SliceStable(branches, func(i, j int) bool {
-		a, b := branches[i].GetShortName() == def, branches[j].GetShortName() == def
+		a, b := branches[i].ShortName == def, branches[j].ShortName == def
 		return a && !b
 	})
 	for i, b := range branches {
-		p.Branches = append(p.Branches, s.refRow(d, b, commits, b.GetShortName() == def, i == 0))
+		p.Branches = append(p.Branches, s.refRow(d, b, commits, b.ShortName == def, i == 0))
 	}
-	tags := append([]*pb.Ref(nil), d.tags...)
+	tags := append([]domain.Ref(nil), d.tags...)
 	sort.SliceStable(tags, func(i, j int) bool {
-		return commits[tags[i].GetCommitId()].at > commits[tags[j].GetCommitId()].at
+		return commits[tags[i].CommitID.String()].at > commits[tags[j].CommitID.String()].at
 	})
 	for i, t := range tags {
 		p.Tags = append(p.Tags, s.refRow(d, t, commits, false, len(p.Branches) == 0 && i == 0))
 	}
 	if len(tags) > 0 {
-		p.Latest = tags[0].GetShortName()
+		p.Latest = tags[0].ShortName
 	}
 	if d.cut {
 		p.Note = "this repository has more refs than are listed here."
@@ -61,15 +61,16 @@ func (s *Server) refsPage(ctx context.Context, d *repoData) RefsPage {
 	return p
 }
 
-func (s *Server) refRow(d *repoData, r *pb.Ref, commits map[string]refCommit, isDefault, cursor bool) RefRow {
-	c := commits[r.GetCommitId()]
+func (s *Server) refRow(d *repoData, r domain.Ref, commits map[string]refCommit, isDefault, cursor bool) RefRow {
+	id := r.CommitID.String()
+	c := commits[id]
 	row := RefRow{
-		Name: r.GetShortName(), Href: repoHref(d.name(), "tree", r.GetShortName()),
-		Short: short(r.GetCommitId()), Subject: c.subject, When: c.when, WhenAt: c.whenAt,
+		Name: r.ShortName, Href: repoHref(d.name(), "tree", r.ShortName),
+		Short: short(id), Subject: c.subject, When: c.when, WhenAt: c.whenAt,
 		Default: isDefault, Cursor: cursor,
 	}
-	if r.GetCommitId() != "" {
-		row.CHref = repoHref(d.name(), "commit", r.GetCommitId())
+	if id != "" {
+		row.CHref = repoHref(d.name(), "commit", id)
 	}
 	return row
 }

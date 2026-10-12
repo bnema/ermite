@@ -37,8 +37,8 @@ templ OverlayRefs(l Layout) {
 					type="search"
 					placeholder="Switch branch or tag…"
 					autocomplete="off"
-					data-pick
-					hx-on:input="let t = this.value.toLowerCase(); q('#panel-refs li').arr().forEach(li => li.hidden = !li.textContent.toLowerCase().includes(t))"
+					data-pick="#panel-refs li"
+					hx-on:input="ermite.filter(this)"
 				/>
 				<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
 			</div>
@@ -96,14 +96,8 @@ templ OverlayCmd(items []CmdItem) {
 				autocomplete="off"
 				spellcheck="false"
 				aria-controls="cmd-list"
-				hx-on:input="let t = this.value.toLowerCase().trim();
-        q('#cmd-list > li[data-k]').arr().forEach(li => li.hidden = !li.dataset.k.includes(t));
-        let first = q('#cmd-list > li[data-k]:not([hidden])').arr()[0]; first && q(first).take('data-cursor', '#cmd-list > li'); ermiteFinder.palette(this)"
-				hx-on:keydown="let vis = q('#cmd-list > li:not([hidden])').arr();
-        let i = vis.findIndex(li => li.hasAttribute('data-cursor'));
-        let step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
-        if (step) { event.preventDefault(); let n = vis[Math.max(0, Math.min(vis.length - 1, i + step))]; n && (q(n).take('data-cursor', '#cmd-list > li'), n.scrollIntoView({ block: 'nearest' })) }
-        else if (event.key === 'Enter') { event.preventDefault(); vis[Math.max(i, 0)]?.querySelector('a').click() }"
+				hx-on:input="ermite.cmdFilter(this); ermiteFinder.palette(this)"
+				hx-on:keydown="ermite.cmdKey(event)"
 			/>
 			<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
 		</div>

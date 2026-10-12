@@ -5,12 +5,15 @@ package web
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strconv"
+	"sync"
+	"time"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // liveStream turns the events of Watch into the fragments one page shows.
@@ -34,48 +37,73 @@ func renderFragment(ctx context.Context, event string, c templ.Component) (fragm
 
 var gap = []fragment{{event: "gap", html: "gap"}}
 
+// liveEvent reports whether the event of a watch is one the pages follow: a
+// gap, or one of the events of the forge. The use case may send others, which
+// no page shows and no stream carries, not even their id.
+func liveEvent(we ports.WatchEvent) bool {
+	if we.Gap {
+		return true
+	}
+	switch we.Event.(type) {
+	case domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
+		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.CommentAdded:
+		return true
+	}
+	return false
+}
+
 // render returns the fragments for an event, none when it changes nothing on
 // the page.
-func (l *liveStream) render(ctx context.Context, ev *pb.Event) ([]fragment, error) {
-	if ev == nil {
-		return nil, nil
-	}
-	if ev.GetGap() != nil {
+func (l *liveStream) render(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
+	if we.Gap {
 		return gap, nil
 	}
-	if l.repo == "" {
-		return l.home(ctx, ev)
+	if we.Event == nil {
+		return nil, nil
 	}
-	return l.repoPage(ctx, ev)
+	if l.repo == "" {
+		return l.home(ctx, we)
+	}
+	return l.repoPage(ctx, we)
+}
+
+// repoByName reads a repository as the caller of the request. A name that is
+// not valid is a repository that is not there.
+func (l *liveStream) repoByName(ctx context.Context, rawName string) (ports.RepoView, error) {
+	name, err := domain.ParseRepoName(rawName)
+	if err != nil {
+		return ports.RepoView{}, domain.ErrNotFound
+	}
+	return l.s.repoView(ctx, name)
 }
 
 // home upserts the row of the repository an event is about. The row is read
-// again from the API as the visitor of the stream, so a repository that was
-// deleted or that the visitor can no longer see (public to private) removes
-// the row, and the stream never carries more than the list shows.
-func (l *liveStream) home(ctx context.Context, ev *pb.Event) ([]fragment, error) {
+// again from the use case as the principal of the stream, so a repository
+// that was deleted or that the visitor can no longer see (public to private)
+// removes the row, and the stream never carries more than the list shows.
+func (l *liveStream) home(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	var name string
 	fresh := false
-	switch k := ev.GetKind().(type) {
-	case *pb.Event_RepoDeleted:
-		return l.gone(ctx, k.RepoDeleted.GetRepo())
-	case *pb.Event_RepoCreated:
-		name = k.RepoCreated.GetRepo().GetName()
-	case *pb.Event_RepoUpdated:
-		name = k.RepoUpdated.GetRepo().GetName()
-	case *pb.Event_Pushed:
-		name, fresh = k.Pushed.GetRepo(), true
+	switch ev := we.Event.(type) {
+	case domain.RepoDeleted:
+		return l.gone(ctx, ev.Repo.String())
+	case domain.RepoCreated:
+		name = ev.Repo.String()
+	case domain.RepoUpdated:
+		name = ev.Repo.String()
+	case domain.PushEvent:
+		name, fresh = ev.Repo.String(), true
 	default:
 		return nil, nil
 	}
-	res, err := l.s.cfg.Repos.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: name}))
+	view, err := l.repoByName(ctx, name)
 	switch {
-	case connect.CodeOf(err) == connect.CodeNotFound:
+	case errors.Is(err, domain.ErrNotFound):
 		return l.gone(ctx, name)
 	case err != nil:
 		return nil, err
 	}
-	row := homeRow(res.Msg.GetRepo(), l.s.cfg.Now(), false)
+	row := homeRow(view, l.s.cfg.Now(), false)
 	row.Fresh = fresh
 	f, err := renderFragment(ctx, "home-list", HomeRowView(row))
 	return []fragment{f}, err
@@ -87,16 +115,16 @@ func (l *liveStream) gone(ctx context.Context, name string) ([]fragment, error) 
 }
 
 // repoPage handles the events of the topic of one repository.
-func (l *liveStream) repoPage(ctx context.Context, ev *pb.Event) ([]fragment, error) {
-	switch k := ev.GetKind().(type) {
-	case *pb.Event_RepoDeleted, *pb.Event_RepoCreated:
+func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
+	switch ev := we.Event.(type) {
+	case domain.RepoDeleted, domain.RepoCreated:
 		// Gone, or a new repository under the same name: whatever the page
 		// shows is not true any more.
 		return gap, nil
-	case *pb.Event_RepoUpdated:
-		_, err := l.s.cfg.Repos.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: l.repo}))
+	case domain.RepoUpdated:
+		_, err := l.repoByName(ctx, l.repo)
 		switch {
-		case connect.CodeOf(err) == connect.CodeNotFound:
+		case errors.Is(err, domain.ErrNotFound):
 			return gap, nil // no longer visible
 		case err != nil:
 			return nil, err
@@ -104,26 +132,26 @@ func (l *liveStream) repoPage(ctx context.Context, ev *pb.Event) ([]fragment, er
 			return gap, nil // the description, the default branch
 		}
 		return nil, nil
-	case *pb.Event_MergeRequestOpened:
-		return l.mrNotice(ctx, k.MergeRequestOpened.GetMergeRequest().GetNumber(), "a merge request was opened — reload")
-	case *pb.Event_MergeRequestMerged:
-		return l.mrNotice(ctx, k.MergeRequestMerged.GetMergeRequest().GetNumber(), "this merge request was merged — reload")
-	case *pb.Event_MergeRequestClosed:
-		return l.mrNotice(ctx, k.MergeRequestClosed.GetMergeRequest().GetNumber(), "this merge request was closed — reload")
-	case *pb.Event_CommentAdded:
-		return l.mrNotice(ctx, k.CommentAdded.GetNumber(), "a comment was added — reload")
-	case *pb.Event_Pushed:
+	case domain.MergeRequestOpened:
+		return l.mrNotice(ctx, ev.MergeRequest.Number, "a merge request was opened — reload")
+	case domain.MergeRequestMerged:
+		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request was merged — reload")
+	case domain.MergeRequestClosed:
+		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request was closed — reload")
+	case domain.CommentAdded:
+		return l.mrNotice(ctx, ev.Number, "a comment was added — reload")
+	case domain.PushEvent:
 		switch l.view {
 		case "mr":
-			return l.mrPushed(ctx, k.Pushed)
+			return l.mrPushed(ctx, ev)
 		case "mrs":
 			return nil, nil
 		}
 		switch l.view {
 		case "refs":
-			return l.refs(ctx)
+			return l.refs(ctx, we.ID)
 		case "commits":
-			return l.banner(ctx, k.Pushed)
+			return l.banner(ctx, ev)
 		}
 		return l.lastPush(ctx)
 	}
@@ -132,39 +160,144 @@ func (l *liveStream) repoPage(ctx context.Context, ev *pb.Event) ([]fragment, er
 
 // lastPush is the "last push" fact of the summary.
 func (l *liveStream) lastPush(ctx context.Context) ([]fragment, error) {
-	res, err := l.s.cfg.Repos.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: l.repo}))
+	view, err := l.repoByName(ctx, l.repo)
 	if err != nil {
 		return nil, err
 	}
-	f, err := renderFragment(ctx, "repo-last-push", FactValue(lastPushFact(res.Msg.GetRepo(), l.s.cfg.Now())))
+	f, err := renderFragment(ctx, "repo-last-push", FactValue(lastPushFact(view, l.s.cfg.Now())))
 	return []fragment{f}, err
 }
 
-// refs is the table of the refs page and the facts of its rail.
-func (l *liveStream) refs(ctx context.Context) ([]fragment, error) {
-	d, err := l.s.loadRepo(ctx, l.repo)
-	if err != nil {
-		return nil, err
+// refs is the table of the refs page and the facts of its rail. The fragments
+// of one event are built once for all the watchers of the repository that
+// see the same things (see fanout); eventID names the event.
+func (l *liveStream) refs(ctx context.Context, eventID string) ([]fragment, error) {
+	key := fanKey{repo: l.repo, event: eventID, owner: SignedIn(ctx)}
+	return l.s.refsFan.do(ctx, key, func() ([]fragment, error) {
+		d, err := l.s.loadRepo(ctx, l.repo)
+		if err != nil {
+			return nil, err
+		}
+		p := l.s.refsPage(ctx, d)
+		body, err := renderFragment(ctx, "refs-list", RefsBody(p))
+		if err != nil {
+			return nil, err
+		}
+		kv, err := renderFragment(ctx, "refs-list", RefsKV(p))
+		return []fragment{body, kv}, err
+	})
+}
+
+const (
+	// fanTTL is how long the fragments of an event are kept for the watchers
+	// that are told of it a little later than the first.
+	fanTTL = 2 * time.Second
+	// fanMax bounds the events kept; past it an event is built for each
+	// watcher, as without sharing.
+	fanMax = 64
+)
+
+// fanKey says which watchers may share the fragments of an event: those of
+// the same repository, for the same event, and of the same class. The class
+// is anonymous or owner (a session is the owner's alone, ADR 0018): what is
+// built as the owner can show what an anonymous visitor may not see, so the
+// two never share an entry.
+type fanKey struct {
+	repo, event string
+	owner       bool
+}
+
+type fanEntry struct {
+	done  chan struct{} // closed once frags or err is set
+	frags []fragment
+	err   error
+	at    time.Time // when it was built; zero while it is
+}
+
+// fanout builds the fragments of an event once for the many watchers that
+// receive it: a push to a repository that 256 pages watch would otherwise
+// load the refs and the commits they designate 256 times. The zero value is
+// ready. A failure is never kept: the next watcher builds it again.
+type fanout struct {
+	mu sync.Mutex
+	m  map[fanKey]*fanEntry
+}
+
+// do returns the fragments of key, built by build when nobody has or is
+// building them. build runs with the context of the watcher that calls it,
+// which is of the class of the key; a watcher whose builder failed (its
+// request was cancelled, say) does not fail the others, they build again.
+func (f *fanout) do(ctx context.Context, key fanKey, build func() ([]fragment, error)) ([]fragment, error) {
+	if key.event == "" {
+		return build() // no event to share by
 	}
-	p := l.s.refsPage(ctx, d)
-	body, err := renderFragment(ctx, "refs-list", RefsBody(p))
-	if err != nil {
-		return nil, err
+	for range 3 {
+		f.mu.Lock()
+		now := time.Now()
+		for k, e := range f.m {
+			if !e.at.IsZero() && now.Sub(e.at) > fanTTL {
+				delete(f.m, k)
+			}
+		}
+		e, shared := f.m[key]
+		if !shared {
+			if len(f.m) >= fanMax {
+				f.mu.Unlock()
+				return build()
+			}
+			if f.m == nil {
+				f.m = make(map[fanKey]*fanEntry)
+			}
+			e = &fanEntry{done: make(chan struct{})}
+			f.m[key] = e
+		}
+		f.mu.Unlock()
+
+		if !shared {
+			return f.lead(key, e, build)
+		}
+		select {
+		case <-e.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if e.err == nil {
+			return e.frags, nil
+		}
 	}
-	kv, err := renderFragment(ctx, "refs-list", RefsKV(p))
-	return []fragment{body, kv}, err
+	return build()
+}
+
+// lead builds the entry that the caller registered.
+func (f *fanout) lead(key fanKey, e *fanEntry, build func() ([]fragment, error)) (frags []fragment, err error) {
+	err = errors.New("web: fragments were not built") // a panic of build
+	defer func() {
+		f.mu.Lock()
+		e.frags, e.err, e.at = frags, err, time.Now()
+		if err != nil && f.m[key] == e {
+			delete(f.m, key)
+		}
+		f.mu.Unlock()
+		close(e.done)
+	}()
+	return build()
 }
 
 // banner tells the commits page how many commits its branch got since the
 // head it lists.
-func (l *liveStream) banner(ctx context.Context, p *pb.Pushed) ([]fragment, error) {
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter counts the commits of a page for the banner text; display only
+func (l *liveStream) banner(ctx context.Context, p domain.PushEvent) ([]fragment, error) {
 	if l.ref == "" || !isFullID(l.head) {
 		return nil, nil
 	}
 	tip, touched := "", false
-	for _, u := range p.GetRefUpdates() {
-		if u.GetRef() == "refs/heads/"+l.ref {
-			tip, touched = u.GetNewId(), true
+	for _, u := range p.Updates {
+		if u.Ref == "refs/heads/"+l.ref {
+			tip, touched = u.New, true
+			if u.IsDelete() {
+				tip = ""
+			}
 		}
 	}
 	switch {
@@ -175,9 +308,11 @@ func (l *liveStream) banner(ctx context.Context, p *pb.Pushed) ([]fragment, erro
 	}
 	text := ""
 	if tip != l.head {
-		res, err := l.s.cfg.Git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{
-			Repo: l.repo, Revision: tip, PageSize: pageSize,
-		}))
+		name, err := domain.ParseRepoName(l.repo)
+		if err != nil {
+			return nil, err
+		}
+		res, err := l.s.commitList(ctx, name, tip, "", pageSize, "")
 		if err != nil {
 			return nil, err
 		}
@@ -185,10 +320,10 @@ func (l *liveStream) banner(ctx context.Context, p *pb.Pushed) ([]fragment, erro
 		// ordered by date, not as "head..tip", so commits that are not new may
 		// be counted before the head is met. And one page of the log being
 		// all that is read, "100+" cannot be told from a rewritten branch
-		// whose old head is further back: the API has no "is ancestor".
+		// whose old head is further back: the use cases have no "is ancestor".
 		n, found := 0, false
-		for _, c := range res.Msg.GetCommits() {
-			if c.GetId() == l.head {
+		for _, c := range res.Commits {
+			if c.ID.String() == l.head {
 				found = true
 				break
 			}
@@ -197,13 +332,13 @@ func (l *liveStream) banner(ctx context.Context, p *pb.Pushed) ([]fragment, erro
 		switch {
 		case found:
 			text = newCommits(strconv.Itoa(n), n)
-		case res.Msg.GetNextPageToken() != "":
+		case res.NextPageToken != "":
 			text = newCommits(strconv.Itoa(n)+"+", 2)
 		default:
 			text = "the branch was rewritten — reload"
 		}
 	}
-	c := CommitsSlot()
+	c := LiveSlot("commits-head")
 	if text != "" {
 		c = CommitsBanner(text, repoHref(l.repo, "commits", l.ref))
 	}
@@ -240,12 +375,12 @@ func (l *liveStream) mrNotice(ctx context.Context, number int64, text string) ([
 }
 
 // mrPushed announces a push to the source branch of the merge request shown.
-func (l *liveStream) mrPushed(ctx context.Context, p *pb.Pushed) ([]fragment, error) {
+func (l *liveStream) mrPushed(ctx context.Context, p domain.PushEvent) ([]fragment, error) {
 	if l.ref == "" {
 		return nil, nil
 	}
-	for _, u := range p.GetRefUpdates() {
-		if u.GetRef() == "refs/heads/"+l.ref {
+	for _, u := range p.Updates {
+		if u.Ref == "refs/heads/"+l.ref {
 			n, err := strconv.ParseInt(l.n, 10, 64)
 			if err != nil {
 				return nil, nil

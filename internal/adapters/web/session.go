@@ -16,6 +16,8 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/clientlimit"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // The owner's session on the web (ADR 0018).
@@ -29,7 +31,7 @@ import (
 // State changes are POST only and pass one gate (ServeHTTP): an Origin equal to
 // the origin of the public URL, and a valid session, except the login POST,
 // which needs the link instead. The routes read the cookie and never the
-// Authorization header; the API does the opposite.
+// Authorization header; the API does the opposite, it reads the header and no cookie.
 
 // CookieName is the session cookie. The __Host- prefix makes browsers accept
 // it only with Secure, Path=/ and no Domain, and refuse it from a sibling
@@ -38,31 +40,6 @@ const CookieName = "__Host-ermite"
 
 // loginPrefix is the path of login links, up to the nonce.
 const loginPrefix = "/-/login/"
-
-// ErrLinkRejected is what SessionAuth.Login returns for a link that is
-// unknown, expired or already used.
-var ErrLinkRejected = errors.New("login link rejected")
-
-// SessionAuth is the session side of the use cases, as the web needs it.
-type SessionAuth interface {
-	// LoginLinkValid reports whether the link is pending, without using it.
-	LoginLinkValid(nonce string) bool
-	// Login uses the link and returns the session token and how long it
-	// lasts, or ErrLinkRejected.
-	Login(ctx context.Context, nonce string) (token string, lifetime time.Duration, err error)
-	// Verify checks a session token. When it is valid it returns the context
-	// to serve the request with, which carries the owner as the caller of the
-	// API; when it is not, ok is false and err nil. An error means the check
-	// could not be made (the request then runs as anonymous).
-	Verify(ctx context.Context, token string) (owner context.Context, ok bool, err error)
-}
-
-// FailureLimiter counts failed logins per client, with the failed
-// authentications of the other routes. *clientlimit.Limiter fits.
-type FailureLimiter interface {
-	Blocked(ctx context.Context, addr string) (bool, time.Duration)
-	Fail(ctx context.Context, addr string)
-}
 
 type signedInKey struct{}
 
@@ -150,7 +127,19 @@ func (s *Server) withSession(w http.ResponseWriter, r *http.Request) *http.Reque
 		varyCookie(h)
 		return r
 	}
-	return r.WithContext(context.WithValue(owner, signedInKey{}, struct{}{}))
+	ctx = domain.ContextWithPrincipal(ctx, owner)
+	return r.WithContext(context.WithValue(ctx, signedInKey{}, struct{}{}))
+}
+
+// principal is the caller of the request, the one every use case call carries:
+// the owner when the request has a valid session (withSession), anonymous
+// otherwise.
+func principal(ctx context.Context) domain.Principal {
+	p, ok := domain.PrincipalFromContext(ctx)
+	if !ok {
+		return domain.Anonymous()
+	}
+	return p
 }
 
 // sessionStillValid checks again the cookie a long-lived request started
@@ -275,12 +264,12 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 	nonce := r.PathValue("nonce")
 	var token string
 	var lifetime time.Duration
-	err := ErrLinkRejected
+	err := ports.ErrLinkRejected
 	if validNonce(nonce) {
 		token, lifetime, err = s.cfg.Sessions.Login(ctx, nonce)
 	}
 	switch {
-	case errors.Is(err, ErrLinkRejected):
+	case errors.Is(err, ports.ErrLinkRejected):
 		s.cfg.Limiter.Fail(ctx, addr)
 		s.secretPage(w, r, http.StatusNotFound, s.loginRejectedPage())
 		return

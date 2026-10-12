@@ -5,7 +5,7 @@ package web
 import "html/template"
 
 // View models handed to the templ components. Components only loop and
-// branch on these; the handlers build them from the API messages.
+// branch on these; the handlers build them from the use case results.
 
 // Crumb is one segment of the path in the header.
 type Crumb struct {

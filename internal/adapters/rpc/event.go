@@ -8,11 +8,11 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // eventService implements ermiteconnect.EventServiceHandler.
-type eventService struct{ events *app.Events }
+type eventService struct{ events ports.EventService }
 
 // Watch streams events until the client goes away or the server stops. The
 // stream ends with success in both cases: the contract has no error for
@@ -20,7 +20,7 @@ type eventService struct{ events *app.Events }
 // the caller is revoked or expires, and a caller that has too many streams
 // open gets resource_exhausted.
 func (s *eventService) Watch(ctx context.Context, req *connect.Request[pb.WatchRequest], stream *connect.ServerStream[pb.WatchResponse]) error {
-	params := app.WatchParams{
+	params := ports.WatchParams{
 		Topics: req.Msg.GetTopics(), ResumeAfter: req.Msg.GetResumeAfter(),
 		Client: clientFromContext(ctx),
 		// A client's call returns when the response begins: send the headers
@@ -28,7 +28,7 @@ func (s *eventService) Watch(ctx context.Context, req *connect.Request[pb.WatchR
 		// them for a nil message. A failure shows on the first real send.
 		Ready: func() { _ = stream.Send(nil) },
 	}
-	err := s.events.Watch(ctx, caller(ctx), params, func(we app.WatchEvent) error {
+	err := s.events.Watch(ctx, caller(ctx), params, func(we ports.WatchEvent) error {
 		ev := watchEventToPB(we)
 		if ev == nil {
 			return nil

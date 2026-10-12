@@ -3,72 +3,32 @@
 package web
 
 // Keys is the keyboard map. ermite.js turns keys into k-<name> events on
-// <body>; this element (hx-on + hx-live helpers) is the only place that
-// reacts to them.
+// <body>; this element is the only place that binds them, each to one call of
+// window.ermite (ermite.js), which does the work.
 templ Keys() {
 	<div
 		id="keys"
 		hidden
-		hx-on="k-j from:body -> (async (d) => {
-           if (q('dialog[open]').count) return;
-           let rows = q('[data-rows] > :not([hidden])').arr();
-           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
-           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
-           let j = Math.max(0, Math.min(rows.length - 1, i + d)), n = rows[j];
-           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' });
-           let b = document.body.dataset, mark = (j + 1) + '/' + rows.length; b.nav = mark;
-           await timeout('1500ms'); if (b.nav === mark) b.nav = ''
-         })(1);
-         k-k from:body -> (async (d) => {
-           if (q('dialog[open]').count) return;
-           let rows = q('[data-rows] > :not([hidden])').arr();
-           if (!rows.length) return (scrollBy(0, d * 180), q('#main').arr()[0].scrollBy(0, d * 180));
-           let i = rows.findIndex(r => r.hasAttribute('data-cursor'));
-           let j = Math.max(0, Math.min(rows.length - 1, i + d)), n = rows[j];
-           q(n).take('data-cursor'); n.scrollIntoView({ block: 'nearest' });
-           let b = document.body.dataset, mark = (j + 1) + '/' + rows.length; b.nav = mark;
-           await timeout('1500ms'); if (b.nav === mark) b.nav = ''
-         })(-1);
-         k-top from:body -> q('[data-rows] > :not([hidden])').arr()[0]?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 0), q('#main').arr()[0].scrollTo(0, 0));
-         k-bottom from:body -> q('[data-rows] > :not([hidden])').arr().at(-1)?.scrollIntoView({ block: 'nearest' }) ?? (scrollTo(0, 1e9), q('#main').arr()[0].scrollTo(0, 1e9));
-         k-open from:body -> q('dialog[open]').count || document.querySelector('[data-cursor] a')?.click();
-         k-esc from:body -> q('dialog[open]').arr().forEach(d => d.close());
-         k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].showModal();
-         k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].showModal(), q('#refs-filter').arr()[0].focus());
-         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].showModal(); q('#cmd-q').arr()[0].focus(); ermiteFinder.load();
-         k-filter from:body -> q('[data-filter]').arr()[0]?.focus();
-         k-gh from:body -> document.querySelector('.brand')?.click();
-         k-gt from:body -> document.querySelector('.tabs [data-key=t]')?.click();
-         k-gc from:body -> document.querySelector('.tabs [data-key=c]')?.click();
-         k-gr from:body -> document.querySelector('.tabs [data-key=r]')?.click();
-         k-s from:body -> document.querySelector('.tabs [data-key=s]')?.click();
-         k-t from:body -> document.querySelector('.tabs [data-key=t]')?.click();
-         k-c from:body -> document.querySelector('.tabs [data-key=c]')?.click();
-         k-r from:body -> document.querySelector('.tabs [data-key=r]')?.click();
-         k-m from:body -> document.querySelector('.tabs [data-key=m]')?.click();
-         k-gm from:body -> document.querySelector('.tabs [data-key=m]')?.click();
-         k-next from:body -> {
-           let ns = q('#diffs .cmt').arr(); if (!ns.length) return;
-           let i = ns.findIndex(n => n.getBoundingClientRect().top > innerHeight / 3);
-           let n = ns[i < 0 ? 0 : i]; n.closest('details') && (n.closest('details').open = true); n.scrollIntoView({ block: 'center' })
-         };
-         k-split from:body -> {
-           let el = q('[data-diff]').arr()[0]; if (!el) return;
-           el.dataset.diff = 'split'; sessionStorage.setItem('diff', 'split');
-           q('[data-file]').arr().filter(d => d.querySelector('.dt')).forEach(d => d.open = true)
-         };
-         k-unified from:body -> {
-           let el = q('[data-diff]').arr()[0]; if (!el) return;
-           el.dataset.diff = 'unified'; sessionStorage.setItem('diff', 'unified');
-           q('[data-file]').arr().filter(d => d.querySelector('.dt')).forEach(d => d.open = true)
-         };
-         k-collapse from:body -> { let fs = q('[data-file]').arr(), open = !fs.some(d => d.open); fs.forEach(d => d.open = open) };
-         k-permalink from:body -> {
-           let b = document.body.dataset;
-           if (!b.sha) { b.flash = 'no ref to pin on this page'; await timeout('2s'); b.flash = ''; return }
-           history.replaceState(null, '', location.pathname.replace('/' + b.ref + '/', '/' + b.sha + '/') + location.hash);
-           navigator.clipboard?.writeText(location.href);
-           b.flash = 'permalink ' + b.sha.slice(0, 7) + ' copied'; await timeout('2s'); b.flash = ''
-         }"
+		hx-on="k-j from:body -> ermite.move(1);
+         k-k from:body -> ermite.move(-1);
+         k-top from:body -> ermite.edge(false);
+         k-bottom from:body -> ermite.edge(true);
+         k-open from:body -> ermite.open();
+         k-esc from:body -> ermite.closeDialogs();
+         k-help from:body -> ermite.dialog('panel-help');
+         k-refs from:body -> ermite.dialog('panel-refs', 'refs-filter');
+         k-cmd from:body -> ermite.dialog('panel-cmd', 'cmd-q'); ermiteFinder.load();
+         k-filter from:body -> ermite.focusFilter();
+         k-gh from:body -> ermite.go('.brand');
+         k-s from:body -> ermite.tab('s');
+         k-t from:body -> ermite.tab('t');
+         k-c from:body -> ermite.tab('c');
+         k-r from:body -> ermite.tab('r');
+         k-m from:body -> ermite.tab('m');
+         k-next from:body -> ermite.nextNote();
+         k-split from:body -> ermite.layout('split');
+         k-unified from:body -> ermite.layout('unified');
+         k-collapse from:body -> ermite.collapse();
+         k-permalink from:body -> ermite.permalink()"
 	></div>
 }

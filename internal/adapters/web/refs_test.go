@@ -3,27 +3,42 @@
 package web
 
 import (
+	"crypto/sha1" // #nosec G505 -- ids for tests
+	"encoding/hex"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
-func ref(kind pb.RefKind, short string) *pb.Ref {
-	return &pb.Ref{Name: "refs/x/" + short, ShortName: short, Kind: kind, CommitId: "c-" + short}
+// commitOf is a commit id derived from a name, so that two refs of one name
+// share their commit.
+func commitOf(name string) domain.ObjectID {
+	sum := sha1.Sum([]byte(name)) // #nosec G401 -- an id for a test, not a hash for security
+	id, err := domain.ParseObjectID(hex.EncodeToString(sum[:]))
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+func ref(kind domain.RefKind, short string) domain.Ref {
+	id := commitOf(short)
+	return domain.Ref{Name: "refs/x/" + short, ShortName: short, Kind: kind, ID: id, CommitID: id}
 }
 
 // AC3: a ref with slashes is found by the longest matching prefix.
 func TestResolveRef(t *testing.T) {
-	b, tag := pb.RefKind_REF_KIND_BRANCH, pb.RefKind_REF_KIND_TAG
-	refs := []*pb.Ref{
+	t.Parallel()
+	b, tag := domain.RefKindBranch, domain.RefKindTag
+	refs := []domain.Ref{
 		ref(b, "main"), ref(b, "feature"), ref(b, "feature/x"), ref(b, "feature/x/y"), ref(tag, "v1/rc"),
-		ref(pb.RefKind_REF_KIND_HEAD, "main"), ref(tag, "main"),
+		ref(domain.RefKindHead, "main"), ref(tag, "main"),
 	}
 	tests := []struct {
 		path, ref, rest string
-		kind            pb.RefKind
+		kind            domain.RefKind
 		ok              bool
 	}{
 		{"main", "main", "", b, true},
@@ -33,25 +48,27 @@ func TestResolveRef(t *testing.T) {
 		{"feature/other", "feature", "other", b, true},
 		{"/feature/x/", "feature/x", "", b, true},
 		{"v1/rc/README", "v1/rc", "README", tag, true},
-		{"v1/README", "", "", 0, false},
-		{"nope/main", "", "", 0, false},
-		{"", "", "", 0, false},
+		{"v1/README", "", "", "", false},
+		{"nope/main", "", "", "", false},
+		{"", "", "", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
 			r, rest, ok := resolveRef(refs, tt.path)
 			assert.Equal(t, tt.ok, ok)
 			if !ok {
 				return
 			}
-			assert.Equal(t, tt.ref, r.GetShortName())
-			assert.Equal(t, tt.kind, r.GetKind(), "a branch wins over a tag of the same name")
+			assert.Equal(t, tt.ref, r.ShortName)
+			assert.Equal(t, tt.kind, r.Kind, "a branch wins over a tag of the same name")
 			assert.Equal(t, tt.rest, rest)
 		})
 	}
 }
 
 func TestRepoHref(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "/demo", repoHref("demo"))
 	assert.Equal(t, "/demo/tree/feature/x/a%20b/c%23.go", repoHref("demo", "tree", "feature/x", "a b/c#.go"))
 	assert.Equal(t, "/demo/blob/main/%3Fq", repoHref("demo", "blob", "main", "", "?q"))

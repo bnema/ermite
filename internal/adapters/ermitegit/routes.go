@@ -4,16 +4,20 @@ package ermitegit
 
 // DefaultRoutes returns the routes of production.
 //
-// The rule: a method is routed to ermite-git only when it passes the shared
+// The rule: a method is routed to ermite-git when it passes the shared
 // conformance table (TestConformance, TestCompareWithCLI) and its benchmark
-// beats the CLI adapter in time, in bytes AND in allocations per call, warm
-// AND cold, on the generated fixture AND on lazygit (BenchmarkRepoReader,
-// ERMITE_GIT_BENCH_REPO). Where a method has several shapes, every shape must
-// win: the constants GetTree, GetTreeLastCommits, ResolveRevisionAbbrev and
-// ListCommitsPath cover directories of any size and files of any history. A
-// method that does not win stays on the CLI. GetCommit is not routable: the
-// diff stays on git. ListPaths has one shape: the fixture lists 131 files and
-// lazygit 2,180.
+// beats the CLI adapter WARM in time AND in bytes per call, on the generated
+// fixture AND on lazygit (BenchmarkRepoReader, ERMITE_GIT_BENCH_REPO), and its
+// COLD run does not lose in time by more than the open itself (about 65 µs,
+// paid once per open, see below). Allocation counts are reported but do not
+// decide: the repository cache (cache.go) keeps up to 64 repositories open for
+// ten minutes, so nearly every request is warm, and the CLI's own cost (a
+// process per call, absent from the Go counters) is not in its numbers. Where
+// a method has several shapes that behave differently, each has its own
+// constant: GetTree, GetTreeLastCommits (root), GetTreeSubdirLastCommits,
+// ResolveRevisionAbbrev and ListCommitsPath. A method that does not win stays
+// on the CLI. GetCommit is not routable: the diff stays on git. ListPaths has
+// one shape: the fixture lists 131 files and lazygit 2,180.
 //
 // Warm is a repository that is open; cold closes it before every call, the
 // price of the first read after the idle TTL, an eviction or a restart (a
@@ -97,45 +101,53 @@ package ermitegit
 //	ListCommits/dirpath     lazygit  warm  6.7ms 127.8K 403     2.0ms 50.2K 181      win
 //	ListCommits/dirpath     lazygit  cold  6.7ms 127.8K 403     3.3ms 887.1K 2019    loses ba
 //
-// What decides the routes, with ermite-git 5228465 (zlib reader with a reused
-// adler32, header-size cache, Refresh and LookupRefID without allocations):
+// The "verdict" column is the strict reading, every line of the table won;
+// the routes follow the rule above. What decides them, with ermite-git 5228465
+// (zlib reader with a reused adler32, header-size cache, Refresh and
+// LookupRefID without allocations):
 //
-//   - The warm runs all win but GetTree of a large directory on lazygit (time
-//     is won since the zlib change, bytes are not) and OpenBlob, whose
-//     allocations come from the inflate of a small blob and whose time is
-//     lost for a 10 MiB blob (inflate speed: 52 ms against 21 ms).
-//   - The cold runs lose in allocations for every method that does little
-//     work after the open (ListRefs, GetTree, ResolveRefPath: 150 to 200
-//     against 60 to 140), and in time too for the ones that cost a few
-//     microseconds warm (ResolveRevision: 65 µs against 9 to 63 µs).
-//   - Only the history of a revision (ListCommits page 1 and deep) and the
-//     recursive path list (ListPaths) win every line, so they are the only
-//     methods routed. ListPaths wins even cold because one walk replaces a
-//     process and the parsing of its output (the bytes of the paths are kept in
-//     32 KiB blocks, which is what brought the lazygit bytes under the CLI's:
-//     a single growing buffer lost them, 699K against 433K). GetTree dir+last
-//     also wins every line, but GetTreeLastCommits covers GetTree root+last
-//     too, which loses cold allocations on lazygit (4204 against 3073): it is
-//     the nearest miss, and the first to flip once opening a repository
-//     allocates less.
-//   - OpenBlob by size: below 1 MiB the small blob loses cold and, on lazygit,
-//     warm bytes and allocations; above, it loses time. No size makes it win,
-//     so there is no size-based route.
-//
-// Once opening a repository allocates less, re-run the benchmark and flip the
-// constants it wins: ListRefs, ResolveRefPath and ResolveRevision win warm by 4
-// to 60 times in time.
+//   - ListRefs (every repository page, through loadRepo): 905 µs against 24 µs
+//     warm, 120 KiB against 19 KiB (fixture), 960 against 16 µs and 108 KiB
+//     against 2 KiB (lazygit). Cold it is still 4 to 10 times faster
+//     (93 µs); only its allocation count loses. Routed.
+//   - ResolveRevision (name, full id, abbreviation) and ResolveRefPath: 4 to 8
+//     times faster warm, with fewer bytes. Cold they lose 45 µs of time to the
+//     open, but the ListRefs of the same page has opened the repository
+//     already, so the open is paid by a call that wins it back. Routed.
+//   - GetTree with last commits: root listing 4.1 ms against 68 µs on the
+//     fixture, 20.5 ms against 6.2 ms on lazygit (cold 8.7 ms; its 4,206
+//     allocations against 3,082 are the only line lost); a subdirectory of
+//     lazygit 195-199 ms against 8-9 ms warm, 15-17 ms cold, 20 MiB against
+//     1.5 MiB. They are two constants so that either can be flipped back on
+//     its own. Both routed.
+//   - GetTree without last commits wins warm in time everywhere (13 µs against
+//     0.7 ms at the root), but a large directory of lazygit loses warm bytes
+//     (325 KiB against 275 KiB) and, cold, 4.0 ms against 1.4 ms in time. It
+//     stays on the CLI.
+//   - ListCommits of a revision wins every line and stays routed.
+//     ListCommitsPath wins warm and cold in time (lazygit file: 12.9 ms against
+//     6.0 ms warm), only its cold bytes lose (2.4 MiB): it is a candidate, not
+//     flipped here, to be decided with its own conformance review.
+//   - OpenBlob by size: below 1 MiB the small blob loses warm bytes and
+//     allocations on lazygit; above, it loses time (inflate speed: 52 ms
+//     against 21 ms). No size makes it win, so there is no size-based route.
+//   - ListPaths (the recursive path list of the finder) wins every line, even
+//     cold, because one walk replaces a process and the parsing of its output
+//     (the bytes of the paths are kept in 32 KiB blocks, which is what brought
+//     the lazygit bytes under the CLI's: a single growing buffer lost them,
+//     699K against 433K). Routed.
 func DefaultRoutes() Routes {
 	return Routes{
-		ListRefs:              CLI,
-		ResolveRevision:       CLI,
-		ResolveRevisionAbbrev: CLI,
-		ResolveRefPath:        CLI,
-		GetTree:               CLI,
-		GetTreeLastCommits:    CLI,
-		OpenBlob:              CLI,
-		ListCommits:           ErmiteGit,
-		ListCommitsPath:       CLI,
-		ListPaths:             ErmiteGit,
+		ListRefs:                 ErmiteGit,
+		ResolveRevision:          ErmiteGit,
+		ResolveRevisionAbbrev:    ErmiteGit,
+		ResolveRefPath:           ErmiteGit,
+		GetTree:                  CLI,
+		GetTreeLastCommits:       ErmiteGit,
+		GetTreeSubdirLastCommits: ErmiteGit,
+		OpenBlob:                 CLI,
+		ListCommits:              ErmiteGit,
+		ListCommitsPath:          CLI,
+		ListPaths:                ErmiteGit,
 	}
 }

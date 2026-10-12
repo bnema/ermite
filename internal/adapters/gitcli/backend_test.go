@@ -86,6 +86,8 @@ func TestHTTPBackendEnvironment(t *testing.T) {
 		"core.hooksPath":         filepath.Join(data, "run", "hooks"),
 		"receive.fsckObjects":    "true",
 		"uploadpack.allowFilter": "true",
+		"pack.threads":           "1",
+		"pack.windowMemory":      "256m",
 	}, backendConf(e))
 
 	push, err := g.HTTPBackend(ctx, true)
@@ -96,6 +98,8 @@ func TestHTTPBackendEnvironment(t *testing.T) {
 		"core.hooksPath":         filepath.Join(data, "run", "hooks"),
 		"receive.fsckObjects":    "true",
 		"uploadpack.allowFilter": "true",
+		"pack.threads":           "1",
+		"pack.windowMemory":      "256m",
 		"http.receivepack":       "true",
 	}, backendConf(pe), "http.receivepack only for a push; no size limit unless configured")
 

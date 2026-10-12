@@ -169,7 +169,12 @@
     & > :empty { display: none; }
     & .hint-live { color: var(--red); }
   }
-  .hint:not(:has(> :not(:empty))) { display: none; }
+  /* empty, the badge is out of sight but stays a status region (display: none
+     would drop it from the accessibility tree and its next message would not be
+     announced) */
+  .hint:not(:has(> :not(:empty))) {
+    width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); box-shadow: none;
+  }
 
   @media (max-width: 1080px) {
     /* the rail goes under the content, in two columns while there is room */

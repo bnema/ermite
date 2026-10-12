@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,15 +15,17 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func TestFormatEvent(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "event: home-list\nid: b-1\ndata: <tr id=\"x\">\ndata:   <td>1</td>\ndata: </tr>\n\n",
 		formatEvent("b-1", "home-list", "<tr id=\"x\">\n  <td>1</td>\n</tr>", true), "one data line per line")
 	assert.Equal(t, "event: gap\ndata: gap\n\n", formatEvent("", "gap", "gap", true))
@@ -32,6 +35,7 @@ func TestFormatEvent(t *testing.T) {
 }
 
 func TestParseTopic(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{"home": "", "repo:x": "x", "repo:a.b-c": "a.b-c"} {
 		repo, ok := parseTopic(in)
 		assert.True(t, ok, in)
@@ -44,38 +48,57 @@ func TestParseTopic(t *testing.T) {
 }
 
 func TestLiveURL(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "/-/events?topic=home", liveURL("home", ""))
 	assert.Equal(t, "/-/events?topic=repo%3Ax&view=refs", liveURL("repo:x", "view=refs"))
 }
 
 func TestNewCommitsText(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "1 new commit — reload", newCommits("1", 1))
 	assert.Equal(t, "3 new commits — reload", newCommits("3", 3))
 	assert.Equal(t, "100+ new commits — reload", newCommits("100+", 2))
 }
 
-// fakeEvents is an EventService whose behaviour a test sets.
-type fakeEvents struct {
-	ermiteconnect.UnimplementedEventServiceHandler
+// watchProbe drives the generated EventService mock: what the watch does, and
+// a record of the principal and the parameters of the watches it was asked for.
+type watchProbe struct {
 	err     error
-	events  []*pb.Event
+	events  []ports.WatchEvent
 	opened  atomic.Int32
 	closed  atomic.Int32
-	resume  atomic.Value
+	resume  atomic.Value // string: ResumeAfter of the last watch
+	topics  atomic.Value // []string: Topics of the last watch
+	client  atomic.Value // string: Client of the last watch
+	who     atomic.Value // domain.Principal: caller of the last watch
 	release chan struct{}
-	push    chan *pb.Event // events sent on demand, after the fixed ones
+	push    chan ports.WatchEvent // events sent on demand, after the fixed ones
 }
 
-func (f *fakeEvents) Watch(ctx context.Context, req *connect.Request[pb.WatchRequest], st *connect.ServerStream[pb.WatchResponse]) error {
+// service is the EventService the web watches: the mock, answering with the
+// probe.
+func (f *watchProbe) service(t testing.TB) *mocks.EventService {
+	t.Helper()
+	m := mocks.NewEventService(t)
+	m.EXPECT().Watch(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(f.run).Maybe()
+	return m
+}
+
+func (f *watchProbe) run(ctx context.Context, p domain.Principal, params ports.WatchParams, send func(ports.WatchEvent) error) error {
 	f.opened.Add(1)
 	defer f.closed.Add(1)
-	f.resume.Store(req.Msg.GetResumeAfter())
+	f.resume.Store(params.ResumeAfter)
+	f.topics.Store(params.Topics)
+	f.client.Store(params.Client)
+	f.who.Store(p)
 	if f.err != nil {
 		return f.err
 	}
-	_ = st.Send(nil)
+	if params.Ready != nil {
+		params.Ready()
+	}
 	for _, ev := range f.events {
-		if err := st.Send(&pb.WatchResponse{Event: ev}); err != nil {
+		if err := send(ev); err != nil {
 			return err
 		}
 	}
@@ -86,46 +109,29 @@ func (f *fakeEvents) Watch(ctx context.Context, req *connect.Request[pb.WatchReq
 		case <-f.release:
 			return nil
 		case ev := <-f.push:
-			if err := st.Send(&pb.WatchResponse{Event: ev}); err != nil {
+			if err := send(ev); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-// repoOK answers every GetRepo with a public repository.
-type repoOK struct {
-	ermiteconnect.UnimplementedRepoServiceHandler
-}
-
-func (repoOK) GetRepo(_ context.Context, req *connect.Request[pb.GetRepoRequest]) (*connect.Response[pb.GetRepoResponse], error) {
-	return connect.NewResponse(&pb.GetRepoResponse{Repo: &pb.Repo{Name: req.Msg.GetRepo(), DefaultBranch: "main"}}), nil
-}
-
-// eventsServer serves the web on a fake API, with a write timeout shorter
-// than the heartbeat, like a server that sets one.
-func eventsServer(t *testing.T, f *fakeEvents, beat time.Duration, writeTimeout time.Duration) *httptest.Server {
+// eventsServer serves the web on a fake EventService, with a write timeout
+// shorter than the heartbeat, like a server that sets one.
+func eventsServer(t *testing.T, f *watchProbe, beat time.Duration, writeTimeout time.Duration) *httptest.Server {
 	t.Helper()
 	return eventsServerWith(t, f, beat, writeTimeout, nil)
 }
 
 // eventsServerWith is eventsServer with sessions, when sess is not nil.
-func eventsServerWith(t *testing.T, f *fakeEvents, beat time.Duration, writeTimeout time.Duration, sess SessionAuth) *httptest.Server {
+func eventsServerWith(t *testing.T, f *watchProbe, beat time.Duration, writeTimeout time.Duration, sess ports.WebSessionService) *httptest.Server {
 	t.Helper()
-	api := http.NewServeMux()
-	api.Handle(ermiteconnect.NewEventServiceHandler(f))
-	api.Handle(ermiteconnect.NewRepoServiceHandler(repoOK{}))
-	backend := httptest.NewServer(api)
-	t.Cleanup(backend.Close)
-
-	srv, err := New(Config{
-		Repos:     ermiteconnect.NewRepoServiceClient(backend.Client(), backend.URL),
-		Git:       ermiteconnect.NewGitServiceClient(backend.Client(), backend.URL),
-		Events:    ermiteconnect.NewEventServiceClient(backend.Client(), backend.URL),
-		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
+	srv := newTestServer(t, Config{
+		Repos:     reposServing(t, publicRepo(t, "x")),
+		Browse:    mocks.NewBrowseService(t),
+		Events:    f.service(t),
 		Heartbeat: beat, Sessions: sess, Limiter: limiterFor(sess),
 	})
-	require.NoError(t, err)
 	ts := httptest.NewUnstartedServer(srv)
 	ts.Config.WriteTimeout = writeTimeout
 	ts.Start()
@@ -150,7 +156,8 @@ func open(t *testing.T, ts *httptest.Server, query string, hdr map[string]string
 // An idle stream gets a comment every heartbeat, and the write timeout of the
 // server does not end it.
 func TestEventsHeartbeatSurvivesWriteTimeout(t *testing.T) {
-	f := &fakeEvents{release: make(chan struct{})}
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{})}
 	ts := eventsServer(t, f, 40*time.Millisecond, 100*time.Millisecond)
 	resp, cancel := open(t, ts, "topic=home", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -173,9 +180,10 @@ func TestEventsHeartbeatSurvivesWriteTimeout(t *testing.T) {
 // The id of the event, its name and the lines of its data come through; the
 // Last-Event-ID header is the resume point; a Gap becomes a gap event.
 func TestEventsStreamsEventsAndResumes(t *testing.T) {
-	f := &fakeEvents{release: make(chan struct{}), events: []*pb.Event{
-		{Id: "b-7", Kind: &pb.Event_Pushed{Pushed: &pb.Pushed{Repo: "x"}}},
-		{Kind: &pb.Event_Gap{Gap: &pb.Gap{}}},
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{}), events: []ports.WatchEvent{
+		{ID: "b-7", Event: domain.PushEvent{Repo: repoName(t, "x")}},
+		{Gap: true},
 	}}
 	ts := eventsServer(t, f, time.Hour, 0)
 	resp, _ := open(t, ts, "topic=repo:x&view=summary", map[string]string{"Last-Event-ID": "b-6"})
@@ -191,29 +199,92 @@ func TestEventsStreamsEventsAndResumes(t *testing.T) {
 	assert.Contains(t, lines, "id: b-7", "an event with nothing to show keeps its id")
 	assert.Contains(t, lines, "event: gap")
 	assert.Equal(t, "b-6", f.resume.Load())
+	assert.Equal(t, []string{"repo:x"}, f.topics.Load())
+	assert.Equal(t, domain.Anonymous(), f.who.Load(), "a visitor watches as anonymous")
+	assert.NotEmpty(t, f.client.Load(), "the watch is attributed to the address of the visitor")
 }
 
-// Too many watchers is a 503 the browser can retry, not a stream.
-func TestEventsResourceExhausted(t *testing.T) {
-	f := &fakeEvents{err: connect.NewError(connect.CodeResourceExhausted, errors.New("too many watchers"))}
-	ts := eventsServer(t, f, time.Hour, 0)
-	resp, _ := open(t, ts, "topic=home", nil)
-	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-	assert.NotEmpty(t, resp.Header.Get("Retry-After"))
-	assert.NotContains(t, resp.Header.Get("Content-Type"), "event-stream")
+// Too many watchers is a 503 the browser can retry, not a stream; what the
+// watch is refused for decides the status.
+func TestEventsRefusals(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		err        error
+		want       int
+		retryAfter bool
+	}{
+		{"resource exhausted", fmt.Errorf("%w: too many watchers", domain.ErrResourceExhausted), http.StatusServiceUnavailable, true},
+		{"not found", domain.ErrNotFound, http.StatusNotFound, false},
+		{"invalid", domain.ErrInvalid, http.StatusNotFound, false},
+		{"unauthenticated", domain.ErrUnauthenticated, http.StatusUnauthorized, false},
+		{"internal", errors.New("boom"), http.StatusInternalServerError, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ts := eventsServer(t, &watchProbe{err: tt.err}, time.Hour, 0)
+			resp, _ := open(t, ts, "topic=home", nil)
+			assert.Equal(t, tt.want, resp.StatusCode)
+			assert.Equal(t, tt.retryAfter, resp.Header.Get("Retry-After") != "")
+			assert.NotContains(t, resp.Header.Get("Content-Type"), "event-stream")
+			assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
+		})
+	}
+}
 
-	f.err = connect.NewError(connect.CodeNotFound, errors.New("x"))
-	resp, _ = open(t, ts, "topic=home", nil)
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-	f.err = errors.New("boom")
-	resp, _ = open(t, ts, "topic=home", nil)
+// A panic in the watch runs outside the handler goroutine, where net/http
+// would not recover it: it ends the stream with a 500 instead of the process.
+func TestEventsWatchPanicIsAnError(t *testing.T) {
+	t.Parallel()
+	m := mocks.NewEventService(t)
+	m.EXPECT().Watch(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(context.Context, domain.Principal, ports.WatchParams, func(ports.WatchEvent) error) error {
+			panic("boom")
+		})
+	ts := httptest.NewServer(newTestServer(t, Config{
+		Repos:  reposServing(t, publicRepo(t, "x")),
+		Browse: mocks.NewBrowseService(t),
+		Events: m,
+	}))
+	t.Cleanup(ts.Close)
+	resp, _ := open(t, ts, "topic=home", nil)
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
+
+// The topic of a repository the visitor cannot see is refused before any
+// watch is opened: a private repository is a missing one.
+func TestEventsPrivateRepositoryTopic(t *testing.T) {
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{})}
+	srv := newTestServer(t, Config{
+		Repos: reposServing(t, publicRepo(t, "pub")), Browse: mocks.NewBrowseService(t), Events: f.service(t),
+	})
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	for _, query := range []string{"topic=repo:secret", "topic=repo:Bad"} {
+		resp, _ := open(t, ts, query, nil)
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode, query)
+	}
+	assert.Zero(t, f.opened.Load(), "no watch was opened for them")
+}
+
+// The owner's stream is the owner's: the watch is opened as the owner.
+func TestEventsOwnerWatchesAsOwner(t *testing.T) {
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{})}
+	sess, _ := newRevocable(t, "tok")
+	ts := eventsServerWith(t, f, time.Hour, 0, sess)
+	resp, _ := open(t, ts, "topic=home", map[string]string{"Cookie": CookieName + "=tok"})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, domain.Owner(), f.who.Load())
 }
 
 // The handler returns, and the watch it opened ends, when the visitor goes
 // away or the API ends the stream.
 func TestEventsNoLeak(t *testing.T) {
-	f := &fakeEvents{release: make(chan struct{})}
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{})}
 	ts := eventsServer(t, f, time.Hour, 0)
 
 	resp, cancel := open(t, ts, "topic=home", nil)
@@ -236,13 +307,9 @@ func TestEventsNoLeak(t *testing.T) {
 	require.Eventually(t, func() bool { return f.closed.Load() == 2 }, 5*time.Second, time.Millisecond)
 }
 
-func TestEventsOffWithoutClient(t *testing.T) {
-	srv, err := New(Config{
-		Repos:     ermiteconnect.NewRepoServiceClient(http.DefaultClient, "http://x.invalid"),
-		Git:       ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://x.invalid"),
-		PublicURL: "https://forge.example",
-	})
-	require.NoError(t, err)
+func TestEventsOffWithoutEventService(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, Config{Repos: mocks.NewRepoService(t), Browse: mocks.NewBrowseService(t)})
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/-/events?topic=home", nil))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
@@ -252,18 +319,10 @@ func TestEventsOffWithoutClient(t *testing.T) {
 // show it load themselves again: the summary and the refs page, whose rows
 // and marks depend on it. The commits page shows a branch, not the default.
 func TestRepoUpdatedReloadsSummaryAndRefs(t *testing.T) {
-	api := http.NewServeMux()
-	api.Handle(ermiteconnect.NewRepoServiceHandler(repoOK{}))
-	backend := httptest.NewServer(api)
-	t.Cleanup(backend.Close)
-	srv, err := New(Config{
-		Repos:     ermiteconnect.NewRepoServiceClient(backend.Client(), backend.URL),
-		Git:       ermiteconnect.NewGitServiceClient(backend.Client(), backend.URL),
-		PublicURL: "https://forge.example",
-	})
-	require.NoError(t, err)
+	t.Parallel()
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t)})
 
-	ev := &pb.Event{Kind: &pb.Event_RepoUpdated{RepoUpdated: &pb.RepoUpdated{Repo: &pb.Repo{Name: "x"}}}}
+	ev := ports.WatchEvent{Event: domain.RepoUpdated{Repo: repoName(t, "x")}}
 	for view, wantGap := range map[string]bool{"summary": true, "refs": true, "commits": false} {
 		ls := &liveStream{s: srv, repo: "x", view: view}
 		got, err := ls.render(t.Context(), ev)
@@ -276,30 +335,28 @@ func TestRepoUpdatedReloadsSummaryAndRefs(t *testing.T) {
 	}
 }
 
-func limiterFor(sess SessionAuth) FailureLimiter {
+func limiterFor(sess ports.WebSessionService) ports.FailureLimiter {
 	if sess == nil {
 		return nil
 	}
 	return &countingLimiter{}
 }
 
-// revocable is a SessionAuth whose one session ends when the test says so, like
-// SignOutEverywhere does.
-type revocable struct {
-	fakeSessions
-	ended atomic.Bool
-}
-
-func (r *revocable) Verify(ctx context.Context, tok string) (context.Context, bool, error) {
-	return ctx, tok == r.valid && !r.ended.Load(), nil
+// newRevocable is a ports.WebSessionService whose one session ends when the test sets
+// ended, like SignOutEverywhere does.
+func newRevocable(t *testing.T, valid string) (*mocks.WebSessionService, *atomic.Bool) {
+	t.Helper()
+	var ended atomic.Bool
+	return newVerifier(t, valid, func(tok string) (bool, error) { return tok == valid && !ended.Load(), nil }), &ended
 }
 
 // GO-002: the stream of the owner is checked before each event is sent, not
 // only on the heartbeat: after the session ended, the next event is not sent
 // and the stream ends.
 func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
-	f := &fakeEvents{release: make(chan struct{}), push: make(chan *pb.Event)}
-	sess := &revocable{fakeSessions: fakeSessions{valid: "tok"}}
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{}), push: make(chan ports.WatchEvent)}
+	sess, ended := newRevocable(t, "tok")
 	ts := eventsServerWith(t, f, time.Hour, 0, sess) // no heartbeat in the test
 	resp, cancel := open(t, ts, "topic=home", map[string]string{"Cookie": CookieName + "=tok"})
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -318,7 +375,7 @@ func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
 	// The stream is up; a first event goes through while the session lives.
 	require.Equal(t, ": connected", line())
 	line()
-	f.push <- &pb.Event{Id: "b-1", Kind: &pb.Event_Gap{Gap: &pb.Gap{}}}
+	f.push <- ports.WatchEvent{ID: "b-1", Gap: true}
 	var seen []string
 	for l := line(); l != "data: gap"; l = line() {
 		seen = append(seen, l)
@@ -327,9 +384,9 @@ func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
 	assert.Contains(t, seen, "id: b-1")
 
 	// Signed out everywhere: the next event is not sent, the stream ends.
-	sess.ended.Store(true)
+	ended.Store(true)
 	select {
-	case f.push <- &pb.Event{Id: "b-2", Kind: &pb.Event_Gap{Gap: &pb.Gap{}}}:
+	case f.push <- ports.WatchEvent{ID: "b-2", Gap: true}:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the event was not delivered to the web")
 	}
@@ -340,13 +397,14 @@ func TestEventsOwnerStreamEndsBeforeNextEvent(t *testing.T) {
 
 // A visitor's stream does not depend on sessions: events keep flowing.
 func TestEventsVisitorStreamIgnoresSessions(t *testing.T) {
-	f := &fakeEvents{release: make(chan struct{}), push: make(chan *pb.Event)}
-	sess := &revocable{fakeSessions: fakeSessions{valid: "tok"}}
-	sess.ended.Store(true)
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{}), push: make(chan ports.WatchEvent)}
+	sess, ended := newRevocable(t, "tok")
+	ended.Store(true)
 	ts := eventsServerWith(t, f, time.Hour, 0, sess)
 	resp, _ := open(t, ts, "topic=home", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	f.push <- &pb.Event{Id: "b-1", Kind: &pb.Event_Gap{Gap: &pb.Gap{}}}
+	f.push <- ports.WatchEvent{ID: "b-1", Gap: true}
 	sc := bufio.NewScanner(resp.Body)
 	found := false
 	for sc.Scan() {
@@ -361,8 +419,9 @@ func TestEventsVisitorStreamIgnoresSessions(t *testing.T) {
 // GO-006: a stream opened with an invalid cookie is anonymous, and its headers
 // say the answer must not be stored and varies on the cookie.
 func TestEventsInvalidCookieStream(t *testing.T) {
-	f := &fakeEvents{release: make(chan struct{})}
-	ts := eventsServerWith(t, f, time.Hour, 0, &fakeSessions{valid: "tok"})
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{})}
+	ts := eventsServerWith(t, f, time.Hour, 0, newSessions(t, "tok"))
 	resp, _ := open(t, ts, "topic=home", map[string]string{"Cookie": CookieName + "=bad"})
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "no-store, no-transform", resp.Header.Get("Cache-Control"))

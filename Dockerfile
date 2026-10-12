@@ -24,7 +24,7 @@ COPY . .
 ARG VERSION=
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -buildvcs=false -ldflags "-s -w -X main.stamped=${VERSION}" \
+    go build -trimpath -buildvcs=false -ldflags "-s -w -X bnema.dev/ermite/internal/app.stamped=${VERSION}" \
       -o /out/ermite ./cmd/ermite
 
 FROM alpine:3.24

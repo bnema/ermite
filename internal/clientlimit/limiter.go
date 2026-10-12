@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/bnema/zerowrap"
+
+	"bnema.dev/ermite/internal/ports"
 )
 
 // Limiter defaults: 10 failed authentications in 10 minutes block the client
@@ -53,6 +55,8 @@ type Limiter struct {
 	failures  map[string][]time.Time // oldest first, all within Window
 	lastSweep time.Time
 }
+
+var _ ports.FailureLimiter = (*Limiter)(nil)
 
 // NewLimiter builds a limiter. now defaults to time.Now.
 func NewLimiter(now func() time.Time) *Limiter {

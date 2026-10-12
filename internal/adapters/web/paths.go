@@ -11,11 +11,8 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
-	"connectrpc.com/connect"
-
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // errBuildPanicked is what the waiters of a path list get when its build
@@ -31,34 +28,41 @@ type pathList struct {
 // paths is GET /{repo}/paths/{sha}: the file paths of a commit as JSON, for
 // the file finder (files.js). The commit must be a full id; the answer never
 // changes for it, but who may read it does, so every request is authorized
-// first (ResolveRevision runs the access rule) and only then served from the
+// first (ResolveRevision runs the access rule, as the caller of the request) and only then served from the
 // cache of lists. Caching follows raw: a visitor revalidates every time, with
 // an ETag that makes it a 304 (answered before the list is loaded, so it never
 // waits for a build); the owner's copy is private and never stored. The ETag
 // differs for the gzip and the plain variant.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter serves a cached list after the use case authorized it; the headers are about the response, no rule is decided here
 func (s *Server) paths(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	repo, sha := r.PathValue("repo"), r.PathValue("sha")
+	sha := r.PathValue("sha")
 	if !isFullID(sha) {
 		s.fail(ctx, w, r, errNotFound)
 		return
 	}
-	res, err := s.cfg.Git.ResolveRevision(ctx, connect.NewRequest(&pb.ResolveRevisionRequest{Repo: repo, Revision: sha}))
+	repo, err := domain.ParseRepoName(r.PathValue("repo"))
+	if err != nil {
+		s.fail(ctx, w, r, err)
+		return
+	}
+	res, err := s.resolveRevision(ctx, repo, sha)
 	if err != nil {
 		s.fail(ctx, w, r, err)
 		return
 	}
 	// A ref can be named like a commit id: only the commit itself is served,
 	// since the cache is keyed by it.
-	if res.Msg.GetCommitId() != sha {
+	if res.CommitID.String() != sha {
 		s.fail(ctx, w, r, errNotFound)
 		return
 	}
 
 	// The validator names the variant that would be served: the gzip bytes
 	// and the plain JSON are different representations.
-	gz := acceptsGzip(r.Header.Get("Accept-Encoding"))
+	gz := acceptsGzip(r.Header)
 	etag := `"paths-` + sha + `"`
 	if gz {
 		etag = `"paths-` + sha + `-gz"`
@@ -77,7 +81,7 @@ func (s *Server) paths(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	body, err := s.pathCache.load(ctx, repo, sha, func() ([]byte, error) { return s.buildPaths(ctx, repo, sha) })
+	body, err := s.pathCache.load(ctx, repo.String(), sha, func() ([]byte, error) { return s.buildPaths(ctx, repo, sha) })
 	if err != nil {
 		s.fail(ctx, w, r, err)
 		return
@@ -122,17 +126,17 @@ func writePathList(w http.ResponseWriter, r *http.Request, body []byte, gz bool)
 // buildPaths lists the paths of a commit and returns them as gzipped JSON.
 // The build is shared by the requests that wait for it, so it does not stop
 // when the request that started it ends.
-func (s *Server) buildPaths(ctx context.Context, repo, sha string) ([]byte, error) {
+func (s *Server) buildPaths(ctx context.Context, repo domain.RepoName, sha string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), requestTimeout)
 	defer cancel()
-	res, err := s.cfg.Git.ListPaths(ctx, connect.NewRequest(&pb.ListPathsRequest{Repo: repo, Revision: sha}))
+	list, err := s.listPaths(ctx, repo, sha)
 	if err != nil {
 		return nil, err
 	}
-	if res.Msg.GetCommitId() != sha {
+	if list.CommitID.String() != sha {
 		return nil, errNotFound
 	}
-	paths := res.Msg.GetPaths()
+	paths := list.Paths
 	if paths == nil {
 		paths = []string{}
 	}
@@ -143,7 +147,7 @@ func (s *Server) buildPaths(ctx context.Context, repo, sha string) ([]byte, erro
 	}
 	enc := json.NewEncoder(zw)
 	enc.SetEscapeHTML(false) // a path is not HTML; "<", ">" and "&" stay as they are
-	if err := enc.Encode(pathList{Paths: paths, Truncated: res.Msg.GetTruncated()}); err != nil {
+	if err := enc.Encode(pathList{Paths: paths, Truncated: list.Truncated}); err != nil {
 		return nil, err
 	}
 	if err := zw.Close(); err != nil {
@@ -155,33 +159,4 @@ func (s *Server) buildPaths(ctx context.Context, repo, sha string) ([]byte, erro
 	body := make([]byte, buf.Len())
 	copy(body, buf.Bytes())
 	return body, nil
-}
-
-// acceptsGzip reports whether an Accept-Encoding header allows gzip.
-func acceptsGzip(h string) bool {
-	for f := range strings.SplitSeq(h, ",") {
-		name, params, _ := strings.Cut(strings.TrimSpace(f), ";")
-		if !strings.EqualFold(strings.TrimSpace(name), "gzip") {
-			continue
-		}
-		if q, ok := strings.CutPrefix(strings.ReplaceAll(strings.TrimSpace(params), " ", ""), "q="); ok {
-			if v, err := strconv.ParseFloat(q, 64); err == nil && v <= 0 {
-				return false
-			}
-		}
-		return true
-	}
-	return false
-}
-
-// etagMatches reports whether an If-None-Match header lists etag (weak
-// comparison, or "*").
-func etagMatches(header, etag string) bool {
-	for f := range strings.SplitSeq(header, ",") {
-		f = strings.TrimSpace(f)
-		if f == "*" || strings.TrimPrefix(f, "W/") == etag {
-			return true
-		}
-	}
-	return false
 }

@@ -6,10 +6,9 @@ import (
 	"context"
 	"net/http"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // TreeRow is one entry of a directory.
@@ -42,6 +41,8 @@ type TreePage struct {
 
 // tree lists a directory of a ref, with the last commit of each entry, and
 // renders the README of the directory below.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter builds the directory page from the use case results; no rule is decided here
 func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	d, err := s.loadRepo(ctx, r.PathValue("repo"))
 	if err != nil {
@@ -51,52 +52,50 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	if !ok {
 		return nil, 0, errNotFound
 	}
-	res, err := s.cfg.Git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{
-		Repo: d.name(), Revision: t.rev, Path: t.path, IncludeLastCommit: true,
-	}))
+	res, err := s.getTree(ctx, d.repo.Name, t.rev, t.path, true)
 	if err != nil {
 		return nil, 0, err
 	}
-	entries := res.Msg.GetEntries()
+	entries := res.Entries
 	now := s.cfg.Now()
 
 	rowsOnly := r.URL.Query().Has("rows")
 	p := TreePage{}
 	for i, e := range entries {
-		row := TreeRow{Glyph: "·", Name: visibleText(e.GetName()), Size: humanSize(e.GetSize()), Cursor: i == 0 && !rowsOnly}
-		switch e.GetKind() {
-		case pb.EntryKind_ENTRY_KIND_DIRECTORY:
+		row := TreeRow{Glyph: "·", Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0 && !rowsOnly}
+		switch e.Kind {
+		case domain.EntryDirectory:
 			row.Glyph, row.Name, row.Size = "▸", row.Name+"/", "-"
-			row.Href = repoHref(d.name(), "tree", t.name, e.GetPath())
+			row.Href = repoHref(d.name(), "tree", t.name, e.Path)
 			row.Expand = row.Href + "?rows"
-		case pb.EntryKind_ENTRY_KIND_SYMLINK:
+		case domain.EntrySymlink:
 			row.Glyph = "@"
-			row.Href = repoHref(d.name(), "blob", t.name, e.GetPath())
-		case pb.EntryKind_ENTRY_KIND_SUBMODULE:
+			row.Href = repoHref(d.name(), "blob", t.name, e.Path)
+		case domain.EntrySubmodule:
 			row.Glyph, row.Size = "+", "-"
 		default:
-			row.Href = repoHref(d.name(), "blob", t.name, e.GetPath())
+			row.Href = repoHref(d.name(), "blob", t.name, e.Path)
 		}
-		if c := e.GetLastCommit(); c != nil {
-			last := commitRow(d.name(), c, now)
+		if c := e.LastCommit; c != nil {
+			last := commitRow(d.name(), *c, now)
 			row.Subject, row.Author, row.CHref, row.When, row.WhenAt = last.Subject, last.Author, last.CHref, last.When, last.WhenAt
 		}
 		p.Rows = append(p.Rows, row)
 	}
 	if rowsOnly {
 		// The rows alone, for a directory opened in place (files.js).
-		if res.Msg.GetTruncated() {
+		if res.Truncated {
 			p.More = repoHref(d.name(), "tree", t.name, t.path)
 		}
 		return TreeRows(p), http.StatusOK, nil
 	}
-	if res.Msg.GetTruncated() {
+	if res.Truncated {
 		p.Notes = append(p.Notes, "this directory has more entries than are listed here: the first "+itoa(len(entries))+" are shown.")
 	}
-	if res.Msg.GetLastCommitsTruncated() {
+	if res.LastCommitsOmitted {
 		p.Notes = append(p.Notes, "the last commit is shown for the first entries only.")
 	}
-	rd, err := s.readmeIn(ctx, d.name(), res.Msg.GetCommitId(), t.name, t.path, entries)
+	rd, err := s.readmeIn(ctx, d.repo.Name, res.CommitID.String(), t.name, t.path, entries)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -107,7 +106,7 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	l := s.repoLayout(ctx, d, "tree")
 	// The finder searches the commit this page lists, whichever way the URL
 	// spelled it (an abbreviated id included): the listing knows it.
-	t.commit = res.Msg.GetCommitId()
+	t.commit = res.CommitID.String()
 	pinRef(&l, t)
 	l.Crumbs = pathCrumbs(d.name(), "tree", t)
 	if t.path == "" {

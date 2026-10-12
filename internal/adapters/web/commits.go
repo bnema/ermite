@@ -8,10 +8,9 @@ import (
 	"net/url"
 	"path"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // commitsPerPage is how many commits one page of history lists.
@@ -44,7 +43,7 @@ type CommitsPage struct {
 }
 
 // commits lists the history of a ref, newest first, a page at a time, with
-// an optional path to limit it to. The page token of the API travels in the
+// an optional path to limit it to. The page token of the use case travels in the
 // "page" query parameter.
 func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	d, err := s.loadRepo(ctx, r.PathValue("repo"))
@@ -56,13 +55,11 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 		return nil, 0, errNotFound
 	}
 	token := r.URL.Query().Get("page")
-	res, err := s.cfg.Git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{
-		Repo: d.name(), Revision: sel.rev, Path: sel.path, PageSize: commitsPerPage, PageToken: token,
-	}))
+	res, err := s.commitList(ctx, d.repo.Name, sel.rev, sel.path, commitsPerPage, token)
 	if err != nil {
 		return nil, 0, err
 	}
-	cs := res.Msg.GetCommits()
+	cs := res.Commits
 	if len(cs) == 0 && token == "" && sel.path != "" {
 		// Git answers an empty history for a path that never existed.
 		return nil, 0, errNotFound
@@ -70,7 +67,7 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 
 	p := CommitsPage{Ref: sel.name, Path: visibleText(sel.path), Count: len(cs)}
 	base := repoHref(d.name(), "commits", sel.name, sel.path)
-	if t := res.Msg.GetNextPageToken(); t != "" {
+	if t := res.NextPageToken; t != "" {
 		p.Older = base + "?page=" + url.QueryEscape(t)
 	}
 	if token != "" {
@@ -99,16 +96,16 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 }
 
 // fillDays groups the commits of a page by day and lists the refs among them.
-func (s *Server) fillDays(p *CommitsPage, d *repoData, cs []*pb.Commit) {
+func (s *Server) fillDays(p *CommitsPage, d *repoData, cs []domain.Commit) {
 	now := s.cfg.Now()
 	branchesAt, tagsAt := namesAt(d.branches), namesAt(d.tags)
 	for i, c := range cs {
 		row := commitRow(d.name(), c, now)
 		row.ID, row.Cursor = "c-"+row.Short, i == 0
-		row.Branches, row.Tags = branchesAt[c.GetId()], tagsAt[c.GetId()]
+		row.Branches, row.Tags = branchesAt[c.ID.String()], tagsAt[c.ID.String()]
 		day := "unknown date"
-		if t := c.GetCommitter().GetTime(); t.IsValid() {
-			day = t.AsTime().UTC().Format("2006-01-02")
+		if t := c.Committer.Time; !t.IsZero() {
+			day = t.UTC().Format("2006-01-02")
 		}
 		if n := len(p.Days); n == 0 || p.Days[n-1].Day != day {
 			p.Days = append(p.Days, DayGroup{Day: day})
@@ -132,15 +129,15 @@ func (s *Server) pathLink(ctx context.Context, d *repoData, sel target) *Link {
 	if dir == "." {
 		dir = ""
 	}
-	tree, err := s.cfg.Git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{Repo: d.name(), Revision: sel.rev, Path: dir}))
+	tree, err := s.getTree(ctx, d.repo.Name, sel.rev, dir, false)
 	if err != nil {
 		return nil
 	}
-	for _, e := range tree.Msg.GetEntries() {
-		if e.GetPath() != sel.path {
+	for _, e := range tree.Entries {
+		if e.Path != sel.path {
 			continue
 		}
-		if e.GetKind() == pb.EntryKind_ENTRY_KIND_DIRECTORY {
+		if e.Kind == domain.EntryDirectory {
 			return &Link{Label: "open", Href: repoHref(d.name(), "tree", sel.name, sel.path)}
 		}
 		return &Link{Label: "open", Href: repoHref(d.name(), "blob", sel.name, sel.path)}

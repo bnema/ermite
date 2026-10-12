@@ -56,21 +56,10 @@ func codeOf(err error) (connect.Code, bool) {
 	case errors.Is(err, domain.ErrResourceExhausted):
 		return connect.CodeResourceExhausted, true
 	}
-	for _, invalid := range invalidErrors {
-		if errors.Is(err, invalid) {
-			return connect.CodeInvalidArgument, true
-		}
+	if domain.IsInvalid(err) {
+		return connect.CodeInvalidArgument, true
 	}
 	return 0, false
-}
-
-// invalidErrors are the domain errors that mean the request was malformed.
-var invalidErrors = []error{
-	domain.ErrInvalid, domain.ErrInvalidName, domain.ErrInvalidVisibility,
-	domain.ErrInvalidScope, domain.ErrInvalidToken,
-	domain.ErrInvalidObjectID, domain.ErrInvalidRevision, domain.ErrInvalidPath,
-	domain.ErrInvalidPageToken, domain.ErrInvalidPageSize, domain.ErrInvalidRefKind,
-	domain.ErrNotDirectory, domain.ErrNotFile, domain.ErrInvalidText,
 }
 
 // addFieldDetail attaches the fields a request was rejected for as a

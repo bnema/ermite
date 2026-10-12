@@ -21,6 +21,7 @@ func oid(t *testing.T, c byte) domain.ObjectID {
 }
 
 func TestDefaultRepoSettings(t *testing.T) {
+	t.Parallel()
 	s := domain.DefaultRepoSettings()
 	assert.Equal(t, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}, s.AllowedMergeModes)
 	assert.True(t, s.FailingChecksBlock)
@@ -35,6 +36,7 @@ func TestDefaultRepoSettings(t *testing.T) {
 }
 
 func TestNormalizeMergeModes(t *testing.T) {
+	t.Parallel()
 	got, err := domain.NormalizeMergeModes([]domain.MergeMode{domain.MergeModeSquash, domain.MergeModeFastForward, domain.MergeModeSquash})
 	require.NoError(t, err)
 	assert.Equal(t, domain.MergeModes(), got)
@@ -50,6 +52,7 @@ func TestNormalizeMergeModes(t *testing.T) {
 }
 
 func TestParseMergeMode(t *testing.T) {
+	t.Parallel()
 	m, err := domain.ParseMergeMode("fast-forward")
 	require.NoError(t, err)
 	assert.Equal(t, domain.MergeModeFastForward, m)
@@ -78,6 +81,7 @@ func hunkDiff() domain.Diff {
 }
 
 func TestDiffHasLine(t *testing.T) {
+	t.Parallel()
 	d := hunkDiff()
 	tests := []struct {
 		name string
@@ -106,6 +110,7 @@ func TestDiffHasLine(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, d.HasLine(tc.path, tc.side, tc.line))
 		})
 	}
@@ -116,6 +121,7 @@ func sig(name, email string, sec int64) domain.Signature {
 }
 
 func TestNewSquashCommit(t *testing.T) {
+	t.Parallel()
 	title, err := domain.ParseMRTitle("Add search")
 	require.NoError(t, err)
 	mr := domain.MergeRequest{Number: 7, Title: title}
@@ -151,6 +157,7 @@ func TestNewSquashCommit(t *testing.T) {
 }
 
 func TestSquashCommitSigned(t *testing.T) {
+	t.Parallel()
 	title, err := domain.ParseMRTitle("T")
 	require.NoError(t, err)
 	c := domain.NewSquashCommit(domain.MergeRequest{Number: 1, Title: title}, oid(t, 'a'), oid(t, 'b'),
@@ -169,6 +176,7 @@ func TestSquashCommitSigned(t *testing.T) {
 }
 
 func TestSquashCommitCleansIdentitiesAndSummaries(t *testing.T) {
+	t.Parallel()
 	title, err := domain.ParseMRTitle("T")
 	require.NoError(t, err)
 	commits := []domain.Commit{
@@ -183,6 +191,7 @@ func TestSquashCommitCleansIdentitiesAndSummaries(t *testing.T) {
 }
 
 func TestSigningKeyInfoAllowedSigners(t *testing.T) {
+	t.Parallel()
 	i := domain.SigningKeyInfo{
 		Key:       domain.SigningPublicKey{AuthorizedKey: "ssh-ed25519 AAAA"},
 		Committer: domain.Identity{Name: "ermite", Email: "ermite@git.example.org"},
@@ -191,6 +200,7 @@ func TestSigningKeyInfoAllowedSigners(t *testing.T) {
 }
 
 func TestParseBranchName(t *testing.T) {
+	t.Parallel()
 	for _, ok := range []string{"main", "feat/x", "v1.2", "a-b_c"} {
 		got, err := domain.ParseBranchName(ok)
 		require.NoError(t, err, ok)

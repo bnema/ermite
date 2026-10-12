@@ -31,6 +31,7 @@ func (c *pathCache) has(id string) bool {
 }
 
 func TestPathCacheEvictsLeastRecentlyUsed(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(100, 1)
 	blob := func(n int) []byte { return make([]byte, n) }
 	c.store("a", blob(25))
@@ -57,6 +58,7 @@ func TestPathCacheEvictsLeastRecentlyUsed(t *testing.T) {
 // A list over a quarter of the budget is not kept, since it would push out the
 // others; one at the limit is.
 func TestPathCacheSkipsOversizedEntries(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(100, 1)
 	var builds atomic.Int32
 	big := func(n int) func() ([]byte, error) {
@@ -80,6 +82,7 @@ func TestPathCacheSkipsOversizedEntries(t *testing.T) {
 }
 
 func TestPathCacheConcurrent(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(1000, 1)
 	var wg sync.WaitGroup
 	for g := range 8 {
@@ -122,6 +125,7 @@ func building(c *pathCache, n int) bool {
 // Concurrent misses for one commit build once; a failure is shared and not
 // stored; a waiter that gives up leaves the build running.
 func TestPathCacheLoadBuildsOnce(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(1000, 4)
 	var builds atomic.Int32
 	release := make(chan struct{})
@@ -172,6 +176,7 @@ func TestPathCacheLoadBuildsOnce(t *testing.T) {
 // commit waits for the running build, and leaves with its ctx if it is
 // cancelled first. The slot is the build's, not the caller's.
 func TestPathCacheLoadBoundsBuilds(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(1000, 1)
 	started, release := make(chan struct{}), make(chan struct{})
 	first := make(chan error, 1)
@@ -218,6 +223,7 @@ func TestPathCacheLoadBoundsBuilds(t *testing.T) {
 // The slot of a build is kept after its callers leave, and given back when it
 // ends, whether it fails or panics.
 func TestPathCacheSlotOutlivesCallers(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(1000, 1)
 	started, release := make(chan struct{}), make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -240,6 +246,7 @@ func TestPathCacheSlotOutlivesCallers(t *testing.T) {
 // A build that panics is handed to its waiters as an error, leaves nothing
 // in flight or cached, and does not take the process down.
 func TestPathCacheLoadPanic(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(1000, 4)
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -272,6 +279,7 @@ func TestPathCacheLoadPanic(t *testing.T) {
 // The caller that starts a build is released with its context too, and the
 // build goes on for the others.
 func TestPathCacheLoadStarterLeaves(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(1000, 4)
 	release := make(chan struct{})
 	build := func() ([]byte, error) { <-release; return []byte("list"), nil }
@@ -294,6 +302,7 @@ func TestPathCacheLoadStarterLeaves(t *testing.T) {
 // A failure belongs to the repository that built it: another repository
 // asking for the same commit builds its own.
 func TestPathCacheLoadFailureStaysInRepo(t *testing.T) {
+	t.Parallel()
 	c := newPathCache(1000, 4)
 	started, release := make(chan struct{}), make(chan struct{})
 	boom := errors.New("boom")

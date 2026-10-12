@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package ports declares the interfaces the use cases need from the outside
-// world. Adapters implement them; cmd wires them.
+// Package ports declares every interface that crosses a layer, and the
+// parameter and result types of the use case interfaces.
+//
+// Outbound ports (ports.go) are what the use cases need from the outside
+// world: adapters implement them. Inbound ports (services.go) are the use
+// cases as the adapters that serve requests see them: the types of package usecase
+// implement them. Adapters and use cases depend on this package and on domain,
+// never on each other; internal/app wires the implementations. All the mocks are generated in
+// ports/mocks.
 package ports
 
 import (

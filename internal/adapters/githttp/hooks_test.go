@@ -18,56 +18,19 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/adapters/githttp"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 const (
 	oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	oidB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
-
-type call struct {
-	hook    string
-	p       domain.Principal
-	repo    domain.RepoName
-	updates []domain.RefUpdate
-}
-
-type fakeHooks struct {
-	mu       sync.Mutex
-	calls    []call
-	checkErr error
-	recErr   error
-	// onRecord, when set, runs inside Record with its context.
-	onRecord func(ctx context.Context)
-}
-
-func (f *fakeHooks) Check(_ context.Context, p domain.Principal, n domain.RepoName, u []domain.RefUpdate) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, call{"check", p, n, u})
-	return f.checkErr
-}
-
-func (f *fakeHooks) Record(ctx context.Context, p domain.Principal, n domain.RepoName, u []domain.RefUpdate) error {
-	f.mu.Lock()
-	f.calls = append(f.calls, call{"record", p, n, u})
-	err, on := f.recErr, f.onRecord
-	f.mu.Unlock()
-	if on != nil {
-		on(ctx)
-	}
-	return err
-}
-
-func (f *fakeHooks) last() call {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.calls[len(f.calls)-1]
-}
 
 func repoName(t *testing.T, s string) domain.RepoName {
 	t.Helper()
@@ -77,7 +40,7 @@ func repoName(t *testing.T, s string) domain.RepoName {
 }
 
 // startHooks serves a hook socket in a short temporary directory.
-func startHooks(t *testing.T, h githttp.PushHooks) (*githttp.HookServer, string) {
+func startHooks(t *testing.T, h ports.PushHookService) (*githttp.HookServer, string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "hk")
 	require.NoError(t, err)
@@ -117,7 +80,8 @@ func raw(t *testing.T, sock, line string) githttp.HookReply {
 }
 
 func TestHookSocketMode(t *testing.T) {
-	_, sock := startHooks(t, &fakeHooks{})
+	t.Parallel()
+	_, sock := startHooks(t, mocks.NewPushHookService(t))
 	fi, err := os.Stat(sock)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
@@ -125,26 +89,28 @@ func TestHookSocketMode(t *testing.T) {
 }
 
 func TestHookServerReplacesStaleSocketFile(t *testing.T) {
+	t.Parallel()
 	dir, err := os.MkdirTemp("", "hk")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(dir) }()
 	sock := filepath.Join(dir, "hook.sock")
 	require.NoError(t, os.WriteFile(sock, []byte("stale"), 0o600))
-	s := githttp.NewHookServer(sock, &fakeHooks{})
+	s := githttp.NewHookServer(sock, mocks.NewPushHookService(t))
 	require.NoError(t, s.Listen(context.Background()))
 	s.Close(context.Background())
 }
 
 func TestHookServerRejectsTooLongSocketPath(t *testing.T) {
-	s := githttp.NewHookServer("/"+strings.Repeat("a", 120)+"/hook.sock", &fakeHooks{})
+	t.Parallel()
+	s := githttp.NewHookServer("/"+strings.Repeat("a", 120)+"/hook.sock", mocks.NewPushHookService(t))
 	err := s.Listen(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "too long")
 }
 
 func TestHookProtocol(t *testing.T) {
-	fh := &fakeHooks{}
-	srv, sock := startHooks(t, fh)
+	hooks := mocks.NewPushHookService(t)
+	srv, sock := startHooks(t, hooks)
 	p := domain.TokenPrincipal(domain.Token{ID: "tok1", Scopes: []domain.Scope{domain.ScopeRepoWrite}})
 	tokenA, releaseA := srv.Register(context.Background(), repoName(t, "alpha"), p)
 	tokenB, releaseB := srv.Register(context.Background(), repoName(t, "beta"), domain.Root())
@@ -154,46 +120,42 @@ func TestHookProtocol(t *testing.T) {
 	upd := `[{"old":"` + domain.ZeroOID + `","new":"` + oidA + `","ref":"refs/heads/main"}]`
 
 	t.Run("pre-receive is attributed to the repository and principal of its token", func(t *testing.T) {
+		updates := []domain.RefUpdate{{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/main"}}
+		hooks.EXPECT().Check(mock.Anything, mock.MatchedBy(func(got domain.Principal) bool { return got.TokenID() == "tok1" }),
+			repoName(t, "alpha"), updates).Return(nil).Once()
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","updates":`+upd+`}`)
 		assert.True(t, r.OK)
-		c := fh.last()
-		assert.Equal(t, "check", c.hook)
-		assert.Equal(t, repoName(t, "alpha"), c.repo)
-		assert.Equal(t, "tok1", c.p.TokenID())
-		assert.Equal(t, []domain.RefUpdate{{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/main"}}, c.updates)
 
+		hooks.EXPECT().Record(mock.Anything, mock.MatchedBy(func(got domain.Principal) bool { return got.IsRoot() }),
+			repoName(t, "beta"), updates).Return(nil).Once()
 		r = raw(t, sock, `{"token":"`+tokenB+`","hook":"post-receive","updates":`+upd+`}`)
 		assert.True(t, r.OK)
-		c = fh.last()
-		assert.Equal(t, "record", c.hook)
-		assert.Equal(t, repoName(t, "beta"), c.repo)
-		assert.True(t, c.p.IsRoot())
 	})
 
 	t.Run("a repository sent by the client is ignored", func(t *testing.T) {
-		raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","repo":"beta","updates":[]}`)
-		assert.Equal(t, repoName(t, "alpha"), fh.last().repo)
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "alpha"), mock.Anything).Return(nil).Once()
+		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","repo":"beta","updates":[]}`)
+		assert.True(t, r.OK)
 	})
 
 	t.Run("refusal carries the message", func(t *testing.T) {
-		fh.checkErr = errors.Join(domain.ErrRejected, errors.New("protected branch"))
-		defer func() { fh.checkErr = nil }()
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(errors.Join(domain.ErrRejected, errors.New("protected branch"))).Once()
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","updates":`+upd+`}`)
 		assert.False(t, r.OK)
 		assert.Contains(t, r.Message, "rejected")
 	})
 
 	t.Run("an internal error fails closed without leaking details", func(t *testing.T) {
-		fh.checkErr = errors.New("disk /secret/path exploded")
-		defer func() { fh.checkErr = nil }()
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(errors.New("disk /secret/path exploded")).Once()
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","updates":`+upd+`}`)
 		assert.False(t, r.OK)
 		assert.NotContains(t, r.Message, "/secret/path")
 	})
 
 	t.Run("post-receive failure is still ok for git, with a note", func(t *testing.T) {
-		fh.recErr = errors.New("boom")
-		defer func() { fh.recErr = nil }()
+		hooks.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("boom")).Once()
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"post-receive","updates":`+upd+`}`)
 		assert.True(t, r.OK)
 		assert.NotEmpty(t, r.Message)
@@ -205,18 +167,16 @@ func TestHookProtocol(t *testing.T) {
 			assert.False(t, r.OK, tok)
 		}
 		releaseA()
-		before := len(fh.calls)
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","updates":[]}`)
 		assert.False(t, r.OK, "released token")
 		assert.Contains(t, r.Message, "token")
-		assert.Len(t, fh.calls, before, "no use case ran")
+		// The hooks mock expects no call: no use case ran.
 		releaseB()
 	})
 
 	t.Run("malformed requests are refused", func(t *testing.T) {
 		tok, rel := srv.Register(context.Background(), repoName(t, "gamma"), domain.Root())
 		defer rel()
-		before := len(fh.calls)
 		for _, line := range []string{
 			`not json`,
 			`{}`,
@@ -227,7 +187,7 @@ func TestHookProtocol(t *testing.T) {
 			r := raw(t, sock, line)
 			assert.False(t, r.OK, line)
 		}
-		assert.Len(t, fh.calls, before)
+		// The hooks mock expects no call: no use case ran.
 	})
 
 	t.Run("a connection that closes without a request does not hurt", func(t *testing.T) {
@@ -242,24 +202,27 @@ func TestHookProtocol(t *testing.T) {
 // A shutdown while a push is being recorded must not drop the recording: the
 // push is already in the repository.
 func TestHookRecordSurvivesShutdown(t *testing.T) {
-	fh := &fakeHooks{}
+	t.Parallel()
+	hooks := mocks.NewPushHookService(t)
 	started, proceed := make(chan struct{}), make(chan struct{})
 	var cancelled, hasDeadline bool
 	var ctxMu sync.Mutex
-	fh.onRecord = func(ctx context.Context) {
-		close(started)
-		<-proceed
-		ctxMu.Lock()
-		defer ctxMu.Unlock()
-		cancelled = ctx.Err() != nil
-		_, hasDeadline = ctx.Deadline()
-	}
+	hooks.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(ctx context.Context, _ domain.Principal, _ domain.RepoName, _ []domain.RefUpdate) error {
+			close(started)
+			<-proceed
+			ctxMu.Lock()
+			defer ctxMu.Unlock()
+			cancelled = ctx.Err() != nil
+			_, hasDeadline = ctx.Deadline()
+			return nil
+		}).Once()
 
 	dir, err := os.MkdirTemp("", "hk")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "hook.sock")
-	srv := githttp.NewHookServer(sock, fh)
+	srv := githttp.NewHookServer(sock, hooks)
 	require.NoError(t, srv.Listen(context.Background()))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -294,9 +257,14 @@ func TestHookRecordSurvivesShutdown(t *testing.T) {
 }
 
 func TestHookConcurrentTokens(t *testing.T) {
-	fh := &fakeHooks{}
-	srv, sock := startHooks(t, fh)
+	t.Parallel()
+	hooks := mocks.NewPushHookService(t)
+	srv, sock := startHooks(t, hooks)
 	var wg sync.WaitGroup
+	// Each of the 16 tokens reaches the use case for its own repository, once.
+	for i := range 16 {
+		hooks.EXPECT().Record(mock.Anything, mock.Anything, repoName(t, "r"+string(rune('a'+i))), mock.Anything).Return(nil).Once()
+	}
 	for i := range 16 {
 		wg.Add(1)
 		go func() {
@@ -309,39 +277,35 @@ func TestHookConcurrentTokens(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	seen := map[domain.RepoName]bool{}
-	for _, c := range fh.calls {
-		seen[c.repo] = true
-	}
-	assert.Len(t, seen, 16)
 }
 
 func TestRunHook(t *testing.T) {
 	ctx := context.Background()
-	fh := &fakeHooks{}
-	srv, sock := startHooks(t, fh)
+	hooks := mocks.NewPushHookService(t)
+	srv, sock := startHooks(t, hooks)
 	tok, rel := srv.Register(context.Background(), repoName(t, "alpha"), domain.Root())
 	defer rel()
 	input := domain.ZeroOID + " " + oidA + " refs/heads/main\n" + oidA + " " + oidB + " refs/heads/dev\n"
 
 	t.Run("sends the lines git feeds the hook", func(t *testing.T) {
 		var errOut bytes.Buffer
-		require.NoError(t, githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, sock, tok))
-		assert.Equal(t, []domain.RefUpdate{
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "alpha"), []domain.RefUpdate{
 			{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/main"},
 			{Old: oidA, New: oidB, Ref: "refs/heads/dev"},
-		}, fh.last().updates)
+		}).Return(nil).Once()
+		require.NoError(t, githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, sock, tok))
 		assert.Empty(t, errOut.String())
 	})
 
 	t.Run("a ref name with spaces survives", func(t *testing.T) {
+		hooks.EXPECT().Record(mock.Anything, mock.Anything, repoName(t, "alpha"),
+			[]domain.RefUpdate{{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/a b"}}).Return(nil).Once()
 		require.NoError(t, githttp.RunHook(ctx, "post-receive", strings.NewReader(domain.ZeroOID+" "+oidA+" refs/heads/a b\n"), &bytes.Buffer{}, sock, tok))
-		assert.Equal(t, "refs/heads/a b", fh.last().updates[0].Ref)
 	})
 
 	t.Run("pre-receive refusal prints the message and fails", func(t *testing.T) {
-		fh.checkErr = errors.Join(domain.ErrRejected, errors.New("nope"))
-		defer func() { fh.checkErr = nil }()
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(errors.Join(domain.ErrRejected, errors.New("nope"))).Once()
 		var errOut bytes.Buffer
 		err := githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, sock, tok)
 		require.ErrorIs(t, err, githttp.ErrHookRejected)
@@ -400,6 +364,7 @@ func TestRunHook(t *testing.T) {
 }
 
 func TestWriteHookScripts(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "run", "hooks")
 	exe := "/opt/it's here/\"ermite\" $HOME `x`/ermite"
 	require.NoError(t, githttp.WriteHookScripts(dir, exe))
@@ -425,6 +390,9 @@ func TestWriteHookScripts(t *testing.T) {
 }
 
 // The shell really passes the awkward path and the arguments through.
+//
+// Not parallel: it writes executables, and a test that forks meanwhile would
+// inherit the write descriptor and make exec fail with ETXTBSY.
 func TestHookScriptExecsTheBinaryWithQuotedPath(t *testing.T) {
 	base := filepath.Join(t.TempDir(), "it's a \"dir\" $X `y` ; z")
 	require.NoError(t, os.MkdirAll(base, 0o755))

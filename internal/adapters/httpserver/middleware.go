@@ -4,6 +4,7 @@ package httpserver
 
 import (
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -12,18 +13,33 @@ import (
 )
 
 // contentSecurityPolicy allows scripts from the origin plus 'unsafe-eval'
-// for htmx attribute expressions; inline scripts stay forbidden.
-const contentSecurityPolicy = "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'"
+// for htmx attribute expressions; inline scripts stay forbidden. Forms post
+// to the origin only, <base> and plugins are off.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+
+// hstsValue is one year. No includeSubDomains or preload: the server cannot
+// speak for the rest of the domain.
+const hstsValue = "max-age=31536000"
+
+// isHTTPS reports whether the public URL is an https:// URL.
+func isHTTPS(publicURL string) bool {
+	u, err := url.Parse(publicURL)
+	return err == nil && strings.EqualFold(u.Scheme, "https")
+}
 
 // withSecurityHeaders sets the security headers on every response, before
-// the handler runs, so that errors and 404s carry them too.
-func withSecurityHeaders(next http.Handler) http.Handler {
+// the handler runs, so that errors and 404s carry them too. With hsts, the
+// browser is told to stay on https.
+func withSecurityHeaders(next http.Handler, hsts bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Security-Policy", contentSecurityPolicy)
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
+		if hsts {
+			h.Set("Strict-Transport-Security", hstsValue)
+		}
 		next.ServeHTTP(w, r)
 	})
 }

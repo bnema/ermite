@@ -19,6 +19,7 @@ func renderMD(t *testing.T, src string) (string, []Heading) {
 
 // AC4: raw HTML, javascript: links and SVG are neutralised.
 func TestMarkdownNeutralisation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, src string
 		absent    []string
@@ -59,6 +60,7 @@ func TestMarkdownNeutralisation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			out, _ := renderMD(t, tt.src)
 			for _, s := range tt.absent {
 				assert.NotContains(t, out, s)
@@ -80,6 +82,7 @@ func TestMarkdownNeutralisation(t *testing.T) {
 }
 
 func TestMarkdownLinks(t *testing.T) {
+	t.Parallel()
 	tests := []struct{ name, src, href string }{
 		{"relative from the file's directory", "[a](other.md)", `href="/demo/blob/main/docs/other.md"`},
 		{"parent", "[a](../LICENSE)", `href="/demo/blob/main/LICENSE"`},
@@ -95,6 +98,7 @@ func TestMarkdownLinks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			out, _ := renderMD(t, tt.src)
 			if tt.href == "" {
 				assert.NotContains(t, out, "<a ")
@@ -106,6 +110,7 @@ func TestMarkdownLinks(t *testing.T) {
 }
 
 func TestMarkdownOutline(t *testing.T) {
+	t.Parallel()
 	out, outline := renderMD(t, "# Title\n\n## Install `now`\n\n### Install `now`\n\ntext\n\n#### raw *em*\n")
 	assert.Equal(t, []Heading{
 		{Level: 1, ID: "md-title", Text: "Title"},
@@ -124,6 +129,7 @@ func TestMarkdownOutline(t *testing.T) {
 }
 
 func TestMarkdownGFM(t *testing.T) {
+	t.Parallel()
 	out, _ := renderMD(t, "| a | b |\n|:-|-:|\n| 1 | 2 |\n\n~~gone~~\n\n- [x] task\n")
 	assert.Contains(t, out, `<th align="right">b</th>`, "alignment is an attribute, never a style")
 	assert.NotContains(t, out, "style=")

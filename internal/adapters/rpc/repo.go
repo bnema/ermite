@@ -9,12 +9,12 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // repoService implements ermiteconnect.RepoServiceHandler.
-type repoService struct{ repos *app.Repos }
+type repoService struct{ repos ports.RepoService }
 
 func (s *repoService) ListRepos(ctx context.Context, req *connect.Request[pb.ListReposRequest]) (*connect.Response[pb.ListReposResponse], error) {
 	page, err := s.repos.ListPage(ctx, caller(ctx), int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
@@ -53,7 +53,7 @@ func (s *repoService) CreateRepo(ctx context.Context, req *connect.Request[pb.Cr
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	repo, err := s.repos.Create(ctx, caller(ctx), app.CreateParams{
+	repo, err := s.repos.Create(ctx, caller(ctx), ports.CreateRepoParams{
 		Name: name, Description: req.Msg.GetDescription(), Visibility: vis,
 	})
 	if err != nil {
@@ -84,8 +84,8 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 // nothing else.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter maps the field mask of the contract to the optional fields of the use case; no rule is decided here
-func updateParams(msg *pb.UpdateRepoRequest) (app.UpdateParams, error) {
-	var params app.UpdateParams
+func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
+	var params ports.UpdateRepoParams
 	paths := msg.GetUpdateMask().GetPaths()
 	if len(paths) == 0 {
 		return params, fmt.Errorf("%w: update_mask is empty", domain.ErrInvalid)
@@ -135,7 +135,7 @@ func (s *repoService) DeleteRepo(ctx context.Context, req *connect.Request[pb.De
 }
 
 // respondRepo adds the default branch to repo and wraps it in a response.
-func respondRepo[T any](ctx context.Context, repos *app.Repos, repo domain.Repo, wrap func(*pb.Repo) *T) (*connect.Response[T], error) {
+func respondRepo[T any](ctx context.Context, repos ports.RepoService, repo domain.Repo, wrap func(*pb.Repo) *T) (*connect.Response[T], error) {
 	view, err := repos.View(ctx, repo)
 	if err != nil {
 		return nil, connectError(ctx, err)

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -26,97 +27,152 @@ import (
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-type fakeAuth struct {
-	mu   sync.Mutex
-	seen []string
-}
-
-func (f *fakeAuth) Authenticate(_ context.Context, secret string) (domain.Principal, error) {
-	f.mu.Lock()
-	f.seen = append(f.seen, secret)
-	f.mu.Unlock()
-	switch secret {
-	case "root-secret":
-		return domain.Root(), nil
-	case "reader-secret":
-		return domain.TokenPrincipal(domain.Token{ID: "rd", Scopes: []domain.Scope{domain.ScopeRepoRead}}), nil
-	}
-	return domain.Principal{}, domain.ErrUnauthenticated
-}
-
-type fakeRepos struct{}
-
-func (fakeRepos) Get(_ context.Context, p domain.Principal, n domain.RepoName) (domain.Repo, error) {
-	switch n.String() {
-	case "pub":
-		return domain.Repo{Name: n, Visibility: domain.VisibilityPublic}, nil
-	case "priv":
-		if p.Allows(domain.ScopeRepoRead, n) {
-			return domain.Repo{Name: n, Visibility: domain.VisibilityPrivate}, nil
-		}
-	}
-	return domain.Repo{}, domain.ErrNotFound
-}
-
-type fakePushes struct {
-	mu    sync.Mutex
-	calls []bool // the create flag of each Open
-	err   error
-}
-
-func (f *fakePushes) Open(_ context.Context, p domain.Principal, _ domain.RepoName, create bool) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, create)
-	if p.IsAnonymous() {
-		return domain.ErrUnauthenticated
-	}
-	return f.err
-}
-
-type fakeTokens struct {
-	mu       sync.Mutex
-	released int
-	repo     domain.RepoName
-}
-
-func (f *fakeTokens) Register(_ context.Context, r domain.RepoName, _ domain.Principal) (string, func()) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.repo = r
-	return "hook-token", func() { f.mu.Lock(); f.released++; f.mu.Unlock() }
-}
-func (f *fakeTokens) Socket() string { return "/run/hook.sock" }
-
 // cgiScript is a stand-in for git-http-backend: it answers with the
 // environment and the body it received. Like Git, it reads the whole request
 // before it answers (net/http cannot read a request body once the response
 // has started).
+//
+// The script is written once, in TestMain, before any test runs: writing an
+// executable while parallel tests fork lets a child inherit the open write
+// descriptor, and exec then fails with ETXTBSY (golang/go#22315).
 func cgiScript(t *testing.T) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "backend")
+	require.NotEmpty(t, backendScript, "TestMain writes the backend script")
+	return backendScript
+}
+
+var backendScript string
+
+func TestMain(m *testing.M) {
+	os.Exit(runWithBackendScript(m))
+}
+
+func runWithBackendScript(m *testing.M) int {
+	dir, err := os.MkdirTemp("", "githttp-backend")
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	backendScript = filepath.Join(dir, "backend")
 	body := "#!/bin/sh\nin=$(mktemp)\ncat > \"$in\"\nprintf 'Content-Type: text/plain\\r\\n\\r\\n'\nenv | sort\nprintf '\\n--body--\\n'\ncat \"$in\"\nrm -f \"$in\"\n"
-	require.NoError(t, os.WriteFile(p, []byte(body), 0o755))
-	return p
+	if err := os.WriteFile(backendScript, []byte(body), 0o755); err != nil {
+		panic(err)
+	}
+	return m.Run()
 }
 
 type rig struct {
 	h       *githttp.Handler
 	srv     *httptest.Server
-	pushes  *fakePushes
+	pushes  *mocks.PushService
 	backend *mocks.GitBackend
-	hooks   *fakeTokens
-	auth    *fakeAuth
+	hooks   *mocks.HookTokens
+	auth    *mocks.AuthService
 
 	pushFlags  []bool
 	backendErr error
+
+	mu        sync.Mutex // guards what the mocks record while the server runs
+	pushErr   error      // what Pushes.Open answers a named caller
+	pushCalls []bool     // the create flag of each Pushes.Open
+	authCalls int        // Authenticator.Authenticate calls
+	released  int        // hook tokens released
+	hookRepo  domain.RepoName
+}
+
+func (r *rig) setPushErr(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pushErr = err
+}
+
+func (r *rig) takePushCalls() []bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c := r.pushCalls
+	r.pushCalls = nil
+	return c
+}
+
+func (r *rig) authenticateCalls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.authCalls
+}
+
+func (r *rig) releasedTokens() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.released
+}
+
+func (r *rig) hookedRepo() domain.RepoName {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.hookRepo
+}
+
+// stubUseCases answers like the use cases behind the handler: a root and a
+// reader token, a public repository "pub" and a private one "priv".
+func (r *rig) stubUseCases(repos *mocks.RepoLookup) {
+	r.auth.EXPECT().Authenticate(mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, secret string) (domain.Principal, error) {
+			r.mu.Lock()
+			r.authCalls++
+			r.mu.Unlock()
+			switch secret {
+			case "root-secret":
+				return domain.Root(), nil
+			case "reader-secret":
+				return domain.TokenPrincipal(domain.Token{ID: "rd", Scopes: []domain.Scope{domain.ScopeRepoRead}}), nil
+			}
+			return domain.Principal{}, domain.ErrUnauthenticated
+		}).Maybe()
+
+	repos.EXPECT().Get(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, p domain.Principal, n domain.RepoName) (domain.Repo, error) {
+			switch n.String() {
+			case "pub":
+				return domain.Repo{Name: n, Visibility: domain.VisibilityPublic}, nil
+			case "priv":
+				if p.Allows(domain.ScopeRepoRead, n) {
+					return domain.Repo{Name: n, Visibility: domain.VisibilityPrivate}, nil
+				}
+			}
+			return domain.Repo{}, domain.ErrNotFound
+		}).Maybe()
+
+	r.pushes.EXPECT().Open(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, p domain.Principal, _ domain.RepoName, create bool) error {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.pushCalls = append(r.pushCalls, create)
+			if p.IsAnonymous() {
+				return domain.ErrUnauthenticated
+			}
+			return r.pushErr
+		}).Maybe()
+
+	r.hooks.EXPECT().Register(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, n domain.RepoName, _ domain.Principal) (string, func()) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.hookRepo = n
+			return "hook-token", func() { r.mu.Lock(); r.released++; r.mu.Unlock() }
+		}).Maybe()
+	r.hooks.EXPECT().Socket().Return("/run/hook.sock").Maybe()
 }
 
 func newRig(t *testing.T, mut func(*githttp.Config)) *rig {
 	t.Helper()
-	r := &rig{pushes: &fakePushes{}, backend: mocks.NewGitBackend(t), hooks: &fakeTokens{}, auth: &fakeAuth{}}
+	r := &rig{
+		pushes: mocks.NewPushService(t), backend: mocks.NewGitBackend(t),
+		hooks: mocks.NewHookTokens(t), auth: mocks.NewAuthService(t),
+	}
+	repos := mocks.NewRepoLookup(t)
+	r.stubUseCases(repos)
 	cfg := githttp.Config{
-		Auth: r.auth, Repos: fakeRepos{}, Pushes: r.pushes, Backend: r.backend, Hooks: r.hooks,
+		Auth: r.auth, Repos: repos, Pushes: r.pushes, Backend: r.backend, Hooks: r.hooks,
 	}
 	script := cgiScript(t)
 	r.backend.EXPECT().HTTPBackend(mock.Anything, mock.Anything).RunAndReturn(
@@ -171,7 +227,7 @@ func envOf(body string) map[string]string {
 }
 
 func TestHandlerRoutesAndStatuses(t *testing.T) {
-	r := newRig(t, nil)
+	t.Parallel()
 	tests := []struct {
 		name   string
 		method string
@@ -200,6 +256,8 @@ func TestHandlerRoutesAndStatuses(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRig(t, nil) // a rig per subtest: its mocks record without locking
 			user := ""
 			if tt.pass != "" {
 				user = "whatever" // the username is ignored
@@ -216,31 +274,31 @@ func TestHandlerRoutesAndStatuses(t *testing.T) {
 }
 
 func TestHandlerPushAuthorizationAnswers(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	get := func() int {
 		code, _, _ := r.do(t, "GET", "/p.git/info/refs?service=git-receive-pack", "u", "root-secret", nil, nil)
 		return code
 	}
 	assert.Equal(t, 200, get())
-	r.pushes.err = domain.ErrForbidden
+	r.setPushErr(domain.ErrForbidden)
 	assert.Equal(t, 403, get())
-	r.pushes.err = domain.ErrNotFound
+	r.setPushErr(domain.ErrNotFound)
 	assert.Equal(t, 404, get())
-	r.pushes.err = domain.ErrUnauthenticated
+	r.setPushErr(domain.ErrUnauthenticated)
 	assert.Equal(t, 401, get())
-	r.pushes.err = errBoom{}
+	r.setPushErr(errBoom{})
 	assert.Equal(t, 500, get())
 
 	// Only the first request of a push may create.
-	r.pushes.err = nil
-	r.pushes.calls = nil
+	r.setPushErr(nil)
+	r.takePushCalls()
 	r.do(t, "GET", "/p.git/info/refs?service=git-receive-pack", "u", "root-secret", nil, nil)
 	r.do(t, "POST", "/p.git/git-receive-pack", "u", "root-secret", strings.NewReader("0000"), map[string]string{"Content-Type": "application/x-git-receive-pack-request"})
-	assert.Equal(t, []bool{true, false}, r.pushes.calls)
+	assert.Equal(t, []bool{true, false}, r.takePushCalls())
 	// Reads never reach the push use case.
-	r.pushes.calls = nil
 	r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "", "", nil, nil)
-	assert.Empty(t, r.pushes.calls)
+	assert.Empty(t, r.takePushCalls())
 }
 
 type errBoom struct{}
@@ -248,6 +306,7 @@ type errBoom struct{}
 func (errBoom) Error() string { return "boom with /internal/detail" }
 
 func TestHandlerBackendEnvironment(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	hdr := map[string]string{
 		"Cookie":              "session=secret",
@@ -295,21 +354,23 @@ func TestHandlerBackendEnvironment(t *testing.T) {
 	assert.NotContains(t, body, "arbitrary-header-secret", "only allowlisted headers reach the backend, and so its hooks")
 	assert.NotContains(t, e, "HTTP_X_AUTH_TOKEN")
 	assert.NotContains(t, e, "HTTP_X_FORWARDED_FOR")
-	assert.Equal(t, 1, r.hooks.released, "the hook token is revoked when the request ends")
-	assert.Equal(t, "pub", r.hooks.repo.String())
+	assert.Equal(t, 1, r.releasedTokens(), "the hook token is revoked when the request ends")
+	assert.Equal(t, "pub", r.hookedRepo().String())
 
 	// The info/refs advertisement of a push does not register a hook token.
 	r.do(t, "GET", "/pub.git/info/refs?service=git-receive-pack", "u", "root-secret", nil, nil)
-	assert.Equal(t, 1, r.hooks.released)
+	assert.Equal(t, 1, r.releasedTokens())
 }
 
 func TestHandlerNormalizesRepositoryPath(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	_, body, _ := r.do(t, "GET", "/pub/info/refs?service=git-upload-pack", "", "", nil, nil)
 	assert.Equal(t, "/pub.git/info/refs", envOf(body)["PATH_INFO"], "the backend always sees <name>.git")
 }
 
 func TestHandlerChunkedBodyIsStreamed(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	payload := strings.Repeat("x", 300_000)
 	// An io.Reader of unknown length makes the client send chunked.
@@ -325,6 +386,7 @@ func TestHandlerChunkedBodyIsStreamed(t *testing.T) {
 }
 
 func TestHandlerBodyLimit(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, func(c *githttp.Config) { c.MaxBodyBytes = 1000 })
 	big := strings.Repeat("x", 5000)
 	code, _, _ := r.do(t, "POST", "/pub.git/git-receive-pack", "u", "root-secret", strings.NewReader(big), nil)
@@ -342,6 +404,7 @@ func TestHandlerBodyLimit(t *testing.T) {
 }
 
 func TestHandlerUploadPackBodyIsBoundedBelowThePushLimit(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil) // the push limit is 4 GiB
 	big := strings.NewReader(strings.Repeat("x", 64<<20+1))
 	code, _, _ := r.do(t, "POST", "/pub.git/git-upload-pack", "", "", big, nil)
@@ -349,6 +412,7 @@ func TestHandlerUploadPackBodyIsBoundedBelowThePushLimit(t *testing.T) {
 }
 
 func TestHandlerServiceQuery(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	for _, q := range []string{
 		"service=git-upload-pack&service=git-receive-pack",
@@ -366,6 +430,7 @@ func TestHandlerServiceQuery(t *testing.T) {
 }
 
 func TestHandlerGitProtocolHeader(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	tests := []struct {
 		value string
@@ -403,6 +468,7 @@ func TestHandlerDoesNotInheritTheProcessEnvironment(t *testing.T) {
 }
 
 func TestHandlerBackendFailure(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	r.backendErr = io.ErrUnexpectedEOF
 	code, body, _ := r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "", "", nil, nil)
@@ -411,6 +477,7 @@ func TestHandlerBackendFailure(t *testing.T) {
 }
 
 func TestHandlerLimiter(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, func(c *githttp.Config) { c.Limiter = clientlimit.NewLimiter(nil) })
 	for i := range clientlimit.MaxFailures {
 		code, _, _ := r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "u", "wrong", nil, nil)
@@ -420,16 +487,13 @@ func TestHandlerLimiter(t *testing.T) {
 	assert.Equal(t, 429, code)
 	assert.NotEmpty(t, hdr.Get("Retry-After"))
 	// A blocked request does not even reach the authenticator.
-	r.auth.mu.Lock()
-	n := len(r.auth.seen)
-	r.auth.mu.Unlock()
+	n := r.authenticateCalls()
 	r.do(t, "GET", "/pub.git/info/refs?service=git-upload-pack", "u", "root-secret", nil, nil)
-	r.auth.mu.Lock()
-	assert.Equal(t, n, len(r.auth.seen))
-	r.auth.mu.Unlock()
+	assert.Equal(t, n, r.authenticateCalls())
 }
 
 func TestHandlerLimiterTrustedProxyViaConfig(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, func(c *githttp.Config) {
 		c.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}
 	})
@@ -443,6 +507,7 @@ func TestHandlerLimiterTrustedProxyViaConfig(t *testing.T) {
 }
 
 func TestHandlerBearerAndMalformedAuthorization(t *testing.T) {
+	t.Parallel()
 	r := newRig(t, nil)
 	path := "/priv.git/info/refs?service=git-upload-pack"
 	code, _, _ := r.do(t, "GET", path, "", "", nil, map[string]string{"Authorization": "Bearer reader-secret"})
@@ -460,4 +525,36 @@ func TestHandlerBearerAndMalformedAuthorization(t *testing.T) {
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestHandlerUsesTheFailureLimiter(t *testing.T) {
+	t.Parallel()
+	path := "/pub.git/info/refs?service=git-upload-pack"
+	t.Run("a blocked client is refused before authentication", func(t *testing.T) {
+		t.Parallel()
+		limiter := mocks.NewFailureLimiter(t)
+		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(true, 3*time.Second).Once()
+		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
+		code, _, hdr := r.do(t, "GET", path, "u", "root-secret", nil, nil)
+		assert.Equal(t, 429, code)
+		assert.Equal(t, "3", hdr.Get("Retry-After"))
+		assert.Zero(t, r.authenticateCalls())
+	})
+	t.Run("an invalid secret is recorded as a failure", func(t *testing.T) {
+		t.Parallel()
+		limiter := mocks.NewFailureLimiter(t)
+		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(false, time.Duration(0)).Once()
+		limiter.EXPECT().Fail(mock.Anything, "127.0.0.1").Once()
+		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
+		code, _, _ := r.do(t, "GET", path, "u", "wrong", nil, nil)
+		assert.Equal(t, 401, code)
+	})
+	t.Run("a valid secret is not a failure", func(t *testing.T) {
+		t.Parallel()
+		limiter := mocks.NewFailureLimiter(t)
+		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(false, time.Duration(0)).Once()
+		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
+		code, _, _ := r.do(t, "GET", path, "u", "root-secret", nil, nil)
+		assert.Equal(t, 200, code)
+	})
 }

@@ -54,7 +54,7 @@ templ CodeView(h template.HTML) {
     if (lo && event.detail?.scroll) document.getElementById('L' + lo)?.scrollIntoView({ block: 'center' })"
 		hx-live="if (!data.ready) { data.ready = '1'; trigger('sel', { scroll: true }) }"
 		data-ready=""
-	><code>@templ.Raw(string(h))</code></pre>
+	><code hx-ignore>@templ.Raw(string(h))</code></pre>
 }
 
 templ blobRail(p BlobPage) {
