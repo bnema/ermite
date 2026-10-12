@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
+	"slices"
 	"strings"
 
 	"github.com/bnema/kvconf"
@@ -36,46 +36,72 @@ func newConfigCmd(env *cliEnv) *cobra.Command {
 			"take precedence over the file. token.cmd belongs to the server of the file: it is not run when\n" +
 			"ERMITE_URL names another server than the url of the file (the call is then anonymous, with a\n" +
 			"notice: set ERMITE_TOKEN). `ermite version`, `ermite config` and shell completion never run it\n" +
-			"(completion stays anonymous unless ERMITE_TOKEN is set).",
+			"(completion stays anonymous unless ERMITE_TOKEN is set).\n\n" +
+			"token.cmd is also not run when the file belongs to another user, or when the file or its directory\n" +
+			"can be written by other users (Unix); `ermite config show` and `set` warn about it. On Windows\n" +
+			"this check does not exist: keep the file in your own profile (the default place).",
 	}
 	cmd.AddCommand(newConfigShowCmd(env), newConfigSetCmd(env), newConfigUnsetCmd(env))
 	return cmd
 }
 
+// jsonConfig is the stable JSON shape of `ermite config show --json`.
+type jsonConfig struct {
+	File     string  `json:"file"`
+	URL      *string `json:"url"`
+	TokenCmd *string `json:"token_cmd"`
+}
+
 func newConfigShowCmd(env *cliEnv) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Print the config file path and its settings",
 		Long: "Print the path of the config file, then the url and token.cmd stored in it ((not set) when\n" +
-			"absent). It never runs token.cmd.",
+			"absent). It never runs token.cmd, and warns when token.cmd would be refused (file permissions).\n\n" +
+			"JSON fields (--json): file; url and token_cmd, null when not set.",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			f, path, err := env.readFile(cmd, true)
-			if path == "" {
-				p, perr := env.path()
-				if perr != nil {
-					return perr
-				}
-				path = p
-			}
-			if err != nil {
-				// Say which file is unreadable.
-				_ = fields(cmd.OutOrStdout(), [][2]string{{"file", path}})
-				return err
-			}
-			if strings.TrimSpace(env.getenv(client.EnvURL)) != "" && f.URL != "" {
-				noticef(cmd, "%s is set and takes precedence over url", client.EnvURL)
-			}
-			if strings.TrimSpace(env.getenv(client.EnvToken)) != "" && f.TokenCmd != "" {
-				noticef(cmd, "%s is set: token.cmd is not used", client.EnvToken)
-			}
-			return fields(cmd.OutOrStdout(), [][2]string{
-				{"file", path},
-				{keyURL, orNotSet(f.URL)},
-				{keyTokenCmd, orNotSet(f.TokenCmd)},
-			})
-		},
 	}
+	asJSON := addJSONFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		f, path, err := env.readFile(cmd, true)
+		if path == "" {
+			p, perr := env.path()
+			if perr != nil {
+				return perr
+			}
+			path = p
+		}
+		if err != nil {
+			// Say which file is unreadable.
+			_ = fields(cmd.OutOrStdout(), [][2]string{{"file", path}})
+			return err
+		}
+		if strings.TrimSpace(env.getenv(client.EnvURL)) != "" && f.URL != "" {
+			noticef(cmd, "%s is set and takes precedence over url", client.EnvURL)
+		}
+		if strings.TrimSpace(env.getenv(client.EnvToken)) != "" && f.TokenCmd != "" {
+			noticef(cmd, "%s is set: token.cmd is not used", client.EnvToken)
+		}
+		if f.TokenCmd != "" && env.fileTrust != nil {
+			warnf(cmd, "%s", env.fileTrust)
+		}
+		if *asJSON {
+			return writeJSON(cmd.OutOrStdout(), jsonConfig{File: path, URL: nilIfBlank(f.URL), TokenCmd: nilIfBlank(f.TokenCmd)})
+		}
+		return fields(cmd.OutOrStdout(), [][2]string{
+			{"file", path},
+			{keyURL, orNotSet(f.URL)},
+			{keyTokenCmd, orNotSet(f.TokenCmd)},
+		})
+	}
+	return cmd
+}
+
+func nilIfBlank(s string) *string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return &s
 }
 
 func orNotSet(s string) string {
@@ -122,6 +148,10 @@ func newConfigSetCmd(env *cliEnv) *cobra.Command {
 				return fmt.Errorf("writing %s: %w", path, err)
 			}
 			noticef(cmd, "%s set in %s", key, path)
+			// Say now, not at the first command, that token.cmd would be refused.
+			if f, _, trust, err := loadConfigFile(path); err == nil && trust != nil && f.TokenCmd != "" {
+				warnf(cmd, "%s", trust)
+			}
 			return nil
 		},
 	}
@@ -142,8 +172,20 @@ func newConfigUnsetCmd(env *cliEnv) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			data, err := kvconf.ReadFile(path, kvconf.Options{})
+			if errors.Is(err, fs.ErrNotExist) {
 				noticef(cmd, "%s is not set: %s does not exist", key, path)
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("reading %s: %w", path, err)
+			}
+			entries, _, err := kvconf.ParseBytes(data, kvconf.Options{})
+			if err != nil {
+				return fmt.Errorf("reading %s: %w", path, err)
+			}
+			if !slices.ContainsFunc(entries, func(e kvconf.Entry) bool { return e.Key == key }) {
+				noticef(cmd, "%s is not set", key)
 				return nil
 			}
 			if err := kvconf.SetFile(path, map[string]*string{key: nil}, 0o600); err != nil {
