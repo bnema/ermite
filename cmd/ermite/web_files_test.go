@@ -6,11 +6,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -143,6 +146,36 @@ func TestWebTreeRows(t *testing.T) {
 		assert.Equal(t, 404, status, p)
 		assert.NotContains(t, body, "a.txt", p)
 	}
+}
+
+// ?rows on a directory with more entries than are listed ends with the row
+// that links to the directory page, which says the listing is cut.
+func TestWebTreeRowsTruncated(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name("wide"), Visibility: domain.VisibilityPublic})
+	require.NoError(t, err)
+	wt := h.t.TempDir()
+	h.mustGit(wt, "init", "-q", "--initial-branch=main")
+	// The limit is domain.MaxTreeEntries: one commit with a few more.
+	n := domain.MaxTreeEntries + 3
+	require.NoError(t, os.MkdirAll(filepath.Join(wt, "many"), 0o755))
+	for i := range n {
+		require.NoError(t, os.WriteFile(filepath.Join(wt, "many", fmt.Sprintf("f%05d", i)), nil, 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(wt, "small.txt"), []byte("x\n"), 0o644))
+	h.mustGit(wt, "add", ".")
+	h.mustGit(wt, "commit", "-q", "-m", "wide")
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/wide.git"), "main")
+
+	status, _, body := h.get("/wide/tree/main/many?rows")
+	require.Equal(t, 200, status)
+	assert.Equal(t, domain.MaxTreeEntries+1, strings.Count(body, "<tr"), "the listed entries and the row that says there are more")
+	assert.Contains(t, body, `<tr class="tree-more"><td colspan="7"><a href="/wide/tree/main/many">more entries: open the directory</a></td></tr>`)
+	assert.Equal(t, 1, strings.Count(body, "tree-more"))
+
+	// A directory that fits has no such row.
+	_, _, body = h.get("/wide/tree?rows")
+	assert.NotContains(t, body, "tree-more")
 }
 
 // Ref names with a slash are found by their longest prefix, and a commit id
@@ -293,6 +326,19 @@ func TestWebRaw(t *testing.T) {
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusNotModified, resp.StatusCode)
+	// A list of validators, weak ones and "*" match as well.
+	for _, inm := range []string{`"other", ` + etag, "W/" + etag, "*"} {
+		req.Header.Set("If-None-Match", inm)
+		resp, err = http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusNotModified, resp.StatusCode, inm)
+	}
+	req.Header.Set("If-None-Match", `"other", "another"`)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "no validator matches")
 	assert.Equal(t, http.StatusOK, h.status(http.MethodHead, "/files/raw/main/notes.txt", nil))
 }
 
@@ -451,15 +497,12 @@ func TestWebPaths(t *testing.T) {
 	assert.Equal(t, want, decodeList(t, plain.body).Paths)
 	assert.Equal(t, `"paths-`+sha+`"`, plain.hdr.Get("ETag"), "another variant, another validator")
 
-	// Revalidation: 304, still through the access rule.
+	// Revalidation: 304, still through the access rule. The matrix of
+	// validators (variants, weak, "*") is in paths_test.go.
 	nm := raw(map[string]string{"If-None-Match": etag, "Accept-Encoding": "gzip"})
 	assert.Equal(t, http.StatusNotModified, nm.status)
 	assert.Empty(t, nm.body)
 	assert.Equal(t, "no-cache", nm.hdr.Get("Cache-Control"))
-	nm = raw(map[string]string{"If-None-Match": plain.hdr.Get("ETag")})
-	assert.Equal(t, http.StatusNotModified, nm.status, "identity validator, identity body")
-	assert.Equal(t, 200, raw(map[string]string{"If-None-Match": etag}).status, "the gzip validator does not match the plain body")
-	assert.Equal(t, 200, raw(map[string]string{"If-None-Match": `"paths-other"`}).status)
 
 	// Only a full commit id: abbreviations, refs, upper case and unknown ids.
 	for _, p := range []string{
@@ -520,6 +563,8 @@ func TestWebFinderPage(t *testing.T) {
 		{"full id", "/files/tree/" + sha, "/files/paths/" + sha, "/files/blob/" + sha},
 		{"abbreviated id", "/files/tree/" + sha[:7], "/files/paths/" + sha, "/files/blob/" + sha[:7]},
 		{"blob page", "/files/blob/main/main.go", "/files/paths/" + sha, "/files/blob/main"},
+		{"blob at full id", "/files/blob/" + sha + "/main.go", "/files/paths/" + sha, "/files/blob/" + sha},
+		{"blob at abbreviated id", "/files/blob/" + sha[:7] + "/main.go", "/files/paths/" + sha, "/files/blob/" + sha[:7]},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			status, _, body := h.get(tt.path)
