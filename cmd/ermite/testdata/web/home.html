@@ -210,7 +210,7 @@
 </div>
 </dl>
 </dialog>
-<dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
+<dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:close="ermiteFinder.paletteClose()" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 <div class="panel-head">
 <label for="cmd-q" class="sr">go to</label>
 <input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="let t = this.value.toLowerCase().trim();
@@ -280,7 +280,7 @@
          k-esc from:body -> q('dialog[open]').arr().forEach(d => d.close());
          k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].showModal();
          k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].showModal(), q('#refs-filter').arr()[0].focus());
-         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].showModal(); q('#cmd-q').arr()[0].focus(); document.body.dataset.paths && ermiteFinder.load();
+         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].showModal(); q('#cmd-q').arr()[0].focus(); ermiteFinder.load();
          k-filter from:body -> q('[data-filter]').arr()[0]?.focus();
          k-gh from:body -> document.querySelector('.brand')?.click();
          k-gt from:body -> document.querySelector('.tabs [data-key=t]')?.click();
