@@ -128,7 +128,7 @@ func TestStepRanges(t *testing.T) {
 		{Number: 5},
 	}
 	got := domain.StepRanges(steps, 12)
-	assert.Equal(t, []domain.StepRange{{0, 4}, {4, 4}, {4, 9}, {9, 12}, {12, 12}}, got)
+	assert.Equal(t, []domain.StepRange{{Start: 0, End: 4}, {Start: 4, End: 4}, {Start: 4, End: 9}, {Start: 9, End: 12}, {Start: 12, End: 12}}, got)
 	assert.EqualValues(t, 3, domain.StepOfLine(steps, 5))
 	assert.EqualValues(t, 1, domain.StepOfLine(steps, 0))
 	assert.EqualValues(t, 4, domain.StepOfLine(steps, 11))
