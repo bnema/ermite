@@ -130,6 +130,8 @@ type pushFacts struct {
 	filesTruncated bool
 	tagCount       int
 	isTag          bool
+	// defaultBranch is the default branch of the repository, "" when unknown.
+	defaultBranch string
 }
 
 func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tagCount int) error {
@@ -179,6 +181,9 @@ func (c *CI) collect(ctx context.Context, repo domain.RepoName, u domain.RefUpda
 		return pushFacts{}, err
 	}
 	f := pushFacts{update: u, created: u.IsCreate(), isTag: isTag, tagCount: tagCount}
+	if def, _, err := c.cfg.Repos.DefaultBranch(ctx, repo); err == nil {
+		f.defaultBranch = def
+	}
 	res, err := c.cfg.Reader.ResolveRevision(ctx, repo, domain.RevisionOf(newID))
 	if err != nil {
 		return f, fmt.Errorf("resolve %s: %w", u.New, err)
@@ -381,7 +386,7 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 			Status: domain.CIQueued, CreatedAt: now,
 		}
 		d := ports.CIRunDraft{Run: run, Source: domain.CIRunSource{
-			Repo: repo.Name, WorkflowYAML: yaml, GithubJSON: c.githubJSON(repo, run, f, wf),
+			Repo: repo.Name, WorkflowYAML: yaml, GithubJSON: c.githubJSON(ctx, repo, run, f, wf),
 		}}
 		for i, j := range wf.Jobs {
 			job := domain.CIJob{
@@ -413,14 +418,33 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 
 // --- the github context ---
 
+// shortID is the 12-character form of an object id that GitHub puts in the
+// compare URL of a push.
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
+}
+
+// retentionDays is the retention in days, as github.retention_days shows it
+// (at least 1).
+func (c *CI) retentionDays() int {
+	return max(int(c.cfg.Retention/(24*time.Hour)), 1)
+}
+
 type obj = map[string]any
 
 func person(name, email string) obj { return obj{"name": name, "email": email} }
 
-func (c *CI) commitJSON(repo domain.Repo, cm domain.Commit) obj {
+func (c *CI) commitJSON(ctx context.Context, repo domain.Repo, cm domain.Commit) obj {
 	ts := cm.Committer.Time.UTC().Format(time.RFC3339)
+	tree := ""
+	if id, err := c.cfg.Git.CommitTree(ctx, repo.Name, cm.ID); err == nil {
+		tree = id.String()
+	}
 	return obj{
-		"id": cm.ID.String(), "tree_id": "", "distinct": true, "message": cm.Message, "timestamp": ts,
+		"id": cm.ID.String(), "tree_id": tree, "distinct": true, "message": cm.Message, "timestamp": ts,
 		"url":       c.cfg.PublicURL + "/" + repo.Name.String() + "/commit/" + cm.ID.String(),
 		"author":    obj{"name": cm.Author.Name, "email": cm.Author.Email, "username": ""},
 		"committer": obj{"name": cm.Committer.Name, "email": cm.Committer.Email, "username": ""},
@@ -432,10 +456,15 @@ func (c *CI) commitJSON(repo domain.Repo, cm domain.Commit) obj {
 // (the job-dependent keys are added when a job is planned). Values that
 // GitHub's documentation does not settle are marked for the recordings.
 //
-// TODO(verify with recording): the exact types of run_id, run_number,
-// run_attempt (strings) and retention_days (a number), the empty tree_id and
-// the empty added/removed/modified lists of the push commits.
-func (c *CI) githubJSON(repo domain.Repo, run domain.CIRun, f pushFacts, wf *workflow.Workflow) string {
+// Checked against the recordings of ermite-conformance (push-branch-create,
+// push-tag, push-force, ctx-github-names): ids and counters are strings, so is
+// retention_days; "compare" has 12-character ids, the commit page for a created
+// ref and "<before>...<after>" for an update; repository.default_branch and
+// master_branch are the default branch.
+//
+// TODO(verify with recording): the empty added/removed/modified lists of the
+// push commits.
+func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun, f pushFacts, wf *workflow.Workflow) string {
 	full := c.cfg.Owner + "/" + repo.Name.String()
 	refName, refType := strings.TrimPrefix(run.Ref, "refs/heads/"), "branch"
 	if f.isTag {
@@ -446,22 +475,22 @@ func (c *CI) githubJSON(repo domain.Repo, run domain.CIRun, f pushFacts, wf *wor
 	if f.created {
 		before = domain.ZeroOID
 	}
-	compare := repoURL + "/compare/" + before + "..." + f.update.New
+	compare := repoURL + "/compare/" + shortID(before) + "..." + shortID(f.update.New)
 	if f.created {
-		compare = repoURL + "/commit/" + f.update.New
+		compare = repoURL + "/commit/" + shortID(f.update.New)
 	}
 	commits := make([]any, 0, len(f.commits))
 	for _, cm := range f.commits {
-		commits = append(commits, c.commitJSON(repo, cm))
+		commits = append(commits, c.commitJSON(ctx, repo, cm))
 	}
 	event := obj{
 		"ref": run.Ref, "before": before, "after": f.update.New, "created": f.created, "deleted": false, "forced": f.forced,
-		"base_ref": nil, "compare": compare, "commits": commits, "head_commit": c.commitJSON(repo, f.head),
+		"base_ref": nil, "compare": compare, "commits": commits, "head_commit": c.commitJSON(ctx, repo, f.head),
 		"pusher": person(run.Actor, ""),
 		"repository": obj{
 			"name": repo.Name.String(), "full_name": full, "private": repo.Visibility == domain.VisibilityPrivate,
 			"owner": obj{"login": c.cfg.Owner, "name": c.cfg.Owner}, "html_url": repoURL, "clone_url": repoURL + ".git",
-			"default_branch": "", "url": repoURL,
+			"default_branch": f.defaultBranch, "master_branch": f.defaultBranch, "url": repoURL,
 		},
 		"sender": obj{"login": run.Actor, "type": "User"},
 	}
@@ -472,7 +501,7 @@ func (c *CI) githubJSON(repo domain.Repo, run domain.CIRun, f pushFacts, wf *wor
 		"actor": run.Actor, "triggering_actor": run.Actor, "workflow": run.WorkflowName, "workflow_ref": wfRef,
 		"workflow_sha": run.Sha, "run_id": strconv.FormatInt(run.ID, 10), "run_number": strconv.FormatInt(run.Number, 10),
 		"server_url": c.cfg.PublicURL, "api_url": c.cfg.PublicURL + "/-/github/api/v3",
-		"graphql_url": c.cfg.PublicURL + "/-/github/api/graphql", "retention_days": domain.CIRetentionDays,
+		"graphql_url": c.cfg.PublicURL + "/-/github/api/graphql", "retention_days": strconv.Itoa(c.retentionDays()),
 		"head_ref": "", "base_ref": "",
 	}
 	b, err := json.Marshal(gh)

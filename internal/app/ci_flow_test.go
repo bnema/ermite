@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -646,4 +647,40 @@ func TestCIAcknowledgedAssignmentIsNotRepeated(t *testing.T) {
 	again, err := runner.fetch("poll-9")
 	require.NoError(t, err)
 	assert.Nil(t, again, "the acknowledged assignment is not handed out again")
+}
+
+// The push payload follows GitHub's (checked against the recordings of
+// ermite-conformance): 12-character ids in "compare", the commit page for a
+// created ref and a compare range for an update, the default branch of the
+// repository, a tree id, and string counters.
+func TestCIGithubContextOfAPush(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	oneJobWF := strings.Split(ciWorkflow, "  test:")[0]
+	first := c.push("main", map[string]string{".github/workflows/ci.yml": oneJobWF}, "")
+	ev := func() (map[string]any, map[string]any) {
+		job := runner.await()
+		var ctxs map[string]map[string]any
+		require.NoError(t, json.Unmarshal([]byte(job.GetContexts()), &ctxs))
+		gh := ctxs["github"]
+		runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
+		return gh, gh["event"].(map[string]any)
+	}
+
+	gh, event := ev()
+	assert.Equal(t, publicOrigin+"/proj/commit/"+first[:12], event["compare"], "a created ref compares as its commit")
+	assert.Equal(t, true, event["created"])
+	assert.Equal(t, domain.ZeroOID, event["before"])
+	repo := event["repository"].(map[string]any)
+	assert.Equal(t, "main", repo["default_branch"])
+	assert.Equal(t, "main", repo["master_branch"])
+	assert.Equal(t, "90", gh["retention_days"], "a string, from the configured retention")
+	head := event["head_commit"].(map[string]any)
+	tree := strings.TrimSpace(c.bareGit("proj", "rev-parse", first+"^{tree}"))
+	assert.Equal(t, tree, head["tree_id"])
+
+	second := c.push("main", map[string]string{"a.txt": "a\n"}, "")
+	_, event = ev()
+	assert.Equal(t, publicOrigin+"/proj/compare/"+first[:12]+"..."+second[:12], event["compare"])
+	assert.Equal(t, false, event["created"])
 }
