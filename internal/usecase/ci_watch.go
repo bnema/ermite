@@ -198,6 +198,16 @@ func (c *CI) cancelAssignment(ctx context.Context, rs *runState, j *domain.CIJob
 		}
 	}
 	c.mu.Unlock()
+	if j.CancelReason != domain.CICancelNone {
+		// Cancelled (by the owner, fail-fast or the time budget) before the
+		// runner answered: it is over, not queued again for another runner.
+		conclusion := domain.CICancelled
+		if j.CancelReason == domain.CICancelTimeout {
+			conclusion = domain.CITimedOut
+		}
+		rs.end(j, conclusion, "")
+		return
+	}
 	if j.AssignCancels >= domain.CIMaxAssignCancels {
 		rs.end(j, domain.CIFailure, "The job was given to a runner "+itoa(int64(domain.CIMaxAssignCancels))+" times and none of them acknowledged it.")
 		return

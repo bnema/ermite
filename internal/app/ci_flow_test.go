@@ -594,3 +594,36 @@ func TestCINoRunnerNoRunsNoChecks(t *testing.T) {
 	c.push("main", map[string]string{"a.txt": "a\n"}, "")
 	c.waitFor("a run once a runner exists", func() bool { return len(c.runs()) == 1 })
 }
+
+// A job that fail-fast cancelled while its assignment was not acknowledged is
+// over when the assignment is cancelled: it is not given to a runner again.
+func TestCICancelledUnacknowledgedAssignmentIsNotAssignedAgain(t *testing.T) {
+	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
+		cfg.AckTimeout, cfg.Tick, cfg.PollTimeout = 300*time.Millisecond, 20*time.Millisecond, 100*time.Millisecond
+	})
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{".github/workflows/m.yml": `on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        n: [1, 2]
+    steps:
+      - run: echo ${{ matrix.n }}
+`}, "")
+	a, b := runner.await(), runner.await() // both assigned, neither acknowledged yet
+	assert.NotEqual(t, a.GetJobId(), b.GetJobId())
+
+	runner.runJob(a, pb.CiConclusion_CI_CONCLUSION_FAILURE, nil, "x") // fail-fast asks b to stop
+
+	c.waitFor("the run ends", func() bool { return c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
+	for _, j := range c.getRun(c.runs()[0].GetId()).GetJobs() {
+		if j.GetId() == b.GetJobId() {
+			assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, j.GetConclusion())
+		}
+	}
+	again, err := runner.fetch("")
+	require.NoError(t, err)
+	assert.Nil(t, again, "a cancelled job is not given again")
+}
