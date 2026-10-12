@@ -19,8 +19,9 @@ type CIRunDraft struct {
 	Checks []domain.CICheck
 }
 
-// CIWrite is a set of records written in one atomic batch. A record with
+// CIWrite is a set of records written in one atomic batch. A run or a job with
 // Version 0 must not exist yet; any other must be unchanged since it was read.
+// Checks are derived from the jobs and upserted without a precondition.
 // Apply returns domain.ErrConflict otherwise and domain.ErrNotFound when the
 // repository no longer exists.
 type CIWrite struct {

@@ -487,11 +487,10 @@ func (c *CI) stageRecords(ctx context.Context, b *kv.Batch, w ports.CIWrite) (gu
 			guarded[j.Repo] = true
 		}
 	}
+	// Checks are derived from the jobs, written in the same batch and under
+	// the lock of their run: they are upserted without a precondition.
 	for _, ck := range w.Checks {
-		stage(b, checkKey(ck.Repo, ck.Sha, ck.JobID), encodeCheck(ck), ck.Version)
-		if ck.Version == 0 {
-			guarded[ck.Repo] = true
-		}
+		b.Put(checkKey(ck.Repo, ck.Sha, ck.JobID), encodeCheck(ck))
 	}
 	return guarded, nil
 }
