@@ -105,10 +105,10 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	}
 
 	l := s.repoLayout(ctx, d, "tree")
-	pinRef(&l, t)
 	// The finder searches the commit this page lists, whichever way the URL
-	// spelled it (an abbreviated id included).
-	l.setFinder(d.name(), res.Msg.GetCommitId(), t.name)
+	// spelled it (an abbreviated id included): the listing knows it.
+	t.commit = res.Msg.GetCommitId()
+	pinRef(&l, t)
 	l.Crumbs = pathCrumbs(d.name(), "tree", t)
 	if t.path == "" {
 		l.Title = "tree · " + d.name() + " · " + s.instance

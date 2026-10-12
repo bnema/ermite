@@ -98,7 +98,7 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		def = d.head.GetShortName()
 		l.Ref, l.RefPath = def, def
 		l.SHA, l.Short = d.head.GetCommitId(), short(d.head.GetCommitId())
-		l.setFinder(d.name(), l.SHA, def)
+		l.setFinder(l.SHA, def)
 	}
 	mk := func(key, label, href, id string) Section {
 		return Section{Key: key, Label: label, Href: href, Current: section == id}
