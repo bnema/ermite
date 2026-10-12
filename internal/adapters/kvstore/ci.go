@@ -460,16 +460,10 @@ func (c *CI) jobIndexes(b *kv.Batch, j domain.CIJob, old *domain.CIJob) {
 	}
 }
 
-// guardRepo makes the batch depend on the repository, like
-// MergeRequests.guardRepo, for the writes that create keys under it.
+// guardRepo is guardRepoKey on the database of the CI store, for the writes that
+// create keys under a repository.
 func (c *CI) guardRepo(ctx context.Context, b *kv.Batch, repo domain.RepoName) error {
-	item, ok := c.db.Get(ctx, repoKey(repo))
-	if !ok {
-		return domain.ErrNotFound
-	}
-	b.RequireVersion(repoKey(repo), item.Version)
-	b.Put(repoKey(repo), item.Value)
-	return nil
+	return guardRepoKey(ctx, c.db, b, repo)
 }
 
 // stageRecords stages the writes of w. guarded collects the repositories that

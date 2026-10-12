@@ -71,26 +71,9 @@ func mergeRequestKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoNa
 	return keys
 }
 
-// guardRepo makes the batch depend on the repository: it requires the
-// repository key to be at the version just read and rewrites it, which gives it
-// a new version. Every write that adds a key under the repository's merge
-// requests (a request, a comment, a read position) goes through it, so that
-//
-//   - such a write fails with domain.ErrNotFound once the repository is deleted,
-//     and leaves no key that a repository created again under the name would
-//     inherit;
-//   - Store.Delete, which requires the version of the repository key it listed
-//     the keys at, notices a write that got in after the listing and lists again.
-//
-// It returns domain.ErrNotFound when the repository does not exist.
+// guardRepo is guardRepoKey on the database of the merge requests; see there.
 func (m *MergeRequests) guardRepo(ctx context.Context, b *kv.Batch, repo domain.RepoName) error {
-	item, ok := m.db.Get(ctx, repoKey(repo))
-	if !ok {
-		return domain.ErrNotFound
-	}
-	b.RequireVersion(repoKey(repo), item.Version)
-	b.Put(repoKey(repo), item.Value)
-	return nil
+	return guardRepoKey(ctx, m.db, b, repo)
 }
 
 // Create takes the next number of the repository from mrseq/<repo> and stores

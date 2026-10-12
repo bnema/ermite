@@ -90,6 +90,29 @@ func (s *Store) Update(ctx context.Context, repo domain.Repo) error {
 	return nil
 }
 
+// guardRepoKey makes the batch depend on the repository: it requires the
+// repository key to be at the version just read and rewrites it, which gives it
+// a new version. Every write that adds a key under the repository (a merge
+// request, a comment, a read position, a CI run, job or check) goes through it,
+// so that
+//
+//   - such a write fails with domain.ErrNotFound once the repository is deleted,
+//     and leaves no key that a repository created again under the name would
+//     inherit;
+//   - Store.Delete, which requires the version of the repository key it listed
+//     the keys at, notices a write that got in after the listing and lists again.
+//
+// It returns domain.ErrNotFound when the repository does not exist.
+func guardRepoKey(ctx context.Context, db *kv.DB, b *kv.Batch, repo domain.RepoName) error {
+	item, ok := db.Get(ctx, repoKey(repo))
+	if !ok {
+		return domain.ErrNotFound
+	}
+	b.RequireVersion(repoKey(repo), item.Version)
+	b.Put(repoKey(repo), item.Value)
+	return nil
+}
+
 // deleteChunk is how many merge request keys one batch deletes before the
 // last one, which also removes the repository.
 const deleteChunk = 1000
@@ -110,7 +133,7 @@ const deleteTries = 32
 // the last chunk: a delete that fails half way leaves the repository, which
 // the caller can delete again. The last batch requires the repository key to
 // be at the version the keys were listed at. Every write of a merge request key
-// rewrites the repository key (see MergeRequests.guardRepo), so a write that
+// rewrites the repository key (see guardRepoKey), so a write that
 // got in after the listing makes the batch fail and the keys are listed again,
 // and a write after the batch finds no repository: no key outlives the
 // repository to attach itself to a repository created again.
