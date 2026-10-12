@@ -1,0 +1,278 @@
+package web
+
+// The CI pages: the runs of a repository, a run with its jobs, a job with its
+// steps and its log (actions.go). A state is always a word as well as a
+// symbol and a colour.
+
+// CheckIcon is the symbol of a state: a mark in the colour of its kind, with
+// the state as its text for a screen reader.
+templ CheckIcon(kind, state string) {
+	<span class={ "ck", "ck-" + kind } role="img" aria-label={ state } title={ state }></span>
+}
+
+templ Actions(l Layout, p ActionsPage) {
+	@Shell(l, nil) {
+		if len(p.Runs) == 0 {
+			<p class="dim">no runs yet: a push that matches a workflow of .github/workflows starts one.</p>
+		} else {
+			<table class="list runs" aria-label="Runs">
+				<thead>
+					<tr><th class="c-st"></th><th class="c-name">workflow</th><th class="c-sub">commit</th><th class="c-ref">ref</th><th class="c-who">actor</th><th class="c-dur">time</th><th class="c-when">created</th></tr>
+				</thead>
+				<tbody id="run-rows" data-rows>
+					for _, r := range p.Runs {
+						@RunListRow(r)
+					}
+				</tbody>
+			</table>
+		}
+		if p.More != "" {
+			<p class="more"><a href={ templ.SafeURL(p.More) } rel="next">older runs</a></p>
+		}
+	}
+}
+
+// RunListRow is a row of the list of runs; its id is the target of the live
+// updates.
+templ RunListRow(r RunRow) {
+	<tr id={ "run-" + r.ID }>
+		<td class="c-st">@CheckIcon(r.Kind, r.State)</td>
+		<td class="c-name">
+			<a href={ templ.SafeURL(r.Href) }>{ r.Workflow }</a>
+			<span class="mute">{ r.Number }</span>
+			if r.Attempt > 1 {
+				<span class="pill">attempt { itoa(int(r.Attempt)) }</span>
+			}
+		</td>
+		<td class="c-sub"><a href={ templ.SafeURL(r.CHref) }>{ r.Short }</a> { r.Title }</td>
+		<td class="c-ref"><a href={ templ.SafeURL(r.RefHref) }>{ r.Ref }</a></td>
+		<td class="c-who dim">{ r.Actor }</td>
+		<td class="c-dur dim">{ r.State }{ " " }{ r.Duration }</td>
+		<td class="c-when dim">
+			if r.WhenAt != "" {
+				<time datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
+			}
+		</td>
+	</tr>
+}
+
+templ RunDetail(l Layout, p RunPage) {
+	@Shell(l, runRail(p)) {
+		@LiveSlot("run-notice")
+		<div id="run-body">
+			@RunBody(p)
+		</div>
+	}
+}
+
+// runBodyFragment is the body of the run page as a live fragment.
+templ runBodyFragment(p RunPage) {
+	<div id="run-body">
+		@RunBody(p)
+	</div>
+}
+
+// RunBody is the jobs of a run, replaced by the live updates.
+templ RunBody(p RunPage) {
+	<h2 class="run-h">@CheckIcon(p.Kind, p.State)<span>{ p.Workflow }</span> <span class="mute">{ p.Number }</span></h2>
+	if p.Error != "" {
+		<pre class="run-err">{ p.Error }</pre>
+	}
+	<ul class="jobs">
+		for _, j := range p.Jobs {
+			<li id={ "job-" + j.ID }>
+				<a class="job-h" href={ templ.SafeURL(j.Href) }>
+					@CheckIcon(j.Kind, j.State)
+					<span class="j-name">{ j.Name }</span>
+					<span class="dim">{ j.State }{ " " }{ j.Duration }</span>
+				</a>
+				if j.Runner != "" {
+					<span class="mute">on { runnerText(j) }</span>
+				}
+				if len(j.Needs) > 0 {
+					<span class="mute">needs { joinWords(j.Needs) }</span>
+				}
+				if j.Error != "" {
+					<p class="job-err">{ j.Error }</p>
+				}
+				if len(j.Steps) > 0 {
+					<ol class="steps">
+						for _, s := range j.Steps {
+							<li>@CheckIcon(s.Kind, s.State) <span>{ s.Name }</span> <span class="dim">{ s.Duration }</span></li>
+						}
+					</ol>
+				}
+			</li>
+		}
+	</ul>
+}
+
+templ runRail(p RunPage) {
+	<section aria-labelledby="r-run">
+		<h2 id="r-run">Run</h2>
+		<dl class="kv">
+			<dt>result</dt>
+			<dd>{ p.State }</dd>
+			<dt>commit</dt>
+			<dd><a href={ templ.SafeURL(p.CHref) }>{ p.Short }</a></dd>
+			<dt>ref</dt>
+			<dd><a href={ templ.SafeURL(p.RefHref) }>{ p.Ref }</a></dd>
+			<dt>actor</dt>
+			<dd>{ p.Actor }</dd>
+			<dt>attempt</dt>
+			<dd>{ itoa(int(p.Attempt)) } of { itoa(int(p.Latest)) }</dd>
+		</dl>
+		if len(p.Attempts) > 0 {
+			<ul class="attempts">
+				for _, a := range p.Attempts {
+					<li>
+						if a.Current {
+							<span aria-current="page">{ a.Label }</span>
+						} else {
+							<a href={ templ.SafeURL(a.Href) }>{ a.Label }</a>
+						}
+					</li>
+				}
+			</ul>
+		}
+	</section>
+	if p.CancelAction != "" || p.RerunAction != "" {
+		<section aria-labelledby="r-act" class="decide">
+			<h2 id="r-act">Actions</h2>
+			<div class="d-btns">
+				if p.CancelAction != "" {
+					<form method="post" action={ templ.SafeURL(p.CancelAction) }><button type="submit" class="btn">Cancel run</button></form>
+				}
+				if p.RerunAction != "" {
+					<form method="post" action={ templ.SafeURL(p.RerunAction) }><button type="submit" class="btn primary">Re-run all jobs</button></form>
+				}
+				if p.CanRerunFailed {
+					<form method="post" action={ templ.SafeURL(p.RerunFailedAction) }><button type="submit" class="btn">Re-run failed jobs</button></form>
+				}
+			</div>
+		</section>
+	}
+}
+
+// JobHead is the title of the job page with its state and its error, replaced
+// by the live updates. total is the number of lines the log holds.
+templ JobHead(j JobRow, total int64) {
+	<div id="job-head" data-total={ itoa64(total) }>
+		<h2 class="run-h">@CheckIcon(j.Kind, j.State)<span>{ j.Name }</span> <span class="dim">{ j.State }{ " " }{ j.Duration }</span></h2>
+		if j.Error != "" {
+			<p class="job-err">{ j.Error }</p>
+		}
+	</div>
+}
+
+// JobSteps is the steps of the job in the rail, replaced by the live updates.
+templ JobSteps(steps []StepView) {
+	<ol class="steps" id="job-steps">
+		for _, s := range steps {
+			<li>
+				@CheckIcon(s.Kind, s.State)
+				if s.LogEnd > s.LogStart {
+					<a href={ templ.SafeURL("#L" + itoa64(s.LogStart)) }>{ s.Name }</a>
+				} else {
+					<span>{ s.Name }</span>
+				}
+				<span class="dim">{ s.Duration }</span>
+			</li>
+		}
+	</ol>
+}
+
+templ Job(l Layout, p JobPage) {
+	@Shell(l, jobRail(p)) {
+		@LiveSlot("job-notice")
+		@JobHead(p.JobRow, p.Total)
+		<div id="job-log" class="joblog" data-total={ itoa64(p.Total) } data-follow?={ p.Follow } data-stream={ p.StreamHref } data-next={ itoa64(p.From + int64(len(p.Lines))) }>
+			if p.Note != "" {
+				<p class="dim">{ p.Note }</p>
+			}
+			if p.Prev != "" {
+				<p class="more"><a href={ templ.SafeURL(p.Prev) } rel="prev">earlier lines</a></p>
+			}
+			<ol class="log" start={ itoa64(p.From + 1) }>
+				for _, ln := range p.Lines {
+					@LogLine(ln)
+				}
+			</ol>
+			if p.Next != "" {
+				<p class="more"><a href={ templ.SafeURL(p.Next) } rel="next">more lines</a></p>
+			}
+		</div>
+	}
+}
+
+// LogLine is a line of the log. Group and error markers of the runner show as
+// headings and errors, never as raw text.
+templ LogLine(ln LogLineView) {
+	<li id={ "L" + itoa64(ln.N) } class={ logClass(ln) } data-step={ itoa(int(ln.Step)) } data-cont?={ ln.Continued }><time>{ ln.Time }</time><span class="t">{ ln.Text }</span></li>
+}
+
+templ jobRail(p JobPage) {
+	<section aria-labelledby="r-job">
+		<h2 id="r-job">Steps</h2>
+		@JobSteps(p.Steps)
+	</section>
+	<section aria-labelledby="r-jobf">
+		<h2 id="r-jobf">Job</h2>
+		<dl class="kv">
+			<dt>run</dt>
+			<dd><a href={ templ.SafeURL(p.RunHref) }>{ p.RunName }</a></dd>
+			if p.Runner != "" {
+				<dt>runner</dt>
+				<dd>{ p.Runner }</dd>
+			}
+			if p.Isolation != "" {
+				<dt>isolation</dt>
+				<dd>{ p.Isolation }</dd>
+			}
+			<dt>lines</dt>
+			<dd>{ itoa64(p.Total) }</dd>
+		</dl>
+		<p><a href={ templ.SafeURL(p.RawHref) }>raw log</a></p>
+	</section>
+}
+
+// CommitChecks is the combined state of the checks of a commit, as a mark
+// with a count, linking to the page that explains it.
+templ CommitChecks(c ChecksSummary) {
+	if c.Total > 0 {
+		<a class="ck-sum" href={ templ.SafeURL(c.Href) } title={ c.Title }>
+			@CheckIcon(c.Kind, c.State)
+			<span class="mute">{ c.Label }</span>
+		</a>
+	}
+}
+
+// MRChecks is the checks section of the rail of a merge request.
+templ MRChecks(c ChecksSection) {
+	<section aria-labelledby="r-checks" id="mr-checks">
+		<h2 id="r-checks">Checks <span class="count">{ itoa(len(c.Rows)) }</span></h2>
+		if len(c.Rows) == 0 {
+			<p class="dim">no checks</p>
+		} else {
+			<ul class="checks">
+				for _, r := range c.Rows {
+					<li>
+						@CheckIcon(r.Kind, r.State)
+						if r.Href != "" {
+							<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+						} else {
+							<span>{ r.Name }</span>
+						}
+						<span class="dim">{ r.State }</span>
+						if r.Waiting {
+							<span class="mute">waiting for a runner</span>
+						}
+					</li>
+				}
+			</ul>
+		}
+		if c.Note != "" {
+			<p class="mute">{ c.Note }</p>
+		}
+	</section>
+}

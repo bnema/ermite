@@ -4,14 +4,17 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/bnema/zerowrap"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite/internal/config"
+	"bnema.dev/ermite/internal/domain"
 )
 
 func newServeCmd() *cobra.Command {
@@ -32,7 +35,7 @@ func newServeCmd() *cobra.Command {
 
 // serve wires the adapters and runs the server until SIGINT or SIGTERM.
 func serve(ctx context.Context) error {
-	cfg, err := config.Load(os.Getenv)
+	cfg, err := loadConfig(os.Getenv)
 	if err != nil {
 		return err
 	}
@@ -66,4 +69,28 @@ func serve(ctx context.Context) error {
 	}
 	log.Info().Msg("stopped")
 	return nil
+}
+
+// loadConfig reads the configuration and adds the checks that need the domain,
+// which config does not import: ERMITE_OWNER follows the rules of repository
+// names. Its problem joins the others in one report.
+func loadConfig(get func(string) string) (config.Config, error) {
+	cfg, err := config.Load(get)
+	var problems []string
+	var ce *config.Error
+	switch {
+	case errors.As(err, &ce):
+		problems = ce.Problems
+	case err != nil:
+		return config.Config{}, err
+	}
+	if owner := strings.TrimSpace(get(config.EnvOwner)); owner != "" {
+		if _, perr := domain.ParseRepoName(owner); perr != nil {
+			problems = append(problems, config.EnvOwner+": must follow the rules of repository names ("+perr.Error()+")")
+		}
+	}
+	if len(problems) > 0 {
+		return config.Config{}, &config.Error{Problems: problems}
+	}
+	return cfg, nil
 }
