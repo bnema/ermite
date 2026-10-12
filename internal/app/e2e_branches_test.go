@@ -96,6 +96,7 @@ func TestAC5BranchLimitedToken(t *testing.T) {
 	assert.Equal(t, before, refs())
 	out, err = h.git(wt, "push", remote, "HEAD:refs/heads/agent/claude/ok", "HEAD:refs/tags/v2")
 	require.Error(t, err)
+	assert.Contains(t, out, "refs/tags/v2 is outside")
 	assert.Equal(t, before, refs(), "git receives both updates in one pack: pre-receive refuses both")
 	assert.Equal(t, mainID, h.bareGit("proj", "rev-parse", "refs/heads/main"))
 
