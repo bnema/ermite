@@ -52,8 +52,6 @@ const (
 	DefaultCommitterName = "ermite"
 	// DefaultOwner is the owner login when ERMITE_OWNER is not set.
 	DefaultOwner = "owner"
-	// DefaultCIRetention is the retention of CI data.
-	DefaultCIRetention = 90 * 24 * time.Hour
 )
 
 // Values of ERMITE_GIT_READER.
@@ -97,7 +95,8 @@ type Config struct {
 	CommitterName, CommitterEmail string
 	// Owner is the owner login of the github context of CI runs.
 	Owner string
-	// CIRetention is how long CI data is kept.
+	// CIRetention is how long CI data is kept; 0 (variable unset) leaves the
+	// default to the CI use case.
 	CIRetention time.Duration
 }
 
@@ -239,7 +238,6 @@ func Load(get func(string) string) (Config, error) {
 		c.Owner = DefaultOwner
 	}
 
-	c.CIRetention = DefaultCIRetention
 	if raw := strings.TrimSpace(get(EnvCILogRetention)); raw != "" {
 		d, err := parseRetention(raw)
 		if err != nil {

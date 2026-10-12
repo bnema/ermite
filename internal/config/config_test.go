@@ -230,8 +230,8 @@ func TestOwnerAndCIRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Owner != "owner" || c.CIRetention != 90*24*time.Hour {
-		t.Fatalf("defaults: owner %q, retention %v", c.Owner, c.CIRetention)
+	if c.Owner != "owner" || c.CIRetention != 0 {
+		t.Fatalf("defaults (retention is left to the use case): owner %q, retention %v", c.Owner, c.CIRetention)
 	}
 
 	c, err = load(map[string]string{config.EnvOwner: "bnema", config.EnvCILogRetention: "30d"})
