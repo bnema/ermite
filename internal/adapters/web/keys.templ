@@ -35,7 +35,7 @@ templ Keys() {
          k-esc from:body -> q('dialog[open]').arr().forEach(d => d.close());
          k-help from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-help').arr()[0].showModal();
          k-refs from:body -> q('#panel-refs').count && (q('dialog[open]').arr().forEach(d => d.close()), q('#panel-refs').arr()[0].showModal(), q('#refs-filter').arr()[0].focus());
-         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].showModal(); q('#cmd-q').arr()[0].focus(); document.body.dataset.paths && ermiteFinder.load();
+         k-cmd from:body -> q('dialog[open]').arr().forEach(d => d.close()); q('#panel-cmd').arr()[0].showModal(); q('#cmd-q').arr()[0].focus(); ermiteFinder.load();
          k-filter from:body -> q('[data-filter]').arr()[0]?.focus();
          k-gh from:body -> document.querySelector('.brand')?.click();
          k-gt from:body -> document.querySelector('.tabs [data-key=t]')?.click();

@@ -79,9 +79,6 @@
     margin-top: var(--s3);
     & #finder-status { margin-bottom: var(--s2); font-size: var(--fs-s); }
   }
-  .cmd-list .dir { color: var(--ink-dim); }
-  .cmd-list strong { color: var(--ink-hi); font-weight: 700; }
-  .cmd-list mark { background: none; color: var(--teal); font-weight: 700; text-decoration: underline; }
 
   /* section headings inside a page */
   .rule-h {

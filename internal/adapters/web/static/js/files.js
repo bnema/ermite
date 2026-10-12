@@ -10,6 +10,8 @@ window.ermiteTree = (() => {
   const depthOf = (tr) => Number(tr.dataset.depth || 0);
   const linkOf = (tr) => tr.querySelector('a[data-expand]');
   const isOpen = (a) => a.getAttribute('aria-expanded') === 'true';
+  // A directory is loaded when rows deeper than it follow it.
+  const isLoaded = (tr) => { const n = tr.nextElementSibling; return !!n && depthOf(n) > depthOf(tr); };
 
   function setOpen(tr, a, open) {
     a.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -64,7 +66,6 @@ window.ermiteTree = (() => {
         if (covered) r.hidden = true;
       }
       tr.after(...rows);
-      tr.dataset.loaded = '1';
       tr.removeAttribute('aria-busy');
       if (covered) setOpen(tr, a, true);
       else expand(tr, a);
@@ -77,7 +78,7 @@ window.ermiteTree = (() => {
     const a = linkOf(tr);
     if (!a || tr.getAttribute('aria-busy') === 'true') return;
     if (isOpen(a)) collapse(tr, a);
-    else if (tr.dataset.loaded) expand(tr, a);
+    else if (isLoaded(tr)) expand(tr, a);
     else load(tr, a);
   }
 
@@ -385,7 +386,7 @@ window.ermiteFinder = (() => {
   // ---- DOM glue -----------------------------------------------------------
 
   const $ = (id) => document.getElementById(id);
-  const loads = new Map(); // URL -> promise of {idx, truncated}
+  let loading = null; // the promise of {idx, truncated}; null before the first load and after a failure
   let rendered = null; // the result the finder list shows
   let frame = 0;
   let treeCursor = null; // the row of the tree that had the cursor when the results came
@@ -395,27 +396,22 @@ window.ermiteFinder = (() => {
   function load() {
     const url = document.body.dataset.paths;
     if (!url) return Promise.resolve(null);
-    let p = loads.get(url);
-    if (!p) {
-      p = fetch(url, { headers: { Accept: 'application/json' } })
+    if (!loading) {
+      const p = fetch(url, { headers: { Accept: 'application/json' } })
         .then((res) => {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return res.json();
         })
         .then((j) => ({ idx: index(j.paths || []), truncated: !!j.truncated }));
-      p.catch(() => loads.delete(url)); // a failure is retried at the next use
-      loads.set(url, p);
+      loading = p;
+      p.catch(() => { if (loading === p) loading = null; }); // a failure is retried at the next use
     }
-    return p;
+    return loading;
   }
 
-  function blobHref(path) {
-    try {
-      return document.body.dataset.blob + '/' + path.split('/').map(encodeURIComponent).join('/');
-    } catch (e) {
-      return '#';
-    }
-  }
+  // The server's JSON never carries a lone surrogate, so encodeURIComponent
+  // cannot throw here.
+  const blobHref = (path) => document.body.dataset.blob + '/' + path.split('/').map(encodeURIComponent).join('/');
 
   const isHigh = (c) => c >= 0xd800 && c <= 0xdbff;
   const isLow = (c) => c >= 0xdc00 && c <= 0xdfff;
@@ -471,21 +467,34 @@ window.ermiteFinder = (() => {
     return lbl;
   }
 
+  // hitLink is the link of path i of the result: its label, out of the tab order.
+  function hitLink(res, i) {
+    const path = res.idx.paths[i];
+    const a = document.createElement('a');
+    a.href = blobHref(path);
+    a.tabIndex = -1;
+    a.append(label(path, positions(res.idx, i, res.q)));
+    return a;
+  }
+
   function option(res, hit, n) {
-    const path = res.idx.paths[hit.i];
     const li = document.createElement('li');
     li.setAttribute('role', 'option');
     li.setAttribute('aria-selected', 'false');
     li.id = 'finder-o' + n;
-    const a = document.createElement('a');
-    a.href = blobHref(path);
-    a.tabIndex = -1;
-    a.append(label(path, positions(res.idx, hit.i, res.q)));
-    li.append(a);
+    li.append(hitLink(res, hit.i));
     return li;
   }
 
   const status = (text) => { $('finder-status').textContent = text; };
+
+  // syncActive makes the option that has data-cursor the active one: j/k
+  // (keys.templ) move the cursor while the field is blurred.
+  function syncActive(el) {
+    const cur = $('finder-list').querySelector(':scope > li[data-cursor]');
+    if (cur && cur.getAttribute('aria-selected') !== 'true') setActive(el, cur);
+    return cur;
+  }
 
   // setActive makes li the active option (null: none) of the listbox.
   function setActive(el, li) {
@@ -563,44 +572,68 @@ window.ermiteFinder = (() => {
     setActive(el, items[0]);
     rendered = res;
     let msg = res.all.length === 0 ? 'no file matches' : res.all.length + (res.all.length === 1 ? ' file matches' : ' files match');
-    if (loaded.truncated) msg += ' · only the first 100,000 files are searched';
+    if (loaded.truncated) msg += ' · only the first ' + loaded.idx.paths.length.toLocaleString('en') + ' files are searched';
     status(msg);
     const open = pendingEnter === q;
     pendingEnter = null;
     if (open) items[0]?.querySelector('a').click();
   }
 
+  // The palette keeps its own frame and previous result: the field of the
+  // dialog and the finder are searched independently.
+  let pFrame = 0;
+  let pPrev = null;
+  const clearHits = () => document.querySelectorAll('#cmd-list > li.finder-hit').forEach((li) => li.remove());
+
+  // palette lists the file hits of the ":" field under its entries, once per frame.
   function palette(el) {
-    if (!document.body.dataset.paths) return Promise.resolve();
-    const clear = () => document.querySelectorAll('#cmd-list > li.finder-hit').forEach((li) => li.remove());
-    clear();
+    if (!document.body.dataset.paths) return;
+    clearHits();
+    if (pFrame) cancelAnimationFrame(pFrame);
+    pFrame = 0;
+    if (!el.value.trim()) {
+      pPrev = null;
+      return;
+    }
+    pFrame = requestAnimationFrame(() => { pFrame = 0; paletteRun(el); });
+  }
+
+  // paletteClose drops the frame and the result kept for the next keystroke.
+  function paletteClose() {
+    if (pFrame) cancelAnimationFrame(pFrame);
+    pFrame = 0;
+    pPrev = null;
+  }
+
+  async function paletteRun(el) {
     const q = el.value;
-    if (!q.trim()) return Promise.resolve();
-    return load().then((loaded) => {
-      if (el.value !== q || !loaded) return;
-      clear();
-      const res = search(loaded.idx, q, 20);
-      const list = $('cmd-list');
-      for (const h of res.hits) {
-        const path = res.idx.paths[h.i];
-        const li = document.createElement('li');
-        li.className = 'finder-hit';
-        const a = document.createElement('a');
-        a.href = blobHref(path);
-        a.tabIndex = -1;
-        const k = document.createElement('span');
-        k.className = 'k';
-        k.textContent = 'file';
-        a.append(label(path, positions(res.idx, h.i, q)), k);
-        li.append(a);
-        list.append(li);
-      }
-      const shown = Array.from(list.querySelectorAll(':scope > li:not([hidden])'));
-      if (shown.length && !shown.some((li) => li.hasAttribute('data-cursor'))) {
-        list.querySelectorAll(':scope > li[data-cursor]').forEach((li) => li.removeAttribute('data-cursor'));
-        shown[0].setAttribute('data-cursor', '');
-      }
-    }, () => {});
+    let loaded;
+    try {
+      loaded = await load();
+    } catch (e) {
+      return;
+    }
+    if (el.value !== q || !loaded) return; // the field changed during the wait
+    const res = search(loaded.idx, q, 20, pPrev);
+    pPrev = res;
+    clearHits();
+    const list = $('cmd-list');
+    for (const h of res.hits) {
+      const li = document.createElement('li');
+      li.className = 'finder-hit';
+      const a = hitLink(res, h.i);
+      const k = document.createElement('span');
+      k.className = 'k';
+      k.textContent = 'file';
+      a.append(k);
+      li.append(a);
+      list.append(li);
+    }
+    const shown = Array.from(list.querySelectorAll(':scope > li:not([hidden])'));
+    if (shown.length && !shown.some((li) => li.hasAttribute('data-cursor'))) {
+      list.querySelectorAll(':scope > li[data-cursor]').forEach((li) => li.removeAttribute('data-cursor'));
+      shown[0].setAttribute('data-cursor', '');
+    }
   }
 
   // input runs the search of the field, once per frame.
@@ -615,7 +648,7 @@ window.ermiteFinder = (() => {
   }
 
   return {
-    index, search, positions, visible, load, palette, input,
+    index, search, positions, visible, label, load, palette, paletteClose, input,
     // key moves the cursor of the results, opens one, or clears the field.
     key(el, e) {
       if (e.isComposing) return; // the Enter or Escape of an input method is its own
@@ -626,8 +659,7 @@ window.ermiteFinder = (() => {
         return;
       }
       if (!results) return;
-      const list = $('finder-list');
-      const cur = list.querySelector(':scope > li[data-cursor]');
+      const cur = syncActive(el);
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const next = e.key === 'ArrowDown' ? cur?.nextElementSibling : cur?.previousElementSibling;
