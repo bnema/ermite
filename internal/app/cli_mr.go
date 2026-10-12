@@ -204,7 +204,7 @@ func completeMRRepoThenNumber(env *cliEnv) func(*cobra.Command, []string, string
 		case 0:
 			return repoNames(env, cmd, toComplete), cobra.ShellCompDirectiveNoFileComp
 		case 1:
-			c, err := env.client(cmd, false)
+			c, err := env.completionClient(cmd)
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}

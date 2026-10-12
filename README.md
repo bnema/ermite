@@ -41,7 +41,7 @@ Each setting comes from the environment or from a config file, the environment f
 | server address | `ERMITE_URL` | `url` |
 | bearer token (optional for public reads) | `ERMITE_TOKEN` | `token.cmd`, a command that prints it |
 
-The file is `~/.config/ermite/config` (`$XDG_CONFIG_HOME/ermite/config` when set; `ERMITE_CONFIG` names another file). It holds no secret: `token.cmd` is a command line that fetches the token from your secret manager (pass, gopass, op, bw, secret-tool, …).
+The file is `~/.config/ermite/config` (`$XDG_CONFIG_HOME/ermite/config` when set; `~/Library/Application Support/ermite/config` on macOS and `%AppData%\ermite\config` on Windows; `ERMITE_CONFIG` names another file). `ermite config show` prints the path in use. It holds no secret: `token.cmd` is a command line that fetches the token from your secret manager (pass, gopass, op, bw, secret-tool, …).
 
 ```ini
 # ~/.config/ermite/config
@@ -55,7 +55,7 @@ ermite config set token.cmd 'pass show ermite/token'   # or: gopass show -o ermi
 ermite config show                                      # path and stored values; unset removes a key
 ```
 
-`token.cmd` runs with `sh -c` (`cmd /C` on Windows) only when a command needs the token, at most once per run, with your environment and terminal (so a pinentry or biometric prompt works). It must print the token alone on one line, in under 4 KiB, within 60 seconds. It is not run when `ERMITE_TOKEN` is set, nor by `ermite version` or `ermite config`, and not when the config file is writable by other users. It belongs to the server of the file: when `ERMITE_URL` names a different server than the file's `url`, it is not run and the call is anonymous (with a notice; set `ERMITE_TOKEN` to authenticate there). A failure is reported in one line without its output. A token sent over plain `http://` to a host that is not loopback triggers a warning on every call.
+`token.cmd` runs with `sh -c` (`cmd /C` on Windows) only when a command needs the token, at most once per run, with your environment and, when standard input is a terminal, that terminal (so a pinentry or biometric prompt works; otherwise it reads nothing). It must print the token alone on one line, in under 4 KiB, within 60 seconds. It is not run when `ERMITE_TOKEN` is set, nor by `ermite version` or `ermite config`, and not when the config file, or the directory holding it, can be written by other users or the file belongs to another user. It belongs to the server of the file: when `ERMITE_URL` names a different server than the file's `url`, it is not run and the call is anonymous (with a notice; set `ERMITE_TOKEN` to authenticate there). A failure is reported in one line without its output. Shell completion never runs it: it is anonymous unless `ERMITE_TOKEN` is set.
 
 ```sh
 export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...

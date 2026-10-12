@@ -26,7 +26,8 @@ func newConfigCmd(env *cliEnv) *cobra.Command {
 		Use:   "config",
 		Short: "Show and edit the config file of the remote commands",
 		Long: "The remote commands read the server address and a way to get a token from a config file,\n" +
-			"~/.config/ermite/config (or the file named by ERMITE_CONFIG):\n\n" +
+			"~/.config/ermite/config (the config directory of the platform on macOS and Windows; or the file\n" +
+			"named by ERMITE_CONFIG; `ermite config show` prints the path in use):\n\n" +
 			"  url       = https://git.example.com\n" +
 			"  token.cmd = pass show ermite/token\n\n" +
 			"token.cmd is a command line run with the system shell when a command needs the token (at most\n" +
@@ -34,7 +35,8 @@ func newConfigCmd(env *cliEnv) *cobra.Command {
 			"op, bw, secret-tool…). The token itself never goes in the file. ERMITE_URL and ERMITE_TOKEN\n" +
 			"take precedence over the file. token.cmd belongs to the server of the file: it is not run when\n" +
 			"ERMITE_URL names another server than the url of the file (the call is then anonymous, with a\n" +
-			"notice: set ERMITE_TOKEN). `ermite version` and `ermite config` never run it.",
+			"notice: set ERMITE_TOKEN). `ermite version`, `ermite config` and shell completion never run it\n" +
+			"(completion stays anonymous unless ERMITE_TOKEN is set).",
 	}
 	cmd.AddCommand(newConfigShowCmd(env), newConfigSetCmd(env), newConfigUnsetCmd(env))
 	return cmd
@@ -49,18 +51,22 @@ func newConfigShowCmd(env *cliEnv) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			f, path, err := env.readFile(cmd, true)
+			if path == "" {
+				p, perr := env.path()
+				if perr != nil {
+					return perr
+				}
+				path = p
+			}
 			if err != nil {
+				// Say which file is unreadable.
+				_ = fields(cmd.OutOrStdout(), [][2]string{{"file", path}})
 				return err
 			}
-			if path == "" {
-				if path, err = env.path(); err != nil {
-					return err
-				}
-			}
-			if env.getenv(client.EnvURL) != "" && f.URL != "" {
+			if strings.TrimSpace(env.getenv(client.EnvURL)) != "" && f.URL != "" {
 				noticef(cmd, "%s is set and takes precedence over url", client.EnvURL)
 			}
-			if env.getenv(client.EnvToken) != "" && f.TokenCmd != "" {
+			if strings.TrimSpace(env.getenv(client.EnvToken)) != "" && f.TokenCmd != "" {
 				noticef(cmd, "%s is set: token.cmd is not used", client.EnvToken)
 			}
 			return fields(cmd.OutOrStdout(), [][2]string{

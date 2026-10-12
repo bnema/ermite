@@ -69,7 +69,6 @@ func TestConfigSetCreatesPrivateFile(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 	}
-	// a file created by `config set` is accepted by the permission check
 	data, _ := os.ReadFile(path)
 	assert.Equal(t, "token.cmd = gopass show -o ermite\n", string(data))
 }
@@ -122,11 +121,6 @@ func TestConfigShowNeverRunsTokenCmdAndNotesPrecedence(t *testing.T) {
 	assert.False(t, strings.Contains(res.stdout+res.stderr, "ermite_x"), "the token is never printed")
 }
 
-func TestConfigHelpShowsAnExample(t *testing.T) {
-	res := runCLI(t, nil, "", "config", "--help").ok(t)
-	assert.Contains(t, res.stdout, "pass show ermite/token")
-	assert.Contains(t, res.stdout, "https://git.example.com")
-}
 func TestConfigHelpDocumentsTheFile(t *testing.T) {
 	res := runCLI(t, nil, "", "--help").ok(t)
 	for _, s := range []string{"ERMITE_URL", "ERMITE_TOKEN", "token.cmd", "ERMITE_CONFIG", "ermite config"} {
@@ -135,4 +129,15 @@ func TestConfigHelpDocumentsTheFile(t *testing.T) {
 	res = runCLI(t, nil, "", "config", "--help").ok(t)
 	assert.Contains(t, res.stdout, "pass show ermite/token")
 	assert.Contains(t, res.stdout, "https://git.example.com")
+}
+
+func TestConfigShowNamesTheFileItCannotRead(t *testing.T) {
+	env := testEnv(t, nil)
+	path := writeConfigFile(t, env, "url = https://git.example.com\n", 0o600)
+	require.NoError(t, os.Remove(path))
+	require.NoError(t, os.Mkdir(path, 0o700)) // a directory is not a config file
+	res := runCLIWith(t, env, "", "config", "show")
+	require.Error(t, res.err)
+	assert.Contains(t, res.stdout, path)
+	assert.Contains(t, res.err.Error(), "config:")
 }

@@ -50,7 +50,10 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 		clientLine := "ermite " + env.version
 		url, err := env.resolveURL(cmd, true)
 		if err != nil {
-			return err
+			// The client version does not depend on the file: say what is wrong
+			// and go on as if no URL were configured.
+			warnf(cmd, "%s", err)
+			url = ""
 		}
 		if url == "" {
 			if *asJSON {

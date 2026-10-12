@@ -114,8 +114,8 @@ func (e *cliEnv) client(cmd *cobra.Command, warn bool) (*client.Client, error) {
 	return newClient(cmd, cfg, warn)
 }
 
-// clientNoTokenCmd is client without running token.cmd, for GetVersion, which
-// is anonymous.
+// clientNoTokenCmd is client without running token.cmd (ERMITE_TOKEN is still
+// used), for GetVersion, which is anonymous, and for completions.
 func (e *cliEnv) clientNoTokenCmd(cmd *cobra.Command, warn bool) (*client.Client, error) {
 	cfg, err := e.buildConfig(cmd, warn, false)
 	if err != nil {
@@ -182,13 +182,20 @@ func collect[T any](ctx context.Context, fetch func(token string) ([]T, string, 
 	}
 }
 
+// completionClient is the client of the shell completions: silent, and
+// anonymous unless ERMITE_TOKEN is set, because completing must never run
+// token.cmd (it may prompt, and a completion script cannot answer).
+func (e *cliEnv) completionClient(cmd *cobra.Command) (*client.Client, error) {
+	return e.clientNoTokenCmd(cmd, false)
+}
+
 // complete builds a shell completion: it opens a client (silently giving up
 // on any failure), lists with a 3 s timeout and keeps the entries whose
 // first element starts with the prefix.
 func complete[T any](env *cliEnv, cmd *cobra.Command, prefix string,
 	list func(context.Context, *client.Client) ([]T, error), entry func(T) (key, text string),
 ) []string {
-	c, err := env.client(cmd, false)
+	c, err := env.completionClient(cmd)
 	if err != nil {
 		return nil
 	}

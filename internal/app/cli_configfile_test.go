@@ -184,7 +184,6 @@ func TestTokenCmdRunsOncePerProcess(t *testing.T) {
 	writeConfigFile(t, env, "url = "+f.serve(t)+"\ntoken.cmd = get-token\n", 0o600)
 	ran := tokenCmdStub(env, "ermite_cmd", nil)
 	root := newRootCmdWith(env)
-	root.SetArgs([]string{"repo", "list"})
 	for range 2 {
 		c, _, err := root.Find([]string{"repo", "list"})
 		require.NoError(t, err)
@@ -405,4 +404,33 @@ func TestTokenCmdFollowsASymlinkedConfigFile(t *testing.T) {
 	env.configPath = func() (string, error) { return link, nil }
 	runCLIWith(t, env, "", "repo", "list").ok(t)
 	assert.Equal(t, "Bearer ermite_cmd", lastAuth(f))
+}
+
+func TestVersionWarnsAboutAnUnreadableConfigFile(t *testing.T) {
+	env := testEnv(t, nil)
+	path := writeConfigFile(t, env, "", 0o600)
+	require.NoError(t, os.Remove(path))
+	require.NoError(t, os.Mkdir(path, 0o700))
+	res := runCLIWith(t, env, "", "version").ok(t)
+	assert.Equal(t, "ermite v0.0.1\n", res.stdout)
+	assert.Contains(t, res.stderr, "ermite: warning: config:")
+}
+
+func TestCompletionNeverRunsTokenCmd(t *testing.T) {
+	f := &fakeAPI{listRepos: func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error) {
+		return &ermite.ListReposResponse{Repos: []*ermite.Repo{repoAlpha}}, nil
+	}}
+	env := testEnv(t, nil)
+	writeConfigFile(t, env, "url = "+f.serve(t)+"\ntoken.cmd = get-token\n", 0o600)
+	ran := tokenCmdStub(env, "ermite_cmd", nil)
+	res := runCLIWith(t, env, "", "__complete", "repo", "show", "").ok(t)
+	assert.Empty(t, *ran)
+	assert.Contains(t, res.stdout, "alpha")
+	assert.Empty(t, lastAuth(f))
+
+	// with ERMITE_TOKEN set the completion is authenticated
+	env = testEnv(t, map[string]string{"ERMITE_TOKEN": "ermite_env"})
+	writeConfigFile(t, env, "url = "+f.serve(t)+"\ntoken.cmd = get-token\n", 0o600)
+	runCLIWith(t, env, "", "__complete", "repo", "show", "").ok(t)
+	assert.Equal(t, "Bearer ermite_env", lastAuth(f))
 }
