@@ -303,7 +303,21 @@ func (c *CI) lockedJob(ctx context.Context, j domain.CIJob, fn func(cur *domain.
 	if err != nil {
 		return err
 	}
+	if err := sameAssignment(j, cur); err != nil {
+		return err
+	}
 	return fn(&cur)
+}
+
+// sameAssignment checks, under the lock of the run, that the job a token was
+// found for is still given under that token: an assignment cancelled and given
+// again since has a new one, and the old runner is unauthenticated. A job that
+// has ended answers with its end instead (the callers do).
+func sameAssignment(was, cur domain.CIJob) error {
+	if !cur.Ended() && cur.TokenHash != was.TokenHash {
+		return domain.ErrUnauthenticated
+	}
+	return nil
 }
 
 // saveJob writes one job (its steps changed) and publishes JobUpdated. The
@@ -562,11 +576,15 @@ func (c *CI) stopForLogLimit(ctx context.Context, j domain.CIJob) error {
 	var ended *domain.JobEndedError
 	err := c.withRun(ctx, j.RunID, j.RunAttempt, func(rs *runState) error {
 		cur := rs.find(j.ID)
-		if cur == nil || cur.Ended() {
-			if cur != nil {
-				ended = &domain.JobEndedError{Conclusion: cur.Conclusion, Message: cur.Error}
-			}
+		if cur == nil {
+			return domain.ErrNotFound
+		}
+		if cur.Ended() {
+			ended = &domain.JobEndedError{Conclusion: cur.Conclusion, Message: cur.Error}
 			return nil
+		}
+		if err := sameAssignment(j, *cur); err != nil {
+			return err
 		}
 		_, _ = c.cfg.Logs.AppendForced(ctx, logRef(*cur), []domain.CILogLine{{Time: c.now(), Text: "##[error]" + domain.CILogLimitMessage}})
 		rs.end(cur, domain.CIFailure, domain.CILogLimitMessage)
@@ -578,6 +596,9 @@ func (c *CI) stopForLogLimit(ctx context.Context, j domain.CIJob) error {
 	})
 	if err != nil {
 		return err
+	}
+	if ended == nil {
+		return domain.ErrNotFound // a typed nil would be taken for an error
 	}
 	return ended
 }
@@ -592,33 +613,47 @@ func (c *CI) Heartbeat(ctx context.Context, secret, jobID string) error {
 	if j.Ended() {
 		return endedError(j)
 	}
-	now := c.now()
-	if j.Phase == domain.CIPhaseAssigned {
-		err := c.withRun(ctx, j.RunID, j.RunAttempt, func(rs *runState) error {
-			cur := rs.find(j.ID)
-			switch {
-			case cur == nil:
-				return domain.ErrUnauthenticated
-			case cur.Ended():
-				return endedError(*cur)
-			case cur.TokenHash != j.TokenHash:
-				return domain.ErrUnauthenticated // the assignment was cancelled and given again
-			case cur.Phase != domain.CIPhaseAssigned:
-				return nil // acknowledged by a concurrent call
-			}
+	// Everything is done under the lock of the run: the acknowledgement, and
+	// the note of the heartbeat, which must not be written once the job ended
+	// (end() forgets it under the same lock).
+	return c.withRun(ctx, j.RunID, j.RunAttempt, func(rs *runState) error {
+		cur := rs.find(j.ID)
+		switch {
+		case cur == nil:
+			return domain.ErrUnauthenticated
+		case cur.Ended():
+			return endedError(*cur)
+		case cur.TokenHash != j.TokenHash:
+			return domain.ErrUnauthenticated // the assignment was cancelled and given again
+		}
+		now := c.now()
+		if cur.Phase == domain.CIPhaseAssigned {
 			cur.Phase, cur.AckedAt, cur.StartedAt, cur.AssignCancels = domain.CIPhaseRunning, now, now, 0
 			rs.touch(cur)
-			return rs.flush(ctx)
-		})
-		if err != nil {
-			return err
+			if err := rs.flush(ctx); err != nil {
+				return err
+			}
+			c.forgetPoll(jobRef(*cur)) // the token it holds is the runner's now
+		}
+		c.mu.Lock()
+		c.heartbeats[jobRef(*cur)] = now
+		c.seen[cur.RunnerID] = now
+		c.mu.Unlock()
+		return nil
+	})
+}
+
+// forgetPoll drops the remembered assignment (and its plaintext token) of a
+// job: after the acknowledgement or the cancel of the assignment, a retried
+// poll has nothing to repeat.
+func (c *CI) forgetPoll(ref string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id, p := range c.polls {
+		if p.ref == ref {
+			delete(c.polls, id)
 		}
 	}
-	c.mu.Lock()
-	c.heartbeats[jobRef(j)] = now
-	c.seen[j.RunnerID] = now
-	c.mu.Unlock()
-	return nil
 }
 
 // WatchJob streams what the runner must react to: the cancel request (the
@@ -704,6 +739,9 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 		if cur.Ended() { // ended by the server since
 			res = ports.CompleteJobResult{Conclusion: cur.Conclusion, Error: cur.Error}
 			return nil
+		}
+		if err := sameAssignment(j, *cur); err != nil {
+			return err
 		}
 		steps, _, err := applySteps(cur.Steps, params.Steps)
 		if err != nil {
