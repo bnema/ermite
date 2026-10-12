@@ -29,6 +29,7 @@ type fakeAPI struct {
 	ermiteconnect.UnimplementedServerServiceHandler
 	ermiteconnect.UnimplementedEventServiceHandler
 	ermiteconnect.UnimplementedMergeRequestServiceHandler
+	ermiteconnect.UnimplementedSessionServiceHandler
 
 	mu     sync.Mutex
 	calls  []string      // procedure names, in order
@@ -55,6 +56,9 @@ type fakeAPI struct {
 	mergeMR       func(*ermite.MergeMergeRequestRequest) (*ermite.MergeMergeRequestResponse, error)
 	markRead      func(*ermite.MarkReadRequest) (*ermite.MarkReadResponse, error)
 	getSigningKey func(*ermite.GetSigningKeyRequest) (*ermite.GetSigningKeyResponse, error)
+
+	listPasskeys  func(*ermite.ListPasskeysRequest) (*ermite.ListPasskeysResponse, error)
+	removePasskey func(*ermite.RemovePasskeyRequest) (*ermite.RemovePasskeyResponse, error)
 }
 
 func (f *fakeAPI) record(name string, h http.Header, req any) {
@@ -137,6 +141,12 @@ func (f *fakeAPI) MarkRead(_ context.Context, r *connect.Request[ermite.MarkRead
 func (f *fakeAPI) GetSigningKey(_ context.Context, r *connect.Request[ermite.GetSigningKeyRequest]) (*connect.Response[ermite.GetSigningKeyResponse], error) {
 	return respond(f, "GetSigningKey", r, f.getSigningKey)
 }
+func (f *fakeAPI) ListPasskeys(_ context.Context, r *connect.Request[ermite.ListPasskeysRequest]) (*connect.Response[ermite.ListPasskeysResponse], error) {
+	return respond(f, "ListPasskeys", r, f.listPasskeys)
+}
+func (f *fakeAPI) RemovePasskey(_ context.Context, r *connect.Request[ermite.RemovePasskeyRequest]) (*connect.Response[ermite.RemovePasskeyResponse], error) {
+	return respond(f, "RemovePasskey", r, f.removePasskey)
+}
 func (f *fakeAPI) Watch(ctx context.Context, r *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
 	f.record("Watch", r.Header(), r.Msg)
 	if f.watch == nil {
@@ -159,6 +169,8 @@ func (f *fakeAPI) serve(t *testing.T) string {
 	p, h = ermiteconnect.NewEventServiceHandler(f)
 	mount(p, h)
 	p, h = ermiteconnect.NewMergeRequestServiceHandler(f)
+	mount(p, h)
+	p, h = ermiteconnect.NewSessionServiceHandler(f)
 	mount(p, h)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
