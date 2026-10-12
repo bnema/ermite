@@ -27,6 +27,8 @@ ermite serve
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
 | `ERMITE_COMMITTER_NAME` | `ermite` | committer of squash merges |
 | `ERMITE_COMMITTER_EMAIL` | `ermite@<public host>` | committer email of squash merges |
+| `ERMITE_OWNER` | `owner` | owner login that CI shows in `github.repository` (`<owner>/<repo>`) and `github.repository_owner`; follows the rules of repository names |
+| `ERMITE_CI_LOG_RETENTION` | `90d` | how long CI runs, jobs, checks and logs are kept: `Nd` (days) or a Go duration such as `720h`, at least one hour |
 
 `ermite version` prints the version (and the server's when a server URL is configured, see Remote CLI).
 
@@ -60,11 +62,14 @@ ermite config show [--json]                             # path and stored values
 ```sh
 export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...
 ermite repo list | show <name> | create <name> [--description …] [--visibility public] | edit <name> [--description …] [--visibility …] [--default-branch …] | delete <name> [--yes]
-ermite token create <label> [--preset cli|agent|ci] [--scope repo:read …] [--repo name …] [--expires 30d]   # prints the secret once
+ermite token create <label> [--preset cli|agent|ci|runner] [--scope repo:read …] [--repo name …] [--expires 30d]   # prints the secret once
 ermite token list | revoke <id>
 ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
 ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | resolve <repo> <n> <comment>
 ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
+ermite run list <repo> [--workflow …] [--branch …] [--status …] | view <repo> <id> [--attempt n] [--log [--job …]]
+ermite run watch <repo> <id> [--log] | cancel <repo> <id> | rerun <repo> <id> [--failed]
+ermite runner list | remove <id>
 ermite web login                # prints a one-time sign-in link (60 s)
 ermite web logout --all         # signs every browser out
 ermite signing-key show         # public key and allowed_signers line of squash commits
@@ -75,7 +80,7 @@ ermite watch [repo] [--json]    # follows events, reconnects and resumes
 
 An agent skill describing the CLI and the forge lives in [`skills/ermite`](skills/ermite/SKILL.md); link or copy that folder into your agent's skills directory.
 
-`--json` on `repo list|show|create|edit`, `token create|list` and `version` prints stable field names, listed in each command's `--help`; `watch --json` prints one object per line. Errors are one line on standard error (`ermite: …`) and exit status 1. `ermite completion bash|zsh|fish` prints a shell completion script that completes repository names from the server.
+`--json` on `repo list|show|create|edit`, `token create|list`, `run list|view|cancel|rerun`, `runner list` and `version` prints stable field names, listed in each command's `--help`; `watch --json` prints one object per line. Errors are one line on standard error (`ermite: …`) and exit status 1. `ermite completion bash|zsh|fish` prints a shell completion script that completes repository names from the server.
 
 ## Git over HTTP
 
@@ -89,6 +94,14 @@ Use the admin token (`ERMITE_ADMIN_TOKEN`) or a stored token as the password; th
 ## Merge requests
 
 A merge request proposes a branch for its target (the default branch unless set). The merge is refused when the branch moved since the reviewed head (`--head`) or when the target is not an ancestor of it. Fast-forward moves the target; squash writes one commit signed by the server's SSH key (`ermite signing-key show` prints the `allowed_signers` line for `git verify-commit`). `ermite repo edit --merge-modes` limits the modes per repository. `--delete-branch` (a checkbox on the web) deletes the source branch after the merge, unless it is the default branch or another open request uses it. Tokens need `mr:write` to open and comment, and `mr:merge` to merge (and delete the merged branch).
+
+## CI
+
+ermite runs the `.github/workflows/*.yml` workflows of a repository on `push` (a branch or a tag, and the merge of a merge request) and shows each job as a check on the commit, the branch list and the merge request. CI is on once a runner is registered; there is no switch. Before that a push makes no run and no check.
+
+Runs execute on [ermite-runner](https://git.bnema.dev/bnema/ermite-runner) hosts, which call ermite over its API. Create a token for the runner host with `ermite token create <label> --preset runner` (the `runner:register` scope, which also gives access to the code and the secrets of every repository: give it only to runners you operate), then register the runner with it. `ermite runner list` shows the runners and whether they are online; `ermite runner remove <id>` stops one. A job goes to a runner that has every label of its `runs-on`; a job no runner takes within 24 hours fails.
+
+`ermite run list|view|watch|cancel|rerun` and the `Actions` tab of a repository read and control the runs; `cancel` and `rerun` need the `ci:write` scope. With `failing_checks_block` on (the default, `ermite repo edit --failing-checks-block=false`), a merge is refused while a check of the head failed or has not finished. A workflow that uses a feature the runner does not support yet (`uses:` steps, `container:`, `services:`, `environment:`, `concurrency`, `continue-on-error`) fails with `not supported yet: <feature>`, never silently. Logs are files under `$ERMITE_DATA_DIR/ci/logs`.
 
 ## Web sign-in
 

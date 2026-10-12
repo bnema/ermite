@@ -1,5 +1,7 @@
-bnema.dev/ermite-api v0.0.0-20261011182719-cb5699451db6 h1:Udj6Rkvt7tDymoIgmbKA30vao5Nv6VJaa78BBrbypxo=
-bnema.dev/ermite-api v0.0.0-20261011182719-cb5699451db6/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
+bnema.dev/ermite-actions v0.0.0-20261012192445-fcc31accb5a4 h1:3TBeF1oKAan41P2AiU1KLGYc4ZTG5KweCe5klMMIkxk=
+bnema.dev/ermite-actions v0.0.0-20261012192445-fcc31accb5a4/go.mod h1:qoIB/Iz4xKdLUG4R6wuBDk6cemdugR+UEo5bpSJJYh4=
+bnema.dev/ermite-api v0.0.0-20261012142818-97a93650f8b7 h1:siActAyQQ3bKqA2dJFV7ZASsmV4LOvGAsIo9z0DmDyg=
+bnema.dev/ermite-api v0.0.0-20261012142818-97a93650f8b7/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
 bnema.dev/ermite-git v0.1.0 h1:8GNhQDj0MxyvrI4kHewZ9k0rT86e9348T3BJ49WHfmI=
 bnema.dev/ermite-git v0.1.0/go.mod h1:m9d4VYHm28mrY6VxVqWQMRIsadGq80FeLub/nrZX6Cg=
 bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3 h1:PVTDOWTg9JJZrnJznTHSCB1Vcc+x2n6zMgZkKiFwvuw=

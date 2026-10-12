@@ -275,7 +275,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 		Long: "Change the fields given as flags and leave the others alone; --description \"\" clears the\n" +
 			"description. The default branch must already exist. --merge-modes lists the modes a merge request\n" +
 			"may be merged with (fast-forward, squash; default for a new repository: both), and\n" +
-			"--failing-checks-block says whether a failing check prevents a merge (there are no checks yet).\n" +
+			"--failing-checks-block says whether a failing check prevents a merge (a failed or unfinished CI check of the head; see README, CI).\n" +
 			"Needs the repo:admin scope." + jsonRepoHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),

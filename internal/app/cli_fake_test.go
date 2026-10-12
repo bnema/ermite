@@ -31,6 +31,7 @@ type fakeAPI struct {
 	ermiteconnect.UnimplementedServerServiceHandler
 	ermiteconnect.UnimplementedEventServiceHandler
 	ermiteconnect.UnimplementedMergeRequestServiceHandler
+	ermiteconnect.UnimplementedRunServiceHandler
 
 	mu     sync.Mutex
 	calls  []string      // procedure names, in order
@@ -161,6 +162,8 @@ func (f *fakeAPI) serve(t *testing.T) string {
 	p, h = ermiteconnect.NewEventServiceHandler(f)
 	mount(p, h)
 	p, h = ermiteconnect.NewMergeRequestServiceHandler(f)
+	mount(p, h)
+	p, h = ermiteconnect.NewRunServiceHandler(f)
 	mount(p, h)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

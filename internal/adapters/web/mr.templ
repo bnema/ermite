@@ -302,11 +302,7 @@ templ mrRail(p MRPage) {
 	if p.Box != nil {
 		@mergeBox(p)
 	}
-	<section aria-labelledby="r-checks">
-		<h2 id="r-checks">Checks <span class="count">0</span></h2>
-		<p class="dim">no checks</p>
-		<p class="mute">there is no CI yet: nothing blocks the merge.</p>
-	</section>
+	@MRChecks(p.Checks)
 	<section aria-labelledby="r-settings">
 		<h2 id="r-settings">Settings</h2>
 		<dl class="kv">

@@ -43,14 +43,14 @@ func (s *Server) refsPage(ctx context.Context, d *repoData) RefsPage {
 		return a && !b
 	})
 	for i, b := range branches {
-		p.Branches = append(p.Branches, s.refRow(d, b, commits, b.ShortName == def, i == 0))
+		p.Branches = append(p.Branches, s.refRow(ctx, d, b, commits, b.ShortName == def, i == 0))
 	}
 	tags := append([]domain.Ref(nil), d.tags...)
 	sort.SliceStable(tags, func(i, j int) bool {
 		return commits[tags[i].CommitID.String()].at > commits[tags[j].CommitID.String()].at
 	})
 	for i, t := range tags {
-		p.Tags = append(p.Tags, s.refRow(d, t, commits, false, len(p.Branches) == 0 && i == 0))
+		p.Tags = append(p.Tags, s.refRow(ctx, d, t, commits, false, len(p.Branches) == 0 && i == 0))
 	}
 	if len(tags) > 0 {
 		p.Latest = tags[0].ShortName
@@ -61,7 +61,7 @@ func (s *Server) refsPage(ctx context.Context, d *repoData) RefsPage {
 	return p
 }
 
-func (s *Server) refRow(d *repoData, r domain.Ref, commits map[string]refCommit, isDefault, cursor bool) RefRow {
+func (s *Server) refRow(ctx context.Context, d *repoData, r domain.Ref, commits map[string]refCommit, isDefault, cursor bool) RefRow {
 	id := r.CommitID.String()
 	c := commits[id]
 	row := RefRow{
@@ -71,6 +71,7 @@ func (s *Server) refRow(d *repoData, r domain.Ref, commits map[string]refCommit,
 	}
 	if id != "" {
 		row.CHref = repoHref(d.name(), "commit", id)
+		row.Checks = checksSummary(d.repo.Name, id, s.checksFor(ctx, d.repo.Name, id))
 	}
 	return row
 }
