@@ -3,6 +3,7 @@
 package web
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"io"
@@ -25,6 +26,7 @@ import (
 type pathsGit struct {
 	ermiteconnect.GitServiceClient
 	lists atomic.Int32
+	paths []string // the list; a.go and b/c.go when nil
 }
 
 func (g *pathsGit) ResolveRevision(_ context.Context, req *connect.Request[pb.ResolveRevisionRequest]) (*connect.Response[pb.ResolveRevisionResponse], error) {
@@ -33,7 +35,11 @@ func (g *pathsGit) ResolveRevision(_ context.Context, req *connect.Request[pb.Re
 
 func (g *pathsGit) ListPaths(_ context.Context, req *connect.Request[pb.ListPathsRequest]) (*connect.Response[pb.ListPathsResponse], error) {
 	g.lists.Add(1)
-	return connect.NewResponse(&pb.ListPathsResponse{CommitId: req.Msg.GetRevision(), Paths: []string{"a.go", "b/c.go"}}), nil
+	paths := g.paths
+	if paths == nil {
+		paths = []string{"a.go", "b/c.go"}
+	}
+	return connect.NewResponse(&pb.ListPathsResponse{CommitId: req.Msg.GetRevision(), Paths: paths}), nil
 }
 
 // A revalidation is answered after the access check and before the list is
@@ -150,4 +156,18 @@ func TestEtagMatches(t *testing.T) {
 	} {
 		assert.Equal(t, tt.want, etagMatches(tt.header, tag), "%q", tt.header)
 	}
+}
+
+// A path is not HTML: "<", ">" and "&" are not escaped in the JSON.
+func TestBuildPathsDoesNotEscapeHTML(t *testing.T) {
+	git := &pathsGit{paths: []string{"a&b/<c>.go"}}
+	srv, err := New(Config{Repos: failing{}, Git: git, PublicURL: "https://forge.example"})
+	require.NoError(t, err)
+	body, err := srv.buildPaths(context.Background(), "r", strings.Repeat("a", 40))
+	require.NoError(t, err)
+	zr, err := gzip.NewReader(bytes.NewReader(body))
+	require.NoError(t, err)
+	out, err := io.ReadAll(zr)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), `"a&b/<c>.go"`)
 }

@@ -82,18 +82,27 @@ func (s *Server) paths(w http.ResponseWriter, r *http.Request) {
 		s.fail(ctx, w, r, err)
 		return
 	}
+	// Authorized, not modified and loaded: all that is left is to send it.
+	validators(w.Header())
+	if err := writePathList(w, r, body, gz); err != nil {
+		s.fail(ctx, w, r, err)
+	}
+}
+
+// writePathList sends a list (gzipped JSON, as the cache keeps it): as it is
+// to a client that accepts gzip, unzipped to the others. The validators are
+// already set. It fails only before anything is written.
+func writePathList(w http.ResponseWriter, r *http.Request, body []byte, gz bool) error {
 	var plain *gzip.Reader
 	if !gz {
+		var err error
 		if plain, err = gzip.NewReader(bytes.NewReader(body)); err != nil {
-			s.fail(ctx, w, r, err)
-			return
+			return err
 		}
 	}
-
 	h := w.Header()
 	h.Set("Content-Type", "application/json")
 	h.Set("X-Content-Type-Options", "nosniff")
-	validators(h)
 	if gz {
 		h.Set("Content-Encoding", "gzip")
 		h.Set("Content-Length", strconv.Itoa(len(body)))
@@ -101,12 +110,13 @@ func (s *Server) paths(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodHead {
 			_, _ = w.Write(body)
 		}
-		return
+		return nil
 	}
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
 		_, _ = io.Copy(w, plain)
 	}
+	return nil
 }
 
 // buildPaths lists the paths of a commit and returns them as gzipped JSON.
@@ -131,7 +141,9 @@ func (s *Server) buildPaths(ctx context.Context, repo, sha string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	if err := json.NewEncoder(zw).Encode(pathList{Paths: paths, Truncated: res.Msg.GetTruncated()}); err != nil {
+	enc := json.NewEncoder(zw)
+	enc.SetEscapeHTML(false) // a path is not HTML; "<", ">" and "&" stay as they are
+	if err := enc.Encode(pathList{Paths: paths, Truncated: res.Msg.GetTruncated()}); err != nil {
 		return nil, err
 	}
 	if err := zw.Close(); err != nil {
