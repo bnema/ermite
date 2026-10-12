@@ -307,6 +307,7 @@ func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
 		"every scope, by an owner key": {ownerTok, domain.TokenPrincipal(domain.Token{ID: "adm", Scopes: domain.AllScopes()}), true},
 		"one scope short":              {domain.Token{ID: "p", Scopes: domain.AllScopes()[1:]}, domain.Root(), false},
 		"repo list":                    {domain.Token{ID: "l", Scopes: domain.AllScopes(), Repos: names(t, "a")}, domain.Root(), false},
+		"branch prefixes":              {domain.Token{ID: "b", Scopes: domain.AllScopes(), BranchPrefixes: []string{"agent/"}}, domain.Root(), false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -612,12 +613,6 @@ func TestTokensCreateBranchPrefixes(t *testing.T) {
 			})
 			assert.ErrorIs(t, err, domain.ErrInvalidToken, "%q", bad)
 		}
-	})
-
-	t.Run("a token with every scope but limited branches has no owner rights", func(t *testing.T) {
-		t.Parallel()
-		p := domain.TokenPrincipal(domain.Token{ID: "t", Scopes: domain.AllScopes(), BranchPrefixes: []string{"a/"}})
-		assert.False(t, p.HasOwnerRights())
 	})
 
 	t.Run("a corrupt empty creator prefix does not cover every child prefix", func(t *testing.T) {

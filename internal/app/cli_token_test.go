@@ -3,9 +3,12 @@
 package app
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -96,22 +99,26 @@ func TestTokenCreateBranchPrefixes(t *testing.T) {
 	})
 
 	t.Run("a server without the feature is asked nothing", func(t *testing.T) {
-		for name, version := range map[string]func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error){
-			"feature missing": func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+		for _, tt := range []struct {
+			name    string
+			version func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error)
+			wantMsg string
+		}{
+			{"feature missing", func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
 				return &ermite.GetVersionResponse{Version: "v0.3.0", Features: []string{"repo.update", "session"}}, nil
-			},
-			"version unreadable": nil, // the fake answers unimplemented
+			}, "does not support token.branch_prefixes"},
+			{"version unreadable", nil, "does not implement this call"}, // the fake answers unimplemented
+			{"server unavailable", func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+				return nil, connect.NewError(connect.CodeUnavailable, errors.New("connection refused"))
+			}, "cannot reach the server"},
 		} {
-			f := &fakeAPI{createToken: echo, getVersion: version}
+			f := &fakeAPI{createToken: echo, getVersion: tt.version}
 			res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "agent", "--branch-prefix", "agent/x/")
-			require.Error(t, res.err, name)
-			if name == "feature missing" {
-				assert.Contains(t, res.err.Error(), "token.branch_prefixes", name)
-				assert.Contains(t, res.err.Error(), "nothing was created", name)
-			}
+			require.Error(t, res.err, tt.name)
+			assert.Contains(t, strings.ToLower(res.err.Error()), tt.wantMsg, tt.name)
 			calls, _ := f.snapshot()
-			assert.NotContains(t, calls, "CreateToken", "%s: no token is created", name)
-			assert.Empty(t, res.stdout, name)
+			assert.NotContains(t, calls, "CreateToken", "%s: no token is created", tt.name)
+			assert.Empty(t, res.stdout, tt.name)
 		}
 	})
 
