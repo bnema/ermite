@@ -81,3 +81,7 @@ Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `
 | `signing-key show` | public key and `allowed_signers` line to check squash commits with `git verify-commit` |
 | `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope and no repository list; the link is a secret |
 | `web logout --all` | signs every browser out |
+| `web passkey list [--json]` | the owner's passkeys (`id`, `name`, `created_at`, `last_used_at`, `synced`); same rights as `web login`; fails with "passkeys are not available on this server" when the public URL is not https with a host name |
+| `web passkey remove <id>` | removes a passkey and signs every browser out; the id comes from `list` |
+
+Adding a passkey is a browser action (`/-/passkeys` once signed in); agents do not use passkeys.

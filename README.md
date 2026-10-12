@@ -44,6 +44,7 @@ ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | res
 ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
 ermite web login                # prints a one-time sign-in link (60 s)
 ermite web logout --all         # signs every browser out
+ermite web passkey list | remove <id>   # the owner's passkeys; removing one signs every browser out
 ermite signing-key show         # public key and allowed_signers line of squash commits
 ermite version                  # client and server, warns about missing server features
 ermite watch [repo] [--json]    # follows events, reconnects and resumes
@@ -68,7 +69,14 @@ A merge request proposes a branch for its target (the default branch unless set)
 
 ## Web sign-in
 
-`ermite web login`, run with the admin token or a token with every scope, prints a link that works once within 60 seconds. Opening it and confirming sets a session cookie for 12 hours (never longer than the token that asked for the link). It needs `https` in `ERMITE_PUBLIC_URL` (except on localhost). Browser writes require the session and an `Origin` equal to `ERMITE_PUBLIC_URL`. `ermite web logout --all`, or revoking a token with every scope, ends every session.
+Two ways in, both for the owner, both giving the same session cookie for 12 hours. Neither works over plain `http` except on localhost: the cookie is `Secure`.
+
+- **Passkey** (a phone, a laptop, a security key): open `/-/login` and press "Sign in with a passkey". Nothing to type, no terminal. A passkey is added once from `/-/passkeys` while signed in.
+- **Link**: `ermite web login`, run with the admin token or a token with every scope, prints a link that works once within 60 seconds. Opening it and confirming signs the browser in (never longer than the token that asked for the link). It is also how to sign in the first time, before any passkey exists.
+
+Passkeys need `ERMITE_PUBLIC_URL` to be `https` (or `http://localhost`) with a **host name, not an IP address**: WebAuthn ties a passkey to that name, and a passkey registered for one name does not work on another. On `http://127.0.0.1:…` the server starts without passkeys (the log says `passkeys disabled`, the routes and links are absent, `ermite version` does not list `passkeys`). Up to 20 passkeys can be registered; each asks for user verification (a fingerprint, a face or a PIN), and the server stores only the public key. A security key that reports a signature counter is checked for cloning; synced passkeys (iCloud, Google, a password manager) report none, so they are not.
+
+`ermite web passkey list` shows them, `ermite web passkey remove <id>` removes one. Removing a passkey, `ermite web logout --all`, or revoking a token with every scope ends every session, on every device. Browser writes require the session and an `Origin` equal to `ERMITE_PUBLIC_URL`. If you lose every device, `ermite web login` still works from a terminal.
 
 The server keeps its runtime files in `$ERMITE_DATA_DIR/run/` (the hook socket and scripts that git calls on each push); the hook socket path must stay under about 100 bytes.
 
