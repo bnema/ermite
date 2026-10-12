@@ -130,11 +130,22 @@ func (c *CI) lastBeat(j domain.CIJob) time.Time {
 func (c *CI) due(j domain.CIJob, now time.Time) bool {
 	switch {
 	case j.Phase == domain.CIPhaseAssigned:
-		return now.Sub(j.AssignedAt) > c.cfg.AckTimeout
+		return now.Sub(c.assignedSince(j)) > c.cfg.AckTimeout
 	case j.CancelReason != domain.CICancelNone:
 		return now.Sub(j.CancelRequestedAt) > c.cfg.CancelGrace
 	}
 	return now.Sub(c.lastBeat(j)) > c.cfg.HeartbeatDeadline || now.After(c.deadline(j))
+}
+
+// assignedSince is when the acknowledgement of an assignment starts to count:
+// its assignment, or the start of this process when that is later, so that a
+// runner that could not reach a server that was down is not punished for it
+// (the same grace as the heartbeat deadline).
+func (c *CI) assignedSince(j domain.CIJob) time.Time {
+	if c.boot.After(j.AssignedAt) {
+		return c.boot
+	}
+	return j.AssignedAt
 }
 
 // deadline is when the job's time budget ends for the server: timeout-minutes
@@ -147,7 +158,7 @@ func (c *CI) deadline(j domain.CIJob) time.Time {
 // reports whether it changed.
 func (c *CI) enforce(ctx context.Context, rs *runState, j *domain.CIJob, now time.Time) bool {
 	switch {
-	case j.Phase == domain.CIPhaseAssigned && now.Sub(j.AssignedAt) > c.cfg.AckTimeout:
+	case j.Phase == domain.CIPhaseAssigned && now.Sub(c.assignedSince(*j)) > c.cfg.AckTimeout:
 		c.cancelAssignment(ctx, rs, j)
 		return true
 	case j.CancelReason != domain.CICancelNone && now.Sub(j.CancelRequestedAt) > c.cfg.CancelGrace:
