@@ -191,6 +191,11 @@ func (s *Tokens) Touch(ctx context.Context, id string, at time.Time) error {
 	return fmt.Errorf("touch token %q: %w", id, domain.ErrConflict)
 }
 
+// encodeToken refuses what the use case already refused (scopes, branch
+// prefixes): a malformed prefix must never reach the store, where it would
+// limit a token wrongly or not at all.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter schema encoding: it re-checks the syntax the use case enforced, it decides no policy
 func encodeToken(t domain.Token) ([]byte, error) {
 	if !validTokenID(t.ID) {
 		return nil, fmt.Errorf("%w: invalid id %q", domain.ErrInvalidToken, t.ID)
@@ -220,6 +225,12 @@ func encodeToken(t domain.Token) ([]byte, error) {
 			return nil, fmt.Errorf("%w: empty repository name", domain.ErrInvalidName)
 		}
 		pb.Repos = append(pb.Repos, r.String())
+	}
+	for _, bp := range t.BranchPrefixes {
+		if _, err := domain.ParseBranchPrefix(bp); err != nil {
+			return nil, err
+		}
+		pb.BranchPrefixes = append(pb.BranchPrefixes, bp)
 	}
 	return mustMarshal(pb), nil
 }
@@ -256,5 +267,7 @@ func decodeToken(val []byte) (domain.Token, error) {
 		}
 		t.Repos = append(t.Repos, name)
 	}
+	// Kept as stored: a token with prefixes stays limited, whatever they say.
+	t.BranchPrefixes = slices.Clone(pb.GetBranchPrefixes())
 	return t, nil
 }

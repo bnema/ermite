@@ -186,6 +186,10 @@ func TestAllowsRef(t *testing.T) {
 		assert.Equal(t, want, limited.AllowsRef(ref), "%q", ref)
 	}
 
+	// A corrupt empty prefix still limits the token and allows nothing.
+	corrupt := domain.TokenPrincipal(domain.Token{Scopes: []domain.Scope{domain.ScopeRepoWrite}, BranchPrefixes: []string{""}})
+	assert.False(t, corrupt.AllowsRef("refs/heads/main"))
+
 	// Without prefixes every ref is allowed.
 	unlimited := domain.TokenPrincipal(domain.Token{Scopes: []domain.Scope{domain.ScopeRepoWrite}})
 	assert.True(t, unlimited.AllowsRef("refs/tags/v1"))

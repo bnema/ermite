@@ -129,7 +129,9 @@ func (p Principal) AllowsRef(ref string) bool {
 		return false
 	}
 	for _, prefix := range p.branchPrefixes {
-		if strings.HasPrefix(name, prefix) {
+		// An empty prefix, which ParseBranchPrefix never lets in, matches
+		// nothing instead of everything: a limited token fails closed.
+		if prefix != "" && strings.HasPrefix(name, prefix) {
 			return true
 		}
 	}
