@@ -132,7 +132,11 @@ func (s *runnerService) Heartbeat(ctx context.Context, req *connect.Request[pb.H
 }
 
 func (s *runnerService) WatchJob(ctx context.Context, req *connect.Request[pb.WatchJobRequest], stream *connect.ServerStream[pb.WatchJobResponse]) error {
-	err := s.runners.WatchJob(ctx, secretFrom(ctx), req.Msg.GetJobId(), func(sig ports.JobSignal) error {
+	// A client's call returns when the response begins: send the headers now,
+	// not with the first message, which may be 30 seconds away. Connect
+	// flushes them for a nil message; a failure shows on the first real send.
+	ready := func() { _ = stream.Send(nil) }
+	err := s.runners.WatchJob(ctx, secretFrom(ctx), req.Msg.GetJobId(), ready, func(sig ports.JobSignal) error {
 		switch {
 		case sig.Cancel != nil:
 			return stream.Send(&pb.WatchJobResponse{Msg: &pb.WatchJobResponse_Cancel{Cancel: &pb.CancelRequest{
@@ -233,6 +237,7 @@ func (s *runService) GetJobLog(ctx context.Context, req *connect.Request[pb.GetJ
 	err = s.runs.GetJobLog(ctx, caller(ctx), name, ports.GetJobLogParams{
 		JobID: req.Msg.GetJobId(), Attempt: req.Msg.GetAttempt(), Offset: req.Msg.GetOffset(), Follow: req.Msg.GetFollow(),
 		Client: clientFromContext(ctx),
+		Ready:  func() { _ = stream.Send(nil) },
 	}, func(b ports.LogBatch) error {
 		out := &pb.GetJobLogResponse{Offset: b.Offset, Lines: make([]*pb.JobLogLine, 0, len(b.Lines))}
 		for _, l := range b.Lines {

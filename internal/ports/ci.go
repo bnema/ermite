@@ -280,7 +280,10 @@ type RunnerService interface {
 	UpdateJob(ctx context.Context, secret, jobID string, steps []StepUpdate) error
 	AppendLog(ctx context.Context, secret, jobID string, step int32, offset int64, lines []domain.CILogLine) (next int64, err error)
 	Heartbeat(ctx context.Context, secret, jobID string) error
-	WatchJob(ctx context.Context, secret, jobID string, send func(JobSignal) error) error
+	// WatchJob calls ready once the job token is valid and the stream is
+	// registered, before any message: the adapter flushes the response headers
+	// then, because a client's call returns only when they arrive.
+	WatchJob(ctx context.Context, secret, jobID string, ready func(), send func(JobSignal) error) error
 	CompleteJob(ctx context.Context, secret string, params CompleteJobParams) (CompleteJobResult, error)
 }
 
@@ -340,6 +343,11 @@ type GetJobLogParams struct {
 	Attempt int32
 	Offset  int64
 	Follow  bool
+	// Ready, when not nil, is called once the access is checked and the
+	// stream is counted, before any batch: the adapter flushes the response
+	// headers then (a follow on a job with no line yet would keep the client's
+	// call waiting for the first one).
+	Ready func()
 	// Client identifies where the call comes from, for the limit of streams
 	// per client; empty counts against the total only.
 	Client string

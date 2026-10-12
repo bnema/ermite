@@ -82,15 +82,19 @@ func (c *ciHarness) registerRunner(name string, labels ...string) *fakeRunner {
 		Name: name, Labels: labels, Version: "devel", Isolation: pb.RunnerIsolation_RUNNER_ISOLATION_VM, Arch: "x64", Os: "linux",
 	}))
 	require.NoError(c.t, err)
-	return &fakeRunner{c: c, id: res.Msg.GetRunnerId(), api: c.api(res.Msg.GetRunnerToken())}
+	return &fakeRunner{c: c, id: res.Msg.GetRunnerId(), secret: res.Msg.GetRunnerToken(), api: c.api(res.Msg.GetRunnerToken())}
 }
 
 // fakeRunner is the runner side of the protocol, as a test.
 type fakeRunner struct {
-	c   *ciHarness
-	id  string
-	api *clients
+	c      *ciHarness
+	id     string
+	secret string
+	api    *clients
 }
+
+// runnerSecret is the runner token of a fake runner.
+func (c *ciHarness) runnerSecret(r *fakeRunner) string { return r.secret }
 
 // fetch polls once for a job.
 func (r *fakeRunner) fetch(pollID string) (*pb.Job, error) {

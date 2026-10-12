@@ -487,16 +487,16 @@ func (_c *RunnerService_UpdateJob_Call) RunAndReturn(run func(ctx context.Contex
 }
 
 // WatchJob provides a mock function for the type RunnerService
-func (_mock *RunnerService) WatchJob(ctx context.Context, secret string, jobID string, send func(ports.JobSignal) error) error {
-	ret := _mock.Called(ctx, secret, jobID, send)
+func (_mock *RunnerService) WatchJob(ctx context.Context, secret string, jobID string, ready func(), send func(ports.JobSignal) error) error {
+	ret := _mock.Called(ctx, secret, jobID, ready, send)
 
 	if len(ret) == 0 {
 		panic("no return value specified for WatchJob")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, func(ports.JobSignal) error) error); ok {
-		r0 = returnFunc(ctx, secret, jobID, send)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, func(), func(ports.JobSignal) error) error); ok {
+		r0 = returnFunc(ctx, secret, jobID, ready, send)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -512,12 +512,13 @@ type RunnerService_WatchJob_Call struct {
 //   - ctx context.Context
 //   - secret string
 //   - jobID string
+//   - ready func()
 //   - send func(ports.JobSignal) error
-func (_e *RunnerService_Expecter) WatchJob(ctx any, secret any, jobID any, send any) *RunnerService_WatchJob_Call {
-	return &RunnerService_WatchJob_Call{Call: _e.mock.On("WatchJob", ctx, secret, jobID, send)}
+func (_e *RunnerService_Expecter) WatchJob(ctx any, secret any, jobID any, ready any, send any) *RunnerService_WatchJob_Call {
+	return &RunnerService_WatchJob_Call{Call: _e.mock.On("WatchJob", ctx, secret, jobID, ready, send)}
 }
 
-func (_c *RunnerService_WatchJob_Call) Run(run func(ctx context.Context, secret string, jobID string, send func(ports.JobSignal) error)) *RunnerService_WatchJob_Call {
+func (_c *RunnerService_WatchJob_Call) Run(run func(ctx context.Context, secret string, jobID string, ready func(), send func(ports.JobSignal) error)) *RunnerService_WatchJob_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -531,15 +532,20 @@ func (_c *RunnerService_WatchJob_Call) Run(run func(ctx context.Context, secret 
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		var arg3 func(ports.JobSignal) error
+		var arg3 func()
 		if args[3] != nil {
-			arg3 = args[3].(func(ports.JobSignal) error)
+			arg3 = args[3].(func())
+		}
+		var arg4 func(ports.JobSignal) error
+		if args[4] != nil {
+			arg4 = args[4].(func(ports.JobSignal) error)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -550,7 +556,7 @@ func (_c *RunnerService_WatchJob_Call) Return(err error) *RunnerService_WatchJob
 	return _c
 }
 
-func (_c *RunnerService_WatchJob_Call) RunAndReturn(run func(ctx context.Context, secret string, jobID string, send func(ports.JobSignal) error) error) *RunnerService_WatchJob_Call {
+func (_c *RunnerService_WatchJob_Call) RunAndReturn(run func(ctx context.Context, secret string, jobID string, ready func(), send func(ports.JobSignal) error) error) *RunnerService_WatchJob_Call {
 	_c.Call.Return(run)
 	return _c
 }

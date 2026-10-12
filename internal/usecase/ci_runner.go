@@ -623,7 +623,7 @@ func (c *CI) Heartbeat(ctx context.Context, secret, jobID string) error {
 
 // WatchJob streams what the runner must react to: the cancel request (the
 // first message when one is already pending), keepalives, and the end.
-func (c *CI) WatchJob(ctx context.Context, secret, jobID string, send func(ports.JobSignal) error) error {
+func (c *CI) WatchJob(ctx context.Context, secret, jobID string, ready func(), send func(ports.JobSignal) error) error {
 	j, err := c.jobFor(ctx, secret, jobID)
 	if err != nil {
 		return err
@@ -635,6 +635,9 @@ func (c *CI) WatchJob(ctx context.Context, secret, jobID string, send func(ports
 	keepalive := time.NewTicker(c.cfg.Keepalive)
 	defer keepalive.Stop()
 	cancelSent := false
+	if ready != nil {
+		ready()
+	}
 	for {
 		wake := c.jobs.wait(ref)
 		cur, err := c.cfg.Store.GetJob(ctx, j.RunID, j.RunAttempt, j.ID)

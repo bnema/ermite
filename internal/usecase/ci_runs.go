@@ -227,6 +227,9 @@ func (c *CI) GetJobLog(ctx context.Context, p domain.Principal, name domain.Repo
 		return err
 	}
 	defer release()
+	if params.Ready != nil {
+		params.Ready()
+	}
 	ref := logRef(j)
 	jref := jobRef(j)
 	offset := params.Offset
