@@ -422,7 +422,7 @@ func (s *Server) job(ctx context.Context, r *http.Request) (templ.Component, int
 	}
 	p.Follow = !view.Ended()
 	p.StreamHref = jobHref(d.name(), id, jobID) + "/stream"
-	lines, next, err := s.readLog(ctx, d.repo.Name, view, from, jobLogPageLines)
+	lines, next, err := s.readLog(ctx, s.logClient(r), d.repo.Name, view, from, jobLogPageLines)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -452,9 +452,14 @@ func (s *Server) job(ctx context.Context, r *http.Request) (templ.Component, int
 	return Job(l, p), http.StatusOK, nil
 }
 
+// logClient is the key of the visitor for the limit of log streams per client.
+func (s *Server) logClient(r *http.Request) string {
+	return clientlimit.Key(clientlimit.ClientAddr(r, s.cfg.TrustedProxies))
+}
+
 // readLog reads up to max lines from a line number, through the log stream of
 // the use case, and returns the line after the last read.
-func (s *Server) readLog(ctx context.Context, repo domain.RepoName, j ports.JobView, from int64, max int) ([]LogLineView, int64, error) {
+func (s *Server) readLog(ctx context.Context, client string, repo domain.RepoName, j ports.JobView, from int64, max int) ([]LogLineView, int64, error) {
 	if from > j.Lines || j.Lines == 0 {
 		return nil, from, nil
 	}
@@ -470,7 +475,7 @@ func (s *Server) readLog(ctx context.Context, repo domain.RepoName, j ports.JobV
 		return 0
 	}
 	stop := errors.New("enough")
-	err := s.cfg.Runs.GetJobLog(ctx, principal(ctx), repo, ports.GetJobLogParams{JobID: j.ID, Attempt: j.Attempt, Offset: from}, func(b ports.LogBatch) error {
+	err := s.cfg.Runs.GetJobLog(ctx, principal(ctx), repo, ports.GetJobLogParams{JobID: j.ID, Attempt: j.Attempt, Offset: from, Client: client}, func(b ports.LogBatch) error {
 		for i, l := range b.Lines {
 			if len(out) >= max {
 				return stop
@@ -541,7 +546,7 @@ func (s *Server) rawLog(w http.ResponseWriter, r *http.Request) {
 	cacheHeaders(ctx, h, "no-cache", sessionCache)
 	written := 0
 	open := false
-	err = s.cfg.Runs.GetJobLog(ctx, principal(ctx), d.repo.Name, ports.GetJobLogParams{JobID: jobID, Attempt: attempt}, func(b ports.LogBatch) error {
+	err = s.cfg.Runs.GetJobLog(ctx, principal(ctx), d.repo.Name, ports.GetJobLogParams{JobID: jobID, Attempt: attempt, Client: s.logClient(r)}, func(b ports.LogBatch) error {
 		for _, l := range b.Lines {
 			if written > rawLogMaxBytes {
 				return errors.New("log too large")
@@ -786,7 +791,7 @@ func (s *Server) logStream(w http.ResponseWriter, r *http.Request) {
 	n := from
 	err = s.cfg.Runs.GetJobLog(ctx, principal(ctx), d.repo.Name, ports.GetJobLogParams{
 		JobID: jobID, Offset: from, Follow: true,
-		Client: clientlimit.Key(clientlimit.ClientAddr(r, s.cfg.TrustedProxies)),
+		Client: s.logClient(r),
 	}, func(b ports.LogBatch) error {
 		var html strings.Builder
 		for i, l := range b.Lines {
