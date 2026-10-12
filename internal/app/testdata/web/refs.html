@@ -19,6 +19,8 @@
 </script>
 <script src="/-/static/js/files.HASH.js" defer>
 </script>
+<script src="/-/static/js/log.HASH.js" defer>
+</script>
 </head>
 <body data-ref="main" data-sha="SHA40" data-sel="" data-nav="" data-paths="/demo/paths/SHA40" data-blob="/demo/blob/main">
 <a class="skip" href="#main">skip to content</a>
@@ -75,6 +77,10 @@
 </li>
 <li>
 <a href="/demo/merge-requests" data-key="m" aria-keyshortcuts="m">Merge requests<kbd aria-hidden="true">m</kbd>
+</a>
+</li>
+<li>
+<a href="/demo/actions" data-key="a" aria-keyshortcuts="a">Actions<kbd aria-hidden="true">a</kbd>
 </a>
 </li>
 </ul>
@@ -196,7 +202,7 @@
            htmx:sse:close, htmx:sse:error -> data.state = 'offline';
            htmx:sse:error -> ermiteLive.error(event.detail.status);
            htmx:sse:before:connection -> ermiteLive.gate(event);
-           home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);
+           home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job -> ermiteLive.swap(event.detail.data);
            gap -> ermiteLive.reload()">
 </span>
 </div>
@@ -377,6 +383,12 @@
 <li data-k="section merge requests">
 <a href="/demo/merge-requests" tabindex="-1">
 <span class="lbl">merge requests</span>
+<span class="k">section</span>
+</a>
+</li>
+<li data-k="section actions">
+<a href="/demo/actions" tabindex="-1">
+<span class="lbl">actions</span>
 <span class="k">section</span>
 </a>
 </li>

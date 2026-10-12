@@ -27,7 +27,8 @@ type Pushes struct {
 	clock ports.Clock
 	maint ports.MaintenanceScheduler
 	auth  ports.Revalidator
-	fresh ports.RepoFreshener // nil: the reader needs no telling
+	fresh ports.RepoFreshener   // nil: the reader needs no telling
+	ci    ports.WorkflowTrigger // nil: no CI
 }
 
 var (
@@ -46,6 +47,13 @@ func NewPushes(meta ports.RepoMetaStore, repos *Repos, git ports.GitRepos, bus p
 // it serves the push at once. Call it before the first push; it returns u.
 func (u *Pushes) WithFreshener(f ports.RepoFreshener) *Pushes {
 	u.fresh = f
+	return u
+}
+
+// WithWorkflowTrigger makes Record start the workflows that match the push.
+// Call it before the first push; it returns u.
+func (u *Pushes) WithWorkflowTrigger(t ports.WorkflowTrigger) *Pushes {
+	u.ci = t
 	return u
 }
 
@@ -121,7 +129,8 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 
 // Record is the post-receive step of an accepted push: it sets pushed_at,
 // repairs HEAD when it points to a missing branch, tells the reader that the
-// repository changed, publishes a PushEvent and schedules maintenance. Every
+// repository changed, queues the workflows the push triggers, publishes a
+// PushEvent and schedules maintenance. Every
 // step runs even when an earlier one fails; the failures are returned together
 // and the push itself is not affected.
 func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error {
@@ -138,6 +147,9 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	}
 	if u.fresh != nil {
 		u.fresh.Refresh(ctx, name)
+	}
+	if u.ci != nil {
+		u.ci.OnPush(ctx, name, updates, p) // queues only: never slows or fails the push
 	}
 	u.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now,
