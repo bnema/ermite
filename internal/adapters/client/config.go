@@ -48,18 +48,19 @@ type Config struct {
 	UserAgent string
 }
 
-// ConfigFromEnv reads ERMITE_URL and ERMITE_TOKEN through getenv and validates
-// them. Timeout and UserAgent are left for the caller to set.
-func ConfigFromEnv(getenv func(string) string) (Config, error) {
-	raw := strings.TrimSpace(getenv(EnvURL))
+// NewConfig validates the server address and the token, however they were
+// found (environment, config file or token command). The token is trimmed and
+// may be empty (anonymous). Timeout and UserAgent are left for the caller.
+func NewConfig(rawURL, token string) (Config, error) {
+	raw := strings.TrimSpace(rawURL)
 	if raw == "" {
-		return Config{}, fmt.Errorf("%s is not set: set it to the address of your ermite server, for example https://git.example.com", EnvURL)
+		return Config{}, fmt.Errorf("%s is not set: set it to the address of your ermite server, for example https://git.example.com, or run `ermite config set url <url>`", EnvURL)
 	}
 	base, err := ParseURL(raw)
 	if err != nil {
-		return Config{}, fmt.Errorf("%s: %w", EnvURL, err)
+		return Config{}, fmt.Errorf("invalid server URL (%s, or `ermite config set url <url>`): %w", EnvURL, err)
 	}
-	return Config{URL: base.String(), Token: strings.TrimSpace(getenv(EnvToken))}, nil
+	return Config{URL: base.String(), Token: strings.TrimSpace(token)}, nil
 }
 
 // ParseURL validates a server address: an absolute http(s) URL with a host,

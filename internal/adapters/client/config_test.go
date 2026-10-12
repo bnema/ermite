@@ -11,20 +11,14 @@ import (
 	"bnema.dev/ermite/internal/adapters/client"
 )
 
-func env(kv map[string]string) func(string) string {
-	return func(k string) string { return kv[k] }
-}
-
-func TestConfigFromEnv(t *testing.T) {
-	cfg, err := client.ConfigFromEnv(env(map[string]string{
-		client.EnvURL: " HTTPS://Git.Example.com/base/ ", client.EnvToken: " ermite_abc\n",
-	}))
+func TestNewConfig(t *testing.T) {
+	cfg, err := client.NewConfig(" HTTPS://Git.Example.com/base/ ", " ermite_abc\n")
 	require.NoError(t, err)
 	assert.Equal(t, "https://Git.Example.com/base", cfg.URL)
 	assert.Equal(t, "ermite_abc", cfg.Token)
 }
 
-func TestConfigFromEnvRejects(t *testing.T) {
+func TestNewConfigRejects(t *testing.T) {
 	tests := []struct {
 		name, url, want string
 	}{
@@ -39,9 +33,11 @@ func TestConfigFromEnvRejects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.ConfigFromEnv(env(map[string]string{client.EnvURL: tt.url}))
+			_, err := client.NewConfig(tt.url, "")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.want)
+			assert.Contains(t, err.Error(), "ermite config set url", "the message tells how to fix it")
+			assert.Contains(t, err.Error(), "ERMITE_URL")
 			assert.NotContains(t, err.Error(), "s3cret", "credentials must never be echoed")
 		})
 	}

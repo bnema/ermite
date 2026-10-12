@@ -5,8 +5,10 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -173,15 +175,35 @@ type result struct {
 	err            error
 }
 
+// testEnv is a cliEnv with the given variables, the fixed clock, and a config
+// file path inside a fresh temp dir (no file yet) so that a test never reads
+// the developer's own ~/.config/ermite/config. token.cmd must not run unless
+// the test sets runTokenCmd.
+func testEnv(t *testing.T, vars map[string]string) *cliEnv {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ermite", "config")
+	return &cliEnv{
+		getenv:     func(k string) string { return vars[k] },
+		now:        func() time.Time { return testNow },
+		version:    "v0.0.1",
+		sleep:      func(ctx context.Context, _ time.Duration) error { return ctx.Err() },
+		configPath: func() (string, error) { return path, nil },
+		runTokenCmd: func(context.Context, string) (string, error) {
+			t.Error("token.cmd must not run")
+			return "", errors.New("token.cmd must not run")
+		},
+	}
+}
+
 // runCLI runs the command tree in process with the given environment.
 func runCLI(t *testing.T, vars map[string]string, stdin string, args ...string) result {
 	t.Helper()
-	env := &cliEnv{
-		getenv:  func(k string) string { return vars[k] },
-		now:     func() time.Time { return testNow },
-		version: "v0.0.1",
-		sleep:   func(ctx context.Context, _ time.Duration) error { return ctx.Err() },
-	}
+	return runCLIWith(t, testEnv(t, vars), stdin, args...)
+}
+
+// runCLIWith runs the command tree in process with env.
+func runCLIWith(t *testing.T, env *cliEnv, stdin string, args ...string) result {
+	t.Helper()
 	root := newRootCmdWith(env)
 	var out, errb bytes.Buffer
 	root.SetOut(&out)

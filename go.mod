@@ -18,6 +18,7 @@ require (
 	connectrpc.com/connect v1.21.0
 	github.com/a-h/templ v0.3.1020
 	github.com/alecthomas/chroma/v2 v2.27.0
+	github.com/bnema/kvconf v0.1.2
 	github.com/bnema/zerowrap v1.4.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/spf13/cobra v1.10.2

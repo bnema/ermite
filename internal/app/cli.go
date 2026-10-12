@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -30,6 +31,23 @@ type cliEnv struct {
 	// defaults.
 	backoff client.Backoff
 	sleep   func(context.Context, time.Duration) error
+
+	// configPath returns the CLI config file path; nil means the default
+	// (ERMITE_CONFIG, else ~/.config/ermite/config).
+	configPath func() (string, error)
+	// runTokenCmd runs the token.cmd command line and returns its raw standard
+	// output; nil means running it with the system shell. Tests replace it.
+	runTokenCmd func(ctx context.Context, cmd string) (string, error)
+
+	// The config file is read at most once and token.cmd run at most once per
+	// process, and only when a command needs them (see cli_configfile.go).
+	fileOnce  sync.Once
+	file      *cliFile
+	filePath  string
+	fileErr   error
+	tokenOnce sync.Once
+	token     string
+	tokenErr  error
 }
 
 func defaultCLIEnv() *cliEnv {
@@ -54,9 +72,28 @@ func (e *cliEnv) ctx(cmd *cobra.Command) context.Context {
 	return ctx
 }
 
-// config reads and validates ERMITE_URL and ERMITE_TOKEN.
-func (e *cliEnv) config() (client.Config, error) {
-	cfg, err := client.ConfigFromEnv(e.getenv)
+// config builds the client configuration: ERMITE_URL and ERMITE_TOKEN win,
+// then the config file (url, and the output of token.cmd for the token).
+func (e *cliEnv) config(cmd *cobra.Command, warn bool) (client.Config, error) {
+	return e.buildConfig(cmd, warn, true)
+}
+
+// buildConfig is config; runTokenCmd false leaves token.cmd alone (ERMITE_TOKEN
+// is still used), for the calls that need no authentication.
+func (e *cliEnv) buildConfig(cmd *cobra.Command, warn, runTokenCmd bool) (client.Config, error) {
+	rawURL, err := e.resolveURL(cmd, warn)
+	if err != nil {
+		return client.Config{}, err
+	}
+	// A missing or invalid URL is reported before token.cmd gets to prompt.
+	if _, err := client.NewConfig(rawURL, ""); err != nil {
+		return client.Config{}, err
+	}
+	token, err := e.resolveToken(cmd, warn, runTokenCmd)
+	if err != nil {
+		return client.Config{}, err
+	}
+	cfg, err := client.NewConfig(rawURL, token)
 	if err != nil {
 		return cfg, err
 	}
@@ -67,10 +104,24 @@ func (e *cliEnv) config() (client.Config, error) {
 // client builds the API client. Commands warn when the token would travel in
 // the clear; completion stays silent.
 func (e *cliEnv) client(cmd *cobra.Command, warn bool) (*client.Client, error) {
-	cfg, err := e.config()
+	cfg, err := e.config(cmd, warn)
 	if err != nil {
 		return nil, err
 	}
+	return newClient(cmd, cfg, warn)
+}
+
+// clientNoTokenCmd is client without running token.cmd, for GetVersion, which
+// is anonymous.
+func (e *cliEnv) clientNoTokenCmd(cmd *cobra.Command, warn bool) (*client.Client, error) {
+	cfg, err := e.buildConfig(cmd, warn, false)
+	if err != nil {
+		return nil, err
+	}
+	return newClient(cmd, cfg, warn)
+}
+
+func newClient(cmd *cobra.Command, cfg client.Config, warn bool) (*client.Client, error) {
 	if w := cfg.InsecureTokenWarning(); w != "" && warn {
 		warnf(cmd, "%s", w)
 	}
