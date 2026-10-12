@@ -1352,14 +1352,14 @@ func Passkeys(l Layout, p PasskeysPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "<div class=\"passkey-add\"><label for=\"passkey-name\" class=\"sr\">Name of the new passkey</label> <input id=\"passkey-name\" type=\"text\" maxlength=\"64\" placeholder=\"Name, for example Pixel 9\" autocomplete=\"off\" data-passkey-name> <button type=\"button\" class=\"btn primary\" data-js data-passkey=\"register\" data-begin=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "<form class=\"passkey-add\" data-js data-passkey-form><label for=\"passkey-name\" class=\"sr\">Name of the new passkey</label> <input id=\"passkey-name\" type=\"text\" placeholder=\"Name, for example Pixel 9\" autocomplete=\"off\" data-passkey-name> <button type=\"submit\" class=\"btn primary\" data-passkey=\"register\" data-begin=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var68 string
 				templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue(p.Begin)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/pages.templ`, Line: 265, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/pages.templ`, Line: 265, Col: 90}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
 				if templ_7745c5c3_Err != nil {
@@ -1372,13 +1372,13 @@ func Passkeys(l Layout, p PasskeysPage) templ.Component {
 				var templ_7745c5c3_Var69 string
 				templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue(p.Finish)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/pages.templ`, Line: 265, Col: 123}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/pages.templ`, Line: 265, Col: 115}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "\">Add a passkey</button></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "\">Add a passkey</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

@@ -259,11 +259,11 @@ templ Passkeys(l Layout, p PasskeysPage) {
 		if p.Full {
 			<p class="dim">{ itoa(p.Max) } passkeys are registered, the most there can be. Remove one to add another.</p>
 		} else {
-			<div class="passkey-add">
+			<form class="passkey-add" data-js data-passkey-form>
 				<label for="passkey-name" class="sr">Name of the new passkey</label>
-				<input id="passkey-name" type="text" maxlength="64" placeholder="Name, for example Pixel 9" autocomplete="off" data-passkey-name/>
-				<button type="button" class="btn primary" data-js data-passkey="register" data-begin={ p.Begin } data-finish={ p.Finish }>Add a passkey</button>
-			</div>
+				<input id="passkey-name" type="text" placeholder="Name, for example Pixel 9" autocomplete="off" data-passkey-name/>
+				<button type="submit" class="btn primary" data-passkey="register" data-begin={ p.Begin } data-finish={ p.Finish }>Add a passkey</button>
+			</form>
 		}
 		<p class="dim" role="status" aria-live="polite" data-passkey-status></p>
 	}

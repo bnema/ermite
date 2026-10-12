@@ -364,6 +364,14 @@ func TestPasskeysPage(t *testing.T) {
 	assert.Contains(t, body, "never")
 	assert.Contains(t, body, `action="/-/passkeys/`+base64.RawURLEncoding.EncodeToString(list[0].ID)+`/remove"`)
 	assert.Contains(t, body, `data-passkey="register"`)
+	// TS-004: the name field and the add button are one form, so Enter submits.
+	form := body[strings.Index(body, "<form class=\"passkey-add\""):]
+	form = form[:strings.Index(form, "</form>")]
+	assert.Contains(t, form, "data-passkey-form")
+	assert.Contains(t, form, `data-passkey-name`)
+	assert.Contains(t, form, `type="submit"`)
+	assert.Contains(t, form, `data-passkey="register"`)
+	assert.NotContains(t, form, "action=", "the script handles the submit; the form never posts by itself")
 	assert.Contains(t, body, `data-begin="/-/passkeys/register/begin"`)
 	assert.Contains(t, body, `data-finish="/-/passkeys/register/finish"`)
 	assert.Contains(t, body, "data-passkey-status")

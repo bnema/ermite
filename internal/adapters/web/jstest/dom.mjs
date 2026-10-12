@@ -143,10 +143,11 @@ export class El {
     return null;
   }
   scrollIntoView() {}
+  focus() { dom.focused.push(this); }
   click() { dom.clicked.push(this); }
 }
 
-export const dom = { clicked: [], body: null, holdFrames: false, frames: new Map(), frameID: 0 };
+export const dom = { clicked: [], focused: [], body: null, holdFrames: false, frames: new Map(), frameID: 0 };
 
 // flushFrames runs the frames held since the last flush.
 export function flushFrames() {
@@ -160,6 +161,7 @@ export function flushFrames() {
 export function installDom({ parseHTML } = {}) {
   dom.body = new El('body');
   dom.clicked = [];
+  dom.focused = [];
   const doc = {
     body: dom.body,
     createElement(tag) {
