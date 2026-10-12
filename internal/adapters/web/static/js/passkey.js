@@ -1,9 +1,12 @@
 // passkey.js: sign in with a passkey (/-/login) and add one (/-/passkeys).
 //
-// One delegated click handler (the login button) and one delegated submit
-// handler (the "add a passkey" form, so that Enter in the name field works).
-// The button carries the two endpoints (data-begin, data-finish). The flow is
-// the one of the WebAuthn JSON API: POST begin, hand options.publicKey to the
+// One delegated submit handler for both pages: the sign-in button and the "add
+// a passkey" button are the submit buttons of a [data-passkey-form], so that a
+// click, Enter in the name field and the keyboard all end in the same place.
+// The button carries the two endpoints (data-begin, data-finish). While a
+// ceremony runs the button is disabled, and a disabled submit button makes the
+// form submit nothing: that is the only guard against a second prompt. The flow
+// is the one of the WebAuthn JSON API: POST begin, hand options.publicKey to the
 // browser (parse*OptionsFromJSON, then navigator.credentials.get|create), POST
 // the result (toJSON()) to finish. Nothing is inline: the CSP only allows
 // scripts from this origin. The core is tested in Node by
@@ -25,10 +28,6 @@ window.ermitePasskey = (() => {
 
   const statusEl = () => document.querySelector('[data-passkey-status]');
   const say = (text) => { const s = statusEl(); if (s) s.textContent = text; };
-
-  // A ceremony runs at a time: a second click or Enter while one waits for the
-  // authenticator would start another prompt.
-  let busy = false;
 
   // nameProblem says why a passkey name would be refused, or '' when it is fine.
   // It mirrors the server (domain.ParsePasskeyName): at most 64 bytes of UTF-8,
@@ -62,8 +61,10 @@ window.ermitePasskey = (() => {
   async function failure(res) {
     let reason = '';
     try { reason = (await res.json()).error || ''; } catch (_) { /* not JSON */ }
-    if (res.status === 403 && (!reason || reason === 'forbidden')) return new Error(SESSION_ENDED);
-    return new Error(reason || 'the server answered ' + res.status);
+    const e = new Error(reason || 'the server answered ' + res.status);
+    if (res.status === 403 && (!reason || reason === 'forbidden')) e.message = SESSION_ENDED;
+    e.status = res.status;
+    return e;
   }
 
   // begin posts to the begin endpoint and checks the shape of the answer.
@@ -74,7 +75,11 @@ window.ermitePasskey = (() => {
       init.body = JSON.stringify({ name });
     }
     const res = await fetch(btn.dataset.begin, init);
-    if (!res.ok) throw await failure(res);
+    if (!res.ok) {
+      const e = await failure(res);
+      e.atBegin = true; // a 400 here is the server refusing the name
+      throw e;
+    }
     let answer;
     try { answer = await res.json(); } catch (_) { throw new Error(UNEXPECTED); }
     const ok = answer && typeof answer.ceremony === 'string' && answer.ceremony !== '' &&
@@ -86,7 +91,7 @@ window.ermitePasskey = (() => {
 
   async function run(btn) {
     const kind = btn.dataset.passkey;
-    if (!parser[kind] || busy) return;
+    if (!parser[kind]) return;
     if (!supported(kind)) { say(UNSUPPORTED); return; }
 
     const nameEl = kind === 'register' ? document.querySelector('[data-passkey-name]') : null;
@@ -96,11 +101,11 @@ window.ermitePasskey = (() => {
       if (problem) { say(problem); nameEl.focus(); return; }
     }
 
-    busy = true;
     btn.disabled = true;
     btn.setAttribute('aria-busy', 'true');
     say(WAITING);
     let done = false;
+    let failed = null;
     try {
       const { ceremony, options } = await begin(btn, kind, name);
       const publicKey = window.PublicKeyCredential[parser[kind]](options.publicKey);
@@ -113,7 +118,7 @@ window.ermitePasskey = (() => {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ceremony, name, credential: cred.toJSON() }),
+        body: JSON.stringify({ ceremony, credential: cred.toJSON() }),
       });
       if (!finished.ok) throw await failure(finished);
       done = true;
@@ -121,30 +126,23 @@ window.ermitePasskey = (() => {
       else location.reload();
     } catch (e) {
       say(messageOf(e));
+      failed = e;
     } finally {
       if (!done) {
-        busy = false;
         btn.removeAttribute('aria-busy');
         btn.disabled = false;
-        // A disabled button cannot hold the focus: give it back once enabled.
-        btn.focus();
+        // A disabled button cannot hold the focus. When the server refused the
+        // name the field is what to fix; otherwise the button, to try again.
+        if (nameEl && failed && failed.atBegin && failed.status === 400) nameEl.focus();
+        else btn.focus();
       }
     }
   }
 
-  // click handles the login button. The add button is a submit button of a
-  // form: its click is left to become a submit, which submit() handles.
-  function click(ev) {
-    const btn = ev.target && ev.target.closest && ev.target.closest('[data-passkey]');
-    if (!btn || btn.disabled || btn.closest('[data-passkey-form]')) return;
-    if (ev.preventDefault) ev.preventDefault();
-    return run(btn);
-  }
-
-  // submit handles the add form, by a click on its button or Enter in the field.
+  // submit handles both forms. The event comes from the form itself.
   function submit(ev) {
-    const form = ev.target && ev.target.closest && ev.target.closest('[data-passkey-form]');
-    if (!form) return;
+    const form = ev.target;
+    if (!form || typeof form.matches !== 'function' || !form.matches('[data-passkey-form]')) return;
     if (ev.preventDefault) ev.preventDefault(); // never a real navigation
     const btn = form.querySelector('[data-passkey]');
     if (!btn || btn.disabled) return;
@@ -164,12 +162,8 @@ window.ermitePasskey = (() => {
   }
 
   if (typeof document.addEventListener === 'function') {
-    document.addEventListener('click', click);
     document.addEventListener('submit', submit);
     init();
   }
-  // reset forgets a ceremony in progress. A page never needs it (a success
-  // navigates away); the tests share one module between pages.
-  const reset = () => { busy = false; };
-  return { click, submit, init, run, nameProblem, reset };
+  return { submit, init, nameProblem };
 })();

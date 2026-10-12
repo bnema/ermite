@@ -189,9 +189,9 @@ templ PasskeyLogin(l Layout, p PasskeyLoginPage) {
 	@Shell(l, nil) {
 		<section class="state" aria-labelledby="state-title">
 			<h1 id="state-title">{ p.Title }</h1>
-			<p class="state-act">
-				<button type="button" class="btn primary" data-js data-passkey="login" data-begin={ p.Begin } data-finish={ p.Finish }>{ p.Button }</button>
-			</p>
+			<form class="state-act" data-js data-passkey-form>
+				<button type="submit" class="btn primary" data-passkey="login" data-begin={ p.Begin } data-finish={ p.Finish }>{ p.Button }</button>
+			</form>
 			<p class="dim" role="status" aria-live="polite" data-passkey-status></p>
 			for _, line := range p.Lines {
 				<p class="dim">{ line }</p>

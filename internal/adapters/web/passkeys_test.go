@@ -461,6 +461,17 @@ func TestPasskeyLoginPage(t *testing.T) {
 	assert.Contains(t, body, "<title>sign in")
 	assert.Contains(t, body, "Sign in with a passkey")
 	assert.Contains(t, body, `data-passkey="login"`)
+	// One entry point for the script: the button is the submit button of a form.
+	start := strings.Index(body, "<form class=\"state-act\"")
+	require.GreaterOrEqual(t, start, 0, "the sign-in form is on the page")
+	form := body[start:]
+	end := strings.Index(form, "</form>")
+	require.GreaterOrEqual(t, end, 0)
+	form = form[:end]
+	assert.Contains(t, form, "data-passkey-form")
+	assert.Contains(t, form, `type="submit"`)
+	assert.Contains(t, form, `data-passkey="login"`)
+	assert.NotContains(t, form, "action=", "the script handles the submit; the form never posts by itself")
 	assert.Contains(t, body, `data-begin="/-/passkeys/login/begin"`)
 	assert.Contains(t, body, `data-finish="/-/passkeys/login/finish"`)
 	assert.Contains(t, body, "ermite web login")
