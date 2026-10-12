@@ -213,3 +213,28 @@ func TestBranchPrefixesOfPrincipal(t *testing.T) {
 	assert.Equal(t, []string{"a/"}, p.BranchPrefixes())
 	assert.Empty(t, domain.Root().BranchPrefixes())
 }
+
+func TestBranchLimitedAndCoversBranchPrefix(t *testing.T) {
+	t.Parallel()
+	free := domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes()})
+	assert.False(t, free.IsBranchLimited())
+	assert.False(t, free.CoversBranchPrefix("agent/x"), "no prefixes cover nothing: callers test IsBranchLimited first")
+	assert.False(t, domain.Root().IsBranchLimited())
+	assert.False(t, domain.Owner().IsBranchLimited())
+	assert.False(t, domain.Anonymous().IsBranchLimited())
+
+	limited := domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes(), BranchPrefixes: []string{"agent/claude/", "bot/"}})
+	assert.True(t, limited.IsBranchLimited())
+	for s, want := range map[string]bool{
+		"agent/claude/x": true, "agent/claude/": true, "bot/y": true,
+		"agent/claude": false, "agent/claudex/y": false, "main": false, "": false, "xbot/y": false,
+	} {
+		assert.Equal(t, want, limited.CoversBranchPrefix(s), "%q", s)
+	}
+
+	// A corrupt empty prefix still limits, and covers nothing.
+	corrupt := domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes(), BranchPrefixes: []string{""}})
+	assert.True(t, corrupt.IsBranchLimited())
+	assert.False(t, corrupt.CoversBranchPrefix("main"))
+	assert.False(t, corrupt.CoversBranchPrefix(""))
+}

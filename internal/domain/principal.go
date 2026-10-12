@@ -82,7 +82,7 @@ func (p Principal) HasOwnerRights() bool {
 	if p.IsRoot() {
 		return true
 	}
-	if p.kind != kindToken || len(p.repos) > 0 || len(p.branchPrefixes) > 0 {
+	if p.kind != kindToken || len(p.repos) > 0 || p.IsBranchLimited() {
 		return false
 	}
 	for _, s := range AllScopes() {
@@ -113,6 +113,24 @@ func (p Principal) Repos() []RepoName { return slices.Clone(p.repos) }
 // every branch.
 func (p Principal) BranchPrefixes() []string { return slices.Clone(p.branchPrefixes) }
 
+// IsBranchLimited reports whether p is limited to branch prefixes. A limited
+// principal has no owner rights, creates no repository and administers none.
+func (p Principal) IsBranchLimited() bool { return len(p.branchPrefixes) > 0 }
+
+// CoversBranchPrefix reports whether s lies under one of the branch prefixes of
+// p: s starts with one of them. An empty prefix, which ParseBranchPrefix never
+// lets in, covers nothing instead of everything, so that a corrupt record
+// limits a token and never widens it. It is false without prefixes: callers
+// test IsBranchLimited first.
+func (p Principal) CoversBranchPrefix(s string) bool {
+	for _, prefix := range p.branchPrefixes {
+		if prefix != "" && strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // AllowsRef reports whether p may write the ref (create, update or delete
 // it). Without branch prefixes every ref is allowed. With them, only a branch
 // "refs/heads/<name>" under one of the prefixes is: tags, every other ref and
@@ -126,7 +144,7 @@ func (p Principal) BranchPrefixes() []string { return slices.Clone(p.branchPrefi
 // is not "refs/heads/agent/x". On a case-insensitive file system the two could
 // name the same ref and the prefixes would not hold.
 func (p Principal) AllowsRef(ref string) bool {
-	if len(p.branchPrefixes) == 0 {
+	if !p.IsBranchLimited() {
 		return true
 	}
 	name, ok := strings.CutPrefix(ref, "refs/heads/")
@@ -136,14 +154,7 @@ func (p Principal) AllowsRef(ref string) bool {
 	if _, err := ParseBranchName(name); err != nil {
 		return false
 	}
-	for _, prefix := range p.branchPrefixes {
-		// An empty prefix, which ParseBranchPrefix never lets in, matches
-		// nothing instead of everything: a limited token fails closed.
-		if prefix != "" && strings.HasPrefix(name, prefix) {
-			return true
-		}
-	}
-	return false
+	return p.CoversBranchPrefix(name)
 }
 
 // ExpiresAt returns the expiry of a stored token; zero means none.

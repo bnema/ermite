@@ -149,8 +149,9 @@ func buildToken(params ports.CreateTokenParams, now time.Time) (domain.Token, er
 }
 
 // checkNoEscalation enforces that tok is within the rights of p: every scope
-// held by p, the repositories within its list and the expiry not beyond its
-// own. Root has no limits.
+// held by p, the repositories within its list, the branch prefixes within its
+// own (a limited p only makes tokens that are limited too, each prefix under
+// one of its own) and the expiry not beyond its own. Root has no limits.
 func checkNoEscalation(p domain.Principal, tok domain.Token) error {
 	if p.IsRoot() {
 		return nil
@@ -170,12 +171,12 @@ func checkNoEscalation(p domain.Principal, tok domain.Token) error {
 			}
 		}
 	}
-	if own := p.BranchPrefixes(); len(own) > 0 {
+	if p.IsBranchLimited() {
 		if len(tok.BranchPrefixes) == 0 {
 			return fmt.Errorf("%w: the creating token is limited to branch prefixes, so the new token must be too", domain.ErrForbidden)
 		}
 		for _, bp := range tok.BranchPrefixes {
-			if !slices.ContainsFunc(own, func(o string) bool { return o != "" && strings.HasPrefix(bp, o) }) {
+			if !p.CoversBranchPrefix(bp) {
 				return fmt.Errorf("%w: branch prefix %s is outside the creating token", domain.ErrForbidden, bp)
 			}
 		}
@@ -189,7 +190,7 @@ func checkNoEscalation(p domain.Principal, tok domain.Token) error {
 }
 
 // List returns the stored tokens the principal could have created, oldest
-// first: those whose scopes, repositories and expiry lie within its own (the
+// first: those whose scopes, repositories, branch prefixes and expiry lie within its own (the
 // no-escalation rule of Create). Root sees every token. It needs token:admin.
 func (t *Tokens) List(ctx context.Context, p domain.Principal) ([]domain.Token, error) {
 	if err := requireTokenAdmin(p); err != nil {
@@ -211,7 +212,7 @@ func (t *Tokens) List(ctx context.Context, p domain.Principal) ([]domain.Token, 
 // Create), so that it does not show itself. Root may revoke any token.
 //
 // A token that has owner rights (HasOwnerRights: every scope, no repository
-// list) could open web sessions, so revoking it also signs every browser out,
+// list and no branch prefixes) could open web sessions, so revoking it also signs every browser out,
 // as `ermite web logout --all` does: web sessions are not tied to the token
 // that opened them. The revocation holds even if signing out fails, which is
 // then reported as an error.

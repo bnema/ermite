@@ -60,9 +60,6 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	if err := adminAccess(p, repo); err != nil {
 		return domain.Repo{}, err
 	}
-	if !canAdminRepo(p) {
-		return domain.Repo{}, fmt.Errorf("%w: a token limited to branch prefixes may not change repository settings", domain.ErrForbidden)
-	}
 	before := repo
 	if params.Description == nil && params.Visibility == nil && params.DefaultBranch == nil &&
 		params.AllowedMergeModes == nil && params.FailingChecksBlock == nil {
@@ -186,9 +183,6 @@ func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.Repo
 	}
 	if err := adminAccess(p, repo); err != nil {
 		return err
-	}
-	if !canAdminRepo(p) {
-		return fmt.Errorf("%w: a token limited to branch prefixes may not delete a repository", domain.ErrForbidden)
 	}
 	log := zerowrap.FromCtx(ctx)
 	switch err := r.git.Trash(ctx, name); {
