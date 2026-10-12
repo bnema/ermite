@@ -125,6 +125,11 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if len(req.GetBranchPrefixes()) > 0 {
+			if err := requireBranchPrefixes(env.ctx(cmd), c); err != nil {
+				return err
+			}
+		}
 		res, err := c.Tokens().CreateToken(env.ctx(cmd), connect.NewRequest(req))
 		if err != nil {
 			return c.Describe(err)
@@ -137,7 +142,22 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 	return cmd
 }
 
-// checkBranchPrefixes refuses to hand out a token that is less limited than
+// requireBranchPrefixes refuses, before anything is created, to ask a server
+// for a branch-limited token when it does not list token.branch_prefixes: such
+// a server ignores the field. A server whose features cannot be read is refused
+// too (fail closed).
+func requireBranchPrefixes(ctx context.Context, c *client.Client) error {
+	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	if err != nil {
+		return c.Describe(err)
+	}
+	if !slices.Contains(res.Msg.GetFeatures(), client.FeatureTokenBranchPrefixes) {
+		return fmt.Errorf("the server does not support %s, so it would ignore --branch-prefix and create an unlimited token: nothing was created (upgrade the server, see `ermite version`)", client.FeatureTokenBranchPrefixes)
+	}
+	return nil
+}
+
+// checkBranchPrefixes is the backstop of requireBranchPrefixes: it refuses to hand out a token that is less limited than
 // asked for. A server that predates branch prefixes ignores the field and
 // creates an unlimited token: the secret is then not printed.
 func checkBranchPrefixes(req *ermite.CreateTokenRequest, got *ermite.Token) error {

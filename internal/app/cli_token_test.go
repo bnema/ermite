@@ -42,6 +42,24 @@ func TestTokenCreateMapsFlags(t *testing.T) {
 	assert.NotContains(t, res.stderr, "SECRETVALUE")
 }
 
+// lastCreateToken returns the last CreateToken request the fake received.
+func lastCreateToken(t *testing.T, f *fakeAPI) *ermite.CreateTokenRequest {
+	t.Helper()
+	calls, reqs := f.snapshot()
+	for i := len(calls) - 1; i >= 0; i-- {
+		if calls[i] == "CreateToken" {
+			return reqs[i].(*ermite.CreateTokenRequest)
+		}
+	}
+	t.Fatal("no CreateToken call")
+	return nil
+}
+
+// withBranchPrefixes is a GetVersion that lists token.branch_prefixes.
+func withBranchPrefixes(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+	return &ermite.GetVersionResponse{Version: "v0.4.0", Features: []string{"token.branch_prefixes"}}, nil
+}
+
 func TestTokenCreateBranchPrefixes(t *testing.T) {
 	echo := func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
 		return &ermite.CreateTokenResponse{
@@ -54,11 +72,10 @@ func TestTokenCreateBranchPrefixes(t *testing.T) {
 	}
 
 	t.Run("maps the repeatable flag, trims and drops duplicates", func(t *testing.T) {
-		f := &fakeAPI{createToken: echo}
+		f := &fakeAPI{createToken: echo, getVersion: withBranchPrefixes}
 		res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "claude", "--preset", "agent", "--repo", "alpha",
 			"--branch-prefix", "agent/claude/", "--branch-prefix", " bot/ ", "--branch-prefix", "agent/claude/").ok(t)
-		_, reqs := f.snapshot()
-		assert.Equal(t, []string{"agent/claude/", "bot/"}, reqs[0].(*ermite.CreateTokenRequest).GetBranchPrefixes())
+		assert.Equal(t, []string{"agent/claude/", "bot/"}, lastCreateToken(t, f).GetBranchPrefixes())
 		assert.Equal(t, "ermite_S\n", res.stdout)
 		assert.Contains(t, res.stderr, "branches")
 		assert.Contains(t, res.stderr, "agent/claude/, bot/")
@@ -73,9 +90,36 @@ func TestTokenCreateBranchPrefixes(t *testing.T) {
 	})
 
 	t.Run("json", func(t *testing.T) {
-		f := &fakeAPI{createToken: echo}
+		f := &fakeAPI{createToken: echo, getVersion: withBranchPrefixes}
 		res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "l", "--scope", "repo:write", "--branch-prefix", "a/", "--json").ok(t)
 		assert.JSONEq(t, `{"id":"tok1","label":"l","scopes":["repo:write"],"repos":[],"branch_prefixes":["a/"],"expires_at":null,"created_at":"2026-10-10T12:00:00Z","last_used_at":null,"secret":"ermite_S"}`, res.stdout)
+	})
+
+	t.Run("a server without the feature is asked nothing", func(t *testing.T) {
+		for name, version := range map[string]func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error){
+			"feature missing": func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+				return &ermite.GetVersionResponse{Version: "v0.3.0", Features: []string{"repo.update", "session"}}, nil
+			},
+			"version unreadable": nil, // the fake answers unimplemented
+		} {
+			f := &fakeAPI{createToken: echo, getVersion: version}
+			res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "agent", "--branch-prefix", "agent/x/")
+			require.Error(t, res.err, name)
+			if name == "feature missing" {
+				assert.Contains(t, res.err.Error(), "token.branch_prefixes", name)
+				assert.Contains(t, res.err.Error(), "nothing was created", name)
+			}
+			calls, _ := f.snapshot()
+			assert.NotContains(t, calls, "CreateToken", "%s: no token is created", name)
+			assert.Empty(t, res.stdout, name)
+		}
+	})
+
+	t.Run("without --branch-prefix the features are not read", func(t *testing.T) {
+		f := &fakeAPI{createToken: echo} // no getVersion: it would answer unimplemented
+		runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "ci").ok(t)
+		calls, _ := f.snapshot()
+		assert.NotContains(t, calls, "GetVersion")
 	})
 
 	t.Run("a server that ignores the field does not hand out an unlimited token", func(t *testing.T) {
@@ -84,7 +128,7 @@ func TestTokenCreateBranchPrefixes(t *testing.T) {
 				Token:  &ermite.Token{Id: "tok9", Label: r.GetLabel(), Scopes: r.GetScopes(), CreatedAt: ts("2026-10-10T12:00:00Z")},
 				Secret: "ermite_UNLIMITED",
 			}, nil
-		}}
+		}, getVersion: withBranchPrefixes}
 		res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "agent", "--branch-prefix", "agent/x/")
 		require.Error(t, res.err)
 		assert.Contains(t, res.err.Error(), "without the requested branch prefixes")
