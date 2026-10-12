@@ -300,6 +300,12 @@ func (v JobView) StepRanges() []domain.StepRange { return domain.StepRanges(v.St
 type ListRunsParams struct {
 	PageSize  int
 	PageToken string
+	// Workflow restricts the result to a workflow file: its path or its file
+	// name. Branch restricts it to the runs of a branch, by short name. Status
+	// restricts it to the runs of that status. Empty means no restriction.
+	Workflow string
+	Branch   string
+	Status   domain.CIStatus
 }
 
 // RunPage is a page of runs, newest first.

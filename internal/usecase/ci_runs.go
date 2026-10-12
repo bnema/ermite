@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -39,16 +40,47 @@ func (c *CI) ListRuns(ctx context.Context, p domain.Principal, name domain.RepoN
 		}
 		before = id
 	}
-	runs, err := c.cfg.Store.ListRuns(ctx, name, before, n+1)
-	if err != nil {
-		return ports.RunPage{}, err
+	match := runFilter(params)
+	// The store returns runs by id; the filters are applied while paging, so a
+	// page of a filtered listing is full unless the runs ran out.
+	var kept []domain.CIRun
+	cursor := before
+	for len(kept) <= n {
+		batch, err := c.cfg.Store.ListRuns(ctx, name, cursor, n+1)
+		if err != nil {
+			return ports.RunPage{}, err
+		}
+		for _, r := range batch {
+			if match(r) {
+				kept = append(kept, r)
+			}
+		}
+		if len(batch) < n+1 {
+			break
+		}
+		cursor = batch[len(batch)-1].ID
 	}
-	page := ports.RunPage{Runs: runs}
-	if len(runs) > n {
-		page.Runs = runs[:n]
-		page.NextPageToken = base64.RawURLEncoding.EncodeToString([]byte(runTokenPrefix + strconv.FormatInt(runs[n-1].ID, 10)))
+	page := ports.RunPage{Runs: kept}
+	if len(kept) > n {
+		page.Runs = kept[:n]
+		page.NextPageToken = base64.RawURLEncoding.EncodeToString([]byte(runTokenPrefix + strconv.FormatInt(kept[n-1].ID, 10)))
 	}
 	return page, nil
+}
+
+// runFilter returns the test of the filters of a listing.
+func runFilter(p ports.ListRunsParams) func(domain.CIRun) bool {
+	return func(r domain.CIRun) bool {
+		switch {
+		case p.Status != "" && r.Status != p.Status:
+			return false
+		case p.Branch != "" && r.Ref != "refs/heads/"+p.Branch:
+			return false
+		case p.Workflow != "" && r.WorkflowPath != p.Workflow && path.Base(r.WorkflowPath) != p.Workflow:
+			return false
+		}
+		return true
+	}
 }
 
 // runOf finds a run of the repository; a run of another repository is not

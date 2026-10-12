@@ -191,8 +191,22 @@ func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.Repo
 	case err != nil:
 		return fmt.Errorf("trash repository %q: %w", name, err)
 	}
+	var runIDs []int64
+	if r.ci != nil {
+		// Listed before the records go: the logs are found by run id.
+		if ids, err := r.ci.RunIDs(ctx, name); err == nil {
+			runIDs = ids
+		} else {
+			log.Warn().Err(err).Str("repo", name.String()).Msg("list the CI runs of the repository; their logs are left to the sweep")
+		}
+	}
 	if err := r.meta.Delete(ctx, name); err != nil {
 		return fmt.Errorf("delete metadata of %q: %w", name, err)
+	}
+	if len(runIDs) > 0 {
+		if err := r.ci.RemoveLogs(context.WithoutCancel(ctx), runIDs); err != nil {
+			log.Warn().Err(err).Str("repo", name.String()).Msg("remove the CI logs of the repository; the sweep will")
+		}
 	}
 	log.Info().Str("repo", name.String()).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("repository deleted")
 	r.bus.Publish(ctx, domain.RepoDeleted{Repo: name, Visibility: repo.Visibility, At: r.clock.Now().UTC(), CreatedAt: repo.CreatedAt})

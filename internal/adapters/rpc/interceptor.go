@@ -69,6 +69,13 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 	if !present {
 		return ctx, nil
 	}
+	if runnerSecretProcedures[procedure] {
+		// A runner or job token: not a stored token. The use case checks it
+		// and answers unauthenticated; runnerService.failed counts the
+		// failures against the client address.
+		ctx = context.WithValue(ctx, addrKey{}, addr)
+		return context.WithValue(ctx, secretKey{}, secret), nil
+	}
 	p, err := i.auth.Authenticate(ctx, secret)
 	switch {
 	case errors.Is(err, domain.ErrUnauthenticated):
@@ -82,6 +89,15 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 }
 
 type clientKey struct{}
+
+// addrKey carries the normalized client address of a call whose credential the
+// use case checks.
+type addrKey struct{}
+
+func addrFromContext(ctx context.Context) string {
+	a, _ := ctx.Value(addrKey{}).(string)
+	return a
+}
 
 // clientFromContext returns the normalized address of the client of a call:
 // its peer, empty when there is none.
