@@ -177,8 +177,11 @@ func (c *CI) collect(ctx context.Context, repo domain.RepoName, u domain.RefUpda
 	f.commit = res.CommitID
 	if isTag {
 		cs, _, err := c.cfg.Git.ListRange(ctx, repo, domain.ObjectID{}, f.commit, 1)
-		if err != nil || len(cs) == 0 {
+		if err != nil {
 			return f, fmt.Errorf("read the commit of the tag: %w", err)
+		}
+		if len(cs) == 0 {
+			return f, fmt.Errorf("read the commit of the tag: %w", domain.ErrNotFound)
 		}
 		f.head = cs[0]
 		return f, nil
@@ -199,8 +202,22 @@ func (c *CI) collect(ctx context.Context, repo domain.RepoName, u domain.RefUpda
 		exclude = base
 	}
 	cs, more, err := c.cfg.Git.ListRange(ctx, repo, exclude, f.commit, ports.MaxCommitLimit)
-	if err != nil || len(cs) == 0 {
+	if err != nil {
 		return f, fmt.Errorf("read the commits of the push: %w", err)
+	}
+	if len(cs) == 0 {
+		// A new branch at a commit the default branch has, or a branch rewound
+		// to an ancestor: no new commit, no changed file. GitHub still runs
+		// the push workflows that have no paths filter, for the head commit.
+		head, _, err := c.cfg.Git.ListRange(ctx, repo, domain.ObjectID{}, f.commit, 1)
+		if err != nil {
+			return f, fmt.Errorf("read the head commit of the push: %w", err)
+		}
+		if len(head) == 0 {
+			return f, fmt.Errorf("read the head commit of the push: %w", domain.ErrNotFound)
+		}
+		f.head = head[0]
+		return f, nil
 	}
 	f.head = cs[0]
 	n := min(len(cs), maxPushCommits)

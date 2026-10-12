@@ -556,3 +556,27 @@ func TestCIEventsAreStreamedOnTheRepositoryTopic(t *testing.T) {
 	require.NoError(t, err)
 	c.sentinel(t, home, "sentinel")
 }
+
+// A new branch at a commit that already exists, and a branch rewound to an
+// ancestor, bring no new commit: GitHub still runs the push workflows (those
+// without a paths filter, as no file changed).
+func TestCIPushWithoutNewCommitsStillRuns(t *testing.T) {
+	c := newCIHarness(t, nil)
+	c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{".github/workflows/any.yml": workflowWith("branches: ['**']")}, "")
+	c.waitFor("main runs", func() bool { return len(c.runs()) == 1 })
+	first := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+
+	// A new branch at the commit main already has.
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), "HEAD:refs/heads/same")
+	c.waitFor("the new branch runs", func() bool { return len(c.runs()) == 2 })
+	assert.Equal(t, "refs/heads/same", c.runs()[0].GetRef())
+	assert.Equal(t, first, c.runs()[0].GetSha())
+
+	// A branch moved forward, then rewound to its ancestor (a forced push).
+	c.push("main", map[string]string{"a.txt": "a\n"}, "")
+	c.waitFor("the push runs", func() bool { return len(c.runs()) == 3 })
+	c.mustGit(c.wt, "push", "-q", "-f", c.urlAuth(adminToken, "/proj.git"), first+":refs/heads/main")
+	c.waitFor("the rewind runs", func() bool { return len(c.runs()) == 4 })
+	assert.Equal(t, first, c.runs()[0].GetSha())
+}
