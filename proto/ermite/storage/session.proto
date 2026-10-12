@@ -6,6 +6,8 @@ syntax = "proto3";
 
 package ermite.storage;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
 
 // SessionKey is stored under the key "session/key": the HS256 secret that
@@ -21,4 +23,33 @@ message SessionKey {
 // Absent means 0.
 message SessionEpoch {
   uint64 epoch = 1;
+}
+
+// PasskeyUser is stored under the key "passkey/user": the WebAuthn user
+// handle of the owner, generated on first use. It identifies the owner to
+// authenticators and never changes.
+message PasskeyUser {
+  // 32 random bytes.
+  bytes handle = 1;
+}
+
+// Passkey is stored under the key "passkey/cred/<base64url credential id>":
+// a WebAuthn credential that can sign the owner in (ADR 0026). It holds the
+// public key only.
+message Passkey {
+  // Credential id, at most 1023 bytes.
+  bytes id = 1;
+  // Name given by the owner.
+  string name = 2;
+  // COSE public key.
+  bytes public_key = 3;
+  string attestation_type = 4;
+  repeated string transports = 5;
+  // Last signature counter; 0 for synced passkeys.
+  uint32 sign_count = 6;
+  bool backup_eligible = 7;
+  bool backup_state = 8;
+  google.protobuf.Timestamp created_at = 9;
+  // Unset until the passkey is first used.
+  google.protobuf.Timestamp last_used_at = 10;
 }
