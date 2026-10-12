@@ -408,15 +408,13 @@ func (w *pathWalker) walk(tree git.ObjectID) error {
 }
 
 // add lists the file name of the current directory, and says whether the walk
-// goes on. A path that is not addressable is not written to a chunk.
+// goes on. PathList.Add filters the paths that are not addressable; their
+// bytes stay in the chunk, which is rare enough not to matter.
 func (w *pathWalker) add(name []byte) bool {
 	mark := len(w.prefix)
 	w.prefix = append(w.prefix, name...)
 	path := w.prefix
 	w.prefix = w.prefix[:mark]
-	if !domain.IsAddressablePathBytes(path) {
-		return true
-	}
 	if w.chunk.Cap()-w.chunk.Len() < len(path) {
 		w.chunk = strings.Builder{}
 		w.chunk.Grow(max(pathChunk, len(path)))

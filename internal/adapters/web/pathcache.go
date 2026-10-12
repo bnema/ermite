@@ -173,7 +173,6 @@ func (c *pathCache) joinOrStart(ctx context.Context, key, id string, build func(
 // nobody above this goroutine could recover it and it would end the process.
 func (c *pathCache) run(ctx context.Context, key, id string, f *pathBuild, build func() ([]byte, error)) {
 	defer func() {
-		defer func() { <-c.slots }()
 		if r := recover(); r != nil {
 			f.body, f.err = nil, errBuildPanicked
 			zerowrap.Ctx(ctx).Error().Interface("panic", r).Str("stack", string(debug.Stack())).Msg("path list build panicked")
@@ -191,5 +190,6 @@ func (c *pathCache) finish(key, id string, f *pathBuild) {
 		c.putLocked(id, f.body)
 	}
 	c.mu.Unlock()
+	<-c.slots // free before the waiters wake: one of them may start the next build
 	close(f.done)
 }
