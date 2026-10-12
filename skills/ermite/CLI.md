@@ -78,7 +78,7 @@ Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `
 |---|---|
 | `serve` | configured by `ERMITE_*` environment variables only (see the project README) |
 | `version [--json]` | client version; with a server URL (`ERMITE_URL` or the config file), the server version and features |
-| `config show` / `config set <url\|token.cmd> <value>` / `config unset <key>` | the CLI config file; `token.cmd` is a command that prints the token (any secret manager), never the token itself; `show` never runs it |
+| `config show [--json]` / `config set <url\|token.cmd> <value>` / `config unset <key>` | the CLI config file; `token.cmd` is a command that prints the token (any secret manager), never the token itself; `show` never runs it |
 | `signing-key show` | public key and `allowed_signers` line to check squash commits with `git verify-commit` |
 | `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope and no repository list; the link is a secret |
 | `web logout --all` | signs every browser out |

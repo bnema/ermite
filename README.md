@@ -52,10 +52,10 @@ token.cmd = pass show ermite/token
 ```sh
 ermite config set url https://git.example.com
 ermite config set token.cmd 'pass show ermite/token'   # or: gopass show -o ermite/token, op read op://vault/ermite/token, secret-tool lookup service ermite
-ermite config show                                      # path and stored values; unset removes a key
+ermite config show [--json]                             # path and stored values; unset removes a key
 ```
 
-`token.cmd` runs with `sh -c` (`cmd /C` on Windows) only when a command needs the token, at most once per run, with your environment and, when standard input is a terminal, that terminal (so a pinentry or biometric prompt works; otherwise it reads nothing). It must print the token alone on one line, in under 4 KiB, within 60 seconds. It is not run when `ERMITE_TOKEN` is set, nor by `ermite version` or `ermite config`, and not when the config file, or the directory holding it, can be written by other users or the file belongs to another user. It belongs to the server of the file: when `ERMITE_URL` names a different server than the file's `url`, it is not run and the call is anonymous (with a notice; set `ERMITE_TOKEN` to authenticate there). A failure is reported in one line without its output. Shell completion never runs it: it is anonymous unless `ERMITE_TOKEN` is set.
+`token.cmd` runs with `sh -c` (`cmd /C` on Windows) only when a command needs the token, at most once per run, with your environment and, when standard input is a terminal, that terminal (so a pinentry or biometric prompt works; otherwise it reads nothing). On a timeout or when ermite is interrupted or terminated, the command and everything it started are killed (when standard input is a terminal, only the shell is, so that prompts keep working). It must print the token alone on one line, in under 4 KiB, within 60 seconds. It is not run when `ERMITE_TOKEN` is set, nor by `ermite version` or `ermite config`, and not when the config file, or the directory holding it, can be written by other users or the file belongs to another user (`ermite config show` and `set` warn about it). On Windows this check does not exist: keep the file in your own profile, the default place. It belongs to the server of the file: when `ERMITE_URL` names a different server than the file's `url`, it is not run and the call is anonymous (with a notice; set `ERMITE_TOKEN` to authenticate there). A failure is reported in one line without its output. Shell completion never runs it: it is anonymous unless `ERMITE_TOKEN` is set.
 
 ```sh
 export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...
@@ -68,7 +68,7 @@ ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <rep
 ermite web login                # prints a one-time sign-in link (60 s)
 ermite web logout --all         # signs every browser out
 ermite signing-key show         # public key and allowed_signers line of squash commits
-ermite config show | set <url|token.cmd> <value> | unset <key>   # the CLI config file
+ermite config show [--json] | set <url|token.cmd> <value> | unset <key>   # the CLI config file
 ermite version                  # client and server, warns about missing server features
 ermite watch [repo] [--json]    # follows events, reconnects and resumes
 ```
