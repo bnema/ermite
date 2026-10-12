@@ -136,7 +136,7 @@ func TestPasskeyAnonymousPostsAreExact(t *testing.T) {
 func TestPasskeyLoginBegin(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyServer(t)
-	f.passkeys.EXPECT().BeginLogin(mock.Anything).Return("cer1", []byte(`{"publicKey":{"challenge":"abc"}}`), nil).Once()
+	f.passkeys.EXPECT().BeginLogin(mock.Anything, mock.Anything).Return("cer1", []byte(`{"publicKey":{"challenge":"abc"}}`), nil).Once()
 
 	rec := f.do(t, req{method: "POST", target: beginLogin, origin: forgeOrigin})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -149,7 +149,7 @@ func TestPasskeyLoginBegin(t *testing.T) {
 func TestPasskeyLoginBeginFailure(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyServer(t)
-	f.passkeys.EXPECT().BeginLogin(mock.Anything).Return("", nil, errors.New("secret detail")).Once()
+	f.passkeys.EXPECT().BeginLogin(mock.Anything, mock.Anything).Return("", nil, errors.New("secret detail")).Once()
 	rec := f.do(t, req{method: "POST", target: beginLogin, origin: forgeOrigin})
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "secret detail")
@@ -295,8 +295,8 @@ func TestPasskeyFinishMalformed(t *testing.T) {
 func TestPasskeyRegistration(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyServer(t)
-	f.passkeys.EXPECT().BeginRegistration(mock.Anything, domain.Owner()).Return("cer9", []byte(`{"publicKey":{}}`), nil).Once()
-	rec := f.do(t, req{method: "POST", target: beginRegister, origin: forgeOrigin, cookie: "tok"})
+	f.passkeys.EXPECT().BeginRegistration(mock.Anything, domain.Owner(), "").Return("cer9", []byte(`{"publicKey":{}}`), nil).Once()
+	rec := f.do(t, postJSON(beginRegister, "tok", `{}`))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.JSONEq(t, `{"ceremony":"cer9","options":{"publicKey":{}}}`, rec.Body.String())
 	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
@@ -338,8 +338,8 @@ func TestPasskeyRegistrationErrors(t *testing.T) {
 	}
 
 	f := newPasskeyServer(t)
-	f.passkeys.EXPECT().BeginRegistration(mock.Anything, mock.Anything).Return("", nil, domain.ErrResourceExhausted).Once()
-	rec := f.do(t, req{method: "POST", target: beginRegister, origin: forgeOrigin, cookie: "tok"})
+	f.passkeys.EXPECT().BeginRegistration(mock.Anything, mock.Anything, mock.Anything).Return("", nil, domain.ErrResourceExhausted).Once()
+	rec := f.do(t, postJSON(beginRegister, "tok", `{}`))
 	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
 }
 
@@ -544,4 +544,68 @@ func TestIsPasskeyLoginPath(t *testing.T) {
 	for _, p := range []string{"", "/-/passkeys/login", "/-/passkeys/login/begin/", "/-/passkeys/register/begin", "/-/passkeys/Login/begin", "/x/-/passkeys/login/begin"} {
 		assert.False(t, isPasskeyLoginPath(p), p)
 	}
+}
+
+// GO-005: a blocked client gets 429 whatever it sends, and a malformed finish
+// is a 4xx that does not count as a failed authentication.
+func TestPasskeyLoginFinishBlockedBeforeBodyChecks(t *testing.T) {
+	t.Parallel()
+	f := newPasskeyServer(t)
+	f.lim.blocked = true
+	for _, r := range []req{
+		{method: "POST", target: finishLogin, origin: forgeOrigin, contentType: "text/plain", body: "x"},
+		postJSON(finishLogin, "", `not json`),
+		postJSON(finishLogin, "", strings.Repeat("a", 64<<10+1)),
+	} {
+		rec := f.do(t, r)
+		assert.Equal(t, http.StatusTooManyRequests, rec.Code, "%q", r.contentType)
+	}
+	assert.Zero(t, f.lim.fails)
+
+	f.lim.blocked = false
+	for _, r := range []req{
+		{method: "POST", target: finishLogin, origin: forgeOrigin, contentType: "text/plain", body: "x"},
+		postJSON(finishLogin, "", `not json`),
+		postJSON(finishLogin, "", `{}`),
+	} {
+		rec := f.do(t, r)
+		assert.GreaterOrEqual(t, rec.Code, 400)
+		assert.Less(t, rec.Code, 500)
+	}
+	assert.Zero(t, f.lim.fails, "a malformed request is not a failed sign-in")
+}
+
+// The client key the web hands to the use case is the one the limiter uses.
+func TestPasskeyLoginBeginPassesTheClientAddress(t *testing.T) {
+	t.Parallel()
+	f := newPasskeyServer(t)
+	f.passkeys.EXPECT().BeginLogin(mock.Anything, "192.0.2.77").Return("c", []byte(`{}`), nil).Once()
+	r := httptest.NewRequest("POST", beginLogin, nil)
+	r.RemoteAddr = "192.0.2.77:51000"
+	r.Header.Set("Origin", forgeOrigin)
+	r.Header.Set("X-Forwarded-For", "203.0.113.5") // no trusted proxy: ignored
+	rec := httptest.NewRecorder()
+	f.srv.ServeHTTP(rec, r)
+	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// TS-001: the name travels with register/begin and is checked there.
+func TestPasskeyRegisterBeginChecksTheName(t *testing.T) {
+	t.Parallel()
+	f := newPasskeyServer(t)
+	f.passkeys.EXPECT().BeginRegistration(mock.Anything, domain.Owner(), "Pixel 9").Return("cer", []byte(`{"publicKey":{}}`), nil).Once()
+	rec := f.do(t, postJSON(beginRegister, "tok", `{"name":"Pixel 9"}`))
+	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	f.passkeys.EXPECT().BeginRegistration(mock.Anything, domain.Owner(), "bad\u0000name").
+		Return("", nil, &domain.TextError{Reason: "contains the control character U+0000"}).Once()
+	rec = f.do(t, postJSON(beginRegister, "tok", `{"name":"bad\u0000name"}`))
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "control character")
+
+	// No body at all is no name; a body that is not JSON, or not the right type, is refused.
+	f.passkeys.EXPECT().BeginRegistration(mock.Anything, domain.Owner(), "").Return("cer", []byte(`{}`), nil).Once()
+	assert.Equal(t, http.StatusOK, f.do(t, postJSON(beginRegister, "tok", ``)).Code)
+	assert.Equal(t, http.StatusBadRequest, f.do(t, postJSON(beginRegister, "tok", `nope`)).Code)
+	assert.Equal(t, http.StatusUnsupportedMediaType, f.do(t, req{method: "POST", target: beginRegister, origin: forgeOrigin, cookie: "tok"}).Code)
 }

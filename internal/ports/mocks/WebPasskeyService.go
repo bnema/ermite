@@ -49,8 +49,8 @@ func (_m *WebPasskeyService) EXPECT() *WebPasskeyService_Expecter {
 }
 
 // BeginLogin provides a mock function for the type WebPasskeyService
-func (_mock *WebPasskeyService) BeginLogin(ctx context.Context) (string, []byte, error) {
-	ret := _mock.Called(ctx)
+func (_mock *WebPasskeyService) BeginLogin(ctx context.Context, client string) (string, []byte, error) {
+	ret := _mock.Called(ctx, client)
 
 	if len(ret) == 0 {
 		panic("no return value specified for BeginLogin")
@@ -59,23 +59,23 @@ func (_mock *WebPasskeyService) BeginLogin(ctx context.Context) (string, []byte,
 	var r0 string
 	var r1 []byte
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) (string, []byte, error)); ok {
-		return returnFunc(ctx)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (string, []byte, error)); ok {
+		return returnFunc(ctx, client)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context) string); ok {
-		r0 = returnFunc(ctx)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) string); ok {
+		r0 = returnFunc(ctx, client)
 	} else {
 		r0 = ret.Get(0).(string)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context) []byte); ok {
-		r1 = returnFunc(ctx)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) []byte); ok {
+		r1 = returnFunc(ctx, client)
 	} else {
 		if ret.Get(1) != nil {
 			r1 = ret.Get(1).([]byte)
 		}
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context) error); ok {
-		r2 = returnFunc(ctx)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, string) error); ok {
+		r2 = returnFunc(ctx, client)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -89,18 +89,24 @@ type WebPasskeyService_BeginLogin_Call struct {
 
 // BeginLogin is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *WebPasskeyService_Expecter) BeginLogin(ctx any) *WebPasskeyService_BeginLogin_Call {
-	return &WebPasskeyService_BeginLogin_Call{Call: _e.mock.On("BeginLogin", ctx)}
+//   - client string
+func (_e *WebPasskeyService_Expecter) BeginLogin(ctx any, client any) *WebPasskeyService_BeginLogin_Call {
+	return &WebPasskeyService_BeginLogin_Call{Call: _e.mock.On("BeginLogin", ctx, client)}
 }
 
-func (_c *WebPasskeyService_BeginLogin_Call) Run(run func(ctx context.Context)) *WebPasskeyService_BeginLogin_Call {
+func (_c *WebPasskeyService_BeginLogin_Call) Run(run func(ctx context.Context, client string)) *WebPasskeyService_BeginLogin_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -111,14 +117,14 @@ func (_c *WebPasskeyService_BeginLogin_Call) Return(ceremony string, options []b
 	return _c
 }
 
-func (_c *WebPasskeyService_BeginLogin_Call) RunAndReturn(run func(ctx context.Context) (string, []byte, error)) *WebPasskeyService_BeginLogin_Call {
+func (_c *WebPasskeyService_BeginLogin_Call) RunAndReturn(run func(ctx context.Context, client string) (string, []byte, error)) *WebPasskeyService_BeginLogin_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // BeginRegistration provides a mock function for the type WebPasskeyService
-func (_mock *WebPasskeyService) BeginRegistration(ctx context.Context, p domain.Principal) (string, []byte, error) {
-	ret := _mock.Called(ctx, p)
+func (_mock *WebPasskeyService) BeginRegistration(ctx context.Context, p domain.Principal, name string) (string, []byte, error) {
+	ret := _mock.Called(ctx, p, name)
 
 	if len(ret) == 0 {
 		panic("no return value specified for BeginRegistration")
@@ -127,23 +133,23 @@ func (_mock *WebPasskeyService) BeginRegistration(ctx context.Context, p domain.
 	var r0 string
 	var r1 []byte
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (string, []byte, error)); ok {
-		return returnFunc(ctx, p)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, string) (string, []byte, error)); ok {
+		return returnFunc(ctx, p, name)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) string); ok {
-		r0 = returnFunc(ctx, p)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, string) string); ok {
+		r0 = returnFunc(ctx, p, name)
 	} else {
 		r0 = ret.Get(0).(string)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal) []byte); ok {
-		r1 = returnFunc(ctx, p)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, string) []byte); ok {
+		r1 = returnFunc(ctx, p, name)
 	} else {
 		if ret.Get(1) != nil {
 			r1 = ret.Get(1).([]byte)
 		}
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.Principal) error); ok {
-		r2 = returnFunc(ctx, p)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.Principal, string) error); ok {
+		r2 = returnFunc(ctx, p, name)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -158,11 +164,12 @@ type WebPasskeyService_BeginRegistration_Call struct {
 // BeginRegistration is a helper method to define mock.On call
 //   - ctx context.Context
 //   - p domain.Principal
-func (_e *WebPasskeyService_Expecter) BeginRegistration(ctx any, p any) *WebPasskeyService_BeginRegistration_Call {
-	return &WebPasskeyService_BeginRegistration_Call{Call: _e.mock.On("BeginRegistration", ctx, p)}
+//   - name string
+func (_e *WebPasskeyService_Expecter) BeginRegistration(ctx any, p any, name any) *WebPasskeyService_BeginRegistration_Call {
+	return &WebPasskeyService_BeginRegistration_Call{Call: _e.mock.On("BeginRegistration", ctx, p, name)}
 }
 
-func (_c *WebPasskeyService_BeginRegistration_Call) Run(run func(ctx context.Context, p domain.Principal)) *WebPasskeyService_BeginRegistration_Call {
+func (_c *WebPasskeyService_BeginRegistration_Call) Run(run func(ctx context.Context, p domain.Principal, name string)) *WebPasskeyService_BeginRegistration_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -172,9 +179,14 @@ func (_c *WebPasskeyService_BeginRegistration_Call) Run(run func(ctx context.Con
 		if args[1] != nil {
 			arg1 = args[1].(domain.Principal)
 		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -185,7 +197,7 @@ func (_c *WebPasskeyService_BeginRegistration_Call) Return(ceremony string, opti
 	return _c
 }
 
-func (_c *WebPasskeyService_BeginRegistration_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (string, []byte, error)) *WebPasskeyService_BeginRegistration_Call {
+func (_c *WebPasskeyService_BeginRegistration_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name string) (string, []byte, error)) *WebPasskeyService_BeginRegistration_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -5,14 +5,18 @@ package usecase_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -126,9 +130,12 @@ func (f *passkeyFixture) acceptRegistration(id string) {
 	}).Maybe()
 }
 
-// acceptLogin makes the verifier accept a login with the stored passkey `id`,
-// reporting the sign count.
-func (f *passkeyFixture) acceptLogin(id string, signCount uint32) {
+// acceptLogin makes the verifier accept a login with the stored passkey `id`.
+// first is the counter of the first sign-in; like a real authenticator, each
+// later one reports a higher counter. 0 means a synced passkey: always 0.
+func (f *passkeyFixture) acceptLogin(id string, first uint32) {
+	var next atomic.Uint32
+	next.Store(first)
 	f.verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
 		func(_, ceremony, _ []byte, lookup func([]byte) (domain.Passkey, error)) (domain.Passkey, error) {
 			if !bytes.HasPrefix(ceremony, []byte("login-")) {
@@ -138,7 +145,9 @@ func (f *passkeyFixture) acceptLogin(id string, signCount uint32) {
 			if err != nil {
 				return domain.Passkey{}, fmt.Errorf("%w: lookup: %v", domain.ErrUnauthenticated, err)
 			}
-			p.SignCount = signCount
+			if first != 0 {
+				p.SignCount = next.Add(1) - 1
+			}
 			p.BackupState = true
 			return p, nil
 		}).Maybe()
@@ -178,13 +187,13 @@ func TestPasskeysAreOwnerOnly(t *testing.T) {
 					assert.ErrorIs(t, err, tc.err, what)
 				}
 			}
-			_, _, err := f.passkeys.BeginRegistration(ctx, tc.p)
+			_, _, err := f.passkeys.BeginRegistration(ctx, tc.p, "")
 			check("begin registration", err)
 			_, err = f.passkeys.List(ctx, tc.p)
 			check("list", err)
 
 			// A ceremony begun by the owner cannot be finished by anyone else.
-			id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+			id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 			require.NoError(t, err)
 			_, err = f.passkeys.FinishRegistration(ctx, tc.p, id, "n", []byte("{}"))
 			check("finish registration", err)
@@ -205,7 +214,7 @@ func TestPasskeysAreOwnerOnly(t *testing.T) {
 func TestBeginLoginIsAnonymous(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyFixture(t)
-	id, options, err := f.passkeys.BeginLogin(context.Background())
+	id, options, err := f.passkeys.BeginLogin(context.Background(), "192.0.2.1")
 	require.NoError(t, err)
 	assert.Len(t, id, 43, "256 bits")
 	assert.JSONEq(t, `{"publicKey":{}}`, string(options))
@@ -217,7 +226,7 @@ func TestRegistration(t *testing.T) {
 	f := newPasskeyFixture(t)
 	f.acceptRegistration("cred-1")
 
-	id, options, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	id, options, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"publicKey":{}}`, string(options))
 
@@ -243,7 +252,7 @@ func TestRegistrationDefaultNameAndBadName(t *testing.T) {
 	f := newPasskeyFixture(t)
 	f.acceptRegistration("cred-1")
 
-	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
 	_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), id, "evil \u202e name", []byte(`{}`))
 	require.ErrorIs(t, err, domain.ErrInvalidText)
@@ -262,7 +271,7 @@ func TestRegistrationDuplicate(t *testing.T) {
 	f.add("cred-1")
 	f.acceptRegistration("cred-1")
 
-	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
 	_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), id, "dup", []byte(`{}`))
 	assert.ErrorIs(t, err, domain.ErrAlreadyExists)
@@ -276,7 +285,7 @@ func TestRegistrationRefusedByVerifier(t *testing.T) {
 	f.verifier.EXPECT().FinishRegistration(testHandle, mock.Anything, mock.Anything).
 		Return(domain.Passkey{}, fmt.Errorf("%w: bad origin", domain.ErrUnauthenticated))
 
-	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
 	_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), id, "x", []byte(`{}`))
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -289,7 +298,7 @@ func TestRegistrationRefusesAnIdTooLong(t *testing.T) {
 	f := newPasskeyFixture(t)
 	f.verifier.EXPECT().FinishRegistration(testHandle, mock.Anything, mock.Anything).
 		Return(domain.Passkey{ID: make([]byte, domain.MaxPasskeyIDLen+1), PublicKey: []byte("k")}, nil)
-	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
 	_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), id, "x", []byte(`{}`))
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -306,7 +315,7 @@ func TestBeginRegistrationExcludesExisting(t *testing.T) {
 	f.verifier.EXPECT().BeginRegistration(testHandle, mock.MatchedBy(func(ps []domain.Passkey) bool {
 		return len(ps) == 2 && string(ps[0].ID) == "a" && string(ps[1].ID) == "b"
 	})).Return([]byte(`{}`), []byte("register-x"), nil).Once()
-	_, _, err := f.passkeys.BeginRegistration(context.Background(), domain.Owner())
+	_, _, err := f.passkeys.BeginRegistration(context.Background(), domain.Owner(), "")
 	require.NoError(t, err)
 }
 
@@ -319,13 +328,13 @@ func TestMaxPasskeys(t *testing.T) {
 		f.add(fmt.Sprintf("p%02d", i))
 	}
 	// A ceremony begun with room for one more.
-	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
 	f.add("last")
 	assert.Equal(t, domain.MaxPasskeys, f.count())
 
 	// Full: no new ceremony, and the one in flight is refused at the end.
-	_, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner())
+	_, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
 	_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), id, "x", []byte(`{}`))
 	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
@@ -333,7 +342,7 @@ func TestMaxPasskeys(t *testing.T) {
 
 	// Removing one makes room again.
 	require.NoError(t, f.passkeys.Remove(ctx, domain.Owner(), []byte("last")))
-	_, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner())
+	_, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	assert.NoError(t, err)
 }
 
@@ -346,9 +355,9 @@ func TestCeremonyExpiry(t *testing.T) {
 	f.acceptLogin("login-cred", 1)
 
 	// One second short of the TTL still works.
-	reg, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	reg, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
-	login, _, err := f.passkeys.BeginLogin(ctx)
+	login, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 	require.NoError(t, err)
 	f.advance(usecase.PasskeyCeremonyTTL - time.Second)
 	_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), reg, "x", []byte(`{}`))
@@ -357,9 +366,9 @@ func TestCeremonyExpiry(t *testing.T) {
 	assert.NoError(t, err)
 
 	// At the TTL it is gone, and it stays gone.
-	reg, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner())
+	reg, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
-	login, _, err = f.passkeys.BeginLogin(ctx)
+	login, _, err = f.passkeys.BeginLogin(ctx, "192.0.2.1")
 	require.NoError(t, err)
 	assert.Equal(t, 2*time.Minute, usecase.PasskeyCeremonyTTL)
 	f.advance(usecase.PasskeyCeremonyTTL)
@@ -375,13 +384,13 @@ func TestExpiredRegistrationsDoNotCount(t *testing.T) {
 	ctx := context.Background()
 	f := newPasskeyFixture(t)
 	for range usecase.MaxPendingPasskeyRegistrations {
-		_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+		_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 		require.NoError(t, err)
 	}
-	_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.ErrorIs(t, err, domain.ErrResourceExhausted)
 	f.advance(usecase.PasskeyCeremonyTTL)
-	_, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner())
+	_, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	assert.NoError(t, err)
 }
 
@@ -392,49 +401,139 @@ func TestPendingRegistrationsAreBounded(t *testing.T) {
 	f.acceptRegistration("cred-1")
 	var ids []string
 	for range usecase.MaxPendingPasskeyRegistrations {
-		id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+		id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 		require.NoError(t, err)
 		ids = append(ids, id)
 	}
 	assert.Len(t, ids, 16)
-	_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.ErrorIs(t, err, domain.ErrResourceExhausted, "the 17th is refused")
 
 	// Pending logins do not use the registrations' room, and a finished
 	// registration frees one.
-	_, _, err = f.passkeys.BeginLogin(ctx)
+	_, _, err = f.passkeys.BeginLogin(ctx, "192.0.2.1")
 	require.NoError(t, err)
 	_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), ids[0], "x", []byte(`{}`))
 	require.NoError(t, err)
-	_, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner())
+	_, _, err = f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	assert.NoError(t, err)
 }
 
-// Anonymous callers cannot fill the room: the 257th pending login evicts the
-// oldest, which then fails; the newest works.
-func TestPendingLoginsEvictTheOldest(t *testing.T) {
+// loginIDs begins n logins for the client, a millisecond apart so that the order
+// of creation is the order of time too.
+func (f *passkeyFixture) loginIDs(t *testing.T, client string, n int) []string {
+	t.Helper()
+	var ids []string
+	for range n {
+		id, _, err := f.passkeys.BeginLogin(context.Background(), client)
+		require.NoError(t, err, "a login is never refused")
+		ids = append(ids, id)
+		f.advance(time.Millisecond)
+	}
+	return ids
+}
+
+// finishes tells whether the ceremony still opens a session.
+func (f *passkeyFixture) finishes(id string) bool {
+	_, _, err := f.passkeys.FinishLogin(context.Background(), id, []byte(`{}`))
+	return err == nil
+}
+
+// A client keeps at most 8 logins waiting: the 9th costs it its own oldest.
+func TestPendingLoginsPerClientCap(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 	f := newPasskeyFixture(t)
 	f.add("cred-1")
 	f.acceptLogin("cred-1", 1)
 
-	var ids []string
-	for range usecase.MaxPendingPasskeyLogins {
-		id, _, err := f.passkeys.BeginLogin(ctx)
-		require.NoError(t, err)
-		ids = append(ids, id)
-		f.advance(time.Millisecond) // the order of creation is the order of time too
-	}
-	newest, _, err := f.passkeys.BeginLogin(ctx)
-	require.NoError(t, err, "the 257th is not refused")
+	other := f.loginIDs(t, "198.51.100.7", 1)[0]
+	ids := f.loginIDs(t, "192.0.2.1", usecase.MaxPendingPasskeyLoginsPerClient)
+	assert.Equal(t, 8, usecase.MaxPendingPasskeyLoginsPerClient)
+	newest := f.loginIDs(t, "192.0.2.1", 1)[0]
 
-	_, _, err = f.passkeys.FinishLogin(ctx, ids[0], []byte(`{}`))
-	assert.ErrorIs(t, err, domain.ErrUnauthenticated, "the oldest was evicted")
-	_, _, err = f.passkeys.FinishLogin(ctx, ids[1], []byte(`{}`))
-	assert.NoError(t, err, "the second oldest is still there")
-	_, _, err = f.passkeys.FinishLogin(ctx, newest, []byte(`{}`))
-	assert.NoError(t, err, "the newest works")
+	assert.False(t, f.finishes(ids[0]), "the 9th evicted this client's oldest")
+	assert.True(t, f.finishes(ids[1]), "the next oldest is still there")
+	assert.True(t, f.finishes(newest), "the newest works")
+	assert.True(t, f.finishes(other), "another client's ceremony is untouched")
+}
+
+// One address flooding can never evict another address's ceremony.
+func TestLoginFloodDoesNotEvictAnotherClient(t *testing.T) {
+	t.Parallel()
+	f := newPasskeyFixture(t)
+	f.add("cred-1")
+	f.acceptLogin("cred-1", 1)
+
+	owner := f.loginIDs(t, "198.51.100.7", 1)[0]
+	f.loginIDs(t, "192.0.2.1", 2*usecase.MaxPendingPasskeyLogins)
+	assert.True(t, f.finishes(owner), "the owner's ceremony from another address still works")
+}
+
+// Over the global cap, the client with the most waiting loses its oldest; a
+// client with one ceremony is never the victim.
+func TestPendingLoginsGlobalOverflow(t *testing.T) {
+	t.Parallel()
+	f := newPasskeyFixture(t)
+	f.add("cred-1")
+	f.acceptLogin("cred-1", 1)
+
+	owner := f.loginIDs(t, "198.51.100.7", 1)[0]
+	perClient := usecase.MaxPendingPasskeyLoginsPerClient
+	var first, second []string
+	n := 0
+	for total := 1; total+perClient <= usecase.MaxPendingPasskeyLogins; total += perClient {
+		ids := f.loginIDs(t, fmt.Sprintf("10.0.%d.1", n), perClient)
+		if n == 0 {
+			first = ids
+		}
+		if n == 1 {
+			second = ids
+		}
+		n++
+	}
+	// 1 + 31*8 = 249 waiting; top up to the cap with a client below the cap.
+	small := f.loginIDs(t, "10.1.0.1", usecase.MaxPendingPasskeyLogins-1-n*perClient)
+	require.Len(t, small, 7)
+
+	// The 257th comes from a client that has none: nobody is refused, the
+	// oldest of a client with 8 waiting goes (the one that waited longest).
+	fresh := f.loginIDs(t, "203.0.113.9", 1)[0]
+	assert.False(t, f.finishes(first[0]), "the oldest of the fullest, oldest client was evicted")
+	assert.True(t, f.finishes(first[1]))
+	assert.True(t, f.finishes(second[0]), "other full clients keep theirs")
+	assert.True(t, f.finishes(owner), "a client with one ceremony is never the victim")
+	assert.True(t, f.finishes(small[0]), "nor one below the others")
+	assert.True(t, f.finishes(fresh), "the new login works")
+}
+
+// IPv6 clients share a cap per /64; an IPv4-mapped address is the IPv4 one.
+func TestPendingLoginsClientKey(t *testing.T) {
+	t.Parallel()
+	f := newPasskeyFixture(t)
+	f.add("cred-1")
+	f.acceptLogin("cred-1", 1)
+	perClient := usecase.MaxPendingPasskeyLoginsPerClient
+
+	// Different addresses of one /64 count together.
+	ids := f.loginIDs(t, "2001:db8:1:2::1", perClient)
+	next := f.loginIDs(t, "2001:db8:1:2:ffff:ffff:ffff:ffff", 1)[0]
+	assert.False(t, f.finishes(ids[0]), "the same /64: the 9th evicted the oldest")
+	assert.True(t, f.finishes(next))
+
+	// Another /64 has its own cap.
+	other := f.loginIDs(t, "2001:db8:1:3::1", perClient)
+	for _, id := range other {
+		assert.True(t, f.finishes(id), "a different /64 is another client")
+	}
+
+	// ::ffff:192.0.2.1 and 192.0.2.1 are one client.
+	v4 := f.loginIDs(t, "192.0.2.1", perClient)
+	f.loginIDs(t, "::ffff:192.0.2.1", 1)
+	assert.False(t, f.finishes(v4[0]))
+	// Two IPv4 addresses of one /24 are two clients.
+	a := f.loginIDs(t, "192.0.2.50", perClient)
+	f.loginIDs(t, "192.0.2.51", perClient)
+	assert.True(t, f.finishes(a[0]))
 }
 
 // Logins never push out a registration, and registrations never push out a login.
@@ -446,9 +545,9 @@ func TestCeremonyKindsAreSeparate(t *testing.T) {
 	f.acceptLogin("cred-1", 1)
 	f.acceptRegistration("cred-2")
 
-	reg, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner())
+	reg, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 	require.NoError(t, err)
-	login, _, err := f.passkeys.BeginLogin(ctx)
+	login, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 	require.NoError(t, err)
 
 	// A registration ceremony does not finish a login, nor the reverse; the
@@ -482,7 +581,7 @@ func TestLoginIssuesASession(t *testing.T) {
 	f.add("cred-1")
 	f.acceptLogin("cred-1", 9)
 
-	id, _, err := f.passkeys.BeginLogin(ctx)
+	id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 	require.NoError(t, err)
 	f.advance(10 * time.Second)
 	token, exp, err := f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
@@ -506,6 +605,191 @@ func TestLoginIssuesASession(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated)
 }
 
+// logCtx is a context whose logger writes JSON lines into the buffer.
+func logCtx(t *testing.T) (context.Context, *syncLog) {
+	t.Helper()
+	buf := &syncLog{}
+	log := zerowrap.New(zerowrap.Config{Level: "trace", Format: "json", Output: buf})
+	return zerowrap.WithCtx(context.Background(), log), buf
+}
+
+type syncLog struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *syncLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *syncLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// GO-001: the reason of a refusal is logged (info), never answered, and holds
+// no key material.
+func TestRefusalsAreLogged(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sign-in", func(t *testing.T) {
+		t.Parallel()
+		ctx, logs := logCtx(t)
+		f := newPasskeyFixture(t)
+		f.add("cred-1")
+		f.verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).
+			Return(domain.Passkey{}, fmt.Errorf("%w: passkey login: origin mismatch", domain.ErrUnauthenticated))
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
+		require.NoError(t, err)
+		_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{"secret":"response-bytes"}`))
+		require.ErrorIs(t, err, domain.ErrUnauthenticated)
+		out := logs.String()
+		assert.Contains(t, out, `"message":"passkey sign-in refused"`)
+		assert.Contains(t, out, `"level":"info"`)
+		assert.Contains(t, out, "origin mismatch")
+		assert.NotContains(t, out, "response-bytes")
+	})
+
+	t.Run("sign-in with an unknown ceremony", func(t *testing.T) {
+		t.Parallel()
+		ctx, logs := logCtx(t)
+		f := newPasskeyFixture(t)
+		_, _, err := f.passkeys.FinishLogin(ctx, "nope", []byte(`{}`))
+		require.ErrorIs(t, err, domain.ErrUnauthenticated)
+		assert.Contains(t, logs.String(), "passkey sign-in refused")
+	})
+
+	t.Run("registration", func(t *testing.T) {
+		t.Parallel()
+		ctx, logs := logCtx(t)
+		f := newPasskeyFixture(t)
+		f.verifier.EXPECT().FinishRegistration(testHandle, mock.Anything, mock.Anything).
+			Return(domain.Passkey{}, fmt.Errorf("%w: passkey registration: user verification missing", domain.ErrUnauthenticated))
+		id, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
+		require.NoError(t, err)
+		_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), id, "x", []byte(`{"secret":"response-bytes"}`))
+		require.ErrorIs(t, err, domain.ErrUnauthenticated)
+		out := logs.String()
+		assert.Contains(t, out, `"message":"passkey registration refused"`)
+		assert.Contains(t, out, "user verification missing")
+		assert.NotContains(t, out, "response-bytes")
+
+		_, err = f.passkeys.FinishRegistration(ctx, domain.Owner(), "unknown", "x", []byte(`{}`))
+		require.ErrorIs(t, err, domain.ErrUnauthenticated)
+		assert.Equal(t, 2, strings.Count(logs.String(), "passkey registration refused"))
+	})
+}
+
+// GO-002: the clone warning says which passkey, by its short reference.
+func TestCloneWarningNamesThePasskey(t *testing.T) {
+	t.Parallel()
+	ctx, logs := logCtx(t)
+	f := newPasskeyFixture(t)
+	f.add("cred-1")
+	f.verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(_, _, _ []byte, lookup func([]byte) (domain.Passkey, error)) (domain.Passkey, error) {
+			_, err := lookup([]byte("cred-1"))
+			require.NoError(t, err)
+			return domain.Passkey{}, domain.ErrPasskeyCloned
+		})
+	id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
+	require.NoError(t, err)
+	_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
+	require.ErrorIs(t, err, domain.ErrUnauthenticated)
+
+	sum := sha256.Sum256([]byte("cred-1"))
+	ref := hex.EncodeToString(sum[:])[:8]
+	out := logs.String()
+	assert.Contains(t, out, `"level":"warn"`)
+	assert.Contains(t, out, `"passkey":"`+ref+`"`)
+	assert.Contains(t, out, "may be cloned")
+	assert.NotContains(t, out, "cred-1", "the credential id itself is never logged")
+}
+
+// GO-003: two logins verified against the same stored counter cannot both
+// succeed. The verifier saw counter 5; by the time the second one writes, the
+// first has stored 6.
+func TestLoginRefusesACounterThatDidNotAdvance(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("another login moved the counter meanwhile", func(t *testing.T) {
+		t.Parallel()
+		f := newPasskeyFixture(t)
+		stored := f.add("cred-1")
+		stored.SignCount = 5
+		f.mu.Lock()
+		f.stored["cred-1"] = stored
+		f.mu.Unlock()
+		f.verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+			func(_, _, _ []byte, lookup func([]byte) (domain.Passkey, error)) (domain.Passkey, error) {
+				p, err := lookup([]byte("cred-1"))
+				require.NoError(t, err)
+				p.SignCount = 6 // what the response reports, against the 5 it was shown
+				// A concurrent login stores 6 before this one gets the lock.
+				f.mu.Lock()
+				f.stored["cred-1"] = p
+				f.mu.Unlock()
+				return p, nil
+			})
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
+		require.NoError(t, err)
+		token, _, err := f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
+		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+		assert.Empty(t, token, "no session")
+		f.mu.Lock()
+		assert.True(t, f.stored["cred-1"].LastUsedAt.IsZero(), "nothing was recorded")
+		f.mu.Unlock()
+	})
+
+	t.Run("a counter that advances is accepted", func(t *testing.T) {
+		t.Parallel()
+		f := newPasskeyFixture(t)
+		p := f.add("cred-1")
+		p.SignCount = 5
+		f.mu.Lock()
+		f.stored["cred-1"] = p
+		f.mu.Unlock()
+		f.acceptLogin("cred-1", 6)
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
+		require.NoError(t, err)
+		_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
+		assert.NoError(t, err)
+	})
+
+	t.Run("a synced passkey reports 0 and is exempt", func(t *testing.T) {
+		t.Parallel()
+		f := newPasskeyFixture(t)
+		f.add("cred-1") // stored counter 0
+		f.acceptLogin("cred-1", 0)
+		for range 2 {
+			id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
+			require.NoError(t, err)
+			_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
+			assert.NoError(t, err)
+		}
+	})
+
+	t.Run("equal counters are refused when the stored one is not 0", func(t *testing.T) {
+		t.Parallel()
+		f := newPasskeyFixture(t)
+		p := f.add("cred-1")
+		p.SignCount = 5
+		f.mu.Lock()
+		f.stored["cred-1"] = p
+		f.mu.Unlock()
+		f.verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).
+			Return(domain.Passkey{ID: []byte("cred-1"), SignCount: 5}, nil)
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
+		require.NoError(t, err)
+		_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
+		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+	})
+}
+
 func TestLoginRefusals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -514,7 +798,7 @@ func TestLoginRefusals(t *testing.T) {
 		t.Parallel()
 		f := newPasskeyFixture(t)
 		f.acceptLogin("ghost", 1)
-		id, _, err := f.passkeys.BeginLogin(ctx)
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 		require.NoError(t, err)
 		_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
 		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -526,7 +810,7 @@ func TestLoginRefusals(t *testing.T) {
 		f.add("cred-1")
 		f.verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).
 			Return(domain.Passkey{}, fmt.Errorf("%w: bad signature", domain.ErrUnauthenticated))
-		id, _, err := f.passkeys.BeginLogin(ctx)
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 		require.NoError(t, err)
 		_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
 		require.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -539,7 +823,7 @@ func TestLoginRefusals(t *testing.T) {
 		p := f.add("cred-1")
 		f.verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).
 			Return(domain.Passkey{}, domain.ErrPasskeyCloned)
-		id, _, err := f.passkeys.BeginLogin(ctx)
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 		require.NoError(t, err)
 		_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
 		require.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -554,7 +838,7 @@ func TestLoginRefusals(t *testing.T) {
 		boom := errors.New("disk on fire")
 		f.verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).
 			Return(domain.Passkey{}, boom)
-		id, _, err := f.passkeys.BeginLogin(ctx)
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 		require.NoError(t, err)
 		token, _, err := f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
 		require.ErrorIs(t, err, boom)
@@ -568,13 +852,14 @@ func TestLoginRefusals(t *testing.T) {
 		store := mocks.NewPasskeyStore(t)
 		boom := errors.New("disk on fire")
 		store.EXPECT().UserHandle(mock.Anything).Return(testHandle, nil)
+		store.EXPECT().Get(mock.Anything, []byte("cred-1")).Return(domain.Passkey{ID: []byte("cred-1")}, nil)
 		store.EXPECT().Update(mock.Anything, mock.Anything).Return(boom)
 		verifier := mocks.NewPasskeyVerifier(t)
 		verifier.EXPECT().BeginLogin().Return([]byte(`{}`), []byte("login-1"), nil)
 		verifier.EXPECT().FinishLogin(testHandle, mock.Anything, mock.Anything, mock.Anything).
 			Return(domain.Passkey{ID: []byte("cred-1")}, nil)
 		pk := usecase.NewPasskeys(store, verifier, f.sessions, f.clock)
-		id, _, err := pk.BeginLogin(ctx)
+		id, _, err := pk.BeginLogin(ctx, "192.0.2.1")
 		require.NoError(t, err)
 		token, _, err := pk.FinishLogin(ctx, id, []byte(`{}`))
 		require.ErrorIs(t, err, boom)
@@ -594,7 +879,7 @@ func TestLoginRefusals(t *testing.T) {
 				f.mu.Unlock()
 				return p, nil
 			})
-		id, _, err := f.passkeys.BeginLogin(ctx)
+		id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 		require.NoError(t, err)
 		token, _, err := f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
 		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
@@ -612,7 +897,7 @@ func TestRemoveBumpsTheEpoch(t *testing.T) {
 	f.add("cred-2")
 	f.acceptLogin("cred-1", 1)
 
-	id, _, err := f.passkeys.BeginLogin(ctx)
+	id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 	require.NoError(t, err)
 	token, _, err := f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
 	require.NoError(t, err)
@@ -632,7 +917,7 @@ func TestRemoveBumpsTheEpoch(t *testing.T) {
 	}
 
 	// A new login works with the epoch it finds now.
-	id, _, err = f.passkeys.BeginLogin(ctx)
+	id, _, err = f.passkeys.BeginLogin(ctx, "192.0.2.1")
 	require.NoError(t, err)
 	token, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
 	require.NoError(t, err)
@@ -680,19 +965,38 @@ func TestPasskeysConcurrent(t *testing.T) {
 	ctx := context.Background()
 	f := newPasskeyFixture(t)
 	f.add("cred-1")
-	f.acceptLogin("cred-1", 1)
+	f.acceptLogin("cred-1", 0) // synced: counters racing in order would be refused, rightly
 	var wg sync.WaitGroup
 	for range 32 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			id, _, err := f.passkeys.BeginLogin(ctx)
+			id, _, err := f.passkeys.BeginLogin(ctx, "192.0.2.1")
 			if assert.NoError(t, err) {
 				_, _, err = f.passkeys.FinishLogin(ctx, id, []byte(`{}`))
 				assert.NoError(t, err)
 			}
-			_, _, _ = f.passkeys.BeginRegistration(ctx, domain.Owner())
+			_, _, _ = f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
 		}()
 	}
 	wg.Wait()
+}
+
+// TS-001: a name that breaks the rules is refused before any ceremony starts,
+// and does not use up one of the pending registrations.
+func TestBeginRegistrationChecksTheName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newPasskeyFixture(t)
+	for _, name := range []string{"evil \u202e name", "a\x00b", strings.Repeat("a", domain.MaxPasskeyNameLen+1), "two\nlines", "\xff"} {
+		_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), name)
+		assert.ErrorIs(t, err, domain.ErrInvalidText, "%q", name)
+	}
+	// None of those counted as a pending registration.
+	for range usecase.MaxPendingPasskeyRegistrations {
+		_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "ok")
+		require.NoError(t, err)
+	}
+	_, _, err := f.passkeys.BeginRegistration(ctx, domain.Owner(), "")
+	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
 }

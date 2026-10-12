@@ -144,12 +144,13 @@ func (s *Server) passkeyLoginPage(w http.ResponseWriter, r *http.Request) {
 
 // passkeyLoginBegin is POST /-/passkeys/login/begin.
 func (s *Server) passkeyLoginBegin(w http.ResponseWriter, r *http.Request) {
-	if _, blocked := s.blocked(w, r); blocked {
+	addr, blocked := s.blocked(w, r)
+	if blocked {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	ceremony, options, err := s.cfg.Passkeys.BeginLogin(ctx)
+	ceremony, options, err := s.cfg.Passkeys.BeginLogin(ctx, addr)
 	if err != nil {
 		s.jsonInternal(ctx, w, r, err)
 		return
@@ -169,12 +170,15 @@ type finishRequest struct {
 // A refusal counts as a failed authentication of the client, whatever the
 // reason.
 func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
-	body, ok := jsonBody(w, r)
-	if !ok {
-		return
-	}
+	// The limiter first: a client that is blocked gets 429 whatever it sends.
 	addr, blocked := s.blocked(w, r)
 	if blocked {
+		return
+	}
+	// A wrong content type or a malformed body is a bug of the client, not a
+	// guess at the owner's passkey: it answers 4xx and is not counted as a failure.
+	body, ok := jsonBody(w, r)
+	if !ok {
 		return
 	}
 	var req finishRequest
@@ -252,11 +256,27 @@ func (s *Server) registerError(ctx context.Context, w http.ResponseWriter, r *ht
 	}
 }
 
-// passkeyRegisterBegin is POST /-/passkeys/register/begin.
+// passkeyRegisterBegin is POST /-/passkeys/register/begin. Like the finish
+// endpoints it needs "Content-Type: application/json".
 func (s *Server) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
+	body, ok := jsonBody(w, r)
+	if !ok {
+		return
+	}
+	// {"name": "..."}; an empty body is no name. The name is checked now, before
+	// the browser prompts the owner for a passkey that would then be refused.
+	var req struct {
+		Name string `json:"name"`
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			jsonError(w, http.StatusBadRequest, "malformed request")
+			return
+		}
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	ceremony, options, err := s.cfg.Passkeys.BeginRegistration(ctx, principal(ctx))
+	ceremony, options, err := s.cfg.Passkeys.BeginRegistration(ctx, principal(ctx), req.Name)
 	if err != nil {
 		s.registerError(ctx, w, r, err)
 		return

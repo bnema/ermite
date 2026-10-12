@@ -82,7 +82,7 @@ type beginReply struct {
 // register adds the authenticator's credential as the owner holding token.
 func (p *passkeyHarness) register(token, name string) page {
 	p.t.Helper()
-	begin := p.postJSON("/-/passkeys/register/begin", token, nil)
+	begin := p.postJSON("/-/passkeys/register/begin", token, map[string]any{"name": name})
 	require.Equal(p.t, http.StatusOK, begin.status, begin.body)
 	var br beginReply
 	require.NoError(p.t, json.Unmarshal([]byte(begin.body), &br))
@@ -135,7 +135,7 @@ func TestPasskeyEndToEnd(t *testing.T) {
 
 	// Anonymous: the list is a 404, registration is refused.
 	assert.Equal(t, http.StatusNotFound, p.b.get("/-/passkeys", nil).status)
-	assert.Equal(t, http.StatusForbidden, p.postJSON("/-/passkeys/register/begin", "", nil).status)
+	assert.Equal(t, http.StatusForbidden, p.postJSON("/-/passkeys/register/begin", "", map[string]any{}).status)
 
 	// Sign in with the CLI link (the way in before any passkey), add a passkey.
 	link := p.cli(t, adminToken, "web", "login").ok(t)

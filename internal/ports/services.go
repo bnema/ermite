@@ -135,13 +135,17 @@ type PasskeyService interface {
 type WebPasskeyService interface {
 	List(ctx context.Context, p domain.Principal) ([]domain.Passkey, error)
 	Remove(ctx context.Context, p domain.Principal, id []byte) error
-	// BeginLogin starts a sign-in. Anonymous callers may.
-	BeginLogin(ctx context.Context) (ceremony string, options []byte, err error)
+	// BeginLogin starts a sign-in. Anonymous callers may. client is the
+	// address the request is attributed to (trusted proxies applied, the one the
+	// failure limiter uses); it bounds how many sign-ins a client keeps waiting.
+	BeginLogin(ctx context.Context, client string) (ceremony string, options []byte, err error)
 	// FinishLogin checks the browser's response and returns the session token
 	// and how long it lasts, or ErrLinkRejected for any refusal.
 	FinishLogin(ctx context.Context, ceremony string, response []byte) (token string, lifetime time.Duration, err error)
-	// BeginRegistration starts adding a passkey. Only the owner may.
-	BeginRegistration(ctx context.Context, p domain.Principal) (ceremony string, options []byte, err error)
+	// BeginRegistration starts adding a passkey. Only the owner may. name is
+	// the name the passkey will get (empty means the default): a name that
+	// breaks the rules is refused before any ceremony starts.
+	BeginRegistration(ctx context.Context, p domain.Principal, name string) (ceremony string, options []byte, err error)
 	// FinishRegistration checks the browser's response and stores the
 	// passkey under name (empty means the default name).
 	FinishRegistration(ctx context.Context, p domain.Principal, ceremony, name string, response []byte) error
