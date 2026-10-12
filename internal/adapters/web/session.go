@@ -180,11 +180,22 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request) bool {
 		denyForbidden(w)
 		return false
 	}
-	if !SignedIn(r.Context()) && (r.Method != http.MethodPost || !isLoginPath(r.URL)) {
+	if !SignedIn(r.Context()) && !s.anonymousPost(r) {
 		denyForbidden(w)
 		return false
 	}
 	return true
+}
+
+// anonymousPost tells whether a POST without a session may pass the gate: the
+// requests that start a session. They are the confirmation of a login link and,
+// when passkeys are on, the two endpoints of a passkey sign-in; each is matched
+// exactly.
+func (s *Server) anonymousPost(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	return isLoginPath(r.URL) || (s.passkeysOn() && isPasskeyLoginPath(r.URL.EscapedPath()))
 }
 
 // isLoginPath tells whether u is exactly a login link: loginPrefix, a nonce of
