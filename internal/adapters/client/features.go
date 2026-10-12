@@ -22,11 +22,15 @@ const (
 	FeatureSigningKey = "signing_key"
 	// FeatureSession is SessionService (`ermite web login`, `web logout`).
 	FeatureSession = "session"
+	// FeatureCIRuns is RunService (`ermite run`), FeatureCIRunners its runner
+	// calls (`ermite runner`).
+	FeatureCIRuns    = "ci.runs"
+	FeatureCIRunners = "ci.runners"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureCIRuns, FeatureCIRunners}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

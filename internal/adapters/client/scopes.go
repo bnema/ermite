@@ -18,10 +18,12 @@ const (
 	presetCLI   = "cli"
 	presetAgent = "agent"
 	presetCI    = "ci"
+	// presetRunner is for a CI runner host: it only registers runners.
+	presetRunner = "runner"
 )
 
 // PresetNames lists the token presets, see PresetScopes.
-var PresetNames = []string{presetCLI, presetAgent, presetCI}
+var PresetNames = []string{presetCLI, presetAgent, presetCI, presetRunner}
 
 // ScopeName is the name of a scope as users type it and as the docs write
 // it: SCOPE_REPO_READ is "repo:read".
@@ -75,6 +77,8 @@ func PresetScopes(name string) ([]ermite.Scope, error) {
 		return []ermite.Scope{ermite.Scope_SCOPE_REPO_WRITE, ermite.Scope_SCOPE_MR_WRITE}, nil
 	case presetCI:
 		return []ermite.Scope{ermite.Scope_SCOPE_REPO_READ}, nil
+	case presetRunner:
+		return []ermite.Scope{ermite.Scope_SCOPE_RUNNER_REGISTER}, nil
 	default:
 		return nil, fmt.Errorf("unknown preset %q: use one of %s", name, strings.Join(PresetNames, ", "))
 	}
