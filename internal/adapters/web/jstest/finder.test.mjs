@@ -3,7 +3,7 @@
 //   node --test 'internal/adapters/web/jstest/*.test.mjs'
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { dom, el, installDom, settle } from './dom.mjs';
+import { dom, el, flushFrames, installDom, settle } from './dom.mjs';
 
 installDom();
 await import('../static/js/files.js');
@@ -197,6 +197,57 @@ test('the palette lists the file hits under its entries', async () => {
   p.cmdQ.value = '';
   F.palette(p.cmdQ);
   assert.equal(p.cmdList.children.length, 1);
+});
+
+test('Enter typed before the frame of the query runs opens the top hit', async () => {
+  const p = page();
+  release();
+  await F.load(); // the path list is loaded: only the frame is pending
+  dom.holdFrames = true;
+  try {
+    p.q.value = 'maingo';
+    F.input(p.q);
+    const e = key('Enter');
+    F.key(p.q, e);
+    assert.equal(e.prevented, true);
+    assert.equal(dom.clicked.length, 0, 'nothing to open before the frame');
+    flushFrames();
+    await settle();
+    assert.deepEqual(dom.clicked.map((a) => a.href), ['/blob/main/cmd/ermite/main.go']);
+  } finally {
+    dom.holdFrames = false;
+  }
+});
+
+test('the palette keeps one search per frame and drops a search when it closes', async () => {
+  const p = page();
+  release();
+  await F.load();
+  dom.holdFrames = true;
+  try {
+    for (const q of ['t', 'tr', 'tre', 'tree']) {
+      p.cmdQ.value = q;
+      F.palette(p.cmdQ);
+    }
+    assert.equal(dom.frames.size, 1, 'the keystrokes of a frame share one search');
+    flushFrames();
+    await settle();
+    assert.equal(p.cmdList.children.filter((li) => li.className === 'finder-hit').length, 4);
+
+    p.cmdQ.value = 'readme';
+    F.palette(p.cmdQ);
+    F.paletteClose();
+    assert.equal(dom.frames.size, 0, 'closing cancels the pending frame');
+
+    // A search past its frame, still awaiting the list, is dropped at close.
+    F.palette(p.cmdQ);
+    flushFrames();
+    F.paletteClose();
+    await settle();
+    assert.equal(p.cmdList.children.filter((li) => li.className === 'finder-hit').length, 0);
+  } finally {
+    dom.holdFrames = false;
+  }
 });
 
 test('the palette drops the results of a query that is stale', async () => {

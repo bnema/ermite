@@ -583,6 +583,7 @@ window.ermiteFinder = (() => {
   // dialog and the finder are searched independently.
   let pFrame = 0;
   let pPrev = null;
+  let pGen = 0; // bumped at close: a search still loading then is dropped
   const clearHits = () => document.querySelectorAll('#cmd-list > li.finder-hit').forEach((li) => li.remove());
 
   // palette lists the file hits of the ":" field under its entries, once per frame.
@@ -603,17 +604,19 @@ window.ermiteFinder = (() => {
     if (pFrame) cancelAnimationFrame(pFrame);
     pFrame = 0;
     pPrev = null;
+    pGen++;
   }
 
   async function paletteRun(el) {
     const q = el.value;
+    const gen = pGen;
     let loaded;
     try {
       loaded = await load();
     } catch (e) {
       return;
     }
-    if (el.value !== q || !loaded) return; // the field changed during the wait
+    if (el.value !== q || gen !== pGen || !loaded) return; // the field changed or the dialog closed during the wait
     const res = search(loaded.idx, q, 20, pPrev);
     pPrev = res;
     clearHits();
@@ -658,7 +661,14 @@ window.ermiteFinder = (() => {
         input(el);
         return;
       }
-      if (!results) return;
+      if (!results) {
+        // A query whose first frame has not run yet: open its top hit once it does.
+        if (e.key === 'Enter' && el.value.trim()) {
+          e.preventDefault();
+          pendingEnter = el.value;
+        }
+        return;
+      }
       const cur = syncActive(el);
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();

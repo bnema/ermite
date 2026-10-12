@@ -146,7 +146,14 @@ export class El {
   click() { dom.clicked.push(this); }
 }
 
-export const dom = { clicked: [], body: null };
+export const dom = { clicked: [], body: null, holdFrames: false, frames: new Map(), frameID: 0 };
+
+// flushFrames runs the frames held since the last flush.
+export function flushFrames() {
+  const fs = [...dom.frames.values()];
+  dom.frames.clear();
+  fs.forEach((f) => f());
+}
 
 // installDom puts the globals files.js expects. parseHTML(text) answers the
 // nodes that a template's innerHTML makes.
@@ -171,9 +178,14 @@ export function installDom({ parseHTML } = {}) {
   globalThis.window = globalThis;
   globalThis.document = doc;
   globalThis.location = { href: '' };
-  // A frame runs at once; a test still orders its steps around the awaits.
-  globalThis.requestAnimationFrame = (f) => { f(); return 0; };
-  globalThis.cancelAnimationFrame = () => {};
+  // A frame runs at once, unless a test holds the frames (dom.holdFrames) to
+  // act between a keystroke and its frame, as in a browser; flushFrames runs them.
+  globalThis.requestAnimationFrame = (f) => {
+    if (!dom.holdFrames) { f(); return 0; }
+    dom.frames.set(++dom.frameID, f);
+    return dom.frameID;
+  };
+  globalThis.cancelAnimationFrame = (id) => { dom.frames.delete(id); };
   return doc;
 }
 
