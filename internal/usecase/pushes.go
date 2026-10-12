@@ -104,6 +104,11 @@ func openExisting(p domain.Principal, repo domain.Repo) error {
 // (protected branches, limits) will refuse here too, by returning an error
 // that matches domain.ErrRejected.
 //
+// The prefix rule is domain.Principal.AllowsRef and shares its assumptions: no
+// symbolic ref under refs/heads besides HEAD (ermite never creates one and
+// receive-pack cannot), and case-sensitive ref storage (Linux). The hook sees
+// every ref of the push, so a tag or any other ref is judged like a branch.
+//
 // The token of the push was valid when the request began, but a push can run
 // for long: it is re-validated here, so a token revoked or expired meanwhile
 // stops the push before Git applies it. A failure to tell refuses it too.

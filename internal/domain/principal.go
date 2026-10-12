@@ -117,6 +117,14 @@ func (p Principal) BranchPrefixes() []string { return slices.Clone(p.branchPrefi
 // it). Without branch prefixes every ref is allowed. With them, only a branch
 // "refs/heads/<name>" under one of the prefixes is: tags, every other ref and
 // a branch outside the prefixes are not.
+//
+// It judges the name of the ref only, and rests on two assumptions about the
+// repositories ermite serves. First, no symbolic ref lives under refs/heads
+// (HEAD is the only symref): ermite never creates one and receive-pack cannot,
+// so a name under a prefix never points at a branch outside it. Second, ref
+// names are stored case-sensitively (Linux file systems): "refs/heads/Agent/x"
+// is not "refs/heads/agent/x". On a case-insensitive file system the two could
+// name the same ref and the prefixes would not hold.
 func (p Principal) AllowsRef(ref string) bool {
 	if len(p.branchPrefixes) == 0 {
 		return true
