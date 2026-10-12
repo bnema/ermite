@@ -287,7 +287,7 @@ func newTokenRevokeCmd(env *cliEnv) *cobra.Command {
 		Use:   "revoke <id>",
 		Short: "Revoke a token",
 		Long: "Revoke a token by id (see `ermite token list`). It stops working immediately.\n\n" +
-			"A token with every scope and no --repo list has the rights of the owner (it can open web\n" +
+			"A token with every scope, no --repo list and no --branch-prefix has the rights of the owner (it can open web\n" +
 			"sessions). Revoking one also signs every browser out, like `ermite web logout --all`:\n" +
 			"web sessions are not tied to the token that opened them. Sign in again with `ermite web login`.",
 		Args: cobra.ExactArgs(1),

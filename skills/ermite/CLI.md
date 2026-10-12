@@ -81,5 +81,5 @@ Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `
 | `serve` | configured by `ERMITE_*` environment variables only (see the project README) |
 | `version [--json]` | client version; with `ERMITE_URL`, the server version and features |
 | `signing-key show` | public key and `allowed_signers` line to check squash commits with `git verify-commit` |
-| `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope and no repository list; the link is a secret |
+| `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope, no repository list and no branch prefix; the link is a secret |
 | `web logout --all` | signs every browser out |

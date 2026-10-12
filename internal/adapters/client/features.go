@@ -24,8 +24,10 @@ const (
 	FeatureSession = "session"
 	// FeatureTokenBranchPrefixes is Token.branch_prefixes and
 	// CreateTokenRequest.branch_prefixes (`ermite token create --branch-prefix`).
-	// A server without it ignores the field: `token create` checks the
-	// token it gets back.
+	// A server without it ignores the field and would create an unlimited
+	// token: `token create --branch-prefix` reads the features first and
+	// refuses when it is missing (the main guard), and also checks the token it
+	// gets back (a backstop).
 	FeatureTokenBranchPrefixes = "token.branch_prefixes"
 )
 
