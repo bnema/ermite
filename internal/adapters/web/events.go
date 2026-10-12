@@ -5,6 +5,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -128,6 +129,17 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer close(finished)
 		defer close(msgs)
+		// net/http only recovers the handler goroutine: a panic in the watch
+		// would end the process. It ends this stream as an error instead.
+		defer func() {
+			if v := recover(); v != nil {
+				log.Error().Interface("panic", v).Msg("event watch panicked")
+				select {
+				case msgs <- recvd{err: fmt.Errorf("watch panicked: %v", v)}:
+				case <-ctx.Done():
+				}
+			}
+		}()
 		err := s.cfg.Events.Watch(ctx, principal(ctx), params, func(we ports.WatchEvent) error {
 			start()
 			select {

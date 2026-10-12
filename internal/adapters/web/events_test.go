@@ -233,6 +233,25 @@ func TestEventsRefusals(t *testing.T) {
 	}
 }
 
+// A panic in the watch runs outside the handler goroutine, where net/http
+// would not recover it: it ends the stream with a 500 instead of the process.
+func TestEventsWatchPanicIsAnError(t *testing.T) {
+	t.Parallel()
+	m := mocks.NewEventService(t)
+	m.EXPECT().Watch(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(context.Context, domain.Principal, ports.WatchParams, func(ports.WatchEvent) error) error {
+			panic("boom")
+		})
+	ts := httptest.NewServer(newTestServer(t, Config{
+		Repos:  reposServing(t, publicRepo(t, "x")),
+		Browse: mocks.NewBrowseService(t),
+		Events: m,
+	}))
+	t.Cleanup(ts.Close)
+	resp, _ := open(t, ts, "topic=home", nil)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
+
 // The topic of a repository the visitor cannot see is refused before any
 // watch is opened: a private repository is a missing one.
 func TestEventsPrivateRepositoryTopic(t *testing.T) {
