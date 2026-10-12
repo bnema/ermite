@@ -29,6 +29,12 @@ import (
 // checks it with sessions); every other request is anonymous. The web passes
 // the principal of the request to each use case call itself.
 func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Handler, error) {
+	// A nil *usecase.Passkeys must not become a non-nil interface (the web
+	// tests for nil to leave the passkey routes out).
+	var passkeys ports.WebPasskeyService
+	if f.Passkeys != nil {
+		passkeys = webPasskeys{f.Passkeys}
+	}
 	return web.New(web.Config{
 		Repos:         f.Repos,
 		Browse:        f.Browse,
@@ -39,6 +45,7 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 		Version:       serverVersion(),
 
 		Sessions:       webSessions{f.Sessions},
+		Passkeys:       passkeys,
 		Limiter:        limiter,
 		TrustedProxies: cfg.TrustedProxies,
 	})
@@ -59,6 +66,25 @@ func sessionsNeedHTTPS(publicURL string) bool {
 	}
 	ip, err := netip.ParseAddr(host)
 	return err != nil || !ip.Unmap().IsLoopback()
+}
+
+// passkeysAvailable reports whether passkeys can work on this public URL, and
+// if not, why. WebAuthn needs a secure context (https, or localhost) and a
+// relying party ID that is a DNS name, not an IP address, so a server on
+// http://127.0.0.1 starts without passkeys. A sign-in needs the session
+// cookie, hence the same https rule as sessionsNeedHTTPS.
+func passkeysAvailable(publicURL string) (ok bool, reason string) {
+	if sessionsNeedHTTPS(publicURL) {
+		return false, "needs https"
+	}
+	u, err := url.Parse(publicURL)
+	if err != nil || u.Hostname() == "" {
+		return false, "public URL has no host"
+	}
+	if _, err := netip.ParseAddr(strings.ToLower(u.Hostname())); err == nil {
+		return false, "public URL host is an IP address"
+	}
+	return true, ""
 }
 
 // warnSessionsNeedHTTPS tells the operator, at startup, that web sign-in will
@@ -129,6 +155,39 @@ func (s webSessions) Verify(ctx context.Context, token string) (domain.Principal
 		return domain.Anonymous(), false, err
 	}
 	return p, true, nil
+}
+
+// webPasskeys adapts the passkey use cases to ports.WebPasskeyService: the
+// session a passkey sign-in opens is given to the web as a token and a
+// lifetime, like webSessions.Login does for a link, and a refusal is
+// ports.ErrLinkRejected.
+type webPasskeys struct{ *usecase.Passkeys }
+
+var _ ports.WebPasskeyService = webPasskeys{}
+
+func (p webPasskeys) FinishLogin(ctx context.Context, ceremony string, response []byte) (string, time.Duration, error) {
+	token, expiresAt, err := p.Passkeys.FinishLogin(ctx, ceremony, response)
+	if errors.Is(err, domain.ErrUnauthenticated) {
+		return "", 0, ports.ErrLinkRejected
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	// Same lifetime as webSessions.Login: the session token carries its own
+	// expiry, the cookie lasts as long.
+	lifetime := usecase.SessionTTL
+	if d := time.Until(expiresAt); d < usecase.SessionTTL-time.Second {
+		lifetime = d.Round(time.Second)
+	}
+	if lifetime < time.Second {
+		return "", 0, ports.ErrLinkRejected
+	}
+	return token, lifetime, nil
+}
+
+func (p webPasskeys) FinishRegistration(ctx context.Context, owner domain.Principal, ceremony, name string, response []byte) error {
+	_, err := p.Passkeys.FinishRegistration(ctx, owner, ceremony, name, response)
+	return err
 }
 
 // webRoutes mounts the web on the patterns it serves.

@@ -48,6 +48,8 @@ type harnessOpts struct {
 	eventBuffer int
 	// revalidateEvery overrides how often a watcher's token is re-checked.
 	revalidateEvery time.Duration
+	// publicURL overrides ERMITE_PUBLIC_URL (http://example.test) when set.
+	publicURL string
 }
 
 // newHarness starts a forge. The data directory is short: the hook socket
@@ -65,6 +67,9 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 		config.EnvAdminToken: adminToken,
 		config.EnvGit:        gitBin,
 		config.EnvAddr:       "127.0.0.1:1",
+	}
+	if o.publicURL != "" {
+		env[config.EnvPublicURL] = o.publicURL
 	}
 	if o.trustedProxies != "" {
 		env[config.EnvTrustedProxies] = o.trustedProxies

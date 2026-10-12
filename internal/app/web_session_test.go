@@ -596,3 +596,30 @@ func TestWarnSharedClientKey(t *testing.T) {
 		})
 	}
 }
+
+// AC4: passkeys exist only where WebAuthn can work: an https public URL (or
+// localhost) with a DNS name as host.
+func TestPasskeysAvailable(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]struct {
+		ok     bool
+		reason string
+	}{
+		"https://git.example.com":      {true, ""},
+		"https://git.example.com:8443": {true, ""},
+		"https://GIT.example.com/":     {true, ""},
+		"http://localhost:7341":        {true, ""},
+		"http://127.0.0.1:7341":        {false, "public URL host is an IP address"},
+		"http://[::1]:7341":            {false, "public URL host is an IP address"},
+		"https://203.0.113.7":          {false, "public URL host is an IP address"},
+		"https://[2001:db8::1]":        {false, "public URL host is an IP address"},
+		"http://git.example.com":       {false, "needs https"},
+		"http://192.168.1.2:7341":      {false, "needs https"},
+		"":                             {false, "public URL has no host"},
+		"https://":                     {false, "public URL has no host"},
+	} {
+		ok, reason := passkeysAvailable(in)
+		assert.Equal(t, want.ok, ok, in)
+		assert.Equal(t, want.reason, reason, in)
+	}
+}
