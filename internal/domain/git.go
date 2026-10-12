@@ -167,20 +167,37 @@ func IsAddressablePath(s string) bool {
 	return s != "" && treePathProblem(s) == ""
 }
 
+// IsAddressablePathBytes is IsAddressablePath for a path held in bytes; it
+// spares the copy into a string.
+func IsAddressablePathBytes(b []byte) bool {
+	return len(b) > 0 && len(b) <= maxTreePathLen && utf8.Valid(b) && pathShapeProblem(b) == ""
+}
+
 // treePathProblem returns why s cannot be a non-root tree path, or "".
 func treePathProblem(s string) string {
 	if len(s) > maxTreePathLen || !utf8.ValidString(s) {
 		return "too long or not valid UTF-8"
 	}
-	for _, c := range s {
-		if c < 0x20 || c == 0x7f {
-			return "control character"
+	return pathShapeProblem(s)
+}
+
+// pathShapeProblem checks the control characters and the components of a path
+// that is valid UTF-8 and short enough. The bytes of a multi-byte character
+// are all 0x80 or more, so it looks at bytes.
+func pathShapeProblem[S ~string | ~[]byte](s S) string {
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i < len(s) && s[i] != '/' {
+			if c := s[i]; c < 0x20 || c == 0x7f {
+				return "control character"
+			}
+			continue
 		}
-	}
-	for part := range strings.SplitSeq(s, "/") {
-		if part == "" || part == "." || part == ".." {
+		n := i - start
+		if n == 0 || (n == 1 && s[start] == '.') || (n == 2 && s[start] == '.' && s[start+1] == '.') {
 			return "empty, . or .. component"
 		}
+		start = i + 1
 	}
 	return ""
 }
@@ -356,6 +373,26 @@ type PathList struct {
 	Paths []string
 	// Truncated is true when more paths exist than the ones in Paths.
 	Truncated bool
+
+	size int // bytes of Paths, kept by Add
+}
+
+// Add lists p, the next path of a walk in tree order, within the bounds of
+// ListPaths: at most maxPaths paths and maxBytes bytes of paths. A path that
+// is not addressable (IsAddressablePath) is left out. When a bound is reached
+// p is not listed, Truncated is set, and Add returns false: the walk can stop.
+// Otherwise it returns true. The bytes of p are kept, not copied.
+func (l *PathList) Add(p string, maxPaths, maxBytes int) bool {
+	if !IsAddressablePath(p) {
+		return true
+	}
+	if len(l.Paths) >= maxPaths || l.size+len(p) > maxBytes {
+		l.Truncated = true
+		return false
+	}
+	l.size += len(p)
+	l.Paths = append(l.Paths, p)
+	return true
 }
 
 // MaxLastCommitEntries bounds the entries of one directory that get a last

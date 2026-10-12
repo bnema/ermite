@@ -73,21 +73,80 @@ func TestParseTreePath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "a/b", p.String())
 	assert.Equal(t, "a/b/c", p.Join("c"))
-
-	for _, bad := range []string{"/a", "a//b", "./a", "a/..", "..", ".", "a\x00b", "a\nb", "\xff", strings.Repeat("a", 4097), "//"} {
-		_, err := domain.ParseTreePath(bad)
-		assert.ErrorIs(t, err, domain.ErrInvalidPath, "%q", bad)
-	}
 }
 
-func TestIsAddressablePath(t *testing.T) {
-	for _, ok := range []string{"a", "a/b.txt", "dir/ünï.go", "a b/c", ".github/ci.yml"} {
-		assert.True(t, domain.IsAddressablePath(ok), "%q", ok)
+// ParseTreePath and IsAddressablePath share one rule. The only differences
+// are the root ("" is a valid path to parse, and not addressable) and the
+// trailing slash (ParseTreePath drops one, IsAddressablePath wants the path
+// as it is).
+func TestTreePathRule(t *testing.T) {
+	long := strings.Repeat("a", 4096)
+	for _, tt := range []struct {
+		path string
+		ok   bool // parses, and is addressable
+	}{
+		{"a", true}, {"a/b.txt", true}, {"dir/ünï.go", true}, {"a b/c", true}, {".github/ci.yml", true}, {long, true},
+		{"/a", false}, {"a//b", false}, {"./a", false}, {"a/..", false}, {"..", false}, {".", false},
+		{"a/../b", false}, {"tab\tname", false}, {"a\nb", false}, {"a\x00b", false}, {"a\x7fb", false},
+		{"\xff", false}, {"a/\xfe/b", false}, {long + "a", false}, {"//", false},
+	} {
+		_, err := domain.ParseTreePath(tt.path)
+		assert.Equal(t, tt.ok, err == nil, "ParseTreePath(%q)", tt.path)
+		if !tt.ok {
+			assert.ErrorIs(t, err, domain.ErrInvalidPath, "%q", tt.path)
+		}
+		assert.Equal(t, tt.ok, domain.IsAddressablePath(tt.path), "IsAddressablePath(%q)", tt.path)
+		assert.Equal(t, tt.ok, domain.IsAddressablePathBytes([]byte(tt.path)), "IsAddressablePathBytes(%q)", tt.path)
 	}
-	for _, bad := range []string{"", "/", "a/", "/a", "a//b", "a/../b", "./a", "..", "tab\tname", "a\nb", "a\x00b", "a\x7fb", "\xff", "a/\xfe/b", strings.Repeat("a", 4097)} {
-		assert.False(t, domain.IsAddressablePath(bad), "%q", bad)
+
+	// The exceptions.
+	_, err := domain.ParseTreePath("")
+	assert.NoError(t, err, "the root parses")
+	assert.False(t, domain.IsAddressablePath(""), "the root is not addressable")
+	assert.False(t, domain.IsAddressablePathBytes(nil))
+	_, err = domain.ParseTreePath("a/")
+	assert.NoError(t, err, "one trailing slash is dropped")
+	assert.False(t, domain.IsAddressablePath("a/"), "an addressable path has none")
+	assert.False(t, domain.IsAddressablePathBytes([]byte("a/")))
+	_, err = domain.ParseTreePath("/")
+	assert.NoError(t, err, `"/" is the root with its trailing slash dropped`)
+	assert.False(t, domain.IsAddressablePath("/"))
+}
+
+func TestPathListAdd(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		adds               []string
+		maxPaths, maxBytes int
+		want               []string
+		wantStopAt         int // index of the Add that returned false, -1 for none
+		truncated          bool
+	}{
+		{"all fit", []string{"a", "b/c"}, 10, 100, []string{"a", "b/c"}, -1, false},
+		{"not addressable are skipped", []string{"a", "", "b//c", "d/", "e\nf", "g"}, 10, 100, []string{"a", "g"}, -1, false},
+		{"skipped paths do not count", []string{"", "..", "a"}, 1, 1, []string{"a"}, -1, false},
+		{"exactly maxPaths", []string{"a", "b"}, 2, 100, []string{"a", "b"}, -1, false},
+		{"over maxPaths", []string{"a", "b", "c"}, 2, 100, []string{"a", "b"}, 2, true},
+		{"exactly maxBytes", []string{"ab", "cd"}, 10, 4, []string{"ab", "cd"}, -1, false},
+		{"over maxBytes", []string{"ab", "cde", "f"}, 10, 4, []string{"ab"}, 1, true},
+		{"nothing fits", []string{"abc"}, 10, 2, nil, 0, true},
+		{"no paths allowed", []string{"a"}, 0, 100, nil, 0, true},
+		{"unaddressable past the limit is no truncation", []string{"a", "b/"}, 1, 100, []string{"a"}, -1, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var l domain.PathList
+			stop := -1
+			for i, p := range tt.adds {
+				if !l.Add(p, tt.maxPaths, tt.maxBytes) {
+					stop = i
+					break
+				}
+			}
+			assert.Equal(t, tt.want, l.Paths)
+			assert.Equal(t, tt.wantStopAt, stop)
+			assert.Equal(t, tt.truncated, l.Truncated)
+		})
 	}
-	assert.True(t, domain.IsAddressablePath(strings.Repeat("a", 4096)))
 }
 
 func TestEntryKindOf(t *testing.T) {

@@ -306,7 +306,6 @@ func (g *Git) ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Re
 		return domain.PathList{}, fmt.Errorf("paths of %q: %w", repo, err)
 	}
 	list := domain.PathList{CommitID: obj.commit, TreeID: treeID}
-	size := 0
 	err = g.pipe(ctx, readArgs(dir, "ls-tree", "-r", "-z", treeID.String()), func(r *bufio.Reader) error {
 		for {
 			tok, err := readToken(r)
@@ -322,16 +321,13 @@ func (g *Git) ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Re
 			}
 			// meta is "<mode> <type> <id>": a submodule is a commit.
 			_, rest, _ := strings.Cut(meta, " ")
-			if typ, _, _ := strings.Cut(rest, " "); typ == "commit" || !domain.IsAddressablePath(path) {
+			if typ, _, _ := strings.Cut(rest, " "); typ == "commit" {
 				continue
 			}
-			if len(list.Paths) >= maxPaths || size+len(path) > maxBytes {
-				list.Truncated = true
+			// A copy: path would keep the whole "<mode> <type> <id>\t" entry alive.
+			if !list.Add(strings.Clone(path), maxPaths, maxBytes) {
 				return errStop
 			}
-			size += len(path)
-			// A copy: path would keep the whole "<mode> <type> <id>\t" entry alive.
-			list.Paths = append(list.Paths, strings.Clone(path))
 		}
 	})
 	if err != nil {

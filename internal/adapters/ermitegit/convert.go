@@ -337,21 +337,17 @@ type pathWalker struct {
 	maxPaths int
 	maxBytes int
 
-	// paths are the paths kept. Their bytes live in chunks: a chunk is filled
+	// list collects the paths. Their bytes live in chunks: a chunk is filled
 	// by a strings.Builder, so a path is read back as a string without a copy,
 	// and a full chunk is left to the paths that point into it instead of
 	// being grown and copied.
-	paths     []string
-	chunk     strings.Builder
-	prefix    []byte // "dir/sub/" of the directory being read
-	size      int    // bytes of the paths kept
-	truncated bool
-	bad       error
+	list   domain.PathList
+	chunk  strings.Builder
+	prefix []byte // "dir/sub/" of the directory being read
+	bad    error
 }
 
 // listPaths lists the files and symbolic links of a revision recursively.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter converts ermite-git values into domain values; the limits and the orders come from domain
 func listPaths(ctx context.Context, r *git.Repo, rev domain.Revision, maxPaths, maxBytes int) (domain.PathList, error) {
 	commit, root, err := commitTree(r, rev)
 	if err != nil {
@@ -362,12 +358,11 @@ func listPaths(ctx context.Context, r *git.Repo, rev domain.Revision, maxPaths, 
 		return domain.PathList{}, err
 	}
 	w := &pathWalker{ctx: ctx, r: r, maxPaths: maxPaths, maxBytes: maxBytes}
+	w.list.CommitID, w.list.TreeID = commit, treeID
 	if err := w.walk(root); err != nil {
 		return domain.PathList{}, err
 	}
-	list := domain.PathList{CommitID: commit, TreeID: treeID, Truncated: w.truncated}
-	list.Paths = w.paths
-	return list, nil
+	return w.list, nil
 }
 
 // walk lists one directory. The recursion is inside the callback of ReadTree,
@@ -388,7 +383,7 @@ func (w *pathWalker) walk(tree git.ObjectID) error {
 			w.prefix = append(w.prefix, e.Name...)
 			// The paths below a directory that is not addressable are not
 			// either: this also bounds the depth of the recursion.
-			if !domain.IsAddressablePath(string(w.prefix)) {
+			if !domain.IsAddressablePathBytes(w.prefix) {
 				w.prefix = w.prefix[:mark]
 				return true
 			}
@@ -399,7 +394,7 @@ func (w *pathWalker) walk(tree git.ObjectID) error {
 				w.bad = err
 				return false
 			}
-			return !w.truncated
+			return !w.list.Truncated
 		case e.Mode.IsRegular(), e.Mode.IsSymlink():
 			return w.add(e.Name)
 		}
@@ -413,27 +408,22 @@ func (w *pathWalker) walk(tree git.ObjectID) error {
 }
 
 // add lists the file name of the current directory, and says whether the walk
-// goes on.
+// goes on. A path that is not addressable is not written to a chunk.
 func (w *pathWalker) add(name []byte) bool {
-	n := len(w.prefix) + len(name)
-	if w.chunk.Cap()-w.chunk.Len() < n {
+	mark := len(w.prefix)
+	w.prefix = append(w.prefix, name...)
+	path := w.prefix
+	w.prefix = w.prefix[:mark]
+	if !domain.IsAddressablePathBytes(path) {
+		return true
+	}
+	if w.chunk.Cap()-w.chunk.Len() < len(path) {
 		w.chunk = strings.Builder{}
-		w.chunk.Grow(max(pathChunk, n))
+		w.chunk.Grow(max(pathChunk, len(path)))
 	}
 	start := w.chunk.Len()
-	w.chunk.Write(w.prefix)
-	w.chunk.Write(name)
-	path := w.chunk.String()[start:]
-	switch {
-	case !domain.IsAddressablePath(path):
-	case len(w.paths) >= w.maxPaths || w.size+n > w.maxBytes:
-		w.truncated = true
-		return false
-	default:
-		w.size += n
-		w.paths = append(w.paths, path)
-	}
-	return true
+	w.chunk.Write(path)
+	return w.list.Add(w.chunk.String()[start:], w.maxPaths, w.maxBytes)
 }
 
 // fillLastCommits sets the last commit of the first MaxLastCommitEntries
