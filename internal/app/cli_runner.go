@@ -55,7 +55,7 @@ func newRunnerListCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -129,7 +129,7 @@ func newRunnerRemoveCmd(env *cliEnv) *cobra.Command {
 		},
 	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}

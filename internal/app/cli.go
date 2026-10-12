@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -30,10 +31,28 @@ type cliEnv struct {
 	// defaults.
 	backoff client.Backoff
 	sleep   func(context.Context, time.Duration) error
+
+	// configPath returns the CLI config file path; nil means the default
+	// (ERMITE_CONFIG, else ~/.config/ermite/config).
+	configPath func() (string, error)
+	// runTokenCmd runs the token.cmd command line and returns its raw standard
+	// output. Tests replace it.
+	runTokenCmd func(ctx context.Context, cmd string) (string, error)
+
+	// The config file is read at most once and token.cmd run at most once per
+	// process, and only when a command needs them (see cli_configfile.go).
+	fileOnce  sync.Once
+	file      *cliFile
+	filePath  string
+	fileTrust error // why token.cmd must not run from this file, if so
+	fileErr   error
+	tokenOnce sync.Once
+	token     string
+	tokenErr  error
 }
 
 func defaultCLIEnv() *cliEnv {
-	return &cliEnv{getenv: os.Getenv, now: time.Now, version: buildVersion()}
+	return &cliEnv{getenv: os.Getenv, now: time.Now, version: buildVersion(), runTokenCmd: runTokenShell}
 }
 
 // userAgent identifies this CLI to the server.
@@ -54,23 +73,56 @@ func (e *cliEnv) ctx(cmd *cobra.Command) context.Context {
 	return ctx
 }
 
-// config reads and validates ERMITE_URL and ERMITE_TOKEN.
-func (e *cliEnv) config() (client.Config, error) {
-	cfg, err := client.ConfigFromEnv(e.getenv)
+// buildConfig builds the client configuration: ERMITE_URL and ERMITE_TOKEN
+// win, then the config file (url, and the output of token.cmd for the token).
+// runTokenCmd false leaves token.cmd alone (ERMITE_TOKEN is still used), for
+// the calls that need no authentication.
+func (e *cliEnv) buildConfig(cmd *cobra.Command, warn, runTokenCmd bool) (client.Config, error) {
+	rawURL, err := e.resolveURL(cmd, warn)
 	if err != nil {
-		return cfg, err
+		return client.Config{}, err
+	}
+	if strings.TrimSpace(rawURL) != "" {
+		if _, err := client.ParseURL(strings.TrimSpace(rawURL)); err != nil {
+			return client.Config{}, fmt.Errorf("%s: %w", e.urlSource(), err)
+		}
+	}
+	// A missing or invalid URL is reported before token.cmd gets to prompt.
+	cfg, err := client.NewConfig(rawURL, "")
+	if err != nil {
+		return client.Config{}, err
+	}
+	cfg.Token = strings.TrimSpace(e.getenv(client.EnvToken))
+	if cfg.Token == "" && runTokenCmd {
+		if cfg.Token, err = e.tokenFromCmd(cmd, warn); err != nil {
+			return client.Config{}, err
+		}
 	}
 	cfg.UserAgent = e.userAgent()
 	return cfg, nil
 }
 
-// client builds the API client. Commands warn when the token would travel in
-// the clear; completion stays silent.
-func (e *cliEnv) client(cmd *cobra.Command, warn bool) (*client.Client, error) {
-	cfg, err := e.config()
+// client builds the API client. It warns when the token would travel in the
+// clear.
+func (e *cliEnv) client(cmd *cobra.Command) (*client.Client, error) {
+	cfg, err := e.buildConfig(cmd, true, true)
 	if err != nil {
 		return nil, err
 	}
+	return newClient(cmd, cfg, true)
+}
+
+// clientNoTokenCmd is client without running token.cmd (ERMITE_TOKEN is still
+// used), for GetVersion, which is anonymous, and for completions.
+func (e *cliEnv) clientNoTokenCmd(cmd *cobra.Command, warn bool) (*client.Client, error) {
+	cfg, err := e.buildConfig(cmd, warn, false)
+	if err != nil {
+		return nil, err
+	}
+	return newClient(cmd, cfg, warn)
+}
+
+func newClient(cmd *cobra.Command, cfg client.Config, warn bool) (*client.Client, error) {
 	if w := cfg.InsecureTokenWarning(); w != "" && warn {
 		warnf(cmd, "%s", w)
 	}
@@ -128,13 +180,20 @@ func collect[T any](ctx context.Context, fetch func(token string) ([]T, string, 
 	}
 }
 
+// completionClient is the client of the shell completions: silent, and
+// anonymous unless ERMITE_TOKEN is set, because completing must never run
+// token.cmd (it may prompt, and a completion script cannot answer).
+func (e *cliEnv) completionClient(cmd *cobra.Command) (*client.Client, error) {
+	return e.clientNoTokenCmd(cmd, false)
+}
+
 // complete builds a shell completion: it opens a client (silently giving up
 // on any failure), lists with a 3 s timeout and keeps the entries whose
 // first element starts with the prefix.
 func complete[T any](env *cliEnv, cmd *cobra.Command, prefix string,
 	list func(context.Context, *client.Client) ([]T, error), entry func(T) (key, text string),
 ) []string {
-	c, err := env.client(cmd, false)
+	c, err := env.completionClient(cmd)
 	if err != nil {
 		return nil
 	}

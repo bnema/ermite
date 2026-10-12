@@ -33,11 +33,13 @@ type jsonServerVersion struct {
 func newVersionCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print the client version and, when ERMITE_URL is set, the server's",
-		Long: "Print the version of this client and, when ERMITE_URL is set, the version of the server and\n" +
-			"the optional features of the API it implements. A warning on standard error says which of the\n" +
-			"features this client uses the server lacks. Without ERMITE_URL only the client is shown.\n\n" +
-			"JSON fields (--json): client.version; server, null without ERMITE_URL, with url, version,\n" +
+		Short: "Print the client version and, when a server URL is configured, the server's",
+		Long: "Print the version of this client and, when a server URL is configured (ERMITE_URL or the url\n" +
+			"of the config file, see `ermite config`), the version of the server and the optional features\n" +
+			"of the API it implements. A warning on standard error says which of the features this client\n" +
+			"uses the server lacks. Without a URL only the client is shown. The token command of the config\n" +
+			"file is not run.\n\n" +
+			"JSON fields (--json): client.version; server, null without a URL, with url, version,\n" +
 			"features (array of identifiers) and missing_features (the ones this client uses that the\n" +
 			"server lacks).",
 		Args: cobra.NoArgs,
@@ -46,7 +48,13 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		out := cmd.OutOrStdout()
 		clientLine := "ermite " + env.version
-		url := strings.TrimSpace(env.getenv(client.EnvURL))
+		url, err := env.resolveURL(cmd, true)
+		if err != nil {
+			// The client version does not depend on the file: say what is wrong
+			// and go on as if no URL were configured.
+			warnf(cmd, "%s", err)
+			url = ""
+		}
 		if url == "" {
 			if *asJSON {
 				return writeJSON(out, jsonVersion{Client: jsonClientVersion{Version: env.version}})
@@ -55,7 +63,8 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 			return err
 		}
 
-		c, err := env.client(cmd, true)
+		// GetVersion is anonymous: token.cmd is not run for it.
+		c, err := env.clientNoTokenCmd(cmd, true)
 		if err != nil {
 			return err
 		}
