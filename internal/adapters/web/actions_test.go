@@ -68,3 +68,45 @@ func TestLogPagesPassTheClientKey(t *testing.T) {
 		assert.Equal(t, want, c)
 	}
 }
+
+// M4: one helper shapes the lines of the page, the raw feed and the live feed.
+func TestAppendLogLine(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 10, 12, 10, 11, 12, 0, time.UTC)
+	line := func(text string, cont bool) ports.JobLogLine {
+		return ports.JobLogLine{Step: 2, CILogLine: domain.CILogLine{Time: at, Text: text, Continued: cont}}
+	}
+	var out []LogLineView
+	out = appendLogLine(out, 10, line("##[group]Run make", false))
+	out = appendLogLine(out, 11, line("plain <b>", false))
+	out = appendLogLine(out, 12, line("##[error]Process completed with exit code 1.", false))
+	out = appendLogLine(out, 13, line("##[endgroup]", false))
+	require.Len(t, out, 4)
+	assert.True(t, out[0].Group)
+	assert.Equal(t, "Run make", out[0].Text, "the marker is structure, not text")
+	assert.EqualValues(t, 10, out[0].N)
+	assert.Equal(t, "10:11:12", out[0].Time)
+	assert.EqualValues(t, 2, out[0].Step)
+	assert.False(t, out[1].Group || out[1].Error || out[1].End)
+	assert.True(t, out[2].Error)
+	assert.Equal(t, "Process completed with exit code 1.", out[2].Text)
+	assert.True(t, out[3].End)
+
+	// A cut line comes back as one line, with the number of its first piece.
+	var cut []LogLineView
+	cut = appendLogLine(cut, 20, line("first half, ", false))
+	cut = appendLogLine(cut, 21, line("second half", true))
+	require.Len(t, cut, 1)
+	assert.Equal(t, "first half, second half", cut[0].Text)
+	assert.EqualValues(t, 20, cut[0].N)
+
+	// A piece that opens a batch has no line before it here: it stays, marked,
+	// for the page to join to the line it already holds.
+	open := appendLogLine(nil, 30, line("rest", true))
+	require.Len(t, open, 1)
+	assert.True(t, open[0].Continued)
+
+	// Invisible characters of the runner's text are shown, never applied.
+	hidden := appendLogLine(nil, 40, line("a\u202eb", false))
+	assert.NotContains(t, hidden[0].Text, "\u202e")
+}

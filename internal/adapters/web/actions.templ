@@ -208,7 +208,7 @@ templ Job(l Layout, p JobPage) {
 // LogLine is a line of the log. Group and error markers of the runner show as
 // headings and errors, never as raw text.
 templ LogLine(ln LogLineView) {
-	<li id={ "L" + itoa64(ln.N) } class={ logClass(ln) } data-step={ itoa(int(ln.Step)) }><time>{ ln.Time }</time><span class="t">{ ln.Text }</span></li>
+	<li id={ "L" + itoa64(ln.N) } class={ logClass(ln) } data-step={ itoa(int(ln.Step)) } data-cont?={ ln.Continued }><time>{ ln.Time }</time><span class="t">{ ln.Text }</span></li>
 }
 
 templ jobRail(p JobPage) {

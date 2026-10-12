@@ -459,9 +459,9 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	}
 	p.ChecksBlock = d.repo.Settings.FailingChecksBlock
 	if open && head != "" {
-		p.Checks = checksSection(d.repo.Repo, s.checksFor(ctx, d.repo.Name, head), now)
+		p.Checks = checksSection(d.repo.Repo, s.checksFor(ctx, d.repo.Name, head))
 	} else if head != "" {
-		p.Checks = checksSection(d.repo.Repo, s.checksFor(ctx, d.repo.Name, head), now)
+		p.Checks = checksSection(d.repo.Repo, s.checksFor(ctx, d.repo.Name, head))
 		p.Checks.Note = ""
 	}
 	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)

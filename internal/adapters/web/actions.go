@@ -198,6 +198,9 @@ type LogLineView struct {
 	// Group marks "##[group]" and "##[endgroup]" lines and Error the
 	// "##[error]" ones; the text is shown without the marker.
 	Group, End, Error bool
+	// Continued marks a piece of a line whose beginning is in an earlier batch
+	// of the live feed: the page appends its text to the line before it.
+	Continued bool
 }
 
 // JobPage is one job with its steps and its log.
@@ -452,6 +455,30 @@ func (s *Server) job(ctx context.Context, r *http.Request) (templ.Component, int
 	return Job(l, p), http.StatusOK, nil
 }
 
+// appendLogLine adds the line n of a job log to the lines shown. The markers
+// of the runner ("##[group]", "##[endgroup]", "##[error]") become structure and
+// are not shown as text. A piece that continues a line too long to send whole
+// is joined to the line before it; one that opens the list (its line is in an
+// earlier batch) keeps Continued, and the page appends it to that line.
+func appendLogLine(out []LogLineView, n int64, l ports.JobLogLine) []LogLineView {
+	text := l.Text
+	v := LogLineView{N: n, Step: l.Step, Time: l.Time.UTC().Format("15:04:05"), Continued: l.Continued}
+	switch {
+	case strings.HasPrefix(text, "##[group]"):
+		v.Group, text = true, strings.TrimPrefix(text, "##[group]")
+	case strings.HasPrefix(text, "##[endgroup]"):
+		v.End, text = true, strings.TrimPrefix(text, "##[endgroup]")
+	case strings.HasPrefix(text, "##[error]"):
+		v.Error, text = true, strings.TrimPrefix(text, "##[error]")
+	}
+	v.Text = visibleText(text)
+	if l.Continued && len(out) > 0 {
+		out[len(out)-1].Text += v.Text
+		return out
+	}
+	return append(out, v)
+}
+
 // logClient is the key of the visitor for the limit of log streams per client.
 func (s *Server) logClient(r *http.Request) string {
 	return clientlimit.Key(clientlimit.ClientAddr(r, s.cfg.TrustedProxies))
@@ -465,40 +492,14 @@ func (s *Server) readLog(ctx context.Context, client string, repo domain.RepoNam
 	}
 	var out []LogLineView
 	next := from
-	ranges := j.StepRanges()
-	stepOf := func(n int64) int32 {
-		for i, r := range ranges {
-			if n >= r.Start && n < r.End {
-				return j.Steps[i].Number
-			}
-		}
-		return 0
-	}
 	stop := errors.New("enough")
 	err := s.cfg.Runs.GetJobLog(ctx, principal(ctx), repo, ports.GetJobLogParams{JobID: j.ID, Attempt: j.Attempt, Offset: from, Client: client}, func(b ports.LogBatch) error {
 		for i, l := range b.Lines {
-			if len(out) >= max {
-				return stop
+			if len(out) >= max && !l.Continued {
+				return stop // the rest of a cut line still belongs to this page
 			}
-			n := b.Offset + int64(i)
-			text := l.Text
-			v := LogLineView{N: n, Step: stepOf(n), Time: l.Time.UTC().Format("15:04:05")}
-			switch {
-			case strings.HasPrefix(text, "##[group]"):
-				v.Group, text = true, strings.TrimPrefix(text, "##[group]")
-			case strings.HasPrefix(text, "##[endgroup]"):
-				v.End, text = true, strings.TrimPrefix(text, "##[endgroup]")
-			case strings.HasPrefix(text, "##[error]"):
-				v.Error, text = true, strings.TrimPrefix(text, "##[error]")
-			}
-			if l.Continued && len(out) > 0 {
-				out[len(out)-1].Text += visibleText(text)
-				next = n + 1
-				continue
-			}
-			v.Text = visibleText(text)
-			out = append(out, v)
-			next = n + 1
+			out = appendLogLine(out, b.Offset+int64(i), l)
+			next = b.Offset + int64(i) + 1
 		}
 		return nil
 	})
@@ -533,8 +534,9 @@ func (s *Server) rawLog(w http.ResponseWriter, r *http.Request) {
 		}
 		attempt = int32(n)
 	}
-	view, err := s.cfg.Runs.GetJob(ctx, principal(ctx), d.repo.Name, jobID, attempt)
-	if err != nil {
+	// The job is read first: a job that is not there, or not readable, is a 404
+	// before any header of the log is sent.
+	if _, err := s.cfg.Runs.GetJob(ctx, principal(ctx), d.repo.Name, jobID, attempt); err != nil {
 		s.fail(ctx, w, r, err)
 		return
 	}
@@ -573,7 +575,6 @@ func (s *Server) rawLog(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintln(w)
 	}
 	if err != nil && !open && errors.Is(err, domain.ErrNotFound) {
-		_ = view
 		w.WriteHeader(http.StatusNotFound)
 	}
 }
@@ -714,7 +715,7 @@ func checksSummary(repo domain.RepoName, sha string, checks []ports.CheckView) C
 
 // checksSection is the checks of the rail of a merge request, with the rule of
 // the repository that applies to them.
-func checksSection(repo domain.Repo, checks []ports.CheckView, now time.Time) ChecksSection {
+func checksSection(repo domain.Repo, checks []ports.CheckView) ChecksSection {
 	sec := ChecksSection{}
 	for _, c := range checks {
 		row := CheckRow{
@@ -736,7 +737,6 @@ func checksSection(repo domain.Repo, checks []ports.CheckView, now time.Time) Ch
 	default:
 		sec.Note = "checks do not block the merge in this repository."
 	}
-	_ = now
 	return sec
 }
 
@@ -770,8 +770,7 @@ func (s *Server) logStream(w http.ResponseWriter, r *http.Request) {
 		s.denyEvents(ctx, w, errNotFound)
 		return
 	}
-	view, err := s.cfg.Runs.GetJob(ctx, principal(ctx), d.repo.Name, jobID, 0)
-	if err != nil {
+	if _, err := s.cfg.Runs.GetJob(ctx, principal(ctx), d.repo.Name, jobID, 0); err != nil {
 		s.denyEvents(ctx, w, err)
 		return
 	}
@@ -786,29 +785,17 @@ func (s *Server) logStream(w http.ResponseWriter, r *http.Request) {
 	if out.raw(": connected\n\n") != nil {
 		return
 	}
-	ranges := view.StepRanges()
-	_ = ranges
 	n := from
 	err = s.cfg.Runs.GetJobLog(ctx, principal(ctx), d.repo.Name, ports.GetJobLogParams{
 		JobID: jobID, Offset: from, Follow: true,
 		Client: s.logClient(r),
 	}, func(b ports.LogBatch) error {
-		var html strings.Builder
+		var views []LogLineView
 		for i, l := range b.Lines {
-			v := LogLineView{N: b.Offset + int64(i), Time: l.Time.UTC().Format("15:04:05"), Step: l.Step}
-			text := l.Text
-			switch {
-			case strings.HasPrefix(text, "##[group]"):
-				v.Group, text = true, strings.TrimPrefix(text, "##[group]")
-			case strings.HasPrefix(text, "##[endgroup]"):
-				v.End, text = true, strings.TrimPrefix(text, "##[endgroup]")
-			case strings.HasPrefix(text, "##[error]"):
-				v.Error, text = true, strings.TrimPrefix(text, "##[error]")
-			}
-			v.Text = visibleText(text)
-			if l.Continued {
-				continue // joined to its line by the page reload; rare and harmless
-			}
+			views = appendLogLine(views, b.Offset+int64(i), l)
+		}
+		var html strings.Builder
+		for _, v := range views {
 			var b2 strings.Builder
 			if err := LogLine(v).Render(ctx, &b2); err != nil {
 				return err
