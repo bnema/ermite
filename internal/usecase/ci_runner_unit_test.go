@@ -148,3 +148,124 @@ func TestLogLimitOnAVanishedJobIsNotFound(t *testing.T) {
 	_, isEnded := domain.IsJobEnded(err)
 	assert.False(t, isEnded)
 }
+
+// expectRunJob makes GetJobLog find the job of the repository (a public one).
+func (u *ciUnit) expectLogJob(j domain.CIJob) {
+	u.meta.EXPECT().Get(mock.Anything, j.Repo).Return(domain.Repo{Name: j.Repo, Visibility: domain.VisibilityPublic}, nil)
+	u.store.EXPECT().GetRun(mock.Anything, j.Repo, j.RunID).Return(domain.CIRun{Repo: j.Repo, ID: j.RunID, Attempt: 1}, nil)
+	u.store.EXPECT().GetJob(mock.Anything, j.RunID, j.RunAttempt, j.ID).Return(j, nil)
+}
+
+// S7: without follow a missing log is not found and an offset past the end is
+// out of range; with follow a running job's reader waits for the lines, and a
+// job that ended answers as without follow (follow changes nothing then).
+func TestGetJobLogFollowAndOutOfRange(t *testing.T) {
+	t.Parallel()
+	p := domain.Anonymous()
+	params := func(follow bool, offset int64) ports.GetJobLogParams {
+		return ports.GetJobLogParams{JobID: jobIDOne, Offset: offset, Follow: follow}
+	}
+	send := func(ports.LogBatch) error { return nil }
+
+	t.Run("no follow: out of range", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, nil)
+		j := ciJob(t, domain.CIPhaseRunning, jobSecret)
+		u.expectLogJob(j)
+		u.logs.EXPECT().Changed(mock.Anything).Return(make(chan struct{}))
+		u.logs.EXPECT().Read(mock.Anything, mock.Anything, int64(5), mock.Anything, mock.Anything).Return(nil, domain.ErrOutOfRange)
+		err := u.ci.GetJobLog(context.Background(), p, j.Repo, params(false, 5), send)
+		assert.ErrorIs(t, err, domain.ErrOutOfRange)
+	})
+	t.Run("no follow: no log", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, nil)
+		j := ciJob(t, domain.CIPhaseReady, jobSecret)
+		u.expectLogJob(j)
+		u.logs.EXPECT().Changed(mock.Anything).Return(make(chan struct{}))
+		u.logs.EXPECT().Read(mock.Anything, mock.Anything, int64(0), mock.Anything, mock.Anything).Return(nil, domain.ErrNotFound)
+		assert.ErrorIs(t, u.ci.GetJobLog(context.Background(), p, j.Repo, params(false, 0), send), domain.ErrNotFound)
+	})
+	t.Run("follow, ended: out of range like without follow", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, nil)
+		j := ciJob(t, domain.CIPhaseEnded, jobSecret)
+		u.expectLogJob(j)
+		u.logs.EXPECT().Changed(mock.Anything).Return(make(chan struct{}))
+		u.logs.EXPECT().Read(mock.Anything, mock.Anything, int64(5), mock.Anything, mock.Anything).Return(nil, domain.ErrOutOfRange)
+		err := u.ci.GetJobLog(context.Background(), p, j.Repo, params(true, 5), send)
+		assert.ErrorIs(t, err, domain.ErrOutOfRange)
+	})
+	t.Run("follow, running: waits for the line, then sends it", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, nil)
+		j := ciJob(t, domain.CIPhaseRunning, jobSecret)
+		u.expectLogJob(j)
+		wake := make(chan struct{})
+		u.logs.EXPECT().Changed(mock.Anything).Return((<-chan struct{})(wake))
+		reads := 0
+		u.logs.EXPECT().Read(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+			func(_ context.Context, _ ports.CILogRef, from int64, _, _ int) ([]domain.CILogLine, error) {
+				reads++
+				if from == 0 && reads == 1 {
+					return nil, domain.ErrOutOfRange // the runner has not written yet
+				}
+				if from == 0 {
+					return []domain.CILogLine{{Time: now, Text: "late line"}}, nil
+				}
+				return nil, nil
+			})
+		ctx, cancel := context.WithCancel(context.Background())
+		got := make(chan ports.LogBatch, 1)
+		errc := make(chan error, 1)
+		go func() {
+			errc <- u.ci.GetJobLog(ctx, p, j.Repo, params(true, 0), func(b ports.LogBatch) error {
+				got <- b
+				cancel() // enough
+				return nil
+			})
+		}()
+		select {
+		case <-got:
+			t.Fatal("a line was sent before it existed")
+		case <-time.After(150 * time.Millisecond):
+		}
+		close(wake) // the append happens
+		select {
+		case b := <-got:
+			require.Len(t, b.Lines, 1)
+			assert.Equal(t, "late line", b.Lines[0].Text)
+		case <-time.After(5 * time.Second):
+			t.Fatal("the reader did not wake up")
+		}
+		require.NoError(t, <-errc)
+	})
+}
+
+// S8: a stream that never idles revalidates the token too.
+func TestGetJobLogRevalidatesABusyStream(t *testing.T) {
+	t.Parallel()
+	auth := mocks.NewRevalidator(t)
+	u := newCIUnit(t, func(cfg *usecase.CIConfig) { cfg.Auth = auth })
+	j := ciJob(t, domain.CIPhaseRunning, jobSecret)
+	u.expectLogJob(j)
+	u.logs.EXPECT().Changed(mock.Anything).Return(make(chan struct{}))
+	// A token principal; the log keeps having lines to send.
+	tok := domain.TokenPrincipal(domain.Token{ID: "t1", Scopes: []domain.Scope{domain.ScopeRepoRead}})
+	u.logs.EXPECT().Read(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]domain.CILogLine{{Time: now, Text: "x"}}, nil)
+	revoked := domain.ErrUnauthenticated
+	auth.EXPECT().Revalidate(mock.Anything, tok).Return(revoked).Once()
+
+	sent := 0
+	start := time.Now()
+	err := u.ci.GetJobLog(context.Background(), tok, j.Repo, ports.GetJobLogParams{JobID: jobIDOne, Follow: true}, func(ports.LogBatch) error {
+		sent++
+		time.Sleep(usecase.DefaultRevalidateEvery / 2)
+		if time.Since(start) > 30*time.Second {
+			return context.DeadlineExceeded
+		}
+		return nil
+	})
+	assert.ErrorIs(t, err, domain.ErrUnauthenticated, "a revoked token stops a busy stream")
+	assert.GreaterOrEqual(t, sent, 2)
+}

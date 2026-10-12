@@ -218,7 +218,7 @@ func (c *CI) GetJobLog(ctx context.Context, p domain.Principal, name domain.Repo
 	if params.Offset < 0 {
 		return fmt.Errorf("%w: negative offset", domain.ErrInvalid)
 	}
-	run, j, err := c.jobOf(ctx, name, params.JobID, params.Attempt)
+	_, j, err := c.jobOf(ctx, name, params.JobID, params.Attempt)
 	if err != nil {
 		return err
 	}
@@ -234,6 +234,19 @@ func (c *CI) GetJobLog(ctx context.Context, p domain.Principal, name domain.Repo
 	jref := jobRef(j)
 	offset := params.Offset
 	checked := time.Now()
+	// revalidate asks again whether the token of a stored-token caller still
+	// exists, at most every few seconds, whether the stream is busy or idle: a
+	// token revoked while a long log is sent stops the stream.
+	revalidate := func() error {
+		if p.TokenID() == "" || c.cfg.Auth == nil || time.Since(checked) <= DefaultRevalidateEvery {
+			return nil
+		}
+		if err := c.cfg.Auth.Revalidate(ctx, p); err != nil {
+			return err
+		}
+		checked = time.Now()
+		return nil
+	}
 	for {
 		wakeJob, wakeLog := c.jobs.wait(jref), c.cfg.Logs.Changed(ref)
 		cur, err := c.cfg.Store.GetJob(ctx, j.RunID, j.RunAttempt, j.ID)
@@ -243,24 +256,25 @@ func (c *CI) GetJobLog(ctx context.Context, p domain.Principal, name domain.Repo
 		done := cur.Ended()
 		lines, err := c.cfg.Logs.Read(ctx, ref, offset, domain.CIMaxLogLines, domain.CIMaxLogChunkBytes)
 		switch {
-		case errors.Is(err, domain.ErrNotFound):
-			// No line yet. Without follow, or for a job that ended without
-			// lines, there is no log.
+		case errors.Is(err, domain.ErrNotFound), errors.Is(err, domain.ErrOutOfRange):
+			// No line yet (a queued job has no log), or fewer lines than the
+			// offset. Without follow, and for a job that ended (follow changes
+			// nothing then), that is the answer (contract: not_found,
+			// out_of_range). A job that runs may still write the line: wait.
 			if !params.Follow || done {
-				if done && params.Offset == 0 && params.Follow {
-					return nil
+				if errors.Is(err, domain.ErrNotFound) {
+					return domain.ErrNotFound
 				}
-				return domain.ErrNotFound
-			}
-		case errors.Is(err, domain.ErrOutOfRange):
-			if !params.Follow || done {
 				return fmt.Errorf("%w: the log has fewer than %d lines", domain.ErrOutOfRange, offset)
 			}
-			return fmt.Errorf("%w: the log has fewer than %d lines", domain.ErrOutOfRange, offset)
+			lines = nil
 		case err != nil:
 			return err
 		}
 		if len(lines) > 0 {
+			if err := revalidate(); err != nil {
+				return err
+			}
 			batch := ports.LogBatch{Offset: offset, Lines: c.withSteps(ctx, cur, offset, lines)}
 			if err := send(batch); err != nil {
 				return err
@@ -271,13 +285,9 @@ func (c *CI) GetJobLog(ctx context.Context, p domain.Principal, name domain.Repo
 		if !params.Follow || done {
 			return nil
 		}
-		if p.TokenID() != "" && c.cfg.Auth != nil && time.Since(checked) > DefaultRevalidateEvery {
-			if err := c.cfg.Auth.Revalidate(ctx, p); err != nil {
-				return err
-			}
-			checked = time.Now()
+		if err := revalidate(); err != nil {
+			return err
 		}
-		_ = run
 		select {
 		case <-wakeJob:
 		case <-wakeLog:

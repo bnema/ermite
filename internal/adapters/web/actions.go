@@ -818,7 +818,7 @@ func (s *Server) logStream(w http.ResponseWriter, r *http.Request) {
 		}
 		return rc.Flush()
 	})
-	if err == nil {
+	if err == nil || errors.Is(err, domain.ErrNotFound) {
 		_ = out.raw("event: ci-end\nid: " + strconv.FormatInt(n, 10) + "\ndata: end\n\n")
 	}
 }
