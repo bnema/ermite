@@ -65,7 +65,6 @@ rules:
 mocking:
   generatedMockPaths:
     - internal/ports/mocks/**
-    - internal/adapters/web/mocks/**
   generatedMockNamePatterns:
     - '{{Interface}}'
 allow:

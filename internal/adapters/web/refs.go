@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // resolveRef finds the ref a URL path starts with and the path that follows.
@@ -14,7 +14,9 @@ import (
 // that is the short name of a branch or tag wins. A branch wins over a tag of
 // the same name. rest has no leading slash and is "" when the path is the ref
 // alone. ok is false when no ref matches; the caller may then try a commit id.
-func resolveRef(refs []*pb.Ref, p string) (ref *pb.Ref, rest string, ok bool) {
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter finds the ref a URL path starts with; URL routing, no rule is decided here
+func resolveRef(refs []domain.Ref, p string) (ref domain.Ref, rest string, ok bool) {
 	names := refsByName(refs)
 	p = strings.Trim(p, "/")
 	for end := len(p); end > 0; end = strings.LastIndex(p[:end], "/") {
@@ -22,21 +24,21 @@ func resolveRef(refs []*pb.Ref, p string) (ref *pb.Ref, rest string, ok bool) {
 			return r, strings.TrimPrefix(p[end:], "/"), true
 		}
 	}
-	return nil, "", false
+	return domain.Ref{}, "", false
 }
 
 // refsByName indexes the branches and tags by short name. A branch wins over
 // a tag of the same name.
-func refsByName(refs []*pb.Ref) map[string]*pb.Ref {
-	names := make(map[string]*pb.Ref, len(refs))
+func refsByName(refs []domain.Ref) map[string]domain.Ref {
+	names := make(map[string]domain.Ref, len(refs))
 	for _, r := range refs {
-		k := r.GetKind()
-		if k != pb.RefKind_REF_KIND_BRANCH && k != pb.RefKind_REF_KIND_TAG {
+		k := r.Kind
+		if k != domain.RefKindBranch && k != domain.RefKindTag {
 			continue
 		}
-		cur, dup := names[r.GetShortName()]
-		if !dup || cur.GetKind() != pb.RefKind_REF_KIND_BRANCH {
-			names[r.GetShortName()] = r
+		cur, dup := names[r.ShortName]
+		if !dup || cur.Kind != domain.RefKindBranch {
+			names[r.ShortName] = r
 		}
 	}
 	return names
@@ -68,8 +70,8 @@ func repoHref(repo string, parts ...string) string {
 // target is what the URL of a tree, blob, raw or commits page designates: a
 // commit, the name it was reached by, and a path in its tree.
 type target struct {
-	// rev is what the API is asked for: the id of the commit of a ref, or
-	// the commit id of the URL itself.
+	// rev is what the use cases are asked for: the id of the commit of a ref,
+	// or the commit id of the URL itself.
 	rev string
 	// name is how the URL spells the ref: a branch or a tag, or the commit id
 	// when detached.
@@ -83,17 +85,17 @@ type target struct {
 // longest prefix of the path that is the short name of a branch or a tag
 // (names may contain "/"); a branch wins over a tag of the same name. An
 // empty rest designates the head of the repository. Whether the commit or
-// the path exists is for the API to say.
+// the path exists is for the use cases to say.
 func (d *repoData) locate(rest string) (target, bool) {
 	rest = strings.Trim(rest, "/")
 	if rest == "" {
 		if d.head == nil {
 			return target{}, false
 		}
-		return target{rev: d.head.GetCommitId(), name: d.head.GetShortName()}, true
+		return target{rev: d.head.CommitID.String(), name: d.head.ShortName}, true
 	}
-	if ref, p, ok := resolveRef(d.allRefs(), rest); ok && ref.GetCommitId() != "" {
-		return target{rev: ref.GetCommitId(), name: ref.GetShortName(), path: p}, true
+	if ref, p, ok := resolveRef(d.allRefs(), rest); ok && !ref.CommitID.IsZero() {
+		return target{rev: ref.CommitID.String(), name: ref.ShortName, path: p}, true
 	}
 	first, p, _ := strings.Cut(rest, "/")
 	if isCommitID(first) {
@@ -123,7 +125,7 @@ func (d *repoData) isBranchHead(t target) bool {
 		return false
 	}
 	for _, b := range d.branches {
-		if b.GetShortName() == t.name && b.GetCommitId() == t.rev {
+		if b.ShortName == t.name && b.CommitID.String() == t.rev {
 			return true
 		}
 	}

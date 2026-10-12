@@ -765,77 +765,8 @@ func TestDeleteRepoMovesToTrash(t *testing.T) {
 	assert.Equal(t, "not_found", codeName(err), "no commit of the deleted repository survives in a reader process")
 }
 
-// TestInProcessClient: the handlers answer calls made in the process with a
-// principal in the context, with no HTTP authentication, and refuse to be
-// fooled by an Authorization header.
-func TestInProcessClient(t *testing.T) {
-	h := newHarness(t, harnessOpts{})
-	h.seed("pub", domain.VisibilityPublic, "README.md")
-	h.seed("priv", domain.VisibilityPrivate, "README.md")
-	c := newClientsOn(h.forge.API.InProcessClient(), rpc.InProcessURL)
-	list := func(ctx context.Context) []string {
-		resp, err := c.repo.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{}))
-		require.NoError(t, err)
-		var out []string
-		for _, r := range resp.Msg.GetRepos() {
-			out = append(out, r.GetName())
-		}
-		return out
-	}
-
-	assert.Equal(t, []string{"pub"}, list(h.ctx), "no principal in the context is anonymous")
-	assert.Equal(t, []string{"pub"}, list(domain.ContextWithPrincipal(h.ctx, domain.Anonymous())))
-	owner := domain.ContextWithPrincipal(h.ctx, domain.Root())
-	assert.Equal(t, []string{"priv", "pub"}, list(owner))
-
-	// Mutations and streams work the same way.
-	_, err := c.repo.CreateRepo(owner, connect.NewRequest(&pb.CreateRepoRequest{Name: "web-made"}))
-	require.NoError(t, err)
-	_, err = c.repo.CreateRepo(h.ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "denied"}))
-	assert.Equal(t, "unauthenticated", codeName(err))
-	msgs, err := readBlob(owner, c, &pb.GetBlobRequest{Repo: "priv", Path: "README.md"})
-	require.NoError(t, err)
-	assert.Equal(t, "content of README.md\n", string(msgs[0].GetChunk()))
-	_, err = readBlob(h.ctx, c, &pb.GetBlobRequest{Repo: "priv", Path: "README.md"})
-	assert.Equal(t, "not_found", codeName(err))
-
-	wctx, cancel := context.WithCancel(owner)
-	defer cancel()
-	st, err := c.event.Watch(wctx, connect.NewRequest(&pb.WatchRequest{Topics: []string{"repo:web-made"}}))
-	require.NoError(t, err)
-	got := make(chan *pb.Event, 1)
-	go func() {
-		if st.Receive() {
-			got <- st.Msg().GetEvent()
-		}
-	}()
-	require.Eventually(t, func() bool { return h.forge.EventLog.Watchers() == 1 }, 5*time.Second, time.Millisecond)
-	_, err = c.repo.UpdateRepo(owner, connect.NewRequest(&pb.UpdateRepoRequest{
-		Repo: "web-made", Description: "d", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}},
-	}))
-	require.NoError(t, err)
-	select {
-	case ev := <-got:
-		assert.Equal(t, "d", ev.GetRepoUpdated().GetRepo().GetDescription())
-	case <-time.After(10 * time.Second):
-		t.Fatal("no event through the in-process client")
-	}
-
-	// An Authorization header does not give a principal in process.
-	hc := h.forge.API.InProcessClient()
-	req, _ := http.NewRequestWithContext(h.ctx, http.MethodPost, rpc.InProcessURL+"/ermite.RepoService/ListRepos", strings.NewReader("{}"))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-	resp, err := hc.Do(req)
-	require.NoError(t, err)
-	body, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	assert.NotContains(t, string(body), `"priv"`)
-}
-
 // A principal in the base context of the HTTP server does not authenticate
-// requests: only the in-process transport can mark a context as trusted, and
-// requests from the network are judged by their headers.
+// requests: requests from the network are judged by their headers.
 func TestNetworkRequestsIgnoreAPrincipalInTheContext(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	h.seed("pub", domain.VisibilityPublic, "README.md")

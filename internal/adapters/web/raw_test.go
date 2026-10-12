@@ -4,39 +4,50 @@ package web
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
-	"bnema.dev/ermite/internal/adapters/web/mocks"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-const blobID = "0123456789abcdef0123456789abcdef01234567"
+const (
+	blobID   = "0123456789abcdef0123456789abcdef01234567"
+	mainTip  = "c0ffee0c0ffee0c0ffee0c0ffee0c0ffee0c0ffe"
+	blobBody = "hello"
+)
 
-// blobAPI serves one text file, the only call raw makes besides the refs.
-type blobAPI struct {
-	ermiteconnect.UnimplementedGitServiceHandler
-}
-
-func (*blobAPI) GetBlob(_ context.Context, req *connect.Request[pb.GetBlobRequest], st *connect.ServerStream[pb.GetBlobResponse]) error {
-	if req.Msg.GetPath() != "docs/a.txt" {
-		return connect.NewError(connect.CodeNotFound, assert.AnError)
-	}
-	return st.Send(&pb.GetBlobResponse{
-		Info:  &pb.BlobInfo{Id: blobID, Path: "docs/a.txt", Size: 5, MediaType: "text/plain"},
-		Chunk: []byte("hello"),
-	})
+// rawBrowse serves one text file, the only call raw makes besides the refs.
+func rawBrowse(t *testing.T) *mocks.BrowseService {
+	t.Helper()
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListRefs(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything).Return(ports.RefPage{
+		Refs: []domain.Ref{{
+			Name: "refs/heads/main", ShortName: "main", Kind: domain.RefKindBranch,
+			ID: objectID(t, mainTip), CommitID: objectID(t, mainTip),
+		}},
+	}, nil).Maybe()
+	browse.EXPECT().OpenBlob(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, _ domain.Principal, _ domain.RepoName, rev domain.Revision, path domain.TreePath) (domain.BlobInfo, io.ReadCloser, error) {
+			if path.String() != "docs/a.txt" || rev.String() != mainTip {
+				return domain.BlobInfo{}, nil, domain.ErrNotFound
+			}
+			return domain.BlobInfo{ID: objectID(t, blobID), Path: "docs/a.txt", Size: int64(len(blobBody)), MediaType: "text/plain"},
+				io.NopCloser(strings.NewReader(blobBody)), nil
+		}).Maybe()
+	return browse
 }
 
 // A revalidation of an unchanged file ends with a 304 and no body. The blob is
-// opened in every case: its id is only known from the stream.
+// opened in every case: its id is only known from the metadata the use case
+// returns with the content.
 func TestRawRevalidation(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -58,19 +69,8 @@ func TestRawRevalidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			repos := mocks.NewRepoServiceClient(t)
-			repos.EXPECT().GetRepo(mock.Anything, mock.Anything).
-				Return(connect.NewResponse(&pb.GetRepoResponse{Repo: &pb.Repo{Name: "r", DefaultBranch: "main"}}), nil)
-			mux := http.NewServeMux()
-			mux.Handle(ermiteconnect.NewGitServiceHandler(&refsGit{}))
-			backend := httptest.NewServer(mux)
-			t.Cleanup(backend.Close)
-
-			srv, err := New(Config{
-				Repos: repos, Git: ermiteconnect.NewGitServiceClient(backend.Client(), backend.URL),
-				PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
-			})
-			require.NoError(t, err)
+			repos := reposServing(t, publicRepo(t, "r"))
+			srv := newTestServer(t, Config{Repos: repos, Browse: rawBrowse(t)})
 			req := httptest.NewRequest(tt.method, tt.url, nil)
 			if tt.ifNone != "" {
 				req.Header.Set("If-None-Match", tt.ifNone)
@@ -92,15 +92,4 @@ func TestRawRevalidation(t *testing.T) {
 			}
 		})
 	}
-}
-
-// refsGit adds the refs of the repository to blobAPI.
-type refsGit struct {
-	blobAPI
-}
-
-func (g *refsGit) ListRefs(context.Context, *connect.Request[pb.ListRefsRequest]) (*connect.Response[pb.ListRefsResponse], error) {
-	return connect.NewResponse(&pb.ListRefsResponse{Refs: []*pb.Ref{
-		{Name: "refs/heads/main", ShortName: "main", Kind: pb.RefKind_REF_KIND_BRANCH, CommitId: "c0ffee0"},
-	}}), nil
 }

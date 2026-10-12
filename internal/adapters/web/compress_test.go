@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func TestAcceptsGzip(t *testing.T) {
@@ -99,12 +99,7 @@ func TestPageETag(t *testing.T) {
 
 func newBareServer(t *testing.T) *Server {
 	t.Helper()
-	srv, err := New(Config{
-		Repos: failing{err: errors.New("x")}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
-		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
-	})
-	require.NoError(t, err)
-	return srv
+	return newTestServer(t, Config{Repos: reposFailing(t, errors.New("x")), Browse: mocks.NewBrowseService(t)})
 }
 
 func gunzip(t *testing.T, b []byte) string {
@@ -318,7 +313,7 @@ func TestAssetsGzip(t *testing.T) {
 // The event stream is never compressed, even for a client that accepts gzip.
 func TestEventsNotCompressed(t *testing.T) {
 	t.Parallel()
-	f := &fakeEvents{release: make(chan struct{})}
+	f := &watchProbe{release: make(chan struct{})}
 	ts := eventsServer(t, f, 20*time.Millisecond, 0)
 	resp, _ := open(t, ts, "topic=home", map[string]string{"Accept-Encoding": "gzip"})
 	require.Equal(t, http.StatusOK, resp.StatusCode)

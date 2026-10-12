@@ -109,11 +109,11 @@ type WebSessionService interface {
 	// Login uses the link and returns the session token and how long it
 	// lasts, or ErrLinkRejected.
 	Login(ctx context.Context, nonce string) (token string, lifetime time.Duration, err error)
-	// Verify checks a session token. When it is valid it returns the context
-	// to serve the request with, which carries the owner as the caller of the
-	// API; when it is not, ok is false and err nil. An error means the check
-	// could not be made (the request then runs as anonymous).
-	Verify(ctx context.Context, token string) (owner context.Context, ok bool, err error)
+	// Verify checks a session token. When it is valid it returns the owner,
+	// the principal the web passes to the use cases for that request; when it
+	// is not, ok is false and err nil. An error means the check could not be
+	// made (the request then runs as anonymous).
+	Verify(ctx context.Context, token string) (owner domain.Principal, ok bool, err error)
 }
 
 // PushService opens a repository for a push: it is domain.ErrUnauthenticated

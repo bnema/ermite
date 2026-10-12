@@ -506,14 +506,22 @@ func TestWebLoginSecretsStayOutOfTheLog(t *testing.T) {
 	assert.NotContains(t, logs, string(key))
 }
 
-// The owner principal is what the API sees from a signed-in page, and is
-// labelled "owner".
+// The owner principal is what the use cases see from a signed-in page, and is
+// labelled "owner": the use case logs it with a write the page made.
 func TestWebOwnerIsLabelledInLogs(t *testing.T) {
-	c := newCLIHarness(t)
-	c.seed("secret", domain.VisibilityPrivate, "notes.txt")
-	token := c.signIn(t)
-	browser{c.harness}.get("/secret", as(token))
-	assert.Contains(t, c.logs.String(), `"principal":"owner"`)
+	r := newMRRepo(t, domain.VisibilityPublic)
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Add search").ok(t)
+	b := browser{r.harness}
+	res := b.form("/proj/merge-requests/1/comments", token, url.Values{"text": {"from the page"}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	var line string
+	for _, l := range strings.Split(r.logs.String(), "\n") {
+		if strings.Contains(l, `"comment added"`) {
+			line = l
+		}
+	}
+	assert.Contains(t, line, `"principal":"owner"`)
 }
 
 // GO-004: a Secure cookie is kept by browsers only from https (or a loopback

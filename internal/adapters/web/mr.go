@@ -11,14 +11,14 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // The merge request pages (ADR 0017). They read through MergeRequestService
-// and GitService as the visitor of the request: anonymous sees the merge
+// and BrowseService as the visitor of the request: anonymous sees the merge
 // requests of public repositories, the signed-in owner those of every
 // repository, and only the owner gets the forms (mr_post.go handles them).
 //
@@ -44,9 +44,9 @@ import (
 
 const (
 	// mrPerPage is how many decided merge requests a page of the list shows,
-	// at least; pages of the API are read whole.
+	// at least; pages of the use case are read whole.
 	mrPerPage = 50
-	// maxMRPages bounds the API pages one list page reads.
+	// maxMRPages bounds the pages of the use case one list page reads.
 	maxMRPages = 20
 	// maxOpenPages bounds the pages read for the open merge requests, which
 	// the first list page shows in full.
@@ -260,39 +260,39 @@ func mrNumber(r *http.Request) (int64, error) {
 	return n, nil
 }
 
-func stateName(s pb.MergeRequestState) string {
+func stateName(s domain.MRState) string {
 	switch s {
-	case pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN:
+	case domain.MRStateOpen:
 		return "open"
-	case pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED:
+	case domain.MRStateMerged:
 		return "merged"
-	case pb.MergeRequestState_MERGE_REQUEST_STATE_CLOSED:
+	case domain.MRStateClosed:
 		return "closed"
 	}
 	return "unknown"
 }
 
-func modeName(m pb.MergeMode) string {
+func modeName(m domain.MergeMode) string {
 	switch m {
-	case pb.MergeMode_MERGE_MODE_FAST_FORWARD:
+	case domain.MergeModeFastForward:
 		return "fast-forward"
-	case pb.MergeMode_MERGE_MODE_SQUASH:
+	case domain.MergeModeSquash:
 		return "squash"
 	}
 	return ""
 }
 
 // mrRow converts a merge request of a listing.
-func (s *Server) mrRow(repo string, m *pb.MergeRequest) MRRow {
+func (s *Server) mrRow(repo string, m domain.MergeRequest) MRRow {
 	row := MRRow{
-		Number: "!" + strconv.FormatInt(m.GetNumber(), 10), Href: mrHref(repo, m.GetNumber()),
-		Title: visibleText(m.GetTitle()), State: stateName(m.GetState()),
-		Branches: visibleText(m.GetSourceBranch()) + " → " + visibleText(m.GetTargetBranch()),
-		Author:   visibleText(m.GetAuthor()),
+		Number: "!" + strconv.FormatInt(m.Number, 10), Href: mrHref(repo, m.Number),
+		Title: visibleText(m.Title.String()), State: stateName(m.State),
+		Branches: visibleText(m.Source) + " → " + visibleText(m.Target),
+		Author:   visibleText(m.Author),
 	}
-	ts := m.GetUpdatedAt()
-	if !ts.IsValid() {
-		ts = m.GetCreatedAt()
+	ts := m.UpdatedAt
+	if ts.IsZero() {
+		ts = m.CreatedAt
 	}
 	row.When, row.WhenAt = whenOf(s.cfg.Now(), ts)
 	return row
@@ -300,30 +300,30 @@ func (s *Server) mrRow(repo string, m *pb.MergeRequest) MRRow {
 
 // mrList lists the merge requests: the open ones, then the merged and closed
 // ones, a page at a time. The decided ones are paged with the page token of
-// the API in "page"; the open ones show on the first page only.
+// the use case in "page"; the open ones show on the first page only.
 func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	d, err := s.loadRepo(ctx, r.PathValue("repo"))
 	if err != nil {
 		return nil, 0, err
 	}
 	token := r.URL.Query().Get("page")
-	p := MRListPage{Default: visibleText(d.repo.GetDefaultBranch())}
+	p := MRListPage{Default: visibleText(d.repo.DefaultBranch)}
 	p.CLI = Clone{ID: "cli-new", Lines: []string{"ermite mr create " + shellWord(d.name()) + " --source <branch> --title <title>"}}
 	base := mrBase(d.name())
 
 	if token == "" {
 		tok := ""
 		for i := 0; i < maxOpenPages; i++ {
-			res, err := s.cfg.MergeRequests.ListMergeRequests(ctx, connect.NewRequest(&pb.ListMergeRequestsRequest{
-				Repo: d.name(), State: pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN, PageSize: pageSize, PageToken: tok,
-			}))
+			res, err := s.cfg.MergeRequests.List(ctx, principal(ctx), d.repo.Name, ports.ListMergeRequestsParams{
+				State: domain.MRStateOpen, PageSize: pageSize, PageToken: tok,
+			})
 			if err != nil {
 				return nil, 0, err
 			}
-			for _, m := range res.Msg.GetMergeRequests() {
+			for _, m := range res.MergeRequests {
 				p.Open = append(p.Open, s.mrRow(d.name(), m))
 			}
-			if tok = res.Msg.GetNextPageToken(); tok == "" {
+			if tok = res.NextPageToken; tok == "" {
 				break
 			}
 		}
@@ -334,18 +334,18 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 
 	tok := token
 	for i := 0; i < maxMRPages; i++ {
-		res, err := s.cfg.MergeRequests.ListMergeRequests(ctx, connect.NewRequest(&pb.ListMergeRequestsRequest{
-			Repo: d.name(), PageSize: pageSize, PageToken: tok,
-		}))
+		res, err := s.cfg.MergeRequests.List(ctx, principal(ctx), d.repo.Name, ports.ListMergeRequestsParams{
+			PageSize: pageSize, PageToken: tok,
+		})
 		if err != nil {
 			return nil, 0, err
 		}
-		for _, m := range res.Msg.GetMergeRequests() {
-			if m.GetState() != pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN {
+		for _, m := range res.MergeRequests {
+			if m.State != domain.MRStateOpen {
 				p.Done = append(p.Done, s.mrRow(d.name(), m))
 			}
 		}
-		tok = res.Msg.GetNextPageToken()
+		tok = res.NextPageToken
 		if tok == "" || len(p.Done) >= mrPerPage {
 			break
 		}
@@ -363,10 +363,10 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 		p.Done[0].Cursor = true
 	}
 	for _, b := range d.branches {
-		if b.GetShortName() == d.repo.GetDefaultBranch() || len(p.Branches) >= railBranches {
+		if b.ShortName == d.repo.DefaultBranch || len(p.Branches) >= railBranches {
 			continue
 		}
-		p.Branches = append(p.Branches, BranchLink{Name: visibleText(b.GetShortName()), Href: repoHref(d.name(), "compare", b.GetShortName())})
+		p.Branches = append(p.Branches, BranchLink{Name: visibleText(b.ShortName), Href: repoHref(d.name(), "compare", b.ShortName)})
 	}
 
 	l := s.repoLayout(ctx, d, "merge-requests")
@@ -391,6 +391,7 @@ func (s *Server) mrSince(ctx context.Context, r *http.Request) (templ.Component,
 	return s.mrPage(ctx, r, true)
 }
 
+//hexcheck:ignore suspicious-business-logic-in-adapter builds the merge request page from the use case results; no rule is decided here
 func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ.Component, int, error) {
 	n, err := mrNumber(r)
 	if err != nil {
@@ -404,79 +405,72 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	if err != nil {
 		return nil, 0, err
 	}
-	res, err := s.cfg.MergeRequests.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{
-		Repo: d.name(), Number: n, SinceLastRead: since,
-	}))
+	res, err := s.cfg.MergeRequests.Get(ctx, principal(ctx), d.repo.Name, n, since)
 	if err != nil {
 		return nil, 0, err
 	}
-	m := res.Msg.GetMergeRequest()
-	if m == nil {
-		return nil, 0, errNotFound
-	}
+	m := res.MergeRequest
 	now := s.cfg.Now()
 	signed := SignedIn(ctx)
-	open := m.GetState() == pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN
-	head := m.GetHeadId()
+	open := m.State == domain.MRStateOpen
+	head := m.HeadID.String()
 	self := mrHref(d.name(), n)
 	if since {
 		self = mrHref(d.name(), n, "since")
 	}
 
 	p := MRPage{
-		Number: "!" + strconv.FormatInt(n, 10), Title: visibleText(m.GetTitle()),
-		State: stateName(m.GetState()), Open: open, Signed: signed,
-		Source: visibleText(m.GetSourceBranch()), Target: visibleText(m.GetTargetBranch()),
-		Author: visibleText(m.GetAuthor()),
-		Desc:   plainParts(m.GetDescription()),
+		Number: "!" + strconv.FormatInt(n, 10), Title: visibleText(m.Title.String()),
+		State: stateName(m.State), Open: open, Signed: signed,
+		Source: visibleText(m.Source), Target: visibleText(m.Target),
+		Author: visibleText(m.Author),
+		Desc:   plainParts(m.Description.String()),
 		Head:   head, HeadShort: short(head),
-		NFiles: int(res.Msg.GetStats().GetFilesChanged()),
-		Adds:   int(res.Msg.GetStats().GetAdditions()),
-		Dels:   int(res.Msg.GetStats().GetDeletions()),
-		Files:  diffFiles(res.Msg.GetDiff().GetFiles()),
+		NFiles: res.Stats.FilesChanged,
+		Adds:   res.Stats.Additions,
+		Dels:   res.Stats.Deletions,
+		Files:  diffFiles(res.Diff.Files),
 	}
 	p.Opened.Name = p.Author
-	p.Opened.When, p.Opened.WhenAt = whenOf(now, m.GetCreatedAt())
-	if t := m.GetCreatedAt(); t.IsValid() {
-		p.Opened.Abs = absolute(t.AsTime())
+	p.Opened.When, p.Opened.WhenAt = whenOf(now, m.CreatedAt)
+	if !m.CreatedAt.IsZero() {
+		p.Opened.Abs = absolute(m.CreatedAt)
 	}
-	p.Updated, p.UpdatedAt = whenOf(now, m.GetUpdatedAt())
+	p.Updated, p.UpdatedAt = whenOf(now, m.UpdatedAt)
 	for _, b := range d.branches {
-		switch b.GetShortName() {
-		case m.GetSourceBranch():
-			p.SourceHref = repoHref(d.name(), "tree", b.GetShortName())
-		case m.GetTargetBranch():
-			p.TargetHref = repoHref(d.name(), "tree", b.GetShortName())
+		switch b.ShortName {
+		case m.Source:
+			p.SourceHref = repoHref(d.name(), "tree", b.ShortName)
+		case m.Target:
+			p.TargetHref = repoHref(d.name(), "tree", b.ShortName)
 		}
 	}
-	if m.GetState() == pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED && m.GetMergedCommitId() != "" {
-		p.MergedShort = short(m.GetMergedCommitId())
-		p.MergedHref = repoHref(d.name(), "commit", m.GetMergedCommitId())
-		p.MergeMode = modeName(m.GetMergeMode())
+	if m.State == domain.MRStateMerged && !m.MergedCommitID.IsZero() {
+		p.MergedShort = short(m.MergedCommitID.String())
+		p.MergedHref = repoHref(d.name(), "commit", m.MergedCommitID.String())
+		p.MergeMode = modeName(m.MergeMode)
 	}
-	if st := d.repo.GetSettings(); st != nil {
-		for _, mode := range st.GetAllowedMergeModes() {
-			if name := modeName(mode); name != "" {
-				p.Modes = append(p.Modes, name)
-			}
+	for _, mode := range d.repo.Settings.AllowedMergeModes {
+		if name := modeName(mode); name != "" {
+			p.Modes = append(p.Modes, name)
 		}
-		p.ChecksBlock = st.GetFailingChecksBlock()
 	}
-	p.Note = diffNote(res.Msg.GetDiff(), len(p.Files), p.NFiles)
+	p.ChecksBlock = d.repo.Settings.FailingChecksBlock
+	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
 
 	// The commits of the request, newest first.
-	for _, c := range res.Msg.GetCommits() {
+	for _, c := range res.Commits {
 		row := commitRow(d.name(), c, now)
 		p.Commits = append(p.Commits, MRCommit{
 			Short: row.Short, Href: row.CHref, Subject: row.Subject, Author: row.Author, When: row.When, WhenAt: row.WhenAt,
 		})
 	}
-	lastRead := res.Msg.GetLastReadId()
+	lastRead := res.LastReadID.String()
 	if signed && lastRead != "" {
 		// The commits are newest first: those before the last read head are new.
 		// A head that is not among them (the branch was rewritten) marks none.
-		for i, c := range res.Msg.GetCommits() {
-			if c.GetId() != lastRead {
+		for i, c := range res.Commits {
+			if c.ID.String() != lastRead {
 				continue
 			}
 			for j := 0; j < i; j++ {
@@ -484,7 +478,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 			}
 		}
 	}
-	if res.Msg.GetCommitsTruncated() {
+	if res.CommitsTruncated {
 		p.CommitsNote = "the branch has more commits than the " + itoa(len(p.Commits)) + " listed."
 	}
 
@@ -502,7 +496,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		switch {
 		case lastRead == "":
 			p.SinceNote = "nothing was marked read yet: this is the whole change."
-		case res.Msg.GetLastReadLost():
+		case res.LastReadLost:
 			p.SinceNote = "the commit you last read (" + short(lastRead) + ") is gone, the branch was rewritten: this is the whole change, review it again."
 		case len(p.Files) == 0:
 			p.SinceNote = "nothing changed since " + short(lastRead) + "."
@@ -521,12 +515,12 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	if canWrite {
 		on = parseOn(r.URL.Query().Get("on"))
 	}
-	s.placeComments(&p, d.name(), n, res.Msg.GetComments(), head, !since, canWrite, on)
+	s.placeComments(&p, d.name(), n, res.Comments, head, !since, canWrite, on)
 	lines, invisible := diffLines(p.Files)
 	p.Invisible = invisible
 	p.DiffView = newDiffView(r, lines, self+"?view=unified", self+"?view=split")
 	if signed && open {
-		p.Box = s.mergeBox(d, n, m.GetSourceBranch(), head, lastRead)
+		p.Box = s.mergeBox(d, n, m.Source, head, lastRead)
 	}
 	if canWrite {
 		p.GeneralForm = &CommentForm{
@@ -537,8 +531,8 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	l := s.repoLayout(ctx, d, "merge-requests")
 	l.Title = p.Number + " " + p.Title + " · " + d.name() + " · " + s.instance
 	if head != "" {
-		pinRef(&l, target{rev: head, name: m.GetSourceBranch()})
-		if !d.hasBranch(m.GetSourceBranch()) {
+		pinRef(&l, target{rev: head, name: m.Source})
+		if !d.hasBranch(m.Source) {
 			pinRef(&l, target{rev: head, name: short(head), detached: true})
 		}
 	}
@@ -551,7 +545,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		l.Crumbs = append(l.Crumbs, Crumb{Label: "since", Current: true})
 	}
 	p.Live = true
-	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.GetSourceBranch()))
+	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source))
 	l.HasRail = true
 	return MergeRequest(l, p), http.StatusOK, nil
 }
@@ -559,7 +553,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 // hasBranch tells whether the repository has the branch.
 func (d *repoData) hasBranch(name string) bool {
 	for _, b := range d.branches {
-		if b.GetShortName() == name {
+		if b.ShortName == name {
 			return true
 		}
 	}
@@ -572,19 +566,17 @@ func (s *Server) mergeBox(d *repoData, n int64, source, head, lastRead string) *
 		MergeAction: mrHref(d.name(), n, "merge"), CloseAction: mrHref(d.name(), n, "close"),
 		ReadAction: mrHref(d.name(), n, "read"), Head: head, HeadGone: head == "",
 		CanMarkRead:     head != "" && head != lastRead,
-		CanDeleteBranch: source != d.repo.GetDefaultBranch(),
+		CanDeleteBranch: source != d.repo.DefaultBranch,
 	}
 	ff, sq := false, false
-	if st := d.repo.GetSettings(); st != nil {
-		for _, mode := range st.GetAllowedMergeModes() {
-			switch mode {
-			case pb.MergeMode_MERGE_MODE_FAST_FORWARD:
-				ff = true
-				b.Modes = append(b.Modes, ModeOption{Value: "fast-forward", Label: "fast-forward"})
-			case pb.MergeMode_MERGE_MODE_SQUASH:
-				sq = true
-				b.Modes = append(b.Modes, ModeOption{Value: "squash", Label: "squash (one signed commit)"})
-			}
+	for _, mode := range d.repo.Settings.AllowedMergeModes {
+		switch mode {
+		case domain.MergeModeFastForward:
+			ff = true
+			b.Modes = append(b.Modes, ModeOption{Value: "fast-forward", Label: "fast-forward"})
+		case domain.MergeModeSquash:
+			sq = true
+			b.Modes = append(b.Modes, ModeOption{Value: "squash", Label: "squash (one signed commit)"})
 		}
 	}
 	if head != "" {
@@ -637,14 +629,16 @@ func parseOn(s string) *lineRef {
 // the target, so a page that shows another diff (since the last read) lists
 // them all below, with their line. A reader who can write gets the line numbers
 // as links to the form of their line; on designates the line whose form shows.
-func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []*pb.Comment, head string, inline, canWrite bool, on *lineRef) {
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter places comments under the lines of the diff shown; display only
+func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domain.Comment, head string, inline, canWrite bool, on *lineRef) {
 	now := s.cfg.Now()
 	self := mrHref(repo, n)
 	resolveAction := func(id string) string { return mrHref(repo, n, "comments", id, "resolve") }
 
 	type lineKey struct {
 		path string
-		side pb.DiffSide
+		side domain.DiffSide
 		line int
 	}
 	index := map[lineKey]*DiffLine{}
@@ -657,13 +651,13 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []*pb.C
 			for li := range f.Hunks[hi].Lines {
 				ln := &f.Hunks[hi].Lines[li]
 				if ln.oldN > 0 && ln.Kind != "add" {
-					index[lineKey{f.Key, pb.DiffSide_DIFF_SIDE_OLD, ln.oldN}] = ln
+					index[lineKey{f.Key, domain.SideOld, ln.oldN}] = ln
 					if linkable {
 						ln.OldHref = self + "?on=old:" + itoa(ln.oldN) + ":" + url.QueryEscape(f.Key) + "#" + f.ID
 					}
 				}
 				if ln.newN > 0 && ln.Kind != "del" {
-					index[lineKey{f.Key, pb.DiffSide_DIFF_SIDE_NEW, ln.newN}] = ln
+					index[lineKey{f.Key, domain.SideNew, ln.newN}] = ln
 					if linkable {
 						ln.NewHref = self + "?on=new:" + itoa(ln.newN) + ":" + url.QueryEscape(f.Key) + "#" + f.ID
 					}
@@ -671,7 +665,7 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []*pb.C
 			}
 		}
 	}
-	find := func(path string, side pb.DiffSide, line int) *DiffLine {
+	find := func(path string, side domain.DiffSide, line int) *DiffLine {
 		if !inline {
 			return nil
 		}
@@ -679,34 +673,35 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []*pb.C
 	}
 
 	for _, c := range comments {
+		cid := strconv.FormatInt(c.ID, 10)
 		v := CommentView{
-			ID: c.GetId(), Author: visibleText(c.GetAuthor()),
-			Parts: plainParts(c.GetText()), Resolved: c.GetResolved(),
-			Outdated: c.GetCommitId() != "" && c.GetCommitId() != head,
+			ID: cid, Author: visibleText(c.Author),
+			Parts: plainParts(c.Text.String()), Resolved: c.Resolved,
+			Outdated: !c.CommitID.IsZero() && c.CommitID.String() != head,
 		}
-		v.When, v.WhenAt = whenOf(now, c.GetCreatedAt())
-		if t := c.GetCreatedAt(); t.IsValid() {
-			v.Abs = absolute(t.AsTime())
+		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
+		if !c.CreatedAt.IsZero() {
+			v.Abs = absolute(c.CreatedAt)
 		}
 		p.NComments++
-		if !c.GetResolved() {
+		if !c.Resolved {
 			p.NUnresolved++
 		}
-		general := c.GetPath() == ""
+		general := c.Path == ""
 		var ln *DiffLine
 		if !general {
-			ln = find(c.GetPath(), c.GetSide(), int(c.GetLine()))
+			ln = find(c.Path, c.Side, c.Line)
 			if ln == nil {
 				side := "new"
-				if c.GetSide() == pb.DiffSide_DIFF_SIDE_OLD {
+				if c.Side == domain.SideOld {
 					side = "old"
 				}
-				v.Where = visibleText(c.GetPath()) + ":" + itoa(int(c.GetLine())) + " (" + side + ")"
+				v.Where = visibleText(c.Path) + ":" + itoa(c.Line) + " (" + side + ")"
 			}
 		}
 		if canWrite {
-			v.Resolve = &ResolveForm{Action: resolveAction(c.GetId()), Value: !c.GetResolved(), Label: "Resolve"}
-			if c.GetResolved() {
+			v.Resolve = &ResolveForm{Action: resolveAction(cid), Value: !c.Resolved, Label: "Resolve"}
+			if c.Resolved {
 				v.Resolve.Label = "Unresolve"
 			}
 		}
@@ -721,9 +716,9 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []*pb.C
 	}
 
 	if on != nil {
-		side := pb.DiffSide_DIFF_SIDE_NEW
+		side := domain.SideNew
 		if on.side == "old" {
-			side = pb.DiffSide_DIFF_SIDE_OLD
+			side = domain.SideOld
 		}
 		if ln := find(on.path, side, on.line); ln != nil {
 			ln.Form = &CommentForm{

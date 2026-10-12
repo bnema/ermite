@@ -4,14 +4,15 @@ package web
 
 import (
 	"errors"
-	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func TestIsCommitID(t *testing.T) {
@@ -28,15 +29,21 @@ func TestIsCommitID(t *testing.T) {
 // branch other than the default one, or none for a commit.
 func TestPinRefMarksCurrent(t *testing.T) {
 	t.Parallel()
-	b, tag := pb.RefKind_REF_KIND_BRANCH, pb.RefKind_REF_KIND_TAG
+	b, tag := domain.RefKindBranch, domain.RefKindTag
+	name, err := domain.ParseRepoName("demo")
+	require.NoError(t, err)
 	d := &repoData{
-		repo:     &pb.Repo{Name: "demo", DefaultBranch: "main"},
-		branches: []*pb.Ref{ref(b, "main"), ref(b, "side")},
-		tags:     []*pb.Ref{ref(tag, "v1")},
+		repo:     ports.RepoView{Repo: domain.Repo{Name: name}, DefaultBranch: "main"},
+		branches: []domain.Ref{ref(b, "main"), ref(b, "side")},
+		tags:     []domain.Ref{ref(tag, "v1")},
 	}
-	d.head = d.branches[0]
+	d.head = &d.branches[0]
+	// The list of the other repositories is not reachable: the layout does
+	// without it.
+	repos := mocks.NewRepoService(t)
+	repos.EXPECT().ListPage(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoPage{}, errors.New("no list"))
 	s, err := New(Config{
-		Repos: failing{err: errors.New("no list")}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
+		Repos: repos, Browse: mocks.NewBrowseService(t),
 		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
 	})
 	require.NoError(t, err)
@@ -53,9 +60,9 @@ func TestPinRefMarksCurrent(t *testing.T) {
 		heads, tags []string
 		ref, short  string
 	}{
-		{"", []string{"main"}, nil, "main", "c-main"},
-		{"v1", nil, []string{"v1"}, "v1", "c-v1"},
-		{"side", []string{"side"}, nil, "side", "c-side"},
+		{"", []string{"main"}, nil, "main", short(commitOf("main").String())},
+		{"v1", nil, []string{"v1"}, "v1", short(commitOf("v1").String())},
+		{"side", []string{"side"}, nil, "side", short(commitOf("side").String())},
 		{"abcdef0123", nil, nil, "detached", "abcdef0"},
 	} {
 		tg, ok := d.locate(tt.rest)

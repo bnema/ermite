@@ -182,6 +182,7 @@ func parseRoute(r *http.Request) (route, int) {
 }
 
 // ServeHTTP implements http.Handler.
+//
 //hexcheck:ignore suspicious-business-logic-in-adapter transport orchestration: the authorization decisions are the use cases'
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var rt route
@@ -374,6 +375,7 @@ func (h *Handler) acquire(ctx context.Context, w http.ResponseWriter, rt route, 
 }
 
 // serveBackend runs git http-backend for an authorized request.
+//
 //hexcheck:ignore suspicious-business-logic-in-adapter process and CGI plumbing: no business rule is decided here
 func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route, name domain.RepoName, p domain.Principal, client string) {
 	ctx := r.Context()

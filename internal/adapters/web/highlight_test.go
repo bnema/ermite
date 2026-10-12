@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 func TestHighlightLines(t *testing.T) {
@@ -141,12 +141,12 @@ func TestSniffImage(t *testing.T) {
 
 func TestLocate(t *testing.T) {
 	t.Parallel()
-	b, tag := pb.RefKind_REF_KIND_BRANCH, pb.RefKind_REF_KIND_TAG
+	b, tag := domain.RefKindBranch, domain.RefKindTag
 	d := &repoData{
-		branches: []*pb.Ref{ref(b, "main"), ref(b, "feature/x")},
-		tags:     []*pb.Ref{ref(tag, "v1/rc")},
+		branches: []domain.Ref{ref(b, "main"), ref(b, "feature/x")},
+		tags:     []domain.Ref{ref(tag, "v1/rc")},
 	}
-	d.head = d.branches[0]
+	d.head = &d.branches[0]
 	for _, tt := range []struct {
 		in, name, path string
 		detached, ok   bool

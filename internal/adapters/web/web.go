@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package web is the HTML front of ermite: the pages of the read-only
-// showcase, rendered with templ from the data of the ermite API.
+// showcase, rendered with templ from the data of the use cases.
 //
-// The package is a client of the API like any other. It talks to the
-// generated ermite-api Connect clients, which internal/app binds in process to the
-// handlers of the rpc adapter (ADR 0020), and it knows nothing of the use
-// cases or the domain. Who the visitor is comes with the request context, set
-// by the middleware internal/app puts in front of the handler: anonymous in P5. The
-// API then shows public repositories only; a private repository is
-// indistinguishable from a missing one, here as everywhere.
+// Like every other inbound adapter, the package reads and writes through the
+// use case interfaces of package ports (ADR 0024), never through the API. The
+// caller of every use case call is passed explicitly: the principal of the
+// request, which is anonymous unless the request carries a valid owner session
+// (ServeHTTP sets it in the context, principal reads it). The use cases then
+// show public repositories only to an anonymous caller; a private repository
+// is indistinguishable from a missing one (domain.ErrNotFound), here as
+// everywhere.
 //
 // Adding a page: a handler on Server, a route in routes, a templ page in
 // pages.templ and its view model in view.go.
@@ -28,11 +29,10 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 	"github.com/bnema/zerowrap"
 
-	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -42,20 +42,22 @@ import (
 // over this one.
 var Patterns = []string{"/"}
 
-// requestTimeout bounds the API calls that build one page.
+// requestTimeout bounds the use case calls that build one page.
 const requestTimeout = 30 * time.Second
 
 // Config configures a Server.
 type Config struct {
-	// Repos and Git are the API clients the pages are built from.
-	Repos ermiteconnect.RepoServiceClient
-	Git   ermiteconnect.GitServiceClient
-	// MergeRequests is the client of the merge request pages (ADR 0017).
-	// Without it there are no such pages, nor section for them.
-	MergeRequests ermiteconnect.MergeRequestServiceClient
-	// Events is the client of the event stream behind /-/events. Without
-	// it the pages are not live and the route answers 404.
-	Events ermiteconnect.EventServiceClient
+	// Repos and Browse are the use cases the pages are built from.
+	Repos  ports.RepoService
+	Browse ports.BrowseService
+	// MergeRequests serves the merge request pages (ADR 0017). Without it
+	// there are no such pages, nor section for them. Leave it unset rather
+	// than assigning a typed nil pointer.
+	MergeRequests ports.MergeRequestService
+	// Events is the source of the event stream behind /-/events. Without
+	// it the pages are not live and the route answers 404. Leave it unset
+	// rather than assigning a typed nil pointer.
+	Events ports.EventService
 	// Heartbeat is how often an idle event stream gets a comment line;
 	// DefaultHeartbeat when zero.
 	Heartbeat time.Duration
@@ -94,8 +96,8 @@ type Server struct {
 
 // New builds the web handler.
 func New(cfg Config) (*Server, error) {
-	if cfg.Repos == nil || cfg.Git == nil {
-		return nil, errors.New("web: the repository and Git API clients are required")
+	if cfg.Repos == nil || cfg.Browse == nil {
+		return nil, errors.New("web: the repository and browse use cases are required")
 	}
 	u, err := url.Parse(cfg.PublicURL)
 	if err != nil || u.Host == "" {
@@ -161,6 +163,9 @@ func (s *Server) routes() *http.ServeMux {
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Whatever the context carried, the caller is anonymous until a valid
+	// session says otherwise (withSession).
+	r = r.WithContext(domain.ContextWithPrincipal(r.Context(), domain.Anonymous()))
 	r = s.withSession(w, r)
 	if !s.gate(w, r) {
 		return
@@ -172,7 +177,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // error, which becomes the 404 or 500 page.
 type handler func(ctx context.Context, r *http.Request) (templ.Component, int, error)
 
-// page adapts a handler: it bounds the API calls, renders the component into
+// page adapts a handler: it bounds the use case calls, renders the component into
 // a buffer (so that a failure never leaves half a page), and maps errors to
 // the state pages.
 func (s *Server) page(h handler) http.HandlerFunc {
@@ -241,15 +246,15 @@ func (s *Server) write(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// fail answers an error of the API: not found (and a name or revision the
-// API refuses, which no page can show either) gives the 404 page, a visitor
-// that left gives nothing, anything else gives the 500 page with an id to
-// find the cause in the log.
+// fail answers an error of a use case: not found (and a name or revision the
+// use case refuses, which no page can show either) gives the 404 page, a
+// visitor that left gives nothing, anything else gives the 500 page with an id
+// to find the cause in the log.
 func (s *Server) fail(ctx context.Context, w http.ResponseWriter, r *http.Request, err error) {
-	switch code := connect.CodeOf(err); {
-	case errors.Is(err, errNotFound), code == connect.CodeNotFound, code == connect.CodeInvalidArgument:
+	switch {
+	case errors.Is(err, domain.ErrNotFound), domain.IsInvalid(err):
 		s.write(ctx, w, r, http.StatusNotFound, s.notFoundPage())
-	case errors.Is(err, context.Canceled), code == connect.CodeCanceled:
+	case errors.Is(err, context.Canceled):
 		// The client is gone; there is nobody to answer.
 	default:
 		id := requestID()
@@ -260,8 +265,8 @@ func (s *Server) fail(ctx context.Context, w http.ResponseWriter, r *http.Reques
 }
 
 // errNotFound is returned by handlers for a resource that does not exist
-// although the API did not say so (a ref or a path that is not there).
-var errNotFound = errors.New("not found")
+// although the use case did not say so (a ref or a path that is not there).
+var errNotFound = domain.ErrNotFound
 
 // requestID is a short random id, shown on the 500 page and logged.
 func requestID() string {

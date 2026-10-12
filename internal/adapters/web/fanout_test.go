@@ -10,13 +10,13 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/adapters/web/mocks"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func frag(s string) []fragment { return []fragment{{event: "refs-list", html: s}} }
@@ -137,58 +137,59 @@ func TestFanoutIsBounded(t *testing.T) {
 }
 
 // refsMocks is a web server over mocks that expect the refs fragment to load
-// the repository and its refs repos times, and to ask for a commit commits
-// times.
-func refsMocks(t *testing.T, repos, commits int) *Server {
+// the repository and its refs once per build of each class of watcher
+// (anonymous, owner), asking the use cases as that class's principal, and to
+// ask for a commit once per build when commits is set.
+func refsMocks(t *testing.T, anonymous, owner int, commits bool) *Server {
 	t.Helper()
-	api := mocks.NewRepoServiceClient(t)
-	git := mocks.NewGitServiceClient(t)
-	api.EXPECT().GetRepo(mock.Anything, mock.Anything).RunAndReturn(
-		func(_ context.Context, req *connect.Request[pb.GetRepoRequest]) (*connect.Response[pb.GetRepoResponse], error) {
-			return connect.NewResponse(&pb.GetRepoResponse{Repo: &pb.Repo{Name: req.Msg.GetRepo(), DefaultBranch: "main"}}), nil
-		}).Times(repos)
-	id := "0123456789abcdef0123456789abcdef01234567"
-	git.EXPECT().ListRefs(mock.Anything, mock.MatchedBy(func(req *connect.Request[pb.ListRefsRequest]) bool {
-		return req.Msg.GetPageSize() == maxRefs // the refs are asked in one page
-	})).RunAndReturn(func(context.Context, *connect.Request[pb.ListRefsRequest]) (*connect.Response[pb.ListRefsResponse], error) {
-		return connect.NewResponse(&pb.ListRefsResponse{Refs: []*pb.Ref{
-			{Name: "refs/heads/main", ShortName: "main", Kind: pb.RefKind_REF_KIND_BRANCH, CommitId: id},
-			{Name: "refs/tags/v1", ShortName: "v1", Kind: pb.RefKind_REF_KIND_TAG, CommitId: id},
-		}}), nil
-	}).Times(repos)
-	if commits > 0 {
-		git.EXPECT().ListCommits(mock.Anything, mock.Anything).RunAndReturn(
-			func(_ context.Context, req *connect.Request[pb.ListCommitsRequest]) (*connect.Response[pb.ListCommitsResponse], error) {
-				return connect.NewResponse(&pb.ListCommitsResponse{Commits: []*pb.Commit{{Id: req.Msg.GetRevision(), Summary: "subject"}}}), nil
-			}).Times(commits)
+	const id = "0123456789abcdef0123456789abcdef01234567"
+	repos := mocks.NewRepoService(t)
+	browse := mocks.NewBrowseService(t)
+	for _, class := range []struct {
+		p      domain.Principal
+		builds int
+	}{{domain.Anonymous(), anonymous}, {domain.Owner(), owner}} {
+		p, builds := class.p, class.builds
+		if builds == 0 {
+			continue
+		}
+		repos.EXPECT().Get(mock.Anything, p, repoName(t, "x")).Return(publicRepo(t, "x").Repo, nil).Times(builds)
+		browse.EXPECT().ListRefs(mock.Anything, p, repoName(t, "x"), mock.MatchedBy(func(params ports.ListRefsParams) bool {
+			return params.PageSize == maxRefs // the refs are asked in one page
+		})).Return(ports.RefPage{Refs: []domain.Ref{
+			{Name: "refs/heads/main", ShortName: "main", Kind: domain.RefKindBranch, CommitID: objectID(t, id)},
+			{Name: "refs/tags/v1", ShortName: "v1", Kind: domain.RefKindTag, CommitID: objectID(t, id)},
+		}}, nil).Times(builds)
+		if commits {
+			browse.EXPECT().ListCommits(mock.Anything, p, repoName(t, "x"), mock.Anything).RunAndReturn(
+				func(_ context.Context, _ domain.Principal, _ domain.RepoName, params ports.ListCommitsParams) (ports.HistoryPage, error) {
+					return ports.HistoryPage{Commits: []domain.Commit{{ID: objectID(t, params.Revision.String()), Summary: "subject"}}}, nil
+				}).Times(builds)
+		}
 	}
-	s, err := New(Config{
-		Repos: api, Git: git,
-		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
-	})
-	require.NoError(t, err)
-	return s
+	repos.EXPECT().View(mock.Anything, mock.Anything).Return(publicRepo(t, "x"), nil).Times(anonymous + owner)
+	return newTestServer(t, Config{Repos: repos, Browse: browse})
 }
 
 // A push is rendered once for the watchers of the same class, and the owner
 // and the anonymous visitors never share what was built.
 func TestLiveRefsSharesAPushBetweenWatchers(t *testing.T) {
 	t.Parallel()
-	owner := context.WithValue(context.Background(), signedInKey{}, struct{}{})
+	owner := domain.ContextWithPrincipal(context.WithValue(context.Background(), signedInKey{}, struct{}{}), domain.Owner())
 	anon := context.Background()
 
 	for _, tt := range []struct {
-		name   string
-		ctxs   []context.Context
-		builds int // loads of the repository and refs, and ListCommits calls: one per class
+		name            string
+		ctxs            []context.Context
+		anonymous, mine int // builds: one per class
 	}{
-		{"five anonymous watchers", []context.Context{anon, anon, anon, anon, anon}, 1},
-		{"owner and anonymous", []context.Context{anon, owner, anon, owner}, 2},
+		{"five anonymous watchers", []context.Context{anon, anon, anon, anon, anon}, 1, 0},
+		{"owner and anonymous", []context.Context{anon, owner, anon, owner}, 1, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := refsMocks(t, tt.builds, tt.builds)
-			ev := &pb.Event{Id: "b-1", Kind: &pb.Event_Pushed{Pushed: &pb.Pushed{Repo: "x"}}}
+			s := refsMocks(t, tt.anonymous, tt.mine, true)
+			ev := ports.WatchEvent{ID: "b-1", Event: domain.PushEvent{Repo: repoName(t, "x")}}
 			for _, ctx := range tt.ctxs {
 				st := &liveStream{s: s, repo: "x", view: "refs"}
 				frags, err := st.render(ctx, ev)
@@ -204,7 +205,7 @@ func TestLiveRefsSharesAPushBetweenWatchers(t *testing.T) {
 // The refs are asked in one page of up to maxRefs (the mock only answers that).
 func TestLoadRepoAsksTheRefsInOnePage(t *testing.T) {
 	t.Parallel()
-	s := refsMocks(t, 1, 0)
+	s := refsMocks(t, 1, 0, false)
 	d, err := s.loadRepo(context.Background(), "x")
 	require.NoError(t, err)
 	assert.Len(t, d.branches, 1)

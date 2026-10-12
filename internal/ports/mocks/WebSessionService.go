@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"bnema.dev/ermite/internal/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -171,25 +172,23 @@ func (_c *WebSessionService_LoginLinkValid_Call) RunAndReturn(run func(nonce str
 }
 
 // Verify provides a mock function for the type WebSessionService
-func (_mock *WebSessionService) Verify(ctx context.Context, token string) (context.Context, bool, error) {
+func (_mock *WebSessionService) Verify(ctx context.Context, token string) (domain.Principal, bool, error) {
 	ret := _mock.Called(ctx, token)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Verify")
 	}
 
-	var r0 context.Context
+	var r0 domain.Principal
 	var r1 bool
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (context.Context, bool, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (domain.Principal, bool, error)); ok {
 		return returnFunc(ctx, token)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) context.Context); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) domain.Principal); ok {
 		r0 = returnFunc(ctx, token)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(context.Context)
-		}
+		r0 = ret.Get(0).(domain.Principal)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) bool); ok {
 		r1 = returnFunc(ctx, token)
@@ -234,12 +233,12 @@ func (_c *WebSessionService_Verify_Call) Run(run func(ctx context.Context, token
 	return _c
 }
 
-func (_c *WebSessionService_Verify_Call) Return(owner context.Context, ok bool, err error) *WebSessionService_Verify_Call {
+func (_c *WebSessionService_Verify_Call) Return(owner domain.Principal, ok bool, err error) *WebSessionService_Verify_Call {
 	_c.Call.Return(owner, ok, err)
 	return _c
 }
 
-func (_c *WebSessionService_Verify_Call) RunAndReturn(run func(ctx context.Context, token string) (context.Context, bool, error)) *WebSessionService_Verify_Call {
+func (_c *WebSessionService_Verify_Call) RunAndReturn(run func(ctx context.Context, token string) (domain.Principal, bool, error)) *WebSessionService_Verify_Call {
 	_c.Call.Return(run)
 	return _c
 }

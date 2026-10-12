@@ -10,17 +10,19 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/bnema/zerowrap"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/clientlimit"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // Live updates. A page that can change under the eyes of its reader opens
 // GET /-/events (the Live component of the hint badge). The handler follows
-// EventService.Watch as the visitor of the request and turns each event into
+// EventService.Watch as the principal of the request and turns each event into
 // the HTML fragments the page shows, sent as Server-Sent Events:
 //
 //	GET /-/events?topic=home
@@ -63,10 +65,6 @@ import (
 const DefaultHeartbeat = 25 * time.Second
 
 const (
-	// startGrace is how long the handler waits after the Watch call answered
-	// for an early failure (too many watchers) before it commits to 200: the
-	// Connect protocol reports it in the stream, after the headers.
-	startGrace = 100 * time.Millisecond
 	// writeWindow bounds one write to the visitor, whatever the write timeout
 	// of the server is.
 	writeWindow = 30 * time.Second
@@ -105,7 +103,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	if repo != "" {
 		// A repository the visitor cannot see is a missing one (AC2).
 		cctx, ccancel := context.WithTimeout(ctx, requestTimeout)
-		_, err := s.cfg.Repos.GetRepo(cctx, connect.NewRequest(&pb.GetRepoRequest{Repo: repo}))
+		err := s.canSee(cctx, repo)
 		ccancel()
 		if err != nil {
 			s.denyEvents(ctx, w, err)
@@ -113,29 +111,33 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stream, err := s.cfg.Events.Watch(ctx, connect.NewRequest(&pb.WatchRequest{
-		Topics: []string{topic}, ResumeAfter: r.Header.Get("Last-Event-ID"),
-	}))
-	if err != nil {
-		s.denyEvents(ctx, w, err)
-		return
-	}
-	// Wait for the answer of the API, which comes once the watch is registered
-	// (or refused), then read the stream from a goroutine.
-	_ = stream.ResponseHeader()
+	// The watch runs in a goroutine and hands each event to this one through
+	// an unbuffered channel: a visitor that reads slowly holds the watch in
+	// its send, falls behind the buffer of the use case, and gets a gap.
 	msgs := make(chan recvd)
-	done := make(chan struct{})
+	started := make(chan struct{})
+	var startOnce sync.Once
+	start := func() { startOnce.Do(func() { close(started) }) }
+	finished := make(chan struct{})
+	params := ports.WatchParams{
+		Topics: []string{topic}, ResumeAfter: r.Header.Get("Last-Event-ID"),
+		// The visitor is the client of the watch, for the limit per client.
+		Client: clientlimit.Key(clientlimit.ClientAddr(r, s.cfg.TrustedProxies)),
+		Ready:  start,
+	}
 	go func() {
-		defer close(done)
+		defer close(finished)
 		defer close(msgs)
-		for stream.Receive() {
+		err := s.cfg.Events.Watch(ctx, principal(ctx), params, func(we ports.WatchEvent) error {
+			start()
 			select {
-			case msgs <- recvd{ev: stream.Msg().GetEvent()}:
+			case msgs <- recvd{ev: we}:
+				return nil
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			}
-		}
-		if err := stream.Err(); err != nil {
+		})
+		if err != nil && ctx.Err() == nil {
 			select {
 			case msgs <- recvd{err: err}:
 			case <-ctx.Done():
@@ -144,26 +146,24 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}()
 	defer func() {
 		cancel()
-		_ = stream.Close()
-		<-done
+		<-finished
 	}()
 
+	// The watch is registered (or refused, which ends it before): only then
+	// does the answer commit to 200.
 	var first *recvd
-	grace := time.NewTimer(startGrace)
 	select {
+	case <-started:
 	case m, open := <-msgs:
-		grace.Stop()
 		if !open {
 			return // the server is stopping
 		}
+		if m.err != nil {
+			s.denyEvents(ctx, w, m.err)
+			return
+		}
 		first = &m
-	case <-grace.C:
 	case <-ctx.Done():
-		grace.Stop()
-		return
-	}
-	if first != nil && first.err != nil {
-		s.denyEvents(ctx, w, first.err)
 		return
 	}
 
@@ -185,10 +185,13 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n")}
 	handle := func(m recvd) bool {
 		if m.err != nil {
-			if ctx.Err() == nil && connect.CodeOf(m.err) != connect.CodeCanceled {
+			if ctx.Err() == nil && !errors.Is(m.err, context.Canceled) {
 				log.Debug().Err(m.err).Str("topic", topic).Msg("event stream ended")
 			}
 			return false
+		}
+		if !liveEvent(m.ev) {
+			return true // nothing to show, not even an id to resume after
 		}
 		// An owner's stream ends when the session does, before it sends
 		// anything more: an event can carry what only the owner may see, and
@@ -208,7 +211,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(err).Str("topic", topic).Msg("render live fragment")
 			frags = gap
 		}
-		return out.send(m.ev.GetId(), frags) == nil
+		return out.send(m.ev.ID, frags) == nil
 	}
 	if first != nil && !handle(*first) {
 		return
@@ -243,8 +246,19 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 // recvd is a message of the Watch stream, or how it failed.
 type recvd struct {
-	ev  *pb.Event
+	ev  ports.WatchEvent
 	err error
+}
+
+// canSee checks that the caller of the request may see the repository named in
+// a topic: one it may not is as missing as one that does not exist.
+func (s *Server) canSee(ctx context.Context, rawName string) error {
+	name, err := domain.ParseRepoName(rawName)
+	if err != nil {
+		return err
+	}
+	_, err = s.cfg.Repos.Get(ctx, principal(ctx), name)
+	return err
 }
 
 // denyStream answers a request that gets no stream.
@@ -253,20 +267,20 @@ func denyStream(w http.ResponseWriter, status int, msg string) {
 	http.Error(w, msg, status)
 }
 
-// denyEvents maps an error of the API, before the stream started, to a
+// denyEvents maps an error of a use case, before the stream started, to a
 // status. Not found and invalid are 404 whatever the reason: a private
 // repository is a missing one.
 func (s *Server) denyEvents(ctx context.Context, w http.ResponseWriter, err error) {
-	switch code := connect.CodeOf(err); {
-	case code == connect.CodeNotFound, code == connect.CodeInvalidArgument:
+	switch {
+	case errors.Is(err, context.Canceled):
+		// The visitor is gone.
+	case errors.Is(err, domain.ErrNotFound), domain.IsInvalid(err):
 		denyStream(w, http.StatusNotFound, "not found")
-	case code == connect.CodeResourceExhausted:
+	case errors.Is(err, domain.ErrResourceExhausted):
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 		denyStream(w, http.StatusServiceUnavailable, "too many event streams, retry later")
-	case code == connect.CodeUnauthenticated:
+	case errors.Is(err, domain.ErrUnauthenticated):
 		denyStream(w, http.StatusUnauthorized, "unauthorized")
-	case errors.Is(err, context.Canceled), code == connect.CodeCanceled:
-		// The visitor is gone.
 	default:
 		log := zerowrap.FromCtx(ctx)
 		log.Error().Err(err).Msg("open event stream")

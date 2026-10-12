@@ -104,6 +104,7 @@ go test ./...
 
 - `internal/usecase` imports only `internal/domain` and `internal/ports`.
 - Adapters import `internal/domain`, `internal/ports` and the shared `internal/clientlimit`; never a use case, `internal/app` or another adapter.
+- The web adapter, like the API and Git over HTTP, calls the use cases through `internal/ports` with the principal of the request (anonymous, or the owner with a valid session); it never imports the generated API code.
 - `internal/ports` imports only `internal/domain`; `internal/domain` imports nothing from the module.
 - `internal/config` (environment parsing) is used by `internal/app` only.
 

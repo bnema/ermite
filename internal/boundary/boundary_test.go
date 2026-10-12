@@ -20,6 +20,10 @@ import (
 
 const modulePath = "bnema.dev/ermite"
 
+// apiGenPath is the generated code of the API contract (protobuf and Connect),
+// a module of its own.
+const apiGenPath = "bnema.dev/ermite-api/gen"
+
 // moduleRoot is the module root relative to this package's directory.
 const moduleRoot = "../.."
 
@@ -48,7 +52,8 @@ const (
 //   - internal/usecase holds the use cases: domain and ports only.
 //   - adapters implement ports and never import use cases or app; the
 //     per-package rule in packageImportDenied also keeps them from importing
-//     each other.
+//     each other, and keeps the web adapter off the generated API code: like
+//     every other adapter it reads and writes through the ports (ADR 0020).
 //   - internal/clientlimit is infrastructure shared by the HTTP adapters.
 //   - internal/config parses the environment into plain values.
 var productionDependencies = map[packageLayer]map[packageLayer]bool{
@@ -75,6 +80,33 @@ func TestImportBoundaries(t *testing.T) {
 		if _, ok := packages[modulePath+"/"+want]; !ok {
 			t.Fatalf("package inventory misses %s: the walk is not reading the module", want)
 		}
+	}
+}
+
+// The generated API code is outside the module: the walk would skip it. The
+// web adapter may not import it in production code, whichever package of it.
+func TestWebAdapterRejectsAPIGeneratedCode(t *testing.T) {
+	tests := []struct {
+		name, source, target string
+		testFile             bool
+		want                 bool
+	}{
+		{"web messages", modulePath + "/internal/adapters/web", apiGenPath + "/ermite", false, false},
+		{"web connect", modulePath + "/internal/adapters/web", apiGenPath + "/ermite/ermiteconnect", false, false},
+		{"web subpackage", modulePath + "/internal/adapters/web/sub", apiGenPath + "/ermite", false, false},
+		{"web test file", modulePath + "/internal/adapters/web", apiGenPath + "/ermite", true, true},
+		{"rpc adapter", modulePath + "/internal/adapters/rpc", apiGenPath + "/ermite", false, true},
+		{"client adapter", modulePath + "/internal/adapters/client", apiGenPath + "/ermite/ermiteconnect", false, true},
+		{"other module of the API", modulePath + "/internal/adapters/web", "bnema.dev/ermite-api/other", false, true},
+		{"web other external package", modulePath + "/internal/adapters/web", "github.com/a-h/templ", false, true},
+		{"a package whose name only starts alike", modulePath + "/internal/adapters/web", apiGenPath + "x/y", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := !externalImportDenied(tt.source, tt.target, tt.testFile); got != tt.want {
+				t.Fatalf("externalImportDenied(%q, %q, test=%t) = %t, want %t", tt.source, tt.target, tt.testFile, !got, !tt.want)
+			}
+		})
 	}
 }
 
@@ -106,8 +138,12 @@ func TestImportBoundaryFixtures(t *testing.T) {
 		{"adapter accepts domain", p("internal/adapters/rpc"), p("internal/domain"), false, true},
 		{"adapter accepts clientlimit", p("internal/adapters/githttp"), p("internal/clientlimit"), false, true},
 		{"adapter accepts own subpackage", p("internal/adapters/web/sub"), p("internal/adapters/web"), false, true},
-		{"adapter production rejects generated mocks", p("internal/adapters/web"), p("internal/adapters/web/mocks"), false, false},
-		{"adapter test may import generated mocks", p("internal/adapters/web"), p("internal/adapters/web/mocks"), true, true},
+		{"adapter accepts generated", p("internal/adapters/rpc"), p("gen/ermite"), false, true},
+		{"web rejects generated", p("internal/adapters/web"), p("gen/ermite"), false, false},
+		{"web rejects generated connect", p("internal/adapters/web"), p("gen/ermite/ermiteconnect"), false, false},
+		{"web subpackage rejects generated", p("internal/adapters/web/sub"), p("gen/ermite"), false, false},
+		{"web test may import ports mocks", p("internal/adapters/web"), p("internal/ports/mocks"), true, true},
+		{"web production rejects ports mocks", p("internal/adapters/web"), p("internal/ports/mocks"), false, false},
 		{"adapter rejects usecase", p("internal/adapters/rpc"), p("internal/usecase"), false, false},
 		{"adapter rejects app", p("internal/adapters/rpc"), p("internal/app"), false, false},
 		{"adapter rejects config", p("internal/adapters/rpc"), p("internal/config"), false, false},
@@ -176,7 +212,14 @@ func inspectRepositoryDependencies(t *testing.T) ([]string, map[string]struct{})
 		testFile := strings.HasSuffix(path, "_test.go")
 		for _, spec := range file.Imports {
 			target, err := strconv.Unquote(spec.Path.Value)
-			if err != nil || (target != modulePath && !strings.HasPrefix(target, modulePath+"/")) {
+			if err != nil {
+				continue
+			}
+			if externalImportDenied(source, target, testFile) {
+				violations = append(violations, fmt.Sprintf("%s: %s may not import %s", rel, source, target))
+				continue
+			}
+			if target != modulePath && !strings.HasPrefix(target, modulePath+"/") {
 				continue
 			}
 			allowed, err := dependencyAllowed(source, target, testFile)
@@ -218,13 +261,30 @@ func dependencyAllowed(source, target string, testFile bool) (bool, error) {
 	return productionDependencies[sourceLayer][targetLayer], nil
 }
 
+// externalImportDenied reports whether a file of package source may not import
+// target, a package outside the module. The only such rule: the production
+// code of the web adapter does not import the generated API code
+// (apiGenPath), so that it goes through the ports. Test files are exempt, like
+// for every rule here.
+func externalImportDenied(source, target string, testFile bool) bool {
+	if testFile || !under(target, apiGenPath) {
+		return false
+	}
+	return under(source, modulePath+"/internal/adapters/web")
+}
+
 // packageImportDenied narrows the layer rules to packages: an adapter may
-// import only packages under its own directory (its mocks, for instance),
-// never a sibling adapter.
+// import only packages under its own directory, never a sibling adapter; and
+// the web adapter may not import the generated API code at all (protobuf,
+// Connect): it goes through the ports, as the other adapters that serve the
+// use cases do.
 func packageImportDenied(source, target string) bool {
 	const adapters = modulePath + "/internal/adapters/"
 	if strings.HasPrefix(source, adapters) && strings.HasPrefix(target, adapters) {
 		return adapterRoot(source) != adapterRoot(target)
+	}
+	if strings.HasPrefix(source, adapters) && adapterRoot(source) == "web" {
+		return under(target, modulePath+"/gen")
 	}
 	return false
 }
@@ -253,7 +313,7 @@ func classifyPackage(path string) (packageLayer, error) {
 		return layerApp, nil
 	case under(path, p("internal/usecase")):
 		return layerUsecase, nil
-	case path == p("internal/ports/mocks"), under(path, p("internal/adapters/web/mocks")), under(path, p("internal/readertest")):
+	case path == p("internal/ports/mocks"), under(path, p("internal/readertest")):
 		return layerTestSupport, nil
 	case under(path, p("internal/adapters")):
 		return layerAdapter, nil

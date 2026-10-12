@@ -9,34 +9,39 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // maxRepos bounds the repositories one page lists.
 const maxRepos = 1000
 
-// pageSize is the page size asked from the commit lists: the largest the API
-// accepts for them.
+// pageSize is the page size asked from the commit lists: the largest the use
+// case accepts for them.
 const pageSize = 100
 
 // listRepos reads the repositories the visitor may see, ordered by name.
 // Every page of ListRepos scans the whole repository list and reads the HEAD
 // of each repository of the page, so the list is asked in one page of up to
-// maxRepos: one scan in the common case, whatever the API cap is (a lower
-// one only means more pages, followed by their token).
-func (s *Server) listRepos(ctx context.Context) ([]*pb.Repo, error) {
-	var repos []*pb.Repo
+// maxRepos: one scan in the common case, whatever the cap of the use case is
+// (a lower one only means more pages, followed by their token).
+func (s *Server) listRepos(ctx context.Context) ([]ports.RepoView, error) {
+	var repos []ports.RepoView
 	token := ""
 	for len(repos) < maxRepos {
-		res, err := s.cfg.Repos.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{PageSize: maxRepos, PageToken: token}))
+		page, err := s.cfg.Repos.ListPage(ctx, principal(ctx), maxRepos, token)
 		if err != nil {
 			return nil, err
 		}
-		repos = append(repos, res.Msg.GetRepos()...)
-		if token = res.Msg.GetNextPageToken(); token == "" {
+		for _, repo := range page.Repos {
+			view, err := s.cfg.Repos.View(ctx, repo)
+			if err != nil {
+				return nil, err
+			}
+			repos = append(repos, view)
+		}
+		if token = page.NextPageToken; token == "" {
 			break
 		}
 	}
@@ -52,17 +57,17 @@ var homeCols = []struct{ key, label, class string }{
 }
 
 // sortRepos orders repos by the column key; ties keep the order by name.
-func sortRepos(repos []*pb.Repo, key string, desc bool) {
-	less := func(a, b *pb.Repo) bool {
+func sortRepos(repos []ports.RepoView, key string, desc bool) {
+	less := func(a, b ports.RepoView) bool {
 		switch key {
 		case "desc":
-			return strings.ToLower(a.GetDescription()) < strings.ToLower(b.GetDescription())
+			return strings.ToLower(a.Description) < strings.ToLower(b.Description)
 		case "branch":
-			return a.GetDefaultBranch() < b.GetDefaultBranch()
+			return a.DefaultBranch < b.DefaultBranch
 		case "push":
-			return a.GetPushedAt().AsTime().Before(b.GetPushedAt().AsTime())
+			return a.PushedAt.Before(b.PushedAt)
 		}
-		return a.GetName() < b.GetName()
+		return a.Name.String() < b.Name.String()
 	}
 	sort.SliceStable(repos, func(i, j int) bool {
 		if desc {
@@ -118,25 +123,25 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 }
 
 // homeRow is the row of a repository in the home list.
-func homeRow(r *pb.Repo, now time.Time, cursor bool) HomeRow {
+func homeRow(r ports.RepoView, now time.Time, cursor bool) HomeRow {
+	name := r.Name.String()
 	row := HomeRow{
-		ID: "repo-" + r.GetName(), Name: r.GetName(), Href: repoHref(r.GetName()),
-		Desc: r.GetDescription(), Pushed: "never", Branch: r.GetDefaultBranch(), Cursor: cursor,
+		ID: "repo-" + name, Name: name, Href: repoHref(name),
+		Desc: r.Description, Pushed: "never", Branch: r.DefaultBranch, Cursor: cursor,
 	}
-	if r.GetPushedAt().IsValid() && r.GetPushedAt().GetSeconds() != 0 {
-		t := r.GetPushedAt().AsTime()
-		row.Pushed, row.PushedAt = ago(now, t), rfc3339(t)
+	if !r.PushedAt.IsZero() {
+		row.Pushed, row.PushedAt = ago(now, r.PushedAt), rfc3339(r.PushedAt)
 	}
 	return row
 }
 
 // repoCmds are the repositories as targets of the ":" command line, but the
 // one being viewed.
-func repoCmds(repos []*pb.Repo, except string) []CmdItem {
+func repoCmds(repos []ports.RepoView, except string) []CmdItem {
 	var out []CmdItem
 	for _, r := range repos {
-		if r.GetName() != except {
-			out = append(out, CmdItem{Kind: "repo", Label: r.GetName(), Href: repoHref(r.GetName())})
+		if name := r.Name.String(); name != except {
+			out = append(out, CmdItem{Kind: "repo", Label: name, Href: repoHref(name)})
 		}
 	}
 	return out

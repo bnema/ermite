@@ -18,7 +18,6 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/adapters/rpc"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/usecase"
@@ -382,13 +381,15 @@ func TestWatchLimits(t *testing.T) {
 	require.Eventually(t, func() bool { return h.forge.EventLog.Watchers() == usecase.MaxWatchersPerClient }, 5*time.Second, time.Millisecond)
 	assert.Equal(t, "resource_exhausted", codeName(watchErr(h.ctx, api)))
 	// A stream of another client address is not affected (the harness trusts
-	// the loopback proxy only when configured: use the in-process caller).
-	inProc := newClientsOn(h.forge.API.InProcessClient(), rpc.InProcessURL)
-	ctx, cancel := context.WithCancel(domain.ContextWithPrincipal(h.ctx, domain.Root()))
+	// the loopback proxy only when configured: ask the use case directly).
+	ctx, cancel := context.WithCancel(h.ctx)
 	defer cancel()
-	st, err := inProc.event.Watch(ctx, connect.NewRequest(&pb.WatchRequest{}))
+	registered := false
+	err := h.forge.EventLog.Watch(ctx, domain.Root(), ports.WatchParams{
+		Client: "another-client", Ready: func() { registered = true; cancel() },
+	}, func(ports.WatchEvent) error { return nil })
 	require.NoError(t, err)
-	_ = st.Close()
+	assert.True(t, registered, "a watch of another client address is registered")
 }
 
 // sentinel proves that nothing reached the stream since the last event it

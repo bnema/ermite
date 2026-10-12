@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
@@ -34,9 +34,12 @@ func newVerifier(t *testing.T, valid string, verify func(token string) (bool, er
 	}
 	m := mocks.NewWebSessionService(t)
 	m.EXPECT().Verify(mock.Anything, mock.Anything).RunAndReturn(
-		func(ctx context.Context, token string) (context.Context, bool, error) {
+		func(_ context.Context, token string) (domain.Principal, bool, error) {
 			ok, err := verify(token)
-			return ctx, ok, err
+			if !ok || err != nil {
+				return domain.Anonymous(), false, err
+			}
+			return domain.Owner(), true, nil
 		}).Maybe()
 	return m
 }
@@ -72,12 +75,10 @@ func (l *countingLimiter) Fail(context.Context, string)                        {
 func newSessionServer(t *testing.T, sess ports.WebSessionService, publicURL string) (*Server, *countingLimiter) {
 	t.Helper()
 	lim := &countingLimiter{}
-	srv, err := New(Config{
-		Repos: failing{err: errors.New("x")}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
-		PublicURL: publicURL, SourceURL: "https://forge.example/ermite", Version: "v1",
-		Sessions: sess, Limiter: lim,
+	srv := newTestServer(t, Config{
+		Repos: reposFailing(t, errors.New("x")), Browse: mocks.NewBrowseService(t),
+		PublicURL: publicURL, Sessions: sess, Limiter: lim,
 	})
-	require.NoError(t, err)
 	return srv, lim
 }
 
@@ -153,12 +154,11 @@ func TestGateLoginExemptionIsExact(t *testing.T) {
 	t.Parallel()
 	sess := newVerifier(t, "tok", nil) // no Login is expected until the last request
 	lim := &countingLimiter{}
-	srv, err := New(Config{
-		Repos: failing{err: errors.New("x")}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
-		MergeRequests: ermiteconnect.NewMergeRequestServiceClient(http.DefaultClient, "http://unused.invalid"),
-		PublicURL:     "https://forge.example", Sessions: sess, Limiter: lim,
+	srv := newTestServer(t, Config{
+		Repos: reposFailing(t, errors.New("x")), Browse: mocks.NewBrowseService(t),
+		MergeRequests: mocks.NewMergeRequestService(t),
+		Sessions:      sess, Limiter: lim,
 	})
-	require.NoError(t, err)
 	post := func(target, cookie string) int {
 		req := httptest.NewRequest(http.MethodPost, target, nil)
 		req.Header.Set("Origin", "https://forge.example")
@@ -206,6 +206,7 @@ func TestWithSessionFailsClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := srv.withSession(rec, req)
 	assert.False(t, SignedIn(r.Context()))
+	assert.Equal(t, domain.Anonymous(), principal(r.Context()))
 	assert.Empty(t, rec.Header().Values("Set-Cookie"))
 
 	srv, _ = newSessionServer(t, newSessions(t, "tok"), "https://forge.example")
@@ -218,7 +219,10 @@ func TestWithSessionFailsClosed(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
-	assert.True(t, SignedIn(srv.withSession(httptest.NewRecorder(), req).Context()))
+	r = srv.withSession(httptest.NewRecorder(), req)
+	assert.True(t, SignedIn(r.Context()))
+	assert.Equal(t, domain.Owner(), principal(r.Context()), "a valid session is the owner")
+	assert.Equal(t, domain.Anonymous(), principal(context.Background()), "no principal is anonymous")
 }
 
 // GO-006: the answer to a request with an invalid cookie is not cached and
@@ -284,17 +288,13 @@ func TestInvalidCookieAnswerIsNotCached(t *testing.T) {
 // Without sessions configured there is no login route and no cookie is read.
 func TestNoSessionsNoRoutes(t *testing.T) {
 	t.Parallel()
-	srv, err := New(Config{
-		Repos: failing{err: errors.New("x")}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
-		PublicURL: "https://forge.example", SourceURL: "https://forge.example/ermite", Version: "v1",
-	})
-	require.NoError(t, err)
+	srv := newTestServer(t, Config{Repos: reposFailing(t, errors.New("x")), Browse: mocks.NewBrowseService(t)})
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/-/login/"+strings.Repeat("a", 43), nil))
 	assert.Equal(t, 404, rec.Code)
 
-	_, err = New(Config{
-		Repos: failing{}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
+	_, err := New(Config{
+		Repos: reposFailing(t, errors.New("x")), Browse: mocks.NewBrowseService(t),
 		PublicURL: "https://forge.example", Sessions: mocks.NewWebSessionService(t),
 	})
 	assert.Error(t, err, "sessions need a limiter")

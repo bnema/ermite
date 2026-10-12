@@ -37,3 +37,25 @@ var (
 	// the number of event watchers; the caller may retry later.
 	ErrResourceExhausted = errors.New("resource exhausted")
 )
+
+// invalidErrors are the errors that mean a request was malformed.
+var invalidErrors = []error{
+	ErrInvalid, ErrInvalidName, ErrInvalidVisibility,
+	ErrInvalidScope, ErrInvalidToken,
+	ErrInvalidObjectID, ErrInvalidRevision, ErrInvalidPath,
+	ErrInvalidPageToken, ErrInvalidPageSize, ErrInvalidRefKind,
+	ErrNotDirectory, ErrNotFile, ErrInvalidText,
+}
+
+// IsInvalid reports whether err means that the request was malformed: an
+// invalid name, revision, path, page token, text, and the like. The adapters
+// answer all of them alike (invalid_argument on the API, the 404 page on the
+// web).
+func IsInvalid(err error) bool {
+	for _, invalid := range invalidErrors {
+		if errors.Is(err, invalid) {
+			return true
+		}
+	}
+	return false
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/clientlimit"
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -30,7 +31,7 @@ import (
 // State changes are POST only and pass one gate (ServeHTTP): an Origin equal to
 // the origin of the public URL, and a valid session, except the login POST,
 // which needs the link instead. The routes read the cookie and never the
-// Authorization header; the API does the opposite.
+// Authorization header; the API does the opposite, it reads the header and no cookie.
 
 // CookieName is the session cookie. The __Host- prefix makes browsers accept
 // it only with Secure, Path=/ and no Domain, and refuse it from a sibling
@@ -126,7 +127,19 @@ func (s *Server) withSession(w http.ResponseWriter, r *http.Request) *http.Reque
 		varyCookie(h)
 		return r
 	}
-	return r.WithContext(context.WithValue(owner, signedInKey{}, struct{}{}))
+	ctx = domain.ContextWithPrincipal(ctx, owner)
+	return r.WithContext(context.WithValue(ctx, signedInKey{}, struct{}{}))
+}
+
+// principal is the caller of the request, the one every use case call carries:
+// the owner when the request has a valid session (withSession), anonymous
+// otherwise.
+func principal(ctx context.Context) domain.Principal {
+	p, ok := domain.PrincipalFromContext(ctx)
+	if !ok {
+		return domain.Anonymous()
+	}
+	return p
 }
 
 // sessionStillValid checks again the cookie a long-lived request started

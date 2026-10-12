@@ -4,17 +4,18 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"path"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/a-h/templ"
 	"github.com/bnema/zerowrap"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 const (
@@ -45,47 +46,43 @@ type BlobPage struct {
 	DirHref  string
 }
 
-// blobStream is an open GetBlob stream whose first message has been read.
+// blobStream is an open file: its metadata and the content, read on demand.
 type blobStream struct {
-	stream *connect.ServerStreamForClient[pb.GetBlobResponse]
-	info   *pb.BlobInfo
-	// buf holds the content already received and not yet handed out.
+	body io.ReadCloser
+	info domain.BlobInfo
+	// buf holds the content already read and not yet handed out.
 	buf []byte
+	// eof is true once body has nothing more.
+	eof bool
 }
 
-// openBlob starts the stream of a file and reads its metadata.
-func (s *Server) openBlob(ctx context.Context, repo string, t target) (*blobStream, error) {
-	if t.path == "" {
-		return nil, errNotFound
-	}
-	st, err := s.cfg.Git.GetBlob(ctx, connect.NewRequest(&pb.GetBlobRequest{Repo: repo, Revision: t.rev, Path: t.path}))
+// openBlob opens a file of the repository.
+func (s *Server) openBlob(ctx context.Context, repo domain.RepoName, t target) (*blobStream, error) {
+	info, body, err := s.openBlobAt(ctx, repo, t.rev, t.path)
 	if err != nil {
 		return nil, err
 	}
-	if !st.Receive() {
-		err := st.Err()
-		_ = st.Close()
-		if err == nil {
-			err = errNotFound
-		}
-		return nil, err
-	}
-	m := st.Msg()
-	return &blobStream{stream: st, info: m.GetInfo(), buf: append([]byte(nil), m.GetChunk()...)}, nil
+	return &blobStream{body: body, info: info}, nil
 }
 
-func (b *blobStream) close() { _ = b.stream.Close() }
+func (b *blobStream) close() { _ = b.body.Close() }
 
-// fill reads from the stream until buf holds n bytes or the content ends.
+// fill reads until buf holds n bytes or the content ends.
 func (b *blobStream) fill(n int) error {
+	if b.eof || len(b.buf) >= n {
+		return nil
+	}
 	// One allocation for the whole content, not the doublings of append.
 	if cap(b.buf) < n {
 		b.buf = append(make([]byte, 0, n), b.buf...)
 	}
-	for len(b.buf) < n && b.stream.Receive() {
-		b.buf = append(b.buf, b.stream.Msg().GetChunk()...)
+	m, err := io.ReadFull(b.body, b.buf[len(b.buf):n])
+	b.buf = b.buf[:len(b.buf)+m]
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		b.eof = true
+		return nil
 	}
-	return b.stream.Err()
+	return err
 }
 
 // image types: the only images the pages show and raw serves as images.
@@ -114,7 +111,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	if !ok {
 		return nil, 0, errNotFound
 	}
-	b, err := s.openBlob(ctx, d.name(), t)
+	b, err := s.openBlob(ctx, d.repo.Name, t)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -125,7 +122,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	if dir == "." {
 		dir = ""
 	}
-	size := b.info.GetSize()
+	size := b.info.Size
 	p := BlobPage{
 		Name:     visibleText(name),
 		RawHref:  repoHref(d.name(), "raw", t.name, t.path),
@@ -133,7 +130,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 		DirHref:  repoHref(d.name(), "tree", t.name, dir),
 		Facts:    []Fact{{Key: "size", Val: humanSize(size)}},
 	}
-	typ := b.info.GetMediaType()
+	typ := b.info.MediaType
 	lang := ""
 
 	// An image is recognised by its bytes, whatever Git's text rule says.
@@ -146,7 +143,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	switch {
 	case img != "":
 		p.Image, typ = true, img
-	case b.info.GetBinary():
+	case b.info.Binary:
 		p.Notice = fmt.Sprintf("binary file (%s, %s): not shown. use raw.", typ, humanSize(size))
 	case size > maxCodeBytes:
 		p.Notice = fmt.Sprintf("file too large to show (%s, the limit is %s). use raw.", humanSize(size), humanSize(maxCodeBytes))
@@ -184,7 +181,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	}
 	p.Facts = append(p.Facts, Fact{Key: "type", Val: lang})
 
-	if last := s.lastChange(ctx, d.name(), t); last != nil {
+	if last := s.lastChange(ctx, d.repo.Name, t); last != nil {
 		p.Last = last
 	}
 
@@ -198,14 +195,12 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 
 // lastChange is the latest commit that touched the path, nil when it cannot
 // be found (the page does not depend on it).
-func (s *Server) lastChange(ctx context.Context, repo string, t target) *CommitRow {
-	res, err := s.cfg.Git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{
-		Repo: repo, Revision: t.rev, Path: t.path, PageSize: 1,
-	}))
-	if err != nil || len(res.Msg.GetCommits()) != 1 {
+func (s *Server) lastChange(ctx context.Context, repo domain.RepoName, t target) *CommitRow {
+	res, err := s.commitList(ctx, repo, t.rev, t.path, 1, "")
+	if err != nil || len(res.Commits) != 1 {
 		return nil
 	}
-	row := commitRow(repo, res.Msg.GetCommits()[0], s.cfg.Now())
+	row := commitRow(repo.String(), res.Commits[0], s.cfg.Now())
 	return &row
 }
 

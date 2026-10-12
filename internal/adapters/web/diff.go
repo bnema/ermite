@@ -13,7 +13,7 @@ import (
 
 	"github.com/a-h/templ"
 
-	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // Seg is a piece of a line of code: plain text, or the visible marker of an
@@ -101,11 +101,11 @@ type DiffFile struct {
 	Hunks []DiffHunk
 }
 
-func lineNumber(n int32) string {
+func lineNumber(n int) string {
 	if n <= 0 {
 		return ""
 	}
-	return itoa(int(n))
+	return itoa(n)
 }
 
 // segments splits a line of code into plain text and markers. One trailing
@@ -197,79 +197,79 @@ func changeBar(add, del, most int) Bar {
 }
 
 // statusLetter is the one-letter status of a file.
-func statusLetter(s pb.FileStatus) string {
+func statusLetter(s domain.FileStatus) string {
 	switch s {
-	case pb.FileStatus_FILE_STATUS_ADDED:
+	case domain.FileAdded:
 		return "A"
-	case pb.FileStatus_FILE_STATUS_DELETED:
+	case domain.FileDeleted:
 		return "D"
-	case pb.FileStatus_FILE_STATUS_RENAMED:
+	case domain.FileRenamed:
 		return "R"
-	case pb.FileStatus_FILE_STATUS_COPIED:
+	case domain.FileCopied:
 		return "C"
-	case pb.FileStatus_FILE_STATUS_TYPE_CHANGED:
+	case domain.FileTypeChanged:
 		return "T"
 	}
 	return "M"
 }
 
 // hunkHeader is the "@@ -a,b +c,d @@ context" line of a hunk.
-func hunkHeader(h *pb.Hunk) string {
-	s := fmt.Sprintf("@@ -%d,%d +%d,%d @@", h.GetOldStart(), h.GetOldLines(), h.GetNewStart(), h.GetNewLines())
-	if t := h.GetHeader(); t != "" {
+func hunkHeader(h domain.Hunk) string {
+	s := fmt.Sprintf("@@ -%d,%d +%d,%d @@", h.OldStart, h.OldLines, h.NewStart, h.NewLines)
+	if t := h.Header; t != "" {
 		s += " " + visibleText(strings.TrimSpace(t))
 	}
 	return s
 }
 
-// diffLine converts a line of the API.
-func diffLine(l *pb.Line) DiffLine {
-	dl := DiffLine{Segs: segments(l.GetText()), NoEOL: l.GetNoNewlineAtEof(), oldN: int(l.GetOldNumber()), newN: int(l.GetNewNumber())}
-	switch l.GetKind() {
-	case pb.LineKind_LINE_KIND_ADDITION:
-		dl.Kind, dl.Mark, dl.New = "add", "+", lineNumber(l.GetNewNumber())
-	case pb.LineKind_LINE_KIND_DELETION:
-		dl.Kind, dl.Mark, dl.Old = "del", "-", lineNumber(l.GetOldNumber())
+// diffLine converts a line of a hunk.
+func diffLine(l domain.Line) DiffLine {
+	dl := DiffLine{Segs: segments(l.Text), NoEOL: l.NoNewlineAtEOF, oldN: l.OldNumber, newN: l.NewNumber}
+	switch l.Kind {
+	case domain.LineAddition:
+		dl.Kind, dl.Mark, dl.New = "add", "+", lineNumber(l.NewNumber)
+	case domain.LineDeletion:
+		dl.Kind, dl.Mark, dl.Old = "del", "-", lineNumber(l.OldNumber)
 	default:
 		dl.Kind, dl.Mark = "ctx", " "
-		dl.Old, dl.New = lineNumber(l.GetOldNumber()), lineNumber(l.GetNewNumber())
+		dl.Old, dl.New = lineNumber(l.OldNumber), lineNumber(l.NewNumber)
 	}
 	return dl
 }
 
 // diffFiles converts the files of a diff for the page.
-func diffFiles(files []*pb.FileDiff) []DiffFile {
+func diffFiles(files []domain.FileDiff) []DiffFile {
 	most := 0
 	for _, f := range files {
-		most = max(most, int(f.GetAdditions()+f.GetDeletions()))
+		most = max(most, f.Additions+f.Deletions)
 	}
 	out := make([]DiffFile, 0, len(files))
 	for i, f := range files {
 		df := DiffFile{
-			ID: "f" + itoa(i+1), Status: statusLetter(f.GetStatus()),
-			Add: int(f.GetAdditions()), Del: int(f.GetDeletions()),
-			Bar: changeBar(int(f.GetAdditions()), int(f.GetDeletions()), most),
+			ID: "f" + itoa(i+1), Status: statusLetter(f.Status),
+			Add: f.Additions, Del: f.Deletions,
+			Bar: changeBar(f.Additions, f.Deletions, most),
 			// A file that is shown in full opens; a file with nothing to read
 			// (binary, truncated) stays closed under its note.
-			Open: len(f.GetHunks()) > 0 && !f.GetTruncated(),
+			Open: len(f.Hunks) > 0 && !f.Truncated,
 		}
-		df.Key = f.GetNewPath()
-		switch f.GetStatus() {
-		case pb.FileStatus_FILE_STATUS_DELETED:
-			df.Key = f.GetOldPath()
-			df.Path = visibleText(f.GetOldPath())
-		case pb.FileStatus_FILE_STATUS_RENAMED, pb.FileStatus_FILE_STATUS_COPIED:
-			df.Path = visibleText(f.GetOldPath()) + " → " + visibleText(f.GetNewPath())
+		df.Key = f.NewPath
+		switch f.Status {
+		case domain.FileDeleted:
+			df.Key = f.OldPath
+			df.Path = visibleText(f.OldPath)
+		case domain.FileRenamed, domain.FileCopied:
+			df.Path = visibleText(f.OldPath) + " → " + visibleText(f.NewPath)
 		default:
-			df.Path = visibleText(f.GetNewPath())
+			df.Path = visibleText(f.NewPath)
 		}
 		df.Note = fileNote(f)
-		if f.GetBinary() {
+		if f.Binary {
 			df.Bar = Bar{Rest: "bin"}
 		}
-		for _, h := range f.GetHunks() {
+		for _, h := range f.Hunks {
 			dh := DiffHunk{Header: hunkHeader(h)}
-			for _, l := range h.GetLines() {
+			for _, l := range h.Lines {
 				dh.Lines = append(dh.Lines, diffLine(l))
 			}
 			dh.Split = pairLines(dh.Lines)
@@ -282,23 +282,23 @@ func diffFiles(files []*pb.FileDiff) []DiffFile {
 
 // fileNote says what the hunks cannot: the kind of change when there is no
 // text to show, the mode change, the similarity of a rename.
-func fileNote(f *pb.FileDiff) string {
+func fileNote(f domain.FileDiff) string {
 	var parts []string
 	switch {
-	case f.GetBinary():
+	case f.Binary:
 		parts = append(parts, "binary file: no text diff")
-	case f.GetTruncated():
-		parts = append(parts, fmt.Sprintf("diff too large to show (%d lines changed): collapsed", f.GetAdditions()+f.GetDeletions()))
+	case f.Truncated:
+		parts = append(parts, fmt.Sprintf("diff too large to show (%d lines changed): collapsed", f.Additions+f.Deletions))
 	}
-	if f.GetOldMode() != 0 && f.GetNewMode() != 0 && f.GetOldMode() != f.GetNewMode() {
-		parts = append(parts, fmt.Sprintf("mode %06o → %06o", f.GetOldMode(), f.GetNewMode()))
+	if f.OldMode != 0 && f.NewMode != 0 && f.OldMode != f.NewMode {
+		parts = append(parts, fmt.Sprintf("mode %06o → %06o", f.OldMode, f.NewMode))
 	}
-	switch f.GetStatus() {
-	case pb.FileStatus_FILE_STATUS_RENAMED:
-		parts = append(parts, fmt.Sprintf("renamed, %d%% similar", f.GetSimilarity()))
-	case pb.FileStatus_FILE_STATUS_COPIED:
-		parts = append(parts, fmt.Sprintf("copied, %d%% similar", f.GetSimilarity()))
-	case pb.FileStatus_FILE_STATUS_TYPE_CHANGED:
+	switch f.Status {
+	case domain.FileRenamed:
+		parts = append(parts, fmt.Sprintf("renamed, %d%% similar", f.Similarity))
+	case domain.FileCopied:
+		parts = append(parts, fmt.Sprintf("copied, %d%% similar", f.Similarity))
+	case domain.FileTypeChanged:
 		parts = append(parts, "type changed")
 	}
 	return strings.Join(parts, " · ")

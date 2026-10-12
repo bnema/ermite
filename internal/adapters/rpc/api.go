@@ -3,8 +3,7 @@
 // Package rpc serves the ermite API contract (bnema.dev/ermite-api) with
 // ConnectRPC: handlers that map the messages of the contract to the use cases
 // of usecase and back, the interceptor that authenticates callers, and the error
-// mapping. The same handlers serve remote clients over HTTP and the web in
-// process (see InProcessClient).
+// mapping.
 package rpc
 
 import (
@@ -90,8 +89,8 @@ func New(cfg Config) *API {
 // it under /-/api/ and strips the prefix.
 func (a *API) Handler() http.Handler { return a.handler }
 
-// caller returns the principal the interceptor (or the in-process caller)
-// put in ctx; anonymous when there is none.
+// caller returns the principal the interceptor put in ctx; anonymous when
+// there is none.
 func caller(ctx context.Context) domain.Principal {
 	p, _ := domain.PrincipalFromContext(ctx)
 	return p
