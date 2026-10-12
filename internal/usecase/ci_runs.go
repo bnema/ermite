@@ -318,11 +318,15 @@ func (c *CI) CancelRun(ctx context.Context, p domain.Principal, name domain.Repo
 	if _, err := c.writableRepo(ctx, p, name); err != nil {
 		return domain.CIRun{}, err
 	}
-	if _, err := c.runOf(ctx, name, runID); err != nil {
+	run, err := c.runOf(ctx, name, runID)
+	if err != nil {
+		return domain.CIRun{}, err
+	}
+	if err := runWriteAccess(p, run); err != nil {
 		return domain.CIRun{}, err
 	}
 	var out domain.CIRun
-	err := c.withRun(ctx, runID, 0, func(rs *runState) error {
+	err = c.withRun(ctx, runID, 0, func(rs *runState) error {
 		if rs.run.Status == domain.CICompleted {
 			return fmt.Errorf("%w: run %d has completed", domain.ErrPreconditionFailed, runID)
 		}
@@ -351,7 +355,11 @@ func (c *CI) RerunRun(ctx context.Context, p domain.Principal, name domain.RepoN
 	if err != nil {
 		return domain.CIRun{}, err
 	}
-	if _, err := c.runOf(ctx, name, runID); err != nil {
+	run, err := c.runOf(ctx, name, runID)
+	if err != nil {
+		return domain.CIRun{}, err
+	}
+	if err := runWriteAccess(p, run); err != nil {
 		return domain.CIRun{}, err
 	}
 	err = c.withRun(ctx, runID, 0, func(rs *runState) error {
@@ -416,7 +424,7 @@ func (c *CI) RerunRun(ctx context.Context, p domain.Principal, name domain.RepoN
 	if err := c.advanceRun(ctx, runID); err != nil {
 		return domain.CIRun{}, err
 	}
-	run, err := c.runOf(ctx, name, runID)
+	run, err = c.runOf(ctx, name, runID)
 	if err != nil {
 		return domain.CIRun{}, err
 	}

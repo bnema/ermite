@@ -462,9 +462,32 @@ func (c *CI) writableRepo(ctx context.Context, p domain.Principal, name domain.R
 	return repo, nil
 }
 
+// runWriteAccess is the branch rule of the write actions on a run, cancel and
+// re-run, which come after the ci:write check. A run is tied to the ref that
+// made it, and re-running it executes the workflow of that ref again while
+// cancelling it stops the checks of that ref. So, like a push, a merge or a
+// branch delete, these actions fall under the branch prefixes of a limited
+// token (ADR 0027): it may act only on the runs of branches under its prefixes,
+// and never on a run of a tag or of any other ref. Without prefixes, every run.
+//
+// Reading runs, jobs, logs and checks is not a write: it needs only the access
+// to read the repository, as for the code, whatever the prefixes. The caller
+// has seen the run by then, so the refusal is forbidden, not not found.
+func runWriteAccess(p domain.Principal, run domain.CIRun) error {
+	if !p.AllowsRef(run.Ref) {
+		return fmt.Errorf("%w: this token may not write %s", domain.ErrForbidden, run.Ref)
+	}
+	return nil
+}
+
 // canManageRunners is the access rule of runners: runner:register on a token
 // that is not restricted to repositories (a runner serves every repository),
-// or root.
+// or root. A token limited to branch prefixes never manages runners, whatever
+// scopes it holds: a runner runs the workflows of every branch of every
+// repository, with their code and secrets, so registering or removing one
+// reaches far beyond the prefixes (a replaced runner could also be a way to
+// take over the jobs of main). Like repository administration and owner
+// rights, it is out of reach of a limited token.
 func canManageRunners(p domain.Principal) error {
 	switch {
 	case p.IsAnonymous():
@@ -473,6 +496,8 @@ func canManageRunners(p domain.Principal) error {
 		return fmt.Errorf("%w: this needs the %s scope", domain.ErrForbidden, domain.ScopeRunnerRegister)
 	case len(p.Repos()) > 0:
 		return fmt.Errorf("%w: a runner serves every repository: the token must not be restricted to some", domain.ErrForbidden)
+	case p.IsBranchLimited():
+		return fmt.Errorf("%w: a token limited to branch prefixes may not manage runners", domain.ErrForbidden)
 	}
 	return nil
 }
