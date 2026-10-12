@@ -12,10 +12,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite-api/gen/ermite"
+
+	"bnema.dev/ermite/internal/adapters/client"
 )
 
 // allFeatures are the features this client uses.
 var allFeatures = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "token.branch_prefixes", "ci.runs", "ci.runners", "passkeys"}
+
+// Every feature the client uses needs a sentence for the version warning.
+func TestEveryUsedFeatureExplainsWhatBreaks(t *testing.T) {
+	for _, f := range client.UsedFeatures() {
+		assert.NotEmpty(t, featureUse[f], f)
+	}
+}
 
 func versionFake(features ...string) *fakeAPI {
 	return &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
