@@ -129,26 +129,27 @@ type PasskeyService interface {
 }
 
 // WebPasskeyService is the passkey side of the use cases, as the web needs
-// it. The composition root implements it over *usecase.Passkeys. A ceremony is
-// the opaque identifier BeginLogin and BeginRegistration return; options is
-// the JSON the browser passes to the WebAuthn API.
+// it: the API's List and Remove, and the browser ceremonies. The composition
+// root implements it over *usecase.Passkeys. A ceremony is the opaque
+// identifier BeginLogin and BeginRegistration return; options is the JSON the
+// browser passes to the WebAuthn API.
 type WebPasskeyService interface {
-	List(ctx context.Context, p domain.Principal) ([]domain.Passkey, error)
-	Remove(ctx context.Context, p domain.Principal, id []byte) error
-	// BeginLogin starts a sign-in. Anonymous callers may. client is the
-	// address the request is attributed to (trusted proxies applied, the one the
-	// failure limiter uses); it bounds how many sign-ins a client keeps waiting.
+	PasskeyService
+	// BeginLogin starts a sign-in. Anonymous callers may. client is the client
+	// key of the request (clientlimit.Key of the address the failure limiter
+	// uses); it bounds how many sign-ins a client keeps waiting.
 	BeginLogin(ctx context.Context, client string) (ceremony string, options []byte, err error)
 	// FinishLogin checks the browser's response and returns the session token
 	// and how long it lasts, or ErrLinkRejected for any refusal.
 	FinishLogin(ctx context.Context, ceremony string, response []byte) (token string, lifetime time.Duration, err error)
 	// BeginRegistration starts adding a passkey. Only the owner may. name is
 	// the name the passkey will get (empty means the default): a name that
-	// breaks the rules is refused before any ceremony starts.
+	// breaks the rules is refused here, before any ceremony starts, and is the
+	// one FinishRegistration stores.
 	BeginRegistration(ctx context.Context, p domain.Principal, name string) (ceremony string, options []byte, err error)
-	// FinishRegistration checks the browser's response and stores the
-	// passkey under name (empty means the default name).
-	FinishRegistration(ctx context.Context, p domain.Principal, ceremony, name string, response []byte) error
+	// FinishRegistration checks the browser's response and stores the passkey
+	// under the name given to BeginRegistration.
+	FinishRegistration(ctx context.Context, p domain.Principal, ceremony string, response []byte) error
 }
 
 // PushService opens a repository for a push: it is domain.ErrUnauthenticated

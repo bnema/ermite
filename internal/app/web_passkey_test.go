@@ -4,7 +4,9 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -89,7 +91,7 @@ func (p *passkeyHarness) register(token, name string) page {
 	opts, err := virtualwebauthn.ParseAttestationOptions(string(br.Options))
 	require.NoError(p.t, err)
 	resp := virtualwebauthn.CreateAttestationResponse(passkeyRP, p.auth, p.cred, *opts)
-	fin := p.postJSON("/-/passkeys/register/finish", token, map[string]any{"ceremony": br.Ceremony, "name": name, "credential": json.RawMessage(resp)})
+	fin := p.postJSON("/-/passkeys/register/finish", token, map[string]any{"ceremony": br.Ceremony, "credential": json.RawMessage(resp)})
 	if fin.status == http.StatusNoContent {
 		p.auth.AddCredential(p.cred)
 		p.auth.Options.UserHandle = p.userHandle()
@@ -253,4 +255,55 @@ func TestPasskeysDisabledOnHTTPPublicURL(t *testing.T) {
 	assert.Contains(t, res.err.Error(), "passkeys are not available on this server")
 	ver := c.cli(t, "", "version", "--json").ok(t)
 	assert.NotContains(t, ver.stdout, `"features": [`+"\n"+`      "passkeys"`)
+}
+
+// A passkey whose counter does not advance (a hardware key that was cloned) is
+// refused end to end, with nothing set and the stored counter kept, while a
+// counter that advances signs in. Without the sign-count check of the use case
+// the clone would sign in: the WebAuthn adapter accepts it and only reports the
+// stored counter back.
+func TestPasskeyClonedAuthenticator(t *testing.T) {
+	p := newPasskeyHarness(t)
+	link := p.cli(t, adminToken, "web", "login").ok(t)
+	pg := p.b.do("POST", passkeyLoginPath(t, link.stdout), map[string]string{"Origin": passkeyOrigin}, "")
+	token := pg.cookie(sessionCookie).Value
+
+	// A hardware key: its counter counts up from 1.
+	p.cred.Counter = 1
+	require.Equal(t, http.StatusNoContent, p.register(token, "key").status)
+
+	p.cred.Counter = 5
+	res := p.login()
+	require.Equal(t, http.StatusNoContent, res.status, res.body)
+
+	// The clone presents the counter it last saw: not higher than the stored 5.
+	for _, counter := range []uint32{5, 3} {
+		p.cred.Counter = counter
+		res = p.login()
+		assert.Equal(t, http.StatusUnauthorized, res.status, "counter %d: %s", counter, res.body)
+		assert.Empty(t, res.hdr.Values("Set-Cookie"), "no session for a clone")
+	}
+
+	// The refusals recorded nothing: the next higher counter still works.
+	p.cred.Counter = 6
+	res = p.login()
+	assert.Equal(t, http.StatusNoContent, res.status, res.body)
+
+	stored, err := p.forge.store.Passkeys().List(p.ctx)
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+	assert.Equal(t, uint32(6), stored[0].SignCount)
+
+	// The warning names the passkey by its short reference, never by its id.
+	sum := sha256.Sum256(p.cred.ID)
+	ref := hex.EncodeToString(sum[:])[:8]
+	var warns []string
+	for _, line := range strings.Split(p.logs.String(), "\n") {
+		var m map[string]any
+		if json.Unmarshal([]byte(line), &m) == nil && m["level"] == "warn" && m["passkey"] == ref {
+			warns = append(warns, line)
+		}
+	}
+	assert.Len(t, warns, 2, "one warning per refused clone")
+	assert.NotContains(t, p.logs.String(), base64.RawURLEncoding.EncodeToString(p.cred.ID))
 }

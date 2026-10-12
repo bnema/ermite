@@ -357,9 +357,11 @@ type PasskeyVerifier interface {
 	// credential request options for the browser ({"publicKey": {...}}).
 	BeginLogin() (options []byte, ceremony []byte, err error)
 	// FinishLogin checks the browser's response and returns the stored passkey
-	// updated with the new sign count and backup state. lookup returns
-	// domain.ErrNotFound for an unknown credential id. A counter that did not
-	// advance gives domain.ErrPasskeyCloned.
+	// updated with the sign count and backup state the response reports. lookup
+	// returns domain.ErrNotFound for an unknown credential id. A counter that
+	// does not advance is not an error here: the returned SignCount is then the
+	// stored one, and the caller, which holds the lock that orders the logins,
+	// refuses it.
 	FinishLogin(userHandle []byte, ceremony, response []byte, lookup func(id []byte) (domain.Passkey, error)) (domain.Passkey, error)
 }
 

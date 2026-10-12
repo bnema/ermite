@@ -3,7 +3,6 @@
 package usecase
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,7 +10,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/netip"
 	"sync"
 	"time"
 
@@ -24,8 +22,6 @@ import (
 // Owner passkeys (ADR 0026). A ceremony is a registration or a login that the
 // browser carries out between two requests; its data lives in memory only.
 const (
-	// PasskeyCeremonyTTL is how long a ceremony may take.
-	PasskeyCeremonyTTL = 2 * time.Minute
 	// MaxPendingPasskeyRegistrations bounds the registrations that wait to be
 	// finished. Only the owner starts one.
 	MaxPendingPasskeyRegistrations = 16
@@ -33,8 +29,8 @@ const (
 	// Anyone may start one, so a login is never refused: on overflow one is
 	// dropped instead, and anonymous callers cannot lock the owner out.
 	MaxPendingPasskeyLogins = 256
-	// MaxPendingPasskeyLoginsPerClient bounds the logins one client (see
-	// clientKey) may have waiting. A client over it loses its own oldest.
+	// MaxPendingPasskeyLoginsPerClient bounds the logins one client (one client
+	// key) may have waiting. A client over it loses its own oldest.
 	MaxPendingPasskeyLoginsPerClient = 8
 
 	// ceremonyIDBytes is the size of a ceremony identifier: 256 bits.
@@ -53,8 +49,9 @@ type ceremony struct {
 	kind    ceremonyKind
 	data    []byte // opaque, from the verifier
 	expires time.Time
-	seq     uint64 // creation order
-	client  string // who began a login (clientKey); "" for a registration
+	seq     uint64             // creation order
+	client  string             // who began a login (its client key); "" for a registration
+	name    domain.PasskeyName // what a registration will call the passkey
 }
 
 // Passkeys are the use cases of the owner's passkeys: registering, signing in,
@@ -82,38 +79,17 @@ func NewPasskeys(store ports.PasskeyStore, verifier ports.PasskeyVerifier, sessi
 	return &Passkeys{store: store, verifier: verifier, sessions: sessions, clock: clock, ceremonies: map[[sha256.Size]byte]ceremony{}}
 }
 
-// clientKey is what a login ceremony is attributed to: the address of the
-// client as the web resolved it (trusted proxies applied), an IPv6 address
-// reduced to its /64 network, since one host owns a whole /64. Anything that is
-// not an address is kept as it is.
-func clientKey(addr string) string {
-	a, err := netip.ParseAddr(addr)
-	if err != nil {
-		return addr
-	}
-	a = a.Unmap()
-	if a.Is6() {
-		p, err := a.Prefix(64)
-		if err != nil {
-			return addr
-		}
-		return p.String()
-	}
-	return a.String()
-}
-
 // pendingLogins is what begin knows of the logins that wait, per client.
 type pendingLogins struct {
-	count        int
-	oldest       [sha256.Size]byte
-	oldestSeq    uint64
-	hasOldestSeq bool
+	count     int
+	oldest    [sha256.Size]byte
+	oldestSeq uint64 // 0 until a login is added: sequence numbers start at 1
 }
 
 func (p *pendingLogins) add(h [sha256.Size]byte, seq uint64) {
 	p.count++
-	if !p.hasOldestSeq || seq < p.oldestSeq {
-		p.oldest, p.oldestSeq, p.hasOldestSeq = h, seq, true
+	if p.oldestSeq == 0 || seq < p.oldestSeq {
+		p.oldest, p.oldestSeq = h, seq
 	}
 }
 
@@ -123,7 +99,7 @@ func (p *pendingLogins) add(h [sha256.Size]byte, seq uint64) {
 // per-client cap it drops that client's own oldest; over the global cap it drops
 // the oldest of the client with the most logins waiting. A client that floods
 // therefore only ever loses its own ceremonies, never another client's.
-func (s *Passkeys) begin(kind ceremonyKind, client string, data []byte) (string, error) {
+func (s *Passkeys) begin(c ceremony) (string, error) {
 	var raw [ceremonyIDBytes]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("generate passkey ceremony: %w", err)
@@ -154,19 +130,19 @@ func (s *Passkeys) begin(kind ceremonyKind, client string, data []byte) (string,
 			pl.add(h, c.seq)
 		}
 	}
-	switch kind {
+	switch c.kind {
 	case ceremonyRegister:
 		if registrations >= MaxPendingPasskeyRegistrations {
 			return "", fmt.Errorf("%w: %d passkey registrations are already pending, finish one or wait two minutes", domain.ErrResourceExhausted, MaxPendingPasskeyRegistrations)
 		}
 	case ceremonyLogin:
-		if pl := byClient[client]; pl != nil && pl.count >= MaxPendingPasskeyLoginsPerClient {
+		if pl := byClient[c.client]; pl != nil && pl.count >= MaxPendingPasskeyLoginsPerClient {
 			delete(s.ceremonies, pl.oldest)
 			logins--
 			// The client is back under its cap; the global step below needs
 			// its new count and its new oldest.
 			pl.count--
-			s.refreshOldest(pl, client)
+			s.refreshOldest(pl, c.client)
 		}
 		if logins >= MaxPendingPasskeyLogins {
 			// The client with the most waiting loses its oldest; among equals,
@@ -186,50 +162,52 @@ func (s *Passkeys) begin(kind ceremonyKind, client string, data []byte) (string,
 		}
 	}
 	s.seq++
-	s.ceremonies[sha256.Sum256([]byte(id))] = ceremony{kind: kind, data: data, expires: now.Add(PasskeyCeremonyTTL), seq: s.seq, client: client}
+	c.expires, c.seq = now.Add(domain.PasskeyCeremonyTTL), s.seq
+	s.ceremonies[sha256.Sum256([]byte(id))] = c
 	return id, nil
 }
 
 // refreshOldest recomputes the oldest login of a client after one was dropped.
 // The caller holds s.mu.
 func (s *Passkeys) refreshOldest(pl *pendingLogins, client string) {
-	pl.hasOldestSeq = false
+	pl.oldestSeq = 0
 	for h, c := range s.ceremonies {
 		if c.kind != ceremonyLogin || c.client != client {
 			continue
 		}
-		if !pl.hasOldestSeq || c.seq < pl.oldestSeq {
-			pl.oldest, pl.oldestSeq, pl.hasOldestSeq = h, c.seq, true
+		if pl.oldestSeq == 0 || c.seq < pl.oldestSeq {
+			pl.oldest, pl.oldestSeq = h, c.seq
 		}
 	}
 }
 
-// take removes the ceremony and returns its data. It is single use, also when
-// the ceremony expired or is of another kind. ok is false for an unknown,
-// expired or mismatched ceremony.
-func (s *Passkeys) take(id string, kind ceremonyKind) (data []byte, ok bool) {
+// take removes the ceremony and returns it. It is single use, also when the
+// ceremony expired or is of another kind. ok is false for an unknown, expired or
+// mismatched ceremony.
+func (s *Passkeys) take(id string, kind ceremonyKind) (c ceremony, ok bool) {
 	h := sha256.Sum256([]byte(id))
 	s.mu.Lock()
 	c, found := s.ceremonies[h]
 	delete(s.ceremonies, h)
 	s.mu.Unlock()
 	if !found || c.kind != kind || !s.clock.Now().Before(c.expires) {
-		return nil, false
+		return ceremony{}, false
 	}
-	return c.data, true
+	return c, true
 }
 
 // BeginRegistration starts adding a passkey. Only the owner may. name is
-// checked now, so that a name the browser would be asked about and then refused
-// costs no ceremony (an empty name means the default); finish checks it again.
-// It gives domain.ErrResourceExhausted when MaxPasskeys passkeys exist or too
+// checked now (an empty name means the default), so that a name the owner would
+// be prompted for and then see refused costs no ceremony; the ceremony keeps the
+// checked name and FinishRegistration stores it. It gives domain.ErrResourceExhausted when MaxPasskeys passkeys exist or too
 // many registrations wait. It returns the ceremony identifier and the options
 // for the browser.
 func (s *Passkeys) BeginRegistration(ctx context.Context, p domain.Principal, name string) (string, []byte, error) {
 	if err := requireOwner(p); err != nil {
 		return "", nil, err
 	}
-	if _, err := parsePasskeyName(name); err != nil {
+	parsed, err := parsePasskeyName(name)
+	if err != nil {
 		return "", nil, err
 	}
 	existing, err := s.store.List(ctx)
@@ -247,50 +225,45 @@ func (s *Passkeys) BeginRegistration(ctx context.Context, p domain.Principal, na
 	if err != nil {
 		return "", nil, err
 	}
-	id, err := s.begin(ceremonyRegister, "", data)
+	id, err := s.begin(ceremony{kind: ceremonyRegister, data: data, name: parsed})
 	if err != nil {
 		return "", nil, err
 	}
 	return id, options, nil
 }
 
-// FinishRegistration checks the browser's response and stores the passkey
-// under name; an empty name means domain.DefaultPasskeyName. A ceremony that is
-// unknown, expired, used or of the wrong kind, and a response the verifier
-// refuses, give domain.ErrUnauthenticated; a bad name matches
-// domain.ErrInvalidText; a credential already registered gives
+// FinishRegistration checks the browser's response and stores the passkey under
+// the name BeginRegistration checked. A ceremony that is unknown, expired, used
+// or of the wrong kind, and a response the verifier refuses, give
+// domain.ErrUnauthenticated; a credential already registered gives
 // domain.ErrAlreadyExists; too many passkeys, domain.ErrResourceExhausted.
-func (s *Passkeys) FinishRegistration(ctx context.Context, p domain.Principal, ceremonyID, name string, response []byte) (domain.Passkey, error) {
+func (s *Passkeys) FinishRegistration(ctx context.Context, p domain.Principal, ceremonyID string, response []byte) error {
 	if err := requireOwner(p); err != nil {
-		return domain.Passkey{}, err
-	}
-	parsed, err := parsePasskeyName(name) // before take: a bad name does not burn the ceremony
-	if err != nil {
-		return domain.Passkey{}, err
+		return err
 	}
 	log := zerowrap.FromCtx(ctx)
-	data, ok := s.take(ceremonyID, ceremonyRegister)
+	c, ok := s.take(ceremonyID, ceremonyRegister)
 	if !ok {
 		err := fmt.Errorf("%w: passkey registration expired or unknown, start again", domain.ErrUnauthenticated)
 		log.Info().Err(err).Msg("passkey registration refused")
-		return domain.Passkey{}, err
+		return err
 	}
 	handle, err := s.store.UserHandle(ctx)
 	if err != nil {
-		return domain.Passkey{}, fmt.Errorf("load passkey user handle: %w", err)
+		return fmt.Errorf("load passkey user handle: %w", err)
 	}
-	pk, err := s.verifier.FinishRegistration(handle, data, response)
+	pk, err := s.verifier.FinishRegistration(handle, c.data, response)
 	if err != nil {
 		if errors.Is(err, domain.ErrUnauthenticated) {
 			// The reason is for the log (it holds no key); the caller gets a 400.
 			log.Info().Err(err).Msg("passkey registration refused")
 		}
-		return domain.Passkey{}, err
+		return err
 	}
 	if n := len(pk.ID); n == 0 || n > domain.MaxPasskeyIDLen {
-		return domain.Passkey{}, fmt.Errorf("%w: credential id has %d bytes", domain.ErrUnauthenticated, n)
+		return fmt.Errorf("%w: credential id has %d bytes", domain.ErrUnauthenticated, n)
 	}
-	pk.Name = parsed.String()
+	pk.Name = c.name.String()
 	pk.CreatedAt = s.clock.Now().UTC()
 	pk.LastUsedAt = time.Time{}
 
@@ -298,28 +271,28 @@ func (s *Passkeys) FinishRegistration(ctx context.Context, p domain.Principal, c
 	defer s.writeMu.Unlock()
 	existing, err := s.store.List(ctx)
 	if err != nil {
-		return domain.Passkey{}, fmt.Errorf("list passkeys: %w", err)
+		return fmt.Errorf("list passkeys: %w", err)
 	}
 	if len(existing) >= domain.MaxPasskeys {
-		return domain.Passkey{}, fmt.Errorf("%w: %d passkeys are registered, remove one first", domain.ErrResourceExhausted, domain.MaxPasskeys)
+		return fmt.Errorf("%w: %d passkeys are registered, remove one first", domain.ErrResourceExhausted, domain.MaxPasskeys)
 	}
 	if err := s.store.Create(ctx, pk); err != nil {
-		return domain.Passkey{}, err
+		return err
 	}
 	log.Info().Str("passkey", passkeyRef(pk.ID)).Msg("passkey added")
-	return pk, nil
+	return nil
 }
 
 // BeginLogin starts a passkey sign-in. Anonymous callers may. client is the
-// address the web resolved for the caller (the one the failure limiter uses);
-// it bounds how many sign-ins one client keeps waiting. It returns the
+// client key of the caller (clientlimit.Key of the address the failure limiter
+// uses); it bounds how many sign-ins one client keeps waiting. It returns the
 // ceremony identifier and the options for the browser.
 func (s *Passkeys) BeginLogin(_ context.Context, client string) (string, []byte, error) {
 	options, data, err := s.verifier.BeginLogin()
 	if err != nil {
 		return "", nil, err
 	}
-	id, err := s.begin(ceremonyLogin, clientKey(client), data)
+	id, err := s.begin(ceremony{kind: ceremonyLogin, data: data, client: client})
 	if err != nil {
 		return "", nil, err
 	}
@@ -333,7 +306,7 @@ func (s *Passkeys) BeginLogin(_ context.Context, client string) (string, []byte,
 // store is returned as it is, so that the caller fails closed.
 func (s *Passkeys) FinishLogin(ctx context.Context, ceremonyID string, response []byte) (token string, expiresAt time.Time, err error) {
 	log := zerowrap.FromCtx(ctx)
-	data, ok := s.take(ceremonyID, ceremonyLogin)
+	c, ok := s.take(ceremonyID, ceremonyLogin)
 	if !ok {
 		log.Info().Msg("passkey sign-in refused: the ceremony expired or is unknown")
 		return "", time.Time{}, domain.ErrUnauthenticated
@@ -342,19 +315,8 @@ func (s *Passkeys) FinishLogin(ctx context.Context, ceremonyID string, response 
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("load passkey user handle: %w", err)
 	}
-	var looked []byte // the credential the response named, for the log
-	pk, err := s.verifier.FinishLogin(handle, data, response, func(id []byte) (domain.Passkey, error) {
-		looked = bytes.Clone(id)
-		return s.store.Get(ctx, id)
-	})
+	pk, err := s.verifier.FinishLogin(handle, c.data, response, func(id []byte) (domain.Passkey, error) { return s.store.Get(ctx, id) })
 	if err != nil {
-		if errors.Is(err, domain.ErrPasskeyCloned) {
-			ev := log.Warn().Err(err)
-			if looked != nil {
-				ev = ev.Str("passkey", passkeyRef(looked))
-			}
-			ev.Msg("passkey sign-in refused: the counter did not advance, the authenticator may be cloned")
-		}
 		if errors.Is(err, domain.ErrUnauthenticated) {
 			// The reason is for the log (it holds no key); the caller learns nothing.
 			log.Info().Err(err).Msg("passkey sign-in refused")
@@ -376,9 +338,10 @@ func (s *Passkeys) FinishLogin(ctx context.Context, ceremonyID string, response 
 		}
 		return "", time.Time{}, fmt.Errorf("read passkey: %w", err)
 	}
-	// The verifier compared the counter with the one it was shown; another
-	// login may have moved it since. A counter that does not advance is the
-	// clone signal (synced passkeys report 0 and are exempt).
+	// The one sign-count check. The verifier returns the counter the response
+	// reports (the stored one when it does not advance), and another login may
+	// have moved the stored one since it looked. A counter that does not advance
+	// is the clone signal; synced passkeys report 0 and are exempt.
 	if cur.SignCount != 0 && pk.SignCount <= cur.SignCount {
 		log.Warn().Str("passkey", passkeyRef(pk.ID)).Msg("passkey sign-in refused: the counter did not advance, the authenticator may be cloned")
 		return "", time.Time{}, domain.ErrUnauthenticated

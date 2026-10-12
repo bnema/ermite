@@ -17,12 +17,11 @@ const (
 	MaxPasskeyNameLen = 64
 	// DefaultPasskeyName names a passkey registered without a name.
 	DefaultPasskeyName = "passkey"
+	// PasskeyCeremonyTTL is how long a registration or a sign-in may take, from
+	// its begin to its finish. The WebAuthn adapter enforces it on the
+	// challenge and the use case on the ceremony it keeps.
+	PasskeyCeremonyTTL = 2 * time.Minute
 )
-
-// ErrPasskeyCloned means a passkey signed in with a counter that did not
-// advance, which hints at a cloned authenticator (ADR 0026). It is an
-// ErrUnauthenticated.
-var ErrPasskeyCloned = fmt.Errorf("%w: passkey counter did not advance (possible clone)", ErrUnauthenticated)
 
 // Passkey is a WebAuthn credential that can sign the owner in. It holds the
 // public key only.
@@ -67,6 +66,3 @@ func ParsePasskeyName(s string) (PasskeyName, error) {
 
 // String returns the name.
 func (n PasskeyName) String() string { return n.s }
-
-// IsZero reports whether n is the zero value.
-func (n PasskeyName) IsZero() bool { return n.s == "" }

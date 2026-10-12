@@ -281,16 +281,16 @@ func (_c *WebPasskeyService_FinishLogin_Call) RunAndReturn(run func(ctx context.
 }
 
 // FinishRegistration provides a mock function for the type WebPasskeyService
-func (_mock *WebPasskeyService) FinishRegistration(ctx context.Context, p domain.Principal, ceremony string, name string, response []byte) error {
-	ret := _mock.Called(ctx, p, ceremony, name, response)
+func (_mock *WebPasskeyService) FinishRegistration(ctx context.Context, p domain.Principal, ceremony string, response []byte) error {
+	ret := _mock.Called(ctx, p, ceremony, response)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FinishRegistration")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, string, string, []byte) error); ok {
-		r0 = returnFunc(ctx, p, ceremony, name, response)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, string, []byte) error); ok {
+		r0 = returnFunc(ctx, p, ceremony, response)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -306,13 +306,12 @@ type WebPasskeyService_FinishRegistration_Call struct {
 //   - ctx context.Context
 //   - p domain.Principal
 //   - ceremony string
-//   - name string
 //   - response []byte
-func (_e *WebPasskeyService_Expecter) FinishRegistration(ctx any, p any, ceremony any, name any, response any) *WebPasskeyService_FinishRegistration_Call {
-	return &WebPasskeyService_FinishRegistration_Call{Call: _e.mock.On("FinishRegistration", ctx, p, ceremony, name, response)}
+func (_e *WebPasskeyService_Expecter) FinishRegistration(ctx any, p any, ceremony any, response any) *WebPasskeyService_FinishRegistration_Call {
+	return &WebPasskeyService_FinishRegistration_Call{Call: _e.mock.On("FinishRegistration", ctx, p, ceremony, response)}
 }
 
-func (_c *WebPasskeyService_FinishRegistration_Call) Run(run func(ctx context.Context, p domain.Principal, ceremony string, name string, response []byte)) *WebPasskeyService_FinishRegistration_Call {
+func (_c *WebPasskeyService_FinishRegistration_Call) Run(run func(ctx context.Context, p domain.Principal, ceremony string, response []byte)) *WebPasskeyService_FinishRegistration_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -326,20 +325,15 @@ func (_c *WebPasskeyService_FinishRegistration_Call) Run(run func(ctx context.Co
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		var arg3 string
+		var arg3 []byte
 		if args[3] != nil {
-			arg3 = args[3].(string)
-		}
-		var arg4 []byte
-		if args[4] != nil {
-			arg4 = args[4].([]byte)
+			arg3 = args[3].([]byte)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
-			arg4,
 		)
 	})
 	return _c
@@ -350,7 +344,7 @@ func (_c *WebPasskeyService_FinishRegistration_Call) Return(err error) *WebPassk
 	return _c
 }
 
-func (_c *WebPasskeyService_FinishRegistration_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, ceremony string, name string, response []byte) error) *WebPasskeyService_FinishRegistration_Call {
+func (_c *WebPasskeyService_FinishRegistration_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, ceremony string, response []byte) error) *WebPasskeyService_FinishRegistration_Call {
 	_c.Call.Return(run)
 	return _c
 }

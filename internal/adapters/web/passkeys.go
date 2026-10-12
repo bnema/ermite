@@ -150,7 +150,7 @@ func (s *Server) passkeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	ceremony, options, err := s.cfg.Passkeys.BeginLogin(ctx, addr)
+	ceremony, options, err := s.cfg.Passkeys.BeginLogin(ctx, clientlimit.Key(addr))
 	if err != nil {
 		s.jsonInternal(ctx, w, r, err)
 		return
@@ -158,11 +158,28 @@ func (s *Server) passkeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, http.StatusOK, ceremonyReply{Ceremony: ceremony, Options: options})
 }
 
-// finishRequest is the body of a finish.
+// finishRequest is the body of a finish. The name of a new passkey is given at
+// the begin of its registration, not here.
 type finishRequest struct {
 	Ceremony   string          `json:"ceremony"`
-	Name       string          `json:"name"`
 	Credential json.RawMessage `json:"credential"`
+}
+
+// readFinish reads the body of a finish: JSON, bounded, with a ceremony and a
+// credential. It answers 415, 413 or 400 and returns false when it cannot. A
+// body that fails here is a bug of the client, not a guess at a passkey: the
+// callers do not count it as a failed sign-in.
+func readFinish(w http.ResponseWriter, r *http.Request) (finishRequest, bool) {
+	body, ok := jsonBody(w, r)
+	if !ok {
+		return finishRequest{}, false
+	}
+	var req finishRequest
+	if err := json.Unmarshal(body, &req); err != nil || req.Ceremony == "" || len(req.Credential) == 0 {
+		jsonError(w, http.StatusBadRequest, "malformed request")
+		return finishRequest{}, false
+	}
+	return req, true
 }
 
 // passkeyLoginFinish is POST /-/passkeys/login/finish: it checks the response
@@ -175,15 +192,8 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	if blocked {
 		return
 	}
-	// A wrong content type or a malformed body is a bug of the client, not a
-	// guess at the owner's passkey: it answers 4xx and is not counted as a failure.
-	body, ok := jsonBody(w, r)
+	req, ok := readFinish(w, r)
 	if !ok {
-		return
-	}
-	var req finishRequest
-	if err := json.Unmarshal(body, &req); err != nil || req.Ceremony == "" || len(req.Credential) == 0 {
-		jsonError(w, http.StatusBadRequest, "malformed request")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
@@ -286,18 +296,13 @@ func (s *Server) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 
 // passkeyRegisterFinish is POST /-/passkeys/register/finish.
 func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
-	body, ok := jsonBody(w, r)
+	req, ok := readFinish(w, r)
 	if !ok {
-		return
-	}
-	var req finishRequest
-	if err := json.Unmarshal(body, &req); err != nil || req.Ceremony == "" || len(req.Credential) == 0 {
-		jsonError(w, http.StatusBadRequest, "malformed request")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
-	if err := s.cfg.Passkeys.FinishRegistration(ctx, principal(ctx), req.Ceremony, req.Name, req.Credential); err != nil {
+	if err := s.cfg.Passkeys.FinishRegistration(ctx, principal(ctx), req.Ceremony, req.Credential); err != nil {
 		s.registerError(ctx, w, r, err)
 		return
 	}

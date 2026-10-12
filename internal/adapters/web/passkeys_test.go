@@ -54,9 +54,14 @@ func newPasskeyServer(t *testing.T) *passkeyFixture {
 	f.srv = newTestServer(t, Config{
 		Repos: reposFailing(t, errors.New("x")), Browse: mocks.NewBrowseService(t),
 		PublicURL: forgeOrigin, Sessions: f.sessions, Passkeys: f.passkeys, Limiter: f.lim,
+		Now: func() time.Time { return fixedNow },
 	})
 	return f
 }
+
+// fixedNow is the clock of the passkey pages: "3d ago" does not depend on when
+// the test runs.
+var fixedNow = time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 
 type req struct {
 	method, target string
@@ -88,7 +93,7 @@ func postJSON(target, cookie, body string) req {
 	return req{method: "POST", target: target, origin: forgeOrigin, cookie: cookie, contentType: "application/json", body: body}
 }
 
-const finishBody = `{"ceremony":"c1","name":"Pixel 9","credential":{"id":"x","type":"public-key"}}`
+const finishBody = `{"ceremony":"c1","credential":{"id":"x","type":"public-key"}}`
 
 var (
 	beginLogin     = "/-/passkeys/login/begin"
@@ -160,12 +165,17 @@ func TestPasskeyLoginBlocked(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyServer(t) // no use case call is expected
 	f.lim.blocked = true
+	// Blocked answers 429 whatever the request holds: the limiter comes before
+	// the content type and the body are looked at.
 	for _, r := range []req{
 		{method: "POST", target: beginLogin, origin: forgeOrigin},
 		postJSON(finishLogin, "", finishBody),
+		{method: "POST", target: finishLogin, origin: forgeOrigin, contentType: "text/plain", body: "x"},
+		postJSON(finishLogin, "", `not json`),
+		postJSON(finishLogin, "", strings.Repeat("a", 64<<10+1)),
 	} {
 		rec := f.do(t, r)
-		assert.Equal(t, http.StatusTooManyRequests, rec.Code, r.target)
+		assert.Equal(t, http.StatusTooManyRequests, rec.Code, "%s %q", r.target, r.contentType)
 		assert.JSONEq(t, `{"error":"too many attempts"}`, rec.Body.String())
 		assert.Equal(t, "91", rec.Header().Get("Retry-After"))
 		assert.Empty(t, rec.Header().Values("Set-Cookie"))
@@ -277,7 +287,6 @@ func TestPasskeyFinishBodyLimit(t *testing.T) {
 	require.Len(t, exact, 64<<10)
 	rec := f.do(t, postJSON(finishLogin, "", exact))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Zero(t, f.lim.fails, "a malformed body is not a failed authentication")
 }
 
 func TestPasskeyFinishMalformed(t *testing.T) {
@@ -301,7 +310,7 @@ func TestPasskeyRegistration(t *testing.T) {
 	assert.JSONEq(t, `{"ceremony":"cer9","options":{"publicKey":{}}}`, rec.Body.String())
 	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 
-	f.passkeys.EXPECT().FinishRegistration(mock.Anything, domain.Owner(), "c1", "Pixel 9", mock.MatchedBy(func(b []byte) bool {
+	f.passkeys.EXPECT().FinishRegistration(mock.Anything, domain.Owner(), "c1", mock.MatchedBy(func(b []byte) bool {
 		return string(b) == `{"id":"x","type":"public-key"}`
 	})).Return(nil).Once()
 	rec = f.do(t, postJSON(finishRegister, "tok", finishBody))
@@ -327,7 +336,7 @@ func TestPasskeyRegistrationErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := newPasskeyServer(t)
-			f.passkeys.EXPECT().FinishRegistration(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(tc.err).Once()
+			f.passkeys.EXPECT().FinishRegistration(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(tc.err).Once()
 			rec := f.do(t, postJSON(finishRegister, "tok", finishBody))
 			assert.Equal(t, tc.status, rec.Code)
 			assert.Contains(t, rec.Body.String(), `"error"`)
@@ -346,7 +355,7 @@ func TestPasskeyRegistrationErrors(t *testing.T) {
 func TestPasskeysPage(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyServer(t)
-	now := time.Now()
+	now := fixedNow
 	list := []domain.Passkey{
 		{ID: []byte{0xfb, 0xff, 'a'}, Name: "Pixel <9>", CreatedAt: now.Add(-72 * time.Hour), LastUsedAt: now.Add(-time.Hour), BackupState: true},
 		{ID: []byte("hw"), Name: "yubikey", CreatedAt: now.Add(-time.Hour)},
@@ -364,9 +373,13 @@ func TestPasskeysPage(t *testing.T) {
 	assert.Contains(t, body, "never")
 	assert.Contains(t, body, `action="/-/passkeys/`+base64.RawURLEncoding.EncodeToString(list[0].ID)+`/remove"`)
 	assert.Contains(t, body, `data-passkey="register"`)
-	// TS-004: the name field and the add button are one form, so Enter submits.
-	form := body[strings.Index(body, "<form class=\"passkey-add\""):]
-	form = form[:strings.Index(form, "</form>")]
+	// The name field and the add button are one form, so Enter submits.
+	start := strings.Index(body, "<form class=\"passkey-add\"")
+	require.GreaterOrEqual(t, start, 0, "the add form is on the page")
+	form := body[start:]
+	end := strings.Index(form, "</form>")
+	require.GreaterOrEqual(t, end, 0)
+	form = form[:end]
 	assert.Contains(t, form, "data-passkey-form")
 	assert.Contains(t, form, `data-passkey-name`)
 	assert.Contains(t, form, `type="submit"`)
@@ -383,7 +396,7 @@ func TestPasskeysPageFull(t *testing.T) {
 	f := newPasskeyServer(t)
 	list := make([]domain.Passkey, domain.MaxPasskeys)
 	for i := range list {
-		list[i] = domain.Passkey{ID: []byte{byte(i + 1)}, Name: "k", CreatedAt: time.Now()}
+		list[i] = domain.Passkey{ID: []byte{byte(i + 1)}, Name: "k", CreatedAt: fixedNow}
 	}
 	f.passkeys.EXPECT().List(mock.Anything, mock.Anything).Return(list, nil).Once()
 	rec := f.do(t, req{method: "GET", target: "/-/passkeys", cookie: "tok"})
@@ -554,50 +567,55 @@ func TestIsPasskeyLoginPath(t *testing.T) {
 	}
 }
 
-// GO-005: a blocked client gets 429 whatever it sends, and a malformed finish
-// is a 4xx that does not count as a failed authentication.
-func TestPasskeyLoginFinishBlockedBeforeBodyChecks(t *testing.T) {
+// A finish that cannot be read is a 4xx, and is not counted as a failed
+// sign-in: the client is buggy, it did not guess at a passkey.
+func TestMalformedFinishIsNotAFailedSignIn(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyServer(t)
-	f.lim.blocked = true
-	for _, r := range []req{
-		{method: "POST", target: finishLogin, origin: forgeOrigin, contentType: "text/plain", body: "x"},
-		postJSON(finishLogin, "", `not json`),
-		postJSON(finishLogin, "", strings.Repeat("a", 64<<10+1)),
-	} {
-		rec := f.do(t, r)
-		assert.Equal(t, http.StatusTooManyRequests, rec.Code, "%q", r.contentType)
-	}
-	assert.Zero(t, f.lim.fails)
-
-	f.lim.blocked = false
 	for _, r := range []req{
 		{method: "POST", target: finishLogin, origin: forgeOrigin, contentType: "text/plain", body: "x"},
 		postJSON(finishLogin, "", `not json`),
 		postJSON(finishLogin, "", `{}`),
+		postJSON(finishLogin, "", strings.Repeat("a", 64<<10+1)),
 	} {
 		rec := f.do(t, r)
 		assert.GreaterOrEqual(t, rec.Code, 400)
 		assert.Less(t, rec.Code, 500)
 	}
-	assert.Zero(t, f.lim.fails, "a malformed request is not a failed sign-in")
+	assert.Zero(t, f.lim.fails)
 }
 
-// The client key the web hands to the use case is the one the limiter uses.
-func TestPasskeyLoginBeginPassesTheClientAddress(t *testing.T) {
+// The client key the web hands to the use case is the one the failure limiter
+// counts under: the address with trusted proxies applied, an IPv4 address as it
+// is (mapped or not), an IPv6 one cut to its /64.
+func TestPasskeyLoginBeginPassesTheClientKey(t *testing.T) {
 	t.Parallel()
-	f := newPasskeyServer(t)
-	f.passkeys.EXPECT().BeginLogin(mock.Anything, "192.0.2.77").Return("c", []byte(`{}`), nil).Once()
-	r := httptest.NewRequest("POST", beginLogin, nil)
-	r.RemoteAddr = "192.0.2.77:51000"
-	r.Header.Set("Origin", forgeOrigin)
-	r.Header.Set("X-Forwarded-For", "203.0.113.5") // no trusted proxy: ignored
-	rec := httptest.NewRecorder()
-	f.srv.ServeHTTP(rec, r)
-	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	for name, tc := range map[string]struct{ remote, xff, want string }{
+		"ipv4":                  {"192.0.2.77:51000", "", "192.0.2.77"},
+		"ipv4 mapped":           {"[::ffff:192.0.2.77]:51000", "", "192.0.2.77"},
+		"ipv6 host":             {"[2001:db8:1:2::1]:51000", "", "2001:db8:1:2::/64"},
+		"ipv6 same /64":         {"[2001:db8:1:2:ffff:ffff:ffff:ffff]:51000", "", "2001:db8:1:2::/64"},
+		"ipv6 another /64":      {"[2001:db8:1:3::1]:51000", "", "2001:db8:1:3::/64"},
+		"forwarded for ignored": {"192.0.2.77:51000", "203.0.113.5", "192.0.2.77"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newPasskeyServer(t)
+			f.passkeys.EXPECT().BeginLogin(mock.Anything, tc.want).Return("c", []byte(`{}`), nil).Once()
+			r := httptest.NewRequest("POST", beginLogin, nil)
+			r.RemoteAddr = tc.remote
+			r.Header.Set("Origin", forgeOrigin)
+			if tc.xff != "" {
+				r.Header.Set("X-Forwarded-For", tc.xff) // no trusted proxy: ignored
+			}
+			rec := httptest.NewRecorder()
+			f.srv.ServeHTTP(rec, r)
+			assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		})
+	}
 }
 
-// TS-001: the name travels with register/begin and is checked there.
+// The name travels with register/begin and is checked there.
 func TestPasskeyRegisterBeginChecksTheName(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyServer(t)

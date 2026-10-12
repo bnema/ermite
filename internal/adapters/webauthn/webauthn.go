@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	gowebauthn "github.com/go-webauthn/webauthn/webauthn"
@@ -19,10 +18,6 @@ import (
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
-
-// ceremonyTimeout is how long the browser may take, enforced here too. The
-// use case keeps its own, equal TTL for the ceremony data.
-const ceremonyTimeout = 2 * time.Minute
 
 // ownerName names the one user in the options sent to the browser.
 const ownerName = "owner"
@@ -46,7 +41,7 @@ func New(publicURL string) (*Verifier, error) {
 	if (u.Scheme != "http" && u.Scheme != "https") || host == "" {
 		return nil, fmt.Errorf("passkeys: public URL %q needs an http(s) scheme and a host", publicURL)
 	}
-	timeout := gowebauthn.TimeoutConfig{Enforce: true, Timeout: ceremonyTimeout, TimeoutUVD: ceremonyTimeout}
+	timeout := gowebauthn.TimeoutConfig{Enforce: true, Timeout: domain.PasskeyCeremonyTTL, TimeoutUVD: domain.PasskeyCeremonyTTL}
 	web, err := gowebauthn.New(&gowebauthn.Config{
 		RPID:          host,
 		RPDisplayName: host,
@@ -114,9 +109,6 @@ func (v *Verifier) FinishRegistration(userHandle []byte, ceremony, response []by
 	if err != nil {
 		return domain.Passkey{}, refuse("registration", err)
 	}
-	if n := len(cred.ID); n == 0 || n > domain.MaxPasskeyIDLen {
-		return domain.Passkey{}, refuse("registration", fmt.Errorf("credential id has %d bytes", n))
-	}
 	transports := make([]string, 0, len(cred.Transport))
 	for _, t := range cred.Transport {
 		transports = append(transports, string(t))
@@ -144,7 +136,7 @@ func (v *Verifier) BeginLogin() ([]byte, []byte, error) {
 // FinishLogin implements ports.PasskeyVerifier. The library compares the user
 // handle of the response with userHandle.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter copies the counter and backup state the library verified into the stored passkey; the clone rule is the library's, the refusal is the port contract
+//hexcheck:ignore suspicious-business-logic-in-adapter copies the counter and backup state the library verified into the stored passkey; it decides nothing: the use case refuses a counter that does not advance
 func (v *Verifier) FinishLogin(userHandle []byte, ceremony, response []byte, lookup func(id []byte) (domain.Passkey, error)) (domain.Passkey, error) {
 	var session gowebauthn.SessionData
 	if err := json.Unmarshal(ceremony, &session); err != nil {
@@ -175,9 +167,8 @@ func (v *Verifier) FinishLogin(userHandle []byte, ceremony, response []byte, loo
 	if err != nil {
 		return domain.Passkey{}, refuse("login", err)
 	}
-	if cred.Authenticator.CloneWarning {
-		return domain.Passkey{}, domain.ErrPasskeyCloned
-	}
+	// The library keeps the stored counter when the received one does not
+	// advance (its clone warning); the use case refuses that, under its lock.
 	stored.SignCount = cred.Authenticator.SignCount
 	stored.BackupState = cred.Flags.BackupState
 	return stored, nil

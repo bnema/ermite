@@ -164,10 +164,10 @@ func (s webSessions) Verify(ctx context.Context, token string) (domain.Principal
 	return p, true, nil
 }
 
-// webPasskeys adapts the passkey use cases to ports.WebPasskeyService: the
-// session a passkey sign-in opens is given to the web as a token and a
-// lifetime, like webSessions.Login does for a link, and a refusal is
-// ports.ErrLinkRejected.
+// webPasskeys adapts the passkey use cases to ports.WebPasskeyService. Only
+// FinishLogin differs from *usecase.Passkeys: the session a passkey sign-in
+// opens is given to the web as a token and a lifetime, like webSessions.Login
+// does for a link, and a refusal is ports.ErrLinkRejected.
 type webPasskeys struct{ *usecase.Passkeys }
 
 var _ ports.WebPasskeyService = webPasskeys{}
@@ -185,11 +185,6 @@ func (p webPasskeys) FinishLogin(ctx context.Context, ceremony string, response 
 		return "", 0, ports.ErrLinkRejected
 	}
 	return token, lifetime, nil
-}
-
-func (p webPasskeys) FinishRegistration(ctx context.Context, owner domain.Principal, ceremony, name string, response []byte) error {
-	_, err := p.Passkeys.FinishRegistration(ctx, owner, ceremony, name, response)
-	return err
 }
 
 // webRoutes mounts the web on the patterns it serves.

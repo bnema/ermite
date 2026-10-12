@@ -43,14 +43,12 @@ func TestParsePasskeyName(t *testing.T) {
 			if tc.reason == "" {
 				require.NoError(t, err)
 				assert.Equal(t, tc.in, got.String())
-				assert.False(t, got.IsZero())
 				return
 			}
 			require.Error(t, err)
 			assert.ErrorIs(t, err, domain.ErrInvalidText)
 			assert.True(t, domain.IsInvalid(err))
 			assert.Contains(t, err.Error(), tc.reason)
-			assert.True(t, got.IsZero())
 		})
 	}
 }
@@ -59,9 +57,4 @@ func TestDefaultPasskeyNameIsValid(t *testing.T) {
 	t.Parallel()
 	_, err := domain.ParsePasskeyName(domain.DefaultPasskeyName)
 	require.NoError(t, err)
-}
-
-func TestErrPasskeyClonedIsUnauthenticated(t *testing.T) {
-	t.Parallel()
-	assert.ErrorIs(t, domain.ErrPasskeyCloned, domain.ErrUnauthenticated)
 }

@@ -280,7 +280,6 @@ func TestLoginRefused(t *testing.T) {
 			err := tc.run(t, d)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, domain.ErrUnauthenticated)
-			assert.NotErrorIs(t, err, domain.ErrPasskeyCloned)
 
 			// Control: the refusal was for the reason of the case. With the device
 			// and the store as they were, a fresh assertion still succeeds, so the
@@ -328,7 +327,11 @@ func TestLoginStoreFailureIsNotAnUnauthenticated(t *testing.T) {
 	assert.NotErrorIs(t, err, domain.ErrUnauthenticated)
 }
 
-func TestClonedAuthenticator(t *testing.T) {
+// A counter that does not advance is not refused here: the verifier reports the
+// stored counter (the library keeps it on a clone warning) and the use case,
+// which orders the logins under its lock, refuses it. TestPasskeyClonedAuthenticator
+// in package app checks the refusal end to end.
+func TestCounterThatDoesNotAdvanceKeepsTheStoredOne(t *testing.T) {
 	t.Parallel()
 	s := sites["localhost"]
 	v, err := webauthn.New(s.url)
@@ -342,11 +345,19 @@ func TestClonedAuthenticator(t *testing.T) {
 	assert.Equal(t, uint32(1), got.SignCount)
 	d.store[string(got.ID)] = got
 
-	// The counter did not advance: a copy of the key is in use.
+	// The counter did not advance: a copy of the key may be in use. The answer
+	// is valid, and carries the stored counter, not a lower or equal new one.
 	ceremony, options = d.assertion(t, v, s)
-	_, err = v.FinishLogin(userHandle, ceremony, d.respond(s, options), d.lookup)
-	require.ErrorIs(t, err, domain.ErrPasskeyCloned)
-	assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+	again, err := v.FinishLogin(userHandle, ceremony, d.respond(s, options), d.lookup)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(1), again.SignCount, "the stored counter, unchanged")
+
+	// A response with a lower counter keeps the stored one too.
+	d.cred.Counter = 0
+	ceremony, options = d.assertion(t, v, s)
+	lower, err := v.FinishLogin(userHandle, ceremony, d.respond(s, options), d.lookup)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(1), lower.SignCount)
 }
 
 // Synced passkeys always report 0: that is not a clone.
