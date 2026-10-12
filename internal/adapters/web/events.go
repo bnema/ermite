@@ -31,6 +31,9 @@ import (
 //	GET /-/events?topic=repo:<name>&view=commits&ref=<branch>&head=<sha>
 //	GET /-/events?topic=repo:<name>&view=mrs
 //	GET /-/events?topic=repo:<name>&view=mr&n=<number>&ref=<source branch>
+//	GET /-/events?topic=repo:<name>&view=actions
+//	GET /-/events?topic=repo:<name>&view=run&n=<run id>
+//	GET /-/events?topic=repo:<name>&view=job&job=<job id>
 //
 // topic is the Watch topic. view says which fragments of a repository the
 // page shows, so that the server renders only those (summary when absent).
@@ -50,6 +53,11 @@ import (
 //	commits-head    data: <div id="commits-head">N new commits — reload</div>
 //	mr-notice       data: <div id="mr-notice">…</div>, on the merge request pages:
 //	                something changed, with the link that reloads the page
+//	ci-run          data: <tr id="run-<id>">…</tr> (the list of runs) or
+//	                <div id="run-body">…</div> (one run)
+//	ci-job          data: <h2 id="job-head">…</h2> and <ol id="job-steps">…</ol>; the log
+//	                itself is never sent in the stream, the page reads the lines after
+//	                the last it holds from /raw?from=
 //	gap             data: gap; events were lost, or what the page shows is gone or
 //	                changed: the page fetches itself again (ermiteLive in ermite.js)
 //
@@ -194,7 +202,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n")}
+	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), job: q.Get("job")}
 	handle := func(m recvd) bool {
 		if m.err != nil {
 			if ctx.Err() == nil && !errors.Is(m.err, context.Canceled) {

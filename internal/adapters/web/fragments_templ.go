@@ -516,7 +516,7 @@ func Live(l Layout) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" hx-swap=\"none\" :text=\"data.state === 'offline' ? 'live updates paused' : ''\" hx-on=\"htmx:sse:after:connection -> data.state = 'live';\n           htmx:sse:close, htmx:sse:error -> data.state = 'offline';\n           htmx:sse:error -> ermiteLive.error(event.detail.status);\n           htmx:sse:before:connection -> ermiteLive.gate(event);\n           home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);\n           gap -> ermiteLive.reload()\"></span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" hx-swap=\"none\" :text=\"data.state === 'offline' ? 'live updates paused' : ''\" hx-on=\"htmx:sse:after:connection -> data.state = 'live';\n           htmx:sse:close, htmx:sse:error -> data.state = 'offline';\n           htmx:sse:error -> ermiteLive.error(event.detail.status);\n           htmx:sse:before:connection -> ermiteLive.gate(event);\n           home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job -> ermiteLive.swap(event.detail.data);\n           gap -> ermiteLive.reload()\"></span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

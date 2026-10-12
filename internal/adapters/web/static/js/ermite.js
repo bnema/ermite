@@ -363,3 +363,26 @@ window.ermiteLive = (() => {
     },
   };
 })();
+
+// ermiteLog follows the log of a running job on its page: the lines arrive as
+// "ci-log" events (internal/adapters/web/actions.go, logStream) and are
+// appended to the list. The browser reconnects by itself with Last-Event-ID,
+// the number of the next line; "ci-end" closes the feed when the job is over.
+// The page scrolls with the log only while the reader is at its end.
+(() => {
+  const box = document.getElementById('job-log');
+  if (!box || !box.hasAttribute('data-follow') || !box.dataset.stream || !window.EventSource) return;
+  const list = box.querySelector('ol.log');
+  if (!list) return;
+  const url = box.dataset.stream + '?from=' + encodeURIComponent(box.dataset.next || '0');
+  const es = new EventSource(url);
+  es.addEventListener('ci-log', (e) => {
+    const t = document.createElement('template');
+    t.innerHTML = e.data;
+    const atEnd = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+    list.append(...t.content.children);
+    if (atEnd) window.scrollTo(0, document.body.scrollHeight);
+  });
+  es.addEventListener('ci-end', () => es.close());
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED) es.close(); };
+})();

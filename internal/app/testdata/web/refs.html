@@ -77,6 +77,10 @@
 <a href="/demo/merge-requests" data-key="m" aria-keyshortcuts="m">Merge requests<kbd aria-hidden="true">m</kbd>
 </a>
 </li>
+<li>
+<a href="/demo/actions" data-key="a" aria-keyshortcuts="a">Actions<kbd aria-hidden="true">a</kbd>
+</a>
+</li>
 </ul>
 </nav>
 </header>
@@ -196,7 +200,7 @@
            htmx:sse:close, htmx:sse:error -> data.state = 'offline';
            htmx:sse:error -> ermiteLive.error(event.detail.status);
            htmx:sse:before:connection -> ermiteLive.gate(event);
-           home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);
+           home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job -> ermiteLive.swap(event.detail.data);
            gap -> ermiteLive.reload()">
 </span>
 </div>
@@ -377,6 +381,12 @@
 <li data-k="section merge requests">
 <a href="/demo/merge-requests" tabindex="-1">
 <span class="lbl">merge requests</span>
+<span class="k">section</span>
+</a>
+</li>
+<li data-k="section actions">
+<a href="/demo/actions" tabindex="-1">
+<span class="lbl">actions</span>
 <span class="k">section</span>
 </a>
 </li>

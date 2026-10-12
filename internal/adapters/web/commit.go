@@ -44,6 +44,8 @@ type CommitPage struct {
 	// Invisible is true when some line holds an invisible character, shown as a
 	// marker.
 	Invisible bool
+	// Checks is the combined state of the CI checks of the commit.
+	Checks ChecksSummary
 }
 
 // DiffView is how a page lays its diff out: the layouts in the page and the
@@ -138,6 +140,7 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 		}
 	}
 	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
+	p.Checks = checksSummary(d.repo.Name, cid, s.checksFor(ctx, d.repo.Name, cid))
 
 	lines, invisible := diffLines(p.Files)
 	p.Invisible = invisible

@@ -113,7 +113,7 @@
            htmx:sse:close, htmx:sse:error -> data.state = 'offline';
            htmx:sse:error -> ermiteLive.error(event.detail.status);
            htmx:sse:before:connection -> ermiteLive.gate(event);
-           home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);
+           home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job -> ermiteLive.swap(event.detail.data);
            gap -> ermiteLive.reload()">
 </span>
 </div>

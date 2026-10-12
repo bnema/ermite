@@ -205,6 +205,8 @@ type MRPage struct {
 	CommitsNote string
 	Modes       []string
 	ChecksBlock bool
+	// Checks are the CI checks of the head of the request.
+	Checks ChecksSection
 
 	Box *MergeBox
 	// Live is true when the page announces changes.
@@ -456,6 +458,12 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		}
 	}
 	p.ChecksBlock = d.repo.Settings.FailingChecksBlock
+	if open && head != "" {
+		p.Checks = checksSection(d.repo.Repo, s.checksFor(ctx, d.repo.Name, head), now)
+	} else if head != "" {
+		p.Checks = checksSection(d.repo.Repo, s.checksFor(ctx, d.repo.Name, head), now)
+		p.Checks.Note = ""
+	}
 	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
 
 	// The commits of the request, newest first.
