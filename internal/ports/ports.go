@@ -156,6 +156,11 @@ type RepoReader interface {
 	// domain.MaxLastCommitEntries entries get their last commit. It returns
 	// domain.ErrNotDirectory if path names something else.
 	GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error)
+	// ListPaths lists the file and symlink paths of rev recursively in tree
+	// order, at most maxPaths paths and maxBytes bytes of paths (PathList.Truncated
+	// tells), skipping submodules and paths that are not addressable
+	// (domain.IsAddressablePath).
+	ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Revision, maxPaths, maxBytes int) (domain.PathList, error)
 	// OpenBlob returns the description of the file at path and a reader of its
 	// content, which streams without holding the whole file in memory. The
 	// caller must close the reader. It returns domain.ErrNotFile if path names

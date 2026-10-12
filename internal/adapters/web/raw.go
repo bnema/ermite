@@ -60,7 +60,7 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 	// private, and a shared cache must not keep serving its files (AC2). The
 	// ETag keeps the revalidation cheap.
 	cacheHeaders(ctx, h, "no-cache", sessionCache)
-	if match := r.Header.Get("If-None-Match"); match != "" && h.Get("ETag") != "" && match == h.Get("ETag") {
+	if etag := h.Get("ETag"); etag != "" && etagMatches(r.Header.Get("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}

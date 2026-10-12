@@ -20,8 +20,18 @@ templ Shell(l Layout, rail templ.Component) {
 			<script src={ l.Assets.Live } defer></script>
 			<script src={ l.Assets.SSE } defer></script>
 			<script src={ l.Assets.App } defer></script>
+			<script src={ l.Assets.Files } defer></script>
 		</head>
-		<body data-ref={ l.RefPath } data-sha={ l.SHA } data-sel="" data-nav="">
+		<body
+			data-ref={ l.RefPath }
+			data-sha={ l.SHA }
+			data-sel=""
+			data-nav=""
+			if l.PathsURL != "" {
+				data-paths={ l.PathsURL }
+				data-blob={ l.BlobBase }
+			}
+		>
 			<a class="skip" href="#main">skip to content</a>
 			@Header(l)
 			<div class={ "work", templ.KV("has-rail", l.HasRail && rail != nil) }>

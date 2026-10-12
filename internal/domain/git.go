@@ -155,20 +155,51 @@ func ParseTreePath(s string) (TreePath, error) {
 	if s == "" {
 		return TreePath{}, nil
 	}
-	if len(s) > maxTreePathLen || !utf8.ValidString(s) {
-		return TreePath{}, fmt.Errorf("%w: %q: too long or not valid UTF-8", ErrInvalidPath, truncate(s))
-	}
-	for _, c := range s {
-		if c < 0x20 || c == 0x7f {
-			return TreePath{}, fmt.Errorf("%w: %q: control character", ErrInvalidPath, truncate(s))
-		}
-	}
-	for part := range strings.SplitSeq(s, "/") {
-		if part == "" || part == "." || part == ".." {
-			return TreePath{}, fmt.Errorf("%w: %q: empty, . or .. component", ErrInvalidPath, truncate(s))
-		}
+	if why := treePathProblem(s); why != "" {
+		return TreePath{}, fmt.Errorf("%w: %q: %s", ErrInvalidPath, truncate(s), why)
 	}
 	return TreePath{s: s}, nil
+}
+
+// IsAddressablePath reports whether s is a non-root path that ParseTreePath
+// accepts as it is (no trailing slash). It allocates nothing.
+func IsAddressablePath(s string) bool {
+	return s != "" && treePathProblem(s) == ""
+}
+
+// IsAddressablePathBytes is IsAddressablePath for a path held in bytes; it
+// spares the copy into a string.
+func IsAddressablePathBytes(b []byte) bool {
+	return len(b) > 0 && len(b) <= maxTreePathLen && utf8.Valid(b) && pathShapeProblem(b) == ""
+}
+
+// treePathProblem returns why s cannot be a non-root tree path, or "".
+func treePathProblem(s string) string {
+	if len(s) > maxTreePathLen || !utf8.ValidString(s) {
+		return "too long or not valid UTF-8"
+	}
+	return pathShapeProblem(s)
+}
+
+// pathShapeProblem checks the control characters and the components of a path
+// that is valid UTF-8 and short enough. The bytes of a multi-byte character
+// are all 0x80 or more, so it looks at bytes.
+func pathShapeProblem[S ~string | ~[]byte](s S) string {
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i < len(s) && s[i] != '/' {
+			if c := s[i]; c < 0x20 || c == 0x7f {
+				return "control character"
+			}
+			continue
+		}
+		n := i - start
+		if n == 0 || (n == 1 && s[start] == '.') || (n == 2 && s[start] == '.' && s[start+1] == '.') {
+			return "empty, . or .. component"
+		}
+		start = i + 1
+	}
+	return ""
 }
 
 func truncate(s string) string {
@@ -324,6 +355,45 @@ type Tree struct {
 
 // MaxTreeEntries bounds the entries of a listed directory.
 const MaxTreeEntries = 5000
+
+// MaxPathEntries bounds the paths ListPaths returns.
+const MaxPathEntries = 100_000
+
+// MaxPathBytes bounds the total bytes of the paths ListPaths returns.
+const MaxPathBytes = 8 << 20
+
+// PathList is the recursive list of the file paths of a revision.
+type PathList struct {
+	// CommitID is the commit the revision resolved to.
+	CommitID ObjectID
+	// TreeID is the root tree of that commit.
+	TreeID ObjectID
+	// Paths are the paths of the files and symbolic links, in tree order (the
+	// order of `git ls-tree -r`).
+	Paths []string
+	// Truncated is true when more paths exist than the ones in Paths.
+	Truncated bool
+
+	size int // bytes of Paths, kept by Add
+}
+
+// Add lists p, the next path of a walk in tree order, within the bounds of
+// ListPaths: at most maxPaths paths and maxBytes bytes of paths. A path that
+// is not addressable (IsAddressablePath) is left out. When a bound is reached
+// p is not listed, Truncated is set, and Add returns false: the walk can stop.
+// Otherwise it returns true. The bytes of p are kept, not copied.
+func (l *PathList) Add(p string, maxPaths, maxBytes int) bool {
+	if !IsAddressablePath(p) {
+		return true
+	}
+	if len(l.Paths) >= maxPaths || l.size+len(p) > maxBytes {
+		l.Truncated = true
+		return false
+	}
+	l.size += len(p)
+	l.Paths = append(l.Paths, p)
+	return true
+}
 
 // MaxLastCommitEntries bounds the entries of one directory that get a last
 // commit: each costs a history lookup.

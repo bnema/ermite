@@ -264,6 +264,17 @@ func Compare(t *testing.T, want, got ports.RepoReader, repo domain.RepoName, dir
 			}
 		}
 	})
+	t.Run("ListPaths", func(t *testing.T) {
+		for _, rev := range revs {
+			for _, lim := range [...][2]int{{domain.MaxPathEntries, domain.MaxPathBytes}, {5, domain.MaxPathBytes}, {domain.MaxPathEntries, 60}} {
+				w, werr := want.ListPaths(ctx, repo, rev, lim[0], lim[1])
+				g, gerr := got.ListPaths(ctx, repo, rev, lim[0], lim[1])
+				if assert.Equal(t, errClass(werr), errClass(gerr), "paths at %q %v", rev, lim) {
+					assert.Equal(t, w, g, "paths at %q %v", rev, lim)
+				}
+			}
+		}
+	})
 	t.Run("OpenBlob", func(t *testing.T) {
 		read := func(r ports.RepoReader, rev domain.Revision, path domain.TreePath) (domain.BlobInfo, []byte, error) {
 			info, rc, err := r.OpenBlob(ctx, repo, rev, path)
@@ -336,6 +347,10 @@ func Compare(t *testing.T, want, got ports.RepoReader, repo domain.RepoName, dir
 			"ResolveRefPath":  func(r ports.RepoReader) error { _, err := r.ResolveRefPath(ctx, nope, "main"); return err },
 			"GetTree": func(r ports.RepoReader) error {
 				_, err := r.GetTree(ctx, nope, domain.Revision{}, domain.TreePath{}, false)
+				return err
+			},
+			"ListPaths": func(r ports.RepoReader) error {
+				_, err := r.ListPaths(ctx, nope, domain.Revision{}, domain.MaxPathEntries, domain.MaxPathBytes)
 				return err
 			},
 			"OpenBlob": func(r ports.RepoReader) error {

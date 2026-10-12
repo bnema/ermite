@@ -2,52 +2,82 @@
 
 package web
 
-// Tree is a directory: the filter, the entries with their last commit, the
+// Tree is a directory: the file finder, the entries with their last commit, the
 // notes on what is left out, and the README of the directory below.
 templ Tree(l Layout, p TreePage) {
 	@Shell(l, nil) {
 		<div class="filter">
-			<label for="tree-filter" class="sr">filter</label>
+			<label for="finder-q" class="sr">find a file</label>
 			<input
-				id="tree-filter"
+				id="finder-q"
 				type="search"
 				data-filter
-				placeholder="Filter this directory…"
+				role="combobox"
+				aria-autocomplete="list"
+				aria-controls="finder-list"
+				aria-expanded="false"
+				placeholder="Find a file…"
 				autocomplete="off"
-				hx-on:input="let t = this.value.toLowerCase(); q('#tree-rows > tr').arr().forEach(r => r.hidden = !r.textContent.toLowerCase().includes(t)); take('data-cursor', '#tree-rows > tr:not([hidden])')"
+				spellcheck="false"
+				hx-on:focus="ermiteFinder.load()"
+				hx-on:input="ermiteFinder.input(this)"
+				hx-on:keydown="ermiteFinder.key(this, event)"
 			/>
 		</div>
-		<table class="list tree" aria-label="Entries">
-			<thead>
-				<tr><th class="cur"></th><th class="c-kind"></th><th class="c-name">name</th><th class="c-size">size</th><th class="c-sub">last commit</th><th class="c-who">author</th><th class="c-when">date</th></tr>
-			</thead>
-			<tbody id="tree-rows" data-rows>
-				for _, r := range p.Rows {
-					@TreeRowView(r)
-				}
-			</tbody>
-		</table>
-		if len(p.Rows) == 0 {
-			<p class="lede dim">this directory is empty.</p>
-		}
-		for _, n := range p.Notes {
-			<p class="note">{ n }</p>
-		}
-		if p.Readme != nil {
-			@ReadmeCard(*p.Readme)
-		}
+		<div id="finder" hidden>
+			<p id="finder-status" class="dim" aria-live="polite"></p>
+			<ul id="finder-list" class="cmd-list" role="listbox" aria-label="Files"></ul>
+		</div>
+		<div id="tree-view">
+			<table class="list tree" aria-label="Entries">
+				<thead>
+					<tr><th class="cur"></th><th class="c-kind"></th><th class="c-name">name</th><th class="c-size">size</th><th class="c-sub">last commit</th><th class="c-who">author</th><th class="c-when">date</th></tr>
+				</thead>
+				<tbody id="tree-rows" data-rows hx-on:click="ermiteTree.click(event)">
+					@TreeRows(p)
+				</tbody>
+			</table>
+			if len(p.Rows) == 0 {
+				<p class="lede dim">this directory is empty.</p>
+			}
+			for _, n := range p.Notes {
+				<p class="note">{ n }</p>
+			}
+			if p.Readme != nil {
+				@ReadmeCard(*p.Readme)
+			}
+		</div>
 	}
 }
 
-// TreeRowView is one entry of a directory. Glyph: ▾ directory, @ symbolic
-// link, + submodule, · file.
+// TreeRows is the rows of a directory alone: what files.js inserts under a
+// directory it opens in place. When the directory has more entries than are
+// listed, the last row links to its page.
+templ TreeRows(p TreePage) {
+	for _, r := range p.Rows {
+		@TreeRowView(r)
+	}
+	if p.More != "" {
+		<tr class="tree-more"><td colspan="7"><a href={ templ.SafeURL(p.More) }>more entries: open the directory</a></td></tr>
+	}
+}
+
+// TreeRowView is one entry of a directory. Glyph: ▸ directory (▾ once opened
+// in place), @ symbolic link, + submodule, · file. A directory link carries
+// data-expand, the URL of its rows.
 templ TreeRowView(r TreeRow) {
 	<tr data-cursor?={ r.Cursor }>
 		<td class="cur" aria-hidden="true"></td>
 		<td class="c-kind" aria-hidden="true">{ r.Glyph }</td>
 		<td class="c-name">
 			if r.Href != "" {
-				<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+				<a
+					href={ templ.SafeURL(r.Href) }
+					if r.Expand != "" {
+						data-expand={ r.Expand }
+						aria-expanded="false"
+					}
+				>{ r.Name }</a>
 			} else {
 				{ r.Name }
 			}

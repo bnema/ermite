@@ -76,6 +76,12 @@ func browseOps() []browseOp {
 		}, func(r *mocks.RepoReader) {
 			r.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, true).Return(domain.Tree{}, nil)
 		}},
+		{"ListPaths", func(b *app.Browse, ctx context.Context, p domain.Principal, repo domain.RepoName) error {
+			_, err := b.ListPaths(ctx, p, repo, domain.Revision{})
+			return err
+		}, func(r *mocks.RepoReader) {
+			r.EXPECT().ListPaths(mock.Anything, mock.Anything, mock.Anything, domain.MaxPathEntries, domain.MaxPathBytes).Return(domain.PathList{}, nil)
+		}},
 		{"OpenBlob", func(b *app.Browse, ctx context.Context, p domain.Principal, repo domain.RepoName) error {
 			_, rc, err := b.OpenBlob(ctx, p, repo, domain.Revision{}, root)
 			if rc != nil {

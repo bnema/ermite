@@ -85,6 +85,24 @@ func (s *gitService) GetTree(ctx context.Context, req *connect.Request[pb.GetTre
 	return connect.NewResponse(out), nil
 }
 
+// ListPaths lists the paths of every file of a revision.
+func (s *gitService) ListPaths(ctx context.Context, req *connect.Request[pb.ListPathsRequest]) (*connect.Response[pb.ListPathsResponse], error) {
+	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	list, err := s.browse.ListPaths(ctx, caller(ctx), name, rev)
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.ListPathsResponse{
+		CommitId:  list.CommitID.String(),
+		TreeId:    list.TreeID.String(),
+		Paths:     list.Paths,
+		Truncated: list.Truncated,
+	}), nil
+}
+
 // GetBlob streams the blob in chunks of BlobChunkSize. The first message
 // carries the metadata and the first chunk.
 func (s *gitService) GetBlob(ctx context.Context, req *connect.Request[pb.GetBlobRequest], stream *connect.ServerStream[pb.GetBlobResponse]) error {
