@@ -106,4 +106,5 @@ var featureUse = map[string]string{
 	client.FeatureMergeDeleteBranch: "`ermite mr merge --delete-branch` needs: the merge works but the branch is kept",
 	client.FeatureSigningKey:        "`ermite signing-key show` needs: the command will fail on this server",
 	client.FeatureSession:           "`ermite web login` needs: the command will fail on this server",
+	client.FeaturePasskeys:          "`ermite web passkey` needs: the commands will fail on this server (passkeys need an https public URL with a DNS host name)",
 }

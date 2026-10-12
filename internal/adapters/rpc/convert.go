@@ -3,6 +3,7 @@
 package rpc
 
 import (
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -402,4 +403,20 @@ func repoOrName(we ports.WatchEvent, name domain.RepoName, vis domain.Visibility
 		return repoToPB(*we.Repo)
 	}
 	return &pb.Repo{Name: name.String(), Visibility: visibilityToPB(vis)}
+}
+
+// passkeysToPB converts passkeys; the credential id is base64url without
+// padding, the form RemovePasskey takes back. Key material never leaves.
+func passkeysToPB(list []domain.Passkey) []*pb.Passkey {
+	out := make([]*pb.Passkey, 0, len(list))
+	for _, p := range list {
+		out = append(out, &pb.Passkey{
+			Id:         base64.RawURLEncoding.EncodeToString(p.ID),
+			Name:       p.Name,
+			CreatedAt:  timestamp(p.CreatedAt),
+			LastUsedAt: timestamp(p.LastUsedAt),
+			Synced:     p.BackupState,
+		})
+	}
+	return out
 }

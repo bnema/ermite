@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 	"net/netip"
+	"slices"
 
 	"connectrpc.com/connect"
 	"github.com/bnema/zerowrap"
@@ -25,8 +26,12 @@ import (
 const MaxRequestBytes = 1 << 20
 
 // Features are the optional capabilities of the contract that this server
-// implements, as GetVersion lists them.
+// always implements, as GetVersion lists them. FeaturePasskeys comes on top
+// when Config.Passkeys is set.
 var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths"}
+
+// FeaturePasskeys is listed by GetVersion when passkeys are available.
+const FeaturePasskeys = "passkeys"
 
 // Config configures the API.
 type Config struct {
@@ -50,6 +55,10 @@ type Config struct {
 	// Leave it unset rather than assigning a typed nil pointer (a nil *T in
 	// the interface is not nil, and the service would be served and called).
 	Sessions ports.SessionService
+	// Passkeys serves ListPasskeys and RemovePasskey; nil means passkeys are
+	// not available (the RPCs answer failed_precondition and GetVersion does
+	// not list "passkeys"). Same rule as Sessions about typed nil pointers.
+	Passkeys ports.PasskeyService
 }
 
 // API is the set of Connect handlers of the contract.
@@ -76,10 +85,14 @@ func New(cfg Config) *API {
 	mux.Handle(ermiteconnect.NewGitServiceHandler(&gitService{cfg.Browse}, opts...))
 	mux.Handle(ermiteconnect.NewTokenServiceHandler(&tokenService{cfg.Tokens}, opts...))
 	mux.Handle(ermiteconnect.NewEventServiceHandler(&eventService{cfg.Events}, opts...))
-	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, key: cfg.SigningKey}, opts...))
+	features := slices.Clone(Features)
+	if cfg.Passkeys != nil {
+		features = append(features, FeaturePasskeys)
+	}
+	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
 	if cfg.Sessions != nil {
-		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{cfg.Sessions}, opts...))
+		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))
 	}
 	return &API{handler: mux}
 }

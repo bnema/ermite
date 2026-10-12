@@ -309,9 +309,11 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	res = c.cli(t, "", "repo", "list", "--json").ok(t)
 	assert.JSONEq(t, `[]`, res.stdout)
 
-	// version: no token needed, nothing missing.
+	// version: no token needed. This server runs on http://127.0.0.1, where
+	// passkeys are not available: they are the only feature missing.
 	res = c.cli(t, "", "version", "--json").ok(t)
-	assert.Empty(t, res.stderr, "no missing-feature warning")
+	assert.Equal(t, 1, strings.Count(res.stderr, "warning:"), res.stderr)
+	assert.Contains(t, res.stderr, "the server does not support passkeys")
 	type versionOut struct {
 		Client struct{ Version string }
 		Server struct {
@@ -325,11 +327,12 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	assert.Equal(t, c.url, ver.Server.URL)
 	assert.NotEmpty(t, ver.Server.Version)
 	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths"}, ver.Server.Features)
-	assert.Equal(t, []string{}, ver.Server.MissingFeatures)
+	assert.Equal(t, []string{"passkeys"}, ver.Server.MissingFeatures)
 	stdout, stderr, code = c.bin(t, secret, "version")
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, stdout, "server")
-	assert.Empty(t, stderr)
+	assert.Equal(t, 1, strings.Count(stderr, "warning:"), stderr)
+	assert.Contains(t, stderr, "the server does not support passkeys")
 
 	// Tokens: create a second one, list, revoke it, see it stop working.
 	// (through the binary: the in-process runs use a fixed clock)
