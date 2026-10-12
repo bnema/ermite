@@ -22,6 +22,13 @@ const (
 	FeatureSigningKey = "signing_key"
 	// FeatureSession is SessionService (`ermite web login`, `web logout`).
 	FeatureSession = "session"
+	// FeatureTokenBranchPrefixes is Token.branch_prefixes and
+	// CreateTokenRequest.branch_prefixes (`ermite token create --branch-prefix`).
+	// A server without it ignores the field and would create an unlimited
+	// token: `token create --branch-prefix` reads the features first and
+	// refuses when it is missing (the main guard), and also checks the token it
+	// gets back (a backstop).
+	FeatureTokenBranchPrefixes = "token.branch_prefixes"
 	// FeatureCIRuns is RunService (`ermite run`), FeatureCIRunners its runner
 	// calls (`ermite runner`).
 	FeatureCIRuns    = "ci.runs"
@@ -30,7 +37,7 @@ const (
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureCIRuns, FeatureCIRunners}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

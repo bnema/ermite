@@ -226,9 +226,12 @@ type Token struct {
 	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// Unset until the token is first used.
-	LastUsedAt    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	LastUsedAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
+	// Branch prefixes, each ending with "/", that the token may write; empty
+	// means every branch. Added in storage schema 2.
+	BranchPrefixes []string `protobuf:"bytes,9,rep,name=branch_prefixes,json=branchPrefixes,proto3" json:"branch_prefixes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Token) Reset() {
@@ -317,6 +320,13 @@ func (x *Token) GetLastUsedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Token) GetBranchPrefixes() []string {
+	if x != nil {
+		return x.BranchPrefixes
+	}
+	return nil
+}
+
 var File_ermite_storage_repo_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_repo_proto_rawDesc = "" +
@@ -333,7 +343,7 @@ const file_ermite_storage_repo_proto_rawDesc = "" +
 	"\tpushed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bpushedAt\x128\n" +
 	"\bsettings\x18\x06 \x01(\v2\x1c.ermite.storage.RepoSettingsR\bsettings\")\n" +
 	"\rSchemaVersion\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\rR\aversion\"\xa3\x02\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\"\xcc\x02\n" +
 	"\x05Token\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x12\n" +
@@ -345,7 +355,8 @@ const file_ermite_storage_repo_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12<\n" +
 	"\flast_used_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastUsedAt*W\n" +
+	"lastUsedAt\x12'\n" +
+	"\x0fbranch_prefixes\x18\t \x03(\tR\x0ebranchPrefixes*W\n" +
 	"\n" +
 	"Visibility\x12\x1a\n" +
 	"\x16VISIBILITY_UNSPECIFIED\x10\x00\x12\x16\n" +

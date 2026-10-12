@@ -26,12 +26,18 @@ func canReadAs(p domain.Principal, name domain.RepoName, vis domain.Visibility) 
 	return p.Allows(domain.ScopeRepoRead, name)
 }
 
-// adminAccess is the access rule for changing or deleting a repository. A
-// caller that may not administer it learns nothing it could not already read:
-// not found when it cannot see the repository, unauthenticated when it is
-// anonymous, forbidden otherwise.
+// adminAccess is the access rule for changing or deleting a repository:
+// repo:admin on it, and no branch prefixes. A token limited to some branches
+// may not delete the repository (that deletes every branch, those outside its
+// prefixes included), nor change its default branch, visibility, description,
+// merge modes or failing-checks rule: these decide what happens to branches the
+// token may not write. A caller that may not administer it learns nothing it
+// could not already read: not found when it cannot see the repository,
+// unauthenticated when it is anonymous, forbidden otherwise.
 func adminAccess(p domain.Principal, repo domain.Repo) error {
 	switch {
+	case canAdmin(p, repo.Name) && p.IsBranchLimited():
+		return fmt.Errorf("%w: a token limited to branch prefixes may not administer a repository", domain.ErrForbidden)
 	case canAdmin(p, repo.Name):
 		return nil
 	case !canRead(p, repo):
@@ -42,10 +48,16 @@ func adminAccess(p domain.Principal, repo domain.Repo) error {
 	return domain.ErrForbidden
 }
 
-// canWrite is the access rule for pushing to a repository, or creating it on
-// first push: repo:write on it.
+// canWrite is the access rule for pushing to a repository: repo:write on it.
 func canWrite(p domain.Principal, name domain.RepoName) bool {
 	return p.Allows(domain.ScopeRepoWrite, name)
+}
+
+// canCreateRepo is the access rule for creating a repository, by the API or on
+// first push: repo:write on the name, and no branch prefixes. A token limited
+// to some branches may push to a repository that exists; it never makes one.
+func canCreateRepo(p domain.Principal, name domain.RepoName) bool {
+	return canWrite(p, name) && !p.IsBranchLimited()
 }
 
 // canManageTokens is the access rule for creating, listing and revoking

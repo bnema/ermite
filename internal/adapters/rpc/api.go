@@ -26,7 +26,7 @@ const MaxRequestBytes = 1 << 20
 
 // Features are the optional capabilities of the contract that this server
 // implements, as GetVersion lists them.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "ci.runs", "ci.runs.filters", "ci.runners"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners"}
 
 // Config configures the API.
 type Config struct {

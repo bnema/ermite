@@ -77,7 +77,7 @@ func (u *Pushes) Open(ctx context.Context, p domain.Principal, name domain.RepoN
 		return fmt.Errorf("get repository %q: %w", name, err)
 	}
 
-	if !create || !canWrite(p, name) {
+	if !create || !canCreateRepo(p, name) {
 		return domain.ErrNotFound
 	}
 	_, err = u.repos.Create(ctx, p, ports.CreateRepoParams{Name: name, Visibility: domain.VisibilityPrivate})
@@ -105,9 +105,17 @@ func openExisting(p domain.Principal, repo domain.Repo) error {
 	return domain.ErrNotFound
 }
 
-// Check is the pre-receive decision. v1 accepts every push of a principal that
-// may write the repository; protected branches and limits will refuse here by
-// returning an error that matches domain.ErrRejected.
+// Check is the pre-receive decision. It accepts a push of a principal that
+// may write the repository. A token limited to branch prefixes may only update
+// (create, move or delete) branches under them: the first ref outside them
+// refuses the whole push, tags and every other ref included. Further rules
+// (protected branches, limits) will refuse here too, by returning an error
+// that matches domain.ErrRejected.
+//
+// The prefix rule is domain.Principal.AllowsRef and shares its assumptions: no
+// symbolic ref under refs/heads besides HEAD (ermite never creates one and
+// receive-pack cannot), and case-sensitive ref storage (Linux). The hook sees
+// every ref of the push, so a tag or any other ref is judged like a branch.
 //
 // The token of the push was valid when the request began, but a push can run
 // for long: it is re-validated here, so a token revoked or expired meanwhile
@@ -121,6 +129,12 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 	}
 	if !canWrite(p, name) {
 		return fmt.Errorf("%w: no write access to %s", domain.ErrRejected, name)
+	}
+	for _, up := range updates {
+		if !p.AllowsRef(up.Ref) {
+			return fmt.Errorf("%w: %s is outside the branches this token may push (%s)",
+				domain.ErrRejected, up.Ref, strings.Join(p.BranchPrefixes(), ", "))
+		}
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Debug().Str("repo", name.String()).Int("refs", len(updates)).Msg("push checked")

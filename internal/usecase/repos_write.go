@@ -46,7 +46,7 @@ func (r *Repos) View(ctx context.Context, repo domain.Repo) (ports.RepoView, err
 
 // Update changes the description, the visibility, the default branch and the
 // merge settings of a repository, and publishes RepoUpdated. The principal needs repo:admin on it
-// (see adminAccess for what the others learn). At least one field must be set,
+// (see adminAccess for what the others learn) and no branch prefixes. At least one field must be set,
 // else domain.ErrInvalid. A default branch that does not exist gives
 // domain.ErrPreconditionFailed; nothing is written before every check passed.
 // The metadata is written first, then HEAD, and RepoUpdated is published after
@@ -174,7 +174,7 @@ func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params por
 
 // Delete moves the repository directory to the trash, removes its metadata
 // and publishes RepoDeleted. The principal needs repo:admin on it (see
-// adminAccess). A repository whose directory is already gone, left by a
+// adminAccess) and no branch prefixes. A repository whose directory is already gone, left by a
 // delete that failed half way, loses its metadata.
 func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.RepoName) error {
 	repo, err := lookupRepo(ctx, r.meta, name)

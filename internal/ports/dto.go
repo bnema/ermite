@@ -61,6 +61,9 @@ type CreateTokenParams struct {
 	Scopes []domain.Scope
 	// Repos limits the token to these repositories; empty means every one.
 	Repos []domain.RepoName
+	// BranchPrefixes limits the token to the branches under these prefixes
+	// (see domain.ParseBranchPrefix); empty means every branch.
+	BranchPrefixes []string
 	// ExpiresAt is the zero time for a token that never expires.
 	ExpiresAt time.Time
 }

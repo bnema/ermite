@@ -21,13 +21,15 @@ import (
 // jsonToken is the stable JSON shape of a stored token. The secret is only
 // present in the output of `token create`.
 type jsonToken struct {
-	ID         string   `json:"id"`
-	Label      string   `json:"label"`
-	Scopes     []string `json:"scopes"`
-	Repos      []string `json:"repos"`
-	ExpiresAt  *string  `json:"expires_at"`
-	CreatedAt  *string  `json:"created_at"`
-	LastUsedAt *string  `json:"last_used_at"`
+	ID     string   `json:"id"`
+	Label  string   `json:"label"`
+	Scopes []string `json:"scopes"`
+	Repos  []string `json:"repos"`
+	// BranchPrefixes limits the branches the token may write; empty means all.
+	BranchPrefixes []string `json:"branch_prefixes"`
+	ExpiresAt      *string  `json:"expires_at"`
+	CreatedAt      *string  `json:"created_at"`
+	LastUsedAt     *string  `json:"last_used_at"`
 }
 
 type jsonCreatedToken struct {
@@ -44,16 +46,20 @@ func toJSONToken(t *ermite.Token) jsonToken {
 	if repos == nil {
 		repos = []string{}
 	}
+	prefixes := t.GetBranchPrefixes()
+	if prefixes == nil {
+		prefixes = []string{}
+	}
 	return jsonToken{
-		ID: t.GetId(), Label: t.GetLabel(), Scopes: scopes, Repos: repos,
+		ID: t.GetId(), Label: t.GetLabel(), Scopes: scopes, Repos: repos, BranchPrefixes: prefixes,
 		ExpiresAt: jsonTime(t.GetExpiresAt()), CreatedAt: jsonTime(t.GetCreatedAt()), LastUsedAt: jsonTime(t.GetLastUsedAt()),
 	}
 }
 
 const jsonTokenHelp = `
 JSON fields of a token (--json): id, label, scopes (array of names like "repo:read"),
-repos (array; empty means every repository), expires_at, created_at and last_used_at
-(RFC 3339 UTC, null when unset or never used).`
+repos (array; empty means every repository), branch_prefixes (array; empty means every branch),
+expires_at, created_at and last_used_at (RFC 3339 UTC, null when unset or never used).`
 
 func newTokenCmd(env *cliEnv) *cobra.Command {
 	token := &cobra.Command{
@@ -67,10 +73,11 @@ func newTokenCmd(env *cliEnv) *cobra.Command {
 
 func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 	var (
-		preset  string
-		scopes  []string
-		repos   []string
-		expires string
+		preset   string
+		scopes   []string
+		repos    []string
+		prefixes []string
+		expires  string
 	)
 	cmd := &cobra.Command{
 		Use:   "create <label>",
@@ -85,6 +92,12 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 			"  ci     repo:read\n" +
 			"A token cannot be more powerful than the one that creates it. --repo limits it to the named\n" +
 			"repositories (default: all). --expires takes 30d, 2w, 12h or a date; default: never.\n\n" +
+			"--branch-prefix limits the branches the token may write (default: all). Each prefix ends with /\n" +
+			"(for example agent/claude/). The token can push, force-push and delete only branches under its\n" +
+			"prefixes, and merge only into them; it cannot push tags, create repositories or delete one,\n" +
+			"and it never has the rights of the owner. It can only create tokens within its own prefixes.\n" +
+			"To give an AI agent its own space:\n" +
+			"  ermite token create claude --preset agent --scope repo:read --repo <repo> --branch-prefix agent/<name>/\n\n" +
 			"The label is free text of up to 100 bytes, except \"owner\" and \"root\" (in any case): they are\n" +
 			"what the audit trail shows for the admin token and the web owner, so the server refuses them." + jsonTokenHelp,
 		Args: cobra.ExactArgs(1),
@@ -92,6 +105,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 	cmd.Flags().StringVar(&preset, "preset", "", "scope preset: "+strings.Join(client.PresetNames, ", "))
 	cmd.Flags().StringSliceVar(&scopes, "scope", nil, "scope to grant, repeatable or comma-separated (for example repo:read)")
 	cmd.Flags().StringSliceVar(&repos, "repo", nil, "limit the token to this repository, repeatable (default: all)")
+	cmd.Flags().StringSliceVar(&prefixes, "branch-prefix", nil, "limit the branches the token may write to this prefix, ending with / (for example agent/claude/); repeatable (default: all)")
 	cmd.Flags().StringVar(&expires, "expires", "", "lifetime (30d, 2w, 12h) or date (2027-01-31); default: never")
 	_ = cmd.RegisterFlagCompletionFunc("preset", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return client.PresetNames, cobra.ShellCompDirectiveNoFileComp
@@ -104,7 +118,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 	})
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		req, err := buildCreateToken(args[0], preset, scopes, repos, expires, env.now())
+		req, err := buildCreateToken(args[0], preset, scopes, repos, prefixes, expires, env.now())
 		if err != nil {
 			return err
 		}
@@ -112,17 +126,51 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if len(req.GetBranchPrefixes()) > 0 {
+			if err := requireBranchPrefixes(env.ctx(cmd), c); err != nil {
+				return err
+			}
+		}
 		res, err := c.Tokens().CreateToken(env.ctx(cmd), connect.NewRequest(req))
 		if err != nil {
 			return c.Describe(err)
+		}
+		if err := checkBranchPrefixes(req, res.Msg.GetToken()); err != nil {
+			return err
 		}
 		return printCreatedToken(cmd, res.Msg, *asJSON)
 	}
 	return cmd
 }
 
+// requireBranchPrefixes refuses, before anything is created, to ask a server
+// for a branch-limited token when it does not list token.branch_prefixes: such
+// a server ignores the field. A server whose features cannot be read is refused
+// too (fail closed).
+func requireBranchPrefixes(ctx context.Context, c *client.Client) error {
+	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	if err != nil {
+		return c.Describe(err)
+	}
+	if !slices.Contains(res.Msg.GetFeatures(), client.FeatureTokenBranchPrefixes) {
+		return fmt.Errorf("the server does not support %s, so it would ignore --branch-prefix and create an unlimited token: nothing was created (upgrade the server, see `ermite version`)", client.FeatureTokenBranchPrefixes)
+	}
+	return nil
+}
+
+// checkBranchPrefixes is the backstop of requireBranchPrefixes: it refuses to hand out a token that is less limited than
+// asked for. A server that predates branch prefixes ignores the field and
+// creates an unlimited token: the secret is then not printed.
+func checkBranchPrefixes(req *ermite.CreateTokenRequest, got *ermite.Token) error {
+	if slices.Equal(req.GetBranchPrefixes(), got.GetBranchPrefixes()) {
+		return nil
+	}
+	return fmt.Errorf("the server created token %s without the requested branch prefixes (it may be too old: "+
+		"see `ermite version`); its secret is not shown, revoke it with `ermite token revoke %s`", got.GetId(), got.GetId())
+}
+
 // buildCreateToken maps the flags of `token create` to the request.
-func buildCreateToken(label, preset string, scopeFlags, repoFlags []string, expires string, now time.Time) (*ermite.CreateTokenRequest, error) {
+func buildCreateToken(label, preset string, scopeFlags, repoFlags, prefixFlags []string, expires string, now time.Time) (*ermite.CreateTokenRequest, error) {
 	label = strings.TrimSpace(label)
 	if label == "" {
 		return nil, errors.New("the label must not be empty")
@@ -135,6 +183,11 @@ func buildCreateToken(label, preset string, scopeFlags, repoFlags []string, expi
 	for _, r := range repoFlags {
 		if r = strings.TrimSpace(r); r != "" && !slices.Contains(req.Repos, r) {
 			req.Repos = append(req.Repos, r)
+		}
+	}
+	for _, bp := range prefixFlags {
+		if bp = strings.TrimSpace(bp); bp != "" && !slices.Contains(req.BranchPrefixes, bp) {
+			req.BranchPrefixes = append(req.BranchPrefixes, bp)
 		}
 	}
 	if expires != "" {
@@ -156,10 +209,15 @@ func printCreatedToken(cmd *cobra.Command, res *ermite.CreateTokenResponse, asJS
 	if len(t.GetRepos()) > 0 {
 		repos = strings.Join(t.GetRepos(), ", ")
 	}
+	branches := "all"
+	if len(t.GetBranchPrefixes()) > 0 {
+		branches = strings.Join(t.GetBranchPrefixes(), ", ")
+	}
 	noticef(cmd, "created token %s %q", t.GetId(), clean(t.GetLabel()))
 	_ = fields(cmd.ErrOrStderr(), [][2]string{
 		{"  scopes", strings.Join(client.ScopeNames(t.GetScopes()), ", ")},
 		{"  repos", repos},
+		{"  branches", branches},
 		{"  expires", shortTime(t.GetExpiresAt(), "never")},
 	})
 	noticef(cmd, "the secret below is shown once and cannot be retrieved later")
@@ -211,12 +269,16 @@ func newTokenListCmd(env *cliEnv) *cobra.Command {
 			if len(t.GetRepos()) > 0 {
 				repos = strings.Join(t.GetRepos(), ",")
 			}
+			branches := "all"
+			if len(t.GetBranchPrefixes()) > 0 {
+				branches = strings.Join(t.GetBranchPrefixes(), ",")
+			}
 			rows = append(rows, []string{
-				t.GetId(), t.GetLabel(), strings.Join(client.ScopeNames(t.GetScopes()), ","), repos,
+				t.GetId(), t.GetLabel(), strings.Join(client.ScopeNames(t.GetScopes()), ","), repos, branches,
 				shortTime(t.GetExpiresAt(), "never"), shortTime(t.GetLastUsedAt(), "never"),
 			})
 		}
-		return table(cmd.OutOrStdout(), []string{"ID", "LABEL", "SCOPES", "REPOS", "EXPIRES", "LAST USED"}, rows)
+		return table(cmd.OutOrStdout(), []string{"ID", "LABEL", "SCOPES", "REPOS", "BRANCHES", "EXPIRES", "LAST USED"}, rows)
 	}
 	return cmd
 }
@@ -226,7 +288,7 @@ func newTokenRevokeCmd(env *cliEnv) *cobra.Command {
 		Use:   "revoke <id>",
 		Short: "Revoke a token",
 		Long: "Revoke a token by id (see `ermite token list`). It stops working immediately.\n\n" +
-			"A token with every scope and no --repo list has the rights of the owner (it can open web\n" +
+			"A token with every scope, no --repo list and no --branch-prefix has the rights of the owner (it can open web\n" +
 			"sessions). Revoking one also signs every browser out, like `ermite web logout --all`:\n" +
 			"web sessions are not tied to the token that opened them. Sign in again with `ermite web login`.",
 		Args: cobra.ExactArgs(1),

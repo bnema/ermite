@@ -4,6 +4,7 @@ package rpc
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -155,6 +156,7 @@ func tokenToPB(t domain.Token) *pb.Token {
 	for _, r := range t.Repos {
 		out.Repos = append(out.Repos, r.String())
 	}
+	out.BranchPrefixes = slices.Clone(t.BranchPrefixes)
 	return out
 }
 

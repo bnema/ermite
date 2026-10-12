@@ -53,4 +53,7 @@ message Token {
   google.protobuf.Timestamp created_at = 7;
   // Unset until the token is first used.
   google.protobuf.Timestamp last_used_at = 8;
+  // Branch prefixes, each ending with "/", that the token may write; empty
+  // means every branch. Added in storage schema 2.
+  repeated string branch_prefixes = 9;
 }

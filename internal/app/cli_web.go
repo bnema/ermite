@@ -23,7 +23,7 @@ func newWebCmd(env *cliEnv) *cobra.Command {
 		Use:   "web",
 		Short: "Sign the owner in to the web interface of a remote server",
 		Long: "Manage the owner's browser sessions on a remote server. They need the server's admin token, or a\n" +
-			"token that holds every scope and is not limited to repositories.",
+			"token that holds every scope and is limited neither to repositories nor to branches.",
 	}
 	web.AddCommand(newWebLoginCmd(env), newWebLogoutCmd(env))
 	return web

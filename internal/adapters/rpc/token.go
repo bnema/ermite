@@ -34,6 +34,7 @@ func (s *tokenService) CreateToken(ctx context.Context, req *connect.Request[pb.
 		}
 		params.Repos = append(params.Repos, name)
 	}
+	params.BranchPrefixes = req.Msg.GetBranchPrefixes()
 	created, err := s.tokens.Create(ctx, caller(ctx), params)
 	if err != nil {
 		return nil, connectError(ctx, err)
