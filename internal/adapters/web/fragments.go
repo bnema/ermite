@@ -416,9 +416,8 @@ func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]frag
 		if err != nil {
 			return nil, err
 		}
-		if id, ok := rowIsNew(ev.Run); ok {
+		if ev.Run.Status == domain.CIQueued {
 			f.html = strings.Replace(f.html, "<tr id=", "<tr data-new id=", 1)
-			_ = id
 		}
 		return []fragment{f}, nil
 	case "run":
@@ -429,9 +428,6 @@ func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]frag
 	}
 	return nil, nil
 }
-
-// rowIsNew is true for a run created a moment ago: the list adds its row.
-func rowIsNew(run domain.CIRun) (int64, bool) { return run.ID, run.Status == domain.CIQueued }
 
 // jobEvent updates the body of the run page and the steps of the job page.
 func (l *liveStream) jobEvent(ctx context.Context, ev domain.JobUpdated) ([]fragment, error) {
