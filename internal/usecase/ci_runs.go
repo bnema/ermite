@@ -466,10 +466,18 @@ func (w *wfCache) drop(runID int64) {
 
 // --- checks ---
 
-// CommitChecks returns the checks of a commit, without access control.
+// CommitChecks returns the checks of a commit, without access control. A
+// commit with more than MaxCIChecks checks is an error (domain.ErrResourceExhausted):
+// the merge rule cannot answer from a part of them.
 func (c *CI) CommitChecks(ctx context.Context, repo domain.RepoName, sha string) ([]domain.CICheck, error) {
-	checks, _, err := c.cfg.Store.ListChecks(ctx, repo, sha, MaxCIChecks)
-	return checks, err
+	checks, more, err := c.cfg.Store.ListChecks(ctx, repo, sha, MaxCIChecks)
+	if err != nil {
+		return nil, err
+	}
+	if more {
+		return nil, fmt.Errorf("%w: the commit has more than %d checks", domain.ErrResourceExhausted, MaxCIChecks)
+	}
+	return checks, nil
 }
 
 // ListChecks returns the checks of a commit: the one of each job of the latest

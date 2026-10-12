@@ -821,6 +821,9 @@ func (m *MergeRequests) checksAllow(ctx context.Context, name domain.RepoName, h
 		return nil
 	}
 	checks, err := m.checks.CommitChecks(ctx, name, head.String())
+	if errors.Is(err, domain.ErrResourceExhausted) {
+		return fmt.Errorf("%w: too many checks to tell whether they passed: %v", domain.ErrPreconditionFailed, err)
+	}
 	if err != nil {
 		return fmt.Errorf("read the checks of %s: %w", head, err)
 	}

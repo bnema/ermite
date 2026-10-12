@@ -91,6 +91,14 @@ func TestMergeRuleOfFailingChecksBlock(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.blocked)
 		})
 	}
+	t.Run("too many checks to tell", func(t *testing.T) {
+		t.Parallel()
+		m := newMergeUnit(t, true)
+		m.checks.EXPECT().CommitChecks(mock.Anything, m.repo.Name, m.head.String()).Return(nil, domain.ErrResourceExhausted)
+		err := m.merge()
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+		assert.Contains(t, err.Error(), "too many checks")
+	})
 	// The cases where the merge goes on (no check, all passing, rule off) need
 	// the whole merge: see TestCIMergeIsBlockedByChecks, which merges for real.
 }

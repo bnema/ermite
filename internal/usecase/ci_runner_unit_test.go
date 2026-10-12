@@ -269,3 +269,19 @@ func TestGetJobLogRevalidatesABusyStream(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated, "a revoked token stops a busy stream")
 	assert.GreaterOrEqual(t, sent, 2)
 }
+
+// S9: more than 1,000 checks on a commit is an error for the merge rule, not a
+// list cut at 1,000.
+func TestCommitChecksRefusesATruncatedList(t *testing.T) {
+	t.Parallel()
+	u := newCIUnit(t, nil)
+	repo := name(t, "proj")
+	u.store.EXPECT().ListChecks(mock.Anything, repo, "abc", usecase.MaxCIChecks).Return(make([]domain.CICheck, usecase.MaxCIChecks), true, nil).Once()
+	_, err := u.ci.CommitChecks(context.Background(), repo, "abc")
+	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
+
+	u.store.EXPECT().ListChecks(mock.Anything, repo, "def", usecase.MaxCIChecks).Return([]domain.CICheck{{Name: "a"}}, false, nil).Once()
+	checks, err := u.ci.CommitChecks(context.Background(), repo, "def")
+	require.NoError(t, err)
+	assert.Len(t, checks, 1)
+}

@@ -103,8 +103,9 @@ type CIRunCleaner interface {
 // CIChecksReader is the read side of the checks, for the merge rule and the
 // pages that show them. *usecase.CI implements it.
 type CIChecksReader interface {
-	// CommitChecks returns the checks of a commit, at most 1,000, without
-	// access control (the caller has checked it).
+	// CommitChecks returns the checks of a commit, without access control (the
+	// caller has checked it). More than 1,000 is domain.ErrResourceExhausted,
+	// not a part of them: a rule must not decide on some of the checks.
 	CommitChecks(ctx context.Context, repo domain.RepoName, sha string) ([]domain.CICheck, error)
 }
 
