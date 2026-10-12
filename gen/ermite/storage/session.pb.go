@@ -13,6 +13,7 @@ package storagepb
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -120,16 +121,208 @@ func (x *SessionEpoch) GetEpoch() uint64 {
 	return 0
 }
 
+// PasskeyUser is stored under the key "passkey/user": the WebAuthn user
+// handle of the owner, generated on first use. It identifies the owner to
+// authenticators and never changes.
+type PasskeyUser struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 32 random bytes.
+	Handle        []byte `protobuf:"bytes,1,opt,name=handle,proto3" json:"handle,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PasskeyUser) Reset() {
+	*x = PasskeyUser{}
+	mi := &file_ermite_storage_session_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PasskeyUser) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PasskeyUser) ProtoMessage() {}
+
+func (x *PasskeyUser) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_session_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PasskeyUser.ProtoReflect.Descriptor instead.
+func (*PasskeyUser) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_session_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PasskeyUser) GetHandle() []byte {
+	if x != nil {
+		return x.Handle
+	}
+	return nil
+}
+
+// Passkey is stored under the key "passkey/cred/<base64url credential id>":
+// a WebAuthn credential that can sign the owner in (ADR 0026). It holds the
+// public key only.
+type Passkey struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Credential id, at most 1023 bytes.
+	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Name given by the owner.
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// COSE public key.
+	PublicKey       []byte   `protobuf:"bytes,3,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	AttestationType string   `protobuf:"bytes,4,opt,name=attestation_type,json=attestationType,proto3" json:"attestation_type,omitempty"`
+	Transports      []string `protobuf:"bytes,5,rep,name=transports,proto3" json:"transports,omitempty"`
+	// Last signature counter; 0 for synced passkeys.
+	SignCount      uint32                 `protobuf:"varint,6,opt,name=sign_count,json=signCount,proto3" json:"sign_count,omitempty"`
+	BackupEligible bool                   `protobuf:"varint,7,opt,name=backup_eligible,json=backupEligible,proto3" json:"backup_eligible,omitempty"`
+	BackupState    bool                   `protobuf:"varint,8,opt,name=backup_state,json=backupState,proto3" json:"backup_state,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Unset until the passkey is first used.
+	LastUsedAt    *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Passkey) Reset() {
+	*x = Passkey{}
+	mi := &file_ermite_storage_session_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Passkey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Passkey) ProtoMessage() {}
+
+func (x *Passkey) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_session_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Passkey.ProtoReflect.Descriptor instead.
+func (*Passkey) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_session_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Passkey) GetId() []byte {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *Passkey) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Passkey) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+func (x *Passkey) GetAttestationType() string {
+	if x != nil {
+		return x.AttestationType
+	}
+	return ""
+}
+
+func (x *Passkey) GetTransports() []string {
+	if x != nil {
+		return x.Transports
+	}
+	return nil
+}
+
+func (x *Passkey) GetSignCount() uint32 {
+	if x != nil {
+		return x.SignCount
+	}
+	return 0
+}
+
+func (x *Passkey) GetBackupEligible() bool {
+	if x != nil {
+		return x.BackupEligible
+	}
+	return false
+}
+
+func (x *Passkey) GetBackupState() bool {
+	if x != nil {
+		return x.BackupState
+	}
+	return false
+}
+
+func (x *Passkey) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Passkey) GetLastUsedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastUsedAt
+	}
+	return nil
+}
+
 var File_ermite_storage_session_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_session_proto_rawDesc = "" +
 	"\n" +
-	"\x1cermite/storage/session.proto\x12\x0eermite.storage\"\x1e\n" +
+	"\x1cermite/storage/session.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\x1e\n" +
 	"\n" +
 	"SessionKey\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\fR\x03key\"$\n" +
 	"\fSessionEpoch\x12\x14\n" +
-	"\x05epoch\x18\x01 \x01(\x04R\x05epochB/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
+	"\x05epoch\x18\x01 \x01(\x04R\x05epoch\"%\n" +
+	"\vPasskeyUser\x12\x16\n" +
+	"\x06handle\x18\x01 \x01(\fR\x06handle\"\xfb\x02\n" +
+	"\aPasskey\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\fR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x03 \x01(\fR\tpublicKey\x12)\n" +
+	"\x10attestation_type\x18\x04 \x01(\tR\x0fattestationType\x12\x1e\n" +
+	"\n" +
+	"transports\x18\x05 \x03(\tR\n" +
+	"transports\x12\x1d\n" +
+	"\n" +
+	"sign_count\x18\x06 \x01(\rR\tsignCount\x12'\n" +
+	"\x0fbackup_eligible\x18\a \x01(\bR\x0ebackupEligible\x12!\n" +
+	"\fbackup_state\x18\b \x01(\bR\vbackupState\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12<\n" +
+	"\flast_used_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastUsedAtB/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
 var (
 	file_ermite_storage_session_proto_rawDescOnce sync.Once
@@ -143,17 +336,22 @@ func file_ermite_storage_session_proto_rawDescGZIP() []byte {
 	return file_ermite_storage_session_proto_rawDescData
 }
 
-var file_ermite_storage_session_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_ermite_storage_session_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_ermite_storage_session_proto_goTypes = []any{
-	(*SessionKey)(nil),   // 0: ermite.storage.SessionKey
-	(*SessionEpoch)(nil), // 1: ermite.storage.SessionEpoch
+	(*SessionKey)(nil),            // 0: ermite.storage.SessionKey
+	(*SessionEpoch)(nil),          // 1: ermite.storage.SessionEpoch
+	(*PasskeyUser)(nil),           // 2: ermite.storage.PasskeyUser
+	(*Passkey)(nil),               // 3: ermite.storage.Passkey
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_ermite_storage_session_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4, // 0: ermite.storage.Passkey.created_at:type_name -> google.protobuf.Timestamp
+	4, // 1: ermite.storage.Passkey.last_used_at:type_name -> google.protobuf.Timestamp
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_session_proto_init() }
@@ -167,7 +365,7 @@ func file_ermite_storage_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_session_proto_rawDesc), len(file_ermite_storage_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

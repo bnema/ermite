@@ -22,6 +22,7 @@ templ Shell(l Layout, rail templ.Component) {
 			<script src={ l.Assets.SSE } defer></script>
 			<script src={ l.Assets.App } defer></script>
 			<script src={ l.Assets.Files } defer></script>
+			<script src={ l.Assets.Passkey } defer></script>
 			<script src={ l.Assets.Log } defer></script>
 		</head>
 		<body
@@ -124,8 +125,13 @@ templ Header(l Layout) {
 				if SignedIn(ctx) {
 					<form class="owner" method="post" action="/-/logout">
 						<span class="owner-badge" title="signed in as the owner">owner</span>
+						if l.Passkeys {
+							<a class="btn" href="/-/passkeys" title="add or remove the passkeys that sign you in">Passkeys</a>
+						}
 						<button type="submit" class="btn" title="sign out of this browser">Sign out</button>
 					</form>
+				} else if l.Passkeys {
+					<a class="btn" href="/-/login" title="sign in with a passkey">Sign in</a>
 				}
 			</div>
 		</div>

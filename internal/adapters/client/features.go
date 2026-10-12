@@ -22,6 +22,10 @@ const (
 	FeatureSigningKey = "signing_key"
 	// FeatureSession is SessionService (`ermite web login`, `web logout`).
 	FeatureSession = "session"
+	// FeaturePasskeys is SessionService.ListPasskeys and RemovePasskey
+	// (`ermite web passkey`). A server lists it only when passkeys are
+	// available (https public URL with a DNS host name).
+	FeaturePasskeys = "passkeys"
 	// FeatureTokenBranchPrefixes is Token.branch_prefixes and
 	// CreateTokenRequest.branch_prefixes (`ermite token create --branch-prefix`).
 	// A server without it ignores the field and would create an unlimited
@@ -37,7 +41,7 @@ const (
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeaturePasskeys}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

@@ -14,12 +14,13 @@ import (
 
 // serverService implements ermiteconnect.ServerServiceHandler.
 type serverService struct {
-	version string
-	key     ports.SigningKeyService
+	version  string
+	features []string
+	key      ports.SigningKeyService
 }
 
 func (s *serverService) GetVersion(context.Context, *connect.Request[pb.GetVersionRequest]) (*connect.Response[pb.GetVersionResponse], error) {
-	return connect.NewResponse(&pb.GetVersionResponse{Version: s.version, Features: slices.Clone(Features)}), nil
+	return connect.NewResponse(&pb.GetVersionResponse{Version: s.version, Features: slices.Clone(s.features)}), nil
 }
 
 // GetSigningKey returns the public key of the commits ermite signs. It needs

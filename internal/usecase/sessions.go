@@ -189,6 +189,17 @@ func (s *Sessions) issue(ctx context.Context, capAt time.Time) (string, time.Tim
 	return tok, exp.Truncate(time.Second), nil
 }
 
+// issueOwner opens an uncapped session for the owner (a passkey login): the
+// same token a login link gives, for SessionTTL.
+func (s *Sessions) issueOwner(ctx context.Context) (string, time.Time, error) {
+	return s.issue(ctx, time.Time{})
+}
+
+// bumpEpoch ends every session and returns the new epoch.
+func (s *Sessions) bumpEpoch(ctx context.Context) (uint64, error) {
+	return s.store.BumpEpoch(ctx)
+}
+
 // Verify checks a session token and returns the owner. The signature must be
 // HS256 with the session key (the algorithm is pinned, so "none" and any other
 // are refused), the token must not be expired or issued in the future, and its

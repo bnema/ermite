@@ -47,6 +47,21 @@
     & .c-sub { width: auto; }
     & .c-who { width: 130px; }
   }
+  .list.passkeys {
+    & .c-name { width: auto; font-weight: 600; }
+    & .c-when { width: 120px; font-size: var(--fs-s); }
+    & .c-sync { width: 80px; font-size: var(--fs-s); }
+    & .c-act { width: 110px; text-align: right; }
+  }
+  .passkey-add {
+    display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s4);
+    & input {
+      flex: 1; min-width: 12ch; max-width: 320px; height: 32px; padding: 0 var(--s3);
+      background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: var(--r-s);
+    }
+    & input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-color: transparent; }
+    & input::placeholder { color: var(--ink-mute); opacity: 1; }
+  }
   .list.commits, .list.refs {
     & .c-sha { width: 96px; }
     & .c-who { width: 140px; }

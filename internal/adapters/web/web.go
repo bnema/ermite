@@ -77,6 +77,11 @@ type Config struct {
 	// Sessions signs the owner in (ADR 0018). Without it there are no login
 	// routes and every visitor is anonymous.
 	Sessions ports.WebSessionService
+	// Passkeys signs the owner in with a passkey and manages the passkeys
+	// (ADR 0026). Without it, or without Sessions, there are no passkey
+	// routes and no link to them. Leave it unset rather than assigning a typed
+	// nil pointer.
+	Passkeys ports.WebPasskeyService
 	// Limiter counts the failed logins; required with Sessions. Share it with
 	// the API and Git, so that a client has one budget of failures.
 	Limiter ports.FailureLimiter
@@ -138,6 +143,9 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET "+loginPrefix+"{nonce}", s.loginConfirm)
 		mux.HandleFunc("POST "+loginPrefix+"{nonce}", s.loginPost)
 		mux.HandleFunc("POST /-/logout", s.logout)
+	}
+	if s.passkeysOn() {
+		s.passkeyRoutes(mux)
 	}
 	mux.HandleFunc("GET /{$}", s.page(s.home))
 	mux.HandleFunc("GET /{repo}", s.page(s.summary))
@@ -306,6 +314,7 @@ func (s *Server) base() Layout {
 		Version:   s.cfg.Version,
 		SourceURL: s.cfg.SourceURL,
 		Assets:    s.assets.urls,
+		Passkeys:  s.passkeysOn(),
 	}
 }
 

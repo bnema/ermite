@@ -25,6 +25,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/rpc"
 	"bnema.dev/ermite/internal/adapters/sshsig"
 	"bnema.dev/ermite/internal/adapters/web"
+	"bnema.dev/ermite/internal/adapters/webauthn"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/config"
 	"bnema.dev/ermite/internal/domain"
@@ -77,7 +78,9 @@ type forge struct {
 	MergeRequests *usecase.MergeRequests
 	SigningKey    *usecase.SigningKey
 	Sessions      *usecase.Sessions
-	EventLog      *usecase.Events
+	// Passkeys is nil when passkeys are not available (passkeysAvailable).
+	Passkeys *usecase.Passkeys
+	EventLog *usecase.Events
 	// CI is the CI engine: workflow trigger, planner, runner protocol and the
 	// owner side. It starts with the server and stops with it.
 	CI  *usecase.CI
@@ -231,9 +234,28 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		return nil, err
 	}
 
+	// Owner passkeys (ADR 0026): built only when the public URL allows them.
+	// When it does, a verifier that cannot be built is fatal.
+	if ok, reason := passkeysAvailable(cfg.PublicURL); ok {
+		verifier, err := webauthn.New(cfg.PublicURL)
+		if err != nil {
+			return nil, fmt.Errorf("passkeys: %w", err)
+		}
+		f.Passkeys = usecase.NewPasskeys(store.Passkeys(), verifier, f.Sessions, clock)
+		log.Info().Str("public_url", cfg.PublicURL).Msg("passkeys enabled")
+	} else {
+		log.Info().Str("reason", reason).Msg("passkeys disabled")
+	}
+
 	// One budget of failed authentications per client, for Git, the API and
 	// the web login.
 	limiter := clientlimit.NewLimiter(nil)
+	// A nil *usecase.Passkeys must not become a non-nil interface: the API
+	// tests for nil to answer failed_precondition and to leave the feature out.
+	var apiPasskeys ports.PasskeyService
+	if f.Passkeys != nil {
+		apiPasskeys = f.Passkeys
+	}
 	f.API = rpc.New(rpc.Config{
 		Auth:           f.Auth,
 		Repos:          f.Repos,
@@ -243,6 +265,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		MergeRequests:  f.MergeRequests,
 		SigningKey:     f.SigningKey,
 		Sessions:       f.Sessions,
+		Passkeys:       apiPasskeys,
 		Runner:         f.CI,
 		Runs:           f.CI,
 		Version:        serverVersion(),

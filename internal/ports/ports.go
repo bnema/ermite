@@ -320,6 +320,53 @@ type SessionStore interface {
 	BumpEpoch(ctx context.Context) (uint64, error)
 }
 
+// PasskeyStore keeps the owner's passkeys (ADR 0026) and the WebAuthn user
+// handle they belong to.
+type PasskeyStore interface {
+	// UserHandle returns the 32-byte WebAuthn user handle of the owner. The
+	// first call on an empty store generates and stores it; it never changes.
+	UserHandle(ctx context.Context) ([]byte, error)
+	// List returns every passkey, oldest first.
+	List(ctx context.Context) ([]domain.Passkey, error)
+	// Get returns the passkey with that credential id, or domain.ErrNotFound.
+	Get(ctx context.Context, id []byte) (domain.Passkey, error)
+	// Create stores the passkey. It returns domain.ErrAlreadyExists if the
+	// credential id is taken. It does not bound the number of passkeys: the
+	// use case checks domain.MaxPasskeys.
+	Create(ctx context.Context, p domain.Passkey) error
+	// Update replaces the stored passkey (sign count, backup state, last
+	// use), or returns domain.ErrNotFound.
+	Update(ctx context.Context, p domain.Passkey) error
+	// Delete removes the passkey, or returns domain.ErrNotFound.
+	Delete(ctx context.Context, id []byte) error
+}
+
+// PasskeyVerifier runs the WebAuthn ceremonies (ADR 0026). It hides the
+// WebAuthn library: the ceremony data it hands out is opaque to the caller,
+// which keeps it between the begin and the finish of a ceremony and passes it
+// back untouched. Every verification failure is domain.ErrUnauthenticated,
+// wrapped with a reason meant for logs, not for callers.
+type PasskeyVerifier interface {
+	// BeginRegistration starts the registration of a passkey for the owner.
+	// options is the JSON of the credential creation options for the browser
+	// ({"publicKey": {...}}); existing passkeys are excluded.
+	BeginRegistration(userHandle []byte, existing []domain.Passkey) (options []byte, ceremony []byte, err error)
+	// FinishRegistration checks the browser's response (the JSON of
+	// PublicKeyCredential.toJSON()) and returns the new passkey, without a name
+	// or creation time.
+	FinishRegistration(userHandle []byte, ceremony, response []byte) (domain.Passkey, error)
+	// BeginLogin starts a discoverable login. options is the JSON of the
+	// credential request options for the browser ({"publicKey": {...}}).
+	BeginLogin() (options []byte, ceremony []byte, err error)
+	// FinishLogin checks the browser's response and returns the stored passkey
+	// updated with the sign count and backup state the response reports. lookup
+	// returns domain.ErrNotFound for an unknown credential id. A counter that
+	// does not advance is not an error here: the returned SignCount is then the
+	// stored one, and the caller, which holds the lock that orders the logins,
+	// refuses it.
+	FinishLogin(userHandle []byte, ceremony, response []byte, lookup func(id []byte) (domain.Passkey, error)) (domain.Passkey, error)
+}
+
 // EventBus fans events out to in-process subscribers.
 type EventBus interface {
 	// Publish hands the event to every subscriber without blocking. A

@@ -60,6 +60,9 @@ type Layout struct {
 	// (/{repo}/paths/{sha}) and BlobBase the URL its file links start with;
 	// both are "" when the page has no commit to search.
 	PathsURL, BlobBase string
+	// Passkeys tells that the passkey routes exist: the header then links to
+	// them.
+	Passkeys bool
 }
 
 // Link is a plain label + href pair.
@@ -194,4 +197,34 @@ type LoginPage struct {
 	Lines  []string
 	Action string // where the form posts
 	Button string
+}
+
+// PasskeyLoginPage is the sign-in page: one button the script drives.
+type PasskeyLoginPage struct {
+	Title  string
+	Lines  []string
+	Button string
+	// Begin and Finish are the endpoints the script posts to.
+	Begin, Finish string
+}
+
+// PasskeyRow is one passkey on the passkeys page.
+type PasskeyRow struct {
+	Name string
+	// Created and LastUsed are relative ("3d ago"); the At fields are the
+	// RFC 3339 forms, "" when never.
+	Created, CreatedAt   string
+	LastUsed, LastUsedAt string
+	Synced               bool
+	// Remove is where the remove form posts.
+	Remove string
+}
+
+// PasskeysPage lists the passkeys and adds one.
+type PasskeysPage struct {
+	Rows          []PasskeyRow
+	Begin, Finish string
+	// Full tells that no more passkeys can be added.
+	Full bool
+	Max  int
 }

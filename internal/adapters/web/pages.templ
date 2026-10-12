@@ -183,3 +183,89 @@ templ Login(l Layout, p LoginPage) {
 		</section>
 	}
 }
+
+// PasskeyLogin is the sign-in page: a button the script (passkey.js) drives.
+// Without script the button is hidden and the page says what to do instead.
+templ PasskeyLogin(l Layout, p PasskeyLoginPage) {
+	@Shell(l, nil) {
+		<section class="state" aria-labelledby="state-title">
+			<h1 id="state-title">{ p.Title }</h1>
+			<form class="state-act" data-js data-passkey-form>
+				<button type="submit" class="btn primary" data-passkey="login" data-begin={ p.Begin } data-finish={ p.Finish }>{ p.Button }</button>
+			</form>
+			<p class="dim" role="status" aria-live="polite" data-passkey-status></p>
+			for _, line := range p.Lines {
+				<p class="dim">{ line }</p>
+			}
+			<p class="state-back"><a href="/">Back to home</a></p>
+		</section>
+	}
+}
+
+// Passkeys lists the owner's passkeys, removes them and adds one.
+templ Passkeys(l Layout, p PasskeysPage) {
+	@Shell(l, nil) {
+		<h2 class="rule-h"><span>Passkeys</span><span class="count">{ itoa(len(p.Rows)) }</span></h2>
+		<p class="dim">A passkey signs you in from this device or your phone, without a terminal. Removing one signs every browser out.</p>
+		if len(p.Rows) > 0 {
+			<table class="list passkeys" aria-label="Passkeys">
+				<thead>
+					<tr>
+						<th class="cur"></th>
+						<th class="c-name">Name</th>
+						<th class="c-when">Created</th>
+						<th class="c-when">Last used</th>
+						<th class="c-sync">Synced</th>
+						<th class="c-act"><span class="sr">Remove</span></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, r := range p.Rows {
+						<tr>
+							<td class="cur" aria-hidden="true"></td>
+							<td class="c-name">{ r.Name }</td>
+							<td class="c-when nowrap">
+								<time
+									if r.CreatedAt != "" {
+										datetime={ r.CreatedAt }
+									}
+								>{ r.Created }</time>
+							</td>
+							<td class="c-when nowrap">
+								<time
+									if r.LastUsedAt != "" {
+										datetime={ r.LastUsedAt }
+									}
+								>{ r.LastUsed }</time>
+							</td>
+							<td class="c-sync">
+								if r.Synced {
+									yes
+								} else {
+									no
+								}
+							</td>
+							<td class="c-act">
+								<form method="post" action={ templ.SafeURL(r.Remove) }>
+									<button type="submit" class="btn danger" aria-label={ "Remove passkey " + r.Name }>Remove</button>
+								</form>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<p class="lede dim">no passkeys yet.</p>
+		}
+		if p.Full {
+			<p class="dim">{ itoa(p.Max) } passkeys are registered, the most there can be. Remove one to add another.</p>
+		} else {
+			<form class="passkey-add" data-js data-passkey-form>
+				<label for="passkey-name" class="sr">Name of the new passkey</label>
+				<input id="passkey-name" type="text" placeholder="Name, for example Pixel 9" autocomplete="off" data-passkey-name/>
+				<button type="submit" class="btn primary" data-passkey="register" data-begin={ p.Begin } data-finish={ p.Finish }>Add a passkey</button>
+			</form>
+		}
+		<p class="dim" role="status" aria-live="polite" data-passkey-status></p>
+	}
+}

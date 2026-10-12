@@ -116,4 +116,5 @@ var featureUse = map[string]string{
 	client.FeatureSigningKey:          "`ermite signing-key show` needs: the command will fail on this server",
 	client.FeatureSession:             "`ermite web login` needs: the command will fail on this server",
 	client.FeatureTokenBranchPrefixes: "`ermite token create --branch-prefix` needs: the command is refused, and `token list` does not show the limits",
+	client.FeaturePasskeys:            "`ermite web passkey` needs: the commands will fail on this server (passkeys need an https public URL with a DNS host name)",
 }
