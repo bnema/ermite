@@ -132,18 +132,25 @@ func (s webSessions) Login(ctx context.Context, nonce string) (string, time.Dura
 	if err != nil {
 		return "", 0, err
 	}
-	// The cookie lasts as long as the session, which the expiry of the token
-	// that made the link may cut short. The session token carries its own
-	// expiry, so a cookie that outlives it by under a second is harmless.
-	// The expiry is truncated to the second, hence the slack on the full TTL.
-	lifetime := usecase.SessionTTL
-	if d := time.Until(expiresAt); d < usecase.SessionTTL-time.Second {
-		lifetime = d.Round(time.Second)
-	}
-	if lifetime < time.Second {
+	lifetime, ok := cookieLifetime(expiresAt)
+	if !ok {
 		return "", 0, ports.ErrLinkRejected
 	}
 	return token, lifetime, nil
+}
+
+// cookieLifetime is how long the session cookie lasts for a session that
+// expires at expiresAt: as long as the session, which the expiry of the token
+// that made a login link may cut short. The session token carries its own
+// expiry, so a cookie that outlives it by under a second is harmless. The
+// expiry is truncated to the second, hence the slack on the full TTL. ok is
+// false when under a second is left: there is no session to give.
+func cookieLifetime(expiresAt time.Time) (lifetime time.Duration, ok bool) {
+	lifetime = usecase.SessionTTL
+	if d := time.Until(expiresAt); d < usecase.SessionTTL-time.Second {
+		lifetime = d.Round(time.Second)
+	}
+	return lifetime, lifetime >= time.Second
 }
 
 func (s webSessions) Verify(ctx context.Context, token string) (domain.Principal, bool, error) {
@@ -173,13 +180,8 @@ func (p webPasskeys) FinishLogin(ctx context.Context, ceremony string, response 
 	if err != nil {
 		return "", 0, err
 	}
-	// Same lifetime as webSessions.Login: the session token carries its own
-	// expiry, the cookie lasts as long.
-	lifetime := usecase.SessionTTL
-	if d := time.Until(expiresAt); d < usecase.SessionTTL-time.Second {
-		lifetime = d.Round(time.Second)
-	}
-	if lifetime < time.Second {
+	lifetime, ok := cookieLifetime(expiresAt)
+	if !ok {
 		return "", 0, ports.ErrLinkRejected
 	}
 	return token, lifetime, nil
