@@ -3,86 +3,23 @@
 //   node --test 'internal/adapters/web/jstest/*.test.mjs'
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { El, el, installDom } from './dom.mjs';
 
-// ---- a DOM just big enough for ermiteTree ----------------------------------
-
-class El {
-  constructor(tag) {
-    this.tagName = tag.toUpperCase();
-    this.attrs = new Map();
-    this.dataset = {};
-    this.children = [];
-    this.parent = null;
-    this.hidden = false;
-    this.style = { setProperty() {} };
-  }
-  setAttribute(k, v) { this.attrs.set(k, String(v)); }
-  getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
-  hasAttribute(k) { return this.attrs.has(k); }
-  removeAttribute(k) { this.attrs.delete(k); }
-  append(c) { c.parent = this; this.children.push(c); }
-  get nextElementSibling() {
-    if (!this.parent) return null;
-    return this.parent.children[this.parent.children.indexOf(this) + 1] || null;
-  }
-  after(...rows) {
-    const sib = this.parent.children;
-    for (const r of rows) r.parent = this.parent;
-    sib.splice(sib.indexOf(this) + 1, 0, ...rows);
-  }
-  closest(sel) {
-    for (let e = this; e; e = e.parent) if (e.matches(sel)) return e;
-    return null;
-  }
-  matches(sel) {
-    if (sel === 'tr') return this.tagName === 'TR';
-    if (sel === 'a[data-expand]') return this.tagName === 'A' && 'expand' in this.dataset;
-    return false;
-  }
-  querySelector(sel) {
-    for (const c of this.children) {
-      if (c.matches(sel) || (sel === '.c-kind' && c.cls === 'c-kind')) return c;
-      const d = c.querySelector(sel);
-      if (d) return d;
-    }
-    return null;
-  }
-}
-
-// row makes a table row; a name ending in "/" is a directory with a link.
+// A row is a name: a trailing "/" makes a directory with a link, "!x" a div
+// that is not a row, "more" the tree-more row of a truncated directory.
 function row(name, depth) {
-  const tr = new El('tr');
-  tr.dataset.depth = String(depth);
+  const tr = el('tr', { cls: name === 'more' ? 'tree-more' : '', attrs: { 'data-depth': depth } });
   tr.name = name;
-  const kind = new El('span');
-  kind.cls = 'c-kind';
-  kind.textContent = '▸';
-  tr.append(kind);
+  tr.append(el('td', { cls: 'c-kind', text: '▸' }));
   if (name.endsWith('/')) {
-    const a = new El('a');
-    a.dataset.expand = '/rows/' + name;
-    a.href = '/tree/' + name;
-    a.setAttribute('aria-expanded', 'false');
-    tr.append(a);
+    tr.append(el('a', { href: '/tree/' + name, attrs: { 'data-expand': '/rows/' + name, 'aria-expanded': 'false' } }));
   }
   return tr;
 }
 
-// A fragment is "x,y/,!z": ! makes a div, not a row.
-globalThis.document = {
-  createElement(tag) {
-    assert.equal(tag, 'template');
-    const t = { content: { children: [] } };
-    Object.defineProperty(t, 'innerHTML', {
-      set(text) {
-        t.content.children = text.split(',').filter(Boolean).map((n) => (n[0] === '!' ? new El('div') : row(n, 0)));
-      },
-    });
-    return t;
-  },
-};
-globalThis.location = { href: '' };
-globalThis.window = globalThis;
+installDom({
+  parseHTML: (text) => text.split(',').filter(Boolean).map((n) => (n[0] === '!' ? new El('div') : row(n, 0))),
+});
 await import('../static/js/files.js');
 const T = window.ermiteTree;
 
@@ -96,16 +33,18 @@ const answer = async (url, text, ok) => {
   await new Promise((r) => setTimeout(r, 0));
 };
 
-const click = (tr) => {
+// click sends a click on the link of tr; it answers whether the page's own
+// navigation was kept (no preventDefault).
+const click = (tr, mods = {}) => {
   const a = tr.querySelector('a[data-expand]');
-  T.click({ target: a, button: 0, preventDefault() {} });
+  let prevented = false;
+  T.click({ target: a, button: 0, preventDefault() { prevented = true; }, ...mods });
+  return !prevented;
 };
 const kindOf = (tr) => tr.querySelector('.c-kind').textContent;
 
 function table(...names) {
-  const body = new El('tbody');
-  for (const n of names) body.append(row(n, 0));
-  return body;
+  return el('tbody', {}, ...names.map((n) => row(n, 0)));
 }
 const byName = (body, n) => body.children.find((r) => r.name === n);
 const shown = (body) => body.children.filter((r) => !r.hidden).map((r) => r.name);
@@ -182,4 +121,57 @@ test('TS-006: only rows are kept; no row falls back to navigating', async () => 
   await answer('/rows/Q/', '!junk');
   assert.equal(globalThis.location.href, '/tree/Q/');
   assert.deepEqual(other.children.map((r) => r.name), ['Q/']);
+});
+
+test('a modified or non-left click keeps the link navigation', () => {
+  pending.clear();
+  const cases = [
+    { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }, { button: 2 },
+  ];
+  for (const mods of cases) {
+    const body = table('P/');
+    assert.equal(click(body.children[0], mods), true, JSON.stringify(mods) + ' is not intercepted');
+    assert.equal(pending.size, 0, 'no request');
+    assert.equal(body.children[0].getAttribute('aria-busy'), null);
+  }
+  assert.equal(click(table('P/').children[0]), false, 'a plain left click is intercepted');
+});
+
+test('a second click while the rows are loading is ignored', async () => {
+  pending.clear();
+  const body = table('P/');
+  let requests = 0;
+  const fetch0 = globalThis.fetch;
+  globalThis.fetch = (url) => { requests++; return fetch0(url); };
+  click(body.children[0]);
+  click(body.children[0]);
+  assert.equal(requests, 1);
+  await answer('/rows/P/', 'a');
+  globalThis.fetch = fetch0;
+  assert.deepEqual(shown(body), ['P/', 'a']);
+});
+
+test('a failed request navigates to the directory', async () => {
+  pending.clear();
+  const body = table('P/');
+  globalThis.location.href = '';
+  click(body.children[0]);
+  await answer('/rows/P/', 'oops', false);
+  assert.equal(globalThis.location.href, '/tree/P/');
+  assert.deepEqual(body.children.map((r) => r.name), ['P/']);
+});
+
+test('the tree-more row has a depth and follows its directory', async () => {
+  pending.clear();
+  const body = table('P/', 'f');
+  click(body.children[0]);
+  await answer('/rows/P/', 'a,more');
+  const more = byName(body, 'more');
+  assert.equal(more.dataset.depth, '1');
+  assert.equal(more.style.props['--depth'], '1');
+  click(body.children[0]);
+  assert.equal(more.hidden, true, 'hidden with its directory');
+  assert.deepEqual(shown(body), ['P/', 'f']);
+  click(body.children[0]);
+  assert.equal(more.hidden, false, 'shown with it again');
 });

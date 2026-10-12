@@ -25,28 +25,13 @@ const idx = F.index(REPO);
 const top = (q, k = 50, prev = null) => F.search(idx, q, k, prev);
 const names = (r) => r.hits.map((h) => REPO[h.i]);
 
-test('index: ASCII-only folding keeps positions', () => {
-  const x = F.index(['İndex/Straße.go', 'ABC/Def.TXT']);
-  assert.equal(x.lower[1], 'abc/def.txt');
-  assert.equal(x.lower[0].length, x.paths[0].length);
-  assert.equal(x.lower[0][0], 'İ', 'non-ASCII is not folded');
-  assert.equal(x.base[0], 'İndex/'.length);
-  assert.equal(x.base[1], 4);
-});
-
-test('index: mask bits', () => {
-  const x = F.index(['a', 'z', '5', '/', '.', '-', '_', 'é', 'A']);
-  assert.deepEqual(Array.from(x.mask), [1, 1 << 25, 1 << 26, 1 << 27, 1 << 28, 1 << 29, 1 << 29, 1 << 30, 1]);
-});
-
 test('search: rejects what is not a subsequence', () => {
   assert.deepEqual(names(top('zzz')), []);
   assert.deepEqual(names(top('gnirt')), [], 'order matters');
   assert.equal(top('zzz').all.length, 0);
   assert.deepEqual(names(top('')), []);
   assert.deepEqual(names(top('   ')), []);
-  // The mask rejects a character no path has.
-  assert.equal(top('q').all.length, 0);
+  assert.equal(top('q').all.length, 0, 'a character no path has');
 });
 
 test('search: ranking', () => {
@@ -89,14 +74,6 @@ test('search: several terms', () => {
   assert.deepEqual(names(top('web zzz')), []);
   // The order of the terms is free.
   assert.deepEqual(new Set(names(top('tree web'))), new Set(names(top('web tree'))));
-});
-
-test('search: case is folded for ASCII only', () => {
-  assert.ok(names(top('README')).includes('README.md'));
-  assert.ok(names(top('readme')).includes('README.md'));
-  const x = F.index(['İndex/Straße.go']);
-  assert.equal(F.search(x, 'index').hits.length, 0, 'İ is not an ASCII capital I');
-  assert.equal(F.search(x, 'ndex').hits.length, 1);
 });
 
 test('search: top k, ties by length then path', () => {
@@ -161,16 +138,32 @@ test('positions', () => {
   assert.equal(both.map((i) => z.paths[0][i]).join(''), 'webtree');
 });
 
-test('positions on a non-ASCII path index the original string', () => {
-  const x = F.index(['İndex/Straße.go']);
-  const pos = F.positions(x, 0, 'strasse');
-  assert.deepEqual(pos, [], 'ß is not ss: nothing is claimed');
-  const q = F.positions(x, 0, 'stra');
-  const s = x.paths[0];
-  assert.equal(q.map((i) => s[i]).join(''), 'Stra');
-  const r = F.positions(x, 0, 'ndex');
-  assert.equal(r.map((i) => s[i]).join(''), 'ndex');
-  assert.equal(r[0], 1);
+// Case is folded for A-Z only, and a position is an index of the original
+// string; both are seen through search and positions.
+test('non-ASCII paths: ASCII-only folding, positions index the original', () => {
+  const cases = [
+    // path, query, the characters the query marks (null: no match)
+    ['İndex/Straße.go', 'index', null], // İ is not an ASCII capital I
+    ['İndex/Straße.go', 'ndex', 'ndex'],
+    ['İndex/Straße.go', 'stra', 'Stra'],
+    ['İndex/Straße.go', 'strasse', null], // ß is not ss
+    ['ABC/Def.TXT', 'abc/def.txt', 'ABC/Def.TXT'],
+    ['README.md', 'readme', 'README'],
+    ['README.md', 'README', 'README'],
+  ];
+  for (const [path, q, want] of cases) {
+    const x = F.index([path]);
+    const r = F.search(x, q);
+    const pos = F.positions(x, 0, q);
+    if (want === null) {
+      assert.equal(r.hits.length, 0, `${q} in ${path}`);
+      assert.deepEqual(pos, [], `${q} in ${path}: nothing is claimed`);
+    } else {
+      assert.equal(r.hits.length, 1, `${q} in ${path}`);
+      assert.equal(pos.map((i) => path[i]).join(''), want, `${q} in ${path}`);
+    }
+  }
+  assert.equal(F.positions(F.index(['İndex/Straße.go']), 0, 'ndex')[0], 1, 'the İ before it counts as one');
 });
 
 test('positions of a long path (greedy)', () => {
