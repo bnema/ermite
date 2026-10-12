@@ -56,8 +56,8 @@ import (
 //	ci-run          data: <tr id="run-<id>">…</tr> (the list of runs) or
 //	                <div id="run-body">…</div> (one run)
 //	ci-job          data: <h2 id="job-head">…</h2> and <ol id="job-steps">…</ol>; the log
-//	                itself is never sent in the stream, the page reads the lines after
-//	                the last it holds from /raw?from=
+//	                itself is never sent in this stream: the page follows it on its own
+//	                feed, /<repo>/actions/runs/<id>/job/<job>/stream?from=<line>
 //	gap             data: gap; events were lost, or what the page shows is gone or
 //	                changed: the page fetches itself again (ermiteLive in ermite.js)
 //

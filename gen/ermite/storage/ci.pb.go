@@ -316,6 +316,59 @@ func (CIIsolation) EnumDescriptor() ([]byte, []int) {
 	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{4}
 }
 
+// CICancelReason says why a job is asked to stop.
+type CICancelReason int32
+
+const (
+	CICancelReason_CI_CANCEL_REASON_UNSPECIFIED CICancelReason = 0
+	CICancelReason_CI_CANCEL_REASON_USER        CICancelReason = 1
+	CICancelReason_CI_CANCEL_REASON_FAIL_FAST   CICancelReason = 2
+	CICancelReason_CI_CANCEL_REASON_TIMEOUT     CICancelReason = 3
+)
+
+// Enum value maps for CICancelReason.
+var (
+	CICancelReason_name = map[int32]string{
+		0: "CI_CANCEL_REASON_UNSPECIFIED",
+		1: "CI_CANCEL_REASON_USER",
+		2: "CI_CANCEL_REASON_FAIL_FAST",
+		3: "CI_CANCEL_REASON_TIMEOUT",
+	}
+	CICancelReason_value = map[string]int32{
+		"CI_CANCEL_REASON_UNSPECIFIED": 0,
+		"CI_CANCEL_REASON_USER":        1,
+		"CI_CANCEL_REASON_FAIL_FAST":   2,
+		"CI_CANCEL_REASON_TIMEOUT":     3,
+	}
+)
+
+func (x CICancelReason) Enum() *CICancelReason {
+	p := new(CICancelReason)
+	*p = x
+	return p
+}
+
+func (x CICancelReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CICancelReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_ermite_storage_ci_proto_enumTypes[5].Descriptor()
+}
+
+func (CICancelReason) Type() protoreflect.EnumType {
+	return &file_ermite_storage_ci_proto_enumTypes[5]
+}
+
+func (x CICancelReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CICancelReason.Descriptor instead.
+func (CICancelReason) EnumDescriptor() ([]byte, []int) {
+	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{5}
+}
+
 // CIRun is stored under "run/<repo>/<id:020d>".
 type CIRun struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
@@ -722,7 +775,7 @@ type CIJob struct {
 	AckedAt           *timestamppb.Timestamp `protobuf:"bytes,30,opt,name=acked_at,json=ackedAt,proto3" json:"acked_at,omitempty"`
 	AssignCancels     int32                  `protobuf:"varint,31,opt,name=assign_cancels,json=assignCancels,proto3" json:"assign_cancels,omitempty"`
 	TokenValidUntil   *timestamppb.Timestamp `protobuf:"bytes,32,opt,name=token_valid_until,json=tokenValidUntil,proto3" json:"token_valid_until,omitempty"`
-	CancelReason      int32                  `protobuf:"varint,33,opt,name=cancel_reason,json=cancelReason,proto3" json:"cancel_reason,omitempty"`
+	CancelReason      CICancelReason         `protobuf:"varint,33,opt,name=cancel_reason,json=cancelReason,proto3,enum=ermite.storage.CICancelReason" json:"cancel_reason,omitempty"`
 	CancelMessage     string                 `protobuf:"bytes,34,opt,name=cancel_message,json=cancelMessage,proto3" json:"cancel_message,omitempty"`
 	CancelRequestedAt *timestamppb.Timestamp `protobuf:"bytes,35,opt,name=cancel_requested_at,json=cancelRequestedAt,proto3" json:"cancel_requested_at,omitempty"`
 	// Set when the job is planned: runs-on, name and contexts are evaluated.
@@ -992,11 +1045,11 @@ func (x *CIJob) GetTokenValidUntil() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *CIJob) GetCancelReason() int32 {
+func (x *CIJob) GetCancelReason() CICancelReason {
 	if x != nil {
 		return x.CancelReason
 	}
-	return 0
+	return CICancelReason_CI_CANCEL_REASON_UNSPECIFIED
 }
 
 func (x *CIJob) GetCancelMessage() string {
@@ -1289,7 +1342,7 @@ var File_ermite_storage_ci_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\n" +
-	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbf\x05\n" +
+	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcb\x05\n" +
 	"\x05CIRun\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\x03R\x02id\x12\x16\n" +
@@ -1314,13 +1367,13 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"started_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
 	"\fcompleted_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12)\n" +
 	"\x10cancel_requested\x18\x14 \x01(\bR\x0fcancelRequested\x12J\n" +
-	"\x13cancel_requested_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAt\"~\n" +
+	"\x13cancel_requested_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAtJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"~\n" +
 	"\vCIRunSource\x12\x15\n" +
 	"\x06run_id\x18\x04 \x01(\x03R\x05runId\x12#\n" +
 	"\rworkflow_yaml\x18\x01 \x01(\tR\fworkflowYaml\x12\x1f\n" +
 	"\vgithub_json\x18\x02 \x01(\tR\n" +
 	"githubJson\x12\x12\n" +
-	"\x04repo\x18\x03 \x01(\tR\x04repo\"\xd9\x02\n" +
+	"\x04repo\x18\x03 \x01(\tR\x04repo\"\xe5\x02\n" +
 	"\x06CIStep\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x121\n" +
@@ -1332,7 +1385,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
 	"\fcompleted_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x1b\n" +
 	"\tlog_start\x18\a \x01(\x03R\blogStart\x12\x1b\n" +
-	"\thas_lines\x18\t \x01(\bR\bhasLines\"\x94\f\n" +
+	"\thas_lines\x18\t \x01(\bR\bhasLinesJ\x04\b\b\x10\tJ\x04\b\n" +
+	"\x10\v\"\xba\f\n" +
 	"\x05CIJob\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\x03R\x05runId\x12\x18\n" +
@@ -1375,8 +1429,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"assignedAt\x125\n" +
 	"\backed_at\x18\x1e \x01(\v2\x1a.google.protobuf.TimestampR\aackedAt\x12%\n" +
 	"\x0eassign_cancels\x18\x1f \x01(\x05R\rassignCancels\x12F\n" +
-	"\x11token_valid_until\x18  \x01(\v2\x1a.google.protobuf.TimestampR\x0ftokenValidUntil\x12#\n" +
-	"\rcancel_reason\x18! \x01(\x05R\fcancelReason\x12%\n" +
+	"\x11token_valid_until\x18  \x01(\v2\x1a.google.protobuf.TimestampR\x0ftokenValidUntil\x12C\n" +
+	"\rcancel_reason\x18! \x01(\x0e2\x1e.ermite.storage.CICancelReasonR\fcancelReason\x12%\n" +
 	"\x0ecancel_message\x18\" \x01(\tR\rcancelMessage\x12J\n" +
 	"\x13cancel_requested_at\x18# \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAt\x12\x18\n" +
 	"\aplanned\x18% \x01(\bR\aplanned\x12\x1f\n" +
@@ -1385,7 +1439,7 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\rcontexts_json\x18' \x01(\tR\fcontextsJson\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe5\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b$\x10%\"\xe5\x03\n" +
 	"\aCICheck\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x10\n" +
@@ -1447,7 +1501,12 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x18CI_ISOLATION_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fCI_ISOLATION_VM\x10\x01\x12!\n" +
 	"\x1dCI_ISOLATION_CONTAINER_SYSBOX\x10\x02\x12%\n" +
-	"!CI_ISOLATION_CONTAINER_PRIVILEGED\x10\x03B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
+	"!CI_ISOLATION_CONTAINER_PRIVILEGED\x10\x03*\x8b\x01\n" +
+	"\x0eCICancelReason\x12 \n" +
+	"\x1cCI_CANCEL_REASON_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15CI_CANCEL_REASON_USER\x10\x01\x12\x1e\n" +
+	"\x1aCI_CANCEL_REASON_FAIL_FAST\x10\x02\x12\x1c\n" +
+	"\x18CI_CANCEL_REASON_TIMEOUT\x10\x03B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
 var (
 	file_ermite_storage_ci_proto_rawDescOnce sync.Once
@@ -1461,7 +1520,7 @@ func file_ermite_storage_ci_proto_rawDescGZIP() []byte {
 	return file_ermite_storage_ci_proto_rawDescData
 }
 
-var file_ermite_storage_ci_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_ermite_storage_ci_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_ermite_storage_ci_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_ermite_storage_ci_proto_goTypes = []any{
 	(CIStatus)(0),                 // 0: ermite.storage.CIStatus
@@ -1469,51 +1528,53 @@ var file_ermite_storage_ci_proto_goTypes = []any{
 	(CIStepState)(0),              // 2: ermite.storage.CIStepState
 	(CIJobPhase)(0),               // 3: ermite.storage.CIJobPhase
 	(CIIsolation)(0),              // 4: ermite.storage.CIIsolation
-	(*CIRun)(nil),                 // 5: ermite.storage.CIRun
-	(*CIRunSource)(nil),           // 6: ermite.storage.CIRunSource
-	(*CIStep)(nil),                // 7: ermite.storage.CIStep
-	(*CIJob)(nil),                 // 8: ermite.storage.CIJob
-	(*CICheck)(nil),               // 9: ermite.storage.CICheck
-	(*CIRunner)(nil),              // 10: ermite.storage.CIRunner
-	nil,                           // 11: ermite.storage.CIJob.OutputsEntry
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
+	(CICancelReason)(0),           // 5: ermite.storage.CICancelReason
+	(*CIRun)(nil),                 // 6: ermite.storage.CIRun
+	(*CIRunSource)(nil),           // 7: ermite.storage.CIRunSource
+	(*CIStep)(nil),                // 8: ermite.storage.CIStep
+	(*CIJob)(nil),                 // 9: ermite.storage.CIJob
+	(*CICheck)(nil),               // 10: ermite.storage.CICheck
+	(*CIRunner)(nil),              // 11: ermite.storage.CIRunner
+	nil,                           // 12: ermite.storage.CIJob.OutputsEntry
+	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
 }
 var file_ermite_storage_ci_proto_depIdxs = []int32{
 	0,  // 0: ermite.storage.CIRun.status:type_name -> ermite.storage.CIStatus
 	1,  // 1: ermite.storage.CIRun.conclusion:type_name -> ermite.storage.CIConclusion
-	12, // 2: ermite.storage.CIRun.created_at:type_name -> google.protobuf.Timestamp
-	12, // 3: ermite.storage.CIRun.started_at:type_name -> google.protobuf.Timestamp
-	12, // 4: ermite.storage.CIRun.completed_at:type_name -> google.protobuf.Timestamp
-	12, // 5: ermite.storage.CIRun.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	13, // 2: ermite.storage.CIRun.created_at:type_name -> google.protobuf.Timestamp
+	13, // 3: ermite.storage.CIRun.started_at:type_name -> google.protobuf.Timestamp
+	13, // 4: ermite.storage.CIRun.completed_at:type_name -> google.protobuf.Timestamp
+	13, // 5: ermite.storage.CIRun.cancel_requested_at:type_name -> google.protobuf.Timestamp
 	2,  // 6: ermite.storage.CIStep.state:type_name -> ermite.storage.CIStepState
 	1,  // 7: ermite.storage.CIStep.conclusion:type_name -> ermite.storage.CIConclusion
-	12, // 8: ermite.storage.CIStep.started_at:type_name -> google.protobuf.Timestamp
-	12, // 9: ermite.storage.CIStep.completed_at:type_name -> google.protobuf.Timestamp
+	13, // 8: ermite.storage.CIStep.started_at:type_name -> google.protobuf.Timestamp
+	13, // 9: ermite.storage.CIStep.completed_at:type_name -> google.protobuf.Timestamp
 	3,  // 10: ermite.storage.CIJob.phase:type_name -> ermite.storage.CIJobPhase
 	1,  // 11: ermite.storage.CIJob.conclusion:type_name -> ermite.storage.CIConclusion
 	4,  // 12: ermite.storage.CIJob.isolation:type_name -> ermite.storage.CIIsolation
-	7,  // 13: ermite.storage.CIJob.steps:type_name -> ermite.storage.CIStep
-	12, // 14: ermite.storage.CIJob.created_at:type_name -> google.protobuf.Timestamp
-	12, // 15: ermite.storage.CIJob.started_at:type_name -> google.protobuf.Timestamp
-	12, // 16: ermite.storage.CIJob.completed_at:type_name -> google.protobuf.Timestamp
-	11, // 17: ermite.storage.CIJob.outputs:type_name -> ermite.storage.CIJob.OutputsEntry
-	12, // 18: ermite.storage.CIJob.ready_at:type_name -> google.protobuf.Timestamp
-	12, // 19: ermite.storage.CIJob.assigned_at:type_name -> google.protobuf.Timestamp
-	12, // 20: ermite.storage.CIJob.acked_at:type_name -> google.protobuf.Timestamp
-	12, // 21: ermite.storage.CIJob.token_valid_until:type_name -> google.protobuf.Timestamp
-	12, // 22: ermite.storage.CIJob.cancel_requested_at:type_name -> google.protobuf.Timestamp
-	0,  // 23: ermite.storage.CICheck.status:type_name -> ermite.storage.CIStatus
-	1,  // 24: ermite.storage.CICheck.conclusion:type_name -> ermite.storage.CIConclusion
-	12, // 25: ermite.storage.CICheck.created_at:type_name -> google.protobuf.Timestamp
-	12, // 26: ermite.storage.CICheck.started_at:type_name -> google.protobuf.Timestamp
-	12, // 27: ermite.storage.CICheck.completed_at:type_name -> google.protobuf.Timestamp
-	4,  // 28: ermite.storage.CIRunner.isolation:type_name -> ermite.storage.CIIsolation
-	12, // 29: ermite.storage.CIRunner.registered_at:type_name -> google.protobuf.Timestamp
-	30, // [30:30] is the sub-list for method output_type
-	30, // [30:30] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	8,  // 13: ermite.storage.CIJob.steps:type_name -> ermite.storage.CIStep
+	13, // 14: ermite.storage.CIJob.created_at:type_name -> google.protobuf.Timestamp
+	13, // 15: ermite.storage.CIJob.started_at:type_name -> google.protobuf.Timestamp
+	13, // 16: ermite.storage.CIJob.completed_at:type_name -> google.protobuf.Timestamp
+	12, // 17: ermite.storage.CIJob.outputs:type_name -> ermite.storage.CIJob.OutputsEntry
+	13, // 18: ermite.storage.CIJob.ready_at:type_name -> google.protobuf.Timestamp
+	13, // 19: ermite.storage.CIJob.assigned_at:type_name -> google.protobuf.Timestamp
+	13, // 20: ermite.storage.CIJob.acked_at:type_name -> google.protobuf.Timestamp
+	13, // 21: ermite.storage.CIJob.token_valid_until:type_name -> google.protobuf.Timestamp
+	5,  // 22: ermite.storage.CIJob.cancel_reason:type_name -> ermite.storage.CICancelReason
+	13, // 23: ermite.storage.CIJob.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	0,  // 24: ermite.storage.CICheck.status:type_name -> ermite.storage.CIStatus
+	1,  // 25: ermite.storage.CICheck.conclusion:type_name -> ermite.storage.CIConclusion
+	13, // 26: ermite.storage.CICheck.created_at:type_name -> google.protobuf.Timestamp
+	13, // 27: ermite.storage.CICheck.started_at:type_name -> google.protobuf.Timestamp
+	13, // 28: ermite.storage.CICheck.completed_at:type_name -> google.protobuf.Timestamp
+	4,  // 29: ermite.storage.CIRunner.isolation:type_name -> ermite.storage.CIIsolation
+	13, // 30: ermite.storage.CIRunner.registered_at:type_name -> google.protobuf.Timestamp
+	31, // [31:31] is the sub-list for method output_type
+	31, // [31:31] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_ci_proto_init() }
@@ -1526,7 +1587,7 @@ func file_ermite_storage_ci_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_ci_proto_rawDesc), len(file_ermite_storage_ci_proto_rawDesc)),
-			NumEnums:      5,
+			NumEnums:      6,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,

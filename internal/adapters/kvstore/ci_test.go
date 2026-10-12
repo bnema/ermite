@@ -356,3 +356,20 @@ func TestCIStateSurvivesARestart(t *testing.T) {
 	active, _ := ci2.ListActiveJobs(ctx)
 	assert.Len(t, active, 1)
 }
+
+func TestCICancelReasonsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	_, ci, n := ciRepo(t)
+	d, err := ci.CreateRun(ctx, n, "w.yml", draftOf(n, "w.yml", 1))
+	require.NoError(t, err)
+	for _, reason := range []domain.CICancelReason{domain.CICancelUser, domain.CICancelFailFast, domain.CICancelTimeout, domain.CICancelNone} {
+		j, err := ci.GetJob(ctx, d.Run.ID, 1, d.Jobs[0].ID)
+		require.NoError(t, err)
+		j.CancelReason, j.CancelMessage, j.CancelRequestedAt = reason, "why", created
+		_, err = ci.Apply(ctx, ports.CIWrite{Jobs: []domain.CIJob{j}})
+		require.NoError(t, err)
+		got, err := ci.GetJob(ctx, d.Run.ID, 1, d.Jobs[0].ID)
+		require.NoError(t, err)
+		assert.Equal(t, reason, got.CancelReason)
+	}
+}

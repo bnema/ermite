@@ -235,7 +235,32 @@ func decodeStepState(s storagepb.CIStepState) domain.CIStepState {
 	return domain.CIStepPending
 }
 
-var cancelReasons = []domain.CICancelReason{domain.CICancelNone, domain.CICancelUser, domain.CICancelFailFast, domain.CICancelTimeout}
+var cancelReasons = []struct {
+	d domain.CICancelReason
+	p storagepb.CICancelReason
+}{
+	{domain.CICancelUser, storagepb.CICancelReason_CI_CANCEL_REASON_USER},
+	{domain.CICancelFailFast, storagepb.CICancelReason_CI_CANCEL_REASON_FAIL_FAST},
+	{domain.CICancelTimeout, storagepb.CICancelReason_CI_CANCEL_REASON_TIMEOUT},
+}
+
+func encodeCancelReason(r domain.CICancelReason) storagepb.CICancelReason {
+	for _, e := range cancelReasons {
+		if e.d == r {
+			return e.p
+		}
+	}
+	return storagepb.CICancelReason_CI_CANCEL_REASON_UNSPECIFIED
+}
+
+func decodeCancelReason(r storagepb.CICancelReason) domain.CICancelReason {
+	for _, e := range cancelReasons {
+		if e.p == r {
+			return e.d
+		}
+	}
+	return domain.CICancelNone
+}
 
 func encodeRun(r domain.CIRun) ([]byte, error) {
 	if r.Repo.IsZero() {
@@ -287,7 +312,6 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 			LogStart: s.LogStart, HasLines: s.HasLines,
 		})
 	}
-	reason := int32(slices.Index(cancelReasons, j.CancelReason))
 	pb := &storagepb.CIJob{
 		Id: j.ID, RunId: j.RunID, Attempt: j.Attempt, RunAttempt: j.RunAttempt, Repo: j.Repo.String(),
 		Key: j.Key, Name: j.Name, Phase: phase, Conclusion: encodeConclusion(j.Conclusion), Error: j.Error,
@@ -298,7 +322,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		TimeoutMinutes: j.TimeoutMinutes, FailFast: j.FailFast, MaxParallel: int32(j.MaxParallel), //nolint:gosec // validated at planning
 		Outputs: j.Outputs, ReadyAt: encodeTime(j.ReadyAt), AssignedAt: encodeTime(j.AssignedAt),
 		AckedAt: encodeTime(j.AckedAt), AssignCancels: int32(j.AssignCancels), //nolint:gosec // at most 3
-		TokenValidUntil: encodeTime(j.TokenValidUntil), CancelReason: max(reason, 0), CancelMessage: j.CancelMessage,
+		TokenValidUntil: encodeTime(j.TokenValidUntil), CancelReason: encodeCancelReason(j.CancelReason), CancelMessage: j.CancelMessage,
 		CancelRequestedAt: encodeTime(j.CancelRequestedAt), Planned: j.Planned,
 	}
 	if j.HasToken() {
@@ -331,9 +355,7 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 		CancelMessage: pb.GetCancelMessage(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),
 		Version: item.Version,
 	}
-	if r := int(pb.GetCancelReason()); r >= 0 && r < len(cancelReasons) {
-		j.CancelReason = cancelReasons[r]
-	}
+	j.CancelReason = decodeCancelReason(pb.GetCancelReason())
 	copy(j.TokenHash[:], pb.GetTokenHash())
 	for _, s := range pb.GetSteps() {
 		j.Steps = append(j.Steps, domain.CIStep{

@@ -63,8 +63,19 @@ enum CIIsolation {
   CI_ISOLATION_CONTAINER_PRIVILEGED = 3;
 }
 
+// CICancelReason says why a job is asked to stop.
+enum CICancelReason {
+  CI_CANCEL_REASON_UNSPECIFIED = 0;
+  CI_CANCEL_REASON_USER = 1;
+  CI_CANCEL_REASON_FAIL_FAST = 2;
+  CI_CANCEL_REASON_TIMEOUT = 3;
+}
+
 // CIRun is stored under "run/<repo>/<id:020d>".
 message CIRun {
+  // 18 and 19 were the workflow file and the github context, which moved to
+  // CIRunSource.
+  reserved 18, 19;
   string repo = 1;
   int64 id = 2;
   int64 number = 3;
@@ -101,6 +112,9 @@ message CIRunSource {
 
 // CIStep is a step of a job.
 message CIStep {
+  // 8 and 10 were the end of the step, which is derived from the next step's
+  // start and the line count.
+  reserved 8, 10;
   int32 number = 1;
   string name = 2;
   CIStepState state = 3;
@@ -116,6 +130,8 @@ message CIStep {
 
 // CIJob is stored under "job/<run_id:020d>/<run_attempt:010d>/<job id>".
 message CIJob {
+  // 36 was the line count of the log, which the log file holds.
+  reserved 36;
   string id = 1;
   int64 run_id = 2;
   // Attempt in which the job executed (the one of its log).
@@ -152,7 +168,7 @@ message CIJob {
   google.protobuf.Timestamp acked_at = 30;
   int32 assign_cancels = 31;
   google.protobuf.Timestamp token_valid_until = 32;
-  int32 cancel_reason = 33;
+  CICancelReason cancel_reason = 33;
   string cancel_message = 34;
   google.protobuf.Timestamp cancel_requested_at = 35;
   // Set when the job is planned: runs-on, name and contexts are evaluated.
