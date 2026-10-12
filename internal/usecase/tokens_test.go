@@ -620,6 +620,43 @@ func TestTokensCreateBranchPrefixes(t *testing.T) {
 		assert.False(t, p.HasOwnerRights())
 	})
 
+	t.Run("a corrupt empty creator prefix does not cover every child prefix", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t) // the store expects no Create
+		corrupt := domain.TokenPrincipal(domain.Token{
+			ID: "c", Scopes: scopes(domain.ScopeTokenAdmin, domain.ScopeRepoWrite), BranchPrefixes: []string{""},
+		})
+		_, err := f.tokens.Create(ctx, corrupt, ports.CreateTokenParams{
+			Label: "x", Scopes: scopes(domain.ScopeRepoWrite), BranchPrefixes: []string{"main/"},
+		})
+		assert.ErrorIs(t, err, domain.ErrForbidden)
+	})
+
+	t.Run("revoking is bounded by the prefixes of a limited token", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		creator := domain.TokenPrincipal(domain.Token{
+			ID: "c", Scopes: scopes(domain.ScopeTokenAdmin, domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/"},
+		})
+		inside := domain.Token{ID: "in", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/x/"}}
+		wide := domain.Token{ID: "wide", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/"}}
+		sibling := domain.Token{ID: "sib", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claudex/"}}
+		free := domain.Token{ID: "free", Scopes: scopes(domain.ScopeRepoRead)}
+
+		f := newTokenFixture(t)
+		for _, tok := range []domain.Token{wide, sibling, free} {
+			f.store.EXPECT().Get(ctx, tok.ID).Return(tok, nil).Once()
+		}
+		// Out of reach: not found, like an unknown id, and nothing is revoked.
+		for _, id := range []string{"wide", "sib", "free"} {
+			assert.ErrorIs(t, f.tokens.Revoke(ctx, creator, id), domain.ErrNotFound, id)
+		}
+		// Within its prefixes it revokes, and no web session is signed out.
+		f.store.EXPECT().Get(ctx, "in").Return(inside, nil).Once()
+		f.store.EXPECT().Revoke(ctx, "in").Return(nil).Once()
+		require.NoError(t, f.tokens.Revoke(ctx, creator, "in"))
+	})
+
 	t.Run("listing hides tokens a limited creator could not have made", func(t *testing.T) {
 		t.Parallel()
 		f := newTokenFixture(t)

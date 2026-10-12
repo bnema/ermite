@@ -175,7 +175,7 @@ func checkNoEscalation(p domain.Principal, tok domain.Token) error {
 			return fmt.Errorf("%w: the creating token is limited to branch prefixes, so the new token must be too", domain.ErrForbidden)
 		}
 		for _, bp := range tok.BranchPrefixes {
-			if !slices.ContainsFunc(own, func(o string) bool { return strings.HasPrefix(bp, o) }) {
+			if !slices.ContainsFunc(own, func(o string) bool { return o != "" && strings.HasPrefix(bp, o) }) {
 				return fmt.Errorf("%w: branch prefix %s is outside the creating token", domain.ErrForbidden, bp)
 			}
 		}
