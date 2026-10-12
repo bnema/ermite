@@ -56,6 +56,10 @@ type Layout struct {
 	Live bool
 	// LiveURL is the stream the page follows, with its query.
 	LiveURL string
+	// PathsURL is the list of the file paths of the commit the page shows
+	// (/{repo}/paths/{sha}) and BlobBase the URL its file links start with;
+	// both are "" when the page has no commit to search.
+	PathsURL, BlobBase string
 }
 
 // Link is a plain label + href pair.

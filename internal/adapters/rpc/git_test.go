@@ -3,6 +3,7 @@
 package rpc
 
 import (
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -46,6 +47,56 @@ func TestGitServiceGetTree(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Empty(t, resp.Msg.GetEntries())
+		})
+	}
+}
+
+func mustObjectID(t *testing.T, s string) domain.ObjectID {
+	t.Helper()
+	id, err := domain.ParseObjectID(s)
+	require.NoError(t, err)
+	return id
+}
+
+func TestGitServiceListPaths(t *testing.T) {
+	t.Parallel()
+	commit := mustObjectID(t, strings.Repeat("a", 40))
+	tree := mustObjectID(t, strings.Repeat("b", 40))
+	tests := []struct {
+		name     string
+		req      *pb.ListPathsRequest
+		list     domain.PathList
+		usecase  error
+		wantCode connect.Code
+		wantCall bool
+	}{
+		{
+			name: "ok", req: &pb.ListPathsRequest{Repo: "demo", Revision: "main"}, wantCall: true,
+			list: domain.PathList{CommitID: commit, TreeID: tree, Paths: []string{"a.go", "b/c.go"}, Truncated: true},
+		},
+		{name: "default revision", req: &pb.ListPathsRequest{Repo: "demo"}, wantCall: true, list: domain.PathList{CommitID: commit, TreeID: tree}},
+		{name: "invalid repo", req: &pb.ListPathsRequest{Repo: "../x"}, wantCode: connect.CodeInvalidArgument},
+		{name: "repo not visible", req: &pb.ListPathsRequest{Repo: "demo"}, usecase: domain.ErrNotFound, wantCode: connect.CodeNotFound, wantCall: true},
+		{name: "revision not found", req: &pb.ListPathsRequest{Repo: "demo", Revision: "nope"}, usecase: domain.ErrNotFound, wantCode: connect.CodeNotFound, wantCall: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			browse := mocks.NewBrowseService(t)
+			if tt.wantCall {
+				browse.EXPECT().ListPaths(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).
+					Return(tt.list, tt.usecase).Once()
+			}
+			resp, err := (&gitService{browse}).ListPaths(ownerCtx(), connect.NewRequest(tt.req))
+			if tt.wantCode != 0 {
+				requireCode(t, tt.wantCode, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.list.CommitID.String(), resp.Msg.GetCommitId())
+			assert.Equal(t, tt.list.TreeID.String(), resp.Msg.GetTreeId())
+			assert.Equal(t, tt.list.Paths, resp.Msg.GetPaths())
+			assert.Equal(t, tt.list.Truncated, resp.Msg.GetTruncated())
 		})
 	}
 }

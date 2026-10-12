@@ -163,6 +163,10 @@ func BenchmarkRepoReader(b *testing.B) {
 			_, err = r.GetTree(ctx, t.name, domain.Revision{}, path(t.treeDir), true)
 			return
 		}},
+		{"ListPaths", func(r ports.RepoReader) (err error) {
+			_, err = r.ListPaths(ctx, t.name, domain.Revision{}, domain.MaxPathEntries, domain.MaxPathBytes)
+			return
+		}},
 		{"OpenBlob/small", func(r ports.RepoReader) error { return drain(r, domain.Revision{}, path(t.file)) }},
 		{"OpenBlob/largest", func(r ports.RepoReader) error { return drain(r, domain.Revision{}, path(t.big)) }},
 		{"ListCommits/page1", func(r ports.RepoReader) (err error) {

@@ -46,6 +46,7 @@ func Conformance(t *testing.T, mk Maker) {
 		{"HostileRevisionAndPathStayLiteral", testHostileRevisionAndPathStayLiteral},
 		{"ResolveRevisionObjectIDBeatsRefs", testResolveRevisionObjectIDBeatsRefs},
 		{"GetTreeIsBounded", testGetTreeIsBounded},
+		{"ListPaths", testListPaths},
 	} {
 		t.Run(tc.name, func(t *testing.T) { tc.fn(t, mk) })
 	}
@@ -700,4 +701,111 @@ func testGetTreeIsBounded(t *testing.T, mk Maker) {
 	small, err := g.GetTree(ctx, f.Name, domain.Revision{}, domain.TreePath{}, false)
 	require.NoError(t, err)
 	assert.False(t, small.Truncated)
+}
+
+func testListPaths(t *testing.T, mk Maker) {
+	ctx := context.Background()
+	g, data := mk(t)
+	f := buildPaths(t, data)
+
+	// git ls-tree -r in order, minus the submodule and the path no address can
+	// carry.
+	var want []string
+	for _, rec := range strings.Split(strings.TrimSuffix(GitOut(t, f.Bare, "ls-tree", "-r", "-z", "HEAD"), "\x00"), "\x00") {
+		meta, p, _ := strings.Cut(rec, "\t")
+		if !strings.Contains(meta, " commit ") && !strings.Contains(p, "\t") {
+			want = append(want, p)
+		}
+	}
+	require.Equal(t, []string{
+		"a-b.txt", "a/b.txt", "a/b/c.txt", "d/e/f/deep.txt", "héllo wörld.txt", "link", "run.sh", "z.txt",
+	}, want, "the fixture")
+
+	got, err := g.ListPaths(ctx, f.Name, domain.Revision{}, domain.MaxPathEntries, domain.MaxPathBytes)
+	require.NoError(t, err)
+	assert.Equal(t, want, got.Paths)
+	assert.False(t, got.Truncated)
+	assert.Equal(t, GitOut(t, f.Bare, "rev-parse", "HEAD"), got.CommitID.String())
+	assert.Equal(t, GitOut(t, f.Bare, "rev-parse", "HEAD^{tree}"), got.TreeID.String())
+
+	t.Run("revisions", func(t *testing.T) {
+		for _, s := range []string{"main", "v1", "refs/tags/v1", f.Git("rev-parse", "HEAD"), f.Git("rev-parse", "HEAD")[:10]} {
+			list, err := g.ListPaths(ctx, f.Name, Rev(t, s), domain.MaxPathEntries, domain.MaxPathBytes)
+			require.NoError(t, err, s)
+			assert.Equal(t, want, list.Paths, s)
+		}
+		// The first commit has no submodule: the same files.
+		first, err := g.ListPaths(ctx, f.Name, Rev(t, f.Git("rev-parse", "HEAD~1")), domain.MaxPathEntries, domain.MaxPathBytes)
+		require.NoError(t, err)
+		assert.Equal(t, want, first.Paths)
+		assert.Equal(t, GitOut(t, f.Bare, "rev-parse", "HEAD~1^{tree}"), first.TreeID.String())
+		assert.NotEqual(t, got.TreeID, first.TreeID)
+	})
+	t.Run("not found", func(t *testing.T) {
+		for _, s := range []string{"nope", "refs/heads/nope", strings.Repeat("ab", 20), "deadbeef"} {
+			_, err := g.ListPaths(ctx, f.Name, Rev(t, s), domain.MaxPathEntries, domain.MaxPathBytes)
+			assert.ErrorIs(t, err, domain.ErrNotFound, s)
+		}
+		_, err := g.ListPaths(ctx, RepoName(t, "no-such-repo"), domain.Revision{}, domain.MaxPathEntries, domain.MaxPathBytes)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	})
+	t.Run("empty repository", func(t *testing.T) {
+		e := NewFixture(t, data, "empty-paths")
+		_, err := g.ListPaths(ctx, e.Name, domain.Revision{}, domain.MaxPathEntries, domain.MaxPathBytes)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	})
+	t.Run("bounds", func(t *testing.T) {
+		list, err := g.ListPaths(ctx, f.Name, domain.Revision{}, 3, domain.MaxPathBytes)
+		require.NoError(t, err)
+		assert.Equal(t, want[:3], list.Paths)
+		assert.True(t, list.Truncated)
+		assert.Equal(t, got.CommitID, list.CommitID)
+		assert.Equal(t, got.TreeID, list.TreeID)
+
+		list, err = g.ListPaths(ctx, f.Name, domain.Revision{}, len(want), domain.MaxPathBytes)
+		require.NoError(t, err)
+		assert.Equal(t, want, list.Paths)
+		assert.False(t, list.Truncated, "exactly maxPaths paths is not truncated")
+
+		sum := len(want[0]) + len(want[1]) + len(want[2])
+		list, err = g.ListPaths(ctx, f.Name, domain.Revision{}, domain.MaxPathEntries, sum-1)
+		require.NoError(t, err)
+		assert.Equal(t, want[:2], list.Paths)
+		assert.True(t, list.Truncated)
+
+		list, err = g.ListPaths(ctx, f.Name, domain.Revision{}, domain.MaxPathEntries, sum)
+		require.NoError(t, err)
+		assert.Equal(t, want[:3], list.Paths, "bytes up to maxBytes fit")
+		assert.True(t, list.Truncated)
+
+		total := 0
+		for _, p := range want {
+			total += len(p)
+		}
+		list, err = g.ListPaths(ctx, f.Name, domain.Revision{}, domain.MaxPathEntries, total)
+		require.NoError(t, err)
+		assert.Equal(t, want, list.Paths)
+		assert.False(t, list.Truncated, "exactly maxBytes bytes is not truncated")
+	})
+	t.Run("cancelled context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err := g.ListPaths(ctx, f.Name, domain.Revision{}, domain.MaxPathEntries, domain.MaxPathBytes)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+	t.Run("a large tree", func(t *testing.T) {
+		w := NewFixture(t, data, "paths-wide")
+		for i := range 300 {
+			w.Write(fmt.Sprintf("d%02d/e%d/f%03d.txt", i%17, i%5, i), "x")
+		}
+		w.Commit("wide")
+		order := lines(GitOut(t, w.Bare, "ls-tree", "-r", "--name-only", "HEAD"))
+		list, err := g.ListPaths(ctx, w.Name, domain.Revision{}, domain.MaxPathEntries, domain.MaxPathBytes)
+		require.NoError(t, err)
+		assert.Equal(t, order, list.Paths)
+		list, err = g.ListPaths(ctx, w.Name, domain.Revision{}, 100, domain.MaxPathBytes)
+		require.NoError(t, err)
+		assert.Equal(t, order[:100], list.Paths)
+		assert.True(t, list.Truncated)
+	})
 }

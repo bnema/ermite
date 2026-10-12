@@ -23,7 +23,7 @@ const StaticPrefix = "/-/static/"
 // Assets are the URLs of the assets a page loads. Their names carry a hash of
 // the content, so they can be cached for ever.
 type Assets struct {
-	CSS, HTMX, Live, SSE, App, Icon string
+	CSS, HTMX, Live, SSE, App, Files, Icon string
 	// Font is the UI font, preloaded by every page.
 	Font string
 	// Rules is the speculation rules file named by the Speculation-Rules header.
@@ -55,6 +55,7 @@ var scripts = []struct {
 	{"hx-live.min.js", func(a *Assets, u string) { a.Live = u }},
 	{"hx-sse.min.js", func(a *Assets, u string) { a.SSE = u }},
 	{"ermite.js", func(a *Assets, u string) { a.App = u }},
+	{"files.js", func(a *Assets, u string) { a.Files = u }},
 }
 
 // sheetAssets are the files the stylesheet references as url(<dir>/<file>):

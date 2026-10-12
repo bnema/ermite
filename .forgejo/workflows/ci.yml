@@ -36,8 +36,9 @@ jobs:
     steps:
       # openssh provides ssh-keygen, which the tests use to check that the squash
       # commits verify (git verify-commit, ADR 0022). The tests fail without it when CI is set.
+      # nodejs runs the tests of the file finder (internal/adapters/web/jstest).
       - name: System packages
-        run: pacman -Syu --noconfirm --needed git gcc openssh
+        run: pacman -Syu --noconfirm --needed git gcc openssh nodejs
       - uses: actions/checkout@v6
       # Job containers reach Forgejo through the Gordon edge on the host loopback,
       # in plain HTTP on :8088 (see vps-infra homelab/igor/ci-runner).
@@ -66,6 +67,9 @@ jobs:
       - run: go test -race ./...
       - name: Architecture
         run: go tool hexcheck -fail-on warn ./...
+      # The core of the file finder (static/js/files.js) runs in Node.
+      - name: JavaScript tests
+        run: node --test 'internal/adapters/web/jstest/*.test.mjs'
 
   proto:
     name: Protobuf and generated code

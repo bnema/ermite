@@ -4,10 +4,16 @@ package app
 
 import (
 	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -98,6 +104,78 @@ func TestWebFilesGolden(t *testing.T) {
 			golden(t, tt.name, normalise(body))
 		})
 	}
+}
+
+// AC1, AC2, AC7: ?rows answers the entries of a directory as table rows only,
+// for the Files view to insert under the directory; a private repository is
+// the 404 of a missing one.
+func TestWebTreeRows(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	h.webFilesRepo("files")
+	h.seed("secret-sauce", domain.VisibilityPrivate, "dir/a.txt")
+
+	// The page links its directories to their rows.
+	_, _, page := h.get("/files/tree/main")
+	assert.Contains(t, page, `href="/files/tree/main/docs" data-expand="/files/tree/main/docs?rows" aria-expanded="false"`)
+	assert.Contains(t, page, `<script src="/-/static/js/files.`)
+	assert.NotContains(t, page, "main.go</span>", "the palette lists no file")
+
+	status, hdr, body := h.get("/files/tree/main/docs?rows")
+	require.Equal(t, 200, status)
+	assert.Equal(t, "no-cache", hdr.Get("Cache-Control"))
+	assert.Contains(t, hdr.Get("Content-Type"), "text/html")
+	assert.NotContains(t, body, "<html")
+	assert.NotContains(t, body, "<table")
+	assert.Equal(t, 2, strings.Count(body, "<tr"), "one row per entry")
+	assert.Contains(t, body, `<a href="/files/blob/main/docs/README.md">README.md</a>`)
+	assert.Contains(t, body, `<a href="/files/blob/main/docs/guide.md">guide.md</a>`)
+	assert.NotContains(t, body, "data-cursor", "the cursor stays on the page")
+	assertNoInline(t, body)
+
+	// A subdirectory row can be opened in turn.
+	_, _, body = h.get("/files/tree/main/src?rows")
+	assert.Contains(t, body, `href="/files/tree/main/src/lib" data-expand="/files/tree/main/src/lib?rows" aria-expanded="false"`)
+	assert.Contains(t, body, "▸")
+	_, _, body = h.get("/files/tree/main/src/lib?rows")
+	assert.Contains(t, body, `href="/files/blob/main/src/lib/util.go"`)
+	assert.NotContains(t, body, "data-expand")
+
+	// Not found, and private as anonymous: the 404 page, nothing of the rows.
+	for _, p := range []string{"/files/tree/main/nope?rows", "/secret-sauce/tree/main/dir?rows", "/secret-sauce/tree/main?rows"} {
+		status, _, body = h.get(p)
+		assert.Equal(t, 404, status, p)
+		assert.NotContains(t, body, "a.txt", p)
+	}
+}
+
+// ?rows on a directory with more entries than are listed ends with the row
+// that links to the directory page, which says the listing is cut.
+func TestWebTreeRowsTruncated(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name("wide"), Visibility: domain.VisibilityPublic})
+	require.NoError(t, err)
+	wt := h.t.TempDir()
+	h.mustGit(wt, "init", "-q", "--initial-branch=main")
+	// The limit is domain.MaxTreeEntries: one commit with a few more.
+	n := domain.MaxTreeEntries + 3
+	require.NoError(t, os.MkdirAll(filepath.Join(wt, "many"), 0o755))
+	for i := range n {
+		require.NoError(t, os.WriteFile(filepath.Join(wt, "many", fmt.Sprintf("f%05d", i)), nil, 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(wt, "small.txt"), []byte("x\n"), 0o644))
+	h.mustGit(wt, "add", ".")
+	h.mustGit(wt, "commit", "-q", "-m", "wide")
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/wide.git"), "main")
+
+	status, _, body := h.get("/wide/tree/main/many?rows")
+	require.Equal(t, 200, status)
+	assert.Equal(t, domain.MaxTreeEntries+1, strings.Count(body, "<tr"), "the listed entries and the row that says there are more")
+	assert.Contains(t, body, `<tr class="tree-more"><td colspan="7"><a href="/wide/tree/main/many">more entries: open the directory</a></td></tr>`)
+	assert.Equal(t, 1, strings.Count(body, "tree-more"))
+
+	// A directory that fits has no such row.
+	_, _, body = h.get("/wide/tree?rows")
+	assert.NotContains(t, body, "tree-more")
 }
 
 // Ref names with a slash are found by their longest prefix, and a commit id
@@ -248,6 +326,19 @@ func TestWebRaw(t *testing.T) {
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusNotModified, resp.StatusCode)
+	// A list of validators, weak ones and "*" match as well.
+	for _, inm := range []string{`"other", ` + etag, "W/" + etag, "*"} {
+		req.Header.Set("If-None-Match", inm)
+		resp, err = http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusNotModified, resp.StatusCode, inm)
+	}
+	req.Header.Set("If-None-Match", `"other", "another"`)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "no validator matches")
 	assert.Equal(t, http.StatusOK, h.status(http.MethodHead, "/files/raw/main/notes.txt", nil))
 }
 
@@ -330,4 +421,168 @@ func TestWebFilesContentSecurity(t *testing.T) {
 	_, _, sheet := h.get(css[1])
 	assert.Contains(t, sheet, ".chroma .kn { color: var(--syn-keyword)")
 	assert.NotRegexp(t, `\.chroma[^{]*\{[^}]*#[0-9a-fA-F]{3,6}`, sheet)
+}
+
+// AC4: GET /<repo>/paths/<sha> lists the file paths of a commit as gzipped
+// JSON, behind the access rule on every request, even when the list is
+// already cached; a visitor revalidates (no-cache + ETag), the owner's copy is
+// private.
+func TestWebPaths(t *testing.T) {
+	c := newCLIHarness(t)
+	h := c.harness
+	h.webFilesRepo("files")
+	sha := h.bareGit("files", "rev-parse", "main")
+
+	var want []string
+	for _, p := range strings.Split(h.bareGit("files", "ls-tree", "-r", "-z", "--name-only", "main"), "\x00") {
+		if p != "" {
+			want = append(want, p)
+		}
+	}
+	require.NotEmpty(t, want)
+	b := browser{h}
+	path := "/files/paths/" + sha
+	type list struct {
+		Paths     []string `json:"paths"`
+		Truncated bool     `json:"truncated"`
+	}
+	decodeList := func(t *testing.T, body string) list {
+		t.Helper()
+		var l list
+		require.NoError(t, json.Unmarshal([]byte(body), &l))
+		return l
+	}
+	gunzip := func(t *testing.T, body string) string {
+		t.Helper()
+		zr, err := gzip.NewReader(strings.NewReader(body))
+		require.NoError(t, err)
+		out, err := io.ReadAll(zr)
+		require.NoError(t, err)
+		return string(out)
+	}
+
+	// Anonymous with gzip: the cached bytes as they are. The client of the
+	// harness would unzip by itself, so the encoding is asked for explicitly
+	// through a transport that does not.
+	raw := func(hdr map[string]string) page {
+		req, err := http.NewRequest(http.MethodGet, h.url(path), nil)
+		require.NoError(t, err)
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		resp, err := (&http.Client{Transport: &http.Transport{DisableCompression: true}}).Do(req)
+		require.NoError(t, err)
+		defer func() { _ = resp.Body.Close() }()
+		out, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return page{status: resp.StatusCode, hdr: resp.Header, body: string(out)}
+	}
+	gz := raw(map[string]string{"Accept-Encoding": "gzip"})
+	require.Equal(t, 200, gz.status)
+	assert.Equal(t, "gzip", gz.hdr.Get("Content-Encoding"))
+	assert.Equal(t, "application/json", gz.hdr.Get("Content-Type"))
+	assert.Equal(t, "nosniff", gz.hdr.Get("X-Content-Type-Options"))
+	assert.Equal(t, "no-cache", gz.hdr.Get("Cache-Control"))
+	assert.Equal(t, "Accept-Encoding", gz.hdr.Get("Vary"))
+	etag := gz.hdr.Get("ETag")
+	assert.Equal(t, `"paths-`+sha+`-gz"`, etag)
+	got := decodeList(t, gunzip(t, gz.body))
+	assert.Equal(t, want, got.Paths, "git ls-tree -r order")
+	assert.False(t, got.Truncated)
+
+	// Without gzip: plain JSON, the same list.
+	plain := raw(nil)
+	require.Equal(t, 200, plain.status)
+	assert.Empty(t, plain.hdr.Get("Content-Encoding"))
+	assert.Equal(t, want, decodeList(t, plain.body).Paths)
+	assert.Equal(t, `"paths-`+sha+`"`, plain.hdr.Get("ETag"), "another variant, another validator")
+
+	// Revalidation: 304, still through the access rule. The matrix of
+	// validators (variants, weak, "*") is in paths_test.go.
+	nm := raw(map[string]string{"If-None-Match": etag, "Accept-Encoding": "gzip"})
+	assert.Equal(t, http.StatusNotModified, nm.status)
+	assert.Empty(t, nm.body)
+	assert.Equal(t, "no-cache", nm.hdr.Get("Cache-Control"))
+
+	// Only a full commit id: abbreviations, refs, upper case and unknown ids.
+	for _, p := range []string{
+		"/files/paths/" + sha[:7], "/files/paths/" + sha[:39], "/files/paths/main", "/files/paths/" + strings.ToUpper(sha),
+		"/files/paths/" + strings.Repeat("0", 40), "/files/paths/", "/never/paths/" + sha,
+	} {
+		assert.Equal(t, 404, b.get(p, nil).status, p)
+	}
+
+	// Another repository does not serve a commit it does not have, though
+	// the list of that commit is cached.
+	h.seed("other", domain.VisibilityPublic, "x.txt")
+	assert.Equal(t, 404, b.get("/other/paths/"+sha, nil).status)
+
+	// The owner: private, never stored; the list is the same.
+	token := c.signIn(t)
+	own := b.get(path, as(token))
+	require.Equal(t, 200, own.status)
+	assert.Equal(t, "private, no-store", own.hdr.Get("Cache-Control"))
+	assert.Contains(t, own.hdr.Values("Vary"), "Cookie")
+	assert.Equal(t, want, decodeList(t, own.body).Paths)
+
+	// The repository turns private: the list is cached on the server, and
+	// anonymous gets the 404 of a missing repository, as the owner still
+	// reads it.
+	priv := domain.VisibilityPrivate
+	_, err := h.forge.Repos.Update(h.ctx, domain.Root(), h.name("files"), ports.UpdateRepoParams{Visibility: &priv})
+	require.NoError(t, err)
+	for _, hdr := range []map[string]string{nil, {"Accept-Encoding": "gzip"}, {"If-None-Match": etag}} {
+		p := b.get(path, hdr)
+		assert.Equal(t, 404, p.status)
+		assert.NotContains(t, p.body, "README.md")
+		assert.NotContains(t, p.hdr.Get("Content-Type"), "json")
+	}
+	assert.Equal(t, 200, b.get(path, as(token)).status)
+}
+
+// AC3, AC4: the Files page carries the finder and the data it needs, on the
+// commit the page shows, however the URL spelled it; the other pages carry
+// the paths of their commit and no finder.
+func TestWebFinderPage(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	h.webFilesRepo("files")
+	sha := h.bareGit("files", "rev-parse", "main")
+	attr := func(body, name string) string {
+		m := regexp.MustCompile(`<body[^>]*\b` + name + `="([^"]*)"`).FindStringSubmatch(body)
+		if m == nil {
+			return "<none>"
+		}
+		return m[1]
+	}
+
+	for _, tt := range []struct{ name, path, paths, blob string }{
+		{"branch", "/files/tree/main", "/files/paths/" + sha, "/files/blob/main"},
+		{"subdirectory", "/files/tree/main/docs", "/files/paths/" + sha, "/files/blob/main"},
+		{"slash ref", "/files/tree/feature/x", "/files/paths/" + h.bareGit("files", "rev-parse", "feature/x"), "/files/blob/feature/x"},
+		{"tag", "/files/tree/v1.0", "/files/paths/" + sha, "/files/blob/v1.0"},
+		{"full id", "/files/tree/" + sha, "/files/paths/" + sha, "/files/blob/" + sha},
+		{"abbreviated id", "/files/tree/" + sha[:7], "/files/paths/" + sha, "/files/blob/" + sha[:7]},
+		{"blob page", "/files/blob/main/main.go", "/files/paths/" + sha, "/files/blob/main"},
+		{"blob at full id", "/files/blob/" + sha + "/main.go", "/files/paths/" + sha, "/files/blob/" + sha},
+		{"blob at abbreviated id", "/files/blob/" + sha[:7] + "/main.go", "/files/paths/" + sha, "/files/blob/" + sha[:7]},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			status, _, body := h.get(tt.path)
+			require.Equal(t, 200, status)
+			assert.Equal(t, tt.paths, attr(body, "data-paths"))
+			assert.Equal(t, tt.blob, attr(body, "data-blob"))
+			if strings.Contains(tt.path, "/tree/") {
+				assert.Contains(t, body, `id="finder-q"`)
+				assert.Contains(t, body, `id="finder-list"`)
+				assert.Contains(t, body, `placeholder="Find a file…"`)
+			} else {
+				assert.NotContains(t, body, `id="finder-q"`)
+			}
+		})
+	}
+	// No commit to search: no data.
+	_, _, body := h.get("/nothing-here")
+	assert.Equal(t, "<none>", attr(body, "data-paths"))
+	_, _, body = h.get("/files/refs")
+	assert.Equal(t, "/files/paths/"+sha, attr(body, "data-paths"))
 }

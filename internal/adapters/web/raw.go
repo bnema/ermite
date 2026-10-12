@@ -77,7 +77,7 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 	// id of the blob at a path: a tree listing of its directory costs more
 	// than opening a small file.
 	cacheHeaders(ctx, h, "no-cache", sessionCache)
-	if match := r.Header.Get("If-None-Match"); match != "" && h.Get("ETag") != "" && match == h.Get("ETag") {
+	if etag := h.Get("ETag"); etag != "" && etagMatches(r.Header.Get("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}

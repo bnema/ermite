@@ -203,6 +203,15 @@ func (b *Browse) GetTree(ctx context.Context, p domain.Principal, repo domain.Re
 	return tree, nil
 }
 
+// ListPaths lists the paths of every file and symbolic link of a revision, at
+// most domain.MaxPathEntries paths and domain.MaxPathBytes bytes of paths.
+func (b *Browse) ListPaths(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.PathList, error) {
+	if _, err := b.authorize(ctx, p, repo); err != nil {
+		return domain.PathList{}, err
+	}
+	return b.reader.ListPaths(ctx, repo, rev, domain.MaxPathEntries, domain.MaxPathBytes)
+}
+
 // OpenBlob returns the description of a file and a reader of its content. The
 // caller closes the reader.
 func (b *Browse) OpenBlob(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, path domain.TreePath) (domain.BlobInfo, io.ReadCloser, error) {

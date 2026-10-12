@@ -11,14 +11,14 @@ import (
 	"bnema.dev/ermite/internal/domain"
 )
 
-// maxFileTargets bounds the files of a directory offered in the ":" list.
-const maxFileTargets = 200
-
 // TreeRow is one entry of a directory.
 type TreeRow struct {
-	Glyph   string // ▾ directory, @ symbolic link, + submodule, · file
-	Name    string
-	Href    string // "" for a submodule
+	Glyph string // ▸ directory, @ symbolic link, + submodule, · file
+	Name  string
+	Href  string // "" for a submodule
+	// Expand is the URL of the rows of a directory (Href?rows); "" for any
+	// other entry.
+	Expand  string
 	Size    string
 	Subject string
 	CHref   string
@@ -34,6 +34,9 @@ type TreePage struct {
 	Readme *Readme
 	// Notes say what the listing leaves out.
 	Notes []string
+	// More, for the rows of a directory expanded in place, is the page of the
+	// directory when it has more entries than are listed; "" otherwise.
+	More string
 }
 
 // tree lists a directory of a ref, with the last commit of each entry, and
@@ -56,14 +59,15 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	entries := res.Entries
 	now := s.cfg.Now()
 
+	rowsOnly := r.URL.Query().Has("rows")
 	p := TreePage{}
-	l := s.repoLayout(ctx, d, "tree")
 	for i, e := range entries {
-		row := TreeRow{Glyph: "·", Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0}
+		row := TreeRow{Glyph: "·", Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0 && !rowsOnly}
 		switch e.Kind {
 		case domain.EntryDirectory:
-			row.Glyph, row.Name, row.Size = "▾", row.Name+"/", "-"
+			row.Glyph, row.Name, row.Size = "▸", row.Name+"/", "-"
 			row.Href = repoHref(d.name(), "tree", t.name, e.Path)
+			row.Expand = row.Href + "?rows"
 		case domain.EntrySymlink:
 			row.Glyph = "@"
 			row.Href = repoHref(d.name(), "blob", t.name, e.Path)
@@ -71,15 +75,19 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 			row.Glyph, row.Size = "+", "-"
 		default:
 			row.Href = repoHref(d.name(), "blob", t.name, e.Path)
-			if len(l.Cmd) < maxFileTargets {
-				l.Cmd = append(l.Cmd, CmdItem{Kind: "file", Label: visibleText(e.Path), Href: row.Href})
-			}
 		}
 		if c := e.LastCommit; c != nil {
 			last := commitRow(d.name(), *c, now)
 			row.Subject, row.Author, row.CHref, row.When, row.WhenAt = last.Subject, last.Author, last.CHref, last.When, last.WhenAt
 		}
 		p.Rows = append(p.Rows, row)
+	}
+	if rowsOnly {
+		// The rows alone, for a directory opened in place (files.js).
+		if res.Truncated {
+			p.More = repoHref(d.name(), "tree", t.name, t.path)
+		}
+		return TreeRows(p), http.StatusOK, nil
 	}
 	if res.Truncated {
 		p.Notes = append(p.Notes, "this directory has more entries than are listed here: the first "+itoa(len(entries))+" are shown.")
@@ -95,6 +103,10 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 		p.Readme = rd.readme
 	}
 
+	l := s.repoLayout(ctx, d, "tree")
+	// The finder searches the commit this page lists, whichever way the URL
+	// spelled it (an abbreviated id included): the listing knows it.
+	t.commit = res.CommitID.String()
 	pinRef(&l, t)
 	l.Crumbs = pathCrumbs(d.name(), "tree", t)
 	if t.path == "" {

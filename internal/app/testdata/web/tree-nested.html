@@ -17,8 +17,10 @@
 </script>
 <script src="/-/static/js/ermite.HASH.js" defer>
 </script>
+<script src="/-/static/js/files.HASH.js" defer>
+</script>
 </head>
-<body data-ref="main" data-sha="SHA40" data-sel="" data-nav="">
+<body data-ref="main" data-sha="SHA40" data-sel="" data-nav="" data-paths="/files/paths/SHA40" data-blob="/files/blob/main">
 <a class="skip" href="#main">skip to content</a>
 <header class="hdr">
 <div class="hdr-top">
@@ -90,9 +92,16 @@
 <div class="work">
 <main id="main" tabindex="-1">
 <div class="filter">
-<label for="tree-filter" class="sr">filter</label>
-<input id="tree-filter" type="search" data-filter="#tree-rows > tr" placeholder="Filter this directory…" autocomplete="off" hx-on:input="ermite.filter(this)">
+<label for="finder-q" class="sr">find a file</label>
+<input id="finder-q" type="search" data-filter role="combobox" aria-autocomplete="list" aria-controls="finder-list" aria-expanded="false" placeholder="Find a file…" autocomplete="off" spellcheck="false" hx-on:focus="ermiteFinder.load()" hx-on:input="ermiteFinder.input(this)" hx-on:keydown="ermiteFinder.key(this, event)">
 </div>
+<div id="finder" hidden>
+<p id="finder-status" class="dim" aria-live="polite">
+</p>
+<ul id="finder-list" class="cmd-list" role="listbox" aria-label="Files">
+</ul>
+</div>
+<div id="tree-view">
 <table class="list tree" aria-label="Entries">
 <thead>
 <tr>
@@ -107,7 +116,7 @@
 <th class="c-when">date</th>
 </tr>
 </thead>
-<tbody id="tree-rows" data-rows>
+<tbody id="tree-rows" data-rows hx-on:click="ermiteTree.click(event)">
 <tr data-cursor>
 <td class="cur" aria-hidden="true">
 </td>
@@ -126,6 +135,7 @@
 </tr>
 </tbody>
 </table>
+</div>
 </main>
 </div>
 <footer class="foot">
@@ -186,7 +196,7 @@
 <dt>
 <kbd>/</kbd>
 </dt>
-<dd>filter the list</dd>
+<dd>filter the list; on Files, find a file in the repository</dd>
 </div>
 <div>
 <dt>
@@ -273,10 +283,10 @@
 </section>
 </div>
 </dialog>
-<dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
+<dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:close="ermiteFinder.paletteClose()" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 <div class="panel-head">
 <label for="cmd-q" class="sr">go to</label>
-<input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="ermite.cmdFilter(this)" hx-on:keydown="ermite.cmdKey(event)">
+<input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="ermite.cmdFilter(this); ermiteFinder.palette(this)" hx-on:keydown="ermite.cmdKey(event)">
 <button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd>
 </button>
@@ -336,12 +346,6 @@
 <span class="k">tag</span>
 </a>
 </li>
-<li data-k="file src/lib/util.go">
-<a href="/files/blob/main/src/lib/util.go" tabindex="-1">
-<span class="lbl">src/lib/util.go</span>
-<span class="k">file</span>
-</a>
-</li>
 </ul>
 <p class="panel-foot">
 <span>
@@ -361,7 +365,7 @@
          k-esc from:body -> ermite.closeDialogs();
          k-help from:body -> ermite.dialog('panel-help');
          k-refs from:body -> ermite.dialog('panel-refs', 'refs-filter');
-         k-cmd from:body -> ermite.dialog('panel-cmd', 'cmd-q');
+         k-cmd from:body -> ermite.dialog('panel-cmd', 'cmd-q'); ermiteFinder.load();
          k-filter from:body -> ermite.focusFilter();
          k-gh from:body -> ermite.go('.brand');
          k-s from:body -> ermite.tab('s');

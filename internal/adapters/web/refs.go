@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"net/url"
 	"strings"
 
@@ -79,6 +80,34 @@ type target struct {
 	path string
 	// detached is true when the URL names a commit and not a ref.
 	detached bool
+	// commit is the full id of the commit when the page has learnt it from
+	// the API and rev is an abbreviation; "" otherwise.
+	commit string
+}
+
+// commitID is the full id of the commit of the target when it is known, and
+// rev otherwise.
+func (t target) commitID() string {
+	if t.commit != "" {
+		return t.commit
+	}
+	return t.rev
+}
+
+// resolveCommit sets the full id of a target named by an abbreviated commit id,
+// with one ResolveRevision. The page renders without it (it only lacks the file
+// finder), so a failure is not one.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter learns the full id of the commit a URL names for the finder links; no rule is decided here
+func (s *Server) resolveCommit(ctx context.Context, repo domain.RepoName, t *target) {
+	if !t.detached || isFullID(t.rev) {
+		return
+	}
+	res, err := s.resolveRevision(ctx, repo, t.rev)
+	if err != nil {
+		return
+	}
+	t.commit = res.CommitID.String()
 }
 
 // locate reads "<ref>[/<path>]" or "<commit>[/<path>]". The ref is the
@@ -134,13 +163,14 @@ func (d *repoData) isBranchHead(t target) bool {
 
 // pinRef points the ref switcher of the layout at what a page shows: a
 // branch or a tag, which is then the current one of the lists, or a commit,
-// which makes none current.
+// which makes none current. It points the file finder at the commit too.
 func pinRef(l *Layout, t target) {
 	if t.detached {
 		l.Ref, l.RefPath, l.Short, l.SHA = "detached", "", short(t.rev), ""
 		if len(t.rev) == 40 {
 			l.SHA = t.rev
 		}
+		l.setFinder(t.commitID(), t.rev)
 		for i := range l.Heads {
 			l.Heads[i].Current = false
 		}
@@ -150,12 +180,26 @@ func pinRef(l *Layout, t target) {
 		return
 	}
 	l.Ref, l.RefPath, l.SHA, l.Short = t.name, t.name, t.rev, short(t.rev)
+	l.setFinder(t.rev, t.name)
 	for i := range l.Heads {
 		l.Heads[i].Current = l.Heads[i].Name == t.name
 	}
 	for i := range l.Tags {
 		l.Tags[i].Current = l.Tags[i].Name == t.name && !hasName(l.Heads, t.name)
 	}
+}
+
+// setFinder points the file finder at a commit: the list of its paths when sha
+// is a full commit id, and the blob pages of ref (a ref name or a commit id)
+// its results open. Without a full id there is nothing to search and the
+// page has no finder data.
+func (l *Layout) setFinder(sha, ref string) {
+	l.PathsURL, l.BlobBase = "", ""
+	if l.Repo == "" || ref == "" || !isFullID(sha) {
+		return
+	}
+	l.PathsURL = repoHref(l.Repo, "paths", sha)
+	l.BlobBase = repoHref(l.Repo, "blob", ref)
 }
 
 func hasName(items []RefItem, name string) bool {

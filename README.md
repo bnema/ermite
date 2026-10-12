@@ -2,7 +2,7 @@
 
 A single-user Git forge in one Go binary. ermite hosts bare repositories, serves clone and push over HTTPS, reviews branches as merge requests, and shows everything in a web interface with live updates.
 
-Status: early development. `ermite serve` serves Git over HTTP (clone, fetch, push), the API, `GET /-/health`, and the web: repositories, tree, files, commits, refs and merge requests. Visitors read public repositories; the owner signs in with a one-time link from the CLI to see private ones and to review and merge.
+Status: early development. `ermite serve` serves Git over HTTP (clone, fetch, push), the API, `GET /-/health`, and the web: repositories, an expandable file tree with a repository-wide fuzzy file finder, files, commits, refs and merge requests. Visitors read public repositories; the owner signs in with a one-time link from the CLI to see private ones and to review and merge.
 
 ## Run
 

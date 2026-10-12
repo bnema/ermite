@@ -110,7 +110,11 @@
     // moving the cursor, and returns the rows.
     hide(input) {
       const t = input.value.toLowerCase();
-      const rows = $$(input.dataset.filter || input.dataset.pick);
+      // A bare data-filter marks a field with its own search (the file finder
+      // of the Files view): there are no rows to hide.
+      const sel = input.dataset.filter || input.dataset.pick;
+      if (!sel) return [];
+      const rows = $$(sel);
       for (const r of rows) r.hidden = !r.textContent.toLowerCase().includes(t);
       if (input.dataset.groups) {
         for (const g of $$(input.dataset.groups)) g.hidden = !rows.some((r) => !r.hidden && g.contains(r));
@@ -120,10 +124,12 @@
     // The "go to" palette.
     cmdFilter(input) {
       const t = input.value.toLowerCase().trim();
-      const items = $$('#cmd-list > li');
+      // The file hits the finder adds (li.finder-hit, files.js) have no data-k:
+      // the finder owns them.
+      const items = $$('#cmd-list > li[data-k]');
       for (const li of items) li.hidden = !li.dataset.k.includes(t);
       const first = items.find((li) => !li.hidden);
-      if (first) setCursor(first, items);
+      if (first) setCursor(first, $$('#cmd-list > li'));
     },
     cmdKey(e) {
       const vis = $$('#cmd-list > li:not([hidden])');

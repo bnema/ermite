@@ -61,6 +61,7 @@ type BrowseService interface {
 	ListRefs(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListRefsParams) (RefPage, error)
 	ResolveRevision(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.ResolvedRevision, error)
 	GetTree(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error)
+	ListPaths(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.PathList, error)
 	OpenBlob(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, path domain.TreePath) (domain.BlobInfo, io.ReadCloser, error)
 	ListCommits(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListCommitsParams) (HistoryPage, error)
 	GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.CommitDetail, error)

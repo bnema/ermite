@@ -295,6 +295,84 @@ func (_c *BrowseService_ListCommits_Call) RunAndReturn(run func(ctx context.Cont
 	return _c
 }
 
+// ListPaths provides a mock function for the type BrowseService
+func (_mock *BrowseService) ListPaths(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.PathList, error) {
+	ret := _mock.Called(ctx, p, repo, rev)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListPaths")
+	}
+
+	var r0 domain.PathList
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision) (domain.PathList, error)); ok {
+		return returnFunc(ctx, p, repo, rev)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision) domain.PathList); ok {
+		r0 = returnFunc(ctx, p, repo, rev)
+	} else {
+		r0 = ret.Get(0).(domain.PathList)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision) error); ok {
+		r1 = returnFunc(ctx, p, repo, rev)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// BrowseService_ListPaths_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListPaths'
+type BrowseService_ListPaths_Call struct {
+	*mock.Call
+}
+
+// ListPaths is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - rev domain.Revision
+func (_e *BrowseService_Expecter) ListPaths(ctx any, p any, repo any, rev any) *BrowseService_ListPaths_Call {
+	return &BrowseService_ListPaths_Call{Call: _e.mock.On("ListPaths", ctx, p, repo, rev)}
+}
+
+func (_c *BrowseService_ListPaths_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision)) *BrowseService_ListPaths_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 domain.Revision
+		if args[3] != nil {
+			arg3 = args[3].(domain.Revision)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *BrowseService_ListPaths_Call) Return(pathList domain.PathList, err error) *BrowseService_ListPaths_Call {
+	_c.Call.Return(pathList, err)
+	return _c
+}
+
+func (_c *BrowseService_ListPaths_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.PathList, error)) *BrowseService_ListPaths_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListRefs provides a mock function for the type BrowseService
 func (_mock *BrowseService) ListRefs(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.ListRefsParams) (ports.RefPage, error) {
 	ret := _mock.Called(ctx, p, repo, params)

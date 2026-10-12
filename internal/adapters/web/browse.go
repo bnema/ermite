@@ -69,3 +69,23 @@ func (s *Server) openBlobAt(ctx context.Context, repo domain.RepoName, rev, path
 	}
 	return s.cfg.Browse.OpenBlob(ctx, principal(ctx), repo, r, p)
 }
+
+// resolveRevision resolves rev to the commit it designates.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter parses the URL text and calls the use case; no rule is decided here
+func (s *Server) resolveRevision(ctx context.Context, repo domain.RepoName, rev string) (domain.ResolvedRevision, error) {
+	r, err := domain.ParseRevision(rev)
+	if err != nil {
+		return domain.ResolvedRevision{}, err
+	}
+	return s.cfg.Browse.ResolveRevision(ctx, principal(ctx), repo, r)
+}
+
+// listPaths lists the file paths of the commit rev.
+func (s *Server) listPaths(ctx context.Context, repo domain.RepoName, rev string) (domain.PathList, error) {
+	r, err := domain.ParseRevision(rev)
+	if err != nil {
+		return domain.PathList{}, err
+	}
+	return s.cfg.Browse.ListPaths(ctx, principal(ctx), repo, r)
+}

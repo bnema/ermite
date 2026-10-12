@@ -186,6 +186,9 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	}
 
 	l := s.repoLayout(ctx, d, "tree")
+	// A blob stream does not name its commit: an abbreviated id is resolved
+	// for the finder.
+	s.resolveCommit(ctx, d.repo.Name, &t)
 	pinRef(&l, t)
 	l.Crumbs = pathCrumbs(d.name(), "blob", t)
 	l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
