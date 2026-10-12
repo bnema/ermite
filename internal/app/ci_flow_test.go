@@ -580,3 +580,17 @@ func TestCIPushWithoutNewCommitsStillRuns(t *testing.T) {
 	c.waitFor("the rewind runs", func() bool { return len(c.runs()) == 4 })
 	assert.Equal(t, first, c.runs()[0].GetSha())
 }
+
+// CI is on once a runner is registered: before that a push makes no run and no
+// check; after, it does.
+func TestCINoRunnerNoRunsNoChecks(t *testing.T) {
+	c := newCIHarness(t, nil)
+	sha := c.push("main", map[string]string{".github/workflows/ci.yml": ciWorkflow}, "")
+	time.Sleep(400 * time.Millisecond)
+	assert.Empty(t, c.runs())
+	assert.Empty(t, c.checks(sha))
+
+	c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{"a.txt": "a\n"}, "")
+	c.waitFor("a run once a runner exists", func() bool { return len(c.runs()) == 1 })
+}

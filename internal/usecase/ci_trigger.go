@@ -93,6 +93,15 @@ func (c *CI) planPush(t ciTrigger) {
 
 // handlePush starts the workflows that match each ref of the push.
 func (c *CI) handlePush(ctx context.Context, t ciTrigger) error {
+	// CI is on once a runner is registered (plan, "Config"): without one a push
+	// makes no run and no check, so a forge that does not use CI shows nothing.
+	runners, err := c.cfg.Store.ListRunners(ctx)
+	if err != nil {
+		return fmt.Errorf("list the runners: %w", err)
+	}
+	if len(runners) == 0 {
+		return nil
+	}
 	tags := 0
 	for _, u := range t.updates {
 		if strings.HasPrefix(u.Ref, "refs/tags/") {
