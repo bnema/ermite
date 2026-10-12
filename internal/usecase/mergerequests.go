@@ -710,6 +710,14 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	if err != nil {
 		return domain.MergeRequest{}, false, err
 	}
+	// A merge moves the target and may delete the source: a token limited to
+	// branch prefixes may do so only within them.
+	if !p.AllowsRef("refs/heads/" + mr.Target) {
+		return domain.MergeRequest{}, false, fmt.Errorf("%w: this token may not write %s", domain.ErrForbidden, mr.Target)
+	}
+	if params.DeleteSource && !p.AllowsRef("refs/heads/"+mr.Source) {
+		return domain.MergeRequest{}, false, fmt.Errorf("%w: this token may not write %s", domain.ErrForbidden, mr.Source)
+	}
 	if !mr.IsOpen() {
 		return domain.MergeRequest{}, false, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
 	}

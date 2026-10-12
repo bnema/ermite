@@ -76,6 +76,9 @@ func TestPushesOpen(t *testing.T) {
 		{"missing, no create", domain.Root(), nil, false, domain.ErrNotFound},
 		{"missing, reader may not create", tokenPrincipal(domain.ScopeRepoRead), nil, true, domain.ErrNotFound},
 		{"missing, writer limited elsewhere", tokenPrincipal(domain.ScopeRepoWrite, "other"), nil, true, domain.ErrNotFound},
+		{"existing, writer limited to branches", branchLimited(domain.ScopeRepoWrite), &priv, false, nil},
+		{"missing, writer limited to branches may not create", branchLimited(domain.ScopeRepoWrite), nil, true, domain.ErrNotFound},
+		{"missing, writer limited to branches and to the repo may not create", branchLimited(domain.ScopeRepoWrite, "tools"), nil, true, domain.ErrNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -200,6 +203,86 @@ func TestPushesCheck(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		assert.ErrorIs(t, f.pushes.Check(ctx, domain.Anonymous(), n, ups), domain.ErrRejected)
+	})
+}
+
+// AC5: a token limited to branch prefixes pushes only under them.
+func TestPushesCheckBranchPrefixes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	n := name(t, "tools")
+	limited := domain.TokenPrincipal(domain.Token{
+		ID: "b1", Scopes: scopes(domain.ScopeRepoWrite), BranchPrefixes: []string{"agent/claude/", "bot/"},
+	})
+	up := func(old, new, ref string) domain.RefUpdate { return domain.RefUpdate{Old: old, New: new, Ref: ref} }
+
+	tests := []struct {
+		name    string
+		updates []domain.RefUpdate
+		refused string // the ref named by the error; "" = accepted
+	}{
+		{"create under the prefix", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/heads/agent/claude/x")}, ""},
+		{"force-push under the prefix", []domain.RefUpdate{up(oidA, oidB, "refs/heads/agent/claude/x")}, ""},
+		{"delete under the prefix", []domain.RefUpdate{up(oidA, domain.ZeroOID, "refs/heads/agent/claude/x")}, ""},
+		{"second prefix", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/heads/bot/y")}, ""},
+		{"several under the prefixes", []domain.RefUpdate{
+			up(domain.ZeroOID, oidA, "refs/heads/agent/claude/a"), up(domain.ZeroOID, oidA, "refs/heads/bot/b"),
+		}, ""},
+		{"main", []domain.RefUpdate{up(oidA, oidB, "refs/heads/main")}, "refs/heads/main"},
+		{"delete main", []domain.RefUpdate{up(oidA, domain.ZeroOID, "refs/heads/main")}, "refs/heads/main"},
+		{"the prefix itself without a name", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/heads/agent/claude")}, "refs/heads/agent/claude"},
+		{"a sibling that shares the text", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/heads/agent/claudex/y")}, "refs/heads/agent/claudex/y"},
+		{"a tag", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/tags/v1")}, "refs/tags/v1"},
+		{"a tag named like the prefix", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/tags/agent/claude/v1")}, "refs/tags/agent/claude/v1"},
+		{"a notes ref", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/notes/commits")}, "refs/notes/commits"},
+		{"a ref outside refs/heads", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/agent/claude/x")}, "refs/agent/claude/x"},
+		{"a path trick", []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/heads/agent/claude/../main")}, "refs/heads/agent/claude/../main"},
+		{"mixed push: one allowed, one forbidden", []domain.RefUpdate{
+			up(domain.ZeroOID, oidA, "refs/heads/agent/claude/ok"), up(oidA, oidB, "refs/heads/main"),
+		}, "refs/heads/main"},
+		{"mixed push, forbidden first", []domain.RefUpdate{
+			up(oidA, oidB, "refs/heads/main"), up(domain.ZeroOID, oidA, "refs/heads/agent/claude/ok"),
+		}, "refs/heads/main"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newPushFixture(t)
+			f.tokens.EXPECT().Get(ctx, "b1").Return(domain.Token{ID: "b1", Scopes: scopes(domain.ScopeRepoWrite)}, nil)
+			err := f.pushes.Check(ctx, limited, n, tt.updates)
+			if tt.refused == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, domain.ErrRejected)
+			assert.Contains(t, err.Error(), tt.refused+" is outside the branches this token may push (agent/claude/, bot/)")
+		})
+	}
+
+	t.Run("a token without limit pushes anywhere", func(t *testing.T) {
+		t.Parallel()
+		f := newPushFixture(t)
+		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite)}, nil)
+		free := domain.TokenPrincipal(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite)})
+		require.NoError(t, f.pushes.Check(ctx, free, n, []domain.RefUpdate{
+			up(domain.ZeroOID, oidA, "refs/tags/v1"), up(oidA, oidB, "refs/heads/main"),
+		}))
+	})
+
+	t.Run("root pushes anywhere", func(t *testing.T) {
+		t.Parallel()
+		f := newPushFixture(t)
+		require.NoError(t, f.pushes.Check(ctx, domain.Root(), n, []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/tags/v1")}))
+	})
+
+	t.Run("a limited token without repo:write is rejected for the repository first", func(t *testing.T) {
+		t.Parallel()
+		f := newPushFixture(t)
+		f.tokens.EXPECT().Get(ctx, "b2").Return(domain.Token{ID: "b2", Scopes: scopes(domain.ScopeRepoRead)}, nil)
+		p := domain.TokenPrincipal(domain.Token{ID: "b2", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"a/"}})
+		err := f.pushes.Check(ctx, p, n, []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/heads/a/x")})
+		require.ErrorIs(t, err, domain.ErrRejected)
+		assert.Contains(t, err.Error(), "no write access")
 	})
 }
 

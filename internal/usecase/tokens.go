@@ -54,7 +54,8 @@ func NewTokens(store ports.TokenStore, clock ports.Clock, sessions ports.Session
 // domain.ErrUnauthenticated, others without it domain.ErrForbidden. A token
 // cannot create a token more powerful than itself: every scope must be one it
 // holds, the repositories must lie within its list (a limited token cannot
-// create an unlimited one) and the expiry must not outlast its own. Violations
+// create an unlimited one), the same for branch prefixes (each must start
+// with one of its own) and the expiry must not outlast its own. Violations
 // give domain.ErrForbidden. Root has no such limits. Invalid settings give
 // domain.ErrInvalidToken (this includes the labels "owner" and "root", which
 // are reserved, in any case and around spaces), an unknown scope
@@ -88,7 +89,7 @@ func (t *Tokens) Create(ctx context.Context, p domain.Principal, params ports.Cr
 		log := zerowrap.FromCtx(ctx)
 		log.Info().
 			Str("token_id", tok.ID).Str("label", tok.Label).
-			Int("scopes", len(tok.Scopes)).Int("repos", len(tok.Repos)).
+			Int("scopes", len(tok.Scopes)).Int("repos", len(tok.Repos)).Int("branch_prefixes", len(tok.BranchPrefixes)).
 			Str("created_by", p.Label()).Str("created_by_token", p.TokenID()).
 			Msg("token created")
 		return ports.CreatedToken{Token: tok, Secret: secret}, nil
@@ -122,10 +123,15 @@ func buildToken(params ports.CreateTokenParams, now time.Time) (domain.Token, er
 	if !params.ExpiresAt.IsZero() && !params.ExpiresAt.After(now) {
 		return domain.Token{}, fmt.Errorf("%w: expiry is not in the future", domain.ErrInvalidToken)
 	}
+	prefixes, err := domain.ParseBranchPrefixes(params.BranchPrefixes)
+	if err != nil {
+		return domain.Token{}, err
+	}
 	tok := domain.Token{
-		Label:     params.Label,
-		CreatedAt: now,
-		ExpiresAt: params.ExpiresAt.UTC(),
+		Label:          params.Label,
+		BranchPrefixes: prefixes,
+		CreatedAt:      now,
+		ExpiresAt:      params.ExpiresAt.UTC(),
 	}
 	// Canonical order, no duplicates.
 	for _, s := range domain.AllScopes() {
@@ -161,6 +167,16 @@ func checkNoEscalation(p domain.Principal, tok domain.Token) error {
 		for _, r := range tok.Repos {
 			if !slices.Contains(own, r) {
 				return fmt.Errorf("%w: repository %s is outside the creating token", domain.ErrForbidden, r)
+			}
+		}
+	}
+	if own := p.BranchPrefixes(); len(own) > 0 {
+		if len(tok.BranchPrefixes) == 0 {
+			return fmt.Errorf("%w: the creating token is limited to branch prefixes, so the new token must be too", domain.ErrForbidden)
+		}
+		for _, bp := range tok.BranchPrefixes {
+			if !slices.ContainsFunc(own, func(o string) bool { return strings.HasPrefix(bp, o) }) {
+				return fmt.Errorf("%w: branch prefix %s is outside the creating token", domain.ErrForbidden, bp)
 			}
 		}
 	}

@@ -174,7 +174,7 @@ func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params por
 
 // Delete moves the repository directory to the trash, removes its metadata
 // and publishes RepoDeleted. The principal needs repo:admin on it (see
-// adminAccess). A repository whose directory is already gone, left by a
+// adminAccess) and no branch prefixes. A repository whose directory is already gone, left by a
 // delete that failed half way, loses its metadata.
 func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.RepoName) error {
 	repo, err := lookupRepo(ctx, r.meta, name)
@@ -183,6 +183,9 @@ func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.Repo
 	}
 	if err := adminAccess(p, repo); err != nil {
 		return err
+	}
+	if !canDeleteRepo(p) {
+		return fmt.Errorf("%w: a token limited to branch prefixes may not delete a repository", domain.ErrForbidden)
 	}
 	log := zerowrap.FromCtx(ctx)
 	switch err := r.git.Trash(ctx, name); {

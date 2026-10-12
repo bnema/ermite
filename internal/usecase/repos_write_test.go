@@ -165,6 +165,14 @@ func TestUpdate(t *testing.T) {
 		})
 	}
 
+	t.Run("a token limited to branches may not delete a repository", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t) // no Trash, no Delete
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
+		err := f.repos.Delete(ctx, branchLimited(domain.ScopeRepoAdmin), n)
+		assert.ErrorIs(t, err, domain.ErrForbidden)
+	})
+
 	t.Run("a missing repository is not found", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)

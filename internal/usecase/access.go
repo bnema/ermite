@@ -48,6 +48,20 @@ func canWrite(p domain.Principal, name domain.RepoName) bool {
 	return p.Allows(domain.ScopeRepoWrite, name)
 }
 
+// canCreateRepo is the access rule for creating a repository, by the API or on
+// first push: repo:write on the name, and no branch prefixes. A token limited
+// to some branches may push to a repository that exists; it never makes one.
+func canCreateRepo(p domain.Principal, name domain.RepoName) bool {
+	return canWrite(p, name) && len(p.BranchPrefixes()) == 0
+}
+
+// canDeleteRepo is the access rule for deleting a repository on top of
+// adminAccess: no branch prefixes. Deleting a repository deletes every branch,
+// those outside the prefixes of a limited token included.
+func canDeleteRepo(p domain.Principal) bool {
+	return len(p.BranchPrefixes()) == 0
+}
+
 // canManageTokens is the access rule for creating, listing and revoking
 // stored tokens: token:admin, which root holds.
 func canManageTokens(p domain.Principal) bool {

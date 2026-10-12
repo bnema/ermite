@@ -86,6 +86,18 @@ func TestCreate(t *testing.T) {
 		}
 	})
 
+	t.Run("a token limited to branches may not create a repository", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t) // the mocks expect no call: nothing is staged
+		for _, p := range []domain.Principal{
+			branchLimited(domain.ScopeRepoWrite),
+			branchLimited(domain.ScopeRepoWrite, "tools"),
+		} {
+			_, err := f.repos.Create(ctx, p, ports.CreateRepoParams{Name: name(t, "tools")})
+			assert.ErrorIs(t, err, domain.ErrForbidden)
+		}
+	})
+
 	t.Run("token with repo:write creates", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
@@ -189,6 +201,24 @@ func tokenPrincipal(s domain.Scope, repos ...string) domain.Principal {
 		tok.Repos = append(tok.Repos, n)
 	}
 	return domain.TokenPrincipal(tok)
+}
+
+// branchLimited is a token with one scope, optionally limited to repositories,
+// and limited to the branches under "agent/".
+func branchLimited(s domain.Scope, repos ...string) domain.Principal {
+	tok := domain.Token{ID: "t", Scopes: []domain.Scope{s}, BranchPrefixes: []string{"agent/"}}
+	for _, r := range repos {
+		tok.Repos = append(tok.Repos, name2(r))
+	}
+	return domain.TokenPrincipal(tok)
+}
+
+func name2(s string) domain.RepoName {
+	n, err := domain.ParseRepoName(s)
+	if err != nil {
+		panic(err)
+	}
+	return n
 }
 
 func TestGetAndListAccess(t *testing.T) {

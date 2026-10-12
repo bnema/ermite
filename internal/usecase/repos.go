@@ -37,8 +37,9 @@ func NewRepos(meta ports.RepoMetaStore, git ports.GitRepos, bus ports.EventBus, 
 // after the metadata is written removes it again and discards the staged
 // repository.
 //
-// The principal needs repo:write on the name: anonymous callers get
-// domain.ErrUnauthenticated, other callers without it domain.ErrForbidden.
+// The principal needs repo:write on the name and no branch prefixes: anonymous
+// callers get domain.ErrUnauthenticated, other callers without it (a token
+// limited to some branches included) domain.ErrForbidden.
 func (r *Repos) Create(ctx context.Context, p domain.Principal, params ports.CreateRepoParams) (domain.Repo, error) {
 	if params.Name.IsZero() {
 		return domain.Repo{}, fmt.Errorf("%w: empty name", domain.ErrInvalidName)
@@ -46,7 +47,7 @@ func (r *Repos) Create(ctx context.Context, p domain.Principal, params ports.Cre
 	if p.IsAnonymous() {
 		return domain.Repo{}, domain.ErrUnauthenticated
 	}
-	if !canWrite(p, params.Name) {
+	if !canCreateRepo(p, params.Name) {
 		return domain.Repo{}, domain.ErrForbidden
 	}
 	if err := validateDescription(params.Description); err != nil {
