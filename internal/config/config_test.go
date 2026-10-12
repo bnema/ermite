@@ -246,7 +246,6 @@ func TestOwnerAndCIRetention(t *testing.T) {
 	}
 
 	for _, extra := range []map[string]string{
-		{config.EnvOwner: "Bad Name"}, {config.EnvOwner: ".dot"},
 		{config.EnvCILogRetention: "soon"}, {config.EnvCILogRetention: "0d"}, {config.EnvCILogRetention: "10m"},
 	} {
 		if _, err := load(extra); err == nil {

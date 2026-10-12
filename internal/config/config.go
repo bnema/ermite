@@ -232,11 +232,11 @@ func Load(get func(string) string) (Config, error) {
 		c.CommitterEmail = "ermite@" + u.Hostname()
 	}
 
+	// The name rules of the owner are those of repository names (the domain);
+	// config imports nothing, so internal/app checks them (see loadConfig).
 	c.Owner = strings.TrimSpace(get(EnvOwner))
 	if c.Owner == "" {
 		c.Owner = DefaultOwner
-	} else if err := validateOwner(c.Owner); err != nil {
-		bad(EnvOwner, "%v", err)
 	}
 
 	c.CIRetention = DefaultCIRetention
@@ -253,24 +253,6 @@ func Load(get func(string) string) (Config, error) {
 		return Config{}, &Error{Problems: problems}
 	}
 	return c, nil
-}
-
-// validateOwner applies the rules of repository names (lowercase letters,
-// digits, '.', '_' and '-', at most 100 characters, no leading or trailing
-// '.'), which config cannot import from the domain.
-func validateOwner(s string) error {
-	if len(s) > 100 {
-		return fmt.Errorf("must be at most 100 characters")
-	}
-	for _, r := range s {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '_' && r != '-' {
-			return fmt.Errorf("must follow the rules of repository names: a-z, 0-9, '.', '_', '-' (got %q)", s)
-		}
-	}
-	if strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".") || strings.Contains(s, "..") {
-		return fmt.Errorf("must not start or end with '.' nor contain '..' (got %q)", s)
-	}
-	return nil
 }
 
 // parseRetention reads a duration in days ("90d") or in Go's syntax ("720h"),
