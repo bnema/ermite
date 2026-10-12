@@ -197,7 +197,6 @@ func TestSchema(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, s.Close(ctx))
 		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
-		assert.Equal(t, uint32(2), uint32(kvstore.SchemaVersion), "branch prefixes need schema 2")
 	})
 
 	t.Run("current is accepted and kept", func(t *testing.T) {

@@ -105,12 +105,12 @@ func TestAC5BranchLimitedToken(t *testing.T) {
 	out, err = h.git(wt, "push", "-q", h.urlAuth(secret, "/brand-new.git"), "agent/claude/x")
 	require.Error(t, err, out)
 	assert.NoDirExists(t, h.repoDir("brand-new"))
-	unlimited, _ := h.branchToken(scopes(domain.ScopeRepoWrite), []string{"agent/claude/"}) // not limited to a repository
-	out, err = h.git(wt, "push", "-q", h.urlAuth(unlimited, "/brand-new.git"), "agent/claude/x")
+	anyRepo, _ := h.branchToken(scopes(domain.ScopeRepoWrite), []string{"agent/claude/"}) // not limited to a repository
+	out, err = h.git(wt, "push", "-q", h.urlAuth(anyRepo, "/brand-new.git"), "agent/claude/x")
 	require.Error(t, err, out)
 	assert.NoDirExists(t, h.repoDir("brand-new"))
-	assert.Equal(t, 404, h.statusAuth("GET", "/brand-new.git/info/refs?service=git-receive-pack", unlimited))
-	_, err = h.api(unlimited).repo.CreateRepo(h.ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "via-api"}))
+	assert.Equal(t, 404, h.statusAuth("GET", "/brand-new.git/info/refs?service=git-receive-pack", anyRepo))
+	_, err = h.api(anyRepo).repo.CreateRepo(h.ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "via-api"}))
 	assert.Equal(t, "permission_denied", codeName(err))
 	assert.NoDirExists(t, h.repoDir("via-api"))
 	// The same token without prefixes does both.

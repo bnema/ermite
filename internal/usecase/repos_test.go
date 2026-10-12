@@ -191,8 +191,10 @@ func TestCreate(t *testing.T) {
 	})
 }
 
-func tokenPrincipal(s domain.Scope, repos ...string) domain.Principal {
-	tok := domain.Token{ID: "t", Scopes: []domain.Scope{s}}
+// scopedToken is the principal of a token with one scope, limited to the
+// repositories and to the branch prefixes given (none means no limit).
+func scopedToken(s domain.Scope, prefixes []string, repos ...string) domain.Principal {
+	tok := domain.Token{ID: "t", Scopes: []domain.Scope{s}, BranchPrefixes: prefixes}
 	for _, r := range repos {
 		n, err := domain.ParseRepoName(r)
 		if err != nil {
@@ -203,22 +205,14 @@ func tokenPrincipal(s domain.Scope, repos ...string) domain.Principal {
 	return domain.TokenPrincipal(tok)
 }
 
+func tokenPrincipal(s domain.Scope, repos ...string) domain.Principal {
+	return scopedToken(s, nil, repos...)
+}
+
 // branchLimited is a token with one scope, optionally limited to repositories,
 // and limited to the branches under "agent/".
 func branchLimited(s domain.Scope, repos ...string) domain.Principal {
-	tok := domain.Token{ID: "t", Scopes: []domain.Scope{s}, BranchPrefixes: []string{"agent/"}}
-	for _, r := range repos {
-		tok.Repos = append(tok.Repos, name2(r))
-	}
-	return domain.TokenPrincipal(tok)
-}
-
-func name2(s string) domain.RepoName {
-	n, err := domain.ParseRepoName(s)
-	if err != nil {
-		panic(err)
-	}
-	return n
+	return scopedToken(s, []string{"agent/"}, repos...)
 }
 
 func TestGetAndListAccess(t *testing.T) {
