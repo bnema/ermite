@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -80,6 +81,10 @@ type Token struct {
 	Scopes []Scope
 	// Repos limits the token to these repositories; empty means every one.
 	Repos []RepoName
+	// BranchPrefixes limits the branches the token may write to those under
+	// one of these prefixes (each ends with "/"); empty means every branch.
+	// A limited token cannot write tags or other refs, nor create repositories.
+	BranchPrefixes []string
 	// ExpiresAt is the zero time for a token that never expires.
 	ExpiresAt  time.Time
 	CreatedAt  time.Time
@@ -89,4 +94,48 @@ type Token struct {
 // Expired reports whether the token is no longer valid at now.
 func (t Token) Expired(now time.Time) bool {
 	return !t.ExpiresAt.IsZero() && !now.Before(t.ExpiresAt)
+}
+
+const (
+	// MaxBranchPrefixLen is the longest branch prefix, in bytes.
+	MaxBranchPrefixLen = 100
+	// MaxBranchPrefixes is the most branch prefixes of a token.
+	MaxBranchPrefixes = 8
+)
+
+// ParseBranchPrefix validates a branch prefix such as "agent/claude/": it ends
+// with "/", the rest is a valid branch name, and it has at most
+// MaxBranchPrefixLen bytes. Errors match ErrInvalidToken.
+func ParseBranchPrefix(s string) (string, error) {
+	if len(s) > MaxBranchPrefixLen {
+		return "", fmt.Errorf("%w: branch prefix is longer than %d bytes", ErrInvalidToken, MaxBranchPrefixLen)
+	}
+	name, ok := strings.CutSuffix(s, "/")
+	if !ok {
+		return "", fmt.Errorf("%w: branch prefix %q must end with /", ErrInvalidToken, s)
+	}
+	if _, err := ParseBranchName(name); err != nil {
+		return "", fmt.Errorf("%w: branch prefix %q: %w", ErrInvalidToken, s, err)
+	}
+	return s, nil
+}
+
+// ParseBranchPrefixes validates a list of branch prefixes: at most
+// MaxBranchPrefixes, each valid, duplicates removed, order kept. Errors match
+// ErrInvalidToken. The result is nil for an empty list.
+func ParseBranchPrefixes(in []string) ([]string, error) {
+	var out []string
+	for _, s := range in {
+		p, err := ParseBranchPrefix(s)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	if len(out) > MaxBranchPrefixes {
+		return nil, fmt.Errorf("%w: at most %d branch prefixes", ErrInvalidToken, MaxBranchPrefixes)
+	}
+	return out, nil
 }

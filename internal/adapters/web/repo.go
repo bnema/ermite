@@ -135,6 +135,7 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 	if s.cfg.MergeRequests != nil {
 		l.Sections = append(l.Sections, mk("m", "Merge requests", mrBase(d.name()), "merge-requests"))
 	}
+	l.Sections = s.withActions(l.Sections, d.name(), section)
 	l.Crumbs = []Crumb{{Label: d.name(), Href: repoHref(d.name()), Current: section == "summary"}}
 
 	l.Cmd = append(l.Cmd, CmdItem{Kind: "go", Label: "home", Href: "/"})
@@ -159,6 +160,14 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		l.Cmd = append(l.Cmd, repoCmds(repos, d.name())...)
 	}
 	return l
+}
+
+// withActions adds the Actions tab when the server runs CI.
+func (s *Server) withActions(sections []Section, repo, current string) []Section {
+	if s.cfg.Runs == nil {
+		return sections
+	}
+	return append(sections, Section{Key: "a", Label: "Actions", Href: actionsBase(repo), Current: current == "actions"})
 }
 
 // cloneURL is the HTTPS clone URL of a repository.

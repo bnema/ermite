@@ -73,7 +73,7 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 	if token != "" {
 		p.Newest = base
 	}
-	s.fillDays(&p, d, cs)
+	s.fillDays(ctx, &p, d, cs)
 	if sel.path != "" && token == "" {
 		p.Open = s.pathLink(ctx, d, sel)
 	}
@@ -95,14 +95,21 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 	return Commits(l, p), http.StatusOK, nil
 }
 
+// maxCheckLookups bounds the commits of one page whose checks are read: each
+// is one read of the store.
+const maxCheckLookups = 100
+
 // fillDays groups the commits of a page by day and lists the refs among them.
-func (s *Server) fillDays(p *CommitsPage, d *repoData, cs []domain.Commit) {
+func (s *Server) fillDays(ctx context.Context, p *CommitsPage, d *repoData, cs []domain.Commit) {
 	now := s.cfg.Now()
 	branchesAt, tagsAt := namesAt(d.branches), namesAt(d.tags)
 	for i, c := range cs {
 		row := commitRow(d.name(), c, now)
 		row.ID, row.Cursor = "c-"+row.Short, i == 0
 		row.Branches, row.Tags = branchesAt[c.ID.String()], tagsAt[c.ID.String()]
+		if i < maxCheckLookups {
+			row.Checks = checksSummary(d.repo.Name, c.ID.String(), s.checksFor(ctx, d.repo.Name, c.ID.String()))
+		}
 		day := "unknown date"
 		if t := c.Committer.Time; !t.IsZero() {
 			day = t.UTC().Format("2006-01-02")

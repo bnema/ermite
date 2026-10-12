@@ -26,11 +26,22 @@ const (
 	// (`ermite web passkey`). A server lists it only when passkeys are
 	// available (https public URL with a DNS host name).
 	FeaturePasskeys = "passkeys"
+	// FeatureTokenBranchPrefixes is Token.branch_prefixes and
+	// CreateTokenRequest.branch_prefixes (`ermite token create --branch-prefix`).
+	// A server without it ignores the field and would create an unlimited
+	// token: `token create --branch-prefix` reads the features first and
+	// refuses when it is missing (the main guard), and also checks the token it
+	// gets back (a backstop).
+	FeatureTokenBranchPrefixes = "token.branch_prefixes"
+	// FeatureCIRuns is RunService (`ermite run`), FeatureCIRunners its runner
+	// calls (`ermite runner`).
+	FeatureCIRuns    = "ci.runs"
+	FeatureCIRunners = "ci.runners"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeaturePasskeys}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeaturePasskeys}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

@@ -177,6 +177,14 @@ func TestTokensCreateNoEscalation(t *testing.T) {
 		})
 	}
 
+	adminOn := func(prefixes []string) domain.Principal {
+		return domain.TokenPrincipal(domain.Token{
+			ID:             "creator",
+			Scopes:         scopes(domain.ScopeTokenAdmin, domain.ScopeRepoRead, domain.ScopeRepoWrite),
+			BranchPrefixes: prefixes,
+		})
+	}
+
 	tests := []struct {
 		name      string
 		principal domain.Principal
@@ -211,6 +219,22 @@ func TestTokensCreateNoEscalation(t *testing.T) {
 			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: exp}, nil},
 		{"root: everything", domain.Root(),
 			ports.CreateTokenParams{Label: "x", Scopes: domain.AllScopes()}, nil},
+		{"branch-limited creator, child within its prefix", adminOn([]string{"agent/claude/"}),
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/sub/"}}, nil},
+		{"branch-limited creator, child with the same prefix", adminOn([]string{"agent/claude/"}),
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/"}}, nil},
+		{"branch-limited creator, child with one of two prefixes", adminOn([]string{"a/", "b/"}),
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"b/x/", "a/"}}, nil},
+		{"branch-limited creator, child without prefixes", adminOn([]string{"agent/claude/"}),
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrForbidden},
+		{"branch-limited creator, child with a wider prefix", adminOn([]string{"agent/claude/"}),
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/"}}, domain.ErrForbidden},
+		{"branch-limited creator, child with a sibling prefix", adminOn([]string{"agent/claude/"}),
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claudex/"}}, domain.ErrForbidden},
+		{"branch-limited creator, one prefix of two outside", adminOn([]string{"agent/claude/"}),
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/a/", "main/"}}, domain.ErrForbidden},
+		{"unlimited creator may limit branches", admin(nil, time.Time{}),
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"z/"}}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -283,6 +307,7 @@ func TestTokensRevokeOwnerRightsEndsWebSessions(t *testing.T) {
 		"every scope, by an owner key": {ownerTok, domain.TokenPrincipal(domain.Token{ID: "adm", Scopes: domain.AllScopes()}), true},
 		"one scope short":              {domain.Token{ID: "p", Scopes: domain.AllScopes()[1:]}, domain.Root(), false},
 		"repo list":                    {domain.Token{ID: "l", Scopes: domain.AllScopes(), Repos: names(t, "a")}, domain.Root(), false},
+		"branch prefixes":              {domain.Token{ID: "b", Scopes: domain.AllScopes(), BranchPrefixes: []string{"agent/"}}, domain.Root(), false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -549,5 +574,97 @@ func TestAuthenticate(t *testing.T) {
 		_, err := f.auth.Authenticate(ctx, secret)
 		assert.ErrorIs(t, err, boom)
 		assert.NotErrorIs(t, err, domain.ErrUnauthenticated)
+	})
+}
+
+func TestTokensCreateBranchPrefixes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("stored in canonical form: duplicates dropped, order kept", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t)
+		f.store.EXPECT().Create(ctx, mock.MatchedBy(func(tok domain.Token) bool {
+			return assert.ObjectsAreEqual([]string{"b/", "a/c/"}, tok.BranchPrefixes)
+		})).Return(nil)
+		got, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{
+			Label: "x", Scopes: scopes(domain.ScopeRepoWrite), BranchPrefixes: []string{"b/", "a/c/", "b/"},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"b/", "a/c/"}, got.Token.BranchPrefixes)
+	})
+
+	t.Run("no prefixes stays unlimited", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t)
+		f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
+		got, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoWrite)})
+		require.NoError(t, err)
+		assert.Empty(t, got.Token.BranchPrefixes)
+	})
+
+	t.Run("invalid prefixes are refused with ErrInvalidToken", func(t *testing.T) {
+		t.Parallel()
+		nine := []string{"a/", "b/", "c/", "d/", "e/", "f/", "g/", "h/", "i/"}
+		for _, bad := range [][]string{{"agent"}, {"/"}, {""}, {"a b/"}, {"../"}, {"refs/heads/a/"}, {strings.Repeat("a", 100) + "/"}, {"a/", "bad"}, nine} {
+			f := newTokenFixture(t) // the store expects no Create
+			_, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{
+				Label: "x", Scopes: scopes(domain.ScopeRepoWrite), BranchPrefixes: bad,
+			})
+			assert.ErrorIs(t, err, domain.ErrInvalidToken, "%q", bad)
+		}
+	})
+
+	t.Run("a corrupt empty creator prefix does not cover every child prefix", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t) // the store expects no Create
+		corrupt := domain.TokenPrincipal(domain.Token{
+			ID: "c", Scopes: scopes(domain.ScopeTokenAdmin, domain.ScopeRepoWrite), BranchPrefixes: []string{""},
+		})
+		_, err := f.tokens.Create(ctx, corrupt, ports.CreateTokenParams{
+			Label: "x", Scopes: scopes(domain.ScopeRepoWrite), BranchPrefixes: []string{"main/"},
+		})
+		assert.ErrorIs(t, err, domain.ErrForbidden)
+	})
+
+	t.Run("revoking is bounded by the prefixes of a limited token", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		creator := domain.TokenPrincipal(domain.Token{
+			ID: "c", Scopes: scopes(domain.ScopeTokenAdmin, domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/"},
+		})
+		inside := domain.Token{ID: "in", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/x/"}}
+		wide := domain.Token{ID: "wide", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/"}}
+		sibling := domain.Token{ID: "sib", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claudex/"}}
+		free := domain.Token{ID: "free", Scopes: scopes(domain.ScopeRepoRead)}
+
+		f := newTokenFixture(t)
+		for _, tok := range []domain.Token{wide, sibling, free} {
+			f.store.EXPECT().Get(ctx, tok.ID).Return(tok, nil).Once()
+		}
+		// Out of reach: not found, like an unknown id, and nothing is revoked.
+		for _, id := range []string{"wide", "sib", "free"} {
+			assert.ErrorIs(t, f.tokens.Revoke(ctx, creator, id), domain.ErrNotFound, id)
+		}
+		// Within its prefixes it revokes, and no web session is signed out.
+		f.store.EXPECT().Get(ctx, "in").Return(inside, nil).Once()
+		f.store.EXPECT().Revoke(ctx, "in").Return(nil).Once()
+		require.NoError(t, f.tokens.Revoke(ctx, creator, "in"))
+	})
+
+	t.Run("listing hides tokens a limited creator could not have made", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t)
+		mine := domain.Token{ID: "mine", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/x/"}}
+		wide := domain.Token{ID: "wide", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"agent/"}}
+		free := domain.Token{ID: "free", Scopes: scopes(domain.ScopeRepoRead)}
+		f.store.EXPECT().List(ctx).Return([]domain.Token{mine, wide, free}, nil)
+		p := domain.TokenPrincipal(domain.Token{
+			ID: "c", Scopes: scopes(domain.ScopeTokenAdmin, domain.ScopeRepoRead), BranchPrefixes: []string{"agent/claude/"},
+		})
+		got, err := f.tokens.List(ctx, p)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		assert.Equal(t, "mine", got[0].ID)
 	})
 }

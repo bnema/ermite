@@ -165,6 +165,32 @@ func TestUpdate(t *testing.T) {
 		})
 	}
 
+	t.Run("a token limited to branches may not change any setting", func(t *testing.T) {
+		t.Parallel()
+		modes := []domain.MergeMode{domain.MergeModeSquash}
+		block := true
+		for name, params := range map[string]ports.UpdateRepoParams{
+			"default branch": {DefaultBranch: ptr("dev")},
+			"visibility":     {Visibility: ptr(domain.VisibilityPublic)},
+			"description":    {Description: ptr("x")},
+			"merge modes":    {AllowedMergeModes: &modes},
+			"checks rule":    {FailingChecksBlock: &block},
+		} {
+			f := newFixture(t) // no HasBranch, no Update, no SetDefaultBranch, no Publish
+			f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
+			_, err := f.repos.Update(ctx, branchLimited(domain.ScopeRepoAdmin), n, params)
+			assert.ErrorIs(t, err, domain.ErrForbidden, name)
+		}
+	})
+
+	t.Run("a token limited to branches may not delete a repository", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t) // no Trash, no Delete
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
+		err := f.repos.Delete(ctx, branchLimited(domain.ScopeRepoAdmin), n)
+		assert.ErrorIs(t, err, domain.ErrForbidden)
+	})
+
 	t.Run("a missing repository is not found", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)

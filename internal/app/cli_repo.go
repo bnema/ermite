@@ -86,7 +86,7 @@ func newRepoCmd(env *cliEnv) *cobra.Command {
 	repo := &cobra.Command{
 		Use:   "repo",
 		Short: "Manage repositories on a remote server",
-		Long:  "Manage repositories on the server at ERMITE_URL, authenticated with ERMITE_TOKEN.",
+		Long:  "Manage repositories on the configured server (ERMITE_URL or the config file, see `ermite config`), authenticated with ERMITE_TOKEN or the token command of the config file.",
 	}
 	repo.AddCommand(
 		newRepoListCmd(env), newRepoShowCmd(env), newRepoCreateCmd(env),
@@ -146,7 +146,7 @@ func newRepoListCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -205,7 +205,7 @@ func newRepoShowCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -239,7 +239,7 @@ func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -275,7 +275,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 		Long: "Change the fields given as flags and leave the others alone; --description \"\" clears the\n" +
 			"description. The default branch must already exist. --merge-modes lists the modes a merge request\n" +
 			"may be merged with (fast-forward, squash; default for a new repository: both), and\n" +
-			"--failing-checks-block says whether a failing check prevents a merge (there are no checks yet).\n" +
+			"--failing-checks-block says whether a failing check prevents a merge (a failed or unfinished CI check of the head; see README, CI).\n" +
 			"Needs the repo:admin scope." + jsonRepoHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
@@ -295,7 +295,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -377,7 +377,7 @@ func newRepoDeleteCmd(env *cliEnv) *cobra.Command {
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		// Check the configuration before asking anything.
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,7 +24,8 @@ type liveStream struct {
 	view string // "summary", "refs" or "commits"
 	ref  string // commits: the branch listed
 	head string // commits: the commit listed first
-	n    string // mr: the number of the merge request shown
+	n    string // mr: the number of the merge request shown; run: the run id
+	job  string // job: the id of the job shown
 }
 
 // renderFragment renders a component to the data of an event.
@@ -46,7 +48,8 @@ func liveEvent(we ports.WatchEvent) bool {
 	}
 	switch we.Event.(type) {
 	case domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
-		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.CommentAdded:
+		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.CommentAdded,
+		domain.RunUpdated, domain.JobUpdated:
 		return true
 	}
 	return false
@@ -117,6 +120,10 @@ func (l *liveStream) gone(ctx context.Context, name string) ([]fragment, error) 
 // repoPage handles the events of the topic of one repository.
 func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	switch ev := we.Event.(type) {
+	case domain.RunUpdated:
+		return l.runEvent(ctx, ev)
+	case domain.JobUpdated:
+		return l.jobEvent(ctx, ev)
 	case domain.RepoDeleted, domain.RepoCreated:
 		// Gone, or a new repository under the same name: whatever the page
 		// shows is not true any more.
@@ -394,4 +401,100 @@ func (l *liveStream) mrPushed(ctx context.Context, p domain.PushEvent) ([]fragme
 func (l *liveStream) notice(ctx context.Context, text, href string) ([]fragment, error) {
 	f, err := renderFragment(ctx, "mr-notice", MRNotice(text, href))
 	return []fragment{f}, err
+}
+
+// runEvent updates the pages of CI that a RunUpdated changes: the row of the
+// list of runs, or the body of the run page shown. Only a state is sent: the
+// events carry no log and no text of the workflow.
+func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]fragment, error) {
+	if l.s.cfg.Runs == nil {
+		return nil, nil
+	}
+	switch l.view {
+	case "actions":
+		f, err := renderFragment(ctx, "ci-run", RunListRow(l.s.runRow(l.repo, ev.Run, l.s.cfg.Now())))
+		if err != nil {
+			return nil, err
+		}
+		if ev.Run.Status == domain.CIQueued {
+			f.html = strings.Replace(f.html, "<tr id=", "<tr data-new id=", 1)
+		}
+		return []fragment{f}, nil
+	case "run":
+		if strconv.FormatInt(ev.Run.ID, 10) != l.n {
+			return nil, nil
+		}
+		return l.runBody(ctx)
+	}
+	return nil, nil
+}
+
+// jobEvent updates the body of the run page and the steps of the job page.
+func (l *liveStream) jobEvent(ctx context.Context, ev domain.JobUpdated) ([]fragment, error) {
+	if l.s.cfg.Runs == nil {
+		return nil, nil
+	}
+	switch l.view {
+	case "run":
+		if strconv.FormatInt(ev.Job.RunID, 10) != l.n {
+			return nil, nil
+		}
+		return l.runBody(ctx)
+	case "job":
+		if ev.Job.ID != l.job {
+			return nil, nil
+		}
+		return l.jobState(ctx)
+	}
+	return nil, nil
+}
+
+// runBody renders again the jobs of the run page.
+func (l *liveStream) runBody(ctx context.Context) ([]fragment, error) {
+	id, err := strconv.ParseInt(l.n, 10, 64)
+	if err != nil {
+		return nil, nil
+	}
+	d, err := l.s.loadRepo(ctx, l.repo)
+	if err != nil {
+		return nil, err
+	}
+	p, err := l.s.runPage(ctx, d, id, 0)
+	if err != nil {
+		return nil, err
+	}
+	body, err := renderFragment(ctx, "ci-run", runBodyFragment(p))
+	if err != nil {
+		return nil, err
+	}
+	// The buttons depend on the state: the page fetches itself again when the
+	// run completed, so that the owner gets the right ones.
+	if !p.Active {
+		return []fragment{body, {event: "gap", html: "gap"}}, nil
+	}
+	return []fragment{body}, nil
+}
+
+// jobState tells the job page that its state or its steps changed: the page
+// reloads the part of the log after the last line it holds (ermite.js).
+func (l *liveStream) jobState(ctx context.Context) ([]fragment, error) {
+	d, err := l.s.loadRepo(ctx, l.repo)
+	if err != nil {
+		return nil, err
+	}
+	view, err := l.s.cfg.Runs.GetJob(ctx, principal(ctx), d.repo.Name, l.job, 0)
+	if err != nil {
+		return nil, err
+	}
+	now := l.s.cfg.Now()
+	row := l.s.jobRow(d.name(), view, now)
+	f, err := renderFragment(ctx, "ci-job", JobHead(row, view.Lines))
+	if err != nil {
+		return nil, err
+	}
+	steps, err := renderFragment(ctx, "ci-job", JobSteps(stepViews(view, now)))
+	if err != nil {
+		return nil, err
+	}
+	return []fragment{f, steps}, nil
 }

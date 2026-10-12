@@ -326,7 +326,7 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	ver := decode[versionOut](t, res.stdout)
 	assert.Equal(t, c.url, ver.Server.URL)
 	assert.NotEmpty(t, ver.Server.Version)
-	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths"}, ver.Server.Features)
+	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners"}, ver.Server.Features)
 	assert.Equal(t, []string{"passkeys"}, ver.Server.MissingFeatures)
 	stdout, stderr, code = c.bin(t, secret, "version")
 	require.Equal(t, 0, code, stderr)
@@ -339,7 +339,7 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	stdout, stderr, code = c.bin(t, secret, "token", "create", "tmp", "--preset", "ci", "--repo", "proj", "--expires", "7d", "--json")
 	require.Equal(t, 0, code, stderr)
 	res = result{stdout: stdout}
-	assert.Equal(t, []string{"created_at", "expires_at", "id", "label", "last_used_at", "repos", "scopes", "secret"}, keys(t, res.stdout))
+	assert.Equal(t, []string{"branch_prefixes", "created_at", "expires_at", "id", "label", "last_used_at", "repos", "scopes", "secret"}, keys(t, res.stdout))
 	tmp := decode[tokenOut](t, res.stdout)
 	assert.Equal(t, []string{"repo:read"}, tmp.Scopes)
 	assert.Equal(t, []string{"proj"}, tmp.Repos)
@@ -369,7 +369,7 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	assert.Equal(t, tmp.ID, byLabel["tmp"].ID)
 	assert.NotContains(t, res.stdout, `"secret"`)
 	res = c.cli(t, secret, "token", "list").ok(t)
-	assert.Regexp(t, `(?m)^ID\s+LABEL\s+SCOPES\s+REPOS\s+EXPIRES\s+LAST USED$`, res.stdout)
+	assert.Regexp(t, `(?m)^ID\s+LABEL\s+SCOPES\s+REPOS\s+BRANCHES\s+EXPIRES\s+LAST USED$`, res.stdout)
 	assert.Contains(t, res.stdout, tmp.ID)
 
 	stdout, stderr, code = c.bin(t, secret, "token", "revoke", tmp.ID)

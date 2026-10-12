@@ -4,6 +4,7 @@ package domain
 
 import (
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -22,12 +23,14 @@ const (
 // token, the owner signed in on the web, or a stored token with its scopes
 // and repositories.
 type Principal struct {
-	kind      principalKind
-	tokenID   string
-	scopes    []Scope
-	repos     []RepoName
-	expiresAt time.Time
-	label     string
+	kind    principalKind
+	tokenID string
+	scopes  []Scope
+	repos   []RepoName
+	// branchPrefixes limits the branches a token may write; empty = all.
+	branchPrefixes []string
+	expiresAt      time.Time
+	label          string
 }
 
 // Anonymous returns the principal of a caller without credentials.
@@ -44,12 +47,13 @@ func Owner() Principal { return Principal{kind: kindOwner} }
 // TokenPrincipal returns the principal of the holder of a stored token.
 func TokenPrincipal(t Token) Principal {
 	return Principal{
-		kind:      kindToken,
-		tokenID:   t.ID,
-		scopes:    slices.Clone(t.Scopes),
-		repos:     slices.Clone(t.Repos),
-		expiresAt: t.ExpiresAt,
-		label:     t.Label,
+		kind:           kindToken,
+		tokenID:        t.ID,
+		scopes:         slices.Clone(t.Scopes),
+		repos:          slices.Clone(t.Repos),
+		branchPrefixes: slices.Clone(t.BranchPrefixes),
+		expiresAt:      t.ExpiresAt,
+		label:          t.Label,
 	}
 }
 
@@ -72,13 +76,13 @@ func (p Principal) Label() string {
 func (p Principal) IsRoot() bool { return p.kind == kindRoot || p.kind == kindOwner }
 
 // HasOwnerRights reports whether p is the owner: root, the owner's web
-// session, or a stored token that holds every scope and is not limited to a
-// list of repositories. It decides who may manage browser sessions.
+// session, or a stored token that holds every scope and is limited neither to
+// a list of repositories nor to branch prefixes. It decides who may manage browser sessions.
 func (p Principal) HasOwnerRights() bool {
 	if p.IsRoot() {
 		return true
 	}
-	if p.kind != kindToken || len(p.repos) > 0 {
+	if p.kind != kindToken || len(p.repos) > 0 || p.IsBranchLimited() {
 		return false
 	}
 	for _, s := range AllScopes() {
@@ -104,6 +108,54 @@ func (p Principal) Scopes() []Scope { return slices.Clone(p.scopes) }
 // Repos returns the repository list of a stored token; empty means every
 // repository.
 func (p Principal) Repos() []RepoName { return slices.Clone(p.repos) }
+
+// BranchPrefixes returns the branch prefixes of a stored token; empty means
+// every branch.
+func (p Principal) BranchPrefixes() []string { return slices.Clone(p.branchPrefixes) }
+
+// IsBranchLimited reports whether p is limited to branch prefixes. A limited
+// principal has no owner rights, creates no repository and administers none.
+func (p Principal) IsBranchLimited() bool { return len(p.branchPrefixes) > 0 }
+
+// CoversBranchPrefix reports whether s lies under one of the branch prefixes of
+// p: s starts with one of them. An empty prefix, which ParseBranchPrefix never
+// lets in, covers nothing instead of everything, so that a corrupt record
+// limits a token and never widens it. It is false without prefixes: callers
+// test IsBranchLimited first.
+func (p Principal) CoversBranchPrefix(s string) bool {
+	for _, prefix := range p.branchPrefixes {
+		if prefix != "" && strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsRef reports whether p may write the ref (create, update or delete
+// it). Without branch prefixes every ref is allowed. With them, only a branch
+// "refs/heads/<name>" under one of the prefixes is: tags, every other ref and
+// a branch outside the prefixes are not.
+//
+// It judges the name of the ref only, and rests on two assumptions about the
+// repositories ermite serves. First, no symbolic ref lives under refs/heads
+// (HEAD is the only symref): ermite never creates one and receive-pack cannot,
+// so a name under a prefix never points at a branch outside it. Second, ref
+// names are stored case-sensitively (Linux file systems): "refs/heads/Agent/x"
+// is not "refs/heads/agent/x". On a case-insensitive file system the two could
+// name the same ref and the prefixes would not hold.
+func (p Principal) AllowsRef(ref string) bool {
+	if !p.IsBranchLimited() {
+		return true
+	}
+	name, ok := strings.CutPrefix(ref, "refs/heads/")
+	if !ok {
+		return false
+	}
+	if _, err := ParseBranchName(name); err != nil {
+		return false
+	}
+	return p.CoversBranchPrefix(name)
+}
 
 // ExpiresAt returns the expiry of a stored token; zero means none.
 func (p Principal) ExpiresAt() time.Time { return p.expiresAt }

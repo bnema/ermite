@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	storagepb "bnema.dev/ermite/gen/ermite/storage"
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -191,4 +192,56 @@ func TestTokensConcurrentTouchAndRevoke(t *testing.T) {
 	} else {
 		assert.Len(t, list, 1)
 	}
+}
+
+func TestTokensBranchPrefixes(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("round trip, order kept", func(t *testing.T) {
+		s := openStore(t, t.TempDir())
+		tok := newToken(t, "t1", "s1")
+		tok.BranchPrefixes = []string{"b/", "agent/claude/"}
+		require.NoError(t, s.Tokens().Create(ctx, tok))
+		got, err := s.Tokens().Get(ctx, "t1")
+		require.NoError(t, err)
+		assert.Equal(t, tok, got)
+		byHash, err := s.Tokens().FindByHash(ctx, tok.Hash)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"b/", "agent/claude/"}, byHash.BranchPrefixes)
+	})
+
+	t.Run("a token stored before the field existed decodes with no prefixes", func(t *testing.T) {
+		dir := t.TempDir()
+		old := newToken(t, "old", "s-old")
+		putRaw(t, dir, "token/old", mustProto(t, &storagepb.Token{
+			Id: "old", Label: "old", Hash: old.Hash[:], Scopes: []string{"repo:write"},
+		}))
+		s := openStore(t, dir)
+		got, err := s.Tokens().Get(ctx, "old")
+		require.NoError(t, err)
+		assert.Empty(t, got.BranchPrefixes)
+		assert.Equal(t, []domain.Scope{domain.ScopeRepoWrite}, got.Scopes)
+	})
+
+	t.Run("an invalid prefix is not stored", func(t *testing.T) {
+		s := openStore(t, t.TempDir())
+		for _, bad := range []string{"", "agent", "/", "a b/"} {
+			tok := newToken(t, "t1", "s1")
+			tok.BranchPrefixes = []string{bad}
+			assert.ErrorIs(t, s.Tokens().Create(ctx, tok), domain.ErrInvalidToken, "%q", bad)
+		}
+		_, err := s.Tokens().Get(ctx, "t1")
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	})
+
+	t.Run("a stored prefix survives touch and stays limiting", func(t *testing.T) {
+		s := openStore(t, t.TempDir())
+		tok := newToken(t, "t1", "s1")
+		tok.BranchPrefixes = []string{"agent/"}
+		require.NoError(t, s.Tokens().Create(ctx, tok))
+		require.NoError(t, s.Tokens().Touch(ctx, "t1", created.Add(time.Hour)))
+		got, err := s.Tokens().Get(ctx, "t1")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"agent/"}, got.BranchPrefixes)
+	})
 }

@@ -21,6 +21,8 @@
 </script>
 <script src="/-/static/js/passkey.HASH.js" defer>
 </script>
+<script src="/-/static/js/log.HASH.js" defer>
+</script>
 </head>
 <body data-ref="main" data-sha="SHA40" data-sel="" data-nav="" data-paths="/diffs/paths/SHA40" data-blob="/diffs/blob/main">
 <a class="skip" href="#main">skip to content</a>
@@ -82,6 +84,10 @@
 <a href="/diffs/merge-requests" data-key="m" aria-keyshortcuts="m">Merge requests<kbd aria-hidden="true">m</kbd>
 </a>
 </li>
+<li>
+<a href="/diffs/actions" data-key="a" aria-keyshortcuts="a">Actions<kbd aria-hidden="true">a</kbd>
+</a>
+</li>
 </ul>
 </nav>
 </header>
@@ -108,6 +114,8 @@
 <a href="/diffs/commit/SHA40">add a very large file</a>
 <span class="pill">main</span>
 </td>
+<td class="c-ck">
+</td>
 <td class="c-who dim">T</td>
 <td class="c-when nowrap dim">
 <time datetime="STAMP" title="STAMP">AGO</time>
@@ -128,6 +136,8 @@
 <td class="c-sha mute">SHA7</td>
 <td class="c-subject">
 <a href="/diffs/commit/SHA40">add evil.go</a>
+</td>
+<td class="c-ck">
 </td>
 <td class="c-who dim">T</td>
 <td class="c-when nowrap dim">
@@ -151,6 +161,8 @@
 <a href="/diffs/commit/SHA40">merge the side branch</a>
 <span class="pill">merge</span>
 </td>
+<td class="c-ck">
+</td>
 <td class="c-who dim">T</td>
 <td class="c-when nowrap dim">
 <time datetime="STAMP" title="STAMP">AGO</time>
@@ -173,6 +185,8 @@
 <a href="/diffs/commit/SHA40">work on the side</a>
 <span class="pill">side</span>
 </td>
+<td class="c-ck">
+</td>
 <td class="c-who dim">T</td>
 <td class="c-when nowrap dim">
 <time datetime="STAMP" title="STAMP">AGO</time>
@@ -194,6 +208,8 @@
 <td class="c-subject">
 <a href="/diffs/commit/SHA40">change a binary file</a>
 </td>
+<td class="c-ck">
+</td>
 <td class="c-who dim">T</td>
 <td class="c-when nowrap dim">
 <time datetime="STAMP" title="STAMP">AGO</time>
@@ -214,6 +230,8 @@
 <td class="c-sha mute">SHA7</td>
 <td class="c-subject">
 <a href="/diffs/commit/SHA40">rename a file and delete another</a>
+</td>
+<td class="c-ck">
 </td>
 <td class="c-who dim">T</td>
 <td class="c-when nowrap dim">
@@ -238,6 +256,8 @@
 <span class="pill tag">
 <span class="sr">tag </span>v1.0.0</span>
 </td>
+<td class="c-ck">
+</td>
 <td class="c-who dim">T</td>
 <td class="c-when nowrap dim">
 <time datetime="STAMP" title="STAMP">AGO</time>
@@ -258,6 +278,8 @@
 <td class="c-sha mute">SHA7</td>
 <td class="c-subject">
 <a href="/diffs/commit/SHA40">root: the first files</a>
+</td>
+<td class="c-ck">
 </td>
 <td class="c-who dim">T</td>
 <td class="c-when nowrap dim">
@@ -306,7 +328,7 @@
            htmx:sse:close, htmx:sse:error -> data.state = 'offline';
            htmx:sse:error -> ermiteLive.error(event.detail.status);
            htmx:sse:before:connection -> ermiteLive.gate(event);
-           home-list, repo-last-push, refs-list, commits-head, mr-notice -> ermiteLive.swap(event.detail.data);
+           home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job -> ermiteLive.swap(event.detail.data);
            gap -> ermiteLive.reload()">
 </span>
 </div>
@@ -483,6 +505,12 @@
 <li data-k="section merge requests">
 <a href="/diffs/merge-requests" tabindex="-1">
 <span class="lbl">merge requests</span>
+<span class="k">section</span>
+</a>
+</li>
+<li data-k="section actions">
+<a href="/diffs/actions" tabindex="-1">
+<span class="lbl">actions</span>
 <span class="k">section</span>
 </a>
 </li>

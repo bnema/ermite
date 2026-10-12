@@ -17,8 +17,11 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
-// SchemaVersion is the storage schema this build reads and writes.
-const SchemaVersion = 1
+// SchemaVersion is the storage schema this build reads and writes. Version 2
+// adds branch prefixes to tokens: a build that does not know them would treat
+// a branch-limited token as unrestricted, so it must refuse the data
+// (ErrSchemaTooNew) instead.
+const SchemaVersion = 2
 
 const schemaKey = "meta/schema"
 
@@ -33,8 +36,8 @@ type Store struct {
 var _ ports.RepoMetaStore = (*Store)(nil)
 
 // Open opens (or creates) the database in dir and checks the storage schema:
-// a missing version is written as SchemaVersion, a higher one stops with
-// ErrSchemaTooNew. dir must exist.
+// a missing version is written as SchemaVersion, a lower one is upgraded to it,
+// a higher one stops with ErrSchemaTooNew. dir must exist.
 func Open(ctx context.Context, dir string) (*Store, error) {
 	db, err := kv.Open(ctx, dir, kv.Options{})
 	if err != nil {
@@ -106,6 +109,22 @@ func (s *Store) checkSchema(ctx context.Context) error {
 			return fmt.Errorf("%w: found %d, supported %d", ErrSchemaTooNew, sv.GetVersion(), SchemaVersion)
 		case sv.GetVersion() == 0:
 			return fmt.Errorf("decode storage schema: invalid version 0")
+		}
+		if sv.GetVersion() < SchemaVersion {
+			// Older data stays readable as it is (the changes are additive);
+			// the new version is recorded so that older builds refuse it.
+			var b kv.Batch
+			b.RequireVersion(key, item.Version)
+			b.Put(key, mustMarshal(&storagepb.SchemaVersion{Version: SchemaVersion}))
+			_, err := s.db.Apply(ctx, &b)
+			if errors.Is(err, kv.ErrConflict) {
+				continue // changed meanwhile: read it again
+			}
+			if err != nil {
+				return fmt.Errorf("upgrade storage schema: %w", err)
+			}
+			log.Info().Uint32("from", sv.GetVersion()).Uint32("schema", SchemaVersion).Msg("storage schema upgraded")
+			return nil
 		}
 		log.Info().Uint32("schema", sv.GetVersion()).Msg("storage schema checked")
 		return nil

@@ -54,6 +54,10 @@ type Config struct {
 	// there are no such pages, nor section for them. Leave it unset rather
 	// than assigning a typed nil pointer.
 	MergeRequests ports.MergeRequestService
+	// Runs serves the CI pages (/<repo>/actions) and the checks shown next to
+	// commits and merge requests. Without it there are no such pages. Leave it
+	// unset rather than assigning a typed nil pointer.
+	Runs ports.RunService
 	// Events is the source of the event stream behind /-/events. Without
 	// it the pages are not live and the route answers 404. Leave it unset
 	// rather than assigning a typed nil pointer.
@@ -168,6 +172,17 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/merge", s.mrAction(s.mrMerge))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/close", s.mrAction(s.mrClose))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/read", s.mrAction(s.mrRead))
+	}
+	if s.cfg.Runs != nil {
+		mux.HandleFunc("GET /{repo}/actions", s.page(s.actions))
+		mux.HandleFunc("GET /{repo}/actions/{$}", s.page(s.actions))
+		mux.HandleFunc("GET /{repo}/actions/runs/{id}", s.page(s.run))
+		mux.HandleFunc("GET /{repo}/actions/runs/{id}/job/{job}", s.page(s.job))
+		mux.HandleFunc("GET /{repo}/actions/runs/{id}/job/{job}/raw", s.rawLog)
+		mux.HandleFunc("GET /{repo}/actions/runs/{id}/job/{job}/stream", s.logStream)
+		mux.HandleFunc("POST /{repo}/actions/runs/{id}/cancel", s.ciAction(s.runCancel))
+		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun", s.ciAction(s.runRerun(false)))
+		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun-failed", s.ciAction(s.runRerun(true)))
 	}
 	mux.HandleFunc("GET /{repo}/{rest...}", s.page(s.notFound))
 	return mux

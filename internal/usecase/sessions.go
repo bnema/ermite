@@ -74,13 +74,13 @@ func NewSessions(ctx context.Context, store ports.SessionStore, clock ports.Cloc
 }
 
 // requireOwner is the access rule of the session API: root, or a stored token
-// with every scope and no repository list.
+// with every scope, no repository list and no branch prefixes.
 func requireOwner(p domain.Principal) error {
 	switch {
 	case p.IsAnonymous():
 		return domain.ErrUnauthenticated
 	case !p.HasOwnerRights():
-		return fmt.Errorf("%w: managing web sessions needs the admin token or a token with every scope and no repository list", domain.ErrForbidden)
+		return fmt.Errorf("%w: managing web sessions needs the admin token or a token with every scope, no repository list and no branch prefixes", domain.ErrForbidden)
 	}
 	return nil
 }

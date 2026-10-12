@@ -46,7 +46,7 @@ func (r *Repos) View(ctx context.Context, repo domain.Repo) (ports.RepoView, err
 
 // Update changes the description, the visibility, the default branch and the
 // merge settings of a repository, and publishes RepoUpdated. The principal needs repo:admin on it
-// (see adminAccess for what the others learn). At least one field must be set,
+// (see adminAccess for what the others learn) and no branch prefixes. At least one field must be set,
 // else domain.ErrInvalid. A default branch that does not exist gives
 // domain.ErrPreconditionFailed; nothing is written before every check passed.
 // The metadata is written first, then HEAD, and RepoUpdated is published after
@@ -174,7 +174,7 @@ func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params por
 
 // Delete moves the repository directory to the trash, removes its metadata
 // and publishes RepoDeleted. The principal needs repo:admin on it (see
-// adminAccess). A repository whose directory is already gone, left by a
+// adminAccess) and no branch prefixes. A repository whose directory is already gone, left by a
 // delete that failed half way, loses its metadata.
 func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.RepoName) error {
 	repo, err := lookupRepo(ctx, r.meta, name)
@@ -191,8 +191,22 @@ func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.Repo
 	case err != nil:
 		return fmt.Errorf("trash repository %q: %w", name, err)
 	}
+	var runIDs []int64
+	if r.ci != nil {
+		// Listed before the records go: the logs are found by run id.
+		if ids, err := r.ci.RunIDs(ctx, name); err == nil {
+			runIDs = ids
+		} else {
+			log.Warn().Err(err).Str("repo", name.String()).Msg("list the CI runs of the repository; their logs are left to the sweep")
+		}
+	}
 	if err := r.meta.Delete(ctx, name); err != nil {
 		return fmt.Errorf("delete metadata of %q: %w", name, err)
+	}
+	if len(runIDs) > 0 {
+		if err := r.ci.RemoveLogs(context.WithoutCancel(ctx), runIDs); err != nil {
+			log.Warn().Err(err).Str("repo", name.String()).Msg("remove the CI logs of the repository; the sweep will")
+		}
 	}
 	log.Info().Str("repo", name.String()).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("repository deleted")
 	r.bus.Publish(ctx, domain.RepoDeleted{Repo: name, Visibility: repo.Visibility, At: r.clock.Now().UTC(), CreatedAt: repo.CreatedAt})

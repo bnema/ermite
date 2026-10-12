@@ -25,7 +25,7 @@ func newWebCmd(env *cliEnv) *cobra.Command {
 		Use:   "web",
 		Short: "Sign the owner in to the web interface of a remote server",
 		Long: "Manage the owner's browser sessions and passkeys on a remote server. They need the server's admin\n" +
-			"token, or a token that holds every scope and is not limited to repositories.",
+			"token, or a token that holds every scope and is limited neither to repositories nor to branches.",
 	}
 	web.AddCommand(newWebLoginCmd(env), newWebLogoutCmd(env), newWebPasskeyCmd(env))
 	return web
@@ -45,7 +45,7 @@ func newWebLoginCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -77,7 +77,7 @@ func newWebLogoutCmd(env *cliEnv) *cobra.Command {
 		if !all {
 			return errors.New("--all is required: this signs every browser out (one browser signs out from its page)")
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -133,7 +133,7 @@ func newWebPasskeyListCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -188,7 +188,7 @@ func newWebPasskeyRemoveCmd(env *cliEnv) *cobra.Command {
 			return ids, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := env.client(cmd, true)
+			c, err := env.client(cmd)
 			if err != nil {
 				return err
 			}

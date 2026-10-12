@@ -5,6 +5,7 @@ package rpc
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -156,6 +157,7 @@ func tokenToPB(t domain.Token) *pb.Token {
 	for _, r := range t.Repos {
 		out.Repos = append(out.Repos, r.String())
 	}
+	out.BranchPrefixes = slices.Clone(t.BranchPrefixes)
 	return out
 }
 
@@ -392,6 +394,12 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	case domain.CommentAdded:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_CommentAdded{CommentAdded: &pb.CommentAdded{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}
+	case domain.RunUpdated:
+		out.Time = timestamp(ev.At)
+		out.Kind = runEventToPB(ev)
+	case domain.JobUpdated:
+		out.Time = timestamp(ev.At)
+		out.Kind = jobEventToPB(ev)
 	default:
 		return nil
 	}

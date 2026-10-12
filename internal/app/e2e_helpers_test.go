@@ -56,6 +56,12 @@ type harnessOpts struct {
 // lives in it and Unix socket paths are limited to about 100 bytes.
 func newHarness(t *testing.T, o harnessOpts) *harness {
 	t.Helper()
+	return newHarnessWith(t, o, nil)
+}
+
+// newHarnessWith is newHarness with a change of the wiring options.
+func newHarnessWith(t *testing.T, o harnessOpts, tweak func(*options)) *harness {
+	t.Helper()
 	gitBin := requireGit(t)
 	data, err := os.MkdirTemp("", "ermite")
 	require.NoError(t, err)
@@ -90,7 +96,11 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	if hookExe == "" {
 		hookExe = binary(t)
 	}
-	f, err := newForge(ctx, cfg, options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody, eventBuffer: o.eventBuffer, revalidateEvery: o.revalidateEvery})
+	opts := options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody, eventBuffer: o.eventBuffer, revalidateEvery: o.revalidateEvery}
+	if tweak != nil {
+		tweak(&opts)
+	}
+	f, err := newForge(ctx, cfg, opts)
 	require.NoError(t, err)
 
 	h := &harness{t: t, forge: f, data: data, logs: logs, ctx: ctx, cancel: cancel, hooksDone: make(chan error, 1)}

@@ -358,7 +358,8 @@ func assertNoMergeRequestKeys(t *testing.T, mrs *kvstore.MergeRequests, n domain
 }
 
 // TestDeleteRacingWithWrites: writes racing with Delete either land before it
-// and are deleted, or are refused after it; nothing is left for a repository
+// and are deleted, or are refused (not found after it, or a conflict when the
+// retries run out under this contention); nothing is left for a repository
 // created again under the name.
 func TestDeleteRacingWithWrites(t *testing.T) {
 	ctx := context.Background()
@@ -376,7 +377,7 @@ func TestDeleteRacingWithWrites(t *testing.T) {
 					if w%2 == 0 {
 						err := mrs.SetRead(ctx, n, mr.Number, oid('a'))
 						if err != nil {
-							assert.ErrorIs(t, err, domain.ErrNotFound)
+							assert.True(t, errors.Is(err, domain.ErrConflict) || errors.Is(err, domain.ErrNotFound), "round %d: %v", round, err)
 							return
 						}
 						continue

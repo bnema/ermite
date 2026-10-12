@@ -138,6 +138,9 @@ type CommitRow struct {
 	Branches []string
 	Tags     []string
 	Cursor   bool
+	// Checks is the combined state of the CI checks of the commit; empty when
+	// it has none.
+	Checks ChecksSummary
 }
 
 // SummaryPage is the repository summary.
@@ -165,6 +168,8 @@ type LatestTag struct {
 type RefRow struct {
 	Name, Href, Short, CHref, Subject, When, WhenAt string
 	Default, Cursor                                 bool
+	// Checks is the combined state of the CI checks of the commit.
+	Checks ChecksSummary
 }
 
 // RefsPage lists the branches and tags of a repository.

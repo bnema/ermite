@@ -255,7 +255,9 @@ type MergeRequestStore interface {
 	// ObjectID when there is none.
 	GetRead(ctx context.Context, repo domain.RepoName, number int64) (domain.ObjectID, error)
 	// SetRead records the head the reviewer has read. It returns
-	// domain.ErrNotFound when the repository does not exist.
+	// domain.ErrNotFound when the repository does not exist, and
+	// domain.ErrConflict when concurrent writes to the repository keep it
+	// from landing.
 	SetRead(ctx context.Context, repo domain.RepoName, number int64, head domain.ObjectID) error
 }
 

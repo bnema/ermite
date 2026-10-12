@@ -3,6 +3,7 @@
 package domain_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -110,4 +111,130 @@ func TestHasOwnerRights(t *testing.T) {
 	assert.True(t, domain.TokenPrincipal(domain.Token{Scopes: all}).HasOwnerRights())
 	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[1:]}).HasOwnerRights(), "a scope short")
 	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all, Repos: []domain.RepoName{a}}).HasOwnerRights(), "limited to a repository")
+}
+
+func TestParseBranchPrefix(t *testing.T) {
+	t.Parallel()
+	for _, ok := range []string{"agent/", "agent/claude/", "a/b/c/", "feat-1/", strings.Repeat("a", 99) + "/"} {
+		got, err := domain.ParseBranchPrefix(ok)
+		require.NoError(t, err, ok)
+		assert.Equal(t, ok, got)
+	}
+	for _, bad := range []string{
+		"", "/", "agent", "agent/claude", "//", "agent//", "/agent/", "-x/", ".x/", "a/.b/", "a..b/",
+		"a b/", "a~/", "a:/", "a?/", "a*/", "a[/", "a\\/", "a@{/", "x.lock/", "a\x00/", "a\n/", "\xff/",
+		"refs/heads/agent/", "agent.//", strings.Repeat("a", 100) + "/",
+	} {
+		_, err := domain.ParseBranchPrefix(bad)
+		assert.ErrorIs(t, err, domain.ErrInvalidToken, "%q", bad)
+	}
+}
+
+func TestParseBranchPrefixes(t *testing.T) {
+	t.Parallel()
+	got, err := domain.ParseBranchPrefixes(nil)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+
+	got, err = domain.ParseBranchPrefixes([]string{"b/", "a/", "b/"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"b/", "a/"}, got, "duplicates removed, order kept")
+
+	eight := []string{"a/", "b/", "c/", "d/", "e/", "f/", "g/", "h/"}
+	got, err = domain.ParseBranchPrefixes(eight)
+	require.NoError(t, err)
+	assert.Len(t, got, 8)
+	_, err = domain.ParseBranchPrefixes(append(eight, "i/"))
+	assert.ErrorIs(t, err, domain.ErrInvalidToken)
+	got, err = domain.ParseBranchPrefixes(append(eight, "a/"))
+	require.NoError(t, err, "duplicates do not count")
+	assert.Len(t, got, 8)
+
+	_, err = domain.ParseBranchPrefixes([]string{"a/", "bad"})
+	assert.ErrorIs(t, err, domain.ErrInvalidToken)
+}
+
+func TestAllowsRef(t *testing.T) {
+	t.Parallel()
+	limited := domain.TokenPrincipal(domain.Token{
+		Scopes: []domain.Scope{domain.ScopeRepoWrite}, BranchPrefixes: []string{"agent/claude/", "bot/"},
+	})
+	for ref, want := range map[string]bool{
+		"refs/heads/agent/claude/x":       true,
+		"refs/heads/agent/claude/a/b":     true,
+		"refs/heads/bot/y":                true,
+		"refs/heads/agent/claude":         false,
+		"refs/heads/agent/claude/":        false,
+		"refs/heads/agent/claudex/y":      false,
+		"refs/heads/main":                 false,
+		"refs/heads/agent/other/x":        false,
+		"refs/heads/other/agent/claude/x": false,
+		"refs/tags/v1":                    false,
+		"refs/tags/agent/claude/x":        false,
+		"refs/notes/commits":              false,
+		"refs/remotes/agent/claude/x":     false,
+		"refs/changes/agent/claude/x":     false,
+		"agent/claude/x":                  false,
+		"heads/agent/claude/x":            false,
+		"HEAD":                            false,
+		"":                                false,
+		"refs/heads/agent/claude/../main": false,
+		"refs/heads/agent/claude/x.lock":  false,
+		"refs/heads/agent/claude/a b":     false,
+		"refs/heads//agent/claude/x":      false,
+	} {
+		assert.Equal(t, want, limited.AllowsRef(ref), "%q", ref)
+	}
+
+	// A corrupt empty prefix still limits the token and allows nothing.
+	corrupt := domain.TokenPrincipal(domain.Token{Scopes: []domain.Scope{domain.ScopeRepoWrite}, BranchPrefixes: []string{""}})
+	assert.False(t, corrupt.AllowsRef("refs/heads/main"))
+
+	// Without prefixes every ref is allowed.
+	unlimited := domain.TokenPrincipal(domain.Token{Scopes: []domain.Scope{domain.ScopeRepoWrite}})
+	assert.True(t, unlimited.AllowsRef("refs/tags/v1"))
+	assert.True(t, unlimited.AllowsRef("refs/heads/main"))
+	assert.True(t, domain.Root().AllowsRef("refs/tags/v1"))
+	assert.True(t, domain.Owner().AllowsRef("refs/heads/main"))
+}
+
+func TestBranchPrefixesOfPrincipal(t *testing.T) {
+	t.Parallel()
+	tok := domain.Token{Scopes: domain.AllScopes(), BranchPrefixes: []string{"a/"}}
+	p := domain.TokenPrincipal(tok)
+	assert.Equal(t, []string{"a/"}, p.BranchPrefixes())
+	assert.False(t, p.HasOwnerRights(), "a token with every scope but limited branches is not the owner")
+	assert.True(t, domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes()}).HasOwnerRights())
+
+	// The principal owns copies.
+	tok.BranchPrefixes[0] = "b/"
+	assert.Equal(t, []string{"a/"}, p.BranchPrefixes())
+	p.BranchPrefixes()[0] = "c/"
+	assert.Equal(t, []string{"a/"}, p.BranchPrefixes())
+	assert.Empty(t, domain.Root().BranchPrefixes())
+}
+
+func TestBranchLimitedAndCoversBranchPrefix(t *testing.T) {
+	t.Parallel()
+	free := domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes()})
+	assert.False(t, free.IsBranchLimited())
+	assert.False(t, free.CoversBranchPrefix("agent/x"), "no prefixes cover nothing: callers test IsBranchLimited first")
+	assert.False(t, domain.Root().IsBranchLimited())
+	assert.False(t, domain.Owner().IsBranchLimited())
+	assert.False(t, domain.Anonymous().IsBranchLimited())
+
+	limited := domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes(), BranchPrefixes: []string{"agent/claude/", "bot/"}})
+	assert.True(t, limited.IsBranchLimited())
+	for s, want := range map[string]bool{
+		"agent/claude/x": true, "agent/claude/": true, "bot/y": true,
+		"agent/claude": false, "agent/claudex/y": false, "main": false, "": false, "xbot/y": false,
+	} {
+		assert.Equal(t, want, limited.CoversBranchPrefix(s), "%q", s)
+	}
+
+	// A corrupt empty prefix still limits, and covers nothing.
+	corrupt := domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes(), BranchPrefixes: []string{""}})
+	assert.True(t, corrupt.IsBranchLimited())
+	assert.False(t, corrupt.CoversBranchPrefix("main"))
+	assert.False(t, corrupt.CoversBranchPrefix(""))
 }

@@ -61,6 +61,9 @@ type CreateTokenParams struct {
 	Scopes []domain.Scope
 	// Repos limits the token to these repositories; empty means every one.
 	Repos []domain.RepoName
+	// BranchPrefixes limits the token to the branches under these prefixes
+	// (see domain.ParseBranchPrefix); empty means every branch.
+	BranchPrefixes []string
 	// ExpiresAt is the zero time for a token that never expires.
 	ExpiresAt time.Time
 }
@@ -137,8 +140,8 @@ type WatchEvent struct {
 	// Event is nil then.
 	Gap bool
 	// Event is a domain.RepoCreated, RepoUpdated, RepoDeleted, PushEvent,
-	// MergeRequestOpened, MergeRequestMerged, MergeRequestClosed or
-	// CommentAdded.
+	// MergeRequestOpened, MergeRequestMerged, MergeRequestClosed,
+	// CommentAdded, RunUpdated or JobUpdated.
 	Event domain.Event
 	// Repo is the state of the repository at delivery, for RepoCreated and
 	// RepoUpdated.

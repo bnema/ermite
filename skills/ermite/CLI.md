@@ -1,6 +1,6 @@
 # ermite CLI reference
 
-Remote commands read `ERMITE_URL` (`http://` or `https://`) and `ERMITE_TOKEN` (optional for public reads). Run `ermite <command> --help` for the authoritative text of a command and its JSON fields.
+Remote commands read `ERMITE_URL` (`http://` or `https://`) and `ERMITE_TOKEN` (optional for public reads); they fall back to the `url` and `token.cmd` of the config file (`~/.config/ermite/config`, the platform config dir on macOS and Windows, or the file named by `ERMITE_CONFIG`; `ermite config show` prints the path), the environment first (`token.cmd` is only run for the server of the file: with a different `ERMITE_URL` set `ERMITE_TOKEN` too). Agents: use `ERMITE_TOKEN`, or your own `ERMITE_CONFIG` file; do not edit the owner's `~/.config/ermite/config` and never run `token.cmd` yourself or print what it prints. Run `ermite <command> --help` for the authoritative text of a command and its JSON fields.
 
 Errors are one line on standard error (`ermite: ...`) with exit status 1. `--json` prints stable field names. `ermite completion bash|zsh|fish` completes repository names from the server.
 
@@ -20,7 +20,7 @@ Repository JSON: `name`, `description`, `visibility`, `default_branch`, `created
 
 | Command | Scope | Notes |
 |---|---|---|
-| `token create <label> [--preset cli\|agent\|ci] [--scope S] [--repo R] [--expires 30d\|2w\|12h\|2027-01-31] [--json]` | `token:admin` | secret printed once on standard output; there is no default scope |
+| `token create <label> [--preset cli\|agent\|ci] [--scope S] [--repo R] [--branch-prefix P] [--expires 30d\|2w\|12h\|2027-01-31] [--json]` | `token:admin` | secret printed once on standard output; there is no default scope |
 | `token list [--json]` | `token:admin` | secrets are never shown; the admin token is not listed |
 | `token revoke <id>` | `token:admin` | |
 
@@ -44,7 +44,9 @@ Scopes:
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
 
-A token can never grant more than the token that creates it. `--repo` (repeatable) limits it to those repositories; the default is all. Labels are free text up to 100 bytes; `owner` and `root` are reserved. Token JSON: `id`, `label`, `scopes`, `repos`, `expires_at`, `created_at`, `last_used_at`.
+A token can never grant more than the token that creates it. `--repo` (repeatable) limits it to those repositories; the default is all. Labels are free text up to 100 bytes; `owner` and `root` are reserved. Token JSON: `id`, `label`, `scopes`, `repos`, `branch_prefixes`, `expires_at`, `created_at`, `last_used_at`.
+
+`--branch-prefix` (repeatable, up to 8, each ending with `/`, for example `agent/claude/`) limits the branches the token may write; the default is all. A limited token pushes, force-pushes and deletes only `refs/heads/<prefix>…`: any other ref (`main`, tags, notes) refuses the whole push, naming the ref. It cannot create or delete a repository or change its settings (`repo edit`: default branch, visibility, description, merge modes), merges only into branches under its prefixes (and deletes only a source branch under them), never has owner rights, and creates only tokens within its own prefixes. A token for an agent: `ermite token create claude --preset agent --scope repo:read --repo <repo> --branch-prefix agent/claude/`. If you hold such a token, work on a branch under your prefix and open a merge request; do not try `main` or tags.
 
 ## Merge requests
 
@@ -77,9 +79,10 @@ Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `
 | Command | Notes |
 |---|---|
 | `serve` | configured by `ERMITE_*` environment variables only (see the project README) |
-| `version [--json]` | client version; with `ERMITE_URL`, the server version and features |
+| `version [--json]` | client version; with a server URL (`ERMITE_URL` or the config file), the server version and features |
+| `config show [--json]` / `config set <url\|token.cmd> <value>` / `config unset <key>` | the CLI config file; `token.cmd` is a command that prints the token (any secret manager), never the token itself; `show` never runs it |
 | `signing-key show` | public key and `allowed_signers` line to check squash commits with `git verify-commit` |
-| `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope and no repository list; the link is a secret |
+| `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope, no repository list and no branch prefix; the link is a secret |
 | `web logout --all` | signs every browser out |
 | `web passkey list [--json]` | the owner's passkeys (`id`, `name`, `created_at`, `last_used_at`, `synced`); same rights as `web login`; fails with "passkeys are not available on this server" when the public URL is not https with a host name |
 | `web passkey remove <id>` | removes a passkey and signs every browser out; the id comes from `list` |
