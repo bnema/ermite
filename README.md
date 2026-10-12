@@ -37,8 +37,10 @@ The same binary drives a running server over its API. It reads `ERMITE_URL` (the
 ```sh
 export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...
 ermite repo list | show <name> | create <name> [--description …] [--visibility public] | edit <name> [--description …] [--visibility …] [--default-branch …] | delete <name> [--yes]
-ermite token create <label> [--preset cli|agent|ci] [--scope repo:read …] [--repo name …] [--expires 30d]   # prints the secret once
+ermite token create <label> [--preset cli|agent|ci] [--scope repo:read …] [--repo name …] [--branch-prefix agent/x/ …] [--expires 30d]   # prints the secret once
 ermite token list | revoke <id>
+# a token for an AI agent that cannot touch main:
+ermite token create claude --preset agent --scope repo:read --repo myrepo --branch-prefix agent/claude/
 ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
 ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | resolve <repo> <n> <comment>
 ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
@@ -61,6 +63,16 @@ git push http://u:<token>@git.example.com/<repo>.git main
 ```
 
 Use the admin token (`ERMITE_ADMIN_TOKEN`) or a stored token as the password; the username is ignored. Store it in a Git credential helper rather than in the URL. Pushing to a new name creates a private repository. Repository names are lowercase, `[a-z0-9._-]`. TLS is terminated by your proxy; list its network in `ERMITE_TRUSTED_PROXIES` so that failed-login limits see the real client address (`X-Forwarded-For`).
+
+## Branch-limited tokens
+
+For an AI agent that should propose changes, not publish them: `--branch-prefix agent/claude/` (repeatable, up to 8, each ending with `/`) limits a token to the branches under its prefixes.
+
+- It can push, force-push and delete `refs/heads/agent/claude/…`. Any other ref (`main`, other branches, tags, notes, anything outside `refs/heads/`) refuses the whole push, and the message names the ref.
+- It cannot create a repository (push to a new name, or `repo create`) nor delete one, never has the rights of the owner (it cannot open web sessions even with every scope), and can only create tokens whose prefixes lie within its own.
+- It opens, comments on and closes merge requests as usual; with `mr:merge` it can merge only into a branch under its prefixes, and delete only a source branch under them. You review and merge the agent's request.
+- `ermite token list` shows a `branches` column (`all` when unlimited); `--json` has `branch_prefixes`.
+- This build stores tokens in storage schema 2. Once it has started on your data, an older ermite refuses to start on it (it would read limited tokens as unrestricted): to go back, restore the backup taken before the upgrade.
 
 ## Merge requests
 

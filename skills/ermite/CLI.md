@@ -20,7 +20,7 @@ Repository JSON: `name`, `description`, `visibility`, `default_branch`, `created
 
 | Command | Scope | Notes |
 |---|---|---|
-| `token create <label> [--preset cli\|agent\|ci] [--scope S] [--repo R] [--expires 30d\|2w\|12h\|2027-01-31] [--json]` | `token:admin` | secret printed once on standard output; there is no default scope |
+| `token create <label> [--preset cli\|agent\|ci] [--scope S] [--repo R] [--branch-prefix P] [--expires 30d\|2w\|12h\|2027-01-31] [--json]` | `token:admin` | secret printed once on standard output; there is no default scope |
 | `token list [--json]` | `token:admin` | secrets are never shown; the admin token is not listed |
 | `token revoke <id>` | `token:admin` | |
 
@@ -44,7 +44,9 @@ Scopes:
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
 
-A token can never grant more than the token that creates it. `--repo` (repeatable) limits it to those repositories; the default is all. Labels are free text up to 100 bytes; `owner` and `root` are reserved. Token JSON: `id`, `label`, `scopes`, `repos`, `expires_at`, `created_at`, `last_used_at`.
+A token can never grant more than the token that creates it. `--repo` (repeatable) limits it to those repositories; the default is all. Labels are free text up to 100 bytes; `owner` and `root` are reserved. Token JSON: `id`, `label`, `scopes`, `repos`, `branch_prefixes`, `expires_at`, `created_at`, `last_used_at`.
+
+`--branch-prefix` (repeatable, up to 8, each ending with `/`, for example `agent/claude/`) limits the branches the token may write; the default is all. A limited token pushes, force-pushes and deletes only `refs/heads/<prefix>…`: any other ref (`main`, tags, notes) refuses the whole push, naming the ref. It cannot create or delete a repository, merges only into branches under its prefixes (and deletes only a source branch under them), never has owner rights, and creates only tokens within its own prefixes. A token for an agent: `ermite token create claude --preset agent --scope repo:read --repo <repo> --branch-prefix agent/claude/`. If you hold such a token, work on a branch under your prefix and open a merge request; do not try `main` or tags.
 
 ## Merge requests
 
