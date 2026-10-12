@@ -1,6 +1,6 @@
 # ermite CLI reference
 
-Remote commands read `ERMITE_URL` (`http://` or `https://`) and `ERMITE_TOKEN` (optional for public reads). Run `ermite <command> --help` for the authoritative text of a command and its JSON fields.
+Remote commands read `ERMITE_URL` (`http://` or `https://`) and `ERMITE_TOKEN` (optional for public reads); they fall back to the `url` and `token.cmd` of the config file (`~/.config/ermite/config`, the platform config dir on macOS and Windows, or the file named by `ERMITE_CONFIG`; `ermite config show` prints the path), the environment first (`token.cmd` is only run for the server of the file: with a different `ERMITE_URL` set `ERMITE_TOKEN` too). Agents: use `ERMITE_TOKEN`, or your own `ERMITE_CONFIG` file; do not edit the owner's `~/.config/ermite/config` and never run `token.cmd` yourself or print what it prints. Run `ermite <command> --help` for the authoritative text of a command and its JSON fields.
 
 Errors are one line on standard error (`ermite: ...`) with exit status 1. `--json` prints stable field names. `ermite completion bash|zsh|fish` completes repository names from the server.
 
@@ -79,7 +79,8 @@ Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `
 | Command | Notes |
 |---|---|
 | `serve` | configured by `ERMITE_*` environment variables only (see the project README) |
-| `version [--json]` | client version; with `ERMITE_URL`, the server version and features |
+| `version [--json]` | client version; with a server URL (`ERMITE_URL` or the config file), the server version and features |
+| `config show [--json]` / `config set <url\|token.cmd> <value>` / `config unset <key>` | the CLI config file; `token.cmd` is a command that prints the token (any secret manager), never the token itself; `show` never runs it |
 | `signing-key show` | public key and `allowed_signers` line to check squash commits with `git verify-commit` |
 | `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope, no repository list and no branch prefix; the link is a secret |
 | `web logout --all` | signs every browser out |

@@ -1,5 +1,7 @@
-bnema.dev/ermite-api v0.0.0-20261012144722-abe47d3bceb4 h1:iI+rw7PeE+Qljx9Ye2GxANZi3SwUIrxOlKvvbKa6O54=
-bnema.dev/ermite-api v0.0.0-20261012144722-abe47d3bceb4/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
+bnema.dev/ermite-actions v0.0.0-20261012192445-fcc31accb5a4 h1:3TBeF1oKAan41P2AiU1KLGYc4ZTG5KweCe5klMMIkxk=
+bnema.dev/ermite-actions v0.0.0-20261012192445-fcc31accb5a4/go.mod h1:qoIB/Iz4xKdLUG4R6wuBDk6cemdugR+UEo5bpSJJYh4=
+bnema.dev/ermite-api v0.0.0-20261012155218-f8f64413e63c h1:XFaUL8e/4reQ/0M3JUwi/4dmTWspxgwXXg3UQKmFoXQ=
+bnema.dev/ermite-api v0.0.0-20261012155218-f8f64413e63c/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
 bnema.dev/ermite-git v0.1.0 h1:8GNhQDj0MxyvrI4kHewZ9k0rT86e9348T3BJ49WHfmI=
 bnema.dev/ermite-git v0.1.0/go.mod h1:m9d4VYHm28mrY6VxVqWQMRIsadGq80FeLub/nrZX6Cg=
 bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3 h1:PVTDOWTg9JJZrnJznTHSCB1Vcc+x2n6zMgZkKiFwvuw=
@@ -106,6 +108,8 @@ github.com/bmatcuk/doublestar/v4 v4.10.0 h1:zU9WiOla1YA122oLM6i4EXvGW62DvKZVxIe6
 github.com/bmatcuk/doublestar/v4 v4.10.0/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/bnema/hexcheck v0.3.1 h1:Apv7w0KmsfbOBOq/r1jPlENX3Z7ukAEPlAxvWMTTd3I=
 github.com/bnema/hexcheck v0.3.1/go.mod h1:8KuFStFhn1qNKDBrUvxOB5VzSP/uuePrURqPhq2KVAk=
+github.com/bnema/kvconf v0.1.2 h1:1hDKL9jkQSBdR9dSKbwTONhUUBfJgAdh5vu+yFHOb70=
+github.com/bnema/kvconf v0.1.2/go.mod h1:+P2X9I/sLx+Lfir45s9a7WA0GnC22WgKbZWE9LK6lcU=
 github.com/bnema/zerowrap v1.4.1 h1:v70w8LDU2+FU+EX/etY9DjVwOAWN0fUKShwZyZHnyLU=
 github.com/bnema/zerowrap v1.4.1/go.mod h1:8M8Qz3uRpbszYkXqi0Dnr1TZ4lDrQY8/orGm30zwKKg=
 github.com/brianvoe/gofakeit/v6 v6.28.0 h1:Xib46XXuQfmlLS2EXRuJpqcw8St6qSZz75OUo0tgAW4=

@@ -27,33 +27,62 @@ ermite serve
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
 | `ERMITE_COMMITTER_NAME` | `ermite` | committer of squash merges |
 | `ERMITE_COMMITTER_EMAIL` | `ermite@<public host>` | committer email of squash merges |
+| `ERMITE_OWNER` | `owner` | owner login that CI shows in `github.repository` (`<owner>/<repo>`) and `github.repository_owner`; follows the rules of repository names |
+| `ERMITE_CI_LOG_RETENTION` | `90d` | how long CI runs, jobs, checks and logs are kept: `Nd` (days) or a Go duration such as `720h`, at least one hour |
 
-`ermite version` prints the version (and the server's when `ERMITE_URL` is set).
+`ermite version` prints the version (and the server's when a server URL is configured, see Remote CLI).
 
 ## Remote CLI
 
 The same binary drives a running server over its API. It reads `ERMITE_URL` (the server address, `http://` or `https://`) and `ERMITE_TOKEN` (a bearer token; optional for public reads). A token sent over plain `http://` to a host that is not loopback triggers a warning on every call.
 
+Each setting comes from the environment or from a config file, the environment first:
+
+| Setting | Environment | Config file key |
+|---|---|---|
+| server address | `ERMITE_URL` | `url` |
+| bearer token (optional for public reads) | `ERMITE_TOKEN` | `token.cmd`, a command that prints it |
+
+The file is `~/.config/ermite/config` (`$XDG_CONFIG_HOME/ermite/config` when set; `~/Library/Application Support/ermite/config` on macOS and `%AppData%\ermite\config` on Windows; `ERMITE_CONFIG` names another file). `ermite config show` prints the path in use. It holds no secret: `token.cmd` is a command line that fetches the token from your secret manager (pass, gopass, op, bw, secret-tool, …).
+
+```ini
+# ~/.config/ermite/config
+url       = https://git.example.com
+token.cmd = pass show ermite/token
+```
+
+```sh
+ermite config set url https://git.example.com
+ermite config set token.cmd 'pass show ermite/token'   # or: gopass show -o ermite/token, op read op://vault/ermite/token, secret-tool lookup service ermite
+ermite config show [--json]                             # path and stored values; unset removes a key
+```
+
+`token.cmd` runs with `sh -c` (`cmd /C` on Windows) only when a command needs the token, at most once per run, with your environment and, when standard input is a terminal, that terminal (so a pinentry or biometric prompt works; otherwise it reads nothing). On a timeout or when ermite is interrupted or terminated, the command and everything it started are killed (when standard input is a terminal, only the shell is, so that prompts keep working). It must print the token alone on one line, in under 4 KiB, within 60 seconds. It is not run when `ERMITE_TOKEN` is set, nor by `ermite version` or `ermite config`, and not when the config file, or the directory holding it, can be written by other users or the file belongs to another user (`ermite config show` and `set` warn about it). On Windows this check does not exist: keep the file in your own profile, the default place. It belongs to the server of the file: when `ERMITE_URL` names a different server than the file's `url`, it is not run and the call is anonymous (with a notice; set `ERMITE_TOKEN` to authenticate there). A failure is reported in one line without its output. Shell completion never runs it: it is anonymous unless `ERMITE_TOKEN` is set.
+
 ```sh
 export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...
 ermite repo list | show <name> | create <name> [--description …] [--visibility public] | edit <name> [--description …] [--visibility …] [--default-branch …] | delete <name> [--yes]
-ermite token create <label> [--preset cli|agent|ci] [--scope repo:read …] [--repo name …] [--branch-prefix agent/x/ …] [--expires 30d]   # prints the secret once
+ermite token create <label> [--preset cli|agent|ci|runner] [--scope repo:read …] [--repo name …] [--branch-prefix agent/x/ …] [--expires 30d]   # prints the secret once
 ermite token list | revoke <id>
 # a token for an AI agent that cannot touch main:
 ermite token create claude --preset agent --scope repo:read --repo myrepo --branch-prefix agent/claude/
 ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
 ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | resolve <repo> <n> <comment>
 ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
+ermite run list <repo> [--workflow …] [--branch …] [--status …] | view <repo> <id> [--attempt n] [--log [--job …]]
+ermite run watch <repo> <id> [--log] | cancel <repo> <id> | rerun <repo> <id> [--failed]
+ermite runner list | remove <id>
 ermite web login                # prints a one-time sign-in link (60 s)
 ermite web logout --all         # signs every browser out
 ermite signing-key show         # public key and allowed_signers line of squash commits
+ermite config show [--json] | set <url|token.cmd> <value> | unset <key>   # the CLI config file
 ermite version                  # client and server, warns about missing server features
 ermite watch [repo] [--json]    # follows events, reconnects and resumes
 ```
 
 An agent skill describing the CLI and the forge lives in [`skills/ermite`](skills/ermite/SKILL.md); link or copy that folder into your agent's skills directory.
 
-`--json` on `repo list|show|create|edit`, `token create|list` and `version` prints stable field names, listed in each command's `--help`; `watch --json` prints one object per line. Errors are one line on standard error (`ermite: …`) and exit status 1. `ermite completion bash|zsh|fish` prints a shell completion script that completes repository names from the server.
+`--json` on `repo list|show|create|edit`, `token create|list`, `run list|view|cancel|rerun`, `runner list` and `version` prints stable field names, listed in each command's `--help`; `watch --json` prints one object per line. Errors are one line on standard error (`ermite: …`) and exit status 1. `ermite completion bash|zsh|fish` prints a shell completion script that completes repository names from the server.
 
 ## Git over HTTP
 
@@ -77,6 +106,14 @@ For an AI agent that should propose changes, not publish them: `--branch-prefix 
 ## Merge requests
 
 A merge request proposes a branch for its target (the default branch unless set). The merge is refused when the branch moved since the reviewed head (`--head`) or when the target is not an ancestor of it. Fast-forward moves the target; squash writes one commit signed by the server's SSH key (`ermite signing-key show` prints the `allowed_signers` line for `git verify-commit`). `ermite repo edit --merge-modes` limits the modes per repository. `--delete-branch` (a checkbox on the web) deletes the source branch after the merge, unless it is the default branch or another open request uses it. Tokens need `mr:write` to open and comment, and `mr:merge` to merge (and delete the merged branch).
+
+## CI
+
+ermite runs the `.github/workflows/*.yml` workflows of a repository on `push` (a branch or a tag, and the merge of a merge request) and shows each job as a check on the commit, the branch list and the merge request. CI is on once a runner is registered; there is no switch. Before that a push makes no run and no check.
+
+Runs execute on [ermite-runner](https://git.bnema.dev/bnema/ermite-runner) hosts, which call ermite over its API. Create a token for the runner host with `ermite token create <label> --preset runner` (the `runner:register` scope, which also gives access to the code and the secrets of every repository: give it only to runners you operate), then register the runner with it. `ermite runner list` shows the runners and whether they are online; `ermite runner remove <id>` stops one. A job goes to a runner that has every label of its `runs-on`; a job no runner takes within 24 hours fails.
+
+`ermite run list|view|watch|cancel|rerun` and the `Actions` tab of a repository read and control the runs; `cancel` and `rerun` need the `ci:write` scope. With `failing_checks_block` on (the default, `ermite repo edit --failing-checks-block=false`), a merge is refused while a check of the head failed or has not finished. A workflow that uses a feature the runner does not support yet (`uses:` steps, `container:`, `services:`, `environment:`, `concurrency`, `continue-on-error`) fails with `not supported yet: <feature>`, never silently. Logs are files under `$ERMITE_DATA_DIR/ci/logs`.
 
 ## Web sign-in
 

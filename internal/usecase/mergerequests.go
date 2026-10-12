@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/bnema/zerowrap"
@@ -48,6 +49,8 @@ type MergeRequests struct {
 	bus       ports.EventBus
 	clock     ports.Clock
 	maint     ports.MaintenanceScheduler
+	ci        ports.WorkflowTrigger // nil: no CI
+	checks    ports.CIChecksReader  // nil: no CI, so no check blocks a merge
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -71,13 +74,18 @@ type MergeRequestsConfig struct {
 	Clock     ports.Clock
 	// Maint queues the maintenance that follows a merge, as it does a push.
 	Maint ports.MaintenanceScheduler
+	// CI starts the workflows a merge triggers (GitHub runs "push" workflows
+	// on a merge) and Checks gives the checks the merge rule reads. Both are
+	// optional: without them there is no CI.
+	CI     ports.WorkflowTrigger
+	Checks ports.CIChecksReader
 }
 
 // NewMergeRequests builds the merge request use cases.
 func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 	return &MergeRequests{
 		meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
-		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint,
+		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
 }
@@ -761,6 +769,11 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	case !ok:
 		return domain.MergeRequest{}, false, fmt.Errorf("%w: %q is not an ancestor of %q: rebase it on %q and push again", domain.ErrPreconditionFailed, mr.Target, mr.Source, mr.Target)
 	}
+	if settings.FailingChecksBlock {
+		if err := m.checksAllow(ctx, name, head); err != nil {
+			return domain.MergeRequest{}, false, err
+		}
+	}
 	if params.DeleteSource {
 		if err := m.checkDeletable(ctx, name, mr); err != nil {
 			return domain.MergeRequest{}, false, err
@@ -800,7 +813,44 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	m.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,
 	})
+	if m.ci != nil {
+		// GitHub runs the "push" workflows of a merge, with the owner as pusher.
+		m.ci.OnPush(ctx, name, updates[:1], domain.Owner())
+	}
 	return mr, deleted, nil
+}
+
+// checksAllow is the merge rule of FailingChecksBlock: every check of the
+// head must have ended as success, skipped or neutral. A check still queued or
+// running blocks too (the merge could land code that then fails), and a head
+// without any check merges.
+func (m *MergeRequests) checksAllow(ctx context.Context, name domain.RepoName, head domain.ObjectID) error {
+	if m.checks == nil {
+		return nil
+	}
+	checks, err := m.checks.CommitChecks(ctx, name, head.String())
+	if errors.Is(err, domain.ErrResourceExhausted) {
+		return fmt.Errorf("%w: too many checks to tell whether they passed: %v", domain.ErrPreconditionFailed, err)
+	}
+	if err != nil {
+		return fmt.Errorf("read the checks of %s: %w", head, err)
+	}
+	var failing, pending []string
+	for _, c := range checks {
+		switch {
+		case c.Status != domain.CICompleted:
+			pending = append(pending, c.Name)
+		case !c.Conclusion.PassesMerge():
+			failing = append(failing, c.Name)
+		}
+	}
+	switch {
+	case len(failing) > 0:
+		return fmt.Errorf("%w: failing checks block the merge: %s (turn off failing_checks_block to merge anyway)", domain.ErrPreconditionFailed, strings.Join(failing, ", "))
+	case len(pending) > 0:
+		return fmt.Errorf("%w: checks have not finished: %s", domain.ErrPreconditionFailed, strings.Join(pending, ", "))
+	}
+	return nil
 }
 
 // checkDeletable refuses to delete the source branch of mr when it is the

@@ -40,6 +40,10 @@ templ Commit(l Layout, p CommitPage) {
 						{ " · diff against the first parent" }
 					}
 				</dd>
+				if p.Checks.Total > 0 {
+					<dt>checks</dt>
+					<dd>@CommitChecks(p.Checks)</dd>
+				}
 				if len(p.Refs) > 0 {
 					<dt>refs</dt>
 					<dd>

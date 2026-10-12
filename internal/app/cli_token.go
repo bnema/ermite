@@ -88,6 +88,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 			"What the token may do is chosen with --preset and/or --scope (they add up); there is no default:\n" +
 			"  cli    every scope, for your own daily use\n" +
 			"  agent  repo:write, mr:write\n" +
+			"  runner runner:register (a CI runner host)\n" +
 			"  ci     repo:read\n" +
 			"A token cannot be more powerful than the one that creates it. --repo limits it to the named\n" +
 			"repositories (default: all). --expires takes 30d, 2w, 12h or a date; default: never.\n\n" +
@@ -121,7 +122,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -243,7 +244,7 @@ func newTokenListCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -301,7 +302,7 @@ func newTokenRevokeCmd(env *cliEnv) *cobra.Command {
 			return ids, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := env.client(cmd, true)
+			c, err := env.client(cmd)
 			if err != nil {
 				return err
 			}

@@ -26,7 +26,7 @@ const MaxRequestBytes = 1 << 20
 
 // Features are the optional capabilities of the contract that this server
 // implements, as GetVersion lists them.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners"}
 
 // Config configures the API.
 type Config struct {
@@ -46,6 +46,11 @@ type Config struct {
 	// budget of failures. Leave it unset rather than assigning a typed nil
 	// pointer (a nil *T in the interface is not nil, and would be called).
 	Limiter ports.FailureLimiter
+	// Runner serves RunnerService and Runs serves RunService; without them the
+	// CI services are not served. Leave them unset rather than assigning a
+	// typed nil pointer.
+	Runner ports.RunnerService
+	Runs   ports.RunService
 	// Sessions are the owner's web sessions; nil serves no SessionService.
 	// Leave it unset rather than assigning a typed nil pointer (a nil *T in
 	// the interface is not nil, and the service would be served and called).
@@ -80,6 +85,12 @@ func New(cfg Config) *API {
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
 	if cfg.Sessions != nil {
 		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{cfg.Sessions}, opts...))
+	}
+	if cfg.Runner != nil {
+		mux.Handle(ermiteconnect.NewRunnerServiceHandler(&runnerService{runners: cfg.Runner, limiter: cfg.Limiter}, opts...))
+	}
+	if cfg.Runs != nil {
+		mux.Handle(ermiteconnect.NewRunServiceHandler(&runService{cfg.Runs}, opts...))
 	}
 	return &API{handler: mux}
 }

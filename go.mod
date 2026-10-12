@@ -12,12 +12,14 @@ tool (
 )
 
 require (
-	bnema.dev/ermite-api v0.0.0-20261012144722-abe47d3bceb4
+	bnema.dev/ermite-actions v0.0.0-20261012192445-fcc31accb5a4
+	bnema.dev/ermite-api v0.0.0-20261012155218-f8f64413e63c
 	bnema.dev/ermite-git v0.1.0
 	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
 	connectrpc.com/connect v1.21.0
 	github.com/a-h/templ v0.3.1020
 	github.com/alecthomas/chroma/v2 v2.27.0
+	github.com/bnema/kvconf v0.1.2
 	github.com/bnema/zerowrap v1.4.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/spf13/cobra v1.10.2
@@ -25,6 +27,7 @@ require (
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.49.0
+	golang.org/x/term v0.46.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260904194346-d0f1323225a4
 	google.golang.org/protobuf v1.36.12
 )
@@ -151,7 +154,6 @@ require (
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260904194346-d0f1323225a4 // indirect

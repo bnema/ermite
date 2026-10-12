@@ -21,6 +21,7 @@ type Repos struct {
 	git   ports.GitRepos
 	bus   ports.EventBus
 	clock ports.Clock
+	ci    ports.CIRunCleaner // nil: no CI logs to remove
 }
 
 var _ ports.RepoService = (*Repos)(nil)
@@ -29,6 +30,13 @@ var _ ports.RepoService = (*Repos)(nil)
 // published on bus.
 func NewRepos(meta ports.RepoMetaStore, git ports.GitRepos, bus ports.EventBus, clock ports.Clock) *Repos {
 	return &Repos{meta: meta, git: git, bus: bus, clock: clock}
+}
+
+// WithCIRunCleaner makes Delete remove the CI logs of the repository. Call it
+// before the first request; it returns r.
+func (r *Repos) WithCIRunCleaner(c ports.CIRunCleaner) *Repos {
+	r.ci = c
+	return r
 }
 
 // Create makes a repository and publishes RepoCreated: it stages a bare repository, records the

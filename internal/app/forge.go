@@ -15,6 +15,7 @@ import (
 
 	"github.com/bnema/zerowrap"
 
+	"bnema.dev/ermite/internal/adapters/cilogs"
 	"bnema.dev/ermite/internal/adapters/ermitegit"
 	"bnema.dev/ermite/internal/adapters/eventbus"
 	"bnema.dev/ermite/internal/adapters/gitcli"
@@ -48,6 +49,9 @@ type options struct {
 	eventBuffer int
 	// revalidateEvery overrides usecase.DefaultRevalidateEvery when not zero.
 	revalidateEvery time.Duration
+	// ci overrides the settings of the CI engine (tests shorten its
+	// durations).
+	ci func(*usecase.CIConfig)
 }
 
 // forge is the wired server: every adapter and use case, ready to serve.
@@ -74,8 +78,11 @@ type forge struct {
 	SigningKey    *usecase.SigningKey
 	Sessions      *usecase.Sessions
 	EventLog      *usecase.Events
-	API           *rpc.API
-	Bus           ports.EventBus
+	// CI is the CI engine: workflow trigger, planner, runner protocol and the
+	// owner side. It starts with the server and stops with it.
+	CI  *usecase.CI
+	API *rpc.API
+	Bus ports.EventBus
 }
 
 // newSigningSeed makes the seed of a new ed25519 signing key.
@@ -182,6 +189,21 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	log.Info().Str("reader", cfg.GitReader).Msg("git reader selected")
 	f.Browse = usecase.NewBrowse(store, reader)
+
+	// CI (ADR 0025): the engine reads workflows through the reader, and plans
+	// them in the background; a push only queues its refs.
+	ciCfg := usecase.CIConfig{
+		Store: store.CI(), Logs: cilogs.New(cilogs.Dir(cfg.DataDir)), Meta: store, Repos: git, Reader: reader,
+		Git: git, Diff: git, Bus: f.Bus, Clock: clock, Auth: f.Auth,
+		Owner: cfg.Owner, PublicURL: cfg.PublicURL, Retention: cfg.CIRetention,
+	}
+	if opts.ci != nil {
+		opts.ci(&ciCfg)
+	}
+	f.CI = usecase.NewCI(ctx, ciCfg)
+	f.Pushes.WithWorkflowTrigger(f.CI)
+	f.Repos.WithCIRunCleaner(f.CI)
+	f.CI.Start()
 	f.EventLog = usecase.NewEvents(ctx, f.Repos, f.Bus, clock, usecase.EventsConfig{
 		Size: opts.eventBuffer, Auth: f.Auth, RevalidateEvery: opts.revalidateEvery,
 	})
@@ -200,6 +222,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.MergeRequests = usecase.NewMergeRequests(usecase.MergeRequestsConfig{
 		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
+		CI: f.CI, Checks: f.CI,
 	})
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 
@@ -220,6 +243,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		MergeRequests:  f.MergeRequests,
 		SigningKey:     f.SigningKey,
 		Sessions:       f.Sessions,
+		Runner:         f.CI,
+		Runs:           f.CI,
 		Version:        serverVersion(),
 		TrustedProxies: cfg.TrustedProxies,
 		Limiter:        limiter,
@@ -296,6 +321,9 @@ func (f *forge) Close(ctx context.Context) {
 	log := zerowrap.FromCtx(ctx)
 	if f.hooks != nil {
 		f.hooks.Close(ctx)
+	}
+	if f.CI != nil {
+		f.CI.Close(ctx)
 	}
 	if f.EventLog != nil {
 		f.EventLog.Close(ctx)

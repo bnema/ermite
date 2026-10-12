@@ -65,6 +65,11 @@ func (c *Client) Repos() ermiteconnect.RepoServiceClient {
 	return ermiteconnect.NewRepoServiceClient(c.http, c.base, c.opts...)
 }
 
+// Runs returns the RunService client.
+func (c *Client) Runs() ermiteconnect.RunServiceClient {
+	return ermiteconnect.NewRunServiceClient(c.http, c.base, c.opts...)
+}
+
 // Tokens returns the TokenService client.
 func (c *Client) Tokens() ermiteconnect.TokenServiceClient {
 	return ermiteconnect.NewTokenServiceClient(c.http, c.base, c.opts...)

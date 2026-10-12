@@ -112,6 +112,7 @@ templ CommitRows(rows []CommitRow) {
 							<span class="pill tag"><span class="sr">tag </span>{ t }</span>
 						}
 					</td>
+					<td class="c-ck">@CommitChecks(c.Checks)</td>
 					<td class="c-who dim">{ c.Author }</td>
 					<td class="c-when nowrap dim"><time datetime={ c.WhenAt } title={ c.WhenAt }>{ c.When }</time></td>
 				</tr>

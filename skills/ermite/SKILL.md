@@ -16,6 +16,8 @@ ermite version                        # client and server versions, warns about 
 ermite repo list
 ```
 
+Instead of exporting them, the owner can keep `url` and a `token.cmd` (a command that prints the token, such as `pass show ermite/token`) in `~/.config/ermite/config`; as an agent, set `ERMITE_TOKEN` or point `ERMITE_CONFIG` at your own file.
+
 Never print a token, commit it, log it or paste it into a chat. Prefer a Git credential helper to a token in a URL. Use `https://`: a token sent over plain `http://` to a remote host triggers a warning.
 
 ## Git

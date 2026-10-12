@@ -1,0 +1,53 @@
+@layer components {
+  /* CI: runs, jobs, steps, checks and the log. Hue only where it carries a
+     verdict, and every mark has its word beside it or in its label. */
+  .ck {
+    display: inline-block; width: 14px; height: 14px; margin-right: var(--s1); vertical-align: -2px;
+    border: 2px solid var(--ink-dim); border-radius: 50%; box-sizing: border-box; flex: none;
+  }
+  .ck-ok { background: var(--teal); border-color: var(--teal); }
+  .ck-bad { background: var(--red); border-color: var(--red); border-radius: 3px; transform: rotate(45deg) scale(.85); }
+  .ck-cancelled { border-style: dashed; }
+  .ck-skipped { border-color: var(--border-strong); background: var(--bg-raised); }
+  .ck-queued { border-style: dotted; }
+  .ck-running { border-color: var(--teal); border-top-color: transparent; animation: ck-spin 1s linear infinite; }
+  @keyframes ck-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .ck-running { animation: none; border-top-color: var(--teal); } }
+
+  .ck-sum { display: inline-flex; align-items: center; gap: var(--s1); margin-left: var(--s2); font-size: var(--fs-xs); white-space: nowrap; }
+  .c-ck { width: 1%; white-space: nowrap; }
+
+  .runs .c-st { width: 1%; }
+  .runs .c-dur, .runs .c-who { white-space: nowrap; }
+  .runs tr[data-new] { background: var(--bg-raised); }
+
+  .run-h { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s4); }
+  .run-err, .job-err {
+    max-width: var(--measure); padding: var(--s3) var(--s4); margin: 0 0 var(--s4); white-space: pre-wrap; overflow-wrap: anywhere;
+    background: var(--bg-surface); border: 1px solid var(--border); border-left: 3px solid var(--red); border-radius: var(--r-s);
+    font: inherit; font-size: var(--fs-s);
+  }
+
+  .jobs { display: grid; gap: var(--s4); padding: 0; list-style: none; }
+  .jobs > li { padding: var(--s3) var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
+  .job-h { display: flex; align-items: center; gap: var(--s2); font-weight: 700; }
+  .steps { display: grid; gap: 2px; padding: 0; margin: var(--s2) 0 0; list-style: none; font-size: var(--fs-s); }
+  .steps li { display: flex; align-items: center; gap: var(--s1); }
+  .attempts { padding: 0; margin: var(--s2) 0 0; list-style: none; font-size: var(--fs-s); }
+  .checks { display: grid; gap: var(--s1); padding: 0; margin: 0; list-style: none; font-size: var(--fs-s); }
+  .checks li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
+
+  .joblog { margin-top: var(--s4); }
+  .log {
+    margin: 0; padding: var(--s2) 0; list-style: none; overflow-x: auto;
+    font: var(--fs-s) / 1.5 var(--mono); background: var(--bg-inset); border: 1px solid var(--border); border-radius: var(--r-s);
+  }
+  .log .lg { display: flex; gap: var(--s3); padding: 0 var(--s3); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .log .lg:target { background: var(--bg-raised); }
+  .log .lg time { flex: none; color: var(--ink-dim); user-select: none; }
+  .log .lg .t { min-width: 0; }
+  .log .group .t { font-weight: 700; }
+  .log .endgroup { display: none; }
+  .log .error .t { color: var(--red); }
+  .joblog .more { margin: var(--s2) 0; font-size: var(--fs-s); }
+}
