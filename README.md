@@ -55,7 +55,7 @@ ermite config set token.cmd 'pass show ermite/token'   # or: gopass show -o ermi
 ermite config show                                      # path and stored values; unset removes a key
 ```
 
-`token.cmd` runs with `sh -c` (`cmd /C` on Windows) only when a command needs the token, at most once per run, with your environment and terminal (so a pinentry or biometric prompt works). It must print the token alone on one line, in under 4 KiB, within 60 seconds. It is not run when `ERMITE_TOKEN` is set, nor by `ermite version` or `ermite config`, and not when the config file is writable by other users. A failure is reported in one line without its output. A token sent over plain `http://` to a host that is not loopback triggers a warning on every call.
+`token.cmd` runs with `sh -c` (`cmd /C` on Windows) only when a command needs the token, at most once per run, with your environment and terminal (so a pinentry or biometric prompt works). It must print the token alone on one line, in under 4 KiB, within 60 seconds. It is not run when `ERMITE_TOKEN` is set, nor by `ermite version` or `ermite config`, and not when the config file is writable by other users. It belongs to the server of the file: when `ERMITE_URL` names a different server than the file's `url`, it is not run and the call is anonymous (with a notice; set `ERMITE_TOKEN` to authenticate there). A failure is reported in one line without its output. A token sent over plain `http://` to a host that is not loopback triggers a warning on every call.
 
 ```sh
 export ERMITE_URL=https://git.example.com ERMITE_TOKEN=ermite_...

@@ -1,6 +1,6 @@
 # ermite CLI reference
 
-Remote commands read `ERMITE_URL` (`http://` or `https://`) and `ERMITE_TOKEN` (optional for public reads); they fall back to the `url` and `token.cmd` of the config file (`~/.config/ermite/config`, or the file named by `ERMITE_CONFIG`), the environment first. Agents: use `ERMITE_TOKEN`, or your own `ERMITE_CONFIG` file; do not edit the owner's `~/.config/ermite/config` and never run `token.cmd` yourself or print what it prints. Run `ermite <command> --help` for the authoritative text of a command and its JSON fields.
+Remote commands read `ERMITE_URL` (`http://` or `https://`) and `ERMITE_TOKEN` (optional for public reads); they fall back to the `url` and `token.cmd` of the config file (`~/.config/ermite/config`, or the file named by `ERMITE_CONFIG`), the environment first (`token.cmd` is only run for the server of the file: with a different `ERMITE_URL` set `ERMITE_TOKEN` too). Agents: use `ERMITE_TOKEN`, or your own `ERMITE_CONFIG` file; do not edit the owner's `~/.config/ermite/config` and never run `token.cmd` yourself or print what it prints. Run `ermite <command> --help` for the authoritative text of a command and its JSON fields.
 
 Errors are one line on standard error (`ermite: ...`) with exit status 1. `--json` prints stable field names. `ermite completion bash|zsh|fish` completes repository names from the server.
 

@@ -85,15 +85,46 @@ func TestEnvironmentWinsOverConfigFile(t *testing.T) {
 	assert.Empty(t, calls, "the url of the file is not used when ERMITE_URL is set")
 }
 
-func TestEnvURLAloneStillUsesTokenCmd(t *testing.T) {
+func TestEnvURLDifferentFromFileKeepsTokenCmdOut(t *testing.T) {
 	f := listFake()
 	env := testEnv(t, map[string]string{"ERMITE_URL": f.serve(t)})
 	writeConfigFile(t, env, "url = http://file.invalid\ntoken.cmd = get-token\n", 0o600)
 	ran := tokenCmdStub(env, "ermite_cmd", nil)
 
-	runCLIWith(t, env, "", "repo", "list").ok(t)
+	res := runCLIWith(t, env, "", "repo", "list").ok(t)
+	assert.Empty(t, *ran, "the token of the file's server must not go to another server")
+	assert.Empty(t, lastAuth(f))
+	assert.Equal(t, 1, strings.Count(res.stderr, "ermite: ERMITE_URL differs from the config file url: token.cmd not run (set ERMITE_TOKEN)\n"), res.stderr)
+
+	t.Run("file without url", func(t *testing.T) {
+		env := testEnv(t, map[string]string{"ERMITE_URL": f.serve(t)})
+		writeConfigFile(t, env, "token.cmd = get-token\n", 0o600)
+		ran := tokenCmdStub(env, "ermite_cmd", nil)
+		res := runCLIWith(t, env, "", "repo", "list").ok(t)
+		assert.Empty(t, *ran)
+		assert.Contains(t, res.stderr, "token.cmd not run")
+	})
+	t.Run("invalid ERMITE_URL", func(t *testing.T) {
+		env := testEnv(t, map[string]string{"ERMITE_URL": "nope"})
+		writeConfigFile(t, env, "url = http://file.invalid\ntoken.cmd = get-token\n", 0o600)
+		ran := tokenCmdStub(env, "ermite_cmd", nil)
+		require.Error(t, runCLIWith(t, env, "", "repo", "list").err)
+		assert.Empty(t, *ran)
+	})
+}
+
+func TestEnvURLSameAsFileUsesTokenCmd(t *testing.T) {
+	f := listFake()
+	url := f.serve(t)
+	// the same address, written differently
+	env := testEnv(t, map[string]string{"ERMITE_URL": " " + strings.ToUpper(url[:4]) + url[4:] + "/ "})
+	writeConfigFile(t, env, "url = "+url+"\ntoken.cmd = get-token\n", 0o600)
+	ran := tokenCmdStub(env, "ermite_cmd", nil)
+
+	res := runCLIWith(t, env, "", "repo", "list").ok(t)
 	assert.Equal(t, "Bearer ermite_cmd", lastAuth(f))
 	assert.Len(t, *ran, 1)
+	assert.NotContains(t, res.stderr, "token.cmd")
 }
 
 func TestTokenCmdNotRunWhenEnvTokenSet(t *testing.T) {

@@ -107,7 +107,10 @@ func (e *cliEnv) resolveToken(cmd *cobra.Command, warn, runCmd bool) (string, er
 	return e.tokenFromCmd(cmd, warn)
 }
 
-// tokenFromCmd is the output of token.cmd, or "" when the file sets none.
+// tokenFromCmd is the output of token.cmd, or "" when the file sets none or
+// when ERMITE_URL points somewhere else than the url of the file: the token
+// the command fetches belongs to the server of the file, and must not be sent
+// to another one.
 func (e *cliEnv) tokenFromCmd(cmd *cobra.Command, warn bool) (string, error) {
 	f, path, err := e.readFile(cmd, warn)
 	if err != nil {
@@ -117,8 +120,31 @@ func (e *cliEnv) tokenFromCmd(cmd *cobra.Command, warn bool) (string, error) {
 	if line == "" {
 		return "", nil
 	}
-	e.tokenOnce.Do(func() { e.token, e.tokenErr = e.fetchToken(e.ctx(cmd), path, line) })
+	e.tokenOnce.Do(func() {
+		if !e.urlIsFromFile(f) {
+			if warn {
+				noticef(cmd, "%s differs from the config file url: token.cmd not run (set %s)", client.EnvURL, client.EnvToken)
+			}
+			return
+		}
+		e.token, e.tokenErr = e.fetchToken(e.ctx(cmd), path, line)
+	})
 	return e.token, e.tokenErr
+}
+
+// urlIsFromFile reports whether the server in use is the one of the config
+// file: ERMITE_URL is unset, or names the same address as the file's url.
+func (e *cliEnv) urlIsFromFile(f *cliFile) bool {
+	envURL := strings.TrimSpace(e.getenv(client.EnvURL))
+	if envURL == "" {
+		return true
+	}
+	a, err := client.ParseURL(envURL)
+	if err != nil {
+		return false
+	}
+	b, err := client.ParseURL(strings.TrimSpace(f.URL))
+	return err == nil && a.String() == b.String()
 }
 
 // fetchToken runs token.cmd. Neither its output nor its error text reach the

@@ -32,8 +32,9 @@ func newConfigCmd(env *cliEnv) *cobra.Command {
 			"token.cmd is a command line run with the system shell when a command needs the token (at most\n" +
 			"once per run): it must print the token alone on one line. Use any secret manager (pass, gopass,\n" +
 			"op, bw, secret-tool…). The token itself never goes in the file. ERMITE_URL and ERMITE_TOKEN\n" +
-			"take precedence over the file; `ermite version` and `ermite config` never run token.cmd. The\n" +
-			"command is not run when the file is writable by other users.",
+			"take precedence over the file. token.cmd belongs to the server of the file: it is not run when\n" +
+			"ERMITE_URL names another server than the url of the file (the call is then anonymous, with a\n" +
+			"notice: set ERMITE_TOKEN). `ermite version` and `ermite config` never run it.",
 	}
 	cmd.AddCommand(newConfigShowCmd(env), newConfigSetCmd(env), newConfigUnsetCmd(env))
 	return cmd
