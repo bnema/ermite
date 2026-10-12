@@ -31,12 +31,34 @@ import (
 // environment and the body it received. Like Git, it reads the whole request
 // before it answers (net/http cannot read a request body once the response
 // has started).
+//
+// The script is written once, in TestMain, before any test runs: writing an
+// executable while parallel tests fork lets a child inherit the open write
+// descriptor, and exec then fails with ETXTBSY (golang/go#22315).
 func cgiScript(t *testing.T) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "backend")
+	require.NotEmpty(t, backendScript, "TestMain writes the backend script")
+	return backendScript
+}
+
+var backendScript string
+
+func TestMain(m *testing.M) {
+	os.Exit(runWithBackendScript(m))
+}
+
+func runWithBackendScript(m *testing.M) int {
+	dir, err := os.MkdirTemp("", "githttp-backend")
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	backendScript = filepath.Join(dir, "backend")
 	body := "#!/bin/sh\nin=$(mktemp)\ncat > \"$in\"\nprintf 'Content-Type: text/plain\\r\\n\\r\\n'\nenv | sort\nprintf '\\n--body--\\n'\ncat \"$in\"\nrm -f \"$in\"\n"
-	require.NoError(t, os.WriteFile(p, []byte(body), 0o755))
-	return p
+	if err := os.WriteFile(backendScript, []byte(body), 0o755); err != nil {
+		panic(err)
+	}
+	return m.Run()
 }
 
 type rig struct {

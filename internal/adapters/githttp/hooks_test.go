@@ -390,8 +390,10 @@ func TestWriteHookScripts(t *testing.T) {
 }
 
 // The shell really passes the awkward path and the arguments through.
+//
+// Not parallel: it writes executables, and a test that forks meanwhile would
+// inherit the write descriptor and make exec fail with ETXTBSY.
 func TestHookScriptExecsTheBinaryWithQuotedPath(t *testing.T) {
-	t.Parallel()
 	base := filepath.Join(t.TempDir(), "it's a \"dir\" $X `y` ; z")
 	require.NoError(t, os.MkdirAll(base, 0o755))
 	exe := filepath.Join(base, "fake ermite")
