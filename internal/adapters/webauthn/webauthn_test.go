@@ -5,6 +5,7 @@ package webauthn_test
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"testing"
 	"time"
 
@@ -274,10 +275,22 @@ func TestLoginRefused(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			d := register(t, v, s, virtualwebauthn.AuthenticatorOptions{})
+			opts := d.auth.Options
+			stored := maps.Clone(d.store)
 			err := tc.run(t, d)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, domain.ErrUnauthenticated)
 			assert.NotErrorIs(t, err, domain.ErrPasskeyCloned)
+
+			// Control: the refusal was for the reason of the case. With the device
+			// and the store as they were, a fresh assertion still succeeds, so the
+			// case did not fail by something that breaks every login.
+			d.auth.Options = opts
+			d.store = stored
+			ceremony, options := d.assertion(t, v, s)
+			got, err := v.FinishLogin(userHandle, ceremony, d.respond(s, options), d.lookup)
+			require.NoError(t, err, "a fresh, untouched assertion must succeed")
+			assert.Equal(t, d.cred.ID, got.ID)
 		})
 	}
 }
