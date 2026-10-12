@@ -46,7 +46,7 @@ func (r *Repos) View(ctx context.Context, repo domain.Repo) (ports.RepoView, err
 
 // Update changes the description, the visibility, the default branch and the
 // merge settings of a repository, and publishes RepoUpdated. The principal needs repo:admin on it
-// (see adminAccess for what the others learn). At least one field must be set,
+// (see adminAccess for what the others learn) and no branch prefixes. At least one field must be set,
 // else domain.ErrInvalid. A default branch that does not exist gives
 // domain.ErrPreconditionFailed; nothing is written before every check passed.
 // The metadata is written first, then HEAD, and RepoUpdated is published after
@@ -59,6 +59,9 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	}
 	if err := adminAccess(p, repo); err != nil {
 		return domain.Repo{}, err
+	}
+	if !canAdminRepo(p) {
+		return domain.Repo{}, fmt.Errorf("%w: a token limited to branch prefixes may not change repository settings", domain.ErrForbidden)
 	}
 	before := repo
 	if params.Description == nil && params.Visibility == nil && params.DefaultBranch == nil &&
@@ -184,7 +187,7 @@ func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.Repo
 	if err := adminAccess(p, repo); err != nil {
 		return err
 	}
-	if !canDeleteRepo(p) {
+	if !canAdminRepo(p) {
 		return fmt.Errorf("%w: a token limited to branch prefixes may not delete a repository", domain.ErrForbidden)
 	}
 	log := zerowrap.FromCtx(ctx)

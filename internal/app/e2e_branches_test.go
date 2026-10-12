@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/domain"
@@ -121,6 +122,14 @@ func TestAC5BranchLimitedToken(t *testing.T) {
 	_, err = h.api(admin).repo.DeleteRepo(h.ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "via-api"}))
 	assert.Equal(t, "permission_denied", codeName(err))
 	assert.DirExists(t, h.repoDir("via-api"))
+	// ... nor change its settings (default branch, visibility, ...).
+	_, err = h.api(admin).repo.UpdateRepo(h.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+		Repo: "via-api", Visibility: pb.Visibility_VISIBILITY_PUBLIC, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
+	}))
+	assert.Equal(t, "permission_denied", codeName(err))
+	got, err := h.api(adminToken).repo.GetRepo(h.ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "via-api"}))
+	require.NoError(t, err)
+	assert.Equal(t, pb.Visibility_VISIBILITY_PRIVATE, got.Msg.GetRepo().GetVisibility())
 
 	// It never has owner rights, whatever its scopes.
 	all, _ := h.branchToken(domain.AllScopes(), []string{"agent/claude/"})
