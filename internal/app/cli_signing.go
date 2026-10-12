@@ -55,7 +55,7 @@ func newSigningKeyShowCmd(env *cliEnv) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("json", "public-key")
 	cmd.MarkFlagsMutuallyExclusive("json", "allowed-signers")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}

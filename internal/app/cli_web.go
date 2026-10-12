@@ -43,7 +43,7 @@ func newWebLoginCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -75,7 +75,7 @@ func newWebLogoutCmd(env *cliEnv) *cobra.Command {
 		if !all {
 			return errors.New("--all is required: this signs every browser out (one browser signs out from its page)")
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}

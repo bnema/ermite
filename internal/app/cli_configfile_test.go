@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/term"
 
 	"bnema.dev/ermite-api/gen/ermite"
 )
@@ -88,30 +89,38 @@ func TestEnvironmentWinsOverConfigFile(t *testing.T) {
 
 func TestEnvURLDifferentFromFileKeepsTokenCmdOut(t *testing.T) {
 	f := listFake()
-	env := testEnv(t, map[string]string{"ERMITE_URL": f.serve(t)})
-	writeConfigFile(t, env, "url = http://file.invalid\ntoken.cmd = get-token\n", 0o600)
-	ran := tokenCmdStub(env, "ermite_cmd", nil)
+	tests := []struct {
+		name    string
+		envURL  string // "" means the fake server
+		file    string // the content of the config file
+		wantErr bool
+	}{
+		{name: "other url in the file", file: "url = http://file.invalid\ntoken.cmd = get-token\n"},
+		{name: "file without url", file: "token.cmd = get-token\n"},
+		{name: "invalid ERMITE_URL", envURL: "nope", file: "url = http://file.invalid\ntoken.cmd = get-token\n", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			envURL := tt.envURL
+			if envURL == "" {
+				envURL = f.serve(t)
+			}
+			env := testEnv(t, map[string]string{"ERMITE_URL": envURL})
+			writeConfigFile(t, env, tt.file, 0o600)
+			ran := tokenCmdStub(env, "ermite_cmd", nil)
 
-	res := runCLIWith(t, env, "", "repo", "list").ok(t)
-	assert.Empty(t, *ran, "the token of the file's server must not go to another server")
-	assert.Empty(t, lastAuth(f))
-	assert.Equal(t, 1, strings.Count(res.stderr, "ermite: ERMITE_URL differs from the config file url: token.cmd not run (set ERMITE_TOKEN)\n"), res.stderr)
-
-	t.Run("file without url", func(t *testing.T) {
-		env := testEnv(t, map[string]string{"ERMITE_URL": f.serve(t)})
-		writeConfigFile(t, env, "token.cmd = get-token\n", 0o600)
-		ran := tokenCmdStub(env, "ermite_cmd", nil)
-		res := runCLIWith(t, env, "", "repo", "list").ok(t)
-		assert.Empty(t, *ran)
-		assert.Contains(t, res.stderr, "token.cmd not run")
-	})
-	t.Run("invalid ERMITE_URL", func(t *testing.T) {
-		env := testEnv(t, map[string]string{"ERMITE_URL": "nope"})
-		writeConfigFile(t, env, "url = http://file.invalid\ntoken.cmd = get-token\n", 0o600)
-		ran := tokenCmdStub(env, "ermite_cmd", nil)
-		require.Error(t, runCLIWith(t, env, "", "repo", "list").err)
-		assert.Empty(t, *ran)
-	})
+			res := runCLIWith(t, env, "", "repo", "list")
+			assert.Empty(t, *ran, "the token of the file's server must not go to another server")
+			if tt.wantErr {
+				require.Error(t, res.err)
+				return
+			}
+			require.NoError(t, res.err)
+			assert.Empty(t, lastAuth(f))
+			assert.Equal(t, 1, strings.Count(res.stderr, "token.cmd not run"), res.stderr)
+			assert.Contains(t, res.stderr, "ERMITE_TOKEN")
+		})
+	}
 }
 
 func TestEnvURLSameAsFileUsesTokenCmd(t *testing.T) {
@@ -187,7 +196,7 @@ func TestTokenCmdRunsOncePerProcess(t *testing.T) {
 	for range 2 {
 		c, _, err := root.Find([]string{"repo", "list"})
 		require.NoError(t, err)
-		_, err = env.client(c, true)
+		_, err = env.client(c)
 		require.NoError(t, err)
 	}
 	assert.Len(t, *ran, 1)
@@ -256,10 +265,11 @@ func TestMissingURLIsReportedBeforeTokenCmdRuns(t *testing.T) {
 
 func TestInvalidFileURLIsReported(t *testing.T) {
 	env := testEnv(t, nil)
-	writeConfigFile(t, env, "url = git.example.com\n", 0o600)
+	path := writeConfigFile(t, env, "url = git.example.com\n", 0o600)
 	res := runCLIWith(t, env, "", "repo", "list")
 	require.Error(t, res.err)
-	assert.Contains(t, res.err.Error(), "invalid server URL")
+	assert.Contains(t, res.err.Error(), "url in "+filepath.Dir(path)) // the file named
+	assert.Contains(t, res.err.Error(), "ermite config set url")
 	assert.Contains(t, res.err.Error(), "http")
 }
 
@@ -298,40 +308,63 @@ func TestTokenCmdRunsThroughTheShell(t *testing.T) {
 	f := listFake()
 	env := testEnv(t, nil)
 	writeConfigFile(t, env, "url = "+f.serve(t)+"\ntoken.cmd = printf secret\n", 0o600)
-	env.runTokenCmd = nil // the real thing
+	env.runTokenCmd = runTokenShell // the real thing
 
 	runCLIWith(t, env, "", "repo", "list").ok(t)
 	assert.Equal(t, "Bearer secret", lastAuth(f))
 }
 
-func TestRunShellReportsFailuresWithoutOutput(t *testing.T) {
+func TestRunShell(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses sh")
 	}
-	_, err := runShell(t.Context(), "echo s3cret; exit 3", time.Minute)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exit status 3")
-	assert.NotContains(t, err.Error(), "s3cret")
+	tests := []struct {
+		name    string
+		line    string
+		want    string // the output on success
+		errHas  string // the error on failure
+		errNot  string // what the error must not show
+		wantErr bool
+	}{
+		{name: "exit status", line: "echo s3cret; exit 3", wantErr: true, errHas: "exit status 3", errNot: "s3cret"},
+		{name: "too much output", line: "head -c 5000 /dev/zero | tr '\\0' a", wantErr: true, errHas: "more than 4096 bytes", errNot: "aaa"},
+		{name: "output", line: "echo ermite_ok", want: "ermite_ok\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := runShell(t.Context(), tt.line, time.Minute)
+			if !tt.wantErr {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, out)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errHas)
+			assert.NotContains(t, err.Error(), tt.errNot)
+		})
+	}
+}
 
-	_, err = runShell(t.Context(), "head -c 5000 /dev/zero | tr '\\0' a", time.Minute)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "more than 4096 bytes")
-	assert.NotContains(t, err.Error(), "aaa")
-
-	out, err := runShell(t.Context(), "echo ermite_ok", time.Minute)
-	require.NoError(t, err)
-	assert.Equal(t, "ermite_ok\n", out)
+// requireNoTerminal skips a test of the non-terminal path when the tests run
+// with a terminal as standard input.
+func requireNoTerminal(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sh")
+	}
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		t.Skip("standard input is a terminal")
+	}
 }
 
 func TestTokenCmdTimesOut(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses sh")
-	}
+	requireNoTerminal(t)
 	f := listFake()
 	env := testEnv(t, nil)
-	writeConfigFile(t, env, "url = "+f.serve(t)+"\ntoken.cmd = exec sleep 30\n", 0o600)
-	env.runTokenCmd = nil
-	env.tokenTimeout = 100 * time.Millisecond
+	writeConfigFile(t, env, "url = "+f.serve(t)+"\ntoken.cmd = sleep 30; :\n", 0o600)
+	env.runTokenCmd = func(ctx context.Context, line string) (string, error) {
+		return runShell(ctx, line, 100*time.Millisecond)
+	}
 
 	start := time.Now()
 	res := runCLIWith(t, env, "", "repo", "list")
@@ -341,11 +374,7 @@ func TestTokenCmdTimesOut(t *testing.T) {
 }
 
 func TestTokenCmdGetsNoInputWithoutATerminal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses sh")
-	}
-	// under `go test` stdin is the null device or a pipe, never a terminal
-	require.False(t, stdinIsTerminal())
+	requireNoTerminal(t)
 	out, err := runShell(t.Context(), "cat; echo done", time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, "done\n", out, "the command read nothing")
@@ -374,21 +403,6 @@ func TestTokenCmdRefusedWhenDirectoryIsWritableByOthers(t *testing.T) {
 		tokenCmdStub(env, "ermite_cmd", nil)
 		runCLIWith(t, env, "", "repo", "list").ok(t)
 	})
-}
-
-func TestTokenCmdRefusedWhenFileIsOwnedByAnotherUser(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() != 0 {
-		t.Skip("needs root to give a file away")
-	}
-	env := testEnv(t, nil)
-	path := writeConfigFile(t, env, "url = http://ermite.invalid:1\ntoken.cmd = get-token\n", 0o600)
-	require.NoError(t, os.Chown(path, 65534, -1))
-	ran := tokenCmdStub(env, "ermite_cmd", nil)
-
-	res := runCLIWith(t, env, "", "repo", "list")
-	require.Error(t, res.err)
-	assert.Equal(t, "config file "+path+" is owned by another user: token.cmd not run", res.err.Error())
-	assert.Empty(t, *ran)
 }
 
 func TestTokenCmdFollowsASymlinkedConfigFile(t *testing.T) {

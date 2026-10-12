@@ -146,7 +146,7 @@ func newRepoListCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -205,7 +205,7 @@ func newRepoShowCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -239,7 +239,7 @@ func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -295,7 +295,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -377,7 +377,7 @@ func newRepoDeleteCmd(env *cliEnv) *cobra.Command {
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		// Check the configuration before asking anything.
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}

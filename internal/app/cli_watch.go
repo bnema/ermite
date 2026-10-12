@@ -163,7 +163,7 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 		if len(args) == 1 {
 			topics = []string{"repo:" + args[0]}
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}

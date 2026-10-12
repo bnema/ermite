@@ -11,11 +11,14 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/bnema/kvconf"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"bnema.dev/ermite/internal/adapters/client"
 )
@@ -107,7 +110,7 @@ func loadConfigFile(path string) (f *cliFile, warnings []kvconf.Warning, trust, 
 	if !info.Mode().IsRegular() {
 		return nil, nil, nil, fmt.Errorf("%s: %w", path, kvconf.ErrNotRegular)
 	}
-	trust = checkPrivate(path, info)
+	trust = checkPrivate(path, info, os.Geteuid())
 	data, err := io.ReadAll(io.LimitReader(h, kvconf.DefaultMaxBytes+1))
 	if err != nil {
 		return nil, nil, nil, err
@@ -123,6 +126,14 @@ func loadConfigFile(path string) (f *cliFile, warnings []kvconf.Warning, trust, 
 	return f, warnings, trust, nil
 }
 
+// urlSource says where the server address in use comes from, for error messages.
+func (e *cliEnv) urlSource() string {
+	if strings.TrimSpace(e.getenv(client.EnvURL)) != "" {
+		return client.EnvURL
+	}
+	return fmt.Sprintf("url in %s (fix it with `ermite config set url <url>`)", e.filePath)
+}
+
 // resolveURL is ERMITE_URL if set, else the url of the config file, else "".
 func (e *cliEnv) resolveURL(cmd *cobra.Command, warn bool) (string, error) {
 	if v := strings.TrimSpace(e.getenv(client.EnvURL)); v != "" {
@@ -133,18 +144,6 @@ func (e *cliEnv) resolveURL(cmd *cobra.Command, warn bool) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(f.URL), nil
-}
-
-// resolveToken is ERMITE_TOKEN if set, else (when runCmd is set) the output
-// of token.cmd, else "" (anonymous). token.cmd runs at most once per process.
-func (e *cliEnv) resolveToken(cmd *cobra.Command, warn, runCmd bool) (string, error) {
-	if v := strings.TrimSpace(e.getenv(client.EnvToken)); v != "" {
-		return v, nil
-	}
-	if !runCmd {
-		return "", nil
-	}
-	return e.tokenFromCmd(cmd, warn)
 }
 
 // tokenFromCmd is the output of token.cmd, or "" when the file sets none or
@@ -193,11 +192,7 @@ func (e *cliEnv) fetchToken(ctx context.Context, line string) (string, error) {
 	if e.fileTrust != nil {
 		return "", e.fileTrust
 	}
-	run := e.runTokenCmd
-	if run == nil {
-		run = e.shell
-	}
-	out, err := run(ctx, line)
+	out, err := e.runTokenCmd(ctx, line)
 	if err != nil {
 		return "", fmt.Errorf("token.cmd failed: %w", err)
 	}
@@ -211,58 +206,50 @@ func (e *cliEnv) fetchToken(ctx context.Context, line string) (string, error) {
 	return out, nil
 }
 
-// shell runs a token.cmd command line, with the timeout of the environment.
-func (e *cliEnv) shell(ctx context.Context, line string) (string, error) {
-	timeout := e.tokenTimeout
-	if timeout <= 0 {
-		timeout = tokenCmdTimeout
-	}
-	return runShell(ctx, line, timeout)
+// runTokenShell is the default runTokenCmd: the system shell, for at most
+// tokenCmdTimeout.
+func runTokenShell(ctx context.Context, line string) (string, error) {
+	return runShell(ctx, line, tokenCmdTimeout)
 }
 
 // runShell runs line with the system shell. Standard error is the terminal's,
 // and so is standard input when it is a terminal, so a pinentry or a biometric
 // prompt works; a script or an agent gets no input. Standard output is
 // captured, up to tokenCmdMaxOutput bytes. The environment is the process's.
+// An interrupt or SIGTERM sent to ermite, or the end of ctx, stops the command
+// like a timeout does (see shellCommand for what is killed).
 func runShell(ctx context.Context, line string, timeout time.Duration) (string, error) {
-	parent := ctx
-	ctx, cancel := context.WithTimeout(parent, timeout)
+	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	runCtx, cancel := context.WithTimeout(sigCtx, timeout)
 	defer cancel()
-	c := shellCommand(ctx, line)
+
+	foreground := term.IsTerminal(int(os.Stdin.Fd()))
+	c := shellCommand(runCtx, line, foreground)
 	out := &cappedBuffer{max: tokenCmdMaxOutput}
 	c.Stdout, c.Stderr = out, os.Stderr
-	if stdinIsTerminal() {
+	if foreground {
 		c.Stdin = os.Stdin
 	} // else nil: the command reads os.DevNull
 	// Do not wait forever for a background process that kept the pipe open.
 	c.WaitDelay = 2 * time.Second
 	err := c.Run()
-	switch {
-	case parent.Err() != nil:
-		return "", errors.New("interrupted")
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return "", fmt.Errorf("timed out after %s", timeout)
-	case err != nil:
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
+	if err != nil {
+		switch {
+		case sigCtx.Err() != nil:
+			return "", errors.New("interrupted")
+		case errors.Is(runCtx.Err(), context.DeadlineExceeded):
+			return "", fmt.Errorf("timed out after %s", timeout)
+		}
+		if exit := (*exec.ExitError)(nil); errors.As(err, &exit) {
 			return "", errors.New(exit.String())
 		}
 		return "", err
-	case out.over:
+	}
+	if out.over {
 		return "", fmt.Errorf("printed more than %d bytes", tokenCmdMaxOutput)
 	}
 	return out.buf.String(), nil
-}
-
-// stdinIsTerminal reports whether standard input is a terminal: a character
-// device other than the null device.
-func stdinIsTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
-		return false
-	}
-	null, err := os.Stat(os.DevNull)
-	return err != nil || !os.SameFile(fi, null)
 }
 
 // cappedBuffer keeps the first max bytes written and notes an overflow.

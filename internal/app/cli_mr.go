@@ -265,7 +265,7 @@ func newMRCreateCmd(env *cliEnv) *cobra.Command {
 			Repo: args[0], Title: title, Description: desc,
 			SourceBranch: trimBranch(source), TargetBranch: trimBranch(target),
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -310,7 +310,7 @@ func newMRListCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -474,7 +474,7 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -687,7 +687,7 @@ func newMRCommentCmd(env *cliEnv) *cobra.Command {
 		case line != 0 || cmd.Flags().Changed("side"):
 			return errors.New("--line and --side need --path")
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -722,7 +722,7 @@ func newMRResolveCmd(env *cliEnv) *cobra.Command {
 			return err
 		}
 		id := strings.TrimPrefix(strings.TrimSpace(args[2]), "#")
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -781,7 +781,7 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			return fmt.Errorf("--head is required: run `ermite mr show %s %d` and give the head id it prints, "+
 				"so that only the commit you reviewed is merged", args[0], n)
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -830,7 +830,7 @@ func newMRCloseCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}

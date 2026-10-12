@@ -58,7 +58,7 @@ func NewConfig(rawURL, token string) (Config, error) {
 	}
 	base, err := ParseURL(raw)
 	if err != nil {
-		return Config{}, fmt.Errorf("invalid server URL (%s, or `ermite config set url <url>`): %w", EnvURL, err)
+		return Config{}, fmt.Errorf("invalid server URL: %w", err)
 	}
 	return Config{URL: base.String(), Token: strings.TrimSpace(token)}, nil
 }

@@ -107,7 +107,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -185,7 +185,7 @@ func newTokenListCmd(env *cliEnv) *cobra.Command {
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
-		c, err := env.client(cmd, true)
+		c, err := env.client(cmd)
 		if err != nil {
 			return err
 		}
@@ -239,7 +239,7 @@ func newTokenRevokeCmd(env *cliEnv) *cobra.Command {
 			return ids, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := env.client(cmd, true)
+			c, err := env.client(cmd)
 			if err != nil {
 				return err
 			}

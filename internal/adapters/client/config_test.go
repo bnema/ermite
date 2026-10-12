@@ -18,6 +18,13 @@ func TestNewConfig(t *testing.T) {
 	assert.Equal(t, "ermite_abc", cfg.Token)
 }
 
+func TestNewConfigUnsetTellsHowToFixIt(t *testing.T) {
+	_, err := client.NewConfig("  ", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ERMITE_URL")
+	assert.Contains(t, err.Error(), "ermite config set url")
+}
+
 func TestNewConfigRejects(t *testing.T) {
 	tests := []struct {
 		name, url, want string
@@ -36,8 +43,6 @@ func TestNewConfigRejects(t *testing.T) {
 			_, err := client.NewConfig(tt.url, "")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.want)
-			assert.Contains(t, err.Error(), "ermite config set url", "the message tells how to fix it")
-			assert.Contains(t, err.Error(), "ERMITE_URL")
 			assert.NotContains(t, err.Error(), "s3cret", "credentials must never be echoed")
 		})
 	}
