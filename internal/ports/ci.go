@@ -5,6 +5,7 @@ package ports
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -125,25 +126,11 @@ type ErrCILogGap struct{ Count int64 }
 
 // Error implements error.
 func (e *ErrCILogGap) Error() string {
-	return "out of range: the log holds lines up to the offset of " + itoa(e.Count)
+	return "out of range: the log holds lines up to the offset of " + strconv.FormatInt(e.Count, 10)
 }
 
 // Is makes errors.Is(err, domain.ErrOutOfRange) true.
 func (e *ErrCILogGap) Is(target error) bool { return target == domain.ErrOutOfRange }
-
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
-}
 
 // CILogStore keeps the logs of the jobs: append-only files, one line per log
 // line, never in the metadata store. Lines are numbered from 0.

@@ -42,7 +42,8 @@ const (
 )
 
 // CIConfig holds what the CI use cases need. Store, Logs, Meta, Repos, Reader,
-// Git, Diff, Bus and Clock are required.
+// Git, Diff, Bus, Clock, Owner and PublicURL are required (the config supplies
+// the defaults of Owner and Retention).
 type CIConfig struct {
 	Store  ports.CIStore
 	Logs   ports.CILogStore
@@ -91,9 +92,6 @@ func (c CIConfig) withDefaults() CIConfig {
 	def(&c.Retention, domain.CIRetentionDays*24*time.Hour)
 	if c.TriggerQueue <= 0 {
 		c.TriggerQueue = DefaultCITriggerQueue
-	}
-	if c.Owner == "" {
-		c.Owner = "owner"
 	}
 	return c
 }
@@ -148,6 +146,9 @@ type pollRecord struct {
 // NewCI builds the CI use cases. ctx carries the logger; its cancellation is
 // not followed: call Start to run the workers and Close to stop them.
 func NewCI(ctx context.Context, cfg CIConfig) *CI {
+	if cfg.Owner == "" {
+		panic("usecase: CIConfig.Owner is required")
+	}
 	cfg = cfg.withDefaults()
 	run, stop := context.WithCancel(context.WithoutCancel(ctx))
 	return &CI{
