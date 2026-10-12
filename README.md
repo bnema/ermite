@@ -69,7 +69,7 @@ Use the admin token (`ERMITE_ADMIN_TOKEN`) or a stored token as the password; th
 For an AI agent that should propose changes, not publish them: `--branch-prefix agent/claude/` (repeatable, up to 8, each ending with `/`) limits a token to the branches under its prefixes.
 
 - It can push, force-push and delete `refs/heads/agent/claude/…`. Any other ref (`main`, other branches, tags, notes, anything outside `refs/heads/`) refuses the whole push, and the message names the ref.
-- It cannot create a repository (push to a new name, or `repo create`) nor delete one, never has the rights of the owner (it cannot open web sessions even with every scope), and can only create tokens whose prefixes lie within its own.
+- It cannot create a repository (push to a new name, or `repo create`), delete one, or change its settings (default branch, visibility, description, merge modes, failing-checks rule): those decide what happens to branches outside its prefixes. It never has the rights of the owner (it cannot open web sessions even with every scope), and can only create tokens whose prefixes lie within its own.
 - It opens, comments on and closes merge requests as usual; with `mr:merge` it can merge only into a branch under its prefixes, and delete only a source branch under them. You review and merge the agent's request.
 - `ermite token list` shows a `branches` column (`all` when unlimited); `--json` has `branch_prefixes`.
 - This build stores tokens in storage schema 2. Once it has started on your data, an older ermite refuses to start on it (it would read limited tokens as unrestricted): to go back, restore the backup taken before the upgrade.
