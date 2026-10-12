@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // MaxDescriptionLen is the longest repository description, in bytes.
@@ -33,34 +34,14 @@ func validateDescription(s string) error {
 	return nil
 }
 
-// RepoView is a repository with the Git state that belongs in its summary.
-type RepoView struct {
-	domain.Repo
-	// DefaultBranch is the branch HEAD points to, even when it does not exist
-	// yet; empty when HEAD is detached or the directory is missing.
-	DefaultBranch string
-}
-
 // View adds the default branch to a repository the caller has already been
 // allowed to see. A repository without a directory has no default branch.
-func (r *Repos) View(ctx context.Context, repo domain.Repo) (RepoView, error) {
+func (r *Repos) View(ctx context.Context, repo domain.Repo) (ports.RepoView, error) {
 	branch, err := r.git.HeadBranch(ctx, repo.Name)
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return RepoView{}, fmt.Errorf("read default branch of %q: %w", repo.Name, err)
+		return ports.RepoView{}, fmt.Errorf("read default branch of %q: %w", repo.Name, err)
 	}
-	return RepoView{Repo: repo, DefaultBranch: branch}, nil
-}
-
-// UpdateParams are the changes of Update; a nil field is left alone.
-type UpdateParams struct {
-	Description   *string
-	Visibility    *domain.Visibility
-	DefaultBranch *string
-	// AllowedMergeModes replaces the allowed merge modes; it must hold at
-	// least one known mode.
-	AllowedMergeModes *[]domain.MergeMode
-	// FailingChecksBlock replaces the setting of that name.
-	FailingChecksBlock *bool
+	return ports.RepoView{Repo: repo, DefaultBranch: branch}, nil
 }
 
 // Update changes the description, the visibility, the default branch and the
@@ -71,7 +52,7 @@ type UpdateParams struct {
 // The metadata is written first, then HEAD, and RepoUpdated is published after
 // both. When only the HEAD move fails, RepoUpdated is still published for the
 // stored metadata and the HEAD error is returned.
-func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.RepoName, params UpdateParams) (domain.Repo, error) {
+func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.RepoName, params ports.UpdateRepoParams) (domain.Repo, error) {
 	repo, err := lookupRepo(ctx, r.meta, name)
 	if err != nil {
 		return domain.Repo{}, err
@@ -158,7 +139,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 
 // updateMeta applies the metadata fields, retrying when a write (a push
 // recording pushed_at) gets in between.
-func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params UpdateParams) (domain.Repo, error) {
+func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params ports.UpdateRepoParams) (domain.Repo, error) {
 	for range pushRetries {
 		repo, err := r.meta.Get(ctx, name)
 		if err != nil {

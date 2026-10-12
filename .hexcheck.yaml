@@ -40,6 +40,9 @@ components:
     role: ignore
     paths:
       - internal/readertest/**
+# Cross-layer contracts live in ports: adapters and app import ports and domain,
+# never each other. hexcheck has no rule for an adapter importing app (only the
+# reverse, no-infra-imports-in-usecase), so that direction is kept by review.
 rules:
   no-adapter-imports-in-core: error
   no-infra-imports-in-usecase: error
@@ -53,8 +56,7 @@ rules:
 mocking:
   generatedMockPaths:
     - internal/ports/mocks/**
-    - internal/app/mocks/**
-    - internal/adapters/*/mocks/**
+    - internal/adapters/web/mocks/**
   generatedMockNamePatterns:
     - '{{Interface}}'
 allow:

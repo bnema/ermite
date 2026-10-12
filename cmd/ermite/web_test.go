@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the golden files of the web tests")
@@ -30,7 +30,7 @@ const webFixtureReadme = "# Demo\n\nA small *demo* with a [guide](docs/guide.md)
 // branches (one with a slash), two tags and a description.
 func (h *harness) webRepo(name string) {
 	h.t.Helper()
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{
 		Name: h.name(name), Description: "A demo repository", Visibility: domain.VisibilityPublic,
 	})
 	require.NoError(h.t, err)
@@ -162,7 +162,7 @@ func TestWebPrivateRepoIsInvisible(t *testing.T) {
 // AC4, end to end: a README that attacks the page is neutralised.
 func TestWebReadmeIsNeutralised(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name("evil"), Visibility: domain.VisibilityPublic})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name("evil"), Visibility: domain.VisibilityPublic})
 	require.NoError(t, err)
 	wt := h.t.TempDir()
 	h.mustGit(wt, "init", "-q", "--initial-branch=main")

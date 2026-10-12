@@ -18,9 +18,9 @@ import (
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/config"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // harness is a forge wired like `ermite serve`, behind an httptest server,
@@ -186,7 +186,7 @@ func (h *harness) status(method, path string, hdr http.Header) int {
 // token creates a stored token through the use case, as root.
 func (h *harness) token(scopes []domain.Scope, repos ...string) string {
 	h.t.Helper()
-	p := app.CreateTokenParams{Label: "e2e", Scopes: scopes}
+	p := ports.CreateTokenParams{Label: "e2e", Scopes: scopes}
 	for _, r := range repos {
 		p.Repos = append(p.Repos, h.name(r))
 	}

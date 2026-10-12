@@ -11,15 +11,15 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // BlobChunkSize is the largest chunk of a GetBlob stream.
 const BlobChunkSize = 64 << 10
 
 // gitService implements ermiteconnect.GitServiceHandler.
-type gitService struct{ browse Browse }
+type gitService struct{ browse ports.BrowseService }
 
 // target is the repository and revision most requests start with.
 func target(repo, revision string) (domain.RepoName, domain.Revision, error) {
@@ -39,7 +39,7 @@ func (s *gitService) ListRefs(ctx context.Context, req *connect.Request[pb.ListR
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	params := app.ListRefsParams{PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken()}
+	params := ports.ListRefsParams{PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken()}
 	for _, k := range req.Msg.GetKinds() {
 		kind, err := refKindFromPB(k)
 		if err != nil {
@@ -144,7 +144,7 @@ func (s *gitService) ListCommits(ctx context.Context, req *connect.Request[pb.Li
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	page, err := s.browse.ListCommits(ctx, caller(ctx), name, app.ListCommitsParams{
+	page, err := s.browse.ListCommits(ctx, caller(ctx), name, ports.ListCommitsParams{
 		Revision: rev, Path: path, PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken(),
 	})
 	if err != nil {

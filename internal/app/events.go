@@ -27,7 +27,7 @@ const (
 	// MaxWatchers is the most watches in progress at once.
 	MaxWatchers = 256
 	// MaxWatchersPerClient is the most watches in progress for one client
-	// address (see WatchParams.Client).
+	// address (see ports.WatchParams.Client).
 	MaxWatchersPerClient = 16
 	// DefaultRevalidateEvery is how long a watcher with a stored token goes
 	// without asking the token store whether the token still exists.
@@ -74,7 +74,7 @@ type bufferedEvent struct {
 // NewEvents and lives until Close.
 type Events struct {
 	repos *Repos
-	auth  Revalidator
+	auth  ports.Revalidator
 	clock ports.Clock
 	boot  string
 	size  int
@@ -92,13 +92,15 @@ type Events struct {
 	clients map[string]int // watches in progress by client
 }
 
+var _ ports.EventService = (*Events)(nil)
+
 // EventsConfig configures Events.
 type EventsConfig struct {
 	// Size is the number of events remembered; DefaultEventBuffer when not
 	// positive.
 	Size int
 	// Auth confirms that the token of a watcher still exists. Required.
-	Auth Revalidator
+	Auth ports.Revalidator
 	// RevalidateEvery is how long the answer of Auth is kept for a watcher;
 	// DefaultRevalidateEvery when zero, and negative to ask for every event.
 	RevalidateEvery time.Duration
@@ -246,40 +248,6 @@ func (e *Events) parseID(id string) (uint64, bool) {
 	return n, err == nil && n > 0
 }
 
-// WatchParams select the events of a watch.
-type WatchParams struct {
-	// Topics are TopicHome or "repo:<name>"; empty means TopicHome.
-	Topics []string
-	// ResumeAfter is the id of the last event the caller saw; empty to
-	// receive only new events.
-	ResumeAfter string
-	// Client identifies where the watch comes from, for the limit per client
-	// (MaxWatchersPerClient): an opaque key such as a normalized address; the
-	// web passes its visitor's. Empty only for callers with no client, which
-	// count against MaxWatchers alone.
-	Client string
-	// Ready, when not nil, is called once the topics are valid and the watch
-	// is registered: events published from then on are not missed. Nothing is
-	// sent before it returns.
-	Ready func()
-}
-
-// WatchEvent is one item of a watch.
-type WatchEvent struct {
-	// ID identifies the event, for resuming. Empty on a gap.
-	ID string
-	// Gap tells that events were lost: the caller must reload what it shows.
-	// Event is nil then.
-	Gap bool
-	// Event is a domain.RepoCreated, RepoUpdated, RepoDeleted, PushEvent,
-	// MergeRequestOpened, MergeRequestMerged, MergeRequestClosed or
-	// CommentAdded.
-	Event domain.Event
-	// Repo is the state of the repository at delivery, for RepoCreated and
-	// RepoUpdated.
-	Repo *RepoView
-}
-
 // watch is the state of one Watch call.
 type watch struct {
 	p     domain.Principal
@@ -337,7 +305,7 @@ func (e *Events) parseTopics(ctx context.Context, p domain.Principal, topics []s
 // buffered, or was not issued by this run, a gap comes first and the oldest
 // buffered event follows. A watcher that falls more than the buffer behind
 // gets a gap too, and carries on with the oldest buffered event.
-func (e *Events) Watch(ctx context.Context, p domain.Principal, params WatchParams, send func(WatchEvent) error) error {
+func (e *Events) Watch(ctx context.Context, p domain.Principal, params ports.WatchParams, send func(ports.WatchEvent) error) error {
 	w, err := e.parseTopics(ctx, p, params.Topics)
 	if err != nil {
 		return err
@@ -382,7 +350,7 @@ func (e *Events) Watch(ctx context.Context, p domain.Principal, params WatchPara
 	log := zerowrap.FromCtx(ctx)
 	log.Debug().Strs("topics", params.Topics).Bool("resume", params.ResumeAfter != "").Bool("gap", gap).Msg("watch started")
 	if gap {
-		if err := send(WatchEvent{Gap: true}); err != nil {
+		if err := send(ports.WatchEvent{Gap: true}); err != nil {
 			return err
 		}
 	}
@@ -392,7 +360,7 @@ func (e *Events) Watch(ctx context.Context, p domain.Principal, params WatchPara
 		}
 		batch, changed, oldest, lost, closed := e.since(next)
 		if lost {
-			if err := send(WatchEvent{Gap: true}); err != nil {
+			if err := send(ports.WatchEvent{Gap: true}); err != nil {
 				return err
 			}
 			next = oldest
@@ -482,15 +450,15 @@ func (e *Events) since(next uint64) (batch []bufferedEvent, changed <-chan struc
 }
 
 // deliver sends the event if the watcher follows its topic and may see it.
-func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send func(WatchEvent) error) error {
+func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send func(ports.WatchEvent) error) error {
 	if err := e.stillAllowed(ctx, w); err != nil {
 		return err
 	}
-	out := WatchEvent{ID: e.id(be.seq), Event: be.ev}
+	out := ports.WatchEvent{ID: e.id(be.seq), Event: be.ev}
 	switch ev := be.ev.(type) {
 	case domain.EventGap:
 		// The feeder lost events: tell every watcher.
-		return send(WatchEvent{Gap: true})
+		return send(ports.WatchEvent{Gap: true})
 	case domain.RepoDeleted:
 		// The repository is gone: use the visibility it had.
 		if !w.wants(ev.Repo) || !canReadAs(w.p, ev.Repo, ev.Visibility) {
@@ -523,7 +491,7 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 // The exception is a repository that became private: the watchers who could
 // read it before are told once, with its name and its new visibility only,
 // so that what they show can be removed.
-func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName, withRepo bool, be bufferedEvent, out WatchEvent, send func(WatchEvent) error) error {
+func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName, withRepo bool, be bufferedEvent, out ports.WatchEvent, send func(ports.WatchEvent) error) error {
 	if !w.wants(name) || !be.known {
 		return nil
 	}
@@ -541,7 +509,7 @@ func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName
 	}
 	if !canReadAs(w.p, name, be.vis) {
 		if up, ok := be.ev.(domain.RepoUpdated); ok && canReadAs(w.p, name, up.Previous) {
-			out.Repo = &RepoView{Repo: domain.Repo{Name: name, Visibility: up.Visibility}}
+			out.Repo = &ports.RepoView{Repo: domain.Repo{Name: name, Visibility: up.Visibility}}
 			return send(out)
 		}
 		return nil

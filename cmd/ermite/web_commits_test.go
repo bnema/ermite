@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // diffFixture is the repository of the commit pages: one commit for each
@@ -27,7 +27,7 @@ type diffFixture struct {
 // createRepo creates a public repository for the pages.
 func (h *harness) createRepo(name string, vis domain.Visibility) {
 	h.t.Helper()
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name(name), Description: "Diffs", Visibility: vis})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name(name), Description: "Diffs", Visibility: vis})
 	require.NoError(h.t, err)
 }
 

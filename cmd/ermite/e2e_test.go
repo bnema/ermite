@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 func scopes(s ...domain.Scope) []domain.Scope { return s }
@@ -29,7 +29,7 @@ func scopes(s ...domain.Scope) []domain.Scope { return s }
 // publicRepo creates a public repository with one commit pushed by root.
 func (h *harness) publicRepo(name string, files ...string) {
 	h.t.Helper()
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name(name), Visibility: domain.VisibilityPublic})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name(name), Visibility: domain.VisibilityPublic})
 	require.NoError(h.t, err)
 	wt := h.workTree("main", files...)
 	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/"+name+".git"), "main")
@@ -189,7 +189,7 @@ func TestAC2PushAuthorization(t *testing.T) {
 	assert.Contains(t, out, "Authentication failed")
 
 	// Revoked token.
-	created, err := h.forge.Tokens.Create(h.ctx, domain.Root(), app.CreateTokenParams{Label: "short", Scopes: scopes(domain.ScopeRepoWrite)})
+	created, err := h.forge.Tokens.Create(h.ctx, domain.Root(), ports.CreateTokenParams{Label: "short", Scopes: scopes(domain.ScopeRepoWrite)})
 	require.NoError(t, err)
 	next("before-revoke")
 	out, err = h.git(wt, "push", "-q", h.urlAuth(created.Secret, "/proj.git"), "main")
@@ -570,20 +570,20 @@ func TestAC8TokenCreationThroughTheForge(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	ctx := context.Background()
 
-	admin, err := h.forge.Tokens.Create(ctx, domain.Root(), app.CreateTokenParams{
+	admin, err := h.forge.Tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{
 		Label: "limited admin", Scopes: scopes(domain.ScopeTokenAdmin, domain.ScopeRepoWrite), Repos: []domain.RepoName{h.name("a")},
 	})
 	require.NoError(t, err)
 	p, err := h.forge.Auth.Authenticate(ctx, admin.Secret)
 	require.NoError(t, err)
 
-	_, err = h.forge.Tokens.Create(ctx, p, app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoAdmin), Repos: []domain.RepoName{h.name("a")}})
+	_, err = h.forge.Tokens.Create(ctx, p, ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoAdmin), Repos: []domain.RepoName{h.name("a")}})
 	assert.ErrorIs(t, err, domain.ErrForbidden, "scope escalation")
-	_, err = h.forge.Tokens.Create(ctx, p, app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoWrite)})
+	_, err = h.forge.Tokens.Create(ctx, p, ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoWrite)})
 	assert.ErrorIs(t, err, domain.ErrForbidden, "repository list escalation")
-	_, err = h.forge.Tokens.Create(ctx, p, app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoWrite), Repos: []domain.RepoName{h.name("b")}})
+	_, err = h.forge.Tokens.Create(ctx, p, ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoWrite), Repos: []domain.RepoName{h.name("b")}})
 	assert.ErrorIs(t, err, domain.ErrForbidden, "another repository")
-	child, err := h.forge.Tokens.Create(ctx, p, app.CreateTokenParams{Label: "child", Scopes: scopes(domain.ScopeRepoWrite), Repos: []domain.RepoName{h.name("a")}})
+	child, err := h.forge.Tokens.Create(ctx, p, ports.CreateTokenParams{Label: "child", Scopes: scopes(domain.ScopeRepoWrite), Repos: []domain.RepoName{h.name("a")}})
 	require.NoError(t, err)
 
 	// The child works on its repository, and revoking the index entry kills it at once.

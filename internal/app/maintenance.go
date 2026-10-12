@@ -38,6 +38,8 @@ type Maintainer struct {
 	wg      sync.WaitGroup
 }
 
+var _ ports.MaintenanceScheduler = (*Maintainer)(nil)
+
 type maintEntry struct {
 	timer   *time.Timer // pending run, nil while running or idle
 	running bool

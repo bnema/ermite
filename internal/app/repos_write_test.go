@@ -15,6 +15,7 @@ import (
 
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -36,7 +37,7 @@ func TestUpdate(t *testing.T) {
 			Repo: n, At: now, Visibility: domain.VisibilityPublic, Previous: domain.VisibilityPrivate,
 		}).Return().Once()
 
-		got, err := f.repos.Update(ctx, admin, n, app.UpdateParams{
+		got, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{
 			Description: ptr("new"), Visibility: ptr(domain.VisibilityPublic),
 		})
 		require.NoError(t, err)
@@ -50,7 +51,7 @@ func TestUpdate(t *testing.T) {
 		f.meta.EXPECT().Update(ctx, mock.Anything).Return(domain.ErrConflict).Once()
 		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil).Once()
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
-		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{Description: ptr("x")})
+		_, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{Description: ptr("x")})
 		require.NoError(t, err)
 	})
 
@@ -61,7 +62,7 @@ func TestUpdate(t *testing.T) {
 		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
 		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").Return(nil)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
-		got, err := f.repos.Update(ctx, admin, n, app.UpdateParams{DefaultBranch: ptr("dev")})
+		got, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{DefaultBranch: ptr("dev")})
 		require.NoError(t, err)
 		assert.Equal(t, priv, got)
 	})
@@ -81,7 +82,7 @@ func TestUpdate(t *testing.T) {
 			return nil
 		})
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Run(func(context.Context, domain.Event) { order = append(order, "event") }).Return().Once()
-		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{Description: ptr("x"), DefaultBranch: ptr("dev")})
+		_, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{Description: ptr("x"), DefaultBranch: ptr("dev")})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"meta", "head", "event"}, order)
 	})
@@ -98,7 +99,7 @@ func TestUpdate(t *testing.T) {
 		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{
 			Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPublic,
 		}).Return().Once()
-		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{Visibility: ptr(domain.VisibilityPrivate), DefaultBranch: ptr("dev")})
+		_, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{Visibility: ptr(domain.VisibilityPrivate), DefaultBranch: ptr("dev")})
 		assert.ErrorIs(t, err, boom)
 	})
 
@@ -109,7 +110,7 @@ func TestUpdate(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
 		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").Return(boom)
-		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{DefaultBranch: ptr("dev")})
+		_, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{DefaultBranch: ptr("dev")})
 		assert.ErrorIs(t, err, boom)
 	})
 
@@ -118,12 +119,12 @@ func TestUpdate(t *testing.T) {
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.git.EXPECT().HasBranch(ctx, n, "nope").Return(false, nil)
-		_, err := f.repos.Update(ctx, admin, n, app.UpdateParams{Description: ptr("x"), DefaultBranch: ptr("nope")})
+		_, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{Description: ptr("x"), DefaultBranch: ptr("nope")})
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	})
 
 	t.Run("invalid input changes nothing", func(t *testing.T) {
-		for name, params := range map[string]app.UpdateParams{
+		for name, params := range map[string]ports.UpdateRepoParams{
 			"empty":             {},
 			"empty branch":      {DefaultBranch: ptr("")},
 			"multi-line":        {Description: ptr("a\nb")},
@@ -157,7 +158,7 @@ func TestUpdate(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t)
 			f.meta.EXPECT().Get(ctx, n).Return(tt.repo, nil)
-			_, err := f.repos.Update(ctx, tt.p, n, app.UpdateParams{Description: ptr("x")})
+			_, err := f.repos.Update(ctx, tt.p, n, ports.UpdateRepoParams{Description: ptr("x")})
 			assert.ErrorIs(t, err, tt.want)
 			err = f.repos.Delete(ctx, tt.p, n)
 			assert.ErrorIs(t, err, tt.want)
@@ -168,7 +169,7 @@ func TestUpdate(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
-		_, err := f.repos.Update(ctx, domain.Root(), n, app.UpdateParams{Description: ptr("x")})
+		_, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Description: ptr("x")})
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
 }

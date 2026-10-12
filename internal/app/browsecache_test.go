@@ -131,7 +131,7 @@ func TestHistoryCacheNotServedAcrossRecreate(t *testing.T) {
 			r.EXPECT().GetTree(mock.Anything, n, rev, dir, true).Return(domain.Tree{}, domain.ErrNotFound).Once()
 		}},
 		{"last change of a path", func(b *app.Browse) error {
-			_, err := b.ListCommits(ctx, domain.Anonymous(), n, app.ListCommitsParams{Revision: rev, Path: dir, PageSize: 1})
+			_, err := b.ListCommits(ctx, domain.Anonymous(), n, ports.ListCommitsParams{Revision: rev, Path: dir, PageSize: 1})
 			return err
 		}, func(r *mocks.RepoReader) {
 			q := ports.CommitQuery{Revision: rev, Path: dir, Limit: 1}
@@ -305,7 +305,7 @@ func TestListCommitsLastChangeCache(t *testing.T) {
 			}, nil).Times(tc.calls)
 			for range 2 {
 				page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name,
-					app.ListCommitsParams{Revision: tc.rev, Path: tc.path, PageSize: tc.size})
+					ports.ListCommitsParams{Revision: tc.rev, Path: tc.path, PageSize: tc.size})
 				require.NoError(t, err)
 				require.Len(t, page.Commits, 1)
 				page.Commits[0].Parents[0] = oid("f") // must not leak into the cache
@@ -319,13 +319,13 @@ func TestListCommitsLastChangeCache(t *testing.T) {
 		f.meta.EXPECT().Get(mock.Anything, pub.Name).Return(pub, nil)
 		f.reader.EXPECT().ListCommits(mock.Anything, pub.Name, ports.CommitQuery{Revision: full, Path: file, Limit: 1}).
 			Return(ports.CommitPage{Head: oid("a"), Commits: []domain.Commit{{ID: oid("c")}}, HasMore: true}, nil).Once()
-		first, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Revision: full, Path: file, PageSize: 1})
+		first, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{Revision: full, Path: file, PageSize: 1})
 		require.NoError(t, err)
 		require.NotEmpty(t, first.NextPageToken)
 		f.reader.EXPECT().ListCommits(mock.Anything, pub.Name, ports.CommitQuery{Revision: domain.RevisionOf(oid("a")), Path: file, Skip: 1, Limit: 1}).
 			Return(ports.CommitPage{Head: oid("a")}, nil).Twice()
 		for range 2 {
-			_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: file, PageSize: 1, PageToken: first.NextPageToken})
+			_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{Path: file, PageSize: 1, PageToken: first.NextPageToken})
 			require.NoError(t, err)
 		}
 	})

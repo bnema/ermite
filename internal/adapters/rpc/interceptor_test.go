@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
-	"bnema.dev/ermite/internal/adapters/rpc/mocks"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 const peer = "203.0.113.7:4242"
@@ -69,7 +69,7 @@ func TestInterceptorAuthenticate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			auth := mocks.NewAuthenticator(t)
+			auth := mocks.NewAuthService(t)
 			limiter := mocks.NewFailureLimiter(t)
 			if tt.wantLimit {
 				wait := time.Duration(0)
@@ -117,7 +117,7 @@ func TestInterceptorIgnoresForwardedForFromUntrustedPeer(t *testing.T) {
 	limiter.EXPECT().Blocked(mock.Anything, "203.0.113.7").Return(false, time.Duration(0)).Once()
 	h := bearerHeader("")
 	h.Set("X-Forwarded-For", "198.51.100.1")
-	i := newInterceptor(Config{Auth: mocks.NewAuthenticator(t), Limiter: limiter})
+	i := newInterceptor(Config{Auth: mocks.NewAuthService(t), Limiter: limiter})
 	_, err := i.authenticate(context.Background(), ermiteconnect.RepoServiceListReposProcedure, peer, h)
 	require.NoError(t, err)
 }

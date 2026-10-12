@@ -18,6 +18,7 @@ import (
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 var errInternal = errors.New("internal error")
@@ -37,8 +38,8 @@ var errInternal = errors.New("internal error")
 // put there by a server's base context, is ignored and the request is
 // authenticated from its headers.
 type interceptor struct {
-	auth    Authenticator
-	limiter FailureLimiter
+	auth    ports.AuthService
+	limiter ports.FailureLimiter
 	trusted []netip.Prefix
 }
 

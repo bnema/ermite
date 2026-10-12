@@ -23,8 +23,9 @@ import (
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/adapters/sshsig"
 	"bnema.dev/ermite/internal/app"
-	appmocks "bnema.dev/ermite/internal/app/mocks"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 // queuedRepos records the repositories whose maintenance was queued.
@@ -58,7 +59,7 @@ type mrRig struct {
 	store  *kvstore.Store
 	git    *gitcli.Git
 	bus    *eventbus.Bus
-	sched  *appmocks.MaintenanceScheduler
+	sched  *mocks.MaintenanceScheduler
 	queued *queuedRepos
 	events <-chan domain.Event
 	work   string
@@ -94,7 +95,7 @@ func newMRRig(t *testing.T) *mrRig {
 	require.NoError(t, err)
 	bus := eventbus.NewWithBuffer(1024)
 	committer := domain.Identity{Name: "ermite", Email: "ermite@git.example.org"}
-	sched := appmocks.NewMaintenanceScheduler(t)
+	sched := mocks.NewMaintenanceScheduler(t)
 	queued := &queuedRepos{}
 	sched.EXPECT().Schedule(mock.Anything, mock.Anything).Run(queued.add).Return().Maybe()
 	r := &mrRig{
@@ -109,7 +110,7 @@ func newMRRig(t *testing.T) *mrRig {
 		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: bus, Clock: fixedClock{}, Maint: r.sched,
 	})
-	_, err = r.repos.Create(ctx, root, app.CreateParams{Name: r.repo, Visibility: domain.VisibilityPrivate})
+	_, err = r.repos.Create(ctx, root, ports.CreateRepoParams{Name: r.repo, Visibility: domain.VisibilityPrivate})
 	require.NoError(t, err)
 	r.sh("init", "-q", "--initial-branch=main")
 	return r
@@ -196,7 +197,7 @@ func (r *mrRig) feature(branch string) domain.ObjectID {
 
 func (r *mrRig) open(branch string) domain.MergeRequest {
 	r.t.Helper()
-	mr, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "Add " + branch, Source: branch})
+	mr, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "Add " + branch, Source: branch})
 	require.NoError(r.t, err)
 	return mr
 }
@@ -252,26 +253,26 @@ func TestCreateMergeRequestInputRules(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		params app.CreateMergeRequestParams
+		params ports.CreateMergeRequestParams
 		field  string // "" for valid
 	}{
-		{"valid, default target", app.CreateMergeRequestParams{Title: "t", Source: "feat"}, ""},
-		{"valid, explicit target and description", app.CreateMergeRequestParams{Title: "t", Description: "a\nb", Source: "other", Target: "main"}, ""},
-		{"empty title", app.CreateMergeRequestParams{Title: "", Source: "feat", Target: "other"}, "title"},
-		{"two-line title", app.CreateMergeRequestParams{Title: "a\nb", Source: "feat", Target: "other"}, "title"},
-		{"title too long", app.CreateMergeRequestParams{Title: strings.Repeat("x", 121), Source: "feat", Target: "other"}, "title"},
-		{"title with a bidi override", app.CreateMergeRequestParams{Title: "a\u202eb", Source: "feat", Target: "other"}, "title"},
-		{"title with an escape", app.CreateMergeRequestParams{Title: "\x1b[31m", Source: "feat", Target: "other"}, "title"},
-		{"description with a control character", app.CreateMergeRequestParams{Title: "t", Description: "a\x07", Source: "feat", Target: "other"}, "description"},
-		{"description with a bidi isolate", app.CreateMergeRequestParams{Title: "t", Description: "a\u2066b", Source: "feat", Target: "other"}, "description"},
-		{"description too long", app.CreateMergeRequestParams{Title: "t", Description: strings.Repeat("x", 8001), Source: "feat", Target: "other"}, "description"},
-		{"description not utf-8", app.CreateMergeRequestParams{Title: "t", Description: "\xff", Source: "feat", Target: "other"}, "description"},
-		{"source missing", app.CreateMergeRequestParams{Title: "t", Source: ""}, "source_branch"},
-		{"source does not exist", app.CreateMergeRequestParams{Title: "t", Source: "nope", Target: "main"}, "source_branch"},
-		{"source is not a branch name", app.CreateMergeRequestParams{Title: "t", Source: "a..b", Target: "main"}, "source_branch"},
-		{"source is a full ref", app.CreateMergeRequestParams{Title: "t", Source: "refs/heads/feat", Target: "main"}, "source_branch"},
-		{"target does not exist", app.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "nope"}, "target_branch"},
-		{"same branch", app.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "feat"}, "target_branch"},
+		{"valid, default target", ports.CreateMergeRequestParams{Title: "t", Source: "feat"}, ""},
+		{"valid, explicit target and description", ports.CreateMergeRequestParams{Title: "t", Description: "a\nb", Source: "other", Target: "main"}, ""},
+		{"empty title", ports.CreateMergeRequestParams{Title: "", Source: "feat", Target: "other"}, "title"},
+		{"two-line title", ports.CreateMergeRequestParams{Title: "a\nb", Source: "feat", Target: "other"}, "title"},
+		{"title too long", ports.CreateMergeRequestParams{Title: strings.Repeat("x", 121), Source: "feat", Target: "other"}, "title"},
+		{"title with a bidi override", ports.CreateMergeRequestParams{Title: "a\u202eb", Source: "feat", Target: "other"}, "title"},
+		{"title with an escape", ports.CreateMergeRequestParams{Title: "\x1b[31m", Source: "feat", Target: "other"}, "title"},
+		{"description with a control character", ports.CreateMergeRequestParams{Title: "t", Description: "a\x07", Source: "feat", Target: "other"}, "description"},
+		{"description with a bidi isolate", ports.CreateMergeRequestParams{Title: "t", Description: "a\u2066b", Source: "feat", Target: "other"}, "description"},
+		{"description too long", ports.CreateMergeRequestParams{Title: "t", Description: strings.Repeat("x", 8001), Source: "feat", Target: "other"}, "description"},
+		{"description not utf-8", ports.CreateMergeRequestParams{Title: "t", Description: "\xff", Source: "feat", Target: "other"}, "description"},
+		{"source missing", ports.CreateMergeRequestParams{Title: "t", Source: ""}, "source_branch"},
+		{"source does not exist", ports.CreateMergeRequestParams{Title: "t", Source: "nope", Target: "main"}, "source_branch"},
+		{"source is not a branch name", ports.CreateMergeRequestParams{Title: "t", Source: "a..b", Target: "main"}, "source_branch"},
+		{"source is a full ref", ports.CreateMergeRequestParams{Title: "t", Source: "refs/heads/feat", Target: "main"}, "source_branch"},
+		{"target does not exist", ports.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "nope"}, "target_branch"},
+		{"same branch", ports.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "feat"}, "target_branch"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -290,7 +291,7 @@ func TestCreateMergeRequestInputRules(t *testing.T) {
 	}
 
 	t.Run("a request is rejected whole with every field named", func(t *testing.T) {
-		_, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "a\nb", Description: "\x07", Source: "nope", Target: "feat"})
+		_, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "a\nb", Description: "\x07", Source: "nope", Target: "feat"})
 		got := fieldsOf(t, err)
 		assert.Contains(t, got, "title")
 		assert.Contains(t, got, "description")
@@ -309,22 +310,22 @@ func TestCreateMergeRequestNumbersAndDuplicates(t *testing.T) {
 	second := r.open("two")
 	assert.Equal(t, int64(2), second.Number)
 
-	_, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "again", Source: "one", Target: "main"})
+	_, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "again", Source: "one", Target: "main"})
 	require.ErrorIs(t, err, domain.ErrAlreadyExists, "same open source and target")
-	_, err = r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "again", Source: "one"})
+	_, err = r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "again", Source: "one"})
 	require.ErrorIs(t, err, domain.ErrAlreadyExists, "the default target is the same target")
 
 	// Another target is another request.
 	r.sh("checkout", "-q", "-B", "stage", "main")
 	r.push("stage")
-	third, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "to stage", Source: "one", Target: "stage"})
+	third, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "to stage", Source: "one", Target: "stage"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), third.Number)
 
 	// Once the first is closed, the pair is free again, with a new number.
 	_, err = r.mrs.Close(r.ctx, root, r.repo, first.Number)
 	require.NoError(t, err)
-	fourth, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "retry", Source: "one"})
+	fourth, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "retry", Source: "one"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), fourth.Number, "numbers are never reused")
 }
@@ -340,7 +341,7 @@ func TestMergeRequestAccess(t *testing.T) {
 
 	reads := map[string]func(p domain.Principal) error{
 		"List": func(p domain.Principal) error {
-			_, err := r.mrs.List(r.ctx, p, r.repo, app.ListMergeRequestsParams{})
+			_, err := r.mrs.List(r.ctx, p, r.repo, ports.ListMergeRequestsParams{})
 			return err
 		},
 		"Get": func(p domain.Principal) error {
@@ -357,16 +358,16 @@ func TestMergeRequestAccess(t *testing.T) {
 	}
 	_, err := r.mrs.Get(r.ctx, reader, r.repo, n+1, false)
 	assert.ErrorIs(t, err, domain.ErrNotFound, "unknown number")
-	_, err = r.mrs.List(r.ctx, root, name(t, "ghost"), app.ListMergeRequestsParams{})
+	_, err = r.mrs.List(r.ctx, root, name(t, "ghost"), ports.ListMergeRequestsParams{})
 	assert.ErrorIs(t, err, domain.ErrNotFound, "unknown repository")
 
 	writes := map[string]func(p domain.Principal) error{
 		"Create": func(p domain.Principal) error {
-			_, err := r.mrs.Create(r.ctx, p, r.repo, app.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "feat"})
+			_, err := r.mrs.Create(r.ctx, p, r.repo, ports.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "feat"})
 			return err
 		},
 		"AddComment": func(p domain.Principal) error {
-			_, err := r.mrs.AddComment(r.ctx, p, r.repo, n, app.AddCommentParams{Text: "x"})
+			_, err := r.mrs.AddComment(r.ctx, p, r.repo, n, ports.AddCommentParams{Text: "x"})
 			return err
 		},
 		"ResolveComment": func(p domain.Principal) error {
@@ -382,7 +383,7 @@ func TestMergeRequestAccess(t *testing.T) {
 			return err
 		},
 		"Merge": func(p domain.Principal) error {
-			_, err := r.mrs.Merge(r.ctx, p, r.repo, n+100, app.MergeParams{HeadID: mr.HeadID})
+			_, err := r.mrs.Merge(r.ctx, p, r.repo, n+100, ports.MergeParams{HeadID: mr.HeadID})
 			return err
 		},
 	}
@@ -413,11 +414,11 @@ func TestMergeRequestAccess(t *testing.T) {
 	// On a public repository an anonymous caller reads, but writing is
 	// unauthenticated rather than not found.
 	pubName := name(t, "pub")
-	_, err = r.repos.Create(r.ctx, root, app.CreateParams{Name: pubName, Visibility: domain.VisibilityPublic})
+	_, err = r.repos.Create(r.ctx, root, ports.CreateRepoParams{Name: pubName, Visibility: domain.VisibilityPublic})
 	require.NoError(t, err)
-	_, err = r.mrs.List(r.ctx, domain.Anonymous(), pubName, app.ListMergeRequestsParams{})
+	_, err = r.mrs.List(r.ctx, domain.Anonymous(), pubName, ports.ListMergeRequestsParams{})
 	assert.NoError(t, err)
-	_, err = r.mrs.Create(r.ctx, domain.Anonymous(), pubName, app.CreateMergeRequestParams{Title: "t", Source: "a", Target: "b"})
+	_, err = r.mrs.Create(r.ctx, domain.Anonymous(), pubName, ports.CreateMergeRequestParams{Title: "t", Source: "a", Target: "b"})
 	assert.ErrorIs(t, err, domain.ErrUnauthenticated)
 }
 
@@ -434,24 +435,24 @@ func TestListMergeRequests(t *testing.T) {
 	require.NoError(t, err)
 	r.sh("checkout", "-q", "main")
 	merged := r.feature("f0")
-	_, err = r.mrs.Merge(r.ctx, root, r.repo, 1, app.MergeParams{HeadID: merged})
+	_, err = r.mrs.Merge(r.ctx, root, r.repo, 1, ports.MergeParams{HeadID: merged})
 	require.NoError(t, err)
 	r.sh("branch", "-D", "f4")
 	r.run(r.bare(), r.env(author), "branch", "-D", "f4")
 
-	numbers := func(p app.MergeRequestPage) []int64 {
+	numbers := func(p ports.MergeRequestPage) []int64 {
 		var out []int64
 		for _, m := range p.MergeRequests {
 			out = append(out, m.Number)
 		}
 		return out
 	}
-	all, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{})
+	all, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{5, 4, 3, 2, 1}, numbers(all), "highest number first")
 	assert.Empty(t, all.NextPageToken)
 
-	open, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{State: domain.MRStateOpen})
+	open, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{State: domain.MRStateOpen})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{5, 4, 3}, numbers(open))
 	for _, m := range open.MergeRequests {
@@ -461,35 +462,35 @@ func TestListMergeRequests(t *testing.T) {
 			assert.False(t, m.HeadID.IsZero(), "an open request carries its head")
 		}
 	}
-	closed, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{State: domain.MRStateClosed})
+	closed, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{State: domain.MRStateClosed})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{2}, numbers(closed))
-	mergedPage, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{State: domain.MRStateMerged})
+	mergedPage, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{State: domain.MRStateMerged})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{1}, numbers(mergedPage))
 	assert.Equal(t, merged, mergedPage.MergeRequests[0].HeadID, "a merged request keeps the head it had")
 
 	// Paging: the token names the last number.
-	p1, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{PageSize: 2})
+	p1, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{PageSize: 2})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{5, 4}, numbers(p1))
 	require.NotEmpty(t, p1.NextPageToken)
 	// A request created between the pages does not shift them.
 	r.feature("late")
 	r.open("late")
-	p2, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{PageSize: 2, PageToken: p1.NextPageToken})
+	p2, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{PageSize: 2, PageToken: p1.NextPageToken})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{3, 2}, numbers(p2))
-	p3, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{PageSize: 2, PageToken: p2.NextPageToken})
+	p3, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{PageSize: 2, PageToken: p2.NextPageToken})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{1}, numbers(p3))
 	assert.Empty(t, p3.NextPageToken)
 
 	for _, tok := range []string{"garbage", "bW9yZQ"} {
-		_, err = r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{PageToken: tok})
+		_, err = r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{PageToken: tok})
 		assert.ErrorIs(t, err, domain.ErrInvalidPageToken)
 	}
-	_, err = r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{PageSize: -1})
+	_, err = r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{PageSize: -1})
 	assert.ErrorIs(t, err, domain.ErrInvalidPageSize)
 	_ = nums
 }
@@ -499,9 +500,9 @@ func TestGetMergeRequest(t *testing.T) {
 	main := r.seed()
 	head := r.feature("feat")
 	mr := r.open("feat")
-	_, err := r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, app.AddCommentParams{Text: "first"})
+	_, err := r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{Text: "first"})
 	require.NoError(t, err)
-	_, err = r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, app.AddCommentParams{Text: "second"})
+	_, err = r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{Text: "second"})
 	require.NoError(t, err)
 
 	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
@@ -565,30 +566,30 @@ func TestAddComment(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		params app.AddCommentParams
+		params ports.AddCommentParams
 		field  string // "" for valid
 	}{
-		{"general", app.AddCommentParams{Text: "looks good"}, ""},
-		{"multi-line general", app.AddCommentParams{Text: "a\n\nb"}, ""},
-		{"new side of a changed line", app.AddCommentParams{Path: "a.txt", Line: 2, Side: domain.SideNew, Text: "x"}, ""},
-		{"old side of a changed line", app.AddCommentParams{Path: "a.txt", Line: 2, Side: domain.SideOld, Text: "x"}, ""},
-		{"context line", app.AddCommentParams{Path: "a.txt", Line: 3, Side: domain.SideNew, Text: "x"}, ""},
-		{"added file", app.AddCommentParams{Path: "c.txt", Line: 1, Side: domain.SideNew, Text: "x"}, ""},
-		{"empty text", app.AddCommentParams{Text: ""}, "text"},
-		{"blank text", app.AddCommentParams{Text: " \n "}, "text"},
-		{"text too long", app.AddCommentParams{Text: strings.Repeat("x", 8001)}, "text"},
-		{"text with a control character", app.AddCommentParams{Text: "a\x1b[0m"}, "text"},
-		{"text with a tab", app.AddCommentParams{Text: "a\tb"}, "text"},
-		{"text with a bidi override", app.AddCommentParams{Text: "a\u202eb"}, "text"},
-		{"line outside the diff", app.AddCommentParams{Path: "a.txt", Line: 40, Side: domain.SideNew, Text: "x"}, "path"},
-		{"unchanged file", app.AddCommentParams{Path: "b.txt", Line: 1, Side: domain.SideNew, Text: "x"}, "path"},
-		{"unknown path", app.AddCommentParams{Path: "nope.txt", Line: 1, Side: domain.SideNew, Text: "x"}, "path"},
-		{"deleted line on the wrong side", app.AddCommentParams{Path: "c.txt", Line: 1, Side: domain.SideOld, Text: "x"}, "path"},
-		{"path without a line", app.AddCommentParams{Path: "a.txt", Side: domain.SideNew, Text: "x"}, "line"},
-		{"path without a side", app.AddCommentParams{Path: "a.txt", Line: 2, Text: "x"}, "side"},
-		{"line without a path", app.AddCommentParams{Line: 2, Side: domain.SideNew, Text: "x"}, "path"},
-		{"side without a path", app.AddCommentParams{Side: domain.SideOld, Text: "x"}, "path"},
-		{"negative line", app.AddCommentParams{Path: "a.txt", Line: -2, Side: domain.SideNew, Text: "x"}, "line"},
+		{"general", ports.AddCommentParams{Text: "looks good"}, ""},
+		{"multi-line general", ports.AddCommentParams{Text: "a\n\nb"}, ""},
+		{"new side of a changed line", ports.AddCommentParams{Path: "a.txt", Line: 2, Side: domain.SideNew, Text: "x"}, ""},
+		{"old side of a changed line", ports.AddCommentParams{Path: "a.txt", Line: 2, Side: domain.SideOld, Text: "x"}, ""},
+		{"context line", ports.AddCommentParams{Path: "a.txt", Line: 3, Side: domain.SideNew, Text: "x"}, ""},
+		{"added file", ports.AddCommentParams{Path: "c.txt", Line: 1, Side: domain.SideNew, Text: "x"}, ""},
+		{"empty text", ports.AddCommentParams{Text: ""}, "text"},
+		{"blank text", ports.AddCommentParams{Text: " \n "}, "text"},
+		{"text too long", ports.AddCommentParams{Text: strings.Repeat("x", 8001)}, "text"},
+		{"text with a control character", ports.AddCommentParams{Text: "a\x1b[0m"}, "text"},
+		{"text with a tab", ports.AddCommentParams{Text: "a\tb"}, "text"},
+		{"text with a bidi override", ports.AddCommentParams{Text: "a\u202eb"}, "text"},
+		{"line outside the diff", ports.AddCommentParams{Path: "a.txt", Line: 40, Side: domain.SideNew, Text: "x"}, "path"},
+		{"unchanged file", ports.AddCommentParams{Path: "b.txt", Line: 1, Side: domain.SideNew, Text: "x"}, "path"},
+		{"unknown path", ports.AddCommentParams{Path: "nope.txt", Line: 1, Side: domain.SideNew, Text: "x"}, "path"},
+		{"deleted line on the wrong side", ports.AddCommentParams{Path: "c.txt", Line: 1, Side: domain.SideOld, Text: "x"}, "path"},
+		{"path without a line", ports.AddCommentParams{Path: "a.txt", Side: domain.SideNew, Text: "x"}, "line"},
+		{"path without a side", ports.AddCommentParams{Path: "a.txt", Line: 2, Text: "x"}, "side"},
+		{"line without a path", ports.AddCommentParams{Line: 2, Side: domain.SideNew, Text: "x"}, "path"},
+		{"side without a path", ports.AddCommentParams{Side: domain.SideOld, Text: "x"}, "path"},
+		{"negative line", ports.AddCommentParams{Path: "a.txt", Line: -2, Side: domain.SideNew, Text: "x"}, "line"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -625,7 +626,7 @@ func TestAddComment(t *testing.T) {
 	t.Run("not open", func(t *testing.T) {
 		_, err := r.mrs.Close(r.ctx, mrW, r.repo, n)
 		require.NoError(t, err)
-		_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, n, app.AddCommentParams{Text: "late"})
+		_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, n, ports.AddCommentParams{Text: "late"})
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		_, err = r.mrs.ResolveComment(r.ctx, mrW, r.repo, n, 1, true)
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
@@ -642,7 +643,7 @@ func TestConcurrentComments(t *testing.T) {
 	ids := make(chan int64, workers)
 	for i := range workers {
 		wg.Go(func() {
-			c, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, app.AddCommentParams{Text: fmt.Sprintf("c%d", i)})
+			c, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, ports.AddCommentParams{Text: fmt.Sprintf("c%d", i)})
 			if assert.NoError(t, err) {
 				ids <- c.ID
 			}
@@ -666,7 +667,7 @@ func TestResolveComment(t *testing.T) {
 	r.seed()
 	r.feature("feat")
 	mr := r.open("feat")
-	c, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, app.AddCommentParams{Text: "fix this"})
+	c, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, ports.AddCommentParams{Text: "fix this"})
 	require.NoError(t, err)
 	r.drain()
 
@@ -698,9 +699,9 @@ func TestEventsOfAMergeRequest(t *testing.T) {
 	r.drain()
 
 	mr := r.open("feat")
-	c, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, app.AddCommentParams{Text: "note"})
+	c, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, ports.AddCommentParams{Text: "note"})
 	require.NoError(t, err)
-	_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+	_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 	require.NoError(t, err)
 
 	r.feature("other")
@@ -732,7 +733,7 @@ func TestEventsOfAMergeRequest(t *testing.T) {
 	// Failed calls publish nothing.
 	_, err = r.mrs.Close(r.ctx, mrW, r.repo, other.Number)
 	require.Error(t, err)
-	_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, other.Number, app.AddCommentParams{Text: "x"})
+	_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, other.Number, ports.AddCommentParams{Text: "x"})
 	require.Error(t, err)
 	assert.Empty(t, r.drain())
 }
@@ -859,7 +860,7 @@ func TestMergeFastForward(t *testing.T) {
 	mr := r.open("feat")
 	r.drain()
 
-	merged, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+	merged, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 	require.NoError(t, err)
 	assert.Equal(t, domain.MRStateMerged, merged.State)
 	assert.Equal(t, domain.MergeModeFastForward, merged.MergeMode, "the default mode")
@@ -880,11 +881,11 @@ func TestMergeFastForward(t *testing.T) {
 	assert.Len(t, d.Diff.Files, 2)
 
 	// Repeating it, or touching a final request, is a failed precondition.
-	_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+	_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	_, err = r.mrs.Close(r.ctx, mrW, r.repo, mr.Number)
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
-	_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, app.AddCommentParams{Text: "x"})
+	_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, ports.AddCommentParams{Text: "x"})
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 }
 
@@ -897,14 +898,14 @@ func TestMergeRefusals(t *testing.T) {
 		mr := r.open("feat")
 		r.commit(author, "more.txt", "m\n", "pushed after the review")
 		r.push("feat")
-		_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+		_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		assert.Contains(t, err.Error(), "branch moved, read again")
 		assert.NotEqual(t, head, r.branchHead("main"), "main did not move")
 		// Reading again gives the new head, which merges.
 		d, err := r.mrs.Get(r.ctx, mrM, r.repo, mr.Number, false)
 		require.NoError(t, err)
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: d.MergeRequest.HeadID})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: d.MergeRequest.HeadID})
 		require.NoError(t, err)
 	})
 
@@ -919,7 +920,7 @@ func TestMergeRefusals(t *testing.T) {
 		tip := r.branchHead("main")
 
 		for _, mode := range []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash} {
-			_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, Mode: mode})
+			_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, Mode: mode})
 			require.ErrorIs(t, err, domain.ErrPreconditionFailed, mode)
 			assert.Contains(t, err.Error(), "rebase", mode)
 		}
@@ -932,7 +933,7 @@ func TestMergeRefusals(t *testing.T) {
 		r.sh("checkout", "-q", "feat")
 		r.sh("rebase", "-q", "main")
 		r.push("feat")
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: r.head()})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: r.head()})
 		require.NoError(t, err)
 	})
 
@@ -942,13 +943,13 @@ func TestMergeRefusals(t *testing.T) {
 		head := r.feature("feat")
 		mr := r.open("feat")
 		modes := []domain.MergeMode{domain.MergeModeFastForward}
-		_, err := r.repos.Update(r.ctx, root, r.repo, app.UpdateParams{AllowedMergeModes: &modes})
+		_, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowedMergeModes: &modes})
 		require.NoError(t, err)
 
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, Mode: domain.MergeModeSquash})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, Mode: domain.MergeModeSquash})
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		assert.Contains(t, err.Error(), "squash")
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 		require.NoError(t, err, "fast-forward is allowed")
 	})
 
@@ -958,11 +959,11 @@ func TestMergeRefusals(t *testing.T) {
 		head := r.feature("feat")
 		mr := r.open("feat")
 		modes := []domain.MergeMode{domain.MergeModeSquash}
-		_, err := r.repos.Update(r.ctx, root, r.repo, app.UpdateParams{AllowedMergeModes: &modes})
+		_, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowedMergeModes: &modes})
 		require.NoError(t, err)
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, Mode: domain.MergeModeSquash})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, Mode: domain.MergeModeSquash})
 		require.NoError(t, err)
 	})
 
@@ -971,13 +972,13 @@ func TestMergeRefusals(t *testing.T) {
 		r.seed()
 		head := r.feature("feat")
 		mr := r.open("feat")
-		_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{})
+		_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{})
 		require.ErrorIs(t, err, domain.ErrInvalid)
 		assert.Contains(t, fieldsOf(t, err), "head_id")
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, Mode: "rebase"})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, Mode: "rebase"})
 		require.ErrorIs(t, err, domain.ErrInvalid)
 		assert.Contains(t, fieldsOf(t, err), "mode")
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, 99, app.MergeParams{HeadID: head})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, 99, ports.MergeParams{HeadID: head})
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
 
@@ -987,13 +988,13 @@ func TestMergeRefusals(t *testing.T) {
 		head := r.feature("feat")
 		mr := r.open("feat")
 		r.run(r.bare(), r.env(author), "branch", "-D", "feat")
-		_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+		_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		assert.Contains(t, err.Error(), "no longer exists")
 
 		r.push("feat")
 		r.run(r.bare(), r.env(author), "update-ref", "refs/heads/main", head.String())
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed, "the target already is at the head")
 		assert.Contains(t, err.Error(), "nothing to merge")
 	})
@@ -1022,7 +1023,7 @@ func TestConcurrentMergesSerialize(t *testing.T) {
 				continue
 			}
 			wg.Go(func() {
-				_, err := r.mrs.Merge(r.ctx, mrM, r.repo, number, app.MergeParams{HeadID: head, Mode: mode})
+				_, err := r.mrs.Merge(r.ctx, mrM, r.repo, number, ports.MergeParams{HeadID: head, Mode: mode})
 				results <- outcome{number, err}
 			})
 		}
@@ -1079,11 +1080,11 @@ func TestSquashMerge(t *testing.T) {
 	r.commit(bob, "w.txt", "w\n", "bob again")
 	r.push("feat")
 	head := r.branchHead("feat")
-	mr, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "Add things", Source: "feat"})
+	mr, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "Add things", Source: "feat"})
 	require.NoError(t, err)
 	r.drain()
 
-	merged, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, Mode: domain.MergeModeSquash})
+	merged, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, Mode: domain.MergeModeSquash})
 	require.NoError(t, err)
 	assert.Equal(t, domain.MergeModeSquash, merged.MergeMode)
 	require.False(t, merged.MergedCommitID.IsZero())
@@ -1144,7 +1145,7 @@ func TestSquashSingleCommitHasNoTrailer(t *testing.T) {
 	r.commit(author, "m.txt", "m\n", "only")
 	r.push("mine")
 	mr := r.open("mine")
-	merged, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: r.branchHead("mine"), Mode: domain.MergeModeSquash})
+	merged, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: r.branchHead("mine"), Mode: domain.MergeModeSquash})
 	require.NoError(t, err)
 	msg := r.run(r.bare(), r.env(author), "log", "-1", "--format=%B", merged.MergedCommitID.String())
 	assert.Equal(t, "Add mine (!1)\n\n- only", msg)
@@ -1159,7 +1160,7 @@ func TestUpdateRepoSettings(t *testing.T) {
 
 	modes := []domain.MergeMode{domain.MergeModeSquash, domain.MergeModeSquash}
 	off := false
-	got, err := r.repos.Update(r.ctx, root, r.repo, app.UpdateParams{AllowedMergeModes: &modes, FailingChecksBlock: &off})
+	got, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowedMergeModes: &modes, FailingChecksBlock: &off})
 	require.NoError(t, err)
 	assert.Equal(t, domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, FailingChecksBlock: false}, got.Settings)
 	again, err := r.repos.Get(r.ctx, root, r.repo)
@@ -1168,14 +1169,14 @@ func TestUpdateRepoSettings(t *testing.T) {
 
 	// Only the named setting changes.
 	on := true
-	got, err = r.repos.Update(r.ctx, root, r.repo, app.UpdateParams{FailingChecksBlock: &on})
+	got, err = r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{FailingChecksBlock: &on})
 	require.NoError(t, err)
 	assert.Equal(t, []domain.MergeMode{domain.MergeModeSquash}, got.Settings.AllowedMergeModes)
 	assert.True(t, got.Settings.FailingChecksBlock)
 
 	for _, bad := range [][]domain.MergeMode{{}, nil, {"rebase"}} {
 		bad := bad
-		_, err = r.repos.Update(r.ctx, root, r.repo, app.UpdateParams{AllowedMergeModes: &bad})
+		_, err = r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowedMergeModes: &bad})
 		assert.ErrorIs(t, err, domain.ErrInvalid, "%v", bad)
 	}
 	again, err = r.repos.Get(r.ctx, root, r.repo)
@@ -1183,7 +1184,7 @@ func TestUpdateRepoSettings(t *testing.T) {
 	assert.Equal(t, got.Settings, again.Settings, "a refused change stores nothing")
 
 	// repo:admin is needed, like for any other field.
-	_, err = r.repos.Update(r.ctx, writer(domain.ScopeRepoRead, domain.ScopeMRMerge), r.repo, app.UpdateParams{FailingChecksBlock: &off})
+	_, err = r.repos.Update(r.ctx, writer(domain.ScopeRepoRead, domain.ScopeMRMerge), r.repo, ports.UpdateRepoParams{FailingChecksBlock: &off})
 	assert.ErrorIs(t, err, domain.ErrForbidden)
 }
 
@@ -1194,13 +1195,13 @@ func TestDeletingARepositoryDropsItsMergeRequests(t *testing.T) {
 	r.open("feat")
 	require.NoError(t, r.repos.Delete(r.ctx, root, r.repo))
 
-	_, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{})
+	_, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{})
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 
 	// Created again under the same name, it starts empty.
-	_, err = r.repos.Create(r.ctx, root, app.CreateParams{Name: r.repo})
+	_, err = r.repos.Create(r.ctx, root, ports.CreateRepoParams{Name: r.repo})
 	require.NoError(t, err)
-	page, err := r.mrs.List(r.ctx, root, r.repo, app.ListMergeRequestsParams{})
+	page, err := r.mrs.List(r.ctx, root, r.repo, ports.ListMergeRequestsParams{})
 	require.NoError(t, err)
 	assert.Empty(t, page.MergeRequests)
 }
@@ -1222,12 +1223,12 @@ func TestAgentPresetWorksOnItsPrivateRepository(t *testing.T) {
 	r.seed()
 	head := r.feature("feat")
 
-	mr, err := r.mrs.Create(r.ctx, agent, r.repo, app.CreateMergeRequestParams{Title: "From the agent", Source: "feat"})
+	mr, err := r.mrs.Create(r.ctx, agent, r.repo, ports.CreateMergeRequestParams{Title: "From the agent", Source: "feat"})
 	require.NoError(t, err)
 	assert.Equal(t, head, mr.HeadID)
 	assert.Equal(t, "agent-1", mr.Author)
 
-	c, err := r.mrs.AddComment(r.ctx, agent, r.repo, mr.Number, app.AddCommentParams{Text: "note"})
+	c, err := r.mrs.AddComment(r.ctx, agent, r.repo, mr.Number, ports.AddCommentParams{Text: "note"})
 	require.NoError(t, err)
 	_, err = r.mrs.ResolveComment(r.ctx, agent, r.repo, mr.Number, c.ID, true)
 	require.NoError(t, err)
@@ -1235,7 +1236,7 @@ func TestAgentPresetWorksOnItsPrivateRepository(t *testing.T) {
 	require.NoError(t, err)
 
 	// repo:write alone does not read merge requests.
-	_, err = r.mrs.List(r.ctx, agent, r.repo, app.ListMergeRequestsParams{})
+	_, err = r.mrs.List(r.ctx, agent, r.repo, ports.ListMergeRequestsParams{})
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 	_, err = r.mrs.Get(r.ctx, agent, r.repo, mr.Number, false)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
@@ -1245,11 +1246,11 @@ func TestAgentPresetWorksOnItsPrivateRepository(t *testing.T) {
 	assert.Equal(t, domain.MRStateClosed, closed.State)
 
 	// An unknown repository is not found whatever the scopes.
-	_, err = r.mrs.Create(r.ctx, agent, name(t, "ghost"), app.CreateMergeRequestParams{Title: "t", Source: "feat"})
+	_, err = r.mrs.Create(r.ctx, agent, name(t, "ghost"), ports.CreateMergeRequestParams{Title: "t", Source: "feat"})
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 	// A token limited to other repositories does not get the scope here.
 	elsewhere := domain.TokenPrincipal(domain.Token{ID: "e", Scopes: []domain.Scope{domain.ScopeRepoWrite, domain.ScopeMRWrite}, Repos: []domain.RepoName{name(t, "else")}})
-	_, err = r.mrs.Create(r.ctx, elsewhere, r.repo, app.CreateMergeRequestParams{Title: "t", Source: "feat"})
+	_, err = r.mrs.Create(r.ctx, elsewhere, r.repo, ports.CreateMergeRequestParams{Title: "t", Source: "feat"})
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
 
@@ -1267,7 +1268,7 @@ func TestMergeRecordsAPush(t *testing.T) {
 			require.True(t, before.PushedAt.IsZero(), "no push recorded yet")
 			assert.Empty(t, r.queued.names())
 
-			_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{Mode: mode, HeadID: head})
+			_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{Mode: mode, HeadID: head})
 			require.NoError(t, err)
 
 			after, err := r.repos.Get(r.ctx, root, r.repo)
@@ -1285,10 +1286,10 @@ func TestCommentsPerMergeRequestAreBounded(t *testing.T) {
 	r.feature("feat")
 	mr := r.open("feat")
 	for i := range app.MaxCommentsPerMergeRequest {
-		_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, app.AddCommentParams{Text: fmt.Sprintf("c%d", i)})
+		_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, ports.AddCommentParams{Text: fmt.Sprintf("c%d", i)})
 		require.NoError(t, err, "comment %d", i+1)
 	}
-	_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, app.AddCommentParams{Text: "one too many"})
+	_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, ports.AddCommentParams{Text: "one too many"})
 	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
 	d, err := r.mrs.Get(r.ctx, root, r.repo, mr.Number, false)
 	require.NoError(t, err)
@@ -1301,6 +1302,6 @@ func TestCommentsPerMergeRequestAreBounded(t *testing.T) {
 	r.commit(author, "o.txt", "o\n", "other")
 	r.push("other")
 	other := r.open("other")
-	_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, other.Number, app.AddCommentParams{Text: "fine"})
+	_, err = r.mrs.AddComment(r.ctx, mrW, r.repo, other.Number, ports.AddCommentParams{Text: "fine"})
 	require.NoError(t, err)
 }

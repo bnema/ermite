@@ -14,6 +14,8 @@ type SigningKey struct {
 	committer domain.Identity
 }
 
+var _ ports.SigningKeyService = (*SigningKey)(nil)
+
 // NewSigningKey builds the use case over the signer and the identity recorded
 // as the committer of the signed commits.
 func NewSigningKey(signer ports.CommitSigner, committer domain.Identity) *SigningKey {

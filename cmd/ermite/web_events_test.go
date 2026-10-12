@@ -17,6 +17,7 @@ import (
 
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // sseEvent is one event read from /-/events.
@@ -126,7 +127,7 @@ func TestWebEventsHome(t *testing.T) {
 	assert.Contains(t, ev.data, `href="/pub"`)
 
 	// A new repository is a row; so is a repository created by a push.
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name("fresh"), Description: "a <b>fresh</b> one", Visibility: domain.VisibilityPublic})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name("fresh"), Description: "a <b>fresh</b> one", Visibility: domain.VisibilityPublic})
 	require.NoError(t, err)
 	ev = s.next(t, watchWait)
 	assert.Equal(t, "home-list", ev.name)
@@ -136,7 +137,7 @@ func TestWebEventsHome(t *testing.T) {
 
 	// A repository that turns private is removed from the anonymous list.
 	priv := domain.VisibilityPrivate
-	_, err = h.forge.Repos.Update(h.ctx, domain.Root(), h.name("fresh"), app.UpdateParams{Visibility: &priv})
+	_, err = h.forge.Repos.Update(h.ctx, domain.Root(), h.name("fresh"), ports.UpdateRepoParams{Visibility: &priv})
 	require.NoError(t, err)
 	ev = s.next(t, watchWait)
 	assert.Equal(t, "home-list", ev.name)
@@ -286,7 +287,7 @@ func TestWebEventsPrivate(t *testing.T) {
 	wt := h.workTree("main", "a.txt")
 	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/priv.git"), "main")
 	desc := "secret change"
-	_, err := h.forge.Repos.Update(h.ctx, domain.Root(), h.name("priv"), app.UpdateParams{Description: &desc})
+	_, err := h.forge.Repos.Update(h.ctx, domain.Root(), h.name("priv"), ports.UpdateRepoParams{Description: &desc})
 	require.NoError(t, err)
 	// Made public later, it does not reveal what happened while it was
 	// private; the update that makes it public is shown.
@@ -303,7 +304,7 @@ func TestWebEventsPrivate(t *testing.T) {
 // public repository and requires its row to be the next event.
 func (h *harness) sentinelSSE(t *testing.T, s *sseStream, name string) {
 	t.Helper()
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name(name), Visibility: domain.VisibilityPublic})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name(name), Visibility: domain.VisibilityPublic})
 	require.NoError(t, err)
 	ev := s.next(t, watchWait)
 	assert.Contains(t, ev.data, `id="repo-`+name+`"`, "an event came before the sentinel: %s", ev.data)

@@ -22,8 +22,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/adapters/githttp"
-	ghmocks "bnema.dev/ermite/internal/adapters/githttp/mocks"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 const (
@@ -39,7 +40,7 @@ func repoName(t *testing.T, s string) domain.RepoName {
 }
 
 // startHooks serves a hook socket in a short temporary directory.
-func startHooks(t *testing.T, h githttp.PushHooks) (*githttp.HookServer, string) {
+func startHooks(t *testing.T, h ports.PushHookService) (*githttp.HookServer, string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "hk")
 	require.NoError(t, err)
@@ -80,7 +81,7 @@ func raw(t *testing.T, sock, line string) githttp.HookReply {
 
 func TestHookSocketMode(t *testing.T) {
 	t.Parallel()
-	_, sock := startHooks(t, ghmocks.NewPushHooks(t))
+	_, sock := startHooks(t, mocks.NewPushHookService(t))
 	fi, err := os.Stat(sock)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
@@ -94,21 +95,21 @@ func TestHookServerReplacesStaleSocketFile(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dir) }()
 	sock := filepath.Join(dir, "hook.sock")
 	require.NoError(t, os.WriteFile(sock, []byte("stale"), 0o600))
-	s := githttp.NewHookServer(sock, ghmocks.NewPushHooks(t))
+	s := githttp.NewHookServer(sock, mocks.NewPushHookService(t))
 	require.NoError(t, s.Listen(context.Background()))
 	s.Close(context.Background())
 }
 
 func TestHookServerRejectsTooLongSocketPath(t *testing.T) {
 	t.Parallel()
-	s := githttp.NewHookServer("/"+strings.Repeat("a", 120)+"/hook.sock", ghmocks.NewPushHooks(t))
+	s := githttp.NewHookServer("/"+strings.Repeat("a", 120)+"/hook.sock", mocks.NewPushHookService(t))
 	err := s.Listen(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "too long")
 }
 
 func TestHookProtocol(t *testing.T) {
-	hooks := ghmocks.NewPushHooks(t)
+	hooks := mocks.NewPushHookService(t)
 	srv, sock := startHooks(t, hooks)
 	p := domain.TokenPrincipal(domain.Token{ID: "tok1", Scopes: []domain.Scope{domain.ScopeRepoWrite}})
 	tokenA, releaseA := srv.Register(context.Background(), repoName(t, "alpha"), p)
@@ -202,7 +203,7 @@ func TestHookProtocol(t *testing.T) {
 // push is already in the repository.
 func TestHookRecordSurvivesShutdown(t *testing.T) {
 	t.Parallel()
-	hooks := ghmocks.NewPushHooks(t)
+	hooks := mocks.NewPushHookService(t)
 	started, proceed := make(chan struct{}), make(chan struct{})
 	var cancelled, hasDeadline bool
 	var ctxMu sync.Mutex
@@ -257,7 +258,7 @@ func TestHookRecordSurvivesShutdown(t *testing.T) {
 
 func TestHookConcurrentTokens(t *testing.T) {
 	t.Parallel()
-	hooks := ghmocks.NewPushHooks(t)
+	hooks := mocks.NewPushHookService(t)
 	srv, sock := startHooks(t, hooks)
 	var wg sync.WaitGroup
 	// Each of the 16 tokens reaches the use case for its own repository, once.
@@ -280,7 +281,7 @@ func TestHookConcurrentTokens(t *testing.T) {
 
 func TestRunHook(t *testing.T) {
 	ctx := context.Background()
-	hooks := ghmocks.NewPushHooks(t)
+	hooks := mocks.NewPushHookService(t)
 	srv, sock := startHooks(t, hooks)
 	tok, rel := srv.Register(context.Background(), repoName(t, "alpha"), domain.Root())
 	defer rel()

@@ -40,28 +40,12 @@ type Tokens struct {
 	sessions ports.SessionStore
 }
 
+var _ ports.TokenService = (*Tokens)(nil)
+
 // NewTokens builds the token use cases over their ports. sessions is where
 // revoking a token with owner rights ends every web session (see Revoke).
 func NewTokens(store ports.TokenStore, clock ports.Clock, sessions ports.SessionStore) *Tokens {
 	return &Tokens{store: store, clock: clock, sessions: sessions}
-}
-
-// CreateTokenParams are the settings of a new token.
-type CreateTokenParams struct {
-	Label string
-	// Scopes must not be empty.
-	Scopes []domain.Scope
-	// Repos limits the token to these repositories; empty means every one.
-	Repos []domain.RepoName
-	// ExpiresAt is the zero time for a token that never expires.
-	ExpiresAt time.Time
-}
-
-// CreatedToken is a new token with its secret, which is shown once and never
-// stored.
-type CreatedToken struct {
-	Token  domain.Token
-	Secret string
 }
 
 // Create makes a stored token and returns it with its secret.
@@ -75,20 +59,20 @@ type CreatedToken struct {
 // domain.ErrInvalidToken (this includes the labels "owner" and "root", which
 // are reserved, in any case and around spaces), an unknown scope
 // domain.ErrInvalidScope.
-func (t *Tokens) Create(ctx context.Context, p domain.Principal, params CreateTokenParams) (CreatedToken, error) {
+func (t *Tokens) Create(ctx context.Context, p domain.Principal, params ports.CreateTokenParams) (ports.CreatedToken, error) {
 	if p.IsAnonymous() {
-		return CreatedToken{}, domain.ErrUnauthenticated
+		return ports.CreatedToken{}, domain.ErrUnauthenticated
 	}
 	if !canManageTokens(p) {
-		return CreatedToken{}, fmt.Errorf("%w: creating tokens needs %s", domain.ErrForbidden, domain.ScopeTokenAdmin)
+		return ports.CreatedToken{}, fmt.Errorf("%w: creating tokens needs %s", domain.ErrForbidden, domain.ScopeTokenAdmin)
 	}
 	now := t.clock.Now().UTC()
 	tok, err := buildToken(params, now)
 	if err != nil {
-		return CreatedToken{}, err
+		return ports.CreatedToken{}, err
 	}
 	if err := checkNoEscalation(p, tok); err != nil {
-		return CreatedToken{}, err
+		return ports.CreatedToken{}, err
 	}
 
 	for range 3 {
@@ -99,7 +83,7 @@ func (t *Tokens) Create(ctx context.Context, p domain.Principal, params CreateTo
 			continue // a random id or secret collided: practically never
 		}
 		if err != nil {
-			return CreatedToken{}, fmt.Errorf("store token: %w", err)
+			return ports.CreatedToken{}, fmt.Errorf("store token: %w", err)
 		}
 		log := zerowrap.FromCtx(ctx)
 		log.Info().
@@ -107,13 +91,13 @@ func (t *Tokens) Create(ctx context.Context, p domain.Principal, params CreateTo
 			Int("scopes", len(tok.Scopes)).Int("repos", len(tok.Repos)).
 			Str("created_by", p.Label()).Str("created_by_token", p.TokenID()).
 			Msg("token created")
-		return CreatedToken{Token: tok, Secret: secret}, nil
+		return ports.CreatedToken{Token: tok, Secret: secret}, nil
 	}
-	return CreatedToken{}, errors.New("store token: could not find a free id")
+	return ports.CreatedToken{}, errors.New("store token: could not find a free id")
 }
 
 // buildToken validates the settings and returns the token without id and hash.
-func buildToken(params CreateTokenParams, now time.Time) (domain.Token, error) {
+func buildToken(params ports.CreateTokenParams, now time.Time) (domain.Token, error) {
 	if params.Label == "" || len(params.Label) > MaxTokenLabelLen || !utf8.ValidString(params.Label) {
 		return domain.Token{}, fmt.Errorf("%w: label must be 1 to %d bytes of UTF-8", domain.ErrInvalidToken, MaxTokenLabelLen)
 	}
@@ -273,6 +257,11 @@ type Auth struct {
 	tokens ports.TokenStore
 	clock  ports.Clock
 }
+
+var (
+	_ ports.AuthService = (*Auth)(nil)
+	_ ports.Revalidator = (*Auth)(nil)
+)
 
 // NewAuth builds the authentication use case. rootHash is the SHA-256 of the
 // admin token.

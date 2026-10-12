@@ -39,13 +39,6 @@ const (
 	LoginPath = "/-/login/"
 )
 
-// LoginLink is a login link as the owner receives it.
-type LoginLink struct {
-	// URL holds the secret: show it once, never log it.
-	URL       string
-	ExpiresAt time.Time
-}
-
 // Sessions are the use cases of the owner's browser sessions: login links,
 // session tokens and signing out everywhere. Login links live in memory only,
 // so a restart voids them; the signing key and the epoch are in the store.
@@ -58,6 +51,8 @@ type Sessions struct {
 	mu    sync.Mutex
 	links map[[sha256.Size]byte]pendingLink // by hash of the nonce
 }
+
+var _ ports.SessionService = (*Sessions)(nil)
 
 // pendingLink is a login link that waits to be used.
 type pendingLink struct {
@@ -95,13 +90,13 @@ func requireOwner(p domain.Principal) error {
 // created it: it is capped at that token's expiry (no cap for root, or a token
 // that never expires). It gives domain.ErrResourceExhausted when MaxPendingLoginLinks
 // links wait. The nonce is never logged.
-func (s *Sessions) CreateLoginLink(ctx context.Context, p domain.Principal) (LoginLink, error) {
+func (s *Sessions) CreateLoginLink(ctx context.Context, p domain.Principal) (ports.LoginLink, error) {
 	if err := requireOwner(p); err != nil {
-		return LoginLink{}, err
+		return ports.LoginLink{}, err
 	}
 	var raw [loginNonceBytes]byte
 	if _, err := rand.Read(raw[:]); err != nil {
-		return LoginLink{}, fmt.Errorf("generate login link: %w", err)
+		return ports.LoginLink{}, fmt.Errorf("generate login link: %w", err)
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(raw[:])
 	now := s.clock.Now()
@@ -115,14 +110,14 @@ func (s *Sessions) CreateLoginLink(ctx context.Context, p domain.Principal) (Log
 	}
 	if len(s.links) >= MaxPendingLoginLinks {
 		s.mu.Unlock()
-		return LoginLink{}, fmt.Errorf("%w: %d login links are already pending, use one or wait a minute", domain.ErrResourceExhausted, MaxPendingLoginLinks)
+		return ports.LoginLink{}, fmt.Errorf("%w: %d login links are already pending, use one or wait a minute", domain.ErrResourceExhausted, MaxPendingLoginLinks)
 	}
 	s.links[sha256.Sum256([]byte(nonce))] = pendingLink{expires: exp, sessionCap: p.ExpiresAt()}
 	s.mu.Unlock()
 
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("created_by", p.Label()).Str("created_by_token", p.TokenID()).Time("expires_at", exp).Msg("login link created")
-	return LoginLink{URL: s.publicURL + LoginPath + nonce, ExpiresAt: exp.UTC()}, nil
+	return ports.LoginLink{URL: s.publicURL + LoginPath + nonce, ExpiresAt: exp.UTC()}, nil
 }
 
 // LoginLinkValid reports whether the nonce is a pending link, without using

@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // Trojan Source: a right-to-left override and an isolate around code.
@@ -37,7 +37,7 @@ func tinyPNG(t *testing.T) []byte {
 // tag with a slash.
 func (h *harness) webFilesRepo(name string) {
 	h.t.Helper()
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{
 		Name: h.name(name), Description: "Files of every kind", Visibility: domain.VisibilityPublic,
 	})
 	require.NoError(h.t, err)

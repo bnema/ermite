@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // This file maps domain values to the messages of the contract and back.
@@ -55,7 +55,7 @@ func visibilityFromPB(v pb.Visibility) (domain.Visibility, error) {
 	return "", fmt.Errorf("%w: %v", domain.ErrInvalidVisibility, v)
 }
 
-func repoToPB(v app.RepoView) *pb.Repo {
+func repoToPB(v ports.RepoView) *pb.Repo {
 	settings := v.Settings
 	if settings.IsZero() {
 		settings = domain.DefaultRepoSettings()
@@ -361,7 +361,7 @@ func refUpdatesToPB(updates []domain.RefUpdate) []*pb.RefUpdate {
 
 // watchEventToPB maps one item of a watch; nil when the event has no
 // representation in the contract.
-func watchEventToPB(we app.WatchEvent) *pb.Event {
+func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	if we.Gap {
 		return &pb.Event{Kind: &pb.Event_Gap{Gap: &pb.Gap{}}}
 	}
@@ -397,7 +397,7 @@ func watchEventToPB(we app.WatchEvent) *pb.Event {
 	return out
 }
 
-func repoOrName(we app.WatchEvent, name domain.RepoName, vis domain.Visibility) *pb.Repo {
+func repoOrName(we ports.WatchEvent, name domain.RepoName, vis domain.Visibility) *pb.Repo {
 	if we.Repo != nil {
 		return repoToPB(*we.Repo)
 	}

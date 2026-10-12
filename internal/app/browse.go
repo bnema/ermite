@@ -31,6 +31,8 @@ type Browse struct {
 	history *historyCache
 }
 
+var _ ports.BrowseService = (*Browse)(nil)
+
 // NewBrowse builds the read use cases over their ports, with a history cache
 // of the default bounds.
 func NewBrowse(meta ports.RepoMetaStore, reader ports.RepoReader) *Browse {
@@ -71,23 +73,6 @@ func repoEpoch(r domain.Repo) int64 {
 	return r.CreatedAt.UnixNano()
 }
 
-// ListRefsParams selects the refs to list.
-type ListRefsParams struct {
-	// Kinds restricts the result; empty means every kind.
-	Kinds []domain.RefKind
-	// PageSize is 0 for the default, and lowered to MaxRefPageSize.
-	PageSize int
-	// PageToken is the NextPageToken of the previous page, or empty.
-	PageToken string
-}
-
-// RefPage is a page of refs.
-type RefPage struct {
-	Refs []domain.Ref
-	// NextPageToken is empty on the last page.
-	NextPageToken string
-}
-
 func kindRank(k domain.RefKind) int {
 	switch k {
 	case domain.RefKindHead:
@@ -101,26 +86,26 @@ func kindRank(k domain.RefKind) int {
 // ListRefs lists HEAD, the branches and the tags, in that order, then by
 // name. The page token names the last ref of the previous page, so refs that
 // appear or disappear between two pages never shift the others.
-func (b *Browse) ListRefs(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListRefsParams) (RefPage, error) {
+func (b *Browse) ListRefs(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.ListRefsParams) (ports.RefPage, error) {
 	size, err := pageSizeUpTo(params.PageSize, MaxRefPageSize)
 	if err != nil {
-		return RefPage{}, err
+		return ports.RefPage{}, err
 	}
 	for _, k := range params.Kinds {
 		if k != domain.RefKindHead && k != domain.RefKindBranch && k != domain.RefKindTag {
-			return RefPage{}, fmt.Errorf("%w: %q", domain.ErrInvalidRefKind, k)
+			return ports.RefPage{}, fmt.Errorf("%w: %q", domain.ErrInvalidRefKind, k)
 		}
 	}
 	after, err := decodeRefToken(params.PageToken)
 	if err != nil {
-		return RefPage{}, err
+		return ports.RefPage{}, err
 	}
 	if _, err := b.authorize(ctx, p, repo); err != nil {
-		return RefPage{}, err
+		return ports.RefPage{}, err
 	}
 	all, err := b.reader.ListRefs(ctx, repo)
 	if err != nil {
-		return RefPage{}, err
+		return ports.RefPage{}, err
 	}
 
 	var wanted []domain.Ref
@@ -129,7 +114,7 @@ func (b *Browse) ListRefs(ctx context.Context, p domain.Principal, repo domain.R
 			wanted = append(wanted, r)
 		}
 	}
-	var page RefPage
+	var page ports.RefPage
 	page.Refs, page.NextPageToken = pageAfter(wanted, size,
 		func(r domain.Ref) bool { return after == nil || refAfter(r, *after) },
 		encodeRefToken)
@@ -227,53 +212,31 @@ func (b *Browse) OpenBlob(ctx context.Context, p domain.Principal, repo domain.R
 	return b.reader.OpenBlob(ctx, repo, rev, path)
 }
 
-// ListCommitsParams selects a page of history.
-type ListCommitsParams struct {
-	// Revision is where the history starts; the zero value is HEAD. Ignored
-	// when PageToken is set: the token pins the commit the first page started
-	// from, so every page walks the same history even if a branch moves.
-	Revision domain.Revision
-	// Path limits the history to the commits that changed it. It must be the
-	// same on every page of a listing.
-	Path domain.TreePath
-	// PageSize is 0 for the default, and lowered to MaxPageSize.
-	PageSize int
-	// PageToken is the NextPageToken of the previous page, or empty.
-	PageToken string
-}
-
-// CommitPage is a page of history, newest first.
-type CommitPage struct {
-	Commits []domain.Commit
-	// NextPageToken is empty on the last page.
-	NextPageToken string
-}
-
 // ListCommits returns a page of history. The page token holds the commit the
 // listing started from, how many commits were already returned and a digest
 // of the path; a token used with another path is invalid.
-func (b *Browse) ListCommits(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListCommitsParams) (CommitPage, error) {
+func (b *Browse) ListCommits(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.ListCommitsParams) (ports.HistoryPage, error) {
 	size, err := pageSize(params.PageSize)
 	if err != nil {
-		return CommitPage{}, err
+		return ports.HistoryPage{}, err
 	}
 	q := ports.CommitQuery{Revision: params.Revision, Path: params.Path, Limit: size}
 	if params.PageToken != "" {
 		head, skip, err := decodeCommitToken(params.PageToken, params.Path)
 		if err != nil {
-			return CommitPage{}, err
+			return ports.HistoryPage{}, err
 		}
 		q.Revision, q.Skip = domain.RevisionOf(head), skip
 	}
 	r, err := b.authorize(ctx, p, repo)
 	if err != nil {
-		return CommitPage{}, err
+		return ports.HistoryPage{}, err
 	}
 	res, err := b.listCommits(ctx, r, q)
 	if err != nil {
-		return CommitPage{}, err
+		return ports.HistoryPage{}, err
 	}
-	out := CommitPage{Commits: res.Commits}
+	out := ports.HistoryPage{Commits: res.Commits}
 	if res.HasMore {
 		out.NextPageToken = encodeCommitToken(res.Head, q.Skip+len(res.Commits), params.Path)
 	}

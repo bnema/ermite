@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/app"
-	appmocks "bnema.dev/ermite/internal/app/mocks"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
@@ -25,7 +24,7 @@ type pushFixture struct {
 	bus    *mocks.EventBus
 	clock  *mocks.Clock
 	tokens *mocks.TokenStore
-	sched  *appmocks.MaintenanceScheduler
+	sched  *mocks.MaintenanceScheduler
 	pushes *app.Pushes
 }
 
@@ -37,7 +36,7 @@ func newPushFixture(t *testing.T) *pushFixture {
 		bus:    mocks.NewEventBus(t),
 		clock:  mocks.NewClock(t),
 		tokens: mocks.NewTokenStore(t),
-		sched:  appmocks.NewMaintenanceScheduler(t),
+		sched:  mocks.NewMaintenanceScheduler(t),
 	}
 	f.clock.EXPECT().Now().Return(now).Maybe()
 	repos := app.NewRepos(f.meta, f.git, f.bus, f.clock)

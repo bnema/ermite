@@ -16,6 +16,7 @@ import (
 
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
@@ -65,7 +66,7 @@ func TestTokensCreateAllowsLabelsNearReserved(t *testing.T) {
 			t.Parallel()
 			f := newTokenFixture(t)
 			f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
-			_, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: tt.label, Scopes: scopes(domain.ScopeRepoRead)})
+			_, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{Label: tt.label, Scopes: scopes(domain.ScopeRepoRead)})
 			assert.NoError(t, err)
 		})
 	}
@@ -82,7 +83,7 @@ func TestTokensCreate(t *testing.T) {
 		f.store.EXPECT().Create(ctx, mock.Anything).Run(func(_ context.Context, tok domain.Token) { stored = tok }).Return(nil)
 
 		exp := now.Add(48 * time.Hour)
-		got, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{
+		got, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{
 			Label:     "ci",
 			Scopes:    scopes(domain.ScopeRepoWrite, domain.ScopeRepoRead, domain.ScopeRepoRead),
 			Repos:     names(t, "b", "a", "b"),
@@ -109,9 +110,9 @@ func TestTokensCreate(t *testing.T) {
 		t.Parallel()
 		f := newTokenFixture(t)
 		f.store.EXPECT().Create(ctx, mock.Anything).Return(nil)
-		a, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
+		a, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
 		require.NoError(t, err)
-		b, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
+		b, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
 		require.NoError(t, err)
 		assert.NotEqual(t, a.Secret, b.Secret)
 		assert.NotEqual(t, a.Token.ID, b.Token.ID)
@@ -122,7 +123,7 @@ func TestTokensCreate(t *testing.T) {
 		f := newTokenFixture(t)
 		f.store.EXPECT().Create(ctx, mock.Anything).Return(domain.ErrAlreadyExists).Once()
 		f.store.EXPECT().Create(ctx, mock.Anything).Return(nil).Once()
-		_, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
+		_, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
 		require.NoError(t, err)
 	})
 
@@ -131,27 +132,27 @@ func TestTokensCreate(t *testing.T) {
 		f := newTokenFixture(t)
 		boom := errors.New("boom")
 		f.store.EXPECT().Create(ctx, mock.Anything).Return(boom)
-		_, err := f.tokens.Create(ctx, domain.Root(), app.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
+		_, err := f.tokens.Create(ctx, domain.Root(), ports.CreateTokenParams{Label: "a", Scopes: scopes(domain.ScopeRepoRead)})
 		assert.ErrorIs(t, err, boom)
 	})
 
 	invalid := []struct {
 		name   string
-		params app.CreateTokenParams
+		params ports.CreateTokenParams
 		want   error
 	}{
-		{"empty label", app.CreateTokenParams{Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
-		{"long label", app.CreateTokenParams{Label: strings.Repeat("x", 101), Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
-		{"bad utf8 label", app.CreateTokenParams{Label: "\xff", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
-		{"reserved owner", app.CreateTokenParams{Label: "owner", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
-		{"reserved root", app.CreateTokenParams{Label: "root", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
-		{"reserved, upper case", app.CreateTokenParams{Label: "OWNER", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
-		{"reserved, mixed case", app.CreateTokenParams{Label: "Root", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
-		{"reserved, padded", app.CreateTokenParams{Label: " \towner \n", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
-		{"no scopes", app.CreateTokenParams{Label: "x"}, domain.ErrInvalidToken},
-		{"unknown scope", app.CreateTokenParams{Label: "x", Scopes: scopes("nope")}, domain.ErrInvalidScope},
-		{"past expiry", app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: now}, domain.ErrInvalidToken},
-		{"zero repo name", app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), Repos: []domain.RepoName{{}}}, domain.ErrInvalidToken},
+		{"empty label", ports.CreateTokenParams{Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"long label", ports.CreateTokenParams{Label: strings.Repeat("x", 101), Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"bad utf8 label", ports.CreateTokenParams{Label: "\xff", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved owner", ports.CreateTokenParams{Label: "owner", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved root", ports.CreateTokenParams{Label: "root", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved, upper case", ports.CreateTokenParams{Label: "OWNER", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved, mixed case", ports.CreateTokenParams{Label: "Root", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"reserved, padded", ports.CreateTokenParams{Label: " \towner \n", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrInvalidToken},
+		{"no scopes", ports.CreateTokenParams{Label: "x"}, domain.ErrInvalidToken},
+		{"unknown scope", ports.CreateTokenParams{Label: "x", Scopes: scopes("nope")}, domain.ErrInvalidScope},
+		{"past expiry", ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: now}, domain.ErrInvalidToken},
+		{"zero repo name", ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), Repos: []domain.RepoName{{}}}, domain.ErrInvalidToken},
 	}
 	for _, tt := range invalid {
 		t.Run("invalid/"+tt.name, func(t *testing.T) {
@@ -179,37 +180,37 @@ func TestTokensCreateNoEscalation(t *testing.T) {
 	tests := []struct {
 		name      string
 		principal domain.Principal
-		params    app.CreateTokenParams
+		params    ports.CreateTokenParams
 		want      error // nil = allowed
 	}{
-		{"anonymous", domain.Anonymous(), app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrUnauthenticated},
+		{"anonymous", domain.Anonymous(), ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrUnauthenticated},
 		{"token without token:admin",
 			domain.TokenPrincipal(domain.Token{Scopes: scopes(domain.ScopeRepoWrite)}),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrForbidden},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrForbidden},
 		{"subset of scopes", admin(nil, time.Time{}),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, nil},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, nil},
 		{"same scopes incl. token:admin", admin(nil, time.Time{}),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeTokenAdmin, domain.ScopeRepoWrite)}, nil},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeTokenAdmin, domain.ScopeRepoWrite)}, nil},
 		{"scope it lacks", admin(nil, time.Time{}),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead, domain.ScopeRepoAdmin)}, domain.ErrForbidden},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead, domain.ScopeRepoAdmin)}, domain.ErrForbidden},
 		{"limited creator, same repos", admin(names(t, "a", "b"), time.Time{}),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), Repos: names(t, "a")}, nil},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), Repos: names(t, "a")}, nil},
 		{"limited creator, repo outside its list", admin(names(t, "a"), time.Time{}),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), Repos: names(t, "a", "z")}, domain.ErrForbidden},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), Repos: names(t, "a", "z")}, domain.ErrForbidden},
 		{"limited creator, unlimited child", admin(names(t, "a"), time.Time{}),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrForbidden},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrForbidden},
 		{"unlimited creator may limit", admin(nil, time.Time{}),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), Repos: names(t, "z")}, nil},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), Repos: names(t, "z")}, nil},
 		{"expiring creator, child never expires", admin(nil, exp),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrForbidden},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead)}, domain.ErrForbidden},
 		{"expiring creator, child outlasts", admin(nil, exp),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: exp.Add(time.Second)}, domain.ErrForbidden},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: exp.Add(time.Second)}, domain.ErrForbidden},
 		{"expiring creator, child within", admin(nil, exp),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: exp.Add(-time.Second)}, nil},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: exp.Add(-time.Second)}, nil},
 		{"expiring creator, child same expiry", admin(nil, exp),
-			app.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: exp}, nil},
+			ports.CreateTokenParams{Label: "x", Scopes: scopes(domain.ScopeRepoRead), ExpiresAt: exp}, nil},
 		{"root: everything", domain.Root(),
-			app.CreateTokenParams{Label: "x", Scopes: domain.AllScopes()}, nil},
+			ports.CreateTokenParams{Label: "x", Scopes: domain.AllScopes()}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

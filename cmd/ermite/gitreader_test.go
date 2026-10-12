@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/config"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // The suite runs with the reader of ERMITE_GIT_READER (ermite-git by default).
@@ -28,7 +28,7 @@ func TestGitReaderOfTheForgeAndReadAfterPush(t *testing.T) {
 	assert.Equal(t, want, h.forge.cfg.GitReader)
 	assert.Equal(t, want == config.GitReaderErmiteGit, h.forge.reader != nil, "the ermite-git adapter exists only for ermite-git")
 
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{
 		Name: h.name("fresh"), Visibility: domain.VisibilityPublic,
 	})
 	require.NoError(t, err)

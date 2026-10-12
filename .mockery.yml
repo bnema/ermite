@@ -1,5 +1,6 @@
-# Mocks of the ports and of the consumer-side interfaces of the adapters and
-# the use cases. Regenerate with: go generate ./internal/ports
+# Mocks of the ports, generated in internal/ports/mocks, and of the generated
+# Connect clients the web adapter calls. Regenerate with:
+# go generate ./internal/ports
 template: testify
 _anchors:
   mocks: &mocks
@@ -10,14 +11,6 @@ _anchors:
     all: true
 packages:
   bnema.dev/ermite/internal/ports:
-    config: *mocks
-  bnema.dev/ermite/internal/adapters/githttp:
-    config: *mocks
-  bnema.dev/ermite/internal/adapters/rpc:
-    config: *mocks
-  bnema.dev/ermite/internal/app:
-    config: *mocks
-  bnema.dev/ermite/internal/adapters/web:
     config: *mocks
   bnema.dev/ermite-api/gen/ermite/ermiteconnect:
     config:

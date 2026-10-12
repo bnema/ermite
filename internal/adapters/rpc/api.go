@@ -18,6 +18,7 @@ import (
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // MaxRequestBytes bounds the size of a request message. Responses are not
@@ -28,22 +29,16 @@ const MaxRequestBytes = 1 << 20
 // implements, as GetVersion lists them.
 var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session"}
 
-// Authenticator turns a token secret into a principal, or
-// domain.ErrUnauthenticated. app.Auth fits.
-type Authenticator interface {
-	Authenticate(ctx context.Context, secret string) (domain.Principal, error)
-}
-
 // Config configures the API.
 type Config struct {
-	Auth   Authenticator
-	Repos  Repos
-	Tokens Tokens
-	Browse Browse
-	Events Events
+	Auth   ports.AuthService
+	Repos  ports.RepoService
+	Tokens ports.TokenService
+	Browse ports.BrowseService
+	Events ports.EventService
 	// MergeRequests serves MergeRequestService, SigningKey GetSigningKey.
-	MergeRequests MergeRequests
-	SigningKey    SigningKey
+	MergeRequests ports.MergeRequestService
+	SigningKey    ports.SigningKeyService
 	Version       string
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
@@ -51,11 +46,11 @@ type Config struct {
 	// it with the other adapters that authenticate, so that a client has one
 	// budget of failures. Leave it unset rather than assigning a typed nil
 	// pointer (a nil *T in the interface is not nil, and would be called).
-	Limiter FailureLimiter
+	Limiter ports.FailureLimiter
 	// Sessions are the owner's web sessions; nil serves no SessionService.
 	// Leave it unset rather than assigning a typed nil pointer (a nil *T in
 	// the interface is not nil, and the service would be served and called).
-	Sessions Sessions
+	Sessions ports.SessionService
 }
 
 // API is the set of Connect handlers of the contract.

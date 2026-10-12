@@ -19,8 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 const (
@@ -311,7 +311,7 @@ func TestWebRevokingAnOwnerTokenSignsEveryoneOut(t *testing.T) {
 
 	// The cap: a link made by a token that expires in an hour gives a cookie,
 	// and a session, of an hour.
-	soon, err := c.forge.Tokens.Create(c.ctx, domain.Root(), app.CreateTokenParams{
+	soon, err := c.forge.Tokens.Create(c.ctx, domain.Root(), ports.CreateTokenParams{
 		Label: "soon", Scopes: domain.AllScopes(), ExpiresAt: time.Now().Add(time.Hour),
 	})
 	require.NoError(t, err)

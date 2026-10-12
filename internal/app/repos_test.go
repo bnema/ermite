@@ -63,7 +63,7 @@ func TestCreate(t *testing.T) {
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
 		f.bus.EXPECT().Publish(ctx, domain.RepoCreated{Repo: n, Visibility: domain.VisibilityPrivate, At: now}).Return().Once()
 
-		got, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: n, Description: "d"})
+		got, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: n, Description: "d"})
 		require.NoError(t, err)
 		assert.Equal(t, want, got)
 	})
@@ -71,7 +71,7 @@ func TestCreate(t *testing.T) {
 	t.Run("anonymous is refused before anything runs", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
-		_, err := f.repos.Create(ctx, domain.Anonymous(), app.CreateParams{Name: name(t, "tools")})
+		_, err := f.repos.Create(ctx, domain.Anonymous(), ports.CreateRepoParams{Name: name(t, "tools")})
 		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
 	})
 
@@ -81,7 +81,7 @@ func TestCreate(t *testing.T) {
 			tokenPrincipal(domain.ScopeRepoWrite, "other"),
 		} {
 			f := newFixture(t)
-			_, err := f.repos.Create(ctx, p, app.CreateParams{Name: name(t, "tools")})
+			_, err := f.repos.Create(ctx, p, ports.CreateRepoParams{Name: name(t, "tools")})
 			assert.ErrorIs(t, err, domain.ErrForbidden)
 		}
 	})
@@ -94,21 +94,21 @@ func TestCreate(t *testing.T) {
 		f.meta.EXPECT().Create(ctx, mock.Anything).Return(nil)
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
-		_, err := f.repos.Create(ctx, tokenPrincipal(domain.ScopeRepoWrite, "tools"), app.CreateParams{Name: n})
+		_, err := f.repos.Create(ctx, tokenPrincipal(domain.ScopeRepoWrite, "tools"), ports.CreateRepoParams{Name: n})
 		require.NoError(t, err)
 	})
 
 	t.Run("zero name is invalid", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
-		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{})
+		_, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{})
 		assert.ErrorIs(t, err, domain.ErrInvalidName)
 	})
 
 	t.Run("unknown visibility is invalid", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
-		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: name(t, "tools"), Visibility: "secret"})
+		_, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: name(t, "tools"), Visibility: "secret"})
 		assert.ErrorIs(t, err, domain.ErrInvalidVisibility)
 	})
 
@@ -116,7 +116,7 @@ func TestCreate(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
 		f.git.EXPECT().Stage(ctx).Return("", errBoom)
-		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: name(t, "tools")})
+		_, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: name(t, "tools")})
 		assert.ErrorIs(t, err, errBoom)
 	})
 
@@ -126,7 +126,7 @@ func TestCreate(t *testing.T) {
 		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
 		f.meta.EXPECT().Create(ctx, mock.Anything).Return(domain.ErrAlreadyExists)
 		f.git.EXPECT().Discard(mock.Anything, ports.StagedID("s1")).Return(nil)
-		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: name(t, "tools")})
+		_, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: name(t, "tools")})
 		assert.ErrorIs(t, err, domain.ErrAlreadyExists)
 	})
 
@@ -139,7 +139,7 @@ func TestCreate(t *testing.T) {
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(domain.ErrAlreadyExists)
 		f.meta.EXPECT().Delete(mock.Anything, n).Return(nil)
 		f.git.EXPECT().Discard(mock.Anything, ports.StagedID("s1")).Return(nil)
-		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: n})
+		_, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: n})
 		assert.ErrorIs(t, err, domain.ErrAlreadyExists)
 	})
 
@@ -152,7 +152,7 @@ func TestCreate(t *testing.T) {
 		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(errBoom)
 		f.meta.EXPECT().Delete(mock.Anything, n).Return(nil)
 		f.git.EXPECT().Discard(mock.Anything, ports.StagedID("s1")).Return(nil)
-		_, err := f.repos.Create(ctx, domain.Root(), app.CreateParams{Name: n})
+		_, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: n})
 		assert.ErrorIs(t, err, errBoom)
 	})
 
@@ -174,7 +174,7 @@ func TestCreate(t *testing.T) {
 		f.git.EXPECT().Discard(mock.Anything, ports.StagedID("s1")).RunAndReturn(func(c context.Context, _ ports.StagedID) error {
 			return c.Err()
 		})
-		_, err := f.repos.Create(cctx, domain.Root(), app.CreateParams{Name: n})
+		_, err := f.repos.Create(cctx, domain.Root(), ports.CreateRepoParams{Name: n})
 		assert.ErrorIs(t, err, errBoom)
 	})
 }

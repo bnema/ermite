@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/app"
-	appmocks "bnema.dev/ermite/internal/app/mocks"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
@@ -28,7 +28,7 @@ type eventRig struct {
 	meta          *mocks.RepoMetaStore
 	git           *mocks.GitRepos
 	feed          chan domain.Event
-	auth          *appmocks.Revalidator
+	auth          *mocks.Revalidator
 	revoked       sync.Map     // token IDs revoked by the test
 	revalidations atomic.Int32 // calls to auth.Revalidate
 	events        *app.Events
@@ -46,7 +46,7 @@ func newEventRigConfig(t *testing.T, cfg app.EventsConfig) *eventRig {
 		meta: mocks.NewRepoMetaStore(t),
 		git:  mocks.NewGitRepos(t),
 		feed: make(chan domain.Event, 4096),
-		auth: appmocks.NewRevalidator(t),
+		auth: mocks.NewRevalidator(t),
 	}
 	// Tokens are valid until the test revokes them.
 	r.auth.EXPECT().Revalidate(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, p domain.Principal) error {
@@ -95,14 +95,14 @@ func (r *eventRig) push(n domain.RepoName, i int) {
 
 // watcher is a running Watch.
 type watcher struct {
-	got  chan app.WatchEvent
+	got  chan ports.WatchEvent
 	done chan error
 }
 
-func (r *eventRig) watch(ctx context.Context, p domain.Principal, params app.WatchParams) *watcher {
-	w := &watcher{got: make(chan app.WatchEvent, 4096), done: make(chan error, 1)}
+func (r *eventRig) watch(ctx context.Context, p domain.Principal, params ports.WatchParams) *watcher {
+	w := &watcher{got: make(chan ports.WatchEvent, 4096), done: make(chan error, 1)}
 	go func() {
-		w.done <- r.events.Watch(ctx, p, params, func(e app.WatchEvent) error {
+		w.done <- r.events.Watch(ctx, p, params, func(e ports.WatchEvent) error {
 			w.got <- e
 			return nil
 		})
@@ -110,7 +110,7 @@ func (r *eventRig) watch(ctx context.Context, p domain.Principal, params app.Wat
 	return w
 }
 
-func (w *watcher) next(t *testing.T) app.WatchEvent {
+func (w *watcher) next(t *testing.T) ports.WatchEvent {
 	t.Helper()
 	synctest.Wait() // everything the event can reach has run
 	select {
@@ -121,7 +121,7 @@ func (w *watcher) next(t *testing.T) app.WatchEvent {
 	default:
 		t.Fatal("no event")
 	}
-	return app.WatchEvent{}
+	return ports.WatchEvent{}
 }
 
 // sentinelOID marks the push events that only prove the ones before them were
@@ -150,10 +150,10 @@ func TestWatchLiveAndFiltered(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
-		root := r.watch(ctx, domain.Root(), app.WatchParams{Topics: []string{"home"}})
-		scoped := r.watch(ctx, tokenPrincipal(domain.ScopeRepoRead, "other"), app.WatchParams{})
-		onlyPriv := r.watch(ctx, domain.Root(), app.WatchParams{Topics: []string{"repo:priv"}})
+		anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{})
+		root := r.watch(ctx, domain.Root(), ports.WatchParams{Topics: []string{"home"}})
+		scoped := r.watch(ctx, tokenPrincipal(domain.ScopeRepoRead, "other"), ports.WatchParams{})
+		onlyPriv := r.watch(ctx, domain.Root(), ports.WatchParams{Topics: []string{"repo:priv"}})
 		synctest.Wait()
 		require.Equal(t, 4, r.events.Watchers())
 
@@ -191,7 +191,7 @@ func TestWatchRechecksAccessPerEvent(t *testing.T) {
 		})
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		w := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
+		w := r.watch(ctx, domain.Anonymous(), ports.WatchParams{})
 		synctest.Wait()
 		require.Equal(t, 1, r.events.Watchers())
 
@@ -217,7 +217,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
-		first := r.watch(ctx, domain.Root(), app.WatchParams{})
+		first := r.watch(ctx, domain.Root(), ports.WatchParams{})
 		synctest.Wait()
 		require.Equal(t, 1, r.events.Watchers())
 		// One at a time: this watcher must not fall behind the small ring.
@@ -235,7 +235,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 			r, _, ctx, ids := setup(t)
 			// 20 events were taken, the buffer holds the last 8: ids[12] is the
 			// oldest still present; ids[0] is long gone.
-			w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[0]})
+			w := r.watch(ctx, domain.Root(), ports.WatchParams{ResumeAfter: ids[0]})
 			gap := w.next(t)
 			assert.True(t, gap.Gap)
 			assert.Empty(t, gap.ID)
@@ -250,7 +250,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			r, _, ctx, _ := setup(t)
 			for _, id := range []string{"nonsense", "zz-1", "-", "0-0"} {
-				w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: id})
+				w := r.watch(ctx, domain.Root(), ports.WatchParams{ResumeAfter: id})
 				assert.True(t, w.next(t).Gap, id)
 			}
 		})
@@ -260,7 +260,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r, _, ctx, _ := setup(t)
-			w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: "otherboot-999"})
+			w := r.watch(ctx, domain.Root(), ports.WatchParams{ResumeAfter: "otherboot-999"})
 			assert.True(t, w.next(t).Gap)
 		})
 	})
@@ -269,7 +269,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r, n, ctx, ids := setup(t)
-			w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[16]})
+			w := r.watch(ctx, domain.Root(), ports.WatchParams{ResumeAfter: ids[16]})
 			for _, want := range ids[17:] {
 				e := w.next(t)
 				assert.False(t, e.Gap)
@@ -287,7 +287,7 @@ func TestWatchResumeAndGap(t *testing.T) {
 		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r, n, ctx, ids := setup(t)
-			w := r.watch(ctx, domain.Root(), app.WatchParams{ResumeAfter: ids[len(ids)-1]})
+			w := r.watch(ctx, domain.Root(), ports.WatchParams{ResumeAfter: ids[len(ids)-1]})
 			r.push(n, 99)
 			e := w.next(t)
 			assert.False(t, e.Gap)
@@ -302,7 +302,7 @@ func TestWatchTopicErrors(t *testing.T) {
 	r.repo("pub", domain.VisibilityPublic)
 	r.repo("priv", domain.VisibilityPrivate)
 	r.meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound).Maybe()
-	noop := func(app.WatchEvent) error { return nil }
+	noop := func(ports.WatchEvent) error { return nil }
 	ctx := context.Background()
 
 	for topic, want := range map[string]error{
@@ -313,7 +313,7 @@ func TestWatchTopicErrors(t *testing.T) {
 		"repo:priv":    domain.ErrNotFound, // hidden from anonymous
 		"repo:pub:foo": domain.ErrInvalidName,
 	} {
-		err := r.events.Watch(ctx, domain.Anonymous(), app.WatchParams{Topics: []string{topic}}, noop)
+		err := r.events.Watch(ctx, domain.Anonymous(), ports.WatchParams{Topics: []string{topic}}, noop)
 		assert.ErrorIs(t, err, want, topic)
 	}
 }
@@ -325,7 +325,7 @@ func TestWatchEndsCleanly(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRig(t, 0)
 			ctx, cancel := context.WithCancel(context.Background())
-			w := r.watch(ctx, domain.Root(), app.WatchParams{})
+			w := r.watch(ctx, domain.Root(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
 			cancel()
@@ -344,7 +344,7 @@ func TestWatchEndsCleanly(t *testing.T) {
 		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRig(t, 0)
-			w := r.watch(context.Background(), domain.Root(), app.WatchParams{})
+			w := r.watch(context.Background(), domain.Root(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
 			r.events.Close(context.Background())
@@ -367,7 +367,7 @@ func TestWatchEndsCleanly(t *testing.T) {
 			boom := errors.New("client went away")
 			done := make(chan error, 1)
 			go func() {
-				done <- r.events.Watch(context.Background(), domain.Root(), app.WatchParams{}, func(app.WatchEvent) error { return boom })
+				done <- r.events.Watch(context.Background(), domain.Root(), ports.WatchParams{}, func(ports.WatchEvent) error { return boom })
 			}()
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
@@ -386,12 +386,12 @@ func TestWatchSlowWatcherGetsAGap(t *testing.T) {
 
 		release := make(chan struct{})
 		var mu sync.Mutex
-		var got []app.WatchEvent
+		var got []ports.WatchEvent
 		done := make(chan error, 1)
 		blocked := make(chan struct{})
 		first := true
 		go func() {
-			done <- r.events.Watch(context.Background(), domain.Root(), app.WatchParams{}, func(e app.WatchEvent) error {
+			done <- r.events.Watch(context.Background(), domain.Root(), ports.WatchParams{}, func(e ports.WatchEvent) error {
 				if first { // block on the first event while the ring turns over
 					first = false
 					close(blocked)
@@ -405,7 +405,7 @@ func TestWatchSlowWatcherGetsAGap(t *testing.T) {
 		}()
 		// A second, fast watcher tells when the use case has taken every event:
 		// it receives them in order.
-		fast := r.watch(context.Background(), domain.Root(), app.WatchParams{})
+		fast := r.watch(context.Background(), domain.Root(), ports.WatchParams{})
 		synctest.Wait()
 		require.Equal(t, 2, r.events.Watchers())
 		r.push(n, 0)
@@ -444,8 +444,8 @@ func TestEventsRepoPayloads(t *testing.T) {
 		priv := r.repo("priv", domain.VisibilityPrivate)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
-		root := r.watch(ctx, domain.Root(), app.WatchParams{})
+		anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{})
+		root := r.watch(ctx, domain.Root(), ports.WatchParams{})
 		synctest.Wait()
 		require.Equal(t, 2, r.events.Watchers())
 
@@ -493,7 +493,7 @@ func TestWatchEndsWhenTheTokenIsRevoked(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		w := r.watch(ctx, p, app.WatchParams{})
+		w := r.watch(ctx, p, ports.WatchParams{})
 		synctest.Wait()
 		require.Equal(t, 1, r.events.Watchers())
 		r.push(pub, 1)
@@ -523,7 +523,7 @@ func TestWatchEndsWhenTheTokenExpires(t *testing.T) {
 		pub := r.repo("pub", domain.VisibilityPublic)
 		// The rig's clock stands at now: this token expired at now.
 		p := tokenWith("tok", now)
-		w := r.watch(context.Background(), p, app.WatchParams{})
+		w := r.watch(context.Background(), p, ports.WatchParams{})
 		r.push(pub, 1) // whether or not the watch had started, it ends unauthenticated
 		synctest.Wait()
 		select {
@@ -542,7 +542,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRigConfig(t, app.EventsConfig{}) // the production default interval
-			w := r.watch(context.Background(), tokenWith("tok", time.Time{}), app.WatchParams{})
+			w := r.watch(context.Background(), tokenWith("tok", time.Time{}), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
 			r.revoked.Store("tok", true)
@@ -569,7 +569,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: time.Hour})
 			pub := r.repo("pub", domain.VisibilityPublic)
-			w := r.watch(context.Background(), tokenWith("tok", time.Time{}), app.WatchParams{})
+			w := r.watch(context.Background(), tokenWith("tok", time.Time{}), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
 			for i := range 20 {
@@ -592,8 +592,8 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			r := newEventRigConfig(t, app.EventsConfig{RevalidateEvery: -1})
 			pub := r.repo("pub", domain.VisibilityPublic)
-			a := r.watch(context.Background(), domain.Anonymous(), app.WatchParams{})
-			b := r.watch(context.Background(), domain.Root(), app.WatchParams{})
+			a := r.watch(context.Background(), domain.Anonymous(), ports.WatchParams{})
+			b := r.watch(context.Background(), domain.Root(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 2, r.events.Watchers())
 			r.push(pub, 1)
@@ -606,7 +606,7 @@ func TestWatchRevalidatesIdleWatchersAndCachesTheAnswer(t *testing.T) {
 
 func TestWatchLimits(t *testing.T) {
 	t.Parallel()
-	noop := func(app.WatchEvent) error { return nil }
+	noop := func(ports.WatchEvent) error { return nil }
 
 	t.Run("too many topics", func(t *testing.T) {
 		t.Parallel()
@@ -619,8 +619,8 @@ func TestWatchLimits(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel() // returns at once once the topics are accepted
-			assert.NoError(t, r.events.Watch(ctx, domain.Root(), app.WatchParams{Topics: ok}, noop))
-			err := r.events.Watch(context.Background(), domain.Root(), app.WatchParams{Topics: append(ok, "home")}, noop)
+			assert.NoError(t, r.events.Watch(ctx, domain.Root(), ports.WatchParams{Topics: ok}, noop))
+			err := r.events.Watch(context.Background(), domain.Root(), ports.WatchParams{Topics: append(ok, "home")}, noop)
 			assert.ErrorIs(t, err, domain.ErrInvalid)
 		})
 	})
@@ -632,11 +632,11 @@ func TestWatchLimits(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			for range app.MaxWatchers {
-				r.watch(ctx, domain.Root(), app.WatchParams{})
+				r.watch(ctx, domain.Root(), ports.WatchParams{})
 			}
 			synctest.Wait()
 			require.Equal(t, app.MaxWatchers, r.events.Watchers())
-			err := r.events.Watch(ctx, domain.Root(), app.WatchParams{}, noop)
+			err := r.events.Watch(ctx, domain.Root(), ports.WatchParams{}, noop)
 			assert.ErrorIs(t, err, domain.ErrResourceExhausted)
 			assert.Equal(t, app.MaxWatchers, r.events.Watchers(), "a refused watch is not counted")
 
@@ -645,7 +645,7 @@ func TestWatchLimits(t *testing.T) {
 			require.Equal(t, 0, r.events.Watchers())
 			again, stop := context.WithCancel(context.Background())
 			stop()
-			assert.NoError(t, r.events.Watch(again, domain.Root(), app.WatchParams{}, noop))
+			assert.NoError(t, r.events.Watch(again, domain.Root(), ports.WatchParams{}, noop))
 		})
 	})
 
@@ -656,17 +656,17 @@ func TestWatchLimits(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			for range app.MaxWatchersPerClient {
-				r.watch(ctx, domain.Root(), app.WatchParams{Client: "198.51.100.1"})
+				r.watch(ctx, domain.Root(), ports.WatchParams{Client: "198.51.100.1"})
 			}
 			synctest.Wait()
 			require.Equal(t, app.MaxWatchersPerClient, r.events.Watchers())
 
-			err := r.events.Watch(ctx, domain.Root(), app.WatchParams{Client: "198.51.100.1"}, noop)
+			err := r.events.Watch(ctx, domain.Root(), ports.WatchParams{Client: "198.51.100.1"}, noop)
 			assert.ErrorIs(t, err, domain.ErrResourceExhausted)
 
 			// Another client, and callers in process, are not affected.
-			r.watch(ctx, domain.Root(), app.WatchParams{Client: "198.51.100.2"})
-			r.watch(ctx, domain.Root(), app.WatchParams{})
+			r.watch(ctx, domain.Root(), ports.WatchParams{Client: "198.51.100.2"})
+			r.watch(ctx, domain.Root(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, app.MaxWatchersPerClient+2, r.events.Watchers())
 
@@ -675,7 +675,7 @@ func TestWatchLimits(t *testing.T) {
 			require.Equal(t, 0, r.events.Watchers())
 			again, stop := context.WithCancel(context.Background())
 			stop()
-			assert.NoError(t, r.events.Watch(again, domain.Root(), app.WatchParams{Client: "198.51.100.1"}, noop), "the slots were released")
+			assert.NoError(t, r.events.Watch(again, domain.Root(), ports.WatchParams{Client: "198.51.100.1"}, noop), "the slots were released")
 		})
 	})
 }
@@ -712,7 +712,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 			defer cancel()
 			r := newEventRig(t, 0)
 			l, n := r.liveRepo("secret", domain.VisibilityPrivate, now)
-			root := r.watch(ctx, domain.Root(), app.WatchParams{})
+			root := r.watch(ctx, domain.Root(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
 			r.push(n, 1)
@@ -728,7 +728,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 			// An anonymous caller that resumes with an id nobody issued gets what
 			// is buffered, filtered: the public update and the public push, not the
 			// pushes of the private era.
-			anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{ResumeAfter: "bogus"})
+			anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{ResumeAfter: "bogus"})
 			assert.True(t, anon.next(t).Gap)
 			upd := anon.next(t)
 			require.IsType(t, domain.RepoUpdated{}, upd.Event)
@@ -747,7 +747,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 			r := newEventRig(t, 0)
 			first := now.Add(-time.Hour)
 			l, n := r.liveRepo("again", domain.VisibilityPublic, first)
-			root := r.watch(ctx, domain.Root(), app.WatchParams{})
+			root := r.watch(ctx, domain.Root(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
 			r.push(n, 1)
@@ -757,7 +757,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 			r.push(n, 2)
 			root.next(t)
 
-			anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{ResumeAfter: "bogus"})
+			anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{ResumeAfter: "bogus"})
 			assert.True(t, anon.next(t).Gap)
 			e := anon.next(t)
 			require.IsType(t, domain.PushEvent{}, e.Event)
@@ -773,10 +773,10 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 			defer cancel()
 			r := newEventRig(t, 0)
 			l, n := r.liveRepo("hide", domain.VisibilityPublic, now)
-			anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
-			reader := r.watch(ctx, tokenPrincipal(domain.ScopeRepoRead, "hide"), app.WatchParams{})
-			other := r.watch(ctx, tokenPrincipal(domain.ScopeRepoRead, "elsewhere"), app.WatchParams{})
-			root := r.watch(ctx, domain.Root(), app.WatchParams{})
+			anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{})
+			reader := r.watch(ctx, tokenPrincipal(domain.ScopeRepoRead, "hide"), ports.WatchParams{})
+			other := r.watch(ctx, tokenPrincipal(domain.ScopeRepoRead, "elsewhere"), ports.WatchParams{})
+			root := r.watch(ctx, domain.Root(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 4, r.events.Watchers())
 
@@ -809,7 +809,7 @@ func TestEventsKeepTheVisibilityOfTheirTime(t *testing.T) {
 			defer cancel()
 			r := newEventRig(t, 0)
 			_, n := r.liveRepo("closed", domain.VisibilityPrivate, now)
-			anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
+			anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
 			r.feed <- domain.RepoUpdated{Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPrivate, CreatedAt: now}
@@ -842,8 +842,8 @@ func TestPushEventsKeepTheirSnapshot(t *testing.T) {
 				defer cancel()
 				r := newEventRig(t, 0)
 				l, n := r.liveRepo("secret", domain.VisibilityPrivate, now)
-				anon := r.watch(ctx, domain.Anonymous(), app.WatchParams{})
-				root := r.watch(ctx, domain.Root(), app.WatchParams{})
+				anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{})
+				root := r.watch(ctx, domain.Root(), ports.WatchParams{})
 				synctest.Wait()
 				require.Equal(t, 2, r.events.Watchers())
 
@@ -859,7 +859,7 @@ func TestPushEventsKeepTheirSnapshot(t *testing.T) {
 
 				anon.quiet(t, r, r.repo("open", domain.VisibilityPublic))
 
-				late := r.watch(ctx, domain.Anonymous(), app.WatchParams{ResumeAfter: "bogus"})
+				late := r.watch(ctx, domain.Anonymous(), ports.WatchParams{ResumeAfter: "bogus"})
 				assert.True(t, late.next(t).Gap)
 				late.quiet(t, r, r.repo("open2", domain.VisibilityPublic))
 			})
@@ -873,7 +873,7 @@ func TestPushEventsKeepTheirSnapshot(t *testing.T) {
 			defer cancel()
 			r := newEventRig(t, 0)
 			n := r.repo("ghost", domain.VisibilityPublic)
-			root := r.watch(ctx, domain.Root(), app.WatchParams{})
+			root := r.watch(ctx, domain.Root(), ports.WatchParams{})
 			synctest.Wait()
 			require.Equal(t, 1, r.events.Watchers())
 			r.feed <- domain.PushEvent{Repo: n, Visibility: domain.VisibilityPublic, At: now}

@@ -23,18 +23,12 @@ type Repos struct {
 	clock ports.Clock
 }
 
+var _ ports.RepoService = (*Repos)(nil)
+
 // NewRepos builds the repository use cases over their ports. Changes are
 // published on bus.
 func NewRepos(meta ports.RepoMetaStore, git ports.GitRepos, bus ports.EventBus, clock ports.Clock) *Repos {
 	return &Repos{meta: meta, git: git, bus: bus, clock: clock}
-}
-
-// CreateParams are the settings of a new repository.
-type CreateParams struct {
-	Name        domain.RepoName
-	Description string
-	// Visibility defaults to private when empty.
-	Visibility domain.Visibility
 }
 
 // Create makes a repository and publishes RepoCreated: it stages a bare repository, records the
@@ -45,7 +39,7 @@ type CreateParams struct {
 //
 // The principal needs repo:write on the name: anonymous callers get
 // domain.ErrUnauthenticated, other callers without it domain.ErrForbidden.
-func (r *Repos) Create(ctx context.Context, p domain.Principal, params CreateParams) (domain.Repo, error) {
+func (r *Repos) Create(ctx context.Context, p domain.Principal, params ports.CreateRepoParams) (domain.Repo, error) {
 	if params.Name.IsZero() {
 		return domain.Repo{}, fmt.Errorf("%w: empty name", domain.ErrInvalidName)
 	}

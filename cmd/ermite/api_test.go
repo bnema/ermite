@@ -24,9 +24,9 @@ import (
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/adapters/rpc"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // principals of the access tables.
@@ -652,8 +652,8 @@ func TestGetBlobStreamsInChunks(t *testing.T) {
 	}
 }
 
-func createParams(h *harness, name string, vis domain.Visibility) app.CreateParams {
-	return app.CreateParams{Name: h.name(name), Visibility: vis}
+func createParams(h *harness, name string, vis domain.Visibility) ports.CreateRepoParams {
+	return ports.CreateRepoParams{Name: h.name(name), Visibility: vis}
 }
 
 // TestUpdateRepoDefaultBranch: HEAD moves with git symbolic-ref once the

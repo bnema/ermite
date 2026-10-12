@@ -33,6 +33,7 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // Patterns are the ServeMux patterns the handler serves: everything. The
@@ -69,10 +70,10 @@ type Config struct {
 	Now func() time.Time
 	// Sessions signs the owner in (ADR 0018). Without it there are no login
 	// routes and every visitor is anonymous.
-	Sessions SessionAuth
+	Sessions ports.WebSessionService
 	// Limiter counts the failed logins; required with Sessions. Share it with
 	// the API and Git, so that a client has one budget of failures.
-	Limiter FailureLimiter
+	Limiter ports.FailureLimiter
 	// TrustedProxies are the networks allowed to set X-Forwarded-For, to find
 	// the address of the client that fails a login.
 	TrustedProxies []netip.Prefix

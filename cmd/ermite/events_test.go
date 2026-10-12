@@ -21,6 +21,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/rpc"
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // watchWait is how long a test waits for an event that must arrive. Only
@@ -222,7 +223,7 @@ func TestAC5NoPrivateEventsToAnonymous(t *testing.T) {
 		assert.Equal(t, "pub", ev.GetPushed().GetRepo(), name)
 	}
 	// Nothing about priv came before the sentinel, for either of them.
-	_, err = h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name("sentinel"), Visibility: domain.VisibilityPublic})
+	_, err = h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name("sentinel"), Visibility: domain.VisibilityPublic})
 	require.NoError(t, err)
 	for name, w := range map[string]*stream{"anonymous": anon, "scoped": scoped} {
 		assert.Equal(t, "sentinel", w.next(t, watchWait).GetRepoCreated().GetRepo().GetName(), name)
@@ -340,7 +341,7 @@ func TestServeShutdownEndsWatchStreams(t *testing.T) {
 func TestWatchEndsWhenTheTokenIsRevoked(t *testing.T) {
 	h := newHarness(t, harnessOpts{revalidateEvery: 20 * time.Millisecond})
 	h.seed("priv", domain.VisibilityPrivate)
-	created, err := h.forge.Tokens.Create(h.ctx, domain.Root(), app.CreateTokenParams{
+	created, err := h.forge.Tokens.Create(h.ctx, domain.Root(), ports.CreateTokenParams{
 		Label: "watcher", Scopes: scopes(domain.ScopeRepoRead),
 	})
 	require.NoError(t, err)
@@ -396,7 +397,7 @@ func TestWatchLimits(t *testing.T) {
 // order they were published.
 func (h *harness) sentinel(t *testing.T, s *stream, name string) {
 	t.Helper()
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name(name), Visibility: domain.VisibilityPublic})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name(name), Visibility: domain.VisibilityPublic})
 	require.NoError(t, err)
 	ev := s.next(t, watchWait)
 	assert.Equal(t, name, ev.GetRepoCreated().GetRepo().GetName(), "an event came before the sentinel: %v", ev)

@@ -19,8 +19,8 @@ import (
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // clients are the generated Connect clients of one caller.
@@ -105,7 +105,7 @@ func codeName(err error) string {
 // commit per file to its main branch with git.
 func (h *harness) seed(name string, vis domain.Visibility, files ...string) {
 	h.t.Helper()
-	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), app.CreateParams{Name: h.name(name), Visibility: vis})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name(name), Visibility: vis})
 	require.NoError(h.t, err)
 	if len(files) == 0 {
 		return

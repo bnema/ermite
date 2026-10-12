@@ -15,8 +15,8 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // Every value of the domain maps to a real value of the contract, never to
@@ -212,12 +212,12 @@ func TestCommentID(t *testing.T) {
 func TestRepoToPBAlwaysHasSettings(t *testing.T) {
 	t.Parallel()
 	// A repository value without settings (never stored with them) reads as the defaults.
-	r := repoToPB(app.RepoView{Repo: domain.Repo{Name: mustName(t, "x")}})
+	r := repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustName(t, "x")}})
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH}, r.GetSettings().GetAllowedMergeModes())
 	assert.True(t, r.GetSettings().GetFailingChecksBlock())
 
 	custom := domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}}
-	r = repoToPB(app.RepoView{Repo: domain.Repo{Name: mustName(t, "x"), Settings: custom}})
+	r = repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustName(t, "x"), Settings: custom}})
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}, r.GetSettings().GetAllowedMergeModes())
 	assert.False(t, r.GetSettings().GetFailingChecksBlock())
 }
@@ -313,7 +313,7 @@ func TestWatchEventToPBMergeRequestEvents(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			got := watchEventToPB(app.WatchEvent{ID: "e1", Event: tc.ev})
+			got := watchEventToPB(ports.WatchEvent{ID: "e1", Event: tc.ev})
 			require.NotNil(t, got)
 			assert.Equal(t, "e1", got.GetId())
 			assert.Equal(t, at, got.GetTime().AsTime())
@@ -327,7 +327,7 @@ func TestWatchEventToPBMergeRequestEvents(t *testing.T) {
 	}
 
 	c := domain.Comment{ID: 9, Author: "root", Path: "a.txt", Line: 3, Side: domain.SideOld, CreatedAt: at}
-	got := watchEventToPB(app.WatchEvent{ID: "e2", Event: domain.CommentAdded{Repo: repo, Number: 4, Comment: c, At: at}})
+	got := watchEventToPB(ports.WatchEvent{ID: "e2", Event: domain.CommentAdded{Repo: repo, Number: 4, Comment: c, At: at}})
 	added := got.GetCommentAdded()
 	require.NotNil(t, added)
 	assert.Equal(t, "proj", added.GetRepo())

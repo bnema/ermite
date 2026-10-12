@@ -61,56 +61,18 @@ const (
 	serviceReceive = "git-receive-pack"
 )
 
-// Authenticator turns the secret of a request into a principal. It returns
-// domain.ErrUnauthenticated for a secret that is not valid. app.Auth fits.
-type Authenticator interface {
-	Authenticate(ctx context.Context, secret string) (domain.Principal, error)
-}
-
-// Repos is the read side of the repository use cases. A repository the
-// principal may not read is domain.ErrNotFound. app.Repos fits.
-type Repos interface {
-	Get(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error)
-}
-
-// Pushes opens a repository for a push: it is domain.ErrUnauthenticated for an
-// anonymous caller, domain.ErrNotFound for a repository the caller may not
-// write and cannot see (or that is missing and may not be created),
-// domain.ErrForbidden for one it can see but not write. With create, a missing
-// repository the principal may write is created. app.Pushes fits.
-type Pushes interface {
-	Open(ctx context.Context, p domain.Principal, name domain.RepoName, create bool) error
-}
-
-// HookTokens hands out the per-request tokens the hooks of a push present
-// back to ermite, and the socket they present them on.
-type HookTokens interface {
-	// Register binds a new token to the repository and principal of a push.
-	// release revokes it and must be called when the request ends.
-	Register(ctx context.Context, repo domain.RepoName, p domain.Principal) (token string, release func())
-	// Socket is the path of the hook socket.
-	Socket() string
-}
-
-// FailureLimiter counts the failed authentications per client, with the other
-// adapters that authenticate. *clientlimit.Limiter fits.
-type FailureLimiter interface {
-	Blocked(ctx context.Context, addr string) (bool, time.Duration)
-	Fail(ctx context.Context, addr string)
-}
-
 // Config configures a Handler.
 type Config struct {
-	Auth    Authenticator
-	Repos   Repos
-	Pushes  Pushes
+	Auth    ports.AuthService
+	Repos   ports.RepoLookup
+	Pushes  ports.PushService
 	Backend ports.GitBackend
 	// Hooks provides hook tokens for pushes. It is required.
-	Hooks HookTokens
+	Hooks ports.HookTokens
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one.
-	Limiter FailureLimiter
+	Limiter ports.FailureLimiter
 	// MaxBodyBytes bounds the body of a push; 0 means DefaultMaxBodyBytes.
 	// The body of a fetch is bounded by 64 MiB at most.
 	MaxBodyBytes int64
@@ -148,7 +110,7 @@ const (
 // Handler serves the smart HTTP routes of Patterns.
 type Handler struct {
 	cfg     Config
-	limiter FailureLimiter
+	limiter ports.FailureLimiter
 	maxBody int64
 
 	upload, receive chan struct{} // slots of the backends, per service
@@ -220,6 +182,7 @@ func parseRoute(r *http.Request) (route, int) {
 }
 
 // ServeHTTP implements http.Handler.
+//hexcheck:ignore suspicious-business-logic-in-adapter transport orchestration: the authorization decisions are the use cases'
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var rt route
 	var name domain.RepoName
@@ -411,6 +374,7 @@ func (h *Handler) acquire(ctx context.Context, w http.ResponseWriter, rt route, 
 }
 
 // serveBackend runs git http-backend for an authorized request.
+//hexcheck:ignore suspicious-business-logic-in-adapter process and CGI plumbing: no business rule is decided here
 func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route, name domain.RepoName, p domain.Principal, client string) {
 	ctx := r.Context()
 	logger := zerowrap.FromCtx(ctx)

@@ -14,9 +14,9 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/adapters/rpc/mocks"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 // ownerCtx is the context of a call made by the owner, as the interceptor
@@ -60,12 +60,12 @@ func TestRepoServiceGetRepo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			repos := mocks.NewRepos(t)
+			repos := mocks.NewRepoService(t)
 			if tt.wantCall {
 				repo := domain.Repo{Name: mustRepoName(t, "demo"), Description: "d", Visibility: domain.VisibilityPublic}
 				repos.EXPECT().Get(mock.Anything, domain.Owner(), repo.Name).Return(repo, tt.usecase).Once()
 				if tt.usecase == nil {
-					repos.EXPECT().View(mock.Anything, repo).Return(app.RepoView{Repo: repo, DefaultBranch: "main"}, tt.viewErr).Once()
+					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo, DefaultBranch: "main"}, tt.viewErr).Once()
 				}
 			}
 			svc := &repoService{repos}
@@ -102,14 +102,14 @@ func TestRepoServiceCreateRepo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			repos := mocks.NewRepos(t)
+			repos := mocks.NewRepoService(t)
 			if tt.wantCall {
 				repo := domain.Repo{Name: mustRepoName(t, "demo"), Visibility: domain.VisibilityPrivate}
-				repos.EXPECT().Create(mock.Anything, domain.Owner(), mock.MatchedBy(func(p app.CreateParams) bool {
+				repos.EXPECT().Create(mock.Anything, domain.Owner(), mock.MatchedBy(func(p ports.CreateRepoParams) bool {
 					return p.Name.String() == "demo"
 				})).Return(repo, tt.usecase).Once()
 				if tt.usecase == nil {
-					repos.EXPECT().View(mock.Anything, repo).Return(app.RepoView{Repo: repo}, nil).Once()
+					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo}, nil).Once()
 				}
 			}
 			resp, err := (&repoService{repos}).CreateRepo(ownerCtx(), connect.NewRequest(tt.req))
@@ -170,12 +170,12 @@ func TestRepoServiceUpdateRepoValidatesMask(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			repos := mocks.NewRepos(t)
+			repos := mocks.NewRepoService(t)
 			if tt.wantCall {
 				repo := domain.Repo{Name: mustRepoName(t, "demo"), Description: "new"}
 				repos.EXPECT().Update(mock.Anything, domain.Owner(), repo.Name, mock.Anything).Return(repo, tt.usecase).Once()
 				if tt.usecase == nil {
-					repos.EXPECT().View(mock.Anything, repo).Return(app.RepoView{Repo: repo}, nil).Once()
+					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo}, nil).Once()
 				}
 			}
 			resp, err := (&repoService{repos}).UpdateRepo(ownerCtx(), connect.NewRequest(tt.req))
@@ -206,7 +206,7 @@ func TestRepoServiceDeleteRepo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			repos := mocks.NewRepos(t)
+			repos := mocks.NewRepoService(t)
 			if tt.wantCall {
 				repos.EXPECT().Delete(mock.Anything, domain.Owner(), mustRepoName(t, tt.repo)).Return(tt.usecase).Once()
 			}
@@ -224,12 +224,12 @@ func TestRepoServiceListRepos(t *testing.T) {
 	t.Parallel()
 	t.Run("pages and views every repo", func(t *testing.T) {
 		t.Parallel()
-		repos := mocks.NewRepos(t)
+		repos := mocks.NewRepoService(t)
 		a := domain.Repo{Name: mustRepoName(t, "a")}
 		b := domain.Repo{Name: mustRepoName(t, "b")}
-		repos.EXPECT().ListPage(mock.Anything, domain.Owner(), 2, "tok").Return(app.RepoPage{Repos: []domain.Repo{a, b}, NextPageToken: "next"}, nil).Once()
-		repos.EXPECT().View(mock.Anything, a).Return(app.RepoView{Repo: a}, nil).Once()
-		repos.EXPECT().View(mock.Anything, b).Return(app.RepoView{Repo: b}, nil).Once()
+		repos.EXPECT().ListPage(mock.Anything, domain.Owner(), 2, "tok").Return(ports.RepoPage{Repos: []domain.Repo{a, b}, NextPageToken: "next"}, nil).Once()
+		repos.EXPECT().View(mock.Anything, a).Return(ports.RepoView{Repo: a}, nil).Once()
+		repos.EXPECT().View(mock.Anything, b).Return(ports.RepoView{Repo: b}, nil).Once()
 		resp, err := (&repoService{repos}).ListRepos(ownerCtx(), connect.NewRequest(&pb.ListReposRequest{PageSize: 2, PageToken: "tok"}))
 		require.NoError(t, err)
 		require.Len(t, resp.Msg.GetRepos(), 2)
@@ -245,8 +245,8 @@ func TestRepoServiceListRepos(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			repos := mocks.NewRepos(t)
-			repos.EXPECT().ListPage(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(app.RepoPage{}, tc.err).Once()
+			repos := mocks.NewRepoService(t)
+			repos.EXPECT().ListPage(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoPage{}, tc.err).Once()
 			_, err := (&repoService{repos}).ListRepos(ownerCtx(), connect.NewRequest(&pb.ListReposRequest{}))
 			requireCode(t, tc.code, err)
 		})

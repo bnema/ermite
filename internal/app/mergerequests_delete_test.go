@@ -12,6 +12,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/gitcli"
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // A merge can delete its source branch; the push event carries both refs.
@@ -26,7 +27,7 @@ func TestMergeDeletesTheSourceBranch(t *testing.T) {
 			mr := r.open("feat")
 			r.drain()
 
-			res, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{Mode: mode, HeadID: head, DeleteSource: true})
+			res, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{Mode: mode, HeadID: head, DeleteSource: true})
 			require.NoError(t, err)
 			assert.True(t, res.SourceDeleted)
 			assert.Equal(t, domain.MRStateMerged, res.State)
@@ -54,7 +55,7 @@ func TestMergeDeletesTheSourceBranch(t *testing.T) {
 		r.seed()
 		head := r.feature("feat")
 		mr := r.open("feat")
-		res, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head})
+		res, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
 		require.NoError(t, err)
 		assert.False(t, res.SourceDeleted)
 		assert.Equal(t, head, r.branchHead("feat"))
@@ -73,10 +74,10 @@ func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
 		r.sh("checkout", "-q", "-B", "release", "main")
 		r.push("release")
 		mr := r.open("feat")
-		_, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "to release", Source: "feat", Target: "release"})
+		_, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "to release", Source: "feat", Target: "release"})
 		require.NoError(t, err)
 
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, DeleteSource: true})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		assert.Contains(t, err.Error(), "!2 still uses")
 		assert.Equal(t, main, r.branchHead("main"), "not merged")
@@ -95,9 +96,9 @@ func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
 		r.sh("checkout", "-q", "-B", "sub", "feat")
 		r.commit(author, "d.txt", "dee\n", "add d")
 		r.push("sub")
-		_, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "stacked", Source: "sub", Target: "feat"})
+		_, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "stacked", Source: "sub", Target: "feat"})
 		require.NoError(t, err)
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, DeleteSource: true})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		assert.Equal(t, head, r.branchHead("feat"))
 	})
@@ -109,9 +110,9 @@ func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
 		r.sh("checkout", "-q", "-B", "old", "main~1")
 		r.push("old")
 		old := r.branchHead("old")
-		mr, err := r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "back", Source: "main", Target: "old"})
+		mr, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "back", Source: "main", Target: "old"})
 		require.NoError(t, err)
-		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: main, DeleteSource: true})
+		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: main, DeleteSource: true})
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		assert.Contains(t, err.Error(), "default branch")
 		assert.Equal(t, old, r.branchHead("old"), "not merged")
@@ -127,7 +128,7 @@ func TestSquashMergedRequestReadsAfterItsCommitsArePruned(t *testing.T) {
 	r.seed()
 	head := r.feature("feat")
 	mr := r.open("feat")
-	res, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{Mode: domain.MergeModeSquash, HeadID: head, DeleteSource: true})
+	res, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{Mode: domain.MergeModeSquash, HeadID: head, DeleteSource: true})
 	require.NoError(t, err)
 	require.True(t, res.SourceDeleted)
 
@@ -154,9 +155,9 @@ func TestCreateAfterAMergeDeletedTheBranch(t *testing.T) {
 	r.seed()
 	head := r.feature("feat")
 	mr := r.open("feat")
-	_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, DeleteSource: true})
+	_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
 	require.NoError(t, err)
-	_, err = r.mrs.Create(r.ctx, root, r.repo, app.CreateMergeRequestParams{Title: "late", Source: "feat"})
+	_, err = r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "late", Source: "feat"})
 	require.ErrorIs(t, err, domain.ErrInvalid)
 	assert.Contains(t, fieldsOf(t, err), "source_branch")
 }
@@ -189,7 +190,7 @@ func TestMergeKeepsASourceThatMovedAfterTheMerge(t *testing.T) {
 	})
 	r.drain()
 
-	res, err := mrs.Merge(r.ctx, mrM, r.repo, mr.Number, app.MergeParams{HeadID: head, DeleteSource: true})
+	res, err := mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
 	require.NoError(t, err, "the merge stands")
 	assert.False(t, res.SourceDeleted)
 	assert.Equal(t, domain.MRStateMerged, res.State)

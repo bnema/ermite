@@ -20,6 +20,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 type fixedClock struct{}
@@ -56,7 +57,7 @@ func TestCreateConcurrentSameNameRealAdapters(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := repos.Create(ctx, domain.Root(), app.CreateParams{Name: n})
+			_, err := repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: n})
 			errs <- err
 		}()
 	}

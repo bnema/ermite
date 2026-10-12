@@ -18,17 +18,6 @@ import (
 // pushRetries bounds the retries of a metadata update that loses a race.
 const pushRetries = 5
 
-// MaintenanceScheduler queues repository maintenance. *Maintainer fits.
-type MaintenanceScheduler interface {
-	Schedule(ctx context.Context, name domain.RepoName)
-}
-
-// Revalidator confirms that a principal obtained earlier is still
-// authorized. *Auth fits.
-type Revalidator interface {
-	Revalidate(ctx context.Context, p domain.Principal) error
-}
-
 // Pushes are the use cases around a Git push.
 type Pushes struct {
 	meta  ports.RepoMetaStore
@@ -36,15 +25,20 @@ type Pushes struct {
 	git   ports.GitRepos
 	bus   ports.EventBus
 	clock ports.Clock
-	maint MaintenanceScheduler
-	auth  Revalidator
+	maint ports.MaintenanceScheduler
+	auth  ports.Revalidator
 	fresh ports.RepoFreshener // nil: the reader needs no telling
 }
+
+var (
+	_ ports.PushService     = (*Pushes)(nil)
+	_ ports.PushHookService = (*Pushes)(nil)
+)
 
 // NewPushes builds the push use cases. Every argument is required: auth
 // re-validates the token of a push when its pre-receive hook runs, maint
 // queues the maintenance that follows a push.
-func NewPushes(meta ports.RepoMetaStore, repos *Repos, git ports.GitRepos, bus ports.EventBus, clock ports.Clock, maint MaintenanceScheduler, auth Revalidator) *Pushes {
+func NewPushes(meta ports.RepoMetaStore, repos *Repos, git ports.GitRepos, bus ports.EventBus, clock ports.Clock, maint ports.MaintenanceScheduler, auth ports.Revalidator) *Pushes {
 	return &Pushes{meta: meta, repos: repos, git: git, bus: bus, clock: clock, maint: maint, auth: auth}
 }
 
@@ -78,7 +72,7 @@ func (u *Pushes) Open(ctx context.Context, p domain.Principal, name domain.RepoN
 	if !create || !canWrite(p, name) {
 		return domain.ErrNotFound
 	}
-	_, err = u.repos.Create(ctx, p, CreateParams{Name: name, Visibility: domain.VisibilityPrivate})
+	_, err = u.repos.Create(ctx, p, ports.CreateRepoParams{Name: name, Visibility: domain.VisibilityPrivate})
 	switch {
 	case err == nil:
 		return nil // Create published RepoCreated

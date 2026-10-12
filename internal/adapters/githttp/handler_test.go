@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/adapters/githttp"
-	ghmocks "bnema.dev/ermite/internal/adapters/githttp/mocks"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -43,10 +42,10 @@ func cgiScript(t *testing.T) string {
 type rig struct {
 	h       *githttp.Handler
 	srv     *httptest.Server
-	pushes  *ghmocks.Pushes
+	pushes  *mocks.PushService
 	backend *mocks.GitBackend
-	hooks   *ghmocks.HookTokens
-	auth    *ghmocks.Authenticator
+	hooks   *mocks.HookTokens
+	auth    *mocks.AuthService
 
 	pushFlags  []bool
 	backendErr error
@@ -93,7 +92,7 @@ func (r *rig) hookedRepo() domain.RepoName {
 
 // stubUseCases answers like the use cases behind the handler: a root and a
 // reader token, a public repository "pub" and a private one "priv".
-func (r *rig) stubUseCases(repos *ghmocks.Repos) {
+func (r *rig) stubUseCases(repos *mocks.RepoLookup) {
 	r.auth.EXPECT().Authenticate(mock.Anything, mock.Anything).RunAndReturn(
 		func(_ context.Context, secret string) (domain.Principal, error) {
 			r.mu.Lock()
@@ -145,10 +144,10 @@ func (r *rig) stubUseCases(repos *ghmocks.Repos) {
 func newRig(t *testing.T, mut func(*githttp.Config)) *rig {
 	t.Helper()
 	r := &rig{
-		pushes: ghmocks.NewPushes(t), backend: mocks.NewGitBackend(t),
-		hooks: ghmocks.NewHookTokens(t), auth: ghmocks.NewAuthenticator(t),
+		pushes: mocks.NewPushService(t), backend: mocks.NewGitBackend(t),
+		hooks: mocks.NewHookTokens(t), auth: mocks.NewAuthService(t),
 	}
-	repos := ghmocks.NewRepos(t)
+	repos := mocks.NewRepoLookup(t)
 	r.stubUseCases(repos)
 	cfg := githttp.Config{
 		Auth: r.auth, Repos: repos, Pushes: r.pushes, Backend: r.backend, Hooks: r.hooks,
@@ -511,7 +510,7 @@ func TestHandlerUsesTheFailureLimiter(t *testing.T) {
 	path := "/pub.git/info/refs?service=git-upload-pack"
 	t.Run("a blocked client is refused before authentication", func(t *testing.T) {
 		t.Parallel()
-		limiter := ghmocks.NewFailureLimiter(t)
+		limiter := mocks.NewFailureLimiter(t)
 		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(true, 3*time.Second).Once()
 		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
 		code, _, hdr := r.do(t, "GET", path, "u", "root-secret", nil, nil)
@@ -521,7 +520,7 @@ func TestHandlerUsesTheFailureLimiter(t *testing.T) {
 	})
 	t.Run("an invalid secret is recorded as a failure", func(t *testing.T) {
 		t.Parallel()
-		limiter := ghmocks.NewFailureLimiter(t)
+		limiter := mocks.NewFailureLimiter(t)
 		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(false, time.Duration(0)).Once()
 		limiter.EXPECT().Fail(mock.Anything, "127.0.0.1").Once()
 		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
@@ -530,7 +529,7 @@ func TestHandlerUsesTheFailureLimiter(t *testing.T) {
 	})
 	t.Run("a valid secret is not a failure", func(t *testing.T) {
 		t.Parallel()
-		limiter := ghmocks.NewFailureLimiter(t)
+		limiter := mocks.NewFailureLimiter(t)
 		limiter.EXPECT().Blocked(mock.Anything, "127.0.0.1").Return(false, time.Duration(0)).Once()
 		r := newRig(t, func(c *githttp.Config) { c.Limiter = limiter })
 		code, _, _ := r.do(t, "GET", path, "u", "root-secret", nil, nil)

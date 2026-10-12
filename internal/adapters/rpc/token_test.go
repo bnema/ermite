@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/adapters/rpc/mocks"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func TestTokenServiceCreateToken(t *testing.T) {
@@ -35,10 +35,10 @@ func TestTokenServiceCreateToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			tokens := mocks.NewTokens(t)
+			tokens := mocks.NewTokenService(t)
 			if tt.wantCall {
 				tokens.EXPECT().Create(mock.Anything, domain.Owner(), mock.Anything).
-					Return(app.CreatedToken{Token: domain.Token{ID: "t1", Label: "ci"}, Secret: "s3cret"}, tt.usecase).Once()
+					Return(ports.CreatedToken{Token: domain.Token{ID: "t1", Label: "ci"}, Secret: "s3cret"}, tt.usecase).Once()
 			}
 			resp, err := (&tokenService{tokens}).CreateToken(ownerCtx(), connect.NewRequest(tt.req))
 			if tt.wantCode != 0 {
@@ -54,10 +54,10 @@ func TestTokenServiceCreateToken(t *testing.T) {
 
 func TestTokenServiceCreateTokenPassesParams(t *testing.T) {
 	t.Parallel()
-	tokens := mocks.NewTokens(t)
-	tokens.EXPECT().Create(mock.Anything, domain.Owner(), mock.MatchedBy(func(p app.CreateTokenParams) bool {
+	tokens := mocks.NewTokenService(t)
+	tokens.EXPECT().Create(mock.Anything, domain.Owner(), mock.MatchedBy(func(p ports.CreateTokenParams) bool {
 		return p.Label == "ci" && len(p.Scopes) == 1 && len(p.Repos) == 1 && p.Repos[0].String() == "demo"
-	})).Return(app.CreatedToken{}, nil).Once()
+	})).Return(ports.CreatedToken{}, nil).Once()
 	_, err := (&tokenService{tokens}).CreateToken(ownerCtx(), connect.NewRequest(&pb.CreateTokenRequest{
 		Label: "ci", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}, Repos: []string{"demo"},
 	}))
@@ -78,7 +78,7 @@ func TestTokenServiceRevokeToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			tokens := mocks.NewTokens(t)
+			tokens := mocks.NewTokenService(t)
 			tokens.EXPECT().Revoke(mock.Anything, domain.Owner(), "t1").Return(tt.usecase).Once()
 			_, err := (&tokenService{tokens}).RevokeToken(ownerCtx(), connect.NewRequest(&pb.RevokeTokenRequest{Id: "t1"}))
 			if tt.wantCode != 0 {
@@ -92,15 +92,15 @@ func TestTokenServiceRevokeToken(t *testing.T) {
 
 func TestTokenServiceListTokens(t *testing.T) {
 	t.Parallel()
-	tokens := mocks.NewTokens(t)
+	tokens := mocks.NewTokenService(t)
 	tokens.EXPECT().ListPage(mock.Anything, domain.Owner(), 5, "tok").
-		Return(app.TokenPage{Tokens: []domain.Token{{ID: "a"}, {ID: "b"}}, NextPageToken: "n"}, nil).Once()
+		Return(ports.TokenPage{Tokens: []domain.Token{{ID: "a"}, {ID: "b"}}, NextPageToken: "n"}, nil).Once()
 	resp, err := (&tokenService{tokens}).ListTokens(ownerCtx(), connect.NewRequest(&pb.ListTokensRequest{PageSize: 5, PageToken: "tok"}))
 	require.NoError(t, err)
 	assert.Len(t, resp.Msg.GetTokens(), 2)
 	assert.Equal(t, "n", resp.Msg.GetNextPageToken())
 
-	tokens.EXPECT().ListPage(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(app.TokenPage{}, domain.ErrInvalidPageToken).Once()
+	tokens.EXPECT().ListPage(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.TokenPage{}, domain.ErrInvalidPageToken).Once()
 	_, err = (&tokenService{tokens}).ListTokens(ownerCtx(), connect.NewRequest(&pb.ListTokensRequest{}))
 	requireCode(t, connect.CodeInvalidArgument, err)
 }

@@ -11,13 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/adapters/rpc/mocks"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func TestServerServiceGetVersion(t *testing.T) {
 	t.Parallel()
-	svc := &serverService{version: "v1.2.3", key: mocks.NewSigningKey(t)}
+	svc := &serverService{version: "v1.2.3", key: mocks.NewSigningKeyService(t)}
 	resp, err := svc.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
 	require.NoError(t, err)
 	assert.Equal(t, "v1.2.3", resp.Msg.GetVersion())
@@ -30,7 +30,7 @@ func TestServerServiceGetVersion(t *testing.T) {
 
 func TestServerServiceGetSigningKey(t *testing.T) {
 	t.Parallel()
-	key := mocks.NewSigningKey(t)
+	key := mocks.NewSigningKeyService(t)
 	key.EXPECT().Info().Return(domain.SigningKeyInfo{
 		Key:       domain.SigningPublicKey{AuthorizedKey: "ssh-ed25519 AAAA", Fingerprint: "SHA256:xyz"},
 		Committer: domain.Identity{Name: "ermite", Email: "ermite@example.com"},

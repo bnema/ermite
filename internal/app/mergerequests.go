@@ -47,11 +47,13 @@ type MergeRequests struct {
 	committer domain.Identity
 	bus       ports.EventBus
 	clock     ports.Clock
-	maint     MaintenanceScheduler
+	maint     ports.MaintenanceScheduler
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
 }
+
+var _ ports.MergeRequestService = (*MergeRequests)(nil)
 
 // MergeRequestsConfig holds what the merge request use cases need. Every field
 // is required.
@@ -68,7 +70,7 @@ type MergeRequestsConfig struct {
 	Bus       ports.EventBus
 	Clock     ports.Clock
 	// Maint queues the maintenance that follows a merge, as it does a push.
-	Maint MaintenanceScheduler
+	Maint ports.MaintenanceScheduler
 }
 
 // NewMergeRequests builds the merge request use cases.
@@ -161,20 +163,12 @@ func (m *MergeRequests) branchOrZero(ctx context.Context, repo domain.RepoName, 
 	return id, err
 }
 
-// CreateMergeRequestParams describes the merge request to open.
-type CreateMergeRequestParams struct {
-	Title       string
-	Description string
-	// Source is required; Target defaults to the default branch.
-	Source, Target string
-}
-
 // Create opens a merge request and publishes MergeRequestOpened. The principal
 // needs mr:write. A request that breaks a rule of ADR 0017 (the texts, a
 // branch that does not exist, source and target the same) is rejected whole
 // with an *domain.InvalidFieldsError naming the fields. An open request with
 // the same source and target gives domain.ErrAlreadyExists.
-func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name domain.RepoName, params CreateMergeRequestParams) (domain.MergeRequest, error) {
+func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name domain.RepoName, params ports.CreateMergeRequestParams) (domain.MergeRequest, error) {
 	repo, err := m.writable(ctx, p, name, domain.ScopeMRWrite)
 	if err != nil {
 		return domain.MergeRequest{}, err
@@ -239,7 +233,7 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 // Only a branch that does not exist is a violation. Any other failure to read
 // Git is returned as an error, so that it is logged and masked, not shown in
 // the field violations.
-func (m *MergeRequests) checkBranches(ctx context.Context, name domain.RepoName, params CreateMergeRequestParams, v *domain.Violations) (source, target string, err error) {
+func (m *MergeRequests) checkBranches(ctx context.Context, name domain.RepoName, params ports.CreateMergeRequestParams, v *domain.Violations) (source, target string, err error) {
 	source, target = params.Source, params.Target
 	if source == "" {
 		v.Add("source_branch", "is required")
@@ -279,44 +273,27 @@ func (m *MergeRequests) checkBranches(ctx context.Context, name domain.RepoName,
 	return source, target, nil
 }
 
-// ListMergeRequestsParams selects a page of merge requests.
-type ListMergeRequestsParams struct {
-	// State restricts the result; empty means every state.
-	State domain.MRState
-	// PageSize is 0 for the default, and lowered to MaxPageSize.
-	PageSize int
-	// PageToken is the NextPageToken of the previous page, or empty.
-	PageToken string
-}
-
-// MergeRequestPage is a page of merge requests, highest number first.
-type MergeRequestPage struct {
-	MergeRequests []domain.MergeRequest
-	// NextPageToken is empty on the last page.
-	NextPageToken string
-}
-
 // List returns a page of the merge requests of a repository, highest number
 // first. The open ones carry the head of their source branch. The page token
 // names the last number of the previous page, so requests created between two
 // pages never shift the others.
-func (m *MergeRequests) List(ctx context.Context, p domain.Principal, name domain.RepoName, params ListMergeRequestsParams) (MergeRequestPage, error) {
+func (m *MergeRequests) List(ctx context.Context, p domain.Principal, name domain.RepoName, params ports.ListMergeRequestsParams) (ports.MergeRequestPage, error) {
 	size, err := pageSize(params.PageSize)
 	if err != nil {
-		return MergeRequestPage{}, err
+		return ports.MergeRequestPage{}, err
 	}
 	after, err := decodeMRToken(params.PageToken)
 	if err != nil {
-		return MergeRequestPage{}, err
+		return ports.MergeRequestPage{}, err
 	}
 	if _, err := m.readable(ctx, p, name); err != nil {
-		return MergeRequestPage{}, err
+		return ports.MergeRequestPage{}, err
 	}
 	all, err := m.store.List(ctx, name)
 	if err != nil {
-		return MergeRequestPage{}, fmt.Errorf("list merge requests of %q: %w", name, err)
+		return ports.MergeRequestPage{}, fmt.Errorf("list merge requests of %q: %w", name, err)
 	}
-	var page MergeRequestPage
+	var page ports.MergeRequestPage
 	page.MergeRequests, page.NextPageToken = pageAfter(all, size,
 		func(mr domain.MergeRequest) bool {
 			return (params.State == "" || mr.State == params.State) && (after == 0 || mr.Number < after)
@@ -324,7 +301,7 @@ func (m *MergeRequests) List(ctx context.Context, p domain.Principal, name domai
 		encodeMRToken)
 	for i, mr := range page.MergeRequests {
 		if page.MergeRequests[i], err = m.withHead(ctx, mr); err != nil {
-			return MergeRequestPage{}, err
+			return ports.MergeRequestPage{}, err
 		}
 	}
 	return page, nil
@@ -361,27 +338,6 @@ func (m *MergeRequests) get(ctx context.Context, p domain.Principal, name domain
 	return repo, mr, nil
 }
 
-// MergeRequestDetail is a merge request with its review data.
-type MergeRequestDetail struct {
-	MergeRequest domain.MergeRequest
-	// Commits are the commits of the head that the target lacks, newest
-	// first, at most MaxMergeRequestCommits.
-	Commits          []domain.Commit
-	CommitsTruncated bool
-	// DiffBaseID is the commit the diff compares from; zero when the source
-	// branch is gone, then the diff is empty.
-	DiffBaseID domain.ObjectID
-	Stats      domain.DiffStats
-	Diff       domain.Diff
-	// Comments are the comments, oldest first.
-	Comments []domain.Comment
-	// LastReadID is the head recorded by MarkRead; zero when none.
-	LastReadID domain.ObjectID
-	// LastReadLost tells that since-last-read was asked for, a head was
-	// recorded, but that commit is gone: the diff is against the target.
-	LastReadLost bool
-}
-
 // Get returns a merge request with its commits, its diff, its comments and the
 // read position. The diff compares the merge base of the target and the head
 // with the head ("target...head"), within domain.DefaultDiffLimits. With
@@ -390,25 +346,25 @@ type MergeRequestDetail struct {
 // still exists; when none was recorded the diff is the default one, and when
 // the recorded commit is gone too, with LastReadLost set. A merged or closed
 // request keeps the head and the base it had.
-func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, sinceLastRead bool) (MergeRequestDetail, error) {
+func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, sinceLastRead bool) (ports.MergeRequestDetail, error) {
 	_, mr, err := m.get(ctx, p, name, number)
 	if err != nil {
-		return MergeRequestDetail{}, err
+		return ports.MergeRequestDetail{}, err
 	}
 	if mr, err = m.withHead(ctx, mr); err != nil {
-		return MergeRequestDetail{}, err
+		return ports.MergeRequestDetail{}, err
 	}
-	d := MergeRequestDetail{MergeRequest: mr}
+	d := ports.MergeRequestDetail{MergeRequest: mr}
 	if d.Comments, err = m.store.ListComments(ctx, name, number); err != nil {
-		return MergeRequestDetail{}, fmt.Errorf("list comments of !%d in %q: %w", number, name, err)
+		return ports.MergeRequestDetail{}, fmt.Errorf("list comments of !%d in %q: %w", number, name, err)
 	}
 	if d.LastReadID, err = m.store.GetRead(ctx, name, number); err != nil {
-		return MergeRequestDetail{}, err
+		return ports.MergeRequestDetail{}, err
 	}
 
 	exclude, base, err := m.rangeOf(ctx, mr)
 	if err != nil {
-		return MergeRequestDetail{}, err
+		return ports.MergeRequestDetail{}, err
 	}
 	head := mr.HeadID
 	if head.IsZero() {
@@ -419,18 +375,18 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 		// source branch; once it is deleted, gc may prune them.
 		switch ok, err := m.git.HasCommit(ctx, name, head); {
 		case err != nil:
-			return MergeRequestDetail{}, err
+			return ports.MergeRequestDetail{}, err
 		case !ok:
 			return d, nil // the reviewed commits are gone: no commits, no diff
 		}
 	}
 	if d.Commits, d.CommitsTruncated, err = m.git.ListRange(ctx, name, exclude, head, MaxMergeRequestCommits); err != nil {
-		return MergeRequestDetail{}, err
+		return ports.MergeRequestDetail{}, err
 	}
 	if sinceLastRead && !d.LastReadID.IsZero() {
 		switch ok, err := m.git.HasCommit(ctx, name, d.LastReadID); {
 		case err != nil:
-			return MergeRequestDetail{}, err
+			return ports.MergeRequestDetail{}, err
 		case ok:
 			base = d.LastReadID
 		default:
@@ -442,7 +398,7 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 	}
 	d.DiffBaseID = base
 	if d.Stats, d.Diff, err = m.git.DiffCommits(ctx, name, base, head, domain.DefaultDiffLimits()); err != nil {
-		return MergeRequestDetail{}, err
+		return ports.MergeRequestDetail{}, err
 	}
 	return d, nil
 }
@@ -470,23 +426,13 @@ func (m *MergeRequests) rangeOf(ctx context.Context, mr domain.MergeRequest) (ex
 	return tip, base, err
 }
 
-// AddCommentParams describes the comment to add.
-type AddCommentParams struct {
-	// Path, Line and Side designate a line of the diff; all empty for a
-	// general comment.
-	Path string
-	Line int
-	Side domain.DiffSide
-	Text string
-}
-
 // AddComment adds a comment and publishes CommentAdded. The principal needs
 // mr:write. The text must follow the rules of ADR 0017 and not be blank; a
 // comment on a line must name a line of the current diff of the request (see
 // domain.Diff.HasLine), else the call fails with domain.ErrInvalid. A request
 // that is not open gives domain.ErrPreconditionFailed, and one that already
 // holds MaxCommentsPerMergeRequest comments domain.ErrResourceExhausted.
-func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params AddCommentParams) (domain.Comment, error) {
+func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.AddCommentParams) (domain.Comment, error) {
 	repo, err := m.writable(ctx, p, name, domain.ScopeMRWrite)
 	if err != nil {
 		return domain.Comment{}, err
@@ -567,7 +513,7 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 
 // checkLine verifies that a comment designates a line of the current diff of
 // the request.
-func (m *MergeRequests) checkLine(ctx context.Context, mr domain.MergeRequest, params AddCommentParams) error {
+func (m *MergeRequests) checkLine(ctx context.Context, mr domain.MergeRequest, params ports.AddCommentParams) error {
 	var v domain.Violations
 	_, base, err := m.rangeOf(ctx, mr)
 	if err != nil {
@@ -706,25 +652,6 @@ func (m *MergeRequests) MarkRead(ctx context.Context, p domain.Principal, name d
 	return head, nil
 }
 
-// MergeParams describes the merge to perform.
-type MergeParams struct {
-	// Mode defaults to fast-forward.
-	Mode domain.MergeMode
-	// HeadID is the commit the caller reviewed; the source branch must still
-	// point to it.
-	HeadID domain.ObjectID
-	// DeleteSource deletes the source branch after the merge.
-	DeleteSource bool
-}
-
-// MergeResult is a merged request and what happened to its source branch.
-type MergeResult struct {
-	domain.MergeRequest
-	// SourceDeleted is true when DeleteSource was asked and the branch is
-	// gone.
-	SourceDeleted bool
-}
-
 // Merge merges an open merge request, publishes MergeRequestMerged then a
 // PushEvent for the target branch, and returns the merged request. The
 // principal needs mr:merge. Merges of one repository run one at a time.
@@ -748,12 +675,12 @@ type MergeResult struct {
 // request. After the merge the source is deleted if it still points to the
 // head; the PushEvent then carries the deletion too. A failed deletion is
 // logged and leaves the branch: the merge stands and SourceDeleted is false.
-func (m *MergeRequests) Merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params MergeParams) (MergeResult, error) {
+func (m *MergeRequests) Merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams) (ports.MergeResult, error) {
 	mr, deleted, err := m.merge(ctx, p, name, number, params)
-	return MergeResult{MergeRequest: mr, SourceDeleted: deleted}, err
+	return ports.MergeResult{MergeRequest: mr, SourceDeleted: deleted}, err
 }
 
-func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params MergeParams) (domain.MergeRequest, bool, error) {
+func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams) (domain.MergeRequest, bool, error) {
 	repo, err := m.writable(ctx, p, name, domain.ScopeMRMerge)
 	if err != nil {
 		return domain.MergeRequest{}, false, err

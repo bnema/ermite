@@ -20,7 +20,8 @@ import (
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
-	"bnema.dev/ermite/internal/adapters/web/mocks"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func TestFormatEvent(t *testing.T) {
@@ -115,7 +116,7 @@ func eventsServer(t *testing.T, f *fakeEvents, beat time.Duration, writeTimeout 
 }
 
 // eventsServerWith is eventsServer with sessions, when sess is not nil.
-func eventsServerWith(t *testing.T, f *fakeEvents, beat time.Duration, writeTimeout time.Duration, sess SessionAuth) *httptest.Server {
+func eventsServerWith(t *testing.T, f *fakeEvents, beat time.Duration, writeTimeout time.Duration, sess ports.WebSessionService) *httptest.Server {
 	t.Helper()
 	api := http.NewServeMux()
 	api.Handle(ermiteconnect.NewEventServiceHandler(f))
@@ -287,16 +288,16 @@ func TestRepoUpdatedReloadsSummaryAndRefs(t *testing.T) {
 	}
 }
 
-func limiterFor(sess SessionAuth) FailureLimiter {
+func limiterFor(sess ports.WebSessionService) ports.FailureLimiter {
 	if sess == nil {
 		return nil
 	}
 	return &countingLimiter{}
 }
 
-// newRevocable is a SessionAuth whose one session ends when the test sets
+// newRevocable is a ports.WebSessionService whose one session ends when the test sets
 // ended, like SignOutEverywhere does.
-func newRevocable(t *testing.T, valid string) (*mocks.SessionAuth, *atomic.Bool) {
+func newRevocable(t *testing.T, valid string) (*mocks.WebSessionService, *atomic.Bool) {
 	t.Helper()
 	var ended atomic.Bool
 	return newVerifier(t, valid, func(tok string) (bool, error) { return tok == valid && !ended.Load(), nil }), &ended

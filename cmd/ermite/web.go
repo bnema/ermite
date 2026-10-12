@@ -21,6 +21,7 @@ import (
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/config"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // newWeb builds the web pages on the API of this process: the generated
@@ -96,15 +97,17 @@ func warnSharedClientKey(ctx context.Context, trusted []netip.Prefix, maxPerClie
 			"requests and one budget of failed authentications; set it to the proxy networks")
 }
 
-// webSessions adapts the session use cases to web.SessionAuth: a valid token
-// gives the context of the owner, whose principal the API calls of the page
-// carry (rpc.API.InProcessClient).
+// webSessions adapts the session use cases to ports.WebSessionService: a valid
+// token gives the context of the owner, whose principal the API calls of the
+// page carry (rpc.API.InProcessClient).
 type webSessions struct{ *app.Sessions }
+
+var _ ports.WebSessionService = webSessions{}
 
 func (s webSessions) Login(ctx context.Context, nonce string) (string, time.Duration, error) {
 	token, expiresAt, err := s.Sessions.Login(ctx, nonce)
 	if errors.Is(err, domain.ErrUnauthenticated) {
-		return "", 0, web.ErrLinkRejected
+		return "", 0, ports.ErrLinkRejected
 	}
 	if err != nil {
 		return "", 0, err
@@ -118,7 +121,7 @@ func (s webSessions) Login(ctx context.Context, nonce string) (string, time.Dura
 		lifetime = d.Round(time.Second)
 	}
 	if lifetime < time.Second {
-		return "", 0, web.ErrLinkRejected
+		return "", 0, ports.ErrLinkRejected
 	}
 	return token, lifetime, nil
 }

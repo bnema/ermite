@@ -17,21 +17,22 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
-	"bnema.dev/ermite/internal/adapters/web/mocks"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 // nonceA is the one valid login link of the mocks.
 var nonceA = strings.Repeat("a", 43)
 
-// newVerifier is a SessionAuth that accepts the session token valid, checked
+// newVerifier is a WebSessionService that accepts the session token valid, checked
 // by verify when it is not nil, and that does not know any login link. A
 // call that is not expected fails the test.
-func newVerifier(t *testing.T, valid string, verify func(token string) (bool, error)) *mocks.SessionAuth {
+func newVerifier(t *testing.T, valid string, verify func(token string) (bool, error)) *mocks.WebSessionService {
 	t.Helper()
 	if verify == nil {
 		verify = func(token string) (bool, error) { return token == valid, nil }
 	}
-	m := mocks.NewSessionAuth(t)
+	m := mocks.NewWebSessionService(t)
 	m.EXPECT().Verify(mock.Anything, mock.Anything).RunAndReturn(
 		func(ctx context.Context, token string) (context.Context, bool, error) {
 			ok, err := verify(token)
@@ -41,22 +42,22 @@ func newVerifier(t *testing.T, valid string, verify func(token string) (bool, er
 }
 
 // expectLogin makes nonceA the one link of m, answering with the token valid.
-func expectLogin(m *mocks.SessionAuth, valid string) {
+func expectLogin(m *mocks.WebSessionService, valid string) {
 	m.EXPECT().LoginLinkValid(mock.Anything).RunAndReturn(func(n string) bool { return n == nonceA }).Maybe()
 	m.EXPECT().Login(mock.Anything, nonceA).Return(valid, time.Hour, nil).Maybe()
-	m.EXPECT().Login(mock.Anything, mock.Anything).Return("", time.Duration(0), ErrLinkRejected).Maybe()
+	m.EXPECT().Login(mock.Anything, mock.Anything).Return("", time.Duration(0), ports.ErrLinkRejected).Maybe()
 }
 
-// newSessions is a SessionAuth with one session token and one login link.
-func newSessions(t *testing.T, valid string) *mocks.SessionAuth {
+// newSessions is a WebSessionService with one session token and one login link.
+func newSessions(t *testing.T, valid string) *mocks.WebSessionService {
 	t.Helper()
 	m := newVerifier(t, valid, nil)
 	expectLogin(m, valid)
 	return m
 }
 
-// newBrokenSessions is a SessionAuth whose check cannot be made.
-func newBrokenSessions(t *testing.T, valid string) *mocks.SessionAuth {
+// newBrokenSessions is a WebSessionService whose check cannot be made.
+func newBrokenSessions(t *testing.T, valid string) *mocks.WebSessionService {
 	t.Helper()
 	m := newVerifier(t, valid, func(string) (bool, error) { return false, errors.New("kv down") })
 	expectLogin(m, valid)
@@ -68,7 +69,7 @@ type countingLimiter struct{ fails int }
 func (*countingLimiter) Blocked(context.Context, string) (bool, time.Duration) { return false, 0 }
 func (l *countingLimiter) Fail(context.Context, string)                        { l.fails++ }
 
-func newSessionServer(t *testing.T, sess SessionAuth, publicURL string) (*Server, *countingLimiter) {
+func newSessionServer(t *testing.T, sess ports.WebSessionService, publicURL string) (*Server, *countingLimiter) {
 	t.Helper()
 	lim := &countingLimiter{}
 	srv, err := New(Config{
@@ -294,7 +295,7 @@ func TestNoSessionsNoRoutes(t *testing.T) {
 
 	_, err = New(Config{
 		Repos: failing{}, Git: ermiteconnect.NewGitServiceClient(http.DefaultClient, "http://unused.invalid"),
-		PublicURL: "https://forge.example", Sessions: mocks.NewSessionAuth(t),
+		PublicURL: "https://forge.example", Sessions: mocks.NewWebSessionService(t),
 	})
 	assert.Error(t, err, "sessions need a limiter")
 }

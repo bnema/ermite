@@ -8,11 +8,12 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // sessionService implements ermiteconnect.SessionServiceHandler. The browser
 // never calls it: sessions come from the link, and the API ignores cookies.
-type sessionService struct{ sessions Sessions }
+type sessionService struct{ sessions ports.SessionService }
 
 func (s *sessionService) CreateLoginLink(ctx context.Context, _ *connect.Request[pb.CreateLoginLinkRequest]) (*connect.Response[pb.CreateLoginLinkResponse], error) {
 	link, err := s.sessions.CreateLoginLink(ctx, caller(ctx))

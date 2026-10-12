@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // mrRepo is a public repository "proj" with README.md on main and a branch
@@ -466,7 +466,7 @@ func TestWebMergeRequestLimitIsFriendly(t *testing.T) {
 	token := r.signIn(t)
 	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "t").ok(t)
 	for i := 0; i < 1000; i++ {
-		_, err := r.forge.MergeRequests.AddComment(r.ctx, domain.Root(), r.name("proj"), 1, app.AddCommentParams{Text: "n"})
+		_, err := r.forge.MergeRequests.AddComment(r.ctx, domain.Root(), r.name("proj"), 1, ports.AddCommentParams{Text: "n"})
 		require.NoError(t, err)
 	}
 	full := b.form("/proj/merge-requests/1/comments", token, url.Values{"text": {"one more"}})

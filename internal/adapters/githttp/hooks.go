@@ -19,16 +19,8 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
-
-// PushHooks is what the hook socket asks of the use cases. app.Pushes fits.
-type PushHooks interface {
-	// Check decides a push before Git applies it; an error matching
-	// domain.ErrRejected refuses it, any other error refuses it as a failure.
-	Check(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error
-	// Record handles an accepted push.
-	Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error
-}
 
 // readTimeout bounds how long a connection may take to send its request line.
 const readTimeout = 30 * time.Second
@@ -46,7 +38,7 @@ type hookEntry struct {
 // socket the hooks call back on. It implements HookTokens.
 type HookServer struct {
 	path  string
-	hooks PushHooks
+	hooks ports.PushHookService
 
 	mu     sync.RWMutex
 	tokens map[string]hookEntry
@@ -57,10 +49,10 @@ type HookServer struct {
 	wg     sync.WaitGroup
 }
 
-var _ HookTokens = (*HookServer)(nil)
+var _ ports.HookTokens = (*HookServer)(nil)
 
 // NewHookServer builds a server for the socket at path. Call Serve to listen.
-func NewHookServer(path string, hooks PushHooks) *HookServer {
+func NewHookServer(path string, hooks ports.PushHookService) *HookServer {
 	return &HookServer{path: path, hooks: hooks, tokens: make(map[string]hookEntry), conns: make(map[net.Conn]struct{})}
 }
 
@@ -183,6 +175,7 @@ func (s *HookServer) Close(ctx context.Context) {
 }
 
 // handle serves one connection: one request line, one reply line.
+//hexcheck:ignore suspicious-business-logic-in-adapter hook protocol dispatch: the decisions are the use cases'
 func (s *HookServer) handle(ctx context.Context, conn net.Conn) {
 	log := zerowrap.FromCtx(ctx)
 	_ = conn.SetReadDeadline(time.Now().Add(readTimeout))

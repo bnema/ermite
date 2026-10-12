@@ -55,7 +55,7 @@ func browseOps() []browseOp {
 	root := domain.TreePath{}
 	return []browseOp{
 		{"ListRefs", func(b *app.Browse, ctx context.Context, p domain.Principal, repo domain.RepoName) error {
-			_, err := b.ListRefs(ctx, p, repo, app.ListRefsParams{})
+			_, err := b.ListRefs(ctx, p, repo, ports.ListRefsParams{})
 			return err
 		}, func(r *mocks.RepoReader) { r.EXPECT().ListRefs(mock.Anything, mock.Anything).Return(nil, nil) }},
 		{"ResolveRevision", func(b *app.Browse, ctx context.Context, p domain.Principal, repo domain.RepoName) error {
@@ -87,7 +87,7 @@ func browseOps() []browseOp {
 				Return(domain.BlobInfo{}, io.NopCloser(strings.NewReader("")), nil)
 		}},
 		{"ListCommits", func(b *app.Browse, ctx context.Context, p domain.Principal, repo domain.RepoName) error {
-			_, err := b.ListCommits(ctx, p, repo, app.ListCommitsParams{})
+			_, err := b.ListCommits(ctx, p, repo, ports.ListCommitsParams{})
 			return err
 		}, func(r *mocks.RepoReader) {
 			r.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything).Return(ports.CommitPage{}, nil)
@@ -214,7 +214,7 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 		tok := ""
 		for pages := 0; ; pages++ {
 			require.Less(t, pages, 10)
-			page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{PageSize: 2, PageToken: tok})
+			page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{PageSize: 2, PageToken: tok})
 			require.NoError(t, err)
 			got = append(got, names(page.Refs)...)
 			if tok = page.NextPageToken; tok == "" {
@@ -226,19 +226,19 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 
 	t.Run("a ref that appears between pages does not shift the others", func(t *testing.T) {
 		b := setup(t, all[:4])
-		page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{PageSize: 2})
+		page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{PageSize: 2})
 		require.NoError(t, err)
 		require.Equal(t, []string{"HEAD", "refs/heads/a"}, names(page.Refs))
 
 		b2 := setup(t, append([]domain.Ref{all[0], ref(domain.RefKindBranch, "refs/heads/0new")}, all[1:4]...))
-		next, err := b2.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{PageSize: 2, PageToken: page.NextPageToken})
+		next, err := b2.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{PageSize: 2, PageToken: page.NextPageToken})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"refs/heads/b", "refs/heads/c"}, names(next.Refs))
 	})
 
 	t.Run("kinds filter", func(t *testing.T) {
 		b := setup(t, all)
-		page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{Kinds: []domain.RefKind{domain.RefKindTag}})
+		page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{Kinds: []domain.RefKind{domain.RefKindTag}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"refs/tags/v1", "refs/tags/v2"}, names(page.Refs))
 		assert.Empty(t, page.NextPageToken)
@@ -251,13 +251,13 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 			many = append(many, ref(domain.RefKindTag, fmt.Sprintf("refs/tags/t%04d", i)))
 		}
 		b := setup(t, many)
-		page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{})
+		page, err := b.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{})
 		require.NoError(t, err)
 		assert.Len(t, page.Refs, app.DefaultPageSize)
 		assert.NotEmpty(t, page.NextPageToken)
 
 		b = setup(t, many)
-		page, err = b.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{PageSize: 100000})
+		page, err = b.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{PageSize: 100000})
 		require.NoError(t, err)
 		assert.Len(t, page.Refs, app.MaxRefPageSize, "a page holds up to MaxRefPageSize refs")
 		assert.NotEmpty(t, page.NextPageToken)
@@ -266,7 +266,7 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 	t.Run("bad input never reaches the reader", func(t *testing.T) {
 		t.Parallel()
 		f := newBrowseFixture(t)
-		for _, params := range []app.ListRefsParams{
+		for _, params := range []ports.ListRefsParams{
 			{PageSize: -1},
 			{Kinds: []domain.RefKind{"nope"}},
 			{PageToken: "!!!"},
@@ -275,11 +275,11 @@ func TestListRefsPagingAndKinds(t *testing.T) {
 			_, err := f.browse.ListRefs(ctx, domain.Anonymous(), pub.Name, params)
 			assert.Error(t, err, "%+v", params)
 		}
-		_, err := f.browse.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{PageSize: -1})
+		_, err := f.browse.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{PageSize: -1})
 		assert.ErrorIs(t, err, domain.ErrInvalidPageSize)
-		_, err = f.browse.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{Kinds: []domain.RefKind{"x"}})
+		_, err = f.browse.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{Kinds: []domain.RefKind{"x"}})
 		assert.ErrorIs(t, err, domain.ErrInvalidRefKind)
-		_, err = f.browse.ListRefs(ctx, domain.Anonymous(), pub.Name, app.ListRefsParams{PageToken: "!!!"})
+		_, err = f.browse.ListRefs(ctx, domain.Anonymous(), pub.Name, ports.ListRefsParams{PageToken: "!!!"})
 		assert.ErrorIs(t, err, domain.ErrInvalidPageToken)
 	})
 }
@@ -296,7 +296,7 @@ func TestListCommitsPaging(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil)
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, ports.CommitQuery{Path: p, Limit: 10}).
 			Return(ports.CommitPage{Head: oid("a"), Commits: []domain.Commit{{ID: oid("b")}}, HasMore: true}, nil)
-		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: p, PageSize: 10})
+		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{Path: p, PageSize: 10})
 		require.NoError(t, err)
 		require.Len(t, page.Commits, 1)
 		require.NotEmpty(t, page.NextPageToken)
@@ -308,7 +308,7 @@ func TestListCommitsPaging(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil)
 		// The revision of the request is ignored once there is a token.
 		rev, _ := domain.ParseRevision("moved")
-		next, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{
+		next, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{
 			Revision: rev, Path: p, PageSize: 10, PageToken: page.NextPageToken,
 		})
 		require.NoError(t, err)
@@ -322,10 +322,10 @@ func TestListCommitsPaging(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil)
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).
 			Return(ports.CommitPage{Head: oid("a"), Commits: []domain.Commit{{ID: oid("b")}}, HasMore: true}, nil)
-		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: p})
+		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{Path: p})
 		require.NoError(t, err)
 
-		for _, params := range []app.ListCommitsParams{
+		for _, params := range []ports.ListCommitsParams{
 			{PageToken: page.NextPageToken},                             // no path
 			{Path: mustPath(t, "other"), PageToken: page.NextPageToken}, // another path
 			{Path: p, PageToken: "garbage"},
@@ -343,7 +343,7 @@ func TestListCommitsPaging(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil).Maybe()
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).
 			Return(ports.CommitPage{Head: oid("a"), Commits: []domain.Commit{{ID: oid("b")}}, HasMore: true}, nil).Once()
-		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: p})
+		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{Path: p})
 		require.NoError(t, err)
 		raw, err := base64.RawURLEncoding.DecodeString(page.NextPageToken)
 		require.NoError(t, err)
@@ -356,9 +356,9 @@ func TestListCommitsPaging(t *testing.T) {
 
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.MatchedBy(func(q ports.CommitQuery) bool { return q.Skip == app.MaxCommitSkip })).
 			Return(ports.CommitPage{Head: oid("a")}, nil).Once()
-		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: p, PageToken: withSkip(app.MaxCommitSkip)})
+		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{Path: p, PageToken: withSkip(app.MaxCommitSkip)})
 		require.NoError(t, err, "the cap itself is allowed")
-		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{Path: p, PageToken: withSkip(app.MaxCommitSkip + 1)})
+		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{Path: p, PageToken: withSkip(app.MaxCommitSkip + 1)})
 		assert.ErrorIs(t, err, domain.ErrInvalidPageToken)
 	})
 
@@ -368,11 +368,11 @@ func TestListCommitsPaging(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil).Times(2)
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, ports.CommitQuery{Limit: app.DefaultPageSize}).Return(ports.CommitPage{}, nil)
 		f.reader.EXPECT().ListCommits(ctx, pub.Name, ports.CommitQuery{Limit: 100}).Return(ports.CommitPage{}, nil)
-		_, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{})
+		_, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{})
 		require.NoError(t, err)
-		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{PageSize: 5000})
+		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{PageSize: 5000})
 		require.NoError(t, err)
-		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, app.ListCommitsParams{PageSize: -3})
+		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{PageSize: -3})
 		assert.ErrorIs(t, err, domain.ErrInvalidPageSize)
 	})
 
@@ -382,10 +382,10 @@ func TestListCommitsPaging(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, priv.Name).Return(priv, nil)
 		f.reader.EXPECT().ListCommits(ctx, priv.Name, mock.Anything).
 			Return(ports.CommitPage{Head: oid("a"), Commits: []domain.Commit{{ID: oid("b")}}, HasMore: true}, nil)
-		page, err := f.browse.ListCommits(ctx, domain.Root(), priv.Name, app.ListCommitsParams{})
+		page, err := f.browse.ListCommits(ctx, domain.Root(), priv.Name, ports.ListCommitsParams{})
 		require.NoError(t, err)
 		f.meta.EXPECT().Get(ctx, priv.Name).Return(priv, nil)
-		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), priv.Name, app.ListCommitsParams{PageToken: page.NextPageToken})
+		_, err = f.browse.ListCommits(ctx, domain.Anonymous(), priv.Name, ports.ListCommitsParams{PageToken: page.NextPageToken})
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
 }

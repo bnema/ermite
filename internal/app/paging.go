@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 const (
@@ -83,31 +84,24 @@ func pageAfter[T any](items []T, size int, after func(T) bool, token func(T) str
 	return page, ""
 }
 
-// RepoPage is a page of repositories ordered by name.
-type RepoPage struct {
-	Repos []domain.Repo
-	// NextPageToken is empty on the last page.
-	NextPageToken string
-}
-
 // ListPage returns a page of the repositories the principal may read, ordered
 // by name. size is 0 for DefaultPageSize and lowered to MaxRepoPageSize; the page
 // token names the last repository of the previous page, so repositories that
 // appear or disappear between two pages never shift the others.
-func (r *Repos) ListPage(ctx context.Context, p domain.Principal, size int, token string) (RepoPage, error) {
+func (r *Repos) ListPage(ctx context.Context, p domain.Principal, size int, token string) (ports.RepoPage, error) {
 	n, err := pageSizeUpTo(size, MaxRepoPageSize)
 	if err != nil {
-		return RepoPage{}, err
+		return ports.RepoPage{}, err
 	}
 	after, err := decodeRepoToken(token)
 	if err != nil {
-		return RepoPage{}, err
+		return ports.RepoPage{}, err
 	}
 	all, err := r.List(ctx, p)
 	if err != nil {
-		return RepoPage{}, err
+		return ports.RepoPage{}, err
 	}
-	var page RepoPage
+	var page ports.RepoPage
 	page.Repos, page.NextPageToken = pageAfter(all, n,
 		func(repo domain.Repo) bool { return after == "" || repo.Name.String() > after },
 		func(repo domain.Repo) string { return encodeRepoToken(repo.Name) })
@@ -130,28 +124,21 @@ func decodeRepoToken(tok string) (string, error) {
 	return raw, nil
 }
 
-// TokenPage is a page of stored tokens, newest first.
-type TokenPage struct {
-	Tokens []domain.Token
-	// NextPageToken is empty on the last page.
-	NextPageToken string
-}
-
 // ListPage returns a page of the tokens List returns, newest first (then by
 // id). size and the page token work like Repos.ListPage; the token names the
 // last token of the previous page.
-func (t *Tokens) ListPage(ctx context.Context, p domain.Principal, size int, token string) (TokenPage, error) {
+func (t *Tokens) ListPage(ctx context.Context, p domain.Principal, size int, token string) (ports.TokenPage, error) {
 	n, err := pageSize(size)
 	if err != nil {
-		return TokenPage{}, err
+		return ports.TokenPage{}, err
 	}
 	after, err := decodeTokenCursor(token)
 	if err != nil {
-		return TokenPage{}, err
+		return ports.TokenPage{}, err
 	}
 	all, err := t.List(ctx, p)
 	if err != nil {
-		return TokenPage{}, err
+		return ports.TokenPage{}, err
 	}
 	slices.SortFunc(all, func(a, b domain.Token) int {
 		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
@@ -159,7 +146,7 @@ func (t *Tokens) ListPage(ctx context.Context, p domain.Principal, size int, tok
 		}
 		return strings.Compare(b.ID, a.ID)
 	})
-	var page TokenPage
+	var page ports.TokenPage
 	page.Tokens, page.NextPageToken = pageAfter(all, n,
 		func(tok domain.Token) bool { return after == nil || tokenAfter(tok, *after) },
 		encodeTokenCursor)

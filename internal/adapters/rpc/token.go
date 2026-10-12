@@ -8,15 +8,15 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // tokenService implements ermiteconnect.TokenServiceHandler.
-type tokenService struct{ tokens Tokens }
+type tokenService struct{ tokens ports.TokenService }
 
 func (s *tokenService) CreateToken(ctx context.Context, req *connect.Request[pb.CreateTokenRequest]) (*connect.Response[pb.CreateTokenResponse], error) {
-	params := app.CreateTokenParams{
+	params := ports.CreateTokenParams{
 		Label:     req.Msg.GetLabel(),
 		ExpiresAt: goTime(req.Msg.GetExpiresAt()),
 	}

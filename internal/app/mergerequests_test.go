@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/app"
-	appmocks "bnema.dev/ermite/internal/app/mocks"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
@@ -37,7 +37,7 @@ func newMRUnit(t *testing.T) *mrUnit {
 	}
 	clock := mocks.NewClock(t)
 	clock.EXPECT().Now().Return(now).Maybe()
-	sched := appmocks.NewMaintenanceScheduler(t)
+	sched := mocks.NewMaintenanceScheduler(t)
 	sched.EXPECT().Schedule(mock.Anything, mock.Anything).Return().Maybe()
 	u.mrs = app.NewMergeRequests(app.MergeRequestsConfig{
 		Meta: u.meta, Store: u.store, Repos: u.repos, Git: u.git,
@@ -51,7 +51,7 @@ func newMRUnit(t *testing.T) *mrUnit {
 func TestCreateReturnsGitFailuresAsErrors(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("fatal: /srv/ermite/repos/proj.git: permission denied")
-	params := app.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "main"}
+	params := ports.CreateMergeRequestParams{Title: "t", Source: "feat", Target: "main"}
 
 	t.Run("reading a branch", func(t *testing.T) {
 		t.Parallel()
@@ -70,7 +70,7 @@ func TestCreateReturnsGitFailuresAsErrors(t *testing.T) {
 		u := newMRUnit(t)
 		u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
 		u.repos.EXPECT().DefaultBranch(mock.Anything, u.repo.Name).Return("", false, boom)
-		_, err := u.mrs.Create(context.Background(), domain.Root(), u.repo.Name, app.CreateMergeRequestParams{Title: "t", Source: "feat"})
+		_, err := u.mrs.Create(context.Background(), domain.Root(), u.repo.Name, ports.CreateMergeRequestParams{Title: "t", Source: "feat"})
 		require.ErrorIs(t, err, boom)
 		var fe *domain.InvalidFieldsError
 		assert.False(t, errors.As(err, &fe), "not a field violation: %v", err)
@@ -109,7 +109,7 @@ func TestMergeReturnsTheFailureToReadTheSettings(t *testing.T) {
 			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(domain.MergeRequest{
 				Repo: u.repo.Name, Number: 1, State: domain.MRStateOpen, Source: "feat", Target: "main",
 			}, nil)
-			_, err := u.mrs.Merge(context.Background(), domain.Root(), u.repo.Name, 1, app.MergeParams{HeadID: someID(t)})
+			_, err := u.mrs.Merge(context.Background(), domain.Root(), u.repo.Name, 1, ports.MergeParams{HeadID: someID(t)})
 			require.ErrorIs(t, err, tc.want)
 			if tc.want == boom {
 				assert.NotErrorIs(t, err, domain.ErrNotFound)

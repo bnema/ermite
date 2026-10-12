@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/adapters/rpc/mocks"
-	"bnema.dev/ermite/internal/app"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 )
 
 func TestSessionServiceCreateLoginLink(t *testing.T) {
@@ -32,9 +32,9 @@ func TestSessionServiceCreateLoginLink(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sessions := mocks.NewSessions(t)
+			sessions := mocks.NewSessionService(t)
 			sessions.EXPECT().CreateLoginLink(mock.Anything, domain.Owner()).
-				Return(app.LoginLink{URL: "https://x/-/login/n", ExpiresAt: exp}, tt.usecase).Once()
+				Return(ports.LoginLink{URL: "https://x/-/login/n", ExpiresAt: exp}, tt.usecase).Once()
 			resp, err := (&sessionService{sessions}).CreateLoginLink(ownerCtx(), connect.NewRequest(&pb.CreateLoginLinkRequest{}))
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
@@ -60,7 +60,7 @@ func TestSessionServiceSignOutEverywhere(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sessions := mocks.NewSessions(t)
+			sessions := mocks.NewSessionService(t)
 			sessions.EXPECT().SignOutEverywhere(mock.Anything, domain.Owner()).Return(tt.usecase).Once()
 			_, err := (&sessionService{sessions}).SignOutEverywhere(ownerCtx(), connect.NewRequest(&pb.SignOutEverywhereRequest{}))
 			if tt.wantCode != 0 {
