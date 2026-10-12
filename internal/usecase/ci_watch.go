@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bnema/zerowrap"
-
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -239,9 +237,11 @@ func (c *CI) checkQueue(ctx context.Context) {
 }
 
 // sweep removes the runs older than the retention, and the logs of runs that
-// no longer exist (a repository deleted while the server was down).
+// no longer exist (a repository deleted while the server was down). Every
+// failure is logged and the next step still runs: a log directory that cannot
+// be removed is tried again at the next sweep.
 func (c *CI) sweep(ctx context.Context) {
-	log := zerowrap.FromCtx(ctx)
+	log := ctxLog(ctx)
 	ids, err := c.cfg.Store.Sweep(ctx, c.now().Add(-c.cfg.Retention))
 	if err != nil {
 		log.Error().Err(err).Msg("ci: sweep the old runs")
@@ -249,7 +249,7 @@ func (c *CI) sweep(ctx context.Context) {
 	}
 	if len(ids) > 0 {
 		if err := c.cfg.Logs.RemoveRuns(ctx, ids); err != nil {
-			log.Error().Err(err).Msg("ci: remove the logs of the old runs")
+			log.Error().Err(err).Int("runs", len(ids)).Msg("ci: remove the logs of the old runs")
 		}
 		for _, id := range ids {
 			c.locks.Delete(id)
@@ -258,16 +258,22 @@ func (c *CI) sweep(ctx context.Context) {
 	}
 	onDisk, err := c.cfg.Logs.RunIDs(ctx)
 	if err != nil {
+		log.Error().Err(err).Msg("ci: list the log directories")
 		return
 	}
 	var orphans []int64
 	for _, id := range onDisk {
-		if _, err := c.cfg.Store.GetRunSource(ctx, id); errors.Is(err, domain.ErrNotFound) {
+		switch _, err := c.cfg.Store.GetRunSource(ctx, id); {
+		case errors.Is(err, domain.ErrNotFound):
 			orphans = append(orphans, id)
+		case err != nil:
+			log.Error().Err(err).Int64("run_id", id).Msg("ci: look up a run with a log directory")
 		}
 	}
 	if len(orphans) > 0 {
-		_ = c.cfg.Logs.RemoveRuns(ctx, orphans)
+		if err := c.cfg.Logs.RemoveRuns(ctx, orphans); err != nil {
+			log.Error().Err(err).Int("runs", len(orphans)).Msg("ci: remove the logs of runs that no longer exist")
+		}
 	}
 }
 

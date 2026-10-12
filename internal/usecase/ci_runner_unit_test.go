@@ -3,10 +3,13 @@
 package usecase_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -284,4 +287,128 @@ func TestCommitChecksRefusesATruncatedList(t *testing.T) {
 	checks, err := u.ci.CommitChecks(context.Background(), repo, "def")
 	require.NoError(t, err)
 	assert.Len(t, checks, 1)
+}
+
+// logCapture is a context whose logger writes into a buffer the test reads.
+func logCapture(t *testing.T) (context.Context, *bytes.Buffer) {
+	t.Helper()
+	var buf bytes.Buffer
+	log := zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf})
+	return zerowrap.WithCtx(context.Background(), log), &buf
+}
+
+// M5, M6: the sweep removes the runs older than the retention (with the clock
+// moved, not waited for), the logs of runs no record has any more, and says so
+// when it cannot.
+func TestSweep(t *testing.T) {
+	t.Parallel()
+	retention := 30 * 24 * time.Hour
+
+	t.Run("old runs go with their logs, orphan logs too", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, func(cfg *usecase.CIConfig) { cfg.Retention = retention })
+		u.clock.t = now.Add(100 * 24 * time.Hour)
+		ctx, out := logCapture(t)
+		u.store.EXPECT().Sweep(mock.Anything, u.clock.t.Add(-retention)).Return([]int64{3, 4}, nil)
+		u.logs.EXPECT().RemoveRuns(mock.Anything, []int64{3, 4}).Return(nil).Once()
+		u.logs.EXPECT().RunIDs(mock.Anything).Return([]int64{5, 6, 7}, nil)
+		u.store.EXPECT().GetRunSource(mock.Anything, int64(5)).Return(domain.CIRunSource{}, nil)
+		u.store.EXPECT().GetRunSource(mock.Anything, int64(6)).Return(domain.CIRunSource{}, domain.ErrNotFound)
+		u.store.EXPECT().GetRunSource(mock.Anything, int64(7)).Return(domain.CIRunSource{}, domain.ErrNotFound)
+		u.logs.EXPECT().RemoveRuns(mock.Anything, []int64{6, 7}).Return(nil).Once()
+		u.ci.Sweep(ctx)
+		assert.NotContains(t, out.String(), `"level":"error"`)
+		assert.Contains(t, out.String(), "old runs removed")
+	})
+
+	t.Run("a store that fails ends the sweep, logged", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, nil)
+		ctx, out := logCapture(t)
+		u.store.EXPECT().Sweep(mock.Anything, mock.Anything).Return(nil, errors.New("kv closed"))
+		u.ci.Sweep(ctx) // the log store expects no call
+		assert.Contains(t, out.String(), "sweep the old runs")
+		assert.Contains(t, out.String(), "kv closed")
+	})
+
+	t.Run("a log directory that cannot be removed is logged and the orphans are still looked for", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, nil)
+		ctx, out := logCapture(t)
+		u.store.EXPECT().Sweep(mock.Anything, mock.Anything).Return([]int64{3}, nil)
+		u.logs.EXPECT().RemoveRuns(mock.Anything, []int64{3}).Return(errors.New("permission denied")).Once()
+		u.logs.EXPECT().RunIDs(mock.Anything).Return([]int64{9}, nil)
+		u.store.EXPECT().GetRunSource(mock.Anything, int64(9)).Return(domain.CIRunSource{}, domain.ErrNotFound)
+		u.logs.EXPECT().RemoveRuns(mock.Anything, []int64{9}).Return(errors.New("disk on fire")).Once()
+		u.ci.Sweep(ctx)
+		assert.Contains(t, out.String(), "remove the logs of the old runs")
+		assert.Contains(t, out.String(), "permission denied")
+		assert.Contains(t, out.String(), "remove the logs of runs that no longer exist")
+		assert.Contains(t, out.String(), "disk on fire")
+	})
+
+	t.Run("a listing of the log directories that fails is logged", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, nil)
+		ctx, out := logCapture(t)
+		u.store.EXPECT().Sweep(mock.Anything, mock.Anything).Return(nil, nil)
+		u.logs.EXPECT().RunIDs(mock.Anything).Return(nil, errors.New("io error"))
+		u.ci.Sweep(ctx)
+		assert.Contains(t, out.String(), "list the log directories")
+	})
+
+	t.Run("a run with a lookup error keeps its logs", func(t *testing.T) {
+		t.Parallel()
+		u := newCIUnit(t, nil)
+		ctx, out := logCapture(t)
+		u.store.EXPECT().Sweep(mock.Anything, mock.Anything).Return(nil, nil)
+		u.logs.EXPECT().RunIDs(mock.Anything).Return([]int64{9}, nil)
+		u.store.EXPECT().GetRunSource(mock.Anything, int64(9)).Return(domain.CIRunSource{}, errors.New("kv closed"))
+		u.ci.Sweep(ctx) // RemoveRuns is not expected: an unknown state removes nothing
+		assert.Contains(t, out.String(), "look up a run")
+	})
+}
+
+// M5: a log that would pass its limit appends nothing; the server adds a last
+// line saying so, fails the job and answers failed_precondition with the end.
+func TestLogLimitEndsTheJob(t *testing.T) {
+	t.Parallel()
+	u := newCIUnit(t, nil)
+	j := ciJob(t, domain.CIPhaseRunning, jobSecret)
+	j.Steps = []domain.CIStep{{Number: 1, State: domain.CIStepInProgress, StartedAt: now, HasLines: true}}
+	u.expectToken(jobSecret, j)
+	u.store.EXPECT().GetJob(mock.Anything, j.RunID, j.RunAttempt, j.ID).Return(j, nil)
+	u.logs.EXPECT().Count(mock.Anything, mock.Anything).Return(10, nil)
+	u.logs.EXPECT().Append(mock.Anything, mock.Anything, int64(10), mock.Anything, int64(domain.CIMaxLogBytes)).Return(0, 0, ports.ErrCILogLimit)
+
+	// stopForLogLimit: the run is loaded, the last line is forced in, the job ends.
+	u.store.EXPECT().GetRunSource(mock.Anything, j.RunID).Return(domain.CIRunSource{RunID: j.RunID, Repo: j.Repo, WorkflowYAML: "on: push\njobs:\n  build:\n    runs-on: x\n    steps:\n      - run: echo\n"}, nil)
+	u.store.EXPECT().GetRun(mock.Anything, j.Repo, j.RunID).Return(domain.CIRun{Repo: j.Repo, ID: j.RunID, Attempt: 1, WorkflowPath: "w.yml"}, nil)
+	u.store.EXPECT().ListJobs(mock.Anything, j.RunID, int32(1)).Return([]domain.CIJob{j}, nil)
+	var forced []domain.CILogLine
+	u.logs.EXPECT().AppendForced(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, _ ports.CILogRef, lines []domain.CILogLine) (int64, error) {
+			forced = lines
+			return 11, nil
+		})
+	var written ports.CIWrite
+	u.store.EXPECT().Apply(mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, w ports.CIWrite) (uint64, error) { written = w; return 5, nil })
+	u.meta.EXPECT().Get(mock.Anything, j.Repo).Return(domain.Repo{Name: j.Repo, Visibility: domain.VisibilityPrivate}, nil)
+	u.logs.EXPECT().Count(mock.Anything, mock.Anything).Return(11, nil).Maybe()
+	u.bus.EXPECT().Publish(mock.Anything, mock.Anything).Return().Maybe()
+
+	_, err := u.ci.AppendLog(context.Background(), jobSecret, jobIDOne, 1, 10, []domain.CILogLine{{Time: now, Text: "one more"}})
+	ended, ok := domain.IsJobEnded(err)
+	require.True(t, ok, "%v", err)
+	assert.Equal(t, domain.CIFailure, ended.Conclusion)
+	assert.Contains(t, ended.Message, "512 MiB")
+
+	require.Len(t, forced, 1)
+	assert.Contains(t, forced[0].Text, "##[error]")
+	assert.Contains(t, forced[0].Text, "512 MiB")
+	require.Len(t, written.Jobs, 1)
+	assert.Equal(t, domain.CIPhaseEnded, written.Jobs[0].Phase)
+	assert.Equal(t, domain.CIFailure, written.Jobs[0].Conclusion)
+	assert.Equal(t, domain.CIStepCompleted, written.Jobs[0].Steps[0].State, "an open step is completed with the job")
 }
