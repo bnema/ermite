@@ -191,13 +191,7 @@ func (c *CI) cancelAssignment(ctx context.Context, rs *runState, j *domain.CIJob
 	j.TokenHash, j.TokenValidUntil = domain.TokenHash{}, time.Time{}
 	j.RunnerID, j.RunnerName, j.Isolation = "", "", domain.CIIsolationNone
 	j.Steps, j.Outputs, j.AssignedAt = nil, nil, time.Time{}
-	c.mu.Lock()
-	for id, p := range c.polls {
-		if p.ref == jobRef(*j) {
-			delete(c.polls, id)
-		}
-	}
-	c.mu.Unlock()
+	c.forgetPoll(jobRef(*j))
 	if j.CancelReason != domain.CICancelNone {
 		// Cancelled (by the owner, fail-fast or the time budget) before the
 		// runner answered: it is over, not queued again for another runner.

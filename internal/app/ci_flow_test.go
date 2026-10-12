@@ -627,3 +627,23 @@ jobs:
 	require.NoError(t, err)
 	assert.Nil(t, again, "a cancelled job is not given again")
 }
+
+// Once the runner acknowledged a job, a retried poll with the same poll_id has
+// nothing to repeat: the plaintext token is no longer kept.
+func TestCIAcknowledgedAssignmentIsNotRepeated(t *testing.T) {
+	c := newCIHarness(t, func(cfg *usecase.CIConfig) { cfg.PollTimeout = 150 * time.Millisecond })
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{".github/workflows/ci.yml": strings.Split(ciWorkflow, "  test:")[0]}, "")
+	var job *pb.Job
+	c.waitFor("a job", func() bool {
+		j, err := runner.fetch("poll-9")
+		require.NoError(t, err)
+		job = j
+		return j != nil
+	})
+	_, err := runner.jobAPI(job).runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	require.NoError(t, err)
+	again, err := runner.fetch("poll-9")
+	require.NoError(t, err)
+	assert.Nil(t, again, "the acknowledged assignment is not handed out again")
+}
