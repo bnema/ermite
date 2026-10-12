@@ -60,7 +60,7 @@ func (e *cliEnv) path() (string, error) {
 // on stderr, printed once, and only when warn is set. The path is returned
 // even when reading fails.
 //
-// The file is opened once: what is parsed and what requirePrivate vets (see
+// The file is opened once: what is parsed and what checkPrivate vets (see
 // fetchToken) are the same file, so token.cmd cannot come from a file that was
 // swapped after the check.
 func (e *cliEnv) readFile(cmd *cobra.Command, warn bool) (*cliFile, string, error) {
