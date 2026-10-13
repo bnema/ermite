@@ -40,10 +40,13 @@ type jsonRun struct {
 }
 
 type jsonStep struct {
-	Number      int32   `json:"number"`
-	Name        string  `json:"name"`
-	State       string  `json:"state"`
-	Conclusion  string  `json:"conclusion"`
+	Number     int32  `json:"number"`
+	Name       string `json:"name"`
+	State      string `json:"state"`
+	Conclusion string `json:"conclusion"`
+	// Outcome is the result before continue-on-error; for a step stored without
+	// one it is the conclusion.
+	Outcome     string  `json:"outcome"`
 	StartedAt   *string `json:"started_at"`
 	CompletedAt *string `json:"completed_at"`
 	LogStart    int64   `json:"log_start"`
@@ -67,10 +70,28 @@ type jsonRunJob struct {
 	CompletedAt *string    `json:"completed_at"`
 }
 
+// jsonAnnotation is an annotation of a run, with the job and the step it belongs to.
+type jsonAnnotation struct {
+	Job         string `json:"job"`
+	JobID       string `json:"job_id"`
+	Step        int32  `json:"step"`
+	Level       string `json:"level"`
+	Title       string `json:"title"`
+	Message     string `json:"message"`
+	File        string `json:"file"`
+	StartLine   int32  `json:"start_line"`
+	EndLine     int32  `json:"end_line"`
+	StartColumn int32  `json:"start_column"`
+	EndColumn   int32  `json:"end_column"`
+}
+
 type jsonRunDetail struct {
 	jsonRun
-	LatestAttempt int32        `json:"latest_attempt"`
-	Jobs          []jsonRunJob `json:"jobs"`
+	LatestAttempt int32            `json:"latest_attempt"`
+	Jobs          []jsonRunJob     `json:"jobs"`
+	Annotations   []jsonAnnotation `json:"annotations"`
+	// AnnotationsTruncated is true when the server holds more annotations than it returned.
+	AnnotationsTruncated bool `json:"annotations_truncated"`
 }
 
 const jsonRunHelp = `
@@ -79,7 +100,9 @@ ref, sha, actor, status (queued, in_progress, completed), conclusion (success, f
 skipped, timed_out, neutral, action_required; empty until completed), error, created_at,
 started_at and completed_at (RFC 3339 UTC, null when unset). "run view" adds latest_attempt and
 jobs (id, attempt, key, name, status, conclusion, error, labels, needs, runner, isolation, steps
-with number, name, state, conclusion, log_start and log_end, started_at, completed_at).`
+with number, name, state, conclusion, outcome (the result before continue-on-error), log_start and log_end,
+started_at, completed_at), annotations (job, job_id, step, level notice|warning|failure, title, message,
+file, start_line, end_line, start_column, end_column) and annotations_truncated.`
 
 func statusText(s ermite.CiStatus) string {
 	return strings.ToLower(strings.TrimPrefix(s.String(), "CI_STATUS_"))
@@ -111,6 +134,15 @@ func runResult(status ermite.CiStatus, c ermite.CiConclusion) string {
 	return statusText(status)
 }
 
+// stepOutcomeText is the outcome of a step; a completed step stored without one
+// has the outcome of its conclusion (Step.outcome).
+func stepOutcomeText(s *ermite.Step) string {
+	if s.GetOutcome() == ermite.CiConclusion_CI_CONCLUSION_UNSPECIFIED && s.GetState() == ermite.StepState_STEP_STATE_COMPLETED {
+		return conclusionText(s.GetConclusion())
+	}
+	return conclusionText(s.GetOutcome())
+}
+
 func toJSONRun(r *ermite.Run) jsonRun {
 	return jsonRun{
 		ID: r.GetId(), Repo: r.GetRepo(), Number: r.GetNumber(), Attempt: r.GetAttempt(), Workflow: r.GetWorkflowName(),
@@ -125,7 +157,7 @@ func toJSONRunJob(j *ermite.RunJob) jsonRunJob {
 	for _, s := range j.GetSteps() {
 		steps = append(steps, jsonStep{
 			Number: s.GetNumber(), Name: s.GetName(), State: stepStateText(s.GetState()), Conclusion: conclusionText(s.GetConclusion()),
-			StartedAt: jsonTime(s.GetStartedAt()), CompletedAt: jsonTime(s.GetCompletedAt()), LogStart: s.GetLogStart(), LogEnd: s.GetLogEnd(),
+			Outcome: stepOutcomeText(s), StartedAt: jsonTime(s.GetStartedAt()), CompletedAt: jsonTime(s.GetCompletedAt()), LogStart: s.GetLogStart(), LogEnd: s.GetLogEnd(),
 		})
 	}
 	labels, needs := j.GetLabels(), j.GetNeeds()
@@ -254,21 +286,27 @@ func parseStatusFlag(s string) (ermite.CiStatus, error) {
 
 func newRunViewCmd(env *cliEnv) *cobra.Command {
 	var attempt int32
-	var logFlag bool
+	var logFlag, summaryFlag bool
 	var jobFlag string
 	cmd := &cobra.Command{
 		Use:   "view <repo> <run id>",
-		Short: "Show a run with its jobs and steps, or the log of a job",
-		Long: "Show a run: its state, its jobs and their steps. --attempt reads an earlier attempt.\n" +
+		Short: "Show a run with its jobs, steps and annotations, or the log or summaries of its jobs",
+		Long: "Show a run: its state, its jobs and their steps, then its ANNOTATIONS (the notices, warnings and\n" +
+			"errors that the steps produced, with their job and file:line). --attempt reads an earlier attempt.\n" +
 			"With --log, print the log of the run's jobs (all of them, or the one chosen by --job: its id\n" +
-			"or its name) instead; the lines are printed as the runner sent them, prefixed by nothing." + jsonRunHelp,
+			"or its name) instead; the lines are printed as the runner sent them, prefixed by nothing.\n" +
+			"With --summary, print the job summaries (the Markdown the steps wrote to GITHUB_STEP_SUMMARY) of\n" +
+			"the run's jobs, or of the --job, as Markdown, not rendered." + jsonRunHelp,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}
 	cmd.Flags().Int32Var(&attempt, "attempt", 0, "the attempt to read (default: the latest)")
 	cmd.Flags().BoolVar(&logFlag, "log", false, "print the log of the jobs instead of the summary")
-	cmd.Flags().StringVar(&jobFlag, "job", "", "with --log, only this job (its id or its name)")
+	cmd.Flags().BoolVar(&summaryFlag, "summary", false, "print the job summaries (Markdown) instead of the summary of the run")
+	cmd.Flags().StringVar(&jobFlag, "job", "", "with --log or --summary, only this job (its id or its name)")
 	asJSON := addJSONFlag(cmd)
+	cmd.MarkFlagsMutuallyExclusive("log", "summary")
+	cmd.MarkFlagsMutuallyExclusive("json", "summary")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		id, err := parseRunID(args[1])
 		if err != nil {
@@ -286,14 +324,30 @@ func newRunViewCmd(env *cliEnv) *cobra.Command {
 		if logFlag {
 			return printRunLog(ctx, cmd.OutOrStdout(), c, args[0], res.Msg, jobFlag, false)
 		}
+		if summaryFlag {
+			return printRunSummaries(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), c, args[0], res.Msg, jobFlag)
+		}
+		anns, err := runAnnotations(ctx, c, args[0], res.Msg)
+		if err != nil {
+			return err
+		}
 		if *asJSON {
-			d := jsonRunDetail{jsonRun: toJSONRun(res.Msg.GetRun()), LatestAttempt: res.Msg.GetLatestAttempt(), Jobs: []jsonRunJob{}}
+			d := jsonRunDetail{
+				jsonRun: toJSONRun(res.Msg.GetRun()), LatestAttempt: res.Msg.GetLatestAttempt(), Jobs: []jsonRunJob{},
+				Annotations: []jsonAnnotation{}, AnnotationsTruncated: anns.truncated,
+			}
 			for _, j := range res.Msg.GetJobs() {
 				d.Jobs = append(d.Jobs, toJSONRunJob(j))
 			}
+			for _, a := range anns.items {
+				d.Annotations = append(d.Annotations, toJSONAnnotation(a, anns.jobs))
+			}
 			return writeJSON(cmd.OutOrStdout(), d)
 		}
-		return printRun(cmd.OutOrStdout(), res.Msg)
+		if err := printRun(cmd.OutOrStdout(), res.Msg); err != nil {
+			return err
+		}
+		return printAnnotations(cmd.OutOrStdout(), anns)
 	}
 	return cmd
 }
@@ -338,6 +392,175 @@ func printRun(w io.Writer, r *ermite.GetRunResponse) error {
 		}
 	}
 	return nil
+}
+
+// runNotes are the annotations of a run as read from the server.
+type runNotes struct {
+	items     []*ermite.JobAnnotation
+	truncated bool
+	// jobs maps a job id to the job.
+	jobs map[string]*ermite.RunJob
+}
+
+// runAnnotations reads the annotations of the attempt of a run that was read.
+// A server without the feature has none: it answers unimplemented, which is
+// not an error here.
+func runAnnotations(ctx context.Context, c *client.Client, repo string, r *ermite.GetRunResponse) (runNotes, error) {
+	out := runNotes{jobs: map[string]*ermite.RunJob{}}
+	for _, j := range r.GetJobs() {
+		out.jobs[j.GetId()] = j
+	}
+	res, err := c.Runs().ListAnnotations(ctx, connect.NewRequest(&ermite.ListAnnotationsRequest{
+		Repo: repo, RunId: r.GetRun().GetId(), Attempt: r.GetRun().GetAttempt(),
+	}))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return out, nil
+	}
+	if err != nil {
+		return runNotes{}, err
+	}
+	out.items, out.truncated = res.Msg.GetAnnotations(), res.Msg.GetTruncated()
+	return out, nil
+}
+
+func annotationLevelText(l ermite.AnnotationLevel) string {
+	switch l {
+	case ermite.AnnotationLevel_ANNOTATION_LEVEL_NOTICE:
+		return "notice"
+	case ermite.AnnotationLevel_ANNOTATION_LEVEL_WARNING:
+		return "warning"
+	case ermite.AnnotationLevel_ANNOTATION_LEVEL_FAILURE:
+		return "error"
+	}
+	return ""
+}
+
+// annotationPlace is "file:line" (or "file:line-endline"), "" without a file.
+func annotationPlace(a *ermite.Annotation) string {
+	if a.GetFile() == "" {
+		return ""
+	}
+	p := a.GetFile()
+	if a.GetStartLine() > 0 {
+		p += ":" + strconv.Itoa(int(a.GetStartLine()))
+		if a.GetEndLine() > a.GetStartLine() {
+			p += "-" + strconv.Itoa(int(a.GetEndLine()))
+		}
+	}
+	return p
+}
+
+func toJSONAnnotation(ja *ermite.JobAnnotation, jobs map[string]*ermite.RunJob) jsonAnnotation {
+	a := ja.GetAnnotation()
+	level := annotationLevelText(a.GetLevel())
+	if level == "error" {
+		level = "failure" // the API's name, as GitHub's annotation_level
+	}
+	return jsonAnnotation{
+		Job: jobs[ja.GetJobId()].GetName(), JobID: ja.GetJobId(), Step: a.GetStepNumber(), Level: level, Title: a.GetTitle(),
+		Message: a.GetMessage(), File: a.GetFile(), StartLine: a.GetStartLine(), EndLine: a.GetEndLine(),
+		StartColumn: a.GetStartColumn(), EndColumn: a.GetEndColumn(),
+	}
+}
+
+// printAnnotations prints the ANNOTATIONS section of `run view`, like `gh run
+// view` does: one line per annotation with its level, its job, its place and
+// its message. Nothing is printed for a run without annotation.
+func printAnnotations(w io.Writer, n runNotes) error {
+	if len(n.items) == 0 {
+		return nil
+	}
+	_, _ = fmt.Fprint(w, "\nANNOTATIONS\n")
+	rows := make([][]string, 0, len(n.items))
+	for _, ja := range n.items {
+		a := ja.GetAnnotation()
+		msg := a.GetMessage()
+		if a.GetTitle() != "" {
+			msg = a.GetTitle() + ": " + msg
+		}
+		rows = append(rows, []string{annotationLevelText(a.GetLevel()), n.jobs[ja.GetJobId()].GetName(), annotationPlace(a), msg})
+	}
+	if err := table(w, []string{"LEVEL", "JOB", "FILE", "MESSAGE"}, rows); err != nil {
+		return err
+	}
+	if n.truncated {
+		_, _ = fmt.Fprintf(w, "(more annotations exist than the %d shown)\n", len(n.items))
+	}
+	return nil
+}
+
+// printRunSummaries prints the job summaries of the chosen jobs as the Markdown
+// the steps wrote to w; notes go to errw. With several of them, each is preceded
+// by a line naming its job and step. Control characters are replaced, as everywhere the CLI prints
+// text it did not write (a tab becomes a space); line breaks are kept.
+func printRunSummaries(ctx context.Context, w, errw io.Writer, c *client.Client, repo string, r *ermite.GetRunResponse, sel string) error {
+	jobs, err := pickJobs(r.GetJobs(), sel)
+	if err != nil {
+		return err
+	}
+	type found struct {
+		job *ermite.RunJob
+		sum *ermite.StepSummary
+	}
+	var all []found
+	truncated := false
+	for _, j := range jobs {
+		if j.GetStatus() == ermite.CiStatus_CI_STATUS_QUEUED {
+			continue
+		}
+		res, err := c.Runs().GetStepSummaries(ctx, connect.NewRequest(&ermite.GetStepSummariesRequest{Repo: repo, JobId: j.GetId(), Attempt: j.GetAttempt()}))
+		if connect.CodeOf(err) == connect.CodeUnimplemented {
+			return fmt.Errorf("the server does not keep job summaries (it lacks the ci.summaries feature)")
+		}
+		if err != nil {
+			return err
+		}
+		for _, s := range res.Msg.GetSummaries() {
+			all = append(all, found{j, s})
+		}
+		truncated = truncated || res.Msg.GetTruncated()
+	}
+	if len(all) == 0 {
+		noticef2(errw, "the run has no job summary")
+		return nil
+	}
+	for i, f := range all {
+		if len(all) > 1 {
+			if i > 0 {
+				_, _ = fmt.Fprintln(w)
+			}
+			_, _ = fmt.Fprintf(w, "== %s: %s ==\n", clean(f.job.GetName()), clean(stepName(f.job, f.sum.GetStepNumber())))
+		}
+		text := rawText(f.sum.GetMarkdown())
+		_, _ = fmt.Fprint(w, text)
+		if !strings.HasSuffix(text, "\n") {
+			_, _ = fmt.Fprintln(w)
+		}
+	}
+	if truncated {
+		noticef2(errw, "some jobs have more summaries than the 20 the server returns")
+	}
+	return nil
+}
+
+// stepName is the name of a step of a job, or "step N" when it is not known.
+func stepName(j *ermite.RunJob, n int32) string {
+	for _, s := range j.GetSteps() {
+		if s.GetNumber() == n && s.GetName() != "" {
+			return s.GetName()
+		}
+	}
+	return "step " + strconv.Itoa(int(n))
+}
+
+// rawText replaces the control characters of a text that may come from the
+// workflow (clean), line by line, so that its line breaks stay.
+func rawText(s string) string {
+	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = clean(l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // pickJobs selects the jobs --job names (an id or a name), or all of them.

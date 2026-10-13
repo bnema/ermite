@@ -38,7 +38,8 @@ import (
 //	ciactive/<job key>                   job assigned or running
 //	jobtoken/<hash>                      job token (value: job key)
 //
-// The job repository tokens and the action resolutions are in ci_token.go.
+// The job repository tokens and the action resolutions are in ci_token.go, the
+// annotations in ci_annotation.go.
 const (
 	runPrefix     = "run/"
 	runSrcPrefix  = "runsrc/"
@@ -315,7 +316,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		steps = append(steps, &storagepb.CIStep{
 			Number: s.Number, Name: s.Name, State: encodeStepState(s.State), Conclusion: encodeConclusion(s.Conclusion),
 			StartedAt: encodeTime(s.StartedAt), CompletedAt: encodeTime(s.CompletedAt),
-			LogStart: s.LogStart, HasLines: s.HasLines,
+			LogStart: s.LogStart, HasLines: s.HasLines, Outcome: encodeConclusion(s.Outcome),
 		})
 	}
 	pb := &storagepb.CIJob{
@@ -367,7 +368,7 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 		j.Steps = append(j.Steps, domain.CIStep{
 			Number: s.GetNumber(), Name: s.GetName(), State: decodeStepState(s.GetState()), Conclusion: decodeConclusion(s.GetConclusion()),
 			StartedAt: decodeTime(s.GetStartedAt()), CompletedAt: decodeTime(s.GetCompletedAt()),
-			LogStart: s.GetLogStart(), HasLines: s.GetHasLines(),
+			LogStart: s.GetLogStart(), HasLines: s.GetHasLines(), Outcome: decodeConclusion(s.GetOutcome()),
 		})
 	}
 	return j, nil
@@ -510,6 +511,7 @@ func (c *CI) stageRecords(ctx context.Context, b *kv.Batch, w ports.CIWrite) (gu
 		}
 	}
 	c.stageRepoTokens(ctx, b, w, guarded)
+	c.stageAnnotations(ctx, b, w, guarded)
 	// Checks are derived from the jobs, written in the same batch and under
 	// the lock of their run: they are upserted without a precondition.
 	for _, ck := range w.Checks {
@@ -836,6 +838,7 @@ func (c *CI) ListChecks(ctx context.Context, repo domain.RepoName, sha string, l
 func (c *CI) runKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName, runID int64) [][]byte {
 	keys := [][]byte{runKey(repo, runID), runSrcKey(runID), openKey(runID)}
 	keys = append(keys, repoTokenKeys(ctx, snap, runID)...)
+	keys = append(keys, annotationKeys(ctx, snap, runID)...)
 	for key, item := range snap.Prefix(ctx, []byte(jobsPrefix(runID))) {
 		keys = append(keys, slices.Clone(key))
 		if j, err := decodeJob(item); err == nil {

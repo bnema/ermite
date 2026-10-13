@@ -24,6 +24,7 @@ import (
 type ciUnit struct {
 	store *mocks.CIStore
 	logs  *mocks.CILogStore
+	sums  *mocks.CISummaryStore
 	meta  *mocks.RepoMetaStore
 	bus   *mocks.EventBus
 	clock *fakeClock
@@ -37,11 +38,11 @@ func (c *fakeClock) Now() time.Time { return c.t }
 func newCIUnit(t *testing.T, tweak func(*usecase.CIConfig)) *ciUnit {
 	t.Helper()
 	u := &ciUnit{
-		store: mocks.NewCIStore(t), logs: mocks.NewCILogStore(t), meta: mocks.NewRepoMetaStore(t),
+		store: mocks.NewCIStore(t), logs: mocks.NewCILogStore(t), sums: mocks.NewCISummaryStore(t), meta: mocks.NewRepoMetaStore(t),
 		bus: mocks.NewEventBus(t), clock: &fakeClock{t: now},
 	}
 	cfg := usecase.CIConfig{
-		Store: u.store, Logs: u.logs, Meta: u.meta, Repos: mocks.NewGitRepos(t), Reader: mocks.NewRepoReader(t),
+		Store: u.store, Logs: u.logs, Summaries: u.sums, Meta: u.meta, Repos: mocks.NewGitRepos(t), Reader: mocks.NewRepoReader(t),
 		Git: mocks.NewMergeGit(t), Diff: mocks.NewCIGit(t), Bus: u.bus, Clock: u.clock, Owner: "owner", PublicURL: "https://forge.test",
 	}
 	if tweak != nil {
@@ -83,7 +84,7 @@ func TestStaleAssignmentIsUnauthenticatedUnderTheLock(t *testing.T) {
 		"UpdateJob": func(u *ciUnit) error {
 			return u.ci.UpdateJob(context.Background(), jobSecret, jobIDOne, []ports.StepUpdate{{
 				Number: 1, State: domain.CIStepInProgress, StartedAt: now,
-			}})
+			}}, nil)
 		},
 		"AppendLog": func(u *ciUnit) error {
 			_, err := u.ci.AppendLog(context.Background(), jobSecret, jobIDOne, 1, 0, []domain.CILogLine{{Time: now, Text: "x"}})
@@ -122,7 +123,7 @@ func TestStaleAssignmentIsUnauthenticatedUnderTheLock(t *testing.T) {
 		ended.Phase, ended.Conclusion = domain.CIPhaseEnded, domain.CICancelled
 		u.expectToken(jobSecret, j)
 		u.store.EXPECT().GetJob(mock.Anything, j.RunID, j.RunAttempt, j.ID).Return(ended, nil)
-		err := u.ci.UpdateJob(context.Background(), jobSecret, jobIDOne, []ports.StepUpdate{{Number: 1, State: domain.CIStepInProgress, StartedAt: now}})
+		err := u.ci.UpdateJob(context.Background(), jobSecret, jobIDOne, []ports.StepUpdate{{Number: 1, State: domain.CIStepInProgress, StartedAt: now}}, nil)
 		got, ok := domain.IsJobEnded(err)
 		require.True(t, ok, "%v", err)
 		assert.Equal(t, domain.CICancelled, got.Conclusion)
@@ -311,6 +312,10 @@ func TestSweep(t *testing.T) {
 		ctx, out := logCapture(t)
 		u.store.EXPECT().Sweep(mock.Anything, u.clock.t.Add(-retention)).Return([]int64{3, 4}, nil)
 		u.logs.EXPECT().RemoveRuns(mock.Anything, []int64{3, 4}).Return(nil).Once()
+		u.sums.EXPECT().RemoveRuns(mock.Anything, []int64{3, 4}).Return(nil).Once()
+		u.sums.EXPECT().RunIDs(mock.Anything).Return([]int64{6, 8}, nil)
+		u.sums.EXPECT().RemoveRuns(mock.Anything, []int64{6, 8}).Return(nil).Once()
+		u.store.EXPECT().GetRunSource(mock.Anything, int64(8)).Return(domain.CIRunSource{}, domain.ErrNotFound)
 		u.logs.EXPECT().RunIDs(mock.Anything).Return([]int64{5, 6, 7}, nil)
 		u.store.EXPECT().GetRunSource(mock.Anything, int64(5)).Return(domain.CIRunSource{}, nil)
 		u.store.EXPECT().GetRunSource(mock.Anything, int64(6)).Return(domain.CIRunSource{}, domain.ErrNotFound)
@@ -337,6 +342,8 @@ func TestSweep(t *testing.T) {
 		ctx, out := logCapture(t)
 		u.store.EXPECT().Sweep(mock.Anything, mock.Anything).Return([]int64{3}, nil)
 		u.logs.EXPECT().RemoveRuns(mock.Anything, []int64{3}).Return(errors.New("permission denied")).Once()
+		u.sums.EXPECT().RemoveRuns(mock.Anything, []int64{3}).Return(nil).Once()
+		u.sums.EXPECT().RunIDs(mock.Anything).Return(nil, nil)
 		u.logs.EXPECT().RunIDs(mock.Anything).Return([]int64{9}, nil)
 		u.store.EXPECT().GetRunSource(mock.Anything, int64(9)).Return(domain.CIRunSource{}, domain.ErrNotFound)
 		u.logs.EXPECT().RemoveRuns(mock.Anything, []int64{9}).Return(errors.New("disk on fire")).Once()
@@ -353,6 +360,7 @@ func TestSweep(t *testing.T) {
 		ctx, out := logCapture(t)
 		u.store.EXPECT().Sweep(mock.Anything, mock.Anything).Return(nil, nil)
 		u.logs.EXPECT().RunIDs(mock.Anything).Return(nil, errors.New("io error"))
+		u.sums.EXPECT().RunIDs(mock.Anything).Return(nil, errors.New("io error"))
 		u.ci.Sweep(ctx)
 		assert.Contains(t, out.String(), "list the log directories")
 	})
@@ -363,6 +371,7 @@ func TestSweep(t *testing.T) {
 		ctx, out := logCapture(t)
 		u.store.EXPECT().Sweep(mock.Anything, mock.Anything).Return(nil, nil)
 		u.logs.EXPECT().RunIDs(mock.Anything).Return([]int64{9}, nil)
+		u.sums.EXPECT().RunIDs(mock.Anything).Return(nil, nil)
 		u.store.EXPECT().GetRunSource(mock.Anything, int64(9)).Return(domain.CIRunSource{}, errors.New("kv closed"))
 		u.ci.Sweep(ctx) // RemoveRuns is not expected: an unknown state removes nothing
 		assert.Contains(t, out.String(), "look up a run")

@@ -173,7 +173,17 @@ type RunPage struct {
 	Latest     int32
 	Attempts   []AttemptLink
 	Jobs       []JobRow
-	Active     bool
+	// Annotations are those of the jobs of the run, AnnotationsMore says that
+	// the server holds more than it returned.
+	Annotations     []AnnotationView
+	AnnotationsMore bool
+	// Summaries are the job summaries, rendered; only the full page has them.
+	Summaries []JobSummaries
+	// SummariesMore says that some summaries are not shown (the page budget).
+	SummariesMore bool
+	Active        bool
+	// detail is what the page was built from.
+	detail ports.RunDetail
 	// Forms are the owner's actions; nil/empty when the visitor cannot.
 	CancelAction, RerunAction, RerunFailedAction string
 	CanRerunFailed                               bool
@@ -284,6 +294,11 @@ func (s *Server) run(ctx context.Context, r *http.Request) (templ.Component, int
 	if err != nil {
 		return nil, 0, err
 	}
+	// The summaries are part of the page, not of the live body: the page
+	// fetches itself again when the run completes (runBody), and they show then.
+	if p.Summaries, p.SummariesMore, err = s.jobSummaries(ctx, d, p.detail.Run, p.detail.Jobs, p.Attempt == p.Latest, maxSummaryPageBytes); err != nil {
+		return nil, 0, err
+	}
 	l := s.repoLayout(ctx, d, "actions")
 	l.Title = "run " + p.ID + " · " + d.name() + " · " + s.instance
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=run&n="+p.ID)
@@ -303,7 +318,7 @@ func (s *Server) runPage(ctx context.Context, d *repoData, id int64, attempt int
 	run := detail.Run
 	p := RunPage{
 		RunRow: s.runRow(d.name(), run, now), Sha: run.Sha, Error: visibleText(run.Error),
-		Attempt: run.Attempt, Latest: detail.LatestAttempt, Active: run.Status != domain.CICompleted,
+		Attempt: run.Attempt, Latest: detail.LatestAttempt, Active: run.Status != domain.CICompleted, detail: detail,
 	}
 	for a := detail.LatestAttempt; a >= 1 && detail.LatestAttempt > 1; a-- {
 		p.Attempts = append(p.Attempts, AttemptLink{
@@ -317,6 +332,11 @@ func (s *Server) runPage(ctx context.Context, d *repoData, id int64, attempt int
 			row.Href = jobHref(d.name(), id, j.ID)
 		}
 		p.Jobs = append(p.Jobs, row)
+	}
+	// The annotations of the attempt shown (the jobs kept from an earlier attempt
+	// by a re-run bring their own).
+	if p.Annotations, p.AnnotationsMore, err = s.runAnnotations(ctx, d, run, run.Attempt, detail.Jobs, run.Attempt == detail.LatestAttempt); err != nil {
+		return RunPage{}, err
 	}
 	if SignedIn(ctx) && run.Attempt == detail.LatestAttempt {
 		base := runHref(d.name(), id)
@@ -382,6 +402,9 @@ func (s *Server) job(ctx context.Context, r *http.Request) (templ.Component, int
 		p.RawHref += "?attempt=" + strconv.Itoa(int(attempt))
 	}
 	p.Follow = !view.Ended()
+	if p.Annotations, p.AnnotationsMore, err = s.jobAnnotations(ctx, d, id, run.Run.Sha, view, attempt); err != nil {
+		return nil, 0, err
+	}
 	p.StreamHref = jobHref(d.name(), id, jobID) + "/stream"
 	lines, next, err := s.readLog(ctx, s.logClient(r), d.repo.Name, view, from, jobLogPageLines)
 	if err != nil {

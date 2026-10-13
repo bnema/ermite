@@ -135,6 +135,9 @@ message CIStep {
   // count of the job: it is never stored.
   int64 log_start = 7;
   bool has_lines = 9;
+  // How the step ended before continue-on-error was applied; unspecified for
+  // a step stored before the field existed (read it as conclusion).
+  CIConclusion outcome = 11;
 }
 
 // CIJob is stored under "job/<run_id:020d>/<run_attempt:010d>/<job id>".
@@ -259,4 +262,32 @@ message CIActionResolution {
   string resolved_sha = 3;
   // 1 = github.com, 2 = this server (the numbers of ActionSource).
   int32 source = 4;
+}
+
+// CIAnnotationLevel is the severity of an annotation.
+enum CIAnnotationLevel {
+  CI_ANNOTATION_LEVEL_UNSPECIFIED = 0;
+  CI_ANNOTATION_LEVEL_NOTICE = 1;
+  CI_ANNOTATION_LEVEL_WARNING = 2;
+  CI_ANNOTATION_LEVEL_FAILURE = 3;
+}
+
+// CIAnnotation is a message attached to a step of a job.
+message CIAnnotation {
+  CIAnnotationLevel level = 1;
+  string title = 2;
+  string message = 3;
+  string file = 4;
+  int32 start_line = 5;
+  int32 end_line = 6;
+  int32 start_column = 7;
+  int32 end_column = 8;
+}
+
+// CIStepAnnotations holds all the annotations of one step of one execution of
+// a job, in the order the step produced them. It is stored under
+// "annot/<run:020d>/<job attempt:010d>/<job id>/<step:010d>"; a step without
+// annotation has no key. The runner replaces the whole value at each report.
+message CIStepAnnotations {
+  repeated CIAnnotation annotations = 1;
 }

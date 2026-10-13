@@ -25,10 +25,15 @@ import (
 // bounded: a diff has its own limits and blobs are streamed.
 const MaxRequestBytes = 1 << 20
 
+// RunnerMaxRequestBytes bounds the size of a request message of RunnerService:
+// a job summary of exactly 1 MiB (UploadSummary) must be accepted, so the limit
+// leaves room for the envelope (job id, step number, framing).
+const RunnerMaxRequestBytes = MaxRequestBytes + 64<<10
+
 // Features are the optional capabilities of the contract that this server
 // always implements, as GetVersion lists them. FeaturePasskeys comes on top
 // when Config.Passkeys is set.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
 const FeaturePasskeys = "passkeys"
@@ -100,7 +105,8 @@ func New(cfg Config) *API {
 		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))
 	}
 	if cfg.Runner != nil {
-		mux.Handle(ermiteconnect.NewRunnerServiceHandler(&runnerService{runners: cfg.Runner, limiter: cfg.Limiter}, opts...))
+		runnerOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))
+		mux.Handle(ermiteconnect.NewRunnerServiceHandler(&runnerService{runners: cfg.Runner, limiter: cfg.Limiter}, runnerOpts...))
 	}
 	if cfg.Runs != nil {
 		mux.Handle(ermiteconnect.NewRunServiceHandler(&runService{cfg.Runs}, opts...))

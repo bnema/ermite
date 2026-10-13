@@ -16,6 +16,7 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/adapters/cilogs"
+	"bnema.dev/ermite/internal/adapters/cisummaries"
 	"bnema.dev/ermite/internal/adapters/ermitegit"
 	"bnema.dev/ermite/internal/adapters/eventbus"
 	"bnema.dev/ermite/internal/adapters/gitcli"
@@ -212,7 +213,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	// CI (ADR 0025): the engine reads workflows through the reader, and plans
 	// them in the background; a push only queues its refs.
 	ciCfg := usecase.CIConfig{
-		Store: store.CI(), Logs: cilogs.New(cilogs.Dir(cfg.DataDir)), Meta: store, Repos: git, Reader: reader,
+		Store: store.CI(), Logs: cilogs.New(cilogs.Dir(cfg.DataDir)), Summaries: cisummaries.New(cisummaries.Dir(cfg.DataDir)), Meta: store, Repos: git, Reader: reader,
 		Git: git, Diff: git, Bus: f.Bus, Clock: clock, Auth: f.Auth,
 		Owner: cfg.Owner, PublicURL: cfg.PublicURL, Retention: cfg.CIRetention,
 		PollTimeout: cfg.CIPollTimeout, Archive: git,

@@ -120,6 +120,22 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The commit of the run of a job page is read once here: the annotations of
+	// the live job fragments link to files at it, and it never changes, so a
+	// job update does not read the run again. A run that is not there or not
+	// readable refuses the stream like a missing repository.
+	var sha string
+	if repo != "" && q.Get("view") == "job" && s.cfg.Runs != nil {
+		cctx, ccancel := context.WithTimeout(ctx, requestTimeout)
+		var err error
+		sha, err = s.jobRunSha(cctx, repo, q.Get("job"))
+		ccancel()
+		if err != nil {
+			s.denyEvents(ctx, w, err)
+			return
+		}
+	}
+
 	// The watch runs in a goroutine and hands each event to this one through
 	// an unbuffered channel: a visitor that reads slowly holds the watch in
 	// its send, falls behind the buffer of the use case, and gets a gap.
@@ -202,7 +218,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), job: q.Get("job")}
+	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), job: q.Get("job"), sha: sha}
 	handle := func(m recvd) bool {
 		if m.err != nil {
 			if ctx.Err() == nil && !errors.Is(m.err, context.Canceled) {

@@ -26,6 +26,9 @@ type liveStream struct {
 	head string // commits: the commit listed first
 	n    string // mr: the number of the merge request shown; run: the run id
 	job  string // job: the id of the job shown
+	// sha is the commit of the run of the job shown, read once when the stream
+	// is set up: the annotations link to files at it, and it never changes.
+	sha string
 }
 
 // renderFragment renders a component to the data of an event.
@@ -478,6 +481,9 @@ func (l *liveStream) runBody(ctx context.Context) ([]fragment, error) {
 // jobState tells the job page that its state or its steps changed: the page
 // reloads the part of the log after the last line it holds (ermite.js).
 func (l *liveStream) jobState(ctx context.Context) ([]fragment, error) {
+	if l.sha == "" {
+		return gap, nil // the stream was set up without the commit of the run
+	}
 	d, err := l.s.loadRepo(ctx, l.repo)
 	if err != nil {
 		return nil, err
@@ -496,5 +502,13 @@ func (l *liveStream) jobState(ctx context.Context) ([]fragment, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []fragment{f, steps}, nil
+	anns, more, err := l.s.jobAnnotations(ctx, d, view.RunID, l.sha, view, 0)
+	if err != nil {
+		return nil, err
+	}
+	notes, err := renderFragment(ctx, "ci-job", JobAnnotations(anns, more))
+	if err != nil {
+		return nil, err
+	}
+	return []fragment{f, steps, notes}, nil
 }

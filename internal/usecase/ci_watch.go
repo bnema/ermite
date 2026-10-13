@@ -185,6 +185,8 @@ func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 func (c *CI) cancelAssignment(ctx context.Context, rs *runState, j *domain.CIJob) {
 	ctxLog(ctx).Warn().Str("job_id", j.ID).Str("runner", j.RunnerName).Msg("job assignment not acknowledged: cancelled")
 	_ = c.cfg.Logs.Reset(ctx, logRef(*j))
+	_ = c.cfg.Summaries.RemoveJob(ctx, logRef(*j))
+	rs.clear = append(rs.clear, logRef(*j))
 	j.AssignCancels++
 	j.TokenHash, j.TokenValidUntil = domain.TokenHash{}, time.Time{}
 	j.RunnerID, j.RunnerName, j.Isolation = "", "", domain.CIIsolationNone
@@ -252,14 +254,25 @@ func (c *CI) sweep(ctx context.Context) {
 		if err := c.cfg.Logs.RemoveRuns(ctx, ids); err != nil {
 			log.Error().Err(err).Int("runs", len(ids)).Msg("ci: remove the logs of the old runs")
 		}
+		if err := c.cfg.Summaries.RemoveRuns(ctx, ids); err != nil {
+			log.Error().Err(err).Int("runs", len(ids)).Msg("ci: remove the summaries of the old runs")
+		}
 		for _, id := range ids {
 			c.locks.Delete(id)
 		}
 		log.Info().Int("runs", len(ids)).Msg("ci: old runs removed")
 	}
-	onDisk, err := c.cfg.Logs.RunIDs(ctx)
+	c.removeOrphans(ctx, "logs", "log directories", c.cfg.Logs.RunIDs, c.cfg.Logs.RemoveRuns)
+	c.removeOrphans(ctx, "summaries", "summary directories", c.cfg.Summaries.RunIDs, c.cfg.Summaries.RemoveRuns)
+}
+
+// removeOrphans deletes what a file store (logs, summaries) holds for runs that
+// no longer exist, for example a repository deleted while the server was down.
+func (c *CI) removeOrphans(ctx context.Context, what, dirs string, list func(context.Context) ([]int64, error), remove func(context.Context, []int64) error) {
+	log := ctxLog(ctx)
+	onDisk, err := list(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("ci: list the log directories")
+		log.Error().Err(err).Msg("ci: list the " + dirs)
 		return
 	}
 	var orphans []int64
@@ -268,12 +281,12 @@ func (c *CI) sweep(ctx context.Context) {
 		case errors.Is(err, domain.ErrNotFound):
 			orphans = append(orphans, id)
 		case err != nil:
-			log.Error().Err(err).Int64("run_id", id).Msg("ci: look up a run with a log directory")
+			log.Error().Err(err).Int64("run_id", id).Msg("ci: look up a run with a " + what + " directory")
 		}
 	}
 	if len(orphans) > 0 {
-		if err := c.cfg.Logs.RemoveRuns(ctx, orphans); err != nil {
-			log.Error().Err(err).Int("runs", len(orphans)).Msg("ci: remove the logs of runs that no longer exist")
+		if err := remove(ctx, orphans); err != nil {
+			log.Error().Err(err).Int("runs", len(orphans)).Msg("ci: remove the " + what + " of runs that no longer exist")
 		}
 	}
 }
@@ -284,10 +297,11 @@ func (c *CI) RunIDs(ctx context.Context, repo domain.RepoName) ([]int64, error) 
 	return c.cfg.Store.RunIDs(ctx, repo)
 }
 
-// RemoveLogs deletes the logs of runs of a repository that was deleted.
+// RemoveLogs deletes the logs and the summaries of runs of a repository that
+// was deleted.
 func (c *CI) RemoveLogs(ctx context.Context, runIDs []int64) error {
 	for _, id := range runIDs {
 		c.locks.Delete(id)
 	}
-	return c.cfg.Logs.RemoveRuns(ctx, runIDs)
+	return errors.Join(c.cfg.Logs.RemoveRuns(ctx, runIDs), c.cfg.Summaries.RemoveRuns(ctx, runIDs))
 }

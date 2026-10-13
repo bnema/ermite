@@ -369,6 +369,59 @@ func (CICancelReason) EnumDescriptor() ([]byte, []int) {
 	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{5}
 }
 
+// CIAnnotationLevel is the severity of an annotation.
+type CIAnnotationLevel int32
+
+const (
+	CIAnnotationLevel_CI_ANNOTATION_LEVEL_UNSPECIFIED CIAnnotationLevel = 0
+	CIAnnotationLevel_CI_ANNOTATION_LEVEL_NOTICE      CIAnnotationLevel = 1
+	CIAnnotationLevel_CI_ANNOTATION_LEVEL_WARNING     CIAnnotationLevel = 2
+	CIAnnotationLevel_CI_ANNOTATION_LEVEL_FAILURE     CIAnnotationLevel = 3
+)
+
+// Enum value maps for CIAnnotationLevel.
+var (
+	CIAnnotationLevel_name = map[int32]string{
+		0: "CI_ANNOTATION_LEVEL_UNSPECIFIED",
+		1: "CI_ANNOTATION_LEVEL_NOTICE",
+		2: "CI_ANNOTATION_LEVEL_WARNING",
+		3: "CI_ANNOTATION_LEVEL_FAILURE",
+	}
+	CIAnnotationLevel_value = map[string]int32{
+		"CI_ANNOTATION_LEVEL_UNSPECIFIED": 0,
+		"CI_ANNOTATION_LEVEL_NOTICE":      1,
+		"CI_ANNOTATION_LEVEL_WARNING":     2,
+		"CI_ANNOTATION_LEVEL_FAILURE":     3,
+	}
+)
+
+func (x CIAnnotationLevel) Enum() *CIAnnotationLevel {
+	p := new(CIAnnotationLevel)
+	*p = x
+	return p
+}
+
+func (x CIAnnotationLevel) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CIAnnotationLevel) Descriptor() protoreflect.EnumDescriptor {
+	return file_ermite_storage_ci_proto_enumTypes[6].Descriptor()
+}
+
+func (CIAnnotationLevel) Type() protoreflect.EnumType {
+	return &file_ermite_storage_ci_proto_enumTypes[6]
+}
+
+func (x CIAnnotationLevel) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CIAnnotationLevel.Descriptor instead.
+func (CIAnnotationLevel) EnumDescriptor() ([]byte, []int) {
+	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{6}
+}
+
 // CIRun is stored under "run/<repo>/<id:020d>".
 type CIRun struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
@@ -674,8 +727,11 @@ type CIStep struct {
 	// Number of the first log line of the step; meaningful with has_lines. The
 	// end of a step is the start of the next step that has lines, or the line
 	// count of the job: it is never stored.
-	LogStart      int64 `protobuf:"varint,7,opt,name=log_start,json=logStart,proto3" json:"log_start,omitempty"`
-	HasLines      bool  `protobuf:"varint,9,opt,name=has_lines,json=hasLines,proto3" json:"has_lines,omitempty"`
+	LogStart int64 `protobuf:"varint,7,opt,name=log_start,json=logStart,proto3" json:"log_start,omitempty"`
+	HasLines bool  `protobuf:"varint,9,opt,name=has_lines,json=hasLines,proto3" json:"has_lines,omitempty"`
+	// How the step ended before continue-on-error was applied; unspecified for
+	// a step stored before the field existed (read it as conclusion).
+	Outcome       CIConclusion `protobuf:"varint,11,opt,name=outcome,proto3,enum=ermite.storage.CIConclusion" json:"outcome,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -764,6 +820,13 @@ func (x *CIStep) GetHasLines() bool {
 		return x.HasLines
 	}
 	return false
+}
+
+func (x *CIStep) GetOutcome() CIConclusion {
+	if x != nil {
+		return x.Outcome
+	}
+	return CIConclusion_CI_CONCLUSION_UNSPECIFIED
 }
 
 // CIJob is stored under "job/<run_id:020d>/<run_attempt:010d>/<job id>".
@@ -1578,6 +1641,155 @@ func (x *CIActionResolution) GetSource() int32 {
 	return 0
 }
 
+// CIAnnotation is a message attached to a step of a job.
+type CIAnnotation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Level         CIAnnotationLevel      `protobuf:"varint,1,opt,name=level,proto3,enum=ermite.storage.CIAnnotationLevel" json:"level,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	File          string                 `protobuf:"bytes,4,opt,name=file,proto3" json:"file,omitempty"`
+	StartLine     int32                  `protobuf:"varint,5,opt,name=start_line,json=startLine,proto3" json:"start_line,omitempty"`
+	EndLine       int32                  `protobuf:"varint,6,opt,name=end_line,json=endLine,proto3" json:"end_line,omitempty"`
+	StartColumn   int32                  `protobuf:"varint,7,opt,name=start_column,json=startColumn,proto3" json:"start_column,omitempty"`
+	EndColumn     int32                  `protobuf:"varint,8,opt,name=end_column,json=endColumn,proto3" json:"end_column,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CIAnnotation) Reset() {
+	*x = CIAnnotation{}
+	mi := &file_ermite_storage_ci_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CIAnnotation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CIAnnotation) ProtoMessage() {}
+
+func (x *CIAnnotation) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_ci_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CIAnnotation.ProtoReflect.Descriptor instead.
+func (*CIAnnotation) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CIAnnotation) GetLevel() CIAnnotationLevel {
+	if x != nil {
+		return x.Level
+	}
+	return CIAnnotationLevel_CI_ANNOTATION_LEVEL_UNSPECIFIED
+}
+
+func (x *CIAnnotation) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *CIAnnotation) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *CIAnnotation) GetFile() string {
+	if x != nil {
+		return x.File
+	}
+	return ""
+}
+
+func (x *CIAnnotation) GetStartLine() int32 {
+	if x != nil {
+		return x.StartLine
+	}
+	return 0
+}
+
+func (x *CIAnnotation) GetEndLine() int32 {
+	if x != nil {
+		return x.EndLine
+	}
+	return 0
+}
+
+func (x *CIAnnotation) GetStartColumn() int32 {
+	if x != nil {
+		return x.StartColumn
+	}
+	return 0
+}
+
+func (x *CIAnnotation) GetEndColumn() int32 {
+	if x != nil {
+		return x.EndColumn
+	}
+	return 0
+}
+
+// CIStepAnnotations holds all the annotations of one step of one execution of
+// a job, in the order the step produced them. It is stored under
+// "annot/<run:020d>/<job attempt:010d>/<job id>/<step:010d>"; a step without
+// annotation has no key. The runner replaces the whole value at each report.
+type CIStepAnnotations struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Annotations   []*CIAnnotation        `protobuf:"bytes,1,rep,name=annotations,proto3" json:"annotations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CIStepAnnotations) Reset() {
+	*x = CIStepAnnotations{}
+	mi := &file_ermite_storage_ci_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CIStepAnnotations) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CIStepAnnotations) ProtoMessage() {}
+
+func (x *CIStepAnnotations) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_ci_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CIStepAnnotations.ProtoReflect.Descriptor instead.
+func (*CIStepAnnotations) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CIStepAnnotations) GetAnnotations() []*CIAnnotation {
+	if x != nil {
+		return x.Annotations
+	}
+	return nil
+}
+
 var File_ermite_storage_ci_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_ci_proto_rawDesc = "" +
@@ -1617,7 +1829,7 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x04repo\x18\x03 \x01(\tR\x04repo\x12\x1f\n" +
 	"\vpusher_kind\x18\x05 \x01(\tR\n" +
 	"pusherKind\x12&\n" +
-	"\x0fpusher_token_id\x18\x06 \x01(\tR\rpusherTokenId\"\xe5\x02\n" +
+	"\x0fpusher_token_id\x18\x06 \x01(\tR\rpusherTokenId\"\x9d\x03\n" +
 	"\x06CIStep\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x121\n" +
@@ -1629,7 +1841,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
 	"\fcompleted_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x1b\n" +
 	"\tlog_start\x18\a \x01(\x03R\blogStart\x12\x1b\n" +
-	"\thas_lines\x18\t \x01(\bR\bhasLinesJ\x04\b\b\x10\tJ\x04\b\n" +
+	"\thas_lines\x18\t \x01(\bR\bhasLines\x126\n" +
+	"\aoutcome\x18\v \x01(\x0e2\x1c.ermite.storage.CIConclusionR\aoutcomeJ\x04\b\b\x10\tJ\x04\b\n" +
 	"\x10\v\"\xe6\f\n" +
 	"\x05CIJob\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -1734,7 +1947,20 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12&\n" +
 	"\x0fname_with_owner\x18\x02 \x01(\tR\rnameWithOwner\x12!\n" +
 	"\fresolved_sha\x18\x03 \x01(\tR\vresolvedSha\x12\x16\n" +
-	"\x06source\x18\x04 \x01(\x05R\x06source*o\n" +
+	"\x06source\x18\x04 \x01(\x05R\x06source\"\x87\x02\n" +
+	"\fCIAnnotation\x127\n" +
+	"\x05level\x18\x01 \x01(\x0e2!.ermite.storage.CIAnnotationLevelR\x05level\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x12\n" +
+	"\x04file\x18\x04 \x01(\tR\x04file\x12\x1d\n" +
+	"\n" +
+	"start_line\x18\x05 \x01(\x05R\tstartLine\x12\x19\n" +
+	"\bend_line\x18\x06 \x01(\x05R\aendLine\x12!\n" +
+	"\fstart_column\x18\a \x01(\x05R\vstartColumn\x12\x1d\n" +
+	"\n" +
+	"end_column\x18\b \x01(\x05R\tendColumn\"S\n" +
+	"\x11CIStepAnnotations\x12>\n" +
+	"\vannotations\x18\x01 \x03(\v2\x1c.ermite.storage.CIAnnotationR\vannotations*o\n" +
 	"\bCIStatus\x12\x19\n" +
 	"\x15CI_STATUS_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10CI_STATUS_QUEUED\x10\x01\x12\x19\n" +
@@ -1771,7 +1997,12 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x1cCI_CANCEL_REASON_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15CI_CANCEL_REASON_USER\x10\x01\x12\x1e\n" +
 	"\x1aCI_CANCEL_REASON_FAIL_FAST\x10\x02\x12\x1c\n" +
-	"\x18CI_CANCEL_REASON_TIMEOUT\x10\x03B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
+	"\x18CI_CANCEL_REASON_TIMEOUT\x10\x03*\x9a\x01\n" +
+	"\x11CIAnnotationLevel\x12#\n" +
+	"\x1fCI_ANNOTATION_LEVEL_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aCI_ANNOTATION_LEVEL_NOTICE\x10\x01\x12\x1f\n" +
+	"\x1bCI_ANNOTATION_LEVEL_WARNING\x10\x02\x12\x1f\n" +
+	"\x1bCI_ANNOTATION_LEVEL_FAILURE\x10\x03B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
 var (
 	file_ermite_storage_ci_proto_rawDescOnce sync.Once
@@ -1785,8 +2016,8 @@ func file_ermite_storage_ci_proto_rawDescGZIP() []byte {
 	return file_ermite_storage_ci_proto_rawDescData
 }
 
-var file_ermite_storage_ci_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_ermite_storage_ci_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_ermite_storage_ci_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_ermite_storage_ci_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_ermite_storage_ci_proto_goTypes = []any{
 	(CIStatus)(0),                 // 0: ermite.storage.CIStatus
 	(CIConclusion)(0),             // 1: ermite.storage.CIConclusion
@@ -1794,56 +2025,62 @@ var file_ermite_storage_ci_proto_goTypes = []any{
 	(CIJobPhase)(0),               // 3: ermite.storage.CIJobPhase
 	(CIIsolation)(0),              // 4: ermite.storage.CIIsolation
 	(CICancelReason)(0),           // 5: ermite.storage.CICancelReason
-	(*CIRun)(nil),                 // 6: ermite.storage.CIRun
-	(*CIRunSource)(nil),           // 7: ermite.storage.CIRunSource
-	(*CIStep)(nil),                // 8: ermite.storage.CIStep
-	(*CIJob)(nil),                 // 9: ermite.storage.CIJob
-	(*CICheck)(nil),               // 10: ermite.storage.CICheck
-	(*CIRunner)(nil),              // 11: ermite.storage.CIRunner
-	(*CIRepoToken)(nil),           // 12: ermite.storage.CIRepoToken
-	(*CIActionResolution)(nil),    // 13: ermite.storage.CIActionResolution
-	nil,                           // 14: ermite.storage.CIJob.OutputsEntry
-	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
+	(CIAnnotationLevel)(0),        // 6: ermite.storage.CIAnnotationLevel
+	(*CIRun)(nil),                 // 7: ermite.storage.CIRun
+	(*CIRunSource)(nil),           // 8: ermite.storage.CIRunSource
+	(*CIStep)(nil),                // 9: ermite.storage.CIStep
+	(*CIJob)(nil),                 // 10: ermite.storage.CIJob
+	(*CICheck)(nil),               // 11: ermite.storage.CICheck
+	(*CIRunner)(nil),              // 12: ermite.storage.CIRunner
+	(*CIRepoToken)(nil),           // 13: ermite.storage.CIRepoToken
+	(*CIActionResolution)(nil),    // 14: ermite.storage.CIActionResolution
+	(*CIAnnotation)(nil),          // 15: ermite.storage.CIAnnotation
+	(*CIStepAnnotations)(nil),     // 16: ermite.storage.CIStepAnnotations
+	nil,                           // 17: ermite.storage.CIJob.OutputsEntry
+	(*timestamppb.Timestamp)(nil), // 18: google.protobuf.Timestamp
 }
 var file_ermite_storage_ci_proto_depIdxs = []int32{
 	0,  // 0: ermite.storage.CIRun.status:type_name -> ermite.storage.CIStatus
 	1,  // 1: ermite.storage.CIRun.conclusion:type_name -> ermite.storage.CIConclusion
-	15, // 2: ermite.storage.CIRun.created_at:type_name -> google.protobuf.Timestamp
-	15, // 3: ermite.storage.CIRun.started_at:type_name -> google.protobuf.Timestamp
-	15, // 4: ermite.storage.CIRun.completed_at:type_name -> google.protobuf.Timestamp
-	15, // 5: ermite.storage.CIRun.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	18, // 2: ermite.storage.CIRun.created_at:type_name -> google.protobuf.Timestamp
+	18, // 3: ermite.storage.CIRun.started_at:type_name -> google.protobuf.Timestamp
+	18, // 4: ermite.storage.CIRun.completed_at:type_name -> google.protobuf.Timestamp
+	18, // 5: ermite.storage.CIRun.cancel_requested_at:type_name -> google.protobuf.Timestamp
 	2,  // 6: ermite.storage.CIStep.state:type_name -> ermite.storage.CIStepState
 	1,  // 7: ermite.storage.CIStep.conclusion:type_name -> ermite.storage.CIConclusion
-	15, // 8: ermite.storage.CIStep.started_at:type_name -> google.protobuf.Timestamp
-	15, // 9: ermite.storage.CIStep.completed_at:type_name -> google.protobuf.Timestamp
-	3,  // 10: ermite.storage.CIJob.phase:type_name -> ermite.storage.CIJobPhase
-	1,  // 11: ermite.storage.CIJob.conclusion:type_name -> ermite.storage.CIConclusion
-	4,  // 12: ermite.storage.CIJob.isolation:type_name -> ermite.storage.CIIsolation
-	8,  // 13: ermite.storage.CIJob.steps:type_name -> ermite.storage.CIStep
-	15, // 14: ermite.storage.CIJob.created_at:type_name -> google.protobuf.Timestamp
-	15, // 15: ermite.storage.CIJob.started_at:type_name -> google.protobuf.Timestamp
-	15, // 16: ermite.storage.CIJob.completed_at:type_name -> google.protobuf.Timestamp
-	14, // 17: ermite.storage.CIJob.outputs:type_name -> ermite.storage.CIJob.OutputsEntry
-	15, // 18: ermite.storage.CIJob.ready_at:type_name -> google.protobuf.Timestamp
-	15, // 19: ermite.storage.CIJob.assigned_at:type_name -> google.protobuf.Timestamp
-	15, // 20: ermite.storage.CIJob.acked_at:type_name -> google.protobuf.Timestamp
-	15, // 21: ermite.storage.CIJob.token_valid_until:type_name -> google.protobuf.Timestamp
-	5,  // 22: ermite.storage.CIJob.cancel_reason:type_name -> ermite.storage.CICancelReason
-	15, // 23: ermite.storage.CIJob.cancel_requested_at:type_name -> google.protobuf.Timestamp
-	0,  // 24: ermite.storage.CICheck.status:type_name -> ermite.storage.CIStatus
-	1,  // 25: ermite.storage.CICheck.conclusion:type_name -> ermite.storage.CIConclusion
-	15, // 26: ermite.storage.CICheck.created_at:type_name -> google.protobuf.Timestamp
-	15, // 27: ermite.storage.CICheck.started_at:type_name -> google.protobuf.Timestamp
-	15, // 28: ermite.storage.CICheck.completed_at:type_name -> google.protobuf.Timestamp
-	4,  // 29: ermite.storage.CIRunner.isolation:type_name -> ermite.storage.CIIsolation
-	15, // 30: ermite.storage.CIRunner.registered_at:type_name -> google.protobuf.Timestamp
-	15, // 31: ermite.storage.CIRepoToken.expires_at:type_name -> google.protobuf.Timestamp
-	15, // 32: ermite.storage.CIRepoToken.created_at:type_name -> google.protobuf.Timestamp
-	33, // [33:33] is the sub-list for method output_type
-	33, // [33:33] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	18, // 8: ermite.storage.CIStep.started_at:type_name -> google.protobuf.Timestamp
+	18, // 9: ermite.storage.CIStep.completed_at:type_name -> google.protobuf.Timestamp
+	1,  // 10: ermite.storage.CIStep.outcome:type_name -> ermite.storage.CIConclusion
+	3,  // 11: ermite.storage.CIJob.phase:type_name -> ermite.storage.CIJobPhase
+	1,  // 12: ermite.storage.CIJob.conclusion:type_name -> ermite.storage.CIConclusion
+	4,  // 13: ermite.storage.CIJob.isolation:type_name -> ermite.storage.CIIsolation
+	9,  // 14: ermite.storage.CIJob.steps:type_name -> ermite.storage.CIStep
+	18, // 15: ermite.storage.CIJob.created_at:type_name -> google.protobuf.Timestamp
+	18, // 16: ermite.storage.CIJob.started_at:type_name -> google.protobuf.Timestamp
+	18, // 17: ermite.storage.CIJob.completed_at:type_name -> google.protobuf.Timestamp
+	17, // 18: ermite.storage.CIJob.outputs:type_name -> ermite.storage.CIJob.OutputsEntry
+	18, // 19: ermite.storage.CIJob.ready_at:type_name -> google.protobuf.Timestamp
+	18, // 20: ermite.storage.CIJob.assigned_at:type_name -> google.protobuf.Timestamp
+	18, // 21: ermite.storage.CIJob.acked_at:type_name -> google.protobuf.Timestamp
+	18, // 22: ermite.storage.CIJob.token_valid_until:type_name -> google.protobuf.Timestamp
+	5,  // 23: ermite.storage.CIJob.cancel_reason:type_name -> ermite.storage.CICancelReason
+	18, // 24: ermite.storage.CIJob.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	0,  // 25: ermite.storage.CICheck.status:type_name -> ermite.storage.CIStatus
+	1,  // 26: ermite.storage.CICheck.conclusion:type_name -> ermite.storage.CIConclusion
+	18, // 27: ermite.storage.CICheck.created_at:type_name -> google.protobuf.Timestamp
+	18, // 28: ermite.storage.CICheck.started_at:type_name -> google.protobuf.Timestamp
+	18, // 29: ermite.storage.CICheck.completed_at:type_name -> google.protobuf.Timestamp
+	4,  // 30: ermite.storage.CIRunner.isolation:type_name -> ermite.storage.CIIsolation
+	18, // 31: ermite.storage.CIRunner.registered_at:type_name -> google.protobuf.Timestamp
+	18, // 32: ermite.storage.CIRepoToken.expires_at:type_name -> google.protobuf.Timestamp
+	18, // 33: ermite.storage.CIRepoToken.created_at:type_name -> google.protobuf.Timestamp
+	6,  // 34: ermite.storage.CIAnnotation.level:type_name -> ermite.storage.CIAnnotationLevel
+	15, // 35: ermite.storage.CIStepAnnotations.annotations:type_name -> ermite.storage.CIAnnotation
+	36, // [36:36] is the sub-list for method output_type
+	36, // [36:36] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_ci_proto_init() }
@@ -1856,8 +2093,8 @@ func file_ermite_storage_ci_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_ci_proto_rawDesc), len(file_ermite_storage_ci_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   9,
+			NumEnums:      7,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

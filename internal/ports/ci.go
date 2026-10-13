@@ -30,13 +30,30 @@ type CIRunDraft struct {
 // exist yet), RevokeJobs the jobs whose repository tokens are deleted by it,
 // and Resolutions the action resolutions of a run attempt to keep. They are
 // written under the lock of the run that owns them.
+//
+// Annotations replace, for each (execution of a job, step) they name, all the
+// annotations stored for it (none deletes them); ClearAnnotations deletes all
+// the annotations of the executions of jobs they name, steps included. Both
+// are written with the batch, so a call is applied whole or not at all.
 type CIWrite struct {
-	Runs        []domain.CIRun
-	Jobs        []domain.CIJob
-	Checks      []domain.CICheck
-	RepoTokens  []domain.CIRepoToken
-	RevokeJobs  []CIJobRef
-	Resolutions []domain.CIActionResolution
+	Runs             []domain.CIRun
+	Jobs             []domain.CIJob
+	Checks           []domain.CICheck
+	RepoTokens       []domain.CIRepoToken
+	RevokeJobs       []CIJobRef
+	Resolutions      []domain.CIActionResolution
+	Annotations      []CIStepAnnotations
+	ClearAnnotations []CILogRef
+}
+
+// CIStepAnnotations are all the annotations of one step of one execution of a
+// job, in the order the step produced them.
+type CIStepAnnotations struct {
+	Repo domain.RepoName
+	Exec CILogRef
+	Step int32
+	// Items are the annotations; none removes those of the step.
+	Items []domain.CIAnnotation
 }
 
 // CIJobRef names one execution of a job.
@@ -84,6 +101,10 @@ type CIStore interface {
 	RunIDs(ctx context.Context, repo domain.RepoName) ([]int64, error)
 	// ListOpenRuns returns the runs that have not completed.
 	ListOpenRuns(ctx context.Context) ([]domain.CIRun, error)
+	// JobAnnotations returns the annotations of one execution of a job
+	// (CIJob.Attempt), ordered by step then by the order the step produced
+	// them. A job without annotation gives an empty list.
+	JobAnnotations(ctx context.Context, runID int64, attempt int32, jobID string) ([]domain.CIAnnotation, error)
 	// GetJob returns a job of a run at an attempt of the run, or
 	// domain.ErrNotFound.
 	GetJob(ctx context.Context, runID int64, runAttempt int32, jobID string) (domain.CIJob, error)
@@ -122,8 +143,8 @@ type CIStore interface {
 }
 
 // CIRunCleaner is what repository deletion needs from CI: the runs of the
-// repository before its records go, and the removal of their logs after.
-// *usecase.CI implements it.
+// repository before its records go, and the removal of their logs and
+// summaries after. *usecase.CI implements it.
 type CIRunCleaner interface {
 	RunIDs(ctx context.Context, repo domain.RepoName) ([]int64, error)
 	RemoveLogs(ctx context.Context, runIDs []int64) error
@@ -138,7 +159,8 @@ type CIChecksReader interface {
 	CommitChecks(ctx context.Context, repo domain.RepoName, sha string) ([]domain.CICheck, error)
 }
 
-// CILogRef names the log of one execution of a job.
+// CILogRef names one execution of a job: its log, its summaries and its
+// annotations are kept under it.
 type CILogRef struct {
 	RunID   int64
 	JobID   string
@@ -185,6 +207,29 @@ type CILogStore interface {
 	// RemoveRuns deletes the logs of the runs.
 	RemoveRuns(ctx context.Context, runIDs []int64) error
 	// RunIDs lists the runs that have a log directory, for the orphan sweep.
+	RunIDs(ctx context.Context) ([]int64, error)
+}
+
+// CISummaryStore keeps the job summaries (the Markdown a step wrote to
+// GITHUB_STEP_SUMMARY): one file per step of an execution of a job, never in
+// the metadata store.
+type CISummaryStore interface {
+	// Put stores the summary of a step, replacing the one it has; the file
+	// appears whole or not at all. An empty markdown removes the summary.
+	Put(ctx context.Context, ref CILogRef, step int32, markdown string) error
+	// List returns the summaries of the steps that have one, by step number,
+	// at most limit; more is true when there are others. With maxBytes above
+	// 0 the files are sized (stat) before they are read, and a summary that
+	// would take the total of the Markdown read past maxBytes is returned
+	// Omitted, unread, as are all the ones after it: a call never reads more
+	// than maxBytes.
+	List(ctx context.Context, ref CILogRef, limit int, maxBytes int64) (summaries []domain.CIStepSummary, more bool, err error)
+	// RemoveJob deletes the summaries of one execution of a job.
+	RemoveJob(ctx context.Context, ref CILogRef) error
+	// RemoveRuns deletes the summaries of the runs.
+	RemoveRuns(ctx context.Context, runIDs []int64) error
+	// RunIDs lists the runs that have a summary directory, for the orphan
+	// sweep.
 	RunIDs(ctx context.Context) ([]int64, error)
 }
 
@@ -258,10 +303,13 @@ type FetchJobResult struct {
 
 // StepUpdate is the state of one step as a runner reports it.
 type StepUpdate struct {
-	Number      int32
-	Name        string
-	State       domain.CIStepState
-	Conclusion  domain.CIConclusion
+	Number     int32
+	Name       string
+	State      domain.CIStepState
+	Conclusion domain.CIConclusion
+	// Outcome is how the step ended before continue-on-error; none when the
+	// runner does not report it.
+	Outcome     domain.CIConclusion
 	StartedAt   time.Time
 	CompletedAt time.Time
 }
@@ -273,6 +321,8 @@ type CompleteJobParams struct {
 	Outputs        map[string]string
 	RunnerShutdown bool
 	Steps          []StepUpdate
+	// Annotations replace those of each step they name, as in UpdateJob.
+	Annotations []domain.CIAnnotation
 }
 
 // CompleteJobResult is the stored result of a job.
@@ -337,7 +387,10 @@ type JobCancel struct {
 type RunnerService interface {
 	Register(ctx context.Context, p domain.Principal, params RegisterRunnerParams) (RegisteredRunner, error)
 	FetchJob(ctx context.Context, secret string, params FetchJobParams) (FetchJobResult, error)
-	UpdateJob(ctx context.Context, secret, jobID string, steps []StepUpdate) error
+	// UpdateJob applies the steps and the annotations whole or not at all: for
+	// each step number present in annotations, the annotations of that step are
+	// replaced (also for a step already completed, or not in steps).
+	UpdateJob(ctx context.Context, secret, jobID string, steps []StepUpdate, annotations []domain.CIAnnotation) error
 	AppendLog(ctx context.Context, secret, jobID string, step int32, offset int64, lines []domain.CILogLine) (next int64, err error)
 	Heartbeat(ctx context.Context, secret, jobID string) error
 	// WatchJob calls ready once the job token is valid and the stream is
@@ -350,6 +403,10 @@ type RunnerService interface {
 	// an error: its answer carries Error. A local ("./") or Docker
 	// ("docker://") reference, or more than 100, is domain.ErrInvalid.
 	ResolveActions(ctx context.Context, secret, jobID string, uses []string) ([]ResolvedAction, error)
+	// UploadSummary stores the summary of a step, replacing the one it has; an
+	// empty markdown removes it. More than 1 MiB, invalid UTF-8 or a step
+	// number outside 1 to 1,000 is domain.ErrInvalid.
+	UploadSummary(ctx context.Context, secret, jobID string, step int32, markdown string) error
 }
 
 // JobView is a job as owners see it.
@@ -445,6 +502,25 @@ type RunnerView struct {
 	Busy     bool
 }
 
+// JobAnnotation is an annotation with the job it belongs to.
+type JobAnnotation struct {
+	JobID      string
+	Annotation domain.CIAnnotation
+}
+
+// AnnotationList are the annotations of a run, at most
+// domain.CIMaxListedAnnotations.
+type AnnotationList struct {
+	Annotations []JobAnnotation
+	Truncated   bool
+}
+
+// SummaryList are the summaries of a job, at most domain.CIMaxListedSummaries.
+type SummaryList struct {
+	Summaries []domain.CIStepSummary
+	Truncated bool
+}
+
 // RunService is the owner side of CI. *usecase.CI implements it.
 type RunService interface {
 	ListRuns(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListRunsParams) (RunPage, error)
@@ -454,6 +530,15 @@ type RunService interface {
 	CancelRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64) (domain.CIRun, error)
 	RerunRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, failedOnly bool) (domain.CIRun, error)
 	ListChecks(ctx context.Context, p domain.Principal, repo domain.RepoName, sha string) (ChecksResult, error)
+	// ListAnnotations returns the annotations of a run attempt (0 for the
+	// latest), of one job when jobID is not empty. Each job gives those of the
+	// attempt in which it executed.
+	ListAnnotations(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, attempt int32, jobID string) (AnnotationList, error)
+	// GetStepSummaries returns the summaries of a job at an attempt (0 for the
+	// latest), by step number. maxBytes above 0 bounds the Markdown read: the
+	// summaries past it come back Omitted, without their Markdown (the API
+	// passes 0, no bound).
+	GetStepSummaries(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, maxBytes int64) (SummaryList, error)
 	ListRunners(ctx context.Context, p domain.Principal, size int, token string) (RunnerPage, error)
 	RemoveRunner(ctx context.Context, p domain.Principal, id string) error
 }
