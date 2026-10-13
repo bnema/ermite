@@ -268,7 +268,7 @@ func encodeRun(r domain.CIRun) ([]byte, error) {
 	}
 	return mustMarshal(&storagepb.CIRun{
 		Repo: r.Repo.String(), Id: r.ID, Number: r.Number, Attempt: r.Attempt,
-		WorkflowPath: r.WorkflowPath, WorkflowName: r.WorkflowName, Title: r.Title,
+		WorkflowPath: r.WorkflowPath, WorkflowName: r.WorkflowName, Name: r.Name, Title: r.Title,
 		Event: r.Event, Ref: r.Ref, Sha: r.Sha, Actor: r.Actor,
 		Status: encodeStatus(r.Status), Conclusion: encodeConclusion(r.Conclusion), Error: r.Error,
 		CreatedAt: encodeTime(r.CreatedAt), StartedAt: encodeTime(r.StartedAt), CompletedAt: encodeTime(r.CompletedAt),
@@ -285,9 +285,13 @@ func decodeRun(item kv.Item) (domain.CIRun, error) {
 	if err != nil {
 		return domain.CIRun{}, fmt.Errorf("decode run: %w", err)
 	}
+	name := pb.GetName()
+	if name == "" {
+		name = pb.GetWorkflowName() // stored before the field existed
+	}
 	return domain.CIRun{
 		Repo: repo, ID: pb.GetId(), Number: pb.GetNumber(), Attempt: pb.GetAttempt(),
-		WorkflowPath: pb.GetWorkflowPath(), WorkflowName: pb.GetWorkflowName(), Title: pb.GetTitle(),
+		WorkflowPath: pb.GetWorkflowPath(), WorkflowName: pb.GetWorkflowName(), Name: name, Title: pb.GetTitle(),
 		Event: pb.GetEvent(), Ref: pb.GetRef(), Sha: pb.GetSha(), Actor: pb.GetActor(),
 		Status: decodeStatus(pb.GetStatus()), Conclusion: decodeConclusion(pb.GetConclusion()), Error: pb.GetError(),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), StartedAt: decodeTime(pb.GetStartedAt()), CompletedAt: decodeTime(pb.GetCompletedAt()),

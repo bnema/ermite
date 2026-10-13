@@ -155,12 +155,16 @@ func CILostMessage(runner string) string {
 
 // CIRun is one execution of one workflow file for one event.
 type CIRun struct {
-	Repo              RepoName
-	ID                int64
-	Number            int64
-	Attempt           int32
-	WorkflowPath      string
-	WorkflowName      string
+	Repo         RepoName
+	ID           int64
+	Number       int64
+	Attempt      int32
+	WorkflowPath string
+	WorkflowName string
+	// Name is GitHub's name of the run: the evaluated run-name when the
+	// workflow has one, else WorkflowName. WorkflowName stays the name of the
+	// workflow (github.workflow, the checks).
+	Name              string
 	Title             string
 	Event             string
 	Ref               string

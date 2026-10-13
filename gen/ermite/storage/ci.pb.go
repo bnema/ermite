@@ -391,8 +391,12 @@ type CIRun struct {
 	CompletedAt       *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
 	CancelRequested   bool                   `protobuf:"varint,20,opt,name=cancel_requested,json=cancelRequested,proto3" json:"cancel_requested,omitempty"`
 	CancelRequestedAt *timestamppb.Timestamp `protobuf:"bytes,21,opt,name=cancel_requested_at,json=cancelRequestedAt,proto3" json:"cancel_requested_at,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// name is GitHub's name of the run: the evaluated run-name, else the
+	// workflow name. Empty in runs stored before it existed (read as
+	// workflow_name).
+	Name          string `protobuf:"bytes,22,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CIRun) Reset() {
@@ -556,6 +560,13 @@ func (x *CIRun) GetCancelRequestedAt() *timestamppb.Timestamp {
 		return x.CancelRequestedAt
 	}
 	return nil
+}
+
+func (x *CIRun) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned
@@ -1353,7 +1364,7 @@ var File_ermite_storage_ci_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\n" +
-	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcb\x05\n" +
+	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdf\x05\n" +
 	"\x05CIRun\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\x03R\x02id\x12\x16\n" +
@@ -1378,7 +1389,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"started_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
 	"\fcompleted_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12)\n" +
 	"\x10cancel_requested\x18\x14 \x01(\bR\x0fcancelRequested\x12J\n" +
-	"\x13cancel_requested_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAtJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"~\n" +
+	"\x13cancel_requested_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAt\x12\x12\n" +
+	"\x04name\x18\x16 \x01(\tR\x04nameJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"~\n" +
 	"\vCIRunSource\x12\x15\n" +
 	"\x06run_id\x18\x04 \x01(\x03R\x05runId\x12#\n" +
 	"\rworkflow_yaml\x18\x01 \x01(\tR\fworkflowYaml\x12\x1f\n" +

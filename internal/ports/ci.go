@@ -173,6 +173,11 @@ type CIGit interface {
 	// means the empty tree), in the order of the diff and without renames
 	// detection, at most max; truncated is true when there were more.
 	ChangedPaths(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID, max int) (paths []string, truncated bool, err error)
+	// CommitsOffBranches returns the commits reachable from head and from no
+	// branch (refs/heads/*; tags do not count), newest first, at most limit
+	// (1 to MaxCommitLimit); more is true when there are others. It is empty
+	// for a commit that a branch already has.
+	CommitsOffBranches(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int) (commits []domain.Commit, more bool, err error)
 }
 
 // --- inbound ---

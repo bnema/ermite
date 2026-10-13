@@ -373,3 +373,28 @@ func TestCICancelReasonsRoundTrip(t *testing.T) {
 		assert.Equal(t, reason, got.CancelReason)
 	}
 }
+
+// Run.Name round-trips, and a run stored without one (before the field existed)
+// reads as its workflow name.
+func TestCIRunNameRoundTripsAndDefaultsToTheWorkflowName(t *testing.T) {
+	ctx := context.Background()
+	_, ci, n := ciRepo(t)
+
+	old, err := ci.CreateRun(ctx, n, ".github/workflows/ci.yml", draftOf(n, ".github/workflows/ci.yml", 0))
+	require.NoError(t, err)
+	got, err := ci.GetRun(ctx, n, old.Run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "ci", got.WorkflowName)
+	assert.Equal(t, "ci", got.Name, "no stored name: the workflow name")
+
+	named, err := ci.CreateRun(ctx, n, ".github/workflows/ci.yml", func(id, number int64) ports.CIRunDraft {
+		d := draftOf(n, ".github/workflows/ci.yml", 0)(id, number)
+		d.Run.Name = "run push on branch by someone"
+		return d
+	})
+	require.NoError(t, err)
+	got, err = ci.GetRun(ctx, n, named.Run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "run push on branch by someone", got.Name)
+	assert.Equal(t, "ci", got.WorkflowName, "the workflow name is unchanged")
+}

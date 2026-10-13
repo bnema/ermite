@@ -58,3 +58,18 @@ func (g *Git) ChangedPaths(ctx context.Context, repo domain.RepoName, base, head
 	}
 	return paths, truncated, nil
 }
+
+// CommitsOffBranches lists the commits reachable from head and from no branch
+// (refs/heads/*), newest first, at most limit. It runs
+// `git log --not --branches --not <head>`: tags do not count, so the commit of
+// another tag that no branch has is listed.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; the limit comes from the port
+func (g *Git) CommitsOffBranches(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int) ([]domain.Commit, bool, error) {
+	if head.IsZero() {
+		return nil, false, fmt.Errorf("commits off branches: %w: no head", domain.ErrInvalid)
+	}
+	// "--not --branches" excludes every branch, the second "--not" turns the
+	// negation off again for the head that follows.
+	return g.logCommits(ctx, repo, head, limit, []string{"--not", "--branches", "--not"}, nil)
+}
