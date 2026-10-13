@@ -132,6 +132,19 @@ func (g *Git) IsAncestor(ctx context.Context, repo domain.RepoName, ancestor, de
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; the limit comes from the port
 func (g *Git) ListRange(ctx context.Context, repo domain.RepoName, exclude, head domain.ObjectID, limit int) ([]domain.Commit, bool, error) {
+	var excluded []string
+	if !exclude.IsZero() {
+		excluded = []string{"^" + exclude.String()}
+	}
+	return g.logCommits(ctx, repo, head, limit, nil, excluded)
+}
+
+// logCommits runs `git log` for the commits reachable from head: revArgs go
+// before the head (options such as --not), excluded after it. Newest first,
+// at most limit; more says there were others.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; the limit comes from the port
+func (g *Git) logCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int, revArgs, excluded []string) ([]domain.Commit, bool, error) {
 	if limit < 1 || limit > ports.MaxCommitLimit {
 		return nil, false, fmt.Errorf("list range: %w: limit %d", domain.ErrInvalidPageSize, limit)
 	}
@@ -139,10 +152,10 @@ func (g *Git) ListRange(ctx context.Context, repo domain.RepoName, exclude, head
 	if err != nil {
 		return nil, false, err
 	}
-	args := readArgs(dir, "log", "-z", "-n", strconv.Itoa(limit+1), "--format="+commitFormat, "--end-of-options", head.String())
-	if !exclude.IsZero() {
-		args = append(args, "^"+exclude.String())
-	}
+	args := readArgs(dir, "log", "-z", "-n", strconv.Itoa(limit+1), "--format="+commitFormat)
+	args = append(args, revArgs...)
+	args = append(args, "--end-of-options", head.String())
+	args = append(args, excluded...)
 	var (
 		commits []domain.Commit
 		more    bool

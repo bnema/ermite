@@ -67,3 +67,61 @@ func TestChangedPathsKeepsAWholeRenameAndOddNames(t *testing.T) {
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"c.txt", "dir with space/é.txt"}, got, "both sides of a rename, verbatim")
 }
+
+func TestCommitsOffBranches(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	m := newMergeFixture(t, data)
+	t.Cleanup(func() { _ = g.Close(ctx) })
+
+	msgs := func(cs []domain.Commit) []string {
+		var out []string
+		for _, c := range cs {
+			out = append(out, c.Summary)
+		}
+		return out
+	}
+
+	// Every commit of the fixture is on main or feat.
+	got, more, err := g.CommitsOffBranches(ctx, m.f.Name, m.d, 10)
+	require.NoError(t, err)
+	assert.Empty(t, got, "feat has its tip")
+	assert.False(t, more)
+
+	// A commit no branch has, on top of feat: listed alone, then with its
+	// parent when that has no branch either (a branch deleted, a detached tip).
+	m.f.Git("checkout", "--quiet", "--detach", m.d.String())
+	m.f.Write("t1.txt", "one\n")
+	t1 := oidOf(t, m.f.Commit("tagged one"))
+	m.f.Write("t2.txt", "two\n")
+	t2 := oidOf(t, m.f.Commit("tagged two"))
+	m.f.Git("update-ref", "refs/tags/v1", t2.String())
+
+	got, more, err = g.CommitsOffBranches(ctx, m.f.Name, t2, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"tagged two", "tagged one"}, msgs(got), "newest first, down to the commits a branch has")
+	assert.False(t, more)
+	got, _, err = g.CommitsOffBranches(ctx, m.f.Name, t1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"tagged one"}, msgs(got))
+
+	// A bound cuts the list and says so.
+	got, more, err = g.CommitsOffBranches(ctx, m.f.Name, t2, 1)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"tagged two"}, msgs(got))
+	assert.True(t, more)
+
+	// Another tag is no branch: t2 stays listed although v1 points to it, and
+	// moving a branch onto t1 takes t1 out of the list.
+	m.f.Git("update-ref", "refs/heads/rel", t1.String())
+	got, _, err = g.CommitsOffBranches(ctx, m.f.Name, t2, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"tagged two"}, msgs(got))
+
+	_, _, err = g.CommitsOffBranches(ctx, m.f.Name, domain.ObjectID{}, 10)
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+	_, _, err = g.CommitsOffBranches(ctx, m.f.Name, t2, 0)
+	assert.ErrorIs(t, err, domain.ErrInvalidPageSize)
+	_, _, err = g.CommitsOffBranches(ctx, name(t, "missing"), t2, 5)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
