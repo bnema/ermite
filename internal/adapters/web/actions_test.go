@@ -38,6 +38,7 @@ func TestLogPagesPassTheClientKey(t *testing.T) {
 	runs.EXPECT().GetRun(mock.Anything, mock.Anything, repo, int64(1), int32(0)).Return(ports.RunDetail{
 		Run: domain.CIRun{Repo: repo, ID: 1, Attempt: 1}, LatestAttempt: 1,
 	}, nil).Maybe()
+	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), int32(0), jobID).Return(ports.AnnotationList{}, nil).Maybe()
 	var seen []string
 	runs.EXPECT().GetJobLog(mock.Anything, mock.Anything, repo, mock.Anything, mock.Anything).RunAndReturn(
 		func(_ context.Context, _ domain.Principal, _ domain.RepoName, p ports.GetJobLogParams, send func(ports.LogBatch) error) error {

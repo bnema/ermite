@@ -231,6 +231,7 @@ func (rs *runState) end(j *domain.CIJob, conclusion domain.CIConclusion, msg str
 		if s.State == domain.CIStepPending && !cancelish {
 			s.Conclusion = domain.CISkipped
 		}
+		s.Outcome = s.Conclusion
 		s.State, s.CompletedAt = domain.CIStepCompleted, now
 	}
 	j.Phase, j.Conclusion, j.CompletedAt = domain.CIPhaseEnded, conclusion, now

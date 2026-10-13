@@ -51,6 +51,9 @@ type JobPage struct {
 	// StreamHref is the live feed of the lines (logStream).
 	StreamHref string
 	Note       string
+	// Annotations are those of the job, shown above the log.
+	Annotations     []AnnotationView
+	AnnotationsMore bool
 }
 
 // appendLogLine adds the line n of a job log to the lines shown. The markers

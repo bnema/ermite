@@ -496,5 +496,17 @@ func (l *liveStream) jobState(ctx context.Context) ([]fragment, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []fragment{f, steps}, nil
+	run, err := l.s.cfg.Runs.GetRun(ctx, principal(ctx), d.repo.Name, view.RunID, 0)
+	if err != nil {
+		return nil, err
+	}
+	anns, more, err := l.s.jobAnnotations(ctx, d, view.RunID, run.Run.Sha, view, 0)
+	if err != nil {
+		return nil, err
+	}
+	notes, err := renderFragment(ctx, "ci-job", JobAnnotations(anns, more))
+	if err != nil {
+		return nil, err
+	}
+	return []fragment{f, steps, notes}, nil
 }

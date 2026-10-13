@@ -62,6 +62,7 @@ templ RunDetail(l Layout, p RunPage) {
 		<div id="run-body">
 			@RunBody(p)
 		</div>
+		@RunSummaries(p.Summaries)
 	}
 }
 
@@ -77,6 +78,12 @@ templ RunBody(p RunPage) {
 	<h2 class="run-h">@CheckIcon(p.Kind, p.State)<span>{ p.Workflow }</span> <span class="mute">{ p.Number }</span></h2>
 	if p.Error != "" {
 		<pre class="run-err">{ p.Error }</pre>
+	}
+	if len(p.Annotations) > 0 {
+		<section class="annots" aria-labelledby="run-annots">
+			<h3 id="run-annots">Annotations <span class="count">{ itoa(len(p.Annotations)) }</span></h3>
+			@AnnotationList(p.Annotations, p.AnnotationsMore, false)
+		</section>
 	}
 	<ul class="jobs">
 		for _, j := range p.Jobs {
@@ -105,6 +112,101 @@ templ RunBody(p RunPage) {
 			</li>
 		}
 	</ul>
+}
+
+// AnnotationList is a list of annotations: the level as a mark with its word,
+// the job and the step, the title and the message, and file:line. Everything
+// comes from the workflow and is text. Without grouped, each item names its job (the
+// run page); grouped lists the annotations by step instead (the job page).
+templ AnnotationList(anns []AnnotationView, more bool, grouped bool) {
+	<ul class="annot-list">
+		for _, a := range anns {
+			<li class={ "annot", "annot-" + a.Kind }>
+				if grouped && a.StepHead {
+					<p class="annot-step">
+						if a.StepHref != "" {
+							<a href={ templ.SafeURL(a.StepHref) }>{ a.Step }</a>
+						} else {
+							{ a.Step }
+						}
+					</p>
+				}
+				<span class={ "an", "an-" + a.Kind } role="img" aria-label={ a.Level } title={ a.Level }></span>
+				<div class="annot-body">
+					<p class="annot-head">
+						<span class="annot-level">{ a.Level }</span>
+						if !grouped {
+							if a.JobHref != "" {
+								<a href={ templ.SafeURL(a.JobHref) }>{ a.Job }</a>
+							} else {
+								<span>{ a.Job }</span>
+							}
+							<span class="mute">{ a.Step }</span>
+						}
+						if a.Title != "" {
+							<strong>{ a.Title }</strong>
+						}
+					</p>
+					<p class="annot-msg">{ a.Message }</p>
+					if a.Where != "" {
+						<p class="annot-where">
+							if a.WhereHref != "" {
+								<a href={ templ.SafeURL(a.WhereHref) }>{ a.Where }</a>
+							} else {
+								<span>{ a.Where }</span>
+							}
+						</p>
+					}
+				</div>
+			</li>
+		}
+	</ul>
+	if more {
+		<p class="mute">more annotations exist than are shown.</p>
+	}
+}
+
+// JobAnnotations is the annotations of the job page, replaced by the live
+// updates; the element exists even when there is none, so that the first one
+// has something to replace.
+templ JobAnnotations(anns []AnnotationView, more bool) {
+	<section id="job-annotations" class="annots" aria-label="Annotations">
+		if len(anns) > 0 {
+			<h3>Annotations <span class="count">{ itoa(len(anns)) }</span></h3>
+			@AnnotationList(anns, more, true)
+		}
+	</section>
+}
+
+// RunSummaries is the job summaries of a run, one block per step that wrote
+// one. The Markdown is rendered by the README renderer: raw HTML dropped, URLs
+// filtered, images shown as their alt text.
+templ RunSummaries(sums []JobSummaries) {
+	for _, j := range sums {
+		<section class="summaries" aria-label={ "Summary of " + j.Job }>
+			<h3>
+				if j.JobHref != "" {
+					<a href={ templ.SafeURL(j.JobHref) }>{ j.Job }</a>
+				} else {
+					{ j.Job }
+				}
+				<span class="mute">summary</span>
+			</h3>
+			for _, s := range j.Steps {
+				<article class="prose summary" aria-label={ s.Step } hx-ignore>
+					<h4 class="summary-step">{ s.Step }</h4>
+					if s.Note != "" {
+						<p class="dim">{ s.Note }</p>
+					} else {
+						@templ.Raw(s.HTML)
+					}
+				</article>
+			}
+			if j.More {
+				<p class="mute">the job has more summaries than the first 20, which are shown.</p>
+			}
+		</section>
+	}
 }
 
 templ runRail(p RunPage) {
@@ -186,6 +288,7 @@ templ Job(l Layout, p JobPage) {
 	@Shell(l, jobRail(p)) {
 		@LiveSlot("job-notice")
 		@JobHead(p.JobRow, p.Total)
+		@JobAnnotations(p.Annotations, p.AnnotationsMore)
 		<div id="job-log" class="joblog" data-total={ itoa64(p.Total) } data-follow?={ p.Follow } data-stream={ p.StreamHref } data-next={ itoa64(p.From + int64(len(p.Lines))) }>
 			if p.Note != "" {
 				<p class="dim">{ p.Note }</p>

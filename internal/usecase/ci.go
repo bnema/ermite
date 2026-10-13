@@ -46,19 +46,21 @@ const (
 	maxCIWorkflowFiles = 256
 )
 
-// CIConfig holds what the CI use cases need. Store, Logs, Meta, Repos, Reader,
+// CIConfig holds what the CI use cases need. Store, Logs, Summaries, Meta, Repos, Reader,
 // Git, Diff, Bus, Clock, Owner and PublicURL are required (the config supplies
 // the defaults of Owner and Retention).
 type CIConfig struct {
-	Store  ports.CIStore
-	Logs   ports.CILogStore
-	Meta   ports.RepoMetaStore
-	Repos  ports.GitRepos
-	Reader ports.RepoReader
-	Git    ports.MergeGit
-	Diff   ports.CIGit
-	Bus    ports.EventBus
-	Clock  ports.Clock
+	Store ports.CIStore
+	Logs  ports.CILogStore
+	// Summaries keeps the job summaries, deleted with the logs of their run.
+	Summaries ports.CISummaryStore
+	Meta      ports.RepoMetaStore
+	Repos     ports.GitRepos
+	Reader    ports.RepoReader
+	Git       ports.MergeGit
+	Diff      ports.CIGit
+	Bus       ports.EventBus
+	Clock     ports.Clock
 	// Auth re-validates the token of a log stream; nil skips it.
 	Auth ports.Revalidator
 	// Remote lists the refs of github.com repositories for ResolveActions; nil
@@ -295,6 +297,10 @@ type runState struct {
 	revoke []ports.CIJobRef
 	// resolutions are the action resolutions to keep with the next flush.
 	resolutions []domain.CIActionResolution
+	// annotations replace the annotations of steps, clear drops all those of
+	// executions of jobs, with the next flush.
+	annotations []ports.CIStepAnnotations
+	clear       []ports.CILogRef
 }
 
 // withRun locks the run, loads it with the jobs of attempt (0 for the latest)
@@ -379,7 +385,9 @@ func (rs *runState) flush(ctx context.Context) error {
 		w.Runs = []domain.CIRun{rs.run}
 	}
 	w.RepoTokens, w.RevokeJobs, w.Resolutions = rs.tokens, rs.revoke, rs.resolutions
-	if len(w.Jobs) == 0 && len(w.Runs) == 0 && len(w.Checks) == 0 && len(w.RepoTokens) == 0 && len(w.RevokeJobs) == 0 && len(w.Resolutions) == 0 {
+	w.Annotations, w.ClearAnnotations = rs.annotations, rs.clear
+	if len(w.Jobs) == 0 && len(w.Runs) == 0 && len(w.Checks) == 0 && len(w.RepoTokens) == 0 && len(w.RevokeJobs) == 0 &&
+		len(w.Resolutions) == 0 && len(w.Annotations) == 0 && len(w.ClearAnnotations) == 0 {
 		return nil
 	}
 	v, err := c.cfg.Store.Apply(ctx, w)
@@ -395,6 +403,7 @@ func (rs *runState) flush(ctx context.Context) error {
 	changedRun := rs.runDirty
 	rs.dirty, rs.checks, rs.runDirty = map[string]bool{}, map[string]bool{}, false
 	rs.tokens, rs.revoke, rs.resolutions = nil, nil, nil
+	rs.annotations, rs.clear = nil, nil
 
 	repo, err := c.cfg.Meta.Get(ctx, rs.run.Repo)
 	if err != nil {

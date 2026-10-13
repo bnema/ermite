@@ -765,6 +765,86 @@ func (_c *CIStore_GetRunner_Call) RunAndReturn(run func(ctx context.Context, id 
 	return _c
 }
 
+// JobAnnotations provides a mock function for the type CIStore
+func (_mock *CIStore) JobAnnotations(ctx context.Context, runID int64, attempt int32, jobID string) ([]domain.CIAnnotation, error) {
+	ret := _mock.Called(ctx, runID, attempt, jobID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for JobAnnotations")
+	}
+
+	var r0 []domain.CIAnnotation
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int32, string) ([]domain.CIAnnotation, error)); ok {
+		return returnFunc(ctx, runID, attempt, jobID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int32, string) []domain.CIAnnotation); ok {
+		r0 = returnFunc(ctx, runID, attempt, jobID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.CIAnnotation)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64, int32, string) error); ok {
+		r1 = returnFunc(ctx, runID, attempt, jobID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CIStore_JobAnnotations_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'JobAnnotations'
+type CIStore_JobAnnotations_Call struct {
+	*mock.Call
+}
+
+// JobAnnotations is a helper method to define mock.On call
+//   - ctx context.Context
+//   - runID int64
+//   - attempt int32
+//   - jobID string
+func (_e *CIStore_Expecter) JobAnnotations(ctx any, runID any, attempt any, jobID any) *CIStore_JobAnnotations_Call {
+	return &CIStore_JobAnnotations_Call{Call: _e.mock.On("JobAnnotations", ctx, runID, attempt, jobID)}
+}
+
+func (_c *CIStore_JobAnnotations_Call) Run(run func(ctx context.Context, runID int64, attempt int32, jobID string)) *CIStore_JobAnnotations_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		var arg2 int32
+		if args[2] != nil {
+			arg2 = args[2].(int32)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *CIStore_JobAnnotations_Call) Return(cIAnnotations []domain.CIAnnotation, err error) *CIStore_JobAnnotations_Call {
+	_c.Call.Return(cIAnnotations, err)
+	return _c
+}
+
+func (_c *CIStore_JobAnnotations_Call) RunAndReturn(run func(ctx context.Context, runID int64, attempt int32, jobID string) ([]domain.CIAnnotation, error)) *CIStore_JobAnnotations_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListActiveJobs provides a mock function for the type CIStore
 func (_mock *CIStore) ListActiveJobs(ctx context.Context) ([]domain.CIJob, error) {
 	ret := _mock.Called(ctx)

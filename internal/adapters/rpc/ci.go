@@ -105,7 +105,11 @@ func (s *runnerService) UpdateJob(ctx context.Context, req *connect.Request[pb.U
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	if err := s.runners.UpdateJob(ctx, secretFrom(ctx), req.Msg.GetJobId(), steps); err != nil {
+	anns, err := annotationsFromPB(req.Msg.GetAnnotations())
+	if err != nil {
+		return nil, s.failed(ctx, err)
+	}
+	if err := s.runners.UpdateJob(ctx, secretFrom(ctx), req.Msg.GetJobId(), steps, anns); err != nil {
 		return nil, s.failed(ctx, err)
 	}
 	return connect.NewResponse(&pb.UpdateJobResponse{}), nil
@@ -162,9 +166,13 @@ func (s *runnerService) CompleteJob(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
+	anns, err := annotationsFromPB(req.Msg.GetAnnotations())
+	if err != nil {
+		return nil, s.failed(ctx, err)
+	}
 	res, err := s.runners.CompleteJob(ctx, secretFrom(ctx), ports.CompleteJobParams{
 		JobID: req.Msg.GetJobId(), Conclusion: concl, Outputs: req.Msg.GetOutputs(),
-		RunnerShutdown: req.Msg.GetRunnerShutdown(), Steps: steps,
+		RunnerShutdown: req.Msg.GetRunnerShutdown(), Steps: steps, Annotations: anns,
 	})
 	if err != nil {
 		return nil, s.failed(ctx, err)
@@ -190,10 +198,12 @@ func (s *runnerService) ResolveActions(ctx context.Context, req *connect.Request
 	return connect.NewResponse(out), nil
 }
 
-// UploadSummary is the E2 work (summaries storage): until the server lists
-// "ci.summaries" it answers unimplemented, as runner.proto says.
-func (s *runnerService) UploadSummary(context.Context, *connect.Request[pb.UploadSummaryRequest]) (*connect.Response[pb.UploadSummaryResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ermite.RunnerService.UploadSummary is not implemented"))
+// UploadSummary stores the summary of a step.
+func (s *runnerService) UploadSummary(ctx context.Context, req *connect.Request[pb.UploadSummaryRequest]) (*connect.Response[pb.UploadSummaryResponse], error) {
+	if err := s.runners.UploadSummary(ctx, secretFrom(ctx), req.Msg.GetJobId(), req.Msg.GetStepNumber(), req.Msg.GetMarkdown()); err != nil {
+		return nil, s.failed(ctx, err)
+	}
+	return connect.NewResponse(&pb.UploadSummaryResponse{}), nil
 }
 
 // runService implements ermiteconnect.RunServiceHandler.
@@ -334,13 +344,36 @@ func (s *runService) RemoveRunner(ctx context.Context, req *connect.Request[pb.R
 	return connect.NewResponse(&pb.RemoveRunnerResponse{}), nil
 }
 
-// ListAnnotations and GetStepSummaries are the E2 work (annotations and
-// summaries): unimplemented until the server lists "ci.annotations" and
-// "ci.summaries".
-func (s *runService) ListAnnotations(context.Context, *connect.Request[pb.ListAnnotationsRequest]) (*connect.Response[pb.ListAnnotationsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ermite.RunService.ListAnnotations is not implemented"))
+// ListAnnotations lists the annotations of a run attempt.
+func (s *runService) ListAnnotations(ctx context.Context, req *connect.Request[pb.ListAnnotationsRequest]) (*connect.Response[pb.ListAnnotationsResponse], error) {
+	name, err := repoOf(req.Msg.GetRepo())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	res, err := s.runs.ListAnnotations(ctx, caller(ctx), name, req.Msg.GetRunId(), req.Msg.GetAttempt(), req.Msg.GetJobId())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	out := &pb.ListAnnotationsResponse{Truncated: res.Truncated, Annotations: make([]*pb.JobAnnotation, 0, len(res.Annotations))}
+	for _, a := range res.Annotations {
+		out.Annotations = append(out.Annotations, &pb.JobAnnotation{JobId: a.JobID, Annotation: annotationToPB(a.Annotation)})
+	}
+	return connect.NewResponse(out), nil
 }
 
-func (s *runService) GetStepSummaries(context.Context, *connect.Request[pb.GetStepSummariesRequest]) (*connect.Response[pb.GetStepSummariesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ermite.RunService.GetStepSummaries is not implemented"))
+// GetStepSummaries returns the summaries of a job.
+func (s *runService) GetStepSummaries(ctx context.Context, req *connect.Request[pb.GetStepSummariesRequest]) (*connect.Response[pb.GetStepSummariesResponse], error) {
+	name, err := repoOf(req.Msg.GetRepo())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	res, err := s.runs.GetStepSummaries(ctx, caller(ctx), name, req.Msg.GetJobId(), req.Msg.GetAttempt())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	out := &pb.GetStepSummariesResponse{Truncated: res.Truncated, Summaries: make([]*pb.StepSummary, 0, len(res.Summaries))}
+	for _, m := range res.Summaries {
+		out.Summaries = append(out.Summaries, &pb.StepSummary{StepNumber: m.Step, Markdown: m.Markdown})
+	}
+	return connect.NewResponse(out), nil
 }

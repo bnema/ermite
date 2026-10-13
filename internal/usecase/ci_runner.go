@@ -321,10 +321,11 @@ func sameAssignment(was, cur domain.CIJob) error {
 	return nil
 }
 
-// saveJob writes one job (its steps changed) and publishes JobUpdated. The
-// status of the run does not depend on steps.
-func (c *CI) saveJob(ctx context.Context, j *domain.CIJob) error {
-	v, err := c.cfg.Store.Apply(ctx, ports.CIWrite{Jobs: []domain.CIJob{*j}})
+// saveJob writes one job (its steps changed) with the annotations that change
+// with it, and publishes JobUpdated. The status of the run does not depend on
+// steps.
+func (c *CI) saveJob(ctx context.Context, j *domain.CIJob, anns ...ports.CIStepAnnotations) error {
+	v, err := c.cfg.Store.Apply(ctx, ports.CIWrite{Jobs: []domain.CIJob{*j}, Annotations: anns})
 	if err != nil {
 		return fmt.Errorf("write job %s: %w", j.ID, err)
 	}
@@ -341,8 +342,10 @@ func logRef(j domain.CIJob) ports.CILogRef {
 	return ports.CILogRef{RunID: j.RunID, JobID: j.ID, Attempt: j.Attempt}
 }
 
-// UpdateJob applies the steps of the request whole or not at all.
-func (c *CI) UpdateJob(ctx context.Context, secret, jobID string, steps []ports.StepUpdate) error {
+// UpdateJob applies the steps and the annotations of the request whole or not
+// at all. The annotations of each step they name replace those stored, whether
+// the step is completed or not.
+func (c *CI) UpdateJob(ctx context.Context, secret, jobID string, steps []ports.StepUpdate, annotations []domain.CIAnnotation) error {
 	j, err := c.jobFor(ctx, secret, jobID)
 	if err != nil {
 		return err
@@ -353,16 +356,26 @@ func (c *CI) UpdateJob(ctx context.Context, secret, jobID string, steps []ports.
 	if err := checkStepUpdates(steps); err != nil {
 		return err
 	}
+	if err := domain.CheckAnnotations(annotations); err != nil {
+		return err
+	}
 	return c.lockedJob(ctx, j, func(cur *domain.CIJob) error {
 		if cur.Ended() {
 			return endedError(*cur)
 		}
 		next, changed, err := applySteps(cur.Steps, steps)
-		if err != nil || !changed {
+		if err != nil {
 			return err
 		}
+		writes, err := c.annotationWrites(ctx, *cur, annotations)
+		if err != nil {
+			return err
+		}
+		if !changed && len(writes) == 0 {
+			return nil
+		}
 		cur.Steps = next
-		return c.saveJob(ctx, cur)
+		return c.saveJob(ctx, cur, writes...)
 	})
 }
 
@@ -377,18 +390,23 @@ func checkStepUpdates(steps []ports.StepUpdate) error {
 		}
 		switch s.State {
 		case domain.CIStepPending:
-			if s.Conclusion != domain.CINoConclusion {
-				return fmt.Errorf("%w: step %d is not completed: it has no conclusion", domain.ErrInvalid, s.Number)
+			if s.Conclusion != domain.CINoConclusion || s.Outcome != domain.CINoConclusion {
+				return fmt.Errorf("%w: step %d is not completed: it has no conclusion or outcome", domain.ErrInvalid, s.Number)
 			}
 		case domain.CIStepInProgress:
-			if s.Conclusion != domain.CINoConclusion || s.StartedAt.IsZero() {
-				return fmt.Errorf("%w: step %d is in progress: started_at is required, conclusion is not allowed", domain.ErrInvalid, s.Number)
+			if s.Conclusion != domain.CINoConclusion || s.Outcome != domain.CINoConclusion || s.StartedAt.IsZero() {
+				return fmt.Errorf("%w: step %d is in progress: started_at is required, conclusion and outcome are not allowed", domain.ErrInvalid, s.Number)
 			}
 		case domain.CIStepCompleted:
 			switch s.Conclusion {
 			case domain.CISuccess, domain.CIFailure, domain.CICancelled, domain.CISkipped:
 			default:
 				return fmt.Errorf("%w: step %d is completed: its conclusion must be success, failure, cancelled or skipped", domain.ErrInvalid, s.Number)
+			}
+			switch s.Outcome {
+			case domain.CINoConclusion, domain.CISuccess, domain.CIFailure, domain.CICancelled, domain.CISkipped:
+			default:
+				return fmt.Errorf("%w: step %d is completed: its outcome must be success, failure, cancelled or skipped", domain.ErrInvalid, s.Number)
 			}
 			if s.StartedAt.IsZero() && s.Conclusion != domain.CISkipped {
 				return fmt.Errorf("%w: step %d: started_at is required", domain.ErrInvalid, s.Number)
@@ -413,21 +431,22 @@ func applySteps(have []domain.CIStep, ups []ports.StepUpdate) ([]domain.CIStep, 
 		i := slices.IndexFunc(out, func(s domain.CIStep) bool { return s.Number == u.Number })
 		if i < 0 {
 			out = append(out, domain.CIStep{
-				Number: u.Number, Name: name, State: u.State, Conclusion: u.Conclusion, StartedAt: u.StartedAt, CompletedAt: u.CompletedAt,
+				Number: u.Number, Name: name, State: u.State, Conclusion: u.Conclusion, Outcome: u.Outcome,
+				StartedAt: u.StartedAt, CompletedAt: u.CompletedAt,
 			})
 			changed = true
 			continue
 		}
 		cur := out[i]
 		next := cur
-		next.Name, next.State, next.Conclusion = name, u.State, u.Conclusion
+		next.Name, next.State, next.Conclusion, next.Outcome = name, u.State, u.Conclusion, u.Outcome
 		next.StartedAt, next.CompletedAt = u.StartedAt, u.CompletedAt
 		if cur.Name != "" && name == "" {
 			next.Name = cur.Name // an empty name never erases one
 		}
 		switch {
 		case cur.State == domain.CIStepCompleted:
-			same := next.State == cur.State && next.Conclusion == cur.Conclusion && next.Name == cur.Name &&
+			same := next.State == cur.State && next.Conclusion == cur.Conclusion && effectiveOutcome(next) == effectiveOutcome(cur) && next.Name == cur.Name &&
 				next.StartedAt.Equal(cur.StartedAt) && next.CompletedAt.Equal(cur.CompletedAt)
 			if !same {
 				return nil, false, fmt.Errorf("%w: step %d is completed: it cannot change", domain.ErrPreconditionFailed, u.Number)
@@ -444,8 +463,17 @@ func applySteps(have []domain.CIStep, ups []ports.StepUpdate) ([]domain.CIStep, 
 	return out, changed, nil
 }
 
+// effectiveOutcome is the outcome of a step, read as its conclusion when the
+// runner did not report one.
+func effectiveOutcome(s domain.CIStep) domain.CIConclusion {
+	if s.Outcome == domain.CINoConclusion {
+		return s.Conclusion
+	}
+	return s.Outcome
+}
+
 func stepsEqual(a, b domain.CIStep) bool {
-	return a.Number == b.Number && a.Name == b.Name && a.State == b.State && a.Conclusion == b.Conclusion &&
+	return a.Number == b.Number && a.Name == b.Name && a.State == b.State && a.Conclusion == b.Conclusion && a.Outcome == b.Outcome &&
 		a.StartedAt.Equal(b.StartedAt) && a.CompletedAt.Equal(b.CompletedAt) && a.LogStart == b.LogStart && a.HasLines == b.HasLines
 }
 
@@ -731,6 +759,9 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 	if err := checkStepUpdates(params.Steps); err != nil {
 		return ports.CompleteJobResult{}, err
 	}
+	if err := domain.CheckAnnotations(params.Annotations); err != nil {
+		return ports.CompleteJobResult{}, err
+	}
 	var res ports.CompleteJobResult
 	err = c.withRun(ctx, j.RunID, j.RunAttempt, func(rs *runState) error {
 		cur := rs.find(j.ID)
@@ -748,6 +779,11 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 		if err != nil {
 			return err
 		}
+		writes, err := c.annotationWrites(ctx, *cur, params.Annotations)
+		if err != nil {
+			return err
+		}
+		rs.annotations = append(rs.annotations, writes...)
 		cur.Steps = steps
 		cur.Outputs = params.Outputs
 		msg := ""

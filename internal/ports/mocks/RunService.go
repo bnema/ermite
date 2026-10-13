@@ -369,6 +369,180 @@ func (_c *RunService_GetRun_Call) RunAndReturn(run func(ctx context.Context, p d
 	return _c
 }
 
+// GetStepSummaries provides a mock function for the type RunService
+func (_mock *RunService) GetStepSummaries(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32) (ports.SummaryList, error) {
+	ret := _mock.Called(ctx, p, repo, jobID, attempt)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStepSummaries")
+	}
+
+	var r0 ports.SummaryList
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string, int32) (ports.SummaryList, error)); ok {
+		return returnFunc(ctx, p, repo, jobID, attempt)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string, int32) ports.SummaryList); ok {
+		r0 = returnFunc(ctx, p, repo, jobID, attempt)
+	} else {
+		r0 = ret.Get(0).(ports.SummaryList)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, string, int32) error); ok {
+		r1 = returnFunc(ctx, p, repo, jobID, attempt)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RunService_GetStepSummaries_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStepSummaries'
+type RunService_GetStepSummaries_Call struct {
+	*mock.Call
+}
+
+// GetStepSummaries is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - jobID string
+//   - attempt int32
+func (_e *RunService_Expecter) GetStepSummaries(ctx any, p any, repo any, jobID any, attempt any) *RunService_GetStepSummaries_Call {
+	return &RunService_GetStepSummaries_Call{Call: _e.mock.On("GetStepSummaries", ctx, p, repo, jobID, attempt)}
+}
+
+func (_c *RunService_GetStepSummaries_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32)) *RunService_GetStepSummaries_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 int32
+		if args[4] != nil {
+			arg4 = args[4].(int32)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *RunService_GetStepSummaries_Call) Return(summaryList ports.SummaryList, err error) *RunService_GetStepSummaries_Call {
+	_c.Call.Return(summaryList, err)
+	return _c
+}
+
+func (_c *RunService_GetStepSummaries_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32) (ports.SummaryList, error)) *RunService_GetStepSummaries_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListAnnotations provides a mock function for the type RunService
+func (_mock *RunService) ListAnnotations(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, attempt int32, jobID string) (ports.AnnotationList, error) {
+	ret := _mock.Called(ctx, p, repo, runID, attempt, jobID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListAnnotations")
+	}
+
+	var r0 ports.AnnotationList
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, int32, string) (ports.AnnotationList, error)); ok {
+		return returnFunc(ctx, p, repo, runID, attempt, jobID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, int32, string) ports.AnnotationList); ok {
+		r0 = returnFunc(ctx, p, repo, runID, attempt, jobID)
+	} else {
+		r0 = ret.Get(0).(ports.AnnotationList)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, int64, int32, string) error); ok {
+		r1 = returnFunc(ctx, p, repo, runID, attempt, jobID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RunService_ListAnnotations_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListAnnotations'
+type RunService_ListAnnotations_Call struct {
+	*mock.Call
+}
+
+// ListAnnotations is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - runID int64
+//   - attempt int32
+//   - jobID string
+func (_e *RunService_Expecter) ListAnnotations(ctx any, p any, repo any, runID any, attempt any, jobID any) *RunService_ListAnnotations_Call {
+	return &RunService_ListAnnotations_Call{Call: _e.mock.On("ListAnnotations", ctx, p, repo, runID, attempt, jobID)}
+}
+
+func (_c *RunService_ListAnnotations_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, attempt int32, jobID string)) *RunService_ListAnnotations_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
+		var arg4 int32
+		if args[4] != nil {
+			arg4 = args[4].(int32)
+		}
+		var arg5 string
+		if args[5] != nil {
+			arg5 = args[5].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+		)
+	})
+	return _c
+}
+
+func (_c *RunService_ListAnnotations_Call) Return(annotationList ports.AnnotationList, err error) *RunService_ListAnnotations_Call {
+	_c.Call.Return(annotationList, err)
+	return _c
+}
+
+func (_c *RunService_ListAnnotations_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, attempt int32, jobID string) (ports.AnnotationList, error)) *RunService_ListAnnotations_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListChecks provides a mock function for the type RunService
 func (_mock *RunService) ListChecks(ctx context.Context, p domain.Principal, repo domain.RepoName, sha string) (ports.ChecksResult, error) {
 	ret := _mock.Called(ctx, p, repo, sha)

@@ -55,9 +55,16 @@ func newMarkdown() *markdown {
 // are where relative links point; dir is the directory of the Markdown file
 // in the repository, "" for the root.
 func (m *markdown) render(source []byte, repo, ref, dir string) (template.HTML, []Heading, error) {
-	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{inner: parser.NewContext().IDs()}))
+	return m.renderWithIDs(source, repo, ref, dir, headingIDPrefix)
+}
+
+// renderWithIDs is render with the prefix of the heading ids and of the
+// #fragment links chosen, so that several documents on one page (the summaries
+// of a run) do not share ids.
+func (m *markdown) renderWithIDs(source []byte, repo, ref, dir, idPrefix string) (template.HTML, []Heading, error) {
+	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{prefix: idPrefix, inner: parser.NewContext().IDs()}))
 	doc := m.md.Parser().Parse(text.NewReader(source), parser.WithContext(pc))
-	pol := linkPolicy{repo: repo, ref: ref, dir: dir, source: source}
+	pol := linkPolicy{repo: repo, ref: ref, dir: dir, source: source, idPrefix: idPrefix}
 	pol.apply(doc)
 
 	var buf bytes.Buffer
@@ -70,10 +77,13 @@ func (m *markdown) render(source []byte, repo, ref, dir string) (template.HTML, 
 }
 
 // prefixedIDs prefixes the heading ids that goldmark generates.
-type prefixedIDs struct{ inner parser.IDs }
+type prefixedIDs struct {
+	prefix string
+	inner  parser.IDs
+}
 
 func (p *prefixedIDs) Generate(value []byte, kind ast.NodeKind) []byte {
-	return append([]byte(headingIDPrefix), p.inner.Generate(value, kind)...)
+	return append([]byte(p.prefix), p.inner.Generate(value, kind)...)
 }
 
 func (p *prefixedIDs) Put(value []byte) { p.inner.Put(value) }
@@ -119,6 +129,8 @@ func plainText(n ast.Node, source []byte) string {
 type linkPolicy struct {
 	repo, ref, dir string
 	source         []byte
+	// idPrefix is the prefix of the heading ids that #fragment links point at.
+	idPrefix string
 }
 
 func (p linkPolicy) apply(doc ast.Node) {
@@ -202,7 +214,7 @@ func (p linkPolicy) target(dest string) (string, linkKind) {
 		if frag == "" || strings.ContainsAny(frag, " \"'<>") {
 			return "", dropped
 		}
-		return "#" + headingIDPrefix + frag, internal
+		return "#" + p.idPrefix + frag, internal
 	}
 	if strings.HasPrefix(dest, "//") {
 		return "", dropped

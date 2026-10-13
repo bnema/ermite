@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
@@ -98,4 +99,120 @@ func TestRunnerServiceErrors(t *testing.T) {
 	ctx = context.WithValue(ctx, addrKey{}, "client-key")
 	requireCode(t, connect.CodeUnauthenticated, s.failed(ctx, domain.ErrUnauthenticated))
 	requireCode(t, connect.CodePermissionDenied, s.failed(ctx, domain.ErrForbidden)) // not a bad credential: no Fail
+}
+
+// The annotations of a request are mapped to the domain; a level that is not
+// one of the three is invalid_argument before the use case sees the call.
+func TestRunnerServiceAnnotationsAndSummary(t *testing.T) {
+	t.Parallel()
+	anns := []*pb.Annotation{
+		{Level: pb.AnnotationLevel_ANNOTATION_LEVEL_FAILURE, Title: "t", Message: "m", File: "f.go", StartLine: 1, EndLine: 2, StartColumn: 3, EndColumn: 4, StepNumber: 5},
+		{Level: pb.AnnotationLevel_ANNOTATION_LEVEL_NOTICE, Message: "n", StepNumber: 1},
+	}
+	want := []domain.CIAnnotation{
+		{Level: domain.AnnotationFailure, Title: "t", Message: "m", File: "f.go", StartLine: 1, EndLine: 2, StartColumn: 3, EndColumn: 4, Step: 5},
+		{Level: domain.AnnotationNotice, Message: "n", Step: 1},
+	}
+	ctx := context.WithValue(ownerCtx(), secretKey{}, "ermitejob_x")
+
+	runners := mocks.NewRunnerService(t)
+	runners.EXPECT().UpdateJob(mock.Anything, "ermitejob_x", "7-0-0", mock.Anything, want).Return(nil).Once()
+	runners.EXPECT().CompleteJob(mock.Anything, "ermitejob_x", mock.MatchedBy(func(p ports.CompleteJobParams) bool {
+		return p.JobID == "7-0-0" && len(p.Annotations) == 2 && p.Annotations[0] == want[0]
+	})).Return(ports.CompleteJobResult{Conclusion: domain.CISuccess, Applied: true}, nil).Once()
+	runners.EXPECT().UploadSummary(mock.Anything, "ermitejob_x", "7-0-0", int32(3), "# md").Return(nil).Once()
+	runners.EXPECT().UploadSummary(mock.Anything, "ermitejob_x", "7-0-0", int32(3), "").Return(&domain.JobEndedError{Conclusion: domain.CIFailure}).Once()
+	s := &runnerService{runners: runners}
+
+	_, err := s.UpdateJob(ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: "7-0-0", Annotations: anns}))
+	require.NoError(t, err)
+	_, err = s.CompleteJob(ctx, connect.NewRequest(&pb.CompleteJobRequest{JobId: "7-0-0", Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: anns}))
+	require.NoError(t, err)
+	_, err = s.UploadSummary(ctx, connect.NewRequest(&pb.UploadSummaryRequest{JobId: "7-0-0", StepNumber: 3, Markdown: "# md"}))
+	require.NoError(t, err)
+	_, err = s.UploadSummary(ctx, connect.NewRequest(&pb.UploadSummaryRequest{JobId: "7-0-0", StepNumber: 3}))
+	requireCode(t, connect.CodeFailedPrecondition, err)
+
+	_, err = s.UpdateJob(ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: "7-0-0", Annotations: []*pb.Annotation{{Message: "no level", StepNumber: 1}}}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+	_, err = s.UpdateJob(ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: "7-0-0", Annotations: []*pb.Annotation{{Level: 99, Message: "x", StepNumber: 1}}}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+	_, err = s.CompleteJob(ctx, connect.NewRequest(&pb.CompleteJobRequest{JobId: "7-0-0", Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: []*pb.Annotation{{Message: "x"}}}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+}
+
+// StepUpdate.outcome reaches the use case, and Step.outcome is the conclusion
+// for a completed step stored without one, and unset before the end.
+func TestStepOutcomeMapping(t *testing.T) {
+	t.Parallel()
+	ups, err := stepUpdatesFromPB([]*pb.StepUpdate{{Number: 1, State: pb.StepState_STEP_STATE_COMPLETED, Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Outcome: pb.CiConclusion_CI_CONCLUSION_FAILURE}})
+	require.NoError(t, err)
+	assert.Equal(t, domain.CIFailure, ups[0].Outcome)
+	_, err = stepUpdatesFromPB([]*pb.StepUpdate{{Number: 1, Outcome: 99}})
+	assert.Error(t, err)
+
+	steps := stepsToPB([]domain.CIStep{
+		{Number: 1, State: domain.CIStepCompleted, Conclusion: domain.CISuccess, Outcome: domain.CIFailure},
+		{Number: 2, State: domain.CIStepCompleted, Conclusion: domain.CIFailure},
+		{Number: 3, State: domain.CIStepInProgress},
+		{Number: 4, State: domain.CIStepCompleted, Conclusion: domain.CISkipped, Outcome: domain.CISkipped},
+	}, 0)
+	got := make([]pb.CiConclusion, len(steps))
+	for i, s := range steps {
+		got[i] = s.GetOutcome()
+	}
+	assert.Equal(t, []pb.CiConclusion{
+		pb.CiConclusion_CI_CONCLUSION_FAILURE, pb.CiConclusion_CI_CONCLUSION_FAILURE,
+		pb.CiConclusion_CI_CONCLUSION_UNSPECIFIED, pb.CiConclusion_CI_CONCLUSION_SKIPPED,
+	}, got)
+}
+
+func TestRunServiceAnnotationsAndSummaries(t *testing.T) {
+	t.Parallel()
+	repo := mustRepoName(t, "demo")
+	runs := mocks.NewRunService(t)
+	runs.EXPECT().ListAnnotations(mock.Anything, domain.Owner(), repo, int64(7), int32(2), "7-0-0").Return(ports.AnnotationList{
+		Annotations: []ports.JobAnnotation{{JobID: "7-0-0", Annotation: domain.CIAnnotation{Level: domain.AnnotationWarning, Message: "m", File: "a.go", StartLine: 4, Step: 3}}},
+		Truncated:   true,
+	}, nil).Once()
+	runs.EXPECT().GetStepSummaries(mock.Anything, domain.Owner(), repo, "7-0-0", int32(0)).Return(ports.SummaryList{
+		Summaries: []domain.CIStepSummary{{Step: 2, Markdown: "# s"}}, Truncated: true,
+	}, nil).Once()
+	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(8), int32(0), "").Return(ports.AnnotationList{}, domain.ErrNotFound).Once()
+	s := &runService{runs: runs}
+
+	res, err := s.ListAnnotations(ownerCtx(), connect.NewRequest(&pb.ListAnnotationsRequest{Repo: "demo", RunId: 7, Attempt: 2, JobId: "7-0-0"}))
+	require.NoError(t, err)
+	require.Len(t, res.Msg.GetAnnotations(), 1)
+	a := res.Msg.GetAnnotations()[0]
+	assert.Equal(t, "7-0-0", a.GetJobId())
+	assert.Equal(t, pb.AnnotationLevel_ANNOTATION_LEVEL_WARNING, a.GetAnnotation().GetLevel())
+	assert.EqualValues(t, 3, a.GetAnnotation().GetStepNumber())
+	assert.EqualValues(t, 4, a.GetAnnotation().GetStartLine())
+	assert.True(t, res.Msg.GetTruncated())
+
+	sums, err := s.GetStepSummaries(ownerCtx(), connect.NewRequest(&pb.GetStepSummariesRequest{Repo: "demo", JobId: "7-0-0"}))
+	require.NoError(t, err)
+	require.Len(t, sums.Msg.GetSummaries(), 1)
+	assert.EqualValues(t, 2, sums.Msg.GetSummaries()[0].GetStepNumber())
+	assert.Equal(t, "# s", sums.Msg.GetSummaries()[0].GetMarkdown())
+	assert.True(t, sums.Msg.GetTruncated())
+
+	_, err = s.ListAnnotations(ownerCtx(), connect.NewRequest(&pb.ListAnnotationsRequest{Repo: "demo", RunId: 8}))
+	requireCode(t, connect.CodeNotFound, err)
+	_, err = s.ListAnnotations(ownerCtx(), connect.NewRequest(&pb.ListAnnotationsRequest{Repo: "../x", RunId: 8}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+	_, err = s.GetStepSummaries(ownerCtx(), connect.NewRequest(&pb.GetStepSummariesRequest{Repo: "../x"}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+}
+
+// UploadSummary is a job call: its bearer secret is the job token, not a stored
+// token, and a summary of exactly 1 MiB passes the size limit of the runner side.
+func TestUploadSummaryIsAJobCallWithRoomForOneMiB(t *testing.T) {
+	t.Parallel()
+	assert.True(t, runnerSecretProcedures[ermiteconnect.RunnerServiceUploadSummaryProcedure])
+	assert.Greater(t, RunnerMaxRequestBytes, 1<<20+len("7-0-0")+16, "1 MiB plus the envelope")
+	assert.Equal(t, MaxRequestBytes, 1<<20, "the other services keep the 1 MiB limit")
+	assert.Contains(t, Features, "ci.annotations")
+	assert.Contains(t, Features, "ci.summaries")
 }

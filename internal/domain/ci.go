@@ -198,10 +198,14 @@ type CIRunSource struct {
 
 // CIStep is a step of a job with where its lines are in the job log.
 type CIStep struct {
-	Number      int32
-	Name        string
-	State       CIStepState
-	Conclusion  CIConclusion
+	Number     int32
+	Name       string
+	State      CIStepState
+	Conclusion CIConclusion
+	// Outcome is how the step ended before continue-on-error was applied
+	// ("steps.<id>.outcome"). Empty for a step that was not completed by a
+	// runner that reports it: read it as Conclusion.
+	Outcome     CIConclusion
 	StartedAt   time.Time
 	CompletedAt time.Time
 	LogStart    int64

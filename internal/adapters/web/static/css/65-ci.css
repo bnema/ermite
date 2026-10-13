@@ -37,6 +37,35 @@
   .checks { display: grid; gap: var(--s1); padding: 0; margin: 0; list-style: none; font-size: var(--fs-s); }
   .checks li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
 
+  /* annotations and summaries of a run */
+  .annots { margin: 0 0 var(--s4); }
+  .annots h3, .summaries h3 { display: flex; align-items: baseline; gap: var(--s2); margin: 0 0 var(--s2); font-size: var(--fs-s); }
+  .annot-list { display: grid; gap: var(--s2); padding: 0; margin: 0; list-style: none; }
+  .annot {
+    display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s2) var(--s3);
+    background: var(--bg-surface); border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: var(--r-s);
+    font-size: var(--fs-s);
+  }
+  .annot-failure { border-left-color: var(--red); }
+  .annot-warning { border-left-style: dashed; border-left-color: var(--ink-dim); }
+  .annot-notice { border-left-color: var(--teal); }
+  .annot p { margin: 0; }
+  .annot-step { flex-basis: 100%; font-weight: 700; }
+  .annot:has(.annot-step) { flex-wrap: wrap; }
+  .annot-body { min-width: 0; }
+  .annot-head { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: baseline; }
+  .annot-level { font-weight: 700; }
+  .annot-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .annot-where { color: var(--ink-dim); font-family: var(--mono); overflow-wrap: anywhere; }
+  .an { display: inline-block; flex: none; width: 14px; height: 14px; margin-top: 2px; border: 2px solid var(--ink-dim); box-sizing: border-box; }
+  .an-failure { background: var(--red); border-color: var(--red); border-radius: 3px; transform: rotate(45deg) scale(.85); }
+  .an-warning { border-radius: 50% 50% 0 0; border-style: dashed; }
+  .an-notice { border-radius: 50%; border-color: var(--teal); }
+  .summaries { margin: var(--s5) 0 0; }
+  .summary { padding: var(--s3) var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
+  .summary + .summary { margin-top: var(--s3); }
+  .summary-step { margin: 0 0 var(--s2); font-size: var(--fs-s); color: var(--ink-dim); }
+
   .joblog { margin-top: var(--s4); }
   .log {
     margin: 0; padding: var(--s2) 0; list-style: none; overflow-x: auto;

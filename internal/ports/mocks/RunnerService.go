@@ -498,16 +498,16 @@ func (_c *RunnerService_ResolveActions_Call) RunAndReturn(run func(ctx context.C
 }
 
 // UpdateJob provides a mock function for the type RunnerService
-func (_mock *RunnerService) UpdateJob(ctx context.Context, secret string, jobID string, steps []ports.StepUpdate) error {
-	ret := _mock.Called(ctx, secret, jobID, steps)
+func (_mock *RunnerService) UpdateJob(ctx context.Context, secret string, jobID string, steps []ports.StepUpdate, annotations []domain.CIAnnotation) error {
+	ret := _mock.Called(ctx, secret, jobID, steps, annotations)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateJob")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, []ports.StepUpdate) error); ok {
-		r0 = returnFunc(ctx, secret, jobID, steps)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, []ports.StepUpdate, []domain.CIAnnotation) error); ok {
+		r0 = returnFunc(ctx, secret, jobID, steps, annotations)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -524,11 +524,12 @@ type RunnerService_UpdateJob_Call struct {
 //   - secret string
 //   - jobID string
 //   - steps []ports.StepUpdate
-func (_e *RunnerService_Expecter) UpdateJob(ctx any, secret any, jobID any, steps any) *RunnerService_UpdateJob_Call {
-	return &RunnerService_UpdateJob_Call{Call: _e.mock.On("UpdateJob", ctx, secret, jobID, steps)}
+//   - annotations []domain.CIAnnotation
+func (_e *RunnerService_Expecter) UpdateJob(ctx any, secret any, jobID any, steps any, annotations any) *RunnerService_UpdateJob_Call {
+	return &RunnerService_UpdateJob_Call{Call: _e.mock.On("UpdateJob", ctx, secret, jobID, steps, annotations)}
 }
 
-func (_c *RunnerService_UpdateJob_Call) Run(run func(ctx context.Context, secret string, jobID string, steps []ports.StepUpdate)) *RunnerService_UpdateJob_Call {
+func (_c *RunnerService_UpdateJob_Call) Run(run func(ctx context.Context, secret string, jobID string, steps []ports.StepUpdate, annotations []domain.CIAnnotation)) *RunnerService_UpdateJob_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -546,11 +547,16 @@ func (_c *RunnerService_UpdateJob_Call) Run(run func(ctx context.Context, secret
 		if args[3] != nil {
 			arg3 = args[3].([]ports.StepUpdate)
 		}
+		var arg4 []domain.CIAnnotation
+		if args[4] != nil {
+			arg4 = args[4].([]domain.CIAnnotation)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -561,7 +567,82 @@ func (_c *RunnerService_UpdateJob_Call) Return(err error) *RunnerService_UpdateJ
 	return _c
 }
 
-func (_c *RunnerService_UpdateJob_Call) RunAndReturn(run func(ctx context.Context, secret string, jobID string, steps []ports.StepUpdate) error) *RunnerService_UpdateJob_Call {
+func (_c *RunnerService_UpdateJob_Call) RunAndReturn(run func(ctx context.Context, secret string, jobID string, steps []ports.StepUpdate, annotations []domain.CIAnnotation) error) *RunnerService_UpdateJob_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UploadSummary provides a mock function for the type RunnerService
+func (_mock *RunnerService) UploadSummary(ctx context.Context, secret string, jobID string, step int32, markdown string) error {
+	ret := _mock.Called(ctx, secret, jobID, step, markdown)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UploadSummary")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int32, string) error); ok {
+		r0 = returnFunc(ctx, secret, jobID, step, markdown)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// RunnerService_UploadSummary_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UploadSummary'
+type RunnerService_UploadSummary_Call struct {
+	*mock.Call
+}
+
+// UploadSummary is a helper method to define mock.On call
+//   - ctx context.Context
+//   - secret string
+//   - jobID string
+//   - step int32
+//   - markdown string
+func (_e *RunnerService_Expecter) UploadSummary(ctx any, secret any, jobID any, step any, markdown any) *RunnerService_UploadSummary_Call {
+	return &RunnerService_UploadSummary_Call{Call: _e.mock.On("UploadSummary", ctx, secret, jobID, step, markdown)}
+}
+
+func (_c *RunnerService_UploadSummary_Call) Run(run func(ctx context.Context, secret string, jobID string, step int32, markdown string)) *RunnerService_UploadSummary_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 int32
+		if args[3] != nil {
+			arg3 = args[3].(int32)
+		}
+		var arg4 string
+		if args[4] != nil {
+			arg4 = args[4].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *RunnerService_UploadSummary_Call) Return(err error) *RunnerService_UploadSummary_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *RunnerService_UploadSummary_Call) RunAndReturn(run func(ctx context.Context, secret string, jobID string, step int32, markdown string) error) *RunnerService_UploadSummary_Call {
 	_c.Call.Return(run)
 	return _c
 }

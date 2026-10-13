@@ -149,13 +149,26 @@ func runToPB(r domain.CIRun) *pb.Run {
 	}
 }
 
+// stepOutcome is Step.outcome: unset until the step is completed, and for a
+// step stored without one (read as its conclusion) it is the conclusion, which
+// is what the contract says UNSPECIFIED means.
+func stepOutcome(s domain.CIStep) domain.CIConclusion {
+	if s.State != domain.CIStepCompleted {
+		return domain.CINoConclusion
+	}
+	if s.Outcome == domain.CINoConclusion {
+		return s.Conclusion
+	}
+	return s.Outcome
+}
+
 func stepsToPB(steps []domain.CIStep, lines int64) []*pb.Step {
 	ranges := domain.StepRanges(steps, lines)
 	out := make([]*pb.Step, 0, len(steps))
 	for i, s := range steps {
 		out = append(out, &pb.Step{
 			Number: s.Number, Name: s.Name, State: stepStateToPB(s.State), Conclusion: conclusionToPB(s.Conclusion),
-			StartedAt: timestamp(s.StartedAt), CompletedAt: timestamp(s.CompletedAt),
+			Outcome: conclusionToPB(stepOutcome(s)), StartedAt: timestamp(s.StartedAt), CompletedAt: timestamp(s.CompletedAt),
 			LogStart: ranges[i].Start, LogEnd: ranges[i].End,
 		})
 	}
@@ -231,8 +244,12 @@ func stepUpdatesFromPB(steps []*pb.StepUpdate) ([]ports.StepUpdate, error) {
 		if err != nil {
 			return nil, err
 		}
+		outcome, err := conclusionFromPB(s.GetOutcome())
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, ports.StepUpdate{
-			Number: s.GetNumber(), Name: s.GetName(), State: stepStateFromPB(s.GetState()), Conclusion: concl,
+			Number: s.GetNumber(), Name: s.GetName(), State: stepStateFromPB(s.GetState()), Conclusion: concl, Outcome: outcome,
 			StartedAt: goTime(s.GetStartedAt()), CompletedAt: goTime(s.GetCompletedAt()),
 		})
 	}
@@ -249,4 +266,52 @@ func runEventToPB(ev domain.RunUpdated) *pb.Event_RunUpdated {
 
 func jobEventToPB(ev domain.JobUpdated) *pb.Event_JobUpdated {
 	return &pb.Event_JobUpdated{JobUpdated: &pb.JobUpdated{Job: jobToPB(ev.Job, ev.Lines)}}
+}
+
+var annotationLevelPairs = []struct {
+	d domain.AnnotationLevel
+	p pb.AnnotationLevel
+}{
+	{domain.AnnotationNotice, pb.AnnotationLevel_ANNOTATION_LEVEL_NOTICE},
+	{domain.AnnotationWarning, pb.AnnotationLevel_ANNOTATION_LEVEL_WARNING},
+	{domain.AnnotationFailure, pb.AnnotationLevel_ANNOTATION_LEVEL_FAILURE},
+}
+
+func annotationLevelToPB(l domain.AnnotationLevel) pb.AnnotationLevel {
+	for _, e := range annotationLevelPairs {
+		if e.d == l {
+			return e.p
+		}
+	}
+	return pb.AnnotationLevel_ANNOTATION_LEVEL_UNSPECIFIED
+}
+
+func annotationToPB(a domain.CIAnnotation) *pb.Annotation {
+	return &pb.Annotation{
+		Level: annotationLevelToPB(a.Level), Title: a.Title, Message: a.Message, File: a.File,
+		StartLine: a.StartLine, EndLine: a.EndLine, StartColumn: a.StartColumn, EndColumn: a.EndColumn, StepNumber: a.Step,
+	}
+}
+
+// annotationsFromPB maps the annotations of a request; an unset or unknown
+// level is invalid_argument. The other rules are the use case's.
+func annotationsFromPB(anns []*pb.Annotation) ([]domain.CIAnnotation, error) {
+	out := make([]domain.CIAnnotation, 0, len(anns))
+	for i, a := range anns {
+		var level domain.AnnotationLevel
+		for _, e := range annotationLevelPairs {
+			if e.p == a.GetLevel() {
+				level = e.d
+			}
+		}
+		if level == "" {
+			return nil, fmt.Errorf("%w: annotation %d has no level", domain.ErrInvalid, i)
+		}
+		out = append(out, domain.CIAnnotation{
+			Level: level, Title: a.GetTitle(), Message: a.GetMessage(), File: a.GetFile(),
+			StartLine: a.GetStartLine(), EndLine: a.GetEndLine(), StartColumn: a.GetStartColumn(), EndColumn: a.GetEndColumn(),
+			Step: a.GetStepNumber(),
+		})
+	}
+	return out, nil
 }

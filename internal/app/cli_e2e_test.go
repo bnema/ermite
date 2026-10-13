@@ -326,7 +326,7 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	ver := decode[versionOut](t, res.stdout)
 	assert.Equal(t, c.url, ver.Server.URL)
 	assert.NotEmpty(t, ver.Server.Version)
-	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions"}, ver.Server.Features)
+	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries"}, ver.Server.Features)
 	assert.Equal(t, []string{"passkeys"}, ver.Server.MissingFeatures)
 	stdout, stderr, code = c.bin(t, secret, "version")
 	require.Equal(t, 0, code, stderr)
