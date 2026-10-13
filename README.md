@@ -93,6 +93,8 @@ git clone http://git.example.com/<repo>.git          # public repositories need 
 git push http://u:<token>@git.example.com/<repo>.git main
 ```
 
+The URL GitHub-shaped clients use, `http://git.example.com/<owner>/<repo>` (`<owner>` is `ERMITE_OWNER`, with or without `.git`), is served too; any other owner is a 404. The token goes as the password of Basic with any user (`x-access-token`), or as `Authorization: Bearer <token>` or `token <token>`.
+
 Use the admin token (`ERMITE_ADMIN_TOKEN`) or a stored token as the password; the username is ignored. Store it in a Git credential helper rather than in the URL. Pushing to a new name creates a private repository. Repository names are lowercase, `[a-z0-9._-]`. TLS is terminated by your proxy; list its network in `ERMITE_TRUSTED_PROXIES` so that failed-login limits see the real client address (`X-Forwarded-For`).
 
 ## Branch-limited tokens
@@ -115,6 +117,10 @@ A merge request proposes a branch for its target (the default branch unless set)
 ermite runs the `.github/workflows/*.yml` workflows of a repository on `push` (a branch or a tag, and the merge of a merge request) and shows each job as a check on the commit, the branch list and the merge request. CI is on once a runner is registered; there is no switch. Before that a push makes no run and no check.
 
 Runs execute on [ermite-runner](https://git.bnema.dev/bnema/ermite-runner) hosts, which call ermite over its API. Create a token for the runner host with `ermite token create <label> --preset runner` (the `runner:register` scope, which also gives access to the code and the secrets of every repository: give it only to runners you operate), then register the runner with it. `ermite runner list` shows the runners and whether they are online; `ermite runner remove <id>` stops one. A job goes to a runner that has every label of its `runs-on`; a job no runner takes within 24 hours fails.
+
+Every job gets a **repository token** (`github.token`, `ermitegh_…`) when a runner takes it: it reads the repository of the run, even a private one, over Git and the REST subset below, writes nothing, and ends with the job (completion, cancel, lost runner) or five minutes after the job's deadline. It is not a stored token: `ermite token list` never shows it and no scope manages it. The runner also gets read tokens for the repositories of the actions a job uses from this server (an action of `ERMITE_OWNER/<repo>` on ermite wins over the same name on github.com).
+
+The Actions that run here call a small part of GitHub's REST API, served at `github.api_url` (`/-/github/api`): `GET /repos/{owner}/{repo}`, `/repos/{owner}/{repo}/hash-algorithm` and `/repos/{owner}/{repo}/tarball[/{ref}]` (streamed with 200, not redirected). Any other path is GitHub's `404 {"message":"Not Found",…}`, so an action that needs more fails as on a GitHub instance without that feature.
 
 `ermite run list|view|watch|cancel|rerun` and the `Actions` tab of a repository read and control the runs; `cancel` and `rerun` need the `ci:write` scope. With `failing_checks_block` on (the default, `ermite repo edit --failing-checks-block=false`), a merge is refused while a check of the head failed or has not finished. A workflow that uses a feature ermite does not support yet (reusable workflows, `environment:`, `concurrency`) fails with `not supported yet: <feature>`, never silently. Logs are files under `$ERMITE_DATA_DIR/ci/logs`.
 
