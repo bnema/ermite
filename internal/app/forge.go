@@ -199,6 +199,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Store: store.CI(), Logs: cilogs.New(cilogs.Dir(cfg.DataDir)), Meta: store, Repos: git, Reader: reader,
 		Git: git, Diff: git, Bus: f.Bus, Clock: clock, Auth: f.Auth,
 		Owner: cfg.Owner, PublicURL: cfg.PublicURL, Retention: cfg.CIRetention,
+		PollTimeout: cfg.CIPollTimeout,
 	}
 	if opts.ci != nil {
 		opts.ci(&ciCfg)

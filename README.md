@@ -29,6 +29,7 @@ ermite serve
 | `ERMITE_COMMITTER_EMAIL` | `ermite@<public host>` | committer email of squash merges |
 | `ERMITE_OWNER` | `owner` | owner login that CI shows in `github.repository` (`<owner>/<repo>`) and `github.repository_owner`; follows the rules of repository names |
 | `ERMITE_CI_LOG_RETENTION` | `90d` | how long CI runs, jobs, checks and logs are kept: `Nd` (days) or a Go duration such as `720h`, at least one hour |
+| `ERMITE_CI_POLL_TIMEOUT` | `50s` | how long the server holds a runner's `FetchJob` call when no job is queued, from `1s` to `55s`; set it below the response timeout of a reverse proxy in front of ermite (Gordon cuts a response that has no headers after 30 s, so use `25s` behind it) |
 
 `ermite version` prints the version (and the server's when a server URL is configured, see Remote CLI).
 
