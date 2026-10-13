@@ -188,7 +188,7 @@ func TestPasskeyEndToEnd(t *testing.T) {
 	assert.Equal(t, base64.RawURLEncoding.EncodeToString(p.cred.ID), listed[0].ID)
 	assert.NotNil(t, listed[0].LastUsedAt, "the sign-in was recorded")
 
-	rm := p.cli(t, adminToken, "web", "passkey", "remove", listed[0].ID).ok(t)
+	rm := p.cli(t, adminToken, "web", "passkey", "remove", "--", listed[0].ID).ok(t)
 	assert.Contains(t, rm.stderr, "every browser is signed out")
 	for _, tok := range []string{token, ck.Value} {
 		assert.Equal(t, http.StatusNotFound, p.b.get("/-/passkeys", as(tok)).status, "the epoch moved: both sessions are gone")
@@ -197,7 +197,7 @@ func TestPasskeyEndToEnd(t *testing.T) {
 	res = p.login()
 	assert.Equal(t, http.StatusUnauthorized, res.status, res.body)
 	assert.Empty(t, res.hdr.Values("Set-Cookie"))
-	again := p.cli(t, adminToken, "web", "passkey", "remove", listed[0].ID)
+	again := p.cli(t, adminToken, "web", "passkey", "remove", "--", listed[0].ID)
 	require.Error(t, again.err)
 	assert.Contains(t, again.err.Error(), "not found")
 }
