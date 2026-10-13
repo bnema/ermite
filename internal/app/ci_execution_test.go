@@ -944,13 +944,6 @@ func TestResolveActionsOfAnotherRepositoryNeedsAPusherWhoReadsIt(t *testing.T) {
 		require.Empty(t, got[0].GetError())
 		assert.Equal(t, pb.ActionSource_ACTION_SOURCE_ERMITE, got[0].GetSource())
 	})
-
-	t.Run("a merge made by the owner's session", func(t *testing.T) {
-		// The runs of merged requests record the owner: a principal that reads
-		// everything.
-		p := domain.PusherOf(domain.Owner())
-		assert.Equal(t, domain.CIPusherOwner, p.Kind)
-	})
 }
 
 // GO-001b: the archive token is bound to (repository, commit). Only the archive
@@ -1307,5 +1300,242 @@ func TestResolveActionsBoundsRemoteWork(t *testing.T) {
 		ok, err := c.resolveErr(runner, job, "a/b@"+shaMain)
 		require.NoError(t, err)
 		assert.Empty(t, ok[0].GetError())
+	})
+}
+
+// mergeWorkflow runs on main only, so that the branch that carries it runs
+// nothing until it is merged.
+const mergeWorkflow = `on:
+  push:
+    branches: [main]
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: owner/private-action@v1
+`
+
+// GO-R1: a merge runs the workflow with the rights of the principal that
+// merged, not the owner's: a token limited to a repository that merges a
+// workflow using a private action of another repository is told "repository not
+// found", while the owner merging the same workflow gets the action. The actor
+// shown on the run stays the owner, as GitHub shows it.
+func TestMergeResolvesActionsWithTheRightsOfTheMerger(t *testing.T) {
+	merge := func(c *ciHarness, as func(mr int64, head string) error) (*pb.Job, *pb.Run) {
+		c.t.Helper()
+		runner := c.registerRunner("alpha", "ubuntu-latest")
+		c.push("main", map[string]string{"README": "x\n"}, "")
+		feat := c.push("feat", map[string]string{".github/workflows/m.yml": mergeWorkflow}, "")
+		mr, err := c.root.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "CI", SourceBranch: "feat"}))
+		require.NoError(c.t, err)
+		require.Empty(c.t, c.runs(), "nothing runs before the merge")
+		require.NoError(c.t, as(mr.Msg.GetMergeRequest().GetNumber(), feat))
+		job := runner.await()
+		c.heartbeat(runner, job)
+		return job, c.runs()[0]
+	}
+	setup := func(t *testing.T) *ciHarness {
+		c := newExecHarness(t, newFakeRemote(t), nil)
+		c.seed("private-action", domain.VisibilityPrivate, "action.yml")
+		c.mustGit(c.repoDir("private-action"), "tag", "v1")
+		return c
+	}
+	asToken := func(c *ciHarness, secret string) func(int64, string) error {
+		return func(n int64, head string) error {
+			_, err := c.api(secret).mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: head}))
+			return err
+		}
+	}
+
+	t.Run("a token limited to the repository", func(t *testing.T) {
+		c := setup(t)
+		secret, _ := c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite, domain.ScopeMRMerge}, nil, "proj")
+		job, run := merge(c, asToken(c, secret))
+		assert.Equal(t, "owner", run.GetActor(), "GitHub shows the owner as the actor of a merge")
+		got := c.resolve(&fakeRunner{c: c, api: c.api(job.GetJobToken())}, job, "owner/private-action@v1")
+		assert.Equal(t, "Unable to resolve action `owner/private-action@v1`, repository not found", got[0].GetError())
+		assert.Empty(t, got[0].GetToken())
+	})
+
+	t.Run("a token that lists both repositories", func(t *testing.T) {
+		c := setup(t)
+		secret, _ := c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite, domain.ScopeMRMerge}, nil, "proj", "private-action")
+		job, _ := merge(c, asToken(c, secret))
+		got := c.resolve(&fakeRunner{c: c, api: c.api(job.GetJobToken())}, job, "owner/private-action@v1")
+		require.Empty(t, got[0].GetError())
+		assert.Equal(t, pb.ActionSource_ACTION_SOURCE_ERMITE, got[0].GetSource())
+	})
+
+	t.Run("the owner", func(t *testing.T) {
+		c := setup(t)
+		job, run := merge(c, func(n int64, head string) error {
+			id, err := domain.ParseObjectID(head)
+			require.NoError(t, err)
+			_, err = c.forge.MergeRequests.Merge(c.ctx, domain.Owner(), c.h("proj"), n, ports.MergeParams{HeadID: id})
+			return err
+		})
+		assert.Equal(t, "owner", run.GetActor())
+		got := c.resolve(&fakeRunner{c: c, api: c.api(job.GetJobToken())}, job, "owner/private-action@v1")
+		require.Empty(t, got[0].GetError())
+		assert.Equal(t, pb.ActionSource_ACTION_SOURCE_ERMITE, got[0].GetSource())
+		assert.True(t, domain.IsRepoToken(got[0].GetToken()))
+	})
+
+	t.Run("the admin token", func(t *testing.T) {
+		c := setup(t)
+		job, _ := merge(c, asToken(c, adminToken))
+		got := c.resolve(&fakeRunner{c: c, api: c.api(job.GetJobToken())}, job, "owner/private-action@v1")
+		require.Empty(t, got[0].GetError())
+	})
+}
+
+// GO-R4: a repository of this server that the pusher cannot read never falls
+// through to github.com under the same name, at the first resolution and when
+// the answer comes from a stored one; only a repository that does not exist
+// here is github.com's.
+func TestAnActionRepositoryOfTheServerNeverFallsThroughToGitHub(t *testing.T) {
+	const ref = "owner/b@v1"
+	notFound := "Unable to resolve action `owner/b@v1`, repository not found"
+	limited := func(c *ciHarness) string {
+		s, _ := c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, nil, "proj")
+		return s
+	}
+	setup := func(t *testing.T) (*ciHarness, *fakeRemote, *fakeRunner) {
+		remote := newFakeRemote(t)
+		remote.set("owner/b", ptrRef("refs/tags/v1", shaOther)) // the repository of the same name on github.com
+		c := newExecHarness(t, remote, nil)
+		return c, remote, c.registerRunner("alpha", "ubuntu-latest")
+	}
+	// run pushes the workflow (first) or a new commit as the secret and returns the
+	// job the push made.
+	run := func(c *ciHarness, runner *fakeRunner, secret string, files map[string]string) *pb.Job {
+		c.t.Helper()
+		c.pushAs(secret, "main", files)
+		job := runner.await()
+		c.heartbeat(runner, job)
+		return job
+	}
+	resolve := func(c *ciHarness, job *pb.Job) *pb.ResolvedAction {
+		return c.resolve(&fakeRunner{c: c, api: c.api(job.GetJobToken())}, job, ref)[0]
+	}
+
+	t.Run("first resolution", func(t *testing.T) {
+		c, remote, runner := setup(t)
+		c.seed("b", domain.VisibilityPrivate, "action.yml")
+		c.mustGit(c.repoDir("b"), "tag", "v1")
+		job := run(c, runner, limited(c), map[string]string{oneJobWorkflow: oneJobYAML()})
+		got := resolve(c, job)
+		assert.Equal(t, notFound, got.GetError(), "the same text as for a repository that is not there")
+		assert.Empty(t, got.GetResolvedSha())
+		assert.Empty(t, got.GetTarballUrl())
+		assert.Empty(t, got.GetToken())
+		assert.False(t, remote.asked("owner/b"), "github.com is never asked about a name the server holds")
+		// And not the second time, from the same attempt.
+		assert.Equal(t, notFound, resolve(c, job).GetError())
+		assert.False(t, remote.asked("owner/b"))
+	})
+
+	t.Run("a pusher who reads it, then one who does not, on the same ref", func(t *testing.T) {
+		c, remote, runner := setup(t)
+		c.seed("b", domain.VisibilityPrivate, "action.yml")
+		c.mustGit(c.repoDir("b"), "tag", "v1")
+		bSha := c.bareGit("b", "rev-parse", "HEAD")
+
+		first := run(c, runner, adminToken, map[string]string{oneJobWorkflow: oneJobYAML()})
+		got := resolve(c, first)
+		require.Empty(t, got.GetError())
+		assert.Equal(t, pb.ActionSource_ACTION_SOURCE_ERMITE, got.GetSource())
+		assert.Equal(t, bSha, got.GetResolvedSha())
+
+		second := run(c, runner, limited(c), map[string]string{"two.txt": "2\n"})
+		got = resolve(c, second)
+		assert.Equal(t, notFound, got.GetError(), "another run, another pusher: its own answer")
+		assert.Empty(t, got.GetToken())
+		assert.False(t, remote.asked("owner/b"))
+		// The first run still resolves.
+		assert.Equal(t, bSha, resolve(c, first).GetResolvedSha())
+	})
+
+	t.Run("a pusher who does not read it, then one who does, on the same ref", func(t *testing.T) {
+		c, remote, runner := setup(t)
+		c.seed("b", domain.VisibilityPrivate, "action.yml")
+		c.mustGit(c.repoDir("b"), "tag", "v1")
+		bSha := c.bareGit("b", "rev-parse", "HEAD")
+
+		first := run(c, runner, limited(c), map[string]string{oneJobWorkflow: oneJobYAML()})
+		assert.Equal(t, notFound, resolve(c, first).GetError())
+
+		second := run(c, runner, adminToken, map[string]string{"two.txt": "2\n"})
+		got := resolve(c, second)
+		require.Empty(t, got.GetError(), "the refusal of the first run is not kept for the second")
+		assert.Equal(t, pb.ActionSource_ACTION_SOURCE_ERMITE, got.GetSource())
+		assert.Equal(t, bSha, got.GetResolvedSha())
+		assert.NotEqual(t, strings.ToLower(shaOther), got.GetResolvedSha(), "not github.com's commit")
+		assert.False(t, remote.asked("owner/b"))
+		assert.Equal(t, notFound, resolve(c, first).GetError(), "and the first run is still refused")
+	})
+
+	t.Run("a stored resolution from github.com, then the repository appears here", func(t *testing.T) {
+		c, remote, runner := setup(t)
+		job := run(c, runner, limited(c), map[string]string{oneJobWorkflow: oneJobYAML()})
+		before := resolve(c, job)
+		require.Empty(t, before.GetError(), "no such repository here: github.com answers")
+		assert.Equal(t, pb.ActionSource_ACTION_SOURCE_GITHUB, before.GetSource())
+		assert.Equal(t, strings.ToLower(shaOther), before.GetResolvedSha())
+		require.Equal(t, 1, remote.count())
+
+		// The name is taken on the server, privately.
+		c.seed("b", domain.VisibilityPrivate, "action.yml")
+		after := resolve(c, job)
+		assert.Equal(t, notFound, after.GetError(), "the stored github.com answer is not served for a repository the pusher may not read")
+		assert.Empty(t, after.GetResolvedSha())
+		assert.Empty(t, after.GetTarballUrl())
+		assert.Equal(t, 1, remote.count(), "and github.com was not asked again")
+	})
+
+	t.Run("a stored resolution from github.com, a pusher who reads the new repository", func(t *testing.T) {
+		c, _, runner := setup(t)
+		job := run(c, runner, adminToken, map[string]string{oneJobWorkflow: oneJobYAML()})
+		before := resolve(c, job)
+		require.Equal(t, pb.ActionSource_ACTION_SOURCE_GITHUB, before.GetSource())
+		c.seed("b", domain.VisibilityPrivate, "action.yml")
+		after := resolve(c, job)
+		require.Empty(t, after.GetError())
+		assert.Equal(t, before.GetResolvedSha(), after.GetResolvedSha(), "stable for the attempt")
+		assert.Empty(t, after.GetToken(), "no archive token for a commit of github.com")
+	})
+
+	t.Run("a stored resolution from the server, then the repository goes", func(t *testing.T) {
+		c, remote, runner := setup(t)
+		c.seed("b", domain.VisibilityPrivate, "action.yml")
+		c.mustGit(c.repoDir("b"), "tag", "v1")
+		job := run(c, runner, adminToken, map[string]string{oneJobWorkflow: oneJobYAML()})
+		require.Empty(t, resolve(c, job).GetError())
+		require.NoError(t, c.forge.Repos.Delete(c.ctx, domain.Root(), c.h("b")))
+		got := resolve(c, job)
+		assert.Equal(t, notFound, got.GetError(), "there is nothing left to serve the stored commit from")
+		assert.Empty(t, got.GetToken())
+		assert.False(t, remote.asked("owner/b"))
+	})
+
+	t.Run("a repository that does not exist here is github.com's", func(t *testing.T) {
+		c, remote, runner := setup(t)
+		job := run(c, runner, limited(c), map[string]string{oneJobWorkflow: oneJobYAML()})
+		got := resolve(c, job)
+		require.Empty(t, got.GetError())
+		assert.Equal(t, pb.ActionSource_ACTION_SOURCE_GITHUB, got.GetSource())
+		assert.True(t, remote.asked("owner/b"))
+	})
+
+	t.Run("the owner's case does not open a way around", func(t *testing.T) {
+		c, remote, runner := setup(t)
+		c.seed("b", domain.VisibilityPrivate, "action.yml")
+		c.mustGit(c.repoDir("b"), "tag", "v1")
+		job := run(c, runner, limited(c), map[string]string{oneJobWorkflow: oneJobYAML()})
+		for _, u := range []string{"OWNER/b@v1", "Owner/B@v1", "owner/B@v1"} {
+			got := c.resolve(&fakeRunner{c: c, api: c.api(job.GetJobToken())}, job, u)[0]
+			assert.Equal(t, "Unable to resolve action `"+strings.TrimSuffix(u, "@v1")+"@v1`, repository not found", got.GetError(), u)
+		}
+		assert.Zero(t, remote.count())
 	})
 }

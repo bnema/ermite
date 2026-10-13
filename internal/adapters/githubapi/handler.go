@@ -43,14 +43,20 @@ var Patterns = []string{Prefix + "/"}
 // notFoundBody is GitHub's body for an unknown endpoint or repository.
 const notFoundBody = `{"message":"Not Found","documentation_url":"https://docs.github.com/rest"}`
 
+// retryAfter is the Retry-After, in seconds, of an answer that asks the client to
+// come back (429 and 503).
+const retryAfter = "5"
+
 // Bounds on the archives written at once.
 const (
 	// DefaultMaxArchives is the archives written at once on the server.
-	DefaultMaxArchives = 8
+	DefaultMaxArchives = 16
 	// DefaultMaxArchivesPerClient is the archives written at once for one client
-	// (see clientlimit.Key): a runner downloads the actions of a job one by one,
-	// so a few are plenty, and one client cannot take every slot.
-	DefaultMaxArchivesPerClient = 3
+	// (see clientlimit.Key). A runner host runs several jobs at once, each
+	// downloading its actions, and all come from one address; eight is half of
+	// the server's slots, so one host cannot take them all. Beyond it the answer
+	// is 429 with Retry-After: the runner waits and tries again.
+	DefaultMaxArchivesPerClient = 8
 	// DefaultWriteIdleTimeout is how long a write of the archive may wait for the
 	// client. The deadline moves forward with every chunk: an archive is bounded
 	// by its size, not by its duration, but a client that stops reading is cut.
@@ -222,7 +228,7 @@ func (h *Handler) acquire(w http.ResponseWriter, client string) (release func(),
 	h.mu.Lock()
 	if h.clients[client] >= h.perCli {
 		h.mu.Unlock()
-		w.Header().Set("Retry-After", "5")
+		w.Header().Set("Retry-After", retryAfter)
 		jsonError(w, http.StatusTooManyRequests, "Too many archives in progress")
 		return nil, false
 	}
@@ -240,7 +246,7 @@ func (h *Handler) acquire(w http.ResponseWriter, client string) (release func(),
 		return func() { <-h.archives; releaseClient() }, true
 	default:
 		releaseClient()
-		w.Header().Set("Retry-After", "5")
+		w.Header().Set("Retry-After", retryAfter)
 		jsonError(w, http.StatusServiceUnavailable, "Server busy")
 		return nil, false
 	}
@@ -307,7 +313,7 @@ func (h *Handler) fail(ctx context.Context, w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrNotFound), domain.IsInvalid(err):
 		notFound(w)
 	case errors.Is(err, domain.ErrResourceExhausted):
-		w.Header().Set("Retry-After", "5")
+		w.Header().Set("Retry-After", retryAfter)
 		jsonError(w, http.StatusServiceUnavailable, "Server busy")
 	case errors.Is(err, context.Canceled):
 	default:
