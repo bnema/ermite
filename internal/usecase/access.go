@@ -20,6 +20,12 @@ func canRead(p domain.Principal, repo domain.Repo) bool {
 // canReadAs is canRead for a repository known by its name and visibility only,
 // such as one that no longer exists.
 func canReadAs(p domain.Principal, name domain.RepoName, vis domain.Visibility) bool {
+	if _, _, archive := p.ArchiveGrant(); archive {
+		// The holder of an archive token downloads one commit through the
+		// archive endpoint, which checks its grant; everywhere else it reads
+		// nothing, not even a public repository (domain.RepoTokenPrincipal).
+		return false
+	}
 	if vis == domain.VisibilityPublic {
 		return true
 	}

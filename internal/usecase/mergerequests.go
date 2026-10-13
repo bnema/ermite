@@ -814,8 +814,9 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,
 	})
 	if m.ci != nil {
-		// GitHub runs the "push" workflows of a merge, with the owner as pusher.
-		m.ci.OnPush(ctx, name, updates[:1], domain.Owner())
+		// GitHub runs the "push" workflows of a merge, with the owner as actor;
+		// the run is trusted with what the merging principal may read.
+		m.ci.OnMerge(ctx, name, updates[:1], p)
 	}
 	return mr, deleted, nil
 }

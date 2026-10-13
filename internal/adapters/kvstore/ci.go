@@ -37,6 +37,8 @@ import (
 //	ciready/<ready_at:020d>/<job key>    job waiting for a runner
 //	ciactive/<job key>                   job assigned or running
 //	jobtoken/<hash>                      job token (value: job key)
+//
+// The job repository tokens and the action resolutions are in ci_token.go.
 const (
 	runPrefix     = "run/"
 	runSrcPrefix  = "runsrc/"
@@ -507,6 +509,7 @@ func (c *CI) stageRecords(ctx context.Context, b *kv.Batch, w ports.CIWrite) (gu
 			guarded[j.Repo] = true
 		}
 	}
+	c.stageRepoTokens(ctx, b, w, guarded)
 	// Checks are derived from the jobs, written in the same batch and under
 	// the lock of their run: they are upserted without a precondition.
 	for _, ck := range w.Checks {
@@ -587,6 +590,7 @@ func (c *CI) CreateRun(ctx context.Context, repo domain.RepoName, workflowPath s
 		}
 		src := mustMarshal(&storagepb.CIRunSource{
 			RunId: draft.Run.ID, Repo: repo.String(), WorkflowYaml: draft.Source.WorkflowYAML, GithubJson: draft.Source.GithubJSON,
+			PusherKind: string(draft.Source.Pusher.Kind), PusherTokenId: draft.Source.Pusher.TokenID,
 		})
 		b.RequireAbsent(runSrcKey(draft.Run.ID))
 		b.Put(runSrcKey(draft.Run.ID), src)
@@ -639,7 +643,10 @@ func (c *CI) GetRunSource(ctx context.Context, runID int64) (domain.CIRunSource,
 	if err != nil {
 		return domain.CIRunSource{}, fmt.Errorf("decode run source: %w", err)
 	}
-	return domain.CIRunSource{RunID: pb.GetRunId(), Repo: repo, WorkflowYAML: pb.GetWorkflowYaml(), GithubJSON: pb.GetGithubJson()}, nil
+	return domain.CIRunSource{
+		RunID: pb.GetRunId(), Repo: repo, WorkflowYAML: pb.GetWorkflowYaml(), GithubJSON: pb.GetGithubJson(),
+		Pusher: domain.CIPusher{Kind: domain.CIPusherKind(pb.GetPusherKind()), TokenID: pb.GetPusherTokenId()},
+	}, nil
 }
 
 // ListRuns returns the runs of the repository, newest first.
@@ -828,6 +835,7 @@ func (c *CI) ListChecks(ctx context.Context, repo domain.RepoName, sha string, l
 // runKeys lists every key of a run except its record: source, jobs, indexes.
 func (c *CI) runKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName, runID int64) [][]byte {
 	keys := [][]byte{runKey(repo, runID), runSrcKey(runID), openKey(runID)}
+	keys = append(keys, repoTokenKeys(ctx, snap, runID)...)
 	for key, item := range snap.Prefix(ctx, []byte(jobsPrefix(runID))) {
 		keys = append(keys, slices.Clone(key))
 		if j, err := decodeJob(item); err == nil {
@@ -852,6 +860,7 @@ func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]by
 		}
 		keys = append(keys, slices.Clone(key))
 	}
+	keys = append(keys, repoReaderKeys(ctx, snap, repo)...)
 	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/"} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))

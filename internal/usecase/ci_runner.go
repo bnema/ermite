@@ -207,16 +207,16 @@ func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID stri
 		if j == nil || j.Phase != domain.CIPhaseAssigned || j.TokenHash != rec.hash || j.RunnerID != runner.ID {
 			return errNoJob
 		}
-		out = c.runnerJob(rs, *j, rec.token)
+		out = c.runnerJob(rs, *j, rec.token, rec.ghToken)
 		return nil
 	})
 	return out, err == nil && out != nil
 }
 
 // runnerJob is the job as the runner gets it.
-func (c *CI) runnerJob(rs *runState, j domain.CIJob, token string) *ports.RunnerJob {
+func (c *CI) runnerJob(rs *runState, j domain.CIJob, token, ghToken string) *ports.RunnerJob {
 	return &ports.RunnerJob{
-		Job: j, Token: token, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
+		Job: j, Token: token, GithubToken: ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
 		WorkflowPath: rs.run.WorkflowPath, WorkflowYAML: rs.src.WorkflowYAML,
 	}
 }
@@ -241,6 +241,7 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 				return errNoJob
 			}
 			token := newToken(domain.JobTokenPrefix)
+			ghToken := rs.issueRepoToken(j)
 			j.Phase, j.AssignedAt = domain.CIPhaseAssigned, c.now()
 			j.TokenHash, j.TokenValidUntil = domain.HashTokenSecret(token), time.Time{}
 			j.RunnerID, j.RunnerName, j.Isolation = runner.ID, runner.Name, runner.Isolation
@@ -248,10 +249,10 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 			if err := rs.flush(ctx); err != nil {
 				return err
 			}
-			out = c.runnerJob(rs, *j, token)
+			out = c.runnerJob(rs, *j, token, ghToken)
 			if pollID != "" {
 				c.mu.Lock()
-				c.polls[runner.ID] = pollRecord{pollID: pollID, ref: jobRef(*j), token: token, hash: j.TokenHash}
+				c.polls[runner.ID] = pollRecord{pollID: pollID, ref: jobRef(*j), token: token, ghToken: ghToken, hash: j.TokenHash}
 				c.mu.Unlock()
 			}
 			return nil

@@ -17,6 +17,10 @@ const (
 	kindRoot
 	kindToken
 	kindOwner
+	// kindArchive is the holder of the archive token of an action: it holds no
+	// scope at all, only a grant to download one commit of one repository (see
+	// ArchivePrincipal).
+	kindArchive
 )
 
 // Principal is the authenticated identity of a caller: nobody, the root
@@ -31,6 +35,9 @@ type Principal struct {
 	branchPrefixes []string
 	expiresAt      time.Time
 	label          string
+	// archiveRepo and archiveSha are the grant of a kindArchive principal.
+	archiveRepo RepoName
+	archiveSha  string
 }
 
 // Anonymous returns the principal of a caller without credentials.
@@ -67,6 +74,8 @@ func (p Principal) Label() string {
 		return "owner"
 	case kindToken:
 		return "token"
+	case kindArchive:
+		return "archive"
 	}
 	return "anonymous"
 }
@@ -187,3 +196,14 @@ func (p Principal) Allows(s Scope, repo RepoName) bool {
 // TokenLabel returns the label of the stored token, or "" for other
 // principals.
 func (p Principal) TokenLabel() string { return p.label }
+
+// ArchiveGrant returns the one commit of one repository that p may download as
+// an archive, and ok true, when p is the holder of an archive token. Only the
+// archive endpoint of the REST subset reads it: for everything else an archive
+// principal holds no scope, so it reads what an anonymous caller reads.
+func (p Principal) ArchiveGrant() (repo RepoName, sha string, ok bool) {
+	if p.kind != kindArchive {
+		return RepoName{}, "", false
+	}
+	return p.archiveRepo, p.archiveSha, true
+}

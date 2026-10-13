@@ -668,3 +668,75 @@ func TestTokensCreateBranchPrefixes(t *testing.T) {
 		assert.Equal(t, "mine", got[0].ID)
 	})
 }
+
+// The job repository tokens of CI: Authenticate resolves them to a principal
+// shaped like a stored token, and only while they exist and have not expired.
+func TestAuthRepoTokens(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	secret := domain.RepoTokenPrefix + strings.Repeat("a", domain.CITokenRandomLen)
+	h := domain.HashTokenSecret(secret)
+	repo := name(t, "proj")
+	tok := domain.CIRepoToken{ID: "id1", Hash: h, Repo: repo, ExpiresAt: now.Add(time.Minute)}
+
+	t.Run("a live token reads its repository", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t)
+		rt := mocks.NewCIRepoTokenStore(t)
+		rt.EXPECT().FindRepoTokenByHash(ctx, h).Return(tok, nil)
+		f.auth.WithRepoTokens(rt)
+		p, err := f.auth.Authenticate(ctx, secret)
+		require.NoError(t, err)
+		assert.True(t, p.Allows(domain.ScopeRepoRead, repo))
+		assert.False(t, p.Allows(domain.ScopeRepoWrite, repo))
+		assert.False(t, p.Allows(domain.ScopeTokenAdmin, repo))
+	})
+	t.Run("the stored tokens are never asked", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t) // its TokenStore mock fails on any call
+		rt := mocks.NewCIRepoTokenStore(t)
+		rt.EXPECT().FindRepoTokenByHash(ctx, h).Return(domain.CIRepoToken{}, domain.ErrNotFound)
+		f.auth.WithRepoTokens(rt)
+		_, err := f.auth.Authenticate(ctx, secret)
+		assert.ErrorIs(t, err, domain.ErrUnauthenticated, "a revoked or unknown token")
+	})
+	t.Run("expired", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t)
+		rt := mocks.NewCIRepoTokenStore(t)
+		old := tok
+		old.ExpiresAt = now
+		rt.EXPECT().FindRepoTokenByHash(ctx, h).Return(old, nil)
+		f.auth.WithRepoTokens(rt)
+		_, err := f.auth.Authenticate(ctx, secret)
+		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+	})
+	t.Run("a store failure is not unauthenticated", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t)
+		rt := mocks.NewCIRepoTokenStore(t)
+		boom := errors.New("disk")
+		rt.EXPECT().FindRepoTokenByHash(ctx, h).Return(domain.CIRepoToken{}, boom)
+		f.auth.WithRepoTokens(rt)
+		_, err := f.auth.Authenticate(ctx, secret)
+		assert.ErrorIs(t, err, boom)
+		assert.NotErrorIs(t, err, domain.ErrUnauthenticated)
+	})
+	t.Run("without CI wired the shape is refused", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t)
+		_, err := f.auth.Authenticate(ctx, secret)
+		assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+	})
+	t.Run("revalidate follows the token, not the stored tokens", func(t *testing.T) {
+		t.Parallel()
+		f := newTokenFixture(t)
+		rt := mocks.NewCIRepoTokenStore(t)
+		rt.EXPECT().GetRepoToken(ctx, "id1").Return(tok, nil).Once()
+		rt.EXPECT().GetRepoToken(ctx, "id1").Return(domain.CIRepoToken{}, domain.ErrNotFound).Once()
+		f.auth.WithRepoTokens(rt)
+		p := domain.RepoTokenPrincipal(tok)
+		assert.NoError(t, f.auth.Revalidate(ctx, p))
+		assert.ErrorIs(t, f.auth.Revalidate(ctx, p), domain.ErrUnauthenticated, "revoked since")
+	})
+}

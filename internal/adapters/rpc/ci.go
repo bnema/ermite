@@ -33,6 +33,9 @@ var runnerSecretProcedures = map[string]bool{
 	ermiteconnect.RunnerServiceHeartbeatProcedure:   true,
 	ermiteconnect.RunnerServiceWatchJobProcedure:    true,
 	ermiteconnect.RunnerServiceCompleteJobProcedure: true,
+	// ResolveActions and UploadSummary are job calls too.
+	ermiteconnect.RunnerServiceResolveActionsProcedure: true,
+	ermiteconnect.RunnerServiceUploadSummaryProcedure:  true,
 }
 
 // ciError maps an error of the CI use cases. A call on a job that ended gets
@@ -167,6 +170,30 @@ func (s *runnerService) CompleteJob(ctx context.Context, req *connect.Request[pb
 		return nil, s.failed(ctx, err)
 	}
 	return connect.NewResponse(&pb.CompleteJobResponse{Conclusion: conclusionToPB(res.Conclusion), Error: res.Error, Applied: res.Applied}), nil
+}
+
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter maps the references of the request to strings and the answers back to the contract; the rules are the use case's
+func (s *runnerService) ResolveActions(ctx context.Context, req *connect.Request[pb.ResolveActionsRequest]) (*connect.Response[pb.ResolveActionsResponse], error) {
+	uses := make([]string, 0, len(req.Msg.GetRefs()))
+	for _, r := range req.Msg.GetRefs() {
+		uses = append(uses, r.GetUses())
+	}
+	res, err := s.runners.ResolveActions(ctx, secretFrom(ctx), req.Msg.GetJobId(), uses)
+	if err != nil {
+		return nil, s.failed(ctx, err)
+	}
+	out := &pb.ResolveActionsResponse{Actions: make([]*pb.ResolvedAction, 0, len(res))}
+	for _, a := range res {
+		out.Actions = append(out.Actions, resolvedActionToPB(a))
+	}
+	return connect.NewResponse(out), nil
+}
+
+// UploadSummary is the E2 work (summaries storage): until the server lists
+// "ci.summaries" it answers unimplemented, as runner.proto says.
+func (s *runnerService) UploadSummary(context.Context, *connect.Request[pb.UploadSummaryRequest]) (*connect.Response[pb.UploadSummaryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ermite.RunnerService.UploadSummary is not implemented"))
 }
 
 // runService implements ermiteconnect.RunServiceHandler.
@@ -305,4 +332,15 @@ func (s *runService) RemoveRunner(ctx context.Context, req *connect.Request[pb.R
 		return nil, ciError(ctx, err)
 	}
 	return connect.NewResponse(&pb.RemoveRunnerResponse{}), nil
+}
+
+// ListAnnotations and GetStepSummaries are the E2 work (annotations and
+// summaries): unimplemented until the server lists "ci.annotations" and
+// "ci.summaries".
+func (s *runService) ListAnnotations(context.Context, *connect.Request[pb.ListAnnotationsRequest]) (*connect.Response[pb.ListAnnotationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ermite.RunService.ListAnnotations is not implemented"))
+}
+
+func (s *runService) GetStepSummaries(context.Context, *connect.Request[pb.GetStepSummariesRequest]) (*connect.Response[pb.GetStepSummariesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ermite.RunService.GetStepSummaries is not implemented"))
 }

@@ -200,6 +200,14 @@ type GitBackend interface {
 	HTTPBackend(ctx context.Context, push bool) (HTTPBackend, error)
 }
 
+// GitArchive writes the archive of a commit.
+type GitArchive interface {
+	// Archive writes the tree of the commit as a gzip-compressed tar to w, all
+	// the paths below the directory prefix. It writes nothing and returns
+	// domain.ErrNotFound when the repository or the commit does not exist.
+	Archive(ctx context.Context, repo domain.RepoName, commit domain.ObjectID, prefix string, w io.Writer) error
+}
+
 // TokenStore keeps the stored tokens and the index from secret hash to token.
 // The secret itself is never stored.
 type TokenStore interface {

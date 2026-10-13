@@ -28,7 +28,7 @@ const MaxRequestBytes = 1 << 20
 // Features are the optional capabilities of the contract that this server
 // always implements, as GetVersion lists them. FeaturePasskeys comes on top
 // when Config.Passkeys is set.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
 const FeaturePasskeys = "passkeys"

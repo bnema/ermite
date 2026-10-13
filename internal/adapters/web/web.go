@@ -235,7 +235,7 @@ func (s *Server) ownerRedirect(r *http.Request) (string, bool) {
 		return "", false
 	}
 	first, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.EscapedPath(), "/"), "/")
-	if !ok || first != s.cfg.Owner || rest == "" {
+	if !ok || !domain.OwnerMatches(s.cfg.Owner, first) || rest == "" {
 		return "", false
 	}
 	repo, _, _ := strings.Cut(rest, "/")

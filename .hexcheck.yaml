@@ -74,6 +74,9 @@ allow:
     path: internal/adapters/githttp/**
     reason: rate-limits Git clients with internal/clientlimit
   - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/githubapi/**
+    reason: rate-limits the clients of the REST subset with internal/clientlimit
+  - rule: no-adapter-to-adapter-imports
     path: internal/adapters/rpc/**
     reason: rate-limits API clients with internal/clientlimit
   - rule: no-adapter-to-adapter-imports

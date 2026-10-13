@@ -36,6 +36,7 @@ type ciTrigger struct {
 	repo    domain.RepoName
 	updates []domain.RefUpdate
 	actor   string
+	pusher  domain.CIPusher
 	at      time.Time
 	log     zerowrap.Logger
 }
@@ -44,6 +45,19 @@ type ciTrigger struct {
 // a worker plans them. A full queue drops the trigger, logged at error: a push
 // is never slowed down or failed by CI.
 func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal) {
+	c.enqueue(ctx, repo, updates, authorOf(pusher), domain.PusherOf(pusher))
+}
+
+// OnMerge queues the move of a target branch by a merge. The actor of the run is
+// the owner, as GitHub shows; the pusher recorded with it, whose rights the
+// actions of other repositories are resolved with, is the principal that merged:
+// a token limited to some repositories does not gain the owner's reach by
+// merging.
+func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal) {
+	c.enqueue(ctx, repo, updates, authorOf(domain.Owner()), domain.PusherOf(merger))
+}
+
+func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher) {
 	var kept []domain.RefUpdate
 	for _, u := range updates {
 		if !u.IsDelete() && (strings.HasPrefix(u.Ref, "refs/heads/") || strings.HasPrefix(u.Ref, "refs/tags/")) {
@@ -53,7 +67,7 @@ func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.
 	if len(kept) == 0 {
 		return
 	}
-	t := ciTrigger{repo: repo, updates: kept, actor: authorOf(pusher), at: c.now(), log: zerowrap.FromCtx(ctx)}
+	t := ciTrigger{repo: repo, updates: kept, actor: actor, pusher: pusher, at: c.now(), log: zerowrap.FromCtx(ctx)}
 	c.mu.Lock()
 	closed := c.closed
 	c.mu.Unlock()
@@ -384,7 +398,7 @@ func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f 
 			CreatedAt: now, StartedAt: now, CompletedAt: now,
 		}
 		return ports.CIRunDraft{
-			Run: run, Source: domain.CIRunSource{Repo: repo.Name, WorkflowYAML: "", GithubJSON: "{}"},
+			Run: run, Source: domain.CIRunSource{Repo: repo.Name, WorkflowYAML: "", GithubJSON: "{}", Pusher: t.pusher},
 			Checks: []domain.CICheck{{
 				ID: "run-" + strconv.FormatInt(id, 10), Repo: repo.Name, Sha: run.Sha, Name: wfPath, Status: domain.CICompleted,
 				Conclusion: domain.CIFailure, RunID: id, Attempt: 1, WorkflowName: name, CreatedAt: now, StartedAt: now, CompletedAt: now,
@@ -436,7 +450,7 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 			run.Name, run.Title = runName, runName
 		}
 		d := ports.CIRunDraft{Run: run, Source: domain.CIRunSource{
-			Repo: repo.Name, WorkflowYAML: yaml, GithubJSON: githubJSON,
+			Repo: repo.Name, WorkflowYAML: yaml, GithubJSON: githubJSON, Pusher: t.pusher,
 		}}
 		for i, j := range wf.Jobs {
 			job := domain.CIJob{

@@ -25,10 +25,35 @@ type CIRunDraft struct {
 // Checks are derived from the jobs and upserted without a precondition.
 // Apply returns domain.ErrConflict otherwise and domain.ErrNotFound when the
 // repository no longer exists.
+//
+// RepoTokens are job repository tokens created with the batch (they must not
+// exist yet), RevokeJobs the jobs whose repository tokens are deleted by it,
+// and Resolutions the action resolutions of a run attempt to keep. They are
+// written under the lock of the run that owns them.
 type CIWrite struct {
-	Runs   []domain.CIRun
-	Jobs   []domain.CIJob
-	Checks []domain.CICheck
+	Runs        []domain.CIRun
+	Jobs        []domain.CIJob
+	Checks      []domain.CICheck
+	RepoTokens  []domain.CIRepoToken
+	RevokeJobs  []CIJobRef
+	Resolutions []domain.CIActionResolution
+}
+
+// CIJobRef names one execution of a job.
+type CIJobRef struct {
+	RunID      int64
+	RunAttempt int32
+	JobID      string
+}
+
+// CIRepoTokenStore reads the job repository tokens, for the authentication of
+// a request. They are written by CIStore.Apply. *kvstore.CI implements it.
+type CIRepoTokenStore interface {
+	// FindRepoTokenByHash returns the token whose secret has that hash, or
+	// domain.ErrNotFound.
+	FindRepoTokenByHash(ctx context.Context, hash domain.TokenHash) (domain.CIRepoToken, error)
+	// GetRepoToken returns the token with that id, or domain.ErrNotFound.
+	GetRepoToken(ctx context.Context, id string) (domain.CIRepoToken, error)
 }
 
 // CIStore keeps CI runs, jobs and checks. The store derives its own indexes
@@ -46,6 +71,9 @@ type CIStore interface {
 	Apply(ctx context.Context, w CIWrite) (version uint64, err error)
 	// GetRun returns the run, or domain.ErrNotFound.
 	GetRun(ctx context.Context, repo domain.RepoName, id int64) (domain.CIRun, error)
+	// GetActionResolution returns the resolution kept for the key in the run
+	// attempt, or domain.ErrNotFound.
+	GetActionResolution(ctx context.Context, runID int64, runAttempt int32, key string) (domain.CIActionResolution, error)
 	// GetRunSource returns what the run was planned from, or
 	// domain.ErrNotFound. It is how a run is found from its id alone.
 	GetRunSource(ctx context.Context, runID int64) (domain.CIRunSource, error)
@@ -165,6 +193,11 @@ type CILogStore interface {
 // errors never reach the push.
 type WorkflowTrigger interface {
 	OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal)
+	// OnMerge is OnPush for the move of a target branch by a merge. GitHub shows
+	// the owner as the actor of the push of a merge, whoever merged; but the
+	// rights the run's actions are resolved with are those of merger, the
+	// principal that merged, never the owner's.
+	OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal)
 }
 
 // CIGit is what planning needs from Git beyond RepoReader and MergeGit.
@@ -200,8 +233,10 @@ type RegisteredRunner struct {
 
 // RunnerJob is a job given to a runner.
 type RunnerJob struct {
-	Job          domain.CIJob
-	Token        string
+	Job   domain.CIJob
+	Token string
+	// GithubToken is the job repository token, the "github.token" of the job.
+	GithubToken  string
 	Repo         domain.RepoName
 	Sha, Ref     string
 	WorkflowPath string
@@ -247,6 +282,38 @@ type CompleteJobResult struct {
 	Applied    bool
 }
 
+// ResolvedAction is the resolution of one "uses" of ResolveActions: where to
+// download the action, or Error (then only Ref is set).
+type ResolvedAction struct {
+	Ref           string
+	NameWithOwner string
+	Path          string
+	ResolvedSHA   string
+	TarballURL    string
+	Token         string
+	Source        domain.CIActionSource
+	Error         string
+}
+
+// RemoteRef is a ref of a remote repository, as `git ls-remote` lists it.
+type RemoteRef struct {
+	// Name is the full ref name ("refs/heads/main", "refs/tags/v1").
+	Name string
+	// ID is the object the ref points to (the tag object of an annotated tag).
+	ID string
+	// Peeled is the commit an annotated tag points to; empty for other refs.
+	Peeled string
+}
+
+// GitRemote lists the refs of a repository on github.com, with no
+// credentials. It returns domain.ErrNotFound for a repository that does not
+// exist or needs credentials (GitHub answers alike), and an error matching
+// domain.ErrUnavailable when it cannot tell (network, timeout, too large an
+// answer).
+type GitRemote interface {
+	ListRefs(ctx context.Context, owner, repo string) ([]RemoteRef, error)
+}
+
 // JobSignal is one message of WatchJob.
 type JobSignal struct {
 	Keepalive bool
@@ -278,6 +345,11 @@ type RunnerService interface {
 	// then, because a client's call returns only when they arrive.
 	WatchJob(ctx context.Context, secret, jobID string, ready func(), send func(JobSignal) error) error
 	CompleteJob(ctx context.Context, secret string, params CompleteJobParams) (CompleteJobResult, error)
+	// ResolveActions resolves the "uses" of the job's steps, one answer per
+	// reference in the same order. A reference that cannot be resolved is not
+	// an error: its answer carries Error. A local ("./") or Docker
+	// ("docker://") reference, or more than 100, is domain.ErrInvalid.
+	ResolveActions(ctx context.Context, secret, jobID string, uses []string) ([]ResolvedAction, error)
 }
 
 // JobView is a job as owners see it.

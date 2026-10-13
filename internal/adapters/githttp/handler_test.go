@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -172,7 +173,7 @@ func newRig(t *testing.T, mut func(*githttp.Config)) *rig {
 	repos := mocks.NewRepoLookup(t)
 	r.stubUseCases(repos)
 	cfg := githttp.Config{
-		Auth: r.auth, Repos: repos, Pushes: r.pushes, Backend: r.backend, Hooks: r.hooks,
+		Auth: r.auth, Repos: repos, Pushes: r.pushes, Backend: r.backend, Hooks: r.hooks, Owner: "acme",
 	}
 	script := cgiScript(t)
 	r.backend.EXPECT().HTTPBackend(mock.Anything, mock.Anything).RunAndReturn(
@@ -188,7 +189,7 @@ func newRig(t *testing.T, mut func(*githttp.Config)) *rig {
 	}
 	r.h = githttp.New(cfg)
 	mux := http.NewServeMux()
-	for _, p := range githttp.Patterns {
+	for _, p := range slices.Concat(githttp.Patterns, githttp.OwnerPatterns("acme"), githttp.OwnerPatterns("ACME")) {
 		mux.Handle(p, r.h)
 	}
 	r.srv = httptest.NewServer(mux)
@@ -506,6 +507,54 @@ func TestHandlerLimiterTrustedProxyViaConfig(t *testing.T) {
 	assert.Equal(t, 200, code)
 }
 
+// The clone URL of GitHub-shaped clients, /<owner>/<repo>, with or without .git:
+// served for the owner of the forge, 404 for anyone else and for what is not a
+// Git path.
+func TestHandlerServesTheOwnerForm(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, method, path, pass string
+		want                     int
+	}{
+		{"owner, no suffix", "GET", "/acme/pub/info/refs?service=git-upload-pack", "", 200},
+		{"owner, .git", "GET", "/acme/pub.git/info/refs?service=git-upload-pack", "", 200},
+		{"owner, private, reader", "GET", "/acme/priv/info/refs?service=git-upload-pack", "reader-secret", 200},
+		{"owner, private, anonymous", "GET", "/acme/priv/info/refs?service=git-upload-pack", "", 401},
+		{"owner, push, root", "GET", "/acme/pub/info/refs?service=git-receive-pack", "root-secret", 200},
+		{"upload-pack", "POST", "/acme/pub/git-upload-pack", "", 200},
+		{"other owner", "GET", "/other/pub/info/refs?service=git-upload-pack", "root-secret", 404},
+		{"owner case does not matter", "GET", "/ACME/pub/info/refs?service=git-upload-pack", "root-secret", 200},
+		{"too deep", "GET", "/acme/pub/x/info/refs?service=git-upload-pack", "root-secret", 404},
+		{"no repository", "GET", "/acme/info/refs?service=git-upload-pack", "root-secret", 404},
+		{"empty repository", "GET", "/acme//info/refs?service=git-upload-pack", "root-secret", 404},
+		{"invalid repository", "GET", "/acme/Bad/info/refs?service=git-upload-pack", "root-secret", 404},
+		{"owner, wrong method", "POST", "/acme/pub/info/refs?service=git-upload-pack", "", 405},
+		{"owner, not a git path", "GET", "/acme/pub/HEAD", "", 404},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRig(t, nil)
+			user := ""
+			if tt.pass != "" {
+				user = "x-access-token"
+			}
+			code, _, _ := r.do(t, tt.method, tt.path, user, tt.pass, nil, nil)
+			assert.Equal(t, tt.want, code)
+		})
+	}
+}
+
+// Without an owner configured only the plain form is served.
+func TestHandlerWithoutOwnerServesThePlainFormOnly(t *testing.T) {
+	t.Parallel()
+	r := newRig(t, func(c *githttp.Config) { c.Owner = "" })
+	code, _, _ := r.do(t, "GET", "/acme/pub/info/refs?service=git-upload-pack", "", "", nil, nil)
+	assert.Equal(t, 404, code)
+	code, _, _ = r.do(t, "GET", "/pub/info/refs?service=git-upload-pack", "", "", nil, nil)
+	assert.Equal(t, 200, code)
+}
+
 func TestHandlerBearerAndMalformedAuthorization(t *testing.T) {
 	t.Parallel()
 	r := newRig(t, nil)
@@ -514,6 +563,8 @@ func TestHandlerBearerAndMalformedAuthorization(t *testing.T) {
 	assert.Equal(t, 200, code)
 	code, _, _ = r.do(t, "GET", path, "", "", nil, map[string]string{"Authorization": "bearer reader-secret"})
 	assert.Equal(t, 200, code, "the scheme is case-insensitive")
+	code, _, _ = r.do(t, "GET", path, "", "", nil, map[string]string{"Authorization": "token reader-secret"})
+	assert.Equal(t, 200, code, "GitHub's own scheme")
 	for _, h := range []string{"Basic !!!notbase64", "Digest abc", "Bearer", "garbage"} {
 		code, _, _ := r.do(t, "GET", path, "", "", nil, map[string]string{"Authorization": h})
 		assert.Equal(t, 401, code, h)

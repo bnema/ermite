@@ -189,6 +189,7 @@ func (c *CI) cancelAssignment(ctx context.Context, rs *runState, j *domain.CIJob
 	j.TokenHash, j.TokenValidUntil = domain.TokenHash{}, time.Time{}
 	j.RunnerID, j.RunnerName, j.Isolation = "", "", domain.CIIsolationNone
 	j.Steps, j.Outputs, j.AssignedAt = nil, nil, time.Time{}
+	rs.revokeTokens(j) // the next assignment gets new ones
 	c.forgetPoll(jobRef(*j))
 	if j.CancelReason != domain.CICancelNone {
 		// Cancelled (by the owner, fail-fast or the time budget) before the
