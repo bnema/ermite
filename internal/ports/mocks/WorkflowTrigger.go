@@ -47,6 +47,64 @@ func (_m *WorkflowTrigger) EXPECT() *WorkflowTrigger_Expecter {
 	return &WorkflowTrigger_Expecter{mock: &_m.Mock}
 }
 
+// OnMerge provides a mock function for the type WorkflowTrigger
+func (_mock *WorkflowTrigger) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal) {
+	_mock.Called(ctx, repo, updates, merger)
+	return
+}
+
+// WorkflowTrigger_OnMerge_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OnMerge'
+type WorkflowTrigger_OnMerge_Call struct {
+	*mock.Call
+}
+
+// OnMerge is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - updates []domain.RefUpdate
+//   - merger domain.Principal
+func (_e *WorkflowTrigger_Expecter) OnMerge(ctx any, repo any, updates any, merger any) *WorkflowTrigger_OnMerge_Call {
+	return &WorkflowTrigger_OnMerge_Call{Call: _e.mock.On("OnMerge", ctx, repo, updates, merger)}
+}
+
+func (_c *WorkflowTrigger_OnMerge_Call) Run(run func(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal)) *WorkflowTrigger_OnMerge_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 []domain.RefUpdate
+		if args[2] != nil {
+			arg2 = args[2].([]domain.RefUpdate)
+		}
+		var arg3 domain.Principal
+		if args[3] != nil {
+			arg3 = args[3].(domain.Principal)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *WorkflowTrigger_OnMerge_Call) Return() *WorkflowTrigger_OnMerge_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *WorkflowTrigger_OnMerge_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal)) *WorkflowTrigger_OnMerge_Call {
+	_c.Run(run)
+	return _c
+}
+
 // OnPush provides a mock function for the type WorkflowTrigger
 func (_mock *WorkflowTrigger) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal) {
 	_mock.Called(ctx, repo, updates, pusher)

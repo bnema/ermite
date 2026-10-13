@@ -193,6 +193,11 @@ type CILogStore interface {
 // errors never reach the push.
 type WorkflowTrigger interface {
 	OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal)
+	// OnMerge is OnPush for the move of a target branch by a merge. GitHub shows
+	// the owner as the actor of the push of a merge, whoever merged; but the
+	// rights the run's actions are resolved with are those of merger, the
+	// principal that merged, never the owner's.
+	OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal)
 }
 
 // CIGit is what planning needs from Git beyond RepoReader and MergeGit.
