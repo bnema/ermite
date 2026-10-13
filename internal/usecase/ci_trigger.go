@@ -378,7 +378,7 @@ func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f 
 	now := c.now()
 	draft, err := c.cfg.Store.CreateRun(ctx, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
-			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name,
+			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name, Name: name,
 			Title: firstLine(f.head.Message), Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
 			Status: domain.CICompleted, Conclusion: domain.CIFailure, Error: cutText(problem, maxRunError),
 			CreatedAt: now, StartedAt: now, CompletedAt: now,
@@ -412,26 +412,29 @@ func (c *CI) publishRun(ctx context.Context, repo domain.Repo, run domain.CIRun)
 func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, yaml string, wf *workflow.Workflow) error {
 	now := c.now()
 	name := workflowName(wf, wfPath)
-	// The title of a run without run-name is the commit message for a branch;
-	// for a tag GitHub shows the workflow name, not the commit message
-	// (recorded: filter-tags, filter-paths-tag, filter-branches-ignore, where
-	// every file has its own name). The four scenarios whose file is ci.yml
-	// (push-tag, push-tags-limit, push-delete-tag, skip-directive-tag) recorded
-	// "push-branch-create", which is the name of another scenario's ci.yml and
-	// not that of the workflow of the run: a leftover on github.com's side that
-	// no rule produces, so those four titles cannot match.
+	// The title of a run without run-name is the commit message for a branch.
+	// For a tag GitHub shows the name of the workflow registered for the path,
+	// not the commit message (recorded: filter-tags, filter-paths-tag,
+	// filter-branches-ignore, and push-tag, push-tags-limit, push-delete-tag,
+	// skip-directive-tag, whose ci.yml is called "push-branch-create" on the
+	// default branch of the recording repository although each run's own
+	// workflow has another name: 14 of 14 tag runs). Registered is read as the
+	// "name:" of the file on the default branch; the first version GitHub saw
+	// is the same file in the recording and cannot be told apart.
 	title := firstLine(f.head.Message)
 	if f.isTag {
-		title = name
+		title = c.registeredName(ctx, repo.Name, wfPath, name)
 	}
 	draft, err := c.cfg.Store.CreateRun(ctx, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
-			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name,
+			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name, Name: name,
 			Title: title, Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
 			Status: domain.CIQueued, CreatedAt: now,
 		}
 		githubJSON := c.githubJSON(ctx, repo, run, f)
-		run.Title = c.runTitle(ctx, wf, githubJSON, run.Title)
+		if runName, ok := c.evalRunName(ctx, wf, githubJSON); ok {
+			run.Name, run.Title = runName, runName
+		}
 		d := ports.CIRunDraft{Run: run, Source: domain.CIRunSource{
 			Repo: repo.Name, WorkflowYAML: yaml, GithubJSON: githubJSON,
 		}}
@@ -472,19 +475,53 @@ func workflowName(wf *workflow.Workflow, path string) string {
 	return wf.Name
 }
 
-// runTitle is the title of a run, GitHub's display_title: the run-name
-// evaluated with the github, inputs and vars contexts (the contexts the
-// schema allows there), else commitTitle, which the caller sets to the first
-// line of the head commit message (the workflow name for a tag). A run-name
-// that does not evaluate, or that evaluates to nothing, falls back to
-// commitTitle, and the failure is logged.
-func (c *CI) runTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, commitTitle string) string {
+// registeredName is the name GitHub shows for a tag run without run-name: the
+// name of the workflow registered for the path, here the "name:" of the file on
+// the default branch (the path when that file has none). It is own, the name of
+// the workflow of the run, when the default branch has no such file, the file
+// does not parse, or anything cannot be read.
+func (c *CI) registeredName(ctx context.Context, repo domain.RepoName, wfPath, own string) string {
+	def, exists, err := c.cfg.Repos.DefaultBranch(ctx, repo)
+	if err != nil || !exists {
+		return own
+	}
+	tip, err := c.cfg.Git.BranchHead(ctx, repo, def)
+	if err != nil {
+		return own
+	}
+	tp, err := domain.ParseTreePath(wfPath)
+	if err != nil {
+		return own
+	}
+	_, rc, err := c.cfg.Reader.OpenBlob(ctx, repo, domain.RevisionOf(tip), tp)
+	if err != nil {
+		return own
+	}
+	content, err := io.ReadAll(io.LimitReader(rc, maxCIWorkflowBytes+1))
+	_ = rc.Close()
+	if err != nil || len(content) > maxCIWorkflowBytes {
+		return own
+	}
+	wf, errs := workflow.Parse(wfPath, content)
+	if len(errs) > 0 {
+		return own
+	}
+	return workflowName(wf, wfPath)
+}
+
+// evalRunName evaluates the run-name of a workflow with the github, inputs and
+// vars contexts (the contexts the schema allows there). ok is false when the
+// workflow has none, when it does not evaluate (logged), or when it evaluates
+// to nothing: the run then has no name of its own, GitHub's display title falls
+// back to the commit message (a branch) or the registered name (a tag), and
+// the name of the run to the name of the workflow.
+func (c *CI) evalRunName(ctx context.Context, wf *workflow.Workflow, githubJSON string) (string, bool) {
 	if wf.RunName == nil {
-		return commitTitle
+		return "", false
 	}
 	gh, err := expr.FromJSON([]byte(githubJSON))
 	if err != nil {
-		return commitTitle
+		return "", false
 	}
 	env := template.Env{Contexts: map[string]expr.Value{
 		"github": gh, "inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
@@ -492,13 +529,13 @@ func (c *CI) runTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, co
 	name, err := template.EvaluateString(ctx, wf.RunName, env)
 	if err != nil {
 		log := zerowrap.FromCtx(ctx)
-		log.Warn().Err(err).Msg("ci run-name does not evaluate: the run is titled with the commit message")
-		return commitTitle
+		log.Warn().Err(err).Msg("ci run-name does not evaluate: the run keeps the workflow name and the default title")
+		return "", false
 	}
 	if name = firstLine(name); name == "" {
-		return commitTitle
+		return "", false
 	}
-	return name
+	return name, true
 }
 
 // matrixProblem expands the strategy of every job of the file, whatever its

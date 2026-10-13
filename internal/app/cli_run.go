@@ -24,6 +24,7 @@ type jsonRun struct {
 	Number       int64   `json:"number"`
 	Attempt      int32   `json:"attempt"`
 	Workflow     string  `json:"workflow"`
+	Name         string  `json:"name"`
 	WorkflowPath string  `json:"workflow_path"`
 	Title        string  `json:"title"`
 	Event        string  `json:"event"`
@@ -73,7 +74,7 @@ type jsonRunDetail struct {
 }
 
 const jsonRunHelp = `
-JSON fields of a run (--json): id, repo, number, attempt, workflow, workflow_path, title, event,
+JSON fields of a run (--json): id, repo, number, attempt, workflow, name (the name of the run: its run-name, else the workflow), workflow_path, title, event,
 ref, sha, actor, status (queued, in_progress, completed), conclusion (success, failure, cancelled,
 skipped, timed_out, neutral, action_required; empty until completed), error, created_at,
 started_at and completed_at (RFC 3339 UTC, null when unset). "run view" adds latest_attempt and
@@ -113,7 +114,7 @@ func runResult(status ermite.CiStatus, c ermite.CiConclusion) string {
 func toJSONRun(r *ermite.Run) jsonRun {
 	return jsonRun{
 		ID: r.GetId(), Repo: r.GetRepo(), Number: r.GetNumber(), Attempt: r.GetAttempt(), Workflow: r.GetWorkflowName(),
-		WorkflowPath: r.GetWorkflowPath(), Title: r.GetTitle(), Event: r.GetEvent(), Ref: r.GetRef(), Sha: r.GetSha(),
+		Name: r.GetName(), WorkflowPath: r.GetWorkflowPath(), Title: r.GetTitle(), Event: r.GetEvent(), Ref: r.GetRef(), Sha: r.GetSha(),
 		Actor: r.GetActor(), Status: statusText(r.GetStatus()), Conclusion: conclusionText(r.GetConclusion()), Error: r.GetError(),
 		CreatedAt: jsonTime(r.GetCreatedAt()), StartedAt: jsonTime(r.GetStartedAt()), CompletedAt: jsonTime(r.GetCompletedAt()),
 	}

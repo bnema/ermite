@@ -220,7 +220,10 @@ func jsonNumber(v any) string {
 	return string(b)
 }
 
-// The run title is the evaluated run-name, else the head commit message.
+// The run title is the evaluated run-name, else the head commit message. The
+// name of the run is the evaluated run-name too (recorded: ctx-github-names,
+// name = title = the run-name), else the workflow name; github.workflow stays
+// the workflow name.
 func TestCIRunTitle(t *testing.T) {
 	c := newCIHarness(t, nil)
 	c.registerRunner("alpha", "ubuntu-latest")
@@ -234,14 +237,24 @@ jobs:
       - run: echo hi
 `, ".github/workflows/plain.yml": workflowWith("branches: [main]")}, "the head commit\n\nbody")
 	c.waitFor("two runs", func() bool { return len(c.runs()) == 2 })
-	titles := map[string]string{}
+	titles, names, workflows := map[string]string{}, map[string]string{}, map[string]string{}
 	for _, r := range c.runs() {
 		titles[r.GetWorkflowPath()] = r.GetTitle()
+		names[r.GetWorkflowPath()] = r.GetName()
+		workflows[r.GetWorkflowPath()] = r.GetWorkflowName()
 	}
 	assert.Equal(t, map[string]string{
 		".github/workflows/named.yml": "run push on branch by someone",
 		".github/workflows/plain.yml": "the head commit",
 	}, titles)
+	assert.Equal(t, map[string]string{
+		".github/workflows/named.yml": "run push on branch by someone",
+		".github/workflows/plain.yml": ".github/workflows/plain.yml",
+	}, names, "the run-name, else the workflow name")
+	assert.Equal(t, map[string]string{
+		".github/workflows/named.yml": "Named",
+		".github/workflows/plain.yml": ".github/workflows/plain.yml",
+	}, workflows, "workflow_name is unchanged by a run-name")
 }
 
 // An over-256 matrix is an invalid workflow, like on github.com
@@ -575,6 +588,35 @@ func TestCIThreeTagsInOnePush(t *testing.T) {
 	for _, r := range c.runs() {
 		assert.Equal(t, "Tags", r.GetTitle())
 	}
+}
+
+// A tag run without run-name is titled with the name of the workflow registered
+// for its path: the "name:" of the file on the default branch, which can differ
+// from the file at the tag (recorded: push-tag, push-tags-limit, push-delete-tag
+// and skip-directive-tag, whose ci.yml is "push-branch-create" on the default
+// branch of the recording repository and has the scenario's own name at the
+// tag; and the files with a unique name, where both agree). Its name stays the
+// workflow name of the tagged file.
+func TestCITagTitleIsTheNameRegisteredOnTheDefaultBranch(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	wf := func(name string) map[string]string {
+		return map[string]string{".github/workflows/ci.yml": "name: " + name + "\non:\n  push:\n    tags: ['v*']\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"}
+	}
+	c.push("main", wf("registered"), "")
+	// The tagged commit is off every branch and renames the workflow.
+	c.mustGit(c.wt, "checkout", "-q", "--detach")
+	c.writeFile(c.wt, ".github/workflows/ci.yml", []byte(wf("renamed")[".github/workflows/ci.yml"]))
+	_, title := c.tagEvent(runner, "v1", 1)
+	assert.Equal(t, "registered", title, "the name of ci.yml on the default branch")
+	r := c.runs()[0]
+	assert.Equal(t, "renamed", r.GetWorkflowName(), "the workflow of the run is the file at the tag (github.workflow)")
+	assert.Equal(t, "renamed", r.GetName(), "and so is the name of the run, which has no run-name")
+
+	// A file the default branch does not have: the run's own workflow name.
+	c.writeFile(c.wt, ".github/workflows/other.yml", []byte("name: other\non:\n  push:\n    tags: ['w*']\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"))
+	_, title = c.tagEvent(runner, "w1", 2)
+	assert.Equal(t, "other", title)
 }
 
 // A tag run with a run-name keeps the evaluated run-name as its title (the

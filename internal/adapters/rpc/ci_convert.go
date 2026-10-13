@@ -130,10 +130,19 @@ func cancelReasonToPB(r domain.CICancelReason) pb.CancelReason {
 	return pb.CancelReason_CANCEL_REASON_UNSPECIFIED
 }
 
+// runName is Run.name: the name of the run, the workflow name for a run that
+// has none of its own.
+func runName(r domain.CIRun) string {
+	if r.Name == "" {
+		return r.WorkflowName
+	}
+	return r.Name
+}
+
 func runToPB(r domain.CIRun) *pb.Run {
 	return &pb.Run{
 		Repo: r.Repo.String(), Id: r.ID, Number: r.Number, Attempt: r.Attempt,
-		WorkflowPath: r.WorkflowPath, WorkflowName: r.WorkflowName, Title: r.Title, Event: r.Event,
+		WorkflowPath: r.WorkflowPath, WorkflowName: r.WorkflowName, Name: runName(r), Title: r.Title, Event: r.Event,
 		Ref: r.Ref, Sha: r.Sha, Actor: r.Actor, Status: statusToPB(r.Status), Conclusion: conclusionToPB(r.Conclusion),
 		Error: r.Error, CreatedAt: timestamp(r.CreatedAt), StartedAt: timestamp(r.StartedAt), CompletedAt: timestamp(r.CompletedAt),
 		Version: int64(r.Version), //nolint:gosec // a store sequence, far below 2^63

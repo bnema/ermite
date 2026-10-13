@@ -95,6 +95,10 @@ message CIRun {
   google.protobuf.Timestamp completed_at = 17;
   bool cancel_requested = 20;
   google.protobuf.Timestamp cancel_requested_at = 21;
+  // name is GitHub's name of the run: the evaluated run-name, else the
+  // workflow name. Empty in runs stored before it existed (read as
+  // workflow_name).
+  string name = 22;
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned

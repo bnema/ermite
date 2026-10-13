@@ -44,7 +44,7 @@ func TestCLIRunsAndRunners(t *testing.T) {
 	assert.Equal(t, "failure", runs[0].Conclusion)
 	assert.Equal(t, "completed", runs[0].Status)
 	assert.Equal(t, "refs/heads/main", runs[0].Ref)
-	assert.Equal(t, []string{"actor", "attempt", "completed_at", "conclusion", "created_at", "error", "event", "id", "number", "ref", "repo", "sha", "started_at", "status", "title", "workflow", "workflow_path"}, keys(t, strings.TrimSpace(strings.Trim(strings.TrimSpace(js.stdout), "[]"))))
+	assert.Equal(t, []string{"actor", "attempt", "completed_at", "conclusion", "created_at", "error", "event", "id", "name", "number", "ref", "repo", "sha", "started_at", "status", "title", "workflow", "workflow_path"}, keys(t, strings.TrimSpace(strings.Trim(strings.TrimSpace(js.stdout), "[]"))))
 
 	none := h.cli(t, adminToken, "run", "list", "proj", "--status", "queued")
 	require.NoError(t, none.err)

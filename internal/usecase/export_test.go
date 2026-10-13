@@ -15,9 +15,13 @@ func AuthorOf(p domain.Principal) string { return authorOf(p) }
 // Sweep exposes the daily sweep to the tests.
 func (c *CI) Sweep(ctx context.Context) { c.sweep(ctx) }
 
-// RunTitle exposes runTitle to the tests.
+// RunTitle gives the title of a run as startRun sets it: the evaluated
+// run-name, else commitTitle.
 func (c *CI) RunTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, commitTitle string) string {
-	return c.runTitle(ctx, wf, githubJSON, commitTitle)
+	if name, ok := c.evalRunName(ctx, wf, githubJSON); ok {
+		return name
+	}
+	return commitTitle
 }
 
 // CheckRunID exposes checkRunID to the tests.
