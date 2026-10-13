@@ -66,8 +66,9 @@ type Config struct {
 	// DefaultHeartbeat when zero.
 	Heartbeat time.Duration
 	// Owner is the owner login the GitHub-shaped URLs of CI show
-	// (<server>/<owner>/<repo>/...). A GET of such a URL that is not a page
-	// by itself is redirected to /<repo>/.... Empty: no redirect.
+	// (<server>/<owner>/<repo>/...). A GET or HEAD of /<owner>/<rest> is
+	// redirected to /<rest> unless a repository named like the owner is
+	// visible to the caller. Empty: no redirect.
 	Owner string
 	// PublicURL is the base URL of the instance, without a trailing slash:
 	// the clone URLs are built on it, and its host is the instance name.
@@ -213,9 +214,18 @@ const catchAll = "GET /{repo}/{rest...}"
 
 // ownerRedirect maps /<owner>/<repo>[.git][/rest] to /<repo>[.git][/rest]: the
 // URLs that the github context of CI shows (html_url, commit and compare
-// URLs, clone_url) have the owner of the instance in front, like GitHub's. A
-// path is only redirected when it would be a 404 otherwise, so that a
-// repository named like the owner keeps its own pages.
+// URLs, clone_url) have the owner of the instance in front, like GitHub's.
+//
+// The rule is by repository, not by route: when no repository named like the
+// owner is visible to the caller, every GET or HEAD of /<owner>/<rest> is
+// redirected, so /<owner>/actions reaches the repository named "actions". A
+// repository named like the owner keeps its own pages. A private one is seen
+// as missing by an anonymous caller (the use case answers ErrNotFound), so the
+// redirect is the same as for a name nobody has and tells nothing.
+//
+// The target is built from a segment that parses as a repository name, which
+// has no slash, backslash, percent sign or dot-dot: it can only be a path on
+// this origin, never a "//host" one.
 func (s *Server) ownerRedirect(r *http.Request) (string, bool) {
 	if s.cfg.Owner == "" || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		return "", false
@@ -225,10 +235,10 @@ func (s *Server) ownerRedirect(r *http.Request) (string, bool) {
 		return "", false
 	}
 	repo, _, _ := strings.Cut(rest, "/")
-	if _, err := domain.ParseRepoName(strings.TrimSuffix(repo, ".git")); err != nil {
+	if _, err := domain.ParseRepoPath(repo); err != nil {
 		return "", false
 	}
-	if _, pattern := s.mux.Handler(r); pattern != catchAll {
+	if s.ownerNamesARepo(r) {
 		return "", false
 	}
 	to := "/" + rest
@@ -236,6 +246,27 @@ func (s *Server) ownerRedirect(r *http.Request) (string, bool) {
 		to += "?" + r.URL.RawQuery
 	}
 	return to, true
+}
+
+// ownerNamesARepo tells whether the caller can see a repository named like
+// the owner. A lookup that fails otherwise counts as yes: the request is then
+// served as it was before, without a redirect.
+func (s *Server) ownerNamesARepo(r *http.Request) bool {
+	name, err := domain.ParseRepoName(s.cfg.Owner)
+	if err != nil {
+		return false
+	}
+	ctx := r.Context()
+	_, err = s.cfg.Repos.Get(ctx, principal(ctx), name)
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, domain.ErrNotFound):
+		return false
+	}
+	log := zerowrap.FromCtx(ctx)
+	log.Warn().Err(err).Msg("owner redirect: the lookup of the repository named like the owner failed")
+	return true
 }
 
 // handler builds a page. It returns the component and its status, or an
