@@ -172,6 +172,24 @@ func (c *CI) answer(ctx context.Context, rs *runState, j *domain.CIJob, p action
 	ra := ports.ResolvedAction{
 		Ref: p.uses, NameWithOwner: res.NameWithOwner, Path: p.path, ResolvedSHA: res.ResolvedSHA, Source: res.Source,
 	}
+	notFound := ports.ResolvedAction{Ref: p.uses, Error: errUnresolvedRepo(p)}
+
+	// A repository of this server that the pusher cannot read is never served
+	// from anywhere else: not from github.com under the same name, whatever
+	// source an earlier resolution of the attempt stored. It answers as a
+	// repository that does not exist. (When it does not exist on this server, a
+	// stored ermite resolution has nothing to serve either.)
+	repo, onErmite, err := c.ermiteRepoOf(ctx, p)
+	if err != nil {
+		return ports.ResolvedAction{}, err
+	}
+	if onErmite {
+		if ok, err := c.pusherCanRead(ctx, by, rs.run.Repo, repo); err != nil {
+			return ports.ResolvedAction{}, err
+		} else if !ok {
+			return notFound, nil
+		}
+	}
 	switch res.Source {
 	case domain.CIActionGitHub:
 		// The case the workflow wrote: the stored resolution is shared by
@@ -179,23 +197,11 @@ func (c *CI) answer(ctx context.Context, rs *runState, j *domain.CIJob, p action
 		ra.NameWithOwner = p.owner + "/" + p.repo
 		ra.TarballURL = "https://codeload.github.com/" + ra.NameWithOwner + "/tar.gz/" + res.ResolvedSHA
 	case domain.CIActionErmite:
-		name, err := domain.ParseRepoName(strings.ToLower(p.repo))
-		if err != nil {
-			return ports.ResolvedAction{Ref: p.uses, Error: errUnresolvedRepo(p)}, nil
-		}
-		repo, err := c.cfg.Meta.Get(ctx, name)
-		if errors.Is(err, domain.ErrNotFound) {
-			return ports.ResolvedAction{Ref: p.uses, Error: errUnresolvedRepo(p)}, nil
-		} else if err != nil {
-			return ports.ResolvedAction{}, err
-		}
-		if ok, err := c.pusherCanRead(ctx, by, rs.run.Repo, repo); err != nil {
-			return ports.ResolvedAction{}, err
-		} else if !ok {
-			return ports.ResolvedAction{Ref: p.uses, Error: errUnresolvedRepo(p)}, nil
+		if !onErmite {
+			return notFound, nil
 		}
 		ra.TarballURL = c.cfg.PublicURL + apiPath + "/repos/" + res.NameWithOwner + "/tarball/" + res.ResolvedSHA
-		ra.Token = c.archiveToken(rs, j, name, res.ResolvedSHA)
+		ra.Token = c.archiveToken(rs, j, repo.Name, res.ResolvedSHA)
 	}
 	return ra, nil
 }
@@ -219,6 +225,29 @@ func (c *CI) archiveToken(rs *runState, j *domain.CIJob, repo domain.RepoName, s
 	c.archiveTokens[ref][key] = tok
 	c.mu.Unlock()
 	return tok
+}
+
+// ermiteRepoOf finds the repository of this server that a reference names: the
+// owner is ERMITE_OWNER (without regard to case) and the repository exists. ok
+// is false for any other reference, which github.com serves. It is the one
+// place that decides the source of an action, for a first resolution and for the
+// answer from a stored one.
+func (c *CI) ermiteRepoOf(ctx context.Context, a actionRef) (repo domain.Repo, ok bool, err error) {
+	if !domain.OwnerMatches(c.cfg.Owner, a.owner) {
+		return domain.Repo{}, false, nil
+	}
+	name, perr := domain.ParseRepoName(strings.ToLower(a.repo))
+	if perr != nil {
+		return domain.Repo{}, false, nil // not a name ermite can hold
+	}
+	repo, err = c.cfg.Meta.Get(ctx, name)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return domain.Repo{}, false, nil
+	case err != nil:
+		return domain.Repo{}, false, err
+	}
+	return repo, true, nil
 }
 
 // pusherAccess is who the actions of a run are resolved on behalf of: the
@@ -343,30 +372,28 @@ func errUnresolvedRepo(a actionRef) string {
 // does not resolve; err is a failure of the call.
 func (c *CI) resolveAction(ctx context.Context, j domain.CIJob, a actionRef, remote *remoteRefs, by pusherAccess) (res domain.CIActionResolution, msg string, err error) {
 	res = domain.CIActionResolution{RunID: j.RunID, RunAttempt: j.RunAttempt, Key: a.key()}
-	if domain.OwnerMatches(c.cfg.Owner, a.owner) {
-		if name, perr := domain.ParseRepoName(strings.ToLower(a.repo)); perr == nil {
-			if repo, gerr := c.cfg.Meta.Get(ctx, name); gerr == nil {
-				// A repository the pusher may not read answers as one that does
-				// not exist, before any ref is looked at, so that the texts leak
-				// nothing about it.
-				if ok, err := c.pusherCanRead(ctx, by, j.Repo, repo); err != nil {
-					return res, "", err
-				} else if !ok {
-					return res, errUnresolvedRepo(a), nil
-				}
-				sha, found, err := c.resolveOnErmite(ctx, name, a.ref)
-				if err != nil {
-					return res, "", err
-				}
-				if !found {
-					return res, errUnresolvedRef(a), nil
-				}
-				res.NameWithOwner, res.ResolvedSHA, res.Source = c.cfg.Owner+"/"+name.String(), sha, domain.CIActionErmite
-				return res, "", nil
-			} else if !errors.Is(gerr, domain.ErrNotFound) {
-				return res, "", gerr
-			}
+	repo, onErmite, err := c.ermiteRepoOf(ctx, a)
+	if err != nil {
+		return res, "", err
+	}
+	if onErmite {
+		// The repository exists here, so github.com never answers for it. A
+		// repository the pusher may not read answers as one that does not exist,
+		// before any ref is looked at, so that the texts leak nothing about it.
+		if ok, err := c.pusherCanRead(ctx, by, j.Repo, repo); err != nil {
+			return res, "", err
+		} else if !ok {
+			return res, errUnresolvedRepo(a), nil
 		}
+		sha, found, err := c.resolveOnErmite(ctx, repo.Name, a.ref)
+		if err != nil {
+			return res, "", err
+		}
+		if !found {
+			return res, errUnresolvedRef(a), nil
+		}
+		res.NameWithOwner, res.ResolvedSHA, res.Source = c.cfg.Owner+"/"+repo.Name.String(), sha, domain.CIActionErmite
+		return res, "", nil
 	}
 	res.NameWithOwner, res.Source = a.owner+"/"+a.repo, domain.CIActionGitHub
 	if low := strings.ToLower(a.ref); isHex40(low) {
