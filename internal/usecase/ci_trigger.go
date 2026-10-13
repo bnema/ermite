@@ -133,6 +133,9 @@ type pushFacts struct {
 	isTag          bool
 	// defaultBranch is the default branch of the repository, "" when unknown.
 	defaultBranch string
+	// payload is the commit part of the push event, shared by the workflows
+	// of the ref; handleRef builds it once, before the first one that matches.
+	payload *pushPayload
 }
 
 func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tagCount int) error {
@@ -169,6 +172,9 @@ func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tag
 			Ref: u.Ref, Created: facts.created, ChangedFiles: facts.files, FilesTruncated: facts.filesTruncated, TagCount: tagCount,
 		}):
 		default:
+			if facts.payload == nil {
+				facts.payload = c.pushPayload(ctx, repo, facts)
+			}
 			if problem := c.matrixProblem(ctx, repo, t, facts, f.path, wf); problem != "" {
 				errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, problem))
 				continue
@@ -466,13 +472,20 @@ func (c *CI) runTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, co
 	return name
 }
 
-// matrixProblem evaluates the strategy of the jobs that can be evaluated
-// before the run starts (those that read no needs output) and returns the
-// error text when a matrix produces more configurations than GitHub allows:
-// GitHub then fails the run with no job, like an invalid workflow file
-// (recorded: matrix-over-256). Other strategy errors stay job failures, found
-// when the job is planned.
+// matrixProblem expands the strategy of every job of the file, whatever its
+// "if:" says, with an empty needs context (a matrix built from a needs output does not
+// evaluate here, and that error is ignored),
+// and returns the error text of the first strategy that produces more
+// configurations than GitHub allows: GitHub then fails the run with no job,
+// like an invalid workflow file (recorded: matrix-over-256). Any other error
+// of a strategy is ignored here and stays a job failure, found when the job is
+// planned. Whether GitHub counts the matrix of a job that "if:" skips is not
+// recorded yet (needs an "if: false" scenario over 256). The github context
+// is that of a run with no id yet, on the commits shared by the ref.
 func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath string, wf *workflow.Workflow) string {
+	if !slices.ContainsFunc(wf.Jobs, func(j *workflow.Job) bool { return j.Strategy != nil }) {
+		return "" // nothing to expand: no context to build
+	}
 	probe := domain.CIRun{Repo: repo.Name, Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor, WorkflowPath: wfPath, WorkflowName: wf.Name, CreatedAt: c.now()}
 	gh, err := expr.FromJSON([]byte(c.githubJSON(ctx, repo, probe, f)))
 	if err != nil {
@@ -483,7 +496,7 @@ func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f
 	}}
 	for _, j := range wf.Jobs {
 		if _, err := j.EvaluateStrategy(ctx, env); err != nil && strings.Contains(err.Error(), "which exceeds the maximum of") {
-			// ermite-actions' configurationLimitError is not exported.
+			// ermite-actions' configurationLimitError is not exported yet.
 			return wfPath + ": " + err.Error()
 		}
 	}

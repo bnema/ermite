@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -45,15 +47,15 @@ const (
 	apiPath = "/-/github/api"
 )
 
-// kv is a key and a value of an ordered JSON object.
-type kv struct {
+// pair is a key and a value of an ordered JSON object.
+type pair struct {
 	k string
 	v any
 }
 
 // ordered is a JSON object that keeps the order of its keys, as the github
 // context of GitHub does (toJSON(github) prints that order).
-type ordered []kv
+type ordered []pair
 
 func (o ordered) MarshalJSON() ([]byte, error) {
 	var b bytes.Buffer
@@ -228,6 +230,24 @@ func (c *CI) commitJSON(ctx context.Context, repo domain.Repo, u ghURLs, cm doma
 	}
 }
 
+// pushPayload is the part of the push event that is the same for every
+// workflow of one ref: the commits, each with its tree id (one Git call per
+// commit). It is built once per ref and shared by the probes and the runs.
+type pushPayload struct {
+	commits []any
+	head    map[string]any
+}
+
+// pushPayload builds the commit part of the push event of f.
+func (c *CI) pushPayload(ctx context.Context, repo domain.Repo, f pushFacts) *pushPayload {
+	u := c.urls(repo)
+	p := &pushPayload{commits: make([]any, 0, len(f.commits)), head: c.commitJSON(ctx, repo, u, f.head)}
+	for _, cm := range f.commits {
+		p.commits = append(p.commits, c.commitJSON(ctx, repo, u, cm))
+	}
+	return p
+}
+
 func person(name, email string) map[string]any { return map[string]any{"name": name, "email": email} }
 
 // githubJSON builds the "github" context of the run as GitHub does for a push
@@ -240,6 +260,9 @@ func person(name, email string) map[string]any { return map[string]any{"name": n
 // 12-character ids: the commit page for a created ref with one commit,
 // "<first>^...<after>" for a created ref with several, "<before>...<after>" for
 // an update.
+//
+// The commits of the event come from f.payload, built once per ref; without
+// one they are read from Git here.
 func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun, f pushFacts) string {
 	u := c.urls(repo)
 	id := c.identity(run.Actor)
@@ -259,13 +282,13 @@ func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun,
 	case f.created:
 		compare = u.repo + "/commit/" + shortID(f.update.New)
 	}
-	commits := make([]any, 0, len(f.commits))
-	for _, cm := range f.commits {
-		commits = append(commits, c.commitJSON(ctx, repo, u, cm))
+	payload := f.payload
+	if payload == nil {
+		payload = c.pushPayload(ctx, repo, f)
 	}
 	event := map[string]any{
 		"ref": run.Ref, "before": before, "after": f.update.New, "created": f.created, "deleted": false, "forced": f.forced,
-		"base_ref": nil, "compare": compare, "commits": commits, "head_commit": c.commitJSON(ctx, repo, u, f.head),
+		"base_ref": nil, "compare": compare, "commits": payload.commits, "head_commit": payload.head,
 		"pusher":     map[string]any{"name": id.login, "email": ""},
 		"repository": c.repoObj(repo, u, f.defaultBranch, run.CreatedAt),
 		"sender":     u.userObj(id, false),
@@ -291,22 +314,60 @@ func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun,
 	return string(b)
 }
 
+// Layout of job.check_run_id, 53 bits so that it is exact as a JavaScript
+// number (2^53 is the first integer that is not):
+//
+//	bits 0-8    combo:   matrix leg, 9 bits (0-511); a matrix has at most 256
+//	bits 9-18   index:   position of the job in the workflow file, 10 bits
+//	                     (0-1023): a workflow of more jobs than that is refused
+//	                     here, ermite has no limit of its own on them
+//	bits 19-25  attempt: run attempt, 7 bits (0-127), so that every re-run
+//	                     gets new ids, as on GitHub
+//	bits 26-52  run:     run id, 27 bits (below 134 million)
+const (
+	checkComboBits   = 9
+	checkIndexBits   = 10
+	checkAttemptBits = 7
+	checkRunBits     = 53 - checkComboBits - checkIndexBits - checkAttemptBits
+)
+
+// errCheckRunID is returned when a job instance does not fit the layout of
+// check_run_id: the id is not wrapped or truncated, the job fails with it.
+var errCheckRunID = errors.New("the job instance is out of the range of a check run id")
+
 // checkRunID is the number github.com shows in job.check_run_id: derived from
-// the position of the job instance, as ermite's checks are not numbered. It is
-// unique and stable per run, job and matrix leg, and fits in a JavaScript
-// number.
-func checkRunID(run domain.CIRun, index, combo int) int64 {
-	return run.ID<<20 | int64(index&0x7ff)<<9 | int64(combo&0x1ff)
+// the run, its attempt and the position of the job instance, as ermite's
+// checks are not numbered. It is unique and stable per attempt, job and matrix
+// leg, and fits in a JavaScript number. A value outside its field is an error,
+// never a silent wrap that would give two instances the same id.
+func checkRunID(run domain.CIRun, index, combo int) (int64, error) {
+	attempt := int64(run.Attempt)
+	switch {
+	case run.ID < 0 || run.ID >= 1<<checkRunBits,
+		attempt < 0 || attempt >= 1<<checkAttemptBits,
+		index < 0 || index >= 1<<checkIndexBits,
+		combo < 0 || combo >= 1<<checkComboBits:
+		return 0, fmt.Errorf("%w: run %d, attempt %d, job %d, leg %d", errCheckRunID, run.ID, run.Attempt, index, combo)
+	}
+	id := run.ID<<(checkAttemptBits+checkIndexBits+checkComboBits) |
+		attempt<<(checkIndexBits+checkComboBits) |
+		int64(index)<<checkComboBits |
+		int64(combo)
+	return id, nil
 }
 
 // jobKeys are the keys of the "job" context that the server knows, in
 // GitHub's order (the runner adds "status"). The runner copies the "job" key
 // of the contexts it is given into the job context.
-func (c *CI) jobKeys(run domain.CIRun, index, combo int) ordered {
+func (c *CI) jobKeys(run domain.CIRun, index, combo int) (ordered, error) {
+	id, err := checkRunID(run, index, combo)
+	if err != nil {
+		return nil, err
+	}
 	u := c.urls(domain.Repo{Name: run.Repo})
 	return ordered{
-		{"check_run_id", checkRunID(run, index, combo)},
+		{"check_run_id", id},
 		{"workflow_ref", u.full + "/" + run.WorkflowPath + "@" + run.Ref},
 		{"workflow_sha", run.Sha}, {"workflow_repository", u.full}, {"workflow_file_path", run.WorkflowPath},
-	}
+	}, nil
 }
