@@ -253,3 +253,35 @@ func TestOwnerAndCIRetention(t *testing.T) {
 		}
 	}
 }
+
+func TestCIPollTimeout(t *testing.T) {
+	load := func(extra map[string]string) (config.Config, error) {
+		env := map[string]string{
+			config.EnvDataDir: "/data", config.EnvPublicURL: "https://forge.example.org",
+			config.EnvAdminToken: "0123456789abcdef0123456789abcdef",
+		}
+		for k, v := range extra {
+			env[k] = v
+		}
+		return config.Load(func(k string) string { return env[k] })
+	}
+
+	c, err := load(nil)
+	require.NoError(t, err)
+	assert.Zero(t, c.CIPollTimeout, "unset: the default is left to the CI use case")
+
+	for in, want := range map[string]time.Duration{
+		"25s": 25 * time.Second, " 30s ": 30 * time.Second, "1s": time.Second, "55s": 55 * time.Second, "1500ms": 1500 * time.Millisecond,
+	} {
+		c, err = load(map[string]string{config.EnvCIPollTimeout: in})
+		require.NoError(t, err, in)
+		assert.Equal(t, want, c.CIPollTimeout, in)
+	}
+
+	for _, in := range []string{"soon", "25", "0s", "-5s", "999ms", "56s", "2m"} {
+		_, err := load(map[string]string{config.EnvCIPollTimeout: in})
+		var ce *config.Error
+		require.True(t, errors.As(err, &ce), in)
+		assert.Contains(t, ce.Problems[0], config.EnvCIPollTimeout, in)
+	}
+}

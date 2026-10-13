@@ -39,6 +39,9 @@ const (
 	EnvOwner = "ERMITE_OWNER"
 	// EnvCILogRetention is how long CI runs, jobs, checks and logs are kept.
 	EnvCILogRetention = "ERMITE_CI_LOG_RETENTION"
+	// EnvCIPollTimeout is how long FetchJob holds a runner's call. Lower it
+	// when a reverse proxy cuts idle responses sooner than the default 50 s.
+	EnvCIPollTimeout = "ERMITE_CI_POLL_TIMEOUT"
 )
 
 // Defaults.
@@ -61,6 +64,14 @@ const (
 	// GitReaderErmiteGit reads them with the ermite-git library where it is
 	// proven faster, and with the git binary elsewhere.
 	GitReaderErmiteGit = "ermite-git"
+)
+
+// Bounds of ERMITE_CI_POLL_TIMEOUT. The upper bound keeps the poll under the 60 s
+// that the runner waits for one FetchJob; the lower one stops runners from
+// polling in a tight loop.
+const (
+	MinCIPollTimeout = time.Second
+	MaxCIPollTimeout = 55 * time.Second
 )
 
 // MinAdminTokenLen is the shortest accepted admin token, in characters.
@@ -98,6 +109,9 @@ type Config struct {
 	// CIRetention is how long CI data is kept; 0 (variable unset) leaves the
 	// default to the CI use case.
 	CIRetention time.Duration
+	// CIPollTimeout is how long FetchJob holds a call; 0 (variable unset)
+	// leaves the default to the CI use case.
+	CIPollTimeout time.Duration
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -244,6 +258,18 @@ func Load(get func(string) string) (Config, error) {
 			bad(EnvCILogRetention, "%v", err)
 		} else {
 			c.CIRetention = d
+		}
+	}
+
+	if raw := strings.TrimSpace(get(EnvCIPollTimeout)); raw != "" {
+		d, err := time.ParseDuration(raw)
+		switch {
+		case err != nil:
+			bad(EnvCIPollTimeout, "must be a duration such as 25s (got %q)", raw)
+		case d < MinCIPollTimeout || d > MaxCIPollTimeout:
+			bad(EnvCIPollTimeout, "must be between %v and %v (got %q)", MinCIPollTimeout, MaxCIPollTimeout, raw)
+		default:
+			c.CIPollTimeout = d
 		}
 	}
 
