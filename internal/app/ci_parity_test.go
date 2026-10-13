@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 )
 
 // conformance is testdata/conformance/ctx-job-runner.contexts.json: the
@@ -270,6 +271,7 @@ jobs:
 	run := c.getRun(c.runs()[0].GetId())
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, run.GetRun().GetConclusion())
 	assert.Empty(t, run.GetJobs(), "no job")
+	assert.Equal(t, ".github/workflows/m.yml", run.GetRun().GetWorkflowName(), "no name: in this file: the path")
 	assert.Contains(t, run.GetRun().GetError(), "Strategy for job 'too-many' produced 272 configurations which exceeds the maximum of 256 configurations")
 }
 
@@ -435,9 +437,9 @@ jobs:
 	assert.Equal(t, "Display name of", c.getRun(c.runs()[0].GetId()).GetJobs()[0].GetName())
 }
 
-// A tag push carries, like a created branch, the commits the default branch
-// lacks, newest as head_commit, and the compare URL of several commits is
-// "<first>^...<last>" (recorded: push-tag, skip-directive-tag).
+// A tag push carries the commits that no branch has, newest as head_commit, and
+// the compare URL of several commits is "<first>^...<last>" (recorded:
+// skip-directive-tag, where no branch exists).
 func TestCITagEventCarriesTheNewCommits(t *testing.T) {
 	c := newCIHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
@@ -464,4 +466,285 @@ func TestCITagEventCarriesTheNewCommits(t *testing.T) {
 	assert.Equal(t, publicOrigin+"/owner/proj/compare/"+first[:12]+"^..."+last[:12], ev["compare"])
 	assert.Equal(t, "tag", ctxs["github"]["ref_type"])
 	assert.Equal(t, true, ev["created"])
+}
+
+// tagEvent pushes the tag and returns the push event and the title of the run
+// it starts, after `want` runs exist.
+func (c *ciHarness) tagEvent(runner *fakeRunner, tag string, want int) (map[string]any, string) {
+	c.t.Helper()
+	c.mustGit(c.wt, "tag", tag)
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), tag)
+	job := runner.await()
+	var ctxs map[string]map[string]any
+	require.NoError(c.t, json.Unmarshal([]byte(job.GetContexts()), &ctxs))
+	runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
+	c.waitFor("the run exists", func() bool { return len(c.runs()) == want })
+	var title string
+	for _, r := range c.runs() {
+		if r.GetRef() == "refs/tags/"+tag {
+			title = r.GetTitle()
+		}
+	}
+	return ctxs["github"]["event"].(map[string]any), title
+}
+
+func eventMessages(ev map[string]any) []string {
+	var msgs []string
+	for _, cm := range ev["commits"].([]any) {
+		msgs = append(msgs, cm.(map[string]any)["message"].(string))
+	}
+	return msgs
+}
+
+// A tag on a commit that a branch has carries that commit alone, and the
+// compare URL is its page, not a range from the previous push (recorded:
+// filter-tags, filter-paths-tag, filter-branches-ignore). The tag run is
+// titled with the workflow name (filter-*).
+func TestCITagEventOfACommitABranchHas(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	// Two commits on main, pushed with the workflow; both are on a branch.
+	c.push("main", map[string]string{".github/workflows/rel.yml": "name: Release\non:\n  push:\n    tags: ['v*']\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"}, "")
+	older := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+	c.writeFile(c.wt, "x.txt", []byte("x\n"))
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), "main")
+	newer := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+
+	ev, title := c.tagEvent(runner, "v1", 1)
+	assert.Equal(t, []string{"add x.txt"}, eventMessages(ev), "the tagged commit alone, not the push range")
+	assert.Equal(t, newer, ev["head_commit"].(map[string]any)["id"])
+	assert.Equal(t, publicOrigin+"/owner/proj/commit/"+newer[:12], ev["compare"])
+	assert.Equal(t, "Release", title, "a tag run is titled with the workflow name, not the commit message")
+
+	// A tag on an older commit of the branch: that commit alone.
+	c.mustGit(c.wt, "tag", "v0", older)
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), "v0")
+	job := runner.await()
+	var ctxs map[string]map[string]any
+	require.NoError(t, json.Unmarshal([]byte(job.GetContexts()), &ctxs))
+	runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
+	ev = ctxs["github"]["event"].(map[string]any)
+	assert.Equal(t, older, ev["after"])
+	assert.Equal(t, older, ev["head_commit"].(map[string]any)["id"])
+	assert.Equal(t, publicOrigin+"/owner/proj/commit/"+older[:12], ev["compare"])
+}
+
+// A tag on a new commit on top of the branch (recorded: push-tag) carries that
+// commit alone: the commit of the branch under it is not part of the event.
+func TestCITagEventOfANewCommitOnTopOfABranch(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n    tags: ['v*']\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"}, "branch commit")
+	first := runner.await()
+	runner.runJob(first, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
+	c.waitFor("the branch run ends", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
+	assert.Equal(t, "branch commit", c.runs()[0].GetTitle(), "a branch run keeps the commit message as title")
+
+	c.writeFile(c.wt, "t.txt", []byte("t\n")) // "add t.txt", only the tag is pushed
+	tagged := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+	ev, title := c.tagEvent(runner, "v1", 2)
+	assert.Equal(t, []string{"add t.txt"}, eventMessages(ev))
+	assert.Equal(t, publicOrigin+"/owner/proj/commit/"+tagged[:12], ev["compare"])
+	assert.Equal(t, ".github/workflows/ci.yml", title, "no name:, so the workflow name is the path of the file (assumed, not recorded)")
+	assert.Equal(t, true, ev["created"])
+	assert.Equal(t, domain.ZeroOID, ev["before"])
+}
+
+// Several tags in one push start one run each, with the same event: the
+// commit alone (recorded: push-tags-limit), titled with the workflow name.
+func TestCIThreeTagsInOnePush(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{".github/workflows/t.yml": "name: Tags\non:\n  push:\n    tags: ['v*']\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"}, "")
+	c.writeFile(c.wt, "t.txt", []byte("t\n"))
+	sha := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+	for _, tag := range []string{"v1", "v2", "v3"} {
+		c.mustGit(c.wt, "tag", tag)
+	}
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), "v1", "v2", "v3")
+	for range 3 {
+		job := runner.await()
+		var ctxs map[string]map[string]any
+		require.NoError(t, json.Unmarshal([]byte(job.GetContexts()), &ctxs))
+		ev := ctxs["github"]["event"].(map[string]any)
+		assert.Equal(t, []string{"add t.txt"}, eventMessages(ev))
+		assert.Equal(t, publicOrigin+"/owner/proj/commit/"+sha[:12], ev["compare"])
+		runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
+	}
+	c.waitFor("three runs", func() bool { return len(c.runs()) == 3 })
+	for _, r := range c.runs() {
+		assert.Equal(t, "Tags", r.GetTitle())
+	}
+}
+
+// A tag run with a run-name keeps the evaluated run-name as its title (the
+// run-name of a tag push is not recorded; branch pushes are, ctx-github-names).
+func TestCITagRunKeepsItsRunName(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{".github/workflows/t.yml": "name: Tags\nrun-name: \"release ${{ github.ref_name }}\"\non:\n  push:\n    tags: ['v*']\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"}, "")
+	_, title := c.tagEvent(runner, "v1", 1)
+	assert.Equal(t, "release v1", title)
+}
+
+// An exclude entry with a key that is no key of the matrix makes the workflow
+// invalid, and the run is named after the file (recorded: matrix-edge-values,
+// a-exclude-unknown-key.yml: name = path, no job), while an over-256 matrix
+// keeps the name of the workflow (matrix-over-256).
+func TestCIInvalidStrategyRunNames(t *testing.T) {
+	c := newCIHarness(t, nil)
+	c.registerRunner("alpha", "ubuntu-latest")
+	var a, b []string
+	for i := 1; i <= 17; i++ {
+		a = append(a, itoa(i))
+	}
+	for i := 1; i <= 16; i++ {
+		b = append(b, itoa(i))
+	}
+	c.push("main", map[string]string{
+		".github/workflows/over.yml": `name: matrix-over-256
+on: push
+jobs:
+  too-many:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        a: [` + strings.Join(a, ", ") + `]
+        b: [` + strings.Join(b, ", ") + `]
+    steps:
+      - run: echo
+`,
+		".github/workflows/exclude.yml": `name: a-exclude-unknown-key
+on: push
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [one, two]
+        exclude:
+          - nokey: x
+          - os: one
+            nokey: y
+    steps:
+      - run: echo "os=${{ matrix.os }}"
+`,
+		".github/workflows/noname.yml": `on: push
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [one]
+        exclude:
+          - nokey: x
+    steps:
+      - run: echo
+`}, "")
+	c.waitFor("three failed runs", func() bool {
+		rs := c.runs()
+		if len(rs) != 3 {
+			return false
+		}
+		for _, r := range rs {
+			if r.GetStatus() != pb.CiStatus_CI_STATUS_COMPLETED {
+				return false
+			}
+		}
+		return true
+	})
+	names := map[string]string{}
+	for _, r := range c.runs() {
+		names[r.GetWorkflowPath()] = r.GetWorkflowName()
+		assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, r.GetConclusion(), r.GetWorkflowPath())
+		assert.Empty(t, c.getRun(r.GetId()).GetJobs(), "no job: %s", r.GetWorkflowPath())
+		if r.GetWorkflowPath() == ".github/workflows/exclude.yml" {
+			one := ".github/workflows/exclude.yml: Matrix exclude key 'nokey' does not match any key within the matrix"
+			assert.Equal(t, one+"\n"+one, r.GetError(), "once per offending entry")
+		}
+	}
+	assert.Equal(t, map[string]string{
+		".github/workflows/over.yml":    "matrix-over-256",
+		".github/workflows/exclude.yml": ".github/workflows/exclude.yml",
+		".github/workflows/noname.yml":  ".github/workflows/noname.yml",
+	}, names)
+	// The check of a failed run carries the same workflow name.
+	sha := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+	checkNames := map[string]string{}
+	for _, ck := range c.checks(sha) {
+		checkNames[ck.GetName()] = ck.GetWorkflowName()
+	}
+	assert.Equal(t, "matrix-over-256", checkNames[".github/workflows/over.yml"])
+	assert.Equal(t, ".github/workflows/exclude.yml", checkNames[".github/workflows/exclude.yml"])
+}
+
+// The default success() of a job looks at the whole chain of its needs, not
+// only at the direct ones (recorded: needs-failed-dependency): chain-after-always
+// needs with-always, which ran through always() after broken failed, and is
+// skipped. with-always and with-failure still run.
+func TestCIDefaultSuccessLooksAtTheWholeChain(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{".github/workflows/n.yml": `name: needs-failed-dependency
+on: push
+jobs:
+  broken:
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 1
+  plain:
+    needs: broken
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo SHOULD-NOT-RUN
+  with-always:
+    needs: broken
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "result=${{ needs.broken.result }}"
+  with-failure:
+    needs: broken
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "result=${{ needs.broken.result }}"
+  chain-after-always:
+    needs: with-always
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo chain-after-always-runs-because-with-always-succeeded
+  chain-with-failure:
+    needs: with-always
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "failure() is true when an ancestor failed"
+  chain-always:
+    needs: with-always
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo always
+`}, "")
+	broken := runner.await()
+	assert.Equal(t, "broken", broken.GetJobKey())
+	runner.runJob(broken, pb.CiConclusion_CI_CONCLUSION_FAILURE, nil, "x")
+	ran := map[string]bool{}
+	for range 4 {
+		j := runner.await()
+		ran[j.GetJobKey()] = true
+		runner.runJob(j, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
+	}
+	assert.Equal(t, map[string]bool{"with-always": true, "with-failure": true, "chain-with-failure": true, "chain-always": true}, ran)
+	c.waitFor("the run ends", func() bool { return c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
+	got := map[string]pb.CiConclusion{}
+	for _, j := range c.getRun(c.runs()[0].GetId()).GetJobs() {
+		got[j.GetName()] = j.GetConclusion()
+	}
+	skipped, ok := pb.CiConclusion_CI_CONCLUSION_SKIPPED, pb.CiConclusion_CI_CONCLUSION_SUCCESS
+	assert.Equal(t, map[string]pb.CiConclusion{
+		"broken": pb.CiConclusion_CI_CONCLUSION_FAILURE, "plain": skipped, "with-always": ok, "with-failure": ok,
+		"chain-after-always": skipped, "chain-with-failure": ok, "chain-always": ok,
+	}, got)
 }

@@ -161,13 +161,13 @@ func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tag
 		wf, perrs := workflow.Parse(f.path, f.content)
 		switch {
 		case f.problem != "":
-			errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, f.problem))
+			errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, f.path, f.problem))
 		case len(perrs) > 0:
 			var lines []string
 			for _, e := range perrs {
 				lines = append(lines, e.Error())
 			}
-			errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, strings.Join(lines, "\n")))
+			errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, f.path, strings.Join(lines, "\n")))
 		case skip || !wf.MatchPush(workflow.PushInfo{
 			Ref: u.Ref, Created: facts.created, ChangedFiles: facts.files, FilesTruncated: facts.filesTruncated, TagCount: tagCount,
 		}):
@@ -175,8 +175,12 @@ func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tag
 			if facts.payload == nil {
 				facts.payload = c.pushPayload(ctx, repo, facts)
 			}
-			if problem := c.matrixProblem(ctx, repo, t, facts, f.path, wf); problem != "" {
-				errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, problem))
+			if problem := c.matrixProblem(ctx, repo, t, facts, f.path, wf); problem.text != "" {
+				name := f.path
+				if problem.named {
+					name = workflowName(wf, f.path)
+				}
+				errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, name, problem.text))
 				continue
 			}
 			errs = append(errs, c.startRun(ctx, repo, t, facts, f.path, string(f.content), wf))
@@ -201,14 +205,18 @@ func (c *CI) collect(ctx context.Context, repo domain.RepoName, u domain.RefUpda
 	}
 	f.commit = res.CommitID
 	if isTag {
-		// Recorded (push-tag, skip-directive-tag): the event of a tag carries
-		// the commits that the default branch does not have, like a created
-		// branch, newest as head_commit. No file list: paths filters are not
+		// Recorded (push-tag, skip-directive-tag, push-tags-limit): the event of
+		// a tag carries the commits that no branch has, newest as head_commit
+		// ("compare" is then that commit's page, or "<first>^...<head>" for
+		// several). Not the range from the previous push, and not the commits
+		// the default branch lacks: in push-tag the branch commit under the
+		// tagged one is not listed, in skip-directive-tag, which has no branch,
+		// both commits are. A tag on a commit that a branch has lists that
+		// commit alone (not recorded). No file list: paths filters are not
 		// evaluated for tags.
-		base := c.defaultBase(ctx, repo, "", f.commit)
-		cs, _, err := c.cfg.Git.ListRange(ctx, repo, base, f.commit, ports.MaxCommitLimit)
+		cs, _, err := c.cfg.Diff.CommitsOffBranches(ctx, repo, f.commit, ports.MaxCommitLimit)
 		if err != nil {
-			return f, fmt.Errorf("read the commit of the tag: %w", err)
+			return f, fmt.Errorf("read the commits of the tag: %w", err)
 		}
 		if len(cs) == 0 {
 			cs, _, err = c.cfg.Git.ListRange(ctx, repo, domain.ObjectID{}, f.commit, 1)
@@ -218,8 +226,6 @@ func (c *CI) collect(ctx context.Context, repo domain.RepoName, u domain.RefUpda
 			if len(cs) == 0 {
 				return f, fmt.Errorf("read the commit of the tag: %w", domain.ErrNotFound)
 			}
-			f.head = cs[0]
-			return f, nil
 		}
 		f.head = cs[0]
 		f.commits = slices.Clone(cs[:min(len(cs), maxPushCommits)])
@@ -364,11 +370,15 @@ func firstLine(s string) string {
 
 // startInvalid records the failed run of an invalid workflow file: no job, the
 // errors as Run.error, like GitHub's "Invalid workflow file".
-func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, problem string) error {
+//
+// name is what the run is called: the path of the file when the file is not a
+// workflow GitHub accepts, or the workflow's own name for a workflow that
+// parses but whose strategy GitHub refuses (recorded: matrix-over-256).
+func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, name, problem string) error {
 	now := c.now()
 	draft, err := c.cfg.Store.CreateRun(ctx, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
-			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: wfPath,
+			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name,
 			Title: firstLine(f.head.Message), Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
 			Status: domain.CICompleted, Conclusion: domain.CIFailure, Error: cutText(problem, maxRunError),
 			CreatedAt: now, StartedAt: now, CompletedAt: now,
@@ -377,7 +387,7 @@ func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f 
 			Run: run, Source: domain.CIRunSource{Repo: repo.Name, WorkflowYAML: "", GithubJSON: "{}"},
 			Checks: []domain.CICheck{{
 				ID: "run-" + strconv.FormatInt(id, 10), Repo: repo.Name, Sha: run.Sha, Name: wfPath, Status: domain.CICompleted,
-				Conclusion: domain.CIFailure, RunID: id, Attempt: 1, WorkflowName: wfPath, CreatedAt: now, StartedAt: now, CompletedAt: now,
+				Conclusion: domain.CIFailure, RunID: id, Attempt: 1, WorkflowName: name, CreatedAt: now, StartedAt: now, CompletedAt: now,
 			}},
 		}
 	})
@@ -401,14 +411,23 @@ func (c *CI) publishRun(ctx context.Context, repo domain.Repo, run domain.CIRun)
 // job of the file, then plans the jobs that can start.
 func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, yaml string, wf *workflow.Workflow) error {
 	now := c.now()
-	name := wf.Name
-	if name == "" {
-		name = wfPath
+	name := workflowName(wf, wfPath)
+	// The title of a run without run-name is the commit message for a branch;
+	// for a tag GitHub shows the workflow name, not the commit message
+	// (recorded: filter-tags, filter-paths-tag, filter-branches-ignore, where
+	// every file has its own name). The four scenarios whose file is ci.yml
+	// (push-tag, push-tags-limit, push-delete-tag, skip-directive-tag) recorded
+	// "push-branch-create", which is the name of another scenario's ci.yml and
+	// not that of the workflow of the run: a leftover on github.com's side that
+	// no rule produces, so those four titles cannot match.
+	title := firstLine(f.head.Message)
+	if f.isTag {
+		title = name
 	}
 	draft, err := c.cfg.Store.CreateRun(ctx, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
 			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name,
-			Title: firstLine(f.head.Message), Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
+			Title: title, Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
 			Status: domain.CIQueued, CreatedAt: now,
 		}
 		githubJSON := c.githubJSON(ctx, repo, run, f)
@@ -444,11 +463,21 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 	return c.advanceRun(ctx, draft.Run.ID)
 }
 
+// workflowName is the name of a workflow, the path of its file when it has no
+// "name:".
+func workflowName(wf *workflow.Workflow, path string) string {
+	if wf.Name == "" {
+		return path
+	}
+	return wf.Name
+}
+
 // runTitle is the title of a run, GitHub's display_title: the run-name
 // evaluated with the github, inputs and vars contexts (the contexts the
-// schema allows there), else the first line of the head commit message. A
-// run-name that does not evaluate, or that evaluates to nothing, falls back to
-// the commit message, and the failure is logged.
+// schema allows there), else commitTitle, which the caller sets to the first
+// line of the head commit message (the workflow name for a tag). A run-name
+// that does not evaluate, or that evaluates to nothing, falls back to
+// commitTitle, and the failure is logged.
 func (c *CI) runTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, commitTitle string) string {
 	if wf.RunName == nil {
 		return commitTitle
@@ -477,29 +506,44 @@ func (c *CI) runTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, co
 // evaluate here, and that error is ignored),
 // and returns the error text of the first strategy that produces more
 // configurations than GitHub allows: GitHub then fails the run with no job,
-// like an invalid workflow file (recorded: matrix-over-256). Any other error
+// like an invalid workflow file (recorded: matrix-over-256; the run keeps the
+// name of the workflow). An "exclude" entry with a key that is no vector of the
+// matrix is refused too, and there GitHub names the run after the file path
+// (recorded: matrix-edge-values, a-exclude-unknown-key.yml). Any other error
 // of a strategy is ignored here and stays a job failure, found when the job is
 // planned. Whether GitHub counts the matrix of a job that "if:" skips is not
 // recorded yet (needs an "if: false" scenario over 256). The github context
 // is that of a run with no id yet, on the commits shared by the ref.
-func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath string, wf *workflow.Workflow) string {
+func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath string, wf *workflow.Workflow) matrixIssue {
 	if !slices.ContainsFunc(wf.Jobs, func(j *workflow.Job) bool { return j.Strategy != nil }) {
-		return "" // nothing to expand: no context to build
+		return matrixIssue{} // nothing to expand: no context to build
 	}
 	probe := domain.CIRun{Repo: repo.Name, Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor, WorkflowPath: wfPath, WorkflowName: wf.Name, CreatedAt: c.now()}
 	gh, err := expr.FromJSON([]byte(c.githubJSON(ctx, repo, probe, f)))
 	if err != nil {
-		return ""
+		return matrixIssue{}
 	}
 	env := template.Env{Contexts: map[string]expr.Value{
 		"github": gh, "needs": expr.NewDictionary(), "inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
 	}}
 	for _, j := range wf.Jobs {
-		if _, err := j.EvaluateStrategy(ctx, env); errors.Is(err, workflow.ErrTooManyConfigurations) {
-			return wfPath + ": " + err.Error()
+		_, err := j.EvaluateStrategy(ctx, env)
+		switch {
+		case errors.Is(err, workflow.ErrTooManyConfigurations):
+			return matrixIssue{text: wfPath + ": " + err.Error(), named: true}
+		case errors.Is(err, workflow.ErrExcludeUnknownKey):
+			// One line per offending entry, each with the file.
+			return matrixIssue{text: wfPath + ": " + strings.ReplaceAll(err.Error(), "\n", "\n"+wfPath+": ")}
 		}
 	}
-	return ""
+	return matrixIssue{}
+}
+
+// matrixIssue is a strategy GitHub refuses: the error text, and whether the run
+// keeps the name of the workflow (else it is named after the file).
+type matrixIssue struct {
+	text  string
+	named bool
 }
 
 // --- the github context (see ci_github.go) ---
