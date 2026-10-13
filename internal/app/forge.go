@@ -20,6 +20,8 @@ import (
 	"bnema.dev/ermite/internal/adapters/eventbus"
 	"bnema.dev/ermite/internal/adapters/gitcli"
 	"bnema.dev/ermite/internal/adapters/githttp"
+	"bnema.dev/ermite/internal/adapters/githubapi"
+	"bnema.dev/ermite/internal/adapters/gitremote"
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/adapters/rpc"
@@ -50,9 +52,20 @@ type options struct {
 	eventBuffer int
 	// revalidateEvery overrides usecase.DefaultRevalidateEvery when not zero.
 	revalidateEvery time.Duration
+	// remote replaces the lister of github.com refs (tests never reach the
+	// network).
+	remoteLister ports.GitRemote
 	// ci overrides the settings of the CI engine (tests shorten its
 	// durations).
 	ci func(*usecase.CIConfig)
+}
+
+// remote returns the lister of github.com refs: the test's, else def.
+func (o options) remote(def ports.GitRemote) ports.GitRemote {
+	if o.remoteLister != nil {
+		return o.remoteLister
+	}
+	return def
 }
 
 // forge is the wired server: every adapter and use case, ready to serve.
@@ -161,7 +174,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Msg("repositories reconciled")
 
 	f.Tokens = usecase.NewTokens(store.Tokens(), clock, store.Sessions())
-	f.Auth = usecase.NewAuth(cfg.AdminTokenHash, store.Tokens(), clock)
+	f.Auth = usecase.NewAuth(cfg.AdminTokenHash, store.Tokens(), clock).WithRepoTokens(store.CI())
 	f.maint = usecase.NewMaintainer(ctx, git, opts.maintenanceDelay)
 	f.Pushes = usecase.NewPushes(store, f.Repos, git, f.Bus, clock, f.maint, f.Auth)
 
@@ -199,7 +212,10 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Store: store.CI(), Logs: cilogs.New(cilogs.Dir(cfg.DataDir)), Meta: store, Repos: git, Reader: reader,
 		Git: git, Diff: git, Bus: f.Bus, Clock: clock, Auth: f.Auth,
 		Owner: cfg.Owner, PublicURL: cfg.PublicURL, Retention: cfg.CIRetention,
-		PollTimeout: cfg.CIPollTimeout,
+		PollTimeout: cfg.CIPollTimeout, Archive: git,
+		Remote: opts.remote(gitremote.New(gitremote.Config{
+			Bin: cfg.Git, Path: path, Home: filepath.Join(cfg.DataDir, "run", "git-home"),
+		})),
 	}
 	if opts.ci != nil {
 		opts.ci(&ciCfg)
@@ -279,14 +295,26 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Repos:          f.Repos,
 		Pushes:         f.Pushes,
 		Backend:        git,
+		Owner:          cfg.Owner,
 		Hooks:          f.hooks,
 		TrustedProxies: cfg.TrustedProxies,
 		Limiter:        limiter,
 		MaxBodyBytes:   maxBody,
 	})
-	routes := make([]httpserver.Route, 0, len(githttp.Patterns)+len(web.Patterns))
+	routes := make([]httpserver.Route, 0, 2*len(githttp.Patterns)+len(githubapi.Patterns)+len(web.Patterns))
 	for _, p := range githttp.Patterns {
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
+	}
+	// The owner form of the clone URL (github.repository), which GitHub's
+	// actions use. config.Owner follows the rules of repository names, so it is
+	// a literal segment that never overlaps /-/.
+	for _, p := range githttp.OwnerPatterns(cfg.Owner) {
+		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
+	}
+	// The REST subset the actions call on github.api_url.
+	api := githubapi.New(githubapi.Config{Auth: f.Auth, API: f.CI, TrustedProxies: cfg.TrustedProxies, Limiter: limiter})
+	for _, p := range githubapi.Patterns {
+		routes = append(routes, httpserver.Route{Pattern: p, Handler: api})
 	}
 	warnSessionsNeedHTTPS(ctx, cfg.PublicURL)
 	warnSharedClientKey(ctx, cfg.TrustedProxies, githttp.DefaultMaxPerClient)

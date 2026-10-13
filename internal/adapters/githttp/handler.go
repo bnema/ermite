@@ -38,6 +38,21 @@ var Patterns = []string{
 	"POST /{repo}/git-receive-pack",
 }
 
+// OwnerPatterns are the patterns of Patterns under /<owner>/, where owner is
+// ERMITE_OWNER: the URL github.repository gives (actions/checkout clones
+// <server_url>/<owner>/<repo>, with no .git suffix). The owner is a literal
+// segment so that the patterns never overlap the /-/ routes, and other owners
+// fall through to the web, which answers 404. Register them only for a valid
+// owner; Config.Owner must be the same.
+func OwnerPatterns(owner string) []string {
+	out := make([]string, len(Patterns))
+	for i, p := range Patterns {
+		method, path, _ := strings.Cut(p, " ")
+		out[i] = method + " /" + owner + path
+	}
+	return out
+}
+
 // DefaultMaxBodyBytes bounds a request body (a push) when Config.MaxBodyBytes
 // is zero.
 const DefaultMaxBodyBytes int64 = 4 << 30
@@ -67,6 +82,9 @@ type Config struct {
 	Repos   ports.RepoLookup
 	Pushes  ports.PushService
 	Backend ports.GitBackend
+	// Owner is ERMITE_OWNER: /<owner>/<repo>/... is served like /<repo>/...
+	// (see OwnerPatterns). Empty serves the second form nowhere.
+	Owner string
 	// Hooks provides hook tokens for pushes. It is required.
 	Hooks ports.HookTokens
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
@@ -146,12 +164,34 @@ type route struct {
 
 func (rt route) push() bool { return rt.service == serviceReceive }
 
+// gitSuffixes are the ends of the paths the handler serves, after the
+// repository.
+var gitSuffixes = []string{"/info/refs", "/" + serviceUpload, "/" + serviceReceive}
+
 // parseRoute recognizes /<repo>/info/refs?service=..., /<repo>/git-upload-pack
-// and /<repo>/git-receive-pack. info/refs without a service is the dumb
-// protocol, which ermite does not serve.
-func parseRoute(r *http.Request) (route, int) {
-	seg, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	if !ok || seg == "" {
+// and /<repo>/git-receive-pack, and the same under /<owner>/ for the owner of
+// the forge. info/refs without a service is the dumb protocol, which ermite
+// does not serve.
+func (h *Handler) parseRoute(r *http.Request) (route, int) {
+	p := strings.TrimPrefix(r.URL.Path, "/")
+	var head, rest string
+	for _, suffix := range gitSuffixes {
+		if h, ok := strings.CutSuffix(p, suffix); ok {
+			head, rest = h, suffix[1:]
+			break
+		}
+	}
+	if rest == "" {
+		return route{}, http.StatusNotFound
+	}
+	seg := head
+	if owner, repo, ok := strings.Cut(head, "/"); ok {
+		if h.cfg.Owner == "" || owner != h.cfg.Owner {
+			return route{}, http.StatusNotFound
+		}
+		seg = repo
+	}
+	if seg == "" || strings.Contains(seg, "/") {
 		return route{}, http.StatusNotFound
 	}
 	rt := route{repo: seg, suffix: rest}
@@ -175,8 +215,6 @@ func parseRoute(r *http.Request) (route, int) {
 			return route{}, http.StatusMethodNotAllowed
 		}
 		rt.service = rest
-	default:
-		return route{}, http.StatusNotFound
 	}
 	return rt, 0
 }
@@ -198,7 +236,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Msg("git request")
 	}()
 
-	rt, status := parseRoute(r)
+	rt, status := h.parseRoute(r)
 	if status != 0 {
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -265,7 +303,8 @@ func (h *Handler) authenticate(r *http.Request, addr string) (domain.Principal, 
 }
 
 // credentials extracts the token from an Authorization header: the password of
-// Basic (the username is ignored) or a Bearer token. present is true when the
+// Basic (the username is ignored, actions/checkout sends x-access-token), or
+// the value of "Bearer" or "token". present is true when the
 // header exists, even if it carries nothing usable, which then fails
 // authentication.
 func credentials(r *http.Request) (secret string, present bool) {
@@ -276,7 +315,7 @@ func credentials(r *http.Request) (secret string, present bool) {
 	if _, pass, ok := r.BasicAuth(); ok {
 		return pass, true
 	}
-	if scheme, tok, ok := strings.Cut(auth, " "); ok && strings.EqualFold(scheme, "Bearer") {
+	if scheme, tok, ok := strings.Cut(auth, " "); ok && (strings.EqualFold(scheme, "Bearer") || strings.EqualFold(scheme, "token")) {
 		return strings.TrimSpace(tok), true
 	}
 	return "", true

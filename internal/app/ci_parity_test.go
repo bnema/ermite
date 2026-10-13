@@ -307,20 +307,50 @@ jobs:
 	runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
 }
 
-// A step timeout stays refused as long as the runner has none.
-func TestCIStepTimeoutIsStillRefused(t *testing.T) {
+// CI-2: planning runs what CI-1 refused (uses, container, services, a step
+// timeout) and still refuses job-level uses, environment and concurrency.
+func TestCIPlanningAcceptsCI2Features(t *testing.T) {
 	c := newCIHarness(t, nil)
-	c.registerRunner("alpha", "ubuntu-latest")
+	runner := c.registerRunner("alpha", "ubuntu-latest")
 	c.push("main", map[string]string{".github/workflows/s.yml": `on: push
 jobs:
   j:
     runs-on: ubuntu-latest
+    container: alpine:3
+    services:
+      db:
+        image: postgres:16
     steps:
+      - uses: actions/checkout@v4
       - timeout-minutes: 1
         run: echo
 `}, "")
-	c.waitFor("the run fails", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
-	assert.Equal(t, "not supported yet: timeout-minutes on a step", c.getRun(c.runs()[0].GetId()).GetJobs()[0].GetError())
+	job := runner.await()
+	assert.Equal(t, "j", job.GetJobKey())
+
+	for _, tc := range []struct{ name, job, want string }{
+		{"reusable", "uses: ./.github/workflows/x.yml", "not supported yet: reusable workflows (uses at the job level)"},
+		{"environment", "runs-on: ubuntu-latest\n    environment: prod\n    steps:\n      - run: echo", "not supported yet: environment"},
+		{"concurrency", "runs-on: ubuntu-latest\n    concurrency: g\n    steps:\n      - run: echo", "not supported yet: concurrency"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "on: push\njobs:\n  r:\n    " + tc.job + "\n"
+			c.push("main", map[string]string{".github/workflows/" + tc.name + ".yml": body}, "")
+			var got string
+			c.waitFor(tc.name+" fails", func() bool {
+				for _, r := range c.runs() {
+					if r.GetWorkflowPath() == ".github/workflows/"+tc.name+".yml" && r.GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED {
+						if jobs := c.getRun(r.GetId()).GetJobs(); len(jobs) == 1 {
+							got = jobs[0].GetError()
+							return true
+						}
+					}
+				}
+				return false
+			})
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 // A failed job with continue-on-error does not fail the run, keeps its own
@@ -416,11 +446,21 @@ func TestWebRedirectsOwnerURLs(t *testing.T) {
 		"/owner/proj":                   "/proj",
 		"/owner/proj/commit/" + sha:     "/proj/commit/" + sha,
 		"/owner/proj/compare/a...b?x=1": "/proj/compare/a...b?x=1",
-		"/owner/proj.git/info/refs":     "/proj.git/info/refs",
 	} {
 		res := b.get(path, nil)
 		assert.Equal(t, http.StatusPermanentRedirect, res.status, path)
 		assert.Equal(t, to, res.hdr.Get("Location"), path)
+	}
+	// The git URLs of the owner are served by git over HTTP, not redirected
+	// (checkout clones <server>/<owner>/<repo>): the private repository asks
+	// for credentials, a dumb request has no route.
+	for path, want := range map[string]int{
+		"/owner/proj.git/info/refs?service=git-upload-pack": http.StatusUnauthorized,
+		"/owner/proj/info/refs?service=git-upload-pack":     http.StatusUnauthorized,
+		"/other/proj/info/refs?service=git-upload-pack":     http.StatusNotFound,
+		"/owner/proj.git/info/refs":                         http.StatusNotFound,
+	} {
+		assert.Equal(t, want, b.get(path, nil).status, path)
 	}
 	assert.Equal(t, http.StatusNotFound, b.get("/other/proj/commit/"+sha, nil).status, "not the owner")
 	assert.Equal(t, http.StatusNotFound, b.get("/owner", nil).status, "a bare owner is no page")
