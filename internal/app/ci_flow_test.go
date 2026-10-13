@@ -668,7 +668,7 @@ func TestCIGithubContextOfAPush(t *testing.T) {
 	}
 
 	gh, event := ev()
-	assert.Equal(t, publicOrigin+"/proj/commit/"+first[:12], event["compare"], "a created ref compares as its commit")
+	assert.Equal(t, publicOrigin+"/owner/proj/commit/"+first[:12], event["compare"], "a created ref compares as its commit")
 	assert.Equal(t, true, event["created"])
 	assert.Equal(t, domain.ZeroOID, event["before"])
 	repo := event["repository"].(map[string]any)
@@ -681,6 +681,6 @@ func TestCIGithubContextOfAPush(t *testing.T) {
 
 	second := c.push("main", map[string]string{"a.txt": "a\n"}, "")
 	_, event = ev()
-	assert.Equal(t, publicOrigin+"/proj/compare/"+first[:12]+"..."+second[:12], event["compare"])
+	assert.Equal(t, publicOrigin+"/owner/proj/compare/"+first[:12]+"..."+second[:12], event["compare"])
 	assert.Equal(t, false, event["created"])
 }

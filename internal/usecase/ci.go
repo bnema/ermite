@@ -398,6 +398,8 @@ func (rs *runState) recompute(now time.Time) domain.CIRun {
 			started = j.StartedAt
 		}
 		switch {
+		case j.Conclusion.IsFailure() && j.ContinueOnError:
+			// continue-on-error: the job failed, the run does not.
 		case j.Conclusion.IsFailure():
 			failed = true
 		case j.Conclusion == domain.CICancelled:

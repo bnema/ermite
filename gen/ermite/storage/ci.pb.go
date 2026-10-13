@@ -786,9 +786,13 @@ type CIJob struct {
 	RunAttempt int32 `protobuf:"varint,38,opt,name=run_attempt,json=runAttempt,proto3" json:"run_attempt,omitempty"`
 	// The contexts JSON given to the runner, computed when the job is planned
 	// (needs outputs are final then).
-	ContextsJson  string `protobuf:"bytes,39,opt,name=contexts_json,json=contextsJson,proto3" json:"contexts_json,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ContextsJson string `protobuf:"bytes,39,opt,name=contexts_json,json=contextsJson,proto3" json:"contexts_json,omitempty"`
+	// The job's continue-on-error, evaluated when the job is planned: a failure
+	// of the job does not fail the run, does not cancel the siblings of its
+	// matrix, and needs.<job>.result is success.
+	ContinueOnError bool `protobuf:"varint,40,opt,name=continue_on_error,json=continueOnError,proto3" json:"continue_on_error,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CIJob) Reset() {
@@ -1085,6 +1089,13 @@ func (x *CIJob) GetContextsJson() string {
 		return x.ContextsJson
 	}
 	return ""
+}
+
+func (x *CIJob) GetContinueOnError() bool {
+	if x != nil {
+		return x.ContinueOnError
+	}
+	return false
 }
 
 // CICheck is stored under "check/<repo>/<sha>/<id>": the id of its job, or
@@ -1386,7 +1397,7 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\fcompleted_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x1b\n" +
 	"\tlog_start\x18\a \x01(\x03R\blogStart\x12\x1b\n" +
 	"\thas_lines\x18\t \x01(\bR\bhasLinesJ\x04\b\b\x10\tJ\x04\b\n" +
-	"\x10\v\"\xba\f\n" +
+	"\x10\v\"\xe6\f\n" +
 	"\x05CIJob\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\x03R\x05runId\x12\x18\n" +
@@ -1436,7 +1447,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\aplanned\x18% \x01(\bR\aplanned\x12\x1f\n" +
 	"\vrun_attempt\x18& \x01(\x05R\n" +
 	"runAttempt\x12#\n" +
-	"\rcontexts_json\x18' \x01(\tR\fcontextsJson\x1a:\n" +
+	"\rcontexts_json\x18' \x01(\tR\fcontextsJson\x12*\n" +
+	"\x11continue_on_error\x18( \x01(\bR\x0fcontinueOnError\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b$\x10%\"\xe5\x03\n" +

@@ -65,6 +65,11 @@ type Config struct {
 	// Heartbeat is how often an idle event stream gets a comment line;
 	// DefaultHeartbeat when zero.
 	Heartbeat time.Duration
+	// Owner is the owner login the GitHub-shaped URLs of CI show
+	// (<server>/<owner>/<repo>/...). A GET or HEAD of /<owner>/<rest> is
+	// redirected to /<rest> unless a repository named like the owner is
+	// visible to the caller. Empty: no redirect.
+	Owner string
 	// PublicURL is the base URL of the instance, without a trailing slash:
 	// the clone URLs are built on it, and its host is the instance name.
 	PublicURL string
@@ -100,6 +105,9 @@ type Server struct {
 	// pathCache holds the path lists the file finder fetches.
 	pathCache *pathCache
 	mux       *http.ServeMux
+	// ownerRepo is the owner login as a repository name, zero when it is not
+	// a valid one (then no repository can be named like the owner).
+	ownerRepo domain.RepoName
 	// refsFan shares the fragments of the refs page between the watchers of
 	// a push; entries are few and short-lived.
 	refsFan fanout
@@ -129,6 +137,7 @@ func New(cfg Config) (*Server, error) {
 		pathCache: newPathCache(pathCacheBytes, pathBuilds),
 		origin:    originOf(u),
 	}
+	s.ownerRepo, _ = domain.ParseRepoName(cfg.Owner)
 	s.mux = s.routes()
 	return s, nil
 }
@@ -184,7 +193,7 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun", s.ciAction(s.runRerun(false)))
 		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun-failed", s.ciAction(s.runRerun(true)))
 	}
-	mux.HandleFunc("GET /{repo}/{rest...}", s.page(s.notFound))
+	mux.HandleFunc(catchAll, s.page(s.notFound))
 	return mux
 }
 
@@ -197,7 +206,70 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.gate(w, r) {
 		return
 	}
+	if to, ok := s.ownerRedirect(r); ok {
+		http.Redirect(w, r, to, http.StatusPermanentRedirect)
+		return
+	}
 	s.mux.ServeHTTP(w, r)
+}
+
+// catchAll is the pattern of the paths that are no page.
+const catchAll = "GET /{repo}/{rest...}"
+
+// ownerRedirect maps /<owner>/<repo>[.git][/rest] to /<repo>[.git][/rest]: the
+// URLs that the github context of CI shows (html_url, commit and compare
+// URLs, clone_url) have the owner of the instance in front, like GitHub's.
+//
+// The rule is by repository, not by route: when no repository named like the
+// owner is visible to the caller, every GET or HEAD of /<owner>/<rest> is
+// redirected, so /<owner>/actions reaches the repository named "actions". A
+// repository named like the owner keeps its own pages. A private one is seen
+// as missing by an anonymous caller (the use case answers ErrNotFound), so the
+// redirect is the same as for a name nobody has and tells nothing.
+//
+// The target is built from a segment that parses as a repository name, which
+// has no slash, backslash, percent sign or dot-dot: it can only be a path on
+// this origin, never a "//host" one.
+func (s *Server) ownerRedirect(r *http.Request) (string, bool) {
+	if s.cfg.Owner == "" || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+		return "", false
+	}
+	first, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.EscapedPath(), "/"), "/")
+	if !ok || first != s.cfg.Owner || rest == "" {
+		return "", false
+	}
+	repo, _, _ := strings.Cut(rest, "/")
+	if _, err := domain.ParseRepoPath(repo); err != nil {
+		return "", false
+	}
+	if s.ownerNamesARepo(r) {
+		return "", false
+	}
+	to := "/" + rest
+	if r.URL.RawQuery != "" {
+		to += "?" + r.URL.RawQuery
+	}
+	return to, true
+}
+
+// ownerNamesARepo tells whether the caller can see a repository named like
+// the owner. A lookup that fails otherwise counts as yes: the request is then
+// served as it was before, without a redirect.
+func (s *Server) ownerNamesARepo(r *http.Request) bool {
+	if s.ownerRepo.IsZero() {
+		return false // the owner login is not a repository name
+	}
+	ctx := r.Context()
+	_, err := s.cfg.Repos.Get(ctx, principal(ctx), s.ownerRepo)
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, domain.ErrNotFound):
+		return false
+	}
+	log := zerowrap.FromCtx(ctx)
+	log.Debug().Err(err).Msg("owner redirect: the lookup of the repository named like the owner failed")
+	return true
 }
 
 // handler builds a page. It returns the component and its status, or an

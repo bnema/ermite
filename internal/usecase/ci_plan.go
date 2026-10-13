@@ -67,32 +67,18 @@ func unsupported(j *workflow.Job) string {
 		return "environment"
 	case j.Concurrency != nil:
 		return "concurrency"
-	case present(j.ContinueOnError):
-		return "continue-on-error"
 	}
 	for _, s := range j.Steps {
 		switch {
 		case s.Uses != nil:
 			return "uses: " + s.Uses.Value
-		case present(s.ContinueOnError):
-			return "continue-on-error on a step"
-		case present(s.TimeoutMinutes):
+		case s.TimeoutMinutes != nil:
+			// The runner refuses it too (executor.notSupported): it has no
+			// step timeout yet.
 			return "timeout-minutes on a step"
 		}
 	}
 	return ""
-}
-
-// present reports whether an optional key is given and is not a literal
-// false (continue-on-error: false is the default).
-func present(t template.Token) bool {
-	if t == nil {
-		return false
-	}
-	if b, ok := t.(*template.Boolean); ok && !b.Value {
-		return false
-	}
-	return true
 }
 
 // instances returns the indexes of the records of the job key, in order.
@@ -120,6 +106,10 @@ func (rs *runState) sortJobs() {
 func result(insts []domain.CIJob) string {
 	var failed, cancelled, ok bool
 	for _, j := range insts {
+		if j.ContinueOnError && j.Conclusion.IsFailure() {
+			ok = true // recorded: needs.<job>.result is success
+			continue
+		}
 		switch j.Conclusion {
 		case domain.CIFailure, domain.CITimedOut, domain.CIActionRequired:
 			failed = true
@@ -210,8 +200,8 @@ func (rs *runState) githubValue(key string, attempt int32) (*expr.Dictionary, er
 	if !ok {
 		return nil, fmt.Errorf("the stored github context is not an object")
 	}
-	d.Add("job", expr.String(key))
-	d.Add("run_attempt", expr.String(strconv.Itoa(int(attempt))))
+	setKey(d, "job", expr.String(key))
+	setKey(d, "run_attempt", expr.String(strconv.Itoa(int(attempt))))
 	return d, nil
 }
 
@@ -246,7 +236,7 @@ func (rs *runState) end(j *domain.CIJob, conclusion domain.CIConclusion, msg str
 	delete(rs.c.heartbeats, jobRef(*j))
 	rs.c.mu.Unlock()
 
-	if j.FailFast && conclusion.IsFailure() {
+	if j.FailFast && !j.ContinueOnError && conclusion.IsFailure() {
 		for i := range rs.jobs {
 			s := &rs.jobs[i]
 			if s.Key != j.Key || s.ID == j.ID || s.Ended() {
@@ -357,7 +347,10 @@ func (rs *runState) planJob(ctx context.Context, wj *workflow.Job, idx int, need
 	rec := rs.jobs[idx]
 	fail := func(msg string) { rs.end(&rs.jobs[idx], domain.CIFailure, msg) }
 
-	gh, err := rs.githubValue(wj.ID, rs.run.Attempt)
+	// github.job is empty while the job is evaluated (if, strategy, name,
+	// runs-on...): the runner sets it. Recorded: ctx-github-names, where
+	// "name: Display name of ${{ github.job }}" shows as "Display name of".
+	gh, err := rs.githubValue("", rs.run.Attempt)
 	if err != nil {
 		fail(err.Error())
 		return
@@ -431,6 +424,7 @@ func (rs *runState) instance(ctx context.Context, wj *workflow.Job, plan *workfl
 	if err != nil {
 		return j, err
 	}
+	name = strings.TrimSpace(name) // GitHub shows "Display name of", not "Display name of "
 	labels, _, err := wj.EvaluateRunsOn(ctx, env)
 	if err != nil {
 		return j, err
@@ -451,7 +445,11 @@ func (rs *runState) instance(ctx context.Context, wj *workflow.Job, plan *workfl
 		return j, err
 	}
 	matrix := plan.Combos[i].Values
-	contexts, err := contextsJSON(gh, needs, plan.Context(i), matrix)
+	var matrixCtx expr.Value = matrix
+	if !plan.HasMatrix {
+		matrixCtx = expr.Null{} // GitHub: "matrix": null for a job without a matrix
+	}
+	contexts, err := contextsJSON(gh, needs, plan.Context(i), matrixCtx, rs.c.jobKeys(ctx, rs.run, base.Index, i))
 	if err != nil {
 		return j, err
 	}
@@ -459,6 +457,15 @@ func (rs *runState) instance(ctx context.Context, wj *workflow.Job, plan *workfl
 	j.MatrixJSON = compactJSON(expr.ToJSON(matrix))
 	j.ContextsJSON, j.ComboTotal = contexts, len(plan.Combos)
 	j.FailFast, j.MaxParallel = plan.FailFast, plan.MaxParallel
+	j.ContinueOnError = false
+	if wj.ContinueOnError != nil {
+		// Evaluated with github, needs, strategy, matrix, vars and inputs.
+		coe, err := template.EvaluateBool(ctx, wj.ContinueOnError, env)
+		if err != nil {
+			return j, err
+		}
+		j.ContinueOnError = coe
+	}
 	j.Planned, j.Phase = true, domain.CIPhaseWaiting
 	return j, nil
 }
@@ -473,7 +480,12 @@ func compactJSON(s string) string {
 
 // contextsJSON is the JSON object of the contexts the server computes for a
 // job (Job.contexts in runner.proto).
-func contextsJSON(github, needs *expr.Dictionary, strategy, matrix *expr.Dictionary) (string, error) {
+//
+// "job" holds the keys of the job context the server knows (check_run_id,
+// workflow_ref, workflow_sha, workflow_repository, workflow_file_path); the
+// runner adds status. The runner copies the keys of this "job" into its job
+// context (executor.State.initRest), whatever they are.
+func contextsJSON(github, needs, strategy *expr.Dictionary, matrix expr.Value, job ordered) (string, error) {
 	out := map[string]json.RawMessage{}
 	for k, v := range map[string]expr.Value{
 		"github": github, "needs": needs, "strategy": strategy, "matrix": matrix,
@@ -481,6 +493,11 @@ func contextsJSON(github, needs *expr.Dictionary, strategy, matrix *expr.Diction
 	} {
 		out[k] = json.RawMessage(compactJSON(expr.ToJSON(v)))
 	}
+	jb, err := json.Marshal(job)
+	if err != nil {
+		return "", err
+	}
+	out["job"] = jb
 	b, err := json.Marshal(out)
 	if err != nil {
 		return "", err
