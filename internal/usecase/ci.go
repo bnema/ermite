@@ -56,6 +56,11 @@ type CIConfig struct {
 	Clock  ports.Clock
 	// Auth re-validates the token of a log stream; nil skips it.
 	Auth ports.Revalidator
+	// Remote lists the refs of github.com repositories for ResolveActions; nil
+	// answers every github.com action with unavailable.
+	Remote ports.GitRemote
+	// Archive serves the tarballs of the REST subset.
+	Archive ports.GitArchive
 	// Owner is the owner login of the github context.
 	Owner string
 	// PublicURL is the base URL of the instance (github.server_url).
@@ -122,9 +127,14 @@ type CI struct {
 	heartbeats map[string]time.Time // job reference -> last heartbeat
 	seen       map[string]time.Time // runner id -> last seen
 	polls      map[string]pollRecord
-	streams    int
-	perClient  map[string]int
-	closed     bool
+	// archiveTokens are the secrets of the tokens given for the archives of
+	// ermite actions, per job reference then repository, so that a job that
+	// resolves the same repository twice gets one token (memory only: a
+	// restart issues new ones).
+	archiveTokens map[string]map[domain.RepoName]string
+	streams       int
+	perClient     map[string]int
+	closed        bool
 }
 
 var (
@@ -137,10 +147,11 @@ var (
 // pollRecord remembers the assignment a poll made, for the retry of a lost
 // response (FetchJobRequest.poll_id). The token is kept in memory only.
 type pollRecord struct {
-	pollID string
-	ref    string
-	token  string
-	hash   domain.TokenHash
+	pollID  string
+	ref     string
+	token   string
+	ghToken string
+	hash    domain.TokenHash
 }
 
 // NewCI builds the CI use cases. ctx carries the logger; its cancellation is
@@ -155,7 +166,8 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue),
 		ctx: run, stop: stop, flows: newWfCache(64),
 		heartbeats: map[string]time.Time{}, seen: map[string]time.Time{}, polls: map[string]pollRecord{},
-		perClient: map[string]int{},
+		archiveTokens: map[string]map[domain.RepoName]string{},
+		perClient:     map[string]int{},
 	}
 }
 
@@ -258,6 +270,12 @@ type runState struct {
 	// chk marks jobs whose check must be written even when the job itself did
 	// not change (a rerun moves every check to the new attempt).
 	checks map[string]bool
+	// tokens are the job repository tokens to create, revoke the jobs whose
+	// tokens are deleted, with the next flush.
+	tokens []domain.CIRepoToken
+	revoke []ports.CIJobRef
+	// resolutions are the action resolutions to keep with the next flush.
+	resolutions []domain.CIActionResolution
 }
 
 // withRun locks the run, loads it with the jobs of attempt (0 for the latest)
@@ -341,7 +359,8 @@ func (rs *runState) flush(ctx context.Context) error {
 	if rs.runDirty {
 		w.Runs = []domain.CIRun{rs.run}
 	}
-	if len(w.Jobs) == 0 && len(w.Runs) == 0 && len(w.Checks) == 0 {
+	w.RepoTokens, w.RevokeJobs, w.Resolutions = rs.tokens, rs.revoke, rs.resolutions
+	if len(w.Jobs) == 0 && len(w.Runs) == 0 && len(w.Checks) == 0 && len(w.RepoTokens) == 0 && len(w.RevokeJobs) == 0 && len(w.Resolutions) == 0 {
 		return nil
 	}
 	v, err := c.cfg.Store.Apply(ctx, w)
@@ -356,6 +375,7 @@ func (rs *runState) flush(ctx context.Context) error {
 	}
 	changedRun := rs.runDirty
 	rs.dirty, rs.checks, rs.runDirty = map[string]bool{}, map[string]bool{}, false
+	rs.tokens, rs.revoke, rs.resolutions = nil, nil, nil
 
 	repo, err := c.cfg.Meta.Get(ctx, rs.run.Repo)
 	if err != nil {

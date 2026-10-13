@@ -205,8 +205,23 @@ func runnerJobToPB(j *ports.RunnerJob) *pb.Job {
 		JobId: j.Job.ID, RunId: j.Job.RunID, Attempt: j.Job.RunAttempt, JobToken: j.Token,
 		WorkflowPath: j.WorkflowPath, WorkflowYaml: j.WorkflowYAML, JobKey: j.Job.Key, Matrix: j.Job.MatrixJSON,
 		Contexts: j.Job.ContextsJSON, Labels: j.Job.Labels, TimeoutMinutes: j.Job.TimeoutMinutes,
-		Repo: j.Repo.String(), Sha: j.Sha, Ref: j.Ref,
+		Repo: j.Repo.String(), Sha: j.Sha, Ref: j.Ref, GithubToken: j.GithubToken,
 	}
+}
+
+func resolvedActionToPB(a ports.ResolvedAction) *pb.ResolvedAction {
+	out := &pb.ResolvedAction{Ref: a.Ref, Error: a.Error}
+	if a.Error != "" {
+		return out
+	}
+	out.NameWithOwner, out.Path, out.ResolvedSha, out.TarballUrl, out.Token = a.NameWithOwner, a.Path, a.ResolvedSHA, a.TarballURL, a.Token
+	switch a.Source {
+	case domain.CIActionGitHub:
+		out.Source = pb.ActionSource_ACTION_SOURCE_GITHUB
+	case domain.CIActionErmite:
+		out.Source = pb.ActionSource_ACTION_SOURCE_ERMITE
+	}
+	return out
 }
 
 func stepUpdatesFromPB(steps []*pb.StepUpdate) ([]ports.StepUpdate, error) {

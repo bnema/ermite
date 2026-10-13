@@ -37,6 +37,8 @@ import (
 //	ciready/<ready_at:020d>/<job key>    job waiting for a runner
 //	ciactive/<job key>                   job assigned or running
 //	jobtoken/<hash>                      job token (value: job key)
+//
+// The job repository tokens and the action resolutions are in ci_token.go.
 const (
 	runPrefix     = "run/"
 	runSrcPrefix  = "runsrc/"
@@ -507,6 +509,7 @@ func (c *CI) stageRecords(ctx context.Context, b *kv.Batch, w ports.CIWrite) (gu
 			guarded[j.Repo] = true
 		}
 	}
+	c.stageRepoTokens(ctx, b, w, guarded)
 	// Checks are derived from the jobs, written in the same batch and under
 	// the lock of their run: they are upserted without a precondition.
 	for _, ck := range w.Checks {
@@ -828,6 +831,7 @@ func (c *CI) ListChecks(ctx context.Context, repo domain.RepoName, sha string, l
 // runKeys lists every key of a run except its record: source, jobs, indexes.
 func (c *CI) runKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName, runID int64) [][]byte {
 	keys := [][]byte{runKey(repo, runID), runSrcKey(runID), openKey(runID)}
+	keys = append(keys, repoTokenKeys(ctx, snap, runID)...)
 	for key, item := range snap.Prefix(ctx, []byte(jobsPrefix(runID))) {
 		keys = append(keys, slices.Clone(key))
 		if j, err := decodeJob(item); err == nil {

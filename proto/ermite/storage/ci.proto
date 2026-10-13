@@ -220,3 +220,35 @@ message CIRunner {
   google.protobuf.Timestamp registered_at = 8;
   bytes token_hash = 9;
 }
+
+// CIRepoToken is a job repository token (the "github.token" of a job, or the
+// token of one action archive), stored under "ghtoken/<id>". The secret is
+// never stored: "ghtokenhash/<sha256 hex>" maps its hash to the id, and
+// "ghtokenrun/<run:020d>/<run attempt:010d>/<job id>/<id>" (value: empty) lists
+// the tokens of a job so that they are revoked together.
+message CIRepoToken {
+  string id = 1;
+  bytes hash = 2;
+  // The one repository the token reads.
+  string repo = 3;
+  // The job the token belongs to: it is revoked when the job ends.
+  int64 run_id = 4;
+  int32 run_attempt = 5;
+  string job_id = 6;
+  // Set for the token of an action archive, unset for the job's own token.
+  bool archive = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// CIActionResolution is the resolution of an action reference for a run
+// attempt, stored under "actres/<run:020d>/<run attempt:010d>/<sha256 of key>"
+// so that every job of the attempt gets the same commit.
+message CIActionResolution {
+  // "owner/repo@ref", lower-cased owner and repository.
+  string key = 1;
+  string name_with_owner = 2;
+  string resolved_sha = 3;
+  // 1 = github.com, 2 = this server (the numbers of ActionSource).
+  int32 source = 4;
+}

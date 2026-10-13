@@ -36,6 +36,10 @@ var (
 	// ErrResourceExhausted means a limit of the server is reached, for example
 	// the number of event watchers; the caller may retry later.
 	ErrResourceExhausted = errors.New("resource exhausted")
+	// ErrUnavailable means something the operation depends on, outside the
+	// forge (github.com for an action), could not be reached; the caller may
+	// retry later.
+	ErrUnavailable = errors.New("unavailable")
 )
 
 // invalidErrors are the errors that mean a request was malformed.

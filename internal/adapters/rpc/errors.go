@@ -55,6 +55,8 @@ func codeOf(err error) (connect.Code, bool) {
 		return connect.CodeAborted, true
 	case errors.Is(err, domain.ErrResourceExhausted):
 		return connect.CodeResourceExhausted, true
+	case errors.Is(err, domain.ErrUnavailable):
+		return connect.CodeUnavailable, true
 	}
 	if domain.IsInvalid(err) {
 		return connect.CodeInvalidArgument, true

@@ -273,6 +273,9 @@ type Auth struct {
 	root   domain.TokenHash
 	tokens ports.TokenStore
 	clock  ports.Clock
+	// repoTokens resolves the job repository tokens (domain.RepoTokenPrefix);
+	// nil when CI is not wired.
+	repoTokens ports.CIRepoTokenStore
 }
 
 var (
@@ -286,6 +289,17 @@ func NewAuth(rootHash domain.TokenHash, tokens ports.TokenStore, clock ports.Clo
 	return &Auth{root: rootHash, tokens: tokens, clock: clock}
 }
 
+// WithRepoTokens makes Authenticate accept the job repository tokens of CI
+// (the "github.token" of a job, ADR 0025). They resolve to a principal shaped
+// like a stored token (repo:read on one repository, with an expiry), so no
+// rule of the forge knows them; they are stored apart from the stored tokens,
+// so ListTokens never shows them and token:admin never manages them. Call it
+// once while wiring.
+func (a *Auth) WithRepoTokens(s ports.CIRepoTokenStore) *Auth {
+	a.repoTokens = s
+	return a
+}
+
 // Revalidate checks that the holder of a principal obtained earlier is still
 // authorized: root always is; a stored token must still exist and not have
 // expired. It gives domain.ErrUnauthenticated otherwise, and any error of the
@@ -297,6 +311,9 @@ func (a *Auth) Revalidate(ctx context.Context, p domain.Principal) error {
 	}
 	if p.IsAnonymous() {
 		return domain.ErrUnauthenticated
+	}
+	if id := p.TokenID(); domain.IsRepoTokenID(id) {
+		return a.revalidateRepoToken(ctx, strings.TrimPrefix(id, "job:"))
 	}
 	tok, err := a.tokens.Get(ctx, p.TokenID())
 	if errors.Is(err, domain.ErrNotFound) {
@@ -325,6 +342,9 @@ func (a *Auth) Authenticate(ctx context.Context, secret string) (domain.Principa
 	if subtle.ConstantTimeCompare(h[:], a.root[:]) == 1 {
 		return domain.Root(), nil
 	}
+	if domain.IsRepoToken(secret) {
+		return a.authenticateRepoToken(ctx, h)
+	}
 	tok, err := a.tokens.FindByHash(ctx, h)
 	if errors.Is(err, domain.ErrNotFound) {
 		return domain.Principal{}, domain.ErrUnauthenticated
@@ -343,4 +363,42 @@ func (a *Auth) Authenticate(ctx context.Context, secret string) (domain.Principa
 		}
 	}
 	return domain.TokenPrincipal(tok), nil
+}
+
+// authenticateRepoToken resolves a job repository token: it exists (it is
+// deleted when its job ends, is cancelled or lost) and has not expired.
+func (a *Auth) authenticateRepoToken(ctx context.Context, h domain.TokenHash) (domain.Principal, error) {
+	if a.repoTokens == nil {
+		return domain.Principal{}, domain.ErrUnauthenticated
+	}
+	t, err := a.repoTokens.FindRepoTokenByHash(ctx, h)
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.Principal{}, domain.ErrUnauthenticated
+	}
+	if err != nil {
+		return domain.Principal{}, fmt.Errorf("find repository token: %w", err)
+	}
+	if t.Expired(a.clock.Now().UTC()) {
+		return domain.Principal{}, domain.ErrUnauthenticated
+	}
+	return domain.RepoTokenPrincipal(t), nil
+}
+
+// revalidateRepoToken is Revalidate for the principal of a job repository
+// token.
+func (a *Auth) revalidateRepoToken(ctx context.Context, id string) error {
+	if a.repoTokens == nil {
+		return domain.ErrUnauthenticated
+	}
+	t, err := a.repoTokens.GetRepoToken(ctx, id)
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.ErrUnauthenticated
+	}
+	if err != nil {
+		return fmt.Errorf("find repository token: %w", err)
+	}
+	if t.Expired(a.clock.Now().UTC()) {
+		return domain.ErrUnauthenticated
+	}
+	return nil
 }

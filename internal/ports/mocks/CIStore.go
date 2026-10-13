@@ -405,6 +405,84 @@ func (_c *CIStore_FindRunnerByToken_Call) RunAndReturn(run func(ctx context.Cont
 	return _c
 }
 
+// GetActionResolution provides a mock function for the type CIStore
+func (_mock *CIStore) GetActionResolution(ctx context.Context, runID int64, runAttempt int32, key string) (domain.CIActionResolution, error) {
+	ret := _mock.Called(ctx, runID, runAttempt, key)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetActionResolution")
+	}
+
+	var r0 domain.CIActionResolution
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int32, string) (domain.CIActionResolution, error)); ok {
+		return returnFunc(ctx, runID, runAttempt, key)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64, int32, string) domain.CIActionResolution); ok {
+		r0 = returnFunc(ctx, runID, runAttempt, key)
+	} else {
+		r0 = ret.Get(0).(domain.CIActionResolution)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64, int32, string) error); ok {
+		r1 = returnFunc(ctx, runID, runAttempt, key)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CIStore_GetActionResolution_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetActionResolution'
+type CIStore_GetActionResolution_Call struct {
+	*mock.Call
+}
+
+// GetActionResolution is a helper method to define mock.On call
+//   - ctx context.Context
+//   - runID int64
+//   - runAttempt int32
+//   - key string
+func (_e *CIStore_Expecter) GetActionResolution(ctx any, runID any, runAttempt any, key any) *CIStore_GetActionResolution_Call {
+	return &CIStore_GetActionResolution_Call{Call: _e.mock.On("GetActionResolution", ctx, runID, runAttempt, key)}
+}
+
+func (_c *CIStore_GetActionResolution_Call) Run(run func(ctx context.Context, runID int64, runAttempt int32, key string)) *CIStore_GetActionResolution_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		var arg2 int32
+		if args[2] != nil {
+			arg2 = args[2].(int32)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *CIStore_GetActionResolution_Call) Return(cIActionResolution domain.CIActionResolution, err error) *CIStore_GetActionResolution_Call {
+	_c.Call.Return(cIActionResolution, err)
+	return _c
+}
+
+func (_c *CIStore_GetActionResolution_Call) RunAndReturn(run func(ctx context.Context, runID int64, runAttempt int32, key string) (domain.CIActionResolution, error)) *CIStore_GetActionResolution_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetJob provides a mock function for the type CIStore
 func (_mock *CIStore) GetJob(ctx context.Context, runID int64, runAttempt int32, jobID string) (domain.CIJob, error) {
 	ret := _mock.Called(ctx, runID, runAttempt, jobID)

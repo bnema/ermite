@@ -55,6 +55,24 @@ type TokenService interface {
 	Revoke(ctx context.Context, p domain.Principal, id string) error
 }
 
+// GitHubAPIService is the subset of GitHub's REST API that ermite serves under
+// /-/github/api, for the actions that run on it (ADR 0025, CI-2). owner is the
+// owner of the URL: only ERMITE_OWNER names repositories, any other owner is
+// domain.ErrNotFound, as is a repository the principal may not read.
+// *usecase.CI implements it.
+type GitHubAPIService interface {
+	// GetRepo returns the JSON of GET /repos/{owner}/{repo}.
+	GetRepo(ctx context.Context, p domain.Principal, owner, repo string) ([]byte, error)
+	// HashAlgorithm returns the object format of the repository, "sha1".
+	HashAlgorithm(ctx context.Context, p domain.Principal, owner, repo string) (string, error)
+	// Tarball resolves ref (a branch, a tag or a commit id; empty means the
+	// default branch) and writes the gzip-compressed tar of the commit to the
+	// writer that begin returns. begin is called once, with the file name of the
+	// archive, before the first byte and not at all when the ref does not
+	// resolve (domain.ErrNotFound).
+	Tarball(ctx context.Context, p domain.Principal, owner, repo, ref string, begin func(filename string) io.Writer) error
+}
+
 // BrowseService is the read side of a repository's content. *usecase.Browse
 // implements it.
 type BrowseService interface {

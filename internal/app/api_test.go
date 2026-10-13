@@ -196,7 +196,7 @@ func TestAC2ReadAccess(t *testing.T) {
 		for _, who := range allPrincipals {
 			resp, err := r.who[who].server.GetVersion(ctx, connect.NewRequest(&pb.GetVersionRequest{}))
 			require.NoError(t, err, who)
-			assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners"}, resp.Msg.GetFeatures(), who)
+			assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions"}, resp.Msg.GetFeatures(), who)
 			assert.NotEmpty(t, resp.Msg.GetVersion())
 		}
 	})
