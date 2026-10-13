@@ -105,6 +105,9 @@ type Server struct {
 	// pathCache holds the path lists the file finder fetches.
 	pathCache *pathCache
 	mux       *http.ServeMux
+	// ownerRepo is the owner login as a repository name, zero when it is not
+	// a valid one (then no repository can be named like the owner).
+	ownerRepo domain.RepoName
 	// refsFan shares the fragments of the refs page between the watchers of
 	// a push; entries are few and short-lived.
 	refsFan fanout
@@ -134,6 +137,7 @@ func New(cfg Config) (*Server, error) {
 		pathCache: newPathCache(pathCacheBytes, pathBuilds),
 		origin:    originOf(u),
 	}
+	s.ownerRepo, _ = domain.ParseRepoName(cfg.Owner)
 	s.mux = s.routes()
 	return s, nil
 }
@@ -252,12 +256,11 @@ func (s *Server) ownerRedirect(r *http.Request) (string, bool) {
 // the owner. A lookup that fails otherwise counts as yes: the request is then
 // served as it was before, without a redirect.
 func (s *Server) ownerNamesARepo(r *http.Request) bool {
-	name, err := domain.ParseRepoName(s.cfg.Owner)
-	if err != nil {
-		return false
+	if s.ownerRepo.IsZero() {
+		return false // the owner login is not a repository name
 	}
 	ctx := r.Context()
-	_, err = s.cfg.Repos.Get(ctx, principal(ctx), name)
+	_, err := s.cfg.Repos.Get(ctx, principal(ctx), s.ownerRepo)
 	switch {
 	case err == nil:
 		return true
@@ -265,7 +268,7 @@ func (s *Server) ownerNamesARepo(r *http.Request) bool {
 		return false
 	}
 	log := zerowrap.FromCtx(ctx)
-	log.Warn().Err(err).Msg("owner redirect: the lookup of the repository named like the owner failed")
+	log.Debug().Err(err).Msg("owner redirect: the lookup of the repository named like the owner failed")
 	return true
 }
 

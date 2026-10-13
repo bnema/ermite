@@ -449,11 +449,7 @@ func (rs *runState) instance(ctx context.Context, wj *workflow.Job, plan *workfl
 	if !plan.HasMatrix {
 		matrixCtx = expr.Null{} // GitHub: "matrix": null for a job without a matrix
 	}
-	jobKeys, err := rs.c.jobKeys(rs.run, base.Index, i)
-	if err != nil {
-		return j, err
-	}
-	contexts, err := contextsJSON(gh, needs, plan.Context(i), matrixCtx, jobKeys)
+	contexts, err := contextsJSON(gh, needs, plan.Context(i), matrixCtx, rs.c.jobKeys(ctx, rs.run, base.Index, i))
 	if err != nil {
 		return j, err
 	}

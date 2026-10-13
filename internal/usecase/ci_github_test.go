@@ -3,12 +3,15 @@
 package usecase_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -57,14 +60,15 @@ func TestRunTitle(t *testing.T) {
 // below 2^53, and refuses what does not fit instead of wrapping.
 func TestCheckRunID(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
 	run := func(id int64, attempt int32) domain.CIRun { return domain.CIRun{ID: id, Attempt: attempt} }
 	seen := map[int64]string{}
 	for _, id := range []int64{1, 2, 1<<27 - 1} {
 		for _, attempt := range []int32{1, 2, 127} {
 			for _, index := range []int{0, 1, 1023} {
 				for _, combo := range []int{0, 1, 255, 511} {
-					got, err := usecase.CheckRunID(run(id, attempt), index, combo)
-					require.NoError(t, err)
+					got := usecase.CheckRunID(ctx, run(id, attempt), index, combo)
+					require.NotZero(t, got)
 					assert.Less(t, got, int64(1)<<53)
 					key := fmt.Sprintf("run %d attempt %d job %d leg %d", id, attempt, index, combo)
 					assert.NotContains(t, seen, got, "%s collides", key)
@@ -73,12 +77,17 @@ func TestCheckRunID(t *testing.T) {
 			}
 		}
 	}
-	a, _ := usecase.CheckRunID(run(7, 1), 0, 0)
-	b, _ := usecase.CheckRunID(run(7, 2), 0, 0)
+	a := usecase.CheckRunID(ctx, run(7, 1), 0, 0)
+	b := usecase.CheckRunID(ctx, run(7, 2), 0, 0)
 	assert.NotEqual(t, a, b, "a re-run gets new ids")
-	again, _ := usecase.CheckRunID(run(7, 1), 0, 0)
+	again := usecase.CheckRunID(ctx, run(7, 1), 0, 0)
 	assert.Equal(t, a, again, "stable per attempt")
 
+	// In range, the layout is fixed: leg in the low bits, then job, attempt, run.
+	assert.Equal(t, int64(5)<<26|int64(3)<<19|int64(2)<<9|1, usecase.CheckRunID(ctx, run(5, 3), 2, 1))
+
+	// Out of range, the id is 0 and the overflow is logged at warn, never an
+	// error: the key is informational.
 	for name, c := range map[string]struct {
 		run          domain.CIRun
 		index, combo int
@@ -91,7 +100,12 @@ func TestCheckRunID(t *testing.T) {
 		"huge run id":  {run(math.MaxInt64, 1), 0, 0},
 		"negative run": {run(-1, 1), 0, 0},
 	} {
-		_, err := usecase.CheckRunID(c.run, c.index, c.combo)
-		assert.Error(t, err, name)
+		var logs bytes.Buffer
+		lctx := zerowrap.WithCtx(ctx, zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &logs}))
+		assert.Zero(t, usecase.CheckRunID(lctx, c.run, c.index, c.combo), name)
+		assert.Contains(t, logs.String(), `"level":"warn"`, name)
+		assert.Contains(t, logs.String(), `"run_id":`+strconv.FormatInt(c.run.ID, 10), name)
+		assert.Contains(t, logs.String(), `"attempt":`+strconv.Itoa(int(c.run.Attempt)), name)
+		assert.Contains(t, logs.String(), `"job_index":`+strconv.Itoa(c.index), name)
 	}
 }

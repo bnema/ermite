@@ -21,6 +21,6 @@ func (c *CI) RunTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, co
 }
 
 // CheckRunID exposes checkRunID to the tests.
-func CheckRunID(run domain.CIRun, index, combo int) (int64, error) {
-	return checkRunID(run, index, combo)
+func CheckRunID(ctx context.Context, run domain.CIRun, index, combo int) int64 {
+	return checkRunID(ctx, run, index, combo)
 }

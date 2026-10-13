@@ -495,8 +495,7 @@ func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f
 		"github": gh, "needs": expr.NewDictionary(), "inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
 	}}
 	for _, j := range wf.Jobs {
-		if _, err := j.EvaluateStrategy(ctx, env); err != nil && strings.Contains(err.Error(), "which exceeds the maximum of") {
-			// ermite-actions' configurationLimitError is not exported yet.
+		if _, err := j.EvaluateStrategy(ctx, env); errors.Is(err, workflow.ErrTooManyConfigurations) {
 			return wfPath + ": " + err.Error()
 		}
 	}

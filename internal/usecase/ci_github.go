@@ -9,12 +9,12 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 )
@@ -319,11 +319,14 @@ func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun,
 //
 //	bits 0-8    combo:   matrix leg, 9 bits (0-511); a matrix has at most 256
 //	bits 9-18   index:   position of the job in the workflow file, 10 bits
-//	                     (0-1023): a workflow of more jobs than that is refused
-//	                     here, ermite has no limit of its own on them
+//	                     (0-1023); ermite has no limit of its own on the number
+//	                     of jobs
 //	bits 19-25  attempt: run attempt, 7 bits (0-127), so that every re-run
 //	                     gets new ids, as on GitHub
 //	bits 26-52  run:     run id, 27 bits (below 134 million)
+//
+// A field that overflows would wrap into another instance's id, so the whole
+// id is 0 then (see checkRunID).
 const (
 	checkComboBits   = 9
 	checkIndexBits   = 10
@@ -331,43 +334,41 @@ const (
 	checkRunBits     = 53 - checkComboBits - checkIndexBits - checkAttemptBits
 )
 
-// errCheckRunID is returned when a job instance does not fit the layout of
-// check_run_id: the id is not wrapped or truncated, the job fails with it.
-var errCheckRunID = errors.New("the job instance is out of the range of a check run id")
-
 // checkRunID is the number github.com shows in job.check_run_id: derived from
 // the run, its attempt and the position of the job instance, as ermite's
 // checks are not numbered. It is unique and stable per attempt, job and matrix
-// leg, and fits in a JavaScript number. A value outside its field is an error,
-// never a silent wrap that would give two instances the same id.
-func checkRunID(run domain.CIRun, index, combo int) (int64, error) {
+// leg, and fits in a JavaScript number.
+//
+// The key is informational, so it never fails a job: a value outside its field
+// (which would wrap and give two instances the same id) is logged at warn with
+// the run, attempt and job, and the id falls back to 0.
+func checkRunID(ctx context.Context, run domain.CIRun, index, combo int) int64 {
 	attempt := int64(run.Attempt)
 	switch {
 	case run.ID < 0 || run.ID >= 1<<checkRunBits,
 		attempt < 0 || attempt >= 1<<checkAttemptBits,
 		index < 0 || index >= 1<<checkIndexBits,
 		combo < 0 || combo >= 1<<checkComboBits:
-		return 0, fmt.Errorf("%w: run %d, attempt %d, job %d, leg %d", errCheckRunID, run.ID, run.Attempt, index, combo)
+		log := zerowrap.FromCtx(ctx)
+		log.Warn().Int64("run_id", run.ID).Int32("attempt", run.Attempt).Int("job_index", index).Int("leg", combo).
+			Msg("ci check_run_id is out of range: the job context shows 0")
+		return 0
 	}
-	id := run.ID<<(checkAttemptBits+checkIndexBits+checkComboBits) |
+	return run.ID<<(checkAttemptBits+checkIndexBits+checkComboBits) |
 		attempt<<(checkIndexBits+checkComboBits) |
 		int64(index)<<checkComboBits |
 		int64(combo)
-	return id, nil
 }
 
 // jobKeys are the keys of the "job" context that the server knows, in
 // GitHub's order (the runner adds "status"). The runner copies the "job" key
 // of the contexts it is given into the job context.
-func (c *CI) jobKeys(run domain.CIRun, index, combo int) (ordered, error) {
-	id, err := checkRunID(run, index, combo)
-	if err != nil {
-		return nil, err
-	}
+func (c *CI) jobKeys(ctx context.Context, run domain.CIRun, index, combo int) ordered {
+	id := checkRunID(ctx, run, index, combo)
 	u := c.urls(domain.Repo{Name: run.Repo})
 	return ordered{
 		{"check_run_id", id},
 		{"workflow_ref", u.full + "/" + run.WorkflowPath + "@" + run.Ref},
 		{"workflow_sha", run.Sha}, {"workflow_repository", u.full}, {"workflow_file_path", run.WorkflowPath},
-	}, nil
+	}
 }
