@@ -51,3 +51,56 @@ func TestRepoTokenPrincipalReadsOneRepositoryAndNothingElse(t *testing.T) {
 	assert.False(t, tok.Expired(exp.Add(-time.Second)))
 	assert.True(t, tok.Expired(exp), "the expiry instant is already over")
 }
+
+func TestArchivePrincipalHoldsNoScopeAndOneGrant(t *testing.T) {
+	t.Parallel()
+	repo, _ := domain.ParseRepoName("action")
+	sha := strings.Repeat("a", 40)
+	exp := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+	p := domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "ab", Repo: repo, Archive: true, Sha: sha, ExpiresAt: exp})
+
+	gr, gs, ok := p.ArchiveGrant()
+	assert.True(t, ok)
+	assert.Equal(t, repo, gr)
+	assert.Equal(t, sha, gs)
+	for _, s := range domain.AllScopes() {
+		assert.False(t, p.HasScope(s), s)
+		assert.False(t, p.Allows(s, repo), s)
+	}
+	assert.False(t, p.IsRoot())
+	assert.False(t, p.IsAnonymous(), "it is authenticated, with nothing to read")
+	assert.False(t, p.HasOwnerRights())
+	assert.Equal(t, exp, p.ExpiresAt())
+	assert.True(t, domain.IsRepoTokenID(p.TokenID()))
+	assert.Equal(t, "archive", p.Label())
+
+	own := domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "cd", Repo: repo, ExpiresAt: exp})
+	_, _, ok = own.ArchiveGrant()
+	assert.False(t, ok, "the job's own token has no grant, it has the scope")
+	for _, other := range []domain.Principal{domain.Anonymous(), domain.Root(), domain.Owner()} {
+		_, _, ok = other.ArchiveGrant()
+		assert.False(t, ok)
+	}
+}
+
+func TestPusherOf(t *testing.T) {
+	t.Parallel()
+	repo, _ := domain.ParseRepoName("proj")
+	assert.Equal(t, domain.CIPusher{Kind: domain.CIPusherRoot}, domain.PusherOf(domain.Root()))
+	assert.Equal(t, domain.CIPusher{Kind: domain.CIPusherOwner}, domain.PusherOf(domain.Owner()))
+	assert.Equal(t, domain.CIPusher{Kind: domain.CIPusherToken, TokenID: "abc"},
+		domain.PusherOf(domain.TokenPrincipal(domain.Token{ID: "abc", Scopes: []domain.Scope{domain.ScopeRepoWrite}})))
+	assert.Equal(t, domain.CIPusher{}, domain.PusherOf(domain.Anonymous()))
+	assert.Equal(t, domain.CIPusher{}, domain.PusherOf(domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "x", Repo: repo})), "a job token never pushes")
+}
+
+func TestOwnerMatches(t *testing.T) {
+	t.Parallel()
+	assert.True(t, domain.OwnerMatches("acme", "acme"))
+	assert.True(t, domain.OwnerMatches("acme", "ACME"))
+	assert.True(t, domain.OwnerMatches("acme", "Acme"))
+	assert.False(t, domain.OwnerMatches("acme", "acme2"))
+	assert.False(t, domain.OwnerMatches("acme", ""))
+	assert.False(t, domain.OwnerMatches("", ""), "no owner configured matches nothing")
+	assert.False(t, domain.OwnerMatches("", "acme"))
+}

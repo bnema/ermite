@@ -101,3 +101,12 @@ func nameProblem(s string) string {
 	}
 	return ""
 }
+
+// OwnerMatches reports whether name is the owner of the forge, as GitHub
+// matches the owner of a repository: without regard to case. It is the one
+// rule for the owner segment of the Git URLs, of the REST subset and of the
+// references of actions. configured is ERMITE_OWNER, which is lower case (it
+// follows the rules of repository names); an empty one matches nothing.
+func OwnerMatches(configured, name string) bool {
+	return configured != "" && strings.EqualFold(configured, name)
+}

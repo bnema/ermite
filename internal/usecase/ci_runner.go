@@ -241,7 +241,7 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 				return errNoJob
 			}
 			token := newToken(domain.JobTokenPrefix)
-			ghToken := rs.issueRepoToken(j, false)
+			ghToken := rs.issueRepoToken(j)
 			j.Phase, j.AssignedAt = domain.CIPhaseAssigned, c.now()
 			j.TokenHash, j.TokenValidUntil = domain.HashTokenSecret(token), time.Time{}
 			j.RunnerID, j.RunnerName, j.Isolation = runner.ID, runner.Name, runner.Isolation

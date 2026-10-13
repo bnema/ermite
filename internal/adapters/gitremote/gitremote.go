@@ -45,6 +45,29 @@ type Config struct {
 	MaxOutput int
 	// AllowedProtocols is GIT_ALLOW_PROTOCOL: "https" by default.
 	AllowedProtocols string
+	// Proxy is the proxy environment forwarded to git, as NAME=value pairs: see
+	// ProxyEnv. Nothing else of the environment of ermite reaches git.
+	Proxy []string
+}
+
+// proxyVars are the variables git (through libcurl) reads to reach github.com
+// through a proxy. They are the only ones of the environment of ermite that
+// the ls-remote processes get.
+var proxyVars = []string{
+	"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY",
+	"https_proxy", "http_proxy", "no_proxy", "all_proxy",
+}
+
+// ProxyEnv picks the proxy variables from an environment lookup (os.Getenv),
+// for Config.Proxy. Empty ones are left out.
+func ProxyEnv(get func(string) string) []string {
+	var out []string
+	for _, name := range proxyVars {
+		if v := get(name); v != "" {
+			out = append(out, name+"="+v)
+		}
+	}
+	return out
 }
 
 // Remote implements ports.GitRemote over the git binary.
@@ -121,6 +144,7 @@ func (r *Remote) ListRefs(ctx context.Context, owner, repo string) ([]ports.Remo
 		"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=", "GCM_INTERACTIVE=never",
 		"GIT_ALLOW_PROTOCOL=" + r.cfg.AllowedProtocols, "LC_ALL=C", "PATH=" + r.cfg.Path,
 	}
+	cmd.Env = append(cmd.Env, r.cfg.Proxy...)
 	cmd.Dir = r.cfg.Home
 	cmd.Stdout, cmd.Stderr = out, &limitedBuffer{b: &stderr, max: 4096}
 	cmd.WaitDelay = 2 * time.Second

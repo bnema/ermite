@@ -112,6 +112,11 @@ message CIRunSource {
   // Repository of the run: the key of the run record is run/<repo>/<id>, and
   // the runner side knows a run by its id only.
   string repo = 3;
+  // Who pushed the commit: "root", "owner", "token" or empty (a run stored
+  // before it was recorded, or pushed by nobody). pusher_token_id is the ID of
+  // the stored token for "token". What a token may read is looked up live.
+  string pusher_kind = 5;
+  string pusher_token_id = 6;
 }
 
 // CIStep is a step of a job.
@@ -223,9 +228,10 @@ message CIRunner {
 
 // CIRepoToken is a job repository token (the "github.token" of a job, or the
 // token of one action archive), stored under "ghtoken/<id>". The secret is
-// never stored: "ghtokenhash/<sha256 hex>" maps its hash to the id, and
-// "ghtokenrun/<run:020d>/<run attempt:010d>/<job id>/<id>" (value: empty) lists
-// the tokens of a job so that they are revoked together.
+// never stored: "ghtokenhash/<sha256 hex>" maps its hash to the id,
+// "ghtokenjob/<run:020d>/<run attempt:010d>/<job id>/<id>" lists the tokens of a
+// job so that they are revoked together, and "ghtokenrepo/<repo>/<id>" the
+// tokens that read a repository, so that they go with it.
 message CIRepoToken {
   string id = 1;
   bytes hash = 2;
@@ -239,6 +245,8 @@ message CIRepoToken {
   bool archive = 7;
   google.protobuf.Timestamp expires_at = 8;
   google.protobuf.Timestamp created_at = 9;
+  // The commit an archive token downloads.
+  string sha = 10;
 }
 
 // CIActionResolution is the resolution of an action reference for a run

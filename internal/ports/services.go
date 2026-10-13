@@ -67,10 +67,15 @@ type GitHubAPIService interface {
 	HashAlgorithm(ctx context.Context, p domain.Principal, owner, repo string) (string, error)
 	// Tarball resolves ref (a branch, a tag or a commit id; empty means the
 	// default branch) and writes the gzip-compressed tar of the commit to the
-	// writer that begin returns. begin is called once, with the file name of the
+	// writer that begin returns; the archive token of an action (see
+	// domain.RepoTokenPrincipal) gets the commit it was issued for and no other.
+	// begin is called once, with the file name of the
 	// archive, before the first byte and not at all when the ref does not
 	// resolve (domain.ErrNotFound).
 	Tarball(ctx context.Context, p domain.Principal, owner, repo, ref string, begin func(filename string) io.Writer) error
+	// TarballName is Tarball for a HEAD request: the same access and the same
+	// resolution of ref, then the file name, without producing the archive.
+	TarballName(ctx context.Context, p domain.Principal, owner, repo, ref string) (string, error)
 }
 
 // BrowseService is the read side of a repository's content. *usecase.Browse

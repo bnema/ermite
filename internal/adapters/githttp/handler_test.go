@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -188,7 +189,7 @@ func newRig(t *testing.T, mut func(*githttp.Config)) *rig {
 	}
 	r.h = githttp.New(cfg)
 	mux := http.NewServeMux()
-	for _, p := range append(githttp.Patterns, githttp.OwnerPatterns("acme")...) {
+	for _, p := range slices.Concat(githttp.Patterns, githttp.OwnerPatterns("acme"), githttp.OwnerPatterns("ACME")) {
 		mux.Handle(p, r.h)
 	}
 	r.srv = httptest.NewServer(mux)
@@ -522,7 +523,7 @@ func TestHandlerServesTheOwnerForm(t *testing.T) {
 		{"owner, push, root", "GET", "/acme/pub/info/refs?service=git-receive-pack", "root-secret", 200},
 		{"upload-pack", "POST", "/acme/pub/git-upload-pack", "", 200},
 		{"other owner", "GET", "/other/pub/info/refs?service=git-upload-pack", "root-secret", 404},
-		{"owner case is exact", "GET", "/ACME/pub/info/refs?service=git-upload-pack", "root-secret", 404},
+		{"owner case does not matter", "GET", "/ACME/pub/info/refs?service=git-upload-pack", "root-secret", 200},
 		{"too deep", "GET", "/acme/pub/x/info/refs?service=git-upload-pack", "root-secret", 404},
 		{"no repository", "GET", "/acme/info/refs?service=git-upload-pack", "root-secret", 404},
 		{"empty repository", "GET", "/acme//info/refs?service=git-upload-pack", "root-secret", 404},

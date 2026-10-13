@@ -286,3 +286,87 @@ func (_c *GitHubAPIService_Tarball_Call) RunAndReturn(run func(ctx context.Conte
 	_c.Call.Return(run)
 	return _c
 }
+
+// TarballName provides a mock function for the type GitHubAPIService
+func (_mock *GitHubAPIService) TarballName(ctx context.Context, p domain.Principal, owner string, repo string, ref string) (string, error) {
+	ret := _mock.Called(ctx, p, owner, repo, ref)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TarballName")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, string, string, string) (string, error)); ok {
+		return returnFunc(ctx, p, owner, repo, ref)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, string, string, string) string); ok {
+		r0 = returnFunc(ctx, p, owner, repo, ref)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, string, string, string) error); ok {
+		r1 = returnFunc(ctx, p, owner, repo, ref)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// GitHubAPIService_TarballName_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TarballName'
+type GitHubAPIService_TarballName_Call struct {
+	*mock.Call
+}
+
+// TarballName is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - owner string
+//   - repo string
+//   - ref string
+func (_e *GitHubAPIService_Expecter) TarballName(ctx any, p any, owner any, repo any, ref any) *GitHubAPIService_TarballName_Call {
+	return &GitHubAPIService_TarballName_Call{Call: _e.mock.On("TarballName", ctx, p, owner, repo, ref)}
+}
+
+func (_c *GitHubAPIService_TarballName_Call) Run(run func(ctx context.Context, p domain.Principal, owner string, repo string, ref string)) *GitHubAPIService_TarballName_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 string
+		if args[4] != nil {
+			arg4 = args[4].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *GitHubAPIService_TarballName_Call) Return(s string, err error) *GitHubAPIService_TarballName_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *GitHubAPIService_TarballName_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, owner string, repo string, ref string) (string, error)) *GitHubAPIService_TarballName_Call {
+	_c.Call.Return(run)
+	return _c
+}

@@ -590,6 +590,7 @@ func (c *CI) CreateRun(ctx context.Context, repo domain.RepoName, workflowPath s
 		}
 		src := mustMarshal(&storagepb.CIRunSource{
 			RunId: draft.Run.ID, Repo: repo.String(), WorkflowYaml: draft.Source.WorkflowYAML, GithubJson: draft.Source.GithubJSON,
+			PusherKind: string(draft.Source.Pusher.Kind), PusherTokenId: draft.Source.Pusher.TokenID,
 		})
 		b.RequireAbsent(runSrcKey(draft.Run.ID))
 		b.Put(runSrcKey(draft.Run.ID), src)
@@ -642,7 +643,10 @@ func (c *CI) GetRunSource(ctx context.Context, runID int64) (domain.CIRunSource,
 	if err != nil {
 		return domain.CIRunSource{}, fmt.Errorf("decode run source: %w", err)
 	}
-	return domain.CIRunSource{RunID: pb.GetRunId(), Repo: repo, WorkflowYAML: pb.GetWorkflowYaml(), GithubJSON: pb.GetGithubJson()}, nil
+	return domain.CIRunSource{
+		RunID: pb.GetRunId(), Repo: repo, WorkflowYAML: pb.GetWorkflowYaml(), GithubJSON: pb.GetGithubJson(),
+		Pusher: domain.CIPusher{Kind: domain.CIPusherKind(pb.GetPusherKind()), TokenID: pb.GetPusherTokenId()},
+	}, nil
 }
 
 // ListRuns returns the runs of the repository, newest first.
@@ -856,6 +860,7 @@ func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]by
 		}
 		keys = append(keys, slices.Clone(key))
 	}
+	keys = append(keys, repoReaderKeys(ctx, snap, repo)...)
 	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/"} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))

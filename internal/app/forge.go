@@ -52,6 +52,9 @@ type options struct {
 	eventBuffer int
 	// revalidateEvery overrides usecase.DefaultRevalidateEvery when not zero.
 	revalidateEvery time.Duration
+	// archivesPerClient overrides the archives one client downloads at once
+	// when positive.
+	archivesPerClient int
 	// remote replaces the lister of github.com refs (tests never reach the
 	// network).
 	remoteLister ports.GitRemote
@@ -215,7 +218,9 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		PollTimeout: cfg.CIPollTimeout, Archive: git,
 		Remote: opts.remote(gitremote.New(gitremote.Config{
 			Bin: cfg.Git, Path: path, Home: filepath.Join(cfg.DataDir, "run", "git-home"),
+			Proxy: gitremote.ProxyEnv(os.Getenv),
 		})),
+		Tokens: store.Tokens(),
 	}
 	if opts.ci != nil {
 		opts.ci(&ciCfg)
@@ -312,7 +317,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
 	}
 	// The REST subset the actions call on github.api_url.
-	api := githubapi.New(githubapi.Config{Auth: f.Auth, API: f.CI, TrustedProxies: cfg.TrustedProxies, Limiter: limiter})
+	api := githubapi.New(githubapi.Config{Auth: f.Auth, API: f.CI, TrustedProxies: cfg.TrustedProxies, Limiter: limiter, MaxArchivesPerClient: opts.archivesPerClient})
 	for _, p := range githubapi.Patterns {
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: api})
 	}

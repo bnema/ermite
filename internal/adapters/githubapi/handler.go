@@ -16,6 +16,7 @@
 package githubapi
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"io"
@@ -23,6 +24,8 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/bnema/zerowrap"
 
@@ -40,8 +43,19 @@ var Patterns = []string{Prefix + "/"}
 // notFoundBody is GitHub's body for an unknown endpoint or repository.
 const notFoundBody = `{"message":"Not Found","documentation_url":"https://docs.github.com/rest"}`
 
-// DefaultMaxArchives bounds the archives written at once.
-const DefaultMaxArchives = 8
+// Bounds on the archives written at once.
+const (
+	// DefaultMaxArchives is the archives written at once on the server.
+	DefaultMaxArchives = 8
+	// DefaultMaxArchivesPerClient is the archives written at once for one client
+	// (see clientlimit.Key): a runner downloads the actions of a job one by one,
+	// so a few are plenty, and one client cannot take every slot.
+	DefaultMaxArchivesPerClient = 3
+	// DefaultWriteIdleTimeout is how long a write of the archive may wait for the
+	// client. The deadline moves forward with every chunk: an archive is bounded
+	// by its size, not by its duration, but a client that stops reading is cut.
+	DefaultWriteIdleTimeout = 2 * time.Minute
+)
 
 // Config configures a Handler.
 type Config struct {
@@ -52,8 +66,12 @@ type Config struct {
 	// Limiter counts failed authentications; nil builds a default one.
 	Limiter ports.FailureLimiter
 	// MaxArchives bounds the archives written at once (each runs a git
-	// process); zero means DefaultMaxArchives.
-	MaxArchives int
+	// process); zero means DefaultMaxArchives. MaxArchivesPerClient bounds them
+	// per client; zero means DefaultMaxArchivesPerClient. WriteIdleTimeout is
+	// the idle write deadline; zero means DefaultWriteIdleTimeout.
+	MaxArchives          int
+	MaxArchivesPerClient int
+	WriteIdleTimeout     time.Duration
 }
 
 // Handler serves the REST subset.
@@ -61,6 +79,11 @@ type Handler struct {
 	cfg      Config
 	limiter  ports.FailureLimiter
 	archives chan struct{}
+	perCli   int
+	idle     time.Duration
+
+	mu      sync.Mutex     // guards clients
+	clients map[string]int // archives being written, per clientlimit.Key
 }
 
 // New builds a Handler.
@@ -74,6 +97,9 @@ func New(cfg Config) *Handler {
 		n = DefaultMaxArchives
 	}
 	h.archives = make(chan struct{}, n)
+	h.perCli = cmp.Or(cfg.MaxArchivesPerClient, DefaultMaxArchivesPerClient)
+	h.idle = cmp.Or(cfg.WriteIdleTimeout, DefaultWriteIdleTimeout)
+	h.clients = make(map[string]int)
 	return h
 }
 
@@ -127,7 +153,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, r, []byte(`{"hash_algorithm":`+strconv.Quote(alg)+`}`))
 	case "tarball":
-		h.tarball(w, r, p, owner, repo, ref)
+		h.tarball(w, r, p, owner, repo, ref, clientlimit.Key(addr))
 	}
 }
 
@@ -150,35 +176,33 @@ func route(rest string) (kind, owner, repo, ref string, ok bool) {
 	return "", "", "", "", false
 }
 
-// tarball streams the archive. It is not a 302 to a codeload: ermite serves the
-// bytes itself, which the runner follows without a second credential.
-func (h *Handler) tarball(w http.ResponseWriter, r *http.Request, p domain.Principal, owner, repo, ref string) {
+// tarball answers an archive request. A HEAD resolves the ref and sends the
+// headers of the archive, and runs no git. A GET streams the archive; it is not
+// a 302 to a codeload: ermite serves the bytes itself, which the runner follows
+// without a second credential.
+func (h *Handler) tarball(w http.ResponseWriter, r *http.Request, p domain.Principal, owner, repo, ref, client string) {
 	ctx := r.Context()
-	select {
-	case h.archives <- struct{}{}:
-		defer func() { <-h.archives }()
-	default:
-		w.Header().Set("Retry-After", "5")
-		jsonError(w, http.StatusServiceUnavailable, "Server busy")
-		return
-	}
 	if r.Method == http.MethodHead {
-		// Resolve without writing: a HEAD is answered with the headers only.
-		err := h.cfg.API.Tarball(ctx, p, owner, repo, ref, func(name string) io.Writer {
-			setArchiveHeaders(w, name)
-			w.WriteHeader(http.StatusOK)
-			return io.Discard
-		})
-		if err != nil && !errors.Is(err, context.Canceled) {
+		name, err := h.cfg.API.TarballName(ctx, p, owner, repo, ref)
+		if err != nil {
 			h.fail(ctx, w, err)
+			return
 		}
+		setArchiveHeaders(w, name)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
+	release, ok := h.acquire(w, client)
+	if !ok {
+		return
+	}
+	defer release()
+	rc := http.NewResponseController(w)
 	started := false
 	err := h.cfg.API.Tarball(ctx, p, owner, repo, ref, func(name string) io.Writer {
 		started = true
 		setArchiveHeaders(w, name)
-		return w
+		return &idleWriter{w: w, rc: rc, idle: h.idle}
 	})
 	switch {
 	case err == nil:
@@ -189,6 +213,51 @@ func (h *Handler) tarball(w http.ResponseWriter, r *http.Request, p domain.Princ
 	default:
 		h.fail(ctx, w, err)
 	}
+}
+
+// acquire takes an archive slot for the client, or answers 429 (the client
+// already has its share) or 503 (the server writes all it can) and reports
+// false. It never waits: an archive can take minutes.
+func (h *Handler) acquire(w http.ResponseWriter, client string) (release func(), ok bool) {
+	h.mu.Lock()
+	if h.clients[client] >= h.perCli {
+		h.mu.Unlock()
+		w.Header().Set("Retry-After", "5")
+		jsonError(w, http.StatusTooManyRequests, "Too many archives in progress")
+		return nil, false
+	}
+	h.clients[client]++
+	h.mu.Unlock()
+	releaseClient := func() {
+		h.mu.Lock()
+		if h.clients[client]--; h.clients[client] <= 0 {
+			delete(h.clients, client)
+		}
+		h.mu.Unlock()
+	}
+	select {
+	case h.archives <- struct{}{}:
+		return func() { <-h.archives; releaseClient() }, true
+	default:
+		releaseClient()
+		w.Header().Set("Retry-After", "5")
+		jsonError(w, http.StatusServiceUnavailable, "Server busy")
+		return nil, false
+	}
+}
+
+// idleWriter moves the write deadline of the connection forward before each
+// chunk, so that only a client that stops reading is cut. Where the response
+// writer cannot set a deadline, the writes are not bounded here.
+type idleWriter struct {
+	w    io.Writer
+	rc   *http.ResponseController
+	idle time.Duration
+}
+
+func (i *idleWriter) Write(b []byte) (int, error) {
+	_ = i.rc.SetWriteDeadline(time.Now().Add(i.idle))
+	return i.w.Write(b)
 }
 
 func setArchiveHeaders(w http.ResponseWriter, name string) {

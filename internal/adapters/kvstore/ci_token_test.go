@@ -140,3 +140,56 @@ type jobRefT struct {
 	RunID int64
 	JobID string
 }
+
+// GO-006: an archive token is indexed by the repository it reads, so deleting
+// that repository deletes it, though it belongs to a job of another one.
+func TestCIArchiveTokensGoWithTheRepositoryTheyRead(t *testing.T) {
+	ctx := context.Background()
+	s, ci, run := ciRepo(t)
+	target := name(t, "action")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: target, Visibility: domain.VisibilityPrivate, CreatedAt: created}))
+	d, err := ci.CreateRun(ctx, run, "w.yml", draftOf(run, "w.yml", 1))
+	require.NoError(t, err)
+	ref := jobRefT{RunID: d.Run.ID, JobID: d.Jobs[0].ID}
+
+	own := repoToken("own", "ermitegh_own", ref, run, false)
+	arch := repoToken("arch", "ermitegh_arch", ref, target, true)
+	arch.Sha = "1111111111111111111111111111111111111111"
+	_, err = ci.Apply(ctx, ports.CIWrite{RepoTokens: []domain.CIRepoToken{own, arch}})
+	require.NoError(t, err)
+	got, err := ci.FindRepoTokenByHash(ctx, arch.Hash)
+	require.NoError(t, err)
+	assert.Equal(t, arch.Sha, got.Sha, "the commit is stored")
+	assert.True(t, got.Archive)
+
+	require.NoError(t, s.Delete(ctx, target))
+	_, err = ci.FindRepoTokenByHash(ctx, arch.Hash)
+	assert.ErrorIs(t, err, domain.ErrNotFound, "gone with the repository it reads")
+	_, err = ci.GetRepoToken(ctx, "arch")
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+	_, err = ci.FindRepoTokenByHash(ctx, own.Hash)
+	assert.NoError(t, err, "the token of the run's own repository is untouched")
+
+	// Revoking the job afterwards finds no stale entry to trip on.
+	_, err = ci.Apply(ctx, ports.CIWrite{RevokeJobs: []ports.CIJobRef{{RunID: d.Run.ID, RunAttempt: 1, JobID: ref.JobID}}})
+	require.NoError(t, err)
+	_, err = ci.FindRepoTokenByHash(ctx, own.Hash)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+// GO-001: the pusher recorded with a run comes back with its source.
+func TestCIRunSourceKeepsThePusher(t *testing.T) {
+	ctx := context.Background()
+	_, ci, n := ciRepo(t)
+	for i, p := range []domain.CIPusher{{Kind: domain.CIPusherRoot}, {Kind: domain.CIPusherOwner}, {Kind: domain.CIPusherToken, TokenID: "abc123"}, {}} {
+		d, err := ci.CreateRun(ctx, n, "w.yml", func(id, number int64) ports.CIRunDraft {
+			dr := draftOf(n, "w.yml", 0)(id, number)
+			dr.Source.Pusher = p
+			return dr
+		})
+		require.NoError(t, err, i)
+		src, err := ci.GetRunSource(ctx, d.Run.ID)
+		require.NoError(t, err)
+		assert.Equal(t, p, src.Pusher)
+	}
+}

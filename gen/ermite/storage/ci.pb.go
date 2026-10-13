@@ -580,7 +580,12 @@ type CIRunSource struct {
 	GithubJson string `protobuf:"bytes,2,opt,name=github_json,json=githubJson,proto3" json:"github_json,omitempty"`
 	// Repository of the run: the key of the run record is run/<repo>/<id>, and
 	// the runner side knows a run by its id only.
-	Repo          string `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`
+	Repo string `protobuf:"bytes,3,opt,name=repo,proto3" json:"repo,omitempty"`
+	// Who pushed the commit: "root", "owner", "token" or empty (a run stored
+	// before it was recorded, or pushed by nobody). pusher_token_id is the ID of
+	// the stored token for "token". What a token may read is looked up live.
+	PusherKind    string `protobuf:"bytes,5,opt,name=pusher_kind,json=pusherKind,proto3" json:"pusher_kind,omitempty"`
+	PusherTokenId string `protobuf:"bytes,6,opt,name=pusher_token_id,json=pusherTokenId,proto3" json:"pusher_token_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -639,6 +644,20 @@ func (x *CIRunSource) GetGithubJson() string {
 func (x *CIRunSource) GetRepo() string {
 	if x != nil {
 		return x.Repo
+	}
+	return ""
+}
+
+func (x *CIRunSource) GetPusherKind() string {
+	if x != nil {
+		return x.PusherKind
+	}
+	return ""
+}
+
+func (x *CIRunSource) GetPusherTokenId() string {
+	if x != nil {
+		return x.PusherTokenId
 	}
 	return ""
 }
@@ -1362,9 +1381,10 @@ func (x *CIRunner) GetTokenHash() []byte {
 
 // CIRepoToken is a job repository token (the "github.token" of a job, or the
 // token of one action archive), stored under "ghtoken/<id>". The secret is
-// never stored: "ghtokenhash/<sha256 hex>" maps its hash to the id, and
-// "ghtokenrun/<run:020d>/<run attempt:010d>/<job id>/<id>" (value: empty) lists
-// the tokens of a job so that they are revoked together.
+// never stored: "ghtokenhash/<sha256 hex>" maps its hash to the id,
+// "ghtokenjob/<run:020d>/<run attempt:010d>/<job id>/<id>" lists the tokens of a
+// job so that they are revoked together, and "ghtokenrepo/<repo>/<id>" the
+// tokens that read a repository, so that they go with it.
 type CIRepoToken struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1376,9 +1396,11 @@ type CIRepoToken struct {
 	RunAttempt int32  `protobuf:"varint,5,opt,name=run_attempt,json=runAttempt,proto3" json:"run_attempt,omitempty"`
 	JobId      string `protobuf:"bytes,6,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	// Set for the token of an action archive, unset for the job's own token.
-	Archive       bool                   `protobuf:"varint,7,opt,name=archive,proto3" json:"archive,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Archive   bool                   `protobuf:"varint,7,opt,name=archive,proto3" json:"archive,omitempty"`
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// The commit an archive token downloads.
+	Sha           string `protobuf:"bytes,10,opt,name=sha,proto3" json:"sha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1474,6 +1496,13 @@ func (x *CIRepoToken) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *CIRepoToken) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
 }
 
 // CIActionResolution is the resolution of an action reference for a run
@@ -1579,13 +1608,16 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\fcompleted_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12)\n" +
 	"\x10cancel_requested\x18\x14 \x01(\bR\x0fcancelRequested\x12J\n" +
 	"\x13cancel_requested_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAt\x12\x12\n" +
-	"\x04name\x18\x16 \x01(\tR\x04nameJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"~\n" +
+	"\x04name\x18\x16 \x01(\tR\x04nameJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"\xc7\x01\n" +
 	"\vCIRunSource\x12\x15\n" +
 	"\x06run_id\x18\x04 \x01(\x03R\x05runId\x12#\n" +
 	"\rworkflow_yaml\x18\x01 \x01(\tR\fworkflowYaml\x12\x1f\n" +
 	"\vgithub_json\x18\x02 \x01(\tR\n" +
 	"githubJson\x12\x12\n" +
-	"\x04repo\x18\x03 \x01(\tR\x04repo\"\xe5\x02\n" +
+	"\x04repo\x18\x03 \x01(\tR\x04repo\x12\x1f\n" +
+	"\vpusher_kind\x18\x05 \x01(\tR\n" +
+	"pusherKind\x12&\n" +
+	"\x0fpusher_token_id\x18\x06 \x01(\tR\rpusherTokenId\"\xe5\x02\n" +
 	"\x06CIStep\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x121\n" +
@@ -1682,7 +1714,7 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x02os\x18\a \x01(\tR\x02os\x12?\n" +
 	"\rregistered_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\fregisteredAt\x12\x1d\n" +
 	"\n" +
-	"token_hash\x18\t \x01(\fR\ttokenHash\"\xa4\x02\n" +
+	"token_hash\x18\t \x01(\fR\ttokenHash\"\xb6\x02\n" +
 	"\vCIRepoToken\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\fR\x04hash\x12\x12\n" +
@@ -1695,7 +1727,9 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x89\x01\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x10\n" +
+	"\x03sha\x18\n" +
+	" \x01(\tR\x03sha\"\x89\x01\n" +
 	"\x12CIActionResolution\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12&\n" +
 	"\x0fname_with_owner\x18\x02 \x01(\tR\rnameWithOwner\x12!\n" +

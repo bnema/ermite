@@ -42,8 +42,10 @@ var Patterns = []string{
 // ERMITE_OWNER: the URL github.repository gives (actions/checkout clones
 // <server_url>/<owner>/<repo>, with no .git suffix). The owner is a literal
 // segment so that the patterns never overlap the /-/ routes, and other owners
-// fall through to the web, which answers 404. Register them only for a valid
-// owner; Config.Owner must be the same.
+// fall through to the web, which answers 404. The handler matches the owner
+// without regard to case, as GitHub does, but the mux only the exact spelling
+// of ERMITE_OWNER (lower case, like a repository name); register them only for
+// a valid owner and set Config.Owner to the same.
 func OwnerPatterns(owner string) []string {
 	out := make([]string, len(Patterns))
 	for i, p := range Patterns {
@@ -176,8 +178,8 @@ func (h *Handler) parseRoute(r *http.Request) (route, int) {
 	p := strings.TrimPrefix(r.URL.Path, "/")
 	var head, rest string
 	for _, suffix := range gitSuffixes {
-		if h, ok := strings.CutSuffix(p, suffix); ok {
-			head, rest = h, suffix[1:]
+		if trimmed, ok := strings.CutSuffix(p, suffix); ok {
+			head, rest = trimmed, suffix[1:]
 			break
 		}
 	}
@@ -186,7 +188,9 @@ func (h *Handler) parseRoute(r *http.Request) (route, int) {
 	}
 	seg := head
 	if owner, repo, ok := strings.Cut(head, "/"); ok {
-		if h.cfg.Owner == "" || owner != h.cfg.Owner {
+		// The owner is matched as GitHub does, without regard to case, like the
+		// REST subset and the references of actions (domain.OwnerMatches).
+		if !domain.OwnerMatches(h.cfg.Owner, owner) {
 			return route{}, http.StatusNotFound
 		}
 		seg = repo

@@ -36,12 +36,14 @@ func (c *CI) repoTokenExpiry(j domain.CIJob) (expires domain.CIRepoToken) {
 
 // issueRepoToken adds a repository token for j to the next flush and returns
 // its secret. j must be assigned (its AssignedAt is set).
-func (rs *runState) issueRepoToken(j *domain.CIJob, archive bool) string {
-	return rs.issueRepoTokenFor(j, rs.run.Repo, archive)
+func (rs *runState) issueRepoToken(j *domain.CIJob) string {
+	return rs.issueRepoTokenFor(j, rs.run.Repo, "")
 }
 
-// issueRepoTokenFor is issueRepoToken for a token that reads repo.
-func (rs *runState) issueRepoTokenFor(j *domain.CIJob, repo domain.RepoName, archive bool) string {
+// issueRepoTokenFor is issueRepoToken for a token that reads repo. A sha makes
+// it the archive token of that commit of repo, which downloads that archive and
+// nothing else.
+func (rs *runState) issueRepoTokenFor(j *domain.CIJob, repo domain.RepoName, sha string) string {
 	c := rs.c
 	now := c.now()
 	at := *j
@@ -51,7 +53,7 @@ func (rs *runState) issueRepoTokenFor(j *domain.CIJob, repo domain.RepoName, arc
 	secret := newToken(domain.RepoTokenPrefix)
 	t := c.repoTokenExpiry(at)
 	t.ID, t.Hash, t.Repo = newRepoTokenID(), domain.HashTokenSecret(secret), repo
-	t.RunID, t.RunAttempt, t.JobID, t.Archive, t.CreatedAt = j.RunID, j.RunAttempt, j.ID, archive, now
+	t.RunID, t.RunAttempt, t.JobID, t.Archive, t.Sha, t.CreatedAt = j.RunID, j.RunAttempt, j.ID, sha != "", sha, now
 	rs.tokens = append(rs.tokens, t)
 	return secret
 }

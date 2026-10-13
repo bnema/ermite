@@ -17,7 +17,8 @@ import (
 // on github.api_url. The access rule is the forge's: a repository is read by
 // anyone when public, and with repo:read when private, which the principal of a
 // job repository token holds on the repository of its run (and the archive
-// tokens on theirs).
+// tokens on theirs). The holder of an archive token reads none of it but its
+// own archive.
 
 var _ ports.GitHubAPIService = (*CI)(nil)
 
@@ -25,7 +26,7 @@ var _ ports.GitHubAPIService = (*CI)(nil)
 // owner, a name that is not one and a repository the caller cannot read are all
 // not found.
 func (c *CI) githubRepo(ctx context.Context, p domain.Principal, owner, name string) (domain.Repo, error) {
-	if !strings.EqualFold(owner, c.cfg.Owner) {
+	if !domain.OwnerMatches(c.cfg.Owner, owner) {
 		return domain.Repo{}, domain.ErrNotFound
 	}
 	rn, err := domain.ParseRepoName(strings.ToLower(name))
@@ -97,25 +98,72 @@ func (c *CI) HashAlgorithm(ctx context.Context, p domain.Principal, owner, name 
 	return "sha1", nil
 }
 
+// archiveTarget finds the repository and the commit of an archive request and
+// checks the access to it. A reader of the repository (the job's own token, any
+// principal with repo:read, anyone for a public one) gets any ref. The holder of
+// an archive token (domain.RepoTokenPrincipal) gets its commit of its
+// repository and nothing else: the ref may be anything that resolves to exactly
+// that commit, and every other answer is not found.
+func (c *CI) archiveTarget(ctx context.Context, p domain.Principal, owner, name, ref string) (domain.Repo, domain.ObjectID, error) {
+	var repo domain.Repo
+	grantRepo, grantSha, granted := p.ArchiveGrant()
+	if granted {
+		if !domain.OwnerMatches(c.cfg.Owner, owner) {
+			return domain.Repo{}, domain.ObjectID{}, domain.ErrNotFound
+		}
+		rn, err := domain.ParseRepoName(strings.ToLower(name))
+		if err != nil || rn != grantRepo {
+			return domain.Repo{}, domain.ObjectID{}, domain.ErrNotFound
+		}
+		if repo, err = lookupRepo(ctx, c.cfg.Meta, rn); err != nil {
+			return domain.Repo{}, domain.ObjectID{}, err
+		}
+	} else {
+		var err error
+		if repo, err = c.githubRepo(ctx, p, owner, name); err != nil {
+			return domain.Repo{}, domain.ObjectID{}, err
+		}
+	}
+	rev, err := domain.ParseRevision(ref)
+	if err != nil {
+		return domain.Repo{}, domain.ObjectID{}, domain.ErrNotFound
+	}
+	res, err := c.cfg.Reader.ResolveRevision(ctx, repo.Name, rev)
+	if err != nil {
+		return domain.Repo{}, domain.ObjectID{}, err
+	}
+	if granted && res.CommitID.String() != grantSha {
+		return domain.Repo{}, domain.ObjectID{}, domain.ErrNotFound
+	}
+	return repo, res.CommitID, nil
+}
+
+func (c *CI) archiveDir(repo domain.Repo, commit domain.ObjectID) string {
+	return c.cfg.Owner + "-" + repo.Name.String() + "-" + commit.String()[:7]
+}
+
+// TarballName answers a HEAD of the archive: the access and the ref are
+// checked as for the archive, and the name of the file is returned, without
+// running git archive.
+func (c *CI) TarballName(ctx context.Context, p domain.Principal, owner, name, ref string) (string, error) {
+	repo, commit, err := c.archiveTarget(ctx, p, owner, name, ref)
+	if err != nil {
+		return "", err
+	}
+	return c.archiveDir(repo, commit) + ".tar.gz", nil
+}
+
 // Tarball streams the archive of a ref as `git archive` makes it, in one
 // response (GitHub answers 302 to codeload: ermite serves it itself). The files
 // are in a directory <owner>-<repo>-<7 first characters of the commit>, as
 // GitHub names it.
 func (c *CI) Tarball(ctx context.Context, p domain.Principal, owner, name, ref string, begin func(string) io.Writer) error {
-	repo, err := c.githubRepo(ctx, p, owner, name)
+	repo, commit, err := c.archiveTarget(ctx, p, owner, name, ref)
 	if err != nil {
 		return err
 	}
-	rev, err := domain.ParseRevision(ref)
-	if err != nil {
-		return domain.ErrNotFound
-	}
-	res, err := c.cfg.Reader.ResolveRevision(ctx, repo.Name, rev)
-	if err != nil {
-		return err
-	}
-	dir := c.cfg.Owner + "-" + repo.Name.String() + "-" + shortID(res.CommitID.String())[:7]
-	return c.cfg.Archive.Archive(ctx, repo.Name, res.CommitID, dir, &lazyWriter{begin: func() io.Writer { return begin(dir + ".tar.gz") }})
+	dir := c.archiveDir(repo, commit)
+	return c.cfg.Archive.Archive(ctx, repo.Name, commit, dir, &lazyWriter{begin: func() io.Writer { return begin(dir + ".tar.gz") }})
 }
 
 // lazyWriter calls begin at the first write, so that nothing is sent before git

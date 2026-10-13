@@ -191,6 +191,9 @@ type CIRunSource struct {
 	Repo         RepoName
 	WorkflowYAML string
 	GithubJSON   string
+	// Pusher is who pushed the commit: what the actions of other repositories
+	// of the server may be resolved on behalf of.
+	Pusher CIPusher
 }
 
 // CIStep is a step of a job with where its lines are in the job log.

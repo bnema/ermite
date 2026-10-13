@@ -22,7 +22,8 @@ import (
 //
 //	ghtoken/<id>                                        CIRepoToken
 //	ghtokenhash/<hash>                                  token id
-//	ghtokenjob/<run:020d>/<attempt:010d>/<job>/<id>     empty: the tokens of a job
+//	ghtokenjob/<run:020d>/<attempt:010d>/<job>/<id>     the id: the tokens of a job
+//	ghtokenrepo/<repo>/<id>                             the job key: the tokens that read a repository
 //	actres/<run:020d>/<attempt:010d>/<sha256(key)>      CIActionResolution
 //
 // Stored tokens use token/ and tokenhash/: the two families never meet, so a
@@ -31,6 +32,7 @@ const (
 	repoTokenPrefix     = "ghtoken/"
 	repoTokenHashPrefix = "ghtokenhash/"
 	repoTokenJobPrefix  = "ghtokenjob/"
+	repoTokenRepoPrefix = "ghtokenrepo/"
 	resolutionPrefix    = "actres/"
 )
 
@@ -46,6 +48,12 @@ func repoTokenJobPrefixOf(runID int64, attempt int32, jobID string) string {
 func repoTokenJobKey(t domain.CIRepoToken) []byte {
 	return []byte(repoTokenJobPrefixOf(t.RunID, t.RunAttempt, t.JobID) + t.ID)
 }
+func repoTokenRepoPrefixOf(repo domain.RepoName) string {
+	return repoTokenRepoPrefix + repo.String() + "/"
+}
+func repoTokenRepoKey(repo domain.RepoName, id string) []byte {
+	return []byte(repoTokenRepoPrefixOf(repo) + id)
+}
 func resolutionKey(runID int64, attempt int32, key string) []byte {
 	sum := sha256.Sum256([]byte(key))
 	return []byte(fmt.Sprintf("%s%020d/%010d/%s", resolutionPrefix, runID, attempt, hex.EncodeToString(sum[:])))
@@ -54,7 +62,7 @@ func resolutionKey(runID int64, attempt int32, key string) []byte {
 func encodeRepoToken(t domain.CIRepoToken) []byte {
 	return mustMarshal(&storagepb.CIRepoToken{
 		Id: t.ID, Hash: t.Hash[:], Repo: t.Repo.String(), RunId: t.RunID, RunAttempt: t.RunAttempt, JobId: t.JobID,
-		Archive: t.Archive, ExpiresAt: encodeTime(t.ExpiresAt), CreatedAt: encodeTime(t.CreatedAt),
+		Archive: t.Archive, ExpiresAt: encodeTime(t.ExpiresAt), CreatedAt: encodeTime(t.CreatedAt), Sha: t.Sha,
 	})
 }
 
@@ -70,6 +78,7 @@ func decodeRepoToken(val []byte) (domain.CIRepoToken, error) {
 	t := domain.CIRepoToken{
 		ID: pb.GetId(), Repo: repo, RunID: pb.GetRunId(), RunAttempt: pb.GetRunAttempt(), JobID: pb.GetJobId(),
 		Archive: pb.GetArchive(), ExpiresAt: decodeTime(pb.GetExpiresAt()), CreatedAt: decodeTime(pb.GetCreatedAt()),
+		Sha: pb.GetSha(),
 	}
 	copy(t.Hash[:], pb.GetHash())
 	return t, nil
@@ -90,6 +99,7 @@ func (c *CI) stageRepoTokens(ctx context.Context, b *kv.Batch, w ports.CIWrite, 
 			if it, ok := snap.Get(ctx, repoTokenKey(id)); ok {
 				if t, err := decodeRepoToken(it.Value); err == nil {
 					b.Delete(repoTokenHashKey(t.Hash))
+					b.Delete(repoTokenRepoKey(t.Repo, id))
 				}
 			}
 		}
@@ -100,6 +110,7 @@ func (c *CI) stageRepoTokens(ctx context.Context, b *kv.Batch, w ports.CIWrite, 
 		b.Put(repoTokenKey(t.ID), encodeRepoToken(t))
 		b.Put(repoTokenHashKey(t.Hash), []byte(t.ID))
 		b.Put(repoTokenJobKey(t), []byte(t.ID))
+		b.Put(repoTokenRepoKey(t.Repo, t.ID), []byte(t.ID))
 		guarded[t.Repo] = true
 	}
 	for _, r := range w.Resolutions {
@@ -158,20 +169,40 @@ func (c *CI) GetActionResolution(ctx context.Context, runID int64, attempt int32
 	}, nil
 }
 
+// tokenKeys lists the keys of the token with that id: the record, its hash
+// index, its entry in the list of its job and in the list of its repository.
+func tokenKeys(ctx context.Context, snap *kv.Snapshot, id string) [][]byte {
+	keys := [][]byte{repoTokenKey(id)}
+	if it, ok := snap.Get(ctx, repoTokenKey(id)); ok {
+		if t, err := decodeRepoToken(it.Value); err == nil {
+			keys = append(keys, repoTokenHashKey(t.Hash), repoTokenJobKey(t), repoTokenRepoKey(t.Repo, id))
+		}
+	}
+	return keys
+}
+
 // repoTokenKeys lists the keys of the repository tokens and action
 // resolutions of a run, for its deletion.
 func repoTokenKeys(ctx context.Context, snap *kv.Snapshot, runID int64) [][]byte {
 	var keys [][]byte
 	for key, item := range snap.Prefix(ctx, []byte(fmt.Sprintf("%s%020d/", repoTokenJobPrefix, runID))) {
-		keys = append(keys, append([]byte(nil), key...), repoTokenKey(string(item.Value)))
-		if it, ok := snap.Get(ctx, repoTokenKey(string(item.Value))); ok {
-			if t, err := decodeRepoToken(it.Value); err == nil {
-				keys = append(keys, repoTokenHashKey(t.Hash))
-			}
-		}
+		keys = append(keys, append([]byte(nil), key...))
+		keys = append(keys, tokenKeys(ctx, snap, string(item.Value))...)
 	}
 	for key := range snap.Prefix(ctx, []byte(fmt.Sprintf("%s%020d/", resolutionPrefix, runID))) {
 		keys = append(keys, append([]byte(nil), key...))
+	}
+	return keys
+}
+
+// repoReaderKeys lists the keys of every repository token that reads the
+// repository, whichever job holds it: the archive tokens given to the jobs of
+// other repositories go with the repository they read.
+func repoReaderKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]byte {
+	var keys [][]byte
+	for key, item := range snap.Prefix(ctx, []byte(repoTokenRepoPrefixOf(repo))) {
+		keys = append(keys, append([]byte(nil), key...))
+		keys = append(keys, tokenKeys(ctx, snap, string(item.Value))...)
 	}
 	return keys
 }

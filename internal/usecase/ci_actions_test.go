@@ -3,6 +3,7 @@
 package usecase
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,6 +29,12 @@ func TestParseActionRef(t *testing.T) {
 		{uses: "o/r@a@b", fail: "Expected format {org}/{repo}[/path]@ref. Actual 'o/r@a@b'"},
 		{uses: "o/r/../x@v1", fail: "Expected format {org}/{repo}[/path]@ref. Actual 'o/r/../x@v1'"},
 		{uses: "o/r/./x@v1", fail: "Expected format {org}/{repo}[/path]@ref. Actual 'o/r/./x@v1'"},
+		{uses: "a/...@v1", fail: "Expected format {org}/{repo}[/path]@ref. Actual 'a/...@v1'"},
+		{uses: "../..@" + strings.Repeat("a", 40), fail: "Expected format {org}/{repo}[/path]@ref. Actual '../..@" + strings.Repeat("a", 40) + "'"},
+		{uses: "a%2f/b@v1", fail: "Expected format {org}/{repo}[/path]@ref. Actual 'a%2f/b@v1'"},
+		{uses: "a/b?x@v1", fail: "Expected format {org}/{repo}[/path]@ref. Actual 'a/b?x@v1'"},
+		{uses: "a/b#x@v1", fail: "Expected format {org}/{repo}[/path]@ref. Actual 'a/b#x@v1'"},
+		{uses: "-a/_b.c@v1", owner: "-a", repo: "_b.c", ref: "v1"},
 		{uses: "", fail: "Expected format {org}/{repo}[/path]@ref. Actual ''"},
 	}
 	for _, tt := range tests {

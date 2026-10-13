@@ -146,3 +146,34 @@ func TestListRefsGitEnvironment(t *testing.T) {
 	assert.Contains(t, env, "ls-remote -- https://example.test/o/r refs/heads/* refs/tags/*")
 	assert.Contains(t, env, "credential.helper=")
 }
+
+// GO-008: the proxy variables of ermite reach git, and nothing else of its
+// environment does.
+func TestListRefsForwardsTheProxyEnvironment(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "env")
+	bin := filepath.Join(t.TempDir(), "git")
+	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\nenv > '"+out+"'\nexit 0\n"), 0o755))
+	t.Setenv("HTTPS_PROXY", "http://proxy.internal:3128")
+	t.Setenv("no_proxy", "localhost,.internal")
+	t.Setenv("HTTP_PROXY", "")
+	t.Setenv("GITHUB_TOKEN", "not-for-git")
+
+	proxy := gitremote.ProxyEnv(os.Getenv)
+	assert.ElementsMatch(t, []string{"HTTPS_PROXY=http://proxy.internal:3128", "no_proxy=localhost,.internal"}, proxy, "empty ones are left out")
+
+	_, err := newRemote(t, "https://example.test", func(c *gitremote.Config) { c.Bin, c.Proxy = bin, proxy }).ListRefs(context.Background(), "o", "r")
+	require.NoError(t, err)
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	env := string(b)
+	assert.Contains(t, env, "HTTPS_PROXY=http://proxy.internal:3128")
+	assert.Contains(t, env, "no_proxy=localhost,.internal")
+	assert.NotContains(t, env, "not-for-git")
+	assert.NotContains(t, env, "HTTP_PROXY=")
+
+	// Without Config.Proxy nothing is forwarded, whatever the process has.
+	_, err = newRemote(t, "https://example.test", func(c *gitremote.Config) { c.Bin = bin }).ListRefs(context.Background(), "o", "r")
+	require.NoError(t, err)
+	b, _ = os.ReadFile(out)
+	assert.NotContains(t, string(b), "proxy.internal")
+}

@@ -11,10 +11,12 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -655,7 +657,7 @@ func TestResolveActionsAuthentication(t *testing.T) {
 }
 
 // AC4: an action of a repository of ermite wins over github.com, is downloaded
-// with a per-job read token for that repository only, and the same ref gives the
+// with a per-job token bound to that commit of that repository, and the same ref gives the
 // same commit to every job of the attempt (and a new one to a re-run).
 func TestResolveActionsFromErmite(t *testing.T) {
 	remote := newFakeRemote(t)
@@ -685,7 +687,7 @@ func TestResolveActionsFromErmite(t *testing.T) {
 	}
 	assert.Equal(t, "owner/myaction", got[0].GetNameWithOwner())
 	assert.Equal(t, "sub", got[1].GetPath())
-	assert.Equal(t, got[0].GetToken(), got[2].GetToken(), "one token per repository and job")
+	assert.Equal(t, got[0].GetToken(), got[2].GetToken(), "one token per commit and job")
 	assert.Contains(t, got[4].GetError(), "unable to find version `gone`")
 	assert.False(t, remote.asked("owner/myaction"), "ermite is asked first, github.com not at all")
 	assert.Contains(t, got[5].GetError(), "Unable to resolve action `owner/nothere@v1`")
@@ -698,9 +700,9 @@ func TestResolveActionsFromErmite(t *testing.T) {
 	require.Equal(t, http.StatusOK, status)
 	assert.Equal(t, "content of dist/index.js\n", untar(t, body)["owner-myaction-"+tag[:7]+"/dist/index.js"])
 	status, _, _ = c.get("/owner/myaction/info/refs?service=git-upload-pack", basic(arch))
-	assert.Equal(t, http.StatusOK, status, "and clones it")
+	assert.Equal(t, http.StatusNotFound, status, "it does not clone: the archive of one commit is all it gets")
 	status, _, _ = c.get("/owner/myaction/info/refs?service=git-receive-pack", basic(arch))
-	assert.Equal(t, http.StatusForbidden, status, "never writes")
+	assert.Equal(t, http.StatusNotFound, status, "and never writes")
 	status, _, _ = c.get("/owner/hidden/info/refs?service=git-upload-pack", basic(arch))
 	assert.Equal(t, http.StatusNotFound, status, "another private repository")
 	status, _, _ = c.get("/owner/proj/info/refs?service=git-upload-pack", basic(arch))
@@ -789,4 +791,521 @@ func TestRepositoryTokensAreNeverLogged(t *testing.T) {
 		assert.NotContains(t, logs, secret)
 	}
 	assert.NotContains(t, logs, strings.Repeat("Z", 43))
+}
+
+// pushAs pushes a commit to branch of the repository with the token and returns
+// its sha.
+func (c *ciHarness) pushAs(token, branch string, files map[string]string) string {
+	c.t.Helper()
+	if _, err := c.git(c.wt, "checkout", "-q", branch); err != nil {
+		c.mustGit(c.wt, "checkout", "-q", "-b", branch)
+	}
+	for name, content := range files {
+		c.writeFile(c.wt, name, []byte(content))
+	}
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(token, "/"+c.repo+".git"), branch)
+	return strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+}
+
+const oneJobWorkflow = ".github/workflows/ci.yml"
+
+func oneJobYAML() string { return strings.Split(ciWorkflow, "  test:")[0] }
+
+// GO-001a: an action of another repository of ermite is resolved on behalf of
+// the pusher of the run, with the rule of the forge: a pusher that cannot read
+// the repository gets "repository not found", exactly as for one that does not
+// exist, and the check is made again at each answer with the live token.
+func TestResolveActionsOfAnotherRepositoryNeedsAPusherWhoReadsIt(t *testing.T) {
+	notFound := "Unable to resolve action `owner/private-action@v1`, repository not found"
+	missing := "Unable to resolve action `owner/does-not-exist@v1`, repository not found"
+
+	type scenario struct {
+		name string
+		// token makes the stored token that pushes the run, nil for the root token.
+		token func(c *ciHarness) (secret, id string)
+		reads bool
+	}
+	scenarios := []scenario{
+		{"root", nil, true},
+		{"a token without the repository in its list", func(c *ciHarness) (string, string) {
+			return c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, nil, "proj")
+		}, false},
+		{"a token without repo:read", func(c *ciHarness) (string, string) {
+			return c.branchToken([]domain.Scope{domain.ScopeRepoWrite}, nil)
+		}, false},
+		{"a token that lists both repositories", func(c *ciHarness) (string, string) {
+			return c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, nil, "proj", "private-action")
+		}, true},
+		{"a token for every repository", func(c *ciHarness) (string, string) {
+			return c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, nil)
+		}, true},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			c := newExecHarness(t, newFakeRemote(t), nil)
+			c.seed("private-action", domain.VisibilityPrivate, "action.yml")
+			secret := adminToken
+			if sc.token != nil {
+				secret, _ = sc.token(c)
+			}
+			runner := c.registerRunner("alpha", "ubuntu-latest")
+			c.pushAs(secret, "main", map[string]string{oneJobWorkflow: oneJobYAML()})
+			job := runner.await()
+			c.heartbeat(runner, job)
+
+			got := c.resolve(runner, job, "owner/private-action@v1", "owner/does-not-exist@v1")
+			assert.Equal(t, missing, got[1].GetError())
+			c.mustGit(c.repoDir("private-action"), "tag", "v1")
+			got = c.resolve(runner, job, "owner/private-action@v1")
+			if sc.reads {
+				require.Empty(t, got[0].GetError())
+				assert.True(t, domain.IsRepoToken(got[0].GetToken()))
+				assert.Equal(t, pb.ActionSource_ACTION_SOURCE_ERMITE, got[0].GetSource())
+			} else {
+				assert.Equal(t, notFound, got[0].GetError(), "as GitHub says for a repository that is not there")
+				assert.Empty(t, got[0].GetToken())
+				assert.Empty(t, got[0].GetResolvedSha())
+				assert.Empty(t, got[0].GetTarballUrl())
+				assert.Equal(t, pb.ActionSource_ACTION_SOURCE_UNSPECIFIED, got[0].GetSource())
+			}
+			// A wrong ref of a repository that cannot be read leaks nothing either:
+			// the same text as for a missing repository, not "unable to find version".
+			bad := c.resolve(runner, job, "owner/private-action@nope")
+			if sc.reads {
+				assert.Contains(t, bad[0].GetError(), "unable to find version `nope`")
+			} else {
+				assert.Equal(t, "Unable to resolve action `owner/private-action@nope`, repository not found", bad[0].GetError())
+			}
+		})
+	}
+
+	t.Run("the token is looked up again, so revoking it stops the answers", func(t *testing.T) {
+		c := newExecHarness(t, newFakeRemote(t), nil)
+		c.seed("private-action", domain.VisibilityPrivate, "action.yml")
+		c.mustGit(c.repoDir("private-action"), "tag", "v1")
+		secret, id := c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, nil)
+		runner := c.registerRunner("alpha", "ubuntu-latest")
+		c.pushAs(secret, "main", map[string]string{oneJobWorkflow: oneJobYAML()})
+		job := runner.await()
+		c.heartbeat(runner, job)
+
+		first := c.resolve(runner, job, "owner/private-action@v1")
+		require.Empty(t, first[0].GetError())
+
+		require.NoError(t, c.forge.Tokens.Revoke(c.ctx, domain.Root(), id))
+		again := c.resolve(runner, job, "owner/private-action@v1")
+		assert.Equal(t, notFound, again[0].GetError(), "the commit is resolved already, the pusher no longer reads")
+		assert.Empty(t, again[0].GetToken())
+	})
+
+	t.Run("a repository made private since", func(t *testing.T) {
+		c := newExecHarness(t, newFakeRemote(t), nil)
+		c.seed("private-action", domain.VisibilityPublic, "action.yml")
+		c.mustGit(c.repoDir("private-action"), "tag", "v1")
+		secret, _ := c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, nil, "proj")
+		runner := c.registerRunner("alpha", "ubuntu-latest")
+		c.pushAs(secret, "main", map[string]string{oneJobWorkflow: oneJobYAML()})
+		job := runner.await()
+		c.heartbeat(runner, job)
+
+		assert.Empty(t, c.resolve(runner, job, "owner/private-action@v1")[0].GetError(), "public: anyone reads it")
+		priv := domain.VisibilityPrivate
+		_, err := c.forge.Repos.Update(c.ctx, domain.Root(), c.h("private-action"), ports.UpdateRepoParams{Visibility: &priv})
+		require.NoError(t, err)
+		assert.Equal(t, notFound, c.resolve(runner, job, "owner/private-action@v1")[0].GetError())
+	})
+
+	t.Run("an expired token", func(t *testing.T) {
+		c := newExecHarness(t, newFakeRemote(t), nil)
+		c.seed("private-action", domain.VisibilityPrivate, "action.yml")
+		c.mustGit(c.repoDir("private-action"), "tag", "v1")
+		exp := time.Now().Add(1500 * time.Millisecond)
+		got, err := c.forge.Tokens.Create(c.ctx, domain.Root(), ports.CreateTokenParams{
+			Label: "short", Scopes: []domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, ExpiresAt: exp,
+		})
+		require.NoError(t, err)
+		runner := c.registerRunner("alpha", "ubuntu-latest")
+		c.pushAs(got.Secret, "main", map[string]string{oneJobWorkflow: oneJobYAML()})
+		job := runner.await()
+		c.heartbeat(runner, job)
+		assert.Empty(t, c.resolve(runner, job, "owner/private-action@v1")[0].GetError())
+		time.Sleep(time.Until(exp) + 200*time.Millisecond)
+		assert.Equal(t, notFound, c.resolve(runner, job, "owner/private-action@v1")[0].GetError())
+	})
+
+	t.Run("the repository of the run is always readable by its job", func(t *testing.T) {
+		c := newExecHarness(t, newFakeRemote(t), nil)
+		secret, _ := c.branchToken([]domain.Scope{domain.ScopeRepoRead, domain.ScopeRepoWrite}, nil, "proj")
+		runner := c.registerRunner("alpha", "ubuntu-latest")
+		c.pushAs(secret, "main", map[string]string{oneJobWorkflow: oneJobYAML()})
+		job := runner.await()
+		c.heartbeat(runner, job)
+		got := c.resolve(runner, job, "owner/proj@main")
+		require.Empty(t, got[0].GetError())
+		assert.Equal(t, pb.ActionSource_ACTION_SOURCE_ERMITE, got[0].GetSource())
+	})
+
+	t.Run("a merge made by the owner's session", func(t *testing.T) {
+		// The runs of merged requests record the owner: a principal that reads
+		// everything.
+		p := domain.PusherOf(domain.Owner())
+		assert.Equal(t, domain.CIPusherOwner, p.Kind)
+	})
+}
+
+// GO-001b: the archive token is bound to (repository, commit). Only the archive
+// endpoint reads it, only for that commit; it is refused by Git over HTTP, the
+// repository and hash-algorithm endpoints, and for any other commit, ref or
+// repository, public or not.
+func TestArchiveTokenIsBoundToItsCommit(t *testing.T) {
+	c := newExecHarness(t, newFakeRemote(t), nil)
+	c.seed("myaction", domain.VisibilityPrivate, "action.yml", "dist/index.js")
+	first := c.bareGit("myaction", "rev-parse", "HEAD")
+	c.mustGit(c.repoDir("myaction"), "tag", "v1")
+	// A second commit, to have a sha the token was not issued for.
+	other := c.workTree("main", "action.yml", "dist/index.js", "more.js")
+	c.mustGit(other, "push", "-q", "-f", c.urlAuth(adminToken, "/myaction.git"), "main")
+	second := c.bareGit("myaction", "rev-parse", "HEAD")
+	require.NotEqual(t, first, second)
+	c.seed("openrepo", domain.VisibilityPublic, "a.txt")
+	openSha := c.bareGit("openrepo", "rev-parse", "HEAD")
+
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	job := c.startJob(runner)
+	c.heartbeat(runner, job)
+	got := c.resolve(runner, job, "owner/myaction@v1", "owner/myaction@"+second)
+	require.Empty(t, got[0].GetError())
+	require.Empty(t, got[1].GetError())
+	assert.Equal(t, first, got[0].GetResolvedSha())
+	assert.Equal(t, second, got[1].GetResolvedSha())
+	assert.NotEqual(t, got[0].GetToken(), got[1].GetToken(), "one token per commit")
+	arch := got[0].GetToken()
+	tarball := func(repo, ref, tok string) int {
+		status, _, _ := c.get("/-/github/api/repos/owner/"+repo+"/tarball/"+ref, basic(tok))
+		return status
+	}
+
+	// What it is for: that commit, named by its sha or by a ref that resolves to it.
+	assert.Equal(t, http.StatusOK, tarball("myaction", first, arch))
+	assert.Equal(t, http.StatusOK, tarball("myaction", "v1", arch), "any ref that resolves to the commit")
+	assert.Equal(t, http.StatusOK, tarball("MyAction", first, arch), "names are case-insensitive")
+	status, _, hdr := c.head("/-/github/api/repos/owner/myaction/tarball/"+first, basic(arch))
+	assert.Equal(t, http.StatusOK, status)
+	assert.Contains(t, hdr.Get("Content-Disposition"), "owner-myaction-"+first[:7])
+
+	// Nothing else.
+	assert.Equal(t, http.StatusNotFound, tarball("myaction", second, arch), "another commit of the repository")
+	assert.Equal(t, http.StatusNotFound, tarball("myaction", "main", arch), "a ref that now points elsewhere")
+	assert.Equal(t, http.StatusNotFound, tarball("myaction", "", arch), "the default branch")
+	assert.Equal(t, http.StatusNotFound, tarball("proj", "main", arch), "the repository of the run")
+	assert.Equal(t, http.StatusNotFound, tarball("openrepo", openSha, arch), "not even a public repository")
+	assert.Equal(t, http.StatusUnauthorized, tarball("myaction", first, arch+"x"), "a token that is not one")
+	status, _, _ = c.head("/-/github/api/repos/owner/myaction/tarball/"+second, basic(arch))
+	assert.Equal(t, http.StatusNotFound, status, "HEAD is checked like GET")
+	for _, p := range []string{
+		"/owner/myaction/info/refs?service=git-upload-pack",
+		"/owner/myaction.git/info/refs?service=git-upload-pack",
+		"/myaction/info/refs?service=git-upload-pack",
+		"/owner/myaction/info/refs?service=git-receive-pack",
+		"/owner/openrepo/info/refs?service=git-upload-pack",
+		"/-/github/api/repos/owner/myaction",
+		"/-/github/api/repos/owner/myaction/hash-algorithm",
+		"/-/github/api/repos/owner/openrepo",
+		"/-/github/api/repos/owner/openrepo/hash-algorithm",
+	} {
+		status, _, _ := c.get(p, basic(arch))
+		assert.Contains(t, []int{http.StatusNotFound, http.StatusUnauthorized}, status, p)
+	}
+	// It lists no repository over the API either, and holds no scope there.
+	list, err := c.api(arch).repo.ListRepos(c.ctx, connect.NewRequest(&pb.ListReposRequest{}))
+	require.NoError(t, err)
+	names := []string{}
+	for _, r := range list.Msg.GetRepos() {
+		names = append(names, r.GetName())
+	}
+	assert.Empty(t, names, "it reads nothing, not even the public repositories an anonymous caller reads")
+	_, err = c.api(arch).repo.GetRepo(c.ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "myaction"}))
+	assert.Equal(t, connect.CodeNotFound, ciErrCode(err))
+
+	// The job's own token is the opposite: it reads its repository whole, and
+	// the archive of nothing else.
+	own := job.GetGithubToken()
+	assert.Equal(t, http.StatusNotFound, tarball("myaction", first, own))
+	assert.Equal(t, http.StatusOK, tarball("proj", "main", own))
+
+	// Principals.
+	p, err := c.forge.Auth.Authenticate(c.ctx, arch)
+	require.NoError(t, err)
+	repo, sha, ok := p.ArchiveGrant()
+	require.True(t, ok)
+	assert.Equal(t, "myaction", repo.String())
+	assert.Equal(t, first, sha)
+	assert.Empty(t, p.Scopes())
+	assert.False(t, p.HasScope(domain.ScopeRepoRead))
+	assert.False(t, p.Allows(domain.ScopeRepoRead, repo))
+	assert.False(t, p.IsRoot())
+	ownP, err := c.forge.Auth.Authenticate(c.ctx, own)
+	require.NoError(t, err)
+	_, _, ok = ownP.ArchiveGrant()
+	assert.False(t, ok)
+}
+
+func (c *ciHarness) head(path, authorization string) (int, string, http.Header) {
+	c.t.Helper()
+	req, err := http.NewRequest(http.MethodHead, c.url(path), nil)
+	require.NoError(c.t, err)
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(c.t, err)
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b), resp.Header
+}
+
+// GO-002: a HEAD of the tarball answers the headers of the archive of the ref it
+// resolves, runs no git archive, and 404s a ref that does not resolve.
+func TestTarballHeadRunsNoArchive(t *testing.T) {
+	c := newExecHarness(t, newFakeRemote(t), nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	job := c.startJob(runner)
+	tok := job.GetGithubToken()
+	sha := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+
+	status, body, hdr := c.head("/-/github/api/repos/owner/proj/tarball/main", basic(tok))
+	assert.Equal(t, http.StatusOK, status)
+	assert.Empty(t, body, "no body")
+	assert.Contains(t, hdr.Get("Content-Disposition"), "owner-proj-"+sha[:7]+".tar.gz")
+	assert.Contains(t, hdr.Get("Content-Type"), "gzip")
+	status, _, _ = c.head("/-/github/api/repos/owner/proj/tarball/nope", basic(tok))
+	assert.Equal(t, http.StatusNotFound, status)
+	status, _, _ = c.head("/-/github/api/repos/owner/proj/tarball/main", "")
+	assert.Equal(t, http.StatusNotFound, status, "private and anonymous")
+	status, _, _ = c.head("/-/github/api/repos/owner/other/tarball/main", basic(tok))
+	assert.Equal(t, http.StatusNotFound, status)
+}
+
+// GO-003: one client cannot take every archive slot, and the slots are given
+// back.
+func TestArchiveDownloadsAreLimitedPerClient(t *testing.T) {
+	h := newHarnessWith(t, harnessOpts{}, func(o *options) { o.archivesPerClient = 1 })
+	c := &ciHarness{harness: h, root: h.api(adminToken), repo: "proj"}
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name("proj"), Visibility: domain.VisibilityPrivate})
+	require.NoError(t, err)
+	c.wt = h.workTree("main")
+	c.writeFile(c.wt, "big.bin", bytes.Repeat([]byte("0123456789abcdef"), 1<<20)) // 16 MiB, compressible
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), "main")
+
+	// Start a download and read none of it: the response is held open.
+	req, err := http.NewRequest(http.MethodGet, c.url("/-/github/api/repos/owner/proj/tarball/main"), nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+
+	var status int
+	c.waitFor("the second download is refused", func() bool {
+		status, _, _ = c.get("/-/github/api/repos/owner/proj/tarball/main", "Bearer "+adminToken)
+		return status == http.StatusTooManyRequests
+	})
+	assert.Equal(t, http.StatusTooManyRequests, status)
+	hs, _, _ := c.head("/-/github/api/repos/owner/proj/tarball/main", "Bearer "+adminToken)
+	assert.Equal(t, http.StatusOK, hs, "a HEAD takes no slot")
+	metaStatus, _, _ := c.get("/-/github/api/repos/owner/proj", "Bearer "+adminToken)
+	assert.Equal(t, http.StatusOK, metaStatus, "nor does the repository endpoint")
+
+	// Reading it to the end gives the slot back.
+	_, err = io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	c.waitFor("the slot is given back", func() bool {
+		status, _, _ = c.get("/-/github/api/repos/owner/proj/tarball/main", "Bearer "+adminToken)
+		return status == http.StatusOK
+	})
+}
+
+// GO-004: owner and repository are validated with GitHub's charset for every
+// source; nothing but a name reaches a URL, a path or a command.
+func TestResolveActionsRejectsMalformedNames(t *testing.T) {
+	remote := newFakeRemote(t)
+	c := newExecHarness(t, remote, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	job := c.startJob(runner)
+	c.heartbeat(runner, job)
+
+	bad := []string{
+		"../..@" + shaMain, ".../x@" + shaMain, "../x@" + shaMain, "..//x@" + shaMain, "a/..@" + shaMain, "../b@" + shaMain,
+		"a/b%2e@" + shaMain, "a%2fb/c@" + shaMain, "a/b?x=1@" + shaMain, "a/b#f@" + shaMain, "a b/c@" + shaMain,
+		"a/b c@" + shaMain, "a:b/c@" + shaMain, "a/b\n@" + shaMain, "a@b/c@v1", "a/b\x00@v1", "a/...@v1", "a/.@v1",
+		"é/b@v1", strings.Repeat("a", 101) + "/b@v1", "a/" + strings.Repeat("b", 101) + "@v1", "/@v1", "@@",
+	}
+	got := c.resolve(runner, job, bad...)
+	require.Len(t, got, len(bad))
+	for i, g := range got {
+		assert.Equal(t, "Expected format {org}/{repo}[/path]@ref. Actual '"+bad[i]+"'", g.GetError(), "%q", bad[i])
+		assert.Empty(t, g.GetTarballUrl(), "%q", bad[i])
+		assert.Empty(t, g.GetToken(), "%q", bad[i])
+	}
+	assert.Zero(t, remote.count(), "no malformed name reached ls-remote")
+
+	// Names GitHub accepts still do.
+	remote.set("a.b/c_d-e", ptrRef("refs/tags/v1", shaMain))
+	ok := c.resolve(runner, job, "a.b/c_d-e@v1", "Owner/repo/sub@"+shaMain)
+	assert.Empty(t, ok[0].GetError())
+	assert.Empty(t, ok[1].GetError())
+}
+
+// A token revoked, a job lost, the server restarted: the archive token goes with
+// the job, and it was never written anywhere but hashed.
+func TestArchiveTokenIsRevokedWithTheJobAfterARestart(t *testing.T) {
+	c := newExecHarness(t, newFakeRemote(t), func(cfg *usecase.CIConfig) {
+		cfg.HeartbeatDeadline, cfg.Tick, cfg.PollTimeout = 600*time.Millisecond, 20*time.Millisecond, 100*time.Millisecond
+	})
+	c.seed("myaction", domain.VisibilityPrivate, "action.yml")
+	sha := c.bareGit("myaction", "rev-parse", "HEAD")
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	job := c.startJob(runner)
+	c.heartbeat(runner, job)
+	arch := c.resolve(runner, job, "owner/myaction@"+sha)[0].GetToken()
+	require.NotEmpty(t, arch)
+	url := "/-/github/api/repos/owner/myaction/tarball/" + sha
+	status, _, _ := c.get(url, basic(arch))
+	require.Equal(t, http.StatusOK, status)
+
+	// Restart: the tokens are in the store, the secrets in memory are gone.
+	cfg, hookExe := c.forge.cfg, binary(t)
+	c.srv.Close()
+	c.forge.Close(c.ctx)
+	f2, err := newForge(c.ctx, cfg, options{hookExe: hookExe, remoteLister: newFakeRemote(t).m, ci: func(cc *usecase.CIConfig) {
+		cc.HeartbeatDeadline, cc.Tick = 600*time.Millisecond, 20*time.Millisecond
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() { f2.Close(context.WithoutCancel(c.ctx)) })
+	srv := httptest.NewServer(f2.server.Handler())
+	t.Cleanup(srv.Close)
+
+	get := func(tok string) int {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+url, nil)
+		req.Header.Set("Authorization", basic(tok))
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	assert.Equal(t, http.StatusOK, get(arch), "the token survives a restart")
+
+	// The runner is gone: the heartbeat deadline of the new server passes, the
+	// job is lost and its tokens with it.
+	require.Eventually(t, func() bool { return get(arch) == http.StatusUnauthorized }, 10*time.Second, 50*time.Millisecond)
+	assert.Equal(t, http.StatusUnauthorized, get(job.GetGithubToken()), "the job's own token as well")
+	api := newClients(srv.URL+"/-/api", adminToken)
+	res, err := api.run.GetRun(c.ctx, connect.NewRequest(&pb.GetRunRequest{Repo: "proj", RunId: job.GetRunId()}))
+	require.NoError(t, err)
+	assert.Contains(t, res.Msg.GetJobs()[0].GetError(), "lost communication")
+}
+
+// GO-006: the archive tokens that read a repository go when it is deleted, and
+// the run that held one goes on without a stale index.
+func TestArchiveTokensGoWithTheRepositoryTheyRead(t *testing.T) {
+	c := newExecHarness(t, newFakeRemote(t), nil)
+	c.seed("myaction", domain.VisibilityPrivate, "action.yml")
+	sha := c.bareGit("myaction", "rev-parse", "HEAD")
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	job := c.startJob(runner)
+	c.heartbeat(runner, job)
+	arch := c.resolve(runner, job, "owner/myaction@"+sha)[0].GetToken()
+	_, err := c.forge.Auth.Authenticate(c.ctx, arch)
+	require.NoError(t, err)
+
+	require.NoError(t, c.forge.Repos.Delete(c.ctx, domain.Root(), c.h("myaction")))
+	_, err = c.forge.Auth.Authenticate(c.ctx, arch)
+	assert.ErrorIs(t, err, domain.ErrUnauthenticated, "deleted with the repository it reads")
+	_, err = c.forge.Auth.Authenticate(c.ctx, job.GetGithubToken())
+	assert.NoError(t, err, "the job's own token is the run's repository's, not touched")
+
+	// A repository created again under the name does not inherit the token.
+	c.seed("myaction", domain.VisibilityPrivate, "action.yml")
+	_, err = c.forge.Auth.Authenticate(c.ctx, arch)
+	assert.ErrorIs(t, err, domain.ErrUnauthenticated)
+	status, _, _ := c.get("/-/github/api/repos/owner/myaction/tarball/"+sha, basic(arch))
+	assert.Equal(t, http.StatusUnauthorized, status)
+
+	// The job ending afterwards revokes what is left without an error.
+	runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
+}
+
+// GO-005: ls-remote runs are bounded server-wide and a call has a deadline.
+func TestResolveActionsBoundsRemoteWork(t *testing.T) {
+	t.Run("concurrency", func(t *testing.T) {
+		// The jobs of a run resolve at the same time: five calls, two slots.
+		var running, peak atomic.Int32
+		release := make(chan struct{})
+		remote := newFakeRemote(t)
+		remote.m.ExpectedCalls = nil
+		remote.m.EXPECT().ListRefs(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+			func(ctx context.Context, owner, repo string) ([]ports.RemoteRef, error) {
+				n := running.Add(1)
+				defer running.Add(-1)
+				for {
+					p := peak.Load()
+					if n <= p || peak.CompareAndSwap(p, n) {
+						break
+					}
+				}
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				return []ports.RemoteRef{{Name: "refs/tags/v1", ID: shaMain}}, nil
+			}).Maybe()
+		c := newExecHarness(t, remote, func(cfg *usecase.CIConfig) { cfg.RemoteConcurrency = 2 })
+		runner := c.registerRunner("alpha", "ubuntu-latest")
+		job := c.startJob(runner)
+		c.heartbeat(runner, job)
+
+		var wg sync.WaitGroup
+		results := make([][]*pb.ResolvedAction, 5)
+		errs := make([]error, 5)
+		for i, repo := range []string{"one", "two", "three", "four", "five"} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results[i], errs[i] = c.resolveErr(runner, job, "a/"+repo+"@v1")
+			}()
+		}
+		require.Eventually(t, func() bool { return running.Load() == 2 }, 5*time.Second, 10*time.Millisecond)
+		time.Sleep(150 * time.Millisecond)
+		assert.EqualValues(t, 2, running.Load(), "the others wait for a slot")
+		close(release)
+		wg.Wait()
+		assert.LessOrEqual(t, peak.Load(), int32(2))
+		for i := range results {
+			require.NoError(t, errs[i])
+			assert.Empty(t, results[i][0].GetError(), results[i][0].GetRef())
+		}
+	})
+
+	t.Run("deadline", func(t *testing.T) {
+		remote := newFakeRemote(t)
+		remote.m.ExpectedCalls = nil
+		remote.m.EXPECT().ListRefs(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+			func(ctx context.Context, _, _ string) ([]ports.RemoteRef, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}).Maybe()
+		c := newExecHarness(t, remote, func(cfg *usecase.CIConfig) { cfg.ResolveTimeout = 300 * time.Millisecond })
+		runner := c.registerRunner("alpha", "ubuntu-latest")
+		job := c.startJob(runner)
+		c.heartbeat(runner, job)
+		start := time.Now()
+		_, err := c.resolveErr(runner, job, "slow/action@v1")
+		assert.Equal(t, connect.CodeUnavailable, ciErrCode(err), "a deadline of ours is unavailable, not deadline_exceeded")
+		assert.Less(t, time.Since(start), 5*time.Second)
+		// The job goes on: the next call is answered.
+		ok, err := c.resolveErr(runner, job, "a/b@"+shaMain)
+		require.NoError(t, err)
+		assert.Empty(t, ok[0].GetError())
+	})
 }

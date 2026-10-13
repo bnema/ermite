@@ -29,6 +29,11 @@ const (
 	DefaultCIKeepalive = 30 * time.Second
 	// DefaultCITriggerQueue is the size of the queue of pushes to plan.
 	DefaultCITriggerQueue = 256
+	// DefaultCIRemoteConcurrency is the git ls-remote processes ResolveActions
+	// runs at once, whatever the number of jobs that resolve.
+	DefaultCIRemoteConcurrency = 4
+	// DefaultCIResolveTimeout bounds one ResolveActions call.
+	DefaultCIResolveTimeout = 60 * time.Second
 	// MaxCIChecks is the most checks ListChecks returns.
 	MaxCIChecks = 1000
 	// MaxCILogStreams and MaxCILogStreamsPerClient bound the concurrent log
@@ -61,6 +66,15 @@ type CIConfig struct {
 	Remote ports.GitRemote
 	// Archive serves the tarballs of the REST subset.
 	Archive ports.GitArchive
+	// Tokens finds the stored token of the pusher of a run, to ask what it may
+	// read when an action of another repository is resolved for the run. Nil
+	// reads nothing for a token (fail closed).
+	Tokens ports.TokenStore
+	// RemoteConcurrency bounds the git ls-remote processes at once (default
+	// DefaultCIRemoteConcurrency); ResolveTimeout bounds one ResolveActions call
+	// (default DefaultCIResolveTimeout).
+	RemoteConcurrency int
+	ResolveTimeout    time.Duration
 	// Owner is the owner login of the github context.
 	Owner string
 	// PublicURL is the base URL of the instance (github.server_url).
@@ -95,6 +109,10 @@ func (c CIConfig) withDefaults() CIConfig {
 	def(&c.TimeoutSlack, domain.CITimeoutSlack)
 	def(&c.QueueTimeout, domain.CIQueueTimeout)
 	def(&c.Retention, domain.CIRetentionDays*24*time.Hour)
+	if c.RemoteConcurrency <= 0 {
+		c.RemoteConcurrency = DefaultCIRemoteConcurrency
+	}
+	def(&c.ResolveTimeout, DefaultCIResolveTimeout)
 	if c.TriggerQueue <= 0 {
 		c.TriggerQueue = DefaultCITriggerQueue
 	}
@@ -117,21 +135,22 @@ type CI struct {
 	ctx  context.Context
 	wg   sync.WaitGroup
 
-	locks   sync.Map // run id -> *sync.Mutex
-	assign  sync.Mutex
-	jobs    notifier // woken when a job changes: key is the job reference
-	pending notifier // woken when a job may be ready or a runner was removed
-	flows   *wfCache
+	remoteSlots chan struct{} // slots of the git ls-remote processes
+	locks       sync.Map      // run id -> *sync.Mutex
+	assign      sync.Mutex
+	jobs        notifier // woken when a job changes: key is the job reference
+	pending     notifier // woken when a job may be ready or a runner was removed
+	flows       *wfCache
 
 	mu         sync.Mutex
 	heartbeats map[string]time.Time // job reference -> last heartbeat
 	seen       map[string]time.Time // runner id -> last seen
 	polls      map[string]pollRecord
 	// archiveTokens are the secrets of the tokens given for the archives of
-	// ermite actions, per job reference then repository, so that a job that
-	// resolves the same repository twice gets one token (memory only: a
+	// ermite actions, per job reference then "<repository>@<sha>", so that a job
+	// that resolves the same commit twice gets one token (memory only: a
 	// restart issues new ones).
-	archiveTokens map[string]map[domain.RepoName]string
+	archiveTokens map[string]map[string]string
 	streams       int
 	perClient     map[string]int
 	closed        bool
@@ -164,9 +183,9 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 	run, stop := context.WithCancel(context.WithoutCancel(ctx))
 	return &CI{
 		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue),
-		ctx: run, stop: stop, flows: newWfCache(64),
+		ctx: run, stop: stop, flows: newWfCache(64), remoteSlots: make(chan struct{}, cfg.RemoteConcurrency),
 		heartbeats: map[string]time.Time{}, seen: map[string]time.Time{}, polls: map[string]pollRecord{},
-		archiveTokens: map[string]map[domain.RepoName]string{},
+		archiveTokens: map[string]map[string]string{},
 		perClient:     map[string]int{},
 	}
 }
