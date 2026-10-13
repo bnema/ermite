@@ -477,36 +477,57 @@ func workflowName(wf *workflow.Workflow, path string) string {
 
 // registeredName is the name GitHub shows for a tag run without run-name: the
 // name of the workflow registered for the path, here the "name:" of the file on
-// the default branch (the path when that file has none). It is own, the name of
-// the workflow of the run, when the default branch has no such file, the file
-// does not parse, or anything cannot be read.
+// the default branch (the path when that file has none). It falls back to own,
+// the name of the workflow of the run, when the default branch has no such
+// file, the file does not parse, or anything cannot be read; a failure other
+// than a missing file is logged at debug.
 func (c *CI) registeredName(ctx context.Context, repo domain.RepoName, wfPath, own string) string {
-	def, exists, err := c.cfg.Repos.DefaultBranch(ctx, repo)
-	if err != nil || !exists {
+	name, err := c.registeredNameOf(ctx, repo, wfPath)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			log := zerowrap.FromCtx(ctx)
+			log.Debug().Err(err).Str("workflow", wfPath).Msg("ci tag run title: the registered workflow name is not readable, using the run's own")
+		}
 		return own
+	}
+	return name
+}
+
+// registeredNameOf is registeredName without the fallback; a missing default
+// branch or file is domain.ErrNotFound.
+func (c *CI) registeredNameOf(ctx context.Context, repo domain.RepoName, wfPath string) (string, error) {
+	def, exists, err := c.cfg.Repos.DefaultBranch(ctx, repo)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return "", domain.ErrNotFound
 	}
 	tip, err := c.cfg.Git.BranchHead(ctx, repo, def)
 	if err != nil {
-		return own
+		return "", err
 	}
 	tp, err := domain.ParseTreePath(wfPath)
 	if err != nil {
-		return own
+		return "", err
 	}
 	_, rc, err := c.cfg.Reader.OpenBlob(ctx, repo, domain.RevisionOf(tip), tp)
 	if err != nil {
-		return own
+		return "", err
 	}
 	content, err := io.ReadAll(io.LimitReader(rc, maxCIWorkflowBytes+1))
 	_ = rc.Close()
-	if err != nil || len(content) > maxCIWorkflowBytes {
-		return own
+	if err != nil {
+		return "", err
+	}
+	if len(content) > maxCIWorkflowBytes {
+		return "", fmt.Errorf("workflow file over %d bytes", maxCIWorkflowBytes)
 	}
 	wf, errs := workflow.Parse(wfPath, content)
 	if len(errs) > 0 {
-		return own
+		return "", fmt.Errorf("workflow does not parse: %v", errs[0])
 	}
-	return workflowName(wf, wfPath)
+	return workflowName(wf, wfPath), nil
 }
 
 // evalRunName evaluates the run-name of a workflow with the github, inputs and
