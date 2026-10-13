@@ -21,7 +21,7 @@ import (
 
 // maxSummaryPageBytes bounds the Markdown rendered in one page, all summaries
 // together; the ones past it are not shown, with a note.
-const maxSummaryPageBytes = 4 << 20
+const maxSummaryPageBytes int64 = 4 << 20
 
 // AnnotationView is an annotation as shown.
 type AnnotationView struct {
@@ -156,17 +156,21 @@ type JobSummaries struct {
 }
 
 // jobSummaries reads and renders the summaries of the jobs of a run, in the
-// order of the jobs, within maxSummaryPageBytes of Markdown.
-func (s *Server) jobSummaries(ctx context.Context, d *repoData, run domain.CIRun, jobs []ports.JobView, linkJobs bool) ([]JobSummaries, error) {
-	budget := maxSummaryPageBytes
-	var out []JobSummaries
+// order of the jobs, within budget bytes of Markdown. The budget goes down as
+// summaries are read and is handed to the use case, which sizes the files
+// before it reads them: a page view reads at most budget bytes. Once it is used
+// up no further job is asked, and more is true: some summaries are not shown.
+func (s *Server) jobSummaries(ctx context.Context, d *repoData, run domain.CIRun, jobs []ports.JobView, linkJobs bool, budget int64) (out []JobSummaries, more bool, err error) {
 	for _, j := range jobs {
 		if j.Phase != domain.CIPhaseRunning && !j.Ended() {
 			continue // no step has run
 		}
-		res, err := s.cfg.Runs.GetStepSummaries(ctx, principal(ctx), d.repo.Name, j.ID, j.Attempt)
+		if budget <= 0 {
+			return out, true, nil
+		}
+		res, err := s.cfg.Runs.GetStepSummaries(ctx, principal(ctx), d.repo.Name, j.ID, j.Attempt, budget)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if len(res.Summaries) == 0 {
 			continue
@@ -179,12 +183,14 @@ func (s *Server) jobSummaries(ctx context.Context, d *repoData, run domain.CIRun
 				name = st.name
 			}
 			v := SummaryView{Step: name}
-			if len(sm.Markdown) > budget {
+			if sm.Omitted {
 				v.Note = "this summary is not shown: the summaries of the page are over " + humanSize(maxSummaryPageBytes) + "."
+				more = true
+				budget = 0 // everything after an omitted summary is omitted too
 				js.Steps = append(js.Steps, v)
 				continue
 			}
-			budget -= len(sm.Markdown)
+			budget -= int64(len(sm.Markdown))
 			prefix := headingIDPrefix + "s" + j.ID + "-" + strconv.Itoa(int(sm.Step)) + "-"
 			h, _, err := s.md.renderWithIDs([]byte(sm.Markdown), d.name(), run.Sha, "", prefix)
 			if err != nil {
@@ -196,7 +202,25 @@ func (s *Server) jobSummaries(ctx context.Context, d *repoData, run domain.CIRun
 		}
 		out = append(out, js)
 	}
-	return out, nil
+	return out, more, nil
+}
+
+// jobRunSha is the commit of the run a job belongs to, for the live fragments of
+// its page. A job id that is not one, or a run that cannot be read, is not found.
+func (s *Server) jobRunSha(ctx context.Context, repo, jobID string) (string, error) {
+	name, err := domain.ParseRepoName(repo)
+	if err != nil {
+		return "", domain.ErrNotFound
+	}
+	runID, _, _, ok := domain.ParseJobID(jobID)
+	if !ok {
+		return "", domain.ErrNotFound
+	}
+	d, err := s.cfg.Runs.GetRun(ctx, principal(ctx), name, runID, 0)
+	if err != nil {
+		return "", err
+	}
+	return d.Run.Sha, nil
 }
 
 // runAnnotations reads the annotations of a run attempt and builds their views.

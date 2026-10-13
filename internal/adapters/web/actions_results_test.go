@@ -48,7 +48,7 @@ func TestSummariesAreRenderedSafely(t *testing.T) {
 		Jobs: []ports.JobView{job}, LatestAttempt: 1,
 	}, nil)
 	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), int32(1), "").Return(ports.AnnotationList{}, nil)
-	runs.EXPECT().GetStepSummaries(mock.Anything, mock.Anything, repo, jobID, int32(1)).Return(ports.SummaryList{
+	runs.EXPECT().GetStepSummaries(mock.Anything, mock.Anything, repo, jobID, int32(1), maxSummaryPageBytes).Return(ports.SummaryList{
 		Summaries: []domain.CIStepSummary{{Step: 2, Markdown: md}, {Step: 7, Markdown: "second"}}, Truncated: true,
 	}, nil)
 	browse := mocks.NewBrowseService(t)
@@ -127,4 +127,111 @@ func TestRepoPath(t *testing.T) {
 	for _, bad := range []string{"", ".", "..", "../a", "a/..", "a/../b", "/a", "a//b", "a/./b", "a/", `a\b`, "a\x00b", "a\nb", "a\tb"} {
 		assert.False(t, repoPath(bad), "%q", bad)
 	}
+}
+
+func endedJob(t *testing.T, repo domain.RepoName, id string) ports.JobView {
+	t.Helper()
+	return ports.JobView{CIJob: domain.CIJob{
+		ID: id, RunID: 1, Attempt: 1, RunAttempt: 1, Repo: repo, Key: "k", Name: "job " + id,
+		Phase: domain.CIPhaseEnded, Conclusion: domain.CISuccess,
+	}}
+}
+
+func runPageServer(t *testing.T, repo domain.RepoName, jobs []ports.JobView, runs *mocks.RunService) *httptest.ResponseRecorder {
+	t.Helper()
+	runs.EXPECT().GetRun(mock.Anything, mock.Anything, repo, int64(1), int32(0)).Return(ports.RunDetail{
+		Run:  domain.CIRun{Repo: repo, ID: 1, Attempt: 1, Number: 1, WorkflowName: "ci", Sha: strings.Repeat("a", 40), Status: domain.CICompleted, Conclusion: domain.CISuccess},
+		Jobs: jobs, LatestAttempt: 1,
+	}, nil)
+	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), int32(1), "").Return(ports.AnnotationList{}, nil)
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, repo.String())), Browse: browse, Runs: runs})
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/proj/actions/runs/1", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	return rec
+}
+
+// GO-001: once the render budget is used up no other job is asked for its
+// summaries, and the page says that some are not shown.
+func TestSummariesStopAtTheBudget(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	jobs := []ports.JobView{endedJob(t, repo, "1-0-0"), endedJob(t, repo, "1-1-0"), endedJob(t, repo, "1-2-0")}
+	runs := mocks.NewRunService(t)
+	// The first job takes the whole budget; the other two are never asked
+	// (the mock fails the test on a call it does not expect).
+	full := strings.Repeat("x", int(maxSummaryPageBytes))
+	runs.EXPECT().GetStepSummaries(mock.Anything, mock.Anything, repo, "1-0-0", int32(1), maxSummaryPageBytes).Return(ports.SummaryList{
+		Summaries: []domain.CIStepSummary{{Step: 1, Markdown: full}},
+	}, nil).Once()
+	body := runPageServer(t, repo, jobs, runs).Body.String()
+	assert.Contains(t, body, "more summaries are not shown")
+	assert.Contains(t, body, `aria-label="Summary of job 1-0-0"`)
+	assert.NotContains(t, body, `aria-label="Summary of job 1-1-0"`, "no summary of the other jobs")
+}
+
+// The budget handed to the next job is what is left; a summary the store left
+// unread is shown as such, and so are the ones after it.
+func TestSummariesPassWhatIsLeftOfTheBudget(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	jobs := []ports.JobView{endedJob(t, repo, "1-0-0"), endedJob(t, repo, "1-1-0"), endedJob(t, repo, "1-2-0")}
+	runs := mocks.NewRunService(t)
+	runs.EXPECT().GetStepSummaries(mock.Anything, mock.Anything, repo, "1-0-0", int32(1), maxSummaryPageBytes).Return(ports.SummaryList{
+		Summaries: []domain.CIStepSummary{{Step: 1, Markdown: "hello"}},
+	}, nil).Once()
+	runs.EXPECT().GetStepSummaries(mock.Anything, mock.Anything, repo, "1-1-0", int32(1), maxSummaryPageBytes-5).Return(ports.SummaryList{
+		Summaries: []domain.CIStepSummary{{Step: 1, Markdown: "world"}, {Step: 2, Omitted: true}, {Step: 3, Omitted: true}},
+	}, nil).Once()
+	body := runPageServer(t, repo, jobs, runs).Body.String()
+	assert.Contains(t, body, "hello")
+	assert.Contains(t, body, "world")
+	assert.Equal(t, 2, strings.Count(body, "this summary is not shown"))
+	assert.Contains(t, body, "more summaries are not shown")
+	assert.NotContains(t, body, `aria-label="Summary of job 1-2-0"`, "the third job is not asked once an omission happened")
+}
+
+func TestNoNoteWhenEverythingFits(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	runs := mocks.NewRunService(t)
+	runs.EXPECT().GetStepSummaries(mock.Anything, mock.Anything, repo, "1-0-0", int32(1), maxSummaryPageBytes).Return(ports.SummaryList{
+		Summaries: []domain.CIStepSummary{{Step: 1, Markdown: "small"}},
+	}, nil).Once()
+	body := runPageServer(t, repo, []ports.JobView{endedJob(t, repo, "1-0-0")}, runs).Body.String()
+	assert.Contains(t, body, "small")
+	assert.NotContains(t, body, "not shown")
+}
+
+// GO-002: a live job update reads the job and its annotations, never the run;
+// the commit comes from the stream, and a stream without it has the page fetch
+// itself again.
+func TestJobStateDoesNotReadTheRun(t *testing.T) {
+	t.Parallel()
+	const jobID = "1-0-0"
+	repo := repoName(t, "proj")
+	job := endedJob(t, repo, jobID)
+	job.Steps = []domain.CIStep{{Number: 1, Name: "s", State: domain.CIStepCompleted, Conclusion: domain.CISuccess, HasLines: true}}
+	job.Lines = 2
+	sha := strings.Repeat("c", 40)
+
+	runs := mocks.NewRunService(t) // GetRun is not expected
+	runs.EXPECT().GetJob(mock.Anything, mock.Anything, repo, jobID, int32(0)).Return(job, nil)
+	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), int32(0), jobID).Return(ports.AnnotationList{
+		Annotations: []ports.JobAnnotation{{JobID: jobID, Annotation: domain.CIAnnotation{Level: domain.AnnotationWarning, Message: "m", File: "a.go", StartLine: 2, Step: 1}}},
+	}, nil)
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs})
+
+	frags, err := (&liveStream{s: srv, repo: "proj", view: "job", job: jobID, sha: sha}).jobState(context.Background())
+	require.NoError(t, err)
+	require.Len(t, frags, 3)
+	assert.Contains(t, frags[2].html, `href="/proj/blob/`+sha+`/a.go#L2"`, "the annotation links to the commit the stream was set up with")
+
+	frags, err = (&liveStream{s: srv, repo: "proj", view: "job", job: jobID}).jobState(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, gap, frags)
 }

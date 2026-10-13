@@ -111,8 +111,9 @@ func (c *CI) ListAnnotations(ctx context.Context, p domain.Principal, name domai
 }
 
 // GetStepSummaries returns the summaries of a job at an attempt (0 for the
-// latest): the first 20 steps that have one, by step number.
-func (c *CI) GetStepSummaries(ctx context.Context, p domain.Principal, name domain.RepoName, jobID string, attempt int32) (ports.SummaryList, error) {
+// latest): the first 20 steps that have one, by step number. With maxBytes
+// above 0, no more than that many bytes of Markdown are read.
+func (c *CI) GetStepSummaries(ctx context.Context, p domain.Principal, name domain.RepoName, jobID string, attempt int32, maxBytes int64) (ports.SummaryList, error) {
 	if _, err := c.readableRepo(ctx, p, name); err != nil {
 		return ports.SummaryList{}, err
 	}
@@ -120,7 +121,7 @@ func (c *CI) GetStepSummaries(ctx context.Context, p domain.Principal, name doma
 	if err != nil {
 		return ports.SummaryList{}, err
 	}
-	list, more, err := c.cfg.Summaries.List(ctx, logRef(j), domain.CIMaxListedSummaries)
+	list, more, err := c.cfg.Summaries.List(ctx, logRef(j), domain.CIMaxListedSummaries, max(maxBytes, 0))
 	if err != nil {
 		return ports.SummaryList{}, err
 	}

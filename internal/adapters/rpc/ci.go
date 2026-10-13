@@ -367,7 +367,7 @@ func (s *runService) GetStepSummaries(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	res, err := s.runs.GetStepSummaries(ctx, caller(ctx), name, req.Msg.GetJobId(), req.Msg.GetAttempt())
+	res, err := s.runs.GetStepSummaries(ctx, caller(ctx), name, req.Msg.GetJobId(), req.Msg.GetAttempt(), 0)
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}

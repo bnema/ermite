@@ -218,8 +218,12 @@ type CISummaryStore interface {
 	// appears whole or not at all. An empty markdown removes the summary.
 	Put(ctx context.Context, ref CILogRef, step int32, markdown string) error
 	// List returns the summaries of the steps that have one, by step number,
-	// at most limit; more is true when there are others.
-	List(ctx context.Context, ref CILogRef, limit int) (summaries []domain.CIStepSummary, more bool, err error)
+	// at most limit; more is true when there are others. With maxBytes above
+	// 0 the files are sized (stat) before they are read, and a summary that
+	// would take the total of the Markdown read past maxBytes is returned
+	// Omitted, unread, as are all the ones after it: a call never reads more
+	// than maxBytes.
+	List(ctx context.Context, ref CILogRef, limit int, maxBytes int64) (summaries []domain.CIStepSummary, more bool, err error)
 	// RemoveJob deletes the summaries of one execution of a job.
 	RemoveJob(ctx context.Context, ref CILogRef) error
 	// RemoveRuns deletes the summaries of the runs.
@@ -531,8 +535,10 @@ type RunService interface {
 	// attempt in which it executed.
 	ListAnnotations(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, attempt int32, jobID string) (AnnotationList, error)
 	// GetStepSummaries returns the summaries of a job at an attempt (0 for the
-	// latest), by step number.
-	GetStepSummaries(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32) (SummaryList, error)
+	// latest), by step number. maxBytes above 0 bounds the Markdown read: the
+	// summaries past it come back Omitted, without their Markdown (the API
+	// passes 0, no bound).
+	GetStepSummaries(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, maxBytes int64) (SummaryList, error)
 	ListRunners(ctx context.Context, p domain.Principal, size int, token string) (RunnerPage, error)
 	RemoveRunner(ctx context.Context, p domain.Principal, id string) error
 }

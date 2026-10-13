@@ -49,8 +49,8 @@ func (_m *CISummaryStore) EXPECT() *CISummaryStore_Expecter {
 }
 
 // List provides a mock function for the type CISummaryStore
-func (_mock *CISummaryStore) List(ctx context.Context, ref ports.CILogRef, limit int) ([]domain.CIStepSummary, bool, error) {
-	ret := _mock.Called(ctx, ref, limit)
+func (_mock *CISummaryStore) List(ctx context.Context, ref ports.CILogRef, limit int, maxBytes int64) ([]domain.CIStepSummary, bool, error) {
+	ret := _mock.Called(ctx, ref, limit, maxBytes)
 
 	if len(ret) == 0 {
 		panic("no return value specified for List")
@@ -59,23 +59,23 @@ func (_mock *CISummaryStore) List(ctx context.Context, ref ports.CILogRef, limit
 	var r0 []domain.CIStepSummary
 	var r1 bool
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ports.CILogRef, int) ([]domain.CIStepSummary, bool, error)); ok {
-		return returnFunc(ctx, ref, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ports.CILogRef, int, int64) ([]domain.CIStepSummary, bool, error)); ok {
+		return returnFunc(ctx, ref, limit, maxBytes)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ports.CILogRef, int) []domain.CIStepSummary); ok {
-		r0 = returnFunc(ctx, ref, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ports.CILogRef, int, int64) []domain.CIStepSummary); ok {
+		r0 = returnFunc(ctx, ref, limit, maxBytes)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]domain.CIStepSummary)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, ports.CILogRef, int) bool); ok {
-		r1 = returnFunc(ctx, ref, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, ports.CILogRef, int, int64) bool); ok {
+		r1 = returnFunc(ctx, ref, limit, maxBytes)
 	} else {
 		r1 = ret.Get(1).(bool)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, ports.CILogRef, int) error); ok {
-		r2 = returnFunc(ctx, ref, limit)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, ports.CILogRef, int, int64) error); ok {
+		r2 = returnFunc(ctx, ref, limit, maxBytes)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -91,11 +91,12 @@ type CISummaryStore_List_Call struct {
 //   - ctx context.Context
 //   - ref ports.CILogRef
 //   - limit int
-func (_e *CISummaryStore_Expecter) List(ctx any, ref any, limit any) *CISummaryStore_List_Call {
-	return &CISummaryStore_List_Call{Call: _e.mock.On("List", ctx, ref, limit)}
+//   - maxBytes int64
+func (_e *CISummaryStore_Expecter) List(ctx any, ref any, limit any, maxBytes any) *CISummaryStore_List_Call {
+	return &CISummaryStore_List_Call{Call: _e.mock.On("List", ctx, ref, limit, maxBytes)}
 }
 
-func (_c *CISummaryStore_List_Call) Run(run func(ctx context.Context, ref ports.CILogRef, limit int)) *CISummaryStore_List_Call {
+func (_c *CISummaryStore_List_Call) Run(run func(ctx context.Context, ref ports.CILogRef, limit int, maxBytes int64)) *CISummaryStore_List_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -109,10 +110,15 @@ func (_c *CISummaryStore_List_Call) Run(run func(ctx context.Context, ref ports.
 		if args[2] != nil {
 			arg2 = args[2].(int)
 		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -123,7 +129,7 @@ func (_c *CISummaryStore_List_Call) Return(summaries []domain.CIStepSummary, mor
 	return _c
 }
 
-func (_c *CISummaryStore_List_Call) RunAndReturn(run func(ctx context.Context, ref ports.CILogRef, limit int) ([]domain.CIStepSummary, bool, error)) *CISummaryStore_List_Call {
+func (_c *CISummaryStore_List_Call) RunAndReturn(run func(ctx context.Context, ref ports.CILogRef, limit int, maxBytes int64) ([]domain.CIStepSummary, bool, error)) *CISummaryStore_List_Call {
 	_c.Call.Return(run)
 	return _c
 }

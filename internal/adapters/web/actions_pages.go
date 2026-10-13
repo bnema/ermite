@@ -179,7 +179,9 @@ type RunPage struct {
 	AnnotationsMore bool
 	// Summaries are the job summaries, rendered; only the full page has them.
 	Summaries []JobSummaries
-	Active    bool
+	// SummariesMore says that some summaries are not shown (the page budget).
+	SummariesMore bool
+	Active        bool
 	// detail is what the page was built from.
 	detail ports.RunDetail
 	// Forms are the owner's actions; nil/empty when the visitor cannot.
@@ -294,7 +296,7 @@ func (s *Server) run(ctx context.Context, r *http.Request) (templ.Component, int
 	}
 	// The summaries are part of the page, not of the live body: the page
 	// fetches itself again when the run completes (runBody), and they show then.
-	if p.Summaries, err = s.jobSummaries(ctx, d, p.detail.Run, p.detail.Jobs, p.Attempt == p.Latest); err != nil {
+	if p.Summaries, p.SummariesMore, err = s.jobSummaries(ctx, d, p.detail.Run, p.detail.Jobs, p.Attempt == p.Latest, maxSummaryPageBytes); err != nil {
 		return nil, 0, err
 	}
 	l := s.repoLayout(ctx, d, "actions")

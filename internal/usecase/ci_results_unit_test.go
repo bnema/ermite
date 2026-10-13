@@ -177,7 +177,7 @@ func TestGetStepSummariesAndListAnnotations(t *testing.T) {
 	u.store.EXPECT().GetJob(mock.Anything, int64(7), int32(2), jobIDOne).Return(j, nil)
 	u.store.EXPECT().ListJobs(mock.Anything, int64(7), int32(2)).Return([]domain.CIJob{j}, nil)
 	u.store.EXPECT().JobAnnotations(mock.Anything, int64(7), int32(1), jobIDOne).Return([]domain.CIAnnotation{warn(1, "from attempt 1")}, nil)
-	u.sums.EXPECT().List(mock.Anything, ports.CILogRef{RunID: 7, JobID: jobIDOne, Attempt: 1}, domain.CIMaxListedSummaries).
+	u.sums.EXPECT().List(mock.Anything, ports.CILogRef{RunID: 7, JobID: jobIDOne, Attempt: 1}, domain.CIMaxListedSummaries, int64(0)).
 		Return([]domain.CIStepSummary{{Step: 3, Markdown: "s"}}, true, nil)
 	ctx := context.Background()
 
@@ -187,7 +187,7 @@ func TestGetStepSummariesAndListAnnotations(t *testing.T) {
 	assert.Equal(t, jobIDOne, anns.Annotations[0].JobID)
 	assert.False(t, anns.Truncated)
 
-	sums, err := u.ci.GetStepSummaries(ctx, domain.Anonymous(), repo, jobIDOne, 0)
+	sums, err := u.ci.GetStepSummaries(ctx, domain.Anonymous(), repo, jobIDOne, 0, 0)
 	require.NoError(t, err)
 	assert.True(t, sums.Truncated)
 	assert.Equal(t, []domain.CIStepSummary{{Step: 3, Markdown: "s"}}, sums.Summaries)
@@ -226,6 +226,27 @@ func TestResultsReadsFollowTheAccessOfTheRepository(t *testing.T) {
 	u.meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, Visibility: domain.VisibilityPrivate}, nil)
 	_, err := u.ci.ListAnnotations(context.Background(), domain.Anonymous(), repo, 7, 0, "")
 	assert.ErrorIs(t, err, domain.ErrNotFound)
-	_, err = u.ci.GetStepSummaries(context.Background(), domain.Anonymous(), repo, jobIDOne, 0)
+	_, err = u.ci.GetStepSummaries(context.Background(), domain.Anonymous(), repo, jobIDOne, 0, 0)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+// The byte budget of a reader reaches the store, and a negative one means none.
+func TestGetStepSummariesPassesTheBudget(t *testing.T) {
+	t.Parallel()
+	u := newCIUnit(t, nil)
+	repo := name(t, "proj")
+	j := ciJob(t, domain.CIPhaseEnded, jobSecret)
+	u.meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, Visibility: domain.VisibilityPublic}, nil)
+	u.store.EXPECT().GetRun(mock.Anything, repo, int64(7)).Return(domain.CIRun{Repo: repo, ID: 7, Attempt: 1}, nil)
+	u.store.EXPECT().GetJob(mock.Anything, int64(7), int32(1), jobIDOne).Return(j, nil)
+	ref := ports.CILogRef{RunID: 7, JobID: jobIDOne, Attempt: 1}
+	u.sums.EXPECT().List(mock.Anything, ref, domain.CIMaxListedSummaries, int64(4096)).
+		Return([]domain.CIStepSummary{{Step: 1, Markdown: "a"}, {Step: 2, Omitted: true}}, false, nil).Once()
+	u.sums.EXPECT().List(mock.Anything, ref, domain.CIMaxListedSummaries, int64(0)).Return(nil, false, nil).Once()
+
+	got, err := u.ci.GetStepSummaries(context.Background(), domain.Anonymous(), repo, jobIDOne, 0, 4096)
+	require.NoError(t, err)
+	assert.True(t, got.Summaries[1].Omitted)
+	_, err = u.ci.GetStepSummaries(context.Background(), domain.Anonymous(), repo, jobIDOne, 0, -5)
+	require.NoError(t, err)
 }

@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -89,7 +90,7 @@ func (s *Store) Put(_ context.Context, ref ports.CILogRef, step int32, markdown 
 }
 
 // List returns the summaries of the steps that have one, by step number.
-func (s *Store) List(_ context.Context, ref ports.CILogRef, limit int) ([]domain.CIStepSummary, bool, error) {
+func (s *Store) List(_ context.Context, ref ports.CILogRef, limit int, maxBytes int64) ([]domain.CIStepSummary, bool, error) {
 	if !validRef(ref) {
 		return nil, false, nil
 	}
@@ -118,17 +119,69 @@ func (s *Store) List(_ context.Context, ref ports.CILogRef, limit int) ([]domain
 		steps = steps[:limit]
 	}
 	out := make([]domain.CIStepSummary, 0, len(steps))
+	var read int64
+	exhausted := false
 	for _, n := range steps {
-		b, err := os.ReadFile(s.path(ref, n))
+		if exhausted {
+			out = append(out, domain.CIStepSummary{Step: n, Omitted: true})
+			continue
+		}
+		if maxBytes > 0 {
+			// Size the file first: a summary that does not fit is not read.
+			info, err := os.Stat(s.path(ref, n))
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // removed meanwhile
+			}
+			if err != nil {
+				return nil, false, fmt.Errorf("stat summary: %w", err)
+			}
+			if read+info.Size() > maxBytes {
+				exhausted = true
+				out = append(out, domain.CIStepSummary{Step: n, Omitted: true})
+				continue
+			}
+		}
+		b, err := readCapped(s.path(ref, n), maxBytes, read)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue // removed meanwhile
+		}
+		if errors.Is(err, errOverBudget) {
+			exhausted = true // replaced by a larger file since the stat
+			out = append(out, domain.CIStepSummary{Step: n, Omitted: true})
+			continue
 		}
 		if err != nil {
 			return nil, false, fmt.Errorf("read summary: %w", err)
 		}
+		read += int64(len(b))
 		out = append(out, domain.CIStepSummary{Step: n, Markdown: string(b)})
 	}
 	return out, more, nil
+}
+
+var errOverBudget = errors.New("over budget")
+
+// readCapped reads a file, at most what is left of maxBytes after read bytes
+// (no cap when maxBytes is 0): a file that is longer than that, because it grew
+// since it was sized, is errOverBudget and its content is dropped.
+func readCapped(path string, maxBytes, read int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	if maxBytes <= 0 {
+		return io.ReadAll(f)
+	}
+	left := maxBytes - read
+	b, err := io.ReadAll(io.LimitReader(f, left+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > left {
+		return nil, errOverBudget
+	}
+	return b, nil
 }
 
 // RemoveJob deletes the summaries of one execution of a job.

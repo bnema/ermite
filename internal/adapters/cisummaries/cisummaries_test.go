@@ -23,7 +23,7 @@ func TestPutListReplaceAndRemove(t *testing.T) {
 	root := t.TempDir()
 	s := cisummaries.New(root)
 
-	got, more, err := s.List(ctx, ref, 20)
+	got, more, err := s.List(ctx, ref, 20, 0)
 	require.NoError(t, err)
 	assert.Empty(t, got)
 	assert.False(t, more)
@@ -35,23 +35,23 @@ func TestPutListReplaceAndRemove(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "two", string(b))
 
-	got, _, err = s.List(ctx, ref, 20)
+	got, _, err = s.List(ctx, ref, 20, 0)
 	require.NoError(t, err)
 	assert.Equal(t, []domain.CIStepSummary{{Step: 2, Markdown: "two"}, {Step: 10, Markdown: "# ten"}}, got, "by step number, not by name")
 
 	// Replace, and an empty markdown removes.
 	require.NoError(t, s.Put(ctx, ref, 2, "again"))
-	got, _, _ = s.List(ctx, ref, 20)
+	got, _, _ = s.List(ctx, ref, 20, 0)
 	assert.Equal(t, "again", got[0].Markdown)
 	require.NoError(t, s.Put(ctx, ref, 2, ""))
 	require.NoError(t, s.Put(ctx, ref, 3, ""), "removing what is not there is fine")
-	got, _, _ = s.List(ctx, ref, 20)
+	got, _, _ = s.List(ctx, ref, 20, 0)
 	require.Len(t, got, 1)
 	assert.EqualValues(t, 10, got[0].Step)
 
 	// Another attempt and another job have their own.
 	other := ports.CILogRef{RunID: 7, JobID: "7-0-0", Attempt: 2}
-	got, _, _ = s.List(ctx, other, 20)
+	got, _, _ = s.List(ctx, other, 20, 0)
 	assert.Empty(t, got)
 
 	// A write leaves no temporary file behind.
@@ -68,12 +68,12 @@ func TestListStopsAtTheLimit(t *testing.T) {
 	for i := int32(1); i <= 25; i++ {
 		require.NoError(t, s.Put(ctx, ref, i, "s"))
 	}
-	got, more, err := s.List(ctx, ref, 20)
+	got, more, err := s.List(ctx, ref, 20, 0)
 	require.NoError(t, err)
 	assert.Len(t, got, 20)
 	assert.True(t, more)
 	assert.EqualValues(t, 20, got[19].Step, "the first 20 steps that have one")
-	got, more, _ = s.List(ctx, ref, 25)
+	got, more, _ = s.List(ctx, ref, 25, 0)
 	assert.Len(t, got, 25)
 	assert.False(t, more)
 }
@@ -88,7 +88,7 @@ func TestListIgnoresStrayFiles(t *testing.T) {
 	for _, n := range []string{".tmp-123", "x.md", "01.md", "0.md", "-1.md", "notes.txt"} {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, n), []byte("stray"), 0o600))
 	}
-	got, _, err := s.List(ctx, ref, 20)
+	got, _, err := s.List(ctx, ref, 20, 0)
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "one", got[0].Markdown)
@@ -110,15 +110,15 @@ func TestRemoveJobRemoveRunsAndRunIDs(t *testing.T) {
 	assert.ElementsMatch(t, []int64{7, 8}, ids)
 
 	require.NoError(t, s.RemoveJob(ctx, ref))
-	got, _, _ := s.List(ctx, ref, 20)
+	got, _, _ := s.List(ctx, ref, 20, 0)
 	assert.Empty(t, got)
-	got, _, _ = s.List(ctx, second, 20)
+	got, _, _ = s.List(ctx, second, 20, 0)
 	assert.Len(t, got, 1, "the other job of the run stays")
 
 	require.NoError(t, s.RemoveRuns(ctx, []int64{7, 0, -3, 99}))
-	got, _, _ = s.List(ctx, second, 20)
+	got, _, _ = s.List(ctx, second, 20, 0)
 	assert.Empty(t, got)
-	got, _, _ = s.List(ctx, third, 20)
+	got, _, _ = s.List(ctx, third, 20, 0)
 	assert.Len(t, got, 1)
 	ids, _ = s.RunIDs(ctx)
 	assert.Equal(t, []int64{8}, ids)
@@ -136,7 +136,7 @@ func TestRefsCannotEscape(t *testing.T) {
 		{RunID: 7, JobID: "7-0-0", Attempt: 0},
 	} {
 		assert.ErrorIs(t, s.Put(ctx, bad, 1, "x"), domain.ErrNotFound)
-		got, _, err := s.List(ctx, bad, 20)
+		got, _, err := s.List(ctx, bad, 20, 0)
 		require.NoError(t, err)
 		assert.Empty(t, got)
 	}
@@ -151,7 +151,61 @@ func TestASummaryOfTheMaximumSizeRoundTrips(t *testing.T) {
 	s := cisummaries.New(t.TempDir())
 	big := strings.Repeat("x", domain.CIMaxSummaryBytes)
 	require.NoError(t, s.Put(ctx, ref, 1, big))
-	got, _, err := s.List(ctx, ref, 20)
+	got, _, err := s.List(ctx, ref, 20, 0)
 	require.NoError(t, err)
 	assert.Len(t, got[0].Markdown, domain.CIMaxSummaryBytes)
+}
+
+// With a byte budget the files are sized before they are read: a summary that
+// does not fit, and every one after it, comes back Omitted and is never opened.
+func TestListReadsNoMoreThanTheBudget(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	s := cisummaries.New(root)
+	require.NoError(t, s.Put(ctx, ref, 1, strings.Repeat("a", 100)))
+	require.NoError(t, s.Put(ctx, ref, 2, strings.Repeat("b", 100)))
+	require.NoError(t, s.Put(ctx, ref, 3, strings.Repeat("c", 10)))
+	require.NoError(t, s.Put(ctx, ref, 4, "d"))
+	dir := filepath.Join(root, "7", "7-0-0", "1")
+	// A file that cannot be opened proves it was sized, not read.
+	if os.Geteuid() != 0 {
+		for _, n := range []string{"2.md", "3.md", "4.md"} {
+			require.NoError(t, os.Chmod(filepath.Join(dir, n), 0))
+		}
+	}
+
+	got, more, err := s.List(ctx, ref, 20, 150)
+	require.NoError(t, err)
+	assert.False(t, more)
+	require.Len(t, got, 4)
+	assert.Equal(t, strings.Repeat("a", 100), got[0].Markdown)
+	assert.False(t, got[0].Omitted)
+	for _, o := range got[1:] {
+		assert.True(t, o.Omitted, "step %d", o.Step)
+		assert.Empty(t, o.Markdown)
+	}
+	assert.EqualValues(t, []int32{1, 2, 3, 4}, []int32{got[0].Step, got[1].Step, got[2].Step, got[3].Step}, "the steps are still listed")
+}
+
+func TestListBudgetBoundaries(t *testing.T) {
+	ctx := t.Context()
+	s := cisummaries.New(t.TempDir())
+	require.NoError(t, s.Put(ctx, ref, 1, "12345"))
+	require.NoError(t, s.Put(ctx, ref, 2, "678"))
+
+	got, _, _ := s.List(ctx, ref, 20, 8)
+	assert.False(t, got[0].Omitted || got[1].Omitted, "exactly the budget fits")
+	got, _, _ = s.List(ctx, ref, 20, 7)
+	assert.False(t, got[0].Omitted)
+	assert.True(t, got[1].Omitted, "one byte over")
+	got, _, _ = s.List(ctx, ref, 20, 4)
+	assert.True(t, got[0].Omitted && got[1].Omitted, "the first does not fit")
+	got, _, _ = s.List(ctx, ref, 20, 0)
+	assert.False(t, got[0].Omitted || got[1].Omitted, "no budget, no bound")
+
+	// A smaller file after one that does not fit is still omitted: the order
+	// of steps is kept and nothing is read past the first omission.
+	require.NoError(t, s.Put(ctx, ref, 3, "x"))
+	got, _, _ = s.List(ctx, ref, 20, 7)
+	assert.True(t, got[2].Omitted)
 }

@@ -175,7 +175,7 @@ func TestRunServiceAnnotationsAndSummaries(t *testing.T) {
 		Annotations: []ports.JobAnnotation{{JobID: "7-0-0", Annotation: domain.CIAnnotation{Level: domain.AnnotationWarning, Message: "m", File: "a.go", StartLine: 4, Step: 3}}},
 		Truncated:   true,
 	}, nil).Once()
-	runs.EXPECT().GetStepSummaries(mock.Anything, domain.Owner(), repo, "7-0-0", int32(0)).Return(ports.SummaryList{
+	runs.EXPECT().GetStepSummaries(mock.Anything, domain.Owner(), repo, "7-0-0", int32(0), int64(0)).Return(ports.SummaryList{
 		Summaries: []domain.CIStepSummary{{Step: 2, Markdown: "# s"}}, Truncated: true,
 	}, nil).Once()
 	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(8), int32(0), "").Return(ports.AnnotationList{}, domain.ErrNotFound).Once()

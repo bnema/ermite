@@ -62,7 +62,7 @@ templ RunDetail(l Layout, p RunPage) {
 		<div id="run-body">
 			@RunBody(p)
 		</div>
-		@RunSummaries(p.Summaries)
+		@RunSummaries(p.Summaries, p.SummariesMore)
 	}
 }
 
@@ -181,7 +181,7 @@ templ JobAnnotations(anns []AnnotationView, more bool) {
 // RunSummaries is the job summaries of a run, one block per step that wrote
 // one. The Markdown is rendered by the README renderer: raw HTML dropped, URLs
 // filtered, images shown as their alt text.
-templ RunSummaries(sums []JobSummaries) {
+templ RunSummaries(sums []JobSummaries, more bool) {
 	for _, j := range sums {
 		<section class="summaries" aria-label={ "Summary of " + j.Job }>
 			<h3>
@@ -206,6 +206,9 @@ templ RunSummaries(sums []JobSummaries) {
 				<p class="mute">the job has more summaries than the first 20, which are shown.</p>
 			}
 		</section>
+	}
+	if more {
+		<p class="mute">more summaries are not shown: the summaries of the page are over { humanSize(maxSummaryPageBytes) }.</p>
 	}
 }
 

@@ -57,6 +57,9 @@ type CIAnnotation struct {
 type CIStepSummary struct {
 	Step     int32
 	Markdown string
+	// Omitted is set when the summary exists but was not read, because the
+	// caller's byte budget was used up; Markdown is then empty.
+	Omitted bool
 }
 
 // CheckAnnotations validates the annotations of a request: the limits of the

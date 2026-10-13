@@ -370,8 +370,8 @@ func (_c *RunService_GetRun_Call) RunAndReturn(run func(ctx context.Context, p d
 }
 
 // GetStepSummaries provides a mock function for the type RunService
-func (_mock *RunService) GetStepSummaries(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32) (ports.SummaryList, error) {
-	ret := _mock.Called(ctx, p, repo, jobID, attempt)
+func (_mock *RunService) GetStepSummaries(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, maxBytes int64) (ports.SummaryList, error) {
+	ret := _mock.Called(ctx, p, repo, jobID, attempt, maxBytes)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetStepSummaries")
@@ -379,16 +379,16 @@ func (_mock *RunService) GetStepSummaries(ctx context.Context, p domain.Principa
 
 	var r0 ports.SummaryList
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string, int32) (ports.SummaryList, error)); ok {
-		return returnFunc(ctx, p, repo, jobID, attempt)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string, int32, int64) (ports.SummaryList, error)); ok {
+		return returnFunc(ctx, p, repo, jobID, attempt, maxBytes)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string, int32) ports.SummaryList); ok {
-		r0 = returnFunc(ctx, p, repo, jobID, attempt)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string, int32, int64) ports.SummaryList); ok {
+		r0 = returnFunc(ctx, p, repo, jobID, attempt, maxBytes)
 	} else {
 		r0 = ret.Get(0).(ports.SummaryList)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, string, int32) error); ok {
-		r1 = returnFunc(ctx, p, repo, jobID, attempt)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, string, int32, int64) error); ok {
+		r1 = returnFunc(ctx, p, repo, jobID, attempt, maxBytes)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -406,11 +406,12 @@ type RunService_GetStepSummaries_Call struct {
 //   - repo domain.RepoName
 //   - jobID string
 //   - attempt int32
-func (_e *RunService_Expecter) GetStepSummaries(ctx any, p any, repo any, jobID any, attempt any) *RunService_GetStepSummaries_Call {
-	return &RunService_GetStepSummaries_Call{Call: _e.mock.On("GetStepSummaries", ctx, p, repo, jobID, attempt)}
+//   - maxBytes int64
+func (_e *RunService_Expecter) GetStepSummaries(ctx any, p any, repo any, jobID any, attempt any, maxBytes any) *RunService_GetStepSummaries_Call {
+	return &RunService_GetStepSummaries_Call{Call: _e.mock.On("GetStepSummaries", ctx, p, repo, jobID, attempt, maxBytes)}
 }
 
-func (_c *RunService_GetStepSummaries_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32)) *RunService_GetStepSummaries_Call {
+func (_c *RunService_GetStepSummaries_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, maxBytes int64)) *RunService_GetStepSummaries_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -432,12 +433,17 @@ func (_c *RunService_GetStepSummaries_Call) Run(run func(ctx context.Context, p 
 		if args[4] != nil {
 			arg4 = args[4].(int32)
 		}
+		var arg5 int64
+		if args[5] != nil {
+			arg5 = args[5].(int64)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
 			arg4,
+			arg5,
 		)
 	})
 	return _c
@@ -448,7 +454,7 @@ func (_c *RunService_GetStepSummaries_Call) Return(summaryList ports.SummaryList
 	return _c
 }
 
-func (_c *RunService_GetStepSummaries_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32) (ports.SummaryList, error)) *RunService_GetStepSummaries_Call {
+func (_c *RunService_GetStepSummaries_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, maxBytes int64) (ports.SummaryList, error)) *RunService_GetStepSummaries_Call {
 	_c.Call.Return(run)
 	return _c
 }
