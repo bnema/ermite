@@ -133,9 +133,31 @@ func result(insts []domain.CIJob) string {
 
 // needsOf computes the needs context and the status functions of a job from
 // the jobs it needs, and whether they all have ended.
-func (rs *runState) needsOf(j *workflow.Job) (needs *expr.Dictionary, st workflow.StatusFuncs, ready bool) {
+//
+// The needs context holds the direct needs only, but the status functions look
+// at the whole chain (wf.Ancestors): a job whose need ran through always()
+// after a failure further up is skipped by its default success() (recorded:
+// needs-failed-dependency, chain-after-always), and failure() is true when an
+// ancestor failed (documented, not recorded). An ancestor beyond the direct
+// needs only changes success() and failure(): cancelled() is not recorded for
+// them, and a skipped ancestor behind a need that did run is not either.
+func (rs *runState) needsOf(wf *workflow.Workflow, j *workflow.Job) (needs *expr.Dictionary, st workflow.StatusFuncs, ready bool) {
 	needs = expr.NewDictionary()
 	st = workflow.StatusFuncs{Success: true, Cancelled: rs.run.CancelRequested}
+	for _, n := range wf.Ancestors(j.ID) {
+		var insts []domain.CIJob
+		for _, i := range rs.instances(n) {
+			if rs.jobs[i].Ended() {
+				insts = append(insts, rs.jobs[i])
+			}
+		}
+		switch result(insts) {
+		case "failure":
+			st.Failure, st.Success = true, false
+		case "cancelled":
+			st.Success = false
+		}
+	}
 	for _, n := range j.Needs {
 		var insts []domain.CIJob
 		for _, i := range rs.instances(n) {
@@ -305,7 +327,7 @@ func (rs *runState) advance(ctx context.Context) error {
 			if rec.Planned || rec.Ended() || rec.Phase != domain.CIPhaseWaiting {
 				continue
 			}
-			needs, st, ready := rs.needsOf(wj)
+			needs, st, ready := rs.needsOf(wf, wj)
 			if !ready {
 				continue
 			}
