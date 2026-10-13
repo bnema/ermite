@@ -12,7 +12,7 @@ tool (
 )
 
 require (
-	bnema.dev/ermite-actions v0.0.0-20261013001922-b6a9ba732350
+	bnema.dev/ermite-actions v0.0.0-20261013023311-6a649fe70c57
 	bnema.dev/ermite-api v0.0.0-20261012155218-f8f64413e63c
 	bnema.dev/ermite-git v0.1.0
 	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
