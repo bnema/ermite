@@ -52,31 +52,18 @@ func (w *wfCache) get(runID int64, path, yaml string) (*workflow.Workflow, error
 	return wf, nil
 }
 
-// unsupported names the feature of a job that CI-1 does not run, or "". Such
-// a job fails with "not supported yet: <feature>" instead of running wrong.
-// Relax it as the runner learns the features (ADR 0025, CI-2 and CI-3).
+// unsupported names the feature of a job that ermite does not run yet, or "".
+// Such a job fails with "not supported yet: <feature>" instead of running
+// wrong. CI-2 runs steps with uses:, job container:, services: and step
+// timeout-minutes (ADR 0025); what stays is CI-3.
 func unsupported(j *workflow.Job) string {
 	switch {
 	case j.IsReusable():
 		return "reusable workflows (uses at the job level)"
-	case j.Container != nil:
-		return "container"
-	case j.Services != nil:
-		return "services"
 	case j.Environment != nil:
 		return "environment"
 	case j.Concurrency != nil:
 		return "concurrency"
-	}
-	for _, s := range j.Steps {
-		switch {
-		case s.Uses != nil:
-			return "uses: " + s.Uses.Value
-		case s.TimeoutMinutes != nil:
-			// The runner refuses it too (executor.notSupported): it has no
-			// step timeout yet.
-			return "timeout-minutes on a step"
-		}
 	}
 	return ""
 }
@@ -253,6 +240,7 @@ func (rs *runState) end(j *domain.CIJob, conclusion domain.CIConclusion, msg str
 	if j.HasToken() {
 		j.TokenValidUntil = now.Add(domain.CITokenGrace)
 	}
+	rs.revokeTokens(j)
 	rs.touch(j)
 	rs.c.mu.Lock()
 	delete(rs.c.heartbeats, jobRef(*j))
