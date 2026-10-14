@@ -54,6 +54,12 @@ func (rs *runState) issueRepoTokenFor(j *domain.CIJob, repo domain.RepoName, sha
 	t := c.repoTokenExpiry(at)
 	t.ID, t.Hash, t.Repo = newRepoTokenID(), domain.HashTokenSecret(secret), repo
 	t.RunID, t.RunAttempt, t.JobID, t.Archive, t.Sha, t.CreatedAt = j.RunID, j.RunAttempt, j.ID, sha != "", sha, now
+	if sha == "" {
+		// The job's own token: what it may do on the run's repository follows
+		// from the permissions of the job, lowered to read when the run is not
+		// trusted (D1, D3).
+		t.Permissions = domain.TokenPermissions(j.Permissions, rs.run.Trusted)
+	}
 	rs.tokens = append(rs.tokens, t)
 	return secret
 }

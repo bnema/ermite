@@ -270,6 +270,12 @@ type CIJob struct {
 	// "environment:"), "" for none. Set when the job is planned; the secrets
 	// and variables of the environment are read when the job is assigned.
 	Environment string
+	// Permissions are the permissions of the job's repository token as the
+	// workflow and the job ask for them (ResolvePermissions), key to level;
+	// set when the job is planned. Empty: the default (a job planned before
+	// they were stored). The trust rule of the run is applied when the token
+	// is issued (TokenPermissions), not here.
+	Permissions map[string]string
 	// MaxParallel is the max-parallel of the strategy, 0 for no limit.
 	MaxParallel int
 	Outputs     map[string]string

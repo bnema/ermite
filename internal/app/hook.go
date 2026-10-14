@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite/internal/adapters/githttp"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // newHookCmd is the hidden command that git's receive hooks run (through the
@@ -30,7 +31,8 @@ func newHookCmd() *cobra.Command {
 			SilenceUsage:  true,
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				return githttp.RunHook(cmd.Context(), name, cmd.InOrStdin(), cmd.ErrOrStderr(),
-					os.Getenv(githttp.EnvHookSocket), os.Getenv(githttp.EnvHookToken))
+					os.Getenv(githttp.EnvHookSocket), os.Getenv(githttp.EnvHookToken),
+					ports.PushObjects{Dir: os.Getenv("GIT_OBJECT_DIRECTORY"), Alternates: os.Getenv("GIT_ALTERNATE_OBJECT_DIRECTORIES")})
 			},
 		})
 	}

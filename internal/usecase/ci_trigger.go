@@ -47,7 +47,16 @@ type ciTrigger struct {
 // OnPush queues the refs of a push or a merge for planning and returns at once;
 // a worker plans them. A full queue drops the trigger, logged at error: a push
 // is never slowed down or failed by CI.
+//
+// A push made with a job token starts nothing, as on GitHub (events created
+// with GITHUB_TOKEN start no run): that is what stops a workflow that pushes
+// from running itself again.
 func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal) {
+	if pusher.ViaJobToken() {
+		log := zerowrap.FromCtx(ctx)
+		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("push by a job token starts no run")
+		return
+	}
 	c.enqueue(ctx, repo, updates, authorOf(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher))
 }
 
@@ -58,6 +67,11 @@ func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.
 // merging. For the same reason the run is trusted (gets secrets) only when the
 // merger is: the displayed actor is not the one that decides.
 func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal) {
+	if merger.ViaJobToken() {
+		log := zerowrap.FromCtx(ctx)
+		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("merge by a job token starts no run")
+		return
+	}
 	c.enqueue(ctx, repo, updates, authorOf(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger))
 }
 

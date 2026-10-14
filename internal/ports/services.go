@@ -190,7 +190,8 @@ type PushService interface {
 type PushHookService interface {
 	// Check decides a push before Git applies it; an error matching
 	// domain.ErrRejected refuses it, any other error refuses it as a failure.
-	Check(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error
+	// objects are the objects of the push in progress (the quarantine of git).
+	Check(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate, objects PushObjects) error
 	// Record handles an accepted push.
 	Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error
 }

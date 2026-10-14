@@ -12,6 +12,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"bnema.dev/ermite/internal/ports"
 )
 
 // hookDialTimeout bounds connecting to the socket and the whole exchange.
@@ -31,8 +33,8 @@ var ErrHookRejected = errors.New("push refused")
 // or erroring server, or a refusal all return an error (git then rejects the
 // push). For post-receive the push already happened: failures are reported on
 // errOut and RunHook returns nil.
-func RunHook(ctx context.Context, hook string, in io.Reader, errOut io.Writer, socket, token string) error {
-	err := callHook(ctx, hook, in, errOut, socket, token)
+func RunHook(ctx context.Context, hook string, in io.Reader, errOut io.Writer, socket, token string, objects ports.PushObjects) error {
+	err := callHook(ctx, hook, in, errOut, socket, token, objects)
 	if err == nil {
 		return nil
 	}
@@ -43,7 +45,7 @@ func RunHook(ctx context.Context, hook string, in io.Reader, errOut io.Writer, s
 	return err
 }
 
-func callHook(ctx context.Context, hook string, in io.Reader, errOut io.Writer, socket, token string) error {
+func callHook(ctx context.Context, hook string, in io.Reader, errOut io.Writer, socket, token string, objects ports.PushObjects) error {
 	if hook != HookPreReceive && hook != HookPostReceive {
 		return fmt.Errorf("unknown hook %q", hook)
 	}
@@ -67,7 +69,7 @@ func callHook(ctx context.Context, hook string, in io.Reader, errOut io.Writer, 
 		_ = conn.SetDeadline(dl)
 	}
 
-	req, err := encodeLine(HookRequest{Token: token, Hook: hook, Updates: updates})
+	req, err := encodeLine(HookRequest{Token: token, Hook: hook, Updates: updates, ObjectsDir: objects.Dir, Alternates: objects.Alternates})
 	if err != nil {
 		return err
 	}

@@ -210,7 +210,7 @@ func (s *HookServer) handle(ctx context.Context, conn net.Conn) {
 	rlog := log.WithField("repo", entry.repo.String())
 	switch req.Hook {
 	case HookPreReceive:
-		err := s.hooks.Check(ctx, entry.principal, entry.repo, updates)
+		err := s.hooks.Check(ctx, entry.principal, entry.repo, updates, ports.PushObjects{Dir: req.ObjectsDir, Alternates: req.Alternates})
 		switch {
 		case err == nil:
 			s.reply(ctx, conn, HookReply{OK: true})

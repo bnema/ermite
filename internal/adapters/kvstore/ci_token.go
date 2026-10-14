@@ -62,7 +62,7 @@ func resolutionKey(runID int64, attempt int32, key string) []byte {
 func encodeRepoToken(t domain.CIRepoToken) []byte {
 	return mustMarshal(&storagepb.CIRepoToken{
 		Id: t.ID, Hash: t.Hash[:], Repo: t.Repo.String(), RunId: t.RunID, RunAttempt: t.RunAttempt, JobId: t.JobID,
-		Archive: t.Archive, ExpiresAt: encodeTime(t.ExpiresAt), CreatedAt: encodeTime(t.CreatedAt), Sha: t.Sha,
+		Archive: t.Archive, ExpiresAt: encodeTime(t.ExpiresAt), CreatedAt: encodeTime(t.CreatedAt), Sha: t.Sha, Permissions: t.Permissions,
 	})
 }
 
@@ -78,7 +78,7 @@ func decodeRepoToken(val []byte) (domain.CIRepoToken, error) {
 	t := domain.CIRepoToken{
 		ID: pb.GetId(), Repo: repo, RunID: pb.GetRunId(), RunAttempt: pb.GetRunAttempt(), JobID: pb.GetJobId(),
 		Archive: pb.GetArchive(), ExpiresAt: decodeTime(pb.GetExpiresAt()), CreatedAt: decodeTime(pb.GetCreatedAt()),
-		Sha: pb.GetSha(),
+		Sha: pb.GetSha(), Permissions: pb.GetPermissions(),
 	}
 	copy(t.Hash[:], pb.GetHash())
 	return t, nil

@@ -24,6 +24,7 @@ type pushFixture struct {
 	bus    *mocks.EventBus
 	clock  *mocks.Clock
 	tokens *mocks.TokenStore
+	cirepo *mocks.CIRepoTokenStore
 	sched  *mocks.MaintenanceScheduler
 	pushes *usecase.Pushes
 }
@@ -36,11 +37,12 @@ func newPushFixture(t *testing.T) *pushFixture {
 		bus:    mocks.NewEventBus(t),
 		clock:  mocks.NewClock(t),
 		tokens: mocks.NewTokenStore(t),
+		cirepo: mocks.NewCIRepoTokenStore(t),
 		sched:  mocks.NewMaintenanceScheduler(t),
 	}
 	f.clock.EXPECT().Now().Return(now).Maybe()
 	repos := usecase.NewRepos(f.meta, f.git, f.bus, f.clock)
-	auth := usecase.NewAuth(domain.HashTokenSecret(rootSecret), f.tokens, f.clock)
+	auth := usecase.NewAuth(domain.HashTokenSecret(rootSecret), f.tokens, f.clock).WithRepoTokens(f.cirepo)
 	f.pushes = usecase.NewPushes(f.meta, repos, f.git, f.bus, f.clock, f.sched, auth)
 	return f
 }
@@ -158,28 +160,28 @@ func TestPushesCheck(t *testing.T) {
 	t.Run("root is always valid and needs no lookup", func(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t) // the token store mock expects no call
-		require.NoError(t, f.pushes.Check(ctx, domain.Root(), n, ups))
+		require.NoError(t, f.check(ctx, domain.Root(), n, ups))
 	})
 
 	t.Run("a writer whose token still exists", func(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite)}, nil)
-		require.NoError(t, f.pushes.Check(ctx, writer, n, ups))
+		require.NoError(t, f.check(ctx, writer, n, ups))
 	})
 
 	t.Run("a token revoked during the push is rejected", func(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{}, domain.ErrNotFound)
-		assert.ErrorIs(t, f.pushes.Check(ctx, writer, n, ups), domain.ErrRejected)
+		assert.ErrorIs(t, f.check(ctx, writer, n, ups), domain.ErrRejected)
 	})
 
 	t.Run("a token that expired during the push is rejected", func(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite), ExpiresAt: now.Add(-time.Second)}, nil)
-		assert.ErrorIs(t, f.pushes.Check(ctx, writer, n, ups), domain.ErrRejected)
+		assert.ErrorIs(t, f.check(ctx, writer, n, ups), domain.ErrRejected)
 	})
 
 	t.Run("a store failure fails closed", func(t *testing.T) {
@@ -187,7 +189,7 @@ func TestPushesCheck(t *testing.T) {
 		f := newPushFixture(t)
 		boom := errors.New("boom")
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{}, boom)
-		err := f.pushes.Check(ctx, writer, n, ups)
+		err := f.check(ctx, writer, n, ups)
 		require.ErrorIs(t, err, boom)
 		assert.NotErrorIs(t, err, domain.ErrRejected, "an internal failure, not a refusal")
 	})
@@ -196,13 +198,13 @@ func TestPushesCheck(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "r1").Return(domain.Token{ID: "r1", Scopes: scopes(domain.ScopeRepoRead)}, nil)
-		assert.ErrorIs(t, f.pushes.Check(ctx, reader, n, ups), domain.ErrRejected)
+		assert.ErrorIs(t, f.check(ctx, reader, n, ups), domain.ErrRejected)
 	})
 
 	t.Run("anonymous is rejected", func(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
-		assert.ErrorIs(t, f.pushes.Check(ctx, domain.Anonymous(), n, ups), domain.ErrRejected)
+		assert.ErrorIs(t, f.check(ctx, domain.Anonymous(), n, ups), domain.ErrRejected)
 	})
 }
 
@@ -249,7 +251,7 @@ func TestPushesCheckBranchPrefixes(t *testing.T) {
 			t.Parallel()
 			f := newPushFixture(t)
 			f.tokens.EXPECT().Get(ctx, "b1").Return(domain.Token{ID: "b1", Scopes: scopes(domain.ScopeRepoWrite)}, nil)
-			err := f.pushes.Check(ctx, limited, n, tt.updates)
+			err := f.check(ctx, limited, n, tt.updates)
 			if tt.refused == "" {
 				require.NoError(t, err)
 				return
@@ -264,7 +266,7 @@ func TestPushesCheckBranchPrefixes(t *testing.T) {
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "w1").Return(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite)}, nil)
 		free := domain.TokenPrincipal(domain.Token{ID: "w1", Scopes: scopes(domain.ScopeRepoWrite)})
-		require.NoError(t, f.pushes.Check(ctx, free, n, []domain.RefUpdate{
+		require.NoError(t, f.check(ctx, free, n, []domain.RefUpdate{
 			up(domain.ZeroOID, oidA, "refs/tags/v1"), up(oidA, oidB, "refs/heads/main"),
 		}))
 	})
@@ -272,7 +274,7 @@ func TestPushesCheckBranchPrefixes(t *testing.T) {
 	t.Run("root pushes anywhere", func(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
-		require.NoError(t, f.pushes.Check(ctx, domain.Root(), n, []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/tags/v1")}))
+		require.NoError(t, f.check(ctx, domain.Root(), n, []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/tags/v1")}))
 	})
 
 	t.Run("a limited token without repo:write is rejected for the repository first", func(t *testing.T) {
@@ -280,7 +282,7 @@ func TestPushesCheckBranchPrefixes(t *testing.T) {
 		f := newPushFixture(t)
 		f.tokens.EXPECT().Get(ctx, "b2").Return(domain.Token{ID: "b2", Scopes: scopes(domain.ScopeRepoRead)}, nil)
 		p := domain.TokenPrincipal(domain.Token{ID: "b2", Scopes: scopes(domain.ScopeRepoRead), BranchPrefixes: []string{"a/"}})
-		err := f.pushes.Check(ctx, p, n, []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/heads/a/x")})
+		err := f.check(ctx, p, n, []domain.RefUpdate{up(domain.ZeroOID, oidA, "refs/heads/a/x")})
 		require.ErrorIs(t, err, domain.ErrRejected)
 		assert.Contains(t, err.Error(), "no write access")
 	})
@@ -436,3 +438,88 @@ func TestPushesDefaultBranchRule(t *testing.T) {
 
 // mockAny matches any argument of a mocked call.
 var mockAny = mock.Anything
+
+// check is Pushes.Check for a push with nothing in quarantine.
+func (f *pushFixture) check(ctx context.Context, p domain.Principal, n domain.RepoName, ups []domain.RefUpdate) error {
+	return f.pushes.Check(ctx, p, n, ups, ports.PushObjects{})
+}
+
+type fakeGuard struct {
+	path string
+	err  error
+	got  []domain.RefUpdate
+	objs ports.PushObjects
+}
+
+func (g *fakeGuard) ChangedWorkflow(_ context.Context, _ domain.RepoName, ups []domain.RefUpdate, o ports.PushObjects) (string, error) {
+	g.got, g.objs = ups, o
+	return g.path, g.err
+}
+
+// A push by the token of a job is judged on the workflows it changes, and by it
+// alone: every other principal is not asked.
+func TestPushesCheckRefusesWorkflowChangesOfJobTokens(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	n := name(t, "tools")
+	ups := []domain.RefUpdate{{Old: oidA, New: oidB, Ref: "refs/heads/main"}, {Old: domain.ZeroOID, New: oidB, Ref: "refs/tags/v1"}}
+	objs := ports.PushObjects{Dir: "/d/repos/tools.git/objects/incoming-1"}
+	exp := now.Add(time.Hour)
+	job := domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "j1", Repo: n, ExpiresAt: exp, Permissions: map[string]string{"contents": "write"}})
+	readOnlyJob := domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "j2", Repo: n, ExpiresAt: exp})
+
+	build := func(t *testing.T, g *fakeGuard) *pushFixture {
+		f := newPushFixture(t)
+		if g != nil {
+			f.pushes.WithWorkflowGuard(g)
+		}
+		f.cirepo.EXPECT().GetRepoToken(ctx, mock.Anything).Return(domain.CIRepoToken{ID: "j1", ExpiresAt: exp}, nil).Maybe()
+		return f
+	}
+
+	t.Run("no workflow touched", func(t *testing.T) {
+		t.Parallel()
+		g := &fakeGuard{}
+		f := build(t, g)
+		require.NoError(t, f.pushes.Check(ctx, job, n, ups, objs))
+		assert.Equal(t, ups, g.got, "every ref is judged")
+		assert.Equal(t, objs, g.objs, "from the objects of the push in quarantine")
+	})
+	t.Run("a workflow touched refuses the whole push with GitHub's text", func(t *testing.T) {
+		t.Parallel()
+		f := build(t, &fakeGuard{path: ".github/workflows/ci.yml"})
+		err := f.pushes.Check(ctx, job, n, ups, objs)
+		require.ErrorIs(t, err, domain.ErrRejected)
+		assert.Contains(t, err.Error(), "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission")
+	})
+	t.Run("a failure to tell refuses it, not as a policy", func(t *testing.T) {
+		t.Parallel()
+		f := build(t, &fakeGuard{err: errors.New("git broke")})
+		err := f.pushes.Check(ctx, job, n, ups, objs)
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, domain.ErrRejected)
+	})
+	t.Run("without a guard a job token cannot be judged: refused", func(t *testing.T) {
+		t.Parallel()
+		f := build(t, nil)
+		assert.ErrorIs(t, f.pushes.Check(ctx, job, n, ups, objs), domain.ErrRejected)
+	})
+	t.Run("a job token without contents: write cannot push at all", func(t *testing.T) {
+		t.Parallel()
+		f := build(t, &fakeGuard{})
+		assert.ErrorIs(t, f.pushes.Check(ctx, readOnlyJob, n, ups, objs), domain.ErrRejected)
+	})
+	t.Run("the owner is not asked", func(t *testing.T) {
+		t.Parallel()
+		g := &fakeGuard{path: ".github/workflows/ci.yml"}
+		f := build(t, g)
+		require.NoError(t, f.pushes.Check(ctx, domain.Root(), n, ups, objs))
+		assert.Nil(t, g.got)
+	})
+	t.Run("a job token never creates a repository on push", func(t *testing.T) {
+		t.Parallel()
+		f := build(t, &fakeGuard{})
+		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
+		assert.ErrorIs(t, f.pushes.Open(ctx, job, n, true), domain.ErrNotFound)
+	})
+}

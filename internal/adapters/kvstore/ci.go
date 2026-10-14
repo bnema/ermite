@@ -330,7 +330,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		Outputs: j.Outputs, ReadyAt: encodeTime(j.ReadyAt), AssignedAt: encodeTime(j.AssignedAt),
 		AckedAt: encodeTime(j.AckedAt), AssignCancels: int32(j.AssignCancels), //nolint:gosec // at most 3
 		TokenValidUntil: encodeTime(j.TokenValidUntil), CancelReason: encodeCancelReason(j.CancelReason), CancelMessage: j.CancelMessage,
-		CancelRequestedAt: encodeTime(j.CancelRequestedAt), Planned: j.Planned, Environment: j.Environment,
+		CancelRequestedAt: encodeTime(j.CancelRequestedAt), Planned: j.Planned, Environment: j.Environment, Permissions: j.Permissions,
 	}
 	if j.HasToken() {
 		pb.TokenHash = j.TokenHash[:]
@@ -360,7 +360,7 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 		TokenValidUntil: decodeTime(pb.GetTokenValidUntil()), ReadyAt: decodeTime(pb.GetReadyAt()),
 		AssignedAt: decodeTime(pb.GetAssignedAt()), AckedAt: decodeTime(pb.GetAckedAt()), AssignCancels: int(pb.GetAssignCancels()),
 		CancelMessage: pb.GetCancelMessage(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),
-		Environment: pb.GetEnvironment(), Version: item.Version,
+		Environment: pb.GetEnvironment(), Permissions: pb.GetPermissions(), Version: item.Version,
 	}
 	j.CancelReason = decodeCancelReason(pb.GetCancelReason())
 	copy(j.TokenHash[:], pb.GetTokenHash())

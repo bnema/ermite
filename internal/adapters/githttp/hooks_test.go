@@ -122,7 +122,7 @@ func TestHookProtocol(t *testing.T) {
 	t.Run("pre-receive is attributed to the repository and principal of its token", func(t *testing.T) {
 		updates := []domain.RefUpdate{{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/main"}}
 		hooks.EXPECT().Check(mock.Anything, mock.MatchedBy(func(got domain.Principal) bool { return got.TokenID() == "tok1" }),
-			repoName(t, "alpha"), updates).Return(nil).Once()
+			repoName(t, "alpha"), updates, ports.PushObjects{}).Return(nil).Once()
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","updates":`+upd+`}`)
 		assert.True(t, r.OK)
 
@@ -133,13 +133,13 @@ func TestHookProtocol(t *testing.T) {
 	})
 
 	t.Run("a repository sent by the client is ignored", func(t *testing.T) {
-		hooks.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "alpha"), mock.Anything).Return(nil).Once()
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "alpha"), mock.Anything, mock.Anything).Return(nil).Once()
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","repo":"beta","updates":[]}`)
 		assert.True(t, r.OK)
 	})
 
 	t.Run("refusal carries the message", func(t *testing.T) {
-		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Return(errors.Join(domain.ErrRejected, errors.New("protected branch"))).Once()
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","updates":`+upd+`}`)
 		assert.False(t, r.OK)
@@ -147,7 +147,7 @@ func TestHookProtocol(t *testing.T) {
 	})
 
 	t.Run("an internal error fails closed without leaking details", func(t *testing.T) {
-		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Return(errors.New("disk /secret/path exploded")).Once()
 		r := raw(t, sock, `{"token":"`+tokenA+`","hook":"pre-receive","updates":`+upd+`}`)
 		assert.False(t, r.OK)
@@ -292,22 +292,22 @@ func TestRunHook(t *testing.T) {
 		hooks.EXPECT().Check(mock.Anything, mock.Anything, repoName(t, "alpha"), []domain.RefUpdate{
 			{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/main"},
 			{Old: oidA, New: oidB, Ref: "refs/heads/dev"},
-		}).Return(nil).Once()
-		require.NoError(t, githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, sock, tok))
+		}, ports.PushObjects{Dir: "/data/repos/alpha.git/objects/incoming-x"}).Return(nil).Once()
+		require.NoError(t, githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, sock, tok, ports.PushObjects{Dir: "/data/repos/alpha.git/objects/incoming-x"}))
 		assert.Empty(t, errOut.String())
 	})
 
 	t.Run("a ref name with spaces survives", func(t *testing.T) {
 		hooks.EXPECT().Record(mock.Anything, mock.Anything, repoName(t, "alpha"),
 			[]domain.RefUpdate{{Old: domain.ZeroOID, New: oidA, Ref: "refs/heads/a b"}}).Return(nil).Once()
-		require.NoError(t, githttp.RunHook(ctx, "post-receive", strings.NewReader(domain.ZeroOID+" "+oidA+" refs/heads/a b\n"), &bytes.Buffer{}, sock, tok))
+		require.NoError(t, githttp.RunHook(ctx, "post-receive", strings.NewReader(domain.ZeroOID+" "+oidA+" refs/heads/a b\n"), &bytes.Buffer{}, sock, tok, ports.PushObjects{}))
 	})
 
 	t.Run("pre-receive refusal prints the message and fails", func(t *testing.T) {
-		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		hooks.EXPECT().Check(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Return(errors.Join(domain.ErrRejected, errors.New("nope"))).Once()
 		var errOut bytes.Buffer
-		err := githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, sock, tok)
+		err := githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, sock, tok, ports.PushObjects{})
 		require.ErrorIs(t, err, githttp.ErrHookRejected)
 		assert.Contains(t, errOut.String(), "rejected")
 	})
@@ -320,12 +320,12 @@ func TestRunHook(t *testing.T) {
 			"unknown token":  {sock, "unknown"},
 		} {
 			var errOut bytes.Buffer
-			err := githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, args[0], args[1])
+			err := githttp.RunHook(ctx, "pre-receive", strings.NewReader(input), &errOut, args[0], args[1], ports.PushObjects{})
 			assert.ErrorIs(t, err, githttp.ErrHookRejected, name)
 		}
-		err := githttp.RunHook(ctx, "pre-receive", strings.NewReader("garbage\n"), &bytes.Buffer{}, sock, tok)
+		err := githttp.RunHook(ctx, "pre-receive", strings.NewReader("garbage\n"), &bytes.Buffer{}, sock, tok, ports.PushObjects{})
 		assert.ErrorIs(t, err, githttp.ErrHookRejected, "unreadable input")
-		assert.Error(t, githttp.RunHook(ctx, "update", strings.NewReader(input), &bytes.Buffer{}, sock, tok))
+		assert.Error(t, githttp.RunHook(ctx, "update", strings.NewReader(input), &bytes.Buffer{}, sock, tok, ports.PushObjects{}))
 	})
 
 	t.Run("a server that never answers is cut off by the context", func(t *testing.T) {
@@ -348,17 +348,17 @@ func TestRunHook(t *testing.T) {
 		cctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
 		start := time.Now()
-		err = githttp.RunHook(cctx, "pre-receive", strings.NewReader(input), &bytes.Buffer{}, silent, tok)
+		err = githttp.RunHook(cctx, "pre-receive", strings.NewReader(input), &bytes.Buffer{}, silent, tok, ports.PushObjects{})
 		assert.ErrorIs(t, err, githttp.ErrHookRejected)
 		assert.Less(t, time.Since(start), 5*time.Second)
 	})
 
 	t.Run("post-receive never fails the push", func(t *testing.T) {
 		var errOut bytes.Buffer
-		require.NoError(t, githttp.RunHook(ctx, "post-receive", strings.NewReader(input), &errOut, filepath.Join(t.TempDir(), "gone.sock"), tok))
+		require.NoError(t, githttp.RunHook(ctx, "post-receive", strings.NewReader(input), &errOut, filepath.Join(t.TempDir(), "gone.sock"), tok, ports.PushObjects{}))
 		assert.Contains(t, errOut.String(), "post-receive")
 		errOut.Reset()
-		require.NoError(t, githttp.RunHook(ctx, "post-receive", strings.NewReader(input), &errOut, "", ""))
+		require.NoError(t, githttp.RunHook(ctx, "post-receive", strings.NewReader(input), &errOut, "", "", ports.PushObjects{}))
 		assert.NotEmpty(t, errOut.String())
 	})
 }

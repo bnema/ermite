@@ -4,6 +4,7 @@ package readertest
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -46,6 +47,7 @@ func Conformance(t *testing.T, mk Maker) {
 		{"HostileRevisionAndPathStayLiteral", testHostileRevisionAndPathStayLiteral},
 		{"ResolveRevisionObjectIDBeatsRefs", testResolveRevisionObjectIDBeatsRefs},
 		{"GetTreeIsBounded", testGetTreeIsBounded},
+		{"GetTreeRefusesAGitlinkToATree", testGetTreeRefusesAGitlinkToATree},
 		{"ListPaths", testListPaths},
 	} {
 		t.Run(tc.name, func(t *testing.T) { tc.fn(t, mk) })
@@ -808,4 +810,38 @@ func testListPaths(t *testing.T, mk Maker) {
 		assert.Equal(t, order[:100], list.Paths)
 		assert.True(t, list.Truncated)
 	})
+}
+
+// A tree entry of mode 160000 (a submodule) names a commit of another
+// repository. When its id is that of a tree this repository has, it still is no
+// directory of it: both readers answer not found, and the same id as a real
+// directory lists.
+func testGetTreeRefusesAGitlinkToATree(t *testing.T, mk Maker) {
+	ctx := context.Background()
+	g, data := mk(t)
+	f := NewFixture(t, data, "gitlink")
+	f.Write("README", "r\n")
+	f.Write("dir/f.txt", "f\n")
+	f.Commit("dir")
+	dirID := f.Git("rev-parse", "HEAD:dir")
+	raw := func(entries ...[3]string) string {
+		var b strings.Builder
+		for _, e := range entries {
+			id, err := hex.DecodeString(e[2])
+			require.NoError(t, err)
+			b.WriteString(e[0] + " " + e[1] + "\x00")
+			b.Write(id)
+		}
+		return f.WriteObject("tree", b.String())
+	}
+	both := raw([3]string{"40000", "asdir", dirID}, [3]string{"160000", "sub", dirID}) // the same id, two modes
+	commit := f.Git("commit-tree", both, "-m", "gitlink")
+	f.Git("update-ref", "refs/heads/main", commit)
+
+	tree, err := g.GetTree(ctx, f.Name, Rev(t, commit), TreePath(t, "asdir"), false)
+	require.NoError(t, err)
+	require.Len(t, tree.Entries, 1)
+	assert.Equal(t, "f.txt", tree.Entries[0].Name)
+	_, err = g.GetTree(ctx, f.Name, Rev(t, commit), TreePath(t, "sub"), false)
+	assert.ErrorIs(t, err, domain.ErrNotFound, "a gitlink is no directory, whatever it names")
 }

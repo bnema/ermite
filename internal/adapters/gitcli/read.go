@@ -351,6 +351,11 @@ func (g *Git) GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revi
 	if obj.info.Type != "tree" {
 		return domain.Tree{}, fmt.Errorf("tree %q of %q: %w", path, repo, domain.ErrNotDirectory)
 	}
+	if !path.IsRoot() && obj.info.Mode != 0o040000 {
+		// A submodule entry whose commit id names a tree the repository has:
+		// no directory of this repository, as for ermite-git.
+		return domain.Tree{}, fmt.Errorf("tree %q of %q: %w", path, repo, domain.ErrNotFound)
+	}
 	treeID, err := domain.ParseObjectID(obj.info.ID)
 	if err != nil {
 		return domain.Tree{}, err

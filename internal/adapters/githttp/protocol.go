@@ -28,6 +28,11 @@ type HookRequest struct {
 	Token   string       `json:"token"`
 	Hook    string       `json:"hook"`
 	Updates []HookUpdate `json:"updates"`
+	// ObjectsDir and Alternates are GIT_OBJECT_DIRECTORY and
+	// GIT_ALTERNATE_OBJECT_DIRECTORIES of the hook: where the objects of a push
+	// in quarantine are (pre-receive only).
+	ObjectsDir string `json:"objects_dir,omitempty"`
+	Alternates string `json:"alternates,omitempty"`
 }
 
 // HookUpdate is one ref update, as git feeds it to the hook.

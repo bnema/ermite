@@ -41,9 +41,12 @@ type CIRepoToken struct {
 	// Repo and nothing else.
 	Archive bool
 	// Sha is the commit an archive token is bound to; empty for the job's own.
-	Sha       string
-	ExpiresAt time.Time
-	CreatedAt time.Time
+	Sha string
+	// Permissions are the permissions of the job's own token (key to level, see
+	// TokenPermissions). Empty: the default, which reads the repository.
+	Permissions map[string]string
+	ExpiresAt   time.Time
+	CreatedAt   time.Time
 }
 
 // Expired reports whether the token is no longer valid at now.
@@ -56,10 +59,12 @@ const RepoTokenGrace = 5 * time.Minute
 // RepoTokenPrincipal returns the principal of the holder of a job repository
 // token.
 //
-// The job's own token is shaped like a stored token (the scope repo:read on one
-// repository, an expiry), so that every authorization rule of the forge applies
-// to it unchanged: it reads that repository, even when private, and writes
-// nothing.
+// The job's own token is shaped like a stored token (scopes on one repository,
+// an expiry), so that every authorization rule of the forge applies to it
+// unchanged. Its scopes follow its permissions (RepoTokenScopes): by default it
+// reads that repository, even when private, and writes nothing; with
+// contents: write it also pushes to it. It has no branch prefixes: a run whose
+// actor is limited to branches is not trusted and holds no write permission.
 //
 // An archive token holds no scope at all: it is the grant to download one
 // commit of one repository as an archive, which only the archive endpoint
@@ -76,7 +81,7 @@ func RepoTokenPrincipal(t CIRepoToken) Principal {
 		}
 	}
 	return TokenPrincipal(Token{
-		ID: repoTokenIDPrefix + t.ID, Label: "ci job", Scopes: []Scope{ScopeRepoRead},
+		ID: repoTokenIDPrefix + t.ID, Label: "ci job", Scopes: RepoTokenScopes(t.Permissions),
 		Repos: []RepoName{t.Repo}, ExpiresAt: t.ExpiresAt, CreatedAt: t.CreatedAt,
 	})
 }

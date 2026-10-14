@@ -202,6 +202,10 @@ message CIJob {
   // The evaluated environment: of the job, set when the job is planned; empty
   // for none. Its secrets and variables are read when the job is assigned.
   string environment = 41;
+  // The effective permissions of the job's repository token (D3), computed when
+  // the job is planned: permission key to "read", "write" or "none". Absent on
+  // a job planned before the field existed: the restricted default.
+  map<string, string> permissions = 42;
 }
 
 // CICheck is stored under "check/<repo>/<sha>/<id>": the id of its job, or
@@ -256,6 +260,11 @@ message CIRepoToken {
   google.protobuf.Timestamp created_at = 9;
   // The commit an archive token downloads.
   string sha = 10;
+  // The permissions of a job's own token (key to "read", "write" or "none");
+  // what it may do on its repository follows from them (domain.RepoTokenPrincipal).
+  // Absent: the restricted default, read-only, as tokens issued before the
+  // field existed (an older binary reads a newer token as read-only too).
+  map<string, string> permissions = 11;
 }
 
 // CIActionResolution is the resolution of an action reference for a run

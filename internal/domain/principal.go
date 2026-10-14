@@ -166,6 +166,13 @@ func (p Principal) AllowsRef(ref string) bool {
 	return p.CoversBranchPrefix(name)
 }
 
+// ViaJobToken reports whether p is the holder of a job repository token (the
+// GITHUB_TOKEN of a CI job, or an action archive token): what it does must not
+// start CI runs, and it may not change workflows (CI-3, D3).
+func (p Principal) ViaJobToken() bool {
+	return (p.kind == kindToken || p.kind == kindArchive) && IsRepoTokenID(p.tokenID)
+}
+
 // ExpiresAt returns the expiry of a stored token; zero means none.
 func (p Principal) ExpiresAt() time.Time { return p.expiresAt }
 

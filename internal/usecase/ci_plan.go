@@ -347,7 +347,7 @@ func (rs *runState) advance(ctx context.Context) error {
 			if !ready {
 				continue
 			}
-			rs.planJob(ctx, wj, insts[0], needs, st)
+			rs.planJob(ctx, wf, wj, insts[0], needs, st)
 			changed = true
 		}
 	}
@@ -381,7 +381,7 @@ func (rs *runState) promote() {
 // plan evaluates a job whose needs have ended: its condition, its strategy and
 // the parts of every instance the server decides (name, labels, timeout,
 // contexts). The record at idx becomes the first instance.
-func (rs *runState) planJob(ctx context.Context, wj *workflow.Job, idx int, needs *expr.Dictionary, st workflow.StatusFuncs) {
+func (rs *runState) planJob(ctx context.Context, wf *workflow.Workflow, wj *workflow.Job, idx int, needs *expr.Dictionary, st workflow.StatusFuncs) {
 	rec := rs.jobs[idx]
 	fail := func(msg string) { rs.end(&rs.jobs[idx], domain.CIFailure, msg) }
 
@@ -428,7 +428,7 @@ func (rs *runState) planJob(ctx context.Context, wj *workflow.Job, idx int, need
 			fail(err.Error())
 			return
 		}
-		inst, err := rs.instance(ctx, wj, plan, rec, i, menv, needs)
+		inst, err := rs.instance(ctx, wf, wj, plan, rec, i, menv, needs)
 		if err != nil {
 			fail(err.Error())
 			return
@@ -456,7 +456,7 @@ func (rs *runState) skippedName(ctx context.Context, wj *workflow.Job, env templ
 }
 
 // instance builds the planned record of combination i of a job.
-func (rs *runState) instance(ctx context.Context, wj *workflow.Job, plan *workflow.Strategy, base domain.CIJob, i int, env template.Env, needs *expr.Dictionary) (domain.CIJob, error) {
+func (rs *runState) instance(ctx context.Context, wf *workflow.Workflow, wj *workflow.Job, plan *workflow.Strategy, base domain.CIJob, i int, env template.Env, needs *expr.Dictionary) (domain.CIJob, error) {
 	j := base
 	j.Combo = i
 	j.ID = domain.NewJobID(rs.run.ID, base.Index, i)
@@ -506,6 +506,7 @@ func (rs *runState) instance(ctx context.Context, wj *workflow.Job, plan *workfl
 		return j, err
 	}
 	j.Environment = environment
+	j.Permissions = domain.ResolvePermissions(permissionSpec(wf.Permissions), permissionSpec(wj.Permissions))
 	j.Name, j.Labels, j.TimeoutMinutes = name, labels, timeout
 	j.MatrixJSON = compactJSON(expr.ToJSON(matrix))
 	j.ContextsJSON, j.ComboTotal = contexts, len(plan.Combos)
@@ -556,4 +557,16 @@ func contextsJSON(github, needs, strategy *expr.Dictionary, matrix expr.Value, v
 		return "", err
 	}
 	return string(b), nil
+}
+
+// permissionSpec reads the "permissions:" of a workflow or a job, nil for none.
+func permissionSpec(p *workflow.Permissions) *domain.PermissionSpec {
+	if p == nil {
+		return nil
+	}
+	spec := &domain.PermissionSpec{All: p.All, Levels: make(map[string]string, len(p.Scopes))}
+	for _, sc := range p.Scopes {
+		spec.Levels[sc.Scope] = sc.Level
+	}
+	return spec
 }

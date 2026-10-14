@@ -35,6 +35,12 @@ func readArgs(dir string, args ...string) []string {
 // error kills the process and is returned. Without a deadline in ctx the
 // process gets commandTimeout.
 func (g *Git) pipe(ctx context.Context, args []string, fn func(*bufio.Reader) error) error {
+	return g.pipeWith(ctx, nil, nil, args, fn)
+}
+
+// pipeWith is pipe with extra environment variables after the isolated ones
+// (the quarantine of a push) and, when stdin is not nil, the standard input.
+func (g *Git) pipeWith(ctx context.Context, extra []string, stdin io.Reader, args []string, fn func(*bufio.Reader) error) error {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, commandTimeout)
@@ -50,9 +56,10 @@ func (g *Git) pipe(ctx context.Context, args []string, fn func(*bufio.Reader) er
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, g.bin, args...)
-	cmd.Env = g.env
+	cmd.Env = append(append(make([]string, 0, len(g.env)+len(extra)), g.env...), extra...)
 	cmd.Dir = g.dataDir
 	cmd.WaitDelay = 5 * time.Second
+	cmd.Stdin = stdin
 	stderr := &tailBuffer{max: 4096}
 	cmd.Stderr = stderr
 	stdout, err := cmd.StdoutPipe()

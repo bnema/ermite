@@ -221,6 +221,7 @@ func runnerJobToPB(j *ports.RunnerJob) *pb.Job {
 		Contexts: j.Job.ContextsJSON, Labels: j.Job.Labels, TimeoutMinutes: j.Job.TimeoutMinutes,
 		Repo: j.Repo.String(), Sha: j.Sha, Ref: j.Ref, GithubToken: j.GithubToken,
 		Secrets: j.Secrets, Vars: j.Vars, Environment: j.Environment, Trusted: j.Trusted,
+		Permissions: &pb.JobPermissions{Levels: j.Permissions},
 	}
 }
 

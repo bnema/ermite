@@ -193,3 +193,24 @@ func TestCIRunSourceKeepsThePusher(t *testing.T) {
 		assert.Equal(t, p, src.Pusher)
 	}
 }
+
+func TestCIRepoTokenKeepsItsPermissions(t *testing.T) {
+	ctx := context.Background()
+	_, ci, n := ciRepo(t)
+	d, err := ci.CreateRun(ctx, n, "w.yml", draftOf(n, "w.yml", 1))
+	require.NoError(t, err)
+	ref := jobRefT{RunID: d.Run.ID, JobID: d.Jobs[0].ID}
+	with := repoToken("p1", "ermitegh_with", ref, n, false)
+	with.Permissions = map[string]string{"contents": "write", "metadata": "read"}
+	without := repoToken("p2", "ermitegh_without", ref, n, false)
+	_, err = ci.Apply(ctx, ports.CIWrite{RepoTokens: []domain.CIRepoToken{with, without}})
+	require.NoError(t, err)
+
+	got, err := ci.GetRepoToken(ctx, "p1")
+	require.NoError(t, err)
+	assert.Equal(t, with.Permissions, got.Permissions)
+	got, err = ci.FindRepoTokenByHash(ctx, without.Hash)
+	require.NoError(t, err)
+	assert.Empty(t, got.Permissions, "a token stored without permissions reads back as the default")
+	assert.Equal(t, []domain.Scope{domain.ScopeRepoRead}, domain.RepoTokenPrincipal(got).Scopes())
+}

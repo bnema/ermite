@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -48,16 +49,16 @@ func (_m *PushHookService) EXPECT() *PushHookService_Expecter {
 }
 
 // Check provides a mock function for the type PushHookService
-func (_mock *PushHookService) Check(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error {
-	ret := _mock.Called(ctx, p, name, updates)
+func (_mock *PushHookService) Check(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects) error {
+	ret := _mock.Called(ctx, p, name, updates, objects)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Check")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, []domain.RefUpdate) error); ok {
-		r0 = returnFunc(ctx, p, name, updates)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, []domain.RefUpdate, ports.PushObjects) error); ok {
+		r0 = returnFunc(ctx, p, name, updates, objects)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -74,11 +75,12 @@ type PushHookService_Check_Call struct {
 //   - p domain.Principal
 //   - name domain.RepoName
 //   - updates []domain.RefUpdate
-func (_e *PushHookService_Expecter) Check(ctx any, p any, name any, updates any) *PushHookService_Check_Call {
-	return &PushHookService_Check_Call{Call: _e.mock.On("Check", ctx, p, name, updates)}
+//   - objects ports.PushObjects
+func (_e *PushHookService_Expecter) Check(ctx any, p any, name any, updates any, objects any) *PushHookService_Check_Call {
+	return &PushHookService_Check_Call{Call: _e.mock.On("Check", ctx, p, name, updates, objects)}
 }
 
-func (_c *PushHookService_Check_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate)) *PushHookService_Check_Call {
+func (_c *PushHookService_Check_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects)) *PushHookService_Check_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -96,11 +98,16 @@ func (_c *PushHookService_Check_Call) Run(run func(ctx context.Context, p domain
 		if args[3] != nil {
 			arg3 = args[3].([]domain.RefUpdate)
 		}
+		var arg4 ports.PushObjects
+		if args[4] != nil {
+			arg4 = args[4].(ports.PushObjects)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -111,7 +118,7 @@ func (_c *PushHookService_Check_Call) Return(err error) *PushHookService_Check_C
 	return _c
 }
 
-func (_c *PushHookService_Check_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error) *PushHookService_Check_Call {
+func (_c *PushHookService_Check_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects) error) *PushHookService_Check_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -63,7 +63,7 @@ func canWrite(p domain.Principal, name domain.RepoName) bool {
 // first push: repo:write on the name, and no branch prefixes. A token limited
 // to some branches may push to a repository that exists; it never makes one.
 func canCreateRepo(p domain.Principal, name domain.RepoName) bool {
-	return canWrite(p, name) && !p.IsBranchLimited()
+	return canWrite(p, name) && !p.IsBranchLimited() && !p.ViaJobToken()
 }
 
 // canManageTokens is the access rule for creating, listing and revoking

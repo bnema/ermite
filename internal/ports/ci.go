@@ -259,6 +259,28 @@ type CIGit interface {
 	CommitsOffBranches(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int) (commits []domain.Commit, more bool, err error)
 }
 
+// PushObjects tells where the objects of a push in progress are. Git receives a
+// push into a quarantine directory and moves the objects into the repository
+// only when pre-receive accepts it, so the objects a pre-receive check reads are
+// not in the repository yet. Both fields are what git's own environment holds
+// in the hook (GIT_OBJECT_DIRECTORY and GIT_ALTERNATE_OBJECT_DIRECTORIES). The
+// zero value is a push with nothing in quarantine.
+type PushObjects struct {
+	Dir        string
+	Alternates string
+}
+
+// WorkflowGuard finds the changes of a push to the workflow files of a
+// repository.
+type WorkflowGuard interface {
+	// ChangedWorkflow returns the first path under .github/workflows/ that
+	// the updates create or change, from the old tree of each ref (the empty tree
+	// for a new ref) to its new one. A deleted ref changes nothing. "" means
+	// none. objects are those of the push in progress; a directory that is not
+	// inside the repository is refused.
+	ChangedWorkflow(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, objects PushObjects) (path string, err error)
+}
+
 // --- inbound ---
 
 // RegisterRunnerParams describe a runner to register.
@@ -299,6 +321,9 @@ type RunnerJob struct {
 	Secrets map[string]string
 	// Trusted is the trusted flag of the run: secrets were allowed.
 	Trusted bool
+	// Permissions are the permissions of GithubToken (key to level), after the
+	// trust rule: no write when the run is not trusted.
+	Permissions map[string]string
 }
 
 // String describes the job without its secrets and tokens, so that a job

@@ -29,6 +29,7 @@ type Pushes struct {
 	auth  ports.Revalidator
 	fresh ports.RepoFreshener   // nil: the reader needs no telling
 	ci    ports.WorkflowTrigger // nil: no CI
+	wf    ports.WorkflowGuard   // nil: pushes by job tokens are refused
 }
 
 var (
@@ -54,6 +55,14 @@ func (u *Pushes) WithFreshener(f ports.RepoFreshener) *Pushes {
 // Call it before the first push; it returns u.
 func (u *Pushes) WithWorkflowTrigger(t ports.WorkflowTrigger) *Pushes {
 	u.ci = t
+	return u
+}
+
+// WithWorkflowGuard lets Check tell whether a push changes workflow files, which
+// a push by a job token may not do. Without it a push by a job token is
+// refused, as it cannot be judged. Call it before the first push; it returns u.
+func (u *Pushes) WithWorkflowGuard(g ports.WorkflowGuard) *Pushes {
+	u.wf = g
 	return u
 }
 
@@ -120,7 +129,14 @@ func openExisting(p domain.Principal, repo domain.Repo) error {
 // The token of the push was valid when the request began, but a push can run
 // for long: it is re-validated here, so a token revoked or expired meanwhile
 // stops the push before Git applies it. A failure to tell refuses it too.
-func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error {
+//
+// The token of a CI job (GITHUB_TOKEN with contents: write) may not change
+// workflows: a push that creates or changes a file under .github/workflows/ on
+// any ref, branch or tag, is refused as a whole (CI-3, D3). A new ref counts
+// every workflow its commit holds, as on GitHub; deleting a ref is not a
+// change. objects locate the objects of the push, which are not in the
+// repository yet.
+func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects) error {
 	if err := u.auth.Revalidate(ctx, p); err != nil {
 		if errors.Is(err, domain.ErrUnauthenticated) {
 			return fmt.Errorf("%w: the token is no longer valid", domain.ErrRejected)
@@ -136,8 +152,32 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 				domain.ErrRejected, up.Ref, strings.Join(p.BranchPrefixes(), ", "))
 		}
 	}
+	if p.ViaJobToken() {
+		if err := u.checkWorkflows(ctx, name, updates, objects); err != nil {
+			return err
+		}
+	}
 	log := zerowrap.FromCtx(ctx)
 	log.Debug().Str("repo", name.String()).Int("refs", len(updates)).Msg("push checked")
+	return nil
+}
+
+// workflowRefusal is GitHub's refusal of a push by the token of a job that
+// changes a workflow (a push to a branch or a tag; the token lacks the
+// "workflows" permission, which no job token can have).
+const workflowRefusal = "refusing to allow a GitHub App to create or update workflow `%s` without `workflows` permission"
+
+func (u *Pushes) checkWorkflows(ctx context.Context, name domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects) error {
+	if u.wf == nil {
+		return fmt.Errorf("%w: the token of a job may not push here", domain.ErrRejected)
+	}
+	path, err := u.wf.ChangedWorkflow(ctx, name, updates, objects)
+	switch {
+	case err != nil:
+		return fmt.Errorf("find the workflows changed by a push to %s: %w", name, err)
+	case path != "":
+		return fmt.Errorf("%w: "+workflowRefusal, domain.ErrRejected, path)
+	}
 	return nil
 }
 
