@@ -12,8 +12,8 @@ tool (
 )
 
 require (
-	bnema.dev/ermite-actions v0.0.0-20261013040121-5c0e25d50362
-	bnema.dev/ermite-api v0.1.1-0.20261013091642-49ac5fd7a78a
+	bnema.dev/ermite-actions v0.2.0
+	bnema.dev/ermite-api v0.2.0
 	bnema.dev/ermite-git v0.1.0
 	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
 	connectrpc.com/connect v1.21.0
