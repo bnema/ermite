@@ -20,7 +20,8 @@ import (
 
 // Defaults of the bounds.
 const (
-	// DefaultTimeout is how long one ls-remote may take.
+	// DefaultTimeout is how long ListRefs may take in all, its attempts
+	// included. It is below the 30 s the runner gives a call.
 	DefaultTimeout = 20 * time.Second
 	// DefaultMaxOutput is the most bytes of ls-remote output read: a repository
 	// with 100,000 tags lists about 8 MB. More is refused as unavailable.
@@ -125,18 +126,50 @@ func (w *limitWriter) Write(p []byte) (int, error) {
 	return w.buf.Write(p)
 }
 
+// attempts is how many times a ls-remote that timed out is run: a connection
+// that github.com never answered (a lost SYN) is often not repeated by a new
+// one, which may also reach another address.
+const attempts = 2
+
 // ListRefs lists the branches and tags of owner/repo, with the peeled commit
-// of the annotated tags.
+// of the annotated tags. Timeout bounds the whole call, attempts and clean-up
+// included: the time to clean up after an attempt (kill, WaitDelay) is
+// reserved before it runs, and a ls-remote that timed out is run once more
+// with what is left, at most half. The cancellation of ctx is returned as it
+// is, not retried.
 func (r *Remote) ListRefs(ctx context.Context, owner, repo string) ([]ports.RemoteRef, error) {
 	if !validSegment(owner) || !validSegment(repo) {
 		return nil, domain.ErrNotFound
 	}
-	ctx, cancel := context.WithTimeout(ctx, r.cfg.Timeout)
+	deadline := time.Now().Add(r.cfg.Timeout)
+	cleanup := max(min(2*time.Second, r.cfg.Timeout/8), time.Millisecond)
+	ran := 0
+	for ran < attempts {
+		run := min(r.cfg.Timeout/attempts, time.Until(deadline)-cleanup)
+		if run <= 0 {
+			break
+		}
+		ran++
+		refs, timedOut, err := r.listOnce(ctx, owner, repo, run, cleanup)
+		switch {
+		case ctx.Err() != nil:
+			return nil, ctx.Err() // the caller gave up
+		case !timedOut:
+			return refs, err
+		}
+	}
+	return nil, fmt.Errorf("%w: git ls-remote %s/%s did not answer within %s (%d attempts)", domain.ErrUnavailable, owner, repo, r.cfg.Timeout, ran)
+}
+
+// listOnce runs one git ls-remote for at most d, then cleans up for at most
+// cleanup. timedOut tells that d ran out and parent did not.
+func (r *Remote) listOnce(parent context.Context, owner, repo string, d, cleanup time.Duration) (refs []ports.RemoteRef, timedOut bool, _ error) {
+	ctx, cancel := context.WithTimeout(parent, d)
 	defer cancel()
 	out := &limitWriter{max: r.cfg.MaxOutput, cancel: cancel}
 	var stderr bytes.Buffer
 	url := strings.TrimSuffix(r.cfg.BaseURL, "/") + "/" + owner + "/" + repo
-	cmd := exec.CommandContext(ctx, r.cfg.Bin,
+	cmd := exec.Command(r.cfg.Bin,
 		"-c", "credential.helper=", "-c", "core.askPass=", "-c", "http.followRedirects=false",
 		"ls-remote", "--", url, "refs/heads/*", "refs/tags/*")
 	cmd.Env = []string{
@@ -147,23 +180,26 @@ func (r *Remote) ListRefs(ctx context.Context, owner, repo string) ([]ports.Remo
 	cmd.Env = append(cmd.Env, r.cfg.Proxy...)
 	cmd.Dir = r.cfg.Home
 	cmd.Stdout, cmd.Stderr = out, &limitedBuffer{b: &stderr, max: 4096}
-	cmd.WaitDelay = 2 * time.Second
-	err := cmd.Run()
+	// The backstop for a helper that escaped the kill and holds the pipes: the
+	// time reserved for it by ListRefs.
+	cmd.WaitDelay = cleanup
+	err := run(ctx, cmd)
 	switch {
 	case out.exceeded:
-		return nil, fmt.Errorf("%w: git ls-remote %s/%s listed more than %d bytes", domain.ErrUnavailable, owner, repo, r.cfg.MaxOutput)
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return nil, fmt.Errorf("%w: git ls-remote %s/%s took more than %s", domain.ErrUnavailable, owner, repo, r.cfg.Timeout)
-	case ctx.Err() != nil:
-		return nil, ctx.Err()
+		return nil, false, fmt.Errorf("%w: git ls-remote %s/%s listed more than %d bytes", domain.ErrUnavailable, owner, repo, r.cfg.MaxOutput)
+	case err != nil && ctx.Err() != nil:
+		return nil, true, nil
 	case err != nil:
 		msg := stderr.String()
 		if notFound(msg) {
-			return nil, domain.ErrNotFound
+			return nil, false, domain.ErrNotFound
 		}
-		return nil, fmt.Errorf("%w: git ls-remote %s/%s: %v", domain.ErrUnavailable, owner, repo, firstLine(msg))
+		if firstLine(msg) == "" {
+			msg = err.Error()
+		}
+		return nil, false, fmt.Errorf("%w: git ls-remote %s/%s: %v", domain.ErrUnavailable, owner, repo, firstLine(msg))
 	}
-	return parse(out.buf.String()), nil
+	return parse(out.buf.String()), false, nil
 }
 
 // notFound recognises what git says when github.com answers 404 or asks for

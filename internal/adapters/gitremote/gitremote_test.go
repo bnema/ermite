@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -122,9 +123,125 @@ func TestListRefsTimesOut(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "git")
 	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\nsleep 30\n"), 0o755))
 	start := time.Now()
-	_, err := newRemote(t, "file:///x", func(c *gitremote.Config) { c.Bin, c.Timeout = bin, 200*time.Millisecond }).ListRefs(context.Background(), "o", "r")
+	_, err := newRemote(t, "file:///x", func(c *gitremote.Config) { c.Bin, c.Timeout = bin, 400*time.Millisecond }).ListRefs(context.Background(), "o", "r")
 	assert.ErrorIs(t, err, domain.ErrUnavailable)
-	assert.Less(t, time.Since(start), 10*time.Second)
+	// One overall deadline, both attempts and the clean-up inside it.
+	assert.Less(t, time.Since(start), 1*time.Second)
+}
+
+// dead tells whether the process pid is gone or a zombie (not reaped yet, as
+// under a subreaper that does not wait): either way it runs no more.
+func dead(pid int) bool {
+	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return true
+	}
+	// "pid (comm) S ...": comm may hold spaces and parentheses.
+	s := string(raw)
+	i := strings.LastIndexByte(s, ')')
+	return i < 0 || len(s) < i+3 || s[i+2] == 'Z' || s[i+2] == 'X'
+}
+
+// git runs git-remote-https, the one that connects: when the time is up it is
+// killed too, and does not outlive the call. Each attempt starts one.
+func TestListRefsKillsTheHelpersOfGit(t *testing.T) {
+	if _, err := os.Stat("/proc/self/stat"); err != nil {
+		t.Skip("needs /proc")
+	}
+	dir := t.TempDir()
+	pids := filepath.Join(dir, "pids")
+	bin := filepath.Join(dir, "git")
+	script := "#!/bin/sh\nsleep 30 &\necho $! >> '" + pids + "'\nwait\n"
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+	_, err := newRemote(t, "file:///x", func(c *gitremote.Config) { c.Bin, c.Timeout = bin, 600*time.Millisecond }).ListRefs(context.Background(), "o", "r")
+	assert.ErrorIs(t, err, domain.ErrUnavailable)
+	raw, rerr := os.ReadFile(pids)
+	require.NoError(t, rerr)
+	fields := strings.Fields(string(raw))
+	require.Len(t, fields, 2, "one helper per attempt")
+	for _, f := range fields {
+		pid, aerr := strconv.Atoi(f)
+		require.NoError(t, aerr)
+		assert.Eventually(t, func() bool { return dead(pid) }, 2*time.Second, 20*time.Millisecond, "the helper %d of git is still running", pid)
+	}
+}
+
+// A helper that left the group (setsid) and keeps the output of git open
+// cannot hold the call past its Timeout: the clean-up is inside the budget.
+func TestListRefsStaysInsideTimeoutWithAHelperHoldingTheOutput(t *testing.T) {
+	setsid, err := exec.LookPath("setsid")
+	if err != nil {
+		t.Skip("needs setsid")
+	}
+	dir := t.TempDir()
+	pids := filepath.Join(dir, "pids")
+	bin := filepath.Join(dir, "git")
+	script := "#!/bin/sh\n'" + setsid + "' sleep 30 &\necho $! >> '" + pids + "'\nwait\n"
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+	t.Cleanup(func() {
+		raw, _ := os.ReadFile(pids)
+		for _, f := range strings.Fields(string(raw)) {
+			if pid, err := strconv.Atoi(f); err == nil {
+				if p, err := os.FindProcess(pid); err == nil {
+					_ = p.Kill()
+				}
+			}
+		}
+	})
+	const timeout = 400 * time.Millisecond
+	r := newRemote(t, "file:///x", func(c *gitremote.Config) { c.Bin, c.Timeout = bin, timeout })
+	start := time.Now()
+	_, err = r.ListRefs(context.Background(), "o", "r")
+	assert.ErrorIs(t, err, domain.ErrUnavailable)
+	// Generous for a loaded CI, still far below a clean-up outside the budget
+	// (a full WaitDelay of seconds).
+	assert.LessOrEqual(t, time.Since(start), timeout+250*time.Millisecond)
+}
+
+// The helper of a git that exits by itself does not outlive it either.
+func TestListRefsKillsTheHelpersOfAGitThatExited(t *testing.T) {
+	if _, err := os.Stat("/proc/self/stat"); err != nil {
+		t.Skip("needs /proc")
+	}
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+	bin := filepath.Join(dir, "git")
+	script := "#!/bin/sh\nsleep 30 >/dev/null 2>&1 &\necho $! > '" + pidFile + "'\nexit 0\n"
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+	_, err := newRemote(t, "file:///x", func(c *gitremote.Config) { c.Bin = bin }).ListRefs(context.Background(), "o", "r")
+	require.NoError(t, err)
+	raw, rerr := os.ReadFile(pidFile)
+	require.NoError(t, rerr)
+	pid, aerr := strconv.Atoi(strings.TrimSpace(string(raw)))
+	require.NoError(t, aerr)
+	assert.Eventually(t, func() bool { return dead(pid) }, 2*time.Second, 20*time.Millisecond)
+}
+
+// A connection github.com never answers is run again within the same bound,
+// and the second one can succeed.
+func TestListRefsRunsAgainAfterATimeOut(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "git")
+	id := strings.Repeat("a", domain.ObjectIDLen)
+	script := "#!/bin/sh\nif [ ! -e '" + dir + "/seen' ]; then touch '" + dir + "/seen'; sleep 30; fi\nprintf '" + id + "\\trefs/heads/main\\n'\n"
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+	start := time.Now()
+	refs, err := newRemote(t, "file:///x", func(c *gitremote.Config) { c.Bin, c.Timeout = bin, 1000*time.Millisecond }).ListRefs(context.Background(), "o", "r")
+	require.NoError(t, err)
+	require.Len(t, refs, 1)
+	assert.Equal(t, "refs/heads/main", refs[0].Name)
+	assert.Less(t, time.Since(start), 1500*time.Millisecond)
+}
+
+func TestListRefsStopsWhenTheCallerGivesUp(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "git")
+	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\nsleep 30\n"), 0o755))
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := newRemote(t, "file:///x", func(c *gitremote.Config) { c.Bin = bin }).ListRefs(ctx, "o", "r")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(start), 1500*time.Millisecond)
 }
 
 // git asks for no credentials and runs with no configuration of the machine:
