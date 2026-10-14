@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -246,6 +247,8 @@ func TestChangedWorkflowPeelsAndClassifiesBothEnds(t *testing.T) {
 	plain := f.Commit("plain")
 	f.Write(".github/workflows/ci.yml", "on: push\n")
 	wf := f.Commit("workflow")
+	f.Write(".github/workflows/ci.yml", "on: [push]\n")
+	f.Commit("the default branch moves on to other workflows") // HEAD is not wf
 	blob := f.WriteObject("blob", "hello\n")
 	annotatedBlob := f.WriteObject("tag", "object "+blob+"\ntype blob\ntag b\ntagger a <a@b> 1 +0000\n\nm\n")
 	annotatedWF := f.WriteObject("tag", "object "+oidOf(t, wf).String()+"\ntype commit\ntag c\ntagger a <a@b> 1 +0000\n\nm\n")
@@ -372,4 +375,218 @@ func TestChangedWorkflowComparesTheModeOfTheEntries(t *testing.T) {
 	p, err := g.ChangedWorkflow(ctx, f.Name, []domain.RefUpdate{{Old: asGitlink, New: tag, Ref: "refs/tags/t"}}, ports.PushObjects{})
 	require.NoError(t, err)
 	assert.Equal(t, ".github/workflows/ci.yml", p)
+}
+
+// A history for the rules on the commits a push brings: main holds workflows A,
+// old (a branch) holds B, and the commits made here are in no ref yet, like
+// those of a push in quarantine.
+type guardHistory struct {
+	t      *testing.T
+	f      *readertest.Fixture
+	trees  map[string]string // workflows name -> tree id
+	m, o   string            // main (A) and old (B)
+	extraN int
+	readme string
+}
+
+func newGuardHistory(t *testing.T, g *gitcli.Git, data string) *guardHistory {
+	t.Helper()
+	f := readertest.NewFixture(t, data, "proj")
+	h := &guardHistory{t: t, f: f, trees: map[string]string{}}
+	h.readme = f.WriteObject("blob", "r\n")
+	for _, n := range []string{"A", "B", "C", "D"} {
+		h.trees[n] = rawTree(t, f, [3]string{"100644", "ci.yml", f.WriteObject("blob", "on: push # "+n+"\n")})
+	}
+	h.m = h.commit("A", "")
+	h.o = h.commit("B", "")
+	f.Git("update-ref", "refs/heads/main", h.m)
+	f.Git("update-ref", "refs/heads/old", h.o)
+	return h
+}
+
+// commit makes a commit with the workflows named ("" for none), one more file
+// each time (so that no two commits share a tree by accident), and the parents.
+func (h *guardHistory) commit(workflows, _ string, parents ...string) string {
+	h.t.Helper()
+	h.extraN++
+	extra := h.f.WriteObject("blob", fmt.Sprintf("file %d\n", h.extraN))
+	entries := [][3]string{{"100644", "README", h.readme}, {"100644", fmt.Sprintf("x%d", h.extraN), extra}}
+	if workflows != "" {
+		gh := rawTree(h.t, h.f, [3]string{"040000", "workflows", h.trees[workflows]})
+		entries = append([][3]string{{"040000", ".github", gh}}, entries...)
+	}
+	return commitOf(h.t, h.f, rawTree(h.t, h.f, entries...), parents...)
+}
+
+func TestChangedWorkflowJudgesThePushedCommits(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	h := newGuardHistory(t, g, data)
+	t.Cleanup(func() { _ = g.Close(ctx) })
+	f := h.f
+	run := func(ups ...domain.RefUpdate) (string, error) {
+		return g.ChangedWorkflow(ctx, f.Name, ups, ports.PushObjects{})
+	}
+	create := func(ref, to string) domain.RefUpdate { return domain.RefUpdate{Old: domain.ZeroOID, New: to, Ref: ref} }
+	move := func(ref, from, to string) domain.RefUpdate { return domain.RefUpdate{Old: from, New: to, Ref: ref} }
+	const ci = ".github/workflows/ci.yml"
+
+	allowed := func(name string, ups ...domain.RefUpdate) {
+		t.Helper()
+		p, err := run(ups...)
+		require.NoError(t, err, name)
+		assert.Empty(t, p, name)
+	}
+	refused := func(name string, ups ...domain.RefUpdate) {
+		t.Helper()
+		p, err := run(ups...)
+		require.NoError(t, err, name)
+		assert.Equal(t, ci, p, name)
+	}
+
+	// The staging repro: a new branch off main with a commit that touches no workflow.
+	allowed("new branch off main with a plain commit", create("refs/heads/smoke", h.commit("A", "", h.m)))
+	allowed("a new branch at the head of main", create("refs/heads/same", h.m))
+	allowed("a new tag at the head of main", create("refs/tags/v1", h.m))
+	allowed("a new branch whose commits carry no workflows at all", create("refs/heads/bare", h.commit("", "")))
+	allowed("a fast-forward with plain commits", move("refs/heads/main", h.m, h.commit("A", "", h.commit("A", "", h.m))))
+	allowed("a commit that removes the workflows", move("refs/heads/main", h.m, h.commit("", "", h.m)))
+
+	// A pushed commit that changes them is refused wherever it goes.
+	refused("new branch with a commit that changes workflows", create("refs/heads/w", h.commit("C", "", h.m)))
+	refused("a root commit that carries workflows", create("refs/heads/root", h.commit("C", "")))
+	refused("an update with a commit that changes workflows", move("refs/heads/main", h.m, h.commit("C", "", h.m)))
+	n4 := h.commit("C", "", h.m)
+	n5 := h.commit("A", "", n4) // reverts the change of the commit before
+	refused("a fast-forward through a commit that changes them and a later one that reverts it", move("refs/heads/main", h.m, n5))
+	refused("a new branch through the same", create("refs/heads/through", n5))
+	n6 := h.commit("A", "", h.commit("C", "", h.o))
+	refused("a commit that changes them below plain ones, on an old base", create("refs/heads/below", h.commit("C", "", n6)))
+
+	// A ref cannot be moved onto existing commits with other workflows.
+	refused("a new branch at an old commit whose workflows differ from main", create("refs/heads/b", h.o))
+	refused("a new tag at that commit", create("refs/tags/old", h.o))
+	refused("an update moving back to an older commit with other workflows", move("refs/heads/main", h.m, h.o))
+	allowed("an update to a commit with the same workflows", move("refs/heads/old", h.o, h.commit("B", "", h.o)))
+	allowed("an update that moves a ref to a commit without workflows (removes them)", move("refs/heads/old", h.o, h.commit("", "", h.o)))
+
+	// Merges: a change only if it differs from every parent.
+	allowed("a merge of existing commits that keeps main's workflows", move("refs/heads/main", h.m, h.commit("A", "", h.m, h.o)))
+	allowed("a new branch with a merge keeping one parent's workflows", create("refs/heads/merge", h.commit("A", "", h.m, h.o)))
+	refused("a merge that differs from both parents", create("refs/heads/merge2", h.commit("D", "", h.m, h.o)))
+	refused("a merge of a pushed side that changes them (the side commit is itself new)", create("refs/heads/merge3", h.commit("A", "", h.m, h.commit("C", "", h.o))))
+	// One that takes the old side's workflows is a change of the ref, not of a commit.
+	refused("a merge taking the other parent's workflows, onto main", move("refs/heads/main", h.m, h.commit("B", "", h.m, h.o)))
+
+	// Several updates: the first refused refuses the push.
+	refused("a plain ref and a refused one", create("refs/heads/ok", h.commit("A", "", h.m)), create("refs/heads/w2", h.commit("C", "", h.m)))
+	allowed("deletes", move("refs/heads/old", h.o, domain.ZeroOID))
+}
+
+// With no default branch head, a new ref is compared with no workflows at all.
+func TestChangedWorkflowOfANewRefWithoutADefaultBranchHead(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	h := newGuardHistory(t, g, data)
+	t.Cleanup(func() { _ = g.Close(ctx) })
+	h.f.Git("symbolic-ref", "HEAD", "refs/heads/nothing") // the default branch does not exist
+	run := func(to string) string {
+		p, err := g.ChangedWorkflow(ctx, h.f.Name, []domain.RefUpdate{{Old: domain.ZeroOID, New: to, Ref: "refs/tags/t"}}, ports.PushObjects{})
+		require.NoError(t, err)
+		return p
+	}
+	assert.Equal(t, ".github/workflows/ci.yml", run(h.m), "an existing commit with workflows")
+	plain := h.commit("", "")
+	h.f.Git("update-ref", "refs/heads/plain", plain)
+	assert.Empty(t, run(plain), "an existing commit without")
+}
+
+// The commits of a push are bounded: more than the bound fails closed.
+func TestChangedWorkflowBoundsThePushedCommits(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	h := newGuardHistory(t, g, data)
+	t.Cleanup(func() { _ = g.Close(ctx) })
+	// A chain of plain commits on main, made with fast-import in a ref that is
+	// removed afterwards: the objects stay, in no ref, like a push in quarantine.
+	chain := func(n int) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "reset refs/tmp/chain\nfrom %s\n", h.m)
+		for i := range n {
+			fmt.Fprintf(&b, "commit refs/tmp/chain\ncommitter a <a@b> %d +0000\ndata 1\nc\nM 100644 inline f.txt\ndata 2\n%d\n\n", 1000+i, i%10)
+		}
+		cmd := exec.Command("git", "--git-dir="+h.f.Bare, "fast-import", "--quiet")
+		cmd.Stdin = strings.NewReader(b.String())
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		tip := h.f.Git("rev-parse", "refs/tmp/chain")
+		h.f.Git("update-ref", "-d", "refs/tmp/chain")
+		return tip
+	}
+	// Plain commits carry the workflows of main (the fast-import tree has none,
+	// so the chain is "removing" them): allowed, whatever their number, up to the bound.
+	p, err := g.ChangedWorkflow(ctx, h.f.Name, []domain.RefUpdate{{Old: h.m, New: chain(gitcli.MaxPushedCommits), Ref: "refs/heads/main"}}, ports.PushObjects{})
+	require.NoError(t, err)
+	assert.Empty(t, p)
+	_, err = g.ChangedWorkflow(ctx, h.f.Name, []domain.RefUpdate{{Old: h.m, New: chain(gitcli.MaxPushedCommits + 1), Ref: "refs/heads/main"}}, ports.PushObjects{})
+	assert.ErrorIs(t, err, domain.ErrInvalid, "more commits than the bound refuses the push")
+}
+
+// countingReader serves synthetic rev-list output and counts what was read.
+type countingReader struct {
+	lines, read int
+	line        []byte
+	pending     []byte
+	made        int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	if len(c.pending) == 0 {
+		if c.made == c.lines {
+			return 0, io.EOF
+		}
+		c.made++
+		c.pending = c.line
+	}
+	n := copy(p, c.pending)
+	c.pending = c.pending[n:]
+	c.read += n
+	return n, nil
+}
+
+// A hostile push: ten thousand commits of two hundred parents each is two
+// million ids. The bound is met after the first lines, and nothing more is read
+// or kept.
+func TestParseRevListRejectsManyParentsEarly(t *testing.T) {
+	id := func(n int) string { return fmt.Sprintf("%040x", n+1) }
+	var b strings.Builder
+	b.WriteString(id(0))
+	for i := range 198 {
+		b.WriteString(" " + id(1+i%3)) // few distinct parents, repeated: the distinct count alone would stay small
+	}
+	b.WriteString("\n")
+	r := &countingReader{lines: gitcli.MaxPushedCommits, line: []byte(b.String())}
+	kept, err := gitcli.ParseRevList(r, gitcli.MaxPushedCommits, gitcli.MaxPushedObjects)
+	require.ErrorIs(t, err, domain.ErrInvalid)
+	assert.Contains(t, err.Error(), "ids (commits and parents)", "refused by the bound on ids, not by the line length")
+	assert.Zero(t, kept, "nothing is returned with the error")
+	total := gitcli.MaxPushedCommits * len(b.String())
+	assert.Less(t, r.read, 2<<20, "read only the head of %d bytes", total)
+	assert.Less(t, r.read*20, total)
+
+	// Within the bounds the same lines are kept: 100 commits of 198 parents.
+	r = &countingReader{lines: 100, line: []byte(b.String())}
+	kept, err = gitcli.ParseRevList(r, gitcli.MaxPushedCommits, gitcli.MaxPushedObjects)
+	require.NoError(t, err)
+	assert.Equal(t, 100, kept)
+
+	// The other bounds and malformed output.
+	_, err = gitcli.ParseRevList(strings.NewReader(id(0)+"\n"+id(1)+"\n"), 1, 100)
+	assert.ErrorIs(t, err, domain.ErrInvalid, "commits")
+	_, err = gitcli.ParseRevList(strings.NewReader(id(0)+" "+id(1)+"\n"+id(2)+"\n"), 10, 2)
+	assert.ErrorIs(t, err, domain.ErrInvalid, "ids")
+	_, err = gitcli.ParseRevList(strings.NewReader("nonsense\n"), 10, 10)
+	assert.ErrorIs(t, err, domain.ErrInvalid, "an id that is none")
+	_, err = gitcli.ParseRevList(strings.NewReader(id(0)+strings.Repeat(" "+id(1), 300)+"\n"), 10, 1000)
+	assert.ErrorIs(t, err, domain.ErrInvalid, "a line over the bound")
 }

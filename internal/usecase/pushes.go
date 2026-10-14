@@ -131,11 +131,14 @@ func openExisting(p domain.Principal, repo domain.Repo) error {
 // stops the push before Git applies it. A failure to tell refuses it too.
 //
 // The token of a CI job (GITHUB_TOKEN with contents: write) may not change
-// workflows: a push that creates or changes a file under .github/workflows/ on
-// any ref, branch or tag, is refused as a whole (CI-3, D3). A new ref counts
-// every workflow its commit holds, as on GitHub; deleting a ref is not a
-// change. objects locate the objects of the push, which are not in the
-// repository yet.
+// workflows (CI-3, D3). The push is refused as a whole, on any ref, branch or
+// tag, when a commit it brings changes .github/workflows (it has workflows that
+// differ from those of every parent; removing them is allowed), or when a ref
+// would end with workflows other than it had: an update with other than the old
+// ones, a new ref with other than those of the default branch head (or any, when
+// there is no head). A new branch cut from existing commits that change nothing
+// is therefore allowed; deleting a ref is not a change. objects locate the
+// objects of the push, which are not in the repository yet.
 func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects) error {
 	if err := u.auth.Revalidate(ctx, p); err != nil {
 		if errors.Is(err, domain.ErrUnauthenticated) {
@@ -173,6 +176,9 @@ func (u *Pushes) checkWorkflows(ctx context.Context, name domain.RepoName, updat
 	}
 	path, err := u.wf.ChangedWorkflow(ctx, name, updates, objects)
 	switch {
+	case errors.Is(err, domain.ErrInvalid):
+		// A push the guard cannot judge within its bounds: refused, with the reason.
+		return fmt.Errorf("%w: %v", domain.ErrRejected, err)
 	case err != nil:
 		return fmt.Errorf("find the workflows changed by a push to %s: %w", name, err)
 	case path != "":

@@ -273,11 +273,17 @@ type PushObjects struct {
 // WorkflowGuard finds the changes of a push to the workflow files of a
 // repository.
 type WorkflowGuard interface {
-	// ChangedWorkflow returns the first path under .github/workflows/ that
-	// the updates create or change, from the old tree of each ref (the empty tree
-	// for a new ref) to its new one. A deleted ref changes nothing. "" means
-	// none. objects are those of the push in progress; a directory that is not
-	// inside the repository is refused.
+	// ChangedWorkflow returns the first path under .github/workflows/ that the
+	// updates change, "" for none. Two checks, as GitHub judges the token of a
+	// job: (1) every commit the push brings (those no ref has yet) is compared
+	// with each of its parents (a root commit with nothing) and is a change when
+	// it has workflows that differ from every parent's; (2) the workflows a ref
+	// ends with must be its old ones or none for an update, and the default
+	// branch head's or none for a new ref (none when there is no head). A
+	// workflows directory that disappears is no change, and a deleted ref changes
+	// nothing. objects are those of the push in progress; a directory that is not
+	// inside the repository is refused. A push beyond the bounds of the check
+	// (commits, parents) is an error that matches domain.ErrInvalid.
 	ChangedWorkflow(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, objects PushObjects) (path string, err error)
 }
 

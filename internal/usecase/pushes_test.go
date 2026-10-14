@@ -5,6 +5,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -498,6 +499,13 @@ func TestPushesCheckRefusesWorkflowChangesOfJobTokens(t *testing.T) {
 		err := f.pushes.Check(ctx, job, n, ups, objs)
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, domain.ErrRejected)
+	})
+	t.Run("a push beyond the guard's bounds is refused as a policy, with the reason", func(t *testing.T) {
+		t.Parallel()
+		f := build(t, &fakeGuard{err: fmt.Errorf("%w: the push brings more than 10000 commits", domain.ErrInvalid)})
+		err := f.pushes.Check(ctx, job, n, ups, objs)
+		require.ErrorIs(t, err, domain.ErrRejected)
+		assert.Contains(t, err.Error(), "more than 10000 commits")
 	})
 	t.Run("without a guard a job token cannot be judged: refused", func(t *testing.T) {
 		t.Parallel()

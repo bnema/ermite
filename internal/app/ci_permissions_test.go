@@ -196,19 +196,25 @@ func TestJobTokenWithContentsWritePushesButNotWorkflows(t *testing.T) {
 	require.Error(t, err, "a rename into .github/workflows")
 	assert.Contains(t, out, refusal(".github/workflows/moved.yml"))
 
-	// A tag that points to a commit holding workflows (even an existing one).
+	// A ref cut from the head of main carries main's workflows and changes none:
+	// a tag, an annotated tag and a branch there are allowed, as are new branches
+	// with commits that touch no workflow (staging run 855).
 	out, err = c.tokenPush(c.wt, tok, "main:refs/tags/v1")
-	require.Error(t, err, "a tag on a commit with workflows: "+out)
-	assert.Contains(t, out, "without `workflows` permission")
-	// An annotated tag is judged by the commit it peels to.
+	require.NoError(t, err, "a tag on main's head: "+out)
 	c.mustGit(c.wt, "tag", "-a", "-m", "release", "va", "main")
 	out, err = c.tokenPush(c.wt, tok, "refs/tags/va:refs/tags/va")
-	require.Error(t, err, "an annotated tag on a commit with workflows: "+out)
-	assert.Contains(t, out, "without `workflows` permission")
-	// A new branch off main carries the workflows too.
+	require.NoError(t, err, "an annotated tag on main's head: "+out)
 	out, err = c.tokenPush(c.wt, tok, "main:refs/heads/copy")
-	require.Error(t, err)
-	assert.Contains(t, out, "without `workflows` permission")
+	require.NoError(t, err, "a branch at main's head: "+out)
+	c.mustGit(c.wt, "checkout", "-q", "-B", "smoke/perms-ok", "main")
+	c.commitIn(c.wt, "smoke.txt", "ok")
+	out, err = c.tokenPush(c.wt, tok, "smoke/perms-ok:refs/heads/smoke/perms-ok")
+	require.NoError(t, err, "a new branch with a commit that touches no workflow: "+out)
+	c.mustGit(c.wt, "checkout", "-q", "-B", "smoke/wf", "main")
+	c.commitIn(c.wt, ".github/workflows/smoke.yml", wfYAML)
+	out, err = c.tokenPush(c.wt, tok, "smoke/wf:refs/heads/smoke/wf")
+	require.Error(t, err, "a new branch with a commit that adds a workflow: "+out)
+	assert.Contains(t, out, refusal(".github/workflows/smoke.yml"))
 
 	// One ref that touches a workflow refuses a push of several.
 	c.mustGit(c.wt, "checkout", "-q", "-B", "ok", "main")
@@ -222,6 +228,12 @@ func TestJobTokenWithContentsWritePushesButNotWorkflows(t *testing.T) {
 	// The owner's token is not held to it.
 	out, err = c.git(c.wt, "push", c.urlAuth(adminToken, "/proj.git"), "r:refs/heads/rworkflow")
 	require.NoError(t, err, out)
+
+	// A job token cannot put a ref on that existing commit, whose workflows
+	// differ from the default branch's, nor move main back onto it.
+	out, err = c.tokenPush(c.wt, tok, "r:refs/heads/cut")
+	require.Error(t, err, "a new branch at an existing commit with other workflows: "+out)
+	assert.Contains(t, out, "without `workflows` permission")
 
 	// None of the pushes of the job token started a run; a push of the owner
 	// does, and queues after them.
