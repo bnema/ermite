@@ -4,6 +4,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"html/template"
@@ -25,6 +26,9 @@ const maxReadmeBytes = 512 << 10
 
 // recentCommits is how many commits the rail of the summary lists.
 const recentCommits = 5
+
+// recentRuns is how many runs the rail of the summary lists.
+const recentRuns = 5
 
 // readmeNames are the README file names in order of preference (compared
 // lowercase): Markdown first.
@@ -63,6 +67,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 
 	p.Facts = s.facts(d, now)
 	p.Latest = s.latest(ctx, d)
+	p.Actions = s.recentActions(ctx, d.repo.Name, now)
 
 	if rd, err := s.readme(ctx, d, ref); err != nil {
 		return nil, 0, err
@@ -231,4 +236,36 @@ func humanSize(n int64) string {
 		return fmt.Sprintf("%.1f KiB", float64(n)/1024)
 	}
 	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+}
+
+// recentActions is the newest runs for the rail, as the caller of the request
+// sees them (the permission of the actions page). It is nil when the server
+// runs no CI or the caller cannot read it; a failure of the read is logged and
+// the page goes on without, since the code does not depend on CI.
+func (s *Server) recentActions(ctx context.Context, repo domain.RepoName, now time.Time) *RecentActions {
+	if s.cfg.Runs == nil {
+		return nil
+	}
+	a, err := s.listRecentActions(ctx, repo, now)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			log := zerowrap.FromCtx(ctx)
+			log.Warn().Err(err).Str("repo", repo.String()).Msg("read the recent runs")
+		}
+		return nil
+	}
+	return &a
+}
+
+// listRecentActions reads the newest runs of a repository.
+func (s *Server) listRecentActions(ctx context.Context, repo domain.RepoName, now time.Time) (RecentActions, error) {
+	page, err := s.cfg.Runs.ListRuns(ctx, principal(ctx), repo, ports.ListRunsParams{PageSize: recentRuns})
+	if err != nil {
+		return RecentActions{}, err
+	}
+	a := RecentActions{AllHref: actionsBase(repo.String())}
+	for _, run := range page.Runs {
+		a.Runs = append(a.Runs, s.runRow(repo.String(), run, now))
+	}
+	return a, nil
 }

@@ -53,7 +53,8 @@ import (
 //	commits-head    data: <div id="commits-head">N new commits — reload</div>
 //	mr-notice       data: <div id="mr-notice">…</div>, on the merge request pages:
 //	                something changed, with the link that reloads the page
-//	ci-run          data: <tr id="run-<id>">…</tr> (the list of runs) or
+//	ci-run          data: <tr id="run-<id>">…</tr> (the list of runs),
+//	                <section id="recent-actions">…</section> (the rail of the summary) or
 //	                <div id="run-body">…</div> (one run)
 //	ci-job          data: <h2 id="job-head">…</h2> and <ol id="job-steps">…</ol>; the log
 //	                itself is never sent in this stream: the page follows it on its own

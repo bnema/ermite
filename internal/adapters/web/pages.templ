@@ -80,6 +80,9 @@ templ summaryRail(p SummaryPage) {
 		<section aria-labelledby="r-recent"><h2 id="r-recent">Recent commits <a href={ templ.SafeURL(p.AllHref) }>View all</a></h2>@CommitRows(p.Recent)
 </section>
 	}
+	if p.Actions != nil {
+		@RecentActionsBlock(*p.Actions)
+	}
 	if len(p.Outline) > 0 && p.Readme != nil {
 		<section aria-labelledby="r-outline"><h2 id="r-outline">On this page</h2>@Outline(p.Outline)
 </section>

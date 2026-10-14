@@ -407,7 +407,8 @@ func (l *liveStream) notice(ctx context.Context, text, href string) ([]fragment,
 }
 
 // runEvent updates the pages of CI that a RunUpdated changes: the row of the
-// list of runs, or the body of the run page shown. Only a state is sent: the
+// list of runs, the recent actions of the summary, or the body of the run page
+// shown. Only a state is sent: the
 // events carry no log and no text of the workflow.
 func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]fragment, error) {
 	if l.s.cfg.Runs == nil {
@@ -423,6 +424,8 @@ func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]frag
 			f.html = strings.Replace(f.html, "<tr id=", "<tr data-new id=", 1)
 		}
 		return []fragment{f}, nil
+	case "summary":
+		return l.recentActions(ctx)
 	case "run":
 		if strconv.FormatInt(ev.Run.ID, 10) != l.n {
 			return nil, nil
@@ -430,6 +433,25 @@ func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]frag
 		return l.runBody(ctx)
 	}
 	return nil, nil
+}
+
+// recentActions is the "Recent actions" block of the summary rail, read again
+// as the principal of the stream: the newest runs change with every event, and
+// a viewer who cannot read CI any more gets the block hidden and empty.
+func (l *liveStream) recentActions(ctx context.Context) ([]fragment, error) {
+	name, err := domain.ParseRepoName(l.repo)
+	if err != nil {
+		return nil, nil
+	}
+	a, err := l.s.listRecentActions(ctx, name, l.s.cfg.Now())
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		a = RecentActions{AllHref: actionsBase(l.repo)}
+	case err != nil:
+		return nil, err
+	}
+	f, err := renderFragment(ctx, "ci-run", RecentActionsBlock(a))
+	return []fragment{f}, err
 }
 
 // jobEvent updates the body of the run page and the steps of the job page.

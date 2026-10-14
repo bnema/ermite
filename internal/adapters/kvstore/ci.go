@@ -660,18 +660,31 @@ func (c *CI) ListRuns(ctx context.Context, repo domain.RepoName, before int64, l
 	if before > 0 {
 		end = runKey(repo, before)
 	}
-	// Collect then reverse: the snapshot iterates in key order only.
-	var all []domain.CIRun
+	// The snapshot iterates in key order only: keep the last limit items in a
+	// ring and decode only those, so the cost of a page does not grow with the
+	// decoded history of the repository.
+	type entry struct {
+		key  []byte
+		item kv.Item
+	}
+	var ring []entry
+	next := 0
 	for key, item := range c.db.Snapshot(ctx).Range(ctx, start, end) {
-		r, err := decodeRun(item)
+		if limit <= 0 || len(ring) < limit {
+			ring = append(ring, entry{key, item})
+			continue
+		}
+		ring[next] = entry{key, item}
+		next = (next + 1) % limit
+	}
+	ordered := append(ring[next:len(ring):len(ring)], ring[:next]...)
+	all := make([]domain.CIRun, 0, len(ordered))
+	for i := len(ordered) - 1; i >= 0; i-- {
+		r, err := decodeRun(ordered[i].item)
 		if err != nil {
-			return nil, fmt.Errorf("decode %s: %w", key, err)
+			return nil, fmt.Errorf("decode %s: %w", ordered[i].key, err)
 		}
 		all = append(all, r)
-	}
-	slices.Reverse(all)
-	if limit > 0 && len(all) > limit {
-		all = all[:limit]
 	}
 	return all, nil
 }

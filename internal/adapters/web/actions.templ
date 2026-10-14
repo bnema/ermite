@@ -56,6 +56,27 @@ templ RunListRow(r RunRow) {
 	</tr>
 }
 
+// RecentActionsBlock is the "Recent actions" section of the summary rail; its
+// id is the target of the live updates. Without a run it is hidden.
+templ RecentActionsBlock(a RecentActions) {
+	<section id="recent-actions" aria-labelledby="r-actions" hidden?={ len(a.Runs) == 0 }>
+		<h2 id="r-actions">Recent actions <a href={ templ.SafeURL(a.AllHref) }>View all</a></h2>
+		<ul class="rruns">
+			for _, r := range a.Runs {
+				<li>
+					@CheckIcon(r.Kind, r.State)
+					<a class="rr-name" href={ templ.SafeURL(r.Href) } title={ r.Workflow + " " + r.Number + " · " + r.State }>{ r.Workflow }</a>
+					<span class="mute">{ r.Number }</span>
+					<a class="rr-ref" href={ templ.SafeURL(r.RefHref) }>{ r.Ref }</a>
+					if r.WhenAt != "" {
+						<time class="dim" datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
+					}
+				</li>
+			}
+		</ul>
+	</section>
+}
+
 templ RunDetail(l Layout, p RunPage) {
 	@Shell(l, runRail(p)) {
 		@LiveSlot("run-notice")

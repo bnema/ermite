@@ -153,6 +153,17 @@ type SummaryPage struct {
 	AllHref string
 	// Latest is the newest tag, nil when the repository has none.
 	Latest *LatestTag
+	// Actions is the recent runs of the rail, nil when the viewer cannot read
+	// CI (or the server runs none).
+	Actions *RecentActions
+}
+
+// RecentActions is the "Recent actions" block of the summary rail: the newest
+// runs. With no run the block is in the page but hidden, so that the first
+// run reaches it live.
+type RecentActions struct {
+	Runs    []RunRow
+	AllHref string
 }
 
 // LatestTag is the newest tag of a repository, shown in the summary rail.
