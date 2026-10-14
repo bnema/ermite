@@ -35,6 +35,10 @@ type clients struct {
 	session ermiteconnect.SessionServiceClient
 	runner  ermiteconnect.RunnerServiceClient
 	run     ermiteconnect.RunServiceClient
+
+	secret ermiteconnect.SecretServiceClient
+	vars   ermiteconnect.VariableServiceClient
+	env    ermiteconnect.EnvironmentServiceClient
 }
 
 // bearerTransport adds the Authorization header of a secret, if any.
@@ -85,6 +89,10 @@ func newClientsOn(hc connect.HTTPClient, base string, opts ...connect.ClientOpti
 		session: ermiteconnect.NewSessionServiceClient(hc, base, opts...),
 		runner:  ermiteconnect.NewRunnerServiceClient(hc, base, opts...),
 		run:     ermiteconnect.NewRunServiceClient(hc, base, opts...),
+
+		secret: ermiteconnect.NewSecretServiceClient(hc, base, opts...),
+		vars:   ermiteconnect.NewVariableServiceClient(hc, base, opts...),
+		env:    ermiteconnect.NewEnvironmentServiceClient(hc, base, opts...),
 	}
 }
 

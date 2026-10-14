@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of ermite: CI secrets, variables and
+// environments (ADR 0019, CI-3).
+
+syntax = "proto3";
+
+package ermite.storage;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// SecretRecord is stored under "secret/<scope>/<NAME>": the value sealed with
+// AES-256-GCM (version byte, nonce, ciphertext and tag), bound by its additional
+// data to the scope and the name.
+message SecretRecord {
+  bytes sealed = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}
+
+// VariableRecord is stored under "var/<scope>/<NAME>".
+message VariableRecord {
+  string value = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}
+
+// EnvironmentRecord is stored under "env/<repo>/<lower-cased escaped name>";
+// name keeps the case it was created with.
+message EnvironmentRecord {
+  string repo = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+}

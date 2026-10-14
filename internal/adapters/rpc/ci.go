@@ -207,7 +207,12 @@ func (s *runnerService) UploadSummary(ctx context.Context, req *connect.Request[
 }
 
 // runService implements ermiteconnect.RunServiceHandler.
-type runService struct{ runs ports.RunService }
+type runService struct {
+	// DispatchWorkflow is not implemented yet: the feature "ci.dispatch" is not
+	// listed and the RPC answers unimplemented.
+	ermiteconnect.UnimplementedRunServiceHandler
+	runs ports.RunService
+}
 
 func repoOf(s string) (domain.RepoName, error) { return domain.ParseRepoName(s) }
 

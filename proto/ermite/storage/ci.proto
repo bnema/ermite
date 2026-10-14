@@ -99,6 +99,9 @@ message CIRun {
   // workflow name. Empty in runs stored before it existed (read as
   // workflow_name).
   string name = 22;
+  // trusted: the actor of the run is the owner, so its jobs get secrets. False
+  // in runs stored before it existed (the safe reading).
+  bool trusted = 23;
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned
@@ -196,6 +199,9 @@ message CIJob {
   // of the job does not fail the run, does not cancel the siblings of its
   // matrix, and needs.<job>.result is success.
   bool continue_on_error = 40;
+  // The evaluated environment: of the job, set when the job is planned; empty
+  // for none. Its secrets and variables are read when the job is assigned.
+  string environment = 41;
 }
 
 // CICheck is stored under "check/<repo>/<sha>/<id>": the id of its job, or

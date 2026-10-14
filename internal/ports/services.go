@@ -219,3 +219,47 @@ type FailureLimiter interface {
 	Blocked(ctx context.Context, addr string) (bool, time.Duration)
 	Fail(ctx context.Context, addr string)
 }
+
+// SecretPage is one page of secrets.
+type SecretPage struct {
+	Secrets       []domain.Secret
+	NextPageToken string
+}
+
+// VariablePage is one page of variables.
+type VariablePage struct {
+	Variables     []domain.Variable
+	NextPageToken string
+}
+
+// EnvironmentPage is one page of environments.
+type EnvironmentPage struct {
+	Environments  []domain.Environment
+	NextPageToken string
+}
+
+// SecretService is the secret use cases the API serves. They need the
+// secrets:write scope, never on a token limited to branches. Values are never
+// returned. *usecase.CISettings implements it.
+type SecretService interface {
+	SetSecret(ctx context.Context, p domain.Principal, scope domain.SettingsScope, name, value string) (domain.Secret, error)
+	ListSecrets(ctx context.Context, p domain.Principal, scope domain.SettingsScope, size int, token string) (SecretPage, error)
+	DeleteSecret(ctx context.Context, p domain.Principal, scope domain.SettingsScope, name string) error
+}
+
+// VariableService is the variable use cases the API serves, with the access
+// rules of SecretService. *usecase.CISettings implements it.
+type VariableService interface {
+	SetVariable(ctx context.Context, p domain.Principal, scope domain.SettingsScope, name, value string) (domain.Variable, error)
+	GetVariable(ctx context.Context, p domain.Principal, scope domain.SettingsScope, name string) (domain.Variable, error)
+	ListVariables(ctx context.Context, p domain.Principal, scope domain.SettingsScope, size int, token string) (VariablePage, error)
+	DeleteVariable(ctx context.Context, p domain.Principal, scope domain.SettingsScope, name string) error
+}
+
+// EnvironmentService is the environment use cases the API serves, with the
+// access rules of SecretService. *usecase.CISettings implements it.
+type EnvironmentService interface {
+	CreateEnvironment(ctx context.Context, p domain.Principal, repo domain.RepoName, name string) (domain.Environment, error)
+	ListEnvironments(ctx context.Context, p domain.Principal, repo domain.RepoName, size int, token string) (EnvironmentPage, error)
+	DeleteEnvironment(ctx context.Context, p domain.Principal, repo domain.RepoName, name string) error
+}

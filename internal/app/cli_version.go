@@ -118,5 +118,6 @@ var featureUse = map[string]string{
 	client.FeatureTokenBranchPrefixes: "`ermite token create --branch-prefix` needs: the command is refused, and `token list` does not show the limits",
 	client.FeatureCIRuns:              "`ermite run` needs: the commands will fail on this server",
 	client.FeatureCIRunners:           "`ermite runner` needs: the commands will fail on this server",
+	client.FeatureCISecrets:           "`ermite secret`, `variable` and `environment` need: the commands will fail on this server",
 	client.FeaturePasskeys:            "`ermite web passkey` needs: the commands will fail on this server (passkeys need an https public URL with a DNS host name)",
 }

@@ -324,14 +324,14 @@ func TestCIUnsupportedFeatureFailsTheJob(t *testing.T) {
 jobs:
   j:
     runs-on: ubuntu-latest
-    environment: production
+    concurrency: group
     steps:
       - run: echo
 `}, "")
 	c.waitFor("the run fails", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 	j := c.getRun(c.runs()[0].GetId()).GetJobs()[0]
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, j.GetConclusion())
-	assert.Equal(t, "not supported yet: environment", j.GetError())
+	assert.Equal(t, "not supported yet: concurrency", j.GetError())
 }
 
 // A job for a label no runner has is "waiting for a runner" and fails after the

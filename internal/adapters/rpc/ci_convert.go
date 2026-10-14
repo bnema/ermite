@@ -145,6 +145,7 @@ func runToPB(r domain.CIRun) *pb.Run {
 		WorkflowPath: r.WorkflowPath, WorkflowName: r.WorkflowName, Name: runName(r), Title: r.Title, Event: r.Event,
 		Ref: r.Ref, Sha: r.Sha, Actor: r.Actor, Status: statusToPB(r.Status), Conclusion: conclusionToPB(r.Conclusion),
 		Error: r.Error, CreatedAt: timestamp(r.CreatedAt), StartedAt: timestamp(r.StartedAt), CompletedAt: timestamp(r.CompletedAt),
+		Trusted: r.Trusted,
 		Version: int64(r.Version), //nolint:gosec // a store sequence, far below 2^63
 	}
 }
@@ -219,6 +220,7 @@ func runnerJobToPB(j *ports.RunnerJob) *pb.Job {
 		WorkflowPath: j.WorkflowPath, WorkflowYaml: j.WorkflowYAML, JobKey: j.Job.Key, Matrix: j.Job.MatrixJSON,
 		Contexts: j.Job.ContextsJSON, Labels: j.Job.Labels, TimeoutMinutes: j.Job.TimeoutMinutes,
 		Repo: j.Repo.String(), Sha: j.Sha, Ref: j.Ref, GithubToken: j.GithubToken,
+		Secrets: j.Secrets, Vars: j.Vars, Environment: j.Environment, Trusted: j.Trusted,
 	}
 }
 

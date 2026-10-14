@@ -275,7 +275,7 @@ func encodeRun(r domain.CIRun) ([]byte, error) {
 		Event: r.Event, Ref: r.Ref, Sha: r.Sha, Actor: r.Actor,
 		Status: encodeStatus(r.Status), Conclusion: encodeConclusion(r.Conclusion), Error: r.Error,
 		CreatedAt: encodeTime(r.CreatedAt), StartedAt: encodeTime(r.StartedAt), CompletedAt: encodeTime(r.CompletedAt),
-		CancelRequested: r.CancelRequested, CancelRequestedAt: encodeTime(r.CancelRequestedAt),
+		CancelRequested: r.CancelRequested, CancelRequestedAt: encodeTime(r.CancelRequestedAt), Trusted: r.Trusted,
 	}), nil
 }
 
@@ -299,7 +299,7 @@ func decodeRun(item kv.Item) (domain.CIRun, error) {
 		Status: decodeStatus(pb.GetStatus()), Conclusion: decodeConclusion(pb.GetConclusion()), Error: pb.GetError(),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), StartedAt: decodeTime(pb.GetStartedAt()), CompletedAt: decodeTime(pb.GetCompletedAt()),
 		CancelRequested: pb.GetCancelRequested(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),
-		Version: item.Version,
+		Trusted: pb.GetTrusted(), Version: item.Version,
 	}, nil
 }
 
@@ -330,7 +330,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		Outputs: j.Outputs, ReadyAt: encodeTime(j.ReadyAt), AssignedAt: encodeTime(j.AssignedAt),
 		AckedAt: encodeTime(j.AckedAt), AssignCancels: int32(j.AssignCancels), //nolint:gosec // at most 3
 		TokenValidUntil: encodeTime(j.TokenValidUntil), CancelReason: encodeCancelReason(j.CancelReason), CancelMessage: j.CancelMessage,
-		CancelRequestedAt: encodeTime(j.CancelRequestedAt), Planned: j.Planned,
+		CancelRequestedAt: encodeTime(j.CancelRequestedAt), Planned: j.Planned, Environment: j.Environment,
 	}
 	if j.HasToken() {
 		pb.TokenHash = j.TokenHash[:]
@@ -360,7 +360,7 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 		TokenValidUntil: decodeTime(pb.GetTokenValidUntil()), ReadyAt: decodeTime(pb.GetReadyAt()),
 		AssignedAt: decodeTime(pb.GetAssignedAt()), AckedAt: decodeTime(pb.GetAckedAt()), AssignCancels: int(pb.GetAssignCancels()),
 		CancelMessage: pb.GetCancelMessage(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),
-		Version: item.Version,
+		Environment: pb.GetEnvironment(), Version: item.Version,
 	}
 	j.CancelReason = decodeCancelReason(pb.GetCancelReason())
 	copy(j.TokenHash[:], pb.GetTokenHash())

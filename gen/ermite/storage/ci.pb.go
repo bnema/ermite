@@ -447,7 +447,10 @@ type CIRun struct {
 	// name is GitHub's name of the run: the evaluated run-name, else the
 	// workflow name. Empty in runs stored before it existed (read as
 	// workflow_name).
-	Name          string `protobuf:"bytes,22,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,22,opt,name=name,proto3" json:"name,omitempty"`
+	// trusted: the actor of the run is the owner, so its jobs get secrets. False
+	// in runs stored before it existed (the safe reading).
+	Trusted       bool `protobuf:"varint,23,opt,name=trusted,proto3" json:"trusted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -620,6 +623,13 @@ func (x *CIRun) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *CIRun) GetTrusted() bool {
+	if x != nil {
+		return x.Trusted
+	}
+	return false
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned
@@ -884,8 +894,11 @@ type CIJob struct {
 	// of the job does not fail the run, does not cancel the siblings of its
 	// matrix, and needs.<job>.result is success.
 	ContinueOnError bool `protobuf:"varint,40,opt,name=continue_on_error,json=continueOnError,proto3" json:"continue_on_error,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The evaluated environment: of the job, set when the job is planned; empty
+	// for none. Its secrets and variables are read when the job is assigned.
+	Environment   string `protobuf:"bytes,41,opt,name=environment,proto3" json:"environment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CIJob) Reset() {
@@ -1189,6 +1202,13 @@ func (x *CIJob) GetContinueOnError() bool {
 		return x.ContinueOnError
 	}
 	return false
+}
+
+func (x *CIJob) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
 }
 
 // CICheck is stored under "check/<repo>/<sha>/<id>": the id of its job, or
@@ -1794,7 +1814,7 @@ var File_ermite_storage_ci_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\n" +
-	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdf\x05\n" +
+	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf9\x05\n" +
 	"\x05CIRun\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\x03R\x02id\x12\x16\n" +
@@ -1820,7 +1840,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\fcompleted_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12)\n" +
 	"\x10cancel_requested\x18\x14 \x01(\bR\x0fcancelRequested\x12J\n" +
 	"\x13cancel_requested_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAt\x12\x12\n" +
-	"\x04name\x18\x16 \x01(\tR\x04nameJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"\xc7\x01\n" +
+	"\x04name\x18\x16 \x01(\tR\x04name\x12\x18\n" +
+	"\atrusted\x18\x17 \x01(\bR\atrustedJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"\xc7\x01\n" +
 	"\vCIRunSource\x12\x15\n" +
 	"\x06run_id\x18\x04 \x01(\x03R\x05runId\x12#\n" +
 	"\rworkflow_yaml\x18\x01 \x01(\tR\fworkflowYaml\x12\x1f\n" +
@@ -1843,7 +1864,7 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\tlog_start\x18\a \x01(\x03R\blogStart\x12\x1b\n" +
 	"\thas_lines\x18\t \x01(\bR\bhasLines\x126\n" +
 	"\aoutcome\x18\v \x01(\x0e2\x1c.ermite.storage.CIConclusionR\aoutcomeJ\x04\b\b\x10\tJ\x04\b\n" +
-	"\x10\v\"\xe6\f\n" +
+	"\x10\v\"\x88\r\n" +
 	"\x05CIJob\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\x03R\x05runId\x12\x18\n" +
@@ -1894,7 +1915,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\vrun_attempt\x18& \x01(\x05R\n" +
 	"runAttempt\x12#\n" +
 	"\rcontexts_json\x18' \x01(\tR\fcontextsJson\x12*\n" +
-	"\x11continue_on_error\x18( \x01(\bR\x0fcontinueOnError\x1a:\n" +
+	"\x11continue_on_error\x18( \x01(\bR\x0fcontinueOnError\x12 \n" +
+	"\venvironment\x18) \x01(\tR\venvironment\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b$\x10%\"\xe5\x03\n" +

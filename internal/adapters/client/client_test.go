@@ -139,16 +139,16 @@ func TestDescribeBoundsLongMessages(t *testing.T) {
 func TestMissingFeatures(t *testing.T) {
 	assert.Empty(t, client.MissingFeatures(client.UsedFeatures()))
 	assert.Equal(t,
-		[]string{client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureSigningKey, client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners},
+		[]string{client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureSigningKey, client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners, client.FeatureCISecrets},
 		client.MissingFeatures([]string{client.FeatureRepoUpdate, client.FeatureSession, client.FeaturePasskeys, "other"}))
 	assert.Equal(t, []string{client.FeatureSigningKey}, client.MissingFeatures([]string{
 		client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureSession,
-		client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners,
+		client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners, client.FeatureCISecrets,
 		client.FeaturePasskeys,
 	}))
 	assert.Equal(t, []string{client.FeaturePasskeys}, client.MissingFeatures([]string{
 		client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureSigningKey, client.FeatureSession,
-		client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners,
+		client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners, client.FeatureCISecrets,
 	}))
 	assert.Equal(t, client.UsedFeatures(), client.MissingFeatures(nil))
 }

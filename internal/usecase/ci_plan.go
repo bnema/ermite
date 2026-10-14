@@ -28,9 +28,37 @@ type wfCache struct {
 	mu  sync.Mutex
 	max int
 	m   map[int64]*workflow.Workflow
+	// uses keeps which secrets each job of a run refers to (the names only,
+	// never a value), per run then job key: the workflow file of a run does not
+	// change, so the walk of its YAML is done once per job.
+	uses map[int64]map[string]secretUse
 }
 
-func newWfCache(max int) *wfCache { return &wfCache{max: max, m: map[int64]*workflow.Workflow{}} }
+func newWfCache(max int) *wfCache {
+	return &wfCache{max: max, m: map[int64]*workflow.Workflow{}, uses: map[int64]map[string]secretUse{}}
+}
+
+// secretUse returns the secrets the job refers to, walking the YAML once per
+// run and job.
+func (w *wfCache) secretUse(runID int64, yaml, jobKey string) secretUse {
+	w.mu.Lock()
+	if u, ok := w.uses[runID][jobKey]; ok {
+		w.mu.Unlock()
+		return u
+	}
+	w.mu.Unlock()
+	u := secretsUsedBy(yaml, jobKey)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.uses[runID] == nil {
+		if len(w.uses) >= w.max {
+			clear(w.uses)
+		}
+		w.uses[runID] = map[string]secretUse{}
+	}
+	w.uses[runID][jobKey] = u
+	return u
+}
 
 func (w *wfCache) get(runID int64, path, yaml string) (*workflow.Workflow, error) {
 	w.mu.Lock()
@@ -55,13 +83,12 @@ func (w *wfCache) get(runID int64, path, yaml string) (*workflow.Workflow, error
 // unsupported names the feature of a job that ermite does not run yet, or "".
 // Such a job fails with "not supported yet: <feature>" instead of running
 // wrong. CI-2 runs steps with uses:, job container:, services: and step
-// timeout-minutes (ADR 0025); what stays is CI-3.
+// timeout-minutes (ADR 0025), CI-3 runs environment:; what stays is the rest of
+// CI-3.
 func unsupported(j *workflow.Job) string {
 	switch {
 	case j.IsReusable():
 		return "reusable workflows (uses at the job level)"
-	case j.Environment != nil:
-		return "environment"
 	case j.Concurrency != nil:
 		return "concurrency"
 	}
@@ -366,8 +393,13 @@ func (rs *runState) planJob(ctx context.Context, wj *workflow.Job, idx int, need
 		fail(err.Error())
 		return
 	}
+	vars, err := rs.c.varsContext(ctx, rs.run.Repo)
+	if err != nil {
+		fail(err.Error())
+		return
+	}
 	env := template.Env{Contexts: map[string]expr.Value{
-		"github": gh, "needs": needs, "inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
+		"github": gh, "needs": needs, "inputs": expr.NewDictionary(), "vars": vars,
 	}}
 	run, err := wj.EvaluateIf(ctx, env, st)
 	switch {
@@ -460,10 +492,20 @@ func (rs *runState) instance(ctx context.Context, wj *workflow.Job, plan *workfl
 	if !plan.HasMatrix {
 		matrixCtx = expr.Null{} // GitHub: "matrix": null for a job without a matrix
 	}
-	contexts, err := contextsJSON(gh, needs, plan.Context(i), matrixCtx, rs.c.jobKeys(ctx, rs.run, base.Index, i))
+	environment, err := environmentOf(ctx, wj, env)
 	if err != nil {
 		return j, err
 	}
+	// The vars of planning (see planJob), not read again for each leg.
+	vars, _ := env.Contexts["vars"].(*expr.Dictionary)
+	if vars == nil {
+		vars = expr.NewDictionary()
+	}
+	contexts, err := contextsJSON(gh, needs, plan.Context(i), matrixCtx, vars, rs.c.jobKeys(ctx, rs.run, base.Index, i))
+	if err != nil {
+		return j, err
+	}
+	j.Environment = environment
 	j.Name, j.Labels, j.TimeoutMinutes = name, labels, timeout
 	j.MatrixJSON = compactJSON(expr.ToJSON(matrix))
 	j.ContextsJSON, j.ComboTotal = contexts, len(plan.Combos)
@@ -496,11 +538,11 @@ func compactJSON(s string) string {
 // workflow_ref, workflow_sha, workflow_repository, workflow_file_path); the
 // runner adds status. The runner copies the keys of this "job" into its job
 // context (executor.State.initRest), whatever they are.
-func contextsJSON(github, needs, strategy *expr.Dictionary, matrix expr.Value, job ordered) (string, error) {
+func contextsJSON(github, needs, strategy *expr.Dictionary, matrix expr.Value, vars *expr.Dictionary, job ordered) (string, error) {
 	out := map[string]json.RawMessage{}
 	for k, v := range map[string]expr.Value{
 		"github": github, "needs": needs, "strategy": strategy, "matrix": matrix,
-		"inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
+		"inputs": expr.NewDictionary(), "vars": vars,
 	} {
 		out[k] = json.RawMessage(compactJSON(expr.ToJSON(v)))
 	}

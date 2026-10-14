@@ -123,7 +123,11 @@ func (c *CI) FetchJob(ctx context.Context, secret string, params ports.FetchJobP
 		if err := checkPollID(params.PollID); err != nil {
 			return ports.FetchJobResult{}, err
 		}
-		if j, ok := c.repeatPoll(ctx, runner, params.PollID); ok {
+		j, ok, err := c.repeatPoll(ctx, runner, params.PollID)
+		if err != nil {
+			return ports.FetchJobResult{}, err // the runner asks again with the same poll id
+		}
+		if ok {
 			return ports.FetchJobResult{Job: j}, nil
 		}
 	}
@@ -188,18 +192,18 @@ func offeredLabels(r domain.CIRunner, asked []string) ([]string, error) {
 
 // repeatPoll answers a retried poll with the assignment the first call made,
 // as long as it has not been acknowledged or cancelled.
-func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID string) (*ports.RunnerJob, bool) {
+func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID string) (*ports.RunnerJob, bool, error) {
 	c.mu.Lock()
 	rec, ok := c.polls[runner.ID]
 	c.mu.Unlock()
 	if !ok || rec.pollID != pollID {
-		return nil, false
+		return nil, false, nil
 	}
 	var rid int64
 	var ra int32
 	var id string
 	if _, err := fmt.Sscanf(rec.ref, "%d/%d/%s", &rid, &ra, &id); err != nil {
-		return nil, false
+		return nil, false, nil
 	}
 	var out *ports.RunnerJob
 	err := c.withRun(ctx, rid, ra, func(rs *runState) error {
@@ -207,17 +211,41 @@ func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID stri
 		if j == nil || j.Phase != domain.CIPhaseAssigned || j.TokenHash != rec.hash || j.RunnerID != runner.ID {
 			return errNoJob
 		}
-		out = c.runnerJob(rs, *j, rec.token, rec.ghToken)
+		// The secrets are not kept with the poll: they are read again.
+		settings, err := c.settingsOf(ctx, rs, *j)
+		if err != nil {
+			return err
+		}
+		out = c.runnerJob(rs, *j, rec.token, rec.ghToken, settings)
 		return nil
 	})
-	return out, err == nil && out != nil
+	switch {
+	case err == nil && out != nil:
+		return out, true, nil
+	case isSettingsError(err):
+		return nil, false, err // checked first: it may wrap ErrConflict or ErrNotFound
+	case err == nil, errors.Is(err, errNoJob), errors.Is(err, domain.ErrNotFound), errors.Is(err, domain.ErrConflict):
+		return nil, false, nil // nothing to repeat: the poll goes on as a new one
+	}
+	return nil, false, err // the settings could not be read: not a lost assignment
 }
 
-// runnerJob is the job as the runner gets it.
-func (c *CI) runnerJob(rs *runState, j domain.CIJob, token, ghToken string) *ports.RunnerJob {
+// runnerJob is the job as the runner gets it. settings are read when the job
+// is assigned and live in this value only: j is a copy, so the contexts it
+// carries (with the variables as they are now) are not stored, and the secrets
+// go nowhere but to the runner (never to the run record, the github context or
+// a log; RunnerJob prints without them).
+//
+// TODO(ci3-c2): the runner writes the "Set up job" log; it states there that
+// secrets were withheld when Trusted is false (the server adds no setup line).
+func (c *CI) runnerJob(rs *runState, j domain.CIJob, token, ghToken string, settings ports.JobSettings) *ports.RunnerJob {
+	if settings.Vars != nil {
+		j.ContextsJSON = withVars(j.ContextsJSON, settings.Vars)
+	}
 	return &ports.RunnerJob{
 		Job: j, Token: token, GithubToken: ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
 		WorkflowPath: rs.run.WorkflowPath, WorkflowYAML: rs.src.WorkflowYAML,
+		Environment: j.Environment, Vars: settings.Vars, Secrets: settings.Secrets, Trusted: rs.run.Trusted,
 	}
 }
 
@@ -240,6 +268,11 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 			if j == nil || j.Phase != domain.CIPhaseReady || rs.run.CancelRequested {
 				return errNoJob
 			}
+			// Before anything changes: a failure here leaves the job ready.
+			settings, err := c.settingsOf(ctx, rs, *j)
+			if err != nil {
+				return err
+			}
 			token := newToken(domain.JobTokenPrefix)
 			ghToken := rs.issueRepoToken(j)
 			j.Phase, j.AssignedAt = domain.CIPhaseAssigned, c.now()
@@ -249,7 +282,7 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 			if err := rs.flush(ctx); err != nil {
 				return err
 			}
-			out = c.runnerJob(rs, *j, token, ghToken)
+			out = c.runnerJob(rs, *j, token, ghToken, settings)
 			if pollID != "" {
 				c.mu.Lock()
 				c.polls[runner.ID] = pollRecord{pollID: pollID, ref: jobRef(*j), token: token, ghToken: ghToken, hash: j.TokenHash}
@@ -262,6 +295,8 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 			log := zerowrap.FromCtx(ctx)
 			log.Info().Str("runner", runner.Name).Str("job_id", out.Job.ID).Int64("run_id", out.Job.RunID).Msg("job assigned")
 			return out, nil
+		case isSettingsError(err):
+			return nil, err // the job stays ready; the runner polls again
 		case errors.Is(err, errNoJob), errors.Is(err, domain.ErrNotFound), errors.Is(err, domain.ErrConflict):
 			continue // taken or gone meanwhile
 		default:

@@ -178,6 +178,11 @@ type CIRun struct {
 	CompletedAt       time.Time
 	CancelRequested   bool
 	CancelRequestedAt time.Time
+	// Trusted is set when the actor of the run is the owner (TrustedActor):
+	// only then do its jobs receive secrets and a write permission. A re-run
+	// keeps or lowers it, never raises it (RerunTrusted). False for a run
+	// stored before the field existed: the safe reading.
+	Trusted bool
 	// Version is the version of the stored record, which grows at every
 	// change and never goes back.
 	Version uint64
@@ -261,6 +266,10 @@ type CIJob struct {
 	// need it unaffected (needs.<job>.result is success). The conclusion of
 	// the job itself stays failure.
 	ContinueOnError bool
+	// Environment is the name of the environment of the job (its evaluated
+	// "environment:"), "" for none. Set when the job is planned; the secrets
+	// and variables of the environment are read when the job is assigned.
+	Environment string
 	// MaxParallel is the max-parallel of the strategy, 0 for no limit.
 	MaxParallel int
 	Outputs     map[string]string

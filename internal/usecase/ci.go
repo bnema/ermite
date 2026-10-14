@@ -72,6 +72,10 @@ type CIConfig struct {
 	// read when an action of another repository is resolved for the run. Nil
 	// reads nothing for a token (fail closed).
 	Tokens ports.TokenStore
+	// Settings resolves the variables and secrets of a job (CI-3). Nil gives
+	// jobs none, and an empty "vars" context. Leave it unset rather than
+	// assigning a typed nil pointer.
+	Settings ports.CIJobSettings
 	// RemoteConcurrency bounds the git ls-remote processes at once (default
 	// DefaultCIRemoteConcurrency); ResolveTimeout bounds one ResolveActions call
 	// (default DefaultCIResolveTimeout).

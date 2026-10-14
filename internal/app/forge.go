@@ -26,6 +26,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/adapters/rpc"
+	"bnema.dev/ermite/internal/adapters/secretbox"
 	"bnema.dev/ermite/internal/adapters/sshsig"
 	"bnema.dev/ermite/internal/adapters/web"
 	"bnema.dev/ermite/internal/adapters/webauthn"
@@ -100,9 +101,11 @@ type forge struct {
 	EventLog *usecase.Events
 	// CI is the CI engine: workflow trigger, planner, runner protocol and the
 	// owner side. It starts with the server and stops with it.
-	CI  *usecase.CI
-	API *rpc.API
-	Bus ports.EventBus
+	CI *usecase.CI
+	// Settings are the secrets, variables and environments of CI.
+	Settings *usecase.CISettings
+	API      *rpc.API
+	Bus      ports.EventBus
 }
 
 // newSigningSeed makes the seed of a new ed25519 signing key.
@@ -210,6 +213,23 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	log.Info().Str("reader", cfg.GitReader).Msg("git reader selected")
 	f.Browse = usecase.NewBrowse(store, reader)
 
+	// Secrets, variables and environments (ADR 0019, CI-3). With a key the
+	// secrets are sealed under it, and the server refuses to start when the
+	// key is not the one they were sealed with; without one they cannot be set
+	// and jobs receive none.
+	var sealer ports.SecretSealer // a nil *secretbox.Box must not become a non-nil interface
+	if cfg.SecretsKey != nil {
+		box, err := secretbox.New(cfg.SecretsKey)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", config.EnvSecretsKey, err)
+		}
+		sealer = box
+	}
+	f.Settings, err = usecase.NewCISettings(ctx, store, store.Settings(), sealer, clock)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", config.EnvSecretsKey, err)
+	}
+
 	// CI (ADR 0025): the engine reads workflows through the reader, and plans
 	// them in the background; a push only queues its refs.
 	ciCfg := usecase.CIConfig{
@@ -221,7 +241,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			Bin: cfg.Git, Path: path, Home: filepath.Join(cfg.DataDir, "run", "git-home"),
 			Proxy: gitremote.ProxyEnv(os.Getenv),
 		})),
-		Tokens: store.Tokens(),
+		Tokens:   store.Tokens(),
+		Settings: f.Settings,
 	}
 	if opts.ci != nil {
 		opts.ci(&ciCfg)
@@ -291,6 +312,9 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Passkeys:       apiPasskeys,
 		Runner:         f.CI,
 		Runs:           f.CI,
+		Secrets:        f.Settings,
+		Variables:      f.Settings,
+		Environments:   f.Settings,
 		Version:        serverVersion(),
 		TrustedProxies: cfg.TrustedProxies,
 		Limiter:        limiter,

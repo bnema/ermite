@@ -50,6 +50,8 @@ type harnessOpts struct {
 	revalidateEvery time.Duration
 	// publicURL overrides ERMITE_PUBLIC_URL (http://example.test) when set.
 	publicURL string
+	// env adds or overrides variables of the server's environment.
+	env map[string]string
 }
 
 // newHarness starts a forge. The data directory is short: the hook socket
@@ -76,6 +78,9 @@ func newHarnessWith(t *testing.T, o harnessOpts, tweak func(*options)) *harness 
 	}
 	if o.publicURL != "" {
 		env[config.EnvPublicURL] = o.publicURL
+	}
+	for k, v := range o.env {
+		env[k] = v
 	}
 	if o.trustedProxies != "" {
 		env[config.EnvTrustedProxies] = o.trustedProxies

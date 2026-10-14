@@ -37,6 +37,9 @@ type ciTrigger struct {
 	updates []domain.RefUpdate
 	actor   string
 	pusher  domain.CIPusher
+	// trusted: the principal that pushed or merged is the owner
+	// (domain.TrustedActor), so the run gets secrets.
+	trusted bool
 	at      time.Time
 	log     zerowrap.Logger
 }
@@ -45,19 +48,20 @@ type ciTrigger struct {
 // a worker plans them. A full queue drops the trigger, logged at error: a push
 // is never slowed down or failed by CI.
 func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal) {
-	c.enqueue(ctx, repo, updates, authorOf(pusher), domain.PusherOf(pusher))
+	c.enqueue(ctx, repo, updates, authorOf(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher))
 }
 
 // OnMerge queues the move of a target branch by a merge. The actor of the run is
 // the owner, as GitHub shows; the pusher recorded with it, whose rights the
 // actions of other repositories are resolved with, is the principal that merged:
 // a token limited to some repositories does not gain the owner's reach by
-// merging.
+// merging. For the same reason the run is trusted (gets secrets) only when the
+// merger is: the displayed actor is not the one that decides.
 func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal) {
-	c.enqueue(ctx, repo, updates, authorOf(domain.Owner()), domain.PusherOf(merger))
+	c.enqueue(ctx, repo, updates, authorOf(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger))
 }
 
-func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher) {
+func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted bool) {
 	var kept []domain.RefUpdate
 	for _, u := range updates {
 		if !u.IsDelete() && (strings.HasPrefix(u.Ref, "refs/heads/") || strings.HasPrefix(u.Ref, "refs/tags/")) {
@@ -67,7 +71,7 @@ func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain
 	if len(kept) == 0 {
 		return
 	}
-	t := ciTrigger{repo: repo, updates: kept, actor: actor, pusher: pusher, at: c.now(), log: zerowrap.FromCtx(ctx)}
+	t := ciTrigger{repo: repo, updates: kept, actor: actor, pusher: pusher, trusted: trusted, at: c.now(), log: zerowrap.FromCtx(ctx)}
 	c.mu.Lock()
 	closed := c.closed
 	c.mu.Unlock()
@@ -394,7 +398,7 @@ func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f 
 		run := domain.CIRun{
 			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name, Name: name,
 			Title: firstLine(f.head.Message), Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
-			Status: domain.CICompleted, Conclusion: domain.CIFailure, Error: cutText(problem, maxRunError),
+			Status: domain.CICompleted, Conclusion: domain.CIFailure, Error: cutText(problem, maxRunError), Trusted: t.trusted,
 			CreatedAt: now, StartedAt: now, CompletedAt: now,
 		}
 		return ports.CIRunDraft{
@@ -439,14 +443,18 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 	if f.isTag {
 		title = c.registeredName(ctx, repo.Name, wfPath, name)
 	}
+	vars, err := c.varsContext(ctx, repo.Name)
+	if err != nil {
+		return err
+	}
 	draft, err := c.cfg.Store.CreateRun(ctx, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
 			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name, Name: name,
 			Title: title, Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
-			Status: domain.CIQueued, CreatedAt: now,
+			Status: domain.CIQueued, Trusted: t.trusted, CreatedAt: now,
 		}
 		githubJSON := c.githubJSON(ctx, repo, run, f)
-		if runName, ok := c.evalRunName(ctx, wf, githubJSON); ok {
+		if runName, ok := c.evalRunName(ctx, wf, githubJSON, vars); ok {
 			run.Name, run.Title = runName, runName
 		}
 		d := ports.CIRunDraft{Run: run, Source: domain.CIRunSource{
@@ -550,7 +558,7 @@ func (c *CI) registeredNameOf(ctx context.Context, repo domain.RepoName, wfPath 
 // to nothing: the run then has no name of its own, GitHub's display title falls
 // back to the commit message (a branch) or the registered name (a tag), and
 // the name of the run to the name of the workflow.
-func (c *CI) evalRunName(ctx context.Context, wf *workflow.Workflow, githubJSON string) (string, bool) {
+func (c *CI) evalRunName(ctx context.Context, wf *workflow.Workflow, githubJSON string, vars *expr.Dictionary) (string, bool) {
 	if wf.RunName == nil {
 		return "", false
 	}
@@ -559,7 +567,7 @@ func (c *CI) evalRunName(ctx context.Context, wf *workflow.Workflow, githubJSON 
 		return "", false
 	}
 	env := template.Env{Contexts: map[string]expr.Value{
-		"github": gh, "inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
+		"github": gh, "inputs": expr.NewDictionary(), "vars": vars,
 	}}
 	name, err := template.EvaluateString(ctx, wf.RunName, env)
 	if err != nil {
@@ -595,8 +603,14 @@ func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f
 	if err != nil {
 		return matrixIssue{}
 	}
+	vars, err := c.varsContext(ctx, repo.Name)
+	if err != nil {
+		// Only the sizes of the matrices are looked at here: the job fails on
+		// the same error when it is planned.
+		vars = expr.NewDictionary()
+	}
 	env := template.Env{Contexts: map[string]expr.Value{
-		"github": gh, "needs": expr.NewDictionary(), "inputs": expr.NewDictionary(), "vars": expr.NewDictionary(),
+		"github": gh, "needs": expr.NewDictionary(), "inputs": expr.NewDictionary(), "vars": vars,
 	}}
 	for _, j := range wf.Jobs {
 		_, err := j.EvaluateStrategy(ctx, env)

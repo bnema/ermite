@@ -4,6 +4,7 @@ package config_test
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"net/netip"
 	"strings"
@@ -283,5 +284,38 @@ func TestCIPollTimeout(t *testing.T) {
 		var ce *config.Error
 		require.True(t, errors.As(err, &ce), in)
 		assert.Contains(t, ce.Problems[0], config.EnvCIPollTimeout, in)
+	}
+}
+
+func TestSecretsKey(t *testing.T) {
+	key := make([]byte, config.SecretsKeyLen)
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
+	std := base64.StdEncoding.EncodeToString(key)
+
+	cfg, err := config.Load(lookup(valid(nil)))
+	require.NoError(t, err)
+	assert.Nil(t, cfg.SecretsKey, "unset: secrets are off")
+
+	for name, enc := range map[string]string{
+		"std": std, "raw": base64.RawStdEncoding.EncodeToString(key),
+		"url": base64.URLEncoding.EncodeToString(key), "rawurl": base64.RawURLEncoding.EncodeToString(key), "spaces": " " + std + "\n",
+	} {
+		cfg, err = config.Load(lookup(valid(map[string]string{config.EnvSecretsKey: enc})))
+		require.NoError(t, err, name)
+		assert.Equal(t, key, cfg.SecretsKey, name)
+	}
+
+	for name, bad := range map[string]string{
+		"short":      base64.StdEncoding.EncodeToString(key[:16]),
+		"long":       base64.StdEncoding.EncodeToString(append(key, 1)),
+		"not base64": "not base64 at all!!",
+	} {
+		_, err = config.Load(lookup(valid(map[string]string{config.EnvSecretsKey: bad})))
+		var ce *config.Error
+		require.ErrorAs(t, err, &ce, name)
+		assert.Contains(t, err.Error(), config.EnvSecretsKey, name)
+		assert.NotContains(t, err.Error(), bad, "the value is never repeated: "+name)
 	}
 }

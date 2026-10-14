@@ -399,6 +399,9 @@ func (c *CI) RerunRun(ctx context.Context, p domain.Principal, name domain.RepoN
 		run.Attempt, run.Status, run.Conclusion = next, domain.CIQueued, domain.CINoConclusion
 		run.StartedAt, run.CompletedAt, run.CreatedAt = time.Time{}, time.Time{}, now
 		run.CancelRequested, run.CancelRequestedAt = false, time.Time{}
+		// Kept or lowered, never raised: the owner who runs an agent's run
+		// again does not give it secrets (D1).
+		run.Trusted = domain.RerunTrusted(rs.run.Trusted, p)
 		w.Runs = []domain.CIRun{run}
 		rs2 := &runState{c: c, run: run, attempt: next, jobs: fresh, src: rs.src, dirty: map[string]bool{}, checks: map[string]bool{}}
 		for _, j := range fresh {
@@ -469,6 +472,7 @@ func rerunSet(rs *runState, failedOnly bool) (map[string]bool, error) {
 func (w *wfCache) drop(runID int64) {
 	w.mu.Lock()
 	delete(w.m, runID)
+	delete(w.uses, runID)
 	w.mu.Unlock()
 }
 

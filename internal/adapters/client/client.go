@@ -90,6 +90,21 @@ func (c *Client) MergeRequests() ermiteconnect.MergeRequestServiceClient {
 	return ermiteconnect.NewMergeRequestServiceClient(c.http, c.base, c.opts...)
 }
 
+// Secrets returns the SecretService client.
+func (c *Client) Secrets() ermiteconnect.SecretServiceClient {
+	return ermiteconnect.NewSecretServiceClient(c.http, c.base, c.opts...)
+}
+
+// Variables returns the VariableService client.
+func (c *Client) Variables() ermiteconnect.VariableServiceClient {
+	return ermiteconnect.NewVariableServiceClient(c.http, c.base, c.opts...)
+}
+
+// Environments returns the EnvironmentService client.
+func (c *Client) Environments() ermiteconnect.EnvironmentServiceClient {
+	return ermiteconnect.NewEnvironmentServiceClient(c.http, c.base, c.opts...)
+}
+
 // Server returns the ServerService client.
 func (c *Client) Server() ermiteconnect.ServerServiceClient {
 	return ermiteconnect.NewServerServiceClient(c.http, c.base, c.opts...)

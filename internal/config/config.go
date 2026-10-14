@@ -7,6 +7,7 @@ package config
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/netip"
@@ -42,7 +43,14 @@ const (
 	// EnvCIPollTimeout is how long FetchJob holds a runner's call. Lower it
 	// when a reverse proxy cuts idle responses sooner than the default 50 s.
 	EnvCIPollTimeout = "ERMITE_CI_POLL_TIMEOUT"
+	// EnvSecretsKey is the master key that encrypts CI secrets at rest: 32
+	// random bytes in base64, provided by the deployment secret store like
+	// ERMITE_ADMIN_TOKEN. Without it secrets cannot be set and jobs get none.
+	EnvSecretsKey = "ERMITE_SECRETS_KEY"
 )
+
+// SecretsKeyLen is the length of the secrets key in bytes (AES-256).
+const SecretsKeyLen = 32
 
 // Defaults.
 const (
@@ -112,6 +120,10 @@ type Config struct {
 	// CIPollTimeout is how long FetchJob holds a call; 0 (variable unset)
 	// leaves the default to the CI use case.
 	CIPollTimeout time.Duration
+	// SecretsKey is the decoded ERMITE_SECRETS_KEY (SecretsKeyLen bytes); nil
+	// when the variable is unset. It is a secret: never log it or put it in an
+	// error.
+	SecretsKey []byte
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -273,10 +285,30 @@ func Load(get func(string) string) (Config, error) {
 		}
 	}
 
+	if raw := strings.TrimSpace(get(EnvSecretsKey)); raw != "" {
+		// The message never repeats the value.
+		if key, ok := decodeSecretsKey(raw); !ok {
+			bad(EnvSecretsKey, "must be %d random bytes in base64 (for example `head -c 32 /dev/urandom | base64`)", SecretsKeyLen)
+		} else {
+			c.SecretsKey = key
+		}
+	}
+
 	if len(problems) > 0 {
 		return Config{}, &Error{Problems: problems}
 	}
 	return c, nil
+}
+
+// decodeSecretsKey reads 32 bytes in standard or URL-safe base64, with or
+// without padding.
+func decodeSecretsKey(raw string) ([]byte, bool) {
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if key, err := enc.DecodeString(raw); err == nil {
+			return key, len(key) == SecretsKeyLen
+		}
+	}
+	return nil, false
 }
 
 // parseRetention reads a duration in days ("90d") or in Go's syntax ("720h"),

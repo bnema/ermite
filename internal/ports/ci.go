@@ -5,6 +5,7 @@ package ports
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -286,7 +287,28 @@ type RunnerJob struct {
 	Sha, Ref     string
 	WorkflowPath string
 	WorkflowYAML string
+	// Environment is the environment the job deploys to, "" for none.
+	Environment string
+	// Vars are the merged variables of the job (environment over repository
+	// over instance), already in its "vars" context.
+	Vars map[string]string
+	// Secrets are the secrets the job refers to, in plain text: empty when the
+	// run is not trusted, when the job refers to none and when the server has
+	// no key. They go to the runner and nowhere else: never into the run
+	// record, the github context or a log.
+	Secrets map[string]string
+	// Trusted is the trusted flag of the run: secrets were allowed.
+	Trusted bool
 }
+
+// String describes the job without its secrets and tokens, so that a job
+// printed by mistake leaks nothing.
+func (j RunnerJob) String() string {
+	return fmt.Sprintf("RunnerJob{job:%s run:%d repo:%s secrets:%d trusted:%t}", j.Job.ID, j.Job.RunID, j.Repo, len(j.Secrets), j.Trusted)
+}
+
+// GoString is String for %#v.
+func (j RunnerJob) GoString() string { return j.String() }
 
 // FetchJobParams selects the job a runner asks for.
 type FetchJobParams struct {
@@ -541,4 +563,95 @@ type RunService interface {
 	GetStepSummaries(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32, maxBytes int64) (SummaryList, error)
 	ListRunners(ctx context.Context, p domain.Principal, size int, token string) (RunnerPage, error)
 	RemoveRunner(ctx context.Context, p domain.Principal, id string) error
+}
+
+// ErrSecretNotOpened means a sealed secret does not open: another key, other
+// additional data (a value moved to another scope or name) or a damaged value.
+var ErrSecretNotOpened = errors.New("secret does not open")
+
+// SecretSealer encrypts the values of secrets at rest. The adapter holds the
+// master key; without one the use cases get no sealer and refuse secrets.
+type SecretSealer interface {
+	// Seal returns plaintext sealed and bound to aad. It never fails.
+	Seal(plaintext, aad []byte) []byte
+	// Open reverses Seal with the same aad, or returns ErrSecretNotOpened.
+	Open(sealed, aad []byte) ([]byte, error)
+	// KeyCheck is a value derived from the key that does not reveal it.
+	KeyCheck() []byte
+}
+
+// SealedSecret is a stored secret: its value is sealed.
+type SealedSecret struct {
+	Name      string
+	Sealed    []byte
+	UpdatedAt time.Time
+}
+
+// CISettingsStore keeps the secrets, variables and environments of CI (ADR
+// 0019). A scope that names a missing repository or environment is
+// domain.ErrNotFound for every write and every read of its content. Names are
+// already upper-cased (domain.ParseSettingName).
+type CISettingsStore interface {
+	// BindSecretsKey records the key check beside the secrets when none is
+	// stored, and returns domain.ErrSecretsKeyMismatch when the stored one
+	// differs.
+	BindSecretsKey(ctx context.Context, check []byte) error
+	// PutSecret creates or replaces a secret.
+	PutSecret(ctx context.Context, scope domain.SettingsScope, name string, sealed []byte, at time.Time) (domain.Secret, error)
+	// GetSealedSecret reads one secret of a scope, or domain.ErrNotFound when
+	// it, the repository or the environment does not exist.
+	GetSealedSecret(ctx context.Context, scope domain.SettingsScope, name string) (SealedSecret, error)
+	// ListSealedSecrets lists the secrets of one scope ordered by name.
+	ListSealedSecrets(ctx context.Context, scope domain.SettingsScope) ([]SealedSecret, error)
+	// DeleteSecret deletes a secret, or returns domain.ErrNotFound.
+	DeleteSecret(ctx context.Context, scope domain.SettingsScope, name string) error
+	// PutVariable creates or replaces a variable.
+	PutVariable(ctx context.Context, scope domain.SettingsScope, name, value string, at time.Time) (domain.Variable, error)
+	// GetVariable returns a variable, or domain.ErrNotFound.
+	GetVariable(ctx context.Context, scope domain.SettingsScope, name string) (domain.Variable, error)
+	// ListVariables lists the variables of one scope ordered by name.
+	ListVariables(ctx context.Context, scope domain.SettingsScope) ([]domain.Variable, error)
+	// DeleteVariable deletes a variable, or returns domain.ErrNotFound.
+	DeleteVariable(ctx context.Context, scope domain.SettingsScope, name string) error
+	// CreateEnvironment creates the environment, or returns the existing one
+	// (compared without regard to case) unchanged.
+	CreateEnvironment(ctx context.Context, repo domain.RepoName, name string, at time.Time) (domain.Environment, error)
+	// ListEnvironments lists the environments of a repository ordered by name.
+	ListEnvironments(ctx context.Context, repo domain.RepoName) ([]domain.Environment, error)
+	// DeleteEnvironment deletes the environment with its secrets and
+	// variables, or returns domain.ErrNotFound.
+	DeleteEnvironment(ctx context.Context, repo domain.RepoName, name string) error
+}
+
+// JobSettingsRequest asks for the variables, and when wanted the secrets, a job
+// sees.
+type JobSettingsRequest struct {
+	Repo domain.RepoName
+	// Environment is the environment of the job, "" for none.
+	Environment string
+	// CreateEnvironment creates the environment first when it does not exist
+	// (a job that names one creates it on first use).
+	CreateEnvironment bool
+	// WantSecrets asks for secrets at all: false for a run that is not
+	// trusted. SecretNames are the (upper-cased) names to return, or AllSecrets
+	// for every secret of the scopes.
+	WantSecrets bool
+	SecretNames []string
+	AllSecrets  bool
+}
+
+// JobSettings are what a job sees: the merged variables and secrets, with the
+// environment over the repository over the instance.
+type JobSettings struct {
+	Vars    map[string]string
+	Secrets map[string]string
+	// SecretsOff is set when secrets were wanted but the server has no
+	// ERMITE_SECRETS_KEY, so none can be given.
+	SecretsOff bool
+}
+
+// CIJobSettings resolves the variables and secrets of a job. *usecase.CISettings
+// implements it.
+type CIJobSettings interface {
+	Resolve(ctx context.Context, req JobSettingsRequest) (JobSettings, error)
 }

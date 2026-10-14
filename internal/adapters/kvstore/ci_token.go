@@ -206,3 +206,13 @@ func repoReaderKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName
 	}
 	return keys
 }
+
+// CountRepoTokens counts the job repository tokens that read the repository
+// (every job's, archive tokens included). It serves tests and diagnostics.
+func (c *CI) CountRepoTokens(ctx context.Context, repo domain.RepoName) (int, error) {
+	n := 0
+	for range c.db.Snapshot(ctx).Prefix(ctx, []byte(repoTokenRepoPrefixOf(repo))) {
+		n++
+	}
+	return n, nil
+}

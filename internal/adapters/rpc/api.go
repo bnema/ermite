@@ -32,7 +32,8 @@ const RunnerMaxRequestBytes = MaxRequestBytes + 64<<10
 
 // Features are the optional capabilities of the contract that this server
 // always implements, as GetVersion lists them. FeaturePasskeys comes on top
-// when Config.Passkeys is set.
+// when Config.Passkeys is set, and FeatureCISecrets when the settings services
+// are.
 var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
@@ -69,6 +70,13 @@ type Config struct {
 	// not available (the RPCs answer failed_precondition and GetVersion does
 	// not list "passkeys"). Same rule as Sessions about typed nil pointers.
 	Passkeys ports.PasskeyService
+	// Secrets, Variables and Environments serve SecretService, VariableService
+	// and EnvironmentService, and GetVersion lists "ci.secrets", when all three
+	// are set (they are one use case). Same rule as Sessions about typed nil
+	// pointers.
+	Secrets      ports.SecretService
+	Variables    ports.VariableService
+	Environments ports.EnvironmentService
 }
 
 // API is the set of Connect handlers of the contract.
@@ -99,17 +107,26 @@ func New(cfg Config) *API {
 	if cfg.Passkeys != nil {
 		features = append(features, FeaturePasskeys)
 	}
+	settings := cfg.Secrets != nil && cfg.Variables != nil && cfg.Environments != nil
+	if settings {
+		features = append(features, FeatureCISecrets)
+	}
 	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
 	if cfg.Sessions != nil {
 		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))
+	}
+	if settings {
+		mux.Handle(ermiteconnect.NewSecretServiceHandler(&secretService{cfg.Secrets}, opts...))
+		mux.Handle(ermiteconnect.NewVariableServiceHandler(&variableService{cfg.Variables}, opts...))
+		mux.Handle(ermiteconnect.NewEnvironmentServiceHandler(&environmentService{cfg.Environments}, opts...))
 	}
 	if cfg.Runner != nil {
 		runnerOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))
 		mux.Handle(ermiteconnect.NewRunnerServiceHandler(&runnerService{runners: cfg.Runner, limiter: cfg.Limiter}, runnerOpts...))
 	}
 	if cfg.Runs != nil {
-		mux.Handle(ermiteconnect.NewRunServiceHandler(&runService{cfg.Runs}, opts...))
+		mux.Handle(ermiteconnect.NewRunServiceHandler(&runService{runs: cfg.Runs}, opts...))
 	}
 	return &API{handler: mux}
 }

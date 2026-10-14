@@ -403,3 +403,24 @@ func TestCIRunNameRoundTripsAndDefaultsToTheWorkflowName(t *testing.T) {
 	assert.Equal(t, "run push on branch by someone", got.Name)
 	assert.Equal(t, "ci", got.WorkflowName, "the workflow name is unchanged")
 }
+
+func TestCIRunTrustedRoundTripsAndDefaultsToFalse(t *testing.T) {
+	ctx := context.Background()
+	_, ci, n := ciRepo(t)
+
+	old, err := ci.CreateRun(ctx, n, ".github/workflows/ci.yml", draftOf(n, ".github/workflows/ci.yml", 0))
+	require.NoError(t, err)
+	got, err := ci.GetRun(ctx, n, old.Run.ID)
+	require.NoError(t, err)
+	assert.False(t, got.Trusted, "a run without the flag is not trusted")
+
+	trusted, err := ci.CreateRun(ctx, n, ".github/workflows/ci.yml", func(id, number int64) ports.CIRunDraft {
+		d := draftOf(n, ".github/workflows/ci.yml", 0)(id, number)
+		d.Run.Trusted = true
+		return d
+	})
+	require.NoError(t, err)
+	got, err = ci.GetRun(ctx, n, trusted.Run.ID)
+	require.NoError(t, err)
+	assert.True(t, got.Trusted)
+}

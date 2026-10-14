@@ -37,11 +37,14 @@ const (
 	// calls (`ermite runner`).
 	FeatureCIRuns    = "ci.runs"
 	FeatureCIRunners = "ci.runners"
+	// FeatureCISecrets is SecretService, VariableService and EnvironmentService
+	// (`ermite secret`, `variable`, `environment`).
+	FeatureCISecrets = "ci.secrets"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeaturePasskeys}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeaturePasskeys}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.
