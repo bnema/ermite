@@ -2,6 +2,8 @@
 
 package domain
 
+import "slices"
+
 // The permissions of a job repository token (CI-3, D3) are the keys and levels
 // of the "permissions:" of a GitHub workflow. They are computed once, when the
 // job is planned, and stored as a map from key to level; a key that is absent
@@ -171,4 +173,38 @@ func RepoTokenScopes(perms map[string]string) []Scope {
 		scopes = append(scopes, ScopeMRWrite)
 	}
 	return scopes
+}
+
+// permissionRank orders the levels: none, read, write.
+func permissionRank(level string) int {
+	switch level {
+	case PermissionRead:
+		return 1
+	case PermissionWrite:
+		return 2
+	}
+	return 0
+}
+
+// PermissionViolations lists the keys that requested asks for above what max
+// allows (an absent key is none): a reusable workflow can only keep or lower the
+// permissions of its caller. The two slices hold "key: level" in the same
+// order, sorted by key, as GitHub's error message shows them.
+func PermissionViolations(requested, max map[string]string) (asked, allowed []string) {
+	keys := make([]string, 0, len(requested))
+	for k := range requested {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		if permissionRank(requested[k]) > permissionRank(max[k]) {
+			lv := max[k]
+			if lv == "" {
+				lv = PermissionNone
+			}
+			asked = append(asked, k+": "+requested[k])
+			allowed = append(allowed, k+": "+lv)
+		}
+	}
+	return asked, allowed
 }

@@ -210,7 +210,7 @@ func TestSchema(t *testing.T) {
 		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 	})
 
-	t.Run("version 1 is upgraded to 2, its data kept", func(t *testing.T) {
+	t.Run("version 1 is upgraded to the current one, its data kept", func(t *testing.T) {
 		dir := t.TempDir()
 		putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 1}))
 		putRaw(t, dir, "repo/old", mustProto(t, &storagepb.Repo{Name: "old", Visibility: storagepb.Visibility_VISIBILITY_PUBLIC}))
@@ -220,15 +220,39 @@ func TestSchema(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "old", got.Name.String())
 		require.NoError(t, s.Close(ctx))
-		assert.Equal(t, uint32(2), readSchema(t, dir))
+		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
+	})
+
+	t.Run("version 2 is upgraded to 3, its data kept", func(t *testing.T) {
+		dir := t.TempDir()
+		putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 2}))
+		putRaw(t, dir, "repo/old", mustProto(t, &storagepb.Repo{Name: "old", Visibility: storagepb.Visibility_VISIBILITY_PUBLIC}))
+		s, err := kvstore.Open(ctx, dir)
+		require.NoError(t, err)
+		_, err = s.Get(ctx, name(t, "old"))
+		require.NoError(t, err)
+		require.NoError(t, s.Close(ctx))
+		assert.Equal(t, uint32(3), readSchema(t, dir))
+	})
+
+	// Downgrade guard: once a build with reusable workflows has opened the data
+	// (and may have stored calls), a build that knows schema 2 only must refuse
+	// it; it does so for any version above its own (ErrSchemaTooNew), which is
+	// the version 3 this build writes.
+	t.Run("data written by this build is above schema 2", func(t *testing.T) {
+		dir := t.TempDir()
+		s, err := kvstore.Open(ctx, dir)
+		require.NoError(t, err)
+		require.NoError(t, s.Close(ctx))
+		assert.Greater(t, readSchema(t, dir), uint32(2), "a build that supports 2 refuses it")
 	})
 
 	t.Run("newer stops startup and releases the lock", func(t *testing.T) {
 		dir := t.TempDir()
-		putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 3}))
+		putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: kvstore.SchemaVersion + 1}))
 		_, err := kvstore.Open(ctx, dir)
 		require.ErrorIs(t, err, kvstore.ErrSchemaTooNew)
-		assert.Equal(t, uint32(3), readSchema(t, dir), "the lock was released and the value kept")
+		assert.Equal(t, uint32(kvstore.SchemaVersion+1), readSchema(t, dir), "the lock was released and the value kept")
 	})
 
 	t.Run("garbage and zero are errors", func(t *testing.T) {

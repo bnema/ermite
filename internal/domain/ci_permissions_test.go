@@ -136,3 +136,14 @@ func TestRepoTokenPrincipalFollowsItsPermissions(t *testing.T) {
 	assert.False(t, domain.Anonymous().ViaJobToken())
 	assert.False(t, domain.TokenPrincipal(domain.Token{ID: "0123456789abcdef"}).ViaJobToken())
 }
+
+func TestPermissionViolations(t *testing.T) {
+	t.Parallel()
+	asked, allowed := domain.PermissionViolations(
+		map[string]string{"contents": "write", "issues": "read", "packages": "read", "pages": "none"},
+		map[string]string{"contents": "read", "packages": "write"})
+	assert.Equal(t, []string{"contents: write", "issues: read"}, asked)
+	assert.Equal(t, []string{"contents: read", "issues: none"}, allowed)
+	asked, _ = domain.PermissionViolations(map[string]string{"contents": "read"}, map[string]string{"contents": "write"})
+	assert.Empty(t, asked, "lowering is allowed")
+}

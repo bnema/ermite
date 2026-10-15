@@ -378,15 +378,15 @@ func (c *CI) RerunRun(ctx context.Context, p domain.Principal, name domain.RepoN
 		w := ports.CIWrite{}
 		var fresh []domain.CIJob
 		for _, j := range rs.jobs {
-			if !redo[j.Key] {
+			if !redo[rootKey(j.Key)] {
 				kept := j // kept with its own attempt, steps and log
 				kept.RunAttempt, kept.Version = next, 0
 				w.Jobs = append(w.Jobs, kept)
 				fresh = append(fresh, kept)
 				continue
 			}
-			if j.Combo > 0 {
-				continue // the matrix is expanded again when the job is planned
+			if j.Combo > 0 || j.Scope != "" {
+				continue // the matrix, and the jobs of a call, are expanded again when the job is planned
 			}
 			n := domain.CIJob{
 				ID: domain.NewJobID(runID, j.Index, 0), RunID: runID, Attempt: next, RunAttempt: next, Repo: rs.run.Repo,
@@ -394,6 +394,17 @@ func (c *CI) RerunRun(ctx context.Context, p domain.Principal, name domain.RepoN
 			}
 			w.Jobs = append(w.Jobs, n)
 			fresh = append(fresh, n)
+		}
+		if failedOnly {
+			// The callee of a reusable workflow stays at the commit the run first
+			// resolved, as the jobs that are kept ran from it; a re-run of
+			// everything resolves afresh (as for the actions of CI-2, which are
+			// resolved again in every attempt).
+			res, err := c.callResolutions(ctx, rs, next)
+			if err != nil {
+				return err
+			}
+			w.Resolutions = append(w.Resolutions, res...)
 		}
 		run := rs.run
 		run.Attempt, run.Status, run.Conclusion = next, domain.CIQueued, domain.CINoConclusion
@@ -443,14 +454,14 @@ func rerunSet(rs *runState, failedOnly bool) (map[string]bool, error) {
 	redo := map[string]bool{}
 	if !failedOnly {
 		for _, j := range rs.jobs {
-			redo[j.Key] = true
+			redo[rootKey(j.Key)] = true
 		}
 		return redo, nil
 	}
 	for _, j := range rs.jobs {
 		switch j.Conclusion {
 		case domain.CIFailure, domain.CICancelled, domain.CITimedOut, domain.CIActionRequired:
-			redo[j.Key] = true
+			redo[rootKey(j.Key)] = true
 		}
 	}
 	if len(redo) == 0 {
@@ -459,7 +470,7 @@ func rerunSet(rs *runState, failedOnly bool) (map[string]bool, error) {
 	for changed := true; changed; {
 		changed = false
 		for _, j := range rs.jobs {
-			if redo[j.Key] {
+			if redo[j.Key] || j.Scope != "" {
 				continue
 			}
 			if slices.ContainsFunc(j.Needs, func(n string) bool { return redo[n] }) {

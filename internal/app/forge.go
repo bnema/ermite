@@ -22,6 +22,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/gitcli"
 	"bnema.dev/ermite/internal/adapters/githttp"
 	"bnema.dev/ermite/internal/adapters/githubapi"
+	"bnema.dev/ermite/internal/adapters/githubraw"
 	"bnema.dev/ermite/internal/adapters/gitremote"
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/kvstore"
@@ -60,6 +61,9 @@ type options struct {
 	// remote replaces the lister of github.com refs (tests never reach the
 	// network).
 	remoteLister ports.GitRemote
+	// workflowFetcher replaces the downloader of github.com reusable workflows
+	// (tests never reach the network).
+	workflowFetcher ports.WorkflowFetcher
 	// ci overrides the settings of the CI engine (tests shorten its
 	// durations).
 	ci func(*usecase.CIConfig)
@@ -69,6 +73,15 @@ type options struct {
 func (o options) remote(def ports.GitRemote) ports.GitRemote {
 	if o.remoteLister != nil {
 		return o.remoteLister
+	}
+	return def
+}
+
+// workflows returns the downloader of github.com reusable workflows: the
+// test's, else def.
+func (o options) workflows(def ports.WorkflowFetcher) ports.WorkflowFetcher {
+	if o.workflowFetcher != nil {
+		return o.workflowFetcher
 	}
 	return def
 }
@@ -241,8 +254,9 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			Bin: cfg.Git, Path: path, Home: filepath.Join(cfg.DataDir, "run", "git-home"),
 			Proxy: gitremote.ProxyEnv(os.Getenv),
 		})),
-		Tokens:   store.Tokens(),
-		Settings: f.Settings,
+		Tokens:    store.Tokens(),
+		Settings:  f.Settings,
+		Workflows: opts.workflows(githubraw.New(githubraw.Config{})),
 	}
 	if opts.ci != nil {
 		opts.ci(&ciCfg)

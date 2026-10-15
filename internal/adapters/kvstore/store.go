@@ -20,8 +20,11 @@ import (
 // SchemaVersion is the storage schema this build reads and writes. Version 2
 // adds branch prefixes to tokens: a build that does not know them would treat
 // a branch-limited token as unrestricted, so it must refuse the data
-// (ErrSchemaTooNew) instead.
-const SchemaVersion = 2
+// (ErrSchemaTooNew) instead. Version 3 adds the records of CI-3 that an older
+// build would misread: the call and scoped jobs of reusable workflows (it would
+// run the jobs of a called workflow as jobs of the caller's file, and plan the
+// call itself).
+const SchemaVersion = 3
 
 const schemaKey = "meta/schema"
 

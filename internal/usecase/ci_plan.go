@@ -32,10 +32,12 @@ type wfCache struct {
 	// never a value), per run then job key: the workflow file of a run does not
 	// change, so the walk of its YAML is done once per job.
 	uses map[int64]map[string]secretUse
+	// called keeps the parsed reusable workflows, by hash of path and content.
+	called map[string]*workflow.Workflow
 }
 
 func newWfCache(max int) *wfCache {
-	return &wfCache{max: max, m: map[int64]*workflow.Workflow{}, uses: map[int64]map[string]secretUse{}}
+	return &wfCache{max: max, m: map[int64]*workflow.Workflow{}, uses: map[int64]map[string]secretUse{}, called: map[string]*workflow.Workflow{}}
 }
 
 // secretUse returns the secrets the job refers to, walking the YAML once per
@@ -78,19 +80,6 @@ func (w *wfCache) get(runID int64, path, yaml string) (*workflow.Workflow, error
 	}
 	w.m[runID] = wf
 	return wf, nil
-}
-
-// unsupported names the feature of a job that ermite does not run yet, or "".
-// Such a job fails with "not supported yet: <feature>" instead of running
-// wrong. CI-2 runs steps with uses:, job container:, services: and step
-// timeout-minutes (ADR 0025), CI-3 runs environment:; what stays is the rest of
-// CI-3.
-func unsupported(j *workflow.Job) string {
-	switch {
-	case j.IsReusable():
-		return "reusable workflows (uses at the job level)"
-	}
-	return ""
 }
 
 // instances returns the indexes of the records of the job key, in order.
@@ -153,12 +142,12 @@ func result(insts []domain.CIJob) string {
 // ancestor failed (documented, not recorded). An ancestor beyond the direct
 // needs only changes success() and failure(): cancelled() is not recorded for
 // them, and a skipped ancestor behind a need that did run is not either.
-func (rs *runState) needsOf(wf *workflow.Workflow, j *workflow.Job) (needs *expr.Dictionary, st workflow.StatusFuncs, ready bool) {
+func (rs *runState) needsOf(wf *workflow.Workflow, j *workflow.Job, scope string) (needs *expr.Dictionary, st workflow.StatusFuncs, ready bool) {
 	needs = expr.NewDictionary()
 	st = workflow.StatusFuncs{Success: true, Cancelled: rs.run.CancelRequested}
 	for _, n := range wf.Ancestors(j.ID) {
 		var insts []domain.CIJob
-		for _, i := range rs.instances(n) {
+		for _, i := range rs.instancesIn(scope, n) {
 			if rs.jobs[i].Ended() {
 				insts = append(insts, rs.jobs[i])
 			}
@@ -172,7 +161,7 @@ func (rs *runState) needsOf(wf *workflow.Workflow, j *workflow.Job) (needs *expr
 	}
 	for _, n := range j.Needs {
 		var insts []domain.CIJob
-		for _, i := range rs.instances(n) {
+		for _, i := range rs.instancesIn(scope, n) {
 			if !rs.jobs[i].Ended() {
 				return nil, st, false
 			}
@@ -275,7 +264,7 @@ func (rs *runState) end(j *domain.CIJob, conclusion domain.CIConclusion, msg str
 	if j.FailFast && !j.ContinueOnError && conclusion.IsFailure() {
 		for i := range rs.jobs {
 			s := &rs.jobs[i]
-			if s.Key != j.Key || s.ID == j.ID || s.Ended() {
+			if s.Key != j.Key || s.Scope != j.Scope || s.ID == j.ID || s.Ended() {
 				continue
 			}
 			if s.Active() {
@@ -344,11 +333,19 @@ func (rs *runState) advance(ctx context.Context) error {
 			if rec.Planned || rec.Ended() || rec.Phase != domain.CIPhaseWaiting {
 				continue
 			}
-			needs, st, ready := rs.needsOf(wf, wj)
+			needs, st, ready := rs.needsOf(wf, wj, "")
 			if !ready {
 				continue
 			}
 			rs.planJob(ctx, wf, wj, insts[0], needs, st)
+			changed = true
+		}
+		// The jobs of called workflows, and the calls that have ended.
+		ch, err := rs.advanceCalls(ctx)
+		if err != nil {
+			return err
+		}
+		if ch {
 			changed = true
 		}
 	}
@@ -363,15 +360,15 @@ func (rs *runState) promote(ctx context.Context) error {
 	counts := map[string]int{}
 	for _, j := range rs.jobs {
 		if j.Phase == domain.CIPhaseReady || j.Active() {
-			counts[j.Key]++
+			counts[j.Scope+"\x00"+j.Key]++
 		}
 	}
 	for i := range rs.jobs {
 		j := &rs.jobs[i]
-		if !j.Planned || j.Phase != domain.CIPhaseWaiting {
-			continue
+		if !j.Planned || j.Phase != domain.CIPhaseWaiting || j.Call != nil {
+			continue // a call never runs: it ends with the jobs of its scope
 		}
-		if j.MaxParallel > 0 && counts[j.Key] >= j.MaxParallel {
+		if j.MaxParallel > 0 && counts[j.Scope+"\x00"+j.Key] >= j.MaxParallel {
 			continue
 		}
 		if g := j.Concurrency; g.Group != "" && !g.FromRun {
@@ -388,7 +385,7 @@ func (rs *runState) promote(ctx context.Context) error {
 			}
 		}
 		j.Phase, j.ReadyAt = domain.CIPhaseReady, now
-		counts[j.Key]++
+		counts[j.Scope+"\x00"+j.Key]++
 		rs.touch(j)
 	}
 	return nil
@@ -415,7 +412,7 @@ func (rs *runState) planJob(ctx context.Context, wf *workflow.Workflow, wj *work
 		return
 	}
 	env := template.Env{Contexts: map[string]expr.Value{
-		"github": gh, "needs": needs, "inputs": expr.NewDictionary(), "vars": vars,
+		"github": gh, "needs": needs, "inputs": rs.inputsOf(rec), "vars": vars,
 	}}
 	run, err := wj.EvaluateIf(ctx, env, st)
 	switch {
@@ -424,11 +421,20 @@ func (rs *runState) planJob(ctx context.Context, wf *workflow.Workflow, wj *work
 		return
 	case !run:
 		rs.jobs[idx].Name = rs.skippedName(ctx, wj, env)
+		if call := rs.scopeOf(rec); call != nil {
+			rs.jobs[idx].Name = call.Name + " / " + rs.jobs[idx].Name
+		}
 		rs.end(&rs.jobs[idx], domain.CISkipped, "")
 		return
 	}
-	if feature := unsupported(wj); feature != "" {
-		fail("not supported yet: " + feature)
+	if wj.IsReusable() {
+		if err := rs.planCall(ctx, wf, wj, idx, env); err != nil {
+			if text, ok := isCallFailure(err); ok {
+				fail(text)
+			} else {
+				fail("reusable workflow " + wj.Uses.Value + ": " + err.Error())
+			}
+		}
 		return
 	}
 	plan, err := wj.EvaluateStrategy(ctx, env)
@@ -437,6 +443,10 @@ func (rs *runState) planJob(ctx context.Context, wf *workflow.Workflow, wj *work
 		return
 	}
 
+	if err := rs.checkJobBudget(len(plan.Combos) - 1); err != nil {
+		fail(err.Error())
+		return
+	}
 	insts := make([]domain.CIJob, 0, len(plan.Combos))
 	for i := range plan.Combos {
 		menv, err := plan.MatrixEnv(env, i)
@@ -484,6 +494,10 @@ func (rs *runState) instance(ctx context.Context, wf *workflow.Workflow, wj *wor
 		return j, err
 	}
 	name = strings.TrimSpace(name) // GitHub shows "Display name of", not "Display name of "
+	call := rs.scopeOf(base)
+	if call != nil {
+		name = call.Name + " / " + name // "<caller job name> / <callee job name>"
+	}
 	labels, _, err := wj.EvaluateRunsOn(ctx, env)
 	if err != nil {
 		return j, err
@@ -517,12 +531,18 @@ func (rs *runState) instance(ctx context.Context, wf *workflow.Workflow, wj *wor
 	if vars == nil {
 		vars = expr.NewDictionary()
 	}
-	contexts, err := contextsJSON(gh, needs, plan.Context(i), matrixCtx, vars, rs.c.jobKeys(ctx, rs.run, base.Index, i))
+	contexts, err := contextsJSON(gh, needs, plan.Context(i), matrixCtx, vars, rs.inputsOf(base), rs.jobKeysOf(ctx, base, i))
 	if err != nil {
 		return j, err
 	}
 	j.Environment = environment
-	j.Permissions = domain.ResolvePermissions(permissionSpec(wf.Permissions), permissionSpec(wj.Permissions))
+	if call != nil {
+		if j.Permissions, err = rs.scopedPermissions(wf, wj, call); err != nil {
+			return j, err
+		}
+	} else {
+		j.Permissions = domain.ResolvePermissions(permissionSpec(wf.Permissions), permissionSpec(wj.Permissions))
+	}
 	j.Name, j.Labels, j.TimeoutMinutes = name, labels, timeout
 	j.MatrixJSON = compactJSON(expr.ToJSON(matrix))
 	j.ContextsJSON, j.ComboTotal = contexts, len(plan.Combos)
@@ -565,11 +585,11 @@ func compactJSON(s string) string {
 // workflow_ref, workflow_sha, workflow_repository, workflow_file_path); the
 // runner adds status. The runner copies the keys of this "job" into its job
 // context (executor.State.initRest), whatever they are.
-func contextsJSON(github, needs, strategy *expr.Dictionary, matrix expr.Value, vars *expr.Dictionary, job ordered) (string, error) {
+func contextsJSON(github, needs, strategy *expr.Dictionary, matrix expr.Value, vars, inputs *expr.Dictionary, job ordered) (string, error) {
 	out := map[string]json.RawMessage{}
 	for k, v := range map[string]expr.Value{
 		"github": github, "needs": needs, "strategy": strategy, "matrix": matrix,
-		"inputs": expr.NewDictionary(), "vars": vars,
+		"inputs": inputs, "vars": vars,
 	} {
 		out[k] = json.RawMessage(compactJSON(expr.ToJSON(v)))
 	}

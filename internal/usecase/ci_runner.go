@@ -242,9 +242,15 @@ func (c *CI) runnerJob(rs *runState, j domain.CIJob, token, ghToken string, sett
 	if settings.Vars != nil {
 		j.ContextsJSON = withVars(j.ContextsJSON, settings.Vars)
 	}
+	path, yaml := rs.run.WorkflowPath, rs.src.WorkflowYAML
+	if call := rs.scopeOf(j); call != nil && call.Call != nil {
+		// A job of a called workflow runs from the file of the call, under its
+		// id in that file.
+		path, yaml, j.Key = call.Call.Path, call.Call.YAML, j.CallID
+	}
 	return &ports.RunnerJob{
 		Job: j, Token: token, GithubToken: ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
-		WorkflowPath: rs.run.WorkflowPath, WorkflowYAML: rs.src.WorkflowYAML,
+		WorkflowPath: path, WorkflowYAML: yaml,
 		Environment: j.Environment, Vars: settings.Vars, Secrets: settings.Secrets, Trusted: rs.run.Trusted,
 		Permissions: domain.TokenPermissions(j.Permissions, rs.run.Trusted),
 	}

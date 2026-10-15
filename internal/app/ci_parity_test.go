@@ -308,7 +308,7 @@ jobs:
 }
 
 // CI-2: planning runs what CI-1 refused (uses, container, services, a step
-// timeout) and CI-3 environments, and still refuses job-level uses.
+// timeout).
 func TestCIPlanningAcceptsCI2Features(t *testing.T) {
 	c := newCIHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
@@ -327,28 +327,6 @@ jobs:
 `}, "")
 	job := runner.await()
 	assert.Equal(t, "j", job.GetJobKey())
-
-	for _, tc := range []struct{ name, job, want string }{
-		{"reusable", "uses: ./.github/workflows/x.yml", "not supported yet: reusable workflows (uses at the job level)"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			body := "on: push\njobs:\n  r:\n    " + tc.job + "\n"
-			c.push("main", map[string]string{".github/workflows/" + tc.name + ".yml": body}, "")
-			var got string
-			c.waitFor(tc.name+" fails", func() bool {
-				for _, r := range c.runs() {
-					if r.GetWorkflowPath() == ".github/workflows/"+tc.name+".yml" && r.GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED {
-						if jobs := c.getRun(r.GetId()).GetJobs(); len(jobs) == 1 {
-							got = jobs[0].GetError()
-							return true
-						}
-					}
-				}
-				return false
-			})
-			assert.Equal(t, tc.want, got)
-		})
-	}
 }
 
 // A failed job with continue-on-error does not fail the run, keeps its own

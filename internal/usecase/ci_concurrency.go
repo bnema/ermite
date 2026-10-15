@@ -313,7 +313,7 @@ func (c *CI) cancelLater(group string, e domain.CIConcurrencyEntry) {
 // where it stands: its own record does not say want yet (a promotion whose
 // planning failed or was lost, or a crash between the write of the group and the
 // write of the entry). An entry that is gone or over is the pruning's business.
-func (c *CI) entryNeeds(ctx context.Context, repo domain.RepoName, e domain.CIConcurrencyEntry, want domain.CIConcurrencyState) bool {
+func (c *CI) entryNeeds(ctx context.Context, repo domain.RepoName, group string, e domain.CIConcurrencyEntry, want domain.CIConcurrencyState) bool {
 	if e.JobID == "" {
 		run, err := c.cfg.Store.GetRun(ctx, repo, e.RunID)
 		return err == nil && run.Status != domain.CICompleted && run.Attempt == e.Attempt && run.Concurrency.State != want
@@ -325,7 +325,16 @@ func (c *CI) entryNeeds(ctx context.Context, repo domain.RepoName, e domain.CICo
 		run, err := c.cfg.Store.GetRun(ctx, repo, e.RunID)
 		return err == nil && run.Status != domain.CICompleted && run.Attempt == e.Attempt
 	}
-	return err == nil && !j.Ended() && j.Phase == domain.CIPhaseWaiting && j.Concurrency.State != want
+	if err != nil || j.Ended() || j.Phase != domain.CIPhaseWaiting {
+		return false
+	}
+	// A call holds two groups, its own and its callee's: the state to compare
+	// is the one of the group asked about.
+	if j.Call != nil && domain.ConcurrencyKey(j.Call.Concurrency.Group) == domain.ConcurrencyKey(group) &&
+		domain.ConcurrencyKey(j.Concurrency.Group) != domain.ConcurrencyKey(group) {
+		return j.Call.Concurrency.State != want
+	}
+	return j.Concurrency.State != want
 }
 
 // ReconcileConcurrency repairs the groups. It runs at startup and every minute.
@@ -376,11 +385,11 @@ func (c *CI) ReconcileConcurrency(ctx context.Context) {
 			if r.Canceling {
 				c.cancelLater(st.Marks[r.Key()].Group, *r)
 			}
-			if c.entryNeeds(ctx, g.Repo, *r, domain.CIConcurrencyHolding) {
+			if c.entryNeeds(ctx, g.Repo, g.Group, *r, domain.CIConcurrencyHolding) {
 				c.wake(g.Repo, g.Group, *r)
 			}
 		}
-		if p := st.Record.Pending; p != nil && c.entryNeeds(ctx, g.Repo, *p, domain.CIConcurrencyPending) {
+		if p := st.Record.Pending; p != nil && c.entryNeeds(ctx, g.Repo, g.Group, *p, domain.CIConcurrencyPending) {
 			c.wake(g.Repo, g.Group, *p)
 		}
 		for _, m := range st.Marks {
@@ -618,12 +627,21 @@ func (rs *runState) releaseEnded(ctx context.Context, changed []int, runDone boo
 	c := rs.c
 	for _, i := range changed {
 		j := rs.jobs[i]
-		if !j.Ended() || j.Concurrency.Group == "" || j.Concurrency.FromRun {
+		if !j.Ended() {
 			continue
 		}
 		e := domain.CIConcurrencyEntry{RunID: j.RunID, Attempt: j.RunAttempt, JobID: j.ID}
-		if err := c.releaseEntry(ctx, rs.run.Repo, j.Concurrency.Group, e); err != nil && !errors.Is(err, domain.ErrNotFound) {
-			ctxLog(ctx).Error().Err(err).Str("job_id", j.ID).Msg("ci: free a concurrency group")
+		groups := []string{}
+		if j.Concurrency.Group != "" && !j.Concurrency.FromRun {
+			groups = append(groups, j.Concurrency.Group)
+		}
+		if j.Call != nil && j.Call.Concurrency.Group != "" {
+			groups = append(groups, j.Call.Concurrency.Group) // a call ends holding both
+		}
+		for _, g := range groups {
+			if err := c.releaseEntry(ctx, rs.run.Repo, g, e); err != nil && !errors.Is(err, domain.ErrNotFound) {
+				ctxLog(ctx).Error().Err(err).Str("job_id", j.ID).Msg("ci: free a concurrency group")
+			}
 		}
 	}
 	if runDone && rs.run.Concurrency.Group != "" {

@@ -288,6 +288,15 @@ type CIJob struct {
 	// the job is planned, else the one of its run (FromRun).
 	Concurrency CIConcurrency
 
+	// Scope is the id of the record of the job that called the reusable workflow
+	// this job belongs to, "" for a job of the run's own workflow. CallID is the
+	// id of the job in that called workflow (Key is "<caller key>/<call id>").
+	Scope  string
+	CallID string
+	// Call is set on the record of a job that calls a reusable workflow: it never
+	// runs, it ends when the jobs of its scope have.
+	Call *CICall
+
 	// TokenHash is the hash of the job token of the current assignment; zero
 	// when there is none.
 	TokenHash       TokenHash
@@ -305,6 +314,37 @@ type CIJob struct {
 	Version uint64
 }
 
+// CICall is what a job calling a reusable workflow resolved (CI-3, D7).
+type CICall struct {
+	Uses string
+	// Path is the file in its repository, Repository "owner/repo" for github.com
+	// or the name on this server, Ref what the workflow wrote ("" for a local
+	// call), Sha the commit the call resolved to.
+	Path, Repository, Ref, Sha string
+	YAML                       string
+	// InputsJSON is the inputs context of the called workflow.
+	InputsJSON string
+	// Secrets holds the names (upper case) of the secrets of the called workflow
+	// that the calling workflow's "secrets:" gives, with empty values: the
+	// expressions are read from the pinned calling workflow when a job is
+	// assigned. Inherit: "secrets: inherit".
+	Secrets map[string]string
+	Inherit bool
+	// Depth is 1 for a call from the run's own workflow.
+	Depth int
+	// Expanded: the jobs of the called workflow exist.
+	Expanded bool
+	// Concurrency is the workflow-level group of the called workflow. The call
+	// holds it, with the group of the calling job (CIJob.Concurrency), until it
+	// ends; its jobs wait for both.
+	Concurrency CIConcurrency
+	// Admitted: the call may start, the max-parallel of the calling job's
+	// strategy allows it.
+	Admitted bool
+	// SecretCtx is the JSON of the other contexts the Secrets expressions read.
+	SecretCtx string
+}
+
 // Status is the status owners see: a job is queued until its runner
 // acknowledged it.
 func (j CIJob) Status() CIStatus {
@@ -316,6 +356,12 @@ func (j CIJob) Status() CIStatus {
 	case CIPhaseWaiting:
 		if j.Concurrency.State == CIConcurrencyPending {
 			return CIPending
+		}
+		if j.Call != nil && j.Call.Concurrency.State == CIConcurrencyPending {
+			return CIPending
+		}
+		if j.Call != nil && j.Call.Expanded && j.Call.Admitted {
+			return CIInProgress
 		}
 	}
 	return CIQueued

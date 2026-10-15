@@ -337,7 +337,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		AckedAt: encodeTime(j.AckedAt), AssignCancels: int32(j.AssignCancels), //nolint:gosec // at most 3
 		TokenValidUntil: encodeTime(j.TokenValidUntil), CancelReason: encodeCancelReason(j.CancelReason), CancelMessage: j.CancelMessage,
 		CancelRequestedAt: encodeTime(j.CancelRequestedAt), Planned: j.Planned, Environment: j.Environment, Permissions: j.Permissions,
-		Concurrency: encodeConcurrency(j.Concurrency),
+		Concurrency: encodeConcurrency(j.Concurrency), Scope: j.Scope, CallId: j.CallID, Call: encodeCall(j.Call),
 	}
 	if j.HasToken() {
 		pb.TokenHash = j.TokenHash[:]
@@ -368,6 +368,7 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 		AssignedAt: decodeTime(pb.GetAssignedAt()), AckedAt: decodeTime(pb.GetAckedAt()), AssignCancels: int(pb.GetAssignCancels()),
 		CancelMessage: pb.GetCancelMessage(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),
 		Environment: pb.GetEnvironment(), Permissions: pb.GetPermissions(), Concurrency: decodeConcurrency(pb.GetConcurrency()), Version: item.Version,
+		Scope: pb.GetScope(), CallID: pb.GetCallId(), Call: decodeCall(pb.GetCall()),
 	}
 	j.CancelReason = decodeCancelReason(pb.GetCancelReason())
 	copy(j.TokenHash[:], pb.GetTokenHash())
@@ -1061,4 +1062,26 @@ func (c *CI) RemoveRunner(ctx context.Context, id string) (domain.CIRunner, erro
 		return r, nil
 	}
 	return domain.CIRunner{}, fmt.Errorf("remove runner %q: %w", id, domain.ErrConflict)
+}
+
+func encodeCall(c *domain.CICall) *storagepb.CICall {
+	if c == nil {
+		return nil
+	}
+	return &storagepb.CICall{
+		Uses: c.Uses, Path: c.Path, Repository: c.Repository, Ref: c.Ref, Sha: c.Sha, Yaml: c.YAML, InputsJson: c.InputsJSON,
+		Secrets: c.Secrets, Inherit: c.Inherit, Depth: int32(c.Depth), Expanded: c.Expanded, Concurrency: encodeConcurrency(c.Concurrency), Admitted: c.Admitted, SecretCtx: c.SecretCtx, //nolint:gosec // at most 4
+	}
+}
+
+//hexcheck:ignore suspicious-business-logic-in-adapter maps the stored call to the domain call field by field: no rule is decided here
+func decodeCall(pb *storagepb.CICall) *domain.CICall {
+	if pb == nil {
+		return nil
+	}
+	return &domain.CICall{
+		Uses: pb.GetUses(), Path: pb.GetPath(), Repository: pb.GetRepository(), Ref: pb.GetRef(), Sha: pb.GetSha(), YAML: pb.GetYaml(),
+		InputsJSON: pb.GetInputsJson(), Secrets: pb.GetSecrets(), Inherit: pb.GetInherit(), Depth: int(pb.GetDepth()), Expanded: pb.GetExpanded(), Concurrency: decodeConcurrency(pb.GetConcurrency()),
+		Admitted: pb.GetAdmitted(), SecretCtx: pb.GetSecretCtx(),
+	}
 }

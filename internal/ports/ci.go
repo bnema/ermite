@@ -438,6 +438,15 @@ type GitRemote interface {
 	ListRefs(ctx context.Context, owner, repo string) ([]RemoteRef, error)
 }
 
+// WorkflowFetcher downloads one reusable workflow file from github.com at a
+// commit that was already resolved (CI-3, D7), with no credentials. It returns
+// domain.ErrNotFound for a file or repository that does not exist or needs
+// credentials, domain.ErrResourceExhausted for a file larger than maxBytes, and
+// an error matching domain.ErrUnavailable when it cannot tell.
+type WorkflowFetcher interface {
+	FetchWorkflow(ctx context.Context, owner, repo, sha, path string, maxBytes int64) ([]byte, error)
+}
+
 // JobSignal is one message of WatchJob.
 type JobSignal struct {
 	Keepalive bool

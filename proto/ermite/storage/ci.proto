@@ -213,6 +213,56 @@ message CIJob {
   // The job's concurrency group (its own, else the one of its run) and where
   // it is in it.
   CIConcurrency concurrency = 43;
+  // Reusable workflows (D7). scope is the id of the record of the job that
+  // called the workflow this job belongs to, empty for a job of the run's own
+  // workflow; call_id is the id of the job in that called workflow (key is
+  // "<caller key>/<call id>"). call is set on the record that stands for a job
+  // calling a reusable workflow: it never runs, it ends when the jobs of its
+  // scope have.
+  string scope = 44;
+  string call_id = 45;
+  CICall call = 46;
+}
+
+// CICall is the call a reusable-workflow job makes, set when the calling job is
+// planned. The called workflow's file is kept here, so that the jobs of the call
+// are planned and run from the file of the commit that was resolved.
+message CICall {
+  string uses = 1;
+  // path of the file in its repository, repository as "owner/repo" (github.com)
+  // or the name of the repository on this server, ref as the calling workflow
+  // wrote it ("" for a local call), sha the commit it resolved to.
+  string path = 2;
+  string repository = 3;
+  string ref = 4;
+  string sha = 5;
+  string yaml = 6;
+  // inputs_json is the inputs context of the called workflow: the values given
+  // and the defaults, typed.
+  string inputs_json = 7;
+  // secrets holds the names of the secrets of the called workflow that the
+  // calling workflow's "secrets:" gives (upper case), with an empty value: the
+  // expressions are not stored. They are read as template tokens from the pinned
+  // workflow file of the caller when a job is assigned, and evaluated once there.
+  map<string, string> secrets = 8;
+  bool inherit = 9;
+  int32 depth = 10;
+  // expanded: the jobs of the called workflow exist.
+  bool expanded = 11;
+  // concurrency is the workflow-level group of the called workflow, evaluated
+  // with the caller's github context and the call's inputs when the call is
+  // planned. The call record is its entry, like the group of the calling job
+  // (CIJob.concurrency): the jobs of the call run once the call holds both.
+  CIConcurrency concurrency = 12;
+  // admitted: the call may start (the max-parallel of the calling job's
+  // strategy allows it); it asks for its groups and plans its jobs only then.
+  bool admitted = 13;
+  // secret_ctx is the JSON of the contexts the "secrets:" expressions read apart
+  // from the secrets, as they were when the call was planned: needs, matrix,
+  // strategy, inputs and vars of the calling scope (none is secret). Plain data,
+  // never interpreted as a reference; the vars are the caller's, not those of
+  // the environment of the job that is assigned.
+  string secret_ctx = 14;
 }
 
 // CICheck is stored under "check/<repo>/<sha>/<id>": the id of its job, or

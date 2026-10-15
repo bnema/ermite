@@ -316,8 +316,8 @@ jobs:
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, c.runs()[0].GetConclusion())
 }
 
-// A job with a feature of a later phase fails clearly, never silently.
-func TestCIUnsupportedFeatureFailsTheJob(t *testing.T) {
+// A job that calls a reusable workflow which is not there fails clearly, never silently.
+func TestCICallOfAMissingWorkflowFailsTheJob(t *testing.T) {
 	c := newCIHarness(t, nil)
 	c.registerRunner("alpha", "ubuntu-latest")
 	c.push("main", map[string]string{".github/workflows/u.yml": `on: push
@@ -328,7 +328,7 @@ jobs:
 	c.waitFor("the run fails", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 	j := c.getRun(c.runs()[0].GetId()).GetJobs()[0]
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, j.GetConclusion())
-	assert.Equal(t, "not supported yet: reusable workflows (uses at the job level)", j.GetError())
+	assert.Contains(t, j.GetError(), "Unable to find reusable workflow '.github/workflows/callee.yml'")
 }
 
 // A job for a label no runner has is "waiting for a runner" and fails after the

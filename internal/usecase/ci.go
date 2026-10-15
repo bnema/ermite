@@ -69,6 +69,9 @@ type CIConfig struct {
 	// Remote lists the refs of github.com repositories for ResolveActions; nil
 	// answers every github.com action with unavailable.
 	Remote ports.GitRemote
+	// Workflows downloads reusable workflow files from github.com at a resolved
+	// commit; nil fails such a call as unavailable.
+	Workflows ports.WorkflowFetcher
 	// Archive serves the tarballs of the REST subset.
 	Archive ports.GitArchive
 	// Tokens finds the stored token of the pusher of a run, to ask what it may

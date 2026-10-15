@@ -294,13 +294,27 @@ func (c *CI) settingsOf(ctx context.Context, rs *runState, j domain.CIJob) (port
 		// that is not trusted does not add environments to the repository.
 		CreateEnvironment: j.Environment != "" && rs.run.Trusted,
 	}
+	var inner secretUse
+	scoped := rs.scopeOf(j) != nil
 	if rs.run.Trusted {
-		use := c.flows.secretUse(rs.run.ID, rs.src.WorkflowYAML, j.Key)
+		var use secretUse
+		if scoped {
+			// A job of a called workflow gets the secrets its caller passes
+			// it, under the names the called workflow gives them.
+			use, inner = rs.scopedSecretUse(j)
+		} else {
+			use = c.flows.secretUse(rs.run.ID, rs.src.WorkflowYAML, j.Key)
+		}
 		req.WantSecrets, req.AllSecrets, req.SecretNames = !use.none(), use.All, use.Names
 	}
 	got, err := c.cfg.Settings.Resolve(ctx, req)
 	if err != nil {
 		return ports.JobSettings{}, &settingsError{err}
+	}
+	if scoped && rs.run.Trusted {
+		// Also when no stored secret resolved: a mapping can give a literal
+		// value. A run that is not trusted gets nothing.
+		got.Secrets = rs.mapSecrets(ctx, j, got.Secrets, inner)
 	}
 	return got, nil
 }
