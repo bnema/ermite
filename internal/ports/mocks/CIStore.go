@@ -993,6 +993,68 @@ func (_c *CIStore_ListChecks_Call) RunAndReturn(run func(ctx context.Context, re
 	return _c
 }
 
+// ListConcurrency provides a mock function for the type CIStore
+func (_mock *CIStore) ListConcurrency(ctx context.Context) ([]ports.CIConcurrencyGroup, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListConcurrency")
+	}
+
+	var r0 []ports.CIConcurrencyGroup
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]ports.CIConcurrencyGroup, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) []ports.CIConcurrencyGroup); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ports.CIConcurrencyGroup)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CIStore_ListConcurrency_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListConcurrency'
+type CIStore_ListConcurrency_Call struct {
+	*mock.Call
+}
+
+// ListConcurrency is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *CIStore_Expecter) ListConcurrency(ctx any) *CIStore_ListConcurrency_Call {
+	return &CIStore_ListConcurrency_Call{Call: _e.mock.On("ListConcurrency", ctx)}
+}
+
+func (_c *CIStore_ListConcurrency_Call) Run(run func(ctx context.Context)) *CIStore_ListConcurrency_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *CIStore_ListConcurrency_Call) Return(cIConcurrencyGroups []ports.CIConcurrencyGroup, err error) *CIStore_ListConcurrency_Call {
+	_c.Call.Return(cIConcurrencyGroups, err)
+	return _c
+}
+
+func (_c *CIStore_ListConcurrency_Call) RunAndReturn(run func(ctx context.Context) ([]ports.CIConcurrencyGroup, error)) *CIStore_ListConcurrency_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListJobs provides a mock function for the type CIStore
 func (_mock *CIStore) ListJobs(ctx context.Context, runID int64, runAttempt int32) ([]domain.CIJob, error) {
 	ret := _mock.Called(ctx, runID, runAttempt)
@@ -1537,6 +1599,75 @@ func (_c *CIStore_Sweep_Call) Return(int64s []int64, err error) *CIStore_Sweep_C
 }
 
 func (_c *CIStore_Sweep_Call) RunAndReturn(run func(ctx context.Context, before time.Time) ([]int64, error)) *CIStore_Sweep_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateConcurrency provides a mock function for the type CIStore
+func (_mock *CIStore) UpdateConcurrency(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error {
+	ret := _mock.Called(ctx, repo, group, fn)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateConcurrency")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string, func(*domain.CIConcurrencyGroupState) error) error); ok {
+		r0 = returnFunc(ctx, repo, group, fn)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// CIStore_UpdateConcurrency_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateConcurrency'
+type CIStore_UpdateConcurrency_Call struct {
+	*mock.Call
+}
+
+// UpdateConcurrency is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - group string
+//   - fn func(*domain.CIConcurrencyGroupState) error
+func (_e *CIStore_Expecter) UpdateConcurrency(ctx any, repo any, group any, fn any) *CIStore_UpdateConcurrency_Call {
+	return &CIStore_UpdateConcurrency_Call{Call: _e.mock.On("UpdateConcurrency", ctx, repo, group, fn)}
+}
+
+func (_c *CIStore_UpdateConcurrency_Call) Run(run func(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error)) *CIStore_UpdateConcurrency_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 func(*domain.CIConcurrencyGroupState) error
+		if args[3] != nil {
+			arg3 = args[3].(func(*domain.CIConcurrencyGroupState) error)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *CIStore_UpdateConcurrency_Call) Return(err error) *CIStore_UpdateConcurrency_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *CIStore_UpdateConcurrency_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error) *CIStore_UpdateConcurrency_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -323,15 +323,12 @@ func TestCIUnsupportedFeatureFailsTheJob(t *testing.T) {
 	c.push("main", map[string]string{".github/workflows/u.yml": `on: push
 jobs:
   j:
-    runs-on: ubuntu-latest
-    concurrency: group
-    steps:
-      - run: echo
+    uses: ./.github/workflows/callee.yml
 `}, "")
 	c.waitFor("the run fails", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 	j := c.getRun(c.runs()[0].GetId()).GetJobs()[0]
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, j.GetConclusion())
-	assert.Equal(t, "not supported yet: concurrency", j.GetError())
+	assert.Equal(t, "not supported yet: reusable workflows (uses at the job level)", j.GetError())
 }
 
 // A job for a label no runner has is "waiting for a runner" and fails after the

@@ -89,8 +89,6 @@ func unsupported(j *workflow.Job) string {
 	switch {
 	case j.IsReusable():
 		return "reusable workflows (uses at the job level)"
-	case j.Concurrency != nil:
-		return "concurrency"
 	}
 	return ""
 }
@@ -332,6 +330,9 @@ func (rs *runState) advance(ctx context.Context) error {
 		}
 		return nil
 	}
+	if ok, err := rs.acquireRun(ctx, wf); err != nil || !ok {
+		return err // waits for its group, or was failed by it
+	}
 	for changed := true; changed; {
 		changed = false
 		for _, wj := range wf.Jobs {
@@ -351,12 +352,13 @@ func (rs *runState) advance(ctx context.Context) error {
 			changed = true
 		}
 	}
-	rs.promote()
-	return nil
+	return rs.promote(ctx)
 }
 
-// promote makes planned instances ready while max-parallel allows it.
-func (rs *runState) promote() {
+// promote makes planned instances ready while max-parallel allows it and the
+// concurrency group of the job, if it has one of its own, gives it the turn.
+// An instance that waits for its group is pending.
+func (rs *runState) promote(ctx context.Context) error {
 	now := rs.c.now()
 	counts := map[string]int{}
 	for _, j := range rs.jobs {
@@ -372,10 +374,24 @@ func (rs *runState) promote() {
 		if j.MaxParallel > 0 && counts[j.Key] >= j.MaxParallel {
 			continue
 		}
+		if g := j.Concurrency; g.Group != "" && !g.FromRun {
+			st, err := rs.acquire(ctx, g.Group, domain.CIConcurrencyEntry{RunID: j.RunID, Attempt: j.RunAttempt, JobID: j.ID, Cancel: g.Cancel})
+			if err != nil {
+				return err
+			}
+			if st != g.State {
+				j.Concurrency.State = st
+				rs.touch(j)
+			}
+			if st != domain.CIConcurrencyHolding {
+				continue
+			}
+		}
 		j.Phase, j.ReadyAt = domain.CIPhaseReady, now
 		counts[j.Key]++
 		rs.touch(j)
 	}
+	return nil
 }
 
 // plan evaluates a job whose needs have ended: its condition, its strategy and
@@ -519,6 +535,16 @@ func (rs *runState) instance(ctx context.Context, wf *workflow.Workflow, wj *wor
 			return j, err
 		}
 		j.ContinueOnError = coe
+	}
+	if wj.Concurrency != nil {
+		// Evaluated with github, needs, strategy, matrix, inputs and vars;
+		// this leg's own group, which it takes before it may run.
+		conc, err := evalConcurrency(ctx, wj.Concurrency, env)
+		if err != nil {
+			return j, err
+		}
+		conc.Evaluated = true
+		j.Concurrency = conc
 	}
 	j.Planned, j.Phase = true, domain.CIPhaseWaiting
 	return j, nil

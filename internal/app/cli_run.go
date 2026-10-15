@@ -505,7 +505,7 @@ func printRunSummaries(ctx context.Context, w, errw io.Writer, c *client.Client,
 	var all []found
 	truncated := false
 	for _, j := range jobs {
-		if j.GetStatus() == ermite.CiStatus_CI_STATUS_QUEUED {
+		if j.GetStatus() == ermite.CiStatus_CI_STATUS_QUEUED || j.GetStatus() == ermite.CiStatus_CI_STATUS_PENDING {
 			continue
 		}
 		res, err := c.Runs().GetStepSummaries(ctx, connect.NewRequest(&ermite.GetStepSummariesRequest{Repo: repo, JobId: j.GetId(), Attempt: j.GetAttempt()}))
@@ -601,7 +601,7 @@ func printRunLog(ctx context.Context, w io.Writer, c *client.Client, repo string
 // streamJobLog writes the lines of one job. Continued pieces are joined to the
 // line before them, as the raw log has them.
 func streamJobLog(ctx context.Context, w io.Writer, c *client.Client, repo string, j *ermite.RunJob, follow bool) error {
-	if j.GetStatus() == ermite.CiStatus_CI_STATUS_QUEUED && !follow {
+	if (j.GetStatus() == ermite.CiStatus_CI_STATUS_QUEUED || j.GetStatus() == ermite.CiStatus_CI_STATUS_PENDING) && !follow {
 		noticef2(w, "job %q has not started: no log yet", j.GetName())
 		return nil
 	}

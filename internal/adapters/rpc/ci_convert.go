@@ -18,6 +18,8 @@ func statusToPB(s domain.CIStatus) pb.CiStatus {
 		return pb.CiStatus_CI_STATUS_IN_PROGRESS
 	case domain.CICompleted:
 		return pb.CiStatus_CI_STATUS_COMPLETED
+	case domain.CIPending:
+		return pb.CiStatus_CI_STATUS_PENDING
 	}
 	return pb.CiStatus_CI_STATUS_UNSPECIFIED
 }
@@ -181,7 +183,7 @@ func jobToPB(j domain.CIJob, lines int64) *pb.RunJob {
 		Id: j.ID, RunId: j.RunID, Attempt: j.Attempt, Repo: j.Repo.String(), Key: j.Key, Name: j.Name,
 		Status: statusToPB(j.Status()), Conclusion: conclusionToPB(j.Conclusion), Error: j.Error,
 		Labels: j.Labels, Needs: j.Needs, RunnerId: j.RunnerID, RunnerName: j.RunnerName, Isolation: isolationToPB(j.Isolation),
-		Steps: stepsToPB(j.Steps, lines), CreatedAt: timestamp(j.CreatedAt), StartedAt: timestamp(j.StartedAt),
+		ConcurrencyGroup: j.Concurrency.Group, Steps: stepsToPB(j.Steps, lines), CreatedAt: timestamp(j.CreatedAt), StartedAt: timestamp(j.StartedAt),
 		CompletedAt: timestamp(j.CompletedAt),
 		Version:     int64(j.Version), //nolint:gosec // a store sequence, far below 2^63
 	}

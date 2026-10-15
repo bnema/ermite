@@ -47,6 +47,14 @@ type CIWrite struct {
 	ClearAnnotations []CILogRef
 }
 
+// CIConcurrencyGroup is a stored concurrency group: its repository, its key (the
+// group, canonical: ConcurrencyKey), its record and its marks.
+type CIConcurrencyGroup struct {
+	Repo  domain.RepoName
+	Group string
+	State domain.CIConcurrencyGroupState
+}
+
 // CIStepAnnotations are all the annotations of one step of one execution of a
 // job, in the order the step produced them.
 type CIStepAnnotations struct {
@@ -123,6 +131,19 @@ type CIStore interface {
 	// ListChecks returns the checks of a commit, at most limit; more is true
 	// when there are more.
 	ListChecks(ctx context.Context, repo domain.RepoName, sha string, limit int) (checks []domain.CICheck, more bool, err error)
+	// UpdateConcurrency reads a concurrency group of a repository (compared
+	// with domain.ConcurrencyKey) with the marks of its entries, calls fn on a
+	// copy and stores what fn leaves in it, in one batch: the record, the marks
+	// that changed and the marks that fn removed. A group left with neither
+	// record nor marks is removed. The batch carries the version precondition of
+	// the group whatever fn does, and every change of the marks rewrites the
+	// record, so no two transactions of a group both succeed on the same state:
+	// on a conflict fn is called again on the new state and must be repeatable.
+	// A deleted repository is domain.ErrNotFound.
+	UpdateConcurrency(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error
+	// ListConcurrency returns every concurrency group that has an entry, for
+	// the reconciliation at startup.
+	ListConcurrency(ctx context.Context) ([]CIConcurrencyGroup, error)
 	// Sweep removes the runs completed before the time, with their jobs,
 	// checks and sources (not their numbers), and returns their ids so that
 	// the logs can go too.

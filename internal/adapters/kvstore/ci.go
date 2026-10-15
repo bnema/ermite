@@ -37,6 +37,7 @@ import (
 //	ciready/<ready_at:020d>/<job key>    job waiting for a runner
 //	ciactive/<job key>                   job assigned or running
 //	jobtoken/<hash>                      job token (value: job key)
+//	concur/<repo>/<key(group)>           concurrency group (ci_concurrency.go)
 //
 // The job repository tokens and the action resolutions are in ci_token.go, the
 // annotations in ci_annotation.go.
@@ -110,6 +111,8 @@ func encodeStatus(s domain.CIStatus) storagepb.CIStatus {
 		return storagepb.CIStatus_CI_STATUS_IN_PROGRESS
 	case domain.CICompleted:
 		return storagepb.CIStatus_CI_STATUS_COMPLETED
+	case domain.CIPending:
+		return storagepb.CIStatus_CI_STATUS_PENDING
 	}
 	return storagepb.CIStatus_CI_STATUS_UNSPECIFIED
 }
@@ -120,6 +123,8 @@ func decodeStatus(s storagepb.CIStatus) domain.CIStatus {
 		return domain.CIInProgress
 	case storagepb.CIStatus_CI_STATUS_COMPLETED:
 		return domain.CICompleted
+	case storagepb.CIStatus_CI_STATUS_PENDING:
+		return domain.CIPending
 	}
 	return domain.CIQueued
 }
@@ -276,6 +281,7 @@ func encodeRun(r domain.CIRun) ([]byte, error) {
 		Status: encodeStatus(r.Status), Conclusion: encodeConclusion(r.Conclusion), Error: r.Error,
 		CreatedAt: encodeTime(r.CreatedAt), StartedAt: encodeTime(r.StartedAt), CompletedAt: encodeTime(r.CompletedAt),
 		CancelRequested: r.CancelRequested, CancelRequestedAt: encodeTime(r.CancelRequestedAt), Trusted: r.Trusted,
+		Concurrency: encodeConcurrency(r.Concurrency),
 	}), nil
 }
 
@@ -299,7 +305,7 @@ func decodeRun(item kv.Item) (domain.CIRun, error) {
 		Status: decodeStatus(pb.GetStatus()), Conclusion: decodeConclusion(pb.GetConclusion()), Error: pb.GetError(),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), StartedAt: decodeTime(pb.GetStartedAt()), CompletedAt: decodeTime(pb.GetCompletedAt()),
 		CancelRequested: pb.GetCancelRequested(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),
-		Trusted: pb.GetTrusted(), Version: item.Version,
+		Trusted: pb.GetTrusted(), Concurrency: decodeConcurrency(pb.GetConcurrency()), Version: item.Version,
 	}, nil
 }
 
@@ -331,6 +337,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		AckedAt: encodeTime(j.AckedAt), AssignCancels: int32(j.AssignCancels), //nolint:gosec // at most 3
 		TokenValidUntil: encodeTime(j.TokenValidUntil), CancelReason: encodeCancelReason(j.CancelReason), CancelMessage: j.CancelMessage,
 		CancelRequestedAt: encodeTime(j.CancelRequestedAt), Planned: j.Planned, Environment: j.Environment, Permissions: j.Permissions,
+		Concurrency: encodeConcurrency(j.Concurrency),
 	}
 	if j.HasToken() {
 		pb.TokenHash = j.TokenHash[:]
@@ -360,7 +367,7 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 		TokenValidUntil: decodeTime(pb.GetTokenValidUntil()), ReadyAt: decodeTime(pb.GetReadyAt()),
 		AssignedAt: decodeTime(pb.GetAssignedAt()), AckedAt: decodeTime(pb.GetAckedAt()), AssignCancels: int(pb.GetAssignCancels()),
 		CancelMessage: pb.GetCancelMessage(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),
-		Environment: pb.GetEnvironment(), Permissions: pb.GetPermissions(), Version: item.Version,
+		Environment: pb.GetEnvironment(), Permissions: pb.GetPermissions(), Concurrency: decodeConcurrency(pb.GetConcurrency()), Version: item.Version,
 	}
 	j.CancelReason = decodeCancelReason(pb.GetCancelReason())
 	copy(j.TokenHash[:], pb.GetTokenHash())
@@ -877,7 +884,7 @@ func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]by
 		keys = append(keys, slices.Clone(key))
 	}
 	keys = append(keys, repoReaderKeys(ctx, snap, repo)...)
-	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/"} {
+	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/", concurPrefix + repo.String() + "/", concurMarkPrefixAll + repo.String() + "/"} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))
 		}

@@ -20,6 +20,9 @@ const (
 	CIQueued     CIStatus = "queued"
 	CIInProgress CIStatus = "in_progress"
 	CICompleted  CIStatus = "completed"
+	// CIPending is a job or a check held back by a concurrency group: another
+	// entry of the group runs, or a newer one is waiting. Never a run's status.
+	CIPending CIStatus = "pending"
 )
 
 // CIConclusion is how a run, a job, a step or a check ended, with GitHub's
@@ -183,6 +186,8 @@ type CIRun struct {
 	// keeps or lowers it, never raises it (RerunTrusted). False for a run
 	// stored before the field existed: the safe reading.
 	Trusted bool
+	// Concurrency is the workflow-level concurrency of the latest attempt.
+	Concurrency CIConcurrency
 	// Version is the version of the stored record, which grows at every
 	// change and never goes back.
 	Version uint64
@@ -279,6 +284,9 @@ type CIJob struct {
 	// MaxParallel is the max-parallel of the strategy, 0 for no limit.
 	MaxParallel int
 	Outputs     map[string]string
+	// Concurrency is the concurrency group of the job: its own, evaluated when
+	// the job is planned, else the one of its run (FromRun).
+	Concurrency CIConcurrency
 
 	// TokenHash is the hash of the job token of the current assignment; zero
 	// when there is none.
@@ -305,6 +313,10 @@ func (j CIJob) Status() CIStatus {
 		return CIInProgress
 	case CIPhaseEnded:
 		return CICompleted
+	case CIPhaseWaiting:
+		if j.Concurrency.State == CIConcurrencyPending {
+			return CIPending
+		}
 	}
 	return CIQueued
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"bnema.dev/ermite-actions/expr"
+	"bnema.dev/ermite-actions/template"
 	"bnema.dev/ermite-actions/workflow"
 	"bnema.dev/ermite/internal/domain"
 )
@@ -54,3 +55,8 @@ func (s *SecretUseCache) Use(runID int64, yaml, jobKey string) SecretUse {
 
 // Drop is wfCache.drop.
 func (s *SecretUseCache) Drop(runID int64) { s.c.drop(runID) }
+
+// EvalConcurrency exposes evalConcurrency to the tests.
+func EvalConcurrency(ctx context.Context, tok template.Token, env template.Env) (domain.CIConcurrency, error) {
+	return evalConcurrency(ctx, tok, env)
+}

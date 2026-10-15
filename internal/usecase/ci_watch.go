@@ -12,7 +12,12 @@ import (
 	"bnema.dev/ermite/internal/domain"
 )
 
-const sweepEvery = 24 * time.Hour
+const (
+	sweepEvery = 24 * time.Hour
+	// reconcileEvery is how often the concurrency groups are repaired (see
+	// ReconcileConcurrency for what a pass costs).
+	reconcileEvery = time.Minute
+)
 
 // advanceRun plans what can start in the latest attempt of a run.
 func (c *CI) advanceRun(ctx context.Context, runID int64) error {
@@ -35,6 +40,7 @@ func (c *CI) resume() {
 		ctxLog(ctx).Error().Err(err).Msg("ci: list the open runs")
 		return
 	}
+	c.ReconcileConcurrency(ctx)
 	for _, r := range runs {
 		if err := c.advanceRun(ctx, r.ID); err != nil && !errors.Is(err, domain.ErrNotFound) && ctx.Err() == nil {
 			ctxLog(ctx).Error().Err(err).Int64("run_id", r.ID).Msg("ci: plan an open run again")
@@ -49,7 +55,7 @@ func (c *CI) watchdog() {
 	defer c.wg.Done()
 	tick := time.NewTicker(c.cfg.Tick)
 	defer tick.Stop()
-	lastSweep := time.Time{}
+	lastSweep, lastReconcile := time.Time{}, c.now()
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -59,6 +65,10 @@ func (c *CI) watchdog() {
 		c.guard("watchdog", func() {
 			c.checkActive(c.ctx)
 			c.checkQueue(c.ctx)
+			if now := c.now(); now.Sub(lastReconcile) >= reconcileEvery {
+				lastReconcile = now
+				c.ReconcileConcurrency(c.ctx)
+			}
 			if now := c.now(); now.Sub(lastSweep) >= sweepEvery {
 				lastSweep = now
 				c.sweep(c.ctx)

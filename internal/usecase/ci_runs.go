@@ -399,6 +399,7 @@ func (c *CI) RerunRun(ctx context.Context, p domain.Principal, name domain.RepoN
 		run.Attempt, run.Status, run.Conclusion = next, domain.CIQueued, domain.CINoConclusion
 		run.StartedAt, run.CompletedAt, run.CreatedAt = time.Time{}, time.Time{}, now
 		run.CancelRequested, run.CancelRequestedAt = false, time.Time{}
+		run.Concurrency = domain.CIConcurrency{} // evaluated again: the re-run joins its group again
 		// Kept or lowered, never raised: the owner who runs an agent's run
 		// again does not give it secrets (D1).
 		run.Trusted = domain.RerunTrusted(rs.run.Trusted, p)

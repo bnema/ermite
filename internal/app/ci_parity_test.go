@@ -308,8 +308,7 @@ jobs:
 }
 
 // CI-2: planning runs what CI-1 refused (uses, container, services, a step
-// timeout) and CI-3 environments, and still refuses job-level uses and
-// concurrency.
+// timeout) and CI-3 environments, and still refuses job-level uses.
 func TestCIPlanningAcceptsCI2Features(t *testing.T) {
 	c := newCIHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
@@ -331,7 +330,6 @@ jobs:
 
 	for _, tc := range []struct{ name, job, want string }{
 		{"reusable", "uses: ./.github/workflows/x.yml", "not supported yet: reusable workflows (uses at the job level)"},
-		{"concurrency", "runs-on: ubuntu-latest\n    concurrency: g\n    steps:\n      - run: echo", "not supported yet: concurrency"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := "on: push\njobs:\n  r:\n    " + tc.job + "\n"

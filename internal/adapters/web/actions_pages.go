@@ -50,6 +50,8 @@ func ciState(status domain.CIStatus, c domain.CIConclusion) string {
 	switch status {
 	case domain.CIQueued:
 		return "queued"
+	case domain.CIPending:
+		return "pending"
 	case domain.CIInProgress:
 		return "running"
 	}
@@ -75,7 +77,7 @@ func ciState(status domain.CIStatus, c domain.CIConclusion) string {
 // ciKind groups the states into the few that have an icon and a colour.
 func ciKind(status domain.CIStatus, c domain.CIConclusion) string {
 	switch {
-	case status == domain.CIQueued:
+	case status == domain.CIQueued, status == domain.CIPending:
 		return "queued"
 	case status == domain.CIInProgress:
 		return "running"

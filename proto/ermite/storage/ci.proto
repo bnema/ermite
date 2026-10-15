@@ -18,6 +18,8 @@ enum CIStatus {
   CI_STATUS_QUEUED = 1;
   CI_STATUS_IN_PROGRESS = 2;
   CI_STATUS_COMPLETED = 3;
+  // Held back by a concurrency group (jobs and checks only).
+  CI_STATUS_PENDING = 4;
 }
 
 // CIConclusion is how a run, a job, a step or a check ended.
@@ -102,6 +104,8 @@ message CIRun {
   // trusted: the actor of the run is the owner, so its jobs get secrets. False
   // in runs stored before it existed (the safe reading).
   bool trusted = 23;
+  // The evaluated workflow-level concurrency of the attempt.
+  CIConcurrency concurrency = 24;
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned
@@ -206,6 +210,9 @@ message CIJob {
   // the job is planned: permission key to "read", "write" or "none". Absent on
   // a job planned before the field existed: the restricted default.
   map<string, string> permissions = 42;
+  // The job's concurrency group (its own, else the one of its run) and where
+  // it is in it.
+  CIConcurrency concurrency = 43;
 }
 
 // CICheck is stored under "check/<repo>/<sha>/<id>": the id of its job, or
@@ -305,4 +312,67 @@ message CIAnnotation {
 // annotation has no key. The runner replaces the whole value at each report.
 message CIStepAnnotations {
   repeated CIAnnotation annotations = 1;
+}
+
+// CIConcurrencyState is where a run or a job is in its concurrency group.
+enum CIConcurrencyState {
+  CI_CONCURRENCY_STATE_UNSPECIFIED = 0;
+  // Another entry of the group runs: this one waits.
+  CI_CONCURRENCY_STATE_PENDING = 1;
+  // This entry is the running one of its group.
+  CI_CONCURRENCY_STATE_HOLDING = 2;
+  // Only in a CIConcurrencyMark: a newer entry replaced this one, which is owed
+  // a cancellation and may never acquire the group.
+  CI_CONCURRENCY_STATE_REPLACED = 3;
+}
+
+// CIConcurrency is the evaluated "concurrency:" of a run or a job, kept on its
+// record (CIRun.concurrency, CIJob.concurrency).
+message CIConcurrency {
+  string group = 1;
+  bool cancel = 2;
+  CIConcurrencyState state = 3;
+  // evaluated: the expressions were evaluated, whatever the result.
+  bool evaluated = 4;
+  // from_run: a job that shows the group of its run and holds nothing itself.
+  bool from_run = 5;
+  // preempted: cancelled because a newer entry of the group asked for it; the
+  // job ends with GitHub's annotation.
+  bool preempted = 6;
+}
+
+// CIConcurrencyEntry is a run (job_id empty) or a job in a concurrency group.
+message CIConcurrencyEntry {
+  int64 run_id = 1;
+  int32 attempt = 2;
+  string job_id = 3;
+  bool cancel = 4;
+  // canceling: a waiting entry with cancel-in-progress asked this running one
+  // to stop; the entry stays until it has ended.
+  bool canceling = 5;
+}
+
+// CIConcurrencyRecord is stored under "concur/<repo>/<key(group)>" (ConcurrencyKey): the
+// running entry and the pending one of a group (queue: single). A group with
+// neither has no key.
+message CIConcurrencyRecord {
+  // 3 held the cancellations owed to replaced entries; a replaced entry is now
+  // found from its own record (it waits in a group that does not name it).
+  reserved 3;
+  CIConcurrencyEntry running = 1;
+  CIConcurrencyEntry pending = 2;
+}
+
+// CIConcurrencyMark is stored under
+// "concurmark/<repo>/<escaped key(group)>/<run:020d>/<attempt:010d>/<job id or ->":
+// where an entry stands in its group. It is written in the same batch as the
+// group record ("concur/..."), so that an entry is marked pending or holding if
+// and only if the record names it; an entry the record stops naming because a
+// newer one replaced it is marked replaced in that very batch. The mark is
+// removed with the entry (it ended, was released, or is gone).
+message CIConcurrencyMark {
+  CIConcurrencyEntry entry = 1;
+  // group as the newest request wrote it, for the cancel annotation.
+  string group = 2;
+  CIConcurrencyState state = 3;
 }

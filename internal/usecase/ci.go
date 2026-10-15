@@ -34,6 +34,9 @@ const (
 	DefaultCIRemoteConcurrency = 4
 	// DefaultCIResolveTimeout bounds one ResolveActions call.
 	DefaultCIResolveTimeout = 60 * time.Second
+	// DefaultCIConcurrencyPruneBatch is the stale marks of a concurrency group a
+	// transaction removes at most.
+	DefaultCIConcurrencyPruneBatch = 256
 	// MaxCIChecks is the most checks ListChecks returns.
 	MaxCIChecks = 1000
 	// MaxCILogStreams and MaxCILogStreamsPerClient bound the concurrent log
@@ -98,6 +101,15 @@ type CIConfig struct {
 	TimeoutSlack      time.Duration
 	QueueTimeout      time.Duration
 	TriggerQueue      int
+	// ConcurrencyRetries bounds the retries of a delivery of the concurrency
+	// groups that failed (a cancel, the planning of a promoted entry): 0 is the
+	// default (8), a negative number none, which the tests use to leave the
+	// recovery to the reconciliation.
+	ConcurrencyRetries int
+	// ConcurrencyPruneBatch bounds the stale marks of a concurrency group one
+	// transaction removes (default 256, far below the size limit of a kv batch);
+	// the others go with the next decisions and the reconciliation.
+	ConcurrencyPruneBatch int
 }
 
 func (c CIConfig) withDefaults() CIConfig {
@@ -121,6 +133,9 @@ func (c CIConfig) withDefaults() CIConfig {
 	def(&c.ResolveTimeout, DefaultCIResolveTimeout)
 	if c.TriggerQueue <= 0 {
 		c.TriggerQueue = DefaultCITriggerQueue
+	}
+	if c.ConcurrencyPruneBatch <= 0 {
+		c.ConcurrencyPruneBatch = DefaultCIConcurrencyPruneBatch
 	}
 	return c
 }
@@ -405,6 +420,7 @@ func (rs *runState) flush(ctx context.Context) error {
 		rs.run.Version = v
 	}
 	changedRun := rs.runDirty
+	rs.releaseEnded(ctx, changedJobs, changedRun && rs.run.Status == domain.CICompleted)
 	rs.dirty, rs.checks, rs.runDirty = map[string]bool{}, map[string]bool{}, false
 	rs.tokens, rs.revoke, rs.resolutions = nil, nil, nil
 	rs.annotations, rs.clear = nil, nil
