@@ -6,10 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	kv "bnema.dev/ermite-kv"
+	"github.com/bnema/zerowrap"
 	"google.golang.org/protobuf/proto"
 
 	storagepb "bnema.dev/ermite/gen/ermite/storage"
@@ -25,8 +29,16 @@ const (
 	commentPrefix = "mrc/"    // mrc/<repo>/<number:010d>/<id:010d>
 	readPrefix    = "mrread/" // mrread/<repo>/<number:010d>
 	seqPrefix     = "mrseq/"  // mrseq/<repo>
-	numberFormat  = "%010d"
-	createTries   = 10
+	// The indexes of the open merge requests by source branch and by target
+	// branch, which a push looks up (the values are not read). They are written in
+	// the same batch as the merge request, so they are never out of step with it,
+	// and built once, together, for the data that predates them (BuildOpenIndex,
+	// mrOpenIndexMarker).
+	mrOpenPrefix      = "mropen/"     // mropen/<repo>/<escaped source>/<number:010d>
+	mrTargetPrefix    = "mrtarget/"   // mrtarget/<repo>/<escaped target>/<number:010d>
+	mrOpenIndexMarker = "meta/mropen" // present once the indexes cover every merge request
+	numberFormat      = "%010d"
+	createTries       = 10
 )
 
 // MergeRequests is the ermite-kv backed ports.MergeRequestStore. It shares the
@@ -56,11 +68,111 @@ func readKey(repo domain.RepoName, n int64) []byte {
 }
 func seqKey(repo domain.RepoName) []byte { return []byte(seqPrefix + repo.String()) }
 
+// mrOpenRepoPrefix is where the open merge requests of a repository are indexed
+// by source branch.
+func mrOpenRepoPrefix(repo domain.RepoName) string { return mrOpenPrefix + repo.String() + "/" }
+
+// indexBranchPrefix is where the open merge requests of one branch are indexed
+// under prefix (mrOpenPrefix or mrTargetPrefix): the branch is escaped, so it
+// holds no '/' and the prefix matches that branch only.
+func indexBranchPrefix(prefix string, repo domain.RepoName, branch string) string {
+	return prefix + repo.String() + "/" + url.PathEscape(branch) + "/"
+}
+
+func indexKey(prefix string, repo domain.RepoName, branch string, n int64) []byte {
+	return []byte(indexBranchPrefix(prefix, repo, branch) + fmt.Sprintf(numberFormat, n))
+}
+
+// indexOpen adds to b the writes that keep the indexes of the open merge
+// requests (by source and by target) in step with a write of mr over old (nil
+// when old is not known, as for a new request or a comment: the keys of mr are
+// then put or deleted, whatever they were). Deleting a key that is not there is
+// not an error.
+func indexOpen(b *kv.Batch, old *domain.MergeRequest, mr domain.MergeRequest) {
+	if old != nil && old.IsOpen() {
+		if !mr.IsOpen() || old.Source != mr.Source {
+			b.Delete(indexKey(mrOpenPrefix, old.Repo, old.Source, old.Number))
+		}
+		if !mr.IsOpen() || old.Target != mr.Target {
+			b.Delete(indexKey(mrTargetPrefix, old.Repo, old.Target, old.Number))
+		}
+	}
+	switch {
+	case mr.IsOpen():
+		b.Put(indexKey(mrOpenPrefix, mr.Repo, mr.Source, mr.Number), []byte{1})
+		b.Put(indexKey(mrTargetPrefix, mr.Repo, mr.Target, mr.Number), []byte{1})
+	case old == nil:
+		b.Delete(indexKey(mrOpenPrefix, mr.Repo, mr.Source, mr.Number))
+		b.Delete(indexKey(mrTargetPrefix, mr.Repo, mr.Target, mr.Number))
+	}
+}
+
+// BuildOpenIndex builds the indexes of the open merge requests (by source and
+// by target) when the data does not have them yet (it predates them): one pass
+// over the merge requests, in batches, then the marker. It runs when the store is opened and is idempotent: a pass
+// cut short by a crash is simply done again, writing the same keys.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter one-time storage backfill of an index: a storage concern, no policy
+func (s *Store) BuildOpenIndex(ctx context.Context) error {
+	if _, ok := s.db.Get(ctx, []byte(mrOpenIndexMarker)); ok {
+		return nil
+	}
+	var b kv.Batch
+	n := 0
+	flush := func() error {
+		if b.Len() == 0 {
+			return nil
+		}
+		if _, err := s.db.Apply(ctx, &b); err != nil {
+			return fmt.Errorf("build the index of open merge requests: %w", err)
+		}
+		b.Reset()
+		return nil
+	}
+	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte(mrPrefix)) {
+		repoName, _, ok := strings.Cut(strings.TrimPrefix(string(key), mrPrefix), "/")
+		if !ok {
+			continue
+		}
+		repo, err := domain.ParseRepoName(repoName)
+		if err != nil {
+			continue
+		}
+		mr, err := decodeMergeRequest(repo, item)
+		if err != nil {
+			return fmt.Errorf("build the index of open merge requests: decode %s: %w", key, err)
+		}
+		if !mr.IsOpen() {
+			continue
+		}
+		b.Put(indexKey(mrOpenPrefix, mr.Repo, mr.Source, mr.Number), []byte{1})
+		b.Put(indexKey(mrTargetPrefix, mr.Repo, mr.Target, mr.Number), []byte{1})
+		if n++; n%(deleteChunk/2) == 0 {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := flush(); err != nil {
+		return err
+	}
+	b.Put([]byte(mrOpenIndexMarker), []byte{1})
+	if _, err := s.db.Apply(ctx, &b); err != nil {
+		return fmt.Errorf("build the index of open merge requests: %w", err)
+	}
+	log := zerowrap.FromCtx(ctx)
+	log.Info().Int("open", n).Msg("index of open merge requests built")
+	return nil
+}
+
 // mergeRequestKeys lists every key of the snapshot that belongs to the
 // repository's merge requests.
 func mergeRequestKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]byte {
 	var keys [][]byte
-	for _, p := range []string{mrRepoPrefix(repo), commentPrefix + repo.String() + "/", readPrefix + repo.String() + "/"} {
+	for _, p := range []string{
+		mrRepoPrefix(repo), commentPrefix + repo.String() + "/", readPrefix + repo.String() + "/",
+		mrOpenRepoPrefix(repo), mrTargetPrefix + repo.String() + "/",
+	} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))
 		}
@@ -116,6 +228,7 @@ func (m *MergeRequests) Create(ctx context.Context, mr domain.MergeRequest) (dom
 		b.Put(seqKey(mr.Repo), mustMarshal(&storagepb.Sequence{Last: mr.Number}))
 		b.RequireAbsent(mrKey(mr.Repo, mr.Number))
 		b.Put(mrKey(mr.Repo, mr.Number), val)
+		indexOpen(&b, nil, mr)
 		_, err = m.db.Apply(ctx, &b)
 		if errors.Is(err, kv.ErrConflict) {
 			continue
@@ -154,6 +267,83 @@ func (m *MergeRequests) List(ctx context.Context, repo domain.RepoName) ([]domai
 	return out, nil
 }
 
+// scanIndex reads the numbers under the prefixes of an index, in key order. It
+// reads keys only: no merge request is decoded. With a limit above 0 it stops as
+// soon as it has seen limit+1 keys and returns the first limit with truncated
+// set, so the work does not grow with the number of open requests on a branch.
+// The context is checked before every prefix and every key (the scan of ermite-kv
+// itself ignores it): on cancellation it stops and returns what it has with the
+// error of the context.
+func (m *MergeRequests) scanIndex(ctx context.Context, prefixes []string, limit int) (numbers []int64, truncated bool, err error) {
+	snap := m.db.Snapshot(ctx)
+	for _, prefix := range prefixes {
+		if err := ctx.Err(); err != nil {
+			return numbers, true, err
+		}
+		for key := range snap.Prefix(ctx, []byte(prefix)) {
+			if err := ctx.Err(); err != nil {
+				return numbers, true, err
+			}
+			if limit > 0 && len(numbers) == limit {
+				return numbers, true, nil // the limit+1th key: more exist
+			}
+			n, perr := strconv.ParseInt(string(key[strings.LastIndexByte(string(key), '/')+1:]), 10, 64)
+			if perr != nil {
+				return numbers, false, fmt.Errorf("index key %q: %w", key, perr)
+			}
+			numbers = append(numbers, n)
+		}
+	}
+	return numbers, false, nil
+}
+
+func (m *MergeRequests) byBranch(ctx context.Context, index string, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error) {
+	prefixes := make([]string, 0, len(branches))
+	for _, b := range branches {
+		prefixes = append(prefixes, indexBranchPrefix(index, repo, b))
+	}
+	return m.scanIndex(ctx, prefixes, limit)
+}
+
+// OpenBySource returns the numbers of the open merge requests of the repository
+// whose source branch is one of branches, from the index: a scan of the keys of
+// those branches only, whatever the number of merge requests the repository
+// ever had, stopping after limit of them (truncated).
+func (m *MergeRequests) OpenBySource(ctx context.Context, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error) {
+	return m.byBranch(ctx, mrOpenPrefix, repo, branches, limit)
+}
+
+// OpenByTarget is OpenBySource for the target branch.
+func (m *MergeRequests) OpenByTarget(ctx context.Context, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error) {
+	return m.byBranch(ctx, mrTargetPrefix, repo, branches, limit)
+}
+
+// ListOpen returns the open merge requests of the repository, highest number
+// first, through the index: only the open ones are read.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter reads the open merge requests through their index: a storage concern, no policy
+func (m *MergeRequests) ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.MergeRequest, error) {
+	numbers, _, err := m.scanIndex(ctx, []string{mrOpenRepoPrefix(repo)}, 0)
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(numbers)
+	var out []domain.MergeRequest
+	for _, n := range slices.Backward(numbers) {
+		mr, err := m.Get(ctx, repo, n)
+		if errors.Is(err, domain.ErrNotFound) {
+			continue // closed or deleted since the snapshot of the index
+		}
+		if err != nil {
+			return nil, err
+		}
+		if mr.IsOpen() {
+			out = append(out, mr)
+		}
+	}
+	return out, nil
+}
+
 // Update replaces the merge request with a version precondition.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter port method name only
@@ -163,7 +353,8 @@ func (m *MergeRequests) Update(ctx context.Context, mr domain.MergeRequest) erro
 		return err
 	}
 	key := mrKey(mr.Repo, mr.Number)
-	if _, ok := m.db.Get(ctx, key); !ok {
+	cur, ok := m.db.Get(ctx, key)
+	if !ok {
 		return domain.ErrNotFound
 	}
 	if mr.Version == 0 {
@@ -172,6 +363,13 @@ func (m *MergeRequests) Update(ctx context.Context, mr domain.MergeRequest) erro
 	var b kv.Batch
 	b.RequireVersion(key, mr.Version)
 	b.Put(key, val)
+	// The stored request is the one mr was read at (the version is required
+	// above): its index key moves with the write.
+	if old, err := decodeMergeRequest(mr.Repo, cur); err == nil {
+		indexOpen(&b, &old, mr)
+	} else {
+		indexOpen(&b, nil, mr)
+	}
 	if _, err := m.db.Apply(ctx, &b); err != nil {
 		if errors.Is(err, kv.ErrConflict) {
 			return domain.ErrConflict
@@ -227,6 +425,7 @@ func (m *MergeRequests) SaveComment(ctx context.Context, mr domain.MergeRequest,
 	}
 	b.RequireVersion(mrKey(mr.Repo, mr.Number), mr.Version)
 	b.Put(mrKey(mr.Repo, mr.Number), mrVal)
+	indexOpen(&b, nil, mr)
 	if c.Version == 0 {
 		b.RequireAbsent(commentKey(mr.Repo, mr.Number, c.ID))
 	} else {

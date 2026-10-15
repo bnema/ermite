@@ -76,6 +76,14 @@ type GitHubAPIService interface {
 	// TarballName is Tarball for a HEAD request: the same access and the same
 	// resolution of ref, then the file name, without producing the archive.
 	TarballName(ctx context.Context, p domain.Principal, owner, repo, ref string) (string, error)
+	// ListPullFiles answers GET /repos/{owner}/{repo}/pulls/{number}/files: the
+	// JSON array of the files of page (1-based) of perPage files (1 to 100) of
+	// the merge request, and the Link header value ("" for a single page). A
+	// public repository is read by anyone; a private one by a principal that
+	// reads it. The job token of the repository needs pull-requests: read; one
+	// that reads the repository without it gets domain.ErrForbidden (GitHub: 403
+	// "Resource not accessible by integration").
+	ListPullFiles(ctx context.Context, p domain.Principal, owner, repo string, number int64, page, perPage int) (body []byte, link string, err error)
 }
 
 // BrowseService is the read side of a repository's content. *usecase.Browse

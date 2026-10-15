@@ -264,9 +264,11 @@ func person(name, email string) map[string]any { return map[string]any{"name": n
 // The commits of the event come from f.payload, built once per ref; without
 // one they are read from Git here.
 func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun, f pushFacts) string {
+	if f.pull != nil {
+		return c.pullGithubJSON(repo, run, f)
+	}
 	u := c.urls(repo)
 	id := c.identity(run.Actor)
-	owner := c.identity("owner")
 	refName, refType := strings.TrimPrefix(run.Ref, "refs/heads/"), "branch"
 	if f.isTag {
 		refName, refType = strings.TrimPrefix(run.Ref, "refs/tags/"), "tag"
@@ -293,6 +295,24 @@ func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun,
 		"repository": c.repoObj(repo, u, f.defaultBranch, run.CreatedAt),
 		"sender":     u.userObj(id, false),
 	}
+	return c.githubContext(repo, run, ghEvent{name: "push", refName: refName, refType: refType, payload: event})
+}
+
+// ghEvent is what differs between the github contexts of the events.
+type ghEvent struct {
+	name, refName, refType string
+	// headRef and baseRef are github.head_ref and github.base_ref: set for a
+	// pull_request only.
+	headRef, baseRef string
+	payload          map[string]any
+}
+
+// githubContext assembles the "github" context of a run in GitHub's key order
+// around the payload of the event.
+func (c *CI) githubContext(repo domain.Repo, run domain.CIRun, e ghEvent) string {
+	u := c.urls(repo)
+	id := c.identity(run.Actor)
+	owner := c.identity("owner")
 	repoID := strconv.FormatInt(stableID("repo", u.full), 10)
 	gh := ordered{
 		{"job", ""}, {"ref", run.Ref}, {"sha", run.Sha}, {"repository", u.full}, {"repository_owner", c.cfg.Owner},
@@ -301,9 +321,9 @@ func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun,
 		{"retention_days", strconv.Itoa(c.retentionDays())}, {"run_attempt", "1"},
 		{"artifact_cache_size_limit", ghCacheLimit}, {"repository_visibility", string(repo.Visibility)},
 		{"actor_id", strconv.FormatInt(id.id, 10)}, {"actor", id.login}, {"workflow", run.WorkflowName},
-		{"head_ref", ""}, {"base_ref", ""}, {"event_name", "push"}, {"server_url", u.server},
-		{"api_url", u.api}, {"graphql_url", u.api + "/graphql"}, {"ref_name", refName}, {"ref_protected", false},
-		{"ref_type", refType}, {"secret_source", ghSecretSource}, {"event", event},
+		{"head_ref", e.headRef}, {"base_ref", e.baseRef}, {"event_name", e.name}, {"server_url", u.server},
+		{"api_url", u.api}, {"graphql_url", u.api + "/graphql"}, {"ref_name", e.refName}, {"ref_protected", false},
+		{"ref_type", e.refType}, {"secret_source", ghSecretSource}, {"event", e.payload},
 		{"workflow_ref", u.full + "/" + run.WorkflowPath + "@" + run.Ref}, {"workflow_sha", run.Sha},
 		{"repository_id", repoID}, {"triggering_actor", id.login},
 	}

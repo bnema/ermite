@@ -106,6 +106,9 @@ message CIRun {
   bool trusted = 23;
   // The evaluated workflow-level concurrency of the attempt.
   CIConcurrency concurrency = 24;
+  // head_sha: the head of the merge request of a pull_request run, where sha is
+  // the test merge commit. Empty for the other events.
+  string head_sha = 25;
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned

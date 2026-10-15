@@ -44,14 +44,19 @@ type ciTrigger struct {
 	log     zerowrap.Logger
 }
 
-// OnPush queues the refs of a push or a merge for planning and returns at once;
-// a worker plans them. A full queue drops the trigger, logged at error: a push
-// is never slowed down or failed by CI.
+// OnPush queues the refs of a push or a merge for planning and returns; a
+// worker plans them. A full queue drops the trigger, logged at error: a push is
+// never slowed down or failed by CI. The push workflows are queued first; the
+// merge requests the push touches are then handed to their own worker, with a
+// short lock and no I/O, so nothing here waits for Git or the store.
 //
 // A push made with a job token starts nothing, as on GitHub (events created
 // with GITHUB_TOKEN start no run): that is what stops a workflow that pushes
 // from running itself again.
 func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal) {
+	// The merge requests follow the push whoever made it (their refs); only a
+	// push that is not a job's starts pull_request runs.
+	defer c.onBranchesMoved(ctx, repo, updates, authorOf(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), !pusher.ViaJobToken())
 	if pusher.ViaJobToken() {
 		log := zerowrap.FromCtx(ctx)
 		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("push by a job token starts no run")
@@ -67,6 +72,10 @@ func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.
 // merging. For the same reason the run is trusted (gets secrets) only when the
 // merger is: the displayed actor is not the one that decides.
 func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal) {
+	// The merge moved a target branch: the test merges of the other requests
+	// into it are computed again (a merge starts no synchronize run), after the
+	// push workflows are queued.
+	defer c.onBranchesMoved(ctx, repo, updates, authorOf(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger), false)
 	if merger.ViaJobToken() {
 		log := zerowrap.FromCtx(ctx)
 		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("merge by a job token starts no run")
@@ -168,6 +177,36 @@ type pushFacts struct {
 	// payload is the commit part of the push event, shared by the workflows
 	// of the ref; handleRef builds it once, before the first one that matches.
 	payload *pushPayload
+	// pull is set for a pull_request run: update.Ref is then
+	// refs/pull/<n>/merge (or /head), commit the test merge commit (or the
+	// head) and head the head commit.
+	pull *pullFacts
+}
+
+// eventName is the event of the run, as the run records and github.event_name
+// show it.
+func (f pushFacts) eventName() string {
+	if f.pull != nil {
+		return "pull_request"
+	}
+	return "push"
+}
+
+// runTitle is the title of a run without run-name: the commit message of a
+// push, the title of the merge request for a pull_request.
+func (f pushFacts) runTitle() string {
+	if f.pull != nil {
+		return firstLine(f.pull.mr.Title.String())
+	}
+	return firstLine(f.head.Message)
+}
+
+// headSha is CIRun.HeadSha: the head of the merge request, "" for a push.
+func (f pushFacts) headSha() string {
+	if f.pull != nil {
+		return f.pull.head.String()
+	}
+	return ""
 }
 
 func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tagCount int) error {
@@ -408,22 +447,22 @@ func firstLine(s string) string {
 // parses but whose strategy GitHub refuses (recorded: matrix-over-256).
 func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, name, problem string) error {
 	now := c.now()
-	draft, err := c.cfg.Store.CreateRun(ctx, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
+	draft, err := c.createRun(ctx, f, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
 			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name, Name: name,
-			Title: firstLine(f.head.Message), Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
+			Title: f.runTitle(), Event: f.eventName(), Ref: f.update.Ref, Sha: f.commit.String(), HeadSha: f.headSha(), Actor: t.actor,
 			Status: domain.CICompleted, Conclusion: domain.CIFailure, Error: cutText(problem, maxRunError), Trusted: t.trusted,
 			CreatedAt: now, StartedAt: now, CompletedAt: now,
 		}
 		return ports.CIRunDraft{
 			Run: run, Source: domain.CIRunSource{Repo: repo.Name, WorkflowYAML: "", GithubJSON: "{}", Pusher: t.pusher},
 			Checks: []domain.CICheck{{
-				ID: "run-" + strconv.FormatInt(id, 10), Repo: repo.Name, Sha: run.Sha, Name: wfPath, Status: domain.CICompleted,
+				ID: "run-" + strconv.FormatInt(id, 10), Repo: repo.Name, Sha: run.CheckSha(), Name: wfPath, Status: domain.CICompleted,
 				Conclusion: domain.CIFailure, RunID: id, Attempt: 1, WorkflowName: name, CreatedAt: now, StartedAt: now, CompletedAt: now,
 			}},
 		}
 	})
-	if errors.Is(err, domain.ErrNotFound) {
+	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, errPullClosed) {
 		return nil
 	}
 	if err != nil {
@@ -453,7 +492,7 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 	// workflow has another name: 14 of 14 tag runs). Registered is read as the
 	// "name:" of the file on the default branch; the first version GitHub saw
 	// is the same file in the recording and cannot be told apart.
-	title := firstLine(f.head.Message)
+	title := f.runTitle()
 	if f.isTag {
 		title = c.registeredName(ctx, repo.Name, wfPath, name)
 	}
@@ -461,10 +500,10 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 	if err != nil {
 		return err
 	}
-	draft, err := c.cfg.Store.CreateRun(ctx, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
+	draft, err := c.createRun(ctx, f, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
 			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name, Name: name,
-			Title: title, Event: "push", Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor,
+			Title: title, Event: f.eventName(), Ref: f.update.Ref, Sha: f.commit.String(), HeadSha: f.headSha(), Actor: t.actor,
 			Status: domain.CIQueued, Trusted: t.trusted, CreatedAt: now,
 		}
 		githubJSON := c.githubJSON(ctx, repo, run, f)
@@ -481,13 +520,13 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 			}
 			d.Jobs = append(d.Jobs, job)
 			d.Checks = append(d.Checks, domain.CICheck{
-				ID: job.ID, Repo: repo.Name, Sha: run.Sha, Name: job.Name, Status: domain.CIQueued, RunID: id, JobID: job.ID,
+				ID: job.ID, Repo: repo.Name, Sha: run.CheckSha(), Name: job.Name, Status: domain.CIQueued, RunID: id, JobID: job.ID,
 				Attempt: 1, WorkflowName: name, CreatedAt: now,
 			})
 		}
 		return d
 	})
-	if errors.Is(err, domain.ErrNotFound) {
+	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, errPullClosed) {
 		return nil
 	}
 	if err != nil {

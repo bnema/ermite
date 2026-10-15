@@ -223,6 +223,40 @@ func TestSchema(t *testing.T) {
 		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 	})
 
+	t.Run("version 2 is upgraded to 3, its runs kept", func(t *testing.T) {
+		dir := t.TempDir()
+		putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 2}))
+		putRaw(t, dir, "repo/old", mustProto(t, &storagepb.Repo{Name: "old", Visibility: storagepb.Visibility_VISIBILITY_PUBLIC}))
+		// A run written by a schema 2 build (no head sha), and a retained pull_request
+		// run that has one: both must read back after the upgrade.
+		putRaw(t, dir, "run/old/00000000000000000001", mustProto(t, &storagepb.CIRun{
+			Repo: "old", Id: 1, Number: 1, Attempt: 1, Event: "push", Ref: "refs/heads/main", Sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Status: storagepb.CIStatus_CI_STATUS_COMPLETED,
+		}))
+		putRaw(t, dir, "run/old/00000000000000000002", mustProto(t, &storagepb.CIRun{
+			Repo: "old", Id: 2, Number: 2, Attempt: 1, Event: "pull_request", Ref: "refs/pull/1/merge",
+			Sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", HeadSha: "cccccccccccccccccccccccccccccccccccccccc",
+			Status: storagepb.CIStatus_CI_STATUS_COMPLETED,
+		}))
+		s, err := kvstore.Open(ctx, dir)
+		require.NoError(t, err)
+		got, err := s.Get(ctx, name(t, "old"))
+		require.NoError(t, err)
+		assert.Equal(t, "old", got.Name.String())
+		old, err := s.CI().GetRun(ctx, name(t, "old"), 1)
+		require.NoError(t, err)
+		assert.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", old.Sha)
+		assert.Empty(t, old.HeadSha)
+		assert.Equal(t, old.Sha, old.CheckSha(), "a run without a head sha keeps its checks on its commit")
+		pr, err := s.CI().GetRun(ctx, name(t, "old"), 2)
+		require.NoError(t, err)
+		assert.Equal(t, "pull_request", pr.Event)
+		assert.Equal(t, "cccccccccccccccccccccccccccccccccccccccc", pr.HeadSha)
+		assert.Equal(t, pr.HeadSha, pr.CheckSha(), "the checks of a pull_request run are on the head")
+		require.NoError(t, s.Close(ctx))
+		assert.Equal(t, uint32(3), readSchema(t, dir))
+	})
+
 	t.Run("version 2 is upgraded to 3, its data kept", func(t *testing.T) {
 		dir := t.TempDir()
 		putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 2}))

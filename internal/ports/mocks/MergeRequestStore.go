@@ -477,6 +477,246 @@ func (_c *MergeRequestStore_ListComments_Call) RunAndReturn(run func(ctx context
 	return _c
 }
 
+// ListOpen provides a mock function for the type MergeRequestStore
+func (_mock *MergeRequestStore) ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.MergeRequest, error) {
+	ret := _mock.Called(ctx, repo)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListOpen")
+	}
+
+	var r0 []domain.MergeRequest
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) ([]domain.MergeRequest, error)); ok {
+		return returnFunc(ctx, repo)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) []domain.MergeRequest); ok {
+		r0 = returnFunc(ctx, repo)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.MergeRequest)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName) error); ok {
+		r1 = returnFunc(ctx, repo)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestStore_ListOpen_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListOpen'
+type MergeRequestStore_ListOpen_Call struct {
+	*mock.Call
+}
+
+// ListOpen is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+func (_e *MergeRequestStore_Expecter) ListOpen(ctx any, repo any) *MergeRequestStore_ListOpen_Call {
+	return &MergeRequestStore_ListOpen_Call{Call: _e.mock.On("ListOpen", ctx, repo)}
+}
+
+func (_c *MergeRequestStore_ListOpen_Call) Run(run func(ctx context.Context, repo domain.RepoName)) *MergeRequestStore_ListOpen_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestStore_ListOpen_Call) Return(mergeRequests []domain.MergeRequest, err error) *MergeRequestStore_ListOpen_Call {
+	_c.Call.Return(mergeRequests, err)
+	return _c
+}
+
+func (_c *MergeRequestStore_ListOpen_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName) ([]domain.MergeRequest, error)) *MergeRequestStore_ListOpen_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// OpenBySource provides a mock function for the type MergeRequestStore
+func (_mock *MergeRequestStore) OpenBySource(ctx context.Context, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error) {
+	ret := _mock.Called(ctx, repo, branches, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for OpenBySource")
+	}
+
+	var r0 []int64
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, []string, int) ([]int64, bool, error)); ok {
+		return returnFunc(ctx, repo, branches, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, []string, int) []int64); ok {
+		r0 = returnFunc(ctx, repo, branches, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]int64)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, []string, int) bool); ok {
+		r1 = returnFunc(ctx, repo, branches, limit)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, []string, int) error); ok {
+		r2 = returnFunc(ctx, repo, branches, limit)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// MergeRequestStore_OpenBySource_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OpenBySource'
+type MergeRequestStore_OpenBySource_Call struct {
+	*mock.Call
+}
+
+// OpenBySource is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - branches []string
+//   - limit int
+func (_e *MergeRequestStore_Expecter) OpenBySource(ctx any, repo any, branches any, limit any) *MergeRequestStore_OpenBySource_Call {
+	return &MergeRequestStore_OpenBySource_Call{Call: _e.mock.On("OpenBySource", ctx, repo, branches, limit)}
+}
+
+func (_c *MergeRequestStore_OpenBySource_Call) Run(run func(ctx context.Context, repo domain.RepoName, branches []string, limit int)) *MergeRequestStore_OpenBySource_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestStore_OpenBySource_Call) Return(numbers []int64, truncated bool, err error) *MergeRequestStore_OpenBySource_Call {
+	_c.Call.Return(numbers, truncated, err)
+	return _c
+}
+
+func (_c *MergeRequestStore_OpenBySource_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error)) *MergeRequestStore_OpenBySource_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// OpenByTarget provides a mock function for the type MergeRequestStore
+func (_mock *MergeRequestStore) OpenByTarget(ctx context.Context, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error) {
+	ret := _mock.Called(ctx, repo, branches, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for OpenByTarget")
+	}
+
+	var r0 []int64
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, []string, int) ([]int64, bool, error)); ok {
+		return returnFunc(ctx, repo, branches, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, []string, int) []int64); ok {
+		r0 = returnFunc(ctx, repo, branches, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]int64)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, []string, int) bool); ok {
+		r1 = returnFunc(ctx, repo, branches, limit)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, []string, int) error); ok {
+		r2 = returnFunc(ctx, repo, branches, limit)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// MergeRequestStore_OpenByTarget_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OpenByTarget'
+type MergeRequestStore_OpenByTarget_Call struct {
+	*mock.Call
+}
+
+// OpenByTarget is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - branches []string
+//   - limit int
+func (_e *MergeRequestStore_Expecter) OpenByTarget(ctx any, repo any, branches any, limit any) *MergeRequestStore_OpenByTarget_Call {
+	return &MergeRequestStore_OpenByTarget_Call{Call: _e.mock.On("OpenByTarget", ctx, repo, branches, limit)}
+}
+
+func (_c *MergeRequestStore_OpenByTarget_Call) Run(run func(ctx context.Context, repo domain.RepoName, branches []string, limit int)) *MergeRequestStore_OpenByTarget_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestStore_OpenByTarget_Call) Return(numbers []int64, truncated bool, err error) *MergeRequestStore_OpenByTarget_Call {
+	_c.Call.Return(numbers, truncated, err)
+	return _c
+}
+
+func (_c *MergeRequestStore_OpenByTarget_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error)) *MergeRequestStore_OpenByTarget_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SaveComment provides a mock function for the type MergeRequestStore
 func (_mock *MergeRequestStore) SaveComment(ctx context.Context, mr domain.MergeRequest, c domain.Comment) error {
 	ret := _mock.Called(ctx, mr, c)

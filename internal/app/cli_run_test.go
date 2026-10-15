@@ -130,3 +130,9 @@ func TestCLIRunsAndRunners(t *testing.T) {
 	assert.NoError(t, h.cli(t, created.Secret, "runner", "list").err)
 	assert.Error(t, h.cli(t, created.Secret, "run", "cancel", "proj", id).err)
 }
+
+func TestRefTextShowsMergeRequests(t *testing.T) {
+	assert.Equal(t, "!12", refText("refs/pull/12/merge"))
+	assert.Equal(t, "main", refText("refs/heads/main"))
+	assert.Equal(t, "v1", refText("refs/tags/v1"))
+}

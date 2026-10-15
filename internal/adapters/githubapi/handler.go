@@ -6,6 +6,7 @@
 //	GET /repos/{owner}/{repo}
 //	GET /repos/{owner}/{repo}/hash-algorithm
 //	GET /repos/{owner}/{repo}/tarball[/{ref}]
+//	GET /repos/{owner}/{repo}/pulls/{number}/files   (dorny/paths-filter on pull_request)
 //
 // Everything else under the prefix is GitHub's 404 JSON, so that an action
 // calling an endpoint of a feature ermite lacks fails as it does on a GitHub
@@ -115,6 +116,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	rest := strings.TrimPrefix(r.URL.Path, Prefix)
 	kind, owner, repo, ref, ok := route(rest)
+	var number int64
+	if kind == "pullfiles" {
+		number, _ = strconv.ParseInt(ref, 10, 64)
+	}
 	if !ok {
 		notFound(w)
 		return
@@ -160,10 +165,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, r, []byte(`{"hash_algorithm":`+strconv.Quote(alg)+`}`))
 	case "tarball":
 		h.tarball(w, r, p, owner, repo, ref, clientlimit.Key(addr))
+	case "pullfiles":
+		h.pullFiles(w, r, p, owner, repo, number)
 	}
 }
 
-// route recognises the three endpoints. ref is "" for /tarball.
+// route recognises the endpoints. ref is "" for /tarball.
 func route(rest string) (kind, owner, repo, ref string, ok bool) {
 	parts := strings.Split(strings.TrimPrefix(rest, "/"), "/")
 	if len(parts) < 3 || parts[0] != "repos" || parts[1] == "" || parts[2] == "" {
@@ -175,11 +182,43 @@ func route(rest string) (kind, owner, repo, ref string, ok bool) {
 		return "repo", owner, repo, "", true
 	case len(parts) == 4 && parts[3] == "hash-algorithm":
 		return "hash", owner, repo, "", true
+	case len(parts) == 6 && parts[3] == "pulls" && parts[5] == "files" && isNumber(parts[4]):
+		// ref carries the number of the pull request.
+		return "pullfiles", owner, repo, parts[4], true
 	case len(parts) >= 4 && parts[3] == "tarball":
 		// The ref may hold slashes (feature/x): everything after tarball/.
 		return "tarball", owner, repo, strings.Join(parts[4:], "/"), true
 	}
 	return "", "", "", "", false
+}
+
+// isNumber reports whether s is a positive decimal number.
+func isNumber(s string) bool {
+	n, err := strconv.ParseInt(s, 10, 64)
+	return err == nil && n > 0 && strconv.FormatInt(n, 10) == s
+}
+
+// pullFiles answers the files of a pull request, a page at a time as GitHub
+// does: page and per_page in the query (30 and 100 at most), the other pages
+// in the Link header. A parameter that is not a positive number is the default,
+// as GitHub treats it.
+func (h *Handler) pullFiles(w http.ResponseWriter, r *http.Request, p domain.Principal, owner, repo string, number int64) {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	perPage, _ := strconv.Atoi(q.Get("per_page"))
+	body, link, err := h.cfg.API.ListPullFiles(r.Context(), p, owner, repo, number, page, perPage)
+	if err != nil {
+		if errors.Is(err, domain.ErrForbidden) {
+			jsonError(w, http.StatusForbidden, "Resource not accessible by integration")
+			return
+		}
+		h.fail(r.Context(), w, err)
+		return
+	}
+	if link != "" {
+		w.Header().Set("Link", link)
+	}
+	writeJSON(w, r, body)
 }
 
 // tarball answers an archive request. A HEAD resolves the ref and sends the

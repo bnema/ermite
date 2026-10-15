@@ -38,6 +38,9 @@ type Principal struct {
 	// archiveRepo and archiveSha are the grant of a kindArchive principal.
 	archiveRepo RepoName
 	archiveSha  string
+	// jobPerms are the permissions (key to level) of a job's own token; nil for
+	// every other principal.
+	jobPerms map[string]string
 }
 
 // Anonymous returns the principal of a caller without credentials.
@@ -164,6 +167,19 @@ func (p Principal) AllowsRef(ref string) bool {
 		return false
 	}
 	return p.CoversBranchPrefix(name)
+}
+
+// JobPermits reports whether p is the job's own token, for the repository, and
+// its workflow permissions give key at least the level (write includes read).
+// It is how an endpoint that GitHub gates on a permission with no ermite scope
+// (pull-requests: read) checks a job token; every other principal answers
+// false and is judged by its scopes.
+func (p Principal) JobPermits(key, level string, repo RepoName) bool {
+	if p.kind != kindToken || !IsRepoTokenID(p.tokenID) || !slices.Contains(p.repos, repo) {
+		return false
+	}
+	have := p.jobPerms[key]
+	return have == PermissionWrite || (have == PermissionRead && level == PermissionRead)
 }
 
 // ViaJobToken reports whether p is the holder of a job repository token (the

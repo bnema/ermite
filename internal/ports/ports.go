@@ -245,6 +245,20 @@ type MergeRequestStore interface {
 	// List returns every merge request of the repository, highest number
 	// first.
 	List(ctx context.Context, repo domain.RepoName) ([]domain.MergeRequest, error)
+	// ListOpen returns the open merge requests of the repository, highest
+	// number first, reading only the open ones (through an index).
+	ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.MergeRequest, error)
+	// OpenBySource returns the numbers of the open merge requests whose source
+	// branch is one of branches (short names), from an index of keys: a push
+	// looks up the branches it moved, whatever the number of merge requests the
+	// repository ever had. No request is read. It stops after limit numbers (a
+	// limit of 0 or less means none) and reports truncated when there are more,
+	// without counting them; the context is checked between keys, and a
+	// cancelled one ends the lookup with its error and what was found so far.
+	OpenBySource(ctx context.Context, repo domain.RepoName, branches []string, limit int) (numbers []int64, truncated bool, err error)
+	// OpenByTarget is OpenBySource for the open merge requests whose target
+	// branch is one of branches.
+	OpenByTarget(ctx context.Context, repo domain.RepoName, branches []string, limit int) (numbers []int64, truncated bool, err error)
 	// Update replaces the stored merge request. It returns domain.ErrNotFound
 	// if there is none and domain.ErrConflict if another write changed it
 	// since mr was read.

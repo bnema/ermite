@@ -267,6 +267,57 @@ type WorkflowTrigger interface {
 	OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal)
 }
 
+// PullRequestTrigger starts the pull_request workflows of the merge requests
+// (CI-3, D5), like WorkflowTrigger does for pushes. It only queues the work.
+// The synchronize activity needs no call here: the push of the source branch
+// reaches WorkflowTrigger.OnPush.
+type PullRequestTrigger interface {
+	// OnPullRequest queues the activity ev of a merge request. p is who caused
+	// it: its trust is the run's, whatever happens to the branches before the
+	// event is handled. A job token starts no run.
+	OnPullRequest(ctx context.Context, repo domain.RepoName, ev PullRequestEvent, p domain.Principal)
+}
+
+// PullRequestEvent is one activity of a merge request, with the commits it is
+// for fixed when it happened: it runs for exactly these, with the trust of
+// whoever caused it, even when the branches have moved on by the time it is
+// handled.
+type PullRequestEvent struct {
+	Number int64
+	// Action is domain.PullOpened or domain.PullClosed.
+	Action string
+	// Head is the head of the source branch and Base the tip of the target at
+	// that moment; either may be zero when unknown (the current one is read).
+	Head, Base domain.ObjectID
+}
+
+// PullGate lets the CI change what depends on a merge request staying open
+// (its refs/pull refs, the runs of its opening and updates) without racing a
+// close or a merge. *usecase.MergeRequests implements it.
+type PullGate interface {
+	// WhileOpen runs fn holding the merge lock of the repository (the one
+	// Close and Merge take) when merge request number is open, and returns
+	// domain.ErrPreconditionFailed without running fn when it is not. fn must
+	// be short and must not call the merge request use cases.
+	WhileOpen(ctx context.Context, repo domain.RepoName, number int64, fn func() error) error
+}
+
+// PullGit is what the refs/pull/<n>/{head,merge} of the merge requests need
+// from Git. Every method returns domain.ErrNotFound when the repository has no
+// directory.
+type PullGit interface {
+	// TestMerge merges head into base without touching a ref (`git merge-tree
+	// --write-tree`) and returns the tree of the result. clean is false when
+	// the merge conflicts, or when the commits share no history.
+	TestMerge(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID) (tree domain.ObjectID, clean bool, err error)
+	// SetPullRef points a ref of domain.IsPullRef to the commit. Any other ref
+	// name is domain.ErrInvalid.
+	SetPullRef(ctx context.Context, repo domain.RepoName, ref string, id domain.ObjectID) error
+	// PullRef returns the commit a ref of domain.IsPullRef points to, or
+	// domain.ErrNotFound.
+	PullRef(ctx context.Context, repo domain.RepoName, ref string) (domain.ObjectID, error)
+}
+
 // CIGit is what planning needs from Git beyond RepoReader and MergeGit.
 type CIGit interface {
 	// ChangedPaths returns the paths changed from base to head (a zero base

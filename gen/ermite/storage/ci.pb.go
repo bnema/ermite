@@ -513,7 +513,10 @@ type CIRun struct {
 	// in runs stored before it existed (the safe reading).
 	Trusted bool `protobuf:"varint,23,opt,name=trusted,proto3" json:"trusted,omitempty"`
 	// The evaluated workflow-level concurrency of the attempt.
-	Concurrency   *CIConcurrency `protobuf:"bytes,24,opt,name=concurrency,proto3" json:"concurrency,omitempty"`
+	Concurrency *CIConcurrency `protobuf:"bytes,24,opt,name=concurrency,proto3" json:"concurrency,omitempty"`
+	// head_sha: the head of the merge request of a pull_request run, where sha is
+	// the test merge commit. Empty for the other events.
+	HeadSha       string `protobuf:"bytes,25,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -700,6 +703,13 @@ func (x *CIRun) GetConcurrency() *CIConcurrency {
 		return x.Concurrency
 	}
 	return nil
+}
+
+func (x *CIRun) GetHeadSha() string {
+	if x != nil {
+		return x.HeadSha
+	}
+	return ""
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned
@@ -2411,7 +2421,7 @@ var File_ermite_storage_ci_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\n" +
-	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xba\x06\n" +
+	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd5\x06\n" +
 	"\x05CIRun\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\x03R\x02id\x12\x16\n" +
@@ -2439,7 +2449,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x13cancel_requested_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\x11cancelRequestedAt\x12\x12\n" +
 	"\x04name\x18\x16 \x01(\tR\x04name\x12\x18\n" +
 	"\atrusted\x18\x17 \x01(\bR\atrusted\x12?\n" +
-	"\vconcurrency\x18\x18 \x01(\v2\x1d.ermite.storage.CIConcurrencyR\vconcurrencyJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"\xc7\x01\n" +
+	"\vconcurrency\x18\x18 \x01(\v2\x1d.ermite.storage.CIConcurrencyR\vconcurrency\x12\x19\n" +
+	"\bhead_sha\x18\x19 \x01(\tR\aheadShaJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"\xc7\x01\n" +
 	"\vCIRunSource\x12\x15\n" +
 	"\x06run_id\x18\x04 \x01(\x03R\x05runId\x12#\n" +
 	"\rworkflow_yaml\x18\x01 \x01(\tR\fworkflowYaml\x12\x1f\n" +

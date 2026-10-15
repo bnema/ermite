@@ -234,6 +234,10 @@ func (s *Server) runRow(repo string, run domain.CIRun, now time.Time) RunRow {
 		Duration: duration(run.StartedAt, run.CompletedAt, now), Number: "#" + strconv.FormatInt(run.Number, 10), Attempt: run.Attempt,
 	}
 	row.RefHref = repoHref(repo, "tree", strings.TrimPrefix(strings.TrimPrefix(run.Ref, "refs/heads/"), "refs/tags/"))
+	if n, ok := pullNumber(run.Ref); ok {
+		// A pull_request run is for refs/pull/<n>/merge: it shows the merge request.
+		row.Ref, row.RefHref = "!"+strconv.FormatInt(n, 10), mrHref(repo, n)
+	}
 	row.When, row.WhenAt = whenOf(now, run.CreatedAt)
 	return row
 }
@@ -491,3 +495,13 @@ func runnerText(j JobRow) string {
 }
 
 func joinWords(ws []string) string { return strings.Join(ws, ", ") }
+
+// pullNumber reads the merge request number of refs/pull/<n>/merge or /head.
+func pullNumber(ref string) (int64, bool) {
+	if !domain.IsPullRef(ref) {
+		return 0, false
+	}
+	num, _, _ := strings.Cut(strings.TrimPrefix(ref, domain.PullRefPrefix), "/")
+	n, err := strconv.ParseInt(num, 10, 64)
+	return n, err == nil
+}

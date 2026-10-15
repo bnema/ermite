@@ -3,6 +3,7 @@
 package domain
 
 import (
+	"maps"
 	"strings"
 	"time"
 )
@@ -80,10 +81,15 @@ func RepoTokenPrincipal(t CIRepoToken) Principal {
 			archiveRepo: t.Repo, archiveSha: t.Sha,
 		}
 	}
-	return TokenPrincipal(Token{
+	p := TokenPrincipal(Token{
 		ID: repoTokenIDPrefix + t.ID, Label: "ci job", Scopes: RepoTokenScopes(t.Permissions),
 		Repos: []RepoName{t.Repo}, ExpiresAt: t.ExpiresAt, CreatedAt: t.CreatedAt,
 	})
+	p.jobPerms = maps.Clone(t.Permissions)
+	if len(p.jobPerms) == 0 {
+		p.jobPerms = DefaultTokenPermissions()
+	}
+	return p
 }
 
 // CIPusherKind tells who pushed the commit of a run.

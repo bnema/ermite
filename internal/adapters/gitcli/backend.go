@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -35,6 +36,7 @@ func HooksDir(dataDir string) string { return filepath.Join(dataDir, "run", "hoo
 //	pack.threads=1
 //	pack.windowMemory=256m
 //	http.receivepack=true            (push only)
+//	receive.hideRefs=refs/pull/      (push only: ermite writes them, git refuses updates)
 //	receive.maxInputSize=<max>       (push only, when configured)
 //
 // A push also gets REMOTE_USER=owner.
@@ -55,6 +57,9 @@ func (g *Git) HTTPBackend(ctx context.Context, push bool) (ports.HTTPBackend, er
 	}
 	if push {
 		conf = append(conf, [2]string{"http.receivepack", "true"})
+		// refs/pull/* (the merge requests' head and test merge) are served to
+		// fetch and cannot be updated by a push: git itself refuses a hidden ref.
+		conf = append(conf, [2]string{"receive.hideRefs", domain.PullRefPrefix})
 		if g.maxRecv > 0 {
 			conf = append(conf, [2]string{"receive.maxInputSize", strconv.FormatInt(g.maxRecv, 10)})
 		}

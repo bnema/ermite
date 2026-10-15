@@ -245,6 +245,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 
 	// CI (ADR 0025): the engine reads workflows through the reader, and plans
 	// them in the background; a push only queues its refs.
+	committer := domain.Identity{Name: cfg.CommitterName, Email: cfg.CommitterEmail}
 	ciCfg := usecase.CIConfig{
 		Store: store.CI(), Logs: cilogs.New(cilogs.Dir(cfg.DataDir)), Summaries: cisummaries.New(cisummaries.Dir(cfg.DataDir)), Meta: store, Repos: git, Reader: reader,
 		Git: git, Diff: git, Bus: f.Bus, Clock: clock, Auth: f.Auth,
@@ -258,6 +259,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Settings:  f.Settings,
 		Workflows: opts.workflows(githubraw.New(githubraw.Config{})),
 	}
+	f.pullRequests(&ciCfg, store, git, committer)
 	if opts.ci != nil {
 		opts.ci(&ciCfg)
 	}
@@ -278,13 +280,13 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if err != nil {
 		return nil, err
 	}
-	committer := domain.Identity{Name: cfg.CommitterName, Email: cfg.CommitterEmail}
 	f.SigningKey = usecase.NewSigningKey(signer, committer)
 	f.MergeRequests = usecase.NewMergeRequests(usecase.MergeRequestsConfig{
 		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
-		CI: f.CI, Checks: f.CI,
+		CI: f.CI, Checks: f.CI, PullRequests: f.CI,
 	})
+	f.CI.SetPullGate(f.MergeRequests)
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 
 	f.Sessions, err = usecase.NewSessions(ctx, store.Sessions(), clock, cfg.PublicURL)
@@ -440,5 +442,14 @@ func (f *forge) Close(ctx context.Context) {
 			log.Error().Err(err).Msg("close metadata store")
 		}
 		f.store = nil
+	}
+}
+
+// pullRequests gives the CI the merge requests, the refs/pull refs and the
+// identity of the test merge commits (CI-3, D5).
+func (f *forge) pullRequests(cfg *usecase.CIConfig, store *kvstore.Store, git *gitcli.Git, committer domain.Identity) {
+	cfg.MRs, cfg.Pull, cfg.Committer = store.MergeRequests(), git, committer
+	if f.reader != nil {
+		cfg.Fresh = f.reader // a nil *ermitegit.Adapter must not become a non-nil interface
 	}
 }

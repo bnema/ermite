@@ -150,6 +150,12 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 		return fmt.Errorf("%w: no write access to %s", domain.ErrRejected, name)
 	}
 	for _, up := range updates {
+		// refs/pull/* belong to ermite (the head and the test merge of the merge
+		// requests): nobody pushes there, whatever the token, the workflow
+		// guard included.
+		if domain.IsPullRefName(up.Ref) {
+			return fmt.Errorf("%w: %s is maintained by ermite: refs/pull/* cannot be pushed", domain.ErrRejected, up.Ref)
+		}
 		if !p.AllowsRef(up.Ref) {
 			return fmt.Errorf("%w: %s is outside the branches this token may push (%s)",
 				domain.ErrRejected, up.Ref, strings.Join(p.BranchPrefixes(), ", "))

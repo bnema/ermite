@@ -101,6 +101,7 @@ func TestHTTPBackendEnvironment(t *testing.T) {
 		"pack.threads":           "1",
 		"pack.windowMemory":      "256m",
 		"http.receivepack":       "true",
+		"receive.hideRefs":       "refs/pull/",
 	}, backendConf(pe), "http.receivepack only for a push; no size limit unless configured")
 
 	// Nothing from the caller's environment leaks.

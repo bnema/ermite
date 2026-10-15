@@ -167,11 +167,15 @@ type CIRun struct {
 	// Name is GitHub's name of the run: the evaluated run-name when the
 	// workflow has one, else WorkflowName. WorkflowName stays the name of the
 	// workflow (github.workflow, the checks).
-	Name              string
-	Title             string
-	Event             string
-	Ref               string
-	Sha               string
+	Name  string
+	Title string
+	Event string
+	Ref   string
+	Sha   string
+	// HeadSha is the head of the merge request of a pull_request run, whose Sha
+	// is the test merge commit github.sha shows; empty for the other events. The
+	// checks of the run attach to it (CheckSha).
+	HeadSha           string
 	Actor             string
 	Status            CIStatus
 	Conclusion        CIConclusion
@@ -191,6 +195,16 @@ type CIRun struct {
 	// Version is the version of the stored record, which grows at every
 	// change and never goes back.
 	Version uint64
+}
+
+// CheckSha is the commit the checks of the run attach to: the head of the merge
+// request for a pull_request run (as on GitHub, where the checks of the test
+// merge show on the head), the commit of the run otherwise.
+func (r CIRun) CheckSha() string {
+	if r.HeadSha != "" {
+		return r.HeadSha
+	}
+	return r.Sha
 }
 
 // CIRunSource is what a run was planned from: the workflow file at the sha of

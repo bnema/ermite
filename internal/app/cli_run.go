@@ -254,7 +254,7 @@ func newRunListCmd(env *cliEnv) *cobra.Command {
 		for _, r := range runs {
 			rows = append(rows, []string{
 				strconv.FormatInt(r.GetId(), 10), runResult(r.GetStatus(), r.GetConclusion()), r.GetWorkflowName(),
-				strings.TrimPrefix(strings.TrimPrefix(r.GetRef(), "refs/heads/"), "refs/tags/"), shortSha(r.GetSha()),
+				refText(r.GetRef()), shortSha(r.GetSha()),
 				r.GetActor(), shortTime(r.GetCreatedAt(), "-"), r.GetTitle(),
 			})
 		}
@@ -766,4 +766,15 @@ func newRunRerunCmd(env *cliEnv) *cobra.Command {
 		return nil
 	}
 	return cmd
+}
+
+// refText is a ref as the run list shows it: the short name of a branch or a
+// tag, "!<n>" for the merge ref of a merge request (a pull_request run).
+func refText(ref string) string {
+	if rest, ok := strings.CutPrefix(ref, "refs/pull/"); ok {
+		if n, _, ok := strings.Cut(rest, "/"); ok {
+			return "!" + n
+		}
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "refs/tags/")
 }

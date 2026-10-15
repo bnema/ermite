@@ -60,3 +60,16 @@ func (s *SecretUseCache) Drop(runID int64) { s.c.drop(runID) }
 func EvalConcurrency(ctx context.Context, tok template.Token, env template.Env) (domain.CIConcurrency, error) {
 	return evalConcurrency(ctx, tok, env)
 }
+
+// MatchPullRequest exposes the pull_request filter to the tests.
+func MatchPullRequest(wf *workflow.Workflow, action, base string, files []string, truncated bool) bool {
+	return matchPullRequest(wf, action, base, files, truncated)
+}
+
+// PullFilesLink exposes the Link header of the files endpoint to the tests.
+func PullFilesLink(base string, page, perPage, total int) string {
+	return pullFilesLink(base, page, perPage, total)
+}
+
+// FilePatch exposes the patch text of a file of the files endpoint to the tests.
+func FilePatch(f domain.FileDiff) (string, bool) { return filePatch(f) }

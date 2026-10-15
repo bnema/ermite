@@ -62,8 +62,36 @@ type CIConfig struct {
 	Reader    ports.RepoReader
 	Git       ports.MergeGit
 	Diff      ports.CIGit
-	Bus       ports.EventBus
-	Clock     ports.Clock
+	// MRs, Pull and Committer give the workflows their pull_request event and
+	// the refs/pull/<n>/{head,merge} refs of the merge requests (CI-3, D5);
+	// without MRs or Pull the merge requests start no run and have no such
+	// refs. Committer is the identity of the test merge commits (default
+	// "ermite"). Fresh, when set, is told when the refs of a repository changed
+	// so that the reader sees them at once.
+	MRs       ports.MergeRequestStore
+	Pull      ports.PullGit
+	Committer domain.Identity
+	Fresh     ports.RepoFreshener
+	// PullStage, when set, is called by the workers of the merge requests at
+	// the stages "event" (an activity is taken), "computed" (its merge is
+	// computed, before it is published) and "refresh" (a refresh is taken).
+	// Tests use it to interleave other changes.
+	PullStage func(stage string)
+	// PullRefreshes bounds the merge requests waiting for a refresh of their refs
+	// (default DefaultCIPullRefreshes); past it repositories are rescanned. It
+	// does not bound the activities (synchronize runs), which have their own queue
+	// with the overload policy of the push triggers.
+	PullRefreshes int
+	// PullAttempts bounds the merge requests whose last conflict is remembered
+	// (default DefaultCIPullAttempts), so that a rescan does not try a conflicting
+	// merge again until a branch moves.
+	PullAttempts int
+	// PullSnapshot bounds the merge requests one push takes the snapshot of, in the
+	// push handler (default DefaultCIPullSnapshot): past it the others are skipped
+	// with an error in the log and the repository is rescanned for its refs.
+	PullSnapshot int
+	Bus          ports.EventBus
+	Clock        ports.Clock
 	// Auth re-validates the token of a log stream; nil skips it.
 	Auth ports.Revalidator
 	// Remote lists the refs of github.com repositories for ResolveActions; nil
@@ -134,6 +162,12 @@ func (c CIConfig) withDefaults() CIConfig {
 		c.RemoteConcurrency = DefaultCIRemoteConcurrency
 	}
 	def(&c.ResolveTimeout, DefaultCIResolveTimeout)
+	if c.PullSnapshot <= 0 {
+		c.PullSnapshot = DefaultCIPullSnapshot
+	}
+	if c.PullRefreshes <= 0 {
+		c.PullRefreshes = DefaultCIPullRefreshes
+	}
 	if c.TriggerQueue <= 0 {
 		c.TriggerQueue = DefaultCITriggerQueue
 	}
@@ -154,6 +188,9 @@ type CI struct {
 	cfg   CIConfig
 	boot  time.Time
 	queue chan ciTrigger
+	pull  *pullQueue // the work of the merge requests (ci_pull.go)
+
+	pullFileLists pullFilesCache // the files of the merge requests (ci_pullfiles.go)
 
 	stop context.CancelFunc
 	ctx  context.Context
@@ -206,7 +243,7 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 	cfg = cfg.withDefaults()
 	run, stop := context.WithCancel(context.WithoutCancel(ctx))
 	return &CI{
-		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue),
+		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue), pull: newPullQueue(cfg.TriggerQueue, cfg.PullRefreshes, cfg.PullAttempts),
 		ctx: run, stop: stop, flows: newWfCache(64), remoteSlots: make(chan struct{}, cfg.RemoteConcurrency),
 		heartbeats: map[string]time.Time{}, seen: map[string]time.Time{}, polls: map[string]pollRecord{},
 		archiveTokens: map[string]map[string]string{},
@@ -217,7 +254,9 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 // Start runs the trigger worker and the watchdog, and plans again the runs
 // that were open when the server stopped.
 func (c *CI) Start() {
-	c.wg.Add(2)
+	c.wg.Add(4)
+	go c.pullLoop()
+	go c.refreshLoop()
 	go c.triggerLoop()
 	go c.watchdog()
 	c.wg.Add(1)
@@ -374,7 +413,7 @@ func (rs *runState) touch(j *domain.CIJob) { rs.dirty[j.ID] = true }
 // checkOf builds the check of a job.
 func (rs *runState) checkOf(j domain.CIJob) domain.CICheck {
 	return domain.CICheck{
-		ID: j.ID, Repo: rs.run.Repo, Sha: rs.run.Sha, Name: j.Name, Status: j.Status(), Conclusion: j.Conclusion,
+		ID: j.ID, Repo: rs.run.Repo, Sha: rs.run.CheckSha(), Name: j.Name, Status: j.Status(), Conclusion: j.Conclusion,
 		RunID: rs.run.ID, JobID: j.ID, Attempt: rs.run.Attempt, WorkflowName: rs.run.WorkflowName,
 		CreatedAt: j.CreatedAt, StartedAt: j.StartedAt, CompletedAt: j.CompletedAt,
 	}

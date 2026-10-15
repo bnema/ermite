@@ -23,7 +23,11 @@ import (
 // (ErrSchemaTooNew) instead. Version 3 adds the records of CI-3 that an older
 // build would misread: the call and scoped jobs of reusable workflows (it would
 // run the jobs of a called workflow as jobs of the caller's file, and plan the
-// call itself).
+// call itself), the head commit of the runs of merge requests
+// (CIRun.head_sha: it would attach their checks to the merge commit, where
+// nothing looks for them), and the index of the open merge requests by source
+// branch (mropen/: an older build would not keep it up to date; the upgrade
+// builds it once, see BuildOpenIndex).
 const SchemaVersion = 3
 
 const schemaKey = "meta/schema"
@@ -48,6 +52,11 @@ func Open(ctx context.Context, dir string) (*Store, error) {
 	}
 	s := &Store{db: db}
 	if err := s.checkSchema(ctx); err != nil {
+		_ = db.Close(context.WithoutCancel(ctx))
+		return nil, err
+	}
+	// Part of the schema 3 upgrade: the index of the open merge requests.
+	if err := s.BuildOpenIndex(ctx); err != nil {
 		_ = db.Close(context.WithoutCancel(ctx))
 		return nil, err
 	}

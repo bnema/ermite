@@ -49,14 +49,18 @@ type MergeRequests struct {
 	bus       ports.EventBus
 	clock     ports.Clock
 	maint     ports.MaintenanceScheduler
-	ci        ports.WorkflowTrigger // nil: no CI
-	checks    ports.CIChecksReader  // nil: no CI, so no check blocks a merge
+	ci        ports.WorkflowTrigger    // nil: no CI
+	checks    ports.CIChecksReader     // nil: no CI, so no check blocks a merge
+	pulls     ports.PullRequestTrigger // nil: no pull_request workflows
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
 }
 
-var _ ports.MergeRequestService = (*MergeRequests)(nil)
+var (
+	_ ports.MergeRequestService = (*MergeRequests)(nil)
+	_ ports.PullGate            = (*MergeRequests)(nil)
+)
 
 // MergeRequestsConfig holds what the merge request use cases need. Every field
 // is required.
@@ -79,13 +83,17 @@ type MergeRequestsConfig struct {
 	// optional: without them there is no CI.
 	CI     ports.WorkflowTrigger
 	Checks ports.CIChecksReader
+	// PullRequests starts the pull_request workflows when a request is opened,
+	// closed or merged (the push of its source branch reaches CI instead).
+	// Optional.
+	PullRequests ports.PullRequestTrigger
 }
 
 // NewMergeRequests builds the merge request use cases.
 func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 	return &MergeRequests{
 		meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
-		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks,
+		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
 }
@@ -232,6 +240,11 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 		return domain.MergeRequest{}, err
 	}
 	m.bus.Publish(ctx, domain.MergeRequestOpened{MergeRequest: mr, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+	if m.pulls != nil {
+		// The commits the opening is for are the ones of now.
+		base, _ := m.branchOrZero(ctx, name, target)
+		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: mr.Number, Action: domain.PullOpened, Head: mr.HeadID, Base: base}, p)
+	}
 	return mr, nil
 }
 
@@ -619,6 +632,9 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 		log.Info().Str("repo", name.String()).Int64("number", number).
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("merge request closed")
 		m.bus.Publish(ctx, domain.MergeRequestClosed{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		if m.pulls != nil {
+			m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID}, p)
+		}
 		return mr, nil
 	}
 	return domain.MergeRequest{}, fmt.Errorf("close !%d of %q: %w", number, name, domain.ErrConflict)
@@ -813,12 +829,34 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	m.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,
 	})
+	if m.pulls != nil {
+		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID}, p) // closed, merged: true
+	}
 	if m.ci != nil {
 		// GitHub runs the "push" workflows of a merge, with the owner as actor;
 		// the run is trusted with what the merging principal may read.
 		m.ci.OnMerge(ctx, name, updates[:1], p)
 	}
 	return mr, deleted, nil
+}
+
+// WhileOpen implements ports.PullGate: fn runs under the merge lock, so a
+// close or a merge of the request cannot complete in the middle of it, and not
+// at all when the request is no longer open.
+func (m *MergeRequests) WhileOpen(ctx context.Context, name domain.RepoName, number int64, fn func() error) error {
+	unlock, err := m.lockRepo(ctx, name)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	mr, err := m.store.Get(ctx, name, number)
+	if err != nil {
+		return err
+	}
+	if !mr.IsOpen() {
+		return fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
+	}
+	return fn()
 }
 
 // checksAllow is the merge rule of FailingChecksBlock: every check of the
