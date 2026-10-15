@@ -52,6 +52,7 @@ type MergeRequests struct {
 	ci        ports.WorkflowTrigger    // nil: no CI
 	checks    ports.CIChecksReader     // nil: no CI, so no check blocks a merge
 	pulls     ports.PullRequestTrigger // nil: no pull_request workflows
+	tips      ports.CIRefTipStore      // nil: who merges is not recorded
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -87,13 +88,17 @@ type MergeRequestsConfig struct {
 	// closed or merged (the push of its source branch reaches CI instead).
 	// Optional.
 	PullRequests ports.PullRequestTrigger
+	// RefTips records who moves the target branch (and deletes the record of a
+	// deleted source branch) before the merge does, as a push does
+	// (domain.CIRefTip). Optional.
+	RefTips ports.CIRefTipStore
 }
 
 // NewMergeRequests builds the merge request use cases.
 func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 	return &MergeRequests{
 		meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
-		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests,
+		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
 }
@@ -796,7 +801,7 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 		}
 	}
 
-	merged, err := m.moveTarget(ctx, mr, mode, tip, head)
+	merged, err := m.moveTarget(ctx, mr, mode, tip, head, p)
 	if err != nil {
 		return domain.MergeRequest{}, false, err
 	}
@@ -812,7 +817,12 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	updates := []domain.RefUpdate{{Old: tip.String(), New: merged.String(), Ref: "refs/heads/" + mr.Target}}
 	deleted := false
 	if params.DeleteSource {
-		// The merge is done and recorded: a failure here keeps the branch.
+		// The merge is done and recorded: a failure here keeps the branch. Who
+		// pushed the source goes first (the branch is gone either way for a
+		// schedule; a kept branch merely has no record: not trusted).
+		if err := recordRefTips(ctx, m.tips, name, []domain.RefUpdate{{Old: head.String(), New: domain.ZeroOID, Ref: "refs/heads/" + mr.Source}}, "", domain.CIPusher{}, false); err != nil {
+			log.Warn().Err(err).Str("repo", name.String()).Str("branch", mr.Source).Msg("the record of the source branch was kept")
+		}
 		switch err := m.git.DeleteBranch(context.WithoutCancel(ctx), name, mr.Source, head); {
 		case err != nil:
 			log.Warn().Err(err).Str("repo", name.String()).Int64("number", number).Str("branch", mr.Source).
@@ -835,7 +845,7 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	if m.ci != nil {
 		// GitHub runs the "push" workflows of a merge, with the owner as actor;
 		// the run is trusted with what the merging principal may read.
-		m.ci.OnMerge(ctx, name, updates[:1], p)
+		m.ci.OnMerge(ctx, name, updates, p)
 	}
 	return mr, deleted, nil
 }
@@ -931,7 +941,7 @@ func (m *MergeRequests) recordPush(ctx context.Context, name domain.RepoName) {
 
 // moveTarget moves the target branch from tip to the head (fast-forward) or to
 // a new signed squash commit, and returns the new tip.
-func (m *MergeRequests) moveTarget(ctx context.Context, mr domain.MergeRequest, mode domain.MergeMode, tip, head domain.ObjectID) (domain.ObjectID, error) {
+func (m *MergeRequests) moveTarget(ctx context.Context, mr domain.MergeRequest, mode domain.MergeMode, tip, head domain.ObjectID, p domain.Principal) (domain.ObjectID, error) {
 	newTip := head
 	if mode == domain.MergeModeSquash {
 		commits, more, err := m.git.ListRange(ctx, mr.Repo, tip, head, domain.MaxSquashCommits)
@@ -953,6 +963,13 @@ func (m *MergeRequests) moveTarget(ctx context.Context, mr domain.MergeRequest, 
 		if newTip, err = m.git.WriteCommit(ctx, mr.Repo, commit.Signed(armored)); err != nil {
 			return domain.ObjectID{}, err
 		}
+	}
+	// The target is the merger's from the moment it moves: recorded before it
+	// does, under the merge lock (domain.CIRefTip). The run shows the owner, as a
+	// merge's push does on GitHub.
+	if err := recordRefTips(ctx, m.tips, mr.Repo, []domain.RefUpdate{{Old: tip.String(), New: newTip.String(), Ref: "refs/heads/" + mr.Target}},
+		authorOf(domain.Owner()), domain.PusherOf(p), domain.TrustedActor(p)); err != nil {
+		return domain.ObjectID{}, err
 	}
 	err := m.git.UpdateBranch(ctx, mr.Repo, mr.Target, tip, newTip)
 	if errors.Is(err, domain.ErrConflict) {

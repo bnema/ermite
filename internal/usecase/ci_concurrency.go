@@ -616,7 +616,7 @@ func (rs *runState) evalRunConcurrency(ctx context.Context, wf *workflow.Workflo
 	if err != nil {
 		return domain.CIConcurrency{}, err
 	}
-	env := template.Env{Contexts: map[string]expr.Value{"github": gh, "inputs": expr.NewDictionary(), "vars": vars}}
+	env := template.Env{Contexts: map[string]expr.Value{"github": gh, "inputs": rs.inputsOf(domain.CIJob{}), "vars": vars}}
 	return evalConcurrency(ctx, wf.Concurrency, env)
 }
 

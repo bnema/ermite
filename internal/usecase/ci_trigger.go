@@ -54,6 +54,9 @@ type ciTrigger struct {
 // with GITHUB_TOKEN start no run): that is what stops a workflow that pushes
 // from running itself again.
 func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal) {
+	// Whoever pushed, the workflow files of the default branch may have changed.
+	// (Who pushed was recorded before the refs moved: Pushes.Check.)
+	c.markSchedulesDirty(repo, updates)
 	// The merge requests follow the push whoever made it (their refs); only a
 	// push that is not a job's starts pull_request runs.
 	defer c.onBranchesMoved(ctx, repo, updates, authorOf(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), !pusher.ViaJobToken())
@@ -72,6 +75,7 @@ func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.
 // merging. For the same reason the run is trusted (gets secrets) only when the
 // merger is: the displayed actor is not the one that decides.
 func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal) {
+	c.markSchedulesDirty(repo, updates)
 	// The merge moved a target branch: the test merges of the other requests
 	// into it are computed again (a merge starts no synchronize run), after the
 	// push workflows are queued.
@@ -181,13 +185,19 @@ type pushFacts struct {
 	// refs/pull/<n>/merge (or /head), commit the test merge commit (or the
 	// head) and head the head commit.
 	pull *pullFacts
+	// custom is set for the events that are not a push or a merge request:
+	// workflow_dispatch, schedule and workflow_run (ci_events.go).
+	custom *customEvent
 }
 
 // eventName is the event of the run, as the run records and github.event_name
 // show it.
 func (f pushFacts) eventName() string {
-	if f.pull != nil {
+	switch {
+	case f.pull != nil:
 		return "pull_request"
+	case f.custom != nil:
+		return f.custom.name
 	}
 	return "push"
 }
@@ -195,8 +205,11 @@ func (f pushFacts) eventName() string {
 // runTitle is the title of a run without run-name: the commit message of a
 // push, the title of the merge request for a pull_request.
 func (f pushFacts) runTitle() string {
-	if f.pull != nil {
+	switch {
+	case f.pull != nil:
 		return firstLine(f.pull.mr.Title.String())
+	case f.custom != nil && f.custom.title != "":
+		return firstLine(f.custom.title)
 	}
 	return firstLine(f.head.Message)
 }
@@ -469,6 +482,8 @@ func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f 
 		return err
 	}
 	c.publishRun(ctx, repo, draft.Run)
+	c.onRunEvent(ctx, draft.Run, runRequested)
+	c.onRunEvent(ctx, draft.Run, runCompleted)
 	log := logRun(ctx, draft.Run)
 	log.Info().Str("workflow", wfPath).Msg("ci run failed: invalid workflow file")
 	return nil
@@ -481,6 +496,13 @@ func (c *CI) publishRun(ctx context.Context, repo domain.Repo, run domain.CIRun)
 // startRun creates the run of a matching workflow with one waiting record per
 // job of the file, then plans the jobs that can start.
 func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, yaml string, wf *workflow.Workflow) error {
+	_, err := c.launchRun(ctx, repo, t, f, wfPath, yaml, wf)
+	return err
+}
+
+// launchRun is startRun that also returns the run it created, as it was when
+// created (the zero run when the repository or the merge request is gone).
+func (c *CI) launchRun(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, yaml string, wf *workflow.Workflow) (domain.CIRun, error) {
 	now := c.now()
 	name := workflowName(wf, wfPath)
 	// The title of a run without run-name is the commit message for a branch.
@@ -498,7 +520,7 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 	}
 	vars, err := c.varsContext(ctx, repo.Name)
 	if err != nil {
-		return err
+		return domain.CIRun{}, err
 	}
 	draft, err := c.createRun(ctx, f, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
@@ -527,18 +549,19 @@ func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f push
 		return d
 	})
 	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, errPullClosed) {
-		return nil
+		return domain.CIRun{}, nil
 	}
 	if err != nil {
-		return err
+		return domain.CIRun{}, err
 	}
 	c.publishRun(ctx, repo, draft.Run)
 	for _, j := range draft.Jobs {
 		c.cfg.Bus.Publish(ctx, domain.JobUpdated{Job: j, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	}
+	c.onRunEvent(ctx, draft.Run, runRequested)
 	log := logRun(ctx, draft.Run)
-	log.Info().Str("workflow", wfPath).Str("ref", f.update.Ref).Int("jobs", len(draft.Jobs)).Msg("ci run created")
-	return c.advanceRun(ctx, draft.Run.ID)
+	log.Info().Str("workflow", wfPath).Str("ref", f.update.Ref).Str("event", draft.Run.Event).Int("jobs", len(draft.Jobs)).Msg("ci run created")
+	return draft.Run, c.advanceRun(ctx, draft.Run.ID)
 }
 
 // workflowName is the name of a workflow, the path of its file when it has no
@@ -620,7 +643,7 @@ func (c *CI) evalRunName(ctx context.Context, wf *workflow.Workflow, githubJSON 
 		return "", false
 	}
 	env := template.Env{Contexts: map[string]expr.Value{
-		"github": gh, "inputs": expr.NewDictionary(), "vars": vars,
+		"github": gh, "inputs": eventInputs(wf, githubJSON), "vars": vars,
 	}}
 	name, err := template.EvaluateString(ctx, wf.RunName, env)
 	if err != nil {
@@ -652,7 +675,8 @@ func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f
 		return matrixIssue{} // nothing to expand: no context to build
 	}
 	probe := domain.CIRun{Repo: repo.Name, Ref: f.update.Ref, Sha: f.commit.String(), Actor: t.actor, WorkflowPath: wfPath, WorkflowName: wf.Name, CreatedAt: c.now()}
-	gh, err := expr.FromJSON([]byte(c.githubJSON(ctx, repo, probe, f)))
+	ghJSON := c.githubJSON(ctx, repo, probe, f)
+	gh, err := expr.FromJSON([]byte(ghJSON))
 	if err != nil {
 		return matrixIssue{}
 	}
@@ -663,7 +687,7 @@ func (c *CI) matrixProblem(ctx context.Context, repo domain.Repo, t ciTrigger, f
 		vars = expr.NewDictionary()
 	}
 	env := template.Env{Contexts: map[string]expr.Value{
-		"github": gh, "needs": expr.NewDictionary(), "inputs": expr.NewDictionary(), "vars": vars,
+		"github": gh, "needs": expr.NewDictionary(), "inputs": eventInputs(wf, ghJSON), "vars": vars,
 	}}
 	for _, j := range wf.Jobs {
 		_, err := j.EvaluateStrategy(ctx, env)

@@ -40,6 +40,9 @@ templ RunListRow(r RunRow) {
 		<td class="c-name">
 			<a href={ templ.SafeURL(r.Href) }>{ r.Workflow }</a>
 			<span class="mute">{ r.Number }</span>
+			if r.Event != "" {
+				<span class="pill">{ r.Event }</span>
+			}
 			if r.Attempt > 1 {
 				<span class="pill">attempt { itoa(int(r.Attempt)) }</span>
 			}
@@ -239,6 +242,8 @@ templ runRail(p RunPage) {
 		<dl class="kv">
 			<dt>result</dt>
 			<dd>{ p.State }</dd>
+			<dt>event</dt>
+			<dd>{ p.Event }</dd>
 			<dt>commit</dt>
 			<dd><a href={ templ.SafeURL(p.CHref) }>{ p.Short }</a></dd>
 			<dt>ref</dt>

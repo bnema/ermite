@@ -141,6 +141,27 @@ type CIConfig struct {
 	// transaction removes (default 256, far below the size limit of a kv batch);
 	// the others go with the next decisions and the reconciliation.
 	ConcurrencyPruneBatch int
+	// ScheduleTick is how often the scheduler looks at the clock (default one
+	// second) and ScheduleBudget the repositories it handles per tick (default
+	// 64); see ci_schedule.go.
+	ScheduleTick   time.Duration
+	ScheduleBudget int
+	// RefTips holds who moves each branch and tag to its object, written before
+	// the ref moves (Pushes, MergeRequests), for the actor and trust of scheduled
+	// runs and the trust of dispatched ones (ci_tips.go). Nil: they are never
+	// trusted. Leave it unset rather than assigning a typed nil pointer.
+	RefTips ports.CIRefTipStore
+	// DispatchResolved, when set, is called by DispatchWorkflow after it resolved
+	// its ref and before it judges the trust of the run. Tests use it to move the
+	// ref in between.
+	DispatchResolved func()
+	// RunEventHandled, when set, is called after the workflows waiting for a
+	// "requested" or "completed" event of a run were started (or none matched).
+	// Tests use it as a barrier.
+	RunEventHandled func(runID int64, action string)
+	// ScheduleVisit, when set, is called with each repository the scheduler
+	// looks at. Tests use it.
+	ScheduleVisit func(repo domain.RepoName)
 }
 
 func (c CIConfig) withDefaults() CIConfig {
@@ -174,6 +195,10 @@ func (c CIConfig) withDefaults() CIConfig {
 	if c.ConcurrencyPruneBatch <= 0 {
 		c.ConcurrencyPruneBatch = DefaultCIConcurrencyPruneBatch
 	}
+	def(&c.ScheduleTick, DefaultCIScheduleTick)
+	if c.ScheduleBudget <= 0 {
+		c.ScheduleBudget = DefaultCIScheduleBudget
+	}
 	return c
 }
 
@@ -188,7 +213,11 @@ type CI struct {
 	cfg   CIConfig
 	boot  time.Time
 	queue chan ciTrigger
-	pull  *pullQueue // the work of the merge requests (ci_pull.go)
+	// runEvents are the requested and completed events of runs, for the
+	// workflow_run workflows (ci_workflowrun.go).
+	runEvents chan runEvent
+	sched     *scheduler // the schedule trigger (ci_schedule.go)
+	pull      *pullQueue // the work of the merge requests (ci_pull.go)
 
 	pullFileLists pullFilesCache // the files of the merge requests (ci_pullfiles.go)
 
@@ -243,7 +272,7 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 	cfg = cfg.withDefaults()
 	run, stop := context.WithCancel(context.WithoutCancel(ctx))
 	return &CI{
-		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue), pull: newPullQueue(cfg.TriggerQueue, cfg.PullRefreshes, cfg.PullAttempts),
+		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue), runEvents: make(chan runEvent, cfg.TriggerQueue), sched: newScheduler(cfg.Clock.Now()), pull: newPullQueue(cfg.TriggerQueue, cfg.PullRefreshes, cfg.PullAttempts),
 		ctx: run, stop: stop, flows: newWfCache(64), remoteSlots: make(chan struct{}, cfg.RemoteConcurrency),
 		heartbeats: map[string]time.Time{}, seen: map[string]time.Time{}, polls: map[string]pollRecord{},
 		archiveTokens: map[string]map[string]string{},
@@ -254,7 +283,9 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 // Start runs the trigger worker and the watchdog, and plans again the runs
 // that were open when the server stopped.
 func (c *CI) Start() {
-	c.wg.Add(4)
+	c.wg.Add(6)
+	go c.scheduleLoop()
+	go c.runEventLoop()
 	go c.pullLoop()
 	go c.refreshLoop()
 	go c.triggerLoop()
@@ -426,6 +457,7 @@ func (rs *runState) flush(ctx context.Context) error {
 	now := c.now()
 	var w ports.CIWrite
 	var changedJobs []int
+	completing := false
 	for i := range rs.jobs {
 		if rs.dirty[rs.jobs[i].ID] {
 			w.Jobs = append(w.Jobs, rs.jobs[i])
@@ -439,6 +471,7 @@ func (rs *runState) flush(ctx context.Context) error {
 			}
 		}
 		if next := rs.recompute(now); next != rs.run {
+			completing = rs.run.Status != domain.CICompleted && next.Status == domain.CICompleted
 			rs.run, rs.runDirty = next, true
 		}
 	}
@@ -485,6 +518,9 @@ func (rs *runState) flush(ctx context.Context) error {
 	}
 	if changedRun {
 		c.cfg.Bus.Publish(ctx, domain.RunUpdated{Run: rs.run, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+	}
+	if completing {
+		c.onRunEvent(ctx, rs.run, runCompleted)
 	}
 	return nil
 }

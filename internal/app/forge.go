@@ -256,6 +256,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			Proxy: gitremote.ProxyEnv(os.Getenv),
 		})),
 		Tokens:    store.Tokens(),
+		RefTips:   store.CI(),
 		Settings:  f.Settings,
 		Workflows: opts.workflows(githubraw.New(githubraw.Config{})),
 	}
@@ -264,7 +265,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		opts.ci(&ciCfg)
 	}
 	f.CI = usecase.NewCI(ctx, ciCfg)
-	f.Pushes.WithWorkflowTrigger(f.CI).WithWorkflowGuard(git)
+	f.Pushes.WithWorkflowTrigger(f.CI).WithWorkflowGuard(git).WithRefTips(store.CI())
 	f.Repos.WithCIRunCleaner(f.CI)
 	f.CI.Start()
 	f.EventLog = usecase.NewEvents(ctx, f.Repos, f.Bus, clock, usecase.EventsConfig{
@@ -284,7 +285,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.MergeRequests = usecase.NewMergeRequests(usecase.MergeRequestsConfig{
 		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
-		CI: f.CI, Checks: f.CI, PullRequests: f.CI,
+		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(),
 	})
 	f.CI.SetPullGate(f.MergeRequests)
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")

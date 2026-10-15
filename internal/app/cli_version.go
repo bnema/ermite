@@ -119,5 +119,6 @@ var featureUse = map[string]string{
 	client.FeatureCIRuns:              "`ermite run` needs: the commands will fail on this server",
 	client.FeatureCIRunners:           "`ermite runner` needs: the commands will fail on this server",
 	client.FeatureCISecrets:           "`ermite secret`, `variable` and `environment` need: the commands will fail on this server",
+	client.FeatureCIDispatch:          "`ermite workflow run` needs: the command will fail on this server",
 	client.FeaturePasskeys:            "`ermite web passkey` needs: the commands will fail on this server (passkeys need an https public URL with a DNS host name)",
 }

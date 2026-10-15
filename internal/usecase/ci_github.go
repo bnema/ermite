@@ -267,6 +267,9 @@ func (c *CI) githubJSON(ctx context.Context, repo domain.Repo, run domain.CIRun,
 	if f.pull != nil {
 		return c.pullGithubJSON(repo, run, f)
 	}
+	if f.custom != nil {
+		return c.customGithubJSON(repo, run, f)
+	}
 	u := c.urls(repo)
 	id := c.identity(run.Actor)
 	refName, refType := strings.TrimPrefix(run.Ref, "refs/heads/"), "branch"

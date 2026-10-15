@@ -203,6 +203,9 @@ func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.Repo
 	if err := r.meta.Delete(ctx, name); err != nil {
 		return fmt.Errorf("delete metadata of %q: %w", name, err)
 	}
+	if r.ci != nil {
+		r.ci.ForgetRepo(name)
+	}
 	if len(runIDs) > 0 {
 		if err := r.ci.RemoveLogs(context.WithoutCancel(ctx), runIDs); err != nil {
 			log.Warn().Err(err).Str("repo", name.String()).Msg("remove the CI logs of the repository; the sweep will")

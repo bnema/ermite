@@ -30,6 +30,7 @@ type Pushes struct {
 	fresh ports.RepoFreshener   // nil: the reader needs no telling
 	ci    ports.WorkflowTrigger // nil: no CI
 	wf    ports.WorkflowGuard   // nil: pushes by job tokens are refused
+	tips  ports.CIRefTipStore   // nil: who pushes a ref is not recorded
 }
 
 var (
@@ -55,6 +56,14 @@ func (u *Pushes) WithFreshener(f ports.RepoFreshener) *Pushes {
 // Call it before the first push; it returns u.
 func (u *Pushes) WithWorkflowTrigger(t ports.WorkflowTrigger) *Pushes {
 	u.ci = t
+	return u
+}
+
+// WithRefTips makes Check record who is about to move each branch and tag
+// (domain.CIRefTip), before Git moves it. Call it before the first push; it
+// returns u.
+func (u *Pushes) WithRefTips(t ports.CIRefTipStore) *Pushes {
+	u.tips = t
 	return u
 }
 
@@ -165,6 +174,13 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 		if err := u.checkWorkflows(ctx, name, updates, objects); err != nil {
 			return err
 		}
+	}
+	// Last, once the push is accepted: who pushes the branches and tags is
+	// recorded before Git moves them, so that a tip never has the record of an
+	// earlier pusher at the same commit (domain.CIRefTip). A record that cannot
+	// be written refuses the push, as it cannot be run later with a known trust.
+	if err := recordRefTips(ctx, u.tips, name, updates, authorOf(p), domain.PusherOf(p), domain.TrustedActor(p)); err != nil {
+		return err
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Debug().Str("repo", name.String()).Int("refs", len(updates)).Msg("push checked")

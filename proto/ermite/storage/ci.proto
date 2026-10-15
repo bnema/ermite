@@ -416,6 +416,21 @@ message CIConcurrencyRecord {
   CIConcurrencyEntry pending = 2;
 }
 
+// CIRefTip is stored under "cireftip/<repo>/<full ref name>" (a branch or a
+// tag): who moves the ref to the object sha, so that a scheduled or dispatched
+// run on it takes their actor and trust (domain.CIRefTip). It is written before
+// the ref moves, and names the object it is for: a record of another object
+// than the ref's is not valid.
+message CIRefTip {
+  string sha = 1;
+  // The actor the run shows ("owner", "root" or a token label).
+  string actor = 2;
+  bool trusted = 3;
+  // As CIRunSource: "root", "owner", "token" or empty.
+  string pusher_kind = 4;
+  string pusher_token_id = 5;
+}
+
 // CIConcurrencyMark is stored under
 // "concurmark/<repo>/<escaped key(group)>/<run:020d>/<attempt:010d>/<job id or ->":
 // where an entry stands in its group. It is written in the same batch as the

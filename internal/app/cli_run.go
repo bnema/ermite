@@ -253,12 +253,12 @@ func newRunListCmd(env *cliEnv) *cobra.Command {
 		rows := make([][]string, 0, len(runs))
 		for _, r := range runs {
 			rows = append(rows, []string{
-				strconv.FormatInt(r.GetId(), 10), runResult(r.GetStatus(), r.GetConclusion()), r.GetWorkflowName(),
+				strconv.FormatInt(r.GetId(), 10), runResult(r.GetStatus(), r.GetConclusion()), r.GetWorkflowName(), r.GetEvent(),
 				refText(r.GetRef()), shortSha(r.GetSha()),
 				r.GetActor(), shortTime(r.GetCreatedAt(), "-"), r.GetTitle(),
 			})
 		}
-		return table(cmd.OutOrStdout(), []string{"ID", "RESULT", "WORKFLOW", "REF", "COMMIT", "ACTOR", "CREATED", "TITLE"}, rows)
+		return table(cmd.OutOrStdout(), []string{"ID", "RESULT", "WORKFLOW", "EVENT", "REF", "COMMIT", "ACTOR", "CREATED", "TITLE"}, rows)
 	}
 	return cmd
 }
@@ -357,6 +357,7 @@ func printRun(w io.Writer, r *ermite.GetRunResponse) error {
 	pairs := [][2]string{
 		{"run", fmt.Sprintf("%d (#%d of %s)", run.GetId(), run.GetNumber(), run.GetWorkflowName())},
 		{"result", runResult(run.GetStatus(), run.GetConclusion())},
+		{"event", run.GetEvent()},
 		{"ref", run.GetRef()},
 		{"commit", run.GetSha()},
 		{"title", run.GetTitle()},

@@ -38,6 +38,7 @@ import (
 //	ciactive/<job key>                   job assigned or running
 //	jobtoken/<hash>                      job token (value: job key)
 //	concur/<repo>/<key(group)>           concurrency group (ci_concurrency.go)
+//	cireftip/<repo>/<ref>                who moves a branch or tag to its object (ci_tip.go)
 //
 // The job repository tokens and the action resolutions are in ci_token.go, the
 // annotations in ci_annotation.go.
@@ -885,7 +886,7 @@ func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]by
 		keys = append(keys, slices.Clone(key))
 	}
 	keys = append(keys, repoReaderKeys(ctx, snap, repo)...)
-	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/", concurPrefix + repo.String() + "/", concurMarkPrefixAll + repo.String() + "/"} {
+	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/", concurPrefix + repo.String() + "/", concurMarkPrefixAll + repo.String() + "/", refTipsPrefix(repo)} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))
 		}

@@ -484,6 +484,13 @@ func (rs *runState) inputsOf(j domain.CIJob) *expr.Dictionary {
 				return d
 			}
 		}
+		return expr.NewDictionary()
+	}
+	if j.Scope == "" && rs.run.Event == eventDispatch {
+		// The inputs of a workflow_dispatch run, typed by their declaration.
+		if wf, err := rs.c.flows.get(rs.run.ID, rs.run.WorkflowPath, rs.src.WorkflowYAML); err == nil {
+			return eventInputs(wf, rs.src.GithubJSON)
+		}
 	}
 	return expr.NewDictionary()
 }

@@ -82,6 +82,19 @@ type CIRepoTokenStore interface {
 	GetRepoToken(ctx context.Context, id string) (domain.CIRepoToken, error)
 }
 
+// CIRefTipStore keeps, per branch or tag (full ref name), who moves it to its
+// object (domain.CIRefTip). The record is written before the ref moves.
+// *kvstore.CI implements it; the records go with the repository.
+type CIRefTipStore interface {
+	// PutRefTip stores the record of a ref, replacing the earlier one. A
+	// repository that does not exist is domain.ErrNotFound.
+	PutRefTip(ctx context.Context, t domain.CIRefTip) error
+	// GetRefTip returns the record of a ref, or domain.ErrNotFound.
+	GetRefTip(ctx context.Context, repo domain.RepoName, ref string) (domain.CIRefTip, error)
+	// DeleteRefTip removes the record of a ref; a missing one is not an error.
+	DeleteRefTip(ctx context.Context, repo domain.RepoName, ref string) error
+}
+
 // CIStore keeps CI runs, jobs and checks. The store derives its own indexes
 // (the queue of ready jobs, the active jobs, the open runs, the job tokens)
 // from the records it writes.
@@ -170,6 +183,9 @@ type CIStore interface {
 type CIRunCleaner interface {
 	RunIDs(ctx context.Context, repo domain.RepoName) ([]int64, error)
 	RemoveLogs(ctx context.Context, runIDs []int64) error
+	// ForgetRepo drops what CI keeps in memory for the deleted repository (its
+	// cached schedules).
+	ForgetRepo(repo domain.RepoName)
 }
 
 // CIChecksReader is the read side of the checks, for the merge rule and the
@@ -253,6 +269,16 @@ type CISummaryStore interface {
 	// RunIDs lists the runs that have a summary directory, for the orphan
 	// sweep.
 	RunIDs(ctx context.Context) ([]int64, error)
+}
+
+// DispatchParams are the arguments of RunService.DispatchWorkflow.
+type DispatchParams struct {
+	// WorkflowPath is the path of the workflow file, or its file name.
+	WorkflowPath string
+	// Ref is a branch or a tag, short or full name; empty is the default branch.
+	Ref string
+	// Inputs are the values of the inputs by name, as text.
+	Inputs map[string]string
 }
 
 // WorkflowTrigger starts the workflows that match pushed refs. OnPush only
@@ -663,6 +689,10 @@ type RunService interface {
 	GetJobLog(ctx context.Context, p domain.Principal, repo domain.RepoName, params GetJobLogParams, send func(LogBatch) error) error
 	CancelRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64) (domain.CIRun, error)
 	RerunRun(ctx context.Context, p domain.Principal, repo domain.RepoName, runID int64, failedOnly bool) (domain.CIRun, error)
+	// DispatchWorkflow starts a run of a workflow file by hand (workflow_dispatch).
+	// The caller needs ci:write on the repository, or is a job token with the
+	// permission actions: write. The run is returned queued.
+	DispatchWorkflow(ctx context.Context, p domain.Principal, repo domain.RepoName, params DispatchParams) (domain.CIRun, error)
 	ListChecks(ctx context.Context, p domain.Principal, repo domain.RepoName, sha string) (ChecksResult, error)
 	// ListAnnotations returns the annotations of a run attempt (0 for the
 	// latest), of one job when jobID is not empty. Each job gives those of the

@@ -2349,6 +2349,89 @@ func (x *CIConcurrencyRecord) GetPending() *CIConcurrencyEntry {
 	return nil
 }
 
+// CIRefTip is stored under "cireftip/<repo>/<full ref name>" (a branch or a
+// tag): who moves the ref to the object sha, so that a scheduled or dispatched
+// run on it takes their actor and trust (domain.CIRefTip). It is written before
+// the ref moves, and names the object it is for: a record of another object
+// than the ref's is not valid.
+type CIRefTip struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Sha   string                 `protobuf:"bytes,1,opt,name=sha,proto3" json:"sha,omitempty"`
+	// The actor the run shows ("owner", "root" or a token label).
+	Actor   string `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	Trusted bool   `protobuf:"varint,3,opt,name=trusted,proto3" json:"trusted,omitempty"`
+	// As CIRunSource: "root", "owner", "token" or empty.
+	PusherKind    string `protobuf:"bytes,4,opt,name=pusher_kind,json=pusherKind,proto3" json:"pusher_kind,omitempty"`
+	PusherTokenId string `protobuf:"bytes,5,opt,name=pusher_token_id,json=pusherTokenId,proto3" json:"pusher_token_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CIRefTip) Reset() {
+	*x = CIRefTip{}
+	mi := &file_ermite_storage_ci_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CIRefTip) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CIRefTip) ProtoMessage() {}
+
+func (x *CIRefTip) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_ci_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CIRefTip.ProtoReflect.Descriptor instead.
+func (*CIRefTip) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CIRefTip) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *CIRefTip) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *CIRefTip) GetTrusted() bool {
+	if x != nil {
+		return x.Trusted
+	}
+	return false
+}
+
+func (x *CIRefTip) GetPusherKind() string {
+	if x != nil {
+		return x.PusherKind
+	}
+	return ""
+}
+
+func (x *CIRefTip) GetPusherTokenId() string {
+	if x != nil {
+		return x.PusherTokenId
+	}
+	return ""
+}
+
 // CIConcurrencyMark is stored under
 // "concurmark/<repo>/<escaped key(group)>/<run:020d>/<attempt:010d>/<job id or ->":
 // where an entry stands in its group. It is written in the same batch as the
@@ -2368,7 +2451,7 @@ type CIConcurrencyMark struct {
 
 func (x *CIConcurrencyMark) Reset() {
 	*x = CIConcurrencyMark{}
-	mi := &file_ermite_storage_ci_proto_msgTypes[14]
+	mi := &file_ermite_storage_ci_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2380,7 +2463,7 @@ func (x *CIConcurrencyMark) String() string {
 func (*CIConcurrencyMark) ProtoMessage() {}
 
 func (x *CIConcurrencyMark) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_ci_proto_msgTypes[14]
+	mi := &file_ermite_storage_ci_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2393,7 +2476,7 @@ func (x *CIConcurrencyMark) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CIConcurrencyMark.ProtoReflect.Descriptor instead.
 func (*CIConcurrencyMark) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{14}
+	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CIConcurrencyMark) GetEntry() *CIConcurrencyEntry {
@@ -2642,7 +2725,14 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\tcanceling\x18\x05 \x01(\bR\tcanceling\"\x97\x01\n" +
 	"\x13CIConcurrencyRecord\x12<\n" +
 	"\arunning\x18\x01 \x01(\v2\".ermite.storage.CIConcurrencyEntryR\arunning\x12<\n" +
-	"\apending\x18\x02 \x01(\v2\".ermite.storage.CIConcurrencyEntryR\apendingJ\x04\b\x03\x10\x04\"\x9d\x01\n" +
+	"\apending\x18\x02 \x01(\v2\".ermite.storage.CIConcurrencyEntryR\apendingJ\x04\b\x03\x10\x04\"\x95\x01\n" +
+	"\bCIRefTip\x12\x10\n" +
+	"\x03sha\x18\x01 \x01(\tR\x03sha\x12\x14\n" +
+	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x18\n" +
+	"\atrusted\x18\x03 \x01(\bR\atrusted\x12\x1f\n" +
+	"\vpusher_kind\x18\x04 \x01(\tR\n" +
+	"pusherKind\x12&\n" +
+	"\x0fpusher_token_id\x18\x05 \x01(\tR\rpusherTokenId\"\x9d\x01\n" +
 	"\x11CIConcurrencyMark\x128\n" +
 	"\x05entry\x18\x01 \x01(\v2\".ermite.storage.CIConcurrencyEntryR\x05entry\x12\x14\n" +
 	"\x05group\x18\x02 \x01(\tR\x05group\x128\n" +
@@ -2709,7 +2799,7 @@ func file_ermite_storage_ci_proto_rawDescGZIP() []byte {
 }
 
 var file_ermite_storage_ci_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
-var file_ermite_storage_ci_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_ermite_storage_ci_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_ermite_storage_ci_proto_goTypes = []any{
 	(CIStatus)(0),                 // 0: ermite.storage.CIStatus
 	(CIConclusion)(0),             // 1: ermite.storage.CIConclusion
@@ -2733,55 +2823,56 @@ var file_ermite_storage_ci_proto_goTypes = []any{
 	(*CIConcurrency)(nil),         // 19: ermite.storage.CIConcurrency
 	(*CIConcurrencyEntry)(nil),    // 20: ermite.storage.CIConcurrencyEntry
 	(*CIConcurrencyRecord)(nil),   // 21: ermite.storage.CIConcurrencyRecord
-	(*CIConcurrencyMark)(nil),     // 22: ermite.storage.CIConcurrencyMark
-	nil,                           // 23: ermite.storage.CIJob.OutputsEntry
-	nil,                           // 24: ermite.storage.CIJob.PermissionsEntry
-	nil,                           // 25: ermite.storage.CICall.SecretsEntry
-	nil,                           // 26: ermite.storage.CIRepoToken.PermissionsEntry
-	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
+	(*CIRefTip)(nil),              // 22: ermite.storage.CIRefTip
+	(*CIConcurrencyMark)(nil),     // 23: ermite.storage.CIConcurrencyMark
+	nil,                           // 24: ermite.storage.CIJob.OutputsEntry
+	nil,                           // 25: ermite.storage.CIJob.PermissionsEntry
+	nil,                           // 26: ermite.storage.CICall.SecretsEntry
+	nil,                           // 27: ermite.storage.CIRepoToken.PermissionsEntry
+	(*timestamppb.Timestamp)(nil), // 28: google.protobuf.Timestamp
 }
 var file_ermite_storage_ci_proto_depIdxs = []int32{
 	0,  // 0: ermite.storage.CIRun.status:type_name -> ermite.storage.CIStatus
 	1,  // 1: ermite.storage.CIRun.conclusion:type_name -> ermite.storage.CIConclusion
-	27, // 2: ermite.storage.CIRun.created_at:type_name -> google.protobuf.Timestamp
-	27, // 3: ermite.storage.CIRun.started_at:type_name -> google.protobuf.Timestamp
-	27, // 4: ermite.storage.CIRun.completed_at:type_name -> google.protobuf.Timestamp
-	27, // 5: ermite.storage.CIRun.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	28, // 2: ermite.storage.CIRun.created_at:type_name -> google.protobuf.Timestamp
+	28, // 3: ermite.storage.CIRun.started_at:type_name -> google.protobuf.Timestamp
+	28, // 4: ermite.storage.CIRun.completed_at:type_name -> google.protobuf.Timestamp
+	28, // 5: ermite.storage.CIRun.cancel_requested_at:type_name -> google.protobuf.Timestamp
 	19, // 6: ermite.storage.CIRun.concurrency:type_name -> ermite.storage.CIConcurrency
 	2,  // 7: ermite.storage.CIStep.state:type_name -> ermite.storage.CIStepState
 	1,  // 8: ermite.storage.CIStep.conclusion:type_name -> ermite.storage.CIConclusion
-	27, // 9: ermite.storage.CIStep.started_at:type_name -> google.protobuf.Timestamp
-	27, // 10: ermite.storage.CIStep.completed_at:type_name -> google.protobuf.Timestamp
+	28, // 9: ermite.storage.CIStep.started_at:type_name -> google.protobuf.Timestamp
+	28, // 10: ermite.storage.CIStep.completed_at:type_name -> google.protobuf.Timestamp
 	1,  // 11: ermite.storage.CIStep.outcome:type_name -> ermite.storage.CIConclusion
 	3,  // 12: ermite.storage.CIJob.phase:type_name -> ermite.storage.CIJobPhase
 	1,  // 13: ermite.storage.CIJob.conclusion:type_name -> ermite.storage.CIConclusion
 	4,  // 14: ermite.storage.CIJob.isolation:type_name -> ermite.storage.CIIsolation
 	10, // 15: ermite.storage.CIJob.steps:type_name -> ermite.storage.CIStep
-	27, // 16: ermite.storage.CIJob.created_at:type_name -> google.protobuf.Timestamp
-	27, // 17: ermite.storage.CIJob.started_at:type_name -> google.protobuf.Timestamp
-	27, // 18: ermite.storage.CIJob.completed_at:type_name -> google.protobuf.Timestamp
-	23, // 19: ermite.storage.CIJob.outputs:type_name -> ermite.storage.CIJob.OutputsEntry
-	27, // 20: ermite.storage.CIJob.ready_at:type_name -> google.protobuf.Timestamp
-	27, // 21: ermite.storage.CIJob.assigned_at:type_name -> google.protobuf.Timestamp
-	27, // 22: ermite.storage.CIJob.acked_at:type_name -> google.protobuf.Timestamp
-	27, // 23: ermite.storage.CIJob.token_valid_until:type_name -> google.protobuf.Timestamp
+	28, // 16: ermite.storage.CIJob.created_at:type_name -> google.protobuf.Timestamp
+	28, // 17: ermite.storage.CIJob.started_at:type_name -> google.protobuf.Timestamp
+	28, // 18: ermite.storage.CIJob.completed_at:type_name -> google.protobuf.Timestamp
+	24, // 19: ermite.storage.CIJob.outputs:type_name -> ermite.storage.CIJob.OutputsEntry
+	28, // 20: ermite.storage.CIJob.ready_at:type_name -> google.protobuf.Timestamp
+	28, // 21: ermite.storage.CIJob.assigned_at:type_name -> google.protobuf.Timestamp
+	28, // 22: ermite.storage.CIJob.acked_at:type_name -> google.protobuf.Timestamp
+	28, // 23: ermite.storage.CIJob.token_valid_until:type_name -> google.protobuf.Timestamp
 	5,  // 24: ermite.storage.CIJob.cancel_reason:type_name -> ermite.storage.CICancelReason
-	27, // 25: ermite.storage.CIJob.cancel_requested_at:type_name -> google.protobuf.Timestamp
-	24, // 26: ermite.storage.CIJob.permissions:type_name -> ermite.storage.CIJob.PermissionsEntry
+	28, // 25: ermite.storage.CIJob.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	25, // 26: ermite.storage.CIJob.permissions:type_name -> ermite.storage.CIJob.PermissionsEntry
 	19, // 27: ermite.storage.CIJob.concurrency:type_name -> ermite.storage.CIConcurrency
 	12, // 28: ermite.storage.CIJob.call:type_name -> ermite.storage.CICall
-	25, // 29: ermite.storage.CICall.secrets:type_name -> ermite.storage.CICall.SecretsEntry
+	26, // 29: ermite.storage.CICall.secrets:type_name -> ermite.storage.CICall.SecretsEntry
 	19, // 30: ermite.storage.CICall.concurrency:type_name -> ermite.storage.CIConcurrency
 	0,  // 31: ermite.storage.CICheck.status:type_name -> ermite.storage.CIStatus
 	1,  // 32: ermite.storage.CICheck.conclusion:type_name -> ermite.storage.CIConclusion
-	27, // 33: ermite.storage.CICheck.created_at:type_name -> google.protobuf.Timestamp
-	27, // 34: ermite.storage.CICheck.started_at:type_name -> google.protobuf.Timestamp
-	27, // 35: ermite.storage.CICheck.completed_at:type_name -> google.protobuf.Timestamp
+	28, // 33: ermite.storage.CICheck.created_at:type_name -> google.protobuf.Timestamp
+	28, // 34: ermite.storage.CICheck.started_at:type_name -> google.protobuf.Timestamp
+	28, // 35: ermite.storage.CICheck.completed_at:type_name -> google.protobuf.Timestamp
 	4,  // 36: ermite.storage.CIRunner.isolation:type_name -> ermite.storage.CIIsolation
-	27, // 37: ermite.storage.CIRunner.registered_at:type_name -> google.protobuf.Timestamp
-	27, // 38: ermite.storage.CIRepoToken.expires_at:type_name -> google.protobuf.Timestamp
-	27, // 39: ermite.storage.CIRepoToken.created_at:type_name -> google.protobuf.Timestamp
-	26, // 40: ermite.storage.CIRepoToken.permissions:type_name -> ermite.storage.CIRepoToken.PermissionsEntry
+	28, // 37: ermite.storage.CIRunner.registered_at:type_name -> google.protobuf.Timestamp
+	28, // 38: ermite.storage.CIRepoToken.expires_at:type_name -> google.protobuf.Timestamp
+	28, // 39: ermite.storage.CIRepoToken.created_at:type_name -> google.protobuf.Timestamp
+	27, // 40: ermite.storage.CIRepoToken.permissions:type_name -> ermite.storage.CIRepoToken.PermissionsEntry
 	6,  // 41: ermite.storage.CIAnnotation.level:type_name -> ermite.storage.CIAnnotationLevel
 	17, // 42: ermite.storage.CIStepAnnotations.annotations:type_name -> ermite.storage.CIAnnotation
 	7,  // 43: ermite.storage.CIConcurrency.state:type_name -> ermite.storage.CIConcurrencyState
@@ -2807,7 +2898,7 @@ func file_ermite_storage_ci_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_ci_proto_rawDesc), len(file_ermite_storage_ci_proto_rawDesc)),
 			NumEnums:      8,
-			NumMessages:   19,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -66,6 +66,16 @@ func MatchPullRequest(wf *workflow.Workflow, action, base string, files []string
 	return matchPullRequest(wf, action, base, files, truncated)
 }
 
+// MatchWorkflowRun exposes the workflow_run filter to the tests.
+func MatchWorkflowRun(wf *workflow.Workflow, name, action, headBranch string) bool {
+	return matchWorkflowRun(wf, name, action, headBranch)
+}
+
+// ResolveDispatchInputs exposes resolveDispatchInputs to the tests.
+func ResolveDispatchInputs(defs []workflow.Input, given map[string]string) (map[string]string, error) {
+	return resolveDispatchInputs(defs, given)
+}
+
 // PullFilesLink exposes the Link header of the files endpoint to the tests.
 func PullFilesLink(base string, page, perPage, total int) string {
 	return pullFilesLink(base, page, perPage, total)

@@ -307,6 +307,13 @@ func (c *CI) RunIDs(ctx context.Context, repo domain.RepoName) ([]int64, error) 
 	return c.cfg.Store.RunIDs(ctx, repo)
 }
 
+// ForgetRepo drops what CI holds in memory for a repository that was deleted:
+// its cached schedules, so that it is never scheduled again (D12).
+func (c *CI) ForgetRepo(repo domain.RepoName) {
+	c.sched.drop(repo)
+	c.sched.forgetDirty(repo)
+}
+
 // RemoveLogs deletes the logs and the summaries of runs of a repository that
 // was deleted.
 func (c *CI) RemoveLogs(ctx context.Context, runIDs []int64) error {

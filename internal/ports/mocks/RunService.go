@@ -126,6 +126,84 @@ func (_c *RunService_CancelRun_Call) RunAndReturn(run func(ctx context.Context, 
 	return _c
 }
 
+// DispatchWorkflow provides a mock function for the type RunService
+func (_mock *RunService) DispatchWorkflow(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.DispatchParams) (domain.CIRun, error) {
+	ret := _mock.Called(ctx, p, repo, params)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DispatchWorkflow")
+	}
+
+	var r0 domain.CIRun
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, ports.DispatchParams) (domain.CIRun, error)); ok {
+		return returnFunc(ctx, p, repo, params)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, ports.DispatchParams) domain.CIRun); ok {
+		r0 = returnFunc(ctx, p, repo, params)
+	} else {
+		r0 = ret.Get(0).(domain.CIRun)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, ports.DispatchParams) error); ok {
+		r1 = returnFunc(ctx, p, repo, params)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RunService_DispatchWorkflow_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DispatchWorkflow'
+type RunService_DispatchWorkflow_Call struct {
+	*mock.Call
+}
+
+// DispatchWorkflow is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - params ports.DispatchParams
+func (_e *RunService_Expecter) DispatchWorkflow(ctx any, p any, repo any, params any) *RunService_DispatchWorkflow_Call {
+	return &RunService_DispatchWorkflow_Call{Call: _e.mock.On("DispatchWorkflow", ctx, p, repo, params)}
+}
+
+func (_c *RunService_DispatchWorkflow_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.DispatchParams)) *RunService_DispatchWorkflow_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 ports.DispatchParams
+		if args[3] != nil {
+			arg3 = args[3].(ports.DispatchParams)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *RunService_DispatchWorkflow_Call) Return(cIRun domain.CIRun, err error) *RunService_DispatchWorkflow_Call {
+	_c.Call.Return(cIRun, err)
+	return _c
+}
+
+func (_c *RunService_DispatchWorkflow_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.DispatchParams) (domain.CIRun, error)) *RunService_DispatchWorkflow_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetJob provides a mock function for the type RunService
 func (_mock *RunService) GetJob(ctx context.Context, p domain.Principal, repo domain.RepoName, jobID string, attempt int32) (ports.JobView, error) {
 	ret := _mock.Called(ctx, p, repo, jobID, attempt)

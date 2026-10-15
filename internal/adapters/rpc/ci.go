@@ -208,8 +208,6 @@ func (s *runnerService) UploadSummary(ctx context.Context, req *connect.Request[
 
 // runService implements ermiteconnect.RunServiceHandler.
 type runService struct {
-	// DispatchWorkflow is not implemented yet: the feature "ci.dispatch" is not
-	// listed and the RPC answers unimplemented.
 	ermiteconnect.UnimplementedRunServiceHandler
 	runs ports.RunService
 }
@@ -312,6 +310,20 @@ func (s *runService) RerunRun(ctx context.Context, req *connect.Request[pb.Rerun
 		return nil, ciError(ctx, err)
 	}
 	return connect.NewResponse(&pb.RerunRunResponse{Run: runToPB(run)}), nil
+}
+
+func (s *runService) DispatchWorkflow(ctx context.Context, req *connect.Request[pb.DispatchWorkflowRequest]) (*connect.Response[pb.DispatchWorkflowResponse], error) {
+	name, err := repoOf(req.Msg.GetRepo())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	run, err := s.runs.DispatchWorkflow(ctx, caller(ctx), name, ports.DispatchParams{
+		WorkflowPath: req.Msg.GetWorkflowPath(), Ref: req.Msg.GetRef(), Inputs: req.Msg.GetInputs(),
+	})
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	return connect.NewResponse(&pb.DispatchWorkflowResponse{Run: runToPB(run)}), nil
 }
 
 func (s *runService) ListChecks(ctx context.Context, req *connect.Request[pb.ListChecksRequest]) (*connect.Response[pb.ListChecksResponse], error) {

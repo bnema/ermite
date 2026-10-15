@@ -119,6 +119,9 @@ type RunRow struct {
 	Kind     string // ciKind
 	State    string // ciState
 	Workflow string
+	// Event is the event that triggered the run (push, pull_request,
+	// workflow_dispatch, schedule, workflow_run).
+	Event    string
 	Title    string
 	Ref      string
 	RefHref  string
@@ -228,7 +231,7 @@ func (s *Server) runRow(repo string, run domain.CIRun, now time.Time) RunRow {
 	row := RunRow{
 		ID: strconv.FormatInt(run.ID, 10), Href: runHref(repo, run.ID),
 		Kind: ciKind(run.Status, run.Conclusion), State: ciState(run.Status, run.Conclusion),
-		Workflow: visibleText(run.WorkflowName), Title: visibleText(run.Title),
+		Workflow: visibleText(run.WorkflowName), Event: visibleText(run.Event), Title: visibleText(run.Title),
 		Ref:   visibleText(strings.TrimPrefix(strings.TrimPrefix(run.Ref, "refs/heads/"), "refs/tags/")),
 		Short: short(run.Sha), CHref: repoHref(repo, "commit", run.Sha), Actor: visibleText(run.Actor),
 		Duration: duration(run.StartedAt, run.CompletedAt, now), Number: "#" + strconv.FormatInt(run.Number, 10), Attempt: run.Attempt,

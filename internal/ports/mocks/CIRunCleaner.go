@@ -47,6 +47,46 @@ func (_m *CIRunCleaner) EXPECT() *CIRunCleaner_Expecter {
 	return &CIRunCleaner_Expecter{mock: &_m.Mock}
 }
 
+// ForgetRepo provides a mock function for the type CIRunCleaner
+func (_mock *CIRunCleaner) ForgetRepo(repo domain.RepoName) {
+	_mock.Called(repo)
+	return
+}
+
+// CIRunCleaner_ForgetRepo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ForgetRepo'
+type CIRunCleaner_ForgetRepo_Call struct {
+	*mock.Call
+}
+
+// ForgetRepo is a helper method to define mock.On call
+//   - repo domain.RepoName
+func (_e *CIRunCleaner_Expecter) ForgetRepo(repo any) *CIRunCleaner_ForgetRepo_Call {
+	return &CIRunCleaner_ForgetRepo_Call{Call: _e.mock.On("ForgetRepo", repo)}
+}
+
+func (_c *CIRunCleaner_ForgetRepo_Call) Run(run func(repo domain.RepoName)) *CIRunCleaner_ForgetRepo_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 domain.RepoName
+		if args[0] != nil {
+			arg0 = args[0].(domain.RepoName)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *CIRunCleaner_ForgetRepo_Call) Return() *CIRunCleaner_ForgetRepo_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *CIRunCleaner_ForgetRepo_Call) RunAndReturn(run func(repo domain.RepoName)) *CIRunCleaner_ForgetRepo_Call {
+	_c.Run(run)
+	return _c
+}
+
 // RemoveLogs provides a mock function for the type CIRunCleaner
 func (_mock *CIRunCleaner) RemoveLogs(ctx context.Context, runIDs []int64) error {
 	ret := _mock.Called(ctx, runIDs)
