@@ -552,7 +552,18 @@ func (c *CI) cancelEntry(ctx context.Context, e domain.CIConcurrencyEntry, group
 					rs.cancelForGroup(&rs.jobs[i], msg)
 				}
 			}
-			return rs.flush(ctx)
+			if err := rs.flush(ctx); err != nil {
+				return err
+			}
+			// The flush frees the group the run's own record names. A run whose
+			// writes of its group were lost names none: free the group that
+			// decided the cancel, and the mark with it.
+			if rs.run.Status == domain.CICompleted && domain.ConcurrencyKey(rs.run.Concurrency.Group) != domain.ConcurrencyKey(group) {
+				if err := c.releaseEntry(ctx, rs.run.Repo, group, e); err != nil && !errors.Is(err, domain.ErrNotFound) {
+					return err
+				}
+			}
+			return nil
 		}
 		j := rs.find(e.JobID)
 		if j == nil || !j.Planned {

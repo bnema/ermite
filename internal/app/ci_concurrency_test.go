@@ -802,6 +802,53 @@ func TestCIConcurrencyReplacedRunWithLostWritesIsCancelled(t *testing.T) {
 	c.waitFor("its mark goes with it", func() bool { return c.markState("Deploy", bEntry) == "" })
 }
 
+// As above, but only B's own writes fail: C's record knows it is pending, so
+// the reconciliation does not plan C again, and no other decision on the group
+// prunes B's mark. The cancel that ends B frees the group that decided it,
+// although B's own record names no group.
+func TestCIConcurrencyCancelOfARunUnawareOfItsGroupDropsItsMark(t *testing.T) {
+	c, runner, fs := flakyConcurrencyHarness(t, -1)
+	r1 := c.pushN(1, workflowAt(wfGroup, ""))
+	runner.await()
+
+	bID := r1.GetId() + 1 // run ids are taken in sequence
+	fs.match = func(w ports.CIWrite) bool {
+		for _, r := range w.Runs {
+			if r.ID == bID && r.Concurrency.State == domain.CIConcurrencyPending {
+				return true
+			}
+		}
+		for _, j := range w.Jobs {
+			if j.RunID == bID && j.Ended() && j.Conclusion == domain.CICancelled {
+				return true
+			}
+		}
+		return false
+	}
+	fs.fails.Store(1 << 20)
+	b := c.pushN(2, workflowAt(wfGroup, ""))
+	require.Equal(t, bID, b.GetId())
+	bEntry := domain.CIConcurrencyEntry{RunID: bID, Attempt: 1}
+	c.waitFor("B is named by the group", func() bool { return c.markState("Deploy", bEntry) == domain.CIConcurrencyPending })
+
+	r3 := c.pushN(3, workflowAt(wfGroup, ""))
+	c.waitFor("B is marked replaced", func() bool { return c.markState("Deploy", bEntry) == domain.CIConcurrencyReplaced })
+	c.waitJobs("C knows it waits", r3, func(js []*pb.RunJob) bool {
+		return len(js) == 1 && js[0].GetStatus() == pb.CiStatus_CI_STATUS_PENDING
+	})
+	run, err := c.forge.store.CI().GetRun(c.ctx, c.h("proj"), bID)
+	require.NoError(t, err)
+	require.Empty(t, run.Concurrency.Group, "B's own record names no group")
+
+	fs.fails.Store(0)
+	c.forge.CI.ReconcileConcurrency(c.ctx)
+	c.waitFor("B ends cancelled", func() bool { return c.conclusionOf(b) == pb.CiConclusion_CI_CONCLUSION_CANCELLED })
+	c.waitFor("its mark goes with it", func() bool { return c.markState("Deploy", bEntry) == "" })
+	rec := c.groupRecord("Deploy")
+	require.Len(t, rec.Pending, 1)
+	assert.Equal(t, r3.GetId(), rec.Pending[0].RunID, "C still waits")
+}
+
 // A grouped job B is replaced by C, the cancel never lands, C is promoted when
 // the running job ends, and an unrelated sibling of B completes and advances B:
 // B's grouped job must not take the free place, it ends cancelled and never runs.
