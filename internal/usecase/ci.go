@@ -106,6 +106,9 @@ type CIConfig struct {
 	// read when an action of another repository is resolved for the run. Nil
 	// reads nothing for a token (fail closed).
 	Tokens ports.TokenStore
+	// OIDC signs the ID tokens of the jobs (CI-4); nil issues none: jobs get no
+	// token endpoint, and the provider is not served.
+	OIDC *OIDC
 	// Settings resolves the variables and secrets of a job (CI-3). Nil gives
 	// jobs none, and an empty "vars" context. Leave it unset rather than
 	// assigning a typed nil pointer.
@@ -267,6 +270,7 @@ type pollRecord struct {
 	ref     string
 	token   string
 	ghToken string
+	idToken string
 	hash    domain.TokenHash
 }
 

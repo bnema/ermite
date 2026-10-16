@@ -43,6 +43,10 @@ type CIRepoToken struct {
 	Archive bool
 	// Sha is the commit an archive token is bound to; empty for the job's own.
 	Sha string
+	// OIDC is set for the ID token request token of the job
+	// (OIDCRequestTokenPrefix): it only asks the token endpoint for the job's
+	// ID tokens, and authenticates nothing else (RepoTokenPrincipal).
+	OIDC bool
 	// Permissions are the permissions of the job's own token (key to level, see
 	// TokenPermissions). Empty: the default, which reads the repository.
 	Permissions map[string]string
@@ -74,7 +78,13 @@ const RepoTokenGrace = 5 * time.Minute
 // does not show itself to it.
 //
 // Both have a TokenID that starts with "job:" and matches no stored token.
+//
+// An ID token request token is nobody: it is anonymous everywhere but at the
+// token endpoint, which looks it up itself.
 func RepoTokenPrincipal(t CIRepoToken) Principal {
+	if t.OIDC {
+		return Anonymous()
+	}
 	if t.Archive {
 		return Principal{
 			kind: kindArchive, tokenID: repoTokenIDPrefix + t.ID, label: "ci archive", expiresAt: t.ExpiresAt,

@@ -77,6 +77,9 @@ allow:
     path: internal/adapters/githubapi/**
     reason: rate-limits the clients of the REST subset with internal/clientlimit
   - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/oidchttp/**
+    reason: rate-limits the clients of the OIDC token endpoint with internal/clientlimit
+  - rule: no-adapter-to-adapter-imports
     path: internal/adapters/rpc/**
     reason: rate-limits API clients with internal/clientlimit
   - rule: no-adapter-to-adapter-imports

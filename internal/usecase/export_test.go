@@ -4,6 +4,9 @@ package usecase
 
 import (
 	"context"
+	"crypto/rsa"
+	"slices"
+	"time"
 
 	"bnema.dev/ermite-actions/expr"
 	"bnema.dev/ermite-actions/template"
@@ -94,4 +97,36 @@ func FilePatch(f domain.FileDiff) (string, bool) { return filePatch(f) }
 // the tests, on a CI that has cfg and no workers.
 func PullTipsTrusted(ctx context.Context, cfg CIConfig, repo domain.RepoName, ev ports.PullRequestEvent) (bool, domain.ObjectID) {
 	return (&CI{cfg: cfg}).pullTipsTrusted(ctx, repo, ev)
+}
+
+// Thumbprint exposes thumbprint to the tests.
+func Thumbprint(pub *rsa.PublicKey) string { return thumbprint(pub) }
+
+// IDTokenClaims gives the claims idTokenClaims builds, decoded.
+func IDTokenClaims(contextsJSON, environment, issuer, audience string, at time.Time) (map[string]any, []string, error) {
+	claims, err := idTokenClaims(contextsJSON, environment, idTokenMeta{issuer: issuer, audience: audience, jti: "jti", now: at})
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make(map[string]any, len(claims))
+	keys := make([]string, 0, len(claims))
+	for _, p := range claims {
+		out[p.k] = p.v
+		keys = append(keys, p.k)
+	}
+	return out, keys, nil
+}
+
+// SignForTest signs claims (in the order of their keys) with the signing key.
+func (o *OIDC) SignForTest(claims map[string]any) (string, error) {
+	keys := make([]string, 0, len(claims))
+	for k := range claims {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	out := make(ordered, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, pair{k, claims[k]})
+	}
+	return o.sign(out)
 }

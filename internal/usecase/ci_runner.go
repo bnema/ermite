@@ -216,7 +216,7 @@ func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID stri
 		if err != nil {
 			return err
 		}
-		out = c.runnerJob(rs, *j, rec.token, rec.ghToken, settings)
+		out = c.runnerJob(rs, *j, jobSecrets{token: rec.token, ghToken: rec.ghToken, idToken: rec.idToken}, settings)
 		return nil
 	})
 	switch {
@@ -238,7 +238,7 @@ func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID stri
 //
 // TODO(ci3-c2): the runner writes the "Set up job" log; it states there that
 // secrets were withheld when Trusted is false (the server adds no setup line).
-func (c *CI) runnerJob(rs *runState, j domain.CIJob, token, ghToken string, settings ports.JobSettings) *ports.RunnerJob {
+func (c *CI) runnerJob(rs *runState, j domain.CIJob, sec jobSecrets, settings ports.JobSettings) *ports.RunnerJob {
 	if settings.Vars != nil {
 		j.ContextsJSON = withVars(j.ContextsJSON, settings.Vars)
 	}
@@ -248,13 +248,24 @@ func (c *CI) runnerJob(rs *runState, j domain.CIJob, token, ghToken string, sett
 		// id in that file.
 		path, yaml, j.Key = call.Call.Path, call.Call.YAML, j.CallID
 	}
-	return &ports.RunnerJob{
-		Job: j, Token: token, GithubToken: ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
+	out := &ports.RunnerJob{
+		Job: j, Token: sec.token, GithubToken: sec.ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
 		WorkflowPath: path, WorkflowYAML: yaml,
 		Environment: j.Environment, Vars: settings.Vars, Secrets: settings.Secrets, Trusted: rs.run.Trusted,
 		Permissions: domain.TokenPermissions(j.Permissions, rs.run.Trusted),
 		Cache:       c.cacheScope(rs.run, rs.src.GithubJSON),
 	}
+	if sec.idToken != "" && c.cfg.OIDC != nil {
+		out.IDTokenURL, out.IDTokenRequestToken = c.cfg.OIDC.TokenURL(), sec.idToken
+	}
+	return out
+}
+
+// jobSecrets are the secrets issued with an assignment: the job token, the
+// repository token and the ID token request token ("" when the job gets
+// none).
+type jobSecrets struct {
+	token, ghToken, idToken string
 }
 
 // assignTo gives the oldest queued job that matches the labels to the runner,
@@ -283,6 +294,7 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 			}
 			token := newToken(domain.JobTokenPrefix)
 			ghToken := rs.issueRepoToken(j)
+			idToken := rs.issueIDTokenRequest(j)
 			j.Phase, j.AssignedAt = domain.CIPhaseAssigned, c.now()
 			j.TokenHash, j.TokenValidUntil = domain.HashTokenSecret(token), time.Time{}
 			j.RunnerID, j.RunnerName, j.Isolation = runner.ID, runner.Name, runner.Isolation
@@ -290,10 +302,10 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 			if err := rs.flush(ctx); err != nil {
 				return err
 			}
-			out = c.runnerJob(rs, *j, token, ghToken, settings)
+			out = c.runnerJob(rs, *j, jobSecrets{token: token, ghToken: ghToken, idToken: idToken}, settings)
 			if pollID != "" {
 				c.mu.Lock()
-				c.polls[runner.ID] = pollRecord{pollID: pollID, ref: jobRef(*j), token: token, ghToken: ghToken, hash: j.TokenHash}
+				c.polls[runner.ID] = pollRecord{pollID: pollID, ref: jobRef(*j), token: token, ghToken: ghToken, idToken: idToken, hash: j.TokenHash}
 				c.mu.Unlock()
 			}
 			return nil

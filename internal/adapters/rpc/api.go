@@ -39,6 +39,10 @@ var Features = []string{"repo.update", "events.resume", "merge_requests", "merge
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
 const FeaturePasskeys = "passkeys"
 
+// FeatureCIOIDC is listed by GetVersion when the server issues OIDC ID tokens
+// to CI jobs (Job.id_token_url, ServerService.RotateOIDCKey).
+const FeatureCIOIDC = "ci.oidc"
+
 // Config configures the API.
 type Config struct {
 	Auth   ports.AuthService
@@ -77,6 +81,10 @@ type Config struct {
 	Secrets      ports.SecretService
 	Variables    ports.VariableService
 	Environments ports.EnvironmentService
+	// OIDCKeys rotates the key of the ID tokens of CI jobs; nil when the server
+	// issues none (GetVersion then does not list "ci.oidc"). Same rule as
+	// Sessions about typed nil pointers.
+	OIDCKeys ports.OIDCKeyService
 }
 
 // API is the set of Connect handlers of the contract.
@@ -111,7 +119,10 @@ func New(cfg Config) *API {
 	if settings {
 		features = append(features, FeatureCISecrets)
 	}
-	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey}, opts...))
+	if cfg.OIDCKeys != nil {
+		features = append(features, FeatureCIOIDC)
+	}
+	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
 	if cfg.Sessions != nil {
 		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))

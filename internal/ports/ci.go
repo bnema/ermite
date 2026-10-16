@@ -433,6 +433,11 @@ type RunnerJob struct {
 	Permissions map[string]string
 	// Cache is the scope of the job in the runner's cache (Job.cache).
 	Cache JobCache
+	// IDTokenURL is the token endpoint of the job's OIDC ID tokens and
+	// IDTokenRequestToken its bearer (Job.id_token_url and
+	// id_token_request_token); both "" when the job may not have ID tokens.
+	IDTokenURL          string
+	IDTokenRequestToken string
 }
 
 // JobCache is what a job may do in the cache the runner serves: save entries

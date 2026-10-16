@@ -101,7 +101,7 @@ func newHarnessWith(t *testing.T, o harnessOpts, tweak func(*options)) *harness 
 	if hookExe == "" {
 		hookExe = binary(t)
 	}
-	opts := options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody, eventBuffer: o.eventBuffer, revalidateEvery: o.revalidateEvery}
+	opts := options{hookExe: hookExe, maintenanceDelay: o.maintenance, maxBodyBytes: o.maxBody, eventBuffer: o.eventBuffer, revalidateEvery: o.revalidateEvery, oidcKey: oidcTestKeys(t)}
 	if tweak != nil {
 		tweak(&opts)
 	}

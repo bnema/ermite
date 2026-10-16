@@ -321,7 +321,7 @@ func (c *CI) githubContext(repo domain.Repo, run domain.CIRun, e ghEvent) string
 		{"job", ""}, {"ref", run.Ref}, {"sha", run.Sha}, {"repository", u.full}, {"repository_owner", c.cfg.Owner},
 		{"repository_owner_id", strconv.FormatInt(owner.id, 10)}, {"repositoryUrl", "git://" + u.host + "/" + u.full + ".git"},
 		{"run_id", strconv.FormatInt(run.ID, 10)}, {"run_number", strconv.FormatInt(run.Number, 10)},
-		{"retention_days", strconv.Itoa(c.retentionDays())}, {"run_attempt", "1"},
+		{"retention_days", strconv.Itoa(c.retentionDays())}, {"run_attempt", strconv.Itoa(int(max(run.Attempt, 1)))},
 		{"artifact_cache_size_limit", ghCacheLimit}, {"repository_visibility", string(repo.Visibility)},
 		{"actor_id", strconv.FormatInt(id.id, 10)}, {"actor", id.login}, {"workflow", run.WorkflowName},
 		{"head_ref", e.headRef}, {"base_ref", e.baseRef}, {"event_name", e.name}, {"server_url", u.server},

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"net"
@@ -26,6 +27,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/gitremote"
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/kvstore"
+	"bnema.dev/ermite/internal/adapters/oidchttp"
 	"bnema.dev/ermite/internal/adapters/rpc"
 	"bnema.dev/ermite/internal/adapters/secretbox"
 	"bnema.dev/ermite/internal/adapters/sshsig"
@@ -67,6 +69,9 @@ type options struct {
 	// ci overrides the settings of the CI engine (tests shorten its
 	// durations).
 	ci func(*usecase.CIConfig)
+	// oidcKey generates the signing keys of the ID tokens; nil generates RSA
+	// keys (tests give prepared ones: a 3072-bit key takes a while).
+	oidcKey func() (*rsa.PrivateKey, error)
 }
 
 // remote returns the lister of github.com refs: the test's, else def.
@@ -117,8 +122,11 @@ type forge struct {
 	CI *usecase.CI
 	// Settings are the secrets, variables and environments of CI.
 	Settings *usecase.CISettings
-	API      *rpc.API
-	Bus      ports.EventBus
+	// OIDC is the provider of the ID tokens of CI jobs; nil without a secrets
+	// key.
+	OIDC *usecase.OIDC
+	API  *rpc.API
+	Bus  ports.EventBus
 }
 
 // newSigningSeed makes the seed of a new ed25519 signing key.
@@ -242,6 +250,14 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", config.EnvSecretsKey, err)
 	}
+	// The OIDC provider of CI jobs (CI-4): its signing key is sealed with the
+	// secrets key, so there is none without one.
+	f.OIDC, err = usecase.NewOIDC(ctx, usecase.OIDCConfig{
+		Store: store, Sealer: sealer, Tokens: store.CI(), Clock: clock, PublicURL: cfg.PublicURL, NewKey: opts.oidcKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("oidc: %w", err)
+	}
 
 	// CI (ADR 0025): the engine reads workflows through the reader, and plans
 	// them in the background; a push only queues its refs.
@@ -259,6 +275,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		RefTips:   store.CI(),
 		Settings:  f.Settings,
 		Workflows: opts.workflows(githubraw.New(githubraw.Config{})),
+		OIDC:      f.OIDC,
 	}
 	f.pullRequests(&ciCfg, store, git, committer)
 	if opts.ci != nil {
@@ -317,6 +334,10 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if f.Passkeys != nil {
 		apiPasskeys = f.Passkeys
 	}
+	var apiOIDC ports.OIDCKeyService // same rule as apiPasskeys
+	if f.OIDC != nil {
+		apiOIDC = f.OIDC
+	}
 	f.API = rpc.New(rpc.Config{
 		Auth:           f.Auth,
 		Repos:          f.Repos,
@@ -332,6 +353,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Secrets:        f.Settings,
 		Variables:      f.Settings,
 		Environments:   f.Settings,
+		OIDCKeys:       apiOIDC,
 		Version:        serverVersion(),
 		TrustedProxies: cfg.TrustedProxies,
 		Limiter:        limiter,
@@ -348,7 +370,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Limiter:        limiter,
 		MaxBodyBytes:   maxBody,
 	})
-	routes := make([]httpserver.Route, 0, 2*len(githttp.Patterns)+len(githubapi.Patterns)+len(web.Patterns))
+	routes := make([]httpserver.Route, 0, 2*len(githttp.Patterns)+len(githubapi.Patterns)+len(oidchttp.Patterns)+len(web.Patterns))
 	for _, p := range githttp.Patterns {
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
 	}
@@ -362,6 +384,11 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	api := githubapi.New(githubapi.Config{Auth: f.Auth, API: f.CI, TrustedProxies: cfg.TrustedProxies, Limiter: limiter, MaxArchivesPerClient: opts.archivesPerClient})
 	for _, p := range githubapi.Patterns {
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: api})
+	}
+	// The OIDC provider of CI jobs (issuer <public URL>/-/oidc).
+	idp := oidchttp.New(oidchttp.Config{OIDC: f.CI, TrustedProxies: cfg.TrustedProxies, Limiter: limiter})
+	for _, p := range oidchttp.Patterns {
+		routes = append(routes, httpserver.Route{Pattern: p, Handler: idp})
 	}
 	warnSessionsNeedHTTPS(ctx, cfg.PublicURL)
 	warnSharedClientKey(ctx, cfg.TrustedProxies, githttp.DefaultMaxPerClient)

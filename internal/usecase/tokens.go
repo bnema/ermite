@@ -378,7 +378,8 @@ func (a *Auth) authenticateRepoToken(ctx context.Context, h domain.TokenHash) (d
 	if err != nil {
 		return domain.Principal{}, fmt.Errorf("find repository token: %w", err)
 	}
-	if t.Expired(a.clock.Now().UTC()) {
+	if t.OIDC || t.Expired(a.clock.Now().UTC()) {
+		// An ID token request token is only for the token endpoint.
 		return domain.Principal{}, domain.ErrUnauthenticated
 	}
 	return domain.RepoTokenPrincipal(t), nil
@@ -397,7 +398,7 @@ func (a *Auth) revalidateRepoToken(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("find repository token: %w", err)
 	}
-	if t.Expired(a.clock.Now().UTC()) {
+	if t.OIDC || t.Expired(a.clock.Now().UTC()) {
 		return domain.ErrUnauthenticated
 	}
 	return nil

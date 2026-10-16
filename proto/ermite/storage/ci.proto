@@ -328,6 +328,11 @@ message CIRepoToken {
   // Absent: the restricted default, read-only, as tokens issued before the
   // field existed (an older binary reads a newer token as read-only too).
   map<string, string> permissions = 11;
+  // Set for the ID token request token of the job ("ermiteoidc_"), which only
+  // the OIDC token endpoint accepts. A binary that predates the field reads it
+  // as a job's own token, but never looks it up: it only resolves secrets with
+  // the "ermitegh_" prefix, whose hashes are not those of these tokens.
+  bool oidc = 12;
 }
 
 // CIActionResolution is the resolution of an action reference for a run

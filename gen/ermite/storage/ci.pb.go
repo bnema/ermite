@@ -1801,7 +1801,12 @@ type CIRepoToken struct {
 	// what it may do on its repository follows from them (domain.RepoTokenPrincipal).
 	// Absent: the restricted default, read-only, as tokens issued before the
 	// field existed (an older binary reads a newer token as read-only too).
-	Permissions   map[string]string `protobuf:"bytes,11,rep,name=permissions,proto3" json:"permissions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Permissions map[string]string `protobuf:"bytes,11,rep,name=permissions,proto3" json:"permissions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Set for the ID token request token of the job ("ermiteoidc_"), which only
+	// the OIDC token endpoint accepts. A binary that predates the field reads it
+	// as a job's own token, but never looks it up: it only resolves secrets with
+	// the "ermitegh_" prefix, whose hashes are not those of these tokens.
+	Oidc          bool `protobuf:"varint,12,opt,name=oidc,proto3" json:"oidc,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1911,6 +1916,13 @@ func (x *CIRepoToken) GetPermissions() map[string]string {
 		return x.Permissions
 	}
 	return nil
+}
+
+func (x *CIRepoToken) GetOidc() bool {
+	if x != nil {
+		return x.Oidc
+	}
+	return false
 }
 
 // CIActionResolution is the resolution of an action reference for a run
@@ -2726,7 +2738,7 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x02os\x18\a \x01(\tR\x02os\x12?\n" +
 	"\rregistered_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\fregisteredAt\x12\x1d\n" +
 	"\n" +
-	"token_hash\x18\t \x01(\fR\ttokenHash\"\xc6\x03\n" +
+	"token_hash\x18\t \x01(\fR\ttokenHash\"\xda\x03\n" +
 	"\vCIRepoToken\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\fR\x04hash\x12\x12\n" +
@@ -2742,7 +2754,8 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x10\n" +
 	"\x03sha\x18\n" +
 	" \x01(\tR\x03sha\x12N\n" +
-	"\vpermissions\x18\v \x03(\v2,.ermite.storage.CIRepoToken.PermissionsEntryR\vpermissions\x1a>\n" +
+	"\vpermissions\x18\v \x03(\v2,.ermite.storage.CIRepoToken.PermissionsEntryR\vpermissions\x12\x12\n" +
+	"\x04oidc\x18\f \x01(\bR\x04oidc\x1a>\n" +
 	"\x10PermissionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x89\x01\n" +

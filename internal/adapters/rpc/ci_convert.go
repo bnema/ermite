@@ -225,6 +225,7 @@ func runnerJobToPB(j *ports.RunnerJob) *pb.Job {
 		Secrets: j.Secrets, Vars: j.Vars, Environment: j.Environment, Trusted: j.Trusted,
 		Permissions: &pb.JobPermissions{Levels: j.Permissions},
 		Cache:       &pb.JobCache{Repository: j.Cache.Repository, WriteRef: j.Cache.WriteRef, ReadRefs: j.Cache.ReadRefs},
+		IdTokenUrl:  j.IDTokenURL, IdTokenRequestToken: j.IDTokenRequestToken,
 	}
 }
 

@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of ermite: the keys that sign the OIDC
+// ID tokens of CI jobs (CI-4).
+
+syntax = "proto3";
+
+package ermite.storage;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// OIDCKey is stored under "oidc/key/<kid>", kid being the RFC 7638 thumbprint
+// of its public key. The private key is never stored in the clear: sealed is
+// its PKCS #8 DER sealed with ERMITE_SECRETS_KEY (AES-256-GCM, see secretbox),
+// with the key path as additional data.
+message OIDCKey {
+  bytes sealed = 1;
+  google.protobuf.Timestamp created_at = 2;
+  // Set once the key was replaced: it signs no more, and leaves the JWKS 24
+  // hours later.
+  google.protobuf.Timestamp retired_at = 3;
+}
