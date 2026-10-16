@@ -584,10 +584,11 @@ func (c *CI) ListRunners(ctx context.Context, p domain.Principal, size int, toke
 		func(r domain.CIRunner) string {
 			return base64.RawURLEncoding.EncodeToString([]byte("rn1:" + strings.ToLower(r.Name)))
 		})
+	now := c.now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, r := range rows {
-		page.Runners = append(page.Runners, ports.RunnerView{CIRunner: r, LastSeen: c.seen[r.ID], Busy: busy[r.ID]})
+		page.Runners = append(page.Runners, ports.RunnerView{CIRunner: r, LastSeen: c.seen[r.ID], Busy: busy[r.ID], Online: c.runnerOnline(c.seen[r.ID], now)})
 	}
 	return page, nil
 }

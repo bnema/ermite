@@ -97,6 +97,28 @@ func (c *CI) runnerFor(ctx context.Context, secret string) (domain.CIRunner, err
 	return r, err
 }
 
+// RunnerOnlineWindow is how long after its last sign of life (a poll or a
+// heartbeat) a runner is online, by the server's clock.
+const RunnerOnlineWindow = 2 * time.Minute
+
+func (c *CI) runnerOnline(lastSeen, now time.Time) bool {
+	return !lastSeen.IsZero() && now.Sub(lastSeen) < RunnerOnlineWindow
+}
+
+// noteVersion records the version a poll reports, once: the runner read for
+// this poll already holds the stored one, so an unchanged version costs no
+// write. A runner that sends none keeps its stored version. A failure to
+// record is logged and does not fail the poll.
+func (c *CI) noteVersion(ctx context.Context, r domain.CIRunner, version string) {
+	if version == "" || version == r.Version {
+		return
+	}
+	if err := c.cfg.Store.SetRunnerVersion(ctx, r.ID, version); err != nil && !errors.Is(err, domain.ErrNotFound) {
+		log := zerowrap.FromCtx(ctx)
+		log.Warn().Err(err).Str("runner_id", r.ID).Msg("runner version not recorded")
+	}
+}
+
 func (c *CI) markSeen(runnerID string) {
 	c.mu.Lock()
 	c.seen[runnerID] = c.now()
@@ -115,6 +137,9 @@ func (c *CI) FetchJob(ctx context.Context, secret string, params ports.FetchJobP
 	if err != nil {
 		return ports.FetchJobResult{}, err
 	}
+	if len(params.Version) > maxVersionLen || !utf8.ValidString(params.Version) {
+		return ports.FetchJobResult{}, fmt.Errorf("%w: version is at most 64 characters", domain.ErrInvalid)
+	}
 	offered, err := offeredLabels(runner, params.Labels)
 	if err != nil {
 		return ports.FetchJobResult{}, err
@@ -132,6 +157,7 @@ func (c *CI) FetchJob(ctx context.Context, secret string, params ports.FetchJobP
 		}
 	}
 	c.markSeen(runner.ID)
+	c.noteVersion(ctx, runner, params.Version)
 	deadline := time.NewTimer(c.cfg.PollTimeout)
 	defer deadline.Stop()
 	for {

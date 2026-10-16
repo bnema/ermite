@@ -251,6 +251,30 @@ func TestCIRunnersCreateReplaceFindRemove(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestCISetRunnerVersion(t *testing.T) {
+	ctx := context.Background()
+	_, ci, _ := ciRepo(t)
+	h := domain.HashTokenSecret("ermiterun_v")
+	_, err := ci.CreateRunner(ctx, domain.CIRunner{ID: "r1", Name: "alpha", Version: "v1", TokenHash: h, RegisteredAt: created}, false)
+	require.NoError(t, err)
+
+	require.NoError(t, ci.SetRunnerVersion(ctx, "r1", "v2"))
+	got, err := ci.GetRunner(ctx, "r1")
+	require.NoError(t, err)
+	assert.Equal(t, "v2", got.Version)
+	assert.Equal(t, h, got.TokenHash, "the rest of the record is kept")
+	assert.Equal(t, "alpha", got.Name)
+
+	// An unchanged version is not written.
+	before, ok := ci.RawVersionForTest(ctx, "r1")
+	require.True(t, ok)
+	require.NoError(t, ci.SetRunnerVersion(ctx, "r1", "v2"))
+	after, _ := ci.RawVersionForTest(ctx, "r1")
+	assert.Equal(t, before, after)
+
+	assert.ErrorIs(t, ci.SetRunnerVersion(ctx, "gone", "v1"), domain.ErrNotFound)
+}
+
 func TestCISweepRemovesOldCompletedRunsOnly(t *testing.T) {
 	ctx := context.Background()
 	_, ci, n := ciRepo(t)

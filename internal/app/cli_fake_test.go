@@ -34,6 +34,8 @@ type fakeAPI struct {
 	ermiteconnect.UnimplementedSessionServiceHandler
 	ermiteconnect.UnimplementedRunServiceHandler
 
+	runners []*ermite.Runner // ListRunners answer; nil means one default runner
+
 	mu     sync.Mutex
 	calls  []string      // procedure names, in order
 	reqs   []any         // request messages, in order

@@ -208,7 +208,7 @@ func checkToPB(c domain.CICheck) *pb.Check {
 func runnerToPB(r ports.RunnerView) *pb.Runner {
 	return &pb.Runner{
 		Id: r.ID, Name: r.Name, Labels: r.Labels, Isolation: isolationToPB(r.Isolation), Version: r.Version,
-		Arch: r.Arch, Os: r.OS, RegisteredAt: timestamp(r.RegisteredAt), LastSeen: timestamp(r.LastSeen), Busy: r.Busy,
+		Arch: r.Arch, Os: r.OS, RegisteredAt: timestamp(r.RegisteredAt), LastSeen: timestamp(r.LastSeen), Busy: r.Busy, Online: r.Online,
 	}
 }
 

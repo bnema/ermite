@@ -2,6 +2,8 @@
 
 package kvstore
 
+import "context"
+
 // SetAfterSettingsSnapshot installs the hook that runs between the snapshot of
 // DeleteEnvironment and its batch, and returns the function that removes it.
 func SetAfterSettingsSnapshot(f func()) (restore func()) {
@@ -16,3 +18,10 @@ var (
 	EncodeConcurrencyRecord = encodeConcurrencyRecord
 	EncodeConcurrencyMark   = encodeConcurrencyMark
 )
+
+// RawVersionForTest is the kv version of a runner record: it moves on every
+// write.
+func (c *CI) RawVersionForTest(ctx context.Context, id string) (uint64, bool) {
+	item, ok := c.db.Get(ctx, runnerKey(id))
+	return item.Version, ok
+}

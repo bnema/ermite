@@ -1535,6 +1535,69 @@ func (_c *CIStore_RunIDs_Call) RunAndReturn(run func(ctx context.Context, repo d
 	return _c
 }
 
+// SetRunnerVersion provides a mock function for the type CIStore
+func (_mock *CIStore) SetRunnerVersion(ctx context.Context, id string, version string) error {
+	ret := _mock.Called(ctx, id, version)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetRunnerVersion")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, id, version)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// CIStore_SetRunnerVersion_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetRunnerVersion'
+type CIStore_SetRunnerVersion_Call struct {
+	*mock.Call
+}
+
+// SetRunnerVersion is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id string
+//   - version string
+func (_e *CIStore_Expecter) SetRunnerVersion(ctx any, id any, version any) *CIStore_SetRunnerVersion_Call {
+	return &CIStore_SetRunnerVersion_Call{Call: _e.mock.On("SetRunnerVersion", ctx, id, version)}
+}
+
+func (_c *CIStore_SetRunnerVersion_Call) Run(run func(ctx context.Context, id string, version string)) *CIStore_SetRunnerVersion_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CIStore_SetRunnerVersion_Call) Return(err error) *CIStore_SetRunnerVersion_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *CIStore_SetRunnerVersion_Call) RunAndReturn(run func(ctx context.Context, id string, version string) error) *CIStore_SetRunnerVersion_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Sweep provides a mock function for the type CIStore
 func (_mock *CIStore) Sweep(ctx context.Context, before time.Time) ([]int64, error) {
 	ret := _mock.Called(ctx, before)

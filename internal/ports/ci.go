@@ -172,6 +172,10 @@ type CIStore interface {
 	FindRunnerByToken(ctx context.Context, hash domain.TokenHash) (domain.CIRunner, error)
 	// ListRunners returns every runner ordered by name.
 	ListRunners(ctx context.Context) ([]domain.CIRunner, error)
+	// SetRunnerVersion records the version the runner runs now. It writes only
+	// when the stored version differs, and returns domain.ErrNotFound for a
+	// runner that is gone.
+	SetRunnerVersion(ctx context.Context, id, version string) error
 	// RemoveRunner removes the runner and its token, or returns
 	// domain.ErrNotFound.
 	RemoveRunner(ctx context.Context, id string) (domain.CIRunner, error)
@@ -462,6 +466,8 @@ func (j RunnerJob) GoString() string { return j.String() }
 type FetchJobParams struct {
 	Labels []string
 	PollID string
+	// Version is the version of the running runner, "" from an older runner.
+	Version string
 }
 
 // FetchJobResult is the answer of a poll.
@@ -679,6 +685,8 @@ type RunnerView struct {
 	domain.CIRunner
 	LastSeen time.Time
 	Busy     bool
+	// Online is decided by the server's clock (see usecase.RunnerOnlineWindow).
+	Online bool
 }
 
 // JobAnnotation is an annotation with the job it belongs to.

@@ -4,7 +4,9 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
@@ -35,6 +37,9 @@ func (f *fakeAPI) RerunRun(_ context.Context, r *connect.Request[ermite.RerunRun
 
 func (f *fakeAPI) ListRunners(_ context.Context, r *connect.Request[ermite.ListRunnersRequest]) (*connect.Response[ermite.ListRunnersResponse], error) {
 	return respond(f, "ListRunners", r, func(*ermite.ListRunnersRequest) (*ermite.ListRunnersResponse, error) {
+		if f.runners != nil {
+			return &ermite.ListRunnersResponse{Runners: f.runners}, nil
+		}
 		return &ermite.ListRunnersResponse{Runners: []*ermite.Runner{{Id: "r1", Name: "alpha"}}}, nil
 	})
 }
@@ -111,4 +116,27 @@ func TestCICompletionNeverRunsTokenCmd(t *testing.T) {
 			assert.Empty(t, lastAuth(f))
 		})
 	}
+}
+
+// The CLI shows what the server decided: it never compares last_seen with its
+// own clock.
+func TestRunnerListShowsTheServersVerdict(t *testing.T) {
+	f := &fakeAPI{}
+	f.runners = []*ermite.Runner{
+		{Id: "r1", Name: "up", Version: "v2", Online: true},
+		{Id: "r2", Name: "busy", Online: true, Busy: true},
+		{Id: "r3", Name: "down"},
+	}
+	env := testEnv(t, map[string]string{"ERMITE_URL": f.serve(t), "ERMITE_TOKEN": "ermite_x"})
+	env.now = func() time.Time { return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC) } // a clock that is far off
+	out := runCLIWith(t, env, "", "runner", "list").ok(t).stdout
+	state := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n")[1:] {
+		fields := strings.Fields(line)
+		state[fields[1]] = fields[2]
+	}
+	assert.Equal(t, map[string]string{"up": "online", "busy": "busy", "down": "offline"}, state, out)
+
+	js := runCLIWith(t, env, "", "runner", "list", "--json").ok(t).stdout
+	assert.Contains(t, js, `"online": true`)
 }

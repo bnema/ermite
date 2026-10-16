@@ -682,3 +682,35 @@ func TestCIGithubContextOfAPush(t *testing.T) {
 	assert.Equal(t, publicOrigin+"/owner/proj/compare/"+first[:12]+"..."+second[:12], event["compare"])
 	assert.Equal(t, false, event["created"])
 }
+
+// ListRunners says by the server's clock whether a runner is online, and shows
+// the version the runner reported at its last poll, not the one it registered
+// with. A poll without a version keeps the stored one.
+func TestCIRunnerListOnlineAndVersion(t *testing.T) {
+	c := newCIHarness(t, func(cfg *usecase.CIConfig) { cfg.PollTimeout = 50 * time.Millisecond })
+	r := c.registerRunner("alpha", "ubuntu-latest")
+	list := func() *pb.Runner {
+		res, err := c.root.run.ListRunners(c.ctx, connect.NewRequest(&pb.ListRunnersRequest{}))
+		require.NoError(t, err)
+		require.Len(t, res.Msg.GetRunners(), 1)
+		return res.Msg.GetRunners()[0]
+	}
+	poll := func(version string) error {
+		_, err := r.api.runner.FetchJob(c.ctx, connect.NewRequest(&pb.FetchJobRequest{Version: version}))
+		return err
+	}
+	got := list()
+	assert.False(t, got.GetOnline(), "never seen")
+	assert.Equal(t, "devel", got.GetVersion())
+
+	require.NoError(t, poll("v1.2.3"))
+	got = list()
+	assert.True(t, got.GetOnline())
+	assert.Equal(t, "v1.2.3", got.GetVersion(), "the running version replaces the registered one")
+
+	require.NoError(t, poll(""))
+	assert.Equal(t, "v1.2.3", list().GetVersion(), "an older runner sends none: unchanged")
+
+	assert.Equal(t, connect.CodeInvalidArgument, ciErrCode(poll(strings.Repeat("v", 65))))
+	assert.Equal(t, "v1.2.3", list().GetVersion())
+}

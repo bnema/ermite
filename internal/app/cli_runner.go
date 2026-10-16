@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -27,12 +26,14 @@ type jsonRunner struct {
 	RegisteredAt *string  `json:"registered_at"`
 	LastSeen     *string  `json:"last_seen"`
 	Busy         bool     `json:"busy"`
+	Online       bool     `json:"online"`
 }
 
 const jsonRunnerHelp = `
 JSON fields of a runner (--json): id, name, labels, isolation (vm, container-sysbox,
 container-privileged), version, arch, os, registered_at, last_seen (RFC 3339 UTC, null if never
-seen) and busy. A runner not seen for more than about 2 minutes is offline.`
+seen), busy and online (decided by the server: heard from within the last 2 minutes by its
+clock; a server older than the field reports false for every runner).`
 
 func newRunnerCmd(env *cliEnv) *cobra.Command {
 	runner := &cobra.Command{
@@ -79,7 +80,7 @@ func newRunnerListCmd(env *cliEnv) *cobra.Command {
 				}
 				out = append(out, jsonRunner{
 					ID: r.GetId(), Name: r.GetName(), Labels: labels, Isolation: isolationText(r.GetIsolation()), Version: r.GetVersion(),
-					Arch: r.GetArch(), Os: r.GetOs(), RegisteredAt: jsonTime(r.GetRegisteredAt()), LastSeen: jsonTime(r.GetLastSeen()), Busy: r.GetBusy(),
+					Arch: r.GetArch(), Os: r.GetOs(), RegisteredAt: jsonTime(r.GetRegisteredAt()), LastSeen: jsonTime(r.GetLastSeen()), Busy: r.GetBusy(), Online: r.GetOnline(),
 				})
 			}
 			return writeJSON(cmd.OutOrStdout(), out)
@@ -91,7 +92,7 @@ func newRunnerListCmd(env *cliEnv) *cobra.Command {
 		rows := make([][]string, 0, len(runners))
 		for _, r := range runners {
 			state := "offline"
-			if ls := r.GetLastSeen(); ls.IsValid() && env.now().Sub(ls.AsTime()) < 2*time.Minute {
+			if r.GetOnline() {
 				state = "online"
 				if r.GetBusy() {
 					state = "busy"

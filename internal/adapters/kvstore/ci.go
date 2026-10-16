@@ -1038,6 +1038,37 @@ func (c *CI) ListRunners(ctx context.Context) ([]domain.CIRunner, error) {
 	return out, nil
 }
 
+// SetRunnerVersion records the version a runner runs now; an unchanged version
+// is not written.
+func (c *CI) SetRunnerVersion(ctx context.Context, id, version string) error {
+	for range createRunTries {
+		item, ok := c.db.Get(ctx, runnerKey(id))
+		if !ok || id == "" || strings.Contains(id, "/") {
+			return domain.ErrNotFound
+		}
+		r, err := decodeRunner(item.Value)
+		if err != nil {
+			return err
+		}
+		if r.Version == version {
+			return nil
+		}
+		r.Version = version
+		var b kv.Batch
+		b.RequireVersion(runnerKey(id), item.Version)
+		b.Put(runnerKey(id), encodeRunner(r))
+		_, err = c.db.Apply(ctx, &b)
+		if errors.Is(err, kv.ErrConflict) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("set runner %q version: %w", id, err)
+		}
+		return nil
+	}
+	return fmt.Errorf("set runner %q version: %w", id, domain.ErrConflict)
+}
+
 // RemoveRunner removes the runner, its name and its token.
 func (c *CI) RemoveRunner(ctx context.Context, id string) (domain.CIRunner, error) {
 	for range createRunTries {

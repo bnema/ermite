@@ -95,7 +95,7 @@ func (s *runnerService) RegisterRunner(ctx context.Context, req *connect.Request
 }
 
 func (s *runnerService) FetchJob(ctx context.Context, req *connect.Request[pb.FetchJobRequest]) (*connect.Response[pb.FetchJobResponse], error) {
-	res, err := s.runners.FetchJob(ctx, secretFrom(ctx), ports.FetchJobParams{Labels: req.Msg.GetLabels(), PollID: req.Msg.GetPollId()})
+	res, err := s.runners.FetchJob(ctx, secretFrom(ctx), ports.FetchJobParams{Labels: req.Msg.GetLabels(), PollID: req.Msg.GetPollId(), Version: req.Msg.GetVersion()})
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
