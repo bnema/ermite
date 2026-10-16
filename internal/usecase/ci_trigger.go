@@ -183,7 +183,8 @@ type pushFacts struct {
 	payload *pushPayload
 	// pull is set for a pull_request run: update.Ref is then
 	// refs/pull/<n>/merge (or /head), commit the test merge commit (or the
-	// head) and head the head commit.
+	// head) and head the head commit. For a pull_request_target run
+	// (pull.target) update.Ref is the default branch and commit its tip.
 	pull *pullFacts
 	// custom is set for the events that are not a push or a merge request:
 	// workflow_dispatch, schedule and workflow_run (ci_events.go).
@@ -194,6 +195,8 @@ type pushFacts struct {
 // show it.
 func (f pushFacts) eventName() string {
 	switch {
+	case f.pull != nil && f.pull.target:
+		return eventPullTarget
 	case f.pull != nil:
 		return "pull_request"
 	case f.custom != nil:
@@ -214,7 +217,16 @@ func (f pushFacts) runTitle() string {
 	return firstLine(f.head.Message)
 }
 
-// headSha is CIRun.HeadSha: the head of the merge request, "" for a push.
+// pullNumber is CIRun.PullNumber: the merge request, 0 for a push.
+func (f pushFacts) pullNumber() int64 {
+	if f.pull != nil {
+		return f.pull.mr.Number
+	}
+	return 0
+}
+
+// headSha is CIRun.HeadSha: the head of the merge request (pull_request and
+// pull_request_target), "" for a push.
 func (f pushFacts) headSha() string {
 	if f.pull != nil {
 		return f.pull.head.String()
@@ -463,7 +475,7 @@ func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f 
 	draft, err := c.createRun(ctx, f, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
 			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name, Name: name,
-			Title: f.runTitle(), Event: f.eventName(), Ref: f.update.Ref, Sha: f.commit.String(), HeadSha: f.headSha(), Actor: t.actor,
+			Title: f.runTitle(), Event: f.eventName(), Ref: f.update.Ref, Sha: f.commit.String(), HeadSha: f.headSha(), PullNumber: f.pullNumber(), Actor: t.actor,
 			Status: domain.CICompleted, Conclusion: domain.CIFailure, Error: cutText(problem, maxRunError), Trusted: t.trusted,
 			CreatedAt: now, StartedAt: now, CompletedAt: now,
 		}
@@ -525,7 +537,7 @@ func (c *CI) launchRun(ctx context.Context, repo domain.Repo, t ciTrigger, f pus
 	draft, err := c.createRun(ctx, f, repo.Name, wfPath, func(id, number int64) ports.CIRunDraft {
 		run := domain.CIRun{
 			Repo: repo.Name, ID: id, Number: number, Attempt: 1, WorkflowPath: wfPath, WorkflowName: name, Name: name,
-			Title: title, Event: f.eventName(), Ref: f.update.Ref, Sha: f.commit.String(), HeadSha: f.headSha(), Actor: t.actor,
+			Title: title, Event: f.eventName(), Ref: f.update.Ref, Sha: f.commit.String(), HeadSha: f.headSha(), PullNumber: f.pullNumber(), Actor: t.actor,
 			Status: domain.CIQueued, Trusted: t.trusted, CreatedAt: now,
 		}
 		githubJSON := c.githubJSON(ctx, repo, run, f)

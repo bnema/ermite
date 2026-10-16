@@ -52,6 +52,16 @@ import (
 //
 // A head that does not merge cleanly makes no run for that update, as on GitHub;
 // the merge ref then keeps the last commit that merged, as GitHub's does.
+//
+// The pull_request_target event (CI-4, D4) has the same activities, payload
+// and filters, but runs the workflows of the default branch's tip, as taken
+// when the activity happened, conflict or not: github.ref is the default
+// branch, github.sha that tip. Its checks attach to the head too. It is
+// trusted when the cause of the activity is trusted and the default tip was
+// pushed by a trusted principal: the head and the base do not matter, as none
+// of their files run unless a workflow checks them out (GitHub's "pwn
+// request"). It is stricter than GitHub, which gives the secrets to any pull
+// request of the repository: an agent's activity runs it without secrets.
 
 const (
 	// DefaultCIPullRefreshes bounds the merge requests (and the pushes) waiting
@@ -87,6 +97,13 @@ type pullEvent struct {
 	actor              string
 	pusher             domain.CIPusher
 	trusted            bool
+	// actorTrusted is the trust of the cause alone (the pusher of a
+	// synchronize, whoever opened or closed): trusted also requires the head
+	// and the base to be, pull_request_target the default tip.
+	actorTrusted bool
+	// target is the default branch's tip when the activity happened: what its
+	// pull_request_target runs execute.
+	target defaultTip
 	// merge is the last merge commit the trust of a closing was checked
 	// against, zero when there was none.
 	merge domain.ObjectID
@@ -97,6 +114,30 @@ type pullEvent struct {
 
 func (e pullEvent) trigger(at time.Time) ciTrigger {
 	return ciTrigger{repo: e.repo, actor: e.actor, pusher: e.pusher, trusted: e.trusted, at: at, log: e.log}
+}
+
+// defaultTip is the tip of the default branch at one moment (CI-4, D4).
+type defaultTip struct {
+	branch string
+	commit domain.ObjectID
+	// trusted: a trusted principal set the branch to exactly that commit.
+	trusted bool
+}
+
+// defaultTipOf takes the tip of the default branch of a repository now, and
+// whether a trusted principal pushed it. The zero value when the repository
+// has no default branch (no pull_request_target run), and not trusted on any
+// error or without a record (refTrusted).
+func (c *CI) defaultTipOf(ctx context.Context, repo domain.RepoName) defaultTip {
+	def, exists, err := c.cfg.Repos.DefaultBranch(ctx, repo)
+	if err != nil || !exists {
+		return defaultTip{}
+	}
+	tip, err := c.cfg.Git.BranchHead(ctx, repo, def)
+	if err != nil {
+		return defaultTip{}
+	}
+	return defaultTip{branch: def, commit: tip, trusted: c.refTrusted(ctx, repo, pinnedRef{ref: "refs/heads/" + def, commit: tip, object: tip})}
 }
 
 type pullKey struct {
@@ -163,8 +204,9 @@ func (c *CI) OnPullRequest(ctx context.Context, repo domain.RepoName, ev ports.P
 	e := pullEvent{
 		repo: repo, number: ev.Number, action: ev.Action, head: ev.Head, base: ev.Base,
 		actor: authorOf(p), pusher: domain.PusherOf(p), run: !p.ViaJobToken(), log: zerowrap.FromCtx(ctx),
+		actorTrusted: domain.TrustedActor(p), target: c.defaultTipOf(ctx, repo),
 	}
-	if domain.TrustedActor(p) {
+	if e.actorTrusted {
 		e.trusted, e.merge = c.pullTipsTrusted(ctx, repo, ev)
 	}
 	c.queuePullEvent(e)
@@ -370,6 +412,7 @@ func (c *CI) onBranchesMoved(ctx context.Context, repo domain.RepoName, updates 
 	}
 	tips := map[string]domain.ObjectID{}
 	baseTrusted := map[string]bool{}
+	var target *defaultTip // the default tip of the snapshot, read once
 	for _, n := range numbers {
 		mr, err := c.cfg.MRs.Get(ctx, repo, n)
 		if err != nil || !mr.IsOpen() {
@@ -395,9 +438,13 @@ func (c *CI) onBranchesMoved(ctx context.Context, repo domain.RepoName, updates 
 					baseTrusted[mr.Target] = bt
 				}
 				evTrusted := trusted && bt
+				if target == nil {
+					t := c.defaultTipOf(ctx, repo)
+					target = &t
+				}
 				c.queuePullEvent(pullEvent{
 					repo: repo, number: mr.Number, action: domain.PullSynchronize, head: head, base: base, before: before,
-					actor: actor, pusher: pusher, trusted: evTrusted, run: true, log: log,
+					actor: actor, pusher: pusher, trusted: evTrusted, actorTrusted: trusted, target: *target, run: true, log: log,
 				})
 			}
 		}
@@ -656,6 +703,11 @@ type pullFacts struct {
 	// before is the head before a synchronize.
 	before domain.ObjectID
 	merged bool
+	// merge is the test merge commit of head and base, zero when there is
+	// none (a conflict, or a closed request that never merged cleanly).
+	merge domain.ObjectID
+	// target is set for a pull_request_target run.
+	target bool
 }
 
 // pullState is the merge of a head into a base.
@@ -690,10 +742,14 @@ func (c *CI) handlePullEvent(ctx context.Context, e pullEvent) error {
 			return err
 		}
 		c.stage(pullStageComputed)
-		if err := c.publishPull(ctx, mr, st); err != nil || !st.clean || !e.run {
+		if err := c.publishPull(ctx, mr, st); err != nil || !e.run {
 			return err
 		}
-		return c.startPullRuns(ctx, e, mr, st)
+		var err1 error
+		if st.clean { // a conflict makes no pull_request run, as on GitHub
+			err1 = c.startPullRuns(ctx, e, mr, st, false)
+		}
+		return errors.Join(err1, c.startPullRuns(ctx, e, mr, st, true))
 	case domain.PullClosed:
 		if mr.IsOpen() || !e.run {
 			return nil
@@ -702,10 +758,11 @@ func (c *CI) handlePullEvent(ctx context.Context, e pullEvent) error {
 		if err != nil || !ok {
 			return err
 		}
+		pe := e
 		if st.otherHead || st.merge != e.merge {
-			e.trusted = false // not the code the trust was checked for
+			pe.trusted = false // not the code the trust was checked for
 		}
-		return c.startPullRuns(ctx, e, mr, st)
+		return errors.Join(c.startPullRuns(ctx, pe, mr, st, false), c.startPullRuns(ctx, e, mr, st, true))
 	}
 	return nil
 }
@@ -868,8 +925,12 @@ func (c *CI) closedPull(ctx context.Context, e pullEvent, mr domain.MergeRequest
 }
 
 // startPullRuns starts the pull_request workflows of the merge request that
-// match the activity and the files it changes.
-func (c *CI) startPullRuns(ctx context.Context, e pullEvent, mr domain.MergeRequest, st pullState) error {
+// match the activity and the files it changes, or with target its
+// pull_request_target workflows: those of the default tip of the event.
+func (c *CI) startPullRuns(ctx context.Context, e pullEvent, mr domain.MergeRequest, st pullState, target bool) error {
+	if target && (e.target.commit.IsZero() || st.head.IsZero()) {
+		return nil // no default branch, or no head to run for
+	}
 	runners, err := c.cfg.Store.ListRunners(ctx)
 	if err != nil {
 		return fmt.Errorf("list the runners: %w", err)
@@ -883,10 +944,22 @@ func (c *CI) startPullRuns(ctx context.Context, e pullEvent, mr domain.MergeRequ
 	}
 	t := e.trigger(c.now())
 	ref, sha := domain.PullMergeRef(mr.Number), st.merge
-	if sha.IsZero() {
+	switch {
+	case target:
+		// The code is the default tip's: the cause and that tip decide.
+		ref, sha = "refs/heads/"+e.target.branch, e.target.commit
+		t.trusted = e.actorTrusted && e.target.trusted
+		if e.actorTrusted && !e.target.trusted {
+			ctxLog(ctx).Info().Str("repo", e.repo.String()).Int64("number", mr.Number).Str("action", e.action).Str("tip", sha.String()).
+				Msg("ci pull_request_target runs are not trusted: the default branch tip was not pushed by a trusted principal")
+		}
+	case sha.IsZero():
 		ref, sha = domain.PullHeadRef(mr.Number), st.head
 	}
-	pf := &pullFacts{mr: mr, action: e.action, head: st.head, base: st.base, before: e.before, merged: mr.State == domain.MRStateMerged}
+	pf := &pullFacts{
+		mr: mr, action: e.action, head: st.head, base: st.base, before: e.before, merged: mr.State == domain.MRStateMerged,
+		merge: st.merge, target: target,
+	}
 	f := pushFacts{
 		update: domain.RefUpdate{Ref: ref, Old: domain.ZeroOID, New: sha.String()}, commit: sha, pull: pf,
 	}
@@ -912,8 +985,8 @@ func (c *CI) startPullRuns(ctx context.Context, e pullEvent, mr domain.MergeRequ
 	if err != nil || len(files) == 0 {
 		return err
 	}
-	if workflow.SkipCI(f.head.Message) {
-		return nil
+	if !target && workflow.SkipCI(f.head.Message) {
+		return nil // GitHub's skip directives are for push and pull_request only
 	}
 	var errs []error
 	for _, file := range files {
@@ -921,7 +994,7 @@ func (c *CI) startPullRuns(ctx context.Context, e pullEvent, mr domain.MergeRequ
 			continue // reported by the push of the branch
 		}
 		wf, perrs := workflow.Parse(file.path, file.content)
-		if len(perrs) > 0 || !matchPullRequest(wf, e.action, mr.Target, f.files, f.filesTruncated) {
+		if len(perrs) > 0 || !matchPullRequest(wf, f.eventName(), e.action, mr.Target, f.files, f.filesTruncated) {
 			continue
 		}
 		if problem := c.matrixProblem(ctx, repo, t, f, file.path, wf); problem.text != "" {
@@ -938,16 +1011,16 @@ func (c *CI) startPullRuns(ctx context.Context, e pullEvent, mr domain.MergeRequ
 }
 
 // matchPullRequest reports whether the workflow runs for the activity of a merge
-// request into base: the event is listed, the activity is one of its types
-// (opened, synchronize and reopened when it lists none), and the branches and
-// paths filters, which apply to the base branch and the changed files, let it
-// through. The filters are those of the push event (ermite-actions), run on the
-// pull_request event under another name.
-func matchPullRequest(wf *workflow.Workflow, action, base string, files []string, truncated bool) bool {
+// request into base: the event (pull_request or pull_request_target) is
+// listed, the activity is one of its types (opened, synchronize and reopened
+// when it lists none), and the branches and paths filters, which apply to the
+// base branch and the changed files, let it through. The filters are those of
+// the push event (ermite-actions), run on the event under another name.
+func matchPullRequest(wf *workflow.Workflow, event, action, base string, files []string, truncated bool) bool {
 	if wf == nil || wf.On == nil {
 		return false
 	}
-	ev := wf.On.Event("pull_request")
+	ev := wf.On.Event(event)
 	if ev == nil {
 		return false
 	}
@@ -969,7 +1042,8 @@ func matchPullRequest(wf *workflow.Workflow, action, base string, files []string
 // pullGithubJSON builds the github context of a pull_request run: github.ref is
 // the merge ref, github.sha the merge commit (the head for a closed request
 // that never merged), and the event is shaped like GitHub's pull_request
-// webhook payload with the fields ermite can fill.
+// webhook payload with the fields ermite can fill. A pull_request_target run
+// has the same payload under its own event name, on the default branch.
 func (c *CI) pullGithubJSON(repo domain.Repo, run domain.CIRun, f pushFacts) string {
 	p := f.pull
 	mr := p.mr
@@ -1005,8 +1079,8 @@ func (c *CI) pullGithubJSON(repo domain.Repo, run domain.CIRun, f pushFacts) str
 	case p.merged:
 		mergedAt = tm(mr.UpdatedAt)
 		mergeSha = mr.MergedCommitID.String()
-	case f.commit.String() != p.head.String():
-		mergeSha = f.commit.String() // the test merge commit
+	case !p.merge.IsZero() && p.merge != p.head:
+		mergeSha = p.merge.String() // the test merge commit
 	}
 	prID := stableID("pull", u.full+"#"+num)
 	pr := map[string]any{
@@ -1029,8 +1103,12 @@ func (c *CI) pullGithubJSON(repo domain.Repo, run domain.CIRun, f pushFacts) str
 		}
 		event["before"], event["after"] = before, p.head.String()
 	}
+	refName := strings.TrimPrefix(run.Ref, domain.PullRefPrefix)
+	if p.target {
+		refName = strings.TrimPrefix(run.Ref, "refs/heads/")
+	}
 	return c.githubContext(repo, run, ghEvent{
-		name: "pull_request", refName: strings.TrimPrefix(run.Ref, domain.PullRefPrefix), refType: "branch",
+		name: f.eventName(), refName: refName, refType: "branch",
 		headRef: mr.Source, baseRef: mr.Target, payload: event,
 	})
 }

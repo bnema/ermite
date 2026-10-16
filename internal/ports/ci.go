@@ -431,6 +431,17 @@ type RunnerJob struct {
 	// Permissions are the permissions of GithubToken (key to level), after the
 	// trust rule: no write when the run is not trusted.
 	Permissions map[string]string
+	// Cache is the scope of the job in the runner's cache (Job.cache).
+	Cache JobCache
+}
+
+// JobCache is what a job may do in the cache the runner serves: save entries
+// under WriteRef only ("" for none) and restore those of ReadRefs, most
+// specific first. Repository is "owner/name".
+type JobCache struct {
+	Repository string
+	WriteRef   string
+	ReadRefs   []string
 }
 
 // String describes the job without its secrets and tokens, so that a job

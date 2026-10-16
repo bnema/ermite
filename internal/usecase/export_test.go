@@ -64,7 +64,12 @@ func EvalConcurrency(ctx context.Context, tok template.Token, env template.Env) 
 
 // MatchPullRequest exposes the pull_request filter to the tests.
 func MatchPullRequest(wf *workflow.Workflow, action, base string, files []string, truncated bool) bool {
-	return matchPullRequest(wf, action, base, files, truncated)
+	return matchPullRequest(wf, "pull_request", action, base, files, truncated)
+}
+
+// MatchPullRequestTarget exposes the pull_request_target filter to the tests.
+func MatchPullRequestTarget(wf *workflow.Workflow, action, base string, files []string, truncated bool) bool {
+	return matchPullRequest(wf, "pull_request_target", action, base, files, truncated)
 }
 
 // MatchWorkflowRun exposes the workflow_run filter to the tests.

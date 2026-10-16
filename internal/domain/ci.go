@@ -175,7 +175,10 @@ type CIRun struct {
 	// HeadSha is the head of the merge request of a pull_request run, whose Sha
 	// is the test merge commit github.sha shows; empty for the other events. The
 	// checks of the run attach to it (CheckSha).
-	HeadSha           string
+	HeadSha string
+	// PullNumber is the merge request of a pull_request or pull_request_target
+	// run, 0 for the other events (and for runs stored before it existed).
+	PullNumber        int64
 	Actor             string
 	Status            CIStatus
 	Conclusion        CIConclusion

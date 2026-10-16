@@ -237,8 +237,13 @@ func (s *Server) runRow(repo string, run domain.CIRun, now time.Time) RunRow {
 		Duration: duration(run.StartedAt, run.CompletedAt, now), Number: "#" + strconv.FormatInt(run.Number, 10), Attempt: run.Attempt,
 	}
 	row.RefHref = repoHref(repo, "tree", strings.TrimPrefix(strings.TrimPrefix(run.Ref, "refs/heads/"), "refs/tags/"))
-	if n, ok := pullNumber(run.Ref); ok {
-		// A pull_request run is for refs/pull/<n>/merge: it shows the merge request.
+	n, ok := run.PullNumber, run.PullNumber > 0
+	if !ok {
+		n, ok = pullNumber(run.Ref) // a run stored before PullNumber existed
+	}
+	if ok {
+		// A pull_request run is for refs/pull/<n>/merge, a pull_request_target
+		// run for the default branch: both show the merge request.
 		row.Ref, row.RefHref = "!"+strconv.FormatInt(n, 10), mrHref(repo, n)
 	}
 	row.When, row.WhenAt = whenOf(now, run.CreatedAt)

@@ -42,6 +42,27 @@ func TestMatchPullRequestTypes(t *testing.T) {
 	assert.True(t, usecase.MatchPullRequest(parsePR(t, "  [push, pull_request]\n"), "opened", "main", nil, false))
 }
 
+// CI-4 D4: pull_request_target has the types and the filters of pull_request,
+// under its own name; types ermite never emits parse and never match.
+func TestMatchPullRequestTarget(t *testing.T) {
+	def := parsePR(t, "  pull_request_target:\n")
+	for action, want := range map[string]bool{"opened": true, "synchronize": true, "reopened": true, "closed": false} {
+		assert.Equal(t, want, usecase.MatchPullRequestTarget(def, action, "main", nil, false), "default types, "+action)
+	}
+	assert.False(t, usecase.MatchPullRequest(def, "opened", "main", nil, false), "not a pull_request workflow")
+	assert.False(t, usecase.MatchPullRequestTarget(parsePR(t, "  pull_request:\n"), "opened", "main", nil, false))
+	labeled := parsePR(t, "  pull_request_target:\n    types: [labeled, closed]\n")
+	assert.False(t, usecase.MatchPullRequestTarget(labeled, "opened", "main", nil, false))
+	assert.True(t, usecase.MatchPullRequestTarget(labeled, "closed", "main", nil, false))
+
+	wf := parsePR(t, "  pull_request_target:\n    branches: [main]\n    paths: ['src/**']\n")
+	assert.True(t, usecase.MatchPullRequestTarget(wf, "opened", "main", []string{"src/a.go"}, false))
+	assert.False(t, usecase.MatchPullRequestTarget(wf, "opened", "dev", []string{"src/a.go"}, false), "the base branch is filtered")
+	assert.False(t, usecase.MatchPullRequestTarget(wf, "opened", "main", []string{"README.md"}, false), "the changed files are filtered")
+	ignore := parsePR(t, "  pull_request_target:\n    branches-ignore: [wip]\n")
+	assert.False(t, usecase.MatchPullRequestTarget(ignore, "opened", "wip", nil, false))
+}
+
 func TestMatchPullRequestFilters(t *testing.T) {
 	wf := parsePR(t, "  pull_request:\n    branches: [main, 'release/**']\n    paths: ['src/**', '!src/gen/**']\n")
 	files := func(f ...string) []string { return f }

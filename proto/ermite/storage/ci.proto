@@ -109,6 +109,9 @@ message CIRun {
   // head_sha: the head of the merge request of a pull_request run, where sha is
   // the test merge commit. Empty for the other events.
   string head_sha = 25;
+  // pull_number: the merge request of a pull_request or pull_request_target
+  // run, 0 for the other events and in runs stored before it existed.
+  int64 pull_number = 26;
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned

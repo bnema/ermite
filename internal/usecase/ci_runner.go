@@ -253,6 +253,7 @@ func (c *CI) runnerJob(rs *runState, j domain.CIJob, token, ghToken string, sett
 		WorkflowPath: path, WorkflowYAML: yaml,
 		Environment: j.Environment, Vars: settings.Vars, Secrets: settings.Secrets, Trusted: rs.run.Trusted,
 		Permissions: domain.TokenPermissions(j.Permissions, rs.run.Trusted),
+		Cache:       c.cacheScope(rs.run, rs.src.GithubJSON),
 	}
 }
 

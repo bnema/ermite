@@ -22,6 +22,7 @@ const (
 	eventDispatch    = "workflow_dispatch"
 	eventSchedule    = "schedule"
 	eventWorkflowRun = "workflow_run"
+	eventPullTarget  = "pull_request_target"
 
 	// maxDispatchInputs is the number of top-level inputs of a workflow_dispatch
 	// (docs.github.com, "Events that trigger workflows", workflow_dispatch: up to

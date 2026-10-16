@@ -278,7 +278,7 @@ func encodeRun(r domain.CIRun) ([]byte, error) {
 	return mustMarshal(&storagepb.CIRun{
 		Repo: r.Repo.String(), Id: r.ID, Number: r.Number, Attempt: r.Attempt,
 		WorkflowPath: r.WorkflowPath, WorkflowName: r.WorkflowName, Name: r.Name, Title: r.Title,
-		Event: r.Event, Ref: r.Ref, Sha: r.Sha, HeadSha: r.HeadSha, Actor: r.Actor,
+		Event: r.Event, Ref: r.Ref, Sha: r.Sha, HeadSha: r.HeadSha, PullNumber: r.PullNumber, Actor: r.Actor,
 		Status: encodeStatus(r.Status), Conclusion: encodeConclusion(r.Conclusion), Error: r.Error,
 		CreatedAt: encodeTime(r.CreatedAt), StartedAt: encodeTime(r.StartedAt), CompletedAt: encodeTime(r.CompletedAt),
 		CancelRequested: r.CancelRequested, CancelRequestedAt: encodeTime(r.CancelRequestedAt), Trusted: r.Trusted,
@@ -302,7 +302,7 @@ func decodeRun(item kv.Item) (domain.CIRun, error) {
 	return domain.CIRun{
 		Repo: repo, ID: pb.GetId(), Number: pb.GetNumber(), Attempt: pb.GetAttempt(),
 		WorkflowPath: pb.GetWorkflowPath(), WorkflowName: pb.GetWorkflowName(), Name: name, Title: pb.GetTitle(),
-		Event: pb.GetEvent(), Ref: pb.GetRef(), Sha: pb.GetSha(), HeadSha: pb.GetHeadSha(), Actor: pb.GetActor(),
+		Event: pb.GetEvent(), Ref: pb.GetRef(), Sha: pb.GetSha(), HeadSha: pb.GetHeadSha(), PullNumber: pb.GetPullNumber(), Actor: pb.GetActor(),
 		Status: decodeStatus(pb.GetStatus()), Conclusion: decodeConclusion(pb.GetConclusion()), Error: pb.GetError(),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), StartedAt: decodeTime(pb.GetStartedAt()), CompletedAt: decodeTime(pb.GetCompletedAt()),
 		CancelRequested: pb.GetCancelRequested(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),

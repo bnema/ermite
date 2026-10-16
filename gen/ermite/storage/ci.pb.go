@@ -516,7 +516,10 @@ type CIRun struct {
 	Concurrency *CIConcurrency `protobuf:"bytes,24,opt,name=concurrency,proto3" json:"concurrency,omitempty"`
 	// head_sha: the head of the merge request of a pull_request run, where sha is
 	// the test merge commit. Empty for the other events.
-	HeadSha       string `protobuf:"bytes,25,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	HeadSha string `protobuf:"bytes,25,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	// pull_number: the merge request of a pull_request or pull_request_target
+	// run, 0 for the other events and in runs stored before it existed.
+	PullNumber    int64 `protobuf:"varint,26,opt,name=pull_number,json=pullNumber,proto3" json:"pull_number,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -710,6 +713,13 @@ func (x *CIRun) GetHeadSha() string {
 		return x.HeadSha
 	}
 	return ""
+}
+
+func (x *CIRun) GetPullNumber() int64 {
+	if x != nil {
+		return x.PullNumber
+	}
+	return 0
 }
 
 // CIRunSource is stored under "runsrc/<run id:020d>": what a run was planned
@@ -2504,7 +2514,7 @@ var File_ermite_storage_ci_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\n" +
-	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd5\x06\n" +
+	"\x17ermite/storage/ci.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf6\x06\n" +
 	"\x05CIRun\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\x03R\x02id\x12\x16\n" +
@@ -2533,7 +2543,9 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\x04name\x18\x16 \x01(\tR\x04name\x12\x18\n" +
 	"\atrusted\x18\x17 \x01(\bR\atrusted\x12?\n" +
 	"\vconcurrency\x18\x18 \x01(\v2\x1d.ermite.storage.CIConcurrencyR\vconcurrency\x12\x19\n" +
-	"\bhead_sha\x18\x19 \x01(\tR\aheadShaJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"\xc7\x01\n" +
+	"\bhead_sha\x18\x19 \x01(\tR\aheadSha\x12\x1f\n" +
+	"\vpull_number\x18\x1a \x01(\x03R\n" +
+	"pullNumberJ\x04\b\x12\x10\x13J\x04\b\x13\x10\x14\"\xc7\x01\n" +
 	"\vCIRunSource\x12\x15\n" +
 	"\x06run_id\x18\x04 \x01(\x03R\x05runId\x12#\n" +
 	"\rworkflow_yaml\x18\x01 \x01(\tR\fworkflowYaml\x12\x1f\n" +
