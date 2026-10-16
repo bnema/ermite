@@ -36,9 +36,10 @@ import (
 //     closed or merged. An event carries the commits it is for, fixed when it
 //     happened, and the actor and trust of whoever caused it: it runs for exactly
 //     those commits, with that trust, even when the branches have moved on by the
-//     time it is handled (GitHub runs each synchronize). The merge commit of a
-//     run is computed from the head and base of its event, never from the branches
-//     as they are now.
+//     time it is handled (GitHub runs each synchronize). A run is trusted only
+//     if the head and the base of its event were pushed by trusted principals
+//     too (pullTipsTrusted, pullBaseTrusted). The merge commit of a run is computed from the head and
+//     base of its event, never from the branches as they are now.
 //   - the refresh worker keeps refs/pull/<n>/{head,merge} at the latest branches
 //     when a source or a target branch moves; the refreshes of one merge request
 //     coalesce, and the work is bounded.
@@ -86,6 +87,9 @@ type pullEvent struct {
 	actor              string
 	pusher             domain.CIPusher
 	trusted            bool
+	// merge is the last merge commit the trust of a closing was checked
+	// against, zero when there was none.
+	merge domain.ObjectID
 	// run is false when the cause is a job token: no run starts.
 	run bool
 	log zerowrap.Logger
@@ -156,11 +160,141 @@ func (c *CI) OnPullRequest(ctx context.Context, repo domain.RepoName, ev ports.P
 	if !c.pullEnabled() {
 		return
 	}
-	c.queuePullEvent(pullEvent{
+	e := pullEvent{
 		repo: repo, number: ev.Number, action: ev.Action, head: ev.Head, base: ev.Base,
-		actor: authorOf(p), pusher: domain.PusherOf(p), trusted: domain.TrustedActor(p), run: !p.ViaJobToken(),
-		log: zerowrap.FromCtx(ctx),
-	})
+		actor: authorOf(p), pusher: domain.PusherOf(p), run: !p.ViaJobToken(), log: zerowrap.FromCtx(ctx),
+	}
+	if domain.TrustedActor(p) {
+		e.trusted, e.merge = c.pullTipsTrusted(ctx, repo, ev)
+	}
+	c.queuePullEvent(e)
+}
+
+// pullTipsTrusted reports whether the code the runs of an activity that is not
+// a push execute was pushed by trusted principals (CI-4, D1), and, for a
+// closing, the last merge commit it checked (zero when there is none). The
+// workflow of a pull_request run comes from its merge commit, so from the head
+// and the base: whoever opens or closes the request did not necessarily write
+// either, and without this the owner opening the request of an agent's branch
+// (or into an agent's branch) would run the agent's workflow with the owner's
+// secrets. Every check is positive: an error, an unknown commit or a missing
+// record is not trusted.
+//
+// The records of the source and target branches (domain.CIRefTip) must name
+// exactly the head and the base of the event; they are read here, when the
+// activity happens, as the commits of the event are fixed: a push of either
+// branch before the event is handled changes nothing (a push of the source has
+// its own event and trust). A tip with no record (pushed before the records
+// existed: the next trusted push restores it), or a record for another commit
+// (the branch was force-pushed, moved or deleted) is not trusted. The base of
+// an opening is ev.Base, the target tip of that moment. A closing runs the last
+// merge commit published (which no longer changes once the request is closed:
+// the event worker checks it is still the one checked here), whose parents are
+// its head and base; without one it runs its head alone.
+//
+// A synchronize carries the trust of the push that set the source to its head
+// (onBranchesMoved), and its base is checked there. The closing a merge makes
+// is checked by mergedTrusted.
+func (c *CI) pullTipsTrusted(ctx context.Context, repo domain.RepoName, ev ports.PullRequestEvent) (bool, domain.ObjectID) {
+	mr, err := c.cfg.MRs.Get(ctx, repo, ev.Number)
+	if err != nil {
+		pullUntrusted(ctx, repo, ev, err, "the merge request cannot be read")
+		return false, domain.ObjectID{}
+	}
+	base := ev.Base
+	var merge domain.ObjectID
+	if ev.Action == domain.PullClosed {
+		var parents []domain.ObjectID
+		if merge, parents, err = c.lastMerge(ctx, repo, mr.Number); err != nil {
+			pullUntrusted(ctx, repo, ev, err, "the last merge commit cannot be read")
+			return false, merge
+		}
+		base = domain.ObjectID{} // no merge commit: the head runs alone
+		if !merge.IsZero() {
+			if parents[1] != ev.Head {
+				pullUntrusted(ctx, repo, ev, nil, "the last merge commit is of another head")
+				return false, merge
+			}
+			base = parents[0]
+		}
+	}
+	if ev.Merged {
+		return c.mergedTrusted(ctx, repo, ev, mr, base), merge
+	}
+	if !c.refTrusted(ctx, repo, pinnedRef{ref: "refs/heads/" + mr.Source, commit: ev.Head, object: ev.Head}) {
+		pullUntrusted(ctx, repo, ev, nil, "the head was not pushed by a trusted principal")
+		return false, merge
+	}
+	if ev.Action == domain.PullClosed && merge.IsZero() {
+		return true, merge
+	}
+	return c.pullBaseTrusted(ctx, repo, ev.Number, ev.Action, mr.Target, base), merge
+}
+
+// pullUntrusted logs why the runs of an activity are not trusted.
+func pullUntrusted(ctx context.Context, repo domain.RepoName, ev ports.PullRequestEvent, err error, why string) {
+	ctxLog(ctx).Info().Err(err).Str("repo", repo.String()).Int64("number", ev.Number).Str("action", ev.Action).
+		Str("head", ev.Head.String()).Msg("ci pull request runs are not trusted: " + why)
+}
+
+// lastMerge returns the last merge commit published for a request and its two
+// parents (base, head); zero and no error when there is none.
+func (c *CI) lastMerge(ctx context.Context, repo domain.RepoName, number int64) (domain.ObjectID, []domain.ObjectID, error) {
+	merge, err := c.cfg.Pull.PullRef(ctx, repo, domain.PullMergeRef(number))
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.ObjectID{}, nil, nil
+	}
+	if err != nil {
+		return merge, nil, err
+	}
+	cs, _, err := c.cfg.Git.ListRange(ctx, repo, domain.ObjectID{}, merge, 1)
+	if err != nil {
+		return merge, nil, err
+	}
+	if len(cs) != 1 || len(cs[0].Parents) != 2 {
+		return merge, nil, fmt.Errorf("%s is not a merge commit", merge)
+	}
+	return merge, cs[0].Parents, nil
+}
+
+// mergedTrusted reports whether the closing a merge made runs code the merger
+// took into the target: the request is merged, the target was set to its merge
+// result by a trusted principal (the merge records the merger), the head the
+// run executes is the one merged (the parents of the last merge commit were
+// checked against it), and the base it executes, if any, is in the merge
+// result's history. The records of the source branch are gone by then.
+func (c *CI) mergedTrusted(ctx context.Context, repo domain.RepoName, ev ports.PullRequestEvent, mr domain.MergeRequest, base domain.ObjectID) bool {
+	switch {
+	case ev.Action != domain.PullClosed || mr.State != domain.MRStateMerged || mr.MergedCommitID.IsZero():
+		pullUntrusted(ctx, repo, ev, nil, "the request is not merged")
+		return false
+	case ev.Head.IsZero() || ev.Head != mr.HeadID:
+		pullUntrusted(ctx, repo, ev, nil, "the head is not the merged one")
+		return false
+	case !c.refTrusted(ctx, repo, pinnedRef{ref: "refs/heads/" + mr.Target, commit: mr.MergedCommitID, object: mr.MergedCommitID}):
+		pullUntrusted(ctx, repo, ev, nil, "the merge result was not set by a trusted principal")
+		return false
+	}
+	if base.IsZero() {
+		return true
+	}
+	if mb, err := c.cfg.Git.MergeBase(ctx, repo, base, mr.MergedCommitID); err != nil || mb != base {
+		pullUntrusted(ctx, repo, ev, err, "the base is not in the merge result")
+		return false
+	}
+	return true
+}
+
+// pullBaseTrusted reports whether the target branch was set to exactly base by
+// a trusted principal: the merge commit of a run carries the target's files
+// too, its workflow included.
+func (c *CI) pullBaseTrusted(ctx context.Context, repo domain.RepoName, number int64, action, target string, base domain.ObjectID) bool {
+	if c.refTrusted(ctx, repo, pinnedRef{ref: "refs/heads/" + target, commit: base, object: base}) {
+		return true
+	}
+	ctxLog(ctx).Info().Str("repo", repo.String()).Int64("number", number).Str("action", action).Str("base", base.String()).
+		Msg("ci pull request runs are not trusted: the base was not pushed by a trusted principal")
+	return false
 }
 
 // onBranchesMoved is called for every push and merge, after its push
@@ -235,6 +369,7 @@ func (c *CI) onBranchesMoved(ctx context.Context, repo domain.RepoName, updates 
 		c.markPullDirty(repo)
 	}
 	tips := map[string]domain.ObjectID{}
+	baseTrusted := map[string]bool{}
 	for _, n := range numbers {
 		mr, err := c.cfg.MRs.Get(ctx, repo, n)
 		if err != nil || !mr.IsOpen() {
@@ -252,9 +387,17 @@ func (c *CI) onBranchesMoved(ctx context.Context, repo domain.RepoName, updates 
 					tips[mr.Target] = base
 				}
 				before, _ := domain.ParseObjectID(u.Old) // zero for a new branch
+				// The pusher's trust covers the head; the base of the snapshot
+				// must have been pushed by a trusted principal too.
+				bt, checked := baseTrusted[mr.Target]
+				if trusted && !checked {
+					bt = c.pullBaseTrusted(ctx, repo, mr.Number, domain.PullSynchronize, mr.Target, base)
+					baseTrusted[mr.Target] = bt
+				}
+				evTrusted := trusted && bt
 				c.queuePullEvent(pullEvent{
 					repo: repo, number: mr.Number, action: domain.PullSynchronize, head: head, base: base, before: before,
-					actor: actor, pusher: pusher, trusted: trusted, run: true, log: log,
+					actor: actor, pusher: pusher, trusted: evTrusted, run: true, log: log,
 				})
 			}
 		}
@@ -522,6 +665,10 @@ type pullState struct {
 	// request, the last one published, zero if none.
 	merge domain.ObjectID
 	clean bool
+	// otherHead is set for a closed request whose last merge commit is of
+	// another head than its event's: the provenance of the event's head says
+	// nothing of the code the run executes.
+	otherHead bool
 }
 
 func (c *CI) handlePullEvent(ctx context.Context, e pullEvent) error {
@@ -554,6 +701,9 @@ func (c *CI) handlePullEvent(ctx context.Context, e pullEvent) error {
 		st, ok, err := c.closedPull(ctx, e, mr)
 		if err != nil || !ok {
 			return err
+		}
+		if st.otherHead || st.merge != e.merge {
+			e.trusted = false // not the code the trust was checked for
 		}
 		return c.startPullRuns(ctx, e, mr, st)
 	}
@@ -707,6 +857,7 @@ func (c *CI) closedPull(ctx context.Context, e pullEvent, mr domain.MergeRequest
 			if st.head.IsZero() {
 				st.head = cs[0].Parents[1]
 			}
+			st.otherHead = cs[0].Parents[1] != e.head
 		}
 	}
 	if st.base.IsZero() {

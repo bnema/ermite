@@ -31,7 +31,9 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	aad := domain.SecretAAD(domain.RepoScope(repo), "TOKEN")
 	for _, plain := range []string{"x", "multi\nline\r\nvalue", strings.Repeat("é", 20000), "\x00\xff"} {
 		sealed := b.Seal([]byte(plain), aad)
-		assert.NotContains(t, string(sealed), plain, "the value is not stored in clear")
+		if len(plain) >= 8 { // a shorter value can turn up in random bytes by chance
+			assert.NotContains(t, string(sealed), plain, "the value is not stored in clear")
+		}
 		got, err := b.Open(sealed, aad)
 		require.NoError(t, err)
 		assert.Equal(t, plain, string(got))

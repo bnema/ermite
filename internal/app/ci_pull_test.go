@@ -307,6 +307,208 @@ func TestPullRequestTrustFollowsTheActor(t *testing.T) {
 	assert.False(t, job.GetTrusted())
 }
 
+// CI-4 D1: the workflow of a pull_request run comes from the head, so the run
+// is trusted only if the head was pushed by a trusted principal too.
+func TestPullRequestTrustFollowsTheHeadsPusher(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", pullWF("    types: [opened, synchronize, closed]", ""), "")
+	secret, _ := c.branchToken(scopes(domain.ScopeRepoRead, domain.ScopeRepoWrite, domain.ScopeMRWrite), []string{"agent/"}, "proj")
+	agentPush := func(branch, file string) string {
+		c.writeFile(c.wt, file, []byte(file+"\n"))
+		c.mustGit(c.wt, "push", "-q", c.urlAuth(secret, "/proj.git"), branch)
+		return strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+	}
+
+	// The owner opens the request of a branch the agent pushed: not trusted.
+	c.mustGit(c.wt, "checkout", "-q", "-b", "agent/x")
+	agentPush("agent/x", "x.txt")
+	n := c.openMR(c.root, "agent/x")
+	job := c.finish(runner)
+	assert.False(t, job.GetTrusted(), "the agent's workflow does not get the owner's secrets")
+	run := c.runs()[0]
+	assert.False(t, run.GetTrusted())
+	assert.Equal(t, "root", run.GetActor(), "the actor is still who opened it")
+
+	// The owner pushes on top: the synchronize is trusted.
+	c.push("agent/x", map[string]string{"y.txt": "y\n"}, "")
+	assert.True(t, c.finish(runner).GetTrusted())
+
+	// The agent pushes again: not trusted.
+	agentPush("agent/x", "z.txt")
+	assert.False(t, c.finish(runner).GetTrusted())
+
+	// The owner closes it, the head being the agent's: not trusted.
+	_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+	require.NoError(t, err)
+	job = c.finish(runner)
+	assert.Equal(t, "closed", c.ghContext(job)["event"].(map[string]any)["action"])
+	assert.False(t, job.GetTrusted())
+
+	// The owner's own branch: trusted.
+	c.mustGit(c.wt, "checkout", "-q", "-b", "own", "main")
+	c.push("own", map[string]string{"o.txt": "o\n"}, "")
+	c.openMR(c.root, "own")
+	assert.True(t, c.finish(runner).GetTrusted())
+
+	// A head whose record names another commit (the branch moved since, or the
+	// owner's push of it was refused), or that has none: not trusted.
+	c.mustGit(c.wt, "checkout", "-q", "-b", "other", "main")
+	c.push("other", map[string]string{"p.txt": "p\n"}, "")
+	require.NoError(t, c.forge.store.CI().PutRefTip(c.ctx, domain.CIRefTip{
+		Repo: c.name("proj"), Ref: "refs/heads/other", Sha: "1111111111111111111111111111111111111111", Actor: "root", Trusted: true,
+	}))
+	c.openMR(c.root, "other")
+	assert.False(t, c.finish(runner).GetTrusted(), "the record names another commit")
+
+	c.mustGit(c.wt, "checkout", "-q", "-b", "none", "main")
+	c.push("none", map[string]string{"q.txt": "q\n"}, "")
+	require.NoError(t, c.forge.store.CI().DeleteRefTip(c.ctx, c.name("proj"), "refs/heads/none"))
+	c.openMR(c.root, "none")
+	assert.False(t, c.finish(runner).GetTrusted(), "no record")
+}
+
+// Merging takes the head into the target: the closing of a merged request has
+// the merger's trust, even with the source branch (and its record) deleted.
+func TestPullRequestMergedByTheOwnerIsTrusted(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", pullWF("    types: [closed]", ""), "")
+	secret, _ := c.branchToken(scopes(domain.ScopeRepoRead, domain.ScopeRepoWrite), []string{"agent/"}, "proj")
+	c.mustGit(c.wt, "checkout", "-q", "-b", "agent/m")
+	c.writeFile(c.wt, "m.txt", []byte("m\n"))
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(secret, "/proj.git"), "agent/m")
+	n := c.openMR(c.root, "agent/m")
+	c.waitFor("the head ref", func() bool { return c.ref(domain.PullHeadRef(n)) != "" })
+	_, err := c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+		Repo: "proj", Number: n, HeadId: c.ref(domain.PullHeadRef(n)), DeleteSourceBranch: true,
+	}))
+	require.NoError(t, err)
+	job := c.finish(runner)
+	assert.Equal(t, true, c.ghContext(job)["event"].(map[string]any)["pull_request"].(map[string]any)["merged"])
+	assert.True(t, job.GetTrusted())
+}
+
+// openMRInto opens a merge request from source into target as the owner.
+func (c *ciHarness) openMRInto(source, target string) int64 {
+	c.t.Helper()
+	res, err := c.root.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+		Repo: c.repo, Title: "Title of " + source, SourceBranch: source, TargetBranch: target,
+	}))
+	require.NoError(c.t, err)
+	return res.Msg.GetMergeRequest().GetNumber()
+}
+
+// The merge commit carries the target's files too: the base of the event must
+// have been pushed by a trusted principal as well, for every activity.
+func TestPullRequestTrustFollowsTheBasesPusher(t *testing.T) {
+	c, hook := newHookedHarness(t)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", pullWF("    types: [opened, synchronize, closed]", ""), "")
+	secret, _ := c.branchToken(scopes(domain.ScopeRepoRead, domain.ScopeRepoWrite), []string{"agent/"}, "proj")
+	c.mustGit(c.wt, "checkout", "-q", "-b", "agent/base")
+	c.writeFile(c.wt, "a.txt", []byte("a\n"))
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(secret, "/proj.git"), "agent/base")
+	c.mustGit(c.wt, "checkout", "-q", "-b", "feat", "main")
+	c.push("feat", map[string]string{"f.txt": "f\n"}, "")
+
+	// The owner's branch into the agent's: not trusted, opened or synchronized.
+	n := c.openMRInto("feat", "agent/base")
+	assert.False(t, c.finish(runner).GetTrusted(), "opened on the agent's target")
+	c.push("feat", map[string]string{"g.txt": "g\n"}, "")
+	job := c.finish(runner)
+	assert.Equal(t, "synchronize", c.ghContext(job)["event"].(map[string]any)["action"])
+	assert.False(t, job.GetTrusted(), "a synchronize by the owner on the agent's target")
+
+	// The owner pushes the target: its tip is the owner's, so are the next runs.
+	c.mustGit(c.wt, "checkout", "-q", "agent/base")
+	c.push("agent/base", map[string]string{"b.txt": "b\n"}, "")
+	c.mustGit(c.wt, "checkout", "-q", "feat")
+	c.push("feat", map[string]string{"h.txt": "h\n"}, "")
+	assert.True(t, c.finish(runner).GetTrusted(), "owner's source, owner's target")
+
+	// The agent pushes the target again; the owner closes: the run is the last
+	// merge (refreshed on the agent's tip), not trusted.
+	c.mustGit(c.wt, "checkout", "-q", "agent/base")
+	c.writeFile(c.wt, "c.txt", []byte("c\n"))
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(secret, "/proj.git"), "agent/base")
+	agentTip := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+	c.waitFor("the merge on the agent's tip", func() bool {
+		m := c.ref(domain.PullMergeRef(n))
+		return m != "" && strings.HasPrefix(c.parents(m), agentTip+" ")
+	})
+	_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+	require.NoError(t, err)
+	job = c.finish(runner)
+	assert.Equal(t, "closed", c.ghContext(job)["event"].(map[string]any)["action"])
+	assert.False(t, job.GetTrusted(), "closed on a merge of the agent's target")
+
+	// The trust is that of the snapshot: the owner moving the agent's target
+	// after the opening does not make the opening trusted.
+	c.mustGit(c.wt, "checkout", "-q", "-b", "feat2", "main")
+	c.push("feat2", map[string]string{"k.txt": "k\n"}, "")
+	reached, release := hook.block(t, "event")
+	c.openMRInto("feat2", "agent/base")
+	await(t, reached, "the opening event")
+	c.mustGit(c.wt, "checkout", "-q", "agent/base")
+	c.push("agent/base", map[string]string{"d.txt": "d\n"}, "")
+	release()
+	job = c.finish(runner)
+	assert.Equal(t, agentTip+" ", c.parents(c.ghContext(job)["sha"].(string))[:41], "the run is for the snapshot's base")
+	assert.False(t, job.GetTrusted())
+
+	// And the other way: the agent moving the owner's target after the opening
+	// does not make it untrusted.
+	c.mustGit(c.wt, "checkout", "-q", "-b", "feat3", "main")
+	c.push("feat3", map[string]string{"m.txt": "m\n"}, "")
+	ownerTip := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "agent/base"))
+	reached, release = hook.block(t, "event")
+	c.openMRInto("feat3", "agent/base")
+	await(t, reached, "the opening event")
+	c.mustGit(c.wt, "checkout", "-q", "agent/base")
+	c.writeFile(c.wt, "e.txt", []byte("e\n"))
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(secret, "/proj.git"), "agent/base")
+	release()
+	job = c.finish(runner)
+	assert.Equal(t, ownerTip+" ", c.parents(c.ghContext(job)["sha"].(string))[:41])
+	assert.True(t, job.GetTrusted())
+}
+
+// A closed request runs its last merge commit, which can be of an older head
+// than the one its closing is for: the trust of that head says nothing of it.
+func TestPullRequestClosedOnAMergeOfAnOlderHeadIsNotTrusted(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	files := pullWF("    types: [closed]", "")
+	files["c.txt"] = "base\n"
+	c.push("main", files, "")
+	secret, _ := c.branchToken(scopes(domain.ScopeRepoRead, domain.ScopeRepoWrite), []string{"agent/"}, "proj")
+	c.mustGit(c.wt, "checkout", "-q", "-b", "agent/o")
+	c.writeFile(c.wt, "x.txt", []byte("x\n"))
+	c.mustGit(c.wt, "push", "-q", c.urlAuth(secret, "/proj.git"), "agent/o")
+	agentHead := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+	n := c.openMR(c.root, "agent/o")
+
+	// The target moves, the agent's head still merges; then the owner pushes a
+	// head that conflicts: the merge ref keeps the merge of the agent's head.
+	c.mustGit(c.wt, "checkout", "-q", "main")
+	main2 := c.push("main", map[string]string{"c.txt": "main\n"}, "")
+	c.waitFor("the merge of the agent's head on the new target", func() bool {
+		m := c.ref(domain.PullMergeRef(n))
+		return m != "" && c.parents(m) == main2+" "+agentHead
+	})
+	c.mustGit(c.wt, "checkout", "-q", "agent/o")
+	ownerHead := c.push("agent/o", map[string]string{"c.txt": "owner\n"}, "")
+	c.waitFor("the head ref", func() bool { return c.ref(domain.PullHeadRef(n)) == ownerHead })
+	require.Equal(t, main2+" "+agentHead, c.parents(c.ref(domain.PullMergeRef(n))))
+
+	_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+	require.NoError(t, err)
+	job := c.finish(runner)
+	assert.Equal(t, c.ref(domain.PullMergeRef(n)), c.ghContext(job)["sha"], "the run is the merge of the agent's head")
+	assert.False(t, job.GetTrusted())
+}
+
 func TestPullRefsAreServedHiddenAndNotPushable(t *testing.T) {
 	c := newCIHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")

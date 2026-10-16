@@ -9,6 +9,7 @@ import (
 	"bnema.dev/ermite-actions/template"
 	"bnema.dev/ermite-actions/workflow"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // AuthorOf exposes authorOf to the tests.
@@ -83,3 +84,9 @@ func PullFilesLink(base string, page, perPage, total int) string {
 
 // FilePatch exposes the patch text of a file of the files endpoint to the tests.
 func FilePatch(f domain.FileDiff) (string, bool) { return filePatch(f) }
+
+// PullTipsTrusted exposes the trust check of an activity of a merge request to
+// the tests, on a CI that has cfg and no workers.
+func PullTipsTrusted(ctx context.Context, cfg CIConfig, repo domain.RepoName, ev ports.PullRequestEvent) (bool, domain.ObjectID) {
+	return (&CI{cfg: cfg}).pullTipsTrusted(ctx, repo, ev)
+}

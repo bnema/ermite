@@ -315,6 +315,9 @@ type PullRequestEvent struct {
 	// Head is the head of the source branch and Base the tip of the target at
 	// that moment; either may be zero when unknown (the current one is read).
 	Head, Base domain.ObjectID
+	// Merged is set on the closing a merge makes: its runs have the merger's
+	// trust (usecase.CI checks the merge against the request).
+	Merged bool
 }
 
 // PullGate lets the CI change what depends on a merge request staying open

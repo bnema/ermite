@@ -840,7 +840,7 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,
 	})
 	if m.pulls != nil {
-		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID}, p) // closed, merged: true
+		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID, Merged: true}, p)
 	}
 	if m.ci != nil {
 		// GitHub runs the "push" workflows of a merge, with the owner as actor;

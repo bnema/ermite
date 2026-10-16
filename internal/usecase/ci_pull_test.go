@@ -3,13 +3,19 @@
 package usecase_test
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite-actions/workflow"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 	"bnema.dev/ermite/internal/usecase"
 )
 
@@ -84,4 +90,113 @@ func TestFilePatch(t *testing.T) {
 	assert.False(t, ok, "truncated")
 	_, ok = usecase.FilePatch(domain.FileDiff{Status: domain.FileRenamed})
 	assert.False(t, ok, "a pure rename has no hunk")
+}
+
+// CI-4 D1: every path of the trust of an activity that is not a push ends
+// untrusted unless the provenance of the code it runs is positively known.
+func TestPullTipsTrustedFailsClosed(t *testing.T) {
+	oid := func(c byte) domain.ObjectID {
+		id, err := domain.ParseObjectID(strings.Repeat(string(c), 40))
+		require.NoError(t, err)
+		return id
+	}
+	head, base, merge, merged, other := oid('1'), oid('2'), oid('3'), oid('4'), oid('9')
+	boom := errors.New("boom")
+	repo := name(t, "proj")
+	open := domain.MergeRequest{Repo: repo, Number: 1, Source: "feat", Target: "main", State: domain.MRStateOpen}
+	closed := open
+	closed.State = domain.MRStateClosed
+	mergedMR := open
+	mergedMR.State, mergedMR.HeadID, mergedMR.MergedCommitID = domain.MRStateMerged, head, merged
+	tip := func(ref string, sha domain.ObjectID, trusted bool) domain.CIRefTip {
+		return domain.CIRefTip{Repo: repo, Ref: ref, Sha: sha.String(), Trusted: trusted}
+	}
+	goodTips := []domain.CIRefTip{tip("refs/heads/feat", head, true), tip("refs/heads/main", base, true)}
+	mergeCommit := []domain.Commit{{ID: merge, Parents: []domain.ObjectID{base, head}}}
+
+	type world struct {
+		mr       domain.MergeRequest
+		mrErr    error
+		tips     []domain.CIRefTip
+		tipErr   error
+		mergeRef domain.ObjectID // zero: none
+		refErr   error
+		commits  []domain.Commit
+		listErr  error
+		mb       domain.ObjectID
+		mbErr    error
+	}
+	opened := ports.PullRequestEvent{Number: 1, Action: domain.PullOpened, Head: head, Base: base}
+	closing := ports.PullRequestEvent{Number: 1, Action: domain.PullClosed, Head: head}
+	merging := ports.PullRequestEvent{Number: 1, Action: domain.PullClosed, Head: head, Merged: true}
+	mergedTips := []domain.CIRefTip{tip("refs/heads/main", merged, true)}
+
+	cases := []struct {
+		name string
+		ev   ports.PullRequestEvent
+		w    world
+		want bool
+	}{
+		{"opened: head and base pushed by the owner", opened, world{mr: open, tips: goodTips}, true},
+		{"opened: the request cannot be read", opened, world{mrErr: boom}, false},
+		{"opened: the request is gone", opened, world{mrErr: domain.ErrNotFound}, false},
+		{"opened: a record cannot be read", opened, world{mr: open, tipErr: boom}, false},
+		{"opened: unknown head", ports.PullRequestEvent{Number: 1, Action: domain.PullOpened, Base: base}, world{mr: open, tips: goodTips}, false},
+		{"opened: unknown base", ports.PullRequestEvent{Number: 1, Action: domain.PullOpened, Head: head}, world{mr: open, tips: goodTips}, false},
+		{"opened: head without a record", opened, world{mr: open, tips: goodTips[1:]}, false},
+		{"opened: base without a record", opened, world{mr: open, tips: goodTips[:1]}, false},
+		{"opened: base pushed by an agent", opened, world{mr: open, tips: []domain.CIRefTip{goodTips[0], tip("refs/heads/main", base, false)}}, false},
+		{"opened: base record for another commit", opened, world{mr: open, tips: []domain.CIRefTip{goodTips[0], tip("refs/heads/main", other, true)}}, false},
+		{"an unknown action is checked like an opening", ports.PullRequestEvent{Number: 1, Action: "edited", Head: head, Base: base}, world{mr: open, tips: goodTips[:1]}, false},
+		{"closed: no merge commit, owner's head", closing, world{mr: closed, tips: goodTips[:1]}, true},
+		{"closed: merge commit of owner's tips", closing, world{mr: closed, tips: goodTips, mergeRef: merge, commits: mergeCommit}, true},
+		{"closed: the merge ref cannot be read", closing, world{mr: closed, tips: goodTips, refErr: boom}, false},
+		{"closed: the merge commit cannot be read", closing, world{mr: closed, tips: goodTips, mergeRef: merge, listErr: boom}, false},
+		{"closed: the merge ref is not a merge", closing, world{mr: closed, tips: goodTips, mergeRef: merge, commits: []domain.Commit{{ID: merge, Parents: []domain.ObjectID{base}}}}, false},
+		{"closed: the merge commit is of another head", closing, world{mr: closed, tips: goodTips, mergeRef: merge, commits: []domain.Commit{{ID: merge, Parents: []domain.ObjectID{base, other}}}}, false},
+		{"closed: merge commit on an agent's base", closing, world{mr: closed, tips: []domain.CIRefTip{goodTips[0], tip("refs/heads/main", base, false)}, mergeRef: merge, commits: mergeCommit}, false},
+		{"closed, not by a merge, of a merged request: checked like a closing", closing, world{mr: mergedMR, tips: mergedTips}, false},
+		{"merged: the merger's", merging, world{mr: mergedMR, tips: mergedTips, mergeRef: merge, commits: mergeCommit, mb: base}, true},
+		{"merged without a merge commit", merging, world{mr: mergedMR, tips: mergedTips}, true},
+		{"merged flag on a request that is not merged", merging, world{mr: closed, tips: append(goodTips, mergedTips...)}, false},
+		{"merged flag on an opening", ports.PullRequestEvent{Number: 1, Action: domain.PullOpened, Head: head, Merged: true}, world{mr: mergedMR, tips: mergedTips}, false},
+		{"merged: another head than the merged one", ports.PullRequestEvent{Number: 1, Action: domain.PullClosed, Head: other, Merged: true}, world{mr: mergedMR, tips: mergedTips}, false},
+		{"merged: unknown head", ports.PullRequestEvent{Number: 1, Action: domain.PullClosed, Merged: true}, world{mr: mergedMR, tips: mergedTips}, false},
+		{"merged: the target moved since", merging, world{mr: mergedMR, tips: []domain.CIRefTip{tip("refs/heads/main", other, true)}}, false},
+		{"merged: the target set by an agent", merging, world{mr: mergedMR, tips: []domain.CIRefTip{tip("refs/heads/main", merged, false)}}, false},
+		{"merged: the base is not in the merge result", merging, world{mr: mergedMR, tips: mergedTips, mergeRef: merge, commits: mergeCommit, mb: other}, false},
+		{"merged: the merge base cannot be read", merging, world{mr: mergedMR, tips: mergedTips, mergeRef: merge, commits: mergeCommit, mbErr: boom}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := tc.w
+			mrs := mocks.NewMergeRequestStore(t)
+			mrs.EXPECT().Get(mock.Anything, repo, int64(1)).Return(w.mr, w.mrErr).Maybe()
+			tips := mocks.NewCIRefTipStore(t)
+			tips.EXPECT().GetRefTip(mock.Anything, repo, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.RepoName, ref string) (domain.CIRefTip, error) {
+				if w.tipErr != nil {
+					return domain.CIRefTip{}, w.tipErr
+				}
+				for _, rt := range w.tips {
+					if rt.Ref == ref {
+						return rt, nil
+					}
+				}
+				return domain.CIRefTip{}, domain.ErrNotFound
+			}).Maybe()
+			pull := mocks.NewPullGit(t)
+			refErr := w.refErr
+			if refErr == nil && w.mergeRef.IsZero() {
+				refErr = domain.ErrNotFound
+			}
+			pull.EXPECT().PullRef(mock.Anything, repo, domain.PullMergeRef(1)).Return(w.mergeRef, refErr).Maybe()
+			git := mocks.NewMergeGit(t)
+			git.EXPECT().ListRange(mock.Anything, repo, domain.ObjectID{}, merge, 1).Return(w.commits, false, w.listErr).Maybe()
+			git.EXPECT().MergeBase(mock.Anything, repo, mock.Anything, merged).Return(w.mb, w.mbErr).Maybe()
+
+			cfg := usecase.CIConfig{MRs: mrs, RefTips: tips, Pull: pull, Git: git}
+			got, _ := usecase.PullTipsTrusted(context.Background(), cfg, repo, tc.ev)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
