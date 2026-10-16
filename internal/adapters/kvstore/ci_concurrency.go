@@ -49,11 +49,19 @@ var concurrencyStates = []struct {
 	{domain.CIConcurrencyHolding, storagepb.CIConcurrencyState_CI_CONCURRENCY_STATE_HOLDING},
 }
 
+// markStates are the states a mark may hold on top of concurrencyStates.
+var markStates = append(slices.Clone(concurrencyStates), []struct {
+	d domain.CIConcurrencyState
+	p storagepb.CIConcurrencyState
+}{
+	{domain.CIConcurrencyReplaced, storagepb.CIConcurrencyState_CI_CONCURRENCY_STATE_REPLACED},
+}...)
+
 func encodeConcurrency(c domain.CIConcurrency) *storagepb.CIConcurrency {
 	if c == (domain.CIConcurrency{}) {
 		return nil
 	}
-	out := &storagepb.CIConcurrency{Group: c.Group, Cancel: c.Cancel, Evaluated: c.Evaluated, FromRun: c.FromRun, Preempted: c.Preempted}
+	out := &storagepb.CIConcurrency{Group: c.Group, Cancel: c.Cancel, Evaluated: c.Evaluated, FromRun: c.FromRun, Preempted: c.Preempted, QueueMax: c.Max}
 	for _, e := range concurrencyStates {
 		if e.d == c.State {
 			out.State = e.p
@@ -66,7 +74,7 @@ func decodeConcurrency(pb *storagepb.CIConcurrency) domain.CIConcurrency {
 	if pb == nil {
 		return domain.CIConcurrency{}
 	}
-	c := domain.CIConcurrency{Group: pb.GetGroup(), Cancel: pb.GetCancel(), Evaluated: pb.GetEvaluated(), FromRun: pb.GetFromRun(), Preempted: pb.GetPreempted()}
+	c := domain.CIConcurrency{Group: pb.GetGroup(), Cancel: pb.GetCancel(), Evaluated: pb.GetEvaluated(), FromRun: pb.GetFromRun(), Preempted: pb.GetPreempted(), Max: pb.GetQueueMax()}
 	for _, e := range concurrencyStates {
 		if e.p == pb.GetState() {
 			c.State = e.d
@@ -79,11 +87,20 @@ func encodeConcurrencyEntry(e *domain.CIConcurrencyEntry) *storagepb.CIConcurren
 	if e == nil {
 		return nil
 	}
-	return &storagepb.CIConcurrencyEntry{RunId: e.RunID, Attempt: e.Attempt, JobId: e.JobID, Cancel: e.Cancel, Canceling: e.Canceling}
+	return &storagepb.CIConcurrencyEntry{RunId: e.RunID, Attempt: e.Attempt, JobId: e.JobID, Cancel: e.Cancel, Canceling: e.Canceling, QueueMax: e.Max}
 }
 
+// encodeConcurrencyRecord writes the waiting entries to queue, and the head of
+// the line to pending too, for a binary that predates queue (a downgrade).
 func encodeConcurrencyRecord(r domain.CIConcurrencyRecord) []byte {
-	return mustMarshal(&storagepb.CIConcurrencyRecord{Running: encodeConcurrencyEntry(r.Running), Pending: encodeConcurrencyEntry(r.Pending)})
+	pb := &storagepb.CIConcurrencyRecord{Running: encodeConcurrencyEntry(r.Running)}
+	for i := range r.Pending {
+		pb.Queue = append(pb.Queue, encodeConcurrencyEntry(&r.Pending[i]))
+	}
+	if len(r.Pending) > 0 {
+		pb.Pending = encodeConcurrencyEntry(&r.Pending[0])
+	}
+	return mustMarshal(pb)
 }
 
 //hexcheck:ignore suspicious-business-logic-in-adapter maps the stored record to the domain record field by field: no rule is decided here
@@ -92,14 +109,22 @@ func decodeConcurrencyRecord(val []byte) (domain.CIConcurrencyRecord, error) {
 	if err := proto.Unmarshal(val, &pb); err != nil {
 		return domain.CIConcurrencyRecord{}, fmt.Errorf("decode concurrency group: %w", err)
 	}
-	return domain.CIConcurrencyRecord{Running: decodeConcurrencyEntry(pb.GetRunning()), Pending: decodeConcurrencyEntry(pb.GetPending())}, nil
+	rec := domain.CIConcurrencyRecord{Running: decodeConcurrencyEntry(pb.GetRunning())}
+	for _, q := range pb.GetQueue() {
+		rec.Pending = append(rec.Pending, *decodeConcurrencyEntry(q))
+	}
+	// A record stored before queue: max holds its only waiting entry in pending.
+	if p := decodeConcurrencyEntry(pb.GetPending()); p != nil && len(rec.Pending) == 0 {
+		rec.Pending = []domain.CIConcurrencyEntry{*p}
+	}
+	return rec, nil
 }
 
 func decodeConcurrencyEntry(pb *storagepb.CIConcurrencyEntry) *domain.CIConcurrencyEntry {
 	if pb == nil {
 		return nil
 	}
-	return &domain.CIConcurrencyEntry{RunID: pb.GetRunId(), Attempt: pb.GetAttempt(), JobID: pb.GetJobId(), Cancel: pb.GetCancel(), Canceling: pb.GetCanceling()}
+	return &domain.CIConcurrencyEntry{RunID: pb.GetRunId(), Attempt: pb.GetAttempt(), JobID: pb.GetJobId(), Cancel: pb.GetCancel(), Canceling: pb.GetCanceling(), Max: pb.GetQueueMax()}
 }
 
 // concurMarkPrefix is where the marks of a group are: the group key is escaped,
@@ -110,13 +135,13 @@ func concurMarkPrefix(repo domain.RepoName, group string) string {
 
 func encodeConcurrencyMark(m domain.CIConcurrencyMark) []byte {
 	pb := &storagepb.CIConcurrencyMark{Entry: encodeConcurrencyEntry(&m.Entry), Group: m.Group}
-	for _, e := range concurrencyStates {
+	for _, e := range markStates {
 		if e.d == m.State {
 			pb.State = e.p
 		}
 	}
-	if m.State == domain.CIConcurrencyReplaced {
-		pb.State = storagepb.CIConcurrencyState_CI_CONCURRENCY_STATE_REPLACED
+	if m.State == domain.CIConcurrencyRejected {
+		pb.State, pb.QueueFull = storagepb.CIConcurrencyState_CI_CONCURRENCY_STATE_REPLACED, true
 	}
 	return mustMarshal(pb)
 }
@@ -131,13 +156,13 @@ func decodeConcurrencyMark(val []byte) (domain.CIConcurrencyMark, error) {
 	if e := decodeConcurrencyEntry(pb.GetEntry()); e != nil {
 		m.Entry = *e
 	}
-	switch pb.GetState() {
-	case storagepb.CIConcurrencyState_CI_CONCURRENCY_STATE_PENDING:
-		m.State = domain.CIConcurrencyPending
-	case storagepb.CIConcurrencyState_CI_CONCURRENCY_STATE_HOLDING:
-		m.State = domain.CIConcurrencyHolding
-	case storagepb.CIConcurrencyState_CI_CONCURRENCY_STATE_REPLACED:
-		m.State = domain.CIConcurrencyReplaced
+	for _, e := range markStates {
+		if e.p == pb.GetState() {
+			m.State = e.d
+		}
+	}
+	if m.State == domain.CIConcurrencyReplaced && pb.GetQueueFull() {
+		m.State = domain.CIConcurrencyRejected
 	}
 	return m, nil
 }

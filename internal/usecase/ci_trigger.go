@@ -91,7 +91,7 @@ func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain
 func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted bool) {
 	var kept []domain.RefUpdate
 	for _, u := range updates {
-		if !u.IsDelete() && (strings.HasPrefix(u.Ref, "refs/heads/") || strings.HasPrefix(u.Ref, "refs/tags/")) {
+		if strings.HasPrefix(u.Ref, "refs/heads/") || strings.HasPrefix(u.Ref, "refs/tags/") {
 			kept = append(kept, u)
 		}
 	}
@@ -148,15 +148,29 @@ func (c *CI) handlePush(ctx context.Context, t ciTrigger) error {
 	if len(runners) == 0 {
 		return nil
 	}
-	tags := 0
+	var tags, created, deleted int
 	for _, u := range t.updates {
 		if strings.HasPrefix(u.Ref, "refs/tags/") {
-			tags++
+			switch {
+			case u.IsDelete():
+				deleted++
+			case u.IsCreate():
+				tags++
+				created++
+			default:
+				tags++
+			}
 		}
 	}
 	var errs []error
 	for _, u := range t.updates {
-		if err := c.handleRef(ctx, t, u, tags); err != nil {
+		var err error
+		if u.IsDelete() {
+			err = c.handleDelete(ctx, t, u, deleted)
+		} else {
+			err = c.handleRef(ctx, t, u, tags, created)
+		}
+		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", u.Ref, err))
 		}
 	}
@@ -187,7 +201,7 @@ type pushFacts struct {
 	// (pull.target) update.Ref is the default branch and commit its tip.
 	pull *pullFacts
 	// custom is set for the events that are not a push or a merge request:
-	// workflow_dispatch, schedule and workflow_run (ci_events.go).
+	// workflow_dispatch, schedule, workflow_run, create and delete (ci_events.go).
 	custom *customEvent
 }
 
@@ -234,10 +248,17 @@ func (f pushFacts) headSha() string {
 	return ""
 }
 
-func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tagCount int) error {
+// handleRef starts the push workflows of a pushed ref and, for a created one,
+// its create workflows. tagCount is the number of tags the push sets,
+// tagsCreated the number it creates.
+func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tagCount, tagsCreated int) error {
 	isTag := strings.HasPrefix(u.Ref, "refs/tags/")
-	if isTag && tagCount > workflow.MaxTagsPerPush {
-		return nil // GitHub creates no event for the tags of such a push
+	// GitHub creates no push event for the tags of a push that sets more than
+	// three, and no create event when it creates more than three.
+	push := !isTag || tagCount <= workflow.MaxTagsPerPush
+	create := u.IsCreate() && (!isTag || tagsCreated <= workflow.MaxTagsPerPush)
+	if !push && !create {
+		return nil
 	}
 	repo, err := c.cfg.Meta.Get(ctx, t.repo)
 	if err != nil {
@@ -254,16 +275,17 @@ func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tag
 	skip := workflow.SkipCI(facts.head.Message)
 	var errs []error
 	for _, f := range files {
-		wf, perrs := workflow.Parse(f.path, f.content)
+		wf, perrs := parseWorkflow(f.path, f.content)
+		var problems []string
+		for _, e := range perrs {
+			problems = append(problems, e.Error())
+		}
 		switch {
+		case !push:
 		case f.problem != "":
 			errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, f.path, f.problem))
-		case len(perrs) > 0:
-			var lines []string
-			for _, e := range perrs {
-				lines = append(lines, e.Error())
-			}
-			errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, f.path, strings.Join(lines, "\n")))
+		case len(problems) > 0:
+			errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, f.path, strings.Join(problems, "\n")))
 		case skip || !wf.MatchPush(workflow.PushInfo{
 			Ref: u.Ref, Created: facts.created, ChangedFiles: facts.files, FilesTruncated: facts.filesTruncated, TagCount: tagCount,
 		}):
@@ -281,6 +303,9 @@ func (c *CI) handleRef(ctx context.Context, t ciTrigger, u domain.RefUpdate, tag
 			}
 			errs = append(errs, c.startRun(ctx, repo, t, facts, f.path, string(f.content), wf))
 		}
+	}
+	if create {
+		errs = append(errs, c.startCreateRuns(ctx, repo, t, facts, files))
 	}
 	return errors.Join(errs...)
 }

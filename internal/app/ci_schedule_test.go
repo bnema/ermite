@@ -255,3 +255,35 @@ func TestScheduleBoundsTheWorkPerTick(t *testing.T) {
 	assert.Equal(t, time.Date(2026, 3, 4, 10, 1, 0, 0, time.UTC), ci.SchedulePassed(), "three ticks go through three repositories")
 	assert.Len(t, c.scheduled(), 1)
 }
+
+// CI-4 D6: the timezone of an entry is the wall clock its cron reads.
+func TestScheduleTimezone(t *testing.T) {
+	c, clk, _ := newScheduleHarness(t, "2026-06-01 06:58:30")
+	wf := map[string]string{".github/workflows/nightly.yml": "name: nightly\non:\n  schedule:\n    - cron: '0 9 * * *'\n      timezone: Europe/Paris\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"}
+	c.push("main", wf, "")
+	tick := func(at string) {
+		clk.set(at)
+		c.forge.CI.ScheduleNow(c.ctx)
+	}
+	tick("2026-06-01 06:59:10")
+	tick("2026-06-01 09:00:10")
+	assert.Empty(t, c.scheduled(), "09:00 UTC is 11:00 in Paris")
+	tick("2026-06-02 07:00:10")
+	require.Len(t, c.scheduled(), 1, "09:00 in Paris")
+}
+
+// A timezone that is no IANA name makes the workflow invalid: its push records
+// a failed run with the error, and it is never scheduled.
+func TestScheduleInvalidTimezone(t *testing.T) {
+	c, clk, _ := newScheduleHarness(t, "2026-06-01 06:58:30")
+	wf := map[string]string{".github/workflows/nightly.yml": "name: nightly\non:\n  push:\n  schedule:\n    - cron: '* * * * *'\n      timezone: Mars/Olympus\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"}
+	c.push("main", wf, "")
+	c.waitFor("the invalid run", func() bool { return len(c.runs()) == 1 })
+	run := c.runs()[0]
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, run.GetConclusion())
+	assert.Equal(t, ".github/workflows/nightly.yml", run.GetName())
+	assert.Contains(t, c.getRun(run.GetId()).GetRun().GetError(), `.github/workflows/nightly.yml: invalid schedule timezone "Mars/Olympus"`)
+	clk.set("2026-06-01 07:00:10")
+	c.forge.CI.ScheduleNow(c.ctx)
+	assert.Empty(t, c.scheduled())
+}

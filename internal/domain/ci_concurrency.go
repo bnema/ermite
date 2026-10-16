@@ -3,6 +3,7 @@
 package domain
 
 import (
+	"slices"
 	"strconv"
 	"unicode"
 	"unicode/utf16"
@@ -16,7 +17,7 @@ const (
 	// CIConcurrencyIdle: the group is evaluated but the entry has not asked for
 	// its turn yet.
 	CIConcurrencyIdle CIConcurrencyState = ""
-	// CIConcurrencyPending: the group record names this entry as the waiting
+	// CIConcurrencyPending: the group record names this entry as a waiting
 	// one, behind the running entry.
 	CIConcurrencyPending CIConcurrencyState = "pending"
 	// CIConcurrencyHolding: this entry is the running one of its group.
@@ -24,12 +25,30 @@ const (
 	// CIConcurrencyReplaced: only in a mark. A newer entry replaced this one:
 	// it is owed a cancellation and never acquires the group.
 	CIConcurrencyReplaced CIConcurrencyState = "replaced"
+	// CIConcurrencyRejected: only in a mark. A queue: max entry that arrived
+	// while CIMaxConcurrencyQueue entries were waiting: like a replaced entry it
+	// is owed a cancellation and never acquires the group, but its annotation is
+	// ConcurrencyQueueFullMessage.
+	CIConcurrencyRejected CIConcurrencyState = "rejected"
 )
+
+// Owed reports whether a mark in this state is owed a cancellation: the entry
+// was replaced or rejected, and never acquires its group.
+func (s CIConcurrencyState) Owed() bool {
+	return s == CIConcurrencyReplaced || s == CIConcurrencyRejected
+}
 
 // CIMaxConcurrencyGroup is the longest concurrency group name GitHub accepts
 // (actions/runner WorkflowTemplateConverter.cs:679-687, "must be less than 400
 // characters").
 const CIMaxConcurrencyGroup = 400
+
+// CIMaxConcurrencyQueue is how many entries may wait in a group with queue: max
+// (docs.github.com, data/reusables/actions/actions-group-concurrency.md: "Up to
+// 100 jobs or workflow runs can be pending in the concurrency group. When the
+// queue is full, any additional jobs or workflow runs are canceled."; the limits
+// page: "up to 100 jobs or workflow runs can be queued per concurrency group").
+const CIMaxConcurrencyQueue = 100
 
 // CIConcurrency is the evaluated "concurrency:" of a run (workflow level) or of
 // a job.
@@ -39,6 +58,8 @@ type CIConcurrency struct {
 	Group string
 	// Cancel is the evaluated cancel-in-progress.
 	Cancel bool
+	// Max is set for queue: max (the default, queue: single, leaves it false).
+	Max bool
 	// State is written to the record of the entry only after the group record
 	// named it (acquire committed): an entry that waits in a group that does
 	// not name it any more was replaced, and is cancelled.
@@ -83,6 +104,13 @@ func ConcurrencyCancelMessage(group string) string {
 	return "Canceling since a higher priority waiting request for '" + group + "' exists"
 }
 
+// ConcurrencyQueueFullMessage is the annotation of a queue: max entry cancelled
+// because CIMaxConcurrencyQueue entries already wait in its group. GitHub's text
+// is not documented: this one is ermite's.
+func ConcurrencyQueueFullMessage(group string) string {
+	return "Canceling since the concurrency group '" + group + "' already has " + strconv.Itoa(CIMaxConcurrencyQueue) + " waiting requests"
+}
+
 // CIConcurrencyEntry is a run (JobID empty) or a job waiting for or holding a
 // concurrency group.
 type CIConcurrencyEntry struct {
@@ -96,6 +124,8 @@ type CIConcurrencyEntry struct {
 	// cancel-in-progress asked to stop; it stays named until it has ended, and
 	// the reconciliation asks it again.
 	Canceling bool
+	// Max is the queue mode of the entry: queue: max when set, else single.
+	Max bool
 }
 
 // Key identifies the entry in the marks of its group.
@@ -108,27 +138,103 @@ func (e CIConcurrencyEntry) Same(o CIConcurrencyEntry) bool {
 	return e.RunID == o.RunID && e.Attempt == o.Attempt && e.JobID == o.JobID
 }
 
-// CIConcurrencyRecord is the state of a group: at most one running entry and
-// one pending entry (queue: single).
+// CIConcurrencyRecord is the state of a group: at most one running entry, and
+// the waiting entries in the order they started waiting (first in, first out).
+//
+// GitHub documents each queue mode alone; a group that mixes them follows
+// ermite's rules (Enqueue): a queue: single entry that starts waiting cancels
+// and replaces every waiting entry, whatever their mode, and is then the only
+// one; a queue: max entry joins the end of the line, or is rejected when
+// CIMaxConcurrencyQueue entries already wait. When the running entry leaves,
+// the head of the line takes its place (Promote); a waiting entry that leaves
+// keeps the order of the others.
 type CIConcurrencyRecord struct {
 	Running *CIConcurrencyEntry
-	Pending *CIConcurrencyEntry
+	Pending []CIConcurrencyEntry
 }
 
 // IsEmpty reports whether nothing runs or waits in the group.
-func (r CIConcurrencyRecord) IsEmpty() bool { return r.Running == nil && r.Pending == nil }
+func (r CIConcurrencyRecord) IsEmpty() bool { return r.Running == nil && len(r.Pending) == 0 }
 
-// Names reports whether the record names the entry as the running or the
-// pending one.
+// Names reports whether the record names the entry as the running or a pending
+// one.
 func (r CIConcurrencyRecord) Names(e CIConcurrencyEntry) bool {
-	return (r.Running != nil && r.Running.Same(e)) || (r.Pending != nil && r.Pending.Same(e))
+	return (r.Running != nil && r.Running.Same(e)) || r.PendingIndex(e) >= 0
+}
+
+// PendingIndex is the place of the entry in the waiting line, -1 if it does not
+// wait.
+func (r CIConcurrencyRecord) PendingIndex(e CIConcurrencyEntry) int {
+	for i, p := range r.Pending {
+		if p.Same(e) {
+			return i
+		}
+	}
+	return -1
+}
+
+// RemovePending takes the entry out of the waiting line, keeping the order of
+// the others, and reports whether it was there.
+func (r *CIConcurrencyRecord) RemovePending(e CIConcurrencyEntry) bool {
+	i := r.PendingIndex(e)
+	if i < 0 {
+		return false
+	}
+	r.Pending = append(r.Pending[:i:i], r.Pending[i+1:]...)
+	if len(r.Pending) == 0 {
+		r.Pending = nil
+	}
+	return true
+}
+
+// Enqueue puts a new entry, which neither runs nor waits, in the waiting line.
+// A queue: single entry replaces every waiting entry (returned, in line order)
+// and is then the only one; a queue: max entry is appended, unless limit
+// entries already wait: then the record is left as it is and rejected is set.
+func (r *CIConcurrencyRecord) Enqueue(e CIConcurrencyEntry, limit int) (replaced []CIConcurrencyEntry, rejected bool) {
+	if !e.Max {
+		replaced = r.Pending
+		r.Pending = []CIConcurrencyEntry{e}
+		return replaced, false
+	}
+	if len(r.Pending) >= limit {
+		return nil, true
+	}
+	r.Pending = append(r.Pending, e)
+	return nil, false
+}
+
+// Promote gives the free running place to the head of the waiting line, and
+// returns it (nil when the place is taken or nobody waits).
+func (r *CIConcurrencyRecord) Promote() *CIConcurrencyEntry {
+	if r.Running != nil || len(r.Pending) == 0 {
+		return nil
+	}
+	head := r.Pending[0]
+	r.Pending = r.Pending[1:]
+	if len(r.Pending) == 0 {
+		r.Pending = nil
+	}
+	r.Running = &head
+	return r.Running
+}
+
+// Clone is a copy of the record that shares nothing with it.
+func (r CIConcurrencyRecord) Clone() CIConcurrencyRecord {
+	out := CIConcurrencyRecord{Pending: slices.Clone(r.Pending)}
+	if r.Running != nil {
+		e := *r.Running
+		out.Running = &e
+	}
+	return out
 }
 
 // CIConcurrencyMark says where an entry stands in its group. The marks of a group
 // are written in the same batch as its record: an entry is marked pending or
-// holding if and only if the record names it as the pending or the running
-// entry, and an entry that a newer one replaced is marked replaced in the batch
-// that unnames it. So a replaced entry is found from the marks alone, whatever
+// holding if and only if the record names it as a pending or the running
+// entry, an entry that a newer one replaced is marked replaced in the batch
+// that unnames it, and a queue: max entry that found the line full is marked
+// rejected in the batch that refused it. So a replaced entry is found from the marks alone, whatever
 // failed after that batch.
 type CIConcurrencyMark struct {
 	Entry CIConcurrencyEntry

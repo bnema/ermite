@@ -395,6 +395,8 @@ message CIConcurrency {
   // preempted: cancelled because a newer entry of the group asked for it; the
   // job ends with GitHub's annotation.
   bool preempted = 6;
+  // queue_max: queue: max (false is queue: single, the default).
+  bool queue_max = 7;
 }
 
 // CIConcurrencyEntry is a run (job_id empty) or a job in a concurrency group.
@@ -406,17 +408,25 @@ message CIConcurrencyEntry {
   // canceling: a waiting entry with cancel-in-progress asked this running one
   // to stop; the entry stays until it has ended.
   bool canceling = 5;
+  // queue_max: the entry was queued with queue: max.
+  bool queue_max = 6;
 }
 
 // CIConcurrencyRecord is stored under "concur/<repo>/<key(group)>" (ConcurrencyKey): the
-// running entry and the pending one of a group (queue: single). A group with
-// neither has no key.
+// running entry and the waiting ones of a group. A group with neither has no
+// key.
 message CIConcurrencyRecord {
   // 3 held the cancellations owed to replaced entries; a replaced entry is now
   // found from its own record (it waits in a group that does not name it).
   reserved 3;
   CIConcurrencyEntry running = 1;
+  // pending is the head of queue, written for the binaries that predate queue
+  // (a downgrade keeps the first waiting entry; the others, which their record
+  // no longer names, are cancelled as replaced). It is read when queue is
+  // empty: a record stored by such a binary.
   CIConcurrencyEntry pending = 2;
+  // queue holds the waiting entries, first in first out.
+  repeated CIConcurrencyEntry queue = 4;
 }
 
 // CIRefTip is stored under "cireftip/<repo>/<full ref name>" (a branch or a
@@ -446,4 +456,8 @@ message CIConcurrencyMark {
   // group as the newest request wrote it, for the cancel annotation.
   string group = 2;
   CIConcurrencyState state = 3;
+  // queue_full: with state REPLACED, the entry was a queue: max entry that
+  // found the waiting line full (its annotation says so). Stored as REPLACED so
+  // that a binary that predates it still cancels the entry.
+  bool queue_full = 4;
 }

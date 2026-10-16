@@ -372,7 +372,7 @@ func (rs *runState) promote(ctx context.Context) error {
 			continue
 		}
 		if g := j.Concurrency; g.Group != "" && !g.FromRun {
-			st, err := rs.acquire(ctx, g.Group, domain.CIConcurrencyEntry{RunID: j.RunID, Attempt: j.RunAttempt, JobID: j.ID, Cancel: g.Cancel})
+			st, err := rs.acquire(ctx, g.Group, domain.CIConcurrencyEntry{RunID: j.RunID, Attempt: j.RunAttempt, JobID: j.ID, Cancel: g.Cancel, Max: g.Max})
 			if err != nil {
 				return err
 			}

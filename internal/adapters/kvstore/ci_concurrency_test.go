@@ -9,7 +9,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
+	storagepb "bnema.dev/ermite/gen/ermite/storage"
+	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -47,14 +50,14 @@ func markOf(e domain.CIConcurrencyEntry, state domain.CIConcurrencyState) domain
 func TestCIConcurrencyGroupRecord(t *testing.T) {
 	_, ci, n := ciRepo(t)
 	update(t, ci, n, "Deploy", func(s *domain.CIConcurrencyGroupState) {
-		s.Record.Running, s.Record.Pending = entry(1), &domain.CIConcurrencyEntry{RunID: 2, Attempt: 1, JobID: "2-0-0", Cancel: true}
+		s.Record.Running, s.Record.Pending = entry(1), []domain.CIConcurrencyEntry{{RunID: 2, Attempt: 1, JobID: "2-0-0", Cancel: true}}
 	})
 	got := read(t, ci, n, "DEPLOY")
 	require.NotNil(t, got.Record.Running)
-	require.NotNil(t, got.Record.Pending)
+	require.Len(t, got.Record.Pending, 1)
 	assert.EqualValues(t, 1, got.Record.Running.RunID)
-	assert.Equal(t, "2-0-0", got.Record.Pending.JobID)
-	assert.True(t, got.Record.Pending.Cancel)
+	assert.Equal(t, "2-0-0", got.Record.Pending[0].JobID)
+	assert.True(t, got.Record.Pending[0].Cancel)
 	assert.True(t, read(t, ci, n, "other").IsEmpty(), "another group is another record")
 
 	update(t, ci, n, "deploy", func(s *domain.CIConcurrencyGroupState) { *s = domain.CIConcurrencyGroupState{} })
@@ -70,7 +73,7 @@ func TestCIConcurrencyMarksAreWrittenWithTheRecord(t *testing.T) {
 	_, ci, n := ciRepo(t)
 	run, wait := *entry(1), *entry(2)
 	update(t, ci, n, "Deploy", func(s *domain.CIConcurrencyGroupState) {
-		s.Record.Running, s.Record.Pending = &run, &wait
+		s.Record.Running, s.Record.Pending = &run, []domain.CIConcurrencyEntry{wait}
 		s.Marks = map[string]domain.CIConcurrencyMark{
 			run.Key():  markOf(run, domain.CIConcurrencyHolding),
 			wait.Key(): markOf(wait, domain.CIConcurrencyPending),
@@ -83,12 +86,13 @@ func TestCIConcurrencyMarksAreWrittenWithTheRecord(t *testing.T) {
 
 	// The waiting entry is replaced: unnamed and marked in one transaction.
 	update(t, ci, n, "Deploy", func(s *domain.CIConcurrencyGroupState) {
-		s.Record.Pending = entry(3)
+		s.Record.Pending = []domain.CIConcurrencyEntry{*entry(3)}
 		s.Marks[wait.Key()] = markOf(wait, domain.CIConcurrencyReplaced)
 		s.Marks[entry(3).Key()] = markOf(*entry(3), domain.CIConcurrencyPending)
 	})
 	got = read(t, ci, n, "Deploy")
-	assert.EqualValues(t, 3, got.Record.Pending.RunID)
+	require.Len(t, got.Record.Pending, 1)
+	assert.EqualValues(t, 3, got.Record.Pending[0].RunID)
 	assert.Equal(t, domain.CIConcurrencyReplaced, got.Marks[wait.Key()].State)
 	assert.Len(t, got.Marks, 3)
 
@@ -196,7 +200,7 @@ func TestCIConcurrencyAMarkChangeIsGatedByTheRecord(t *testing.T) {
 	require.NoError(t, ci.UpdateConcurrency(ctx, n, "g", func(s *domain.CIConcurrencyGroupState) error {
 		calls++
 		if calls == 1 {
-			update(t, ci, n, "g", func(o *domain.CIConcurrencyGroupState) { o.Record.Pending = entry(2) })
+			update(t, ci, n, "g", func(o *domain.CIConcurrencyGroupState) { o.Record.Pending = []domain.CIConcurrencyEntry{*entry(2)} })
 		}
 		m := s.Marks[entry(1).Key()]
 		m.State = domain.CIConcurrencyReplaced
@@ -205,7 +209,7 @@ func TestCIConcurrencyAMarkChangeIsGatedByTheRecord(t *testing.T) {
 	}))
 	assert.Equal(t, 2, calls, "the first attempt was made on a stale record")
 	got := read(t, ci, n, "g")
-	require.NotNil(t, got.Record.Pending, "the concurrent change is kept")
+	require.Len(t, got.Record.Pending, 1, "the concurrent change is kept")
 	assert.Equal(t, domain.CIConcurrencyReplaced, got.Marks[entry(1).Key()].State)
 }
 
@@ -238,7 +242,9 @@ func TestCIConcurrencyUnchangedRecordKeepsItsPrecondition(t *testing.T) {
 // copy that shares the entries.
 func TestCIConcurrencyInPlaceMutationIsWritten(t *testing.T) {
 	_, ci, n := ciRepo(t)
-	update(t, ci, n, "g", func(s *domain.CIConcurrencyGroupState) { s.Record.Running, s.Record.Pending = entry(1), entry(2) })
+	update(t, ci, n, "g", func(s *domain.CIConcurrencyGroupState) {
+		s.Record.Running, s.Record.Pending = entry(1), []domain.CIConcurrencyEntry{*entry(2)}
+	})
 
 	update(t, ci, n, "g", func(s *domain.CIConcurrencyGroupState) {
 		s.Record.Running.Canceling = true // through the pointer, the struct is returned as given
@@ -248,12 +254,12 @@ func TestCIConcurrencyInPlaceMutationIsWritten(t *testing.T) {
 	assert.True(t, got.Record.Running.Canceling, "the in-place change of the running entry is stored")
 
 	update(t, ci, n, "g", func(s *domain.CIConcurrencyGroupState) {
-		s.Record.Pending.JobID, s.Record.Pending.Cancel = "2-0-0", true
+		s.Record.Pending[0].JobID, s.Record.Pending[0].Cancel = "2-0-0", true
 	})
 	got = read(t, ci, n, "g")
-	require.NotNil(t, got.Record.Pending)
-	assert.Equal(t, "2-0-0", got.Record.Pending.JobID)
-	assert.True(t, got.Record.Pending.Cancel)
+	require.Len(t, got.Record.Pending, 1)
+	assert.Equal(t, "2-0-0", got.Record.Pending[0].JobID)
+	assert.True(t, got.Record.Pending[0].Cancel)
 }
 
 // ListConcurrency returns every group with its repository and canonical key.
@@ -291,4 +297,62 @@ func TestCIConcurrencyGroupsAreDeletedWithTheRepository(t *testing.T) {
 	groups, err := ci.ListConcurrency(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, groups)
+}
+
+// queue: max: the waiting line is stored in order with the queue mode of each
+// entry, and a rejected mark is kept as such.
+func TestCIConcurrencyQueueRoundTrip(t *testing.T) {
+	_, ci, n := ciRepo(t)
+	line := []domain.CIConcurrencyEntry{
+		{RunID: 4, Attempt: 1, Max: true},
+		{RunID: 2, Attempt: 1, JobID: "2-0-0", Max: true},
+		{RunID: 3, Attempt: 2},
+	}
+	rejected := domain.CIConcurrencyEntry{RunID: 5, Attempt: 1, Max: true}
+	update(t, ci, n, "Deploy", func(s *domain.CIConcurrencyGroupState) {
+		s.Record.Running, s.Record.Pending = entry(1), line
+		s.Marks = map[string]domain.CIConcurrencyMark{rejected.Key(): markOf(rejected, domain.CIConcurrencyRejected)}
+	})
+	got := read(t, ci, n, "deploy")
+	assert.Equal(t, line, got.Record.Pending, "the order and the queue modes are kept")
+	assert.Equal(t, domain.CIConcurrencyRejected, got.Marks[rejected.Key()].State)
+	assert.True(t, got.Marks[rejected.Key()].Entry.Max)
+
+	// Stored as replaced with queue_full: a binary that predates it still
+	// cancels the entry.
+	var pb storagepb.CIConcurrencyMark
+	require.NoError(t, proto.Unmarshal(kvstore.EncodeConcurrencyMark(markOf(rejected, domain.CIConcurrencyRejected)), &pb))
+	assert.Equal(t, storagepb.CIConcurrencyState_CI_CONCURRENCY_STATE_REPLACED, pb.GetState())
+	assert.True(t, pb.GetQueueFull())
+}
+
+// A record stored before queue: max holds its only waiting entry in the
+// pending field: it reads as a line of one, and is written back in the new
+// layout.
+func TestCIConcurrencyRecordOldLayout(t *testing.T) {
+	old, err := proto.Marshal(&storagepb.CIConcurrencyRecord{
+		Running: &storagepb.CIConcurrencyEntry{RunId: 1, Attempt: 1},
+		Pending: &storagepb.CIConcurrencyEntry{RunId: 2, Attempt: 1, JobId: "2-0-0", Cancel: true},
+	})
+	require.NoError(t, err)
+	rec, err := kvstore.DecodeConcurrencyRecord(old)
+	require.NoError(t, err)
+	require.NotNil(t, rec.Running)
+	assert.EqualValues(t, 1, rec.Running.RunID)
+	assert.Equal(t, []domain.CIConcurrencyEntry{{RunID: 2, Attempt: 1, JobID: "2-0-0", Cancel: true}}, rec.Pending)
+
+	var pb storagepb.CIConcurrencyRecord
+	require.NoError(t, proto.Unmarshal(kvstore.EncodeConcurrencyRecord(rec), &pb))
+	assert.EqualValues(t, 2, pb.GetPending().GetRunId(), "the head of the line is written to the old field too, for a downgrade")
+	assert.Len(t, pb.GetQueue(), 1)
+
+	// A line of two: an older binary sees its head only.
+	rec.Pending = append(rec.Pending, domain.CIConcurrencyEntry{RunID: 3, Attempt: 1, Max: true})
+	pb.Reset()
+	require.NoError(t, proto.Unmarshal(kvstore.EncodeConcurrencyRecord(rec), &pb))
+	assert.EqualValues(t, 2, pb.GetPending().GetRunId())
+	assert.Len(t, pb.GetQueue(), 2)
+	back, err := kvstore.DecodeConcurrencyRecord(kvstore.EncodeConcurrencyRecord(rec))
+	require.NoError(t, err)
+	assert.Equal(t, rec, back, "the queue wins over the old field")
 }

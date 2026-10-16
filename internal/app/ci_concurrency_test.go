@@ -267,8 +267,8 @@ func TestCIConcurrencyFreedByLostJob(t *testing.T) {
 	assert.Equal(t, r2.GetId(), job2.GetRunId())
 }
 
-// A group that evaluates to nothing fails the job as GitHub does, and
-// queue: max is refused.
+// A group that evaluates to nothing fails the job as GitHub does, and so does
+// queue: max with cancel-in-progress, literal or evaluated to true.
 func TestCIConcurrencyErrors(t *testing.T) {
 	c, runner := concurrencyHarness(t)
 	_ = runner
@@ -276,18 +276,24 @@ func TestCIConcurrencyErrors(t *testing.T) {
 	c.waitJobs("failed", r1, allStatus(pb.CiStatus_CI_STATUS_COMPLETED))
 	assert.Contains(t, c.jobsOf(r1)[0].GetError(), "concurrency group name cannot be empty")
 
+	// The literal pair is a workflow validation error (GitHub's docs): the run
+	// fails with no job, like an invalid workflow file, at job and workflow level.
 	r3 := c.pushN(3, workflowAt("", "    concurrency:\n      group: g\n      queue: max\n      cancel-in-progress: true\n"))
-	c.waitJobs("failed", r3, allStatus(pb.CiStatus_CI_STATUS_COMPLETED))
-	assert.Equal(t, "'queue: max' cannot be combined with 'cancel-in-progress: true'.", c.jobsOf(r3)[0].GetError())
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, r3.GetConclusion())
+	assert.Empty(t, c.jobsOf(r3))
+	assert.Equal(t, ".github/workflows/ci.yml (Line: 12, Col: 27): 'queue: max' cannot be combined with 'cancel-in-progress: true'.", c.getRun(r3.GetId()).GetRun().GetError())
+	r4 := c.pushN(4, workflowAt("concurrency: {group: g, queue: max, cancel-in-progress: true}\n", ""))
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, r4.GetConclusion())
+	assert.Contains(t, c.getRun(r4.GetId()).GetRun().GetError(), "'queue: max' cannot be combined with 'cancel-in-progress: true'.")
 
-	r2 := c.pushN(2, workflowAt("", "    concurrency:\n      group: g\n      queue: max\n"))
+	r2 := c.pushN(2, workflowAt("", "    concurrency:\n      group: g\n      queue: max\n      cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}\n"))
 	c.waitJobs("failed", r2, allStatus(pb.CiStatus_CI_STATUS_COMPLETED))
-	assert.Equal(t, "not supported yet: queue: max", strings.TrimSpace(c.jobsOf(r2)[0].GetError()))
+	assert.Equal(t, "'queue: max' cannot be combined with 'cancel-in-progress: true'.", strings.TrimSpace(c.jobsOf(r2)[0].GetError()))
 }
 
 // holdGroup writes a group behind the use case's back, as a crash would leave
 // it: the entries are named and marked whatever the state of their runs.
-func (c *ciHarness) holdGroup(group string, running, pending *domain.CIConcurrencyEntry) {
+func (c *ciHarness) holdGroup(group string, running *domain.CIConcurrencyEntry, pending ...domain.CIConcurrencyEntry) {
 	c.t.Helper()
 	require.NoError(c.t, c.forge.store.CI().UpdateConcurrency(c.ctx, c.h("proj"), group, func(st *domain.CIConcurrencyGroupState) error {
 		st.Record.Running, st.Record.Pending = running, pending
@@ -295,8 +301,8 @@ func (c *ciHarness) holdGroup(group string, running, pending *domain.CIConcurren
 		if running != nil {
 			st.Marks[running.Key()] = domain.CIConcurrencyMark{Entry: *running, Group: group, State: domain.CIConcurrencyHolding}
 		}
-		if pending != nil {
-			st.Marks[pending.Key()] = domain.CIConcurrencyMark{Entry: *pending, Group: group, State: domain.CIConcurrencyPending}
+		for _, p := range pending {
+			st.Marks[p.Key()] = domain.CIConcurrencyMark{Entry: p, Group: group, State: domain.CIConcurrencyPending}
 		}
 		return nil
 	}))
@@ -329,7 +335,7 @@ func TestCIConcurrencyHealsAfterACrash(t *testing.T) {
 	runner.runJob(runner.await(), pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
 	c.waitFor("the first run completes", func() bool { return c.getRun(r1.GetId()).GetRun().GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 	c.waitFor("the group is released", func() bool { return c.groupRecord("Deploy").IsEmpty() })
-	c.holdGroup("Deploy", &domain.CIConcurrencyEntry{RunID: r1.GetId(), Attempt: 1}, nil) // the release that did not happen
+	c.holdGroup("Deploy", &domain.CIConcurrencyEntry{RunID: r1.GetId(), Attempt: 1}) // the release that did not happen
 
 	r2 := c.pushN(2, workflowAt(wfGroup, ""))
 	job2 := runner.await()
@@ -348,7 +354,7 @@ func TestCIConcurrencyHealsAfterRunDeletion(t *testing.T) {
 	c.waitFor("completes", func() bool { return c.getRun(r1.GetId()).GetRun().GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 	c.waitFor("released", func() bool { return c.groupRecord("Deploy").IsEmpty() })
 	ghost := &domain.CIConcurrencyEntry{RunID: r1.GetId(), Attempt: 1}
-	c.holdGroup("Deploy", ghost, nil)
+	c.holdGroup("Deploy", ghost)
 	ids, err := c.forge.store.CI().Sweep(c.ctx, time.Now().Add(time.Hour))
 	require.NoError(t, err)
 	require.Contains(t, ids, r1.GetId(), "the run is deleted")
@@ -415,8 +421,8 @@ func TestCIConcurrencyCancelSurvivesAFailedDelivery(t *testing.T) {
 	r3 := c.pushN(3, workflowAt(wfGroup, ""))
 	c.waitFor("the first delivery failed", func() bool { return fs.hits.Load() == 1 })
 	rec := c.groupRecord("Deploy")
-	require.NotNil(t, rec.Pending)
-	assert.Equal(t, r3.GetId(), rec.Pending.RunID)
+	require.Len(t, rec.Pending, 1)
+	assert.Equal(t, r3.GetId(), rec.Pending[0].RunID)
 	c.waitFor("the replaced run is cancelled by the retry", func() bool { return c.conclusionOf(r2) == pb.CiConclusion_CI_CONCLUSION_CANCELLED })
 	assert.True(t, c.cancelAnnotation(r2, "Deploy"))
 	runner.runJob(job1, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
@@ -449,7 +455,7 @@ func TestCIConcurrencyReconcileCancelsEveryReplacedVictim(t *testing.T) {
 		next := c.pushN(3+i, workflowAt(wfGroup, ""))
 		c.waitFor("the newer run takes the waiting place", func() bool {
 			rec := c.groupRecord("Deploy")
-			return rec.Pending != nil && rec.Pending.RunID == next.GetId()
+			return len(rec.Pending) == 1 && rec.Pending[0].RunID == next.GetId()
 		})
 		c.waitJobs("the newer run is pending", next, allStatus(pb.CiStatus_CI_STATUS_PENDING))
 		victims = append(victims, prev)
@@ -539,9 +545,9 @@ func TestCIConcurrencyCrashBetweenGroupAndEntry(t *testing.T) {
 	_, err = store.Apply(c.ctx, ports.CIWrite{Runs: []domain.CIRun{run}, Jobs: jobs})
 	require.NoError(t, err)
 	rec := c.groupRecord("Deploy")
-	require.NotNil(t, rec.Pending)
-	require.Equal(t, r2.GetId(), rec.Pending.RunID, "the group names the run")
-	assert.Equal(t, domain.CIConcurrencyPending, c.markState("Deploy", *rec.Pending), "and marks it, in the same batch")
+	require.Len(t, rec.Pending, 1)
+	require.Equal(t, r2.GetId(), rec.Pending[0].RunID, "the group names the run")
+	assert.Equal(t, domain.CIConcurrencyPending, c.markState("Deploy", rec.Pending[0]), "and marks it, in the same batch")
 
 	c.forge.CI.ReconcileConcurrency(c.ctx)
 	c.waitFor("the entry is marked pending again", func() bool {
@@ -551,8 +557,8 @@ func TestCIConcurrencyCrashBetweenGroupAndEntry(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	assert.NotEqual(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.conclusionOf(r2), "a named entry is not a replaced one")
 	rec = c.groupRecord("Deploy")
-	require.NotNil(t, rec.Pending)
-	assert.Equal(t, r2.GetId(), rec.Pending.RunID)
+	require.Len(t, rec.Pending, 1)
+	assert.Equal(t, r2.GetId(), rec.Pending[0].RunID)
 
 	runner.runJob(job1, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
 	assert.Equal(t, r2.GetId(), runner.await().GetRunId())
@@ -713,7 +719,7 @@ func TestCIConcurrencyReconcileAtRestart(t *testing.T) {
 	run.Status, run.Conclusion, run.CompletedAt = domain.CICompleted, domain.CISuccess, time.Now()
 	_, err = store.Apply(c.ctx, ports.CIWrite{Jobs: jobs, Runs: []domain.CIRun{run}})
 	require.NoError(t, err)
-	c.holdGroup("Stale", &domain.CIConcurrencyEntry{RunID: r1.GetId(), Attempt: 1}, nil)
+	c.holdGroup("Stale", &domain.CIConcurrencyEntry{RunID: r1.GetId(), Attempt: 1})
 	rec := c.groupRecord("Deploy")
 	require.NotNil(t, rec.Running)
 	require.Equal(t, r1.GetId(), rec.Running.RunID, "the record still holds the ended run")
@@ -745,7 +751,7 @@ func TestCIConcurrencyReconcileAtRestart(t *testing.T) {
 	assert.Equal(t, "DEPLOY", groups[0].Group)
 	require.NotNil(t, groups[0].State.Record.Running)
 	assert.Equal(t, r2.GetId(), groups[0].State.Record.Running.RunID)
-	assert.Nil(t, groups[0].State.Record.Pending)
+	assert.Empty(t, groups[0].State.Record.Pending)
 }
 
 // Both writes of a run's own record fail when it queues (its "pending" state),
@@ -776,7 +782,7 @@ func TestCIConcurrencyReplacedRunWithLostWritesIsCancelled(t *testing.T) {
 	b := c.pushN(2, workflowAt(wfGroup, ""))
 	c.waitFor("B is named by the group", func() bool {
 		rec := c.groupRecord("Deploy")
-		return rec.Pending != nil && rec.Pending.RunID == b.GetId()
+		return len(rec.Pending) == 1 && rec.Pending[0].RunID == b.GetId()
 	})
 	bEntry := domain.CIConcurrencyEntry{RunID: b.GetId(), Attempt: 1}
 	assert.Equal(t, domain.CIConcurrencyPending, c.markState("Deploy", bEntry), "the group batch marked it")
@@ -785,8 +791,8 @@ func TestCIConcurrencyReplacedRunWithLostWritesIsCancelled(t *testing.T) {
 	c.pushN(3, workflowAt(wfGroup, ""))
 	c.waitFor("B is marked replaced", func() bool { return c.markState("Deploy", bEntry) == domain.CIConcurrencyReplaced })
 	rec := c.groupRecord("Deploy")
-	require.NotNil(t, rec.Pending)
-	assert.NotEqual(t, b.GetId(), rec.Pending.RunID, "B is no longer named")
+	require.Len(t, rec.Pending, 1)
+	assert.NotEqual(t, b.GetId(), rec.Pending[0].RunID, "B is no longer named")
 	assert.NotEqual(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.conclusionOf(b))
 
 	fs.fails.Store(0)
@@ -844,8 +850,8 @@ func TestCIJobConcurrencyReplacedJobNeverAcquiresAgain(t *testing.T) {
 	rec = c.groupRecord("jobgroup")
 	require.NotNil(t, rec.Running)
 	assert.Equal(t, rC.GetId(), rec.Running.RunID, "C still holds the group")
-	if rec.Pending != nil {
-		assert.NotEqual(t, rB.GetId(), rec.Pending.RunID, "B did not take the waiting place back")
+	if len(rec.Pending) > 0 {
+		assert.NotEqual(t, rB.GetId(), rec.Pending[0].RunID, "B did not take the waiting place back")
 	}
 	// Nothing of B's grouped job is given to a runner.
 	for range 5 {
@@ -943,8 +949,8 @@ func TestCIJobConcurrencyCrashBetweenGroupAndJob(t *testing.T) {
 	_, err = store.Apply(c.ctx, ports.CIWrite{Jobs: jobs})
 	require.NoError(t, err)
 	rec := c.groupRecord("jobgroup")
-	require.NotNil(t, rec.Pending)
-	assert.Equal(t, entry.JobID, rec.Pending.JobID, "the group names the job")
+	require.Len(t, rec.Pending, 1)
+	assert.Equal(t, entry.JobID, rec.Pending[0].JobID, "the group names the job")
 	assert.Equal(t, domain.CIConcurrencyPending, c.markState("jobgroup", entry), "and its mark says so")
 
 	c.forge.CI.ReconcileConcurrency(c.ctx)
@@ -1109,4 +1115,134 @@ func TestCIConcurrencyPrunesStaleMarksInBoundedBatches(t *testing.T) {
 	assert.Len(t, st.Marks, 1, "the reconciliation prunes the rest, a batch at a time")
 	assert.Contains(t, st.Marks, domain.CIConcurrencyEntry{RunID: r.GetId(), Attempt: 1}.Key())
 	runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+}
+
+func (c *ciHarness) hasAnnotation(run *pb.Run, msg string) bool {
+	for _, j := range c.jobsOf(run) {
+		for _, a := range c.annotations(run.GetId(), j.GetId()).GetAnnotations() {
+			if a.GetAnnotation().GetMessage() == msg {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// pendingRuns is the waiting line of a group, as run ids.
+func (c *ciHarness) pendingRuns(group string) []int64 {
+	var ids []int64
+	for _, p := range c.groupRecord(group).Pending {
+		ids = append(ids, p.RunID)
+	}
+	return ids
+}
+
+func (c *ciHarness) completed(run *pb.Run) bool {
+	return c.getRun(run.GetId()).GetRun().GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED
+}
+
+// queue: max at the workflow and at the job level: three runs of one group
+// run one after the other in the order they started waiting, none cancelled.
+func TestCIConcurrencyQueueMaxRunsInOrder(t *testing.T) {
+	for _, tt := range []struct{ name, top, job string }{
+		{"workflow", "concurrency:\n  group: Deploy\n  queue: max\n", ""},
+		{"job", "", "    concurrency:\n      group: Deploy\n      queue: max\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, runner := concurrencyHarness(t)
+			wf := workflowAt(tt.top, tt.job)
+			r1 := c.pushN(1, wf)
+			job1 := runner.await()
+			require.Equal(t, r1.GetId(), job1.GetRunId())
+			r2 := c.pushN(2, wf)
+			c.waitJobs("the second run is pending", r2, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+			r3 := c.pushN(3, wf)
+			c.waitJobs("the third run is pending", r3, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+			assert.Equal(t, []int64{r2.GetId(), r3.GetId()}, c.pendingRuns("Deploy"), "both wait, in order")
+			rec := c.groupRecord("Deploy")
+			assert.True(t, rec.Running.Max && rec.Pending[0].Max && rec.Pending[1].Max, "each entry records its queue mode")
+
+			runner.runJob(job1, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+			job2 := runner.await()
+			assert.Equal(t, r2.GetId(), job2.GetRunId(), "the head of the line goes first")
+			assert.Equal(t, []int64{r3.GetId()}, c.pendingRuns("Deploy"))
+			runner.runJob(job2, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+			job3 := runner.await()
+			assert.Equal(t, r3.GetId(), job3.GetRunId())
+			runner.runJob(job3, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+			for _, r := range []*pb.Run{r1, r2, r3} {
+				c.waitFor("the run completes", func() bool { return c.completed(r) })
+				assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_SUCCESS, c.conclusionOf(r))
+			}
+			c.waitFor("the group is free", func() bool { return c.groupRecord("Deploy").IsEmpty() })
+		})
+	}
+}
+
+// A queue: max entry that finds the line full is cancelled with ermite's
+// annotation; the waiting ones stay. The cap is lowered to 2 here (it is
+// domain.CIMaxConcurrencyQueue, 100, by default; see the domain tests).
+func TestCIConcurrencyQueueMaxFullLineCancelsTheNewcomer(t *testing.T) {
+	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
+		cfg.CancelGrace, cfg.Tick, cfg.PollTimeout = 300*time.Millisecond, 20*time.Millisecond, 100*time.Millisecond
+		cfg.ConcurrencyQueueMax = 2
+	})
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	wf := workflowAt("concurrency:\n  group: Deploy\n  queue: max\n", "")
+	r1 := c.pushN(1, wf)
+	job1 := runner.await()
+	r2 := c.pushN(2, wf)
+	c.waitJobs("pending", r2, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+	r3 := c.pushN(3, wf)
+	c.waitJobs("pending", r3, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+
+	r4 := c.pushN(4, wf)
+	c.waitFor("the newcomer is cancelled", func() bool { return c.completed(r4) })
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.conclusionOf(r4))
+	assert.True(t, c.hasAnnotation(r4, domain.ConcurrencyQueueFullMessage("Deploy")))
+	assert.False(t, c.cancelAnnotation(r4, "Deploy"))
+	assert.Equal(t, []int64{r2.GetId(), r3.GetId()}, c.pendingRuns("Deploy"), "the line is kept")
+	assert.False(t, c.groupRecord("Deploy").Names(domain.CIConcurrencyEntry{RunID: r4.GetId(), Attempt: 1}), "the newcomer was never named")
+	assert.False(t, c.completed(r1))
+	assert.False(t, c.completed(r2))
+	assert.False(t, c.completed(r3))
+
+	runner.runJob(job1, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+	job2 := runner.await()
+	assert.Equal(t, r2.GetId(), job2.GetRunId())
+	runner.runJob(job2, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+	job3 := runner.await()
+	assert.Equal(t, r3.GetId(), job3.GetRunId())
+	runner.runJob(job3, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+	c.waitFor("the last run completes", func() bool { return c.completed(r3) })
+}
+
+// ermite's rule for a mixed group: a queue: single entry that starts waiting
+// cancels every waiting entry, queue: max ones included, and is then the only
+// one; the running entry is left alone (no cancel-in-progress).
+func TestCIConcurrencyQueueSingleCancelsTheMaxLine(t *testing.T) {
+	c, runner := concurrencyHarness(t)
+	maxWF := workflowAt("concurrency:\n  group: Deploy\n  queue: max\n", "")
+	r1 := c.pushN(1, maxWF)
+	job1 := runner.await()
+	r2 := c.pushN(2, maxWF)
+	c.waitJobs("pending", r2, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+	r3 := c.pushN(3, maxWF)
+	c.waitJobs("pending", r3, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+
+	r4 := c.pushN(4, workflowAt(wfGroup, ""))
+	c.waitJobs("the single run is pending", r4, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+	for _, r := range []*pb.Run{r2, r3} {
+		c.waitFor("the max run is cancelled", func() bool { return c.completed(r) })
+		assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.conclusionOf(r))
+		assert.True(t, c.cancelAnnotation(r, "Deploy"))
+	}
+	assert.Equal(t, []int64{r4.GetId()}, c.pendingRuns("Deploy"))
+	assert.False(t, c.completed(r1), "the running run is left alone")
+
+	runner.runJob(job1, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+	job4 := runner.await()
+	assert.Equal(t, r4.GetId(), job4.GetRunId())
+	runner.runJob(job4, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+	c.waitFor("the single run completes", func() bool { return c.completed(r4) })
 }

@@ -141,6 +141,10 @@ type CIConfig struct {
 	// transaction removes (default 256, far below the size limit of a kv batch);
 	// the others go with the next decisions and the reconciliation.
 	ConcurrencyPruneBatch int
+	// ConcurrencyQueueMax is how many entries may wait in a queue: max group:
+	// 0 is GitHub's limit (domain.CIMaxConcurrencyQueue); the tests lower it so
+	// as not to start a hundred runs.
+	ConcurrencyQueueMax int
 	// ScheduleTick is how often the scheduler looks at the clock (default one
 	// second) and ScheduleBudget the repositories it handles per tick (default
 	// 64); see ci_schedule.go.
@@ -191,6 +195,9 @@ func (c CIConfig) withDefaults() CIConfig {
 	}
 	if c.TriggerQueue <= 0 {
 		c.TriggerQueue = DefaultCITriggerQueue
+	}
+	if c.ConcurrencyQueueMax <= 0 {
+		c.ConcurrencyQueueMax = domain.CIMaxConcurrencyQueue
 	}
 	if c.ConcurrencyPruneBatch <= 0 {
 		c.ConcurrencyPruneBatch = DefaultCIConcurrencyPruneBatch

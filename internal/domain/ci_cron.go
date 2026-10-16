@@ -7,11 +7,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	// The time zones of schedules do not depend on the host's zoneinfo (the
+	// image has none).
+	_ "time/tzdata"
 )
 
 // Cron is a parsed "cron:" of a schedule trigger: five fields (minute, hour, day
-// of month, month, day of week), evaluated in UTC (CI-3 D5; the "timezone" key
-// is ignored). The syntax is that of GitHub's schedule: "*", numbers, lists
+// of month, month, day of week), matched against a wall clock (UTC, or the
+// "timezone" of the entry: CronSchedule). The syntax is that of GitHub's schedule: "*", numbers, lists
 // "a,b", ranges "a-b", steps "*/n", "a/n" and "a-b/n", the names jan-dec and
 // sun-sat in any case; the day of week is 0-6 (Sunday is 0).
 //
@@ -131,4 +135,84 @@ func (c Cron) Matches(t time.Time) bool {
 		return domOK || dowOK
 	}
 	return domOK && dowOK
+}
+
+// CronSchedule is a cron entry with its time zone (CI-4 D6). GitHub runs the
+// entry at the wall clock of the zone, UTC when it has none. In a zone with
+// daylight saving time, an entry whose time is skipped by a spring-forward
+// transition runs at the next valid time (docs.github.com, "Events that trigger
+// workflows", schedule: "a 2:30 AM schedule advances to 3:00 AM"). The docs do
+// not say what a fall-back transition does: a wall clock that happens twice
+// runs once, at its first occurrence, as cron does.
+type CronSchedule struct {
+	Cron Cron
+	Loc  *time.Location
+}
+
+// ParseCronTimezone reads the "timezone" of a schedule entry: an IANA time zone
+// name, UTC when empty. "Local" (the server's zone) is not one.
+func ParseCronTimezone(name string) (*time.Location, error) {
+	if name == "" {
+		return time.UTC, nil
+	}
+	if name == "Local" || strings.HasPrefix(name, "/") || strings.Contains(name, "..") {
+		return nil, fmt.Errorf("%w: invalid schedule timezone %q: expected an IANA time zone name such as America/New_York", ErrInvalid, name)
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid schedule timezone %q: expected an IANA time zone name such as America/New_York", ErrInvalid, name)
+	}
+	return loc, nil
+}
+
+// cronGapLimit bounds how far back a transition is looked for: the largest
+// clock change of the time zone database (Samoa skipped a whole day in 2011).
+const cronGapLimit = 25 * time.Hour
+
+// Due reports whether the entry fires at the minute that starts at t.
+func (s CronSchedule) Due(t time.Time) bool {
+	loc := s.Loc
+	if loc == nil {
+		loc = time.UTC
+	}
+	t = t.Truncate(time.Minute)
+	wall := wallMinute(t, loc)
+	if s.Cron.Matches(wall) {
+		// A wall clock already seen in the last hours (a fall-back
+		// transition repeats it) does not fire again.
+		return !s.repeated(t, wall, loc)
+	}
+	// The first minute after a spring-forward gap runs the entries whose wall
+	// clock fell in the gap.
+	prev := wallMinute(t.Add(-time.Minute), loc)
+	for w := prev.Add(time.Minute); w.Before(wall); w = w.Add(time.Minute) {
+		if s.Cron.Matches(w) {
+			return true
+		}
+	}
+	return false
+}
+
+// repeated reports whether the wall clock of t was already shown earlier: an
+// instant t-d has it when the offset there is the offset at t plus d, so only
+// the larger offsets of the last hours are candidates.
+func (s CronSchedule) repeated(t, wall time.Time, loc *time.Location) bool {
+	if loc == time.UTC {
+		return false
+	}
+	_, now := t.In(loc).Zone()
+	for h := time.Hour; h <= cronGapLimit; h += time.Hour {
+		_, off := t.Add(-h).In(loc).Zone()
+		if back := time.Duration(off-now) * time.Second; back > 0 && wallMinute(t.Add(-back), loc).Equal(wall) {
+			return true
+		}
+	}
+	return false
+}
+
+// wallMinute is the wall clock of t in loc, as a UTC time (Matches reads its
+// fields).
+func wallMinute(t time.Time, loc *time.Location) time.Time {
+	l := t.In(loc)
+	return time.Date(l.Year(), l.Month(), l.Day(), l.Hour(), l.Minute(), 0, 0, time.UTC)
 }

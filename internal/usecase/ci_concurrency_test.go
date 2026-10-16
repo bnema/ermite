@@ -51,8 +51,13 @@ func TestEvalConcurrency(t *testing.T) {
 		{"cancel expression", "{group: g, cancel-in-progress: \"${{ github.ref == 'refs/heads/main' }}\"}", domain.CIConcurrency{Group: "g", Cancel: true}, ""},
 		{"cancel expression false", "{group: g, cancel-in-progress: \"${{ github.ref != 'refs/heads/main' }}\"}", domain.CIConcurrency{Group: "g"}, ""},
 		{"queue single", "{group: g, queue: single}", domain.CIConcurrency{Group: "g"}, ""},
-		{"queue max", "{group: g, queue: max}", domain.CIConcurrency{}, "not supported yet: queue: max"},
+		{"queue max", "{group: g, queue: max}", domain.CIConcurrency{Group: "g", Max: true}, ""},
+		{"queue max with cancel false", "{group: g, queue: max, cancel-in-progress: false}", domain.CIConcurrency{Group: "g", Max: true}, ""},
+		{"queue max from an expression", "{group: g, queue: \"${{ 'max' }}\"}", domain.CIConcurrency{Group: "g", Max: true}, ""},
 		{"queue max with cancel true", "{group: g, queue: max, cancel-in-progress: true}", domain.CIConcurrency{}, "'queue: max' cannot be combined with 'cancel-in-progress: true'."},
+		{"queue max with cancel expression true", "{group: g, queue: max, cancel-in-progress: \"${{ github.ref == 'refs/heads/main' }}\"}", domain.CIConcurrency{}, "'queue: max' cannot be combined with 'cancel-in-progress: true'."},
+		{"queue max with cancel expression false", "{group: g, queue: max, cancel-in-progress: \"${{ github.ref != 'refs/heads/main' }}\"}", domain.CIConcurrency{Group: "g", Max: true}, ""},
+		{"queue expression of another value", "{group: g, queue: \"${{ github.workflow }}\"}", domain.CIConcurrency{}, "Unexpected value 'ci'"},
 		{"empty group", `${{ vars.NOPE }}`, domain.CIConcurrency{}, "concurrency group name cannot be empty"},
 	}
 	for _, tt := range tests {
@@ -61,7 +66,7 @@ func TestEvalConcurrency(t *testing.T) {
 			got, err := evalGroup(t, tt.yaml)
 			if tt.err != "" {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.err)
+				assert.Equal(t, tt.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -108,4 +113,12 @@ func TestConcurrencyIdentity(t *testing.T) {
 	pending.Phase = domain.CIPhaseEnded
 	assert.Equal(t, domain.CICompleted, pending.Status(), "an ended job is not pending any more")
 	assert.Equal(t, domain.CIQueued, domain.CIJob{Phase: domain.CIPhaseWaiting}.Status())
+}
+
+// A literal queue other than single or max is refused by the schema when the
+// workflow is parsed ("concurrency-queue": allowed-values single, max).
+func TestConcurrencyQueueLiteralIsChecked(t *testing.T) {
+	t.Parallel()
+	_, errs := workflow.Parse("w.yml", []byte(fmt.Sprintf(concurrencyYAML, "{group: g, queue: often}")))
+	require.NotEmpty(t, errs)
 }

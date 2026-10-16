@@ -105,3 +105,70 @@ func TestParseCronRefuses(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrInvalid, bad)
 	}
 }
+
+func TestParseCronTimezone(t *testing.T) {
+	for _, ok := range []string{"", "UTC", "America/New_York", "Asia/Kolkata", "Europe/Paris"} {
+		_, err := domain.ParseCronTimezone(ok)
+		assert.NoError(t, err, ok)
+	}
+	for _, bad := range []string{"Mars/Olympus", "Local", "/etc/localtime", "../zoneinfo/UTC", "new york"} {
+		_, err := domain.ParseCronTimezone(bad)
+		assert.ErrorIs(t, err, domain.ErrInvalid, bad)
+	}
+}
+
+// firesOn returns the UTC minutes of the day (from start, for span) at which
+// the schedule is due.
+func firesOn(t *testing.T, spec, zone string, start time.Time, span time.Duration) []string {
+	t.Helper()
+	c, err := domain.ParseCron(spec)
+	require.NoError(t, err)
+	loc, err := domain.ParseCronTimezone(zone)
+	require.NoError(t, err)
+	s := domain.CronSchedule{Cron: c, Loc: loc}
+	var out []string
+	for m := start; m.Before(start.Add(span)); m = m.Add(time.Minute) {
+		if s.Due(m) {
+			out = append(out, m.UTC().Format("2006-01-02 15:04"))
+		}
+	}
+	return out
+}
+
+func TestCronScheduleTimezone(t *testing.T) {
+	day := func(s string) time.Time { return at(t, s+" 00:00") }
+	// Paris in summer is UTC+2.
+	assert.Equal(t, []string{"2026-06-01 07:00"}, firesOn(t, "0 9 * * *", "Europe/Paris", day("2026-06-01"), 24*time.Hour))
+	// No timezone: UTC.
+	assert.Equal(t, []string{"2026-06-01 09:00"}, firesOn(t, "0 9 * * *", "", day("2026-06-01"), 24*time.Hour))
+	// The day of week is the zone's: Monday 00:30 in Tokyo is Sunday 15:30 UTC.
+	assert.Equal(t, []string{"2026-05-31 15:30"}, firesOn(t, "30 0 * * mon", "Asia/Tokyo", day("2026-05-31"), 24*time.Hour))
+}
+
+// New York springs forward on 2026-03-08 (02:00 EST becomes 03:00 EDT) and
+// falls back on 2026-11-01 (02:00 EDT becomes 01:00 EST).
+func TestCronScheduleDST(t *testing.T) {
+	ny := "America/New_York"
+	spring, fall := at(t, "2026-03-08 04:00"), at(t, "2026-11-01 03:00") // local midnight, UTC
+
+	// A time the transition skips runs at the next valid time, 03:00 EDT
+	// (GitHub's docs: "a 2:30 AM schedule advances to 3:00 AM"), once.
+	assert.Equal(t, []string{"2026-03-08 07:00"}, firesOn(t, "30 2 * * *", ny, spring, 24*time.Hour))
+	assert.Equal(t, []string{"2026-03-09 06:30"}, firesOn(t, "30 2 * * *", ny, spring.Add(24*time.Hour), 24*time.Hour), "the day after: 02:30 EDT")
+	// Times around the gap are not moved, and 03:00 runs once.
+	assert.Equal(t, []string{"2026-03-08 06:59"}, firesOn(t, "59 1 * * *", ny, spring, 24*time.Hour))
+	assert.Equal(t, []string{"2026-03-08 07:00"}, firesOn(t, "0 3 * * *", ny, spring, 24*time.Hour))
+	assert.Equal(t, []string{"2026-03-08 07:00", "2026-03-08 07:15", "2026-03-08 07:30", "2026-03-08 07:45"},
+		firesOn(t, "*/15 2-3 * * *", ny, spring, 24*time.Hour), "the skipped 02:00-02:45 entries run once at 03:00, then 03:15-03:45")
+	// Hourly: 23 hours that day.
+	assert.Len(t, firesOn(t, "0 * * * *", ny, spring, 23*time.Hour), 23)
+
+	// A time that happens twice runs once, at its first occurrence (EDT).
+	assert.Equal(t, []string{"2026-11-01 05:30"}, firesOn(t, "30 1 * * *", ny, fall, 25*time.Hour))
+	assert.Equal(t, []string{"2026-11-01 07:00"}, firesOn(t, "0 2 * * *", ny, fall, 25*time.Hour), "02:00 EST, once")
+	// Hourly: 24 runs over the 25 hours of that day, none at 01:00 EST.
+	hourly := firesOn(t, "0 * * * *", ny, fall, 25*time.Hour)
+	assert.Len(t, hourly, 24)
+	assert.Contains(t, hourly, "2026-11-01 05:00")
+	assert.NotContains(t, hourly, "2026-11-01 06:00")
+}

@@ -10,7 +10,6 @@ import (
 	"path"
 	"strings"
 
-	"bnema.dev/ermite-actions/workflow"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
@@ -57,7 +56,7 @@ func (c *CI) DispatchWorkflow(ctx context.Context, p domain.Principal, name doma
 	if err != nil {
 		return domain.CIRun{}, err
 	}
-	wf, perrs := workflow.Parse(wfPath, content)
+	wf, perrs := parseWorkflow(wfPath, content)
 	if len(perrs) > 0 {
 		lines := make([]string, 0, len(perrs))
 		for _, e := range perrs {

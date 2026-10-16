@@ -14,7 +14,6 @@ import (
 
 	"github.com/bnema/zerowrap"
 
-	"bnema.dev/ermite-actions/workflow"
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -52,8 +51,8 @@ const (
 
 // scheduledCron is one cron entry of a workflow.
 type scheduledCron struct {
-	spec string
-	cron domain.Cron
+	spec  string
+	sched domain.CronSchedule
 }
 
 // scheduledWorkflow is a workflow with at least one valid cron entry.
@@ -338,7 +337,7 @@ func (c *CI) loadSchedules(ctx context.Context, repo domain.RepoName) (*schedule
 		if f.problem != "" {
 			continue
 		}
-		wf, perrs := workflow.Parse(f.path, f.content)
+		wf, perrs := parseWorkflow(f.path, f.content)
 		if len(perrs) > 0 || wf.On == nil {
 			continue
 		}
@@ -352,7 +351,11 @@ func (c *CI) loadSchedules(ctx context.Context, repo domain.RepoName) (*schedule
 			if err != nil {
 				continue
 			}
-			sw.crons = append(sw.crons, scheduledCron{spec: sc.Cron, cron: cron})
+			loc, err := domain.ParseCronTimezone(sc.Timezone)
+			if err != nil {
+				continue // the push of the file reported it (parseWorkflow)
+			}
+			sw.crons = append(sw.crons, scheduledCron{spec: sc.Cron, sched: domain.CronSchedule{Cron: cron, Loc: loc}})
 		}
 		if len(sw.crons) > 0 {
 			e.files = append(e.files, sw)
@@ -366,7 +369,7 @@ func (c *CI) loadSchedules(ctx context.Context, repo domain.RepoName) (*schedule
 func dueFor(e *scheduleEntry, minute time.Time) (idx []int, specs []string) {
 	for i, f := range e.files {
 		for _, sc := range f.crons {
-			if sc.cron.Matches(minute) {
+			if sc.sched.Due(minute) {
 				idx, specs = append(idx, i), append(specs, sc.spec)
 				break
 			}
@@ -419,7 +422,7 @@ func (c *CI) scheduleRepo(ctx context.Context, repo domain.RepoName, minute time
 
 // fireSchedule starts the run of one scheduled workflow.
 func (c *CI) fireSchedule(ctx context.Context, repo domain.Repo, def string, e *scheduleEntry, head domain.Commit, sw scheduledWorkflow, spec string) error {
-	wf, perrs := workflow.Parse(sw.path, sw.yaml)
+	wf, perrs := parseWorkflow(sw.path, sw.yaml)
 	if len(perrs) > 0 {
 		return nil
 	}

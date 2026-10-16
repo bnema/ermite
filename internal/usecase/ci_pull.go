@@ -993,7 +993,7 @@ func (c *CI) startPullRuns(ctx context.Context, e pullEvent, mr domain.MergeRequ
 		if file.problem != "" {
 			continue // reported by the push of the branch
 		}
-		wf, perrs := workflow.Parse(file.path, file.content)
+		wf, perrs := parseWorkflow(file.path, file.content)
 		if len(perrs) > 0 || !matchPullRequest(wf, f.eventName(), e.action, mr.Target, f.files, f.filesTruncated) {
 			continue
 		}

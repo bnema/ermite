@@ -545,7 +545,7 @@ func (rs *runState) planCall(ctx context.Context, wf *workflow.Workflow, wj *wor
 		return err
 	}
 	prefix := callerPrefix(wj)
-	cw, errs := workflow.Parse(file.path, file.yaml)
+	cw, errs := parseWorkflow(file.path, file.yaml)
 	if len(errs) > 0 {
 		return callFailure{prefix + " " + errs[0].Error()}
 	}
@@ -999,7 +999,7 @@ func (rs *runState) holdCalls(ctx context.Context) (bool, error) {
 		entry := domain.CIConcurrencyEntry{RunID: j.RunID, Attempt: j.RunAttempt, JobID: j.ID}
 		if g := j.Concurrency; g.Group != "" && !g.FromRun && g.State != domain.CIConcurrencyHolding {
 			e := entry
-			e.Cancel = g.Cancel
+			e.Cancel, e.Max = g.Cancel, g.Max
 			st, err := rs.acquire(ctx, g.Group, e)
 			if err != nil {
 				return changed, err
@@ -1014,7 +1014,7 @@ func (rs *runState) holdCalls(ctx context.Context) (bool, error) {
 		}
 		if g := j.Call.Concurrency; g.Group != "" && g.State != domain.CIConcurrencyHolding {
 			e := entry
-			e.Cancel = g.Cancel
+			e.Cancel, e.Max = g.Cancel, g.Max
 			st, err := rs.acquire(ctx, g.Group, e)
 			if err != nil {
 				return changed, err

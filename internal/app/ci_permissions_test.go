@@ -133,13 +133,14 @@ func TestDefaultTokenCannotPush(t *testing.T) {
 func TestJobTokenWithContentsWritePushesButNotWorkflows(t *testing.T) {
 	c := newCIHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
-	wfYAML := "on:\n  push:\n  create:\npermissions:\n  contents: write\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+	wfYAML := "on:\n  push:\n  create:\n  delete:\npermissions:\n  contents: write\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
 	c.push("main", map[string]string{".github/workflows/p.yml": wfYAML}, "")
 	c.push("feat", map[string]string{"feat.txt": "f"}, "")
 	job := runner.await()
 	tok := job.GetGithubToken()
 	require.Equal(t, "write", levelsOf(job)["contents"])
-	c.waitFor("two runs", func() bool { return len(c.runs()) == 2 })
+	// push and create for main, then for feat.
+	c.waitFor("four runs", func() bool { return len(c.runs()) == 4 })
 	runsBefore := len(c.runs())
 	ref := func(r string) string { return c.bareGit("proj", "rev-parse", "--verify", "-q", r) }
 	refs := func() string { return c.bareGit("proj", "for-each-ref", "--format=%(refname) %(objectname)") }
@@ -238,12 +239,13 @@ func TestJobTokenWithContentsWritePushesButNotWorkflows(t *testing.T) {
 	// None of the pushes of the job token started a run; a push of the owner
 	// does, and queues after them.
 	c.push("sentinel", map[string]string{"s.txt": "s"}, "")
-	c.waitFor("the owner's runs", func() bool { return len(c.runs()) >= runsBefore+2 })
+	c.waitFor("the owner's runs", func() bool { return len(c.runs()) >= runsBefore+4 })
 	for _, r := range c.runs() {
 		assert.NotEqual(t, "refs/heads/orphan", r.GetRef(), "no run for a job token's push")
 		assert.NotEqual(t, "refs/tags/v0", r.GetRef())
+		assert.NotEqual(t, "delete", r.GetEvent(), "no run for a job token's deletes")
 	}
-	assert.Len(t, c.runs(), runsBefore+2, "the owner's rworkflow and sentinel pushes only")
+	assert.Len(t, c.runs(), runsBefore+4, "push and create of the owner's rworkflow and sentinel only")
 }
 
 func TestJobTokenCannotPushToAnotherRepository(t *testing.T) {

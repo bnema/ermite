@@ -2148,7 +2148,9 @@ type CIConcurrency struct {
 	FromRun bool `protobuf:"varint,5,opt,name=from_run,json=fromRun,proto3" json:"from_run,omitempty"`
 	// preempted: cancelled because a newer entry of the group asked for it; the
 	// job ends with GitHub's annotation.
-	Preempted     bool `protobuf:"varint,6,opt,name=preempted,proto3" json:"preempted,omitempty"`
+	Preempted bool `protobuf:"varint,6,opt,name=preempted,proto3" json:"preempted,omitempty"`
+	// queue_max: queue: max (false is queue: single, the default).
+	QueueMax      bool `protobuf:"varint,7,opt,name=queue_max,json=queueMax,proto3" json:"queue_max,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2225,6 +2227,13 @@ func (x *CIConcurrency) GetPreempted() bool {
 	return false
 }
 
+func (x *CIConcurrency) GetQueueMax() bool {
+	if x != nil {
+		return x.QueueMax
+	}
+	return false
+}
+
 // CIConcurrencyEntry is a run (job_id empty) or a job in a concurrency group.
 type CIConcurrencyEntry struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
@@ -2234,7 +2243,9 @@ type CIConcurrencyEntry struct {
 	Cancel  bool                   `protobuf:"varint,4,opt,name=cancel,proto3" json:"cancel,omitempty"`
 	// canceling: a waiting entry with cancel-in-progress asked this running one
 	// to stop; the entry stays until it has ended.
-	Canceling     bool `protobuf:"varint,5,opt,name=canceling,proto3" json:"canceling,omitempty"`
+	Canceling bool `protobuf:"varint,5,opt,name=canceling,proto3" json:"canceling,omitempty"`
+	// queue_max: the entry was queued with queue: max.
+	QueueMax      bool `protobuf:"varint,6,opt,name=queue_max,json=queueMax,proto3" json:"queue_max,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2304,13 +2315,26 @@ func (x *CIConcurrencyEntry) GetCanceling() bool {
 	return false
 }
 
+func (x *CIConcurrencyEntry) GetQueueMax() bool {
+	if x != nil {
+		return x.QueueMax
+	}
+	return false
+}
+
 // CIConcurrencyRecord is stored under "concur/<repo>/<key(group)>" (ConcurrencyKey): the
-// running entry and the pending one of a group (queue: single). A group with
-// neither has no key.
+// running entry and the waiting ones of a group. A group with neither has no
+// key.
 type CIConcurrencyRecord struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Running       *CIConcurrencyEntry    `protobuf:"bytes,1,opt,name=running,proto3" json:"running,omitempty"`
-	Pending       *CIConcurrencyEntry    `protobuf:"bytes,2,opt,name=pending,proto3" json:"pending,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Running *CIConcurrencyEntry    `protobuf:"bytes,1,opt,name=running,proto3" json:"running,omitempty"`
+	// pending is the head of queue, written for the binaries that predate queue
+	// (a downgrade keeps the first waiting entry; the others, which their record
+	// no longer names, are cancelled as replaced). It is read when queue is
+	// empty: a record stored by such a binary.
+	Pending *CIConcurrencyEntry `protobuf:"bytes,2,opt,name=pending,proto3" json:"pending,omitempty"`
+	// queue holds the waiting entries, first in first out.
+	Queue         []*CIConcurrencyEntry `protobuf:"bytes,4,rep,name=queue,proto3" json:"queue,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2355,6 +2379,13 @@ func (x *CIConcurrencyRecord) GetRunning() *CIConcurrencyEntry {
 func (x *CIConcurrencyRecord) GetPending() *CIConcurrencyEntry {
 	if x != nil {
 		return x.Pending
+	}
+	return nil
+}
+
+func (x *CIConcurrencyRecord) GetQueue() []*CIConcurrencyEntry {
+	if x != nil {
+		return x.Queue
 	}
 	return nil
 }
@@ -2453,8 +2484,12 @@ type CIConcurrencyMark struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Entry *CIConcurrencyEntry    `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`
 	// group as the newest request wrote it, for the cancel annotation.
-	Group         string             `protobuf:"bytes,2,opt,name=group,proto3" json:"group,omitempty"`
-	State         CIConcurrencyState `protobuf:"varint,3,opt,name=state,proto3,enum=ermite.storage.CIConcurrencyState" json:"state,omitempty"`
+	Group string             `protobuf:"bytes,2,opt,name=group,proto3" json:"group,omitempty"`
+	State CIConcurrencyState `protobuf:"varint,3,opt,name=state,proto3,enum=ermite.storage.CIConcurrencyState" json:"state,omitempty"`
+	// queue_full: with state REPLACED, the entry was a queue: max entry that
+	// found the waiting line full (its annotation says so). Stored as REPLACED so
+	// that a binary that predates it still cancels the entry.
+	QueueFull     bool `protobuf:"varint,4,opt,name=queue_full,json=queueFull,proto3" json:"queue_full,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2508,6 +2543,13 @@ func (x *CIConcurrencyMark) GetState() CIConcurrencyState {
 		return x.State
 	}
 	return CIConcurrencyState_CI_CONCURRENCY_STATE_UNSPECIFIED
+}
+
+func (x *CIConcurrencyMark) GetQueueFull() bool {
+	if x != nil {
+		return x.QueueFull
+	}
+	return false
 }
 
 var File_ermite_storage_ci_proto protoreflect.FileDescriptor
@@ -2721,34 +2763,39 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\n" +
 	"end_column\x18\b \x01(\x05R\tendColumn\"S\n" +
 	"\x11CIStepAnnotations\x12>\n" +
-	"\vannotations\x18\x01 \x03(\v2\x1c.ermite.storage.CIAnnotationR\vannotations\"\xce\x01\n" +
+	"\vannotations\x18\x01 \x03(\v2\x1c.ermite.storage.CIAnnotationR\vannotations\"\xeb\x01\n" +
 	"\rCIConcurrency\x12\x14\n" +
 	"\x05group\x18\x01 \x01(\tR\x05group\x12\x16\n" +
 	"\x06cancel\x18\x02 \x01(\bR\x06cancel\x128\n" +
 	"\x05state\x18\x03 \x01(\x0e2\".ermite.storage.CIConcurrencyStateR\x05state\x12\x1c\n" +
 	"\tevaluated\x18\x04 \x01(\bR\tevaluated\x12\x19\n" +
 	"\bfrom_run\x18\x05 \x01(\bR\afromRun\x12\x1c\n" +
-	"\tpreempted\x18\x06 \x01(\bR\tpreempted\"\x92\x01\n" +
+	"\tpreempted\x18\x06 \x01(\bR\tpreempted\x12\x1b\n" +
+	"\tqueue_max\x18\a \x01(\bR\bqueueMax\"\xaf\x01\n" +
 	"\x12CIConcurrencyEntry\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\x03R\x05runId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x05R\aattempt\x12\x15\n" +
 	"\x06job_id\x18\x03 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06cancel\x18\x04 \x01(\bR\x06cancel\x12\x1c\n" +
-	"\tcanceling\x18\x05 \x01(\bR\tcanceling\"\x97\x01\n" +
+	"\tcanceling\x18\x05 \x01(\bR\tcanceling\x12\x1b\n" +
+	"\tqueue_max\x18\x06 \x01(\bR\bqueueMax\"\xd1\x01\n" +
 	"\x13CIConcurrencyRecord\x12<\n" +
 	"\arunning\x18\x01 \x01(\v2\".ermite.storage.CIConcurrencyEntryR\arunning\x12<\n" +
-	"\apending\x18\x02 \x01(\v2\".ermite.storage.CIConcurrencyEntryR\apendingJ\x04\b\x03\x10\x04\"\x95\x01\n" +
+	"\apending\x18\x02 \x01(\v2\".ermite.storage.CIConcurrencyEntryR\apending\x128\n" +
+	"\x05queue\x18\x04 \x03(\v2\".ermite.storage.CIConcurrencyEntryR\x05queueJ\x04\b\x03\x10\x04\"\x95\x01\n" +
 	"\bCIRefTip\x12\x10\n" +
 	"\x03sha\x18\x01 \x01(\tR\x03sha\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x18\n" +
 	"\atrusted\x18\x03 \x01(\bR\atrusted\x12\x1f\n" +
 	"\vpusher_kind\x18\x04 \x01(\tR\n" +
 	"pusherKind\x12&\n" +
-	"\x0fpusher_token_id\x18\x05 \x01(\tR\rpusherTokenId\"\x9d\x01\n" +
+	"\x0fpusher_token_id\x18\x05 \x01(\tR\rpusherTokenId\"\xbc\x01\n" +
 	"\x11CIConcurrencyMark\x128\n" +
 	"\x05entry\x18\x01 \x01(\v2\".ermite.storage.CIConcurrencyEntryR\x05entry\x12\x14\n" +
 	"\x05group\x18\x02 \x01(\tR\x05group\x128\n" +
-	"\x05state\x18\x03 \x01(\x0e2\".ermite.storage.CIConcurrencyStateR\x05state*\x86\x01\n" +
+	"\x05state\x18\x03 \x01(\x0e2\".ermite.storage.CIConcurrencyStateR\x05state\x12\x1d\n" +
+	"\n" +
+	"queue_full\x18\x04 \x01(\bR\tqueueFull*\x86\x01\n" +
 	"\bCIStatus\x12\x19\n" +
 	"\x15CI_STATUS_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10CI_STATUS_QUEUED\x10\x01\x12\x19\n" +
@@ -2890,13 +2937,14 @@ var file_ermite_storage_ci_proto_depIdxs = []int32{
 	7,  // 43: ermite.storage.CIConcurrency.state:type_name -> ermite.storage.CIConcurrencyState
 	20, // 44: ermite.storage.CIConcurrencyRecord.running:type_name -> ermite.storage.CIConcurrencyEntry
 	20, // 45: ermite.storage.CIConcurrencyRecord.pending:type_name -> ermite.storage.CIConcurrencyEntry
-	20, // 46: ermite.storage.CIConcurrencyMark.entry:type_name -> ermite.storage.CIConcurrencyEntry
-	7,  // 47: ermite.storage.CIConcurrencyMark.state:type_name -> ermite.storage.CIConcurrencyState
-	48, // [48:48] is the sub-list for method output_type
-	48, // [48:48] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	20, // 46: ermite.storage.CIConcurrencyRecord.queue:type_name -> ermite.storage.CIConcurrencyEntry
+	20, // 47: ermite.storage.CIConcurrencyMark.entry:type_name -> ermite.storage.CIConcurrencyEntry
+	7,  // 48: ermite.storage.CIConcurrencyMark.state:type_name -> ermite.storage.CIConcurrencyState
+	49, // [49:49] is the sub-list for method output_type
+	49, // [49:49] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_ci_proto_init() }

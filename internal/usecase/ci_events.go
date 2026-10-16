@@ -14,7 +14,8 @@ import (
 	"bnema.dev/ermite/internal/domain"
 )
 
-// The events workflow_dispatch, schedule and workflow_run (CI-3, D5). They share
+// The events workflow_dispatch, schedule and workflow_run (CI-3, D5), and create
+// and delete (ci_refevents.go). They share
 // the run machinery of the push (startRun); what differs is the github context
 // and, for workflow_dispatch, the typed inputs.
 
@@ -33,8 +34,8 @@ const (
 	maxDispatchPayload = 65535
 )
 
-// customEvent is what a run of workflow_dispatch, schedule or workflow_run is
-// for, beside the commit (pushFacts.custom).
+// customEvent is what a run of workflow_dispatch, schedule, workflow_run,
+// create or delete is for, beside the commit (pushFacts.custom).
 type customEvent struct {
 	name  string
 	title string
@@ -45,6 +46,8 @@ type customEvent struct {
 	cron string
 	// triggered is the run a workflow_run is for.
 	triggered *workflowRunFacts
+	// ref is the branch or tag created or deleted (create, delete).
+	ref string
 }
 
 // workflowRunFacts is the triggering run of a workflow_run.
@@ -200,8 +203,8 @@ func eventInputs(wf *workflow.Workflow, githubJSON string) *expr.Dictionary {
 	return typedInputs(ev.Inputs, values)
 }
 
-// customGithubJSON is the github context of a workflow_dispatch, schedule or
-// workflow_run run.
+// customGithubJSON is the github context of a workflow_dispatch, schedule,
+// workflow_run, create or delete run.
 func (c *CI) customGithubJSON(repo domain.Repo, run domain.CIRun, f pushFacts) string {
 	u := c.urls(repo)
 	id := c.identity(run.Actor)
@@ -226,6 +229,8 @@ func (c *CI) customGithubJSON(repo domain.Repo, run domain.CIRun, f pushFacts) s
 		event["action"] = t.action
 		event["workflow_run"] = c.workflowRunObj(repo, u, t)
 		event["workflow"] = c.workflowObj(u, t.run.WorkflowPath, t.run.WorkflowName, t.run.CreatedAt)
+	case eventCreate, eventDelete:
+		refEventPayload(cu.name, cu.ref, f.defaultBranch, event)
 	}
 	refName, refType := strings.TrimPrefix(run.Ref, "refs/heads/"), "branch"
 	if tag, ok := strings.CutPrefix(run.Ref, "refs/tags/"); ok {

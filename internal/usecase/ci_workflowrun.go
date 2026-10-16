@@ -213,7 +213,7 @@ func (c *CI) handleRunEvent(ctx context.Context, e runEvent) error {
 		if f.problem != "" {
 			continue
 		}
-		wf, perrs := workflow.Parse(f.path, f.content)
+		wf, perrs := parseWorkflow(f.path, f.content)
 		if len(perrs) > 0 || !matchWorkflowRun(wf, e.run.WorkflowName, e.action, head) {
 			continue
 		}
