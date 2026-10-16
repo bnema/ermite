@@ -32,7 +32,7 @@ const (
 	// CIMaxAnnotationMessage, CIMaxAnnotationTitle and CIMaxAnnotationFile bound
 	// the text fields of an annotation, in characters.
 	CIMaxAnnotationMessage = 4096
-	CIMaxAnnotationTitle   = 255
+	CIMaxAnnotationTitle   = 4096
 	CIMaxAnnotationFile    = 1024
 	// CIMaxListedAnnotations is the most annotations ListAnnotations returns.
 	CIMaxListedAnnotations = 1000

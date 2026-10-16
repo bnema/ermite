@@ -147,7 +147,7 @@ func TestCIAnnotationsAndSummariesOverTheAPI(t *testing.T) {
 			"no level":           {{Message: "m", StepNumber: 1}},
 			"no message":         {ann(notice, 1, "")},
 			"message too long":   {ann(notice, 1, strings.Repeat("é", 4097))},
-			"title too long":     {{Level: notice, Message: "m", Title: strings.Repeat("t", 256), StepNumber: 1}},
+			"title too long":     {{Level: notice, Message: "m", Title: strings.Repeat("t", 4097), StepNumber: 1}},
 			"file too long":      {{Level: notice, Message: "m", File: strings.Repeat("f", 1025), StepNumber: 1}},
 			"step zero":          {ann(notice, 0, "m")},
 			"step beyond 1000":   {ann(notice, 1001, "m")},
@@ -159,7 +159,7 @@ func TestCIAnnotationsAndSummariesOverTheAPI(t *testing.T) {
 		}
 		// Characters, not bytes: 4096 two-byte characters pass.
 		require.NoError(t, runner.update(a, nil, ann(notice, 11, strings.Repeat("é", 4096))))
-		require.NoError(t, runner.update(a, nil, &pb.Annotation{Level: notice, Message: "m", Title: strings.Repeat("t", 255), File: strings.Repeat("f", 1024), StepNumber: 11}))
+		require.NoError(t, runner.update(a, nil, &pb.Annotation{Level: notice, Message: "m", Title: strings.Repeat("t", 4096), File: strings.Repeat("f", 1024), StepNumber: 11}))
 		// An invalid call stored nothing: steps 1, 3 and 7 are as they were.
 		after := c.annotations(runID, a.GetJobId()).GetAnnotations()
 		require.GreaterOrEqual(t, len(after), len(before))
