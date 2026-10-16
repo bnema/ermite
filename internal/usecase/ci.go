@@ -124,6 +124,15 @@ type CIConfig struct {
 	PublicURL string
 	// Retention is how long runs, jobs, checks and logs are kept.
 	Retention time.Duration
+	// Artifacts and ArtifactFiles keep the artifacts of the runs (CI-4 D3):
+	// the records and the contents. Without both the artifact services refuse
+	// every call. ArtifactLimits are their settings; a zero field takes its
+	// default (the run retention of domain.CIRetentionDays,
+	// domain.DefaultCIArtifactQuota, domain.DefaultCIArtifactMaxSize). Leave
+	// them unset rather than assigning typed nil pointers.
+	Artifacts      ports.CIArtifactStore
+	ArtifactFiles  ports.CIArtifactFiles
+	ArtifactLimits ports.ArtifactLimits
 
 	// The durations below default to the contract's; tests shorten them.
 	PollTimeout       time.Duration
@@ -186,6 +195,13 @@ func (c CIConfig) withDefaults() CIConfig {
 	def(&c.TimeoutSlack, domain.CITimeoutSlack)
 	def(&c.QueueTimeout, domain.CIQueueTimeout)
 	def(&c.Retention, domain.CIRetentionDays*24*time.Hour)
+	def(&c.ArtifactLimits.Retention, domain.CIRetentionDays*24*time.Hour)
+	if c.ArtifactLimits.Quota <= 0 {
+		c.ArtifactLimits.Quota = domain.DefaultCIArtifactQuota
+	}
+	if c.ArtifactLimits.MaxSize <= 0 {
+		c.ArtifactLimits.MaxSize = domain.DefaultCIArtifactMaxSize
+	}
 	if c.RemoteConcurrency <= 0 {
 		c.RemoteConcurrency = DefaultCIRemoteConcurrency
 	}
@@ -254,6 +270,10 @@ type CI struct {
 	streams       int
 	perClient     map[string]int
 	closed        bool
+	// artifactLocks serialize the commits of each artifact (ci_artifacts.go).
+	artifactLocks map[int64]*artifactLock
+	// reservations are the artifact bytes being written (ci_artifacts.go).
+	reservations artifactReservations
 }
 
 var (

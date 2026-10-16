@@ -36,6 +36,14 @@ var runnerSecretProcedures = map[string]bool{
 	// ResolveActions and UploadSummary are job calls too.
 	ermiteconnect.RunnerServiceResolveActionsProcedure: true,
 	ermiteconnect.RunnerServiceUploadSummaryProcedure:  true,
+	// So is all of JobArtifactService.
+	ermiteconnect.JobArtifactServiceCreateJobArtifactProcedure:      true,
+	ermiteconnect.JobArtifactServiceUploadJobArtifactBlockProcedure: true,
+	ermiteconnect.JobArtifactServiceCommitJobArtifactProcedure:      true,
+	ermiteconnect.JobArtifactServiceFinalizeJobArtifactProcedure:    true,
+	ermiteconnect.JobArtifactServiceListJobArtifactsProcedure:       true,
+	ermiteconnect.JobArtifactServiceDownloadJobArtifactProcedure:    true,
+	ermiteconnect.JobArtifactServiceDeleteJobArtifactProcedure:      true,
 }
 
 // ciError maps an error of the CI use cases. A call on a job that ended gets

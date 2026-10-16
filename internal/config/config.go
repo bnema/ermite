@@ -47,6 +47,15 @@ const (
 	// random bytes in base64, provided by the deployment secret store like
 	// ERMITE_ADMIN_TOKEN. Without it secrets cannot be set and jobs get none.
 	EnvSecretsKey = "ERMITE_SECRETS_KEY"
+	// EnvCIArtifacts turns the CI artifacts (artifacts v4) off when "0" or
+	// "false"; they are on by default.
+	EnvCIArtifacts = "ERMITE_CI_ARTIFACTS"
+	// EnvCIArtifactRetention is the default and longest retention of an
+	// artifact, EnvCIArtifactQuota the space of the artifacts of one
+	// repository, EnvCIArtifactMax the size of one artifact.
+	EnvCIArtifactRetention = "ERMITE_CI_ARTIFACT_RETENTION"
+	EnvCIArtifactQuota     = "ERMITE_CI_ARTIFACT_QUOTA"
+	EnvCIArtifactMax       = "ERMITE_CI_ARTIFACT_MAX"
 )
 
 // SecretsKeyLen is the length of the secrets key in bytes (AES-256).
@@ -124,6 +133,13 @@ type Config struct {
 	// when the variable is unset. It is a secret: never log it or put it in an
 	// error.
 	SecretsKey []byte
+	// CIArtifacts is false when ERMITE_CI_ARTIFACTS turns the artifacts off.
+	CIArtifacts bool
+	// CIArtifactRetention, CIArtifactQuota and CIArtifactMax are the limits of
+	// the artifacts; 0 (variable unset) leaves the default to the CI use case.
+	CIArtifactRetention time.Duration
+	CIArtifactQuota     int64
+	CIArtifactMax       int64
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -294,10 +310,65 @@ func Load(get func(string) string) (Config, error) {
 		}
 	}
 
+	switch raw := strings.ToLower(strings.TrimSpace(get(EnvCIArtifacts))); raw {
+	case "", "1", "true":
+		c.CIArtifacts = true
+	case "0", "false":
+	default:
+		bad(EnvCIArtifacts, "must be 0, 1, false or true (got %q)", raw)
+	}
+	if raw := strings.TrimSpace(get(EnvCIArtifactRetention)); raw != "" {
+		d, err := parseRetention(raw)
+		switch {
+		case err != nil:
+			bad(EnvCIArtifactRetention, "%v", err)
+		case d < 24*time.Hour:
+			bad(EnvCIArtifactRetention, "must be at least one day (got %q)", raw)
+		default:
+			c.CIArtifactRetention = d
+		}
+	}
+	for _, v := range []struct {
+		env string
+		dst *int64
+	}{{EnvCIArtifactQuota, &c.CIArtifactQuota}, {EnvCIArtifactMax, &c.CIArtifactMax}} {
+		if raw := strings.TrimSpace(get(v.env)); raw != "" {
+			n, err := parseSize(raw)
+			if err != nil {
+				bad(v.env, "%v", err)
+			} else {
+				*v.dst = n
+			}
+		}
+	}
+
 	if len(problems) > 0 {
 		return Config{}, &Error{Problems: problems}
 	}
 	return c, nil
+}
+
+// sizeUnits are the suffixes of parseSize, longest first.
+var sizeUnits = []struct {
+	suffix string
+	mult   int64
+}{{"TiB", 1 << 40}, {"GiB", 1 << 30}, {"MiB", 1 << 20}, {"KiB", 1 << 10}, {"B", 1}}
+
+// parseSize reads a size in bytes: a number with an optional suffix B, KiB,
+// MiB, GiB or TiB ("10GiB", "512 MiB"), from 1 MiB to 1 PiB.
+func parseSize(raw string) (int64, error) {
+	num, mult := raw, int64(1)
+	for _, u := range sizeUnits {
+		if n, ok := strings.CutSuffix(raw, u.suffix); ok {
+			num, mult = strings.TrimSpace(n), u.mult
+			break
+		}
+	}
+	n, err := strconv.ParseInt(num, 10, 64)
+	if err != nil || n < 1 || n > (1<<50)/mult || n*mult < 1<<20 {
+		return 0, fmt.Errorf("must be a size from 1MiB to 1024TiB such as 10GiB (got %q)", raw)
+	}
+	return n * mult, nil
 }
 
 // decodeSecretsKey reads 32 bytes in standard or URL-safe base64, with or

@@ -25,6 +25,7 @@ import (
 //	GET  /<repo>/actions/runs/<id>/job/<job id>   one job: steps and live log
 //	GET  /<repo>/actions/runs/<id>/job/<job id>/raw   the log as text
 //	POST /<repo>/actions/runs/<id>/cancel | rerun | rerun-failed   (the owner)
+//	GET  /<repo>/actions/runs/<id>/artifacts/<artifact id>   (actions_artifacts.go)
 
 const (
 	// actionsPageSize is the number of runs one page lists.
@@ -186,7 +187,10 @@ type RunPage struct {
 	Summaries []JobSummaries
 	// SummariesMore says that some summaries are not shown (the page budget).
 	SummariesMore bool
-	Active        bool
+	// Artifacts are those of the run; only the full page has them, nil when
+	// the visitor cannot list them or there is none.
+	Artifacts *ArtifactsView
+	Active    bool
 	// detail is what the page was built from.
 	detail ports.RunDetail
 	// Forms are the owner's actions; nil/empty when the visitor cannot.
@@ -313,6 +317,7 @@ func (s *Server) run(ctx context.Context, r *http.Request) (templ.Component, int
 	if p.Summaries, p.SummariesMore, err = s.jobSummaries(ctx, d, p.detail.Run, p.detail.Jobs, p.Attempt == p.Latest, maxSummaryPageBytes); err != nil {
 		return nil, 0, err
 	}
+	p.Artifacts = s.runArtifacts(ctx, d.repo.Name, p)
 	l := s.repoLayout(ctx, d, "actions")
 	l.Title = "run " + p.ID + " · " + d.name() + " · " + s.instance
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=run&n="+p.ID)

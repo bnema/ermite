@@ -234,8 +234,10 @@ func humanSize(n int64) string {
 		return itoa(int(n)) + " B"
 	case n < 1<<20:
 		return fmt.Sprintf("%.1f KiB", float64(n)/1024)
+	case n < 1<<30:
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
 	}
-	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30))
 }
 
 // recentActions is the newest runs for the rail, as the caller of the request

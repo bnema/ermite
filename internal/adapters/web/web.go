@@ -58,6 +58,10 @@ type Config struct {
 	// commits and merge requests. Without it there are no such pages. Leave it
 	// unset rather than assigning a typed nil pointer.
 	Runs ports.RunService
+	// Artifacts serves the artifacts of the runs: a section of the run page,
+	// their download and their deletion. It needs Runs. Without it there is
+	// neither. Leave it unset rather than assigning a typed nil pointer.
+	Artifacts ports.ArtifactService
 	// Events is the source of the event stream behind /-/events. Without
 	// it the pages are not live and the route answers 404. Leave it unset
 	// rather than assigning a typed nil pointer.
@@ -192,6 +196,10 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("POST /{repo}/actions/runs/{id}/cancel", s.ciAction(s.runCancel))
 		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun", s.ciAction(s.runRerun(false)))
 		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun-failed", s.ciAction(s.runRerun(true)))
+		if s.cfg.Artifacts != nil {
+			mux.HandleFunc("GET /{repo}/actions/runs/{id}/artifacts/{artifact}", s.artifactDownload)
+			mux.HandleFunc("POST /{repo}/actions/runs/{id}/artifacts/{artifact}/delete", s.ciAction(s.artifactDelete))
+		}
 	}
 	mux.HandleFunc(catchAll, s.page(s.notFound))
 	return mux

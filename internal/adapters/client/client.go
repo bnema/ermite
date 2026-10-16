@@ -70,6 +70,11 @@ func (c *Client) Runs() ermiteconnect.RunServiceClient {
 	return ermiteconnect.NewRunServiceClient(c.http, c.base, c.opts...)
 }
 
+// Artifacts returns the ArtifactService client.
+func (c *Client) Artifacts() ermiteconnect.ArtifactServiceClient {
+	return ermiteconnect.NewArtifactServiceClient(c.http, c.base, c.opts...)
+}
+
 // Tokens returns the TokenService client.
 func (c *Client) Tokens() ermiteconnect.TokenServiceClient {
 	return ermiteconnect.NewTokenServiceClient(c.http, c.base, c.opts...)

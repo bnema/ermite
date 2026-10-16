@@ -319,3 +319,44 @@ func TestSecretsKey(t *testing.T) {
 		assert.NotContains(t, err.Error(), bad, "the value is never repeated: "+name)
 	}
 }
+
+func TestCIArtifacts(t *testing.T) {
+	c, err := config.Load(lookup(valid(nil)))
+	require.NoError(t, err)
+	assert.True(t, c.CIArtifacts, "on by default")
+	assert.Zero(t, c.CIArtifactRetention, "unset: the defaults are left to the CI use case")
+	assert.Zero(t, c.CIArtifactQuota)
+	assert.Zero(t, c.CIArtifactMax)
+
+	c, err = config.Load(lookup(valid(map[string]string{
+		config.EnvCIArtifacts: "0", config.EnvCIArtifactRetention: "30d",
+		config.EnvCIArtifactQuota: "20GiB", config.EnvCIArtifactMax: "512 MiB",
+	})))
+	require.NoError(t, err)
+	assert.False(t, c.CIArtifacts)
+	assert.Equal(t, 30*24*time.Hour, c.CIArtifactRetention)
+	assert.EqualValues(t, 20<<30, c.CIArtifactQuota)
+	assert.EqualValues(t, 512<<20, c.CIArtifactMax)
+
+	for in, want := range map[string]int64{"1048576": 1 << 20, "2048KiB": 2 << 20, "1TiB": 1 << 40, "3 GiB": 3 << 30, "5368709120B": 5 << 30} {
+		c, err := config.Load(lookup(valid(map[string]string{config.EnvCIArtifactMax: in})))
+		require.NoError(t, err, in)
+		assert.Equal(t, want, c.CIArtifactMax, in)
+	}
+
+	for env, in := range map[string]string{
+		config.EnvCIArtifacts:         "maybe",
+		config.EnvCIArtifactRetention: "12h",
+		config.EnvCIArtifactQuota:     "10GB",
+		config.EnvCIArtifactMax:       "1KiB",
+	} {
+		_, err := config.Load(lookup(valid(map[string]string{env: in})))
+		var ce *config.Error
+		require.True(t, errors.As(err, &ce), env)
+		assert.Contains(t, ce.Problems[0], env)
+	}
+	for _, in := range []string{"0", "-1GiB", "2048TiB", "9223372036854775807GiB", "GiB"} {
+		_, err := config.Load(lookup(valid(map[string]string{config.EnvCIArtifactQuota: in})))
+		require.Error(t, err, in)
+	}
+}

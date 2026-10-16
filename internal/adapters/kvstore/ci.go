@@ -875,7 +875,7 @@ func (c *CI) runKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoNam
 }
 
 // ciKeys lists every key of the snapshot that belongs to the repository's CI
-// runs, checks and numbers.
+// runs, checks, numbers and artifacts.
 func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]byte {
 	c := &CI{}
 	var keys [][]byte
@@ -886,6 +886,7 @@ func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]by
 		keys = append(keys, slices.Clone(key))
 	}
 	keys = append(keys, repoReaderKeys(ctx, snap, repo)...)
+	keys = append(keys, artifactKeys(ctx, snap, repo)...)
 	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/", concurPrefix + repo.String() + "/", concurMarkPrefixAll + repo.String() + "/", refTipsPrefix(repo)} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))

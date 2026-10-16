@@ -86,6 +86,9 @@ templ RunDetail(l Layout, p RunPage) {
 		<div id="run-body">
 			@RunBody(p)
 		</div>
+		if p.Artifacts != nil {
+			@RunArtifacts(*p.Artifacts)
+		}
 		@RunSummaries(p.Summaries, p.SummariesMore)
 	}
 }
@@ -199,6 +202,47 @@ templ JobAnnotations(anns []AnnotationView, more bool) {
 			<h3>Annotations <span class="count">{ itoa(len(anns)) }</span></h3>
 			@AnnotationList(anns, more, true)
 		}
+	</section>
+}
+
+// RunArtifacts is the artifacts of a run, with the space the artifacts of
+// the repository use. Names come from the workflow and are text.
+templ RunArtifacts(a ArtifactsView) {
+	<section class="artifacts" aria-labelledby="run-artifacts">
+		<h3 id="run-artifacts">Artifacts <span class="count">{ itoa(len(a.Rows)) }</span></h3>
+		<table class="list" aria-label="Artifacts">
+			<thead>
+				<tr><th class="c-name">name</th><th class="c-sub">size</th><th class="c-who">job</th><th class="c-when">expires</th><th></th></tr>
+			</thead>
+			<tbody>
+				for _, r := range a.Rows {
+					<tr>
+						<td class="c-name"><a href={ templ.SafeURL(r.Href) } download>{ r.Name }</a></td>
+						<td class="c-sub dim">{ r.Size }</td>
+						<td class="c-who">
+							if r.JobHref != "" {
+								<a href={ templ.SafeURL(r.JobHref) }>{ r.Job }</a>
+							} else {
+								<span class="dim">{ r.Job }</span>
+							}
+						</td>
+						<td class="c-when dim">
+							if r.ExpiresAt != "" {
+								<time datetime={ r.ExpiresAt }>{ r.Expires }</time>
+							} else {
+								{ r.Expires }
+							}
+						</td>
+						<td>
+							if r.DeleteAction != "" {
+								<form method="post" action={ templ.SafeURL(r.DeleteAction) }><button type="submit" class="btn" aria-label={ "Delete " + r.Name }>Delete</button></form>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+		<p class="mute">{ a.Usage }</p>
 	</section>
 }
 

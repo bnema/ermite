@@ -16,6 +16,7 @@ import (
 
 	"github.com/bnema/zerowrap"
 
+	"bnema.dev/ermite/internal/adapters/ciartifacts"
 	"bnema.dev/ermite/internal/adapters/cilogs"
 	"bnema.dev/ermite/internal/adapters/cisummaries"
 	"bnema.dev/ermite/internal/adapters/ermitegit"
@@ -277,6 +278,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Workflows: opts.workflows(githubraw.New(githubraw.Config{})),
 		OIDC:      f.OIDC,
 	}
+	artifacts(&ciCfg, cfg, store)
 	f.pullRequests(&ciCfg, store, git, committer)
 	if opts.ci != nil {
 		opts.ci(&ciCfg)
@@ -338,6 +340,11 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if f.OIDC != nil {
 		apiOIDC = f.OIDC
 	}
+	var jobArtifacts ports.JobArtifactService
+	var artifacts ports.ArtifactService
+	if cfg.CIArtifacts {
+		jobArtifacts, artifacts = f.CI, f.CI
+	}
 	f.API = rpc.New(rpc.Config{
 		Auth:           f.Auth,
 		Repos:          f.Repos,
@@ -354,6 +361,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Variables:      f.Settings,
 		Environments:   f.Settings,
 		OIDCKeys:       apiOIDC,
+		JobArtifacts:   jobArtifacts,
+		Artifacts:      artifacts,
 		Version:        serverVersion(),
 		TrustedProxies: cfg.TrustedProxies,
 		Limiter:        limiter,
@@ -471,6 +480,17 @@ func (f *forge) Close(ctx context.Context) {
 		}
 		f.store = nil
 	}
+}
+
+// artifacts gives the CI the stores and limits of the artifacts (CI-4 D3):
+// records in the kv store, contents under ci/artifacts. ERMITE_CI_ARTIFACTS=0
+// gives none, and the API then serves no artifact service.
+func artifacts(ci *usecase.CIConfig, cfg config.Config, store *kvstore.Store) {
+	if !cfg.CIArtifacts {
+		return
+	}
+	ci.Artifacts, ci.ArtifactFiles = store.Artifacts(), ciartifacts.New(ciartifacts.Dir(cfg.DataDir))
+	ci.ArtifactLimits = ports.ArtifactLimits{Retention: cfg.CIArtifactRetention, Quota: cfg.CIArtifactQuota, MaxSize: cfg.CIArtifactMax}
 }
 
 // pullRequests gives the CI the merge requests, the refs/pull refs and the

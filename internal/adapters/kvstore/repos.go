@@ -123,7 +123,7 @@ const deleteTries = 32
 
 // Delete removes the repository and everything keyed to it: its merge
 // requests, their comments and read positions, and its number sequence, and
-// its CI runs, jobs, checks and run numbers. The
+// its CI runs, jobs, checks, run numbers and artifacts. The
 // Git data is moved to the trash by the caller; the merge requests are not
 // kept anywhere, like the repository metadata, so a repository created again
 // under the same name starts clean, with its numbers starting at 1. A missing

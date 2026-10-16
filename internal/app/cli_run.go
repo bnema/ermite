@@ -178,11 +178,13 @@ func toJSONRunJob(j *ermite.RunJob) jsonRunJob {
 func newRunCmd(env *cliEnv) *cobra.Command {
 	run := &cobra.Command{
 		Use:   "run",
-		Short: "List, read, watch, cancel and re-run CI runs",
+		Short: "List, read, watch, cancel and re-run CI runs, and download their artifacts",
 		Long: "Work with the CI runs of a repository (the workflows that .github/workflows start on a push).\n" +
-			"Reading needs the access of reading the repository; cancel and rerun need the ci:write scope.",
+			"Reading needs the access of reading the repository; cancel and rerun need the ci:write scope.\n" +
+			"Artifacts are never served anonymously, even for a public repository: they need a token.",
 	}
-	run.AddCommand(newRunListCmd(env), newRunViewCmd(env), newRunWatchCmd(env), newRunCancelCmd(env), newRunRerunCmd(env))
+	run.AddCommand(newRunListCmd(env), newRunViewCmd(env), newRunWatchCmd(env), newRunCancelCmd(env), newRunRerunCmd(env),
+		newRunArtifactsCmd(env), newRunDownloadCmd(env))
 	return run
 }
 

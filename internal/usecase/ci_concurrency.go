@@ -679,6 +679,7 @@ func (rs *runState) releaseEnded(ctx context.Context, changed []int, runDone boo
 		if !j.Ended() {
 			continue
 		}
+		c.artifactsJobEnded(ctx, j)
 		e := domain.CIConcurrencyEntry{RunID: j.RunID, Attempt: j.RunAttempt, JobID: j.ID}
 		groups := []string{}
 		if j.Concurrency.Group != "" && !j.Concurrency.FromRun {

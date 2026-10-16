@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of the CI artifacts (artifacts v4,
+// CI-4 D3). The contents are not stored here: they are files under
+// $ERMITE_DATA_DIR/ci/artifacts.
+
+syntax = "proto3";
+
+package ermite.storage;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// CIArtifactState is where an artifact is in its upload.
+enum CIArtifactState {
+  CI_ARTIFACT_STATE_UNSPECIFIED = 0;
+  // Created; its blocks are being uploaded.
+  CI_ARTIFACT_STATE_PENDING = 1;
+  // Its content is assembled from the blocks; not visible yet.
+  CI_ARTIFACT_STATE_COMMITTED = 2;
+  // Finalized: visible to the run and its owners.
+  CI_ARTIFACT_STATE_FINAL = 3;
+}
+
+// CIArtifact is stored under "artifact/<repo>/<run:020d>/<id:020d>", with the
+// index "artifactid/<id:020d>" (value "<repo>/<run:020d>").
+message CIArtifact {
+  int64 id = 1;
+  string repo = 2;
+  int64 run_id = 3;
+  // attempt: the attempt of the run whose job uploads it.
+  int32 attempt = 4;
+  string job_id = 5;
+  // assignment: the hash of the job token of the assignment that uploads it;
+  // only that assignment may change a pending artifact.
+  bytes assignment = 6;
+  string name = 7;
+  string media_type = 8;
+  int64 size = 9;
+  // digest: "sha256:<hex>", set from the commit.
+  string digest = 10;
+  CIArtifactState state = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp expires_at = 13;
+  // charged: the bytes counted against the quota of the repository (the
+  // staged blocks while pending, the content once committed).
+  int64 charged = 14;
+  // list_digest: the SHA-256 of the block list of the commit, to recognize a
+  // repeated commit.
+  bytes list_digest = 15;
+}
+
+// CIArtifactBlock is stored under "artifactblk/<artifact:020d>/<hex(block id)>":
+// a staged block of a pending artifact.
+message CIArtifactBlock {
+  int64 size = 1;
+  // file: the name of the block's file in the staging directory of the
+  // artifact (hexadecimal characters and a dot only).
+  string file = 2;
+}
+
+// CIArtifactUsage is stored under "artifactuse/<repo>": the bytes charged to
+// the artifacts of the repository, pending uploads included. Every write of
+// the artifacts of the repository rewrites it under its version, so that two
+// writes never both decide on the same state.
+message CIArtifactUsage {
+  int64 used = 1;
+}

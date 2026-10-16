@@ -25,9 +25,10 @@ import (
 // bounded: a diff has its own limits and blobs are streamed.
 const MaxRequestBytes = 1 << 20
 
-// RunnerMaxRequestBytes bounds the size of a request message of RunnerService:
-// a job summary of exactly 1 MiB (UploadSummary) must be accepted, so the limit
-// leaves room for the envelope (job id, step number, framing).
+// RunnerMaxRequestBytes bounds the size of a request message of RunnerService
+// and JobArtifactService: a job summary of exactly 1 MiB (UploadSummary) and a
+// block message with 1 MiB of data must be accepted, so the limit leaves room
+// for the envelope (job id, step number, block id, framing).
 const RunnerMaxRequestBytes = MaxRequestBytes + 64<<10
 
 // Features are the optional capabilities of the contract that this server
@@ -37,6 +38,7 @@ const RunnerMaxRequestBytes = MaxRequestBytes + 64<<10
 var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
+// FeatureCIArtifacts (artifact.go) when the artifact services are served.
 const FeaturePasskeys = "passkeys"
 
 // FeatureCIOIDC is listed by GetVersion when the server issues OIDC ID tokens
@@ -85,6 +87,11 @@ type Config struct {
 	// issues none (GetVersion then does not list "ci.oidc"). Same rule as
 	// Sessions about typed nil pointers.
 	OIDCKeys ports.OIDCKeyService
+	// JobArtifacts and Artifacts serve JobArtifactService and ArtifactService,
+	// and GetVersion lists "ci.artifacts", when both are set and Runner is.
+	// Same rule as Sessions about typed nil pointers.
+	JobArtifacts ports.JobArtifactService
+	Artifacts    ports.ArtifactService
 }
 
 // API is the set of Connect handlers of the contract.
@@ -119,6 +126,10 @@ func New(cfg Config) *API {
 	if settings {
 		features = append(features, FeatureCISecrets)
 	}
+	artifacts := cfg.JobArtifacts != nil && cfg.Artifacts != nil && cfg.Runner != nil
+	if artifacts {
+		features = append(features, FeatureCIArtifacts)
+	}
 	if cfg.OIDCKeys != nil {
 		features = append(features, FeatureCIOIDC)
 	}
@@ -134,7 +145,13 @@ func New(cfg Config) *API {
 	}
 	if cfg.Runner != nil {
 		runnerOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))
-		mux.Handle(ermiteconnect.NewRunnerServiceHandler(&runnerService{runners: cfg.Runner, limiter: cfg.Limiter}, runnerOpts...))
+		runners := &runnerService{runners: cfg.Runner, limiter: cfg.Limiter}
+		mux.Handle(ermiteconnect.NewRunnerServiceHandler(runners, runnerOpts...))
+		if artifacts {
+			// A block message carries up to 1 MiB of data, like a summary.
+			mux.Handle(ermiteconnect.NewJobArtifactServiceHandler(&jobArtifactService{artifacts: cfg.JobArtifacts, runner: runners}, runnerOpts...))
+			mux.Handle(ermiteconnect.NewArtifactServiceHandler(&artifactService{artifacts: cfg.Artifacts}, opts...))
+		}
 	}
 	if cfg.Runs != nil {
 		mux.Handle(ermiteconnect.NewRunServiceHandler(&runService{runs: cfg.Runs}, opts...))

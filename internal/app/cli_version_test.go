@@ -17,7 +17,7 @@ import (
 )
 
 // allFeatures are the features this client uses.
-var allFeatures = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "token.branch_prefixes", "ci.runs", "ci.runners", "ci.secrets", "ci.dispatch", "passkeys"}
+var allFeatures = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "token.branch_prefixes", "ci.runs", "ci.runners", "ci.secrets", "ci.dispatch", "ci.artifacts", "passkeys"}
 
 // Every feature the client uses needs a sentence for the version warning.
 func TestEveryUsedFeatureExplainsWhatBreaks(t *testing.T) {
@@ -45,15 +45,15 @@ func TestVersionWithServer(t *testing.T) {
 	f := versionFake(allFeatures...)
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "version").ok(t)
-	assert.Equal(t, "client    ermite v0.0.1\nserver    v0.4.0 at "+url+"\nfeatures  repo.update, events.resume, merge_requests, merge_requests.delete_branch, signing_key, session, token.branch_prefixes, ci.runs, ci.runners, ci.secrets, ci.dispatch, passkeys\n", res.stdout)
+	assert.Equal(t, "client    ermite v0.0.1\nserver    v0.4.0 at "+url+"\nfeatures  repo.update, events.resume, merge_requests, merge_requests.delete_branch, signing_key, session, token.branch_prefixes, ci.runs, ci.runners, ci.secrets, ci.dispatch, ci.artifacts, passkeys\n", res.stdout)
 	assert.Empty(t, res.stderr, "no warning when every feature is there")
 
 	res = runCLI(t, envFor(url), "", "version", "--json").ok(t)
-	assert.JSONEq(t, `{"client":{"version":"v0.0.1"},"server":{"url":"`+url+`","version":"v0.4.0","features":["repo.update","events.resume","merge_requests","merge_requests.delete_branch","signing_key","session","token.branch_prefixes","ci.runs","ci.runners","ci.secrets","ci.dispatch","passkeys"],"missing_features":[]}}`, res.stdout)
+	assert.JSONEq(t, `{"client":{"version":"v0.0.1"},"server":{"url":"`+url+`","version":"v0.4.0","features":["repo.update","events.resume","merge_requests","merge_requests.delete_branch","signing_key","session","token.branch_prefixes","ci.runs","ci.runners","ci.secrets","ci.dispatch","ci.artifacts","passkeys"],"missing_features":[]}}`, res.stdout)
 }
 
 func TestVersionWarnsAboutMissingFeatures(t *testing.T) {
-	f := versionFake("repo.update", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "token.branch_prefixes", "ci.runs", "ci.runners", "ci.secrets", "ci.dispatch", "passkeys")
+	f := versionFake("repo.update", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "token.branch_prefixes", "ci.runs", "ci.runners", "ci.secrets", "ci.dispatch", "ci.artifacts", "passkeys")
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "version").ok(t)
 	assert.Contains(t, res.stdout, "v0.4.0")
@@ -61,7 +61,7 @@ func TestVersionWarnsAboutMissingFeatures(t *testing.T) {
 	assert.NotContains(t, res.stderr, "repo.update")
 
 	res = runCLI(t, envFor(url), "", "version", "--json").ok(t)
-	assert.JSONEq(t, `{"client":{"version":"v0.0.1"},"server":{"url":"`+url+`","version":"v0.4.0","features":["repo.update","merge_requests","merge_requests.delete_branch","signing_key","session","token.branch_prefixes","ci.runs","ci.runners","ci.secrets","ci.dispatch","passkeys"],"missing_features":["events.resume"]}}`, res.stdout)
+	assert.JSONEq(t, `{"client":{"version":"v0.0.1"},"server":{"url":"`+url+`","version":"v0.4.0","features":["repo.update","merge_requests","merge_requests.delete_branch","signing_key","session","token.branch_prefixes","ci.runs","ci.runners","ci.secrets","ci.dispatch","ci.artifacts","passkeys"],"missing_features":["events.resume"]}}`, res.stdout)
 	assert.Contains(t, res.stderr, "events.resume", "the warning also goes to stderr with --json")
 
 	f = versionFake()

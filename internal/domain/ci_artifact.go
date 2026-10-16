@@ -1,0 +1,175 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package domain
+
+import (
+	"fmt"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
+)
+
+// Limits and defaults of the CI artifacts (artifacts v4, CI-4 D3).
+const (
+	// CIArtifactMaxNameLen is the longest artifact name, in characters.
+	CIArtifactMaxNameLen = 256
+	// CIArtifactMaxMediaTypeLen is the longest media type of an artifact.
+	CIArtifactMaxMediaTypeLen = 255
+	// CIArtifactMaxBlockIDLen is the longest block id (Azure's, decoded).
+	CIArtifactMaxBlockIDLen = 64
+	// CIArtifactMaxBlocks bounds the blocks of a commit and the blocks staged
+	// for one artifact.
+	CIArtifactMaxBlocks = 50_000
+	// CIArtifactMaxPendingPerJob bounds the unfinished uploads of a job, and
+	// CIArtifactMaxPerRun the artifacts of a run, unfinished ones included
+	// (the toolkit uploads one artifact at a time).
+	CIArtifactMaxPendingPerJob = 32
+	CIArtifactMaxPerRun        = 1000
+	// CIArtifactChunk is the largest piece of data of one message, both ways.
+	CIArtifactChunk = 1 << 20
+	// CIArtifactMinRetention is the shortest retention of an artifact.
+	CIArtifactMinRetention = 24 * time.Hour
+	// CIArtifactPendingMax is how long an upload may stay unfinished before the
+	// sweep deletes it, whatever its job does.
+	CIArtifactPendingMax = 24 * time.Hour
+	// DefaultCIArtifactQuota is the space the artifacts of one repository may
+	// use, uploads in progress included.
+	DefaultCIArtifactQuota = 10 << 30
+	// DefaultCIArtifactMaxSize is the largest artifact.
+	DefaultCIArtifactMaxSize = 5 << 30
+	// CIArtifactZip is the media type of an archive.
+	CIArtifactZip = "application/zip"
+)
+
+// CIArtifactState is where an artifact is in its upload.
+type CIArtifactState string
+
+const (
+	// CIArtifactPending is created, its blocks being uploaded.
+	CIArtifactPending CIArtifactState = "pending"
+	// CIArtifactCommitted has its content; not visible yet.
+	CIArtifactCommitted CIArtifactState = "committed"
+	// CIArtifactFinal is finalized: visible to the run and its owners.
+	CIArtifactFinal CIArtifactState = "final"
+)
+
+// CIArtifact is a file that a job of a run uploaded with
+// actions/upload-artifact. It belongs to the run: every job of the run, in any
+// attempt, sees the finalized ones.
+type CIArtifact struct {
+	// ID is global, monotonic and never reused.
+	ID    int64
+	Repo  RepoName
+	RunID int64
+	// Attempt is the attempt of the run of the job that uploads it.
+	Attempt int32
+	JobID   string
+	// Assignment is the hash of the job token of the assignment that uploads
+	// it: a pending artifact belongs to that assignment only.
+	Assignment TokenHash
+	Name       string
+	MediaType  string
+	Size       int64
+	// Digest is "sha256:<hex>" of the content, known from the commit.
+	Digest    string
+	State     CIArtifactState
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	// Charged is what the artifact counts against the quota of its
+	// repository: the blocks staged while pending, then the content.
+	Charged int64
+	// ListDigest identifies the block list of the commit.
+	ListDigest []byte
+	// Version is the store version of the record; 0 for a new one.
+	Version uint64
+}
+
+// Final reports whether the artifact is finalized.
+func (a CIArtifact) Final() bool { return a.State == CIArtifactFinal }
+
+// Visible reports whether the artifact is finalized and not expired at now.
+func (a CIArtifact) Visible(now time.Time) bool { return a.Final() && now.Before(a.ExpiresAt) }
+
+// UploadedBy reports whether the job, at its run attempt, uploads or uploaded
+// the artifact. It says nothing of the assignment.
+func (a CIArtifact) UploadedBy(j CIJob) bool {
+	return a.RunID == j.RunID && a.Attempt == j.RunAttempt && a.JobID == j.ID
+}
+
+// PendingOf reports whether the artifact is an unfinished upload of the
+// current assignment of the job.
+func (a CIArtifact) PendingOf(j CIJob) bool {
+	return !a.Final() && a.UploadedBy(j) && a.Assignment == j.TokenHash && j.HasToken()
+}
+
+// ParseArtifactName checks an artifact name: 1 to 256 characters of valid
+// UTF-8, without control characters, '"', ':', '<', '>', '|', '*', '?', '\'
+// or '/' (the characters @actions/artifact refuses). A name is never used as a
+// path: these rules are the toolkit's.
+func ParseArtifactName(name string) error {
+	if name == "" || !utf8.ValidString(name) || utf8.RuneCountInString(name) > CIArtifactMaxNameLen {
+		return fmt.Errorf("%w: an artifact name has 1 to %d characters of valid UTF-8", ErrInvalid, CIArtifactMaxNameLen)
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) || strings.ContainsRune(`":<>|*?\/`, r) {
+			return fmt.Errorf("%w: an artifact name has no control character and none of \" : < > | * ? \\ /", ErrInvalid)
+		}
+	}
+	return nil
+}
+
+// ParseArtifactMediaType checks the media type of an artifact uploaded as is
+// and returns it, CIArtifactZip for an empty one: at most 255 printable ASCII
+// characters.
+func ParseArtifactMediaType(mt string) (string, error) {
+	if mt == "" {
+		return CIArtifactZip, nil
+	}
+	if len(mt) > CIArtifactMaxMediaTypeLen {
+		return "", fmt.Errorf("%w: a media type has at most %d characters", ErrInvalid, CIArtifactMaxMediaTypeLen)
+	}
+	for i := 0; i < len(mt); i++ {
+		if mt[i] < 0x20 || mt[i] > 0x7e {
+			return "", fmt.Errorf("%w: a media type has printable ASCII characters only", ErrInvalid)
+		}
+	}
+	return mt, nil
+}
+
+// ParseArtifactDigest checks a digest given by an uploader: "sha256:" and 64
+// hexadecimal characters, returned in lower case. Empty is no digest.
+func ParseArtifactDigest(d string) (string, error) {
+	if d == "" {
+		return "", nil
+	}
+	hex, ok := strings.CutPrefix(strings.ToLower(d), "sha256:")
+	if !ok || len(hex) != 64 || strings.Trim(hex, "0123456789abcdef") != "" {
+		return "", fmt.Errorf("%w: a digest is \"sha256:\" and 64 hexadecimal characters", ErrInvalid)
+	}
+	return "sha256:" + hex, nil
+}
+
+// CheckArtifactBlockID checks a block id: 1 to 64 bytes.
+func CheckArtifactBlockID(id []byte) error {
+	if len(id) == 0 || len(id) > CIArtifactMaxBlockIDLen {
+		return fmt.Errorf("%w: a block id has 1 to %d bytes", ErrInvalid, CIArtifactMaxBlockIDLen)
+	}
+	return nil
+}
+
+// ArtifactExpiry is the expiry an artifact gets: the one asked for (zero:
+// none) kept between one day from now and the longest retention, now plus the
+// retention without one. A retention below one day counts as one day.
+func ArtifactExpiry(asked, now time.Time, retention time.Duration) time.Time {
+	retention = max(retention, CIArtifactMinRetention)
+	switch {
+	case asked.IsZero():
+		return now.Add(retention)
+	case asked.Before(now.Add(CIArtifactMinRetention)):
+		return now.Add(CIArtifactMinRetention)
+	case asked.After(now.Add(retention)):
+		return now.Add(retention)
+	}
+	return asked
+}

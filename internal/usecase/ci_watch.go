@@ -250,7 +250,8 @@ func (c *CI) checkQueue(ctx context.Context) {
 }
 
 // sweep removes the runs older than the retention, and the logs of runs that
-// no longer exist (a repository deleted while the server was down). Every
+// no longer exist (a repository deleted while the server was down), then
+// sweeps the artifacts (expired, of removed runs, unfinished). Every
 // failure is logged and the next step still runs: a log directory that cannot
 // be removed is tried again at the next sweep.
 func (c *CI) sweep(ctx context.Context) {
@@ -274,6 +275,7 @@ func (c *CI) sweep(ctx context.Context) {
 	}
 	c.removeOrphans(ctx, "logs", "log directories", c.cfg.Logs.RunIDs, c.cfg.Logs.RemoveRuns)
 	c.removeOrphans(ctx, "summaries", "summary directories", c.cfg.Summaries.RunIDs, c.cfg.Summaries.RemoveRuns)
+	c.sweepArtifacts(ctx)
 }
 
 // removeOrphans deletes what a file store (logs, summaries) holds for runs that
@@ -314,11 +316,15 @@ func (c *CI) ForgetRepo(repo domain.RepoName) {
 	c.sched.forgetDirty(repo)
 }
 
-// RemoveLogs deletes the logs and the summaries of runs of a repository that
-// was deleted.
+// RemoveLogs deletes the logs, the summaries and the artifact files of runs of
+// a repository that was deleted (its artifact records went with it).
 func (c *CI) RemoveLogs(ctx context.Context, runIDs []int64) error {
 	for _, id := range runIDs {
 		c.locks.Delete(id)
 	}
-	return errors.Join(c.cfg.Logs.RemoveRuns(ctx, runIDs), c.cfg.Summaries.RemoveRuns(ctx, runIDs))
+	err := errors.Join(c.cfg.Logs.RemoveRuns(ctx, runIDs), c.cfg.Summaries.RemoveRuns(ctx, runIDs))
+	if c.artifactsOn() {
+		err = errors.Join(err, c.cfg.ArtifactFiles.RemoveRuns(ctx, runIDs))
+	}
+	return err
 }

@@ -35,11 +35,18 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 	if f.Passkeys != nil {
 		passkeys = webPasskeys{f.Passkeys}
 	}
+	// Without artifacts (ERMITE_CI_ARTIFACTS=0) the run page has no section
+	// for them and no download route.
+	var artifacts ports.ArtifactService
+	if cfg.CIArtifacts {
+		artifacts = f.CI
+	}
 	return web.New(web.Config{
 		Repos:         f.Repos,
 		Browse:        f.Browse,
 		MergeRequests: f.MergeRequests,
 		Runs:          f.CI,
+		Artifacts:     artifacts,
 		Events:        f.EventLog,
 		Owner:         cfg.Owner,
 		PublicURL:     cfg.PublicURL,
