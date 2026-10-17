@@ -46,10 +46,11 @@
       body().dispatchEvent(new CustomEvent('k-' + name, { bubbles: false }));
     },
 
-    // Row cursor: j / k.
+    // Row cursor: j / k. In the side panel they move the focus between its
+    // controls instead.
     move(d) {
       if ($('dialog[open]')) return;
-      if (window.ermiteMR?.stepFiles(d)) return;
+      if (window.ermiteMR?.stepFiles(d) || window.ermiteRail.step(d)) return;
       const rows = visibleRows();
       if (!rows.length) {
         scrollBy(0, d * 180);
@@ -74,6 +75,16 @@
     },
     open() {
       if (!$('dialog[open]')) $('[data-cursor] a')?.click();
+    },
+    // l / h: into the side panel (the current file of a merge request, else
+    // its main action, else its first control) and back to the content.
+    // Enter then activates the control.
+    rail(into) {
+      if ($('dialog[open]')) return;
+      if (into && window.ermiteMR?.focusFiles()) return flash('files · j k move · enter open · h back');
+      if (!into && window.ermiteMR?.leaveFiles()) return;
+      const msg = into ? window.ermiteRail.enter() : window.ermiteRail.leave();
+      if (msg) flash(msg);
     },
     // openFile opens a file of the diff the table of contents links to.
     openFile(id) {
@@ -215,9 +226,63 @@
   };
   window.ermite = ermite;
 
+  // The side panel (aside.rail) by keyboard: l enters it on its main action
+  // (the primary button) or its first control, j / k step between its shown
+  // controls (not hidden, not in a closed <details>), h leaves it for <main>.
+  // Each returns the hint to flash, if any. Self-contained: jstest/rail.test.mjs
+  // evaluates this block alone.
+  window.ermiteRail = (() => {
+    const CONTROLS = ['a', 'button', 'select', 'summary', 'input', 'textarea'];
+    const reachable = (e) => {
+      if (e.disabled || e.closest('[hidden]')) return false;
+      if (e.tagName === 'A' && !e.hasAttribute('href')) return false;
+      if (e.tagName === 'INPUT' && e.getAttribute('type') === 'hidden') return false;
+      return !e.getClientRects || e.getClientRects().length > 0;
+    };
+    const rail = () => document.querySelector('.rail');
+    // items walks the panel in document order.
+    const items = (r) => {
+      const out = [];
+      const walk = (e) => {
+        for (const c of e.children) {
+          if (CONTROLS.includes(c.tagName.toLowerCase())) { if (reachable(c)) out.push(c); }
+          else walk(c);
+        }
+      };
+      walk(r);
+      return out;
+    };
+    const inside = (r) => r && r.contains(document.activeElement);
+    const go = (e) => { e.focus(); e.scrollIntoView({ block: 'nearest' }); };
+    return {
+      enter() {
+        const r = rail();
+        if (!r) return 'no side panel on this page';
+        const list = items(r);
+        const target = list.find((e) => e.matches('.btn.primary')) || list[0];
+        if (!target) return 'nothing to act on in the side panel';
+        go(target);
+        return 'side panel · j k move · enter act · h back';
+      },
+      leave() {
+        if (inside(rail())) document.getElementById('main')?.focus({ preventScroll: true });
+      },
+      // step moves d controls within the panel; false when the focus is not in it.
+      step(d) {
+        const r = rail();
+        if (!inside(r)) return false;
+        const list = items(r);
+        const i = list.indexOf(document.activeElement);
+        const next = list[Math.max(0, Math.min(list.length - 1, i + d))];
+        if (next) go(next);
+        return true;
+      },
+    };
+  })();
+
   // 1. Keys.
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
-    s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', d: 'split', u: 'unified', x: 'collapse', Enter: 'open', Escape: 'esc',
+    s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', Enter: 'open', Escape: 'esc',
     // the merge request page (mr.js): the merge menu, mark read
     M: 'merge', R: 'read' };
   // "g t" is the key "t": the tabs have one event each.
@@ -225,7 +290,7 @@
   let pending = 0;
   let pendingTimer = 0;
   addEventListener('keydown', (e) => {
-    const typing = e.target.closest('input, textarea, select, [contenteditable]');
+    const typing = e.target.closest('input:not([type=checkbox], [type=radio], [type=submit], [type=button]), textarea, select, [contenteditable]');
     // ctrl k / cmd k opens the palette; in a field only cmd k, so that the
     // field keeps ctrl k (kill to end of line on macOS).
     if ((e.metaKey || (e.ctrlKey && !typing)) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') { e.preventDefault(); pending = 0; return ermite.fire('cmd'); }

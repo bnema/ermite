@@ -224,6 +224,13 @@
 </div>
 <div>
 <dt>
+<kbd>l</kbd>
+<kbd>h</kbd>
+</dt>
+<dd>into the side panel (on a merge request, its files) / back to the content; there j k move between its controls</dd>
+</div>
+<div>
+<dt>
 <kbd>g g</kbd>
 <kbd>G</kbd>
 </dt>
@@ -391,6 +398,8 @@
          k-top from:body -> ermite.edge(false);
          k-bottom from:body -> ermite.edge(true);
          k-open from:body -> ermite.open();
+         k-right from:body -> ermite.rail(true);
+         k-left from:body -> ermite.rail(false);
          k-esc from:body -> ermite.closeDialogs();
          k-help from:body -> ermite.dialog('panel-help');
          k-refs from:body -> ermite.dialog('panel-refs', 'refs-filter');
