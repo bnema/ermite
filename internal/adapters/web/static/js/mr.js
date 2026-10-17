@@ -9,8 +9,9 @@
 //     on its button, 1-9 pick a mode, D toggles the branch deletion, Enter
 //     submits (the browser does it: the focus is on the button), Esc closes.
 //     R marks the head read. Nothing merges on one key.
-//  3. g f puts the focus in the list of files; j / k move in it, Enter opens
-//     the file, Esc goes back to the diff.
+//  3. g f puts the focus in the list of files (opening it when folded); j / k
+//     move in it, Enter opens the file, Esc goes back to the diff. The button
+//     of its header folds the list, and the choice is remembered.
 //
 // Nothing runs on a page without #diffs[data-mr]. window.ermiteMR.core is pure
 // (jstest/mr.test.mjs).
@@ -196,6 +197,7 @@ window.ermiteMR = (() => {
   // The list of files by keyboard: g f focuses the current file.
   const links = () => $$('.r-files .files > li:not([hidden]) > a');
   function focusFiles() {
+    foldFiles(false);
     const all = links();
     if (!all.length) return false;
     const cur = all.find((a) => a.getAttribute('aria-current') === 'true') || all[0];
@@ -219,6 +221,27 @@ window.ermiteMR = (() => {
     return true;
   }
 
+  // foldFiles folds the list of files to its header, or opens it again:
+  // toggles without an argument. The choice is kept for the next pages.
+  function foldFiles(fold) {
+    const sec = $('.r-files');
+    const btn = sec && $('button.fold', sec);
+    if (!btn) return;
+    if (fold === undefined) fold = !sec.hasAttribute('data-folded');
+    sec.toggleAttribute('data-folded', fold);
+    btn.setAttribute('aria-expanded', String(!fold));
+    btn.title = fold ? 'open the list of files' : 'fold the list of files';
+    $('.sr', btn).textContent = btn.title;
+    // The list did not follow the review while folded: show its current file,
+    // moving the list only (never the page).
+    const box = !fold && $('.files', sec);
+    const a = box && $('a[aria-current="true"]', box);
+    if (a && (a.offsetTop < box.scrollTop || a.offsetTop + a.offsetHeight > box.scrollTop + box.clientHeight)) {
+      box.scrollTop = a.offsetTop - (box.clientHeight - a.offsetHeight) / 2;
+    }
+    try { localStorage.setItem('mr-files-folded', fold ? '1' : ''); } catch { /* storage refused: holds for this page */ }
+  }
+
   // openFile opens the file of a link of the list (and loads it first).
   function openFile(id) {
     const f = document.getElementById(id);
@@ -228,6 +251,9 @@ window.ermiteMR = (() => {
 
   function start() {
     if (!$('#diffs[data-mr]')) return;
+    let folded = false;
+    try { folded = localStorage.getItem('mr-files-folded') === '1'; } catch { /* no storage: open */ }
+    if (folded) foldFiles(true);
     watch();
     // A link to a file or a comment that is not loaded yet.
     const hash = () => {
@@ -242,7 +268,7 @@ window.ermiteMR = (() => {
     });
   }
 
-  return { core, start, load, reveal, openMerge, closeMenus, menuKey, markRead, focusFiles, stepFiles, leaveFiles, openFile };
+  return { core, start, load, reveal, openMerge, closeMenus, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
 })();
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.ermiteMR.start());

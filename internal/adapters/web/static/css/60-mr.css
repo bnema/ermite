@@ -75,20 +75,19 @@
     & .clone code { white-space: pre-wrap; overflow-wrap: anywhere; }
   }
 
-  /* the rail of a merge request: the list of files on top, which follows the
-     review and scrolls on its own; checks, commits and settings scroll with
-     the page. Only on a two-column layout. */
+  /* the rail of a merge request follows the review: it sticks under the
+     header, one screen high, and scrolls on its own to its checks, commits
+     and settings. The list of files keeps its own scroll, under a height, so
+     that the blocks below it stay in reach. Only on a two-column layout. */
   @media (min-width: 1081px) {
-    /* the rail runs the height of the content, so that its first block can
-       stick all along the diff */
-    .work.has-rail:has(.r-files) { align-items: stretch; }
-    .rail:has(.r-files) { align-self: stretch; }
-    .rail .r-files {
-      position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4)); z-index: 3;
-      display: flex; flex-direction: column;
+    .rail:has(.r-files) {
+      position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4));
       max-height: calc(100dvh - var(--hdr-h, 0px) - var(--s4) * 2);
+      overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
     }
-    .rail .r-files > .files { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; min-height: 0; }
+    /* the blocks keep their height: the rail scrolls, it does not squeeze them */
+    .rail:has(.r-files) > * { flex: none; }
+    .rail .r-files > .files { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   }
   /* on one column the rail goes under the diff: the list of files keeps its
      own scroll, under a height */
@@ -97,6 +96,12 @@
   }
   .r-files {
     & > h2 kbd { margin-left: auto; }
+    & > h2 .fold { width: 24px; height: 24px; margin: -2px -6px -2px 0; background: none; border-color: transparent; color: var(--ink-dim); }
+    & > h2 .fold:hover { color: var(--ink-hi); border-color: var(--border-strong); }
+    & > h2 .fold .ico { transition: transform .15s; }
+    &[data-folded] > h2 { border-bottom: 0; }
+    &[data-folded] > h2 .fold .ico { transform: rotate(-90deg); }
+    &[data-folded] > :not(h2) { display: none; }
     & > .ffilter { margin: var(--s2) var(--s3) 0; }
     & > .ffilter input {
       width: 100%; height: 30px; padding: 0 var(--s2); font: inherit; font-size: var(--fs-s); color: inherit;

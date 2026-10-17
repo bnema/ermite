@@ -20,6 +20,7 @@
   .i-branch { --i: url(icons/branch.svg); }
   .i-search { --i: url(icons/search.svg); }
   .i-file { --i: url(icons/file.svg); }
+  .i-chevron { --i: url(icons/chevron.svg); }
   .i-tag { --i: url(icons/tag.svg); }
   .i-user { --i: url(icons/user.svg); }
   .i-key { --i: url(icons/key.svg); }
