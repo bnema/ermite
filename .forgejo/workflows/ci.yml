@@ -64,7 +64,14 @@ jobs:
       - name: Generated templ code is up to date
         run: scripts/templ-drift.sh
       - run: go vet ./...
-      - run: go test -race ./...
+      # The end-to-end tests (internal/app, a real server per test) run before a
+      # PR is opened (README, Build) and here on main only: they are most of the
+      # time of a PR run.
+      - name: Tests
+        run: go test -race $(go list ./... | grep -vx 'bnema.dev/ermite/internal/app')
+      - name: End-to-end tests
+        if: github.event_name == 'push'
+        run: go test -race ./internal/app/
       - name: Architecture
         run: go tool hexcheck -fail-on warn ./...
       # The core of the file finder (static/js/files.js) runs in Node.

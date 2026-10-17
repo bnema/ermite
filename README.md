@@ -202,6 +202,8 @@ go build ./cmd/ermite
 go test ./...
 ```
 
+`go test ./...` includes the end-to-end tests of `internal/app`, which start a real server per test. Run them before opening a pull request: CI runs them on `main` only, after the merge.
+
 ## Architecture
 
 `cmd/ermite` (entry point, calls `app.Run`) → `internal/app` (CLI and composition root: builds the adapters and wires them to the use cases) → `internal/usecase` (use cases), `internal/ports` (interfaces and parameter types that cross layers), `internal/domain` (pure values and rules) and `internal/adapters` (Git, KV store, HTTP, API, web, client implementations of the ports).
