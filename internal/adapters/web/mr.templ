@@ -162,13 +162,7 @@ templ MergeRequest(l Layout, p MRPage) {
 		if p.SinceNote != "" {
 			<p class="notice">{ p.SinceNote }</p>
 		}
-		<div class="diff-tools" role="toolbar" aria-label="Diff view">
-			<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
-			<span class="grow"></span>
-			@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
-			@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
-			@collapseButton()
-		</div>
+		@mrBar(p)
 		if p.Invisible {
 			<p class="notice">
 				this diff holds invisible characters (direction controls, zero-width characters). They are shown as
@@ -180,6 +174,7 @@ templ MergeRequest(l Layout, p MRPage) {
 		}
 		<div
 			id="diffs"
+			data-mr
 			if p.Both {
 				data-diff={ p.View }
 			} else {
@@ -256,6 +251,9 @@ templ commentView(c CommentView, suffix string) {
 		if c.Resolve != nil {
 			<form class="c-act" method="post" action={ templ.SafeURL(c.Resolve.Action) }>
 				<input type="hidden" name="resolved" value={ boolText(c.Resolve.Value) }/>
+				if c.Resolve.From > 0 {
+					<input type="hidden" name="from" value={ itoa(c.Resolve.From) }/>
+				}
 				<button type="submit" class="btn">{ c.Resolve.Label }</button>
 			</form>
 		}
@@ -289,6 +287,9 @@ templ commentForm(f CommentForm, suffix string) {
 			<input type="hidden" name="line" value={ f.Line }/>
 			<input type="hidden" name="side" value={ f.Side }/>
 		}
+		if f.From > 0 {
+			<input type="hidden" name="from" value={ itoa(f.From) }/>
+		}
 		<div class="f-btns">
 			<button type="submit" class="btn primary">Comment</button>
 			if f.Cancel != "" {
@@ -299,25 +300,11 @@ templ commentForm(f CommentForm, suffix string) {
 }
 
 templ mrRail(p MRPage) {
-	if p.Box != nil {
-		@mergeBox(p)
-	}
-	@MRChecks(p.Checks)
-	<section aria-labelledby="r-settings">
-		<h2 id="r-settings">Settings</h2>
-		<dl class="kv">
-			<dt>modes</dt>
-			<dd>{ strings.Join(p.Modes, ", ") }</dd>
-			<dt>checks</dt>
-			<dd>
-				if p.ChecksBlock {
-					failing ones block the merge
-				} else {
-					do not block the merge
-				}
-			</dd>
-		</dl>
+	<section aria-labelledby="r-files" class="r-files">
+		<h2 id="r-files">Files <span class="count">{ itoa(len(p.Files)) }</span><kbd aria-hidden="true">g f</kbd></h2>
+		@FileList(p.Files)
 	</section>
+	@MRChecks(p.Checks)
 	<section aria-labelledby="r-commits">
 		<h2 id="r-commits">Commits <span class="count">{ itoa(len(p.Commits)) }</span></h2>
 		<ul class="pcommits">
@@ -344,74 +331,125 @@ templ mrRail(p MRPage) {
 			<p class="note">{ p.CommitsNote }</p>
 		}
 	</section>
-	<section aria-labelledby="r-files">
-		<h2 id="r-files">Files <span class="count">{ itoa(len(p.Files)) }</span></h2>
-		@FileList(p.Files)
+	<section aria-labelledby="r-settings">
+		<h2 id="r-settings">Settings</h2>
+		<dl class="kv">
+			<dt>modes</dt>
+			<dd>{ strings.Join(p.Modes, ", ") }</dd>
+			<dt>checks</dt>
+			<dd>
+				if p.ChecksBlock {
+					failing ones block the merge
+				} else {
+					do not block the merge
+				}
+			</dd>
+		</dl>
 	</section>
 }
 
-// mergeBox is the first block of the rail of an open request, for the owner:
-// the merge form (it carries the head that was read), the terminal lines, and
-// the other things one does with the request.
-templ mergeBox(p MRPage) {
-	<section class="decide" aria-labelledby="r-merge" data-state="open">
-		<h2 id="r-merge">Merge</h2>
-		<dl class="kv">
-			<dt>head</dt>
-			<dd>
-				if p.Box.HeadGone {
-					gone: the source branch was deleted
-				} else {
-					{ p.HeadShort }
-				}
-			</dd>
-			<dt>into</dt>
-			<dd>{ p.Target }</dd>
-		</dl>
-		if p.Box.ReadyAction != "" {
-			<p class="d-draft">this is a draft: it cannot be merged until it is ready for review.</p>
-			<form class="d-btns" method="post" action={ templ.SafeURL(p.Box.ReadyAction) }>
-				<button type="submit" class="btn primary" title="remove the draft prefix from the title">Ready for review</button>
-			</form>
-		} else if !p.Box.HeadGone {
-			<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.MergeAction) }>
-				<input type="hidden" name="head_id" value={ p.Box.Head }/>
-				<label class="sr" for="merge-mode">merge mode</label>
-				<select id="merge-mode" name="mode">
-					for _, m := range p.Box.Modes {
-						<option value={ m.Value }>{ m.Label }</option>
-					}
-				</select>
-				if p.Box.CanDeleteBranch {
-					<label class="d-check"><input type="checkbox" name="delete_branch" value="1"/> delete { p.Source } after the merge</label>
-				}
-				<div class="d-btns">
-					<button type="submit" class="btn primary">Merge</button>
-				</div>
-			</form>
+// mrBar is the bar above the diff, which follows the review: the totals, the
+// layout of the diff, the state of the checks and, for the owner of an open
+// request, the merge menu and the other actions. Each menu is a <details>: it
+// works without scripts; with them, M and the keys of the menu drive it.
+templ mrBar(p MRPage) {
+	<div class="diff-tools mr-bar" role="toolbar" aria-label="Diff view and merge">
+		<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
+		@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
+		@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
+		@collapseButton()
+		<span class="grow"></span>
+		@MRChecksSum(p.ChecksSum)
+		if p.Box != nil {
+			@mergeMenu(p)
+			@moreMenu(p)
 		}
-		<div class="d-btns">
+	</div>
+}
+
+// mergeMenu is the merge of an open request, for the owner: the form (it
+// carries the head that was read), or "Ready for review" for a draft. The
+// mode and the branch deletion have keys (1-3, D) while it is open.
+templ mergeMenu(p MRPage) {
+	<details class="menu mmenu" id="merge-menu" data-state="open">
+		<summary class="btn primary" aria-keyshortcuts="Shift+M">
+			if p.Box.ReadyAction != "" {
+				Draft
+			} else {
+				Merge
+			}
+			<kbd aria-hidden="true">M</kbd>
+		</summary>
+		<div class="menu-pop" role="group" aria-label="Merge">
+			<dl class="kv">
+				<dt>head</dt>
+				<dd>
+					if p.Box.HeadGone {
+						gone: the source branch was deleted
+					} else {
+						{ p.HeadShort }
+					}
+				</dd>
+				<dt>into</dt>
+				<dd>{ p.Target }</dd>
+			</dl>
+			if p.Box.ReadyAction != "" {
+				<p class="d-draft">this is a draft: it cannot be merged until it is ready for review.</p>
+				<form class="d-btns" method="post" action={ templ.SafeURL(p.Box.ReadyAction) }>
+					<button type="submit" class="btn primary" data-default title="remove the draft prefix from the title">Ready for review</button>
+				</form>
+			} else if !p.Box.HeadGone {
+				<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.MergeAction) }>
+					<input type="hidden" name="head_id" value={ p.Box.Head }/>
+					<fieldset class="d-modes">
+						<legend class="sr">merge mode</legend>
+						for i, m := range p.Box.Modes {
+							<label>
+								<input type="radio" name="mode" value={ m.Value } checked?={ i == 0 }/>
+								{ m.Label }
+								if i < 9 {
+									<kbd aria-hidden="true">{ itoa(i + 1) }</kbd>
+								}
+							</label>
+						}
+					</fieldset>
+					if p.Box.CanDeleteBranch {
+						<label class="d-check"><input type="checkbox" name="delete_branch" value="1"/> delete { p.Source } after the merge <kbd aria-hidden="true">D</kbd></label>
+					}
+					<div class="d-btns">
+						<button type="submit" class="btn primary" data-default>Merge into { p.Target }</button>
+					</div>
+				</form>
+			}
+		</div>
+	</details>
+}
+
+// moreMenu is what else the owner does with an open request: mark the head
+// read, close it, merge it from a terminal.
+templ moreMenu(p MRPage) {
+	<details class="menu omenu">
+		<summary class="btn icon" aria-label="More actions" title="more actions">⋯</summary>
+		<div class="menu-pop" role="group" aria-label="More actions">
 			if p.Box.CanMarkRead {
 				<form method="post" action={ templ.SafeURL(p.Box.ReadAction) }>
 					<input type="hidden" name="head_id" value={ p.Box.Head }/>
-					<button type="submit" title="the next visit can show only what changed after this head" class="btn">Mark read</button>
+					<button type="submit" title="the next visit can show only what changed after this head" class="btn" aria-keyshortcuts="Shift+R" data-read>Mark read <kbd aria-hidden="true">R</kbd></button>
 				</form>
 			}
 			<form method="post" action={ templ.SafeURL(p.Box.CloseAction) }>
 				<button type="submit" title="close without merging; the branch is kept" class="btn danger">Close</button>
 			</form>
+			if !p.Box.HeadGone && p.Box.ReadyAction == "" {
+				<details class="d-or">
+					<summary class="mute">or from a terminal</summary>
+					@CloneBlock(p.Box.CLI)
+				</details>
+			}
 		</div>
-		if !p.Box.HeadGone && p.Box.ReadyAction == "" {
-			<details class="d-or">
-				<summary class="mute">or from a terminal</summary>
-				@CloneBlock(p.Box.CLI)
-			</details>
-		}
-	</section>
+	</details>
 }
 
-// Compare is a branch against the default branch: the commits it is ahead by,
-// its diff when the API can give one, and the form that opens a merge request.
 templ Compare(l Layout, p ComparePage) {
 	@Shell(l, compareRail(p)) {
 		<header class="show mr-h">

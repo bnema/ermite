@@ -75,7 +75,7 @@ func TestPickRemoteRef(t *testing.T) {
 
 // countingRemote answers ListRefs from a function and counts the calls.
 type countingRemote struct {
-	calls int
+	calls  int
 	answer func() ([]ports.RemoteRef, error)
 }
 

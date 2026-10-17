@@ -18,41 +18,109 @@
     & .mute { font-weight: 400; font-family: var(--mono); }
   }
 
-  /* merge block: first thing in the rail */
-  .decide {
-    border-color: var(--border-strong) !important;
-    & select {
-      display: block; width: 100%; height: 36px; padding: 0 var(--s3);
-      font: inherit; color: inherit; background: var(--bg-inset);
-      border: 1px solid var(--border-strong); border-radius: var(--r-s);
+  /* the bar above the diff of a merge request: the diff tools, the checks and
+     the menus of the owner, on one line that follows the review */
+  /* on a narrow screen the bar takes two lines: the diff tools, then the
+     checks and the menus; the file headers stick under both */
+  @media (max-width: 860px) {
+    body:has(.mr-bar) { --bar-h: 96px; }
+    .mr-bar .grow { flex-basis: 100%; height: 0; }
+  }
+  .mr-bar {
+    gap: var(--s2);
+    & .mr-ck { margin-left: 0; height: 32px; padding: 0 var(--s2); border-radius: var(--r-s); text-decoration: none; color: var(--ink-dim); font-size: var(--fs-s); }
+    & .mr-ck:hover { background: var(--bg-raised); color: var(--ink-hi); }
+  }
+
+  /* a menu of the bar: a <details> whose panel opens under its button */
+  .menu {
+    position: relative;
+    & > summary { list-style: none; }
+    & > summary::-webkit-details-marker { display: none; }
+    & > summary.primary::after { content: ""; width: 0; height: 0; margin-left: 2px; border: 4px solid transparent; border-top-color: currentColor; transform: translateY(2px); }
+    & .menu-pop {
+      position: absolute; right: 0; top: calc(100% + var(--s1)); z-index: 6; width: 320px; max-width: calc(100vw - 2 * var(--pad));
+      display: grid; gap: var(--s3); padding: var(--s3) var(--s4);
+      background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: 0 8px 24px rgb(0 0 0 / .18);
+      font-size: var(--fs-s);
     }
-    & .d-check { display: flex; gap: var(--s2); align-items: center; margin-top: var(--s2); color: var(--ink-dim); font-size: var(--fs-s); cursor: pointer; }
-    & .d-check input { accent-color: var(--ink-hi); margin: 0; }
-    & .d-btns { display: flex; gap: var(--s2); margin-top: var(--s3); flex-wrap: wrap; }
-    & .d-btns .primary { flex: 1; justify-content: center; }
-    /* the terminal lines fold away: a reviewer who merges in the page does
-       not need them in sight */
-    & .d-draft { font-size: var(--fs-s); color: var(--ink-dim); }
-    & .d-or { font-size: var(--fs-s); }
-    & .d-or > summary { cursor: pointer; list-style: none; }
+    & .kv { margin: 0; }
+  }
+  .mmenu {
+    & .d-modes { display: grid; gap: var(--s1); border: 0; padding: 0; margin: 0; }
+    & .d-modes label, & .d-check {
+      display: flex; gap: var(--s2); align-items: center; padding: 4px var(--s2); margin: 0 calc(-1 * var(--s2));
+      border-radius: var(--r-s); color: var(--ink); cursor: pointer;
+    }
+    & .d-modes label:hover, & .d-check:hover { background: var(--bg-raised); }
+    & .d-modes label:has(:checked) { background: var(--bg-raised); color: var(--ink-hi); font-weight: 600; }
+    & .d-modes kbd, & .d-check kbd { margin-left: auto; }
+    & input { accent-color: var(--ink-hi); margin: 0; }
+    & .d-check { color: var(--ink-dim); }
+    & .d-btns { display: flex; margin-top: var(--s1); }
+    & .d-btns .btn { flex: 1; justify-content: center; }
+    & .d-draft { color: var(--ink-dim); }
+  }
+  .omenu {
+    & > summary { font-size: 18px; line-height: 1; }
+    & .menu-pop { width: 280px; }
+    & form .btn { width: 100%; justify-content: flex-start; }
+    & .btn kbd { margin-left: auto; }
+    & .d-or > summary { cursor: pointer; list-style: none; color: var(--ink-mute); }
     & .d-or > summary::-webkit-details-marker { display: none; }
     & .d-or > summary::before { content: "▸ "; }
     & .d-or[open] > summary::before { content: "▾ "; }
     & .d-or > summary:hover { color: var(--ink-hi); }
     & .d-or[open] > .clone { margin-top: var(--s2); }
-    & .clone { margin-top: 0; }
     & .clone code { white-space: pre-wrap; overflow-wrap: anywhere; }
   }
 
-  /* the rail of a merge request follows the review: the merge block and the
-     checks stay in reach at the end of a long diff. It scrolls on its own
-     when it is taller than the window. Only on a two-column layout. */
+  /* the rail of a merge request: the list of files on top, which follows the
+     review and scrolls on its own; checks, commits and settings scroll with
+     the page. Only on a two-column layout. */
   @media (min-width: 1081px) {
-    .work.has-rail:has(#mr-checks) .rail {
-      position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4));
+    /* the rail runs the height of the content, so that its first block can
+       stick all along the diff */
+    .work.has-rail:has(.r-files) { align-items: stretch; }
+    .rail:has(.r-files) { align-self: stretch; }
+    .rail .r-files {
+      position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4)); z-index: 3;
+      display: flex; flex-direction: column;
       max-height: calc(100dvh - var(--hdr-h, 0px) - var(--s4) * 2);
-      overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
     }
+    .rail .r-files > .files { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; min-height: 0; }
+  }
+  /* on one column the rail goes under the diff: the list of files keeps its
+     own scroll, under a height */
+  @media (max-width: 1080px) {
+    .rail .r-files > .files { max-height: 50dvh; overflow-y: auto; overscroll-behavior: contain; }
+  }
+  .r-files {
+    & > h2 kbd { margin-left: auto; }
+    & > .ffilter { margin: var(--s2) var(--s3) 0; }
+    & > .ffilter input {
+      width: 100%; height: 30px; padding: 0 var(--s2); font: inherit; font-size: var(--fs-s); color: inherit;
+      background: var(--bg-inset); border: 1px solid var(--border-strong); border-radius: var(--r-s);
+    }
+    & > .files { margin: var(--s2) 0 !important; padding: 0 var(--s2); }
+  }
+
+  /* a file of the diff whose window is not loaded yet: about its room */
+  .dlazy {
+    display: flex; align-items: center; justify-content: center;
+    background: repeating-linear-gradient(var(--bg-surface) 0 var(--lh-code), var(--paper-alt) var(--lh-code) calc(var(--lh-code) * 2));
+    border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--r) var(--r);
+    font-size: var(--fs-s);
+    & a { color: var(--ink-mute); }
+    &.dlazy-1 { height: 120px; } &.dlazy-2 { height: 360px; } &.dlazy-3 { height: 900px; } &.dlazy-4 { height: 1600px; }
+    /* with scripts the window comes by itself: the link of the page without
+       scripts would only flash */
+    html.js & > a { visibility: hidden; }
+    & .notice { margin: 0; }
+  }
+  .dloose {
+    padding: var(--s2) var(--s3) var(--s3); background: var(--bg-surface);
+    border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--r) var(--r);
   }
 
   .pcommits { font-size: var(--fs-s); display: grid; gap: var(--s1); }

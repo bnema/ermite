@@ -194,6 +194,26 @@ type MergeRequestDetail struct {
 	LastReadLost bool
 }
 
+// GetMergeRequestOptions say which diff MergeRequestService.Get reads.
+type GetMergeRequestOptions struct {
+	// SinceLastRead compares the head recorded by MarkRead with the head (see Get).
+	SinceLastRead bool
+	// Files, when set, lists every changed file, without the file-count
+	// limit, and reads the hunks of the files in the window only, each within
+	// the per-file and the total limits of domain.DefaultDiffLimits. Unset,
+	// the diff is bounded by domain.DefaultDiffLimits (the API contract).
+	Files *FileWindow
+	// Base and Head, when not zero, are the diff the caller shows: Get
+	// returns domain.ErrConflict when the request's diff base or head differ
+	// (the branch moved, a read was marked).
+	Base, Head domain.ObjectID
+	// DiffOnly skips the commits of the request (Commits stays empty).
+	DiffOnly bool
+}
+
+// FileWindow is the range [From, To) of files whose hunks are read.
+type FileWindow struct{ From, To int }
+
 // AddCommentParams describes the comment to add.
 type AddCommentParams struct {
 	// Path, Line and Side designate a line of the diff; all empty for a

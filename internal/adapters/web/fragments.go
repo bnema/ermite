@@ -496,8 +496,13 @@ func (l *liveStream) mrChecks(ctx context.Context) ([]fragment, error) {
 	case err != nil:
 		return nil, err
 	}
-	f, err := renderFragment(ctx, "ci-run", MRChecks(checksSection(repo, l.s.checksFor(ctx, name, l.head))))
-	return []fragment{f}, err
+	checks := l.s.checksFor(ctx, name, l.head)
+	f, err := renderFragment(ctx, "ci-run", MRChecks(checksSection(repo, checks)))
+	if err != nil {
+		return nil, err
+	}
+	sum, err := renderFragment(ctx, "ci-run", MRChecksSum(checksSummary(name, l.head, checks)))
+	return []fragment{f, sum}, err
 }
 
 // recentActions is the "Recent actions" block of the summary rail, read again

@@ -41,6 +41,7 @@
   };
 
   const ermite = {
+    flash,
     fire(name) {
       body().dispatchEvent(new CustomEvent('k-' + name, { bubbles: false }));
     },
@@ -48,6 +49,7 @@
     // Row cursor: j / k.
     move(d) {
       if ($('dialog[open]')) return;
+      if (window.ermiteMR?.stepFiles(d)) return;
       const rows = visibleRows();
       if (!rows.length) {
         scrollBy(0, d * 180);
@@ -72,6 +74,11 @@
     },
     open() {
       if (!$('dialog[open]')) $('[data-cursor] a')?.click();
+    },
+    // openFile opens a file of the diff the table of contents links to.
+    openFile(id) {
+      const f = document.getElementById(id);
+      if (f) f.open = true;
     },
     focusFilter() {
       $('[data-filter]')?.focus();
@@ -210,9 +217,11 @@
 
   // 1. Keys.
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
-    s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', d: 'split', u: 'unified', x: 'collapse', Enter: 'open', Escape: 'esc' };
+    s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', d: 'split', u: 'unified', x: 'collapse', Enter: 'open', Escape: 'esc',
+    // the merge request page (mr.js): the merge menu, mark read
+    M: 'merge', R: 'read' };
   // "g t" is the key "t": the tabs have one event each.
-  const goto = { h: 'gh', t: 't', c: 'c', r: 'r', m: 'm', g: 'top' };
+  const goto = { h: 'gh', t: 't', c: 'c', r: 'r', m: 'm', g: 'top', f: 'gf' };
   let pending = 0;
   let pendingTimer = 0;
   addEventListener('keydown', (e) => {
@@ -221,7 +230,16 @@
     // field keeps ctrl k (kill to end of line on macOS).
     if ((e.metaKey || (e.ctrlKey && !typing)) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') { e.preventDefault(); pending = 0; return ermite.fire('cmd'); }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.key === 'Escape') { pending = 0; if (typing) e.target.blur(); return ermite.fire('esc'); }
+    const mr = window.ermiteMR;
+    if (e.key === 'Escape') {
+      pending = 0;
+      if (mr?.closeMenus() || mr?.leaveFiles()) return;
+      if (typing) e.target.blur();
+      return ermite.fire('esc');
+    }
+    // An open merge menu takes its keys (1-9, D) before the field check: its
+    // radios and its checkbox hold the focus.
+    if (mr?.menuKey(e)) return;
     if (typing) return;
     // An open dialog takes only the keys that move between dialogs: the page
     // behind it does not react (scripted clicks would go through inert).
@@ -273,7 +291,7 @@
   // line (the first file when none is). One observer tracks the files in the
   // band; it reports only when a file enters or leaves it, so a scroll costs
   // nothing in between, and a jump that skips the band is caught by the scan.
-  const files = $$('.dfile');
+  let files = $$('.dfile');
   const links = new Map($$('.files a[href^="#"]').map((a) => [a.hash.slice(1), a]));
   if (files.length && links.size && 'IntersectionObserver' in window) {
     const inBand = new Set();
@@ -284,7 +302,17 @@
         ?? files[0];
       if (f === current) return;
       links.get(current?.id)?.removeAttribute('aria-current');
-      links.get(f.id)?.setAttribute('aria-current', 'true');
+      const a = links.get(f.id);
+      a?.setAttribute('aria-current', 'true');
+      // The list scrolls on its own: the current file stays in it. Only the
+      // list moves, never the page (scrollIntoView would scroll the page to
+      // the list when the rail is under the diff).
+      const box = a?.closest('.files');
+      if (a && box && box.scrollHeight > box.clientHeight && !box.contains(document.activeElement)) {
+        const top = a.offsetTop;
+        if (top < box.scrollTop) box.scrollTop = top;
+        else if (top + a.offsetHeight > box.scrollTop + box.clientHeight) box.scrollTop = top + a.offsetHeight - box.clientHeight;
+      }
       current = f;
     };
     const io = new IntersectionObserver((entries) => {
@@ -295,6 +323,15 @@
       mark();
     }, { rootMargin: '0px 0px -67% 0px' });
     for (const f of files) io.observe(f);
+    // A window of files of a merge request came in (mr.js): its files replace
+    // placeholders, which the observer and the list knew by element.
+    ermite.watchFile = (f, old) => {
+      if (old) { io.unobserve(old); inBand.delete(old); }
+      files = $$('.dfile');
+      for (const x of [...inBand]) if (!x.isConnected) inBand.delete(x);
+      if (current && !current.isConnected) current = document.getElementById(current.id);
+      io.observe(f);
+    };
   }
 
   // 5. A failure of a handler or of a request (htmx logs it to the console

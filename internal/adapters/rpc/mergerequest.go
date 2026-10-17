@@ -166,7 +166,7 @@ func (s *mergeRequestService) GetMergeRequest(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	d, err := s.mrs.Get(ctx, caller(ctx), name, req.Msg.GetNumber(), req.Msg.GetSinceLastRead())
+	d, err := s.mrs.Get(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.GetMergeRequestOptions{SinceLastRead: req.Msg.GetSinceLastRead()})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}

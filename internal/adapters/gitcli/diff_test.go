@@ -484,3 +484,179 @@ func TestGetCommitStopsGitEarly(t *testing.T) {
 	assert.True(t, d.Diff.Files[1].Truncated)
 	assert.Equal(t, 100005, d.Stats.Additions)
 }
+
+// windowFixture commits a diff that mixes what the patch reader must step over
+// in a window: text, binary, a rename, a type change (two sections), a mode
+// change (no hunks) and more text. It returns the id of the second commit.
+func windowFixture(t *testing.T, data, name string) (*readertest.Fixture, string) {
+	t.Helper()
+	f := readertest.NewFixture(t, data, name)
+	f.Lines("a-text", "a", 20).WriteBytes("b-bin", []byte{0, 1, 2}).Lines("c-old", "c", 30).
+		Lines("d-type", "d", 5).Lines("e-mode", "e", 3).Lines("f-text", "f", 20).Lines("g-text", "g", 20)
+	f.Commit("v1")
+	f.Lines("a-text", "A", 21).WriteBytes("b-bin", []byte{0, 3}).Mv("c-old", "c-new").
+		Remove("d-type").Symlink("a-text", "d-type").Chmod("e-mode", 0o755).Lines("f-text", "F", 20).Lines("g-text", "G", 2)
+	f.Write("c-new", readLines("c", 30)+"extra\n") // a rename with one line added
+	id := f.Commit("v2")
+	return f, id
+}
+
+func readLines(prefix string, n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "%s %d\n", prefix, i)
+	}
+	return b.String()
+}
+
+func TestDiffLimitsWindow(t *testing.T) {
+	ctx := context.Background()
+	g, data := newReader(t, nil)
+
+	t.Run("a window reads the hunks of its files only, whatever the files around it", func(t *testing.T) {
+		f, id := windowFixture(t, data, "win-mixed")
+		full, err := g.GetCommit(ctx, f.Name, readertest.Rev(t, id), domain.DefaultDiffLimits())
+		require.NoError(t, err)
+		assertMatchesGitShow(t, f, id, full)
+		n := len(full.Diff.Files)
+		require.GreaterOrEqual(t, n, 7)
+		status := map[domain.FileStatus]bool{}
+		for _, file := range full.Diff.Files {
+			status[file.Status] = true
+		}
+		assert.True(t, status[domain.FileTypeChanged], "the fixture has a type change")
+		assert.True(t, status[domain.FileRenamed], "the fixture has a rename")
+		assert.False(t, full.Diff.Truncated)
+
+		tests := []struct {
+			name     string
+			from, to int
+		}{
+			{"first file", 0, 1},
+			{"middle", 2, 5},
+			{"type change alone", 3, 4},
+			{"binary alone", 1, 2},
+			{"mode change alone", 4, 5},
+			{"rename alone", 2, 3},
+			{"through the end, to 0", 3, 0},
+			{"to past the end", 5, 100},
+			{"last file", n - 1, n},
+			{"from past the end", n, n + 5},
+			{"far past the end", 1000, 0},
+			{"empty window", 3, 3},
+			{"whole diff", 0, 0},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				limits := domain.DefaultDiffLimits()
+				limits.From, limits.To = tc.from, tc.to
+				d, err := g.GetCommit(ctx, f.Name, readertest.Rev(t, id), limits)
+				require.NoError(t, err)
+				require.Len(t, d.Diff.Files, n)
+				assert.Equal(t, full.Stats, d.Stats)
+				assert.False(t, d.Diff.Truncated, "files outside the window do not truncate the diff")
+				to := tc.to
+				if to == 0 {
+					to = n
+				}
+				for i, got := range d.Diff.Files {
+					want := full.Diff.Files[i]
+					if i < tc.from || i >= to {
+						want.Hunks = nil
+					}
+					assert.Equal(t, want, got, "file %d (%s)", i, want.NewPath)
+				}
+			})
+		}
+	})
+
+	t.Run("files outside the window use none of the total budget", func(t *testing.T) {
+		f := readertest.NewFixture(t, data, "win-budget")
+		commitFiles(f, "five", map[string]int{"a": 10, "b": 10, "c": 10, "d": 10, "e": 10})
+		limits := domain.DiffLimits{MaxFileLines: 100, MaxTotalLines: 15, MaxTotalBytes: 1 << 20, From: 3, To: 5}
+		d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
+		require.NoError(t, err)
+		require.Len(t, d.Diff.Files, 5)
+		for i, file := range d.Diff.Files {
+			switch i {
+			case 3:
+				assert.False(t, file.Truncated)
+				assert.Len(t, file.Hunks, 1, "10 lines fit in 15")
+			case 4:
+				assert.True(t, file.Truncated, "the second file of the window does not fit in the 5 lines left")
+			default:
+				assert.False(t, file.Truncated)
+				assert.Empty(t, file.Hunks)
+				assert.Equal(t, 10, file.Additions, "counts stay accurate")
+			}
+		}
+		assert.True(t, d.Diff.Truncated, "a file of the window is truncated")
+
+		limits.From, limits.To = 0, 0
+		limits.MaxTotalBytes = 25 // "a 0\n".."a 9\n" is 30 bytes of text per file
+		d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
+		require.NoError(t, err)
+		assert.True(t, d.Diff.Files[0].Truncated)
+	})
+
+	t.Run("a file beyond the window is not truncated by its own size", func(t *testing.T) {
+		f := readertest.NewFixture(t, data, "win-huge")
+		f.Lines("a", "x", 5).Lines("z-huge", "y", 5000).Commit("c")
+		limits := domain.DefaultDiffLimits()
+		limits.From, limits.To = 0, 1
+		d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
+		require.NoError(t, err)
+		require.Len(t, d.Diff.Files, 2)
+		assert.Len(t, d.Diff.Files[0].Hunks, 1)
+		assert.False(t, d.Diff.Files[1].Truncated)
+		assert.Empty(t, d.Diff.Files[1].Hunks)
+		assert.False(t, d.Diff.Truncated)
+		limits.From, limits.To = 1, 2
+		d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
+		require.NoError(t, err)
+		assert.True(t, d.Diff.Files[1].Truncated, "in the window, over the per-file limit")
+		assert.True(t, d.Diff.Truncated)
+	})
+
+	t.Run("MaxFiles 0 lists every file", func(t *testing.T) {
+		f := readertest.NewFixture(t, data, "win-many")
+		const total = 350
+		for i := range total {
+			f.Write(fmt.Sprintf("many/f%03d", i), fmt.Sprintf("x%d\n", i))
+		}
+		f.Commit("many")
+		limits := domain.DefaultDiffLimits()
+		limits.MaxFiles = 0
+		d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
+		require.NoError(t, err)
+		require.Len(t, d.Diff.Files, total)
+		assert.False(t, d.Diff.Truncated)
+		assert.Equal(t, domain.DiffStats{FilesChanged: total, Additions: total}, d.Stats)
+		for i, file := range d.Diff.Files {
+			assert.Equal(t, fmt.Sprintf("many/f%03d", i), file.NewPath)
+			require.Len(t, file.Hunks, 1, file.NewPath)
+		}
+
+		// A window past the 300th file reads its own hunks.
+		limits.From, limits.To = 320, 330
+		d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
+		require.NoError(t, err)
+		require.Len(t, d.Diff.Files, total)
+		assert.False(t, d.Diff.Truncated)
+		for i, file := range d.Diff.Files {
+			if i >= 320 && i < 330 {
+				require.Len(t, file.Hunks, 1)
+				assert.Equal(t, fmt.Sprintf("x%d", i), file.Hunks[0].Lines[0].Text)
+			} else {
+				assert.Empty(t, file.Hunks)
+			}
+			assert.False(t, file.Truncated)
+		}
+
+		// The default limits still cut at 300.
+		d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, domain.DefaultDiffLimits())
+		require.NoError(t, err)
+		assert.Len(t, d.Diff.Files, 300)
+		assert.True(t, d.Diff.Truncated)
+	})
+}

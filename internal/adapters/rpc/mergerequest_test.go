@@ -212,7 +212,7 @@ func TestMergeRequestServiceGet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			mrs := mocks.NewMergeRequestService(t)
-			mrs.EXPECT().Get(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(4), true).
+			mrs.EXPECT().Get(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(4), ports.GetMergeRequestOptions{SinceLastRead: true}).
 				Return(ports.MergeRequestDetail{MergeRequest: domain.MergeRequest{Number: 4}, CommitsTruncated: true}, tt.usecase).Once()
 			resp, err := (&mergeRequestService{mrs}).GetMergeRequest(ownerCtx(), connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "demo", Number: 4, SinceLastRead: true}))
 			if tt.wantCode != 0 {

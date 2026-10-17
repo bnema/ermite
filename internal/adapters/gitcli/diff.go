@@ -107,16 +107,22 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 		stats.Deletions += entries[i].del
 	}
 	var diff domain.Diff
-	if len(entries) > limits.MaxFiles {
+	if limits.MaxFiles > 0 && len(entries) > limits.MaxFiles {
 		entries = entries[:limits.MaxFiles]
 		diff.Truncated = true
+	}
+	// Only the files of the window [from, to) get their hunks; the others are
+	// listed as they are, neither truncated nor counted in the budgets.
+	from, to := max(limits.From, 0), len(entries)
+	if limits.To > 0 {
+		to = min(limits.To, len(entries))
 	}
 
 	// The patch holds one section per file, two for a type change, in the
 	// order of the entries. Entries without lines to show (binary, pure
 	// rename, mode change) have a section without hunks.
 	lastRead := -1
-	for i := range entries {
+	for i := from; i < to; i++ {
 		if wantsHunks(&entries[i], limits, limits.MaxTotalLines, limits.MaxTotalBytes) {
 			lastRead = i
 		}
@@ -136,8 +142,9 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 		if e.typeChange {
 			sections = 2
 		}
+		inWindow := i >= from && i < to
 		switch {
-		case !changedLines(e):
+		case !inWindow, !changedLines(e):
 			// Nothing to show.
 		case !wantsHunks(e, limits, budget, pr.bytesLeft):
 			e.file.Truncated = true

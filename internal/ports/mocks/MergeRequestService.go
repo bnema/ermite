@@ -361,8 +361,8 @@ func (_c *MergeRequestService_Create_Call) RunAndReturn(run func(ctx context.Con
 }
 
 // Get provides a mock function for the type MergeRequestService
-func (_mock *MergeRequestService) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, sinceLastRead bool) (ports.MergeRequestDetail, error) {
-	ret := _mock.Called(ctx, p, name, number, sinceLastRead)
+func (_mock *MergeRequestService) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, opts ports.GetMergeRequestOptions) (ports.MergeRequestDetail, error) {
+	ret := _mock.Called(ctx, p, name, number, opts)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Get")
@@ -370,16 +370,16 @@ func (_mock *MergeRequestService) Get(ctx context.Context, p domain.Principal, n
 
 	var r0 ports.MergeRequestDetail
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, bool) (ports.MergeRequestDetail, error)); ok {
-		return returnFunc(ctx, p, name, number, sinceLastRead)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, ports.GetMergeRequestOptions) (ports.MergeRequestDetail, error)); ok {
+		return returnFunc(ctx, p, name, number, opts)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, bool) ports.MergeRequestDetail); ok {
-		r0 = returnFunc(ctx, p, name, number, sinceLastRead)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, ports.GetMergeRequestOptions) ports.MergeRequestDetail); ok {
+		r0 = returnFunc(ctx, p, name, number, opts)
 	} else {
 		r0 = ret.Get(0).(ports.MergeRequestDetail)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, int64, bool) error); ok {
-		r1 = returnFunc(ctx, p, name, number, sinceLastRead)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, int64, ports.GetMergeRequestOptions) error); ok {
+		r1 = returnFunc(ctx, p, name, number, opts)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -396,12 +396,12 @@ type MergeRequestService_Get_Call struct {
 //   - p domain.Principal
 //   - name domain.RepoName
 //   - number int64
-//   - sinceLastRead bool
-func (_e *MergeRequestService_Expecter) Get(ctx any, p any, name any, number any, sinceLastRead any) *MergeRequestService_Get_Call {
-	return &MergeRequestService_Get_Call{Call: _e.mock.On("Get", ctx, p, name, number, sinceLastRead)}
+//   - opts ports.GetMergeRequestOptions
+func (_e *MergeRequestService_Expecter) Get(ctx any, p any, name any, number any, opts any) *MergeRequestService_Get_Call {
+	return &MergeRequestService_Get_Call{Call: _e.mock.On("Get", ctx, p, name, number, opts)}
 }
 
-func (_c *MergeRequestService_Get_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, sinceLastRead bool)) *MergeRequestService_Get_Call {
+func (_c *MergeRequestService_Get_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, opts ports.GetMergeRequestOptions)) *MergeRequestService_Get_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -419,9 +419,9 @@ func (_c *MergeRequestService_Get_Call) Run(run func(ctx context.Context, p doma
 		if args[3] != nil {
 			arg3 = args[3].(int64)
 		}
-		var arg4 bool
+		var arg4 ports.GetMergeRequestOptions
 		if args[4] != nil {
-			arg4 = args[4].(bool)
+			arg4 = args[4].(ports.GetMergeRequestOptions)
 		}
 		run(
 			arg0,
@@ -439,7 +439,7 @@ func (_c *MergeRequestService_Get_Call) Return(mergeRequestDetail ports.MergeReq
 	return _c
 }
 
-func (_c *MergeRequestService_Get_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, sinceLastRead bool) (ports.MergeRequestDetail, error)) *MergeRequestService_Get_Call {
+func (_c *MergeRequestService_Get_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, opts ports.GetMergeRequestOptions) (ports.MergeRequestDetail, error)) *MergeRequestService_Get_Call {
 	_c.Call.Return(run)
 	return _c
 }

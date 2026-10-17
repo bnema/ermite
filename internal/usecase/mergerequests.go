@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -419,18 +421,40 @@ func (m *MergeRequests) get(ctx context.Context, p domain.Principal, name domain
 // Get returns a merge request with its commits, its diff, its comments and the
 // read position. The diff compares the merge base of the target and the head
 // with the head ("target...head"), within domain.DefaultDiffLimits. With
-// sinceLastRead it compares the head recorded by MarkRead with the current
-// head instead, which works after a force-push as long as the recorded commit
-// still exists; when none was recorded the diff is the default one, and when
-// the recorded commit is gone too, with LastReadLost set. A merged or closed
-// request keeps the head and the base it had.
-func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, sinceLastRead bool) (ports.MergeRequestDetail, error) {
+// opts.SinceLastRead it compares the head recorded by MarkRead with the
+// current head instead, which works after a force-push as long as the recorded
+// commit still exists; when none was recorded the diff is the default one, and
+// when the recorded commit is gone too, with LastReadLost set. A merged or
+// closed request keeps the head and the base it had.
+//
+// opts.Files lists every changed file and reads the hunks of a window of them
+// only; opts.Base and opts.Head make Get fail with domain.ErrConflict when the
+// diff is no longer the one the caller shows (before any diff is read);
+// opts.DiffOnly skips the commits. An invalid window gives domain.ErrInvalid.
+func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, opts ports.GetMergeRequestOptions) (ports.MergeRequestDetail, error) {
+	limits := domain.DefaultDiffLimits()
+	if w := opts.Files; w != nil {
+		if w.From < 0 || w.To < 0 || (w.To != 0 && w.To < w.From) {
+			return ports.MergeRequestDetail{}, fmt.Errorf("%w: file window [%d, %d)", domain.ErrInvalid, w.From, w.To)
+		}
+		limits.MaxFiles, limits.From, limits.To = 0, w.From, w.To
+	}
 	_, mr, err := m.get(ctx, p, name, number)
 	if err != nil {
 		return ports.MergeRequestDetail{}, err
 	}
 	if mr, err = m.withHead(ctx, mr); err != nil {
 		return ports.MergeRequestDetail{}, err
+	}
+	if !opts.Head.IsZero() && opts.Head != mr.HeadID {
+		return ports.MergeRequestDetail{}, fmt.Errorf("%w: the head of !%d moved to %s", domain.ErrConflict, number, mr.HeadID)
+	}
+	// checkBase fails when the caller shows another diff base than base.
+	checkBase := func(base domain.ObjectID) error {
+		if !opts.Base.IsZero() && opts.Base != base {
+			return fmt.Errorf("%w: the diff base of !%d is now %s", domain.ErrConflict, number, base)
+		}
+		return nil
 	}
 	d := ports.MergeRequestDetail{MergeRequest: mr}
 	if d.Comments, err = m.store.ListComments(ctx, name, number); err != nil {
@@ -446,7 +470,7 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 	}
 	head := mr.HeadID
 	if head.IsZero() {
-		return d, nil // the source branch is gone: no commits, no diff
+		return d, checkBase(domain.ObjectID{}) // the source branch is gone: no commits, no diff
 	}
 	if !mr.IsOpen() {
 		// After a squash the reviewed commits are only reachable from the
@@ -455,13 +479,19 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 		case err != nil:
 			return ports.MergeRequestDetail{}, err
 		case !ok:
-			return d, nil // the reviewed commits are gone: no commits, no diff
+			// The reviewed commits are gone: no commits, no diff.
+			if err := checkBase(domain.ObjectID{}); err != nil {
+				return ports.MergeRequestDetail{}, err
+			}
+			return d, nil
 		}
 	}
-	if d.Commits, d.CommitsTruncated, err = m.git.ListRange(ctx, name, exclude, head, MaxMergeRequestCommits); err != nil {
-		return ports.MergeRequestDetail{}, err
+	if !opts.DiffOnly {
+		if d.Commits, d.CommitsTruncated, err = m.git.ListRange(ctx, name, exclude, head, MaxMergeRequestCommits); err != nil {
+			return ports.MergeRequestDetail{}, err
+		}
 	}
-	if sinceLastRead && !d.LastReadID.IsZero() {
+	if opts.SinceLastRead && !d.LastReadID.IsZero() {
 		switch ok, err := m.git.HasCommit(ctx, name, d.LastReadID); {
 		case err != nil:
 			return ports.MergeRequestDetail{}, err
@@ -471,11 +501,14 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 			d.LastReadLost = true
 		}
 	}
+	if err := checkBase(base); err != nil {
+		return ports.MergeRequestDetail{}, err
+	}
 	if base.IsZero() {
 		return d, nil
 	}
 	d.DiffBaseID = base
-	if d.Stats, d.Diff, err = m.git.DiffCommits(ctx, name, base, head, domain.DefaultDiffLimits()); err != nil {
+	if d.Stats, d.Diff, err = m.git.DiffCommits(ctx, name, base, head, limits); err != nil {
 		return ports.MergeRequestDetail{}, err
 	}
 	return d, nil
@@ -601,14 +634,39 @@ func (m *MergeRequests) checkLine(ctx context.Context, mr domain.MergeRequest, p
 		v.Add("path", "the merge request has no diff to comment on")
 		return v.Err()
 	}
-	_, diff, err := m.git.DiffCommits(ctx, mr.Repo, base, mr.HeadID, domain.DefaultDiffLimits())
+	// A comment may be on a file past the 300th that the web view lists, so
+	// the file is looked up among all the files (MaxFiles 0). Reading every
+	// file's hunks within the default total limits would reject a comment on a
+	// file the earlier ones left no budget for. So a first read lists the files
+	// with no hunks (From past the end: cheap, git is stopped at once), and a
+	// second reads the hunks of the one file within the default per-file limit
+	// and total limits, as the web view does for a window holding it.
+	list := domain.DefaultDiffLimits()
+	list.MaxFiles, list.From = 0, math.MaxInt
+	_, diff, err := m.git.DiffCommits(ctx, mr.Repo, base, mr.HeadID, list)
 	if err != nil {
 		return err
 	}
-	if !diff.HasLine(params.Path, params.Side, params.Line) {
+	idx := slices.IndexFunc(diff.Files, func(f domain.FileDiff) bool { return diffFileName(f) == params.Path })
+	if idx >= 0 {
+		one := domain.DefaultDiffLimits()
+		one.MaxFiles, one.From, one.To = 0, idx, idx+1
+		if _, diff, err = m.git.DiffCommits(ctx, mr.Repo, base, mr.HeadID, one); err != nil {
+			return err
+		}
+	}
+	if idx < 0 || !diff.HasLine(params.Path, params.Side, params.Line) {
 		v.Add("path", fmt.Sprintf("%s:%d on the %s side is not a line of the diff", params.Path, params.Line, params.Side))
 	}
 	return v.Err()
+}
+
+// diffFileName is the path a comment designates for f, as Diff.HasLine reads it.
+func diffFileName(f domain.FileDiff) string {
+	if f.Status == domain.FileDeleted {
+		return f.OldPath
+	}
+	return f.NewPath
 }
 
 // ResolveComment marks a comment resolved or unresolved. The principal needs

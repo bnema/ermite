@@ -108,7 +108,7 @@ type EventService interface {
 type MergeRequestService interface {
 	Create(ctx context.Context, p domain.Principal, name domain.RepoName, params CreateMergeRequestParams) (domain.MergeRequest, error)
 	List(ctx context.Context, p domain.Principal, name domain.RepoName, params ListMergeRequestsParams) (MergeRequestPage, error)
-	Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, sinceLastRead bool) (MergeRequestDetail, error)
+	Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, opts GetMergeRequestOptions) (MergeRequestDetail, error)
 	AddComment(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params AddCommentParams) (domain.Comment, error)
 	ResolveComment(ctx context.Context, p domain.Principal, name domain.RepoName, number, commentID int64, resolved bool) (domain.Comment, error)
 	Close(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error)

@@ -85,15 +85,6 @@ func TestPairLines(t *testing.T) {
 	assert.Equal(t, DiffLine{Kind: "add", Mark: "+", New: "2", Segs: []Seg{{Text: "a1"}}, newN: 2}, ls[4])
 }
 
-func TestChangeBar(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, Bar{Rest: "··········"}, changeBar(0, 0, 0))
-	assert.Equal(t, Bar{Add: "++++++++++"}, changeBar(100, 0, 100))
-	assert.Equal(t, Bar{Add: "+++++", Del: "-----", Rest: ""}, changeBar(50, 50, 100))
-	assert.Equal(t, Bar{Add: "+", Rest: "·········"}, changeBar(1, 0, 1000), "a change is never rounded away")
-	assert.Equal(t, 10, len(changeBar(7, 7, 8).Add+changeBar(7, 7, 8).Del+changeBar(7, 7, 8).Rest), "never wider than the bar")
-}
-
 func TestFileNotes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

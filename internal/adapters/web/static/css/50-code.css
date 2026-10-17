@@ -46,10 +46,18 @@
   }
 
   /* one file of a diff */
+  .dfile { --lnw: 4ch; }
+  .lnw-2 { --lnw: 2ch; } .lnw-3 { --lnw: 3ch; } .lnw-4 { --lnw: 4ch; } .lnw-5 { --lnw: 5ch; } .lnw-6 { --lnw: 6ch; } .lnw-7 { --lnw: 7ch; }
   .dfile {
-    margin-top: var(--s3); scroll-margin-top: calc(var(--hdr-h, 0px) + 56px);
+    margin-top: var(--s3); scroll-margin-top: calc(var(--hdr-h, 0px) + var(--bar-h, 48px) + 8px);
+    /* a file far from the screen is neither laid out nor painted: a diff of
+       hundreds of files scrolls and switches layout like a short one. The
+       browser remembers the last size it rendered (auto). */
+    content-visibility: auto; contain-intrinsic-size: auto 480px;
     & > summary {
-      position: sticky; top: calc(var(--hdr-h, 0px) + 48px); z-index: 4;
+      /* under the diff tools, whose height --bar-h is (two lines when they
+         wrap: the merge request bar on a narrow screen) */
+      position: sticky; top: calc(var(--hdr-h, 0px) + var(--bar-h, 48px)); z-index: 4;
       background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r) var(--r) 0 0; padding: var(--s2) var(--s3);
       font-family: var(--mono); font-size: var(--fs-s);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style: none;
@@ -66,7 +74,9 @@
     width: max-content; min-width: 100%; font-family: var(--mono);
     font-size: var(--fs-code); line-height: var(--lh-code);
     & td { padding: 0; vertical-align: top; }
-    & .ln { width: 6ch; min-width: 6ch; padding-right: 1ch; text-align: right; color: var(--ink-mute); user-select: none; }
+    /* the gutter is as wide as the largest line number of the file (lnw-N on
+       .dfile), plus 1ch on each side */
+    & .ln { width: calc(var(--lnw) + 2ch); min-width: calc(var(--lnw) + 2ch); padding: 0 1ch; text-align: right; color: var(--ink-mute); user-select: none; }
     & .m { width: 2ch; text-align: center; user-select: none; color: var(--ink-dim); }
     & .tx { white-space: pre; }
     & .hunk td { color: var(--ink-mute); background: var(--paper-alt); padding: 0 1ch; }
@@ -83,22 +93,38 @@
      the hunk header, which spans all columns); long lines wrap in their half */
   .spl {
     width: 100%; table-layout: fixed;
-    & .c-ln { width: 7ch; } & .c-m { width: 2.5ch; }
+    & .c-ln { width: calc(var(--lnw) + 2ch); } & .c-m { width: 2.5ch; }
     & .tx, & .hunk td { white-space: pre-wrap; overflow-wrap: anywhere; }
     & td.ln:nth-child(4) { border-left: 1px solid var(--border); }
   }
   #diffs[data-diff="unified"] .spl, #diffs[data-diff="split"] .uni { display: none; }
 
-  /* diff table of contents in the rail */
+  /* diff table of contents in the rail: one line a file, the name first and
+     its directory dimmed after it (cut from its start when long), the
+     comments, the counts */
   .files {
-    font-size: var(--fs-s);
-    & a { display: grid; grid-template-columns: 2ch minmax(0, 1fr) auto; column-gap: var(--s2); padding: 2px var(--s2); margin: 0 calc(-1 * var(--s2)); border-radius: 4px; text-decoration: none; font-family: var(--mono); }
+    font-size: var(--fs-s); position: relative; /* the offsets of its links count from it (ermite.js) */
+    & li[hidden] { display: none; }
+    & a {
+      display: grid; grid-template-columns: 1.5ch minmax(0, 1fr) auto auto; column-gap: var(--s2); align-items: baseline;
+      height: 26px; line-height: 26px; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2));
+      border-radius: 4px; border-left: 2px solid transparent; text-decoration: none; font-family: var(--mono); color: var(--ink);
+    }
     & a:hover { background: var(--bg-raised); }
     & a:hover .p { text-decoration: underline; }
-    & a[aria-current="true"] { background: var(--row); font-weight: bold; }
-    & .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-    & .n { color: var(--ink-dim); font-size: var(--fs-s); }
-    & .b { grid-column: 2 / -1; color: var(--ink-mute); font-size: var(--fs-s); letter-spacing: .1ch; line-height: 1; padding-bottom: 4px; }
+    & a[aria-current="true"] { background: var(--row); border-left-color: var(--ink-hi); }
+    & a[aria-current="true"] .p { font-weight: bold; color: var(--ink-hi); }
+    & .st { color: var(--ink-mute); font-weight: bold; }
+    & .st[data-st="A"] { color: var(--teal); }
+    & .st[data-st="D"] { color: var(--red); }
+    & .nm { overflow: hidden; white-space: nowrap; display: flex; min-width: 0; }
+    & .nm .p { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    /* cut from the start (rtl), the path itself kept in its order (bdi) */
+    & .nm .d { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; color: var(--ink-mute); padding-left: 1ch; }
+    & .nm .d bdi { direction: ltr; }
+    & .cn { font: 600 var(--fs-xs) / 16px var(--font); padding: 0 6px; border-radius: 999px; background: var(--ink-hi); color: var(--on-ink); align-self: center; }
+    & .cn.done { background: var(--bg-strong); color: var(--ink-dim); }
+    & .n { color: var(--ink-dim); font-size: var(--fs-xs); white-space: nowrap; }
   }
 
   @media (max-width: 700px) {

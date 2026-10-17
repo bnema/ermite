@@ -131,7 +131,7 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 </button>
 </div>
 <div id="diffs" data-diff="split">
-<details class="dfile" id="f1" data-file open>
+<details class="dfile lnw-2" id="f1" data-file open>
 <summary>
 <span class="st">M</span>
 <span class="p">a.txt</span>
@@ -271,7 +271,7 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 </table>
 </div>
 </details>
-<details class="dfile" id="f2" data-file>
+<details class="dfile lnw-2" id="f2" data-file>
 <summary>
 <span class="st">M</span>
 <span class="p">run.sh</span>
@@ -289,32 +289,35 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
 </h2>
 <ol class="files" aria-label="Changed files">
 <li>
-<a href="#f1" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
-<span class="st" title="M">M</span>
-<span class="p" title="a.txt">a.txt</span>
+<a href="#f1" title="a.txt" hx-on:click="(window.ermiteMR?.openFile || ermite.openFile)(this.hash.slice(1))">
+<span class="st" data-st="M" title="modified">M</span>
+<span class="nm">
+<span class="p">a.txt</span>
+<span class="d">
+<bdi>
+</bdi>
+</span>
+</span>
 <span class="n">
 <span class="plus">+2</span>
 <span class="minus">-1</span>
 </span>
-<span class="b" aria-hidden="true">
-<span class="plus">+++++++</span>
-<span class="minus">---</span>
-</span>
 </a>
 </li>
 <li>
-<a href="#f2" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
-<span class="st" title="M">M</span>
-<span class="p" title="run.sh">run.sh</span>
+<a href="#f2" title="run.sh" hx-on:click="(window.ermiteMR?.openFile || ermite.openFile)(this.hash.slice(1))">
+<span class="st" data-st="M" title="modified">M</span>
+<span class="nm">
+<span class="p">run.sh</span>
+<span class="d">
+<bdi>
+</bdi>
+</span>
+</span>
 <span class="n">
 <span class="plus">+0</span>
 <span class="minus">-0</span>
 </span>
-<span class="b" aria-hidden="true">
-<span class="plus">
-</span>
-<span class="minus">
-</span>··········</span>
 </a>
 </li>
 </ol>
@@ -566,7 +569,10 @@ And &lt;b&gt;html&lt;/b&gt; &amp; &#34;quotes&#34;.</pre>
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
-         k-permalink from:body -> ermite.permalink()">
+         k-permalink from:body -> ermite.permalink();
+         k-merge from:body -> window.ermiteMR?.openMerge();
+         k-read from:body -> window.ermiteMR?.markRead();
+         k-gf from:body -> window.ermiteMR?.focusFiles()">
 </div>
 </body>
 </html>

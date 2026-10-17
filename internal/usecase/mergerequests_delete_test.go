@@ -42,7 +42,7 @@ func TestMergeDeletesTheSourceBranch(t *testing.T) {
 			}, evs[1].(domain.PushEvent).Updates)
 
 			// The merged request still reads, with its commits and diff.
-			d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+			d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 			require.NoError(t, err)
 			assert.Len(t, d.Commits, 2)
 			assert.Len(t, d.Diff.Files, 2)
@@ -82,7 +82,7 @@ func TestMergeRefusesToDeleteANeededBranch(t *testing.T) {
 		assert.Contains(t, err.Error(), "!2 still uses")
 		assert.Equal(t, main, r.branchHead("main"), "not merged")
 		assert.Equal(t, head, r.branchHead("feat"))
-		d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+		d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, domain.MRStateOpen, d.MergeRequest.State)
 	})
@@ -138,7 +138,7 @@ func TestSquashMergedRequestReadsAfterItsCommitsArePruned(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok, "the reviewed commits are pruned")
 
-	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, domain.MRStateMerged, d.MergeRequest.State)
 	assert.Equal(t, res.MergedCommitID, d.MergeRequest.MergedCommitID)

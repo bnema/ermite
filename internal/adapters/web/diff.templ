@@ -141,17 +141,39 @@ templ commitRail(p CommitPage) {
 // FileList is the table of contents of a diff: status letter, path, +n -m
 // and an ASCII bar. The row of the file in view is marked.
 templ FileList(files []DiffFile) {
+	if len(files) > fileFilterMin {
+		<div class="ffilter">
+			<label for="files-filter" class="sr">filter the changed files</label>
+			<input
+				id="files-filter"
+				type="search"
+				placeholder="Filter files…"
+				autocomplete="off"
+				data-pick=".files > li"
+				hx-on:input="ermite.filter(this)"
+			/>
+		</div>
+	}
 	<ol class="files" aria-label="Changed files">
 		for _, f := range files {
 			<li>
 				<a
 					href={ templ.SafeURL("#" + f.ID) }
-					hx-on:click="document.getElementById(this.hash.slice(1)).open = true"
+					title={ f.Path }
+					hx-on:click="(window.ermiteMR?.openFile || ermite.openFile)(this.hash.slice(1))"
 				>
-					<span class="st" title={ f.Status }>{ f.Status }</span>
-					<span class="p" title={ f.Path }>{ f.Path }</span>
-					<span class="n"><span class="plus">+{ itoa(f.Add) }</span> <span class="minus">-{ itoa(f.Del) }</span></span>
-					<span class="b" aria-hidden="true"><span class="plus">{ f.Bar.Add }</span><span class="minus">{ f.Bar.Del }</span>{ f.Bar.Rest }</span>
+					<span class="st" data-st={ f.Status } title={ statusName(f.Status) }>{ f.Status }</span>
+					<span class="nm"><span class="p">{ f.Name }</span>{ " " }<span class="d"><bdi>{ f.Dir }</bdi></span></span>
+					if f.OpenNotes > 0 {
+						<span class="cn" title={ plural(f.OpenNotes, "open comment", "open comments") }>{ itoa(f.OpenNotes) }</span>
+					} else if f.Notes > 0 {
+						<span class="cn done" title={ plural(f.Notes, "resolved comment", "resolved comments") }>{ itoa(f.Notes) }</span>
+					}
+					if f.Bin {
+						<span class="n mute">bin</span>
+					} else {
+						<span class="n"><span class="plus">+{ itoa(f.Add) }</span> <span class="minus">-{ itoa(f.Del) }</span></span>
+					}
 				</a>
 			</li>
 		}
@@ -164,7 +186,7 @@ templ FileList(files []DiffFile) {
 // colour alone.
 templ DiffFileView(f DiffFile, p DiffView) {
 	<details
-		class="dfile"
+		class={ "dfile", "lnw-" + itoa(f.Digits) }
 		id={ f.ID }
 		data-file
 		if f.Open {
@@ -177,7 +199,14 @@ templ DiffFileView(f DiffFile, p DiffView) {
 				{ " " }<span class="note">{ f.Note }</span>
 			}
 		</summary>
-		if len(f.Hunks) > 0 {
+		if f.Lazy {
+			// A placeholder: mr.js fetches the window of the file when it comes
+			// near the screen and swaps the files of the window in. Without
+			// scripts the link opens the page of that window.
+			<div class={ "dlazy", "dlazy-" + itoa(f.Height) } data-src={ f.Src } data-notes={ f.Comments }>
+				<a href={ templ.SafeURL("?from=" + itoa(f.From) + "#" + f.ID) }>show this file</a>
+			</div>
+		} else if len(f.Hunks) > 0 {
 			<div class="dscroll">
 				if p.ShowUnified {
 					<table class="dt uni" aria-label={ f.Path + ", unified" }>
@@ -233,7 +262,28 @@ templ DiffFileView(f DiffFile, p DiffView) {
 				}
 			</p>
 		}
+		if len(f.Loose) > 0 {
+			<div class="dloose">
+				for _, c := range f.Loose {
+					@commentView(c, "")
+				}
+			</div>
+		}
 	</details>
+}
+
+// MRFiles is a window of files of a merge request, for the placeholders of
+// the page: the files only, which replace the placeholders of the same ids.
+templ MRFiles(p MRFilesPage) {
+	for _, f := range p.Files {
+		@DiffFileView(f, p.DiffView)
+	}
+}
+
+// MRFilesMoved answers a window of a diff that is not the one of the page any
+// more: the placeholder shows it instead of a file of another diff.
+templ MRFilesMoved() {
+	<p class="notice" data-moved>this merge request changed since the page was loaded — <a href="">reload</a></p>
 }
 
 // splitSide is one half of a row of the split view; a side without a line is

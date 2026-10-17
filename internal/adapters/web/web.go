@@ -177,6 +177,7 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /{repo}/merge-requests/{$}", s.page(s.mrList))
 		mux.HandleFunc("GET /{repo}/merge-requests/{n}", s.page(s.mrShow))
 		mux.HandleFunc("GET /{repo}/merge-requests/{n}/since", s.page(s.mrSince))
+		mux.HandleFunc("GET /{repo}/merge-requests/{n}/files", s.page(s.mrFiles))
 		mux.HandleFunc("GET /{repo}/compare/{rest...}", s.page(s.compare))
 		// The writes: POST only, behind the gate (ServeHTTP).
 		mux.HandleFunc("POST /{repo}/merge-requests", s.mrAction(s.mrCreate))

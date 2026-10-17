@@ -3,6 +3,7 @@
 package app
 
 import (
+	"fmt"
 	"html"
 	"net/http"
 	"net/url"
@@ -141,7 +142,7 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	assert.Contains(t, mr.body, "Finds things.\nSee ", "line breaks are kept")
 	assert.NotContains(t, mr.body, "<form", "an anonymous visitor gets no form")
 	assert.NotContains(t, mr.body, "ermite mr merge", "nor the merge line")
-	assert.NotContains(t, mr.body, ">Merge</button>")
+	assert.NotContains(t, mr.body, `id="merge-menu"`)
 	assert.Contains(t, mr.body, `href="/proj/commit/`+head+`"`, "the commits are in the rail")
 	assert.NotContains(t, strings.ToLower(mr.body), "proposal")
 	assertNoInline(t, mr.body)
@@ -157,10 +158,11 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	assert.Contains(t, own.hdr.Values("Vary"), "Cookie")
 	assert.Equal(t, head, formHead(t, own.body))
 	assert.Contains(t, own.body, `action="/proj/merge-requests/1/merge"`)
-	assert.Contains(t, own.body, `<option value="fast-forward">`)
-	assert.Contains(t, own.body, `<option value="squash">`)
+	assert.Contains(t, own.body, `id="merge-menu"`, "the merge is a menu of the bar above the diff")
+	assert.Contains(t, own.body, `<input type="radio" name="mode" value="fast-forward" checked>`, "the first mode is the default")
+	assert.Contains(t, own.body, `<input type="radio" name="mode" value="squash">`)
 	assert.Contains(t, own.body, "ermite mr merge proj 1 --head "+head)
-	assert.Contains(t, own.body, `name="delete_branch" value="1"> delete feat/search after the merge`)
+	assert.Contains(t, own.body, `name="delete_branch" value="1"> delete feat/search after the merge <kbd aria-hidden="true">D</kbd>`)
 	assert.NotContains(t, own.body, `name="delete_branch" value="1" checked>`, "unchecked by default")
 	assert.Contains(t, own.body, "ermite mr merge proj 1 --head "+head+" --squash")
 	assert.Contains(t, own.body, `action="/proj/merge-requests/1/comments"`)
@@ -313,7 +315,7 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Contains(t, own.body, `action="/proj/merge-requests/1/read"`)
 	res = b.form(base+"/read", token, url.Values{"head_id": {head1}})
 	require.Equal(t, http.StatusSeeOther, res.status, res.body)
-	assert.NotContains(t, b.get(base, as(token)).body, ">Mark read</button>", "the head is the one that was read")
+	assert.NotContains(t, b.get(base, as(token)).body, "data-read>Mark read", "the head is the one that was read")
 	r.writeFile(r.wt, "extra.txt", []byte("extra\n"))
 	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
 	head2 := r.headOf("feat/search")
@@ -322,7 +324,7 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Contains(t, all.body, `href="/proj/merge-requests/1/since"`)
 	assert.Contains(t, all.body, "since your last read")
 	assert.Contains(t, all.body, "<li data-new>", "the commit pushed since is marked")
-	assert.Contains(t, all.body, ">Mark read</button>")
+	assert.Contains(t, all.body, "data-read>Mark read")
 	assert.Contains(t, all.body, "outdated", "the notes were written on the earlier head")
 	since := b.get(base+"/since", as(token))
 	require.Equal(t, 200, since.status, since.body)
@@ -357,7 +359,7 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Contains(t, done.body, "fast-forward")
 	assert.Contains(t, done.body, `href="/proj/commit/`+head2+`"`)
 	assert.NotContains(t, done.body, "<form")
-	assert.NotContains(t, b.get(base, as(token)).body, ">Merge</button>", "nothing to merge any more")
+	assert.NotContains(t, b.get(base, as(token)).body, `id="merge-menu"`, "nothing to merge any more")
 	// Writes on a merged request are refused with a page.
 	late := b.form(base+"/comments", token, url.Values{"text": {"too late"}})
 	assert.Equal(t, http.StatusConflict, late.status)
@@ -628,3 +630,86 @@ func TestWebMergeRequestSinceAfterForcePush(t *testing.T) {
 	assert.Contains(t, lost.body, "is gone, the branch was rewritten")
 	assert.Contains(t, lost.body, "other.txt", "the whole change is shown")
 }
+
+// A request of many files: the page lists every file and holds the hunks of
+// the first window only; the other files are placeholders that load their
+// window from /files, which carries the base and the head of the diff. A
+// comment on a far file comes with its window; a moved head answers 409; the
+// page of a window (?from=, the links of a page without scripts) shows its
+// hunks and its line forms.
+func TestWebMergeRequestFileWindows(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	const n = 60
+	for i := range n {
+		r.writeFile(r.wt, fmt.Sprintf("many/f%02d.txt", i), []byte(fmt.Sprintf("line %d\n", i)))
+	}
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+	head := r.headOf("feat/search")
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Many").ok(t)
+	r.cli(t, adminToken, "mr", "comment", "proj", "1", "--path", "many/f55.txt", "--line", "1", "-m", "far note").ok(t)
+
+	page := b.get("/proj/merge-requests/1", nil)
+	require.Equal(t, 200, page.status)
+	assert.Equal(t, n+1, strings.Count(page.body, `<li><a href="#f`), "every file is listed")
+	assert.Equal(t, n+1-25, strings.Count(page.body, `class="dlazy`), "the files past the first window are placeholders")
+	assert.NotContains(t, page.body, "far note", "the comment of a far file comes with its window")
+	assert.Contains(t, page.body, `data-notes="c1"`, "its placeholder knows it")
+	assert.Contains(t, page.body, `<span class="cn" title="1 open comment">1</span>`, "the list counts it")
+	m := reWindowSrc.FindStringSubmatch(page.body)
+	require.Len(t, m, 2, "a placeholder holds the address of its window")
+	src := html.UnescapeString(m[1])
+	assert.Contains(t, src, "head="+head)
+
+	win := b.get(strings.Replace(src, "from=25", "from=50", 1), nil)
+	require.Equal(t, 200, win.status, win.body)
+	assert.Contains(t, win.body, "far note")
+	assert.Contains(t, win.body, `line 55</td>`)
+	assert.NotContains(t, win.body, "<html", "a window is a fragment")
+	assert.NotContains(t, win.body, `class="dlazy`)
+	// The window renders the layouts of the page: both when it switches them,
+	// the one it shows otherwise.
+	both := b.get(src+"&view=split&layouts=both", nil)
+	assert.Contains(t, both.body, `class="dt uni"`)
+	assert.Contains(t, both.body, `class="dt spl"`)
+	one := b.get(src+"&view=split&layouts=one", nil)
+	assert.NotContains(t, one.body, `class="dt uni"`)
+	assert.Contains(t, one.body, `class="dt spl"`)
+	assert.Equal(t, 404, b.get(strings.Replace(src, "from=25", "from=7", 1), nil).status, "not a window start")
+	assert.Equal(t, 404, b.get(strings.Replace(src, "from=25", "from=100", 1), nil).status, "past the files")
+
+	// The page of a window, without scripts: its hunks, the line forms of the
+	// owner point back to it.
+	own := b.get("/proj/merge-requests/1?from=50", as(token))
+	require.Equal(t, 200, own.status)
+	assert.Contains(t, own.body, "line 55</td>")
+	assert.Contains(t, own.body, `href="/proj/merge-requests/1?from=50&amp;on=new:1:many%2Ff55.txt#f`)
+	assert.NotContains(t, own.body, "line 0</td>", "the first window is a placeholder there")
+	assert.Contains(t, own.body, `href="/proj/merge-requests/1?view=split&amp;from=50"`, "the layout links keep the window")
+	assert.Equal(t, 404, b.get("/proj/merge-requests/1?from=3", nil).status)
+
+	// A comment on a line of a far window: its form, its cancel link and the
+	// answer return to that window.
+	form := b.get("/proj/merge-requests/1?from=50&on=new:1:many%2Ff55.txt", as(token))
+	require.Equal(t, 200, form.status)
+	assert.Contains(t, form.body, `name="from" value="50"`)
+	assert.Contains(t, form.body, `class="btn" href="/proj/merge-requests/1?from=50#f`)
+	res := b.form("/proj/merge-requests/1/comments", token, url.Values{"text": {"near it"}, "path": {"many/f55.txt"}, "line": {"1"}, "side": {"new"}, "from": {"50"}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Equal(t, "/proj/merge-requests/1?from=50#c2", res.hdr.Get("Location"))
+	assert.Contains(t, b.get("/proj/merge-requests/1?from=50", as(token)).body, `<input type="hidden" name="from" value="50">`, "its resolve form too")
+	res = b.form("/proj/merge-requests/1/comments/2/resolve", token, url.Values{"resolved": {"true"}, "from": {"50"}})
+	assert.Equal(t, "/proj/merge-requests/1?from=50#c2", res.hdr.Get("Location"))
+	res = b.form("/proj/merge-requests/1/comments/2/resolve", token, url.Values{"resolved": {"false"}, "from": {"7"}})
+	assert.Equal(t, "/proj/merge-requests/1#c2", res.hdr.Get("Location"), "a window that is none is dropped")
+
+	// The head moved: the window says to reload, never a file of another diff.
+	r.writeFile(r.wt, "later.txt", []byte("later\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+	stale := b.get(src, nil)
+	assert.Equal(t, http.StatusConflict, stale.status)
+	assert.Contains(t, stale.body, "data-moved")
+}
+
+var reWindowSrc = regexp.MustCompile(`data-src="([^"]*from=25[^"]*)"`)

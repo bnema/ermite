@@ -28,6 +28,13 @@ import (
 //	GET  /<repo>/merge-requests/<n>          the request with its diff
 //	GET  /<repo>/merge-requests/<n>/since    the diff since the last read
 //	GET  /<repo>/compare/<branch>            a branch against the default branch
+//	GET  /<repo>/merge-requests/<n>/files    a window of files of the diff
+//
+// The page lists every changed file and reads the hunks of the first window
+// of files only (mrWindow); the files after it are placeholders that the
+// browser fills in, a window per request, as they come near the screen
+// (/files?from=&base=&head=). Without scripts each placeholder links to the
+// page of its window (?from=), which shows the hunks of that window.
 //
 // Reading marks nothing as read. MarkRead stores state, and a GET must stay
 // safe: a prefetcher, a link preview or a reload of the owner's tab would move
@@ -43,6 +50,9 @@ import (
 // forms and the CLI lines exist only in the owner's copy.
 
 const (
+	// mrWindow is how many files of a merge request one read gets the hunks
+	// of: the page shows the first window and loads the others.
+	mrWindow = 25
 	// mrPerPage is how many decided merge requests a page of the list shows,
 	// at least; pages of the use case are read whole.
 	mrPerPage = 50
@@ -114,6 +124,8 @@ type ResolveForm struct {
 	// Value is the state the form sets.
 	Value bool
 	Label string
+	// From is the window of the page the comment is on (CommentForm.From).
+	From int
 }
 
 // CommentForm is the POST that adds a comment.
@@ -125,6 +137,9 @@ type CommentForm struct {
 	Path, Line, Side string
 	Cancel           string
 	Focus            bool
+	// From is the window of the page the form is on (see mrWindow), sent
+	// back so that the answer returns to it; 0 for the first.
+	From int
 }
 
 // MRCommit is a commit of the request.
@@ -198,8 +213,11 @@ type MRPage struct {
 	Invisible bool
 
 	// General are the comments that are not on a line, Loose those on a line
-	// that the diff shown does not have.
+	// that the diff shown does not have. With LooseInFiles (a window of files
+	// loaded later) the loose comments of a listed file go under the file
+	// instead (DiffFile.Loose).
 	General, Loose []CommentView
+	LooseInFiles   bool
 	NComments      int
 	NUnresolved    int
 	GeneralForm    *CommentForm
@@ -208,12 +226,16 @@ type MRPage struct {
 	CommitsNote string
 	Modes       []string
 	ChecksBlock bool
-	// Checks are the CI checks of the head of the request.
-	Checks ChecksSection
+	// Checks are the CI checks of the head of the request, ChecksSum their
+	// state in the bar above the diff.
+	Checks    ChecksSection
+	ChecksSum ChecksSummary
 
 	Box *MergeBox
 	// Live is true when the page announces changes.
 	Live bool
+	// From is the first file of the window the page read the hunks of (?from=).
+	From int
 }
 
 // CompareCommit is a commit of a branch that the target lacks.
@@ -419,9 +441,18 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	if err != nil {
 		return nil, 0, err
 	}
-	res, err := s.cfg.MergeRequests.Get(ctx, principal(ctx), d.repo.Name, n, since)
+	from, err := parseFrom(r)
 	if err != nil {
 		return nil, 0, err
+	}
+	res, err := s.cfg.MergeRequests.Get(ctx, principal(ctx), d.repo.Name, n, ports.GetMergeRequestOptions{
+		SinceLastRead: since, Files: &ports.FileWindow{From: from, To: from + mrWindow},
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if from > 0 && from >= len(res.Diff.Files) {
+		return nil, 0, errNotFound
 	}
 	m := res.MergeRequest
 	now := s.cfg.Now()
@@ -470,13 +501,20 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		}
 	}
 	p.ChecksBlock = d.repo.Settings.FailingChecksBlock
-	if open && head != "" {
-		p.Checks = checksSection(d.repo.Repo, s.checksFor(ctx, d.repo.Name, head))
-	} else if head != "" {
-		p.Checks = checksSection(d.repo.Repo, s.checksFor(ctx, d.repo.Name, head))
-		p.Checks.Note = ""
+	if head != "" {
+		checks := s.checksFor(ctx, d.repo.Name, head)
+		p.Checks = checksSection(d.repo.Repo, checks)
+		p.ChecksSum = checksSummary(d.repo.Name, head, checks)
+		if !open {
+			p.Checks.Note = ""
+		}
 	}
 	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
+	countNotes(p.Files, res.Comments)
+	if !res.DiffBaseID.IsZero() {
+		lazyFiles(p.Files, from, filesSrc(d.name(), n, since, res.DiffBaseID.String(), head))
+	}
+	p.From = from
 
 	// The commits of the request, newest first.
 	for _, c := range res.Commits {
@@ -538,7 +576,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	s.placeComments(&p, d.name(), n, res.Comments, head, !since, canWrite, on)
 	lines, invisible := diffLines(p.Files)
 	p.Invisible = invisible
-	p.DiffView = newDiffView(r, lines, self+"?view=unified", self+"?view=split")
+	p.DiffView = newDiffView(r, lines, withFrom(self+"?view=unified", from), withFrom(self+"?view=split", from))
 	if signed && open {
 		p.Box = s.mergeBox(d, n, m.Source, head, lastRead)
 		if m.IsDraft() {
@@ -570,6 +608,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	p.Live = true
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source)+"&head="+url.QueryEscape(head))
 	l.HasRail = true
+	l.MR = true
 	return MergeRequest(l, p), http.StatusOK, nil
 }
 
@@ -666,23 +705,30 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 	}
 	index := map[lineKey]*DiffLine{}
 	fileIDs := map[string]string{}
+	fileAt := map[string]int{}
 	for fi := range p.Files {
 		f := &p.Files[fi]
 		fileIDs[f.Key] = f.ID
+		fileAt[f.Key] = fi
 		linkable := canWrite && f.Key != "" && !strings.ContainsFunc(f.Key, invisible)
+		// The form of a line shows on the page of the window of its file.
+		on := self + "?on="
+		if w := windowStart(fi); w > 0 {
+			on = self + "?from=" + itoa(w) + "&on="
+		}
 		for hi := range f.Hunks {
 			for li := range f.Hunks[hi].Lines {
 				ln := &f.Hunks[hi].Lines[li]
 				if ln.oldN > 0 && ln.Kind != "add" {
 					index[lineKey{f.Key, domain.SideOld, ln.oldN}] = ln
 					if linkable {
-						ln.OldHref = self + "?on=old:" + itoa(ln.oldN) + ":" + url.QueryEscape(f.Key) + "#" + f.ID
+						ln.OldHref = on + "old:" + itoa(ln.oldN) + ":" + url.QueryEscape(f.Key) + "#" + f.ID
 					}
 				}
 				if ln.newN > 0 && ln.Kind != "del" {
 					index[lineKey{f.Key, domain.SideNew, ln.newN}] = ln
 					if linkable {
-						ln.NewHref = self + "?on=new:" + itoa(ln.newN) + ":" + url.QueryEscape(f.Key) + "#" + f.ID
+						ln.NewHref = on + "new:" + itoa(ln.newN) + ":" + url.QueryEscape(f.Key) + "#" + f.ID
 					}
 				}
 			}
@@ -711,6 +757,11 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 			p.NUnresolved++
 		}
 		general := c.Path == ""
+		fi, listed := fileAt[c.Path]
+		if !general && listed && p.Files[fi].Lazy {
+			// Its file comes with its window, and the comment with it.
+			continue
+		}
 		var ln *DiffLine
 		if !general {
 			ln = find(c.Path, c.Side, c.Line)
@@ -724,6 +775,9 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 		}
 		if canWrite {
 			v.Resolve = &ResolveForm{Action: resolveAction(cid), Value: !c.Resolved, Label: "Resolve"}
+			if !general && listed {
+				v.Resolve.From = windowStart(fi)
+			}
 			if c.Resolved {
 				v.Resolve.Label = "Unresolve"
 			}
@@ -733,6 +787,8 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 			ln.Notes = append(ln.Notes, v)
 		case general:
 			p.General = append(p.General, v)
+		case p.LooseInFiles && listed:
+			p.Files[fi].Loose = append(p.Files[fi].Loose, v)
 		default:
 			p.Loose = append(p.Loose, v)
 		}
@@ -747,7 +803,8 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 			ln.Form = &CommentForm{
 				ID: "cf-line", Action: mrHref(repo, n, "comments"), Path: on.path, Line: itoa(on.line), Side: on.side,
 				Title:  "comment on " + visibleText(on.path) + ":" + itoa(on.line) + " (" + on.side + ")",
-				Cancel: self + "#" + fileIDs[on.path], Focus: true,
+				Cancel: withFrom(self, windowStart(fileAt[on.path])) + "#" + fileIDs[on.path], Focus: true,
+				From: windowStart(fileAt[on.path]),
 			}
 		}
 	}

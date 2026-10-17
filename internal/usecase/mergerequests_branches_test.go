@@ -39,7 +39,7 @@ func TestMergeWithBranchLimitedToken(t *testing.T) {
 		}
 		assert.Equal(t, main, r.branchHead("main"), "main did not move")
 		assert.Equal(t, head, r.branchHead("agent/claude/feat"), "the source stays")
-		d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+		d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, domain.MRStateOpen, d.MergeRequest.State)
 		assert.Empty(t, r.drain(), "no event")

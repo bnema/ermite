@@ -376,7 +376,10 @@
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
-         k-permalink from:body -> ermite.permalink()">
+         k-permalink from:body -> ermite.permalink();
+         k-merge from:body -> window.ermiteMR?.openMerge();
+         k-read from:body -> window.ermiteMR?.markRead();
+         k-gf from:body -> window.ermiteMR?.focusFiles()">
 </div>
 </body>
 </html>

@@ -181,6 +181,7 @@ func (s *Server) mrComment(ctx context.Context, r *http.Request) (string, string
 	if err != nil {
 		return "", back, err
 	}
+	back = withFrom(back, formFrom(r))
 	c, err := s.cfg.MergeRequests.AddComment(ctx, principal(ctx), name, n, params)
 	if err != nil {
 		return "", back, err
@@ -209,6 +210,7 @@ func (s *Server) mrResolve(ctx context.Context, r *http.Request) (string, string
 	// An id this server never issued is 0: the use case answers not found,
 	// after the repository and the scope were checked, as for any unknown
 	// comment.
+	back = withFrom(back, formFrom(r))
 	c, err := s.cfg.MergeRequests.ResolveComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")), resolved)
 	if err != nil {
 		return "", back, err

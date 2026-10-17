@@ -125,7 +125,7 @@
 </button>
 </div>
 <div id="diffs" data-diff="unified" hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff">
-<details class="dfile" id="f1" data-file>
+<details class="dfile lnw-2" id="f1" data-file>
 <summary>
 <span class="st">R</span>
 <span class="p">old.txt → docs-old.txt</span>
@@ -135,7 +135,7 @@
 </summary>
 <p class="note pad">renamed, 100% similar</p>
 </details>
-<details class="dfile" id="f2" data-file open>
+<details class="dfile lnw-2" id="f2" data-file open>
 <summary>
 <span class="st">D</span>
 <span class="p">gone.txt</span>
@@ -193,32 +193,34 @@
 </h2>
 <ol class="files" aria-label="Changed files">
 <li>
-<a href="#f1" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
-<span class="st" title="R">R</span>
-<span class="p" title="old.txt → docs-old.txt">old.txt → docs-old.txt</span>
+<a href="#f1" title="old.txt → docs-old.txt" hx-on:click="(window.ermiteMR?.openFile || ermite.openFile)(this.hash.slice(1))">
+<span class="st" data-st="R" title="renamed">R</span>
+<span class="nm">
+<span class="p">docs-old.txt</span>
+<span class="d">
+<bdi>
+</bdi>
+</span>
+</span>
 <span class="n">
 <span class="plus">+0</span>
 <span class="minus">-0</span>
 </span>
-<span class="b" aria-hidden="true">
-<span class="plus">
-</span>
-<span class="minus">
-</span>··········</span>
 </a>
 </li>
 <li>
-<a href="#f2" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
-<span class="st" title="D">D</span>
-<span class="p" title="gone.txt">gone.txt</span>
+<a href="#f2" title="gone.txt" hx-on:click="(window.ermiteMR?.openFile || ermite.openFile)(this.hash.slice(1))">
+<span class="st" data-st="D" title="deleted">D</span>
+<span class="nm">
+<span class="p">gone.txt</span>
+<span class="d">
+<bdi>
+</bdi>
+</span>
+</span>
 <span class="n">
 <span class="plus">+0</span>
 <span class="minus">-1</span>
-</span>
-<span class="b" aria-hidden="true">
-<span class="plus">
-</span>
-<span class="minus">----------</span>
 </span>
 </a>
 </li>
@@ -471,7 +473,10 @@
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
-         k-permalink from:body -> ermite.permalink()">
+         k-permalink from:body -> ermite.permalink();
+         k-merge from:body -> window.ermiteMR?.openMerge();
+         k-read from:body -> window.ermiteMR?.markRead();
+         k-gf from:body -> window.ermiteMR?.focusFiles()">
 </div>
 </body>
 </html>

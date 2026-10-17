@@ -4,8 +4,9 @@ package web
 
 import "strings"
 
-// OverlayHelp is the keyboard map panel.
-templ OverlayHelp() {
+// OverlayHelp is the keyboard map panel; the keys of the merge request page
+// show on that page only.
+templ OverlayHelp(mr bool) {
 	<dialog id="panel-help" class="panel modal" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 		<div class="panel-head"><h2>Keyboard shortcuts</h2><button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd> close</button></div>
 		<dl class="keys">
@@ -21,6 +22,11 @@ templ OverlayHelp() {
 			<div><dt><kbd>y</kbd></dt><dd>copy a permalink pinned to the commit</dd></div>
 			<div><dt><kbd>d</kbd> <kbd>u</kbd> <kbd>x</kbd></dt><dd>diff: split / unified / collapse or expand all</dd></div>
 			<div><dt><kbd>n</kbd></dt><dd>merge request: next note in the diff</dd></div>
+			if mr {
+				<div><dt><kbd>g f</kbd></dt><dd>merge request: the list of files (j k move, enter opens, esc back)</dd></div>
+				<div><dt><kbd>M</kbd></dt><dd>merge request: the merge menu; there 1–3 pick the mode, D deletes the branch, enter merges</dd></div>
+				<div><dt><kbd>R</kbd></dt><dd>merge request: mark the head read</dd></div>
+			}
 			<div><dt><kbd>esc</kbd></dt><dd>close a dialog, leave a field</dd></div>
 		</dl>
 	</dialog>

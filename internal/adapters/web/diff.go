@@ -80,10 +80,6 @@ type DiffHunk struct {
 	Split  []SplitRow
 }
 
-// Bar is the change bar of the file list, "+++--·····", in three runs so each
-// can carry its colour.
-type Bar struct{ Add, Del, Rest string }
-
 // DiffFile is one changed file.
 type DiffFile struct {
 	ID     string
@@ -93,12 +89,48 @@ type DiffFile struct {
 	Key      string
 	Path     string // display path, "old → new" for a rename
 	Add, Del int
-	Bar      Bar
+	// Bin is true for a binary file: no lines to count.
+	Bin bool
 	// Note is why there is no text to show, or what else changed: a binary
 	// file, a mode change, a truncation, a similarity.
 	Note  string
 	Open  bool
 	Hunks []DiffHunk
+	// Digits is the width of the largest line number of the file, at least 2
+	// and at most 7: the gutter is as wide as the file needs (class lnw-N).
+	Digits int
+	// Name and Dir are the last element of the path and the directory before
+	// it ("" at the root), for the compact file list.
+	Name, Dir string
+	// Notes is the number of comments on lines of the file, Open those not
+	// resolved; the file list shows them.
+	Notes, OpenNotes int
+	// Lazy is true when the hunks of the file were not read: the page shows a
+	// placeholder that loads them (Src, the window of files it belongs to).
+	Lazy bool
+	Src  string
+	// From is the index of the first file of the window of a lazy file: the
+	// page without scripts links to ?from=From.
+	From int
+	// Height is the size class of a lazy file (1 to 4, by its changed lines),
+	// so that the placeholder takes about the room of the diff.
+	Height int
+	// Comments are the ids of the comments on the file ("c12"): a link to a
+	// comment of a lazy file loads that file first.
+	Comments string
+	// Loose are the comments of a file loaded with its window that are on a
+	// line its diff does not show: listed at the end of the file.
+	Loose []CommentView
+}
+
+// gutterDigits is the number of digits of the largest line number of the
+// hunks, clamped to the widths the style sheet has a class for.
+func gutterDigits(hunks []domain.Hunk) int {
+	most := 0
+	for _, h := range hunks {
+		most = max(most, h.OldStart+h.OldLines, h.NewStart+h.NewLines)
+	}
+	return min(max(len(itoa(most)), 2), 7)
 }
 
 func lineNumber(n int) string {
@@ -176,26 +208,6 @@ func pairLines(ls []DiffLine) []SplitRow {
 	return out
 }
 
-// changeBar draws the change bar of a file, scaled to the largest file.
-func changeBar(add, del, most int) Bar {
-	const cells = 10
-	if most == 0 {
-		return Bar{Rest: strings.Repeat("·", cells)}
-	}
-	scale := func(n int) int {
-		c := (n*cells + most - 1) / most
-		if n > 0 && c == 0 {
-			c = 1
-		}
-		return c
-	}
-	a, d := scale(add), scale(del)
-	if a+d > cells {
-		d = cells - a
-	}
-	return Bar{strings.Repeat("+", a), strings.Repeat("-", d), strings.Repeat("·", cells-a-d)}
-}
-
 // statusLetter is the one-letter status of a file.
 func statusLetter(s domain.FileStatus) string {
 	switch s {
@@ -211,6 +223,27 @@ func statusLetter(s domain.FileStatus) string {
 		return "T"
 	}
 	return "M"
+}
+
+// fileFilterMin is the number of files above which the file list has a
+// filter.
+const fileFilterMin = 10
+
+// statusName says what a status letter means, for its tooltip.
+func statusName(letter string) string {
+	switch letter {
+	case "A":
+		return "added"
+	case "D":
+		return "deleted"
+	case "R":
+		return "renamed"
+	case "C":
+		return "copied"
+	case "T":
+		return "type changed"
+	}
+	return "modified"
 }
 
 // hunkHeader is the "@@ -a,b +c,d @@ context" line of a hunk.
@@ -239,16 +272,11 @@ func diffLine(l domain.Line) DiffLine {
 
 // diffFiles converts the files of a diff for the page.
 func diffFiles(files []domain.FileDiff) []DiffFile {
-	most := 0
-	for _, f := range files {
-		most = max(most, f.Additions+f.Deletions)
-	}
 	out := make([]DiffFile, 0, len(files))
 	for i, f := range files {
 		df := DiffFile{
 			ID: "f" + itoa(i+1), Status: statusLetter(f.Status),
-			Add: f.Additions, Del: f.Deletions,
-			Bar: changeBar(f.Additions, f.Deletions, most),
+			Add: f.Additions, Del: f.Deletions, Bin: f.Binary,
 			// A file that is shown in full opens; a file with nothing to read
 			// (binary, truncated) stays closed under its note.
 			Open: len(f.Hunks) > 0 && !f.Truncated,
@@ -264,9 +292,8 @@ func diffFiles(files []domain.FileDiff) []DiffFile {
 			df.Path = visibleText(f.NewPath)
 		}
 		df.Note = fileNote(f)
-		if f.Binary {
-			df.Bar = Bar{Rest: "bin"}
-		}
+		df.Digits = gutterDigits(f.Hunks)
+		df.Name, df.Dir = splitPath(df.Key)
 		for _, h := range f.Hunks {
 			dh := DiffHunk{Header: hunkHeader(h)}
 			for _, l := range h.Lines {

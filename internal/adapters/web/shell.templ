@@ -29,6 +29,9 @@ templ Shell(l Layout, rail templ.Component) {
 			<script src={ l.Assets.Files } defer></script>
 			<script src={ l.Assets.Passkey } defer></script>
 			<script src={ l.Assets.Log } defer></script>
+			if l.MR {
+				<script src={ l.Assets.MR } defer></script>
+			}
 		</head>
 		<body
 			data-ref={ l.RefPath }
@@ -57,7 +60,7 @@ templ Shell(l Layout, rail templ.Component) {
 			</div>
 			@Footer(l)
 			@Hint(l)
-			@OverlayHelp()
+			@OverlayHelp(l.MR)
 			@OverlayRefs(l)
 			@OverlayCmd(l.Cmd)
 			@Keys()

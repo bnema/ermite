@@ -130,7 +130,7 @@
 </div>
 <p class="notice">this diff is incomplete: 1 file is too large to show. the totals above count everything; clone the repository to read the rest.</p>
 <div id="diffs" data-diff="unified" hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff">
-<details class="dfile" id="f1" data-file>
+<details class="dfile lnw-2" id="f1" data-file>
 <summary>
 <span class="st">A</span>
 <span class="p">big.txt</span>
@@ -148,17 +148,18 @@
 </h2>
 <ol class="files" aria-label="Changed files">
 <li>
-<a href="#f1" hx-on:click="document.getElementById(this.hash.slice(1)).open = true">
-<span class="st" title="A">A</span>
-<span class="p" title="big.txt">big.txt</span>
+<a href="#f1" title="big.txt" hx-on:click="(window.ermiteMR?.openFile || ermite.openFile)(this.hash.slice(1))">
+<span class="st" data-st="A" title="added">A</span>
+<span class="nm">
+<span class="p">big.txt</span>
+<span class="d">
+<bdi>
+</bdi>
+</span>
+</span>
 <span class="n">
 <span class="plus">+2600</span>
 <span class="minus">-0</span>
-</span>
-<span class="b" aria-hidden="true">
-<span class="plus">++++++++++</span>
-<span class="minus">
-</span>
 </span>
 </a>
 </li>
@@ -411,7 +412,10 @@
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
-         k-permalink from:body -> ermite.permalink()">
+         k-permalink from:body -> ermite.permalink();
+         k-merge from:body -> window.ermiteMR?.openMerge();
+         k-read from:body -> window.ermiteMR?.markRead();
+         k-gf from:body -> window.ermiteMR?.focusFiles()">
 </div>
 </body>
 </html>

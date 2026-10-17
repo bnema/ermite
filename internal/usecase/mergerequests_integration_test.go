@@ -345,7 +345,7 @@ func TestMergeRequestAccess(t *testing.T) {
 			return err
 		},
 		"Get": func(p domain.Principal) error {
-			_, err := r.mrs.Get(r.ctx, p, r.repo, n, false)
+			_, err := r.mrs.Get(r.ctx, p, r.repo, n, ports.GetMergeRequestOptions{})
 			return err
 		},
 	}
@@ -356,7 +356,7 @@ func TestMergeRequestAccess(t *testing.T) {
 		assert.NoError(t, call(reader), what+" with repo:read")
 		assert.NoError(t, call(root), what+" by root")
 	}
-	_, err := r.mrs.Get(r.ctx, reader, r.repo, n+1, false)
+	_, err := r.mrs.Get(r.ctx, reader, r.repo, n+1, ports.GetMergeRequestOptions{})
 	assert.ErrorIs(t, err, domain.ErrNotFound, "unknown number")
 	_, err = r.mrs.List(r.ctx, root, name(t, "ghost"), ports.ListMergeRequestsParams{})
 	assert.ErrorIs(t, err, domain.ErrNotFound, "unknown repository")
@@ -505,7 +505,7 @@ func TestGetMergeRequest(t *testing.T) {
 	_, err = r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{Text: "second"})
 	require.NoError(t, err)
 
-	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, head, d.MergeRequest.HeadID)
 	assert.Equal(t, main, d.DiffBaseID, "the base is the merge base of the target and the head")
@@ -523,14 +523,14 @@ func TestGetMergeRequest(t *testing.T) {
 	r.sh("checkout", "-q", "main")
 	r.commit(author, "later.txt", "x\n", "later on main")
 	r.push("main")
-	d, err = r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+	d, err = r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, main, d.DiffBaseID)
 	assert.Len(t, d.Commits, 2, "the commits that main lacks")
 
 	// A deleted source branch: no commits, no diff, an empty head.
 	r.run(r.bare(), r.env(author), "branch", "-D", "feat")
-	d, err = r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+	d, err = r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.True(t, d.MergeRequest.HeadID.IsZero())
 	assert.Empty(t, d.Commits)
@@ -548,7 +548,7 @@ func TestGetMergeRequestTruncatesCommits(t *testing.T) {
 	}
 	r.push("long")
 	mr := r.open("long")
-	d, err := r.mrs.Get(r.ctx, root, r.repo, mr.Number, false)
+	d, err := r.mrs.Get(r.ctx, root, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Len(t, d.Commits, usecase.MaxMergeRequestCommits)
 	assert.True(t, d.CommitsTruncated)
@@ -610,7 +610,7 @@ func TestAddComment(t *testing.T) {
 	}
 
 	// Ids count 1, 2, ... in order of creation and only the valid ones are kept.
-	d, err := r.mrs.Get(r.ctx, root, r.repo, n, false)
+	d, err := r.mrs.Get(r.ctx, root, r.repo, n, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	var kept int
 	for _, tc := range tests {
@@ -657,7 +657,7 @@ func TestConcurrentComments(t *testing.T) {
 		seen[id] = true
 	}
 	assert.Len(t, seen, workers)
-	d, err := r.mrs.Get(r.ctx, root, r.repo, mr.Number, false)
+	d, err := r.mrs.Get(r.ctx, root, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Len(t, d.Comments, workers)
 }
@@ -752,7 +752,7 @@ func TestMarkReadAndSinceLastRead(t *testing.T) {
 	n := mr.Number
 
 	// Nothing recorded: the flag changes nothing.
-	d, err := r.mrs.Get(r.ctx, mrW, r.repo, n, true)
+	d, err := r.mrs.Get(r.ctx, mrW, r.repo, n, ports.GetMergeRequestOptions{SinceLastRead: true})
 	require.NoError(t, err)
 	assert.True(t, d.LastReadID.IsZero())
 	assert.False(t, d.LastReadLost)
@@ -762,7 +762,7 @@ func TestMarkReadAndSinceLastRead(t *testing.T) {
 	got, err := r.mrs.MarkRead(r.ctx, mrW, r.repo, n, domain.ObjectID{})
 	require.NoError(t, err)
 	assert.Equal(t, head1, got)
-	d, err = r.mrs.Get(r.ctx, reader, r.repo, n, false)
+	d, err = r.mrs.Get(r.ctx, reader, r.repo, n, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, head1, d.LastReadID, "reported whether or not since_last_read is set")
 	assert.Equal(t, base, d.DiffBaseID)
@@ -771,7 +771,7 @@ func TestMarkReadAndSinceLastRead(t *testing.T) {
 	r.commit(author, "d.txt", "dee\n", "add d")
 	head2 := r.head()
 	r.push("feat")
-	d, err = r.mrs.Get(r.ctx, reader, r.repo, n, true)
+	d, err = r.mrs.Get(r.ctx, reader, r.repo, n, ports.GetMergeRequestOptions{SinceLastRead: true})
 	require.NoError(t, err)
 	assert.Equal(t, head1, d.DiffBaseID)
 	assert.Equal(t, head2, d.MergeRequest.HeadID)
@@ -791,7 +791,7 @@ func TestMarkReadAndSinceLastRead(t *testing.T) {
 	// An explicit head is recorded as given.
 	_, err = r.mrs.MarkRead(r.ctx, mrW, r.repo, n, base)
 	require.NoError(t, err)
-	d, err = r.mrs.Get(r.ctx, reader, r.repo, n, true)
+	d, err = r.mrs.Get(r.ctx, reader, r.repo, n, ports.GetMergeRequestOptions{SinceLastRead: true})
 	require.NoError(t, err)
 	assert.Equal(t, base, d.DiffBaseID)
 }
@@ -819,7 +819,7 @@ func TestSinceLastReadAfterForcePush(t *testing.T) {
 	// head1 is not an ancestor of head2 any more.
 	r.run(r.bare(), r.env(author), "cat-file", "-e", head1.String())
 
-	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, true)
+	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{SinceLastRead: true})
 	require.NoError(t, err)
 	assert.False(t, d.LastReadLost)
 	assert.Equal(t, head1, d.DiffBaseID, "the diff starts at the head that was read")
@@ -838,14 +838,14 @@ func TestSinceLastReadAfterForcePush(t *testing.T) {
 	assert.Equal(t, []string{"see"}, removed)
 
 	// The whole change is still available without the flag.
-	d, err = r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+	d, err = r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, base, d.DiffBaseID)
 	assert.Len(t, d.Diff.Files, 2)
 
 	// Once the recorded commit is pruned, the response says so.
 	r.run(r.bare(), r.env(author), "gc", "-q", "--prune=now")
-	d, err = r.mrs.Get(r.ctx, reader, r.repo, mr.Number, true)
+	d, err = r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{SinceLastRead: true})
 	require.NoError(t, err)
 	assert.True(t, d.LastReadLost, "the recorded head is gone")
 	assert.Equal(t, head1, d.LastReadID, "still reported")
@@ -871,7 +871,7 @@ func TestMergeFastForward(t *testing.T) {
 	_ = main
 
 	// The stored request is the merged one, and reads keep a diff.
-	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, false)
+	d, err := r.mrs.Get(r.ctx, reader, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, domain.MRStateMerged, d.MergeRequest.State)
 	assert.Equal(t, head, d.MergeRequest.HeadID)
@@ -940,7 +940,7 @@ func TestMergeRefusals(t *testing.T) {
 		assert.Contains(t, err.Error(), "branch moved, read again")
 		assert.NotEqual(t, head, r.branchHead("main"), "main did not move")
 		// Reading again gives the new head, which merges.
-		d, err := r.mrs.Get(r.ctx, mrM, r.repo, mr.Number, false)
+		d, err := r.mrs.Get(r.ctx, mrM, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 		require.NoError(t, err)
 		_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: d.MergeRequest.HeadID})
 		require.NoError(t, err)
@@ -962,7 +962,7 @@ func TestMergeRefusals(t *testing.T) {
 			assert.Contains(t, err.Error(), "rebase", mode)
 		}
 		assert.Equal(t, tip, r.branchHead("main"))
-		d, err := r.mrs.Get(r.ctx, mrM, r.repo, mr.Number, false)
+		d, err := r.mrs.Get(r.ctx, mrM, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, domain.MRStateOpen, d.MergeRequest.State)
 
@@ -1081,14 +1081,14 @@ func TestConcurrentMergesSerialize(t *testing.T) {
 	require.Len(t, won, 1, "exactly one merge request was merged: %v", won)
 	for number, times := range won {
 		assert.Equal(t, 1, times, "!%d merged twice", number)
-		mr, err := r.mrs.Get(r.ctx, root, r.repo, number, false)
+		mr, err := r.mrs.Get(r.ctx, root, r.repo, number, ports.GetMergeRequestOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, domain.MRStateMerged, mr.MergeRequest.State)
 		assert.Equal(t, mr.MergeRequest.MergedCommitID, r.branchHead("main"))
 	}
 	for number := range heads {
 		if won[number] == 0 {
-			d, err := r.mrs.Get(r.ctx, root, r.repo, number, false)
+			d, err := r.mrs.Get(r.ctx, root, r.repo, number, ports.GetMergeRequestOptions{})
 			require.NoError(t, err)
 			assert.Equal(t, domain.MRStateOpen, d.MergeRequest.State, "!%d lost and stays open", number)
 		}
@@ -1275,7 +1275,7 @@ func TestAgentPresetWorksOnItsPrivateRepository(t *testing.T) {
 	// repo:write alone does not read merge requests.
 	_, err = r.mrs.List(r.ctx, agent, r.repo, ports.ListMergeRequestsParams{})
 	assert.ErrorIs(t, err, domain.ErrNotFound)
-	_, err = r.mrs.Get(r.ctx, agent, r.repo, mr.Number, false)
+	_, err = r.mrs.Get(r.ctx, agent, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 
 	closed, err := r.mrs.Close(r.ctx, agent, r.repo, mr.Number)
@@ -1328,7 +1328,7 @@ func TestCommentsPerMergeRequestAreBounded(t *testing.T) {
 	}
 	_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, mr.Number, ports.AddCommentParams{Text: "one too many"})
 	assert.ErrorIs(t, err, domain.ErrResourceExhausted)
-	d, err := r.mrs.Get(r.ctx, root, r.repo, mr.Number, false)
+	d, err := r.mrs.Get(r.ctx, root, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 	require.NoError(t, err)
 	assert.Len(t, d.Comments, usecase.MaxCommentsPerMergeRequest)
 

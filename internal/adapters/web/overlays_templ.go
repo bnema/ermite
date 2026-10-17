@@ -12,8 +12,9 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import "strings"
 
-// OverlayHelp is the keyboard map panel.
-func OverlayHelp() templ.Component {
+// OverlayHelp is the keyboard map panel; the keys of the merge request page
+// show on that page only.
+func OverlayHelp(mr bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -41,13 +42,23 @@ func OverlayHelp() templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs("switch")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 18, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 19, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " branch or tag</dd></div><div><dt><kbd>s</kbd> <kbd>t</kbd> <kbd>c</kbd> <kbd>r</kbd> <kbd>m</kbd></dt><dd>tabs: summary, files, commits, branches &amp; tags, merge requests</dd></div><div><dt><kbd>g h</kbd></dt><dd>home</dd></div><div><dt><kbd>y</kbd></dt><dd>copy a permalink pinned to the commit</dd></div><div><dt><kbd>d</kbd> <kbd>u</kbd> <kbd>x</kbd></dt><dd>diff: split / unified / collapse or expand all</dd></div><div><dt><kbd>n</kbd></dt><dd>merge request: next note in the diff</dd></div><div><dt><kbd>esc</kbd></dt><dd>close a dialog, leave a field</dd></div></dl></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " branch or tag</dd></div><div><dt><kbd>s</kbd> <kbd>t</kbd> <kbd>c</kbd> <kbd>r</kbd> <kbd>m</kbd></dt><dd>tabs: summary, files, commits, branches &amp; tags, merge requests</dd></div><div><dt><kbd>g h</kbd></dt><dd>home</dd></div><div><dt><kbd>y</kbd></dt><dd>copy a permalink pinned to the commit</dd></div><div><dt><kbd>d</kbd> <kbd>u</kbd> <kbd>x</kbd></dt><dd>diff: split / unified / collapse or expand all</dd></div><div><dt><kbd>n</kbd></dt><dd>merge request: next note in the diff</dd></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if mr {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div><dt><kbd>g f</kbd></dt><dd>merge request: the list of files (j k move, enter opens, esc back)</dd></div><div><dt><kbd>M</kbd></dt><dd>merge request: the merge menu; there 1–3 pick the mode, D deletes the branch, enter merges</dd></div><div><dt><kbd>R</kbd></dt><dd>merge request: mark the head read</dd></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div><dt><kbd>esc</kbd></dt><dd>close a dialog, leave a field</dd></div></dl></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -78,20 +89,20 @@ func OverlayRefs(l Layout) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if l.Ref != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<dialog id=\"panel-refs\" class=\"panel modal\" aria-label=\"Switch ref\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><label for=\"refs-filter\" class=\"sr\">filter branches and tags</label> <input id=\"refs-filter\" type=\"search\" placeholder=\"Switch branch or tag…\" autocomplete=\"off\" data-pick=\"#panel-refs li\" hx-on:input=\"ermite.filter(this)\"> <button type=\"button\" class=\"panel-x\" aria-label=\"Close\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd></button></div><div class=\"panel-cols\" data-picklist><section aria-label=\"Branches\"><h2>Branches <span class=\"count\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<dialog id=\"panel-refs\" class=\"panel modal\" aria-label=\"Switch ref\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><label for=\"refs-filter\" class=\"sr\">filter branches and tags</label> <input id=\"refs-filter\" type=\"search\" placeholder=\"Switch branch or tag…\" autocomplete=\"off\" data-pick=\"#panel-refs li\" hx-on:input=\"ermite.filter(this)\"> <button type=\"button\" class=\"panel-x\" aria-label=\"Close\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd></button></div><div class=\"panel-cols\" data-picklist><section aria-label=\"Branches\"><h2>Branches <span class=\"count\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(len(l.Heads)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 47, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 53, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</span></h2><ul>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</span></h2><ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -101,20 +112,20 @@ func OverlayRefs(l Layout) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</ul></section><section aria-label=\"Tags\"><h2>Tags <span class=\"count\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</ul></section><section aria-label=\"Tags\"><h2>Tags <span class=\"count\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(len(l.Tags)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 55, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 61, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</span></h2><ul>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</span></h2><ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -124,7 +135,7 @@ func OverlayRefs(l Layout) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</ul></section></div></dialog>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</ul></section></div></dialog>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -154,58 +165,58 @@ func refItem(r RefItem) templ.Component {
 			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<li><a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<li><a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 templ.SafeURL
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(r.Href))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 70, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 76, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if r.Current {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, " aria-current=\"true\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, " aria-current=\"true\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "><span class=\"mark\" aria-hidden=\"true\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "><span class=\"mark\" aria-hidden=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if r.Current {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "●")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "●")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "&nbsp;")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "&nbsp;")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(r.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 81, Col: 18}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 87, Col: 18}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</a></li>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</a></li>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -236,79 +247,79 @@ func OverlayCmd(items []CmdItem) templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<dialog id=\"panel-cmd\" class=\"panel modal\" aria-label=\"Go to\" hx-on:close=\"ermiteFinder.paletteClose()\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><label for=\"cmd-q\" class=\"sr\">go to</label> <input id=\"cmd-q\" type=\"search\" placeholder=\"Go to a section, branch, tag, file or repository…\" autocomplete=\"off\" spellcheck=\"false\" aria-controls=\"cmd-list\" hx-on:input=\"ermite.cmdFilter(this); ermiteFinder.palette(this)\" hx-on:keydown=\"ermite.cmdKey(event)\"> <button type=\"button\" class=\"panel-x\" aria-label=\"Close\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd></button></div><ul id=\"cmd-list\" class=\"cmd-list\" aria-label=\"Targets\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<dialog id=\"panel-cmd\" class=\"panel modal\" aria-label=\"Go to\" hx-on:close=\"ermiteFinder.paletteClose()\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><label for=\"cmd-q\" class=\"sr\">go to</label> <input id=\"cmd-q\" type=\"search\" placeholder=\"Go to a section, branch, tag, file or repository…\" autocomplete=\"off\" spellcheck=\"false\" aria-controls=\"cmd-list\" hx-on:input=\"ermite.cmdFilter(this); ermiteFinder.palette(this)\" hx-on:keydown=\"ermite.cmdKey(event)\"> <button type=\"button\" class=\"panel-x\" aria-label=\"Close\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd></button></div><ul id=\"cmd-list\" class=\"cmd-list\" aria-label=\"Targets\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for i, c := range items {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<li data-k=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<li data-k=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(strings.ToLower(c.Kind + " " + c.Label))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 106, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 112, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if i == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, " data-cursor")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, " data-cursor")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 templ.SafeURL
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(c.Href))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 106, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 112, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" tabindex=\"-1\"><span class=\"lbl\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" tabindex=\"-1\"><span class=\"lbl\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(c.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 106, Col: 158}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 112, Col: 158}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</span><span class=\"k\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</span><span class=\"k\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(c.Kind)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 106, Col: 191}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 112, Col: 191}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</span></a></li>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</span></a></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</ul><p class=\"panel-foot\"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>enter</kbd> open</span><span><kbd>esc</kbd> close</span></p></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</ul><p class=\"panel-foot\"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>enter</kbd> open</span><span><kbd>esc</kbd> close</span></p></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -67,6 +67,8 @@ type Layout struct {
 	// Passkeys tells that the passkey routes exist: the header then links to
 	// them.
 	Passkeys bool
+	// MR loads the script of the merge request page (mr.js).
+	MR bool
 }
 
 // Link is a plain label + href pair.

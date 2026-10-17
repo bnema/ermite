@@ -493,7 +493,8 @@ type FileDiff struct {
 	// Similarity is a percentage for a renamed or copied file, 0 otherwise.
 	Similarity int
 	// Truncated means the file exceeded a diff limit: Hunks is empty although
-	// the file changed. Additions and Deletions stay accurate.
+	// the file changed. Additions and Deletions stay accurate. A file outside
+	// the DiffLimits window has no Hunks and is not Truncated.
 	Truncated bool
 	Hunks     []Hunk
 }
@@ -502,9 +503,11 @@ type FileDiff struct {
 // parent, or against the empty tree for a root commit.
 type Diff struct {
 	// Files are ordered as Git reports them (by path). Files past
-	// DiffLimits.MaxFiles are left out.
+	// DiffLimits.MaxFiles (when it is not 0) are left out.
 	Files []FileDiff
 	// Truncated is true when files were left out or a listed file is truncated.
+	// Files listed without hunks because they are outside the DiffLimits window
+	// do not make it true.
 	Truncated bool
 }
 
@@ -523,7 +526,8 @@ type CommitDetail struct {
 
 // DiffLimits bound the size of a Diff. Lines are hunk lines, context included.
 type DiffLimits struct {
-	// MaxFiles is the number of files kept.
+	// MaxFiles is the number of files kept; 0 means no limit on the number of
+	// files (every changed file is listed).
 	MaxFiles int
 	// MaxFileLines is the most lines one file may have; a file over it is
 	// truncated.
@@ -536,6 +540,13 @@ type DiffLimits struct {
 	// the memory of a diff whose lines are very long; files are truncated
 	// like for MaxTotalLines.
 	MaxTotalBytes int
+	// From and To select the files whose hunks are read: those with an index in
+	// [From, To), counted from 0 in the order of Diff.Files. The other files
+	// are listed (paths, status, modes, ids, Binary, Additions, Deletions,
+	// Similarity) without hunks; they are not Truncated and use none of
+	// MaxTotalLines and MaxTotalBytes. To == 0 means no end, so the zero values
+	// select every file. MaxFileLines applies to each file of the window.
+	From, To int
 }
 
 // DefaultDiffLimits are the limits of the API contract: 300 files, 2,000
