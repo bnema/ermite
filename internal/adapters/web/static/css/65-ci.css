@@ -53,9 +53,9 @@
   /* a long step name (a whole shell command) wraps inside the rail; the icon
      stays on its first line and the duration at the right */
   .steps li { display: flex; align-items: flex-start; gap: var(--s1); min-width: 0; }
-  .steps li > :is(a, span:not(.dim)) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .steps li > .ck { flex: none; margin-top: 3px; }
+  .steps li > :is(a, span:not(.ck, .dim)) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .steps li > .dim { flex: none; margin-left: auto; }
-  .steps li > :first-child { margin-top: 3px; flex: none; }
   .attempts { padding: 0; margin: var(--s2) 0 0; list-style: none; font-size: var(--fs-s); }
   .checks { display: grid; gap: var(--s1); padding: 0; margin: 0; list-style: none; font-size: var(--fs-s); }
   .checks li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
