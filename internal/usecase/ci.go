@@ -252,6 +252,7 @@ type CI struct {
 	wg   sync.WaitGroup
 
 	remoteSlots chan struct{} // slots of the git ls-remote processes
+	remoteCache *refsCache    // the refs of github.com repositories, for every job
 	locks       sync.Map      // run id -> *sync.Mutex
 	assign      sync.Mutex
 	jobs        notifier // woken when a job changes: key is the job reference
@@ -304,7 +305,7 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 	run, stop := context.WithCancel(context.WithoutCancel(ctx))
 	return &CI{
 		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue), runEvents: make(chan runEvent, cfg.TriggerQueue), sched: newScheduler(cfg.Clock.Now()), pull: newPullQueue(cfg.TriggerQueue, cfg.PullRefreshes, cfg.PullAttempts),
-		ctx: run, stop: stop, flows: newWfCache(64), remoteSlots: make(chan struct{}, cfg.RemoteConcurrency),
+		ctx: run, stop: stop, flows: newWfCache(64), remoteSlots: make(chan struct{}, cfg.RemoteConcurrency), remoteCache: newRefsCache(),
 		heartbeats: map[string]time.Time{}, seen: map[string]time.Time{}, polls: map[string]pollRecord{},
 		archiveTokens: map[string]map[string]string{},
 		perClient:     map[string]int{},

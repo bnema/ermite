@@ -158,7 +158,7 @@ func (c *CI) loadCallee(ctx context.Context, rs *runState, home *domain.CICall, 
 			res = stored
 		case errors.Is(err, domain.ErrNotFound):
 			var msg string
-			res, msg, err = c.resolveAction(ctx, rec, ar, newRemoteRefs(c.cfg.Remote, c.remoteSlots), by)
+			res, msg, err = c.resolveAction(ctx, rec, ar, c.newRemoteRefs(rec.RunAttempt), by)
 			if err != nil {
 				return f, err
 			}

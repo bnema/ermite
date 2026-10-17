@@ -3,11 +3,17 @@
 package usecase
 
 import (
+	"context"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -66,3 +72,119 @@ func TestPickRemoteRef(t *testing.T) {
 	assert.Empty(t, pickRemoteRef(refs, "nope"))
 	assert.Empty(t, pickRemoteRef(nil, "v1"))
 }
+
+// countingRemote answers ListRefs from a function and counts the calls.
+type countingRemote struct {
+	calls int
+	answer func() ([]ports.RemoteRef, error)
+}
+
+func (r *countingRemote) ListRefs(context.Context, string, string) ([]ports.RemoteRef, error) {
+	r.calls++
+	return r.answer()
+}
+
+// The refs of a github.com repository are listed once for the jobs of the next
+// minutes; when github.com does not answer, the last list is used.
+func TestRemoteRefsCache(t *testing.T) {
+	v4 := []ports.RemoteRef{{Name: "refs/tags/v4", ID: strings.Repeat("a", 40)}}
+	remote := &countingRemote{answer: func() ([]ports.RemoteRef, error) { return v4, nil }}
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	c := &CI{cfg: CIConfig{Remote: remote}, remoteSlots: make(chan struct{}, 1), remoteCache: newRefsCache()}
+	list := func() ([]ports.RemoteRef, error) {
+		r := c.newRemoteRefs(1)
+		r.now = func() time.Time { return now }
+		return r.list(context.Background(), "Actions", "checkout")
+	}
+
+	got, err := list()
+	require.NoError(t, err)
+	assert.Equal(t, v4, got)
+	now = now.Add(refsFresh - time.Second)
+	_, err = list()
+	require.NoError(t, err)
+	assert.Equal(t, 1, remote.calls, "a fresh list is not asked again, whatever the case of the name")
+	rerun := c.newRemoteRefs(2)
+	rerun.now = func() time.Time { return now }
+	_, err = rerun.list(context.Background(), "actions", "checkout")
+	require.NoError(t, err)
+	assert.Equal(t, 2, remote.calls, "a re-run asks again")
+
+	now = now.Add(refsFresh + time.Second) // the re-run listed it afresh
+	remote.answer = func() ([]ports.RemoteRef, error) { return nil, fmt.Errorf("%w: timeout", domain.ErrUnavailable) }
+	got, err = list()
+	require.NoError(t, err, "github.com did not answer: the last list is used")
+	assert.Equal(t, v4, got)
+	assert.Equal(t, 3, remote.calls, "an old list is asked again")
+
+	now = now.Add(refsStale)
+	_, err = list()
+	require.ErrorIs(t, err, domain.ErrUnavailable, "too old to stand in")
+
+	remote.answer = func() ([]ports.RemoteRef, error) { return nil, domain.ErrNotFound }
+	c.remoteCache = newRefsCache()
+	_, err = list()
+	require.ErrorIs(t, err, domain.ErrNotFound)
+	_, err = list()
+	require.ErrorIs(t, err, domain.ErrNotFound)
+	assert.Equal(t, 6, remote.calls, "a missing repository is not cached")
+}
+
+// A stale list stands in without becoming younger, the oldest repository makes
+// room for a new one, and the cache is safe for jobs resolving at once.
+func TestRefsCacheBounds(t *testing.T) {
+	v4 := []ports.RemoteRef{{Name: "refs/tags/v4", ID: strings.Repeat("a", 40)}}
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	remote := &countingRemote{answer: func() ([]ports.RemoteRef, error) { return v4, nil }}
+	c := &CI{cfg: CIConfig{Remote: remote}, remoteSlots: make(chan struct{}, 1), remoteCache: newRefsCache()}
+	list := func(repo string) error {
+		r := c.newRemoteRefs(1)
+		r.now = func() time.Time { return now }
+		_, err := r.list(context.Background(), "actions", repo)
+		return err
+	}
+	require.NoError(t, list("checkout"))
+	remote.answer = func() ([]ports.RemoteRef, error) { return nil, domain.ErrUnavailable }
+	now = now.Add(refsStale - time.Hour)
+	require.NoError(t, list("checkout"), "stands in")
+	now = now.Add(time.Hour)
+	require.ErrorIs(t, list("checkout"), domain.ErrUnavailable, "standing in did not make it younger")
+
+	cache := newRefsCache()
+	for i := range refsMax {
+		cache.put(fmt.Sprintf("o/r%d", i), v4, now.Add(time.Duration(i)*time.Second))
+	}
+	cache.put("o/new", v4, now.Add(time.Hour))
+	_, ok := cache.stale("o/r0", now)
+	assert.False(t, ok, "the oldest is evicted")
+	_, ok = cache.stale("o/r1", now.Add(time.Second))
+	assert.True(t, ok)
+	assert.Len(t, cache.m, refsMax)
+
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			key := fmt.Sprintf("o/r%d", i%3)
+			cache.put(key, v4, now)
+			cache.get(key, now)
+			cache.stale(key, now)
+		})
+	}
+	wg.Wait()
+}
+
+// An unanswered ls-remote fails the call with the action named.
+func TestResolveActionNamesTheActionGitHubDidNotAnswer(t *testing.T) {
+	remote := &countingRemote{answer: func() ([]ports.RemoteRef, error) {
+		return nil, fmt.Errorf("%w: git ls-remote actions/checkout did not answer within 20s (2 attempts)", domain.ErrUnavailable)
+	}}
+	c := &CI{cfg: CIConfig{Remote: remote, Owner: "owner", Clock: stillClock{}}, remoteSlots: make(chan struct{}, 1), remoteCache: newRefsCache()}
+	_, _, err := c.resolveAction(context.Background(), domain.CIJob{}, parseActionRef("actions/checkout@v4"), c.newRemoteRefs(1), pusherAccess{})
+	require.ErrorIs(t, err, domain.ErrUnavailable)
+	assert.Contains(t, err.Error(), "actions/checkout@v4")
+	assert.Contains(t, err.Error(), "github.com did not answer")
+}
+
+type stillClock struct{}
+
+func (stillClock) Now() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }

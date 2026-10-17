@@ -8,6 +8,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -74,7 +78,7 @@ func (c *CI) resolveActions(ctx context.Context, secret, jobID string, uses []st
 	// run: a ls-remote takes seconds and must not hold up the job's calls.
 	found := map[string]domain.CIActionResolution{}
 	fails := map[string]string{}
-	remote := newRemoteRefs(c.cfg.Remote, c.remoteSlots)
+	remote := c.newRemoteRefs(j.RunAttempt)
 	for _, p := range parsed {
 		if p.err != "" {
 			continue
@@ -404,6 +408,9 @@ func (c *CI) resolveAction(ctx context.Context, j domain.CIJob, a actionRef, rem
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		return res, errUnresolvedRepo(a), nil
+	case errors.Is(err, domain.ErrUnavailable) && ctx.Err() == nil:
+		// The job learns which action and why, not only "unavailable".
+		return res, "", fmt.Errorf("%w: resolving `%s`: github.com did not answer (%v)", domain.ErrUnavailable, a.uses, err)
 	case err != nil:
 		return res, "", err
 	}
@@ -459,11 +466,18 @@ func (c *CI) resolveOnErmite(ctx context.Context, repo domain.RepoName, ref stri
 	return "", false, nil
 }
 
-// remoteRefs lists the refs of a remote once per repository within a call.
+// remoteRefs lists the refs of a remote once per repository within a call,
+// through the cache of the server (see refsCache).
 type remoteRefs struct {
 	remote ports.GitRemote
 	slots  chan struct{}
+	cache  *refsCache
+	now    func() time.Time
 	seen   map[string]remoteList
+	// refresh asks github.com even when the cache is fresh: a re-run resolves
+	// again (a moved tag is often why it is re-run). The cache still stands
+	// in when github.com does not answer.
+	refresh bool
 }
 
 type remoteList struct {
@@ -471,8 +485,10 @@ type remoteList struct {
 	err  error
 }
 
-func newRemoteRefs(r ports.GitRemote, slots chan struct{}) *remoteRefs {
-	return &remoteRefs{remote: r, slots: slots, seen: map[string]remoteList{}}
+// newRemoteRefs lists for the jobs of an attempt: a re-run (attempt > 1)
+// refreshes.
+func (c *CI) newRemoteRefs(attempt int32) *remoteRefs {
+	return &remoteRefs{remote: c.cfg.Remote, slots: c.remoteSlots, cache: c.remoteCache, now: c.now, seen: map[string]remoteList{}, refresh: attempt > 1}
 }
 
 func (r *remoteRefs) list(ctx context.Context, owner, repo string) ([]ports.RemoteRef, error) {
@@ -483,6 +499,10 @@ func (r *remoteRefs) list(ctx context.Context, owner, repo string) ([]ports.Remo
 	if l, ok := r.seen[key]; ok {
 		return l.refs, l.err
 	}
+	if refs, fresh := r.cache.get(key, r.now()); fresh && !r.refresh {
+		r.seen[key] = remoteList{refs, nil}
+		return refs, nil
+	}
 	// At most a few ls-remote at once on the whole server, whatever the number
 	// of jobs resolving: a process each, and github.com is slow to answer.
 	select {
@@ -491,10 +511,84 @@ func (r *remoteRefs) list(ctx context.Context, owner, repo string) ([]ports.Remo
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+	// Another job may have listed it while this one waited for a slot.
+	if refs, fresh := r.cache.get(key, r.now()); fresh && !r.refresh {
+		r.seen[key] = remoteList{refs, nil}
+		return refs, nil
+	}
 	refs, err := r.remote.ListRefs(ctx, owner, repo)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	switch {
+	case err == nil:
+		r.cache.put(key, refs, r.now())
+	case errors.Is(err, domain.ErrUnavailable):
+		// github.com did not answer: the last list it gave is better than a
+		// failed job, for a while (refsStale).
+		if old, ok := r.cache.stale(key, r.now()); ok {
+			log := zerowrap.FromCtx(ctx)
+			log.Warn().Err(err).Str("repo", key).Msg("github.com did not answer: using the refs listed earlier")
+			refs, err = old, nil
+		}
+	}
 	r.seen[key] = remoteList{refs, err}
 	return refs, err
+}
+
+const (
+	// refsFresh is how long a list of the refs of a repository of github.com
+	// is used without asking again: the jobs of the next minutes resolve
+	// actions/checkout@v4 without a ls-remote. A tag or branch moved meanwhile
+	// is seen after at most that long.
+	refsFresh = 5 * time.Minute
+	// refsStale is how long a list is kept for when github.com does not answer.
+	refsStale = 24 * time.Hour
+	// refsMax bounds the repositories in the cache.
+	refsMax = 256
+)
+
+// refsCache keeps the refs of the repositories of github.com the actions come
+// from, for the whole server. Safe for concurrent use.
+type refsCache struct {
+	mu sync.Mutex
+	m  map[string]cachedRefs
+}
+
+type cachedRefs struct {
+	refs []ports.RemoteRef
+	at   time.Time
+}
+
+func newRefsCache() *refsCache { return &refsCache{m: map[string]cachedRefs{}} }
+
+// get returns the list of key and whether it is fresh.
+func (c *refsCache) get(key string, now time.Time) ([]ports.RemoteRef, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[key]
+	return e.refs, ok && now.Sub(e.at) < refsFresh
+}
+
+// stale returns the list of key when it is not older than refsStale.
+func (c *refsCache) stale(key string, now time.Time) ([]ports.RemoteRef, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[key]
+	return e.refs, ok && now.Sub(e.at) < refsStale
+}
+
+func (c *refsCache) put(key string, refs []ports.RemoteRef, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.m[key]; !ok && len(c.m) >= refsMax {
+		var oldest string
+		for k, e := range c.m {
+			if oldest == "" || e.at.Before(c.m[oldest].at) {
+				oldest = k
+			}
+		}
+		delete(c.m, oldest)
+	}
+	c.m[key] = cachedRefs{refs: refs, at: now}
 }
