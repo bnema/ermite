@@ -20,6 +20,9 @@ type Section struct {
 	Label   string
 	Href    string
 	Current bool
+	// Count is shown after the label when it is not empty: the open merge
+	// requests.
+	Count string
 }
 
 // RefItem is a branch or tag in the ref switcher.

@@ -26,6 +26,22 @@ func invisible(r rune) bool {
 // marker is the visible form of an invisible character.
 func marker(r rune) string { return fmt.Sprintf("<U+%04X>", r) }
 
+// who is the name shown for the author of a merge request or a comment, or the
+// actor of a run. ermite has one user: the owner's web session, root and every
+// stored token act for the owner, so they show the owner's name (ERMITE_OWNER),
+// not the label of the token, which names a device ("laptop"). Only CI is
+// someone else, shown as stored: a job token ("ci job") and the workflows a job
+// dispatched ("github-actions[bot]").
+func (s *Server) who(stored string) string {
+	if strings.HasPrefix(stored, "ci ") || strings.HasSuffix(stored, "[bot]") {
+		return visibleText(stored)
+	}
+	if s.cfg.Owner != "" {
+		return s.cfg.Owner
+	}
+	return "owner"
+}
+
 // visibleText is s with every invisible character replaced by its marker,
 // for the places that show text as a plain string: paths, names, subjects.
 func visibleText(s string) string {

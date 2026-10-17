@@ -248,6 +248,9 @@ type MergeRequestStore interface {
 	// ListOpen returns the open merge requests of the repository, highest
 	// number first, reading only the open ones (through an index).
 	ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.MergeRequest, error)
+	// CountOpen returns the number of open merge requests of the repository
+	// from the index of keys: no request is read.
+	CountOpen(ctx context.Context, repo domain.RepoName) (int, error)
 	// OpenBySource returns the numbers of the open merge requests whose source
 	// branch is one of branches (short names), from an index of keys: a push
 	// looks up the branches it moved, whatever the number of merge requests the

@@ -260,6 +260,25 @@ func (s *Server) mrClose(ctx context.Context, r *http.Request) (string, string, 
 	return back, back, nil
 }
 
+// mrReady is POST /<repo>/merge-requests/<n>/ready: the draft prefix leaves
+// the title.
+func (s *Server) mrReady(ctx context.Context, r *http.Request) (string, string, error) {
+	repo := r.PathValue("repo")
+	n, err := number(r)
+	if err != nil {
+		return "", "", err
+	}
+	back := mrHref(repo, n)
+	name, err := domain.ParseRepoName(repo)
+	if err != nil {
+		return "", back, err
+	}
+	if _, err := s.cfg.MergeRequests.MarkReady(ctx, principal(ctx), name, n); err != nil {
+		return "", back, err
+	}
+	return back, back, nil
+}
+
 // mrMerge is POST /<repo>/merge-requests/<n>/merge. The form carries the mode,
 // the head the owner was shown (head_id): the server merges only if the
 // branch still points to it, and delete_branch when the owner asked to delete

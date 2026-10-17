@@ -138,6 +138,9 @@ type MRCommit struct {
 type MergeBox struct {
 	MergeAction string
 	CloseAction string
+	// ReadyAction takes a draft out of draft; empty when it is not one: a
+	// draft shows it in place of the merge form.
+	ReadyAction string
 	ReadAction  string
 	Head        string
 	Modes       []ModeOption
@@ -262,6 +265,15 @@ func mrNumber(r *http.Request) (int64, error) {
 	return n, nil
 }
 
+// mrStateName is the state a page shows: "draft" for an open request whose
+// title marks it so.
+func mrStateName(m domain.MergeRequest) string {
+	if m.IsOpen() && m.IsDraft() {
+		return "draft"
+	}
+	return stateName(m.State)
+}
+
 func stateName(s domain.MRState) string {
 	switch s {
 	case domain.MRStateOpen:
@@ -287,10 +299,10 @@ func modeName(m domain.MergeMode) string {
 // mrRow converts a merge request of a listing.
 func (s *Server) mrRow(repo string, m domain.MergeRequest) MRRow {
 	row := MRRow{
-		Number: "!" + strconv.FormatInt(m.Number, 10), Href: mrHref(repo, m.Number),
-		Title: visibleText(m.Title.String()), State: stateName(m.State),
+		Number: "#" + strconv.FormatInt(m.Number, 10), Href: mrHref(repo, m.Number),
+		Title: visibleText(m.Title.String()), State: mrStateName(m),
 		Branches: visibleText(m.Source) + " → " + visibleText(m.Target),
-		Author:   visibleText(m.Author),
+		Author:   s.who(m.Author),
 	}
 	ts := m.UpdatedAt
 	if ts.IsZero() {
@@ -422,10 +434,10 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	}
 
 	p := MRPage{
-		Number: "!" + strconv.FormatInt(n, 10), Title: visibleText(m.Title.String()),
-		State: stateName(m.State), Open: open, Signed: signed,
+		Number: "#" + strconv.FormatInt(n, 10), Title: visibleText(m.Title.String()),
+		State: mrStateName(m), Open: open, Signed: signed,
 		Source: visibleText(m.Source), Target: visibleText(m.Target),
-		Author: visibleText(m.Author),
+		Author: s.who(m.Author),
 		Desc:   plainParts(m.Description.String()),
 		Head:   head, HeadShort: short(head),
 		NFiles: res.Stats.FilesChanged,
@@ -529,6 +541,9 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	p.DiffView = newDiffView(r, lines, self+"?view=unified", self+"?view=split")
 	if signed && open {
 		p.Box = s.mergeBox(d, n, m.Source, head, lastRead)
+		if m.IsDraft() {
+			p.Box.ReadyAction = mrHref(d.name(), n, "ready")
+		}
 	}
 	if canWrite {
 		p.GeneralForm = &CommentForm{
@@ -553,7 +568,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		l.Crumbs = append(l.Crumbs, Crumb{Label: "since", Current: true})
 	}
 	p.Live = true
-	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source))
+	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source)+"&head="+url.QueryEscape(head))
 	l.HasRail = true
 	return MergeRequest(l, p), http.StatusOK, nil
 }
@@ -683,7 +698,7 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 	for _, c := range comments {
 		cid := strconv.FormatInt(c.ID, 10)
 		v := CommentView{
-			ID: cid, Author: visibleText(c.Author),
+			ID: cid, Author: s.who(c.Author),
 			Parts: plainParts(c.Text.String()), Resolved: c.Resolved,
 			Outdated: !c.CommitID.IsZero() && c.CommitID.String() != head,
 		}

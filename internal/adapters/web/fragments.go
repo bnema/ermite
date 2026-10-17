@@ -29,7 +29,14 @@ type liveStream struct {
 	// sha is the commit of the run of the job shown, read once when the stream
 	// is set up: the annotations link to files at it, and it never changes.
 	sha string
+	// headRuns says, on a merge request page, whether a run is one of the
+	// head shown (its checks are on that head); a job event does not carry
+	// its commit, so its run is read once. One stream reads it, no lock.
+	headRuns map[int64]bool
 }
+
+// maxHeadRuns bounds headRuns: past it the map starts again.
+const maxHeadRuns = 256
 
 // renderFragment renders a component to the data of an event.
 func renderFragment(ctx context.Context, event string, c templ.Component) (fragment, error) {
@@ -51,7 +58,7 @@ func liveEvent(we ports.WatchEvent) bool {
 	}
 	switch we.Event.(type) {
 	case domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
-		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.CommentAdded,
+		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded,
 		domain.RunUpdated, domain.JobUpdated:
 		return true
 	}
@@ -148,6 +155,8 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request was merged — reload")
 	case domain.MergeRequestClosed:
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request was closed — reload")
+	case domain.MergeRequestReady:
+		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request is ready for review — reload")
 	case domain.CommentAdded:
 		return l.mrNotice(ctx, ev.Number, "a comment was added — reload")
 	case domain.PushEvent:
@@ -431,8 +440,64 @@ func (l *liveStream) runEvent(ctx context.Context, ev domain.RunUpdated) ([]frag
 			return nil, nil
 		}
 		return l.runBody(ctx)
+	case "mr":
+		ofHead := ev.Run.CheckSha() == l.head
+		l.rememberRun(ev.Run.ID, ofHead)
+		if !ofHead {
+			return nil, nil
+		}
+		return l.mrChecks(ctx)
 	}
 	return nil, nil
+}
+
+// rememberRun records whether a run is one of the head of the page.
+func (l *liveStream) rememberRun(id int64, ofHead bool) {
+	if l.headRuns == nil || len(l.headRuns) >= maxHeadRuns {
+		l.headRuns = make(map[int64]bool)
+	}
+	l.headRuns[id] = ofHead
+}
+
+// jobOfHead tells whether the run of a job is one of the head of the page,
+// reading the run the first time.
+func (l *liveStream) jobOfHead(ctx context.Context, job domain.CIJob) (bool, error) {
+	if ofHead, known := l.headRuns[job.RunID]; known {
+		return ofHead, nil
+	}
+	run, err := l.s.cfg.Runs.GetRun(ctx, principal(ctx), job.Repo, job.RunID, 0)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	ofHead := run.Run.CheckSha() == l.head
+	l.rememberRun(job.RunID, ofHead)
+	return ofHead, nil
+}
+
+// mrChecks is the checks block of the merge request page, read again for the
+// head the page shows: a run or a job of that head changed. A job event does
+// not name its commit; reading the checks of the head is one store read, and
+// a job of another commit leaves them as they were.
+func (l *liveStream) mrChecks(ctx context.Context) ([]fragment, error) {
+	if !isFullID(l.head) {
+		return nil, nil
+	}
+	name, err := domain.ParseRepoName(l.repo)
+	if err != nil {
+		return nil, nil
+	}
+	repo, err := l.s.repoRecord(ctx, name)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return gap, nil
+	case err != nil:
+		return nil, err
+	}
+	f, err := renderFragment(ctx, "ci-run", MRChecks(checksSection(repo, l.s.checksFor(ctx, name, l.head))))
+	return []fragment{f}, err
 }
 
 // recentActions is the "Recent actions" block of the summary rail, read again
@@ -470,6 +535,15 @@ func (l *liveStream) jobEvent(ctx context.Context, ev domain.JobUpdated) ([]frag
 			return nil, nil
 		}
 		return l.jobState(ctx)
+	case "mr":
+		if !isFullID(l.head) {
+			return nil, nil
+		}
+		ofHead, err := l.jobOfHead(ctx, ev.Job)
+		if err != nil || !ofHead {
+			return nil, err
+		}
+		return l.mrChecks(ctx)
 	}
 	return nil, nil
 }

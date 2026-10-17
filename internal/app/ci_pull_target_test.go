@@ -355,7 +355,7 @@ func TestWebShowsTheMergeRequestOfAPullRequestTargetRun(t *testing.T) {
 		res := b.get(page, nil)
 		require.Equal(t, 200, res.status, res.body)
 		assert.Contains(t, res.body, fmt.Sprintf(`href="/proj/merge-requests/%d"`, n), page)
-		assert.Contains(t, res.body, fmt.Sprintf("!%d", n), page)
+		assert.Contains(t, res.body, fmt.Sprintf(">#%d<", n), page)
 	}
 }
 

@@ -184,6 +184,7 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/resolve", s.mrAction(s.mrResolve))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/merge", s.mrAction(s.mrMerge))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/close", s.mrAction(s.mrClose))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/ready", s.mrAction(s.mrReady))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/read", s.mrAction(s.mrRead))
 	}
 	if s.cfg.Runs != nil {

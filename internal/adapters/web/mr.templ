@@ -368,7 +368,12 @@ templ mergeBox(p MRPage) {
 			<dt>into</dt>
 			<dd>{ p.Target }</dd>
 		</dl>
-		if !p.Box.HeadGone {
+		if p.Box.ReadyAction != "" {
+			<p class="d-draft">this is a draft: it cannot be merged until it is ready for review.</p>
+			<form class="d-btns" method="post" action={ templ.SafeURL(p.Box.ReadyAction) }>
+				<button type="submit" class="btn primary" title="remove the draft prefix from the title">Ready for review</button>
+			</form>
+		} else if !p.Box.HeadGone {
 			<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.MergeAction) }>
 				<input type="hidden" name="head_id" value={ p.Box.Head }/>
 				<label class="sr" for="merge-mode">merge mode</label>
@@ -396,9 +401,11 @@ templ mergeBox(p MRPage) {
 				<button type="submit" title="close without merging; the branch is kept" class="btn danger">Close</button>
 			</form>
 		</div>
-		if !p.Box.HeadGone {
-			<p class="mute d-or">or from a terminal</p>
-			@CloneBlock(p.Box.CLI)
+		if !p.Box.HeadGone && p.Box.ReadyAction == "" {
+			<details class="d-or">
+				<summary class="mute">or from a terminal</summary>
+				@CloneBlock(p.Box.CLI)
+			</details>
 		}
 	</section>
 }

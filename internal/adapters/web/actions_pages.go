@@ -237,7 +237,7 @@ func (s *Server) runRow(repo string, run domain.CIRun, now time.Time) RunRow {
 		Kind: ciKind(run.Status, run.Conclusion), State: ciState(run.Status, run.Conclusion),
 		Workflow: visibleText(run.WorkflowName), Event: visibleText(run.Event), Title: visibleText(run.Title),
 		Ref:   visibleText(strings.TrimPrefix(strings.TrimPrefix(run.Ref, "refs/heads/"), "refs/tags/")),
-		Short: short(run.Sha), CHref: repoHref(repo, "commit", run.Sha), Actor: visibleText(run.Actor),
+		Short: short(run.Sha), CHref: repoHref(repo, "commit", run.Sha), Actor: s.who(run.Actor),
 		Duration: duration(run.StartedAt, run.CompletedAt, now), Number: "#" + strconv.FormatInt(run.Number, 10), Attempt: run.Attempt,
 	}
 	row.RefHref = repoHref(repo, "tree", strings.TrimPrefix(strings.TrimPrefix(run.Ref, "refs/heads/"), "refs/tags/"))
@@ -248,7 +248,7 @@ func (s *Server) runRow(repo string, run domain.CIRun, now time.Time) RunRow {
 	if ok {
 		// A pull_request run is for refs/pull/<n>/merge, a pull_request_target
 		// run for the default branch: both show the merge request.
-		row.Ref, row.RefHref = "!"+strconv.FormatInt(n, 10), mrHref(repo, n)
+		row.Ref, row.RefHref = "#"+strconv.FormatInt(n, 10), mrHref(repo, n)
 	}
 	row.When, row.WhenAt = whenOf(now, run.CreatedAt)
 	return row

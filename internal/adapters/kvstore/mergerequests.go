@@ -344,6 +344,13 @@ func (m *MergeRequests) ListOpen(ctx context.Context, repo domain.RepoName) ([]d
 	return out, nil
 }
 
+// CountOpen counts the open merge requests of the repository from the keys of
+// the index: no request is decoded.
+func (m *MergeRequests) CountOpen(ctx context.Context, repo domain.RepoName) (int, error) {
+	numbers, _, err := m.scanIndex(ctx, []string{mrOpenRepoPrefix(repo)}, 0)
+	return len(numbers), err
+}
+
 // Update replaces the merge request with a version precondition.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter port method name only

@@ -111,7 +111,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 	}
 	switch {
 	case existing != nil:
-		p.Existing = &Link{Label: "!" + itoa(int(existing.Number)) + " " + visibleText(existing.Title.String()), Href: mrHref(name, existing.Number)}
+		p.Existing = &Link{Label: "#" + itoa(int(existing.Number)) + " " + visibleText(existing.Title.String()), Href: mrHref(name, existing.Number)}
 	case SignedIn(ctx) && !same && len(ahead) > 0:
 		title := ""
 		if len(ahead) == 1 {

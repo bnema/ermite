@@ -211,3 +211,27 @@ func TestParseBranchName(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrInvalidRevision, "%q", bad)
 	}
 }
+
+// A title that starts with "WIP:" or "[WIP]", in any case, is a draft; ready
+// drops the prefix and the spaces after it.
+func TestMergeRequestDraft(t *testing.T) {
+	for _, tc := range []struct {
+		title, ready string
+		draft        bool
+	}{
+		{"WIP: feat: drag and drop", "feat: drag and drop", true},
+		{"wip:fix", "fix", true},
+		{"  [WIP]  tidy", "tidy", true},
+		{"WIP: [wip] both", "both", true}, // every prefix goes
+		{"feat: wip: later", "", false},
+		{"WIPE the cache", "", false},
+		{"WIP:", "", true}, // a draft, but nothing would be left
+	} {
+		title, err := domain.ParseMRTitle(tc.title)
+		require.NoError(t, err)
+		assert.Equal(t, tc.draft, domain.MergeRequest{Title: title}.IsDraft(), tc.title)
+		ready, ok := domain.ReadyTitle(title)
+		assert.Equal(t, tc.ready != "", ok, tc.title)
+		assert.Equal(t, tc.ready, ready.String(), tc.title)
+	}
+}

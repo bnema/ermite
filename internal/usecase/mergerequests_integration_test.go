@@ -889,6 +889,43 @@ func TestMergeFastForward(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 }
 
+// A draft is not merged until it is marked ready; ready drops the prefix of
+// the title, and only for an open draft. CountOpen counts drafts as open.
+func TestDraftMergeRequest(t *testing.T) {
+	r := newMRRig(t)
+	r.seed()
+	head := r.feature("feat")
+	mr, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "WIP: add feat", Source: "feat"})
+	require.NoError(t, err)
+
+	_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
+	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	assert.Contains(t, err.Error(), "draft")
+
+	n, err := r.mrs.CountOpen(r.ctx, reader, r.repo)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	_, err = r.mrs.MarkReady(r.ctx, reader, r.repo, mr.Number)
+	require.Error(t, err, "mr:write is needed")
+	r.drain()
+	ready, err := r.mrs.MarkReady(r.ctx, mrW, r.repo, mr.Number)
+	require.NoError(t, err)
+	assert.Equal(t, "add feat", ready.Title.String())
+	assert.False(t, ready.IsDraft())
+	evs := r.drain()
+	require.Len(t, evs, 1, "live pages learn the request is ready")
+	assert.Equal(t, "add feat", evs[0].(domain.MergeRequestReady).MergeRequest.Title.String())
+	_, err = r.mrs.MarkReady(r.ctx, mrW, r.repo, mr.Number)
+	require.ErrorIs(t, err, domain.ErrPreconditionFailed, "not a draft any more")
+
+	_, err = r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
+	require.NoError(t, err)
+	n, err = r.mrs.CountOpen(r.ctx, reader, r.repo)
+	require.NoError(t, err)
+	assert.Zero(t, n)
+}
+
 // AC4: the checks of a merge.
 func TestMergeRefusals(t *testing.T) {
 	t.Run("a branch that moved since the review", func(t *testing.T) {

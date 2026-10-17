@@ -10,8 +10,8 @@ import (
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-// ago renders a short relative date: now, 5m ago, 3h ago, 12d ago, 5mo ago,
-// 2y ago.
+// ago renders a short relative date: now, 5 min ago, 3h ago, 12d ago, 5mo
+// ago, 2y ago. Minutes are "min", so that they never read as months.
 func ago(now, t time.Time) string {
 	if t.IsZero() {
 		return "never"
@@ -21,7 +21,7 @@ func ago(now, t time.Time) string {
 	case d < time.Minute:
 		return "now"
 	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+		return fmt.Sprintf("%d min ago", int(d.Minutes()))
 	case d < 48*time.Hour:
 		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	case d < 60*24*time.Hour:

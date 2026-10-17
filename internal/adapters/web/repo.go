@@ -35,18 +35,26 @@ type repoData struct {
 // the Git state of its summary. A missing or private repository is
 // domain.ErrNotFound.
 func (s *Server) repoView(ctx context.Context, name domain.RepoName) (ports.RepoView, error) {
+	repo, err := s.repoRecord(ctx, name)
+	if err != nil {
+		return ports.RepoView{}, err
+	}
+	return s.cfg.Repos.View(ctx, repo)
+}
+
+// repoRecord reads the repository record only, without Git: its name,
+// visibility and settings (the defaults when it has none).
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter reads the repository from the use case; filling in the default settings for display decides no rule
+func (s *Server) repoRecord(ctx context.Context, name domain.RepoName) (domain.Repo, error) {
 	repo, err := s.cfg.Repos.Get(ctx, principal(ctx), name)
 	if err != nil {
-		return ports.RepoView{}, err
+		return domain.Repo{}, err
 	}
-	view, err := s.cfg.Repos.View(ctx, repo)
-	if err != nil {
-		return ports.RepoView{}, err
+	if repo.Settings.IsZero() {
+		repo.Settings = domain.DefaultRepoSettings()
 	}
-	if view.Settings.IsZero() {
-		view.Settings = domain.DefaultRepoSettings()
-	}
-	return view, nil
+	return repo, nil
 }
 
 // loadRepo reads a repository and its refs. A missing, private or invalidly
@@ -110,6 +118,16 @@ func (d *repoData) allRefs() []domain.Ref {
 // name is the repository name.
 func (d *repoData) name() string { return d.repo.Name.String() }
 
+// openMRCount is the number of open merge requests shown on the tab, empty
+// when there are none or they cannot be counted (the tab still works).
+func (s *Server) openMRCount(ctx context.Context, name domain.RepoName) string {
+	n, err := s.cfg.MergeRequests.CountOpen(ctx, principal(ctx), name)
+	if err != nil || n == 0 {
+		return ""
+	}
+	return itoa(n)
+}
+
 // layout is the Layout of the pages of a repository: the sections, the ref
 // switcher on the head ref and the ":" targets. The caller sets the title,
 // the crumbs, the status and the rail.
@@ -133,7 +151,9 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		mk("r", "Branches & tags", repoHref(d.name(), "refs"), "refs"),
 	}
 	if s.cfg.MergeRequests != nil {
-		l.Sections = append(l.Sections, mk("m", "Merge requests", mrBase(d.name()), "merge-requests"))
+		mrs := mk("m", "Merge requests", mrBase(d.name()), "merge-requests")
+		mrs.Count = s.openMRCount(ctx, d.repo.Name)
+		l.Sections = append(l.Sections, mrs)
 	}
 	l.Sections = s.withActions(l.Sections, d.name(), section)
 	l.Crumbs = []Crumb{{Label: d.name(), Href: repoHref(d.name()), Current: section == "summary"}}

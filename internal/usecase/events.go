@@ -174,6 +174,8 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.MergeRequestClosed:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.MergeRequestReady:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.CommentAdded:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.RunUpdated:
@@ -480,6 +482,8 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 	case domain.MergeRequestMerged:
 		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.MergeRequestClosed:
+		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
+	case domain.MergeRequestReady:
 		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.CommentAdded:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)

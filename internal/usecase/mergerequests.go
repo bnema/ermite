@@ -333,6 +333,58 @@ func (m *MergeRequests) List(ctx context.Context, p domain.Principal, name domai
 	return page, nil
 }
 
+// MarkReady implements ports.MergeRequestService: the title of an open draft
+// loses its draft prefix, so the request can be merged. The principal needs
+// mr:write. A request that is not open, or not a draft, gives
+// domain.ErrPreconditionFailed.
+func (m *MergeRequests) MarkReady(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error) {
+	repo, err := m.writable(ctx, p, name, domain.ScopeMRWrite)
+	if err != nil {
+		return domain.MergeRequest{}, err
+	}
+	unlock, err := m.lockRepo(ctx, name) // a merge sees the request as it is after
+	if err != nil {
+		return domain.MergeRequest{}, err
+	}
+	defer unlock()
+	for range maxWriteRetries {
+		mr, err := m.store.Get(ctx, name, number)
+		if err != nil {
+			return domain.MergeRequest{}, err
+		}
+		if !mr.IsOpen() {
+			return domain.MergeRequest{}, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
+		}
+		title, ok := domain.ReadyTitle(mr.Title)
+		if !ok {
+			return domain.MergeRequest{}, fmt.Errorf("%w: !%d is not a draft", domain.ErrPreconditionFailed, number)
+		}
+		mr.Title, mr.UpdatedAt = title, m.clock.Now().UTC()
+		err = m.store.Update(ctx, mr)
+		if errors.Is(err, domain.ErrConflict) {
+			continue
+		}
+		if err != nil {
+			return domain.MergeRequest{}, fmt.Errorf("mark !%d of %q ready: %w", number, name, err)
+		}
+		m.bus.Publish(ctx, domain.MergeRequestReady{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		return m.withHead(ctx, mr)
+	}
+	return domain.MergeRequest{}, fmt.Errorf("mark !%d of %q ready: %w", number, name, domain.ErrConflict)
+}
+
+// CountOpen implements ports.MergeRequestService.
+func (m *MergeRequests) CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error) {
+	if _, err := m.readable(ctx, p, name); err != nil {
+		return 0, err
+	}
+	n, err := m.store.CountOpen(ctx, name)
+	if err != nil {
+		return 0, fmt.Errorf("count open merge requests of %q: %w", name, err)
+	}
+	return n, nil
+}
+
 func encodeMRToken(last domain.MergeRequest) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(mrTokenPrefix + strconv.FormatInt(last.Number, 10)))
 }
@@ -749,6 +801,9 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	}
 	if !mr.IsOpen() {
 		return domain.MergeRequest{}, false, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
+	}
+	if mr.IsDraft() {
+		return domain.MergeRequest{}, false, fmt.Errorf("%w: !%d is a draft: mark it ready for review first", domain.ErrPreconditionFailed, number)
 	}
 	// The settings are read again under the lock: a change applies at once.
 	repo, err = m.meta.Get(ctx, name)

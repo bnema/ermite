@@ -148,6 +148,18 @@ type MergeRequestClosed struct {
 // EventKind implements Event.
 func (MergeRequestClosed) EventKind() string { return "mr.closed" }
 
+// MergeRequestReady is published when a draft merge request was marked ready
+// for review: its title lost the draft prefix.
+type MergeRequestReady struct {
+	MergeRequest MergeRequest
+	At           time.Time
+	Visibility   Visibility
+	CreatedAt    time.Time
+}
+
+// EventKind implements Event.
+func (MergeRequestReady) EventKind() string { return "mr.ready" }
+
 // CommentAdded is published when a comment was added to a merge request.
 type CommentAdded struct {
 	Repo       RepoName

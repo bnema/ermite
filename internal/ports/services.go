@@ -114,6 +114,11 @@ type MergeRequestService interface {
 	Close(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error)
 	MarkRead(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, head domain.ObjectID) (domain.ObjectID, error)
 	Merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params MergeParams) (MergeResult, error)
+	// MarkReady takes a draft out of draft: its title loses its "WIP:" prefix.
+	MarkReady(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error)
+	// CountOpen is the number of open merge requests of a repository the
+	// principal can read. It reads no Git: the tab of every page shows it.
+	CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error)
 }
 
 // SigningKeyService tells which key signs the commits of the forge.

@@ -5,6 +5,7 @@
   .mr-state[data-state="open"]::before { content: "● "; color: var(--teal); }
   .mr-state[data-state="merged"]::before { content: "✓ "; color: var(--teal); }
   .mr-state[data-state="closed"]::before { content: "✗ "; color: var(--red); }
+  .mr-state[data-state="draft"]::before { content: "◌ "; color: var(--ink-dim); }
   .mr-desc { max-width: var(--measure); white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--s4) var(--s5); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
   .mr-desc a, .c-text a { text-decoration: underline; }
 
@@ -29,9 +30,29 @@
     & .d-check input { accent-color: var(--ink-hi); margin: 0; }
     & .d-btns { display: flex; gap: var(--s2); margin-top: var(--s3); flex-wrap: wrap; }
     & .d-btns .primary { flex: 1; justify-content: center; }
+    /* the terminal lines fold away: a reviewer who merges in the page does
+       not need them in sight */
+    & .d-draft { font-size: var(--fs-s); color: var(--ink-dim); }
     & .d-or { font-size: var(--fs-s); }
+    & .d-or > summary { cursor: pointer; list-style: none; }
+    & .d-or > summary::-webkit-details-marker { display: none; }
+    & .d-or > summary::before { content: "▸ "; }
+    & .d-or[open] > summary::before { content: "▾ "; }
+    & .d-or > summary:hover { color: var(--ink-hi); }
+    & .d-or[open] > .clone { margin-top: var(--s2); }
     & .clone { margin-top: 0; }
     & .clone code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  }
+
+  /* the rail of a merge request follows the review: the merge block and the
+     checks stay in reach at the end of a long diff. It scrolls on its own
+     when it is taller than the window. Only on a two-column layout. */
+  @media (min-width: 1081px) {
+    .work.has-rail:has(#mr-checks) .rail {
+      position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4));
+      max-height: calc(100dvh - var(--hdr-h, 0px) - var(--s4) * 2);
+      overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    }
   }
 
   .pcommits { font-size: var(--fs-s); display: grid; gap: var(--s1); }

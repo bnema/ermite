@@ -40,7 +40,7 @@ func TestWebActionsPages(t *testing.T) {
 	assert.Contains(t, list.body, `href="/proj/actions/runs/1"`)
 	assert.Contains(t, list.body, `aria-label="queued"`)
 	assert.Contains(t, list.body, "/-/events?topic=repo%3Aproj&amp;view=actions", "the page follows the repository stream")
-	assert.Contains(t, list.body, ">Actions<", "the tab")
+	assert.Contains(t, list.body, `aria-current="page">Actions <kbd`, "the tab")
 
 	// The MR page says "waiting for a runner" only when no runner matches.
 	mr, err := ci.root.mr.CreateMergeRequest(ci.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "Add CI", SourceBranch: "feat"}))
@@ -134,7 +134,8 @@ func TestWebActionsPages(t *testing.T) {
 }
 
 // The live updates of the pages: the run page gets the body of the run when a
-// job changes, and the job page its state, never a line of the log.
+// job changes, the job page its state, never a line of the log, and the page
+// of a merge request the checks of the head it shows (and only of that head).
 func TestWebActionsLiveFragments(t *testing.T) {
 	ci := newCIHarness(t, nil)
 	c := &cliHarness{harness: ci.harness, url: ci.srv.URL}
@@ -151,12 +152,15 @@ func TestWebActionsLiveFragments(t *testing.T) {
 	list := ci.sse("topic=repo:proj&view=actions", "")
 	job := runner.await()
 	jobStream := ci.sse("topic=repo:proj&view=job&job="+job.GetJobId(), "")
+	sha := ci.runs()[0].GetSha()
+	mrPage := ci.sse("topic=repo:proj&view=mr&n=1&ref=main&head="+sha, "")
+	otherHead := ci.sse("topic=repo:proj&view=mr&n=2&ref=x&head="+strings.Repeat("0", 40), "")
 	_ = token
 
 	runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "a secret value in the log")
 	deadline := time.After(10 * time.Second)
-	var sawRun, sawList, sawJob bool
-	for !sawRun || !sawList || !sawJob {
+	var sawRun, sawList, sawJob, sawChecks bool
+	for !sawRun || !sawList || !sawJob || !sawChecks {
 		select {
 		case ev := <-run.events:
 			sawRun = sawRun || (ev.name == "ci-run" && strings.Contains(ev.data, `id="run-body"`))
@@ -166,8 +170,12 @@ func TestWebActionsLiveFragments(t *testing.T) {
 		case ev := <-jobStream.events:
 			sawJob = sawJob || (ev.name == "ci-job" && strings.Contains(ev.data, `id="job-head"`))
 			assert.NotContains(t, ev.data, "a secret value in the log", "the stream of states never carries the log")
+		case ev := <-mrPage.events:
+			sawChecks = sawChecks || (ev.name == "ci-run" && strings.Contains(ev.data, `id="mr-checks"`) && strings.Contains(ev.data, "success"))
+		case ev := <-otherHead.events:
+			assert.NotEqual(t, "ci-run", ev.name, "the checks of another head are not sent")
 		case <-deadline:
-			t.Fatalf("fragments: run %v, list %v, job %v", sawRun, sawList, sawJob)
+			t.Fatalf("fragments: run %v, list %v, job %v, checks %v", sawRun, sawList, sawJob, sawChecks)
 		}
 	}
 	_ = domain.CISuccess

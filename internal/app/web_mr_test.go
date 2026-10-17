@@ -130,7 +130,7 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	require.Equal(t, 200, mr.status, mr.body)
 	assert.Equal(t, "no-cache", mr.hdr.Get("Cache-Control"))
 	assert.Equal(t, []string{"Accept-Encoding"}, mr.hdr.Values("Vary"))
-	assert.Contains(t, mr.body, "<h1><span class=\"mute\">!1</span> Add &lt;b&gt;search&lt;/b&gt;</h1>")
+	assert.Contains(t, mr.body, "<h1><span class=\"mute\">#1</span> Add &lt;b&gt;search&lt;/b&gt;</h1>")
 	assert.NotContains(t, mr.body, "<b>search</b>")
 	assert.Contains(t, mr.body, "feat/search")
 	assert.Contains(t, mr.body, "package search</td>")
@@ -218,6 +218,7 @@ func TestWebMergeRequestWritesNeedSessionAndOrigin(t *testing.T) {
 		"/proj/merge-requests/1/merge":              "mode=fast-forward&head_id=" + head,
 		"/proj/merge-requests/1/close":              "",
 		"/proj/merge-requests/1/read":               "head_id=" + head,
+		"/proj/merge-requests/1/ready":              "",
 	}
 	for path, body := range paths {
 		noOrigin := b.do("POST", path, as(token), body)
@@ -430,6 +431,54 @@ func TestWebMergeRequestSquashCloseAndList(t *testing.T) {
 	assert.Contains(t, stale.body, "has moved on")
 }
 
+// A "WIP:" request is a draft: the list and the page say so, the box offers
+// "Ready for review" instead of the merge form and the terminal lines, the
+// merge is refused; ready drops the prefix and the merge form comes back. The
+// tab counts the open requests.
+func TestWebMergeRequestDraft(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	head := r.headOf("feat/search")
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "WIP: search").ok(t)
+
+	page := b.get("/proj/merge-requests/1", as(token)).body
+	assert.Contains(t, page, `data-state="draft"`)
+	assert.Contains(t, page, `action="/proj/merge-requests/1/ready"`)
+	assert.NotContains(t, page, `action="/proj/merge-requests/1/merge"`)
+	assert.NotContains(t, page, "ermite mr merge", "no terminal line for a draft")
+	assert.Contains(t, page, `<span class="count">1<span class="sr"> open</span></span>`, "the tab counts the open requests")
+	assert.Contains(t, b.get("/proj/merge-requests", nil).body, `data-state="draft"`)
+
+	res := b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"fast-forward"}, "head_id": {head}})
+	assert.Equal(t, http.StatusConflict, res.status, "a draft is not merged")
+
+	res = b.form("/proj/merge-requests/1/ready", token, nil)
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	page = b.get("/proj/merge-requests/1", as(token)).body
+	assert.Contains(t, page, "> search</h1>", "the prefix is gone")
+	assert.Contains(t, page, `data-state="open"`)
+	assert.Contains(t, page, `action="/proj/merge-requests/1/merge"`)
+	assert.Contains(t, page, `<details class="d-or">`, "the terminal lines fold away")
+	assert.Equal(t, http.StatusConflict, b.form("/proj/merge-requests/1/ready", token, nil).status, "not a draft any more")
+}
+
+// A request opened with a token shows the owner's name, not the label of the
+// token, which names a device.
+func TestWebMergeRequestAuthorIsTheOwner(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	out, errOut, code := r.bin(t, adminToken, "token", "create", "laptop", "--preset", "cli")
+	require.Equal(t, 0, code, errOut)
+	r.cli(t, strings.TrimSpace(out), "mr", "create", "proj", "--source", "feat/search", "--title", "search").ok(t)
+
+	b := browser{r.harness}
+	for _, path := range []string{"/proj/merge-requests/1", "/proj/merge-requests"} {
+		body := b.get(path, nil).body
+		assert.NotContains(t, body, "laptop", path)
+	}
+	assert.Contains(t, b.get("/proj/merge-requests", nil).body, `<td class="c-who dim">owner</td>`)
+}
+
 // The box offers no deletion for the default branch; a fast-forward with the
 // box checked deletes the source.
 func TestWebMergeDeleteBranchBox(t *testing.T) {
@@ -543,7 +592,7 @@ func TestWebMergeRequestEvents(t *testing.T) {
 			drained = true
 		}
 	}
-	assert.Contains(t, r.get1("/proj/merge-requests/1"), `hx-sse:connect="/-/events?topic=repo%3Aproj&amp;view=mr&amp;n=1&amp;ref=feat%2Fsearch"`)
+	assert.Contains(t, r.get1("/proj/merge-requests/1"), `hx-sse:connect="/-/events?topic=repo%3Aproj&amp;view=mr&amp;n=1&amp;ref=feat%2Fsearch&amp;head=`+r.headOf("feat/search")+`"`)
 }
 
 func (r *mrRepo) get1(path string) string {

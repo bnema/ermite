@@ -150,7 +150,13 @@ templ Header(l Layout) {
 								if s.Current {
 									aria-current="page"
 								}
-							>{ s.Label }<kbd aria-hidden="true">{ s.Key }</kbd></a>
+							>
+								{ s.Label }
+								if s.Count != "" {
+									<span class="count">{ s.Count }<span class="sr">{ " open" }</span></span>
+								}
+								<kbd aria-hidden="true">{ s.Key }</kbd>
+							</a>
 						</li>
 					}
 				</ul>

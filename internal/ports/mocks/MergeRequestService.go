@@ -210,6 +210,78 @@ func (_c *MergeRequestService_Close_Call) RunAndReturn(run func(ctx context.Cont
 	return _c
 }
 
+// CountOpen provides a mock function for the type MergeRequestService
+func (_mock *MergeRequestService) CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error) {
+	ret := _mock.Called(ctx, p, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountOpen")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) (int, error)); ok {
+		return returnFunc(ctx, p, name)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) int); ok {
+		r0 = returnFunc(ctx, p, name)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName) error); ok {
+		r1 = returnFunc(ctx, p, name)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestService_CountOpen_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountOpen'
+type MergeRequestService_CountOpen_Call struct {
+	*mock.Call
+}
+
+// CountOpen is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - name domain.RepoName
+func (_e *MergeRequestService_Expecter) CountOpen(ctx any, p any, name any) *MergeRequestService_CountOpen_Call {
+	return &MergeRequestService_CountOpen_Call{Call: _e.mock.On("CountOpen", ctx, p, name)}
+}
+
+func (_c *MergeRequestService_CountOpen_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName)) *MergeRequestService_CountOpen_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestService_CountOpen_Call) Return(n int, err error) *MergeRequestService_CountOpen_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MergeRequestService_CountOpen_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error)) *MergeRequestService_CountOpen_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Create provides a mock function for the type MergeRequestService
 func (_mock *MergeRequestService) Create(ctx context.Context, p domain.Principal, name domain.RepoName, params ports.CreateMergeRequestParams) (domain.MergeRequest, error) {
 	ret := _mock.Called(ctx, p, name, params)
@@ -530,6 +602,84 @@ func (_c *MergeRequestService_MarkRead_Call) Return(objectID domain.ObjectID, er
 }
 
 func (_c *MergeRequestService_MarkRead_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, head domain.ObjectID) (domain.ObjectID, error)) *MergeRequestService_MarkRead_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkReady provides a mock function for the type MergeRequestService
+func (_mock *MergeRequestService) MarkReady(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error) {
+	ret := _mock.Called(ctx, p, name, number)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkReady")
+	}
+
+	var r0 domain.MergeRequest
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64) (domain.MergeRequest, error)); ok {
+		return returnFunc(ctx, p, name, number)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64) domain.MergeRequest); ok {
+		r0 = returnFunc(ctx, p, name, number)
+	} else {
+		r0 = ret.Get(0).(domain.MergeRequest)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, int64) error); ok {
+		r1 = returnFunc(ctx, p, name, number)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestService_MarkReady_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkReady'
+type MergeRequestService_MarkReady_Call struct {
+	*mock.Call
+}
+
+// MarkReady is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - name domain.RepoName
+//   - number int64
+func (_e *MergeRequestService_Expecter) MarkReady(ctx any, p any, name any, number any) *MergeRequestService_MarkReady_Call {
+	return &MergeRequestService_MarkReady_Call{Call: _e.mock.On("MarkReady", ctx, p, name, number)}
+}
+
+func (_c *MergeRequestService_MarkReady_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64)) *MergeRequestService_MarkReady_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestService_MarkReady_Call) Return(mergeRequest domain.MergeRequest, err error) *MergeRequestService_MarkReady_Call {
+	_c.Call.Return(mergeRequest, err)
+	return _c
+}
+
+func (_c *MergeRequestService_MarkReady_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error)) *MergeRequestService_MarkReady_Call {
 	_c.Call.Return(run)
 	return _c
 }

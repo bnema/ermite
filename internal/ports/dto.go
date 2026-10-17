@@ -141,7 +141,7 @@ type WatchEvent struct {
 	Gap bool
 	// Event is a domain.RepoCreated, RepoUpdated, RepoDeleted, PushEvent,
 	// MergeRequestOpened, MergeRequestMerged, MergeRequestClosed,
-	// CommentAdded, RunUpdated or JobUpdated.
+	// MergeRequestReady, CommentAdded, RunUpdated or JobUpdated.
 	Event domain.Event
 	// Repo is the state of the repository at delivery, for RepoCreated and
 	// RepoUpdated.

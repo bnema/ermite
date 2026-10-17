@@ -137,6 +137,50 @@ type MergeRequest struct {
 	Version uint64
 }
 
+// draftPrefixes mark a draft at the start of a title, compared without regard
+// to case, as Forgejo and Gitea do.
+var draftPrefixes = []string{"wip:", "[wip]"}
+
+// IsDraft reports whether the title marks the request as a draft: it starts
+// with "WIP:" or "[WIP]". A draft cannot be merged.
+func (mr MergeRequest) IsDraft() bool {
+	_, ok := draftRest(mr.Title.String())
+	return ok
+}
+
+// ReadyTitle is the title without its draft prefixes (all of them, so that
+// "WIP: [WIP] x" is no longer a draft), and false when the title has none or
+// nothing would be left of it.
+func ReadyTitle(t MRTitle) (MRTitle, bool) {
+	rest, ok := draftRest(t.String())
+	if !ok {
+		return MRTitle{}, false
+	}
+	for {
+		next, more := draftRest(rest)
+		if !more {
+			break
+		}
+		rest = next
+	}
+	ready, err := ParseMRTitle(rest)
+	if err != nil {
+		return MRTitle{}, false
+	}
+	return ready, true
+}
+
+// draftRest is the title after its draft prefix and the spaces that follow.
+func draftRest(title string) (string, bool) {
+	t := strings.TrimLeft(title, " ")
+	for _, p := range draftPrefixes {
+		if len(t) >= len(p) && strings.EqualFold(t[:len(p)], p) {
+			return strings.TrimLeft(t[len(p):], " "), true
+		}
+	}
+	return "", false
+}
+
 // IsOpen reports whether the request awaits review.
 func (m MergeRequest) IsOpen() bool { return m.State == MRStateOpen }
 
