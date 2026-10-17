@@ -27,7 +27,7 @@ ermite serve
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
 | `ERMITE_COMMITTER_NAME` | `ermite` | committer of squash merges |
 | `ERMITE_COMMITTER_EMAIL` | `ermite@<public host>` | committer email of squash merges |
-| `ERMITE_OWNER` | `owner` | owner login that CI shows in `github.repository` (`<owner>/<repo>`) and `github.repository_owner`; follows the rules of repository names |
+| `ERMITE_OWNER` | `owner` | owner login: shown in the web header when signed in, named in new passkeys, and the one CI shows in `github.repository` (`<owner>/<repo>`) and `github.repository_owner`; follows the rules of repository names |
 | `ERMITE_CI_LOG_RETENTION` | `90d` | how long CI runs, jobs, checks and logs are kept: `Nd` (days) or a Go duration such as `720h`, at least one hour |
 | `ERMITE_SECRETS_KEY` | empty | 32 random bytes in base64 (`head -c 32 /dev/urandom \| base64`) that encrypt CI secrets at rest (AES-256-GCM); keep it in the deployment secret store like `ERMITE_ADMIN_TOKEN`. Without it `ermite secret set` fails and jobs receive no secrets (variables and environments still work). The server refuses to start with another key than the one the stored secrets were sealed with; losing the key loses every secret (set them again), a backup without the key reveals none |
 | `ERMITE_CI_ARTIFACTS` | `1` | `0` turns the CI artifacts off: no artifact service, and artifact actions fail as on a GitHub Enterprise Server without artifacts v4 |
@@ -168,7 +168,7 @@ The cache (`actions/cache`, `setup-go`/`setup-node` `cache:`) is served by the r
 Two ways in, both for the owner, both giving the same session cookie for 12 hours. Neither works over plain `http` except on localhost: the cookie is `Secure`.
 
 - **Passkey** (a phone, a laptop, a security key): open `/-/login` and press "Sign in with a passkey". Nothing to type, no terminal. A passkey is added once from `/-/passkeys` while signed in.
-- **Link**: `ermite web login`, run with the admin token or a token with every scope, prints a link that works once within 60 seconds. Opening it and confirming signs the browser in (never longer than the token that asked for the link). It is also how to sign in the first time, before any passkey exists.
+- **Link**: `ermite web login`, run with the admin token or a token with every scope, prints a link that works once within 60 seconds. Opening it signs the browser in (without scripts, click the button on the page) (never longer than the token that asked for the link). It is also how to sign in the first time, before any passkey exists.
 
 Passkeys need `ERMITE_PUBLIC_URL` to be `https` (or `http://localhost`) with a **host name, not an IP address**: WebAuthn ties a passkey to that name, and a passkey registered for one name does not work on another. On `http://127.0.0.1:…` the server starts without passkeys (the log says `passkeys disabled`, the routes and links are absent, `ermite version` does not list `passkeys`). Up to 20 passkeys can be registered; each asks for user verification (a fingerprint, a face or a PIN), and the server stores only the public key. A security key that reports a signature counter is checked for cloning; synced passkeys (iCloud, Google, a password manager) report none, so they are not.
 

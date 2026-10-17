@@ -317,7 +317,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	// Owner passkeys (ADR 0026): built only when the public URL allows them.
 	// When it does, a verifier that cannot be built is fatal.
 	if ok, reason := passkeysAvailable(cfg.PublicURL); ok {
-		verifier, err := webauthn.New(cfg.PublicURL)
+		verifier, err := webauthn.New(cfg.PublicURL, cfg.Owner)
 		if err != nil {
 			return nil, fmt.Errorf("passkeys: %w", err)
 		}

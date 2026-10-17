@@ -35,11 +35,11 @@ func newWebLoginCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Print a one-time link that signs your browser in",
-		Long: "Ask the server for a login link and print it on standard output. Open it in your browser and confirm:\n" +
+		Long: "Ask the server for a login link and print it on standard output. Open it in your browser:\n" +
 			"the browser is then signed in as the owner for 12 hours (private repositories, merge requests).\n\n" +
 			"The link works once, for about a minute, and only until the server restarts. It is a secret: it is\n" +
-			"printed and nowhere else (not stored, not logged); do not paste it into a chat or a ticket. Opening\n" +
-			"it only shows a confirmation page; confirming it signs the browser in.\n\n" +
+			"printed and nowhere else (not stored, not logged); do not paste it into a chat or a ticket. The page\n" +
+			"signs the browser in by itself; link previews, which run no script, cannot use it.\n\n" +
 			"JSON fields (--json): url, expires_at (RFC 3339 UTC).",
 		Args: cobra.NoArgs,
 	}
@@ -56,7 +56,7 @@ func newWebLoginCmd(env *cliEnv) *cobra.Command {
 		if *asJSON {
 			return writeJSON(cmd.OutOrStdout(), jsonLoginLink{URL: res.Msg.GetUrl(), ExpiresAt: jsonTime(res.Msg.GetExpiresAt())})
 		}
-		noticef(cmd, "open this link in your browser and confirm; it works once, until %s UTC", shortTime(res.Msg.GetExpiresAt(), "shortly"))
+		noticef(cmd, "open this link in your browser; it works once, until %s UTC", shortTime(res.Msg.GetExpiresAt(), "shortly"))
 		_, err = fmt.Fprintln(cmd.OutOrStdout(), res.Msg.GetUrl())
 		return err
 	}

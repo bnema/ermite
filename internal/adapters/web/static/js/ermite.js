@@ -255,6 +255,15 @@
     a.setAttribute('aria-controls', 'panel-refs');
   }
 
+  // A login link signs in without a click: its page submits its form once a
+  // browser shows it, not while it is prerendered.
+  const auto = $('form[data-autosubmit]');
+  if (auto) {
+    const go = () => auto.requestSubmit();
+    if (document.prerendering) document.addEventListener('prerenderingchange', go, { once: true });
+    else go();
+  }
+
   // In the app shell the page does not scroll, <main> does: give it focus so arrows,
   // PageUp/PageDown and space scroll the content without a click first.
   if (!location.hash) document.getElementById('main')?.focus({ preventScroll: true });
@@ -310,7 +319,24 @@
 window.ermiteLive = (() => {
   let reloading = false;
   let stopped = false;
+  // A stream that drops and comes back within LOST_AFTER (a proxy or the
+  // server closing it, a network hiccup) is not worth a message.
+  const LOST_AFTER = 5000;
+  let lostTimer = 0;
+  const setState = (s) => { const el = document.querySelector('.hint-live'); if (el) el.dataset.state = s; };
   return {
+    // lost is htmx:sse:close and htmx:sse:error: "live updates paused" shows
+    // only if the stream is still down LOST_AFTER later.
+    lost() {
+      if (lostTimer) return;
+      lostTimer = setTimeout(() => { lostTimer = 0; setState('offline'); }, LOST_AFTER);
+    },
+    // back is htmx:sse:after:connection.
+    back() {
+      clearTimeout(lostTimer);
+      lostTimer = 0;
+      setState('live');
+    },
     swap(html) {
       const t = document.createElement('template');
       t.innerHTML = html;

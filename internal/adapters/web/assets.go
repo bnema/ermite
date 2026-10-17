@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -24,6 +25,9 @@ const StaticPrefix = "/-/static/"
 // the content, so they can be cached for ever.
 type Assets struct {
 	CSS, HTMX, Live, SSE, App, Files, Passkey, Log, Icon string
+	// Manifest is the web app manifest (install on a phone's home screen),
+	// AppleIcon the home screen icon iOS reads from a link instead.
+	Manifest, AppleIcon string
 	// Font is the UI font, preloaded by every page.
 	Font string
 	// Rules is the speculation rules file named by the Speculation-Rules header.
@@ -146,7 +150,71 @@ func loadAssets() (*assetSet, error) {
 		return nil, err
 	}
 	s.urls.Icon = put("img", "icon.svg", icon, "image/svg+xml")
+
+	if err := s.loadApp(put); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// appIcons are the PNG icons of the installed app (static/app), in the
+// manifest; purpose "maskable" has the picture inside the safe zone on a
+// full-bleed background, for launchers that crop to a circle or a squircle.
+var appIcons = []struct{ file, sizes, purpose string }{
+	{"icon-192.png", "192x192", "any"},
+	{"icon-512.png", "512x512", "any"},
+	{"icon-maskable-512.png", "512x512", "maskable"},
+}
+
+// webManifest is the shape of the web app manifest: the minimum a browser
+// asks for to offer "install" / "add to home screen".
+type webManifest struct {
+	Name            string         `json:"name"`
+	ShortName       string         `json:"short_name"`
+	StartURL        string         `json:"start_url"`
+	Scope           string         `json:"scope"`
+	Display         string         `json:"display"`
+	BackgroundColor string         `json:"background_color"`
+	ThemeColor      string         `json:"theme_color"`
+	Icons           []manifestIcon `json:"icons"`
+}
+
+type manifestIcon struct {
+	Src     string `json:"src"`
+	Sizes   string `json:"sizes"`
+	Type    string `json:"type"`
+	Purpose string `json:"purpose"`
+}
+
+// appColor is the dark canvas: the splash screen and the bar of the installed
+// app (the pages follow the system theme; the manifest takes one colour).
+const appColor = "#050505"
+
+// loadApp adds the app icons and the manifest, which names them by their
+// hashed URLs.
+func (s *assetSet) loadApp(put func(dir, name string, b []byte, typ string) string) error {
+	m := webManifest{
+		Name: "ermite", ShortName: "ermite", StartURL: "/", Scope: "/", Display: "standalone",
+		BackgroundColor: appColor, ThemeColor: appColor,
+	}
+	for _, ic := range appIcons {
+		b, err := staticFS.ReadFile("static/app/" + ic.file)
+		if err != nil {
+			return err
+		}
+		m.Icons = append(m.Icons, manifestIcon{Src: put("app", ic.file, b, "image/png"), Sizes: ic.sizes, Type: "image/png", Purpose: ic.purpose})
+	}
+	apple, err := staticFS.ReadFile("static/app/apple-touch-icon.png")
+	if err != nil {
+		return err
+	}
+	s.urls.AppleIcon = put("app", "apple-touch-icon.png", apple, "image/png")
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	s.urls.Manifest = put("app", "manifest.webmanifest", b, "application/manifest+json")
+	return nil
 }
 
 // serve answers GET /-/static/<hashed name>. A name that does not match a

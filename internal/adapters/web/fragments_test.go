@@ -58,9 +58,9 @@ func TestShellDegradesWithoutScripts(t *testing.T) {
 	got := renderToString(t, Header(l))
 	assert.Contains(t, got, `<a class="btn ref" href="/demo/refs" data-fire="refs"`)
 	assert.NotContains(t, got, "hx-on:click", "no handler is inlined in the header")
-	for _, want := range []string{`class="btn search" data-js`, `class="btn icon" data-js data-fire="help"`} {
-		assert.Contains(t, got, want)
-	}
+	assert.Contains(t, got, `class="btn search" data-js`)
+	assert.NotContains(t, got, `data-fire="help"`, "the help button is in the footer only")
+	assert.Contains(t, renderToString(t, Footer(l)), `class="foot-keys" data-js data-fire="help"`)
 }
 
 // Data reaches the scripts through data-* attributes, never spliced into an

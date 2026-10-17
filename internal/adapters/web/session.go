@@ -23,9 +23,10 @@ import (
 // The owner's session on the web (ADR 0018).
 //
 // A browser signs in by opening the one-time link `ermite web login` printed:
-// GET /-/login/<nonce> shows a confirmation and consumes nothing, so link
-// previews and prefetchers cannot use it; POST /-/login/<nonce> consumes the
-// link and sets the cookie. The cookie holds a signed token; every request
+// GET /-/login/<nonce> shows a page whose script posts the link at once and
+// consumes nothing itself, so link previews and prefetchers, which run no
+// script, cannot use it; POST /-/login/<nonce> consumes the link and sets the
+// cookie. The cookie holds a signed token; every request
 // that carries a valid one runs as the owner, every other as anonymous.
 //
 // State changes are POST only and pass one gate (ServeHTTP): an Origin equal to
@@ -243,8 +244,8 @@ func (s *Server) secretPage(w http.ResponseWriter, r *http.Request, status int, 
 	s.write(r.Context(), w, r, status, c)
 }
 
-// loginConfirm is GET /-/login/<nonce>: it shows the confirmation and does not
-// use the link.
+// loginConfirm is GET /-/login/<nonce>: it shows the page that signs in (its
+// script posts the form, see Login) and does not use the link.
 func (s *Server) loginConfirm(w http.ResponseWriter, r *http.Request) {
 	nonce := r.PathValue("nonce")
 	if !validNonce(nonce) || !s.cfg.Sessions.LoginLinkValid(nonce) {
@@ -253,8 +254,8 @@ func (s *Server) loginConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	l := s.stateLayout("sign in", []Crumb{{Label: "sign in", Current: true}})
 	s.secretPage(w, r, http.StatusOK, Login(l, LoginPage{
-		Title:  "sign in as the owner",
-		Lines:  []string{"this browser will be signed in for 12 hours.", "only confirm if you ran `ermite web login` just now."},
+		Title:  "signing in as the owner…",
+		Lines:  []string{"this browser will be signed in for 12 hours.", "if nothing happens, click the button."},
 		Action: loginPrefix + nonce,
 		Button: "Sign in",
 	}))

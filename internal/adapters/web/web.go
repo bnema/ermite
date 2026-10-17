@@ -390,7 +390,7 @@ func (s *Server) notFound(context.Context, *http.Request) (templ.Component, int,
 // base is the Layout every page starts from.
 func (s *Server) base() Layout {
 	return Layout{
-		Instance:  s.instance,
+		Owner:     s.cfg.Owner,
 		Version:   s.cfg.Version,
 		SourceURL: s.cfg.SourceURL,
 		Assets:    s.assets.urls,

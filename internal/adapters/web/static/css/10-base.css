@@ -17,6 +17,9 @@
   /* a cross-document fade between pages, where the browser has it */
   @view-transition { navigation: auto; }
   ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 120ms; }
+  /* the snapshots fade over this layer: transparent, it shows a white canvas
+     for a frame when the new page is a little late */
+  ::view-transition { background: var(--bg-canvas); }
   @media (prefers-reduced-motion: reduce) {
     @view-transition { navigation: none; }
   }

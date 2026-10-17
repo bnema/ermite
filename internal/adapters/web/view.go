@@ -34,8 +34,9 @@ type CmdItem struct{ Kind, Label, Href string }
 
 // Layout is the input of the page shell.
 type Layout struct {
-	Title     string
-	Instance  string
+	Title string
+	// Owner is the owner's name (ERMITE_OWNER), shown when signed in.
+	Owner     string
 	Version   string
 	SourceURL string
 	Assets    Assets

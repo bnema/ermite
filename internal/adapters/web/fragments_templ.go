@@ -474,8 +474,9 @@ func MRNotice(text, href string) templ.Component {
 }
 
 // Live is the connection to the event stream, in the hint badge. It shows
-// only once a connection was lost: a page that never connected, or that is
-// live, says nothing. The events of the stream are fragments that ermiteLive
+// only once a connection stays lost for a few seconds (ermiteLive.lost): a
+// page that never connected, that is live, or whose stream comes back right
+// away (a proxy closing an idle stream) says nothing. The events of the stream are fragments that ermiteLive
 // (ermite.js) swaps in the page. A page without a stream renders nothing.
 //
 // hx-sse retries a lost connection for ever, with a growing delay. A refusal
@@ -510,13 +511,13 @@ func Live(l Layout) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(l.LiveURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/fragments.templ`, Line: 97, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/fragments.templ`, Line: 98, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" hx-swap=\"none\" :text=\"data.state === 'offline' ? 'live updates paused' : ''\" hx-on=\"htmx:sse:after:connection -> data.state = 'live';\n           htmx:sse:close, htmx:sse:error -> data.state = 'offline';\n           htmx:sse:error -> ermiteLive.error(event.detail.status);\n           htmx:sse:before:connection -> ermiteLive.gate(event);\n           home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job -> ermiteLive.swap(event.detail.data);\n           gap -> ermiteLive.reload()\"></span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" hx-swap=\"none\" :text=\"data.state === 'offline' ? 'live updates paused' : ''\" hx-on=\"htmx:sse:after:connection -> ermiteLive.back();\n           htmx:sse:close, htmx:sse:error -> ermiteLive.lost();\n           htmx:sse:error -> ermiteLive.error(event.detail.status);\n           htmx:sse:before:connection -> ermiteLive.gate(event);\n           home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job -> ermiteLive.swap(event.detail.data);\n           gap -> ermiteLive.reload()\"></span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>src/lib · files · example.test</title>
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0c0c0c">
+<meta name="apple-mobile-web-app-title" content="ermite">
 <link rel="icon" type="image/svg+xml" href="/-/static/img/icon.HASH.svg">
+<link rel="apple-touch-icon" href="/-/static/app/apple-touch-icon.HASH.png">
+<link rel="manifest" href="/-/static/app/manifest.HASH.webmanifest">
 <link rel="preload" href="/-/static/fonts/atkinson-next.HASH.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/-/static/css/ermite.HASH.css">
 <meta name="htmx-config" content='{"history":false,"includeIndicatorCSS":false,"extensions":"sse, hx-live"}'>
@@ -28,10 +33,9 @@
 <a class="skip" href="#main">skip to content</a>
 <header class="hdr">
 <div class="hdr-top">
-<a class="brand" href="/" data-g="h" title="home (g h)">
+<a class="brand" href="/" data-g="h" aria-label="home" title="home (g h)">
 <span class="brand-mark" aria-hidden="true">
 </span>
-<span class="brand-name">example.test</span>
 </a>
 <nav class="crumbs" aria-label="Path">
 <ol>
@@ -65,7 +69,6 @@
 <span class="search-label">Go to…</span>
 <kbd aria-hidden="true">ctrl k</kbd>
 </button>
-<button type="button" class="btn icon" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)">?</button>
 </div>
 </div>
 <nav class="tabs" aria-label="Sections">
@@ -149,8 +152,8 @@
 <footer class="foot">
 <span>ermite devel</span>
 <a href="http://example.test/ermite" rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
-<span class="foot-keys">
-<kbd>?</kbd> keyboard shortcuts</span>
+<button type="button" class="foot-keys" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?">
+<kbd aria-hidden="true">?</kbd> keyboard shortcuts</button>
 </footer>
 <div class="hint" role="status" aria-live="polite">
 <span class="hint-nav" :text="document.body.dataset.nav || ''">

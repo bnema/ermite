@@ -90,7 +90,7 @@ func TestRegisterThenLogin(t *testing.T) {
 	for name, s := range sites {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			v, err := webauthn.New(s.url)
+			v, err := webauthn.New(s.url, "owner")
 			require.NoError(t, err)
 			d := register(t, v, s, virtualwebauthn.AuthenticatorOptions{BackupEligible: true})
 			d.cred.Counter = 5
@@ -119,7 +119,7 @@ func TestRegisterThenLogin(t *testing.T) {
 func TestRegistrationReportsBackupFlags(t *testing.T) {
 	t.Parallel()
 	s := sites["https"]
-	v, err := webauthn.New(s.url)
+	v, err := webauthn.New(s.url, "owner")
 	require.NoError(t, err)
 	d := register(t, v, s, virtualwebauthn.AuthenticatorOptions{BackupEligible: true, BackupState: true,
 		Transports: []virtualwebauthn.Transport{virtualwebauthn.TransportInternal, virtualwebauthn.TransportHybrid}})
@@ -139,7 +139,7 @@ func TestRegistrationReportsBackupFlags(t *testing.T) {
 func TestOptions(t *testing.T) {
 	t.Parallel()
 	s := sites["https"]
-	v, err := webauthn.New(s.url)
+	v, err := webauthn.New(s.url, "owner")
 	require.NoError(t, err)
 
 	existing := domain.Passkey{ID: []byte("already-registered"), PublicKey: []byte("k"), Transports: []string{"usb"}}
@@ -197,7 +197,7 @@ func TestOptions(t *testing.T) {
 func TestLoginRefused(t *testing.T) {
 	t.Parallel()
 	s := sites["localhost"]
-	v, err := webauthn.New(s.url)
+	v, err := webauthn.New(s.url, "owner")
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -315,7 +315,7 @@ func setExpires(t *testing.T, ceremony []byte, at time.Time) []byte {
 func TestLoginStoreFailureIsNotAnUnauthenticated(t *testing.T) {
 	t.Parallel()
 	s := sites["localhost"]
-	v, err := webauthn.New(s.url)
+	v, err := webauthn.New(s.url, "owner")
 	require.NoError(t, err)
 	d := register(t, v, s, virtualwebauthn.AuthenticatorOptions{})
 	ceremony, options := d.assertion(t, v, s)
@@ -334,7 +334,7 @@ func TestLoginStoreFailureIsNotAnUnauthenticated(t *testing.T) {
 func TestCounterThatDoesNotAdvanceKeepsTheStoredOne(t *testing.T) {
 	t.Parallel()
 	s := sites["localhost"]
-	v, err := webauthn.New(s.url)
+	v, err := webauthn.New(s.url, "owner")
 	require.NoError(t, err)
 	d := register(t, v, s, virtualwebauthn.AuthenticatorOptions{})
 
@@ -364,7 +364,7 @@ func TestCounterThatDoesNotAdvanceKeepsTheStoredOne(t *testing.T) {
 func TestZeroCounterIsNotAClone(t *testing.T) {
 	t.Parallel()
 	s := sites["localhost"]
-	v, err := webauthn.New(s.url)
+	v, err := webauthn.New(s.url, "owner")
 	require.NoError(t, err)
 	d := register(t, v, s, virtualwebauthn.AuthenticatorOptions{BackupEligible: true, BackupState: true})
 	for range 2 {
@@ -378,7 +378,7 @@ func TestZeroCounterIsNotAClone(t *testing.T) {
 func TestRegistrationRefused(t *testing.T) {
 	t.Parallel()
 	s := sites["https"]
-	v, err := webauthn.New(s.url)
+	v, err := webauthn.New(s.url, "owner")
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -436,11 +436,11 @@ func TestRegistrationRefused(t *testing.T) {
 func TestNew(t *testing.T) {
 	t.Parallel()
 	for _, ok := range []string{"https://git.example.com", "http://localhost:7341", "https://Git.Example.com:8443/"} {
-		_, err := webauthn.New(ok)
+		_, err := webauthn.New(ok, "owner")
 		assert.NoError(t, err, ok)
 	}
 	for _, bad := range []string{"http://127.0.0.1:7341", "http://[::1]:7341", "git.example.com", "ftp://git.example.com", "", "https://"} {
-		_, err := webauthn.New(bad)
+		_, err := webauthn.New(bad, "owner")
 		assert.Error(t, err, bad)
 	}
 }

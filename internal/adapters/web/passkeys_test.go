@@ -484,19 +484,21 @@ func TestPasskeyLoginPage(t *testing.T) {
 }
 
 // The header links: "Sign in" for a visitor, "Passkeys" for the owner.
+// They are icons with an accessible name.
 func TestPasskeyHeaderLinks(t *testing.T) {
 	t.Parallel()
 	f := newPasskeyServer(t)
 	rec := f.do(t, req{method: "GET", target: "/-/login"})
-	assert.Contains(t, rec.Body.String(), `href="/-/login"`)
+	assert.Contains(t, rec.Body.String(), `href="/-/login" aria-label="Sign in"`)
 	assert.NotContains(t, rec.Body.String(), `href="/-/passkeys"`)
 	assert.Contains(t, rec.Body.String(), "passkey.", "the script is loaded")
 
 	f.passkeys.EXPECT().List(mock.Anything, mock.Anything).Return(nil, nil).Once()
 	rec = f.do(t, req{method: "GET", target: "/-/passkeys", cookie: "tok"})
-	assert.Contains(t, rec.Body.String(), `href="/-/passkeys"`)
+	assert.Contains(t, rec.Body.String(), `href="/-/passkeys" aria-label="Passkeys"`)
 	assert.Contains(t, rec.Body.String(), `action="/-/logout"`)
-	assert.NotContains(t, rec.Body.String(), `>Sign in</a>`)
+	assert.Contains(t, rec.Body.String(), `aria-label="Sign out"`)
+	assert.NotContains(t, rec.Body.String(), `aria-label="Sign in"`)
 }
 
 // Without the passkey service there is no route, no link and no script
@@ -564,7 +566,7 @@ func TestPasskeyRoutesLeaveLoginLinksAlone(t *testing.T) {
 	f := newPasskeyServer(t)
 	rec := f.do(t, req{method: "GET", target: "/-/login/" + nonceA})
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "sign in as the owner")
+	assert.Contains(t, rec.Body.String(), "signing in as the owner")
 	rec = f.do(t, req{method: "POST", target: "/-/login/" + nonceA, origin: forgeOrigin})
 	assert.Equal(t, http.StatusSeeOther, rec.Code)
 }

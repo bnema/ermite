@@ -21,6 +21,10 @@
   .i-search { --i: url(icons/search.svg); }
   .i-file { --i: url(icons/file.svg); }
   .i-tag { --i: url(icons/tag.svg); }
+  .i-user { --i: url(icons/user.svg); }
+  .i-key { --i: url(icons/key.svg); }
+  .i-log-in { --i: url(icons/log-in.svg); }
+  .i-log-out { --i: url(icons/log-out.svg); }
 
   .pill {
     display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2); margin-left: var(--s1);
@@ -48,9 +52,7 @@
     max-width: var(--page); margin: 0 auto; height: 56px; padding: 0 var(--pad);
   }
   .brand {
-    display: flex; align-items: center; gap: var(--s2); flex: none;
-    font: 700 var(--fs) / 1 var(--mono); color: var(--ink-hi); text-decoration: none;
-    & .brand-name { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    display: flex; align-items: center; flex: none; text-decoration: none;
     &:hover { text-decoration: none; }
   }
   /* the hermit by his fire: a grey picture in its own rounded square */
@@ -78,7 +80,10 @@
   }
   .owner {
     display: flex; align-items: center; gap: var(--s2);
-    & .owner-badge { font: 600 var(--fs-xs) / 1 var(--mono); color: var(--ink-dim); padding: 0 var(--s1); }
+    & .owner-badge {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 20ch; padding: 0 var(--s1);
+      font: 600 var(--fs-s) / 1 var(--mono); color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
   }
 
   .tabs {
@@ -103,6 +108,9 @@
     flex: 1; width: 100%; max-width: var(--page); margin: 0 auto;
     padding: var(--s5) var(--pad) var(--s7);
     display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); align-items: start;
+    /* .work grows to fill the page (flex: 1): without this, the rows share the
+       spare height and a short content pushes the rail down */
+    align-content: start;
   }
   .work.has-rail { grid-template-columns: minmax(0, 1fr) var(--rail); }
   .rail { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
@@ -156,7 +164,8 @@
     font-size: var(--fs-s); color: var(--ink-mute);
     &::before { content: ""; flex-basis: 100%; height: 1px; margin-bottom: var(--s2); background: var(--border); }
     & a { color: var(--ink-dim); }
-    & .foot-keys { margin-left: auto; }
+    & .foot-keys { margin-left: auto; color: var(--ink-dim); }
+    & .foot-keys:hover { color: var(--ink-hi); }
   }
 
   /* hint: bottom right, only while it has something to say */
@@ -187,14 +196,12 @@
   @media (max-width: 720px) {
     :root { --pad: var(--s4); }
     .hdr-top { gap: var(--s3); height: 52px; }
-    .brand-name { display: none; }
     .crumbs li:not(:last-child) { display: none; }
-    .ref .sha, .owner-badge, .hdr-acts .icon { display: none; }
+    .ref .sha, .owner .owner-badge { display: none; }
     .ref { max-width: 16ch; }
     .work { padding-top: var(--s4); }
     .rail { grid-template-columns: minmax(0, 1fr); }
     .tabs kbd { display: none; }
-    .foot .foot-keys { display: none; }
     .list .c-who, .list .c-desc, .list .c-sub, .list .c-ref, .list .c-size, .list .c-lang { display: none; }
   }
 }

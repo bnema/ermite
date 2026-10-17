@@ -19,20 +19,21 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
-// ownerName names the one user in the options sent to the browser.
-const ownerName = "owner"
-
 // Verifier runs the WebAuthn ceremonies for the owner of one public URL.
 type Verifier struct {
 	web *gowebauthn.WebAuthn
+	// name names the one user in the options sent to the browser: the
+	// owner's name (ERMITE_OWNER), which password managers show.
+	name string
 }
 
 var _ ports.PasskeyVerifier = (*Verifier)(nil)
 
 // New builds a verifier for publicURL: the relying party ID is its host name,
 // the only accepted origin is its origin. It fails when the library refuses the
-// configuration, for example for a host that is an IP address.
-func New(publicURL string) (*Verifier, error) {
+// configuration, for example for a host that is an IP address. ownerName is
+// the name the browser shows for the passkey.
+func New(publicURL, ownerName string) (*Verifier, error) {
 	u, err := url.Parse(publicURL)
 	if err != nil {
 		return nil, fmt.Errorf("passkeys: parse public URL: %w", err)
@@ -57,18 +58,19 @@ func New(publicURL string) (*Verifier, error) {
 	if err != nil {
 		return nil, fmt.Errorf("passkeys: %w", err)
 	}
-	return &Verifier{web: web}, nil
+	return &Verifier{web: web, name: ownerName}, nil
 }
 
 // owner is the single WebAuthn user.
 type owner struct {
+	name        string
 	handle      []byte
 	credentials []gowebauthn.Credential
 }
 
 func (o owner) WebAuthnID() []byte                           { return o.handle }
-func (o owner) WebAuthnName() string                         { return ownerName }
-func (o owner) WebAuthnDisplayName() string                  { return ownerName }
+func (o owner) WebAuthnName() string                         { return o.name }
+func (o owner) WebAuthnDisplayName() string                  { return o.name }
 func (o owner) WebAuthnCredentials() []gowebauthn.Credential { return o.credentials }
 
 // refuse builds the error of a failed verification: an ErrUnauthenticated whose
@@ -84,7 +86,7 @@ func (v *Verifier) BeginRegistration(userHandle []byte, existing []domain.Passke
 	for _, p := range existing {
 		exclude = append(exclude, descriptor(p))
 	}
-	creation, session, err := v.web.BeginRegistration(owner{handle: userHandle},
+	creation, session, err := v.web.BeginRegistration(owner{name: v.name, handle: userHandle},
 		gowebauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 		gowebauthn.WithExclusions(exclude),
 		gowebauthn.WithConveyancePreference(protocol.PreferNoAttestation),
@@ -105,7 +107,7 @@ func (v *Verifier) FinishRegistration(userHandle []byte, ceremony, response []by
 	if err != nil {
 		return domain.Passkey{}, refuse("registration", err)
 	}
-	cred, err := v.web.CreateCredential(owner{handle: userHandle}, session, parsed)
+	cred, err := v.web.CreateCredential(owner{name: v.name, handle: userHandle}, session, parsed)
 	if err != nil {
 		return domain.Passkey{}, refuse("registration", err)
 	}
@@ -158,7 +160,7 @@ func (v *Verifier) FinishLogin(userHandle []byte, ceremony, response []byte, loo
 			return nil, err
 		}
 		stored = p
-		return owner{handle: userHandle, credentials: []gowebauthn.Credential{credential(p)}}, nil
+		return owner{name: v.name, handle: userHandle, credentials: []gowebauthn.Credential{credential(p)}}, nil
 	}
 	_, cred, err := v.web.ValidatePasskeyLogin(handler, session, parsed)
 	if lookupErr != nil {

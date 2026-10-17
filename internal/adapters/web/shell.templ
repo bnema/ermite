@@ -13,7 +13,12 @@ templ Shell(l Layout, rail templ.Component) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<meta name="color-scheme" content="light dark"/>
 			<title>{ l.Title }</title>
+			<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff"/>
+			<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0c0c0c"/>
+			<meta name="apple-mobile-web-app-title" content="ermite"/>
 			<link rel="icon" type="image/svg+xml" href={ templ.SafeURL(l.Assets.Icon) }/>
+			<link rel="apple-touch-icon" href={ templ.SafeURL(l.Assets.AppleIcon) }/>
+			<link rel="manifest" href={ templ.SafeURL(l.Assets.Manifest) }/>
 			<link rel="preload" href={ templ.SafeURL(l.Assets.Font) } as="font" type="font/woff2" crossorigin/>
 			<link rel="stylesheet" href={ templ.SafeURL(l.Assets.CSS) }/>
 			<meta name="htmx-config" content='{"history":false,"includeIndicatorCSS":false,"extensions":"sse, hx-live"}'/>
@@ -60,14 +65,13 @@ templ Shell(l Layout, rail templ.Component) {
 	</html>
 }
 
-// Header is the page header: the instance, the path, the ref switcher, the
-// "go to" palette and the owner; inside a repository, the tabs below.
+// Header is the page header: the logo (home), the path, the ref switcher,
+// the "go to" palette and the owner; inside a repository, the tabs below.
 templ Header(l Layout) {
 	<header class="hdr">
 		<div class="hdr-top">
-			<a class="brand" href="/" data-g="h" title="home (g h)">
+			<a class="brand" href="/" data-g="h" aria-label="home" title="home (g h)">
 				<span class="brand-mark" aria-hidden="true"></span>
-				<span class="brand-name">{ l.Instance }</span>
 			</a>
 			if len(l.Crumbs) > 0 {
 				<nav class="crumbs" aria-label="Path">
@@ -121,17 +125,16 @@ templ Header(l Layout) {
 					<span class="search-label">Go to…</span>
 					<kbd aria-hidden="true">ctrl k</kbd>
 				</button>
-				<button type="button" class="btn icon" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?" aria-label="Keyboard shortcuts" title="keyboard shortcuts (?)">?</button>
 				if SignedIn(ctx) {
 					<form class="owner" method="post" action="/-/logout">
-						<span class="owner-badge" title="signed in as the owner">owner</span>
+						<span class="owner-badge" title="signed in as the owner"><span class="ico i-user" aria-hidden="true"></span>{ l.Owner }</span>
 						if l.Passkeys {
-							<a class="btn" href="/-/passkeys" title="add or remove the passkeys that sign you in">Passkeys</a>
+							<a class="btn icon" href="/-/passkeys" aria-label="Passkeys" title="passkeys: add or remove the passkeys that sign you in"><span class="ico i-key" aria-hidden="true"></span></a>
 						}
-						<button type="submit" class="btn" title="sign out of this browser">Sign out</button>
+						<button type="submit" class="btn icon" aria-label="Sign out" title="sign out of this browser"><span class="ico i-log-out" aria-hidden="true"></span></button>
 					</form>
 				} else if l.Passkeys {
-					<a class="btn" href="/-/login" title="sign in with a passkey">Sign in</a>
+					<a class="btn icon" href="/-/login" aria-label="Sign in" title="sign in with a passkey"><span class="ico i-log-in" aria-hidden="true"></span></a>
 				}
 			</div>
 		</div>
@@ -162,7 +165,7 @@ templ Footer(l Layout) {
 	<footer class="foot">
 		<span>ermite { l.Version }</span>
 		<a href={ templ.SafeURL(l.SourceURL) } rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
-		<span class="foot-keys"><kbd>?</kbd> keyboard shortcuts</span>
+		<button type="button" class="foot-keys" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?"><kbd aria-hidden="true">?</kbd> keyboard shortcuts</button>
 	</footer>
 }
 
