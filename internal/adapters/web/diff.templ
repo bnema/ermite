@@ -212,6 +212,9 @@ templ DiffFileView(f DiffFile, p DiffView) {
 					<table class="dt uni" aria-label={ f.Path + ", unified" }>
 						for _, h := range f.Hunks {
 							<tbody>
+								if h.Gap != nil {
+									@gapRow(*h.Gap, 4)
+								}
 								<tr class="hunk"><td colspan="4">{ h.Header }</td></tr>
 								for _, ln := range h.Lines {
 									<tr class={ ln.Kind }>
@@ -229,6 +232,11 @@ templ DiffFileView(f DiffFile, p DiffView) {
 								}
 							</tbody>
 						}
+						if f.Tail != nil {
+							<tbody>
+								@gapRow(*f.Tail, 4)
+							</tbody>
+						}
 					</table>
 				}
 				if p.ShowSplit {
@@ -236,6 +244,9 @@ templ DiffFileView(f DiffFile, p DiffView) {
 						<colgroup><col class="c-ln"/><col class="c-m"/><col/><col class="c-ln"/><col class="c-m"/><col/></colgroup>
 						for _, h := range f.Hunks {
 							<tbody>
+								if h.Gap != nil {
+									@gapRow(*h.Gap, 6)
+								}
 								<tr class="hunk"><td colspan="6">{ h.Header }</td></tr>
 								for _, row := range h.Split {
 									<tr>
@@ -248,6 +259,11 @@ templ DiffFileView(f DiffFile, p DiffView) {
 										</tr>
 									}
 								}
+							</tbody>
+						}
+						if f.Tail != nil {
+							<tbody>
+								@gapRow(*f.Tail, 6)
 							</tbody>
 						}
 					</table>
@@ -284,6 +300,50 @@ templ MRFiles(p MRFilesPage) {
 // more: the placeholder shows it instead of a file of another diff.
 templ MRFilesMoved() {
 	<p class="notice" data-moved>this merge request changed since the page was loaded — <a href="">reload</a></p>
+}
+
+// gapRow is the row of the hidden lines before a hunk, or of the rest of the
+// file: a button that loads them in their place (ermite.js, ermite.expand).
+// Without scripts nothing loads them: hidden.
+templ gapRow(g DiffGap, cols int) {
+	<tr class="gap" data-js data-gap={ g.Key }>
+		<td colspan={ itoa(cols) }>
+			<button type="button" data-src={ g.Src }>
+				<span aria-hidden="true">⋯</span> { g.Label() }
+			</button>
+		</td>
+	</tr>
+}
+
+// DiffContext is the hidden lines of a gap, for /context: one body a layout,
+// whose rows replace the rows of the gap in the table of that layout.
+templ DiffContext(c ContextRows) {
+	<table>
+		<tbody data-for="uni">
+			for _, ln := range c.Lines {
+				<tr class="ctx">
+					<td class="ln">{ ln.Old }</td>
+					<td class="ln">{ ln.New }</td>
+					<td class="m">{ ln.Mark }</td>
+					<td class="tx">@codeLine(ln)</td>
+				</tr>
+			}
+			if c.More != nil {
+				@gapRow(*c.More, 4)
+			}
+		</tbody>
+		<tbody data-for="spl">
+			for i := range c.Lines {
+				<tr>
+					@splitSide(&c.Lines[i], true)
+					@splitSide(&c.Lines[i], false)
+				</tr>
+			}
+			if c.More != nil {
+				@gapRow(*c.More, 6)
+			}
+		</tbody>
+	</table>
 }
 
 // splitSide is one half of a row of the split view; a side without a line is

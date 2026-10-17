@@ -476,6 +476,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		Dels:   res.Stats.Deletions,
 		Files:  diffFiles(res.Diff.Files),
 	}
+	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head))
 	p.Opened.Name = p.Author
 	p.Opened.When, p.Opened.WhenAt = whenOf(now, m.CreatedAt)
 	if !m.CreatedAt.IsZero() {

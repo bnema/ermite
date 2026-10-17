@@ -10,6 +10,7 @@
 //  3. ermiteLive applies the fragments of the event stream (see events.go).
 //  4. The file of the diff in view is marked in the table of contents.
 //  5. A handler that fails is shown in the hint badge.
+//  6. The lines a diff hides load in place (ermiteGaps; e and E).
 (() => {
   // Marks the page as scripted: what does nothing without scripts (the filters,
   // the "go to" and help buttons) is hidden until this class is set (see the
@@ -179,6 +180,26 @@
       const open = !files.some((d) => d.open);
       for (const d of files) d.open = open;
     },
+    // e / E: the whole file in view, or every file of the diff, with every
+    // line its hunks hide.
+    expandFile() {
+      const f = window.ermiteGaps.current();
+      if (!f) return flash('no file in view');
+      f.open = true;
+      window.ermiteGaps.file(f).then((r) => {
+        if (!r.done) return; // load said what failed
+        flash(r.lines ? 'whole file' : 'nothing hidden in this file');
+      });
+    },
+    async expandAll() {
+      const files = $$('[data-file]').filter((f) => f.querySelector('tr.gap'));
+      if (!files.length) return flash('nothing hidden in the loaded files');
+      flash('loading every line…', 10000);
+      for (const f of files) {
+        if (!(await window.ermiteGaps.file(f)).done) return; // load said what failed
+      }
+      flash('every line of the loaded files');
+    },
     nextNote() {
       const notes = $$('#diffs .cmt');
       if (!notes.length) return;
@@ -280,9 +301,96 @@
     };
   })();
 
+  // The hidden lines of a diff: a row .gap holds a button that loads them
+  // (/context); the rows that come back replace the gap in the table of each
+  // layout (the unified and the split tables hold one row each for it). A
+  // file whose lines are all loaded has no gap left.
+  window.ermiteGaps = (() => {
+    const pending = new Map();
+    // load fills the gap the button is in, in both tables of its file.
+    function load(btn) {
+      const src = btn.dataset.src;
+      const row = btn.closest('tr.gap');
+      const file = row?.closest('[data-file]');
+      if (!src || !file) return Promise.resolve(0);
+      if (pending.has(src)) return pending.get(src);
+      const key = row.dataset.gap;
+      const table = btn.closest('table');
+      const focused = document.activeElement === btn;
+      btn.disabled = true;
+      const p = fetch(src, { headers: { Accept: 'text/html' }, credentials: 'same-origin' })
+        .then(async (res) => {
+          if (!res.ok) throw new Error('loading the hidden lines: ' + res.status);
+          const t = document.createElement('template');
+          t.innerHTML = await res.text();
+          let n = 0;
+          for (const table of file.querySelectorAll('table.dt')) {
+            const kind = table.classList.contains('spl') ? 'spl' : 'uni';
+            const from = t.content.querySelector('tbody[data-for="' + kind + '"]');
+            const at = [...table.querySelectorAll('tr.gap')].find((r) => r.dataset.gap === key);
+            if (!from || !at) continue;
+            const rows = [...from.children].map((r) => r.cloneNode(true));
+            n = Math.max(n, rows.filter((r) => !r.classList.contains('gap')).length);
+            at.replaceWith(...rows);
+          }
+          // The focus was on the button, which is gone: on the gap that is
+          // left in the same table, else on the content.
+          if (focused && (document.activeElement === btn || document.activeElement === document.body)) {
+            const next = [...(table?.querySelectorAll('tr.gap') || [])].find((r) => r.dataset.gap === key)?.querySelector('button');
+            if (next) next.focus({ preventScroll: true });
+            else document.getElementById('main')?.focus({ preventScroll: true });
+          }
+          return n;
+        })
+        .catch((err) => {
+          btn.disabled = false;
+          window.ermite?.flash?.(err.message, 4000);
+          return -1;
+        })
+        .finally(() => pending.delete(src));
+      pending.set(src, p);
+      return p;
+    }
+    // file loads every gap of a file, until none is left (a long gap comes
+    // back with a gap for the rest). A gap already loading is waited for.
+    // done is false when a load failed (it said why) or the file never ran
+    // out of gaps.
+    async function file(f) {
+      let lines = 0;
+      for (let guard = 0; guard < 1000; guard++) {
+        const btn = f.querySelector('tr.gap button[data-src]');
+        if (!btn) return { done: true, lines };
+        const n = await load(btn);
+        if (n < 0) return { done: false, lines };
+        if (btn.isConnected) {
+          // an answer that did not take the gap's place: stop, not loop
+          window.ermite?.flash?.('some hidden lines could not be shown', 4000);
+          return { done: false, lines };
+        }
+        lines += n;
+      }
+      window.ermite?.flash?.('the file is too long to show every line at once', 4000);
+      return { done: false, lines };
+    }
+    // current is the file in view: the one the table of contents marks, else
+    // the last whose top is above the top third of the window.
+    function current() {
+      const a = document.querySelector('.files a[aria-current="true"]');
+      const marked = a && document.getElementById(a.hash.slice(1));
+      if (marked?.matches('[data-file]')) return marked;
+      const files = [...document.querySelectorAll('[data-file]')];
+      return files.findLast((f) => f.getBoundingClientRect().top < innerHeight / 3) ?? files[0] ?? null;
+    }
+    addEventListener('click', (e) => {
+      const btn = e.target.closest?.('tr.gap button[data-src]');
+      if (btn) load(btn);
+    });
+    return { load, file, current };
+  })();
+
   // 1. Keys.
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
-    s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', Enter: 'open', Escape: 'esc',
+    s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
     // the merge request page (mr.js): the merge menu, mark read
     M: 'merge', R: 'read' };
   // "g t" is the key "t": the tabs have one event each.

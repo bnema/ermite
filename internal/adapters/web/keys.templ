@@ -31,6 +31,8 @@ templ Keys() {
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
+         k-expand from:body -> ermite.expandFile();
+         k-expandAll from:body -> ermite.expandAll();
          k-permalink from:body -> ermite.permalink();
          k-merge from:body -> window.ermiteMR?.openMerge();
          k-read from:body -> window.ermiteMR?.markRead();

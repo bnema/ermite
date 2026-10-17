@@ -172,6 +172,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /{repo}/blob/{rest...}", s.page(s.blob))
 	mux.HandleFunc("GET /{repo}/raw/{rest...}", s.raw)
 	mux.HandleFunc("GET /{repo}/paths/{sha}", s.paths)
+	mux.HandleFunc("GET /{repo}/context/{sha}", s.page(s.diffContext))
 	if s.cfg.MergeRequests != nil {
 		mux.HandleFunc("GET /{repo}/merge-requests", s.page(s.mrList))
 		mux.HandleFunc("GET /{repo}/merge-requests/{$}", s.page(s.mrList))

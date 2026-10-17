@@ -141,3 +141,53 @@ func TestCodeLine(t *testing.T) {
 	assert.Equal(t, `a &lt;b&gt; <span class="inv" title="invisible character">&lt;U+202E&gt;</span> c  d`+
 		`<span class="eol" title="no newline at end of file">`+noEOL+`</span>`, b.String())
 }
+
+// The gaps of a file: before a hunk the unchanged lines it does not show
+// (the same number on each side), after the last hunk the rest of the file;
+// none for a file whose lines are all in the diff.
+func TestContextGaps(t *testing.T) {
+	t.Parallel()
+	ctx := func(o, n int) domain.Line { return line(domain.LineContext, o, n, "x") }
+	files := []domain.FileDiff{
+		{Status: domain.FileModified, NewPath: "a b.go", Hunks: []domain.Hunk{
+			{OldStart: 1, OldLines: 2, NewStart: 1, NewLines: 2, Lines: []domain.Line{ctx(1, 1), ctx(2, 2)}},
+			{OldStart: 10, OldLines: 3, NewStart: 10, NewLines: 3, Lines: []domain.Line{ctx(10, 10), ctx(11, 11), ctx(12, 12)}},
+		}},
+		{Status: domain.FileModified, NewPath: "b.go", Hunks: []domain.Hunk{
+			// a pure deletion: the new side has no line, "+4,0" names line 4
+			{OldStart: 5, OldLines: 1, NewStart: 4, NewLines: 0, Lines: []domain.Line{line(domain.LineDeletion, 5, 0, "x")}},
+		}},
+		{Status: domain.FileAdded, NewPath: "c.go", Hunks: []domain.Hunk{{OldStart: 0, NewStart: 1, NewLines: 1, Lines: []domain.Line{line(domain.LineAddition, 0, 1, "x")}}}},
+		{Status: domain.FileModified, NewPath: "d.go", Hunks: []domain.Hunk{
+			{OldStart: 3, OldLines: 1, NewStart: 3, NewLines: 1, Lines: []domain.Line{{Kind: domain.LineAddition, NewNumber: 3, Text: "end", NoNewlineAtEOF: true}}},
+		}},
+	}
+	out := diffFiles(files)
+	contextGaps(out, files, "/r/context/c")
+
+	a := out[0]
+	assert.Nil(t, a.Hunks[0].Gap, "the first hunk starts at line 1")
+	require.NotNil(t, a.Hunks[1].Gap)
+	assert.Equal(t, 7, a.Hunks[1].Gap.Lines, "lines 3 to 9 on both sides")
+	assert.Equal(t, "/r/context/c?key=g1&n=7&new=3&old=3&path=a+b.go", a.Hunks[1].Gap.Src)
+	require.NotNil(t, a.Tail)
+	assert.Equal(t, "/r/context/c?key=tail&n=0&new=13&old=13&path=a+b.go", a.Tail.Src)
+
+	b := out[1]
+	require.NotNil(t, b.Hunks[0].Gap)
+	assert.Equal(t, 4, b.Hunks[0].Gap.Lines, "lines 1 to 4 on both sides before the deleted line 5")
+	assert.Nil(t, b.Tail, "a hunk that ends on a change ends the file")
+
+	assert.Nil(t, out[2].Tail, "an added file shows every line")
+	assert.Nil(t, out[3].Tail, "the last hunk holds the end of the file")
+	assert.NotNil(t, a.Tail, "three unchanged lines after the change: the file may go on")
+	assert.NotNil(t, out[3].Hunks[0].Gap)
+
+	// Sides that do not move together (a parse the page cannot trust): no gap.
+	odd := []domain.FileDiff{{Status: domain.FileModified, NewPath: "e.go", Hunks: []domain.Hunk{
+		{OldStart: 10, OldLines: 1, NewStart: 12, NewLines: 1, Lines: []domain.Line{ctx(10, 12)}},
+	}}}
+	o := diffFiles(odd)
+	contextGaps(o, odd, "/r/context/c")
+	assert.Nil(t, o[0].Hunks[0].Gap)
+}

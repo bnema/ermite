@@ -197,6 +197,7 @@ func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component,
 	signed := SignedIn(ctx)
 	canWrite := signed && m.State == domain.MRStateOpen && !since
 	p := MRPage{Files: diffFiles(res.Diff.Files), LooseInFiles: true}
+	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head.String()))
 	s.placeComments(&p, d.name(), n, res.Comments, m.HeadID.String(), !since, canWrite, nil)
 	window := p.Files[from:min(from+mrWindow, len(p.Files))]
 	// The layouts follow the page: it sends ?view= (the layout shown) and

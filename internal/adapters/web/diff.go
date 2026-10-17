@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net/url"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -78,6 +79,28 @@ type DiffHunk struct {
 	Header string
 	Lines  []DiffLine
 	Split  []SplitRow
+	// Gap is the unchanged lines before the hunk that the diff does not show,
+	// nil when there are none or they cannot be loaded.
+	Gap *DiffGap
+}
+
+// DiffGap is a run of unchanged lines a diff hides: a row of the diff that
+// loads them (diffContext) and takes their place.
+type DiffGap struct {
+	// Key tells the gap apart within its file: the unified and the split
+	// tables hold one row each for it.
+	Key string
+	// Lines is the number of hidden lines, 0 for the rest of the file.
+	Lines int
+	Src   string
+}
+
+// Label is the text of the row of the gap.
+func (g DiffGap) Label() string {
+	if g.Lines == 0 {
+		return "show the rest of the file"
+	}
+	return plural(g.Lines, "hidden line", "hidden lines")
 }
 
 // DiffFile is one changed file.
@@ -121,6 +144,66 @@ type DiffFile struct {
 	// Loose are the comments of a file loaded with its window that are on a
 	// line its diff does not show: listed at the end of the file.
 	Loose []CommentView
+	// Tail is the rest of the file after its last hunk, nil when it cannot be
+	// loaded. Its length is not known until it is.
+	Tail *DiffGap
+}
+
+// diffContextLines is the number of unchanged lines Git shows around a change
+// (the -U3 of the diffs of the Git adapter, Git's default).
+const diffContextLines = 3
+
+// contextGaps gives the files of a diff the gaps around their hunks, which
+// load the hidden lines of the new side from base (/<repo>/context/<commit>,
+// the commit of the new side). Only a file whose two sides hold text has
+// them: an added or a deleted file shows every line already.
+func contextGaps(out []DiffFile, files []domain.FileDiff, base string) {
+	for i, f := range files {
+		if i >= len(out) || f.Binary || f.Truncated || len(f.Hunks) == 0 || len(out[i].Hunks) != len(f.Hunks) {
+			continue
+		}
+		switch f.Status {
+		case domain.FileModified, domain.FileRenamed, domain.FileCopied:
+		default:
+			continue
+		}
+		gap := func(key string, oldFrom, newFrom, n int) *DiffGap {
+			q := url.Values{}
+			q.Set("path", f.NewPath)
+			q.Set("old", itoa(oldFrom))
+			q.Set("new", itoa(newFrom))
+			q.Set("n", itoa(n))
+			q.Set("key", key)
+			return &DiffGap{Key: key, Lines: n, Src: base + "?" + q.Encode()}
+		}
+		// first is the first line of a side of a hunk: a side without lines
+		// names the line before the hunk ("-5,0").
+		first := func(start, lines int) int {
+			if lines == 0 {
+				return start + 1
+			}
+			return start
+		}
+		oldNext, newNext := 1, 1
+		for j, h := range f.Hunks {
+			oldFirst, newFirst := first(h.OldStart, h.OldLines), first(h.NewStart, h.NewLines)
+			if n := newFirst - newNext; n > 0 && n == oldFirst-oldNext {
+				out[i].Hunks[j].Gap = gap("g"+itoa(j), oldNext, newNext, n)
+			}
+			oldNext, newNext = oldFirst+h.OldLines, newFirst+h.NewLines
+		}
+		// Git ends a hunk diffContextLines lines after its last change, or at
+		// the end of the file: fewer lines after the last change mean the
+		// file ends there.
+		last := f.Hunks[len(f.Hunks)-1].Lines
+		trailing := 0
+		for k := len(last) - 1; k >= 0 && last[k].Kind == domain.LineContext && !last[k].NoNewlineAtEOF; k-- {
+			trailing++
+		}
+		if trailing >= diffContextLines {
+			out[i].Tail = gap("tail", oldNext, newNext, 0)
+		}
+	}
 }
 
 // gutterDigits is the number of digits of the largest line number of the

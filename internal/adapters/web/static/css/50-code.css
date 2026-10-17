@@ -80,6 +80,15 @@
     & .m { width: 2ch; text-align: center; user-select: none; color: var(--ink-dim); }
     & .tx { white-space: pre; }
     & .hunk td { color: var(--ink-mute); background: var(--paper-alt); padding: 0 1ch; }
+    /* a run of hidden lines: the whole row loads them */
+    & .gap td { padding: 0; background: var(--paper-alt); }
+    & .gap button {
+      display: block; width: 100%; padding: 2px 1ch; text-align: left; cursor: pointer;
+      font: inherit; color: var(--ink-dim); background: none; border: 0;
+      border-block: 1px dashed var(--border);
+    }
+    & .gap button:hover, & .gap button:focus-visible { color: var(--ink-hi); background: var(--bg-strong); }
+    & .gap button:disabled { cursor: progress; opacity: .6; }
     & .add, & tr.add td { background: var(--add); }
     & .del, & tr.del td { background: var(--del); }
     & .add.m, & tr.add .m { color: var(--teal); font-weight: bold; }

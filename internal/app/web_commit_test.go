@@ -185,3 +185,81 @@ func TestWebCommitPrivate(t *testing.T) {
 		assert.Equal(t, normalise(missing), normalise(body), p)
 	}
 }
+
+// The hidden lines of a diff: the page has a gap before a hunk and after the
+// last one, and /context serves their rows for both layouts, numbered on both
+// sides; a private repository's are the 404 page.
+func TestWebDiffContext(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	wt := t.TempDir()
+	h.mustGit(wt, "init", "-q", "--initial-branch=main")
+	var src strings.Builder
+	for i := 1; i <= 40; i++ {
+		fmt.Fprintf(&src, "line %d <b>\n", i)
+	}
+	h.put(wt, "f.txt", []byte(src.String()), 0o644)
+	h.commitAt(wt, "2026-02-01T10:00:00Z", "forty lines")
+	h.put(wt, "f.txt", []byte(strings.Replace(src.String(), "line 20 <b>", "line twenty", 1)), 0o644)
+	sha := h.commitAt(wt, "2026-02-02T10:00:00Z", "change line 20")
+	h.createRepo("ctx", domain.VisibilityPublic)
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/ctx.git"), "main")
+
+	_, _, page := h.get("/ctx/commit/" + sha)
+	gap := "/ctx/context/" + sha + "?key=g0&amp;n=16&amp;new=1&amp;old=1&amp;path=f.txt"
+	assert.Contains(t, page, gap, "lines 1 to 16 before the hunk (17 to 23)")
+	assert.Contains(t, page, "16 hidden lines")
+	assert.Contains(t, page, "/ctx/context/"+sha+"?key=tail&amp;n=0&amp;new=24&amp;old=24&amp;path=f.txt")
+
+	st, _, body := h.get("/ctx/context/" + sha + "?key=g0&n=16&new=1&old=1&path=f.txt")
+	require.Equal(t, 200, st)
+	assert.Equal(t, 3, strings.Count(body, "line 16 &lt;b&gt;"), "unified once, split on both sides, escaped")
+	assert.NotContains(t, body, "line 17")
+	assert.NotContains(t, body, `class="gap"`, "nothing left")
+
+	st, _, body = h.get("/ctx/context/" + sha + "?key=tail&n=0&new=24&old=24&path=f.txt")
+	require.Equal(t, 200, st)
+	assert.Contains(t, body, "line 40 &lt;b&gt;")
+	assert.NotContains(t, body, "line 23 ")
+
+	for _, bad := range []string{
+		"/ctx/context/" + sha + "?n=1&new=1&old=1",                // no path
+		"/ctx/context/" + sha + "?n=1&new=0&old=1&path=f.txt",     // line 0
+		"/ctx/context/" + sha + "?n=-1&new=1&old=1&path=f.txt",    // negative
+		"/ctx/context/" + sha + "?n=1&new=99&old=99&path=f.txt",   // past the end
+		"/ctx/context/" + sha + "?n=1&new=1&old=1&path=nope.txt",  // no such file
+		"/ctx/context/" + sha[:7] + "?n=1&new=1&old=1&path=f.txt", // not a full id
+		"/ctx/context/main?n=1&new=1&old=1&path=f.txt",            // a ref
+	} {
+		st, _, _ := h.get(bad)
+		assert.Equal(t, 404, st, bad)
+	}
+
+	// Lines as Git numbers them: a lone CR is not a line break; the last line
+	// of a file without a final newline keeps its marker.
+	var cr strings.Builder
+	cr.WriteString("a\rb\n")
+	for i := 2; i <= 30; i++ {
+		fmt.Fprintf(&cr, "row %d\n", i)
+	}
+	h.put(wt, "cr.txt", []byte(cr.String()+"last"), 0o644)
+	h.commitAt(wt, "2026-02-03T10:00:00Z", "cr")
+	h.put(wt, "cr.txt", []byte(strings.Replace(cr.String(), "row 15\n", "row fifteen\n", 1)+"last"), 0o644)
+	crSHA := h.commitAt(wt, "2026-02-04T10:00:00Z", "change row 15")
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/ctx.git"), "main")
+	_, _, crPage := h.get("/ctx/commit/" + crSHA)
+	assert.Contains(t, crPage, "11 hidden lines", "lines 1 to 11 before the hunk at 12")
+	st, _, body = h.get("/ctx/context/" + crSHA + "?n=11&new=1&old=1&path=cr.txt")
+	require.Equal(t, 200, st)
+	assert.Contains(t, body, "row 11")
+	assert.NotContains(t, body, "row 12", "a lone CR does not shift the numbers")
+	st, _, body = h.get("/ctx/context/" + crSHA + "?n=0&new=19&old=19&path=cr.txt")
+	require.Equal(t, 200, st)
+	assert.Contains(t, body, "last<span class=\"eol\"", "no newline at the end of the file")
+
+	// A private repository: the 404 page, nothing of the file.
+	h.createRepo("ctx-hidden", domain.VisibilityPrivate)
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/ctx-hidden.git"), "main")
+	st, _, body = h.get("/ctx-hidden/context/" + sha + "?n=0&new=1&old=1&path=f.txt")
+	assert.Equal(t, 404, st)
+	assert.NotContains(t, body, "line 1 ")
+}
