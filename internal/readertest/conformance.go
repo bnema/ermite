@@ -49,6 +49,7 @@ func Conformance(t *testing.T, mk Maker) {
 		{"GetTreeIsBounded", testGetTreeIsBounded},
 		{"GetTreeRefusesAGitlinkToATree", testGetTreeRefusesAGitlinkToATree},
 		{"ListPaths", testListPaths},
+		{"CountCommitsAndLatestTag", testCountCommitsAndLatestTag},
 	} {
 		t.Run(tc.name, func(t *testing.T) { tc.fn(t, mk) })
 	}
@@ -102,6 +103,67 @@ func testListRefs(t *testing.T, mk Maker) {
 		{"refs/tags/v2", "v2", domain.RefKindTag, tagID("v2"), h.C2},
 		{"refs/tags/v2-again", "v2-again", domain.RefKindTag, tagID("v2-again"), h.C2},
 	}, got)
+}
+
+func testCountCommitsAndLatestTag(t *testing.T, mk Maker) {
+	ctx := context.Background()
+	g, data := mk(t)
+	f := NewFixture(t, data, "stats")
+
+	_, ok, err := g.LatestTag(ctx, f.Name)
+	require.NoError(t, err)
+	assert.False(t, ok, "no tag yet")
+
+	var ids []string
+	for i := range 4 { // committed at 12:01, 12:02, 12:03, 12:04
+		ids = append(ids, f.Commit("c"+itoa(i)))
+	}
+	head := MustID(t, ids[3])
+	n, err := g.CountCommits(ctx, f.Name, head, time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, 4, n)
+	n, err = g.CountCommits(ctx, f.Name, head, f.When.Add(-90*time.Second))
+	require.NoError(t, err)
+	assert.Equal(t, 2, n, "the commits of 12:03 and 12:04")
+	n, err = g.CountCommits(ctx, f.Name, MustID(t, ids[1]), time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, n, "from another commit")
+	_, err = g.CountCommits(ctx, f.Name, MustID(t, strings.Repeat("ab", 20)), time.Time{})
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	// Dates out of order: a commit dated in the past on top of recent ones
+	// does not hide them.
+	recent := f.When
+	f.When = recent.Add(-48 * time.Hour)
+	old := f.Commit("backdated")
+	f.When = recent
+	n, err = g.CountCommits(ctx, f.Name, MustID(t, old), recent.Add(-90*time.Second))
+	require.NoError(t, err)
+	assert.Equal(t, 2, n, "the recent commits behind an old one count")
+
+	// The latest tag is the one made last: an annotated tag by its own date,
+	// a lightweight one by the date of its commit.
+	f.Git("tag", "light-old", ids[0])
+	f.When = f.When.Add(time.Hour)
+	f.Git("tag", "-a", "-m", "new", "v2", ids[0])
+	f.Git("tag", "light-new", ids[3])
+	tag, ok, err := g.LatestTag(ctx, f.Name)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "v2", tag.Name)
+	assert.True(t, tag.At.Equal(f.When), "%v", tag.At)
+	assert.Equal(t, ids[0], tag.CommitID.String(), "an annotated tag is peeled to its commit")
+
+	f.When = f.When.Add(time.Hour)
+	f.Git("tag", "-a", "-m", "tree", "tree-tag", ids[0]+"^{tree}")
+	tag, ok, err = g.LatestTag(ctx, f.Name)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "tree-tag", tag.Name)
+	assert.True(t, tag.CommitID.IsZero(), "a tag of a tree has no commit")
+
+	_, _, err = g.LatestTag(ctx, RepoName(t, "nope"))
+	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
 
 func testListRefsEmptyAndMissing(t *testing.T, mk Maker) {

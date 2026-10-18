@@ -96,6 +96,9 @@ type BrowseService interface {
 	OpenBlob(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, path domain.TreePath) (domain.BlobInfo, io.ReadCloser, error)
 	ListCommits(ctx context.Context, p domain.Principal, repo domain.RepoName, params ListCommitsParams) (HistoryPage, error)
 	GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.CommitDetail, error)
+	// RepoStats counts the commits of the branch whose head is given, and
+	// names the latest tag.
+	RepoStats(ctx context.Context, p domain.Principal, repo domain.RepoName, head domain.ObjectID, now time.Time) (RepoStats, error)
 }
 
 // EventService streams the events of the forge. *usecase.Events implements it.

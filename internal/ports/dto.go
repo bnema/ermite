@@ -114,6 +114,18 @@ type HistoryPage struct {
 	NextPageToken string
 }
 
+// RepoStats are the figures of a repository the home page shows.
+type RepoStats struct {
+	// Commits is the number of commits of the default branch; Recent of them
+	// were committed in the last RecentDays days.
+	Commits, Recent int
+	// LatestTag is the most recently created tag; nil without tags.
+	LatestTag *domain.TagInfo
+}
+
+// RecentDays is the window of RepoStats.Recent.
+const RecentDays = 30
+
 // WatchParams select the events of a watch.
 type WatchParams struct {
 	// Topics are TopicHome or "repo:<name>"; empty means TopicHome.

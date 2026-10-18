@@ -45,6 +45,55 @@ func homeCommits(t testing.TB, n int) []domain.Commit {
 	return out
 }
 
+// homeBrowse is a BrowseService whose figures are always there: 1234
+// commits, 7 of them recent, no tag. Tests that care set their own.
+func homeBrowse(t *testing.T) *mocks.BrowseService {
+	t.Helper()
+	b := mocks.NewBrowseService(t)
+	b.EXPECT().RepoStats(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(ports.RepoStats{Commits: 1234, Recent: 7}, nil).Maybe()
+	return b
+}
+
+// Each row shows the figures of its repository: commits, recent commits,
+// latest tag and last activity; no branch name.
+func TestHomeRowFigures(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	head := objectID(t, fmt.Sprintf("%040x", 2))
+	now := time.Now()
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
+	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{
+		Commits: 12345, Recent: 42, LatestTag: &domain.TagInfo{Name: "v1.2.0", At: now.Add(-3 * time.Hour), CommitID: head},
+	}, nil).Once()
+	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse})
+
+	row := srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), now, false)
+	require.NotNil(t, row.Stats)
+	out := renderRow(t, row)
+	assert.Contains(t, out, "<dt>commits</dt><dd>12\u202f345</dd>")
+	assert.Contains(t, out, "<dt>last 30 days</dt><dd>42</dd>")
+	assert.Contains(t, out, `<a href="/proj/tree/`+head.String()+`" title="made 3h ago">v1.2.0</a>`, "by its commit: a branch may share its name")
+	assert.Contains(t, out, "<dt>last activity</dt>")
+	assert.NotContains(t, out, "i-branch", "the default branch is not shown")
+	assert.NotContains(t, out, "pushed")
+
+	// A failed read leaves the figures out, not the row.
+	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{}, errors.New("boom")).Once()
+	row = srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), now, false)
+	assert.Nil(t, row.Stats)
+	assert.Len(t, row.Commits, 2)
+	assert.NotContains(t, renderRow(t, row), "<dt>commits</dt>")
+}
+
+func TestGrouped(t *testing.T) {
+	t.Parallel()
+	for n, want := range map[int]string{0: "0", 999: "999", 1000: "1\u202f000", 1234567: "1\u202f234\u202f567"} {
+		assert.Equal(t, want, grouped(n), n)
+	}
+}
+
 func renderRow(t testing.TB, r HomeRow) string {
 	t.Helper()
 	var b bytes.Buffer
@@ -63,7 +112,7 @@ func mustRevision(t testing.TB, s string) domain.Revision {
 // name of the branch.
 func TestHomeRowShowsFiveCommits(t *testing.T) {
 	t.Parallel()
-	browse := mocks.NewBrowseService(t)
+	browse := homeBrowse(t)
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repoName(t, "proj"), ports.ListCommitsParams{
 		Revision: mustRevision(t, "refs/heads/main"), PageSize: homeRecent,
 	}).Return(ports.HistoryPage{Commits: homeCommits(t, 7)}, nil).Once()
@@ -90,7 +139,8 @@ func TestHomeRowEmptyRepository(t *testing.T) {
 	assert.True(t, row.NoCommits)
 	out := renderRow(t, row)
 	assert.Contains(t, out, "no commits yet")
-	assert.Contains(t, out, "never pushed")
+	assert.Contains(t, out, `<dt>last activity</dt><dd class="mute">never</dd>`)
+	assert.NotContains(t, out, "<dt>commits</dt>", "no figures without a commit")
 	assert.NotContains(t, out, "repo-commits\" aria-label")
 }
 
@@ -119,7 +169,7 @@ func TestHomeRowCI(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			browse := mocks.NewBrowseService(t)
+			browse := homeBrowse(t)
 			browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
 			runs := mocks.NewRunService(t)
 			runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).
@@ -147,7 +197,7 @@ func TestHomeRowPrivateBadge(t *testing.T) {
 	t.Parallel()
 	priv := pushedRepo(t, "secret")
 	priv.Visibility = domain.VisibilityPrivate
-	browse := mocks.NewBrowseService(t)
+	browse := homeBrowse(t)
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{}, nil).Maybe()
 	srv := newTestServer(t, Config{Repos: reposServing(t, priv, pushedRepo(t, "open")), Browse: browse})
 
@@ -162,7 +212,7 @@ func TestRunUpdatedRefreshesTheHomeRow(t *testing.T) {
 	t.Parallel()
 	repo := repoName(t, "proj")
 	head := fmt.Sprintf("%040x", 2)
-	browse := mocks.NewBrowseService(t)
+	browse := homeBrowse(t)
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
 	runs := mocks.NewRunService(t)
 	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{Checks: []ports.CheckView{
@@ -196,7 +246,7 @@ func TestRunUpdatedRefreshesTheHomeRow(t *testing.T) {
 // served; the others are not affected.
 func TestHomeSurvivesABrokenRepository(t *testing.T) {
 	t.Parallel()
-	browse := mocks.NewBrowseService(t)
+	browse := homeBrowse(t)
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repoName(t, "broken"), mock.Anything).
 		Return(ports.HistoryPage{}, errors.New("git exploded")).Once()
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repoName(t, "fine"), mock.Anything).
@@ -222,7 +272,7 @@ func TestHomeRowsAreBoundedAndOrdered(t *testing.T) {
 		views = append(views, pushedRepo(t, fmt.Sprintf("r%02d", i)))
 	}
 	var running, peak atomic.Int32
-	browse := mocks.NewBrowseService(t)
+	browse := homeBrowse(t)
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
 		func(context.Context, domain.Principal, domain.RepoName, ports.ListCommitsParams) (ports.HistoryPage, error) {
 			cur := running.Add(1)

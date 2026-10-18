@@ -29,6 +29,8 @@ type Browse struct {
 	// they never change, and computing them costs a history walk. Nil
 	// disables it.
 	history *historyCache
+	// stats keeps the figures of the home page.
+	stats statsCache
 }
 
 var _ ports.BrowseService = (*Browse)(nil)

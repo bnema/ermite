@@ -60,7 +60,6 @@ templ mrRows(rows []MRRow, label string) {
 			<tbody data-rows>
 				for _, m := range rows {
 					<tr data-cursor?={ m.Cursor } data-state={ m.State }>
-						<td class="cur" aria-hidden="true"></td>
 						<td class="c-n mute">{ m.Number }</td>
 						<td class="c-state">{ m.State }</td>
 						<td class="c-subject"><a href={ templ.SafeURL(m.Href) }>{ m.Title }</a> <span class="mute">{ m.Branches }</span></td>

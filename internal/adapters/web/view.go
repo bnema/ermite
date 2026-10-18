@@ -76,14 +76,17 @@ type Link struct{ Label, Href string }
 
 // HomeRow is one repository in the home list.
 type HomeRow struct {
-	ID       string
-	Name     string
-	Href     string
-	Desc     string
-	Pushed   string
-	PushedAt string // RFC 3339, "" when never pushed
-	Branch   string
+	ID   string
+	Name string
+	Href string
+	Desc string
+	// Active is when the repository last changed (its last push or merge),
+	// ActiveAt its RFC 3339 form, "" when it never got a commit.
+	Active   string
+	ActiveAt string
 	Cursor   bool
+	// Stats are the figures of the row; nil when they could not be read.
+	Stats *HomeStats
 	// Private marks a private repository; only set for a signed-in visitor.
 	Private bool
 	// Fresh marks a row that a push just updated (live updates only).
@@ -95,6 +98,15 @@ type HomeRow struct {
 	// CI is the latest run of the default branch, nil when there is none to
 	// show.
 	CI *HomeCI
+}
+
+// HomeStats are the figures of a home row: commits of the default branch,
+// those of the last 30 days, and the latest tag.
+type HomeStats struct {
+	Commits, Recent string
+	// Tag is the latest tag, "" without tags; TagHref links its tree, TagWhen
+	// tells when it was made.
+	Tag, TagHref, TagWhen string
 }
 
 // HomeCI is the state of the latest run of the default branch of a repository.

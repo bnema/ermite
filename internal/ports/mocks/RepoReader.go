@@ -7,6 +7,7 @@ package mocks
 import (
 	"context"
 	"io"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -47,6 +48,84 @@ type RepoReader_Expecter struct {
 
 func (_m *RepoReader) EXPECT() *RepoReader_Expecter {
 	return &RepoReader_Expecter{mock: &_m.Mock}
+}
+
+// CountCommits provides a mock function for the type RepoReader
+func (_mock *RepoReader) CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (int, error) {
+	ret := _mock.Called(ctx, repo, head, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountCommits")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) (int, error)); ok {
+		return returnFunc(ctx, repo, head, since)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) int); ok {
+		r0 = returnFunc(ctx, repo, head, since)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) error); ok {
+		r1 = returnFunc(ctx, repo, head, since)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RepoReader_CountCommits_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountCommits'
+type RepoReader_CountCommits_Call struct {
+	*mock.Call
+}
+
+// CountCommits is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - head domain.ObjectID
+//   - since time.Time
+func (_e *RepoReader_Expecter) CountCommits(ctx any, repo any, head any, since any) *RepoReader_CountCommits_Call {
+	return &RepoReader_CountCommits_Call{Call: _e.mock.On("CountCommits", ctx, repo, head, since)}
+}
+
+func (_c *RepoReader_CountCommits_Call) Run(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time)) *RepoReader_CountCommits_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 domain.ObjectID
+		if args[2] != nil {
+			arg2 = args[2].(domain.ObjectID)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *RepoReader_CountCommits_Call) Return(n int, err error) *RepoReader_CountCommits_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *RepoReader_CountCommits_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (int, error)) *RepoReader_CountCommits_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // GetCommit provides a mock function for the type RepoReader
@@ -207,6 +286,78 @@ func (_c *RepoReader_GetTree_Call) Return(tree domain.Tree, err error) *RepoRead
 }
 
 func (_c *RepoReader_GetTree_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, rev domain.Revision, path domain.TreePath, includeLastCommit bool) (domain.Tree, error)) *RepoReader_GetTree_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LatestTag provides a mock function for the type RepoReader
+func (_mock *RepoReader) LatestTag(ctx context.Context, repo domain.RepoName) (domain.TagInfo, bool, error) {
+	ret := _mock.Called(ctx, repo)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LatestTag")
+	}
+
+	var r0 domain.TagInfo
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) (domain.TagInfo, bool, error)); ok {
+		return returnFunc(ctx, repo)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) domain.TagInfo); ok {
+		r0 = returnFunc(ctx, repo)
+	} else {
+		r0 = ret.Get(0).(domain.TagInfo)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName) bool); ok {
+		r1 = returnFunc(ctx, repo)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName) error); ok {
+		r2 = returnFunc(ctx, repo)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// RepoReader_LatestTag_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LatestTag'
+type RepoReader_LatestTag_Call struct {
+	*mock.Call
+}
+
+// LatestTag is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+func (_e *RepoReader_Expecter) LatestTag(ctx any, repo any) *RepoReader_LatestTag_Call {
+	return &RepoReader_LatestTag_Call{Call: _e.mock.On("LatestTag", ctx, repo)}
+}
+
+func (_c *RepoReader_LatestTag_Call) Run(run func(ctx context.Context, repo domain.RepoName)) *RepoReader_LatestTag_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *RepoReader_LatestTag_Call) Return(tag domain.TagInfo, ok bool, err error) *RepoReader_LatestTag_Call {
+	_c.Call.Return(tag, ok, err)
+	return _c
+}
+
+func (_c *RepoReader_LatestTag_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName) (domain.TagInfo, bool, error)) *RepoReader_LatestTag_Call {
 	_c.Call.Return(run)
 	return _c
 }

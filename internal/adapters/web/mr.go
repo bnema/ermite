@@ -199,12 +199,12 @@ type MRPage struct {
 	UpdatedAt      string
 	// Desc is the description rendered as Markdown (as a README: no raw
 	// HTML, filtered URLs), "" when it is empty.
-	Desc           template.HTML
-	Head           string
-	HeadShort      string
-	MergedShort    string
-	MergedHref     string
-	MergeMode      string
+	Desc        template.HTML
+	Head        string
+	HeadShort   string
+	MergedShort string
+	MergedHref  string
+	MergeMode   string
 
 	Since     *SinceNav
 	SinceNote string

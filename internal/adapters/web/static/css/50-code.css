@@ -119,11 +119,11 @@
          a pixel below the row, enough to give the list a scroll bar */
       display: grid; grid-template-columns: 1.5ch minmax(0, 1fr) auto auto; column-gap: var(--s2); align-items: center;
       height: 26px; line-height: 26px; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2));
-      border-radius: 4px; border-left: 2px solid transparent; text-decoration: none; font-family: var(--mono); color: var(--ink);
+      border-radius: 4px; border: 1px solid transparent; text-decoration: none; font-family: var(--mono); color: var(--ink);
     }
     & a:hover { background: var(--bg-raised); }
     & a:hover .p { text-decoration: underline; }
-    & a[aria-current="true"] { background: var(--row); border-left-color: var(--ink-hi); }
+    & a[aria-current="true"] { background: var(--row); border-color: var(--ink-mute); }
     & a[aria-current="true"] .p { font-weight: bold; color: var(--ink-hi); }
     & .st { color: var(--ink-mute); font-weight: bold; }
     & .st[data-st="A"] { color: var(--teal); }
@@ -158,8 +158,7 @@
   .rail .list.commits {
     border: 0; border-radius: 0; background: none; table-layout: auto;
     & td { height: 34px; padding: 0 var(--s2); width: 1%; white-space: nowrap; }
-    & td.cur { width: 3px; padding: 0; }
-    & td:nth-child(2) { padding-left: var(--s3); }
+    & td:first-child { padding-left: var(--s3); }
     & td:last-child { padding-right: var(--s4); }
     & .c-who { display: none; }
     & .c-subject { width: auto; max-width: 0; font-size: var(--fs-s); }

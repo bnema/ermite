@@ -5,11 +5,16 @@ package usecase_test
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -104,7 +109,95 @@ func browseOps() []browseOp {
 		}, func(r *mocks.RepoReader) {
 			r.EXPECT().GetCommit(mock.Anything, mock.Anything, mock.Anything, domain.DefaultDiffLimits()).Return(domain.CommitDetail{}, nil)
 		}},
+		{"RepoStats", func(b *usecase.Browse, ctx context.Context, p domain.Principal, repo domain.RepoName) error {
+			_, err := b.RepoStats(ctx, p, repo, oid("a"), time.Now())
+			return err
+		}, func(r *mocks.RepoReader) {
+			r.EXPECT().CountCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(1, nil)
+			r.EXPECT().LatestTag(mock.Anything, mock.Anything).Return(domain.TagInfo{}, false, nil)
+		}},
 	}
+}
+
+// RepoStats reads Git once per state of the repository (head and last push)
+// and per 10 minutes; concurrent callers share the read, and a failure is
+// not kept.
+func TestRepoStatsCache(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newBrowseFixture(t)
+	repo := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic, CreatedAt: time.Unix(100, 0), PushedAt: time.Unix(200, 0)}
+	var mu sync.Mutex
+	f.meta.EXPECT().Get(mock.Anything, repo.Name).RunAndReturn(func(context.Context, domain.RepoName) (domain.Repo, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return repo, nil
+	})
+	now := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
+	var reads atomic.Int32
+	gate := make(chan struct{})
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, mock.Anything, time.Time{}).RunAndReturn(
+		func(context.Context, domain.RepoName, domain.ObjectID, time.Time) (int, error) {
+			reads.Add(1)
+			<-gate
+			return 900, nil
+		})
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, mock.Anything, mock.MatchedBy(func(s time.Time) bool { return !s.IsZero() })).Return(12, nil)
+	tag := domain.TagInfo{Name: "v1", At: now, CommitID: oid("c")}
+	f.reader.EXPECT().LatestTag(mock.Anything, repo.Name).Return(tag, true, nil)
+
+	stats := func(head string, at time.Time) ports.RepoStats {
+		st, err := f.browse.RepoStats(ctx, domain.Anonymous(), repo.Name, oid(head), at)
+		require.NoError(t, err)
+		return st
+	}
+
+	// Eight concurrent requests: one read.
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			st := stats("a", now)
+			assert.Equal(t, 900, st.Commits)
+			assert.Equal(t, 12, st.Recent)
+			assert.Equal(t, tag, *st.LatestTag)
+		})
+	}
+	for reads.Load() == 0 {
+		runtime.Gosched()
+	}
+	close(gate)
+	wg.Wait()
+	assert.EqualValues(t, 1, reads.Load(), "concurrent callers share the read")
+
+	stats("a", now.Add(9*time.Minute))
+	assert.EqualValues(t, 1, reads.Load(), "served from the cache")
+	stats("a", now.Add(10*time.Minute))
+	assert.EqualValues(t, 2, reads.Load(), "expired")
+	stats("b", now.Add(10*time.Minute))
+	assert.EqualValues(t, 3, reads.Load(), "another head")
+	mu.Lock()
+	repo.PushedAt = time.Unix(300, 0) // a push, a tag-only one included
+	mu.Unlock()
+	stats("b", now.Add(10*time.Minute))
+	assert.EqualValues(t, 4, reads.Load(), "a push forgets the figures")
+}
+
+func TestRepoStatsDoesNotKeepAFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newBrowseFixture(t)
+	repo := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
+	f.meta.EXPECT().Get(ctx, repo.Name).Return(repo, nil)
+	now := time.Now()
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, oid("a"), time.Time{}).Return(0, errors.New("boom")).Once()
+	_, err := f.browse.RepoStats(ctx, domain.Anonymous(), repo.Name, oid("a"), now)
+	require.Error(t, err)
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, oid("a"), mock.Anything).Return(3, nil).Twice()
+	f.reader.EXPECT().LatestTag(mock.Anything, repo.Name).Return(domain.TagInfo{}, false, nil).Once()
+	st, err := f.browse.RepoStats(ctx, domain.Anonymous(), repo.Name, oid("a"), now)
+	require.NoError(t, err)
+	assert.Equal(t, 3, st.Commits)
+	assert.Nil(t, st.LatestTag)
 }
 
 // TestBrowseAccess is the access rule over every read use case and every

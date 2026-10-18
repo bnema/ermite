@@ -253,6 +253,16 @@ type Ref struct {
 	CommitID ObjectID
 }
 
+// TagInfo is a tag and when it was made: the tagger date of an annotated
+// tag, the committer date of the commit of a lightweight one.
+type TagInfo struct {
+	Name string // short name, without refs/tags/
+	At   time.Time
+	// CommitID is the commit the tag leads to; zero for a tag of a tree or
+	// a blob.
+	CommitID ObjectID
+}
+
 // ResolvedRevision is the result of resolving a Revision.
 type ResolvedRevision struct {
 	// CommitID is the commit the revision designates, tags followed.

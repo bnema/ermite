@@ -168,6 +168,7 @@ func (s *Server) homeRowOf(ctx context.Context, r ports.RepoView, now time.Time,
 	row.Commits, head, row.NoCommits = s.homeCommits(ctx, r, now)
 	if head != "" {
 		row.CI = s.homeCI(ctx, r, head)
+		row.Stats = s.homeStats(ctx, r, head, now)
 	}
 	return row
 }
@@ -193,6 +194,33 @@ func (s *Server) homeCommits(ctx context.Context, r ports.RepoView, now time.Tim
 		head = page.Commits[0].ID.String()
 	}
 	return rows, head, len(rows) == 0
+}
+
+// homeStats are the figures of a row; nil when the read fails (logged), since
+// the row does not depend on them.
+func (s *Server) homeStats(ctx context.Context, r ports.RepoView, head string, now time.Time) *HomeStats {
+	id, err := domain.ParseObjectID(head)
+	if err != nil {
+		return nil
+	}
+	st, err := s.cfg.Browse.RepoStats(ctx, principal(ctx), r.Name, id, now)
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			log := zerowrap.FromCtx(ctx)
+			log.Warn().Err(err).Str("repo", r.Name.String()).Msg("read the figures of the home page")
+		}
+		return nil
+	}
+	hs := &HomeStats{Commits: grouped(st.Commits), Recent: grouped(st.Recent)}
+	if t := st.LatestTag; t != nil {
+		hs.Tag, hs.TagWhen = t.Name, ago(now, t.At)
+		if !t.CommitID.IsZero() {
+			// By its commit: a branch of the same name would win over the
+			// tag in a tree path.
+			hs.TagHref = repoHref(r.Name.String(), "tree", t.CommitID.String())
+		}
+	}
+	return hs
 }
 
 // homeCI is the state of the CI on the head of the default branch, as the
@@ -231,11 +259,11 @@ func homeRow(r ports.RepoView, now time.Time, cursor, signed bool) HomeRow {
 	name := r.Name.String()
 	row := HomeRow{
 		ID: "repo-" + name, Name: name, Href: repoHref(name),
-		Desc: r.Description, Branch: r.DefaultBranch, Cursor: cursor,
+		Desc: r.Description, Cursor: cursor,
 		Private: signed && r.Visibility == domain.VisibilityPrivate,
 	}
 	if !r.PushedAt.IsZero() {
-		row.Pushed, row.PushedAt = ago(now, r.PushedAt), rfc3339(r.PushedAt)
+		row.Active, row.ActiveAt = ago(now, r.PushedAt), rfc3339(r.PushedAt)
 	}
 	return row
 }

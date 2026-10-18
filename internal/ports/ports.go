@@ -178,6 +178,12 @@ type RepoReader interface {
 	// GetCommit returns a commit with its statistics and its diff against the
 	// first parent, bounded by limits.
 	GetCommit(ctx context.Context, repo domain.RepoName, rev domain.Revision, limits domain.DiffLimits) (domain.CommitDetail, error)
+	// CountCommits counts the commits reachable from head; with a non-zero
+	// since, only those committed at or after it.
+	CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (int, error)
+	// LatestTag is the most recently created tag (the commit date for a
+	// lightweight tag); ok is false when the repository has no tag.
+	LatestTag(ctx context.Context, repo domain.RepoName) (tag domain.TagInfo, ok bool, err error)
 }
 
 // HTTPBackend tells how to run `git http-backend` for one request.

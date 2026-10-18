@@ -122,7 +122,7 @@ templ Refs(l Layout, p RefsPage) {
 		</div>
 		<table class="list refs" aria-label="Branches and tags">
 			<thead>
-				<tr><th class="cur"></th><th class="c-kind">kind</th><th class="c-name">name</th><th class="c-sha">commit</th><th class="c-sub">subject</th><th class="c-when">date</th></tr>
+				<tr><th class="c-kind">kind</th><th class="c-name">name</th><th class="c-sha">commit</th><th class="c-sub">subject</th><th class="c-when">date</th></tr>
 			</thead>
 			@RefsBody(p)
 		</table>
@@ -134,7 +134,6 @@ templ Refs(l Layout, p RefsPage) {
 
 templ refRow(kind string, r RefRow) {
 	<tr data-cursor?={ r.Cursor }>
-		<td class="cur" aria-hidden="true"></td>
 		<td class="c-kind mute">{ kind }</td>
 		<td class="c-name">
 			<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
@@ -234,7 +233,6 @@ templ Passkeys(l Layout, p PasskeysPage) {
 			<table class="list passkeys" aria-label="Passkeys">
 				<thead>
 					<tr>
-						<th class="cur"></th>
 						<th class="c-name">Name</th>
 						<th class="c-when">Created</th>
 						<th class="c-when">Last used</th>
@@ -245,7 +243,6 @@ templ Passkeys(l Layout, p PasskeysPage) {
 				<tbody>
 					for _, r := range p.Rows {
 						<tr>
-							<td class="cur" aria-hidden="true"></td>
 							<td class="c-name">{ r.Name }</td>
 							<td class="c-when nowrap">
 								<time

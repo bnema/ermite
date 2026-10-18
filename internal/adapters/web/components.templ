@@ -52,16 +52,30 @@ templ HomeRowView(r HomeRow) {
 			} else {
 				<p class="repo-desc mute">no description</p>
 			}
-			<p class="repo-meta">
-				if r.Branch != "" {
-					<span class="repo-branch"><span class="ico i-branch" aria-hidden="true"></span>{ r.Branch }</span>
+			<dl class="repo-stats" aria-label={ "Figures of " + r.Name }>
+				if s := r.Stats; s != nil {
+					<div><dt>commits</dt><dd>{ s.Commits }</dd></div>
+					<div><dt>last 30 days</dt><dd>{ s.Recent }</dd></div>
+					if s.Tag != "" {
+						<div>
+							<dt>latest tag</dt>
+							if s.TagHref != "" {
+								<dd><a href={ templ.SafeURL(s.TagHref) } title={ "made " + s.TagWhen }>{ s.Tag }</a></dd>
+							} else {
+								<dd title={ "made " + s.TagWhen }>{ s.Tag }</dd>
+							}
+						</div>
+					}
 				}
-				if r.PushedAt != "" {
-					<span>pushed <time datetime={ r.PushedAt } title={ r.PushedAt }>{ r.Pushed }</time></span>
-				} else {
-					<span>never pushed</span>
-				}
-			</p>
+				<div>
+					<dt>last activity</dt>
+					if r.ActiveAt != "" {
+						<dd><time datetime={ r.ActiveAt } title={ r.ActiveAt }>{ r.Active }</time></dd>
+					} else {
+						<dd class="mute">never</dd>
+					}
+				</div>
+			</dl>
 		</div>
 		if r.CI != nil {
 			<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Title }>
@@ -131,7 +145,6 @@ templ CommitRows(rows []CommitRow) {
 					}
 					data-cursor?={ c.Cursor }
 				>
-					<td class="cur" aria-hidden="true"></td>
 					<td class="c-sha mute">{ c.Short }</td>
 					<td class="c-subject">
 						<a href={ templ.SafeURL(c.CHref) }>{ c.Subject }</a>

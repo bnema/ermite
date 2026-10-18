@@ -45,6 +45,22 @@ func rfc3339(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
+// grouped writes a count with thousands separated by a thin space: 12 345.
+func grouped(n int) string {
+	s := itoa(n)
+	if n < 0 || len(s) <= 3 {
+		return s
+	}
+	var b []byte
+	for i := range len(s) {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b = append(b, "\u202f"...)
+		}
+		b = append(b, s[i])
+	}
+	return string(b)
+}
+
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return "1 " + one
