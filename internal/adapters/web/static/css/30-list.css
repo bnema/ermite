@@ -179,19 +179,27 @@
     .home[data-layout="split"] .repos { grid-template-columns: minmax(0, 1fr); }
   }
 
-  /* compact: a line per repository. Name, description, figures, CI state and
-     a small pulse sit in one grid row; the commits and topics are left out. */
+  /* compact: a line per repository. Name, description, figures, CI mark and
+     a small pulse sit in one grid row; the commits and topics are left out.
+     The rows share the columns of the list (subgrid): the name column is as
+     wide as the longest name, the figures line up, and the description takes
+     what is left. */
   .home[data-layout="compact"] {
-    & .repos { gap: var(--s2); }
+    & .repos {
+      display: grid; grid-template-columns: fit-content(18rem) minmax(0, 1fr) auto auto 140px;
+      gap: var(--s2) var(--s4);
+    }
     & .repo {
-      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) minmax(0, 20rem) 5.5rem 140px;
+      grid-column: 1 / -1; grid-template-columns: subgrid;
       grid-template-areas: "name desc stats ci pulse";
-      grid-template-rows: none; column-gap: var(--s4); row-gap: 0; align-items: center;
+      /* normal: the row takes the gaps of the list */
+      grid-template-rows: none; column-gap: normal; row-gap: 0; align-items: center;
       padding: var(--s2) var(--s4);
     }
     & .repo-main, & .repo-head { display: contents; }
     & .repo-topics, & .repo-commits { display: none; }
-    & .repo-name { grid-area: name; flex-wrap: nowrap; gap: var(--s2); font-size: var(--fs); line-height: 24px; overflow-wrap: normal; }
+    /* min-width 0: a long name is cut, it does not widen the column past its cap */
+    & .repo-name { grid-area: name; min-width: 0; flex-wrap: nowrap; gap: var(--s2); font-size: var(--fs); line-height: 24px; overflow-wrap: normal; }
     & .repo-name a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     & .repo-name .pill { flex: none; }
     & .repo-desc {
@@ -212,7 +220,9 @@
       content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 3px; vertical-align: -2px;
       background: currentColor; mask: url(icons/tag.svg) center / contain no-repeat;
     }
-    & .repo-ci { grid-area: ci; justify-self: start; padding-top: 0; font-size: var(--fs-xs); }
+    /* the CI state is its mark; the word is in the tooltip and for screen readers */
+    & .repo-ci { grid-area: ci; justify-self: center; padding-top: 0; }
+    & .repo-ci .ci-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     /* the pulse: the same curve, small, with a bigger dot to stay seen */
     & .repo-pulse { grid-area: pulse; width: 100%; height: 100%; min-height: 18px; margin: 0; padding: 0; }
     & div.repo-pulse { aspect-ratio: auto; box-sizing: border-box; }
@@ -221,14 +231,14 @@
     & .pulse-dot { r: 9px; stroke: none; }
   }
   @media (max-width: 1100px) {
-    .home[data-layout="compact"] .repo { grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 14rem) 5.5rem 96px; column-gap: var(--s3); }
+    .home[data-layout="compact"] .repos { grid-template-columns: fit-content(14rem) minmax(0, 1fr) auto auto 96px; column-gap: var(--s3); }
     .home[data-layout="compact"] .repo-stats .rs-tag { display: none; }
   }
   /* on a phone: name and CI state on a line, the description and the figures
      under it; the pulse is dropped */
   @media (max-width: 720px) {
     .home[data-layout="compact"] .repo {
-      grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name ci" "desc desc" "stats stats"; row-gap: 2px;
+      grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name ci" "desc desc" "stats stats"; column-gap: var(--s3); row-gap: 2px;
     }
     .home[data-layout="compact"] .repo-pulse { display: none; }
     .home[data-layout="compact"] .repo-stats .rs-tag { display: flex; }

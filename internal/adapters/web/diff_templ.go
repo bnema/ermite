@@ -249,15 +249,15 @@ func Commit(l Layout, p CommitPage) templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
-				if p.Sig != nil && p.Sig.Class != "sig-none" {
+				if p.Sig.Class != "sig-none" {
 					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<span class=\"sig-why dim\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var12 string
-					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(p.Sig.Title)
+					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(p.Sig.Reason)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 54, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 54, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 					if templ_7745c5c3_Err != nil {

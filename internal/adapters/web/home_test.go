@@ -212,7 +212,7 @@ func TestHomeRowCI(t *testing.T) {
 			}
 			require.NotNil(t, row.CI)
 			assert.Contains(t, out, `class="repo-ci" href="`+tt.href+`"`)
-			assert.Contains(t, out, tt.label, "the state has a word, not only a mark")
+			assert.Contains(t, out, `<span class="ci-label">`+tt.label+`</span>`, "the state has a word, not only a mark; compact hides it")
 			assert.Contains(t, out, `<span class="sr">CI: </span>`)
 		})
 	}

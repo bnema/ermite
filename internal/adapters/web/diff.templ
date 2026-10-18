@@ -50,8 +50,8 @@ templ Commit(l Layout, p CommitPage) {
 						if p.Verification.KeyTitle != "" {
 							<span class="dim">{ "· " + visibleText(p.Verification.KeyTitle) }</span>
 						}
-						if p.Sig != nil && p.Sig.Class != "sig-none" {
-							<span class="sig-why dim">{ p.Sig.Title }</span>
+						if p.Sig.Class != "sig-none" {
+							<span class="sig-why dim">{ p.Sig.Reason }</span>
 						}
 					</dd>
 				}

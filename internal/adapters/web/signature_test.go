@@ -128,7 +128,8 @@ func TestCommitPageShowsTheSignature(t *testing.T) {
 	got = page(verification(domain.FormatGPG, domain.StatusUnknownKey, gpgFP, ""))
 	assert.Contains(t, got, `sig-warn`)
 	assert.Contains(t, got, "<code>"+gpgFP+"</code>")
-	assert.Contains(t, got, `<span class="sig-why dim">Signed with an unknown GPG key `+gpgFP+`</span>`, "the reason is text, not only a tooltip")
+	assert.Contains(t, got, `<span class="sig-why dim">The key is unknown</span>`, "the reason is text, not only a tooltip")
+	assert.Equal(t, 1, strings.Count(got, ">"+gpgFP), "the fingerprint is shown once; the pill tooltip may repeat it")
 
 	got = page(verification("", domain.StatusUnsigned, "", ""))
 	assert.Contains(t, got, "<dt>signature</dt>")

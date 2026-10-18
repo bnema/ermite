@@ -9,8 +9,10 @@ import (
 // SignatureBadge is the pill of a signed commit. Label is the verdict, Proto
 // the protocol ("SSH", "GPG", "X.509", empty when unknown), Class the style
 // (sig-ok, sig-warn, sig-bad, sig-none) and Title the tooltip that says why.
+// Reason says why without naming the key, for a page that shows the key next
+// to it.
 type SignatureBadge struct {
-	Label, Proto, Class, Title string
+	Label, Proto, Class, Title, Reason string
 }
 
 // signatureProto is the display name of a signature format.
@@ -37,7 +39,7 @@ func signatureBadge(v domain.CommitVerification, long bool) *SignatureBadge {
 		if !long {
 			return nil
 		}
-		return &SignatureBadge{Label: "unsigned", Class: "sig-none", Title: "This commit is not signed"}
+		return &SignatureBadge{Label: "unsigned", Class: "sig-none", Title: "This commit is not signed", Reason: "Not signed"}
 	}
 	b := &SignatureBadge{Proto: signatureProto(v.Format)}
 	key := keyPhrase(v)
@@ -45,30 +47,38 @@ func signatureBadge(v domain.CommitVerification, long bool) *SignatureBadge {
 	case domain.StatusVerified:
 		b.Label, b.Class = "Verified", "sig-ok"
 		b.Title = "Signed with " + key + " — verified for the committer email"
+		b.Reason = "Verified for the committer email"
 	case domain.StatusUnknownKey:
 		b.Label, b.Class = "Unverified", "sig-warn"
 		b.Title = unknownKeyTitle(v)
+		b.Reason = "The key is unknown"
 	case domain.StatusEmailMismatch:
 		b.Label, b.Class = "Unverified", "sig-warn"
 		b.Title = "Signed with " + key + " — this key is not trusted for the committer email"
+		b.Reason = "This key is not trusted for the committer email"
 	case domain.StatusExpired:
 		b.Label, b.Class = "Unverified", "sig-warn"
 		b.Title = "Signed with " + key + " — the key or the signature expired"
+		b.Reason = "The key or the signature expired"
 	case domain.StatusRevoked:
 		b.Label, b.Class = "Unverified", "sig-warn"
 		b.Title = "Signed with " + key + " — the key is revoked"
+		b.Reason = "The key is revoked"
 	case domain.StatusBadSignature:
 		b.Label, b.Class = "Bad signature", "sig-bad"
-		b.Title = "The signature does not match the commit"
+		b.Reason = "The signature does not match the commit"
 	case domain.StatusUnsupported:
 		b.Label, b.Class = "Unverified", "sig-warn"
 		if proto := signatureProto(v.Format); proto != "" {
-			b.Title = proto + " signatures are not checked"
+			b.Reason = proto + " signatures are not checked"
 		} else {
-			b.Title = "This kind of signature is not checked"
+			b.Reason = "This kind of signature is not checked"
 		}
 	default:
 		return nil
+	}
+	if b.Title == "" {
+		b.Title = b.Reason
 	}
 	return b
 }

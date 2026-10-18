@@ -96,7 +96,7 @@ templ HomeRowView(r HomeRow) {
 			if r.CI != nil {
 				<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Title }>
 					<span class={ "ck", "ck-" + r.CI.Kind } aria-hidden="true"></span>
-					<span class="sr">CI: </span>{ r.CI.Label }
+					<span class="sr">CI: </span><span class="ci-label">{ r.CI.Label }</span>
 				</a>
 			}
 		</div>
