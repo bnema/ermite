@@ -32,26 +32,35 @@ templ CloneBlock(c Clone) {
 	</div>
 }
 
-// HomeRow is one row of the home list. Its id is the target of SSE swaps.
+// HomeRowView is the card of a repository in the home list. Its id is the
+// target of SSE swaps; the name link comes first, `enter` follows it.
 templ HomeRowView(r HomeRow) {
-	<tr id={ r.ID } data-cursor?={ r.Cursor }>
-		<td class="cur" aria-hidden="true"></td>
-		<td class="c-name">
+	<li id={ r.ID } class="repo" data-cursor?={ r.Cursor }>
+		<h2 class="repo-name">
 			<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+			if r.Private {
+				<span class="pill">private</span>
+			}
 			if r.Fresh {
 				<span class="pill new">new push</span>
 			}
-		</td>
-		<td class="c-desc dim">{ r.Desc }</td>
-		<td class="c-when nowrap">
-			<time
-				if r.PushedAt != "" {
-					datetime={ r.PushedAt }
-				}
-			>{ r.Pushed }</time>
-		</td>
-		<td class="c-ref">{ r.Branch }</td>
-	</tr>
+		</h2>
+		if r.Desc != "" {
+			<p class="repo-desc">{ r.Desc }</p>
+		} else {
+			<p class="repo-desc mute">no description</p>
+		}
+		<p class="repo-meta">
+			if r.Branch != "" {
+				<span class="repo-branch"><span class="ico i-branch" aria-hidden="true"></span>{ r.Branch }</span>
+			}
+			if r.PushedAt != "" {
+				<span>pushed <time datetime={ r.PushedAt } title={ r.PushedAt }>{ r.Pushed }</time></span>
+			} else {
+				<span>never pushed</span>
+			}
+		</p>
+	</li>
 }
 
 // Outline is the README outline; levels indent by 2ch, the h1 is bold.

@@ -116,7 +116,7 @@ func (l *liveStream) home(ctx context.Context, we ports.WatchEvent) ([]fragment,
 	case err != nil:
 		return nil, err
 	}
-	row := homeRow(view, l.s.cfg.Now(), false)
+	row := homeRow(view, l.s.cfg.Now(), false, SignedIn(ctx))
 	row.Fresh = fresh
 	f, err := renderFragment(ctx, "home-list", HomeRowView(row))
 	return []fragment{f}, err

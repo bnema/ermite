@@ -28,13 +28,47 @@
     & .c-sub { color: var(--ink-dim); }
   }
 
+  /* home: the repositories as cards in a grid (one column on a phone); the
+     page is a stack of sections, so others can sit beside or below */
   .home {
-    & .c-name { width: 26%; font-family: var(--mono); font-weight: 700; }
-    & th.c-name { font-family: var(--font); }
-    & .c-desc { width: auto; }
-    & .c-when { width: 130px; }
-    & .c-ref { width: 120px; }
-    & .c-lang { width: 120px; }
+    display: flex; flex-direction: column; gap: var(--s5);
+    & .home-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3) var(--s4); margin-bottom: var(--s4); }
+    & .home-bar .filter { flex: 1 1 260px; }
+    & .sort { display: flex; align-items: center; gap: var(--s1); font-size: var(--fs-s); }
+    & .sort > .mute { margin-right: var(--s1); }
+    & .sort a {
+      display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 var(--s2);
+      color: var(--ink-dim); text-decoration: none; border: 1px solid transparent; border-radius: var(--r-s);
+    }
+    & .sort a:hover { color: var(--ink-hi); background: var(--bg-raised); }
+    & .sort a[aria-current="true"] { color: var(--ink-hi); background: var(--bg-raised); border-color: var(--border-strong); }
+  }
+  .repos {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: var(--s3);
+    margin: 0; padding: 0; list-style: none;
+    & .repo {
+      position: relative; display: flex; flex-direction: column; gap: var(--s2); min-width: 0;
+      padding: var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
+    }
+    & .repo:hover { background: var(--bg-raised); border-color: var(--border-strong); }
+    & .repo[data-cursor] { background: var(--bg-raised); border-color: var(--ink-mute); box-shadow: inset 3px 0 0 var(--ink-hi); }
+    & .repo[hidden] { display: none; }
+    & .repo-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2); font-size: 17px; line-height: 26px; overflow-wrap: anywhere; }
+    & .repo-name a { color: var(--ink-hi); text-decoration: none; }
+    /* the whole card is the target of the name link */
+    & .repo-name a::after { content: ""; position: absolute; inset: 0; border-radius: var(--r); }
+    & .repo-name a:focus-visible { outline: none; }
+    & .repo-name a:focus-visible::after { outline: 2px solid var(--focus); outline-offset: 1px; }
+    & .repo:hover .repo-name a, & .repo[data-cursor] .repo-name a { text-decoration: underline; }
+    & .repo-name .pill { margin-left: 0; }
+    & .repo-desc {
+      flex: 1; color: var(--ink-dim);
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+    }
+    & .repo-desc.mute { color: var(--ink-mute); font-style: italic; }
+    & .repo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s4); font-size: var(--fs-s); color: var(--ink-mute); }
+    & .repo-meta time { color: var(--ink-dim); }
+    & .repo-branch { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); color: var(--ink-dim); }
   }
   .list.tree {
     & .c-kind { width: 36px; color: var(--ink-mute); padding-right: 0; text-align: center; }

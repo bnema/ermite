@@ -45,7 +45,7 @@ import (
 //
 // Events, each with the id of the Watch event it comes from:
 //
-//	home-list       data: <tr id="repo-<name>">…</tr>, or <tr id="repo-<name>" data-gone></tr>
+//	home-list       data: <li id="repo-<name>">…</li>, or <li id="repo-<name>" data-gone></li>
 //	                for a repository that is deleted or no longer visible
 //	repo-last-push  data: <dd id="last-push-<name>">…</dd>
 //	refs-list       data: <tbody id="ref-rows">…</tbody>, and again with

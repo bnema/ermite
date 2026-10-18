@@ -83,25 +83,27 @@ type HomeRow struct {
 	Pushed   string
 	PushedAt string // RFC 3339, "" when never pushed
 	Branch   string
-	Tag      string
 	Cursor   bool
+	// Private marks a private repository; only set for a signed-in visitor.
+	Private bool
 	// Fresh marks a row that a push just updated (live updates only).
 	Fresh bool
 }
 
-// SortCol is a column header of the home list; it links to its sort order.
-type SortCol struct {
+// SortLink is one way to order the home list; it links to that order.
+type SortLink struct {
 	Label string
 	Href  string
-	Dir   string // "ascending" | "descending" | "none"
-	Mark  string
-	Class string
+	Mark  string // "▲" or "▼" on the current order, "" otherwise
+	// State says the current direction and what the link does, for screen
+	// readers (the mark is hidden from them); "" off the current order.
+	State string
 }
 
 // HomePage is the repository list.
 type HomePage struct {
-	Cols []SortCol
-	Rows []HomeRow
+	Sorts []SortLink
+	Rows  []HomeRow
 }
 
 // Fact is one key/value row of the facts block.

@@ -5,42 +5,49 @@ package web
 // Home is the repository list.
 templ Home(l Layout, p HomePage) {
 	@Shell(l, nil) {
-		<div class="filter">
-			<label for="home-filter" class="sr">filter</label>
-			<input
-				id="home-filter"
-				type="search"
-				data-filter="#repo-rows > tr"
-				placeholder="Filter repositories…"
-				autocomplete="off"
-				hx-on:input="ermite.filter(this)"
-			/>
-		</div>
-		<table class="list home" aria-label="Repositories">
-			<thead>
-				<tr>
-					<th class="cur"></th>
-					for _, c := range p.Cols {
-						<th class={ c.Class } aria-sort={ c.Dir }>
-							<a href={ templ.SafeURL(c.Href) }>
-								{ c.Label }
-								if c.Mark != "" {
-									<span aria-hidden="true">{ c.Mark }</span>
+		<h1 class="sr">Repositories</h1>
+		<div class="home">
+			<section class="home-repos" aria-label="Repositories">
+				<div class="home-bar">
+					<div class="filter">
+						<label for="home-filter" class="sr">filter</label>
+						<input
+							id="home-filter"
+							type="search"
+							data-filter="#repo-rows > li"
+							placeholder="Filter repositories…"
+							autocomplete="off"
+							hx-on:input="ermite.filter(this)"
+						/>
+					</div>
+					<nav class="sort" aria-label="Sort repositories">
+						<span class="mute">sort</span>
+						for _, s := range p.Sorts {
+							<a
+								href={ templ.SafeURL(s.Href) }
+								if s.Mark != "" {
+									aria-current="true"
+								}
+							>
+								{ s.Label }
+								if s.Mark != "" {
+									<span aria-hidden="true">{ s.Mark }</span>
+									<span class="sr">{ ", " + s.State }</span>
 								}
 							</a>
-						</th>
+						}
+					</nav>
+				</div>
+				<ul class="repos" id="repo-rows" data-rows>
+					for _, r := range p.Rows {
+						@HomeRowView(r)
 					}
-				</tr>
-			</thead>
-			<tbody id="repo-rows" data-rows>
-				for _, r := range p.Rows {
-					@HomeRowView(r)
+				</ul>
+				if len(p.Rows) == 0 {
+					<p class="lede dim">no repositories yet.</p>
 				}
-			</tbody>
-		</table>
-		if len(p.Rows) == 0 {
-			<p class="lede dim">no repositories yet.</p>
-		}
+			</section>
+		</div>
 	}
 }
 

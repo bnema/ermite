@@ -11,6 +11,7 @@ import (
 
 	"github.com/a-h/templ"
 
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -48,13 +49,15 @@ func (s *Server) listRepos(ctx context.Context) ([]ports.RepoView, error) {
 	return repos, nil
 }
 
-// homeCols are the sortable columns of the home list, in order.
-var homeCols = []struct{ key, label, class string }{
-	{"name", "name", "c-name"},
-	{"desc", "description", "c-desc"},
-	{"push", "last push", "c-when"},
-	{"branch", "branch", "c-ref"},
+// homeSorts are the orders the home list offers, in order. The query also
+// accepts "desc" and "branch", which the page does not link to.
+var homeSorts = []struct{ key, label string }{
+	{"push", "last push"},
+	{"name", "name"},
 }
+
+// homeKeys are the keys of ?sort= that sortRepos knows.
+var homeKeys = []string{"push", "name", "desc", "branch"}
 
 // sortRepos orders repos by the column key; ties keep the order by name.
 func sortRepos(repos []ports.RepoView, key string, desc bool) {
@@ -85,9 +88,9 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 		return nil, 0, err
 	}
 	key, desc := "push", true
-	for _, c := range homeCols {
-		if r.URL.Query().Get("sort") == c.key {
-			key, desc = c.key, c.key == "push"
+	for _, k := range homeKeys {
+		if r.URL.Query().Get("sort") == k {
+			key, desc = k, k == "push"
 		}
 	}
 	if d := r.URL.Query().Get("dir"); d == "asc" || d == "desc" {
@@ -96,23 +99,26 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 	sortRepos(repos, key, desc)
 
 	now := s.cfg.Now()
+	signed := SignedIn(ctx)
 	p := HomePage{}
-	for _, c := range homeCols {
-		sc := SortCol{Label: c.label, Class: c.class, Dir: "none"}
+	for _, c := range homeSorts {
+		sl := SortLink{Label: c.label}
 		next := "asc"
+		if c.key == "push" {
+			next = "desc"
+		}
 		if c.key == key {
-			sc.Dir, sc.Mark = "ascending", "▲"
+			sl.Mark, sl.State = "▲", "ascending, select for descending"
+			next = "desc"
 			if desc {
-				sc.Dir, sc.Mark = "descending", "▼"
-			} else {
-				next = "desc"
+				sl.Mark, sl.State, next = "▼", "descending, select for ascending", "asc"
 			}
 		}
-		sc.Href = "/?sort=" + c.key + "&dir=" + next
-		p.Cols = append(p.Cols, sc)
+		sl.Href = "/?sort=" + c.key + "&dir=" + next
+		p.Sorts = append(p.Sorts, sl)
 	}
 	for i, repo := range repos {
-		p.Rows = append(p.Rows, homeRow(repo, now, i == 0))
+		p.Rows = append(p.Rows, homeRow(repo, now, i == 0, signed))
 	}
 
 	l := s.base()
@@ -122,12 +128,14 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 	return Home(l, p), http.StatusOK, nil
 }
 
-// homeRow is the row of a repository in the home list.
-func homeRow(r ports.RepoView, now time.Time, cursor bool) HomeRow {
+// homeRow is the card of a repository in the home list. The private badge is
+// for a signed-in visitor: an anonymous one never gets a private repository.
+func homeRow(r ports.RepoView, now time.Time, cursor, signed bool) HomeRow {
 	name := r.Name.String()
 	row := HomeRow{
 		ID: "repo-" + name, Name: name, Href: repoHref(name),
-		Desc: r.Description, Pushed: "never", Branch: r.DefaultBranch, Cursor: cursor,
+		Desc: r.Description, Branch: r.DefaultBranch, Cursor: cursor,
+		Private: signed && r.Visibility == domain.VisibilityPrivate,
 	}
 	if !r.PushedAt.IsZero() {
 		row.Pushed, row.PushedAt = ago(now, r.PushedAt), rfc3339(r.PushedAt)

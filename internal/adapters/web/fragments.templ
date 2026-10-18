@@ -21,10 +21,10 @@ templ FactValue(f Fact) {
 	</dd>
 }
 
-// RepoGone replaces the row of a repository that is deleted or not visible
+// RepoGone replaces the card of a repository that is deleted or not visible
 // any more; the page removes the element.
 templ RepoGone(id string) {
-	<tr id={ id } data-gone hidden></tr>
+	<li id={ id } data-gone hidden></li>
 }
 
 // RefsBody is the rows of the refs table.

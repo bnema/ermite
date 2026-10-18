@@ -49,58 +49,51 @@
 </header>
 <div class="work">
 <main id="main" tabindex="-1">
+<h1 class="sr">Repositories</h1>
+<div class="home">
+<section class="home-repos" aria-label="Repositories">
+<div class="home-bar">
 <div class="filter">
 <label for="home-filter" class="sr">filter</label>
-<input id="home-filter" type="search" data-filter="#repo-rows > tr" placeholder="Filter repositories…" autocomplete="off" hx-on:input="ermite.filter(this)">
+<input id="home-filter" type="search" data-filter="#repo-rows > li" placeholder="Filter repositories…" autocomplete="off" hx-on:input="ermite.filter(this)">
 </div>
-<table class="list home" aria-label="Repositories">
-<thead>
-<tr>
-<th class="cur">
-</th>
-<th class="c-name" aria-sort="none">
-<a href="/?sort=name&amp;dir=asc">name </a>
-</th>
-<th class="c-desc" aria-sort="none">
-<a href="/?sort=desc&amp;dir=asc">description </a>
-</th>
-<th class="c-when" aria-sort="descending">
-<a href="/?sort=push&amp;dir=asc">last push <span aria-hidden="true">▼</span>
+<nav class="sort" aria-label="Sort repositories">
+<span class="mute">sort</span>
+<a href="/?sort=push&amp;dir=asc" aria-current="true">last push <span aria-hidden="true">▼</span>
+<span class="sr">, descending, select for ascending</span>
 </a>
-</th>
-<th class="c-ref" aria-sort="none">
-<a href="/?sort=branch&amp;dir=asc">branch </a>
-</th>
-</tr>
-</thead>
-<tbody id="repo-rows" data-rows>
-<tr id="repo-demo" data-cursor>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-name">
+<a href="/?sort=name&amp;dir=asc">name </a>
+</nav>
+</div>
+<ul class="repos" id="repo-rows" data-rows>
+<li id="repo-demo" class="repo" data-cursor>
+<h2 class="repo-name">
 <a href="/demo">demo</a>
-</td>
-<td class="c-desc dim">A demo repository</td>
-<td class="c-when nowrap">
-<time datetime="STAMP">AGO</time>
-</td>
-<td class="c-ref">main</td>
-</tr>
-<tr id="repo-quiet">
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-name">
+</h2>
+<p class="repo-desc">A demo repository</p>
+<p class="repo-meta">
+<span class="repo-branch">
+<span class="ico i-branch" aria-hidden="true">
+</span>main</span>
+<span>pushed <time datetime="STAMP" title="STAMP">AGO</time>
+</span>
+</p>
+</li>
+<li id="repo-quiet" class="repo">
+<h2 class="repo-name">
 <a href="/quiet">quiet</a>
-</td>
-<td class="c-desc dim">
-</td>
-<td class="c-when nowrap">
-<time>never</time>
-</td>
-<td class="c-ref">main</td>
-</tr>
-</tbody>
-</table>
+</h2>
+<p class="repo-desc mute">no description</p>
+<p class="repo-meta">
+<span class="repo-branch">
+<span class="ico i-branch" aria-hidden="true">
+</span>main</span>
+<span>never pushed</span>
+</p>
+</li>
+</ul>
+</section>
+</div>
 </main>
 </div>
 <footer class="foot">

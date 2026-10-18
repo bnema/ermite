@@ -122,7 +122,7 @@ func TestWebEventsHome(t *testing.T) {
 	assert.Less(t, time.Since(start), 2*time.Second)
 	assert.Equal(t, "home-list", ev.name)
 	assert.NotEmpty(t, ev.id)
-	assert.Contains(t, ev.data, `<tr id="repo-pub"`)
+	assert.Contains(t, ev.data, `<li id="repo-pub"`)
 	assert.Contains(t, ev.data, `new push`)
 	assert.Contains(t, ev.data, `href="/pub"`)
 
@@ -131,7 +131,7 @@ func TestWebEventsHome(t *testing.T) {
 	require.NoError(t, err)
 	ev = s.next(t, watchWait)
 	assert.Equal(t, "home-list", ev.name)
-	assert.Contains(t, ev.data, `<tr id="repo-fresh"`)
+	assert.Contains(t, ev.data, `<li id="repo-fresh"`)
 	assert.Contains(t, ev.data, "a &lt;b&gt;fresh&lt;/b&gt; one", "text is escaped")
 	assert.NotContains(t, ev.data, "new push")
 
@@ -141,13 +141,13 @@ func TestWebEventsHome(t *testing.T) {
 	require.NoError(t, err)
 	ev = s.next(t, watchWait)
 	assert.Equal(t, "home-list", ev.name)
-	assert.Contains(t, ev.data, `<tr id="repo-fresh" data-gone`)
+	assert.Contains(t, ev.data, `<li id="repo-fresh" data-gone`)
 	assert.NotContains(t, ev.data, "fresh one")
 
 	// And a deleted one.
 	require.NoError(t, h.forge.Repos.Delete(h.ctx, domain.Root(), h.name("pub")))
 	ev = s.next(t, watchWait)
-	assert.Contains(t, ev.data, `<tr id="repo-pub" data-gone`)
+	assert.Contains(t, ev.data, `<li id="repo-pub" data-gone`)
 }
 
 // AC5: the stream of a repository carries its last push; the refs page its
