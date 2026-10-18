@@ -70,17 +70,6 @@
     & .repo-meta time { color: var(--ink-dim); }
     & .repo-branch { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); color: var(--ink-dim); }
   }
-  .list.tree {
-    & .c-kind { width: 36px; color: var(--ink-mute); padding-right: 0; text-align: center; }
-    /* --depth is set by files.js on the rows opened in place */
-    & .c-name { width: 32%; font-family: var(--mono); font-size: var(--fs-s); padding-inline-start: calc(var(--s3) + var(--depth, 0) * 1.25ch); }
-    & tr[aria-busy=true] .c-kind { opacity: .4; }
-    & .tree-more td { padding-inline-start: calc(var(--s3) + 36px + var(--depth, 0) * 1.25ch); color: var(--ink-dim); font-size: var(--fs-s); }
-    & .c-size { width: 90px; text-align: right; }
-    & .c-when { width: 100px; }
-    & .c-sub { width: auto; }
-    & .c-who { width: 130px; }
-  }
   .list.passkeys {
     & .c-name { width: auto; font-weight: 600; }
     & .c-when { width: 120px; font-size: var(--fs-s); }
@@ -125,8 +114,101 @@
 
   /* file finder: the results replace the tree while the field has a query */
   #finder {
-    margin-top: var(--s3);
-    & #finder-status { margin-bottom: var(--s2); font-size: var(--fs-s); }
+    & #finder-status { padding: var(--s3) var(--s4) var(--s2); font-size: var(--fs-s); }
+    & #finder-list { padding: 0 var(--s2) var(--s2); }
+  }
+
+  /* the Files view: the finder on top, the tree in a card under it */
+  .tree-find {
+    display: flex; align-items: center; gap: var(--s4); margin-bottom: var(--s3);
+    & .filter { flex: 1; max-width: none; }
+    & .filter::before { top: 14px; left: 14px; }
+    & .filter::after { right: 12px; }
+    & .filter input { height: 44px; padding-left: 42px; font-size: var(--fs); background: var(--bg-surface); }
+  }
+  .tree-keys { flex: none; color: var(--ink-mute); font-size: var(--fs-xs); white-space: nowrap; }
+  .tree-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
+  }
+  .tree-head {
+    display: flex; align-items: center; gap: var(--s3); min-height: 40px; padding: 0 var(--s4);
+    background: var(--bg-raised); border-bottom: 1px solid var(--border); font-size: var(--fs-s);
+    & .tree-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 var(--fs-s) / 1 var(--mono); color: var(--ink-hi); }
+    & .tree-up { flex: none; font: 600 var(--fs-s) / 1 var(--mono); color: var(--ink-dim); text-decoration: none; }
+    & .tree-up:hover { color: var(--ink-hi); text-decoration: underline; }
+    & .tree-count { flex: none; color: var(--ink-mute); }
+  }
+  .tree-card > :is(.lede, .note) { margin: var(--s3) var(--s4); }
+
+  /* The tree: one flat list, a row per entry, each as deep as --depth says
+     (files.js sets it on the rows it opens in place). A row draws, from the
+     left: a vertical guide per level above it, the branch tick to its node,
+     the node, its name; then size, last commit and date, which are secondary. */
+  ul.tree {
+    --indent: 22px; --rowh: 32px; --guide: var(--border-strong);
+    & > li {
+      display: grid; grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1.2fr) 96px; align-items: center;
+      min-height: var(--rowh); padding-right: var(--s4); font-size: var(--fs-s);
+    }
+    & > li:hover, & > li[data-cursor] { background: var(--bg-raised); }
+    & > li[data-cursor] { box-shadow: inset 3px 0 0 var(--ink-hi); }
+    & > li:focus-visible { outline-offset: -2px; border-radius: 0; }
+    & .t-main { display: flex; align-items: stretch; min-width: 0; min-height: var(--rowh); padding-left: var(--s3); }
+    & .t-twig {
+      flex: none; width: calc(var(--depth, 0) * var(--indent));
+      background: repeating-linear-gradient(90deg,
+        transparent 0 calc(var(--indent) / 2), var(--guide) calc(var(--indent) / 2) calc(var(--indent) / 2 + 1px),
+        transparent calc(var(--indent) / 2 + 1px) var(--indent));
+    }
+    & .t-node { position: relative; flex: none; width: var(--indent); }
+    & .t-node::before, & .t-node::after { content: ""; position: absolute; }
+    /* the branch tick, from the guide of the directory to this node */
+    & .t-node::before { top: 50%; left: calc(var(--indent) / -2); right: calc(50% + 6px); height: 1px; background: var(--guide); }
+    & > li[data-depth="0"] .t-node::before { display: none; }
+    /* an open directory continues its guide down, to its first entry */
+    & > li[aria-expanded="true"] .t-node {
+      background: linear-gradient(var(--guide), var(--guide)) center bottom / 1px calc(50% - 8px) no-repeat;
+    }
+    /* the node: a ring for a file, a chevron for a directory (it turns down
+       once open), a diamond for a link, a square for a submodule */
+    & .t-node::after {
+      top: 50%; left: 50%; width: 7px; height: 7px; margin: -4px 0 0 -4px;
+      background: var(--bg-surface); border: 1px solid var(--ink-mute); border-radius: 50%;
+    }
+    & > li:hover .t-node::after, & > li[data-cursor] .t-node::after { background: var(--bg-raised); border-color: var(--ink-hi); }
+    & > li[data-kind="dir"] .t-node::after {
+      width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 0; border-radius: 0; background: var(--ink-dim);
+      mask: url(icons/chevron.svg) center / contain no-repeat; transform: rotate(-90deg);
+    }
+    & > li[data-kind="dir"][aria-expanded="true"] .t-node::after { transform: none; background: var(--ink-hi); }
+    & > li[data-kind="link"] .t-node::after { border-radius: 1px; transform: rotate(45deg); }
+    & > li[data-kind="module"] .t-node::after { border-radius: 1px; }
+    & > li[aria-busy="true"] .t-node { opacity: .4; }
+    & .t-name {
+      align-self: center; min-width: 0; padding: 4px var(--s1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: var(--mono); font-size: var(--fs); color: var(--ink); text-decoration: none; cursor: pointer;
+    }
+    & > li[data-kind="dir"] .t-name { font-weight: 700; color: var(--ink-hi); }
+    & > li[data-kind="link"] .t-name, & > li[data-kind="module"] .t-name { color: var(--ink-dim); cursor: default; }
+    & > li:hover .t-name, & > li[data-cursor] .t-name { text-decoration: underline; }
+    & .t-size { padding-right: var(--s4); text-align: right; font: var(--fs-xs) / 1 var(--mono); color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+    & .t-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-dim); }
+    & .t-sub a { color: inherit; text-decoration: none; }
+    & .t-sub a:hover { color: var(--ink-hi); text-decoration: underline; }
+    & .t-when { text-align: right; white-space: nowrap; color: var(--ink-mute); font-size: var(--fs-xs); }
+    & > li.tree-more { grid-template-columns: minmax(0, 1fr); }
+    & > li.tree-more .t-name { font-size: var(--fs-s); font-weight: 400; color: var(--ink-dim); text-decoration: underline; }
+    & > li.tree-more .t-node::after { display: none; }
+  }
+  @media (max-width: 900px) {
+    ul.tree > li { grid-template-columns: minmax(0, 1fr) 64px 80px; }
+    ul.tree .t-sub { display: none; }
+  }
+  @media (max-width: 720px) {
+    .tree-keys { display: none; }
+    ul.tree { --indent: 18px; }
+    ul.tree > li { grid-template-columns: minmax(0, 1fr) 72px; }
+    ul.tree .t-size { display: none; }
   }
 
   /* section headings inside a page */

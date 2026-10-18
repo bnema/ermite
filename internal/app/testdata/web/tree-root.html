@@ -96,283 +96,272 @@
 </header>
 <div class="work">
 <main id="main" tabindex="-1">
-<div class="filter">
+<div class="tree-find">
+<div class="filter wide">
 <label for="finder-q" class="sr">find a file</label>
-<input id="finder-q" type="search" data-filter role="combobox" aria-autocomplete="list" aria-controls="finder-list" aria-expanded="false" placeholder="Find a file…" autocomplete="off" spellcheck="false" hx-on:focus="ermiteFinder.load()" hx-on:input="ermiteFinder.input(this)" hx-on:keydown="ermiteFinder.key(this, event)">
+<input id="finder-q" type="search" data-filter role="combobox" aria-autocomplete="list" aria-controls="finder-list" aria-expanded="false" placeholder="Find a file in this repository…" autocomplete="off" spellcheck="false" hx-on:focus="ermiteFinder.load()" hx-on:input="ermiteFinder.input(this)" hx-on:keydown="ermiteFinder.key(this, event)">
 </div>
-<div id="finder" hidden>
+<p class="tree-keys" data-js aria-hidden="true">
+<kbd>j</kbd>
+<kbd>k</kbd> move · <kbd>l</kbd> open · <kbd>h</kbd> back</p>
+</div>
+<div id="finder" class="tree-card" hidden>
 <p id="finder-status" class="dim" aria-live="polite">
 </p>
 <ul id="finder-list" class="cmd-list" role="listbox" aria-label="Files">
 </ul>
 </div>
-<div id="tree-view">
-<table class="list tree" aria-label="Entries">
-<thead>
-<tr>
-<th class="cur">
-</th>
-<th class="c-kind">
-</th>
-<th class="c-name">name</th>
-<th class="c-size">size</th>
-<th class="c-sub">last commit</th>
-<th class="c-who">author</th>
-<th class="c-when">date</th>
-</tr>
-</thead>
-<tbody id="tree-rows" data-rows hx-on:click="ermiteTree.click(event)">
-<tr data-cursor>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">▸</td>
-<td class="c-name">
-<a href="/files/tree/main/docs" data-expand="/files/tree/main/docs?rows" aria-expanded="false">docs/</a>
-</td>
-<td class="c-size num dim">-</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add docs/guide.md</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+<div id="tree-view" class="tree-card">
+<div class="tree-head">
+<span class="tree-path">/</span>
+<span class="tree-count">15 entries</span>
+</div>
+<ul id="tree-rows" class="tree" role="tree" aria-label="Entries" data-rows data-tree hx-on:click="ermiteTree.click(event)">
+<li role="treeitem" aria-level="1" aria-posinset="1" aria-setsize="15" data-kind="dir" data-depth="0" data-cursor data-expand="/files/tree/main/docs?rows" aria-expanded="false">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/tree/main/docs" title="directory">docs/</a>
+<span class="sr"> (directory)</span>
+</span>
+<span class="t-size">
+</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add docs/guide.md</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">▸</td>
-<td class="c-name">
-<a href="/files/tree/main/src" data-expand="/files/tree/main/src?rows" aria-expanded="false">src/</a>
-</td>
-<td class="c-size num dim">-</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add src/lib/util.go</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="2" aria-setsize="15" data-kind="dir" data-depth="0" data-expand="/files/tree/main/src?rows" aria-expanded="false">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/tree/main/src" title="directory">src/</a>
+<span class="sr"> (directory)</span>
+</span>
+<span class="t-size">
+</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add src/lib/util.go</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/README.md">README.md</a>
-</td>
-<td class="c-size num dim">41 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add README.md</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="3" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/README.md">README.md</a>
+</span>
+<span class="t-size">41 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add README.md</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/big.txt">big.txt</a>
-</td>
-<td class="c-size num dim">1.1 MiB</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add big.txt</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="4" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/big.txt">big.txt</a>
+</span>
+<span class="t-size">1.1 MiB</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add big.txt</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/data.bin">data.bin</a>
-</td>
-<td class="c-size num dim">10 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add data.bin</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="5" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/data.bin">data.bin</a>
+</span>
+<span class="t-size">10 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add data.bin</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/empty.txt">empty.txt</a>
-</td>
-<td class="c-size num dim">0 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add empty.txt</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="6" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/empty.txt">empty.txt</a>
+</span>
+<span class="t-size">0 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add empty.txt</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/evil.go">evil.go</a>
-</td>
-<td class="c-size num dim">87 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add evil.go</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="7" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/evil.go">evil.go</a>
+</span>
+<span class="t-size">87 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add evil.go</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/fake.jpg">fake.jpg</a>
-</td>
-<td class="c-size num dim">15 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add fake.jpg</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="8" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/fake.jpg">fake.jpg</a>
+</span>
+<span class="t-size">15 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add fake.jpg</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/fake.png">fake.png</a>
-</td>
-<td class="c-size num dim">39 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add fake.png</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="9" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/fake.png">fake.png</a>
+</span>
+<span class="t-size">39 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add fake.png</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/lines.txt">lines.txt</a>
-</td>
-<td class="c-size num dim">39.1 KiB</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add lines.txt</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="10" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/lines.txt">lines.txt</a>
+</span>
+<span class="t-size">39.1 KiB</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add lines.txt</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/logo.svg">logo.svg</a>
-</td>
-<td class="c-size num dim">89 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add logo.svg</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="11" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/logo.svg">logo.svg</a>
+</span>
+<span class="t-size">89 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add logo.svg</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/main.go">main.go</a>
-</td>
-<td class="c-size num dim">87 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add main.go</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="12" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/main.go">main.go</a>
+</span>
+<span class="t-size">87 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add main.go</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/notes.txt">notes.txt</a>
-</td>
-<td class="c-size num dim">24 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add notes.txt</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="13" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/notes.txt">notes.txt</a>
+</span>
+<span class="t-size">24 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add notes.txt</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/page.html">page.html</a>
-</td>
-<td class="c-size num dim">26 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add page.html</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="14" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/page.html">page.html</a>
+</span>
+<span class="t-size">26 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add page.html</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-<tr>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/pic.png">pic.png</a>
-</td>
-<td class="c-size num dim">88 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add pic.png</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+</span>
+</li>
+<li role="treeitem" aria-level="1" aria-posinset="15" aria-setsize="15" data-kind="file" data-depth="0">
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/pic.png">pic.png</a>
+</span>
+<span class="t-size">88 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add pic.png</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-</tbody>
-</table>
-<section class="card readme" aria-labelledby="readme-h">
-<h2 class="card-h" id="readme-h">
-<span class="ico i-file" aria-hidden="true">
-</span> README.md</h2>
-<article class="prose" aria-label="README.md" hx-ignore>
-<h1 id="md-files">Files</h1>
-<p>See <a href="/files/blob/main/docs/guide.md">the guide</a>.</p>
-</article>
-</section>
+</span>
+</li>
+</ul>
 </div>
 </main>
 </div>
@@ -421,14 +410,25 @@
 <dt>
 <kbd>enter</kbd>
 </dt>
-<dd>open the row under the cursor</dd>
+<dd>open the row under the cursor; on Files, a directory opens or closes in place</dd>
+</div>
+<div>
+<dt>
+<kbd>↑</kbd>
+<kbd>↓</kbd>
+<kbd>←</kbd>
+<kbd>→</kbd>
+<kbd>home</kbd>
+<kbd>end</kbd>
+</dt>
+<dd>in the file tree (focus on a row): previous / next row, close / open a directory or go to its parent / first entry, first / last row. They never open a file</dd>
 </div>
 <div>
 <dt>
 <kbd>l</kbd>
 <kbd>h</kbd>
 </dt>
-<dd>into the side panel (on a merge request, its files) / back to the content; there j k move between its controls</dd>
+<dd>on Files: open a directory or a file / close a directory or go up to its parent, then to the parent page. Elsewhere: into the side panel (on a merge request, its files) / back to the content; there j k move between its controls</dd>
 </div>
 <div>
 <dt>
@@ -441,7 +441,7 @@
 <dt>
 <kbd>/</kbd>
 </dt>
-<dd>filter the list; on Files, find a file in the repository</dd>
+<dd>filter the list; on Files, find a file anywhere in the repository (esc clears, enter opens the best match)</dd>
 </div>
 <div>
 <dt>

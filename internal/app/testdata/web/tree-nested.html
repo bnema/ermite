@@ -102,50 +102,45 @@
 </header>
 <div class="work">
 <main id="main" tabindex="-1">
-<div class="filter">
+<div class="tree-find">
+<div class="filter wide">
 <label for="finder-q" class="sr">find a file</label>
-<input id="finder-q" type="search" data-filter role="combobox" aria-autocomplete="list" aria-controls="finder-list" aria-expanded="false" placeholder="Find a file…" autocomplete="off" spellcheck="false" hx-on:focus="ermiteFinder.load()" hx-on:input="ermiteFinder.input(this)" hx-on:keydown="ermiteFinder.key(this, event)">
+<input id="finder-q" type="search" data-filter role="combobox" aria-autocomplete="list" aria-controls="finder-list" aria-expanded="false" placeholder="Find a file in this repository…" autocomplete="off" spellcheck="false" hx-on:focus="ermiteFinder.load()" hx-on:input="ermiteFinder.input(this)" hx-on:keydown="ermiteFinder.key(this, event)">
 </div>
-<div id="finder" hidden>
+<p class="tree-keys" data-js aria-hidden="true">
+<kbd>j</kbd>
+<kbd>k</kbd> move · <kbd>l</kbd> open · <kbd>h</kbd> back</p>
+</div>
+<div id="finder" class="tree-card" hidden>
 <p id="finder-status" class="dim" aria-live="polite">
 </p>
 <ul id="finder-list" class="cmd-list" role="listbox" aria-label="Files">
 </ul>
 </div>
-<div id="tree-view">
-<table class="list tree" aria-label="Entries">
-<thead>
-<tr>
-<th class="cur">
-</th>
-<th class="c-kind">
-</th>
-<th class="c-name">name</th>
-<th class="c-size">size</th>
-<th class="c-sub">last commit</th>
-<th class="c-who">author</th>
-<th class="c-when">date</th>
-</tr>
-</thead>
-<tbody id="tree-rows" data-rows hx-on:click="ermiteTree.click(event)">
-<tr data-cursor>
-<td class="cur" aria-hidden="true">
-</td>
-<td class="c-kind" aria-hidden="true">·</td>
-<td class="c-name">
-<a href="/files/blob/main/src/lib/util.go">util.go</a>
-</td>
-<td class="c-size num dim">12 B</td>
-<td class="c-sub dim">
-<a href="/files/commit/SHA40">add src/lib/util.go</a>
-</td>
-<td class="c-who dim">T</td>
-<td class="c-when nowrap dim">
+<div id="tree-view" class="tree-card">
+<div class="tree-head">
+<span class="tree-path">src/lib/</span>
+<a class="tree-up" href="/files/tree/main/src" title="parent directory (h)">..</a>
+<span class="tree-count">1 entry</span>
+</div>
+<ul id="tree-rows" class="tree" role="tree" aria-label="Entries" data-rows data-tree data-up="/files/tree/main/src" hx-on:click="ermiteTree.click(event)">
+<li role="treeitem" aria-level="1" aria-posinset="1" aria-setsize="1" data-kind="file" data-depth="0" data-cursor>
+<span class="t-main">
+<span class="t-twig" aria-hidden="true">
+</span>
+<span class="t-node" aria-hidden="true">
+</span>
+<a class="t-name" href="/files/blob/main/src/lib/util.go">util.go</a>
+</span>
+<span class="t-size">12 B</span>
+<span class="t-sub">
+<a class="t-commit" href="/files/commit/SHA40" title="T">add src/lib/util.go</a>
+</span>
+<span class="t-when">
 <time datetime="STAMP" title="STAMP">AGO</time>
-</td>
-</tr>
-</tbody>
-</table>
+</span>
+</li>
+</ul>
 </div>
 </main>
 </div>
@@ -194,14 +189,25 @@
 <dt>
 <kbd>enter</kbd>
 </dt>
-<dd>open the row under the cursor</dd>
+<dd>open the row under the cursor; on Files, a directory opens or closes in place</dd>
+</div>
+<div>
+<dt>
+<kbd>↑</kbd>
+<kbd>↓</kbd>
+<kbd>←</kbd>
+<kbd>→</kbd>
+<kbd>home</kbd>
+<kbd>end</kbd>
+</dt>
+<dd>in the file tree (focus on a row): previous / next row, close / open a directory or go to its parent / first entry, first / last row. They never open a file</dd>
 </div>
 <div>
 <dt>
 <kbd>l</kbd>
 <kbd>h</kbd>
 </dt>
-<dd>into the side panel (on a merge request, its files) / back to the content; there j k move between its controls</dd>
+<dd>on Files: open a directory or a file / close a directory or go up to its parent, then to the parent page. Elsewhere: into the side panel (on a merge request, its files) / back to the content; there j k move between its controls</dd>
 </div>
 <div>
 <dt>
@@ -214,7 +220,7 @@
 <dt>
 <kbd>/</kbd>
 </dt>
-<dd>filter the list; on Files, find a file in the repository</dd>
+<dd>filter the list; on Files, find a file anywhere in the repository (esc clears, enter opens the best match)</dd>
 </div>
 <div>
 <dt>

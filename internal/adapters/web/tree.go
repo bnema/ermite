@@ -5,20 +5,33 @@ package web
 import (
 	"context"
 	"net/http"
+	"path"
 
 	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/domain"
 )
 
+// Entry kinds of a TreeRow; the stylesheet draws the node of a row by its kind.
+const (
+	kindDir    = "dir"
+	kindFile   = "file"
+	kindLink   = "link"
+	kindModule = "module"
+)
+
 // TreeRow is one entry of a directory.
 type TreeRow struct {
-	Glyph string // ▸ directory, @ symbolic link, + submodule, · file
-	Name  string
-	Href  string // "" for a submodule
+	Kind string // kindDir, kindFile, kindLink or kindModule
+	Name string
+	Href string // "" for a submodule
 	// Expand is the URL of the rows of a directory (Href?rows); "" for any
 	// other entry.
-	Expand  string
+	Expand string
+	// Hint says what a directory, a link or a submodule is, in words, for the
+	// screen reader (the node drawn for it is aria-hidden) and the tooltip; ""
+	// for a file.
+	Hint    string
 	Size    string
 	Subject string
 	CHref   string
@@ -26,21 +39,39 @@ type TreeRow struct {
 	When    string
 	WhenAt  string
 	Cursor  bool
+	// Pos and Set are the aria-posinset and aria-setsize of the row among the
+	// entries of its directory; Set is -1 when the listing is cut, as the
+	// directory has more entries than are listed.
+	Pos, Set int
 }
 
 // TreePage is a directory.
 type TreePage struct {
-	Rows   []TreeRow
-	Readme *Readme
+	Rows []TreeRow
+	// Path is the directory, "/" for the root.
+	Path string
+	// Up is the page of the parent directory, "" at the root: the h key of the
+	// tree goes there from a top-level entry.
+	Up string
 	// Notes say what the listing leaves out.
 	Notes []string
 	// More, for the rows of a directory expanded in place, is the page of the
 	// directory when it has more entries than are listed; "" otherwise.
 	More string
+	// MorePos is the position of the row that says there are more.
+	MorePos int
 }
 
-// tree lists a directory of a ref, with the last commit of each entry, and
-// renders the README of the directory below.
+// Unit is the noun of the entry count in the head of the tree.
+func (p TreePage) Unit() string {
+	if len(p.Rows) == 1 {
+		return "entry"
+	}
+	return "entries"
+}
+
+// tree lists a directory of a ref, with the last commit of each entry. With
+// ?rows it answers the entries alone, for a directory opened in place.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter builds the directory page from the use case results; no rule is decided here
 func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, int, error) {
@@ -60,19 +91,22 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	now := s.cfg.Now()
 
 	rowsOnly := r.URL.Query().Has("rows")
-	p := TreePage{}
+	p := TreePage{Path: "/"}
+	if t.path != "" {
+		p.Path = visibleText(t.path) + "/"
+	}
 	for i, e := range entries {
-		row := TreeRow{Glyph: "·", Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0 && !rowsOnly}
+		row := TreeRow{Kind: kindFile, Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0 && !rowsOnly}
 		switch e.Kind {
 		case domain.EntryDirectory:
-			row.Glyph, row.Name, row.Size = "▸", row.Name+"/", "-"
+			row.Kind, row.Hint, row.Name, row.Size = kindDir, "directory", row.Name+"/", ""
 			row.Href = repoHref(d.name(), "tree", t.name, e.Path)
 			row.Expand = row.Href + "?rows"
 		case domain.EntrySymlink:
-			row.Glyph = "@"
+			row.Kind, row.Hint = kindLink, "symbolic link"
 			row.Href = repoHref(d.name(), "blob", t.name, e.Path)
 		case domain.EntrySubmodule:
-			row.Glyph, row.Size = "+", "-"
+			row.Kind, row.Hint, row.Size = kindModule, "submodule", ""
 		default:
 			row.Href = repoHref(d.name(), "blob", t.name, e.Path)
 		}
@@ -82,10 +116,16 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 		}
 		p.Rows = append(p.Rows, row)
 	}
+	for i := range p.Rows {
+		p.Rows[i].Pos, p.Rows[i].Set = i+1, len(p.Rows)
+		if res.Truncated {
+			p.Rows[i].Set = -1
+		}
+	}
 	if rowsOnly {
 		// The rows alone, for a directory opened in place (files.js).
 		if res.Truncated {
-			p.More = repoHref(d.name(), "tree", t.name, t.path)
+			p.More, p.MorePos = repoHref(d.name(), "tree", t.name, t.path), len(p.Rows)+1
 		}
 		return TreeRows(p), http.StatusOK, nil
 	}
@@ -95,12 +135,12 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 	if res.LastCommitsOmitted {
 		p.Notes = append(p.Notes, "the last commit is shown for the first entries only.")
 	}
-	rd, err := s.readmeIn(ctx, d.repo.Name, res.CommitID.String(), t.name, t.path, entries)
-	if err != nil {
-		return nil, 0, err
-	}
-	if rd != nil {
-		p.Readme = rd.readme
+	if t.path != "" {
+		up := path.Dir(t.path)
+		if up == "." {
+			up = ""
+		}
+		p.Up = repoHref(d.name(), "tree", t.name, up)
 	}
 
 	l := s.repoLayout(ctx, d, "tree")

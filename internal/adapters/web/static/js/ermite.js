@@ -62,6 +62,7 @@
       const j = Math.max(0, Math.min(rows.length - 1, i + d));
       setCursor(rows[j], $$('[data-rows] > [data-cursor]'));
       rows[j].scrollIntoView({ block: 'nearest' });
+      window.ermiteTree?.sync(rows[j]);
       const mark = j + 1 + '/' + rows.length;
       body().dataset.nav = mark;
       setTimeout(() => body().dataset.nav === mark && (body().dataset.nav = ''), 1500);
@@ -73,15 +74,19 @@
       if (!row) return scrollPage(last ? 1e9 : 0);
       setCursor(row, $$('[data-rows] > [data-cursor]'));
       row.scrollIntoView({ block: 'nearest' });
+      window.ermiteTree?.sync(row);
     },
     open() {
-      if (!$('dialog[open]')) $('[data-cursor] a')?.click();
+      if ($('dialog[open]') || window.ermiteTree?.open()) return;
+      $('[data-cursor] a')?.click();
     },
-    // l / h: into the side panel (the current file of a merge request, else
-    // its main action, else its first control) and back to the content.
-    // Enter then activates the control.
+    // l / h: in the Files view, open a directory or a file / close a directory
+    // or go up. Elsewhere: into the side panel (the current file of a merge
+    // request, else its main action, else its first control) and back to the
+    // content. Enter then activates the control.
     rail(into) {
       if ($('dialog[open]')) return;
+      if (window.ermiteTree?.key(into)) return;
       if (into && window.ermiteMR?.focusFiles()) return flash('files · j k move · enter open · h back');
       if (!into && window.ermiteMR?.leaveFiles()) return;
       const msg = into ? window.ermiteRail.enter() : window.ermiteRail.leave();
@@ -425,6 +430,10 @@
       return;
     }
     if (e.key === 'g') { pending = 1; clearTimeout(pendingTimer); pendingTimer = setTimeout(() => (pending = 0), 1200); return; }
+    // The arrows and Home / End are the tree's only while the focus is on one of
+    // its rows (they scroll, or move the focus, anywhere else); j k l h are
+    // page-level keys, as on the other lists.
+    if (!e.shiftKey && e.target.closest?.('#tree-rows') && window.ermiteTree?.arrow(e.key)) { e.preventDefault(); return; }
     const name = single[e.key];
     if (!name) return;
     if (e.key !== 'Enter' || !$('dialog[open]')) e.preventDefault();

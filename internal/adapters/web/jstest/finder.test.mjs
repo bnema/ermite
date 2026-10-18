@@ -30,13 +30,13 @@ globalThis.fetch = async () => {
 };
 
 // page builds the parts of the Files view and of the palette that files.js
-// reaches, around a query field and a tree of three rows.
+// reaches, around a query field and a tree of three rows (li).
 function page() {
-  const rows = ['r1', 'r2', 'r3'].map((n) => el('tr', { attrs: { 'data-nm': n } }));
+  const rows = ['r1', 'r2', 'r3'].map((n) => el('li', { attrs: { 'data-nm': n } }));
   rows[1].setAttribute('data-cursor', '');
   const q = el('input', { id: 'finder-q' });
   const cmdQ = el('input', { id: 'cmd-q' });
-  const treeRows = el('tbody', { id: 'tree-rows', attrs: { 'data-rows': '' } }, ...rows);
+  const treeRows = el('ul', { id: 'tree-rows', attrs: { 'data-rows': '' } }, ...rows);
   const finderList = el('ul', { id: 'finder-list' });
   const cmdList = el('ul', { id: 'cmd-list' }, el('li', { attrs: { 'data-k': 'section' }, cls: 'entry' }));
   const finder = el('div', { id: 'finder', hidden: true }, el('p', { id: 'finder-status' }), finderList);

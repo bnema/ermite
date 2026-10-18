@@ -1,98 +1,263 @@
-// files.js: the Files view. A directory opens in place: its entries are
-// fetched once as table rows (the tree page with ?rows), inserted under it
-// and kept in the DOM, so closing and opening it again needs no request.
+// files.js: the Files view. The entries of a directory are the rows of a tree
+// (li, flat in one ul, each with its depth). A directory opens in place: its
+// entries are fetched once as rows (the tree page with ?rows), inserted under
+// it and kept in the DOM, so closing and opening it again needs no request.
 //
-// Rows opened in place carry data-depth and the --depth custom property
-// (set through the CSSOM: the CSP forbids style attributes). Rows of the
-// page itself have depth 0. Nothing here touches the document at load; the
-// handlers are declared in the templates (hx-on:click on #tree-rows).
+// Rows opened in place carry data-depth, aria-level and the --depth custom
+// property (set through the CSSOM: the CSP forbids style attributes), which
+// the stylesheet turns into indentation guides. Rows of the page itself have
+// depth 0.
+//
+// Focus model: a roving tabindex on the rows. The row under the cursor
+// (data-cursor) is the only one in the tab order (tabindex 0) and it has the
+// DOM focus whenever the keyboard or a click moved the cursor, so j k l h, the
+// arrows, Enter and Tab all act on the row that is highlighted. The name link
+// of a row is out of the tab order (the row stands for it: Enter opens it);
+// the link to the last commit is tabbable only in the row under the cursor
+// (Tab from the row reaches it, the next Tab leaves the tree). Without
+// scripts nothing is taken out of the tab order. The handlers are declared in
+// the templates (hx-on:click on #tree-rows); init() runs once at load (a page
+// without a tree: nothing); ermite.js calls ermiteTree.key and open for h, l
+// and Enter, and ermiteTree.sync for the cursor moves of j k gg G.
 window.ermiteTree = (() => {
-  const depthOf = (tr) => Number(tr.dataset.depth || 0);
-  const linkOf = (tr) => tr.querySelector('a[data-expand]');
-  const isOpen = (a) => a.getAttribute('aria-expanded') === 'true';
+  const depthOf = (li) => Number(li.dataset.depth || 0);
+  const isDir = (li) => li.hasAttribute('data-expand');
+  const isOpen = (li) => li.getAttribute('aria-expanded') === 'true';
   // A directory is loaded when rows deeper than it follow it.
-  const isLoaded = (tr) => { const n = tr.nextElementSibling; return !!n && depthOf(n) > depthOf(tr); };
+  const isLoaded = (li) => { const n = li.nextElementSibling; return !!n && depthOf(n) > depthOf(li); };
+  const nameLink = (li) => li.querySelector('a.t-name');
 
-  function setOpen(tr, a, open) {
-    a.setAttribute('aria-expanded', open ? 'true' : 'false');
-    const kind = tr.querySelector('.c-kind');
-    if (kind) kind.textContent = open ? '▾' : '▸';
+  // tab puts a row in or out of the tab order, with its link to the last commit.
+  function tab(li, on) {
+    li.setAttribute('tabindex', on ? '0' : '-1');
+    for (const a of li.querySelectorAll('a.t-commit')) a.setAttribute('tabindex', on ? '0' : '-1');
   }
 
-  // collapse hides every row under tr. The cursor of a row it hides moves to
-  // tr, so it never rests on a row that cannot be seen.
-  function collapse(tr, a) {
-    setOpen(tr, a, false);
-    const d = depthOf(tr);
-    for (let r = tr.nextElementSibling; r && depthOf(r) > d; r = r.nextElementSibling) {
-      r.hidden = true;
-      if (r.hasAttribute('data-cursor')) {
-        r.removeAttribute('data-cursor');
-        tr.setAttribute('data-cursor', '');
-      }
+  // prep takes a row out of the tab order: the one under the cursor comes back.
+  function prep(li) {
+    tab(li, false);
+    nameLink(li)?.setAttribute('tabindex', '-1');
+  }
+
+  // mark makes li the row under the cursor, the one stop of the tab order,
+  // and with focus gives it the DOM focus (without scrolling: the caller does).
+  function mark(li, focus) {
+    for (const r of Array.from(li.parentElement.children)) {
+      if (r === li || !(r.hasAttribute('data-cursor') || r.getAttribute('tabindex') === '0')) continue;
+      r.removeAttribute('data-cursor');
+      tab(r, false);
     }
+    li.setAttribute('data-cursor', '');
+    tab(li, true);
+    if (focus) li.focus({ preventScroll: true });
   }
 
-  // expand shows the rows under tr that no collapsed directory between hides.
-  function expand(tr, a) {
-    setOpen(tr, a, true);
-    const d = depthOf(tr);
+  // setCursor moves the cursor, and so the focus, to li, and shows it.
+  function setCursor(li) {
+    mark(li, true);
+    li.scrollIntoView({ block: 'nearest' });
+  }
+
+  // collapse hides every row under li. The cursor, and the focus, of a row it
+  // hides move to li, so they never rest on a row that cannot be seen.
+  function collapse(li) {
+    li.setAttribute('aria-expanded', 'false');
+    const d = depthOf(li);
+    let lostCursor = false;
+    let lostFocus = false;
+    for (let r = li.nextElementSibling; r && depthOf(r) > d; r = r.nextElementSibling) {
+      r.hidden = true;
+      if (r.hasAttribute('data-cursor')) lostCursor = true;
+      if (r.contains(document.activeElement)) lostFocus = true;
+    }
+    if (lostCursor || lostFocus) mark(li, lostFocus);
+  }
+
+  // expand shows the rows under li that no collapsed directory between hides.
+  function expand(li) {
+    li.setAttribute('aria-expanded', 'true');
+    const d = depthOf(li);
     let closedAt = Infinity; // depth of the collapsed directory whose rows are skipped
-    for (let r = tr.nextElementSibling; r && depthOf(r) > d; r = r.nextElementSibling) {
+    for (let r = li.nextElementSibling; r && depthOf(r) > d; r = r.nextElementSibling) {
       const rd = depthOf(r);
       if (rd <= closedAt) closedAt = Infinity;
       r.hidden = rd > closedAt;
-      const la = linkOf(r);
-      if (closedAt === Infinity && la && !isOpen(la)) closedAt = rd;
+      if (closedAt === Infinity && isDir(r) && !isOpen(r)) closedAt = rd;
     }
   }
 
-  async function load(tr, a) {
-    tr.setAttribute('aria-busy', 'true');
+  async function load(li) {
+    li.setAttribute('aria-busy', 'true');
     try {
-      const res = await fetch(a.dataset.expand, { headers: { Accept: 'text/html' } });
+      const res = await fetch(li.dataset.expand, { headers: { Accept: 'text/html' } });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const t = document.createElement('template');
       t.innerHTML = await res.text();
-      const d = depthOf(tr) + 1;
-      const rows = Array.from(t.content.children).filter((r) => r.tagName === 'TR');
+      const d = depthOf(li) + 1;
+      const rows = Array.from(t.content.children).filter((r) => r.tagName === 'LI');
       if (!rows.length) throw new Error('no rows');
-      // An ancestor closed while the request was out: tr is hidden, and its
+      // An ancestor closed while the request was out: li is hidden, and its
       // rows come in hidden, for the expand of that ancestor to show.
-      const covered = tr.hidden;
+      const covered = li.hidden;
       for (const r of rows) {
         r.dataset.depth = String(d);
+        r.setAttribute('aria-level', String(d + 1));
         r.style.setProperty('--depth', String(d));
+        prep(r);
         if (covered) r.hidden = true;
       }
-      tr.after(...rows);
-      tr.removeAttribute('aria-busy');
-      if (covered) setOpen(tr, a, true);
-      else expand(tr, a);
+      li.after(...rows);
+      li.removeAttribute('aria-busy');
+      if (covered) li.setAttribute('aria-expanded', 'true');
+      else expand(li);
     } catch (e) {
-      location.href = a.href;
+      location.href = nameLink(li).href;
     }
   }
 
-  function toggle(tr) {
-    const a = linkOf(tr);
-    if (!a || tr.getAttribute('aria-busy') === 'true') return;
-    if (isOpen(a)) collapse(tr, a);
-    else if (isLoaded(tr)) expand(tr, a);
-    else load(tr, a);
+  function toggle(li) {
+    if (!isDir(li) || li.getAttribute('aria-busy') === 'true') return;
+    if (isOpen(li)) collapse(li);
+    else if (isLoaded(li)) expand(li);
+    else load(li);
+  }
+
+  const rowsEl = () => document.getElementById('tree-rows');
+  const cursorRow = () => rowsEl()?.querySelector(':scope > [data-cursor]') ?? null;
+  const flash = (m) => window.ermite?.flash?.(m);
+
+  // parentOf is the visible row of the directory that holds li: the closest
+  // row above it that is less deep.
+  function parentOf(li) {
+    const d = depthOf(li);
+    for (let r = li.previousElementSibling; r; r = r.previousElementSibling) if (depthOf(r) < d) return r;
+    return null;
   }
 
   return {
-    // click opens or closes the directory under a plain left click; any
-    // modified or other click keeps the link's own navigation.
+    // click puts the cursor and the focus on the row under any click, and
+    // opens or closes the directory under a plain left click on its name or its
+    // node; any modified or other click, and a click on the last commit, keep
+    // their own navigation.
     click(event) {
-      const a = event.target.closest('a[data-expand]');
-      if (!a || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const li = event.target.closest('li');
+      if (!li || !li.parentElement) return;
+      mark(li, true);
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      if (!event.target.closest('.t-main') || !isDir(li)) return;
       event.preventDefault();
-      toggle(a.closest('tr'));
+      toggle(li);
+    },
+
+    // init takes the rows out of the tab order but the one under the cursor
+    // (the first when none has it). It runs once the page has loaded, and
+    // not at all without a tree.
+    init() {
+      const rows = typeof document === 'undefined' ? null : rowsEl();
+      if (!rows) return;
+      const lis = Array.from(rows.children);
+      for (const li of lis) prep(li);
+      const cur = cursorRow() ?? lis[0];
+      if (cur) mark(cur, false);
+    },
+
+    // sync follows a cursor that ermite.js moved (j k gg G): the focus goes
+    // with it, and the tab stop.
+    sync(li) {
+      if (li.parentElement && li.parentElement.id === 'tree-rows') mark(li, true);
+    },
+
+    // mark is for the finder, which takes the cursor away and gives it back.
+    mark(li) { mark(li, false); },
+
+    // active says that h and l (and the arrows) walk the tree: it is shown,
+    // not replaced by the results of the finder.
+    active() {
+      const rows = rowsEl();
+      return !!rows && rows.hasAttribute('data-rows');
+    },
+
+    // open is Enter on the row under the cursor: a directory opens or closes
+    // in place, a file opens. It answers whether the tree took the key.
+    open() {
+      const li = this.active() && cursorRow();
+      if (!li) return false;
+      if (isDir(li)) toggle(li);
+      else if (nameLink(li)) nameLink(li).click();
+      else flash('a submodule has no page here');
+      return true;
+    },
+
+    // arrow is a key of the tree pattern (WAI-ARIA APG Tree View) pressed with
+    // the focus on a row: it only moves the focus or the expansion, and never
+    // opens a file or leaves the page. It answers whether the key is one the
+    // tree handles (the caller then keeps the browser from scrolling).
+    //  Down, Up: the next, the previous visible row. Home, End: the first, the last.
+    //  Right: a closed directory opens, an open one moves to its first entry, a
+    //         file does nothing.
+    //  Left:  an open directory closes, any other row moves to its directory,
+    //         and a top-level row does nothing.
+    arrow(key) {
+      if (!this.active()) return false;
+      const li = cursorRow();
+      if (!li) return false;
+      const rows = Array.from(li.parentElement.children).filter((r) => !r.hidden);
+      const i = rows.indexOf(li);
+      switch (key) {
+        case 'ArrowDown': if (rows[i + 1]) setCursor(rows[i + 1]); break;
+        case 'ArrowUp': if (i > 0) setCursor(rows[i - 1]); break;
+        case 'Home': if (rows[0]) setCursor(rows[0]); break;
+        case 'End': if (rows.length) setCursor(rows[rows.length - 1]); break;
+        case 'ArrowRight':
+          if (!isDir(li)) break;
+          if (!isOpen(li)) toggle(li);
+          else if (rows[i + 1] && depthOf(rows[i + 1]) > depthOf(li)) setCursor(rows[i + 1]);
+          break;
+        case 'ArrowLeft':
+          if (isDir(li) && isOpen(li)) collapse(li);
+          else if (parentOf(li)) setCursor(parentOf(li));
+          break;
+        default: return false;
+      }
+      return true;
+    },
+
+    // key is l (into = true) or h on the row under the cursor, the Vim keys
+    // with their richer behaviour; it answers whether the tree took the key.
+    //  l: a closed directory opens, an open one moves to its first entry, a
+    //     file is opened.
+    //  h: an open directory closes, any other row goes to its directory, and a
+    //     top-level row to the parent directory's page.
+    key(into) {
+      if (!this.active()) return false;
+      const li = cursorRow();
+      if (!li) return false;
+      if (into) {
+        if (isDir(li)) {
+          if (!isOpen(li)) return toggle(li), true;
+          const n = li.nextElementSibling;
+          if (n && !n.hidden && depthOf(n) > depthOf(li)) setCursor(n);
+          return true;
+        }
+        const a = nameLink(li);
+        if (a) a.click();
+        else flash('a submodule has no page here');
+        return true;
+      }
+      if (isDir(li) && isOpen(li)) {
+        collapse(li);
+        return true;
+      }
+      const up = parentOf(li);
+      if (up) setCursor(up);
+      else if (rowsEl().dataset.up) location.href = rowsEl().dataset.up;
+      else flash('top of the tree');
+      return true;
     },
   };
 })();
+
+window.ermiteTree.init();
 
 // ermiteFinder: the fuzzy finder of the Files view and the file hits of the
 // ":" palette. The core (index, search, positions, visible) is pure and runs
@@ -522,9 +687,9 @@ window.ermiteFinder = (() => {
     rows.setAttribute('data-rows', '');
     const keep = treeCursor;
     treeCursor = null;
-    if (!rows.querySelector(':scope > tr[data-cursor]')) {
-      const row = keep && keep.parentElement === rows && !keep.hidden ? keep : rows.querySelector(':scope > tr:not([hidden])');
-      row?.setAttribute('data-cursor', '');
+    if (!rows.querySelector(':scope > [data-cursor]')) {
+      const row = keep && keep.parentElement === rows && !keep.hidden ? keep : rows.querySelector(':scope > li:not([hidden])');
+      if (row) window.ermiteTree.mark(row);
     }
   }
 
@@ -535,7 +700,7 @@ window.ermiteFinder = (() => {
     el.setAttribute('aria-expanded', 'true');
     const rows = $('tree-rows');
     rows.removeAttribute('data-rows');
-    rows.querySelectorAll(':scope > tr[data-cursor]').forEach((r) => {
+    rows.querySelectorAll(':scope > [data-cursor]').forEach((r) => {
       treeCursor = r;
       r.removeAttribute('data-cursor');
     });

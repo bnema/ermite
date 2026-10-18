@@ -116,7 +116,15 @@ func TestWebTreeRows(t *testing.T) {
 
 	// The page links its directories to their rows.
 	_, _, page := h.get("/files/tree/main")
-	assert.Contains(t, page, `href="/files/tree/main/docs" data-expand="/files/tree/main/docs?rows" aria-expanded="false"`)
+	assert.Contains(t, page, `data-expand="/files/tree/main/docs?rows" aria-expanded="false"`)
+	assert.Contains(t, page, `<a class="t-name" href="/files/tree/main/docs" title="directory">docs/</a>`)
+	// Every row says its place among the entries of its own directory.
+	assert.Contains(t, page, `aria-level="1" aria-posinset="1" aria-setsize="15" data-kind="dir"`)
+	assert.Contains(t, page, `aria-posinset="15" aria-setsize="15" data-kind="file"`)
+	assert.Equal(t, 15, strings.Count(page, `role="treeitem"`))
+	assert.Contains(t, page, `<a class="t-commit" href="/files/commit/`)
+	assert.NotContains(t, page, "<h1", "no README below the tree: the summary shows it")
+	assert.NotContains(t, page, "See the guide")
 	assert.Contains(t, page, `<script src="/-/static/js/files.`)
 	assert.NotContains(t, page, "main.go</span>", "the palette lists no file")
 
@@ -126,16 +134,19 @@ func TestWebTreeRows(t *testing.T) {
 	assert.Contains(t, hdr.Get("Content-Type"), "text/html")
 	assert.NotContains(t, body, "<html")
 	assert.NotContains(t, body, "<table")
-	assert.Equal(t, 2, strings.Count(body, "<tr"), "one row per entry")
-	assert.Contains(t, body, `<a href="/files/blob/main/docs/README.md">README.md</a>`)
-	assert.Contains(t, body, `<a href="/files/blob/main/docs/guide.md">guide.md</a>`)
+	assert.NotContains(t, body, "<ul")
+	assert.Equal(t, 2, strings.Count(body, "<li"), "one row per entry")
+	assert.Contains(t, body, `aria-posinset="1" aria-setsize="2"`)
+	assert.Contains(t, body, `aria-posinset="2" aria-setsize="2"`, "positions count the entries of the directory itself")
+	assert.Contains(t, body, `<a class="t-name" href="/files/blob/main/docs/README.md">README.md</a>`)
+	assert.Contains(t, body, `<a class="t-name" href="/files/blob/main/docs/guide.md">guide.md</a>`)
 	assert.NotContains(t, body, "data-cursor", "the cursor stays on the page")
 	assertNoInline(t, body)
 
 	// A subdirectory row can be opened in turn.
 	_, _, body = h.get("/files/tree/main/src?rows")
-	assert.Contains(t, body, `href="/files/tree/main/src/lib" data-expand="/files/tree/main/src/lib?rows" aria-expanded="false"`)
-	assert.Contains(t, body, "▸")
+	assert.Contains(t, body, `data-expand="/files/tree/main/src/lib?rows" aria-expanded="false"`)
+	assert.Contains(t, body, `data-kind="dir"`)
 	_, _, body = h.get("/files/tree/main/src/lib?rows")
 	assert.Contains(t, body, `href="/files/blob/main/src/lib/util.go"`)
 	assert.NotContains(t, body, "data-expand")
@@ -169,13 +180,68 @@ func TestWebTreeRowsTruncated(t *testing.T) {
 
 	status, _, body := h.get("/wide/tree/main/many?rows")
 	require.Equal(t, 200, status)
-	assert.Equal(t, domain.MaxTreeEntries+1, strings.Count(body, "<tr"), "the listed entries and the row that says there are more")
-	assert.Contains(t, body, `<tr class="tree-more"><td colspan="7"><a href="/wide/tree/main/many">more entries: open the directory</a></td></tr>`)
+	assert.Equal(t, domain.MaxTreeEntries+1, strings.Count(body, "<li"), "the listed entries and the row that says there are more")
+	assert.Contains(t, body, `<a class="t-name" href="/wide/tree/main/many">more entries: open the directory</a>`)
 	assert.Equal(t, 1, strings.Count(body, "tree-more"))
+	// The listing is cut: the size is unknown (-1), and the row that says so is the next position.
+	assert.Equal(t, domain.MaxTreeEntries, strings.Count(body, `aria-setsize="-1" data-kind=`))
+	assert.Contains(t, body, `aria-posinset="1" aria-setsize="-1" data-kind="file"`)
+	assert.Contains(t, body, fmt.Sprintf(`class="tree-more" role="treeitem" aria-level="1" aria-posinset="%d" aria-setsize="-1"`, domain.MaxTreeEntries+1))
 
 	// A directory that fits has no such row.
 	_, _, body = h.get("/wide/tree?rows")
 	assert.NotContains(t, body, "tree-more")
+
+	// The page of the directory says the listing is cut, in a note, and its
+	// rows are of unknown number.
+	status, _, page := h.get("/wide/tree/main/many")
+	require.Equal(t, 200, status)
+	assert.Contains(t, page, fmt.Sprintf(`<p class="note">this directory has more entries than are listed here: the first %d are shown.</p>`, domain.MaxTreeEntries))
+	assert.Contains(t, page, `aria-posinset="1" aria-setsize="-1" data-kind="file"`)
+	assert.NotContains(t, page, "tree-more", "the page of the directory has no row for the rest: its note says it")
+	_, _, page = h.get("/wide/tree/main")
+	assert.NotContains(t, page, `class="note"`, "a directory that fits has no note")
+}
+
+// Entries that are not plain files or directories say what they are in words
+// (the node drawn for them is aria-hidden), and a name is text: HTML in it is
+// escaped and invisible characters show as markers.
+func TestWebTreeEntryKinds(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name("kinds"), Visibility: domain.VisibilityPublic})
+	require.NoError(t, err)
+	wt := h.t.TempDir()
+	h.mustGit(wt, "init", "-q", "--initial-branch=main")
+	h.writeFile(wt, "target.txt", []byte("t\n"))
+	h.writeFile(wt, `odd<b>&"name.txt`, []byte("x\n"))
+	h.writeFile(wt, "bidi\u202eevil.txt", []byte("x\n"))
+	h.writeFile(wt, "dir/inner.txt", []byte("x\n"))
+	// A symbolic link and a submodule entry (a gitlink: no clone is needed).
+	require.NoError(t, os.Symlink("target.txt", filepath.Join(wt, "link.txt")))
+	h.mustGit(wt, "add", "link.txt")
+	h.mustGit(wt, "update-index", "--add", "--cacheinfo", "160000,"+strings.TrimSpace(h.mustGit(wt, "rev-parse", "HEAD"))+",vendor")
+	h.mustGit(wt, "commit", "-q", "-m", "kinds")
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/kinds.git"), "main")
+
+	status, _, page := h.get("/kinds/tree/main")
+	require.Equal(t, 200, status)
+	assertNoInline(t, page)
+
+	// A symbolic link has a link to its page, and says what it is.
+	assert.Contains(t, page, `data-kind="link"`)
+	assert.Contains(t, page, `<a class="t-name" href="/kinds/blob/main/link.txt" title="symbolic link">link.txt</a> <span class="sr"> (symbolic link)</span>`)
+	// A submodule has no page here: a name that is not a link.
+	assert.Contains(t, page, `data-kind="module"`)
+	assert.Contains(t, page, `<span class="t-name" title="submodule">vendor</span> <span class="sr"> (submodule)</span>`)
+	// A directory says so too, and a file says nothing more.
+	assert.Contains(t, page, `title="directory">dir/</a> <span class="sr"> (directory)</span>`)
+	assert.Contains(t, page, `href="/kinds/blob/main/target.txt">target.txt</a> </span>`)
+
+	// HTML in a name is escaped; an invisible character shows as its marker.
+	assert.NotContains(t, page, "<b>&")
+	assert.Contains(t, page, `odd&lt;b&gt;&amp;&#34;name.txt`)
+	assert.Contains(t, page, "bidi&lt;U+202E&gt;evil.txt")
+	assert.NotContains(t, page, "\u202e")
 }
 
 // Ref names with a slash are found by their longest prefix, and a commit id
@@ -201,10 +267,13 @@ func TestWebFilesRefs(t *testing.T) {
 	status, _, _ = h.get("/files/tree/" + sha[:7])
 	assert.Equal(t, 200, status, "an abbreviated commit id")
 
-	// Links of a directory README stay under the directory and the ref.
+	// The entries of a directory stay under the directory and the ref, and the
+	// tree goes up to the parent.
 	_, _, body = h.get("/files/tree/main/docs")
 	assert.Contains(t, body, `href="/files/blob/main/docs/guide.md"`)
-	assert.Contains(t, body, `href="/files/blob/main/main.go"`)
+	assert.Contains(t, body, `data-up="/files/tree/main"`)
+	_, _, body = h.get("/files/tree/main/src/lib")
+	assert.Contains(t, body, `data-up="/files/tree/main/src"`)
 }
 
 // AC3: what does not exist is the 404 page, with no hint of why.
@@ -574,7 +643,7 @@ func TestWebFinderPage(t *testing.T) {
 			if strings.Contains(tt.path, "/tree/") {
 				assert.Contains(t, body, `id="finder-q"`)
 				assert.Contains(t, body, `id="finder-list"`)
-				assert.Contains(t, body, `placeholder="Find a file…"`)
+				assert.Contains(t, body, `placeholder="Find a file in this repository…"`)
 			} else {
 				assert.NotContains(t, body, `id="finder-q"`)
 			}

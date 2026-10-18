@@ -2,49 +2,63 @@
 
 package web
 
-// Tree is a directory: the file finder, the entries with their last commit, the
-// notes on what is left out, and the README of the directory below.
+// Tree is a directory as a tree: the file finder on top, then the entries
+// with their last commit, and the notes on what is left out. A directory opens
+// in place (files.js); the keyboard walks the rows (j k l h, the arrows).
 templ Tree(l Layout, p TreePage) {
 	@Shell(l, nil) {
-		<div class="filter">
-			<label for="finder-q" class="sr">find a file</label>
-			<input
-				id="finder-q"
-				type="search"
-				data-filter
-				role="combobox"
-				aria-autocomplete="list"
-				aria-controls="finder-list"
-				aria-expanded="false"
-				placeholder="Find a file…"
-				autocomplete="off"
-				spellcheck="false"
-				hx-on:focus="ermiteFinder.load()"
-				hx-on:input="ermiteFinder.input(this)"
-				hx-on:keydown="ermiteFinder.key(this, event)"
-			/>
+		<div class="tree-find">
+			<div class="filter wide">
+				<label for="finder-q" class="sr">find a file</label>
+				<input
+					id="finder-q"
+					type="search"
+					data-filter
+					role="combobox"
+					aria-autocomplete="list"
+					aria-controls="finder-list"
+					aria-expanded="false"
+					placeholder="Find a file in this repository…"
+					autocomplete="off"
+					spellcheck="false"
+					hx-on:focus="ermiteFinder.load()"
+					hx-on:input="ermiteFinder.input(this)"
+					hx-on:keydown="ermiteFinder.key(this, event)"
+				/>
+			</div>
+			<p class="tree-keys" data-js aria-hidden="true"><kbd>j</kbd> <kbd>k</kbd> move · <kbd>l</kbd> open · <kbd>h</kbd> back</p>
 		</div>
-		<div id="finder" hidden>
+		<div id="finder" class="tree-card" hidden>
 			<p id="finder-status" class="dim" aria-live="polite"></p>
 			<ul id="finder-list" class="cmd-list" role="listbox" aria-label="Files"></ul>
 		</div>
-		<div id="tree-view">
-			<table class="list tree" aria-label="Entries">
-				<thead>
-					<tr><th class="cur"></th><th class="c-kind"></th><th class="c-name">name</th><th class="c-size">size</th><th class="c-sub">last commit</th><th class="c-who">author</th><th class="c-when">date</th></tr>
-				</thead>
-				<tbody id="tree-rows" data-rows hx-on:click="ermiteTree.click(event)">
-					@TreeRows(p)
-				</tbody>
-			</table>
+		<div id="tree-view" class="tree-card">
+			<div class="tree-head">
+				<span class="tree-path">{ p.Path }</span>
+				if p.Up != "" {
+					<a class="tree-up" href={ templ.SafeURL(p.Up) } title="parent directory (h)">..</a>
+				}
+				<span class="tree-count">{ itoa(len(p.Rows)) } { p.Unit() }</span>
+			</div>
+			<ul
+				id="tree-rows"
+				class="tree"
+				role="tree"
+				aria-label="Entries"
+				data-rows
+				data-tree
+				if p.Up != "" {
+					data-up={ p.Up }
+				}
+				hx-on:click="ermiteTree.click(event)"
+			>
+				@TreeRows(p)
+			</ul>
 			if len(p.Rows) == 0 {
 				<p class="lede dim">this directory is empty.</p>
 			}
 			for _, n := range p.Notes {
 				<p class="note">{ n }</p>
-			}
-			if p.Readme != nil {
-				@ReadmeCard(*p.Readme)
 			}
 		</div>
 	}
@@ -58,41 +72,73 @@ templ TreeRows(p TreePage) {
 		@TreeRowView(r)
 	}
 	if p.More != "" {
-		<tr class="tree-more"><td colspan="7"><a href={ templ.SafeURL(p.More) }>more entries: open the directory</a></td></tr>
+		<li class="tree-more" role="treeitem" aria-level="1" aria-posinset={ itoa(p.MorePos) } aria-setsize="-1" data-depth="0">
+			<span class="t-main">
+				<span class="t-twig" aria-hidden="true"></span>
+				<span class="t-node" aria-hidden="true"></span>
+				<a class="t-name" href={ templ.SafeURL(p.More) }>more entries: open the directory</a>
+			</span>
+		</li>
 	}
 }
 
-// TreeRowView is one entry of a directory. Glyph: ▸ directory (▾ once opened
-// in place), @ symbolic link, + submodule, · file. A directory link carries
-// data-expand, the URL of its rows.
+// TreeRowView is one entry of a directory, a row of the tree: the guides of
+// its depth (t-twig), its node, its name, then its last commit. A directory
+// carries data-expand, the URL of its rows, and aria-expanded; files.js sets
+// the depth of the rows it inserts (data-depth, --depth, aria-level).
+// aria-posinset and aria-setsize count the entries of the row's own directory
+// (setsize -1: the listing is cut and the total unknown), so the positions
+// stay right once the rows of a directory are inserted into the flat list. The
+// node is drawn by the stylesheet from data-kind, which is aria-hidden: the
+// type of a directory, a link or a submodule is said in text for screen readers
+// (the .sr span, part of the name of the treeitem) and in a tooltip.
 templ TreeRowView(r TreeRow) {
-	<tr data-cursor?={ r.Cursor }>
-		<td class="cur" aria-hidden="true"></td>
-		<td class="c-kind" aria-hidden="true">{ r.Glyph }</td>
-		<td class="c-name">
+	<li
+		role="treeitem"
+		aria-level="1"
+		aria-posinset={ itoa(r.Pos) }
+		aria-setsize={ itoa(r.Set) }
+		data-kind={ r.Kind }
+		data-depth="0"
+		data-cursor?={ r.Cursor }
+		if r.Expand != "" {
+			data-expand={ r.Expand }
+			aria-expanded="false"
+		}
+	>
+		<span class="t-main">
+			<span class="t-twig" aria-hidden="true"></span>
+			<span class="t-node" aria-hidden="true"></span>
 			if r.Href != "" {
 				<a
+					class="t-name"
 					href={ templ.SafeURL(r.Href) }
-					if r.Expand != "" {
-						data-expand={ r.Expand }
-						aria-expanded="false"
+					if r.Hint != "" {
+						title={ r.Hint }
 					}
 				>{ r.Name }</a>
 			} else {
-				{ r.Name }
+				<span
+					class="t-name"
+					if r.Hint != "" {
+						title={ r.Hint }
+					}
+				>{ r.Name }</span>
 			}
-		</td>
-		<td class="c-size num dim">{ r.Size }</td>
-		<td class="c-sub dim">
+			if r.Hint != "" {
+				<span class="sr">{ " (" + r.Hint + ")" }</span>
+			}
+		</span>
+		<span class="t-size">{ r.Size }</span>
+		<span class="t-sub">
 			if r.CHref != "" {
-				<a href={ templ.SafeURL(r.CHref) }>{ r.Subject }</a>
+				<a class="t-commit" href={ templ.SafeURL(r.CHref) } title={ r.Author }>{ r.Subject }</a>
 			}
-		</td>
-		<td class="c-who dim">{ r.Author }</td>
-		<td class="c-when nowrap dim">
+		</span>
+		<span class="t-when">
 			if r.WhenAt != "" {
 				<time datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
 			}
-		</td>
-	</tr>
+		</span>
+	</li>
 }

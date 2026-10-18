@@ -143,11 +143,15 @@ export class El {
     return null;
   }
   scrollIntoView() {}
-  focus() { dom.focused.push(this); }
+  focus() { dom.focused.push(this); dom.active = this; }
+  contains(n) {
+    for (let e = n; e; e = e.parent) if (e === this) return true;
+    return false;
+  }
   click() { dom.clicked.push(this); }
 }
 
-export const dom = { clicked: [], focused: [], body: null, holdFrames: false, frames: new Map(), frameID: 0 };
+export const dom = { clicked: [], focused: [], active: null, body: null, holdFrames: false, frames: new Map(), frameID: 0 };
 
 // flushFrames runs the frames held since the last flush.
 export function flushFrames() {
@@ -162,8 +166,10 @@ export function installDom({ parseHTML } = {}) {
   dom.body = new El('body');
   dom.clicked = [];
   dom.focused = [];
+  dom.active = null;
   const doc = {
     body: dom.body,
+    get activeElement() { return dom.active || dom.body; },
     createElement(tag) {
       const e = new El(tag);
       if (tag === 'template') {
