@@ -1,0 +1,10 @@
+{
+  "name": "home",
+  "description": "Anonymous visitors on the home page, each keeping its live updates stream open.",
+  "requests": [
+    { "name": "home", "path": "/", "weight": 1 }
+  ],
+  "streams": [
+    { "name": "events home", "path": "/-/events?topic=home", "count": 200 }
+  ]
+}
