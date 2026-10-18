@@ -488,13 +488,13 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 	case domain.CommentAdded:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.RunUpdated:
-		// CI events go on the topic of their repository only, never on home.
-		if !w.repos[ev.Run.Repo] {
-			return nil
-		}
+		// Home shows the CI state of each repository.
 		return e.deliverRepo(ctx, w, ev.Run.Repo, false, be, out, send)
 	case domain.JobUpdated:
-		if !w.repos[ev.Job.Repo] {
+		// Home gets a job when it ends only: a failed job turns the state to
+		// failing before its run ends. Its progress stays on the topic of its
+		// repository.
+		if !w.repos[ev.Job.Repo] && ev.Job.Phase != domain.CIPhaseEnded {
 			return nil
 		}
 		return e.deliverRepo(ctx, w, ev.Job.Repo, false, be, out, send)

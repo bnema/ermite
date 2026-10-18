@@ -1,0 +1,246 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
+)
+
+// pushedRepo is a public repository that was pushed to.
+func pushedRepo(t testing.TB, name string) ports.RepoView {
+	t.Helper()
+	v := publicRepo(t, name)
+	v.PushedAt = time.Now().Add(-time.Hour)
+	return v
+}
+
+// homeCommits are n commits, newest first, with distinct ids and subjects.
+func homeCommits(t testing.TB, n int) []domain.Commit {
+	t.Helper()
+	var out []domain.Commit
+	for i := n; i >= 1; i-- {
+		out = append(out, domain.Commit{
+			ID:        objectID(t, fmt.Sprintf("%040x", i)),
+			Summary:   fmt.Sprintf("subject number %d", i),
+			Committer: domain.Signature{Time: time.Now().Add(-time.Duration(i) * time.Minute)},
+		})
+	}
+	return out
+}
+
+func renderRow(t testing.TB, r HomeRow) string {
+	t.Helper()
+	var b bytes.Buffer
+	require.NoError(t, HomeRowView(r).Render(context.Background(), &b))
+	return b.String()
+}
+
+func mustRevision(t testing.TB, s string) domain.Revision {
+	t.Helper()
+	r, err := domain.ParseRevision(s)
+	require.NoError(t, err)
+	return r
+}
+
+// Each row lists at most five commits of the default branch, read by the full
+// name of the branch.
+func TestHomeRowShowsFiveCommits(t *testing.T) {
+	t.Parallel()
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repoName(t, "proj"), ports.ListCommitsParams{
+		Revision: mustRevision(t, "refs/heads/main"), PageSize: homeRecent,
+	}).Return(ports.HistoryPage{Commits: homeCommits(t, 7)}, nil).Once()
+	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse})
+
+	row := srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), time.Now(), false)
+	require.Len(t, row.Commits, homeRecent)
+	assert.Equal(t, "subject number 7", row.Commits[0].Subject)
+	assert.False(t, row.NoCommits)
+	assert.Nil(t, row.CI, "a server without CI shows no state")
+
+	out := renderRow(t, row)
+	assert.Equal(t, homeRecent, strings.Count(out, `class="rc-sha"`))
+	assert.Contains(t, out, `href="/proj/commit/`+fmt.Sprintf("%040x", 7)+`"`)
+	assert.Contains(t, out, `aria-label="Recent commits of proj"`)
+	assert.NotContains(t, out, `class="repo-ci"`)
+}
+
+func TestHomeRowEmptyRepository(t *testing.T) {
+	t.Parallel()
+	// Never pushed: nothing is read.
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "new")), Browse: mocks.NewBrowseService(t), Runs: mocks.NewRunService(t)})
+	row := srv.homeRowOf(context.Background(), publicRepo(t, "new"), time.Now(), false)
+	assert.True(t, row.NoCommits)
+	out := renderRow(t, row)
+	assert.Contains(t, out, "no commits yet")
+	assert.Contains(t, out, "never pushed")
+	assert.NotContains(t, out, "repo-commits\" aria-label")
+}
+
+func TestHomeRowCI(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	head := fmt.Sprintf("%040x", 2) // the newest of homeCommits(t, 2)
+	check := func(run int64, status domain.CIStatus, c domain.CIConclusion) ports.CheckView {
+		return ports.CheckView{CICheck: domain.CICheck{Repo: repo, Sha: head, Name: "ci / test", RunID: run, Status: status, Conclusion: c}}
+	}
+	tests := []struct {
+		name   string
+		checks []ports.CheckView
+		err    error
+		label  string // "" when no state is shown
+		href   string
+	}{
+		{"passing", []ports.CheckView{check(9, domain.CICompleted, domain.CISuccess)}, nil, "passing", "/proj/actions/runs/9"},
+		{"failing", []ports.CheckView{check(9, domain.CICompleted, domain.CISuccess), check(9, domain.CICompleted, domain.CIFailure)}, nil, "failing", "/proj/actions/runs/9"},
+		{"running", []ports.CheckView{check(9, domain.CIInProgress, "")}, nil, "running", "/proj/actions/runs/9"},
+		{"several runs link the commit", []ports.CheckView{check(9, domain.CICompleted, domain.CISuccess), check(10, domain.CICompleted, domain.CISuccess)}, nil, "passing", "/proj/commit/" + head},
+		{"no check on the head", nil, nil, "", ""},
+		{"the viewer cannot read CI", nil, domain.ErrNotFound, "", ""},
+		{"the read fails", nil, errors.New("boom"), "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			browse := mocks.NewBrowseService(t)
+			browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
+			runs := mocks.NewRunService(t)
+			runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).
+				Return(ports.ChecksResult{Checks: tt.checks}, tt.err).Once()
+			srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse, Runs: runs})
+
+			row := srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), time.Now(), false)
+			require.Len(t, row.Commits, 2, "the commits do not depend on CI")
+			out := renderRow(t, row)
+			if tt.label == "" {
+				assert.Nil(t, row.CI)
+				assert.NotContains(t, out, "repo-ci")
+				return
+			}
+			require.NotNil(t, row.CI)
+			assert.Contains(t, out, `class="repo-ci" href="`+tt.href+`"`)
+			assert.Contains(t, out, tt.label, "the state has a word, not only a mark")
+			assert.Contains(t, out, `<span class="sr">CI: </span>`)
+		})
+	}
+}
+
+// The private badge is for the signed-in owner only.
+func TestHomeRowPrivateBadge(t *testing.T) {
+	t.Parallel()
+	priv := pushedRepo(t, "secret")
+	priv.Visibility = domain.VisibilityPrivate
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{}, nil).Maybe()
+	srv := newTestServer(t, Config{Repos: reposServing(t, priv, pushedRepo(t, "open")), Browse: browse})
+
+	signed := context.WithValue(context.Background(), signedInKey{}, struct{}{})
+	assert.Contains(t, renderRow(t, srv.homeRowOf(signed, priv, time.Now(), false)), `<span class="pill">private</span>`)
+	assert.NotContains(t, renderRow(t, srv.homeRowOf(context.Background(), priv, time.Now(), false)), "private")
+	assert.NotContains(t, renderRow(t, srv.homeRowOf(signed, pushedRepo(t, "open"), time.Now(), false)), "private")
+}
+
+// A run update re-renders the home row, so its CI state follows the run.
+func TestRunUpdatedRefreshesTheHomeRow(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	head := fmt.Sprintf("%040x", 2)
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
+	runs := mocks.NewRunService(t)
+	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{Checks: []ports.CheckView{
+		{CICheck: domain.CICheck{Repo: repo, Sha: head, RunID: 9, Status: domain.CICompleted, Conclusion: domain.CISuccess}},
+	}}, nil).Once()
+	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse, Runs: runs})
+
+	got, err := (&liveStream{s: srv}).render(t.Context(), ports.WatchEvent{Event: domain.RunUpdated{Run: domain.CIRun{Repo: repo, ID: 9}}})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "home-list", got[0].event)
+	assert.Contains(t, got[0].html, `id="repo-proj"`)
+	assert.Contains(t, got[0].html, "passing")
+	assert.NotContains(t, got[0].html, "new push", "a run is not a push")
+
+	// A job that ended refreshes the row too; one in progress does not.
+	got, err = (&liveStream{s: srv}).render(t.Context(), ports.WatchEvent{Event: domain.JobUpdated{Job: domain.CIJob{Repo: repo, Phase: domain.CIPhaseRunning}}})
+	require.NoError(t, err)
+	assert.Empty(t, got)
+	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{Checks: []ports.CheckView{
+		{CICheck: domain.CICheck{Repo: repo, Sha: head, RunID: 9, Status: domain.CICompleted, Conclusion: domain.CIFailure}},
+		{CICheck: domain.CICheck{Repo: repo, Sha: head, RunID: 9, Status: domain.CIInProgress}},
+	}}, nil).Once()
+	got, err = (&liveStream{s: srv}).render(t.Context(), ports.WatchEvent{Event: domain.JobUpdated{Job: domain.CIJob{Repo: repo, Phase: domain.CIPhaseEnded}}})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0].html, "failing", "a failed job shows before its run ends")
+}
+
+// A repository whose commits cannot be read keeps its row, and the page is
+// served; the others are not affected.
+func TestHomeSurvivesABrokenRepository(t *testing.T) {
+	t.Parallel()
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repoName(t, "broken"), mock.Anything).
+		Return(ports.HistoryPage{}, errors.New("git exploded")).Once()
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repoName(t, "fine"), mock.Anything).
+		Return(ports.HistoryPage{Commits: homeCommits(t, 3)}, nil).Once()
+	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "broken"), pushedRepo(t, "fine")), Browse: browse})
+
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/?sort=name", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, `id="repo-broken"`)
+	assert.Contains(t, body, `id="repo-fine"`)
+	assert.Equal(t, 3, strings.Count(body, `class="rc-sha"`), "only the readable repository lists commits")
+	assert.NotContains(t, body, "no commits yet", "a failed read is not an empty branch")
+}
+
+// The rows are read a few at a time, in the order of the list.
+func TestHomeRowsAreBoundedAndOrdered(t *testing.T) {
+	t.Parallel()
+	const n = 40
+	var views []ports.RepoView
+	for i := range n {
+		views = append(views, pushedRepo(t, fmt.Sprintf("r%02d", i)))
+	}
+	var running, peak atomic.Int32
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(context.Context, domain.Principal, domain.RepoName, ports.ListCommitsParams) (ports.HistoryPage, error) {
+			cur := running.Add(1)
+			for p := peak.Load(); cur > p && !peak.CompareAndSwap(p, cur); p = peak.Load() {
+			}
+			time.Sleep(2 * time.Millisecond)
+			running.Add(-1)
+			return ports.HistoryPage{Commits: homeCommits(t, 1)}, nil
+		})
+	srv := newTestServer(t, Config{Repos: reposServing(t, views...), Browse: browse})
+
+	rows := srv.homeRows(context.Background(), views, time.Now())
+	require.Len(t, rows, n)
+	for i, r := range rows {
+		assert.Equal(t, fmt.Sprintf("r%02d", i), r.Name)
+		assert.Len(t, r.Commits, 1)
+	}
+	assert.True(t, rows[0].Cursor)
+	assert.LessOrEqual(t, int(peak.Load()), homeWorkers)
+	assert.Greater(t, int(peak.Load()), 1, "the reads overlap")
+}

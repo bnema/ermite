@@ -67,6 +67,7 @@
 </div>
 <ul class="repos" id="repo-rows" data-rows>
 <li id="repo-demo" class="repo" data-cursor>
+<div class="repo-main">
 <h2 class="repo-name">
 <a href="/demo">demo</a>
 </h2>
@@ -78,8 +79,22 @@
 <span>pushed <time datetime="STAMP" title="STAMP">AGO</time>
 </span>
 </p>
+</div>
+<ul class="repo-commits" aria-label="Recent commits of demo">
+<li>
+<a class="rc-sha" href="/demo/commit/SHA40">SHA7</a>
+<span class="rc-subject" title="add main.go">add main.go</span>
+<time class="dim" datetime="STAMP" title="STAMP">AGO</time>
+</li>
+<li>
+<a class="rc-sha" href="/demo/commit/SHA40">SHA7</a>
+<span class="rc-subject" title="first commit">first commit</span>
+<time class="dim" datetime="STAMP" title="STAMP">AGO</time>
+</li>
+</ul>
 </li>
 <li id="repo-quiet" class="repo">
+<div class="repo-main">
 <h2 class="repo-name">
 <a href="/quiet">quiet</a>
 </h2>
@@ -90,6 +105,8 @@
 </span>main</span>
 <span>never pushed</span>
 </p>
+</div>
+<p class="repo-commits mute">no commits yet</p>
 </li>
 </ul>
 </section>

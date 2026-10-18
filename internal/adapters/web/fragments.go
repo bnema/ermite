@@ -106,6 +106,13 @@ func (l *liveStream) home(ctx context.Context, we ports.WatchEvent) ([]fragment,
 		name = ev.Repo.String()
 	case domain.PushEvent:
 		name, fresh = ev.Repo.String(), true
+	case domain.RunUpdated:
+		name = ev.Run.Repo.String() // the CI state of the row
+	case domain.JobUpdated:
+		if ev.Job.Phase != domain.CIPhaseEnded {
+			return nil, nil
+		}
+		name = ev.Job.Repo.String() // a failed job turns the state to failing
 	default:
 		return nil, nil
 	}
@@ -116,7 +123,7 @@ func (l *liveStream) home(ctx context.Context, we ports.WatchEvent) ([]fragment,
 	case err != nil:
 		return nil, err
 	}
-	row := homeRow(view, l.s.cfg.Now(), false, SignedIn(ctx))
+	row := l.s.homeRowOf(ctx, view, l.s.cfg.Now(), false)
 	row.Fresh = fresh
 	f, err := renderFragment(ctx, "home-list", HomeRowView(row))
 	return []fragment{f}, err

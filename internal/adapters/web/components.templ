@@ -32,34 +32,58 @@ templ CloneBlock(c Clone) {
 	</div>
 }
 
-// HomeRowView is the card of a repository in the home list. Its id is the
-// target of SSE swaps; the name link comes first, `enter` follows it.
+// HomeRowView is the row of a repository in the home list: what it is, its
+// latest run, and its newest commits. Its id is the target of SSE swaps; the
+// name link comes first, `enter` follows it.
 templ HomeRowView(r HomeRow) {
 	<li id={ r.ID } class="repo" data-cursor?={ r.Cursor }>
-		<h2 class="repo-name">
-			<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
-			if r.Private {
-				<span class="pill">private</span>
-			}
-			if r.Fresh {
-				<span class="pill new">new push</span>
-			}
-		</h2>
-		if r.Desc != "" {
-			<p class="repo-desc">{ r.Desc }</p>
-		} else {
-			<p class="repo-desc mute">no description</p>
-		}
-		<p class="repo-meta">
-			if r.Branch != "" {
-				<span class="repo-branch"><span class="ico i-branch" aria-hidden="true"></span>{ r.Branch }</span>
-			}
-			if r.PushedAt != "" {
-				<span>pushed <time datetime={ r.PushedAt } title={ r.PushedAt }>{ r.Pushed }</time></span>
+		<div class="repo-main">
+			<h2 class="repo-name">
+				<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+				if r.Private {
+					<span class="pill">private</span>
+				}
+				if r.Fresh {
+					<span class="pill new">new push</span>
+				}
+			</h2>
+			if r.Desc != "" {
+				<p class="repo-desc">{ r.Desc }</p>
 			} else {
-				<span>never pushed</span>
+				<p class="repo-desc mute">no description</p>
 			}
-		</p>
+			<p class="repo-meta">
+				if r.Branch != "" {
+					<span class="repo-branch"><span class="ico i-branch" aria-hidden="true"></span>{ r.Branch }</span>
+				}
+				if r.PushedAt != "" {
+					<span>pushed <time datetime={ r.PushedAt } title={ r.PushedAt }>{ r.Pushed }</time></span>
+				} else {
+					<span>never pushed</span>
+				}
+			</p>
+		</div>
+		if r.CI != nil {
+			<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Title }>
+				<span class={ "ck", "ck-" + r.CI.Kind } aria-hidden="true"></span>
+				<span class="sr">CI: </span>{ r.CI.Label }
+			</a>
+		}
+		if len(r.Commits) > 0 {
+			<ul class="repo-commits" aria-label={ "Recent commits of " + r.Name }>
+				for _, c := range r.Commits {
+					<li>
+						<a class="rc-sha" href={ templ.SafeURL(c.CHref) }>{ c.Short }</a>
+						<span class="rc-subject" title={ c.Subject }>{ c.Subject }</span>
+						if c.WhenAt != "" {
+							<time class="dim" datetime={ c.WhenAt } title={ c.WhenAt }>{ c.When }</time>
+						}
+					</li>
+				}
+			</ul>
+		} else if r.NoCommits {
+			<p class="repo-commits mute">no commits yet</p>
+		}
 	</li>
 }
 

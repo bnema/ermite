@@ -88,6 +88,21 @@ type HomeRow struct {
 	Private bool
 	// Fresh marks a row that a push just updated (live updates only).
 	Fresh bool
+	// Commits are the newest of the default branch. NoCommits says there is
+	// none (never pushed, or an empty branch); a failed read says nothing.
+	Commits   []CommitRow
+	NoCommits bool
+	// CI is the latest run of the default branch, nil when there is none to
+	// show.
+	CI *HomeCI
+}
+
+// HomeCI is the state of the latest run of the default branch of a repository.
+type HomeCI struct {
+	Href  string
+	Kind  string // the mark: ok, bad, running, queued, skipped, cancelled
+	Label string // the word next to it
+	Title string
 }
 
 // SortLink is one way to order the home list; it links to that order.

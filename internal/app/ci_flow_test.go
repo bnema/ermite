@@ -518,7 +518,9 @@ func TestCIRepositoryDeletionRemovesRunsAndLogs(t *testing.T) {
 	assert.Greater(t, c.runs()[0].GetId(), int64(1), "run ids are never reused")
 }
 
-// The events of a run and its jobs are published on the repository topic.
+// The events of a run and its jobs are published on the repository topic;
+// "home", which shows the CI state of each repository, gets the runs and the
+// jobs that ended only.
 func TestCIEventsAreStreamedOnTheRepositoryTopic(t *testing.T) {
 	c := newCIHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
@@ -549,11 +551,27 @@ func TestCIEventsAreStreamedOnTheRepositoryTopic(t *testing.T) {
 	assert.GreaterOrEqual(t, runUpdates, 2)
 	assert.GreaterOrEqual(t, jobUpdates, 2)
 
-	// They are never sent on "home".
 	home := c.watch(c.root, "", "home")
 	_, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: lastRun.GetId()}))
 	require.NoError(t, err)
-	c.sentinel(t, home, "sentinel")
+	ev := home.next(t, watchWait)
+	require.NotNil(t, ev.GetRunUpdated(), "home gets the run: %v", ev)
+	assert.Equal(t, "proj", ev.GetRunUpdated().GetRun().GetRepo())
+	// The rest of the rerun before the sentinel: runs, no job in progress.
+	_, err = c.forge.Repos.Create(c.ctx, domain.Root(), ports.CreateRepoParams{Name: c.name("sentinel"), Visibility: domain.VisibilityPublic})
+	require.NoError(t, err)
+	for {
+		ev = home.next(t, watchWait)
+		if ev.GetRepoCreated() != nil {
+			assert.Equal(t, "sentinel", ev.GetRepoCreated().GetRepo().GetName())
+			break
+		}
+		if j := ev.GetJobUpdated(); j != nil {
+			assert.Equal(t, pb.CiStatus_CI_STATUS_COMPLETED, j.GetJob().GetStatus(), "a job in progress does not reach home")
+			continue
+		}
+		require.NotNil(t, ev.GetRunUpdated(), "only CI state reaches home: %v", ev)
+	}
 }
 
 // A new branch at a commit that already exists, and a branch rewound to an

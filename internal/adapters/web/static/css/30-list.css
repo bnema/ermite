@@ -28,8 +28,8 @@
     & .c-sub { color: var(--ink-dim); }
   }
 
-  /* home: the repositories as cards in a grid (one column on a phone); the
-     page is a stack of sections, so others can sit beside or below */
+  /* home: the repositories as rows in a vertical list; the page is a stack of
+     sections, so others can sit beside or below */
   .home {
     display: flex; flex-direction: column; gap: var(--s5);
     & .home-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3) var(--s4); margin-bottom: var(--s4); }
@@ -43,32 +43,49 @@
     & .sort a:hover { color: var(--ink-hi); background: var(--bg-raised); }
     & .sort a[aria-current="true"] { color: var(--ink-hi); background: var(--bg-raised); border-color: var(--border-strong); }
   }
+  /* a row: name, description and facts on the left; the state of the latest
+     run at the top right, the newest commits under it. Stacked on a phone. */
   .repos {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: var(--s3);
+    display: flex; flex-direction: column; gap: var(--s3);
     margin: 0; padding: 0; list-style: none;
     & .repo {
-      position: relative; display: flex; flex-direction: column; gap: var(--s2); min-width: 0;
+      display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-areas: "main ci" "main recent";
+      grid-template-rows: auto 1fr; column-gap: var(--s6); min-width: 0;
       padding: var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
     }
     & .repo:hover { background: var(--bg-raised); border-color: var(--border-strong); }
     & .repo[data-cursor] { background: var(--bg-raised); border-color: var(--ink-mute); box-shadow: inset 3px 0 0 var(--ink-hi); }
     & .repo[hidden] { display: none; }
-    & .repo-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2); font-size: 17px; line-height: 26px; overflow-wrap: anywhere; }
+    & .repo-main { grid-area: main; display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+    & .repo-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2); font-family: var(--mono); font-size: 17px; line-height: 26px; overflow-wrap: anywhere; }
     & .repo-name a { color: var(--ink-hi); text-decoration: none; }
-    /* the whole card is the target of the name link */
-    & .repo-name a::after { content: ""; position: absolute; inset: 0; border-radius: var(--r); }
-    & .repo-name a:focus-visible { outline: none; }
-    & .repo-name a:focus-visible::after { outline: 2px solid var(--focus); outline-offset: 1px; }
     & .repo:hover .repo-name a, & .repo[data-cursor] .repo-name a { text-decoration: underline; }
     & .repo-name .pill { margin-left: 0; }
     & .repo-desc {
-      flex: 1; color: var(--ink-dim);
+      color: var(--ink-dim);
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
     }
     & .repo-desc.mute { color: var(--ink-mute); font-style: italic; }
     & .repo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s4); font-size: var(--fs-s); color: var(--ink-mute); }
     & .repo-meta time { color: var(--ink-dim); }
     & .repo-branch { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); color: var(--ink-dim); }
+    & .repo-ci {
+      grid-area: ci; justify-self: end; display: inline-flex; align-items: center; gap: var(--s1); margin-bottom: var(--s2);
+      font-size: var(--fs-s); color: var(--ink-dim); text-decoration: none;
+    }
+    & .repo-ci:hover { color: var(--ink-hi); text-decoration: underline; }
+    & .repo-ci .ck { margin: 0; }
+    & .repo-commits { grid-area: recent; min-width: 0; margin: 0; padding: 0; list-style: none; font-size: var(--fs-s); }
+    & p.repo-commits { font-style: italic; }
+    & .repo-commits li { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; padding: 2px 0; }
+    & .rc-sha { flex: none; font-family: var(--mono); color: var(--ink-dim); text-decoration: none; }
+    & .rc-sha:hover { color: var(--ink-hi); text-decoration: underline; }
+    & .rc-subject { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-hi); }
+    & .repo-commits time { flex: none; white-space: nowrap; }
+    @media (max-width: 720px) {
+      & .repo { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "ci" "recent"; grid-template-rows: none; row-gap: var(--s3); }
+      & .repo-ci { justify-self: start; margin-bottom: 0; }
+    }
   }
   .list.passkeys {
     & .c-name { width: auto; font-weight: 600; }

@@ -125,6 +125,7 @@ func TestWebEventsHome(t *testing.T) {
 	assert.Contains(t, ev.data, `<li id="repo-pub"`)
 	assert.Contains(t, ev.data, `new push`)
 	assert.Contains(t, ev.data, `href="/pub"`)
+	assert.Contains(t, ev.data, `<ul class="repo-commits" aria-label="Recent commits of pub">`, "the live row lists the commits too")
 
 	// A new repository is a row; so is a repository created by a push.
 	_, err := h.forge.Repos.Create(h.ctx, domain.Root(), ports.CreateRepoParams{Name: h.name("fresh"), Description: "a <b>fresh</b> one", Visibility: domain.VisibilityPublic})

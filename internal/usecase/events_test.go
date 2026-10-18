@@ -881,3 +881,44 @@ func TestPushEventsKeepTheirSnapshot(t *testing.T) {
 		})
 	})
 }
+
+// Home shows the CI state of each repository: a run update reaches it, for the
+// watchers who may read the repository, and so does a job that ended; the
+// progress of a job stays on the repository topic.
+func TestWatchHomeGetsRunUpdates(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 0)
+		pub := r.repo("pub", domain.VisibilityPublic)
+		priv := r.repo("priv", domain.VisibilityPrivate)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{Topics: []string{"home"}})
+		root := r.watch(ctx, domain.Root(), ports.WatchParams{Topics: []string{"home"}})
+		synctest.Wait()
+		require.Equal(t, 2, r.events.Watchers())
+
+		run := func(n domain.RepoName, vis domain.Visibility) domain.RunUpdated {
+			return domain.RunUpdated{Run: domain.CIRun{Repo: n, ID: 1}, At: now, Visibility: vis, CreatedAt: now}
+		}
+		job := func(n domain.RepoName, vis domain.Visibility, phase domain.CIJobPhase) domain.JobUpdated {
+			return domain.JobUpdated{Job: domain.CIJob{Repo: n, Phase: phase}, At: now, Visibility: vis, CreatedAt: now}
+		}
+		r.feed <- job(pub, domain.VisibilityPublic, domain.CIPhaseRunning)
+		r.feed <- run(priv, domain.VisibilityPrivate)
+		r.feed <- job(priv, domain.VisibilityPrivate, domain.CIPhaseEnded)
+		r.feed <- run(pub, domain.VisibilityPublic)
+		r.feed <- job(pub, domain.VisibilityPublic, domain.CIPhaseEnded)
+
+		assert.Equal(t, pub, anon.next(t).Event.(domain.RunUpdated).Run.Repo, "anonymous: no private run, no running job")
+		assert.Equal(t, pub, anon.next(t).Event.(domain.JobUpdated).Job.Repo)
+		anon.quiet(t, r, pub)
+
+		assert.Equal(t, priv, root.next(t).Event.(domain.RunUpdated).Run.Repo)
+		assert.Equal(t, priv, root.next(t).Event.(domain.JobUpdated).Job.Repo)
+		assert.Equal(t, pub, root.next(t).Event.(domain.RunUpdated).Run.Repo)
+		assert.Equal(t, pub, root.next(t).Event.(domain.JobUpdated).Job.Repo)
+		root.quiet(t, r, pub)
+	})
+}
