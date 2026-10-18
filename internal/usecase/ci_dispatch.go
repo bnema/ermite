@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 
 	"bnema.dev/ermite/internal/domain"
@@ -40,6 +39,11 @@ func (c *CI) DispatchWorkflow(ctx context.Context, p domain.Principal, name doma
 	wfPath, err := dispatchPath(params.WorkflowPath)
 	if err != nil {
 		return domain.CIRun{}, err
+	}
+	if off, err := c.workflowDisabled(ctx, name, wfPath); err != nil {
+		return domain.CIRun{}, err
+	} else if off {
+		return domain.CIRun{}, fmt.Errorf("%w: %s is disabled (`ermite workflow enable`)", domain.ErrPreconditionFailed, wfPath)
 	}
 	pin, err := c.dispatchRef(ctx, name, params.Ref)
 	if err != nil {
@@ -91,6 +95,10 @@ func (c *CI) DispatchWorkflow(ctx context.Context, p domain.Principal, name doma
 		return domain.CIRun{}, fmt.Errorf("%w: %s", domain.ErrInvalid, problem.text)
 	}
 	run, err := c.launchRun(ctx, repo, t, f, wfPath, string(content), wf)
+	if errors.Is(err, domain.ErrWorkflowDisabled) {
+		// Disabled after the check above: the store refused the run.
+		return domain.CIRun{}, fmt.Errorf("%w: %s is disabled (`ermite workflow enable`)", domain.ErrPreconditionFailed, wfPath)
+	}
 	if err != nil {
 		return domain.CIRun{}, err
 	}
@@ -131,21 +139,9 @@ func (c *CI) dispatchCaller(ctx context.Context, p domain.Principal, name domain
 }
 
 // dispatchPath checks the workflow file of a dispatch: a file of
-// .github/workflows, named by its path or by its file name.
-func dispatchPath(s string) (string, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "", fmt.Errorf("%w: the workflow file is required", domain.ErrInvalid)
-	}
-	if !strings.Contains(s, "/") {
-		s = workflowDir + "/" + s
-	}
-	ext := strings.ToLower(path.Ext(s))
-	if path.Dir(s) != workflowDir || (ext != ".yml" && ext != ".yaml") {
-		return "", fmt.Errorf("%w: %q is not a workflow file of %s", domain.ErrInvalid, s, workflowDir)
-	}
-	return s, nil
-}
+// .github/workflows, named by its path or by its file name, in its canonical
+// spelling (the one the disabled state is keyed by).
+func dispatchPath(s string) (string, error) { return domain.ParseWorkflowPath(s) }
 
 // pinnedRef is what a dispatch resolved its ref to, once: the full name, the
 // commit the run executes and the object the ref points to (the commit for a

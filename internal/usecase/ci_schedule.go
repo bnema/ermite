@@ -329,7 +329,11 @@ func (c *CI) loadSchedules(ctx context.Context, repo domain.RepoName) (*schedule
 		return &scheduleEntry{}, nil // no repository, no default branch, nothing to schedule
 	}
 	e := &scheduleEntry{tip: tip}
-	files, err := c.workflowFiles(ctx, repo, tip)
+	// Every workflow, disabled or not: the cache is of the commit, not of the
+	// state, which is read when a schedule fires (fireSchedule). A load that
+	// raced with a disable or an enable would otherwise keep the wrong set of
+	// workflows for as long as the tip does not move.
+	files, err := c.listWorkflowFiles(ctx, repo, tip)
 	if err != nil {
 		return nil, err
 	}
@@ -394,6 +398,9 @@ func (c *CI) scheduleRepo(ctx context.Context, repo domain.RepoName, minute time
 		if e, err = c.loadSchedules(ctx, repo); err != nil {
 			return fmt.Errorf("read the schedules: %w", err)
 		}
+		if c.cfg.ScheduleLoaded != nil {
+			c.cfg.ScheduleLoaded(repo)
+		}
 		c.sched.put(repo, e)
 	}
 	idx, specs := dueFor(e, minute)
@@ -422,6 +429,11 @@ func (c *CI) scheduleRepo(ctx context.Context, repo domain.RepoName, minute time
 
 // fireSchedule starts the run of one scheduled workflow.
 func (c *CI) fireSchedule(ctx context.Context, repo domain.Repo, def string, e *scheduleEntry, head domain.Commit, sw scheduledWorkflow, spec string) error {
+	// The cache holds the disabled workflows too; the state is read now (and the
+	// store checks it again when the run is stored).
+	if off, err := c.workflowDisabled(ctx, repo.Name, sw.path); err != nil || off {
+		return err
+	}
 	wf, perrs := parseWorkflow(sw.path, sw.yaml)
 	if len(perrs) > 0 {
 		return nil
@@ -442,5 +454,8 @@ func (c *CI) fireSchedule(ctx context.Context, repo domain.Repo, def string, e *
 		return c.startInvalid(ctx, repo, t, facts, sw.path, name, problem.text)
 	}
 	_, err := c.launchRun(ctx, repo, t, facts, sw.path, string(sw.yaml), wf)
+	if errors.Is(err, domain.ErrWorkflowDisabled) {
+		return nil
+	}
 	return err
 }

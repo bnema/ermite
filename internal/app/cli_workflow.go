@@ -13,14 +13,15 @@ import (
 )
 
 // `ermite workflow run`: start a workflow that has a workflow_dispatch trigger,
-// like `gh workflow run`.
+// like `gh workflow run`. `workflow list|disable|enable` show and set the state
+// of the workflow files of a repository, like `gh workflow list|disable|enable`.
 
 func newWorkflowCmd(env *cliEnv) *cobra.Command {
 	wf := &cobra.Command{
 		Use:   "workflow",
-		Short: "Start workflows by hand",
+		Short: "Start, list, disable and enable workflows",
 	}
-	wf.AddCommand(newWorkflowRunCmd(env))
+	wf.AddCommand(newWorkflowRunCmd(env), newWorkflowListCmd(env), newWorkflowDisableCmd(env), newWorkflowEnableCmd(env))
 	return wf
 }
 
@@ -82,4 +83,132 @@ func newWorkflowRunCmd(env *cliEnv) *cobra.Command {
 		return nil
 	}
 	return cmd
+}
+
+type jsonWorkflow struct {
+	Repo  string `json:"repo"`
+	File  string `json:"file"`
+	Name  string `json:"name"`
+	State string `json:"state"`
+}
+
+const jsonWorkflowHelp = `
+JSON fields of a workflow (--json): repo, file (the path, always .github/workflows/<file>), name (the
+"name:" of the workflow on the default branch, the path when it has none, empty when the default branch
+has no such file) and state (enabled or disabled).`
+
+func workflowStateText(s ermite.WorkflowState) string {
+	if s == ermite.WorkflowState_WORKFLOW_STATE_DISABLED {
+		return "disabled"
+	}
+	return "enabled"
+}
+
+func toJSONWorkflow(repo string, w *ermite.Workflow) jsonWorkflow {
+	return jsonWorkflow{Repo: repo, File: w.GetPath(), Name: w.GetName(), State: workflowStateText(w.GetState())}
+}
+
+func newWorkflowListCmd(env *cliEnv) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list <repo>",
+		Short: "List the workflows of a repository and whether they are enabled",
+		Long: "List the workflow files of .github/workflows on the default branch with their state, and the disabled\n" +
+			"workflows whose file is absent there (a disabled workflow is listed even in an empty repository), ordered\n" +
+			"by file. Needs the repo:read scope for a private repository." + jsonWorkflowHelp + "\n--json prints an array of workflows.",
+		Example:           "  ermite workflow list app\n  ermite workflow list app --json",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeRepoNames(env),
+	}
+	asJSON := addJSONFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		c, err := env.client(cmd)
+		if err != nil {
+			return err
+		}
+		res, err := c.Runs().ListWorkflows(env.ctx(cmd), connect.NewRequest(&ermite.ListWorkflowsRequest{Repo: args[0]}))
+		if err != nil {
+			return c.Describe(err)
+		}
+		list := res.Msg.GetWorkflows()
+		if *asJSON {
+			out := make([]jsonWorkflow, 0, len(list))
+			for _, w := range list {
+				out = append(out, toJSONWorkflow(args[0], w))
+			}
+			return writeJSON(cmd.OutOrStdout(), out)
+		}
+		if len(list) == 0 {
+			noticef(cmd, "no workflows")
+			return nil
+		}
+		rows := make([][]string, 0, len(list))
+		for _, w := range list {
+			rows = append(rows, []string{w.GetPath(), w.GetName(), workflowStateText(w.GetState())})
+		}
+		return table(cmd.OutOrStdout(), []string{"FILE", "NAME", "STATE"}, rows)
+	}
+	return cmd
+}
+
+func newWorkflowDisableCmd(env *cliEnv) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "disable <repo> <file>",
+		Short: "Stop a workflow from starting runs",
+		Long: "Disable a workflow file of a repository, like `gh workflow disable`: no event (push, pull_request,\n" +
+			"pull_request_target, schedule, workflow_run, create, delete, workflow_dispatch) starts a run of it any more.\n" +
+			"Runs already started go on. The state belongs to the repository and to the file path, not to a branch. The\n" +
+			"file is its path or its file name (release.yml) and does not have to exist: disable it right after\n" +
+			"`ermite repo create`, before the first push. Disabling a disabled workflow changes nothing. Undo with\n" +
+			"`ermite workflow enable`. Needs the repo:admin scope." + jsonWorkflowHelp,
+		Example:           "  ermite workflow disable app release.yml\n  ermite workflow disable app .github/workflows/codeql.yml",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeRepoNames(env),
+	}
+	asJSON := addJSONFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		c, err := env.client(cmd)
+		if err != nil {
+			return err
+		}
+		res, err := c.Runs().DisableWorkflow(env.ctx(cmd), connect.NewRequest(&ermite.DisableWorkflowRequest{Repo: args[0], Workflow: args[1]}))
+		if err != nil {
+			return c.Describe(err)
+		}
+		return printWorkflowState(cmd, *asJSON, args[0], res.Msg.GetWorkflow(), "disabled")
+	}
+	return cmd
+}
+
+func newWorkflowEnableCmd(env *cliEnv) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "enable <repo> <file>",
+		Short: "Let a disabled workflow start runs again",
+		Long: "Enable a workflow file of a repository, like `gh workflow enable`. The events that happened while it was\n" +
+			"disabled are not replayed. Enabling a workflow that is not disabled changes nothing. The file is its path\n" +
+			"or its file name. Needs the repo:admin scope." + jsonWorkflowHelp,
+		Example:           "  ermite workflow enable app release.yml",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeRepoNames(env),
+	}
+	asJSON := addJSONFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		c, err := env.client(cmd)
+		if err != nil {
+			return err
+		}
+		res, err := c.Runs().EnableWorkflow(env.ctx(cmd), connect.NewRequest(&ermite.EnableWorkflowRequest{Repo: args[0], Workflow: args[1]}))
+		if err != nil {
+			return c.Describe(err)
+		}
+		return printWorkflowState(cmd, *asJSON, args[0], res.Msg.GetWorkflow(), "enabled")
+	}
+	return cmd
+}
+
+func printWorkflowState(cmd *cobra.Command, asJSON bool, repo string, w *ermite.Workflow, state string) error {
+	if asJSON {
+		return writeJSON(cmd.OutOrStdout(), toJSONWorkflow(repo, w))
+	}
+	noticef(cmd, "%s %s in %s", state, clean(w.GetPath()), clean(repo))
+	return nil
 }

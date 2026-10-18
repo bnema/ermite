@@ -430,8 +430,25 @@ type workflowFile struct {
 	problem string
 }
 
-// workflowFiles reads .github/workflows/*.yml|*.yaml at the commit.
+// workflowFiles reads .github/workflows/*.yml|*.yaml at the commit, without the
+// workflows the repository disabled: every event that starts a run reads its
+// workflows here, so a disabled one starts none (ci_workflows.go).
 func (c *CI) workflowFiles(ctx context.Context, repo domain.RepoName, commit domain.ObjectID) ([]workflowFile, error) {
+	files, err := c.listWorkflowFiles(ctx, repo, commit)
+	if err != nil || len(files) == 0 {
+		return files, err
+	}
+	off, err := c.disabledPaths(ctx, repo)
+	if err != nil || len(off) == 0 {
+		return files, err
+	}
+	return slices.DeleteFunc(files, func(f workflowFile) bool { return slices.Contains(off, f.path) }), nil
+}
+
+// listWorkflowFiles is workflowFiles with the disabled ones. The disabled state
+// is also enforced where a run is stored (CIStore.CreateRun), which is what
+// holds against a change made while a push is being planned.
+func (c *CI) listWorkflowFiles(ctx context.Context, repo domain.RepoName, commit domain.ObjectID) ([]workflowFile, error) {
 	dir, err := domain.ParseTreePath(workflowDir)
 	if err != nil {
 		return nil, err
@@ -512,7 +529,7 @@ func (c *CI) startInvalid(ctx context.Context, repo domain.Repo, t ciTrigger, f 
 			}},
 		}
 	})
-	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, errPullClosed) {
+	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, errPullClosed) || errors.Is(err, domain.ErrWorkflowDisabled) {
 		return nil
 	}
 	if err != nil {
@@ -534,11 +551,16 @@ func (c *CI) publishRun(ctx context.Context, repo domain.Repo, run domain.CIRun)
 // job of the file, then plans the jobs that can start.
 func (c *CI) startRun(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, yaml string, wf *workflow.Workflow) error {
 	_, err := c.launchRun(ctx, repo, t, f, wfPath, yaml, wf)
+	if errors.Is(err, domain.ErrWorkflowDisabled) {
+		return nil // disabled since it was read: no run (the store decides, atomically)
+	}
 	return err
 }
 
 // launchRun is startRun that also returns the run it created, as it was when
-// created (the zero run when the repository or the merge request is gone).
+// created (the zero run when the repository or the merge request is gone). A
+// workflow that is disabled when the run is stored gets none, whatever was
+// checked before: the error is domain.ErrWorkflowDisabled.
 func (c *CI) launchRun(ctx context.Context, repo domain.Repo, t ciTrigger, f pushFacts, wfPath, yaml string, wf *workflow.Workflow) (domain.CIRun, error) {
 	now := c.now()
 	name := workflowName(wf, wfPath)

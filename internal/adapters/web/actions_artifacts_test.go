@@ -108,6 +108,7 @@ func artifactsServer(t *testing.T, arts *fakeArtifacts) *passkeyFixture {
 		Jobs: []ports.JobView{job}, LatestAttempt: 1,
 	}, nil).Maybe()
 	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), int32(1), "").Return(ports.AnnotationList{}, nil).Maybe()
+	runs.EXPECT().DisabledWorkflows(mock.Anything, mock.Anything, repo).Return(nil, nil).Maybe()
 	runs.EXPECT().GetStepSummaries(mock.Anything, mock.Anything, repo, mock.Anything, mock.Anything, mock.Anything).Return(ports.SummaryList{}, nil).Maybe()
 	browse := mocks.NewBrowseService(t)
 	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()

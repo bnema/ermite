@@ -244,7 +244,7 @@ func (c *CI) handleRunEvent(ctx context.Context, e runEvent) error {
 			errs = append(errs, c.startInvalid(ctx, repo, t, facts, f.path, name, problem.text))
 			continue
 		}
-		if _, err := c.launchRun(ctx, repo, t, facts, f.path, string(f.content), wf); err != nil && !errors.Is(err, context.Canceled) {
+		if _, err := c.launchRun(ctx, repo, t, facts, f.path, string(f.content), wf); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, domain.ErrWorkflowDisabled) {
 			errs = append(errs, err)
 		}
 	}

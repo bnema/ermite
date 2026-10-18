@@ -580,7 +580,14 @@ const createRunTries = 20
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter takes the next numbers under version preconditions: a storage concern, no policy
 func (c *CI) CreateRun(ctx context.Context, repo domain.RepoName, workflowPath string, build func(id, number int64) ports.CIRunDraft) (ports.CIRunDraft, error) {
+	offKey := workflowOffKey(repo, workflowPath)
 	for range createRunTries {
+		// A workflow the repository disabled gets no run, whatever started it.
+		// The key is also required absent by the batch below, so a disable that
+		// lands after this read fails the batch, and the next try sees it.
+		if _, off := c.db.Get(ctx, offKey); off {
+			return ports.CIRunDraft{}, domain.ErrWorkflowDisabled
+		}
 		lastID, idItem, idOK, err := c.readSeq(ctx, []byte(runSeqKey))
 		if err != nil {
 			return ports.CIRunDraft{}, err
@@ -605,6 +612,7 @@ func (c *CI) CreateRun(ctx context.Context, repo domain.RepoName, workflowPath s
 		})
 		b.RequireAbsent(runSrcKey(draft.Run.ID))
 		b.Put(runSrcKey(draft.Run.ID), src)
+		b.RequireAbsent(offKey)
 		for r := range guarded {
 			if err := c.guardRepo(ctx, &b, r); err != nil {
 				return ports.CIRunDraft{}, err
@@ -887,7 +895,7 @@ func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]by
 	}
 	keys = append(keys, repoReaderKeys(ctx, snap, repo)...)
 	keys = append(keys, artifactKeys(ctx, snap, repo)...)
-	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/", concurPrefix + repo.String() + "/", concurMarkPrefixAll + repo.String() + "/", refTipsPrefix(repo)} {
+	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/", concurPrefix + repo.String() + "/", concurMarkPrefixAll + repo.String() + "/", refTipsPrefix(repo), workflowOffPrefixOf(repo)} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))
 		}

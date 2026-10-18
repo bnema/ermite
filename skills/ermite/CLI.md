@@ -62,6 +62,17 @@ A token can never grant more than the token that creates it. `--repo` (repeatabl
 
 Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `target_branch`, `state`, `author` (token label), `created_at`, `updated_at`, `head_id`, `merged_commit_id`, `merge_mode`. `mr show --json` adds `commits`, `diff_base_id`, `stats`, `files` (with `hunks` under `--diff`: `kind`, `old_number`, `new_number`, `text`), `comments`, `last_read_id`, `last_read_lost`.
 
+## Workflows
+
+| Command | Scope | Notes |
+|---|---|---|
+| `workflow list <repo> [--json]` | `repo:read` for a private repository | the files of `.github/workflows` on the default branch with their state, and the disabled files that branch lacks |
+| `workflow disable <repo> <file> [--json]` | `repo:admin` | like `gh workflow disable`: no event (push, pull_request, pull_request_target, schedule, workflow_run, create, delete, workflow_dispatch) starts a run of it; runs already started go on; `<file>` is `release.yml` or `.github/workflows/release.yml` and need not exist, so it works on an empty repository before the first push; doing it twice is not an error |
+| `workflow enable <repo> <file> [--json]` | `repo:admin` | undoes `disable`; missed events are not replayed |
+| `workflow run <file> --repo R [--ref REF] [-f name=value]` | `ci:write` | starts a `workflow_dispatch` workflow; refused while the workflow is disabled |
+
+Workflow JSON: `repo`, `file` (always `.github/workflows/<file>`), `name` (the `name:` on the default branch, empty when the file is absent there), `state` (`enabled` or `disabled`). A token limited to branch prefixes cannot disable or enable.
+
 ## Events
 
 `ermite watch [repo] [--json]` runs until interrupted, reconnects and resumes after the last event. With `--json` it prints one object per line with `id`, `time`, `type` and type-specific fields.

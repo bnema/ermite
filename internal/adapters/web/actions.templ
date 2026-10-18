@@ -12,6 +12,13 @@ templ CheckIcon(kind, state string) {
 
 templ Actions(l Layout, p ActionsPage) {
 	@Shell(l, nil) {
+		if len(p.Disabled) > 0 {
+			<p class="dim wf-off">disabled workflows (they start no run):
+				for _, f := range p.Disabled {
+					<span class="pill">{ f }</span>{ " " }
+				}
+			</p>
+		}
 		if len(p.Runs) == 0 {
 			<p class="dim">no runs yet: a push that matches a workflow of .github/workflows starts one.</p>
 		} else {
@@ -83,6 +90,9 @@ templ RecentActionsBlock(a RecentActions) {
 templ RunDetail(l Layout, p RunPage) {
 	@Shell(l, runRail(p)) {
 		@LiveSlot("run-notice")
+		if p.WorkflowDisabled {
+			<p class="dim wf-off"><span class="pill">disabled</span> this workflow is disabled: no event starts a run of it (<code>ermite workflow enable</code>).</p>
+		}
 		<div id="run-body">
 			@RunBody(p)
 		</div>

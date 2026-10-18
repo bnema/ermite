@@ -63,6 +63,9 @@ ermite run view <repo> <id> [--attempt n] [--log [--job …]] [--summary]
 ermite run watch <repo> <id> [--log] | cancel <repo> <id> | rerun <repo> <id> [--failed]
 ermite run artifacts <repo> <id> | download <repo> <id> [--name N]… [--dir D]
 ermite workflow run <file> --repo <repo> [--ref …] [-f name=value …]
+ermite workflow list <repo> [--json]
+ermite workflow disable <repo> <file>    # no event starts a run of it; the file need not exist yet
+ermite workflow enable <repo> <file>
 ermite runner list | remove <id>
 ermite secret set|list|delete …         # CI secrets (needs ERMITE_SECRETS_KEY)
 ermite variable set|get|list|delete …

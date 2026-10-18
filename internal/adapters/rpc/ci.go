@@ -334,6 +334,54 @@ func (s *runService) DispatchWorkflow(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&pb.DispatchWorkflowResponse{Run: runToPB(run)}), nil
 }
 
+func workflowToPB(w ports.WorkflowInfo) *pb.Workflow {
+	state := pb.WorkflowState_WORKFLOW_STATE_ENABLED
+	if w.Disabled {
+		state = pb.WorkflowState_WORKFLOW_STATE_DISABLED
+	}
+	return &pb.Workflow{Path: w.Path, Name: w.Name, State: state}
+}
+
+func (s *runService) ListWorkflows(ctx context.Context, req *connect.Request[pb.ListWorkflowsRequest]) (*connect.Response[pb.ListWorkflowsResponse], error) {
+	name, err := repoOf(req.Msg.GetRepo())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	list, err := s.runs.ListWorkflows(ctx, caller(ctx), name)
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	out := &pb.ListWorkflowsResponse{Workflows: make([]*pb.Workflow, 0, len(list))}
+	for _, w := range list {
+		out.Workflows = append(out.Workflows, workflowToPB(w))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *runService) DisableWorkflow(ctx context.Context, req *connect.Request[pb.DisableWorkflowRequest]) (*connect.Response[pb.DisableWorkflowResponse], error) {
+	name, err := repoOf(req.Msg.GetRepo())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	w, err := s.runs.DisableWorkflow(ctx, caller(ctx), name, req.Msg.GetWorkflow())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	return connect.NewResponse(&pb.DisableWorkflowResponse{Workflow: workflowToPB(w)}), nil
+}
+
+func (s *runService) EnableWorkflow(ctx context.Context, req *connect.Request[pb.EnableWorkflowRequest]) (*connect.Response[pb.EnableWorkflowResponse], error) {
+	name, err := repoOf(req.Msg.GetRepo())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	w, err := s.runs.EnableWorkflow(ctx, caller(ctx), name, req.Msg.GetWorkflow())
+	if err != nil {
+		return nil, ciError(ctx, err)
+	}
+	return connect.NewResponse(&pb.EnableWorkflowResponse{Workflow: workflowToPB(w)}), nil
+}
+
 func (s *runService) ListChecks(ctx context.Context, req *connect.Request[pb.ListChecksRequest]) (*connect.Response[pb.ListChecksResponse], error) {
 	name, err := repoOf(req.Msg.GetRepo())
 	if err != nil {

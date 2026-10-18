@@ -167,6 +167,9 @@ type CIConfig struct {
 	// runs and the trust of dispatched ones (ci_tips.go). Nil: they are never
 	// trusted. Leave it unset rather than assigning a typed nil pointer.
 	RefTips ports.CIRefTipStore
+	// WorkflowState keeps the workflows a repository disabled (ci_workflows.go).
+	// Nil: none is. Leave it unset rather than assigning a typed nil pointer.
+	WorkflowState ports.CIWorkflowStore
 	// DispatchResolved, when set, is called by DispatchWorkflow after it resolved
 	// its ref and before it judges the trust of the run. Tests use it to move the
 	// ref in between.
@@ -175,6 +178,10 @@ type CIConfig struct {
 	// "requested" or "completed" event of a run were started (or none matched).
 	// Tests use it as a barrier.
 	RunEventHandled func(runID int64, action string)
+	// ScheduleLoaded, when set, is called after the scheduler read the workflows
+	// of a repository and before it caches and fires them. Tests use it to
+	// change the disabled state in that window.
+	ScheduleLoaded func(repo domain.RepoName)
 	// ScheduleVisit, when set, is called with each repository the scheduler
 	// looks at. Tests use it.
 	ScheduleVisit func(repo domain.RepoName)

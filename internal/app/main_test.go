@@ -116,8 +116,20 @@ func baseEnv() []string {
 	return []string{"PATH=" + os.Getenv("PATH")}
 }
 
+// isolatedEnv is the environment of a CLI run that must not see the user's
+// ERMITE_URL, ERMITE_TOKEN or config file: a version command with a server URL
+// also asks the server and prints its version.
+func isolatedEnv(t *testing.T) []string {
+	t.Helper()
+	cfg := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(cfg, nil, 0o600))
+	return append(baseEnv(), "ERMITE_CONFIG="+cfg, "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
+}
+
 func TestVersion(t *testing.T) {
-	out, err := exec.Command(binary(t), "version").Output()
+	cmd := exec.Command(binary(t), "version")
+	cmd.Env = isolatedEnv(t)
+	out, err := cmd.Output()
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(string(out), "ermite "), string(out))
 	assert.Equal(t, 1, strings.Count(string(out), "\n"))

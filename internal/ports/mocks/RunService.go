@@ -126,6 +126,158 @@ func (_c *RunService_CancelRun_Call) RunAndReturn(run func(ctx context.Context, 
 	return _c
 }
 
+// DisableWorkflow provides a mock function for the type RunService
+func (_mock *RunService) DisableWorkflow(ctx context.Context, p domain.Principal, repo domain.RepoName, file string) (ports.WorkflowInfo, error) {
+	ret := _mock.Called(ctx, p, repo, file)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DisableWorkflow")
+	}
+
+	var r0 ports.WorkflowInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string) (ports.WorkflowInfo, error)); ok {
+		return returnFunc(ctx, p, repo, file)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string) ports.WorkflowInfo); ok {
+		r0 = returnFunc(ctx, p, repo, file)
+	} else {
+		r0 = ret.Get(0).(ports.WorkflowInfo)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, string) error); ok {
+		r1 = returnFunc(ctx, p, repo, file)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RunService_DisableWorkflow_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DisableWorkflow'
+type RunService_DisableWorkflow_Call struct {
+	*mock.Call
+}
+
+// DisableWorkflow is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - file string
+func (_e *RunService_Expecter) DisableWorkflow(ctx any, p any, repo any, file any) *RunService_DisableWorkflow_Call {
+	return &RunService_DisableWorkflow_Call{Call: _e.mock.On("DisableWorkflow", ctx, p, repo, file)}
+}
+
+func (_c *RunService_DisableWorkflow_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, file string)) *RunService_DisableWorkflow_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *RunService_DisableWorkflow_Call) Return(workflowInfo ports.WorkflowInfo, err error) *RunService_DisableWorkflow_Call {
+	_c.Call.Return(workflowInfo, err)
+	return _c
+}
+
+func (_c *RunService_DisableWorkflow_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, file string) (ports.WorkflowInfo, error)) *RunService_DisableWorkflow_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DisabledWorkflows provides a mock function for the type RunService
+func (_mock *RunService) DisabledWorkflows(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]string, error) {
+	ret := _mock.Called(ctx, p, repo)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DisabledWorkflows")
+	}
+
+	var r0 []string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) ([]string, error)); ok {
+		return returnFunc(ctx, p, repo)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) []string); ok {
+		r0 = returnFunc(ctx, p, repo)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName) error); ok {
+		r1 = returnFunc(ctx, p, repo)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RunService_DisabledWorkflows_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DisabledWorkflows'
+type RunService_DisabledWorkflows_Call struct {
+	*mock.Call
+}
+
+// DisabledWorkflows is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+func (_e *RunService_Expecter) DisabledWorkflows(ctx any, p any, repo any) *RunService_DisabledWorkflows_Call {
+	return &RunService_DisabledWorkflows_Call{Call: _e.mock.On("DisabledWorkflows", ctx, p, repo)}
+}
+
+func (_c *RunService_DisabledWorkflows_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName)) *RunService_DisabledWorkflows_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *RunService_DisabledWorkflows_Call) Return(strings []string, err error) *RunService_DisabledWorkflows_Call {
+	_c.Call.Return(strings, err)
+	return _c
+}
+
+func (_c *RunService_DisabledWorkflows_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]string, error)) *RunService_DisabledWorkflows_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DispatchWorkflow provides a mock function for the type RunService
 func (_mock *RunService) DispatchWorkflow(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.DispatchParams) (domain.CIRun, error) {
 	ret := _mock.Called(ctx, p, repo, params)
@@ -200,6 +352,84 @@ func (_c *RunService_DispatchWorkflow_Call) Return(cIRun domain.CIRun, err error
 }
 
 func (_c *RunService_DispatchWorkflow_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.DispatchParams) (domain.CIRun, error)) *RunService_DispatchWorkflow_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// EnableWorkflow provides a mock function for the type RunService
+func (_mock *RunService) EnableWorkflow(ctx context.Context, p domain.Principal, repo domain.RepoName, file string) (ports.WorkflowInfo, error) {
+	ret := _mock.Called(ctx, p, repo, file)
+
+	if len(ret) == 0 {
+		panic("no return value specified for EnableWorkflow")
+	}
+
+	var r0 ports.WorkflowInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string) (ports.WorkflowInfo, error)); ok {
+		return returnFunc(ctx, p, repo, file)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, string) ports.WorkflowInfo); ok {
+		r0 = returnFunc(ctx, p, repo, file)
+	} else {
+		r0 = ret.Get(0).(ports.WorkflowInfo)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, string) error); ok {
+		r1 = returnFunc(ctx, p, repo, file)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RunService_EnableWorkflow_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'EnableWorkflow'
+type RunService_EnableWorkflow_Call struct {
+	*mock.Call
+}
+
+// EnableWorkflow is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - file string
+func (_e *RunService_Expecter) EnableWorkflow(ctx any, p any, repo any, file any) *RunService_EnableWorkflow_Call {
+	return &RunService_EnableWorkflow_Call{Call: _e.mock.On("EnableWorkflow", ctx, p, repo, file)}
+}
+
+func (_c *RunService_EnableWorkflow_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, file string)) *RunService_EnableWorkflow_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *RunService_EnableWorkflow_Call) Return(workflowInfo ports.WorkflowInfo, err error) *RunService_EnableWorkflow_Call {
+	_c.Call.Return(workflowInfo, err)
+	return _c
+}
+
+func (_c *RunService_EnableWorkflow_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, file string) (ports.WorkflowInfo, error)) *RunService_EnableWorkflow_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -857,6 +1087,80 @@ func (_c *RunService_ListRuns_Call) Return(runPage ports.RunPage, err error) *Ru
 }
 
 func (_c *RunService_ListRuns_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, params ports.ListRunsParams) (ports.RunPage, error)) *RunService_ListRuns_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListWorkflows provides a mock function for the type RunService
+func (_mock *RunService) ListWorkflows(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]ports.WorkflowInfo, error) {
+	ret := _mock.Called(ctx, p, repo)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListWorkflows")
+	}
+
+	var r0 []ports.WorkflowInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) ([]ports.WorkflowInfo, error)); ok {
+		return returnFunc(ctx, p, repo)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) []ports.WorkflowInfo); ok {
+		r0 = returnFunc(ctx, p, repo)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ports.WorkflowInfo)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName) error); ok {
+		r1 = returnFunc(ctx, p, repo)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RunService_ListWorkflows_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListWorkflows'
+type RunService_ListWorkflows_Call struct {
+	*mock.Call
+}
+
+// ListWorkflows is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+func (_e *RunService_Expecter) ListWorkflows(ctx any, p any, repo any) *RunService_ListWorkflows_Call {
+	return &RunService_ListWorkflows_Call{Call: _e.mock.On("ListWorkflows", ctx, p, repo)}
+}
+
+func (_c *RunService_ListWorkflows_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName)) *RunService_ListWorkflows_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *RunService_ListWorkflows_Call) Return(workflowInfos []ports.WorkflowInfo, err error) *RunService_ListWorkflows_Call {
+	_c.Call.Return(workflowInfos, err)
+	return _c
+}
+
+func (_c *RunService_ListWorkflows_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]ports.WorkflowInfo, error)) *RunService_ListWorkflows_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -28,6 +28,22 @@ ermite run cancel <repo> <id>          # needs ci:write
 ermite run rerun <repo> <id> [--failed]
 ```
 
+### Disable a workflow
+
+```sh
+ermite workflow list <repo> [--json]
+ermite workflow disable <repo> <file>   # needs repo:admin
+ermite workflow enable <repo> <file>
+```
+
+Like `gh workflow disable`: a disabled workflow starts no run for any event (`push`, `pull_request`, `pull_request_target`, `schedule`, `workflow_run`, `create`, `delete`, `workflow_dispatch`). Runs already started go on, and events missed while it was disabled are not replayed.
+
+- `<file>` is `release.yml` or `.github/workflows/release.yml`. The state belongs to the repository and the path, not to a branch, and the file need not exist: disable a release workflow right after `ermite repo create`, before the first push, so pushing tags starts nothing. The files stay identical to their GitHub copies.
+- `list` shows the files of the default branch with their name and state, and the disabled files that branch lacks. Needs `repo:read` for a private repository.
+- The Actions tab names the disabled workflows, and the page of a run says when its workflow is disabled.
+- A disabled **reusable** workflow (`on: workflow_call`) can still be called with `uses:` from an enabled workflow: it then runs inside the caller's run, not as a run of its own, as on GitHub. Disable the caller to stop it.
+- The state is checked again in the transaction that stores a run, so a disable takes effect for every run not yet stored, even one being planned at that moment.
+
 The **Actions** tab of a repository shows the same. With `failing_checks_block` on (default), a merge waits for every check to pass. Turn it off with `ermite repo edit <repo> --failing-checks-block=false`.
 
 ## Trust

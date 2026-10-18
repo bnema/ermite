@@ -466,3 +466,10 @@ message CIConcurrencyMark {
   // that a binary that predates it still cancels the entry.
   bool queue_full = 4;
 }
+
+// CIWorkflowDisabled is stored under "ciwfoff/<repo>/<workflow path>" (the path
+// is ".github/workflows/<file>"): the workflow is disabled and starts no run.
+// The file does not have to exist. It goes with the repository.
+message CIWorkflowDisabled {
+  google.protobuf.Timestamp disabled_at = 1;
+}

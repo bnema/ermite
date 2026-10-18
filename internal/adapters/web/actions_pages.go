@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -143,6 +144,9 @@ type ActionsPage struct {
 	More string
 	// NoRunner says that CI has no runner to run on yet.
 	NoRunner bool
+	// Disabled are the workflow files that start no run (`ermite workflow
+	// disable`), as paths.
+	Disabled []string
 }
 
 // StepView is a step of a job.
@@ -193,6 +197,9 @@ type RunPage struct {
 	Active    bool
 	// detail is what the page was built from.
 	detail ports.RunDetail
+	// WorkflowDisabled: the workflow file of the run is disabled now, so a new
+	// event starts no run of it.
+	WorkflowDisabled bool
 	// Forms are the owner's actions; nil/empty when the visitor cannot.
 	CancelAction, RerunAction, RerunFailedAction string
 	CanRerunFailed                               bool
@@ -223,12 +230,23 @@ func (s *Server) actions(ctx context.Context, r *http.Request) (templ.Component,
 	if page.NextPageToken != "" {
 		p.More = actionsBase(d.name()) + "?page=" + page.NextPageToken
 	}
+	p.Disabled = s.disabledWorkflows(ctx, d)
 	l := s.repoLayout(ctx, d, "actions")
 	l.Title = "actions · " + d.name() + " · " + s.instance
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=actions")
 	l.Crumbs[0].Current = false
 	l.Crumbs = append(l.Crumbs, Crumb{Label: "actions", Current: true})
 	return Actions(l, p), http.StatusOK, nil
+}
+
+// disabledWorkflows are the disabled workflow paths of the repository; the
+// pages show them as a note, so a failure to read them is not one of the page.
+func (s *Server) disabledWorkflows(ctx context.Context, d *repoData) []string {
+	off, err := s.cfg.Runs.DisabledWorkflows(ctx, principal(ctx), d.repo.Name)
+	if err != nil {
+		return nil
+	}
+	return off
 }
 
 func (s *Server) runRow(repo string, run domain.CIRun, now time.Time) RunRow {
@@ -318,6 +336,7 @@ func (s *Server) run(ctx context.Context, r *http.Request) (templ.Component, int
 		return nil, 0, err
 	}
 	p.Artifacts = s.runArtifacts(ctx, d.repo.Name, p)
+	p.WorkflowDisabled = slices.Contains(s.disabledWorkflows(ctx, d), p.detail.Run.WorkflowPath)
 	l := s.repoLayout(ctx, d, "actions")
 	l.Title = "run " + p.ID + " · " + d.name() + " · " + s.instance
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=run&n="+p.ID)

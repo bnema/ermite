@@ -39,7 +39,7 @@ Its cache is read-only and restores only default-branch entries.
 ermite workflow run <file> --repo <repo> [--ref <branch|tag>] [-f name=value …]
 ```
 
-- Needs `ci:write`. `<file>` is a path or a name under `.github/workflows`. `--ref` defaults to the default branch.
+- Needs `ci:write`. `<file>` is a path or a name under `.github/workflows`. `--ref` defaults to the default branch. A disabled workflow (`ermite workflow disable`) is refused with `failed_precondition`.
 - Inputs are checked against the workflow (`required`, `boolean`, `number`, `choice`, `environment`). Up to 25 inputs.
 - A branch-limited token can dispatch only on its branches, and never gets a trusted run.
 - A job can dispatch with its own token when its `permissions:` give `actions: write`.

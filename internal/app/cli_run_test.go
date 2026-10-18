@@ -136,3 +136,54 @@ func TestRefTextShowsMergeRequests(t *testing.T) {
 	assert.Equal(t, "main", refText("refs/heads/main"))
 	assert.Equal(t, "v1", refText("refs/tags/v1"))
 }
+
+// `ermite workflow disable|enable|list`, over a real server: right after
+// `repo create`, before any push, then once the file exists.
+func TestCLIWorkflowDisableEnableList(t *testing.T) {
+	ci := newCIHarness(t, nil)
+	h := &cliHarness{harness: ci.harness, url: ci.srv.URL}
+
+	dis := h.cli(t, adminToken, "workflow", "disable", "proj", "release.yml")
+	require.NoError(t, dis.err, dis.stderr)
+	assert.Contains(t, dis.stderr, "disabled .github/workflows/release.yml in proj")
+
+	empty := h.cli(t, adminToken, "workflow", "list", "proj")
+	require.NoError(t, empty.err, empty.stderr)
+	assert.Contains(t, empty.stdout, "FILE")
+	assert.Contains(t, empty.stdout, ".github/workflows/release.yml")
+	assert.Contains(t, empty.stdout, "disabled")
+
+	ci.push("main", map[string]string{".github/workflows/ci.yml": ciWorkflow, releaseWF: wfOn("release", "  push:\n")}, "")
+	js := h.cli(t, adminToken, "workflow", "list", "proj", "--json")
+	require.NoError(t, js.err, js.stderr)
+	list := decode[[]jsonWorkflow](t, js.stdout)
+	assert.Equal(t, []jsonWorkflow{
+		{Repo: "proj", File: ".github/workflows/ci.yml", Name: "ci", State: "enabled"},
+		{Repo: "proj", File: releaseWF, Name: "release", State: "disabled"},
+	}, list)
+	raw := decode[[]map[string]any](t, js.stdout)
+	assert.Len(t, raw[0], 4, "repo, file, name, state")
+	for _, k := range []string{"repo", "file", "name", "state"} {
+		assert.Contains(t, raw[0], k)
+	}
+
+	en := h.cli(t, adminToken, "workflow", "enable", "proj", "release.yml", "--json")
+	require.NoError(t, en.err, en.stderr)
+	assert.Equal(t, jsonWorkflow{Repo: "proj", File: releaseWF, State: "enabled"}, decode[jsonWorkflow](t, en.stdout))
+	after := decode[[]jsonWorkflow](t, h.cli(t, adminToken, "workflow", "list", "proj", "--json").stdout)
+	assert.Equal(t, "enabled", after[1].State)
+
+	bad := h.cli(t, adminToken, "workflow", "disable", "proj", "sub/x.yml")
+	require.Error(t, bad.err)
+	missing := h.cli(t, adminToken, "workflow", "disable", "nope", "x.yml")
+	require.Error(t, missing.err)
+
+	reader := h.cli(t, ci.token(scopes(domain.ScopeRepoRead), "proj"), "workflow", "disable", "proj", "release.yml")
+	require.Error(t, reader.err)
+	assert.Contains(t, reader.err.Error(), "permission denied")
+
+	help := h.cli(t, adminToken, "workflow", "disable", "--help")
+	require.NoError(t, help.err)
+	assert.Contains(t, help.stdout, "JSON fields of a workflow (--json): repo, file")
+	assert.Contains(t, help.stdout, "repo:admin")
+}

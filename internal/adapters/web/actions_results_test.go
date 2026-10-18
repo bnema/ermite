@@ -43,6 +43,7 @@ func TestSummariesAreRenderedSafely(t *testing.T) {
 	}, "\n")
 
 	runs := mocks.NewRunService(t)
+	runs.EXPECT().DisabledWorkflows(mock.Anything, mock.Anything, repo).Return(nil, nil).Maybe()
 	runs.EXPECT().GetRun(mock.Anything, mock.Anything, repo, int64(1), int32(0)).Return(ports.RunDetail{
 		Run:  domain.CIRun{Repo: repo, ID: 1, Attempt: 1, Number: 1, WorkflowName: "ci", Sha: strings.Repeat("a", 40), Status: domain.CICompleted, Conclusion: domain.CISuccess},
 		Jobs: []ports.JobView{job}, LatestAttempt: 1,
@@ -143,6 +144,7 @@ func runPageServer(t *testing.T, repo domain.RepoName, jobs []ports.JobView, run
 		Run:  domain.CIRun{Repo: repo, ID: 1, Attempt: 1, Number: 1, WorkflowName: "ci", Sha: strings.Repeat("a", 40), Status: domain.CICompleted, Conclusion: domain.CISuccess},
 		Jobs: jobs, LatestAttempt: 1,
 	}, nil)
+	runs.EXPECT().DisabledWorkflows(mock.Anything, mock.Anything, repo).Return(nil, nil).Maybe()
 	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), int32(1), "").Return(ports.AnnotationList{}, nil)
 	browse := mocks.NewBrowseService(t)
 	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
@@ -234,4 +236,35 @@ func TestJobStateDoesNotReadTheRun(t *testing.T) {
 	frags, err = (&liveStream{s: srv, repo: "proj", view: "job", job: jobID}).jobState(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, gap, frags)
+}
+
+// A disabled workflow is said on the list of runs and on the page of its runs
+// (`ermite workflow disable`).
+func TestRunPagesSayWhenAWorkflowIsDisabled(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	const path = ".github/workflows/release.yml"
+	runs := mocks.NewRunService(t)
+	runs.EXPECT().DisabledWorkflows(mock.Anything, mock.Anything, repo).Return([]string{path}, nil)
+	runs.EXPECT().ListRuns(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RunPage{}, nil)
+	runs.EXPECT().GetRun(mock.Anything, mock.Anything, repo, int64(1), int32(0)).Return(ports.RunDetail{
+		Run:           domain.CIRun{Repo: repo, ID: 1, Attempt: 1, Number: 1, WorkflowName: "release", WorkflowPath: path, Sha: strings.Repeat("a", 40), Status: domain.CICompleted, Conclusion: domain.CISuccess},
+		LatestAttempt: 1,
+	}, nil)
+	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), int32(1), "").Return(ports.AnnotationList{}, nil)
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
+	srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs})
+	get := func(target string) string {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, target, nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Body.String()
+	}
+	list := get("/proj/actions")
+	assert.Contains(t, list, "disabled workflows")
+	assert.Contains(t, list, path)
+	run := get("/proj/actions/runs/1")
+	assert.Contains(t, run, "this workflow is disabled")
+	assert.NotContains(t, run, "onclick", "no inline script")
 }

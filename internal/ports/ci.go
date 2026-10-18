@@ -95,6 +95,21 @@ type CIRefTipStore interface {
 	DeleteRefTip(ctx context.Context, repo domain.RepoName, ref string) error
 }
 
+// CIWorkflowStore keeps, per repository, the workflow files that are disabled
+// (`ermite workflow disable`). Paths are normalized (domain.ParseWorkflowPath);
+// the file does not have to exist. The records go with the repository.
+// *kvstore.CI implements it.
+type CIWorkflowStore interface {
+	// DisableWorkflow records the path as disabled; one already disabled is
+	// left as it is. A repository that does not exist is domain.ErrNotFound.
+	DisableWorkflow(ctx context.Context, repo domain.RepoName, path string, at time.Time) error
+	// EnableWorkflow removes the record; a path that is not disabled is not an
+	// error.
+	EnableWorkflow(ctx context.Context, repo domain.RepoName, path string) error
+	// DisabledWorkflows returns the disabled paths of the repository, sorted.
+	DisabledWorkflows(ctx context.Context, repo domain.RepoName) ([]string, error)
+}
+
 // CIStore keeps CI runs, jobs and checks. The store derives its own indexes
 // (the queue of ready jobs, the active jobs, the open runs, the job tokens)
 // from the records it writes.
@@ -102,8 +117,12 @@ type CIStore interface {
 	// CreateRun takes the next run id and the next number of the workflow in
 	// the repository (both never reused), calls build with them and stores
 	// the draft it returns, in one batch that fails with domain.ErrNotFound
-	// once the repository is deleted. The records come back with their
-	// versions.
+	// once the repository is deleted, and with domain.ErrWorkflowDisabled when
+	// the repository disabled workflowPath (CIWorkflowStore) when the batch
+	// applies: the state is checked in that transaction, not before it, so a
+	// disable can never be overtaken, whatever event started the run and
+	// whether the run is a failed one for an invalid file or not. The records
+	// come back with their versions.
 	CreateRun(ctx context.Context, repo domain.RepoName, workflowPath string, build func(id, number int64) CIRunDraft) (CIRunDraft, error)
 	// Apply writes the records in one batch and returns the version they all
 	// have afterwards.
@@ -283,6 +302,16 @@ type DispatchParams struct {
 	Ref string
 	// Inputs are the values of the inputs by name, as text.
 	Inputs map[string]string
+}
+
+// WorkflowInfo is a workflow file of a repository and whether it starts runs.
+type WorkflowInfo struct {
+	// Path is ".github/workflows/<file>".
+	Path string
+	// Name is the "name:" of the workflow at the tip of the default branch (the
+	// path when it has none); empty when that file is absent or not a workflow.
+	Name     string
+	Disabled bool
 }
 
 // WorkflowTrigger starts the workflows that match pushed refs. OnPush only
@@ -721,6 +750,18 @@ type RunService interface {
 	// permission actions: write. The run is returned queued.
 	DispatchWorkflow(ctx context.Context, p domain.Principal, repo domain.RepoName, params DispatchParams) (domain.CIRun, error)
 	ListChecks(ctx context.Context, p domain.Principal, repo domain.RepoName, sha string) (ChecksResult, error)
+	// ListWorkflows returns the workflow files at the tip of the default branch
+	// and the disabled ones whatever the branch holds, ordered by path. Reading
+	// the repository is enough.
+	ListWorkflows(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]WorkflowInfo, error)
+	// DisabledWorkflows returns the paths of the disabled workflows, sorted,
+	// without reading any file: the cheap form of ListWorkflows for the pages.
+	DisabledWorkflows(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]string, error)
+	// DisableWorkflow stops the workflow (its file name or path; it does not
+	// have to exist) from starting runs for any event. EnableWorkflow undoes it.
+	// Both need repo:admin on the repository and are idempotent.
+	DisableWorkflow(ctx context.Context, p domain.Principal, repo domain.RepoName, file string) (WorkflowInfo, error)
+	EnableWorkflow(ctx context.Context, p domain.Principal, repo domain.RepoName, file string) (WorkflowInfo, error)
 	// ListAnnotations returns the annotations of a run attempt (0 for the
 	// latest), of one job when jobID is not empty. Each job gives those of the
 	// attempt in which it executed.

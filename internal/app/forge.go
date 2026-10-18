@@ -277,11 +277,12 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			Bin: cfg.Git, Path: path, Home: filepath.Join(cfg.DataDir, "run", "git-home"),
 			Proxy: gitremote.ProxyEnv(os.Getenv),
 		})),
-		Tokens:    store.Tokens(),
-		RefTips:   store.CI(),
-		Settings:  f.Settings,
-		Workflows: opts.workflows(githubraw.New(githubraw.Config{})),
-		OIDC:      f.OIDC,
+		Tokens:        store.Tokens(),
+		RefTips:       store.CI(),
+		WorkflowState: store.CI(),
+		Settings:      f.Settings,
+		Workflows:     opts.workflows(githubraw.New(githubraw.Config{})),
+		OIDC:          f.OIDC,
 	}
 	artifacts(&ciCfg, cfg, store)
 	f.pullRequests(&ciCfg, store, git, committer)

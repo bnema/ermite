@@ -42,6 +42,9 @@ const (
 	FeatureCISecrets = "ci.secrets"
 	// FeatureCIDispatch is RunService.DispatchWorkflow (`ermite workflow run`).
 	FeatureCIDispatch = "ci.dispatch"
+	// FeatureCIWorkflows is RunService.ListWorkflows, DisableWorkflow and
+	// EnableWorkflow (`ermite workflow list|disable|enable`).
+	FeatureCIWorkflows = "ci.workflows"
 	// FeatureCIArtifacts is ArtifactService (`ermite run artifacts`,
 	// `run download`).
 	FeatureCIArtifacts = "ci.artifacts"
@@ -52,7 +55,7 @@ const (
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.
