@@ -54,28 +54,37 @@ templ Summary(l Layout, p SummaryPage) {
 	}
 }
 
+// latestTagFact is the "latest tag" row of About: the newest tag (its
+// commit subject on hover), how old it is, and the count of tags, a link to
+// all of them. With too many tags to date them, the count only.
+templ latestTagFact(t LatestTag) {
+	<dt>latest tag</dt>
+	<dd class="latest-tag">
+		if t.Name != "" {
+			<a class="tag-name" href={ templ.SafeURL(t.Href) } title={ t.Subject }><span class="ico i-tag" aria-hidden="true"></span>{ t.Name }</a>
+			if t.WhenAt != "" {
+				<time class="dim" datetime={ t.WhenAt } title={ t.WhenAt }>{ t.When }</time>
+			}
+		}
+		<a class="all-tags" href={ templ.SafeURL(t.RefsHref) }>{ plural(t.Count, "tag", "tags") }</a>
+	</dd>
+}
+
 templ summaryRail(p SummaryPage) {
 	<section aria-labelledby="r-clone"><h2 id="r-clone">Clone</h2>@CloneBlock(p.Clone)
 </section>
-	<section aria-labelledby="r-facts"><h2 id="r-facts">About</h2>@Facts(p.Facts)
-</section>
-	if p.Latest != nil {
-		<section aria-labelledby="r-tag">
-			<h2 id="r-tag">Tags <span class="count">{ itoa(p.Latest.Count) }</span> <a href={ templ.SafeURL(p.Latest.RefsHref) }>View all</a></h2>
-			if p.Latest.Name != "" {
-				<div class="latest-tag">
-					<a class="tag-name" href={ templ.SafeURL(p.Latest.Href) }><span class="ico i-tag" aria-hidden="true"></span>{ p.Latest.Name }</a>
-					<span class="pill">latest</span>
-					<time class="dim" datetime={ p.Latest.WhenAt } title={ p.Latest.WhenAt }>{ p.Latest.When }</time>
-					if p.Latest.Subject != "" {
-						<p class="tag-sub dim">{ p.Latest.Subject }</p>
-					}
-				</div>
-			} else {
-				<p class="dim">{ plural(p.Latest.Count, "tag", "tags") }</p>
+	<section aria-labelledby="r-facts">
+		<h2 id="r-facts">About</h2>
+		<dl class="kv">
+			for _, f := range p.Facts {
+				<dt>{ f.Key }</dt>
+				@FactValue(f)
 			}
-		</section>
-	}
+			if p.Latest != nil {
+				@latestTagFact(*p.Latest)
+			}
+		</dl>
+	</section>
 	if len(p.Recent) > 0 {
 		<section aria-labelledby="r-recent"><h2 id="r-recent">Recent commits <a href={ templ.SafeURL(p.AllHref) }>View all</a></h2>@CommitRows(p.Recent)
 </section>

@@ -20,7 +20,8 @@
      the refs list has the mark next to the sha. */
   .c-ck { width: 1%; white-space: nowrap; }
   .list .c-ck { width: 92px; }
-  .rail .list.commits .c-ck { width: 76px; }
+  /* the commit table of a rail lays out on its content (50-code.css) */
+  .rail .list.commits .c-ck { width: 1%; }
   .list.refs .c-sha { width: 150px; }
 
   /* the table is fixed: the status column is the icon, its margin and the
@@ -59,6 +60,12 @@
   .attempts { padding: 0; margin: var(--s2) 0 0; list-style: none; font-size: var(--fs-s); }
   .checks { display: grid; gap: var(--s1); padding: 0; margin: 0; list-style: none; font-size: var(--fs-s); }
   .checks li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
+  /* the merge rule under the checks: a note about them, not one of them */
+  .rail section > .rule-note {
+    display: flex; gap: 6px; margin-top: var(--s3); padding-top: var(--s2); border-top: 1px dashed var(--border);
+    font-size: var(--fs-xs); font-style: italic; line-height: 1.4; color: var(--ink-mute);
+    &::before { content: "i"; flex: none; width: 14px; height: 14px; margin-top: 1px; border: 1px solid currentColor; border-radius: 50%; font: 700 9px / 12px var(--mono); font-style: normal; text-align: center; }
+  }
 
   /* annotations and summaries of a run */
   .annots { margin: 0 0 var(--s4); }

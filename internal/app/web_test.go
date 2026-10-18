@@ -264,14 +264,16 @@ func TestWebContentSecurity(t *testing.T) {
 	}
 }
 
-// The summary rail names the newest tag; with more tags than it dates, it
-// gives their count instead of an empty block.
+// About, in the summary rail, names the newest tag; with more tags than it
+// dates, it gives their count only.
 func TestWebSummaryLatestTag(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	h.webRepo("demo")
 	_, _, body := h.get("/demo")
-	assert.Contains(t, body, `<a class="tag-name" href="/demo/tree/v0.2.0">`)
-	assert.Contains(t, body, `<p class="tag-sub dim">add main.go</p>`)
+	assert.Contains(t, body, `<dt>latest tag</dt>`)
+	assert.Contains(t, body, `<a class="tag-name" href="/demo/tree/v0.2.0" title="add main.go">`)
+	assert.Contains(t, body, `<a class="all-tags" href="/demo/refs">2 tags</a>`)
+	assert.NotContains(t, body, `id="r-tag"`, "no Tags block of its own: the tag is a row of About")
 
 	h.seed("many", domain.VisibilityPublic, "a.txt")
 	wt := t.TempDir()
@@ -281,6 +283,6 @@ func TestWebSummaryLatestTag(t *testing.T) {
 	}
 	h.mustGit(wt, "push", "-q", "--tags", "origin")
 	_, _, body = h.get("/many")
-	assert.NotContains(t, body, `class="latest-tag"`)
-	assert.Contains(t, body, `<p class="dim">21 tags</p>`)
+	assert.NotContains(t, body, `class="tag-name"`)
+	assert.Contains(t, body, `<a class="all-tags" href="/many/refs">21 tags</a>`)
 }

@@ -115,7 +115,9 @@
     font-size: var(--fs-s); position: relative; /* the offsets of its links count from it (ermite.js) */
     & li[hidden] { display: none; }
     & a {
-      display: grid; grid-template-columns: 1.5ch minmax(0, 1fr) auto auto; column-gap: var(--s2); align-items: baseline;
+      /* centred, not on the baseline: the smaller counts on a baseline sit
+         a pixel below the row, enough to give the list a scroll bar */
+      display: grid; grid-template-columns: 1.5ch minmax(0, 1fr) auto auto; column-gap: var(--s2); align-items: center;
       height: 26px; line-height: 26px; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2));
       border-radius: 4px; border-left: 2px solid transparent; text-decoration: none; font-family: var(--mono); color: var(--ink);
     }
@@ -127,9 +129,11 @@
     & .st[data-st="A"] { color: var(--teal); }
     & .st[data-st="D"] { color: var(--red); }
     & .nm { overflow: hidden; white-space: nowrap; display: flex; min-width: 0; }
-    & .nm .p { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    /* the name gives way last: the directory shrinks first, down to its
+       ellipsis, before the name is cut */
+    & .nm .p { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     /* cut from the start (rtl), the path itself kept in its order (bdi) */
-    & .nm .d { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; color: var(--ink-mute); padding-left: 1ch; }
+    & .nm .d { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; color: var(--ink-mute); padding-left: 1ch; }
     & .nm .d bdi { direction: ltr; }
     & .cn { font: 600 var(--fs-xs) / 16px var(--font); padding: 0 6px; border-radius: 999px; background: var(--ink-hi); color: var(--on-ink); align-self: center; }
     & .cn.done { background: var(--bg-strong); color: var(--ink-dim); }
@@ -148,18 +152,20 @@
     & .c-sha { width: 96px; }
     & .c-sub { width: auto; }
   }
-  /* the commit table inside a rail block: no frame of its own */
+  /* the commit table inside a rail block: no frame of its own. The id, the
+     checks and the date take the width of their text (an empty checks cell
+     next to nothing); the subject takes the rest, cut at its end only. */
   .rail .list.commits {
-    border: 0; border-radius: 0; background: none;
-    & td { height: 34px; padding: 0 var(--s2); }
+    border: 0; border-radius: 0; background: none; table-layout: auto;
+    & td { height: 34px; padding: 0 var(--s2); width: 1%; white-space: nowrap; }
     & td.cur { width: 3px; padding: 0; }
     & td:nth-child(2) { padding-left: var(--s3); }
     & td:last-child { padding-right: var(--s4); }
     & .c-who { display: none; }
-    & .c-sha { width: 72px; }
-    & .c-subject { font-size: var(--fs-s); }
+    & .c-subject { width: auto; max-width: 0; font-size: var(--fs-s); }
     & .c-subject .pill { display: none; }
-    & .c-when { width: 70px; text-align: right; }
+    & .c-ck:empty { padding: 0; }
+    & .c-when { text-align: right; }
   }
   .rail section > p { overflow-wrap: anywhere; }
   @media (max-width: 700px) {
