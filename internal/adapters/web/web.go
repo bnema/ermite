@@ -108,7 +108,9 @@ type Server struct {
 	md       *markdown
 	// pathCache holds the path lists the file finder fetches.
 	pathCache *pathCache
-	mux       *http.ServeMux
+	// hl holds the colours of highlighted diffs.
+	hl  *hlCache
+	mux *http.ServeMux
 	// ownerRepo is the owner login as a repository name, zero when it is not
 	// a valid one (then no repository can be named like the owner).
 	ownerRepo domain.RepoName
@@ -141,6 +143,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg: cfg, instance: u.Host, assets: assets, md: newMarkdown(),
 		pathCache: newPathCache(pathCacheBytes, pathBuilds),
+		hl:        newHLCache(hlCacheBytes),
 		origin:    originOf(u),
 	}
 	s.ownerRepo, _ = domain.ParseRepoName(cfg.Owner)

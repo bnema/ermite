@@ -44,6 +44,9 @@
      --hdr-h is its height, the offset of the sticky bars of the diffs. */
   body { --hdr-h: 57px; }
   body:has(.hdr .tabs) { --hdr-h: 101px; }
+  /* A row the cursor scrolls to (j / k, scrollIntoView) stops below the
+     sticky header, not under it. */
+  [data-rows] > * { scroll-margin-top: calc(var(--hdr-h) + var(--s3)); scroll-margin-bottom: var(--s3); }
   .hdr {
     position: sticky; top: 0; z-index: 20;
     background: var(--bg-surface); border-bottom: 1px solid var(--border);

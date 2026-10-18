@@ -81,11 +81,18 @@ func (s *Server) diffContext(ctx context.Context, r *http.Request) (templ.Compon
 	}
 	cut := min(end, newFrom-1+maxContextLines)
 
+	// The colours of the lines come from the file lexed down to the last of
+	// them; plain where that is not possible (limits, no language).
+	colours := s.hl.highlightContext(ctx, info.ID.String(), path, lines, newFrom-1, cut)
 	var out ContextRows
 	for i := newFrom - 1; i < cut; i++ {
 		o, nw := oldFrom+i-(newFrom-1), i+1
+		segs := segments(lines[i])
+		if colours != nil && colours[i-(newFrom-1)] != nil {
+			segs = colours[i-(newFrom-1)]
+		}
 		out.Lines = append(out.Lines, DiffLine{
-			Kind: "ctx", Mark: " ", Segs: segments(lines[i]),
+			Kind: "ctx", Mark: " ", Segs: segs,
 			Old: itoa(o), New: itoa(nw), oldN: o, newN: nw,
 			NoEOL: noEOL && i == len(lines)-1,
 		})

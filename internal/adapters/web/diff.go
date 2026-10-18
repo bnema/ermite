@@ -22,6 +22,9 @@ import (
 type Seg struct {
 	Text string
 	Mark bool
+	// Class is the CSS class of the syntax token the text belongs to (the
+	// classes of 56-chroma.css), "" for plain text and for markers.
+	Class string
 }
 
 // DiffLine is one line of a hunk, in the unified view and, paired, in the
@@ -226,24 +229,29 @@ func lineNumber(n int) string {
 // segments splits a line of code into plain text and markers. One trailing
 // carriage return, the terminator of a CRLF file, is dropped.
 func segments(text string) []Seg {
-	text = strings.TrimSuffix(text, "\r")
+	return appendSegs(nil, strings.TrimSuffix(text, "\r"), "")
+}
+
+// appendSegs appends to out the pieces of text, a piece of code of the
+// syntax class class: plain text of that class, and the markers of its
+// invisible characters.
+func appendSegs(out []Seg, text, class string) []Seg {
 	if !strings.ContainsFunc(text, invisible) {
-		return []Seg{{Text: text}}
+		return append(out, Seg{Text: text, Class: class})
 	}
-	var out []Seg
 	start := 0
 	for i, r := range text {
 		if !invisible(r) {
 			continue
 		}
 		if i > start {
-			out = append(out, Seg{Text: text[start:i]})
+			out = append(out, Seg{Text: text[start:i], Class: class})
 		}
 		out = append(out, Seg{Text: marker(r), Mark: true})
 		start = i + utf8.RuneLen(r)
 	}
 	if start < len(text) {
-		out = append(out, Seg{Text: text[start:]})
+		out = append(out, Seg{Text: text[start:], Class: class})
 	}
 	return out
 }
@@ -424,9 +432,12 @@ func codeLine(ln DiffLine) templ.Component {
 	return templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
 		var b strings.Builder
 		for _, s := range ln.Segs {
-			if s.Mark {
+			switch {
+			case s.Mark:
 				b.WriteString(`<span class="inv" title="invisible character">` + html.EscapeString(s.Text) + `</span>`)
-			} else {
+			case s.Class != "":
+				b.WriteString(`<span class="` + html.EscapeString(s.Class) + `">` + html.EscapeString(s.Text) + `</span>`)
+			default:
 				b.WriteString(html.EscapeString(s.Text))
 			}
 		}

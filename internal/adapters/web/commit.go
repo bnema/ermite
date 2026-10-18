@@ -120,7 +120,7 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 		NFiles: res.Stats.FilesChanged,
 		Adds:   res.Stats.Additions,
 		Dels:   res.Stats.Deletions,
-		Files:  diffFiles(res.Diff.Files),
+		Files:  s.hl.files(ctx, res.Diff.Files),
 	}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", cid))
 	if cm := person(c.Committer, now); cm != p.Author || c.Committer.Email != c.Author.Email {

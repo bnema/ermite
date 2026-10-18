@@ -221,7 +221,7 @@ templ DiffFileView(f DiffFile, p DiffView) {
 										<td class="ln">@gutter(ln.Old, ln.OldHref)</td>
 										<td class="ln">@gutter(ln.New, ln.NewHref)</td>
 										<td class="m">{ ln.Mark }</td>
-										<td class="tx">@codeLine(ln)</td>
+										<td class="tx chroma">@codeLine(ln)</td>
 									</tr>
 									if len(ln.Notes) > 0 || ln.Form != nil {
 										<tr class="fnote">
@@ -325,7 +325,7 @@ templ DiffContext(c ContextRows) {
 					<td class="ln">{ ln.Old }</td>
 					<td class="ln">{ ln.New }</td>
 					<td class="m">{ ln.Mark }</td>
-					<td class="tx">@codeLine(ln)</td>
+					<td class="tx chroma">@codeLine(ln)</td>
 				</tr>
 			}
 			if c.More != nil {
@@ -362,7 +362,7 @@ templ splitSide(ln *DiffLine, old bool) {
 			}
 		</td>
 		<td class={ "m", ln.Kind }>{ ln.Mark }</td>
-		<td class={ "tx", ln.Kind }>@codeLine(*ln)</td>
+		<td class={ "tx", "chroma", ln.Kind }>@codeLine(*ln)</td>
 	}
 }
 

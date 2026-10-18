@@ -476,7 +476,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		NFiles: res.Stats.FilesChanged,
 		Adds:   res.Stats.Additions,
 		Dels:   res.Stats.Deletions,
-		Files:  diffFiles(res.Diff.Files),
+		Files:  s.hl.files(ctx, res.Diff.Files),
 	}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head))
 	if desc := m.Description.String(); strings.TrimSpace(desc) != "" {

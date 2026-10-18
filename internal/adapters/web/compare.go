@@ -86,7 +86,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 			return nil, 0, err
 		}
 		p.HasDiff = true
-		p.Files = diffFiles(res.Diff.Files)
+		p.Files = s.hl.files(ctx, res.Diff.Files)
 		contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", res.Commit.ID.String()))
 		p.NFiles, p.Adds, p.Dels = res.Stats.FilesChanged, res.Stats.Additions, res.Stats.Deletions
 		if n := diffNote(res.Diff, len(p.Files), p.NFiles); n != "" {

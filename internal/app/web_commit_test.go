@@ -186,6 +186,43 @@ func TestWebCommitPrivate(t *testing.T) {
 	}
 }
 
+// The syntax colours reach the hidden lines: /context lexes the whole file, so
+// a block comment that opens in the hidden lines and closes below them is
+// coloured as one, with the classes of the code view, and the text stays
+// escaped.
+func TestWebDiffContextHighlight(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	wt := t.TempDir()
+	h.mustGit(wt, "init", "-q", "--initial-branch=main")
+	var src strings.Builder
+	src.WriteString("package a\n\n/* open <b>\n")
+	for i := 1; i <= 30; i++ {
+		fmt.Fprintf(&src, "still a comment %d\n", i)
+	}
+	src.WriteString("*/\nvar x = 1\n")
+	for i := 1; i <= 20; i++ {
+		fmt.Fprintf(&src, "var y%d = %d\n", i, i)
+	}
+	h.put(wt, "f.go", []byte(src.String()), 0o644)
+	h.commitAt(wt, "2026-02-01T10:00:00Z", "a file")
+	h.put(wt, "f.go", []byte(strings.Replace(src.String(), "var y15 = 15", "var y15 = 150", 1)), 0o644)
+	sha := h.commitAt(wt, "2026-02-02T10:00:00Z", "change y15")
+	h.createRepo("hl", domain.VisibilityPublic)
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/hl.git"), "main")
+
+	_, _, page := h.get("/hl/commit/" + sha)
+	assert.Contains(t, page, `<span class="kd">var</span>`, "the hunk is coloured")
+	assertNoInline(t, page)
+
+	st, _, body := h.get("/hl/context/" + sha + "?key=g0&n=20&new=1&old=1&path=f.go")
+	require.Equal(t, 200, st)
+	assert.Contains(t, body, `<span class="kn">package</span> a`)
+	assert.Contains(t, body, `<span class="cm">/* open &lt;b&gt;</span>`)
+	assert.Contains(t, body, `<span class="cm">still a comment 5</span>`, "the comment opened above is still open")
+	assert.NotContains(t, body, "<b>")
+	assertNoInline(t, body)
+}
+
 // The hidden lines of a diff: the page has a gap before a hunk and after the
 // last one, and /context serves their rows for both layouts, numbered on both
 // sides; a private repository's are the 404 page.

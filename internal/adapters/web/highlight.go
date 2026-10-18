@@ -144,6 +144,12 @@ func lexerFor(name string) chroma.Lexer {
 // lexer that gave up half-way (its regexp timeout) leaves behind. A lexer
 // may add a final line feed (EnsureNL), nothing else.
 func tokenise(ctx context.Context, lx chroma.Lexer, src string) (toks []chroma.Token, ok bool) {
+	return tokeniseInto(ctx, lx, src, nil)
+}
+
+// tokeniseInto is tokenise appending the tokens to buf (a buffer of length 0
+// that the caller reuses); the result is nil when it reports false.
+func tokeniseInto(ctx context.Context, lx chroma.Lexer, src string, buf []chroma.Token) (toks []chroma.Token, ok bool) {
 	defer func() {
 		if recover() != nil {
 			toks, ok = nil, false
@@ -153,6 +159,7 @@ func tokenise(ctx context.Context, lx chroma.Lexer, src string) (toks []chroma.T
 	if err != nil {
 		return nil, false
 	}
+	toks = buf
 	for t := it(); t != chroma.EOF; t = it() {
 		if len(toks)%256 == 0 && ctx.Err() != nil {
 			return nil, false
