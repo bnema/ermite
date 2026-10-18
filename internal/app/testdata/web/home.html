@@ -20,6 +20,8 @@
 </script>
 <script src="/-/static/js/hx-sse.min.HASH.js" defer>
 </script>
+<script src="/-/static/js/store.HASH.js" defer>
+</script>
 <script src="/-/static/js/ermite.HASH.js" defer>
 </script>
 <script src="/-/static/js/files.HASH.js" defer>
@@ -50,7 +52,7 @@
 <div class="work">
 <main id="main" tabindex="-1">
 <h1 class="sr">Repositories</h1>
-<div class="home">
+<div class="home" data-layout="cards">
 <section class="home-repos" aria-label="Repositories">
 <div class="home-bar">
 <div class="filter">
@@ -64,6 +66,20 @@
 </a>
 <a href="/?sort=name&amp;dir=asc">name </a>
 </nav>
+<div class="layout-switch" role="group" aria-label="Layout" data-js>
+<button type="button" class="btn icon" data-set-layout="cards" aria-pressed="true" title="Cards" aria-label="Cards">
+<span class="ico i-cards" aria-hidden="true">
+</span>
+</button>
+<button type="button" class="btn icon" data-set-layout="split" aria-pressed="false" title="Two columns" aria-label="Two columns">
+<span class="ico i-split" aria-hidden="true">
+</span>
+</button>
+<button type="button" class="btn icon" data-set-layout="compact" aria-pressed="false" title="Compact list" aria-label="Compact list">
+<span class="ico i-compact" aria-hidden="true">
+</span>
+</button>
+</div>
 </div>
 <ul class="repos" id="repo-rows" data-rows>
 <li id="repo-demo" class="repo" data-cursor>
@@ -105,7 +121,7 @@
 <dt>last 30 days</dt>
 <dd>0</dd>
 </div>
-<div>
+<div class="rs-active">
 <dt>last activity</dt>
 <dd>
 <time datetime="STAMP" title="STAMP">AGO</time>
@@ -145,7 +161,7 @@
 </div>
 <div class="repo-head">
 <dl class="repo-stats" aria-label="Figures of quiet">
-<div>
+<div class="rs-active">
 <dt>last activity</dt>
 <dd class="mute">never</dd>
 </div>

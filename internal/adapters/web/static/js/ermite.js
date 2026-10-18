@@ -13,6 +13,9 @@
 //  6. The lines a diff hides load in place (ermiteGaps; e and E).
 //  7. The service worker (ermiteInstall).
 //  8. Chip lists kept on one line, with a … chip (ermiteFit).
+//  9. The layout of the home page, remembered in the browser (ermiteLayout).
+//
+// Preferences are kept by ermiteStore (store.js, loaded first).
 (() => {
   // Marks the page as scripted: what does nothing without scripts (the filters,
   // the "go to" and help buttons) is hidden until this class is set (see the
@@ -481,16 +484,16 @@
   // The preference "single-character shortcuts" (WCAG 2.1.4): off, the keys
   // that are one printable character (j, k, s, ?, :, G, 1-9 in the merge menu,
   // …) do nothing. Shortcuts with ctrl or cmd, escape, enter and the arrows
-  // keep working. The choice lives in localStorage ("keys-off") and is made in
-  // the help dialog (a checkbox) or the palette (an action). Self-contained:
-  // jstest/keys.test.mjs evaluates this block alone.
+  // keep working. The choice is kept by ermiteStore ("keys-off": '1' when off)
+  // and is made in the help dialog (a checkbox) or the palette (an action).
+  // Self-contained with store.js: jstest/a11y.test.mjs evaluates this block.
   window.ermiteKeys = (() => {
-    const KEY = 'keys-off';
-    let off = false;
-    try { off = localStorage.getItem(KEY) === '1'; } catch { /* no storage: on, and the choice holds for this page */ }
+    const pref = window.ermiteStore.pref('keys-off', { values: ['1', ''], fallback: '' });
+    const isOff = () => pref.get() === '1';
     // apply shows the state: the checkbox and the note of the help dialog,
     // and the label of the palette action.
     function apply() {
+      const off = isOff();
       const box = document.getElementById('keys-off');
       if (box) box.checked = off;
       const note = document.getElementById('keys-note');
@@ -503,23 +506,51 @@
       if (act) act.textContent = off ? 'turn single-key shortcuts on' : 'turn single-key shortcuts off';
     }
     function set(v) {
-      off = !!v;
-      try { localStorage.setItem(KEY, off ? '1' : ''); } catch { /* storage refused: holds for this page */ }
+      pref.set(v ? '1' : '');
       apply();
     }
-    addEventListener('storage', (e) => {
-      if (e.key !== KEY) return;
-      off = e.newValue === '1';
-      apply();
-    });
+    pref.watch(apply);
     apply();
     return {
-      off: () => off,
+      off: isOff,
       set,
       apply,
       // blocks says whether the preference turns this key off.
-      blocks: (e) => off && e.key.length === 1,
+      blocks: (e) => isOff() && e.key.length === 1,
     };
+  })();
+
+  // The layout of the home page: "cards" (the default), "split" (two
+  // repositories per row) or "compact" (one line each). The choice is kept by
+  // ermiteStore ("home-layout"), made with the buttons [data-set-layout] of
+  // the layout switch, and shown as .home[data-layout], which the styles
+  // follow, and as aria-pressed on the buttons. Another tab's change applies
+  // here at once. The topic chips are fitted again: their room changes with the
+  // layout. Self-contained with store.js: jstest/layout.test.mjs evaluates
+  // this block.
+  window.ermiteLayout = (() => {
+    const values = ['cards', 'split', 'compact'];
+    const pref = window.ermiteStore.pref('home-layout', { values, fallback: 'cards' });
+    function apply() {
+      const layout = pref.get();
+      const home = document.querySelector('.home');
+      if (home) home.setAttribute('data-layout', layout);
+      for (const b of document.querySelectorAll('[data-set-layout]')) {
+        b.setAttribute('aria-pressed', String(b.getAttribute('data-set-layout') === layout));
+      }
+      window.ermiteFit?.all();
+    }
+    function set(v) {
+      pref.set(v);
+      apply();
+    }
+    addEventListener('click', (e) => {
+      const btn = e.target.closest?.('[data-set-layout]');
+      if (btn) set(btn.getAttribute('data-set-layout'));
+    });
+    pref.watch(apply);
+    apply();
+    return { get: pref.get, set, apply, values };
   })();
 
   // 1. Keys.

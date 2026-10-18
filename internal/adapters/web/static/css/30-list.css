@@ -135,6 +135,104 @@
       & .repo-commits { min-height: 0; }
     }
   }
+  /* Home layouts. The server renders "cards" (the rules above); a script
+     sets .home[data-layout] from the stored choice. The rows carry no markup
+     of their own for a layout, so a row swapped in by a live update fits. */
+  .home .layout-switch { display: flex; align-items: center; gap: 2px; }
+  .home .layout-switch .btn {
+    width: 28px; height: 28px; color: var(--ink-dim); background: none; border-color: transparent; border-radius: var(--r-s);
+    &:hover { color: var(--ink-hi); background: var(--bg-raised); }
+    &[aria-pressed="true"] { color: var(--ink-hi); background: var(--bg-raised); border-color: var(--border-strong); }
+  }
+  .home .home-bar .sort { margin-left: auto; }
+
+  /* split: two denser cards side by side. Name and CI state on top, the
+     description, the pulse as a band from edge to edge, the figures in one
+     row and the two newest commits. One column on a narrow screen. */
+  .home[data-layout="split"] {
+    & .repos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
+    & .repo {
+      grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); row-gap: 0;
+      grid-template-areas: "name ci" "desc desc" "topics topics" "pulse pulse" "stats stats" "recent recent";
+      grid-template-rows: auto 1fr auto auto auto auto;
+      overflow: hidden;
+    }
+    & .repo-main, & .repo-head { display: contents; }
+    & .repo-name { grid-area: name; align-self: center; font-size: 16px; }
+    & .repo-ci { grid-area: ci; align-self: center; padding-top: 0; }
+    & .repo-desc { grid-area: desc; margin-top: var(--s2); }
+    & .repo-topics { grid-area: topics; margin-top: var(--s2); }
+    & .repo-topics:empty { display: none; }
+    & .repo-pulse { grid-area: pulse; margin: var(--s3) calc(-1 * var(--s4)) 0; padding: 0; border-block: 1px solid var(--border); }
+    /* one row while it fits; a narrow card wraps the figures instead of
+       letting them overlap */
+    & .repo-stats { grid-area: stats; flex-wrap: wrap; justify-content: space-between; gap: var(--s2) var(--s3); margin-top: var(--s3); }
+    & .repo-stats div { flex: none; }
+    & .repo-stats dd { font-size: var(--fs); }
+    & .repo-stats .rs-tag dd { max-width: 12ch; }
+    & .repo-commits { grid-area: recent; min-height: calc(2 * (var(--lh) + 4px)); margin-top: var(--s2); }
+    & .repo-commits li:nth-child(n+3) { display: none; }
+    & .repo-commits[data-full] li:last-child { opacity: 1; }
+    & .repo-commits[data-full] li:nth-child(2) { opacity: .65; }
+  }
+  @media (max-width: 900px) {
+    .home[data-layout="split"] .repos { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* compact: a line per repository. Name, description, figures, CI state and
+     a small pulse sit in one grid row; the commits and topics are left out. */
+  .home[data-layout="compact"] {
+    & .repos { gap: var(--s2); }
+    & .repo {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) minmax(0, 20rem) 5.5rem 140px;
+      grid-template-areas: "name desc stats ci pulse";
+      grid-template-rows: none; column-gap: var(--s4); row-gap: 0; align-items: center;
+      padding: var(--s2) var(--s4);
+    }
+    & .repo-main, & .repo-head { display: contents; }
+    & .repo-topics, & .repo-commits { display: none; }
+    & .repo-name { grid-area: name; flex-wrap: nowrap; gap: var(--s2); font-size: var(--fs); line-height: 24px; overflow-wrap: normal; }
+    & .repo-name a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    & .repo-name .pill { flex: none; }
+    & .repo-desc {
+      grid-area: desc; display: block; min-height: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: var(--fs-s); color: var(--ink-mute);
+    }
+    /* figures inline, the value before its label; the label of the date and
+       of the tag is left to screen readers */
+    & .repo-stats { grid-area: stats; flex-wrap: nowrap; gap: var(--s3); overflow: hidden; }
+    & .repo-stats div { flex-direction: row; align-items: baseline; gap: 4px; flex: none; }
+    & .repo-stats dt { order: 1; font-size: var(--fs-xs); line-height: 16px; letter-spacing: 0; text-transform: none; }
+    & .repo-stats dd { font-size: var(--fs-xs); line-height: 16px; color: var(--ink-dim); }
+    & .repo-stats .rs-active dt, & .repo-stats .rs-tag dt {
+      position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+    }
+    & .repo-stats .rs-tag dd { max-width: 10ch; }
+    & .repo-stats .rs-tag dd::before {
+      content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 3px; vertical-align: -2px;
+      background: currentColor; mask: url(icons/tag.svg) center / contain no-repeat;
+    }
+    & .repo-ci { grid-area: ci; justify-self: start; padding-top: 0; font-size: var(--fs-xs); }
+    /* the pulse: the same curve, small, with a bigger dot to stay seen */
+    & .repo-pulse { grid-area: pulse; width: 100%; height: 100%; min-height: 18px; margin: 0; padding: 0; }
+    & div.repo-pulse { aspect-ratio: auto; box-sizing: border-box; }
+    & .repo-pulse svg { position: relative; top: 50%; transform: translateY(-50%); }
+    & .pulse-grid { display: none; }
+    & .pulse-dot { r: 9px; stroke: none; }
+  }
+  @media (max-width: 1100px) {
+    .home[data-layout="compact"] .repo { grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 14rem) 5.5rem 96px; column-gap: var(--s3); }
+    .home[data-layout="compact"] .repo-stats .rs-tag { display: none; }
+  }
+  /* on a phone: name and CI state on a line, the description and the figures
+     under it; the pulse is dropped */
+  @media (max-width: 720px) {
+    .home[data-layout="compact"] .repo {
+      grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name ci" "desc desc" "stats stats"; row-gap: 2px;
+    }
+    .home[data-layout="compact"] .repo-pulse { display: none; }
+    .home[data-layout="compact"] .repo-stats .rs-tag { display: flex; }
+  }
   .list.passkeys {
     & .c-name { width: auto; font-weight: 600; }
     & .c-when { width: 120px; font-size: var(--fs-s); }

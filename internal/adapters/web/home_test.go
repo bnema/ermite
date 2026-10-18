@@ -320,3 +320,27 @@ func TestHomeRowsAreBoundedAndOrdered(t *testing.T) {
 	assert.LessOrEqual(t, int(peak.Load()), homeWorkers)
 	assert.Greater(t, int(peak.Load()), 1, "the reads overlap")
 }
+
+// The page starts in the cards layout (a script applies the stored choice) and
+// offers the three layouts, "cards" pressed; the store loads before the app.
+func TestHomeOffersTheLayouts(t *testing.T) {
+	t.Parallel()
+	browse := homeBrowse(t)
+	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
+	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse})
+
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, `<div class="home" data-layout="cards">`)
+	assert.Contains(t, body, `<div class="layout-switch" role="group" aria-label="Layout" data-js>`)
+	for layout, pressed := range map[string]string{"cards": "true", "split": "false", "compact": "false"} {
+		assert.Contains(t, body, `data-set-layout="`+layout+`" aria-pressed="`+pressed+`"`)
+		assert.Contains(t, body, `class="ico i-`+layout+`"`)
+	}
+	store := strings.Index(body, "/js/store.")
+	app := strings.Index(body, "/js/ermite.")
+	require.NotEqual(t, -1, store)
+	assert.Less(t, store, app, "the store loads before the app script")
+}

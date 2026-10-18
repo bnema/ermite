@@ -74,7 +74,7 @@ templ HomeRowView(r HomeRow) {
 					<div><dt>commits</dt><dd>{ s.Commits }</dd></div>
 					<div><dt>last 30 days</dt><dd>{ s.Recent }</dd></div>
 				}
-				<div>
+				<div class="rs-active">
 					<dt>last activity</dt>
 					if r.ActiveAt != "" {
 						<dd><time datetime={ r.ActiveAt } title={ r.ActiveAt }>{ r.Active }</time></dd>

@@ -6,7 +6,7 @@ package web
 templ Home(l Layout, p HomePage) {
 	@Shell(l, nil) {
 		<h1 class="sr">Repositories</h1>
-		<div class="home">
+		<div class="home" data-layout="cards">
 			<section class="home-repos" aria-label="Repositories">
 				<div class="home-bar">
 					<div class="filter">
@@ -37,6 +37,17 @@ templ Home(l Layout, p HomePage) {
 							</a>
 						}
 					</nav>
+					<div class="layout-switch" role="group" aria-label="Layout" data-js>
+						<button type="button" class="btn icon" data-set-layout="cards" aria-pressed="true" title="Cards" aria-label="Cards">
+							<span class="ico i-cards" aria-hidden="true"></span>
+						</button>
+						<button type="button" class="btn icon" data-set-layout="split" aria-pressed="false" title="Two columns" aria-label="Two columns">
+							<span class="ico i-split" aria-hidden="true"></span>
+						</button>
+						<button type="button" class="btn icon" data-set-layout="compact" aria-pressed="false" title="Compact list" aria-label="Compact list">
+							<span class="ico i-compact" aria-hidden="true"></span>
+						</button>
+					</div>
 				</div>
 				<ul class="repos" id="repo-rows" data-rows>
 					for _, r := range p.Rows {

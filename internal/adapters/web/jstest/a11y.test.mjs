@@ -49,13 +49,15 @@ doc.querySelectorAll = () => []; // the page-wide queries of the top of ermite.j
 doc.querySelector = () => null;
 
 const store = new Map();
-globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)) };
+globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
 const listeners = {};
 globalThis.addEventListener = (type, f) => (listeners[type] ||= []).push(f);
+globalThis.removeEventListener = (type, f) => { listeners[type] = (listeners[type] || []).filter((g) => g !== f); };
 globalThis.scrollTo = () => {};
 globalThis.fetch = async () => ({ ok: true, json: async () => ({ paths: ['cmd/main.go', 'README.md'] }) });
 
 await import('../static/js/files.js');
+await import('../static/js/store.js'); // loaded before ermite.js, as in the page
 await import('../static/js/ermite.js');
 doc.querySelectorAll = query.all;
 doc.querySelector = query.one;
@@ -302,6 +304,20 @@ test('shortcuts off: the checkbox, the note and the palette action show the stat
   assert.match(note.textContent, /are on/);
   assert.match(lbl.textContent, /off$/);
   doc.querySelector = find;
+});
+
+test('shortcuts off: another tab\'s change applies here', () => {
+  // The browser has written the value before the event comes.
+  const storage = (newValue) => {
+    if (newValue === null) store.delete('keys-off'); else store.set('keys-off', newValue);
+    listeners.storage.forEach((f) => f({ key: 'keys-off', newValue }));
+  };
+  storage('1');
+  assert.equal(K.off(), true);
+  storage('');
+  assert.equal(K.off(), false);
+  storage(null);
+  assert.equal(K.off(), false, 'removed: on');
 });
 
 test('the preference is read from storage when the page loads', async () => {
