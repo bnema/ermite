@@ -5,6 +5,7 @@ package web
 import (
 	"context"
 	"html"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -196,7 +197,9 @@ type MRPage struct {
 	Opened         Person
 	Updated        string
 	UpdatedAt      string
-	Desc           []TextPart
+	// Desc is the description rendered as Markdown (as a README: no raw
+	// HTML, filtered URLs), "" when it is empty.
+	Desc           template.HTML
 	Head           string
 	HeadShort      string
 	MergedShort    string
@@ -469,7 +472,6 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		State: mrStateName(m), Open: open, Signed: signed,
 		Source: visibleText(m.Source), Target: visibleText(m.Target),
 		Author: s.who(m.Author),
-		Desc:   plainParts(m.Description.String()),
 		Head:   head, HeadShort: short(head),
 		NFiles: res.Stats.FilesChanged,
 		Adds:   res.Stats.Additions,
@@ -477,6 +479,16 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		Files:  diffFiles(res.Diff.Files),
 	}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head))
+	if desc := m.Description.String(); strings.TrimSpace(desc) != "" {
+		// Relative links point into the source branch as it is now (its head
+		// commit); the heading ids carry their own prefix, apart from the
+		// ids of the diff.
+		h, _, err := s.md.renderWithIDs([]byte(desc), d.name(), head, "", "mr-desc-")
+		if err != nil {
+			return nil, 0, err
+		}
+		p.Desc = h
+	}
 	p.Opened.Name = p.Author
 	p.Opened.When, p.Opened.WhenAt = whenOf(now, m.CreatedAt)
 	if !m.CreatedAt.IsZero() {

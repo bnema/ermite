@@ -11,7 +11,7 @@
 //  4. The file of the diff in view is marked in the table of contents.
 //  5. A handler that fails is shown in the hint badge.
 //  6. The lines a diff hides load in place (ermiteGaps; e and E).
-//  7. The service worker and the "install app" button (ermiteInstall).
+//  7. The service worker (ermiteInstall).
 (() => {
   // Marks the page as scripted: what does nothing without scripts (the filters,
   // the "go to" and help buttons) is hidden until this class is set (see the
@@ -366,20 +366,12 @@
     };
   })();
 
-  // The installed app. The service worker (/-/sw.js) is registered once the page
-  // has loaded. Chrome offers the install by itself only as an icon in the
-  // address bar of a desktop (or a mini-bar on a phone): the page keeps the
-  // beforeinstallprompt event and shows its own button ([data-install] in the
-  // header), which asks the browser to prompt. The button stays hidden when the
-  // app is already running installed or once it was installed. Self-contained:
-  // jstest/install.test.mjs evaluates this block alone.
+  // The installed app: the service worker (/-/sw.js) is registered once the
+  // page has loaded. With it and the manifest the browser offers the install
+  // by itself (the address bar of a desktop, the menu or a banner on a phone);
+  // the page leaves that offer alone. Self-contained: jstest/install.test.mjs
+  // evaluates this block alone.
   window.ermiteInstall = (() => {
-    let deferred = null;
-    const buttons = () => $$('[data-install]');
-    const show = (on) => { for (const b of buttons()) b.hidden = !on; };
-    const installed = () =>
-      !!window.matchMedia?.('(display-mode: standalone), (display-mode: minimal-ui), (display-mode: window-controls-overlay)').matches ||
-      navigator.standalone === true;
     const api = {
       // register installs the service worker; a browser without one, or a
       // refusal, leaves the site working as before.
@@ -387,44 +379,7 @@
         if (!navigator.serviceWorker) return Promise.resolve(null);
         return navigator.serviceWorker.register('/-/sw.js', { scope: '/' }).catch(() => null);
       },
-      // offer keeps the event the browser sent and shows the button.
-      offer(e) {
-        if (installed()) return;
-        e.preventDefault();
-        deferred = e;
-        show(true);
-      },
-      // prompt asks the browser to show its install dialog. The event works
-      // once: a new one comes if the visitor dismisses the dialog. The button
-      // stays while the dialog is up; once it hides, the focus it held moves
-      // to the search of the header rather than to the body.
-      async prompt() {
-        const e = deferred;
-        if (!e) return '';
-        deferred = null;
-        let outcome = '';
-        try {
-          await e.prompt();
-          outcome = (await e.userChoice).outcome;
-        } catch {
-          outcome = '';
-        }
-        const had = buttons().some((b) => b === document.activeElement);
-        show(false);
-        if (had) document.querySelector('[aria-controls="panel-cmd"]')?.focus?.();
-        return outcome;
-      },
-      done() {
-        deferred = null;
-        show(false);
-      },
     };
-    addEventListener('beforeinstallprompt', api.offer);
-    addEventListener('appinstalled', api.done);
-    addEventListener('click', (e) => {
-      // pending is the prompt the last click started (its outcome)
-      if (e.target.closest?.('[data-install]')) api.pending = api.prompt();
-    });
     if (document.readyState === 'complete') api.register();
     else addEventListener('load', () => api.register(), { once: true });
     return api;

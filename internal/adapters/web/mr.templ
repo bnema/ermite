@@ -140,8 +140,10 @@ templ MergeRequest(l Layout, p MRPage) {
 			</dl>
 		</header>
 		@LiveSlot("mr-notice")
-		if len(p.Desc) > 0 {
-			<p class="mr-desc">@userText(p.Desc)</p>
+		if p.Desc != "" {
+			<article class="mr-desc prose" aria-label="description" hx-ignore>
+				@templ.Raw(string(p.Desc))
+			</article>
 		}
 		if p.Since != nil {
 			<nav class="since" aria-label="Diff range">
@@ -481,7 +483,7 @@ templ Compare(l Layout, p ComparePage) {
 				<label for="mr-title">title</label>
 				<input id="mr-title" name="title" type="text" maxlength="120" required value={ p.Create.Title } autocomplete="off"/>
 				<label for="mr-desc">description</label>
-				<textarea id="mr-desc" name="description" rows="4" maxlength="8000" placeholder="plain text, optional"></textarea>
+				<textarea id="mr-desc" name="description" rows="4" maxlength="8000" placeholder="Markdown, optional"></textarea>
 				<div class="f-btns">
 					<button type="submit" class="btn primary">Create merge request</button>
 				</div>

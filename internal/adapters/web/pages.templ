@@ -68,10 +68,11 @@ templ latestTagFact(t LatestTag) {
 	<dt>latest tag</dt>
 	<dd class="latest-tag">
 		if t.Name != "" {
-			<a class="tag-name" href={ templ.SafeURL(t.Href) } title={ t.Subject }><span class="ico i-tag" aria-hidden="true"></span>{ t.Name }</a>
+			<a class="tag-name" href={ templ.SafeURL(t.Href) } title={ t.Subject }>{ t.Name }</a>
 			if t.WhenAt != "" {
-				<time class="dim" datetime={ t.WhenAt } title={ t.WhenAt }>{ t.When }</time>
+				{ " · " }<time datetime={ t.WhenAt } title={ t.WhenAt }>{ t.When }</time>
 			}
+			{ " · " }
 		}
 		<a class="all-tags" href={ templ.SafeURL(t.RefsHref) }>{ plural(t.Count, "tag", "tags") }</a>
 	</dd>

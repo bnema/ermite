@@ -6,8 +6,12 @@
   .mr-state[data-state="merged"]::before { content: "✓ "; color: var(--teal); }
   .mr-state[data-state="closed"]::before { content: "✗ "; color: var(--red); }
   .mr-state[data-state="draft"]::before { content: "◌ "; color: var(--ink-dim); }
-  .mr-desc { max-width: var(--measure); white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--s4) var(--s5); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
-  .mr-desc a, .c-text a { text-decoration: underline; }
+  /* the description: Markdown as a README, as wide as the header card above;
+     the text inside keeps the reading measure */
+  .mr-desc.prose { max-width: none; padding: var(--s4) var(--s5); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
+  .mr-desc.prose > * { max-width: var(--measure); }
+  .mr-desc.prose > pre, .mr-desc.prose > table { max-width: 100%; }
+  .c-text a { text-decoration: underline; }
 
   .since {
     display: inline-flex; flex-wrap: wrap; gap: var(--s1); padding: var(--s1);

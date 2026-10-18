@@ -98,7 +98,7 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	// Open one from the compare page.
 	res := b.form("/proj/merge-requests", token, url.Values{
 		"source": {"feat/search"}, "target": {"main"}, "title": {"Add <b>search</b>"},
-		"description": {"Finds things.\r\nSee https://example.org/spec) and javascript:alert(1)"},
+		"description": {"## Summary\r\n\r\nFinds **things** with `Find()`.\r\n\r\n- See https://example.org/spec) and javascript:alert(1)\r\n- [x](javascript:alert(1)) <script>alert(1)</script>"},
 	})
 	require.Equal(t, http.StatusSeeOther, res.status, res.body)
 	assert.Equal(t, "/proj/merge-requests/1", res.hdr.Get("Location"))
@@ -137,9 +137,15 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	assert.Contains(t, mr.body, "package search</td>")
 	assert.Contains(t, mr.body, "no checks")
 	assert.Contains(t, mr.body, "fast-forward, squash")
-	assert.Contains(t, mr.body, `<a href="https://example.org/spec" rel="noopener nofollow ugc">https://example.org/spec</a>)`, "the address is linked, not its closing bracket")
+	// The description is Markdown, rendered as a README: no raw HTML, no
+	// script URL; its heading ids keep apart from the ids of the page.
+	assert.Contains(t, mr.body, `<article class="mr-desc prose" aria-label="description" hx-ignore>`)
+	assert.Contains(t, mr.body, `<h2 id="mr-desc-summary">Summary</h2>`)
+	assert.Contains(t, mr.body, `<strong>things</strong>`)
+	assert.Contains(t, mr.body, `<code>Find()</code>`)
+	assert.Contains(t, mr.body, `<a href="https://example.org/spec"`, "a bare address is linked")
 	assert.NotContains(t, mr.body, `href="javascript:`)
-	assert.Contains(t, mr.body, "Finds things.\nSee ", "line breaks are kept")
+	assert.NotContains(t, mr.body, `<script>alert(1)</script>`)
 	assert.NotContains(t, mr.body, "<form", "an anonymous visitor gets no form")
 	assert.NotContains(t, mr.body, "ermite mr merge", "nor the merge line")
 	assert.NotContains(t, mr.body, `id="merge-menu"`)

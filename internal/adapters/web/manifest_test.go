@@ -57,7 +57,6 @@ func TestWebAppManifest(t *testing.T) {
 	page := renderToString(t, Shell(Layout{Assets: u}, nil))
 	assert.Contains(t, page, `<link rel="manifest" href="`+u.Manifest+`">`)
 	assert.Contains(t, page, `<link rel="apple-touch-icon" href="`+u.AppleIcon+`">`)
-	assert.Contains(t, page, `data-install`)
 }
 
 // The icons are exactly the size the manifest declares: Chrome does not
