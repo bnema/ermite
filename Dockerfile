@@ -4,7 +4,7 @@
 #
 #   docker build --build-arg VERSION="$(git describe --tags --always --dirty)" -t ermite .
 #
-# The modules bnema.dev/ermite-* resolve through the bnema.dev vanity path.
+# The modules bnema.dev/ermite-* are public and resolve through the bnema.dev vanity path.
 # GIT_REWRITE_BASE optionally rewrites the git host for builds behind a private route:
 #   --build-arg GIT_REWRITE_BASE=<url> --network host
 #
@@ -12,7 +12,7 @@
 
 FROM golang:1.27-alpine3.24 AS build
 RUN apk add --no-cache git
-ENV CGO_ENABLED=0 GOWORK=off GOTOOLCHAIN=local GOPRIVATE=bnema.dev/ermite*
+ENV CGO_ENABLED=0 GOWORK=off GOTOOLCHAIN=local
 ARG GIT_REWRITE_BASE=
 RUN if [ -n "$GIT_REWRITE_BASE" ]; then \
       git config --global url."$GIT_REWRITE_BASE".insteadOf https://git.bnema.dev/; \

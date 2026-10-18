@@ -1,7 +1,7 @@
 # Keep the build context to the sources.
 .git
 .worktrees
-.forgejo
+.github
 .air.toml
 compose.yaml
 Dockerfile

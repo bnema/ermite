@@ -187,7 +187,7 @@ docker run -d -p 127.0.0.1:7341:7341 -v ermite-data:/data \
   -e ERMITE_PUBLIC_URL=http://localhost:7341 -e ERMITE_ADMIN_TOKEN="$token" ermite
 ```
 
-The image is alpine with git, runs as uid 10001 and keeps its data in the `/data` volume. Logs are JSON by default. The build fetches the `bnema.dev/ermite-*` modules through their `bnema.dev` vanity paths. Behind a private route, `--build-arg GIT_REWRITE_BASE=<url>` rewrites the git host used for those modules.
+The image is alpine with git, runs as uid 10001 and keeps its data in the `/data` volume. Logs are JSON by default. The build fetches the public `bnema.dev/ermite-*` modules through their `bnema.dev` vanity paths. Behind a private route, `--build-arg GIT_REWRITE_BASE=<url>` rewrites the git host used for those modules.
 
 ## Develop with compose
 

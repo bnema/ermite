@@ -1,6 +1,6 @@
 # Development server with hot reload: `docker compose up`, then http://localhost:7341.
-# The module is built on its own (no go.work), like CI. Private modules bnema.dev/ermite-*
-# resolve through the bnema.dev vanity path, using the host's DNS and routes.
+# The module is built on its own (no go.work), like CI. The modules bnema.dev/ermite-* are public
+# and resolve through the bnema.dev vanity path.
 services:
   ermite:
     build:
@@ -15,7 +15,6 @@ services:
       CGO_ENABLED: "0"
       GOWORK: "off"
       GOTOOLCHAIN: local
-      GOPRIVATE: bnema.dev/ermite*
       # The mounted .git of a worktree points outside the container.
       GOFLAGS: -buildvcs=false
       ERMITE_DATA_DIR: /data

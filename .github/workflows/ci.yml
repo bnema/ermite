@@ -8,7 +8,6 @@ on:
 env:
   # Test the module alone, with the versions in go.mod (never a go.work).
   GOWORK: "off"
-  GOPRIVATE: bnema.dev/ermite*
 
 jobs:
   lint:
@@ -16,9 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      # Job containers reach the forge over plain HTTP on the host loopback.
-      - name: Fetch bnema.dev/ermite* modules through the runner's Forgejo route
-        run: git config --global url."http://git.bnema.dev:8088/".insteadOf "https://git.bnema.dev/"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -30,8 +26,9 @@ jobs:
   test:
     name: Test
     # ermite needs git >= 2.45; the ubuntu-latest image (Debian bookworm) has 2.39.
-    # The arch label runs archlinux:latest as root, with a current git.
-    runs-on: arch
+    # The job runs in archlinux:latest as root, with a current git.
+    runs-on: ubuntu-latest
+    container: archlinux:latest
     steps:
       # openssh provides ssh-keygen, which the tests use to check that the squash
       # commits verify (git verify-commit, ADR 0022). The tests fail without it when CI is set.
@@ -39,9 +36,10 @@ jobs:
       - name: System packages
         run: pacman -Syu --noconfirm --needed git gcc openssh nodejs
       - uses: actions/checkout@v6
-      # Job containers reach the forge over plain HTTP on the host loopback.
-      - name: Fetch bnema.dev/ermite* modules through the runner's Forgejo route
-        run: git config --global url."http://git.bnema.dev:8088/".insteadOf "https://git.bnema.dev/"
+      # The workspace belongs to the runner user, not root: without this, git does not
+      # treat it as a repository and `git diff a b` compares the two files instead.
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -84,9 +82,6 @@ jobs:
         with:
           # buf breaking compares with the base branch.
           fetch-depth: 0
-      # Job containers reach the forge over plain HTTP on the host loopback.
-      - name: Fetch bnema.dev/ermite* modules through the runner's Forgejo route
-        run: git config --global url."http://git.bnema.dev:8088/".insteadOf "https://git.bnema.dev/"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -109,27 +104,17 @@ jobs:
 
   image:
     name: Image
-    # Build only, nothing is pushed. The arch job container gets the runner's rootless
-    # Podman socket as /var/run/docker.sock (docker_host in ci-runner/config.yml), so the
-    # docker CLI builds through Podman.
-    runs-on: arch
+    # Build only, nothing is pushed. A plain ubuntu-latest job (not a container):
+    # the runner image provides the docker CLI and daemon.
+    runs-on: ubuntu-latest
     steps:
-      - name: System packages
-        run: pacman -Syu --noconfirm --needed git docker
       - uses: actions/checkout@v6
         with:
           # git describe needs the tags for the image version.
           fetch-depth: 0
-      # The build runs in Podman on the runner host. With the host network it resolves
-      # the forge through the host's /etc/hosts (loopback) and reaches it over plain HTTP.
-      # Podman's Docker API rejects
-      # the classic builder's --add-host encoding, so host networking is used instead.
-      # Acceptable because only trusted branches of this repo trigger CI (no fork PRs).
       - name: Build the image
         run: |
           docker build \
-            --network host \
-            --build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/ \
             --build-arg VERSION="$(git describe --tags --always --dirty)" \
             -t ermite:ci .
       - name: Smoke test

@@ -15,7 +15,7 @@ require (
 	bnema.dev/ermite-actions v0.2.0
 	bnema.dev/ermite-api v0.5.0
 	bnema.dev/ermite-git v0.1.0
-	bnema.dev/ermite-kv v0.0.0-20261010031554-5e09b48f81c3
+	bnema.dev/ermite-kv v0.1.0
 	connectrpc.com/connect v1.21.0
 	github.com/a-h/templ v0.3.1020
 	github.com/alecthomas/chroma/v2 v2.27.0
