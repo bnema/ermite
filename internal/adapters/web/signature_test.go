@@ -3,6 +3,7 @@
 package web
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -138,4 +139,15 @@ func TestCommitPageShowsTheSignature(t *testing.T) {
 
 	got = page(domain.CommitVerification{})
 	assert.NotContains(t, got, "signature")
+}
+
+func TestMergeRequestCommitsShowTheSignatureBadge(t *testing.T) {
+	t.Parallel()
+	signed := signatureBadge(verification(domain.FormatGPG, domain.StatusVerified, gpgFP, ""), false)
+	got := renderToString(t, mrRail(MRPage{Commits: []MRCommit{
+		{Short: "aaaaaaa", Href: "/r/commit/a", Subject: "signed", Sig: signed},
+		{Short: "bbbbbbb", Href: "/r/commit/b", Subject: "unsigned"},
+	}}))
+	assert.Equal(t, 1, strings.Count(got, `class="pill sig sig-ok"`), "only the signed commit has a pill")
+	assert.Contains(t, got, `<span class="sig-proto">GPG</span> Verified`)
 }

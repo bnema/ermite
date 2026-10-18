@@ -67,10 +67,16 @@ func (b *Browse) WithVerifier(v ports.CommitVerifier) *Browse {
 // verify fills the Verification of the commits, in place, with one call. The
 // slice must not be shared with a cache.
 func (b *Browse) verify(ctx context.Context, repo domain.RepoName, commits []domain.Commit) {
-	if b.verifier == nil || len(commits) == 0 {
+	verifyCommits(ctx, b.verifier, repo, commits)
+}
+
+// verifyCommits fills the Verification of the commits in place, with one call
+// to v; a nil v leaves them unchecked.
+func verifyCommits(ctx context.Context, v ports.CommitVerifier, repo domain.RepoName, commits []domain.Commit) {
+	if v == nil || len(commits) == 0 {
 		return
 	}
-	res := b.verifier.VerifyCommits(ctx, repo, commits)
+	res := v.VerifyCommits(ctx, repo, commits)
 	for i := range commits {
 		if v, ok := res[commits[i].ID]; ok {
 			commits[i].Verification = v

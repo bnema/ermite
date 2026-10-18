@@ -318,6 +318,9 @@ templ mrRail(p MRPage) {
 				<li data-new?={ c.New }>
 					<a href={ templ.SafeURL(c.Href) }>{ c.Short }</a>
 					<span class="s">{ c.Subject }</span>
+					if c.Sig != nil {
+						@signaturePill(c.Sig)
+					}
 					<span class="mute">
 						{ c.Author }
 						if c.WhenAt != "" {

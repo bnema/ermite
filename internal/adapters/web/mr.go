@@ -148,6 +148,8 @@ type MRCommit struct {
 	Short, Href, Subject, Author, When, WhenAt string
 	// New is true for a commit pushed after the head the reviewer last read.
 	New bool
+	// Sig is the signature badge, nil for an unsigned or unchecked commit.
+	Sig *SignatureBadge
 }
 
 // MergeBox is what the owner does with an open request.
@@ -534,6 +536,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		row := commitRow(d.name(), c, now)
 		p.Commits = append(p.Commits, MRCommit{
 			Short: row.Short, Href: row.CHref, Subject: row.Subject, Author: row.Author, When: row.When, WhenAt: row.WhenAt,
+			Sig: row.Sig,
 		})
 	}
 	lastRead := res.LastReadID.String()

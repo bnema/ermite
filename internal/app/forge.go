@@ -314,6 +314,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
 		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(),
 	})
+	f.MergeRequests.WithVerifier(f.Signatures)
 	f.CI.SetPullGate(f.MergeRequests)
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 

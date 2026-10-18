@@ -1,6 +1,6 @@
 # Commit signatures
 
-ermite checks commit signatures on the commit list and the commit page and shows a badge with the protocol and the result. The API returns the same result in `Commit.verification` from `ListCommits` and `GetCommit`.
+ermite checks commit signatures on the commit list, the commit page and the commits of a merge request, and shows a badge with the protocol and the result. The API returns the same result in `Commit.verification` from `ListCommits`, `GetCommit` and `GetMergeRequest`.
 
 ## Formats
 

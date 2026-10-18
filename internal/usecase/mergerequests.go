@@ -55,6 +55,7 @@ type MergeRequests struct {
 	checks    ports.CIChecksReader     // nil: no CI, so no check blocks a merge
 	pulls     ports.PullRequestTrigger // nil: no pull_request workflows
 	tips      ports.CIRefTipStore      // nil: who merges is not recorded
+	verifier  ports.CommitVerifier     // nil: commits are not checked (ADR 0030)
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -103,6 +104,13 @@ func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
+}
+
+// WithVerifier makes GetMergeRequest fill the signature state of the commits
+// it lists (ADR 0030).
+func (m *MergeRequests) WithVerifier(v ports.CommitVerifier) *MergeRequests {
+	m.verifier = v
+	return m
 }
 
 // lockRepo takes the merge lock of a repository, waiting until ctx ends. The
@@ -490,6 +498,7 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 		if d.Commits, d.CommitsTruncated, err = m.git.ListRange(ctx, name, exclude, head, MaxMergeRequestCommits); err != nil {
 			return ports.MergeRequestDetail{}, err
 		}
+		verifyCommits(ctx, m.verifier, name, d.Commits)
 	}
 	if opts.SinceLastRead && !d.LastReadID.IsZero() {
 		switch ok, err := m.git.HasCommit(ctx, name, d.LastReadID); {

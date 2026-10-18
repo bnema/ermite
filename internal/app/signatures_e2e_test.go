@@ -135,6 +135,24 @@ func TestCommitSignaturesEndToEnd(t *testing.T) {
 	assert.Contains(t, body, "GPG")
 	assert.Contains(t, body, "sig-ok")
 
+	// A merge request lists its commits with their signature state, over the
+	// API and on its page.
+	h.mustGit(wt, "checkout", "-q", "-b", "feat")
+	h.writeFile(wt, "d.txt", []byte("d\n"))
+	h.mustGit(wt, "-c", "gpg.format=ssh", "-c", "user.signingkey="+sshKey+".pub", "commit", "-q", "--amend", "-S", "--no-edit")
+	feat := strings.TrimSpace(h.mustGit(wt, "rev-parse", "HEAD"))
+	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/sig.git"), "feat")
+	_, err = root.mr.CreateMergeRequest(ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "sig", Title: "d", SourceBranch: "feat"}))
+	require.NoError(t, err)
+	mr, err := root.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "sig", Number: 1}))
+	require.NoError(t, err)
+	require.Len(t, mr.Msg.GetCommits(), 1)
+	assert.Equal(t, feat, mr.Msg.GetCommits()[0].GetId())
+	assert.Equal(t, pb.SignatureStatus_SIGNATURE_STATUS_VERIFIED, mr.Msg.GetCommits()[0].GetVerification().GetStatus())
+	code, _, body = h.get("/sig/merge-requests/1")
+	require.Equal(t, http.StatusOK, code)
+	assert.Contains(t, body, `<span class="pill sig sig-ok"`)
+
 	// Removing the key turns the commit unknown again.
 	_, err = trust.RemoveTrustedKey(ctx, connect.NewRequest(&pb.RemoveTrustedKeyRequest{Id: list.Msg.GetKeys()[1].GetId()}))
 	require.NoError(t, err)
