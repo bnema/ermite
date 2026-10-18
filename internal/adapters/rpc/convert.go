@@ -227,7 +227,83 @@ func commitToPB(c domain.Commit) *pb.Commit {
 	for _, p := range c.Parents {
 		out.ParentIds = append(out.ParentIds, p.String())
 	}
+	if c.Verification.Status != domain.StatusUnchecked {
+		out.Verification = verificationToPB(c.Verification)
+	}
 	return out
+}
+
+func verificationToPB(v domain.CommitVerification) *pb.CommitVerification {
+	return &pb.CommitVerification{
+		Format:      signatureFormatToPB(v.Format),
+		Status:      signatureStatusToPB(v.Status),
+		Fingerprint: v.Fingerprint,
+		KeyId:       v.KeyID,
+		KeyTitle:    v.KeyTitle,
+	}
+}
+
+func signatureFormatToPB(f domain.SignatureFormat) pb.SignatureFormat {
+	switch f {
+	case domain.FormatSSH:
+		return pb.SignatureFormat_SIGNATURE_FORMAT_SSH
+	case domain.FormatGPG:
+		return pb.SignatureFormat_SIGNATURE_FORMAT_GPG
+	case domain.FormatX509:
+		return pb.SignatureFormat_SIGNATURE_FORMAT_X509
+	case domain.FormatNone:
+		return pb.SignatureFormat_SIGNATURE_FORMAT_UNSPECIFIED
+	}
+	return pb.SignatureFormat_SIGNATURE_FORMAT_UNSPECIFIED
+}
+
+// signatureFormatFromPB maps the format of a key to add: only SSH and GPG keys
+// can be trusted.
+func signatureFormatFromPB(f pb.SignatureFormat) (domain.SignatureFormat, error) {
+	switch f {
+	case pb.SignatureFormat_SIGNATURE_FORMAT_SSH:
+		return domain.FormatSSH, nil
+	case pb.SignatureFormat_SIGNATURE_FORMAT_GPG:
+		return domain.FormatGPG, nil
+	case pb.SignatureFormat_SIGNATURE_FORMAT_UNSPECIFIED, pb.SignatureFormat_SIGNATURE_FORMAT_X509:
+	}
+	return domain.FormatNone, fmt.Errorf("%w: key format must be ssh or gpg", domain.ErrInvalid)
+}
+
+func signatureStatusToPB(s domain.SignatureStatus) pb.SignatureStatus {
+	switch s {
+	case domain.StatusUnsigned:
+		return pb.SignatureStatus_SIGNATURE_STATUS_UNSIGNED
+	case domain.StatusVerified:
+		return pb.SignatureStatus_SIGNATURE_STATUS_VERIFIED
+	case domain.StatusUnknownKey:
+		return pb.SignatureStatus_SIGNATURE_STATUS_UNKNOWN_KEY
+	case domain.StatusBadSignature:
+		return pb.SignatureStatus_SIGNATURE_STATUS_BAD_SIGNATURE
+	case domain.StatusEmailMismatch:
+		return pb.SignatureStatus_SIGNATURE_STATUS_EMAIL_MISMATCH
+	case domain.StatusExpired:
+		return pb.SignatureStatus_SIGNATURE_STATUS_EXPIRED
+	case domain.StatusRevoked:
+		return pb.SignatureStatus_SIGNATURE_STATUS_REVOKED
+	case domain.StatusUnsupported:
+		return pb.SignatureStatus_SIGNATURE_STATUS_UNSUPPORTED
+	case domain.StatusUnchecked:
+		return pb.SignatureStatus_SIGNATURE_STATUS_UNSPECIFIED
+	}
+	return pb.SignatureStatus_SIGNATURE_STATUS_UNSPECIFIED
+}
+
+func trustedKeyToPB(k domain.TrustedKey) *pb.TrustedKey {
+	return &pb.TrustedKey{
+		Id:        k.ID,
+		Format:    signatureFormatToPB(k.Format),
+		Title:     k.Title,
+		PublicKey: k.PublicKey,
+		Emails:    slices.Clone(k.Emails),
+		CreatedAt: timestamp(k.CreatedAt),
+		Builtin:   k.Builtin,
+	}
 }
 
 func treeEntryToPB(e domain.TreeEntry) *pb.TreeEntry {

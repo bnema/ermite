@@ -180,6 +180,8 @@ type CommitRow struct {
 	// Checks is the combined state of the CI checks of the commit; empty when
 	// it has none.
 	Checks ChecksSummary
+	// Sig is the signature badge, nil for an unchecked or unsigned commit.
+	Sig *SignatureBadge
 }
 
 // SummaryPage is the repository summary.

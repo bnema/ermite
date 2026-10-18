@@ -162,6 +162,8 @@
     & td:last-child { padding-right: var(--s4); }
     & .c-who { display: none; }
     & .c-subject { width: auto; max-width: 0; font-size: var(--fs-s); }
+    /* the pills are hidden here, the signature one too: the rail is narrow and
+       the subject is what the row is for; the commit page shows the badge. */
     & .c-subject .pill { display: none; }
     & .c-ck:empty { padding: 0; }
     & .c-when { text-align: right; }

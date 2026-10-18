@@ -193,6 +193,9 @@ templ CommitRows(rows []CommitRow) {
 						if c.Merge {
 							<span class="pill">merge</span>
 						}
+						if c.Sig != nil {
+							@signaturePill(c.Sig)
+						}
 						for _, b := range c.Branches {
 							<span class="pill">{ b }</span>
 						}
@@ -207,4 +210,15 @@ templ CommitRows(rows []CommitRow) {
 			}
 		</tbody>
 	</table>
+}
+
+// signaturePill is the badge of a signed commit: the protocol and the verdict
+// as text, the reason in the tooltip.
+templ signaturePill(b *SignatureBadge) {
+	<span class={ "pill sig", b.Class } title={ b.Title }>
+		if b.Proto != "" {
+			<span class="sig-proto">{ b.Proto }</span>
+		}
+		{ b.Label }
+	</span>
 }

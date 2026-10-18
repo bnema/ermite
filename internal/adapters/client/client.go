@@ -110,6 +110,11 @@ func (c *Client) Environments() ermiteconnect.EnvironmentServiceClient {
 	return ermiteconnect.NewEnvironmentServiceClient(c.http, c.base, c.opts...)
 }
 
+// TrustedKeys returns the TrustedKeyService client.
+func (c *Client) TrustedKeys() ermiteconnect.TrustedKeyServiceClient {
+	return ermiteconnect.NewTrustedKeyServiceClient(c.http, c.base, c.opts...)
+}
+
 // Server returns the ServerService client.
 func (c *Client) Server() ermiteconnect.ServerServiceClient {
 	return ermiteconnect.NewServerServiceClient(c.http, c.base, c.opts...)

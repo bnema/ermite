@@ -31,6 +31,9 @@ type Browse struct {
 	history *historyCache
 	// stats keeps the figures of the home page.
 	stats statsCache
+	// verifier fills the signature state of the commits; nil leaves it
+	// unchecked.
+	verifier ports.CommitVerifier
 }
 
 var _ ports.BrowseService = (*Browse)(nil)
@@ -51,6 +54,28 @@ func NewBrowse(meta ports.RepoMetaStore, reader ports.RepoReader) *Browse {
 func (b *Browse) WithHistoryCache(maxEntries int, maxBytes int64) *Browse {
 	b.history = newHistoryCache(maxEntries, maxBytes)
 	return b
+}
+
+// WithVerifier sets the checker of commit signatures (ADR 0030): commits
+// returned by ListCommits and GetCommit then carry their Verification. Call
+// it before the first request.
+func (b *Browse) WithVerifier(v ports.CommitVerifier) *Browse {
+	b.verifier = v
+	return b
+}
+
+// verify fills the Verification of the commits, in place, with one call. The
+// slice must not be shared with a cache.
+func (b *Browse) verify(ctx context.Context, repo domain.RepoName, commits []domain.Commit) {
+	if b.verifier == nil || len(commits) == 0 {
+		return
+	}
+	res := b.verifier.VerifyCommits(ctx, repo, commits)
+	for i := range commits {
+		if v, ok := res[commits[i].ID]; ok {
+			commits[i].Verification = v
+		}
+	}
 }
 
 // authorize returns the repository if p may read it. The caller uses it to
@@ -247,6 +272,8 @@ func (b *Browse) ListCommits(ctx context.Context, p domain.Principal, repo domai
 	if err != nil {
 		return ports.HistoryPage{}, err
 	}
+	// res.Commits is a copy (see listCommits): the cached page is untouched.
+	b.verify(ctx, repo, res.Commits)
 	out := ports.HistoryPage{Commits: res.Commits}
 	if res.HasMore {
 		out.NextPageToken = encodeCommitToken(res.Head, q.Skip+len(res.Commits), params.Path)
@@ -308,5 +335,14 @@ func (b *Browse) GetCommit(ctx context.Context, p domain.Principal, repo domain.
 	if _, err := b.authorize(ctx, p, repo); err != nil {
 		return domain.CommitDetail{}, err
 	}
-	return b.reader.GetCommit(ctx, repo, rev, domain.DefaultDiffLimits())
+	d, err := b.reader.GetCommit(ctx, repo, rev, domain.DefaultDiffLimits())
+	if err != nil {
+		return domain.CommitDetail{}, err
+	}
+	if b.verifier != nil {
+		one := []domain.Commit{d.Commit}
+		b.verify(ctx, repo, one)
+		d.Commit = one[0]
+	}
+	return d, nil
 }

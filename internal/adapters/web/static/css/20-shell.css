@@ -36,7 +36,20 @@
     background: var(--bg-raised); border: 1px solid var(--border-strong); border-radius: 999px; white-space: nowrap;
     &.tag::before { content: ""; width: 6px; height: 6px; margin-right: 6px; border: 1.5px solid currentColor; border-radius: 1px; transform: rotate(45deg); }
     &.new { color: var(--teal); border-color: currentColor; }
+    /* the signature of a commit: the protocol, then the verdict, always as text
+       (colour never carries it alone). Verified takes the accent, a signature
+       that cannot be vouched for keeps the neutral pill with the ink of a
+       warning, a bad one is red, "unsigned" (commit page) is dim. */
+    &.sig { gap: 5px; }
+    &.sig .sig-proto { font-weight: 700; letter-spacing: .02em; }
+    &.sig-ok { color: var(--teal); border-color: currentColor; }
+    &.sig-warn { color: var(--ink-hi); border-style: dashed; }
+    &.sig-bad { color: var(--red); border-color: currentColor; }
+    &.sig-none { color: var(--ink-mute); border-style: dotted; font-weight: 400; }
   }
+  /* Why a signature is or is not verified, as text: a title alone is not
+     reachable by keyboard, touch or every screen reader. */
+  .sig-why { display: block; margin-top: 2px; }
   .count {
     display: inline-block; min-width: 22px; padding: 0 7px; margin-left: var(--s1);
     font: 600 var(--fs-xs) / 20px var(--font); text-align: center; color: var(--ink-dim);

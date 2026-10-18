@@ -442,6 +442,9 @@ type Commit struct {
 	// Message is the whole message without trailing line breaks, converted to
 	// valid UTF-8.
 	Message string
+	// Verification is the signature state (ADR 0030). The readers leave it
+	// zero (unchecked); the browse use case fills it.
+	Verification CommitVerification
 }
 
 // FileStatus tells what a commit did to a file.

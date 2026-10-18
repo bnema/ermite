@@ -272,6 +272,7 @@ func commitRow(repo string, c domain.Commit, now time.Time) CommitRow {
 		Short: short(c.ID.String()), Subject: visibleText(c.Summary),
 		CHref:  repoHref(repo, "commit", c.ID.String()),
 		Author: visibleText(c.Author.Name), Merge: len(c.Parents) > 1,
+		Sig: signatureBadge(c.Verification, false),
 	}
 	row.When, row.WhenAt = whenOf(now, c.Committer.Time)
 	return row

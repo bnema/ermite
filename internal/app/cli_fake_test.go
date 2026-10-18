@@ -33,6 +33,7 @@ type fakeAPI struct {
 	ermiteconnect.UnimplementedMergeRequestServiceHandler
 	ermiteconnect.UnimplementedSessionServiceHandler
 	ermiteconnect.UnimplementedRunServiceHandler
+	ermiteconnect.UnimplementedTrustedKeyServiceHandler
 
 	runners []*ermite.Runner // ListRunners answer; nil means one default runner
 
@@ -64,6 +65,10 @@ type fakeAPI struct {
 
 	listPasskeys  func(*ermite.ListPasskeysRequest) (*ermite.ListPasskeysResponse, error)
 	removePasskey func(*ermite.RemovePasskeyRequest) (*ermite.RemovePasskeyResponse, error)
+
+	listTrustedKeys  func(*ermite.ListTrustedKeysRequest) (*ermite.ListTrustedKeysResponse, error)
+	addTrustedKey    func(*ermite.AddTrustedKeyRequest) (*ermite.AddTrustedKeyResponse, error)
+	removeTrustedKey func(*ermite.RemoveTrustedKeyRequest) (*ermite.RemoveTrustedKeyResponse, error)
 }
 
 func (f *fakeAPI) record(name string, h http.Header, req any) {
@@ -152,6 +157,15 @@ func (f *fakeAPI) ListPasskeys(_ context.Context, r *connect.Request[ermite.List
 func (f *fakeAPI) RemovePasskey(_ context.Context, r *connect.Request[ermite.RemovePasskeyRequest]) (*connect.Response[ermite.RemovePasskeyResponse], error) {
 	return respond(f, "RemovePasskey", r, f.removePasskey)
 }
+func (f *fakeAPI) ListTrustedKeys(_ context.Context, r *connect.Request[ermite.ListTrustedKeysRequest]) (*connect.Response[ermite.ListTrustedKeysResponse], error) {
+	return respond(f, "ListTrustedKeys", r, f.listTrustedKeys)
+}
+func (f *fakeAPI) AddTrustedKey(_ context.Context, r *connect.Request[ermite.AddTrustedKeyRequest]) (*connect.Response[ermite.AddTrustedKeyResponse], error) {
+	return respond(f, "AddTrustedKey", r, f.addTrustedKey)
+}
+func (f *fakeAPI) RemoveTrustedKey(_ context.Context, r *connect.Request[ermite.RemoveTrustedKeyRequest]) (*connect.Response[ermite.RemoveTrustedKeyResponse], error) {
+	return respond(f, "RemoveTrustedKey", r, f.removeTrustedKey)
+}
 func (f *fakeAPI) Watch(ctx context.Context, r *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
 	f.record("Watch", r.Header(), r.Msg)
 	if f.watch == nil {
@@ -178,6 +192,8 @@ func (f *fakeAPI) serve(t *testing.T) string {
 	p, h = ermiteconnect.NewSessionServiceHandler(f)
 	mount(p, h)
 	p, h = ermiteconnect.NewRunServiceHandler(f)
+	mount(p, h)
+	p, h = ermiteconnect.NewTrustedKeyServiceHandler(f)
 	mount(p, h)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

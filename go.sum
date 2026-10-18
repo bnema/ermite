@@ -1,7 +1,7 @@
 bnema.dev/ermite-actions v0.2.0 h1:238UBhSZcm8RxqqjZvX3RLGKQNyKtxoXKnKIkYt4P/M=
 bnema.dev/ermite-actions v0.2.0/go.mod h1:qoIB/Iz4xKdLUG4R6wuBDk6cemdugR+UEo5bpSJJYh4=
-bnema.dev/ermite-api v0.5.0 h1:LAhstFCx4NZuJZFifuavezwue8IOENPdyS7kda4lUQU=
-bnema.dev/ermite-api v0.5.0/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
+bnema.dev/ermite-api v0.6.0 h1:MHAH4Mzpnaxu6VhXQTnMZsWWmzrnRPPlO2uqlB5NgJI=
+bnema.dev/ermite-api v0.6.0/go.mod h1:L5smjt+IAigyAo3Ny2EnFB9IwvIGOPT1GoByZNgbDa8=
 bnema.dev/ermite-git v0.1.0 h1:8GNhQDj0MxyvrI4kHewZ9k0rT86e9348T3BJ49WHfmI=
 bnema.dev/ermite-git v0.1.0/go.mod h1:m9d4VYHm28mrY6VxVqWQMRIsadGq80FeLub/nrZX6Cg=
 bnema.dev/ermite-kv v0.1.0 h1:NbD76jgqMq08AVTe/l0EEqDTHjywaYNoqC5c/WgYRcE=
@@ -54,6 +54,8 @@ github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2 h1:XFJZFWESIWlUEHHjzBuv8R
 github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2/go.mod h1:BHWO8lJzttJLqwuV8Rb1B3OG2OSzLbssZDI1FRg2eAA=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
+github.com/ProtonMail/go-crypto v1.4.1 h1:9RfcZHqEQUvP8RzecWEUafnZVtEvrBVL9BiF67IQOfM=
+github.com/ProtonMail/go-crypto v1.4.1/go.mod h1:e1OaTyu5SYVrO9gKOEhTc+5UcXtTUa+P3uLudwcgPqo=
 github.com/a-h/parse v0.0.0-20250122154542-74294addb73e h1:HjVbSQHy+dnlS6C3XajZ69NYAb5jbGNfHanvm1+iYlo=
 github.com/a-h/parse v0.0.0-20250122154542-74294addb73e/go.mod h1:3mnrkvGpurZ4ZrTDbYU84xhwXW2TjTKShSwjRi2ihfQ=
 github.com/a-h/templ v0.3.1020 h1:ypAT/L5ySWEnZ6Zft/5yfoWXYYkhFNvEFOeeqecg4tw=
@@ -134,6 +136,8 @@ github.com/clipperhouse/displaywidth v0.10.0 h1:GhBG8WuerxjFQQYeuZAeVTuyxuX+Urai
 github.com/clipperhouse/displaywidth v0.10.0/go.mod h1:XqJajYsaiEwkxOj4bowCTMcT1SgvHo9flfF3jQasdbs=
 github.com/clipperhouse/uax29/v2 v2.6.0 h1:z0cDbUV+aPASdFb2/ndFnS9ts/WNXgTNNGFoKXuhpos=
 github.com/clipperhouse/uax29/v2 v2.6.0/go.mod h1:Wn1g7MK6OoeDT0vL+Q0SQLDz/KpfsVRgg6W7ihQeh4g=
+github.com/cloudflare/circl v1.6.2 h1:hL7VBpHHKzrV5WTfHCaBsgx/HGbBYlgrwvNXEVDYYsQ=
+github.com/cloudflare/circl v1.6.2/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
 github.com/containerd/errdefs v1.0.0/go.mod h1:+YBYIdtsnF4Iw6nWZhJcqGSg/dwvV7tyJ/kCkyJ2k+M=
 github.com/containerd/errdefs/pkg v0.3.0 h1:9IKJ06FvyNlexW690DXuQNx2KA2cUJXx151Xdx3ZPPE=

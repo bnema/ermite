@@ -46,6 +46,10 @@ type CommitPage struct {
 	Invisible bool
 	// Checks is the combined state of the CI checks of the commit.
 	Checks ChecksSummary
+	// Sig is the signature badge, nil when the commit was not checked.
+	Sig *SignatureBadge
+	// Verification is what is known of the signing key, for the details.
+	Verification domain.CommitVerification
 }
 
 // DiffView is how a page lays its diff out: the layouts in the page and the
@@ -121,6 +125,9 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 		Adds:   res.Stats.Additions,
 		Dels:   res.Stats.Deletions,
 		Files:  s.hl.files(ctx, res.Diff.Files),
+
+		Sig:          signatureBadge(c.Verification, true),
+		Verification: c.Verification,
 	}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", cid))
 	if cm := person(c.Committer, now); cm != p.Author || c.Committer.Email != c.Author.Email {

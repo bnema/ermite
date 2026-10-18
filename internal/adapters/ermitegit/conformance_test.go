@@ -28,3 +28,12 @@ func TestConformanceDefaultRoutes(t *testing.T) {
 		return a, data
 	})
 }
+
+// TestCommitObjects runs the shared CommitObjectReader table against the
+// adapter.
+func TestCommitObjects(t *testing.T) {
+	readertest.CommitObjects(t, func(t *testing.T) (ports.CommitObjectReader, string) {
+		a, _, data := newAdapter(t, ermitegit.DefaultRoutes(), nil)
+		return a, data
+	})
+}

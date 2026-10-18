@@ -34,7 +34,7 @@ const RunnerMaxRequestBytes = MaxRequestBytes + 64<<10
 // Features are the optional capabilities of the contract that this server
 // always implements, as GetVersion lists them. FeaturePasskeys comes on top
 // when Config.Passkeys is set, and FeatureCISecrets when the settings services
-// are.
+// are, and FeatureCommitSignatures when Config.TrustedKeys is set.
 var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
@@ -92,6 +92,10 @@ type Config struct {
 	// Same rule as Sessions about typed nil pointers.
 	JobArtifacts ports.JobArtifactService
 	Artifacts    ports.ArtifactService
+	// TrustedKeys serves TrustedKeyService, and GetVersion lists
+	// "commit_signatures", when set (ADR 0030). Same rule as Sessions about
+	// typed nil pointers.
+	TrustedKeys ports.TrustedKeyService
 }
 
 // API is the set of Connect handlers of the contract.
@@ -133,10 +137,16 @@ func New(cfg Config) *API {
 	if cfg.OIDCKeys != nil {
 		features = append(features, FeatureCIOIDC)
 	}
+	if cfg.TrustedKeys != nil {
+		features = append(features, FeatureCommitSignatures)
+	}
 	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
 	if cfg.Sessions != nil {
 		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))
+	}
+	if cfg.TrustedKeys != nil {
+		mux.Handle(ermiteconnect.NewTrustedKeyServiceHandler(&trustedKeyService{cfg.TrustedKeys}, opts...))
 	}
 	if settings {
 		mux.Handle(ermiteconnect.NewSecretServiceHandler(&secretService{cfg.Secrets}, opts...))

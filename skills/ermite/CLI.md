@@ -82,6 +82,8 @@ Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `
 | `version [--json]` | client version; with a server URL (`ERMITE_URL` or the config file), the server version and features |
 | `config show [--json]` / `config set <url\|token.cmd> <value>` / `config unset <key>` | the CLI config file; `token.cmd` is a command that prints the token (any secret manager), never the token itself; `show` never runs it |
 | `signing-key show` | public key and `allowed_signers` line to check squash commits with `git verify-commit` |
+| `signing-key trust list [--json]` | keys commit signatures are checked against (the server key first) |
+| `signing-key trust add --format ssh\|gpg --title <t> --email <e>... <file\|->` / `trust remove <id>` | owner only; a commit shows verified when its committer email is listed for the key |
 | `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope, no repository list and no branch prefix; the link is a secret |
 | `web logout --all` | signs every browser out |
 | `web passkey list [--json]` | the owner's passkeys (`id`, `name`, `created_at`, `last_used_at`, `synced`); same rights as `web login`; fails with "passkeys are not available on this server" when the public URL is not https with a host name |

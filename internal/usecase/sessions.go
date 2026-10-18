@@ -75,12 +75,16 @@ func NewSessions(ctx context.Context, store ports.SessionStore, clock ports.Cloc
 
 // requireOwner is the access rule of the session API: root, or a stored token
 // with every scope, no repository list and no branch prefixes.
-func requireOwner(p domain.Principal) error {
+func requireOwner(p domain.Principal) error { return requireOwnerFor(p, "managing web sessions") }
+
+// requireOwnerFor is the owner rule; action names what was refused in the
+// error ("managing web sessions").
+func requireOwnerFor(p domain.Principal, action string) error {
 	switch {
 	case p.IsAnonymous():
 		return domain.ErrUnauthenticated
 	case !p.HasOwnerRights():
-		return fmt.Errorf("%w: managing web sessions needs the admin token or a token with every scope, no repository list and no branch prefixes", domain.ErrForbidden)
+		return fmt.Errorf("%w: %s needs the admin token or a token with every scope, no repository list and no branch prefixes", domain.ErrForbidden, action)
 	}
 	return nil
 }

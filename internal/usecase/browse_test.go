@@ -567,3 +567,98 @@ func mustPath(t *testing.T, s string) domain.TreePath {
 	require.NoError(t, err)
 	return p
 }
+
+func TestBrowseVerifiesCommits(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pub := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
+	verified := domain.CommitVerification{Format: domain.FormatSSH, Status: domain.StatusVerified, KeyID: "SHA256:k"}
+	unsigned := domain.CommitVerification{Status: domain.StatusUnsigned}
+
+	newFixture := func(t *testing.T) (*browseFixture, *mocks.CommitVerifier) {
+		f := newBrowseFixture(t)
+		v := mocks.NewCommitVerifier(t)
+		f.browse.WithVerifier(v)
+		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil)
+		return f, v
+	}
+
+	t.Run("ListCommits fills the page with one call and leaves unchecked commits alone", func(t *testing.T) {
+		t.Parallel()
+		f, v := newFixture(t)
+		cs := []domain.Commit{{ID: oid("a")}, {ID: oid("b")}, {ID: oid("c")}}
+		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).Return(ports.CommitPage{Head: oid("a"), Commits: cs}, nil)
+		v.EXPECT().VerifyCommits(ctx, pub.Name, cs).Return(map[domain.ObjectID]domain.CommitVerification{
+			oid("a"): verified, oid("b"): unsigned,
+		}).Once()
+		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{})
+		require.NoError(t, err)
+		require.Len(t, page.Commits, 3)
+		assert.Equal(t, verified, page.Commits[0].Verification)
+		assert.Equal(t, unsigned, page.Commits[1].Verification)
+		assert.Equal(t, domain.CommitVerification{}, page.Commits[2].Verification)
+	})
+
+	t.Run("a cached page is not mutated", func(t *testing.T) {
+		t.Parallel()
+		f, v := newFixture(t)
+		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil).Maybe()
+		full := oid("a")
+		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).
+			Return(ports.CommitPage{Head: full, Commits: []domain.Commit{{ID: full}}}, nil).Once()
+		v.EXPECT().VerifyCommits(ctx, pub.Name, mock.Anything).
+			Return(map[domain.ObjectID]domain.CommitVerification{full: verified}).Twice()
+		params := ports.ListCommitsParams{Revision: domain.RevisionOf(full), PageSize: 1}
+		for range 2 { // the second answer comes from the history cache
+			page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, params)
+			require.NoError(t, err)
+			assert.Equal(t, verified, page.Commits[0].Verification)
+		}
+		// With the verifier off, the cached entry is still unchecked.
+		f.browse.WithVerifier(nil)
+		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, params)
+		require.NoError(t, err)
+		assert.Equal(t, domain.CommitVerification{}, page.Commits[0].Verification)
+	})
+
+	t.Run("GetCommit fills the commit", func(t *testing.T) {
+		t.Parallel()
+		f, v := newFixture(t)
+		c := domain.Commit{ID: oid("a")}
+		f.reader.EXPECT().GetCommit(ctx, pub.Name, mock.Anything, domain.DefaultDiffLimits()).
+			Return(domain.CommitDetail{Commit: c, Stats: domain.DiffStats{FilesChanged: 2}}, nil)
+		v.EXPECT().VerifyCommits(ctx, pub.Name, []domain.Commit{c}).
+			Return(map[domain.ObjectID]domain.CommitVerification{oid("a"): verified})
+		d, err := f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{})
+		require.NoError(t, err)
+		assert.Equal(t, verified, d.Commit.Verification)
+		assert.Equal(t, 2, d.Stats.FilesChanged)
+	})
+
+	t.Run("nothing is verified for an empty page or a failed read", func(t *testing.T) {
+		t.Parallel()
+		f, _ := newFixture(t) // the verifier mock fails the test if called
+		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).Return(ports.CommitPage{}, nil)
+		_, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{})
+		require.NoError(t, err)
+		f.reader.EXPECT().GetCommit(ctx, pub.Name, mock.Anything, mock.Anything).Return(domain.CommitDetail{}, domain.ErrNotFound)
+		_, err = f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{})
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	})
+
+	t.Run("without a verifier the commits are unchanged", func(t *testing.T) {
+		t.Parallel()
+		f := newBrowseFixture(t)
+		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil)
+		f.reader.EXPECT().ListCommits(ctx, pub.Name, mock.Anything).
+			Return(ports.CommitPage{Commits: []domain.Commit{{ID: oid("a")}}}, nil)
+		f.reader.EXPECT().GetCommit(ctx, pub.Name, mock.Anything, mock.Anything).
+			Return(domain.CommitDetail{Commit: domain.Commit{ID: oid("a")}}, nil)
+		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{})
+		require.NoError(t, err)
+		assert.Equal(t, domain.CommitVerification{}, page.Commits[0].Verification)
+		d, err := f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{})
+		require.NoError(t, err)
+		assert.Equal(t, domain.CommitVerification{}, d.Commit.Verification)
+	})
+}

@@ -13,10 +13,11 @@ tool (
 
 require (
 	bnema.dev/ermite-actions v0.2.0
-	bnema.dev/ermite-api v0.5.0
+	bnema.dev/ermite-api v0.6.0
 	bnema.dev/ermite-git v0.1.0
 	bnema.dev/ermite-kv v0.1.0
 	connectrpc.com/connect v1.21.0
+	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/a-h/templ v0.3.1020
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/bnema/kvconf v0.1.2
@@ -71,6 +72,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
+	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect

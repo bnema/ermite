@@ -45,11 +45,14 @@ const (
 	// FeatureCIArtifacts is ArtifactService (`ermite run artifacts`,
 	// `run download`).
 	FeatureCIArtifacts = "ci.artifacts"
+	// FeatureCommitSignatures is TrustedKeyService and Commit.verification
+	// (`ermite signing-key trust`).
+	FeatureCommitSignatures = "commit_signatures"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIArtifacts, FeaturePasskeys}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

@@ -40,6 +40,21 @@ templ Commit(l Layout, p CommitPage) {
 						{ " · diff against the first parent" }
 					}
 				</dd>
+				if p.Sig != nil {
+					<dt>signature</dt>
+					<dd>
+						@signaturePill(p.Sig)
+						if p.Verification.Fingerprint != "" {
+							<code>{ p.Verification.Fingerprint }</code>
+						}
+						if p.Verification.KeyTitle != "" {
+							<span class="dim">{ "· " + visibleText(p.Verification.KeyTitle) }</span>
+						}
+						if p.Sig != nil && p.Sig.Class != "sig-none" {
+							<span class="sig-why dim">{ p.Sig.Title }</span>
+						}
+					</dd>
+				}
 				if p.Checks.Total > 0 {
 					<dt>checks</dt>
 					<dd>@CommitChecks(p.Checks)</dd>

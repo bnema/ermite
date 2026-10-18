@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bnema/zerowrap"
@@ -31,6 +32,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/oidchttp"
 	"bnema.dev/ermite/internal/adapters/rpc"
 	"bnema.dev/ermite/internal/adapters/secretbox"
+	"bnema.dev/ermite/internal/adapters/sigverify"
 	"bnema.dev/ermite/internal/adapters/sshsig"
 	"bnema.dev/ermite/internal/adapters/web"
 	"bnema.dev/ermite/internal/adapters/webauthn"
@@ -114,7 +116,10 @@ type forge struct {
 	// ServerService.GetSigningKey.
 	MergeRequests *usecase.MergeRequests
 	SigningKey    *usecase.SigningKey
-	Sessions      *usecase.Sessions
+	// Signatures are the trusted keys and the commit signature checks
+	// (ADR 0030).
+	Signatures *usecase.Signatures
+	Sessions   *usecase.Sessions
 	// Passkeys is nil when passkeys are not available (passkeysAvailable).
 	Passkeys *usecase.Passkeys
 	EventLog *usecase.Events
@@ -301,6 +306,9 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		return nil, err
 	}
 	f.SigningKey = usecase.NewSigningKey(signer, committer)
+	if err := f.signatures(store, reader, signer.PublicKey(), committer, clock); err != nil {
+		return nil, err
+	}
 	f.MergeRequests = usecase.NewMergeRequests(usecase.MergeRequestsConfig{
 		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
@@ -353,6 +361,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Events:         f.EventLog,
 		MergeRequests:  f.MergeRequests,
 		SigningKey:     f.SigningKey,
+		TrustedKeys:    f.Signatures,
 		Sessions:       f.Sessions,
 		Passkeys:       apiPasskeys,
 		Runner:         f.CI,
@@ -500,4 +509,28 @@ func (f *forge) pullRequests(cfg *usecase.CIConfig, store *kvstore.Store, git *g
 	if f.reader != nil {
 		cfg.Fresh = f.reader // a nil *ermitegit.Adapter must not become a non-nil interface
 	}
+}
+
+// signatures wires the commit signature checks (ADR 0030): the stored trusted
+// keys, the instance key as a builtin one for the committer email, the SSH and
+// OpenPGP verifiers, and the raw commit objects of the selected reader.
+func (f *forge) signatures(store *kvstore.Store, reader ports.RepoReader, key domain.SigningPublicKey, committer domain.Identity, clock ports.Clock) error {
+	objects, ok := reader.(ports.CommitObjectReader)
+	if !ok {
+		return errors.New("the git reader cannot read raw commit objects")
+	}
+	builtin := domain.TrustedKey{
+		ID: key.Fingerprint, Format: domain.FormatSSH, Title: "ermite instance key",
+		PublicKey: key.AuthorizedKey, Emails: []string{strings.ToLower(committer.Email)}, Builtin: true,
+	}
+	verifiers := map[domain.SignatureFormat]ports.SignatureVerifier{
+		domain.FormatSSH: sigverify.SSH{}, domain.FormatGPG: sigverify.GPG{},
+	}
+	sigs, err := usecase.NewSignatures(store.TrustedKeys(), sigverify.Inspector{}, verifiers, objects, builtin, clock)
+	if err != nil {
+		return err
+	}
+	f.Signatures = sigs
+	f.Browse.WithVerifier(sigs)
+	return nil
 }
