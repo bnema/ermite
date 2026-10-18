@@ -26,6 +26,7 @@
   .i-key { --i: url(icons/key.svg); }
   .i-log-in { --i: url(icons/log-in.svg); }
   .i-log-out { --i: url(icons/log-out.svg); }
+  .i-download { --i: url(icons/download.svg); }
 
   .pill {
     display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2); margin-left: var(--s1);

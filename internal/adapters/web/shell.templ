@@ -128,6 +128,16 @@ templ Header(l Layout) {
 					<span class="search-label">Go to…</span>
 					<kbd aria-hidden="true">ctrl k</kbd>
 				</button>
+				<button
+					type="button"
+					class="btn icon"
+					data-install
+					hidden
+					aria-label="Install app"
+					title="install ermite as an app"
+				>
+					<span class="ico i-download" aria-hidden="true"></span>
+				</button>
 				if SignedIn(ctx) {
 					<form class="owner" method="post" action="/-/logout">
 						<span class="owner-badge" title="signed in as the owner"><span class="ico i-user" aria-hidden="true"></span>{ l.Owner }</span>

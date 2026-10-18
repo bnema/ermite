@@ -152,6 +152,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+StaticPrefix, s.assets.serve)
 	mux.HandleFunc("GET /-/events", s.events)
+	mux.HandleFunc("GET "+ServiceWorkerPath, s.assets.sw.serve)
 	if s.cfg.Sessions != nil {
 		mux.HandleFunc("GET "+loginPrefix+"{nonce}", s.loginConfirm)
 		mux.HandleFunc("POST "+loginPrefix+"{nonce}", s.loginPost)

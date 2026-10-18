@@ -387,7 +387,15 @@ func TestWebRejectsForgedSessions(t *testing.T) {
 		require.NotNil(t, ck, name)
 		assert.Negative(t, ck.MaxAge, name)
 		assert.Equal(t, 403, b.do("POST", "/-/logout", post(tok), "").status, name)
+
+		// The service worker revalidates on every check, but an answer that
+		// clears a cookie stays no-store.
+		sw := b.get("/-/sw.js", as(tok))
+		assert.Equal(t, 200, sw.status, name)
+		assert.Equal(t, "no-store", sw.hdr.Get("Cache-Control"), name)
+		assert.NotNil(t, sw.cookie(sessionCookie), name)
 	}
+	assert.Equal(t, "no-cache", b.get("/-/sw.js", nil).hdr.Get("Cache-Control"))
 }
 
 // Failed logins count in the limiter of failed authentications, like a bad

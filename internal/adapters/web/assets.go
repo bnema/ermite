@@ -47,6 +47,7 @@ type asset struct {
 type assetSet struct {
 	byName map[string]asset
 	urls   Assets
+	sw     serviceWorker
 }
 
 // scripts are the JavaScript files of the page, in embedded static/js: the
@@ -155,6 +156,11 @@ func loadAssets() (*assetSet, error) {
 	if err := s.loadApp(put); err != nil {
 		return nil, err
 	}
+	sw, err := loadServiceWorker()
+	if err != nil {
+		return nil, err
+	}
+	s.sw = sw
 	return s, nil
 }
 
@@ -167,11 +173,16 @@ var appIcons = []struct{ file, sizes, purpose string }{
 	{"icon-maskable-512.png", "512x512", "maskable"},
 }
 
-// webManifest is the shape of the web app manifest: the minimum a browser
-// asks for to offer "install" / "add to home screen".
+// webManifest is the shape of the web app manifest: what a browser asks for to
+// offer "install" / "add to home screen", and the id and description of the
+// richer install dialog.
 type webManifest struct {
+	// ID is the identity of the app, independent of the (hashed) URL of the
+	// manifest and of start_url.
+	ID              string         `json:"id"`
 	Name            string         `json:"name"`
 	ShortName       string         `json:"short_name"`
+	Description     string         `json:"description"`
 	StartURL        string         `json:"start_url"`
 	Scope           string         `json:"scope"`
 	Display         string         `json:"display"`
@@ -195,7 +206,8 @@ const appColor = "#050505"
 // hashed URLs.
 func (s *assetSet) loadApp(put func(dir, name string, b []byte, typ string) string) error {
 	m := webManifest{
-		Name: "ermite", ShortName: "ermite", StartURL: "/", Scope: "/", Display: "standalone",
+		ID: "/", Name: "ermite", ShortName: "ermite", StartURL: "/", Scope: "/", Display: "standalone",
+		Description:     "Self-hosted Git forge: browse code, review merge requests and follow CI.",
 		BackgroundColor: appColor, ThemeColor: appColor,
 	}
 	for _, ic := range appIcons {
