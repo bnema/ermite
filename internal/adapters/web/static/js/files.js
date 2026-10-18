@@ -232,6 +232,9 @@ window.ermiteTree = (() => {
       if (!this.active()) return false;
       const li = cursorRow();
       if (!li) return false;
+      // The focus joins the cursor row first (it may still be on the page, as
+      // after a load): Enter then acts on the row the key acted on.
+      if (document.activeElement !== li && !li.contains(document.activeElement)) mark(li, true);
       if (into) {
         if (isDir(li)) {
           if (!isOpen(li)) return toggle(li), true;
@@ -672,6 +675,13 @@ window.ermiteFinder = (() => {
     }
   }
 
+  // sync is syncActive for whoever moves the cursor of the results from
+  // outside (j / k and gg / G, ermite.js): the options and the field follow it.
+  function sync() {
+    const el = $('finder-q');
+    if (el && $('finder') && !$('finder').hidden) syncActive(el);
+  }
+
   // showTree: no query, the directory again, with j/k and Enter on its rows.
   function showTree(el) {
     rendered = null;
@@ -755,6 +765,7 @@ window.ermiteFinder = (() => {
   function palette(el) {
     if (!document.body.dataset.paths) return;
     clearHits();
+    window.ermiteCmd?.sync(); // the cursor may have been on a hit
     if (pFrame) cancelAnimationFrame(pFrame);
     pFrame = 0;
     if (!el.value.trim()) {
@@ -802,6 +813,7 @@ window.ermiteFinder = (() => {
       list.querySelectorAll(':scope > li[data-cursor]').forEach((li) => li.removeAttribute('data-cursor'));
       shown[0].setAttribute('data-cursor', '');
     }
+    window.ermiteCmd?.sync(); // roles, ids and the active option of the new hits
   }
 
   // input runs the search of the field, once per frame.
@@ -816,12 +828,17 @@ window.ermiteFinder = (() => {
   }
 
   return {
-    index, search, positions, visible, label, load, palette, paletteClose, input,
+    index, search, positions, visible, label, load, palette, paletteClose, input, sync,
     // key moves the cursor of the results, opens one, or clears the field.
     key(el, e) {
       if (e.isComposing) return; // the Enter or Escape of an input method is its own
       const results = !$('finder').hidden;
       if (e.key === 'Escape') {
+        // With a query, Escape only clears it: the field keeps the focus (the
+        // global handler of ermite.js would blur it). Without one, it leaves the field.
+        if (!el.value) return;
+        e.preventDefault();
+        e.stopPropagation();
         el.value = '';
         input(el);
         return;

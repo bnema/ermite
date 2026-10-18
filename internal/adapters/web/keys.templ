@@ -36,6 +36,7 @@ templ Keys() {
          k-permalink from:body -> ermite.permalink();
          k-merge from:body -> window.ermiteMR?.openMerge();
          k-read from:body -> window.ermiteMR?.markRead();
-         k-gf from:body -> window.ermiteMR?.focusFiles()"
+         k-gf from:body -> window.ermiteMR?.focusFiles();
+         k-keys from:body -> ermite.toggleKeys()"
 	></div>
 }

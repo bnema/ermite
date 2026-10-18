@@ -223,6 +223,11 @@
 <button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd> close</button>
 </div>
+<div class="keys-pref">
+<label>
+<input type="checkbox" id="keys-off" aria-describedby="keys-note" hx-on:change="ermite.setKeysOff(this.checked)"> Turn off single-key shortcuts</label>
+<p id="keys-note" class="dim">Single-key shortcuts are on. ctrl k and esc work whatever this says.</p>
+</div>
 <dl class="keys">
 <div>
 <dt>
@@ -376,70 +381,76 @@
 <dialog id="panel-cmd" class="panel modal" aria-label="Go to" hx-on:close="ermiteFinder.paletteClose()" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 <div class="panel-head">
 <label for="cmd-q" class="sr">go to</label>
-<input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" aria-controls="cmd-list" hx-on:input="ermite.cmdFilter(this); ermiteFinder.palette(this)" hx-on:keydown="ermite.cmdKey(event)">
+<input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="cmd-list" aria-activedescendant="cmd-o0" hx-on:input="ermite.cmdFilter(this); ermiteFinder.palette(this)" hx-on:keydown="ermite.cmdKey(event)">
 <button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd>
 </button>
 </div>
-<ul id="cmd-list" class="cmd-list" aria-label="Targets">
-<li data-k="go home" data-cursor>
+<ul id="cmd-list" class="cmd-list" role="listbox" aria-label="Targets">
+<li id="cmd-o0" role="option" aria-selected="true" data-k="go home" data-cursor>
 <a href="/" tabindex="-1">
 <span class="lbl">home</span>
 <span class="k">go</span>
 </a>
 </li>
-<li data-k="section summary">
+<li id="cmd-o1" role="option" aria-selected="false" data-k="section summary">
 <a href="/files" tabindex="-1">
 <span class="lbl">summary</span>
 <span class="k">section</span>
 </a>
 </li>
-<li data-k="section files">
+<li id="cmd-o2" role="option" aria-selected="false" data-k="section files">
 <a href="/files/tree/main" tabindex="-1">
 <span class="lbl">files</span>
 <span class="k">section</span>
 </a>
 </li>
-<li data-k="section commits">
+<li id="cmd-o3" role="option" aria-selected="false" data-k="section commits">
 <a href="/files/commits/main" tabindex="-1">
 <span class="lbl">commits</span>
 <span class="k">section</span>
 </a>
 </li>
-<li data-k="section branches &amp; tags">
+<li id="cmd-o4" role="option" aria-selected="false" data-k="section branches &amp; tags">
 <a href="/files/refs" tabindex="-1">
 <span class="lbl">branches &amp; tags</span>
 <span class="k">section</span>
 </a>
 </li>
-<li data-k="section merge requests">
+<li id="cmd-o5" role="option" aria-selected="false" data-k="section merge requests">
 <a href="/files/merge-requests" tabindex="-1">
 <span class="lbl">merge requests</span>
 <span class="k">section</span>
 </a>
 </li>
-<li data-k="section actions">
+<li id="cmd-o6" role="option" aria-selected="false" data-k="section actions">
 <a href="/files/actions" tabindex="-1">
 <span class="lbl">actions</span>
 <span class="k">section</span>
 </a>
 </li>
-<li data-k="branch feature/x">
+<li id="cmd-o7" role="option" aria-selected="false" data-k="branch feature/x">
 <a href="/files/tree/feature/x" tabindex="-1">
 <span class="lbl">feature/x</span>
 <span class="k">branch</span>
 </a>
 </li>
-<li data-k="branch main">
+<li id="cmd-o8" role="option" aria-selected="false" data-k="branch main">
 <a href="/files/tree/main" tabindex="-1">
 <span class="lbl">main</span>
 <span class="k">branch</span>
 </a>
 </li>
-<li data-k="tag v1.0">
+<li id="cmd-o9" role="option" aria-selected="false" data-k="tag v1.0">
 <a href="/files/tree/v1.0" tabindex="-1">
 <span class="lbl">v1.0</span>
 <span class="k">tag</span>
+</a>
+</li>
+<li id="cmd-o10" role="option" aria-selected="false" data-k="action turn single-key shortcuts on off keyboard">
+<a href="#" data-fire="keys" tabindex="-1">
+<span class="lbl">turn single-key shortcuts off</span>
+<span class="k">action</span>
 </a>
 </li>
 </ul>
@@ -480,7 +491,8 @@
          k-permalink from:body -> ermite.permalink();
          k-merge from:body -> window.ermiteMR?.openMerge();
          k-read from:body -> window.ermiteMR?.markRead();
-         k-gf from:body -> window.ermiteMR?.focusFiles()">
+         k-gf from:body -> window.ermiteMR?.focusFiles();
+         k-keys from:body -> ermite.toggleKeys()">
 </div>
 </body>
 </html>

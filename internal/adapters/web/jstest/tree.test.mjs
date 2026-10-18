@@ -276,6 +276,18 @@ test('init: one tab stop, the row under the cursor; name links are out of the ta
   assert.equal(body.children[1].getAttribute('tabindex'), '-1');
 });
 
+test('l or h before any focus in the tree brings the focus to the cursor row', async () => {
+  pending.clear();
+  const body = table('P/', 'f');
+  assert.equal(dom.active, null, 'the page has the focus after a load');
+  T.key(true); // opens P/, the cursor stays on it
+  assert.equal(dom.active, body.children[0]);
+  await answer('/rows/P/', 'a');
+  dom.active = null;
+  T.key(false); // closes P/
+  assert.equal(dom.active, body.children[0]);
+});
+
 test('l and h move the focus with the cursor, and the tab stop with them', async () => {
   pending.clear();
   const body = table('P/', 'f');

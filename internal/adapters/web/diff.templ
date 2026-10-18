@@ -54,7 +54,7 @@ templ Commit(l Layout, p CommitPage) {
 				}
 			</dl>
 		</header>
-		<div class="diff-tools" role="toolbar" aria-label="Diff view">
+		<div class="diff-tools" role="group" aria-label="Diff view">
 			<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 			<span class="grow"></span>
 			@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)

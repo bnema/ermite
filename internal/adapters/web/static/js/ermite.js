@@ -64,6 +64,7 @@
       setCursor(rows[j], $$('[data-rows] > [data-cursor]'));
       rows[j].scrollIntoView({ block: 'nearest' });
       window.ermiteTree?.sync(rows[j]);
+      window.ermiteFinder?.sync(); // the rows may be the file finder's options
       const mark = j + 1 + '/' + rows.length;
       body().dataset.nav = mark;
       setTimeout(() => body().dataset.nav === mark && (body().dataset.nav = ''), 1500);
@@ -76,6 +77,7 @@
       setCursor(row, $$('[data-rows] > [data-cursor]'));
       row.scrollIntoView({ block: 'nearest' });
       window.ermiteTree?.sync(row);
+      window.ermiteFinder?.sync();
     },
     open() {
       if ($('dialog[open]') || window.ermiteTree?.open()) return;
@@ -108,6 +110,18 @@
       $(`.tabs [data-key=${key}]`)?.click();
     },
 
+    // The preference "single-key shortcuts" (ermiteKeys): the checkbox of the
+    // help dialog and the action of the palette.
+    setKeysOff(off) {
+      window.ermiteKeys.set(off);
+    },
+    toggleKeys() {
+      const off = !window.ermiteKeys.off();
+      window.ermiteKeys.set(off);
+      ermite.closeDialogs();
+      flash(off ? 'single-key shortcuts off · ctrl k and esc still work' : 'single-key shortcuts on');
+    },
+
     // Dialogs.
     closeDialogs() {
       for (const d of $$('dialog[open]')) d.close();
@@ -117,6 +131,7 @@
       if (!d) return;
       ermite.closeDialogs();
       d.showModal();
+      if (id === 'panel-cmd') window.ermiteCmd?.sync();
       if (focusId) document.getElementById(focusId)?.focus();
     },
 
@@ -146,31 +161,12 @@
       }
       return rows;
     },
-    // The "go to" palette.
+    // The "go to" palette (ermiteCmd below).
     cmdFilter(input) {
-      const t = input.value.toLowerCase().trim();
-      // The file hits the finder adds (li.finder-hit, files.js) have no data-k:
-      // the finder owns them.
-      const items = $$('#cmd-list > li[data-k]');
-      for (const li of items) li.hidden = !li.dataset.k.includes(t);
-      const first = items.find((li) => !li.hidden);
-      if (first) setCursor(first, $$('#cmd-list > li'));
+      window.ermiteCmd.filter(input);
     },
     cmdKey(e) {
-      const vis = $$('#cmd-list > li:not([hidden])');
-      const i = vis.findIndex((li) => li.hasAttribute('data-cursor'));
-      const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
-      if (step) {
-        e.preventDefault();
-        const n = vis[Math.max(0, Math.min(vis.length - 1, i + step))];
-        if (n) {
-          setCursor(n, $$('#cmd-list > li'));
-          n.scrollIntoView({ block: 'nearest' });
-        }
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        vis[Math.max(i, 0)]?.querySelector('a')?.click();
-      }
+      window.ermiteCmd.key(e);
     },
 
     // Diff.
@@ -252,6 +248,69 @@
     },
   };
   window.ermite = ermite;
+
+  // The "go to" palette is an editable combobox with a listbox popup: the
+  // focus stays in #cmd-q, the options are the <li> of #cmd-list, and the one
+  // with data-cursor is the active one (aria-selected on it, aria-activedescendant
+  // on the field). sync keeps the two in step; it runs on every change of the
+  // cursor or of the list, including the file hits files.js adds later.
+  // Self-contained: jstest/palette.test.mjs evaluates this block alone.
+  window.ermiteCmd = (() => {
+    const list = () => document.getElementById('cmd-list');
+    const field = () => document.getElementById('cmd-q');
+    const options = () => [...list().querySelectorAll(':scope > li')];
+    let seq = 0;
+    const moveCursor = (li) => {
+      for (const o of options()) if (o !== li) o.removeAttribute('data-cursor');
+      li.setAttribute('data-cursor', '');
+    };
+    function sync() {
+      const input = field();
+      if (!input || !list()) return;
+      const all = options();
+      const shown = all.filter((li) => !li.hidden);
+      const cur = shown.find((li) => li.hasAttribute('data-cursor'));
+      for (const li of all) {
+        li.id ||= 'cmd-h' + seq++;
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', li === cur ? 'true' : 'false');
+      }
+      input.setAttribute('aria-expanded', shown.length ? 'true' : 'false');
+      if (cur) input.setAttribute('aria-activedescendant', cur.id);
+      else input.removeAttribute('aria-activedescendant');
+    }
+    return {
+      sync,
+      // filter hides the entries that do not contain the text of the field.
+      // The file hits the finder adds (li.finder-hit, files.js) have no data-k:
+      // the finder owns them.
+      filter(input) {
+        const t = input.value.toLowerCase().trim();
+        const items = options().filter((li) => li.hasAttribute('data-k'));
+        for (const li of items) li.hidden = !li.getAttribute('data-k').includes(t);
+        const first = items.find((li) => !li.hidden);
+        if (first) moveCursor(first);
+        sync();
+      },
+      key(e) {
+        const vis = options().filter((li) => !li.hidden);
+        const i = vis.findIndex((li) => li.hasAttribute('data-cursor'));
+        const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+        if (step) {
+          e.preventDefault();
+          const n = vis[Math.max(0, Math.min(vis.length - 1, i + step))];
+          if (n) {
+            moveCursor(n);
+            n.scrollIntoView({ block: 'nearest' });
+          }
+          sync();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          vis[Math.max(i, 0)]?.querySelector('a')?.click();
+        }
+      },
+    };
+  })();
 
   // The side panel (aside.rail) by keyboard: l enters it on its main action
   // (the primary button) or its first control, j / k step between its shown
@@ -458,6 +517,50 @@
     return { load, file, current };
   })();
 
+  // The preference "single-character shortcuts" (WCAG 2.1.4): off, the keys
+  // that are one printable character (j, k, s, ?, :, G, 1-9 in the merge menu,
+  // …) do nothing. Shortcuts with ctrl or cmd, escape, enter and the arrows
+  // keep working. The choice lives in localStorage ("keys-off") and is made in
+  // the help dialog (a checkbox) or the palette (an action). Self-contained:
+  // jstest/keys.test.mjs evaluates this block alone.
+  window.ermiteKeys = (() => {
+    const KEY = 'keys-off';
+    let off = false;
+    try { off = localStorage.getItem(KEY) === '1'; } catch { /* no storage: on, and the choice holds for this page */ }
+    // apply shows the state: the checkbox and the note of the help dialog,
+    // and the label of the palette action.
+    function apply() {
+      const box = document.getElementById('keys-off');
+      if (box) box.checked = off;
+      const note = document.getElementById('keys-note');
+      if (note) {
+        note.textContent = off
+          ? 'Single-key shortcuts are off: only ctrl k and esc, enter and the arrows work. Turn them on again here.'
+          : 'Single-key shortcuts are on. ctrl k and esc work whatever this says.';
+      }
+      const act = document.querySelector('#cmd-list [data-fire="keys"] .lbl');
+      if (act) act.textContent = off ? 'turn single-key shortcuts on' : 'turn single-key shortcuts off';
+    }
+    function set(v) {
+      off = !!v;
+      try { localStorage.setItem(KEY, off ? '1' : ''); } catch { /* storage refused: holds for this page */ }
+      apply();
+    }
+    addEventListener('storage', (e) => {
+      if (e.key !== KEY) return;
+      off = e.newValue === '1';
+      apply();
+    });
+    apply();
+    return {
+      off: () => off,
+      set,
+      apply,
+      // blocks says whether the preference turns this key off.
+      blocks: (e) => off && e.key.length === 1,
+    };
+  })();
+
   // 1. Keys.
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
     s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
@@ -480,6 +583,8 @@
       if (typing) e.target.blur();
       return ermite.fire('esc');
     }
+    // Single-character shortcuts turned off: only the keys above work.
+    if (window.ermiteKeys.blocks(e)) { pending = 0; return; }
     // An open merge menu takes its keys (1-9, D) before the field check: its
     // radios and its checkbox hold the focus.
     if (mr?.menuKey(e)) return;
@@ -607,6 +712,50 @@ window.ermiteLive = (() => {
   // server closing it, a network hiccup) is not worth a message.
   const LOST_AFTER = 5000;
   let lostTimer = 0;
+  // The focus survives a swap. focusables are the controls of a fragment in
+  // document order; where(root) says which one has the focus (its id, else its
+  // tag and href or name, and its index among the controls) and refocus finds
+  // it again in the element that replaced root.
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]';
+  // shown: not inside a hidden element (a filtered row, a folded block); the
+  // browser refuses the focus there.
+  const shown = (e) => !e.closest('[hidden]') && (!e.checkVisibility || e.checkVisibility());
+  const focusables = (root) => [...root.querySelectorAll(FOCUSABLE)].filter(shown);
+  // take focuses e and says whether the focus is there now.
+  const take = (e) => { e.focus({ preventScroll: true }); return document.activeElement === e; };
+  const where = (root) => {
+    const a = document.activeElement;
+    if (!a || a === document.body || !root.contains(a)) return null;
+    if (a === root) return { self: true };
+    const all = focusables(root);
+    return { id: a.id, tag: a.tagName, href: a.getAttribute('href'), name: a.getAttribute('name'), index: all.indexOf(a) };
+  };
+  const refocus = (root, w) => {
+    if (w.self) return root.focus({ preventScroll: true });
+    const all = focusables(root);
+    const same = (e) => e.tagName === w.tag;
+    const target =
+      (w.id && all.find((e) => e.id === w.id)) ||
+      (w.href != null && all.find((e) => same(e) && e.getAttribute('href') === w.href)) ||
+      (w.name != null && all.find((e) => same(e) && e.getAttribute('name') === w.name)) ||
+      (all[w.index] && same(all[w.index]) && all[w.index]) ||
+      all[0];
+    if (target) target.focus({ preventScroll: true });
+    else if (root.hasAttribute('tabindex')) root.focus({ preventScroll: true });
+  };
+  // lostFocus: the element that had the focus inside is gone. The focus goes to
+  // the first control of the next shown row, else of the nearest shown row
+  // before, else to the content.
+  const lostFocus = (after, before) => {
+    const tryRow = (e) => {
+      if (!shown(e)) return false;
+      const c = focusables(e)[0] || (e.hasAttribute('tabindex') ? e : null);
+      return !!c && take(c);
+    };
+    for (let e = after; e; e = e.nextElementSibling) if (tryRow(e)) return;
+    for (let e = before; e; e = e.previousElementSibling) if (tryRow(e)) return;
+    document.getElementById('main')?.focus({ preventScroll: true });
+  };
   const setState = (s) => { const el = document.querySelector('.hint-live'); if (el) el.dataset.state = s; };
   return {
     // lost is htmx:sse:close and htmx:sse:error: "live updates paused" shows
@@ -628,16 +777,27 @@ window.ermiteLive = (() => {
       const cursorKey = cursor?.id || cursor?.querySelector('a')?.getAttribute('href');
       for (const el of [...t.content.children]) {
         const old = el.id && document.getElementById(el.id);
-        if (el.hasAttribute('data-gone')) { old?.remove(); continue; }
+        const had = old ? where(old) : null; // the focus is inside what is replaced
+        if (el.hasAttribute('data-gone')) {
+          const after = old?.nextElementSibling, before = old?.previousElementSibling;
+          old?.remove();
+          if (had) lostFocus(after, before);
+          continue;
+        }
         if (!old) {
           const rows = document.getElementById('repo-rows');
           if (rows && el.id.startsWith('repo-')) { rows.prepend(el); window.htmx?.process(el); }
           continue;
         }
-        if (old.hasAttribute('data-slot')) { old.replaceChildren(...el.childNodes); continue; }
+        if (old.hasAttribute('data-slot')) {
+          old.replaceChildren(...el.childNodes);
+          if (had) refocus(old, had);
+          continue;
+        }
         if (old.hasAttribute('data-cursor')) el.setAttribute('data-cursor', '');
         old.replaceWith(el);
         window.htmx?.process(el);
+        if (had) refocus(el, had);
       }
       // The rows may have changed under an active filter: apply it again and
       // keep the cursor on its row while that row is still shown.

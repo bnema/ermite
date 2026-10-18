@@ -1952,7 +1952,7 @@ func mrBar(p MRPage) templ.Component {
 			templ_7745c5c3_Var97 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "<div class=\"diff-tools mr-bar\" role=\"toolbar\" aria-label=\"Diff view and merge\"><span class=\"dim\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "<div class=\"diff-tools mr-bar\" role=\"group\" aria-label=\"Diff view and merge\"><span class=\"dim\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2624,7 +2624,7 @@ func Compare(l Layout, p ComparePage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if p.HasDiff {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 236, "<div class=\"diff-tools\" role=\"toolbar\" aria-label=\"Diff view\"><span class=\"dim\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 236, "<div class=\"diff-tools\" role=\"group\" aria-label=\"Diff view\"><span class=\"dim\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

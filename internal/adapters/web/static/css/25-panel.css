@@ -21,7 +21,6 @@
     & h2 { font-size: var(--fs); flex: 1; }
     & input { flex: 1; min-width: 0; height: 32px; font-size: 16px; }
     & input::placeholder { color: var(--ink-mute); opacity: 1; }
-    & input:focus-visible { outline: none; }
   }
   .panel-x { color: var(--ink-mute); font-size: var(--fs-s); display: flex; gap: var(--s2); align-items: center; }
   .panel-x:hover { color: var(--ink-hi); }
@@ -60,10 +59,18 @@
   }
 
   .keys {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); column-gap: var(--s5); row-gap: var(--s1);
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); column-gap: var(--s5); row-gap: var(--s1);
     padding: var(--s3) var(--s4) var(--s4) !important;
     & > div { display: grid; grid-template-columns: 130px 1fr; gap: var(--s3); align-items: baseline; padding: var(--s1) 0; border-bottom: 1px solid var(--border); }
-    & dt { white-space: nowrap; display: flex; gap: var(--s1); }
-    & dd { color: var(--ink-dim); font-size: var(--fs-s); }
+    & dt { display: flex; flex-wrap: wrap; gap: var(--s1); min-width: 0; }
+    & dd { color: var(--ink-dim); font-size: var(--fs-s); min-width: 0; overflow-wrap: anywhere; }
+    @media (max-width: 480px) { & > div { grid-template-columns: minmax(0, 1fr); gap: var(--s1); } }
+  }
+  /* the preference "single-key shortcuts" of the help dialog */
+  .keys-pref {
+    flex: none; padding: var(--s3) var(--s4) 0;
+    & label { display: flex; align-items: center; gap: var(--s2); cursor: pointer; }
+    & input[type=checkbox] { width: 16px; height: 16px; flex: none; accent-color: var(--teal); }
+    & p { font-size: var(--fs-s); margin-top: var(--s1); }
   }
 }

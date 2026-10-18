@@ -49,7 +49,7 @@ function page() {
 }
 
 const key = (k, extra = {}) => {
-  const e = { key: k, isComposing: false, prevented: false, preventDefault() { this.prevented = true; }, ...extra };
+  const e = { key: k, isComposing: false, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {}, ...extra };
   return e;
 };
 const status = () => document.getElementById('finder-status').textContent;
