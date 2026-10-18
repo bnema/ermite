@@ -80,10 +80,21 @@ func TestHomeRowFigures(t *testing.T) {
 	assert.Contains(t, out, `<a href="/proj/tree/`+head.String()+`" title="v1.2.0 · made 3h ago">v1.2.0</a>`, "by its commit: a branch may share its name")
 	assert.Contains(t, out, "<dt>last activity</dt>")
 	assert.NotContains(t, out, "i-branch", "the default branch is not shown")
-	assert.Contains(t, out, `<ul class="repo-topics" aria-label="Topics of proj"><li>go</li><li>git</li></ul>`)
+	assert.Contains(t, out, `<ul class="repo-topics" aria-label="Topics of proj" data-fit><li>go</li><li>git</li></ul>`)
 	assert.Contains(t, out, `role="img" aria-label="Activity: 0 commits in the last 90 days"`)
 	assert.Contains(t, out, `<linearGradient id="hb-proj"`)
+	assert.NotContains(t, out, "pulse-ring", "nothing moves")
+	assert.NotContains(t, out, "90 days ago")
 	assert.NotContains(t, out, "pushed")
+	// The tag comes last, after the last activity.
+	assert.Regexp(t, `<dt>last activity</dt>.*<dt>last tag</dt>`, out)
+
+	// Without topics nor figures, the row keeps their room: every card has the
+	// same height.
+	bare := renderRow(t, HomeRow{ID: "repo-bare", Name: "bare", Href: "/bare"})
+	assert.Contains(t, bare, `<div class="repo-topics" aria-hidden="true"></div>`)
+	assert.Contains(t, bare, `<div class="repo-pulse" aria-hidden="true"></div>`)
+	assert.NotContains(t, bare, "last tag")
 
 	// Past the cap of the walk, the figures are lower bounds.
 	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{

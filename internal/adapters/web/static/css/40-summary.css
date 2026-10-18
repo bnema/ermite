@@ -28,6 +28,8 @@
     & ol { list-style: decimal; }
     & li + li { margin-top: var(--s1); }
     & li::marker { color: var(--ink-mute); }
+    & a { color: var(--accent); text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+    & a:hover { color: var(--accent); text-decoration-color: currentColor; }
     & li > ul, & li > ol, & li > p { margin-top: var(--s1); }
     & pre {
       padding: var(--s3) var(--s4); overflow-x: auto;
@@ -38,7 +40,7 @@
       padding: 1px 5px; font-size: .88em; overflow-wrap: anywhere;
       background: var(--bg-raised); border: 1px solid var(--border); border-radius: 4px;
     }
-    & blockquote { padding-left: var(--s4); border-left: 3px solid var(--border-strong); color: var(--ink-dim); }
+    & blockquote { padding-left: var(--s4); border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--border-strong)); color: var(--ink-dim); }
     & table { display: block; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-s); font-size: var(--fs-s); line-height: 20px; }
     & th, & td { padding: 6px var(--s3); white-space: nowrap; vertical-align: top; border-top: 1px solid var(--border); }
     & th { background: var(--bg-raised); border-top: 0; font-weight: 700; }

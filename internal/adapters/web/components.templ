@@ -54,14 +54,18 @@ templ HomeRowView(r HomeRow) {
 				<p class="repo-desc mute">no description</p>
 			}
 			if len(r.Topics) > 0 {
-				<ul class="repo-topics" aria-label={ "Topics of " + r.Name }>
+				<ul class="repo-topics" aria-label={ "Topics of " + r.Name } data-fit>
 					for _, t := range r.Topics {
 						<li>{ t }</li>
 					}
 				</ul>
+			} else {
+				<div class="repo-topics" aria-hidden="true"></div>
 			}
 			if r.Stats != nil && r.Stats.Pulse != nil {
 				@pulse(r.Stats.Pulse)
+			} else {
+				<div class="repo-pulse" aria-hidden="true"></div>
 			}
 		</div>
 		<div class="repo-head">
@@ -69,16 +73,6 @@ templ HomeRowView(r HomeRow) {
 				if s := r.Stats; s != nil {
 					<div><dt>commits</dt><dd>{ s.Commits }</dd></div>
 					<div><dt>last 30 days</dt><dd>{ s.Recent }</dd></div>
-					if s.Tag != "" {
-						<div class="rs-tag">
-							<dt>latest tag</dt>
-							if s.TagHref != "" {
-								<dd><a href={ templ.SafeURL(s.TagHref) } title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</a></dd>
-							} else {
-								<dd title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</dd>
-							}
-						</div>
-					}
 				}
 				<div>
 					<dt>last activity</dt>
@@ -88,6 +82,16 @@ templ HomeRowView(r HomeRow) {
 						<dd class="mute">never</dd>
 					}
 				</div>
+				if s := r.Stats; s != nil && s.Tag != "" {
+					<div class="rs-tag">
+						<dt>last tag</dt>
+						if s.TagHref != "" {
+							<dd><a href={ templ.SafeURL(s.TagHref) } title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</a></dd>
+						} else {
+							<dd title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</dd>
+						}
+					</div>
+				}
 			</dl>
 			if r.CI != nil {
 				<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Title }>
@@ -119,8 +123,9 @@ templ HomeRowView(r HomeRow) {
 }
 
 // pulse is the activity curve of a home row: a smooth line over a fading
-// area on a faint grid, and a dot at today that beats while the repository
-// is active. The SVG scales evenly with its column, so the dot stays round.
+// area on a faint grid, and a dot at today, in colour while the repository
+// is active. Nothing moves: the page stays idle. The SVG scales evenly with
+// its column, so the dot stays round.
 templ pulse(h *Heartbeat) {
 	<figure class="repo-pulse" data-live?={ h.Live }>
 		<svg viewBox="0 0 600 64" role="img" aria-label={ h.Label } focusable="false">
@@ -133,10 +138,8 @@ templ pulse(h *Heartbeat) {
 			<path class="pulse-grid" d="M0 21.5 H600 M0 42.5 H600 M0 63.5 H600" vector-effect="non-scaling-stroke"></path>
 			<path class="pulse-area" d={ h.Area } fill={ "url(#" + h.GradID + ")" }></path>
 			<path class="pulse-line" d={ h.Line } vector-effect="non-scaling-stroke"></path>
-			<circle class="pulse-ring" cx={ h.X } cy={ h.Y } r="4"></circle>
 			<circle class="pulse-dot" cx={ h.X } cy={ h.Y } r="3.5"></circle>
 		</svg>
-		<figcaption class="pulse-cap" aria-hidden="true"><span>90 days ago</span><span>today</span></figcaption>
 	</figure>
 }
 

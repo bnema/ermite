@@ -99,7 +99,7 @@
     & a:hover { color: var(--ink-hi); }
     & a:hover::after { background: var(--border-strong); }
     & a[aria-current] { color: var(--ink-hi); }
-    & a[aria-current]::after { background: var(--ink-hi); }
+    & a[aria-current]::after { background: var(--accent); }
     & kbd { opacity: .55; }
     & a:hover kbd, & a:focus-visible kbd, & a[aria-current] kbd { opacity: 1; }
   }

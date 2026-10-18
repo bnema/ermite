@@ -40,7 +40,7 @@
       font-family: var(--mono); font-size: var(--fs-s); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     & li a:hover, & li a:focus-visible { background: var(--bg-raised); color: var(--ink-hi); }
-    & li a[aria-current] { font-weight: 700; color: var(--ink-hi); }
+    & li a[aria-current] { font-weight: 700; color: var(--ink-hi); box-shadow: inset 2px 0 0 var(--accent); }
     & .mark { display: inline-block; width: 1ch; color: var(--teal); }
   }
 
@@ -50,7 +50,7 @@
       text-decoration: none; color: var(--ink);
     }
     & li a:hover { background: var(--bg-raised); }
-    & li[data-cursor] a { background: var(--bg-strong); color: var(--ink-hi); }
+    & li[data-cursor] a { background: var(--bg-strong); color: var(--ink-hi); box-shadow: inset 2px 0 0 var(--accent); }
     & .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: var(--fs-s); }
     & .k { flex: none; font-size: var(--fs-xs); color: var(--ink-mute); }
     & .dir { color: var(--ink-dim); }

@@ -42,7 +42,7 @@
   small { font-size: var(--fs-s); }
   code, pre, kbd, samp { font-family: var(--mono); }
   a { color: inherit; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
-  a:hover { text-decoration-color: currentColor; color: var(--ink-hi); }
+  a:hover { text-decoration-color: var(--accent); color: var(--ink-hi); }
   hr { border: 0; border-top: 1px solid var(--border); margin: var(--s5) 0; }
   ::selection { background: var(--ink-hi); color: var(--on-ink); }
 

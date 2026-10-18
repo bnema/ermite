@@ -12,6 +12,7 @@
 //  5. A handler that fails is shown in the hint badge.
 //  6. The lines a diff hides load in place (ermiteGaps; e and E).
 //  7. The service worker (ermiteInstall).
+//  8. Chip lists kept on one line, with a … chip (ermiteFit).
 (() => {
   // Marks the page as scripted: what does nothing without scripts (the filters,
   // the "go to" and help buttons) is hidden until this class is set (see the
@@ -155,7 +156,12 @@
       const sel = input.dataset.filter || input.dataset.pick;
       if (!sel) return [];
       const rows = $$(sel);
-      for (const r of rows) r.hidden = !r.textContent.toLowerCase().includes(t);
+      for (const r of rows) {
+        const was = r.hidden;
+        r.hidden = !r.textContent.toLowerCase().includes(t);
+        // A row shown again lays out its chips again (it had no width hidden).
+        if (was && !r.hidden) for (const ul of $$('[data-fit]', r)) window.ermiteFit?.fit(ul);
+      }
       if (input.dataset.groups) {
         for (const g of $$(input.dataset.groups)) g.hidden = !rows.some((r) => !r.hidden && g.contains(r));
       }
@@ -641,6 +647,88 @@
     };
   }
 
+  // 8. A list of chips on one line ([data-fit], the topics of a home row):
+  // the chips that wrap out of sight are hidden and a "…" button after the
+  // last one shown names them; pressing it opens the list (data-open) on as
+  // many lines as it needs. Self-contained: jstest/fit.test.mjs evaluates
+  // this block alone.
+  window.ermiteFit = (() => {
+    const fit = (ul) => {
+      if (ul.hasAttribute('data-open')) return;
+      // The … button is kept across fits, so that a refit (a resize) does not
+      // take the focus from it.
+      let more = ul.querySelector(':scope > li.more');
+      let btn = more?.firstElementChild;
+      const focused = !!btn && document.activeElement === btn;
+      more?.remove();
+      const chips = [...ul.children];
+      for (const li of chips) li.hidden = false;
+      const top = chips[0]?.offsetTop;
+      if (top === undefined || chips.at(-1).offsetTop === top) {
+        // Everything fits now: a focused … button hands the focus to the
+        // last chip.
+        if (focused && chips.length) {
+          chips.at(-1).setAttribute('tabindex', '-1');
+          chips.at(-1).focus({ preventScroll: true });
+        }
+        return;
+      }
+      if (!more) {
+        more = document.createElement('li');
+        more.className = 'more';
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '…';
+        more.append(btn);
+      }
+      ul.append(more);
+      if (focused) btn.focus({ preventScroll: true });
+      // Keep the chips of the first line, then drop from the end until the
+      // … chip fits there too.
+      let shown = chips.findIndex((li) => li.offsetTop !== top);
+      for (const li of chips.slice(shown)) li.hidden = true;
+      while (shown > 0 && more.offsetTop !== top) chips[--shown].hidden = true;
+      const rest = chips.slice(shown).map((li) => li.textContent);
+      btn.title = rest.join(', ');
+      btn.setAttribute('aria-label', 'show ' + rest.length + ' more: ' + rest.join(', '));
+    };
+    // open shows every chip of the list of the … button pressed.
+    const open = (btn) => {
+      const ul = btn.closest('[data-fit]');
+      if (!ul) return;
+      const item = btn.closest('li');
+      // The focus goes to the first chip that was hidden, now shown.
+      const next = [...ul.children].find((li) => li.hidden);
+      ul.setAttribute('data-open', '');
+      item.remove();
+      for (const li of ul.children) li.hidden = false;
+      if (next) {
+        next.setAttribute('tabindex', '-1');
+        next.focus({ preventScroll: true });
+      }
+    };
+    const all = (root = document) => {
+      for (const ul of root.querySelectorAll('[data-fit]')) fit(ul);
+    };
+    return { fit, all, open };
+  })();
+  addEventListener('click', (e) => {
+    const btn = e.target.closest?.('[data-fit] > li.more > button');
+    if (btn) window.ermiteFit.open(btn);
+  });
+  {
+    window.ermiteFit.all();
+    // Widths change with the window and when the fonts arrive; one frame per
+    // burst. Always listening: a live update can bring the first list.
+    let pending = 0;
+    const again = () => {
+      if (pending) return;
+      pending = requestAnimationFrame(() => { pending = 0; window.ermiteFit.all(); });
+    };
+    addEventListener('resize', again);
+    document.fonts?.ready.then(again);
+  }
+
   // 5. A failure of a handler or of a request (htmx logs it to the console
   // already) is shown, so that a key that does nothing is not a mystery.
   addEventListener('htmx:error', (e) => {
@@ -712,6 +800,8 @@ window.ermiteLive = (() => {
     document.getElementById('main')?.focus({ preventScroll: true });
   };
   const setState = (s) => { const el = document.querySelector('.hint-live'); if (el) el.dataset.state = s; };
+  // fitIn lays out the one-line chip lists of a fragment now in the page.
+  const fitIn = (el) => { for (const ul of el.querySelectorAll('[data-fit]')) window.ermiteFit?.fit(ul); };
   return {
     // lost is htmx:sse:close and htmx:sse:error: "live updates paused" shows
     // only if the stream is still down LOST_AFTER later.
@@ -741,7 +831,7 @@ window.ermiteLive = (() => {
         }
         if (!old) {
           const rows = document.getElementById('repo-rows');
-          if (rows && el.id.startsWith('repo-')) { rows.prepend(el); window.htmx?.process(el); }
+          if (rows && el.id.startsWith('repo-')) { rows.prepend(el); window.htmx?.process(el); fitIn(el); }
           continue;
         }
         if (old.hasAttribute('data-slot')) {
@@ -752,6 +842,7 @@ window.ermiteLive = (() => {
         if (old.hasAttribute('data-cursor')) el.setAttribute('data-cursor', '');
         old.replaceWith(el);
         window.htmx?.process(el);
+        fitIn(el);
         if (had) refocus(el, had);
       }
       // The rows may have changed under an active filter: apply it again and

@@ -20,9 +20,11 @@
   font-weight: 200 800; font-style: normal; font-display: swap;
 }
 
-/* Palette: grays only, in four surface levels, so that blocks read apart
-   without hue. Dark: each level is lighter than the one below it; light: each
-   is whiter. Hue is kept for code, diffs and verdicts. */
+/* Palette: grays, in four surface levels, so that blocks read apart without
+   hue. Dark: each level is lighter than the one below it; light: each is
+   whiter. Hue is kept for code, diffs and verdicts, and one accent, the teal
+   of Despair, marks where you are and what is alive: the current tab, the row
+   cursor, links in prose, open folders. */
 @layer tokens {
   :root {
     color-scheme: light dark;
@@ -46,9 +48,10 @@
     --focus:    light-dark(#000000, #ffffff);
     --on-ink:   light-dark(#ffffff, #050505); /* text on a filled ink button */
 
-    /* Colour, sparingly, from the owner's Despair theme: only code, diffs and
-       verdicts carry hue. Light values are the same hues darkened to AA. */
+    /* Colour, sparingly, from the owner's Despair theme. Light values are the
+       same hues darkened to AA. */
     --teal:    light-dark(#2f6b6b, #7db5b5);
+    --accent:  var(--teal); /* the one accent of the interface */
     --teal-2:  light-dark(#355f5f, #5a8585);
     --red:     light-dark(#a8404b, #d96c75);
     --rose:    light-dark(#6b6570, #a7a2a9);
