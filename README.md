@@ -1,5 +1,7 @@
 # ermite
 
+> Read-only mirror. Development happens at git.bnema.dev; issues and pull requests are closed here.
+
 A single-user Git forge in one Go binary. ermite hosts bare repositories, serves clone and push over HTTPS, reviews branches as merge requests, and shows everything in a web interface with live updates.
 
 Status: early development. `ermite serve` serves Git over HTTP (clone, fetch, push), the API, `GET /-/health`, and the web: repositories, an expandable file tree with a repository-wide fuzzy file finder, files, commits, refs and merge requests. Visitors read public repositories; the owner signs in with a one-time link from the CLI to see private ones and to review and merge.
@@ -21,7 +23,7 @@ ermite serve
 | `ERMITE_ADDR` | `:7341` | listen address |
 | `ERMITE_TRUSTED_PROXIES` | empty | comma-separated CIDRs |
 | `ERMITE_GIT` | `git` | git 2.45 or newer |
-| `ERMITE_GIT_READER` | `ermite-git` | `ermite-git` reads refs, trees, blobs and history with the [ermite-git](https://git.bnema.dev/bnema/ermite-git) library where it is faster than the `git` binary and falls back to `git` elsewhere and for repositories it does not read; `cli` uses the `git` binary for every read (the escape hatch if a read looks wrong: set it and restart) |
+| `ERMITE_GIT_READER` | `ermite-git` | `ermite-git` reads refs, trees, blobs and history with the [ermite-git](https://github.com/bnema/ermite-git) library where it is faster than the `git` binary and falls back to `git` elsewhere and for repositories it does not read; `cli` uses the `git` binary for every read (the escape hatch if a read looks wrong: set it and restart) |
 | `ERMITE_SOURCE_URL` | `$ERMITE_PUBLIC_URL/ermite` | link to the source (AGPL) |
 | `ERMITE_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
@@ -34,7 +36,7 @@ ermite serve
 | `ERMITE_CI_ARTIFACT_RETENTION` | `90d` | default and longest retention of an artifact (`retention-days`), at least one day: `Nd` or a Go duration |
 | `ERMITE_CI_ARTIFACT_QUOTA` | `10GiB` | space of the artifacts of one repository, uploads in progress included: bytes, or a number with `KiB`, `MiB`, `GiB`, `TiB` |
 | `ERMITE_CI_ARTIFACT_MAX` | `5GiB` | size of one artifact, same syntax |
-| `ERMITE_CI_POLL_TIMEOUT` | `50s` | how long the server holds a runner's `FetchJob` call when no job is queued, from `1s` to `55s`; set it below the response timeout of a reverse proxy in front of ermite (Gordon cuts a response that has no headers after 30 s, so use `25s` behind it) |
+| `ERMITE_CI_POLL_TIMEOUT` | `50s` | how long the server holds a runner's `FetchJob` call when no job is queued, from `1s` to `55s`; set it below the response timeout of a reverse proxy in front of ermite (a reverse proxy may cut a response that has no headers after 30 s, so use `25s` behind such a proxy) |
 
 `ermite version` prints the version (and the server's when a server URL is configured, see Remote CLI).
 
@@ -122,7 +124,7 @@ A merge request proposes a branch for its target (the default branch unless set)
 
 ermite runs the `.github/workflows/*.yml` workflows of a repository on `push` (a branch or a tag, and the merge of a merge request), on `pull_request` and `pull_request_target` (the merge requests, below), `workflow_dispatch`, `schedule`, `workflow_run`, `create` and `delete` (below) and shows each job as a check on the commit, the branch list and the merge request. CI is on once a runner is registered; there is no switch. Before that a push makes no run and no check.
 
-Runs execute on [ermite-runner](https://git.bnema.dev/bnema/ermite-runner) hosts, which call ermite over its API. Create a token for the runner host with `ermite token create <label> --preset runner` (the `runner:register` scope, which also gives access to the code and the secrets of every repository: give it only to runners you operate), then register the runner with it. `ermite runner list` shows the runners and whether they are online; `ermite runner remove <id>` stops one. A job goes to a runner that has every label of its `runs-on`; a job no runner takes within 24 hours fails.
+Runs execute on [ermite-runner](https://github.com/bnema/ermite-runner) hosts, which call ermite over its API. Create a token for the runner host with `ermite token create <label> --preset runner` (the `runner:register` scope, which also gives access to the code and the secrets of every repository: give it only to runners you operate), then register the runner with it. `ermite runner list` shows the runners and whether they are online; `ermite runner remove <id>` stops one. A job goes to a runner that has every label of its `runs-on`; a job no runner takes within 24 hours fails.
 
 Every job gets a **repository token** (`github.token`, `ermitegh_…`) when a runner takes it: it reads the repository of the run, even a private one, over Git and the REST subset below, writes nothing, and ends with the job (completion, cancel, lost runner) or five minutes after the job's deadline. It is not a stored token: `ermite token list` never shows it and no scope manages it.
 
@@ -185,7 +187,7 @@ docker run -d -p 127.0.0.1:7341:7341 -v ermite-data:/data \
   -e ERMITE_PUBLIC_URL=http://localhost:7341 -e ERMITE_ADMIN_TOKEN="$token" ermite
 ```
 
-The image is alpine with git, runs as uid 10001 and keeps its data in the `/data` volume. Logs are JSON by default. The build fetches `bnema.dev/ermite-*` from `git.bnema.dev`, so the host must reach it (NetBird); the build container uses the host's DNS and routes. Behind another route, pass `--build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/` with `--network host`, as the CI job does.
+The image is alpine with git, runs as uid 10001 and keeps its data in the `/data` volume. Logs are JSON by default. The build fetches the `bnema.dev/ermite-*` modules through their `bnema.dev` vanity paths. Behind a private route, `--build-arg GIT_REWRITE_BASE=<url>` rewrites the git host used for those modules.
 
 ## Develop with compose
 

@@ -1,6 +1,6 @@
 # Development server with hot reload: `docker compose up`, then http://localhost:7341.
 # The module is built on its own (no go.work), like CI. Private modules bnema.dev/ermite-*
-# are fetched from git.bnema.dev, which the container reaches through the host's DNS and routes.
+# resolve through the bnema.dev vanity path, using the host's DNS and routes.
 services:
   ermite:
     build:

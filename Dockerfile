@@ -4,11 +4,9 @@
 #
 #   docker build --build-arg VERSION="$(git describe --tags --always --dirty)" -t ermite .
 #
-# The modules bnema.dev/ermite-* are private and resolve through git.bnema.dev, which is
-# reachable from the NetBird network only. The build container uses the host's DNS and
-# routes, so on a NetBird host it needs nothing more. Behind a different route (CI), set
-#   --build-arg GIT_REWRITE_BASE=http://git.bnema.dev:8088/ --network host
-# to fetch the modules over that URL instead of https://git.bnema.dev/.
+# The modules bnema.dev/ermite-* resolve through the bnema.dev vanity path.
+# GIT_REWRITE_BASE optionally rewrites the git host for builds behind a private route:
+#   --build-arg GIT_REWRITE_BASE=<url> --network host
 #
 # Base images are pinned to an Alpine minor release; bump them on purpose.
 
