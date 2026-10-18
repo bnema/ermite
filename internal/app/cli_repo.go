@@ -26,12 +26,13 @@ const (
 
 // jsonRepo is the stable JSON shape of a repository.
 type jsonRepo struct {
-	Name          string  `json:"name"`
-	Description   string  `json:"description"`
-	Visibility    string  `json:"visibility"`
-	DefaultBranch string  `json:"default_branch"`
-	CreatedAt     *string `json:"created_at"`
-	PushedAt      *string `json:"pushed_at"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Topics        []string `json:"topics"`
+	Visibility    string   `json:"visibility"`
+	DefaultBranch string   `json:"default_branch"`
+	CreatedAt     *string  `json:"created_at"`
+	PushedAt      *string  `json:"pushed_at"`
 	// MergeModes are the allowed merge modes ("fast-forward", "squash").
 	MergeModes         []string `json:"merge_modes"`
 	FailingChecksBlock bool     `json:"failing_checks_block"`
@@ -47,6 +48,7 @@ func toJSONRepo(r *ermite.Repo) jsonRepo {
 		FailingChecksBlock: r.GetSettings().GetFailingChecksBlock(),
 		Name:               r.GetName(),
 		Description:        r.GetDescription(),
+		Topics:             append([]string{}, r.GetTopics()...),
 		Visibility:         visibilityName(r.GetVisibility()),
 		DefaultBranch:      r.GetDefaultBranch(),
 		CreatedAt:          jsonTime(r.GetCreatedAt()),
@@ -188,6 +190,7 @@ func printRepo(w io.Writer, r *ermite.Repo) error {
 		{"visibility", visibilityName(r.GetVisibility())},
 		{"default branch", r.GetDefaultBranch()},
 		{"description", desc},
+		{"topics", orDash(strings.Join(r.GetTopics(), ", "))},
 		{"created", shortTime(r.GetCreatedAt(), "-")},
 		{"last push", shortTime(r.GetPushedAt(), "never")},
 		{"merge modes", orDash(strings.Join(modes, ", "))},
@@ -221,6 +224,7 @@ func newRepoShowCmd(env *cliEnv) *cobra.Command {
 func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 	var (
 		description string
+		topics      []string
 		visibility  string
 	)
 	cmd := &cobra.Command{
@@ -231,11 +235,12 @@ func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&description, "description", "", "one-line description")
+	cmd.Flags().StringSliceVar(&topics, "topics", nil, "topics, comma-separated (1-50 characters of a-z, 0-9 and -; at most 20)")
 	cmd.Flags().StringVar(&visibility, "visibility", visibilityPrivate, "visibility: public or private")
 	_ = cmd.RegisterFlagCompletionFunc("visibility", visibilityCompletion)
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		req, err := buildCreateRepo(args[0], description, visibility)
+		req, err := buildCreateRepo(args[0], description, topics, visibility)
 		if err != nil {
 			return err
 		}
@@ -257,23 +262,23 @@ func visibilityCompletion(*cobra.Command, []string, string) ([]string, cobra.She
 }
 
 // buildCreateRepo maps the flags of `repo create` to the request.
-func buildCreateRepo(name, description, visibility string) (*ermite.CreateRepoRequest, error) {
+func buildCreateRepo(name, description string, topics []string, visibility string) (*ermite.CreateRepoRequest, error) {
 	vis, err := parseVisibility(visibility)
 	if err != nil {
 		return nil, err
 	}
-	return &ermite.CreateRepoRequest{Name: name, Description: description, Visibility: vis}, nil
+	return &ermite.CreateRepoRequest{Name: name, Description: description, Topics: topics, Visibility: vis}, nil
 }
 
 func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	var description, visibility, defaultBranch string
-	var mergeModes []string
+	var topics, mergeModes []string
 	var failingChecksBlock bool
 	cmd := &cobra.Command{
 		Use:   "edit <name>",
-		Short: "Change a repository's description, visibility, default branch or merge settings",
+		Short: "Change a repository's description, topics, visibility, default branch or merge settings",
 		Long: "Change the fields given as flags and leave the others alone; --description \"\" clears the\n" +
-			"description. The default branch must already exist. --merge-modes lists the modes a merge request\n" +
+			"description and --topics \"\" clears the topics. The default branch must already exist. --merge-modes lists the modes a merge request\n" +
 			"may be merged with (fast-forward, squash; default for a new repository: both), and\n" +
 			"--failing-checks-block says whether a failing check prevents a merge (a failed or unfinished CI check of the head; see README, CI).\n" +
 			"Needs the repo:admin scope." + jsonRepoHelp,
@@ -281,6 +286,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 		ValidArgsFunction: completeRepoNames(env),
 	}
 	cmd.Flags().StringVar(&description, "description", "", "new description (empty clears it)")
+	cmd.Flags().StringSliceVar(&topics, "topics", nil, "new topics, comma-separated (empty clears them)")
 	cmd.Flags().StringVar(&visibility, "visibility", "", "new visibility: public or private")
 	cmd.Flags().StringVar(&defaultBranch, "default-branch", "", "short name of the new default branch")
 	cmd.Flags().StringSliceVar(&mergeModes, "merge-modes", nil, "allowed merge modes, comma-separated: fast-forward, squash")
@@ -291,7 +297,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	})
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		req, err := buildUpdateRepo(cmd, args[0], description, visibility, defaultBranch, mergeModes, failingChecksBlock)
+		req, err := buildUpdateRepo(cmd, args[0], description, topics, visibility, defaultBranch, mergeModes, failingChecksBlock)
 		if err != nil {
 			return err
 		}
@@ -310,12 +316,16 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 
 // buildUpdateRepo maps the flags of `repo edit` to the request: only the flags
 // the user passed go into the update mask.
-func buildUpdateRepo(cmd *cobra.Command, name, description, visibility, defaultBranch string, mergeModes []string, failingChecksBlock bool) (*ermite.UpdateRepoRequest, error) {
+func buildUpdateRepo(cmd *cobra.Command, name, description string, topics []string, visibility, defaultBranch string, mergeModes []string, failingChecksBlock bool) (*ermite.UpdateRepoRequest, error) {
 	req := &ermite.UpdateRepoRequest{Repo: name}
 	var paths []string
 	if cmd.Flags().Changed("description") {
 		req.Description = description
 		paths = append(paths, "description")
+	}
+	if cmd.Flags().Changed("topics") {
+		req.Topics = topics
+		paths = append(paths, "topics")
 	}
 	if cmd.Flags().Changed("visibility") {
 		vis, err := parseVisibility(visibility)
@@ -356,7 +366,7 @@ func buildUpdateRepo(cmd *cobra.Command, name, description, visibility, defaultB
 		paths = append(paths, "settings.failing_checks_block")
 	}
 	if len(paths) == 0 {
-		return nil, errors.New("nothing to change: give at least one of --description, --visibility, --default-branch, --merge-modes, --failing-checks-block")
+		return nil, errors.New("nothing to change: give at least one of --description, --topics, --visibility, --default-branch, --merge-modes, --failing-checks-block")
 	}
 	req.UpdateMask = &fieldmaskpb.FieldMask{Paths: paths}
 	return req, nil

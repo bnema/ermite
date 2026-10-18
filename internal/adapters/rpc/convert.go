@@ -65,6 +65,7 @@ func repoToPB(v ports.RepoView) *pb.Repo {
 	return &pb.Repo{
 		Name:          v.Name.String(),
 		Description:   v.Description,
+		Topics:        v.Topics,
 		Visibility:    visibilityToPB(v.Visibility),
 		DefaultBranch: v.DefaultBranch,
 		CreatedAt:     timestamp(v.CreatedAt),

@@ -4,6 +4,8 @@ package domain
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -35,10 +37,57 @@ func (v Visibility) String() string { return string(v) }
 type Repo struct {
 	Name        RepoName
 	Description string
-	Visibility  Visibility
-	CreatedAt   time.Time
-	PushedAt    time.Time // zero until the first push
+	// Topics are the normalized topics (see NormalizeTopics); nil for none.
+	Topics     []string
+	Visibility Visibility
+	CreatedAt  time.Time
+	PushedAt   time.Time // zero until the first push
 	// Settings are the merge settings; the stores always fill them in, with
 	// the defaults for a repository that never stored any.
 	Settings RepoSettings
+}
+
+// Limits of the topics of a repository.
+const (
+	// MaxTopics is the largest number of topics of a repository.
+	MaxTopics = 20
+	// MaxTopicLen is the longest topic, in characters.
+	MaxTopicLen = 50
+)
+
+// NormalizeTopics lowercases, validates, deduplicates and sorts topics. A
+// topic is 1 to MaxTopicLen characters of a-z, 0-9 and "-", starting with a
+// letter or a digit; there are at most MaxTopics of them once deduplicated.
+// No topic gives nil. A broken rule gives an error matching ErrInvalid.
+func NormalizeTopics(topics []string) ([]string, error) {
+	var out []string
+	for _, t := range topics {
+		t = strings.ToLower(t)
+		if !validTopic(t) {
+			return nil, fmt.Errorf("%w: topic %q must be 1 to %d characters of a-z, 0-9 and -, starting with a letter or a digit", ErrInvalid, t, MaxTopicLen)
+		}
+		out = append(out, t)
+	}
+	slices.Sort(out)
+	out = slices.Compact(out)
+	if len(out) > MaxTopics {
+		return nil, fmt.Errorf("%w: %d topics, at most %d", ErrInvalid, len(out), MaxTopics)
+	}
+	return out, nil
+}
+
+func validTopic(t string) bool {
+	if t == "" || len(t) > MaxTopicLen {
+		return false
+	}
+	for i := range len(t) {
+		c := t[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }

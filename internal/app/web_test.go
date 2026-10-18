@@ -184,8 +184,11 @@ var (
 	reInlineScript = regexp.MustCompile(`(?is)<script\b[^>]*>`)
 	reStyleAttr    = regexp.MustCompile(`(?i)\sstyle\s*=`)
 	reStyleTag     = regexp.MustCompile(`(?i)<style\b`)
-	reImport       = regexp.MustCompile(`(?i)@import|url\(`)
-	reCSSURL       = regexp.MustCompile(`url\(\s*([^)]*?)\s*\)`)
+	// reImport finds what loads a resource from a page: an @import, or a url()
+	// that is not a reference to an element of the same document (an SVG
+	// gradient, fill="url(#id)").
+	reImport = regexp.MustCompile(`(?i)@import|url\(\s*[^#\s]`)
+	reCSSURL = regexp.MustCompile(`url\(\s*([^)]*?)\s*\)`)
 )
 
 // assertNoInline checks the page has no inline script, style element or

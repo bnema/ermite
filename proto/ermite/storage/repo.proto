@@ -30,6 +30,8 @@ message Repo {
   // Unset on repositories stored before merge requests: they read as the
   // default settings.
   RepoSettings settings = 6;
+  // Normalized and sorted; empty on repositories stored before topics.
+  repeated string topics = 7;
 }
 
 // SchemaVersion is stored under the key "meta/schema".

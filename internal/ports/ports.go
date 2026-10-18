@@ -118,6 +118,9 @@ type CommitQuery struct {
 	Limit int
 }
 
+// MaxCommitTimes bounds RepoReader.CommitTimes.
+const MaxCommitTimes = 100_000
+
 // MaxCommitLimit is the most commits one CommitQuery may ask for.
 const MaxCommitLimit = 1000
 
@@ -178,9 +181,12 @@ type RepoReader interface {
 	// GetCommit returns a commit with its statistics and its diff against the
 	// first parent, bounded by limits.
 	GetCommit(ctx context.Context, repo domain.RepoName, rev domain.Revision, limits domain.DiffLimits) (domain.CommitDetail, error)
-	// CountCommits counts the commits reachable from head; with a non-zero
-	// since, only those committed at or after it.
-	CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (int, error)
+	// CountCommits counts the commits reachable from head.
+	CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID) (int, error)
+	// CommitTimes are the committer dates of the commits reachable from head
+	// committed at or after since, in no particular order; at most
+	// MaxCommitTimes, truncated tells there were more.
+	CommitTimes(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (times []time.Time, truncated bool, err error)
 	// LatestTag is the most recently created tag (the commit date for a
 	// lightweight tag); ok is false when the repository has no tag.
 	LatestTag(ctx context.Context, repo domain.RepoName) (tag domain.TagInfo, ok bool, err error)

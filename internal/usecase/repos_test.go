@@ -68,6 +68,28 @@ func TestCreate(t *testing.T) {
 		assert.Equal(t, want, got)
 	})
 
+	t.Run("topics are normalized and stored", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		n := name(t, "tools")
+		want := domain.Repo{Name: n, Topics: []string{"cli", "go"}, Visibility: domain.VisibilityPrivate, CreatedAt: now, Settings: domain.DefaultRepoSettings()}
+		f.git.EXPECT().Stage(ctx).Return(ports.StagedID("s1"), nil)
+		f.meta.EXPECT().Create(ctx, want).Return(nil)
+		f.git.EXPECT().Publish(ctx, ports.StagedID("s1"), n).Return(nil)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
+
+		got, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: n, Topics: []string{"Go", "cli", "go"}})
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
+	})
+
+	t.Run("an invalid topic is refused before anything runs", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		_, err := f.repos.Create(ctx, domain.Root(), ports.CreateRepoParams{Name: name(t, "tools"), Topics: []string{"bad topic"}})
+		assert.ErrorIs(t, err, domain.ErrInvalid)
+	})
+
 	t.Run("anonymous is refused before anything runs", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)

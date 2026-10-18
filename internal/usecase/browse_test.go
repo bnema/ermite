@@ -113,7 +113,8 @@ func browseOps() []browseOp {
 			_, err := b.RepoStats(ctx, p, repo, oid("a"), time.Now())
 			return err
 		}, func(r *mocks.RepoReader) {
-			r.EXPECT().CountCommits(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(1, nil)
+			r.EXPECT().CountCommits(mock.Anything, mock.Anything, mock.Anything).Return(1, nil)
+			r.EXPECT().CommitTimes(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, false, nil)
 			r.EXPECT().LatestTag(mock.Anything, mock.Anything).Return(domain.TagInfo{}, false, nil)
 		}},
 	}
@@ -136,13 +137,17 @@ func TestRepoStatsCache(t *testing.T) {
 	now := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
 	var reads atomic.Int32
 	gate := make(chan struct{})
-	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, mock.Anything, time.Time{}).RunAndReturn(
-		func(context.Context, domain.RepoName, domain.ObjectID, time.Time) (int, error) {
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, mock.Anything).RunAndReturn(
+		func(context.Context, domain.RepoName, domain.ObjectID) (int, error) {
 			reads.Add(1)
 			<-gate
 			return 900, nil
 		})
-	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, mock.Anything, mock.MatchedBy(func(s time.Time) bool { return !s.IsZero() })).Return(12, nil)
+	recent := make([]time.Time, 12)
+	for i := range recent {
+		recent[i] = now.Add(-time.Duration(i) * time.Hour)
+	}
+	f.reader.EXPECT().CommitTimes(mock.Anything, repo.Name, mock.Anything, mock.Anything).Return(recent, false, nil)
 	tag := domain.TagInfo{Name: "v1", At: now, CommitID: oid("c")}
 	f.reader.EXPECT().LatestTag(mock.Anything, repo.Name).Return(tag, true, nil)
 
@@ -160,6 +165,8 @@ func TestRepoStatsCache(t *testing.T) {
 			assert.Equal(t, 900, st.Commits)
 			assert.Equal(t, 12, st.Recent)
 			assert.Equal(t, tag, *st.LatestTag)
+			require.Len(t, st.Activity, ports.ActivityDays)
+			assert.Equal(t, 12, st.Activity[ports.ActivityDays-1], "all in the last day")
 		})
 	}
 	for reads.Load() == 0 {
@@ -182,6 +189,70 @@ func TestRepoStatsCache(t *testing.T) {
 	assert.EqualValues(t, 4, reads.Load(), "a push forgets the figures")
 }
 
+// The activity spreads the commits over the last days, oldest first, and
+// the recent count covers 30 days.
+func TestRepoStatsActivity(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newBrowseFixture(t)
+	repo := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
+	f.meta.EXPECT().Get(ctx, repo.Name).Return(repo, nil)
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	times := []time.Time{
+		now.Add(time.Hour),    // in the future: the last day
+		now.Add(-time.Minute), // the last day
+		now.Add(-day - 1),     // the day before
+		now.Add(-29 * day),    // recent, day 29 ago
+		now.Add(-31 * day),    // not recent
+		now.Add(-89*day - 1),  // the first day of the span
+	}
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, oid("a")).Return(100, nil)
+	f.reader.EXPECT().CommitTimes(mock.Anything, repo.Name, oid("a"), now.Add(-ports.ActivityDays*day)).Return(times, false, nil)
+	f.reader.EXPECT().LatestTag(mock.Anything, repo.Name).Return(domain.TagInfo{}, false, nil)
+	st, err := f.browse.RepoStats(ctx, domain.Anonymous(), repo.Name, oid("a"), now)
+	require.NoError(t, err)
+	assert.Equal(t, 4, st.Recent)
+	last := ports.ActivityDays - 1
+	assert.Equal(t, 2, st.Activity[last])
+	assert.Equal(t, 1, st.Activity[last-1])
+	assert.Equal(t, 1, st.Activity[last-29])
+	assert.Equal(t, 1, st.Activity[last-31])
+	assert.Equal(t, 1, st.Activity[0])
+	sum := 0
+	for _, n := range st.Activity {
+		sum += n
+	}
+	assert.Equal(t, 6, sum)
+	assert.False(t, st.Partial)
+}
+
+// The days are 24 hours whatever the zone of now: across a change of
+// daylight saving time, the walk and the bins agree and no hour is lost.
+func TestRepoStatsActivityAcrossDST(t *testing.T) {
+	t.Parallel()
+	paris, err := time.LoadLocation("Europe/Paris")
+	require.NoError(t, err)
+	ctx := context.Background()
+	f := newBrowseFixture(t)
+	repo := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
+	f.meta.EXPECT().Get(ctx, repo.Name).Return(repo, nil)
+	// 90 days of 24 hours before this noon cross the spring change (March 29).
+	now := time.Date(2026, 4, 1, 12, 0, 0, 0, paris)
+	day := 24 * time.Hour
+	since := now.Add(-ports.ActivityDays * day)
+	require.NotEqual(t, now.AddDate(0, 0, -ports.ActivityDays), since, "the calendar would differ by an hour")
+	times := []time.Time{since.Add(time.Minute), now.Add(-30*day + time.Minute)}
+	f.reader.EXPECT().CommitTimes(mock.Anything, repo.Name, oid("a"), since).Return(times, true, nil)
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, oid("a")).Return(200_000, nil)
+	f.reader.EXPECT().LatestTag(mock.Anything, repo.Name).Return(domain.TagInfo{}, false, nil)
+	st, err := f.browse.RepoStats(ctx, domain.Anonymous(), repo.Name, oid("a"), now)
+	require.NoError(t, err)
+	assert.Equal(t, 1, st.Activity[0], "the start of the span is in the first day")
+	assert.Equal(t, 1, st.Recent, "30 days of 24 hours")
+	assert.True(t, st.Partial, "the walk was truncated")
+}
+
 func TestRepoStatsDoesNotKeepAFailure(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -189,10 +260,11 @@ func TestRepoStatsDoesNotKeepAFailure(t *testing.T) {
 	repo := domain.Repo{Name: name(t, "pub"), Visibility: domain.VisibilityPublic}
 	f.meta.EXPECT().Get(ctx, repo.Name).Return(repo, nil)
 	now := time.Now()
-	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, oid("a"), time.Time{}).Return(0, errors.New("boom")).Once()
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, oid("a")).Return(0, errors.New("boom")).Once()
 	_, err := f.browse.RepoStats(ctx, domain.Anonymous(), repo.Name, oid("a"), now)
 	require.Error(t, err)
-	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, oid("a"), mock.Anything).Return(3, nil).Twice()
+	f.reader.EXPECT().CountCommits(mock.Anything, repo.Name, oid("a")).Return(3, nil).Once()
+	f.reader.EXPECT().CommitTimes(mock.Anything, repo.Name, oid("a"), mock.Anything).Return([]time.Time{now}, false, nil).Once()
 	f.reader.EXPECT().LatestTag(mock.Anything, repo.Name).Return(domain.TagInfo{}, false, nil).Once()
 	st, err := f.browse.RepoStats(ctx, domain.Anonymous(), repo.Name, oid("a"), now)
 	require.NoError(t, err)

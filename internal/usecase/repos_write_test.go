@@ -44,6 +44,39 @@ func TestUpdate(t *testing.T) {
 		assert.Equal(t, want, got)
 	})
 
+	t.Run("topics are normalized and stored, and RepoUpdated is published", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
+		want := priv
+		want.Topics = []string{"cli", "go"}
+		want.Settings = domain.DefaultRepoSettings()
+		f.meta.EXPECT().Update(ctx, want).Return(nil)
+		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{
+			Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPrivate,
+		}).Return().Once()
+
+		got, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{Topics: &[]string{"Go", "cli", "go"}})
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
+	})
+
+	t.Run("an empty list clears the topics", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		withTopics := priv
+		withTopics.Topics = []string{"go"}
+		f.meta.EXPECT().Get(ctx, n).Return(withTopics, nil).Twice()
+		want := priv
+		want.Settings = domain.DefaultRepoSettings()
+		f.meta.EXPECT().Update(ctx, want).Return(nil)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
+
+		got, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{Topics: &[]string{}})
+		require.NoError(t, err)
+		assert.Nil(t, got.Topics)
+	})
+
 	t.Run("a lost race on the metadata is retried", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
@@ -124,12 +157,19 @@ func TestUpdate(t *testing.T) {
 	})
 
 	t.Run("invalid input changes nothing", func(t *testing.T) {
+		tooMany := make([]string, 0, domain.MaxTopics+1)
+		for i := range domain.MaxTopics + 1 {
+			tooMany = append(tooMany, fmt.Sprintf("t%d", i))
+		}
 		for name, params := range map[string]ports.UpdateRepoParams{
 			"empty":             {},
 			"empty branch":      {DefaultBranch: ptr("")},
 			"multi-line":        {Description: ptr("a\nb")},
 			"too long":          {Description: ptr(strings.Repeat("x", usecase.MaxDescriptionLen+1))},
 			"bad utf-8":         {Description: ptr("\xff")},
+			"bad topic":         {Topics: &[]string{"Bad_Topic"}},
+			"empty topic":       {Topics: &[]string{""}},
+			"too many topics":   {Topics: &tooMany},
 			"unknown visiblity": {Visibility: ptr(domain.Visibility("secret"))},
 		} {
 			f := newFixture(t)

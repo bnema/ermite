@@ -50,47 +50,55 @@ func (_m *RepoReader) EXPECT() *RepoReader_Expecter {
 	return &RepoReader_Expecter{mock: &_m.Mock}
 }
 
-// CountCommits provides a mock function for the type RepoReader
-func (_mock *RepoReader) CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (int, error) {
+// CommitTimes provides a mock function for the type RepoReader
+func (_mock *RepoReader) CommitTimes(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) ([]time.Time, bool, error) {
 	ret := _mock.Called(ctx, repo, head, since)
 
 	if len(ret) == 0 {
-		panic("no return value specified for CountCommits")
+		panic("no return value specified for CommitTimes")
 	}
 
-	var r0 int
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) (int, error)); ok {
+	var r0 []time.Time
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) ([]time.Time, bool, error)); ok {
 		return returnFunc(ctx, repo, head, since)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) int); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) []time.Time); ok {
 		r0 = returnFunc(ctx, repo, head, since)
 	} else {
-		r0 = ret.Get(0).(int)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]time.Time)
+		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) bool); ok {
 		r1 = returnFunc(ctx, repo, head, since)
 	} else {
-		r1 = ret.Error(1)
+		r1 = ret.Get(1).(bool)
 	}
-	return r0, r1
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, domain.ObjectID, time.Time) error); ok {
+		r2 = returnFunc(ctx, repo, head, since)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
 }
 
-// RepoReader_CountCommits_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountCommits'
-type RepoReader_CountCommits_Call struct {
+// RepoReader_CommitTimes_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CommitTimes'
+type RepoReader_CommitTimes_Call struct {
 	*mock.Call
 }
 
-// CountCommits is a helper method to define mock.On call
+// CommitTimes is a helper method to define mock.On call
 //   - ctx context.Context
 //   - repo domain.RepoName
 //   - head domain.ObjectID
 //   - since time.Time
-func (_e *RepoReader_Expecter) CountCommits(ctx any, repo any, head any, since any) *RepoReader_CountCommits_Call {
-	return &RepoReader_CountCommits_Call{Call: _e.mock.On("CountCommits", ctx, repo, head, since)}
+func (_e *RepoReader_Expecter) CommitTimes(ctx any, repo any, head any, since any) *RepoReader_CommitTimes_Call {
+	return &RepoReader_CommitTimes_Call{Call: _e.mock.On("CommitTimes", ctx, repo, head, since)}
 }
 
-func (_c *RepoReader_CountCommits_Call) Run(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time)) *RepoReader_CountCommits_Call {
+func (_c *RepoReader_CommitTimes_Call) Run(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time)) *RepoReader_CommitTimes_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -118,12 +126,84 @@ func (_c *RepoReader_CountCommits_Call) Run(run func(ctx context.Context, repo d
 	return _c
 }
 
+func (_c *RepoReader_CommitTimes_Call) Return(times []time.Time, truncated bool, err error) *RepoReader_CommitTimes_Call {
+	_c.Call.Return(times, truncated, err)
+	return _c
+}
+
+func (_c *RepoReader_CommitTimes_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) ([]time.Time, bool, error)) *RepoReader_CommitTimes_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CountCommits provides a mock function for the type RepoReader
+func (_mock *RepoReader) CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID) (int, error) {
+	ret := _mock.Called(ctx, repo, head)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountCommits")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID) (int, error)); ok {
+		return returnFunc(ctx, repo, head)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID) int); ok {
+		r0 = returnFunc(ctx, repo, head)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID) error); ok {
+		r1 = returnFunc(ctx, repo, head)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// RepoReader_CountCommits_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountCommits'
+type RepoReader_CountCommits_Call struct {
+	*mock.Call
+}
+
+// CountCommits is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - head domain.ObjectID
+func (_e *RepoReader_Expecter) CountCommits(ctx any, repo any, head any) *RepoReader_CountCommits_Call {
+	return &RepoReader_CountCommits_Call{Call: _e.mock.On("CountCommits", ctx, repo, head)}
+}
+
+func (_c *RepoReader_CountCommits_Call) Run(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID)) *RepoReader_CountCommits_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 domain.ObjectID
+		if args[2] != nil {
+			arg2 = args[2].(domain.ObjectID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
 func (_c *RepoReader_CountCommits_Call) Return(n int, err error) *RepoReader_CountCommits_Call {
 	_c.Call.Return(n, err)
 	return _c
 }
 
-func (_c *RepoReader_CountCommits_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (int, error)) *RepoReader_CountCommits_Call {
+func (_c *RepoReader_CountCommits_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID) (int, error)) *RepoReader_CountCommits_Call {
 	_c.Call.Return(run)
 	return _c
 }

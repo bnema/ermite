@@ -80,6 +80,8 @@ type HomeRow struct {
 	Name string
 	Href string
 	Desc string
+	// Topics classify the repository, as on GitHub.
+	Topics []string
 	// Active is when the repository last changed (its last push or merge),
 	// ActiveAt its RFC 3339 form, "" when it never got a commit.
 	Active   string
@@ -107,6 +109,8 @@ type HomeStats struct {
 	// Tag is the latest tag, "" without tags; TagHref links its tree, TagWhen
 	// tells when it was made.
 	Tag, TagHref, TagWhen string
+	// Pulse is the activity curve; nil when it could not be drawn.
+	Pulse *Heartbeat
 }
 
 // HomeCI is the state of the latest run of the default branch of a repository.

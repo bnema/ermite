@@ -3,22 +3,24 @@
 package gitcli
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // CountCommits runs `git rev-list --count`, from the commit graph when the
-// repository has one. A bound uses --since-as-filter, which looks at every
-// reachable commit: --since stops the walk at the first older one, and
-// misses newer commits behind it when dates are out of order.
+// repository has one.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter reads the count git prints
-func (g *Git) CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (int, error) {
+func (g *Git) CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID) (int, error) {
 	if head.IsZero() {
 		return 0, fmt.Errorf("count commits: %w: no head", domain.ErrInvalid)
 	}
@@ -26,11 +28,7 @@ func (g *Git) CountCommits(ctx context.Context, repo domain.RepoName, head domai
 	if err != nil {
 		return 0, err
 	}
-	args := []string{"rev-list", "--count"}
-	if !since.IsZero() {
-		args = append(args, "--since-as-filter=@"+strconv.FormatInt(since.Unix(), 10))
-	}
-	out, err := g.run(ctx, readArgs(dir, append(args, "--end-of-options", head.String())...)...)
+	out, err := g.run(ctx, readArgs(dir, "rev-list", "--count", "--end-of-options", head.String())...)
 	if err != nil {
 		if exitCode(err) == 128 {
 			return 0, fmt.Errorf("count commits of %q: %w", repo, domain.ErrNotFound)
@@ -42,6 +40,54 @@ func (g *Git) CountCommits(ctx context.Context, repo domain.RepoName, head domai
 		return 0, fmt.Errorf("count commits of %q: git printed %q", repo, strings.TrimSpace(out))
 	}
 	return n, nil
+}
+
+// CommitTimes runs `git rev-list --since-as-filter --format=%ct`. The filter
+// looks at every reachable commit: --since stops the walk at the first older
+// one, and misses newer commits behind it when dates are out of order.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter reads the dates git prints; the bound comes from the port
+func (g *Git) CommitTimes(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) ([]time.Time, bool, error) {
+	if head.IsZero() {
+		return nil, false, fmt.Errorf("commit times: %w: no head", domain.ErrInvalid)
+	}
+	dir, err := g.repoDir(repo)
+	if err != nil {
+		return nil, false, err
+	}
+	args := readArgs(dir, "rev-list", "--no-commit-header", "--format=%ct",
+		"--since-as-filter=@"+strconv.FormatInt(since.Unix(), 10), "--end-of-options", head.String())
+	var (
+		times     []time.Time
+		truncated bool
+	)
+	err = g.pipe(ctx, args, func(r *bufio.Reader) error {
+		for {
+			line, err := r.ReadString('\n')
+			if errors.Is(err, io.EOF) && line == "" {
+				return nil
+			}
+			if err != nil && !errors.Is(err, io.EOF) {
+				return err
+			}
+			sec, perr := strconv.ParseInt(strings.TrimSpace(line), 10, 64)
+			if perr != nil {
+				return fmt.Errorf("git rev-list: unexpected line %q", truncateText(line))
+			}
+			if len(times) == ports.MaxCommitTimes {
+				truncated = true
+				return errStop
+			}
+			times = append(times, time.Unix(sec, 0).UTC())
+		}
+	})
+	if err != nil {
+		if exitCode(err) == 128 {
+			return nil, false, fmt.Errorf("commit times of %q: %w", repo, domain.ErrNotFound)
+		}
+		return nil, false, fmt.Errorf("commit times of %q: %w", repo, err)
+	}
+	return times, truncated, nil
 }
 
 // LatestTag runs `git for-each-ref --sort=-creatordate --count=1` on the tags.

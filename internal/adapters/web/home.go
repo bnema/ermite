@@ -211,7 +211,10 @@ func (s *Server) homeStats(ctx context.Context, r ports.RepoView, head string, n
 		}
 		return nil
 	}
-	hs := &HomeStats{Commits: grouped(st.Commits), Recent: grouped(st.Recent)}
+	hs := &HomeStats{Commits: grouped(st.Commits), Recent: grouped(st.Recent), Pulse: s.pulses.get(r.Name.String(), st.Activity, st.Partial)}
+	if st.Partial {
+		hs.Recent += "+" // a lower bound: the walk stopped at its cap
+	}
 	if t := st.LatestTag; t != nil {
 		hs.Tag, hs.TagWhen = t.Name, ago(now, t.At)
 		if !t.CommitID.IsZero() {
@@ -259,7 +262,7 @@ func homeRow(r ports.RepoView, now time.Time, cursor, signed bool) HomeRow {
 	name := r.Name.String()
 	row := HomeRow{
 		ID: "repo-" + name, Name: name, Href: repoHref(name),
-		Desc: r.Description, Cursor: cursor,
+		Desc: r.Description, Topics: r.Topics, Cursor: cursor,
 		Private: signed && r.Visibility == domain.VisibilityPrivate,
 	}
 	if !r.PushedAt.IsZero() {

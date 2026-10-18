@@ -44,7 +44,7 @@ func (r *Repos) View(ctx context.Context, repo domain.Repo) (ports.RepoView, err
 	return ports.RepoView{Repo: repo, DefaultBranch: branch}, nil
 }
 
-// Update changes the description, the visibility, the default branch and the
+// Update changes the description, the topics, the visibility, the default branch and the
 // merge settings of a repository, and publishes RepoUpdated. The principal needs repo:admin on it
 // (see adminAccess for what the others learn) and no branch prefixes. At least one field must be set,
 // else domain.ErrInvalid. A default branch that does not exist gives
@@ -61,7 +61,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 		return domain.Repo{}, err
 	}
 	before := repo
-	if params.Description == nil && params.Visibility == nil && params.DefaultBranch == nil &&
+	if params.Description == nil && params.Topics == nil && params.Visibility == nil && params.DefaultBranch == nil &&
 		params.AllowedMergeModes == nil && params.FailingChecksBlock == nil {
 		return domain.Repo{}, fmt.Errorf("%w: nothing to update", domain.ErrInvalid)
 	}
@@ -76,6 +76,13 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 		if err := validateDescription(*params.Description); err != nil {
 			return domain.Repo{}, err
 		}
+	}
+	if params.Topics != nil {
+		topics, err := domain.NormalizeTopics(*params.Topics)
+		if err != nil {
+			return domain.Repo{}, err
+		}
+		params.Topics = &topics
 	}
 	if params.Visibility != nil {
 		if _, err := domain.ParseVisibility(params.Visibility.String()); err != nil {
@@ -102,7 +109,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	// branch was checked above, so the remaining causes are a vanished
 	// repository or an I/O failure.
 	metaDone := false
-	if params.Description != nil || params.Visibility != nil || params.AllowedMergeModes != nil || params.FailingChecksBlock != nil {
+	if params.Description != nil || params.Topics != nil || params.Visibility != nil || params.AllowedMergeModes != nil || params.FailingChecksBlock != nil {
 		if repo, err = r.updateMeta(ctx, name, params); err != nil {
 			return domain.Repo{}, err
 		}
@@ -122,6 +129,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	log.Info().
 		Str("repo", name.String()).
 		Bool("description", params.Description != nil).
+		Bool("topics", params.Topics != nil).
 		Bool("visibility", params.Visibility != nil).
 		Bool("default_branch", params.DefaultBranch != nil).
 		Bool("settings", params.AllowedMergeModes != nil || params.FailingChecksBlock != nil).
@@ -147,6 +155,9 @@ func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params por
 		}
 		if params.Description != nil {
 			repo.Description = *params.Description
+		}
+		if params.Topics != nil {
+			repo.Topics = *params.Topics
 		}
 		if params.Visibility != nil {
 			repo.Visibility = *params.Visibility

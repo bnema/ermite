@@ -168,12 +168,13 @@ type tokenOut struct {
 }
 
 type repoOut struct {
-	Name          string  `json:"name"`
-	Description   string  `json:"description"`
-	Visibility    string  `json:"visibility"`
-	DefaultBranch string  `json:"default_branch"`
-	CreatedAt     *string `json:"created_at"`
-	PushedAt      *string `json:"pushed_at"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Topics        []string `json:"topics"`
+	Visibility    string   `json:"visibility"`
+	DefaultBranch string   `json:"default_branch"`
+	CreatedAt     *string  `json:"created_at"`
+	PushedAt      *string  `json:"pushed_at"`
 }
 
 type eventOut struct {
@@ -190,7 +191,7 @@ type eventOut struct {
 	MergeRequest *mrOut `json:"merge_request"`
 }
 
-var repoKeys = []string{"created_at", "default_branch", "description", "failing_checks_block", "merge_modes", "name", "pushed_at", "visibility"}
+var repoKeys = []string{"created_at", "default_branch", "description", "failing_checks_block", "merge_modes", "name", "pushed_at", "topics", "visibility"}
 
 // AC6: the CLI end to end against a real forge.
 func TestAC6CLIEndToEnd(t *testing.T) {
@@ -209,11 +210,12 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	w := c.startWatch(t, secret)
 
 	// Create. Private by default; here public with a description.
-	res := c.cli(t, secret, "repo", "create", "proj", "--description", "first", "--visibility", "public", "--json").ok(t)
+	res := c.cli(t, secret, "repo", "create", "proj", "--description", "first", "--topics", "Go,cli,go", "--visibility", "public", "--json").ok(t)
 	assert.Equal(t, repoKeys, keys(t, res.stdout))
 	created := decode[repoOut](t, res.stdout)
 	assert.Equal(t, "proj", created.Name)
 	assert.Equal(t, "first", created.Description)
+	assert.Equal(t, []string{"cli", "go"}, created.Topics, "normalized: lowercase, sorted, deduplicated")
 	assert.Equal(t, "public", created.Visibility)
 	assert.Equal(t, "main", created.DefaultBranch)
 	require.NotNil(t, created.CreatedAt)
@@ -280,6 +282,16 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	// Clearing the description takes an explicit empty value.
 	res = c.cli(t, secret, "repo", "edit", "proj", "--description", "", "--json").ok(t)
 	assert.Empty(t, decode[repoOut](t, res.stdout).Description)
+	assert.Equal(t, "repo_updated", decode[eventOut](t, w.next(t, time.Second)).Type)
+
+	// Topics are replaced as a whole and cleared with an empty value.
+	res = c.cli(t, secret, "repo", "edit", "proj", "--topics", "forge,git", "--json").ok(t)
+	assert.Equal(t, []string{"forge", "git"}, decode[repoOut](t, res.stdout).Topics)
+	assert.Equal(t, "repo_updated", decode[eventOut](t, w.next(t, time.Second)).Type)
+	_, stderr, code = c.bin(t, secret, "repo", "edit", "proj", "--topics", "Bad_Topic")
+	requireOneLineError(t, stderr, code, "invalid request")
+	res = c.cli(t, secret, "repo", "edit", "proj", "--topics", "", "--json").ok(t)
+	assert.Empty(t, decode[repoOut](t, res.stdout).Topics)
 	assert.Equal(t, "repo_updated", decode[eventOut](t, w.next(t, time.Second)).Type)
 
 	// list and show: same shape, human tables too.

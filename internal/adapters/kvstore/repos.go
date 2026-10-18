@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 	"unicode/utf8"
 
@@ -201,6 +202,7 @@ func encodeRepo(r domain.Repo) ([]byte, error) {
 	pb := &storagepb.Repo{
 		Name:        r.Name.String(),
 		Description: r.Description,
+		Topics:      r.Topics,
 		Visibility:  vis,
 		CreatedAt:   encodeTime(r.CreatedAt),
 		PushedAt:    encodeTime(r.PushedAt),
@@ -221,6 +223,7 @@ func decodeRepo(val []byte) (domain.Repo, error) {
 	return domain.Repo{
 		Name:        name,
 		Description: pb.GetDescription(),
+		Topics:      slices.Clone(pb.GetTopics()),
 		Visibility:  decodeVisibility(pb.GetVisibility()),
 		CreatedAt:   decodeTime(pb.GetCreatedAt()),
 		PushedAt:    decodeTime(pb.GetPushedAt()),

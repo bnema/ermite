@@ -115,6 +115,8 @@ type Server struct {
 	// refsFan shares the fragments of the refs page between the watchers of
 	// a push; entries are few and short-lived.
 	refsFan fanout
+	// pulses holds the activity curves of the home rows.
+	pulses pulseCache
 }
 
 // New builds the web handler.

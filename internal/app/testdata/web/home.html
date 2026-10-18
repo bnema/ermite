@@ -72,6 +72,34 @@
 <a href="/demo">demo</a>
 </h2>
 <p class="repo-desc">A demo repository</p>
+<figure class="repo-pulse">
+<svg viewBox="0 0 600 64" role="img" aria-label="Activity: 0 commits in the last 90 days" focusable="false">
+<defs>
+<linearGradient id="hb-demo" x1="0" y1="0" x2="0" y2="1">
+<stop class="pulse-stop-top" offset="0">
+</stop>
+<stop class="pulse-stop-bottom" offset="1">
+</stop>
+</linearGradient>
+</defs>
+<path class="pulse-grid" d="M0 21.5 H600 M0 42.5 H600 M0 63.5 H600" vector-effect="non-scaling-stroke">
+</path>
+<path class="pulse-area" d="M0 58 C98.3 58 491.7 58 590 58 L590 64 L0 64 Z" fill="url(#hb-demo)">
+</path>
+<path class="pulse-line" d="M0 58 C98.3 58 491.7 58 590 58" vector-effect="non-scaling-stroke">
+</path>
+<circle class="pulse-ring" cx="590" cy="58" r="4">
+</circle>
+<circle class="pulse-dot" cx="590" cy="58" r="3.5">
+</circle>
+</svg>
+<figcaption class="pulse-cap" aria-hidden="true">
+<span>90 days ago</span>
+<span>today</span>
+</figcaption>
+</figure>
+</div>
+<div class="repo-head">
 <dl class="repo-stats" aria-label="Figures of demo">
 <div>
 <dt>commits</dt>
@@ -81,10 +109,10 @@
 <dt>last 30 days</dt>
 <dd>0</dd>
 </div>
-<div>
+<div class="rs-tag">
 <dt>latest tag</dt>
 <dd>
-<a href="/demo/tree/SHA40" title="made AGO">v0.2.0</a>
+<a href="/demo/tree/SHA40" title="v0.2.0 · made AGO">v0.2.0</a>
 </dd>
 </div>
 <div>
@@ -114,6 +142,8 @@
 <a href="/quiet">quiet</a>
 </h2>
 <p class="repo-desc mute">no description</p>
+</div>
+<div class="repo-head">
 <dl class="repo-stats" aria-label="Figures of quiet">
 <div>
 <dt>last activity</dt>

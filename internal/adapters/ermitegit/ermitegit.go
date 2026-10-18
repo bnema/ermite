@@ -418,8 +418,13 @@ func (a *Adapter) GetCommit(ctx context.Context, repo domain.RepoName, rev domai
 
 // CountCommits is served by the wrapped reader: git counts from the commit
 // graph.
-func (a *Adapter) CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) (int, error) {
-	return a.cli.CountCommits(ctx, repo, head, since)
+func (a *Adapter) CountCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID) (int, error) {
+	return a.cli.CountCommits(ctx, repo, head)
+}
+
+// CommitTimes is served by the wrapped reader.
+func (a *Adapter) CommitTimes(ctx context.Context, repo domain.RepoName, head domain.ObjectID, since time.Time) ([]time.Time, bool, error) {
+	return a.cli.CommitTimes(ctx, repo, head, since)
 }
 
 // LatestTag is served by the wrapped reader.

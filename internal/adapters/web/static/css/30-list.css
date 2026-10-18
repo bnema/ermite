@@ -48,8 +48,8 @@
     display: flex; flex-direction: column; gap: var(--s3);
     margin: 0; padding: 0; list-style: none;
     & .repo {
-      display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-areas: "main ci" "main recent";
-      grid-template-rows: auto 1fr; column-gap: var(--s6); min-width: 0;
+      display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-areas: "main head" "main recent";
+      grid-template-rows: auto 1fr; column-gap: var(--s6); row-gap: var(--s3); min-width: 0;
       padding: var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
     }
     & .repo:hover { background: var(--bg-raised); border-color: var(--border-strong); }
@@ -65,17 +65,43 @@
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
     }
     & .repo-desc.mute { color: var(--ink-mute); font-style: italic; }
+    /* topics: small quiet chips, as on GitHub */
+    & .repo-topics { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+    & .repo-topics li {
+      padding: 1px 9px; border: 1px solid var(--border-strong); border-radius: 999px;
+      font-family: var(--mono); font-size: 12px; line-height: 18px; color: var(--teal); background: var(--bg-raised);
+    }
+    /* the pulse: the commits per day over 90 days, smoothed, under the text */
+    & .repo-pulse { position: relative; margin: auto 0 0; padding-top: var(--s2); }
+    & .repo-pulse svg { display: block; width: 100%; height: auto; overflow: visible; }
+    & .pulse-grid { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; }
+    & .pulse-stop-top { stop-color: var(--teal); stop-opacity: .32; }
+    & .pulse-stop-bottom { stop-color: var(--teal); stop-opacity: 0; }
+    & .pulse-line { fill: none; stroke: var(--teal); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    & .pulse-dot { fill: var(--teal); stroke: var(--bg-surface); stroke-width: 1.5; }
+    & .pulse-ring { fill: none; stroke: var(--teal); stroke-width: 1.5; opacity: 0; transform-box: fill-box; transform-origin: center; }
+    & .repo:hover .pulse-dot, & .repo[data-cursor] .pulse-dot { stroke: var(--bg-raised); }
+    & .pulse-cap { display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px; line-height: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-mute); }
+    & .repo-pulse:not([data-live]) .pulse-line { stroke: var(--ink-mute); }
+    & .repo-pulse:not([data-live]) .pulse-dot { fill: var(--ink-mute); }
+    & .repo-pulse:not([data-live]) .pulse-stop-top { stop-color: var(--ink-mute); stop-opacity: .18; }
+    @media (prefers-reduced-motion: no-preference) {
+      & .repo-pulse[data-live] .pulse-ring { animation: pulse-beat 2.4s cubic-bezier(.2, .6, .3, 1) infinite; }
+    }
+    /* the right column: figures, then the CI state, over the commits */
+    & .repo-head { grid-area: head; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3) var(--s5); min-width: 0; }
     /* the figures: a small label over a mono value, side by side */
-    & .repo-stats { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); margin: var(--s1) 0 0; }
+    & .repo-stats { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); margin: 0; min-width: 0; }
     & .repo-stats div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    & .repo-stats dt { font-size: 11px; line-height: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-mute); }
+    & .repo-stats dt { font-size: 11px; line-height: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-mute); white-space: nowrap; }
     & .repo-stats dd { margin: 0; font-family: var(--mono); font-size: 15px; line-height: 20px; color: var(--ink-hi); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    & .repo-stats .rs-tag dd { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
     & .repo-stats dd.mute { color: var(--ink-mute); }
     & .repo-stats dd a { color: inherit; text-decoration: none; }
     & .repo-stats dd a:hover { text-decoration: underline; }
     & .repo-ci {
-      grid-area: ci; justify-self: end; display: inline-flex; align-items: center; gap: var(--s1); margin-bottom: var(--s2);
-      font-size: var(--fs-s); color: var(--ink-dim); text-decoration: none;
+      flex: none; display: inline-flex; align-items: center; gap: var(--s1); padding-top: 2px;
+      font-size: var(--fs-s); color: var(--ink-dim); text-decoration: none; white-space: nowrap;
     }
     & .repo-ci:hover { color: var(--ink-hi); text-decoration: underline; }
     & .repo-ci .ck { margin: 0; }
@@ -86,10 +112,16 @@
     & .rc-sha:hover { color: var(--ink-hi); text-decoration: underline; }
     & .rc-subject { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-hi); }
     & .repo-commits time { flex: none; white-space: nowrap; }
+    /* a full list goes on: its last commit fades */
+    & .repo-commits[data-full] li:last-child { opacity: .65; }
     @media (max-width: 720px) {
-      & .repo { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "ci" "recent"; grid-template-rows: none; row-gap: var(--s3); }
-      & .repo-ci { justify-self: start; margin-bottom: 0; }
+      & .repo { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "head" "recent"; grid-template-rows: none; }
+      & .repo-head { flex-wrap: wrap; }
     }
+  }
+  @keyframes pulse-beat {
+    0% { opacity: .9; transform: scale(1); }
+    70%, 100% { opacity: 0; transform: scale(3.2); }
   }
   .list.passkeys {
     & .c-name { width: auto; font-weight: 600; }

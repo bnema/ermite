@@ -32,9 +32,10 @@ templ CloneBlock(c Clone) {
 	</div>
 }
 
-// HomeRowView is the row of a repository in the home list: what it is, its
-// latest run, and its newest commits. Its id is the target of SSE swaps; the
-// name link comes first, `enter` follows it.
+// HomeRowView is the row of a repository in the home list. On the left what
+// it is: name, description, topics and the pulse of its activity; on the
+// right its figures and CI state over its newest commits. Its id is the
+// target of SSE swaps; the name link comes first, `enter` follows it.
 templ HomeRowView(r HomeRow) {
 	<li id={ r.ID } class="repo" data-cursor?={ r.Cursor }>
 		<div class="repo-main">
@@ -52,17 +53,29 @@ templ HomeRowView(r HomeRow) {
 			} else {
 				<p class="repo-desc mute">no description</p>
 			}
+			if len(r.Topics) > 0 {
+				<ul class="repo-topics" aria-label={ "Topics of " + r.Name }>
+					for _, t := range r.Topics {
+						<li>{ t }</li>
+					}
+				</ul>
+			}
+			if r.Stats != nil && r.Stats.Pulse != nil {
+				@pulse(r.Stats.Pulse)
+			}
+		</div>
+		<div class="repo-head">
 			<dl class="repo-stats" aria-label={ "Figures of " + r.Name }>
 				if s := r.Stats; s != nil {
 					<div><dt>commits</dt><dd>{ s.Commits }</dd></div>
 					<div><dt>last 30 days</dt><dd>{ s.Recent }</dd></div>
 					if s.Tag != "" {
-						<div>
+						<div class="rs-tag">
 							<dt>latest tag</dt>
 							if s.TagHref != "" {
-								<dd><a href={ templ.SafeURL(s.TagHref) } title={ "made " + s.TagWhen }>{ s.Tag }</a></dd>
+								<dd><a href={ templ.SafeURL(s.TagHref) } title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</a></dd>
 							} else {
-								<dd title={ "made " + s.TagWhen }>{ s.Tag }</dd>
+								<dd title={ s.Tag + " · made " + s.TagWhen }>{ s.Tag }</dd>
 							}
 						</div>
 					}
@@ -76,15 +89,19 @@ templ HomeRowView(r HomeRow) {
 					}
 				</div>
 			</dl>
+			if r.CI != nil {
+				<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Title }>
+					<span class={ "ck", "ck-" + r.CI.Kind } aria-hidden="true"></span>
+					<span class="sr">CI: </span>{ r.CI.Label }
+				</a>
+			}
 		</div>
-		if r.CI != nil {
-			<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Title }>
-				<span class={ "ck", "ck-" + r.CI.Kind } aria-hidden="true"></span>
-				<span class="sr">CI: </span>{ r.CI.Label }
-			</a>
-		}
 		if len(r.Commits) > 0 {
-			<ul class="repo-commits" aria-label={ "Recent commits of " + r.Name }>
+			<ul
+				class="repo-commits"
+				data-full?={ len(r.Commits) == homeRecent }
+				aria-label={ "Recent commits of " + r.Name }
+			>
 				for _, c := range r.Commits {
 					<li>
 						<a class="rc-sha" href={ templ.SafeURL(c.CHref) }>{ c.Short }</a>
@@ -99,6 +116,28 @@ templ HomeRowView(r HomeRow) {
 			<p class="repo-commits mute">no commits yet</p>
 		}
 	</li>
+}
+
+// pulse is the activity curve of a home row: a smooth line over a fading
+// area on a faint grid, and a dot at today that beats while the repository
+// is active. The SVG scales evenly with its column, so the dot stays round.
+templ pulse(h *Heartbeat) {
+	<figure class="repo-pulse" data-live?={ h.Live }>
+		<svg viewBox="0 0 600 64" role="img" aria-label={ h.Label } focusable="false">
+			<defs>
+				<linearGradient id={ h.GradID } x1="0" y1="0" x2="0" y2="1">
+					<stop class="pulse-stop-top" offset="0"></stop>
+					<stop class="pulse-stop-bottom" offset="1"></stop>
+				</linearGradient>
+			</defs>
+			<path class="pulse-grid" d="M0 21.5 H600 M0 42.5 H600 M0 63.5 H600" vector-effect="non-scaling-stroke"></path>
+			<path class="pulse-area" d={ h.Area } fill={ "url(#" + h.GradID + ")" }></path>
+			<path class="pulse-line" d={ h.Line } vector-effect="non-scaling-stroke"></path>
+			<circle class="pulse-ring" cx={ h.X } cy={ h.Y } r="4"></circle>
+			<circle class="pulse-dot" cx={ h.X } cy={ h.Y } r="3.5"></circle>
+		</svg>
+		<figcaption class="pulse-cap" aria-hidden="true"><span>90 days ago</span><span>today</span></figcaption>
+	</figure>
 }
 
 // Outline is the README outline; levels indent by 2ch, the h1 is bold.

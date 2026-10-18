@@ -42,7 +42,7 @@ func TestCreateGetListUpdateDelete(t *testing.T) {
 	ctx := context.Background()
 	s := openStore(t, t.TempDir())
 
-	b := domain.Repo{Name: name(t, "b"), Description: "second", Visibility: domain.VisibilityPublic, CreatedAt: created, Settings: domain.DefaultRepoSettings()}
+	b := domain.Repo{Name: name(t, "b"), Description: "second", Topics: []string{"cli", "go"}, Visibility: domain.VisibilityPublic, CreatedAt: created, Settings: domain.DefaultRepoSettings()}
 	a := domain.Repo{Name: name(t, "a"), Visibility: domain.VisibilityPrivate, CreatedAt: created, PushedAt: created.Add(time.Hour), Settings: domain.DefaultRepoSettings()}
 	require.NoError(t, s.Create(ctx, b))
 	require.NoError(t, s.Create(ctx, a))
@@ -63,11 +63,18 @@ func TestCreateGetListUpdateDelete(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrAlreadyExists)
 
 	b.Description = "changed"
+	b.Topics = []string{"forge"}
 	b.Visibility = domain.VisibilityPrivate
 	require.NoError(t, s.Update(ctx, b))
 	got, err = s.Get(ctx, b.Name)
 	require.NoError(t, err)
 	assert.Equal(t, b, got)
+
+	b.Topics = nil
+	require.NoError(t, s.Update(ctx, b))
+	got, err = s.Get(ctx, b.Name)
+	require.NoError(t, err)
+	assert.Nil(t, got.Topics, "cleared topics read back as nil")
 
 	require.NoError(t, s.Delete(ctx, b.Name))
 	_, err = s.Get(ctx, b.Name)
@@ -336,4 +343,19 @@ func TestCorruptRepoValue(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrInvalidName)
 	_, err = s.List(ctx)
 	assert.Error(t, err)
+}
+
+func TestRepoWithoutTopicsReadsNil(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	putRaw(t, dir, "repo/old", mustProto(t, &storagepb.Repo{Name: "old", Visibility: storagepb.Visibility_VISIBILITY_PUBLIC}))
+	putRaw(t, dir, "repo/new", mustProto(t, &storagepb.Repo{Name: "new", Visibility: storagepb.Visibility_VISIBILITY_PUBLIC, Topics: []string{"a", "b"}}))
+	s := openStore(t, dir)
+
+	old, err := s.Get(ctx, name(t, "old"))
+	require.NoError(t, err)
+	assert.Nil(t, old.Topics)
+	got, err := s.Get(ctx, name(t, "new"))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b"}, got.Topics)
 }

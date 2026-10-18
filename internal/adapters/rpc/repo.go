@@ -54,7 +54,7 @@ func (s *repoService) CreateRepo(ctx context.Context, req *connect.Request[pb.Cr
 		return nil, connectError(ctx, err)
 	}
 	repo, err := s.repos.Create(ctx, caller(ctx), ports.CreateRepoParams{
-		Name: name, Description: req.Msg.GetDescription(), Visibility: vis,
+		Name: name, Description: req.Msg.GetDescription(), Topics: req.Msg.GetTopics(), Visibility: vis,
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -79,7 +79,7 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 }
 
 // updateParams maps the field mask of an update. The mask must name at least
-// one of "description", "visibility", "default_branch", "settings",
+// one of "description", "topics", "visibility", "default_branch", "settings",
 // "settings.allowed_merge_modes" and "settings.failing_checks_block", and
 // nothing else.
 //
@@ -94,6 +94,8 @@ func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 		switch path {
 		case "description":
 			params.Description = new(msg.GetDescription())
+		case "topics":
+			params.Topics = new(msg.GetTopics())
 		case "visibility":
 			vis, err := visibilityFromPB(msg.GetVisibility())
 			if err != nil {

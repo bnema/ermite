@@ -61,6 +61,10 @@ func (r *Repos) Create(ctx context.Context, p domain.Principal, params ports.Cre
 	if err := validateDescription(params.Description); err != nil {
 		return domain.Repo{}, err
 	}
+	topics, err := domain.NormalizeTopics(params.Topics)
+	if err != nil {
+		return domain.Repo{}, err
+	}
 	vis := params.Visibility
 	if vis == "" {
 		vis = domain.VisibilityPrivate
@@ -71,6 +75,7 @@ func (r *Repos) Create(ctx context.Context, p domain.Principal, params ports.Cre
 	repo := domain.Repo{
 		Name:        params.Name,
 		Description: params.Description,
+		Topics:      topics,
 		Visibility:  vis,
 		CreatedAt:   r.clock.Now().UTC(),
 		Settings:    domain.DefaultRepoSettings(),

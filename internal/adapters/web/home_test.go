@@ -66,18 +66,32 @@ func TestHomeRowFigures(t *testing.T) {
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
 	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{
 		Commits: 12345, Recent: 42, LatestTag: &domain.TagInfo{Name: "v1.2.0", At: now.Add(-3 * time.Hour), CommitID: head},
+		Activity: make([]int, ports.ActivityDays),
 	}, nil).Once()
 	srv := newTestServer(t, Config{Repos: reposServing(t, pushedRepo(t, "proj")), Browse: browse})
 
-	row := srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), now, false)
+	view := pushedRepo(t, "proj")
+	view.Topics = []string{"go", "git"}
+	row := srv.homeRowOf(context.Background(), view, now, false)
 	require.NotNil(t, row.Stats)
 	out := renderRow(t, row)
 	assert.Contains(t, out, "<dt>commits</dt><dd>12\u202f345</dd>")
 	assert.Contains(t, out, "<dt>last 30 days</dt><dd>42</dd>")
-	assert.Contains(t, out, `<a href="/proj/tree/`+head.String()+`" title="made 3h ago">v1.2.0</a>`, "by its commit: a branch may share its name")
+	assert.Contains(t, out, `<a href="/proj/tree/`+head.String()+`" title="v1.2.0 · made 3h ago">v1.2.0</a>`, "by its commit: a branch may share its name")
 	assert.Contains(t, out, "<dt>last activity</dt>")
 	assert.NotContains(t, out, "i-branch", "the default branch is not shown")
+	assert.Contains(t, out, `<ul class="repo-topics" aria-label="Topics of proj"><li>go</li><li>git</li></ul>`)
+	assert.Contains(t, out, `role="img" aria-label="Activity: 0 commits in the last 90 days"`)
+	assert.Contains(t, out, `<linearGradient id="hb-proj"`)
 	assert.NotContains(t, out, "pushed")
+
+	// Past the cap of the walk, the figures are lower bounds.
+	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{
+		Commits: 300000, Recent: 100000, Activity: make([]int, ports.ActivityDays), Partial: true,
+	}, nil).Once()
+	out = renderRow(t, srv.homeRowOf(context.Background(), pushedRepo(t, "proj"), now, false))
+	assert.Contains(t, out, "<dt>last 30 days</dt><dd>100\u202f000+</dd>")
+	assert.Contains(t, out, `aria-label="Activity: at least 0 commits in the last 90 days"`)
 
 	// A failed read leaves the figures out, not the row.
 	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{}, errors.New("boom")).Once()
@@ -126,6 +140,7 @@ func TestHomeRowShowsFiveCommits(t *testing.T) {
 
 	out := renderRow(t, row)
 	assert.Equal(t, homeRecent, strings.Count(out, `class="rc-sha"`))
+	assert.Contains(t, out, `class="repo-commits" data-full`, "a full list fades its last commit")
 	assert.Contains(t, out, `href="/proj/commit/`+fmt.Sprintf("%040x", 7)+`"`)
 	assert.Contains(t, out, `aria-label="Recent commits of proj"`)
 	assert.NotContains(t, out, `class="repo-ci"`)

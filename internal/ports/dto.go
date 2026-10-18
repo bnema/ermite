@@ -31,13 +31,17 @@ type RepoView struct {
 type CreateRepoParams struct {
 	Name        domain.RepoName
 	Description string
+	// Topics are normalized by Create (see domain.NormalizeTopics).
+	Topics []string
 	// Visibility defaults to private when empty.
 	Visibility domain.Visibility
 }
 
 // UpdateRepoParams are the changes of Update; a nil field is left alone.
 type UpdateRepoParams struct {
-	Description   *string
+	Description *string
+	// Topics replaces the topics; an empty list clears them.
+	Topics        *[]string
 	Visibility    *domain.Visibility
 	DefaultBranch *string
 	// AllowedMergeModes replaces the allowed merge modes; it must hold at
@@ -121,10 +125,19 @@ type RepoStats struct {
 	Commits, Recent int
 	// LatestTag is the most recently created tag; nil without tags.
 	LatestTag *domain.TagInfo
+	// Activity is the number of commits of each of the last ActivityDays
+	// days, oldest first; the last day ends now. A day is 24 hours.
+	Activity []int
+	// Partial tells that the recent commits were more than MaxCommitTimes:
+	// Recent and Activity count only some of them.
+	Partial bool
 }
 
 // RecentDays is the window of RepoStats.Recent.
 const RecentDays = 30
+
+// ActivityDays is the span of RepoStats.Activity.
+const ActivityDays = 90
 
 // WatchParams select the events of a watch.
 type WatchParams struct {

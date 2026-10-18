@@ -5,6 +5,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -93,7 +94,7 @@ func TestRepoServiceCreateRepo(t *testing.T) {
 		wantCode connect.Code
 		wantCall bool
 	}{
-		{name: "ok", req: &pb.CreateRepoRequest{Name: "demo", Visibility: pb.Visibility_VISIBILITY_PRIVATE}, wantCall: true},
+		{name: "ok", req: &pb.CreateRepoRequest{Name: "demo", Topics: []string{"go", "cli"}, Visibility: pb.Visibility_VISIBILITY_PRIVATE}, wantCall: true},
 		{name: "invalid name", req: &pb.CreateRepoRequest{Name: "Bad Name", Visibility: pb.Visibility_VISIBILITY_PRIVATE}, wantCode: connect.CodeInvalidArgument},
 		{name: "unknown visibility", req: &pb.CreateRepoRequest{Name: "demo", Visibility: pb.Visibility(99)}, wantCode: connect.CodeInvalidArgument},
 		{name: "already exists", req: &pb.CreateRepoRequest{Name: "demo"}, usecase: domain.ErrAlreadyExists, wantCode: connect.CodeAlreadyExists, wantCall: true},
@@ -106,7 +107,7 @@ func TestRepoServiceCreateRepo(t *testing.T) {
 			if tt.wantCall {
 				repo := domain.Repo{Name: mustRepoName(t, "demo"), Visibility: domain.VisibilityPrivate}
 				repos.EXPECT().Create(mock.Anything, domain.Owner(), mock.MatchedBy(func(p ports.CreateRepoParams) bool {
-					return p.Name.String() == "demo"
+					return p.Name.String() == "demo" && slices.Equal(p.Topics, tt.req.GetTopics())
 				})).Return(repo, tt.usecase).Once()
 				if tt.usecase == nil {
 					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo}, nil).Once()
@@ -251,4 +252,31 @@ func TestRepoServiceListRepos(t *testing.T) {
 			requireCode(t, tc.code, err)
 		})
 	}
+}
+
+func TestUpdateParamsTopics(t *testing.T) {
+	t.Parallel()
+	mask := func(paths ...string) *fieldmaskpb.FieldMask { return &fieldmaskpb.FieldMask{Paths: paths} }
+
+	params, err := updateParams(&pb.UpdateRepoRequest{UpdateMask: mask("topics"), Topics: []string{"go", "cli"}})
+	require.NoError(t, err)
+	require.NotNil(t, params.Topics)
+	assert.Equal(t, []string{"go", "cli"}, *params.Topics)
+	assert.Nil(t, params.Description, "only the masked fields are set")
+
+	params, err = updateParams(&pb.UpdateRepoRequest{UpdateMask: mask("topics")})
+	require.NoError(t, err)
+	require.NotNil(t, params.Topics, "a masked empty list is a clear, not an absent field")
+	assert.Empty(t, *params.Topics)
+
+	params, err = updateParams(&pb.UpdateRepoRequest{UpdateMask: mask("description"), Topics: []string{"go"}})
+	require.NoError(t, err)
+	assert.Nil(t, params.Topics, "topics outside the mask are ignored")
+}
+
+func TestRepoToPBTopics(t *testing.T) {
+	t.Parallel()
+	got := repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustRepoName(t, "demo"), Topics: []string{"cli", "go"}}})
+	assert.Equal(t, []string{"cli", "go"}, got.GetTopics())
+	assert.Empty(t, repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustRepoName(t, "demo")}}).GetTopics())
 }

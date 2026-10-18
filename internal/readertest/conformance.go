@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -119,16 +120,29 @@ func testCountCommitsAndLatestTag(t *testing.T, mk Maker) {
 		ids = append(ids, f.Commit("c"+itoa(i)))
 	}
 	head := MustID(t, ids[3])
-	n, err := g.CountCommits(ctx, f.Name, head, time.Time{})
+	n, err := g.CountCommits(ctx, f.Name, head)
 	require.NoError(t, err)
 	assert.Equal(t, 4, n)
-	n, err = g.CountCommits(ctx, f.Name, head, f.When.Add(-90*time.Second))
-	require.NoError(t, err)
-	assert.Equal(t, 2, n, "the commits of 12:03 and 12:04")
-	n, err = g.CountCommits(ctx, f.Name, MustID(t, ids[1]), time.Time{})
+	n, err = g.CountCommits(ctx, f.Name, MustID(t, ids[1]))
 	require.NoError(t, err)
 	assert.Equal(t, 2, n, "from another commit")
-	_, err = g.CountCommits(ctx, f.Name, MustID(t, strings.Repeat("ab", 20)), time.Time{})
+	_, err = g.CountCommits(ctx, f.Name, MustID(t, strings.Repeat("ab", 20)))
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	unix := func(ts []time.Time) []int64 {
+		var out []int64
+		for _, x := range ts {
+			out = append(out, x.Unix())
+		}
+		slices.Sort(out)
+		return out
+	}
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	times, more, err := g.CommitTimes(ctx, f.Name, head, base.Add(150*time.Second))
+	require.NoError(t, err)
+	assert.False(t, more)
+	assert.Equal(t, []int64{base.Add(3 * time.Minute).Unix(), base.Add(4 * time.Minute).Unix()}, unix(times), "12:03 and 12:04")
+	_, _, err = g.CommitTimes(ctx, f.Name, MustID(t, strings.Repeat("ab", 20)), base)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 
 	// Dates out of order: a commit dated in the past on top of recent ones
@@ -137,9 +151,9 @@ func testCountCommitsAndLatestTag(t *testing.T, mk Maker) {
 	f.When = recent.Add(-48 * time.Hour)
 	old := f.Commit("backdated")
 	f.When = recent
-	n, err = g.CountCommits(ctx, f.Name, MustID(t, old), recent.Add(-90*time.Second))
+	times, _, err = g.CommitTimes(ctx, f.Name, MustID(t, old), base.Add(150*time.Second))
 	require.NoError(t, err)
-	assert.Equal(t, 2, n, "the recent commits behind an old one count")
+	assert.Len(t, times, 2, "the recent commits behind an old one count")
 
 	// The latest tag is the one made last: an annotated tag by its own date,
 	// a lightweight one by the date of its commit.

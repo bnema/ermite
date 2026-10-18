@@ -88,7 +88,9 @@ type Repo struct {
 	PushedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=pushed_at,json=pushedAt,proto3" json:"pushed_at,omitempty"`
 	// Unset on repositories stored before merge requests: they read as the
 	// default settings.
-	Settings      *RepoSettings `protobuf:"bytes,6,opt,name=settings,proto3" json:"settings,omitempty"`
+	Settings *RepoSettings `protobuf:"bytes,6,opt,name=settings,proto3" json:"settings,omitempty"`
+	// Normalized and sorted; empty on repositories stored before topics.
+	Topics        []string `protobuf:"bytes,7,rep,name=topics,proto3" json:"topics,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -161,6 +163,13 @@ func (x *Repo) GetPushedAt() *timestamppb.Timestamp {
 func (x *Repo) GetSettings() *RepoSettings {
 	if x != nil {
 		return x.Settings
+	}
+	return nil
+}
+
+func (x *Repo) GetTopics() []string {
+	if x != nil {
+		return x.Topics
 	}
 	return nil
 }
@@ -331,7 +340,7 @@ var File_ermite_storage_repo_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_repo_proto_rawDesc = "" +
 	"\n" +
-	"\x19ermite/storage/repo.proto\x12\x0eermite.storage\x1a\"ermite/storage/merge_request.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa6\x02\n" +
+	"\x19ermite/storage/repo.proto\x12\x0eermite.storage\x1a\"ermite/storage/merge_request.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbe\x02\n" +
 	"\x04Repo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12:\n" +
@@ -341,7 +350,8 @@ const file_ermite_storage_repo_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x127\n" +
 	"\tpushed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bpushedAt\x128\n" +
-	"\bsettings\x18\x06 \x01(\v2\x1c.ermite.storage.RepoSettingsR\bsettings\")\n" +
+	"\bsettings\x18\x06 \x01(\v2\x1c.ermite.storage.RepoSettingsR\bsettings\x12\x16\n" +
+	"\x06topics\x18\a \x03(\tR\x06topics\")\n" +
 	"\rSchemaVersion\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\"\xcc\x02\n" +
 	"\x05Token\x12\x0e\n" +

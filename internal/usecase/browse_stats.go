@@ -4,6 +4,7 @@ package usecase
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -81,7 +82,37 @@ func (c *statsCache) get(ctx context.Context, key statsKey, now time.Time, read 
 	}
 }
 
+// activity counts the commits of the last ports.RecentDays days, and those
+// of each of the last ports.ActivityDays days, oldest first. A day is the 24
+// hours that end at now minus a whole number of days; a commit dated after
+// now counts in the last day.
+func activity(times []time.Time, now time.Time) (recent int, days []int) {
+	days = make([]int, ports.ActivityDays)
+	recentSince := daysBefore(now, ports.RecentDays)
+	for _, t := range times {
+		if !t.Before(recentSince) {
+			recent++
+		}
+		ago := int(now.Sub(t) / (24 * time.Hour))
+		if ago < 0 {
+			ago = 0
+		}
+		if ago < ports.ActivityDays {
+			days[ports.ActivityDays-1-ago]++
+		}
+	}
+	return recent, days
+}
+
+// daysBefore is now minus n days of 24 hours: the days of activity are
+// elapsed time, not calendar days, so that a change of daylight saving time
+// neither drops nor doubles an hour.
+func daysBefore(now time.Time, n int) time.Time {
+	return now.Add(-time.Duration(n) * 24 * time.Hour)
+}
+
 func cloneStats(st ports.RepoStats) ports.RepoStats {
+	st.Activity = slices.Clone(st.Activity)
 	if st.LatestTag != nil {
 		t := *st.LatestTag
 		st.LatestTag = &t
@@ -89,9 +120,10 @@ func cloneStats(st ports.RepoStats) ports.RepoStats {
 	return st
 }
 
-// RepoStats counts the commits reachable from head, all of them and those of
-// the last ports.RecentDays days before now, and names the latest tag. The
-// answer is kept for statsTTL, or until the repository is pushed to.
+// RepoStats counts the commits reachable from head, all of them, those of
+// the last ports.RecentDays days and those of each recent day, and names the
+// latest tag. The answer is kept for statsTTL, or until the repository is
+// pushed to: the home page and its live updates read it on every row.
 func (b *Browse) RepoStats(ctx context.Context, p domain.Principal, repo domain.RepoName, head domain.ObjectID, now time.Time) (ports.RepoStats, error) {
 	r, err := b.authorize(ctx, p, repo)
 	if err != nil {
@@ -103,13 +135,17 @@ func (b *Browse) RepoStats(ctx context.Context, p domain.Principal, repo domain.
 		rctx := context.WithoutCancel(ctx)
 		var st ports.RepoStats
 		var err error
-		if st.Commits, err = b.reader.CountCommits(rctx, repo, head, time.Time{}); err != nil {
+		if st.Commits, err = b.reader.CountCommits(rctx, repo, head); err != nil {
 			return ports.RepoStats{}, err
 		}
-		since := now.AddDate(0, 0, -ports.RecentDays)
-		if st.Recent, err = b.reader.CountCommits(rctx, repo, head, since); err != nil {
+		// One walk gives both the recent count and the activity.
+		span := max(ports.RecentDays, ports.ActivityDays)
+		times, truncated, err := b.reader.CommitTimes(rctx, repo, head, daysBefore(now, span))
+		if err != nil {
 			return ports.RepoStats{}, err
 		}
+		st.Recent, st.Activity = activity(times, now)
+		st.Partial = truncated
 		tag, ok, err := b.reader.LatestTag(rctx, repo)
 		if err != nil {
 			return ports.RepoStats{}, err

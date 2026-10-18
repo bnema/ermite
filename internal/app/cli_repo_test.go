@@ -16,7 +16,7 @@ import (
 
 var (
 	repoAlpha = &ermite.Repo{
-		Name: "alpha", Description: "The first one", Visibility: ermite.Visibility_VISIBILITY_PUBLIC,
+		Name: "alpha", Description: "The first one", Topics: []string{"cli", "go"}, Visibility: ermite.Visibility_VISIBILITY_PUBLIC,
 		DefaultBranch: "main", CreatedAt: ts("2026-01-02T03:04:05Z"), PushedAt: ts("2026-03-04T05:06:07Z"),
 		Settings: &ermite.RepoSettings{
 			AllowedMergeModes:  []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_FAST_FORWARD, ermite.MergeMode_MERGE_MODE_SQUASH},
@@ -54,8 +54,8 @@ func TestRepoList(t *testing.T) {
 		{
 			name: "json", repos: both, args: []string{"repo", "list", "--json"}, wantJSON: true,
 			wantStdout: `[
-				{"name":"alpha","description":"The first one","visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true},
-				{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}
+				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true},
+				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}
 			]`,
 		},
 		{
@@ -111,6 +111,7 @@ func TestRepoShow(t *testing.T) {
 		"visibility            public\n"+
 		"default branch        main\n"+
 		"description           The first one\n"+
+		"topics                cli, go\n"+
 		"created               2026-01-02 03:04\n"+
 		"last push             2026-03-04 05:06\n"+
 		"merge modes           fast-forward, squash\n"+
@@ -119,7 +120,7 @@ func TestRepoShow(t *testing.T) {
 	assert.Equal(t, "alpha", reqs[0].(*ermite.GetRepoRequest).GetRepo())
 
 	res = runCLI(t, envFor(url), "", "repo", "show", "alpha", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"alpha","description":"The first one","visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true}`, res.stdout)
+	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true}`, res.stdout)
 }
 
 func TestRepoShowNeedsOneArg(t *testing.T) {
@@ -129,14 +130,16 @@ func TestRepoShowNeedsOneArg(t *testing.T) {
 
 func TestRepoCreateMapsFlags(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
-		want ermite.Visibility
-		desc string
+		name   string
+		args   []string
+		want   ermite.Visibility
+		desc   string
+		topics []string
 	}{
-		{"default is private", []string{"x"}, ermite.Visibility_VISIBILITY_PRIVATE, ""},
-		{"--visibility public", []string{"x", "--visibility", "public", "--description", "d d"}, ermite.Visibility_VISIBILITY_PUBLIC, "d d"},
-		{"case insensitive", []string{"x", "--visibility", "Public"}, ermite.Visibility_VISIBILITY_PUBLIC, ""},
+		{"default is private", []string{"x"}, ermite.Visibility_VISIBILITY_PRIVATE, "", nil},
+		{"--visibility public", []string{"x", "--visibility", "public", "--description", "d d"}, ermite.Visibility_VISIBILITY_PUBLIC, "d d", nil},
+		{"case insensitive", []string{"x", "--visibility", "Public"}, ermite.Visibility_VISIBILITY_PUBLIC, "", nil},
+		{"--topics", []string{"x", "--topics", "go,cli"}, ermite.Visibility_VISIBILITY_PRIVATE, "", []string{"go", "cli"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -150,6 +153,7 @@ func TestRepoCreateMapsFlags(t *testing.T) {
 			assert.Equal(t, "x", got.GetName())
 			assert.Equal(t, tt.want, got.GetVisibility())
 			assert.Equal(t, tt.desc, got.GetDescription())
+			assert.Equal(t, tt.topics, got.GetTopics())
 		})
 	}
 }
@@ -172,7 +176,7 @@ func TestRepoCreateJSON(t *testing.T) {
 		return &ermite.CreateRepoResponse{Repo: repoBeta}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "create", "beta", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"beta","description":"","visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}`, res.stdout)
+	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}`, res.stdout)
 }
 
 func TestRepoEditMask(t *testing.T) {
@@ -187,6 +191,12 @@ func TestRepoEditMask(t *testing.T) {
 		}},
 		{"clear description", []string{"--description", ""}, []string{"description"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
 			assert.Empty(t, r.GetDescription())
+		}},
+		{"topics", []string{"--topics", "Go,cli"}, []string{"topics"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
+			assert.Equal(t, []string{"Go", "cli"}, r.GetTopics())
+		}},
+		{"clear topics", []string{"--topics", ""}, []string{"topics"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
+			assert.Empty(t, r.GetTopics())
 		}},
 		{"visibility", []string{"--visibility", "public"}, []string{"visibility"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
 			assert.Equal(t, ermite.Visibility_VISIBILITY_PUBLIC, r.GetVisibility())
