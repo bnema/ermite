@@ -135,6 +135,19 @@ type IssueService interface {
 	Reopen(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error)
 }
 
+// IssueModerationService is the owner's moderation of the pending issues.
+// Every call needs owner rights and answers domain.ErrNotFound otherwise.
+// *usecase.IssueModeration implements it.
+type IssueModerationService interface {
+	// ListPending lists the pending issues of a repository, or of every
+	// repository when repo is zero, oldest first.
+	ListPending(ctx context.Context, p domain.Principal, repo domain.RepoName, page ListPendingParams) (PendingIssuePage, error)
+	// Approve opens the pending issue under a new number.
+	Approve(ctx context.Context, p domain.Principal, repo domain.RepoName, id domain.PendingIssueID) (domain.Issue, error)
+	// Reject deletes the pending issue and, with ban, bans its submitter.
+	Reject(ctx context.Context, p domain.Principal, repo domain.RepoName, id domain.PendingIssueID, ban bool) error
+}
+
 // IssueNumberResolver tells whether a number of a repository names an issue or
 // a merge request, for the callers that follow a "#n" reference. *usecase.Issues
 // implements it.
@@ -263,6 +276,18 @@ type HookTokens interface {
 type FailureLimiter interface {
 	Blocked(ctx context.Context, addr string) (bool, time.Duration)
 	Fail(ctx context.Context, addr string)
+}
+
+// SubmissionLimiter limits the submissions of the public issue form per
+// client. *clientlimit.SubmissionLimiter implements it.
+type SubmissionLimiter interface {
+	// Allow reports whether addr may submit now, and when to retry if not.
+	Allow(ctx context.Context, addr string) (ok bool, retryAfter time.Duration)
+	// Record counts a submission from addr.
+	Record(ctx context.Context, addr string)
+	// Recent returns the submissions of the last hour from addr and from all
+	// clients.
+	Recent(ctx context.Context, addr string) (perAddr, global int)
 }
 
 // SecretPage is one page of secrets.

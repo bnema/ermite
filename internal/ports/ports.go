@@ -278,6 +278,49 @@ type IssueStore interface {
 	ListComments(ctx context.Context, repo domain.RepoName, number int64) ([]domain.IssueComment, error)
 }
 
+// PendingIssueStore keeps the issues submitted through the public form until
+// the owner decides. They have no number: Approve gives one. Put and Approve
+// return domain.ErrNotFound when the repository does not exist, so that
+// deleting a repository leaves nothing for one created again under its name.
+// *kvstore.PendingIssues implements it.
+type PendingIssueStore interface {
+	// Put stores the pending issue; its id must be new.
+	Put(ctx context.Context, p domain.PendingIssue) error
+	// Get returns the pending issue, or domain.ErrNotFound.
+	Get(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) (domain.PendingIssue, error)
+	// List returns a page of the pending issues of the repository, or of
+	// every repository when repo is zero, oldest first. A PageSize of 0
+	// means every one.
+	List(ctx context.Context, repo domain.RepoName, page ListPendingParams) (PendingIssuePage, error)
+	// Count returns how many pending issues there are in all repositories,
+	// reading at most domain.MaxPendingIssues+1 of them.
+	Count(ctx context.Context) (int, error)
+	// Approve takes the next number of the repository (the one merge requests
+	// and issues share), writes the open issue (its author is the pending
+	// one, or "anonymous"), indexes it as open and deletes the pending record,
+	// in one batch. It returns domain.ErrNotFound when either is missing.
+	Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) (domain.Issue, error)
+	// Delete removes the pending issue, or returns domain.ErrNotFound.
+	Delete(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) error
+}
+
+// IssueKeyStore keeps the server key of the public issue form, from which the
+// use cases derive their subkeys.
+type IssueKeyStore interface {
+	// Key returns the 32-byte secret. The first call on an empty store
+	// generates and stores it; a restart keeps it.
+	Key(ctx context.Context) ([]byte, error)
+}
+
+// IssueBanStore keeps the bans of submitters, by the hash of their client key.
+type IssueBanStore interface {
+	// Ban bans the hash until the given time, replacing an earlier ban.
+	Ban(ctx context.Context, hash []byte, until time.Time) error
+	// Banned reports whether the hash is banned at now. An expired ban counts
+	// as not banned and is deleted.
+	Banned(ctx context.Context, hash []byte, now time.Time) (bool, error)
+}
+
 // MergeRequestStore keeps the merge requests of the repositories, their
 // comments and the read position of the reviewer. A repository has no entry
 // until its first merge request. Create, SaveComment and SetRead return

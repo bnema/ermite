@@ -218,6 +218,21 @@ type IssuePage struct {
 	NextPageToken string
 }
 
+// ListPendingParams selects a page of pending issues.
+type ListPendingParams struct {
+	// PageSize is the page size; the use case applies the default and the
+	// maximum, a store takes it as is (0: every one).
+	PageSize int
+	// PageToken is the NextPageToken of the previous page.
+	PageToken string
+}
+
+// PendingIssuePage is a page of pending issues, oldest first.
+type PendingIssuePage struct {
+	Issues        []domain.PendingIssue
+	NextPageToken string
+}
+
 // CreateIssueParams describes the issue to open.
 type CreateIssueParams struct {
 	Title string
@@ -316,7 +331,7 @@ type InboxMergeRequest struct {
 
 // InboxCounts are the numbers of open items across every repository, whatever
 // the filter.
-type InboxCounts struct{ MergeRequests, Issues int }
+type InboxCounts struct{ MergeRequests, Issues, Pending int }
 
 // InboxOverview is what the owner has to look at across every repository: the
 // open merge requests and the open issues, most recently updated first. A
@@ -327,6 +342,9 @@ type InboxOverview struct {
 	// every repository when there is no filter. Counts always counts all.
 	MergeRequests []InboxMergeRequest
 	Issues        []domain.Issue
+	// Pending are the issues awaiting moderation, in every repository
+	// whatever the filter, oldest first. At most domain.MaxPendingIssues.
+	Pending []domain.PendingIssue
 	// Repos are the repositories that have at least one open item, by name,
 	// whatever the filter: they feed the filter itself.
 	Repos []domain.RepoName
