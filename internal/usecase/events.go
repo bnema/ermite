@@ -178,6 +178,12 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.CommentAdded:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.CommentEdited:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.CommentDeleted:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.CommentResolved:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.RunUpdated:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.JobUpdated:
@@ -486,6 +492,12 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 	case domain.MergeRequestReady:
 		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.CommentAdded:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.CommentEdited:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.CommentDeleted:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.CommentResolved:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.RunUpdated:
 		// Home shows the CI state of each repository.

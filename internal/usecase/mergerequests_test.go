@@ -117,3 +117,70 @@ func TestMergeReturnsTheFailureToReadTheSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestNoteMutationRetries(t *testing.T) {
+	for _, action := range []string{"edit", "delete", "resolve"} {
+		t.Run(action, func(t *testing.T) {
+			u := newMRUnit(t)
+			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
+			mr := domain.MergeRequest{Repo: u.repo.Name, Number: 1, State: domain.MRStateOpen}
+			text, err := domain.ParsePlainText("before")
+			require.NoError(t, err)
+			c := domain.Comment{ID: 1, Author: "root", Text: text}
+			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(mr, nil).Twice()
+			u.store.EXPECT().GetComment(mock.Anything, u.repo.Name, int64(1), int64(1)).Return(c, nil).Twice()
+			u.store.EXPECT().SaveComment(mock.Anything, mock.Anything, mock.Anything).Return(domain.ErrConflict).Once()
+			u.store.EXPECT().SaveComment(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+			// The bus expectation must be exactly once despite the conflict.
+			bus := mocks.NewEventBus(t)
+			bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(e domain.Event) bool {
+				return e.EventKind() == "mr.comment_"+map[string]string{"edit": "edited", "delete": "deleted", "resolve": "resolved"}[action]
+			})).Return().Once()
+			clock := mocks.NewClock(t)
+			clock.EXPECT().Now().Return(now)
+			svc := usecase.NewMergeRequests(usecase.MergeRequestsConfig{Meta: u.meta, Store: u.store, Bus: bus, Clock: clock})
+			switch action {
+			case "edit":
+				_, err = svc.EditComment(context.Background(), domain.Root(), u.repo.Name, 1, 1, "after")
+			case "delete":
+				_, err = svc.DeleteComment(context.Background(), domain.Root(), u.repo.Name, 1, 1)
+			case "resolve":
+				_, err = svc.ResolveComment(context.Background(), domain.Root(), u.repo.Name, 1, 1, true)
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestAddNoteValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		params  ports.AddCommentParams
+		target  domain.Comment
+		missing bool
+	}{
+		{name: "range without path", params: ports.AddCommentParams{StartLine: 1, Text: "x"}},
+		{name: "equal ends", params: ports.AddCommentParams{Path: "a", StartLine: 3, Line: 3, Side: domain.SideNew, Text: "x"}},
+		{name: "reversed ends", params: ports.AddCommentParams{Path: "a", StartLine: 4, Line: 3, Side: domain.SideNew, Text: "x"}},
+		{name: "reply anchor", params: ports.AddCommentParams{ReplyTo: 1, Path: "a", Line: 1, Side: domain.SideNew, Text: "x"}},
+		{name: "reply verdict", params: ports.AddCommentParams{ReplyTo: 1, Verdict: domain.VerdictApprove}},
+		{name: "reply to reply", params: ports.AddCommentParams{ReplyTo: 1, Text: "x"}, target: domain.Comment{ReplyTo: 2}},
+		{name: "deleted root", params: ports.AddCommentParams{ReplyTo: 1, Text: "x"}, target: domain.Comment{Deleted: true}},
+		{name: "missing root", params: ports.AddCommentParams{ReplyTo: 1, Text: "x"}, missing: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := newMRUnit(t)
+			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
+			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(domain.MergeRequest{State: domain.MRStateOpen}, nil)
+			if tc.name == "reply to reply" || tc.name == "deleted root" || tc.missing {
+				var err error
+				if tc.missing {
+					err = domain.ErrNotFound
+				}
+				u.store.EXPECT().GetComment(mock.Anything, u.repo.Name, int64(1), int64(1)).Return(tc.target, err)
+			}
+			_, err := u.mrs.AddComment(context.Background(), domain.Root(), u.repo.Name, 1, tc.params)
+			require.ErrorIs(t, err, domain.ErrInvalid)
+		})
+	}
+}
