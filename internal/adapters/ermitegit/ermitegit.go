@@ -291,7 +291,7 @@ func (a *Adapter) ListRefs(ctx context.Context, repo domain.RepoName) ([]domain.
 
 // ResolveRevision turns a revision into a commit.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter routes a call by a code constant; rules and limits come from domain and ports
+//hexcheck:ignore suspicious-business-logic-in-adapter selects the configured CLI or library backend, with a separate route for abbreviated IDs; resolution order comes from domain.Revision.Candidates
 func (a *Adapter) ResolveRevision(ctx context.Context, repo domain.RepoName, rev domain.Revision) (domain.ResolvedRevision, error) {
 	cli := func() (domain.ResolvedRevision, error) { return a.cli.ResolveRevision(ctx, repo, rev) }
 	route := a.routes.ResolveRevision

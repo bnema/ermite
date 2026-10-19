@@ -153,63 +153,50 @@ func readHead(dir string) (string, error) {
 	return ref, nil
 }
 
-// revCandidate is one way to read a revision as a commit.
-type revCandidate struct {
-	spec string // object expression for cat-file
-	ref  string // full ref name it stands for, "" for ids and HEAD
-}
-
-// candidates lists, in order, how a revision is tried. A full object id is an
-// object id first: a branch or a tag that happens to be named like a commit
-// must not redirect a link to that commit; refs are tried only when no such
-// object exists. Otherwise it is the branch, then the tag, then (for "HEAD",
-// full ref names and abbreviations) as written. Other forms Git understands,
-// such as "main~2" or "FETCH_HEAD", are not revisions of ermite.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule for revision resolution order; pending move to domain.Revision in a follow-up
-func candidates(rev domain.Revision) []revCandidate {
-	s := rev.String()
-	switch {
-	case rev.IsHead() || s == "HEAD":
-		return []revCandidate{{spec: "HEAD^{commit}"}}
-	}
-	refs := []revCandidate{
-		{spec: headsRefPrefix + s + "^{commit}", ref: headsRefPrefix + s},
-		{spec: tagsRefPrefix + s + "^{commit}", ref: tagsRefPrefix + s},
-	}
-	switch {
-	case rev.IsObjectID():
-		return append([]revCandidate{{spec: s + "^{commit}"}}, refs...)
-	case strings.HasPrefix(s, "refs/"):
-		return append(refs, revCandidate{spec: s + "^{commit}", ref: s})
-	case rev.IsAbbrevID():
-		return append(refs, revCandidate{spec: s + "^{commit}"})
-	}
-	return refs
-}
-
-// resolve resolves rev on an open cat-file connection.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule for revision resolution order; pending move to domain.Revision in a follow-up
+// resolve resolves the domain candidates on an open cat-file connection.
 func resolve(c *catConn, rev domain.Revision) (domain.ResolvedRevision, error) {
-	for _, cand := range candidates(rev) {
-		h, err := c.info(cand.spec)
-		if notFound(err) {
-			continue
-		}
+	for _, cand := range rev.Candidates() {
+		id, ok, err := lookupRevisionCandidate(c, cand)
 		if err != nil {
 			return domain.ResolvedRevision{}, err
 		}
-		if h.Type != "commit" {
+		if !ok {
 			continue
 		}
-		id, err := domain.ParseObjectID(h.ID)
-		if err != nil {
-			return domain.ResolvedRevision{}, c.fail(err)
-		}
-		return domain.ResolvedRevision{CommitID: id, Ref: cand.ref}, nil
+		return domain.ResolvedRevision{CommitID: id, Ref: candidateRef(cand)}, nil
 	}
-	return domain.ResolvedRevision{}, fmt.Errorf("revision %q: %w", rev, domain.ErrNotFound)
+	return domain.ResolvedRevision{}, revisionNotFound(rev)
+}
+
+func revisionNotFound(rev domain.Revision) error {
+	return fmt.Errorf("revision %q: %w", rev, domain.ErrNotFound)
+}
+
+// lookupRevisionCandidate asks cat-file to peel a candidate to a commit.
+func lookupRevisionCandidate(c *catConn, candidate domain.RevisionCandidate) (domain.ObjectID, bool, error) {
+	h, err := c.info(candidate.Name + "^{commit}")
+	if notFound(err) {
+		return domain.ObjectID{}, false, nil
+	}
+	if err != nil {
+		return domain.ObjectID{}, false, err
+	}
+	if h.Type != "commit" {
+		return domain.ObjectID{}, false, nil
+	}
+	id, err := domain.ParseObjectID(h.ID)
+	if err != nil {
+		return domain.ObjectID{}, false, c.fail(err)
+	}
+	return id, true, nil
+}
+
+// candidateRef translates a ref lookup into the resolved ref field.
+func candidateRef(candidate domain.RevisionCandidate) string {
+	if candidate.Kind == domain.RevisionCandidateRef {
+		return candidate.Name
+	}
+	return ""
 }
 
 // ResolveRevision resolves a revision with `cat-file`.
@@ -261,7 +248,7 @@ type object struct {
 // request series on the repository's process. A missing path is
 // domain.ErrNotFound.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter uses the business rule for revision resolution order, pending move to domain.Revision in a follow-up, before looking up a path
+//hexcheck:ignore suspicious-business-logic-in-adapter translates a root path to Git tree syntax and a non-root path to Git colon syntax, then reads the cat-file header
 func (g *Git) lookup(ctx context.Context, dir string, rev domain.Revision, path domain.TreePath) (object, error) {
 	var obj object
 	err := g.cat.do(ctx, dir, func(c *catConn) error {

@@ -119,55 +119,56 @@ func peelID(r *git.Repo, id git.ObjectID) (_ git.ObjectID, ok bool, _ error) {
 	return commit, true, nil
 }
 
-// resolveRevision tries the candidates of gitcli in the same order, which
-// the port documents: HEAD is HEAD; a full object id is an object before it
-// is a ref; then the branch, then the tag; then a full ref name and an
-// abbreviated id as written. It does not use Repo.Resolve, whose order is
-// git's own (tags before branches, no ref for a missing full id).
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule for revision resolution order; pending move to domain.Revision in a follow-up
+// resolveRevision performs the lookups ordered by the domain, rather than
+// Repo.Resolve, whose Git-specific resolution order differs from the port.
 func resolveRevision(r *git.Repo, rev domain.Revision) (resolved, error) {
-	s := rev.String()
-	if rev.IsHead() || s == "HEAD" {
-		if c, ok, err := peelRef(r, "HEAD"); err != nil || ok {
-			return resolved{commit: c}, err
-		}
-		return resolved{}, notFound(rev)
-	}
-	if rev.IsObjectID() {
-		id, err := git.ParseID(s)
+	for _, candidate := range rev.Candidates() {
+		c, ok, err := lookupRevisionCandidate(r, candidate)
 		if err != nil {
 			return resolved{}, err
 		}
-		if c, ok, err := peelID(r, id); err != nil || ok {
-			return resolved{commit: c}, err
+		if ok {
+			return resolved{commit: c, ref: candidateRef(candidate)}, nil
 		}
 	}
-	for _, name := range [...]string{headsPrefix + s, tagsPrefix + s} {
-		if c, ok, err := peelRef(r, name); err != nil || ok {
-			return resolved{commit: c, ref: name}, err
-		}
+	return resolved{}, notFound(rev)
+}
+
+// candidateRef translates a ref lookup into the resolved ref field.
+func candidateRef(candidate domain.RevisionCandidate) string {
+	if candidate.Kind == domain.RevisionCandidateRef {
+		return candidate.Name
 	}
-	switch {
-	case len(s) > 5 && s[:5] == "refs/":
-		if c, ok, err := peelRef(r, s); err != nil || ok {
-			return resolved{commit: c, ref: s}, err
+	return ""
+}
+
+// lookupRevisionCandidate translates one domain candidate to the library API.
+func lookupRevisionCandidate(r *git.Repo, candidate domain.RevisionCandidate) (git.ObjectID, bool, error) {
+	switch candidate.Kind {
+	case domain.RevisionCandidateHead, domain.RevisionCandidateRef:
+		return peelRef(r, candidate.Name)
+	case domain.RevisionCandidateObject:
+		id, err := git.ParseID(candidate.Name)
+		if err != nil {
+			return git.ObjectID{}, false, err
 		}
-	case rev.IsAbbrevID():
-		id, err := r.ResolveCommitPrefix(s)
+		return peelID(r, id)
+	case domain.RevisionCandidateAbbrevID:
+		id, err := r.ResolveCommitPrefix(candidate.Name)
 		if err == nil {
 			// The prefix may name an annotated tag: git peels it.
 			id, err = r.PeelToCommit(id)
 		}
 		switch {
 		case err == nil:
-			return resolved{commit: id}, nil
+			return id, true, nil
 		case errors.Is(err, git.ErrNotFound), errors.Is(err, git.ErrAmbiguous), errors.Is(err, git.ErrWrongType):
+			return git.ObjectID{}, false, nil
 		default:
-			return resolved{}, err
+			return git.ObjectID{}, false, err
 		}
 	}
-	return resolved{}, notFound(rev)
+	return git.ObjectID{}, false, fmt.Errorf("unknown revision candidate kind %d", candidate.Kind)
 }
 
 func notFound(rev domain.Revision) error {
