@@ -28,6 +28,7 @@ type liveStream struct {
 	head   string // commits: the commit listed first
 	n      string // mr: the number of the merge request shown; run: the run id
 	job    string // job: the id of the job shown
+	target string // mr: the target branch of the merge request shown
 	// sha is the commit of the run of the job shown, read once when the stream
 	// is set up: the annotations link to files at it, and it never changes.
 	sha string
@@ -60,7 +61,7 @@ func liveEvent(we ports.WatchEvent) bool {
 	}
 	switch we.Event.(type) {
 	case domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
-		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
+		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.MergeRequestMergeability, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
 		domain.RunUpdated, domain.JobUpdated,
 		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved:
 		return true
@@ -188,6 +189,11 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request was closed — reload")
 	case domain.MergeRequestReady:
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request is ready for review — reload")
+	case domain.MergeRequestMergeability:
+		if l.view != "mr" || strconv.FormatInt(ev.Number, 10) != l.n {
+			return nil, nil
+		}
+		return l.mrMergeability(ctx)
 	case domain.CommentEdited:
 		return l.mrNotice(ctx, ev.Number, "a note was edited — reload")
 	case domain.CommentDeleted:
@@ -454,21 +460,65 @@ func (l *liveStream) issueNotice(ctx context.Context, number int64, text string)
 	return nil, nil
 }
 
-// mrPushed announces a push to the source branch of the merge request shown.
+// mrPushed announces a push to the source branch of the merge request shown,
+// and has the badge follow a push to its source or its target.
 func (l *liveStream) mrPushed(ctx context.Context, p domain.PushEvent) ([]fragment, error) {
-	if l.ref == "" {
+	n, err := strconv.ParseInt(l.n, 10, 64)
+	if err != nil {
 		return nil, nil
 	}
+	var out []fragment
+	moved := false
 	for _, u := range p.Updates {
-		if u.Ref == "refs/heads/"+l.ref {
-			n, err := strconv.ParseInt(l.n, 10, 64)
+		switch {
+		case l.ref != "" && u.Ref == "refs/heads/"+l.ref:
+			notice, err := l.notice(ctx, "the branch changed — reload", mrHref(l.repo, n))
 			if err != nil {
-				return nil, nil
+				return nil, err
 			}
-			return l.notice(ctx, "the branch changed — reload", mrHref(l.repo, n))
+			out = append(out, notice...)
+			moved = true
+		case l.target != "" && u.Ref == "refs/heads/"+l.target:
+			moved = true
+		}
+		if moved && len(out) > 0 {
+			break
 		}
 	}
-	return nil, nil
+	if !moved {
+		return nil, nil
+	}
+	badge, err := l.mrMergeability(ctx)
+	return append(out, badge...), err
+}
+
+// mrMergeability is the badge of the merge box, read again: the result for the
+// tips as they are now, "checking" until the server has one (it then sends the
+// MergeRequestMergeability that turns the badge). Nothing for a request that
+// is not open.
+func (l *liveStream) mrMergeability(ctx context.Context) ([]fragment, error) {
+	if !SignedIn(ctx) || l.s.cfg.MergeRequests == nil {
+		return nil, nil // the box is the owner's
+	}
+	name, err := domain.ParseRepoName(l.repo)
+	if err != nil {
+		return nil, nil
+	}
+	n, err := strconv.ParseInt(l.n, 10, 64)
+	if err != nil {
+		return nil, nil
+	}
+	m, err := l.s.cfg.MergeRequests.Mergeability(ctx, principal(ctx), name, n)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return gap, nil
+	case err != nil:
+		return nil, err
+	case m.State == "":
+		return nil, nil
+	}
+	f, err := renderFragment(ctx, "mr-mergeability", MRMergeabilityFragment(mergeabilityView(m, l.target)))
+	return []fragment{f}, err
 }
 
 func (l *liveStream) notice(ctx context.Context, text, href string) ([]fragment, error) {

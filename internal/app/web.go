@@ -35,6 +35,10 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 	if f.Passkeys != nil {
 		passkeys = webPasskeys{f.Passkeys}
 	}
+	var signing ports.SigningKeyService
+	if f.SigningKey != nil {
+		signing = f.SigningKey
+	}
 	// Without artifacts (ERMITE_CI_ARTIFACTS=0) the run page has no section
 	// for them and no download route.
 	var artifacts ports.ArtifactService
@@ -50,6 +54,7 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 		Inbox:         f.Inbox,
 		IssueForm:     f.IssueSubmissions,
 		Moderation:    f.IssueModeration,
+		SigningKey:    signing,
 		Runs:          f.CI,
 		Artifacts:     artifacts,
 		Events:        f.EventLog,

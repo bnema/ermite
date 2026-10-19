@@ -972,7 +972,13 @@
            htmx:sse:close, htmx:sse:error -> ermiteLive.lost();
            htmx:sse:error -> ermiteLive.error(event.detail.status);
            htmx:sse:before:connection -> ermiteLive.gate(event);
+<<<<<<< HEAD
            home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job, inbox -> ermiteLive.swap(event.detail.data);
+||||||| parent of 7eacfea (feat(web,cli): live mergeability in the merge box, merge modes and inline merge errors)
+           home-list, repo-last-push, refs-list, commits-head, mr-notice, ci-run, ci-job -> ermiteLive.swap(event.detail.data);
+=======
+           home-list, repo-last-push, refs-list, commits-head, mr-notice, mr-mergeability, ci-run, ci-job -> ermiteLive.swap(event.detail.data);
+>>>>>>> 7eacfea (feat(web,cli): live mergeability in the merge box, merge modes and inline merge errors)
            gap -> ermiteLive.reload()">
 </span>
 </div>

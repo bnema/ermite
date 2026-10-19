@@ -36,5 +36,5 @@ ermite signing-key trust remove <id>
 
 - A key may sign for 1 to 10 emails; up to 100 keys.
 - The id is the fingerprint: `SHA256:…` for SSH, the primary key fingerprint for OpenPGP.
-- The server's own key (`ermite signing-key show`), which signs squash merges, is always trusted for the committer email and cannot be removed.
+- The server's own key (`ermite signing-key show`), which signs squash and merge commits (generated automatically on first start), is always trusted for the committer email and cannot be removed.
 - Private keys are refused.

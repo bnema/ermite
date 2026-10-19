@@ -260,19 +260,19 @@ func TestMergeRequestsCLIEndToEnd(t *testing.T) {
 	require.Error(t, res.err)
 	assert.Contains(t, res.err.Error(), "precondition failed")
 
-	// Squash, with --squash. Without --head the merge is refused before it reaches the server.
+	// Squash, with --mode squash. Without --head the merge is refused before it reaches the server.
 	c.mustGit(wt, "checkout", "-q", "-b", "feat/two", head3)
 	c.mustGit(wt, "-c", "user.name=Cy", "-c", "user.email=cy@example.org", "commit", "-q", "--allow-empty", "-m", "empty by Cy")
 	c.writeFile(wt, "two.txt", []byte("two\n"))
 	c.mustGit(wt, "push", "-q", url, "feat/two")
 	c.cli(t, secret, "mr", "create", "proj", "--source", "feat/two", "--title", "Second").ok(t)
 	w.nextOfType(t, "merge_request_opened")
-	_, stderr, code = c.bin(t, secret, "mr", "merge", "proj", "2", "--squash")
+	_, stderr, code = c.bin(t, secret, "mr", "merge", "proj", "2", "--mode", "squash")
 	requireOneLineError(t, stderr, code, "--head is required", "ermite mr show proj 2")
 	head4 := c.bareGit("proj", "rev-parse", "feat/two")
-	res = c.cli(t, secret, "mr", "merge", "proj", "2", "--squash", "--head", head4)
+	res = c.cli(t, secret, "mr", "merge", "proj", "2", "--mode", "squash", "--head", head4)
 	require.NoError(t, res.err, res.stderr)
-	assert.Regexp(t, `^merged proj!2 into main \(squash\) at [0-9a-f]{10}\n$`, res.stdout)
+	assert.Regexp(t, `^merged proj!2 into main \(squash\) at [0-9a-f]{10}\nthe commit is signed by the server's key SHA256:\S+; .ermite signing-key show. prints the key to verify it\n$`, res.stdout)
 	sq := c.bareGit("proj", "rev-parse", "main")
 	assert.Equal(t, head3, c.bareGit("proj", "rev-parse", sq+"^"))
 	assert.Equal(t, "Second (!2)", c.bareGit("proj", "log", "-1", "--format=%s", sq))
@@ -338,7 +338,7 @@ func TestSigningKeyShowVerifiesASquashCommit(t *testing.T) {
 	c.writeFile(wt, "x.txt", []byte("x\n"))
 	c.mustGit(wt, "push", "-q", url, "main", "feat")
 	c.cli(t, adminToken, "mr", "create", "proj", "--source", "feat", "--title", "Add x").ok(t)
-	res := c.cli(t, adminToken, "mr", "merge", "proj", "1", "--squash", "--head", c.bareGit("proj", "rev-parse", "feat"))
+	res := c.cli(t, adminToken, "mr", "merge", "proj", "1", "--mode", "squash", "--head", c.bareGit("proj", "rev-parse", "feat"))
 	require.NoError(t, res.err, res.stderr)
 	sq := c.bareGit("proj", "rev-parse", "main")
 

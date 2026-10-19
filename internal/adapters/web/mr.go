@@ -196,10 +196,38 @@ type MergeBox struct {
 	// CanDeleteBranch offers to delete the source after the merge: it is not
 	// the default branch. The server checks again, with the open requests.
 	CanDeleteBranch bool
+	// Mergeability is the live badge of the box and what the modes depend on.
+	Mergeability MergeabilityView
+	// Signed is true when a mode that creates a commit (squash, merge commit)
+	// is offered; Fingerprint is then the one of the key that signs it, empty
+	// when the server does not tell.
+	Signed      bool
+	Fingerprint string
+	// Error is why the last merge was refused, shown in the box.
+	Error string
 }
 
-// ModeOption is a merge mode the repository allows.
-type ModeOption struct{ Value, Label string }
+// ModeOption is a merge mode the repository allows. Disabled says that the
+// mode is not possible for the current state of the request, Reason why.
+type ModeOption struct {
+	Value, Label string
+	Disabled     bool
+	Reason       string
+}
+
+// MergeabilityView is the mergeability of an open request, ready to show: the
+// badge, and what the merge modes depend on (the flags are what the controls
+// of the box read, live).
+type MergeabilityView struct {
+	State, Label, Detail string
+	Paths                []string
+	// PathsNote says that more paths conflict than are listed.
+	PathsNote string
+	// FFOk and MergeOk say whether fast-forward, squash and merge commit are
+	// possible; the reasons say why not.
+	FFOk, MergeOk         bool
+	FFReason, MergeReason string
+}
 
 // SinceNav switches between the whole diff and the diff since the last read.
 type SinceNav struct {
@@ -233,6 +261,12 @@ type MRPage struct {
 	MergedShort string
 	MergedHref  string
 	MergeMode   string
+	// Deleting is the source branch that a merge just asked to delete: the
+	// deletion follows the answer.
+	Deleting string
+	// MergeError is why a merge was refused when the page has no merge box
+	// to show it in (the request is not open any more).
+	MergeError string
 
 	Since     *SinceNav
 	SinceNote string
@@ -346,8 +380,57 @@ func modeName(m domain.MergeMode) string {
 		return "fast-forward"
 	case domain.MergeModeSquash:
 		return "squash"
+	case domain.MergeModeMerge:
+		return "merge commit"
 	}
 	return ""
+}
+
+// mergeabilityView converts the mergeability of a request into the badge and
+// the flags of the controls of the merge box. A request without result is
+// being checked.
+func mergeabilityView(m domain.Mergeability, target string) MergeabilityView {
+	v := MergeabilityView{State: string(domain.MergeabilityChecking), Label: "Checking…"}
+	v.FFOk, v.FFReason = m.Allows(domain.MergeModeFastForward)
+	v.MergeOk, v.MergeReason = m.Allows(domain.MergeModeSquash)
+	target = visibleText(target)
+	switch m.State {
+	case domain.MergeabilityUpToDate:
+		v.State, v.Label = string(m.State), "Ready to merge"
+	case domain.MergeabilityBehind:
+		v.State, v.Label, v.Detail = string(m.State), "Behind "+target+" by "+behindText(m), "merges without conflicts"
+	case domain.MergeabilityConflict:
+		v.State, v.Label, v.Detail = string(m.State), "Conflicts with "+target, "rebase needed"
+		v.Paths, v.PathsNote = conflictList(m)
+	}
+	return v
+}
+
+// behindText is "2 commits", "1 commit" or "1000+ commits".
+func behindText(m domain.Mergeability) string {
+	if m.Behind == 1 && !m.BehindCapped {
+		return "1 commit"
+	}
+	n := itoa(m.Behind)
+	if m.BehindCapped {
+		n += "+"
+	}
+	return n + " commits"
+}
+
+// conflictList is the conflicting paths to show, and the note that says what
+// the list lacks.
+func conflictList(m domain.Mergeability) (paths []string, note string) {
+	for _, p := range m.ConflictPaths {
+		paths = append(paths, visibleText(p))
+	}
+	switch {
+	case len(paths) == 0:
+		note = "no common history."
+	case m.ConflictPathsTruncated:
+		note = "more files conflict than are listed."
+	}
+	return paths, note
 }
 
 // mrRow converts a merge request of a listing.
@@ -540,6 +623,9 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		p.MergedHref = repoHref(d.name(), "commit", m.MergedCommitID.String())
 		p.MergeMode = modeName(m.MergeMode)
 	}
+	if signed && m.State == domain.MRStateMerged && r.URL.Query().Get("deleting") == "1" && d.hasBranch(m.Source) {
+		p.Deleting = visibleText(m.Source)
+	}
 	for _, mode := range d.repo.Settings.AllowedMergeModes {
 		if name := modeName(mode); name != "" {
 			p.Modes = append(p.Modes, name)
@@ -624,10 +710,14 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	p.Invisible = invisible
 	p.DiffView = newDiffView(r, lines, withFrom(self+"?view=unified", from), withFrom(self+"?view=split", from))
 	if signed && open {
-		p.Box = s.mergeBox(d, n, m.Source, head, lastRead)
+		p.Box = s.mergeBox(d, n, m.Source, head, lastRead, mergeabilityView(res.Mergeability, m.Target))
+		p.Box.Error = mergeErrorOf(ctx)
 		if m.IsDraft() {
 			p.Box.ReadyAction = mrHref(d.name(), n, "ready")
 		}
+	}
+	if p.Box == nil {
+		p.MergeError = mergeErrorOf(ctx) // the request is not open any more
 	}
 	if canWrite {
 		p.GeneralForm = &CommentForm{
@@ -652,7 +742,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		l.Crumbs = append(l.Crumbs, Crumb{Label: "since", Current: true})
 	}
 	p.Live = true
-	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source)+"&head="+url.QueryEscape(head))
+	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source)+"&head="+url.QueryEscape(head)+"&target="+url.QueryEscape(m.Target))
 	l.HasRail = true
 	l.MR = true
 	return MergeRequest(l, p), http.StatusOK, nil
@@ -669,35 +759,76 @@ func (d *repoData) hasBranch(name string) bool {
 }
 
 // mergeBox is what the owner can do with an open request.
-func (s *Server) mergeBox(d *repoData, n int64, source, head, lastRead string) *MergeBox {
+func (s *Server) mergeBox(d *repoData, n int64, source, head, lastRead string, mg MergeabilityView) *MergeBox {
 	b := &MergeBox{
 		MergeAction: mrHref(d.name(), n, "merge"), CloseAction: mrHref(d.name(), n, "close"),
 		ReadAction: mrHref(d.name(), n, "read"), Head: head, HeadGone: head == "",
 		CanMarkRead:     head != "" && head != lastRead,
 		CanDeleteBranch: source != d.repo.DefaultBranch,
+		Mergeability:    mg,
 	}
-	ff, sq := false, false
+	var lines []string
+	cmd := ""
+	if head != "" {
+		cmd = "ermite mr merge " + shellWord(d.name()) + " " + strconv.FormatInt(n, 10) + " --head " + head
+	}
 	for _, mode := range d.repo.Settings.AllowedMergeModes {
 		switch mode {
 		case domain.MergeModeFastForward:
-			ff = true
-			b.Modes = append(b.Modes, ModeOption{Value: "fast-forward", Label: "fast-forward"})
+			b.Modes = append(b.Modes, ModeOption{Value: "fast-forward", Label: "fast-forward", Disabled: !mg.FFOk, Reason: reasonIf(!mg.FFOk, mg.FFReason)})
+			lines = append(lines, cmd)
 		case domain.MergeModeSquash:
-			sq = true
-			b.Modes = append(b.Modes, ModeOption{Value: "squash", Label: "squash (one signed commit)"})
+			b.Signed = true
+			b.Modes = append(b.Modes, ModeOption{Value: "squash", Label: "squash (one signed commit)", Disabled: !mg.MergeOk, Reason: reasonIf(!mg.MergeOk, mg.MergeReason)})
+			lines = append(lines, cmd+" --mode squash")
+		case domain.MergeModeMerge:
+			b.Signed = true
+			b.Modes = append(b.Modes, ModeOption{Value: "merge", Label: "merge commit (signed)", Disabled: !mg.MergeOk, Reason: reasonIf(!mg.MergeOk, mg.MergeReason)})
+			lines = append(lines, cmd+" --mode merge")
 		}
+	}
+	if b.Signed && s.cfg.SigningKey != nil {
+		b.Fingerprint = s.cfg.SigningKey.Info().Key.Fingerprint
 	}
 	if head != "" {
-		cmd := "ermite mr merge " + shellWord(d.name()) + " " + strconv.FormatInt(n, 10) + " --head " + head
-		b.CLI = Clone{ID: "cli-merge"}
-		if ff {
-			b.CLI.Lines = append(b.CLI.Lines, cmd)
-		}
-		if sq {
-			b.CLI.Lines = append(b.CLI.Lines, cmd+" --squash")
-		}
+		b.CLI = Clone{ID: "cli-merge", Lines: lines}
 	}
 	return b
+}
+
+func reasonIf(cond bool, reason string) string {
+	if cond {
+		return reason
+	}
+	return ""
+}
+
+// firstModeOK is the index of the first mode that is possible, -1 for none.
+func (b *MergeBox) firstModeOK() int {
+	for i, m := range b.Modes {
+		if !m.Disabled {
+			return i
+		}
+	}
+	return -1
+}
+
+// Checked is the mode the form has checked: the first that is possible, else
+// the first (it is disabled, and a live update may enable it).
+func (b *MergeBox) Checked() int { return max(b.firstModeOK(), 0) }
+
+// CanMerge tells whether some mode is possible: the button is enabled.
+func (b *MergeBox) CanMerge() bool { return b.firstModeOK() >= 0 }
+
+// MergeTitle is why the button is disabled, empty when it is not.
+func (b *MergeBox) MergeTitle() string {
+	if b.CanMerge() {
+		return ""
+	}
+	if len(b.Modes) == 0 {
+		return "the repository allows no merge mode"
+	}
+	return b.Modes[0].Reason
 }
 
 // shellWord quotes s for a shell unless it is made of safe characters, which

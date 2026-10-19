@@ -124,6 +124,10 @@ type MergeRequestService interface {
 	// CountOpen is the number of open merge requests of a repository the
 	// principal can read. It reads no Git: the tab of every page shows it.
 	CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error)
+	// Mergeability is the mergeability of an open merge request, "checking"
+	// until the server has a result for the current tips; zero for a request
+	// that is not open. It reads no diff: the live pages call it on each change.
+	Mergeability(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Mergeability, error)
 }
 
 // IssueService is the issue use cases. *usecase.Issues implements it.

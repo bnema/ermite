@@ -38,12 +38,21 @@ type sseStream struct {
 // watch is registered: what happens after is not missed.
 func (h *harness) sse(query, lastID string) *sseStream {
 	h.t.Helper()
+	return h.sseAs(query, lastID, nil)
+}
+
+// sseAs opens the stream with the headers given (the owner's cookie).
+func (h *harness) sseAs(query, lastID string, headers map[string]string) *sseStream {
+	h.t.Helper()
 	ctx, cancel := context.WithCancel(h.ctx)
 	h.t.Cleanup(cancel)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url("/-/events?"+query), nil)
 	require.NoError(h.t, err)
 	if lastID != "" {
 		req.Header.Set("Last-Event-ID", lastID)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(h.t, err)

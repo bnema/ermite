@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
+)
+
+func repoWithModes(modes ...domain.MergeMode) ports.RepoView {
+	var v ports.RepoView
+	v.Settings.AllowedMergeModes = modes
+	return v
+}
+
+func watchOf(ev domain.Event) ports.WatchEvent { return ports.WatchEvent{Event: ev} }
+
+func TestMergeabilityView(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name          string
+		m             domain.Mergeability
+		label, detail string
+		ffOK, mergeOK bool
+		note          string
+		paths         []string
+	}{
+		{"up to date", domain.Mergeability{State: domain.MergeabilityUpToDate}, "Ready to merge", "", true, true, "", nil},
+		{"behind", domain.Mergeability{State: domain.MergeabilityBehind, Behind: 2}, "Behind main by 2 commits", "merges without conflicts", false, true, "", nil},
+		{"behind by one", domain.Mergeability{State: domain.MergeabilityBehind, Behind: 1}, "Behind main by 1 commit", "merges without conflicts", false, true, "", nil},
+		{"behind, capped", domain.Mergeability{State: domain.MergeabilityBehind, Behind: 1000, BehindCapped: true}, "Behind main by 1000+ commits", "merges without conflicts", false, true, "", nil},
+		{"conflict", domain.Mergeability{State: domain.MergeabilityConflict, ConflictPaths: []string{"a.go"}}, "Conflicts with main", "rebase needed", false, false, "", []string{"a.go"}},
+		{"conflict, truncated", domain.Mergeability{State: domain.MergeabilityConflict, ConflictPaths: []string{"a.go"}, ConflictPathsTruncated: true}, "Conflicts with main", "rebase needed", false, false, "more files conflict than are listed.", []string{"a.go"}},
+		{"no common history", domain.Mergeability{State: domain.MergeabilityConflict}, "Conflicts with main", "rebase needed", false, false, "no common history.", nil},
+		{"checking", domain.Mergeability{State: domain.MergeabilityChecking}, "Checking…", "", false, false, "", nil},
+		{"none", domain.Mergeability{}, "Checking…", "", false, false, "", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			v := mergeabilityView(tt.m, "main")
+			assert.Equal(t, tt.label, v.Label)
+			assert.Equal(t, tt.detail, v.Detail)
+			assert.Equal(t, tt.ffOK, v.FFOk)
+			assert.Equal(t, tt.mergeOK, v.MergeOk)
+			assert.Equal(t, tt.note, v.PathsNote)
+			assert.Equal(t, tt.paths, v.Paths)
+			assert.Equal(t, !tt.ffOK, v.FFReason != "", "a mode that is not possible says why")
+			assert.Equal(t, !tt.mergeOK, v.MergeReason != "")
+		})
+	}
+}
+
+func TestMergeBoxModes(t *testing.T) {
+	t.Parallel()
+	d := &repoData{repo: repoWithModes(domain.MergeModes()...)}
+	s := &Server{}
+
+	behind := s.mergeBox(d, 1, "feat", "abc", "", mergeabilityView(domain.Mergeability{State: domain.MergeabilityBehind, Behind: 1}, "main"))
+	require.Len(t, behind.Modes, 3)
+	assert.True(t, behind.Modes[0].Disabled, "fast-forward is not possible when behind")
+	assert.NotEmpty(t, behind.Modes[0].Reason)
+	assert.False(t, behind.Modes[1].Disabled)
+	assert.False(t, behind.Modes[2].Disabled)
+	assert.Equal(t, 1, behind.Checked(), "the first possible mode is checked")
+	assert.True(t, behind.CanMerge())
+	assert.True(t, behind.Signed)
+
+	conflict := s.mergeBox(d, 1, "feat", "abc", "", mergeabilityView(domain.Mergeability{State: domain.MergeabilityConflict}, "main"))
+	assert.False(t, conflict.CanMerge())
+	assert.NotEmpty(t, conflict.MergeTitle(), "the button says why it is disabled")
+	assert.Equal(t, 0, conflict.Checked())
+	assert.Contains(t, conflict.CLI.Lines[2], "--mode merge")
+	assert.NotContains(t, conflict.CLI.Lines[1], "--squash")
+}
+
+func TestMergeBoxOnlyFastForwardIsNotSigned(t *testing.T) {
+	t.Parallel()
+	d := &repoData{repo: repoWithModes(domain.MergeModeFastForward)}
+	b := (&Server{}).mergeBox(d, 1, "feat", "abc", "", mergeabilityView(domain.Mergeability{State: domain.MergeabilityUpToDate}, "main"))
+	assert.False(t, b.Signed, "no commit is created, nothing to explain")
+	assert.Len(t, b.Modes, 1)
+}
+
+func TestMergeBoxNamesTheSigningKey(t *testing.T) {
+	t.Parallel()
+	key := mocks.NewSigningKeyService(t)
+	key.EXPECT().Info().Return(domain.SigningKeyInfo{Key: domain.SigningPublicKey{Fingerprint: "SHA256:abc"}})
+	d := &repoData{repo: repoWithModes(domain.MergeModes()...)}
+	b := (&Server{cfg: Config{SigningKey: key}}).mergeBox(d, 1, "feat", "abc", "", mergeabilityView(domain.Mergeability{}, "main"))
+	assert.Equal(t, "SHA256:abc", b.Fingerprint)
+}
+
+func TestMergeErrorTravelsInTheContext(t *testing.T) {
+	t.Parallel()
+	assert.Empty(t, mergeErrorOf(context.Background()))
+	assert.Equal(t, "boom", mergeErrorOf(withMergeError(context.Background(), "boom")))
+}
+
+func TestMergeabilityLiveEvents(t *testing.T) {
+	t.Parallel()
+	assert.True(t, liveEvent(watchOf(domain.MergeRequestMergeability{Number: 1})))
+	svc := mocks.NewMergeRequestService(t)
+	svc.EXPECT().Mergeability(mock.Anything, mock.Anything, mock.Anything, int64(1)).
+		Return(domain.Mergeability{State: domain.MergeabilityBehind, Behind: 3}, nil)
+	l := liveStream{s: &Server{cfg: Config{MergeRequests: svc}}, repo: "demo", view: "mr", n: "1", target: "main"}
+	ctx := context.WithValue(context.Background(), signedInKey{}, struct{}{})
+
+	fs, err := l.repoPage(ctx, watchOf(domain.MergeRequestMergeability{Number: 1}))
+	require.NoError(t, err)
+	require.Len(t, fs, 1)
+	assert.Equal(t, "mr-mergeability", fs[0].event)
+	assert.Contains(t, fs[0].html, "Behind main by 3 commits")
+
+	// Another request, or a page that is not one: nothing.
+	fs, err = l.repoPage(ctx, watchOf(domain.MergeRequestMergeability{Number: 2}))
+	require.NoError(t, err)
+	assert.Empty(t, fs)
+	// The box is the owner's.
+	fs, err = l.repoPage(context.Background(), watchOf(domain.MergeRequestMergeability{Number: 1}))
+	require.NoError(t, err)
+	assert.Empty(t, fs)
+}

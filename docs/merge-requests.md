@@ -5,25 +5,63 @@ A merge request proposes a branch for a target (the default branch unless set).
 ```sh
 ermite mr create myrepo --source feature --title "Add feature"
 ermite mr show myrepo 1 --diff
-ermite mr merge myrepo 1 --head <commit> [--squash] [--delete-branch]
+ermite mr merge myrepo 1 --head <commit> [--mode fast-forward|squash|merge] [--delete-branch]
 ```
 
 `ermite mr create` and `ermite mr close` print a confirmation followed by the full
 merge request web URL on its own line. With `--json`, merge request objects
 (create, show, list, close and merge) include `url` alongside the other fields.
 
-- **Fast-forward** moves the target. **Squash** writes one commit signed by the server's SSH key.
-- The merge is refused when the branch moved since the reviewed `--head`, or when the target is not an ancestor of it.
+## Merge modes
+
+| Mode | Result | Needs |
+|---|---|---|
+| `fast-forward` (default) | the target moves to the head, no commit | the target is an ancestor of the head |
+| `squash` | one new commit with the merged tree, the target tip as only parent | the branch merges without conflicts |
+| `merge` | a merge commit with two parents, the target tip and the head | the branch merges without conflicts |
+
+- The server never rebases. A branch behind its target merges with `squash` or `merge`, or is rebased and pushed again for a fast-forward.
+- The server checks the mode again when it merges, whatever the badge showed, and refuses with the reason (the target moved, a conflict with the paths).
+- The merge is also refused when the branch moved since the reviewed `--head`.
 - With `failing_checks_block` on (default), the merge is refused while a check of the head failed or is still running.
-- `--delete-branch` deletes the source branch, unless it is the default branch or another open request uses it.
-- `ermite repo edit --merge-modes` limits the modes per repository.
+- The merge answers as soon as the target has moved. `--delete-branch` then deletes the source branch right after, in the background (unless it is the default branch or another open request uses it); if the branch moved meanwhile, it is kept.
+- Every mode is allowed by default, including in repositories that had only `fast-forward` and `squash` before `merge` existed: those gain `merge`. Disable a mode per repository with `ermite repo edit <repo> --merge-modes fast-forward,squash` (list the modes to keep).
 - Scopes: `mr:write` to open and comment, `mr:review` to give a verdict, `mr:merge` to merge.
 
-Verify squash commits with the `allowed_signers` line from `ermite signing-key show`:
+## Signed commits
+
+Squash and merge commits are signed by ermite's own key. The key is generated automatically the first time the server starts, belongs to the server, and its committer identity is `ERMITE_COMMITTER_NAME` / `ERMITE_COMMITTER_EMAIL`. `ermite signing-key show` prints its fingerprint and the `allowed_signers` line; use it to verify locally, or register the public key on GitHub or Forgejo.
 
 ```sh
-git verify-commit <commit>
+ermite signing-key show --allowed-signers > allowed_signers
+git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=allowed_signers verify-commit <commit>
 ```
+
+The merge box of the web page and the output of `mr merge --mode squash|merge` repeat this with the fingerprint.
+
+## Mergeability
+
+The server checks in the background whether each open request merges with its target, and again whenever the source or the target moves. `mr show` prints it; the web merge box shows it as a live badge; `ermite watch` reports each change.
+
+| State | Meaning | Modes possible |
+|---|---|---|
+| `checking` | no result yet for the current branches | none (wait) |
+| `up_to_date` | the target is an ancestor of the head | all |
+| `behind` | the head lacks `behind` commits of the target (`behind_capped`: at least 1000) but merges without conflicts | `squash`, `merge` |
+| `conflict` | the merge conflicts; up to 20 `conflict_paths` are listed (`conflict_paths_truncated` when there are more); no paths means no common history | none (rebase) |
+
+```sh
+ermite mr show myrepo 1
+# mergeability  behind by 2, merges without conflicts (squash or merge commit; fast-forward needs a rebase)
+```
+
+In `mr show --json`, `mergeability` holds `state`, `behind`, `behind_capped`, `conflict_paths`, `conflict_paths_truncated`, `target_id` and `head_id`; it is `null` unless the request is open. `ermite watch` prints `merge_request_mergeability` events when the state changes (not on every push):
+
+```text
+2026-10-19T14:00:00Z  merge_request_mergeability  myrepo!1 mergeability: behind by 2
+```
+
+In the web merge box a mode that is not possible is disabled with its reason, and the Merge button too when no mode is possible. A merge the server refuses (target moved, conflict, branch moved) shows the page again with the reason in the box.
 
 ## Notes
 

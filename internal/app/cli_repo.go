@@ -33,7 +33,7 @@ type jsonRepo struct {
 	DefaultBranch string   `json:"default_branch"`
 	CreatedAt     *string  `json:"created_at"`
 	PushedAt      *string  `json:"pushed_at"`
-	// MergeModes are the allowed merge modes ("fast-forward", "squash").
+	// MergeModes are the allowed merge modes ("fast-forward", "squash", "merge").
 	MergeModes         []string `json:"merge_modes"`
 	FailingChecksBlock bool     `json:"failing_checks_block"`
 	// Issues is the issue mode ("off", "owner" or "public").
@@ -114,8 +114,8 @@ func parseVisibility(s string) (ermite.Visibility, error) {
 const jsonRepoHelp = `
 JSON fields of a repository (--json): name, description, visibility ("public" or
 "private"), default_branch, created_at and pushed_at (RFC 3339 UTC; pushed_at is
-null until the first push), merge_modes (array of the allowed merge modes, "fast-forward" and/or
-"squash"), failing_checks_block (whether a failing check prevents a merge) and issues (the issue
+null until the first push), merge_modes (array of the allowed merge modes, "fast-forward", "squash" and/or
+"merge"), failing_checks_block (whether a failing check prevents a merge) and issues (the issue
 mode: "off", "owner" or "public").`
 
 func newRepoCmd(env *cliEnv) *cobra.Command {
@@ -315,7 +315,9 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 		Short: "Change a repository's description, topics, visibility, default branch, merge settings or issues",
 		Long: "Change the fields given as flags and leave the others alone; --description \"\" clears the\n" +
 			"description and --topics \"\" clears the topics. The default branch must already exist. --merge-modes lists the modes a merge request\n" +
-			"may be merged with (fast-forward, squash; default for a new repository: both), and\n" +
+			"may be merged with (fast-forward, squash, merge; every mode is allowed by default, so to disable one,\n" +
+			"list the others: --merge-modes fast-forward,squash disables the merge commit; squash and merge\n" +
+			"commits are signed with the server's key, see `ermite signing-key show`), and\n" +
 			"--failing-checks-block says whether a failing check prevents a merge (a failed or unfinished CI check of the head; see README, CI).\n" +
 			"--issues sets who may use issues: off (default), owner (the owner and tokens with issue:write) or\n" +
 			"public (visitors of a public repository may also propose issues through a moderated form).\nNeeds a server with the issues feature.\n" +
@@ -327,7 +329,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	cmd.Flags().StringSliceVar(&topics, "topics", nil, "new topics, comma-separated (empty clears them)")
 	cmd.Flags().StringVar(&visibility, "visibility", "", "new visibility: public or private")
 	cmd.Flags().StringVar(&defaultBranch, "default-branch", "", "short name of the new default branch")
-	cmd.Flags().StringSliceVar(&mergeModes, "merge-modes", nil, "allowed merge modes, comma-separated: fast-forward, squash")
+	cmd.Flags().StringSliceVar(&mergeModes, "merge-modes", nil, "allowed merge modes, comma-separated: fast-forward, squash, merge (all by default; list the ones to keep)")
 	cmd.Flags().BoolVar(&failingChecksBlock, "failing-checks-block", true, "a failing check prevents a merge (--failing-checks-block=false to allow it)")
 	cmd.Flags().StringVar(&issues, "issues", "", "issue mode: off, owner or public")
 	_ = cmd.RegisterFlagCompletionFunc("issues", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
@@ -335,7 +337,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	})
 	_ = cmd.RegisterFlagCompletionFunc("visibility", visibilityCompletion)
 	_ = cmd.RegisterFlagCompletionFunc("merge-modes", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-		return []string{modeFastForward, modeSquash}, cobra.ShellCompDirectiveNoFileComp
+		return []string{modeFastForward, modeSquash, modeMerge}, cobra.ShellCompDirectiveNoFileComp
 	})
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -400,7 +402,7 @@ func buildUpdateRepo(cmd *cobra.Command, name, description string, topics []stri
 			modes = append(modes, mode)
 		}
 		if len(modes) == 0 {
-			return nil, errors.New("--merge-modes must name at least one mode: fast-forward, squash")
+			return nil, errors.New("--merge-modes must name at least one mode: fast-forward, squash, merge")
 		}
 		req.Settings = &ermite.RepoSettings{AllowedMergeModes: modes}
 		paths = append(paths, "settings.allowed_merge_modes")

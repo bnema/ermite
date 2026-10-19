@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -122,6 +123,71 @@ type jsonMergeRequest struct {
 	MergeMode      string  `json:"merge_mode"`
 }
 
+// jsonMergeability is the stable JSON shape of the mergeability of an open
+// merge request.
+type jsonMergeability struct {
+	// State is "checking", "up_to_date", "behind" or "conflict".
+	State string `json:"state"`
+	// Behind counts the commits of the target the head lacks (behind only);
+	// BehindCapped says it is a lower bound.
+	Behind        int32    `json:"behind"`
+	BehindCapped  bool     `json:"behind_capped"`
+	ConflictPaths []string `json:"conflict_paths"`
+	// ConflictPathsTruncated says that more paths conflict than listed.
+	ConflictPathsTruncated bool   `json:"conflict_paths_truncated"`
+	TargetID               string `json:"target_id"`
+	HeadID                 string `json:"head_id"`
+}
+
+func mergeabilityName(s ermite.MergeabilityState) string {
+	switch s {
+	case ermite.MergeabilityState_MERGEABILITY_STATE_CHECKING:
+		return "checking"
+	case ermite.MergeabilityState_MERGEABILITY_STATE_UP_TO_DATE:
+		return "up_to_date"
+	case ermite.MergeabilityState_MERGEABILITY_STATE_BEHIND:
+		return "behind"
+	case ermite.MergeabilityState_MERGEABILITY_STATE_CONFLICT:
+		return "conflict"
+	}
+	return ""
+}
+
+// toJSONMergeability maps a mergeability; nil when the server sent none.
+func toJSONMergeability(m *ermite.Mergeability) *jsonMergeability {
+	if m == nil {
+		return nil
+	}
+	return &jsonMergeability{
+		State: mergeabilityName(m.GetState()), Behind: m.GetBehind(), BehindCapped: m.GetBehindCapped(),
+		ConflictPaths: append([]string{}, m.GetConflictPaths()...), ConflictPathsTruncated: m.GetConflictPathsTruncated(),
+		TargetID: m.GetTargetId(), HeadID: m.GetHeadId(),
+	}
+}
+
+// mergeabilityText is the human form of a mergeability: "up to date",
+// "behind by 2", "conflict (a, b, ...)", "checking".
+func mergeabilityText(m *jsonMergeability) string {
+	switch m.State {
+	case "up_to_date":
+		return "up to date with the target, can be fast-forwarded"
+	case "behind":
+		return fmt.Sprintf("behind by %d%s, merges without conflicts (squash or merge commit; fast-forward needs a rebase)", m.Behind, plus(m.BehindCapped))
+	case "conflict":
+		if len(m.ConflictPaths) == 0 {
+			return "conflict (no common history with the target), rebase needed"
+		}
+		more := ""
+		if m.ConflictPathsTruncated {
+			more = ", ..."
+		}
+		return "conflict (" + strings.Join(m.ConflictPaths, ", ") + more + "), rebase needed"
+	case "checking":
+		return "checking"
+	}
+	return m.State
+}
+
 // jsonMerged is the output of `mr merge --json`.
 type jsonMerged struct {
 	jsonMergeRequest
@@ -178,8 +244,14 @@ const jsonMRHelp = `
 JSON fields of a merge request (--json): repo, url (full web URL), number, title, description, source_branch,
 target_branch, state ("open", "merged" or "closed"), author (token label), created_at and
 updated_at (RFC 3339 UTC), head_id (the commit the source branch points to; empty when the
-branch is gone), merged_commit_id and merge_mode ("fast-forward" or "squash"; both empty
+branch is gone), merged_commit_id and merge_mode ("fast-forward", "squash" or "merge"; both empty
 unless merged).`
+
+const jsonMergeabilityHelp = `
+mr show --json adds mergeability, null unless the request is open: state ("checking", "up_to_date",
+"behind" or "conflict"), behind and behind_capped (commits of the target the head lacks; behind
+only), conflict_paths and conflict_paths_truncated (conflict only), target_id and head_id (the
+commits the result is for).`
 
 const jsonCommentHelp = `
 JSON fields of a comment: id, author, path, line and side ("old" or "new"; empty path, line 0
@@ -417,6 +489,8 @@ type jsonCommit struct {
 // jsonMRDetail is the stable JSON shape of `mr show --json`.
 type jsonMRDetail struct {
 	jsonMergeRequest
+	// Mergeability is null unless the request is open and the server computes it.
+	Mergeability     *jsonMergeability   `json:"mergeability"`
 	Commits          []jsonCommit        `json:"commits"`
 	CommitsTruncated bool                `json:"commits_truncated"`
 	DiffBaseID       string              `json:"diff_base_id"`
@@ -449,6 +523,7 @@ func lineKindName(k ermite.LineKind) string {
 func toJSONDetail(d *ermite.GetMergeRequestResponse, withDiff bool, baseURL string) jsonMRDetail {
 	out := jsonMRDetail{
 		jsonMergeRequest: toJSONMergeRequest(d.GetMergeRequest(), baseURL),
+		Mergeability:     toJSONMergeability(d.GetMergeRequest().GetMergeability()),
 		Commits:          []jsonCommit{}, CommitsTruncated: d.GetCommitsTruncated(),
 		DiffBaseID: d.GetDiffBaseId(),
 		Stats: jsonStats{
@@ -501,7 +576,9 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 			"--since-last-read shows the diff since the head recorded by --mark-read (or by the web) instead of\n" +
 			"the whole change; after a force-push it still works when the recorded commit exists, else the\n" +
 			"whole change is shown and the output says so. --mark-read records the head shown as read; it needs\n" +
-			"the mr:write scope." + jsonMRHelp + jsonCommentHelp + "\n" +
+			"the mr:write scope. The mergeability line says whether the branch merges with its target now: up to\n" +
+			"date (can be fast-forwarded), behind by N commits (merges without conflicts, squash or merge commit),\n" +
+			"or in conflict with the paths that conflict (rebase needed)." + jsonMRHelp + jsonMergeabilityHelp + jsonCommentHelp + "\n" +
 			"--json adds to the merge request fields: commits (id, author, summary), commits_truncated,\n" +
 			"diff_base_id (the commit the diff starts from), stats (files_changed, additions, deletions),\n" +
 			"diff_truncated, files (old_path, new_path, status, additions, deletions, binary, truncated and,\n" +
@@ -573,6 +650,9 @@ func printMRDetail(w io.Writer, d *ermite.GetMergeRequestResponse, withDiff, sin
 	}
 	if m.GetState() == ermite.MergeRequestState_MERGE_REQUEST_STATE_MERGED {
 		pairs = append(pairs, [2]string{"merged", orDash(m.GetMergedCommitId()) + " (" + modeName(m.GetMergeMode()) + ")"})
+	}
+	if mg := toJSONMergeability(m.GetMergeability()); mg != nil && m.GetState() == ermite.MergeRequestState_MERGE_REQUEST_STATE_OPEN {
+		pairs = append(pairs, [2]string{"mergeability", mergeabilityText(mg)})
 	}
 	if len(d.GetVerdicts()) > 0 {
 		var verdicts []string
@@ -962,34 +1042,49 @@ func newMRResolveCmd(env *cliEnv) *cobra.Command {
 }
 
 func newMRMergeCmd(env *cliEnv) *cobra.Command {
-	var squash, deleteBranch bool
+	var mode string
+	var deleteBranch bool
 	var head string
 	cmd := &cobra.Command{
 		Use:   "merge <repo> <number>",
 		Short: "Merge a merge request",
-		Long: "Merge an open merge request. The default is a fast-forward: the target branch moves to the head\n" +
-			"and no commit is created. --squash makes one new commit with the tree of the head and the target\n" +
-			"as only parent, signed by the server's key (see `ermite signing-key show`). The target must be an\n" +
-			"ancestor of the head, else rebase the branch and push it again; the repository settings may allow\n" +
-			"only one of the modes.\n\n" +
+		Long: "Merge an open merge request with --mode (default fast-forward; the repository settings may allow\n" +
+			"only some modes, see `ermite repo edit --merge-modes`):\n" +
+			"  fast-forward  the target branch moves to the head and no commit is created. The target must be\n" +
+			"                an ancestor of the head, else rebase the branch and push it again, or use another mode.\n" +
+			"  squash        one new commit with the tree of the merge of the head and the target, the target tip\n" +
+			"                as only parent. The branch must merge without conflicts.\n" +
+			"  merge         a merge commit with two parents, the target tip and the head. The branch must merge\n" +
+			"                without conflicts.\n" +
+			"A squash and a merge commit are signed with the server's own key, generated automatically when the\n" +
+			"server first starts; `ermite signing-key show` prints it. The server never rebases. `ermite mr show`\n" +
+			"prints the mergeability (up to date, behind, conflict); the server checks again when merging and\n" +
+			"refuses a merge that is not possible, saying why.\n\n" +
 			"The server merges only if the source branch still points to the head you reviewed, so --head is\n" +
 			"required: give the full id of the head that `ermite mr show <repo> <number>` printed when you\n" +
 			"reviewed the change. If the branch moved since, the merge is refused: review again. Needs the\n" +
 			"mr:merge scope.\n\n" +
-			"--delete-branch asks the server to delete the source branch right after the merge, in the\n" +
-			"background. The merge is refused when the branch is the default branch or used by another open\n" +
-			"merge request. If the deletion later fails (the branch moved, say), the merge stands and the\n" +
-			"branch is kept." + jsonMRHelp +
+			"The merge answers as soon as the target branch has moved. --delete-branch asks the server to delete\n" +
+			"the source branch right after, in the background. The merge is refused when the branch is the\n" +
+			"default branch or used by another open merge request. If the deletion later fails (the branch\n" +
+			"moved, say), the merge stands and the branch is kept." + jsonMRHelp +
 			"\n--json adds source_branch_deleted (true when the deletion was requested: the server deletes the branch right after the merge).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
-	cmd.Flags().BoolVar(&squash, "squash", false, "squash the branch into one signed commit instead of a fast-forward")
+	cmd.Flags().StringVar(&mode, "mode", modeFastForward, "merge mode: fast-forward, squash or merge (a merge commit)")
 	cmd.Flags().StringVar(&head, "head", "", "full id of the head you reviewed, from `ermite mr show` (required)")
 	cmd.Flags().BoolVar(&deleteBranch, "delete-branch", false, "delete the source branch after the merge")
+	_ = cmd.RegisterFlagCompletionFunc("mode", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{modeFastForward, modeSquash, modeMerge}, cobra.ShellCompDirectiveNoFileComp
+	})
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		n, err := parseNumber(args[1])
+		if err != nil {
+			return err
+		}
+		pbMode, err := parseMode(mode)
 		if err != nil {
 			return err
 		}
@@ -1003,12 +1098,13 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			return err
 		}
 		ctx := env.ctx(cmd)
-		mode := ermite.MergeMode_MERGE_MODE_FAST_FORWARD
-		if squash {
-			mode = ermite.MergeMode_MERGE_MODE_SQUASH
+		if pbMode == ermite.MergeMode_MERGE_MODE_MERGE_COMMIT {
+			if err := requireFeature(ctx, c, client.FeatureMergeability, "has no merge commit mode (--mode merge)"); err != nil {
+				return err
+			}
 		}
 		res, err := c.MergeRequests().MergeMergeRequest(ctx, connect.NewRequest(&ermite.MergeMergeRequestRequest{
-			Repo: args[0], Number: n, Mode: mode, HeadId: head, DeleteSourceBranch: deleteBranch,
+			Repo: args[0], Number: n, Mode: pbMode, HeadId: head, DeleteSourceBranch: deleteBranch,
 		}))
 		if err != nil {
 			return c.Describe(err)
@@ -1018,14 +1114,42 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 		if *asJSON {
 			return writeJSON(cmd.OutOrStdout(), jsonMerged{jsonMergeRequest: toJSONMergeRequest(m, c.URL()), SourceBranchDeleted: deleted})
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "merged %s!%d into %s (%s) at %s\n", clean(m.GetRepo()), m.GetNumber(),
+		out := cmd.OutOrStdout()
+		_, err = fmt.Fprintf(out, "merged %s!%d into %s (%s) at %s\n", clean(m.GetRepo()), m.GetNumber(),
 			clean(m.GetTargetBranch()), modeName(m.GetMergeMode()), shortID(m.GetMergedCommitId()))
+		if err == nil && pbMode != ermite.MergeMode_MERGE_MODE_FAST_FORWARD {
+			_, err = fmt.Fprintln(out, signedNote(ctx, c))
+		}
 		if err == nil && deleted {
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleting branch %s (done by the server after the merge)\n", clean(m.GetSourceBranch()))
+			_, err = fmt.Fprintf(out, "deleting branch %s (done by the server after the merge)\n", clean(m.GetSourceBranch()))
 		}
 		return err
 	}
 	return cmd
+}
+
+// signedNote says that a squash or merge commit is signed by the server's
+// key, with its fingerprint when the server tells it.
+func signedNote(ctx context.Context, c *client.Client) string {
+	const how = "; `ermite signing-key show` prints the key to verify it"
+	res, err := c.Server().GetSigningKey(ctx, connect.NewRequest(&ermite.GetSigningKeyRequest{}))
+	if err != nil || res.Msg.GetFingerprint() == "" {
+		return "the commit is signed by the server's key" + how
+	}
+	return "the commit is signed by the server's key " + clean(res.Msg.GetFingerprint()) + how
+}
+
+// requireFeature refuses to go on with a server that does not list the
+// feature. A server whose features cannot be read is refused too.
+func requireFeature(ctx context.Context, c *client.Client, feature, what string) error {
+	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	if err != nil {
+		return c.Describe(err)
+	}
+	if !slices.Contains(res.Msg.GetFeatures(), feature) {
+		return fmt.Errorf("the server does not support %s, so it %s (upgrade the server, see `ermite version`)", feature, what)
+	}
+	return nil
 }
 
 func newMRCloseCmd(env *cliEnv) *cobra.Command {

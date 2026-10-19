@@ -3,6 +3,8 @@
 package app
 
 import (
+	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -174,6 +176,53 @@ func TestMRShow(t *testing.T) {
 	assert.Contains(t, res.stderr, "head you last read is gone")
 }
 
+// The mergeability of an open request is a line of `mr show` and a field of
+// its JSON.
+func TestMRShowMergeability(t *testing.T) {
+	withState := func(mg *ermite.Mergeability) *ermite.GetMergeRequestResponse {
+		m := proto.Clone(mrOne).(*ermite.MergeRequest)
+		m.Mergeability = mg
+		return &ermite.GetMergeRequestResponse{MergeRequest: m}
+	}
+	var cur *ermite.GetMergeRequestResponse
+	f := &fakeAPI{getMR: func(*ermite.GetMergeRequestRequest) (*ermite.GetMergeRequestResponse, error) { return cur, nil }}
+	url := f.serve(t)
+	for _, tt := range []struct {
+		mg   *ermite.Mergeability
+		line string
+	}{
+		{&ermite.Mergeability{State: ermite.MergeabilityState_MERGEABILITY_STATE_UP_TO_DATE}, "up to date"},
+		{&ermite.Mergeability{State: ermite.MergeabilityState_MERGEABILITY_STATE_BEHIND, Behind: 1000, BehindCapped: true}, "behind by 1000+"},
+		{&ermite.Mergeability{State: ermite.MergeabilityState_MERGEABILITY_STATE_CONFLICT, ConflictPaths: []string{"a.txt", "b/c.go"}, ConflictPathsTruncated: true}, "conflict (a.txt, b/c.go, ...)"},
+		{&ermite.Mergeability{State: ermite.MergeabilityState_MERGEABILITY_STATE_CHECKING}, "checking"},
+	} {
+		cur = withState(tt.mg)
+		res := runCLI(t, envFor(url), "", "mr", "show", "alpha", "1").ok(t)
+		assert.Regexp(t, `(?m)^mergeability\s+.*`+regexp.QuoteMeta(tt.line), res.stdout)
+	}
+	cur = withState(&ermite.Mergeability{State: ermite.MergeabilityState_MERGEABILITY_STATE_BEHIND, Behind: 2, TargetId: headA})
+	res := runCLI(t, envFor(url), "", "mr", "show", "alpha", "1", "--json").ok(t)
+	var got struct {
+		Mergeability *struct {
+			State    string `json:"state"`
+			Behind   int    `json:"behind"`
+			TargetID string `json:"target_id"`
+		} `json:"mergeability"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(res.stdout), &got))
+	require.NotNil(t, got.Mergeability)
+	assert.Equal(t, "behind", got.Mergeability.State)
+	assert.Equal(t, 2, got.Mergeability.Behind)
+	assert.Equal(t, headA, got.Mergeability.TargetID)
+
+	// No mergeability (a merged request, or an older server): no line, null.
+	cur = withState(nil)
+	res = runCLI(t, envFor(url), "", "mr", "show", "alpha", "1").ok(t)
+	assert.NotContains(t, res.stdout, "mergeability")
+	res = runCLI(t, envFor(url), "", "mr", "show", "alpha", "1", "--json").ok(t)
+	assert.Regexp(t, `"mergeability":\s*null`, res.stdout)
+}
+
 func TestMRShowMarkRead(t *testing.T) {
 	f := &fakeAPI{
 		getMR: func(*ermite.GetMergeRequestRequest) (*ermite.GetMergeRequestResponse, error) {
@@ -252,6 +301,12 @@ func TestMRResolveMergeAndClose(t *testing.T) {
 		closeMR: func(*ermite.CloseMergeRequestRequest) (*ermite.CloseMergeRequestResponse, error) {
 			return &ermite.CloseMergeRequestResponse{MergeRequest: closed}, nil
 		},
+		getSigningKey: func(*ermite.GetSigningKeyRequest) (*ermite.GetSigningKeyResponse, error) {
+			return &ermite.GetSigningKeyResponse{Fingerprint: "SHA256:abc"}, nil
+		},
+		getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+			return &ermite.GetVersionResponse{Version: "test", Features: []string{"merge_requests.mergeability"}}, nil
+		},
 	}
 	url := f.serve(t)
 
@@ -265,15 +320,36 @@ func TestMRResolveMergeAndClose(t *testing.T) {
 	assert.False(t, reqs[1].(*ermite.ResolveCommentRequest).GetResolved())
 
 	// Merge with an explicit head and mode.
-	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--squash", "--head", headA).ok(t)
-	assert.Equal(t, "merged alpha!1 into main (squash) at dddddddddd\n", res.stdout)
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--mode", "squash", "--head", headA).ok(t)
+	assert.Equal(t, "merged alpha!1 into main (squash) at dddddddddd\n"+
+		"the commit is signed by the server's key SHA256:abc; `ermite signing-key show` prints the key to verify it\n", res.stdout)
 	assert.Empty(t, res.stderr)
 	calls, reqs := f.snapshot()
-	assert.Equal(t, []string{"ResolveComment", "ResolveComment", "MergeMergeRequest"}, calls, "an explicit head needs no read first")
+	assert.Equal(t, []string{"ResolveComment", "ResolveComment", "MergeMergeRequest", "GetSigningKey"}, calls, "an explicit head needs no read first; the signing key is for the note")
 	m := reqs[2].(*ermite.MergeMergeRequestRequest)
 	assert.Equal(t, ermite.MergeMode_MERGE_MODE_SQUASH, m.GetMode())
 	assert.Equal(t, headA, m.GetHeadId())
 	assert.EqualValues(t, 1, m.GetNumber())
+
+	// A merge commit, and a mode that does not exist.
+	merged.MergeMode = ermite.MergeMode_MERGE_MODE_MERGE_COMMIT
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--mode", "merge", "--head", headA).ok(t)
+	assert.Contains(t, res.stdout, "merged alpha!1 into main (merge) at dddddddddd\n")
+	assert.Contains(t, res.stdout, "signed by the server's key SHA256:abc")
+	_, reqs = f.snapshot()
+	var lastMerge *ermite.MergeMergeRequestRequest
+	for _, r := range reqs {
+		if mr, ok := r.(*ermite.MergeMergeRequestRequest); ok {
+			lastMerge = mr
+		}
+	}
+	require.NotNil(t, lastMerge)
+	assert.Equal(t, ermite.MergeMode_MERGE_MODE_MERGE_COMMIT, lastMerge.GetMode())
+	bad := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--mode", "rebase", "--head", headA)
+	require.Error(t, bad.err)
+	assert.Contains(t, bad.err.Error(), "invalid merge mode")
+	assert.Error(t, runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--squash", "--head", headA).err, "--squash is gone")
+	merged.MergeMode = ermite.MergeMode_MERGE_MODE_SQUASH
 
 	// The default mode is a fast-forward.
 	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--head", headA, "--json").ok(t)
@@ -299,7 +375,7 @@ func TestMRMergeNeedsTheHead(t *testing.T) {
 	url := f.serve(t)
 	for _, args := range [][]string{
 		{"mr", "merge", "alpha", "1"},
-		{"mr", "merge", "alpha", "1", "--squash"},
+		{"mr", "merge", "alpha", "1", "--mode", "squash"},
 		{"mr", "merge", "alpha", "1", "--head", "  "},
 	} {
 		res := runCLI(t, envFor(url), "", args...)

@@ -213,7 +213,7 @@ window.ermiteMR = (() => {
       const box = $('input[name="delete_branch"]', m);
       if (box) box.checked = !box.checked;
     } else {
-      radios[act.mode].checked = true;
+      if (!radios[act.mode].disabled) radios[act.mode].checked = true;
     }
     $('[data-default]', m)?.focus();
     return true;

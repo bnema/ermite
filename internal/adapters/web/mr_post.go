@@ -60,12 +60,53 @@ func (s *Server) mrAction(h func(ctx context.Context, r *http.Request) (to strin
 			return
 		}
 		to, back, err := h(ctx, r)
+		var re *rerender
+		if errors.As(err, &re) && s.rerenderMR(ctx, w, r, re) {
+			return
+		}
 		if err != nil {
 			s.actionFailed(ctx, w, r, err, back)
 			return
 		}
 		seeOther(w, r, to)
 	}
+}
+
+// rerender is the error of a merge the use case refused for a reason the
+// owner reads on the page of the request: the page is shown again, with the
+// status, and the reason in its merge box. Any other error keeps actionFailed.
+type rerender struct {
+	status int
+	msg    string
+	err    error
+}
+
+func (e *rerender) Error() string { return e.err.Error() }
+func (e *rerender) Unwrap() error { return e.err }
+
+type mergeErrorKey struct{}
+
+// withMergeError carries the reason of a refused merge to the page.
+func withMergeError(ctx context.Context, msg string) context.Context {
+	return context.WithValue(ctx, mergeErrorKey{}, msg)
+}
+
+func mergeErrorOf(ctx context.Context) string {
+	msg, _ := ctx.Value(mergeErrorKey{}).(string)
+	return msg
+}
+
+// rerenderMR writes the page of the request with the reason of the refusal.
+// It reports false when the page cannot be built; the caller then answers as
+// for any refused action.
+func (s *Server) rerenderMR(ctx context.Context, w http.ResponseWriter, r *http.Request, re *rerender) bool {
+	c, _, err := s.mrPage(withMergeError(ctx, re.msg), r, false)
+	if err != nil {
+		return false
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.write(ctx, w, r, re.status, c)
+	return true
 }
 
 // actionFailed answers a refused action.
@@ -322,8 +363,11 @@ func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, 
 		mode = domain.MergeModeFastForward
 	case "squash":
 		mode = domain.MergeModeSquash
+	case "merge":
+		mode = domain.MergeModeMerge
 	default:
-		return "", back, formError("mode must be fast-forward or squash")
+		err := formError("mode must be fast-forward, squash or merge")
+		return "", back, &rerender{status: http.StatusBadRequest, msg: err.Error(), err: err}
 	}
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
@@ -333,10 +377,18 @@ func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, 
 	if err != nil {
 		return "", back, err
 	}
-	if _, err := s.cfg.MergeRequests.Merge(ctx, principal(ctx), name, n, ports.MergeParams{
+	res, err := s.cfg.MergeRequests.Merge(ctx, principal(ctx), name, n, ports.MergeParams{
 		Mode: mode, HeadID: head, DeleteSource: r.PostFormValue("delete_branch") == "1",
-	}); err != nil {
+	})
+	switch {
+	case errors.Is(err, domain.ErrPreconditionFailed), errors.Is(err, domain.ErrConflict):
+		return "", back, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
+	case err != nil:
 		return "", back, err
+	}
+	if res.SourceDeleted {
+		// The deletion follows the answer: the page says it is being done.
+		return back + "?deleting=1", back, nil
 	}
 	return back, back, nil
 }

@@ -78,7 +78,22 @@
     & .d-btns { display: flex; margin-top: var(--s1); }
     & .d-btns .btn { flex: 1; justify-content: center; }
     & .d-draft { color: var(--ink-dim); }
+    & .d-note { margin: 0; color: var(--ink-dim); }
+    & .d-err { margin: 0; padding: var(--s2) var(--s3); color: var(--ink-hi); border: 1px solid var(--red); border-left-width: 3px; border-radius: var(--r-s); overflow-wrap: anywhere; }
+    /* the badge is a live slot, but not a banner */
+    & #mr-mergeability:not(:empty) { padding: 0; font-weight: normal; background: none; border: 0; display: grid; gap: var(--s1); }
+    & .mg-paths { margin: 0; padding-left: 2ch; max-height: 8em; overflow: auto; }
+    & .mg-paths code { overflow-wrap: anywhere; }
+    & .d-modes label:has(:disabled) { color: var(--ink-mute); cursor: not-allowed; }
+    & .d-modes label:has(:disabled):hover { background: none; }
+    & .btn:disabled { opacity: .5; cursor: not-allowed; }
   }
+  .badge[data-state] { display: inline-block; padding: 0 var(--s2); border: 1px solid var(--border-strong); border-radius: var(--r-s); font-weight: 600; color: var(--ink-hi); }
+  .badge[data-state="up_to_date"] { border-color: var(--teal); color: var(--teal); }
+  .badge[data-state="behind"] { border-color: var(--teal-2); }
+  .badge[data-state="conflict"] { border-color: var(--red); color: var(--red); }
+  .badge[data-state="checking"] { color: var(--ink-dim); border-style: dashed; }
+  .note[role="status"] { color: var(--ink-dim); }
   .omenu {
     & > summary { font-size: 18px; line-height: 1; }
     & .menu-pop { width: 280px; }

@@ -34,8 +34,8 @@ ermite serve
 |---|---|---|
 | `ERMITE_GIT` | `git` | git 2.45 or newer |
 | `ERMITE_GIT_READER` | `ermite-git` | `ermite-git` reads with the [ermite-git](https://github.com/bnema/ermite-git) library where it is faster, and falls back to `git`. `cli` uses `git` for every read: set it and restart if a read looks wrong |
-| `ERMITE_COMMITTER_NAME` | `ermite` | committer of squash merges |
-| `ERMITE_COMMITTER_EMAIL` | `ermite@<public host>` | committer email of squash merges |
+| `ERMITE_COMMITTER_NAME` | `ermite` | committer of squash and merge commits |
+| `ERMITE_COMMITTER_EMAIL` | `ermite@<public host>` | committer email of squash and merge commits |
 
 ## CI
 

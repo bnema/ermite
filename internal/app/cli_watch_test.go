@@ -200,6 +200,49 @@ func TestWatchMergeRequestEvents(t *testing.T) {
 	assert.Equal(t, "merge_request_closed", decode[eventOut](t, lines[3]).Type)
 }
 
+// A mergeability event shows the state, with how far behind or the paths.
+func TestWatchMergeabilityEvents(t *testing.T) {
+	mg := func(m *ermite.Mergeability) func(*ermite.Event) {
+		return func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestMergeability{MergeRequestMergeability: &ermite.MergeRequestMergeability{Repo: "alpha", Number: 1, Mergeability: m}}
+		}
+	}
+	events := []*ermite.WatchResponse{
+		evt("1", mg(&ermite.Mergeability{State: ermite.MergeabilityState_MERGEABILITY_STATE_UP_TO_DATE})),
+		evt("2", mg(&ermite.Mergeability{State: ermite.MergeabilityState_MERGEABILITY_STATE_BEHIND, Behind: 2})),
+		evt("3", mg(&ermite.Mergeability{State: ermite.MergeabilityState_MERGEABILITY_STATE_CONFLICT, ConflictPaths: []string{"a.txt", "b.txt"}})),
+	}
+	f := &fakeAPI{watch: finishing(events)}
+	url := f.serve(t)
+
+	res := runCLI(t, envFor(url), "", "watch")
+	require.Error(t, res.err)
+	assert.Equal(t, ""+
+		"2026-10-10T12:00:00Z  merge_request_mergeability  alpha!1 mergeability: up_to_date\n"+
+		"2026-10-10T12:00:00Z  merge_request_mergeability  alpha!1 mergeability: behind by 2\n"+
+		"2026-10-10T12:00:00Z  merge_request_mergeability  alpha!1 mergeability: conflict (a.txt, b.txt)\n", res.stdout)
+
+	res = runCLI(t, envFor(url), "", "watch", "--json")
+	lines := strings.Split(strings.TrimSpace(res.stdout), "\n")
+	require.Len(t, lines, 3)
+	var ev struct {
+		Type         string `json:"type"`
+		Number       int64  `json:"number"`
+		Mergeability struct {
+			State         string   `json:"state"`
+			Behind        int      `json:"behind"`
+			ConflictPaths []string `json:"conflict_paths"`
+		} `json:"mergeability"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(lines[1]), &ev))
+	assert.Equal(t, "merge_request_mergeability", ev.Type)
+	assert.EqualValues(t, 1, ev.Number)
+	assert.Equal(t, "behind", ev.Mergeability.State)
+	assert.Equal(t, 2, ev.Mergeability.Behind)
+	require.NoError(t, json.Unmarshal([]byte(lines[2]), &ev))
+	assert.Equal(t, []string{"a.txt", "b.txt"}, ev.Mergeability.ConflictPaths)
+}
+
 func TestNoteWatchEvents(t *testing.T) {
 	note := &ermite.Comment{Id: "4", ReplyTo: "2", StartLine: 10, Line: 24, Verdict: ermite.Verdict_VERDICT_APPROVE, EditedAt: ts("2026-10-10T12:00:00Z"), Deleted: true, Author: "owner"}
 	events := []*ermite.Event{

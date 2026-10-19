@@ -29,8 +29,8 @@ type jsonEvent struct {
 	MergeRequest *jsonMergeRequest `json:"merge_request,omitempty"`
 	Number       int64             `json:"number,omitempty"`
 	Comment      *jsonComment      `json:"comment,omitempty"`
-	// Mergeability is the state of a merge_request_mergeability event.
-	Mergeability string `json:"mergeability,omitempty"`
+	// Mergeability is set for a merge_request_mergeability event.
+	Mergeability *jsonMergeability `json:"mergeability,omitempty"`
 }
 
 type jsonRefUpdate struct {
@@ -99,7 +99,7 @@ func toJSONEvent(ev *ermite.Event, baseURL string) (jsonEvent, bool) {
 		out.Type, out.Repo, out.Number, out.Comment = eventCommentResolved, k.CommentResolved.GetRepo(), k.CommentResolved.GetNumber(), &c
 	case *ermite.Event_MergeRequestMergeability:
 		out.Type, out.Repo, out.Number = eventMRMergeability, k.MergeRequestMergeability.GetRepo(), k.MergeRequestMergeability.GetNumber()
-		out.Mergeability = k.MergeRequestMergeability.GetMergeability().GetState().String()
+		out.Mergeability = toJSONMergeability(k.MergeRequestMergeability.GetMergeability())
 	case *ermite.Event_Gap:
 		out.Type = eventGap
 	default:
@@ -133,11 +133,33 @@ func eventLine(e jsonEvent) string {
 	case eventCommentAdded, eventCommentEdited, eventCommentDeleted, eventCommentResolved:
 		detail = fmt.Sprintf("%s!%d by %s", e.Repo, e.Number, e.Comment.Author)
 	case eventMRMergeability:
-		detail = fmt.Sprintf("%s!%d %s", e.Repo, e.Number, e.Mergeability)
+		detail = fmt.Sprintf("%s!%d mergeability: %s", e.Repo, e.Number, mergeabilityEventText(e.Mergeability))
 	case eventGap:
 		detail = "events were lost, reload what you display"
 	}
 	return clean(ts + "  " + e.Type + "  " + detail)
+}
+
+// mergeabilityEventText is the short form of a mergeability for a watch line:
+// "up_to_date", "behind by 2", "conflict (a, b)", "checking".
+func mergeabilityEventText(m *jsonMergeability) string {
+	if m == nil {
+		return "unknown"
+	}
+	switch m.State {
+	case "behind":
+		return fmt.Sprintf("behind by %d%s", m.Behind, plus(m.BehindCapped))
+	case "conflict":
+		if len(m.ConflictPaths) == 0 {
+			return "conflict (no common history)"
+		}
+		more := ""
+		if m.ConflictPathsTruncated {
+			more = ", ..."
+		}
+		return "conflict (" + strings.Join(m.ConflictPaths, ", ") + more + ")"
+	}
+	return m.State
 }
 
 func refUpdateText(u jsonRefUpdate) string {

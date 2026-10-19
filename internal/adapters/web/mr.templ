@@ -2,7 +2,10 @@
 
 package web
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // MRList is the list of the merge requests of a repository: the open ones,
 // then the merged and closed ones.
@@ -145,6 +148,12 @@ templ MergeRequest(l Layout, p MRPage) {
 				</article>
 			}
 		</section>
+		if p.Deleting != "" {
+			<p class="note" role="status">merged. the branch { p.Deleting } is being deleted.</p>
+		}
+		if p.MergeError != "" {
+			<p class="d-err" role="alert">{ p.MergeError }</p>
+		}
 		@LiveSlot("mr-notice")
 		if p.Since != nil {
 			<nav class="since" aria-label="Diff range">
@@ -446,8 +455,13 @@ templ mrBar(p MRPage) {
 // mergeMenu is the merge of an open request, for the owner: the form (it
 // carries the head that was read), or "Ready for review" for a draft. The
 // mode and the branch deletion have keys (1-3, D) while it is open.
+//
+// The badge is a live slot (mr-mergeability); the modes and the button read
+// its data-* attributes (hx-live bindings), so that they follow the slot when
+// the stream replaces its content. The server renders the same state in the
+// attributes, for a page without scripts.
 templ mergeMenu(p MRPage) {
-	<details class="menu mmenu" id="merge-menu" data-state="open">
+	<details class="menu mmenu" id="merge-menu" data-state="open" open?={ p.Box.Error != "" }>
 		<summary class="btn primary" aria-keyshortcuts="Shift+M">
 			if p.Box.ReadyAction != "" {
 				Draft
@@ -469,19 +483,32 @@ templ mergeMenu(p MRPage) {
 				<dt>into</dt>
 				<dd>{ p.Target }</dd>
 			</dl>
+			if p.Box.Error != "" {
+				<p class="d-err" role="alert">{ p.Box.Error }</p>
+			}
 			if p.Box.ReadyAction != "" {
 				<p class="d-draft">this is a draft: it cannot be merged until it is ready for review.</p>
 				<form class="d-btns" method="post" action={ templ.SafeURL(p.Box.ReadyAction) }>
 					<button type="submit" class="btn primary" data-default title="remove the draft prefix from the title">Ready for review</button>
 				</form>
 			} else if !p.Box.HeadGone {
+				@mrMergeabilitySlot(p.Box.Mergeability)
 				<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.MergeAction) }>
 					<input type="hidden" name="head_id" value={ p.Box.Head }/>
 					<fieldset class="d-modes">
 						<legend class="sr">merge mode</legend>
 						for i, m := range p.Box.Modes {
 							<label>
-								<input type="radio" name="mode" value={ m.Value } checked?={ i == 0 }/>
+								<input
+									type="radio"
+									name="mode"
+									value={ m.Value }
+									checked?={ i == p.Box.Checked() }
+									disabled?={ m.Disabled }
+									title={ m.Reason }
+									:disabled="this.value === 'fast-forward' ? q('[data-mergeability]').data.ffOk !== true : q('[data-mergeability]').data.mergeOk !== true"
+									:title="this.value === 'fast-forward' ? q('[data-mergeability]').data.ffReason : q('[data-mergeability]').data.mergeReason"
+								/>
 								{ m.Label }
 								if i < 9 {
 									<kbd aria-hidden="true">{ itoa(i + 1) }</kbd>
@@ -489,16 +516,74 @@ templ mergeMenu(p MRPage) {
 							</label>
 						}
 					</fieldset>
+					if p.Box.Signed {
+						<p class="d-note" id="mr-signing">
+							squash and merge commits are signed with ermite's own key, generated automatically on first start.
+							if p.Box.Fingerprint != "" {
+								{ " " }key <code>{ p.Box.Fingerprint }</code>.
+							}
+							{ " " }<code>ermite signing-key show</code> prints the public key to verify them.
+						</p>
+					}
 					if p.Box.CanDeleteBranch {
 						<label class="d-check"><input type="checkbox" name="delete_branch" value="1"/> delete { p.Source } after the merge <kbd aria-hidden="true">D</kbd></label>
 					}
 					<div class="d-btns">
-						<button type="submit" class="btn primary" data-default>Merge into { p.Target }</button>
+						<button
+							type="submit"
+							class="btn primary"
+							data-default
+							disabled?={ !p.Box.CanMerge() }
+							title={ p.Box.MergeTitle() }
+							:disabled="!this.form.querySelector('input[name=mode]:checked:not(:disabled)')"
+							:title="(this.form.querySelector('input[name=mode]:checked') || {}).title || ''"
+						>Merge into { p.Target }</button>
 					</div>
 				</form>
 			}
 		</div>
 	</details>
+}
+
+// MRMergeability is the content of the mergeability slot: the badge, and the
+// state the controls of the merge box read.
+templ MRMergeability(v MergeabilityView) {
+	<span
+		data-mergeability
+		data-state={ v.State }
+		data-ff-ok={ strconv.FormatBool(v.FFOk) }
+		data-merge-ok={ strconv.FormatBool(v.MergeOk) }
+		data-ff-reason={ v.FFReason }
+		data-merge-reason={ v.MergeReason }
+	>
+		<span class="badge" data-state={ v.State }>{ v.Label }</span>
+		if v.Detail != "" {
+			{ " " }<span class="dim">{ v.Detail }</span>
+		}
+	</span>
+	if len(v.Paths) > 0 {
+		<ul class="mg-paths" aria-label="conflicting files">
+			for _, path := range v.Paths {
+				<li><code>{ path }</code></li>
+			}
+		</ul>
+	}
+	if v.PathsNote != "" {
+		<p class="dim">{ v.PathsNote }</p>
+	}
+}
+
+// mrMergeabilitySlot is the status region of the badge, with its content: the
+// stream replaces the children, never the element (see LiveSlot).
+templ mrMergeabilitySlot(v MergeabilityView) {
+	<div id="mr-mergeability" class="live-slot" role="status" data-slot>
+		@MRMergeability(v)
+	</div>
+}
+
+// MRMergeabilityFragment is the slot as the stream sends it.
+templ MRMergeabilityFragment(v MergeabilityView) {
+	@mrMergeabilitySlot(v)
 }
 
 // moreMenu is what else the owner does with an open request: mark the head

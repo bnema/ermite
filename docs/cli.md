@@ -54,10 +54,10 @@ ermite repo delete <name> [--yes]
 ermite token create <label> [--preset cli|agent|ci|runner] [--scope …] [--repo …] [--branch-prefix …] [--expires 30d]
 ermite token list | revoke <id>
 
-ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
+ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]   # show prints the mergeability: up to date, behind, conflict
 ermite mr comment <repo> <n> -m … [--path … --line N|A-B --side old|new] [--reply <id>] [--approve|--request-changes]
 ermite mr resolve <repo> <n> <comment> | edit-comment <repo> <n> <comment> -m … | delete-comment <repo> <n> <comment>
-ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
+ermite mr merge <repo> <n> --head <id> [--mode fast-forward|squash|merge] [--delete-branch] | close <repo> <n>
 
 ermite issue create <repo> --title … [--body … | --body-file …] | list <repo> [--state open|closed|all]
 ermite issue show <repo> <n> | comment <repo> <n> -m … | close <repo> <n> | reopen <repo> <n>
@@ -78,7 +78,7 @@ ermite environment create|list|delete … --repo <repo>
 ermite web login                         # one-time sign-in link (60 s)
 ermite web logout --all                  # sign every browser out
 ermite web passkey list | remove <id>
-ermite signing-key show                  # public key of squash commits
+ermite signing-key show                  # public key of squash and merge commits (server-signed)
 ermite oidc rotate-key
 ermite watch [repo] [--json]             # follow live events
 ermite version                           # client and server versions
@@ -90,7 +90,8 @@ Issues need a server with the `issues` feature and `ermite repo edit <repo> --is
 ## Output
 
 - `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list` and `version`.
-- `watch --json` prints one object per line.
+- `watch --json` prints one object per line. `merge_request_mergeability` events carry `mergeability` (`state`, `behind`, `conflict_paths`…) and print as `repo!n mergeability: behind by 2`.
+- `mr merge --mode squash|merge` creates a commit signed by the server's own key (generated on first start); the output names its fingerprint, `ermite signing-key show` prints the key. Every mode is allowed by default; `repo edit --merge-modes fast-forward,squash` disables `merge`.
 - Errors are one line on stderr (`ermite: …`) with exit status 1.
 - Shell completion completes repository names from the server.
 

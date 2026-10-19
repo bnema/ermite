@@ -37,9 +37,9 @@ git push https://git.example.com/<repo>.git main             # password = token,
 2. Read: `ermite mr show <repo> <n> --diff --json`. Keep `head_id`; take line numbers from the hunks.
 3. Comment on a line: `ermite mr comment <repo> <n> -m "text" --path <file> --line <n> --side new`; `--line 10-14` covers a range on one side. Without `--path` the comment is general. The line must appear in the diff. Notes are Markdown; `^N` refers to note N.
 4. End a review with a verdict (needs `mr:review`): `--approve` or `--request-changes`, alone or with a message. Verdicts are informative and cannot be edited; a new verdict replaces the previous one.
-5. Merge only when asked: `ermite mr merge <repo> <n> --head <head_id>`, with `--squash` for one commit signed by the server and `--delete-branch` to delete the source branch afterwards.
+5. Merge only when asked: `ermite mr merge <repo> <n> --head <head_id>`, with `--mode squash` for one commit or `--mode merge` for a merge commit (both signed by the server's key, see `ermite signing-key show`) and `--delete-branch` to delete the source branch afterwards.
 
-The merge is refused when the branch moved since `head_id` (review again) or when the target is not an ancestor of the head (rebase and push again). The repository may allow only one merge mode.
+The merge is refused when the branch moved since `head_id` (review again) or, for `fast-forward`, when the target is not an ancestor of the head (rebase and push again, or use `squash`/`merge`), or when `squash`/`merge` conflict. `ermite mr show` prints the `mergeability` line (up to date, behind by N, conflict with paths). The repository may allow only some merge modes.
 
 ### Act on a review
 

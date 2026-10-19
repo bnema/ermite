@@ -31,7 +31,7 @@ import (
 //	GET /-/events?topic=repo:<name>&view=summary|refs
 //	GET /-/events?topic=repo:<name>&view=commits&ref=<branch>&head=<sha>
 //	GET /-/events?topic=repo:<name>&view=mrs
-//	GET /-/events?topic=repo:<name>&view=mr&n=<number>&ref=<source branch>
+//	GET /-/events?topic=repo:<name>&view=mr&n=<number>&ref=<source branch>&target=<target branch>
 //	GET /-/events?topic=repo:<name>&view=issues
 //	GET /-/events?topic=repo:<name>&view=issue&n=<number>
 //	GET /-/events?topic=repo:<name>&view=actions
@@ -56,6 +56,10 @@ import (
 //	refs-list       data: <tbody id="ref-rows">…</tbody>, and again with
 //	                <dl id="refs-kv">…</dl>, the facts of the rail
 //	commits-head    data: <div id="commits-head">N new commits — reload</div>
+//	mr-mergeability data: <div id="mr-mergeability">…</div>, on the merge request pages:
+//	                the badge of the merge box (a slot like mr-notice), when the
+//	                mergeability of the request shown settles or a push moves its
+//	                source or target
 //	mr-notice       data: <div id="mr-notice">…</div>, on the merge request and issue pages:
 //	                something changed, with the link that reloads the page
 //	ci-run          data: <tr id="run-<id>">…</tr> (the list of runs),
@@ -254,7 +258,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), job: q.Get("job"), sha: sha}
+	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), target: q.Get("target"), job: q.Get("job"), sha: sha}
 	if topic == ownerTopic {
 		st.filter = q.Get("repo")
 	}

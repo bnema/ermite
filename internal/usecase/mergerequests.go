@@ -440,6 +440,28 @@ func (m *MergeRequests) CountOpen(ctx context.Context, p domain.Principal, name 
 	return n, nil
 }
 
+// Mergeability implements ports.MergeRequestService: the mergeability of an
+// open merge request for the current tips, queued when there is no up-to-date
+// result. It is the zero value for a request that is not open, or without a
+// mergeability service.
+func (m *MergeRequests) Mergeability(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Mergeability, error) {
+	_, mr, err := m.get(ctx, p, name, number)
+	if err != nil {
+		return domain.Mergeability{}, err
+	}
+	if m.mergeab == nil || !mr.IsOpen() {
+		return domain.Mergeability{}, nil
+	}
+	if mr, err = m.withHead(ctx, mr); err != nil {
+		return domain.Mergeability{}, err
+	}
+	tip, err := m.branchOrZero(ctx, name, mr.Target)
+	if err != nil {
+		return domain.Mergeability{}, err
+	}
+	return m.mergeab.Read(ctx, mr, tip), nil
+}
+
 func encodeMRToken(last domain.MergeRequest) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(mrTokenPrefix + strconv.FormatInt(last.Number, 10)))
 }

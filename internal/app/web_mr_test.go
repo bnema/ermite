@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -165,12 +166,15 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	assert.Equal(t, head, formHead(t, own.body))
 	assert.Contains(t, own.body, `action="/proj/merge-requests/1/merge"`)
 	assert.Contains(t, own.body, `id="merge-menu"`, "the merge is a menu of the bar above the diff")
-	assert.Contains(t, own.body, `<input type="radio" name="mode" value="fast-forward" checked>`, "the first mode is the default")
-	assert.Contains(t, own.body, `<input type="radio" name="mode" value="squash">`)
+	assert.Contains(t, own.body, `name="mode" value="fast-forward" checked`, "the first possible mode is the default")
+	assert.Contains(t, own.body, `name="mode" value="squash"`)
+	assert.Contains(t, own.body, `name="mode" value="merge"`, "every mode is allowed by default")
 	assert.Contains(t, own.body, "ermite mr merge proj 1 --head "+head)
 	assert.Contains(t, own.body, `name="delete_branch" value="1"> delete feat/search after the merge <kbd aria-hidden="true">D</kbd>`)
 	assert.NotContains(t, own.body, `name="delete_branch" value="1" checked>`, "unchecked by default")
-	assert.Contains(t, own.body, "ermite mr merge proj 1 --head "+head+" --squash")
+	assert.Contains(t, own.body, "ermite mr merge proj 1 --head "+head+" --mode squash")
+	assert.Contains(t, own.body, "ermite mr merge proj 1 --head "+head+" --mode merge")
+	assert.NotContains(t, own.body, "--squash")
 	assert.Contains(t, own.body, `action="/proj/merge-requests/1/comments"`)
 	assert.Contains(t, own.body, `action="/proj/merge-requests/1/close"`)
 	assert.Contains(t, own.body, `href="/proj/merge-requests/1?on=new:1:search.go#f`, "line numbers link to their form")
@@ -573,8 +577,7 @@ func TestWebMergeRequestEvents(t *testing.T) {
 	r := newMRRepo(t, domain.VisibilityPublic)
 	list := r.sse("topic=repo:proj&view=mrs", "")
 	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Secret <title>").ok(t)
-	ev := list.next(t, watchWait)
-	assert.Equal(t, "mr-notice", ev.name)
+	ev := nextNamed(t, list, "mr-notice")
 	assert.Contains(t, ev.data, `<div id="mr-notice" class="live-slot" role="status" data-slot>`)
 	assert.Contains(t, ev.data, `href="/proj/merge-requests"`)
 	assert.NotContains(t, ev.data, "Secret")
@@ -582,19 +585,18 @@ func TestWebMergeRequestEvents(t *testing.T) {
 	one := r.sse("topic=repo:proj&view=mr&n=1&ref=feat/search", "")
 	other := r.sse("topic=repo:proj&view=mr&n=2&ref=feat/other", "")
 	r.cli(t, adminToken, "mr", "comment", "proj", "1", "-m", "private words").ok(t)
-	ev = one.next(t, watchWait)
-	assert.Equal(t, "mr-notice", ev.name)
+	ev = nextNamed(t, one, "mr-notice")
 	assert.Contains(t, ev.data, "a comment was added")
 	assert.Contains(t, ev.data, `href="/proj/merge-requests/1"`)
 	assert.NotContains(t, ev.data, "private words")
 
 	r.writeFile(r.wt, "more.txt", []byte("more\n"))
 	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
-	ev = one.next(t, watchWait)
+	ev = nextNamed(t, one, "mr-notice")
 	assert.Contains(t, ev.data, "the branch changed")
 
 	r.cli(t, adminToken, "mr", "close", "proj", "1").ok(t)
-	assert.Contains(t, one.next(t, watchWait).data, "was closed")
+	assert.Contains(t, nextNamed(t, one, "mr-notice").data, "was closed")
 
 	// A page of another request hears nothing of this one.
 	for drained := false; !drained; {
@@ -607,7 +609,20 @@ func TestWebMergeRequestEvents(t *testing.T) {
 			drained = true
 		}
 	}
-	assert.Contains(t, r.get1("/proj/merge-requests/1"), `hx-sse:connect="/-/events?topic=repo%3Aproj&amp;view=mr&amp;n=1&amp;ref=feat%2Fsearch&amp;head=`+r.headOf("feat/search")+`"`)
+	assert.Contains(t, r.get1("/proj/merge-requests/1"), `hx-sse:connect="/-/events?topic=repo%3Aproj&amp;view=mr&amp;n=1&amp;ref=feat%2Fsearch&amp;head=`+r.headOf("feat/search")+`&amp;target=main"`)
+}
+
+// nextNamed returns the next event that carries the fragment event: the
+// events that change nothing on the page (an id alone) are skipped.
+func nextNamed(t *testing.T, s *sseStream, name string) sseEvent {
+	t.Helper()
+	for range 10 {
+		if ev := s.next(t, watchWait); ev.name == name {
+			return ev
+		}
+	}
+	t.Fatalf("no %s event", name)
+	return sseEvent{}
 }
 
 func (r *mrRepo) get1(path string) string {
@@ -726,3 +741,175 @@ func TestWebMergeRequestFileWindows(t *testing.T) {
 }
 
 var reWindowSrc = regexp.MustCompile(`data-src="([^"]*from=25[^"]*)"`)
+
+// advanceMain pushes a commit to main that the feature branch lacks. file is
+// the file it adds (give search.go to conflict with the feature branch).
+func (r *mrRepo) advanceMain(file, content string) {
+	r.t.Helper()
+	r.mustGit(r.wt, "checkout", "-q", "main")
+	r.writeFile(r.wt, file, []byte(content))
+	r.mustGit(r.wt, "push", "-q", r.url, "main")
+	r.mustGit(r.wt, "checkout", "-q", "feat/search")
+}
+
+// mrPageWith polls the owner's page of !1 until it contains want.
+func (r *mrRepo) mrPageWith(token, want string) string {
+	r.t.Helper()
+	var body string
+	require.Eventually(r.t, func() bool {
+		body = browser{r.harness}.get("/proj/merge-requests/1", as(token)).body
+		return strings.Contains(body, want)
+	}, 10*time.Second, 25*time.Millisecond, "the page never showed %q", want)
+	return body
+}
+
+// The merge box shows the mergeability of the request: ready, then behind
+// (fast-forward is disabled with its reason, the other modes are not), then
+// in conflict (no mode is possible and the button says why).
+func TestWebMergeRequestMergeabilityBadge(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Add search").ok(t)
+
+	body := r.mrPageWith(token, "Ready to merge")
+	assert.Contains(t, body, `<div id="mr-mergeability" class="live-slot" role="status" data-slot>`)
+	assert.Contains(t, body, `data-state="up_to_date"`)
+	assert.Contains(t, body, `name="mode" value="fast-forward" checked`)
+	assert.NotContains(t, body, `value="fast-forward" checked disabled`)
+	assert.Contains(t, body, `id="mr-signing"`, "squash and merge commits say who signs them")
+	assert.Contains(t, body, "signed with ermite's own key, generated automatically on first start")
+	assert.Contains(t, body, "<code>ermite signing-key show</code>")
+	assert.Contains(t, body, "SHA256:", "the fingerprint of the signing key")
+	assert.Contains(t, body, `:disabled="`, "the controls follow the badge")
+	assertNoInline(t, body)
+
+	// Main moves on: the branch is behind by one commit and merges cleanly.
+	r.advanceMain("other.txt", "other\n")
+	body = r.mrPageWith(token, "Behind main by 1 commit")
+	assert.Contains(t, body, "merges without conflicts")
+	assert.Contains(t, body, `data-ff-ok="false"`)
+	assert.Contains(t, body, `data-merge-ok="true"`)
+	assert.Regexp(t, `<input type="radio" name="mode" value="fast-forward"[^>]* disabled`, body)
+	assert.Contains(t, body, `title="behind the target: rebase or use squash/merge"`)
+	assert.Regexp(t, `name="mode" value="squash" checked`, body, "the first possible mode is checked")
+	assert.NotRegexp(t, `name="mode" value="squash"[^>]* disabled`, body)
+
+	// A conflicting change to main: every mode is disabled and the files are listed.
+	r.mustGit(r.wt, "checkout", "-q", "main")
+	r.writeFile(r.wt, "search.go", []byte("package other\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "main")
+	body = r.mrPageWith(token, "Conflicts with main")
+	assert.Contains(t, body, "rebase needed")
+	assert.Contains(t, body, `<ul class="mg-paths" aria-label="conflicting files"><li><code>search.go</code></li></ul>`)
+	assert.Regexp(t, `<button type="submit" class="btn primary" data-default disabled title="conflicts with the target"`, body)
+	assert.NotContains(t, body, `name="mode" value="squash" checked`)
+
+	// The server refuses it too, and says so in the box of the page.
+	res := browser{r.harness}.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"squash"}, "head_id": {formHead(t, body)}})
+	assert.Equal(t, http.StatusConflict, res.status)
+	assert.Contains(t, res.body, `<p class="d-err" role="alert">`)
+	assert.Contains(t, res.body, "conflicts with main")
+}
+
+// A merge the server refuses (the target moved after the page was read) shows
+// the page of the request again, 409, with the reason in its merge box.
+func TestWebMergeRequestInlineMergeError(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Add search").ok(t)
+	body := r.mrPageWith(token, "Ready to merge")
+	head := formHead(t, body)
+
+	r.advanceMain("other.txt", "other\n") // raced: the form below still says fast-forward
+	res := b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"fast-forward"}, "head_id": {head}})
+	assert.Equal(t, http.StatusConflict, res.status)
+	assert.Equal(t, "no-store", res.hdr.Get("Cache-Control"))
+	assert.Contains(t, res.body, `id="merge-menu"`, "the page of the request, not a state page")
+	assert.Contains(t, res.body, `<p class="d-err" role="alert">`)
+	assert.Contains(t, res.body, "the target has moved")
+	assert.Contains(t, res.body, `<details class="menu mmenu" id="merge-menu" data-state="open" open>`, "the box is open on the error")
+	assert.Equal(t, head, r.headOf("feat/search"))
+	assert.NotContains(t, b.get("/proj/merge-requests/1", as(token)).body, "d-err", "a reload shows no error")
+
+	// A head that moved is refused the same way.
+	r.writeFile(r.wt, "more.txt", []byte("more\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+	res = b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"squash"}, "head_id": {head}})
+	assert.Equal(t, http.StatusConflict, res.status)
+	assert.Contains(t, res.body, `<p class="d-err" role="alert">`)
+	assert.Contains(t, res.body, "branch moved")
+
+	// Other refusals keep the state page; a mode that does not exist is a 400.
+	assert.Equal(t, http.StatusBadRequest, b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"rebase"}, "head_id": {head}}).status)
+}
+
+// A merge commit through the page; with the branch deletion requested the
+// merged page says the branch is being deleted, not that it is gone.
+func TestWebMergeRequestMergeCommitAndDeletingNote(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Add search").ok(t)
+	r.advanceMain("other.txt", "other\n")
+	body := r.mrPageWith(token, "Behind main by 1 commit")
+	head := formHead(t, body)
+	main0 := r.headOf("main")
+
+	res := b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"merge"}, "head_id": {head}, "delete_branch": {"1"}})
+	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	assert.Equal(t, "/proj/merge-requests/1?deleting=1", res.hdr.Get("Location"))
+	merged := r.headOf("main")
+	assert.Equal(t, main0, r.bareGit("proj", "rev-parse", merged+"^1"))
+	assert.Equal(t, head, r.bareGit("proj", "rev-parse", merged+"^2"))
+	assert.Contains(t, r.bareGit("proj", "cat-file", "-p", merged), "gpgsig")
+	page := b.get("/proj/merge-requests/1?deleting=1", as(token))
+	assert.Contains(t, page.body, "merge commit")
+	if strings.Contains(page.body, "is being deleted") {
+		assert.Contains(t, page.body, "feat/search is being deleted")
+	}
+	assert.NotContains(t, page.body, "is deleted")
+	r.forge.MergeRequests.Wait(r.ctx)
+	assert.Empty(t, r.bareGit("proj", "for-each-ref", "refs/heads/feat/search"))
+	assert.NotContains(t, b.get("/proj/merge-requests/1?deleting=1", as(token)).body, "is being deleted", "once gone, nothing is being deleted")
+}
+
+// The badge follows the request live: a push to the target turns the fragment
+// of the page to "checking" or "behind", and the settled result follows.
+func TestWebMergeRequestMergeabilityLive(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	token := r.signIn(t)
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Add search").ok(t)
+	r.mrPageWith(token, "Ready to merge")
+
+	one := r.sseAs("topic=repo:proj&view=mr&n=1&ref=feat/search&target=main", "", as(token))
+	anon := r.sse("topic=repo:proj&view=mr&n=1&ref=feat/search&target=main", "")
+	r.advanceMain("other.txt", "other\n")
+	deadline := time.After(watchWait)
+	for done := false; !done; {
+		ev := nextNamed(t, one, "mr-mergeability")
+		select {
+		case <-deadline:
+			t.Fatal("the badge never showed the result")
+		default:
+		}
+		if strings.Contains(ev.data, "Behind main by 1 commit") {
+			assert.Contains(t, ev.data, `<div id="mr-mergeability" class="live-slot" role="status" data-slot>`)
+			assert.Contains(t, ev.data, `data-ff-ok="false"`)
+			assert.Contains(t, ev.data, `data-merge-ok="true"`)
+			done = true
+		} else {
+			assert.Contains(t, ev.data, "Checking…", "before the result, the badge says it checks")
+		}
+	}
+	// The box is the owner's: a visitor's stream carries no badge.
+	for {
+		select {
+		case ev := <-anon.events:
+			assert.NotEqual(t, "mr-mergeability", ev.name)
+			continue
+		default:
+		}
+		break
+	}
+}

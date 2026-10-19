@@ -11,7 +11,7 @@ Errors are one line on standard error (`ermite: ...`) with exit status 1. `--jso
 | `repo list [--json]` | none | repositories you can see |
 | `repo show <name> [--json]` | none | |
 | `repo create <name> [--description TEXT] [--visibility public]` | `repo:write` | private by default |
-| `repo edit <name> [--description TEXT] [--visibility V] [--default-branch B] [--merge-modes fast-forward,squash] [--failing-checks-block=false]` | `repo:admin` | only the given flags change; `--description ""` clears it; the branch must exist |
+| `repo edit <name> [--description TEXT] [--visibility V] [--default-branch B] [--merge-modes fast-forward,squash,merge] [--failing-checks-block=false]` | `repo:admin` | only the given flags change; every merge mode is allowed by default, list the ones to keep; `--description ""` clears it; the branch must exist |
 | `repo delete <name> [--yes]` | `repo:admin` | |
 
 Repository JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before the first push), `merge_modes`, `failing_checks_block`.
@@ -56,12 +56,12 @@ A token can never grant more than the token that creates it. `--repo` (repeatabl
 |---|---|---|
 | `mr create <repo> --source B --title T [--target B] [--description TEXT\|-]` | `mr:write` | target defaults to the default branch; title of 120 characters max; `-` reads standard input |
 | `mr list <repo> [--state open\|merged\|closed\|all] [--json]` | none | default `open` |
-| `mr show <repo> <n> [--diff] [--since-last-read] [--mark-read] [--json]` | `mr:write` for `--mark-read` | commits, changed files and comments; `--diff` adds hunks with line numbers |
+| `mr show <repo> <n> [--diff] [--since-last-read] [--mark-read] [--json]` | `mr:write` for `--mark-read` | commits, changed files and comments; `--diff` adds hunks with line numbers; the `mergeability` line (JSON `mergeability`, null unless open) is `up_to_date`, `behind` (N commits, merges cleanly), `conflict` (paths) or `checking` |
 | `mr comment <repo> <n> -m TEXT\|- [--path P --line N\|A-B --side old\|new] [--reply ID] [--approve\|--request-changes]` | `mr:write`; verdicts `mr:review` | Markdown note (8000 characters max); the lines must be in the current diff on one side; a deleted file uses its old path; `--reply` takes a root note (`12`, `#12` or `^12`), inherits its anchor and cannot carry a verdict; a verdict note may have no message |
 | `mr edit-comment <repo> <n> <comment-id> -m TEXT\|-` | `mr:write` | author only, open merge request; the verdict is unchanged |
 | `mr delete-comment <repo> <n> <comment-id>` | `mr:write` | author only; the text is lost, the verdict is kept |
 | `mr resolve <repo> <n> <comment-id> [--undo]` | `mr:write` | on the thread root, covers its replies; doing it twice is not an error |
-| `mr merge <repo> <n> --head <full-id> [--squash] [--delete-branch]` | `mr:merge` | refused if the branch moved or the target is not an ancestor of the head; `--delete-branch` deletes the source after the merge (refused for the default branch or a branch another open request uses; JSON adds `source_branch_deleted`) |
+| `mr merge <repo> <n> --head <full-id> [--mode fast-forward\|squash\|merge] [--delete-branch]` | `mr:merge` | refused if the branch moved, if `fast-forward` and the target is not an ancestor of the head (behind: use `squash` or `merge`), or if `squash`/`merge` conflict; squash and merge commits are signed by the server key (`signing-key show`); answers once the target moved; `--delete-branch` deletes the source after the merge (refused for the default branch or a branch another open request uses; JSON adds `source_branch_deleted`) |
 | `mr close <repo> <n>` | `mr:write` | a closed merge request cannot be reopened |
 
 `ermite mr create` and `ermite mr close` print a confirmation followed by the full
@@ -106,6 +106,7 @@ Workflow JSON: `repo`, `file` (always `.github/workflows/<file>`), `name` (the `
 | `repo_created`, `repo_updated`, `repo_deleted` | `repo`, `repository` |
 | `pushed` | `repo`, `ref_updates` (`ref`, `old_id`, `new_id`; an empty id means created or deleted) |
 | `merge_request_opened`, `merge_request_merged`, `merge_request_closed` | `repo`, `merge_request` |
+| `merge_request_mergeability` | `repo`, `number`, `mergeability` (`state`: `checking`, `up_to_date`, `behind`, `conflict`; `behind`, `behind_capped`, `conflict_paths`, `conflict_paths_truncated`); sent when the state changes |
 | `comment_added`, `comment_edited`, `comment_deleted`, `comment_resolved` | `repo`, `number`, `comment` (a verdict note has `verdict` set) |
 | `gap` | none: events were lost, reload the state |
 
@@ -116,7 +117,7 @@ Workflow JSON: `repo`, `file` (always `.github/workflows/<file>`), `name` (the `
 | `serve` | configured by `ERMITE_*` environment variables only (see the project README) |
 | `version [--json]` | client version; with a server URL (`ERMITE_URL` or the config file), the server version and features |
 | `config show [--json]` / `config set <url\|token.cmd> <value>` / `config unset <key>` | the CLI config file; `token.cmd` is a command that prints the token (any secret manager), never the token itself; `show` never runs it |
-| `signing-key show` | public key and `allowed_signers` line to check squash commits with `git verify-commit` |
+| `signing-key show` | public key and `allowed_signers` line to check squash and merge commits with `git verify-commit` |
 | `signing-key trust list [--json]` | keys commit signatures are checked against (the server key first) |
 | `signing-key trust add --format ssh\|gpg --title <t> --email <e>... <file\|->` / `trust remove <id>` | owner only; a commit shows verified when its committer email is listed for the key |
 | `web login [--json]` | one-time sign-in link (about 60 s); needs the admin token or a token with every scope, no repository list and no branch prefix; the link is a secret |

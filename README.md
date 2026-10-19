@@ -122,7 +122,7 @@ ermite mr show myrepo 1 --since-last-read --mark-read
 **5. You merge** (or click Merge in the web interface):
 
 ```sh
-ermite mr merge myrepo 1 --head <head id> --squash --delete-branch
+ermite mr merge myrepo 1 --head <head id> --mode squash --delete-branch
 ```
 
 Give the agent the [`skills/ermite`](skills/ermite/SKILL.md) skill so it knows the CLI. Rules of agent tokens: [docs/tokens.md](docs/tokens.md).

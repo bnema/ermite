@@ -33,6 +33,7 @@ func TestLiveSlotsAreStableStatusRegions(t *testing.T) {
 	}{
 		{"empty commits slot", LiveSlot("commits-head"), "commits-head", ""},
 		{"empty mr slot", LiveSlot("mr-notice"), "mr-notice", ""},
+		{"mergeability slot, as sent by the stream", MRMergeabilityFragment(MergeabilityView{State: "up_to_date", Label: "Ready to merge", FFOk: true, MergeOk: true}), "mr-mergeability", "Ready to merge"},
 		{"commits banner", CommitsBanner("2 new commits — reload", "/x/commits/main"), "commits-head", "2 new commits — reload"},
 		{"mr notice", MRNotice("a comment was added — reload", "/x/merge-requests/1"), "mr-notice", "a comment was added — reload"},
 	} {

@@ -76,6 +76,10 @@ type Config struct {
 	// leads to it. Without it there is neither. Leave it unset rather than
 	// assigning a typed nil pointer.
 	Inbox ports.InboxService
+	// SigningKey tells the key that signs the squash and merge commits, shown
+	// in the merge box. Without it the box does not name the key. Leave it
+	// unset rather than assigning a typed nil pointer.
+	SigningKey ports.SigningKeyService
 	// Runs serves the CI pages (/<repo>/actions) and the checks shown next to
 	// commits and merge requests. Without it there are no such pages. Leave it
 	// unset rather than assigning a typed nil pointer.
