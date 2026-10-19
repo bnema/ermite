@@ -135,6 +135,16 @@ type SortLink struct {
 type HomePage struct {
 	Sorts []SortLink
 	Rows  []HomeRow
+	// Inbox is the button to the owner's inbox; nil unless the owner is signed
+	// in.
+	Inbox *InboxButton
+}
+
+// InboxButton is the link to the inbox with the number of open items; Count is
+// negative when it could not be read.
+type InboxButton struct {
+	Href  string
+	Count int
 }
 
 // Fact is one key/value row of the facts block.

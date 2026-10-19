@@ -21,11 +21,13 @@ import (
 type liveStream struct {
 	s    *Server
 	repo string // "" on the home page
-	view string // "summary", "refs" or "commits"
-	ref  string // commits: the branch listed
-	head string // commits: the commit listed first
-	n    string // mr: the number of the merge request shown; run: the run id
-	job  string // job: the id of the job shown
+	// filter is the repository the inbox is filtered on, "" for all.
+	filter string
+	view   string // "summary", "refs" or "commits"
+	ref    string // commits: the branch listed
+	head   string // commits: the commit listed first
+	n      string // mr: the number of the merge request shown; run: the run id
+	job    string // job: the id of the job shown
 	// sha is the commit of the run of the job shown, read once when the stream
 	// is set up: the annotations link to files at it, and it never changes.
 	sha string
@@ -74,6 +76,9 @@ func (l *liveStream) render(ctx context.Context, we ports.WatchEvent) ([]fragmen
 	}
 	if we.Event == nil {
 		return nil, nil
+	}
+	if l.view == "inbox" {
+		return l.inbox(ctx, we)
 	}
 	if l.repo == "" {
 		return l.home(ctx, we)

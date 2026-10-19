@@ -121,6 +121,9 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 		p.Sorts = append(p.Sorts, sl)
 	}
 	p.Rows = s.homeRows(ctx, repos, now)
+	if n, show := s.inboxCount(ctx); show {
+		p.Inbox = &InboxButton{Href: inboxPath, Count: n}
+	}
 
 	l := s.base()
 	l.Title = s.instance

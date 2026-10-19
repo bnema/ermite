@@ -186,6 +186,15 @@
   }
   #mr-notice:empty { display: none; }
 
+  /* the owner's inbox: counters, repository filter, then the two lists */
+  .inbox {
+    display: flex; flex-direction: column; gap: var(--s4);
+    & .inbox-counts { font-size: var(--fs-l, var(--fs)); color: var(--ink-dim); }
+    & .inbox-counts strong { color: var(--ink-hi); font-family: var(--mono); }
+    & .since { align-self: flex-start; max-width: 100%; }
+  }
+  .inbox-btn { gap: var(--s2); }
+
   @media (max-width: 700px) {
     .list.mrs .c-who { display: none; }
   }

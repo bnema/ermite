@@ -27,6 +27,7 @@ import (
 // the HTML fragments the page shows, sent as Server-Sent Events:
 //
 //	GET /-/events?topic=home
+//	GET /-/events?topic=owner&view=inbox[&repo=<name>]   (the signed-in owner only)
 //	GET /-/events?topic=repo:<name>&view=summary|refs
 //	GET /-/events?topic=repo:<name>&view=commits&ref=<branch>&head=<sha>
 //	GET /-/events?topic=repo:<name>&view=mrs
@@ -84,15 +85,35 @@ const (
 	retryAfter = 10
 )
 
-// parseTopic reads "home" or "repo:<name>"; repo is "" for home.
+// ownerTopic is the stream of the inbox: the merge requests and issues of every
+// repository, for the owner.
+const ownerTopic = "owner"
+
+// parseTopic reads "home", "owner" or "repo:<name>"; repo is "" for home and
+// owner.
 func parseTopic(topic string) (repo string, ok bool) {
-	if topic == "home" {
+	if topic == "home" || topic == ownerTopic {
 		return "", true
 	}
 	if name, found := strings.CutPrefix(topic, "repo:"); found && name != "" {
 		return name, true
 	}
 	return "", false
+}
+
+// ownerStreamOK tells whether the request may follow the owner topic: the
+// signed-in owner, with the inbox view and a valid repository filter, on a
+// server that has the inbox.
+func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
+	if s.cfg.Inbox == nil || !SignedIn(ctx) || q.Get("view") != "inbox" {
+		return false
+	}
+	if f := q.Get("repo"); f != "" {
+		if _, err := domain.ParseRepoName(f); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // events is GET /-/events.
@@ -104,6 +125,11 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	topic := q.Get("topic")
 	repo, ok := parseTopic(topic)
+	if topic == ownerTopic {
+		// Anyone but the signed-in owner gets the answer of an unknown topic.
+		ok = s.ownerStreamOK(r.Context(), q)
+		repo = ""
+	}
 	if !ok {
 		denyStream(w, http.StatusBadRequest, "topic must be home or repo:<name>")
 		return
@@ -227,6 +253,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 
 	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), job: q.Get("job"), sha: sha}
+	if topic == ownerTopic {
+		st.filter = q.Get("repo")
+	}
 	handle := func(m recvd) bool {
 		if m.err != nil {
 			if ctx.Err() == nil && !errors.Is(m.err, context.Canceled) {

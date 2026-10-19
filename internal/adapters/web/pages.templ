@@ -9,6 +9,14 @@ templ Home(l Layout, p HomePage) {
 		<div class="home" data-layout="cards">
 			<section class="home-repos" aria-label="Repositories">
 				<div class="home-bar">
+					if p.Inbox != nil {
+						<a class="btn inbox-btn" href={ templ.SafeURL(p.Inbox.Href) } title="inbox">
+							Inbox
+							if p.Inbox.Count >= 0 {
+								<span class="count">{ itoa(p.Inbox.Count) }</span>
+							}
+						</a>
+					}
 					<div class="filter">
 						<label for="home-filter" class="sr">filter</label>
 						<input

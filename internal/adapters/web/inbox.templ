@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// Inbox is the owner's inbox: what is open across every repository. The
+// counters, the filter and the lists are fragments with an id that the live
+// stream replaces as a whole (ermiteLive.swap).
+templ Inbox(l Layout, p InboxPage) {
+	@Shell(l, nil) {
+		<h1 class="sr">Inbox</h1>
+		<div class="inbox">
+			@InboxCounters(p)
+			@InboxRepos(p)
+			@InboxMRs(p)
+			@InboxIssues(p)
+		</div>
+	}
+}
+
+templ InboxCounters(p InboxPage) {
+	<p id="inbox-counts" class="inbox-counts">
+		<strong>{ itoa(p.MergeRequests) }</strong> merge requests · <strong>{ itoa(p.Issues) }</strong> issues
+	</p>
+}
+
+templ InboxRepos(p InboxPage) {
+	<nav id="inbox-repos" class="since" aria-label="Repository">
+		for _, r := range p.Repos {
+			<a
+				href={ templ.SafeURL(r.Href) }
+				if r.Current {
+					aria-current="page"
+				}
+			>{ r.Label }</a>
+		}
+	</nav>
+}
+
+templ InboxMRs(p InboxPage) {
+	<section id="inbox-mrs" aria-labelledby="inbox-mrs-h">
+		<h2 id="inbox-mrs-h" class="rule-h"><span>Open merge requests</span><span class="count">{ itoa(len(p.MRs)) }</span></h2>
+		@inboxRows(p.MRs, "Open merge requests")
+		if len(p.MRs) == 0 {
+			<p class="lede dim">no open merge requests.</p>
+		}
+	</section>
+}
+
+templ InboxIssues(p InboxPage) {
+	<section id="inbox-issues" aria-labelledby="inbox-issues-h">
+		<h2 id="inbox-issues-h" class="rule-h"><span>Open issues</span><span class="count">{ itoa(len(p.IssueRows)) }</span></h2>
+		@inboxRows(p.IssueRows, "Open issues")
+		if len(p.IssueRows) == 0 {
+			<p class="lede dim">no open issues.</p>
+		}
+	</section>
+}
+
+templ inboxRows(rows []InboxRow, label string) {
+	if len(rows) > 0 {
+		<table class="list mrs" aria-label={ label }>
+			<tbody data-rows>
+				for _, m := range rows {
+					<tr data-cursor?={ m.Cursor } data-state="open">
+						<td class="c-n mute">{ m.Number }</td>
+						<td class="c-subject"><a href={ templ.SafeURL(m.Href) }>{ m.Title }</a> <a class="mute" href={ templ.SafeURL(m.RepoHref) }>{ m.Repo }</a></td>
+						<td class="c-when nowrap dim">
+							if m.WhenAt != "" {
+								<time datetime={ m.WhenAt } title={ m.WhenAt }>{ m.When }</time>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}

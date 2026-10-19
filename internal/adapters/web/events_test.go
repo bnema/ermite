@@ -36,7 +36,7 @@ func TestFormatEvent(t *testing.T) {
 
 func TestParseTopic(t *testing.T) {
 	t.Parallel()
-	for in, want := range map[string]string{"home": "", "repo:x": "x", "repo:a.b-c": "a.b-c"} {
+	for in, want := range map[string]string{"home": "", "owner": "", "repo:x": "x", "repo:a.b-c": "a.b-c"} {
 		repo, ok := parseTopic(in)
 		assert.True(t, ok, in)
 		assert.Equal(t, want, repo, in)

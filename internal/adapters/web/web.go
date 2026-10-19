@@ -63,6 +63,10 @@ type Config struct {
 	// it there is no such redirect. Leave it unset rather than assigning a
 	// typed nil pointer.
 	IssueNumbers ports.IssueNumberResolver
+	// Inbox serves the owner's inbox page (/-/inbox) and the button that
+	// leads to it. Without it there is neither. Leave it unset rather than
+	// assigning a typed nil pointer.
+	Inbox ports.InboxService
 	// Runs serves the CI pages (/<repo>/actions) and the checks shown next to
 	// commits and merge requests. Without it there are no such pages. Leave it
 	// unset rather than assigning a typed nil pointer.
@@ -174,6 +178,9 @@ func (s *Server) routes() *http.ServeMux {
 	}
 	if s.passkeysOn() {
 		s.passkeyRoutes(mux)
+	}
+	if s.cfg.Inbox != nil {
+		mux.HandleFunc("GET "+inboxPath, s.page(s.inbox))
 	}
 	mux.HandleFunc("GET /{$}", s.page(s.home))
 	mux.HandleFunc("GET /{repo}", s.page(s.summary))
