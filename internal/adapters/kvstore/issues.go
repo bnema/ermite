@@ -31,14 +31,15 @@ const (
 // Issues is the ermite-kv backed ports.IssueStore. It shares the database of
 // the Store it comes from.
 type Issues struct {
-	db *kv.DB
+	db    *kv.DB
+	locks *numberLocks
 }
 
 var _ ports.IssueStore = (*Issues)(nil)
 
 // Issues returns the issue store over the same database. It is valid until the
 // Store is closed.
-func (s *Store) Issues() *Issues { return &Issues{db: s.db} }
+func (s *Store) Issues() *Issues { return &Issues{db: s.db, locks: s.locks} }
 
 func issueRepoPrefix(repo domain.RepoName) string { return issuePrefix + repo.String() + "/" }
 func issueKey(repo domain.RepoName, n int64) []byte {
@@ -86,7 +87,7 @@ func issueKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
 func (i *Issues) Create(ctx context.Context, issue domain.Issue) (domain.Issue, error) {
-	err := createNumbered(ctx, i.db, issue.Repo, func(b *kv.Batch, n int64) error {
+	err := createNumbered(ctx, i.db, i.locks, issue.Repo, func(b *kv.Batch, n int64) error {
 		issue.Number = n
 		val, err := encodeIssue(issue)
 		if err != nil {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net/url"
 	"slices"
 	"strconv"
@@ -45,14 +46,15 @@ const (
 // MergeRequests is the ermite-kv backed ports.MergeRequestStore. It shares the
 // database of the Store it comes from.
 type MergeRequests struct {
-	db *kv.DB
+	db    *kv.DB
+	locks *numberLocks
 }
 
 var _ ports.MergeRequestStore = (*MergeRequests)(nil)
 
 // MergeRequests returns the merge request store over the same database. It is
 // valid until the Store is closed.
-func (s *Store) MergeRequests() *MergeRequests { return &MergeRequests{db: s.db} }
+func (s *Store) MergeRequests() *MergeRequests { return &MergeRequests{db: s.db, locks: s.locks} }
 
 func mrRepoPrefix(repo domain.RepoName) string { return mrPrefix + repo.String() + "/" }
 func mrKey(repo domain.RepoName, n int64) []byte {
@@ -199,7 +201,7 @@ func (m *MergeRequests) guardRepo(ctx context.Context, b *kv.Batch, repo domain.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
 func (m *MergeRequests) Create(ctx context.Context, mr domain.MergeRequest) (domain.MergeRequest, error) {
-	err := createNumbered(ctx, m.db, mr.Repo, func(b *kv.Batch, n int64) error {
+	err := createNumbered(ctx, m.db, m.locks, mr.Repo, func(b *kv.Batch, n int64) error {
 		mr.Number = n
 		val, err := encodeMergeRequest(mr)
 		if err != nil {
@@ -224,11 +226,11 @@ func (m *MergeRequests) Create(ctx context.Context, mr domain.MergeRequest) (dom
 // number. It retries when the batch conflicts; a missing repository gives
 // domain.ErrNotFound.
 //
-// Creations in one repository are serialized in the process (numberLock), so
+// Creations in one repository are serialized in the process (numberLocks), so
 // a burst of merge requests and issues never exhausts the retries; the version
 // checks still guard against any other writer.
-func createNumbered(ctx context.Context, db *kv.DB, repo domain.RepoName, add func(b *kv.Batch, number int64) error) error {
-	unlock := numberLock(repo)
+func createNumbered(ctx context.Context, db *kv.DB, locks *numberLocks, repo domain.RepoName, add func(b *kv.Batch, number int64) error) error {
+	unlock := locks.lock(repo)
 	defer unlock()
 	for range createTries {
 		repoItem, repoOK := db.Get(ctx, repoKey(repo))
@@ -266,13 +268,21 @@ func createNumbered(ctx context.Context, db *kv.DB, repo domain.RepoName, add fu
 	return domain.ErrConflict
 }
 
-// numberLocks holds one mutex per repository for createNumbered.
-var numberLocks sync.Map // domain.RepoName -> *sync.Mutex
+// numberLockStripes is the size of the table of numbering locks.
+const numberLockStripes = 64
 
-// numberLock locks the numbering of repo and returns the unlock function.
-func numberLock(repo domain.RepoName) func() {
-	v, _ := numberLocks.LoadOrStore(repo, new(sync.Mutex))
-	mu := v.(*sync.Mutex)
+// numberLocks is a fixed table of mutexes, one stripe per hash of the
+// repository name, for createNumbered: the memory is bounded whatever the
+// number of repositories, and two repositories sharing a stripe only wait for
+// each other. One table is shared by every store of a Store, so the merge
+// requests and the issues of a repository are numbered one at a time.
+type numberLocks [numberLockStripes]sync.Mutex
+
+// lock locks the numbering of repo and returns the unlock function.
+func (l *numberLocks) lock(repo domain.RepoName) func() {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(repo.String()))
+	mu := &l[h.Sum32()%numberLockStripes]
 	mu.Lock()
 	return mu.Unlock
 }

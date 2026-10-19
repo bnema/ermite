@@ -37,14 +37,15 @@ const (
 // PendingIssues is the ermite-kv backed ports.PendingIssueStore. It shares the
 // database of the Store it comes from.
 type PendingIssues struct {
-	db *kv.DB
+	db    *kv.DB
+	locks *numberLocks
 }
 
 var _ ports.PendingIssueStore = (*PendingIssues)(nil)
 
 // PendingIssues returns the pending issue store over the same database. It is
 // valid until the Store is closed.
-func (s *Store) PendingIssues() *PendingIssues { return &PendingIssues{db: s.db} }
+func (s *Store) PendingIssues() *PendingIssues { return &PendingIssues{db: s.db, locks: s.locks} }
 
 func pendingRepoPrefix(repo domain.RepoName) string { return pendingPrefix + repo.String() + "/" }
 func pendingKey(repo domain.RepoName, id domain.PendingIssueID) []byte {
@@ -222,7 +223,7 @@ func (s *PendingIssues) Count(ctx context.Context) (int, error) {
 //hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
 func (s *PendingIssues) Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) (domain.Issue, error) {
 	var number int64
-	err := createNumbered(ctx, s.db, repo, func(b *kv.Batch, n int64) error {
+	err := createNumbered(ctx, s.db, s.locks, repo, func(b *kv.Batch, n int64) error {
 		key := pendingKey(repo, id)
 		item, ok := s.db.Get(ctx, key)
 		if !ok {
@@ -258,7 +259,7 @@ func (s *PendingIssues) Approve(ctx context.Context, repo domain.RepoName, id do
 		}
 		return domain.Issue{}, fmt.Errorf("approve pending issue of %q: %w", repo, err)
 	}
-	return (&Issues{db: s.db}).Get(ctx, repo, number)
+	return (&Issues{db: s.db, locks: s.locks}).Get(ctx, repo, number)
 }
 
 // Delete removes the pending record, or returns domain.ErrNotFound.

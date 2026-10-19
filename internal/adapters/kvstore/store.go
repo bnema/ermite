@@ -48,7 +48,8 @@ var ErrSchemaTooNew = errors.New("storage schema is newer than this ermite suppo
 
 // Store is the ermite-kv backed metadata store.
 type Store struct {
-	db *kv.DB
+	db    *kv.DB
+	locks *numberLocks // shared by the merge request and issue stores
 }
 
 var _ ports.RepoMetaStore = (*Store)(nil)
@@ -61,7 +62,7 @@ func Open(ctx context.Context, dir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open ermite-kv in %s: %w", dir, err)
 	}
-	s := &Store{db: db}
+	s := &Store{db: db, locks: new(numberLocks)}
 	if err := s.checkSchema(ctx); err != nil {
 		_ = db.Close(context.WithoutCancel(ctx))
 		return nil, err
