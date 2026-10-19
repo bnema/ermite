@@ -649,7 +649,7 @@ func isRepoLifecycleEvent(ev domain.Event) bool {
 func isItemEvent(ev domain.Event) bool {
 	switch ev.(type) {
 	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
-		domain.MergeRequestReady, domain.CommentAdded,
+		domain.MergeRequestReady, domain.MergeRequestMergeability, domain.CommentAdded,
 		domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved:
 		return true
 	}

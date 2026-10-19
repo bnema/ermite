@@ -997,3 +997,16 @@ func TestNoteMutationEventVisibility(t *testing.T) {
 		}
 	})
 }
+
+func TestMergeabilityEventReachesOwnerTopic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 0)
+		priv := r.repo("priv", domain.VisibilityPrivate)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		owner := r.watch(ctx, domain.Root(), ports.WatchParams{Topics: []string{"repo:priv"}})
+		synctest.Wait()
+		r.feed <- domain.MergeRequestMergeability{Repo: priv, Number: 1, Visibility: domain.VisibilityPrivate, CreatedAt: now, At: now}
+		assert.Equal(t, priv, owner.next(t).Event.(domain.MergeRequestMergeability).Repo)
+	})
+}
