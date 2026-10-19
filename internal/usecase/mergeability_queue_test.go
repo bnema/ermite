@@ -46,3 +46,29 @@ func TestMergeQueueNextMarksAgainForARunningKey(t *testing.T) {
 	assert.True(t, q.again[k])
 	assert.False(t, q.pending[k])
 }
+
+func TestMergeQueueNextServicesADirtyRepoUnderSustainedRefill(t *testing.T) {
+	repo, err := domain.ParseRepoName("proj")
+	require.NoError(t, err)
+	q := newMergeQueue(2)
+	q.markDirty(repo)
+	n := int64(0)
+	refill := func() {
+		for range 2 {
+			n++
+			q.add(mergeKey{repo, n})
+		}
+	}
+	refill()
+	for range 3 {
+		key, dirty := q.next()
+		if dirty != nil {
+			assert.Equal(t, repo, *dirty)
+			return
+		}
+		require.NotNil(t, key)
+		q.finish(*key)
+		refill()
+	}
+	t.Fatal("the dirty repository starved")
+}

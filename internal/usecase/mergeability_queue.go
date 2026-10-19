@@ -32,6 +32,9 @@ type mergeQueue struct {
 	// their next check is published whatever it is.
 	seen map[mergeKey]bool
 	wake chan struct{}
+	// preferDirty alternates the service between pending keys and dirty
+	// repositories, so that neither starves the other.
+	preferDirty bool
 }
 
 func newMergeQueue(max int) *mergeQueue {
@@ -80,10 +83,19 @@ func (q *mergeQueue) markDirtyLocked(repo domain.RepoName) {
 }
 
 // next takes the next check, which it marks running, or the next dirty
-// repository to rescan; pending checks first.
+// repository to rescan, alternating between the two when both wait.
 func (q *mergeQueue) next() (key *mergeKey, dirty *domain.RepoName) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if q.preferDirty && len(q.dirtyOrder) > 0 {
+		q.preferDirty = false
+		r := q.dirtyOrder[0]
+		q.dirtyOrder = q.dirtyOrder[1:]
+		delete(q.dirty, r)
+		dirty = &r
+		q.signalIfWaitingLocked()
+		return nil, dirty
+	}
 	for key == nil && len(q.order) > 0 {
 		k := q.order[0]
 		q.order = q.order[1:]
@@ -98,16 +110,21 @@ func (q *mergeQueue) next() (key *mergeKey, dirty *domain.RepoName) {
 		q.running[k] = true
 		key = &k
 	}
+	q.preferDirty = key != nil
 	if key == nil && len(q.dirtyOrder) > 0 {
 		r := q.dirtyOrder[0]
 		q.dirtyOrder = q.dirtyOrder[1:]
 		delete(q.dirty, r)
 		dirty = &r
 	}
+	q.signalIfWaitingLocked()
+	return key, dirty
+}
+
+func (q *mergeQueue) signalIfWaitingLocked() {
 	if len(q.order) > 0 || len(q.dirtyOrder) > 0 {
 		q.signal() // let another worker take the rest
 	}
-	return key, dirty
 }
 
 // tryRun marks k running for a rescan; when it already runs it asks for
