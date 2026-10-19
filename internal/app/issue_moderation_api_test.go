@@ -52,6 +52,13 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 		assert.Equal(t, "not_found", codeName(err), "%s approve", name)
 		_, err = c.issue.RejectIssue(ctx, connect.NewRequest(&pb.RejectIssueRequest{Repo: "pub", Id: p1.ID.String(), Ban: true}))
 		assert.Equal(t, "not_found", codeName(err), "%s reject", name)
+		// A malformed repository tells a non-owner nothing more.
+		_, err = c.issue.ListPendingIssues(ctx, connect.NewRequest(&pb.ListPendingIssuesRequest{Repo: "Bad Repo!"}))
+		assert.Equal(t, "not_found", codeName(err), "%s list, malformed repo", name)
+		_, err = c.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "Bad Repo!", Id: p1.ID.String()}))
+		assert.Equal(t, "not_found", codeName(err), "%s approve, malformed repo", name)
+		_, err = c.issue.RejectIssue(ctx, connect.NewRequest(&pb.RejectIssueRequest{Repo: "Bad Repo!", Id: "nope"}))
+		assert.Equal(t, "not_found", codeName(err), "%s reject, malformed repo", name)
 	}
 	still, err := r.forge.PendingIssues.Count(ctx)
 	require.NoError(t, err)
@@ -67,6 +74,10 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 	res, err := owner.issue.ListPendingIssues(ctx, connect.NewRequest(&pb.ListPendingIssuesRequest{Repo: "priv"}))
 	require.NoError(t, err)
 	assert.Empty(t, res.Msg.GetIssues())
+
+	// An owner does learn that a repository name is malformed.
+	_, err = owner.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "Bad Repo!", Id: p1.ID.String()}))
+	assert.Equal(t, "invalid_argument", codeName(err))
 
 	// A malformed or unknown id is NotFound.
 	_, err = owner.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "pub", Id: "nope"}))

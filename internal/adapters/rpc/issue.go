@@ -198,7 +198,20 @@ func pendingRef(repo, id string) (domain.RepoName, domain.PendingIssueID, error)
 	return name, pid, nil
 }
 
+// requireOwner answers NotFound to anyone without owner rights, before the
+// request is parsed: a malformed repository must not tell a non-owner more
+// than a well-formed one does.
+func requireOwner(ctx context.Context) error {
+	if !caller(ctx).HasOwnerRights() {
+		return connectError(ctx, domain.ErrNotFound)
+	}
+	return nil
+}
+
 func (s *issueService) ListPendingIssues(ctx context.Context, req *connect.Request[pb.ListPendingIssuesRequest]) (*connect.Response[pb.ListPendingIssuesResponse], error) {
+	if err := requireOwner(ctx); err != nil {
+		return nil, err
+	}
 	var name domain.RepoName
 	if req.Msg.GetRepo() != "" {
 		var err error
@@ -220,6 +233,9 @@ func (s *issueService) ListPendingIssues(ctx context.Context, req *connect.Reque
 }
 
 func (s *issueService) ApproveIssue(ctx context.Context, req *connect.Request[pb.ApproveIssueRequest]) (*connect.Response[pb.ApproveIssueResponse], error) {
+	if err := requireOwner(ctx); err != nil {
+		return nil, err
+	}
 	name, id, err := pendingRef(req.Msg.GetRepo(), req.Msg.GetId())
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -232,6 +248,9 @@ func (s *issueService) ApproveIssue(ctx context.Context, req *connect.Request[pb
 }
 
 func (s *issueService) RejectIssue(ctx context.Context, req *connect.Request[pb.RejectIssueRequest]) (*connect.Response[pb.RejectIssueResponse], error) {
+	if err := requireOwner(ctx); err != nil {
+		return nil, err
+	}
 	name, id, err := pendingRef(req.Msg.GetRepo(), req.Msg.GetId())
 	if err != nil {
 		return nil, connectError(ctx, err)
