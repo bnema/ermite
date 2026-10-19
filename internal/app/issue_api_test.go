@@ -225,8 +225,11 @@ func TestIssuesFeatureAndSettingOverTheAPI(t *testing.T) {
 	_, err = r.root.issue.CreateIssue(ctx, connect.NewRequest(&pb.CreateIssueRequest{Repo: "priv", Title: "t"}))
 	require.NoError(t, err)
 
-	_, err = update(r.root, pb.IssuesMode_ISSUES_MODE_PUBLIC)
-	assert.Equal(t, "invalid_argument", codeName(err), "public issues are refused")
+	updated, err = update(r.root, pb.IssuesMode_ISSUES_MODE_PUBLIC)
+	require.NoError(t, err, "public issues are accepted")
+	assert.Equal(t, pb.IssuesMode_ISSUES_MODE_PUBLIC, updated.GetSettings().GetIssues())
+	_, err = update(r.root, pb.IssuesMode_ISSUES_MODE_OWNER)
+	require.NoError(t, err)
 	_, err = update(r.root, pb.IssuesMode_ISSUES_MODE_UNSPECIFIED)
 	assert.Equal(t, "invalid_argument", codeName(err))
 	repo, err = r.root.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "priv"}))

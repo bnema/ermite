@@ -75,6 +75,10 @@ type options struct {
 	// oidcKey generates the signing keys of the ID tokens; nil generates RSA
 	// keys (tests give prepared ones: a 3072-bit key takes a while).
 	oidcKey func() (*rsa.PrivateKey, error)
+	// issuePoW lowers the proof of work of the public issue form (the base
+	// and the highest difficulty, in bits) when positive, and shortens the
+	// minimum fill time to a nanosecond; tests only.
+	issuePoW int
 }
 
 // remote returns the lister of github.com refs: the test's, else def.
@@ -345,6 +349,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.IssueSubmissions = usecase.NewIssueSubmissions(usecase.IssueSubmissionsConfig{
 		Meta: store, Pending: f.PendingIssues, Bans: f.IssueBans, Limiter: f.SubmissionLimiter,
 		Keys: f.IssueKeys, Bus: f.Bus, Clock: clock,
+		BaseDifficulty: opts.issuePoW, MaxDifficulty: opts.issuePoW, MinFillTime: fastFill(opts.issuePoW),
 	})
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
 		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(),
@@ -570,4 +575,13 @@ func (f *forge) signatures(store *kvstore.Store, reader ports.RepoReader, key do
 	f.Signatures = sigs
 	f.Browse.WithVerifier(sigs)
 	return nil
+}
+
+// fastFill is the minimum fill time of the public issue form for a test that
+// lowers the proof of work: next to none. Zero keeps the production value.
+func fastFill(issuePoW int) time.Duration {
+	if issuePoW > 0 {
+		return time.Nanosecond
+	}
+	return 0
 }

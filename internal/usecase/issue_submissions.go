@@ -104,6 +104,7 @@ type IssueSubmissions struct {
 	clock   ports.Clock
 	base    int
 	limit   int
+	minFill time.Duration
 
 	mu        sync.Mutex
 	spent     map[string]time.Time // nonce -> expiry of its challenge
@@ -125,6 +126,8 @@ type IssueSubmissionsConfig struct {
 	// BaseDifficulty and MaxDifficulty replace the production constants; for
 	// tests. Zero keeps the constants.
 	BaseDifficulty, MaxDifficulty int
+	// MinFillTime replaces minFillTime when positive; for tests.
+	MinFillTime time.Duration
 }
 
 // NewIssueSubmissions builds the submission use case.
@@ -132,7 +135,7 @@ func NewIssueSubmissions(cfg IssueSubmissionsConfig) *IssueSubmissions {
 	s := &IssueSubmissions{
 		meta: cfg.Meta, pending: cfg.Pending, bans: cfg.Bans, limiter: cfg.Limiter,
 		keys: cfg.Keys, bus: cfg.Bus, clock: cfg.Clock,
-		base: baseDifficulty, limit: maxDifficulty,
+		base: baseDifficulty, limit: maxDifficulty, minFill: minFillTime,
 		spent: make(map[string]time.Time),
 	}
 	if cfg.BaseDifficulty > 0 {
@@ -140,6 +143,9 @@ func NewIssueSubmissions(cfg IssueSubmissionsConfig) *IssueSubmissions {
 	}
 	if cfg.MaxDifficulty > 0 {
 		s.limit = cfg.MaxDifficulty
+	}
+	if cfg.MinFillTime > 0 {
+		s.minFill = cfg.MinFillTime
 	}
 	return s
 }
@@ -195,7 +201,7 @@ func (s *IssueSubmissions) Challenge(ctx context.Context, repo domain.RepoName, 
 		Difficulty:  d,
 		FormToken:   enc64(s.sign(s.keys.FormTokenKey(), nonce)),
 		IssuedAt:    time.Unix(claims.IssuedAt, 0).UTC(),
-		MinSubmitAt: time.Unix(claims.IssuedAt, 0).UTC().Add(minFillTime),
+		MinSubmitAt: time.Unix(claims.IssuedAt, 0).UTC().Add(s.minFill),
 		ExpiresAt:   time.Unix(claims.ExpiresAt, 0).UTC(),
 	}, nil
 }
@@ -316,7 +322,7 @@ func (s *IssueSubmissions) Submit(ctx context.Context, repo domain.RepoName, add
 	if !hmac.Equal([]byte(f.FormToken), []byte(enc64(s.sign(s.keys.FormTokenKey(), c.Nonce)))) {
 		return refuse("bad_form_token", domain.ErrSubmissionInvalid)
 	}
-	if now.Before(time.Unix(c.IssuedAt, 0).Add(minFillTime)) {
+	if now.Before(time.Unix(c.IssuedAt, 0).Add(s.minFill)) {
 		return refuse("too_fast", domain.ErrSubmissionInvalid)
 	}
 	if !validSolution(f.Solution) || c.Difficulty < 1 || c.Difficulty > 8*sha256.Size ||

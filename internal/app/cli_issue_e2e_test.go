@@ -59,8 +59,11 @@ func TestIssuesCLIEndToEnd(t *testing.T) {
 	res = c.cli(t, adminToken, "repo", "show", "proj").ok(t)
 	assert.Regexp(t, `issues\s+owner`, res.stdout)
 	require.Error(t, c.cli(t, adminToken, "repo", "edit", "proj", "--issues", "everyone").err)
-	res = c.cli(t, adminToken, "repo", "edit", "proj", "--issues", "public")
-	require.Error(t, res.err, "public is refused by the server for now")
+	res = c.cli(t, adminToken, "repo", "edit", "proj", "--issues", "public", "--json").ok(t)
+	assert.Equal(t, "public", decode[struct {
+		Issues string `json:"issues"`
+	}](t, res.stdout).Issues)
+	c.cli(t, adminToken, "repo", "edit", "proj", "--issues", "owner").ok(t)
 
 	// A merge request first: the issue takes the next number.
 	wt := c.workTree("main", "README.md")

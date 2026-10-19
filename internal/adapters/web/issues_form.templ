@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// IssueForm is the public form that proposes an issue to the owner. It needs
+// JavaScript: the script (issue-form.js) solves a proof of work in a worker,
+// so the form stays hidden until it runs, and the page says why without it.
+templ IssueForm(l Layout, p IssueFormPage) {
+	@Shell(l, issueFormRail()) {
+		<header class="show mr-h">
+			<h1>New issue</h1>
+		</header>
+		<noscript>
+			<p class="lede">This form needs JavaScript: it runs a short proof of work so that bots cannot flood the tracker.</p>
+		</noscript>
+		<form
+			class="cform create"
+			method="post"
+			action={ templ.SafeURL(p.Action) }
+			hidden
+			data-issue-form
+			data-nonce={ p.Nonce }
+			data-difficulty={ itoa(p.Difficulty) }
+			data-min-submit-at={ i64(p.MinSubmitAt) }
+			data-worker={ p.Worker }
+			autocomplete="off"
+		>
+			<input type="hidden" name="token" value={ p.Token }/>
+			<input type="hidden" name="form_token" value={ p.FormToken }/>
+			<input type="hidden" name="solution" value=""/>
+			<label for="issue-title">title</label>
+			<input id="issue-title" name="title" type="text" maxlength="120" required autocomplete="off" value={ p.Title }/>
+			<output data-for="issue-title" data-max={ itoa(p.MaxTitle) } for="issue-title">{ itoa(runeCount(p.Title)) } / { itoa(p.MaxTitle) }</output>
+			if p.ErrorField == "title" {
+				<p class="f-error" role="alert">{ p.Error }</p>
+			}
+			<label for="issue-body">description</label>
+			<textarea id="issue-body" name="body" rows="8" maxlength="10000" placeholder="Markdown, optional">{ p.Body }</textarea>
+			<output data-for="issue-body" data-max={ itoa(p.MaxBody) } for="issue-body">{ itoa(runeCount(p.Body)) } / { itoa(p.MaxBody) }</output>
+			if p.ErrorField == "body" {
+				<p class="f-error" role="alert">{ p.Error }</p>
+			}
+			<label for="issue-author">name (optional, not verified)</label>
+			<input id="issue-author" name="author" type="text" maxlength="40" autocomplete="off" value={ p.Author }/>
+			<output data-for="issue-author" data-max={ itoa(p.MaxAuthor) } for="issue-author">{ itoa(runeCount(p.Author)) } / { itoa(p.MaxAuthor) }</output>
+			if p.ErrorField == "author" {
+				<p class="f-error" role="alert">{ p.Error }</p>
+			}
+			<div class="hp" aria-hidden="true">
+				<label for="issue-website">Leave this field empty</label>
+				<input id="issue-website" name="website" type="text" tabindex="-1" autocomplete="off" value=""/>
+			</div>
+			<p class="dim" data-status role="status" aria-live="polite">Checking your browser… (this takes a few seconds)</p>
+			<div class="f-btns">
+				<button type="submit" class="btn primary" disabled>Submit for moderation</button>
+				<a class="btn" href={ templ.SafeURL(p.Cancel) }>Cancel</a>
+			</div>
+		</form>
+	}
+}
+
+templ issueFormRail() {
+	<section aria-labelledby="r-about">
+		<h2 id="r-about">Before you write</h2>
+		<p class="dim">The owner reads every issue before it appears. Plain text and Markdown only; no address of yours is kept.</p>
+	</section>
+}

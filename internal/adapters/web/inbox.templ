@@ -11,6 +11,7 @@ templ Inbox(l Layout, p InboxPage) {
 		<div class="inbox">
 			@InboxCounters(p)
 			@InboxRepos(p)
+			@InboxPending(p)
 			@InboxMRs(p)
 			@InboxIssues(p)
 		</div>
@@ -19,7 +20,7 @@ templ Inbox(l Layout, p InboxPage) {
 
 templ InboxCounters(p InboxPage) {
 	<p id="inbox-counts" class="inbox-counts">
-		<strong>{ itoa(p.MergeRequests) }</strong> merge requests · <strong>{ itoa(p.Issues) }</strong> issues
+		<strong>{ itoa(p.MergeRequests) }</strong> merge requests · <strong>{ itoa(p.Issues) }</strong> issues · <strong>{ itoa(p.PendingCount) }</strong> awaiting moderation
 	</p>
 }
 
@@ -34,6 +35,43 @@ templ InboxRepos(p InboxPage) {
 			>{ r.Label }</a>
 		}
 	</nav>
+}
+
+// InboxPending is the issues awaiting moderation, first on the page. Their
+// texts come from anonymous visitors: they are shown as plain text, escaped,
+// never as Markdown.
+templ InboxPending(p InboxPage) {
+	<section id="inbox-pending" aria-labelledby="inbox-pending-h">
+		<h2 id="inbox-pending-h" class="rule-h"><span>Awaiting moderation</span><span class="count">{ itoa(p.PendingCount) }</span></h2>
+		if len(p.Pending) > 0 {
+			<ul class="pending-list">
+				for _, m := range p.Pending {
+					<li class="pending">
+						<div class="p-head">
+							<a href={ templ.SafeURL(m.RepoHref) }>{ m.Repo }</a>
+							<span>{ m.Author }</span>
+							if m.WhenAt != "" {
+								<time datetime={ m.WhenAt } title={ m.WhenAt }>{ m.When }</time>
+							}
+						</div>
+						<p class="p-title">{ m.Title }</p>
+						if m.Preview != "" {
+							<p class="p-body">{ m.Preview }</p>
+						}
+						if m.Approve != "" {
+							<div class="p-btns">
+								<form method="post" action={ templ.SafeURL(m.Approve) }><button type="submit" class="btn primary">Approve</button></form>
+								<form method="post" action={ templ.SafeURL(m.Reject) }><button type="submit" class="btn">Reject</button></form>
+								<form method="post" action={ templ.SafeURL(m.Ban) }><button type="submit" class="btn danger">Reject and ban</button></form>
+							</div>
+						}
+					</li>
+				}
+			</ul>
+		} else {
+			<p class="lede dim">nothing awaits moderation.</p>
+		}
+	</section>
 }
 
 templ InboxMRs(p InboxPage) {

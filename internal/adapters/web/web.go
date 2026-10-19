@@ -63,6 +63,15 @@ type Config struct {
 	// it there is no such redirect. Leave it unset rather than assigning a
 	// typed nil pointer.
 	IssueNumbers ports.IssueNumberResolver
+	// IssueForm serves the public issue form of repositories whose issues
+	// mode is public (GET and POST /<repo>/issues/new for a visitor). Without
+	// it there is no such form. Leave it unset rather than assigning a typed
+	// nil pointer.
+	IssueForm ports.IssueSubmissionService
+	// Moderation serves the Approve, Reject and Reject-and-ban buttons of the
+	// pending issues in the inbox. It needs Inbox. Without it there are no
+	// such routes. Leave it unset rather than assigning a typed nil pointer.
+	Moderation ports.IssueModerationService
 	// Inbox serves the owner's inbox page (/-/inbox) and the button that
 	// leads to it. Without it there is neither. Leave it unset rather than
 	// assigning a typed nil pointer.
@@ -181,6 +190,11 @@ func (s *Server) routes() *http.ServeMux {
 	}
 	if s.cfg.Inbox != nil {
 		mux.HandleFunc("GET "+inboxPath, s.page(s.inbox))
+		if s.cfg.Moderation != nil {
+			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/approve", s.mrAction(s.pendingApprove))
+			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/reject", s.mrAction(s.pendingReject(false)))
+			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/ban", s.mrAction(s.pendingReject(true)))
+		}
 	}
 	mux.HandleFunc("GET /{$}", s.page(s.home))
 	mux.HandleFunc("GET /{repo}", s.page(s.summary))
@@ -214,13 +228,17 @@ func (s *Server) routes() *http.ServeMux {
 	if s.cfg.Issues != nil {
 		mux.HandleFunc("GET /{repo}/issues", s.page(s.issueList))
 		mux.HandleFunc("GET /{repo}/issues/{$}", s.page(s.issueList))
-		mux.HandleFunc("GET /{repo}/issues/new", s.page(s.issueNew))
+		mux.HandleFunc("GET /{repo}/issues/new", s.issueNewRoute)
 		mux.HandleFunc("GET /{repo}/issues/{n}", s.pageOrRedirect(s.issueShow, s.issueToMR))
 		// The writes: POST only, behind the gate (ServeHTTP).
 		mux.HandleFunc("POST /{repo}/issues", s.issueAction(s.issueCreate))
 		mux.HandleFunc("POST /{repo}/issues/{n}/comments", s.issueAction(s.issueComment))
 		mux.HandleFunc("POST /{repo}/issues/{n}/close", s.issueAction(s.issueClose))
 		mux.HandleFunc("POST /{repo}/issues/{n}/reopen", s.issueAction(s.issueReopen))
+	}
+	if s.cfg.IssueForm != nil {
+		mux.HandleFunc("GET /{repo}/issues/submitted", s.issueSubmittedPage)
+		mux.HandleFunc("POST /{repo}/issues/new", s.issueFormPost)
 	}
 	if s.cfg.Runs != nil {
 		mux.HandleFunc("GET /{repo}/actions", s.page(s.actions))

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
@@ -40,6 +41,25 @@ type InboxRow struct {
 	Cursor   bool
 }
 
+// PendingRow is one issue awaiting moderation. Everything in it is plain text:
+// it comes from an anonymous visitor and is never rendered as Markdown.
+type PendingRow struct {
+	Repo     string
+	RepoHref string
+	Author   string
+	Title    string
+	// Preview is the start of the body, at most pendingPreviewRunes characters.
+	Preview string
+	When    string
+	WhenAt  string
+	// Approve, Reject and Ban are the URLs the buttons post to; empty without
+	// the moderation use case.
+	Approve, Reject, Ban string
+}
+
+// pendingPreviewRunes bounds the preview of a pending body.
+const pendingPreviewRunes = 300
+
 // InboxRepoLink is an entry of the repository filter.
 type InboxRepoLink struct {
 	Label   string
@@ -51,10 +71,13 @@ type InboxRepoLink struct {
 type InboxPage struct {
 	// MergeRequests and Issues count every open item, whatever the filter.
 	MergeRequests, Issues int
-	Filter                string // the repository filtered on, "" for all
-	Repos                 []InboxRepoLink
-	MRs                   []InboxRow
-	IssueRows             []InboxRow
+	// PendingCount counts every issue awaiting moderation.
+	PendingCount int
+	Pending      []PendingRow
+	Filter       string // the repository filtered on, "" for all
+	Repos        []InboxRepoLink
+	MRs          []InboxRow
+	IssueRows    []InboxRow
 }
 
 // inboxHref is the inbox page, filtered on repo when it is not "".
@@ -82,7 +105,10 @@ func inboxFilter(r *http.Request) (domain.RepoName, error) {
 // inboxPage builds the page from the overview.
 func (s *Server) inboxPage(ov ports.InboxOverview, filter domain.RepoName) InboxPage {
 	now := s.cfg.Now()
-	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, Filter: filter.String()}
+	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Filter: filter.String()}
+	for _, pi := range ov.Pending {
+		p.Pending = append(p.Pending, s.pendingRow(now, pi, filter))
+	}
 	row := func(repo domain.RepoName, n int64, href, title string, updated, created time.Time) InboxRow {
 		ts := updated
 		if ts.IsZero() {
@@ -112,6 +138,85 @@ func (s *Server) inboxPage(ov ports.InboxOverview, filter domain.RepoName) Inbox
 		p.Repos = append(p.Repos, InboxRepoLink{Label: r.String(), Href: inboxHref(r.String()), Current: r == filter})
 	}
 	return p
+}
+
+// pendingRow is the row of a pending issue: the texts as plain strings, the
+// invisible characters marked, the body cut.
+func (s *Server) pendingRow(now time.Time, pi domain.PendingIssue, filter domain.RepoName) PendingRow {
+	repo := pi.Repo.String()
+	row := PendingRow{
+		Repo: repo, RepoHref: repoHref(repo), Author: "anonymous",
+		Title: visibleText(pi.Title.String()),
+	}
+	if a := strings.TrimSpace(visibleText(pi.Author)); a != "" {
+		row.Author = a
+	}
+	body := strings.TrimSpace(visibleText(pi.Body.String()))
+	row.Preview = cutRunes(body, pendingPreviewRunes)
+	if len(row.Preview) < len(body) {
+		row.Preview += "…"
+	}
+	row.When, row.WhenAt = whenOf(now, pi.CreatedAt)
+	if s.cfg.Moderation != nil {
+		base := inboxPath + "/pending/" + url.PathEscape(repo) + "/" + url.PathEscape(pi.ID.String()) + "/"
+		var q string
+		if !filter.IsZero() {
+			q = "?repo=" + url.QueryEscape(filter.String())
+		}
+		row.Approve, row.Reject, row.Ban = base+"approve"+q, base+"reject"+q, base+"ban"+q
+	}
+	return row
+}
+
+// pendingBack is where a moderation action returns: the inbox, on the same
+// repository filter.
+func pendingBack(r *http.Request) string {
+	if f, err := inboxFilter(r); err == nil {
+		return inboxHref(f.String())
+	}
+	return inboxPath
+}
+
+// pendingID reads the repository and the id of the path.
+func pendingID(r *http.Request) (domain.RepoName, domain.PendingIssueID, error) {
+	name, err := domain.ParseRepoName(r.PathValue("repo"))
+	if err != nil {
+		return domain.RepoName{}, "", err
+	}
+	id, err := domain.ParsePendingIssueID(r.PathValue("id"))
+	if err != nil {
+		return domain.RepoName{}, "", domain.ErrNotFound
+	}
+	return name, id, nil
+}
+
+// pendingApprove is POST /-/inbox/pending/<repo>/<id>/approve.
+func (s *Server) pendingApprove(ctx context.Context, r *http.Request) (string, string, error) {
+	back := pendingBack(r)
+	name, id, err := pendingID(r)
+	if err != nil {
+		return "", back, err
+	}
+	if _, err := s.cfg.Moderation.Approve(ctx, principal(ctx), name, id); err != nil {
+		return "", back, err
+	}
+	return back, back, nil
+}
+
+// pendingReject is POST /-/inbox/pending/<repo>/<id>/reject, or .../ban, which
+// also bans the submitter.
+func (s *Server) pendingReject(ban bool) func(ctx context.Context, r *http.Request) (string, string, error) {
+	return func(ctx context.Context, r *http.Request) (string, string, error) {
+		back := pendingBack(r)
+		name, id, err := pendingID(r)
+		if err != nil {
+			return "", back, err
+		}
+		if err := s.cfg.Moderation.Reject(ctx, principal(ctx), name, id, ban); err != nil {
+			return "", back, err
+		}
+		return back, back, nil
+	}
 }
 
 // inbox is GET /-/inbox.
@@ -178,7 +283,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 	}
 	p := l.s.inboxPage(ov, filter)
 	var out []fragment
-	for _, c := range []templ.Component{InboxCounters(p), InboxRepos(p), InboxMRs(p), InboxIssues(p)} {
+	for _, c := range []templ.Component{InboxCounters(p), InboxRepos(p), InboxPending(p), InboxMRs(p), InboxIssues(p)} {
 		f, err := renderFragment(ctx, inboxEvent, c)
 		if err != nil {
 			return nil, err

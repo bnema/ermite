@@ -196,7 +196,22 @@ func (s *Server) anonymousPost(r *http.Request) bool {
 	if r.Method != http.MethodPost {
 		return false
 	}
-	return isLoginPath(r.URL) || (s.passkeysOn() && isPasskeyLoginPath(r.URL.EscapedPath()))
+	return isLoginPath(r.URL) || (s.passkeysOn() && isPasskeyLoginPath(r.URL.EscapedPath())) ||
+		(s.cfg.IssueForm != nil && isIssueFormPath(r.URL))
+}
+
+// isIssueFormPath tells whether u is exactly /<repo>/issues/new for a valid
+// repository name: the one write a visitor may make besides signing in. It
+// looks at the escaped path, which is what the router matches, so that an
+// encoded slash or a trailing segment never passes for it. The Origin check of
+// the gate still applies.
+func isIssueFormPath(u *url.URL) bool {
+	repo, ok := strings.CutSuffix(strings.TrimPrefix(u.EscapedPath(), "/"), "/issues/new")
+	if !ok || strings.Contains(repo, "/") || strings.HasSuffix(repo, ".git") {
+		return false
+	}
+	_, err := domain.ParseRepoName(repo)
+	return err == nil
 }
 
 // isLoginPath tells whether u is exactly a login link: loginPrefix, a nonce of

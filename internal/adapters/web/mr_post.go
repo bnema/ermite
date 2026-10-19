@@ -32,6 +32,9 @@ func (s *Server) form(w http.ResponseWriter, r *http.Request) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 	if err := r.ParseForm(); err != nil {
 		back, what := mrBase(r.PathValue("repo")), "a merge request"
+		if strings.HasPrefix(r.URL.Path, inboxPath+"/") {
+			back, what = inboxPath, "a moderation action"
+		}
 		if strings.Contains(r.URL.Path, "/issues") {
 			back, what = issuesBase(r.PathValue("repo")), "an issue"
 		}

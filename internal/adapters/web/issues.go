@@ -179,7 +179,7 @@ func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Componen
 	if token != "" {
 		p.Newest = link("")
 	}
-	if SignedIn(ctx) {
+	if SignedIn(ctx) || (s.cfg.IssueForm != nil && d.repo.Settings.Issues.OrDefault() == domain.IssuesPublic) {
 		p.NewHref = issuesBase(d.name()) + "/new"
 	}
 

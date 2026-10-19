@@ -180,11 +180,12 @@ func TestInboxLiveFragments(t *testing.T) {
 	ls := &liveStream{s: srv, view: "inbox"}
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
 	require.NoError(t, err)
-	require.Len(t, frags, 4)
+	require.Len(t, frags, 5)
 	assert.Contains(t, frags[0].html, `id="inbox-counts"`)
 	assert.Contains(t, frags[1].html, `id="inbox-repos"`)
-	assert.Contains(t, frags[2].html, `id="inbox-mrs"`)
-	assert.Contains(t, frags[3].html, `id="inbox-issues"`)
+	assert.Contains(t, frags[2].html, `id="inbox-pending"`)
+	assert.Contains(t, frags[3].html, `id="inbox-mrs"`)
+	assert.Contains(t, frags[4].html, `id="inbox-issues"`)
 
 	none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "beta")}})
 	require.NoError(t, err)
@@ -296,7 +297,7 @@ func TestInboxRefreshesOnRepoEvents(t *testing.T) {
 			ls := &liveStream{s: srv, view: "inbox"}
 			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
 			require.NoError(t, err)
-			require.Len(t, frags, 4)
+			require.Len(t, frags, 5)
 			all := ""
 			for _, f := range frags {
 				all += f.html

@@ -318,7 +318,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 			"may be merged with (fast-forward, squash; default for a new repository: both), and\n" +
 			"--failing-checks-block says whether a failing check prevents a merge (a failed or unfinished CI check of the head; see README, CI).\n" +
 			"--issues sets who may use issues: off (default), owner (the owner and tokens with issue:write) or\n" +
-			"public (not available yet; the server refuses it). Needs a server with the issues feature.\n" +
+			"public (visitors of a public repository may also propose issues through a moderated form).\nNeeds a server with the issues feature.\n" +
 			"Needs the repo:admin scope." + jsonRepoHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),

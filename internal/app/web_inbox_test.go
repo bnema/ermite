@@ -51,13 +51,13 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	ev := stream.next(t, watchWait)
 	assert.Equal(t, "inbox", ev.name)
 	assert.Contains(t, ev.data, `id="inbox-counts"`)
-	for range 3 { // the other fragments of this event
+	for range 4 { // the other fragments of this event
 		stream.next(t, watchWait)
 	}
 	_, err = r.forge.Issues.Create(r.ctx, root, r.name("other"), ports.CreateIssueParams{Title: "search is slow"})
 	require.NoError(t, err)
 	var seen strings.Builder
-	for range 4 { // the four fragments of this event
+	for range 5 { // the five fragments of this event
 		seen.WriteString(stream.next(t, watchWait).data)
 	}
 	assert.Contains(t, seen.String(), "search is slow", "an event of the second repository")

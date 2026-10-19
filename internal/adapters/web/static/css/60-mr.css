@@ -173,6 +173,22 @@
     & .f-btns { display: flex; gap: var(--s2); align-items: center; margin-top: var(--s1); }
   }
 
+  /* the public issue form: counters, field errors, the honeypot out of sight */
+  .cform output { justify-self: end; font: var(--fs-s) var(--mono); color: var(--ink-mute); }
+  .cform output.warn { color: var(--ink-hi); font-weight: 700; }
+  .cform output.over { color: var(--red); font-weight: 700; }
+  .cform .f-error { color: var(--red); margin: 0; }
+  .cform .hp { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+
+  /* the inbox: items awaiting moderation, shown as text */
+  .pending-list { display: grid; gap: var(--s3); list-style: none; padding: 0; margin: 0; }
+  .pending { padding: var(--s3) var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); display: grid; gap: var(--s2); }
+  .pending .p-head { display: flex; gap: var(--s3); flex-wrap: wrap; align-items: baseline; color: var(--ink-dim); font-size: var(--fs-s); }
+  .pending .p-title { margin: 0; font-weight: 700; color: var(--ink-hi); overflow-wrap: anywhere; }
+  .pending .p-body { margin: 0; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .pending .p-btns { display: flex; gap: var(--s2); flex-wrap: wrap; }
+  .pending .p-btns form { margin: 0; }
+
   .list.mrs {
     & .c-n { width: 64px; }
     & .c-state { width: 110px; }

@@ -48,6 +48,8 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 		Issues:        f.Issues,
 		IssueNumbers:  f.Issues,
 		Inbox:         f.Inbox,
+		IssueForm:     f.IssueSubmissions,
+		Moderation:    f.IssueModeration,
 		Runs:          f.CI,
 		Artifacts:     artifacts,
 		Events:        f.EventLog,
