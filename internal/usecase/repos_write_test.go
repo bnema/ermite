@@ -215,6 +215,7 @@ func TestUpdate(t *testing.T) {
 			"description":    {Description: ptr("x")},
 			"merge modes":    {AllowedMergeModes: &modes},
 			"checks rule":    {FailingChecksBlock: &block},
+			"issues":         {Issues: ptr(domain.IssuesOwner)},
 		} {
 			f := newFixture(t) // no HasBranch, no Update, no SetDefaultBranch, no Publish
 			f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
@@ -237,6 +238,43 @@ func TestUpdate(t *testing.T) {
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		_, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Description: ptr("x")})
 		assert.ErrorIs(t, err, domain.ErrNotFound)
+	})
+}
+
+func TestUpdateIssuesMode(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	n := name(t, "tools")
+	priv := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, Settings: domain.DefaultRepoSettings()}
+
+	t.Run("public is refused before anything is written", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t) // no Update, no Publish
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
+		_, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Issues: ptr(domain.IssuesPublic)})
+		assert.ErrorIs(t, err, domain.ErrInvalid)
+		assert.Contains(t, err.Error(), "public issues are not available yet")
+	})
+
+	t.Run("an unknown mode is invalid", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
+		_, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Issues: ptr(domain.IssuesMode("all"))})
+		assert.ErrorIs(t, err, domain.ErrInvalid)
+	})
+
+	t.Run("owner is stored and published", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
+		f.meta.EXPECT().Update(ctx, mock.MatchedBy(func(r domain.Repo) bool {
+			return r.Settings.Issues == domain.IssuesOwner && r.Settings.FailingChecksBlock
+		})).Return(nil)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
+		repo, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Issues: ptr(domain.IssuesOwner)})
+		require.NoError(t, err)
+		assert.Equal(t, domain.IssuesOwner, repo.Settings.Issues)
 	})
 }
 

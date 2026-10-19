@@ -49,6 +49,8 @@ type UpdateRepoParams struct {
 	AllowedMergeModes *[]domain.MergeMode
 	// FailingChecksBlock replaces the setting of that name.
 	FailingChecksBlock *bool
+	// Issues replaces the issues mode. IssuesPublic is refused.
+	Issues *domain.IssuesMode
 }
 
 // TokenPage is a page of stored tokens, newest first.
@@ -214,6 +216,19 @@ type IssuePage struct {
 	Issues []domain.Issue
 	// NextPageToken is empty on the last page.
 	NextPageToken string
+}
+
+// CreateIssueParams describes the issue to open.
+type CreateIssueParams struct {
+	Title string
+	Body  string
+}
+
+// IssueDetail is an issue with its comments.
+type IssueDetail struct {
+	Issue domain.Issue
+	// Comments are oldest first.
+	Comments []domain.IssueComment
 }
 
 // MergeRequestDetail is a merge request with its review data.

@@ -89,3 +89,17 @@ type IssueComment struct {
 	// Version is set by the store on read, like Issue's.
 	Version uint64
 }
+
+// NumberKind says what a number of a repository names. Issues and merge
+// requests share one sequence, so a number names at most one of them.
+type NumberKind int
+
+// Number kinds.
+const (
+	// NumberNone: no issue or merge request has this number.
+	NumberNone NumberKind = iota
+	// NumberIssue: the number names an issue.
+	NumberIssue
+	// NumberMergeRequest: the number names a merge request.
+	NumberMergeRequest
+)

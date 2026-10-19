@@ -124,6 +124,26 @@ type MergeRequestService interface {
 	CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error)
 }
 
+// IssueService is the issue use cases. *usecase.Issues implements it.
+type IssueService interface {
+	Create(ctx context.Context, p domain.Principal, name domain.RepoName, params CreateIssueParams) (domain.Issue, error)
+	List(ctx context.Context, p domain.Principal, name domain.RepoName, params ListIssuesParams) (IssuePage, error)
+	// Get returns the issue with its comments, oldest first.
+	Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (IssueDetail, error)
+	AddComment(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, text string) (domain.IssueComment, error)
+	Close(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error)
+	Reopen(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error)
+}
+
+// IssueNumberResolver tells whether a number of a repository names an issue or
+// a merge request, for the callers that follow a "#n" reference. *usecase.Issues
+// implements it.
+type IssueNumberResolver interface {
+	// Kind needs the access of reading the repository and answers
+	// domain.ErrNotFound otherwise, also when issues are off.
+	Kind(ctx context.Context, p domain.Principal, name domain.RepoName, n int64) (domain.NumberKind, error)
+}
+
 // SigningKeyService tells which key signs the commits of the forge.
 // *usecase.SigningKey implements it.
 type SigningKeyService interface {

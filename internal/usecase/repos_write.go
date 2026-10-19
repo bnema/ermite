@@ -62,7 +62,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	}
 	before := repo
 	if params.Description == nil && params.Topics == nil && params.Visibility == nil && params.DefaultBranch == nil &&
-		params.AllowedMergeModes == nil && params.FailingChecksBlock == nil {
+		params.AllowedMergeModes == nil && params.FailingChecksBlock == nil && params.Issues == nil {
 		return domain.Repo{}, fmt.Errorf("%w: nothing to update", domain.ErrInvalid)
 	}
 	if params.AllowedMergeModes != nil {
@@ -71,6 +71,16 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 			return domain.Repo{}, err
 		}
 		params.AllowedMergeModes = &modes
+	}
+	if params.Issues != nil {
+		mode, err := domain.ParseIssuesMode(params.Issues.String())
+		if err != nil {
+			return domain.Repo{}, err
+		}
+		if mode == domain.IssuesPublic {
+			return domain.Repo{}, fmt.Errorf("%w: public issues are not available yet", domain.ErrInvalid)
+		}
+		params.Issues = &mode
 	}
 	if params.Description != nil {
 		if err := validateDescription(*params.Description); err != nil {
@@ -109,7 +119,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	// branch was checked above, so the remaining causes are a vanished
 	// repository or an I/O failure.
 	metaDone := false
-	if params.Description != nil || params.Topics != nil || params.Visibility != nil || params.AllowedMergeModes != nil || params.FailingChecksBlock != nil {
+	if params.Description != nil || params.Topics != nil || params.Visibility != nil || params.AllowedMergeModes != nil || params.FailingChecksBlock != nil || params.Issues != nil {
 		if repo, err = r.updateMeta(ctx, name, params); err != nil {
 			return domain.Repo{}, err
 		}
@@ -132,7 +142,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 		Bool("topics", params.Topics != nil).
 		Bool("visibility", params.Visibility != nil).
 		Bool("default_branch", params.DefaultBranch != nil).
-		Bool("settings", params.AllowedMergeModes != nil || params.FailingChecksBlock != nil).
+		Bool("settings", params.AllowedMergeModes != nil || params.FailingChecksBlock != nil || params.Issues != nil).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).
 		Msg("repository updated")
 	r.bus.Publish(ctx, domain.RepoUpdated{
@@ -170,6 +180,9 @@ func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params por
 		}
 		if params.FailingChecksBlock != nil {
 			repo.Settings.FailingChecksBlock = *params.FailingChecksBlock
+		}
+		if params.Issues != nil {
+			repo.Settings.Issues = *params.Issues
 		}
 		err = r.meta.Update(ctx, repo)
 		if errors.Is(err, domain.ErrConflict) {
