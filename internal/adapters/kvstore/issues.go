@@ -186,7 +186,8 @@ func (i *Issues) ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.I
 }
 
 // Update replaces the issue with a version precondition and moves its index key
-// in the same batch.
+// in the same batch. The repository must exist (see guardRepoKey), so that a
+// concurrent delete of the repository leaves no index key behind.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter port method name only
 func (i *Issues) Update(ctx context.Context, issue domain.Issue) error {
@@ -202,6 +203,9 @@ func (i *Issues) Update(ctx context.Context, issue domain.Issue) error {
 		return fmt.Errorf("update issue %d of %q: read it first: %w", issue.Number, issue.Repo, domain.ErrConflict)
 	}
 	var b kv.Batch
+	if err := guardRepoKey(ctx, i.db, &b, issue.Repo); err != nil {
+		return err
+	}
 	b.RequireVersion(key, issue.Version)
 	b.Put(key, val)
 	indexOpenIssue(&b, issue)

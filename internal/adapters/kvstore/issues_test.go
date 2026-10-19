@@ -337,3 +337,34 @@ func TestSchemaNewerThanThisBuildStopsIssuesData(t *testing.T) {
 	require.ErrorIs(t, err, kvstore.ErrSchemaTooNew)
 	assert.Equal(t, uint32(4), uint32(kvstore.SchemaVersion))
 }
+
+// A reopen racing the delete of the repository either lands before the delete
+// removes it or fails; it never leaves an isopen/ key of a repository that is
+// gone.
+func TestDeleteVersusReopenLeavesNoIssueKeys(t *testing.T) {
+	ctx := context.Background()
+	for range 30 {
+		s, _, n := repoWithMRs(t)
+		is := s.Issues()
+		issue, err := is.Create(ctx, newIssue(t, n, "t"))
+		require.NoError(t, err)
+		issue.State = domain.IssueStateClosed
+		require.NoError(t, is.Update(ctx, issue))
+		closed, err := is.Get(ctx, n, issue.Number)
+		require.NoError(t, err)
+		closed.State = domain.IssueStateOpen
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() { defer wg.Done(); <-start; _ = is.Update(ctx, closed) }()
+		go func() { defer wg.Done(); <-start; _ = s.Delete(ctx, n) }()
+		close(start)
+		wg.Wait()
+
+		for _, prefix := range []string{"is/proj/", "isc/proj/", "isopen/proj/"} {
+			assert.Zero(t, countKeys(t, s, prefix), prefix)
+		}
+		assert.ErrorIs(t, is.Update(ctx, closed), domain.ErrNotFound)
+	}
+}
