@@ -66,4 +66,4 @@ The hook socket and scripts git calls on each push live in `$ERMITE_DATA_DIR/run
 
 ## Storage schema
 
-This build uses storage schema 3. Once it has run on your data, an older ermite refuses to start. To downgrade, restore the backup taken before the upgrade.
+This build uses storage schema 4. Once it has run on your data, an older ermite refuses to start. To downgrade, restore the backup taken before the upgrade.

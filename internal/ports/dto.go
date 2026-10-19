@@ -198,6 +198,24 @@ type MergeRequestPage struct {
 	NextPageToken string
 }
 
+// ListIssuesParams selects a page of issues from an IssueStore.
+type ListIssuesParams struct {
+	// State restricts the result; empty means every state.
+	State domain.IssueState
+	// PageSize is the most issues returned; 0 or less means no limit. The
+	// use case chooses it.
+	PageSize int
+	// PageToken is the NextPageToken of the previous page, or empty.
+	PageToken string
+}
+
+// IssuePage is a page of issues, highest number first.
+type IssuePage struct {
+	Issues []domain.Issue
+	// NextPageToken is empty on the last page.
+	NextPageToken string
+}
+
 // MergeRequestDetail is a merge request with its review data.
 type MergeRequestDetail struct {
 	MergeRequest domain.MergeRequest

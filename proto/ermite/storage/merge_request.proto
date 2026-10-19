@@ -22,6 +22,16 @@ message RepoSettings {
   // Never empty once stored.
   repeated MergeMode allowed_merge_modes = 1;
   bool failing_checks_block = 2;
+  // Who may write issues; unspecified reads as off.
+  IssuesMode issues = 3;
+}
+
+// IssuesMode says who may write issues in a repository.
+enum IssuesMode {
+  ISSUES_MODE_UNSPECIFIED = 0;
+  ISSUES_MODE_OFF = 1;
+  ISSUES_MODE_OWNER = 2;
+  ISSUES_MODE_PUBLIC = 3;
 }
 
 // MergeRequestState is where a merge request is in its life.

@@ -241,6 +241,40 @@ type TokenStore interface {
 	Touch(ctx context.Context, id string, at time.Time) error
 }
 
+// IssueStore keeps the issues of the repositories and their comments. Issues
+// share the number sequence of the merge requests of their repository, so that
+// "#n" names one record. Create and SaveComment return domain.ErrNotFound when
+// the repository does not exist, so that deleting a repository leaves nothing
+// for one created again under its name. *kvstore.Issues implements it.
+type IssueStore interface {
+	// Create stores the issue under the next number of its repository (the
+	// one merge requests draw from), which it sets, and returns it. A number
+	// is never given twice, to an issue or to a merge request, even by a
+	// concurrent Create.
+	Create(ctx context.Context, issue domain.Issue) (domain.Issue, error)
+	// Get returns the issue, or domain.ErrNotFound. Its Version tells Update
+	// which state it was read at.
+	Get(ctx context.Context, repo domain.RepoName, number int64) (domain.Issue, error)
+	// List returns a page of the issues of the repository in the given state
+	// (any when empty), highest number first.
+	List(ctx context.Context, repo domain.RepoName, params ListIssuesParams) (IssuePage, error)
+	// ListOpen returns the open issues of the repository, highest number
+	// first, reading only the open ones (through an index).
+	ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.Issue, error)
+	// Update replaces the stored issue and keeps the index of the open issues
+	// in step. It returns domain.ErrNotFound if there is none and
+	// domain.ErrConflict if another write changed it since issue was read.
+	Update(ctx context.Context, issue domain.Issue) error
+	// SaveComment writes a comment and the issue it belongs to in one batch: a
+	// new comment (Version 0) must not exist yet, an existing one must be
+	// unchanged since it was read, and so must issue. It returns
+	// domain.ErrConflict otherwise. The caller sets issue.CommentSeq, the
+	// comment's ID for a new comment, and issue.UpdatedAt.
+	SaveComment(ctx context.Context, issue domain.Issue, c domain.IssueComment) error
+	// ListComments returns the comments of the issue, oldest first.
+	ListComments(ctx context.Context, repo domain.RepoName, number int64) ([]domain.IssueComment, error)
+}
+
 // MergeRequestStore keeps the merge requests of the repositories, their
 // comments and the read position of the reviewer. A repository has no entry
 // until its first merge request. Create, SaveComment and SetRead return

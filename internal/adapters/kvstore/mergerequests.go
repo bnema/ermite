@@ -198,47 +198,65 @@ func (m *MergeRequests) guardRepo(ctx context.Context, b *kv.Batch, repo domain.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
 func (m *MergeRequests) Create(ctx context.Context, mr domain.MergeRequest) (domain.MergeRequest, error) {
+	err := createNumbered(ctx, m.db, mr.Repo, func(b *kv.Batch, n int64) error {
+		mr.Number = n
+		val, err := encodeMergeRequest(mr)
+		if err != nil {
+			return err
+		}
+		b.RequireAbsent(mrKey(mr.Repo, n))
+		b.Put(mrKey(mr.Repo, n), val)
+		indexOpen(b, nil, mr)
+		return nil
+	})
+	if err != nil {
+		return domain.MergeRequest{}, fmt.Errorf("create merge request of %q: %w", mr.Repo, err)
+	}
+	return m.Get(ctx, mr.Repo, mr.Number)
+}
+
+// createNumbered takes the next number of the repository from mrseq/<repo>,
+// shared by the merge requests and the issues, and lets add put the record
+// under it into a batch that requires the sequence to be unchanged since it was
+// read (absent for the first number) and the repository to be unchanged (see
+// guardRepoKey): two concurrent creations, of either kind, never share a
+// number. It retries when the batch conflicts; a missing repository gives
+// domain.ErrNotFound.
+func createNumbered(ctx context.Context, db *kv.DB, repo domain.RepoName, add func(b *kv.Batch, number int64) error) error {
 	for range createTries {
-		repoItem, repoOK := m.db.Get(ctx, repoKey(mr.Repo))
+		repoItem, repoOK := db.Get(ctx, repoKey(repo))
 		if !repoOK {
-			return domain.MergeRequest{}, domain.ErrNotFound
+			return domain.ErrNotFound
 		}
 		var last int64
-		item, ok := m.db.Get(ctx, seqKey(mr.Repo))
+		item, ok := db.Get(ctx, seqKey(repo))
 		if ok {
 			var seq storagepb.Sequence
 			if err := proto.Unmarshal(item.Value, &seq); err != nil {
-				return domain.MergeRequest{}, fmt.Errorf("decode merge request sequence of %q: %w", mr.Repo, err)
+				return fmt.Errorf("decode sequence of %q: %w", repo, err)
 			}
 			last = seq.GetLast()
 		}
-		mr.Number = last + 1
-		val, err := encodeMergeRequest(mr)
-		if err != nil {
-			return domain.MergeRequest{}, err
-		}
+		number := last + 1
 		var b kv.Batch
-		b.RequireVersion(repoKey(mr.Repo), repoItem.Version)
-		b.Put(repoKey(mr.Repo), repoItem.Value) // see guardRepo
+		b.RequireVersion(repoKey(repo), repoItem.Version)
+		b.Put(repoKey(repo), repoItem.Value) // see guardRepoKey
 		if ok {
-			b.RequireVersion(seqKey(mr.Repo), item.Version)
+			b.RequireVersion(seqKey(repo), item.Version)
 		} else {
-			b.RequireAbsent(seqKey(mr.Repo))
+			b.RequireAbsent(seqKey(repo))
 		}
-		b.Put(seqKey(mr.Repo), mustMarshal(&storagepb.Sequence{Last: mr.Number}))
-		b.RequireAbsent(mrKey(mr.Repo, mr.Number))
-		b.Put(mrKey(mr.Repo, mr.Number), val)
-		indexOpen(&b, nil, mr)
-		_, err = m.db.Apply(ctx, &b)
+		b.Put(seqKey(repo), mustMarshal(&storagepb.Sequence{Last: number}))
+		if err := add(&b, number); err != nil {
+			return err
+		}
+		_, err := db.Apply(ctx, &b)
 		if errors.Is(err, kv.ErrConflict) {
 			continue
 		}
-		if err != nil {
-			return domain.MergeRequest{}, fmt.Errorf("create merge request of %q: %w", mr.Repo, err)
-		}
-		return m.Get(ctx, mr.Repo, mr.Number)
+		return err
 	}
-	return domain.MergeRequest{}, fmt.Errorf("create merge request of %q: %w", mr.Repo, domain.ErrConflict)
+	return domain.ErrConflict
 }
 
 // Get reads mr/<repo>/<number>.
@@ -683,6 +701,11 @@ func encodeSettings(s domain.RepoSettings) (*storagepb.RepoSettings, error) {
 		}
 		pb.AllowedMergeModes = append(pb.AllowedMergeModes, mode)
 	}
+	issues, err := encodeIssuesMode(s.Issues)
+	if err != nil {
+		return nil, err
+	}
+	pb.Issues = issues
 	return pb, nil
 }
 
@@ -707,5 +730,5 @@ func decodeSettings(pb *storagepb.RepoSettings) domain.RepoSettings {
 	if err != nil {
 		return domain.DefaultRepoSettings()
 	}
-	return domain.RepoSettings{AllowedMergeModes: normalized, FailingChecksBlock: pb.GetFailingChecksBlock()}
+	return domain.RepoSettings{AllowedMergeModes: normalized, FailingChecksBlock: pb.GetFailingChecksBlock(), Issues: decodeIssuesMode(pb.GetIssues())}
 }

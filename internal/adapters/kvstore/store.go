@@ -8,12 +8,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	kv "bnema.dev/ermite-kv"
 	"github.com/bnema/zerowrap"
 	"google.golang.org/protobuf/proto"
 
 	storagepb "bnema.dev/ermite/gen/ermite/storage"
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -27,8 +29,14 @@ import (
 // (CIRun.head_sha: it would attach their checks to the merge commit, where
 // nothing looks for them), and the index of the open merge requests by source
 // branch (mropen/: an older build would not keep it up to date; the upgrade
-// builds it once, see BuildOpenIndex).
-const SchemaVersion = 3
+// builds it once, see BuildOpenIndex). Version 4 adds the issues (is/, isc/,
+// isopen/, numbered from the same mrseq/ sequence as the merge requests, and
+// RepoSettings.issues): an older build would not delete them with their
+// repository, nor keep the numbers apart, and it would misread the issue:write
+// scope, so it must refuse the data. The upgrade also adds issue:write to the
+// stored tokens that held all nine earlier scopes with no repository list and
+// no branch prefix, so that they keep the owner rights (see upgradeTokens).
+const SchemaVersion = 4
 
 const schemaKey = "meta/schema"
 
@@ -125,8 +133,15 @@ func (s *Store) checkSchema(ctx context.Context) error {
 		if sv.GetVersion() < SchemaVersion {
 			// Older data stays readable as it is (the changes are additive);
 			// the new version is recorded so that older builds refuse it.
+			// The tokens are upgraded in the same batch, so that a crash
+			// leaves the old version and the upgrade runs again.
 			var b kv.Batch
 			b.RequireVersion(key, item.Version)
+			if sv.GetVersion() < 4 {
+				if err := s.upgradeTokens(ctx, &b); err != nil {
+					return err
+				}
+			}
 			b.Put(key, mustMarshal(&storagepb.SchemaVersion{Version: SchemaVersion}))
 			_, err := s.db.Apply(ctx, &b)
 			if errors.Is(err, kv.ErrConflict) {
@@ -150,4 +165,46 @@ func mustMarshal(m proto.Message) []byte {
 		panic(fmt.Sprintf("kvstore: marshal %T: %v", m, err)) // only for invalid UTF-8 strings, checked by callers
 	}
 	return b
+}
+
+// preIssueScopes are the nine scopes that existed before schema 4.
+var preIssueScopes = []domain.Scope{
+	domain.ScopeRepoRead, domain.ScopeRepoWrite, domain.ScopeRepoAdmin,
+	domain.ScopeMRWrite, domain.ScopeMRMerge,
+	domain.ScopeCIWrite, domain.ScopeSecretsWrite, domain.ScopeRunnerRegister,
+	domain.ScopeTokenAdmin,
+}
+
+// upgradeTokens adds to b the schema 4 upgrade of the tokens: a token that
+// holds all of preIssueScopes, limited to no repository and no branch prefix,
+// had the owner rights, which AllScopes now needs issue:write for, so it gets
+// the scope (this is no escalation). Every other token is left as it is. The
+// batch requires each token to be at the version it was read at.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter one-time storage upgrade of the stored tokens: a storage concern, no policy
+func (s *Store) upgradeTokens(ctx context.Context, b *kv.Batch) error {
+	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte(tokenPrefix)) {
+		pb := &storagepb.Token{}
+		if err := proto.Unmarshal(item.Value, pb); err != nil {
+			return fmt.Errorf("upgrade token %s: %w", key, err)
+		}
+		if len(pb.GetRepos()) > 0 || len(pb.GetBranchPrefixes()) > 0 ||
+			slices.Contains(pb.GetScopes(), domain.ScopeIssueWrite.String()) {
+			continue
+		}
+		full := true
+		for _, sc := range preIssueScopes {
+			if !slices.Contains(pb.GetScopes(), sc.String()) {
+				full = false
+				break
+			}
+		}
+		if !full {
+			continue
+		}
+		pb.Scopes = append(pb.Scopes, domain.ScopeIssueWrite.String())
+		b.RequireVersion(slices.Clone(key), item.Version)
+		b.Put(slices.Clone(key), mustMarshal(pb))
+	}
+	return nil
 }

@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of ermite: issues.
+
+syntax = "proto3";
+
+package ermite.storage;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// IssueState is where an issue is in its life.
+enum IssueState {
+  ISSUE_STATE_UNSPECIFIED = 0;
+  ISSUE_STATE_OPEN = 1;
+  ISSUE_STATE_CLOSED = 2;
+  // Awaiting moderation. Not stored yet.
+  ISSUE_STATE_PENDING = 3;
+}
+
+// Issue is stored under the key "is/<repo>/<number:010d>". The numbers come
+// from the sequence of the merge requests ("mrseq/<repo>"). The open ones are
+// indexed under "isopen/<repo>/<number:010d>".
+message Issue {
+  int64 number = 1;
+  string title = 2;
+  string body = 3;
+  IssueState state = 4;
+  // Label of the token that opened it.
+  string author = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  // Last comment id handed out for this issue.
+  int64 comment_seq = 8;
+}
+
+// IssueComment is stored under the key
+// "isc/<repo>/<number:010d>/<id:010d>".
+message IssueComment {
+  int64 id = 1;
+  string author = 2;
+  string text = 3;
+  google.protobuf.Timestamp created_at = 4;
+}

@@ -76,6 +76,59 @@ func (MergeMode) EnumDescriptor() ([]byte, []int) {
 	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{0}
 }
 
+// IssuesMode says who may write issues in a repository.
+type IssuesMode int32
+
+const (
+	IssuesMode_ISSUES_MODE_UNSPECIFIED IssuesMode = 0
+	IssuesMode_ISSUES_MODE_OFF         IssuesMode = 1
+	IssuesMode_ISSUES_MODE_OWNER       IssuesMode = 2
+	IssuesMode_ISSUES_MODE_PUBLIC      IssuesMode = 3
+)
+
+// Enum value maps for IssuesMode.
+var (
+	IssuesMode_name = map[int32]string{
+		0: "ISSUES_MODE_UNSPECIFIED",
+		1: "ISSUES_MODE_OFF",
+		2: "ISSUES_MODE_OWNER",
+		3: "ISSUES_MODE_PUBLIC",
+	}
+	IssuesMode_value = map[string]int32{
+		"ISSUES_MODE_UNSPECIFIED": 0,
+		"ISSUES_MODE_OFF":         1,
+		"ISSUES_MODE_OWNER":       2,
+		"ISSUES_MODE_PUBLIC":      3,
+	}
+)
+
+func (x IssuesMode) Enum() *IssuesMode {
+	p := new(IssuesMode)
+	*p = x
+	return p
+}
+
+func (x IssuesMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (IssuesMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_ermite_storage_merge_request_proto_enumTypes[1].Descriptor()
+}
+
+func (IssuesMode) Type() protoreflect.EnumType {
+	return &file_ermite_storage_merge_request_proto_enumTypes[1]
+}
+
+func (x IssuesMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use IssuesMode.Descriptor instead.
+func (IssuesMode) EnumDescriptor() ([]byte, []int) {
+	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{1}
+}
+
 // MergeRequestState is where a merge request is in its life.
 type MergeRequestState int32
 
@@ -113,11 +166,11 @@ func (x MergeRequestState) String() string {
 }
 
 func (MergeRequestState) Descriptor() protoreflect.EnumDescriptor {
-	return file_ermite_storage_merge_request_proto_enumTypes[1].Descriptor()
+	return file_ermite_storage_merge_request_proto_enumTypes[2].Descriptor()
 }
 
 func (MergeRequestState) Type() protoreflect.EnumType {
-	return &file_ermite_storage_merge_request_proto_enumTypes[1]
+	return &file_ermite_storage_merge_request_proto_enumTypes[2]
 }
 
 func (x MergeRequestState) Number() protoreflect.EnumNumber {
@@ -126,7 +179,7 @@ func (x MergeRequestState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MergeRequestState.Descriptor instead.
 func (MergeRequestState) EnumDescriptor() ([]byte, []int) {
-	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{1}
+	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{2}
 }
 
 // DiffSide is the side of a diff a comment is attached to.
@@ -164,11 +217,11 @@ func (x DiffSide) String() string {
 }
 
 func (DiffSide) Descriptor() protoreflect.EnumDescriptor {
-	return file_ermite_storage_merge_request_proto_enumTypes[2].Descriptor()
+	return file_ermite_storage_merge_request_proto_enumTypes[3].Descriptor()
 }
 
 func (DiffSide) Type() protoreflect.EnumType {
-	return &file_ermite_storage_merge_request_proto_enumTypes[2]
+	return &file_ermite_storage_merge_request_proto_enumTypes[3]
 }
 
 func (x DiffSide) Number() protoreflect.EnumNumber {
@@ -177,7 +230,7 @@ func (x DiffSide) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DiffSide.Descriptor instead.
 func (DiffSide) EnumDescriptor() ([]byte, []int) {
-	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{2}
+	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{3}
 }
 
 // RepoSettings are the merge settings of a repository, stored inside Repo.
@@ -186,8 +239,10 @@ type RepoSettings struct {
 	// Never empty once stored.
 	AllowedMergeModes  []MergeMode `protobuf:"varint,1,rep,packed,name=allowed_merge_modes,json=allowedMergeModes,proto3,enum=ermite.storage.MergeMode" json:"allowed_merge_modes,omitempty"`
 	FailingChecksBlock bool        `protobuf:"varint,2,opt,name=failing_checks_block,json=failingChecksBlock,proto3" json:"failing_checks_block,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Who may write issues; unspecified reads as off.
+	Issues        IssuesMode `protobuf:"varint,3,opt,name=issues,proto3,enum=ermite.storage.IssuesMode" json:"issues,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RepoSettings) Reset() {
@@ -232,6 +287,13 @@ func (x *RepoSettings) GetFailingChecksBlock() bool {
 		return x.FailingChecksBlock
 	}
 	return false
+}
+
+func (x *RepoSettings) GetIssues() IssuesMode {
+	if x != nil {
+		return x.Issues
+	}
+	return IssuesMode_ISSUES_MODE_UNSPECIFIED
 }
 
 // MergeRequest is stored under the key "mr/<repo>/<number:010d>".
@@ -548,10 +610,11 @@ var File_ermite_storage_merge_request_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_merge_request_proto_rawDesc = "" +
 	"\n" +
-	"\"ermite/storage/merge_request.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8b\x01\n" +
+	"\"ermite/storage/merge_request.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbf\x01\n" +
 	"\fRepoSettings\x12I\n" +
 	"\x13allowed_merge_modes\x18\x01 \x03(\x0e2\x19.ermite.storage.MergeModeR\x11allowedMergeModes\x120\n" +
-	"\x14failing_checks_block\x18\x02 \x01(\bR\x12failingChecksBlock\"\xa6\x04\n" +
+	"\x14failing_checks_block\x18\x02 \x01(\bR\x12failingChecksBlock\x122\n" +
+	"\x06issues\x18\x03 \x01(\x0e2\x1a.ermite.storage.IssuesModeR\x06issues\"\xa6\x04\n" +
 	"\fMergeRequest\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x03R\x06number\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -588,7 +651,13 @@ const file_ermite_storage_merge_request_proto_rawDesc = "" +
 	"\tMergeMode\x12\x1a\n" +
 	"\x16MERGE_MODE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17MERGE_MODE_FAST_FORWARD\x10\x01\x12\x15\n" +
-	"\x11MERGE_MODE_SQUASH\x10\x02*\x96\x01\n" +
+	"\x11MERGE_MODE_SQUASH\x10\x02*m\n" +
+	"\n" +
+	"IssuesMode\x12\x1b\n" +
+	"\x17ISSUES_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fISSUES_MODE_OFF\x10\x01\x12\x15\n" +
+	"\x11ISSUES_MODE_OWNER\x10\x02\x12\x16\n" +
+	"\x12ISSUES_MODE_PUBLIC\x10\x03*\x96\x01\n" +
 	"\x11MergeRequestState\x12#\n" +
 	"\x1fMERGE_REQUEST_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18MERGE_REQUEST_STATE_OPEN\x10\x01\x12\x1e\n" +
@@ -611,31 +680,33 @@ func file_ermite_storage_merge_request_proto_rawDescGZIP() []byte {
 	return file_ermite_storage_merge_request_proto_rawDescData
 }
 
-var file_ermite_storage_merge_request_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_ermite_storage_merge_request_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_ermite_storage_merge_request_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_ermite_storage_merge_request_proto_goTypes = []any{
 	(MergeMode)(0),                // 0: ermite.storage.MergeMode
-	(MergeRequestState)(0),        // 1: ermite.storage.MergeRequestState
-	(DiffSide)(0),                 // 2: ermite.storage.DiffSide
-	(*RepoSettings)(nil),          // 3: ermite.storage.RepoSettings
-	(*MergeRequest)(nil),          // 4: ermite.storage.MergeRequest
-	(*Comment)(nil),               // 5: ermite.storage.Comment
-	(*Sequence)(nil),              // 6: ermite.storage.Sequence
-	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
+	(IssuesMode)(0),               // 1: ermite.storage.IssuesMode
+	(MergeRequestState)(0),        // 2: ermite.storage.MergeRequestState
+	(DiffSide)(0),                 // 3: ermite.storage.DiffSide
+	(*RepoSettings)(nil),          // 4: ermite.storage.RepoSettings
+	(*MergeRequest)(nil),          // 5: ermite.storage.MergeRequest
+	(*Comment)(nil),               // 6: ermite.storage.Comment
+	(*Sequence)(nil),              // 7: ermite.storage.Sequence
+	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
 }
 var file_ermite_storage_merge_request_proto_depIdxs = []int32{
 	0, // 0: ermite.storage.RepoSettings.allowed_merge_modes:type_name -> ermite.storage.MergeMode
-	1, // 1: ermite.storage.MergeRequest.state:type_name -> ermite.storage.MergeRequestState
-	7, // 2: ermite.storage.MergeRequest.created_at:type_name -> google.protobuf.Timestamp
-	7, // 3: ermite.storage.MergeRequest.updated_at:type_name -> google.protobuf.Timestamp
-	0, // 4: ermite.storage.MergeRequest.merge_mode:type_name -> ermite.storage.MergeMode
-	2, // 5: ermite.storage.Comment.side:type_name -> ermite.storage.DiffSide
-	7, // 6: ermite.storage.Comment.created_at:type_name -> google.protobuf.Timestamp
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	1, // 1: ermite.storage.RepoSettings.issues:type_name -> ermite.storage.IssuesMode
+	2, // 2: ermite.storage.MergeRequest.state:type_name -> ermite.storage.MergeRequestState
+	8, // 3: ermite.storage.MergeRequest.created_at:type_name -> google.protobuf.Timestamp
+	8, // 4: ermite.storage.MergeRequest.updated_at:type_name -> google.protobuf.Timestamp
+	0, // 5: ermite.storage.MergeRequest.merge_mode:type_name -> ermite.storage.MergeMode
+	3, // 6: ermite.storage.Comment.side:type_name -> ermite.storage.DiffSide
+	8, // 7: ermite.storage.Comment.created_at:type_name -> google.protobuf.Timestamp
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_merge_request_proto_init() }
@@ -648,7 +719,7 @@ func file_ermite_storage_merge_request_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_merge_request_proto_rawDesc), len(file_ermite_storage_merge_request_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      4,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,

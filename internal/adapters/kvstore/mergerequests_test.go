@@ -441,7 +441,7 @@ func TestRepoSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.DefaultRepoSettings(), got.Settings)
 
-	got.Settings = domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, FailingChecksBlock: false}
+	got.Settings = domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, FailingChecksBlock: false, Issues: domain.IssuesOwner}
 	require.NoError(t, s.Update(ctx, got))
 	again, err := s.Get(ctx, n)
 	require.NoError(t, err)

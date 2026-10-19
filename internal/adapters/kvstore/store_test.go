@@ -230,7 +230,7 @@ func TestSchema(t *testing.T) {
 		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 	})
 
-	t.Run("version 2 is upgraded to 3, its runs kept", func(t *testing.T) {
+	t.Run("version 2 is upgraded to the current one, its runs kept", func(t *testing.T) {
 		dir := t.TempDir()
 		putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 2}))
 		putRaw(t, dir, "repo/old", mustProto(t, &storagepb.Repo{Name: "old", Visibility: storagepb.Visibility_VISIBILITY_PUBLIC}))
@@ -261,10 +261,10 @@ func TestSchema(t *testing.T) {
 		assert.Equal(t, "cccccccccccccccccccccccccccccccccccccccc", pr.HeadSha)
 		assert.Equal(t, pr.HeadSha, pr.CheckSha(), "the checks of a pull_request run are on the head")
 		require.NoError(t, s.Close(ctx))
-		assert.Equal(t, uint32(3), readSchema(t, dir))
+		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 	})
 
-	t.Run("version 2 is upgraded to 3, its data kept", func(t *testing.T) {
+	t.Run("version 2 is upgraded to the current one, its data kept", func(t *testing.T) {
 		dir := t.TempDir()
 		putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 2}))
 		putRaw(t, dir, "repo/old", mustProto(t, &storagepb.Repo{Name: "old", Visibility: storagepb.Visibility_VISIBILITY_PUBLIC}))
@@ -273,7 +273,7 @@ func TestSchema(t *testing.T) {
 		_, err = s.Get(ctx, name(t, "old"))
 		require.NoError(t, err)
 		require.NoError(t, s.Close(ctx))
-		assert.Equal(t, uint32(3), readSchema(t, dir))
+		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 	})
 
 	// Downgrade guard: once a build with reusable workflows has opened the data

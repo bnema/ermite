@@ -25,3 +25,12 @@ func (c *CI) RawVersionForTest(ctx context.Context, id string) (uint64, bool) {
 	item, ok := c.db.Get(ctx, runnerKey(id))
 	return item.Version, ok
 }
+
+// CountKeysForTest counts the keys of the database under prefix.
+func (s *Store) CountKeysForTest(ctx context.Context, prefix string) int {
+	n := 0
+	for range s.db.Snapshot(ctx).Prefix(ctx, []byte(prefix)) {
+		n++
+	}
+	return n
+}

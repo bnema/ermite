@@ -1,0 +1,339 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package kvstore_test
+
+import (
+	"context"
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	storagepb "bnema.dev/ermite/gen/ermite/storage"
+	"bnema.dev/ermite/internal/adapters/kvstore"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+)
+
+func newIssue(t *testing.T, repo domain.RepoName, title string) domain.Issue {
+	t.Helper()
+	ti, err := domain.ParseIssueTitle(title)
+	require.NoError(t, err)
+	body, err := domain.ParseIssueBody("what\nhappened")
+	require.NoError(t, err)
+	return domain.Issue{
+		Repo: repo, Title: ti, Body: body, State: domain.IssueStateOpen,
+		Author: "agent", CreatedAt: created, UpdatedAt: created,
+	}
+}
+
+func newIssueComment(t *testing.T, id int64, text string) domain.IssueComment {
+	t.Helper()
+	body, err := domain.ParseIssueBody(text)
+	require.NoError(t, err)
+	return domain.IssueComment{ID: id, Author: "agent", Text: body, CreatedAt: created}
+}
+
+// countKeys counts the keys of the store under prefix.
+func countKeys(t *testing.T, s *kvstore.Store, prefix string) int {
+	t.Helper()
+	return s.CountKeysForTest(context.Background(), prefix)
+}
+
+func TestIssueRoundTripAndPaging(t *testing.T) {
+	ctx := context.Background()
+	s, _, n := repoWithMRs(t)
+	is := s.Issues()
+
+	first, err := is.Create(ctx, newIssue(t, n, "one"))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), first.Number)
+	assert.NotZero(t, first.Version)
+	got, err := is.Get(ctx, n, 1)
+	require.NoError(t, err)
+	assert.Equal(t, first, got)
+	_, err = is.Get(ctx, n, 2)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	for _, title := range []string{"two", "three", "four"} {
+		_, err := is.Create(ctx, newIssue(t, n, title))
+		require.NoError(t, err)
+	}
+	closed, err := is.Get(ctx, n, 2)
+	require.NoError(t, err)
+	closed.State = domain.IssueStateClosed
+	require.NoError(t, is.Update(ctx, closed))
+
+	page, err := is.List(ctx, n, ports.ListIssuesParams{PageSize: 3})
+	require.NoError(t, err)
+	require.Len(t, page.Issues, 3)
+	assert.Equal(t, int64(4), page.Issues[0].Number)
+	require.NotEmpty(t, page.NextPageToken)
+	page, err = is.List(ctx, n, ports.ListIssuesParams{PageSize: 3, PageToken: page.NextPageToken})
+	require.NoError(t, err)
+	require.Len(t, page.Issues, 1)
+	assert.Equal(t, int64(1), page.Issues[0].Number)
+	assert.Empty(t, page.NextPageToken)
+
+	page, err = is.List(ctx, n, ports.ListIssuesParams{State: domain.IssueStateClosed})
+	require.NoError(t, err)
+	require.Len(t, page.Issues, 1)
+	assert.Equal(t, int64(2), page.Issues[0].Number)
+
+	_, err = is.List(ctx, n, ports.ListIssuesParams{PageToken: "x"})
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+
+	_, err = is.Create(ctx, newIssue(t, name(t, "ghost"), "x"))
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestIssueUpdateNeedsTheVersionItWasReadAt(t *testing.T) {
+	ctx := context.Background()
+	s, _, n := repoWithMRs(t)
+	is := s.Issues()
+	first, err := is.Create(ctx, newIssue(t, n, "t"))
+	require.NoError(t, err)
+	a, b := first, first
+	a.State = domain.IssueStateClosed
+	require.NoError(t, is.Update(ctx, a))
+	b.State = domain.IssueStateClosed
+	assert.ErrorIs(t, is.Update(ctx, b), domain.ErrConflict)
+}
+
+func TestIssueCommentsAndSaveCommentPreconditions(t *testing.T) {
+	ctx := context.Background()
+	s, _, n := repoWithMRs(t)
+	is := s.Issues()
+	issue, err := is.Create(ctx, newIssue(t, n, "t"))
+	require.NoError(t, err)
+
+	issue.CommentSeq = 1
+	require.NoError(t, is.SaveComment(ctx, issue, newIssueComment(t, 1, "first")))
+	// The issue moved on: the same version is refused.
+	issue.CommentSeq = 2
+	assert.ErrorIs(t, is.SaveComment(ctx, issue, newIssueComment(t, 2, "second")), domain.ErrConflict)
+	issue, err = is.Get(ctx, n, issue.Number)
+	require.NoError(t, err)
+	issue.CommentSeq = 2
+	require.NoError(t, is.SaveComment(ctx, issue, newIssueComment(t, 2, "second")))
+
+	comments, err := is.ListComments(ctx, n, issue.Number)
+	require.NoError(t, err)
+	require.Len(t, comments, 2)
+	assert.Equal(t, "first", comments[0].Text.String())
+	assert.Equal(t, int64(2), comments[1].ID)
+
+	require.NoError(t, s.Delete(ctx, n))
+	assert.ErrorIs(t, is.SaveComment(ctx, issue, newIssueComment(t, 3, "late")), domain.ErrNotFound)
+}
+
+func TestConcurrentMergeRequestsAndIssuesNeverShareANumber(t *testing.T) {
+	ctx := context.Background()
+	s, mrs, n := repoWithMRs(t)
+	is := s.Issues()
+	const workers = 16
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		numbers []int64
+	)
+	for w := range workers {
+		wg.Go(func() {
+			var number int64
+			if w%2 == 0 {
+				got, err := mrs.Create(ctx, newMR(t, n, "t"))
+				if !assert.NoError(t, err) {
+					return
+				}
+				number = got.Number
+			} else {
+				got, err := is.Create(ctx, newIssue(t, n, "t"))
+				if !assert.NoError(t, err) {
+					return
+				}
+				number = got.Number
+			}
+			mu.Lock()
+			numbers = append(numbers, number)
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	want := make([]int64, workers)
+	for i := range want {
+		want[i] = int64(i + 1)
+	}
+	assert.ElementsMatch(t, want, numbers, "every number is used once, by an issue or a merge request")
+}
+
+func TestDeleteDropsTheIssuesOfTheRepository(t *testing.T) {
+	ctx := context.Background()
+	s, _, n := repoWithMRs(t)
+	sib := name(t, "proj-2")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: sib, CreatedAt: created, Visibility: domain.VisibilityPublic}))
+	is := s.Issues()
+
+	for _, repo := range []domain.RepoName{n, sib} {
+		issue, err := is.Create(ctx, newIssue(t, repo, "t"))
+		require.NoError(t, err)
+		issue.CommentSeq = 1
+		require.NoError(t, is.SaveComment(ctx, issue, newIssueComment(t, 1, "note")))
+	}
+	require.NoError(t, s.Delete(ctx, n))
+
+	page, err := is.List(ctx, n, ports.ListIssuesParams{})
+	require.NoError(t, err)
+	assert.Empty(t, page.Issues)
+	comments, err := is.ListComments(ctx, n, 1)
+	require.NoError(t, err)
+	assert.Empty(t, comments)
+	open, err := is.ListOpen(ctx, n)
+	require.NoError(t, err)
+	assert.Empty(t, open)
+	assert.Zero(t, countKeys(t, s, "is/proj/"))
+	assert.Zero(t, countKeys(t, s, "isc/proj/"))
+	assert.Zero(t, countKeys(t, s, "isopen/proj/"))
+
+	open, err = is.ListOpen(ctx, sib)
+	require.NoError(t, err)
+	assert.Len(t, open, 1, "a repository whose name starts like the deleted one keeps its issues")
+	comments, err = is.ListComments(ctx, sib, 1)
+	require.NoError(t, err)
+	assert.Len(t, comments, 1)
+
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: n, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+	again, err := is.Create(ctx, newIssue(t, n, "fresh"))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), again.Number)
+}
+
+func TestOpenIssueIndexFollowsUpdates(t *testing.T) {
+	ctx := context.Background()
+	s, _, n := repoWithMRs(t)
+	is := s.Issues()
+	a, err := is.Create(ctx, newIssue(t, n, "a"))
+	require.NoError(t, err)
+	b, err := is.Create(ctx, newIssue(t, n, "b"))
+	require.NoError(t, err)
+
+	numbers := func() []int64 {
+		open, err := is.ListOpen(ctx, n)
+		require.NoError(t, err)
+		var out []int64
+		for _, i := range open {
+			out = append(out, i.Number)
+		}
+		return out
+	}
+	assert.Equal(t, []int64{2, 1}, numbers())
+	assert.Equal(t, 2, countKeys(t, s, "isopen/proj/"))
+
+	a.State = domain.IssueStateClosed
+	require.NoError(t, is.Update(ctx, a))
+	assert.Equal(t, []int64{2}, numbers())
+	assert.Equal(t, 1, countKeys(t, s, "isopen/proj/"))
+
+	a, err = is.Get(ctx, n, a.Number)
+	require.NoError(t, err)
+	a.State = domain.IssueStateOpen
+	require.NoError(t, is.Update(ctx, a))
+	assert.Equal(t, []int64{2, 1}, numbers())
+
+	// A comment keeps the index as the issue says.
+	b.State = domain.IssueStateClosed
+	b.CommentSeq = 1
+	require.NoError(t, is.SaveComment(ctx, b, newIssueComment(t, 1, "closing")))
+	assert.Equal(t, []int64{1}, numbers())
+	assert.Equal(t, 1, countKeys(t, s, "isopen/proj/"))
+}
+
+func TestRepoSettingsKeepTheIssuesMode(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t, t.TempDir())
+	n := name(t, "proj")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: n, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+	got, err := s.Get(ctx, n)
+	require.NoError(t, err)
+	assert.Equal(t, domain.IssuesOff, got.Settings.Issues)
+	for _, m := range []domain.IssuesMode{domain.IssuesOwner, domain.IssuesPublic, domain.IssuesOff} {
+		got.Settings.Issues = m
+		require.NoError(t, s.Update(ctx, got))
+		again, err := s.Get(ctx, n)
+		require.NoError(t, err)
+		assert.Equal(t, m, again.Settings.Issues)
+	}
+	got.Settings.Issues = "everyone"
+	assert.ErrorIs(t, s.Update(ctx, got), domain.ErrInvalid)
+}
+
+// TestSchema4UpgradesTheTokensWithAllScopes: the tokens that held every scope
+// before issue:write existed keep their owner rights; no other token changes.
+func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 3}))
+
+	all9 := []string{
+		"repo:read", "repo:write", "repo:admin", "mr:write", "mr:merge",
+		"ci:write", "secrets:write", "runner:register", "token:admin",
+	}
+	tokens := map[string]*storagepb.Token{
+		"full":      {Id: "full", Scopes: all9},
+		"missing":   {Id: "missing", Scopes: all9[:8]},
+		"repos":     {Id: "repos", Scopes: all9, Repos: []string{"proj"}},
+		"prefix":    {Id: "prefix", Scopes: all9, BranchPrefixes: []string{"agent/"}},
+		"small":     {Id: "small", Scopes: []string{"repo:read"}},
+		"otherfull": {Id: "otherfull", Scopes: append([]string{"token:admin"}, all9[:8]...)},
+	}
+	for id, tok := range tokens {
+		tok.Hash = make([]byte, 32)
+		tok.Hash[0] = byte(len(id))
+		putRaw(t, dir, "token/"+id, mustProto(t, tok))
+	}
+
+	s, err := kvstore.Open(ctx, dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close(ctx) })
+	get := func(id string) domain.Token {
+		tok, err := s.Tokens().Get(ctx, id)
+		require.NoError(t, err)
+		return tok
+	}
+
+	full := get("full")
+	assert.Contains(t, full.Scopes, domain.ScopeIssueWrite)
+	assert.True(t, domain.TokenPrincipal(full).HasOwnerRights())
+	assert.True(t, domain.TokenPrincipal(get("otherfull")).HasOwnerRights(), "the order of the scopes does not matter")
+
+	assert.NotContains(t, get("missing").Scopes, domain.ScopeIssueWrite)
+	assert.False(t, domain.TokenPrincipal(get("missing")).HasOwnerRights())
+	assert.NotContains(t, get("repos").Scopes, domain.ScopeIssueWrite)
+	assert.NotContains(t, get("prefix").Scopes, domain.ScopeIssueWrite)
+	assert.Equal(t, []domain.Scope{domain.ScopeRepoRead}, get("small").Scopes)
+	assert.Len(t, get("missing").Scopes, 8)
+	assert.Len(t, get("repos").Scopes, 9)
+	assert.Len(t, get("prefix").Scopes, 9)
+	assert.Equal(t, []string{"agent/"}, get("prefix").BranchPrefixes)
+	assert.Equal(t, "full", full.ID)
+
+	require.NoError(t, s.Close(ctx))
+	assert.Equal(t, uint32(4), readSchema(t, dir))
+
+	// A second open changes nothing.
+	s2, err := kvstore.Open(ctx, dir)
+	require.NoError(t, err)
+	tok, err := s2.Tokens().Get(ctx, "full")
+	require.NoError(t, err)
+	assert.Equal(t, full.Scopes, tok.Scopes)
+	require.NoError(t, s2.Close(ctx))
+}
+
+func TestSchemaNewerThanThisBuildStopsIssuesData(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: kvstore.SchemaVersion + 1}))
+	_, err := kvstore.Open(ctx, dir)
+	require.ErrorIs(t, err, kvstore.ErrSchemaTooNew)
+	assert.Equal(t, uint32(4), uint32(kvstore.SchemaVersion))
+}
