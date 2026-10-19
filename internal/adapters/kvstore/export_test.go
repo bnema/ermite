@@ -2,7 +2,13 @@
 
 package kvstore
 
-import "context"
+import (
+	"context"
+
+	kv "bnema.dev/ermite-kv"
+
+	"bnema.dev/ermite/internal/domain"
+)
 
 // SetAfterSettingsSnapshot installs the hook that runs between the snapshot of
 // DeleteEnvironment and its batch, and returns the function that removes it.
@@ -33,4 +39,21 @@ func (s *Store) CountKeysForTest(ctx context.Context, prefix string) int {
 		n++
 	}
 	return n
+}
+
+// DropIssueRecordForTest deletes the issue record and leaves its open index
+// entry: the state of an index that is stale.
+func (i *Issues) DropIssueRecordForTest(ctx context.Context, repo domain.RepoName, n int64) error {
+	var b kv.Batch
+	b.Delete(issueKey(repo, n))
+	_, err := i.db.Apply(ctx, &b)
+	return err
+}
+
+// DropMRRecordForTest is DropIssueRecordForTest for a merge request.
+func (m *MergeRequests) DropMRRecordForTest(ctx context.Context, repo domain.RepoName, n int64) error {
+	var b kv.Batch
+	b.Delete(mrKey(repo, n))
+	_, err := m.db.Apply(ctx, &b)
+	return err
 }

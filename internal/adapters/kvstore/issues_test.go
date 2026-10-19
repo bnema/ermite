@@ -425,3 +425,31 @@ func TestListOpenAllIsEmptyWithoutOpenItems(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, open)
 }
+
+func TestListOpenAllSkipsAStaleIndexEntry(t *testing.T) {
+	ctx := context.Background()
+	s, mrs, n := repoWithMRs(t)
+	is := s.Issues()
+	keepI, err := is.Create(ctx, newIssue(t, n, "keep"))
+	require.NoError(t, err)
+	goneI, err := is.Create(ctx, newIssue(t, n, "gone"))
+	require.NoError(t, err)
+	keepM, err := mrs.Create(ctx, newMR(t, n, "keep"))
+	require.NoError(t, err)
+	goneM, err := mrs.Create(ctx, newMR(t, n, "gone"))
+	require.NoError(t, err)
+
+	require.NoError(t, is.DropIssueRecordForTest(ctx, n, goneI.Number))
+	require.NoError(t, mrs.DropMRRecordForTest(ctx, n, goneM.Number))
+	require.Positive(t, countKeys(t, s, "isopen/proj/"), "the index entries are still there")
+	require.Positive(t, countKeys(t, s, "mropen/proj/"))
+
+	issues, err := is.ListOpenAll(ctx)
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, keepI.Number, issues[0].Number)
+	open, err := mrs.ListOpenAll(ctx)
+	require.NoError(t, err)
+	require.Len(t, open, 1)
+	assert.Equal(t, keepM.Number, open[0].Number)
+}

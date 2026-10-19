@@ -3,10 +3,12 @@
 package web
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,4 +194,116 @@ func TestInboxLiveFragments(t *testing.T) {
 // withOwner is a context as the session middleware leaves it for the owner.
 func withOwner(ctx context.Context) context.Context {
 	return domain.ContextWithPrincipal(context.WithValue(ctx, signedInKey{}, struct{}{}), domain.Owner())
+}
+
+// A bearer token is not a web session: the inbox answers it as it answers
+// anyone else, with the unknown-page and unknown-topic responses.
+func TestInboxRefusesABearerToken(t *testing.T) {
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{})}
+	svc := mocks.NewInboxService(t) // never asked
+	srv := newTestServer(t, Config{
+		Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t), Events: f.service(t), Inbox: svc,
+		Heartbeat: time.Hour, Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
+	})
+	bearer := map[string]string{"Authorization": "Bearer tok"}
+
+	// The page.
+	missing := inboxGet(srv, "/-/nothing-here", false)
+	req := httptest.NewRequest(http.MethodGet, "/-/inbox", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	assert.Equal(t, missing.Code, rec.Code)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Equal(t, missing.Body.String(), rec.Body.String(), "the unknown-page response")
+
+	// The stream.
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	unknown, _ := open(t, ts, "topic=nope&view=inbox", nil)
+	want, _ := io.ReadAll(unknown.Body)
+	resp, _ := open(t, ts, "topic=owner&view=inbox", bearer)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Equal(t, unknown.StatusCode, resp.StatusCode)
+	assert.Equal(t, string(want), string(body), "the unknown-topic response")
+	assert.Zero(t, f.opened.Load(), "no watch is opened")
+}
+
+// The owner's inbox stream ends once the session is invalid: the next event is
+// not sent.
+func TestInboxStreamEndsWhenTheSessionEnds(t *testing.T) {
+	t.Parallel()
+	f := &watchProbe{release: make(chan struct{}), push: make(chan ports.WatchEvent)}
+	sess, ended := newRevocable(t, "tok")
+	svc := mocks.NewInboxService(t)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(inboxOverview(t), nil).Maybe()
+	srv := newTestServer(t, Config{
+		Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t), Events: f.service(t), Inbox: svc,
+		Heartbeat: time.Hour, Sessions: sess, Limiter: &countingLimiter{},
+	})
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	resp, cancel := open(t, ts, "topic=owner&view=inbox", map[string]string{"Cookie": CookieName + "=tok"})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	defer time.AfterFunc(5*time.Second, cancel).Stop()
+	rd := bufio.NewReader(resp.Body)
+	line := func() string {
+		s, err := rd.ReadString('\n')
+		if err != nil {
+			return "EOF"
+		}
+		return strings.TrimRight(s, "\n")
+	}
+	require.Equal(t, ": connected", line())
+	line()
+	ev := func(id string) ports.WatchEvent {
+		return ports.WatchEvent{ID: id, Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}}
+	}
+	f.push <- ev("b-1")
+	var seen []string
+	for l := line(); !strings.HasPrefix(l, "data:"); l = line() {
+		seen = append(seen, l)
+		require.NotEqual(t, "EOF", l)
+	}
+	assert.Contains(t, seen, "id: b-1")
+
+	ended.Store(true)
+	select {
+	case f.push <- ev("b-2"):
+	case <-time.After(5 * time.Second):
+		t.Fatal("the event was not delivered to the web")
+	}
+	rest, _ := io.ReadAll(rd)
+	assert.NotContains(t, string(rest), "b-2", "nothing is sent after the session ended")
+	require.Eventually(t, func() bool { return f.closed.Load() == 1 }, 5*time.Second, time.Millisecond, "the watch is closed")
+}
+
+// A repository event refreshes the inbox: issues turned off or a deletion
+// remove its items from the fragments.
+func TestInboxRefreshesOnRepoEvents(t *testing.T) {
+	t.Parallel()
+	for name, ev := range map[string]domain.Event{
+		"issues turned off": domain.RepoUpdated{Repo: repoName(t, "beta")},
+		"repo deleted":      domain.RepoDeleted{Repo: repoName(t, "beta")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			after := ports.InboxOverview{Repos: []domain.RepoName{repoName(t, "alpha")}}
+			svc := mocks.NewInboxService(t)
+			svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(after, nil)
+			srv := inboxServer(t, svc)
+			ls := &liveStream{s: srv, view: "inbox"}
+			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
+			require.NoError(t, err)
+			require.Len(t, frags, 4)
+			all := ""
+			for _, f := range frags {
+				all += f.html
+			}
+			assert.Contains(t, all, `id="inbox-issues"`)
+			assert.NotContains(t, all, "crash on start", "the issue is gone")
+			assert.NotContains(t, all, "/beta", "the repository is gone from the filter")
+		})
+	}
 }
