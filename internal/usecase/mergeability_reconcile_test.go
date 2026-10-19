@@ -16,10 +16,6 @@ import (
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
-type mergeTestClock struct{}
-
-func (mergeTestClock) Now() time.Time { return time.Time{} }
-
 func TestMergeabilityBackoffIsBounded(t *testing.T) {
 	assert.Equal(t, time.Second, mergeBackoff(1))
 	assert.Equal(t, 2*time.Second, mergeBackoff(2))

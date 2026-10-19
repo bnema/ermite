@@ -584,3 +584,90 @@ func TestMergeabilitySuccessfulPassForgetsTheRetryBudget(t *testing.T) {
 	assert.Empty(t, r.afters)
 	assert.Empty(t, r.passes)
 }
+
+// stepClock is a clock the test moves.
+type stepClock struct{ at atomic.Int64 }
+
+func (c *stepClock) Now() time.Time          { return time.Unix(0, c.at.Load()).UTC() }
+func (c *stepClock) advance(d time.Duration) { c.at.Add(int64(d)) }
+
+// An expired timer must not consume a replacement retry of its repository.
+func TestMergeabilityStaleTimerKeepsReplacementRetry(t *testing.T) {
+	repo := name(t, "proj")
+	meta := mocks.NewRepoMetaStore(t)
+	meta.EXPECT().List(mock.Anything).Return(nil, nil)
+	clock := &stepClock{}
+	clock.advance(time.Hour)
+	armed := make(chan time.Duration, 8)
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Meta: meta, Clock: clock, Workers: 1,
+		After: func(d time.Duration) <-chan time.Time { armed <- d; return make(chan time.Time) },
+	})
+	t.Cleanup(func() { svc.Close(context.Background()) })
+	svc.Start()
+
+	svc.RetryForTest(repo)
+	assert.Equal(t, time.Second, <-armed, "the scheduler armed the timer of retry A")
+	oldDue, ok := svc.RetryDueForTest(repo)
+	require.True(t, ok)
+
+	svc.RetryDoneForTest(repo)
+	clock.advance(10 * time.Second)
+	svc.RetryForTest(repo)
+	newDue, ok := svc.RetryDueForTest(repo)
+	require.True(t, ok)
+	require.True(t, newDue.After(oldDue))
+
+	// The old timer fires while the replacement is not yet due.
+	assert.Empty(t, svc.PopDueForTest(repo, oldDue))
+	assert.Equal(t, 1, svc.ScheduledRetries())
+	// The timer armed for the replacement itself releases it.
+	assert.Equal(t, []domain.RepoName{repo}, svc.PopDueForTest(repo, newDue))
+	assert.Zero(t, svc.ScheduledRetries())
+}
+
+func reconcileMocks(t *testing.T, repo domain.RepoName) (*mocks.MergeRequestStore, *mocks.RepoMetaStore, *mocks.MergeGit, domain.MergeRequest) {
+	t.Helper()
+	mr := domain.MergeRequest{Repo: repo, Number: 7, Source: "feat", Target: "main", State: domain.MRStateOpen}
+	store, meta, git := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t)
+	meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, CreatedAt: now}, nil)
+	store.EXPECT().ListOpen(mock.Anything, repo).Return([]domain.MergeRequest{mr}, nil)
+	return store, meta, git, mr
+}
+
+func TestMergeabilityDisappearedBranchDeletesTheRecord(t *testing.T) {
+	repo := name(t, "proj")
+	store, meta, git, _ := reconcileMocks(t, repo)
+	git.EXPECT().BranchHead(mock.Anything, repo, "feat").Return(domain.ObjectID{}, domain.ErrNotFound)
+	git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(fakeOID(t, "b"), nil)
+	store.EXPECT().DeleteMergeability(mock.Anything, repo, int64(7)).Return(nil).Once()
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Store: store, Meta: meta, Git: git, Clock: fixedClock{},
+	})
+	t.Cleanup(func() { svc.Close(context.Background()) })
+	assert.True(t, svc.ReconcileForTest(repo))
+}
+
+func TestMergeabilityConflictMakesThePassFailAndRetries(t *testing.T) {
+	repo := name(t, "proj")
+	head, tip := fakeOID(t, "a"), fakeOID(t, "b")
+	store, meta, git, mr := reconcileMocks(t, repo)
+	meta.EXPECT().List(mock.Anything).Return(nil, nil)
+	git.EXPECT().BranchHead(mock.Anything, repo, "feat").Return(head, nil)
+	git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(tip, nil)
+	git.EXPECT().IsAncestor(mock.Anything, repo, tip, head).Return(true, nil)
+	store.EXPECT().GetMergeability(mock.Anything, repo, int64(7)).Return(domain.Mergeability{}, domain.ErrNotFound)
+	store.EXPECT().PutMergeability(mock.Anything, mock.Anything).Return(domain.ErrConflict)
+
+	asked := make(chan time.Duration, 4)
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Store: store, Meta: meta, Git: git, Clock: fixedClock{}, Workers: 1,
+		After: func(d time.Duration) <-chan time.Time { asked <- d; return make(chan time.Time) },
+	})
+	t.Cleanup(func() { svc.Close(context.Background()) })
+	assert.False(t, svc.ReconcileForTest(repo))
+
+	svc.Start()
+	svc.OnOpened(context.Background(), mr)
+	assert.Equal(t, time.Second, <-asked, "the conflict scheduled a retry")
+}
