@@ -101,14 +101,11 @@ func TestIssuesCLIEndToEnd(t *testing.T) {
 	res = c.cli(t, adminToken, "issue", "comment", "proj", "#2", "-m", "Thanks.").ok(t)
 	assert.Regexp(t, `^comment \S+ added to proj#2\n$`, res.stdout)
 	res = c.cli(t, adminToken, "issue", "show", "proj", "2", "--json").ok(t)
-	var show struct {
+	type showOut struct {
 		issueOut
 		Comments []issueCommentOut `json:"comments"`
 	}
-	show = decode[struct {
-		issueOut
-		Comments []issueCommentOut `json:"comments"`
-	}](t, res.stdout)
+	show := decode[showOut](t, res.stdout)
 	assert.Equal(t, 2, show.CommentCount)
 	require.Len(t, show.Comments, 2)
 	assert.Equal(t, "Reproduced.", show.Comments[0].Text, "oldest first")
