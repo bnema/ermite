@@ -455,6 +455,14 @@ func TestNoteDetailOutput(t *testing.T) {
 	assert.NotNil(t, got.Comments[2].EditedAt)
 }
 
+func TestUnknownVerdictDetailOutput(t *testing.T) {
+	var out strings.Builder
+	require.NoError(t, printMRDetail(&out, &ermite.GetMergeRequestResponse{MergeRequest: mrOne, Verdicts: []*ermite.AuthorVerdict{{Author: "future", Verdict: ermite.Verdict(99)}}}, false, false))
+	assert.Contains(t, out.String(), "future verdict 99")
+	assert.NotContains(t, out.String(), "changes requested")
+	assert.NotContains(t, out.String(), "approved")
+}
+
 func TestMRReviewScopeCompletion(t *testing.T) {
 	cmd := newTokenCreateCmd(&cliEnv{})
 	complete, ok := cmd.GetFlagCompletionFunc("scope")

@@ -562,9 +562,14 @@ func printMRDetail(w io.Writer, d *ermite.GetMergeRequestResponse, withDiff, sin
 	if len(d.GetVerdicts()) > 0 {
 		var verdicts []string
 		for _, v := range d.GetVerdicts() {
-			label := "changes requested"
-			if v.GetVerdict() == ermite.Verdict_VERDICT_APPROVE {
+			var label string
+			switch v.GetVerdict() {
+			case ermite.Verdict_VERDICT_APPROVE:
 				label = "approved"
+			case ermite.Verdict_VERDICT_CHANGES_REQUESTED:
+				label = "changes requested"
+			default:
+				label = fmt.Sprintf("verdict %d", v.GetVerdict())
 			}
 			if v.GetStale() {
 				label += " (stale)"

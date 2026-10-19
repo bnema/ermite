@@ -11,7 +11,6 @@
   .mr-desc.prose { max-width: none; padding: var(--s4) var(--s5); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
   .mr-desc.prose > * { max-width: var(--measure); }
   .mr-desc.prose > pre, .mr-desc.prose > table { max-width: 100%; }
-  .c-text a { text-decoration: underline; }
 
   .since {
     display: inline-flex; flex-wrap: wrap; gap: var(--s1); padding: var(--s1);
@@ -147,12 +146,11 @@
     & p { white-space: normal; }
     & .c-who { font-weight: bold; }
     & .c-state { color: var(--ink-dim); }
-    & .c-text { white-space: pre-wrap; overflow-wrap: anywhere; }
     & .c-where { font-size: var(--fs-s); overflow-wrap: anywhere; }
     & .c-act { margin-top: var(--s2); }
     & .c-act button { height: 26px; font-size: var(--fs-xs); }
     &[data-resolved="true"] { border-left-color: var(--border-strong); }
-    &[data-resolved="true"] .c-text { color: var(--ink-dim); }
+    &[data-resolved="true"] .c-body { color: var(--ink-dim); }
   }
   .dt .fnote td { background: var(--bg-canvas); padding: var(--s2) var(--s3); white-space: normal; }
   .dt .fnote .cmt, .dt .fnote .cform { margin: 0; }

@@ -28,7 +28,7 @@ Presets add up with `--scope` (repeatable or comma-separated):
 
 | Preset | Scopes |
 |---|---|
-| `cli` | every scope (including `mr:review`), for the owner's daily use; a token created before `mr:review` existed lacks it and loses owner rights: recreate it with `--preset cli` |
+| `cli` | every scope (including `mr:review`), for the owner's daily use; a token created before `mr:review` existed lacks it and loses owner rights: recreate it with `--preset cli` using the root token or from a signed-in owner web session (an old token lacking `mr:review` cannot grant it), then replace the stored CLI secret and revoke the old token |
 | `agent` | `repo:write`, `mr:write` |
 | `ci` | `repo:read` |
 

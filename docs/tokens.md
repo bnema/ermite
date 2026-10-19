@@ -6,7 +6,7 @@ ermite token list
 ermite token revoke <id>
 ```
 
-The secret is printed once. Presets and `--scope` add up. The full scope list is in [`skills/ermite/CLI.md`](../skills/ermite/CLI.md). `mr:review` lets a token give a merge request verdict (`--approve`, `--request-changes`); the `cli` preset includes it, the `agent` preset does not. A token created before `mr:review` existed lacks it: recreate it with `--preset cli` to keep the owner's rights.
+The secret is printed once. Presets and `--scope` add up. The full scope list is in [`skills/ermite/CLI.md`](../skills/ermite/CLI.md). `mr:review` lets a token give a merge request verdict (`--approve`, `--request-changes`); the `cli` preset includes it, the `agent` preset does not. A token created before `mr:review` existed lacks it: recreate it with `--preset cli` using the root token or from a signed-in owner web session (an old token lacking `mr:review` cannot grant it), then replace the stored CLI secret and revoke the old token to keep the owner's rights.
 
 | Preset | For |
 |---|---|

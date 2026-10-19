@@ -173,7 +173,7 @@ type CommentAdded struct {
 // EventKind implements Event.
 func (CommentAdded) EventKind() string { return "mr.comment_added" }
 
-// CommentEdited is published when a comment was added to a merge request.
+// CommentEdited is published when the text of a note was edited.
 type CommentEdited struct {
 	Repo       RepoName
 	Number     int64
@@ -186,7 +186,7 @@ type CommentEdited struct {
 // EventKind implements Event.
 func (CommentEdited) EventKind() string { return "mr.comment_edited" }
 
-// CommentDeleted is published when a comment was added to a merge request.
+// CommentDeleted is published when the text of a note was deleted.
 type CommentDeleted struct {
 	Repo       RepoName
 	Number     int64
@@ -199,7 +199,7 @@ type CommentDeleted struct {
 // EventKind implements Event.
 func (CommentDeleted) EventKind() string { return "mr.comment_deleted" }
 
-// CommentResolved is published when a comment was added to a merge request.
+// CommentResolved is published when a thread was resolved or reopened.
 type CommentResolved struct {
 	Repo       RepoName
 	Number     int64

@@ -110,3 +110,50 @@ func TestNotePosts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/demo/merge-requests/1#c2", to)
 }
+
+func TestDeletedNoteRendering(t *testing.T) {
+	t.Parallel()
+	text, err := domain.ParsePlainText("surviving reply")
+	require.NoError(t, err)
+	s := &Server{cfg: Config{Now: time.Now}, md: newMarkdown()}
+	p := MRPage{}
+	s.placeComments(&p, "demo", 1, []domain.Comment{
+		{ID: 1, Author: "reviewer", Deleted: true, Verdict: domain.VerdictApprove},
+		{ID: 2, Deleted: true},
+		{ID: 3, ReplyTo: 2, Deleted: true},
+		{ID: 4, Deleted: true},
+		{ID: 5, ReplyTo: 4, Text: text},
+	}, "", true, true, nil)
+	require.Len(t, p.General, 2)
+	assert.Equal(t, "1", p.General[0].ID)
+	assert.Equal(t, "4", p.General[1].ID)
+	var b bytes.Buffer
+	require.NoError(t, commentView(p.General[0], "").Render(context.Background(), &b))
+	assert.Contains(t, b.String(), `<span class="c-who">owner</span>`)
+	assert.Contains(t, b.String(), "approve")
+	assert.Contains(t, b.String(), "text deleted")
+	b.Reset()
+	require.NoError(t, commentView(p.General[1], "").Render(context.Background(), &b))
+	assert.Contains(t, b.String(), "surviving reply")
+	assert.NotContains(t, b.String(), "Quote")
+	assert.NotContains(t, b.String(), "data-quote")
+}
+
+func TestInlineNoteHeadingIDs(t *testing.T) {
+	t.Parallel()
+	text, err := domain.ParsePlainText("# H\n[jump](#h)")
+	require.NoError(t, err)
+	s := &Server{cfg: Config{Now: time.Now}, md: newMarkdown()}
+	p := MRPage{Files: []DiffFile{{Key: "a", ID: "f1", Hunks: []DiffHunk{{Lines: []DiffLine{{Kind: "add", newN: 1}}}}}}}
+	s.placeComments(&p, "demo", 1, []domain.Comment{{ID: 12, Path: "a", Side: domain.SideNew, Line: 1, Text: text}}, "", true, true, nil)
+	notes := p.Files[0].Hunks[0].Lines[0].Notes
+	require.Len(t, notes, 1)
+	var b bytes.Buffer
+	require.NoError(t, commentView(notes[0], "").Render(context.Background(), &b))
+	require.NoError(t, commentView(notes[0], "-s").Render(context.Background(), &b))
+	html := b.String()
+	assert.Equal(t, 1, strings.Count(html, `id="c12-h"`))
+	assert.Equal(t, 1, strings.Count(html, `id="c12-s-h"`))
+	assert.Contains(t, html, `href="#c12-h"`)
+	assert.Contains(t, html, `href="#c12-s-h"`)
+}

@@ -106,7 +106,7 @@ type CommentView struct {
 	When                  string
 	WhenAt                string
 	Abs                   string
-	Body                  template.HTML
+	Body, BodySplit       template.HTML
 	Replies               []CommentView
 	Edited, Deleted       bool
 	Verdict, Range, Quote string
@@ -796,7 +796,7 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 	exists := noteIDs(comments)
 	children := map[int64][]domain.Comment{}
 	for _, c := range comments {
-		if c.ReplyTo != 0 {
+		if c.ReplyTo != 0 && !c.Deleted {
 			children[c.ReplyTo] = append(children[c.ReplyTo], c)
 		}
 		if !c.Deleted {
@@ -806,14 +806,18 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 			p.NUnresolved++
 		}
 	}
-	var view func(domain.Comment) CommentView
-	view = func(c domain.Comment) CommentView {
+	var view func(domain.Comment, bool) CommentView
+	view = func(c domain.Comment, replyable bool) CommentView {
 		cid := strconv.FormatInt(c.ID, 10)
 		body, err := s.md.renderNote([]byte(c.Text.String()), repo, head, "c"+cid+"-", exists)
 		if err != nil {
 			body = ""
 		}
-		v := CommentView{ID: cid, Author: s.who(c.Author), Body: body, Resolved: c.Resolved, Deleted: c.Deleted, Edited: !c.EditedAt.IsZero(), Verdict: c.Verdict.String(), Outdated: !c.CommitID.IsZero() && c.CommitID.String() != head}
+		bodySplit, err := s.md.renderNote([]byte(c.Text.String()), repo, head, "c"+cid+"-s-", exists)
+		if err != nil {
+			bodySplit = ""
+		}
+		v := CommentView{BodySplit: bodySplit, ID: cid, Author: s.who(c.Author), Body: body, Resolved: c.Resolved, Deleted: c.Deleted, Edited: !c.EditedAt.IsZero(), Verdict: c.Verdict.String(), Outdated: !c.CommitID.IsZero() && c.CommitID.String() != head}
 		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
 		if !c.CreatedAt.IsZero() {
 			v.Abs = absolute(c.CreatedAt)
@@ -827,7 +831,9 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 			if c.ReplyTo != 0 {
 				root = strconv.FormatInt(c.ReplyTo, 10)
 			}
-			v.Quote = "> " + strings.ReplaceAll(c.Text.String(), "\n", "\n> ") + "\n\n^" + cid + " "
+			if replyable {
+				v.Quote = "> " + strings.ReplaceAll(c.Text.String(), "\n", "\n> ") + "\n\n^" + cid + " "
+			}
 			if c.ReplyTo == 0 {
 				v.Reply = &CommentForm{ID: "reply-" + cid, Action: mrHref(repo, n, "comments"), Title: "Reply", ReplyTo: root, From: from}
 			}
@@ -837,18 +843,16 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 			}
 		}
 		for _, reply := range children[c.ID] {
-			if !reply.Deleted {
-				v.Replies = append(v.Replies, view(reply))
-			}
+			v.Replies = append(v.Replies, view(reply, replyable))
 		}
 		return v
 	}
 	for _, c := range comments {
-		if c.ReplyTo != 0 || c.Deleted && len(children[c.ID]) == 0 {
+		if c.ReplyTo != 0 || c.Deleted && c.Verdict == domain.VerdictNone && len(children[c.ID]) == 0 {
 			continue
 		}
 		cid := strconv.FormatInt(c.ID, 10)
-		v := view(c)
+		v := view(c, canWrite && !c.Deleted)
 		general := c.Path == ""
 		fi, listed := fileAt[c.Path]
 		if !general && listed && p.Files[fi].Lazy {

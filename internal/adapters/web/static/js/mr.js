@@ -126,16 +126,31 @@ window.ermiteMR = (() => {
   function reveal(id, scroll = true) {
     // Any navigation, loaded or not, makes the reveals still loading stale.
     const gen = ++revealGen;
+    const target = () => {
+      if (/^c\d+$/.test(id) && $('#diffs')?.dataset.diff === 'split') {
+        const split = document.getElementById(id + '-s');
+        if (split) return split;
+      }
+      return document.getElementById(id);
+    };
     let ph = document.getElementById(id)?.querySelector(':scope > .dlazy');
     if (!ph && /^c\d+/.test(id) && !document.getElementById(id)) {
       const base = id.replace(/-s$/, '');
       ph = $$('.dlazy[data-notes]').find((p) => p.dataset.notes.split(' ').includes(base));
     }
-    if (!ph) return false;
+    if (!ph) {
+      const el = target();
+      if (el && el.id !== id) {
+        const d = el.closest('details');
+        if (d) d.open = true;
+        if (scroll) el.scrollIntoView({ block: 'start' });
+      }
+      return false;
+    }
     load(ph).then(() => {
       // A later reveal (another file asked meanwhile) owns the view.
       if (gen !== revealGen) return;
-      const el = document.getElementById(id);
+      const el = target();
       if (!el) return;
       const d = el.closest('details');
       if (d) d.open = true;

@@ -62,3 +62,33 @@ test('quote opens the thread reply and prefills and focuses its textarea', () =>
  assert.equal(field.value,'> source\n\n^2 ');
  assert.equal(focused,true);
 });
+
+test('reveal selects the split note, including after lazy loading', async () => {
+ const saved = globalThis.document;
+ const savedRAF = globalThis.requestAnimationFrame;
+ let scrolled = '';
+ const details = {open:false};
+ const node = id => ({id, querySelector(){return null;}, closest(){return details;}, scrollIntoView(){scrolled=id;}});
+ const nodes = new Map([['c12',node('c12')],['c12-s',node('c12-s')]]);
+ const ph = {dataset:{notes:'c12'}};
+ globalThis.document = {
+   querySelector: sel => sel === '#diffs' ? {dataset:{diff:'split'}} : null,
+   querySelectorAll: () => [ph],
+   getElementById: id => nodes.get(id),
+ };
+ globalThis.requestAnimationFrame = fn => fn();
+ try {
+   assert.equal(window.ermiteMR.reveal('c12'),false);
+   assert.equal(scrolled,'c12-s');
+   assert.equal(details.open,true);
+   nodes.clear(); scrolled=''; details.open=false;
+   assert.equal(window.ermiteMR.reveal('c12'),true);
+   nodes.set('c12',node('c12')); nodes.set('c12-s',node('c12-s'));
+   await Promise.resolve();
+   assert.equal(scrolled,'c12-s');
+   assert.equal(details.open,true);
+ } finally {
+   globalThis.document=saved;
+   globalThis.requestAnimationFrame=savedRAF;
+ }
+});

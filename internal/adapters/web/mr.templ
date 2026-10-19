@@ -248,10 +248,18 @@ templ commentView(c CommentView, suffix string) {
 			}
 		</p>
 		if c.Deleted {
-			<p class="mute">deleted note</p>
+			if c.Verdict != "" {
+				<p class="mute">text deleted</p>
+			} else {
+				<p class="mute">deleted note</p>
+			}
 		} else {
 			<div class="c-body prose">
-				@templ.Raw(string(c.Body))
+				if suffix == "-s" {
+					@templ.Raw(string(c.BodySplit))
+				} else {
+					@templ.Raw(string(c.Body))
+				}
 			</div>
 		}
 		if c.Edited {
