@@ -321,10 +321,11 @@ type FailureLimiter interface {
 // SubmissionLimiter limits the submissions of the public issue form per
 // client. *clientlimit.SubmissionLimiter implements it.
 type SubmissionLimiter interface {
-	// Allow reports whether addr may submit now, and when to retry if not.
-	Allow(ctx context.Context, addr string) (ok bool, retryAfter time.Duration)
-	// Record counts a submission from addr.
-	Record(ctx context.Context, addr string)
+	// Reserve atomically checks the limits for addr and, if it may submit,
+	// counts a submission. When it may not, retryAfter says when to retry.
+	// release refunds the reservation (only when the submission was not
+	// stored); it is never nil and safe to call once.
+	Reserve(ctx context.Context, addr string) (ok bool, retryAfter time.Duration, release func())
 	// Recent returns the submissions of the last hour from addr and from all
 	// clients.
 	Recent(ctx context.Context, addr string) (perAddr, global int)

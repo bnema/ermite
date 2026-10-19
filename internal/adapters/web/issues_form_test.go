@@ -178,6 +178,28 @@ func TestIssueFormPostOutcomes(t *testing.T) {
 	}
 }
 
+// TestIssueFormPostInvalidTokenLooksTheSame: the use case answers an invalid
+// submission the same whatever the client's ban, limit or the queue; the page
+// must not differ either.
+func TestIssueFormPostInvalidTokenLooksTheSame(t *testing.T) {
+	t.Parallel()
+	var first *httptest.ResponseRecorder
+	for _, state := range []string{"banned", "rate limited", "queue full"} {
+		r := newFormRig(t, domain.IssuesPublic)
+		r.form.EXPECT().Submit(mock.Anything, repoName(t, "proj"), mock.Anything, mock.Anything).Return(domain.ErrSubmissionInvalid).Once()
+		f := goodForm()
+		f.Set("token", "garbage")
+		rec := r.post("/proj/issues/new", fromSite, f.Encode())
+		assert.Equal(t, 400, rec.Code, state)
+		if first == nil {
+			first = rec
+			continue
+		}
+		assert.Equal(t, first.Body.String(), rec.Body.String(), state)
+		assert.Equal(t, first.Header().Get("Retry-After"), rec.Header().Get("Retry-After"), state)
+	}
+}
+
 func TestIssueFormPostSuccess(t *testing.T) {
 	t.Parallel()
 	r := newFormRig(t, domain.IssuesPublic)

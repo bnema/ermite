@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -73,11 +74,16 @@ func newSubFixture(t *testing.T) *subFixture {
 	return f
 }
 
-// open expects the checks before the token: not banned, allowed, room.
-func (f *subFixture) open(pendingCount int) {
+// open expects the checks after the proof of work: not banned, quota
+// available, room. It returns the number of reservations released.
+func (f *subFixture) open(pendingCount int) *atomic.Int32 {
+	released := new(atomic.Int32)
 	f.bans.EXPECT().Banned(mock.Anything, mock.Anything, mock.Anything).Return(false, nil).Maybe()
-	f.limiter.EXPECT().Allow(mock.Anything, mock.Anything).Return(true, time.Duration(0)).Maybe()
+	f.limiter.EXPECT().Reserve(mock.Anything, mock.Anything).RunAndReturn(func(context.Context, string) (bool, time.Duration, func()) {
+		return true, 0, func() { released.Add(1) }
+	}).Maybe()
 	f.pending.EXPECT().Count(mock.Anything).Return(pendingCount, nil).Maybe()
+	return released
 }
 
 func (f *subFixture) challenge(addr string) ports.IssueChallenge {
@@ -179,7 +185,6 @@ func TestIssueSubmitSuccess(t *testing.T) {
 	ch := f.challenge(f.addr)
 	sub := f.valid(ch)
 	f.advance(usecase.MinFillTime)
-	f.limiter.EXPECT().Record(mock.Anything, f.addr).Once()
 	var put domain.PendingIssue
 	f.pending.EXPECT().Put(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, p domain.PendingIssue) error {
 		put = p
@@ -217,11 +222,11 @@ func TestIssueSubmitRefusals(t *testing.T) {
 		}},
 		{name: "rate limited", want: domain.ErrSubmissionRateLimited, wait: wait, setup: func(f *subFixture) {
 			f.bans.EXPECT().Banned(mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
-			f.limiter.EXPECT().Allow(mock.Anything, mock.Anything).Return(false, 5*time.Minute)
+			f.limiter.EXPECT().Reserve(mock.Anything, mock.Anything).Return(false, 5*time.Minute, func() {})
 		}},
 		{name: "paused at 200", want: domain.ErrSubmissionsPaused, wait: wait, setup: func(f *subFixture) {
 			f.bans.EXPECT().Banned(mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
-			f.limiter.EXPECT().Allow(mock.Anything, mock.Anything).Return(true, time.Duration(0))
+			f.limiter.EXPECT().Reserve(mock.Anything, mock.Anything).Return(true, time.Duration(0), func() {})
 			f.pending.EXPECT().Count(mock.Anything).Return(domain.MaxPendingIssues, nil)
 		}},
 		{name: "honeypot", want: domain.ErrSubmissionInvalid, wait: wait, arrange: func(_ *subFixture, _ *ports.IssueChallenge, s *ports.IssueSubmission) string {
@@ -326,7 +331,7 @@ func TestIssueSubmitReplayedNonce(t *testing.T) {
 	ch := f.challenge(f.addr)
 	sub := f.valid(ch)
 	f.advance(usecase.MinFillTime)
-	// first: text refused, nonce is spent anyway
+	// first: text refused, nonce is spent anyway (nothing reserved)
 	bad := sub
 	bad.Title = ""
 	var te *domain.TextError
@@ -344,7 +349,6 @@ func TestIssueSubmitReplayAfterSuccess(t *testing.T) {
 	ch := f.challenge(f.addr)
 	sub := f.valid(ch)
 	f.advance(usecase.MinFillTime)
-	f.limiter.EXPECT().Record(mock.Anything, f.addr).Once()
 	f.pending.EXPECT().Put(mock.Anything, mock.Anything).Return(nil).Once()
 	f.bus.EXPECT().Publish(mock.Anything, mock.Anything).Once()
 	require.NoError(t, f.uc.Submit(context.Background(), f.repo.Name, f.addr, sub))
@@ -390,7 +394,6 @@ func TestIssueSubmitSpentSetExpiry(t *testing.T) {
 	t.Parallel()
 	f := newSubFixture(t)
 	f.open(0)
-	f.limiter.EXPECT().Record(mock.Anything, mock.Anything).Maybe()
 	f.pending.EXPECT().Put(mock.Anything, mock.Anything).Return(nil).Maybe()
 	f.bus.EXPECT().Publish(mock.Anything, mock.Anything).Maybe()
 	ch := f.challenge(f.addr)
@@ -468,4 +471,200 @@ func TestDifficulty(t *testing.T) {
 	}
 	assert.Equal(t, 18, usecase.BaseDifficulty)
 	assert.Equal(t, 21, usecase.MaxDifficulty)
+}
+
+// submitters builds n valid, distinct submissions (one challenge each) for the
+// addresses addrOf(i) and the repositories repoOf(i), ready to be sent.
+type prepared struct {
+	repo domain.RepoName
+	addr string
+	sub  ports.IssueSubmission
+}
+
+func (f *subFixture) prepare(n int, addrOf func(int) string, repoOf func(int) domain.RepoName) []prepared {
+	out := make([]prepared, n)
+	for i := range n {
+		addr := addrOf(i)
+		repo := repoOf(i)
+		f.limiter.EXPECT().Recent(mock.Anything, addr).Return(0, 0).Once()
+		ch, err := f.uc.Challenge(context.Background(), repo, addr)
+		require.NoError(f.t, err)
+		out[i] = prepared{repo: repo, addr: addr, sub: f.valid(ch)}
+	}
+	f.advance(usecase.MinFillTime)
+	return out
+}
+
+// race sends every prepared submission at once and returns the errors.
+func (f *subFixture) race(ps []prepared) []error {
+	errs := make([]error, len(ps))
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i, p := range ps {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs[i] = f.uc.Submit(context.Background(), p.repo, p.addr, p.sub)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	return errs
+}
+
+func TestIssueSubmitConcurrentSameAddrRespectsQuota(t *testing.T) {
+	t.Parallel()
+	f := newSubFixture(t)
+	f.bans.EXPECT().Banned(mock.Anything, mock.Anything, mock.Anything).Return(false, nil).Maybe()
+	f.pending.EXPECT().Count(mock.Anything).Return(0, nil).Maybe()
+	// a real, atomic limiter semantics: PerHour grants then refusals
+	var granted atomic.Int32
+	var rlMu sync.Mutex
+	f.limiter.EXPECT().Reserve(mock.Anything, f.addr).RunAndReturn(func(context.Context, string) (bool, time.Duration, func()) {
+		rlMu.Lock()
+		defer rlMu.Unlock()
+		if granted.Load() >= 3 {
+			return false, time.Minute, func() {}
+		}
+		granted.Add(1)
+		return true, 0, func() {}
+	}).Maybe()
+	var puts atomic.Int32
+	f.pending.EXPECT().Put(mock.Anything, mock.Anything).RunAndReturn(func(context.Context, domain.PendingIssue) error {
+		puts.Add(1)
+		return nil
+	}).Maybe()
+	f.bus.EXPECT().Publish(mock.Anything, mock.Anything).Maybe()
+	ps := f.prepare(20, func(int) string { return f.addr }, func(int) domain.RepoName { return f.repo.Name })
+	var ok, limited int
+	for _, err := range f.race(ps) {
+		var re *domain.SubmissionRetryError
+		switch {
+		case err == nil:
+			ok++
+		case errors.As(err, &re):
+			limited++
+		default:
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	assert.Equal(t, 3, ok)
+	assert.Equal(t, 17, limited)
+	assert.Equal(t, int32(3), puts.Load())
+}
+
+func TestIssueSubmitConcurrentRespectsPendingCap(t *testing.T) {
+	t.Parallel()
+	f := newSubFixture(t)
+	f.bans.EXPECT().Banned(mock.Anything, mock.Anything, mock.Anything).Return(false, nil).Maybe()
+	f.limiter.EXPECT().Reserve(mock.Anything, mock.Anything).Return(true, time.Duration(0), func() {}).Maybe()
+	other := name(t, "other")
+	f.meta.EXPECT().Get(mock.Anything, other).Return(domain.Repo{Name: other, Visibility: domain.VisibilityPublic, Settings: withIssues(domain.IssuesPublic)}, nil).Maybe()
+	var count atomic.Int32
+	count.Store(domain.MaxPendingIssues - 1)
+	f.pending.EXPECT().Count(mock.Anything).RunAndReturn(func(context.Context) (int, error) {
+		return int(count.Load()), nil
+	}).Maybe()
+	var puts atomic.Int32
+	f.pending.EXPECT().Put(mock.Anything, mock.Anything).RunAndReturn(func(context.Context, domain.PendingIssue) error {
+		puts.Add(1)
+		count.Add(1)
+		return nil
+	}).Maybe()
+	f.bus.EXPECT().Publish(mock.Anything, mock.Anything).Maybe()
+	ps := f.prepare(20, func(i int) string { return "ip:198.51.100." + strconv.Itoa(i+1) }, func(i int) domain.RepoName {
+		if i%2 == 0 {
+			return f.repo.Name
+		}
+		return other
+	})
+	var ok, paused int
+	for _, err := range f.race(ps) {
+		switch {
+		case err == nil:
+			ok++
+		case errors.Is(err, domain.ErrSubmissionsPaused):
+			paused++
+		default:
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	assert.Equal(t, 1, ok)
+	assert.Equal(t, 19, paused)
+	assert.Equal(t, int32(1), puts.Load())
+}
+
+func TestIssueSubmitReleasesTheReservationWhenStoreFails(t *testing.T) {
+	t.Parallel()
+	f := newSubFixture(t)
+	released := f.open(0)
+	boom := errors.New("disk full")
+	f.pending.EXPECT().Put(mock.Anything, mock.Anything).Return(boom).Once()
+	ch := f.challenge(f.addr)
+	sub := f.valid(ch)
+	f.advance(usecase.MinFillTime)
+	require.ErrorIs(t, f.uc.Submit(context.Background(), f.repo.Name, f.addr, sub), boom)
+	assert.Equal(t, int32(1), released.Load())
+
+	f.pending.EXPECT().Put(mock.Anything, mock.Anything).Return(nil).Once()
+	f.bus.EXPECT().Publish(mock.Anything, mock.Anything).Once()
+	ch = f.challenge(f.addr)
+	sub = f.valid(ch)
+	f.advance(usecase.MinFillTime)
+	require.NoError(t, f.uc.Submit(context.Background(), f.repo.Name, f.addr, sub))
+	assert.Equal(t, int32(1), released.Load(), "a stored submission keeps its reservation")
+}
+
+func TestIssueSubmitReleasesTheReservationWhenPaused(t *testing.T) {
+	t.Parallel()
+	f := newSubFixture(t)
+	released := f.open(domain.MaxPendingIssues)
+	ch := f.challenge(f.addr)
+	sub := f.valid(ch)
+	f.advance(usecase.MinFillTime)
+	assert.ErrorIs(t, f.uc.Submit(context.Background(), f.repo.Name, f.addr, sub), domain.ErrSubmissionsPaused)
+	assert.Equal(t, int32(1), released.Load())
+}
+
+// TestIssueSubmitNoStateOracleBeforeProofOfWork: a banned client, a limited
+// one, or a full queue all get the same answer to an invalid submission, and
+// no limiter, count or store is touched (the mocks have no expectation).
+func TestIssueSubmitNoStateOracleBeforeProofOfWork(t *testing.T) {
+	t.Parallel()
+	f := newSubFixture(t)
+	ch := f.challenge(f.addr)
+	valid := f.valid(ch)
+	f.advance(usecase.MinFillTime)
+	bad := []ports.IssueSubmission{
+		{},
+		{Token: "garbage", Solution: "x", FormToken: "y", Title: "", Body: ""},
+		{Token: ch.Token, Honeypot: "x"},
+		{Token: ch.Token, FormToken: ch.FormToken, Solution: "nope"},
+		{Token: valid.Token, FormToken: valid.FormToken, Solution: "abc", Title: "two\nlines"}, // text error + bad pow
+	}
+	for _, s := range bad {
+		err := f.uc.Submit(context.Background(), f.repo.Name, f.addr, s)
+		require.ErrorIs(t, err, domain.ErrSubmissionInvalid)
+		assert.NotErrorIs(t, err, domain.ErrInvalidText)
+	}
+	// a fully valid submission from a banned client: still invalid, not
+	// limited, paused or a text error, even with bad text.
+	f.bans.EXPECT().Banned(mock.Anything, mock.Anything, mock.Anything).Return(true, nil).Once()
+	bannedBadText := valid
+	bannedBadText.Title = ""
+	err := f.uc.Submit(context.Background(), f.repo.Name, f.addr, bannedBadText)
+	require.ErrorIs(t, err, domain.ErrSubmissionInvalid)
+	assert.NotErrorIs(t, err, domain.ErrInvalidText)
+	var re *domain.SubmissionRetryError
+	assert.False(t, errors.As(err, &re))
+	assert.NotErrorIs(t, err, domain.ErrSubmissionsPaused)
+}
+
+func TestIssueChallengeRevealsNoState(t *testing.T) {
+	t.Parallel()
+	f := newSubFixture(t) // no Banned, Reserve or Count expectation
+	f.limiter.EXPECT().Recent(mock.Anything, f.addr).Return(50, 500).Once()
+	_, err := f.uc.Challenge(context.Background(), f.repo.Name, f.addr)
+	require.NoError(t, err)
 }

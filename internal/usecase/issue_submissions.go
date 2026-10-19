@@ -106,6 +106,8 @@ type IssueSubmissions struct {
 	limit   int
 	minFill time.Duration
 
+	admitMu sync.Mutex // serializes the pending cap check and the store
+
 	mu        sync.Mutex
 	spent     map[string]time.Time // nonce -> expiry of its challenge
 	nextSweep time.Time
@@ -284,23 +286,6 @@ func (s *IssueSubmissions) Submit(ctx context.Context, repo domain.RepoName, add
 	}
 	ipHash := s.keys.IPHash(addr)
 	now := s.clock.Now().UTC()
-	banned, err := s.bans.Banned(ctx, ipHash, now)
-	if err != nil {
-		return fmt.Errorf("check ban: %w", err)
-	}
-	if banned {
-		return refuse("banned", domain.ErrSubmissionInvalid)
-	}
-	if ok, after := s.limiter.Allow(ctx, addr); !ok {
-		return refuse("rate_limited", &domain.SubmissionRetryError{After: after})
-	}
-	n, err := s.pending.Count(ctx)
-	if err != nil {
-		return fmt.Errorf("count pending issues: %w", err)
-	}
-	if n >= domain.MaxPendingIssues {
-		return refuse("pending_full", domain.ErrSubmissionsPaused)
-	}
 	if f.Honeypot != "" {
 		return refuse("honeypot", domain.ErrSubmissionInvalid)
 	}
@@ -335,6 +320,13 @@ func (s *IssueSubmissions) Submit(ctx context.Context, repo domain.RepoName, add
 		}
 		return refuse("replayed", err)
 	}
+	banned, err := s.bans.Banned(ctx, ipHash, now)
+	if err != nil {
+		return fmt.Errorf("check ban: %w", err)
+	}
+	if banned {
+		return refuse("banned", domain.ErrSubmissionInvalid)
+	}
 	title, err := domain.ParseIssueTitle(f.Title)
 	if err != nil {
 		return refuse("text_title", fmt.Errorf("title: %w", err))
@@ -351,15 +343,40 @@ func (s *IssueSubmissions) Submit(ctx context.Context, repo domain.RepoName, add
 	if err != nil {
 		return fmt.Errorf("new pending issue id: %w", err)
 	}
-	s.limiter.Record(ctx, addr)
-	err = s.pending.Put(ctx, domain.PendingIssue{
+	if err := s.admit(ctx, addr, refuse, domain.PendingIssue{
 		ID: id, Repo: repo, Title: title, Body: body, Author: author, CreatedAt: now, IPHash: ipHash,
-	})
-	if err != nil {
-		return fmt.Errorf("store pending issue of %q: %w", repo, err)
+	}); err != nil {
+		return err
 	}
 	log.Info().Str("repo", repo.String()).Msg("issue submitted for moderation")
 	s.bus.Publish(ctx, domain.IssueSubmitted{Repo: repo, ID: id, At: now})
+	return nil
+}
+
+// admit reserves the client's quota, checks the global queue cap and stores
+// the issue. Ermite is a single process (ADR 0001), so admitMu serializes the
+// Count -> Put section: concurrent submissions cannot exceed
+// domain.MaxPendingIssues. It would not hold with several processes.
+func (s *IssueSubmissions) admit(ctx context.Context, addr string, refuse func(string, error) error, p domain.PendingIssue) error {
+	s.admitMu.Lock()
+	defer s.admitMu.Unlock()
+	ok, after, release := s.limiter.Reserve(ctx, addr)
+	if !ok {
+		return refuse("rate_limited", &domain.SubmissionRetryError{After: after})
+	}
+	n, err := s.pending.Count(ctx)
+	if err != nil {
+		release()
+		return fmt.Errorf("count pending issues: %w", err)
+	}
+	if n >= domain.MaxPendingIssues {
+		release()
+		return refuse("pending_full", domain.ErrSubmissionsPaused)
+	}
+	if err := s.pending.Put(ctx, p); err != nil {
+		release()
+		return fmt.Errorf("store pending issue of %q: %w", p.Repo, err)
+	}
 	return nil
 }
 

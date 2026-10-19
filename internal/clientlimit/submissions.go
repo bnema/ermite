@@ -52,13 +52,17 @@ func NewSubmissionLimiter(now func() time.Time) *SubmissionLimiter {
 	return &SubmissionLimiter{now: now, subs: make(map[string][]time.Time)}
 }
 
-// Allow reports whether addr may submit now. When it may not, retryAfter is
-// how long until the oldest submission that counts leaves its window.
-func (l *SubmissionLimiter) Allow(_ context.Context, addr string) (bool, time.Duration) {
+// Reserve checks the limits for addr and, if it may submit now, counts a
+// submission, atomically: concurrent callers cannot all pass the check. When
+// addr may not submit, retryAfter is how long until the oldest submission that
+// counts leaves its window and release is a no-op. Otherwise release refunds
+// the reservation; call it only if the submission was not stored.
+func (l *SubmissionLimiter) Reserve(_ context.Context, addr string) (ok bool, retryAfter time.Duration, release func()) {
 	key := limiterKey(addr)
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.maintain(now)
 	ts := l.prune(key, now)
 	var wait time.Duration
 	if h := withinWindow(ts, now, HourWindow); len(h) >= PerHour {
@@ -67,20 +71,10 @@ func (l *SubmissionLimiter) Allow(_ context.Context, addr string) (bool, time.Du
 	if len(ts) >= PerDay {
 		wait = max(wait, ts[len(ts)-PerDay].Add(DayWindow).Sub(now))
 	}
-	if wait <= 0 {
-		return true, 0
+	if wait > 0 {
+		return false, max(wait, time.Second), func() {}
 	}
-	return false, max(wait, time.Second)
-}
-
-// Record counts a submission from addr.
-func (l *SubmissionLimiter) Record(_ context.Context, addr string) {
-	key := limiterKey(addr)
-	now := l.now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.maintain(now)
-	ts := append(l.prune(key, now), now)
+	ts = append(ts, now)
 	if len(ts) > PerDay*2 {
 		ts = ts[len(ts)-PerDay*2:] // enough to compute the wait
 	}
@@ -89,6 +83,31 @@ func (l *SubmissionLimiter) Record(_ context.Context, addr string) {
 	if len(l.global) > maxTracked {
 		l.global = l.global[len(l.global)-maxTracked:] // bound the memory
 	}
+	var once sync.Once
+	return true, 0, func() { once.Do(func() { l.refund(key, now) }) }
+}
+
+// refund removes one reservation made at t for key.
+func (l *SubmissionLimiter) refund(key string, t time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if ts := l.subs[key]; ts != nil {
+		l.subs[key] = removeLast(ts, t)
+		if len(l.subs[key]) == 0 {
+			delete(l.subs, key)
+		}
+	}
+	l.global = removeLast(l.global, t)
+}
+
+// removeLast removes the last element of ts equal to t, if any.
+func removeLast(ts []time.Time, t time.Time) []time.Time {
+	for i := len(ts) - 1; i >= 0; i-- {
+		if ts[i].Equal(t) {
+			return slices.Delete(ts, i, i+1)
+		}
+	}
+	return ts
 }
 
 // Recent returns the submissions of addr and of all clients in the last hour.

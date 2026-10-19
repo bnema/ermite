@@ -47,72 +47,6 @@ func (_m *SubmissionLimiter) EXPECT() *SubmissionLimiter_Expecter {
 	return &SubmissionLimiter_Expecter{mock: &_m.Mock}
 }
 
-// Allow provides a mock function for the type SubmissionLimiter
-func (_mock *SubmissionLimiter) Allow(ctx context.Context, addr string) (bool, time.Duration) {
-	ret := _mock.Called(ctx, addr)
-
-	if len(ret) == 0 {
-		panic("no return value specified for Allow")
-	}
-
-	var r0 bool
-	var r1 time.Duration
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (bool, time.Duration)); ok {
-		return returnFunc(ctx, addr)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) bool); ok {
-		r0 = returnFunc(ctx, addr)
-	} else {
-		r0 = ret.Get(0).(bool)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string) time.Duration); ok {
-		r1 = returnFunc(ctx, addr)
-	} else {
-		r1 = ret.Get(1).(time.Duration)
-	}
-	return r0, r1
-}
-
-// SubmissionLimiter_Allow_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Allow'
-type SubmissionLimiter_Allow_Call struct {
-	*mock.Call
-}
-
-// Allow is a helper method to define mock.On call
-//   - ctx context.Context
-//   - addr string
-func (_e *SubmissionLimiter_Expecter) Allow(ctx any, addr any) *SubmissionLimiter_Allow_Call {
-	return &SubmissionLimiter_Allow_Call{Call: _e.mock.On("Allow", ctx, addr)}
-}
-
-func (_c *SubmissionLimiter_Allow_Call) Run(run func(ctx context.Context, addr string)) *SubmissionLimiter_Allow_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *SubmissionLimiter_Allow_Call) Return(ok bool, retryAfter time.Duration) *SubmissionLimiter_Allow_Call {
-	_c.Call.Return(ok, retryAfter)
-	return _c
-}
-
-func (_c *SubmissionLimiter_Allow_Call) RunAndReturn(run func(ctx context.Context, addr string) (bool, time.Duration)) *SubmissionLimiter_Allow_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // Recent provides a mock function for the type SubmissionLimiter
 func (_mock *SubmissionLimiter) Recent(ctx context.Context, addr string) (int, int) {
 	ret := _mock.Called(ctx, addr)
@@ -179,25 +113,53 @@ func (_c *SubmissionLimiter_Recent_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
-// Record provides a mock function for the type SubmissionLimiter
-func (_mock *SubmissionLimiter) Record(ctx context.Context, addr string) {
-	_mock.Called(ctx, addr)
-	return
+// Reserve provides a mock function for the type SubmissionLimiter
+func (_mock *SubmissionLimiter) Reserve(ctx context.Context, addr string) (bool, time.Duration, func()) {
+	ret := _mock.Called(ctx, addr)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Reserve")
+	}
+
+	var r0 bool
+	var r1 time.Duration
+	var r2 func()
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (bool, time.Duration, func())); ok {
+		return returnFunc(ctx, addr)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) bool); ok {
+		r0 = returnFunc(ctx, addr)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) time.Duration); ok {
+		r1 = returnFunc(ctx, addr)
+	} else {
+		r1 = ret.Get(1).(time.Duration)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, string) func()); ok {
+		r2 = returnFunc(ctx, addr)
+	} else {
+		if ret.Get(2) != nil {
+			r2 = ret.Get(2).(func())
+		}
+	}
+	return r0, r1, r2
 }
 
-// SubmissionLimiter_Record_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Record'
-type SubmissionLimiter_Record_Call struct {
+// SubmissionLimiter_Reserve_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Reserve'
+type SubmissionLimiter_Reserve_Call struct {
 	*mock.Call
 }
 
-// Record is a helper method to define mock.On call
+// Reserve is a helper method to define mock.On call
 //   - ctx context.Context
 //   - addr string
-func (_e *SubmissionLimiter_Expecter) Record(ctx any, addr any) *SubmissionLimiter_Record_Call {
-	return &SubmissionLimiter_Record_Call{Call: _e.mock.On("Record", ctx, addr)}
+func (_e *SubmissionLimiter_Expecter) Reserve(ctx any, addr any) *SubmissionLimiter_Reserve_Call {
+	return &SubmissionLimiter_Reserve_Call{Call: _e.mock.On("Reserve", ctx, addr)}
 }
 
-func (_c *SubmissionLimiter_Record_Call) Run(run func(ctx context.Context, addr string)) *SubmissionLimiter_Record_Call {
+func (_c *SubmissionLimiter_Reserve_Call) Run(run func(ctx context.Context, addr string)) *SubmissionLimiter_Reserve_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -215,12 +177,12 @@ func (_c *SubmissionLimiter_Record_Call) Run(run func(ctx context.Context, addr 
 	return _c
 }
 
-func (_c *SubmissionLimiter_Record_Call) Return() *SubmissionLimiter_Record_Call {
-	_c.Call.Return()
+func (_c *SubmissionLimiter_Reserve_Call) Return(ok bool, retryAfter time.Duration, release func()) *SubmissionLimiter_Reserve_Call {
+	_c.Call.Return(ok, retryAfter, release)
 	return _c
 }
 
-func (_c *SubmissionLimiter_Record_Call) RunAndReturn(run func(ctx context.Context, addr string)) *SubmissionLimiter_Record_Call {
-	_c.Run(run)
+func (_c *SubmissionLimiter_Reserve_Call) RunAndReturn(run func(ctx context.Context, addr string) (bool, time.Duration, func())) *SubmissionLimiter_Reserve_Call {
+	_c.Call.Return(run)
 	return _c
 }
