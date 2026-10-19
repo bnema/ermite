@@ -94,3 +94,90 @@ test('state: the button opens only when solved, waited and not over', () => {
   assert.equal(s({ solved: true, now: 6000, unsupported: true }).disabled, true);
   assert.equal(s({ failed: true, solved: true, now: 6000 }).disabled, true);
 });
+
+test('serverLength counts NFC code points like the server', () => {
+  assert.equal(C.serverLength('title', 'e\u0301'.repeat(61)), 61);
+  assert.equal(C.serverLength('title', '\u0344'.repeat(61)), 122);
+  assert.equal(C.counterClass(122, 120), 'over');
+  assert.equal(C.serverLength('title', '😀'.repeat(120)), 120);
+  assert.equal(C.counterClass(120, 120), 'warn');
+  assert.equal(C.serverLength('title', '😀'.repeat(121)), 121);
+  assert.equal(C.counterClass(121, 120), 'over');
+});
+
+test('serverLength drops what the server strips and trims', () => {
+  assert.equal(C.serverLength('title', '  ab\u202e\u200f\u061c\u2066\u0007\u0085  '), 2);
+  assert.equal(C.serverLength('title', ' \u202e '), 0);
+  assert.equal(C.serverLength('author', ' me '), 2);
+  assert.equal(C.serverLength('body', 'a\nb\tc\u0007\u202a\r\n'), 6);
+  assert.equal(C.serverLength('body', ' a '), 3);
+  assert.equal(C.serverLength('title', 'a\tb'), 2);
+});
+
+test('state keeps the button disabled when a title is empty or a field is over', () => {
+  const base = { solved: true, now: 2, minAt: 1, sending: false, unsupported: false, failed: false, overs: false, empty: false };
+  assert.equal(C.state(base).disabled, false);
+  assert.equal(C.state({ ...base, overs: true }).disabled, true);
+  assert.equal(C.state({ ...base, empty: true }).disabled, true);
+});
+
+function fakeStorage() {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), m };
+}
+
+test('drafts are saved, restored once, and scoped to the path', () => {
+  const st = fakeStorage();
+  const k = C.draftKey('/r/issues/new');
+  assert.notEqual(k, C.draftKey('/other/issues/new'));
+  C.saveDraft(st, k, { title: 't', body: 'b\nc', author: 'a', solution: 'x' });
+  assert.deepEqual(C.restoreDraft(st, k), { title: 't', body: 'b\nc', author: 'a' });
+  assert.equal(st.m.size, 0);
+  assert.equal(C.restoreDraft(st, k), null);
+  st.setItem(k, 'not json');
+  assert.equal(C.restoreDraft(st, k), null);
+});
+
+test('onPageShow reloads only for a bfcache restore', () => {
+  assert.equal(C.onPageShow(true), 'reload');
+  assert.equal(C.onPageShow(false), 'none');
+  assert.equal(C.onPageShow(undefined), 'none');
+});
+
+test('init restores a draft and reloads on a bfcache pageshow', () => {
+  const listeners = {};
+  const mk = (o) => ({ listeners: {}, addEventListener(t, f) { this.listeners[t] = f; }, ...o });
+  const title = mk({ id: 'issue-title', name: 'title', value: '' });
+  const body = mk({ id: 'issue-body', name: 'body', value: '' });
+  const author = mk({ id: 'issue-author', name: 'author', value: '' });
+  const outs = [['issue-title', 120], ['issue-body', 10000], ['issue-author', 40]].map(([f, max]) => ({ dataset: { for: f, max: String(max) }, textContent: '', className: '' }));
+  const button = { disabled: false };
+  const solution = { value: '' };
+  const sel = { 'button[type="submit"]': button, '[data-status]': { textContent: '' }, 'input[name="solution"]': solution,
+    '[name="title"]': title, '[name="body"]': body, '[name="author"]': author,
+    '#issue-title': title, '#issue-body': body, '#issue-author': author };
+  const form = { dataset: { minSubmitAt: '0' }, hidden: true, querySelector: (s) => sel[s] ?? null,
+    querySelectorAll: () => outs, addEventListener() {}, removeAttribute() {} };
+  const st = fakeStorage();
+  let reloads = 0;
+  const saved = { sessionStorage: window.sessionStorage, location: window.location, addEventListener: window.addEventListener, Worker: window.Worker };
+  Object.assign(window, { sessionStorage: st, location: { pathname: '/r/issues/new', reload() { reloads++; } },
+    addEventListener(t, f) { listeners[t] = f; }, Worker: undefined });
+  try {
+    C.saveDraft(st, C.draftKey('/r/issues/new'), { title: 'Hello', body: 'B', author: 'me' });
+    window.ermiteIssueForm.init(form);
+    assert.equal(title.value, 'Hello');
+    assert.equal(outs[0].textContent, '5 / 120');
+    assert.equal(st.m.size, 0);
+    assert.equal(button.disabled, true);
+    listeners.pageshow({ persisted: false });
+    assert.equal(reloads, 0);
+    title.value = 'Edited';
+    listeners.pageshow({ persisted: true });
+    assert.equal(reloads, 1);
+    assert.deepEqual(JSON.parse(st.getItem(C.draftKey('/r/issues/new'))), { title: 'Edited', body: 'B', author: 'me' });
+    assert.equal(button.disabled, true);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete window[k]; else window[k] = v; }
+  }
+});

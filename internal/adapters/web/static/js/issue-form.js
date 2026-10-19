@@ -17,15 +17,54 @@ window.ermiteIssueForm = (() => {
     },
     // length counts code points, like the server.
     length(s) { return [...String(s)].length; },
+    // serverLength is the length the server will see for field ('title',
+    // 'body' or 'author'): NFC, control and bidi characters removed (body
+    // keeps \n and \t), title and author trimmed (domain.cleanText).
+    serverLength(field, value) {
+      const multiline = field === 'body';
+      let s = String(value).normalize('NFC');
+      if (multiline) s = s.replace(/\r\n/g, '\n');
+      let out = '';
+      for (const ch of s) {
+        const c = ch.codePointAt(0);
+        if (multiline && (c === 0x0a || c === 0x09)) { out += ch; continue; }
+        if (c < 0x20 || (c >= 0x7f && c <= 0x9f) || c === 0x2028 || c === 0x2029) continue;
+        if (c === 0x200e || c === 0x200f || c === 0x061c ||
+            (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069)) continue;
+        out += ch;
+      }
+      if (!multiline) out = out.trim();
+      return [...out].length;
+    },
+    draftKey(path) { return 'ermite:issue-draft:' + path; },
+    // saveDraft keeps the text fields in storage (never the solution).
+    saveDraft(storage, key, draft) {
+      try { storage.setItem(key, JSON.stringify({ title: draft.title, body: draft.body, author: draft.author })); } catch (_) { /* storage unavailable */ }
+    },
+    // restoreDraft returns the saved draft, or null, and clears it.
+    restoreDraft(storage, key) {
+      try {
+        const raw = storage.getItem(key);
+        if (raw === null || raw === undefined) return null;
+        storage.removeItem(key);
+        const d = JSON.parse(raw);
+        if (!d || typeof d !== 'object') return null;
+        return { title: String(d.title || ''), body: String(d.body || ''), author: String(d.author || '') };
+      } catch (_) { return null; }
+    },
+    // onPageShow decides what to do on pageshow: a page restored from the
+    // back/forward cache has a challenge that may be spent or expired.
+    onPageShow(persisted) { return persisted === true ? 'reload' : 'none'; },
     // state is what the button and the status line show.
-    //   {solved, now, minAt, sending, unsupported, failed, overs}
-    state({ solved, now, minAt, sending, unsupported, failed, overs }) {
+    //   {solved, now, minAt, sending, unsupported, failed, overs, empty}
+    state({ solved, now, minAt, sending, unsupported, failed, overs, empty }) {
       if (unsupported) return { disabled: true, status: 'Your browser cannot run the check.' };
       if (failed) return { disabled: true, status: 'The check failed. Reload the page.' };
       if (sending) return { disabled: true, status: 'Sending…' };
       if (!solved) return { disabled: true, status: 'Checking your browser… (this takes a few seconds)' };
       if (now < minAt) return { disabled: true, status: 'Almost ready…' };
       if (overs) return { disabled: true, status: 'A field is too long.' };
+      if (empty) return { disabled: true, status: 'Enter a title.' };
       return { disabled: false, status: 'Ready.' };
     },
   };
@@ -36,7 +75,7 @@ window.ermiteIssueForm = (() => {
     const status = $('[data-status]');
     const solution = $('input[name="solution"]');
     const minAt = Number(form.dataset.minSubmitAt) || 0;
-    const ctx = { solved: false, sending: false, unsupported: false, failed: false, overs: false };
+    const ctx = { solved: false, sending: false, unsupported: false, failed: false, overs: false, empty: true };
     let timer = null;
 
     function render() {
@@ -47,14 +86,38 @@ window.ermiteIssueForm = (() => {
       if (ctx.solved && Date.now() < minAt && !ctx.sending) timer = setTimeout(render, minAt - Date.now() + 20);
     }
 
-    for (const out of form.querySelectorAll('output[data-for]')) {
+    const storage = (() => { try { return window.sessionStorage; } catch (_) { return null; } })();
+    const draftKey = core.draftKey(window.location ? window.location.pathname : '');
+    const fields = { title: $('[name="title"]'), body: $('[name="body"]'), author: $('[name="author"]') };
+    if (storage) {
+      const d = core.restoreDraft(storage, draftKey);
+      if (d) for (const k of Object.keys(fields)) if (fields[k]) fields[k].value = d[k];
+    }
+    window.addEventListener('pageshow', (e) => {
+      if (core.onPageShow(e.persisted) !== 'reload') return;
+      // The old challenge may be spent or expired: never reuse its solution.
+      if (button) button.disabled = true;
+      if (storage) {
+        core.saveDraft(storage, draftKey, {
+          title: fields.title ? fields.title.value : '',
+          body: fields.body ? fields.body.value : '',
+          author: fields.author ? fields.author.value : '',
+        });
+      }
+      window.location.reload();
+    });
+
+    const outs = [...form.querySelectorAll('output[data-for]')];
+    for (const out of outs) {
       const field = form.querySelector('#' + out.dataset.for);
+      const name = field.name;
       const max = Number(out.dataset.max);
       const update = () => {
-        const n = core.length(field.value);
+        const n = core.serverLength(name, field.value);
         out.textContent = n + ' / ' + max;
         out.className = core.counterClass(n, max);
-        ctx.overs = [...form.querySelectorAll('output[data-for]')].some((o) => o.className === 'over');
+        ctx.overs = outs.some((o) => o.className === 'over');
+        if (name === 'title') ctx.empty = n === 0;
         render();
       };
       field.addEventListener('input', update);

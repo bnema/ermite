@@ -29,19 +29,19 @@ templ IssueForm(l Layout, p IssueFormPage) {
 			<input type="hidden" name="form_token" value={ p.FormToken }/>
 			<input type="hidden" name="solution" value=""/>
 			<label for="issue-title">title</label>
-			<input id="issue-title" name="title" type="text" maxlength="120" required autocomplete="off" value={ p.Title }/>
+			<input id="issue-title" name="title" type="text" required autocomplete="off" value={ p.Title }/>
 			<output data-for="issue-title" data-max={ itoa(p.MaxTitle) } for="issue-title">{ itoa(runeCount(p.Title)) } / { itoa(p.MaxTitle) }</output>
 			if p.ErrorField == "title" {
 				<p class="f-error" role="alert">{ p.Error }</p>
 			}
 			<label for="issue-body">description</label>
-			<textarea id="issue-body" name="body" rows="8" maxlength="10000" placeholder="Markdown, optional">{ p.Body }</textarea>
+			<textarea id="issue-body" name="body" rows="8" placeholder="Markdown, optional">{ p.Body }</textarea>
 			<output data-for="issue-body" data-max={ itoa(p.MaxBody) } for="issue-body">{ itoa(runeCount(p.Body)) } / { itoa(p.MaxBody) }</output>
 			if p.ErrorField == "body" {
 				<p class="f-error" role="alert">{ p.Error }</p>
 			}
 			<label for="issue-author">name (optional, not verified)</label>
-			<input id="issue-author" name="author" type="text" maxlength="40" autocomplete="off" value={ p.Author }/>
+			<input id="issue-author" name="author" type="text" autocomplete="off" value={ p.Author }/>
 			<output data-for="issue-author" data-max={ itoa(p.MaxAuthor) } for="issue-author">{ itoa(runeCount(p.Author)) } / { itoa(p.MaxAuthor) }</output>
 			if p.ErrorField == "author" {
 				<p class="f-error" role="alert">{ p.Error }</p>

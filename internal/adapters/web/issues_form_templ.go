@@ -137,14 +137,14 @@ func IssueForm(l Layout, p IssueFormPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"> <input type=\"hidden\" name=\"solution\" value=\"\"> <label for=\"issue-title\">title</label> <input id=\"issue-title\" name=\"title\" type=\"text\" maxlength=\"120\" required autocomplete=\"off\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"> <input type=\"hidden\" name=\"solution\" value=\"\"> <label for=\"issue-title\">title</label> <input id=\"issue-title\" name=\"title\" type=\"text\" required autocomplete=\"off\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(p.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/issues_form.templ`, Line: 32, Col: 111}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/issues_form.templ`, Line: 32, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 			if templ_7745c5c3_Err != nil {
@@ -212,14 +212,14 @@ func IssueForm(l Layout, p IssueFormPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<label for=\"issue-body\">description</label> <textarea id=\"issue-body\" name=\"body\" rows=\"8\" maxlength=\"10000\" placeholder=\"Markdown, optional\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<label for=\"issue-body\">description</label> <textarea id=\"issue-body\" name=\"body\" rows=\"8\" placeholder=\"Markdown, optional\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(p.Body)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/issues_form.templ`, Line: 38, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/issues_form.templ`, Line: 38, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -287,14 +287,14 @@ func IssueForm(l Layout, p IssueFormPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<label for=\"issue-author\">name (optional, not verified)</label> <input id=\"issue-author\" name=\"author\" type=\"text\" maxlength=\"40\" autocomplete=\"off\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<label for=\"issue-author\">name (optional, not verified)</label> <input id=\"issue-author\" name=\"author\" type=\"text\" autocomplete=\"off\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(p.Author)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/issues_form.templ`, Line: 44, Col: 104}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/issues_form.templ`, Line: 44, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
