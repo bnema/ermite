@@ -385,7 +385,7 @@ func (s *Mergeability) popDue(waited retryItem) []domain.RepoName {
 	now := s.cfg.Clock.Now()
 	var out []domain.RepoName
 	s.heap = slices.DeleteFunc(s.heap, func(it retryItem) bool {
-		if !(it.key == waited.key && it.due.Equal(waited.due)) && it.due.After(now) {
+		if (it.key != waited.key || !it.due.Equal(waited.due)) && it.due.After(now) {
 			return false
 		}
 		out = append(out, it.key)

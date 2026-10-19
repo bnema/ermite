@@ -137,6 +137,7 @@ func TestSquashMergedRequestReadsAfterItsCommitsArePruned(t *testing.T) {
 	res, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{Mode: domain.MergeModeSquash, HeadID: head, DeleteSource: true})
 	require.NoError(t, err)
 	require.True(t, res.SourceDeleted)
+	r.mrs.Wait(r.ctx) // the deletion runs after Merge returned
 
 	r.run(r.bare(), r.env(author), "reflog", "expire", "--expire=now", "--all")
 	r.run(r.bare(), r.env(author), "gc", "-q", "--prune=now")
