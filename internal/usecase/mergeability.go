@@ -161,18 +161,21 @@ func (s *Mergeability) retry(key retryKey) {
 	if s.closed || s.scheduled[key] {
 		return
 	}
-	s.retries[key]++
-	n := s.retries[key]
-	if n > mergeabilityRetries {
-		delete(s.retries, key)
-		return
-	}
+	// The key that waits is chosen before counting attempts, so that only
+	// the waiting keys hold attempt counts: at most cfg.Queue requests plus
+	// one per repository.
 	sk := key
-	if key.kind == retryCheck && s.checkRetries >= s.cfg.Queue {
+	if key.kind == retryCheck && s.retries[key] == 0 && s.checkRetries >= s.cfg.Queue {
 		sk = retryKey{kind: retryRescan, mk: mergeKey{repo: key.mk.repo}}
 		if s.scheduled[sk] {
 			return
 		}
+	}
+	s.retries[sk]++
+	n := s.retries[sk]
+	if n > mergeabilityRetries {
+		delete(s.retries, sk)
+		return
 	}
 	if sk.kind == retryCheck {
 		s.checkRetries++

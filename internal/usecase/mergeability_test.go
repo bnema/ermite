@@ -576,6 +576,7 @@ func TestMergeabilityRetriesAreBounded(t *testing.T) {
 	}
 	assert.LessOrEqual(t, svc.ScheduledRetries(), queue+repos)
 	assert.Positive(t, svc.ScheduledRetries())
+	assert.LessOrEqual(t, svc.RetryAttempts(), queue+repos, "only the waiting keys count their attempts")
 	assert.LessOrEqual(t, runtime.NumGoroutine(), before, "retries must not start goroutines")
 	svc.Close(context.Background()) // returns although retries are pending
 }
