@@ -59,7 +59,8 @@ func liveEvent(we ports.WatchEvent) bool {
 	switch we.Event.(type) {
 	case domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
 		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded,
-		domain.RunUpdated, domain.JobUpdated:
+		domain.RunUpdated, domain.JobUpdated,
+		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented:
 		return true
 	}
 	return false
@@ -166,6 +167,14 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request is ready for review — reload")
 	case domain.CommentAdded:
 		return l.mrNotice(ctx, ev.Number, "a comment was added — reload")
+	case domain.IssueOpened:
+		return l.issueNotice(ctx, ev.Issue.Number, "an issue was opened — reload")
+	case domain.IssueClosed:
+		return l.issueNotice(ctx, ev.Issue.Number, "this issue was closed — reload")
+	case domain.IssueReopened:
+		return l.issueNotice(ctx, ev.Issue.Number, "this issue was reopened — reload")
+	case domain.IssueCommented:
+		return l.issueNotice(ctx, ev.Number, "a comment was added — reload")
 	case domain.PushEvent:
 		switch l.view {
 		case "mr":
@@ -396,6 +405,22 @@ func (l *liveStream) mrNotice(ctx context.Context, number int64, text string) ([
 			return nil, nil
 		}
 		return l.notice(ctx, text, mrHref(l.repo, number))
+	}
+	return nil, nil
+}
+
+// issueNotice tells an issue page that something happened to the issue it
+// shows, or the list that its content changed. Like mrNotice it sends a fixed
+// sentence only, in the same slot.
+func (l *liveStream) issueNotice(ctx context.Context, number int64, text string) ([]fragment, error) {
+	switch l.view {
+	case "issues":
+		return l.notice(ctx, "issues changed — reload", issuesBase(l.repo))
+	case "issue":
+		if strconv.FormatInt(number, 10) != l.n {
+			return nil, nil
+		}
+		return l.notice(ctx, text, issueHref(l.repo, number))
 	}
 	return nil, nil
 }

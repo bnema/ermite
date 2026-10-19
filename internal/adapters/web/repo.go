@@ -155,6 +155,9 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		mrs.Count = s.openMRCount(ctx, d.repo.Name)
 		l.Sections = append(l.Sections, mrs)
 	}
+	if s.cfg.Issues != nil && d.repo.Settings.Issues.OrDefault() != domain.IssuesOff {
+		l.Sections = append(l.Sections, mk("i", "Issues", issuesBase(d.name()), "issues"))
+	}
 	l.Sections = s.withActions(l.Sections, d.name(), section)
 	l.Crumbs = []Crumb{{Label: d.name(), Href: repoHref(d.name()), Current: section == "summary"}}
 

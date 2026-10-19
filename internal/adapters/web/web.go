@@ -54,6 +54,15 @@ type Config struct {
 	// there are no such pages, nor section for them. Leave it unset rather
 	// than assigning a typed nil pointer.
 	MergeRequests ports.MergeRequestService
+	// Issues serves the issue pages (ADR 0031). Without it there are no such
+	// pages, nor tab for them. Leave it unset rather than assigning a typed
+	// nil pointer.
+	Issues ports.IssueService
+	// IssueNumbers tells whether a number names an issue or a merge request,
+	// so that the page of the wrong kind redirects to the right one. Without
+	// it there is no such redirect. Leave it unset rather than assigning a
+	// typed nil pointer.
+	IssueNumbers ports.IssueNumberResolver
 	// Runs serves the CI pages (/<repo>/actions) and the checks shown next to
 	// commits and merge requests. Without it there are no such pages. Leave it
 	// unset rather than assigning a typed nil pointer.
@@ -182,7 +191,7 @@ func (s *Server) routes() *http.ServeMux {
 	if s.cfg.MergeRequests != nil {
 		mux.HandleFunc("GET /{repo}/merge-requests", s.page(s.mrList))
 		mux.HandleFunc("GET /{repo}/merge-requests/{$}", s.page(s.mrList))
-		mux.HandleFunc("GET /{repo}/merge-requests/{n}", s.page(s.mrShow))
+		mux.HandleFunc("GET /{repo}/merge-requests/{n}", s.pageOrRedirect(s.mrShow, s.mrToIssue))
 		mux.HandleFunc("GET /{repo}/merge-requests/{n}/since", s.page(s.mrSince))
 		mux.HandleFunc("GET /{repo}/merge-requests/{n}/files", s.page(s.mrFiles))
 		mux.HandleFunc("GET /{repo}/compare/{rest...}", s.page(s.compare))
@@ -194,6 +203,17 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/close", s.mrAction(s.mrClose))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/ready", s.mrAction(s.mrReady))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/read", s.mrAction(s.mrRead))
+	}
+	if s.cfg.Issues != nil {
+		mux.HandleFunc("GET /{repo}/issues", s.page(s.issueList))
+		mux.HandleFunc("GET /{repo}/issues/{$}", s.page(s.issueList))
+		mux.HandleFunc("GET /{repo}/issues/new", s.page(s.issueNew))
+		mux.HandleFunc("GET /{repo}/issues/{n}", s.pageOrRedirect(s.issueShow, s.issueToMR))
+		// The writes: POST only, behind the gate (ServeHTTP).
+		mux.HandleFunc("POST /{repo}/issues", s.issueAction(s.issueCreate))
+		mux.HandleFunc("POST /{repo}/issues/{n}/comments", s.issueAction(s.issueComment))
+		mux.HandleFunc("POST /{repo}/issues/{n}/close", s.issueAction(s.issueClose))
+		mux.HandleFunc("POST /{repo}/issues/{n}/reopen", s.issueAction(s.issueReopen))
 	}
 	if s.cfg.Runs != nil {
 		mux.HandleFunc("GET /{repo}/actions", s.page(s.actions))

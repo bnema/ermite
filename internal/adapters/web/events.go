@@ -31,6 +31,8 @@ import (
 //	GET /-/events?topic=repo:<name>&view=commits&ref=<branch>&head=<sha>
 //	GET /-/events?topic=repo:<name>&view=mrs
 //	GET /-/events?topic=repo:<name>&view=mr&n=<number>&ref=<source branch>
+//	GET /-/events?topic=repo:<name>&view=issues
+//	GET /-/events?topic=repo:<name>&view=issue&n=<number>
 //	GET /-/events?topic=repo:<name>&view=actions
 //	GET /-/events?topic=repo:<name>&view=run&n=<run id>
 //	GET /-/events?topic=repo:<name>&view=job&job=<job id>
@@ -51,7 +53,7 @@ import (
 //	refs-list       data: <tbody id="ref-rows">…</tbody>, and again with
 //	                <dl id="refs-kv">…</dl>, the facts of the rail
 //	commits-head    data: <div id="commits-head">N new commits — reload</div>
-//	mr-notice       data: <div id="mr-notice">…</div>, on the merge request pages:
+//	mr-notice       data: <div id="mr-notice">…</div>, on the merge request and issue pages:
 //	                something changed, with the link that reloads the page
 //	ci-run          data: <tr id="run-<id>">…</tr> (the list of runs),
 //	                <section id="recent-actions">…</section> (the rail of the summary) or
