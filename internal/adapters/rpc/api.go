@@ -143,7 +143,7 @@ func New(cfg Config) *API {
 		features = append(features, FeatureCommitSignatures)
 	}
 	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys}, opts...))
-	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
+	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{mrs: cfg.MergeRequests}, opts...))
 	mux.Handle(ermiteconnect.NewIssueServiceHandler(&issueService{cfg.Issues}, opts...))
 	if cfg.Sessions != nil {
 		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))
