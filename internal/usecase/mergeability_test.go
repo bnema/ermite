@@ -5,6 +5,8 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -551,4 +553,139 @@ func TestMergeabilityWorkersOutliveTheParentContext(t *testing.T) {
 	svc.OnOpened(context.Background(), mr)
 	<-published // computed although the parent is cancelled
 	svc.Close(context.Background())
+}
+
+// A global failure schedules a bounded number of retries on a single
+// scheduler goroutine, however many requests fail.
+func TestMergeabilityRetriesAreBounded(t *testing.T) {
+	const queue, repos, perRepo = 4, 3, 20
+	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
+	store.EXPECT().Get(mock.Anything, mock.Anything, mock.Anything).Return(domain.MergeRequest{}, errors.New("db down"))
+	meta.EXPECT().List(mock.Anything).Return(nil, nil)
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{}, Workers: 1, Queue: queue,
+		After: func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+	})
+	svc.Start()
+	before := runtime.NumGoroutine()
+	for r := range repos {
+		repo := name(t, "proj"+strconv.Itoa(r))
+		for n := range perRepo {
+			svc.Check(repo, int64(n+1))
+		}
+	}
+	assert.LessOrEqual(t, svc.ScheduledRetries(), queue+repos)
+	assert.Positive(t, svc.ScheduledRetries())
+	assert.LessOrEqual(t, runtime.NumGoroutine(), before, "retries must not start goroutines")
+	svc.Close(context.Background()) // returns although retries are pending
+}
+
+// A request whose retry was coalesced into a repository rescan is checked
+// again through the queue when the rescan is due.
+func TestMergeabilityDueRetriesReenterTheQueue(t *testing.T) {
+	repo := name(t, "proj")
+	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
+	var calls [9]atomic.Int32
+	done := make(chan struct{})
+	store.EXPECT().Get(mock.Anything, repo, mock.Anything).RunAndReturn(
+		func(_ context.Context, _ domain.RepoName, n int64) (domain.MergeRequest, error) {
+			if calls[n].Add(1) == 1 {
+				return domain.MergeRequest{}, errors.New("db down")
+			}
+			if n == 8 {
+				close(done)
+			}
+			return domain.MergeRequest{}, domain.ErrNotFound
+		})
+	store.EXPECT().ListOpen(mock.Anything, repo).Return([]domain.MergeRequest{{Repo: repo, Number: 8}}, nil)
+	meta.EXPECT().List(mock.Anything).Return(nil, nil)
+	afters := make(chan chan time.Time, 4)
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{}, Workers: 1, Queue: 1,
+		After: func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); afters <- ch; return ch },
+	})
+	t.Cleanup(func() { svc.Close(context.Background()) })
+	svc.Start()
+	svc.Check(repo, 7) // scheduled itself
+	svc.Check(repo, 8) // queue full: coalesced into a rescan
+	assert.Equal(t, 2, svc.ScheduledRetries())
+	stop := fireAll(afters) // !7 is due and queued again, then the rescan checks !8
+	defer stop()
+	<-done
+	assert.EqualValues(t, 2, calls[7].Load())
+}
+
+// A transient failure to publish after the store is retried and the event is
+// published without any other trigger.
+func TestMergeabilityRetriesAFailedPublish(t *testing.T) {
+	repo := name(t, "proj")
+	head, tip := fakeOID(t, "a"), fakeOID(t, "b")
+	mr := domain.MergeRequest{Repo: repo, Number: 7, Source: "feat", Target: "main", State: domain.MRStateOpen}
+	rec := domain.Mergeability{Repo: repo, Number: 7, TargetID: tip, HeadID: head, State: domain.MergeabilityUpToDate}
+	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
+	store.EXPECT().Get(mock.Anything, repo, int64(7)).Return(mr, nil)
+	var gets atomic.Int32
+	store.EXPECT().GetMergeability(mock.Anything, repo, int64(7)).RunAndReturn(
+		func(context.Context, domain.RepoName, int64) (domain.Mergeability, error) {
+			if gets.Add(1) == 1 {
+				return domain.Mergeability{}, domain.ErrNotFound
+			}
+			return rec, nil
+		})
+	store.EXPECT().PutMergeability(mock.Anything, mock.Anything).Return(nil).Once()
+	meta.EXPECT().List(mock.Anything).Return(nil, nil)
+	var metaGets atomic.Int32
+	meta.EXPECT().Get(mock.Anything, repo).RunAndReturn(
+		func(context.Context, domain.RepoName) (domain.Repo, error) {
+			if metaGets.Add(1) == 1 {
+				return domain.Repo{}, errors.New("transient")
+			}
+			return domain.Repo{Name: repo, CreatedAt: now}, nil
+		})
+	git.EXPECT().BranchHead(mock.Anything, repo, "feat").Return(head, nil)
+	git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(tip, nil)
+	git.EXPECT().IsAncestor(mock.Anything, repo, tip, head).Return(true, nil)
+	published := make(chan struct{})
+	bus.EXPECT().Publish(mock.Anything, mock.Anything).Run(func(context.Context, domain.Event) { close(published) }).Return().Once()
+
+	afters := make(chan chan time.Time, 4)
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{},
+		After: func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); afters <- ch; return ch },
+	})
+	t.Cleanup(func() { svc.Close(context.Background()) })
+	svc.Start()
+	svc.OnOpened(context.Background(), mr)
+	<-svcWaiting(afters)
+	select {
+	case <-published:
+		t.Fatal("published although the repository could not be read")
+	default:
+	}
+	stop := fireAll(afters)
+	defer stop()
+	<-published
+}
+
+// svcWaiting blocks until the scheduler asked for a timer, and puts it back.
+func svcWaiting(afters chan chan time.Time) <-chan struct{} {
+	ready := make(chan struct{})
+	go func() { ch := <-afters; afters <- ch; close(ready) }()
+	return ready
+}
+
+// fireAll fires every timer the scheduler asks for (stale ones are harmless).
+func fireAll(afters chan chan time.Time) (stop func()) {
+	quit := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case ch := <-afters:
+				ch <- time.Time{}
+			case <-quit:
+				return
+			}
+		}
+	}()
+	return func() { close(quit) }
 }

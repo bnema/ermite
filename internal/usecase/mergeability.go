@@ -82,10 +82,13 @@ type Mergeability struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	retryMu  sync.Mutex
-	retries  map[retryKey]int // attempts so far of the scheduled or failing work
-	retrying map[retryKey]bool
-	closed   bool
+	retryMu      sync.Mutex
+	retries      map[retryKey]int // attempts so far of the scheduled or failing work
+	scheduled    map[retryKey]bool
+	heap         []retryItem // sorted by due time
+	checkRetries int         // scheduled retries of kind retryCheck
+	retryKick    chan struct{}
+	closed       bool
 }
 
 // MergeabilityHook is what the merge request use cases need from the
@@ -115,13 +118,15 @@ func NewMergeability(ctx context.Context, cfg MergeabilityConfig) *Mergeability 
 	wctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	return &Mergeability{
 		cfg: cfg, q: newMergeQueue(cfg.Queue), ctx: wctx, cancel: cancel,
-		retries: map[retryKey]int{}, retrying: map[retryKey]bool{},
+		retries: map[retryKey]int{}, scheduled: map[retryKey]bool{}, retryKick: make(chan struct{}, 1),
 	}
 }
 
 // Start rescans the open merge requests of every repository (the records may
 // be missing or stale after a restart) and starts the workers.
 func (s *Mergeability) Start() {
+	s.wg.Add(1)
+	go s.scheduler()
 	s.rescanAll()
 	for range s.cfg.Workers {
 		s.wg.Add(1)
@@ -138,13 +143,22 @@ func (s *Mergeability) Close(_ context.Context) {
 	s.wg.Wait()
 }
 
-// retry schedules redo after a bounded exponential backoff. It is
+// retryItem is one scheduled retry.
+type retryItem struct {
+	due time.Time
+	key retryKey
+}
+
+// retry schedules a retry of key after a bounded exponential backoff. It is
 // deduplicated per key, gives up after mergeabilityRetries attempts and stops
-// on Close.
-func (s *Mergeability) retry(key retryKey, redo func()) {
+// on Close. All retries share one scheduler goroutine and at most cfg.Queue
+// per-request retries wait at once; past it the retry of a request becomes
+// the retry of its repository's rescan (one per repository), so memory stays
+// bounded.
+func (s *Mergeability) retry(key retryKey) {
 	s.retryMu.Lock()
 	defer s.retryMu.Unlock()
-	if s.closed || s.retrying[key] {
+	if s.closed || s.scheduled[key] {
 		return
 	}
 	s.retries[key]++
@@ -153,21 +167,101 @@ func (s *Mergeability) retry(key retryKey, redo func()) {
 		delete(s.retries, key)
 		return
 	}
-	s.retrying[key] = true
-	after := s.cfg.After(mergeBackoff(n))
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	sk := key
+	if key.kind == retryCheck && s.checkRetries >= s.cfg.Queue {
+		sk = retryKey{kind: retryRescan, mk: mergeKey{repo: key.mk.repo}}
+		if s.scheduled[sk] {
+			return
+		}
+	}
+	if sk.kind == retryCheck {
+		s.checkRetries++
+	}
+	s.scheduled[sk] = true
+	it := retryItem{due: s.cfg.Clock.Now().Add(mergeBackoff(n)), key: sk}
+	i, _ := slices.BinarySearchFunc(s.heap, it, func(a, b retryItem) int {
+		if a.due.After(b.due) {
+			return 1
+		}
+		return -1 // equal dues keep their insertion order
+	})
+	s.heap = slices.Insert(s.heap, i, it)
+	if i == 0 {
+		select {
+		case s.retryKick <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// scheduler is the only goroutine that waits for retries: it sleeps until the
+// earliest is due and puts it back in the normal queue.
+func (s *Mergeability) scheduler() {
+	defer s.wg.Done()
+	for {
+		s.retryMu.Lock()
+		var head retryItem
+		has := len(s.heap) > 0
+		if has {
+			head = s.heap[0]
+		}
+		s.retryMu.Unlock()
+		if !has {
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-s.retryKick:
+				continue
+			}
+		}
+		after := s.cfg.After(max(0, head.due.Sub(s.cfg.Clock.Now())))
 		select {
 		case <-s.ctx.Done():
 			return
+		case <-s.retryKick:
+			continue // an earlier retry arrived
 		case <-after:
 		}
-		s.retryMu.Lock()
-		delete(s.retrying, key)
-		s.retryMu.Unlock()
-		redo()
-	}()
+		for _, k := range s.popDue(head.key) {
+			if s.ctx.Err() != nil {
+				return
+			}
+			s.fire(k)
+		}
+	}
+}
+
+// popDue removes the waited item and the ones due as well.
+func (s *Mergeability) popDue(waited retryKey) []retryKey {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	now := s.cfg.Clock.Now()
+	var out []retryKey
+	s.heap = slices.DeleteFunc(s.heap, func(it retryItem) bool {
+		if it.key != waited && it.due.After(now) {
+			return false
+		}
+		out = append(out, it.key)
+		delete(s.scheduled, it.key)
+		if it.key.kind == retryCheck {
+			s.checkRetries--
+		}
+		return true
+	})
+	return out
+}
+
+// fire puts the work of a due retry back in the normal queue, so that the
+// worker limits apply.
+func (s *Mergeability) fire(k retryKey) {
+	switch k.kind {
+	case retryCheck:
+		s.q.add(k.mk)
+	case retryRescan:
+		s.q.markDirty(k.mk.repo)
+	case retryRescanAll:
+		s.rescanAll()
+	}
 }
 
 // retryDone forgets the failures of key after a success.
@@ -181,7 +275,7 @@ func (s *Mergeability) rescanAll() {
 	repos, err := s.cfg.Meta.List(s.ctx)
 	if err != nil {
 		ctxLog(s.ctx).Error().Err(err).Msg("mergeability: list the repositories to rescan")
-		s.retry(retryKey{kind: retryRescanAll}, s.rescanAll)
+		s.retry(retryKey{kind: retryRescanAll})
 		return
 	}
 	s.retryDone(retryKey{kind: retryRescanAll})
@@ -289,7 +383,7 @@ func (s *Mergeability) runKey(k mergeKey) {
 		if s.check(k) {
 			s.retryDone(rk)
 		} else {
-			s.retry(rk, func() { s.q.add(k) })
+			s.retry(rk)
 		}
 		if !s.q.finish(k) || s.ctx.Err() != nil {
 			return
@@ -303,7 +397,7 @@ func (s *Mergeability) rescan(repo domain.RepoName) {
 	mrs, err := s.cfg.Store.ListOpen(s.ctx, repo)
 	if err != nil {
 		ctxLog(s.ctx).Error().Err(err).Str("repo", repo.String()).Msg("mergeability: list the open merge requests to rescan")
-		s.retry(retryKey{kind: retryRescan, mk: mergeKey{repo: repo}}, func() { s.q.markDirty(repo) })
+		s.retry(retryKey{kind: retryRescan, mk: mergeKey{repo: repo}})
 		return
 	}
 	s.retryDone(retryKey{kind: retryRescan, mk: mergeKey{repo: repo}})
@@ -362,8 +456,9 @@ func (s *Mergeability) check(k mergeKey) (done bool) {
 			return false
 		}
 		if prev.IsFor(tip, head) {
-			if s.q.takeSeen(k) {
-				s.publish(ctx, prev) // a reader saw "checking" before this record
+			if s.q.takeSeen(k) && s.publish(ctx, prev) != nil { // a reader saw "checking" before this record
+				s.q.markSeen(k)
+				return false
 			}
 			return true
 		}
@@ -398,7 +493,10 @@ func (s *Mergeability) check(k mergeKey) (done bool) {
 		}
 		seen := s.q.takeSeen(k)
 		if seen || prev.State == "" || changedMergeability(prev, res) {
-			s.publish(ctx, res)
+			if s.publish(ctx, res) != nil {
+				s.q.markSeen(k) // the next check publishes it
+				return false
+			}
 		}
 		return true
 	}
@@ -471,16 +569,20 @@ func changedMergeability(a, b domain.Mergeability) bool {
 		a.ConflictPathsTruncated != b.ConflictPathsTruncated || !slices.Equal(a.ConflictPaths, b.ConflictPaths)
 }
 
-func (s *Mergeability) publish(ctx context.Context, m domain.Mergeability) {
+// publish sends the result on the bus. It fails on a transient error; a
+// repository that is gone is terminal and not an error.
+func (s *Mergeability) publish(ctx context.Context, m domain.Mergeability) error {
 	repo, err := s.cfg.Meta.Get(ctx, m.Repo)
 	if err != nil {
-		if !errors.Is(err, domain.ErrNotFound) && ctx.Err() == nil {
-			ctxLog(ctx).Error().Err(err).Str("repo", m.Repo.String()).Msg("mergeability: read the repository to publish a result")
+		if errors.Is(err, domain.ErrNotFound) || ctx.Err() != nil {
+			return nil
 		}
-		return
+		ctxLog(ctx).Error().Err(err).Str("repo", m.Repo.String()).Msg("mergeability: read the repository to publish a result")
+		return err
 	}
 	s.cfg.Bus.Publish(ctx, domain.MergeRequestMergeability{
 		Repo: m.Repo, Number: m.Number, Mergeability: m, At: m.CheckedAt,
 		Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
 	})
+	return nil
 }

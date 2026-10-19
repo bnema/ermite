@@ -175,3 +175,10 @@ const MaxSpent = maxSpent
 // SetAfterMergeGate makes the post-merge goroutine of m run f before anything
 // else, to place a test between a merge and its side effects.
 func (m *MergeRequests) SetAfterMergeGate(f func()) { m.afterGate = f }
+
+// ScheduledRetries gives the number of retries waiting in the scheduler.
+func (s *Mergeability) ScheduledRetries() int {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	return len(s.heap)
+}
