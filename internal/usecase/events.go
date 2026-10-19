@@ -270,7 +270,7 @@ func (e *Events) parseID(id string) (uint64, bool) {
 type watch struct {
 	p     domain.Principal
 	home  bool
-	owner bool // the owner topic: merge request and issue events of every repository
+	owner bool // the owner topic: merge request, issue, repo update and deletion events of every repository
 	repos map[domain.RepoName]bool
 
 	checked time.Time // when the token store last confirmed the principal
@@ -281,7 +281,7 @@ func (w *watch) wants(name domain.RepoName) bool { return w.home || w.repos[name
 // wantsEvent is wants for an event: the owner topic also follows the events
 // about merge requests and issues of every repository.
 func (w *watch) wantsEvent(name domain.RepoName, ev domain.Event) bool {
-	return w.wants(name) || (w.owner && isItemEvent(ev))
+	return w.wants(name) || (w.owner && (isItemEvent(ev) || isRepoLifecycleEvent(ev)))
 }
 
 // parseTopics validates the topics of a watch. A repository topic needs a
@@ -495,7 +495,7 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return send(ports.WatchEvent{Gap: true})
 	case domain.RepoDeleted:
 		// The repository is gone: use the visibility it had.
-		if !w.wants(ev.Repo) || !canReadAs(w.p, ev.Repo, ev.Visibility) {
+		if !w.wantsEvent(ev.Repo, ev) || !canReadAs(w.p, ev.Repo, ev.Visibility) {
 			return nil
 		}
 		return send(out)
@@ -589,6 +589,16 @@ func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName
 func isIssueEvent(ev domain.Event) bool {
 	switch ev.(type) {
 	case domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented:
+		return true
+	}
+	return false
+}
+
+// isRepoLifecycleEvent reports whether ev is a repository update or deletion:
+// the owner topic follows them, for they change what the inbox lists.
+func isRepoLifecycleEvent(ev domain.Event) bool {
+	switch ev.(type) {
+	case domain.RepoUpdated, domain.RepoDeleted:
 		return true
 	}
 	return false

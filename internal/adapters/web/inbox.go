@@ -155,12 +155,13 @@ func (s *Server) inboxCount(ctx context.Context) (n int, show bool) {
 	return ov.Counts.MergeRequests + ov.Counts.Issues, true
 }
 
-// inbox renders the fragments an event of a merge request or an issue changes
+// inbox renders the fragments an event of a merge request, an issue or a repository changes
 // on the inbox page: the counters, the filter and the two lists.
 func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	switch we.Event.(type) {
 	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded,
-		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented:
+		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented,
+		domain.RepoUpdated, domain.RepoDeleted:
 	default:
 		return nil, nil
 	}
