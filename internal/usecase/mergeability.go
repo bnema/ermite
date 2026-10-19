@@ -198,6 +198,12 @@ func (s *Mergeability) retry(key retryKey) {
 // earliest is due and puts it back in the normal queue.
 func (s *Mergeability) scheduler() {
 	defer s.wg.Done()
+	// The timer armed for waited; a kick re-arms it only when the earliest
+	// retry changed, so a stale kick never starts a second timer.
+	var (
+		after  <-chan time.Time
+		waited retryItem
+	)
 	for {
 		s.retryMu.Lock()
 		var head retryItem
@@ -207,6 +213,7 @@ func (s *Mergeability) scheduler() {
 		}
 		s.retryMu.Unlock()
 		if !has {
+			after = nil
 			select {
 			case <-s.ctx.Done():
 				return
@@ -214,13 +221,16 @@ func (s *Mergeability) scheduler() {
 				continue
 			}
 		}
-		after := s.cfg.After(max(0, head.due.Sub(s.cfg.Clock.Now())))
+		if after == nil || head.key != waited.key || !head.due.Equal(waited.due) {
+			after, waited = s.cfg.After(max(0, head.due.Sub(s.cfg.Clock.Now()))), head
+		}
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-s.retryKick:
-			continue // an earlier retry arrived
+			continue // an earlier retry may have arrived
 		case <-after:
+			after = nil
 		}
 		for _, k := range s.popDue(head.key) {
 			if s.ctx.Err() != nil {
