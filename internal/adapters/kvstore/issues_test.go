@@ -4,6 +4,7 @@ package kvstore_test
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -266,8 +267,9 @@ func TestRepoSettingsKeepTheIssuesMode(t *testing.T) {
 	assert.ErrorIs(t, s.Update(ctx, got), domain.ErrInvalid)
 }
 
-// TestSchema4UpgradesTheTokensWithAllScopes: the tokens that held every scope
-// before issue:write existed keep their owner rights; no other token changes.
+// TestSchema4UpgradesTheTokensWithAllScopes: the tokens that held every
+// original scope keep their owner rights, gaining mr:review and issue:write
+// (each only if missing); no other token changes.
 func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -279,6 +281,8 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	}
 	tokens := map[string]*storagepb.Token{
 		"full":      {Id: "full", Scopes: all9},
+		"full10":    {Id: "full10", Scopes: append(slices.Clone(all9), "mr:review")},
+		"reposmr":   {Id: "reposmr", Scopes: append(slices.Clone(all9), "mr:review"), Repos: []string{"proj"}},
 		"missing":   {Id: "missing", Scopes: all9[:8]},
 		"repos":     {Id: "repos", Scopes: all9, Repos: []string{"proj"}},
 		"prefix":    {Id: "prefix", Scopes: all9, BranchPrefixes: []string{"agent/"}},
@@ -302,10 +306,22 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 
 	full := get("full")
 	assert.Contains(t, full.Scopes, domain.ScopeIssueWrite)
+	assert.Contains(t, full.Scopes, domain.ScopeMRReview)
+	assert.Len(t, full.Scopes, 11)
+	full10 := get("full10")
+	assert.Len(t, full10.Scopes, 11)
+	assert.Equal(t, 1, countScope(full10.Scopes, domain.ScopeMRReview))
+	assert.Contains(t, full10.Scopes, domain.ScopeIssueWrite)
+	assert.True(t, domain.TokenPrincipal(full10).HasOwnerRights())
+	assert.Len(t, get("reposmr").Scopes, 10)
+	assert.NotContains(t, get("reposmr").Scopes, domain.ScopeIssueWrite)
 	assert.True(t, domain.TokenPrincipal(full).HasOwnerRights())
 	assert.True(t, domain.TokenPrincipal(get("otherfull")).HasOwnerRights(), "the order of the scopes does not matter")
 
 	assert.NotContains(t, get("missing").Scopes, domain.ScopeIssueWrite)
+	assert.NotContains(t, get("missing").Scopes, domain.ScopeMRReview)
+	assert.NotContains(t, get("repos").Scopes, domain.ScopeMRReview)
+	assert.NotContains(t, get("prefix").Scopes, domain.ScopeMRReview)
 	assert.False(t, domain.TokenPrincipal(get("missing")).HasOwnerRights())
 	assert.NotContains(t, get("repos").Scopes, domain.ScopeIssueWrite)
 	assert.NotContains(t, get("prefix").Scopes, domain.ScopeIssueWrite)
@@ -325,6 +341,9 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	tok, err := s2.Tokens().Get(ctx, "full")
 	require.NoError(t, err)
 	assert.Equal(t, full.Scopes, tok.Scopes)
+	tok10, err := s2.Tokens().Get(ctx, "full10")
+	require.NoError(t, err)
+	assert.Equal(t, full10.Scopes, tok10.Scopes)
 	require.NoError(t, s2.Close(ctx))
 }
 
@@ -529,4 +548,14 @@ func TestStoredPendingIssueStateIsCorrupt(t *testing.T) {
 	assert.ErrorContains(t, err, "pending")
 	_, err = is.List(ctx, n, ports.ListIssuesParams{State: domain.IssueStateOpen})
 	assert.ErrorContains(t, err, "pending")
+}
+
+func countScope(scopes []domain.Scope, want domain.Scope) int {
+	n := 0
+	for _, s := range scopes {
+		if s == want {
+			n++
+		}
+	}
+	return n
 }

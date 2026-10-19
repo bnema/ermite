@@ -36,9 +36,10 @@ import (
 // scope, so it must refuse the data. It also adds the pending issues of the
 // public form (ispend/<repo>/<id>, removed with their repository), the bans of
 // their submitters (isban/<hex hash>) and the form's server key
-// (meta/issuekey). The upgrade also adds issue:write to the
-// stored tokens that held all nine earlier scopes with no repository list and
-// no branch prefix, so that they keep the owner rights (see upgradeTokens).
+// (meta/issuekey). The upgrade also adds mr:review and issue:write (each only
+// if missing) to the stored tokens that held all nine original scopes with no
+// repository list and no branch prefix, so that they keep the owner rights (see
+// upgradeTokens).
 const SchemaVersion = 4
 
 const schemaKey = "meta/schema"
@@ -171,7 +172,7 @@ func mustMarshal(m proto.Message) []byte {
 	return b
 }
 
-// preIssueScopes are the nine scopes that existed before schema 4.
+// preIssueScopes are the nine original scopes, before mr:review and issue:write.
 var preIssueScopes = []domain.Scope{
 	domain.ScopeRepoRead, domain.ScopeRepoWrite, domain.ScopeRepoAdmin,
 	domain.ScopeMRWrite, domain.ScopeMRMerge,
@@ -181,9 +182,10 @@ var preIssueScopes = []domain.Scope{
 
 // upgradeTokens adds to b the schema 4 upgrade of the tokens: a token that
 // holds all of preIssueScopes, limited to no repository and no branch prefix,
-// had the owner rights, which AllScopes now needs issue:write for, so it gets
-// the scope (this is no escalation). Every other token is left as it is. The
-// batch requires each token to be at the version it was read at.
+// had the owner rights, which AllScopes now needs mr:review and issue:write
+// for, so it gets each of them if missing (this is no escalation). Every other
+// token is left as it is. The batch requires each token to be at the version it
+// was read at.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter one-time storage upgrade of the stored tokens: a storage concern, no policy
 func (s *Store) upgradeTokens(ctx context.Context, b *kv.Batch) error {
@@ -192,8 +194,7 @@ func (s *Store) upgradeTokens(ctx context.Context, b *kv.Batch) error {
 		if err := proto.Unmarshal(item.Value, pb); err != nil {
 			return fmt.Errorf("upgrade token %s: %w", key, err)
 		}
-		if len(pb.GetRepos()) > 0 || len(pb.GetBranchPrefixes()) > 0 ||
-			slices.Contains(pb.GetScopes(), domain.ScopeIssueWrite.String()) {
+		if len(pb.GetRepos()) > 0 || len(pb.GetBranchPrefixes()) > 0 {
 			continue
 		}
 		full := true
@@ -206,7 +207,16 @@ func (s *Store) upgradeTokens(ctx context.Context, b *kv.Batch) error {
 		if !full {
 			continue
 		}
-		pb.Scopes = append(pb.Scopes, domain.ScopeIssueWrite.String())
+		added := false
+		for _, sc := range []domain.Scope{domain.ScopeMRReview, domain.ScopeIssueWrite} {
+			if !slices.Contains(pb.GetScopes(), sc.String()) {
+				pb.Scopes = append(pb.Scopes, sc.String())
+				added = true
+			}
+		}
+		if !added {
+			continue
+		}
 		b.RequireVersion(slices.Clone(key), item.Version)
 		b.Put(slices.Clone(key), mustMarshal(pb))
 	}
