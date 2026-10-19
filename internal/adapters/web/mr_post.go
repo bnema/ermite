@@ -184,6 +184,23 @@ func (s *Server) mrComment(ctx context.Context, r *http.Request) (string, string
 			return "", back, formError("side must be new or old")
 		}
 	}
+	if raw := r.PostFormValue("reply_to"); raw != "" {
+		params.ReplyTo = commentID(raw)
+		if params.ReplyTo == 0 {
+			return "", back, formError("reply_to is not a note id")
+		}
+	}
+	if raw := r.PostFormValue("start_line"); raw != "" {
+		v, e := strconv.ParseInt(raw, 10, 32)
+		if e != nil {
+			return "", back, formError("start_line is not a number")
+		}
+		params.StartLine = int(v)
+	}
+	params.Verdict, err = domain.ParseVerdict(r.PostFormValue("verdict"))
+	if err != nil {
+		return "", back, err
+	}
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
 		return "", back, err
@@ -362,4 +379,34 @@ func formBool(s string) (bool, error) {
 // break the use case stores.
 func normalizeNewlines(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
+}
+
+// mrEditComment passes source text to the author-checked use case.
+func (s *Server) mrEditComment(ctx context.Context, r *http.Request) (string, string, error) {
+	n, err := number(r)
+	if err != nil {
+		return "", "", err
+	}
+	back := withFrom(mrHref(r.PathValue("repo"), n), formFrom(r))
+	name, err := domain.ParseRepoName(r.PathValue("repo"))
+	if err != nil {
+		return "", back, err
+	}
+	c, err := s.cfg.MergeRequests.EditComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")), normalizeNewlines(r.PostFormValue("text")))
+	return back + "#c" + strconv.FormatInt(c.ID, 10), back, err
+}
+
+// mrDeleteComment passes the note id to the author-checked use case.
+func (s *Server) mrDeleteComment(ctx context.Context, r *http.Request) (string, string, error) {
+	n, err := number(r)
+	if err != nil {
+		return "", "", err
+	}
+	back := withFrom(mrHref(r.PathValue("repo"), n), formFrom(r))
+	name, err := domain.ParseRepoName(r.PathValue("repo"))
+	if err != nil {
+		return "", back, err
+	}
+	c, err := s.cfg.MergeRequests.DeleteComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")))
+	return back + "#c" + strconv.FormatInt(c.ID, 10), back, err
 }

@@ -30,6 +30,8 @@ const (
 	ScopeMRWrite Scope = "mr:write"
 	// ScopeMRMerge merges, and deletes the merged source branch on request.
 	ScopeMRMerge Scope = "mr:merge"
+	// ScopeMRReview sets a verdict on a merge request.
+	ScopeMRReview Scope = "mr:review"
 	// ScopeCIWrite re-runs or cancels CI runs.
 	ScopeCIWrite Scope = "ci:write"
 	// ScopeSecretsWrite sets and deletes secrets and variables.
@@ -43,11 +45,11 @@ const (
 	ScopeIssueWrite Scope = "issue:write"
 )
 
-// AllScopes returns the ten scopes in a stable order.
+// AllScopes returns the eleven scopes in a stable order.
 func AllScopes() []Scope {
 	return []Scope{
 		ScopeRepoRead, ScopeRepoWrite, ScopeRepoAdmin,
-		ScopeMRWrite, ScopeMRMerge,
+		ScopeMRWrite, ScopeMRMerge, ScopeMRReview,
 		ScopeCIWrite, ScopeSecretsWrite, ScopeRunnerRegister,
 		ScopeTokenAdmin,
 		ScopeIssueWrite,

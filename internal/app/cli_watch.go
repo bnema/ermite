@@ -45,15 +45,18 @@ const (
 	eventPushed      = "pushed"
 	eventGap         = "gap"
 
-	eventMROpened     = "merge_request_opened"
-	eventMRMerged     = "merge_request_merged"
-	eventMRClosed     = "merge_request_closed"
-	eventCommentAdded = "comment_added"
+	eventMROpened        = "merge_request_opened"
+	eventMRMerged        = "merge_request_merged"
+	eventMRClosed        = "merge_request_closed"
+	eventCommentAdded    = "comment_added"
+	eventCommentEdited   = "comment_edited"
+	eventCommentDeleted  = "comment_deleted"
+	eventCommentResolved = "comment_resolved"
 )
 
 // toJSONEvent maps an event; ok is false for kinds this client does not know,
 // which the contract says to ignore.
-func toJSONEvent(ev *ermite.Event) (jsonEvent, bool) {
+func toJSONEvent(ev *ermite.Event, baseURL string) (jsonEvent, bool) {
 	out := jsonEvent{ID: ev.GetId(), Time: jsonTime(ev.GetTime())}
 	switch k := ev.GetKind().(type) {
 	case *ermite.Event_RepoCreated:
@@ -71,17 +74,26 @@ func toJSONEvent(ev *ermite.Event) (jsonEvent, bool) {
 			out.RefUpdates = append(out.RefUpdates, jsonRefUpdate{Ref: u.GetRef(), OldID: u.GetOldId(), NewID: u.GetNewId()})
 		}
 	case *ermite.Event_MergeRequestOpened:
-		m := toJSONMergeRequest(k.MergeRequestOpened.GetMergeRequest())
+		m := toJSONMergeRequest(k.MergeRequestOpened.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMROpened, m.Repo, &m
 	case *ermite.Event_MergeRequestMerged:
-		m := toJSONMergeRequest(k.MergeRequestMerged.GetMergeRequest())
+		m := toJSONMergeRequest(k.MergeRequestMerged.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMRMerged, m.Repo, &m
 	case *ermite.Event_MergeRequestClosed:
-		m := toJSONMergeRequest(k.MergeRequestClosed.GetMergeRequest())
+		m := toJSONMergeRequest(k.MergeRequestClosed.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMRClosed, m.Repo, &m
 	case *ermite.Event_CommentAdded:
 		c := toJSONComment(k.CommentAdded.GetComment())
 		out.Type, out.Repo, out.Number, out.Comment = eventCommentAdded, k.CommentAdded.GetRepo(), k.CommentAdded.GetNumber(), &c
+	case *ermite.Event_CommentEdited:
+		c := toJSONComment(k.CommentEdited.GetComment())
+		out.Type, out.Repo, out.Number, out.Comment = eventCommentEdited, k.CommentEdited.GetRepo(), k.CommentEdited.GetNumber(), &c
+	case *ermite.Event_CommentDeleted:
+		c := toJSONComment(k.CommentDeleted.GetComment())
+		out.Type, out.Repo, out.Number, out.Comment = eventCommentDeleted, k.CommentDeleted.GetRepo(), k.CommentDeleted.GetNumber(), &c
+	case *ermite.Event_CommentResolved:
+		c := toJSONComment(k.CommentResolved.GetComment())
+		out.Type, out.Repo, out.Number, out.Comment = eventCommentResolved, k.CommentResolved.GetRepo(), k.CommentResolved.GetNumber(), &c
 	case *ermite.Event_Gap:
 		out.Type = eventGap
 	default:
@@ -112,7 +124,7 @@ func eventLine(e jsonEvent) string {
 		detail = e.Repo + " " + strings.Join(parts, ", ")
 	case eventMROpened, eventMRMerged, eventMRClosed:
 		detail = fmt.Sprintf("%s!%d %s -> %s", e.Repo, e.MergeRequest.Number, e.MergeRequest.SourceBranch, e.MergeRequest.TargetBranch)
-	case eventCommentAdded:
+	case eventCommentAdded, eventCommentEdited, eventCommentDeleted, eventCommentResolved:
 		detail = fmt.Sprintf("%s!%d by %s", e.Repo, e.Number, e.Comment.Author)
 	case eventGap:
 		detail = "events were lost, reload what you display"
@@ -142,17 +154,18 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 		Use:   "watch [repo]",
 		Short: "Print repository events as they happen",
 		Long: "Print one line per event (repository created, updated or deleted, refs pushed, merge requests\n" +
-			"opened, merged or closed, comments added) for every\n" +
+			"opened, merged or closed, notes added, edited, deleted or resolved) for every\n" +
 			"repository you can see, or only for [repo]. It runs until interrupted. When the connection drops it\n" +
 			"reconnects with a growing delay and resumes after the last event it printed; if the server no longer\n" +
 			"has that event it prints a gap event: reload what you display. Connection notices go to standard\n" +
 			"error.\n\n" +
 			"--json prints one JSON object per line (NDJSON). Fields: id, time (RFC 3339 UTC), type\n" +
 			"(repo_created, repo_updated, repo_deleted, pushed, merge_request_opened, merge_request_merged,\n" +
-			"merge_request_closed, comment_added or gap) and, depending on the type, repo (name),\n" +
+			"merge_request_closed, comment_added, comment_edited, comment_deleted, comment_resolved or gap)\n" +
+			"and, depending on the type, repo (name),\n" +
 			"repository (the repository fields of `repo show --json`), ref_updates (array of ref, old_id,\n" +
 			"new_id; an empty id means the ref was created or deleted), merge_request (the fields of\n" +
-			"`mr show --json`) and, for comment_added, number (of the merge request) and comment. Unknown\n" +
+			"`mr show --json`) and, for comment events, number (of the merge request) and comment. Unknown\n" +
 			"event types are skipped.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
@@ -177,7 +190,7 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 			OnNotice: func(msg string) { noticef(cmd, "%s", clean(msg)) },
 		}
 		return c.Watch(ctx, opts, func(ev *ermite.Event) error {
-			e, ok := toJSONEvent(ev)
+			e, ok := toJSONEvent(ev, c.URL())
 			if !ok {
 				return nil
 			}

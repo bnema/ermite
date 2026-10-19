@@ -332,7 +332,7 @@ func (c *CI) CancelRun(ctx context.Context, p domain.Principal, name domain.Repo
 		}
 		if !rs.run.CancelRequested {
 			rs.run.CancelRequested, rs.run.CancelRequestedAt, rs.runDirty = true, c.now(), true
-			rs.cancelAll("Canceled by " + authorOf(p))
+			rs.cancelAll("Canceled by " + domain.AuthorName(p))
 		}
 		if err := rs.flush(ctx); err != nil {
 			return err

@@ -16,6 +16,7 @@ import (
 
 func TestScopeWireNames(t *testing.T) {
 	want := map[ermite.Scope]string{
+		ermite.Scope_SCOPE_MR_REVIEW:       "mr:review",
 		ermite.Scope_SCOPE_REPO_READ:       "repo:read",
 		ermite.Scope_SCOPE_REPO_WRITE:      "repo:write",
 		ermite.Scope_SCOPE_REPO_ADMIN:      "repo:admin",

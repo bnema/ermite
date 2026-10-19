@@ -203,7 +203,7 @@ func (c *CI) OnPullRequest(ctx context.Context, repo domain.RepoName, ev ports.P
 	}
 	e := pullEvent{
 		repo: repo, number: ev.Number, action: ev.Action, head: ev.Head, base: ev.Base,
-		actor: authorOf(p), pusher: domain.PusherOf(p), run: !p.ViaJobToken(), log: zerowrap.FromCtx(ctx),
+		actor: domain.AuthorName(p), pusher: domain.PusherOf(p), run: !p.ViaJobToken(), log: zerowrap.FromCtx(ctx),
 		actorTrusted: domain.TrustedActor(p), target: c.defaultTipOf(ctx, repo),
 	}
 	if e.actorTrusted {

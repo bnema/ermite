@@ -230,3 +230,18 @@ func (p Principal) ArchiveGrant() (repo RepoName, sha string, ok bool) {
 	}
 	return p.archiveRepo, p.archiveSha, true
 }
+
+// AuthorName names who acts, for the author of a merge request or a comment: the
+// label of the token, "root" for the root token, "owner" for the owner signed
+// in on the web and for any other caller without a label.
+func AuthorName(p Principal) string {
+	switch {
+	case p.IsOwner():
+		return "owner"
+	case p.IsRoot():
+		return "root"
+	case p.TokenLabel() != "":
+		return p.TokenLabel()
+	}
+	return "owner"
+}

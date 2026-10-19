@@ -50,17 +50,12 @@ func TestEnumMappersCoverEveryDomainValue(t *testing.T) {
 		}
 		_, err := scopeFromPB(pb.Scope_SCOPE_UNSPECIFIED)
 		assert.ErrorIs(t, err, domain.ErrInvalidScope)
-		// Every scope of the contract is a scope of the domain, except mr:review.
+		// Every scope of the contract is a scope of the domain.
 		for v := range pb.Scope_name {
 			if pb.Scope(v) == pb.Scope_SCOPE_UNSPECIFIED {
 				continue
 			}
 			_, err := scopeFromPB(pb.Scope(v))
-			if pb.Scope(v) == pb.Scope_SCOPE_MR_REVIEW {
-				// In the contract, not implemented here yet: rejected like an unknown scope.
-				assert.ErrorIs(t, err, domain.ErrInvalidScope, pb.Scope(v))
-				continue
-			}
 			assert.NoError(t, err, pb.Scope(v))
 		}
 	})

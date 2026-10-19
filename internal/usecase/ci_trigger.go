@@ -59,13 +59,13 @@ func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.
 	c.markSchedulesDirty(repo, updates)
 	// The merge requests follow the push whoever made it (their refs); only a
 	// push that is not a job's starts pull_request runs.
-	defer c.onBranchesMoved(ctx, repo, updates, authorOf(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), !pusher.ViaJobToken())
+	defer c.onBranchesMoved(ctx, repo, updates, domain.AuthorName(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), !pusher.ViaJobToken())
 	if pusher.ViaJobToken() {
 		log := zerowrap.FromCtx(ctx)
 		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("push by a job token starts no run")
 		return
 	}
-	c.enqueue(ctx, repo, updates, authorOf(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher))
+	c.enqueue(ctx, repo, updates, domain.AuthorName(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher))
 }
 
 // OnMerge queues the move of a target branch by a merge. The actor of the run is
@@ -79,13 +79,13 @@ func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain
 	// The merge moved a target branch: the test merges of the other requests
 	// into it are computed again (a merge starts no synchronize run), after the
 	// push workflows are queued.
-	defer c.onBranchesMoved(ctx, repo, updates, authorOf(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger), false)
+	defer c.onBranchesMoved(ctx, repo, updates, domain.AuthorName(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger), false)
 	if merger.ViaJobToken() {
 		log := zerowrap.FromCtx(ctx)
 		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("merge by a job token starts no run")
 		return
 	}
-	c.enqueue(ctx, repo, updates, authorOf(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger))
+	c.enqueue(ctx, repo, updates, domain.AuthorName(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger))
 }
 
 func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted bool) {

@@ -188,6 +188,11 @@ func (m MergeRequest) IsOpen() bool { return m.State == MRStateOpen }
 
 // Comment is a note on a merge request, general or on a line of its diff.
 type Comment struct {
+	ReplyTo   int64
+	StartLine int
+	Verdict   Verdict
+	EditedAt  time.Time
+	Deleted   bool
 	// ID is unique within the merge request, in order of creation.
 	ID     int64
 	Author string
@@ -349,4 +354,79 @@ func singleLine(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// Verdict is an immutable review decision on a root note.
+type Verdict uint8
+
+// Review verdicts.
+const (
+	VerdictNone Verdict = iota
+	VerdictApprove
+	VerdictChangesRequested
+)
+
+// String returns the wire name of a verdict.
+func (v Verdict) String() string {
+	switch v {
+	case VerdictApprove:
+		return "approve"
+	case VerdictChangesRequested:
+		return "changes_requested"
+	}
+	return ""
+}
+
+// ParseVerdict parses a review decision.
+func ParseVerdict(s string) (Verdict, error) {
+	switch s {
+	case "":
+		return VerdictNone, nil
+	case "approve":
+		return VerdictApprove, nil
+	case "changes_requested":
+		return VerdictChangesRequested, nil
+	}
+	return VerdictNone, fmt.Errorf("%w: verdict %q", ErrInvalid, s)
+}
+
+// IsReply reports whether this note replies to a root.
+func (c Comment) IsReply() bool { return c.ReplyTo != 0 }
+
+// IsRange reports whether this note anchors a range.
+func (c Comment) IsRange() bool { return c.StartLine != 0 }
+
+// AuthorVerdict is an author's latest review decision.
+type AuthorVerdict struct {
+	Author    string
+	Verdict   Verdict
+	CommentID int64
+	CommitID  ObjectID
+	At        time.Time
+	Stale     bool
+}
+
+// CurrentVerdicts returns the latest verdict per author, including deleted notes,
+// in note ID order. Only approvals become stale when the head changes.
+func CurrentVerdicts(comments []Comment, head ObjectID) []AuthorVerdict {
+	latest := make(map[string]Comment)
+	for _, c := range comments {
+		if c.Verdict != VerdictNone && c.ID > latest[c.Author].ID {
+			latest[c.Author] = c
+		}
+	}
+	out := make([]AuthorVerdict, 0, len(latest))
+	for _, c := range latest {
+		out = append(out, AuthorVerdict{Author: c.Author, Verdict: c.Verdict, CommentID: c.ID, CommitID: c.CommitID, At: c.CreatedAt, Stale: c.Verdict == VerdictApprove && (head == (ObjectID{}) || c.CommitID != head)})
+	}
+	slices.SortFunc(out, func(a, b AuthorVerdict) int {
+		if a.CommentID < b.CommentID {
+			return -1
+		}
+		if a.CommentID > b.CommentID {
+			return 1
+		}
+		return 0
+	})
+	return out
 }

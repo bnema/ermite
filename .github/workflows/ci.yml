@@ -1,9 +1,17 @@
 name: CI
 
+# A change that only touches these files skips the whole run: none of them
+# affects the build, the tests or the generated code.
 on:
   push:
     branches: [main]
+    paths-ignore: &docs-only
+      - '**.md'
+      - '**.png'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
+    paths-ignore: *docs-only
 
 env:
   # Test the module alone, with the versions in go.mod (never a go.work).

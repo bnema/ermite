@@ -35,10 +35,23 @@ git push https://git.example.com/<repo>.git main             # password = token,
 
 1. List: `ermite mr list <repo> --json`.
 2. Read: `ermite mr show <repo> <n> --diff --json`. Keep `head_id`; take line numbers from the hunks.
-3. Comment on a line: `ermite mr comment <repo> <n> -m "text" --path <file> --line <n> --side new`. Without `--path` the comment is general. The line must appear in the diff.
-4. Merge only when asked: `ermite mr merge <repo> <n> --head <head_id>`, with `--squash` for one commit signed by the server and `--delete-branch` to delete the source branch afterwards.
+3. Comment on a line: `ermite mr comment <repo> <n> -m "text" --path <file> --line <n> --side new`; `--line 10-14` covers a range on one side. Without `--path` the comment is general. The line must appear in the diff. Notes are Markdown; `^N` refers to note N.
+4. End a review with a verdict (needs `mr:review`): `--approve` or `--request-changes`, alone or with a message. Verdicts are informative and cannot be edited; a new verdict replaces the previous one.
+5. Merge only when asked: `ermite mr merge <repo> <n> --head <head_id>`, with `--squash` for one commit signed by the server and `--delete-branch` to delete the source branch afterwards.
 
 The merge is refused when the branch moved since `head_id` (review again) or when the target is not an ancestor of the head (rebase and push again). The repository may allow only one merge mode.
+
+### Act on a review
+
+Notes are visible as soon as they are written, so a review is not finished until its verdict. Act on a verdict, not on each note (`ermite watch --json` shows `verdict` on the `comment_added` event).
+
+On `changes_requested`: run `ermite mr show <repo> <n> --json`, read the open threads (roots with `resolved` false and their replies), fix the code, push, then answer each thread with `ermite mr comment <repo> <n> --reply <id> -m "Fixed in ^N"`. Leave resolving to the reviewer: do not run `mr resolve` on their threads. Edit or delete only your own notes (`mr edit-comment`, `mr delete-comment`).
+
+An approval is stale after a push; changes requested stay until the reviewer gives a new verdict.
+
+`ermite mr create` and `ermite mr close` print a confirmation followed by the full
+merge request web URL on its own line. With `--json`, merge request objects
+(create, show, list, close and merge) include `url` alongside the other fields.
 
 Open one: `ermite mr create <repo> --source <branch> --title "..."`. After new pushes, `mr show --since-last-read` shows only what changed since `--mark-read`.
 
@@ -48,11 +61,11 @@ Open one: `ermite mr create <repo> --source <branch> --title "..."`. After new p
 ermite token create my-agent --preset agent --repo <repo> --expires 30d
 ```
 
-The secret is printed once. Presets: `agent` (push, open and comment on merge requests), `ci` (read), `cli` (everything). Add `--scope mr:merge` to let an agent merge. A token can never grant more than the token that creates it. Full scope list: [CLI.md](CLI.md).
+The secret is printed once. Presets: `agent` (push, open and comment on merge requests; no verdicts), `ci` (read), `cli` (everything). Add `--scope mr:review` to let an agent give verdicts, `--scope mr:merge` to let it merge. A token can never grant more than the token that creates it. Full scope list: [CLI.md](CLI.md).
 
 ## Follow events
 
-`ermite watch [repo] --json` prints one JSON object per event (pushes, repositories, merge requests, comments). It reconnects and resumes on its own; a `gap` event means some events were lost, so reload the state.
+`ermite watch [repo] --json` prints one JSON object per event (pushes, repositories, merge requests, notes: added, edited, deleted, resolved). It reconnects and resumes on its own; a `gap` event means some events were lost, so reload the state.
 
 ## Run a server
 

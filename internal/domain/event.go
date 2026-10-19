@@ -245,6 +245,45 @@ type IssuePendingRemoved struct {
 // EventKind implements Event.
 func (IssuePendingRemoved) EventKind() string { return "issue.pending_removed" }
 
+// CommentEdited is published when the text of a note was edited.
+type CommentEdited struct {
+	Repo       RepoName
+	Number     int64
+	Comment    Comment
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (CommentEdited) EventKind() string { return "mr.comment_edited" }
+
+// CommentDeleted is published when the text of a note was deleted.
+type CommentDeleted struct {
+	Repo       RepoName
+	Number     int64
+	Comment    Comment
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (CommentDeleted) EventKind() string { return "mr.comment_deleted" }
+
+// CommentResolved is published when a thread was resolved or reopened.
+type CommentResolved struct {
+	Repo       RepoName
+	Number     int64
+	Comment    Comment
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (CommentResolved) EventKind() string { return "mr.comment_resolved" }
+
 // EventGap tells a subscriber that it missed events because it was too slow;
 // it must refresh its whole view.
 type EventGap struct{}

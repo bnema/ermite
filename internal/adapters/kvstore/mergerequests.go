@@ -662,6 +662,11 @@ func encodeComment(c domain.Comment) ([]byte, error) {
 		return nil, err
 	}
 	return mustMarshal(&storagepb.Comment{
+		ReplyTo:   c.ReplyTo,
+		StartLine: int32(c.StartLine), //nolint:gosec // validated against the diff
+		Verdict:   storagepb.Verdict(c.Verdict),
+		EditedAt:  encodeTime(c.EditedAt),
+		Deleted:   c.Deleted,
 		Id:        c.ID,
 		Author:    c.Author,
 		Path:      c.Path,
@@ -685,6 +690,7 @@ func decodeComment(item kv.Item) (domain.Comment, error) {
 		return domain.Comment{}, fmt.Errorf("decode comment %d: %w", pb.GetId(), err)
 	}
 	c := domain.Comment{
+		ReplyTo: pb.GetReplyTo(), StartLine: int(pb.GetStartLine()), Verdict: domain.Verdict(pb.GetVerdict()), EditedAt: decodeTime(pb.GetEditedAt()), Deleted: pb.GetDeleted(),
 		ID: pb.GetId(), Author: pb.GetAuthor(), Path: pb.GetPath(), Line: int(pb.GetLine()),
 		Side: decodeSide(pb.GetSide()), Text: text, Resolved: pb.GetResolved(),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), Version: item.Version,

@@ -547,3 +547,28 @@ func TestSigningSeedRejectsBadGenerators(t *testing.T) {
 	_, err = s.SigningSeed(ctx, func() ([]byte, error) { return nil, assert.AnError }, created)
 	require.ErrorIs(t, err, assert.AnError)
 }
+
+func TestNoteFieldsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	_, store, name := repoWithMRs(t)
+	mr, err := store.Create(ctx, newMR(t, name, "notes"))
+	require.NoError(t, err)
+	for id := int64(1); id <= 2; id++ {
+		mr, err = store.Get(ctx, name, mr.Number)
+		require.NoError(t, err)
+		c := newComment(t, id, "note")
+		if id == 2 {
+			c.ReplyTo = 1
+			c.StartLine = 1
+			c.Verdict = domain.VerdictApprove
+			c.EditedAt = created
+			c.Deleted = true
+		}
+		mr.CommentSeq = id
+		require.NoError(t, store.SaveComment(ctx, mr, c))
+		got, err := store.GetComment(ctx, name, mr.Number, id)
+		require.NoError(t, err)
+		c.Version = got.Version
+		assert.Equal(t, c, got)
+	}
+}

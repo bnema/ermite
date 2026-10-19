@@ -275,7 +275,7 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 		p.Comments = append(p.Comments, v)
 	}
 	if signed {
-		p.Form = &CommentForm{ID: "cf-general", Action: issueHref(d.name(), n, "comments"), Title: "comment on the issue"}
+		p.Form = &CommentForm{ID: "cf-general", Action: issueHref(d.name(), n, "comments"), Title: "comment on the issue", Plain: true}
 		switch i.State {
 		case domain.IssueStateOpen:
 			p.Transition = &IssueActions{Action: issueHref(d.name(), n, "close"), Label: "Close issue"}

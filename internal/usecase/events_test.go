@@ -965,3 +965,35 @@ func TestWatchHomeGetsRunUpdates(t *testing.T) {
 		root.quiet(t, r, pub)
 	})
 }
+
+func TestNoteMutationEventVisibility(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 0)
+		pub := r.repo("pub", domain.VisibilityPublic)
+		priv := r.repo("priv", domain.VisibilityPrivate)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{})
+		owner := r.watch(ctx, domain.Root(), ports.WatchParams{Topics: []string{"repo:priv"}})
+		synctest.Wait()
+		for _, kind := range []string{"edited", "deleted", "resolved"} {
+			for _, n := range []domain.RepoName{priv, pub} {
+				vis := domain.VisibilityPublic
+				if n == priv {
+					vis = domain.VisibilityPrivate
+				}
+				switch kind {
+				case "edited":
+					r.feed <- domain.CommentEdited{Repo: n, Visibility: vis, CreatedAt: now, At: now}
+				case "deleted":
+					r.feed <- domain.CommentDeleted{Repo: n, Visibility: vis, CreatedAt: now, At: now}
+				case "resolved":
+					r.feed <- domain.CommentResolved{Repo: n, Visibility: vis, CreatedAt: now, At: now}
+				}
+			}
+			assert.Equal(t, "mr.comment_"+kind, anon.next(t).Event.EventKind())
+			assert.Equal(t, "mr.comment_"+kind, owner.next(t).Event.EventKind())
+			anon.quiet(t, r, pub)
+		}
+	})
+}

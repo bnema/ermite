@@ -235,3 +235,51 @@ func TestMergeRequestDraft(t *testing.T) {
 		assert.Equal(t, tc.ready, ready.String(), tc.title)
 	}
 }
+
+func TestNoteVerdicts(t *testing.T) {
+	head, old := oid(t, 'a'), oid(t, 'b')
+	for _, tc := range []struct {
+		text    string
+		verdict domain.Verdict
+	}{{"", domain.VerdictNone}, {"approve", domain.VerdictApprove}, {"changes_requested", domain.VerdictChangesRequested}} {
+		v, err := domain.ParseVerdict(tc.text)
+		require.NoError(t, err)
+		assert.Equal(t, tc.verdict, v)
+		assert.Equal(t, tc.text, v.String())
+	}
+	_, err := domain.ParseVerdict("unknown")
+	require.ErrorIs(t, err, domain.ErrInvalid)
+	comments := []domain.Comment{{ID: 3, Author: "a", Verdict: domain.VerdictApprove, CommitID: old, Deleted: true}, {ID: 1, Author: "a", Verdict: domain.VerdictChangesRequested}, {ID: 2, Author: "b", Verdict: domain.VerdictChangesRequested, CommitID: old}, {ID: 4, Author: "a"}}
+	for _, h := range []domain.ObjectID{head, {}} {
+		got := domain.CurrentVerdicts(comments, h)
+		require.Len(t, got, 2)
+		assert.Equal(t, int64(2), got[0].CommentID)
+		assert.False(t, got[0].Stale)
+		assert.Equal(t, int64(3), got[1].CommentID)
+		assert.True(t, got[1].Stale)
+	}
+	comments[0].CommitID = head
+	assert.False(t, domain.CurrentVerdicts(comments, head)[1].Stale)
+	assert.True(t, (domain.Comment{ReplyTo: 1}).IsReply())
+	assert.True(t, (domain.Comment{StartLine: 1}).IsRange())
+}
+
+func TestReviewScopeOwnerRights(t *testing.T) {
+	var old []domain.Scope
+	for _, s := range domain.AllScopes() {
+		if s != domain.ScopeMRReview {
+			old = append(old, s)
+		}
+	}
+	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: old}).HasOwnerRights())
+	assert.True(t, domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes()}).HasOwnerRights())
+	s, err := domain.ParseScope("mr:review")
+	require.NoError(t, err)
+	assert.Equal(t, domain.ScopeMRReview, s)
+	for _, tc := range []struct {
+		p    domain.Principal
+		want string
+	}{{domain.Root(), "root"}, {domain.Owner(), "owner"}, {domain.Anonymous(), "owner"}, {domain.TokenPrincipal(domain.Token{Label: "bot"}), "bot"}} {
+		assert.Equal(t, tc.want, domain.AuthorName(tc.p))
+	}
+}

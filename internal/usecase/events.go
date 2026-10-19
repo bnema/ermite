@@ -192,6 +192,12 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueSubmitted, domain.IssuePendingRemoved:
 		return bufferedEvent{known: true} // owner topic only: no repository snapshot
+	case domain.CommentEdited:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.CommentDeleted:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.CommentResolved:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.RunUpdated:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.JobUpdated:
@@ -529,6 +535,12 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRepo(ctx, w, ev.Issue.Repo, false, be, out, send)
 	case domain.IssueCommented:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.CommentEdited:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.CommentDeleted:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.CommentResolved:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.RunUpdated:
 		// Home shows the CI state of each repository.
 		return e.deliverRepo(ctx, w, ev.Run.Repo, false, be, out, send)
@@ -633,7 +645,8 @@ func isRepoLifecycleEvent(ev domain.Event) bool {
 func isItemEvent(ev domain.Event) bool {
 	switch ev.(type) {
 	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
-		domain.MergeRequestReady, domain.CommentAdded:
+		domain.MergeRequestReady, domain.CommentAdded,
+		domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved:
 		return true
 	}
 	return isIssueEvent(ev)

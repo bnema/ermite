@@ -18,6 +18,25 @@
 window.ermiteMR = (() => {
   // core: the decisions, without the DOM.
   const core = {
+    rangeURL(previous, current, base) {
+      const a = new URL(previous, base), b = new URL(current, base);
+      const parse = (u) => /^(new|old):(\d+):(.+)$/.exec(u.searchParams.get('on') || '');
+      const x = parse(a), y = parse(b);
+      if (!x || !y || a.pathname !== b.pathname || x[1] !== y[1] || x[3] !== y[3] || x[2] === y[2]) return null;
+      const nums = [Number(x[2]), Number(y[2])].sort((a,b) => a-b);
+      b.searchParams.set('on', `${y[1]}:${nums[0]}-${nums[1]}:${y[3]}`);
+      return b.href;
+    },
+    quote(button) {
+      const thread = button.closest('.cmt').closest('[data-thread]');
+      const details = thread?.querySelector(':scope > details[data-reply]');
+      const field = details?.querySelector('textarea');
+      if (!field) return false;
+      details.open = true;
+      field.value = button.dataset.quote;
+      field.focus();
+      return true;
+    },
     // windowOf is the start of the window of file i (files are f1, f2, ...).
     windowOf(id, size) {
       const n = Number(String(id).replace(/^f/, '')) - 1;
@@ -107,16 +126,34 @@ window.ermiteMR = (() => {
   function reveal(id, scroll = true) {
     // Any navigation, loaded or not, makes the reveals still loading stale.
     const gen = ++revealGen;
+    const target = () => {
+      // A page with both layouts says which shows in data-diff; a large diff
+      // rendered in one layout only says it in data-view.
+      const diffs = $('#diffs')?.dataset;
+      if (/^c\d+$/.test(id) && (diffs?.diff || diffs?.view) === 'split') {
+        const split = document.getElementById(id + '-s');
+        if (split) return split;
+      }
+      return document.getElementById(id);
+    };
     let ph = document.getElementById(id)?.querySelector(':scope > .dlazy');
     if (!ph && /^c\d+/.test(id) && !document.getElementById(id)) {
       const base = id.replace(/-s$/, '');
       ph = $$('.dlazy[data-notes]').find((p) => p.dataset.notes.split(' ').includes(base));
     }
-    if (!ph) return false;
+    if (!ph) {
+      const el = target();
+      if (el && el.id !== id) {
+        const d = el.closest('details');
+        if (d) d.open = true;
+        if (scroll) el.scrollIntoView({ block: 'start' });
+      }
+      return false;
+    }
     load(ph).then(() => {
       // A later reveal (another file asked meanwhile) owns the view.
       if (gen !== revealGen) return;
-      const el = document.getElementById(id);
+      const el = target();
       if (!el) return;
       const d = el.closest('details');
       if (d) d.open = true;
@@ -262,6 +299,18 @@ window.ermiteMR = (() => {
     };
     addEventListener('hashchange', hash);
     hash();
+    let lastLine = null;
+    try { lastLine = sessionStorage.getItem('mr-last-line'); } catch { /* storage optional */ }
+    addEventListener('click', (e) => {
+      const quote = e.target.closest?.('[data-quote]');
+      if (quote) { core.quote(quote); return; }
+      const link = e.target.closest?.('a[href*="on="]');
+      if (!link || e.ctrlKey || e.metaKey || e.altKey) return;
+      const next = e.shiftKey && lastLine && core.rangeURL(lastLine, link.href, location.href);
+      lastLine = link.href;
+      try { sessionStorage.setItem('mr-last-line', lastLine); } catch { /* storage optional */ }
+      if (next) { e.preventDefault(); location.assign(next); }
+    });
     // A click outside an open menu closes it.
     addEventListener('click', (e) => {
       for (const d of $$('details.menu[open]')) if (!d.contains(e.target)) d.open = false;

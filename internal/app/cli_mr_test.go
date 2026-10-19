@@ -30,7 +30,7 @@ func TestMRCreateMapsFlags(t *testing.T) {
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "mr", "create", "alpha", "--title", "Add search", "--description", "Finds things.",
 		"--source", "refs/heads/feat/x", "--target", " main ").ok(t)
-	assert.Equal(t, "opened alpha!1 (feat/x into main)\n", res.stdout)
+	assert.Equal(t, "opened alpha!1 (feat/x into main)\n"+url+"/alpha/merge-requests/1\n", res.stdout)
 	_, reqs := f.snapshot()
 	got := reqs[0].(*ermite.CreateMergeRequestRequest)
 	assert.Equal(t, "alpha", got.GetRepo())
@@ -49,7 +49,7 @@ func TestMRCreateMapsFlags(t *testing.T) {
 	_ = res
 
 	res = runCLI(t, envFor(url), "", "mr", "create", "alpha", "--title", "t", "--source", "x", "--json").ok(t)
-	assert.JSONEq(t, `{"repo":"alpha","number":1,"title":"Add search","description":"Finds things.","source_branch":"feat/x","target_branch":"main","state":"open","author":"agent-7","created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-02T11:30:00Z","head_id":"`+headA+`","merged_commit_id":"","merge_mode":""}`, res.stdout)
+	assert.JSONEq(t, `{"url":"`+url+`/alpha/merge-requests/1","repo":"alpha","number":1,"title":"Add search","description":"Finds things.","source_branch":"feat/x","target_branch":"main","state":"open","author":"agent-7","created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-02T11:30:00Z","head_id":"`+headA+`","merged_commit_id":"","merge_mode":""}`, res.stdout)
 
 	for _, args := range [][]string{{"mr", "create", "alpha", "--source", "x"}, {"mr", "create", "alpha", "--title", "t"}, {"mr", "create", "--title", "t", "--source", "x"}} {
 		require.Error(t, runCLI(t, envFor(url), "", args...).err, "%v", args)
@@ -85,6 +85,9 @@ func TestMRListTableJSONAndStates(t *testing.T) {
 	res = runCLI(t, envFor(url), "", "mr", "list", "alpha", "--json").ok(t)
 	assert.Equal(t, []string{"alpha", "alpha"}, []string{decode[[]mrOut](t, res.stdout)[0].Repo, decode[[]mrOut](t, res.stdout)[1].Repo})
 	assert.Equal(t, "squash", decode[[]mrOut](t, res.stdout)[0].MergeMode)
+	for i, m := range decode[[]mrOut](t, res.stdout) {
+		assert.Equal(t, mrWebURL(url, "alpha", int64(2-i)), m.URL)
+	}
 }
 
 func TestMRListFollowsPages(t *testing.T) {
@@ -153,6 +156,7 @@ func TestMRShow(t *testing.T) {
 	assert.NotContains(t, js.stdout, `"hunks"`)
 	js = runCLI(t, envFor(url), "", "mr", "show", "alpha", "1", "--json", "--diff").ok(t)
 	show := decode[showOut](t, js.stdout)
+	assert.Equal(t, url+"/alpha/merge-requests/1", decode[mrOut](t, js.stdout).URL)
 	require.Len(t, show.Files, 1)
 	require.Len(t, show.Files[0].Hunks, 1)
 	assert.Equal(t, "addition", show.Files[0].Hunks[0].Lines[2].Kind)
@@ -274,6 +278,7 @@ func TestMRResolveMergeAndClose(t *testing.T) {
 	// The default mode is a fast-forward.
 	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--head", headA, "--json").ok(t)
 	assert.Equal(t, "merged", decode[mrOut](t, res.stdout).State)
+	assert.Equal(t, url+"/alpha/merge-requests/1", decode[mrOut](t, res.stdout).URL)
 	calls, reqs = f.snapshot()
 	assert.Equal(t, "MergeMergeRequest", calls[len(calls)-1])
 	m = reqs[len(reqs)-1].(*ermite.MergeMergeRequestRequest)
@@ -281,9 +286,10 @@ func TestMRResolveMergeAndClose(t *testing.T) {
 	assert.Equal(t, headA, m.GetHeadId())
 
 	res = runCLI(t, envFor(url), "", "mr", "close", "alpha", "1").ok(t)
-	assert.Equal(t, "closed alpha!1 (feat/x into main)\n", res.stdout)
+	assert.Equal(t, "closed alpha!1 (feat/x into main)\n"+url+"/alpha/merge-requests/1\n", res.stdout)
 	res = runCLI(t, envFor(url), "", "mr", "close", "alpha", "1", "--json").ok(t)
 	assert.Equal(t, "closed", decode[mrOut](t, res.stdout).State)
+	assert.Equal(t, url+"/alpha/merge-requests/1", decode[mrOut](t, res.stdout).URL)
 }
 
 // ADR 0017: the merge is of the commit that was reviewed, so --head is
@@ -380,4 +386,104 @@ func TestSigningKeyShowOutput(t *testing.T) {
 	assert.Equal(t, "ermite@git.example.org ssh-ed25519 AAAAC3Nz\n", res.stdout)
 	res = runCLI(t, envFor(url), "", "signing-key", "show", "--json").ok(t)
 	assert.JSONEq(t, `{"public_key":"ssh-ed25519 AAAAC3Nz","fingerprint":"SHA256:abc","committer_name":"ermite","committer_email":"ermite@git.example.org","allowed_signers":"ermite@git.example.org ssh-ed25519 AAAAC3Nz"}`, res.stdout)
+}
+
+func TestNoteRangesAndIDs(t *testing.T) {
+	for _, tc := range []struct {
+		input      string
+		start, end int32
+	}{{"1", 0, 1}, {"10-24", 10, 24}, {"2147483647", 0, 2147483647}} {
+		start, end, err := parseLineRange(tc.input)
+		require.NoError(t, err)
+		assert.Equal(t, tc.start, start)
+		assert.Equal(t, tc.end, end)
+	}
+	for _, input := range []string{"", "0", "-1", "1-1", "24-10", "0-2", "1-2-3", "2147483648", "a", "1-"} {
+		_, _, err := parseLineRange(input)
+		require.Error(t, err, input)
+	}
+	for _, input := range []string{"12", "^12", "#12"} {
+		got, err := parseNoteID(input)
+		require.NoError(t, err)
+		assert.Equal(t, "12", got)
+	}
+}
+
+func TestNoteFlags(t *testing.T) {
+	f := &fakeAPI{addComment: func(r *ermite.AddCommentRequest) (*ermite.AddCommentResponse, error) {
+		return &ermite.AddCommentResponse{Comment: &ermite.Comment{Id: "1", ReplyTo: r.GetReplyTo(), StartLine: r.GetStartLine(), Line: r.GetLine(), Verdict: r.GetVerdict()}}, nil
+	}}
+	url := f.serve(t)
+	for _, tc := range []struct {
+		flags   []string
+		reply   string
+		start   int32
+		verdict string
+	}{
+		{[]string{"--reply", "^12", "-m", "reply"}, "12", 0, ""},
+		{[]string{"--path", "x", "--line", "10-24", "-m", "range"}, "", 10, ""},
+		{[]string{"--approve"}, "", 0, "approve"},
+		{[]string{"--request-changes"}, "", 0, "changes_requested"},
+	} {
+		res := runCLI(t, envFor(url), "", append([]string{"mr", "comment", "alpha", "1", "--json"}, tc.flags...)...).ok(t)
+		got := decode[jsonComment](t, res.stdout)
+		assert.Equal(t, tc.reply, got.ReplyTo)
+		assert.Equal(t, tc.start, got.StartLine)
+		assert.Equal(t, tc.verdict, got.Verdict)
+	}
+	for _, flags := range [][]string{{"--approve", "--request-changes"}, {"--reply", "1", "--path", "x"}, {"--reply", "1", "--line", "2"}, {"--reply", "1", "--side", "new"}, {"--reply", "1", "--approve"}, {"--reply", "1", "--request-changes"}} {
+		require.Error(t, runCLI(t, envFor(url), "", append([]string{"mr", "comment", "alpha", "1", "-m", "x"}, flags...)...).err)
+	}
+}
+
+func TestNoteDetailOutput(t *testing.T) {
+	d := &ermite.GetMergeRequestResponse{MergeRequest: mrOne, Comments: []*ermite.Comment{
+		{Id: "1", Path: "x", StartLine: 10, Line: 24, Text: "root"},
+		{Id: "3", Text: "other", Deleted: true},
+		{Id: "2", ReplyTo: "1", Text: "reply", EditedAt: ts("2026-10-10T12:00:00Z")},
+	}, Verdicts: []*ermite.AuthorVerdict{
+		{Author: "owner", Verdict: ermite.Verdict_VERDICT_APPROVE, CommentId: "1", Stale: true},
+		{Author: "bot", Verdict: ermite.Verdict_VERDICT_CHANGES_REQUESTED, CommentId: "3"},
+	}}
+	var out strings.Builder
+	require.NoError(t, printMRDetail(&out, d, false, false))
+	text := out.String()
+	assert.Contains(t, text, "owner approved (stale), bot changes requested")
+	assert.Contains(t, text, "lines 10-24")
+	assert.Contains(t, text, "(edited)")
+	assert.Contains(t, text, "[deleted]")
+	assert.Less(t, strings.Index(text, "      #2"), strings.Index(text, "  #3"))
+	got := toJSONDetail(d, false, "https://git.example.org")
+	require.Len(t, got.Verdicts, 2)
+	assert.True(t, got.Verdicts[0].Stale)
+	assert.Equal(t, "changes_requested", got.Verdicts[1].Verdict)
+	assert.Equal(t, "1", got.Comments[2].ReplyTo)
+	assert.NotNil(t, got.Comments[2].EditedAt)
+}
+
+func TestUnknownVerdictDetailOutput(t *testing.T) {
+	var out strings.Builder
+	require.NoError(t, printMRDetail(&out, &ermite.GetMergeRequestResponse{MergeRequest: mrOne, Verdicts: []*ermite.AuthorVerdict{{Author: "future", Verdict: ermite.Verdict(99)}}}, false, false))
+	assert.Contains(t, out.String(), "future verdict 99")
+	assert.NotContains(t, out.String(), "changes requested")
+	assert.NotContains(t, out.String(), "approved")
+}
+
+func TestMRReviewScopeCompletion(t *testing.T) {
+	cmd := newTokenCreateCmd(&cliEnv{})
+	complete, ok := cmd.GetFlagCompletionFunc("scope")
+	require.True(t, ok)
+	values, _ := complete(cmd, nil, "")
+	assert.Contains(t, values, "mr:review")
+}
+
+func TestMRWebURL(t *testing.T) {
+	for _, tt := range []struct{ name, base, repo, want string }{
+		{"plain", "https://git.example.org", "my-repo", "https://git.example.org/my-repo/merge-requests/42"},
+		{"trailing slash", "https://git.example.org/", "alpha", "https://git.example.org/alpha/merge-requests/42"},
+		{"base path", "https://git.example.org/forge///", "alpha", "https://git.example.org/forge/alpha/merge-requests/42"},
+		{"escaped segment", "https://git.example.org", "team/repo #?%", "https://git.example.org/team%2Frepo%20%23%3F%25/merge-requests/42"},
+	} {
+		t.Run(tt.name, func(t *testing.T) { assert.Equal(t, tt.want, mrWebURL(tt.base, tt.repo, 42)) })
+	}
 }

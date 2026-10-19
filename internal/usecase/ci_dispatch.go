@@ -135,7 +135,7 @@ func (c *CI) dispatchCaller(ctx context.Context, p domain.Principal, name domain
 	if err != nil {
 		return repo, "", pusher, false, err
 	}
-	return repo, authorOf(p), domain.PusherOf(p), domain.TrustedActor(p), nil
+	return repo, domain.AuthorName(p), domain.PusherOf(p), domain.TrustedActor(p), nil
 }
 
 // dispatchPath checks the workflow file of a dispatch: a file of

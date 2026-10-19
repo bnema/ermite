@@ -116,7 +116,7 @@ func (i *Issues) Create(ctx context.Context, p domain.Principal, name domain.Rep
 	now := i.clock.Now().UTC()
 	issue, err := i.store.Create(ctx, domain.Issue{
 		Repo: name, Title: title, Body: body, State: domain.IssueStateOpen,
-		Author: authorOf(p), CreatedAt: now, UpdatedAt: now,
+		Author: domain.AuthorName(p), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		return domain.Issue{}, fmt.Errorf("create issue of %q: %w", name, err)
@@ -191,7 +191,7 @@ func (i *Issues) AddComment(ctx context.Context, p domain.Principal, name domain
 		if issue.CommentSeq >= MaxCommentsPerIssue {
 			return domain.IssueComment{}, fmt.Errorf("%w: #%d already has %d comments", domain.ErrResourceExhausted, number, MaxCommentsPerIssue)
 		}
-		c = domain.IssueComment{ID: issue.CommentSeq + 1, Author: authorOf(p), Text: body, CreatedAt: i.clock.Now().UTC()}
+		c = domain.IssueComment{ID: issue.CommentSeq + 1, Author: domain.AuthorName(p), Text: body, CreatedAt: i.clock.Now().UTC()}
 		issue.CommentSeq, issue.UpdatedAt = c.ID, c.CreatedAt
 		err = i.store.SaveComment(ctx, issue, c)
 		if err == nil {

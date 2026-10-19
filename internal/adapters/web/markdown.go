@@ -7,6 +7,8 @@ import (
 	"html/template"
 	"net/url"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -62,7 +64,13 @@ func (m *markdown) render(source []byte, repo, ref, dir string) (template.HTML, 
 // #fragment links chosen, so that several documents on one page (the summaries
 // of a run) do not share ids.
 func (m *markdown) renderWithIDs(source []byte, repo, ref, dir, idPrefix string) (template.HTML, []Heading, error) {
-	return m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, dir: dir, idPrefix: idPrefix})
+	return m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, dir: dir, idPrefix: idPrefix}, nil)
+}
+
+// renderNote uses the repository Markdown policy, then adds local note links.
+func (m *markdown) renderNote(source []byte, repo, ref, idPrefix string, notes func(int64) bool) (template.HTML, error) {
+	h, _, err := m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, idPrefix: idPrefix}, notes)
+	return h, err
 }
 
 // renderUntrusted renders Markdown written by an anonymous visitor (an issue
@@ -73,15 +81,35 @@ func (m *markdown) renderWithIDs(source []byte, repo, ref, dir, idPrefix string)
 //     every other scheme lose their link and keep the text;
 //   - nothing points into the repository.
 func (m *markdown) renderUntrusted(source []byte, idPrefix string) (template.HTML, error) {
-	h, _, err := m.renderPolicy(source, linkPolicy{idPrefix: idPrefix, untrusted: true})
+	h, _, err := m.renderPolicy(source, linkPolicy{idPrefix: idPrefix, untrusted: true}, nil)
 	return h, err
 }
 
-func (m *markdown) renderPolicy(source []byte, pol linkPolicy) (template.HTML, []Heading, error) {
+func (m *markdown) renderPolicy(source []byte, pol linkPolicy, notes func(int64) bool) (template.HTML, []Heading, error) {
 	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{prefix: pol.idPrefix, inner: parser.NewContext().IDs()}))
 	doc := m.md.Parser().Parse(text.NewReader(source), parser.WithContext(pc))
 	pol.source = source
+	// Collect eligible text before the policy unwraps rejected links: their
+	// labels must not accidentally become references either.
+	var refs []*ast.Text
+	if notes != nil {
+		_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+			if !entering {
+				return ast.WalkContinue, nil
+			}
+			switch n := n.(type) {
+			case *ast.CodeSpan, *ast.Link, *ast.AutoLink, *ast.Image, *ast.CodeBlock, *ast.FencedCodeBlock:
+				return ast.WalkSkipChildren, nil
+			case *ast.Text:
+				refs = append(refs, n)
+			}
+			return ast.WalkContinue, nil
+		})
+	}
 	pol.apply(doc)
+	for _, t := range refs {
+		noteReferences(t, source, notes)
+	}
 
 	var buf bytes.Buffer
 	if err := m.md.Renderer().Render(&buf, source, doc); err != nil {
@@ -360,4 +388,51 @@ func (altRenderer) RegisterFuncs(r renderer.NodeRendererFuncRegisterer) {
 		}
 		return ast.WalkContinue, nil
 	})
+}
+
+var noteReferencePattern = regexp.MustCompile(`(^|[^0-9A-Za-z_^])\^([1-9][0-9]{0,5})\b`)
+
+// noteReferences changes only text segments; code and link labels never enter
+// this function. New fragment links deliberately bypass heading-prefix rewriting.
+func noteReferences(t *ast.Text, source []byte, exists func(int64) bool) {
+	parent := t.Parent()
+	if parent == nil {
+		return
+	}
+	value := t.Value(source)
+	offset := 0
+	for _, match := range noteReferencePattern.FindAllSubmatchIndex(value, -1) {
+		id := string(value[match[4]:match[5]])
+		n, err := strconv.ParseInt(id, 10, 64)
+		if err != nil || !exists(n) {
+			continue
+		}
+		start := match[4] - 1
+		// Markdown punctuation may split adjacent text into separate AST nodes.
+		// Check the original preceding byte as well as the segment-local regex.
+		if at := t.Segment.Start + start; at > 0 {
+			prev := source[at-1]
+			if prev >= '0' && prev <= '9' || prev >= 'A' && prev <= 'Z' || prev >= 'a' && prev <= 'z' || prev == '_' || prev == '^' {
+				continue
+			}
+		}
+		if start > offset {
+			parent.InsertBefore(parent, t, ast.NewTextSegment(text.NewSegment(t.Segment.Start+offset, t.Segment.Start+start)))
+		}
+		link := ast.NewLink()
+		link.Destination = []byte("#c" + id)
+		link.Title = []byte("note " + id)
+		link.SetAttributeString("class", []byte("ref"))
+		link.AppendChild(link, ast.NewString(value[start:match[5]]))
+		parent.InsertBefore(parent, t, link)
+		offset = match[5]
+	}
+	if offset == 0 {
+		return
+	}
+	tail := ast.NewTextSegment(text.NewSegment(t.Segment.Start+offset, t.Segment.Stop))
+	tail.SetSoftLineBreak(t.SoftLineBreak())
+	tail.SetHardLineBreak(t.HardLineBreak())
+	parent.InsertBefore(parent, t, tail)
+	parent.RemoveChild(parent, t)
 }

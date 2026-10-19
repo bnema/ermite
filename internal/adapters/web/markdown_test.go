@@ -203,3 +203,32 @@ func TestMarkdownUntrustedBigInputs(t *testing.T) {
 
 	assert.NotContains(t, renderUntrustedMD(t, "[x](https://a.test/\"onmouseover=\"alert(1))\n"), "onmouseover=\"")
 }
+
+func TestNoteMarkdown(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		source string
+		links  int
+	}{
+		{"^2 ^99 a^2 _^2 ^^2 1^2", 1},
+		{"`^2` [^2](https://example.org) [^2](javascript:alert(1))", 0},
+		{"```\n^2\n```", 0},
+		{"^2, ^2\n^2", 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			t.Parallel()
+			h, err := newMarkdown().renderNote([]byte(tt.source), "demo", "main", "c1-", func(n int64) bool { return n == 2 })
+			require.NoError(t, err)
+			assert.Equal(t, tt.links, strings.Count(string(h), `href="#c2"`), string(h))
+			assert.NotContains(t, string(h), `href="#c99"`)
+			assert.NotContains(t, string(h), "javascript:")
+		})
+	}
+	h, err := newMarkdown().renderNote([]byte("# Heading\n\n<script>alert(1)</script>\n\n**bold** ^2"), "demo", "main", "c1-", func(n int64) bool { return n == 2 })
+	require.NoError(t, err)
+	assert.Contains(t, string(h), `id="c1-heading"`)
+	assert.Contains(t, string(h), "<strong>bold</strong>")
+	assert.NotContains(t, string(h), "<script")
+	assert.Contains(t, string(h), `title="note 2"`)
+}

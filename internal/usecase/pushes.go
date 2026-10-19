@@ -179,7 +179,7 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 	// recorded before Git moves them, so that a tip never has the record of an
 	// earlier pusher at the same commit (domain.CIRefTip). A record that cannot
 	// be written refuses the push, as it cannot be run later with a known trust.
-	if err := recordRefTips(ctx, u.tips, name, updates, authorOf(p), domain.PusherOf(p), domain.TrustedActor(p)); err != nil {
+	if err := recordRefTips(ctx, u.tips, name, updates, domain.AuthorName(p), domain.PusherOf(p), domain.TrustedActor(p)); err != nil {
 		return err
 	}
 	log := zerowrap.FromCtx(ctx)

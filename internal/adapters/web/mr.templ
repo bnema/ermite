@@ -229,10 +229,9 @@ templ lineNotes(notes []CommentView, form *CommentForm, suffix string) {
 }
 
 // commentView is a note: a ruled block, under its line in the diff or in the
-// list of comments. The text is plain: escaped, its line breaks kept, its
-// http(s) addresses linked.
+// list of comments. Body comes only from the safe Markdown renderer.
 templ commentView(c CommentView, suffix string) {
-	<div class="cmt" id={ "c" + c.ID + suffix } data-resolved={ boolText(c.Resolved) }>
+	<div class="cmt" id={ "c" + c.ID + suffix } data-resolved={ boolText(c.Resolved) } data-thread?={ c.Reply != nil }>
 		<p class="c-head">
 			<span class="c-who">{ c.Author }</span>
 			if c.WhenAt != "" {
@@ -248,7 +247,49 @@ templ commentView(c CommentView, suffix string) {
 				{ " " }<span class="c-where mute">{ c.Where }</span>
 			}
 		</p>
-		<p class="c-text">@userText(c.Parts)</p>
+		if len(c.Parts) > 0 {
+			<p class="c-text">@userText(c.Parts)</p>
+		} else if c.Deleted {
+			if c.Verdict != "" {
+				<p class="mute">text deleted</p>
+			} else {
+				<p class="mute">deleted note</p>
+			}
+		} else {
+			<div class="c-body prose">
+				if suffix == "-s" {
+					@templ.Raw(string(c.BodySplit))
+				} else {
+					@templ.Raw(string(c.Body))
+				}
+			</div>
+		}
+		if c.Edited {
+			<span class="mute">edited</span>
+		}
+		if c.Verdict != "" {
+			<span class="c-state">{ c.Verdict }</span>
+		}
+		if c.Range != "" {
+			<span class="mute">{ c.Range }</span>
+		}
+		if c.Quote != "" {
+			<button type="button" class="btn" data-js data-quote={ c.Quote }>Quote</button>
+		}
+		if c.Edit != nil {
+			<details><summary>Edit</summary><form method="post" action={ templ.SafeURL(c.Edit.Action) }><input type="hidden" name="from" value={ itoa(c.Edit.From) }/><textarea name="text" maxlength="8000">{ c.Edit.Text }</textarea><button class="btn" type="submit">Save</button></form></details>
+		}
+		if c.Delete != nil {
+			<details><summary>Delete</summary><form method="post" action={ templ.SafeURL(c.Delete.Action) }><input type="hidden" name="from" value={ itoa(c.Delete.From) }/><p>Delete this note?</p><button class="btn" type="submit">Confirm delete</button></form></details>
+		}
+		for _, reply := range c.Replies {
+			@commentView(reply, suffix)
+		}
+		if c.Reply != nil {
+			<details data-reply>
+				<summary>Reply</summary>@commentForm(*c.Reply, suffix)
+			</details>
+		}
 		if c.Resolve != nil {
 			<form class="c-act" method="post" action={ templ.SafeURL(c.Resolve.Action) }>
 				<input type="hidden" name="resolved" value={ boolText(c.Resolve.Value) }/>
@@ -277,8 +318,12 @@ templ commentForm(f CommentForm, suffix string) {
 			name="text"
 			rows="3"
 			maxlength="8000"
-			required
-			placeholder="plain text, 8000 characters at most"
+			if f.Plain {
+				required
+				placeholder="plain text, 8000 characters at most"
+			} else {
+				placeholder="Markdown, 8000 characters at most"
+			}
 			if f.Focus {
 				autofocus
 			}
@@ -287,6 +332,13 @@ templ commentForm(f CommentForm, suffix string) {
 			<input type="hidden" name="path" value={ f.Path }/>
 			<input type="hidden" name="line" value={ f.Line }/>
 			<input type="hidden" name="side" value={ f.Side }/>
+			<label>from line <input type="number" name="start_line" min="1" value={ f.StartLine }/></label>
+		}
+		if f.ReplyTo != "" {
+			<input type="hidden" name="reply_to" value={ f.ReplyTo }/>
+		}
+		if f.Path == "" && f.ReplyTo == "" && !f.Plain {
+			<fieldset><legend>Verdict</legend><label><input type="radio" name="verdict" value="" checked/>Note</label><label><input type="radio" name="verdict" value="approve"/>Approve</label><label><input type="radio" name="verdict" value="changes_requested"/>Request changes</label></fieldset>
 		}
 		if f.From > 0 {
 			<input type="hidden" name="from" value={ itoa(f.From) }/>
@@ -310,6 +362,21 @@ templ mrRail(p MRPage) {
 		</h2>
 		@FileList(p.Files)
 	</section>
+	if len(p.Verdicts) > 0 {
+		<section>
+			<h2>Verdicts</h2>
+			<ul>
+				for _, v := range p.Verdicts {
+					<li>
+						<a href={ templ.SafeURL(v.Href) }>{ v.Author }: { v.Label }</a>
+						if v.Stale {
+							<span class="mute">(stale)</span>
+						}
+					</li>
+				}
+			</ul>
+		</section>
+	}
 	@MRChecks(p.Checks)
 	<section aria-labelledby="r-commits">
 		<h2 id="r-commits">Commits <span class="count">{ itoa(len(p.Commits)) }</span></h2>

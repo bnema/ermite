@@ -241,7 +241,7 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	now := m.clock.Now().UTC()
 	mr, err := m.store.Create(ctx, domain.MergeRequest{
 		Repo: name, Title: title, Description: desc, Source: source, Target: target,
-		State: domain.MRStateOpen, Author: authorOf(p), CreatedAt: now, UpdatedAt: now,
+		State: domain.MRStateOpen, Author: domain.AuthorName(p), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		return domain.MergeRequest{}, fmt.Errorf("create merge request of %q: %w", name, err)
@@ -468,6 +468,7 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 	if d.Comments, err = m.store.ListComments(ctx, name, number); err != nil {
 		return ports.MergeRequestDetail{}, fmt.Errorf("list comments of !%d in %q: %w", number, name, err)
 	}
+	d.Verdicts = domain.CurrentVerdicts(d.Comments, mr.HeadID)
 	if d.LastReadID, err = m.store.GetRead(ctx, name, number); err != nil {
 		return ports.MergeRequestDetail{}, err
 	}
@@ -547,7 +548,7 @@ func (m *MergeRequests) rangeOf(ctx context.Context, mr domain.MergeRequest) (ex
 }
 
 // AddComment adds a comment and publishes CommentAdded. The principal needs
-// mr:write. The text must follow the rules of ADR 0017 and not be blank; a
+// mr:write. The text must follow the rules of ADR 0032 and not be blank unless carrying a verdict; a
 // comment on a line must name a line of the current diff of the request (see
 // domain.Diff.HasLine), else the call fails with domain.ErrInvalid. A request
 // that is not open gives domain.ErrPreconditionFailed, and one that already
@@ -566,20 +567,43 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 	switch {
 	case err != nil:
 		v.AddErr("text", err)
-	case text.IsBlank():
+	case text.IsBlank() && params.Verdict == domain.VerdictNone:
 		v.Add("text", "is required")
 	}
 	general := params.Path == ""
 	switch {
-	case general && (params.Line != 0 || params.Side != domain.SideNone):
+	case general && (params.Line != 0 || params.Side != domain.SideNone || params.StartLine != 0):
 		v.Add("path", "is required with line and side")
 	case !general && params.Line < 1:
 		v.Add("line", "must be 1 or more with a path")
 	case !general && params.Side != domain.SideOld && params.Side != domain.SideNew:
 		v.Add("side", "is required with a path")
 	}
+	if params.StartLine != 0 && (params.StartLine < 1 || params.StartLine >= params.Line) {
+		v.Add("start_line", "must be 1 or more and less than line")
+	}
+	if params.Verdict > domain.VerdictChangesRequested {
+		v.Add("verdict", "is unknown")
+	}
+	if params.ReplyTo != 0 {
+		if params.Path != "" || params.Line != 0 || params.StartLine != 0 || params.Side != domain.SideNone || params.Verdict != domain.VerdictNone {
+			v.Add("reply_to", "a reply cannot specify an anchor or verdict")
+		}
+	}
 	if err := v.Err(); err != nil {
 		return domain.Comment{}, err
+	}
+	if params.ReplyTo != 0 {
+		root, err := m.replyRoot(ctx, name, number, params.ReplyTo)
+		if err != nil {
+			return domain.Comment{}, err
+		}
+		params.Path, params.Line, params.StartLine, params.Side = root.Path, root.Line, root.StartLine, root.Side
+	}
+	if params.Verdict != domain.VerdictNone {
+		if err := scopeAccess(p, repo, domain.ScopeMRReview); err != nil {
+			return domain.Comment{}, err
+		}
 	}
 	if !mr.IsOpen() {
 		return domain.Comment{}, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
@@ -588,7 +612,7 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 	if mr, err = m.withHead(ctx, mr); err != nil {
 		return domain.Comment{}, err
 	}
-	if !general {
+	if !general && params.ReplyTo == 0 {
 		if err := m.checkLine(ctx, mr, params); err != nil {
 			return domain.Comment{}, err
 		}
@@ -600,7 +624,8 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 			return domain.Comment{}, fmt.Errorf("%w: !%d already has %d comments", domain.ErrResourceExhausted, number, MaxCommentsPerMergeRequest)
 		}
 		c = domain.Comment{
-			ID: mr.CommentSeq + 1, Author: authorOf(p), Path: params.Path, Line: params.Line, Side: params.Side,
+			ID: mr.CommentSeq + 1, Author: domain.AuthorName(p), Path: params.Path, Line: params.Line, Side: params.Side,
+			ReplyTo: params.ReplyTo, StartLine: params.StartLine, Verdict: params.Verdict, Resolved: params.Verdict == domain.VerdictApprove,
 			CommitID: mr.HeadID, Text: text, CreatedAt: m.clock.Now().UTC(),
 		}
 		mr.CommentSeq, mr.UpdatedAt = c.ID, c.CreatedAt
@@ -616,6 +641,12 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 		if !fresh.IsOpen() {
 			return domain.Comment{}, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, fresh.State)
 		}
+		if params.ReplyTo != 0 {
+			// The root may have been deleted by the write that got in between.
+			if _, rerr := m.replyRoot(ctx, name, number, params.ReplyTo); rerr != nil {
+				return domain.Comment{}, rerr
+			}
+		}
 		fresh.HeadID = mr.HeadID
 		mr = fresh
 	}
@@ -624,7 +655,7 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", name.String()).Int64("number", number).Int64("comment", c.ID).
-		Bool("on_line", !general).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("comment added")
+		Int64("reply_to", c.ReplyTo).Str("verdict", c.Verdict.String()).Bool("on_line", !general).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("comment added")
 	m.bus.Publish(ctx, domain.CommentAdded{
 		Repo: name, Number: number, Comment: c, At: c.CreatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
 	})
@@ -667,6 +698,9 @@ func (m *MergeRequests) checkLine(ctx context.Context, mr domain.MergeRequest, p
 	if idx < 0 || !diff.HasLine(params.Path, params.Side, params.Line) {
 		v.Add("path", fmt.Sprintf("%s:%d on the %s side is not a line of the diff", params.Path, params.Line, params.Side))
 	}
+	if params.StartLine != 0 && !diff.HasLine(params.Path, params.Side, params.StartLine) {
+		v.Add("start_line", "is not a line of the diff")
+	}
 	return v.Err()
 }
 
@@ -683,7 +717,8 @@ func diffFileName(f domain.FileDiff) string {
 // not open domain.ErrPreconditionFailed. Setting the state the comment already
 // has succeeds and writes nothing.
 func (m *MergeRequests) ResolveComment(ctx context.Context, p domain.Principal, name domain.RepoName, number, commentID int64, resolved bool) (domain.Comment, error) {
-	if _, err := m.writable(ctx, p, name, domain.ScopeMRWrite); err != nil {
+	repo, err := m.writable(ctx, p, name, domain.ScopeMRWrite)
+	if err != nil {
 		return domain.Comment{}, err
 	}
 	for range maxWriteRetries {
@@ -698,6 +733,11 @@ func (m *MergeRequests) ResolveComment(ctx context.Context, p domain.Principal, 
 		if !mr.IsOpen() {
 			return domain.Comment{}, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
 		}
+		if c.IsReply() {
+			var v domain.Violations
+			v.Add("comment_id", fmt.Sprintf("resolve the thread on its root ^%d", c.ReplyTo))
+			return domain.Comment{}, v.Err()
+		}
 		if c.Resolved == resolved {
 			return c, nil
 		}
@@ -710,6 +750,7 @@ func (m *MergeRequests) ResolveComment(ctx context.Context, p domain.Principal, 
 		if err != nil {
 			return domain.Comment{}, fmt.Errorf("resolve comment %d of !%d in %q: %w", commentID, number, name, err)
 		}
+		m.bus.Publish(ctx, domain.CommentResolved{Repo: name, Number: number, Comment: c, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		return c, nil
 	}
 	return domain.Comment{}, fmt.Errorf("resolve comment %d of !%d in %q: %w", commentID, number, name, domain.ErrConflict)
@@ -1090,7 +1131,7 @@ func (m *MergeRequests) moveTarget(ctx context.Context, mr domain.MergeRequest, 
 	// does, under the merge lock (domain.CIRefTip). The run shows the owner, as a
 	// merge's push does on GitHub.
 	if err := recordRefTips(ctx, m.tips, mr.Repo, []domain.RefUpdate{{Old: tip.String(), New: newTip.String(), Ref: "refs/heads/" + mr.Target}},
-		authorOf(domain.Owner()), domain.PusherOf(p), domain.TrustedActor(p)); err != nil {
+		domain.AuthorName(domain.Owner()), domain.PusherOf(p), domain.TrustedActor(p)); err != nil {
 		return domain.ObjectID{}, err
 	}
 	err := m.git.UpdateBranch(ctx, mr.Repo, mr.Target, tip, newTip)
@@ -1128,4 +1169,91 @@ func (m *MergeRequests) markMerged(ctx context.Context, name domain.RepoName, nu
 	log.Error().Str("repo", name.String()).Int64("number", number).Str("commit", merged.String()).
 		Msg("the target branch moved but the merge request could not be marked merged")
 	return domain.MergeRequest{}, fmt.Errorf("record the merge of !%d in %q: %w", number, name, domain.ErrConflict)
+}
+
+// EditComment changes only the author's text, preserving the immutable verdict.
+func (m *MergeRequests) EditComment(ctx context.Context, p domain.Principal, name domain.RepoName, number, commentID int64, text string) (domain.Comment, error) {
+	return m.changeComment(ctx, p, name, number, commentID, text, false)
+}
+
+// DeleteComment removes text but retains the anchor, ID and verdict. Repeated deletion is a no-op.
+func (m *MergeRequests) DeleteComment(ctx context.Context, p domain.Principal, name domain.RepoName, number, commentID int64) (domain.Comment, error) {
+	return m.changeComment(ctx, p, name, number, commentID, "", true)
+}
+
+func (m *MergeRequests) changeComment(ctx context.Context, p domain.Principal, name domain.RepoName, number, commentID int64, text string, remove bool) (domain.Comment, error) {
+	repo, err := m.writable(ctx, p, name, domain.ScopeMRWrite)
+	if err != nil {
+		return domain.Comment{}, err
+	}
+	for range maxWriteRetries {
+		mr, err := m.store.Get(ctx, name, number)
+		if err != nil {
+			return domain.Comment{}, err
+		}
+		c, err := m.store.GetComment(ctx, name, number, commentID)
+		if err != nil {
+			return domain.Comment{}, err
+		}
+		if !mr.IsOpen() {
+			return domain.Comment{}, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
+		}
+		if domain.AuthorName(p) != c.Author {
+			return domain.Comment{}, fmt.Errorf("%w: only the author of a note can edit or delete it", domain.ErrForbidden)
+		}
+		if c.Deleted {
+			if remove {
+				return c, nil
+			}
+			return domain.Comment{}, fmt.Errorf("%w: the note was deleted", domain.ErrPreconditionFailed)
+		}
+		parsed, err := domain.ParsePlainText(text)
+		var v domain.Violations
+		if err != nil {
+			v.AddErr("text", err)
+		} else if !remove && parsed.IsBlank() && c.Verdict == domain.VerdictNone {
+			v.Add("text", "is required")
+		}
+		if err := v.Err(); err != nil {
+			return domain.Comment{}, err
+		}
+		if !remove && parsed == c.Text {
+			return c, nil
+		}
+		c.Text, c.Deleted, c.EditedAt = parsed, remove, m.clock.Now().UTC()
+		mr.UpdatedAt = c.EditedAt
+		if err := m.store.SaveComment(ctx, mr, c); errors.Is(err, domain.ErrConflict) {
+			continue
+		} else if err != nil {
+			return domain.Comment{}, fmt.Errorf("save note %d of !%d in %q: %w", commentID, number, name, err)
+		}
+		log := zerowrap.FromCtx(ctx)
+		log.Info().Str("repo", name.String()).Int64("number", number).Int64("comment", c.ID).Bool("deleted", remove).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("comment changed")
+		if remove {
+			m.bus.Publish(ctx, domain.CommentDeleted{Repo: name, Number: number, Comment: c, At: c.EditedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		} else {
+			m.bus.Publish(ctx, domain.CommentEdited{Repo: name, Number: number, Comment: c, At: c.EditedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		}
+		return c, nil
+	}
+	return domain.Comment{}, fmt.Errorf("save note %d of !%d in %q: %w", commentID, number, name, domain.ErrConflict)
+}
+
+// replyRoot returns the note a reply targets, or a violation when it is
+// missing, itself a reply, or deleted.
+func (m *MergeRequests) replyRoot(ctx context.Context, name domain.RepoName, number, id int64) (domain.Comment, error) {
+	root, err := m.store.GetComment(ctx, name, number, id)
+	var v domain.Violations
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		v.Add("reply_to", fmt.Sprintf("no note ^%d", id))
+	case err != nil:
+		return domain.Comment{}, err
+	case root.IsReply() || root.Deleted:
+		v.Add("reply_to", "must name a non-deleted root note")
+	}
+	if err := v.Err(); err != nil {
+		return domain.Comment{}, err
+	}
+	return root, nil
 }

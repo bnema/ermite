@@ -55,7 +55,8 @@ ermite token create <label> [--preset cli|agent|ci|runner] [--scope …] [--repo
 ermite token list | revoke <id>
 
 ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
-ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | resolve <repo> <n> <comment>
+ermite mr comment <repo> <n> -m … [--path … --line N|A-B --side old|new] [--reply <id>] [--approve|--request-changes]
+ermite mr resolve <repo> <n> <comment> | edit-comment <repo> <n> <comment> -m … | delete-comment <repo> <n> <comment>
 ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
 
 ermite issue create <repo> --title … [--body … | --body-file …] | list <repo> [--state open|closed|all]
@@ -92,3 +93,7 @@ Issues need a server with the `issues` feature and `ermite repo edit <repo> --is
 - `watch --json` prints one object per line.
 - Errors are one line on stderr (`ermite: …`) with exit status 1.
 - Shell completion completes repository names from the server.
+
+`ermite mr create` and `ermite mr close` print a confirmation followed by the full
+merge request web URL on its own line. With `--json`, merge request objects
+(create, show, list, close and merge) include `url` alongside the other fields.

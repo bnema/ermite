@@ -82,6 +82,10 @@ ermite web login   # one-time link to sign in to the web interface
 
 Pushing to a new name also creates a private repository.
 
+`ermite mr create` and `ermite mr close` print a confirmation followed by the full
+merge request web URL on its own line. With `--json`, merge request objects
+(create, show, list, close and merge) include `url` alongside the other fields.
+
 ## Agent workflow
 
 You and the agent use the same CLI. The difference is the token: the agent's is limited to its own branches. It can never push `main`, tags or settings, and its CI runs get no secrets.

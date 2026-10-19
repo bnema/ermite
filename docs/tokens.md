@@ -6,7 +6,7 @@ ermite token list
 ermite token revoke <id>
 ```
 
-The secret is printed once. Presets and `--scope` add up (`issue:write` lets a token write issues). The full scope list is in [`skills/ermite/CLI.md`](../skills/ermite/CLI.md).
+The secret is printed once. Presets and `--scope` add up (`issue:write` lets a token write issues). The full scope list is in [`skills/ermite/CLI.md`](../skills/ermite/CLI.md). `mr:review` lets a token give a merge request verdict (`--approve`, `--request-changes`); the `cli` preset includes it, the `agent` preset does not. A token created before `mr:review` existed lacks it: recreate it with `--preset cli` using the root token or from a signed-in owner web session (an old token lacking `mr:review` cannot grant it), then replace the stored CLI secret and revoke the old token to keep the owner's rights.
 
 | Preset | For |
 |---|---|
@@ -28,7 +28,7 @@ ermite token create claude --preset agent --scope repo:read --repo myrepo --bran
 The token **can**:
 
 - push, force-push and delete branches under its prefixes;
-- open, comment on and close merge requests;
+- open, comment on and close merge requests; with `mr:review`, give verdicts;
 - with `issue:write`, open, comment on, close and reopen issues of the repositories where they are enabled;
 - with `mr:merge`, merge into a branch under its prefixes;
 - read CI runs, logs and checks; with `ci:write`, cancel and re-run runs of its own branches;

@@ -35,14 +35,12 @@ func ScopeName(s ermite.Scope) string {
 	return strings.Replace(strings.ToLower(strings.TrimPrefix(name, "SCOPE_")), "_", ":", 1)
 }
 
-// AllScopes lists every scope the contract defines that this server accepts, in
-// enum order. Deriving it keeps the `cli` preset ("every scope") true when the
-// contract grows. SCOPE_MR_REVIEW is in the contract but not yet implemented
-// here, and the server rejects it like any unknown scope, so it is left out.
+// AllScopes lists every scope the contract defines, in enum order. Deriving it
+// keeps the `cli` preset ("every scope") true when the contract grows.
 func AllScopes() []ermite.Scope {
 	var scopes []ermite.Scope
 	for n := range ermite.Scope_name {
-		if s := ermite.Scope(n); s != ermite.Scope_SCOPE_UNSPECIFIED && s != ermite.Scope_SCOPE_MR_REVIEW {
+		if s := ermite.Scope(n); s != ermite.Scope_SCOPE_UNSPECIFIED {
 			scopes = append(scopes, s)
 		}
 	}

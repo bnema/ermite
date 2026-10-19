@@ -18,6 +18,7 @@ import (
 
 type mrOut struct {
 	Repo           string  `json:"repo"`
+	URL            string  `json:"url"`
 	Number         int64   `json:"number"`
 	Title          string  `json:"title"`
 	Description    string  `json:"description"`
@@ -32,7 +33,7 @@ type mrOut struct {
 	MergeMode      string  `json:"merge_mode"`
 }
 
-var mrKeys = []string{"author", "created_at", "description", "head_id", "merge_mode", "merged_commit_id", "number", "repo", "source_branch", "state", "target_branch", "title", "updated_at"}
+var mrKeys = []string{"author", "created_at", "description", "head_id", "merge_mode", "merged_commit_id", "number", "repo", "source_branch", "state", "target_branch", "title", "updated_at", "url"}
 
 type commentOut struct {
 	ID       string `json:"id"`
@@ -419,4 +420,76 @@ func (w *watchProc) nextOfType(t *testing.T, typ string) eventOut {
 	}
 	t.Fatalf("no %s event", typ)
 	return eventOut{}
+}
+
+func TestMergeRequestNotesCLIEndToEnd(t *testing.T) {
+	c := newCLIHarness(t)
+	c.cli(t, adminToken, "repo", "create", "notes", "--visibility", "public").ok(t)
+	wt := c.workTree("main", "README.md")
+	c.mustGit(wt, "checkout", "-q", "-b", "feat/notes")
+	c.writeFile(wt, "notes.txt", []byte("one\ntwo\nthree\nfour\n"))
+	c.mustGit(wt, "push", "-q", c.urlAuth(adminToken, "/notes.git"), "main", "feat/notes")
+	c.cli(t, adminToken, "mr", "create", "notes", "--source", "feat/notes", "--title", "Notes").ok(t)
+	w := c.startWatch(t, adminToken)
+	res := c.cli(t, adminToken, "mr", "comment", "notes", "1", "--path", "notes.txt", "--line", "1-3", "-m", "**range**", "--json").ok(t)
+	root := decode[jsonComment](t, res.stdout)
+	assert.EqualValues(t, 1, root.StartLine)
+	assert.EqualValues(t, 3, root.Line)
+	w.nextOfType(t, "comment_added")
+	res = c.cli(t, adminToken, "mr", "comment", "notes", "1", "--reply", "^"+root.ID, "-m", "reply to ^"+root.ID, "--json").ok(t)
+	reply := decode[jsonComment](t, res.stdout)
+	assert.Equal(t, root.ID, reply.ReplyTo)
+	assert.Equal(t, root.Path, reply.Path)
+	assert.Equal(t, root.StartLine, reply.StartLine)
+	assert.Equal(t, root.Line, reply.Line)
+	w.nextOfType(t, "comment_added")
+	require.Error(t, c.cli(t, adminToken, "mr", "comment", "notes", "1", "--reply", reply.ID, "-m", "nested").err)
+	require.Error(t, c.cli(t, adminToken, "mr", "resolve", "notes", "1", reply.ID).err)
+	writer := c.token([]domain.Scope{domain.ScopeRepoRead, domain.ScopeMRWrite})
+	denied := c.cli(t, writer, "mr", "comment", "notes", "1", "--approve")
+	require.Error(t, denied.err)
+	assert.Contains(t, denied.err.Error(), "mr:review")
+	res = c.cli(t, adminToken, "mr", "comment", "notes", "1", "--approve", "--json").ok(t)
+	verdict := decode[jsonComment](t, res.stdout)
+	assert.Equal(t, "approve", verdict.Verdict)
+	assert.True(t, verdict.Resolved)
+	assert.Empty(t, verdict.Text)
+	w.nextOfType(t, "comment_added")
+	require.Error(t, c.cli(t, writer, "mr", "edit-comment", "notes", "1", verdict.ID, "-m", "not mine").err)
+	res = runCLI(t, c.vars(adminToken), "edited from stdin\n", "mr", "edit-comment", "notes", "1", "#"+reply.ID, "-m", "-", "--json").ok(t)
+	edited := decode[jsonComment](t, res.stdout)
+	assert.Equal(t, "edited from stdin", edited.Text)
+	require.NotNil(t, edited.EditedAt)
+	w.nextOfType(t, "comment_edited")
+	res = c.cli(t, adminToken, "mr", "delete-comment", "notes", "1", verdict.ID, "--json").ok(t)
+	deleted := decode[jsonComment](t, res.stdout)
+	assert.True(t, deleted.Deleted)
+	assert.Equal(t, "approve", deleted.Verdict)
+	assert.Empty(t, deleted.Text)
+	require.NotNil(t, deleted.EditedAt)
+	w.nextOfType(t, "comment_deleted")
+	c.cli(t, adminToken, "mr", "delete-comment", "notes", "1", verdict.ID).ok(t)
+	c.cli(t, adminToken, "mr", "resolve", "notes", "1", root.ID).ok(t)
+	w.nextOfType(t, "comment_resolved")
+	res = c.cli(t, "", "mr", "show", "notes", "1", "--json").ok(t)
+	detail := decode[jsonMRDetail](t, res.stdout)
+	require.Len(t, detail.Comments, 3)
+	require.Len(t, detail.Verdicts, 1)
+	assert.Equal(t, verdict.ID, detail.Verdicts[0].CommentID)
+	assert.Equal(t, "approve", detail.Verdicts[0].Verdict)
+	assert.False(t, detail.Verdicts[0].Stale)
+	res = c.cli(t, "", "mr", "show", "notes", "1").ok(t)
+	assert.Contains(t, res.stdout, "lines 1-3")
+	assert.Contains(t, res.stdout, "(edited)")
+	assert.Contains(t, res.stdout, "[deleted]")
+	assert.Contains(t, res.stdout, "approved")
+	assert.Contains(t, res.stdout, "      #"+reply.ID)
+	c.cli(t, adminToken, "mr", "comment", "notes", "1", "--request-changes", "-m", "needs work").ok(t)
+	res = c.cli(t, "", "mr", "show", "notes", "1", "--json").ok(t)
+	detail = decode[jsonMRDetail](t, res.stdout)
+	require.Len(t, detail.Verdicts, 1)
+	assert.Equal(t, "changes_requested", detail.Verdicts[0].Verdict)
+	c.cli(t, adminToken, "mr", "close", "notes", "1").ok(t)
+	require.Error(t, c.cli(t, adminToken, "mr", "edit-comment", "notes", "1", root.ID, "-m", "late").err)
+	require.Error(t, c.cli(t, adminToken, "mr", "delete-comment", "notes", "1", root.ID).err)
 }

@@ -360,6 +360,180 @@ func (_c *MergeRequestService_Create_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
+// DeleteComment provides a mock function for the type MergeRequestService
+func (_mock *MergeRequestService) DeleteComment(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, commentID int64) (domain.Comment, error) {
+	ret := _mock.Called(ctx, p, name, number, commentID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteComment")
+	}
+
+	var r0 domain.Comment
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, int64) (domain.Comment, error)); ok {
+		return returnFunc(ctx, p, name, number, commentID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, int64) domain.Comment); ok {
+		r0 = returnFunc(ctx, p, name, number, commentID)
+	} else {
+		r0 = ret.Get(0).(domain.Comment)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, int64, int64) error); ok {
+		r1 = returnFunc(ctx, p, name, number, commentID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestService_DeleteComment_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteComment'
+type MergeRequestService_DeleteComment_Call struct {
+	*mock.Call
+}
+
+// DeleteComment is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - name domain.RepoName
+//   - number int64
+//   - commentID int64
+func (_e *MergeRequestService_Expecter) DeleteComment(ctx any, p any, name any, number any, commentID any) *MergeRequestService_DeleteComment_Call {
+	return &MergeRequestService_DeleteComment_Call{Call: _e.mock.On("DeleteComment", ctx, p, name, number, commentID)}
+}
+
+func (_c *MergeRequestService_DeleteComment_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, commentID int64)) *MergeRequestService_DeleteComment_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
+		var arg4 int64
+		if args[4] != nil {
+			arg4 = args[4].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestService_DeleteComment_Call) Return(comment domain.Comment, err error) *MergeRequestService_DeleteComment_Call {
+	_c.Call.Return(comment, err)
+	return _c
+}
+
+func (_c *MergeRequestService_DeleteComment_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, commentID int64) (domain.Comment, error)) *MergeRequestService_DeleteComment_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// EditComment provides a mock function for the type MergeRequestService
+func (_mock *MergeRequestService) EditComment(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, commentID int64, text string) (domain.Comment, error) {
+	ret := _mock.Called(ctx, p, name, number, commentID, text)
+
+	if len(ret) == 0 {
+		panic("no return value specified for EditComment")
+	}
+
+	var r0 domain.Comment
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, int64, string) (domain.Comment, error)); ok {
+		return returnFunc(ctx, p, name, number, commentID, text)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, int64, string) domain.Comment); ok {
+		r0 = returnFunc(ctx, p, name, number, commentID, text)
+	} else {
+		r0 = ret.Get(0).(domain.Comment)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, int64, int64, string) error); ok {
+		r1 = returnFunc(ctx, p, name, number, commentID, text)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestService_EditComment_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'EditComment'
+type MergeRequestService_EditComment_Call struct {
+	*mock.Call
+}
+
+// EditComment is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - name domain.RepoName
+//   - number int64
+//   - commentID int64
+//   - text string
+func (_e *MergeRequestService_Expecter) EditComment(ctx any, p any, name any, number any, commentID any, text any) *MergeRequestService_EditComment_Call {
+	return &MergeRequestService_EditComment_Call{Call: _e.mock.On("EditComment", ctx, p, name, number, commentID, text)}
+}
+
+func (_c *MergeRequestService_EditComment_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, commentID int64, text string)) *MergeRequestService_EditComment_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
+		var arg4 int64
+		if args[4] != nil {
+			arg4 = args[4].(int64)
+		}
+		var arg5 string
+		if args[5] != nil {
+			arg5 = args[5].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestService_EditComment_Call) Return(comment domain.Comment, err error) *MergeRequestService_EditComment_Call {
+	_c.Call.Return(comment, err)
+	return _c
+}
+
+func (_c *MergeRequestService_EditComment_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, commentID int64, text string) (domain.Comment, error)) *MergeRequestService_EditComment_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Get provides a mock function for the type MergeRequestService
 func (_mock *MergeRequestService) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, opts ports.GetMergeRequestOptions) (ports.MergeRequestDetail, error) {
 	ret := _mock.Called(ctx, p, name, number, opts)

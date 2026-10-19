@@ -233,6 +233,56 @@ func (DiffSide) EnumDescriptor() ([]byte, []int) {
 	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{3}
 }
 
+// Verdict is the immutable review decision of a note.
+type Verdict int32
+
+const (
+	Verdict_VERDICT_UNSPECIFIED       Verdict = 0
+	Verdict_VERDICT_APPROVE           Verdict = 1
+	Verdict_VERDICT_CHANGES_REQUESTED Verdict = 2
+)
+
+// Enum value maps for Verdict.
+var (
+	Verdict_name = map[int32]string{
+		0: "VERDICT_UNSPECIFIED",
+		1: "VERDICT_APPROVE",
+		2: "VERDICT_CHANGES_REQUESTED",
+	}
+	Verdict_value = map[string]int32{
+		"VERDICT_UNSPECIFIED":       0,
+		"VERDICT_APPROVE":           1,
+		"VERDICT_CHANGES_REQUESTED": 2,
+	}
+)
+
+func (x Verdict) Enum() *Verdict {
+	p := new(Verdict)
+	*p = x
+	return p
+}
+
+func (x Verdict) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Verdict) Descriptor() protoreflect.EnumDescriptor {
+	return file_ermite_storage_merge_request_proto_enumTypes[4].Descriptor()
+}
+
+func (Verdict) Type() protoreflect.EnumType {
+	return &file_ermite_storage_merge_request_proto_enumTypes[4]
+}
+
+func (x Verdict) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Verdict.Descriptor instead.
+func (Verdict) EnumDescriptor() ([]byte, []int) {
+	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{4}
+}
+
 // RepoSettings are the merge settings of a repository, stored inside Repo.
 type RepoSettings struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -463,6 +513,11 @@ type Comment struct {
 	Text          string                 `protobuf:"bytes,7,opt,name=text,proto3" json:"text,omitempty"`
 	Resolved      bool                   `protobuf:"varint,8,opt,name=resolved,proto3" json:"resolved,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ReplyTo       int64                  `protobuf:"varint,10,opt,name=reply_to,json=replyTo,proto3" json:"reply_to,omitempty"`
+	StartLine     int32                  `protobuf:"varint,11,opt,name=start_line,json=startLine,proto3" json:"start_line,omitempty"`
+	Verdict       Verdict                `protobuf:"varint,12,opt,name=verdict,proto3,enum=ermite.storage.Verdict" json:"verdict,omitempty"`
+	EditedAt      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=edited_at,json=editedAt,proto3" json:"edited_at,omitempty"`
+	Deleted       bool                   `protobuf:"varint,14,opt,name=deleted,proto3" json:"deleted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -560,6 +615,41 @@ func (x *Comment) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Comment) GetReplyTo() int64 {
+	if x != nil {
+		return x.ReplyTo
+	}
+	return 0
+}
+
+func (x *Comment) GetStartLine() int32 {
+	if x != nil {
+		return x.StartLine
+	}
+	return 0
+}
+
+func (x *Comment) GetVerdict() Verdict {
+	if x != nil {
+		return x.Verdict
+	}
+	return Verdict_VERDICT_UNSPECIFIED
+}
+
+func (x *Comment) GetEditedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EditedAt
+	}
+	return nil
+}
+
+func (x *Comment) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
 // Sequence is stored under the key "mrseq/<repo>": the last merge request
 // number handed out for the repository.
 type Sequence struct {
@@ -634,7 +724,7 @@ const file_ermite_storage_merge_request_proto_rawDesc = "" +
 	"\n" +
 	"merge_mode\x18\r \x01(\x0e2\x19.ermite.storage.MergeModeR\tmergeMode\x12\x1f\n" +
 	"\vcomment_seq\x18\x0e \x01(\x03R\n" +
-	"commentSeq\"\x8f\x02\n" +
+	"commentSeq\"\xcf\x03\n" +
 	"\aComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x16\n" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x12\n" +
@@ -645,7 +735,14 @@ const file_ermite_storage_merge_request_proto_rawDesc = "" +
 	"\x04text\x18\a \x01(\tR\x04text\x12\x1a\n" +
 	"\bresolved\x18\b \x01(\bR\bresolved\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x1e\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x19\n" +
+	"\breply_to\x18\n" +
+	" \x01(\x03R\areplyTo\x12\x1d\n" +
+	"\n" +
+	"start_line\x18\v \x01(\x05R\tstartLine\x121\n" +
+	"\averdict\x18\f \x01(\x0e2\x17.ermite.storage.VerdictR\averdict\x127\n" +
+	"\tedited_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\x12\x18\n" +
+	"\adeleted\x18\x0e \x01(\bR\adeleted\"\x1e\n" +
 	"\bSequence\x12\x12\n" +
 	"\x04last\x18\x01 \x01(\x03R\x04last*[\n" +
 	"\tMergeMode\x12\x1a\n" +
@@ -666,7 +763,11 @@ const file_ermite_storage_merge_request_proto_rawDesc = "" +
 	"\bDiffSide\x12\x19\n" +
 	"\x15DIFF_SIDE_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rDIFF_SIDE_OLD\x10\x01\x12\x11\n" +
-	"\rDIFF_SIDE_NEW\x10\x02B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
+	"\rDIFF_SIDE_NEW\x10\x02*V\n" +
+	"\aVerdict\x12\x17\n" +
+	"\x13VERDICT_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fVERDICT_APPROVE\x10\x01\x12\x1d\n" +
+	"\x19VERDICT_CHANGES_REQUESTED\x10\x02B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
 var (
 	file_ermite_storage_merge_request_proto_rawDescOnce sync.Once
@@ -680,33 +781,36 @@ func file_ermite_storage_merge_request_proto_rawDescGZIP() []byte {
 	return file_ermite_storage_merge_request_proto_rawDescData
 }
 
-var file_ermite_storage_merge_request_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_ermite_storage_merge_request_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_ermite_storage_merge_request_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_ermite_storage_merge_request_proto_goTypes = []any{
 	(MergeMode)(0),                // 0: ermite.storage.MergeMode
 	(IssuesMode)(0),               // 1: ermite.storage.IssuesMode
 	(MergeRequestState)(0),        // 2: ermite.storage.MergeRequestState
 	(DiffSide)(0),                 // 3: ermite.storage.DiffSide
-	(*RepoSettings)(nil),          // 4: ermite.storage.RepoSettings
-	(*MergeRequest)(nil),          // 5: ermite.storage.MergeRequest
-	(*Comment)(nil),               // 6: ermite.storage.Comment
-	(*Sequence)(nil),              // 7: ermite.storage.Sequence
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
+	(Verdict)(0),                  // 4: ermite.storage.Verdict
+	(*RepoSettings)(nil),          // 5: ermite.storage.RepoSettings
+	(*MergeRequest)(nil),          // 6: ermite.storage.MergeRequest
+	(*Comment)(nil),               // 7: ermite.storage.Comment
+	(*Sequence)(nil),              // 8: ermite.storage.Sequence
+	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
 }
 var file_ermite_storage_merge_request_proto_depIdxs = []int32{
-	0, // 0: ermite.storage.RepoSettings.allowed_merge_modes:type_name -> ermite.storage.MergeMode
-	1, // 1: ermite.storage.RepoSettings.issues:type_name -> ermite.storage.IssuesMode
-	2, // 2: ermite.storage.MergeRequest.state:type_name -> ermite.storage.MergeRequestState
-	8, // 3: ermite.storage.MergeRequest.created_at:type_name -> google.protobuf.Timestamp
-	8, // 4: ermite.storage.MergeRequest.updated_at:type_name -> google.protobuf.Timestamp
-	0, // 5: ermite.storage.MergeRequest.merge_mode:type_name -> ermite.storage.MergeMode
-	3, // 6: ermite.storage.Comment.side:type_name -> ermite.storage.DiffSide
-	8, // 7: ermite.storage.Comment.created_at:type_name -> google.protobuf.Timestamp
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	0,  // 0: ermite.storage.RepoSettings.allowed_merge_modes:type_name -> ermite.storage.MergeMode
+	1,  // 1: ermite.storage.RepoSettings.issues:type_name -> ermite.storage.IssuesMode
+	2,  // 2: ermite.storage.MergeRequest.state:type_name -> ermite.storage.MergeRequestState
+	9,  // 3: ermite.storage.MergeRequest.created_at:type_name -> google.protobuf.Timestamp
+	9,  // 4: ermite.storage.MergeRequest.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 5: ermite.storage.MergeRequest.merge_mode:type_name -> ermite.storage.MergeMode
+	3,  // 6: ermite.storage.Comment.side:type_name -> ermite.storage.DiffSide
+	9,  // 7: ermite.storage.Comment.created_at:type_name -> google.protobuf.Timestamp
+	4,  // 8: ermite.storage.Comment.verdict:type_name -> ermite.storage.Verdict
+	9,  // 9: ermite.storage.Comment.edited_at:type_name -> google.protobuf.Timestamp
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_merge_request_proto_init() }
@@ -719,7 +823,7 @@ func file_ermite_storage_merge_request_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_merge_request_proto_rawDesc), len(file_ermite_storage_merge_request_proto_rawDesc)),
-			NumEnums:      4,
+			NumEnums:      5,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,

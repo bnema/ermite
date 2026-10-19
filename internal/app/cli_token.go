@@ -86,7 +86,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 			"or store it right away); details go to standard error. With --json, standard output is one\n" +
 			"object holding the token fields and the secret.\n\n" +
 			"What the token may do is chosen with --preset and/or --scope (they add up); there is no default:\n" +
-			"  cli    every scope, for your own daily use\n" +
+			"  cli    every scope, including mr:review for verdicts, for your own daily use\n" +
 			"  agent  repo:write, mr:write\n" +
 			"  runner runner:register (a CI runner host)\n" +
 			"  ci     repo:read\n" +

@@ -101,13 +101,22 @@ type MRListPage struct {
 
 // CommentView is a comment of a merge request, ready to show.
 type CommentView struct {
-	ID       string
-	Author   string
-	When     string
-	WhenAt   string
-	Abs      string
-	Parts    []TextPart
-	Resolved bool
+	ID              string
+	Author          string
+	When            string
+	WhenAt          string
+	Abs             string
+	Body, BodySplit template.HTML
+	// Parts is a plain-text body (an issue comment); Body is the Markdown of
+	// a merge request note.
+	Parts                 []TextPart
+	Replies               []CommentView
+	Edited, Deleted       bool
+	Verdict, Range, Quote string
+	Edit                  *EditForm
+	Delete                *DeleteForm
+	Reply                 *CommentForm
+	Resolved              bool
 	// Outdated is true when the head moved since the comment was written, so
 	// its line may have moved too.
 	Outdated bool
@@ -117,6 +126,19 @@ type CommentView struct {
 	// Resolve is the form that resolves or unresolves it; nil when the reader
 	// cannot.
 	Resolve *ResolveForm
+}
+
+type EditForm struct {
+	Action, Text string
+	From         int
+}
+type DeleteForm struct {
+	Action string
+	From   int
+}
+type VerdictView struct {
+	Author, Label, Href, Short string
+	Stale                      bool
 }
 
 // ResolveForm is the POST that changes the resolved state of a comment.
@@ -135,9 +157,12 @@ type CommentForm struct {
 	Action string
 	Title  string
 	// Path, Line and Side designate the line; empty for a general comment.
-	Path, Line, Side string
-	Cancel           string
-	Focus            bool
+	Path, Line, Side   string
+	StartLine, ReplyTo string
+	// Plain is a form of an issue comment: plain text, no verdict.
+	Plain  bool
+	Cancel string
+	Focus  bool
 	// From is the window of the page the form is on (see mrWindow), sent
 	// back so that the answer returns to it; 0 for the first.
 	From int
@@ -192,6 +217,7 @@ type MRPage struct {
 	State          string
 	Open           bool
 	Signed         bool
+	NoteAuthor     string
 	Source, Target string
 	SourceHref     string
 	TargetHref     string
@@ -226,6 +252,7 @@ type MRPage struct {
 	NComments      int
 	NUnresolved    int
 	GeneralForm    *CommentForm
+	Verdicts       []VerdictView
 
 	Commits     []MRCommit
 	CommitsNote string
@@ -471,7 +498,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 
 	p := MRPage{
 		Number: "#" + strconv.FormatInt(n, 10), Title: visibleText(m.Title.String()),
-		State: mrStateName(m), Open: open, Signed: signed,
+		State: mrStateName(m), Open: open, Signed: signed, NoteAuthor: domain.AuthorName(principal(ctx)),
 		Source: visibleText(m.Source), Target: visibleText(m.Target),
 		Author: s.who(m.Author),
 		Head:   head, HeadShort: short(head),
@@ -485,11 +512,14 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		// Relative links point into the source branch as it is now (its head
 		// commit); the heading ids carry their own prefix, apart from the
 		// ids of the diff.
-		h, _, err := s.md.renderWithIDs([]byte(desc), d.name(), head, "", "mr-desc-")
+		h, err := s.md.renderNote([]byte(desc), d.name(), head, "mr-desc-", noteIDs(res.Comments))
 		if err != nil {
 			return nil, 0, err
 		}
 		p.Desc = h
+	}
+	for _, v := range res.Verdicts {
+		p.Verdicts = append(p.Verdicts, VerdictView{Author: s.who(v.Author), Label: v.Verdict.String(), Stale: v.Stale, Href: "#c" + strconv.FormatInt(v.CommentID, 10), Short: short(v.CommitID.String())})
 	}
 	p.Opened.Name = p.Author
 	p.Opened.When, p.Opened.WhenAt = whenOf(now, m.CreatedAt)
@@ -684,9 +714,10 @@ func shellWord(s string) string {
 // lineRef designates a line of the diff in the query of the comment form:
 // "?on=new:12:path/to/file".
 type lineRef struct {
-	side string
-	line int
-	path string
+	side  string
+	line  int
+	start int
+	path  string
 }
 
 func parseOn(s string) *lineRef {
@@ -695,11 +726,21 @@ func parseOn(s string) *lineRef {
 		return nil
 	}
 	num, path, ok := strings.Cut(rest, ":")
+	start := 0
+	if a, b, rangeOK := strings.Cut(num, "-"); rangeOK {
+		var e error
+		start, e = strconv.Atoi(a)
+		end, e2 := strconv.Atoi(b)
+		if e != nil || e2 != nil || start < 1 || start >= end {
+			return nil
+		}
+		num = b
+	}
 	line, err := strconv.Atoi(num)
 	if !ok || err != nil || line < 1 || path == "" {
 		return nil
 	}
-	return &lineRef{side: side, line: line, path: path}
+	return &lineRef{side: side, line: line, start: start, path: path}
 }
 
 // placeComments puts every comment under its line when the diff shown has it,
@@ -757,21 +798,66 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 		return index[lineKey{path, side, line}]
 	}
 
+	exists := noteIDs(comments)
+	children := map[int64][]domain.Comment{}
 	for _, c := range comments {
-		cid := strconv.FormatInt(c.ID, 10)
-		v := CommentView{
-			ID: cid, Author: s.who(c.Author),
-			Parts: plainParts(c.Text.String()), Resolved: c.Resolved,
-			Outdated: !c.CommitID.IsZero() && c.CommitID.String() != head,
+		if c.ReplyTo != 0 && !c.Deleted {
+			children[c.ReplyTo] = append(children[c.ReplyTo], c)
 		}
+		if !c.Deleted {
+			p.NComments++
+		}
+		if c.ReplyTo == 0 && !c.Deleted && !c.Resolved {
+			p.NUnresolved++
+		}
+	}
+	var view func(domain.Comment, bool) CommentView
+	view = func(c domain.Comment, replyable bool) CommentView {
+		cid := strconv.FormatInt(c.ID, 10)
+		body, err := s.md.renderNote([]byte(c.Text.String()), repo, head, "c"+cid+"-", exists)
+		if err != nil {
+			body = ""
+		}
+		bodySplit, err := s.md.renderNote([]byte(c.Text.String()), repo, head, "c"+cid+"s-", exists)
+		if err != nil {
+			bodySplit = ""
+		}
+		v := CommentView{BodySplit: bodySplit, ID: cid, Author: s.who(c.Author), Body: body, Resolved: c.Resolved, Deleted: c.Deleted, Edited: !c.EditedAt.IsZero(), Verdict: c.Verdict.String(), Outdated: !c.CommitID.IsZero() && c.CommitID.String() != head}
 		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
 		if !c.CreatedAt.IsZero() {
 			v.Abs = absolute(c.CreatedAt)
 		}
-		p.NComments++
-		if !c.Resolved {
-			p.NUnresolved++
+		if c.StartLine > 0 {
+			v.Range = "lines " + itoa(c.StartLine) + "–" + itoa(c.Line)
 		}
+		if canWrite && !c.Deleted {
+			from := windowStart(fileAt[c.Path])
+			root := cid
+			if c.ReplyTo != 0 {
+				root = strconv.FormatInt(c.ReplyTo, 10)
+			}
+			if replyable {
+				v.Quote = "> " + strings.ReplaceAll(c.Text.String(), "\n", "\n> ") + "\n\n^" + cid + " "
+			}
+			if c.ReplyTo == 0 {
+				v.Reply = &CommentForm{ID: "reply-" + cid, Action: mrHref(repo, n, "comments"), Title: "Reply", ReplyTo: root, From: from}
+			}
+			if c.Author == p.NoteAuthor {
+				v.Edit = &EditForm{Action: mrHref(repo, n, "comments", cid, "edit"), Text: c.Text.String(), From: from}
+				v.Delete = &DeleteForm{Action: mrHref(repo, n, "comments", cid, "delete"), From: from}
+			}
+		}
+		for _, reply := range children[c.ID] {
+			v.Replies = append(v.Replies, view(reply, replyable))
+		}
+		return v
+	}
+	for _, c := range comments {
+		if c.ReplyTo != 0 || c.Deleted && c.Verdict == domain.VerdictNone && len(children[c.ID]) == 0 {
+			continue
+		}
+		cid := strconv.FormatInt(c.ID, 10)
+		v := view(c, canWrite && !c.Deleted)
 		general := c.Path == ""
 		fi, listed := fileAt[c.Path]
 		if !general && listed && p.Files[fi].Lazy {
@@ -789,7 +875,7 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 				v.Where = visibleText(c.Path) + ":" + itoa(c.Line) + " (" + side + ")"
 			}
 		}
-		if canWrite {
+		if canWrite && !c.Deleted {
 			v.Resolve = &ResolveForm{Action: resolveAction(cid), Value: !c.Resolved, Label: "Resolve"}
 			if !general && listed {
 				v.Resolve.From = windowStart(fi)
@@ -815,9 +901,18 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 		if on.side == "old" {
 			side = domain.SideOld
 		}
+		start := on.start
+		if start == 0 {
+			start = on.line
+		}
+		for key, ln := range index {
+			if key.path == on.path && key.side == side && key.line >= start && key.line <= on.line {
+				ln.Selected = true
+			}
+		}
 		if ln := find(on.path, side, on.line); ln != nil {
 			ln.Form = &CommentForm{
-				ID: "cf-line", Action: mrHref(repo, n, "comments"), Path: on.path, Line: itoa(on.line), Side: on.side,
+				StartLine: optionalLine(on.start), ID: "cf-line", Action: mrHref(repo, n, "comments"), Path: on.path, Line: itoa(on.line), Side: on.side,
 				Title:  "comment on " + visibleText(on.path) + ":" + itoa(on.line) + " (" + on.side + ")",
 				Cancel: withFrom(self, windowStart(fileAt[on.path])) + "#" + fileIDs[on.path], Focus: true,
 				From: windowStart(fileAt[on.path]),
@@ -841,4 +936,18 @@ func userText(parts []TextPart) templ.Component {
 		_, err := io.WriteString(w, b.String())
 		return err
 	})
+}
+
+func noteIDs(comments []domain.Comment) func(int64) bool {
+	ids := make(map[int64]bool, len(comments))
+	for _, c := range comments {
+		ids[c.ID] = true
+	}
+	return func(n int64) bool { return ids[n] }
+}
+func optionalLine(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return itoa(n)
 }
