@@ -128,6 +128,15 @@ func TestIssueCreateAndTransitions(t *testing.T) {
 
 	open := domain.Issue{Repo: name(t, "proj"), Number: 3, State: domain.IssueStateOpen, Version: 1}
 
+	t.Run("close with every update conflicting is an error and publishes nothing", func(t *testing.T) {
+		t.Parallel()
+		u := newIssueUnit(t, domain.VisibilityPublic, domain.IssuesOwner)
+		u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(3)).Return(open, nil)
+		u.store.EXPECT().Update(mock.Anything, mock.Anything).Return(domain.ErrConflict)
+		_, err := u.issues.Close(ctx, p, u.repo.Name, 3)
+		assert.ErrorIs(t, err, domain.ErrConflict)
+	})
+
 	t.Run("close retries a conflict then publishes", func(t *testing.T) {
 		t.Parallel()
 		u := newIssueUnit(t, domain.VisibilityPublic, domain.IssuesOwner)
@@ -180,6 +189,15 @@ func TestIssueAddComment(t *testing.T) {
 	ctx := context.Background()
 	p := issuePrincipal(domain.ScopeIssueWrite)
 	issue := domain.Issue{Repo: name(t, "proj"), Number: 3, State: domain.IssueStateClosed, CommentSeq: 4, Version: 1}
+
+	t.Run("every save conflicting is an error and publishes nothing", func(t *testing.T) {
+		t.Parallel()
+		u := newIssueUnit(t, domain.VisibilityPublic, domain.IssuesOwner)
+		u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(3)).Return(issue, nil)
+		u.store.EXPECT().SaveComment(mock.Anything, mock.Anything, mock.Anything).Return(domain.ErrConflict)
+		_, err := u.issues.AddComment(ctx, p, u.repo.Name, 3, "hi") // the bus mock fails on any Publish
+		assert.ErrorIs(t, err, domain.ErrConflict)
+	})
 
 	t.Run("on a closed issue, with a retry", func(t *testing.T) {
 		t.Parallel()

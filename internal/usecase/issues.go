@@ -186,6 +186,7 @@ func (i *Issues) AddComment(ctx context.Context, p domain.Principal, name domain
 		return domain.IssueComment{}, err
 	}
 	var c domain.IssueComment
+	saved := false
 	for range maxWriteRetries {
 		if issue.State == domain.IssueStatePending {
 			return domain.IssueComment{}, fmt.Errorf("%w: #%d is %s", domain.ErrPreconditionFailed, number, issue.State)
@@ -196,15 +197,19 @@ func (i *Issues) AddComment(ctx context.Context, p domain.Principal, name domain
 		c = domain.IssueComment{ID: issue.CommentSeq + 1, Author: authorOf(p), Text: body, CreatedAt: i.clock.Now().UTC()}
 		issue.CommentSeq, issue.UpdatedAt = c.ID, c.CreatedAt
 		err = i.store.SaveComment(ctx, issue, c)
-		if !errors.Is(err, domain.ErrConflict) {
+		if err == nil {
+			saved = true
 			break
+		}
+		if !errors.Is(err, domain.ErrConflict) {
+			return domain.IssueComment{}, fmt.Errorf("save comment on #%d of %q: %w", number, name, err)
 		}
 		if issue, err = i.store.Get(ctx, name, number); err != nil {
 			return domain.IssueComment{}, err
 		}
 	}
-	if err != nil {
-		return domain.IssueComment{}, fmt.Errorf("save comment on #%d of %q: %w", number, name, err)
+	if !saved {
+		return domain.IssueComment{}, fmt.Errorf("save comment on #%d of %q: %w", number, name, domain.ErrConflict)
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", name.String()).Int64("number", number).Int64("comment", c.ID).
