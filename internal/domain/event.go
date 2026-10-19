@@ -173,6 +173,45 @@ type CommentAdded struct {
 // EventKind implements Event.
 func (CommentAdded) EventKind() string { return "mr.comment_added" }
 
+// CommentEdited is published when a comment was added to a merge request.
+type CommentEdited struct {
+	Repo       RepoName
+	Number     int64
+	Comment    Comment
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (CommentEdited) EventKind() string { return "mr.comment_edited" }
+
+// CommentDeleted is published when a comment was added to a merge request.
+type CommentDeleted struct {
+	Repo       RepoName
+	Number     int64
+	Comment    Comment
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (CommentDeleted) EventKind() string { return "mr.comment_deleted" }
+
+// CommentResolved is published when a comment was added to a merge request.
+type CommentResolved struct {
+	Repo       RepoName
+	Number     int64
+	Comment    Comment
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (CommentResolved) EventKind() string { return "mr.comment_resolved" }
+
 // EventGap tells a subscriber that it missed events because it was too slow;
 // it must refresh its whole view.
 type EventGap struct{}

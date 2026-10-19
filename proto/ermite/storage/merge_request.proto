@@ -64,6 +64,13 @@ message MergeRequest {
   int64 comment_seq = 14;
 }
 
+// Verdict is the immutable review decision of a note.
+enum Verdict {
+  VERDICT_UNSPECIFIED = 0;
+  VERDICT_APPROVE = 1;
+  VERDICT_CHANGES_REQUESTED = 2;
+}
+
 // Comment is stored under the key "mrc/<repo>/<number:010d>/<id:010d>".
 message Comment {
   int64 id = 1;
@@ -75,6 +82,11 @@ message Comment {
   string text = 7;
   bool resolved = 8;
   google.protobuf.Timestamp created_at = 9;
+  int64 reply_to = 10;
+  int32 start_line = 11;
+  Verdict verdict = 12;
+  google.protobuf.Timestamp edited_at = 13;
+  bool deleted = 14;
 }
 
 // Sequence is stored under the key "mrseq/<repo>": the last merge request

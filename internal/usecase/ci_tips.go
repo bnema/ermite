@@ -85,7 +85,7 @@ func (c *CI) scheduleActor(ctx context.Context, repo domain.RepoName, branch str
 	if t, ok := c.refTip(ctx, repo, "refs/heads/"+branch, tip); ok {
 		return t.Actor, t.Pusher, t.Trusted
 	}
-	return authorOf(domain.Owner()), domain.CIPusher{}, false
+	return domain.AuthorName(domain.Owner()), domain.CIPusher{}, false
 }
 
 // refTrusted reports whether the ref was set to exactly the pinned object by a

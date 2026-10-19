@@ -17,6 +17,16 @@ import (
 // mergeRequestService implements ermiteconnect.MergeRequestServiceHandler.
 type mergeRequestService struct{ mrs ports.MergeRequestService }
 
+// EditComment is implemented with the note RPC adapter in phase P4a.
+func (s *mergeRequestService) EditComment(context.Context, *connect.Request[pb.EditCommentRequest]) (*connect.Response[pb.EditCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("EditComment is not implemented"))
+}
+
+// DeleteComment is implemented with the note RPC adapter in phase P4a.
+func (s *mergeRequestService) DeleteComment(context.Context, *connect.Request[pb.DeleteCommentRequest]) (*connect.Response[pb.DeleteCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("DeleteComment is not implemented"))
+}
+
 func mergeRequestStateToPB(s domain.MRState) pb.MergeRequestState {
 	switch s {
 	case domain.MRStateOpen:

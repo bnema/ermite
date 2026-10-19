@@ -16,7 +16,7 @@ import (
 func TestScopes(t *testing.T) {
 	t.Parallel()
 	all := domain.AllScopes()
-	assert.Len(t, all, 9)
+	assert.Len(t, all, 10)
 	for _, s := range all {
 		got, err := domain.ParseScope(s.String())
 		require.NoError(t, err)

@@ -124,6 +124,7 @@ func mergeModesFromPB(in []pb.MergeMode) ([]domain.MergeMode, error) {
 }
 
 var scopeToPB = map[domain.Scope]pb.Scope{
+	domain.ScopeMRReview:       pb.Scope_SCOPE_MR_REVIEW,
 	domain.ScopeRepoRead:       pb.Scope_SCOPE_REPO_READ,
 	domain.ScopeRepoWrite:      pb.Scope_SCOPE_REPO_WRITE,
 	domain.ScopeRepoAdmin:      pb.Scope_SCOPE_REPO_ADMIN,

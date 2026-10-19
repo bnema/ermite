@@ -16,7 +16,7 @@ import (
 )
 
 // AuthorOf exposes authorOf to the tests.
-func AuthorOf(p domain.Principal) string { return authorOf(p) }
+func AuthorOf(p domain.Principal) string { return domain.AuthorName(p) }
 
 // Sweep exposes the daily sweep to the tests.
 func (c *CI) Sweep(ctx context.Context) { c.sweep(ctx) }

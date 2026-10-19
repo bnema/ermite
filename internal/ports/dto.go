@@ -212,6 +212,8 @@ type MergeRequestDetail struct {
 	Diff       domain.Diff
 	// Comments are the comments, oldest first.
 	Comments []domain.Comment
+	// Verdicts are the latest verdict per author in note ID order.
+	Verdicts []domain.AuthorVerdict
 	// LastReadID is the head recorded by MarkRead; zero when none.
 	LastReadID domain.ObjectID
 	// LastReadLost tells that since-last-read was asked for, a head was
@@ -241,6 +243,12 @@ type FileWindow struct{ From, To int }
 
 // AddCommentParams describes the comment to add.
 type AddCommentParams struct {
+	// ReplyTo names a non-deleted root; replies cannot specify an anchor or verdict.
+	ReplyTo int64
+	// StartLine starts an inclusive range, requiring a path and 1 <= StartLine < Line.
+	StartLine int
+	// Verdict requires mr:review and is only permitted on roots.
+	Verdict domain.Verdict
 	// Path, Line and Side designate a line of the diff; all empty for a
 	// general comment.
 	Path string

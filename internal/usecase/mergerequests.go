@@ -241,7 +241,7 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	now := m.clock.Now().UTC()
 	mr, err := m.store.Create(ctx, domain.MergeRequest{
 		Repo: name, Title: title, Description: desc, Source: source, Target: target,
-		State: domain.MRStateOpen, Author: authorOf(p), CreatedAt: now, UpdatedAt: now,
+		State: domain.MRStateOpen, Author: domain.AuthorName(p), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		return domain.MergeRequest{}, fmt.Errorf("create merge request of %q: %w", name, err)
@@ -600,7 +600,7 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 			return domain.Comment{}, fmt.Errorf("%w: !%d already has %d comments", domain.ErrResourceExhausted, number, MaxCommentsPerMergeRequest)
 		}
 		c = domain.Comment{
-			ID: mr.CommentSeq + 1, Author: authorOf(p), Path: params.Path, Line: params.Line, Side: params.Side,
+			ID: mr.CommentSeq + 1, Author: domain.AuthorName(p), Path: params.Path, Line: params.Line, Side: params.Side,
 			CommitID: mr.HeadID, Text: text, CreatedAt: m.clock.Now().UTC(),
 		}
 		mr.CommentSeq, mr.UpdatedAt = c.ID, c.CreatedAt
@@ -1090,7 +1090,7 @@ func (m *MergeRequests) moveTarget(ctx context.Context, mr domain.MergeRequest, 
 	// does, under the merge lock (domain.CIRefTip). The run shows the owner, as a
 	// merge's push does on GitHub.
 	if err := recordRefTips(ctx, m.tips, mr.Repo, []domain.RefUpdate{{Old: tip.String(), New: newTip.String(), Ref: "refs/heads/" + mr.Target}},
-		authorOf(domain.Owner()), domain.PusherOf(p), domain.TrustedActor(p)); err != nil {
+		domain.AuthorName(domain.Owner()), domain.PusherOf(p), domain.TrustedActor(p)); err != nil {
 		return domain.ObjectID{}, err
 	}
 	err := m.git.UpdateBranch(ctx, mr.Repo, mr.Target, tip, newTip)
