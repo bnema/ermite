@@ -43,3 +43,26 @@ message IssueComment {
   string text = 3;
   google.protobuf.Timestamp created_at = 4;
 }
+
+// PendingIssue is an issue submitted through the public form, stored under
+// the key "ispend/<repo>/<id>" where id is 16 random bytes in lowercase base32.
+// It has no number until the owner approves it.
+message PendingIssue {
+  string title = 1;
+  string body = 2;
+  // Display name given by the submitter. May be empty.
+  string author = 3;
+  google.protobuf.Timestamp created_at = 4;
+  // HMAC-SHA256 of the client key (32 bytes).
+  bytes ip_hash = 5;
+}
+
+// IssueBan is stored under the key "isban/<hex of the hash>".
+message IssueBan {
+  google.protobuf.Timestamp until = 1;
+}
+
+// IssueKey is stored under the key "meta/issuekey".
+message IssueKey {
+  bytes key = 1;
+}

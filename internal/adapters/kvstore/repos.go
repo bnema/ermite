@@ -145,6 +145,7 @@ func (s *Store) Delete(ctx context.Context, name domain.RepoName) error {
 		snap := s.db.Snapshot(ctx)
 		repoItem, repoOK := snap.Get(ctx, repoKey(name))
 		keys := append(mergeRequestKeys(ctx, snap, name), issueKeys(ctx, snap, name)...)
+		keys = append(keys, pendingKeys(ctx, snap, name)...)
 		keys = append(keys, ciKeys(ctx, snap, name)...)
 		keys = append(keys, settingsKeys(ctx, snap, name)...)
 		for len(keys) > deleteChunk {

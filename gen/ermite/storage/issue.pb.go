@@ -255,6 +255,177 @@ func (x *IssueComment) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// PendingIssue is an issue submitted through the public form, stored under
+// the key "ispend/<repo>/<id>" where id is 16 random bytes in lowercase base32.
+// It has no number until the owner approves it.
+type PendingIssue struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Title string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Body  string                 `protobuf:"bytes,2,opt,name=body,proto3" json:"body,omitempty"`
+	// Display name given by the submitter. May be empty.
+	Author    string                 `protobuf:"bytes,3,opt,name=author,proto3" json:"author,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// HMAC-SHA256 of the client key (32 bytes).
+	IpHash        []byte `protobuf:"bytes,5,opt,name=ip_hash,json=ipHash,proto3" json:"ip_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PendingIssue) Reset() {
+	*x = PendingIssue{}
+	mi := &file_ermite_storage_issue_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PendingIssue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PendingIssue) ProtoMessage() {}
+
+func (x *PendingIssue) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_issue_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PendingIssue.ProtoReflect.Descriptor instead.
+func (*PendingIssue) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PendingIssue) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *PendingIssue) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *PendingIssue) GetAuthor() string {
+	if x != nil {
+		return x.Author
+	}
+	return ""
+}
+
+func (x *PendingIssue) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *PendingIssue) GetIpHash() []byte {
+	if x != nil {
+		return x.IpHash
+	}
+	return nil
+}
+
+// IssueBan is stored under the key "isban/<hex of the hash>".
+type IssueBan struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Until         *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=until,proto3" json:"until,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueBan) Reset() {
+	*x = IssueBan{}
+	mi := &file_ermite_storage_issue_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueBan) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueBan) ProtoMessage() {}
+
+func (x *IssueBan) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_issue_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueBan.ProtoReflect.Descriptor instead.
+func (*IssueBan) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *IssueBan) GetUntil() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Until
+	}
+	return nil
+}
+
+// IssueKey is stored under the key "meta/issuekey".
+type IssueKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueKey) Reset() {
+	*x = IssueKey{}
+	mi := &file_ermite_storage_issue_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueKey) ProtoMessage() {}
+
+func (x *IssueKey) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_issue_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueKey.ProtoReflect.Descriptor instead.
+func (*IssueKey) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *IssueKey) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
 var File_ermite_storage_issue_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_issue_proto_rawDesc = "" +
@@ -277,7 +448,18 @@ const file_ermite_storage_issue_proto_rawDesc = "" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x129\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*p\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xa4\x01\n" +
+	"\fPendingIssue\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x12\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\x12\x16\n" +
+	"\x06author\x18\x03 \x01(\tR\x06author\x129\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x17\n" +
+	"\aip_hash\x18\x05 \x01(\fR\x06ipHash\"<\n" +
+	"\bIssueBan\x120\n" +
+	"\x05until\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05until\"\x1c\n" +
+	"\bIssueKey\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key*p\n" +
 	"\n" +
 	"IssueState\x12\x1b\n" +
 	"\x17ISSUE_STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -298,23 +480,28 @@ func file_ermite_storage_issue_proto_rawDescGZIP() []byte {
 }
 
 var file_ermite_storage_issue_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ermite_storage_issue_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_ermite_storage_issue_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_ermite_storage_issue_proto_goTypes = []any{
 	(IssueState)(0),               // 0: ermite.storage.IssueState
 	(*Issue)(nil),                 // 1: ermite.storage.Issue
 	(*IssueComment)(nil),          // 2: ermite.storage.IssueComment
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*PendingIssue)(nil),          // 3: ermite.storage.PendingIssue
+	(*IssueBan)(nil),              // 4: ermite.storage.IssueBan
+	(*IssueKey)(nil),              // 5: ermite.storage.IssueKey
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
 var file_ermite_storage_issue_proto_depIdxs = []int32{
 	0, // 0: ermite.storage.Issue.state:type_name -> ermite.storage.IssueState
-	3, // 1: ermite.storage.Issue.created_at:type_name -> google.protobuf.Timestamp
-	3, // 2: ermite.storage.Issue.updated_at:type_name -> google.protobuf.Timestamp
-	3, // 3: ermite.storage.IssueComment.created_at:type_name -> google.protobuf.Timestamp
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	6, // 1: ermite.storage.Issue.created_at:type_name -> google.protobuf.Timestamp
+	6, // 2: ermite.storage.Issue.updated_at:type_name -> google.protobuf.Timestamp
+	6, // 3: ermite.storage.IssueComment.created_at:type_name -> google.protobuf.Timestamp
+	6, // 4: ermite.storage.PendingIssue.created_at:type_name -> google.protobuf.Timestamp
+	6, // 5: ermite.storage.IssueBan.until:type_name -> google.protobuf.Timestamp
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_issue_proto_init() }
@@ -328,7 +515,7 @@ func file_ermite_storage_issue_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_issue_proto_rawDesc), len(file_ermite_storage_issue_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   2,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

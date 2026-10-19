@@ -33,7 +33,10 @@ import (
 // isopen/, numbered from the same mrseq/ sequence as the merge requests, and
 // RepoSettings.issues): an older build would not delete them with their
 // repository, nor keep the numbers apart, and it would misread the issue:write
-// scope, so it must refuse the data. The upgrade also adds issue:write to the
+// scope, so it must refuse the data. It also adds the pending issues of the
+// public form (ispend/<repo>/<id>, removed with their repository), the bans of
+// their submitters (isban/<hex hash>) and the form's server key
+// (meta/issuekey). The upgrade also adds issue:write to the
 // stored tokens that held all nine earlier scopes with no repository list and
 // no branch prefix, so that they keep the owner rights (see upgradeTokens).
 const SchemaVersion = 4
