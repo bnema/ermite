@@ -22,10 +22,10 @@ var _ ports.CommitObjectReader = (*Adapter)(nil)
 // always serves it, and the wrapped reader only the repositories the library
 // cannot read.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule for commit eligibility and byte budgets; pending move to domain/usecase
+//hexcheck:ignore suspicious-business-logic-in-adapter streams object headers and bytes; eligibility, deduplication and byte limits are decided by domain.CommitObjectBudget, request validation by domain.ValidateCommitObjects
 func (a *Adapter) ReadCommitObjects(ctx context.Context, repo domain.RepoName, ids []domain.ObjectID) (map[domain.ObjectID][]byte, error) {
-	if len(ids) > ports.MaxCommitLimit {
-		return nil, fmt.Errorf("%w: %d commit objects asked, at most %d", domain.ErrInvalid, len(ids), ports.MaxCommitLimit)
+	if err := domain.ValidateCommitObjects(ids, ports.MaxCommitLimit); err != nil {
+		return nil, err
 	}
 	cli := func() (map[domain.ObjectID][]byte, error) {
 		r, ok := a.cli.(ports.CommitObjectReader)
@@ -36,12 +36,12 @@ func (a *Adapter) ReadCommitObjects(ctx context.Context, repo domain.RepoName, i
 	}
 	return serve(ctx, a, repo, func(r *git.Repo) (map[domain.ObjectID][]byte, error) {
 		out := make(map[domain.ObjectID][]byte, len(ids))
-		var total int64
+		var budget domain.CommitObjectBudget
 		for _, id := range ids {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			if _, done := out[id]; done {
+			if budget.Seen(id) {
 				continue
 			}
 			gid, err := git.ParseID(id.String())
@@ -55,11 +55,12 @@ func (a *Adapter) ReadCommitObjects(ctx context.Context, repo domain.RepoName, i
 			if err != nil {
 				return nil, err
 			}
-			if typ != git.TypeCommit || size > domain.MaxCommitObjectBytes {
-				continue
-			}
-			if total+size > domain.MaxCommitObjectsBytes {
+			take, stop := budget.Admit(id, typ == git.TypeCommit, size)
+			if stop {
 				break
+			}
+			if !take {
+				continue
 			}
 			typ, data, err := r.ReadObject(gid, nil)
 			if errors.Is(err, git.ErrNotFound) {
@@ -68,9 +69,9 @@ func (a *Adapter) ReadCommitObjects(ctx context.Context, repo domain.RepoName, i
 			if err != nil {
 				return nil, err
 			}
-			if typ == git.TypeCommit && len(data) <= domain.MaxCommitObjectBytes && total+int64(len(data)) <= domain.MaxCommitObjectsBytes {
+			if take, _ := budget.Admit(id, typ == git.TypeCommit, int64(len(data))); take {
 				out[id] = data
-				total += int64(len(data))
+				budget.Charge(id, int64(len(data)))
 			}
 		}
 		return out, nil

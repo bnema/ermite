@@ -19,15 +19,10 @@ var _ ports.CommitObjectReader = (*Git)(nil)
 // that would take the total over domain.MaxCommitObjectsBytes (known from
 // `info`, before any content is read, so the stream stays consistent).
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule for commit eligibility and byte budgets; pending move to domain/usecase
+//hexcheck:ignore suspicious-business-logic-in-adapter streams object headers and bytes; eligibility, deduplication and byte limits are decided by domain.CommitObjectBudget, request validation by domain.ValidateCommitObjects
 func (g *Git) ReadCommitObjects(ctx context.Context, repo domain.RepoName, ids []domain.ObjectID) (map[domain.ObjectID][]byte, error) {
-	if len(ids) > ports.MaxCommitLimit {
-		return nil, fmt.Errorf("%w: %d commit objects asked, at most %d", domain.ErrInvalid, len(ids), ports.MaxCommitLimit)
-	}
-	for _, id := range ids {
-		if id.IsZero() {
-			return nil, fmt.Errorf("%w: empty commit id", domain.ErrInvalidObjectID)
-		}
+	if err := domain.ValidateCommitObjects(ids, ports.MaxCommitLimit); err != nil {
+		return nil, err
 	}
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -36,12 +31,12 @@ func (g *Git) ReadCommitObjects(ctx context.Context, repo domain.RepoName, ids [
 	out := make(map[domain.ObjectID][]byte, len(ids))
 	err = g.cat.do(ctx, dir, func(c *catConn) error {
 		clear(out) // a retry on a fresh process starts over
-		var total int64
+		var budget domain.CommitObjectBudget
 		for _, id := range ids {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if _, done := out[id]; done {
+			if budget.Seen(id) {
 				continue
 			}
 			h, err := c.info(id.String())
@@ -51,18 +46,19 @@ func (g *Git) ReadCommitObjects(ctx context.Context, repo domain.RepoName, ids [
 			if err != nil {
 				return err
 			}
-			if h.Type != "commit" || h.Size > domain.MaxCommitObjectBytes {
-				continue
-			}
-			if total+h.Size > domain.MaxCommitObjectsBytes {
+			take, stop := budget.Admit(id, h.Type == "commit", h.Size)
+			if stop {
 				break
+			}
+			if !take {
+				continue
 			}
 			_, data, err := c.contents(id.String(), domain.MaxCommitObjectBytes)
 			if err != nil {
 				return err
 			}
 			out[id] = data
-			total += int64(len(data))
+			budget.Charge(id, int64(len(data)))
 		}
 		return nil
 	})
