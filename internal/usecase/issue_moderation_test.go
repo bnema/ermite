@@ -85,6 +85,7 @@ func TestIssueModerationApprove(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	t.Run("publishes IssueOpened after the commit", func(t *testing.T) {
+		t.Parallel()
 		u := newModerationUnit(t, domain.IssuesPublic)
 		issue := domain.Issue{Repo: u.repo.Name, Number: 7, State: domain.IssueStateOpen}
 		u.pending.EXPECT().Approve(mock.Anything, u.repo.Name, u.id, now).Return(issue, nil).Once()
@@ -94,6 +95,7 @@ func TestIssueModerationApprove(t *testing.T) {
 		assert.Equal(t, int64(7), got.Number)
 	})
 	t.Run("issues off hides the repository", func(t *testing.T) {
+		t.Parallel()
 		for _, mode := range []domain.IssuesMode{domain.IssuesOff, ""} {
 			u := newModerationUnit(t, mode)
 			_, err := u.mod.Approve(ctx, domain.Root(), u.repo.Name, u.id)
@@ -101,6 +103,7 @@ func TestIssueModerationApprove(t *testing.T) {
 		}
 	})
 	t.Run("no event when the store refuses", func(t *testing.T) {
+		t.Parallel()
 		u := newModerationUnit(t, domain.IssuesOwner)
 		u.pending.EXPECT().Approve(mock.Anything, u.repo.Name, u.id, now).Return(domain.Issue{}, domain.ErrNotFound).Once()
 		_, err := u.mod.Approve(ctx, domain.Root(), u.repo.Name, u.id)
@@ -113,6 +116,7 @@ func TestIssueModerationReject(t *testing.T) {
 	ctx := context.Background()
 	hash := bytes.Repeat([]byte{3}, domain.IPHashLen)
 	t.Run("with a ban", func(t *testing.T) {
+		t.Parallel()
 		u := newModerationUnit(t, domain.IssuesPublic)
 		u.pending.EXPECT().Get(mock.Anything, u.repo.Name, u.id).Return(domain.PendingIssue{ID: u.id, Repo: u.repo.Name, IPHash: hash}, nil).Once()
 		u.bans.EXPECT().Ban(mock.Anything, hash, now.Add(domain.BanDuration)).Return(nil).Once()
@@ -121,6 +125,7 @@ func TestIssueModerationReject(t *testing.T) {
 		require.NoError(t, u.mod.Reject(ctx, domain.Owner(), u.repo.Name, u.id, true))
 	})
 	t.Run("without a ban", func(t *testing.T) {
+		t.Parallel()
 		u := newModerationUnit(t, domain.IssuesPublic)
 		u.pending.EXPECT().Get(mock.Anything, u.repo.Name, u.id).Return(domain.PendingIssue{ID: u.id, IPHash: hash}, nil).Once()
 		u.pending.EXPECT().Delete(mock.Anything, u.repo.Name, u.id).Return(nil).Once()
@@ -128,11 +133,13 @@ func TestIssueModerationReject(t *testing.T) {
 		require.NoError(t, u.mod.Reject(ctx, domain.Owner(), u.repo.Name, u.id, false))
 	})
 	t.Run("unknown id", func(t *testing.T) {
+		t.Parallel()
 		u := newModerationUnit(t, domain.IssuesPublic)
 		u.pending.EXPECT().Get(mock.Anything, u.repo.Name, u.id).Return(domain.PendingIssue{}, domain.ErrNotFound).Once()
 		assert.ErrorIs(t, u.mod.Reject(ctx, domain.Owner(), u.repo.Name, u.id, true), domain.ErrNotFound)
 	})
 	t.Run("a failed ban keeps the pending issue", func(t *testing.T) {
+		t.Parallel()
 		u := newModerationUnit(t, domain.IssuesPublic)
 		u.pending.EXPECT().Get(mock.Anything, u.repo.Name, u.id).Return(domain.PendingIssue{ID: u.id, IPHash: hash}, nil).Once()
 		u.bans.EXPECT().Ban(mock.Anything, hash, mock.Anything).Return(assert.AnError).Once()
