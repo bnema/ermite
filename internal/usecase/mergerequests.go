@@ -873,9 +873,6 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("merge request closed")
 		recordActivity(ctx, m.meta, repo.Name, mr.UpdatedAt)
 		m.bus.Publish(ctx, domain.MergeRequestClosed{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
-		if m.mergeab != nil {
-			m.mergeab.OnClosed(ctx, mr)
-		}
 		if m.pulls != nil {
 			m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID}, p)
 		}
@@ -1156,7 +1153,6 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 		m.ci.OnMerge(ctx, name, updates, p)
 	}
 	if m.mergeab != nil {
-		m.mergeab.OnClosed(ctx, mr)
 		m.mergeab.OnBranchesMoved(ctx, name, updates) // the other requests of the moved target
 	}
 }

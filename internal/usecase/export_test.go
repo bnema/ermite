@@ -183,10 +183,13 @@ func (s *Mergeability) ScheduledRetries() int {
 	return len(s.heap)
 }
 
-// RetryAttempts gives the number of repositories (and the global key) whose
+// RetryAttempts gives the number of repositories whose
 // failed attempts are counted.
 func (s *Mergeability) RetryAttempts() int {
 	s.retryMu.Lock()
 	defer s.retryMu.Unlock()
 	return len(s.retries)
 }
+
+// ReconcileForTest runs a repository pass synchronously without workers.
+func (s *Mergeability) ReconcileForTest(repo domain.RepoName) bool { return s.reconcile(repo) }
