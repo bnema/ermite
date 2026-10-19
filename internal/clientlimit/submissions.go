@@ -8,23 +8,29 @@ import (
 	"sync"
 	"time"
 
-	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
 // Submission windows of the public issue form.
 const (
 	// HourWindow and DayWindow are the sliding windows of the limits
-	// domain.SubmitPerHour and domain.SubmitPerDay.
+	// PerHour and PerDay.
 	HourWindow = time.Hour
 	DayWindow  = 24 * time.Hour
+
+	// PerHour and PerDay are the submissions one client may make in each
+	// window. They are the limits of the form (PerHour and
+	// PerDay), repeated here because this package may not import
+	// the domain; a test keeps them equal.
+	PerHour = 3
+	PerDay  = 10
 
 	submissionSweepInterval = HourWindow / 4
 )
 
 // SubmissionLimiter limits the submissions of the public issue form per client
-// (an IPv4 address or an IPv6 /64, see Key): domain.SubmitPerHour in a sliding
-// hour and domain.SubmitPerDay in a sliding day. It also counts the
+// (an IPv4 address or an IPv6 /64, see Key): PerHour in a sliding
+// hour and PerDay in a sliding day. It also counts the
 // submissions of all clients in the last hour. It lives in memory, is bounded
 // like Limiter, and is safe for concurrent use.
 type SubmissionLimiter struct {
@@ -55,11 +61,11 @@ func (l *SubmissionLimiter) Allow(_ context.Context, addr string) (bool, time.Du
 	defer l.mu.Unlock()
 	ts := l.prune(key, now)
 	var wait time.Duration
-	if h := withinWindow(ts, now, HourWindow); len(h) >= domain.SubmitPerHour {
-		wait = h[len(h)-domain.SubmitPerHour].Add(HourWindow).Sub(now)
+	if h := withinWindow(ts, now, HourWindow); len(h) >= PerHour {
+		wait = h[len(h)-PerHour].Add(HourWindow).Sub(now)
 	}
-	if len(ts) >= domain.SubmitPerDay {
-		wait = max(wait, ts[len(ts)-domain.SubmitPerDay].Add(DayWindow).Sub(now))
+	if len(ts) >= PerDay {
+		wait = max(wait, ts[len(ts)-PerDay].Add(DayWindow).Sub(now))
 	}
 	if wait <= 0 {
 		return true, 0
@@ -75,8 +81,8 @@ func (l *SubmissionLimiter) Record(_ context.Context, addr string) {
 	defer l.mu.Unlock()
 	l.maintain(now)
 	ts := append(l.prune(key, now), now)
-	if len(ts) > domain.SubmitPerDay*2 {
-		ts = ts[len(ts)-domain.SubmitPerDay*2:] // enough to compute the wait
+	if len(ts) > PerDay*2 {
+		ts = ts[len(ts)-PerDay*2:] // enough to compute the wait
 	}
 	l.subs[key] = ts
 	l.global = append(l.pruneGlobal(now), now)

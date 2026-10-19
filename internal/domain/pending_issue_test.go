@@ -5,6 +5,7 @@ package domain_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,4 +57,12 @@ func TestParsePendingAuthor(t *testing.T) {
 func TestIssueSubmittedKind(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "issue.submitted", domain.IssueSubmitted{}.EventKind())
+}
+
+func TestSubmissionLimitsAreTheDocumentedOnes(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 3, domain.SubmitPerHour)
+	assert.Equal(t, 10, domain.SubmitPerDay)
+	assert.Equal(t, 200, domain.MaxPendingIssues)
+	assert.Equal(t, 30*24*time.Hour, domain.BanDuration)
 }

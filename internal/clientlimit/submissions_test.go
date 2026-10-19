@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/clientlimit"
-	"bnema.dev/ermite/internal/domain"
 )
 
 func newSubs() (*clientlimit.SubmissionLimiter, *fakeClock) {
@@ -22,7 +21,7 @@ func newSubs() (*clientlimit.SubmissionLimiter, *fakeClock) {
 func TestSubmissionHourWindow(t *testing.T) {
 	t.Parallel()
 	l, clk := newSubs()
-	for i := range domain.SubmitPerHour {
+	for i := range clientlimit.PerHour {
 		ok, _ := l.Allow(bg, "1.2.3.4")
 		require.True(t, ok, "submission %d", i)
 		l.Record(bg, "1.2.3.4")
@@ -45,7 +44,7 @@ func TestSubmissionDayWindow(t *testing.T) {
 	l, clk := newSubs()
 	start := clk.t
 	// 3 per hour, spaced so the hourly limit never bites: one every 2 hours.
-	for range domain.SubmitPerDay {
+	for range clientlimit.PerDay {
 		ok, _ := l.Allow(bg, "1.2.3.4")
 		require.True(t, ok)
 		l.Record(bg, "1.2.3.4")
@@ -64,7 +63,7 @@ func TestSubmissionDayWindow(t *testing.T) {
 func TestSubmissionIPv6GroupsBy64(t *testing.T) {
 	t.Parallel()
 	l, _ := newSubs()
-	for i := range domain.SubmitPerHour {
+	for i := range clientlimit.PerHour {
 		l.Record(bg, fmt.Sprintf("2001:db8:1:2::%x", i+1)) // same /64
 	}
 	ok, _ := l.Allow(bg, "2001:db8:1:2:ffff::1")
