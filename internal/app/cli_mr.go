@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -101,6 +102,7 @@ func parseSide(s string) (ermite.DiffSide, error) {
 // jsonMergeRequest is the stable JSON shape of a merge request.
 type jsonMergeRequest struct {
 	Repo           string  `json:"repo"`
+	URL            string  `json:"url"`
 	Number         int64   `json:"number"`
 	Title          string  `json:"title"`
 	Description    string  `json:"description"`
@@ -121,8 +123,9 @@ type jsonMerged struct {
 	SourceBranchDeleted bool `json:"source_branch_deleted"`
 }
 
-func toJSONMergeRequest(m *ermite.MergeRequest) jsonMergeRequest {
+func toJSONMergeRequest(m *ermite.MergeRequest, baseURL string) jsonMergeRequest {
 	return jsonMergeRequest{
+		URL:  mrWebURL(baseURL, m.GetRepo(), m.GetNumber()),
 		Repo: m.GetRepo(), Number: m.GetNumber(), Title: m.GetTitle(), Description: m.GetDescription(),
 		SourceBranch: m.GetSourceBranch(), TargetBranch: m.GetTargetBranch(), State: stateName(m.GetState()),
 		Author: m.GetAuthor(), CreatedAt: jsonTime(m.GetCreatedAt()), UpdatedAt: jsonTime(m.GetUpdatedAt()),
@@ -151,7 +154,7 @@ func toJSONComment(c *ermite.Comment) jsonComment {
 }
 
 const jsonMRHelp = `
-JSON fields of a merge request (--json): repo, number, title, description, source_branch,
+JSON fields of a merge request (--json): repo, url (full web URL), number, title, description, source_branch,
 target_branch, state ("open", "merged" or "closed"), author (token label), created_at and
 updated_at (RFC 3339 UTC), head_id (the commit the source branch points to; empty when the
 branch is gone), merged_commit_id and merge_mode ("fast-forward" or "squash"; both empty
@@ -245,7 +248,8 @@ func newMRCreateCmd(env *cliEnv) *cobra.Command {
 			"The title is one line of at most 120 characters, the description plain text of at most 8000;\n" +
 			"neither may hold control characters (a description may hold line breaks) or bidirectional\n" +
 			"override characters. --description - reads it from standard input. Fails if an open merge request\n" +
-			"already has the same source and target. Needs the mr:write scope." + jsonMRHelp,
+			"already has the same source and target. Prints a confirmation, then the full web URL on its own line.\n" +
+			"Needs the mr:write scope." + jsonMRHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -273,20 +277,26 @@ func newMRCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "opened")
+		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "opened", c.URL())
 	}
 	return cmd
 }
 
 func trimBranch(s string) string { return strings.TrimPrefix(strings.TrimSpace(s), "refs/heads/") }
 
-// outputMR prints a merge request as JSON, or as one confirmation line.
-func outputMR(cmd *cobra.Command, m *ermite.MergeRequest, asJSON bool, verb string) error {
+// mrWebURL builds the web route with the repository as a single path segment.
+// Repository names currently forbid slashes, but escape all path delimiters defensively.
+func mrWebURL(baseURL, repo string, number int64) string {
+	return strings.TrimRight(baseURL, "/") + "/" + url.PathEscape(repo) + "/merge-requests/" + strconv.FormatInt(number, 10)
+}
+
+// outputMR prints a merge request as JSON, or a confirmation followed by its URL.
+func outputMR(cmd *cobra.Command, m *ermite.MergeRequest, asJSON bool, verb, baseURL string) error {
 	if asJSON {
-		return writeJSON(cmd.OutOrStdout(), toJSONMergeRequest(m))
+		return writeJSON(cmd.OutOrStdout(), toJSONMergeRequest(m, baseURL))
 	}
-	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s!%d (%s into %s)\n", verb, clean(m.GetRepo()), m.GetNumber(),
-		clean(m.GetSourceBranch()), clean(m.GetTargetBranch()))
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s!%d (%s into %s)\n%s\n", verb, clean(m.GetRepo()), m.GetNumber(),
+		clean(m.GetSourceBranch()), clean(m.GetTargetBranch()), mrWebURL(baseURL, m.GetRepo(), m.GetNumber()))
 	return err
 }
 
@@ -321,7 +331,7 @@ func newMRListCmd(env *cliEnv) *cobra.Command {
 		if *asJSON {
 			out := make([]jsonMergeRequest, 0, len(mrs))
 			for _, m := range mrs {
-				out = append(out, toJSONMergeRequest(m))
+				out = append(out, toJSONMergeRequest(m, c.URL()))
 			}
 			return writeJSON(cmd.OutOrStdout(), out)
 		}
@@ -404,9 +414,9 @@ func lineKindName(k ermite.LineKind) string {
 	return strings.ToLower(strings.TrimPrefix(k.String(), "LINE_KIND_"))
 }
 
-func toJSONDetail(d *ermite.GetMergeRequestResponse, withDiff bool) jsonMRDetail {
+func toJSONDetail(d *ermite.GetMergeRequestResponse, withDiff bool, baseURL string) jsonMRDetail {
 	out := jsonMRDetail{
-		jsonMergeRequest: toJSONMergeRequest(d.GetMergeRequest()),
+		jsonMergeRequest: toJSONMergeRequest(d.GetMergeRequest(), baseURL),
 		Commits:          []jsonCommit{}, CommitsTruncated: d.GetCommitsTruncated(),
 		DiffBaseID: d.GetDiffBaseId(),
 		Stats: jsonStats{
@@ -487,7 +497,7 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 		}
 		d := res.Msg
 		if *asJSON {
-			err = writeJSON(cmd.OutOrStdout(), toJSONDetail(d, withDiff))
+			err = writeJSON(cmd.OutOrStdout(), toJSONDetail(d, withDiff, c.URL()))
 		} else {
 			err = printMRDetail(cmd.OutOrStdout(), d, withDiff, sinceLastRead)
 		}
@@ -803,7 +813,7 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 				clean(m.GetSourceBranch()))
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), jsonMerged{jsonMergeRequest: toJSONMergeRequest(m), SourceBranchDeleted: deleted})
+			return writeJSON(cmd.OutOrStdout(), jsonMerged{jsonMergeRequest: toJSONMergeRequest(m, c.URL()), SourceBranchDeleted: deleted})
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "merged %s!%d into %s (%s) at %s\n", clean(m.GetRepo()), m.GetNumber(),
 			clean(m.GetTargetBranch()), modeName(m.GetMergeMode()), shortID(m.GetMergedCommitId()))
@@ -820,7 +830,7 @@ func newMRCloseCmd(env *cliEnv) *cobra.Command {
 		Use:   "close <repo> <number>",
 		Short: "Close a merge request without merging it",
 		Long: "Close an open merge request without merging it. A closed merge request cannot be reopened: open a\n" +
-			"new one. Needs the mr:write scope." + jsonMRHelp,
+			"new one. Prints a confirmation, then the full web URL on its own line. Needs the mr:write scope." + jsonMRHelp,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
@@ -838,7 +848,7 @@ func newMRCloseCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "closed")
+		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "closed", c.URL())
 	}
 	return cmd
 }

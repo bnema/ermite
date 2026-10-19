@@ -40,6 +40,10 @@ git push https://git.example.com/<repo>.git main             # password = token,
 
 The merge is refused when the branch moved since `head_id` (review again) or when the target is not an ancestor of the head (rebase and push again). The repository may allow only one merge mode.
 
+`ermite mr create` and `ermite mr close` print a confirmation followed by the full
+merge request web URL on its own line. With `--json`, merge request objects
+(create, show, list, close and merge) include `url` alongside the other fields.
+
 Open one: `ermite mr create <repo> --source <branch> --title "..."`. After new pushes, `mr show --since-last-read` shows only what changed since `--mark-read`.
 
 ## Tokens
