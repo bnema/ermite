@@ -70,8 +70,8 @@ Issues share the numbering of merge requests and must be enabled per repository:
 | Command | Scope | Notes |
 |---|---|---|
 | `issue create <repo> --title T [--body TEXT\|-] [--body-file F\|-]` | `issue:write` | title of 120 characters max |
-| `issue list <repo> [--state open\|closed\|all] [--json]` | read access or `issue:write` | default `open` |
-| `issue show <repo> <n> [--json]` | read access or `issue:write` | issue and comments |
+| `issue list <repo> [--state open\|closed\|all] [--json]` | read access (public repository, or `repo:read` on a private one) | default `open`; `issue:write` alone does not grant reading |
+| `issue show <repo> <n> [--json]` | read access (public repository, or `repo:read` on a private one) | issue and comments; `issue:write` alone does not grant reading |
 | `issue comment <repo> <n> -m TEXT\|-` | `issue:write` | |
 | `issue close <repo> <n>` / `issue reopen <repo> <n>` | `issue:write` | |
 

@@ -50,6 +50,6 @@ The owner moderates in the Inbox, in the first section, **Awaiting moderation**,
 
 An approved issue is rendered as untrusted Markdown: raw HTML is dropped, images are never loaded (their alt text is shown), only `http`, `https` and `mailto` links are kept, each with `rel="nofollow noopener noreferrer ugc"`, and every other link loses its link and keeps its text.
 
-No address is stored. The limits and the ban key on an HMAC of the network address made with a server key, and the submission keeps only that hash.
+No IP address is written to disk. The rate limiter keys on the normalized network address (the IPv4 address, or the IPv6 /64) for at most 24 hours and keeps it only in memory. Pending submissions and bans store only a keyed hash (HMAC) of that network, made with a server key.
 
 The limits see the address of the client only if `ERMITE_TRUSTED_PROXIES` lists your reverse proxy; otherwise every visitor shares the proxy's address and one budget (see [configuration](configuration.md)).

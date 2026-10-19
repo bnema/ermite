@@ -88,7 +88,7 @@ Issues need a server with the `issues` feature and `ermite repo edit <repo> --is
 
 ## Output
 
-- `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `token create|list`, `run list|view|cancel|rerun`, `runner list` and `version`.
+- `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list` and `version`.
 - `watch --json` prints one object per line.
 - Errors are one line on stderr (`ermite: …`) with exit status 1.
 - Shell completion completes repository names from the server.

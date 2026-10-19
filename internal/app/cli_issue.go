@@ -365,7 +365,7 @@ func newIssueCommentCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "comment <repo> <number>",
 		Short: "Comment on an issue",
-		Long: "Add a Markdown comment (at most 10,000 characters; disallowed control characters are stripped).\n" +
+		Long: "Add a plain-text comment (at most 10,000 characters; disallowed control characters are stripped).\n" +
 			"-m - reads it from standard input. Needs the issue:write scope." + jsonIssueCommentHelp,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeIssueRepoThenNumber(env),
