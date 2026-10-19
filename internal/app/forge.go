@@ -63,6 +63,9 @@ type options struct {
 	// archivesPerClient overrides the archives one client downloads at once
 	// when positive.
 	archivesPerClient int
+	// receivePacks overrides the git-receive-pack backends running at once
+	// when positive (the default follows GOMAXPROCS).
+	receivePacks int
 	// remote replaces the lister of github.com refs (tests never reach the
 	// network).
 	remoteLister ports.GitRemote
@@ -420,15 +423,16 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	})
 
 	gh := githttp.New(githttp.Config{
-		Auth:           f.Auth,
-		Repos:          f.Repos,
-		Pushes:         f.Pushes,
-		Backend:        git,
-		Owner:          cfg.Owner,
-		Hooks:          f.hooks,
-		TrustedProxies: cfg.TrustedProxies,
-		Limiter:        limiter,
-		MaxBodyBytes:   maxBody,
+		Auth:            f.Auth,
+		Repos:           f.Repos,
+		Pushes:          f.Pushes,
+		Backend:         git,
+		Owner:           cfg.Owner,
+		Hooks:           f.hooks,
+		TrustedProxies:  cfg.TrustedProxies,
+		Limiter:         limiter,
+		MaxBodyBytes:    maxBody,
+		MaxReceivePacks: opts.receivePacks,
 	})
 	routes := make([]httpserver.Route, 0, 2*len(githttp.Patterns)+len(githubapi.Patterns)+len(oidchttp.Patterns)+len(web.Patterns))
 	for _, p := range githttp.Patterns {

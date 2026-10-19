@@ -324,11 +324,13 @@ func TestAC4HooksUnknownTokenAndMissingBinary(t *testing.T) {
 }
 
 func TestAC4PostReceiveAttribution(t *testing.T) {
-	h := newHarness(t, harnessOpts{})
+	// Four repositories, pushed at the same time with different refs. The
+	// default receive-pack slots follow GOMAXPROCS (2 on a small runner), so
+	// the test sets enough for every push to run at once.
+	const n = 4
+	h := newHarnessWith(t, harnessOpts{}, func(o *options) { o.receivePacks = n })
 	events := h.forge.Bus.Subscribe(h.ctx)
 
-	// Two repositories, pushed at the same time with different refs.
-	const n = 4
 	type job struct {
 		repo, branch string
 		wt           string
