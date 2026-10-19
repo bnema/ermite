@@ -26,7 +26,7 @@ type Pushes struct {
 	auth    ports.Revalidator
 	fresh   ports.RepoFreshener       // nil: the reader needs no telling
 	ci      ports.WorkflowTrigger     // nil: no CI
-	wf      ports.WorkflowGuard       // nil: pushes by job tokens are refused
+	trees   ports.PushTreeReader      // nil: pushes by job tokens are refused
 	tips    ports.CIRefTipStore       // nil: who pushes a ref is not recorded
 	mergeab ports.MergeabilityTrigger // nil: mergeability is not tracked
 }
@@ -73,11 +73,11 @@ func (u *Pushes) WithRefTips(t ports.CIRefTipStore) *Pushes {
 	return u
 }
 
-// WithWorkflowGuard lets Check tell whether a push changes workflow files, which
+// WithPushTreeReader lets Check tell whether a push changes workflow files, which
 // a push by a job token may not do. Without it a push by a job token is
 // refused, as it cannot be judged. Call it before the first push; it returns u.
-func (u *Pushes) WithWorkflowGuard(g ports.WorkflowGuard) *Pushes {
-	u.wf = g
+func (u *Pushes) WithPushTreeReader(g ports.PushTreeReader) *Pushes {
+	u.trees = g
 	return u
 }
 
@@ -199,20 +199,36 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 const workflowRefusal = "refusing to allow a GitHub App to create or update workflow `%s` without `workflows` permission"
 
 func (u *Pushes) checkWorkflows(ctx context.Context, name domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects) error {
-	if u.wf == nil {
+	if u.trees == nil {
 		return fmt.Errorf("%w: the token of a job may not push here", domain.ErrRejected)
 	}
-	path, err := u.wf.ChangedWorkflow(ctx, name, updates, objects)
-	switch {
-	case errors.Is(err, domain.ErrInvalid):
-		// A push the guard cannot judge within its bounds: refused, with the reason.
-		return fmt.Errorf("%w: %v", domain.ErrRejected, err)
-	case err != nil:
-		return fmt.Errorf("find the workflows changed by a push to %s: %w", name, err)
-	case path != "":
-		return fmt.Errorf("%w: "+workflowRefusal, domain.ErrRejected, path)
+	t, err := u.trees.PushSubtrees(ctx, name, updates, objects, domain.WorkflowDir, domain.DefaultPushWalkBounds())
+	if err != nil {
+		return workflowReadError(name, err)
 	}
-	return nil
+	c, found, err := domain.WorkflowChangeOf(updates, t)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrRejected, err)
+	}
+	if !found {
+		return nil
+	}
+	entry, err := u.trees.FirstDifferentEntry(ctx, name, objects, c.Old, c.New)
+	if err != nil {
+		return workflowReadError(name, err)
+	}
+	path := domain.WorkflowDir
+	if entry != "" {
+		path += "/" + entry
+	}
+	return fmt.Errorf("%w: "+workflowRefusal, domain.ErrRejected, path)
+}
+
+func workflowReadError(name domain.RepoName, err error) error {
+	if errors.Is(err, domain.ErrInvalid) {
+		return fmt.Errorf("%w: %v", domain.ErrRejected, err)
+	}
+	return fmt.Errorf("find the workflows changed by a push to %s: %w", name, err)
 }
 
 // Record is the post-receive step of an accepted push: it sets pushed_at and active_at,

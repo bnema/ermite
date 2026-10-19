@@ -407,21 +407,47 @@ type PushObjects struct {
 	Alternates string
 }
 
-// WorkflowGuard finds the changes of a push to the workflow files of a
-// repository.
-type WorkflowGuard interface {
-	// ChangedWorkflow returns the first path under .github/workflows/ that the
-	// updates change, "" for none. Two checks, as GitHub judges the token of a
-	// job: (1) every commit the push brings (those no ref has yet) is compared
-	// with each of its parents (a root commit with nothing) and is a change when
-	// it has workflows that differ from every parent's; (2) the workflows a ref
-	// ends with must be its old ones or none for an update, and the default
-	// branch head's or none for a new ref (none when there is no head). A
-	// workflows directory that disappears is no change, and a deleted ref changes
-	// nothing. objects are those of the push in progress; a directory that is not
-	// inside the repository is refused. A push beyond the bounds of the check
-	// (commits, parents) is an error that matches domain.ErrInvalid.
-	ChangedWorkflow(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, objects PushObjects) (path string, err error)
+// PushTreeReader reads, for a push still in quarantine, the objects the
+// workflow policy (domain.WorkflowChangeOf) judges. It knows nothing of the
+// policy: it peels, classifies, walks and compares trees.
+type PushTreeReader interface {
+	// PushSubtrees reads what a push brings, and the entry at path (a
+	// directory path without leading or trailing slash, e.g.
+	// domain.WorkflowDir) in each object concerned.
+	//
+	// Updates that delete (New == ZeroOID) have no objects: they are skipped.
+	// For every other update, Old (unless ZeroOID) and New are peeled
+	// (`<oid>^{}`): the result is in Ends keyed by the oid as given. An end
+	// that is missing, malformed, or peels to neither commit, tree nor blob is
+	// an error matching domain.ErrInvalid.
+	//
+	// Commits is `rev-list --parents <tips> --not --all` where tips are the
+	// distinct New ends that peel to a commit: the commits no ref has yet,
+	// each with its parents, in rev-list order. More than bounds.Commits
+	// commits, more than bounds.IDs ids (commits and parents, repeats
+	// included) or a commit whose parent line exceeds the adapter's line
+	// buffer is an error matching domain.ErrInvalid, raised as soon as the
+	// line crossing the bound is read.
+	//
+	// Subtrees holds the entry at path for every end, every commit, every
+	// parent, and, when a create has a non-blob New, the default branch head
+	// (key domain.HeadKey, absent when HEAD is unborn or has no such entry). An object that peels to a blob, or an
+	// object with no entry at path (including a path that crosses a
+	// gitlink, symlink or file), has no key. Kind is EntryDirectory only for
+	// mode 040000 and type tree.
+	//
+	// objects are the quarantine directories of the push; one outside the
+	// repository's objects directory (symlinks resolved) is an error matching
+	// domain.ErrInvalid, checked before anything is read.
+	PushSubtrees(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, objects PushObjects, path string, bounds domain.PushWalkBounds) (domain.PushSubtrees, error)
+
+	// FirstDifferentEntry returns the name of the first top-level entry that
+	// differs between the trees old and new (`diff-tree --name-only -z
+	// --no-renames`, read as a stream up to the first name, then git is
+	// stopped). A zero old is the empty tree. It returns "" when nothing
+	// differs. A name longer than the adapter's path bound is an error
+	// matching domain.ErrInvalid. objects as above.
+	FirstDifferentEntry(ctx context.Context, repo domain.RepoName, objects PushObjects, old, new domain.ObjectID) (name string, err error)
 }
 
 // --- inbound ---

@@ -110,15 +110,9 @@ func (g *Git) CatFileWaiting() int {
 	return n
 }
 
-// MaxPushedCommits is the bound of the commits of a push, for the tests.
-const MaxPushedCommits = maxPushedCommits
-
 // ParseRevList reads rev-list output with the bounds of the guard replaced, and
 // returns the number of commits kept.
 func ParseRevList(r io.Reader, maxCommits, maxIDs int) (int, error) {
 	c, err := parseRevList(bufio.NewReaderSize(r, 64*1024), maxCommits, maxIDs)
 	return len(c), err
 }
-
-// MaxPushedObjects is the bound of the ids of the commits of a push.
-const MaxPushedObjects = maxPushedObjects

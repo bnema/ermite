@@ -313,7 +313,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		opts.ci(&ciCfg)
 	}
 	f.CI = usecase.NewCI(ctx, ciCfg)
-	f.Pushes.WithWorkflowTrigger(f.CI).WithWorkflowGuard(git).WithRefTips(store.CI())
+	f.Pushes.WithWorkflowTrigger(f.CI).WithPushTreeReader(git).WithRefTips(store.CI())
 	f.Repos.WithCIRunCleaner(f.CI)
 	f.CI.Start()
 	f.EventLog = usecase.NewEvents(ctx, f.Repos, f.Bus, clock, usecase.EventsConfig{
