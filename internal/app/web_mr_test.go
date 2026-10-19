@@ -284,7 +284,7 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	require.GreaterOrEqual(t, i, 0, "a note row under the line")
 	note := anon.body[i:]
 	assert.Less(t, strings.Index(note, "Why &lt;i&gt;empty&lt;/i&gt;?"), strings.Index(note, "</tr>"), "the note sits in the row under its line")
-	assert.Contains(t, anon.body, `<a href="https://example.org/a" rel="noopener nofollow ugc">https://example.org/a</a>.`)
+	assert.Contains(t, anon.body, `<a href="https://example.org/a" rel="nofollow noopener noreferrer">https://example.org/a</a>.`)
 	assert.NotContains(t, anon.body, "<i>empty</i>")
 	assert.Contains(t, anon.body, "Looks fine overall.")
 	assert.Equal(t, 2, len(reNoteID.FindAllString(anon.body, -1)))
@@ -338,7 +338,8 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Contains(t, since.body, "changes since "+head1[:7])
 	assert.Contains(t, since.body, "extra</td>")
 	assert.NotContains(t, since.body, `<span class="kn">package</span> search</td>`, "only what changed after the read head")
-	assert.Contains(t, since.body, "Why &lt;i&gt;empty&lt;/i&gt;?", "the notes are listed below, their lines are not in this diff")
+	assert.Contains(t, since.body, "empty", "the notes are listed below, their lines are not in this diff")
+	assert.NotContains(t, since.body, "<i>", "raw HTML is dropped")
 	assert.Contains(t, since.body, "search.go:3 (new)")
 	assert.NotContains(t, since.body, `<form class="cform"`, "no comment form on this diff")
 
@@ -554,7 +555,9 @@ func TestWebMergeRequestEscapesText(t *testing.T) {
 		assert.NotContains(t, body, "<img src=x")
 		assert.NotContains(t, body, "<script>x</script>")
 		assert.Contains(t, html.UnescapeString(body), `"><script>alert(1)</script>`)
-		assert.Contains(t, body, "&lt;script&gt;x&lt;/script&gt; &amp; more")
+		// A note is safe Markdown: a line that opens with an HTML tag is an HTML
+		// block, dropped whole.
+		assert.Contains(t, body, `class="c-body prose"><!-- raw HTML omitted -->`)
 		assertNoInline(t, body)
 		assert.NotContains(t, body, `onmouseover="alert`, "an address stops at a quote")
 	}

@@ -190,3 +190,10 @@
     .list.mrs .c-who { display: none; }
   }
 }
+
+@layer components {
+  .c-body { white-space: normal; overflow-wrap: anywhere; }
+  .c-body.prose > * { margin-block: .5em; }
+  .c-body .ref { font-variant-numeric: tabular-nums; text-decoration: underline; }
+  .cmt > .cmt { margin-inline-start: 2ch; }
+}

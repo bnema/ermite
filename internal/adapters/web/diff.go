@@ -30,6 +30,7 @@ type Seg struct {
 // DiffLine is one line of a hunk, in the unified view and, paired, in the
 // split view.
 type DiffLine struct {
+	Selected bool
 	Kind     string // "ctx", "add", "del"
 	Mark     string // " ", "+", "-": every change keeps its marker, not only a colour
 	Old, New string // line numbers, "" when the side has none
