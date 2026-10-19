@@ -173,4 +173,4 @@ require (
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 )
 
-replace bnema.dev/ermite-api => /home/brice/dev/projects/ermite-workspace/ermite-api/.worktrees/feat-issues
+replace bnema.dev/ermite-api => /home/brice/dev/projects/ermite-workspace/ermite-api/.worktrees/feat-issue-form
