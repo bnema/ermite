@@ -44,3 +44,15 @@ func TestRevisionCandidates(t *testing.T) {
 		})
 	}
 }
+
+func TestRevisionCandidateResolvedRef(t *testing.T) {
+	for _, tc := range []struct {
+		kind domain.RevisionCandidateKind
+		want string
+	}{
+		{domain.RevisionCandidateHead, ""}, {domain.RevisionCandidateObject, ""},
+		{domain.RevisionCandidateRef, "refs/heads/main"}, {domain.RevisionCandidateAbbrevID, ""},
+	} {
+		assert.Equal(t, tc.want, (domain.RevisionCandidate{Kind: tc.kind, Name: "refs/heads/main"}).ResolvedRef())
+	}
+}

@@ -44,3 +44,11 @@ func (r Revision) Candidates() []RevisionCandidate {
 	}
 	return refs
 }
+
+// ResolvedRef returns the full ref name for a ref candidate, or empty otherwise.
+func (c RevisionCandidate) ResolvedRef() string {
+	if c.Kind == RevisionCandidateRef {
+		return c.Name
+	}
+	return ""
+}

@@ -21,7 +21,7 @@ import (
 )
 
 // MaxMergeRequestCommits is the most commits GetMergeRequest returns.
-const MaxMergeRequestCommits = 100
+const MaxMergeRequestCommits = ports.MaxMergeRequestCommits
 
 // maxWriteRetries bounds the retries of a write that loses a race with another
 // write of the same merge request. Each lost race means another writer won, so
@@ -546,7 +546,7 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 	if d.LastReadID, err = m.store.GetRead(ctx, name, number); err != nil {
 		return ports.MergeRequestDetail{}, err
 	}
-	d.CanMarkRead = !mr.HeadID.IsZero() && mr.HeadID != d.LastReadID
+	d.HeadUnread = !mr.HeadID.IsZero() && mr.HeadID != d.LastReadID
 
 	exclude, base, err := m.rangeOf(ctx, mr)
 	if err != nil {
@@ -1055,10 +1055,7 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 		}
 		return domain.MergeRequest{}, fmt.Errorf("get repository %q: %w", name, err)
 	}
-	settings := repo.Settings
-	if settings.IsZero() {
-		settings = domain.DefaultRepoSettings()
-	}
+	settings := repo.EffectiveSettings()
 	if !settings.Allows(mode) {
 		return domain.MergeRequest{}, fmt.Errorf("%w: the %s merge mode is not allowed in %s", domain.ErrPreconditionFailed, mode, name)
 	}
@@ -1448,7 +1445,7 @@ func (m *MergeRequests) replyRoot(ctx context.Context, name domain.RepoName, num
 	return root, nil
 }
 
-// Compare lists at most 500 source commits absent from target. Unlike bounded
+// Compare lists at most ports.MaxCompareCommits source commits absent from target. Unlike bounded
 // history intersection, ancestry remains accurate even for deep histories.
 func (m *MergeRequests) Compare(ctx context.Context, p domain.Principal, repo domain.RepoName, target, source domain.ObjectID) (ports.CompareResult, error) {
 	if _, err := m.readable(ctx, p, repo); err != nil {
@@ -1461,7 +1458,7 @@ func (m *MergeRequests) Compare(ctx context.Context, p domain.Principal, repo do
 	if err != nil {
 		return ports.CompareResult{}, err
 	}
-	commits, more, err := m.git.ListRange(ctx, repo, target, source, 500)
+	commits, more, err := m.git.ListRange(ctx, repo, target, source, ports.MaxCompareCommits)
 	if err != nil {
 		return ports.CompareResult{}, err
 	}
@@ -1470,7 +1467,7 @@ func (m *MergeRequests) Compare(ctx context.Context, p domain.Principal, repo do
 }
 
 // PushSummary detects rewrites by ancestry, not log ordering, and counts at
-// most 100 new commits. More distinguishes a longer range from a rewrite.
+// most ports.MaxPushSummaryCommits new commits. More distinguishes a longer range from a rewrite.
 func (m *MergeRequests) PushSummary(ctx context.Context, p domain.Principal, repo domain.RepoName, oldHead, newTip domain.ObjectID) (ports.PushSummary, error) {
 	if _, err := m.readable(ctx, p, repo); err != nil {
 		return ports.PushSummary{}, err
@@ -1485,7 +1482,7 @@ func (m *MergeRequests) PushSummary(ctx context.Context, p domain.Principal, rep
 	if !ancestor {
 		return ports.PushSummary{Rewritten: true}, nil
 	}
-	commits, more, err := m.git.ListRange(ctx, repo, oldHead, newTip, 100)
+	commits, more, err := m.git.ListRange(ctx, repo, oldHead, newTip, ports.MaxPushSummaryCommits)
 	if err != nil {
 		return ports.PushSummary{}, err
 	}

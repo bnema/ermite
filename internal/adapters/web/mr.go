@@ -654,7 +654,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 
 func (s *Server) mrBox(ctx context.Context, d *repoData, res ports.MergeRequestDetail) *MergeBox {
 	m := res.MergeRequest
-	box := s.mergeBox(d, m.Number, m.Source, m.HeadID.String(), res.CanMarkRead, mergeabilityView(res.Mergeability, m.Target))
+	box := s.mergeBox(d, m.Number, m.Source, m.HeadID.String(), res.HeadUnread, mergeabilityView(res.Mergeability, m.Target))
 	box.Error = mergeErrorOf(ctx)
 	if m.IsDraft() {
 		box.ReadyAction = mrHref(d.name(), m.Number, "ready")

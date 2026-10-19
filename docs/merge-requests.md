@@ -91,3 +91,16 @@ A root note can carry a verdict: `--approve` or `--request-changes`. The text ma
 - `mr show` lists the latest verdict of each author (`verdicts` in `--json`).
 - An approval is stale once the branch head differs from the head it was given on. Changes requested stay current until their author gives a new verdict, whatever is pushed.
 - Verdicts are immutable: editing or deleting the note keeps its verdict. Only a new verdict of the same author replaces it.
+
+## Shared read position and history queries
+
+The read position is shared, not per principal. `MergeRequestDetail.HeadUnread`
+is a fact: the nonzero head differs from that position. The web presentation
+still decides who sees the mark-read button.
+
+Repository comparisons return at most `ports.MaxCompareCommits` (500) commits.
+Push summaries count at most `ports.MaxPushSummaryCommits` (100) commits and
+report whether more exist; ancestry, rather than the bounded list, detects a
+rewrite. Merge-request details include at most `ports.MaxMergeRequestCommits`
+(100) commits. These history queries remain on the merge-request service
+because it owns the merge-git port.

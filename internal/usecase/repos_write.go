@@ -165,9 +165,7 @@ func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params por
 		if params.Visibility != nil {
 			repo.Visibility = *params.Visibility
 		}
-		if repo.Settings.IsZero() {
-			repo.Settings = domain.DefaultRepoSettings()
-		}
+		repo.Settings = repo.EffectiveSettings()
 		if params.AllowedMergeModes != nil {
 			repo.Settings.AllowedMergeModes = *params.AllowedMergeModes
 		}

@@ -234,36 +234,77 @@ func TestAddNoteValidation(t *testing.T) {
 	}
 }
 
-func TestHistorySummaries(t *testing.T) {
+func TestCompare(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		ancestor, more bool
+		name                  string
+		ancestor, more, zero  bool
+		ancestorErr, rangeErr error
 	}{
-		{"linear", true, false}, {"bounded", true, true}, {"rewritten", false, false},
+		{name: "linear", ancestor: true}, {name: "bounded", ancestor: true, more: true},
+		{name: "unrelated histories"}, {name: "zero target forwards ancestry error", zero: true, ancestorErr: domain.ErrInvalid},
+		{name: "ancestor error", ancestorErr: domain.ErrInvalid},
+		{name: "range error", ancestor: true, rangeErr: domain.ErrInvalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			u := newMRUnit(t)
-			old := someID(t)
-			tip := oidFrom(t, "2222222222222222222222222222222222222222")
-			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil).Twice()
-			u.git.EXPECT().IsAncestor(mock.Anything, u.repo.Name, old, tip).Return(tc.ancestor, nil).Twice()
+			old, tip := someID(t), oidFrom(t, "2222222222222222222222222222222222222222")
+			if tc.zero {
+				old = domain.ObjectID{}
+			}
+			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
+			u.git.EXPECT().IsAncestor(mock.Anything, u.repo.Name, old, tip).Return(tc.ancestor, tc.ancestorErr)
 			commits := []domain.Commit{{ID: tip}}
-			u.git.EXPECT().ListRange(mock.Anything, u.repo.Name, old, tip, 500).Return(commits, tc.more, nil)
-			comparison, err := u.mrs.Compare(context.Background(), domain.Root(), u.repo.Name, old, tip)
-			require.NoError(t, err)
-			assert.Equal(t, !tc.ancestor, comparison.Behind)
-			assert.Equal(t, !tc.more, comparison.Exact)
-			assert.Equal(t, commits, comparison.Ahead)
-			if tc.ancestor {
-				u.git.EXPECT().ListRange(mock.Anything, u.repo.Name, old, tip, 100).Return(commits, tc.more, nil)
+			if tc.ancestorErr == nil {
+				u.git.EXPECT().ListRange(mock.Anything, u.repo.Name, old, tip, ports.MaxCompareCommits).Return(commits, tc.more, tc.rangeErr)
 			}
-			summary, err := u.mrs.PushSummary(context.Background(), domain.Root(), u.repo.Name, old, tip)
-			require.NoError(t, err)
-			assert.Equal(t, !tc.ancestor, summary.Rewritten)
-			if tc.ancestor {
-				assert.Equal(t, 1, summary.Count)
-				assert.Equal(t, tc.more, summary.More)
+			got, err := u.mrs.Compare(context.Background(), domain.Root(), u.repo.Name, old, tip)
+			if tc.ancestorErr != nil {
+				require.ErrorIs(t, err, tc.ancestorErr)
+				return
 			}
+			if tc.rangeErr != nil {
+				require.ErrorIs(t, err, tc.rangeErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, ports.CompareResult{Ahead: commits, Behind: !tc.ancestor, Exact: !tc.more}, got)
+		})
+	}
+}
+
+func TestPushSummary(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		ancestor, more        bool
+		ancestorErr, rangeErr error
+	}{
+		{name: "linear", ancestor: true}, {name: "bounded", ancestor: true, more: true},
+		{name: "unrelated histories"}, {name: "ancestor error", ancestorErr: domain.ErrInvalid},
+		{name: "range error", ancestor: true, rangeErr: domain.ErrInvalid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := newMRUnit(t)
+			old, tip := someID(t), oidFrom(t, "2222222222222222222222222222222222222222")
+			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
+			u.git.EXPECT().IsAncestor(mock.Anything, u.repo.Name, old, tip).Return(tc.ancestor, tc.ancestorErr)
+			if tc.ancestor && tc.ancestorErr == nil {
+				u.git.EXPECT().ListRange(mock.Anything, u.repo.Name, old, tip, ports.MaxPushSummaryCommits).Return([]domain.Commit{{ID: tip}}, tc.more, tc.rangeErr)
+			}
+			got, err := u.mrs.PushSummary(context.Background(), domain.Root(), u.repo.Name, old, tip)
+			if tc.ancestorErr != nil {
+				require.ErrorIs(t, err, tc.ancestorErr)
+				return
+			}
+			if tc.rangeErr != nil {
+				require.ErrorIs(t, err, tc.rangeErr)
+				return
+			}
+			require.NoError(t, err)
+			want := ports.PushSummary{Rewritten: !tc.ancestor}
+			if tc.ancestor {
+				want.Count, want.More = 1, tc.more
+			}
+			assert.Equal(t, want, got)
 		})
 	}
 }
@@ -301,7 +342,7 @@ func TestReadTrackingSharedPosition(t *testing.T) {
 			require.NoError(t, err)
 			expected := 0
 			assert.Equal(t, read, detail.LastReadID)
-			assert.Equal(t, read != head, detail.CanMarkRead)
+			assert.Equal(t, read != head, detail.HeadUnread)
 			if tc.readIndex > 0 {
 				expected = tc.readIndex
 			}

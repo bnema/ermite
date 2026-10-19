@@ -52,17 +52,11 @@ func (c *CI) OIDCEnabled() bool { return c.cfg.OIDC.Enabled() }
 
 // OIDCDiscovery returns the OpenID Provider configuration.
 func (c *CI) OIDCDiscovery() ([]byte, error) {
-	if !c.cfg.OIDC.Enabled() {
-		return nil, domain.ErrNotFound
-	}
 	return c.cfg.OIDC.Discovery()
 }
 
 // OIDCKeys returns the JWKS.
 func (c *CI) OIDCKeys() ([]byte, error) {
-	if !c.cfg.OIDC.Enabled() {
-		return nil, domain.ErrNotFound
-	}
 	return c.cfg.OIDC.JWKS()
 }
 

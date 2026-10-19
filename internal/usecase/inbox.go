@@ -74,7 +74,7 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 			return fmt.Errorf("read repository %q: %w", name, err)
 		default:
 			exists[name] = true
-			issuesOn[name] = repo.Settings.Issues.OrDefault() != domain.IssuesOff
+			issuesOn[name] = repo.Settings.IssuesEnabled()
 		}
 		return nil
 	}

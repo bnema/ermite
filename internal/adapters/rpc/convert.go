@@ -58,10 +58,7 @@ func visibilityFromPB(v pb.Visibility) (domain.Visibility, error) {
 }
 
 func repoToPB(v ports.RepoView) *pb.Repo {
-	settings := v.Settings
-	if settings.IsZero() {
-		settings = domain.DefaultRepoSettings()
-	}
+	settings := v.EffectiveSettings()
 	return &pb.Repo{
 		Name:          v.Name.String(),
 		Description:   v.Description,

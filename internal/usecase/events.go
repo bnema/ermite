@@ -573,7 +573,7 @@ func (e *Events) deliverOwnerOnly(ctx context.Context, w *watch, name domain.Rep
 	case err != nil:
 		return fmt.Errorf("check access to %q: %w", name, err)
 	}
-	if repo.Settings.Issues.OrDefault() == domain.IssuesOff {
+	if !repo.Settings.IssuesEnabled() {
 		return nil
 	}
 	return send(out)
@@ -613,7 +613,7 @@ func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName
 	if !canRead(w.p, repo) {
 		return nil
 	}
-	if isIssueEvent(be.ev) && repo.Settings.Issues.OrDefault() == domain.IssuesOff {
+	if isIssueEvent(be.ev) && !repo.Settings.IssuesEnabled() {
 		return nil // issues were turned off since: a replay must not show them
 	}
 	if withRepo {

@@ -355,6 +355,8 @@ func (f *fanout) lead(key fanKey, e *fanEntry, build func() ([]fragment, error))
 
 // banner tells the commits page how many commits its branch got since the
 // head it lists.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter picks the update of the listed branch from the push event; the count and rewrite come from MergeRequests.PushSummary
 func (l *liveStream) banner(ctx context.Context, p domain.PushEvent) ([]fragment, error) {
 	if l.ref == "" || !isFullID(l.head) {
 		return nil, nil
@@ -363,7 +365,7 @@ func (l *liveStream) banner(ctx context.Context, p domain.PushEvent) ([]fragment
 	for _, u := range p.Updates {
 		if u.Ref == "refs/heads/"+l.ref {
 			tip, touched = u.New, true
-			if u.New == domain.ZeroOID {
+			if u.IsDelete() {
 				tip = ""
 			}
 		}

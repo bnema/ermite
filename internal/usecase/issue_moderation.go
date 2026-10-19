@@ -71,7 +71,7 @@ func (m *IssueModeration) Approve(ctx context.Context, p domain.Principal, repo 
 	if err != nil {
 		return domain.Issue{}, err
 	}
-	if r.Settings.Issues.OrDefault() == domain.IssuesOff {
+	if !r.Settings.IssuesEnabled() {
 		return domain.Issue{}, domain.ErrNotFound
 	}
 	now := m.clock.Now().UTC()

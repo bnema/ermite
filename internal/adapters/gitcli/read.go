@@ -163,7 +163,7 @@ func resolve(c *catConn, rev domain.Revision) (domain.ResolvedRevision, error) {
 		if !ok {
 			continue
 		}
-		return domain.ResolvedRevision{CommitID: id, Ref: candidateRef(cand)}, nil
+		return domain.ResolvedRevision{CommitID: id, Ref: cand.ResolvedRef()}, nil
 	}
 	return domain.ResolvedRevision{}, revisionNotFound(rev)
 }
@@ -189,14 +189,6 @@ func lookupRevisionCandidate(c *catConn, candidate domain.RevisionCandidate) (do
 		return domain.ObjectID{}, false, c.fail(err)
 	}
 	return id, true, nil
-}
-
-// candidateRef translates a ref lookup into the resolved ref field.
-func candidateRef(candidate domain.RevisionCandidate) string {
-	if candidate.Kind == domain.RevisionCandidateRef {
-		return candidate.Name
-	}
-	return ""
 }
 
 // ResolveRevision resolves a revision with `cat-file`.

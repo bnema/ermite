@@ -329,7 +329,7 @@ func credentials(r *http.Request) (secret string, present bool) {
 // credentials is asked for them wherever the repository does not show itself,
 // which keeps a private repository and a missing one indistinguishable.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter maps authorization errors to HTTP responses, challenging anonymous callers on hidden or missing repositories
+//hexcheck:ignore suspicious-business-logic-in-adapter implements the smart-HTTP protocol visibility/auth challenge policy (401 vs 404) for hidden or missing repositories
 func (h *Handler) denied(ctx context.Context, w http.ResponseWriter, p domain.Principal, err error) {
 	switch {
 	case errors.Is(err, domain.ErrUnauthenticated):

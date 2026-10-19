@@ -109,7 +109,9 @@ type EventService interface {
 // MergeRequestService is the merge request use cases. *usecase.MergeRequests
 // implements it.
 type MergeRequestService interface {
+	// Compare queries repository history; it stays here because this service owns the merge-git port.
 	Compare(ctx context.Context, p domain.Principal, repo domain.RepoName, target, source domain.ObjectID) (CompareResult, error)
+	// PushSummary queries repository history; it stays here because this service owns the merge-git port.
 	PushSummary(ctx context.Context, p domain.Principal, repo domain.RepoName, oldHead, newTip domain.ObjectID) (PushSummary, error)
 	Create(ctx context.Context, p domain.Principal, name domain.RepoName, params CreateMergeRequestParams) (domain.MergeRequest, error)
 	List(ctx context.Context, p domain.Principal, name domain.RepoName, params ListMergeRequestsParams) (MergeRequestPage, error)

@@ -97,7 +97,7 @@ func (s *Server) issueRepo(ctx context.Context, rawName string) (*repoData, erro
 	if err != nil {
 		return nil, err
 	}
-	if d.repo.Settings.Issues.OrDefault() == domain.IssuesOff {
+	if !d.repo.Settings.IssuesEnabled() {
 		return nil, errNotFound
 	}
 	return d, nil
@@ -129,7 +129,7 @@ func (s *Server) issueRow(repo string, i domain.Issue) IssueRow {
 
 // issueList lists the issues of one state, a page at a time.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter builds the list page from the use case results; whether the New issue button shows only reads the mode
+//hexcheck:ignore suspicious-business-logic-in-adapter renders issue-list navigation; signed-in users see New issue, while anonymous users need a configured form and the domain AcceptsAnonymousIssues predicate
 func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	d, err := s.issueRepo(ctx, r.PathValue("repo"))
 	if err != nil {
@@ -179,7 +179,7 @@ func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Componen
 	if token != "" {
 		p.Newest = link("")
 	}
-	if SignedIn(ctx) || (s.cfg.IssueForm != nil && d.repo.Settings.Issues.OrDefault() == domain.IssuesPublic) {
+	if SignedIn(ctx) || (s.cfg.IssueForm != nil && d.repo.Settings.AcceptsAnonymousIssues()) {
 		p.NewHref = issuesBase(d.name()) + "/new"
 	}
 

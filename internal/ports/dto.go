@@ -249,7 +249,6 @@ type IssueDetail struct {
 	Comments []domain.IssueComment
 }
 
-// MergeRequestDetail is a merge request with its review data.
 // CompareResult describes source commits absent from target, newest first.
 type CompareResult struct {
 	Ahead  []domain.Commit
@@ -264,11 +263,13 @@ type PushSummary struct {
 	Rewritten bool
 }
 
+// MergeRequestDetail is a merge request with its review data.
 type MergeRequestDetail struct {
-	// NewCommits is the unread prefix of Commits; zero if the read head is absent.
-	NewCommits   int
-	CanMarkRead  bool
 	MergeRequest domain.MergeRequest
+	// NewCommits is the unread prefix of Commits; zero if the read head is absent.
+	NewCommits int
+	// HeadUnread reports whether the nonzero head differs from the shared read position.
+	HeadUnread bool
 	// Commits are the commits of the head that the target lacks, newest
 	// first, at most MaxMergeRequestCommits.
 	Commits          []domain.Commit
@@ -374,3 +375,13 @@ type InboxOverview struct {
 	// whatever the filter: they feed the filter itself.
 	Repos []domain.RepoName
 }
+
+// History query limits.
+const (
+	// MaxMergeRequestCommits bounds the commits returned with a merge request.
+	MaxMergeRequestCommits = 100
+	// MaxCompareCommits bounds a repository comparison.
+	MaxCompareCommits = 500
+	// MaxPushSummaryCommits bounds the commits counted in a push summary.
+	MaxPushSummaryCommits = 100
+)

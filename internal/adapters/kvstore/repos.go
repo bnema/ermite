@@ -207,12 +207,8 @@ func encodeRepo(r domain.Repo) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	settings := r.Settings
-	if settings.IsZero() {
-		// Settings are always stored explicitly, so that a later change of
-		// the defaults never alters a stored repository.
-		settings = domain.DefaultRepoSettings()
-	}
+	// Store defaults explicitly so future default changes do not alter stored repositories.
+	settings := r.EffectiveSettings()
 	pbSettings, err := encodeSettings(settings)
 	if err != nil {
 		return nil, err

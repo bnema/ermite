@@ -460,10 +460,10 @@ func (g *fakePushTrees) PushSubtrees(_ context.Context, _ domain.RepoName, ups [
 	if g.data != nil {
 		return *g.data, g.err
 	}
-	t := domain.PushSubtrees{Ends: map[string]domain.PushedEnd{}, Subtrees: map[string]domain.Subtree{}}
+	t := domain.PushSubtrees{Ends: map[string]domain.PushObjectType{}, Subtrees: map[string]domain.Subtree{}}
 	for _, up := range ups {
-		t.Ends[up.Old] = domain.PushedEnd{Type: domain.ObjectCommit}
-		t.Ends[up.New] = domain.PushedEnd{Type: domain.ObjectCommit}
+		t.Ends[up.Old] = domain.PushObjectCommit
+		t.Ends[up.New] = domain.PushObjectCommit
 		if g.path != "" || g.change {
 			id, _ := domain.ParseObjectID(up.New)
 			t.Subtrees[up.New] = domain.Subtree{Kind: domain.EntryDirectory, ID: id}

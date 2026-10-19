@@ -4,14 +4,14 @@ package domain
 
 import "fmt"
 
-// ObjectType is the type of a peeled Git object.
-type ObjectType string
+// PushObjectType is the type of a peeled Git object.
+type PushObjectType string
 
 // Peeled object types accepted by the push tree reader.
 const (
-	ObjectCommit ObjectType = "commit"
-	ObjectTree   ObjectType = "tree"
-	ObjectBlob   ObjectType = "blob"
+	PushObjectCommit PushObjectType = "commit"
+	PushObjectTree   PushObjectType = "tree"
+	PushObjectBlob   PushObjectType = "blob"
 )
 
 // PushWalkBounds bounds the walk over the commits of a push.
@@ -25,9 +25,6 @@ const (
 
 // DefaultPushWalkBounds returns the job-token push walk limits.
 func DefaultPushWalkBounds() PushWalkBounds { return PushWalkBounds{MaxPushedCommits, MaxPushedIDs} }
-
-// PushedEnd describes a peeled ref endpoint.
-type PushedEnd struct{ Type ObjectType }
 
 // Subtree is the kind and identity of an entry at a tree path.
 type Subtree struct {
@@ -48,7 +45,7 @@ const HeadKey = "HEAD"
 // (or HeadKey), and newly reachable commits in rev-list order. Absent entries
 // mean there is no subtree at the requested path.
 type PushSubtrees struct {
-	Ends     map[string]PushedEnd
+	Ends     map[string]PushObjectType
 	Commits  []PushedCommit
 	Subtrees map[string]Subtree
 }
@@ -105,7 +102,7 @@ func WorkflowChangeOf(updates []RefUpdate, t PushSubtrees) (WorkflowTreeChange, 
 		}
 	}
 	for _, up := range updates {
-		if up.IsDelete() || t.Ends[up.New].Type == ObjectBlob {
+		if up.IsDelete() || t.Ends[up.New] == PushObjectBlob {
 			continue
 		}
 		cur := dirOf(up.New)
@@ -115,7 +112,7 @@ func WorkflowChangeOf(updates []RefUpdate, t PushSubtrees) (WorkflowTreeChange, 
 		var base ObjectID
 		if up.IsCreate() {
 			base = dirOf(HeadKey)
-		} else if t.Ends[up.Old].Type != ObjectBlob {
+		} else if t.Ends[up.Old] != PushObjectBlob {
 			base = dirOf(up.Old)
 		}
 		if base != cur {

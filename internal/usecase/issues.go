@@ -59,7 +59,7 @@ func (i *Issues) enabled(ctx context.Context, name domain.RepoName) (domain.Repo
 	if err != nil {
 		return domain.Repo{}, err
 	}
-	if repo.Settings.Issues.OrDefault() == domain.IssuesOff {
+	if !repo.Settings.IssuesEnabled() {
 		return domain.Repo{}, domain.ErrNotFound
 	}
 	return repo, nil

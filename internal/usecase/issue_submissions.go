@@ -162,7 +162,7 @@ func (s *IssueSubmissions) openRepo(ctx context.Context, repo domain.RepoName) e
 		}
 		return err
 	}
-	if !canRead(domain.Anonymous(), r) || r.Settings.Issues.OrDefault() != domain.IssuesPublic {
+	if !canRead(domain.Anonymous(), r) || !r.Settings.AcceptsAnonymousIssues() {
 		return domain.ErrNotFound
 	}
 	return nil

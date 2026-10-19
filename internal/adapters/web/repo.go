@@ -128,7 +128,7 @@ func (s *Server) openMRCount(ctx context.Context, name domain.RepoName) string {
 // switcher on the head ref and the ":" targets. The caller sets the title,
 // the crumbs, the status and the rail.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter lists the tabs of the repository; the issues tab follows the setting, no rule is decided here
+//hexcheck:ignore suspicious-business-logic-in-adapter renders repository navigation; the issues tab uses the domain IssuesEnabled predicate
 func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) Layout {
 	l := s.base()
 	l.Repo = d.name()

@@ -128,18 +128,10 @@ func resolveRevision(r *git.Repo, rev domain.Revision) (resolved, error) {
 			return resolved{}, err
 		}
 		if ok {
-			return resolved{commit: c, ref: candidateRef(candidate)}, nil
+			return resolved{commit: c, ref: candidate.ResolvedRef()}, nil
 		}
 	}
 	return resolved{}, notFound(rev)
-}
-
-// candidateRef translates a ref lookup into the resolved ref field.
-func candidateRef(candidate domain.RevisionCandidate) string {
-	if candidate.Kind == domain.RevisionCandidateRef {
-		return candidate.Name
-	}
-	return ""
 }
 
 // lookupRevisionCandidate translates one domain candidate to the library API.

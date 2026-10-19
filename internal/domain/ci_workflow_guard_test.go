@@ -35,14 +35,15 @@ func TestWorkflowChangeOf(t *testing.T) {
 		return domain.PushedCommit{ID: v, Parents: parents}
 	}
 	type row struct {
-		name    string
-		ups     []domain.RefUpdate
-		commits []domain.PushedCommit
-		trees   map[string]domain.Subtree
-		blobs   []domain.ObjectID
-		want    domain.WorkflowTreeChange
-		found   bool
-		missing bool
+		name     string
+		ups      []domain.RefUpdate
+		commits  []domain.PushedCommit
+		trees    map[string]domain.Subtree
+		treeEnds []domain.ObjectID
+		blobs    []domain.ObjectID
+		want     domain.WorkflowTreeChange
+		found    bool
+		missing  bool
 	}
 	change := func(old, new domain.ObjectID) domain.WorkflowTreeChange {
 		return domain.WorkflowTreeChange{Old: old, New: new}
@@ -77,8 +78,8 @@ func TestWorkflowChangeOf(t *testing.T) {
 		{name: "missing ends fail closed", ups: []domain.RefUpdate{up(a, b)}, missing: true},
 	}
 	rows = append(rows,
-		row{name: "new tree end with workflows", ups: []domain.RefUpdate{up(zero, a)}, trees: map[string]domain.Subtree{a.String(): dir(x)}, want: change(zero, x), found: true},
-		row{name: "new tree end without workflows", ups: []domain.RefUpdate{up(zero, a)}},
+		row{name: "new tree end with workflows", treeEnds: []domain.ObjectID{a}, ups: []domain.RefUpdate{up(zero, a)}, trees: map[string]domain.Subtree{a.String(): dir(x)}, want: change(zero, x), found: true},
+		row{name: "new tree end without workflows", treeEnds: []domain.ObjectID{a}, ups: []domain.RefUpdate{up(zero, a)}},
 		row{name: "new blob ref", ups: []domain.RefUpdate{up(zero, a)}, blobs: []domain.ObjectID{a}},
 	)
 
@@ -92,19 +93,19 @@ func TestWorkflowChangeOf(t *testing.T) {
 	rows = append(rows, row{name: "gitlink to symlink", ups: []domain.RefUpdate{up(a, b)}, trees: map[string]domain.Subtree{a.String(): {Kind: domain.EntrySubmodule, ID: x}, b.String(): {Kind: domain.EntrySymlink, ID: y}}})
 	for _, r := range rows {
 		t.Run(r.name, func(t *testing.T) {
-			data := domain.PushSubtrees{Ends: map[string]domain.PushedEnd{}, Commits: r.commits, Subtrees: r.trees}
+			data := domain.PushSubtrees{Ends: map[string]domain.PushObjectType{}, Commits: r.commits, Subtrees: r.trees}
 			if !r.missing {
 				for _, u := range r.ups {
 					for _, oid := range []string{u.Old, u.New} {
-						data.Ends[oid] = domain.PushedEnd{Type: domain.ObjectCommit}
+						data.Ends[oid] = domain.PushObjectCommit
 					}
 				}
 			}
-			if r.name == "new tree end with workflows" || r.name == "new tree end without workflows" {
-				data.Ends[a.String()] = domain.PushedEnd{Type: domain.ObjectTree}
+			for _, tree := range r.treeEnds {
+				data.Ends[tree.String()] = domain.PushObjectTree
 			}
 			for _, b := range r.blobs {
-				data.Ends[b.String()] = domain.PushedEnd{Type: domain.ObjectBlob}
+				data.Ends[b.String()] = domain.PushObjectBlob
 			}
 			got, found, err := domain.WorkflowChangeOf(r.ups, data)
 			if r.missing {

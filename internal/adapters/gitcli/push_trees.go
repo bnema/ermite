@@ -25,7 +25,7 @@ const (
 
 // PushSubtrees peels push endpoints, walks new commits, and reads entries at path.
 func (g *Git) PushSubtrees(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects, path string, bounds domain.PushWalkBounds) (domain.PushSubtrees, error) {
-	out := domain.PushSubtrees{Ends: map[string]domain.PushedEnd{}, Subtrees: map[string]domain.Subtree{}}
+	out := domain.PushSubtrees{Ends: map[string]domain.PushObjectType{}, Subtrees: map[string]domain.Subtree{}}
 	dir, err := g.repoDir(repo)
 	if err != nil {
 		return out, err
@@ -79,13 +79,13 @@ func (g *Git) readPushSubtrees(ctx context.Context, dir string, extra []string, 
 }
 
 // pushCommitTips translates peeled endpoint answers and deduplicates rev-list tips.
-func pushCommitTips(kept []domain.RefUpdate, types []string, ends map[string]domain.PushedEnd) []string {
+func pushCommitTips(kept []domain.RefUpdate, types []string, ends map[string]domain.PushObjectType) []string {
 	var tips []string
 	seen := map[string]bool{}
 	for i, up := range kept {
 		for j, id := range []string{up.Old, up.New} {
 			if id != domain.ZeroOID {
-				ends[id] = domain.PushedEnd{Type: domain.ObjectType(types[2*i+j])}
+				ends[id] = domain.PushObjectType(types[2*i+j])
 			}
 		}
 		if types[2*i+1] == "commit" && !seen[up.New] {
@@ -113,18 +113,18 @@ func commitAndParentIDs(commits []domain.PushedCommit) []string {
 }
 
 // pushEndSubtreeIDs omits blobs (not tree-ish) and includes HEAD only for creates.
-func pushEndSubtreeIDs(kept []domain.RefUpdate, ends map[string]domain.PushedEnd) []string {
+func pushEndSubtreeIDs(kept []domain.RefUpdate, ends map[string]domain.PushObjectType) []string {
 	var ids []string
 	for _, up := range kept {
 		for _, id := range []string{up.Old, up.New} {
-			if id != domain.ZeroOID && ends[id].Type != domain.ObjectBlob {
+			if id != domain.ZeroOID && ends[id] != domain.PushObjectBlob {
 				ids = append(ids, id)
 			}
 		}
 	}
 	// HEAD is needed only for a new tree-ish ref. Keep it in the end batch.
 	for _, up := range kept {
-		if up.Old == domain.ZeroOID && ends[up.New].Type != domain.ObjectBlob {
+		if up.Old == domain.ZeroOID && ends[up.New] != domain.PushObjectBlob {
 			ids = append(ids, domain.HeadKey)
 			break
 		}

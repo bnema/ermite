@@ -575,3 +575,6 @@ func (s RepoSettings) IssuesEnabled() bool { return s.Issues.OrDefault() != Issu
 
 // ShowsIssueSubmissionReceipt reports whether submissions await public moderation.
 func (s RepoSettings) ShowsIssueSubmissionReceipt() bool { return s.Issues.OrDefault() == IssuesPublic }
+
+// AcceptsAnonymousIssues reports whether anyone may submit an issue.
+func (s RepoSettings) AcceptsAnonymousIssues() bool { return s.Issues.OrDefault() == IssuesPublic }

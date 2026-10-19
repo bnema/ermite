@@ -90,6 +90,7 @@ func TestRepoIssuePresentationRules(t *testing.T) {
 			s := domain.RepoSettings{Issues: tc.mode}
 			assert.Equal(t, tc.enabled, s.IssuesEnabled())
 			assert.Equal(t, tc.receipt, s.ShowsIssueSubmissionReceipt())
+			assert.Equal(t, tc.receipt, s.AcceptsAnonymousIssues())
 		})
 	}
 }

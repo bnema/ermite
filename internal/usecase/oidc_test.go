@@ -366,3 +366,18 @@ func TestDisabledOIDCRotationAuthorization(t *testing.T) {
 	_, err = o.JWKS()
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
+
+func TestDisabledOIDCPublicEndpoints(t *testing.T) {
+	for _, provider := range []*usecase.OIDC{nil, {}} {
+		_, err := provider.Discovery()
+		require.ErrorIs(t, err, domain.ErrNotFound)
+		_, err = provider.JWKS()
+		require.ErrorIs(t, err, domain.ErrNotFound)
+		ci := usecase.NewCI(context.Background(), usecase.CIConfig{Owner: "owner", Clock: fixedClock{}, OIDC: provider})
+		_, err = ci.OIDCDiscovery()
+		require.ErrorIs(t, err, domain.ErrNotFound)
+		_, err = ci.OIDCKeys()
+		require.ErrorIs(t, err, domain.ErrNotFound)
+		ci.Close(context.Background())
+	}
+}

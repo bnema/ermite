@@ -242,12 +242,12 @@ func TestPushSubtreesPeelsAndClassifiesBothEnds(t *testing.T) {
 	tree := f.Git("rev-parse", plain+"^{tree}")
 	for _, r := range []struct {
 		id   string
-		kind domain.ObjectType
-	}{{plain, domain.ObjectCommit}, {tag(plain, "commit"), domain.ObjectCommit}, {blob, domain.ObjectBlob}, {tag(blob, "blob"), domain.ObjectBlob}, {tree, domain.ObjectTree}, {tag(tag(plain, "commit"), "tag"), domain.ObjectCommit}} {
+		kind domain.PushObjectType
+	}{{plain, domain.PushObjectCommit}, {tag(plain, "commit"), domain.PushObjectCommit}, {blob, domain.PushObjectBlob}, {tag(blob, "blob"), domain.PushObjectBlob}, {tree, domain.PushObjectTree}, {tag(tag(plain, "commit"), "tag"), domain.PushObjectCommit}} {
 		got, err := g.PushSubtrees(ctx, f.Name, []domain.RefUpdate{{Old: domain.ZeroOID, New: r.id}}, ports.PushObjects{}, domain.WorkflowDir, domain.DefaultPushWalkBounds())
 		require.NoError(t, err)
-		assert.Equal(t, r.kind, got.Ends[r.id].Type)
-		if r.kind == domain.ObjectBlob {
+		assert.Equal(t, r.kind, got.Ends[r.id])
+		if r.kind == domain.PushObjectBlob {
 			assert.NotContains(t, got.Subtrees, r.id)
 		}
 	}
@@ -503,4 +503,31 @@ func TestFirstDifferentEntry(t *testing.T) {
 	assert.Empty(t, entry)
 	_, err = g.FirstDifferentEntry(ctx, f.Name, ports.PushObjects{Dir: t.TempDir()}, domain.ObjectID{}, tree)
 	assert.ErrorIs(t, err, domain.ErrInvalid)
+}
+
+func TestChangedWorkflowPushHistories(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	h := newGuardHistory(t, g, data)
+	t.Cleanup(func() { _ = g.Close(ctx) })
+	run := func(old, tip, want string) {
+		t.Helper()
+		got, err := changedWorkflow(g, ctx, h.f.Name, []domain.RefUpdate{{Old: old, New: tip, Ref: "refs/heads/pushed"}}, ports.PushObjects{})
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
+	}
+	run(domain.ZeroOID, h.commit("A", "", h.m), "")
+	change := h.commit("C", "", h.m)
+	revert := h.commit("A", "", change)
+	run(h.m, revert, ".github/workflows/ci.yml")
+	run(domain.ZeroOID, h.commit("D", "", h.m, h.o), ".github/workflows/ci.yml")
+	h.f.Git("symbolic-ref", "HEAD", "refs/heads/nothing")
+	run(domain.ZeroOID, h.m, ".github/workflows/ci.yml")
+	ups := []domain.RefUpdate{{Old: domain.ZeroOID, New: h.m, Ref: "refs/tags/t"}}
+	trees, err := g.PushSubtrees(ctx, h.f.Name, ups, ports.PushObjects{}, domain.WorkflowDir, domain.DefaultPushWalkBounds())
+	require.NoError(t, err)
+	assert.NotContains(t, trees.Subtrees, domain.HeadKey)
+	plain := h.commit("", "")
+	h.f.Git("update-ref", "refs/heads/plain", plain)
+	run(domain.ZeroOID, plain, "")
 }
