@@ -48,7 +48,7 @@ It does not run:
 
 ```sh
 ermite repo list | show <name> | create <name> [--description …] [--visibility public]
-ermite repo edit <name> [--description …] [--visibility …] [--default-branch …] [--merge-modes …] [--failing-checks-block=false]
+ermite repo edit <name> [--description …] [--visibility …] [--default-branch …] [--merge-modes …] [--failing-checks-block=false] [--issues off|owner|public]
 ermite repo delete <name> [--yes]
 
 ermite token create <label> [--preset cli|agent|ci|runner] [--scope …] [--repo …] [--branch-prefix …] [--expires 30d]
@@ -57,6 +57,9 @@ ermite token list | revoke <id>
 ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
 ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | resolve <repo> <n> <comment>
 ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
+
+ermite issue create <repo> --title … [--body … | --body-file …] | list <repo> [--state open|closed|all]
+ermite issue show <repo> <n> | comment <repo> <n> -m … | close <repo> <n> | reopen <repo> <n>
 
 ermite run list <repo> [--workflow …] [--branch …] [--status …]
 ermite run view <repo> <id> [--attempt n] [--log [--job …]] [--summary]
@@ -80,6 +83,8 @@ ermite watch [repo] [--json]             # follow live events
 ermite version                           # client and server versions
 ermite completion bash|zsh|fish
 ```
+
+Issues need a server with the `issues` feature and `ermite repo edit <repo> --issues owner`; they are written with the `issue:write` scope. See [Issues](issues.md).
 
 ## Output
 

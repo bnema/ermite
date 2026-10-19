@@ -130,6 +130,7 @@ Give the agent the [`skills/ermite`](skills/ermite/SKILL.md) skill so it knows t
 - [Git over HTTP](docs/git-http.md): URLs and authentication
 - [Tokens](docs/tokens.md): scopes, presets, branch-limited tokens
 - [Merge requests](docs/merge-requests.md)
+- [Issues](docs/issues.md)
 - [Commit signatures](docs/commit-signatures.md): SSH and OpenPGP badges, trusted keys
 - [Web sign-in](docs/web-sign-in.md): passkeys and one-time links
 - [CI](docs/ci.md): runners, trust, concurrency, reusable workflows

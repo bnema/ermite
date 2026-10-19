@@ -6,7 +6,7 @@ ermite token list
 ermite token revoke <id>
 ```
 
-The secret is printed once. Presets and `--scope` add up. The full scope list is in [`skills/ermite/CLI.md`](../skills/ermite/CLI.md).
+The secret is printed once. Presets and `--scope` add up (`issue:write` lets a token write issues). The full scope list is in [`skills/ermite/CLI.md`](../skills/ermite/CLI.md).
 
 | Preset | For |
 |---|---|
@@ -29,6 +29,7 @@ The token **can**:
 
 - push, force-push and delete branches under its prefixes;
 - open, comment on and close merge requests;
+- with `issue:write`, open, comment on, close and reopen issues of the repositories where they are enabled;
 - with `mr:merge`, merge into a branch under its prefixes;
 - read CI runs, logs and checks; with `ci:write`, cancel and re-run runs of its own branches;
 - create tokens whose prefixes lie within its own.

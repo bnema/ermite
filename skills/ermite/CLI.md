@@ -41,6 +41,7 @@ Scopes:
 | `repo:admin` | delete a repository, change visibility, description, default branch, merge settings |
 | `mr:write` | open, comment on, resolve, close, mark read |
 | `mr:merge` | merge, and delete the merged source branch with `--delete-branch` |
+| `issue:write` | open, comment on, close and reopen issues |
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
 
@@ -61,6 +62,20 @@ A token can never grant more than the token that creates it. `--repo` (repeatabl
 | `mr close <repo> <n>` | `mr:write` | a closed merge request cannot be reopened |
 
 Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `target_branch`, `state`, `author` (token label), `created_at`, `updated_at`, `head_id`, `merged_commit_id`, `merge_mode`. `mr show --json` adds `commits`, `diff_base_id`, `stats`, `files` (with `hunks` under `--diff`: `kind`, `old_number`, `new_number`, `text`), `comments`, `last_read_id`, `last_read_lost`.
+
+## Issues
+
+Issues share the numbering of merge requests and must be enabled per repository: `repo edit <repo> --issues off|owner|public` (`repo:admin`; default `off`; `public` is not available yet). Reading and writing needs a server with the `issues` feature.
+
+| Command | Scope | Notes |
+|---|---|---|
+| `issue create <repo> --title T [--body TEXT\|-] [--body-file F\|-]` | `issue:write` | title of 120 characters max |
+| `issue list <repo> [--state open\|closed\|all] [--json]` | read access or `issue:write` | default `open` |
+| `issue show <repo> <n> [--json]` | read access or `issue:write` | issue and comments |
+| `issue comment <repo> <n> -m TEXT\|-` | `issue:write` | |
+| `issue close <repo> <n>` / `issue reopen <repo> <n>` | `issue:write` | |
+
+Issue JSON: `repo`, `number`, `title`, `body`, `state`, `author` (token label), `created_at`, `updated_at`, `comment_count`. `issue show --json` adds `comments` (`id`, `author`, `text`, `created_at`). `repo show --json` has `issues`.
 
 ## Workflows
 
