@@ -15,7 +15,10 @@ import (
 )
 
 // issueService implements ermiteconnect.IssueServiceHandler.
-type issueService struct{ issues ports.IssueService }
+type issueService struct {
+	issues     ports.IssueService
+	moderation ports.IssueModerationService
+}
 
 func issueStateToPB(s domain.IssueState) pb.IssueState {
 	switch s {
@@ -174,4 +177,69 @@ func (s *issueService) ReopenIssue(ctx context.Context, req *connect.Request[pb.
 		return nil, connectError(ctx, err)
 	}
 	return connect.NewResponse(&pb.ReopenIssueResponse{Issue: issueToPB(issue)}), nil
+}
+
+func pendingIssueToPB(p domain.PendingIssue) *pb.PendingIssue {
+	return &pb.PendingIssue{
+		Id: p.ID.String(), Repo: p.Repo.String(), Title: p.Title.String(), Body: p.Body.String(),
+		Author: p.Author, CreatedAt: timestamp(p.CreatedAt),
+	}
+}
+
+// pendingRef parses the repository and the id of a moderation request. A
+// malformed id is reported as not found, like an unknown one.
+func pendingRef(repo, id string) (domain.RepoName, domain.PendingIssueID, error) {
+	name, err := domain.ParseRepoName(repo)
+	if err != nil {
+		return domain.RepoName{}, "", err
+	}
+	pid, err := domain.ParsePendingIssueID(id)
+	if err != nil {
+		return domain.RepoName{}, "", domain.ErrNotFound
+	}
+	return name, pid, nil
+}
+
+func (s *issueService) ListPendingIssues(ctx context.Context, req *connect.Request[pb.ListPendingIssuesRequest]) (*connect.Response[pb.ListPendingIssuesResponse], error) {
+	var name domain.RepoName
+	if req.Msg.GetRepo() != "" {
+		var err error
+		if name, err = domain.ParseRepoName(req.Msg.GetRepo()); err != nil {
+			return nil, connectError(ctx, err)
+		}
+	}
+	page, err := s.moderation.ListPending(ctx, caller(ctx), name, ports.ListPendingParams{
+		PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken(),
+	})
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	out := &pb.ListPendingIssuesResponse{NextPageToken: page.NextPageToken, Issues: make([]*pb.PendingIssue, 0, len(page.Issues))}
+	for _, p := range page.Issues {
+		out.Issues = append(out.Issues, pendingIssueToPB(p))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *issueService) ApproveIssue(ctx context.Context, req *connect.Request[pb.ApproveIssueRequest]) (*connect.Response[pb.ApproveIssueResponse], error) {
+	name, id, err := pendingRef(req.Msg.GetRepo(), req.Msg.GetId())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	issue, err := s.moderation.Approve(ctx, caller(ctx), name, id)
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.ApproveIssueResponse{Issue: issueToPB(issue)}), nil
+}
+
+func (s *issueService) RejectIssue(ctx context.Context, req *connect.Request[pb.RejectIssueRequest]) (*connect.Response[pb.RejectIssueResponse], error) {
+	name, id, err := pendingRef(req.Msg.GetRepo(), req.Msg.GetId())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	if err := s.moderation.Reject(ctx, caller(ctx), name, id, req.Msg.GetBan()); err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.RejectIssueResponse{}), nil
 }

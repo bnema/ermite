@@ -117,6 +117,14 @@ type forge struct {
 	MergeRequests *usecase.MergeRequests
 	// Issues serves IssueService, and tells what a number names.
 	Issues *usecase.Issues
+	// IssueModeration serves the moderation calls of IssueService.
+	IssueModeration *usecase.IssueModeration
+	// IssueKeys are the subkeys of the public issue form, and the stores and
+	// the limiter its submissions use (the form itself comes later).
+	IssueKeys         *usecase.IssueKeys
+	SubmissionLimiter *clientlimit.SubmissionLimiter
+	PendingIssues     ports.PendingIssueStore
+	IssueBans         ports.IssueBanStore
 	// Inbox serves the owner's inbox of the web.
 	Inbox      *usecase.Inbox
 	SigningKey *usecase.SigningKey
@@ -323,7 +331,18 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
 		Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock,
 	})
-	f.Inbox = usecase.NewInbox(usecase.InboxConfig{Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues()})
+	f.IssueModeration = usecase.NewIssueModeration(usecase.IssueModerationConfig{
+		Meta: store, Pending: store.PendingIssues(), Bans: store.IssueBans(), Bus: f.Bus, Clock: clock,
+	})
+	f.SubmissionLimiter = clientlimit.NewSubmissionLimiter(nil)
+	f.PendingIssues, f.IssueBans = store.PendingIssues(), store.IssueBans()
+	f.IssueKeys, err = usecase.NewIssueKeys(ctx, store.IssueKeys())
+	if err != nil {
+		return nil, err
+	}
+	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
+		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(),
+	})
 	f.CI.SetPullGate(f.MergeRequests)
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 
@@ -364,28 +383,29 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		jobArtifacts, artifacts = f.CI, f.CI
 	}
 	f.API = rpc.New(rpc.Config{
-		Auth:           f.Auth,
-		Repos:          f.Repos,
-		Tokens:         f.Tokens,
-		Browse:         f.Browse,
-		Events:         f.EventLog,
-		MergeRequests:  f.MergeRequests,
-		Issues:         f.Issues,
-		SigningKey:     f.SigningKey,
-		TrustedKeys:    f.Signatures,
-		Sessions:       f.Sessions,
-		Passkeys:       apiPasskeys,
-		Runner:         f.CI,
-		Runs:           f.CI,
-		Secrets:        f.Settings,
-		Variables:      f.Settings,
-		Environments:   f.Settings,
-		OIDCKeys:       apiOIDC,
-		JobArtifacts:   jobArtifacts,
-		Artifacts:      artifacts,
-		Version:        serverVersion(),
-		TrustedProxies: cfg.TrustedProxies,
-		Limiter:        limiter,
+		Auth:            f.Auth,
+		Repos:           f.Repos,
+		Tokens:          f.Tokens,
+		Browse:          f.Browse,
+		Events:          f.EventLog,
+		MergeRequests:   f.MergeRequests,
+		Issues:          f.Issues,
+		IssueModeration: f.IssueModeration,
+		SigningKey:      f.SigningKey,
+		TrustedKeys:     f.Signatures,
+		Sessions:        f.Sessions,
+		Passkeys:        apiPasskeys,
+		Runner:          f.CI,
+		Runs:            f.CI,
+		Secrets:         f.Settings,
+		Variables:       f.Settings,
+		Environments:    f.Settings,
+		OIDCKeys:        apiOIDC,
+		JobArtifacts:    jobArtifacts,
+		Artifacts:       artifacts,
+		Version:         serverVersion(),
+		TrustedProxies:  cfg.TrustedProxies,
+		Limiter:         limiter,
 	})
 
 	gh := githttp.New(githttp.Config{

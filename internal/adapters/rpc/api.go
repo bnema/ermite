@@ -56,8 +56,10 @@ type Config struct {
 	MergeRequests ports.MergeRequestService
 	SigningKey    ports.SigningKeyService
 	// Issues serves IssueService.
-	Issues  ports.IssueService
-	Version string
+	Issues ports.IssueService
+	// IssueModeration serves the moderation calls of IssueService.
+	IssueModeration ports.IssueModerationService
+	Version         string
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one. Share
@@ -144,7 +146,7 @@ func New(cfg Config) *API {
 	}
 	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
-	mux.Handle(ermiteconnect.NewIssueServiceHandler(&issueService{cfg.Issues}, opts...))
+	mux.Handle(ermiteconnect.NewIssueServiceHandler(&issueService{issues: cfg.Issues, moderation: cfg.IssueModeration}, opts...))
 	if cfg.Sessions != nil {
 		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))
 	}

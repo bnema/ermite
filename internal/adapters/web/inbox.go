@@ -160,7 +160,7 @@ func (s *Server) inboxCount(ctx context.Context) (n int, show bool) {
 func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	switch we.Event.(type) {
 	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded,
-		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented,
+		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted,
 		domain.RepoUpdated, domain.RepoDeleted:
 	default:
 		return nil, nil

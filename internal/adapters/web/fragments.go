@@ -62,7 +62,7 @@ func liveEvent(we ports.WatchEvent) bool {
 	case domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
 		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded,
 		domain.RunUpdated, domain.JobUpdated,
-		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented:
+		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted:
 		return true
 	}
 	return false
