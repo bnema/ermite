@@ -22,6 +22,8 @@ type Inbox struct {
 	meta   ports.RepoMetaStore
 	mrs    ports.MergeRequestStore
 	issues ports.IssueStore
+	// pending is nil when the public form is not wired.
+	pending ports.PendingIssueStore
 }
 
 var _ ports.InboxService = (*Inbox)(nil)
@@ -31,11 +33,14 @@ type InboxConfig struct {
 	Meta          ports.RepoMetaStore
 	MergeRequests ports.MergeRequestStore
 	Issues        ports.IssueStore
+	// Pending lists the issues awaiting moderation. Optional: without it the
+	// inbox has no pending section.
+	Pending ports.PendingIssueStore
 }
 
 // NewInbox builds the inbox use case.
 func NewInbox(cfg InboxConfig) *Inbox {
-	return &Inbox{meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues}
+	return &Inbox{meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending}
 }
 
 // Overview lists what is open, through the indexes of open items. The counts
@@ -100,6 +105,25 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 		if filter.IsZero() || i.Repo == filter {
 			out.Issues = append(out.Issues, i)
 		}
+	}
+
+	if in.pending != nil {
+		page, err := in.pending.List(ctx, domain.RepoName{}, ports.ListPendingParams{PageSize: domain.MaxPendingIssues})
+		if err != nil {
+			return out, fmt.Errorf("list pending issues: %w", err)
+		}
+		for _, pi := range page.Issues {
+			if err := look(pi.Repo); err != nil {
+				return out, err
+			}
+			if !exists[pi.Repo] || !issuesOn[pi.Repo] {
+				continue
+			}
+			pi.IPHash = nil // the hash is for bans, the page never needs it
+			out.Pending = append(out.Pending, pi)
+			repos[pi.Repo] = true
+		}
+		out.Counts.Pending = len(out.Pending)
 	}
 
 	slices.SortStableFunc(out.MergeRequests, func(a, b ports.InboxMergeRequest) int {

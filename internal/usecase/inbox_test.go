@@ -85,3 +85,26 @@ func TestInboxOverviewSortsFiltersAndSkipsIssuesOff(t *testing.T) {
 	assert.Equal(t, "alpha", got.Issues[0].Repo.String())
 	assert.Len(t, got.Repos, 2, "the filter list keeps every repository")
 }
+
+func TestInboxListsPendingIssuesWithoutTheirHash(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	mrs, is, meta, pending := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewPendingIssueStore(t)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Pending: pending})
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	is.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "on")).Return(repoWithIssues(t, "on", domain.IssuesPublic), nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "off")).Return(repoWithIssues(t, "off", domain.IssuesOff), nil)
+	ti, err := domain.ParseIssueTitle("hi")
+	require.NoError(t, err)
+	pending.EXPECT().List(mock.Anything, domain.RepoName{}, mock.Anything).Return(ports.PendingIssuePage{Issues: []domain.PendingIssue{
+		{ID: "a", Repo: name(t, "on"), Title: ti, IPHash: []byte("secret")},
+		{ID: "b", Repo: name(t, "off"), Title: ti},
+	}}, nil)
+	ov, err := in.Overview(ctx, domain.Owner(), name(t, "other"))
+	require.NoError(t, err)
+	assert.Equal(t, 1, ov.Counts.Pending, "issues off hides pending ones too")
+	require.Len(t, ov.Pending, 1)
+	assert.Nil(t, ov.Pending[0].IPHash)
+	assert.Equal(t, []domain.RepoName{name(t, "on")}, ov.Repos)
+}

@@ -190,6 +190,8 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueCommented:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.IssueSubmitted:
+		return bufferedEvent{known: true} // owner topic only: no repository snapshot
 	case domain.RunUpdated:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.JobUpdated:
@@ -496,6 +498,23 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 	case domain.RepoDeleted:
 		// The repository is gone: use the visibility it had.
 		if !w.wantsEvent(ev.Repo, ev) || !canReadAs(w.p, ev.Repo, ev.Visibility) {
+			return nil
+		}
+		return send(out)
+	case domain.IssueSubmitted:
+		// Owner topic only: never home, never a repository topic, not even
+		// for an owner who watches the repository. No content travels.
+		if !w.owner {
+			return nil
+		}
+		repo, err := lookupRepo(ctx, e.repos.meta, ev.Repo)
+		switch {
+		case errors.Is(err, domain.ErrNotFound), ctx.Err() != nil:
+			return nil
+		case err != nil:
+			return fmt.Errorf("check access to %q: %w", ev.Repo, err)
+		}
+		if repo.Settings.Issues.OrDefault() == domain.IssuesOff {
 			return nil
 		}
 		return send(out)
