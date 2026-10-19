@@ -5,17 +5,12 @@ package web
 import (
 	"context"
 	"net/http"
-	"slices"
 
 	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
-
-// compareDepth bounds the commits read on each side to find where a branch
-// left its target.
-const compareDepth = maxComparePages * pageSize
 
 // compare shows a branch against the default branch of the repository: the
 // commits it is ahead by and, for the owner, the form that opens a merge
@@ -54,7 +49,9 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 		p.Note = "this is the default branch: there is nothing to compare it with."
 		p.AheadText = "0 commits"
 	} else {
-		ahead, exact, behind, err = s.commitsAhead(ctx, d.repo.Name, src.CommitID.String(), tgt.CommitID.String())
+		var comparison ports.CompareResult
+		comparison, err = s.cfg.MergeRequests.Compare(ctx, principal(ctx), d.repo.Name, tgt.CommitID, src.CommitID)
+		ahead, exact, behind = comparison.Ahead, comparison.Exact, comparison.Behind
 		if err != nil {
 			return nil, 0, err
 		}
@@ -135,53 +132,6 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 	)
 	l.HasRail = true
 	return Compare(l, p), http.StatusOK, nil
-}
-
-// commitsAhead lists the commits of the source that the target lacks, newest
-// first. exact is false when the walk gave up before finding where the source
-// meets the target. behind is true when the target has commits the source
-// lacks (the tip of the target is not an ancestor of the source).
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule inferring ahead/behind from bounded history walks; pending move to domain/usecase
-func (s *Server) commitsAhead(ctx context.Context, repo domain.RepoName, srcTip, tgtTip string) (ahead []domain.Commit, exact, behind bool, err error) {
-	if srcTip == tgtTip {
-		return nil, true, false, nil
-	}
-	onTarget := map[string]bool{}
-	tokenT := ""
-	for len(onTarget) < compareDepth {
-		res, err := s.commitList(ctx, repo, tgtTip, "", pageSize, tokenT)
-		if err != nil {
-			return nil, false, false, err
-		}
-		for _, c := range res.Commits {
-			onTarget[c.ID.String()] = true
-		}
-		if tokenT = res.NextPageToken; tokenT == "" {
-			break
-		}
-	}
-	token := ""
-	for n := 0; n < compareDepth; {
-		res, err := s.commitList(ctx, repo, srcTip, "", pageSize, token)
-		if err != nil {
-			return nil, false, false, err
-		}
-		for _, c := range res.Commits {
-			n++
-			if onTarget[c.ID.String()] {
-				// The first commit of the source that the target has: where the
-				// branch left it. The target moved on when this is not its tip.
-				return ahead, true, c.ID.String() != tgtTip, nil
-			}
-			ahead = append(ahead, c)
-		}
-		if token = res.NextPageToken; token == "" {
-			// The whole history of the source is ahead: no common history.
-			return ahead, true, true, nil
-		}
-	}
-	return ahead, false, !slices.ContainsFunc(ahead, func(c domain.Commit) bool { return c.ID.String() == tgtTip }), nil
 }
 
 // openRequestFor finds the open merge request with this source and target.

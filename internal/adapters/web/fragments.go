@@ -355,8 +355,6 @@ func (f *fanout) lead(key fanKey, e *fanEntry, build func() ([]fragment, error))
 
 // banner tells the commits page how many commits its branch got since the
 // head it lists.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule inferring new commit counts and branch rewrites from one history page; pending move to domain/usecase
 func (l *liveStream) banner(ctx context.Context, p domain.PushEvent) ([]fragment, error) {
 	if l.ref == "" || !isFullID(l.head) {
 		return nil, nil
@@ -365,7 +363,7 @@ func (l *liveStream) banner(ctx context.Context, p domain.PushEvent) ([]fragment
 	for _, u := range p.Updates {
 		if u.Ref == "refs/heads/"+l.ref {
 			tip, touched = u.New, true
-			if u.IsDelete() {
+			if u.New == domain.ZeroOID {
 				tip = ""
 			}
 		}
@@ -376,37 +374,9 @@ func (l *liveStream) banner(ctx context.Context, p domain.PushEvent) ([]fragment
 	case tip == "":
 		return gap, nil // the branch was deleted
 	}
-	text := ""
-	if tip != l.head {
-		name, err := domain.ParseRepoName(l.repo)
-		if err != nil {
-			return nil, err
-		}
-		res, err := l.s.commitList(ctx, name, tip, "", pageSize, "")
-		if err != nil {
-			return nil, err
-		}
-		// The count is approximate for a history with merges: the log is
-		// ordered by date, not as "head..tip", so commits that are not new may
-		// be counted before the head is met. And one page of the log being
-		// all that is read, "100+" cannot be told from a rewritten branch
-		// whose old head is further back: the use cases have no "is ancestor".
-		n, found := 0, false
-		for _, c := range res.Commits {
-			if c.ID.String() == l.head {
-				found = true
-				break
-			}
-			n++
-		}
-		switch {
-		case found:
-			text = newCommits(strconv.Itoa(n), n)
-		case res.NextPageToken != "":
-			text = newCommits(strconv.Itoa(n)+"+", 2)
-		default:
-			text = "the branch was rewritten — reload"
-		}
+	text, err := l.bannerText(ctx, tip)
+	if err != nil {
+		return nil, err
 	}
 	c := LiveSlot("commits-head")
 	if text != "" {
@@ -414,6 +384,40 @@ func (l *liveStream) banner(ctx context.Context, p domain.PushEvent) ([]fragment
 	}
 	f, err := renderFragment(ctx, "commits-head", c)
 	return []fragment{f}, err
+}
+
+func (l *liveStream) bannerText(ctx context.Context, tip string) (string, error) {
+	if tip == l.head {
+		return "", nil
+	}
+	name, err := domain.ParseRepoName(l.repo)
+	if err != nil {
+		return "", err
+	}
+	oldHead, err := domain.ParseObjectID(l.head)
+	if err != nil {
+		return "", err
+	}
+	newTip, err := domain.ParseObjectID(tip)
+	if err != nil {
+		return "", err
+	}
+	res, err := l.s.cfg.MergeRequests.PushSummary(ctx, principal(ctx), name, oldHead, newTip)
+	if err != nil {
+		return "", err
+	}
+	return pushSummaryText(res), nil
+}
+
+func pushSummaryText(res ports.PushSummary) string {
+	switch {
+	case res.Rewritten:
+		return "the branch was rewritten — reload"
+	case res.More:
+		return newCommits(strconv.Itoa(res.Count)+"+", 2)
+	default:
+		return newCommits(strconv.Itoa(res.Count), res.Count)
+	}
 }
 
 // newCommits is the text of the banner: "1 new commit — reload".

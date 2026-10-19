@@ -250,7 +250,24 @@ type IssueDetail struct {
 }
 
 // MergeRequestDetail is a merge request with its review data.
+// CompareResult describes source commits absent from target, newest first.
+type CompareResult struct {
+	Ahead  []domain.Commit
+	Behind bool
+	Exact  bool
+}
+
+// PushSummary counts a bounded range; More means additional commits exist.
+type PushSummary struct {
+	Count     int
+	More      bool
+	Rewritten bool
+}
+
 type MergeRequestDetail struct {
+	// NewCommits is the unread prefix of Commits; zero if the read head is absent.
+	NewCommits   int
+	CanMarkRead  bool
 	MergeRequest domain.MergeRequest
 	// Commits are the commits of the head that the target lacks, newest
 	// first, at most MaxMergeRequestCommits.

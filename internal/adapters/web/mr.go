@@ -62,9 +62,6 @@ const (
 	// maxOpenPages bounds the pages read for the open merge requests, which
 	// the first list page shows in full.
 	maxOpenPages = 5
-	// maxComparePages bounds how many pages of history the compare page reads
-	// to find where the branch left the target.
-	maxComparePages = 5
 	// railBranches is how many branches the list offers to compare.
 	railBranches = 15
 )
@@ -546,15 +543,13 @@ func (s *Server) mrSince(ctx context.Context, r *http.Request) (templ.Component,
 	return s.mrPage(ctx, r, true)
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter business rules for owner-only read positions and identifying unread commits; pending move to domain/usecase
 func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ.Component, int, error) {
+	if since && !SignedIn(ctx) {
+		return nil, 0, errNotFound
+	}
 	n, err := mrNumber(r)
 	if err != nil {
 		return nil, 0, err
-	}
-	if since && !SignedIn(ctx) {
-		// The read position is the owner's: there is nothing to show others.
-		return nil, 0, errNotFound
 	}
 	d, err := s.loadRepo(ctx, r.PathValue("repo"))
 	if err != nil {
@@ -574,7 +569,6 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		return nil, 0, errNotFound
 	}
 	m := res.MergeRequest
-	now := s.cfg.Now()
 	signed := SignedIn(ctx)
 	open := m.State == domain.MRStateOpen
 	head := m.HeadID.String()
@@ -595,13 +589,93 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		Files:  s.hl.files(ctx, res.Diff.Files),
 	}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head))
+	if err := s.mrFacts(ctx, r, d, &p, res); err != nil {
+		return nil, 0, err
+	}
+
+	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
+	countNotes(p.Files, res.Comments)
+	if !res.DiffBaseID.IsZero() {
+		lazyFiles(p.Files, from, filesSrc(d.name(), n, since, res.DiffBaseID.String(), head))
+	}
+	p.From = from
+
+	s.mrReadPresentation(&p, d.name(), n, res, since, signed)
+
+	// Comments: under their line, else in the list below the diff. The forms
+	// are the owner's, on the whole diff of an open request.
+	canWrite := signed && open && !since
+	var on *lineRef
+	if canWrite {
+		on = parseOn(r.URL.Query().Get("on"))
+	}
+	s.placeComments(&p, d.name(), n, res.Comments, head, !since, canWrite, on)
+	lines, invisible := diffLines(p.Files)
+	p.Invisible = invisible
+	p.DiffView = newDiffView(r, lines, withFrom(self+"?view=unified", from), withFrom(self+"?view=split", from))
+	if signed && open {
+		p.Box = s.mrBox(ctx, d, res)
+	}
+
+	if mergeErrorOf(ctx) != "" {
+		p.Canonical = self
+	}
+	if p.Box == nil {
+		p.MergeError = mergeErrorOf(ctx) // the request is not open any more
+	}
+	if canWrite {
+		p.GeneralForm = &CommentForm{
+			ID: "cf-general", Action: mrHref(d.name(), n, "comments"), Title: "comment on the merge request",
+		}
+	}
+
+	l := s.repoLayout(ctx, d, "merge-requests")
+	l.Title = p.Number + " " + p.Title + " · " + d.name() + " · " + s.instance
+	if head != "" {
+		pinRef(&l, target{rev: head, name: m.Source})
+		if !d.hasBranch(m.Source) {
+			pinRef(&l, target{rev: head, name: short(head), detached: true})
+		}
+	}
+	l.Crumbs[0].Current = false
+	l.Crumbs = append(l.Crumbs,
+		Crumb{Label: "merge requests", Href: mrBase(d.name())},
+		Crumb{Label: p.Number, Href: mrHref(d.name(), n), Current: !since},
+	)
+	if since {
+		l.Crumbs = append(l.Crumbs, Crumb{Label: "since", Current: true})
+	}
+	p.Live = true
+	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source)+"&head="+url.QueryEscape(head)+"&target="+url.QueryEscape(m.Target))
+	l.HasRail = true
+	l.MR = true
+	return MergeRequest(l, p), http.StatusOK, nil
+}
+
+func (s *Server) mrBox(ctx context.Context, d *repoData, res ports.MergeRequestDetail) *MergeBox {
+	m := res.MergeRequest
+	box := s.mergeBox(d, m.Number, m.Source, m.HeadID.String(), res.CanMarkRead, mergeabilityView(res.Mergeability, m.Target))
+	box.Error = mergeErrorOf(ctx)
+	if m.IsDraft() {
+		box.ReadyAction = mrHref(d.name(), m.Number, "ready")
+	}
+	return box
+}
+
+// mrFacts formats the description, metadata, branch links and checks.
+func (s *Server) mrFacts(ctx context.Context, r *http.Request, d *repoData, p *MRPage, res ports.MergeRequestDetail) error {
+	m := res.MergeRequest
+	head := m.HeadID.String()
+	signed := SignedIn(ctx)
+	open := m.State == domain.MRStateOpen
+	now := s.cfg.Now()
 	if desc := m.Description.String(); strings.TrimSpace(desc) != "" {
 		// Relative links point into the source branch as it is now (its head
 		// commit); the heading ids carry their own prefix, apart from the
 		// ids of the diff.
 		h, err := s.md.renderNote([]byte(desc), d.name(), head, "mr-desc-", noteIDs(res.Comments))
 		if err != nil {
-			return nil, 0, err
+			return err
 		}
 		p.Desc = h
 	}
@@ -644,45 +718,30 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 			p.Checks.Note = ""
 		}
 	}
-	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
-	countNotes(p.Files, res.Comments)
-	if !res.DiffBaseID.IsZero() {
-		lazyFiles(p.Files, from, filesSrc(d.name(), n, since, res.DiffBaseID.String(), head))
-	}
-	p.From = from
+	return nil
+}
 
+// mrReadPresentation maps usecase read tracking to commit rows and navigation.
+func (s *Server) mrReadPresentation(p *MRPage, name string, n int64, res ports.MergeRequestDetail, since, signed bool) {
+	now := s.cfg.Now()
+	head := res.MergeRequest.HeadID.String()
 	// The commits of the request, newest first.
-	for _, c := range res.Commits {
-		row := commitRow(d.name(), c, now)
+	for i, c := range res.Commits {
+		row := commitRow(name, c, now)
 		p.Commits = append(p.Commits, MRCommit{
 			Short: row.Short, Href: row.CHref, Subject: row.Subject, Author: row.Author, When: row.When, WhenAt: row.WhenAt,
-			Sig: row.Sig,
+			Sig: row.Sig, New: signed && i < res.NewCommits,
 		})
 	}
 	lastRead := res.LastReadID.String()
-	if signed && lastRead != "" {
-		// The commits are newest first: those before the last read head are new.
-		// A head that is not among them (the branch was rewritten) marks none.
-		for i, c := range res.Commits {
-			if c.ID.String() != lastRead {
-				continue
-			}
-			for j := 0; j < i; j++ {
-				p.Commits[j].New = true
-			}
-		}
-	}
 	if res.CommitsTruncated {
 		p.CommitsNote = "the branch has more commits than the " + itoa(len(p.Commits)) + " listed."
 	}
 
 	// Since the last read: the navigation, and what the page says about it.
-	if !signed {
-		lastRead = "" // the read position is the owner's
-	}
 	if signed && lastRead != "" {
 		p.Since = &SinceNav{
-			AllHref: mrHref(d.name(), n), SinceHref: mrHref(d.name(), n, "since"),
+			AllHref: mrHref(name, n), SinceHref: mrHref(name, n, "since"),
 			ReadShort: short(lastRead), HeadShort: short(head), Current: since,
 		}
 	}
@@ -702,57 +761,6 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		p.Since.Files = len(p.Files)
 	}
 
-	// Comments: under their line, else in the list below the diff. The forms
-	// are the owner's, on the whole diff of an open request.
-	canWrite := signed && open && !since
-	var on *lineRef
-	if canWrite {
-		on = parseOn(r.URL.Query().Get("on"))
-	}
-	s.placeComments(&p, d.name(), n, res.Comments, head, !since, canWrite, on)
-	lines, invisible := diffLines(p.Files)
-	p.Invisible = invisible
-	p.DiffView = newDiffView(r, lines, withFrom(self+"?view=unified", from), withFrom(self+"?view=split", from))
-	if signed && open {
-		p.Box = s.mergeBox(d, n, m.Source, head, lastRead, mergeabilityView(res.Mergeability, m.Target))
-		p.Box.Error = mergeErrorOf(ctx)
-		if m.IsDraft() {
-			p.Box.ReadyAction = mrHref(d.name(), n, "ready")
-		}
-	}
-	if mergeErrorOf(ctx) != "" {
-		p.Canonical = self
-	}
-	if p.Box == nil {
-		p.MergeError = mergeErrorOf(ctx) // the request is not open any more
-	}
-	if canWrite {
-		p.GeneralForm = &CommentForm{
-			ID: "cf-general", Action: mrHref(d.name(), n, "comments"), Title: "comment on the merge request",
-		}
-	}
-
-	l := s.repoLayout(ctx, d, "merge-requests")
-	l.Title = p.Number + " " + p.Title + " · " + d.name() + " · " + s.instance
-	if head != "" {
-		pinRef(&l, target{rev: head, name: m.Source})
-		if !d.hasBranch(m.Source) {
-			pinRef(&l, target{rev: head, name: short(head), detached: true})
-		}
-	}
-	l.Crumbs[0].Current = false
-	l.Crumbs = append(l.Crumbs,
-		Crumb{Label: "merge requests", Href: mrBase(d.name())},
-		Crumb{Label: p.Number, Href: mrHref(d.name(), n), Current: !since},
-	)
-	if since {
-		l.Crumbs = append(l.Crumbs, Crumb{Label: "since", Current: true})
-	}
-	p.Live = true
-	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source)+"&head="+url.QueryEscape(head)+"&target="+url.QueryEscape(m.Target))
-	l.HasRail = true
-	l.MR = true
-	return MergeRequest(l, p), http.StatusOK, nil
 }
 
 // hasBranch tells whether the repository has the branch.
@@ -766,11 +774,11 @@ func (d *repoData) hasBranch(name string) bool {
 }
 
 // mergeBox is what the owner can do with an open request.
-func (s *Server) mergeBox(d *repoData, n int64, source, head, lastRead string, mg MergeabilityView) *MergeBox {
+func (s *Server) mergeBox(d *repoData, n int64, source, head string, canMarkRead bool, mg MergeabilityView) *MergeBox {
 	b := &MergeBox{
 		MergeAction: mrHref(d.name(), n, "merge"), CloseAction: mrHref(d.name(), n, "close"),
 		ReadAction: mrHref(d.name(), n, "read"), Head: head, HeadGone: head == "",
-		CanMarkRead:     head != "" && head != lastRead,
+		CanMarkRead:     canMarkRead,
 		CanDeleteBranch: source != d.repo.DefaultBranch,
 		Mergeability:    mg,
 	}

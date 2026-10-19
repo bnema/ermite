@@ -233,3 +233,106 @@ func TestAddNoteValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestHistorySummaries(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		ancestor, more bool
+	}{
+		{"linear", true, false}, {"bounded", true, true}, {"rewritten", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := newMRUnit(t)
+			old := someID(t)
+			tip := oidFrom(t, "2222222222222222222222222222222222222222")
+			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil).Twice()
+			u.git.EXPECT().IsAncestor(mock.Anything, u.repo.Name, old, tip).Return(tc.ancestor, nil).Twice()
+			commits := []domain.Commit{{ID: tip}}
+			u.git.EXPECT().ListRange(mock.Anything, u.repo.Name, old, tip, 500).Return(commits, tc.more, nil)
+			comparison, err := u.mrs.Compare(context.Background(), domain.Root(), u.repo.Name, old, tip)
+			require.NoError(t, err)
+			assert.Equal(t, !tc.ancestor, comparison.Behind)
+			assert.Equal(t, !tc.more, comparison.Exact)
+			assert.Equal(t, commits, comparison.Ahead)
+			if tc.ancestor {
+				u.git.EXPECT().ListRange(mock.Anything, u.repo.Name, old, tip, 100).Return(commits, tc.more, nil)
+			}
+			summary, err := u.mrs.PushSummary(context.Background(), domain.Root(), u.repo.Name, old, tip)
+			require.NoError(t, err)
+			assert.Equal(t, !tc.ancestor, summary.Rewritten)
+			if tc.ancestor {
+				assert.Equal(t, 1, summary.Count)
+				assert.Equal(t, tc.more, summary.More)
+			}
+		})
+	}
+}
+
+func TestReadTrackingSharedPosition(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		principal domain.Principal
+		readIndex int
+	}{
+		{"owner unread", domain.Owner(), 1}, {"owner already read", domain.Owner(), 0},
+		{"owner rewritten", domain.Owner(), -1}, {"anonymous", domain.Anonymous(), 1}, {"root token", domain.Root(), 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := newMRUnit(t)
+			u.repo.Visibility = domain.VisibilityPublic
+			head := someID(t)
+			old := oidFrom(t, "2222222222222222222222222222222222222222")
+			read := old
+			if tc.readIndex == 0 {
+				read = head
+			}
+			mr := domain.MergeRequest{Repo: u.repo.Name, Number: 1, State: domain.MRStateClosed, HeadID: head}
+			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
+			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(mr, nil)
+			u.store.EXPECT().ListComments(mock.Anything, u.repo.Name, int64(1)).Return(nil, nil)
+			u.store.EXPECT().GetRead(mock.Anything, u.repo.Name, int64(1)).Return(read, nil)
+			u.git.EXPECT().HasCommit(mock.Anything, u.repo.Name, head).Return(true, nil)
+			commits := []domain.Commit{{ID: head}}
+			if tc.readIndex >= 0 {
+				commits = append(commits, domain.Commit{ID: old})
+			}
+			u.git.EXPECT().ListRange(mock.Anything, u.repo.Name, domain.ObjectID{}, head, usecase.MaxMergeRequestCommits).Return(commits, false, nil)
+			detail, err := u.mrs.Get(context.Background(), tc.principal, u.repo.Name, 1, ports.GetMergeRequestOptions{})
+			require.NoError(t, err)
+			expected := 0
+			assert.Equal(t, read, detail.LastReadID)
+			assert.Equal(t, read != head, detail.CanMarkRead)
+			if tc.readIndex > 0 {
+				expected = tc.readIndex
+			}
+			assert.Equal(t, expected, detail.NewCommits)
+		})
+	}
+}
+
+func TestHistoryAuthorizationAndEqualTips(t *testing.T) {
+	for _, allowed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "private", true: "equal"}[allowed], func(t *testing.T) {
+			u := newMRUnit(t)
+			if allowed {
+				u.repo.Visibility = domain.VisibilityPublic
+			}
+			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil).Twice()
+			id := someID(t)
+			comparison, err := u.mrs.Compare(context.Background(), domain.Anonymous(), u.repo.Name, id, id)
+			if allowed {
+				require.NoError(t, err)
+				assert.True(t, comparison.Exact)
+			} else {
+				require.ErrorIs(t, err, domain.ErrNotFound)
+			}
+			summary, err := u.mrs.PushSummary(context.Background(), domain.Anonymous(), u.repo.Name, id, id)
+			if allowed {
+				require.NoError(t, err)
+				assert.Zero(t, summary)
+			} else {
+				require.ErrorIs(t, err, domain.ErrNotFound)
+			}
+		})
+	}
+}
