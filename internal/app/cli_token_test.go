@@ -174,12 +174,11 @@ func TestTokenCreatePresetExpansionOnTheWire(t *testing.T) {
 		"cli":   client.AllScopes(),
 	} {
 		t.Run(preset, func(t *testing.T) {
-			f := &fakeAPI{createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
+			f := &fakeAPI{getVersion: withIssues, createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
 				return &ermite.CreateTokenResponse{Token: &ermite.Token{Id: "t", Scopes: r.GetScopes()}, Secret: "s"}, nil
 			}}
 			runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", preset).ok(t)
-			_, reqs := f.snapshot()
-			got := reqs[0].(*ermite.CreateTokenRequest)
+			got := lastCreateToken(t, f)
 			assert.ElementsMatch(t, want, got.GetScopes())
 			assert.Empty(t, got.GetRepos())
 			assert.Nil(t, got.GetExpiresAt())

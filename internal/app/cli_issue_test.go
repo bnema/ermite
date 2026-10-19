@@ -3,6 +3,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -221,4 +222,43 @@ func TestTokenCreateIssueWriteNeedsTheFeature(t *testing.T) {
 	f = &fakeAPI{createToken: echo, getVersion: withIssues}
 	runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "agent", "--scope", "issue:write").ok(t)
 	assert.Contains(t, lastCreateToken(t, f).GetScopes(), ermite.Scope_SCOPE_ISSUE_WRITE)
+}
+
+func TestTokenCreatePresetCLIOnAnOldServerDropsIssueWrite(t *testing.T) {
+	f := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+		return &ermite.GetVersionResponse{Version: "v0.4.0"}, nil
+	}, createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
+		return &ermite.CreateTokenResponse{Token: &ermite.Token{Id: "t", Label: r.GetLabel(), Scopes: r.GetScopes()}, Secret: "ermite_S"}, nil
+	}}
+	res := runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "cli").ok(t)
+	got := lastCreateToken(t, f).GetScopes()
+	assert.NotContains(t, got, ermite.Scope_SCOPE_ISSUE_WRITE)
+	assert.NotEmpty(t, got)
+	assert.Contains(t, res.stderr, "no issue:write")
+
+	res = runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", "cli", "--scope", "issue:write")
+	require.Error(t, res.err)
+	assert.Contains(t, res.err.Error(), "does not support issues")
+}
+
+type failingWriter struct{ after int }
+
+func (w *failingWriter) Write(p []byte) (int, error) {
+	if w.after <= 0 {
+		return 0, errors.New("write failed")
+	}
+	w.after--
+	return len(p), nil
+}
+
+func TestPrintIssueDetailReturnsWriteErrors(t *testing.T) {
+	d := &ermite.GetIssueResponse{Issue: &ermite.Issue{Repo: "alpha", Number: 1, Title: "t"}, Comments: []*ermite.IssueComment{{Id: "1", Text: "c"}}}
+	for after := range 60 {
+		err := printIssueDetail(&failingWriter{after: after}, d)
+		if err == nil {
+			return // all writes succeeded: every earlier failure was reported
+		}
+		assert.ErrorContains(t, err, "write failed", after)
+	}
+	t.Fatal("never completed")
 }

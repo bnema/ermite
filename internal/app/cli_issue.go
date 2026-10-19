@@ -110,13 +110,16 @@ func newIssueCmd(env *cliEnv) *cobra.Command {
 
 // requireIssues refuses to go on with a server that does not list issues: it
 // has no IssueService. A server whose features cannot be read is refused too.
+// errNoIssues marks a server that lacks the issues feature.
+var errNoIssues = errors.New("issues are not available")
+
 func requireIssues(ctx context.Context, c *client.Client) error {
 	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
 	if err != nil {
 		return c.Describe(err)
 	}
 	if !slices.Contains(res.Msg.GetFeatures(), client.FeatureIssues) {
-		return fmt.Errorf("the server does not support %s, so it has no issues (upgrade the server, see `ermite version`)", client.FeatureIssues)
+		return fmt.Errorf("%w: the server does not support %s, so it has no issues (upgrade the server, see `ermite version`)", errNoIssues, client.FeatureIssues)
 	}
 	return nil
 }
@@ -194,9 +197,9 @@ func newIssueCreateCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <repo>",
 		Short: "Open an issue",
-		Long: "Open an issue. The title is one line of at most 120 characters, the body plain text of at most\n" +
-			"8000; neither may hold control characters (a body may hold line breaks) or bidirectional override\n" +
-			"characters. --body - and --body-file - read the body from standard input; --body-file reads it\n" +
+		Long: "Open an issue. The title is one line of at most 120 characters, the body Markdown of at most\n" +
+			"10,000 characters; disallowed control characters are stripped (a body may hold line breaks).\n" +
+			"--body - and --body-file - read the body from standard input; --body-file reads it\n" +
 			"from a file otherwise. Needs the issue:write scope." + jsonIssueHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
@@ -343,10 +346,16 @@ func printIssueDetail(w io.Writer, d *ermite.GetIssueResponse) error {
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(w, "\n%s\n", indentText(body))
-	_, _ = fmt.Fprintf(w, "\ncomments (%d)\n", len(d.GetComments()))
+	if _, err := fmt.Fprintf(w, "\n%s\n", indentText(body)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "\ncomments (%d)\n", len(d.GetComments())); err != nil {
+		return err
+	}
 	for _, c := range d.GetComments() {
-		_, _ = fmt.Fprintf(w, "  #%s %s, %s\n%s\n", c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), indentText(c.GetText()))
+		if _, err := fmt.Fprintf(w, "  #%s %s, %s\n%s\n", c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), indentText(c.GetText())); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -356,7 +365,7 @@ func newIssueCommentCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "comment <repo> <number>",
 		Short: "Comment on an issue",
-		Long: "Add a plain-text comment (at most 8000 characters, no control characters except line breaks).\n" +
+		Long: "Add a Markdown comment (at most 10,000 characters; disallowed control characters are stripped).\n" +
 			"-m - reads it from standard input. Needs the issue:write scope." + jsonIssueCommentHelp,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeIssueRepoThenNumber(env),

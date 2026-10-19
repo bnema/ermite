@@ -133,11 +133,16 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 				return err
 			}
 		}
-		// Only an explicit --scope issue:write is checked: a preset such as cli
-		// grows with the contract and must keep working on an older server.
-		if explicitScope(scopes, ermite.Scope_SCOPE_ISSUE_WRITE) {
+		// A preset such as cli grows with the contract and must keep working on an
+		// older server: issue:write from a preset alone is dropped there, while an
+		// explicit --scope issue:write is refused.
+		if slices.Contains(req.Scopes, ermite.Scope_SCOPE_ISSUE_WRITE) {
 			if err := requireIssues(env.ctx(cmd), c); err != nil {
-				return fmt.Errorf("%w (needed for the issue:write scope; nothing was created)", err)
+				if !errors.Is(err, errNoIssues) || explicitScope(scopes, ermite.Scope_SCOPE_ISSUE_WRITE) {
+					return fmt.Errorf("%w (needed for the issue:write scope; nothing was created)", err)
+				}
+				req.Scopes = slices.DeleteFunc(req.Scopes, func(s ermite.Scope) bool { return s == ermite.Scope_SCOPE_ISSUE_WRITE })
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "note: the server has no issues feature, so the token has no issue:write scope")
 			}
 		}
 		res, err := c.Tokens().CreateToken(env.ctx(cmd), connect.NewRequest(req))
