@@ -390,6 +390,11 @@ func (l *liveStream) bannerText(ctx context.Context, tip string) (string, error)
 	if tip == l.head {
 		return "", nil
 	}
+	if l.s.cfg.MergeRequests == nil {
+		// Without the merge request service there is no history summary: the
+		// banner only says the branch moved.
+		return "the branch moved — reload", nil
+	}
 	name, err := domain.ParseRepoName(l.repo)
 	if err != nil {
 		return "", err

@@ -4,6 +4,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"connectrpc.com/connect"
@@ -39,8 +40,12 @@ func (s *serverService) GetSigningKey(context.Context, *connect.Request[pb.GetSi
 }
 
 // RotateOIDCKey replaces the key that signs the ID tokens of CI jobs. Only the
-// owner may; failed_precondition when the server issues no ID tokens.
+// owner may; failed_precondition when the server issues no ID tokens. An API
+// built without an OIDC key service answers unimplemented.
 func (s *serverService) RotateOIDCKey(ctx context.Context, _ *connect.Request[pb.RotateOIDCKeyRequest]) (*connect.Response[pb.RotateOIDCKeyResponse], error) {
+	if s.oidc == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this API serves no OIDC key service"))
+	}
 	p := caller(ctx)
 	r, err := s.oidc.RotateKey(ctx, p)
 	if err != nil {

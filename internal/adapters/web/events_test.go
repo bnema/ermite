@@ -465,3 +465,16 @@ func TestEventsIssuesViewsAreDeniedLikeAMissingRepo(t *testing.T) {
 	resp, _ := open(t, ts, "topic=repo:proj&view=issues", nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
+
+// Without the merge request service the commits page still gets a banner when
+// its branch moves; it only cannot count the new commits.
+func TestCommitsBannerWithoutMergeRequests(t *testing.T) {
+	t.Parallel()
+	srv := newTestServer(t, Config{Repos: mocks.NewRepoService(t), Browse: mocks.NewBrowseService(t)})
+	old, tip := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	ls := &liveStream{s: srv, repo: "x", view: "commits", ref: "main", head: old}
+	got, err := ls.banner(t.Context(), domain.PushEvent{Updates: []domain.RefUpdate{{Ref: "refs/heads/main", Old: old, New: tip}}})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0].html, "the branch moved — reload")
+}

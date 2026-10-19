@@ -49,6 +49,17 @@ func TestServerServiceGetSigningKey(t *testing.T) {
 	assert.Equal(t, "ermite@example.com ssh-ed25519 AAAA", resp.Msg.GetAllowedSigners())
 }
 
+// An API built without an OIDC key service answers unimplemented instead of
+// panicking, for the owner and for anyone else.
+func TestRotateOIDCKeyWithoutService(t *testing.T) {
+	t.Parallel()
+	for _, p := range []domain.Principal{domain.Owner(), {}} {
+		ctx := domain.ContextWithPrincipal(context.Background(), p)
+		_, err := (&serverService{}).RotateOIDCKey(ctx, connect.NewRequest(&pb.RotateOIDCKeyRequest{}))
+		assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
+	}
+}
+
 // GetVersion lists "passkeys" only when the API is built with passkeys.
 func TestAPIListsPasskeysFeatureWhenAvailable(t *testing.T) {
 	t.Parallel()
