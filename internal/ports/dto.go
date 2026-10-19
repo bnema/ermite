@@ -262,6 +262,8 @@ type MergeRequestDetail struct {
 	Comments []domain.Comment
 	// Verdicts are the latest verdict per author in note ID order.
 	Verdicts []domain.AuthorVerdict
+	// Mergeability is zero unless the request is open.
+	Mergeability domain.Mergeability
 	// LastReadID is the head recorded by MarkRead; zero when none.
 	LastReadID domain.ObjectID
 	// LastReadLost tells that since-last-read was asked for, a head was

@@ -381,7 +381,7 @@ func TestRepoEditMergeSettingsCLI(t *testing.T) {
 		MergeModes         []string `json:"merge_modes"`
 		FailingChecksBlock bool     `json:"failing_checks_block"`
 	}](t, res.stdout)
-	assert.Equal(t, []string{"fast-forward", "squash"}, repo.MergeModes)
+	assert.Equal(t, []string{"fast-forward", "squash", "merge"}, repo.MergeModes)
 	assert.True(t, repo.FailingChecksBlock)
 
 	res = c.cli(t, adminToken, "repo", "edit", "proj", "--merge-modes", "squash", "--json").ok(t)

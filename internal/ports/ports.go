@@ -380,6 +380,17 @@ type MergeRequestStore interface {
 	// domain.ErrConflict when concurrent writes to the repository keep it
 	// from landing.
 	SetRead(ctx context.Context, repo domain.RepoName, number int64, head domain.ObjectID) error
+	// GetMergeability returns the stored mergeability of an open merge request,
+	// or domain.ErrNotFound when there is none.
+	GetMergeability(ctx context.Context, repo domain.RepoName, number int64) (domain.Mergeability, error)
+	// PutMergeability stores the mergeability. A Version of 0 requires that
+	// none is stored, otherwise the stored one must be unchanged since it was
+	// read (domain.ErrConflict). It returns domain.ErrNotFound when the merge
+	// request is not stored or not open, so that a late write never resurrects
+	// a record.
+	PutMergeability(ctx context.Context, m domain.Mergeability) error
+	// DeleteMergeability removes the stored mergeability; no error when absent.
+	DeleteMergeability(ctx context.Context, repo domain.RepoName, number int64) error
 }
 
 // MergeGit is what merge requests need from the Git repositories beyond
@@ -415,6 +426,30 @@ type MergeGit interface {
 	// DeleteBranch deletes refs/heads/<branch> if it still points to old. It
 	// returns domain.ErrConflict when the branch moved or is gone.
 	DeleteBranch(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID) error
+	// MergeTree merges head into base without creating a commit. When the
+	// merge is not clean (or the commits share no history) Clean is false and
+	// ConflictPaths lists at most domain.MaxConflictPaths paths.
+	MergeTree(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID) (domain.MergeTreeResult, error)
+	// CountBehind counts the commits of target that head lacks, at most max;
+	// capped is true when there are more.
+	CountBehind(ctx context.Context, repo domain.RepoName, head, target domain.ObjectID, max int) (n int, capped bool, err error)
+}
+
+// MergeabilityTrigger queues mergeability checks. It only queues the work and
+// returns.
+type MergeabilityTrigger interface {
+	// OnBranchesMoved queues the open merge requests whose source or target
+	// branch was moved or deleted by updates.
+	OnBranchesMoved(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate)
+	// OnOpened queues a newly opened merge request.
+	OnOpened(ctx context.Context, mr domain.MergeRequest)
+}
+
+// MergeabilityReader reads the mergeability of open merge requests.
+type MergeabilityReader interface {
+	// Read returns the stored mergeability for mr and targetTip, or a
+	// "checking" one (and queues a check) when there is none or it is stale.
+	Read(ctx context.Context, mr domain.MergeRequest, targetTip domain.ObjectID) domain.Mergeability
 }
 
 // CommitSigner signs the commits ermite creates (ADR 0022). The private key

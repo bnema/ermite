@@ -131,6 +131,16 @@ func (g *Git) run(ctx context.Context, args ...string) (string, error) {
 
 // runInput is run with the given standard input; nil means none.
 func (g *Git) runInput(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
+	out, err := g.runCapture(ctx, stdin, args...)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// runCapture is runInput that also returns the standard output of a failed
+// run.
+func (g *Git) runCapture(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, commandTimeout)
@@ -156,9 +166,9 @@ func (g *Git) runInput(ctx context.Context, stdin io.Reader, args ...string) (st
 		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && msg != "" {
-			return "", fmt.Errorf("git %s: %w: %s", subcommand(args), err, msg)
+			return stdout.String(), fmt.Errorf("git %s: %w: %s", subcommand(args), err, msg)
 		}
-		return "", fmt.Errorf("git %s: %w", subcommand(args), err)
+		return stdout.String(), fmt.Errorf("git %s: %w", subcommand(args), err)
 	}
 	return stdout.String(), nil
 }

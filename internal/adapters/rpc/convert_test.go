@@ -213,7 +213,7 @@ func TestRepoToPBAlwaysHasSettings(t *testing.T) {
 	t.Parallel()
 	// A repository value without settings (never stored with them) reads as the defaults.
 	r := repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustName(t, "x")}})
-	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH}, r.GetSettings().GetAllowedMergeModes())
+	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH, pb.MergeMode_MERGE_MODE_MERGE_COMMIT}, r.GetSettings().GetAllowedMergeModes())
 	assert.True(t, r.GetSettings().GetFailingChecksBlock())
 
 	custom := domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}}

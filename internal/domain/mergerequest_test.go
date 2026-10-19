@@ -3,6 +3,7 @@
 package domain_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func oid(t *testing.T, c byte) domain.ObjectID {
 func TestDefaultRepoSettings(t *testing.T) {
 	t.Parallel()
 	s := domain.DefaultRepoSettings()
-	assert.Equal(t, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}, s.AllowedMergeModes)
+	assert.Equal(t, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash, domain.MergeModeMerge}, s.AllowedMergeModes)
 	assert.True(t, s.FailingChecksBlock)
 	assert.True(t, s.Allows(domain.MergeModeSquash))
 	assert.False(t, domain.RepoSettings{}.Allows(domain.MergeModeSquash))
@@ -39,7 +40,7 @@ func TestNormalizeMergeModes(t *testing.T) {
 	t.Parallel()
 	got, err := domain.NormalizeMergeModes([]domain.MergeMode{domain.MergeModeSquash, domain.MergeModeFastForward, domain.MergeModeSquash})
 	require.NoError(t, err)
-	assert.Equal(t, domain.MergeModes(), got)
+	assert.Equal(t, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}, got)
 
 	got, err = domain.NormalizeMergeModes([]domain.MergeMode{domain.MergeModeSquash})
 	require.NoError(t, err)
@@ -56,7 +57,10 @@ func TestParseMergeMode(t *testing.T) {
 	m, err := domain.ParseMergeMode("fast-forward")
 	require.NoError(t, err)
 	assert.Equal(t, domain.MergeModeFastForward, m)
-	_, err = domain.ParseMergeMode("merge")
+	m, err = domain.ParseMergeMode("merge")
+	require.NoError(t, err)
+	assert.Equal(t, domain.MergeModeMerge, m)
+	_, err = domain.ParseMergeMode("rebase")
 	assert.ErrorIs(t, err, domain.ErrInvalid)
 }
 
@@ -282,4 +286,47 @@ func TestReviewScopeOwnerRights(t *testing.T) {
 	}{{domain.Root(), "root"}, {domain.Owner(), "owner"}, {domain.Anonymous(), "owner"}, {domain.TokenPrincipal(domain.Token{Label: "bot"}), "bot"}} {
 		assert.Equal(t, tc.want, domain.AuthorName(tc.p))
 	}
+}
+
+func TestNewMergeCommit(t *testing.T) {
+	t.Parallel()
+	title, err := domain.ParseMRTitle("Add things")
+	require.NoError(t, err)
+	mr := domain.MergeRequest{Number: 7, Title: title, Source: "feat/x", Target: "main"}
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	c := domain.NewMergeCommit(mr, oid(t, 'a'), oid(t, 'b'), oid(t, 'c'), domain.Identity{Name: "ermite", Email: "e@x"}, at)
+	assert.Equal(t, []domain.ObjectID{oid(t, 'b'), oid(t, 'c')}, c.Parents)
+	assert.Equal(t, c.Author, c.Committer)
+	want := "tree " + strings.Repeat("a", 40) + "\nparent " + strings.Repeat("b", 40) + "\nparent " + strings.Repeat("c", 40) + "\n" +
+		"author ermite <e@x> " + strconv.FormatInt(at.Unix(), 10) + " +0000\ncommitter ermite <e@x> " + strconv.FormatInt(at.Unix(), 10) + " +0000\n\n" +
+		"Merge branch 'feat/x' into main (!7)\n\nAdd things\n"
+	assert.Equal(t, want, string(c.Payload()))
+	assert.Contains(t, string(c.Signed("-----BEGIN-----\nabc\n-----END-----\n")), "gpgsig -----BEGIN-----\n abc\n -----END-----\n")
+}
+
+func TestMergeabilityAllowsAndIsFor(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		state          domain.MergeabilityState
+		ff, squash, mg bool
+	}{
+		{domain.MergeabilityUpToDate, true, true, true},
+		{domain.MergeabilityBehind, false, true, true},
+		{domain.MergeabilityConflict, false, false, false},
+		{domain.MergeabilityChecking, false, false, false},
+	} {
+		m := domain.Mergeability{State: tc.state}
+		ok, reason := m.Allows(domain.MergeModeFastForward)
+		assert.Equal(t, tc.ff, ok, tc.state)
+		assert.Equal(t, !ok, reason != "")
+		ok, _ = m.Allows(domain.MergeModeSquash)
+		assert.Equal(t, tc.squash, ok, tc.state)
+		ok, _ = m.Allows(domain.MergeModeMerge)
+		assert.Equal(t, tc.mg, ok, tc.state)
+	}
+	m := domain.Mergeability{State: domain.MergeabilityBehind, TargetID: oid(t, 'a'), HeadID: oid(t, 'b')}
+	assert.True(t, m.IsFor(oid(t, 'a'), oid(t, 'b')))
+	assert.False(t, m.IsFor(oid(t, 'c'), oid(t, 'b')))
+	assert.False(t, m.IsFor(oid(t, 'a'), oid(t, 'c')))
+	assert.False(t, domain.Mergeability{}.IsFor(domain.ObjectID{}, domain.ObjectID{}))
 }

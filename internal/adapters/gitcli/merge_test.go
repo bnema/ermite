@@ -4,6 +4,7 @@ package gitcli_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -230,4 +231,90 @@ func TestDeleteBranch(t *testing.T) {
 	assert.Equal(t, m.mainTip.String(), m.f.Git("rev-parse", "refs/heads/main"))
 	err = g.DeleteBranch(ctx, name(t, "missing"), "main", m.mainTip)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestMergeTree(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	m := newMergeFixture(t, data)
+	t.Cleanup(func() { _ = g.Close(ctx) })
+
+	// Clean: main is an ancestor of feat.
+	res, err := g.MergeTree(ctx, m.f.Name, m.mainTip, m.featTip)
+	require.NoError(t, err)
+	assert.True(t, res.Clean)
+	assert.False(t, res.Tree.IsZero())
+	assert.Empty(t, res.ConflictPaths)
+
+	// Conflict: both sides change a.txt and c.txt differently.
+	m.f.Git("checkout", "--quiet", "-b", "clash", m.mainTip.String())
+	m.f.Write("a.txt", "one\nTWO\nthree\n")
+	m.f.Write("c.txt", "other\n")
+	clash := oidOf(t, m.f.Commit("clash"))
+	res, err = g.MergeTree(ctx, m.f.Name, clash, m.featTip)
+	require.NoError(t, err)
+	assert.False(t, res.Clean)
+	assert.True(t, res.Tree.IsZero())
+	assert.ElementsMatch(t, []string{"a.txt", "c.txt"}, res.ConflictPaths)
+	assert.False(t, res.Truncated)
+
+	// No common history: not clean, no paths.
+	m.f.Git("checkout", "--quiet", "--orphan", "other")
+	m.f.Git("rm", "-rf", "--quiet", ".")
+	m.f.Write("o.txt", "other\n")
+	other := oidOf(t, m.f.Commit("other root"))
+	res, err = g.MergeTree(ctx, m.f.Name, other, m.featTip)
+	require.NoError(t, err)
+	assert.False(t, res.Clean)
+	assert.Empty(t, res.ConflictPaths)
+
+	// More conflicts than the cap.
+	m.f.Git("checkout", "--quiet", "-b", "wide-a", m.a.String())
+	for i := 0; i < domain.MaxConflictPaths+5; i++ {
+		m.f.Write(fmt.Sprintf("f%02d.txt", i), "base\n")
+	}
+	base := oidOf(t, m.f.Commit("many"))
+	m.f.Git("checkout", "--quiet", "-b", "wide-b", base.String())
+	for i := 0; i < domain.MaxConflictPaths+5; i++ {
+		m.f.Write(fmt.Sprintf("f%02d.txt", i), "b\n")
+	}
+	wb := oidOf(t, m.f.Commit("b side"))
+	m.f.Git("checkout", "--quiet", "wide-a")
+	for i := 0; i < domain.MaxConflictPaths+5; i++ {
+		m.f.Write(fmt.Sprintf("f%02d.txt", i), "a\n")
+	}
+	wa := oidOf(t, m.f.Commit("a side"))
+	res, err = g.MergeTree(ctx, m.f.Name, wa, wb)
+	require.NoError(t, err)
+	assert.False(t, res.Clean)
+	assert.Len(t, res.ConflictPaths, domain.MaxConflictPaths)
+	assert.True(t, res.Truncated)
+}
+
+func TestCountBehind(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	m := newMergeFixture(t, data)
+	t.Cleanup(func() { _ = g.Close(ctx) })
+
+	// main has b that a-based head lacks.
+	n, capped, err := g.CountBehind(ctx, m.f.Name, m.a, m.mainTip, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.False(t, capped)
+
+	n, capped, err = g.CountBehind(ctx, m.f.Name, m.featTip, m.mainTip, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+	assert.False(t, capped)
+
+	// feat is 3 commits ahead of a: counting target=feat from head=a with cap 2.
+	n, capped, err = g.CountBehind(ctx, m.f.Name, m.a, m.featTip, 2)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.True(t, capped)
+	n, capped, err = g.CountBehind(ctx, m.f.Name, m.a, m.featTip, 3)
+	require.NoError(t, err)
+	assert.Equal(t, 3, n)
+	assert.False(t, capped)
 }

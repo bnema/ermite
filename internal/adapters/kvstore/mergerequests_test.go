@@ -574,3 +574,120 @@ func TestNoteFieldsRoundTrip(t *testing.T) {
 		assert.Equal(t, c, got)
 	}
 }
+
+// TestStoredOldDefaultModesGainMerge: settings written before merge commits
+// (no merge_modes_v2) with exactly {fast-forward, squash} read with merge too;
+// the same set written by this build is an explicit choice and stays.
+func TestStoredOldDefaultModesGainMerge(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := kvstore.Open(ctx, dir)
+	require.NoError(t, err)
+	require.NoError(t, s.Close(ctx))
+
+	put := func(db *kv.DB, repo string, modes ...storagepb.MergeMode) {
+		val, err := proto.Marshal(&storagepb.Repo{Name: repo, Visibility: storagepb.Visibility_VISIBILITY_PUBLIC,
+			Settings: &storagepb.RepoSettings{AllowedMergeModes: modes, FailingChecksBlock: true}})
+		require.NoError(t, err)
+		var b kv.Batch
+		b.Put([]byte("repo/"+repo), val)
+		_, err = db.Apply(ctx, &b)
+		require.NoError(t, err)
+	}
+	db, err := kv.Open(ctx, dir, kv.Options{})
+	require.NoError(t, err)
+	put(db, "old", storagepb.MergeMode_MERGE_MODE_FAST_FORWARD, storagepb.MergeMode_MERGE_MODE_SQUASH)
+	put(db, "single", storagepb.MergeMode_MERGE_MODE_SQUASH)
+	require.NoError(t, db.Close(ctx))
+
+	s = openStore(t, dir)
+	old, err := s.Get(ctx, name(t, "old"))
+	require.NoError(t, err)
+	assert.Equal(t, domain.MergeModes(), old.Settings.AllowedMergeModes)
+	single, err := s.Get(ctx, name(t, "single"))
+	require.NoError(t, err)
+	assert.Equal(t, []domain.MergeMode{domain.MergeModeSquash}, single.Settings.AllowedMergeModes)
+
+	// An explicit {ff, squash} written now is kept.
+	old.Settings.AllowedMergeModes = []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}
+	require.NoError(t, s.Update(ctx, old))
+	again, err := s.Get(ctx, name(t, "old"))
+	require.NoError(t, err)
+	assert.Equal(t, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}, again.Settings.AllowedMergeModes)
+}
+
+func mergeability(mr domain.MergeRequest) domain.Mergeability {
+	return domain.Mergeability{
+		Repo: mr.Repo, Number: mr.Number, State: domain.MergeabilityConflict,
+		TargetID: oid('a'), HeadID: oid('b'), Behind: 3, BehindCapped: true,
+		ConflictPaths: []string{"a.txt", "b/c.txt"}, ConflictPathsTruncated: true, CheckedAt: created,
+	}
+}
+
+func TestPutMergeabilityCAS(t *testing.T) {
+	ctx := context.Background()
+	_, mrs, n := repoWithMRs(t)
+	mr, err := mrs.Create(ctx, newMR(t, n, "t"))
+	require.NoError(t, err)
+
+	_, err = mrs.GetMergeability(ctx, n, mr.Number)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	m := mergeability(mr)
+	require.NoError(t, mrs.PutMergeability(ctx, m))
+	assert.ErrorIs(t, mrs.PutMergeability(ctx, m), domain.ErrConflict, "version 0 needs it absent")
+
+	got, err := mrs.GetMergeability(ctx, n, mr.Number)
+	require.NoError(t, err)
+	assert.NotZero(t, got.Version)
+	m.Version = got.Version
+	assert.Equal(t, m, got)
+
+	next := got
+	next.State = domain.MergeabilityUpToDate
+	require.NoError(t, mrs.PutMergeability(ctx, next))
+	assert.ErrorIs(t, mrs.PutMergeability(ctx, next), domain.ErrConflict, "stale version")
+
+	require.NoError(t, mrs.DeleteMergeability(ctx, n, mr.Number))
+	require.NoError(t, mrs.DeleteMergeability(ctx, n, mr.Number), "absent is fine")
+	_, err = mrs.GetMergeability(ctx, n, mr.Number)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+
+	missing := mergeability(mr)
+	missing.Number = 99
+	assert.ErrorIs(t, mrs.PutMergeability(ctx, missing), domain.ErrNotFound)
+
+	checking := mergeability(mr)
+	checking.State = domain.MergeabilityChecking
+	assert.ErrorIs(t, mrs.PutMergeability(ctx, checking), domain.ErrInvalid)
+}
+
+func TestMergeabilityRefusedAndDroppedWhenNotOpen(t *testing.T) {
+	for _, state := range []domain.MRState{domain.MRStateMerged, domain.MRStateClosed} {
+		ctx := context.Background()
+		_, mrs, n := repoWithMRs(t)
+		mr, err := mrs.Create(ctx, newMR(t, n, "t"))
+		require.NoError(t, err)
+		require.NoError(t, mrs.PutMergeability(ctx, mergeability(mr)))
+
+		cur, err := mrs.Get(ctx, n, mr.Number)
+		require.NoError(t, err)
+		cur.State = state
+		require.NoError(t, mrs.Update(ctx, cur))
+		_, err = mrs.GetMergeability(ctx, n, mr.Number)
+		assert.ErrorIs(t, err, domain.ErrNotFound, state)
+
+		assert.ErrorIs(t, mrs.PutMergeability(ctx, mergeability(mr)), domain.ErrNotFound, "a late worker never resurrects it: %s", state)
+	}
+}
+
+func TestDeleteWipesMergeability(t *testing.T) {
+	ctx := context.Background()
+	s, mrs, n := repoWithMRs(t)
+	mr, err := mrs.Create(ctx, newMR(t, n, "t"))
+	require.NoError(t, err)
+	require.NoError(t, mrs.PutMergeability(ctx, mergeability(mr)))
+	require.NoError(t, s.Delete(ctx, n))
+	_, err = mrs.GetMergeability(ctx, n, mr.Number)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}

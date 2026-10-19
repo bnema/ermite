@@ -179,6 +179,69 @@ func (_c *MergeRequestStore_Create_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
+// DeleteMergeability provides a mock function for the type MergeRequestStore
+func (_mock *MergeRequestStore) DeleteMergeability(ctx context.Context, repo domain.RepoName, number int64) error {
+	ret := _mock.Called(ctx, repo, number)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteMergeability")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64) error); ok {
+		r0 = returnFunc(ctx, repo, number)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MergeRequestStore_DeleteMergeability_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteMergeability'
+type MergeRequestStore_DeleteMergeability_Call struct {
+	*mock.Call
+}
+
+// DeleteMergeability is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - number int64
+func (_e *MergeRequestStore_Expecter) DeleteMergeability(ctx any, repo any, number any) *MergeRequestStore_DeleteMergeability_Call {
+	return &MergeRequestStore_DeleteMergeability_Call{Call: _e.mock.On("DeleteMergeability", ctx, repo, number)}
+}
+
+func (_c *MergeRequestStore_DeleteMergeability_Call) Run(run func(ctx context.Context, repo domain.RepoName, number int64)) *MergeRequestStore_DeleteMergeability_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestStore_DeleteMergeability_Call) Return(err error) *MergeRequestStore_DeleteMergeability_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MergeRequestStore_DeleteMergeability_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, number int64) error) *MergeRequestStore_DeleteMergeability_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Get provides a mock function for the type MergeRequestStore
 func (_mock *MergeRequestStore) Get(ctx context.Context, repo domain.RepoName, number int64) (domain.MergeRequest, error) {
 	ret := _mock.Called(ctx, repo, number)
@@ -325,6 +388,78 @@ func (_c *MergeRequestStore_GetComment_Call) Return(comment domain.Comment, err 
 }
 
 func (_c *MergeRequestStore_GetComment_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, number int64, id int64) (domain.Comment, error)) *MergeRequestStore_GetComment_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetMergeability provides a mock function for the type MergeRequestStore
+func (_mock *MergeRequestStore) GetMergeability(ctx context.Context, repo domain.RepoName, number int64) (domain.Mergeability, error) {
+	ret := _mock.Called(ctx, repo, number)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetMergeability")
+	}
+
+	var r0 domain.Mergeability
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64) (domain.Mergeability, error)); ok {
+		return returnFunc(ctx, repo, number)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64) domain.Mergeability); ok {
+		r0 = returnFunc(ctx, repo, number)
+	} else {
+		r0 = ret.Get(0).(domain.Mergeability)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, int64) error); ok {
+		r1 = returnFunc(ctx, repo, number)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestStore_GetMergeability_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetMergeability'
+type MergeRequestStore_GetMergeability_Call struct {
+	*mock.Call
+}
+
+// GetMergeability is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - number int64
+func (_e *MergeRequestStore_Expecter) GetMergeability(ctx any, repo any, number any) *MergeRequestStore_GetMergeability_Call {
+	return &MergeRequestStore_GetMergeability_Call{Call: _e.mock.On("GetMergeability", ctx, repo, number)}
+}
+
+func (_c *MergeRequestStore_GetMergeability_Call) Run(run func(ctx context.Context, repo domain.RepoName, number int64)) *MergeRequestStore_GetMergeability_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestStore_GetMergeability_Call) Return(mergeability domain.Mergeability, err error) *MergeRequestStore_GetMergeability_Call {
+	_c.Call.Return(mergeability, err)
+	return _c
+}
+
+func (_c *MergeRequestStore_GetMergeability_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, number int64) (domain.Mergeability, error)) *MergeRequestStore_GetMergeability_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -841,6 +976,63 @@ func (_c *MergeRequestStore_OpenByTarget_Call) Return(numbers []int64, truncated
 }
 
 func (_c *MergeRequestStore_OpenByTarget_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error)) *MergeRequestStore_OpenByTarget_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// PutMergeability provides a mock function for the type MergeRequestStore
+func (_mock *MergeRequestStore) PutMergeability(ctx context.Context, m domain.Mergeability) error {
+	ret := _mock.Called(ctx, m)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PutMergeability")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Mergeability) error); ok {
+		r0 = returnFunc(ctx, m)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MergeRequestStore_PutMergeability_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PutMergeability'
+type MergeRequestStore_PutMergeability_Call struct {
+	*mock.Call
+}
+
+// PutMergeability is a helper method to define mock.On call
+//   - ctx context.Context
+//   - m domain.Mergeability
+func (_e *MergeRequestStore_Expecter) PutMergeability(ctx any, m any) *MergeRequestStore_PutMergeability_Call {
+	return &MergeRequestStore_PutMergeability_Call{Call: _e.mock.On("PutMergeability", ctx, m)}
+}
+
+func (_c *MergeRequestStore_PutMergeability_Call) Run(run func(ctx context.Context, m domain.Mergeability)) *MergeRequestStore_PutMergeability_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Mergeability
+		if args[1] != nil {
+			arg1 = args[1].(domain.Mergeability)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestStore_PutMergeability_Call) Return(err error) *MergeRequestStore_PutMergeability_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MergeRequestStore_PutMergeability_Call) RunAndReturn(run func(ctx context.Context, m domain.Mergeability) error) *MergeRequestStore_PutMergeability_Call {
 	_c.Call.Return(run)
 	return _c
 }

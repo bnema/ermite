@@ -191,6 +191,96 @@ func (_c *MergeGit_CommitTree_Call) RunAndReturn(run func(ctx context.Context, r
 	return _c
 }
 
+// CountBehind provides a mock function for the type MergeGit
+func (_mock *MergeGit) CountBehind(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, max int) (int, bool, error) {
+	ret := _mock.Called(ctx, repo, head, target, max)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountBehind")
+	}
+
+	var r0 int
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) (int, bool, error)); ok {
+		return returnFunc(ctx, repo, head, target, max)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) int); ok {
+		r0 = returnFunc(ctx, repo, head, target, max)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) bool); ok {
+		r1 = returnFunc(ctx, repo, head, target, max)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) error); ok {
+		r2 = returnFunc(ctx, repo, head, target, max)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// MergeGit_CountBehind_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountBehind'
+type MergeGit_CountBehind_Call struct {
+	*mock.Call
+}
+
+// CountBehind is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - head domain.ObjectID
+//   - target domain.ObjectID
+//   - max int
+func (_e *MergeGit_Expecter) CountBehind(ctx any, repo any, head any, target any, max any) *MergeGit_CountBehind_Call {
+	return &MergeGit_CountBehind_Call{Call: _e.mock.On("CountBehind", ctx, repo, head, target, max)}
+}
+
+func (_c *MergeGit_CountBehind_Call) Run(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, max int)) *MergeGit_CountBehind_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 domain.ObjectID
+		if args[2] != nil {
+			arg2 = args[2].(domain.ObjectID)
+		}
+		var arg3 domain.ObjectID
+		if args[3] != nil {
+			arg3 = args[3].(domain.ObjectID)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeGit_CountBehind_Call) Return(n int, capped bool, err error) *MergeGit_CountBehind_Call {
+	_c.Call.Return(n, capped, err)
+	return _c
+}
+
+func (_c *MergeGit_CountBehind_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, max int) (int, bool, error)) *MergeGit_CountBehind_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteBranch provides a mock function for the type MergeGit
 func (_mock *MergeGit) DeleteBranch(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID) error {
 	ret := _mock.Called(ctx, repo, branch, old)
@@ -666,6 +756,84 @@ func (_c *MergeGit_MergeBase_Call) Return(objectID domain.ObjectID, err error) *
 }
 
 func (_c *MergeGit_MergeBase_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, a domain.ObjectID, b domain.ObjectID) (domain.ObjectID, error)) *MergeGit_MergeBase_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MergeTree provides a mock function for the type MergeGit
+func (_mock *MergeGit) MergeTree(ctx context.Context, repo domain.RepoName, base domain.ObjectID, head domain.ObjectID) (domain.MergeTreeResult, error) {
+	ret := _mock.Called(ctx, repo, base, head)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MergeTree")
+	}
+
+	var r0 domain.MergeTreeResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID) (domain.MergeTreeResult, error)); ok {
+		return returnFunc(ctx, repo, base, head)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID) domain.MergeTreeResult); ok {
+		r0 = returnFunc(ctx, repo, base, head)
+	} else {
+		r0 = ret.Get(0).(domain.MergeTreeResult)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID) error); ok {
+		r1 = returnFunc(ctx, repo, base, head)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeGit_MergeTree_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MergeTree'
+type MergeGit_MergeTree_Call struct {
+	*mock.Call
+}
+
+// MergeTree is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - base domain.ObjectID
+//   - head domain.ObjectID
+func (_e *MergeGit_Expecter) MergeTree(ctx any, repo any, base any, head any) *MergeGit_MergeTree_Call {
+	return &MergeGit_MergeTree_Call{Call: _e.mock.On("MergeTree", ctx, repo, base, head)}
+}
+
+func (_c *MergeGit_MergeTree_Call) Run(run func(ctx context.Context, repo domain.RepoName, base domain.ObjectID, head domain.ObjectID)) *MergeGit_MergeTree_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 domain.ObjectID
+		if args[2] != nil {
+			arg2 = args[2].(domain.ObjectID)
+		}
+		var arg3 domain.ObjectID
+		if args[3] != nil {
+			arg3 = args[3].(domain.ObjectID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeGit_MergeTree_Call) Return(mergeTreeResult domain.MergeTreeResult, err error) *MergeGit_MergeTree_Call {
+	_c.Call.Return(mergeTreeResult, err)
+	return _c
+}
+
+func (_c *MergeGit_MergeTree_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, base domain.ObjectID, head domain.ObjectID) (domain.MergeTreeResult, error)) *MergeGit_MergeTree_Call {
 	_c.Call.Return(run)
 	return _c
 }

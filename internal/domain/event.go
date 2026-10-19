@@ -284,6 +284,20 @@ type CommentResolved struct {
 // EventKind implements Event.
 func (CommentResolved) EventKind() string { return "mr.comment_resolved" }
 
+// MergeRequestMergeability is published when the mergeability of an open merge
+// request changed.
+type MergeRequestMergeability struct {
+	Repo         RepoName
+	Number       int64
+	Mergeability Mergeability
+	At           time.Time
+	Visibility   Visibility
+	CreatedAt    time.Time
+}
+
+// EventKind implements Event.
+func (MergeRequestMergeability) EventKind() string { return "mr.mergeability" }
+
 // EventGap tells a subscriber that it missed events because it was too slow;
 // it must refresh its whole view.
 type EventGap struct{}

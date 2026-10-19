@@ -17,6 +17,7 @@ import (
 	kv "bnema.dev/ermite-kv"
 	"github.com/bnema/zerowrap"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	storagepb "bnema.dev/ermite/gen/ermite/storage"
 	"bnema.dev/ermite/internal/domain"
@@ -27,10 +28,11 @@ import (
 // ending in "/" never matches another repository; numbers and comment ids are
 // zero-padded so that keys sort numerically.
 const (
-	mrPrefix      = "mr/"     // mr/<repo>/<number:010d>
-	commentPrefix = "mrc/"    // mrc/<repo>/<number:010d>/<id:010d>
-	readPrefix    = "mrread/" // mrread/<repo>/<number:010d>
-	seqPrefix     = "mrseq/"  // mrseq/<repo>
+	mrPrefix      = "mr/"      // mr/<repo>/<number:010d>
+	commentPrefix = "mrc/"     // mrc/<repo>/<number:010d>/<id:010d>
+	readPrefix    = "mrread/"  // mrread/<repo>/<number:010d>
+	seqPrefix     = "mrseq/"   // mrseq/<repo>
+	mergePrefix   = "mrmerge/" // mrmerge/<repo>/<number:010d>
 	// The indexes of the open merge requests by source branch and by target
 	// branch, which a push looks up (the values are not read). They are written in
 	// the same batch as the merge request, so they are never out of step with it,
@@ -68,6 +70,9 @@ func commentKey(repo domain.RepoName, n, id int64) []byte {
 }
 func readKey(repo domain.RepoName, n int64) []byte {
 	return []byte(readPrefix + repo.String() + "/" + fmt.Sprintf(numberFormat, n))
+}
+func mergeKey(repo domain.RepoName, n int64) []byte {
+	return []byte(mergePrefix + repo.String() + "/" + fmt.Sprintf(numberFormat, n))
 }
 func seqKey(repo domain.RepoName) []byte { return []byte(seqPrefix + repo.String()) }
 
@@ -175,6 +180,7 @@ func mergeRequestKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoNa
 	for _, p := range []string{
 		mrRepoPrefix(repo), commentPrefix + repo.String() + "/", readPrefix + repo.String() + "/",
 		mrOpenRepoPrefix(repo), mrTargetPrefix + repo.String() + "/",
+		mergePrefix + repo.String() + "/",
 	} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))
@@ -469,6 +475,9 @@ func (m *MergeRequests) Update(ctx context.Context, mr domain.MergeRequest) erro
 	} else {
 		indexOpen(&b, nil, mr)
 	}
+	if !mr.IsOpen() {
+		b.Delete(mergeKey(mr.Repo, mr.Number))
+	}
 	if _, err := m.db.Apply(ctx, &b); err != nil {
 		if errors.Is(err, kv.ErrConflict) {
 			return domain.ErrConflict
@@ -577,6 +586,130 @@ func (m *MergeRequests) SetRead(ctx context.Context, repo domain.RepoName, numbe
 		return nil
 	}
 	return fmt.Errorf("record read position of %d in %q: %w", number, repo, domain.ErrConflict)
+}
+
+// GetMergeability returns the stored mergeability, or domain.ErrNotFound.
+func (m *MergeRequests) GetMergeability(ctx context.Context, repo domain.RepoName, number int64) (domain.Mergeability, error) {
+	item, ok := m.db.Get(ctx, mergeKey(repo, number))
+	if !ok {
+		return domain.Mergeability{}, domain.ErrNotFound
+	}
+	return decodeMergeability(repo, number, item)
+}
+
+// PutMergeability stores the mergeability in a batch that requires the merge
+// request to be unchanged since it was read here and open, and the record to
+// be absent (Version 0) or unchanged.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter version preconditions of a derived record: a storage concern, no policy
+func (m *MergeRequests) PutMergeability(ctx context.Context, mg domain.Mergeability) error {
+	val, err := encodeMergeability(mg)
+	if err != nil {
+		return err
+	}
+	for range createTries {
+		mrItem, ok := m.db.Get(ctx, mrKey(mg.Repo, mg.Number))
+		if !ok {
+			return domain.ErrNotFound
+		}
+		mr, err := decodeMergeRequest(mg.Repo, mrItem)
+		if err != nil {
+			return err
+		}
+		if !mr.IsOpen() {
+			return domain.ErrNotFound
+		}
+		key := mergeKey(mg.Repo, mg.Number)
+		var b kv.Batch
+		b.RequireVersion(mrKey(mg.Repo, mg.Number), mrItem.Version)
+		if mg.Version == 0 {
+			b.RequireAbsent(key)
+		} else {
+			b.RequireVersion(key, mg.Version)
+		}
+		b.Put(key, val)
+		_, err = m.db.Apply(ctx, &b)
+		if errors.Is(err, kv.ErrConflict) {
+			// Either the record changed (the caller's conflict) or the merge
+			// request did (retry against it).
+			if cur, ok := m.db.Get(ctx, mrKey(mg.Repo, mg.Number)); ok && cur.Version != mrItem.Version {
+				continue
+			}
+			return domain.ErrConflict
+		}
+		if err != nil {
+			return fmt.Errorf("store mergeability of %d in %q: %w", mg.Number, mg.Repo, err)
+		}
+		return nil
+	}
+	return fmt.Errorf("store mergeability of %d in %q: %w", mg.Number, mg.Repo, domain.ErrConflict)
+}
+
+// DeleteMergeability removes the stored mergeability; absent is fine.
+func (m *MergeRequests) DeleteMergeability(ctx context.Context, repo domain.RepoName, number int64) error {
+	var b kv.Batch
+	b.Delete(mergeKey(repo, number))
+	if _, err := m.db.Apply(ctx, &b); err != nil {
+		return fmt.Errorf("delete mergeability of %d in %q: %w", number, repo, err)
+	}
+	return nil
+}
+
+func encodeMergeability(m domain.Mergeability) ([]byte, error) {
+	var state storagepb.MergeabilityState
+	switch m.State {
+	case domain.MergeabilityUpToDate:
+		state = storagepb.MergeabilityState_MERGEABILITY_STATE_UP_TO_DATE
+	case domain.MergeabilityBehind:
+		state = storagepb.MergeabilityState_MERGEABILITY_STATE_BEHIND
+	case domain.MergeabilityConflict:
+		state = storagepb.MergeabilityState_MERGEABILITY_STATE_CONFLICT
+	default:
+		return nil, fmt.Errorf("%w: mergeability state %q is not stored", domain.ErrInvalid, m.State)
+	}
+	return proto.Marshal(&storagepb.Mergeability{
+		State:                  state,
+		TargetId:               m.TargetID.String(),
+		HeadId:                 m.HeadID.String(),
+		Behind:                 int32(m.Behind), //nolint:gosec // capped at MaxBehindCount
+		BehindCapped:           m.BehindCapped,
+		ConflictPaths:          m.ConflictPaths,
+		ConflictPathsTruncated: m.ConflictPathsTruncated,
+		CheckedAt:              timestamppb.New(m.CheckedAt),
+	})
+}
+
+func decodeMergeability(repo domain.RepoName, number int64, item kv.Item) (domain.Mergeability, error) {
+	var pb storagepb.Mergeability
+	if err := proto.Unmarshal(item.Value, &pb); err != nil {
+		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: %w", number, repo, err)
+	}
+	out := domain.Mergeability{
+		Repo: repo, Number: number,
+		Behind: int(pb.GetBehind()), BehindCapped: pb.GetBehindCapped(),
+		ConflictPaths:          pb.GetConflictPaths(),
+		ConflictPathsTruncated: pb.GetConflictPathsTruncated(),
+		CheckedAt:              pb.GetCheckedAt().AsTime(),
+		Version:                item.Version,
+	}
+	switch pb.GetState() {
+	case storagepb.MergeabilityState_MERGEABILITY_STATE_UP_TO_DATE:
+		out.State = domain.MergeabilityUpToDate
+	case storagepb.MergeabilityState_MERGEABILITY_STATE_BEHIND:
+		out.State = domain.MergeabilityBehind
+	case storagepb.MergeabilityState_MERGEABILITY_STATE_CONFLICT:
+		out.State = domain.MergeabilityConflict
+	default:
+		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: unknown state %d: %w", number, repo, pb.GetState(), domain.ErrNotFound)
+	}
+	var err error
+	if out.TargetID, err = domain.ParseObjectID(pb.GetTargetId()); err != nil {
+		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: %w", number, repo, err)
+	}
+	if out.HeadID, err = domain.ParseObjectID(pb.GetHeadId()); err != nil {
+		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: %w", number, repo, err)
+	}
+	return out, nil
 }
 
 func encodeMergeRequest(mr domain.MergeRequest) ([]byte, error) {
@@ -735,6 +868,8 @@ func encodeMode(m domain.MergeMode) (storagepb.MergeMode, error) {
 		return storagepb.MergeMode_MERGE_MODE_FAST_FORWARD, nil
 	case domain.MergeModeSquash:
 		return storagepb.MergeMode_MERGE_MODE_SQUASH, nil
+	case domain.MergeModeMerge:
+		return storagepb.MergeMode_MERGE_MODE_MERGE, nil
 	}
 	return 0, fmt.Errorf("%w: merge mode %q", domain.ErrInvalid, m)
 }
@@ -746,6 +881,8 @@ func decodeMode(m storagepb.MergeMode) domain.MergeMode {
 		return domain.MergeModeFastForward
 	case storagepb.MergeMode_MERGE_MODE_SQUASH:
 		return domain.MergeModeSquash
+	case storagepb.MergeMode_MERGE_MODE_MERGE:
+		return domain.MergeModeMerge
 	}
 	return ""
 }
@@ -773,7 +910,7 @@ func decodeSide(s storagepb.DiffSide) domain.DiffSide {
 }
 
 func encodeSettings(s domain.RepoSettings) (*storagepb.RepoSettings, error) {
-	pb := &storagepb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock}
+	pb := &storagepb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock, MergeModesV2: true}
 	for _, m := range s.AllowedMergeModes {
 		mode, err := encodeMode(m)
 		if err != nil || mode == storagepb.MergeMode_MERGE_MODE_UNSPECIFIED {
@@ -809,6 +946,11 @@ func decodeSettings(pb *storagepb.RepoSettings) domain.RepoSettings {
 	normalized, err := domain.NormalizeMergeModes(modes)
 	if err != nil {
 		return domain.DefaultRepoSettings()
+	}
+	// Settings stored before merge commits: exactly {fast-forward, squash} was
+	// the old default, "everything allowed".
+	if !pb.GetMergeModesV2() && slices.Equal(normalized, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}) {
+		normalized = domain.MergeModes()
 	}
 	return domain.RepoSettings{AllowedMergeModes: normalized, FailingChecksBlock: pb.GetFailingChecksBlock(), Issues: decodeIssuesMode(pb.GetIssues())}
 }

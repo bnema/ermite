@@ -15,6 +15,7 @@ enum MergeMode {
   MERGE_MODE_UNSPECIFIED = 0;
   MERGE_MODE_FAST_FORWARD = 1;
   MERGE_MODE_SQUASH = 2;
+  MERGE_MODE_MERGE = 3;
 }
 
 // RepoSettings are the merge settings of a repository, stored inside Repo.
@@ -24,6 +25,11 @@ message RepoSettings {
   bool failing_checks_block = 2;
   // Who may write issues; unspecified reads as off.
   IssuesMode issues = 3;
+  // Set on every write since merge commits exist: the modes are the explicit
+  // choice of the owner. When false (settings stored before), exactly
+  // {fast-forward, squash} was the old default and gains MERGE_MODE_MERGE on
+  // read.
+  bool merge_modes_v2 = 4;
 }
 
 // IssuesMode says who may write issues in a repository.
@@ -103,4 +109,26 @@ message Comment {
 // number handed out for the repository.
 message Sequence {
   int64 last = 1;
+}
+
+// MergeabilityState is the outcome of a mergeability check. "Checking" is
+// never stored.
+enum MergeabilityState {
+  MERGEABILITY_STATE_UNSPECIFIED = 0;
+  MERGEABILITY_STATE_UP_TO_DATE = 1;
+  MERGEABILITY_STATE_BEHIND = 2;
+  MERGEABILITY_STATE_CONFLICT = 3;
+}
+
+// Mergeability is stored under the key "mrmerge/<repo>/<number:010d>": a
+// derived, discardable record of an open merge request.
+message Mergeability {
+  MergeabilityState state = 1;
+  string target_id = 2;
+  string head_id = 3;
+  int32 behind = 4;
+  bool behind_capped = 5;
+  repeated string conflict_paths = 6;
+  bool conflict_paths_truncated = 7;
+  google.protobuf.Timestamp checked_at = 8;
 }

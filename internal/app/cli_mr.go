@@ -31,6 +31,7 @@ const (
 
 	modeFastForward = "fast-forward"
 	modeSquash      = "squash"
+	modeMerge       = "merge"
 )
 
 func stateName(s ermite.MergeRequestState) string {
@@ -65,6 +66,8 @@ func modeName(m ermite.MergeMode) string {
 		return modeFastForward
 	case ermite.MergeMode_MERGE_MODE_SQUASH:
 		return modeSquash
+	case ermite.MergeMode_MERGE_MODE_MERGE_COMMIT:
+		return modeMerge
 	}
 	return ""
 }
@@ -75,8 +78,10 @@ func parseMode(s string) (ermite.MergeMode, error) {
 		return ermite.MergeMode_MERGE_MODE_FAST_FORWARD, nil
 	case modeSquash:
 		return ermite.MergeMode_MERGE_MODE_SQUASH, nil
+	case modeMerge:
+		return ermite.MergeMode_MERGE_MODE_MERGE_COMMIT, nil
 	}
-	return 0, fmt.Errorf("invalid merge mode %q: use %s or %s", s, modeFastForward, modeSquash)
+	return 0, fmt.Errorf("invalid merge mode %q: use %s, %s or %s", s, modeFastForward, modeSquash, modeMerge)
 }
 
 func sideName(s ermite.DiffSide) string {

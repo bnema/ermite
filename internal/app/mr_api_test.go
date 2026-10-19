@@ -298,7 +298,7 @@ func TestUpdateRepoSettingsOverTheAPI(t *testing.T) {
 
 	got, err := h.api("").repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "proj"}))
 	require.NoError(t, err)
-	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH}, got.Msg.GetRepo().GetSettings().GetAllowedMergeModes())
+	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH, pb.MergeMode_MERGE_MODE_MERGE_COMMIT}, got.Msg.GetRepo().GetSettings().GetAllowedMergeModes())
 	assert.True(t, got.Msg.GetRepo().GetSettings().GetFailingChecksBlock())
 
 	update := func(c *clients, paths []string, s *pb.RepoSettings) (*pb.Repo, error) {

@@ -18,18 +18,23 @@ const (
 	MergeModeFastForward MergeMode = "fast-forward"
 	// MergeModeSquash makes one new signed commit with the tree of the head.
 	MergeModeSquash MergeMode = "squash"
+	// MergeModeMerge makes one new signed commit with two parents: the target
+	// tip and the head.
+	MergeModeMerge MergeMode = "merge"
 )
 
-// MergeModes returns the two modes in their canonical order.
-func MergeModes() []MergeMode { return []MergeMode{MergeModeFastForward, MergeModeSquash} }
+// MergeModes returns the modes in their canonical order.
+func MergeModes() []MergeMode {
+	return []MergeMode{MergeModeFastForward, MergeModeSquash, MergeModeMerge}
+}
 
-// ParseMergeMode parses "fast-forward" or "squash".
+// ParseMergeMode parses "fast-forward", "squash" or "merge".
 func ParseMergeMode(s string) (MergeMode, error) {
 	m := MergeMode(s)
 	if slices.Contains(MergeModes(), m) {
 		return m, nil
 	}
-	return "", fmt.Errorf("%w: merge mode %q (want fast-forward or squash)", ErrInvalid, s)
+	return "", fmt.Errorf("%w: merge mode %q (want fast-forward, squash or merge)", ErrInvalid, s)
 }
 
 // String returns the mode as text.
@@ -47,7 +52,7 @@ type RepoSettings struct {
 	Issues IssuesMode
 }
 
-// DefaultRepoSettings are the settings of a new repository: both modes, and
+// DefaultRepoSettings are the settings of a new repository: every mode, and
 // failing checks block the merge.
 func DefaultRepoSettings() RepoSettings {
 	return RepoSettings{AllowedMergeModes: MergeModes(), FailingChecksBlock: true, Issues: IssuesOff}
@@ -249,10 +254,10 @@ type Identity struct {
 	Name, Email string
 }
 
-// SquashCommit is the commit a squash merge creates: the tree of the head on
-// top of the target.
-type SquashCommit struct {
-	Tree, Parent      ObjectID
+// ServerCommit is a commit the server creates: a squash or a merge commit.
+type ServerCommit struct {
+	Tree              ObjectID
+	Parents           []ObjectID
 	Author, Committer Signature
 	Message           string
 }
@@ -267,7 +272,7 @@ const MaxSquashCommits = 1000
 // trailers, in order of appearance. The message is the title, " (!<number>)",
 // a blank line, the summaries of the commits oldest first as a list, and the
 // trailers.
-func NewSquashCommit(mr MergeRequest, tree, parent ObjectID, commits []Commit, committer Identity, at time.Time) SquashCommit {
+func NewSquashCommit(mr MergeRequest, tree, parent ObjectID, commits []Commit, committer Identity, at time.Time) ServerCommit {
 	oldest := slices.Clone(commits)
 	slices.Reverse(oldest)
 	var first Signature
@@ -293,26 +298,41 @@ func NewSquashCommit(mr MergeRequest, tree, parent ObjectID, commits []Commit, c
 	if len(trailers) > 0 {
 		msg.WriteString("\n" + strings.Join(trailers, "\n") + "\n")
 	}
-	return SquashCommit{
-		Tree: tree, Parent: parent,
+	return ServerCommit{
+		Tree: tree, Parents: []ObjectID{parent},
 		Author:    first,
 		Committer: Signature{Name: committer.Name, Email: committer.Email, Time: at.UTC()},
 		Message:   msg.String(),
 	}
 }
 
+// NewMergeCommit builds the merge commit of a merge request: the tree of the
+// merge, the target tip and the head as parents, and the server identity as
+// author and committer.
+func NewMergeCommit(mr MergeRequest, tree, target, head ObjectID, committer Identity, at time.Time) ServerCommit {
+	sig := Signature{Name: committer.Name, Email: committer.Email, Time: at.UTC()}
+	return ServerCommit{
+		Tree: tree, Parents: []ObjectID{target, head},
+		Author: sig, Committer: sig,
+		Message: fmt.Sprintf("Merge branch '%s' into %s (!%d)\n\n%s\n",
+			singleLine(mr.Source), singleLine(mr.Target), mr.Number, singleLine(mr.Title.String())),
+	}
+}
+
 // Payload returns the text of the commit object without a signature, which is
 // what the signature covers.
-func (c SquashCommit) Payload() []byte { return c.encode("") }
+func (c ServerCommit) Payload() []byte { return c.encode("") }
 
 // Signed returns the text of the commit object with the armored SSH signature
 // in its gpgsig header.
-func (c SquashCommit) Signed(armored string) []byte { return c.encode(armored) }
+func (c ServerCommit) Signed(armored string) []byte { return c.encode(armored) }
 
-func (c SquashCommit) encode(armored string) []byte {
+func (c ServerCommit) encode(armored string) []byte {
 	var b strings.Builder
 	b.WriteString("tree " + c.Tree.String() + "\n")
-	b.WriteString("parent " + c.Parent.String() + "\n")
+	for _, p := range c.Parents {
+		b.WriteString("parent " + p.String() + "\n")
+	}
 	b.WriteString("author " + signatureLine(c.Author) + "\n")
 	b.WriteString("committer " + signatureLine(c.Committer) + "\n")
 	if armored != "" {
@@ -429,4 +449,89 @@ func CurrentVerdicts(comments []Comment, head ObjectID) []AuthorVerdict {
 		return 0
 	})
 	return out
+}
+
+// Limits of a stored Mergeability.
+const (
+	// MaxBehindCount caps the commits counted as behind.
+	MaxBehindCount = 1000
+	// MaxConflictPaths caps the conflicted paths listed.
+	MaxConflictPaths = 20
+)
+
+// MergeabilityState is the outcome of a mergeability check.
+type MergeabilityState string
+
+// Mergeability states.
+const (
+	// MergeabilityChecking means there is no up-to-date result yet; it is never
+	// stored.
+	MergeabilityChecking MergeabilityState = "checking"
+	// MergeabilityUpToDate means the target is an ancestor of the head.
+	MergeabilityUpToDate MergeabilityState = "up_to_date"
+	// MergeabilityBehind means the head lacks commits of the target but merges
+	// cleanly.
+	MergeabilityBehind MergeabilityState = "behind"
+	// MergeabilityConflict means the head does not merge cleanly.
+	MergeabilityConflict MergeabilityState = "conflict"
+)
+
+// Mergeability is whether an open merge request merges with its target, for
+// given tips.
+type Mergeability struct {
+	Repo   RepoName
+	Number int64
+	State  MergeabilityState
+	// TargetID and HeadID are the tips the result is for; zero for a derived
+	// "checking".
+	TargetID, HeadID ObjectID
+	// Behind counts the commits of the target not in the head (behind only),
+	// capped at MaxBehindCount.
+	Behind       int
+	BehindCapped bool
+	// ConflictPaths holds at most MaxConflictPaths paths (conflict only).
+	ConflictPaths          []string
+	ConflictPathsTruncated bool
+	CheckedAt              time.Time
+	// Version is set by the store on read, like MergeRequest.Version.
+	Version uint64
+}
+
+// Allows reports whether the mode may be used given the state, and if not,
+// why.
+func (m Mergeability) Allows(mode MergeMode) (bool, string) {
+	switch mode {
+	case MergeModeFastForward:
+		if m.State == MergeabilityUpToDate {
+			return true, ""
+		}
+		if m.State == MergeabilityBehind {
+			return false, "behind the target: rebase or use squash/merge"
+		}
+	case MergeModeSquash, MergeModeMerge:
+		if m.State != MergeabilityConflict && m.State != MergeabilityChecking && m.State != "" {
+			return true, ""
+		}
+	}
+	switch m.State {
+	case MergeabilityConflict:
+		return false, "conflicts with the target"
+	case MergeabilityChecking, "":
+		return false, "mergeability is being checked"
+	}
+	return false, "mode not allowed"
+}
+
+// IsFor reports whether the result is for these tips, that is not stale.
+func (m Mergeability) IsFor(target, head ObjectID) bool {
+	return m.State != "" && m.State != MergeabilityChecking && m.TargetID == target && m.HeadID == head
+}
+
+// MergeTreeResult is the outcome of merging two commits without a commit.
+type MergeTreeResult struct {
+	// Tree is the merged tree; zero when not clean.
+	Tree          ObjectID
+	Clean         bool
+	ConflictPaths []string
+	Truncated     bool
 }

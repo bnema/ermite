@@ -88,6 +88,8 @@ func mergeModeToPB(m domain.MergeMode) pb.MergeMode {
 		return pb.MergeMode_MERGE_MODE_FAST_FORWARD
 	case domain.MergeModeSquash:
 		return pb.MergeMode_MERGE_MODE_SQUASH
+	case domain.MergeModeMerge:
+		return pb.MergeMode_MERGE_MODE_MERGE_COMMIT
 	}
 	return pb.MergeMode_MERGE_MODE_UNSPECIFIED
 }
@@ -102,6 +104,8 @@ func mergeModeFromPB(m pb.MergeMode) (domain.MergeMode, error) {
 		return domain.MergeModeFastForward, nil
 	case pb.MergeMode_MERGE_MODE_SQUASH:
 		return domain.MergeModeSquash, nil
+	case pb.MergeMode_MERGE_MODE_MERGE_COMMIT:
+		return domain.MergeModeMerge, nil
 	}
 	return "", fmt.Errorf("%w: merge mode %v", domain.ErrInvalid, m)
 }
