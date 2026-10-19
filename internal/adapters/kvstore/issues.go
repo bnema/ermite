@@ -129,21 +129,46 @@ func (i *Issues) List(ctx context.Context, repo domain.RepoName, params ports.Li
 		}
 		before = n
 	}
-	var all []domain.Issue
-	for key, item := range i.db.Snapshot(ctx).Prefix(ctx, []byte(issueRepoPrefix(repo))) {
+	// The keys sort by number: walk [first, cursor) ascending, keep the last
+	// PageSize+1 matching records undecoded (the extra one tells whether
+	// another page follows), then decode only those.
+	start := []byte(issueRepoPrefix(repo))
+	end := append(slices.Clone(start[:len(start)-1]), '/'+1) // the prefix ends in '/'
+	if before > 0 {
+		end = issueKey(repo, before)
+	}
+	keep := params.PageSize + 1
+	var window []kv.Item
+	for _, item := range i.db.Snapshot(ctx).Range(ctx, start, end) {
+		if params.State != "" {
+			var pb storagepb.Issue
+			if err := proto.Unmarshal(item.Value, &pb); err != nil {
+				return ports.IssuePage{}, fmt.Errorf("decode issue: %w", err)
+			}
+			st, err := decodeIssueState(pb.GetState())
+			if err != nil {
+				return ports.IssuePage{}, fmt.Errorf("decode issue of %q: %w", repo, err)
+			}
+			if st != params.State {
+				continue
+			}
+		}
+		window = append(window, item)
+		if params.PageSize > 0 && len(window) >= 2*keep {
+			window = append(window[:0], window[len(window)-keep:]...)
+		}
+	}
+	if params.PageSize > 0 && len(window) > keep {
+		window = window[len(window)-keep:]
+	}
+	all := make([]domain.Issue, 0, len(window))
+	for _, item := range slices.Backward(window) {
 		issue, err := decodeIssue(repo, item)
 		if err != nil {
-			return ports.IssuePage{}, fmt.Errorf("decode %s: %w", key, err)
-		}
-		if params.State != "" && issue.State != params.State {
-			continue
-		}
-		if before > 0 && issue.Number >= before {
-			continue
+			return ports.IssuePage{}, err
 		}
 		all = append(all, issue)
 	}
-	slices.Reverse(all)
 	var page ports.IssuePage
 	if params.PageSize > 0 && len(all) > params.PageSize {
 		all = all[:params.PageSize]

@@ -453,3 +453,52 @@ func TestListOpenAllSkipsAStaleIndexEntry(t *testing.T) {
 	require.Len(t, open, 1)
 	assert.Equal(t, keepM.Number, open[0].Number)
 }
+
+func TestIssueListPagesThroughManyIssues(t *testing.T) {
+	ctx := context.Background()
+	s, _, n := repoWithMRs(t)
+	is := s.Issues()
+	const total = 53
+	for i := 1; i <= total; i++ {
+		_, err := is.Create(ctx, newIssue(t, n, "issue "+strconv.Itoa(i)))
+		require.NoError(t, err)
+	}
+	for i := 2; i <= total; i += 3 { // 2, 5, 8, ...
+		is, err := is.Get(ctx, n, int64(i))
+		require.NoError(t, err)
+		is.State = domain.IssueStateClosed
+		require.NoError(t, s.Issues().Update(ctx, is))
+	}
+
+	walk := func(state domain.IssueState, size int) []int64 {
+		var got []int64
+		token := ""
+		for {
+			page, err := s.Issues().List(ctx, n, ports.ListIssuesParams{State: state, PageSize: size, PageToken: token})
+			require.NoError(t, err)
+			require.LessOrEqual(t, len(page.Issues), size)
+			for _, is := range page.Issues {
+				got = append(got, is.Number)
+			}
+			if page.NextPageToken == "" {
+				return got
+			}
+			token = page.NextPageToken
+		}
+	}
+	for _, size := range []int{1, 7, 10, 53, 100} {
+		var all, closed []int64
+		for i := int64(total); i >= 1; i-- {
+			all = append(all, i)
+			if i%3 == 2 {
+				closed = append(closed, i)
+			}
+		}
+		assert.Equal(t, all, walk("", size), "size %d", size)
+		assert.Equal(t, closed, walk(domain.IssueStateClosed, size), "closed, size %d", size)
+	}
+	page, err := s.Issues().List(ctx, n, ports.ListIssuesParams{PageSize: 10, PageToken: "1"})
+	require.NoError(t, err)
+	assert.Empty(t, page.Issues)
+	assert.Empty(t, page.NextPageToken)
+}
