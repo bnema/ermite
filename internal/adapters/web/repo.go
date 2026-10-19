@@ -131,6 +131,8 @@ func (s *Server) openMRCount(ctx context.Context, name domain.RepoName) string {
 // layout is the Layout of the pages of a repository: the sections, the ref
 // switcher on the head ref and the ":" targets. The caller sets the title,
 // the crumbs, the status and the rail.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter lists the tabs of the repository; the issues tab follows the setting, no rule is decided here
 func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) Layout {
 	l := s.base()
 	l.Repo = d.name()

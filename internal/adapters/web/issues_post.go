@@ -67,6 +67,7 @@ func (s *Server) issueReopen(ctx context.Context, r *http.Request) (string, stri
 	return s.issueTransition(ctx, r, s.cfg.Issues.Reopen)
 }
 
+//hexcheck:ignore suspicious-business-logic-in-adapter closes or reopens through the use case that owns the transition; the form only picks which
 func (s *Server) issueTransition(ctx context.Context, r *http.Request, do func(context.Context, domain.Principal, domain.RepoName, int64) (domain.Issue, error)) (string, string, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
