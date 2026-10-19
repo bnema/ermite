@@ -55,7 +55,8 @@ ermite token create <label> [--preset cli|agent|ci|runner] [--scope …] [--repo
 ermite token list | revoke <id>
 
 ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]
-ermite mr comment <repo> <n> -m … [--path … --line … --side old|new] | resolve <repo> <n> <comment>
+ermite mr comment <repo> <n> -m … [--path … --line N|A-B --side old|new] [--reply <id>] [--approve|--request-changes]
+ermite mr resolve <repo> <n> <comment> | edit-comment <repo> <n> <comment> -m … | delete-comment <repo> <n> <comment>
 ermite mr merge <repo> <n> --head <id> [--squash] [--delete-branch] | close <repo> <n>
 
 ermite run list <repo> [--workflow …] [--branch …] [--status …]

@@ -28,7 +28,7 @@ Presets add up with `--scope` (repeatable or comma-separated):
 
 | Preset | Scopes |
 |---|---|
-| `cli` | every scope, for the owner's daily use |
+| `cli` | every scope (including `mr:review`), for the owner's daily use; a token created before `mr:review` existed lacks it and loses owner rights: recreate it with `--preset cli` |
 | `agent` | `repo:write`, `mr:write` |
 | `ci` | `repo:read` |
 
@@ -39,7 +39,8 @@ Scopes:
 | `repo:read` | read private repositories |
 | `repo:write` | push, create a repository |
 | `repo:admin` | delete a repository, change visibility, description, default branch, merge settings |
-| `mr:write` | open, comment on, resolve, close, mark read |
+| `mr:write` | open, comment on, reply, edit and delete own notes, resolve, close, mark read |
+| `mr:review` | give a verdict (`--approve`, `--request-changes`) |
 | `mr:merge` | merge, and delete the merged source branch with `--delete-branch` |
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
@@ -55,12 +56,16 @@ A token can never grant more than the token that creates it. `--repo` (repeatabl
 | `mr create <repo> --source B --title T [--target B] [--description TEXT\|-]` | `mr:write` | target defaults to the default branch; title of 120 characters max; `-` reads standard input |
 | `mr list <repo> [--state open\|merged\|closed\|all] [--json]` | none | default `open` |
 | `mr show <repo> <n> [--diff] [--since-last-read] [--mark-read] [--json]` | `mr:write` for `--mark-read` | commits, changed files and comments; `--diff` adds hunks with line numbers |
-| `mr comment <repo> <n> -m TEXT\|- [--path P --line N --side old\|new]` | `mr:write` | the line must be in the current diff; a deleted file uses its old path |
-| `mr resolve <repo> <n> <comment-id> [--undo]` | `mr:write` | doing it twice is not an error |
+| `mr comment <repo> <n> -m TEXT\|- [--path P --line N\|A-B --side old\|new] [--reply ID] [--approve\|--request-changes]` | `mr:write`; verdicts `mr:review` | Markdown note (8000 characters max); the lines must be in the current diff on one side; a deleted file uses its old path; `--reply` takes a root note (`12`, `#12` or `^12`), inherits its anchor and cannot carry a verdict; a verdict note may have no message |
+| `mr edit-comment <repo> <n> <comment-id> -m TEXT\|-` | `mr:write` | author only, open merge request; the verdict is unchanged |
+| `mr delete-comment <repo> <n> <comment-id>` | `mr:write` | author only; the text is lost, the verdict is kept |
+| `mr resolve <repo> <n> <comment-id> [--undo]` | `mr:write` | on the thread root, covers its replies; doing it twice is not an error |
 | `mr merge <repo> <n> --head <full-id> [--squash] [--delete-branch]` | `mr:merge` | refused if the branch moved or the target is not an ancestor of the head; `--delete-branch` deletes the source after the merge (refused for the default branch or a branch another open request uses; JSON adds `source_branch_deleted`) |
 | `mr close <repo> <n>` | `mr:write` | a closed merge request cannot be reopened |
 
-Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `target_branch`, `state`, `author` (token label), `created_at`, `updated_at`, `head_id`, `merged_commit_id`, `merge_mode`. `mr show --json` adds `commits`, `diff_base_id`, `stats`, `files` (with `hunks` under `--diff`: `kind`, `old_number`, `new_number`, `text`), `comments`, `last_read_id`, `last_read_lost`.
+Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `target_branch`, `state`, `author` (token label), `created_at`, `updated_at`, `head_id`, `merged_commit_id`, `merge_mode`. `mr show --json` adds `commits`, `diff_base_id`, `stats`, `files` (with `hunks` under `--diff`: `kind`, `old_number`, `new_number`, `text`), `comments`, `verdicts`, `last_read_id`, `last_read_lost`.
+
+Comment JSON: `id`, `author`, `path`, `line`, `side`, `commit_id`, `text`, `resolved`, `created_at`, `reply_to` (empty for roots), `start_line` (0 for a single line), `verdict` (`""`, `approve`, `changes_requested`), `edited_at`, `deleted`. Verdict JSON (latest per author): `author`, `verdict`, `comment_id`, `commit_id`, `created_at`, `stale` (an approval given on another head; changes requested are never stale). Verdicts are informative and never block a merge. In notes, `^N` refers to note N.
 
 ## Workflows
 
@@ -82,7 +87,7 @@ Workflow JSON: `repo`, `file` (always `.github/workflows/<file>`), `name` (the `
 | `repo_created`, `repo_updated`, `repo_deleted` | `repo`, `repository` |
 | `pushed` | `repo`, `ref_updates` (`ref`, `old_id`, `new_id`; an empty id means created or deleted) |
 | `merge_request_opened`, `merge_request_merged`, `merge_request_closed` | `repo`, `merge_request` |
-| `comment_added` | `repo`, `number`, `comment` |
+| `comment_added`, `comment_edited`, `comment_deleted`, `comment_resolved` | `repo`, `number`, `comment` (a verdict note has `verdict` set) |
 | `gap` | none: events were lost, reload the state |
 
 ## Server and web
