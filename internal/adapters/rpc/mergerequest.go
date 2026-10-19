@@ -10,12 +10,18 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
 // mergeRequestService implements ermiteconnect.MergeRequestServiceHandler.
-type mergeRequestService struct{ mrs ports.MergeRequestService }
+type mergeRequestService struct {
+	// The note methods (edit, delete, verdicts) are implemented by the merge
+	// request notes work; until then they answer CodeUnimplemented.
+	ermiteconnect.UnimplementedMergeRequestServiceHandler
+	mrs ports.MergeRequestService
+}
 
 func mergeRequestStateToPB(s domain.MRState) pb.MergeRequestState {
 	switch s {
