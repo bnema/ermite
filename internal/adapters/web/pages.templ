@@ -2,6 +2,8 @@
 
 package web
 
+import "fmt"
+
 // Home is the repository list.
 templ Home(l Layout, p HomePage) {
 	@Shell(l, nil) {
@@ -9,14 +11,6 @@ templ Home(l Layout, p HomePage) {
 		<div class="home" data-layout="cards">
 			<section class="home-repos" aria-label="Repositories">
 				<div class="home-bar">
-					if p.Inbox != nil {
-						<a class="btn inbox-btn" href={ templ.SafeURL(p.Inbox.Href) } title="inbox">
-							Inbox
-							if p.Inbox.Count >= 0 {
-								<span class="count">{ itoa(p.Inbox.Count) }</span>
-							}
-						</a>
-					}
 					<div class="filter">
 						<label for="home-filter" class="sr">filter</label>
 						<input
@@ -57,7 +51,7 @@ templ Home(l Layout, p HomePage) {
 						</button>
 					</div>
 				</div>
-				<ul class="repos" id="repo-rows" data-rows>
+				<ul class="repos" id="repo-rows" data-rows data-sort={ p.Sort } data-desc={ fmt.Sprint(p.Desc) }>
 					for _, r := range p.Rows {
 						@HomeRowView(r)
 					}

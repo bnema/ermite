@@ -43,7 +43,7 @@ func TestCreateGetListUpdateDelete(t *testing.T) {
 	s := openStore(t, t.TempDir())
 
 	b := domain.Repo{Name: name(t, "b"), Description: "second", Topics: []string{"cli", "go"}, Visibility: domain.VisibilityPublic, CreatedAt: created, Settings: domain.DefaultRepoSettings()}
-	a := domain.Repo{Name: name(t, "a"), Visibility: domain.VisibilityPrivate, CreatedAt: created, PushedAt: created.Add(time.Hour), Settings: domain.DefaultRepoSettings()}
+	a := domain.Repo{Name: name(t, "a"), Visibility: domain.VisibilityPrivate, CreatedAt: created, PushedAt: created.Add(time.Hour), ActiveAt: created.Add(2 * time.Hour), Settings: domain.DefaultRepoSettings()}
 	require.NoError(t, s.Create(ctx, b))
 	require.NoError(t, s.Create(ctx, a))
 
@@ -54,6 +54,7 @@ func TestCreateGetListUpdateDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, a, got)
 	assert.True(t, got.PushedAt.Equal(a.PushedAt))
+	assert.True(t, got.ActiveAt.Equal(a.ActiveAt))
 
 	list, err := s.List(ctx)
 	require.NoError(t, err)
@@ -65,13 +66,15 @@ func TestCreateGetListUpdateDelete(t *testing.T) {
 	b.Description = "changed"
 	b.Topics = []string{"forge"}
 	b.Visibility = domain.VisibilityPrivate
-	require.NoError(t, s.Update(ctx, b))
+	_, err = s.Mutate(ctx, b.Name, func(r *domain.Repo) (bool, error) { *r = b; return true, nil })
+	require.NoError(t, err)
 	got, err = s.Get(ctx, b.Name)
 	require.NoError(t, err)
 	assert.Equal(t, b, got)
 
 	b.Topics = nil
-	require.NoError(t, s.Update(ctx, b))
+	_, err = s.Mutate(ctx, b.Name, func(r *domain.Repo) (bool, error) { *r = b; return true, nil })
+	require.NoError(t, err)
 	got, err = s.Get(ctx, b.Name)
 	require.NoError(t, err)
 	assert.Nil(t, got.Topics, "cleared topics read back as nil")
@@ -80,7 +83,8 @@ func TestCreateGetListUpdateDelete(t *testing.T) {
 	_, err = s.Get(ctx, b.Name)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 	require.NoError(t, s.Delete(ctx, b.Name), "deleting a missing repository is not an error")
-	assert.ErrorIs(t, s.Update(ctx, b), domain.ErrNotFound)
+	_, err = s.Mutate(ctx, b.Name, func(r *domain.Repo) (bool, error) { return true, nil })
+	assert.ErrorIs(t, err, domain.ErrNotFound)
 
 	_, err = s.Get(ctx, name(t, "never"))
 	assert.ErrorIs(t, err, domain.ErrNotFound)

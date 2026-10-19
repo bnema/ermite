@@ -258,13 +258,15 @@ func TestRepoSettingsKeepTheIssuesMode(t *testing.T) {
 	assert.Equal(t, domain.IssuesOff, got.Settings.Issues)
 	for _, m := range []domain.IssuesMode{domain.IssuesOwner, domain.IssuesPublic, domain.IssuesOff} {
 		got.Settings.Issues = m
-		require.NoError(t, s.Update(ctx, got))
+		_, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) { r.Settings = got.Settings; return true, nil })
+		require.NoError(t, err)
 		again, err := s.Get(ctx, n)
 		require.NoError(t, err)
 		assert.Equal(t, m, again.Settings.Issues)
 	}
 	got.Settings.Issues = "everyone"
-	assert.ErrorIs(t, s.Update(ctx, got), domain.ErrInvalid)
+	_, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) { r.Settings = got.Settings; return true, nil })
+	assert.ErrorIs(t, err, domain.ErrInvalid)
 }
 
 // TestSchema4UpgradesTheTokensWithAllScopes: the tokens that held every

@@ -268,6 +268,8 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	assert.Contains(t, line.body, `name="path" value="search.go"`)
 	assert.Contains(t, line.body, `name="line" value="3"`)
 	assert.Contains(t, line.body, `name="side" value="new"`)
+	assert.Contains(t, line.body, `comment on search.go:3 (new)`, "one line: the title names it")
+	assert.Contains(t, b.get(base+"?on=new:1-3:search.go", as(token)).body, `comment on search.go:1-3 (new)`, "a range: the title names all of it")
 	assert.Equal(t, 0, strings.Count(b.get(base+"?on=new:99:search.go", as(token)).body, `name="line" value="99"`), "a line the diff lacks has no form")
 	assert.Equal(t, 0, strings.Count(b.get(base+"?on=new:3:search.go", nil).body, `<form`), "nor for a visitor")
 

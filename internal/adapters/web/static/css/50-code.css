@@ -79,13 +79,16 @@
     & .ln { width: calc(var(--lnw) + 2ch); min-width: calc(var(--lnw) + 2ch); padding: 0 1ch; text-align: right; color: var(--ink-mute); user-select: none; }
     & .m { width: 2ch; text-align: center; user-select: none; color: var(--ink-dim); }
     & .tx { white-space: pre; }
-    & .hunk td { color: var(--ink-mute); background: var(--paper-alt); padding: 0 1ch; }
+    /* the hunk headers and the hidden lines stay quiet: a faint band between
+       the code, so that the eye keeps reading */
+    & .hunk td, & .gap td { background: color-mix(in srgb, var(--paper-alt) 35%, var(--paper)); }
+    & .hunk td { color: var(--ink-mute); padding: 0 1ch; }
     /* a run of hidden lines: the whole row loads them */
-    & .gap td { padding: 0; background: var(--paper-alt); }
+    & .gap td { padding: 0; }
     & .gap button {
       display: block; width: 100%; padding: 2px 1ch; text-align: left; cursor: pointer;
-      font: inherit; color: var(--ink-dim); background: none; border: 0;
-      border-block: 1px dashed var(--border);
+      font: inherit; color: var(--ink-mute); background: none; border: 0;
+      border-block: 1px dashed color-mix(in srgb, var(--border) 60%, transparent);
     }
     & .gap button:hover, & .gap button:focus-visible { color: var(--ink-hi); background: var(--bg-strong); }
     & .gap button:disabled { cursor: progress; opacity: .6; }

@@ -9,4 +9,29 @@
 
 @layer components {
   .sel { outline: 1px solid var(--ink-dim); outline-offset: -1px; }
+
+  /* a range of selected diff lines (shift + click) is one block: one border
+     around the run, none between its lines. Each edge is an inset shadow of
+     the cells; the top one only on the first line of the run, the bottom one
+     only on the last. In split, each side is a block of its own. */
+  .dt {
+    --sel-edge: var(--ink-dim);
+    & .sel { outline: none; }
+    & tr.sel > td, & td.sel {
+      box-shadow: var(--sel-l, 0 0 transparent), var(--sel-r, 0 0 transparent), var(--sel-t, 0 0 transparent), var(--sel-b, 0 0 transparent);
+      --sel-t: inset 0 1px var(--sel-edge); --sel-b: inset 0 -1px var(--sel-edge);
+    }
+    /* unified: the row is selected */
+    & tr.sel > td:first-child { --sel-l: inset 1px 0 var(--sel-edge); }
+    & tr.sel > td:last-child { --sel-r: inset -1px 0 var(--sel-edge); }
+    & tr.sel + tr.sel > td { --sel-t: 0 0 transparent; }
+    & tr.sel:has(+ tr.sel) > td { --sel-b: 0 0 transparent; }
+    /* split: the cells of one side (number, mark, text) are selected */
+    & td.sel.ln { --sel-l: inset 1px 0 var(--sel-edge); }
+    & td.sel.tx { --sel-r: inset -1px 0 var(--sel-edge); }
+    & tr:has(> :nth-child(3).sel) + tr > :nth-child(-n + 3).sel,
+    & tr:has(> :nth-child(6).sel) + tr > :nth-child(n + 4).sel { --sel-t: 0 0 transparent; }
+    & tr:has(> :nth-child(3).sel):has(+ tr > :nth-child(3).sel) > :nth-child(-n + 3).sel,
+    & tr:has(> :nth-child(6).sel):has(+ tr > :nth-child(6).sel) > :nth-child(n + 4).sel { --sel-b: 0 0 transparent; }
+  }
 }

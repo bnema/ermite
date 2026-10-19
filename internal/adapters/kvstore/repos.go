@@ -64,31 +64,51 @@ func (s *Store) List(ctx context.Context) ([]domain.Repo, error) {
 	return repos, nil
 }
 
-// Update replaces the stored repository. It returns domain.ErrNotFound if
-// there is none and domain.ErrConflict if another write changed it since it
-// was read.
+const repoMutationTries = 8
+
+// Mutate applies a retry-safe mutation under the version it read.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter port method name only
-func (s *Store) Update(ctx context.Context, repo domain.Repo) error {
-	val, err := encodeRepo(repo)
-	if err != nil {
-		return err
-	}
-	key := repoKey(repo.Name)
-	item, ok := s.db.Get(ctx, key)
-	if !ok {
-		return domain.ErrNotFound
-	}
-	var b kv.Batch
-	b.RequireVersion(key, item.Version)
-	b.Put(key, val)
-	if _, err := s.db.Apply(ctx, &b); err != nil {
-		if errors.Is(err, kv.ErrConflict) {
-			return domain.ErrConflict
+//hexcheck:ignore suspicious-business-logic-in-adapter optimistic concurrency is a storage concern
+func (s *Store) Mutate(ctx context.Context, name domain.RepoName, fn func(*domain.Repo) (bool, error)) (domain.Repo, error) {
+	key := repoKey(name)
+	for range repoMutationTries {
+		if err := ctx.Err(); err != nil {
+			return domain.Repo{}, err
 		}
-		return fmt.Errorf("update repository %q: %w", repo.Name, err)
+		item, ok := s.db.Get(ctx, key)
+		if !ok {
+			return domain.Repo{}, domain.ErrNotFound
+		}
+		repo, err := decodeRepo(item.Value)
+		if err != nil {
+			return domain.Repo{}, err
+		}
+		changed, err := fn(&repo)
+		if err != nil {
+			return domain.Repo{}, err
+		}
+		if repo.Name != name {
+			return domain.Repo{}, fmt.Errorf("mutate repository name: %w", domain.ErrInvalidName)
+		}
+		if !changed {
+			return decodeRepo(item.Value)
+		}
+		val, err := encodeRepo(repo)
+		if err != nil {
+			return domain.Repo{}, err
+		}
+		var b kv.Batch
+		b.RequireVersion(key, item.Version)
+		b.Put(key, val)
+		if _, err := s.db.Apply(ctx, &b); err != nil {
+			if errors.Is(err, kv.ErrConflict) {
+				continue
+			}
+			return domain.Repo{}, fmt.Errorf("mutate repository %q: %w", name, err)
+		}
+		return decodeRepo(val)
 	}
-	return nil
+	return domain.Repo{}, domain.ErrConflict
 }
 
 // guardRepoKey makes the batch depend on the repository: it requires the
@@ -208,6 +228,7 @@ func encodeRepo(r domain.Repo) ([]byte, error) {
 		Visibility:  vis,
 		CreatedAt:   encodeTime(r.CreatedAt),
 		PushedAt:    encodeTime(r.PushedAt),
+		ActiveAt:    encodeTime(r.ActiveAt),
 		Settings:    pbSettings,
 	}
 	return mustMarshal(pb), nil
@@ -229,6 +250,7 @@ func decodeRepo(val []byte) (domain.Repo, error) {
 		Visibility:  decodeVisibility(pb.GetVisibility()),
 		CreatedAt:   decodeTime(pb.GetCreatedAt()),
 		PushedAt:    decodeTime(pb.GetPushedAt()),
+		ActiveAt:    decodeTime(pb.GetActiveAt()),
 		Settings:    decodeSettings(pb.GetSettings()),
 	}, nil
 }

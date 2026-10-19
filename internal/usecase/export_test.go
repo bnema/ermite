@@ -19,6 +19,16 @@ import (
 // Sweep exposes the daily sweep to the tests.
 func (c *CI) Sweep(ctx context.Context) { c.sweep(ctx) }
 
+// TouchPushedAt exposes touchPushedAt to the tests.
+func TouchPushedAt(ctx context.Context, meta ports.RepoMetaStore, name domain.RepoName, now time.Time) (domain.Repo, error) {
+	return touchPushedAt(ctx, meta, name, now)
+}
+
+// TouchActiveAt exposes touchActiveAt to the tests.
+func TouchActiveAt(ctx context.Context, meta ports.RepoMetaStore, name domain.RepoName, now time.Time) (domain.Repo, error) {
+	return touchActiveAt(ctx, meta, name, now)
+}
+
 // RunTitle gives the title of a run as startRun sets it: the evaluated
 // run-name, else commitTitle.
 func (c *CI) RunTitle(ctx context.Context, wf *workflow.Workflow, githubJSON, commitTitle string) string {

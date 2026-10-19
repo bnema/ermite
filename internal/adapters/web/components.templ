@@ -37,7 +37,7 @@ templ CloneBlock(c Clone) {
 // right its figures and CI state over its newest commits. Its id is the
 // target of SSE swaps; the name link comes first, `enter` follows it.
 templ HomeRowView(r HomeRow) {
-	<li id={ r.ID } class="repo" data-cursor?={ r.Cursor }>
+	<li id={ r.ID } class="repo" data-cursor?={ r.Cursor } data-activity?={ r.Fresh }>
 		<div class="repo-main">
 			<h2 class="repo-name">
 				<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
@@ -45,7 +45,7 @@ templ HomeRowView(r HomeRow) {
 					<span class="pill">private</span>
 				}
 				if r.Fresh {
-					<span class="pill new">new push</span>
+					<span class="pill new">new activity</span>
 				}
 			</h2>
 			if r.Desc != "" {

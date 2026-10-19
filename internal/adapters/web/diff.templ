@@ -72,9 +72,7 @@ templ Commit(l Layout, p CommitPage) {
 		<div class="diff-tools" role="group" aria-label="Diff view">
 			<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 			<span class="grow"></span>
-			@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
-			@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
-			@collapseButton()
+			@diffViewMenu(p.DiffView)
 		</div>
 		if p.Invisible {
 			<p class="notice">
@@ -110,6 +108,26 @@ templ Commit(l Layout, p CommitPage) {
 			}
 		</div>
 	}
+}
+
+// diffViewMenu is the layout of the diff (unified, the default, or split) and
+// the fold of its files, in one menu: a <details> that works without scripts;
+// u, d and x still act without opening it. Its button names the layout shown.
+templ diffViewMenu(p DiffView) {
+	<details class="menu vmenu">
+		<summary class="btn" aria-label="Diff view">
+			if p.Both {
+				<span hx-live="this.textContent = q('#diffs').attr['data-diff'] === 'split' ? 'Split' : 'Unified'">{ viewLabel(p.View) }</span>
+			} else {
+				{ viewLabel(p.View) }
+			}
+		</summary>
+		<div class="menu-pop" role="group" aria-label="Diff view">
+			@viewLink(p, "unified", "Unified", "u", p.UnifiedHref)
+			@viewLink(p, "split", "Split", "d", p.SplitHref)
+			@collapseButton()
+		</div>
+	</details>
 }
 
 // viewLink is a button of the diff tools. It is a link, so that the split
@@ -203,7 +221,7 @@ templ DiffFileView(f DiffFile, p DiffView) {
 	<details
 		class={ "dfile", "lnw-" + itoa(f.Digits) }
 		id={ f.ID }
-		data-file
+		data-file={ f.Key }
 		if f.Open {
 			open
 		}

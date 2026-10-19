@@ -109,41 +109,43 @@ templ mrListRail(p MRListPage) {
 // form, the checks, the settings, the commits and the files.
 templ MergeRequest(l Layout, p MRPage) {
 	@Shell(l, mrRail(p)) {
-		<header class="show mr-h">
-			<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
-			<dl class="kv show-kv">
-				<dt>state</dt>
-				<dd class="mr-state" data-state={ p.State }>
-					{ p.State }
-					if p.MergedShort != "" {
-						{ " · " }<a href={ templ.SafeURL(p.MergedHref) }>{ p.MergedShort }</a>{ " · " + p.MergeMode }
+		<section class="mr-card">
+			<header class="show mr-h">
+				<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
+				<dl class="kv show-kv">
+					<dt>state</dt>
+					<dd class="mr-state" data-state={ p.State }>
+						{ p.State }
+						if p.MergedShort != "" {
+							{ " · " }<a href={ templ.SafeURL(p.MergedHref) }>{ p.MergedShort }</a>{ " · " + p.MergeMode }
+						}
+					</dd>
+					<dt>branch</dt>
+					<dd>
+						@branchLink(p.Source, p.SourceHref)
+						{ " → " }
+						@branchLink(p.Target, p.TargetHref)
+					</dd>
+					<dt>opened</dt>
+					<dd>
+						{ p.Opened.Name }
+						if p.Opened.WhenAt != "" {
+							{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
+						}
+					</dd>
+					if p.UpdatedAt != "" {
+						<dt>updated</dt>
+						<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
 					}
-				</dd>
-				<dt>branch</dt>
-				<dd>
-					@branchLink(p.Source, p.SourceHref)
-					{ " → " }
-					@branchLink(p.Target, p.TargetHref)
-				</dd>
-				<dt>opened</dt>
-				<dd>
-					{ p.Opened.Name }
-					if p.Opened.WhenAt != "" {
-						{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
-					}
-				</dd>
-				if p.UpdatedAt != "" {
-					<dt>updated</dt>
-					<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
-				}
-			</dl>
-		</header>
+				</dl>
+			</header>
+			if p.Desc != "" {
+				<article class="mr-desc prose" aria-label="description" hx-ignore>
+					@templ.Raw(string(p.Desc))
+				</article>
+			}
+		</section>
 		@LiveSlot("mr-notice")
-		if p.Desc != "" {
-			<article class="mr-desc prose" aria-label="description" hx-ignore>
-				@templ.Raw(string(p.Desc))
-			</article>
-		}
 		if p.Since != nil {
 			<nav class="since" aria-label="Diff range">
 				<a
@@ -431,9 +433,7 @@ templ mrRail(p MRPage) {
 templ mrBar(p MRPage) {
 	<div class="diff-tools mr-bar" role="group" aria-label="Diff view and merge">
 		<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
-		@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
-		@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
-		@collapseButton()
+		@diffViewMenu(p.DiffView)
 		<span class="grow"></span>
 		@MRChecksSum(p.ChecksSum)
 		if p.Box != nil {
@@ -562,9 +562,7 @@ templ Compare(l Layout, p ComparePage) {
 			<div class="diff-tools" role="group" aria-label="Diff view">
 				<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 				<span class="grow"></span>
-				@viewLink(p.DiffView, "unified", "Unified", "u", p.UnifiedHref)
-				@viewLink(p.DiffView, "split", "Split", "d", p.SplitHref)
-				@collapseButton()
+				@diffViewMenu(p.DiffView)
 			</div>
 			if p.Invisible {
 				<p class="notice">

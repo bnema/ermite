@@ -32,6 +32,7 @@ templ Keys() {
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
+         k-wide from:body -> window.ermiteWide.toggle();
          k-expand from:body -> ermite.expandFile();
          k-expandAll from:body -> ermite.expandAll();
          k-permalink from:body -> ermite.permalink();

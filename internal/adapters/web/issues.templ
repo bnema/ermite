@@ -136,31 +136,33 @@ templ issueNewRail() {
 // owner, the form to comment and the button that closes or reopens it.
 templ IssueShow(l Layout, p IssuePage) {
 	@Shell(l, issueRail(p)) {
-		<header class="show mr-h">
-			<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
-			<dl class="kv show-kv">
-				<dt>state</dt>
-				<dd class="mr-state" data-state={ p.State }>{ p.State }</dd>
-				<dt>opened</dt>
-				<dd>
-					{ p.Opened.Name }
-					if p.Opened.WhenAt != "" {
-						{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
+		<section class="mr-card">
+			<header class="show mr-h">
+				<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
+				<dl class="kv show-kv">
+					<dt>state</dt>
+					<dd class="mr-state" data-state={ p.State }>{ p.State }</dd>
+					<dt>opened</dt>
+					<dd>
+						{ p.Opened.Name }
+						if p.Opened.WhenAt != "" {
+							{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
+						}
+					</dd>
+					if p.UpdatedAt != "" {
+						<dt>updated</dt>
+						<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
 					}
-				</dd>
-				if p.UpdatedAt != "" {
-					<dt>updated</dt>
-					<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
-				}
-			</dl>
-		</header>
+				</dl>
+			</header>
+			if p.Desc != "" {
+				<article class="mr-desc prose" aria-label="description" hx-ignore>
+					@templ.Raw(string(p.Desc))
+				</article>
+			}
+		</section>
 		if p.Live {
 			@LiveSlot("mr-notice")
-		}
-		if p.Desc != "" {
-			<article class="mr-desc prose" aria-label="description" hx-ignore>
-				@templ.Raw(string(p.Desc))
-			</article>
 		}
 		<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(len(p.Comments)) }</span></h2>
 		for _, c := range p.Comments {

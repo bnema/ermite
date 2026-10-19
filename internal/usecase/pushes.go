@@ -15,9 +15,6 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
-// pushRetries bounds the retries of a metadata update that loses a race.
-const pushRetries = 5
-
 // Pushes are the use cases around a Git push.
 type Pushes struct {
 	meta  ports.RepoMetaStore
@@ -209,7 +206,7 @@ func (u *Pushes) checkWorkflows(ctx context.Context, name domain.RepoName, updat
 	return nil
 }
 
-// Record is the post-receive step of an accepted push: it sets pushed_at,
+// Record is the post-receive step of an accepted push: it sets pushed_at and active_at,
 // repairs HEAD when it points to a missing branch, tells the reader that the
 // repository changed, queues the workflows the push triggers, publishes a
 // PushEvent and schedules maintenance. Every
@@ -245,36 +242,31 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	return errors.Join(errs...)
 }
 
-// touchPushedAt stores pushed_at, retrying when another write got in between.
+// touchPushedAt stores pushed_at and active_at, preserving later timestamps
+// and retrying when another write got in between.
 // A repository deleted meanwhile is not an error. It returns the repository
-// as read, or the zero value when it is unknown. A push (Pushes.Record) and a
-// merge, which moves a branch too, both record through it.
+// as stored after mutation, or the zero value when it is unknown. A push
+// (Pushes.Record) and a merge, which moves a branch too, both record through it.
 func touchPushedAt(ctx context.Context, meta ports.RepoMetaStore, name domain.RepoName, now time.Time) (domain.Repo, error) {
-	for range pushRetries {
-		repo, err := meta.Get(ctx, name)
-		if errors.Is(err, domain.ErrNotFound) {
-			return domain.Repo{}, nil
+	repo, err := meta.Mutate(ctx, name, func(repo *domain.Repo) (bool, error) {
+		changed := false
+		if now.After(repo.PushedAt) {
+			repo.PushedAt = now
+			changed = true
 		}
-		if err != nil {
-			return domain.Repo{}, fmt.Errorf("get repository %q: %w", name, err)
+		if now.After(repo.ActiveAt) {
+			repo.ActiveAt = now
+			changed = true
 		}
-		if !now.After(repo.PushedAt) {
-			return repo, nil // a later push already recorded
-		}
-		repo.PushedAt = now
-		err = meta.Update(ctx, repo)
-		if errors.Is(err, domain.ErrConflict) {
-			continue
-		}
-		if errors.Is(err, domain.ErrNotFound) {
-			return domain.Repo{}, nil
-		}
-		if err != nil {
-			return repo, fmt.Errorf("update repository %q: %w", name, err)
-		}
-		return repo, nil
+		return changed, nil
+	})
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.Repo{}, nil
 	}
-	return domain.Repo{}, fmt.Errorf("update pushed_at of %q: %w", name, domain.ErrConflict)
+	if err != nil {
+		return repo, fmt.Errorf("update repository %q: %w", name, err)
+	}
+	return repo, nil
 }
 
 // fixDefaultBranch points HEAD to a branch that exists when it points to a

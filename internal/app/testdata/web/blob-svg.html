@@ -20,7 +20,7 @@
 </script>
 <script src="/-/static/js/hx-sse.min.HASH.js" defer>
 </script>
-<script src="/-/static/js/store.HASH.js" defer>
+<script src="/-/static/js/store.HASH.js">
 </script>
 <script src="/-/static/js/ermite.HASH.js" defer>
 </script>
@@ -264,6 +264,12 @@
 </div>
 <div>
 <dt>
+<kbd>w</kbd>
+</dt>
+<dd>wide mode: use the whole width of the screen, or not (remembered)</dd>
+</div>
+<div>
+<dt>
 <kbd>y</kbd>
 </dt>
 <dd>copy a permalink pinned to the commit</dd>
@@ -441,6 +447,7 @@
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
+         k-wide from:body -> window.ermiteWide.toggle();
          k-expand from:body -> ermite.expandFile();
          k-expandAll from:body -> ermite.expandAll();
          k-permalink from:body -> ermite.permalink();

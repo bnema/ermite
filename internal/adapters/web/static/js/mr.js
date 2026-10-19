@@ -196,12 +196,6 @@ window.ermiteMR = (() => {
     $('[data-default]', m)?.focus();
     return true;
   }
-  function closeMenus() {
-    const open = $$('details.menu[open]');
-    for (const d of open) d.open = false;
-    if (open.length) $('summary', open[0])?.focus();
-    return open.length > 0;
-  }
   // menuKey handles a key while the merge menu is open; true when it used it.
   function menuKey(e) {
     const m = menu();
@@ -311,13 +305,9 @@ window.ermiteMR = (() => {
       try { sessionStorage.setItem('mr-last-line', lastLine); } catch { /* storage optional */ }
       if (next) { e.preventDefault(); location.assign(next); }
     });
-    // A click outside an open menu closes it.
-    addEventListener('click', (e) => {
-      for (const d of $$('details.menu[open]')) if (!d.contains(e.target)) d.open = false;
-    });
   }
 
-  return { core, start, load, reveal, openMerge, closeMenus, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
+  return { core, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
 })();
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.ermiteMR.start());

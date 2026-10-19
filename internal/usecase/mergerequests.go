@@ -254,6 +254,7 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	if err != nil {
 		return domain.MergeRequest{}, err
 	}
+	recordActivity(ctx, m.meta, repo.Name, now)
 	m.bus.Publish(ctx, domain.MergeRequestOpened{MergeRequest: mr, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	if m.pulls != nil {
 		// The commits the opening is for are the ones of now.
@@ -377,6 +378,7 @@ func (m *MergeRequests) MarkReady(ctx context.Context, p domain.Principal, name 
 		if err != nil {
 			return domain.MergeRequest{}, fmt.Errorf("mark !%d of %q ready: %w", number, name, err)
 		}
+		recordActivity(ctx, m.meta, repo.Name, mr.UpdatedAt)
 		m.bus.Publish(ctx, domain.MergeRequestReady{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		return m.withHead(ctx, mr)
 	}
@@ -656,6 +658,7 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", name.String()).Int64("number", number).Int64("comment", c.ID).
 		Int64("reply_to", c.ReplyTo).Str("verdict", c.Verdict.String()).Bool("on_line", !general).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("comment added")
+	recordActivity(ctx, m.meta, name, c.CreatedAt)
 	m.bus.Publish(ctx, domain.CommentAdded{
 		Repo: name, Number: number, Comment: c, At: c.CreatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
 	})
@@ -796,6 +799,7 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 		log := zerowrap.FromCtx(ctx)
 		log.Info().Str("repo", name.String()).Int64("number", number).
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("merge request closed")
+		recordActivity(ctx, m.meta, repo.Name, mr.UpdatedAt)
 		m.bus.Publish(ctx, domain.MergeRequestClosed{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		if m.pulls != nil {
 			m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID}, p)
@@ -998,6 +1002,7 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 		}
 	}
 	at := mr.UpdatedAt
+	recordActivity(ctx, m.meta, repo.Name, at)
 	m.bus.Publish(ctx, domain.MergeRequestMerged{MergeRequest: mr, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	m.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,

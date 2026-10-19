@@ -112,6 +112,24 @@ func (l *liveStream) home(ctx context.Context, we ports.WatchEvent) ([]fragment,
 		name = ev.Repo.String()
 	case domain.PushEvent:
 		name, fresh = ev.Repo.String(), true
+	case domain.MergeRequestOpened:
+		name, fresh = ev.MergeRequest.Repo.String(), true
+	case domain.MergeRequestMerged:
+		name, fresh = ev.MergeRequest.Repo.String(), true
+	case domain.MergeRequestClosed:
+		name, fresh = ev.MergeRequest.Repo.String(), true
+	case domain.MergeRequestReady:
+		name, fresh = ev.MergeRequest.Repo.String(), true
+	case domain.CommentAdded:
+		name, fresh = ev.Repo.String(), true
+	case domain.IssueOpened:
+		name, fresh = ev.Issue.Repo.String(), true
+	case domain.IssueClosed:
+		name, fresh = ev.Issue.Repo.String(), true
+	case domain.IssueReopened:
+		name, fresh = ev.Issue.Repo.String(), true
+	case domain.IssueCommented:
+		name, fresh = ev.Repo.String(), true
 	case domain.RunUpdated:
 		name = ev.Run.Repo.String() // the CI state of the row
 	case domain.JobUpdated:

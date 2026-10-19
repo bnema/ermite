@@ -85,6 +85,7 @@ func (m *IssueModeration) Approve(ctx context.Context, p domain.Principal, repo 
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", repo.String()).Int64("number", issue.Number).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("pending issue approved")
+	recordActivity(ctx, m.meta, repo, now)
 	m.bus.Publish(ctx, domain.IssueOpened{Issue: issue, At: now, Visibility: r.Visibility, CreatedAt: r.CreatedAt})
 	return issue, nil
 }

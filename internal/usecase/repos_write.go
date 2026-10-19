@@ -155,11 +155,7 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 // updateMeta applies the metadata fields, retrying when a write (a push
 // recording pushed_at) gets in between.
 func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params ports.UpdateRepoParams) (domain.Repo, error) {
-	for range pushRetries {
-		repo, err := r.meta.Get(ctx, name)
-		if err != nil {
-			return domain.Repo{}, err
-		}
+	repo, err := r.meta.Mutate(ctx, name, func(repo *domain.Repo) (bool, error) {
 		if params.Description != nil {
 			repo.Description = *params.Description
 		}
@@ -181,16 +177,12 @@ func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params por
 		if params.Issues != nil {
 			repo.Settings.Issues = *params.Issues
 		}
-		err = r.meta.Update(ctx, repo)
-		if errors.Is(err, domain.ErrConflict) {
-			continue
-		}
-		if err != nil {
-			return domain.Repo{}, fmt.Errorf("update repository %q: %w", name, err)
-		}
-		return repo, nil
+		return true, nil
+	})
+	if err != nil {
+		return domain.Repo{}, fmt.Errorf("update repository %q: %w", name, err)
 	}
-	return domain.Repo{}, fmt.Errorf("update repository %q: %w", name, domain.ErrConflict)
+	return repo, nil
 }
 
 // Delete moves the repository directory to the trash, removes its metadata

@@ -14,6 +14,7 @@
 //  7. The service worker (ermiteInstall).
 //  8. Chip lists kept on one line, with a … chip (ermiteFit).
 //  9. The layout of the home page, remembered in the browser (ermiteLayout).
+// 10. The wide mode: every page takes the whole width (ermiteWide).
 //
 // Preferences are kept by ermiteStore (store.js, loaded first).
 (() => {
@@ -400,6 +401,25 @@
   // file whose lines are all loaded has no gap left.
   window.ermiteGaps = (() => {
     const pending = new Map();
+    // selectLoaded marks the loaded rows that fall in the range of lines the
+    // URL selects (?on=new:21-149:a.go, a shift + click), as the server marks
+    // the rows it sent: the range stays one block once its hidden lines show.
+    // The loaded rows are context lines, the same on both sides.
+    function selectLoaded(file, rows) {
+      const m = /^(new|old):(?:(\d+)-)?(\d+):(.+)$/.exec(new URLSearchParams(location.search).get('on') || '');
+      // data-file is the path comments name (the new path of a rename), as ?on=
+      if (!m || file.dataset.file !== m[4]) return;
+      const end = Number(m[3]);
+      const start = m[2] ? Number(m[2]) : end;
+      for (const r of rows) {
+        const cells = [...r.querySelectorAll('td')];
+        // unified: old, new, mark, text; split: old side, then new side
+        const num = Number((cells.length === 4 ? cells[m[1] === 'old' ? 0 : 1] : cells[m[1] === 'old' ? 0 : 3])?.textContent.trim());
+        if (!(num >= start && num <= end)) continue;
+        if (cells.length === 4) r.classList.add('sel');
+        else for (const c of cells) c.classList.add('sel');
+      }
+    }
     // load fills the gap the button is in, in both tables of its file.
     function load(btn) {
       const src = btn.dataset.src;
@@ -424,6 +444,7 @@
             if (!from || !at) continue;
             const rows = [...from.children].map((r) => r.cloneNode(true));
             n = Math.max(n, rows.filter((r) => !r.classList.contains('gap')).length);
+            selectLoaded(file, rows.filter((r) => !r.classList.contains('gap')));
             at.replaceWith(...rows);
           }
           // The focus was on the button, which is gone: on the gap that is
@@ -553,9 +574,44 @@
     return { get: pref.get, set, apply, values };
   })();
 
+  // The wide mode (w, on every page): the work area takes the whole width of
+  // the screen, the rail at the right edge and the content in the rest.
+  // The choice is kept by ermiteStore ("wide": '1' when wide) and shown
+  // as html.wide, which the styles follow. Another tab's change applies here
+  // at once.
+  window.ermiteWide = (() => {
+    const pref = window.ermiteStore.pref('wide', { values: ['1', ''], fallback: '' });
+    function apply() {
+      const wide = pref.get() === '1';
+      document.documentElement.classList.toggle?.('wide', wide);
+    }
+    function toggle() {
+      pref.set(pref.get() === '1' ? '' : '1');
+      apply();
+    }
+    pref.watch(apply);
+    apply();
+    return { toggle, apply };
+  })();
+
+  // The menus of the bars (<details class="menu">: the diff view, the merge
+  // menu): closing one hands the focus back to its button when it was inside,
+  // so that a keyboard user keeps their place.
+  function closeMenu(d) {
+    const had = d.contains(document.activeElement);
+    d.open = false;
+    if (had) $('summary', d)?.focus();
+  }
+  // closeMenus closes every open menu (escape); true when one was open.
+  function closeMenus() {
+    const open = $$('details.menu[open]');
+    for (const d of open) closeMenu(d);
+    return open.length > 0;
+  }
+
   // 1. Keys.
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
-    s: 's', t: 't', c: 'c', r: 'r', m: 'm', i: 'i', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
+    s: 's', t: 't', c: 'c', r: 'r', m: 'm', i: 'i', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', w: 'wide', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
     // the merge request page (mr.js): the merge menu, mark read
     M: 'merge', R: 'read' };
   // "g t" is the key "t": the tabs have one event each.
@@ -571,7 +627,7 @@
     const mr = window.ermiteMR;
     if (e.key === 'Escape') {
       pending = 0;
-      if (mr?.closeMenus() || mr?.leaveFiles()) return;
+      if (closeMenus() || mr?.leaveFiles()) return;
       if (typing) e.target.blur();
       return ermite.fire('esc');
     }
@@ -611,6 +667,13 @@
     if (!el || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     ermite.fire(el.dataset.fire);
+    // A choice in a menu closes it; the focus goes back to its button.
+    const menu = el.closest('details.menu');
+    if (menu) closeMenu(menu);
+  });
+  // A click outside an open menu closes it.
+  addEventListener('click', (e) => {
+    for (const d of $$('details.menu[open]')) if (!d.contains(e.target)) d.open = false;
   });
   for (const a of $$('a[data-fire="refs"]')) {
     a.setAttribute('aria-haspopup', 'dialog');
@@ -773,7 +836,8 @@
 // internal/adapters/web/events.go). A fragment is a top-level element with an
 // id: it replaces the element of the page that has the same id. A fragment
 // marked data-gone removes it; a row of a repository the home page does not
-// list yet is added at the top of the list. A slot (data-slot: the place of a
+// list yet is added at the top of the list. Activity updates also move existing
+// home rows to the top when sorted by newest activity; CI updates stay put. A slot (data-slot: the place of a
 // banner, a persistent status region) keeps its element and only gets the
 // children of the fragment, so that screen readers announce the change. A gap,
 // which says the page may have missed events or that what it shows changed,
@@ -872,6 +936,9 @@ window.ermiteLive = (() => {
         }
         if (old.hasAttribute('data-cursor')) el.setAttribute('data-cursor', '');
         old.replaceWith(el);
+        const rows = document.getElementById('repo-rows');
+        if (rows && el.parentElement === rows && rows.dataset.sort === 'activity' &&
+            rows.dataset.desc === 'true' && el.hasAttribute('data-activity')) rows.prepend(el);
         window.htmx?.process(el);
         fitIn(el);
         if (had) refocus(el, had);

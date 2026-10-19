@@ -90,7 +90,9 @@ type Repo struct {
 	// default settings.
 	Settings *RepoSettings `protobuf:"bytes,6,opt,name=settings,proto3" json:"settings,omitempty"`
 	// Normalized and sorted; empty on repositories stored before topics.
-	Topics        []string `protobuf:"bytes,7,rep,name=topics,proto3" json:"topics,omitempty"`
+	Topics []string `protobuf:"bytes,7,rep,name=topics,proto3" json:"topics,omitempty"`
+	// Latest push, merge request or issue activity; unset until recorded.
+	ActiveAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=active_at,json=activeAt,proto3" json:"active_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -170,6 +172,13 @@ func (x *Repo) GetSettings() *RepoSettings {
 func (x *Repo) GetTopics() []string {
 	if x != nil {
 		return x.Topics
+	}
+	return nil
+}
+
+func (x *Repo) GetActiveAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ActiveAt
 	}
 	return nil
 }
@@ -340,7 +349,7 @@ var File_ermite_storage_repo_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_repo_proto_rawDesc = "" +
 	"\n" +
-	"\x19ermite/storage/repo.proto\x12\x0eermite.storage\x1a\"ermite/storage/merge_request.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbe\x02\n" +
+	"\x19ermite/storage/repo.proto\x12\x0eermite.storage\x1a\"ermite/storage/merge_request.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf7\x02\n" +
 	"\x04Repo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12:\n" +
@@ -351,7 +360,8 @@ const file_ermite_storage_repo_proto_rawDesc = "" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x127\n" +
 	"\tpushed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bpushedAt\x128\n" +
 	"\bsettings\x18\x06 \x01(\v2\x1c.ermite.storage.RepoSettingsR\bsettings\x12\x16\n" +
-	"\x06topics\x18\a \x03(\tR\x06topics\")\n" +
+	"\x06topics\x18\a \x03(\tR\x06topics\x127\n" +
+	"\tactive_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bactiveAt\")\n" +
 	"\rSchemaVersion\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\"\xcc\x02\n" +
 	"\x05Token\x12\x0e\n" +
@@ -400,14 +410,15 @@ var file_ermite_storage_repo_proto_depIdxs = []int32{
 	4, // 1: ermite.storage.Repo.created_at:type_name -> google.protobuf.Timestamp
 	4, // 2: ermite.storage.Repo.pushed_at:type_name -> google.protobuf.Timestamp
 	5, // 3: ermite.storage.Repo.settings:type_name -> ermite.storage.RepoSettings
-	4, // 4: ermite.storage.Token.expires_at:type_name -> google.protobuf.Timestamp
-	4, // 5: ermite.storage.Token.created_at:type_name -> google.protobuf.Timestamp
-	4, // 6: ermite.storage.Token.last_used_at:type_name -> google.protobuf.Timestamp
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	4, // 4: ermite.storage.Repo.active_at:type_name -> google.protobuf.Timestamp
+	4, // 5: ermite.storage.Token.expires_at:type_name -> google.protobuf.Timestamp
+	4, // 6: ermite.storage.Token.created_at:type_name -> google.protobuf.Timestamp
+	4, // 7: ermite.storage.Token.last_used_at:type_name -> google.protobuf.Timestamp
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_repo_proto_init() }

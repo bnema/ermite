@@ -289,59 +289,74 @@ func (_c *RepoMetaStore_List_Call) RunAndReturn(run func(ctx context.Context) ([
 	return _c
 }
 
-// Update provides a mock function for the type RepoMetaStore
-func (_mock *RepoMetaStore) Update(ctx context.Context, repo domain.Repo) error {
-	ret := _mock.Called(ctx, repo)
+// Mutate provides a mock function for the type RepoMetaStore
+func (_mock *RepoMetaStore) Mutate(ctx context.Context, name domain.RepoName, fn func(*domain.Repo) (changed bool, err error)) (domain.Repo, error) {
+	ret := _mock.Called(ctx, name, fn)
 
 	if len(ret) == 0 {
-		panic("no return value specified for Update")
+		panic("no return value specified for Mutate")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Repo) error); ok {
-		r0 = returnFunc(ctx, repo)
-	} else {
-		r0 = ret.Error(0)
+	var r0 domain.Repo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, func(*domain.Repo) (changed bool, err error)) (domain.Repo, error)); ok {
+		return returnFunc(ctx, name, fn)
 	}
-	return r0
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, func(*domain.Repo) (changed bool, err error)) domain.Repo); ok {
+		r0 = returnFunc(ctx, name, fn)
+	} else {
+		r0 = ret.Get(0).(domain.Repo)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, func(*domain.Repo) (changed bool, err error)) error); ok {
+		r1 = returnFunc(ctx, name, fn)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
-// RepoMetaStore_Update_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Update'
-type RepoMetaStore_Update_Call struct {
+// RepoMetaStore_Mutate_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Mutate'
+type RepoMetaStore_Mutate_Call struct {
 	*mock.Call
 }
 
-// Update is a helper method to define mock.On call
+// Mutate is a helper method to define mock.On call
 //   - ctx context.Context
-//   - repo domain.Repo
-func (_e *RepoMetaStore_Expecter) Update(ctx any, repo any) *RepoMetaStore_Update_Call {
-	return &RepoMetaStore_Update_Call{Call: _e.mock.On("Update", ctx, repo)}
+//   - name domain.RepoName
+//   - fn func(*domain.Repo) (changed bool, err error)
+func (_e *RepoMetaStore_Expecter) Mutate(ctx any, name any, fn any) *RepoMetaStore_Mutate_Call {
+	return &RepoMetaStore_Mutate_Call{Call: _e.mock.On("Mutate", ctx, name, fn)}
 }
 
-func (_c *RepoMetaStore_Update_Call) Run(run func(ctx context.Context, repo domain.Repo)) *RepoMetaStore_Update_Call {
+func (_c *RepoMetaStore_Mutate_Call) Run(run func(ctx context.Context, name domain.RepoName, fn func(*domain.Repo) (changed bool, err error))) *RepoMetaStore_Mutate_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 domain.Repo
+		var arg1 domain.RepoName
 		if args[1] != nil {
-			arg1 = args[1].(domain.Repo)
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 func(*domain.Repo) (changed bool, err error)
+		if args[2] != nil {
+			arg2 = args[2].(func(*domain.Repo) (changed bool, err error))
 		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
 }
 
-func (_c *RepoMetaStore_Update_Call) Return(err error) *RepoMetaStore_Update_Call {
-	_c.Call.Return(err)
+func (_c *RepoMetaStore_Mutate_Call) Return(repo domain.Repo, err error) *RepoMetaStore_Mutate_Call {
+	_c.Call.Return(repo, err)
 	return _c
 }
 
-func (_c *RepoMetaStore_Update_Call) RunAndReturn(run func(ctx context.Context, repo domain.Repo) error) *RepoMetaStore_Update_Call {
+func (_c *RepoMetaStore_Mutate_Call) RunAndReturn(run func(ctx context.Context, name domain.RepoName, fn func(*domain.Repo) (changed bool, err error)) (domain.Repo, error)) *RepoMetaStore_Mutate_Call {
 	_c.Call.Return(run)
 	return _c
 }

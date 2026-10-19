@@ -56,12 +56,12 @@ func (s *Server) listRepos(ctx context.Context) ([]ports.RepoView, error) {
 // homeSorts are the orders the home list offers, in order. The query also
 // accepts "desc" and "branch", which the page does not link to.
 var homeSorts = []struct{ key, label string }{
-	{"push", "last push"},
+	{"activity", "last activity"},
 	{"name", "name"},
 }
 
 // homeKeys are the keys of ?sort= that sortRepos knows.
-var homeKeys = []string{"push", "name", "desc", "branch"}
+var homeKeys = []string{"activity", "name", "desc", "branch"}
 
 // sortRepos orders repos by the column key; ties keep the order by name.
 func sortRepos(repos []ports.RepoView, key string, desc bool) {
@@ -71,8 +71,8 @@ func sortRepos(repos []ports.RepoView, key string, desc bool) {
 			return strings.ToLower(a.Description) < strings.ToLower(b.Description)
 		case "branch":
 			return a.DefaultBranch < b.DefaultBranch
-		case "push":
-			return a.PushedAt.Before(b.PushedAt)
+		case "activity":
+			return repoActiveAt(a).Before(repoActiveAt(b))
 		}
 		return a.Name.String() < b.Name.String()
 	}
@@ -84,17 +84,17 @@ func sortRepos(repos []ports.RepoView, key string, desc bool) {
 	})
 }
 
-// home lists the repositories: /?sort=<col>&dir=asc|desc, newest push first
+// home lists the repositories: /?sort=<col>&dir=asc|desc, newest activity first
 // by default.
 func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	repos, err := s.listRepos(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
-	key, desc := "push", true
+	key, desc := "activity", true
 	for _, k := range homeKeys {
 		if r.URL.Query().Get("sort") == k {
-			key, desc = k, k == "push"
+			key, desc = k, k == "activity"
 		}
 	}
 	if d := r.URL.Query().Get("dir"); d == "asc" || d == "desc" {
@@ -103,11 +103,11 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 	sortRepos(repos, key, desc)
 
 	now := s.cfg.Now()
-	p := HomePage{}
+	p := HomePage{Sort: key, Desc: desc}
 	for _, c := range homeSorts {
 		sl := SortLink{Label: c.label}
 		next := "asc"
-		if c.key == "push" {
+		if c.key == "activity" {
 			next = "desc"
 		}
 		if c.key == key {
@@ -121,11 +121,10 @@ func (s *Server) home(ctx context.Context, r *http.Request) (templ.Component, in
 		p.Sorts = append(p.Sorts, sl)
 	}
 	p.Rows = s.homeRows(ctx, repos, now)
-	if n, show := s.inboxCount(ctx); show {
-		p.Inbox = &InboxButton{Href: inboxPath, Count: n}
-	}
-
 	l := s.base()
+	if n, show := s.inboxCount(ctx); show {
+		l.Inbox = &InboxButton{Href: inboxPath, Count: n}
+	}
 	l.Title = s.instance
 	l.Live, l.LiveURL = true, liveURL("home", "")
 	l.Cmd = append([]CmdItem{{Kind: "go", Label: "home", Href: "/"}}, repoCmds(repos, "")...)
@@ -268,8 +267,8 @@ func homeRow(r ports.RepoView, now time.Time, cursor, signed bool) HomeRow {
 		Desc: r.Description, Topics: r.Topics, Cursor: cursor,
 		Private: signed && r.Visibility == domain.VisibilityPrivate,
 	}
-	if !r.PushedAt.IsZero() {
-		row.Active, row.ActiveAt = ago(now, r.PushedAt), rfc3339(r.PushedAt)
+	if at := repoActiveAt(r); !at.IsZero() {
+		row.Active, row.ActiveAt = ago(now, at), rfc3339(at)
 	}
 	return row
 }
@@ -284,4 +283,15 @@ func repoCmds(repos []ports.RepoView, except string) []CmdItem {
 		}
 	}
 	return out
+}
+
+// repoActiveAt falls back for repositories without recorded activity.
+func repoActiveAt(r ports.RepoView) time.Time {
+	if !r.ActiveAt.IsZero() {
+		return r.ActiveAt
+	}
+	if r.PushedAt.After(r.CreatedAt) {
+		return r.PushedAt
+	}
+	return r.CreatedAt
 }

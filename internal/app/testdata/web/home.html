@@ -20,7 +20,7 @@
 </script>
 <script src="/-/static/js/hx-sse.min.HASH.js" defer>
 </script>
-<script src="/-/static/js/store.HASH.js" defer>
+<script src="/-/static/js/store.HASH.js">
 </script>
 <script src="/-/static/js/ermite.HASH.js" defer>
 </script>
@@ -61,7 +61,7 @@
 </div>
 <nav class="sort" aria-label="Sort repositories">
 <span class="mute">sort</span>
-<a href="/?sort=push&amp;dir=asc" aria-current="true">last push <span aria-hidden="true">▼</span>
+<a href="/?sort=activity&amp;dir=asc" aria-current="true">last activity <span aria-hidden="true">▼</span>
 <span class="sr">, descending, select for ascending</span>
 </a>
 <a href="/?sort=name&amp;dir=asc">name </a>
@@ -81,8 +81,31 @@
 </button>
 </div>
 </div>
-<ul class="repos" id="repo-rows" data-rows>
-<li id="repo-demo" class="repo" data-cursor>
+<ul class="repos" id="repo-rows" data-rows data-sort="activity" data-desc="true">
+<li id="repo-quiet" class="repo" data-cursor>
+<div class="repo-main">
+<h2 class="repo-name">
+<a href="/quiet">quiet</a>
+</h2>
+<p class="repo-desc mute">no description</p>
+<div class="repo-topics" aria-hidden="true">
+</div>
+<div class="repo-pulse" aria-hidden="true">
+</div>
+</div>
+<div class="repo-head">
+<dl class="repo-stats" aria-label="Figures of quiet">
+<div class="rs-active">
+<dt>last activity</dt>
+<dd>
+<time datetime="STAMP" title="STAMP">AGO</time>
+</dd>
+</div>
+</dl>
+</div>
+<p class="repo-commits mute">no commits yet</p>
+</li>
+<li id="repo-demo" class="repo">
 <div class="repo-main">
 <h2 class="repo-name">
 <a href="/demo">demo</a>
@@ -147,27 +170,6 @@
 <time class="dim" datetime="STAMP" title="STAMP">AGO</time>
 </li>
 </ul>
-</li>
-<li id="repo-quiet" class="repo">
-<div class="repo-main">
-<h2 class="repo-name">
-<a href="/quiet">quiet</a>
-</h2>
-<p class="repo-desc mute">no description</p>
-<div class="repo-topics" aria-hidden="true">
-</div>
-<div class="repo-pulse" aria-hidden="true">
-</div>
-</div>
-<div class="repo-head">
-<dl class="repo-stats" aria-label="Figures of quiet">
-<div class="rs-active">
-<dt>last activity</dt>
-<dd class="mute">never</dd>
-</div>
-</dl>
-</div>
-<p class="repo-commits mute">no commits yet</p>
 </li>
 </ul>
 </section>
@@ -289,6 +291,12 @@
 </div>
 <div>
 <dt>
+<kbd>w</kbd>
+</dt>
+<dd>wide mode: use the whole width of the screen, or not (remembered)</dd>
+</div>
+<div>
+<dt>
 <kbd>y</kbd>
 </dt>
 <dd>copy a permalink pinned to the commit</dd>
@@ -337,15 +345,15 @@
 <span class="k">go</span>
 </a>
 </li>
-<li id="cmd-o1" role="option" aria-selected="false" data-k="repo demo">
-<a href="/demo" tabindex="-1">
-<span class="lbl">demo</span>
+<li id="cmd-o1" role="option" aria-selected="false" data-k="repo quiet">
+<a href="/quiet" tabindex="-1">
+<span class="lbl">quiet</span>
 <span class="k">repo</span>
 </a>
 </li>
-<li id="cmd-o2" role="option" aria-selected="false" data-k="repo quiet">
-<a href="/quiet" tabindex="-1">
-<span class="lbl">quiet</span>
+<li id="cmd-o2" role="option" aria-selected="false" data-k="repo demo">
+<a href="/demo" tabindex="-1">
+<span class="lbl">demo</span>
 <span class="k">repo</span>
 </a>
 </li>
@@ -389,6 +397,7 @@
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
+         k-wide from:body -> window.ermiteWide.toggle();
          k-expand from:body -> ermite.expandFile();
          k-expandAll from:body -> ermite.expandAll();
          k-permalink from:body -> ermite.permalink();

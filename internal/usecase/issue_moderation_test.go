@@ -89,6 +89,7 @@ func TestIssueModerationApprove(t *testing.T) {
 		u := newModerationUnit(t, domain.IssuesPublic)
 		issue := domain.Issue{Repo: u.repo.Name, Number: 7, State: domain.IssueStateOpen}
 		u.pending.EXPECT().Approve(mock.Anything, u.repo.Name, u.id, now).Return(issue, nil).Once()
+		expectRepoMutation(t, u.meta, u.repo, mock.MatchedBy(func(r domain.Repo) bool { return r.ActiveAt.Equal(now) })).Once()
 		u.bus.EXPECT().Publish(mock.Anything, domain.IssueOpened{Issue: issue, At: now, Visibility: u.repo.Visibility, CreatedAt: u.repo.CreatedAt}).Once()
 		got, err := u.mod.Approve(ctx, domain.Owner(), u.repo.Name, u.id)
 		require.NoError(t, err)

@@ -6,14 +6,17 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/adapters/eventbus"
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 	"bnema.dev/ermite/internal/usecase"
 )
 
@@ -46,6 +49,10 @@ func TestIssuesOverTheStore(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, issue.Number, "the number follows the merge request")
 	assert.Equal(t, "bot", issue.Author)
+	repo, err := store.Get(ctx, n)
+	require.NoError(t, err)
+	assert.True(t, repo.ActiveAt.Equal(now))
+	assert.True(t, repo.PushedAt.IsZero())
 
 	kind, err := issues.Kind(ctx, domain.Anonymous(), n, 1)
 	require.NoError(t, err)
@@ -84,4 +91,64 @@ func TestIssuesOverTheStore(t *testing.T) {
 		kinds = append(kinds, (<-events).EventKind())
 	}
 	assert.Equal(t, []string{"issue.opened", "issue.commented", "issue.closed", "issue.commented", "issue.reopened"}, kinds)
+}
+
+// Moderated submissions are private work until approval makes them public activity.
+func TestModeratedIssueActivityOverStore(t *testing.T) {
+	ctx := t.Context()
+	store, err := kvstore.Open(ctx, t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close(ctx)) })
+	n := name(t, "proj")
+	initial := now.Add(-time.Hour)
+	require.NoError(t, store.Create(ctx, domain.Repo{Name: n, Visibility: domain.VisibilityPublic, CreatedAt: initial, ActiveAt: initial, Settings: withIssues(domain.IssuesPublic)}))
+	clock := mocks.NewClock(t)
+	at := now
+	clock.EXPECT().Now().RunAndReturn(func() time.Time { return at }).Maybe()
+	keys, err := usecase.NewIssueKeys(ctx, store.IssueKeys())
+	require.NoError(t, err)
+	limiter := mocks.NewSubmissionLimiter(t)
+	limiter.EXPECT().Recent(mock.Anything, mock.Anything).Return(0, 0).Maybe()
+	limiter.EXPECT().Reserve(mock.Anything, mock.Anything).Return(true, time.Duration(0), func() {}).Maybe()
+	bus := mocks.NewEventBus(t)
+	var kinds []string
+	bus.EXPECT().Publish(mock.Anything, mock.Anything).Run(func(_ context.Context, ev domain.Event) {
+		repo, err := store.Get(ctx, n)
+		require.NoError(t, err)
+		if ev.EventKind() == "issue.opened" {
+			require.Equal(t, at, repo.ActiveAt)
+		} else {
+			require.Equal(t, initial, repo.ActiveAt)
+		}
+		kinds = append(kinds, ev.EventKind())
+	}).Maybe()
+	submissions := usecase.NewIssueSubmissions(usecase.IssueSubmissionsConfig{Meta: store, Pending: store.PendingIssues(), Bans: store.IssueBans(), Limiter: limiter, Keys: keys, Bus: bus, Clock: clock, BaseDifficulty: testBits, MaxDifficulty: testBits})
+	moderation := usecase.NewIssueModeration(usecase.IssueModerationConfig{Meta: store, Pending: store.PendingIssues(), Bans: store.IssueBans(), Bus: bus, Clock: clock})
+	submit := func() domain.PendingIssueID {
+		ch, err := submissions.Challenge(ctx, n, "client")
+		require.NoError(t, err)
+		sub := ports.IssueSubmission{Token: ch.Token, FormToken: ch.FormToken, Solution: solve(t, ch), Title: "Bug", Body: "Details"}
+		at = at.Add(usecase.MinFillTime)
+		require.NoError(t, submissions.Submit(ctx, n, "client", sub))
+		repo, err := store.Get(ctx, n)
+		require.NoError(t, err)
+		require.Equal(t, initial, repo.ActiveAt)
+		page, err := store.PendingIssues().List(ctx, n, ports.ListPendingParams{PageSize: 10})
+		require.NoError(t, err)
+		require.Len(t, page.Issues, 1)
+		return page.Issues[0].ID
+	}
+	id := submit()
+	require.NoError(t, moderation.Reject(ctx, domain.Owner(), n, id, false))
+	repo, err := store.Get(ctx, n)
+	require.NoError(t, err)
+	require.Equal(t, initial, repo.ActiveAt)
+	id = submit()
+	_, err = moderation.Approve(ctx, domain.Owner(), n, id)
+	require.NoError(t, err)
+	repo, err = store.Get(ctx, n)
+	require.NoError(t, err)
+	require.Equal(t, at, repo.ActiveAt)
+	require.True(t, repo.PushedAt.IsZero())
+	require.Equal(t, []string{"issue.submitted", "issue.pending_removed", "issue.submitted", "issue.opened"}, kinds)
 }

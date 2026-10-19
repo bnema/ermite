@@ -42,6 +42,7 @@ type Repo struct {
 	Visibility Visibility
 	CreatedAt  time.Time
 	PushedAt   time.Time // zero until the first push
+	ActiveAt   time.Time // latest push, merge request or issue activity
 	// Settings are the merge settings; the stores always fill them in, with
 	// the defaults for a repository that never stored any.
 	Settings RepoSettings

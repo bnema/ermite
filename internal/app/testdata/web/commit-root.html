@@ -20,7 +20,7 @@
 </script>
 <script src="/-/static/js/hx-sse.min.HASH.js" defer>
 </script>
-<script src="/-/static/js/store.HASH.js" defer>
+<script src="/-/static/js/store.HASH.js">
 </script>
 <script src="/-/static/js/ermite.HASH.js" defer>
 </script>
@@ -119,6 +119,11 @@
 </span>
 <span class="grow">
 </span>
+<details class="menu vmenu">
+<summary class="btn" aria-label="Diff view">
+<span hx-live="this.textContent = q('#diffs').attr['data-diff'] === 'split' ? 'Split' : 'Unified'">Unified</span>
+</summary>
+<div class="menu-pop" role="group" aria-label="Diff view">
 <a href="/diffs/commit/SHA40?view=unified" class="btn vbtn" data-view="unified" aria-keyshortcuts="u" aria-current="true" data-fire="unified" :aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false">Unified<kbd aria-hidden="true">u</kbd>
 </a>
 <a href="/diffs/commit/SHA40?view=split" class="btn vbtn" data-view="split" aria-keyshortcuts="d" data-fire="split" :aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false">Split<kbd aria-hidden="true">d</kbd>
@@ -128,8 +133,10 @@
 <kbd aria-hidden="true">x</kbd>
 </button>
 </div>
+</details>
+</div>
 <div id="diffs" data-diff="unified" hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff">
-<details class="dfile lnw-2" id="f1" data-file open>
+<details class="dfile lnw-2" id="f1" data-file="a.txt" open>
 <summary>
 <span class="st">A</span>
 <span class="p">a.txt</span>
@@ -251,7 +258,7 @@
 </table>
 </div>
 </details>
-<details class="dfile lnw-2" id="f2" data-file open>
+<details class="dfile lnw-2" id="f2" data-file="gone.txt" open>
 <summary>
 <span class="st">A</span>
 <span class="p">gone.txt</span>
@@ -301,7 +308,7 @@
 </table>
 </div>
 </details>
-<details class="dfile lnw-2" id="f3" data-file>
+<details class="dfile lnw-2" id="f3" data-file="logo.bin">
 <summary>
 <span class="st">A</span>
 <span class="p">logo.bin</span>
@@ -311,7 +318,7 @@
 </summary>
 <p class="note pad">binary file: no text diff</p>
 </details>
-<details class="dfile lnw-2" id="f4" data-file open>
+<details class="dfile lnw-2" id="f4" data-file="old.txt" open>
 <summary>
 <span class="st">A</span>
 <span class="p">old.txt</span>
@@ -397,7 +404,7 @@
 </table>
 </div>
 </details>
-<details class="dfile lnw-2" id="f5" data-file open>
+<details class="dfile lnw-2" id="f5" data-file="run.sh" open>
 <summary>
 <span class="st">A</span>
 <span class="p">run.sh</span>
@@ -661,6 +668,12 @@
 </div>
 <div>
 <dt>
+<kbd>w</kbd>
+</dt>
+<dd>wide mode: use the whole width of the screen, or not (remembered)</dd>
+</div>
+<div>
+<dt>
 <kbd>y</kbd>
 </dt>
 <dd>copy a permalink pinned to the commit</dd>
@@ -838,6 +851,7 @@
          k-split from:body -> ermite.layout('split');
          k-unified from:body -> ermite.layout('unified');
          k-collapse from:body -> ermite.collapse();
+         k-wide from:body -> window.ermiteWide.toggle();
          k-expand from:body -> ermite.expandFile();
          k-expandAll from:body -> ermite.expandAll();
          k-permalink from:body -> ermite.permalink();

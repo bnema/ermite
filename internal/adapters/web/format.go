@@ -61,6 +61,14 @@ func grouped(n int) string {
 	return string(b)
 }
 
+// viewLabel names a diff layout on the button of the view menu.
+func viewLabel(view string) string {
+	if view == "split" {
+		return "Split"
+	}
+	return "Unified"
+}
+
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return "1 " + one

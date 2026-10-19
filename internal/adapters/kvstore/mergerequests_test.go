@@ -442,13 +442,15 @@ func TestRepoSettings(t *testing.T) {
 	assert.Equal(t, domain.DefaultRepoSettings(), got.Settings)
 
 	got.Settings = domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, FailingChecksBlock: false, Issues: domain.IssuesOwner}
-	require.NoError(t, s.Update(ctx, got))
+	_, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) { r.Settings = got.Settings; return true, nil })
+	require.NoError(t, err)
 	again, err := s.Get(ctx, n)
 	require.NoError(t, err)
 	assert.Equal(t, got.Settings, again.Settings)
 
 	got.Settings = domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{"rebase"}}
-	assert.ErrorIs(t, s.Update(ctx, got), domain.ErrInvalid)
+	_, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) { r.Settings = got.Settings; return true, nil })
+	assert.ErrorIs(t, err, domain.ErrInvalid)
 }
 
 // TestRepoWithoutStoredSettingsReadsTheDefaults: a repository stored before

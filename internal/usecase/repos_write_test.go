@@ -30,9 +30,9 @@ func TestUpdate(t *testing.T) {
 	t.Run("description and visibility are stored and RepoUpdated is published", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
-		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Once()
 		want := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Description: "new", Settings: domain.DefaultRepoSettings()}
-		f.meta.EXPECT().Update(ctx, want).Return(nil)
+		expectRepoMutation(t, f.meta, priv, want)
 		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{
 			Repo: n, At: now, Visibility: domain.VisibilityPublic, Previous: domain.VisibilityPrivate,
 		}).Return().Once()
@@ -47,11 +47,11 @@ func TestUpdate(t *testing.T) {
 	t.Run("topics are normalized and stored, and RepoUpdated is published", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
-		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Once()
 		want := priv
 		want.Topics = []string{"cli", "go"}
 		want.Settings = domain.DefaultRepoSettings()
-		f.meta.EXPECT().Update(ctx, want).Return(nil)
+		expectRepoMutation(t, f.meta, priv, want)
 		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{
 			Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPrivate,
 		}).Return().Once()
@@ -66,10 +66,10 @@ func TestUpdate(t *testing.T) {
 		f := newFixture(t)
 		withTopics := priv
 		withTopics.Topics = []string{"go"}
-		f.meta.EXPECT().Get(ctx, n).Return(withTopics, nil).Twice()
+		f.meta.EXPECT().Get(ctx, n).Return(withTopics, nil).Once()
 		want := priv
 		want.Settings = domain.DefaultRepoSettings()
-		f.meta.EXPECT().Update(ctx, want).Return(nil)
+		expectRepoMutation(t, f.meta, withTopics, want)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
 
 		got, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{Topics: &[]string{}})
@@ -77,15 +77,12 @@ func TestUpdate(t *testing.T) {
 		assert.Nil(t, got.Topics)
 	})
 
-	t.Run("a lost race on the metadata is retried", func(t *testing.T) {
-		t.Parallel()
+	t.Run("exhausted mutation conflicts are returned", func(t *testing.T) {
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
-		f.meta.EXPECT().Update(ctx, mock.Anything).Return(domain.ErrConflict).Once()
-		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil).Once()
-		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
+		f.meta.EXPECT().Mutate(ctx, n, mock.Anything).Return(domain.Repo{}, domain.ErrConflict).Once()
 		_, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{Description: ptr("x")})
-		require.NoError(t, err)
+		require.ErrorIs(t, err, domain.ErrConflict)
 	})
 
 	t.Run("the default branch is checked, then HEAD moves", func(t *testing.T) {
@@ -106,9 +103,11 @@ func TestUpdate(t *testing.T) {
 		var order []string
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
 		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
-		f.meta.EXPECT().Update(ctx, mock.Anything).RunAndReturn(func(context.Context, domain.Repo) error {
+		f.meta.EXPECT().Mutate(ctx, n, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.RepoName, fn func(*domain.Repo) (bool, error)) (domain.Repo, error) {
 			order = append(order, "meta")
-			return nil
+			repo := priv
+			_, err := fn(&repo)
+			return repo, err
 		})
 		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").RunAndReturn(func(context.Context, domain.RepoName, string) error {
 			order = append(order, "head")
@@ -127,7 +126,7 @@ func TestUpdate(t *testing.T) {
 		pub := domain.Repo{Name: n, Visibility: domain.VisibilityPublic, Description: "old"}
 		f.meta.EXPECT().Get(ctx, n).Return(pub, nil)
 		f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
-		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil)
+		expectRepoMutation(t, f.meta, pub, mock.Anything)
 		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").Return(boom)
 		f.bus.EXPECT().Publish(ctx, domain.RepoUpdated{
 			Repo: n, At: now, Visibility: domain.VisibilityPrivate, Previous: domain.VisibilityPublic,
@@ -250,10 +249,10 @@ func TestUpdateIssuesMode(t *testing.T) {
 	t.Run("public is stored and published", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
-		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
-		f.meta.EXPECT().Update(ctx, mock.MatchedBy(func(r domain.Repo) bool {
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Once()
+		expectRepoMutation(t, f.meta, priv, mock.MatchedBy(func(r domain.Repo) bool {
 			return r.Settings.Issues == domain.IssuesPublic
-		})).Return(nil)
+		}))
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
 		repo, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Issues: ptr(domain.IssuesPublic)})
 		require.NoError(t, err)
@@ -271,10 +270,10 @@ func TestUpdateIssuesMode(t *testing.T) {
 	t.Run("owner is stored and published", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
-		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
-		f.meta.EXPECT().Update(ctx, mock.MatchedBy(func(r domain.Repo) bool {
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Once()
+		expectRepoMutation(t, f.meta, priv, mock.MatchedBy(func(r domain.Repo) bool {
 			return r.Settings.Issues == domain.IssuesOwner && r.Settings.FailingChecksBlock
-		})).Return(nil)
+		}))
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
 		repo, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Issues: ptr(domain.IssuesOwner)})
 		require.NoError(t, err)

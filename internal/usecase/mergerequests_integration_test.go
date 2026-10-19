@@ -1448,3 +1448,14 @@ func TestNoteThreadsRangesAndVerdicts(t *testing.T) {
 	_, err = r.mrs.DeleteComment(r.ctx, root, r.repo, mr.Number, changes.ID)
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 }
+
+func TestMergeRequestRecordsRepositoryActivity(t *testing.T) {
+	r := newMRRig(t)
+	r.seed()
+	r.feature("activity")
+	_, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "Activity", Source: "activity", Target: "main"})
+	require.NoError(t, err)
+	repo, err := r.store.Get(r.ctx, r.repo)
+	require.NoError(t, err)
+	assert.True(t, repo.ActiveAt.Equal(now))
+}

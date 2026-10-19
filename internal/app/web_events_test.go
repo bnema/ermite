@@ -123,7 +123,7 @@ func TestWebEventsHome(t *testing.T) {
 	assert.Equal(t, "home-list", ev.name)
 	assert.NotEmpty(t, ev.id)
 	assert.Contains(t, ev.data, `<li id="repo-pub"`)
-	assert.Contains(t, ev.data, `new push`)
+	assert.Contains(t, ev.data, `new activity`)
 	assert.Contains(t, ev.data, `href="/pub"`)
 	assert.Contains(t, ev.data, `<ul class="repo-commits" aria-label="Recent commits of pub">`, "the live row lists the commits too")
 
@@ -134,7 +134,7 @@ func TestWebEventsHome(t *testing.T) {
 	assert.Equal(t, "home-list", ev.name)
 	assert.Contains(t, ev.data, `<li id="repo-fresh"`)
 	assert.Contains(t, ev.data, "a &lt;b&gt;fresh&lt;/b&gt; one", "text is escaped")
-	assert.NotContains(t, ev.data, "new push")
+	assert.NotContains(t, ev.data, "new activity")
 
 	// A repository that turns private is removed from the anonymous list.
 	priv := domain.VisibilityPrivate

@@ -74,3 +74,8 @@ window.ermiteStore = (() => {
 
   return { get, set, remove, watch, pref };
 })();
+
+// The wide mode (ermiteWide in ermite.js) is set here, before the first paint:
+// shell.templ loads this file without defer, so a wide page never draws narrow
+// first.
+if (window.ermiteStore.get('wide') === '1') document?.documentElement?.classList?.add('wide');

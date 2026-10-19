@@ -252,7 +252,7 @@ func TestRunUpdatedRefreshesTheHomeRow(t *testing.T) {
 	assert.Equal(t, "home-list", got[0].event)
 	assert.Contains(t, got[0].html, `id="repo-proj"`)
 	assert.Contains(t, got[0].html, "passing")
-	assert.NotContains(t, got[0].html, "new push", "a run is not a push")
+	assert.NotContains(t, got[0].html, "new activity", "a run is not a push")
 
 	// A job that ended refreshes the row too; one in progress does not.
 	got, err = (&liveStream{s: srv}).render(t.Context(), ports.WatchEvent{Event: domain.JobUpdated{Job: domain.CIJob{Repo: repo, Phase: domain.CIPhaseRunning}}})
@@ -343,4 +343,53 @@ func TestHomeOffersTheLayouts(t *testing.T) {
 	app := strings.Index(body, "/js/ermite.")
 	require.NotEqual(t, -1, store)
 	assert.Less(t, store, app, "the store loads before the app script")
+}
+
+func TestHomeActivityOrderAndFallback(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	a, b, c := publicRepo(t, "a"), publicRepo(t, "b"), publicRepo(t, "c")
+	a.PushedAt = now.Add(-time.Hour)
+	a.ActiveAt = now
+	b.PushedAt = now.Add(-time.Minute)
+	c.CreatedAt = now.Add(-30 * time.Minute)
+	repos := []ports.RepoView{b, c, a}
+	sortRepos(repos, "activity", true)
+	assert.Equal(t, []ports.RepoView{a, b, c}, repos)
+	sortRepos(repos, "activity", false)
+	assert.Equal(t, []ports.RepoView{c, b, a}, repos)
+	assert.Equal(t, rfc3339(now), homeRow(a, now, false, false).ActiveAt)
+	c.PushedAt = c.CreatedAt.Add(-time.Hour)
+	assert.Equal(t, c.CreatedAt, repoActiveAt(c), "fallback is the later of creation and push")
+}
+
+func TestActivityEventsRefreshTheHomeRow(t *testing.T) {
+	t.Parallel()
+	repo := publicRepo(t, "proj")
+	srv := newTestServer(t, Config{Repos: reposServing(t, repo), Browse: homeBrowse(t)})
+	mr := domain.MergeRequest{Repo: repo.Name}
+	issue := domain.Issue{Repo: repo.Name}
+	for _, ev := range []domain.Event{
+		domain.PushEvent{Repo: repo.Name},
+		domain.MergeRequestOpened{MergeRequest: mr}, domain.MergeRequestMerged{MergeRequest: mr},
+		domain.MergeRequestClosed{MergeRequest: mr}, domain.MergeRequestReady{MergeRequest: mr},
+		domain.CommentAdded{Repo: repo.Name}, domain.IssueOpened{Issue: issue},
+		domain.IssueClosed{Issue: issue}, domain.IssueReopened{Issue: issue}, domain.IssueCommented{Repo: repo.Name},
+	} {
+		t.Run(ev.EventKind(), func(t *testing.T) {
+			t.Parallel()
+			got, err := (&liveStream{s: srv}).home(t.Context(), ports.WatchEvent{Event: ev})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Equal(t, "home-list", got[0].event)
+			assert.Contains(t, got[0].html, `id="repo-proj"`)
+			assert.Contains(t, got[0].html, `data-activity`)
+			assert.Contains(t, got[0].html, "new activity")
+		})
+	}
+	for _, ev := range []domain.Event{domain.IssueSubmitted{Repo: repo.Name}, domain.IssuePendingRemoved{Repo: repo.Name}} {
+		got, err := (&liveStream{s: srv}).home(t.Context(), ports.WatchEvent{Event: ev})
+		require.NoError(t, err)
+		assert.Empty(t, got)
+	}
 }

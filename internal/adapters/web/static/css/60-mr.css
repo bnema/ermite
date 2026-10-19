@@ -1,6 +1,12 @@
 @layer components {
   /* merge requests: the review page. Hue only where it carries a verdict. */
   .mr-h .show-kv { margin-top: 0; }
+  /* one card: the header (title, facts) a shade lighter, the description below */
+  .mr-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
+    & > .mr-h { background: var(--bg-raised); border: 0; border-radius: 0; padding-bottom: var(--s3); }
+    & > .mr-desc.prose { border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+  }
 
   .mr-state[data-state="open"]::before { content: "● "; color: var(--teal); }
   .mr-state[data-state="merged"]::before { content: "✓ "; color: var(--teal); }
@@ -48,6 +54,15 @@
       font-size: var(--fs-s);
     }
     & .kv { margin: 0; }
+  }
+  /* the view menu of a diff: the layout and the fold, one row each */
+  .vmenu {
+    & > summary::after { content: ""; width: 0; height: 0; margin-left: 2px; border: 4px solid transparent; border-top-color: currentColor; transform: translateY(2px); }
+    & .menu-pop { left: 0; right: auto; width: 220px; gap: var(--s1); padding: var(--s2); }
+    & .menu-pop .btn { width: 100%; justify-content: flex-start; border-color: transparent; background: none; }
+    & .menu-pop .btn:hover { background: var(--bg-raised); }
+    & .menu-pop .btn[aria-current="true"] { background: var(--bg-raised); color: var(--ink-hi); }
+    & .menu-pop .btn kbd { margin-left: auto; }
   }
   .mmenu {
     & .d-modes { display: grid; gap: var(--s1); border: 0; padding: 0; margin: 0; }
@@ -207,7 +222,6 @@
     & .inbox-counts strong { color: var(--ink-hi); font-family: var(--mono); }
     & .since { align-self: flex-start; max-width: 100%; }
   }
-  .inbox-btn { gap: var(--s2); }
 
   @media (max-width: 700px) {
     .list.mrs .c-who { display: none; }

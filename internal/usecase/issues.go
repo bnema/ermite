@@ -124,6 +124,7 @@ func (i *Issues) Create(ctx context.Context, p domain.Principal, name domain.Rep
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", name.String()).Int64("number", issue.Number).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue opened")
+	recordActivity(ctx, i.meta, repo.Name, now)
 	i.bus.Publish(ctx, domain.IssueOpened{Issue: issue, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	return issue, nil
 }
@@ -211,6 +212,7 @@ func (i *Issues) AddComment(ctx context.Context, p domain.Principal, name domain
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", name.String()).Int64("number", number).Int64("comment", c.ID).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue comment added")
+	recordActivity(ctx, i.meta, name, c.CreatedAt)
 	i.bus.Publish(ctx, domain.IssueCommented{
 		Repo: name, Number: number, Comment: c, At: c.CreatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
 	})
@@ -260,6 +262,7 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 		log := zerowrap.FromCtx(ctx)
 		log.Info().Str("repo", name.String()).Int64("number", number).
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue " + verb + "d")
+		recordActivity(ctx, i.meta, repo.Name, issue.UpdatedAt)
 		if to == domain.IssueStateOpen {
 			i.bus.Publish(ctx, domain.IssueReopened{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		} else {

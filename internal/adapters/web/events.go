@@ -50,6 +50,8 @@ import (
 //
 //	home-list       data: <li id="repo-<name>">…</li>, or <li id="repo-<name>" data-gone></li>
 //	                for a repository that is deleted or no longer visible
+//	                Activity rows carry data-activity: push, MR lifecycle/comment,
+//	                or issue lifecycle/comment (never pending moderation or CI).
 //	repo-last-push  data: <dd id="last-push-<name>">…</dd>
 //	refs-list       data: <tbody id="ref-rows">…</tbody>, and again with
 //	                <dl id="refs-kv">…</dl>, the facts of the rail

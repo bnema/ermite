@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { dom, El, el, flushFrames, installDom, settle } from './dom.mjs';
 
 // The few things ermite.js uses that dom.mjs does not have.
+El.prototype.prepend = function (...nodes) { this.nodes.unshift(...this.adopt(nodes)); };
 El.prototype.replaceWith = function (n) {
   const p = this.parent;
   const i = p.nodes.indexOf(this);
@@ -332,4 +333,28 @@ test('the preference is read from storage when the page loads', async () => {
   keydown({ closest: () => null }, 'j');
   assert.deepEqual(dom.body.events, []);
   store.set('keys-off', '');
+});
+
+
+test('activity moves a home row up only in newest activity order, preserving focus and cursor', () => {
+  for (const [sort, desc, activity, moves] of [
+    ['activity', 'true', true, true],
+    ['activity', 'false', true, false],
+    ['name', 'true', true, false],
+    ['name', 'false', true, false],
+    ['activity', 'true', false, false], // CI or metadata, not activity
+  ]) {
+    const r = rows();
+    r.list.dataset.sort = sort;
+    r.list.dataset.desc = desc;
+    const old = r.list.children[1];
+    old.setAttribute('data-cursor', '');
+    active = old.children[0];
+    const fresh = r.mk('repo-b', '/b');
+    if (activity) fresh.setAttribute('data-activity', '');
+    swapWith(`activity-${sort}-${desc}-${activity}`, fresh);
+    assert.equal(r.list.children.indexOf(fresh), moves ? 0 : 1);
+    assert.equal(active, fresh.children[0]);
+    assert.ok(fresh.hasAttribute('data-cursor'));
+  }
 });

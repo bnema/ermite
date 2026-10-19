@@ -32,6 +32,8 @@ message Repo {
   RepoSettings settings = 6;
   // Normalized and sorted; empty on repositories stored before topics.
   repeated string topics = 7;
+  // Latest push, merge request or issue activity; unset until recorded.
+  google.protobuf.Timestamp active_at = 8;
 }
 
 // SchemaVersion is stored under the key "meta/schema".

@@ -21,7 +21,7 @@ type RepoPage struct {
 
 // RepoView is a repository with the Git state that belongs in its summary.
 type RepoView struct {
-	domain.Repo
+	domain.Repo // includes ActiveAt, the latest repository activity
 	// DefaultBranch is the branch HEAD points to, even when it does not exist
 	// yet; empty when HEAD is detached or the directory is missing.
 	DefaultBranch string

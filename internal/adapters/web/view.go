@@ -71,6 +71,9 @@ type Layout struct {
 	MR bool
 	// IssueForm loads the script of the public issue form (issue-form.js).
 	IssueForm bool
+	// Inbox is the button to the owner's inbox, next to the logo; set on the
+	// home page only, for the signed-in owner.
+	Inbox *InboxButton
 }
 
 // Link is a plain label + href pair.
@@ -93,7 +96,7 @@ type HomeRow struct {
 	Stats *HomeStats
 	// Private marks a private repository; only set for a signed-in visitor.
 	Private bool
-	// Fresh marks a row that a push just updated (live updates only).
+	// Fresh marks a row that activity just updated (live updates only).
 	Fresh bool
 	// Commits are the newest of the default branch. NoCommits says there is
 	// none (never pushed, or an empty branch); a failed read says nothing.
@@ -135,11 +138,10 @@ type SortLink struct {
 
 // HomePage is the repository list.
 type HomePage struct {
+	Sort  string
+	Desc  bool
 	Sorts []SortLink
 	Rows  []HomeRow
-	// Inbox is the button to the owner's inbox; nil unless the owner is signed
-	// in.
-	Inbox *InboxButton
 }
 
 // InboxButton is the link to the inbox with the number of open items; Count is

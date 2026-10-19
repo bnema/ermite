@@ -39,6 +39,7 @@ func newIssueUnit(t *testing.T, vis domain.Visibility, mode domain.IssuesMode) *
 	clock := mocks.NewClock(t)
 	clock.EXPECT().Now().Return(now).Maybe()
 	u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil).Maybe()
+	expectRepoMutation(t, u.meta, u.repo, mock.MatchedBy(func(r domain.Repo) bool { return r.ActiveAt.Equal(now) && r.PushedAt.IsZero() })).Maybe()
 	u.issues = usecase.NewIssues(usecase.IssuesConfig{Meta: u.meta, Store: u.store, MergeRequests: u.mrs, Bus: u.bus, Clock: clock})
 	return u
 }
@@ -116,6 +117,7 @@ func TestIssueCreateAndTransitions(t *testing.T) {
 		got, err := u.issues.Create(ctx, p, u.repo.Name, ports.CreateIssueParams{Title: " Crash ", Body: "why"})
 		require.NoError(t, err)
 		assert.EqualValues(t, 7, got.Number)
+		u.meta.AssertCalled(t, "Mutate", mock.Anything, u.repo.Name, mock.Anything)
 	})
 
 	t.Run("invalid text stores nothing", func(t *testing.T) {

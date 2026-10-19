@@ -32,10 +32,13 @@ type RepoMetaStore interface {
 	Get(ctx context.Context, name domain.RepoName) (domain.Repo, error)
 	// List returns every repository ordered by name.
 	List(ctx context.Context) ([]domain.Repo, error)
-	// Update replaces the stored repository. It returns domain.ErrNotFound if
-	// there is none and domain.ErrConflict if another write changed the
-	// stored repository since it was read.
-	Update(ctx context.Context, repo domain.Repo) error
+	// Mutate applies fn to the stored repository and writes under the version read.
+	// Concurrent writes retry fn up to a bounded number of attempts, then return
+	// domain.ErrConflict. fn must be pure and safe to call several times, and
+	// must not change Name. changed=false writes nothing. It returns the stored
+	// repository, or domain.ErrNotFound when absent. Errors from fn are returned
+	// unchanged with nothing written.
+	Mutate(ctx context.Context, name domain.RepoName, fn func(*domain.Repo) (changed bool, err error)) (domain.Repo, error)
 	// Delete removes the repository and everything keyed to it: its merge
 	// requests, their comments and read positions, and its number sequence.
 	// A repository created again under the same name starts empty, with its

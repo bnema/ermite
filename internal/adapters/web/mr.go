@@ -910,10 +910,15 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 				ln.Selected = true
 			}
 		}
+		// The title names the whole range a shift + click selected: a.go:21-149.
+		lines := itoa(on.line)
+		if start < on.line {
+			lines = itoa(start) + "-" + lines
+		}
 		if ln := find(on.path, side, on.line); ln != nil {
 			ln.Form = &CommentForm{
 				StartLine: optionalLine(on.start), ID: "cf-line", Action: mrHref(repo, n, "comments"), Path: on.path, Line: itoa(on.line), Side: on.side,
-				Title:  "comment on " + visibleText(on.path) + ":" + itoa(on.line) + " (" + on.side + ")",
+				Title:  "comment on " + visibleText(on.path) + ":" + lines + " (" + on.side + ")",
 				Cancel: withFrom(self, windowStart(fileAt[on.path])) + "#" + fileIDs[on.path], Focus: true,
 				From: windowStart(fileAt[on.path]),
 			}

@@ -305,8 +305,7 @@ func TestPushesRecord(t *testing.T) {
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		repo := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, CreatedAt: now.Add(-time.Hour)}
-		f.meta.EXPECT().Get(ctx, n).Return(repo, nil)
-		f.meta.EXPECT().Update(ctx, domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, CreatedAt: repo.CreatedAt, PushedAt: now}).Return(nil)
+		expectRepoMutation(t, f.meta, repo, domain.Repo{Name: n, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, PushedAt: now, ActiveAt: now}).Once()
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
 		f.bus.EXPECT().Publish(ctx, domain.PushEvent{Repo: n, Updates: ups, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt}).Return()
 
@@ -320,22 +319,18 @@ func TestPushesRecord(t *testing.T) {
 		fresh := mocks.NewRepoFreshener(t)
 		fresh.EXPECT().Refresh(ctx, n).Return().Once()
 		f.pushes.WithFreshener(fresh)
-		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n}, nil)
-		f.meta.EXPECT().Update(ctx, mock.Anything).Return(nil)
+		expectPushMutation(t, f.meta, domain.Repo{Name: n}, nil)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
 	})
 
-	t.Run("pushed_at retries after a conflict and never goes backwards", func(t *testing.T) {
+	t.Run("pushed_at preserves a later push", func(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
-		repo := domain.Repo{Name: n}
-		f.meta.EXPECT().Get(ctx, n).Return(repo, nil).Once()
-		f.meta.EXPECT().Update(ctx, mock.Anything).Return(domain.ErrConflict).Once()
-		later := domain.Repo{Name: n, PushedAt: now.Add(time.Second)}
-		f.meta.EXPECT().Get(ctx, n).Return(later, nil).Once() // a later push recorded meanwhile
+		later := domain.Repo{Name: n, PushedAt: now.Add(time.Second), ActiveAt: now.Add(time.Second)}
+		expectPushMutation(t, f.meta, later, nil) // a later push recorded meanwhile
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
@@ -345,7 +340,7 @@ func TestPushesRecord(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
-		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
+		expectPushMutation(t, f.meta, domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
@@ -355,7 +350,7 @@ func TestPushesRecord(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
-		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
+		expectPushMutation(t, f.meta, domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("", false, domain.ErrNotFound)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
@@ -365,7 +360,7 @@ func TestPushesRecord(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
-		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
+		expectPushMutation(t, f.meta, domain.Repo{}, domain.ErrNotFound)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("trunk", false, nil)
 		f.git.EXPECT().SetDefaultBranch(ctx, n, "main").Return(domain.ErrNotFound)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
@@ -377,7 +372,7 @@ func TestPushesRecord(t *testing.T) {
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		boom := errors.New("boom")
-		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, boom)
+		expectPushMutation(t, f.meta, domain.Repo{}, boom)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("", false, boom)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
 		err := f.pushes.Record(ctx, p, n, ups)
@@ -414,7 +409,7 @@ func TestPushesDefaultBranchRule(t *testing.T) {
 			t.Parallel()
 			f := newPushFixture(t)
 			f.sched.EXPECT().Schedule(ctx, n).Return().Once()
-			f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n, PushedAt: now}, nil)
+			expectPushMutation(t, f.meta, domain.Repo{Name: n, PushedAt: now, ActiveAt: now}, nil)
 			f.git.EXPECT().DefaultBranch(ctx, n).Return(tt.head, tt.exists, nil)
 			if tt.want != "" {
 				f.git.EXPECT().SetDefaultBranch(ctx, n, tt.want).Return(nil)
@@ -429,7 +424,7 @@ func TestPushesDefaultBranchRule(t *testing.T) {
 		f := newPushFixture(t)
 		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
 		boom := errors.New("boom")
-		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n, PushedAt: now}, nil)
+		expectPushMutation(t, f.meta, domain.Repo{Name: n, PushedAt: now, ActiveAt: now}, nil)
 		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", false, nil)
 		f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").Return(boom)
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return()
