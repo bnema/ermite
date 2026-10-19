@@ -224,6 +224,10 @@ func TestMergeRequestsCLIEndToEnd(t *testing.T) {
 	c.mustGit(wt, "reset", "-q", "--hard", main0)
 	c.writeFile(wt, "other.txt", []byte("o\n"))
 	c.mustGit(wt, "push", "-q", "--force", url, "feat/search")
+	// Push refreshes the pull refs asynchronously. Reconcile them synchronously
+	// before GC, or the old pull head/merge can still retain the read commit.
+	require.NoError(t, c.forge.CI.RescanPulls(c.ctx, c.name("proj")))
+	require.NotContains(t, strings.Fields(c.bareGit("proj", "rev-list", "--all")), head1)
 	c.bareGit("proj", "reflog", "expire", "--expire=now", "--all")
 	c.bareGit("proj", "gc", "-q", "--prune=now")
 	res = c.cli(t, "", "mr", "show", "proj", "1", "--since-last-read", "--json").ok(t)

@@ -653,6 +653,10 @@ func TestWebMergeRequestSinceAfterForcePush(t *testing.T) {
 	r.mustGit(r.wt, "reset", "-q", "--hard", "main")
 	r.writeFile(r.wt, "other.txt", []byte("o\n"))
 	r.mustGit(r.wt, "push", "-q", "--force", r.url, "feat/search")
+	// Push refreshes the pull refs asynchronously. Reconcile them synchronously
+	// before GC, or the old pull head/merge can still retain the read commit.
+	require.NoError(t, r.forge.CI.RescanPulls(r.ctx, r.name("proj")))
+	require.NotContains(t, strings.Fields(r.bareGit("proj", "rev-list", "--all")), head1)
 	r.bareGit("proj", "reflog", "expire", "--expire=now", "--all")
 	r.bareGit("proj", "gc", "-q", "--prune=now")
 
