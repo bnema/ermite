@@ -31,6 +31,7 @@ type clients struct {
 	event  ermiteconnect.EventServiceClient
 	server ermiteconnect.ServerServiceClient
 	mr     ermiteconnect.MergeRequestServiceClient
+	issue  ermiteconnect.IssueServiceClient
 
 	session ermiteconnect.SessionServiceClient
 	runner  ermiteconnect.RunnerServiceClient
@@ -85,6 +86,7 @@ func newClientsOn(hc connect.HTTPClient, base string, opts ...connect.ClientOpti
 		event:  ermiteconnect.NewEventServiceClient(hc, base, opts...),
 		server: ermiteconnect.NewServerServiceClient(hc, base, opts...),
 		mr:     ermiteconnect.NewMergeRequestServiceClient(hc, base, opts...),
+		issue:  ermiteconnect.NewIssueServiceClient(hc, base, opts...),
 
 		session: ermiteconnect.NewSessionServiceClient(hc, base, opts...),
 		runner:  ermiteconnect.NewRunnerServiceClient(hc, base, opts...),

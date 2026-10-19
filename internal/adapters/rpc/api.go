@@ -35,7 +35,7 @@ const RunnerMaxRequestBytes = MaxRequestBytes + 64<<10
 // always implements, as GetVersion lists them. FeaturePasskeys comes on top
 // when Config.Passkeys is set, and FeatureCISecrets when the settings services
 // are, and FeatureCommitSignatures when Config.TrustedKeys is set.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache", "ci.workflows"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache", "ci.workflows"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
 // FeatureCIArtifacts (artifact.go) when the artifact services are served.
@@ -55,7 +55,9 @@ type Config struct {
 	// MergeRequests serves MergeRequestService, SigningKey GetSigningKey.
 	MergeRequests ports.MergeRequestService
 	SigningKey    ports.SigningKeyService
-	Version       string
+	// Issues serves IssueService.
+	Issues  ports.IssueService
+	Version string
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one. Share
@@ -142,6 +144,7 @@ func New(cfg Config) *API {
 	}
 	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{cfg.MergeRequests}, opts...))
+	mux.Handle(ermiteconnect.NewIssueServiceHandler(&issueService{cfg.Issues}, opts...))
 	if cfg.Sessions != nil {
 		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))
 	}

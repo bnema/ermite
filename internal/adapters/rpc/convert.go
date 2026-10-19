@@ -75,7 +75,7 @@ func repoToPB(v ports.RepoView) *pb.Repo {
 }
 
 func settingsToPB(s domain.RepoSettings) *pb.RepoSettings {
-	out := &pb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock}
+	out := &pb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock, Issues: issuesModeToPB(s.Issues)}
 	for _, m := range s.AllowedMergeModes {
 		out.AllowedMergeModes = append(out.AllowedMergeModes, mergeModeToPB(m))
 	}
@@ -472,6 +472,18 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	case domain.CommentAdded:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_CommentAdded{CommentAdded: &pb.CommentAdded{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}
+	case domain.IssueOpened:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_IssueOpened{IssueOpened: &pb.IssueOpened{Issue: issueToPB(ev.Issue)}}
+	case domain.IssueClosed:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_IssueClosed{IssueClosed: &pb.IssueClosed{Issue: issueToPB(ev.Issue)}}
+	case domain.IssueReopened:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_IssueReopened{IssueReopened: &pb.IssueReopened{Issue: issueToPB(ev.Issue)}}
+	case domain.IssueCommented:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_IssueCommented{IssueCommented: &pb.IssueCommented{Repo: ev.Repo.String(), Number: ev.Number, Comment: issueCommentToPB(ev.Comment)}}
 	case domain.RunUpdated:
 		out.Time = timestamp(ev.At)
 		out.Kind = runEventToPB(ev)

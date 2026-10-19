@@ -336,3 +336,32 @@ func TestWatchEventToPBMergeRequestEvents(t *testing.T) {
 	assert.Equal(t, pb.DiffSide_DIFF_SIDE_OLD, added.GetComment().GetSide())
 	assert.EqualValues(t, 3, added.GetComment().GetLine())
 }
+
+func TestIssueMappers(t *testing.T) {
+	t.Parallel()
+	for _, m := range domain.IssuesModes() {
+		got, err := issuesModeFromPB(issuesModeToPB(m))
+		require.NoError(t, err)
+		assert.Equal(t, m, got)
+	}
+	assert.Equal(t, pb.IssuesMode_ISSUES_MODE_OFF, issuesModeToPB(""), "the empty mode is off")
+	_, err := issuesModeFromPB(pb.IssuesMode_ISSUES_MODE_UNSPECIFIED)
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+
+	s, err := issueStateFromPB(pb.IssueState_ISSUE_STATE_UNSPECIFIED)
+	require.NoError(t, err)
+	assert.Empty(t, s)
+	_, err = issueStateFromPB(pb.IssueState_ISSUE_STATE_PENDING)
+	assert.ErrorIs(t, err, domain.ErrInvalid)
+
+	n, err := domain.ParseRepoName("proj")
+	require.NoError(t, err)
+	ev := watchEventToPB(ports.WatchEvent{ID: "1", Event: domain.IssueClosed{Issue: domain.Issue{Repo: n, Number: 4, State: domain.IssueStateClosed}}})
+	require.NotNil(t, ev.GetIssueClosed())
+	assert.EqualValues(t, 4, ev.GetIssueClosed().GetIssue().GetNumber())
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_CLOSED, ev.GetIssueClosed().GetIssue().GetState())
+	ev = watchEventToPB(ports.WatchEvent{ID: "2", Event: domain.IssueCommented{Repo: n, Number: 4, Comment: domain.IssueComment{ID: 3}}})
+	assert.Equal(t, "3", ev.GetIssueCommented().GetComment().GetId())
+	assert.NotNil(t, watchEventToPB(ports.WatchEvent{Event: domain.IssueOpened{}}).GetIssueOpened())
+	assert.NotNil(t, watchEventToPB(ports.WatchEvent{Event: domain.IssueReopened{}}).GetIssueReopened())
+}

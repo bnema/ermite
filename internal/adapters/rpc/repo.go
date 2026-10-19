@@ -81,14 +81,22 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 // updateParams maps the field mask of an update. The mask must name at least
 // one of "description", "topics", "visibility", "default_branch", "settings",
 // "settings.allowed_merge_modes" and "settings.failing_checks_block", and
-// nothing else.
+// nothing else; the optional issues field stands outside the mask, and alone
+// it is a valid update.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter maps the field mask of the contract to the optional fields of the use case; no rule is decided here
 func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 	var params ports.UpdateRepoParams
 	paths := msg.GetUpdateMask().GetPaths()
-	if len(paths) == 0 {
+	if len(paths) == 0 && msg.Issues == nil {
 		return params, fmt.Errorf("%w: update_mask is empty", domain.ErrInvalid)
+	}
+	if msg.Issues != nil {
+		mode, err := issuesModeFromPB(msg.GetIssues())
+		if err != nil {
+			return params, err
+		}
+		params.Issues = &mode
 	}
 	for _, path := range paths {
 		switch path {

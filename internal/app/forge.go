@@ -115,7 +115,9 @@ type forge struct {
 	// MergeRequests and SigningKey serve MergeRequestService and
 	// ServerService.GetSigningKey.
 	MergeRequests *usecase.MergeRequests
-	SigningKey    *usecase.SigningKey
+	// Issues serves IssueService, and tells what a number names.
+	Issues     *usecase.Issues
+	SigningKey *usecase.SigningKey
 	// Signatures are the trusted keys and the commit signature checks
 	// (ADR 0030).
 	Signatures *usecase.Signatures
@@ -316,6 +318,9 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(),
 	})
 	f.MergeRequests.WithVerifier(f.Signatures)
+	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
+		Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock,
+	})
 	f.CI.SetPullGate(f.MergeRequests)
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 
@@ -362,6 +367,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Browse:         f.Browse,
 		Events:         f.EventLog,
 		MergeRequests:  f.MergeRequests,
+		Issues:         f.Issues,
 		SigningKey:     f.SigningKey,
 		TrustedKeys:    f.Signatures,
 		Sessions:       f.Sessions,
