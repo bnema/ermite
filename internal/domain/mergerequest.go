@@ -540,9 +540,19 @@ type MergeTreeResult struct {
 // set when some were dropped. Adapters return the raw result; the bound is
 // the domain's.
 func (r MergeTreeResult) Bounded() MergeTreeResult {
-	if len(r.ConflictPaths) > MaxConflictPaths {
-		r.ConflictPaths = r.ConflictPaths[:MaxConflictPaths:MaxConflictPaths]
+	kept := r.ConflictPaths
+	if len(kept) > MaxConflictPaths {
+		kept = kept[:MaxConflictPaths]
 		r.Truncated = true
+	}
+	if kept != nil {
+		// Exact-sized copies: neither the backing array nor the git output the
+		// paths were cut from stays referenced.
+		out := make([]string, len(kept))
+		for i, p := range kept {
+			out[i] = strings.Clone(p)
+		}
+		r.ConflictPaths = out
 	}
 	return r
 }
