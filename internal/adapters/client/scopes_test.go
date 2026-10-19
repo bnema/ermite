@@ -25,6 +25,7 @@ func TestScopeWireNames(t *testing.T) {
 		ermite.Scope_SCOPE_SECRETS_WRITE:   "secrets:write",
 		ermite.Scope_SCOPE_RUNNER_REGISTER: "runner:register",
 		ermite.Scope_SCOPE_TOKEN_ADMIN:     "token:admin",
+		ermite.Scope_SCOPE_ISSUE_WRITE:     "issue:write",
 	}
 	for s, name := range want {
 		assert.Equal(t, name, client.ScopeName(s))
@@ -43,6 +44,7 @@ func TestPresetExpansion(t *testing.T) {
 
 	agent, err := client.PresetScopes("agent")
 	require.NoError(t, err)
+	assert.NotContains(t, agent, ermite.Scope_SCOPE_ISSUE_WRITE, "agents get issue:write only when asked")
 	assert.Equal(t, []ermite.Scope{ermite.Scope_SCOPE_REPO_WRITE, ermite.Scope_SCOPE_MR_WRITE}, agent)
 
 	ci, err := client.PresetScopes("CI")

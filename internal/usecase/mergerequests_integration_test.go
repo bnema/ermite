@@ -1199,7 +1199,7 @@ func TestUpdateRepoSettings(t *testing.T) {
 	off := false
 	got, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowedMergeModes: &modes, FailingChecksBlock: &off})
 	require.NoError(t, err)
-	assert.Equal(t, domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, FailingChecksBlock: false}, got.Settings)
+	assert.Equal(t, domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, FailingChecksBlock: false, Issues: domain.IssuesOff}, got.Settings)
 	again, err := r.repos.Get(r.ctx, root, r.repo)
 	require.NoError(t, err)
 	assert.Equal(t, got.Settings, again.Settings)

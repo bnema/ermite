@@ -38,15 +38,19 @@ const (
 	ScopeRunnerRegister Scope = "runner:register"
 	// ScopeTokenAdmin creates, lists and revokes stored tokens.
 	ScopeTokenAdmin Scope = "token:admin"
+	// ScopeIssueWrite creates, comments on, closes and reopens issues. Moderation
+	// is not part of it: it stays with the owner.
+	ScopeIssueWrite Scope = "issue:write"
 )
 
-// AllScopes returns the nine scopes in a stable order.
+// AllScopes returns the ten scopes in a stable order.
 func AllScopes() []Scope {
 	return []Scope{
 		ScopeRepoRead, ScopeRepoWrite, ScopeRepoAdmin,
 		ScopeMRWrite, ScopeMRMerge,
 		ScopeCIWrite, ScopeSecretsWrite, ScopeRunnerRegister,
 		ScopeTokenAdmin,
+		ScopeIssueWrite,
 	}
 }
 

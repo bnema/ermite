@@ -133,6 +133,7 @@ var scopeToPB = map[domain.Scope]pb.Scope{
 	domain.ScopeSecretsWrite:   pb.Scope_SCOPE_SECRETS_WRITE,
 	domain.ScopeRunnerRegister: pb.Scope_SCOPE_RUNNER_REGISTER,
 	domain.ScopeTokenAdmin:     pb.Scope_SCOPE_TOKEN_ADMIN,
+	domain.ScopeIssueWrite:     pb.Scope_SCOPE_ISSUE_WRITE,
 }
 
 func scopeFromPB(s pb.Scope) (domain.Scope, error) {

@@ -173,6 +173,54 @@ type CommentAdded struct {
 // EventKind implements Event.
 func (CommentAdded) EventKind() string { return "mr.comment_added" }
 
+// IssueOpened is published when an issue is opened.
+type IssueOpened struct {
+	Issue Issue
+	At    time.Time
+	// Visibility and CreatedAt are those of the repository when the event
+	// was published, like PushEvent's.
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (IssueOpened) EventKind() string { return "issue.opened" }
+
+// IssueClosed is published when an issue was closed.
+type IssueClosed struct {
+	Issue      Issue
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (IssueClosed) EventKind() string { return "issue.closed" }
+
+// IssueReopened is published when a closed issue was reopened.
+type IssueReopened struct {
+	Issue      Issue
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (IssueReopened) EventKind() string { return "issue.reopened" }
+
+// IssueCommented is published when a comment was added to an issue.
+type IssueCommented struct {
+	Repo       RepoName
+	Number     int64
+	Comment    IssueComment
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (IssueCommented) EventKind() string { return "issue.commented" }
+
 // EventGap tells a subscriber that it missed events because it was too slow;
 // it must refresh its whole view.
 type EventGap struct{}

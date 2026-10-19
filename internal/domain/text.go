@@ -5,8 +5,11 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Limits of the plain text of a merge request (ADR 0017), in characters.
@@ -177,4 +180,103 @@ func (v *Violations) Err() error {
 		return nil
 	}
 	return &InvalidFieldsError{Fields: append([]FieldViolation(nil), v.list...)}
+}
+
+// Limits of the text of an issue, in code points.
+const (
+	// MaxIssueTitleLen is the longest issue title.
+	MaxIssueTitleLen = 120
+	// MaxIssueBodyLen is the longest issue body or issue comment.
+	MaxIssueBodyLen = 10000
+	// MaxAuthorLabelLen is the longest author label.
+	MaxAuthorLabelLen = 40
+)
+
+// IssueTitle is a validated issue title: one line, 1 to MaxIssueTitleLen code
+// points, normalized. Only ParseIssueTitle builds a non-zero value.
+type IssueTitle struct{ s string }
+
+// String returns the title.
+func (t IssueTitle) String() string { return t.s }
+
+// IsZero reports whether t is the zero value.
+func (t IssueTitle) IsZero() bool { return t.s == "" }
+
+// IssueBody is a validated issue body or issue comment: at most
+// MaxIssueBodyLen code points, normalized, line breaks and tabs allowed. The
+// zero value is the empty text.
+type IssueBody struct{ s string }
+
+// String returns the text.
+func (b IssueBody) String() string { return b.s }
+
+// IsBlank reports whether the text is empty or only white space.
+func (b IssueBody) IsBlank() bool { return isBlank(b.s) }
+
+// ParseIssueTitle cleans s (see cleanText) and validates it: one line, not
+// blank, at most MaxIssueTitleLen code points. A line break is refused, not
+// removed, so that two lines are never glued into one.
+func ParseIssueTitle(s string) (IssueTitle, error) {
+	if !utf8.ValidString(s) {
+		return IssueTitle{}, &TextError{Reason: "is not valid UTF-8"}
+	}
+	if strings.ContainsAny(s, "\r\n\u2028\u2029") {
+		return IssueTitle{}, &TextError{Reason: "must be one line"}
+	}
+	c := strings.TrimSpace(cleanText(s, false))
+	if c == "" {
+		return IssueTitle{}, &TextError{Reason: "is empty"}
+	}
+	if n := utf8.RuneCountInString(c); n > MaxIssueTitleLen {
+		return IssueTitle{}, &TextError{Reason: fmt.Sprintf("is longer than %d characters (%d)", MaxIssueTitleLen, n)}
+	}
+	return IssueTitle{s: c}, nil
+}
+
+// ParseIssueBody cleans s (see cleanText, line breaks and tabs are kept) and
+// validates it: at most MaxIssueBodyLen code points. The empty text is valid.
+func ParseIssueBody(s string) (IssueBody, error) {
+	if !utf8.ValidString(s) {
+		return IssueBody{}, &TextError{Reason: "is not valid UTF-8"}
+	}
+	c := cleanText(s, true)
+	if n := utf8.RuneCountInString(c); n > MaxIssueBodyLen {
+		return IssueBody{}, &TextError{Reason: fmt.Sprintf("is longer than %d characters (%d)", MaxIssueBodyLen, n)}
+	}
+	return IssueBody{s: c}, nil
+}
+
+// ParseAuthorLabel cleans s like a title (one line) and validates it: at most
+// MaxAuthorLabelLen code points. The empty label is valid.
+func ParseAuthorLabel(s string) (string, error) {
+	if !utf8.ValidString(s) {
+		return "", &TextError{Reason: "is not valid UTF-8"}
+	}
+	if strings.ContainsAny(s, "\r\n\u2028\u2029") {
+		return "", &TextError{Reason: "must be one line"}
+	}
+	c := strings.TrimSpace(cleanText(s, false))
+	if n := utf8.RuneCountInString(c); n > MaxAuthorLabelLen {
+		return "", &TextError{Reason: fmt.Sprintf("is longer than %d characters (%d)", MaxAuthorLabelLen, n)}
+	}
+	return c, nil
+}
+
+// cleanText normalizes s to NFC and removes the control characters (C0, C1 and
+// DEL; with multiline, line feeds and tabs stay) and the bidirectional marks,
+// embeddings, overrides and isolates. s must be valid UTF-8.
+func cleanText(s string, multiline bool) string {
+	s = norm.NFC.String(s)
+	if multiline {
+		s = strings.ReplaceAll(s, "\r\n", "\n")
+	}
+	return strings.Map(func(r rune) rune {
+		switch {
+		case multiline && (r == '\n' || r == '\t'):
+			return r
+		case unicode.IsControl(r), isBidiControl(r), r == '\u2028' || r == '\u2029':
+			return -1
+		}
+		return r
+	}, s)
 }

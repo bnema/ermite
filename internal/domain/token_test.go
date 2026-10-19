@@ -16,7 +16,11 @@ import (
 func TestScopes(t *testing.T) {
 	t.Parallel()
 	all := domain.AllScopes()
-	assert.Len(t, all, 9)
+	assert.Len(t, all, 10)
+	assert.Contains(t, all, domain.ScopeIssueWrite)
+	got, err := domain.ParseScope("issue:write")
+	require.NoError(t, err)
+	assert.Equal(t, domain.ScopeIssueWrite, got)
 	for _, s := range all {
 		got, err := domain.ParseScope(s.String())
 		require.NoError(t, err)
@@ -110,6 +114,7 @@ func TestHasOwnerRights(t *testing.T) {
 	assert.False(t, domain.Anonymous().HasOwnerRights())
 	assert.True(t, domain.TokenPrincipal(domain.Token{Scopes: all}).HasOwnerRights())
 	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[1:]}).HasOwnerRights(), "a scope short")
+	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[:9]}).HasOwnerRights(), "without issue:write")
 	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all, Repos: []domain.RepoName{a}}).HasOwnerRights(), "limited to a repository")
 }
 
