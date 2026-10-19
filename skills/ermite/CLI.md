@@ -65,7 +65,7 @@ Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `
 
 ## Issues
 
-Issues share the numbering of merge requests and must be enabled per repository: `repo edit <repo> --issues off|owner|public` (`repo:admin`; default `off`; `public` is not available yet). Reading and writing needs a server with the `issues` feature.
+Issues share the numbering of merge requests and must be enabled per repository: `repo edit <repo> --issues off|owner|public` (`repo:admin`; default `off`; `public` also opens a moderated form to visitors of a public repository). Reading and writing needs a server with the `issues` feature.
 
 | Command | Scope | Notes |
 |---|---|---|

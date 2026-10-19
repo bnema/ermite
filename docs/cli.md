@@ -84,7 +84,7 @@ ermite version                           # client and server versions
 ermite completion bash|zsh|fish
 ```
 
-Issues need a server with the `issues` feature and `ermite repo edit <repo> --issues owner`; they are written with the `issue:write` scope. See [Issues](issues.md).
+Issues need a server with the `issues` feature and `ermite repo edit <repo> --issues owner` (or `--issues public`, which also opens a moderated form to visitors of a public repository); they are written with the `issue:write` scope. See [Issues](issues.md).
 
 ## Output
 
