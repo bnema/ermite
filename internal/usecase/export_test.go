@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"slices"
+	"strconv"
 	"time"
 
 	"bnema.dev/ermite-actions/expr"
@@ -130,3 +131,36 @@ func (o *OIDC) SignForTest(claims map[string]any) (string, error) {
 	}
 	return o.sign(out)
 }
+
+// DifficultyFor exposes the adaptive difficulty with the production base and
+// cap to the tests.
+func DifficultyFor(perAddr, global int) int {
+	return difficultyFor(baseDifficulty, maxDifficulty, perAddr, global)
+}
+
+// Production parameters of the submission, for the tests.
+const (
+	BaseDifficulty = baseDifficulty
+	MaxDifficulty  = maxDifficulty
+	MinFillTime    = minFillTime
+	ChallengeTTL   = challengeTTL
+)
+
+// SpentLen is the number of nonces the submission remembers as spent.
+func (s *IssueSubmissions) SpentLen() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.spent)
+}
+
+// FillSpent fills the spent set with n unexpired nonces.
+func (s *IssueSubmissions) FillSpent(n int, exp time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range n {
+		s.spent["fill"+strconv.Itoa(i)] = exp
+	}
+}
+
+// MaxSpent is the bound of the spent set.
+const MaxSpent = maxSpent

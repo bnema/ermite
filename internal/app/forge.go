@@ -121,7 +121,9 @@ type forge struct {
 	IssueModeration *usecase.IssueModeration
 	// IssueKeys are the subkeys of the public issue form, and the stores and
 	// the limiter its submissions use (the form itself comes later).
-	IssueKeys         *usecase.IssueKeys
+	IssueKeys *usecase.IssueKeys
+	// IssueSubmissions serves the anonymous submission of issues.
+	IssueSubmissions  *usecase.IssueSubmissions
 	SubmissionLimiter *clientlimit.SubmissionLimiter
 	PendingIssues     ports.PendingIssueStore
 	IssueBans         ports.IssueBanStore
@@ -340,6 +342,10 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if err != nil {
 		return nil, err
 	}
+	f.IssueSubmissions = usecase.NewIssueSubmissions(usecase.IssueSubmissionsConfig{
+		Meta: store, Pending: f.PendingIssues, Bans: f.IssueBans, Limiter: f.SubmissionLimiter,
+		Keys: f.IssueKeys, Bus: f.Bus, Clock: clock,
+	})
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
 		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(),
 	})

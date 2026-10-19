@@ -148,6 +148,46 @@ type IssueModerationService interface {
 	Reject(ctx context.Context, p domain.Principal, repo domain.RepoName, id domain.PendingIssueID, ban bool) error
 }
 
+// IssueChallenge is what the public form needs to submit: a signed token, the
+// proof-of-work to solve and the timing.
+type IssueChallenge struct {
+	// Token is the signed challenge, sent back untouched.
+	Token string
+	// Nonce is the base64url of the 16 random bytes the browser hashes:
+	// SHA-256(nonce bytes || ":" || decimal counter) must have Difficulty
+	// leading zero bits.
+	Nonce string
+	// Difficulty is the number of leading zero bits required.
+	Difficulty int
+	// FormToken is a hidden field of the form, sent back untouched.
+	FormToken string
+	// IssuedAt, MinSubmitAt and ExpiresAt bound when the form may be sent.
+	IssuedAt, MinSubmitAt, ExpiresAt time.Time
+}
+
+// IssueSubmission is what the browser sends back.
+type IssueSubmission struct {
+	Token string
+	// Solution is the decimal counter that solves the proof of work.
+	Solution  string
+	FormToken string
+	// Honeypot must be empty: a field only a bot fills.
+	Honeypot            string
+	Title, Body, Author string
+}
+
+// IssueSubmissionService is the anonymous issue submission. Both calls answer
+// domain.ErrNotFound for a repository that is unknown, not public or without
+// public issues. Submit refuses with an error matching
+// domain.ErrSubmissionRefused (ErrSubmissionRateLimited, ErrSubmissionsPaused,
+// ErrSubmissionInvalid) or with a *domain.TextError the user can fix.
+// addr is the client key (clientlimit.Key of the address).
+// *usecase.IssueSubmissions implements it.
+type IssueSubmissionService interface {
+	Challenge(ctx context.Context, repo domain.RepoName, addr string) (IssueChallenge, error)
+	Submit(ctx context.Context, repo domain.RepoName, addr string, f IssueSubmission) error
+}
+
 // IssueNumberResolver tells whether a number of a repository names an issue or
 // a merge request, for the callers that follow a "#n" reference. *usecase.Issues
 // implements it.
