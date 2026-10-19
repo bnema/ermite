@@ -6,3 +6,7 @@
   }
   .eol { color: var(--ink-mute); padding-left: 1ch; user-select: none; }
 }
+
+@layer components {
+  .sel { outline: 1px solid var(--ink-dim); outline-offset: -1px; }
+}

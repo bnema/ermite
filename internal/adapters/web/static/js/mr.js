@@ -18,6 +18,25 @@
 window.ermiteMR = (() => {
   // core: the decisions, without the DOM.
   const core = {
+    rangeURL(previous, current, base) {
+      const a = new URL(previous, base), b = new URL(current, base);
+      const parse = (u) => /^(new|old):(\d+):(.+)$/.exec(u.searchParams.get('on') || '');
+      const x = parse(a), y = parse(b);
+      if (!x || !y || a.pathname !== b.pathname || x[1] !== y[1] || x[3] !== y[3] || x[2] === y[2]) return null;
+      const nums = [Number(x[2]), Number(y[2])].sort((a,b) => a-b);
+      b.searchParams.set('on', `${y[1]}:${nums[0]}-${nums[1]}:${y[3]}`);
+      return b.href;
+    },
+    quote(button) {
+      const thread = button.closest('.cmt').closest('[data-thread]');
+      const details = thread?.querySelector(':scope > details[data-reply]');
+      const field = details?.querySelector('textarea');
+      if (!field) return false;
+      details.open = true;
+      field.value = button.dataset.quote;
+      field.focus();
+      return true;
+    },
     // windowOf is the start of the window of file i (files are f1, f2, ...).
     windowOf(id, size) {
       const n = Number(String(id).replace(/^f/, '')) - 1;
@@ -262,6 +281,18 @@ window.ermiteMR = (() => {
     };
     addEventListener('hashchange', hash);
     hash();
+    let lastLine = null;
+    try { lastLine = sessionStorage.getItem('mr-last-line'); } catch { /* storage optional */ }
+    addEventListener('click', (e) => {
+      const quote = e.target.closest?.('[data-quote]');
+      if (quote) { core.quote(quote); return; }
+      const link = e.target.closest?.('a[href*="on="]');
+      if (!link || e.ctrlKey || e.metaKey || e.altKey) return;
+      const next = e.shiftKey && lastLine && core.rangeURL(lastLine, link.href, location.href);
+      lastLine = link.href;
+      try { sessionStorage.setItem('mr-last-line', lastLine); } catch { /* storage optional */ }
+      if (next) { e.preventDefault(); location.assign(next); }
+    });
     // A click outside an open menu closes it.
     addEventListener('click', (e) => {
       for (const d of $$('details.menu[open]')) if (!d.contains(e.target)) d.open = false;

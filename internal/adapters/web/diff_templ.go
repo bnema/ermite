@@ -1383,7 +1383,7 @@ func DiffFileView(f DiffFile, p DiffView) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					for _, ln := range h.Lines {
-						var templ_7745c5c3_Var73 = []any{ln.Kind}
+						var templ_7745c5c3_Var73 = []any{ln.Kind, templ.KV("sel", ln.Selected)}
 						templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var73...)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
@@ -1936,7 +1936,7 @@ func splitSide(ln *DiffLine, old bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			var templ_7745c5c3_Var91 = []any{"ln", ln.Kind}
+			var templ_7745c5c3_Var91 = []any{"ln", ln.Kind, templ.KV("sel", ln.Selected)}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var91...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -1973,7 +1973,7 @@ func splitSide(ln *DiffLine, old bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var93 = []any{"m", ln.Kind}
+			var templ_7745c5c3_Var93 = []any{"m", ln.Kind, templ.KV("sel", ln.Selected)}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var93...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -1998,7 +1998,7 @@ func splitSide(ln *DiffLine, old bool) templ.Component {
 			var templ_7745c5c3_Var95 string
 			templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(ln.Mark)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 379, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/diff.templ`, Line: 379, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 			if templ_7745c5c3_Err != nil {
@@ -2008,7 +2008,7 @@ func splitSide(ln *DiffLine, old bool) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var96 = []any{"tx", "chroma", ln.Kind}
+			var templ_7745c5c3_Var96 = []any{"tx", "chroma", ln.Kind, templ.KV("sel", ln.Selected)}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var96...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

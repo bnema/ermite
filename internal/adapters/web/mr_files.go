@@ -131,8 +131,10 @@ func countNotes(files []DiffFile, comments []domain.Comment) {
 		if c.Path == "" || !ok {
 			continue
 		}
-		files[i].Notes++
-		if !c.Resolved {
+		if c.ReplyTo == 0 && !c.Deleted {
+			files[i].Notes++
+		}
+		if c.ReplyTo == 0 && !c.Deleted && !c.Resolved {
 			files[i].OpenNotes++
 		}
 		ids[i] = append(ids[i], "c"+strconv.FormatInt(c.ID, 10))
@@ -196,7 +198,7 @@ func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component,
 	m := res.MergeRequest
 	signed := SignedIn(ctx)
 	canWrite := signed && m.State == domain.MRStateOpen && !since
-	p := MRPage{Files: s.hl.files(ctx, res.Diff.Files), LooseInFiles: true}
+	p := MRPage{Files: s.hl.files(ctx, res.Diff.Files), LooseInFiles: true, NoteAuthor: domain.AuthorName(principal(ctx))}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head.String()))
 	s.placeComments(&p, d.name(), n, res.Comments, m.HeadID.String(), !since, canWrite, nil)
 	window := p.Files[from:min(from+mrWindow, len(p.Files))]

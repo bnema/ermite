@@ -232,7 +232,7 @@ templ DiffFileView(f DiffFile, p DiffView) {
 								}
 								<tr class="hunk"><td colspan="4">{ h.Header }</td></tr>
 								for _, ln := range h.Lines {
-									<tr class={ ln.Kind }>
+									<tr class={ ln.Kind, templ.KV("sel", ln.Selected) }>
 										<td class="ln">@gutter(ln.Old, ln.OldHref)</td>
 										<td class="ln">@gutter(ln.New, ln.NewHref)</td>
 										<td class="m">{ ln.Mark }</td>
@@ -369,15 +369,15 @@ templ splitSide(ln *DiffLine, old bool) {
 		<td class="m none"></td>
 		<td class="tx none"></td>
 	} else {
-		<td class={ "ln", ln.Kind }>
+		<td class={ "ln", ln.Kind, templ.KV("sel", ln.Selected) }>
 			if old {
 				@gutter(ln.Old, ln.OldHref)
 			} else {
 				@gutter(ln.New, ln.NewHref)
 			}
 		</td>
-		<td class={ "m", ln.Kind }>{ ln.Mark }</td>
-		<td class={ "tx", "chroma", ln.Kind }>@codeLine(*ln)</td>
+		<td class={ "m", ln.Kind, templ.KV("sel", ln.Selected) }>{ ln.Mark }</td>
+		<td class={ "tx", "chroma", ln.Kind, templ.KV("sel", ln.Selected) }>@codeLine(*ln)</td>
 	}
 }
 
