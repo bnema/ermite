@@ -679,6 +679,7 @@ func encodeMergeability(m domain.Mergeability) ([]byte, error) {
 	})
 }
 
+//hexcheck:ignore suspicious-business-logic-in-adapter decodes the stored record into the domain value; no rule is applied
 func decodeMergeability(repo domain.RepoName, number int64, item kv.Item) (domain.Mergeability, error) {
 	var pb storagepb.Mergeability
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {

@@ -133,6 +133,43 @@ func mergeRequestToPB(mr domain.MergeRequest) *pb.MergeRequest {
 	}
 }
 
+// mergeRequestWithMergeabilityToPB is mergeRequestToPB with the mergeability of
+// an open request; m is ignored for a request that is not open.
+func mergeRequestWithMergeabilityToPB(mr domain.MergeRequest, m domain.Mergeability) *pb.MergeRequest {
+	out := mergeRequestToPB(mr)
+	if mr.IsOpen() && m.State != "" {
+		out.Mergeability = mergeabilityToPB(m)
+	}
+	return out
+}
+
+func mergeabilityStateToPB(s domain.MergeabilityState) pb.MergeabilityState {
+	switch s {
+	case domain.MergeabilityChecking:
+		return pb.MergeabilityState_MERGEABILITY_STATE_CHECKING
+	case domain.MergeabilityUpToDate:
+		return pb.MergeabilityState_MERGEABILITY_STATE_UP_TO_DATE
+	case domain.MergeabilityBehind:
+		return pb.MergeabilityState_MERGEABILITY_STATE_BEHIND
+	case domain.MergeabilityConflict:
+		return pb.MergeabilityState_MERGEABILITY_STATE_CONFLICT
+	}
+	return pb.MergeabilityState_MERGEABILITY_STATE_UNSPECIFIED
+}
+
+func mergeabilityToPB(m domain.Mergeability) *pb.Mergeability {
+	return &pb.Mergeability{
+		State:                  mergeabilityStateToPB(m.State),
+		TargetId:               m.TargetID.String(),
+		HeadId:                 m.HeadID.String(),
+		Behind:                 int32(m.Behind), //nolint:gosec // capped at domain.MaxBehindCount
+		BehindCapped:           m.BehindCapped,
+		ConflictPaths:          m.ConflictPaths,
+		ConflictPathsTruncated: m.ConflictPathsTruncated,
+		CheckedAt:              timestamp(m.CheckedAt),
+	}
+}
+
 func commentToPB(c domain.Comment) *pb.Comment {
 	return &pb.Comment{
 		Id:        strconv.FormatInt(c.ID, 10),
@@ -214,7 +251,7 @@ func (s *mergeRequestService) ListMergeRequests(ctx context.Context, req *connec
 	}
 	out := &pb.ListMergeRequestsResponse{NextPageToken: page.NextPageToken, MergeRequests: make([]*pb.MergeRequest, 0, len(page.MergeRequests))}
 	for _, mr := range page.MergeRequests {
-		out.MergeRequests = append(out.MergeRequests, mergeRequestToPB(mr))
+		out.MergeRequests = append(out.MergeRequests, mergeRequestWithMergeabilityToPB(mr, page.Mergeability[mr.Number]))
 	}
 	return connect.NewResponse(out), nil
 }
@@ -229,7 +266,7 @@ func (s *mergeRequestService) GetMergeRequest(ctx context.Context, req *connect.
 		return nil, connectError(ctx, err)
 	}
 	out := &pb.GetMergeRequestResponse{
-		MergeRequest:     mergeRequestToPB(d.MergeRequest),
+		MergeRequest:     mergeRequestWithMergeabilityToPB(d.MergeRequest, d.Mergeability),
 		CommitsTruncated: d.CommitsTruncated,
 		DiffBaseId:       d.DiffBaseID.String(),
 		Stats:            diffStatsToPB(d.Stats),

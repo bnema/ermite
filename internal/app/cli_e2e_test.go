@@ -123,8 +123,20 @@ func (c *cliHarness) startWatch(t *testing.T, secret string, args ...string) *wa
 	return w
 }
 
-// next decodes the next event line or fails after d.
+// next returns the next event line or fails after d. Mergeability events,
+// which arrive asynchronously after a push or an opening, are skipped.
 func (w *watchProc) next(t *testing.T, d time.Duration) (raw string) {
+	t.Helper()
+	for {
+		l := w.nextAny(t, d)
+		if !strings.Contains(l, `"type":"`+eventMRMergeability+`"`) {
+			return l
+		}
+	}
+}
+
+// nextAny returns the next event line, whatever its kind, or fails after d.
+func (w *watchProc) nextAny(t *testing.T, d time.Duration) (raw string) {
 	t.Helper()
 	select {
 	case l, ok := <-w.lines:
@@ -338,7 +350,7 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	ver := decode[versionOut](t, res.stdout)
 	assert.Equal(t, c.url, ver.Server.URL)
 	assert.NotEmpty(t, ver.Server.Version)
-	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures"}, ver.Server.Features)
+	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures"}, ver.Server.Features)
 	assert.Equal(t, []string{"passkeys"}, ver.Server.MissingFeatures)
 	stdout, stderr, code = c.bin(t, secret, "version")
 	require.Equal(t, 0, code, stderr)

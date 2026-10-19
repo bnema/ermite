@@ -501,6 +501,9 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	case domain.CommentResolved:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_CommentResolved{CommentResolved: &pb.CommentResolved{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}
+	case domain.MergeRequestMergeability:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MergeRequestMergeability{MergeRequestMergeability: &pb.MergeRequestMergeability{Repo: ev.Repo.String(), Number: ev.Number, Mergeability: mergeabilityToPB(ev.Mergeability)}}
 	case domain.RunUpdated:
 		out.Time = timestamp(ev.At)
 		out.Kind = runEventToPB(ev)

@@ -167,8 +167,21 @@ func (h *harness) watch(c *clients, resume string, topics ...string) *stream {
 	return s
 }
 
-// next returns the next event or fails after d.
+// next returns the next event or fails after d. Mergeability events, which
+// arrive asynchronously after a push or an opening, are skipped: use
+// nextAny to see them.
 func (s *stream) next(t *testing.T, d time.Duration) *pb.Event {
+	t.Helper()
+	for {
+		ev := s.nextAny(t, d)
+		if ev.GetMergeRequestMergeability() == nil {
+			return ev
+		}
+	}
+}
+
+// nextAny returns the next event, whatever its kind, or fails after d.
+func (s *stream) nextAny(t *testing.T, d time.Duration) *pb.Event {
 	t.Helper()
 	select {
 	case ev, ok := <-s.events:

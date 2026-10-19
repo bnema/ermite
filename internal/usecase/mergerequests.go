@@ -56,6 +56,7 @@ type MergeRequests struct {
 	pulls     ports.PullRequestTrigger // nil: no pull_request workflows
 	tips      ports.CIRefTipStore      // nil: who merges is not recorded
 	verifier  ports.CommitVerifier     // nil: commits are not checked (ADR 0030)
+	mergeab   MergeabilityHook         // nil: no mergeability
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -95,13 +96,16 @@ type MergeRequestsConfig struct {
 	// deleted source branch) before the merge does, as a push does
 	// (domain.CIRefTip). Optional.
 	RefTips ports.CIRefTipStore
+	// Mergeability is queued when a request is opened, closed or merged and
+	// read by Get and List. Optional: without it Mergeability stays zero.
+	Mergeability MergeabilityHook
 }
 
 // NewMergeRequests builds the merge request use cases.
 func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 	return &MergeRequests{
 		meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
-		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips,
+		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips, mergeab: cfg.Mergeability,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
 }
@@ -256,6 +260,9 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	}
 	recordActivity(ctx, m.meta, repo.Name, now)
 	m.bus.Publish(ctx, domain.MergeRequestOpened{MergeRequest: mr, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+	if m.mergeab != nil {
+		m.mergeab.OnOpened(ctx, mr)
+	}
 	if m.pulls != nil {
 		// The commits the opening is for are the ones of now.
 		base, _ := m.branchOrZero(ctx, name, target)
@@ -336,10 +343,25 @@ func (m *MergeRequests) List(ctx context.Context, p domain.Principal, name domai
 			return (params.State == "" || mr.State == params.State) && (after == 0 || mr.Number < after)
 		},
 		encodeMRToken)
+	tips := map[string]domain.ObjectID{} // one BranchHead per distinct target
 	for i, mr := range page.MergeRequests {
 		if page.MergeRequests[i], err = m.withHead(ctx, mr); err != nil {
 			return ports.MergeRequestPage{}, err
 		}
+		if m.mergeab == nil || !mr.IsOpen() {
+			continue
+		}
+		tip, ok := tips[mr.Target]
+		if !ok {
+			if tip, err = m.branchOrZero(ctx, name, mr.Target); err != nil {
+				return ports.MergeRequestPage{}, err
+			}
+			tips[mr.Target] = tip
+		}
+		if page.Mergeability == nil {
+			page.Mergeability = map[int64]domain.Mergeability{}
+		}
+		page.Mergeability[mr.Number] = m.mergeab.Read(ctx, page.MergeRequests[i], tip)
 	}
 	return page, nil
 }
@@ -467,6 +489,13 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 		return nil
 	}
 	d := ports.MergeRequestDetail{MergeRequest: mr}
+	if m.mergeab != nil && mr.IsOpen() {
+		tip, err := m.branchOrZero(ctx, name, mr.Target)
+		if err != nil {
+			return ports.MergeRequestDetail{}, err
+		}
+		d.Mergeability = m.mergeab.Read(ctx, mr, tip)
+	}
 	if d.Comments, err = m.store.ListComments(ctx, name, number); err != nil {
 		return ports.MergeRequestDetail{}, fmt.Errorf("list comments of !%d in %q: %w", number, name, err)
 	}
@@ -801,6 +830,9 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("merge request closed")
 		recordActivity(ctx, m.meta, repo.Name, mr.UpdatedAt)
 		m.bus.Publish(ctx, domain.MergeRequestClosed{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		if m.mergeab != nil {
+			m.mergeab.OnClosed(ctx, mr)
+		}
 		if m.pulls != nil {
 			m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID}, p)
 		}
@@ -1007,6 +1039,10 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	m.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,
 	})
+	if m.mergeab != nil {
+		m.mergeab.OnClosed(ctx, mr)
+		m.mergeab.OnBranchesMoved(ctx, name, updates) // the other requests of the moved target
+	}
 	if m.pulls != nil {
 		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID, Merged: true}, p)
 	}

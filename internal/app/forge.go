@@ -137,6 +137,8 @@ type forge struct {
 	// Inbox serves the owner's inbox of the web.
 	Inbox      *usecase.Inbox
 	SigningKey *usecase.SigningKey
+	// Mergeability keeps the mergeability of the open merge requests up to date.
+	Mergeability *usecase.Mergeability
 	// Signatures are the trusted keys and the commit signature checks
 	// (ADR 0030).
 	Signatures *usecase.Signatures
@@ -331,11 +333,16 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if err := f.signatures(store, reader, signer.PublicKey(), committer, clock); err != nil {
 		return nil, err
 	}
+	f.Mergeability = usecase.NewMergeability(ctx, usecase.MergeabilityConfig{
+		Store: store.MergeRequests(), Meta: store, Git: git, Bus: f.Bus, Clock: clock,
+	})
+	f.Pushes.WithMergeability(f.Mergeability)
 	f.MergeRequests = usecase.NewMergeRequests(usecase.MergeRequestsConfig{
 		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
-		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(),
+		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(), Mergeability: f.Mergeability,
 	})
+	f.Mergeability.Start()
 	f.MergeRequests.WithVerifier(f.Signatures)
 	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
 		Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock,
@@ -514,6 +521,9 @@ func (f *forge) Close(ctx context.Context) {
 	}
 	if f.CI != nil {
 		f.CI.Close(ctx)
+	}
+	if f.Mergeability != nil {
+		f.Mergeability.Close(ctx)
 	}
 	if f.EventLog != nil {
 		f.EventLog.Close(ctx)

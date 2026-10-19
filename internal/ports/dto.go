@@ -198,6 +198,9 @@ type MergeRequestPage struct {
 	MergeRequests []domain.MergeRequest
 	// NextPageToken is empty on the last page.
 	NextPageToken string
+	// Mergeability holds, by number, the mergeability of the open requests of
+	// the page (nil when the server does not compute it).
+	Mergeability map[int64]domain.Mergeability
 }
 
 // ListIssuesParams selects a page of issues from an IssueStore.

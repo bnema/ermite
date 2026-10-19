@@ -29,6 +29,8 @@ type jsonEvent struct {
 	MergeRequest *jsonMergeRequest `json:"merge_request,omitempty"`
 	Number       int64             `json:"number,omitempty"`
 	Comment      *jsonComment      `json:"comment,omitempty"`
+	// Mergeability is the state of a merge_request_mergeability event.
+	Mergeability string `json:"mergeability,omitempty"`
 }
 
 type jsonRefUpdate struct {
@@ -52,6 +54,7 @@ const (
 	eventCommentEdited   = "comment_edited"
 	eventCommentDeleted  = "comment_deleted"
 	eventCommentResolved = "comment_resolved"
+	eventMRMergeability  = "merge_request_mergeability"
 )
 
 // toJSONEvent maps an event; ok is false for kinds this client does not know,
@@ -94,6 +97,9 @@ func toJSONEvent(ev *ermite.Event, baseURL string) (jsonEvent, bool) {
 	case *ermite.Event_CommentResolved:
 		c := toJSONComment(k.CommentResolved.GetComment())
 		out.Type, out.Repo, out.Number, out.Comment = eventCommentResolved, k.CommentResolved.GetRepo(), k.CommentResolved.GetNumber(), &c
+	case *ermite.Event_MergeRequestMergeability:
+		out.Type, out.Repo, out.Number = eventMRMergeability, k.MergeRequestMergeability.GetRepo(), k.MergeRequestMergeability.GetNumber()
+		out.Mergeability = k.MergeRequestMergeability.GetMergeability().GetState().String()
 	case *ermite.Event_Gap:
 		out.Type = eventGap
 	default:
@@ -126,6 +132,8 @@ func eventLine(e jsonEvent) string {
 		detail = fmt.Sprintf("%s!%d %s -> %s", e.Repo, e.MergeRequest.Number, e.MergeRequest.SourceBranch, e.MergeRequest.TargetBranch)
 	case eventCommentAdded, eventCommentEdited, eventCommentDeleted, eventCommentResolved:
 		detail = fmt.Sprintf("%s!%d by %s", e.Repo, e.Number, e.Comment.Author)
+	case eventMRMergeability:
+		detail = fmt.Sprintf("%s!%d %s", e.Repo, e.Number, e.Mergeability)
 	case eventGap:
 		detail = "events were lost, reload what you display"
 	}

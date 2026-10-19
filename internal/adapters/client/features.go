@@ -54,6 +54,9 @@ const (
 	// FeatureCommitSignatures is TrustedKeyService and Commit.verification
 	// (`ermite signing-key trust`).
 	FeatureCommitSignatures = "commit_signatures"
+	// FeatureMergeability is MergeRequest.mergeability and the
+	// merge_request_mergeability event.
+	FeatureMergeability = "merge_requests.mergeability"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.

@@ -35,7 +35,7 @@ const RunnerMaxRequestBytes = MaxRequestBytes + 64<<10
 // always implements, as GetVersion lists them. FeaturePasskeys comes on top
 // when Config.Passkeys is set, and FeatureCISecrets when the settings services
 // are, and FeatureCommitSignatures when Config.TrustedKeys is set.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache", "ci.workflows"}
+var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache", "ci.workflows"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
 // FeatureCIArtifacts (artifact.go) when the artifact services are served.

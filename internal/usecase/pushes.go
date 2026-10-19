@@ -17,17 +17,18 @@ import (
 
 // Pushes are the use cases around a Git push.
 type Pushes struct {
-	meta  ports.RepoMetaStore
-	repos *Repos
-	git   ports.GitRepos
-	bus   ports.EventBus
-	clock ports.Clock
-	maint ports.MaintenanceScheduler
-	auth  ports.Revalidator
-	fresh ports.RepoFreshener   // nil: the reader needs no telling
-	ci    ports.WorkflowTrigger // nil: no CI
-	wf    ports.WorkflowGuard   // nil: pushes by job tokens are refused
-	tips  ports.CIRefTipStore   // nil: who pushes a ref is not recorded
+	meta    ports.RepoMetaStore
+	repos   *Repos
+	git     ports.GitRepos
+	bus     ports.EventBus
+	clock   ports.Clock
+	maint   ports.MaintenanceScheduler
+	auth    ports.Revalidator
+	fresh   ports.RepoFreshener       // nil: the reader needs no telling
+	ci      ports.WorkflowTrigger     // nil: no CI
+	wf      ports.WorkflowGuard       // nil: pushes by job tokens are refused
+	tips    ports.CIRefTipStore       // nil: who pushes a ref is not recorded
+	mergeab ports.MergeabilityTrigger // nil: mergeability is not tracked
 }
 
 var (
@@ -53,6 +54,14 @@ func (u *Pushes) WithFreshener(f ports.RepoFreshener) *Pushes {
 // Call it before the first push; it returns u.
 func (u *Pushes) WithWorkflowTrigger(t ports.WorkflowTrigger) *Pushes {
 	u.ci = t
+	return u
+}
+
+// WithMergeability makes Record queue the mergeability checks of the merge
+// requests whose branches the push moved. Call it before the first push; it
+// returns u.
+func (u *Pushes) WithMergeability(t ports.MergeabilityTrigger) *Pushes {
+	u.mergeab = t
 	return u
 }
 
@@ -229,6 +238,9 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	}
 	if u.ci != nil {
 		u.ci.OnPush(ctx, name, updates, p) // queues only: never slows or fails the push
+	}
+	if u.mergeab != nil {
+		u.mergeab.OnBranchesMoved(ctx, name, updates) // queues only
 	}
 	u.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now,
