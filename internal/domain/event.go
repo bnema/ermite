@@ -233,6 +233,18 @@ type IssueSubmitted struct {
 // EventKind implements Event.
 func (IssueSubmitted) EventKind() string { return "issue.submitted" }
 
+// IssuePendingRemoved is published when a pending submission is rejected, so
+// the other open inboxes drop it. Like IssueSubmitted it carries no content
+// and is delivered to the owner topic only.
+type IssuePendingRemoved struct {
+	Repo RepoName
+	ID   PendingIssueID
+	At   time.Time
+}
+
+// EventKind implements Event.
+func (IssuePendingRemoved) EventKind() string { return "issue.pending_removed" }
+
 // EventGap tells a subscriber that it missed events because it was too slow;
 // it must refresh its whole view.
 type EventGap struct{}

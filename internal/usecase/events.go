@@ -190,7 +190,7 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueCommented:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
-	case domain.IssueSubmitted:
+	case domain.IssueSubmitted, domain.IssuePendingRemoved:
 		return bufferedEvent{known: true} // owner topic only: no repository snapshot
 	case domain.RunUpdated:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
@@ -502,22 +502,9 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		}
 		return send(out)
 	case domain.IssueSubmitted:
-		// Owner topic only: never home, never a repository topic, not even
-		// for an owner who watches the repository. No content travels.
-		if !w.owner {
-			return nil
-		}
-		repo, err := lookupRepo(ctx, e.repos.meta, ev.Repo)
-		switch {
-		case errors.Is(err, domain.ErrNotFound), ctx.Err() != nil:
-			return nil
-		case err != nil:
-			return fmt.Errorf("check access to %q: %w", ev.Repo, err)
-		}
-		if repo.Settings.Issues.OrDefault() == domain.IssuesOff {
-			return nil
-		}
-		return send(out)
+		return e.deliverOwnerOnly(ctx, w, ev.Repo, out, send)
+	case domain.IssuePendingRemoved:
+		return e.deliverOwnerOnly(ctx, w, ev.Repo, out, send)
 	case domain.RepoCreated:
 		return e.deliverRepo(ctx, w, ev.Repo, true, be, out, send)
 	case domain.RepoUpdated:
@@ -555,6 +542,25 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRepo(ctx, w, ev.Job.Repo, false, be, out, send)
 	}
 	return nil // an event this version does not stream
+}
+
+// deliverOwnerOnly sends an owner-topic event: never home, never a repository
+// topic, not even to an owner who watches the repository. No content travels.
+func (e *Events) deliverOwnerOnly(ctx context.Context, w *watch, name domain.RepoName, out ports.WatchEvent, send func(ports.WatchEvent) error) error {
+	if !w.owner {
+		return nil
+	}
+	repo, err := lookupRepo(ctx, e.repos.meta, name)
+	switch {
+	case errors.Is(err, domain.ErrNotFound), ctx.Err() != nil:
+		return nil
+	case err != nil:
+		return fmt.Errorf("check access to %q: %w", name, err)
+	}
+	if repo.Settings.Issues.OrDefault() == domain.IssuesOff {
+		return nil
+	}
+	return send(out)
 }
 
 // deliverRepo sends an event about a repository if the watcher could read the

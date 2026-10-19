@@ -494,6 +494,8 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 		out.Time = timestamp(ev.At)
 		out.Kind = jobEventToPB(ev)
 	default:
+		// Web-only events, such as domain.IssuePendingRemoved (the API has
+		// no message for it; watchers list pending issues on demand).
 		return nil
 	}
 	return out

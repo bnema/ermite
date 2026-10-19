@@ -114,5 +114,6 @@ func (m *IssueModeration) Reject(ctx context.Context, p domain.Principal, repo d
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", repo.String()).Bool("ban", ban).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("pending issue rejected")
+	m.bus.Publish(ctx, domain.IssuePendingRemoved{Repo: repo, ID: id, At: m.clock.Now().UTC()})
 	return nil
 }

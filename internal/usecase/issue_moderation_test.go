@@ -117,12 +117,14 @@ func TestIssueModerationReject(t *testing.T) {
 		u.pending.EXPECT().Get(mock.Anything, u.repo.Name, u.id).Return(domain.PendingIssue{ID: u.id, Repo: u.repo.Name, IPHash: hash}, nil).Once()
 		u.bans.EXPECT().Ban(mock.Anything, hash, now.Add(domain.BanDuration)).Return(nil).Once()
 		u.pending.EXPECT().Delete(mock.Anything, u.repo.Name, u.id).Return(nil).Once()
+		u.bus.EXPECT().Publish(mock.Anything, domain.IssuePendingRemoved{Repo: u.repo.Name, ID: u.id, At: now}).Once()
 		require.NoError(t, u.mod.Reject(ctx, domain.Owner(), u.repo.Name, u.id, true))
 	})
 	t.Run("without a ban", func(t *testing.T) {
 		u := newModerationUnit(t, domain.IssuesPublic)
 		u.pending.EXPECT().Get(mock.Anything, u.repo.Name, u.id).Return(domain.PendingIssue{ID: u.id, IPHash: hash}, nil).Once()
 		u.pending.EXPECT().Delete(mock.Anything, u.repo.Name, u.id).Return(nil).Once()
+		u.bus.EXPECT().Publish(mock.Anything, domain.IssuePendingRemoved{Repo: u.repo.Name, ID: u.id, At: now}).Once()
 		require.NoError(t, u.mod.Reject(ctx, domain.Owner(), u.repo.Name, u.id, false))
 	})
 	t.Run("unknown id", func(t *testing.T) {
@@ -204,6 +206,39 @@ func TestIssueSubmittedReachesOnlyTheOwnerTopic(t *testing.T) {
 		for name, w := range map[string]*watcher{"home": home, "repo topic": repoTopic, "root repo+home": rootRepo, "anonymous": anon} {
 			e, ok := w.next(t).Event.(domain.IssueOpened)
 			require.True(t, ok, "%s: the first event is the sentinel, not issue.submitted (got %T)", name, e)
+		}
+	})
+}
+
+func TestIssuePendingRemovedReachesOnlyOwnerTopics(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 16)
+		a := r.repo("aaa", domain.VisibilityPublic)
+		r.meta.EXPECT().Get(mock.Anything, a).Unset()
+		r.meta.EXPECT().Get(mock.Anything, a).Return(domain.Repo{Name: a, Visibility: domain.VisibilityPublic, CreatedAt: now, Settings: withIssues(domain.IssuesPublic)}, nil).Maybe()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		owner1 := r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"owner"}})
+		owner2 := r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"owner"}})
+		home := r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"home"}})
+		repoTopic := r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"repo:aaa"}})
+		anon := r.watch(ctx, domain.Anonymous(), ports.WatchParams{Topics: []string{"repo:aaa", "home"}})
+		synctest.Wait()
+
+		r.feed <- domain.IssuePendingRemoved{Repo: a, ID: "x", At: now}
+		r.feed <- domain.IssueOpened{Issue: domain.Issue{Repo: a, Number: 1}, At: now, Visibility: domain.VisibilityPublic, CreatedAt: now}
+
+		for name, w := range map[string]*watcher{"owner 1": owner1, "owner 2": owner2} {
+			_, ok := w.next(t).Event.(domain.IssuePendingRemoved)
+			require.True(t, ok, "%s gets the refresh", name)
+			_, ok = w.next(t).Event.(domain.IssueOpened)
+			require.True(t, ok)
+		}
+		for name, w := range map[string]*watcher{"home": home, "repo topic": repoTopic, "anonymous": anon} {
+			e, ok := w.next(t).Event.(domain.IssueOpened)
+			require.True(t, ok, "%s: the first event is the sentinel (got %T)", name, e)
 		}
 	})
 }

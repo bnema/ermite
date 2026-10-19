@@ -370,3 +370,8 @@ func TestIssueMappers(t *testing.T) {
 	assert.NotNil(t, watchEventToPB(ports.WatchEvent{Event: domain.IssueOpened{}}).GetIssueOpened())
 	assert.NotNil(t, watchEventToPB(ports.WatchEvent{Event: domain.IssueReopened{}}).GetIssueReopened())
 }
+
+func TestWatchEventToPBSkipsPendingRemoved(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, watchEventToPB(ports.WatchEvent{Event: domain.IssuePendingRemoved{}}))
+}
