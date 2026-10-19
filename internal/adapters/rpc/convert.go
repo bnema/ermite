@@ -472,6 +472,15 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	case domain.CommentAdded:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_CommentAdded{CommentAdded: &pb.CommentAdded{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}
+	case domain.CommentEdited:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_CommentEdited{CommentEdited: &pb.CommentEdited{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}
+	case domain.CommentDeleted:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_CommentDeleted{CommentDeleted: &pb.CommentDeleted{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}
+	case domain.CommentResolved:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_CommentResolved{CommentResolved: &pb.CommentResolved{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}
 	case domain.RunUpdated:
 		out.Time = timestamp(ev.At)
 		out.Kind = runEventToPB(ev)

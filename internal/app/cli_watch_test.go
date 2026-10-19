@@ -199,3 +199,27 @@ func TestWatchMergeRequestEvents(t *testing.T) {
 	assert.Equal(t, "merge_request_merged", decode[eventOut](t, lines[2]).Type)
 	assert.Equal(t, "merge_request_closed", decode[eventOut](t, lines[3]).Type)
 }
+
+func TestNoteWatchEvents(t *testing.T) {
+	note := &ermite.Comment{Id: "4", ReplyTo: "2", StartLine: 10, Line: 24, Verdict: ermite.Verdict_VERDICT_APPROVE, EditedAt: ts("2026-10-10T12:00:00Z"), Deleted: true, Author: "owner"}
+	events := []*ermite.Event{
+		{Kind: &ermite.Event_CommentEdited{CommentEdited: &ermite.CommentEdited{Repo: "alpha", Number: 1, Comment: note}}},
+		{Kind: &ermite.Event_CommentDeleted{CommentDeleted: &ermite.CommentDeleted{Repo: "alpha", Number: 1, Comment: note}}},
+		{Kind: &ermite.Event_CommentResolved{CommentResolved: &ermite.CommentResolved{Repo: "alpha", Number: 1, Comment: note}}},
+	}
+	for i, ev := range events {
+		got, ok := toJSONEvent(ev)
+		require.True(t, ok)
+		assert.Equal(t, []string{"comment_edited", "comment_deleted", "comment_resolved"}[i], got.Type)
+		assert.Equal(t, "alpha", got.Repo)
+		assert.EqualValues(t, 1, got.Number)
+		require.NotNil(t, got.Comment)
+		assert.True(t, got.Comment.Deleted)
+		assert.Equal(t, "2", got.Comment.ReplyTo)
+		assert.Equal(t, "approve", got.Comment.Verdict)
+		assert.Contains(t, eventLine(got), got.Type+"  alpha!1 by owner")
+		raw, err := json.Marshal(got)
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), `"edited_at":"2026-10-10T12:00:00Z"`)
+	}
+}

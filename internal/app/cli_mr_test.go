@@ -381,3 +381,84 @@ func TestSigningKeyShowOutput(t *testing.T) {
 	res = runCLI(t, envFor(url), "", "signing-key", "show", "--json").ok(t)
 	assert.JSONEq(t, `{"public_key":"ssh-ed25519 AAAAC3Nz","fingerprint":"SHA256:abc","committer_name":"ermite","committer_email":"ermite@git.example.org","allowed_signers":"ermite@git.example.org ssh-ed25519 AAAAC3Nz"}`, res.stdout)
 }
+
+func TestNoteRangesAndIDs(t *testing.T) {
+	for _, tc := range []struct {
+		input      string
+		start, end int32
+	}{{"1", 0, 1}, {"10-24", 10, 24}, {"2147483647", 0, 2147483647}} {
+		start, end, err := parseLineRange(tc.input)
+		require.NoError(t, err)
+		assert.Equal(t, tc.start, start)
+		assert.Equal(t, tc.end, end)
+	}
+	for _, input := range []string{"", "0", "-1", "1-1", "24-10", "0-2", "1-2-3", "2147483648", "a", "1-"} {
+		_, _, err := parseLineRange(input)
+		require.Error(t, err, input)
+	}
+	for _, input := range []string{"12", "^12", "#12"} {
+		got, err := parseNoteID(input)
+		require.NoError(t, err)
+		assert.Equal(t, "12", got)
+	}
+}
+
+func TestNoteFlags(t *testing.T) {
+	f := &fakeAPI{addComment: func(r *ermite.AddCommentRequest) (*ermite.AddCommentResponse, error) {
+		return &ermite.AddCommentResponse{Comment: &ermite.Comment{Id: "1", ReplyTo: r.GetReplyTo(), StartLine: r.GetStartLine(), Line: r.GetLine(), Verdict: r.GetVerdict()}}, nil
+	}}
+	url := f.serve(t)
+	for _, tc := range []struct {
+		flags   []string
+		reply   string
+		start   int32
+		verdict string
+	}{
+		{[]string{"--reply", "^12", "-m", "reply"}, "12", 0, ""},
+		{[]string{"--path", "x", "--line", "10-24", "-m", "range"}, "", 10, ""},
+		{[]string{"--approve"}, "", 0, "approve"},
+		{[]string{"--request-changes"}, "", 0, "changes_requested"},
+	} {
+		res := runCLI(t, envFor(url), "", append([]string{"mr", "comment", "alpha", "1", "--json"}, tc.flags...)...).ok(t)
+		got := decode[jsonComment](t, res.stdout)
+		assert.Equal(t, tc.reply, got.ReplyTo)
+		assert.Equal(t, tc.start, got.StartLine)
+		assert.Equal(t, tc.verdict, got.Verdict)
+	}
+	for _, flags := range [][]string{{"--approve", "--request-changes"}, {"--reply", "1", "--path", "x"}, {"--reply", "1", "--line", "2"}, {"--reply", "1", "--side", "new"}, {"--reply", "1", "--approve"}, {"--reply", "1", "--request-changes"}} {
+		require.Error(t, runCLI(t, envFor(url), "", append([]string{"mr", "comment", "alpha", "1", "-m", "x"}, flags...)...).err)
+	}
+}
+
+func TestNoteDetailOutput(t *testing.T) {
+	d := &ermite.GetMergeRequestResponse{MergeRequest: mrOne, Comments: []*ermite.Comment{
+		{Id: "1", Path: "x", StartLine: 10, Line: 24, Text: "root"},
+		{Id: "3", Text: "other", Deleted: true},
+		{Id: "2", ReplyTo: "1", Text: "reply", EditedAt: ts("2026-10-10T12:00:00Z")},
+	}, Verdicts: []*ermite.AuthorVerdict{
+		{Author: "owner", Verdict: ermite.Verdict_VERDICT_APPROVE, CommentId: "1", Stale: true},
+		{Author: "bot", Verdict: ermite.Verdict_VERDICT_CHANGES_REQUESTED, CommentId: "3"},
+	}}
+	var out strings.Builder
+	require.NoError(t, printMRDetail(&out, d, false, false))
+	text := out.String()
+	assert.Contains(t, text, "owner approved (stale), bot changes requested")
+	assert.Contains(t, text, "lines 10-24")
+	assert.Contains(t, text, "(edited)")
+	assert.Contains(t, text, "[deleted]")
+	assert.Less(t, strings.Index(text, "      #2"), strings.Index(text, "  #3"))
+	got := toJSONDetail(d, false)
+	require.Len(t, got.Verdicts, 2)
+	assert.True(t, got.Verdicts[0].Stale)
+	assert.Equal(t, "changes_requested", got.Verdicts[1].Verdict)
+	assert.Equal(t, "1", got.Comments[2].ReplyTo)
+	assert.NotNil(t, got.Comments[2].EditedAt)
+}
+
+func TestMRReviewScopeCompletion(t *testing.T) {
+	cmd := newTokenCreateCmd(&cliEnv{})
+	complete, ok := cmd.GetFlagCompletionFunc("scope")
+	require.True(t, ok)
+	values, _ := complete(cmd, nil, "")
+	assert.Contains(t, values, "mr:review")
+}
