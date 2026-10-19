@@ -11,3 +11,10 @@ func (l *Limiter) Tracked() int {
 	defer l.mu.Unlock()
 	return len(l.failures)
 }
+
+// Tracked returns how many clients have submissions on record.
+func (l *SubmissionLimiter) Tracked() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.subs)
+}
