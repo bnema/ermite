@@ -69,6 +69,8 @@ type Layout struct {
 	Passkeys bool
 	// MR loads the script of the merge request page (mr.js).
 	MR bool
+	// IssueForm loads the script of the public issue form (issue-form.js).
+	IssueForm bool
 }
 
 // Link is a plain label + href pair.

@@ -33,6 +33,9 @@ templ Shell(l Layout, rail templ.Component) {
 			if l.MR {
 				<script src={ l.Assets.MR } defer></script>
 			}
+			if l.IssueForm {
+				<script src={ l.Assets.IssueForm } defer></script>
+			}
 		</head>
 		<body
 			data-ref={ l.RefPath }
