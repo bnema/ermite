@@ -213,7 +213,12 @@ window.ermiteMR = (() => {
       const box = $('input[name="delete_branch"]', m);
       if (box) box.checked = !box.checked;
     } else {
-      if (!radios[act.mode].disabled) radios[act.mode].checked = true;
+      const r = radios[act.mode];
+      // A change event lets the live bindings enable the Merge button again.
+      if (!r.disabled && !r.checked) {
+        r.checked = true;
+        r.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     }
     $('[data-default]', m)?.focus();
     return true;
