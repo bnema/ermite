@@ -1002,8 +1002,7 @@ func (m *MergeRequests) checkMode(ctx context.Context, mr domain.MergeRequest, m
 }
 
 func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams) (domain.MergeRequest, error) {
-	repo, err := m.writable(ctx, p, name, domain.ScopeMRMerge)
-	if err != nil {
+	if _, err := m.writable(ctx, p, name, domain.ScopeMRMerge); err != nil {
 		return domain.MergeRequest{}, err
 	}
 	mode := params.Mode
@@ -1048,7 +1047,7 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 		return domain.MergeRequest{}, fmt.Errorf("%w: !%d is a draft: mark it ready for review first", domain.ErrPreconditionFailed, number)
 	}
 	// The settings are read again under the lock: a change applies at once.
-	repo, err = m.meta.Get(ctx, name)
+	repo, err := m.meta.Get(ctx, name)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return domain.MergeRequest{}, err // deleted meanwhile
