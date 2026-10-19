@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -440,16 +441,41 @@ func (f *pushFixture) check(ctx context.Context, p domain.Principal, n domain.Re
 	return f.pushes.Check(ctx, p, n, ups, ports.PushObjects{})
 }
 
-type fakeGuard struct {
-	path string
-	err  error
-	got  []domain.RefUpdate
-	objs ports.PushObjects
+type fakePushTrees struct {
+	path        string
+	err         error
+	diffErr     error
+	got         []domain.RefUpdate
+	objs        ports.PushObjects
+	bounds      domain.PushWalkBounds
+	subtreePath string
+	calls       int
+	old, new    domain.ObjectID
+	data        *domain.PushSubtrees
+	change      bool
 }
 
-func (g *fakeGuard) ChangedWorkflow(_ context.Context, _ domain.RepoName, ups []domain.RefUpdate, o ports.PushObjects) (string, error) {
-	g.got, g.objs = ups, o
-	return g.path, g.err
+func (g *fakePushTrees) PushSubtrees(_ context.Context, _ domain.RepoName, ups []domain.RefUpdate, o ports.PushObjects, path string, bounds domain.PushWalkBounds) (domain.PushSubtrees, error) {
+	g.got, g.objs, g.subtreePath, g.bounds = ups, o, path, bounds
+	if g.data != nil {
+		return *g.data, g.err
+	}
+	t := domain.PushSubtrees{Ends: map[string]domain.PushedEnd{}, Subtrees: map[string]domain.Subtree{}}
+	for _, up := range ups {
+		t.Ends[up.Old] = domain.PushedEnd{Type: domain.ObjectCommit}
+		t.Ends[up.New] = domain.PushedEnd{Type: domain.ObjectCommit}
+		if g.path != "" || g.change {
+			id, _ := domain.ParseObjectID(up.New)
+			t.Subtrees[up.New] = domain.Subtree{Kind: domain.EntryDirectory, ID: id}
+		}
+	}
+	return t, g.err
+}
+
+func (g *fakePushTrees) FirstDifferentEntry(_ context.Context, _ domain.RepoName, _ ports.PushObjects, old, new domain.ObjectID) (string, error) {
+	g.calls++
+	g.old, g.new = old, new
+	return strings.TrimPrefix(g.path, domain.WorkflowDir+"/"), g.diffErr
 }
 
 // A push by the token of a job is judged on the workflows it changes, and by it
@@ -464,10 +490,10 @@ func TestPushesCheckRefusesWorkflowChangesOfJobTokens(t *testing.T) {
 	job := domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "j1", Repo: n, ExpiresAt: exp, Permissions: map[string]string{"contents": "write"}})
 	readOnlyJob := domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "j2", Repo: n, ExpiresAt: exp})
 
-	build := func(t *testing.T, g *fakeGuard) *pushFixture {
+	build := func(t *testing.T, g *fakePushTrees) *pushFixture {
 		f := newPushFixture(t)
 		if g != nil {
-			f.pushes.WithWorkflowGuard(g)
+			f.pushes.WithPushTreeReader(g)
 		}
 		f.cirepo.EXPECT().GetRepoToken(ctx, mock.Anything).Return(domain.CIRepoToken{ID: "j1", ExpiresAt: exp}, nil).Maybe()
 		return f
@@ -475,29 +501,65 @@ func TestPushesCheckRefusesWorkflowChangesOfJobTokens(t *testing.T) {
 
 	t.Run("no workflow touched", func(t *testing.T) {
 		t.Parallel()
-		g := &fakeGuard{}
+		g := &fakePushTrees{}
 		f := build(t, g)
 		require.NoError(t, f.pushes.Check(ctx, job, n, ups, objs))
 		assert.Equal(t, ups, g.got, "every ref is judged")
 		assert.Equal(t, objs, g.objs, "from the objects of the push in quarantine")
+		assert.Equal(t, domain.WorkflowDir, g.subtreePath)
+		assert.Equal(t, domain.DefaultPushWalkBounds(), g.bounds)
+		assert.Zero(t, g.calls)
 	})
 	t.Run("a workflow touched refuses the whole push with GitHub's text", func(t *testing.T) {
 		t.Parallel()
-		f := build(t, &fakeGuard{path: ".github/workflows/ci.yml"})
+		f := build(t, &fakePushTrees{path: ".github/workflows/ci.yml"})
 		err := f.pushes.Check(ctx, job, n, ups, objs)
 		require.ErrorIs(t, err, domain.ErrRejected)
 		assert.Contains(t, err.Error(), "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission")
 	})
+	t.Run("empty differing entry reports the directory and uses the domain pair once", func(t *testing.T) {
+		g := &fakePushTrees{change: true}
+		f := build(t, g)
+		err := f.pushes.Check(ctx, job, n, ups, objs)
+		require.ErrorIs(t, err, domain.ErrRejected)
+		assert.Contains(t, err.Error(), "workflow `.github/workflows`")
+		assert.Equal(t, 1, g.calls)
+		assert.True(t, g.old.IsZero())
+		assert.Equal(t, oidB, g.new.String())
+	})
+	t.Run("diff invalid is rejected with reason", func(t *testing.T) {
+		g := &fakePushTrees{change: true, diffErr: fmt.Errorf("%w: path too long", domain.ErrInvalid)}
+		f := build(t, g)
+		err := f.pushes.Check(ctx, job, n, ups, objs)
+		require.ErrorIs(t, err, domain.ErrRejected)
+		assert.Contains(t, err.Error(), "path too long")
+		assert.Equal(t, 1, g.calls)
+	})
+	t.Run("diff I/O failure retains its class", func(t *testing.T) {
+		boom := errors.New("diff broke")
+		g := &fakePushTrees{change: true, diffErr: boom}
+		f := build(t, g)
+		err := f.pushes.Check(ctx, job, n, ups, objs)
+		require.ErrorIs(t, err, boom)
+		assert.NotErrorIs(t, err, domain.ErrRejected)
+	})
+	t.Run("missing endpoint is rejected before diff", func(t *testing.T) {
+		g := &fakePushTrees{data: &domain.PushSubtrees{}}
+		f := build(t, g)
+		err := f.pushes.Check(ctx, job, n, ups, objs)
+		require.ErrorIs(t, err, domain.ErrRejected)
+		assert.Zero(t, g.calls)
+	})
 	t.Run("a failure to tell refuses it, not as a policy", func(t *testing.T) {
 		t.Parallel()
-		f := build(t, &fakeGuard{err: errors.New("git broke")})
+		f := build(t, &fakePushTrees{err: errors.New("git broke")})
 		err := f.pushes.Check(ctx, job, n, ups, objs)
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, domain.ErrRejected)
 	})
 	t.Run("a push beyond the guard's bounds is refused as a policy, with the reason", func(t *testing.T) {
 		t.Parallel()
-		f := build(t, &fakeGuard{err: fmt.Errorf("%w: the push brings more than 10000 commits", domain.ErrInvalid)})
+		f := build(t, &fakePushTrees{err: fmt.Errorf("%w: the push brings more than 10000 commits", domain.ErrInvalid)})
 		err := f.pushes.Check(ctx, job, n, ups, objs)
 		require.ErrorIs(t, err, domain.ErrRejected)
 		assert.Contains(t, err.Error(), "more than 10000 commits")
@@ -509,19 +571,19 @@ func TestPushesCheckRefusesWorkflowChangesOfJobTokens(t *testing.T) {
 	})
 	t.Run("a job token without contents: write cannot push at all", func(t *testing.T) {
 		t.Parallel()
-		f := build(t, &fakeGuard{})
+		f := build(t, &fakePushTrees{})
 		assert.ErrorIs(t, f.pushes.Check(ctx, readOnlyJob, n, ups, objs), domain.ErrRejected)
 	})
 	t.Run("the owner is not asked", func(t *testing.T) {
 		t.Parallel()
-		g := &fakeGuard{path: ".github/workflows/ci.yml"}
+		g := &fakePushTrees{path: ".github/workflows/ci.yml"}
 		f := build(t, g)
 		require.NoError(t, f.pushes.Check(ctx, domain.Root(), n, ups, objs))
 		assert.Nil(t, g.got)
 	})
 	t.Run("a job token never creates a repository on push", func(t *testing.T) {
 		t.Parallel()
-		f := build(t, &fakeGuard{})
+		f := build(t, &fakePushTrees{})
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		assert.ErrorIs(t, f.pushes.Open(ctx, job, n, true), domain.ErrNotFound)
 	})
