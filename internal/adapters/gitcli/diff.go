@@ -89,7 +89,7 @@ type rawEntry struct {
 
 // readDiff parses the output of diff-tree --raw --numstat -p.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule for diff windowing and truncation budgets; pending move to domain/usecase
+//hexcheck:ignore suspicious-business-logic-in-adapter streams raw, numstat and patch sections; domain.DiffBudget decides window and hunk eligibility and accounts retained lines and bytes; adapter only skips sections and stops the process
 func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.DiffStats, error) {
 	entries, err := readRaw(r)
 	if err != nil {
@@ -105,23 +105,17 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 		stats.Deletions += entries[i].del
 	}
 	var diff domain.Diff
-	if limits.MaxFiles > 0 && len(entries) > limits.MaxFiles {
-		entries = entries[:limits.MaxFiles]
-		diff.Truncated = true
-	}
-	// Only the files of the window [from, to) get their hunks; the others are
-	// listed as they are, neither truncated nor counted in the budgets.
-	from, to := max(limits.From, 0), len(entries)
-	if limits.To > 0 {
-		to = min(limits.To, len(entries))
-	}
+	budget := domain.NewDiffBudget(limits)
+	kept, from, to, truncated := budget.Window(len(entries))
+	entries = entries[:kept]
+	diff.Truncated = truncated
 
 	// The patch holds one section per file, two for a type change, in the
 	// order of the entries. Entries without lines to show (binary, pure
 	// rename, mode change) have a section without hunks.
 	lastRead := -1
 	for i := from; i < to; i++ {
-		if wantsHunks(&entries[i], limits, limits.MaxTotalLines, limits.MaxTotalBytes) {
+		if budget.WantsHunks(entries[i].file.Binary, entries[i].added+entries[i].del) {
 			lastRead = i
 		}
 	}
@@ -131,8 +125,7 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 			_, _ = r.Discard(1)
 		}
 	}
-	pr := &patchReader{lr: newLineReader(r, maxDiffLine), bytesLeft: limits.MaxTotalBytes}
-	budget := limits.MaxTotalLines
+	pr := &patchReader{lr: newLineReader(r, maxDiffLine), budget: budget}
 	diff.Files = make([]domain.FileDiff, 0, len(entries))
 	for i := range entries {
 		e := &entries[i]
@@ -142,21 +135,19 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 		}
 		inWindow := i >= from && i < to
 		switch {
-		case !inWindow, !changedLines(e):
+		case !inWindow, !pr.budget.ChangedLines(e.file.Binary, e.added+e.del):
 			// Nothing to show.
-		case !wantsHunks(e, limits, budget, pr.bytesLeft):
+		case !pr.budget.WantsHunks(e.file.Binary, e.added+e.del):
 			e.file.Truncated = true
 		default:
-			bytesBefore := pr.bytesLeft
-			hunks, lines, truncated, err := pr.file(sections, min(limits.MaxFileLines, budget))
+			before := pr.budget
+			hunks, _, truncated, err := pr.file(sections, pr.budget.FileLines())
 			if err != nil {
 				return domain.Diff{}, domain.DiffStats{}, err
 			}
 			e.file.Hunks, e.file.Truncated = hunks, truncated
 			if truncated {
-				pr.bytesLeft = bytesBefore // nothing of this file is kept
-			} else {
-				budget -= lines
+				pr.budget = before // nothing of this file is kept
 			}
 			sections = 0
 		}
@@ -173,17 +164,6 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 		return diff, stats, errStop
 	}
 	return diff, stats, nil
-}
-
-// changedLines reports whether the file has text lines in its patch.
-func changedLines(e *rawEntry) bool { return !e.file.Binary && e.added+e.del > 0 }
-
-// wantsHunks reports whether the lines of e can still be shown: the changed
-// lines alone, a lower bound of the hunk lines, must fit the per-file limit
-// and what remains of the total, and some text bytes must remain.
-func wantsHunks(e *rawEntry, limits domain.DiffLimits, linesLeft, bytesLeft int) bool {
-	n := e.added + e.del
-	return changedLines(e) && n <= limits.MaxFileLines && n <= linesLeft && bytesLeft > 0
 }
 
 // readRaw reads the `--raw -z` records, which start with ':'.
@@ -333,7 +313,7 @@ type patchReader struct {
 	eof     bool
 	cut     bool // the last line read was cut
 
-	bytesLeft int // text bytes still allowed in the diff
+	budget domain.DiffBudget
 }
 
 const sectionMarker = "diff --git "
@@ -480,8 +460,8 @@ func (p *patchReader) section(max int) (hunks []domain.Hunk, lines int, truncate
 			continue
 		}
 		lines++
-		p.bytesLeft -= len(text)
-		if lines > max || p.bytesLeft < 0 {
+		fits := p.budget.ChargeLine(len(text))
+		if lines > max || !fits {
 			return nil, lines, true, nil
 		}
 		cur.Lines = append(cur.Lines, l)
