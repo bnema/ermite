@@ -456,6 +456,9 @@ templ MRChecks(c ChecksSection) {
 		} else {
 			<ul class="checks">
 				for _, r := range c.Rows {
+					if r.GroupLabel != "" {
+						<li class="ck-group"><a href={ templ.SafeURL(r.GroupHref) }>{ r.GroupLabel }</a></li>
+					}
 					<li>
 						@CheckIcon(r.Kind, r.State)
 						if r.Href != "" {

@@ -421,3 +421,42 @@ func TestLogLimitEndsTheJob(t *testing.T) {
 	assert.Equal(t, domain.CIFailure, written.Jobs[0].Conclusion)
 	assert.Equal(t, domain.CIStepCompleted, written.Jobs[0].Steps[0].State, "an open step is completed with the job")
 }
+
+func TestListChecksRunEvents(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "events"}, {name: "pruned", err: domain.ErrNotFound}, {name: "store error", err: errors.New("store unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			u := newCIUnit(t, nil)
+			repo := name(t, "proj")
+			sha := "0123456789012345678901234567890123456789"
+			u.meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, Visibility: domain.VisibilityPublic}, nil)
+			u.store.EXPECT().ListChecks(mock.Anything, repo, sha, usecase.MaxCIChecks).Return([]domain.CICheck{
+				{RunID: 7, Status: domain.CICompleted}, {RunID: 8, Status: domain.CICompleted}, {RunID: 7, Status: domain.CICompleted},
+			}, false, nil).Once()
+			u.store.EXPECT().GetRun(mock.Anything, repo, int64(7)).Return(domain.CIRun{Event: "push"}, tc.err).Once()
+			if tc.err == nil || errors.Is(tc.err, domain.ErrNotFound) {
+				u.store.EXPECT().GetRun(mock.Anything, repo, int64(8)).Return(domain.CIRun{Event: "pull_request"}, nil).Once()
+			}
+			res, err := u.ci.ListChecks(context.Background(), domain.Anonymous(), repo, sha)
+			if tc.err != nil && !errors.Is(tc.err, domain.ErrNotFound) {
+				require.ErrorIs(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, res.Checks, 3)
+			event := "push"
+			if tc.err != nil {
+				event = ""
+			}
+			assert.Equal(t, event, res.Checks[0].Event)
+			assert.Equal(t, "pull_request", res.Checks[1].Event)
+			assert.Equal(t, event, res.Checks[2].Event)
+		})
+	}
+}

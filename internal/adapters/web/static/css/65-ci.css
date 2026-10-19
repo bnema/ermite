@@ -60,6 +60,9 @@
   .attempts { padding: 0; margin: var(--s2) 0 0; list-style: none; font-size: var(--fs-s); }
   .checks { display: grid; gap: var(--s1); padding: 0; margin: 0; list-style: none; font-size: var(--fs-s); }
   .checks li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
+  .checks .ck-group { font-size: var(--fs-xs); color: var(--ink-dim); margin-top: var(--s2); }
+  .checks .ck-group:first-child { margin-top: 0; }
+  .checks .ck-group a { color: inherit; }
   /* the merge rule under the checks: a note about them, not one of them */
   .rail section > .rule-note {
     display: flex; gap: 6px; margin-top: var(--s3); padding-top: var(--s2); border-top: 1px dashed var(--border);

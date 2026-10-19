@@ -519,8 +519,20 @@ func (c *CI) ListChecks(ctx context.Context, p domain.Principal, name domain.Rep
 	}
 	res := ports.ChecksResult{Truncated: more}
 	var runners []domain.CIRunner
+	events := make(map[int64]string)
 	for _, ck := range checks {
-		v := ports.CheckView{CICheck: ck}
+		event, ok := events[ck.RunID]
+		if !ok {
+			run, err := c.cfg.Store.GetRun(ctx, name, ck.RunID)
+			if err != nil && !errors.Is(err, domain.ErrNotFound) {
+				return ports.ChecksResult{}, err
+			}
+			if err == nil {
+				event = run.Event
+			}
+			events[ck.RunID] = event
+		}
+		v := ports.CheckView{CICheck: ck, Event: event}
 		if ck.Status == domain.CIQueued {
 			if runners == nil {
 				runners, _ = c.cfg.Store.ListRunners(ctx)

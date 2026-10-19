@@ -25,6 +25,7 @@ type ChecksSummary struct {
 type CheckRow struct {
 	Name, Kind, State, Href string
 	Waiting                 bool
+	GroupLabel, GroupHref   string
 }
 
 // ChecksSection is the checks of the head of a merge request.
@@ -82,17 +83,28 @@ func checksSummary(repo domain.RepoName, sha string, checks []ports.CheckView) C
 // the repository that applies to them.
 func checksSection(repo domain.Repo, checks []ports.CheckView) ChecksSection {
 	sec := ChecksSection{}
-	for _, c := range checks {
-		row := CheckRow{
-			Name: visibleText(c.Name), Kind: ciKind(c.Status, c.Conclusion), State: ciState(c.Status, c.Conclusion),
-			Waiting: c.WaitingForRunner,
+	groups := checksByRun(checks)
+	for _, group := range groups {
+		for i, c := range group {
+			row := CheckRow{
+				Name: visibleText(c.Name), Kind: ciKind(c.Status, c.Conclusion), State: ciState(c.Status, c.Conclusion),
+				Waiting: c.WaitingForRunner,
+			}
+			if c.JobID != "" {
+				row.Href = jobHref(repo.Name.String(), c.RunID, c.JobID)
+			} else {
+				row.Href = runHref(repo.Name.String(), c.RunID)
+			}
+			if len(groups) > 1 && i == 0 {
+				event := visibleText(c.Event)
+				if event == "" {
+					event = fmt.Sprintf("run %d", c.RunID)
+				}
+				row.GroupLabel = visibleText(c.WorkflowName) + " · " + event
+				row.GroupHref = runHref(repo.Name.String(), c.RunID)
+			}
+			sec.Rows = append(sec.Rows, row)
 		}
-		if c.JobID != "" {
-			row.Href = jobHref(repo.Name.String(), c.RunID, c.JobID)
-		} else {
-			row.Href = runHref(repo.Name.String(), c.RunID)
-		}
-		sec.Rows = append(sec.Rows, row)
 	}
 	switch {
 	case len(checks) == 0:
@@ -103,4 +115,20 @@ func checksSection(repo domain.Repo, checks []ports.CheckView) ChecksSection {
 		sec.Note = "checks do not block the merge in this repository."
 	}
 	return sec
+}
+
+// checksByRun keeps first-appearance order and the check order within each run.
+func checksByRun(checks []ports.CheckView) [][]ports.CheckView {
+	groups := make([][]ports.CheckView, 0)
+	indices := make(map[int64]int)
+	for _, c := range checks {
+		i, ok := indices[c.RunID]
+		if !ok {
+			i = len(groups)
+			indices[c.RunID] = i
+			groups = append(groups, nil)
+		}
+		groups[i] = append(groups[i], c)
+	}
+	return groups
 }

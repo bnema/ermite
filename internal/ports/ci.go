@@ -695,6 +695,8 @@ type GetJobLogParams struct {
 // CheckView is a check with what owners need to read it.
 type CheckView struct {
 	domain.CICheck
+	// Event is the event of the run of the check (push, pull_request, ...), empty if unknown.
+	Event string
 	// WaitingForRunner is set for a queued check whose job no registered
 	// runner can take (no runner has all its labels).
 	WaitingForRunner bool
