@@ -192,35 +192,29 @@ func (_c *MergeGit_CommitTree_Call) RunAndReturn(run func(ctx context.Context, r
 }
 
 // CountBehind provides a mock function for the type MergeGit
-func (_mock *MergeGit) CountBehind(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, max int) (int, bool, error) {
-	ret := _mock.Called(ctx, repo, head, target, max)
+func (_mock *MergeGit) CountBehind(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, limit int) (int, error) {
+	ret := _mock.Called(ctx, repo, head, target, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CountBehind")
 	}
 
 	var r0 int
-	var r1 bool
-	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) (int, bool, error)); ok {
-		return returnFunc(ctx, repo, head, target, max)
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) (int, error)); ok {
+		return returnFunc(ctx, repo, head, target, limit)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) int); ok {
-		r0 = returnFunc(ctx, repo, head, target, max)
+		r0 = returnFunc(ctx, repo, head, target, limit)
 	} else {
 		r0 = ret.Get(0).(int)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) bool); ok {
-		r1 = returnFunc(ctx, repo, head, target, max)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) error); ok {
+		r1 = returnFunc(ctx, repo, head, target, limit)
 	} else {
-		r1 = ret.Get(1).(bool)
+		r1 = ret.Error(1)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID, int) error); ok {
-		r2 = returnFunc(ctx, repo, head, target, max)
-	} else {
-		r2 = ret.Error(2)
-	}
-	return r0, r1, r2
+	return r0, r1
 }
 
 // MergeGit_CountBehind_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountBehind'
@@ -233,12 +227,12 @@ type MergeGit_CountBehind_Call struct {
 //   - repo domain.RepoName
 //   - head domain.ObjectID
 //   - target domain.ObjectID
-//   - max int
-func (_e *MergeGit_Expecter) CountBehind(ctx any, repo any, head any, target any, max any) *MergeGit_CountBehind_Call {
-	return &MergeGit_CountBehind_Call{Call: _e.mock.On("CountBehind", ctx, repo, head, target, max)}
+//   - limit int
+func (_e *MergeGit_Expecter) CountBehind(ctx any, repo any, head any, target any, limit any) *MergeGit_CountBehind_Call {
+	return &MergeGit_CountBehind_Call{Call: _e.mock.On("CountBehind", ctx, repo, head, target, limit)}
 }
 
-func (_c *MergeGit_CountBehind_Call) Run(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, max int)) *MergeGit_CountBehind_Call {
+func (_c *MergeGit_CountBehind_Call) Run(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, limit int)) *MergeGit_CountBehind_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -271,12 +265,12 @@ func (_c *MergeGit_CountBehind_Call) Run(run func(ctx context.Context, repo doma
 	return _c
 }
 
-func (_c *MergeGit_CountBehind_Call) Return(n int, capped bool, err error) *MergeGit_CountBehind_Call {
-	_c.Call.Return(n, capped, err)
+func (_c *MergeGit_CountBehind_Call) Return(n int, err error) *MergeGit_CountBehind_Call {
+	_c.Call.Return(n, err)
 	return _c
 }
 
-func (_c *MergeGit_CountBehind_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, max int) (int, bool, error)) *MergeGit_CountBehind_Call {
+func (_c *MergeGit_CountBehind_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, target domain.ObjectID, limit int) (int, error)) *MergeGit_CountBehind_Call {
 	_c.Call.Return(run)
 	return _c
 }

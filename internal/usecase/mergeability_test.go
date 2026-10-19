@@ -76,12 +76,23 @@ func (r *mergeRig) events() []domain.MergeRequestMergeability {
 	}
 }
 
-func (r *mergeRig) push2(branch, path, content string) domain.ObjectID {
+// awaitEvents receives mergeability events until n arrived, or fails after a
+// bound: the workers publish after they stored the record the tests wait for.
+func (r *mergeRig) awaitEvents(n int) []domain.MergeRequestMergeability {
 	r.t.Helper()
-	r.sh("checkout", "-q", branch)
-	id := r.commit(author, path, content, "edit "+path)
-	r.push(branch)
-	return id
+	var out []domain.MergeRequestMergeability
+	deadline := time.After(10 * time.Second)
+	for len(out) < n {
+		select {
+		case ev := <-r.mev:
+			if m, ok := ev.(domain.MergeRequestMergeability); ok {
+				out = append(out, m)
+			}
+		case <-deadline:
+			r.t.Fatalf("got %d mergeability events, want %d", len(out), n)
+		}
+	}
+	return out
 }
 
 func TestMergeabilityStatesEndToEnd(t *testing.T) {
@@ -111,8 +122,7 @@ func TestMergeabilityStatesEndToEnd(t *testing.T) {
 	m = r.waitState(mr.Number, domain.MergeabilityConflict, main3, head)
 	assert.Equal(t, []string{"a.txt"}, m.ConflictPaths)
 
-	got := r.events()
-	require.Len(t, got, 3)
+	got := r.awaitEvents(3)
 	for i, s := range []domain.MergeabilityState{domain.MergeabilityUpToDate, domain.MergeabilityBehind, domain.MergeabilityConflict} {
 		assert.Equal(t, s, got[i].Mergeability.State)
 		assert.Equal(t, mr.Number, got[i].Number)
@@ -331,7 +341,7 @@ func TestMergeabilityDedupsTriggers(t *testing.T) {
 	}
 	r.svc.Start()
 	require.Eventually(t, func() bool { return computes.Load() >= 1 }, 5*time.Second, 5*time.Millisecond)
-	time.Sleep(50 * time.Millisecond)
+	r.svc.Close(context.Background()) // the workers have each looked at the queue once more
 	assert.EqualValues(t, 1, computes.Load())
 }
 
@@ -344,4 +354,109 @@ func TestMergeabilityNoWriteForClosedRequest(t *testing.T) {
 	r.git.EXPECT().IsAncestor(mock.Anything, repo, tip, head).Return(true, nil)
 	r.store.EXPECT().PutMergeability(mock.Anything, mock.Anything).Return(domain.ErrNotFound).Once() // closed meanwhile
 	r.svc.Check(repo, 7)                                                                             // no event, no further write
+}
+
+// A reader that saw a stale record marks the request seen and queues it; the
+// worker finds the record already current (stored and published by an earlier
+// check) and must still publish it, as the reader was told "checking".
+func TestMergeabilityFastPathPublishesWhenAReaderSawChecking(t *testing.T) {
+	repo := name(t, "proj")
+	head, tip := fakeOID(t, "a"), fakeOID(t, "b")
+	mr := domain.MergeRequest{Repo: repo, Number: 7, Source: "feat", Target: "main", State: domain.MRStateOpen, HeadID: head}
+	rec := domain.Mergeability{Repo: repo, Number: 7, State: domain.MergeabilityUpToDate, TargetID: tip, HeadID: head, CheckedAt: now}
+	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
+	store.EXPECT().Get(mock.Anything, repo, int64(7)).Return(mr, nil)
+	store.EXPECT().GetMergeability(mock.Anything, repo, int64(7)).Return(domain.Mergeability{}, domain.ErrNotFound).Once() // the reader's read: stale
+	store.EXPECT().GetMergeability(mock.Anything, repo, int64(7)).Return(rec, nil)                                         // the worker has stored it since
+	meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, CreatedAt: now}, nil)
+	git.EXPECT().BranchHead(mock.Anything, repo, "feat").Return(head, nil)
+	git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(tip, nil)
+	var published []domain.Event
+	bus.EXPECT().Publish(mock.Anything, mock.Anything).Run(func(_ context.Context, ev domain.Event) { published = append(published, ev) }).Return().Once()
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{}})
+	t.Cleanup(func() { svc.Close(context.Background()) })
+
+	got := svc.Read(context.Background(), mr, tip)
+	assert.Equal(t, domain.MergeabilityChecking, got.State)
+	svc.Check(repo, 7)
+	require.Len(t, published, 1, "the current record is published for the reader")
+	assert.Equal(t, domain.MergeabilityUpToDate, published[0].(domain.MergeRequestMergeability).Mergeability.State)
+
+	svc.Check(repo, 7) // nobody saw "checking" since: nothing more
+	assert.Len(t, published, 1)
+}
+
+// A rescan claims a key that is also pending; a worker must then not run it
+// concurrently (GO-001).
+func TestMergeabilityRescanAndWorkersNeverRunAKeyConcurrently(t *testing.T) {
+	r := newMockRig(t)
+	repo := r.mr.Repo
+	head, tip := fakeOID(t, "a"), fakeOID(t, "b")
+	r.git.EXPECT().BranchHead(mock.Anything, repo, "feat").Return(head, nil)
+	r.git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(tip, nil)
+	var inflight, peak atomic.Int32
+	entered, release := make(chan struct{}, 8), make(chan struct{})
+	r.git.EXPECT().IsAncestor(mock.Anything, repo, tip, head).RunAndReturn(
+		func(context.Context, domain.RepoName, domain.ObjectID, domain.ObjectID) (bool, error) {
+			n := inflight.Add(1)
+			for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+			}
+			entered <- struct{}{}
+			<-release
+			inflight.Add(-1)
+			return true, nil
+		})
+	r.store.EXPECT().PutMergeability(mock.Anything, mock.Anything).Return(nil)
+	r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Return()
+
+	r.svc.OnOpened(context.Background(), r.mr) // pending
+	done := make(chan struct{})
+	go func() { r.svc.Check(repo, 7); close(done) }() // claims it, as a rescan does
+	<-entered
+	r.svc.Start() // two workers
+	r.svc.Close(context.Background())
+	close(release)
+	<-done
+	assert.EqualValues(t, 1, peak.Load(), "one check of the key at a time")
+}
+
+func TestMergeabilityBoundsConflictPathsAndBehind(t *testing.T) {
+	t.Run("conflict paths", func(t *testing.T) {
+		r := newMockRig(t)
+		repo := r.mr.Repo
+		head, tip := fakeOID(t, "a"), fakeOID(t, "b")
+		r.git.EXPECT().BranchHead(mock.Anything, repo, "feat").Return(head, nil)
+		r.git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(tip, nil)
+		r.git.EXPECT().IsAncestor(mock.Anything, repo, tip, head).Return(false, nil)
+		var paths []string
+		for i := 0; i < domain.MaxConflictPaths+3; i++ {
+			paths = append(paths, strings.Repeat("p", i+1))
+		}
+		r.git.EXPECT().MergeTree(mock.Anything, repo, tip, head).Return(domain.MergeTreeResult{ConflictPaths: paths}, nil)
+		var put domain.Mergeability
+		r.store.EXPECT().PutMergeability(mock.Anything, mock.Anything).RunAndReturn(
+			func(_ context.Context, m domain.Mergeability) error { put = m; return nil })
+		r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Return()
+		r.svc.Check(repo, 7)
+		assert.Equal(t, domain.MergeabilityConflict, put.State)
+		assert.Len(t, put.ConflictPaths, domain.MaxConflictPaths)
+		assert.True(t, put.ConflictPathsTruncated)
+	})
+	t.Run("behind", func(t *testing.T) {
+		r := newMockRig(t)
+		repo := r.mr.Repo
+		head, tip := fakeOID(t, "a"), fakeOID(t, "b")
+		r.git.EXPECT().BranchHead(mock.Anything, repo, "feat").Return(head, nil)
+		r.git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(tip, nil)
+		r.git.EXPECT().IsAncestor(mock.Anything, repo, tip, head).Return(false, nil)
+		r.git.EXPECT().MergeTree(mock.Anything, repo, tip, head).Return(domain.MergeTreeResult{Clean: true}, nil)
+		r.git.EXPECT().CountBehind(mock.Anything, repo, head, tip, domain.MaxBehindCount+1).Return(domain.MaxBehindCount+1, nil)
+		var put domain.Mergeability
+		r.store.EXPECT().PutMergeability(mock.Anything, mock.Anything).RunAndReturn(
+			func(_ context.Context, m domain.Mergeability) error { put = m; return nil })
+		r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Return()
+		r.svc.Check(repo, 7)
+		assert.Equal(t, domain.MaxBehindCount, put.Behind)
+		assert.True(t, put.BehindCapped)
+	})
 }

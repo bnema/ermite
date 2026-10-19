@@ -89,3 +89,32 @@ func (c *CI) DeleteRefTip(ctx context.Context, repo domain.RepoName, ref string)
 	}
 	return nil
 }
+
+// DeleteRefTipIf removes the record of a ref only when it still names sha.
+func (c *CI) DeleteRefTipIf(ctx context.Context, repo domain.RepoName, ref, sha string) error {
+	for range updateAttemptsTip {
+		it, ok := c.db.Get(ctx, refTipKey(repo, ref))
+		if !ok {
+			return nil
+		}
+		var pb storagepb.CIRefTip
+		if err := proto.Unmarshal(it.Value, &pb); err != nil {
+			return fmt.Errorf("decode ref tip: %w", err)
+		}
+		if pb.GetSha() != sha {
+			return nil // a newer push owns the record
+		}
+		var b kv.Batch
+		b.RequireVersion(refTipKey(repo, ref), it.Version)
+		b.Delete(refTipKey(repo, ref))
+		_, err := c.db.Apply(ctx, &b)
+		if errors.Is(err, kv.ErrConflict) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("delete ref tip: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("delete ref tip: %w", domain.ErrConflict)
+}

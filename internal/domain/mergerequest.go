@@ -535,3 +535,27 @@ type MergeTreeResult struct {
 	ConflictPaths []string
 	Truncated     bool
 }
+
+// Bounded returns r with at most MaxConflictPaths conflicted paths, Truncated
+// set when some were dropped. Adapters return the raw result; the bound is
+// the domain's.
+func (r MergeTreeResult) Bounded() MergeTreeResult {
+	if len(r.ConflictPaths) > MaxConflictPaths {
+		r.ConflictPaths = r.ConflictPaths[:MaxConflictPaths:MaxConflictPaths]
+		r.Truncated = true
+	}
+	return r
+}
+
+// BehindLimit is the limit to give a count of commits behind so that
+// BoundBehind can tell whether MaxBehindCount was exceeded.
+const BehindLimit = MaxBehindCount + 1
+
+// BoundBehind caps a raw count of commits behind (counted up to BehindLimit)
+// at MaxBehindCount; capped is true when the count was over it.
+func BoundBehind(n int) (count int, capped bool) {
+	if n > MaxBehindCount {
+		return MaxBehindCount, true
+	}
+	return n, false
+}

@@ -252,7 +252,9 @@ func (s *Mergeability) check(k mergeKey) {
 			return
 		}
 		if prev.IsFor(tip, head) {
-			s.q.takeSeen(k)
+			if s.q.takeSeen(k) {
+				s.publish(ctx, prev) // a reader saw "checking" before this record
+			}
 			return
 		}
 		res, err := s.compute(ctx, k, tip, head)
@@ -328,13 +330,16 @@ func (s *Mergeability) compute(ctx context.Context, k mergeKey, tip, head domain
 	}
 	if !tree.Clean {
 		m.State = domain.MergeabilityConflict
+		tree = tree.Bounded()
 		m.ConflictPaths, m.ConflictPathsTruncated = tree.ConflictPaths, tree.Truncated
 		return m, nil
 	}
 	m.State = domain.MergeabilityBehind
-	if m.Behind, m.BehindCapped, err = s.cfg.Git.CountBehind(ctx, k.repo, head, tip, domain.MaxBehindCount); err != nil {
+	n, err := s.cfg.Git.CountBehind(ctx, k.repo, head, tip, domain.BehindLimit)
+	if err != nil {
 		return m, err
 	}
+	m.Behind, m.BehindCapped = domain.BoundBehind(n)
 	return m, nil
 }
 

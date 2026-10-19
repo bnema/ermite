@@ -93,6 +93,9 @@ type CIRefTipStore interface {
 	GetRefTip(ctx context.Context, repo domain.RepoName, ref string) (domain.CIRefTip, error)
 	// DeleteRefTip removes the record of a ref; a missing one is not an error.
 	DeleteRefTip(ctx context.Context, repo domain.RepoName, ref string) error
+	// DeleteRefTipIf removes the record of a ref only when it still names
+	// sha; a missing or different one is left alone and is not an error.
+	DeleteRefTipIf(ctx context.Context, repo domain.RepoName, ref, sha string) error
 }
 
 // CIWorkflowStore keeps, per repository, the workflow files that are disabled

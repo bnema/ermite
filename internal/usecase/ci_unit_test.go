@@ -54,6 +54,7 @@ func newMergeUnit(t *testing.T, block bool) *mergeUnit {
 	u.git.EXPECT().BranchHead(mock.Anything, u.repo.Name, "feat").Return(m.head, nil)
 	u.git.EXPECT().BranchHead(mock.Anything, u.repo.Name, "main").Return(tip, nil)
 	u.git.EXPECT().IsAncestor(mock.Anything, u.repo.Name, tip, m.head).Return(true, nil)
+	u.git.EXPECT().IsAncestor(mock.Anything, u.repo.Name, m.head, tip).Return(false, nil)
 	return m
 }
 

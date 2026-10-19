@@ -84,14 +84,21 @@ func (q *mergeQueue) markDirtyLocked(repo domain.RepoName) {
 func (q *mergeQueue) next() (key *mergeKey, dirty *domain.RepoName) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	switch {
-	case len(q.order) > 0:
+	for key == nil && len(q.order) > 0 {
 		k := q.order[0]
 		q.order = q.order[1:]
+		if !q.pending[k] {
+			continue // claimed meanwhile by tryRun or an earlier entry
+		}
 		delete(q.pending, k)
+		if q.running[k] {
+			q.again[k] = true // never run a key concurrently
+			continue
+		}
 		q.running[k] = true
 		key = &k
-	case len(q.dirtyOrder) > 0:
+	}
+	if key == nil && len(q.dirtyOrder) > 0 {
 		r := q.dirtyOrder[0]
 		q.dirtyOrder = q.dirtyOrder[1:]
 		delete(q.dirty, r)

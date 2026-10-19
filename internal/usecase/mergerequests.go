@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -63,6 +64,8 @@ type MergeRequests struct {
 
 	// after tracks the post-merge side effects running off the request path.
 	after sync.WaitGroup
+	// afterGate, when set by a test, runs first in the post-merge goroutine.
+	afterGate func()
 }
 
 var (
@@ -952,6 +955,7 @@ func (m *MergeRequests) checkMode(ctx context.Context, mr domain.MergeRequest, m
 	if err != nil {
 		return domain.ObjectID{}, err
 	}
+	res = res.Bounded()
 	if !res.Clean {
 		what := "no common history"
 		if len(res.ConflictPaths) > 0 {
@@ -1049,6 +1053,12 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	case tip == head:
 		return domain.MergeRequest{}, fmt.Errorf("%w: nothing to merge, %q already is at %s", domain.ErrPreconditionFailed, mr.Target, head)
 	}
+	// A head behind the target (or at it) has nothing to merge, in any mode.
+	if behind, err := m.git.IsAncestor(ctx, name, head, tip); err != nil {
+		return domain.MergeRequest{}, err
+	} else if behind {
+		return domain.MergeRequest{}, fmt.Errorf("%w: nothing to merge, %q already contains %s", domain.ErrPreconditionFailed, mr.Target, head)
+	}
 	tree, err := m.checkMode(ctx, mr, mode, tip, head)
 	if err != nil {
 		return domain.MergeRequest{}, err
@@ -1085,6 +1095,16 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	m.after.Add(1)
 	go func() {
 		defer m.after.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log := zerowrap.FromCtx(bg)
+				log.Error().Str("repo", name.String()).Int64("number", number).
+					Str("panic", fmt.Sprint(r)).Bytes("stack", debug.Stack()).Msg("post-merge side effects panicked")
+			}
+		}()
+		if m.afterGate != nil {
+			m.afterGate()
+		}
 		m.afterMerge(bg, p, repo, mr, head, tip, merged, params.DeleteSource)
 	}()
 	return mr, nil
@@ -1095,24 +1115,9 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 // new one.
 func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo domain.Repo, mr domain.MergeRequest, head, tip, merged domain.ObjectID, deleteSource bool) {
 	name := repo.Name
-	log := zerowrap.FromCtx(ctx)
 	updates := []domain.RefUpdate{{Old: tip.String(), New: merged.String(), Ref: "refs/heads/" + mr.Target}}
-	if deleteSource {
-		// Who pushed the source goes first (the branch is gone either way for a
-		// schedule; a kept branch merely has no record: not trusted).
-		del := domain.RefUpdate{Old: head.String(), New: domain.ZeroOID, Ref: "refs/heads/" + mr.Source}
-		if err := recordRefTips(ctx, m.tips, name, []domain.RefUpdate{del}, "", domain.CIPusher{}, false); err != nil {
-			log.Warn().Err(err).Str("repo", name.String()).Str("branch", mr.Source).Msg("the record of the source branch was kept")
-		}
-		switch err := m.git.DeleteBranch(ctx, name, mr.Source, head); {
-		case err != nil:
-			log.Warn().Err(err).Str("repo", name.String()).Int64("number", mr.Number).Str("branch", mr.Source).
-				Msg("source branch kept after the merge")
-		default:
-			updates = append(updates, del)
-			log.Info().Str("repo", name.String()).Int64("number", mr.Number).Str("branch", mr.Source).
-				Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("source branch deleted after the merge")
-		}
+	if deleteSource && m.deleteSource(ctx, p, name, mr, head) {
+		updates = append(updates, domain.RefUpdate{Old: head.String(), New: domain.ZeroOID, Ref: "refs/heads/" + mr.Source})
 	}
 	at := mr.UpdatedAt
 	recordActivity(ctx, m.meta, repo.Name, at)
@@ -1132,6 +1137,37 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 		m.mergeab.OnClosed(ctx, mr)
 		m.mergeab.OnBranchesMoved(ctx, name, updates) // the other requests of the moved target
 	}
+}
+
+// deleteSource deletes the source branch of a merged request if it is still
+// head and still unused, and reports whether it did. The eligibility is checked
+// again and the branch deleted in one critical section of the merge lock: a
+// request opened on the branch since the merge, or a push to it, keeps it. The
+// record of who pushed the branch goes only after a deletion, and only if it
+// still names head.
+func (m *MergeRequests) deleteSource(ctx context.Context, p domain.Principal, name domain.RepoName, mr domain.MergeRequest, head domain.ObjectID) bool {
+	log := zerowrap.FromCtx(ctx).With().Str("repo", name.String()).Int64("number", mr.Number).Str("branch", mr.Source).Logger()
+	unlock, err := m.lockRepo(ctx, name)
+	if err != nil {
+		log.Warn().Err(err).Msg("source branch kept after the merge")
+		return false
+	}
+	defer unlock()
+	if err := m.checkDeletable(ctx, name, mr); err != nil {
+		log.Warn().Err(err).Msg("source branch kept after the merge")
+		return false
+	}
+	if err := m.git.DeleteBranch(ctx, name, mr.Source, head); err != nil {
+		log.Warn().Err(err).Msg("source branch kept after the merge")
+		return false
+	}
+	if m.tips != nil {
+		if err := m.tips.DeleteRefTipIf(ctx, name, "refs/heads/"+mr.Source, head.String()); err != nil && !errors.Is(err, domain.ErrNotFound) {
+			log.Warn().Err(err).Msg("the record of the source branch was kept")
+		}
+	}
+	log.Info().Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("source branch deleted after the merge")
+	return true
 }
 
 // WhileOpen implements ports.PullGate: fn runs under the merge lock, so a

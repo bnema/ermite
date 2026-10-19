@@ -171,3 +171,7 @@ func (s *IssueSubmissions) FillSpent(n int, exp time.Time) {
 
 // MaxSpent is the bound of the spent set.
 const MaxSpent = maxSpent
+
+// SetAfterMergeGate makes the post-merge goroutine of m run f before anything
+// else, to place a test between a merge and its side effects.
+func (m *MergeRequests) SetAfterMergeGate(f func()) { m.afterGate = f }

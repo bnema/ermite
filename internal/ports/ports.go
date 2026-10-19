@@ -428,11 +428,13 @@ type MergeGit interface {
 	DeleteBranch(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID) error
 	// MergeTree merges head into base without creating a commit. When the
 	// merge is not clean (or the commits share no history) Clean is false and
-	// ConflictPaths lists at most domain.MaxConflictPaths paths.
+	// ConflictPaths lists every conflicted path, unbounded: the caller bounds
+	// them (MergeTreeResult.Bounded).
 	MergeTree(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID) (domain.MergeTreeResult, error)
-	// CountBehind counts the commits of target that head lacks, at most max;
-	// capped is true when there are more.
-	CountBehind(ctx context.Context, repo domain.RepoName, head, target domain.ObjectID, max int) (n int, capped bool, err error)
+	// CountBehind counts the commits of target that head lacks, stopping at
+	// limit: the raw count, at most limit. The caller interprets it
+	// (domain.BoundBehind).
+	CountBehind(ctx context.Context, repo domain.RepoName, head, target domain.ObjectID, limit int) (n int, err error)
 }
 
 // MergeabilityTrigger queues mergeability checks. It only queues the work and

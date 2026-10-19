@@ -287,8 +287,8 @@ func TestMergeTree(t *testing.T) {
 	res, err = g.MergeTree(ctx, m.f.Name, wa, wb)
 	require.NoError(t, err)
 	assert.False(t, res.Clean)
-	assert.Len(t, res.ConflictPaths, domain.MaxConflictPaths)
-	assert.True(t, res.Truncated)
+	assert.Len(t, res.ConflictPaths, domain.MaxConflictPaths+5, "the adapter returns every path")
+	assert.False(t, res.Truncated, "bounding is the domain's")
 }
 
 func TestCountBehind(t *testing.T) {
@@ -298,23 +298,19 @@ func TestCountBehind(t *testing.T) {
 	t.Cleanup(func() { _ = g.Close(ctx) })
 
 	// main has b that a-based head lacks.
-	n, capped, err := g.CountBehind(ctx, m.f.Name, m.a, m.mainTip, 10)
+	n, err := g.CountBehind(ctx, m.f.Name, m.a, m.mainTip, 10)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
-	assert.False(t, capped)
 
-	n, capped, err = g.CountBehind(ctx, m.f.Name, m.featTip, m.mainTip, 10)
+	n, err = g.CountBehind(ctx, m.f.Name, m.featTip, m.mainTip, 10)
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
-	assert.False(t, capped)
 
-	// feat is 3 commits ahead of a: counting target=feat from head=a with cap 2.
-	n, capped, err = g.CountBehind(ctx, m.f.Name, m.a, m.featTip, 2)
+	// feat is 3 commits ahead of a: the raw count stops at the limit.
+	n, err = g.CountBehind(ctx, m.f.Name, m.a, m.featTip, 2)
 	require.NoError(t, err)
 	assert.Equal(t, 2, n)
-	assert.True(t, capped)
-	n, capped, err = g.CountBehind(ctx, m.f.Name, m.a, m.featTip, 3)
+	n, err = g.CountBehind(ctx, m.f.Name, m.a, m.featTip, 4)
 	require.NoError(t, err)
 	assert.Equal(t, 3, n)
-	assert.False(t, capped)
 }

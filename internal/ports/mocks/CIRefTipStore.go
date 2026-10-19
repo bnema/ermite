@@ -110,6 +110,75 @@ func (_c *CIRefTipStore_DeleteRefTip_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
+// DeleteRefTipIf provides a mock function for the type CIRefTipStore
+func (_mock *CIRefTipStore) DeleteRefTipIf(ctx context.Context, repo domain.RepoName, ref string, sha string) error {
+	ret := _mock.Called(ctx, repo, ref, sha)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteRefTipIf")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string, string) error); ok {
+		r0 = returnFunc(ctx, repo, ref, sha)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// CIRefTipStore_DeleteRefTipIf_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteRefTipIf'
+type CIRefTipStore_DeleteRefTipIf_Call struct {
+	*mock.Call
+}
+
+// DeleteRefTipIf is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - ref string
+//   - sha string
+func (_e *CIRefTipStore_Expecter) DeleteRefTipIf(ctx any, repo any, ref any, sha any) *CIRefTipStore_DeleteRefTipIf_Call {
+	return &CIRefTipStore_DeleteRefTipIf_Call{Call: _e.mock.On("DeleteRefTipIf", ctx, repo, ref, sha)}
+}
+
+func (_c *CIRefTipStore_DeleteRefTipIf_Call) Run(run func(ctx context.Context, repo domain.RepoName, ref string, sha string)) *CIRefTipStore_DeleteRefTipIf_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *CIRefTipStore_DeleteRefTipIf_Call) Return(err error) *CIRefTipStore_DeleteRefTipIf_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *CIRefTipStore_DeleteRefTipIf_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, ref string, sha string) error) *CIRefTipStore_DeleteRefTipIf_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetRefTip provides a mock function for the type CIRefTipStore
 func (_mock *CIRefTipStore) GetRefTip(ctx context.Context, repo domain.RepoName, ref string) (domain.CIRefTip, error) {
 	ret := _mock.Called(ctx, repo, ref)

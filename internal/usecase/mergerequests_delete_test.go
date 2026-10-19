@@ -3,8 +3,13 @@
 package usecase_test
 
 import (
+	"bytes"
 	"context"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/bnema/zerowrap"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -158,6 +163,7 @@ func TestCreateAfterAMergeDeletedTheBranch(t *testing.T) {
 	mr := r.open("feat")
 	_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
 	require.NoError(t, err)
+	r.mrs.Wait(r.ctx) // the deletion runs after Merge returned
 	_, err = r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "late", Source: "feat"})
 	require.ErrorIs(t, err, domain.ErrInvalid)
 	assert.Contains(t, fieldsOf(t, err), "source_branch")
@@ -201,4 +207,144 @@ func TestMergeKeepsASourceThatMovedAfterTheMerge(t *testing.T) {
 	evs := r.drain()
 	require.Len(t, evs, 2)
 	assert.Len(t, evs[1].(domain.PushEvent).Updates, 1, "only the target moved")
+}
+
+// afterMergeRig builds merge request use cases over the rig with ref-tip
+// records, whose post-merge goroutine waits for the returned release function.
+func (r *mrRig) afterMergeRig(extra func(*usecase.MergeRequestsConfig)) (mrs *usecase.MergeRequests, release func()) {
+	gate := make(chan struct{})
+	cfg := usecase.MergeRequestsConfig{
+		Meta: r.store, Store: r.store.MergeRequests(), Repos: r.git, Git: r.git, Signer: nil,
+		Committer: domain.Identity{Name: "ermite", Email: "ermite@git.example.org"},
+		Bus:       r.bus, Clock: fixedClock{}, Maint: r.sched, RefTips: r.store.CI(),
+	}
+	if extra != nil {
+		extra(&cfg)
+	}
+	mrs = usecase.NewMergeRequests(cfg)
+	mrs.SetAfterMergeGate(func() { <-gate })
+	var once sync.Once
+	return mrs, func() { once.Do(func() { close(gate) }) }
+}
+
+// A request opened on the source after the merge, before the deletion runs,
+// keeps the branch (GO-002).
+func TestMergeKeepsTheSourceWhenAnotherRequestOpensOnItMeanwhile(t *testing.T) {
+	t.Parallel()
+	r := newMRRig(t)
+	r.seed()
+	head := r.feature("feat")
+	mr := r.open("feat")
+	r.sh("checkout", "-q", "-B", "release", "main")
+	r.push("release")
+	mrs, release := r.afterMergeRig(nil)
+	defer release()
+
+	_, err := mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
+	require.NoError(t, err)
+	_, err = mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "to release", Source: "feat", Target: "release"})
+	require.NoError(t, err, "the merge released the lock; the deletion has not run")
+	release()
+	mrs.Wait(r.ctx)
+	assert.Equal(t, head, r.branchHead("feat"), "the branch is kept")
+}
+
+// A push that moves the source after the merge keeps both the branch and the
+// record of who pushed it (GO-003).
+func TestMergeKeepsTheSourceAndItsRecordWhenAPushMovesItMeanwhile(t *testing.T) {
+	t.Parallel()
+	r := newMRRig(t)
+	r.seed()
+	head := r.feature("feat")
+	mr := r.open("feat")
+	mrs, release := r.afterMergeRig(nil)
+	defer release()
+
+	_, err := mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
+	require.NoError(t, err)
+	r.sh("checkout", "-q", "feat")
+	moved := r.commit(author, "later.txt", "later\n", "pushed meanwhile")
+	r.push("feat")
+	require.NoError(t, r.store.CI().PutRefTip(r.ctx, domain.CIRefTip{Repo: r.repo, Ref: "refs/heads/feat", Sha: moved.String(), Actor: "ada"}))
+	release()
+	mrs.Wait(r.ctx)
+
+	assert.Equal(t, moved, r.branchHead("feat"), "the branch is kept")
+	tip, err := r.store.CI().GetRefTip(r.ctx, r.repo, "refs/heads/feat")
+	require.NoError(t, err, "the record of the new push is kept")
+	assert.Equal(t, moved.String(), tip.Sha)
+}
+
+// The record of the source goes with the branch, once it is deleted.
+func TestMergeRemovesTheSourceRecordAfterDeletingIt(t *testing.T) {
+	t.Parallel()
+	r := newMRRig(t)
+	r.seed()
+	head := r.feature("feat")
+	mr := r.open("feat")
+	mrs, release := r.afterMergeRig(nil)
+	release()
+	require.NoError(t, r.store.CI().PutRefTip(r.ctx, domain.CIRefTip{Repo: r.repo, Ref: "refs/heads/feat", Sha: head.String(), Actor: "ada"}))
+
+	_, err := mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
+	require.NoError(t, err)
+	mrs.Wait(r.ctx)
+	_, err = r.git.BranchHead(r.ctx, r.repo, "feat")
+	require.ErrorIs(t, err, domain.ErrNotFound)
+	_, err = r.store.CI().GetRefTip(r.ctx, r.repo, "refs/heads/feat")
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+// panicHooks is a CI trigger whose merge hook panics.
+type panicHooks struct{}
+
+func (panicHooks) OnPush(context.Context, domain.RepoName, []domain.RefUpdate, domain.Principal) {}
+func (panicHooks) OnMerge(context.Context, domain.RepoName, []domain.RefUpdate, domain.Principal) {
+	panic("boom from ci")
+}
+
+func TestMergeLogsAPanickingSideEffectAndWaitReturns(t *testing.T) {
+	t.Parallel()
+	r := newMRRig(t)
+	r.seed()
+	head := r.feature("feat")
+	mr := r.open("feat")
+	mrs, release := r.afterMergeRig(func(c *usecase.MergeRequestsConfig) { c.CI = panicHooks{} })
+	release()
+	var logs bytes.Buffer
+	ctx := zerowrap.WithCtx(r.ctx, zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &logs}))
+
+	_, err := mrs.Merge(ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head})
+	require.NoError(t, err)
+	waited := make(chan struct{})
+	go func() { mrs.Wait(context.Background()); close(waited) }()
+	select {
+	case <-waited:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Wait did not return after a panicking side effect")
+	}
+	assert.Contains(t, logs.String(), "post-merge side effects panicked")
+	assert.Contains(t, logs.String(), "boom from ci")
+}
+
+// A head behind the target has nothing to merge, whatever the mode (GO-007).
+func TestMergeRefusesAHeadBehindTheTarget(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []domain.MergeMode{domain.MergeModeSquash, domain.MergeModeMerge, domain.MergeModeFastForward} {
+		t.Run(string(mode), func(t *testing.T) {
+			t.Parallel()
+			r := newMRRig(t)
+			main := r.seed()
+			r.sh("checkout", "-q", "-B", "old", "main~1")
+			r.push("old")
+			old := r.branchHead("old")
+			require.NotEqual(t, main, old)
+			mr := r.open("old")
+
+			_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{Mode: mode, HeadID: old})
+			require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+			assert.Contains(t, err.Error(), "nothing to merge")
+			assert.Equal(t, main, r.branchHead("main"), "no commit was made")
+		})
+	}
 }

@@ -3,6 +3,7 @@
 package app
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -230,8 +231,11 @@ func TestMergeRecordsTheTargetAndDropsTheSourceRecord(t *testing.T) {
 	}))
 	require.NoError(t, err)
 
-	_, err = tips.GetRefTip(c.ctx, c.name("proj"), "refs/heads/feat")
-	assert.ErrorIs(t, err, domain.ErrNotFound, "the deleted source branch has no record")
+	// The deletion and the removal of the record run after the merge returned.
+	c.waitFor("the deleted source branch has no record", func() bool {
+		_, err := tips.GetRefTip(c.ctx, c.name("proj"), "refs/heads/feat")
+		return errors.Is(err, domain.ErrNotFound)
+	})
 	main, err := tips.GetRefTip(c.ctx, c.name("proj"), "refs/heads/main")
 	require.NoError(t, err)
 	assert.Equal(t, c.ref("refs/heads/main"), main.Sha, "the merge recorded the new tip")

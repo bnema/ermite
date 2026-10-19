@@ -67,6 +67,7 @@ func TestMergeWithBranchLimitedToken(t *testing.T) {
 		res, err := r.mrs.Merge(r.ctx, branchMerger, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
 		require.NoError(t, err)
 		assert.True(t, res.SourceDeleted)
+		r.mrs.Wait(r.ctx) // the deletion runs after Merge returned
 		assert.Equal(t, head, r.branchHead("agent/claude/base"))
 		_, err = r.git.BranchHead(r.ctx, r.repo, "agent/claude/feat")
 		assert.ErrorIs(t, err, domain.ErrNotFound)
