@@ -29,19 +29,17 @@ const (
 	mergeabilityRetryMax     = time.Minute
 )
 
-// retryKind tells what a scheduled retry redoes.
-type retryKind int
-
-const (
-	retryCheck  retryKind = iota // one merge request
-	retryRescan                  // one repository
-	retryRescanAll
-)
-
+// retryKey names the work a scheduled retry redoes: the rescan of one
+// repository, or (all) the rescan of every repository. Retry state is thus
+// bounded by the number of repositories plus one.
 type retryKey struct {
-	kind retryKind
-	mk   mergeKey
+	repo domain.RepoName
+	all  bool
 }
+
+func repoKey(repo domain.RepoName) retryKey { return retryKey{repo: repo} }
+
+var globalKey = retryKey{all: true}
 
 // mergeBackoff is the delay before retry number attempt (1-based).
 func mergeBackoff(attempt int) time.Duration {
@@ -82,13 +80,12 @@ type Mergeability struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	retryMu      sync.Mutex
-	retries      map[retryKey]int // attempts so far of the scheduled or failing work
-	scheduled    map[retryKey]bool
-	heap         []retryItem // sorted by due time
-	checkRetries int         // scheduled retries of kind retryCheck
-	retryKick    chan struct{}
-	closed       bool
+	retryMu   sync.Mutex
+	retries   map[retryKey]int // attempts so far of the scheduled or failing work
+	scheduled map[retryKey]bool
+	heap      []retryItem // sorted by due time
+	retryKick chan struct{}
+	closed    bool
 }
 
 // MergeabilityHook is what the merge request use cases need from the
@@ -151,37 +148,21 @@ type retryItem struct {
 
 // retry schedules a retry of key after a bounded exponential backoff. It is
 // deduplicated per key, gives up after mergeabilityRetries attempts and stops
-// on Close. All retries share one scheduler goroutine and at most cfg.Queue
-// per-request retries wait at once; past it the retry of a request becomes
-// the retry of its repository's rescan (one per repository), so memory stays
-// bounded.
+// on Close. All retries share one scheduler goroutine.
 func (s *Mergeability) retry(key retryKey) {
 	s.retryMu.Lock()
 	defer s.retryMu.Unlock()
 	if s.closed || s.scheduled[key] {
 		return
 	}
-	// The key that waits is chosen before counting attempts, so that only
-	// the waiting keys hold attempt counts: at most cfg.Queue requests plus
-	// one per repository.
-	sk := key
-	if key.kind == retryCheck && s.retries[key] == 0 && s.checkRetries >= s.cfg.Queue {
-		sk = retryKey{kind: retryRescan, mk: mergeKey{repo: key.mk.repo}}
-		if s.scheduled[sk] {
-			return
-		}
-	}
-	s.retries[sk]++
-	n := s.retries[sk]
+	s.retries[key]++
+	n := s.retries[key]
 	if n > mergeabilityRetries {
-		delete(s.retries, sk)
+		delete(s.retries, key)
 		return
 	}
-	if sk.kind == retryCheck {
-		s.checkRetries++
-	}
-	s.scheduled[sk] = true
-	it := retryItem{due: s.cfg.Clock.Now().Add(mergeBackoff(n)), key: sk}
+	s.scheduled[key] = true
+	it := retryItem{due: s.cfg.Clock.Now().Add(mergeBackoff(n)), key: key}
 	i, _ := slices.BinarySearchFunc(s.heap, it, func(a, b retryItem) int {
 		if a.due.After(b.due) {
 			return 1
@@ -256,9 +237,6 @@ func (s *Mergeability) popDue(waited retryKey) []retryKey {
 		}
 		out = append(out, it.key)
 		delete(s.scheduled, it.key)
-		if it.key.kind == retryCheck {
-			s.checkRetries--
-		}
 		return true
 	})
 	return out
@@ -267,14 +245,11 @@ func (s *Mergeability) popDue(waited retryKey) []retryKey {
 // fire puts the work of a due retry back in the normal queue, so that the
 // worker limits apply.
 func (s *Mergeability) fire(k retryKey) {
-	switch k.kind {
-	case retryCheck:
-		s.q.add(k.mk)
-	case retryRescan:
-		s.q.markDirty(k.mk.repo)
-	case retryRescanAll:
+	if k.all {
 		s.rescanAll()
+		return
 	}
+	s.q.markDirty(k.repo)
 }
 
 // retryDone forgets the failures of key after a success.
@@ -288,10 +263,10 @@ func (s *Mergeability) rescanAll() {
 	repos, err := s.cfg.Meta.List(s.ctx)
 	if err != nil {
 		ctxLog(s.ctx).Error().Err(err).Msg("mergeability: list the repositories to rescan")
-		s.retry(retryKey{kind: retryRescanAll})
+		s.retry(globalKey)
 		return
 	}
-	s.retryDone(retryKey{kind: retryRescanAll})
+	s.retryDone(globalKey)
 	for _, r := range repos {
 		n, err := s.cfg.Store.CountOpen(s.ctx, r.Name)
 		if err != nil {
@@ -372,7 +347,9 @@ func (s *Mergeability) loop() {
 		key, dirty := s.q.next()
 		switch {
 		case key != nil:
-			s.runKey(*key)
+			if !s.runKey(*key) {
+				s.retry(repoKey(key.repo))
+			}
 		case dirty != nil:
 			s.rescan(*dirty)
 		default:
@@ -389,39 +366,43 @@ func (s *Mergeability) loop() {
 }
 
 // runKey checks k, which is marked running, as often as it was queued again
-// meanwhile.
-func (s *Mergeability) runKey(k mergeKey) {
+// meanwhile. It reports false when a check failed transiently; the caller
+// then retries the repository.
+func (s *Mergeability) runKey(k mergeKey) bool {
+	ok := true
 	for {
-		rk := retryKey{kind: retryCheck, mk: k}
-		if s.check(k) {
-			s.retryDone(rk)
-		} else {
-			s.retry(rk)
-		}
+		ok = s.check(k) && ok
 		if !s.q.finish(k) || s.ctx.Err() != nil {
-			return
+			return ok
 		}
 	}
 }
 
 // rescan checks every open merge request of a repository, here and not through
 // the bounded queue, so that a rescan never marks its repository dirty again.
+// It succeeds, and resets the retry budget of the repository, only if the
+// listing and every check succeeded; otherwise the repository is retried once.
 func (s *Mergeability) rescan(repo domain.RepoName) {
 	mrs, err := s.cfg.Store.ListOpen(s.ctx, repo)
 	if err != nil {
 		ctxLog(s.ctx).Error().Err(err).Str("repo", repo.String()).Msg("mergeability: list the open merge requests to rescan")
-		s.retry(retryKey{kind: retryRescan, mk: mergeKey{repo: repo}})
+		s.retry(repoKey(repo))
 		return
 	}
-	s.retryDone(retryKey{kind: retryRescan, mk: mergeKey{repo: repo}})
+	ok := true
 	for _, mr := range mrs {
 		if s.ctx.Err() != nil {
 			return
 		}
 		k := mergeKey{repo, mr.Number}
 		if s.q.tryRun(k) {
-			s.runKey(k)
+			ok = s.runKey(k) && ok
 		}
+	}
+	if ok {
+		s.retryDone(repoKey(repo))
+	} else {
+		s.retry(repoKey(repo))
 	}
 }
 
@@ -429,8 +410,8 @@ func (s *Mergeability) rescan(repo domain.RepoName) {
 // goroutine, as a worker does. It is for tests; the server never calls it.
 func (s *Mergeability) Check(repo domain.RepoName, number int64) {
 	k := mergeKey{repo, number}
-	if s.q.tryRun(k) {
-		s.runKey(k)
+	if s.q.tryRun(k) && !s.runKey(k) {
+		s.retry(repoKey(k.repo))
 	}
 }
 

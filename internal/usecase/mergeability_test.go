@@ -464,7 +464,8 @@ func TestMergeabilityBoundsConflictPathsAndBehind(t *testing.T) {
 	})
 }
 
-// A transient Git failure is retried once after the backoff.
+// A transient Git failure is retried once after the backoff, by rescanning
+// the repository through the queue.
 func TestMergeabilityRetriesATransientFailureWithBackoff(t *testing.T) {
 	repo := name(t, "proj")
 	head, tip := fakeOID(t, "a"), fakeOID(t, "b")
@@ -473,6 +474,7 @@ func TestMergeabilityRetriesATransientFailureWithBackoff(t *testing.T) {
 	store.EXPECT().Get(mock.Anything, repo, int64(7)).Return(mr, nil)
 	store.EXPECT().GetMergeability(mock.Anything, repo, int64(7)).Return(domain.Mergeability{}, domain.ErrNotFound)
 	store.EXPECT().PutMergeability(mock.Anything, mock.Anything).Return(nil)
+	store.EXPECT().ListOpen(mock.Anything, repo).Return([]domain.MergeRequest{mr}, nil).Once()
 	meta.EXPECT().List(mock.Anything).Return(nil, nil)
 	meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, CreatedAt: now}, nil)
 	var fails atomic.Int32
@@ -555,15 +557,15 @@ func TestMergeabilityWorkersOutliveTheParentContext(t *testing.T) {
 	svc.Close(context.Background())
 }
 
-// A global failure schedules a bounded number of retries on a single
-// scheduler goroutine, however many requests fail.
+// Failures of many requests of 3 repositories schedule at most one retry per
+// repository on a single scheduler goroutine.
 func TestMergeabilityRetriesAreBounded(t *testing.T) {
-	const queue, repos, perRepo = 4, 3, 20
+	const repos, perRepo = 3, 20
 	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
 	store.EXPECT().Get(mock.Anything, mock.Anything, mock.Anything).Return(domain.MergeRequest{}, errors.New("db down"))
 	meta.EXPECT().List(mock.Anything).Return(nil, nil)
 	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
-		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{}, Workers: 1, Queue: queue,
+		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{}, Workers: 1, Queue: 4,
 		After: func(time.Duration) <-chan time.Time { return make(chan time.Time) },
 	})
 	svc.Start()
@@ -574,46 +576,94 @@ func TestMergeabilityRetriesAreBounded(t *testing.T) {
 			svc.Check(repo, int64(n+1))
 		}
 	}
-	assert.LessOrEqual(t, svc.ScheduledRetries(), queue+repos)
 	assert.Positive(t, svc.ScheduledRetries())
-	assert.LessOrEqual(t, svc.RetryAttempts(), queue+repos, "only the waiting keys count their attempts")
+	assert.LessOrEqual(t, svc.ScheduledRetries(), repos+1)
+	assert.LessOrEqual(t, svc.RetryAttempts(), repos+1)
 	assert.LessOrEqual(t, runtime.NumGoroutine(), before, "retries must not start goroutines")
 	svc.Close(context.Background()) // returns although retries are pending
 }
 
-// A request whose retry was coalesced into a repository rescan is checked
-// again through the queue when the rescan is due.
-func TestMergeabilityDueRetriesReenterTheQueue(t *testing.T) {
-	repo := name(t, "proj")
+// retryRig is a service over mocks whose only repository holds request !7,
+// whose read fails for its first failFor calls. Each repository rescan signals passes.
+type retryRig struct {
+	svc     *usecase.Mergeability
+	repo    domain.RepoName
+	reads   atomic.Int32
+	failFor atomic.Int32
+	passes  chan struct{}
+	afters  chan chan time.Time
+}
+
+func newRetryRig(t *testing.T) *retryRig {
+	t.Helper()
+	r := &retryRig{repo: name(t, "proj"), passes: make(chan struct{}, 32), afters: make(chan chan time.Time, 32)}
 	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
-	var calls [9]atomic.Int32
-	done := make(chan struct{})
-	store.EXPECT().Get(mock.Anything, repo, mock.Anything).RunAndReturn(
-		func(_ context.Context, _ domain.RepoName, n int64) (domain.MergeRequest, error) {
-			if calls[n].Add(1) == 1 {
+	r.failFor.Store(1 << 30)
+	store.EXPECT().Get(mock.Anything, r.repo, int64(7)).RunAndReturn(
+		func(context.Context, domain.RepoName, int64) (domain.MergeRequest, error) {
+			if r.reads.Add(1) <= r.failFor.Load() {
 				return domain.MergeRequest{}, errors.New("db down")
-			}
-			if n == 8 {
-				close(done)
 			}
 			return domain.MergeRequest{}, domain.ErrNotFound
 		})
-	store.EXPECT().ListOpen(mock.Anything, repo).Return([]domain.MergeRequest{{Repo: repo, Number: 8}}, nil)
-	meta.EXPECT().List(mock.Anything).Return(nil, nil)
-	afters := make(chan chan time.Time, 4)
-	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
-		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{}, Workers: 1, Queue: 1,
-		After: func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); afters <- ch; return ch },
+	store.EXPECT().ListOpen(mock.Anything, r.repo).RunAndReturn(
+		func(context.Context, domain.RepoName) ([]domain.MergeRequest, error) {
+			r.passes <- struct{}{}
+			return []domain.MergeRequest{{Repo: r.repo, Number: 7}}, nil
+		})
+	store.EXPECT().CountOpen(mock.Anything, r.repo).Return(1, nil)
+	meta.EXPECT().List(mock.Anything).Return([]domain.Repo{{Name: r.repo}}, nil)
+	r.svc = usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{}, Workers: 1,
+		After: func(time.Duration) <-chan time.Time { ch := make(chan time.Time, 1); r.afters <- ch; return ch },
 	})
-	t.Cleanup(func() { svc.Close(context.Background()) })
-	svc.Start()
-	svc.Check(repo, 7) // scheduled itself
-	svc.Check(repo, 8) // queue full: coalesced into a rescan
-	assert.Equal(t, 2, svc.ScheduledRetries())
-	stop := fireAll(afters) // !7 is due and queued again, then the rescan checks !8
-	defer stop()
-	<-done
-	assert.EqualValues(t, 2, calls[7].Load())
+	t.Cleanup(func() { r.svc.Close(context.Background()) })
+	return r
+}
+
+// next fires the pending retry and waits for the rescan it queues.
+func (r *retryRig) next() {
+	ch := <-r.afters
+	ch <- time.Time{}
+	<-r.passes
+}
+
+func (r *retryRig) settled(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool { return r.svc.RetryAttempts() == 0 && r.svc.ScheduledRetries() == 0 },
+		10*time.Second, time.Millisecond)
+}
+
+// A persistent failure is retried 5 times, then given up with no state kept.
+func TestMergeabilityGivesUpAfterFiveRetries(t *testing.T) {
+	r := newRetryRig(t)
+	r.svc.Start()
+	<-r.passes // the startup rescan fails
+	for range 5 {
+		r.next()
+	}
+	r.settled(t)
+	assert.Empty(t, r.afters, "no sixth retry")
+	assert.Empty(t, r.passes)
+}
+
+// A successful full rescan resets the budget: a later failure gets 5 again.
+func TestMergeabilityFullRescanResetsTheRetryBudget(t *testing.T) {
+	r := newRetryRig(t)
+	r.failFor.Store(2) // the first two reads fail, the third succeeds
+	r.svc.Start()
+	<-r.passes
+	r.next() // second failing pass
+	r.next() // success
+	r.settled(t)
+	r.failFor.Store(1 << 30)
+	r.svc.Check(r.repo, 7) // fails alone: retries the repository
+	for range 5 {
+		r.next()
+	}
+	r.settled(t)
+	assert.Empty(t, r.afters)
+	assert.Empty(t, r.passes)
 }
 
 // A transient failure to publish after the store is retried and the event is
@@ -634,6 +684,7 @@ func TestMergeabilityRetriesAFailedPublish(t *testing.T) {
 			return rec, nil
 		})
 	store.EXPECT().PutMergeability(mock.Anything, mock.Anything).Return(nil).Once()
+	store.EXPECT().ListOpen(mock.Anything, repo).Return([]domain.MergeRequest{mr}, nil)
 	meta.EXPECT().List(mock.Anything).Return(nil, nil)
 	var metaGets atomic.Int32
 	meta.EXPECT().Get(mock.Anything, repo).RunAndReturn(
