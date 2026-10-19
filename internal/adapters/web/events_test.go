@@ -428,3 +428,40 @@ func TestEventsInvalidCookieStream(t *testing.T) {
 	assert.Contains(t, resp.Header.Values("Vary"), "Cookie")
 	assert.Contains(t, resp.Header.Get("Set-Cookie"), "Max-Age=0")
 }
+
+// An issues stream on a repository with issues off, unknown or private is
+// refused the same way: 404 with the same body.
+func TestEventsIssuesViewsAreDeniedLikeAMissingRepo(t *testing.T) {
+	t.Parallel()
+	priv := mocks.NewRepoService(t)
+	priv.EXPECT().Get(mock.Anything, mock.Anything, mock.Anything).Return(domain.Repo{}, domain.ErrNotFound)
+	for _, view := range []string{"issues", "issue&n=1"} {
+		answers := map[string]string{}
+		for name, repos := range map[string]ports.RepoService{
+			"off":     reposServing(t, issueRepoView(t, domain.IssuesOff)),
+			"unset":   reposServing(t, issueRepoView(t, "")),
+			"unknown": reposServing(t),
+			"private": priv,
+		} {
+			f := &watchProbe{release: make(chan struct{})}
+			srv := newTestServer(t, Config{Repos: repos, Browse: mocks.NewBrowseService(t), Events: f.service(t), Issues: mocks.NewIssueService(t), Heartbeat: time.Hour})
+			ts := httptest.NewServer(srv)
+			t.Cleanup(ts.Close)
+			resp, _ := open(t, ts, "topic=repo:proj&view="+view, nil)
+			body, _ := io.ReadAll(resp.Body)
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode, "%s %s", view, name)
+			answers[name] = resp.Header.Get("Cache-Control") + "|" + string(body)
+			assert.Zero(t, f.opened.Load(), "%s %s: no watch is opened", view, name)
+		}
+		for name, a := range answers {
+			assert.Equal(t, answers["unknown"], a, "%s %s", view, name)
+		}
+	}
+	// With issues on, the stream opens.
+	f := &watchProbe{release: make(chan struct{})}
+	srv := newTestServer(t, Config{Repos: reposServing(t, issueRepoView(t, domain.IssuesOwner)), Browse: mocks.NewBrowseService(t), Events: f.service(t), Issues: mocks.NewIssueService(t), Heartbeat: time.Hour})
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	resp, _ := open(t, ts, "topic=repo:proj&view=issues", nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}

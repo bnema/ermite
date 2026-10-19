@@ -206,6 +206,49 @@ func TestWatchRechecksAccessPerEvent(t *testing.T) {
 	})
 }
 
+func TestWatchDropsIssueEventsOnceIssuesAreOff(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 16)
+		n := name(t, "iss")
+		var mu sync.Mutex
+		mode := domain.IssuesOwner
+		r.meta.EXPECT().Get(mock.Anything, n).RunAndReturn(func(context.Context, domain.RepoName) (domain.Repo, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			st := domain.DefaultRepoSettings()
+			st.Issues = mode
+			return domain.Repo{Name: n, Visibility: domain.VisibilityPublic, CreatedAt: now, Settings: st}, nil
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		first := r.watch(ctx, domain.Root(), ports.WatchParams{})
+		synctest.Wait()
+
+		r.push(n, 1)
+		pushID := first.next(t).ID
+		r.feed <- domain.IssueCommented{Repo: n, Number: 1, Comment: domain.IssueComment{ID: 1}, At: now, Visibility: domain.VisibilityPublic, CreatedAt: now}
+		_, ok := first.next(t).Event.(domain.IssueCommented)
+		require.True(t, ok, "delivered while issues are on")
+		r.push(n, 2)
+		first.next(t)
+
+		mu.Lock()
+		mode = domain.IssuesOff
+		mu.Unlock()
+
+		// The replay holds the issue event: it is dropped, the other ones stay.
+		w := r.watch(ctx, domain.Root(), ports.WatchParams{ResumeAfter: pushID})
+		e := w.next(t)
+		_, isPush := e.Event.(domain.PushEvent)
+		require.True(t, isPush, "got %T", e.Event)
+		w.quiet(t, r, n)
+
+		r.feed <- domain.IssueOpened{Issue: domain.Issue{Repo: n, Number: 2}, At: now, Visibility: domain.VisibilityPublic, CreatedAt: now}
+		w.quiet(t, r, n)
+	})
+}
+
 func TestWatchResumeAndGap(t *testing.T) {
 	t.Parallel()
 	const size = 8

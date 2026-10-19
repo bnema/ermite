@@ -552,6 +552,9 @@ func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName
 	if !canRead(w.p, repo) {
 		return nil
 	}
+	if isIssueEvent(be.ev) && repo.Settings.Issues.OrDefault() == domain.IssuesOff {
+		return nil // issues were turned off since: a replay must not show them
+	}
 	if withRepo {
 		view, err := e.repos.View(ctx, repo)
 		if err != nil {
@@ -560,4 +563,13 @@ func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName
 		out.Repo = &view
 	}
 	return send(out)
+}
+
+// isIssueEvent reports whether ev is about an issue.
+func isIssueEvent(ev domain.Event) bool {
+	switch ev.(type) {
+	case domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented:
+		return true
+	}
+	return false
 }

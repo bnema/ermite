@@ -116,6 +116,11 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		// A repository the visitor cannot see is a missing one (AC2).
 		cctx, ccancel := context.WithTimeout(ctx, requestTimeout)
 		err := s.canSee(cctx, repo)
+		if err == nil {
+			if v := q.Get("view"); v == "issues" || v == "issue" {
+				err = s.issuesOn(cctx, repo)
+			}
+		}
 		ccancel()
 		if err != nil {
 			s.denyEvents(ctx, w, err)
@@ -298,6 +303,26 @@ func (s *Server) canSee(ctx context.Context, rawName string) error {
 	}
 	_, err = s.cfg.Repos.Get(ctx, principal(ctx), name)
 	return err
+}
+
+// issuesOn is domain.ErrNotFound unless the repository has issues on and
+// s.cfg.Issues is set: the same answer as for a repository the visitor cannot see.
+func (s *Server) issuesOn(ctx context.Context, rawName string) error {
+	if s.cfg.Issues == nil {
+		return domain.ErrNotFound
+	}
+	name, err := domain.ParseRepoName(rawName)
+	if err != nil {
+		return err
+	}
+	v, err := s.cfg.Repos.Get(ctx, principal(ctx), name)
+	if err != nil {
+		return err
+	}
+	if v.Settings.Issues.OrDefault() == domain.IssuesOff {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // denyStream answers a request that gets no stream.
