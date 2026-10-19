@@ -38,6 +38,10 @@ const (
 const (
 	// TopicHome follows every repository the caller may see.
 	TopicHome = "home"
+	// TopicOwner follows the merge requests and issues of every repository,
+	// for the owner only (the inbox). Anyone else is told it is an unknown
+	// topic.
+	TopicOwner = "owner"
 	// topicRepoPrefix starts the topic of one repository: "repo:<name>".
 	topicRepoPrefix = "repo:"
 )
@@ -266,12 +270,19 @@ func (e *Events) parseID(id string) (uint64, bool) {
 type watch struct {
 	p     domain.Principal
 	home  bool
+	owner bool // the owner topic: merge request and issue events of every repository
 	repos map[domain.RepoName]bool
 
 	checked time.Time // when the token store last confirmed the principal
 }
 
 func (w *watch) wants(name domain.RepoName) bool { return w.home || w.repos[name] }
+
+// wantsEvent is wants for an event: the owner topic also follows the events
+// about merge requests and issues of every repository.
+func (w *watch) wantsEvent(name domain.RepoName, ev domain.Event) bool {
+	return w.wants(name) || (w.owner && isItemEvent(ev))
+}
 
 // parseTopics validates the topics of a watch. A repository topic needs a
 // repository the principal may read (else domain.ErrNotFound); an unknown
@@ -289,8 +300,14 @@ func (e *Events) parseTopics(ctx context.Context, p domain.Principal, topics []s
 			w.home = true
 			continue
 		}
+		if t == TopicOwner && p.HasOwnerRights() {
+			w.owner = true
+			continue
+		}
 		raw, ok := strings.CutPrefix(t, topicRepoPrefix)
 		if !ok {
+			// Includes "owner" for anyone but the owner: the same error as
+			// any unknown topic.
 			return nil, fmt.Errorf("%w: unknown topic %q (want %q or \"repo:<name>\")", domain.ErrInvalid, t, TopicHome)
 		}
 		name, err := domain.ParseRepoName(raw)
@@ -427,7 +444,10 @@ func (e *Events) idleCheck() time.Duration {
 
 // stillAllowed checks that the holder of a stored token may still watch: the
 // token has not expired and, at most every few seconds, still exists. Root and
-// anonymous callers have nothing to lose.
+// anonymous callers have nothing to lose. The owner topic needs nothing more:
+// a stored token with owner rights loses them only by ceasing to exist, which
+// is checked here, and the owner's web session, which this use case cannot see,
+// is checked by the web adapter before it sends anything.
 func (e *Events) stillAllowed(ctx context.Context, w *watch) error {
 	if w.p.TokenID() == "" {
 		return nil
@@ -527,7 +547,7 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 // read it before are told once, with its name and its new visibility only,
 // so that what they show can be removed.
 func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName, withRepo bool, be bufferedEvent, out ports.WatchEvent, send func(ports.WatchEvent) error) error {
-	if !w.wants(name) || !be.known {
+	if !w.wantsEvent(name, be.ev) || !be.known {
 		return nil
 	}
 	repo, err := lookupRepo(ctx, e.repos.meta, name)
@@ -572,4 +592,14 @@ func isIssueEvent(ev domain.Event) bool {
 		return true
 	}
 	return false
+}
+
+// isItemEvent reports whether ev is about a merge request or an issue.
+func isItemEvent(ev domain.Event) bool {
+	switch ev.(type) {
+	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
+		domain.MergeRequestReady, domain.CommentAdded:
+		return true
+	}
+	return isIssueEvent(ev)
 }
