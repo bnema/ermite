@@ -116,7 +116,9 @@ type forge struct {
 	// ServerService.GetSigningKey.
 	MergeRequests *usecase.MergeRequests
 	// Issues serves IssueService, and tells what a number names.
-	Issues     *usecase.Issues
+	Issues *usecase.Issues
+	// Inbox serves the owner's inbox of the web.
+	Inbox      *usecase.Inbox
 	SigningKey *usecase.SigningKey
 	// Signatures are the trusted keys and the commit signature checks
 	// (ADR 0030).
@@ -321,6 +323,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
 		Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock,
 	})
+	f.Inbox = usecase.NewInbox(usecase.InboxConfig{Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues()})
 	f.CI.SetPullGate(f.MergeRequests)
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 

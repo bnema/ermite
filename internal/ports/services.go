@@ -144,6 +144,14 @@ type IssueNumberResolver interface {
 	Kind(ctx context.Context, p domain.Principal, name domain.RepoName, n int64) (domain.NumberKind, error)
 }
 
+// InboxService is the owner's inbox: what is open across every repository.
+// *usecase.Inbox implements it.
+type InboxService interface {
+	// Overview needs owner rights and answers domain.ErrNotFound to anyone
+	// else. The filter, when not zero, restricts the lists to that repository.
+	Overview(ctx context.Context, p domain.Principal, filter domain.RepoName) (InboxOverview, error)
+}
+
 // SigningKeyService tells which key signs the commits of the forge.
 // *usecase.SigningKey implements it.
 type SigningKeyService interface {

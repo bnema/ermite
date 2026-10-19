@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package usecase_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
+	"bnema.dev/ermite/internal/usecase"
+)
+
+func inboxMR(t *testing.T, repo string, n int64, up time.Time) domain.MergeRequest {
+	t.Helper()
+	ti, err := domain.ParseMRTitle("mr")
+	require.NoError(t, err)
+	return domain.MergeRequest{Repo: name(t, repo), Number: n, Title: ti, State: domain.MRStateOpen, UpdatedAt: up}
+}
+
+func inboxIssue(t *testing.T, repo string, n int64, up time.Time) domain.Issue {
+	t.Helper()
+	ti, err := domain.ParseIssueTitle("issue")
+	require.NoError(t, err)
+	return domain.Issue{Repo: name(t, repo), Number: n, Title: ti, State: domain.IssueStateOpen, UpdatedAt: up}
+}
+
+func newInboxUnit(t *testing.T) (*usecase.Inbox, *mocks.MergeRequestStore, *mocks.IssueStore, *mocks.RepoMetaStore) {
+	t.Helper()
+	mrs, is, meta := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t)
+	return usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is}), mrs, is, meta
+}
+
+func repoWithIssues(t *testing.T, n string, mode domain.IssuesMode) domain.Repo {
+	s := domain.DefaultRepoSettings()
+	s.Issues = mode
+	return domain.Repo{Name: name(t, n), Visibility: domain.VisibilityPrivate, Settings: s}
+}
+
+func TestInboxIsOwnerOnly(t *testing.T) {
+	t.Parallel()
+	in, _, _, _ := newInboxUnit(t) // the stores are never read
+	for _, p := range []domain.Principal{domain.Anonymous(), issuePrincipal(domain.ScopeIssueWrite)} {
+		_, err := in.Overview(context.Background(), p, domain.RepoName{})
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+	}
+}
+
+func TestInboxOverviewSortsFiltersAndSkipsIssuesOff(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	in, mrs, is, meta := newInboxUnit(t)
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return([]domain.MergeRequest{
+		inboxMR(t, "alpha", 1, t0), inboxMR(t, "beta", 1, t0.Add(time.Hour)), inboxMR(t, "gone", 1, t0),
+	}, nil)
+	is.EXPECT().ListOpenAll(mock.Anything).Return([]domain.Issue{
+		inboxIssue(t, "alpha", 2, t0), inboxIssue(t, "beta", 2, t0.Add(2*time.Hour)), inboxIssue(t, "quiet", 2, t0),
+	}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "alpha")).Return(repoWithIssues(t, "alpha", domain.IssuesOwner), nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "beta")).Return(repoWithIssues(t, "beta", domain.IssuesPublic), nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "quiet")).Return(repoWithIssues(t, "quiet", domain.IssuesOff), nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound)
+
+	got, err := in.Overview(ctx, domain.Owner(), domain.RepoName{})
+	require.NoError(t, err)
+	assert.Equal(t, ports.InboxCounts{MergeRequests: 2, Issues: 2}, got.Counts)
+	require.Len(t, got.MergeRequests, 2)
+	assert.Equal(t, "beta", got.MergeRequests[0].Repo.String(), "most recently updated first")
+	require.Len(t, got.Issues, 2)
+	assert.Equal(t, "beta", got.Issues[0].Repo.String())
+	assert.Equal(t, []domain.RepoName{name(t, "alpha"), name(t, "beta")}, got.Repos)
+
+	got, err = in.Overview(ctx, domain.Root(), name(t, "alpha"))
+	require.NoError(t, err)
+	assert.Equal(t, ports.InboxCounts{MergeRequests: 2, Issues: 2}, got.Counts, "counts ignore the filter")
+	require.Len(t, got.MergeRequests, 1)
+	require.Len(t, got.Issues, 1)
+	assert.Equal(t, "alpha", got.Issues[0].Repo.String())
+	assert.Len(t, got.Repos, 2, "the filter list keeps every repository")
+}

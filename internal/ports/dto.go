@@ -307,3 +307,27 @@ type LoginLink struct {
 	URL       string
 	ExpiresAt time.Time
 }
+
+// InboxMergeRequest is an open merge request of the owner's inbox. The merge
+// request list of a repository shows no CI state, so none is carried here.
+type InboxMergeRequest struct {
+	domain.MergeRequest
+}
+
+// InboxCounts are the numbers of open items across every repository, whatever
+// the filter.
+type InboxCounts struct{ MergeRequests, Issues int }
+
+// InboxOverview is what the owner has to look at across every repository: the
+// open merge requests and the open issues, most recently updated first. A
+// section for the items awaiting moderation can be added next to them.
+type InboxOverview struct {
+	Counts InboxCounts
+	// MergeRequests and Issues are those of the filtered repository, or of
+	// every repository when there is no filter. Counts always counts all.
+	MergeRequests []InboxMergeRequest
+	Issues        []domain.Issue
+	// Repos are the repositories that have at least one open item, by name,
+	// whatever the filter: they feed the filter itself.
+	Repos []domain.RepoName
+}
