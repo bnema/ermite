@@ -221,6 +221,18 @@ type IssueCommented struct {
 // EventKind implements Event.
 func (IssueCommented) EventKind() string { return "issue.commented" }
 
+// IssueSubmitted is published when an anonymous submission awaits moderation.
+// It carries no content, and is delivered to the owner topic only: never to
+// home or to a repository topic.
+type IssueSubmitted struct {
+	Repo RepoName
+	ID   PendingIssueID
+	At   time.Time
+}
+
+// EventKind implements Event.
+func (IssueSubmitted) EventKind() string { return "issue.submitted" }
+
 // EventGap tells a subscriber that it missed events because it was too slow;
 // it must refresh its whole view.
 type EventGap struct{}
