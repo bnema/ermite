@@ -356,7 +356,7 @@ func (f *fanout) lead(key fanKey, e *fanEntry, build func() ([]fragment, error))
 // banner tells the commits page how many commits its branch got since the
 // head it lists.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter counts the commits of a page for the banner text; display only
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule inferring new commit counts and branch rewrites from one history page; pending move to domain/usecase
 func (l *liveStream) banner(ctx context.Context, p domain.PushEvent) ([]fragment, error) {
 	if l.ref == "" || !isFullID(l.head) {
 		return nil, nil

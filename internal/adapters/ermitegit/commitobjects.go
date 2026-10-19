@@ -22,7 +22,7 @@ var _ ports.CommitObjectReader = (*Adapter)(nil)
 // always serves it, and the wrapped reader only the repositories the library
 // cannot read.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter applies the limits of the port and of the domain
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule for commit eligibility and byte budgets; pending move to domain/usecase
 func (a *Adapter) ReadCommitObjects(ctx context.Context, repo domain.RepoName, ids []domain.ObjectID) (map[domain.ObjectID][]byte, error) {
 	if len(ids) > ports.MaxCommitLimit {
 		return nil, fmt.Errorf("%w: %d commit objects asked, at most %d", domain.ErrInvalid, len(ids), ports.MaxCommitLimit)

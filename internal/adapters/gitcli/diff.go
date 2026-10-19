@@ -32,8 +32,6 @@ const maxDiffLine = 64 << 10
 // Statistics come from the line counts, binary files from their "-" counts.
 // The patch is parsed as it streams: nothing beyond the limits is kept, and
 // git is stopped once nothing more is needed.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git diff-tree output into the domain diff, applying the limits the port passes in
 func (g *Git) GetCommit(ctx context.Context, repo domain.RepoName, rev domain.Revision, limits domain.DiffLimits) (domain.CommitDetail, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -91,7 +89,7 @@ type rawEntry struct {
 
 // readDiff parses the output of diff-tree --raw --numstat -p.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values, applying the limits the port passes in
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule for diff windowing and truncation budgets; pending move to domain/usecase
 func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.DiffStats, error) {
 	entries, err := readRaw(r)
 	if err != nil {
@@ -189,8 +187,6 @@ func wantsHunks(e *rawEntry, limits domain.DiffLimits, linesLeft, bytesLeft int)
 }
 
 // readRaw reads the `--raw -z` records, which start with ':'.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values
 func readRaw(r *bufio.Reader) ([]rawEntry, error) {
 	var entries []rawEntry
 	for {
@@ -241,8 +237,6 @@ func unexpectedEOF(err error) error {
 
 // parseRawMeta parses ":<old mode> <new mode> <old id> <new id> <status>" and
 // returns the number of paths that follow.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values
 func parseRawMeta(meta string) (rawEntry, int, error) {
 	f := strings.Fields(strings.TrimPrefix(meta, ":"))
 	if len(f) != 5 || f[4] == "" {
@@ -296,8 +290,6 @@ func parseRawMeta(meta string) (rawEntry, int, error) {
 
 // readNumstat reads one `--numstat -z` record per entry. A binary file has
 // "-" counts.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values
 func readNumstat(r *bufio.Reader, entries []rawEntry) error {
 	for i := range entries {
 		tok, err := readToken(r)
@@ -434,8 +426,6 @@ func (p *patchReader) file(sections, max int) (hunks []domain.Hunk, lines int, t
 
 // section reads the hunks of the current section up to the next marker, which
 // stays pending. It gives up (truncated) after more than max lines.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values, applying the limits the port passes in
 func (p *patchReader) section(max int) (hunks []domain.Hunk, lines int, truncated bool, err error) {
 	var cur *domain.Hunk
 	var oldN, newN int
@@ -499,8 +489,6 @@ func (p *patchReader) section(max int) (hunks []domain.Hunk, lines int, truncate
 }
 
 // parseHunkHeader parses "@@ -a[,b] +c[,d] @@[ header]".
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values
 func parseHunkHeader(s string) (domain.Hunk, error) {
 	bad := func() (domain.Hunk, error) {
 		return domain.Hunk{}, fmt.Errorf("git diff-tree: unexpected hunk header %q", truncateText(s))

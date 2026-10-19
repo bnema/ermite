@@ -30,7 +30,7 @@ type ContextRows struct {
 // the numbers of the first hidden line on each side, which move together (the
 // lines are unchanged); n the number of lines, 0 for the rest of the file.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter cuts a file the use case opened into rows of the diff; no rule is decided here
+//hexcheck:ignore suspicious-business-logic-in-adapter validates diff-context HTTP parameters, rejects binary or oversized files, and caps rendered context rows
 func (s *Server) diffContext(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	sha := r.PathValue("sha")
 	if !isFullID(sha) {

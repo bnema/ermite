@@ -310,6 +310,9 @@ func decodeRun(item kv.Item) (domain.CIRun, error) {
 	}, nil
 }
 
+// encodeJob serializes a job for storage.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter encodes a job as protobuf, rejecting an empty repository and omitting an absent token hash
 func encodeJob(j domain.CIJob) ([]byte, error) {
 	if j.Repo.IsZero() {
 		return nil, fmt.Errorf("%w: empty name", domain.ErrInvalidName)
@@ -346,7 +349,6 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 	return mustMarshal(pb), nil
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter maps the stored record to the domain job field by field: no rule is decided here
 func decodeJob(item kv.Item) (domain.CIJob, error) {
 	var pb storagepb.CIJob
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {
@@ -530,8 +532,6 @@ func (c *CI) stageRecords(ctx context.Context, b *kv.Batch, w ports.CIWrite) (gu
 }
 
 // Apply writes the records in one batch.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter stages records and their derived indexes under version preconditions: a storage concern, no policy
 func (c *CI) Apply(ctx context.Context, w ports.CIWrite) (uint64, error) {
 	var b kv.Batch
 	guarded, err := c.stageRecords(ctx, &b, w)
@@ -578,7 +578,7 @@ const createRunTries = 20
 
 // CreateRun takes the next run id and number and stores the draft.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter takes the next numbers under version preconditions: a storage concern, no policy
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule rejecting runs of disabled workflows, atomically with creation; pending move to domain/usecase
 func (c *CI) CreateRun(ctx context.Context, repo domain.RepoName, workflowPath string, build func(id, number int64) ports.CIRunDraft) (ports.CIRunDraft, error) {
 	offKey := workflowOffKey(repo, workflowPath)
 	for range createRunTries {
@@ -669,8 +669,6 @@ func (c *CI) GetRunSource(ctx context.Context, runID int64) (domain.CIRunSource,
 }
 
 // ListRuns returns the runs of the repository, newest first.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter port method name only: reads a key range and reverses it
 func (c *CI) ListRuns(ctx context.Context, repo domain.RepoName, before int64, limit int) ([]domain.CIRun, error) {
 	start := []byte(runsPrefix(repo))
 	end := []byte(runPrefix + repo.String() + "0") // '/' + 1
@@ -906,8 +904,6 @@ func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]by
 const sweepChunk = 500
 
 // Sweep removes the runs completed before the time.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter chunked delete of expired records: a storage concern, the retention is decided by the caller
 func (c *CI) Sweep(ctx context.Context, before time.Time) ([]int64, error) {
 	snap := c.db.Snapshot(ctx)
 	var ids []int64
@@ -955,8 +951,6 @@ func runnerNameKey(n string) []byte            { return []byte(runnerName + stri
 func runnerTokenKey(h domain.TokenHash) []byte { return []byte(runnerTokPref + h.String()) }
 
 // CreateRunner stores the runner, its name index and its token index.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter replaces a runner of the same name in one batch: a storage concern, the rule is decided by the caller
 func (c *CI) CreateRunner(ctx context.Context, r domain.CIRunner, replace bool) ([]domain.CIRunner, error) {
 	for range createRunTries {
 		var b kv.Batch
@@ -1115,7 +1109,6 @@ func encodeCall(c *domain.CICall) *storagepb.CICall {
 	}
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter maps the stored call to the domain call field by field: no rule is decided here
 func decodeCall(pb *storagepb.CICall) *domain.CICall {
 	if pb == nil {
 		return nil

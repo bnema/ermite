@@ -33,8 +33,6 @@ type pathList struct {
 // an ETag that makes it a 304 (answered before the list is loaded, so it never
 // waits for a build); the owner's copy is private and never stored. The ETag
 // differs for the gzip and the plain variant.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter serves a cached list after the use case authorized it; the headers are about the response, no rule is decided here
 func (s *Server) paths(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()

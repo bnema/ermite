@@ -174,6 +174,8 @@ var gitSuffixes = []string{"/info/refs", "/" + serviceUpload, "/" + serviceRecei
 // and /<repo>/git-receive-pack, and the same under /<owner>/ for the owner of
 // the forge. info/refs without a service is the dumb protocol, which ermite
 // does not serve.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter decodes smart-HTTP repository routes and owner aliases, validating methods and service query parameters
 func (h *Handler) parseRoute(r *http.Request) (route, int) {
 	p := strings.TrimPrefix(r.URL.Path, "/")
 	var head, rest string
@@ -224,8 +226,6 @@ func (h *Handler) parseRoute(r *http.Request) (route, int) {
 }
 
 // ServeHTTP implements http.Handler.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter transport orchestration: the authorization decisions are the use cases'
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var rt route
 	var name domain.RepoName
@@ -328,6 +328,8 @@ func credentials(r *http.Request) (secret string, present bool) {
 // denied answers an authorization failure. A caller without valid
 // credentials is asked for them wherever the repository does not show itself,
 // which keeps a private repository and a missing one indistinguishable.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter maps authorization errors to HTTP responses, challenging anonymous callers on hidden or missing repositories
 func (h *Handler) denied(ctx context.Context, w http.ResponseWriter, p domain.Principal, err error) {
 	switch {
 	case errors.Is(err, domain.ErrUnauthenticated):
@@ -418,8 +420,6 @@ func (h *Handler) acquire(ctx context.Context, w http.ResponseWriter, rt route, 
 }
 
 // serveBackend runs git http-backend for an authorized request.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter process and CGI plumbing: no business rule is decided here
 func (h *Handler) serveBackend(w http.ResponseWriter, r *http.Request, rt route, name domain.RepoName, p domain.Principal, client string) {
 	ctx := r.Context()
 	logger := zerowrap.FromCtx(ctx)

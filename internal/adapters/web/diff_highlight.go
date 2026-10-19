@@ -370,8 +370,6 @@ func computeFile(ctx context.Context, lx chroma.Lexer, hunks []domain.Hunk) (d *
 
 // applyFile puts the colours on the lines of a file; false when the data is
 // not the one of this file (another number of lines), nothing is changed.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter puts coloured runs on the lines of a diff for the page; no rule is decided here
 func applyFile(d *hlData, f *DiffFile, hunks []domain.Hunk) bool {
 	n := 0
 	for _, h := range hunks {

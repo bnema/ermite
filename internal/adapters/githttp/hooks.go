@@ -175,8 +175,6 @@ func (s *HookServer) Close(ctx context.Context) {
 }
 
 // handle serves one connection: one request line, one reply line.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter hook protocol dispatch: the decisions are the use cases'
 func (s *HookServer) handle(ctx context.Context, conn net.Conn) {
 	log := zerowrap.FromCtx(ctx)
 	_ = conn.SetReadDeadline(time.Now().Add(readTimeout))

@@ -245,6 +245,8 @@ func (s *Server) formAgain(ctx context.Context, w http.ResponseWriter, r *http.R
 }
 
 // issueSubmittedPage is GET /<repo>/issues/submitted.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter business policy exposing the submission receipt only for public issues; pending move to domain/usecase
 func (s *Server) issueSubmittedPage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()

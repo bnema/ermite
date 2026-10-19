@@ -108,8 +108,8 @@ github.com/bits-and-blooms/bitset v1.24.5 h1:654xBVHc23gJMAgOTkPNoCVfiRxuIOAUnAZ
 github.com/bits-and-blooms/bitset v1.24.5/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
 github.com/bmatcuk/doublestar/v4 v4.10.0 h1:zU9WiOla1YA122oLM6i4EXvGW62DvKZVxIe6TYWexEs=
 github.com/bmatcuk/doublestar/v4 v4.10.0/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
-github.com/bnema/hexcheck v0.3.1 h1:Apv7w0KmsfbOBOq/r1jPlENX3Z7ukAEPlAxvWMTTd3I=
-github.com/bnema/hexcheck v0.3.1/go.mod h1:8KuFStFhn1qNKDBrUvxOB5VzSP/uuePrURqPhq2KVAk=
+github.com/bnema/hexcheck v0.4.0 h1:VwzikMw5uCRvyf+FcI+O67TXovw7iwqvn7dSOUCJs7c=
+github.com/bnema/hexcheck v0.4.0/go.mod h1:8KuFStFhn1qNKDBrUvxOB5VzSP/uuePrURqPhq2KVAk=
 github.com/bnema/kvconf v0.1.2 h1:1hDKL9jkQSBdR9dSKbwTONhUUBfJgAdh5vu+yFHOb70=
 github.com/bnema/kvconf v0.1.2/go.mod h1:+P2X9I/sLx+Lfir45s9a7WA0GnC22WgKbZWE9LK6lcU=
 github.com/bnema/zerowrap v1.4.1 h1:v70w8LDU2+FU+EX/etY9DjVwOAWN0fUKShwZyZHnyLU=

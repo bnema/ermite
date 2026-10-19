@@ -39,8 +39,6 @@ func parseID(out string) (domain.ObjectID, error) {
 }
 
 // BranchHead resolves refs/heads/<branch>^{commit} with `cat-file`.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter maps a branch name to a git object name
 func (g *Git) BranchHead(ctx context.Context, repo domain.RepoName, branch string) (domain.ObjectID, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -95,8 +93,6 @@ func (g *Git) HasCommit(ctx context.Context, repo domain.RepoName, id domain.Obj
 }
 
 // MergeBase runs `git merge-base`, which exits 1 when there is none.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter maps git exit codes to the domain not found error
 func (g *Git) MergeBase(ctx context.Context, repo domain.RepoName, a, b domain.ObjectID) (domain.ObjectID, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -129,8 +125,6 @@ func (g *Git) IsAncestor(ctx context.Context, repo domain.RepoName, ancestor, de
 }
 
 // ListRange runs `git log <head> ^<exclude>`.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; the limit comes from the port
 func (g *Git) ListRange(ctx context.Context, repo domain.RepoName, exclude, head domain.ObjectID, limit int) ([]domain.Commit, bool, error) {
 	var excluded []string
 	if !exclude.IsZero() {
@@ -142,8 +136,6 @@ func (g *Git) ListRange(ctx context.Context, repo domain.RepoName, exclude, head
 // logCommits runs `git log` for the commits reachable from head: revArgs go
 // before the head (options such as --not), excluded after it. Newest first,
 // at most limit; more says there were others.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; the limit comes from the port
 func (g *Git) logCommits(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int, revArgs, excluded []string) ([]domain.Commit, bool, error) {
 	if limit < 1 || limit > ports.MaxCommitLimit {
 		return nil, false, fmt.Errorf("list range: %w: limit %d", domain.ErrInvalidPageSize, limit)
@@ -183,8 +175,6 @@ func (g *Git) logCommits(ctx context.Context, repo domain.RepoName, head domain.
 }
 
 // DiffCommits reads the diff between two commits like GetCommit does.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter reads a git diff into the domain diff with the limits the port passes in
 func (g *Git) DiffCommits(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID, limits domain.DiffLimits) (domain.DiffStats, domain.Diff, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -198,8 +188,6 @@ func (g *Git) DiffCommits(ctx context.Context, repo domain.RepoName, base, head 
 }
 
 // CommitTree runs `git rev-parse <commit>^{tree}`.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses the id git printed
 func (g *Git) CommitTree(ctx context.Context, repo domain.RepoName, id domain.ObjectID) (domain.ObjectID, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -229,8 +217,6 @@ func (g *Git) WriteCommit(ctx context.Context, repo domain.RepoName, object []by
 // UpdateBranch runs `git update-ref refs/heads/<branch> <new> <old>`, which
 // takes the ref lock and refuses when the ref is not at old. A failure is
 // told from a moved branch by reading the branch again.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter maps a refused update-ref to the conflict error of the port
 func (g *Git) UpdateBranch(ctx context.Context, repo domain.RepoName, branch string, old, newID domain.ObjectID) error {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -252,8 +238,6 @@ func (g *Git) UpdateBranch(ctx context.Context, repo domain.RepoName, branch str
 // DeleteBranch runs `git update-ref -d refs/heads/<branch> <old>`, which takes
 // the ref lock and refuses when the ref is not at old. A failure is told from
 // a moved or deleted branch by reading the branch again.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter maps a refused update-ref to the conflict error of the port
 func (g *Git) DeleteBranch(ctx context.Context, repo domain.RepoName, branch string, old domain.ObjectID) error {
 	dir, err := g.repoDir(repo)
 	if err != nil {

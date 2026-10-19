@@ -15,8 +15,6 @@ import (
 // that is the short name of a branch or tag wins. A branch wins over a tag of
 // the same name. rest has no leading slash and is "" when the path is the ref
 // alone. ok is false when no ref matches; the caller may then try a commit id.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter finds the ref a URL path starts with; URL routing, no rule is decided here
 func resolveRef(refs []domain.Ref, p string) (ref domain.Ref, rest string, ok bool) {
 	names := refsByName(refs)
 	p = strings.Trim(p, "/")
@@ -97,8 +95,6 @@ func (t target) commitID() string {
 // resolveCommit sets the full id of a target named by an abbreviated commit id,
 // with one ResolveRevision. The page renders without it (it only lacks the file
 // finder), so a failure is not one.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter learns the full id of the commit a URL names for the finder links; no rule is decided here
 func (s *Server) resolveCommit(ctx context.Context, repo domain.RepoName, t *target) {
 	if !t.detached || isFullID(t.rev) {
 		return

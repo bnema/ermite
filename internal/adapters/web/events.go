@@ -342,6 +342,8 @@ func (s *Server) canSee(ctx context.Context, rawName string) error {
 
 // issuesOn is domain.ErrNotFound unless the repository has issues on and
 // s.cfg.Issues is set: the same answer as for a repository the visitor cannot see.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter business policy hiding issue streams when issues are disabled; pending move to domain/usecase
 func (s *Server) issuesOn(ctx context.Context, rawName string) error {
 	if s.cfg.Issues == nil {
 		return domain.ErrNotFound

@@ -18,8 +18,6 @@ var _ ports.PullGit = (*Git)(nil)
 // database and touches no ref or index: it prints the tree of the result and
 // exits 0, or exits 1 when the merge conflicts. Commits with no common history
 // do not merge (GitHub makes no test merge for them either).
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter maps git exit codes to the clean/conflict answer of the port
 func (g *Git) TestMerge(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID) (domain.ObjectID, bool, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {

@@ -21,8 +21,6 @@ const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 // renames not detected (a rename lists both paths, as GitHub's push filters
 // see it), and stops reading after max paths: truncated tells there were more.
 // A zero base diffs against the empty tree.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter reads the path list git prints; the bound comes from the port
 func (g *Git) ChangedPaths(ctx context.Context, repo domain.RepoName, base, head domain.ObjectID, limit int) ([]string, bool, error) {
 	if limit < 1 || head.IsZero() {
 		return nil, false, fmt.Errorf("changed paths: %w: limit %d", domain.ErrInvalid, limit)
@@ -63,8 +61,6 @@ func (g *Git) ChangedPaths(ctx context.Context, repo domain.RepoName, base, head
 // (refs/heads/*), newest first, at most limit. It runs
 // `git log --not --branches --not <head>`: tags do not count, so the commit of
 // another tag that no branch has is listed.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; the limit comes from the port
 func (g *Git) CommitsOffBranches(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int) ([]domain.Commit, bool, error) {
 	if head.IsZero() {
 		return nil, false, fmt.Errorf("commits off branches: %w: no head", domain.ErrInvalid)

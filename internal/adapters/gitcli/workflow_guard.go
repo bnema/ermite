@@ -81,7 +81,7 @@ const (
 // objects of a push still in quarantine through the environment of the hook
 // (ports.PushObjects), accepted only inside the repository's objects directory.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter reads the object ids and the path git prints for the compared trees; the rule that refuses is the use case's
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule for which pushed commits and ref changes alter workflows; pending move to domain/usecase
 func (g *Git) ChangedWorkflow(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, objects ports.PushObjects) (string, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {

@@ -31,8 +31,6 @@ const rawCSP = "default-src 'none'; sandbox"
 // image types (by their bytes, never SVG) as images, and anything else as an
 // attachment of unknown type. A file is never served as HTML or SVG, so what
 // a repository holds cannot run in the origin of the forge.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter streams a file the use case opened; the headers are about the response, no rule is decided here
 func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), rawTimeout)
 	defer cancel()

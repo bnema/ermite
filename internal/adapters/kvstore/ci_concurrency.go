@@ -103,7 +103,6 @@ func encodeConcurrencyRecord(r domain.CIConcurrencyRecord) []byte {
 	return mustMarshal(pb)
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter maps the stored record to the domain record field by field: no rule is decided here
 func decodeConcurrencyRecord(val []byte) (domain.CIConcurrencyRecord, error) {
 	var pb storagepb.CIConcurrencyRecord
 	if err := proto.Unmarshal(val, &pb); err != nil {
@@ -146,7 +145,6 @@ func encodeConcurrencyMark(m domain.CIConcurrencyMark) []byte {
 	return mustMarshal(pb)
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter maps the stored mark to the domain mark field by field: no rule is decided here
 func decodeConcurrencyMark(val []byte) (domain.CIConcurrencyMark, error) {
 	var pb storagepb.CIConcurrencyMark
 	if err := proto.Unmarshal(val, &pb); err != nil {
@@ -257,8 +255,6 @@ func (c *CI) UpdateConcurrency(ctx context.Context, repo domain.RepoName, group 
 }
 
 // ListConcurrency returns every stored group with its marks.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter lists and decodes records and marks: no rule is decided here
 func (c *CI) ListConcurrency(ctx context.Context) ([]ports.CIConcurrencyGroup, error) {
 	type id struct{ repo, group string }
 	snap := c.db.Snapshot(ctx)

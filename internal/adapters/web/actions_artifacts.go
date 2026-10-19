@@ -53,8 +53,6 @@ type ArtifactsView struct {
 // runArtifacts is the artifacts section of a run, nil when there is nothing to
 // show: no artifacts on this server, a visitor who cannot list them, no
 // artifact, or a failed read, which is logged; the run page never fails for it.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter builds the artifacts section from the use case results; which errors hide it is presentation, no rule is decided here
 func (s *Server) runArtifacts(ctx context.Context, repo domain.RepoName, p RunPage) *ArtifactsView {
 	if s.cfg.Artifacts == nil || !SignedIn(ctx) {
 		return nil
@@ -112,8 +110,6 @@ func parseArtifactPath(r *http.Request) (int64, error) {
 // is never served: a zip is application/zip, anything else
 // application/octet-stream, and the answer is sandboxed and not sniffed, so
 // that nothing uploaded by a job can run in the origin of the forge.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter streams what the use case sends; the headers are about the response, no rule is decided here
 func (s *Server) artifactDownload(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), artifactTimeout)
 	defer cancel()

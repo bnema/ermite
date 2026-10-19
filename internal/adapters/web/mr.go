@@ -546,7 +546,7 @@ func (s *Server) mrSince(ctx context.Context, r *http.Request) (templ.Component,
 	return s.mrPage(ctx, r, true)
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter builds the merge request page from the use case results; no rule is decided here
+//hexcheck:ignore suspicious-business-logic-in-adapter business rules for owner-only read positions and identifying unread commits; pending move to domain/usecase
 func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ.Component, int, error) {
 	n, err := mrNumber(r)
 	if err != nil {

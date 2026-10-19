@@ -85,6 +85,8 @@ func settingsKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) 
 
 // BindSecretsKey stores the key check when there is none and compares it
 // otherwise.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter initializes or compares the persisted encryption-key check with compare-and-swap retries
 func (s *Settings) BindSecretsKey(ctx context.Context, check []byte) error {
 	key := []byte(secretsKeyCheck)
 	for range updateAttempts {
@@ -111,6 +113,8 @@ func (s *Settings) BindSecretsKey(ctx context.Context, check []byte) error {
 
 // stage makes the batch depend on the scope: the repository key is guarded
 // and, for an environment, its record is required at the version read.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter validates a settings scope and adds repository and environment existence/version preconditions to a storage batch
 func (s *Settings) stage(ctx context.Context, b *kv.Batch, scope domain.SettingsScope) error {
 	if !scope.Valid() {
 		return fmt.Errorf("%w: scope", domain.ErrInvalid)
@@ -203,6 +207,8 @@ func (s *Settings) GetSealedSecret(ctx context.Context, scope domain.SettingsSco
 }
 
 // existsIn is exists on a snapshot, so a listing and its check agree.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter validates a settings scope and checks repository and environment keys in the same snapshot as a listing
 func (s *Settings) existsIn(ctx context.Context, snap *kv.Snapshot, scope domain.SettingsScope) error {
 	if !scope.Valid() {
 		return fmt.Errorf("%w: scope", domain.ErrInvalid)
@@ -309,8 +315,6 @@ func decodeEnvironment(val []byte) (domain.Environment, error) {
 }
 
 // CreateEnvironment implements ports.CISettingsStore.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter create-if-absent under a version precondition: a storage concern, no policy
 func (s *Settings) CreateEnvironment(ctx context.Context, repo domain.RepoName, name string, at time.Time) (domain.Environment, error) {
 	key := envKey(repo, name)
 	for range updateAttempts {
@@ -353,8 +357,6 @@ func (s *Settings) ListEnvironments(ctx context.Context, repo domain.RepoName) (
 }
 
 // DeleteEnvironment implements ports.CISettingsStore.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter removes the keys of an environment in one batch: a storage concern, no policy
 func (s *Settings) DeleteEnvironment(ctx context.Context, repo domain.RepoName, name string) error {
 	key := envKey(repo, name)
 	scope := domain.EnvironmentScope(repo, name)

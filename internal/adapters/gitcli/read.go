@@ -35,8 +35,6 @@ func notFound(err error) bool { return errors.Is(err, errObjectMissing) }
 // ListRefs lists HEAD, the branches and the tags with `git for-each-ref`.
 // An annotated tag is followed to its commit; a tag of a tag is followed with
 // one `cat-file` request each.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain refs
 func (g *Git) ListRefs(ctx context.Context, repo domain.RepoName) ([]domain.Ref, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -167,6 +165,8 @@ type revCandidate struct {
 // object exists. Otherwise it is the branch, then the tag, then (for "HEAD",
 // full ref names and abbreviations) as written. Other forms Git understands,
 // such as "main~2" or "FETCH_HEAD", are not revisions of ermite.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule for revision resolution order; pending move to domain.Revision in a follow-up
 func candidates(rev domain.Revision) []revCandidate {
 	s := rev.String()
 	switch {
@@ -190,7 +190,7 @@ func candidates(rev domain.Revision) []revCandidate {
 
 // resolve resolves rev on an open cat-file connection.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter maps a revision to git object names, a git detail of the reader
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule for revision resolution order; pending move to domain.Revision in a follow-up
 func resolve(c *catConn, rev domain.Revision) (domain.ResolvedRevision, error) {
 	for _, cand := range candidates(rev) {
 		h, err := c.info(cand.spec)
@@ -213,8 +213,6 @@ func resolve(c *catConn, rev domain.Revision) (domain.ResolvedRevision, error) {
 }
 
 // ResolveRevision resolves a revision with `cat-file`.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port
 func (g *Git) ResolveRevision(ctx context.Context, repo domain.RepoName, rev domain.Revision) (domain.ResolvedRevision, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -235,8 +233,6 @@ func (g *Git) ResolveRevision(ctx context.Context, repo domain.RepoName, rev dom
 // tag, full ref name, HEAD; a single segment may also be a commit id), longest
 // first, with up to one `cat-file` request per candidate on the repository's
 // process. At most domain.MaxRefPathTries segments are tried.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter the split is domain.SplitRefPath; this only runs it on a cat-file connection
 func (g *Git) ResolveRefPath(ctx context.Context, repo domain.RepoName, path string) (domain.RefPath, error) {
 	dir, err := g.repoDir(repo)
 	if err != nil {
@@ -264,6 +260,8 @@ type object struct {
 // lookup resolves rev and reads the header of the object at path, in one
 // request series on the repository's process. A missing path is
 // domain.ErrNotFound.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter uses the business rule for revision resolution order, pending move to domain.Revision in a follow-up, before looking up a path
 func (g *Git) lookup(ctx context.Context, dir string, rev domain.Revision, path domain.TreePath) (object, error) {
 	var obj object
 	err := g.cat.do(ctx, dir, func(c *catConn) error {
@@ -392,8 +390,6 @@ func (g *Git) GetTree(ctx context.Context, repo domain.RepoName, rev domain.Revi
 }
 
 // parseTreeEntry parses "<mode> <type> <id> <size>\t<name>" of ls-tree -l.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port
 func parseTreeEntry(rec string, parent domain.TreePath) (domain.TreeEntry, error) {
 	meta, name, ok := strings.Cut(rec, "\t")
 	f := strings.Fields(meta)
@@ -487,8 +483,6 @@ feed:
 
 // lastCommit returns the newest commit reachable from head that changed path;
 // an empty path means head itself.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port
 func (g *Git) lastCommit(ctx context.Context, dir string, head domain.ObjectID, path string) (domain.Commit, error) {
 	var c domain.Commit
 	found := false
@@ -520,8 +514,6 @@ const commitFormat = "%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%B"
 
 // readCommit reads one commit in commitFormat. It returns io.EOF at the end
 // of the output.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port
 func readCommit(r *bufio.Reader) (domain.Commit, error) {
 	var f [9]string
 	for i := range f {

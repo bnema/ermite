@@ -94,8 +94,6 @@ func (s *PendingIssues) Get(ctx context.Context, repo domain.RepoName, id domain
 // creation time then repository then id. There are at most
 // domain.MaxPendingIssues of them (a little more under a race), so they are
 // read and sorted. The page token is the position of the last item returned.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter pages through the keys of a prefix: a storage concern, no policy
 func (s *PendingIssues) List(ctx context.Context, repo domain.RepoName, page ports.ListPendingParams) (ports.PendingIssuePage, error) {
 	prefix := pendingPrefix
 	if !repo.IsZero() {
@@ -216,8 +214,6 @@ func (s *PendingIssues) Count(ctx context.Context) (int, error) {
 // Approve numbers the pending issue from mrseq/<repo> (see createNumbered),
 // writes the open issue and its index key and deletes the pending record, in
 // one batch that requires the pending record to be unchanged.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter only sets the number under a version precondition; the issue itself is built by domain.ApprovedIssue
 func (s *PendingIssues) Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID, now time.Time) (domain.Issue, error) {
 	var number int64
 	err := createNumbered(ctx, s.db, s.locks, repo, func(b *kv.Batch, n int64) error {
@@ -291,7 +287,6 @@ func encodePending(p domain.PendingIssue) ([]byte, error) {
 	}), nil
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter schema decoding, not a policy
 func decodePending(repo domain.RepoName, id domain.PendingIssueID, item kv.Item) (domain.PendingIssue, error) {
 	var pb storagepb.PendingIssue
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {

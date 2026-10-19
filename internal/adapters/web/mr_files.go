@@ -157,8 +157,6 @@ func splitPath(p string) (name, dir string) {
 // the files of a window with their hunks and their comments, for a
 // placeholder of the page. A base or a head that is not the one of the diff
 // any more answers 409: the page says to reload.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter builds a window of the merge request page from the use case results; no rule is decided here
 func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	n, err := mrNumber(r)
 	if err != nil {

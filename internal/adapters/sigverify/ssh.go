@@ -49,8 +49,6 @@ type sshSigBlob struct {
 }
 
 // Verify implements ports.SignatureVerifier.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter this is the SSHSIG protocol check the port delegates to the adapter; the trust and email rules stay in domain
 func (SSH) Verify(payload, signature []byte, committerEmail string, signedAt int64, keys []domain.TrustedKey) (v domain.CommitVerification) {
 	v = domain.CommitVerification{Format: domain.FormatSSH, Status: domain.StatusBadSignature}
 	defer func() { // a parser bug must not take the server down

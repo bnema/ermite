@@ -42,8 +42,6 @@ func (Verifier) Verify(payload, signature []byte, committerEmail string, signedA
 // trusted completes the verification of a signature whose cryptography is
 // valid and whose key is trusted: verified when the key may sign for the
 // committer email, email_mismatch otherwise.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter the email rule is domain.TrustedKey.TrustsEmail; this only maps it to the port's status
 func trusted(v domain.CommitVerification, key domain.TrustedKey, committerEmail string) domain.CommitVerification {
 	v.KeyID, v.KeyTitle = key.ID, key.Title
 	if key.TrustsEmail(committerEmail) {

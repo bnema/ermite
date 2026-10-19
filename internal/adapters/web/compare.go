@@ -27,8 +27,6 @@ const compareDepth = maxComparePages * pageSize
 // own diff is then the whole change). Otherwise it lists the commits, which
 // link to their own diffs, and says the whole diff comes with the merge
 // request.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter builds the compare page from the use case results; the merge rules are the use case's
 func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	d, err := s.loadRepo(ctx, r.PathValue("repo"))
 	if err != nil {
@@ -144,7 +142,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 // meets the target. behind is true when the target has commits the source
 // lacks (the tip of the target is not an ancestor of the source).
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter walks the history pages the use case returns to find where the branch left its target; the page needs it, the forge decides nothing
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule inferring ahead/behind from bounded history walks; pending move to domain/usecase
 func (s *Server) commitsAhead(ctx context.Context, repo domain.RepoName, srcTip, tgtTip string) (ahead []domain.Commit, exact, behind bool, err error) {
 	if srcTip == tgtTip {
 		return nil, true, false, nil

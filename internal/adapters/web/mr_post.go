@@ -295,8 +295,6 @@ func commentID(s string) int64 {
 }
 
 // headID parses a commit id of a form; the empty string is the zero id.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter parses a form field into the domain id and names the field in the error; no rule is decided here
 func headID(s string) (domain.ObjectID, error) {
 	if s == "" {
 		return domain.ObjectID{}, nil

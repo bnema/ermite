@@ -187,7 +187,6 @@ func (s *gitService) GetCommit(ctx context.Context, req *connect.Request[pb.GetC
 	return connect.NewResponse(commitDetailToPB(detail)), nil
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter port method name only
 func (s *gitService) ResolveRevision(ctx context.Context, req *connect.Request[pb.ResolveRevisionRequest]) (*connect.Response[pb.ResolveRevisionResponse], error) {
 	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
 	if err != nil {

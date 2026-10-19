@@ -42,6 +42,8 @@ func (s *serverService) GetSigningKey(context.Context, *connect.Request[pb.GetSi
 
 // RotateOIDCKey replaces the key that signs the ID tokens of CI jobs. Only the
 // owner may; failed_precondition when the server issues no ID tokens.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter business policy restricting disabled-OIDC rotation errors to owners; pending move to domain/usecase
 func (s *serverService) RotateOIDCKey(ctx context.Context, _ *connect.Request[pb.RotateOIDCKeyRequest]) (*connect.Response[pb.RotateOIDCKeyResponse], error) {
 	p := caller(ctx)
 	if s.oidc == nil {

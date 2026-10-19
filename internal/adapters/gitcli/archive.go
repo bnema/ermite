@@ -28,8 +28,6 @@ var _ ports.GitArchive = (*Git)(nil)
 // not by a gzip binary. A client that goes away ends ctx, which kills git.
 // Nothing is written to w when the commit does not exist
 // (domain.ErrNotFound).
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter runs git archive and compresses its output: a process concern, access and naming are the use case's
 func (g *Git) Archive(ctx context.Context, repo domain.RepoName, commit domain.ObjectID, prefix string, w io.Writer) error {
 	dir, err := g.repoDir(repo)
 	if err != nil {

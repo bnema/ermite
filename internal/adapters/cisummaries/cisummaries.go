@@ -56,6 +56,8 @@ func (s *Store) path(ref ports.CILogRef, step int32) string {
 }
 
 // Put stores the summary of a step, or removes it when markdown is empty.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter validates storage coordinates and atomically writes a step summary, deleting its file when empty
 func (s *Store) Put(_ context.Context, ref ports.CILogRef, step int32, markdown string) error {
 	if !validRef(ref) || step < 1 || step > domain.CIMaxSteps {
 		return domain.ErrNotFound

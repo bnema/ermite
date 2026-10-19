@@ -27,8 +27,6 @@ func domainID(id git.ObjectID) (domain.ObjectID, error) { return domain.ParseObj
 // listRefs lists HEAD, then the branches, then the tags, like gitcli: a tag
 // follows to its commit when it leads to one; HEAD takes the ids of its
 // branch or tag, and only the name of an unborn branch.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter converts ermite-git values into domain values; the limits and the orders come from domain
 func listRefs(r *git.Repo) ([]domain.Ref, error) {
 	var refs []domain.Ref
 	byName := make(map[string]domain.Ref)
@@ -127,7 +125,7 @@ func peelID(r *git.Repo, id git.ObjectID) (_ git.ObjectID, ok bool, _ error) {
 // abbreviated id as written. It does not use Repo.Resolve, whose order is
 // git's own (tags before branches, no ref for a missing full id).
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter tries the candidates of the port in its documented order, like gitcli; the rule is the port contract
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule for revision resolution order; pending move to domain.Revision in a follow-up
 func resolveRevision(r *git.Repo, rev domain.Revision) (resolved, error) {
 	s := rev.String()
 	if rev.IsHead() || s == "HEAD" {
@@ -477,8 +475,6 @@ func fillLastCommits(ctx context.Context, r *git.Repo, commit domain.ObjectID, d
 // The ids, the names, the emails and the message share one backing string, cut
 // into substrings: one allocation for the text of a commit instead of one per
 // field.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter converts ermite-git values into domain values; the limits and the orders come from domain
 func convertCommit(c *git.Commit) (domain.Commit, error) {
 	if len(c.Encoding) > 0 && !isUTF8Label(c.Encoding) {
 		return domain.Commit{}, errFallback

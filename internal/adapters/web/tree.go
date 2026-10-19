@@ -72,8 +72,6 @@ func (p TreePage) Unit() string {
 
 // tree lists a directory of a ref, with the last commit of each entry. With
 // ?rows it answers the entries alone, for a directory opened in place.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter builds the directory page from the use case results; no rule is decided here
 func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	d, err := s.loadRepo(ctx, r.PathValue("repo"))
 	if err != nil {

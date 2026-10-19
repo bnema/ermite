@@ -45,7 +45,7 @@ func (s *Server) repoView(ctx context.Context, name domain.RepoName) (ports.Repo
 // repoRecord reads the repository record only, without Git: its name,
 // visibility and settings (the defaults when it has none).
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter reads the repository from the use case; filling in the default settings for display decides no rule
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule replacing zero repository settings with defaults; pending move to domain/usecase
 func (s *Server) repoRecord(ctx context.Context, name domain.RepoName) (domain.Repo, error) {
 	repo, err := s.cfg.Repos.Get(ctx, principal(ctx), name)
 	if err != nil {

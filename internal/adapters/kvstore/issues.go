@@ -84,8 +84,6 @@ func issueKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][
 // Create takes the next number of the repository from mrseq/<repo>, the
 // sequence of the merge requests, and stores the issue under it; see
 // createNumbered. A missing repository gives domain.ErrNotFound.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
 func (i *Issues) Create(ctx context.Context, issue domain.Issue) (domain.Issue, error) {
 	err := createNumbered(ctx, i.db, i.locks, issue.Repo, func(b *kv.Batch, n int64) error {
 		issue.Number = n
@@ -118,8 +116,6 @@ func (i *Issues) Get(ctx context.Context, repo domain.RepoName, number int64) (d
 
 // List returns a page of the issues of the repository, highest number first. The
 // page token is the last number of the previous page.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter pages through the keys of a prefix: a storage concern, no policy
 func (i *Issues) List(ctx context.Context, repo domain.RepoName, params ports.ListIssuesParams) (ports.IssuePage, error) {
 	before := int64(0) // 0: from the highest
 	if params.PageToken != "" {
@@ -225,8 +221,6 @@ func (i *Issues) ListOpenAll(ctx context.Context) ([]domain.Issue, error) {
 // Update replaces the issue with a version precondition and moves its index key
 // in the same batch. The repository must exist (see guardRepoKey), so that a
 // concurrent delete of the repository leaves no index key behind.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter port method name only
 func (i *Issues) Update(ctx context.Context, issue domain.Issue) error {
 	val, err := encodeIssue(issue)
 	if err != nil {
@@ -330,7 +324,6 @@ func encodeIssue(issue domain.Issue) ([]byte, error) {
 	}), nil
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter schema decoding, not a policy
 func decodeIssue(repo domain.RepoName, item kv.Item) (domain.Issue, error) {
 	var pb storagepb.Issue
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {
@@ -373,7 +366,6 @@ func encodeIssueComment(c domain.IssueComment) ([]byte, error) {
 	}), nil
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter schema decoding, not a policy
 func decodeIssueComment(item kv.Item) (domain.IssueComment, error) {
 	var pb storagepb.IssueComment
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {

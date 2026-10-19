@@ -54,6 +54,8 @@ func (s *Server) checksFor(ctx context.Context, repo domain.RepoName, sha string
 }
 
 // checksSummary reduces checks to the mark a list shows next to a commit.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter renders domain check outcomes as a commit-list mark, passed count, label and actions link
 func checksSummary(repo domain.RepoName, sha string, checks []ports.CheckView) ChecksSummary {
 	if len(checks) == 0 {
 		return ChecksSummary{}

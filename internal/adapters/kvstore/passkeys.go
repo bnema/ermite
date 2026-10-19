@@ -134,8 +134,6 @@ func (s *Passkeys) Create(ctx context.Context, p domain.Passkey) error {
 }
 
 // Update replaces a stored passkey, or returns domain.ErrNotFound.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter version-checked replace, not a policy
 func (s *Passkeys) Update(ctx context.Context, p domain.Passkey) error {
 	val, err := encodePasskey(p)
 	if err != nil {

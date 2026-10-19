@@ -137,8 +137,6 @@ func (v *Verifier) BeginLogin() ([]byte, []byte, error) {
 
 // FinishLogin implements ports.PasskeyVerifier. The library compares the user
 // handle of the response with userHandle.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter copies the counter and backup state the library verified into the stored passkey; it decides nothing: the use case refuses a counter that does not advance
 func (v *Verifier) FinishLogin(userHandle []byte, ceremony, response []byte, lookup func(id []byte) (domain.Passkey, error)) (domain.Passkey, error) {
 	var session gowebauthn.SessionData
 	if err := json.Unmarshal(ceremony, &session); err != nil {

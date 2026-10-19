@@ -79,6 +79,9 @@ var artifactStates = []struct {
 	{domain.CIArtifactFinal, storagepb.CIArtifactState_CI_ARTIFACT_STATE_FINAL},
 }
 
+// encodeArtifact serializes an artifact for storage.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter validates artifact storage identifiers, UTF-8 and enum encoding before protobuf serialization
 func encodeArtifact(a domain.CIArtifact) ([]byte, error) {
 	if a.Repo.IsZero() || a.ID < 1 || a.RunID < 1 {
 		return nil, fmt.Errorf("%w: artifact without id, run or repository", domain.ErrInvalid)
@@ -106,7 +109,6 @@ func encodeArtifact(a domain.CIArtifact) ([]byte, error) {
 	return mustMarshal(pb), nil
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter decodes a record into the domain type: a storage concern, no policy
 func decodeArtifact(item kv.Item) (domain.CIArtifact, error) {
 	var pb storagepb.CIArtifact
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {
@@ -141,8 +143,6 @@ func decodeArtifact(item kv.Item) (domain.CIArtifact, error) {
 const artifactIDTries = 1000
 
 // NextArtifactID takes the next id in its own batch.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
 func (c *CIArtifacts) NextArtifactID(ctx context.Context) (int64, error) {
 	ci := &CI{db: c.db}
 	for range artifactIDTries {
@@ -274,8 +274,6 @@ func (c *CIArtifacts) BlockArtifactIDs(ctx context.Context) ([]int64, error) {
 // --- writes ---
 
 // ApplyArtifacts writes w in one batch.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter stages records and their derived keys under version preconditions: a storage concern, no policy
 func (c *CIArtifacts) ApplyArtifacts(ctx context.Context, w ports.CIArtifactWrite) error {
 	var b kv.Batch
 	guard := false

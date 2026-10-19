@@ -244,6 +244,8 @@ func (s *Store) Count(_ context.Context, ref ports.CILogRef) (int64, error) {
 }
 
 // Read returns lines from line number from.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter reads a bounded snapshot of stored log lines using sparse offsets and maps missing or out-of-range reads to port errors
 func (s *Store) Read(_ context.Context, ref ports.CILogRef, from int64, maxLines, maxBytes int) ([]domain.CILogLine, error) {
 	if !validRef(ref) || from < 0 {
 		return nil, domain.ErrNotFound

@@ -216,8 +216,6 @@ func (s *Server) issueNew(ctx context.Context, r *http.Request) (templ.Component
 }
 
 // issueShow shows an issue with its comments.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter builds the issue page from the use case results; no rule is decided here
 func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	n, err := mrNumber(r)
 	if err != nil {

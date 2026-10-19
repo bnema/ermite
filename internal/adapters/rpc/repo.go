@@ -83,8 +83,6 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 // "settings.allowed_merge_modes" and "settings.failing_checks_block", and
 // nothing else; the optional issues field stands outside the mask, and alone
 // it is a valid update.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter maps the field mask of the contract to the optional fields of the use case; no rule is decided here
 func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 	var params ports.UpdateRepoParams
 	paths := msg.GetUpdateMask().GetPaths()

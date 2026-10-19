@@ -153,8 +153,6 @@ func (s *Tokens) Revoke(ctx context.Context, id string) error {
 
 // Touch sets last_used_at when the given time is later than the stored one,
 // so that racing writers never move it back.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter monotonic write guard, not a policy
 func (s *Tokens) Touch(ctx context.Context, id string, at time.Time) error {
 	if !validTokenID(id) {
 		return domain.ErrNotFound
@@ -194,8 +192,6 @@ func (s *Tokens) Touch(ctx context.Context, id string, at time.Time) error {
 // encodeToken refuses what the use case already refused (scopes, branch
 // prefixes): a malformed prefix must never reach the store, where it would
 // limit a token wrongly or not at all.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter schema encoding: it re-checks the syntax the use case enforced, it decides no policy
 func encodeToken(t domain.Token) ([]byte, error) {
 	if !validTokenID(t.ID) {
 		return nil, fmt.Errorf("%w: invalid id %q", domain.ErrInvalidToken, t.ID)
@@ -237,8 +233,6 @@ func encodeToken(t domain.Token) ([]byte, error) {
 
 // decodeToken drops scopes it does not know (written by a newer ermite): a
 // token never gains rights by being read by an older build.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter schema decoding, not a policy
 func decodeToken(val []byte) (domain.Token, error) {
 	var pb storagepb.Token
 	if err := proto.Unmarshal(val, &pb); err != nil {

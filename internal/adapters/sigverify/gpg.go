@@ -41,8 +41,6 @@ var _ ports.SignatureVerifier = GPG{}
 
 // Verify implements ports.SignatureVerifier. signedAt is ignored: see the time
 // policy of GPG.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter this is the OpenPGP protocol check the port delegates to the adapter; the trust and email rules stay in domain
 func (GPG) Verify(payload, signature []byte, committerEmail string, _ int64, keys []domain.TrustedKey) (v domain.CommitVerification) {
 	v = domain.CommitVerification{Format: domain.FormatGPG, Status: domain.StatusBadSignature}
 	defer func() { // a parser bug must not take the server down

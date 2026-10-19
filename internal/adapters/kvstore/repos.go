@@ -67,8 +67,6 @@ func (s *Store) List(ctx context.Context) ([]domain.Repo, error) {
 const repoMutationTries = 8
 
 // Mutate applies a retry-safe mutation under the version it read.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter optimistic concurrency is a storage concern
 func (s *Store) Mutate(ctx context.Context, name domain.RepoName, fn func(*domain.Repo) (bool, error)) (domain.Repo, error) {
 	key := repoKey(name)
 	for range repoMutationTries {
@@ -158,8 +156,6 @@ const deleteTries = 32
 // got in after the listing makes the batch fail and the keys are listed again,
 // and a write after the batch finds no repository: no key outlives the
 // repository to attach itself to a repository created again.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter chunked delete under a version precondition: a storage concern, no policy
 func (s *Store) Delete(ctx context.Context, name domain.RepoName) error {
 	for range deleteTries {
 		snap := s.db.Snapshot(ctx)

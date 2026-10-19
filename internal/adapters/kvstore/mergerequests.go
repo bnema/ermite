@@ -96,6 +96,8 @@ func indexKey(prefix string, repo domain.RepoName, branch string, n int64) []byt
 // when old is not known, as for a new request or a comment: the keys of mr are
 // then put or deleted, whatever they were). Deleting a key that is not there is
 // not an error.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter maintains source and target indexes to match the stored merge request open state and branch names
 func indexOpen(b *kv.Batch, old *domain.MergeRequest, mr domain.MergeRequest) {
 	if old != nil && old.IsOpen() {
 		if !mr.IsOpen() || old.Source != mr.Source {
@@ -204,8 +206,6 @@ func (m *MergeRequests) guardRepo(ctx context.Context, b *kv.Batch, repo domain.
 // rewrites it (see guardRepo), so that a repository deleted meanwhile is not
 // left with a stray merge request (a push recording pushed_at makes it retry). A missing repository gives
 // domain.ErrNotFound.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
 func (m *MergeRequests) Create(ctx context.Context, mr domain.MergeRequest) (domain.MergeRequest, error) {
 	err := createNumbered(ctx, m.db, m.locks, mr.Repo, func(b *kv.Batch, n int64) error {
 		mr.Number = n
@@ -451,7 +451,7 @@ func (m *MergeRequests) CountOpen(ctx context.Context, repo domain.RepoName) (in
 
 // Update replaces the merge request with a version precondition.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter port method name only
+//hexcheck:ignore suspicious-business-logic-in-adapter replaces a versioned record and maintains open-request indexes and the derived mergeability record
 func (m *MergeRequests) Update(ctx context.Context, mr domain.MergeRequest) error {
 	val, err := encodeMergeRequest(mr)
 	if err != nil {
@@ -564,8 +564,6 @@ func (m *MergeRequests) GetRead(ctx context.Context, repo domain.RepoName, numbe
 
 // SetRead writes mrread/<repo>/<number>. The repository must exist (see
 // guardRepo): domain.ErrNotFound otherwise.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter retries a write that lost a race with the repository key: a storage concern, no policy
 func (m *MergeRequests) SetRead(ctx context.Context, repo domain.RepoName, number int64, head domain.ObjectID) error {
 	if head.IsZero() {
 		return fmt.Errorf("%w: empty read position", domain.ErrInvalidObjectID)
@@ -748,7 +746,6 @@ func encodeMergeRequest(mr domain.MergeRequest) ([]byte, error) {
 	}), nil
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter schema decoding, not a policy
 func decodeMergeRequest(repo domain.RepoName, item kv.Item) (domain.MergeRequest, error) {
 	var pb storagepb.MergeRequest
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {
@@ -815,7 +812,6 @@ func encodeComment(c domain.Comment) ([]byte, error) {
 	}), nil
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter schema decoding, not a policy
 func decodeComment(item kv.Item) (domain.Comment, error) {
 	var pb storagepb.Comment
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {
@@ -931,8 +927,6 @@ func encodeSettings(s domain.RepoSettings) (*storagepb.RepoSettings, error) {
 
 // decodeSettings returns the defaults for a repository stored before merge
 // requests existed, and for settings left with no mode that this build knows.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter schema decoding with the documented defaults
 func decodeSettings(pb *storagepb.RepoSettings) domain.RepoSettings {
 	if pb == nil {
 		return domain.DefaultRepoSettings()

@@ -186,8 +186,6 @@ var preIssueScopes = []domain.Scope{
 // for, so it gets each of them if missing (this is no escalation). Every other
 // token is left as it is. The batch requires each token to be at the version it
 // was read at.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter one-time storage upgrade of the stored tokens: a storage concern, no policy
 func (s *Store) upgradeTokens(ctx context.Context, b *kv.Batch) error {
 	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte(tokenPrefix)) {
 		pb := &storagepb.Token{}

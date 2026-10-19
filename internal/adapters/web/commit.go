@@ -96,8 +96,6 @@ func diffLines(files []DiffFile) (lines int, invisible bool) {
 
 // commit shows a commit: its message, its totals, the changed files and the
 // diff against the first parent. ?view=split selects the split layout.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter builds the commit page from the use case results; no rule is decided here
 func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	sha := r.PathValue("sha")
 	if !isCommitID(sha) {

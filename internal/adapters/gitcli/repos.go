@@ -102,7 +102,7 @@ func (g *Git) Discard(_ context.Context, id ports.StagedID) error {
 
 // PurgeStaging removes everything under repos/.staging/.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter port method name only
+//hexcheck:ignore suspicious-business-logic-in-adapter removes staging leftovers from disk, tolerates a missing directory, and logs each removal
 func (g *Git) PurgeStaging(ctx context.Context) error {
 	entries, err := os.ReadDir(g.stagingDir())
 	if err != nil {
@@ -280,8 +280,6 @@ func (g *Git) DefaultBranch(ctx context.Context, name domain.RepoName) (string, 
 // HasBranch checks refs/heads/<branch> with `git for-each-ref` after
 // `git check-ref-format`, which rejects the glob characters for-each-ref
 // would otherwise interpret.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter port method name only
 func (g *Git) HasBranch(ctx context.Context, name domain.RepoName, branch string) (bool, error) {
 	dir, err := g.repoDir(name)
 	if err != nil {

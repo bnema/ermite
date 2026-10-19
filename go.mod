@@ -64,7 +64,7 @@ require (
 	github.com/bep/godartsass/v2 v2.5.0 // indirect
 	github.com/bep/golibsass v1.2.0 // indirect
 	github.com/bits-and-blooms/bitset v1.24.5 // indirect
-	github.com/bnema/hexcheck v0.3.1 // indirect
+	github.com/bnema/hexcheck v0.4.0 // indirect
 	github.com/brunoga/deep v1.3.1 // indirect
 	github.com/bufbuild/buf v1.73.0 // indirect
 	github.com/bufbuild/protocompile v0.14.2-0.20260910151042-7436f7c76201 // indirect

@@ -19,7 +19,7 @@ var _ ports.CommitObjectReader = (*Git)(nil)
 // that would take the total over domain.MaxCommitObjectsBytes (known from
 // `info`, before any content is read, so the stream stays consistent).
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter applies the limits of the port and of the domain
+//hexcheck:ignore suspicious-business-logic-in-adapter business rule for commit eligibility and byte budgets; pending move to domain/usecase
 func (g *Git) ReadCommitObjects(ctx context.Context, repo domain.RepoName, ids []domain.ObjectID) (map[domain.ObjectID][]byte, error) {
 	if len(ids) > ports.MaxCommitLimit {
 		return nil, fmt.Errorf("%w: %d commit objects asked, at most %d", domain.ErrInvalid, len(ids), ports.MaxCommitLimit)
