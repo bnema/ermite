@@ -127,7 +127,10 @@ window.ermiteMR = (() => {
     // Any navigation, loaded or not, makes the reveals still loading stale.
     const gen = ++revealGen;
     const target = () => {
-      if (/^c\d+$/.test(id) && $('#diffs')?.dataset.diff === 'split') {
+      // A page with both layouts says which shows in data-diff; a large diff
+      // rendered in one layout only says it in data-view.
+      const diffs = $('#diffs')?.dataset;
+      if (/^c\d+$/.test(id) && (diffs?.diff || diffs?.view) === 'split') {
         const split = document.getElementById(id + '-s');
         if (split) return split;
       }

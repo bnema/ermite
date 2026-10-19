@@ -141,7 +141,9 @@ func TestDeletedNoteRendering(t *testing.T) {
 
 func TestInlineNoteHeadingIDs(t *testing.T) {
 	t.Parallel()
-	text, err := domain.ParsePlainText("# H\n[jump](#h)")
+	// "S H" would get the id the split copy of "H" gets if the prefixes of the
+	// two copies overlapped.
+	text, err := domain.ParsePlainText("# H\n\n# S H\n\n[jump](#h)")
 	require.NoError(t, err)
 	s := &Server{cfg: Config{Now: time.Now}, md: newMarkdown()}
 	p := MRPage{Files: []DiffFile{{Key: "a", ID: "f1", Hunks: []DiffHunk{{Lines: []DiffLine{{Kind: "add", newN: 1}}}}}}}
@@ -152,8 +154,9 @@ func TestInlineNoteHeadingIDs(t *testing.T) {
 	require.NoError(t, commentView(notes[0], "").Render(context.Background(), &b))
 	require.NoError(t, commentView(notes[0], "-s").Render(context.Background(), &b))
 	html := b.String()
-	assert.Equal(t, 1, strings.Count(html, `id="c12-h"`))
-	assert.Equal(t, 1, strings.Count(html, `id="c12-s-h"`))
+	for _, id := range []string{"c12-h", "c12-s-h", "c12s-h", "c12s-s-h"} {
+		assert.Equal(t, 1, strings.Count(html, `id="`+id+`"`), id)
+	}
 	assert.Contains(t, html, `href="#c12-h"`)
-	assert.Contains(t, html, `href="#c12-s-h"`)
+	assert.Contains(t, html, `href="#c12s-h"`)
 }

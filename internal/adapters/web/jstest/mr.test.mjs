@@ -63,7 +63,7 @@ test('quote opens the thread reply and prefills and focuses its textarea', () =>
  assert.equal(focused,true);
 });
 
-test('reveal selects the split note, including after lazy loading', async () => {
+for (const dataset of [{diff:'split'}, {view:'split'}]) test(`reveal selects the split note (${JSON.stringify(dataset)}), including after lazy loading`, async () => {
  const saved = globalThis.document;
  const savedRAF = globalThis.requestAnimationFrame;
  let scrolled = '';
@@ -72,7 +72,7 @@ test('reveal selects the split note, including after lazy loading', async () => 
  const nodes = new Map([['c12',node('c12')],['c12-s',node('c12-s')]]);
  const ph = {dataset:{notes:'c12'}};
  globalThis.document = {
-   querySelector: sel => sel === '#diffs' ? {dataset:{diff:'split'}} : null,
+   querySelector: sel => sel === '#diffs' ? {dataset} : null,
    querySelectorAll: () => [ph],
    getElementById: id => nodes.get(id),
  };

@@ -813,7 +813,7 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 		if err != nil {
 			body = ""
 		}
-		bodySplit, err := s.md.renderNote([]byte(c.Text.String()), repo, head, "c"+cid+"-s-", exists)
+		bodySplit, err := s.md.renderNote([]byte(c.Text.String()), repo, head, "c"+cid+"s-", exists)
 		if err != nil {
 			bodySplit = ""
 		}
