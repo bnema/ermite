@@ -94,7 +94,10 @@ type Issue struct {
 	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// Last comment id handed out for this issue.
-	CommentSeq    int64 `protobuf:"varint,8,opt,name=comment_seq,json=commentSeq,proto3" json:"comment_seq,omitempty"`
+	CommentSeq int64 `protobuf:"varint,8,opt,name=comment_seq,json=commentSeq,proto3" json:"comment_seq,omitempty"`
+	// True for an issue approved from the public form: its text comes from
+	// an anonymous visitor and is rendered as untrusted.
+	External      bool `protobuf:"varint,9,opt,name=external,proto3" json:"external,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -183,6 +186,13 @@ func (x *Issue) GetCommentSeq() int64 {
 		return x.CommentSeq
 	}
 	return 0
+}
+
+func (x *Issue) GetExternal() bool {
+	if x != nil {
+		return x.External
+	}
+	return false
 }
 
 // IssueComment is stored under the key
@@ -430,7 +440,7 @@ var File_ermite_storage_issue_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_issue_proto_rawDesc = "" +
 	"\n" +
-	"\x1aermite/storage/issue.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaa\x02\n" +
+	"\x1aermite/storage/issue.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc6\x02\n" +
 	"\x05Issue\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x03R\x06number\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
@@ -442,7 +452,8 @@ const file_ermite_storage_issue_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1f\n" +
 	"\vcomment_seq\x18\b \x01(\x03R\n" +
-	"commentSeq\"\x85\x01\n" +
+	"commentSeq\x12\x1a\n" +
+	"\bexternal\x18\t \x01(\bR\bexternal\"\x85\x01\n" +
 	"\fIssueComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x16\n" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x12\n" +

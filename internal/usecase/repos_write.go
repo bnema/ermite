@@ -77,9 +77,6 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 		if err != nil {
 			return domain.Repo{}, err
 		}
-		if mode == domain.IssuesPublic {
-			return domain.Repo{}, fmt.Errorf("%w: public issues are not available yet", domain.ErrInvalid)
-		}
 		params.Issues = &mode
 	}
 	if params.Description != nil {

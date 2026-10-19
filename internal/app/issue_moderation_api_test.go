@@ -115,10 +115,10 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 	require.Len(t, ov.Pending, 1)
 	assert.Nil(t, ov.Pending[0].IPHash)
 
-	// The public mode is still refused.
+	// The public mode is accepted.
 	pub := domain.IssuesPublic
 	_, err = r.forge.Repos.Update(ctx, domain.Root(), r.name("pub"), ports.UpdateRepoParams{Issues: &pub})
-	assert.Error(t, err)
+	assert.NoError(t, err)
 }
 
 // clientlimit may not import the domain: its copies of the limits must match.

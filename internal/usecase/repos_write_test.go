@@ -247,13 +247,17 @@ func TestUpdateIssuesMode(t *testing.T) {
 	n := name(t, "tools")
 	priv := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, Settings: domain.DefaultRepoSettings()}
 
-	t.Run("public is refused before anything is written", func(t *testing.T) {
+	t.Run("public is stored and published", func(t *testing.T) {
 		t.Parallel()
-		f := newFixture(t) // no Update, no Publish
-		f.meta.EXPECT().Get(ctx, n).Return(priv, nil)
-		_, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Issues: ptr(domain.IssuesPublic)})
-		assert.ErrorIs(t, err, domain.ErrInvalid)
-		assert.Contains(t, err.Error(), "public issues are not available yet")
+		f := newFixture(t)
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Twice()
+		f.meta.EXPECT().Update(ctx, mock.MatchedBy(func(r domain.Repo) bool {
+			return r.Settings.Issues == domain.IssuesPublic
+		})).Return(nil)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
+		repo, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Issues: ptr(domain.IssuesPublic)})
+		require.NoError(t, err)
+		assert.Equal(t, domain.IssuesPublic, repo.Settings.Issues)
 	})
 
 	t.Run("an unknown mode is invalid", func(t *testing.T) {

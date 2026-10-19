@@ -33,6 +33,9 @@ message Issue {
   google.protobuf.Timestamp updated_at = 7;
   // Last comment id handed out for this issue.
   int64 comment_seq = 8;
+  // True for an issue approved from the public form: its text comes from
+  // an anonymous visitor and is rendered as untrusted.
+  bool external = 9;
 }
 
 // IssueComment is stored under the key

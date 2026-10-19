@@ -120,6 +120,7 @@ func TestPendingIssueApproveSharesNumbers(t *testing.T) {
 	assert.Equal(t, domain.IssueStateOpen, issue.State)
 	assert.Equal(t, "Alex", issue.Author)
 	assert.Equal(t, "named", issue.Title.String())
+	assert.True(t, issue.External, "an approved submission is external")
 
 	_, err = ps.Get(ctx, n, named.ID)
 	assert.ErrorIs(t, err, domain.ErrNotFound, "the pending record is gone")
@@ -129,6 +130,7 @@ func TestPendingIssueApproveSharesNumbers(t *testing.T) {
 	got, err := s.Issues().Get(ctx, n, 2)
 	require.NoError(t, err)
 	assert.Equal(t, issue.Title, got.Title)
+	assert.True(t, got.External, "the flag is stored")
 	open, err := s.Issues().ListOpen(ctx, n)
 	require.NoError(t, err)
 	require.Len(t, open, 1)
@@ -142,6 +144,7 @@ func TestPendingIssueApproveSharesNumbers(t *testing.T) {
 	next, err := s.Issues().Create(ctx, newIssue(t, n, "owner"))
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), next.Number, "issues and merge requests share the counter")
+	assert.False(t, next.External, "an issue of the owner is not external")
 }
 
 func TestPendingIssueApproveConcurrent(t *testing.T) {

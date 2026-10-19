@@ -333,6 +333,7 @@ func encodeIssue(issue domain.Issue) ([]byte, error) {
 		CreatedAt:  encodeTime(issue.CreatedAt),
 		UpdatedAt:  encodeTime(issue.UpdatedAt),
 		CommentSeq: issue.CommentSeq,
+		External:   issue.External,
 	}), nil
 }
 
@@ -362,6 +363,7 @@ func decodeIssue(repo domain.RepoName, item kv.Item) (domain.Issue, error) {
 		Author:    pb.GetAuthor(),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), UpdatedAt: decodeTime(pb.GetUpdatedAt()),
 		CommentSeq: pb.GetCommentSeq(),
+		External:   pb.GetExternal(),
 		Version:    item.Version,
 	}, nil
 }

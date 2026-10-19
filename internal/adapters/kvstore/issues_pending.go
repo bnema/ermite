@@ -238,7 +238,7 @@ func (s *PendingIssues) Approve(ctx context.Context, repo domain.RepoName, id do
 		}
 		issue := domain.Issue{
 			Repo: repo, Number: n, Title: p.Title, Body: p.Body, State: domain.IssueStateOpen,
-			Author: author, CreatedAt: p.CreatedAt, UpdatedAt: p.CreatedAt,
+			Author: author, CreatedAt: p.CreatedAt, UpdatedAt: p.CreatedAt, External: true,
 		}
 		val, err := encodeIssue(issue)
 		if err != nil {

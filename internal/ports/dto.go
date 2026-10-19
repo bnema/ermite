@@ -49,7 +49,7 @@ type UpdateRepoParams struct {
 	AllowedMergeModes *[]domain.MergeMode
 	// FailingChecksBlock replaces the setting of that name.
 	FailingChecksBlock *bool
-	// Issues replaces the issues mode. IssuesPublic is refused.
+	// Issues replaces the issues mode.
 	Issues *domain.IssuesMode
 }
 

@@ -72,6 +72,9 @@ type Issue struct {
 	UpdatedAt time.Time
 	// CommentSeq is the id of the last comment of the issue.
 	CommentSeq int64
+	// External is true for an issue approved from the public form: its text
+	// comes from an anonymous visitor and is rendered as untrusted.
+	External bool
 	// Version is set by the store on read: Update fails with ErrConflict when
 	// the stored issue changed since. Opaque to everyone else.
 	Version uint64
