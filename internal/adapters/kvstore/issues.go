@@ -178,39 +178,6 @@ func (i *Issues) List(ctx context.Context, repo domain.RepoName, params ports.Li
 	return page, nil
 }
 
-// ListOpen returns the open issues of the repository, highest number first,
-// through the index: only the open ones are read.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter reads the open issues through their index: a storage concern, no policy
-func (i *Issues) ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.Issue, error) {
-	var numbers []int64
-	for key := range i.db.Snapshot(ctx).Prefix(ctx, []byte(issueOpenRepoPrefix(repo))) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		n, err := strconv.ParseInt(string(key[strings.LastIndexByte(string(key), '/')+1:]), 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("index key %q: %w", key, err)
-		}
-		numbers = append(numbers, n)
-	}
-	slices.Sort(numbers)
-	var out []domain.Issue
-	for _, n := range slices.Backward(numbers) {
-		issue, err := i.Get(ctx, repo, n)
-		if errors.Is(err, domain.ErrNotFound) {
-			continue // closed or deleted since the snapshot of the index
-		}
-		if err != nil {
-			return nil, err
-		}
-		if issue.IsOpen() {
-			out = append(out, issue)
-		}
-	}
-	return out, nil
-}
-
 // ListOpenAll returns the open issues of every repository through the isopen/
 // index: the issues it names are read, no other.
 //
@@ -428,8 +395,6 @@ func encodeIssueState(s domain.IssueState) (storagepb.IssueState, error) {
 		return storagepb.IssueState_ISSUE_STATE_OPEN, nil
 	case domain.IssueStateClosed:
 		return storagepb.IssueState_ISSUE_STATE_CLOSED, nil
-	case domain.IssueStatePending:
-		return storagepb.IssueState_ISSUE_STATE_PENDING, nil
 	}
 	return 0, fmt.Errorf("%w: issue state %q", domain.ErrInvalid, s)
 }
@@ -441,7 +406,7 @@ func decodeIssueState(s storagepb.IssueState) (domain.IssueState, error) {
 	case storagepb.IssueState_ISSUE_STATE_CLOSED:
 		return domain.IssueStateClosed, nil
 	case storagepb.IssueState_ISSUE_STATE_PENDING:
-		return domain.IssueStatePending, nil
+		return "", errors.New("stored issue is pending: a numbered issue is open or closed")
 	}
 	return "", fmt.Errorf("unknown issue state %d", s)
 }

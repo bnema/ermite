@@ -4,12 +4,14 @@ package kvstore_test
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	storagepb "bnema.dev/ermite/gen/ermite/storage"
 	"bnema.dev/ermite/internal/adapters/kvstore"
@@ -189,15 +191,12 @@ func TestDeleteDropsTheIssuesOfTheRepository(t *testing.T) {
 	comments, err := is.ListComments(ctx, n, 1)
 	require.NoError(t, err)
 	assert.Empty(t, comments)
-	open, err := is.ListOpen(ctx, n)
-	require.NoError(t, err)
-	assert.Empty(t, open)
+	assert.Empty(t, openOf(t, is, n))
 	assert.Zero(t, countKeys(t, s, "is/proj/"))
 	assert.Zero(t, countKeys(t, s, "isc/proj/"))
 	assert.Zero(t, countKeys(t, s, "isopen/proj/"))
 
-	open, err = is.ListOpen(ctx, sib)
-	require.NoError(t, err)
+	open := openOf(t, is, sib)
 	assert.Len(t, open, 1, "a repository whose name starts like the deleted one keeps its issues")
 	comments, err = is.ListComments(ctx, sib, 1)
 	require.NoError(t, err)
@@ -219,8 +218,7 @@ func TestOpenIssueIndexFollowsUpdates(t *testing.T) {
 	require.NoError(t, err)
 
 	numbers := func() []int64 {
-		open, err := is.ListOpen(ctx, n)
-		require.NoError(t, err)
+		open := openOf(t, is, n)
 		var out []int64
 		for _, i := range open {
 			out = append(out, i.Number)
@@ -501,4 +499,34 @@ func TestIssueListPagesThroughManyIssues(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, page.Issues)
 	assert.Empty(t, page.NextPageToken)
+}
+
+// openOf lists the open issues of one repository through the isopen/ index.
+func openOf(t *testing.T, is *kvstore.Issues, repo domain.RepoName) []domain.Issue {
+	t.Helper()
+	all, err := is.ListOpenAll(context.Background())
+	require.NoError(t, err)
+	var out []domain.Issue
+	for _, i := range all {
+		if i.Repo == repo {
+			out = append(out, i)
+		}
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].Number > out[b].Number })
+	return out
+}
+
+func TestStoredPendingIssueStateIsCorrupt(t *testing.T) {
+	ctx := context.Background()
+	s, _, n := repoWithMRs(t)
+	is := s.Issues()
+	raw, err := proto.Marshal(&storagepb.Issue{Number: 1, Title: "x", State: storagepb.IssueState_ISSUE_STATE_PENDING})
+	require.NoError(t, err)
+	require.NoError(t, is.PutRawIssueForTest(ctx, n, 1, raw))
+	_, err = is.Get(ctx, n, 1)
+	assert.ErrorContains(t, err, "pending")
+	_, err = is.List(ctx, n, ports.ListIssuesParams{})
+	assert.ErrorContains(t, err, "pending")
+	_, err = is.List(ctx, n, ports.ListIssuesParams{State: domain.IssueStateOpen})
+	assert.ErrorContains(t, err, "pending")
 }

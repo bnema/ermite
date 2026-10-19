@@ -90,7 +90,7 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 		repos[m.Repo] = true
 		out.Counts.MergeRequests++
 		if filter.IsZero() || m.Repo == filter {
-			out.MergeRequests = append(out.MergeRequests, ports.InboxMergeRequest{MergeRequest: m})
+			out.MergeRequests = append(out.MergeRequests, m)
 		}
 	}
 	for _, i := range issues {
@@ -126,7 +126,7 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 		out.Counts.Pending = len(out.Pending)
 	}
 
-	slices.SortStableFunc(out.MergeRequests, func(a, b ports.InboxMergeRequest) int {
+	slices.SortStableFunc(out.MergeRequests, func(a, b domain.MergeRequest) int {
 		return compareRecent(a.UpdatedAt, a.CreatedAt, a.Repo, a.Number, b.UpdatedAt, b.CreatedAt, b.Repo, b.Number)
 	})
 	slices.SortStableFunc(out.Issues, func(a, b domain.Issue) int {

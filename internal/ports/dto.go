@@ -323,12 +323,6 @@ type LoginLink struct {
 	ExpiresAt time.Time
 }
 
-// InboxMergeRequest is an open merge request of the owner's inbox. The merge
-// request list of a repository shows no CI state, so none is carried here.
-type InboxMergeRequest struct {
-	domain.MergeRequest
-}
-
 // InboxCounts are the numbers of open items across every repository, whatever
 // the filter.
 type InboxCounts struct{ MergeRequests, Issues, Pending int }
@@ -340,7 +334,7 @@ type InboxOverview struct {
 	Counts InboxCounts
 	// MergeRequests and Issues are those of the filtered repository, or of
 	// every repository when there is no filter. Counts always counts all.
-	MergeRequests []InboxMergeRequest
+	MergeRequests []domain.MergeRequest
 	Issues        []domain.Issue
 	// Pending are the issues awaiting moderation, in every repository
 	// whatever the filter, oldest first. At most domain.MaxPendingIssues.

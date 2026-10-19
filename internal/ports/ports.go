@@ -258,9 +258,6 @@ type IssueStore interface {
 	// List returns a page of the issues of the repository in the given state
 	// (any when empty), highest number first.
 	List(ctx context.Context, repo domain.RepoName, params ListIssuesParams) (IssuePage, error)
-	// ListOpen returns the open issues of the repository, highest number
-	// first, reading only the open ones (through an index).
-	ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.Issue, error)
 	// ListOpenAll returns the open issues of every repository, reading only
 	// the open ones (through the same index). The order is unspecified.
 	ListOpenAll(ctx context.Context) ([]domain.Issue, error)

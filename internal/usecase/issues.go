@@ -188,9 +188,6 @@ func (i *Issues) AddComment(ctx context.Context, p domain.Principal, name domain
 	var c domain.IssueComment
 	saved := false
 	for range maxWriteRetries {
-		if issue.State == domain.IssueStatePending {
-			return domain.IssueComment{}, fmt.Errorf("%w: #%d is %s", domain.ErrPreconditionFailed, number, issue.State)
-		}
 		if issue.CommentSeq >= MaxCommentsPerIssue {
 			return domain.IssueComment{}, fmt.Errorf("%w: #%d already has %d comments", domain.ErrResourceExhausted, number, MaxCommentsPerIssue)
 		}

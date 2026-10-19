@@ -26,14 +26,12 @@ func issueStateToPB(s domain.IssueState) pb.IssueState {
 		return pb.IssueState_ISSUE_STATE_OPEN
 	case domain.IssueStateClosed:
 		return pb.IssueState_ISSUE_STATE_CLOSED
-	case domain.IssueStatePending:
-		return pb.IssueState_ISSUE_STATE_PENDING
 	}
 	return pb.IssueState_ISSUE_STATE_UNSPECIFIED
 }
 
 // issueStateFromPB maps the state filter of a listing; unspecified is the
-// empty state, which means every state. Pending is not listable.
+// empty state, which means every state. Pending is not listable (InvalidArgument): a domain Issue is never pending.
 func issueStateFromPB(s pb.IssueState) (domain.IssueState, error) {
 	switch s {
 	case pb.IssueState_ISSUE_STATE_UNSPECIFIED:

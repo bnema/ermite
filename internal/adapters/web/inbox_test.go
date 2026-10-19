@@ -29,9 +29,9 @@ func inboxOverview(t testing.TB) ports.InboxOverview {
 	require.NoError(t, err)
 	at := time.Now().Add(-2 * time.Hour)
 	ov := ports.InboxOverview{
-		MergeRequests: []ports.InboxMergeRequest{{MergeRequest: domain.MergeRequest{
+		MergeRequests: []domain.MergeRequest{{
 			Repo: repoName(t, "alpha"), Number: 4, Title: mrTitle, State: domain.MRStateOpen, UpdatedAt: at,
-		}}},
+		}},
 		Issues: []domain.Issue{{Repo: repoName(t, "beta"), Number: 7, Title: isTitle, State: domain.IssueStateOpen, UpdatedAt: at}},
 		Repos:  []domain.RepoName{repoName(t, "alpha"), repoName(t, "beta")},
 	}

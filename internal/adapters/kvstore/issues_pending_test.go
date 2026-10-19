@@ -131,8 +131,7 @@ func TestPendingIssueApproveSharesNumbers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, issue.Title, got.Title)
 	assert.True(t, got.External, "the flag is stored")
-	open, err := s.Issues().ListOpen(ctx, n)
-	require.NoError(t, err)
+	open := openOf(t, s.Issues(), n)
 	require.Len(t, open, 1)
 	assert.Equal(t, int64(2), open[0].Number)
 

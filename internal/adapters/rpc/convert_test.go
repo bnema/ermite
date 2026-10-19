@@ -375,3 +375,9 @@ func TestWatchEventToPBSkipsPendingRemoved(t *testing.T) {
 	t.Parallel()
 	assert.Nil(t, watchEventToPB(ports.WatchEvent{Event: domain.IssuePendingRemoved{}}))
 }
+
+func TestIssueStateToPBNeverPending(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_UNSPECIFIED, issueStateToPB(domain.IssueState("pending")))
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_OPEN, issueStateToPB(domain.IssueStateOpen))
+}

@@ -57,3 +57,11 @@ func (m *MergeRequests) DropMRRecordForTest(ctx context.Context, repo domain.Rep
 	_, err := m.db.Apply(ctx, &b)
 	return err
 }
+
+// PutRawIssueForTest stores value as the issue record, bypassing the codec.
+func (i *Issues) PutRawIssueForTest(ctx context.Context, repo domain.RepoName, n int64, value []byte) error {
+	var b kv.Batch
+	b.Put(issueKey(repo, n), value)
+	_, err := i.db.Apply(ctx, &b)
+	return err
+}

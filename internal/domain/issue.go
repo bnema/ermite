@@ -49,8 +49,6 @@ type IssueState string
 
 // Issue states.
 const (
-	// IssueStatePending awaits moderation. Nothing creates it yet.
-	IssueStatePending IssueState = "pending"
 	// IssueStateOpen is being worked on.
 	IssueStateOpen IssueState = "open"
 	// IssueStateClosed is done with; it can be reopened.
