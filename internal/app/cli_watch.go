@@ -56,7 +56,7 @@ const (
 
 // toJSONEvent maps an event; ok is false for kinds this client does not know,
 // which the contract says to ignore.
-func toJSONEvent(ev *ermite.Event) (jsonEvent, bool) {
+func toJSONEvent(ev *ermite.Event, baseURL string) (jsonEvent, bool) {
 	out := jsonEvent{ID: ev.GetId(), Time: jsonTime(ev.GetTime())}
 	switch k := ev.GetKind().(type) {
 	case *ermite.Event_RepoCreated:
@@ -74,13 +74,13 @@ func toJSONEvent(ev *ermite.Event) (jsonEvent, bool) {
 			out.RefUpdates = append(out.RefUpdates, jsonRefUpdate{Ref: u.GetRef(), OldID: u.GetOldId(), NewID: u.GetNewId()})
 		}
 	case *ermite.Event_MergeRequestOpened:
-		m := toJSONMergeRequest(k.MergeRequestOpened.GetMergeRequest())
+		m := toJSONMergeRequest(k.MergeRequestOpened.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMROpened, m.Repo, &m
 	case *ermite.Event_MergeRequestMerged:
-		m := toJSONMergeRequest(k.MergeRequestMerged.GetMergeRequest())
+		m := toJSONMergeRequest(k.MergeRequestMerged.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMRMerged, m.Repo, &m
 	case *ermite.Event_MergeRequestClosed:
-		m := toJSONMergeRequest(k.MergeRequestClosed.GetMergeRequest())
+		m := toJSONMergeRequest(k.MergeRequestClosed.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMRClosed, m.Repo, &m
 	case *ermite.Event_CommentAdded:
 		c := toJSONComment(k.CommentAdded.GetComment())
@@ -190,7 +190,7 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 			OnNotice: func(msg string) { noticef(cmd, "%s", clean(msg)) },
 		}
 		return c.Watch(ctx, opts, func(ev *ermite.Event) error {
-			e, ok := toJSONEvent(ev)
+			e, ok := toJSONEvent(ev, c.URL())
 			if !ok {
 				return nil
 			}

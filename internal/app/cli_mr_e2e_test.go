@@ -18,6 +18,7 @@ import (
 
 type mrOut struct {
 	Repo           string  `json:"repo"`
+	URL            string  `json:"url"`
 	Number         int64   `json:"number"`
 	Title          string  `json:"title"`
 	Description    string  `json:"description"`
@@ -32,7 +33,7 @@ type mrOut struct {
 	MergeMode      string  `json:"merge_mode"`
 }
 
-var mrKeys = []string{"author", "created_at", "description", "head_id", "merge_mode", "merged_commit_id", "number", "repo", "source_branch", "state", "target_branch", "title", "updated_at"}
+var mrKeys = []string{"author", "created_at", "description", "head_id", "merge_mode", "merged_commit_id", "number", "repo", "source_branch", "state", "target_branch", "title", "updated_at", "url"}
 
 type commentOut struct {
 	ID       string `json:"id"`

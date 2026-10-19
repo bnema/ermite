@@ -8,6 +8,10 @@ ermite mr show myrepo 1 --diff
 ermite mr merge myrepo 1 --head <commit> [--squash] [--delete-branch]
 ```
 
+`ermite mr create` and `ermite mr close` print a confirmation followed by the full
+merge request web URL on its own line. With `--json`, merge request objects
+(create, show, list, close and merge) include `url` alongside the other fields.
+
 - **Fast-forward** moves the target. **Squash** writes one commit signed by the server's SSH key.
 - The merge is refused when the branch moved since the reviewed `--head`, or when the target is not an ancestor of it.
 - With `failing_checks_block` on (default), the merge is refused while a check of the head failed or is still running.

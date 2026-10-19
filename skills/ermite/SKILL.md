@@ -49,6 +49,10 @@ On `changes_requested`: run `ermite mr show <repo> <n> --json`, read the open th
 
 An approval is stale after a push; changes requested stay until the reviewer gives a new verdict.
 
+`ermite mr create` and `ermite mr close` print a confirmation followed by the full
+merge request web URL on its own line. With `--json`, merge request objects
+(create, show, list, close and merge) include `url` alongside the other fields.
+
 Open one: `ermite mr create <repo> --source <branch> --title "..."`. After new pushes, `mr show --since-last-read` shows only what changed since `--mark-read`.
 
 ## Tokens

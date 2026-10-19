@@ -208,7 +208,7 @@ func TestNoteWatchEvents(t *testing.T) {
 		{Kind: &ermite.Event_CommentResolved{CommentResolved: &ermite.CommentResolved{Repo: "alpha", Number: 1, Comment: note}}},
 	}
 	for i, ev := range events {
-		got, ok := toJSONEvent(ev)
+		got, ok := toJSONEvent(ev, "https://git.example.org")
 		require.True(t, ok)
 		assert.Equal(t, []string{"comment_edited", "comment_deleted", "comment_resolved"}[i], got.Type)
 		assert.Equal(t, "alpha", got.Repo)

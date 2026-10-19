@@ -88,3 +88,7 @@ ermite completion bash|zsh|fish
 - `watch --json` prints one object per line.
 - Errors are one line on stderr (`ermite: …`) with exit status 1.
 - Shell completion completes repository names from the server.
+
+`ermite mr create` and `ermite mr close` print a confirmation followed by the full
+merge request web URL on its own line. With `--json`, merge request objects
+(create, show, list, close and merge) include `url` alongside the other fields.

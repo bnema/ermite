@@ -63,7 +63,11 @@ A token can never grant more than the token that creates it. `--repo` (repeatabl
 | `mr merge <repo> <n> --head <full-id> [--squash] [--delete-branch]` | `mr:merge` | refused if the branch moved or the target is not an ancestor of the head; `--delete-branch` deletes the source after the merge (refused for the default branch or a branch another open request uses; JSON adds `source_branch_deleted`) |
 | `mr close <repo> <n>` | `mr:write` | a closed merge request cannot be reopened |
 
-Merge request JSON: `repo`, `number`, `title`, `description`, `source_branch`, `target_branch`, `state`, `author` (token label), `created_at`, `updated_at`, `head_id`, `merged_commit_id`, `merge_mode`. `mr show --json` adds `commits`, `diff_base_id`, `stats`, `files` (with `hunks` under `--diff`: `kind`, `old_number`, `new_number`, `text`), `comments`, `verdicts`, `last_read_id`, `last_read_lost`.
+`ermite mr create` and `ermite mr close` print a confirmation followed by the full
+merge request web URL on its own line. With `--json`, merge request objects
+(create, show, list, close and merge) include `url` alongside the other fields.
+
+Merge request JSON: `repo`, `url` (full web URL), `number`, `title`, `description`, `source_branch`, `target_branch`, `state`, `author` (token label), `created_at`, `updated_at`, `head_id`, `merged_commit_id`, `merge_mode`. `mr show --json` adds `commits`, `diff_base_id`, `stats`, `files` (with `hunks` under `--diff`: `kind`, `old_number`, `new_number`, `text`), `comments`, `verdicts`, `last_read_id`, `last_read_lost`.
 
 Comment JSON: `id`, `author`, `path`, `line`, `side`, `commit_id`, `text`, `resolved`, `created_at`, `reply_to` (empty for roots), `start_line` (0 for a single line), `verdict` (`""`, `approve`, `changes_requested`), `edited_at`, `deleted`. Verdict JSON (latest per author): `author`, `verdict`, `comment_id`, `commit_id`, `created_at`, `stale` (an approval given on another head; changes requested are never stale). Verdicts are informative and never block a merge. In notes, `^N` refers to note N.
 
