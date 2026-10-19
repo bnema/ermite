@@ -114,7 +114,7 @@ func TestPendingIssueApproveSharesNumbers(t *testing.T) {
 	require.NoError(t, ps.Put(ctx, named))
 	require.NoError(t, ps.Put(ctx, anon))
 
-	issue, err := ps.Approve(ctx, n, named.ID)
+	issue, err := ps.Approve(ctx, n, named.ID, created.Add(time.Hour))
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), issue.Number)
 	assert.Equal(t, domain.IssueStateOpen, issue.State)
@@ -124,7 +124,7 @@ func TestPendingIssueApproveSharesNumbers(t *testing.T) {
 
 	_, err = ps.Get(ctx, n, named.ID)
 	assert.ErrorIs(t, err, domain.ErrNotFound, "the pending record is gone")
-	_, err = ps.Approve(ctx, n, named.ID)
+	_, err = ps.Approve(ctx, n, named.ID, created.Add(time.Hour))
 	assert.ErrorIs(t, err, domain.ErrNotFound, "approved once")
 
 	got, err := s.Issues().Get(ctx, n, 2)
@@ -136,7 +136,7 @@ func TestPendingIssueApproveSharesNumbers(t *testing.T) {
 	require.Len(t, open, 1)
 	assert.Equal(t, int64(2), open[0].Number)
 
-	second, err := ps.Approve(ctx, n, anon.ID)
+	second, err := ps.Approve(ctx, n, anon.ID, created.Add(time.Hour))
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), second.Number)
 	assert.Equal(t, "anonymous", second.Author)
@@ -165,7 +165,7 @@ func TestPendingIssueApproveConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			is, err := ps.Approve(ctx, n, id)
+			is, err := ps.Approve(ctx, n, id, created.Add(time.Hour))
 			if assert.NoError(t, err) {
 				mu.Lock()
 				seen[is.Number] = true
@@ -195,7 +195,7 @@ func TestPendingIssueApproveOnDeletedRepoFails(t *testing.T) {
 	require.NoError(t, ps.Put(ctx, p))
 	require.NoError(t, s.Delete(ctx, n))
 
-	_, err := ps.Approve(ctx, n, p.ID)
+	_, err := ps.Approve(ctx, n, p.ID, created.Add(time.Hour))
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 	assert.ErrorIs(t, ps.Put(ctx, newPending(t, n, "t", "", created)), domain.ErrNotFound)
 	assert.Zero(t, countKeys(t, s, "is/"))

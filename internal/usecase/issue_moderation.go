@@ -74,7 +74,8 @@ func (m *IssueModeration) Approve(ctx context.Context, p domain.Principal, repo 
 	if r.Settings.Issues.OrDefault() == domain.IssuesOff {
 		return domain.Issue{}, domain.ErrNotFound
 	}
-	issue, err := m.pending.Approve(ctx, repo, id)
+	now := m.clock.Now().UTC()
+	issue, err := m.pending.Approve(ctx, repo, id, now)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return domain.Issue{}, err
@@ -84,7 +85,6 @@ func (m *IssueModeration) Approve(ctx context.Context, p domain.Principal, repo 
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", repo.String()).Int64("number", issue.Number).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("pending issue approved")
-	now := m.clock.Now().UTC()
 	m.bus.Publish(ctx, domain.IssueOpened{Issue: issue, At: now, Visibility: r.Visibility, CreatedAt: r.CreatedAt})
 	return issue, nil
 }

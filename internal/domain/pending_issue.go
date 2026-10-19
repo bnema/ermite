@@ -85,6 +85,24 @@ func ParsePendingAuthor(s string) (string, error) {
 	return c, nil
 }
 
+// AnonymousAuthor labels an approved issue whose submitter gave no name.
+const AnonymousAuthor = "anonymous"
+
+// ApprovedIssue is the open, external issue a pending submission becomes when
+// the owner approves it at now. The store sets the number. A submitter who gave
+// no name is AnonymousAuthor; the issue keeps the submission time as its
+// creation time.
+func ApprovedIssue(p PendingIssue, now time.Time) Issue {
+	author := p.Author
+	if author == "" {
+		author = AnonymousAuthor
+	}
+	return Issue{
+		Repo: p.Repo, Title: p.Title, Body: p.Body, State: IssueStateOpen,
+		Author: author, CreatedAt: p.CreatedAt, UpdatedAt: now, External: true,
+	}
+}
+
 // PendingIssue is an issue submitted through the public form, awaiting the
 // owner's decision. It has no number: approval gives it one.
 type PendingIssue struct {

@@ -29,9 +29,6 @@ const (
 	banPrefix     = "isban/"  // isban/<hex of the hash>
 	issueKeyKey   = "meta/issuekey"
 	issueKeyLen   = 32
-
-	// anonymousAuthor labels an approved issue whose submitter gave no name.
-	anonymousAuthor = "anonymous"
 )
 
 // PendingIssues is the ermite-kv backed ports.PendingIssueStore. It shares the
@@ -219,9 +216,7 @@ func (s *PendingIssues) Count(ctx context.Context) (int, error) {
 // Approve numbers the pending issue from mrseq/<repo> (see createNumbered),
 // writes the open issue and its index key and deletes the pending record, in
 // one batch that requires the pending record to be unchanged.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter takes the next number under a version precondition: a storage concern, no policy
-func (s *PendingIssues) Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) (domain.Issue, error) {
+func (s *PendingIssues) Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID, now time.Time) (domain.Issue, error) {
 	var number int64
 	err := createNumbered(ctx, s.db, s.locks, repo, func(b *kv.Batch, n int64) error {
 		key := pendingKey(repo, id)
@@ -233,14 +228,8 @@ func (s *PendingIssues) Approve(ctx context.Context, repo domain.RepoName, id do
 		if err != nil {
 			return err
 		}
-		author := p.Author
-		if author == "" {
-			author = anonymousAuthor
-		}
-		issue := domain.Issue{
-			Repo: repo, Number: n, Title: p.Title, Body: p.Body, State: domain.IssueStateOpen,
-			Author: author, CreatedAt: p.CreatedAt, UpdatedAt: p.CreatedAt, External: true,
-		}
+		issue := domain.ApprovedIssue(p, now)
+		issue.Repo, issue.Number = repo, n
 		val, err := encodeIssue(issue)
 		if err != nil {
 			return err

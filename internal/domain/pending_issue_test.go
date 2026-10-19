@@ -66,3 +66,25 @@ func TestSubmissionLimitsAreTheDocumentedOnes(t *testing.T) {
 	assert.Equal(t, 200, domain.MaxPendingIssues)
 	assert.Equal(t, 30*24*time.Hour, domain.BanDuration)
 }
+
+func TestApprovedIssue(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	now := at.Add(time.Hour)
+	title, err := domain.ParseIssueTitle("t")
+	require.NoError(t, err)
+	repo, err := domain.ParseRepoName("proj")
+	require.NoError(t, err)
+
+	named := domain.ApprovedIssue(domain.PendingIssue{Repo: repo, Title: title, Author: "Alex", CreatedAt: at}, now)
+	assert.Equal(t, domain.IssueStateOpen, named.State)
+	assert.Equal(t, "Alex", named.Author)
+	assert.True(t, named.External)
+	assert.Equal(t, repo, named.Repo)
+	assert.Equal(t, at, named.CreatedAt)
+	assert.Equal(t, now, named.UpdatedAt)
+	assert.Zero(t, named.Number, "the store numbers it")
+
+	anon := domain.ApprovedIssue(domain.PendingIssue{Repo: repo, Title: title, CreatedAt: at}, now)
+	assert.Equal(t, domain.AnonymousAuthor, anon.Author)
+}

@@ -6,6 +6,7 @@ package mocks
 
 import (
 	"context"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -49,8 +50,8 @@ func (_m *PendingIssueStore) EXPECT() *PendingIssueStore_Expecter {
 }
 
 // Approve provides a mock function for the type PendingIssueStore
-func (_mock *PendingIssueStore) Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) (domain.Issue, error) {
-	ret := _mock.Called(ctx, repo, id)
+func (_mock *PendingIssueStore) Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID, now time.Time) (domain.Issue, error) {
+	ret := _mock.Called(ctx, repo, id, now)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Approve")
@@ -58,16 +59,16 @@ func (_mock *PendingIssueStore) Approve(ctx context.Context, repo domain.RepoNam
 
 	var r0 domain.Issue
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.PendingIssueID) (domain.Issue, error)); ok {
-		return returnFunc(ctx, repo, id)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.PendingIssueID, time.Time) (domain.Issue, error)); ok {
+		return returnFunc(ctx, repo, id, now)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.PendingIssueID) domain.Issue); ok {
-		r0 = returnFunc(ctx, repo, id)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.PendingIssueID, time.Time) domain.Issue); ok {
+		r0 = returnFunc(ctx, repo, id, now)
 	} else {
 		r0 = ret.Get(0).(domain.Issue)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.PendingIssueID) error); ok {
-		r1 = returnFunc(ctx, repo, id)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.PendingIssueID, time.Time) error); ok {
+		r1 = returnFunc(ctx, repo, id, now)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -83,11 +84,12 @@ type PendingIssueStore_Approve_Call struct {
 //   - ctx context.Context
 //   - repo domain.RepoName
 //   - id domain.PendingIssueID
-func (_e *PendingIssueStore_Expecter) Approve(ctx any, repo any, id any) *PendingIssueStore_Approve_Call {
-	return &PendingIssueStore_Approve_Call{Call: _e.mock.On("Approve", ctx, repo, id)}
+//   - now time.Time
+func (_e *PendingIssueStore_Expecter) Approve(ctx any, repo any, id any, now any) *PendingIssueStore_Approve_Call {
+	return &PendingIssueStore_Approve_Call{Call: _e.mock.On("Approve", ctx, repo, id, now)}
 }
 
-func (_c *PendingIssueStore_Approve_Call) Run(run func(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID)) *PendingIssueStore_Approve_Call {
+func (_c *PendingIssueStore_Approve_Call) Run(run func(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID, now time.Time)) *PendingIssueStore_Approve_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -101,10 +103,15 @@ func (_c *PendingIssueStore_Approve_Call) Run(run func(ctx context.Context, repo
 		if args[2] != nil {
 			arg2 = args[2].(domain.PendingIssueID)
 		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -115,7 +122,7 @@ func (_c *PendingIssueStore_Approve_Call) Return(issue domain.Issue, err error) 
 	return _c
 }
 
-func (_c *PendingIssueStore_Approve_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) (domain.Issue, error)) *PendingIssueStore_Approve_Call {
+func (_c *PendingIssueStore_Approve_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID, now time.Time) (domain.Issue, error)) *PendingIssueStore_Approve_Call {
 	_c.Call.Return(run)
 	return _c
 }

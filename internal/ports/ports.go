@@ -296,10 +296,10 @@ type PendingIssueStore interface {
 	// reading at most domain.MaxPendingIssues+1 of them.
 	Count(ctx context.Context) (int, error)
 	// Approve takes the next number of the repository (the one merge requests
-	// and issues share), writes the open issue (its author is the pending
-	// one, or "anonymous"), indexes it as open and deletes the pending record,
+	// and issues share), writes the issue domain.ApprovedIssue(pending, now)
+	// with that number, indexes it as open and deletes the pending record,
 	// in one batch. It returns domain.ErrNotFound when either is missing.
-	Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) (domain.Issue, error)
+	Approve(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID, now time.Time) (domain.Issue, error)
 	// Delete removes the pending issue, or returns domain.ErrNotFound.
 	Delete(ctx context.Context, repo domain.RepoName, id domain.PendingIssueID) error
 }

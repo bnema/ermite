@@ -87,7 +87,7 @@ func TestIssueModerationApprove(t *testing.T) {
 	t.Run("publishes IssueOpened after the commit", func(t *testing.T) {
 		u := newModerationUnit(t, domain.IssuesPublic)
 		issue := domain.Issue{Repo: u.repo.Name, Number: 7, State: domain.IssueStateOpen}
-		u.pending.EXPECT().Approve(mock.Anything, u.repo.Name, u.id).Return(issue, nil).Once()
+		u.pending.EXPECT().Approve(mock.Anything, u.repo.Name, u.id, now).Return(issue, nil).Once()
 		u.bus.EXPECT().Publish(mock.Anything, domain.IssueOpened{Issue: issue, At: now, Visibility: u.repo.Visibility, CreatedAt: u.repo.CreatedAt}).Once()
 		got, err := u.mod.Approve(ctx, domain.Owner(), u.repo.Name, u.id)
 		require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestIssueModerationApprove(t *testing.T) {
 	})
 	t.Run("no event when the store refuses", func(t *testing.T) {
 		u := newModerationUnit(t, domain.IssuesOwner)
-		u.pending.EXPECT().Approve(mock.Anything, u.repo.Name, u.id).Return(domain.Issue{}, domain.ErrNotFound).Once()
+		u.pending.EXPECT().Approve(mock.Anything, u.repo.Name, u.id, now).Return(domain.Issue{}, domain.ErrNotFound).Once()
 		_, err := u.mod.Approve(ctx, domain.Root(), u.repo.Name, u.id)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
