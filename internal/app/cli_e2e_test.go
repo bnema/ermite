@@ -191,7 +191,7 @@ type eventOut struct {
 	MergeRequest *mrOut `json:"merge_request"`
 }
 
-var repoKeys = []string{"created_at", "default_branch", "description", "failing_checks_block", "merge_modes", "name", "pushed_at", "topics", "visibility"}
+var repoKeys = []string{"created_at", "default_branch", "description", "failing_checks_block", "issues", "merge_modes", "name", "pushed_at", "topics", "visibility"}
 
 // AC6: the CLI end to end against a real forge.
 func TestAC6CLIEndToEnd(t *testing.T) {

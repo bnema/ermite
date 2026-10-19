@@ -113,6 +113,7 @@ var featureUse = map[string]string{
 	client.FeatureEventsResume:        "`ermite watch` uses to resume after a reconnection: events during an outage may be missed",
 	client.FeatureMergeRequests:       "`ermite mr` needs: the commands will fail on this server",
 	client.FeatureMergeDeleteBranch:   "`ermite mr merge --delete-branch` needs: the merge works but the branch is kept",
+	client.FeatureIssues:              "`ermite issue` needs: the commands will fail on this server, and `repo edit --issues` and `token create --scope issue:write` are refused",
 	client.FeatureSigningKey:          "`ermite signing-key show` needs: the command will fail on this server",
 	client.FeatureSession:             "`ermite web login` needs: the command will fail on this server",
 	client.FeatureTokenBranchPrefixes: "`ermite token create --branch-prefix` needs: the command is refused, and `token list` does not show the limits",

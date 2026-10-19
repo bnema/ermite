@@ -54,8 +54,8 @@ func TestRepoList(t *testing.T) {
 		{
 			name: "json", repos: both, args: []string{"repo", "list", "--json"}, wantJSON: true,
 			wantStdout: `[
-				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true},
-				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}
+				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true,"issues":"off"},
+				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false,"issues":"off"}
 			]`,
 		},
 		{
@@ -115,12 +115,13 @@ func TestRepoShow(t *testing.T) {
 		"created               2026-01-02 03:04\n"+
 		"last push             2026-03-04 05:06\n"+
 		"merge modes           fast-forward, squash\n"+
-		"failing checks block  true\n", res.stdout)
+		"failing checks block  true\n"+
+		"issues                off\n", res.stdout)
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.GetRepoRequest).GetRepo())
 
 	res = runCLI(t, envFor(url), "", "repo", "show", "alpha", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true}`, res.stdout)
+	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true,"issues":"off"}`, res.stdout)
 }
 
 func TestRepoShowNeedsOneArg(t *testing.T) {
@@ -176,7 +177,7 @@ func TestRepoCreateJSON(t *testing.T) {
 		return &ermite.CreateRepoResponse{Repo: repoBeta}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "create", "beta", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false}`, res.stdout)
+	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false,"issues":"off"}`, res.stdout)
 }
 
 func TestRepoEditMask(t *testing.T) {

@@ -95,6 +95,11 @@ func (c *Client) MergeRequests() ermiteconnect.MergeRequestServiceClient {
 	return ermiteconnect.NewMergeRequestServiceClient(c.http, c.base, c.opts...)
 }
 
+// Issues returns the IssueService client.
+func (c *Client) Issues() ermiteconnect.IssueServiceClient {
+	return ermiteconnect.NewIssueServiceClient(c.http, c.base, c.opts...)
+}
+
 // Secrets returns the SecretService client.
 func (c *Client) Secrets() ermiteconnect.SecretServiceClient {
 	return ermiteconnect.NewSecretServiceClient(c.http, c.base, c.opts...)

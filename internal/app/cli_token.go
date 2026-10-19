@@ -90,6 +90,8 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 			"  agent  repo:write, mr:write\n" +
 			"  runner runner:register (a CI runner host)\n" +
 			"  ci     repo:read\n" +
+			"Scopes are repo:read, repo:write, repo:admin, mr:write, mr:merge, issue:write and more; give\n" +
+			"issue:write (a server with the issues feature) to let a token write issues.\n" +
 			"A token cannot be more powerful than the one that creates it. --repo limits it to the named\n" +
 			"repositories (default: all). --expires takes 30d, 2w, 12h or a date; default: never.\n\n" +
 			"--branch-prefix limits the branches the token may write (default: all). Each prefix ends with /\n" +
@@ -131,6 +133,13 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 				return err
 			}
 		}
+		// Only an explicit --scope issue:write is checked: a preset such as cli
+		// grows with the contract and must keep working on an older server.
+		if explicitScope(scopes, ermite.Scope_SCOPE_ISSUE_WRITE) {
+			if err := requireIssues(env.ctx(cmd), c); err != nil {
+				return fmt.Errorf("%w (needed for the issue:write scope; nothing was created)", err)
+			}
+		}
 		res, err := c.Tokens().CreateToken(env.ctx(cmd), connect.NewRequest(req))
 		if err != nil {
 			return c.Describe(err)
@@ -141,6 +150,14 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 		return printCreatedToken(cmd, res.Msg, *asJSON)
 	}
 	return cmd
+}
+
+// explicitScope reports whether the --scope flags name want.
+func explicitScope(flags []string, want ermite.Scope) bool {
+	return slices.ContainsFunc(flags, func(f string) bool {
+		s, err := client.ParseScope(f)
+		return err == nil && s == want
+	})
 }
 
 // requireBranchPrefixes refuses, before anything is created, to ask a server

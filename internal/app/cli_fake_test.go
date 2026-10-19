@@ -31,6 +31,7 @@ type fakeAPI struct {
 	ermiteconnect.UnimplementedServerServiceHandler
 	ermiteconnect.UnimplementedEventServiceHandler
 	ermiteconnect.UnimplementedMergeRequestServiceHandler
+	ermiteconnect.UnimplementedIssueServiceHandler
 	ermiteconnect.UnimplementedSessionServiceHandler
 	ermiteconnect.UnimplementedRunServiceHandler
 	ermiteconnect.UnimplementedTrustedKeyServiceHandler
@@ -61,6 +62,12 @@ type fakeAPI struct {
 	closeMR       func(*ermite.CloseMergeRequestRequest) (*ermite.CloseMergeRequestResponse, error)
 	mergeMR       func(*ermite.MergeMergeRequestRequest) (*ermite.MergeMergeRequestResponse, error)
 	markRead      func(*ermite.MarkReadRequest) (*ermite.MarkReadResponse, error)
+	createIssue   func(*ermite.CreateIssueRequest) (*ermite.CreateIssueResponse, error)
+	listIssues    func(*ermite.ListIssuesRequest) (*ermite.ListIssuesResponse, error)
+	getIssue      func(*ermite.GetIssueRequest) (*ermite.GetIssueResponse, error)
+	addIssueCmt   func(*ermite.AddIssueCommentRequest) (*ermite.AddIssueCommentResponse, error)
+	closeIssue    func(*ermite.CloseIssueRequest) (*ermite.CloseIssueResponse, error)
+	reopenIssue   func(*ermite.ReopenIssueRequest) (*ermite.ReopenIssueResponse, error)
 	getSigningKey func(*ermite.GetSigningKeyRequest) (*ermite.GetSigningKeyResponse, error)
 
 	listPasskeys  func(*ermite.ListPasskeysRequest) (*ermite.ListPasskeysResponse, error)
@@ -148,6 +155,24 @@ func (f *fakeAPI) MergeMergeRequest(_ context.Context, r *connect.Request[ermite
 func (f *fakeAPI) MarkRead(_ context.Context, r *connect.Request[ermite.MarkReadRequest]) (*connect.Response[ermite.MarkReadResponse], error) {
 	return respond(f, "MarkRead", r, f.markRead)
 }
+func (f *fakeAPI) CreateIssue(_ context.Context, r *connect.Request[ermite.CreateIssueRequest]) (*connect.Response[ermite.CreateIssueResponse], error) {
+	return respond(f, "CreateIssue", r, f.createIssue)
+}
+func (f *fakeAPI) ListIssues(_ context.Context, r *connect.Request[ermite.ListIssuesRequest]) (*connect.Response[ermite.ListIssuesResponse], error) {
+	return respond(f, "ListIssues", r, f.listIssues)
+}
+func (f *fakeAPI) GetIssue(_ context.Context, r *connect.Request[ermite.GetIssueRequest]) (*connect.Response[ermite.GetIssueResponse], error) {
+	return respond(f, "GetIssue", r, f.getIssue)
+}
+func (f *fakeAPI) AddIssueComment(_ context.Context, r *connect.Request[ermite.AddIssueCommentRequest]) (*connect.Response[ermite.AddIssueCommentResponse], error) {
+	return respond(f, "AddIssueComment", r, f.addIssueCmt)
+}
+func (f *fakeAPI) CloseIssue(_ context.Context, r *connect.Request[ermite.CloseIssueRequest]) (*connect.Response[ermite.CloseIssueResponse], error) {
+	return respond(f, "CloseIssue", r, f.closeIssue)
+}
+func (f *fakeAPI) ReopenIssue(_ context.Context, r *connect.Request[ermite.ReopenIssueRequest]) (*connect.Response[ermite.ReopenIssueResponse], error) {
+	return respond(f, "ReopenIssue", r, f.reopenIssue)
+}
 func (f *fakeAPI) GetSigningKey(_ context.Context, r *connect.Request[ermite.GetSigningKeyRequest]) (*connect.Response[ermite.GetSigningKeyResponse], error) {
 	return respond(f, "GetSigningKey", r, f.getSigningKey)
 }
@@ -188,6 +213,8 @@ func (f *fakeAPI) serve(t *testing.T) string {
 	p, h = ermiteconnect.NewEventServiceHandler(f)
 	mount(p, h)
 	p, h = ermiteconnect.NewMergeRequestServiceHandler(f)
+	mount(p, h)
+	p, h = ermiteconnect.NewIssueServiceHandler(f)
 	mount(p, h)
 	p, h = ermiteconnect.NewSessionServiceHandler(f)
 	mount(p, h)
