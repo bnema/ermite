@@ -376,3 +376,25 @@ func TestIssueStateToPBNeverPending(t *testing.T) {
 	assert.Equal(t, pb.IssueState_ISSUE_STATE_UNSPECIFIED, issueStateToPB(domain.IssueState("pending")))
 	assert.Equal(t, pb.IssueState_ISSUE_STATE_OPEN, issueStateToPB(domain.IssueStateOpen))
 }
+
+func TestMergeRequestToPBMergeabilityOnlyWhileOpen(t *testing.T) {
+	t.Parallel()
+	repo := mustName(t, "proj")
+	for state, want := range map[domain.MRState]bool{domain.MRStateOpen: true, domain.MRStateMerged: false, domain.MRStateClosed: false} {
+		mr := domain.MergeRequest{Repo: repo, Number: 4, State: state}
+		got := mergeRequestToPB(mr).GetMergeability()
+		if !want {
+			assert.Nil(t, got, state)
+			continue
+		}
+		require.NotNil(t, got)
+		assert.Equal(t, pb.MergeabilityState_MERGEABILITY_STATE_CHECKING, got.GetState())
+		ev := watchEventToPB(ports.WatchEvent{ID: "e", Event: domain.MergeRequestOpened{MergeRequest: mr}})
+		assert.Equal(t, pb.MergeabilityState_MERGEABILITY_STATE_CHECKING, ev.GetMergeRequestOpened().GetMergeRequest().GetMergeability().GetState())
+	}
+	for _, ev := range []domain.Event{domain.MergeRequestMerged{MergeRequest: domain.MergeRequest{Repo: repo, State: domain.MRStateMerged}}, domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: repo, State: domain.MRStateClosed}}} {
+		got := watchEventToPB(ports.WatchEvent{ID: "e", Event: ev})
+		assert.Nil(t, got.GetMergeRequestMerged().GetMergeRequest().GetMergeability())
+		assert.Nil(t, got.GetMergeRequestClosed().GetMergeRequest().GetMergeability())
+	}
+}

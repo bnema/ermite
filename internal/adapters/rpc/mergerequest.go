@@ -115,8 +115,11 @@ func diffSideFromPB(s pb.DiffSide) (domain.DiffSide, error) {
 	return "", fmt.Errorf("%w: diff side %v", domain.ErrInvalid, s)
 }
 
+// mergeRequestToPB maps a request. An open one carries the CHECKING
+// mergeability: the server has no result in hand here; Get and List override
+// it with the computed one.
 func mergeRequestToPB(mr domain.MergeRequest) *pb.MergeRequest {
-	return &pb.MergeRequest{
+	out := &pb.MergeRequest{
 		Repo:           mr.Repo.String(),
 		Number:         mr.Number,
 		Title:          mr.Title.String(),
@@ -131,6 +134,10 @@ func mergeRequestToPB(mr domain.MergeRequest) *pb.MergeRequest {
 		MergedCommitId: mr.MergedCommitID.String(),
 		MergeMode:      mergeModeToPB(mr.MergeMode),
 	}
+	if mr.IsOpen() {
+		out.Mergeability = &pb.Mergeability{State: pb.MergeabilityState_MERGEABILITY_STATE_CHECKING}
+	}
+	return out
 }
 
 // mergeRequestWithMergeabilityToPB is mergeRequestToPB with the mergeability of

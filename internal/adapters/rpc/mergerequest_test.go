@@ -51,6 +51,7 @@ func TestMergeRequestServiceCreate(t *testing.T) {
 			require.NoError(t, err)
 			assert.EqualValues(t, 7, resp.Msg.GetMergeRequest().GetNumber())
 			assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN, resp.Msg.GetMergeRequest().GetState())
+			assert.Equal(t, pb.MergeabilityState_MERGEABILITY_STATE_CHECKING, resp.Msg.GetMergeRequest().GetMergeability().GetState())
 		})
 	}
 }
