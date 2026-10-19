@@ -95,6 +95,9 @@ func (s *Mergeability) Start() {
 		defer s.wg.Done()
 		for attempt := 0; attempt <= mergeabilityRetries; attempt++ {
 			repos, err := s.cfg.Meta.List(s.ctx)
+			if err != nil && s.ctx.Err() == nil {
+				ctxLog(s.ctx).Error().Err(err).Int("attempt", attempt+1).Msg("mergeability: list the repositories at startup")
+			}
 			if err == nil {
 				for _, repo := range repos {
 					s.markDirty(repo.Name)
@@ -223,10 +226,12 @@ func (s *Mergeability) reconcile(repo domain.RepoName) bool {
 		return true
 	}
 	if err != nil {
+		s.logFailure(ctx, err, "get the repository", repo, 0)
 		return false
 	}
 	mrs, err := s.cfg.Store.ListOpen(ctx, repo)
 	if err != nil {
+		s.logFailure(ctx, err, "list the open merge requests", repo, 0)
 		return false
 	}
 	ok := true
@@ -241,6 +246,7 @@ func (s *Mergeability) reconcile(repo domain.RepoName) bool {
 		}
 		prev, err := s.cfg.Store.GetMergeability(ctx, repo, mr.Number)
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			s.logFailure(ctx, err, "get the mergeability", repo, mr.Number)
 			ok = false
 			continue
 		}
@@ -249,6 +255,7 @@ func (s *Mergeability) reconcile(repo domain.RepoName) bool {
 		}
 		res, err := s.compute(ctx, repo, mr.Number, tip, head)
 		if err != nil {
+			s.logFailure(ctx, err, "compute the mergeability", repo, mr.Number)
 			ok = false
 			continue
 		}
@@ -258,6 +265,9 @@ func (s *Mergeability) reconcile(repo domain.RepoName) bool {
 			continue
 		}
 		if err != nil {
+			if !errors.Is(err, domain.ErrConflict) { // retried by the next pass
+				s.logFailure(ctx, err, "store the mergeability", repo, mr.Number)
+			}
 			ok = false
 			continue
 		}
@@ -267,6 +277,18 @@ func (s *Mergeability) reconcile(repo domain.RepoName) bool {
 		})
 	}
 	return ok
+}
+
+// logFailure logs an unexpected failure; cancellation is expected on Close.
+func (s *Mergeability) logFailure(ctx context.Context, err error, op string, repo domain.RepoName, number int64) {
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, domain.ErrNotFound) {
+		return
+	}
+	e := ctxLog(ctx).Error().Err(err).Str("repo", repo.String())
+	if number != 0 {
+		e = e.Int64("number", number)
+	}
+	e.Msg("mergeability: " + op)
 }
 
 // retryItem is one scheduled retry.
@@ -345,7 +367,7 @@ func (s *Mergeability) scheduler() {
 		case <-after:
 			after = nil
 		}
-		for _, k := range s.popDue(head.key) {
+		for _, k := range s.popDue(waited) {
 			if s.ctx.Err() != nil {
 				return
 			}
@@ -354,14 +376,16 @@ func (s *Mergeability) scheduler() {
 	}
 }
 
-// popDue removes the waited item and the ones due as well.
-func (s *Mergeability) popDue(waited domain.RepoName) []domain.RepoName {
+// popDue removes the waited item and the ones due as well. The waited item is
+// removed regardless of the clock only when both its key and its deadline
+// match: a replacement retry of the same repository is kept until it is due.
+func (s *Mergeability) popDue(waited retryItem) []domain.RepoName {
 	s.retryMu.Lock()
 	defer s.retryMu.Unlock()
 	now := s.cfg.Clock.Now()
 	var out []domain.RepoName
 	s.heap = slices.DeleteFunc(s.heap, func(it retryItem) bool {
-		if it.key != waited && it.due.After(now) {
+		if !(it.key == waited.key && it.due.Equal(waited.due)) && it.due.After(now) {
 			return false
 		}
 		out = append(out, it.key)

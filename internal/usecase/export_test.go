@@ -193,3 +193,27 @@ func (s *Mergeability) RetryAttempts() int {
 
 // ReconcileForTest runs a repository pass synchronously without workers.
 func (s *Mergeability) ReconcileForTest(repo domain.RepoName) bool { return s.reconcile(repo) }
+
+// RetryForTest schedules a retry of repo as a failed pass does.
+func (s *Mergeability) RetryForTest(repo domain.RepoName) { s.retry(repo) }
+
+// RetryDoneForTest forgets the retries of repo as a successful pass does.
+func (s *Mergeability) RetryDoneForTest(repo domain.RepoName) { s.retryDone(repo) }
+
+// RetryDueForTest gives the deadline of the retry scheduled for repo.
+func (s *Mergeability) RetryDueForTest(repo domain.RepoName) (time.Time, bool) {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	for _, it := range s.heap {
+		if it.key == repo {
+			return it.due, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// PopDueForTest is the scheduler step taken when the timer armed for the
+// retry (repo, due) fires. It gives the repositories it released.
+func (s *Mergeability) PopDueForTest(repo domain.RepoName, due time.Time) []domain.RepoName {
+	return s.popDue(retryItem{key: repo, due: due})
+}
