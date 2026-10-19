@@ -679,38 +679,40 @@ func encodeMergeability(m domain.Mergeability) ([]byte, error) {
 	})
 }
 
-//hexcheck:ignore suspicious-business-logic-in-adapter decodes the stored record into the domain value; no rule is applied
 func decodeMergeability(repo domain.RepoName, number int64, item kv.Item) (domain.Mergeability, error) {
 	var pb storagepb.Mergeability
 	if err := proto.Unmarshal(item.Value, &pb); err != nil {
 		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: %w", number, repo, err)
 	}
-	out := domain.Mergeability{
-		Repo: repo, Number: number,
+	state, ok := mergeabilityStates[pb.GetState()]
+	if !ok {
+		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: unknown state %d: %w", number, repo, pb.GetState(), domain.ErrNotFound)
+	}
+	target, err := domain.ParseObjectID(pb.GetTargetId())
+	if err != nil {
+		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: %w", number, repo, err)
+	}
+	head, err := domain.ParseObjectID(pb.GetHeadId())
+	if err != nil {
+		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: %w", number, repo, err)
+	}
+	return domain.Mergeability{
+		Repo: repo, Number: number, State: state,
+		TargetID: target, HeadID: head,
 		Behind: int(pb.GetBehind()), BehindCapped: pb.GetBehindCapped(),
 		ConflictPaths:          pb.GetConflictPaths(),
 		ConflictPathsTruncated: pb.GetConflictPathsTruncated(),
 		CheckedAt:              pb.GetCheckedAt().AsTime(),
 		Version:                item.Version,
-	}
-	switch pb.GetState() {
-	case storagepb.MergeabilityState_MERGEABILITY_STATE_UP_TO_DATE:
-		out.State = domain.MergeabilityUpToDate
-	case storagepb.MergeabilityState_MERGEABILITY_STATE_BEHIND:
-		out.State = domain.MergeabilityBehind
-	case storagepb.MergeabilityState_MERGEABILITY_STATE_CONFLICT:
-		out.State = domain.MergeabilityConflict
-	default:
-		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: unknown state %d: %w", number, repo, pb.GetState(), domain.ErrNotFound)
-	}
-	var err error
-	if out.TargetID, err = domain.ParseObjectID(pb.GetTargetId()); err != nil {
-		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: %w", number, repo, err)
-	}
-	if out.HeadID, err = domain.ParseObjectID(pb.GetHeadId()); err != nil {
-		return domain.Mergeability{}, fmt.Errorf("decode mergeability of %d in %q: %w", number, repo, err)
-	}
-	return out, nil
+	}, nil
+}
+
+// mergeabilityStates maps the stored states to the domain ones; CHECKING is
+// never stored.
+var mergeabilityStates = map[storagepb.MergeabilityState]domain.MergeabilityState{
+	storagepb.MergeabilityState_MERGEABILITY_STATE_UP_TO_DATE: domain.MergeabilityUpToDate,
+	storagepb.MergeabilityState_MERGEABILITY_STATE_BEHIND:     domain.MergeabilityBehind,
+	storagepb.MergeabilityState_MERGEABILITY_STATE_CONFLICT:   domain.MergeabilityConflict,
 }
 
 func encodeMergeRequest(mr domain.MergeRequest) ([]byte, error) {
