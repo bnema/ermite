@@ -31,6 +31,7 @@ func TestMergeDeletesTheSourceBranch(t *testing.T) {
 			require.NoError(t, err)
 			assert.True(t, res.SourceDeleted)
 			assert.Equal(t, domain.MRStateMerged, res.State)
+			r.mrs.Wait(r.ctx) // the deletion happens after Merge returned
 			_, err = r.git.BranchHead(r.ctx, r.repo, "feat")
 			assert.ErrorIs(t, err, domain.ErrNotFound, "the branch is gone")
 
@@ -192,8 +193,9 @@ func TestMergeKeepsASourceThatMovedAfterTheMerge(t *testing.T) {
 
 	res, err := mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, DeleteSource: true})
 	require.NoError(t, err, "the merge stands")
-	assert.False(t, res.SourceDeleted)
+	assert.True(t, res.SourceDeleted, "the deletion was requested")
 	assert.Equal(t, domain.MRStateMerged, res.State)
+	mrs.Wait(r.ctx)
 	assert.Equal(t, head, r.branchHead("main"))
 	assert.Equal(t, moved, r.branchHead("feat"), "the late commit is kept")
 	evs := r.drain()

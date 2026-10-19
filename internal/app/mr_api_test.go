@@ -375,7 +375,8 @@ func TestMergeDeletesTheSourceOverTheAPI(t *testing.T) {
 		Repo: "proj", Number: 1, HeadId: r.head, DeleteSourceBranch: true,
 	}))
 	require.NoError(t, err)
-	assert.True(t, res.Msg.GetSourceBranchDeleted())
+	assert.True(t, res.Msg.GetSourceBranchDeleted(), "requested")
+	r.forge.MergeRequests.Wait(r.ctx) // the deletion follows the response
 	assert.Empty(t, r.bareGit("proj", "for-each-ref", "refs/heads/feat"))
 
 	// The default branch as a source: refused before anything changes.

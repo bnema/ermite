@@ -394,6 +394,7 @@ func TestWebMergeRequestSquashCloseAndList(t *testing.T) {
 	assert.Contains(t, b.get("/proj/merge-requests/1", as(token)).body, `name="delete_branch" value="1"`, "the box offers to delete the branch")
 	res = b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"squash"}, "head_id": {head}, "delete_branch": {"1"}})
 	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	r.forge.MergeRequests.Wait(r.ctx) // the deletion follows the redirect
 	assert.Empty(t, r.bareGit("proj", "for-each-ref", "refs/heads/feat/search"), "the source branch is deleted")
 	merged := r.headOf("main")
 	assert.NotEqual(t, head, merged, "squash makes a new commit")
@@ -513,6 +514,7 @@ func TestWebMergeDeleteBranchBox(t *testing.T) {
 	one := b.get("/proj/merge-requests/1", as(token))
 	res := b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"fast-forward"}, "head_id": {formHead(t, one.body)}, "delete_branch": {"1"}})
 	require.Equal(t, http.StatusSeeOther, res.status, res.body)
+	r.forge.MergeRequests.Wait(r.ctx) // the deletion follows the redirect
 	assert.Empty(t, r.bareGit("proj", "for-each-ref", "refs/heads/feat/search"))
 	done := b.get("/proj/merge-requests/1", nil)
 	assert.Equal(t, 200, done.status, "the merged page reads without its branch")

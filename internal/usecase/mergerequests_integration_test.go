@@ -207,6 +207,7 @@ func (r *mrRig) open(branch string) domain.MergeRequest {
 // subscriber before Publish returns: whatever a returned call published is
 // already in the channel.
 func (r *mrRig) drain() []domain.Event {
+	r.mrs.Wait(r.ctx) // the events of a merge are published after it returned
 	var out []domain.Event
 	for {
 		select {
@@ -959,11 +960,10 @@ func TestMergeRefusals(t *testing.T) {
 		r.push("main")
 		tip := r.branchHead("main")
 
-		for _, mode := range []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash} {
-			_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, Mode: mode})
-			require.ErrorIs(t, err, domain.ErrPreconditionFailed, mode)
-			assert.Contains(t, err.Error(), "rebase", mode)
-		}
+		// Only a fast-forward needs the target to be an ancestor.
+		_, err := r.mrs.Merge(r.ctx, mrM, r.repo, mr.Number, ports.MergeParams{HeadID: head, Mode: domain.MergeModeFastForward})
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+		assert.Contains(t, err.Error(), "the target has moved: rebase and push again")
 		assert.Equal(t, tip, r.branchHead("main"))
 		d, err := r.mrs.Get(r.ctx, mrM, r.repo, mr.Number, ports.GetMergeRequestOptions{})
 		require.NoError(t, err)
@@ -1047,8 +1047,13 @@ func TestConcurrentMergesSerialize(t *testing.T) {
 	const n = 6
 	heads := map[int64]domain.ObjectID{}
 	for i := range n {
+		// Every branch writes the same file differently: once one is merged the
+		// others neither fast-forward nor merge cleanly.
 		b := fmt.Sprintf("f%d", i)
-		heads[r.openFeature(b).Number] = r.branchHead(b)
+		r.sh("checkout", "-q", "-B", b, "main")
+		r.commit(author, "same.txt", b+"\n", "add "+b)
+		r.push(b)
+		heads[r.open(b).Number] = r.branchHead(b)
 	}
 
 	type outcome struct {

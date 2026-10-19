@@ -60,6 +60,9 @@ type MergeRequests struct {
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
+
+	// after tracks the post-merge side effects running off the request path.
+	after sync.WaitGroup
 }
 
 var (
@@ -115,6 +118,21 @@ func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 func (m *MergeRequests) WithVerifier(v ports.CommitVerifier) *MergeRequests {
 	m.verifier = v
 	return m
+}
+
+// Wait waits for the post-merge side effects still running (source branch
+// deletion, events, CI and mergeability hooks), or for ctx to end. Call it
+// before closing what they use.
+func (m *MergeRequests) Wait(ctx context.Context) {
+	done := make(chan struct{})
+	go func() {
+		m.after.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }
 
 // lockRepo takes the merge lock of a repository, waiting until ctx ends. The
@@ -885,30 +903,76 @@ func (m *MergeRequests) MarkRead(ctx context.Context, p domain.Principal, name d
 // domain.ErrPreconditionFailed when the request is not open, the mode is not
 // allowed by the settings of the repository, the source branch no longer
 // points to the head ("branch moved, read again") or is gone, the target is
-// gone or is not an ancestor of the head (the author rebases and pushes
-// again), or the branch brings nothing. Checks come with CI (CI-1): there are
-// none yet, so the setting that lets failing checks block the merge has
-// nothing to act on.
+// gone, the mode's own condition does not hold (see below), or the branch
+// brings nothing. Checks come with CI (CI-1): there are none yet, so the
+// setting that lets failing checks block the merge has nothing to act on.
 //
-// A fast-forward moves the target to the head, with the old value as a
-// precondition. A squash writes one commit with the tree of the head, the
-// target as parent and the author and message of domain.NewSquashCommit,
-// signed by the instance key, and moves the target to it the same way.
+// The conditions are always checked with Git, under the lock, never from the
+// stored mergeability. A fast-forward needs the target to be an ancestor of
+// the head (the author rebases and pushes again) and moves the target to the
+// head, with the old value as a precondition. A squash and a merge commit need
+// the head to merge cleanly into the target (a behind branch is fine). A squash
+// writes one commit with the merged tree, the target as parent and the author
+// and message of domain.NewSquashCommit; a merge commit has two parents (the
+// target, then the head) and the message of domain.NewMergeCommit. Both are
+// signed by the instance key and move the target the same way.
 //
 // With DeleteSource the merge is also refused, before anything changes, when
 // the source is the default branch or the source or target of another open
-// request. After the merge the source is deleted if it still points to the
-// head; the PushEvent then carries the deletion too. A failed deletion is
-// logged and leaves the branch: the merge stands and SourceDeleted is false.
+// request.
+//
+// Only the merge itself runs before Merge returns, under the lock. Afterwards,
+// off the request path and without the lock: the deletion of the source branch
+// (if it still points to the head; a failure is logged and leaves the branch),
+// MergeRequestMerged then a PushEvent (which carries the deletion too), and
+// the CI and mergeability hooks. Wait waits for them. SourceDeleted therefore
+// only says that the deletion was requested.
 func (m *MergeRequests) Merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams) (ports.MergeResult, error) {
-	mr, deleted, err := m.merge(ctx, p, name, number, params)
-	return ports.MergeResult{MergeRequest: mr, SourceDeleted: deleted}, err
+	mr, err := m.merge(ctx, p, name, number, params)
+	return ports.MergeResult{MergeRequest: mr, SourceDeleted: err == nil && params.DeleteSource}, err
 }
 
-func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams) (domain.MergeRequest, bool, error) {
+// maxConflictPathsShown is how many conflicting paths a refusal lists.
+const maxConflictPathsShown = 5
+
+// checkMode is the authoritative per-mode check of a merge, done with Git. It
+// returns the tree a squash or merge commit gets (zero for a fast-forward).
+func (m *MergeRequests) checkMode(ctx context.Context, mr domain.MergeRequest, mode domain.MergeMode, tip, head domain.ObjectID) (domain.ObjectID, error) {
+	if mode == domain.MergeModeFastForward {
+		ok, err := m.git.IsAncestor(ctx, mr.Repo, tip, head)
+		if err != nil {
+			return domain.ObjectID{}, err
+		}
+		if !ok {
+			return domain.ObjectID{}, fmt.Errorf("%w: the target has moved: rebase and push again, or merge with squash or a merge commit", domain.ErrPreconditionFailed)
+		}
+		return domain.ObjectID{}, nil
+	}
+	res, err := m.git.MergeTree(ctx, mr.Repo, tip, head)
+	if err != nil {
+		return domain.ObjectID{}, err
+	}
+	if !res.Clean {
+		what := "no common history"
+		if len(res.ConflictPaths) > 0 {
+			shown := res.ConflictPaths
+			if len(shown) > maxConflictPathsShown {
+				shown = shown[:maxConflictPathsShown]
+			}
+			what = strings.Join(shown, ", ")
+			if len(shown) < len(res.ConflictPaths) || res.Truncated {
+				what += ", ..."
+			}
+		}
+		return domain.ObjectID{}, fmt.Errorf("%w: conflicts with %s: %s: rebase and push again", domain.ErrPreconditionFailed, mr.Target, what)
+	}
+	return res.Tree, nil
+}
+
+func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams) (domain.MergeRequest, error) {
 	repo, err := m.writable(ctx, p, name, domain.ScopeMRMerge)
 	if err != nil {
-		return domain.MergeRequest{}, false, err
+		return domain.MergeRequest{}, err
 	}
 	mode := params.Mode
 	if mode == "" {
@@ -922,114 +986,131 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 		v.Add("head_id", "is required")
 	}
 	if err := v.Err(); err != nil {
-		return domain.MergeRequest{}, false, err
+		return domain.MergeRequest{}, err
 	}
 
 	unlock, err := m.lockRepo(ctx, name)
 	if err != nil {
-		return domain.MergeRequest{}, false, err
+		return domain.MergeRequest{}, err
 	}
-	defer unlock()
+	var once sync.Once
+	release := func() { once.Do(unlock) }
+	defer release()
 
 	mr, err := m.store.Get(ctx, name, number)
 	if err != nil {
-		return domain.MergeRequest{}, false, err
+		return domain.MergeRequest{}, err
 	}
 	// A merge moves the target and may delete the source: a token limited to
 	// branch prefixes may do so only within them.
 	if !p.AllowsRef("refs/heads/" + mr.Target) {
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: this token may not write %s", domain.ErrForbidden, mr.Target)
+		return domain.MergeRequest{}, fmt.Errorf("%w: this token may not write %s", domain.ErrForbidden, mr.Target)
 	}
 	if params.DeleteSource && !p.AllowsRef("refs/heads/"+mr.Source) {
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: this token may not write %s", domain.ErrForbidden, mr.Source)
+		return domain.MergeRequest{}, fmt.Errorf("%w: this token may not write %s", domain.ErrForbidden, mr.Source)
 	}
 	if !mr.IsOpen() {
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
+		return domain.MergeRequest{}, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, mr.State)
 	}
 	if mr.IsDraft() {
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: !%d is a draft: mark it ready for review first", domain.ErrPreconditionFailed, number)
+		return domain.MergeRequest{}, fmt.Errorf("%w: !%d is a draft: mark it ready for review first", domain.ErrPreconditionFailed, number)
 	}
 	// The settings are read again under the lock: a change applies at once.
 	repo, err = m.meta.Get(ctx, name)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return domain.MergeRequest{}, false, err // deleted meanwhile
+			return domain.MergeRequest{}, err // deleted meanwhile
 		}
-		return domain.MergeRequest{}, false, fmt.Errorf("get repository %q: %w", name, err)
+		return domain.MergeRequest{}, fmt.Errorf("get repository %q: %w", name, err)
 	}
 	settings := repo.Settings
 	if settings.IsZero() {
 		settings = domain.DefaultRepoSettings()
 	}
 	if !settings.Allows(mode) {
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: the %s merge mode is not allowed in %s", domain.ErrPreconditionFailed, mode, name)
+		return domain.MergeRequest{}, fmt.Errorf("%w: the %s merge mode is not allowed in %s", domain.ErrPreconditionFailed, mode, name)
 	}
 
 	head, err := m.branchOrZero(ctx, name, mr.Source)
 	switch {
 	case err != nil:
-		return domain.MergeRequest{}, false, err
+		return domain.MergeRequest{}, err
 	case head.IsZero():
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: the source branch %q no longer exists", domain.ErrPreconditionFailed, mr.Source)
+		return domain.MergeRequest{}, fmt.Errorf("%w: the source branch %q no longer exists", domain.ErrPreconditionFailed, mr.Source)
 	case head != params.HeadID:
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: branch moved, read again: %q is at %s, not %s", domain.ErrPreconditionFailed, mr.Source, head, params.HeadID)
+		return domain.MergeRequest{}, fmt.Errorf("%w: branch moved, read again: %q is at %s, not %s", domain.ErrPreconditionFailed, mr.Source, head, params.HeadID)
 	}
 	tip, err := m.branchOrZero(ctx, name, mr.Target)
 	switch {
 	case err != nil:
-		return domain.MergeRequest{}, false, err
+		return domain.MergeRequest{}, err
 	case tip.IsZero():
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: the target branch %q no longer exists", domain.ErrPreconditionFailed, mr.Target)
+		return domain.MergeRequest{}, fmt.Errorf("%w: the target branch %q no longer exists", domain.ErrPreconditionFailed, mr.Target)
 	case tip == head:
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: nothing to merge, %q already is at %s", domain.ErrPreconditionFailed, mr.Target, head)
+		return domain.MergeRequest{}, fmt.Errorf("%w: nothing to merge, %q already is at %s", domain.ErrPreconditionFailed, mr.Target, head)
 	}
-	switch ok, err := m.git.IsAncestor(ctx, name, tip, head); {
-	case err != nil:
-		return domain.MergeRequest{}, false, err
-	case !ok:
-		return domain.MergeRequest{}, false, fmt.Errorf("%w: %q is not an ancestor of %q: rebase it on %q and push again", domain.ErrPreconditionFailed, mr.Target, mr.Source, mr.Target)
+	tree, err := m.checkMode(ctx, mr, mode, tip, head)
+	if err != nil {
+		return domain.MergeRequest{}, err
 	}
 	if settings.FailingChecksBlock {
 		if err := m.checksAllow(ctx, name, head); err != nil {
-			return domain.MergeRequest{}, false, err
+			return domain.MergeRequest{}, err
 		}
 	}
 	if params.DeleteSource {
 		if err := m.checkDeletable(ctx, name, mr); err != nil {
-			return domain.MergeRequest{}, false, err
+			return domain.MergeRequest{}, err
 		}
 	}
 
-	merged, err := m.moveTarget(ctx, mr, mode, tip, head, p)
+	merged, err := m.moveTarget(ctx, mr, mode, tip, head, tree, p)
 	if err != nil {
-		return domain.MergeRequest{}, false, err
+		return domain.MergeRequest{}, err
 	}
 	m.recordPush(ctx, name) // the target moved, whatever happens next
 	mr, err = m.markMerged(ctx, name, number, mode, tip, head, merged)
 	if err != nil {
-		return domain.MergeRequest{}, false, err
+		return domain.MergeRequest{}, err
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Str("repo", name.String()).Int64("number", number).Str("mode", mode.String()).
 		Str("target", mr.Target).Str("commit", merged.String()).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("merge request merged")
+
+	// The merge is done and recorded. The rest runs without the lock and after
+	// the caller got its answer.
+	release()
+	bg := context.WithoutCancel(ctx)
+	m.after.Add(1)
+	go func() {
+		defer m.after.Done()
+		m.afterMerge(bg, p, repo, mr, head, tip, merged, params.DeleteSource)
+	}()
+	return mr, nil
+}
+
+// afterMerge is what follows a merge off the request path: errors are logged,
+// never returned. mr is the merged request, tip the old target and merged the
+// new one.
+func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo domain.Repo, mr domain.MergeRequest, head, tip, merged domain.ObjectID, deleteSource bool) {
+	name := repo.Name
+	log := zerowrap.FromCtx(ctx)
 	updates := []domain.RefUpdate{{Old: tip.String(), New: merged.String(), Ref: "refs/heads/" + mr.Target}}
-	deleted := false
-	if params.DeleteSource {
-		// The merge is done and recorded: a failure here keeps the branch. Who
-		// pushed the source goes first (the branch is gone either way for a
+	if deleteSource {
+		// Who pushed the source goes first (the branch is gone either way for a
 		// schedule; a kept branch merely has no record: not trusted).
-		if err := recordRefTips(ctx, m.tips, name, []domain.RefUpdate{{Old: head.String(), New: domain.ZeroOID, Ref: "refs/heads/" + mr.Source}}, "", domain.CIPusher{}, false); err != nil {
+		del := domain.RefUpdate{Old: head.String(), New: domain.ZeroOID, Ref: "refs/heads/" + mr.Source}
+		if err := recordRefTips(ctx, m.tips, name, []domain.RefUpdate{del}, "", domain.CIPusher{}, false); err != nil {
 			log.Warn().Err(err).Str("repo", name.String()).Str("branch", mr.Source).Msg("the record of the source branch was kept")
 		}
-		switch err := m.git.DeleteBranch(context.WithoutCancel(ctx), name, mr.Source, head); {
+		switch err := m.git.DeleteBranch(ctx, name, mr.Source, head); {
 		case err != nil:
-			log.Warn().Err(err).Str("repo", name.String()).Int64("number", number).Str("branch", mr.Source).
+			log.Warn().Err(err).Str("repo", name.String()).Int64("number", mr.Number).Str("branch", mr.Source).
 				Msg("source branch kept after the merge")
 		default:
-			deleted = true
-			updates = append(updates, domain.RefUpdate{Old: head.String(), New: domain.ZeroOID, Ref: "refs/heads/" + mr.Source})
-			log.Info().Str("repo", name.String()).Int64("number", number).Str("branch", mr.Source).
+			updates = append(updates, del)
+			log.Info().Str("repo", name.String()).Int64("number", mr.Number).Str("branch", mr.Source).
 				Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("source branch deleted after the merge")
 		}
 	}
@@ -1039,19 +1120,18 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	m.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,
 	})
-	if m.mergeab != nil {
-		m.mergeab.OnClosed(ctx, mr)
-		m.mergeab.OnBranchesMoved(ctx, name, updates) // the other requests of the moved target
-	}
 	if m.pulls != nil {
-		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID, Merged: true}, p)
+		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: mr.Number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID, Merged: true}, p)
 	}
 	if m.ci != nil {
 		// GitHub runs the "push" workflows of a merge, with the owner as actor;
 		// the run is trusted with what the merging principal may read.
 		m.ci.OnMerge(ctx, name, updates, p)
 	}
-	return mr, deleted, nil
+	if m.mergeab != nil {
+		m.mergeab.OnClosed(ctx, mr)
+		m.mergeab.OnBranchesMoved(ctx, name, updates) // the other requests of the moved target
+	}
 }
 
 // WhileOpen implements ports.PullGate: fn runs under the merge lock, so a
@@ -1144,20 +1224,26 @@ func (m *MergeRequests) recordPush(ctx context.Context, name domain.RepoName) {
 }
 
 // moveTarget moves the target branch from tip to the head (fast-forward) or to
-// a new signed squash commit, and returns the new tip.
-func (m *MergeRequests) moveTarget(ctx context.Context, mr domain.MergeRequest, mode domain.MergeMode, tip, head domain.ObjectID, p domain.Principal) (domain.ObjectID, error) {
+// a new signed squash or merge commit with the given tree, and returns the new tip.
+func (m *MergeRequests) moveTarget(ctx context.Context, mr domain.MergeRequest, mode domain.MergeMode, tip, head, tree domain.ObjectID, p domain.Principal) (domain.ObjectID, error) {
 	newTip := head
-	if mode == domain.MergeModeSquash {
+	switch mode {
+	case domain.MergeModeMerge:
+		commit := domain.NewMergeCommit(mr, tree, tip, head, m.committer, m.clock.Now())
+		armored, err := m.signer.Sign(commit.Payload())
+		if err != nil {
+			return domain.ObjectID{}, fmt.Errorf("sign the merge commit of !%d in %q: %w", mr.Number, mr.Repo, err)
+		}
+		if newTip, err = m.git.WriteCommit(ctx, mr.Repo, commit.Signed(armored)); err != nil {
+			return domain.ObjectID{}, err
+		}
+	case domain.MergeModeSquash:
 		commits, more, err := m.git.ListRange(ctx, mr.Repo, tip, head, domain.MaxSquashCommits)
 		if err != nil {
 			return domain.ObjectID{}, err
 		}
 		if more {
 			return domain.ObjectID{}, fmt.Errorf("%w: the branch has more than %d commits to squash", domain.ErrPreconditionFailed, domain.MaxSquashCommits)
-		}
-		tree, err := m.git.CommitTree(ctx, mr.Repo, head)
-		if err != nil {
-			return domain.ObjectID{}, err
 		}
 		commit := domain.NewSquashCommit(mr, tree, tip, commits, m.committer, m.clock.Now())
 		armored, err := m.signer.Sign(commit.Payload())

@@ -519,6 +519,9 @@ func (f *forge) Close(ctx context.Context) {
 	if f.hooks != nil {
 		f.hooks.Close(ctx)
 	}
+	if f.MergeRequests != nil {
+		f.MergeRequests.Wait(ctx) // its side effects use CI and Mergeability
+	}
 	if f.CI != nil {
 		f.CI.Close(ctx)
 	}

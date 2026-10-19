@@ -976,10 +976,11 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			"required: give the full id of the head that `ermite mr show <repo> <number>` printed when you\n" +
 			"reviewed the change. If the branch moved since, the merge is refused: review again. Needs the\n" +
 			"mr:merge scope.\n\n" +
-			"--delete-branch deletes the source branch after the merge. The merge is refused when the branch\n" +
-			"is the default branch or used by another open merge request. If the deletion fails after the\n" +
-			"merge, the merge stands, the branch is kept and a warning goes to standard error." + jsonMRHelp +
-			"\n--json adds source_branch_deleted (true when the branch was deleted).",
+			"--delete-branch asks the server to delete the source branch right after the merge, in the\n" +
+			"background. The merge is refused when the branch is the default branch or used by another open\n" +
+			"merge request. If the deletion later fails (the branch moved, say), the merge stands and the\n" +
+			"branch is kept." + jsonMRHelp +
+			"\n--json adds source_branch_deleted (true when the deletion was requested: the server deletes the branch right after the merge).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
@@ -1014,17 +1015,13 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 		}
 		m := res.Msg.GetMergeRequest()
 		deleted := res.Msg.GetSourceBranchDeleted()
-		if deleteBranch && !deleted {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "ermite: warning: the branch %s was kept (it moved after the merge, or the server cannot delete it)\n",
-				clean(m.GetSourceBranch()))
-		}
 		if *asJSON {
 			return writeJSON(cmd.OutOrStdout(), jsonMerged{jsonMergeRequest: toJSONMergeRequest(m, c.URL()), SourceBranchDeleted: deleted})
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "merged %s!%d into %s (%s) at %s\n", clean(m.GetRepo()), m.GetNumber(),
 			clean(m.GetTargetBranch()), modeName(m.GetMergeMode()), shortID(m.GetMergedCommitId()))
 		if err == nil && deleted {
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted branch %s\n", clean(m.GetSourceBranch()))
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleting branch %s (done by the server after the merge)\n", clean(m.GetSourceBranch()))
 		}
 		return err
 	}

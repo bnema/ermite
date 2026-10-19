@@ -324,8 +324,9 @@ type MergeParams struct {
 // MergeResult is a merged request and what happened to its source branch.
 type MergeResult struct {
 	domain.MergeRequest
-	// SourceDeleted is true when DeleteSource was asked and the branch is
-	// gone.
+	// SourceDeleted is true when DeleteSource was asked: the deletion is
+	// requested, and done asynchronously after the merge returned (it is
+	// skipped if the branch moved meanwhile).
 	SourceDeleted bool
 }
 
