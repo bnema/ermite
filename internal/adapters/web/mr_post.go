@@ -31,7 +31,11 @@ const maxFormBytes = 128 << 10
 func (s *Server) form(w http.ResponseWriter, r *http.Request) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 	if err := r.ParseForm(); err != nil {
-		s.reject(r.Context(), w, r, http.StatusRequestEntityTooLarge, "form too large", "the form is larger than a merge request can be.", mrBase(r.PathValue("repo")))
+		back, what := mrBase(r.PathValue("repo")), "a merge request"
+		if strings.Contains(r.URL.Path, "/issues") {
+			back, what = issuesBase(r.PathValue("repo")), "an issue"
+		}
+		s.reject(r.Context(), w, r, http.StatusRequestEntityTooLarge, "form too large", "the form is larger than "+what+" can be.", back)
 		return false
 	}
 	return true

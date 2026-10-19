@@ -1,0 +1,187 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+// IssueList is the list of the issues of a repository, open or closed.
+templ IssueList(l Layout, p IssueListPage) {
+	@Shell(l, issueListRail(p)) {
+		if p.Live {
+			@LiveSlot("mr-notice")
+		}
+		<nav class="since" aria-label="State">
+			<a
+				href={ templ.SafeURL(p.OpenHref) }
+				if !p.Closed {
+					aria-current="page"
+				}
+			>open</a>
+			<a
+				href={ templ.SafeURL(p.ClosedHref) }
+				if p.Closed {
+					aria-current="page"
+				}
+			>closed</a>
+		</nav>
+		<div class="filter">
+			<label for="issue-filter" class="sr">filter</label>
+			<input
+				id="issue-filter"
+				type="search"
+				data-filter=".mrs tbody tr"
+				placeholder="Filter by title, author or state…"
+				autocomplete="off"
+				hx-on:input="ermite.filter(this)"
+			/>
+		</div>
+		<h2 class="rule-h">
+			if p.Closed {
+				<span>Closed</span>
+			} else {
+				<span>Open</span>
+			}
+			<span class="count">{ itoa(len(p.Rows)) }</span>
+		</h2>
+		@issueRows(p.Rows)
+		if len(p.Rows) == 0 {
+			if p.Closed {
+				<p class="lede dim">no closed issues.</p>
+			} else {
+				<p class="lede dim">no open issues.</p>
+			}
+		}
+		if p.Older != "" || p.Newest != "" {
+			<nav class="pager" aria-label="Pages">
+				if p.Newest != "" {
+					<a class="btn" href={ templ.SafeURL(p.Newest) }>← Newest</a>
+				} else {
+					<span class="btn" aria-disabled="true">← Newest</span>
+				}
+				if p.Older != "" {
+					<a class="btn" href={ templ.SafeURL(p.Older) } rel="next">Older →</a>
+				} else {
+					<span class="btn" aria-disabled="true">Older →</span>
+				}
+			</nav>
+		}
+	}
+}
+
+templ issueRows(rows []IssueRow) {
+	if len(rows) > 0 {
+		<table class="list mrs" aria-label="Issues">
+			<tbody data-rows>
+				for _, i := range rows {
+					<tr data-cursor?={ i.Cursor } data-state={ i.State }>
+						<td class="c-n mute">{ i.Number }</td>
+						<td class="c-state">{ i.State }</td>
+						<td class="c-subject"><a href={ templ.SafeURL(i.Href) }>{ i.Title }</a></td>
+						<td class="c-who dim">{ i.Author }</td>
+						<td class="c-when nowrap dim">
+							if i.WhenAt != "" {
+								<time datetime={ i.WhenAt } title={ i.WhenAt }>{ i.When }</time>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+templ issueListRail(p IssueListPage) {
+	<section aria-labelledby="r-states">
+		<h2 id="r-states">States</h2>
+		<dl class="kv">
+			<dt>open</dt>
+			<dd>being worked on</dd>
+			<dt>closed</dt>
+			<dd>done with, can be reopened</dd>
+		</dl>
+	</section>
+	if p.NewHref != "" {
+		<section aria-labelledby="r-new">
+			<h2 id="r-new">Open one</h2>
+			<a class="btn primary" href={ templ.SafeURL(p.NewHref) }>New issue</a>
+		</section>
+	}
+}
+
+// IssueNew is the form that opens an issue.
+templ IssueNew(l Layout, p IssueNewPage) {
+	@Shell(l, issueNewRail()) {
+		<header class="show mr-h">
+			<h1>New issue</h1>
+		</header>
+		<form class="cform create" method="post" action={ templ.SafeURL(p.Action) }>
+			<label for="issue-title">title</label>
+			<input id="issue-title" name="title" type="text" maxlength="120" required autocomplete="off" autofocus/>
+			<label for="issue-body">description</label>
+			<textarea id="issue-body" name="body" rows="8" maxlength="10000" placeholder="Markdown, optional"></textarea>
+			<div class="f-btns">
+				<button type="submit" class="btn primary">Create issue</button>
+				<a class="btn" href={ templ.SafeURL(p.Cancel) }>Cancel</a>
+			</div>
+		</form>
+	}
+}
+
+templ issueNewRail() {
+	<section aria-labelledby="r-about">
+		<h2 id="r-about">Issues</h2>
+		<p class="dim">issues share their numbers with the merge requests of the repository.</p>
+	</section>
+}
+
+// IssueShow is an issue: its facts, its body, its comments and, for the
+// owner, the form to comment and the button that closes or reopens it.
+templ IssueShow(l Layout, p IssuePage) {
+	@Shell(l, issueRail(p)) {
+		<header class="show mr-h">
+			<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
+			<dl class="kv show-kv">
+				<dt>state</dt>
+				<dd class="mr-state" data-state={ p.State }>{ p.State }</dd>
+				<dt>opened</dt>
+				<dd>
+					{ p.Opened.Name }
+					if p.Opened.WhenAt != "" {
+						{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
+					}
+				</dd>
+				if p.UpdatedAt != "" {
+					<dt>updated</dt>
+					<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
+				}
+			</dl>
+		</header>
+		if p.Live {
+			@LiveSlot("mr-notice")
+		}
+		if p.Desc != "" {
+			<article class="mr-desc prose" aria-label="description" hx-ignore>
+				@templ.Raw(string(p.Desc))
+			</article>
+		}
+		<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(len(p.Comments)) }</span></h2>
+		for _, c := range p.Comments {
+			@commentView(c, "")
+		}
+		if len(p.Comments) == 0 {
+			<p class="dim">no comments yet.</p>
+		}
+		if p.Form != nil {
+			@commentForm(*p.Form, "")
+		}
+	}
+}
+
+templ issueRail(p IssuePage) {
+	if p.Transition != nil {
+		<section aria-labelledby="r-act">
+			<h2 id="r-act">Issue</h2>
+			<form method="post" action={ templ.SafeURL(p.Transition.Action) }>
+				<button type="submit" class="btn">{ p.Transition.Label }</button>
+			</form>
+		</section>
+	}
+}

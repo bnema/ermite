@@ -555,11 +555,11 @@
 
   // 1. Keys.
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
-    s: 's', t: 't', c: 'c', r: 'r', m: 'm', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
+    s: 's', t: 't', c: 'c', r: 'r', m: 'm', i: 'i', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
     // the merge request page (mr.js): the merge menu, mark read
     M: 'merge', R: 'read' };
   // "g t" is the key "t": the tabs have one event each.
-  const goto = { h: 'gh', t: 't', c: 'c', r: 'r', m: 'm', g: 'top', f: 'gf' };
+  const goto = { h: 'gh', t: 't', c: 'c', r: 'r', m: 'm', i: 'i', g: 'top', f: 'gf' };
   let pending = 0;
   let pendingTimer = 0;
   addEventListener('keydown', (e) => {
