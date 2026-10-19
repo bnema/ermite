@@ -4,6 +4,7 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -459,4 +460,95 @@ func TestMergeabilityBoundsConflictPathsAndBehind(t *testing.T) {
 		assert.Equal(t, domain.MaxBehindCount, put.Behind)
 		assert.True(t, put.BehindCapped)
 	})
+}
+
+// A transient Git failure is retried once after the backoff.
+func TestMergeabilityRetriesATransientFailureWithBackoff(t *testing.T) {
+	repo := name(t, "proj")
+	head, tip := fakeOID(t, "a"), fakeOID(t, "b")
+	mr := domain.MergeRequest{Repo: repo, Number: 7, Source: "feat", Target: "main", State: domain.MRStateOpen}
+	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
+	store.EXPECT().Get(mock.Anything, repo, int64(7)).Return(mr, nil)
+	store.EXPECT().GetMergeability(mock.Anything, repo, int64(7)).Return(domain.Mergeability{}, domain.ErrNotFound)
+	store.EXPECT().PutMergeability(mock.Anything, mock.Anything).Return(nil)
+	meta.EXPECT().List(mock.Anything).Return(nil, nil)
+	meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, CreatedAt: now}, nil)
+	var fails atomic.Int32
+	git.EXPECT().BranchHead(mock.Anything, repo, "feat").RunAndReturn(
+		func(context.Context, domain.RepoName, string) (domain.ObjectID, error) {
+			if fails.Add(1) == 1 {
+				return domain.ObjectID{}, errors.New("transient")
+			}
+			return head, nil
+		})
+	git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(tip, nil)
+	git.EXPECT().IsAncestor(mock.Anything, repo, tip, head).Return(true, nil)
+	published := make(chan struct{})
+	bus.EXPECT().Publish(mock.Anything, mock.Anything).Run(func(context.Context, domain.Event) { close(published) }).Return().Once()
+
+	asked, fire := make(chan time.Duration, 4), make(chan time.Time)
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{},
+		After: func(d time.Duration) <-chan time.Time { asked <- d; return fire },
+	})
+	t.Cleanup(func() { svc.Close(context.Background()) })
+	svc.Start()
+	svc.OnOpened(context.Background(), mr)
+
+	assert.Equal(t, time.Second, <-asked)
+	select {
+	case <-published:
+		t.Fatal("published before the backoff elapsed")
+	default:
+	}
+	fire <- time.Time{}
+	<-published
+	assert.Empty(t, asked, "one retry was enough and only one was scheduled")
+}
+
+// Close stops a pending retry timer's goroutine.
+func TestMergeabilityCloseStopsPendingRetries(t *testing.T) {
+	repo := name(t, "proj")
+	mr := domain.MergeRequest{Repo: repo, Number: 7, Source: "feat", Target: "main", State: domain.MRStateOpen}
+	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
+	store.EXPECT().Get(mock.Anything, repo, int64(7)).Return(domain.MergeRequest{}, errors.New("db down"))
+	meta.EXPECT().List(mock.Anything).Return(nil, nil)
+	asked := make(chan time.Duration, 4)
+	svc := usecase.NewMergeability(context.Background(), usecase.MergeabilityConfig{
+		Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{},
+		After: func(d time.Duration) <-chan time.Time { asked <- d; return make(chan time.Time) },
+	})
+	svc.Start()
+	svc.OnOpened(context.Background(), mr)
+	<-asked
+	done := make(chan struct{})
+	go func() { svc.Close(context.Background()); close(done) }()
+	<-done // Close waits for the timer goroutine: it returns only if it stopped
+}
+
+// Workers are not stopped by the cancellation of the context given to the
+// constructor; Close stops them.
+func TestMergeabilityWorkersOutliveTheParentContext(t *testing.T) {
+	repo := name(t, "proj")
+	head, tip := fakeOID(t, "a"), fakeOID(t, "b")
+	mr := domain.MergeRequest{Repo: repo, Number: 7, Source: "feat", Target: "main", State: domain.MRStateOpen}
+	store, meta, git, bus := mocks.NewMergeRequestStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t), mocks.NewEventBus(t)
+	store.EXPECT().Get(mock.Anything, repo, int64(7)).Return(mr, nil)
+	store.EXPECT().GetMergeability(mock.Anything, repo, int64(7)).Return(domain.Mergeability{}, domain.ErrNotFound)
+	store.EXPECT().PutMergeability(mock.Anything, mock.Anything).Return(nil)
+	meta.EXPECT().List(mock.Anything).Return(nil, nil)
+	meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, CreatedAt: now}, nil)
+	git.EXPECT().BranchHead(mock.Anything, repo, "feat").Return(head, nil)
+	git.EXPECT().BranchHead(mock.Anything, repo, "main").Return(tip, nil)
+	git.EXPECT().IsAncestor(mock.Anything, repo, tip, head).Return(true, nil)
+	published := make(chan struct{})
+	bus.EXPECT().Publish(mock.Anything, mock.Anything).Run(func(context.Context, domain.Event) { close(published) }).Return().Once()
+
+	parent, cancel := context.WithCancel(context.Background())
+	svc := usecase.NewMergeability(parent, usecase.MergeabilityConfig{Store: store, Meta: meta, Git: git, Bus: bus, Clock: fixedClock{}})
+	svc.Start()
+	cancel()
+	svc.OnOpened(context.Background(), mr)
+	<-published // computed although the parent is cancelled
+	svc.Close(context.Background())
 }

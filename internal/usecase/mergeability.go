@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -20,7 +21,39 @@ const (
 	// race with a moving branch or a concurrent write; the check is then queued
 	// again.
 	mergeabilityAttempts = 3
+	// Failed checks (Git or store errors) are retried with an exponential
+	// backoff, up to mergeabilityRetries times, then dropped until the next
+	// trigger.
+	mergeabilityRetries      = 5
+	mergeabilityRetryInitial = time.Second
+	mergeabilityRetryMax     = time.Minute
 )
+
+// retryKind tells what a scheduled retry redoes.
+type retryKind int
+
+const (
+	retryCheck  retryKind = iota // one merge request
+	retryRescan                  // one repository
+	retryRescanAll
+)
+
+type retryKey struct {
+	kind retryKind
+	mk   mergeKey
+}
+
+// mergeBackoff is the delay before retry number attempt (1-based).
+func mergeBackoff(attempt int) time.Duration {
+	d := mergeabilityRetryInitial
+	for i := 1; i < attempt; i++ {
+		d *= 2
+		if d >= mergeabilityRetryMax {
+			return mergeabilityRetryMax
+		}
+	}
+	return d
+}
 
 // MergeabilityConfig holds what the mergeability service needs. Workers and
 // Queue default to 2 and 1024.
@@ -33,6 +66,9 @@ type MergeabilityConfig struct {
 	// Workers is the number of checks that run at once, Queue the number of
 	// checks that may wait; past it a repository is rescanned.
 	Workers, Queue int
+	// After returns a channel that fires after d; it defaults to time.After.
+	// Tests inject it to drive the retry backoff.
+	After func(d time.Duration) <-chan time.Time
 }
 
 // Mergeability keeps up to date whether each open merge request merges with
@@ -45,6 +81,11 @@ type Mergeability struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	retryMu  sync.Mutex
+	retries  map[retryKey]int // attempts so far of the scheduled or failing work
+	retrying map[retryKey]bool
+	closed   bool
 }
 
 // MergeabilityHook is what the merge request use cases need from the
@@ -67,8 +108,15 @@ func NewMergeability(ctx context.Context, cfg MergeabilityConfig) *Mergeability 
 	if cfg.Queue <= 0 {
 		cfg.Queue = defaultMergeabilityQueue
 	}
-	wctx, cancel := context.WithCancel(ctx)
-	return &Mergeability{cfg: cfg, q: newMergeQueue(cfg.Queue), ctx: wctx, cancel: cancel}
+	if cfg.After == nil {
+		cfg.After = time.After
+	}
+	// The workers outlive the cancellation of ctx: Close controls their life.
+	wctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	return &Mergeability{
+		cfg: cfg, q: newMergeQueue(cfg.Queue), ctx: wctx, cancel: cancel,
+		retries: map[retryKey]int{}, retrying: map[retryKey]bool{},
+	}
 }
 
 // Start rescans the open merge requests of every repository (the records may
@@ -83,16 +131,60 @@ func (s *Mergeability) Start() {
 
 // Close stops the workers and waits for them.
 func (s *Mergeability) Close(_ context.Context) {
+	s.retryMu.Lock()
+	s.closed = true
+	s.retryMu.Unlock()
 	s.cancel()
 	s.wg.Wait()
+}
+
+// retry schedules redo after a bounded exponential backoff. It is
+// deduplicated per key, gives up after mergeabilityRetries attempts and stops
+// on Close.
+func (s *Mergeability) retry(key retryKey, redo func()) {
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if s.closed || s.retrying[key] {
+		return
+	}
+	s.retries[key]++
+	n := s.retries[key]
+	if n > mergeabilityRetries {
+		delete(s.retries, key)
+		return
+	}
+	s.retrying[key] = true
+	after := s.cfg.After(mergeBackoff(n))
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-after:
+		}
+		s.retryMu.Lock()
+		delete(s.retrying, key)
+		s.retryMu.Unlock()
+		redo()
+	}()
+}
+
+// retryDone forgets the failures of key after a success.
+func (s *Mergeability) retryDone(key retryKey) {
+	s.retryMu.Lock()
+	delete(s.retries, key)
+	s.retryMu.Unlock()
 }
 
 func (s *Mergeability) rescanAll() {
 	repos, err := s.cfg.Meta.List(s.ctx)
 	if err != nil {
 		ctxLog(s.ctx).Error().Err(err).Msg("mergeability: list the repositories to rescan")
+		s.retry(retryKey{kind: retryRescanAll}, s.rescanAll)
 		return
 	}
+	s.retryDone(retryKey{kind: retryRescanAll})
 	for _, r := range repos {
 		n, err := s.cfg.Store.CountOpen(s.ctx, r.Name)
 		if err != nil {
@@ -118,6 +210,7 @@ func (s *Mergeability) OnClosed(ctx context.Context, mr domain.MergeRequest) {
 	if err := s.cfg.Store.DeleteMergeability(context.WithoutCancel(ctx), mr.Repo, mr.Number); err != nil {
 		ctxLog(ctx).Error().Err(err).Str("repo", mr.Repo.String()).Int64("number", mr.Number).Msg("mergeability: delete the record of a closed merge request")
 	}
+	s.q.takeSeen(mergeKey{mr.Repo, mr.Number})
 }
 
 // OnBranchesMoved implements ports.MergeabilityTrigger: the open merge
@@ -192,7 +285,12 @@ func (s *Mergeability) loop() {
 // meanwhile.
 func (s *Mergeability) runKey(k mergeKey) {
 	for {
-		s.check(k)
+		rk := retryKey{kind: retryCheck, mk: k}
+		if s.check(k) {
+			s.retryDone(rk)
+		} else {
+			s.retry(rk, func() { s.q.add(k) })
+		}
 		if !s.q.finish(k) || s.ctx.Err() != nil {
 			return
 		}
@@ -205,8 +303,10 @@ func (s *Mergeability) rescan(repo domain.RepoName) {
 	mrs, err := s.cfg.Store.ListOpen(s.ctx, repo)
 	if err != nil {
 		ctxLog(s.ctx).Error().Err(err).Str("repo", repo.String()).Msg("mergeability: list the open merge requests to rescan")
+		s.retry(retryKey{kind: retryRescan, mk: mergeKey{repo: repo}}, func() { s.q.markDirty(repo) })
 		return
 	}
+	s.retryDone(retryKey{kind: retryRescan, mk: mergeKey{repo: repo}})
 	for _, mr := range mrs {
 		if s.ctx.Err() != nil {
 			return
@@ -227,47 +327,58 @@ func (s *Mergeability) Check(repo domain.RepoName, number int64) {
 	}
 }
 
-// check brings the record of k up to date.
-func (s *Mergeability) check(k mergeKey) {
+// check brings the record of k up to date. It reports false when a transient
+// error (store, Git) dropped the work, which is then retried.
+func (s *Mergeability) check(k mergeKey) (done bool) {
 	ctx := s.ctx
 	log := ctxLog(ctx).With().Str("repo", k.repo.String()).Int64("number", k.number).Logger()
 	for range mergeabilityAttempts {
 		mr, err := s.cfg.Store.Get(ctx, k.repo, k.number)
 		if err != nil {
-			if !errors.Is(err, domain.ErrNotFound) && ctx.Err() == nil {
-				log.Error().Err(err).Msg("mergeability: read the merge request")
+			if errors.Is(err, domain.ErrNotFound) {
+				s.q.takeSeen(k)
+				return true
 			}
-			return
+			if ctx.Err() != nil {
+				return true
+			}
+			log.Error().Err(err).Msg("mergeability: read the merge request")
+			return false
 		}
 		if !mr.IsOpen() {
-			return // the store dropped the record when it left the open state
+			s.q.takeSeen(k)
+			return true // the store dropped the record when it left the open state
 		}
-		head, tip, ok := s.tips(ctx, mr)
+		head, tip, ok, transient := s.tips(ctx, mr)
 		if !ok {
-			return
+			return !transient
 		}
 		prev, err := s.cfg.Store.GetMergeability(ctx, k.repo, k.number)
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			if ctx.Err() != nil {
+				return true
+			}
 			log.Error().Err(err).Msg("mergeability: read the record")
-			return
+			return false
 		}
 		if prev.IsFor(tip, head) {
 			if s.q.takeSeen(k) {
 				s.publish(ctx, prev) // a reader saw "checking" before this record
 			}
-			return
+			return true
 		}
 		res, err := s.compute(ctx, k, tip, head)
 		if err != nil {
-			if ctx.Err() == nil {
-				log.Error().Err(err).Msg("mergeability: compute")
+			if ctx.Err() != nil {
+				return true
 			}
-			return
+			log.Error().Err(err).Msg("mergeability: compute")
+			return false
 		}
 		// The branches may have moved during the computation: the result is
 		// then for tips nobody asks about, and is dropped.
-		if h2, t2, ok := s.tips(ctx, mr); !ok {
-			return
+		if h2, t2, ok, transient := s.tips(ctx, mr); !ok {
+			return !transient
 		} else if h2 != head || t2 != tip {
 			continue
 		}
@@ -276,38 +387,49 @@ func (s *Mergeability) check(k mergeKey) {
 		case errors.Is(err, domain.ErrConflict):
 			continue
 		case errors.Is(err, domain.ErrNotFound):
-			return // closed meanwhile
+			s.q.takeSeen(k)
+			return true // closed meanwhile
 		case err != nil:
+			if ctx.Err() != nil {
+				return true
+			}
 			log.Error().Err(err).Msg("mergeability: store the record")
-			return
+			return false
 		}
 		seen := s.q.takeSeen(k)
 		if seen || prev.State == "" || changedMergeability(prev, res) {
 			s.publish(ctx, res)
 		}
-		return
+		return true
 	}
 	s.q.add(k) // kept losing races: try again later
+	return true
 }
 
 // tips reads the heads of the source and the target of mr. ok is false when
-// the check is over: a branch is gone (the record is deleted) or Git failed.
-func (s *Mergeability) tips(ctx context.Context, mr domain.MergeRequest) (head, tip domain.ObjectID, ok bool) {
+// the check is over: a branch is gone (the record is deleted) or Git failed,
+// which is transient.
+func (s *Mergeability) tips(ctx context.Context, mr domain.MergeRequest) (head, tip domain.ObjectID, ok, transient bool) {
 	head, herr := s.cfg.Git.BranchHead(ctx, mr.Repo, mr.Source)
 	tip, terr := s.cfg.Git.BranchHead(ctx, mr.Repo, mr.Target)
 	switch {
 	case errors.Is(herr, domain.ErrNotFound) || errors.Is(terr, domain.ErrNotFound):
-		if err := s.cfg.Store.DeleteMergeability(ctx, mr.Repo, mr.Number); err != nil && ctx.Err() == nil {
-			ctxLog(ctx).Error().Err(err).Str("repo", mr.Repo.String()).Int64("number", mr.Number).Msg("mergeability: delete the record of a merge request without a branch")
+		if err := s.cfg.Store.DeleteMergeability(ctx, mr.Repo, mr.Number); err != nil {
+			if ctx.Err() == nil {
+				ctxLog(ctx).Error().Err(err).Str("repo", mr.Repo.String()).Int64("number", mr.Number).Msg("mergeability: delete the record of a merge request without a branch")
+			}
+			transient = ctx.Err() == nil
 		}
-		return domain.ObjectID{}, domain.ObjectID{}, false
+		s.q.takeSeen(mergeKey{mr.Repo, mr.Number})
+		return domain.ObjectID{}, domain.ObjectID{}, false, transient
 	case herr != nil || terr != nil:
-		if ctx.Err() == nil {
-			ctxLog(ctx).Error().Err(errors.Join(herr, terr)).Str("repo", mr.Repo.String()).Int64("number", mr.Number).Msg("mergeability: read the branches")
+		if ctx.Err() != nil {
+			return domain.ObjectID{}, domain.ObjectID{}, false, false
 		}
-		return domain.ObjectID{}, domain.ObjectID{}, false
+		ctxLog(ctx).Error().Err(errors.Join(herr, terr)).Str("repo", mr.Repo.String()).Int64("number", mr.Number).Msg("mergeability: read the branches")
+		return domain.ObjectID{}, domain.ObjectID{}, false, true
 	}
-	return head, tip, true
+	return head, tip, true, false
 }
 
 // compute runs the Git reads that decide the state of head against tip.
