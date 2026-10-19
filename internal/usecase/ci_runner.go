@@ -281,7 +281,7 @@ func (c *CI) runnerJob(rs *runState, j domain.CIJob, sec jobSecrets, settings po
 		Permissions: domain.TokenPermissions(j.Permissions, rs.run.Trusted),
 		Cache:       c.cacheScope(rs.run, rs.src.GithubJSON),
 	}
-	if sec.idToken != "" && c.cfg.OIDC != nil {
+	if sec.idToken != "" && c.cfg.OIDC.Enabled() {
 		out.IDTokenURL, out.IDTokenRequestToken = c.cfg.OIDC.TokenURL(), sec.idToken
 	}
 	return out

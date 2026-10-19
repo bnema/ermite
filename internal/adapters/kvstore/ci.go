@@ -576,18 +576,14 @@ func stageSeq(b *kv.Batch, key []byte, item kv.Item, ok bool, last int64) {
 
 const createRunTries = 20
 
-// CreateRun takes the next run id and number and stores the draft.
+// CreateRun takes the next run id and number and stores the draft. The batch
+// requires the workflow's disabled key absent, so a disable that races the
+// caller's check fails the batch and is reported as domain.ErrWorkflowDisabled.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule rejecting runs of disabled workflows, atomically with creation; pending move to domain/usecase
+//hexcheck:ignore suspicious-business-logic-in-adapter atomic precondition only: maps a conflict on the disabled-workflow key to its domain error; the usecase decides
 func (c *CI) CreateRun(ctx context.Context, repo domain.RepoName, workflowPath string, build func(id, number int64) ports.CIRunDraft) (ports.CIRunDraft, error) {
 	offKey := workflowOffKey(repo, workflowPath)
 	for range createRunTries {
-		// A workflow the repository disabled gets no run, whatever started it.
-		// The key is also required absent by the batch below, so a disable that
-		// lands after this read fails the batch, and the next try sees it.
-		if _, off := c.db.Get(ctx, offKey); off {
-			return ports.CIRunDraft{}, domain.ErrWorkflowDisabled
-		}
 		lastID, idItem, idOK, err := c.readSeq(ctx, []byte(runSeqKey))
 		if err != nil {
 			return ports.CIRunDraft{}, err
@@ -620,6 +616,10 @@ func (c *CI) CreateRun(ctx context.Context, repo domain.RepoName, workflowPath s
 		}
 		v, err := c.db.Apply(ctx, &b)
 		if errors.Is(err, kv.ErrConflict) {
+			// Translate a failed disabled-workflow precondition; other conflicts retry.
+			if _, off := c.db.Get(ctx, offKey); off {
+				return ports.CIRunDraft{}, domain.ErrWorkflowDisabled
+			}
 			continue
 		}
 		if err != nil {

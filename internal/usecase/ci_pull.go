@@ -681,11 +681,19 @@ func (c *CI) whileOpen(ctx context.Context, repo domain.RepoName, number int64, 
 // createRun stores a run. The run of an open merge request is stored under the
 // gate, so that one that is closed meanwhile gets none (errPullClosed).
 func (c *CI) createRun(ctx context.Context, f pushFacts, repo domain.RepoName, wfPath string, build func(id, number int64) ports.CIRunDraft) (ports.CIRunDraft, error) {
+	off, err := c.workflowDisabled(ctx, repo, wfPath)
+	if err != nil {
+		return ports.CIRunDraft{}, err
+	}
+	if off {
+		return ports.CIRunDraft{}, domain.ErrWorkflowDisabled
+	}
+
 	if f.pull == nil || f.pull.action == domain.PullClosed {
 		return c.cfg.Store.CreateRun(ctx, repo, wfPath, build)
 	}
 	var d ports.CIRunDraft
-	err := c.whileOpen(ctx, repo, f.pull.mr.Number, func() error {
+	err = c.whileOpen(ctx, repo, f.pull.mr.Number, func() error {
 		var err error
 		d, err = c.cfg.Store.CreateRun(ctx, repo, wfPath, build)
 		return err

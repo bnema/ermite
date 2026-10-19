@@ -4,13 +4,11 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"slices"
 
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
-	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -19,7 +17,7 @@ type serverService struct {
 	version  string
 	features []string
 	key      ports.SigningKeyService
-	// oidc rotates the key of the ID tokens; nil when the server issues none.
+	// oidc manages key rotation, including the disabled-provider response.
 	oidc ports.OIDCKeyService
 }
 
@@ -42,16 +40,8 @@ func (s *serverService) GetSigningKey(context.Context, *connect.Request[pb.GetSi
 
 // RotateOIDCKey replaces the key that signs the ID tokens of CI jobs. Only the
 // owner may; failed_precondition when the server issues no ID tokens.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter business policy restricting disabled-OIDC rotation errors to owners; pending move to domain/usecase
 func (s *serverService) RotateOIDCKey(ctx context.Context, _ *connect.Request[pb.RotateOIDCKeyRequest]) (*connect.Response[pb.RotateOIDCKeyResponse], error) {
 	p := caller(ctx)
-	if s.oidc == nil {
-		if !p.HasOwnerRights() {
-			return nil, connectError(ctx, domain.ErrForbidden)
-		}
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the server issues no OIDC ID tokens: it has no ERMITE_SECRETS_KEY"))
-	}
 	r, err := s.oidc.RotateKey(ctx, p)
 	if err != nil {
 		return nil, connectError(ctx, err)

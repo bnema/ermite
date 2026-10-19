@@ -48,6 +48,50 @@ func (_m *OIDCKeyService) EXPECT() *OIDCKeyService_Expecter {
 	return &OIDCKeyService_Expecter{mock: &_m.Mock}
 }
 
+// Enabled provides a mock function for the type OIDCKeyService
+func (_mock *OIDCKeyService) Enabled() bool {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Enabled")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func() bool); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// OIDCKeyService_Enabled_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Enabled'
+type OIDCKeyService_Enabled_Call struct {
+	*mock.Call
+}
+
+// Enabled is a helper method to define mock.On call
+func (_e *OIDCKeyService_Expecter) Enabled() *OIDCKeyService_Enabled_Call {
+	return &OIDCKeyService_Enabled_Call{Call: _e.mock.On("Enabled")}
+}
+
+func (_c *OIDCKeyService_Enabled_Call) Run(run func()) *OIDCKeyService_Enabled_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *OIDCKeyService_Enabled_Call) Return(b bool) *OIDCKeyService_Enabled_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *OIDCKeyService_Enabled_Call) RunAndReturn(run func() bool) *OIDCKeyService_Enabled_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // RotateKey provides a mock function for the type OIDCKeyService
 func (_mock *OIDCKeyService) RotateKey(ctx context.Context, p domain.Principal) (ports.OIDCRotation, error) {
 	ret := _mock.Called(ctx, p)

@@ -569,3 +569,9 @@ func BoundBehind(n int) (count int, capped bool) {
 	}
 	return n, false
 }
+
+// IssuesEnabled reports whether the repository exposes issue streams and pages.
+func (s RepoSettings) IssuesEnabled() bool { return s.Issues.OrDefault() != IssuesOff }
+
+// ShowsIssueSubmissionReceipt reports whether submissions await public moderation.
+func (s RepoSettings) ShowsIssueSubmissionReceipt() bool { return s.Issues.OrDefault() == IssuesPublic }

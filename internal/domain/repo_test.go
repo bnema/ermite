@@ -60,3 +60,36 @@ func TestNormalizeTopics(t *testing.T) {
 		})
 	}
 }
+
+func TestRepoEffectiveSettings(t *testing.T) {
+	custom := domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeMode("squash")}, Issues: domain.IssuesPublic}
+	for _, tc := range []struct {
+		name           string
+		settings, want domain.RepoSettings
+	}{
+		{"unset", domain.RepoSettings{}, domain.DefaultRepoSettings()},
+		{"custom", custom, custom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := domain.Repo{Settings: tc.settings}
+			assert.Equal(t, tc.want, repo.EffectiveSettings())
+			assert.Equal(t, tc.settings, repo.Settings)
+		})
+	}
+}
+
+func TestRepoIssuePresentationRules(t *testing.T) {
+	for _, tc := range []struct {
+		mode             domain.IssuesMode
+		enabled, receipt bool
+	}{
+		{"", false, false}, {domain.IssuesOff, false, false},
+		{domain.IssuesOwner, true, false}, {domain.IssuesPublic, true, true},
+	} {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			s := domain.RepoSettings{Issues: tc.mode}
+			assert.Equal(t, tc.enabled, s.IssuesEnabled())
+			assert.Equal(t, tc.receipt, s.ShowsIssueSubmissionReceipt())
+		})
+	}
+}
