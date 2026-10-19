@@ -594,20 +594,11 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 		return domain.Comment{}, err
 	}
 	if params.ReplyTo != 0 {
-		root, err := m.store.GetComment(ctx, name, number, params.ReplyTo)
-		switch {
-		case errors.Is(err, domain.ErrNotFound):
-			v.Add("reply_to", fmt.Sprintf("no note ^%d", params.ReplyTo))
-		case err != nil:
-			return domain.Comment{}, err
-		case root.IsReply() || root.Deleted:
-			v.Add("reply_to", "must name a non-deleted root note")
-		default:
-			params.Path, params.Line, params.StartLine, params.Side = root.Path, root.Line, root.StartLine, root.Side
-		}
-		if err := v.Err(); err != nil {
+		root, err := m.replyRoot(ctx, name, number, params.ReplyTo)
+		if err != nil {
 			return domain.Comment{}, err
 		}
+		params.Path, params.Line, params.StartLine, params.Side = root.Path, root.Line, root.StartLine, root.Side
 	}
 	if params.Verdict != domain.VerdictNone {
 		if err := scopeAccess(p, repo, domain.ScopeMRReview); err != nil {
@@ -649,6 +640,12 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 		}
 		if !fresh.IsOpen() {
 			return domain.Comment{}, fmt.Errorf("%w: !%d is %s", domain.ErrPreconditionFailed, number, fresh.State)
+		}
+		if params.ReplyTo != 0 {
+			// The root may have been deleted by the write that got in between.
+			if _, rerr := m.replyRoot(ctx, name, number, params.ReplyTo); rerr != nil {
+				return domain.Comment{}, rerr
+			}
 		}
 		fresh.HeadID = mr.HeadID
 		mr = fresh
@@ -1240,4 +1237,23 @@ func (m *MergeRequests) changeComment(ctx context.Context, p domain.Principal, n
 		return c, nil
 	}
 	return domain.Comment{}, fmt.Errorf("save note %d of !%d in %q: %w", commentID, number, name, domain.ErrConflict)
+}
+
+// replyRoot returns the note a reply targets, or a violation when it is
+// missing, itself a reply, or deleted.
+func (m *MergeRequests) replyRoot(ctx context.Context, name domain.RepoName, number, id int64) (domain.Comment, error) {
+	root, err := m.store.GetComment(ctx, name, number, id)
+	var v domain.Violations
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		v.Add("reply_to", fmt.Sprintf("no note ^%d", id))
+	case err != nil:
+		return domain.Comment{}, err
+	case root.IsReply() || root.Deleted:
+		v.Add("reply_to", "must name a non-deleted root note")
+	}
+	if err := v.Err(); err != nil {
+		return domain.Comment{}, err
+	}
+	return root, nil
 }

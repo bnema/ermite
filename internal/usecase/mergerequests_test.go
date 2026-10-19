@@ -152,6 +152,19 @@ func TestNoteMutationRetries(t *testing.T) {
 	}
 }
 
+// A reply whose root is deleted while the save is retried is rejected.
+func TestAddNoteRechecksReplyRootOnConflict(t *testing.T) {
+	u := newMRUnit(t)
+	u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
+	u.git.EXPECT().BranchHead(mock.Anything, mock.Anything, mock.Anything).Return(domain.ObjectID{}, domain.ErrNotFound)
+	u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(domain.MergeRequest{State: domain.MRStateOpen}, nil).Twice()
+	u.store.EXPECT().GetComment(mock.Anything, u.repo.Name, int64(1), int64(1)).Return(domain.Comment{ID: 1}, nil).Once()
+	u.store.EXPECT().GetComment(mock.Anything, u.repo.Name, int64(1), int64(1)).Return(domain.Comment{ID: 1, Deleted: true}, nil).Once()
+	u.store.EXPECT().SaveComment(mock.Anything, mock.Anything, mock.Anything).Return(domain.ErrConflict).Once()
+	_, err := u.mrs.AddComment(context.Background(), domain.Root(), u.repo.Name, 1, ports.AddCommentParams{ReplyTo: 1, Text: "x"})
+	require.ErrorIs(t, err, domain.ErrInvalid)
+}
+
 func TestAddNoteValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
