@@ -141,12 +141,28 @@ type jsonComment struct {
 	Text      string  `json:"text"`
 	Resolved  bool    `json:"resolved"`
 	CreatedAt *string `json:"created_at"`
+	ReplyTo   string  `json:"reply_to"`
+	StartLine int32   `json:"start_line"`
+	Verdict   string  `json:"verdict"`
+	EditedAt  *string `json:"edited_at"`
+	Deleted   bool    `json:"deleted"`
+}
+
+func verdictName(v ermite.Verdict) string {
+	switch v {
+	case ermite.Verdict_VERDICT_APPROVE:
+		return "approve"
+	case ermite.Verdict_VERDICT_CHANGES_REQUESTED:
+		return "changes_requested"
+	}
+	return ""
 }
 
 func toJSONComment(c *ermite.Comment) jsonComment {
 	return jsonComment{
 		ID: c.GetId(), Author: c.GetAuthor(), Path: c.GetPath(), Line: c.GetLine(), Side: sideName(c.GetSide()),
 		CommitID: c.GetCommitId(), Text: c.GetText(), Resolved: c.GetResolved(), CreatedAt: jsonTime(c.GetCreatedAt()),
+		ReplyTo: c.GetReplyTo(), StartLine: c.GetStartLine(), Verdict: verdictName(c.GetVerdict()), EditedAt: jsonTime(c.GetEditedAt()), Deleted: c.GetDeleted(),
 	}
 }
 
@@ -160,7 +176,8 @@ unless merged).`
 const jsonCommentHelp = `
 JSON fields of a comment: id, author, path, line and side ("old" or "new"; empty path, line 0
 and empty side for a general comment), commit_id (the head when it was written), text,
-resolved, created_at.`
+resolved, created_at, reply_to (empty for roots), start_line (0 for a single line),
+verdict ("", "approve", "changes_requested"), edited_at (nullable RFC 3339), deleted.`
 
 func newMRCmd(env *cliEnv) *cobra.Command {
 	mr := &cobra.Command{
@@ -172,7 +189,7 @@ func newMRCmd(env *cliEnv) *cobra.Command {
 	}
 	mr.AddCommand(
 		newMRCreateCmd(env), newMRListCmd(env), newMRShowCmd(env), newMRCommentCmd(env),
-		newMRResolveCmd(env), newMRMergeCmd(env), newMRCloseCmd(env),
+		newMRResolveCmd(env), newMREditCommentCmd(env), newMRDeleteCommentCmd(env), newMRMergeCmd(env), newMRCloseCmd(env),
 	)
 	return mr
 }
@@ -385,15 +402,25 @@ type jsonCommit struct {
 // jsonMRDetail is the stable JSON shape of `mr show --json`.
 type jsonMRDetail struct {
 	jsonMergeRequest
-	Commits          []jsonCommit  `json:"commits"`
-	CommitsTruncated bool          `json:"commits_truncated"`
-	DiffBaseID       string        `json:"diff_base_id"`
-	Stats            jsonStats     `json:"stats"`
-	DiffTruncated    bool          `json:"diff_truncated"`
-	Files            []jsonFile    `json:"files"`
-	Comments         []jsonComment `json:"comments"`
-	LastReadID       string        `json:"last_read_id"`
-	LastReadLost     bool          `json:"last_read_lost"`
+	Commits          []jsonCommit        `json:"commits"`
+	CommitsTruncated bool                `json:"commits_truncated"`
+	DiffBaseID       string              `json:"diff_base_id"`
+	Stats            jsonStats           `json:"stats"`
+	DiffTruncated    bool                `json:"diff_truncated"`
+	Files            []jsonFile          `json:"files"`
+	Comments         []jsonComment       `json:"comments"`
+	Verdicts         []jsonAuthorVerdict `json:"verdicts"`
+	LastReadID       string              `json:"last_read_id"`
+	LastReadLost     bool                `json:"last_read_lost"`
+}
+
+type jsonAuthorVerdict struct {
+	Author    string  `json:"author"`
+	Verdict   string  `json:"verdict"`
+	CommentID string  `json:"comment_id"`
+	CommitID  string  `json:"commit_id"`
+	CreatedAt *string `json:"created_at"`
+	Stale     bool    `json:"stale"`
 }
 
 func fileStatusName(s ermite.FileStatus) string {
@@ -413,7 +440,7 @@ func toJSONDetail(d *ermite.GetMergeRequestResponse, withDiff bool) jsonMRDetail
 			FilesChanged: d.GetStats().GetFilesChanged(), Additions: d.GetStats().GetAdditions(), Deletions: d.GetStats().GetDeletions(),
 		},
 		DiffTruncated: d.GetDiff().GetTruncated(),
-		Files:         []jsonFile{}, Comments: []jsonComment{},
+		Files:         []jsonFile{}, Comments: []jsonComment{}, Verdicts: []jsonAuthorVerdict{},
 		LastReadID: d.GetLastReadId(), LastReadLost: d.GetLastReadLost(),
 	}
 	for _, c := range d.GetCommits() {
@@ -443,6 +470,9 @@ func toJSONDetail(d *ermite.GetMergeRequestResponse, withDiff bool) jsonMRDetail
 	for _, c := range d.GetComments() {
 		out.Comments = append(out.Comments, toJSONComment(c))
 	}
+	for _, v := range d.GetVerdicts() {
+		out.Verdicts = append(out.Verdicts, jsonAuthorVerdict{Author: v.GetAuthor(), Verdict: verdictName(v.GetVerdict()), CommentID: v.GetCommentId(), CommitID: v.GetCommitId(), CreatedAt: jsonTime(v.GetCreatedAt()), Stale: v.GetStale()})
+	}
 	return out
 }
 
@@ -461,7 +491,7 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 			"diff_base_id (the commit the diff starts from), stats (files_changed, additions, deletions),\n" +
 			"diff_truncated, files (old_path, new_path, status, additions, deletions, binary, truncated and,\n" +
 			"with --diff, hunks of lines with kind, old_number, new_number and text), comments, last_read_id\n" +
-			"and last_read_lost.",
+			"and last_read_lost; verdicts (author, verdict, comment_id, commit_id, created_at, stale).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
@@ -529,6 +559,20 @@ func printMRDetail(w io.Writer, d *ermite.GetMergeRequestResponse, withDiff, sin
 	if m.GetState() == ermite.MergeRequestState_MERGE_REQUEST_STATE_MERGED {
 		pairs = append(pairs, [2]string{"merged", orDash(m.GetMergedCommitId()) + " (" + modeName(m.GetMergeMode()) + ")"})
 	}
+	if len(d.GetVerdicts()) > 0 {
+		var verdicts []string
+		for _, v := range d.GetVerdicts() {
+			label := "changes requested"
+			if v.GetVerdict() == ermite.Verdict_VERDICT_APPROVE {
+				label = "approved"
+			}
+			if v.GetStale() {
+				label += " (stale)"
+			}
+			verdicts = append(verdicts, v.GetAuthor()+" "+label)
+		}
+		pairs = append(pairs, [2]string{"verdicts", strings.Join(verdicts, ", ")})
+	}
 	if err := fields(w, pairs); err != nil {
 		return err
 	}
@@ -561,16 +605,46 @@ func printMRDetail(w io.Writer, d *ermite.GetMergeRequestResponse, withDiff, sin
 	}
 
 	_, _ = fmt.Fprintf(w, "\ncomments (%d)\n", len(d.GetComments()))
-	for _, c := range d.GetComments() {
+	var ordered []*ermite.Comment
+	for _, root := range d.GetComments() {
+		if root.GetReplyTo() != "" {
+			continue
+		}
+		ordered = append(ordered, root)
+		for _, reply := range d.GetComments() {
+			if reply.GetReplyTo() == root.GetId() {
+				ordered = append(ordered, reply)
+			}
+		}
+	}
+	for _, c := range ordered {
 		where := "general"
 		if c.GetPath() != "" {
 			where = fmt.Sprintf("%s:%d (%s)", clean(c.GetPath()), c.GetLine(), sideName(c.GetSide()))
 		}
-		mark := ""
-		if c.GetResolved() {
-			mark = " [resolved]"
+		if c.GetStartLine() > 0 {
+			where = fmt.Sprintf("%s:lines %d-%d (%s)", clean(c.GetPath()), c.GetStartLine(), c.GetLine(), sideName(c.GetSide()))
 		}
-		_, _ = fmt.Fprintf(w, "  #%s %s, %s, %s%s\n%s\n", c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), where, mark, indentText(c.GetText()))
+		mark := ""
+		if c.GetEditedAt() != nil {
+			mark += " (edited)"
+		}
+		if c.GetDeleted() {
+			mark += " [deleted]"
+		}
+		if c.GetVerdict() != ermite.Verdict_VERDICT_UNSPECIFIED {
+			mark += " [" + verdictName(c.GetVerdict()) + "]"
+		}
+		if c.GetResolved() {
+			mark += " [resolved]"
+		}
+		prefix := "  "
+		body := indentText(c.GetText())
+		if c.GetReplyTo() != "" {
+			prefix += "    "
+			body = "    " + strings.ReplaceAll(body, "\n", "\n    ")
+		}
+		_, _ = fmt.Fprintf(w, "%s#%s %s, %s, %s%s\n%s\n", prefix, c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), where, mark, body)
 	}
 	if withDiff {
 		printDiff(w, d.GetDiff())
@@ -643,12 +717,14 @@ func printDiff(w io.Writer, d *ermite.Diff) {
 }
 
 func newMRCommentCmd(env *cliEnv) *cobra.Command {
-	var message, path, side string
-	var line int
+	var message, path, side, line, reply string
+	var approve, requestChanges bool
 	cmd := &cobra.Command{
 		Use:   "comment <repo> <number>",
 		Short: "Comment on a merge request",
-		Long: "Add a plain-text comment (at most 8000 characters, no control characters except line breaks).\n" +
+		Long: "Add a Markdown note (at most 8000 characters); ^N refers to a note in this merge request.\n" +
+			"--reply replies to a root note. --line accepts N or A-B. --approve and --request-changes\n" +
+			"set a verdict (needs mr:review) and allow an empty message.\n" +
 			"-m - reads it from standard input. Without --path it is a general comment. With --path, --line and\n" +
 			"--side (default new) it is attached to a line of the current diff: the path as in `mr show --diff`\n" +
 			"(the new path, the old one for a deleted file), the line number on the old or new side; a line\n" +
@@ -656,11 +732,18 @@ func newMRCommentCmd(env *cliEnv) *cobra.Command {
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
-	cmd.Flags().StringVarP(&message, "message", "m", "", "text of the comment, or - to read standard input (required)")
+	cmd.Flags().StringVarP(&message, "message", "m", "", "Markdown text, or - to read standard input (required unless setting a verdict)")
 	cmd.Flags().StringVar(&path, "path", "", "file the comment is attached to")
-	cmd.Flags().IntVar(&line, "line", 0, "1-based line number on --side")
+	cmd.Flags().StringVar(&line, "line", "", "1-based line N or range A-B on --side")
+	cmd.Flags().StringVar(&reply, "reply", "", "reply to root note (^12, #12 or 12)")
+	cmd.Flags().BoolVar(&approve, "approve", false, "approve (needs mr:review)")
+	cmd.Flags().BoolVar(&requestChanges, "request-changes", false, "request changes (needs mr:review)")
 	cmd.Flags().StringVar(&side, "side", sideNew, "side the line counts on: old or new")
-	_ = cmd.MarkFlagRequired("message")
+	cmd.MarkFlagsMutuallyExclusive("approve", "request-changes")
+	for _, flag := range []string{"path", "line", "side", "approve", "request-changes"} {
+		cmd.MarkFlagsMutuallyExclusive("reply", flag)
+	}
+	// A verdict note may omit its message.
 	_ = cmd.RegisterFlagCompletionFunc("side", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{sideOld, sideNew}, cobra.ShellCompDirectiveNoFileComp
 	})
@@ -674,17 +757,36 @@ func newMRCommentCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if !cmd.Flags().Changed("message") && !approve && !requestChanges {
+			return errors.New("--message is required unless --approve or --request-changes is set")
+		}
 		req := &ermite.AddCommentRequest{Repo: args[0], Number: n, Text: text}
+		if approve {
+			req.Verdict = ermite.Verdict_VERDICT_APPROVE
+		}
+		if requestChanges {
+			req.Verdict = ermite.Verdict_VERDICT_CHANGES_REQUESTED
+		}
+		if cmd.Flags().Changed("reply") {
+			req.ReplyTo, err = parseNoteID(reply)
+			if err != nil {
+				return err
+			}
+		}
 		switch {
 		case path != "":
-			if line < 1 {
+			if line == "" {
 				return errors.New("--line is required with --path: give the line number")
+			}
+			req.StartLine, req.Line, err = parseLineRange(line)
+			if err != nil {
+				return err
 			}
 			if req.Side, err = parseSide(side); err != nil {
 				return err
 			}
-			req.Path, req.Line = path, int32(line) //nolint:gosec // a line number typed by a person
-		case line != 0 || cmd.Flags().Changed("side"):
+			req.Path = path
+		case cmd.Flags().Changed("line") || cmd.Flags().Changed("side"):
 			return errors.New("--line and --side need --path")
 		}
 		c, err := env.client(cmd)
@@ -699,6 +801,100 @@ func newMRCommentCmd(env *cliEnv) *cobra.Command {
 			return writeJSON(cmd.OutOrStdout(), toJSONComment(res.Msg.GetComment()))
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "comment %s added to %s!%d\n", res.Msg.GetComment().GetId(), clean(args[0]), n)
+		return err
+	}
+	return cmd
+}
+
+func parseNoteID(s string) (string, error) {
+	id := strings.TrimLeft(strings.TrimSpace(s), "^#")
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil || n < 1 {
+		return "", fmt.Errorf("invalid note id %q: use ^12, #12 or 12", s)
+	}
+	return strconv.FormatInt(n, 10), nil
+}
+
+func parseLineRange(s string) (start, end int32, err error) {
+	parts := strings.Split(s, "-")
+	invalid := fmt.Errorf("invalid --line %q: use N or A-B with 1 <= A < B", s)
+	if len(parts) < 1 || len(parts) > 2 {
+		return 0, 0, invalid
+	}
+	parse := func(v string) (int32, error) {
+		n, e := strconv.ParseInt(v, 10, 32)
+		if e != nil || n < 1 {
+			return 0, invalid
+		}
+		return int32(n), nil
+	}
+	end, err = parse(parts[len(parts)-1])
+	if err != nil {
+		return 0, 0, err
+	}
+	if len(parts) == 2 {
+		start, err = parse(parts[0])
+		if err != nil || start >= end {
+			return 0, 0, invalid
+		}
+	}
+	return start, end, nil
+}
+
+func newMREditCommentCmd(env *cliEnv) *cobra.Command   { return newMRNoteMutationCmd(env, true) }
+func newMRDeleteCommentCmd(env *cliEnv) *cobra.Command { return newMRNoteMutationCmd(env, false) }
+
+func newMRNoteMutationCmd(env *cliEnv, edit bool) *cobra.Command {
+	verb := "delete"
+	if edit {
+		verb = "edit"
+	}
+	var message string
+	cmd := &cobra.Command{Use: verb + "-comment <repo> <number> <comment-id>", Short: verb + " your own merge request note", Long: "Edit or delete your own note on an open merge request. Needs mr:write. Verdicts are unchanged." + jsonCommentHelp, Args: cobra.ExactArgs(3), ValidArgsFunction: completeMRRepoThenNumber(env)}
+	if edit {
+		cmd.Flags().StringVarP(&message, "message", "m", "", "Markdown text, or - to read standard input (required)")
+		_ = cmd.MarkFlagRequired("message")
+	}
+	asJSON := addJSONFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		n, err := parseNumber(args[1])
+		if err != nil {
+			return err
+		}
+		id, err := parseNoteID(args[2])
+		if err != nil {
+			return err
+		}
+		text, err := readText(cmd, message)
+		if err != nil {
+			return err
+		}
+		c, err := env.client(cmd)
+		if err != nil {
+			return err
+		}
+		var note *ermite.Comment
+		if edit {
+			res, e := c.MergeRequests().EditComment(env.ctx(cmd), connect.NewRequest(&ermite.EditCommentRequest{Repo: args[0], Number: n, CommentId: id, Text: text}))
+			if e != nil {
+				return c.Describe(e)
+			}
+			note = res.Msg.GetComment()
+		} else {
+			res, e := c.MergeRequests().DeleteComment(env.ctx(cmd), connect.NewRequest(&ermite.DeleteCommentRequest{Repo: args[0], Number: n, CommentId: id}))
+			if e != nil {
+				return c.Describe(e)
+			}
+			note = res.Msg.GetComment()
+		}
+		if *asJSON {
+			return writeJSON(cmd.OutOrStdout(), toJSONComment(note))
+		}
+		past := "deleted"
+		if edit {
+			past = "edited"
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "comment %s of %s!%d %s\n", clean(id), clean(args[0]), n, past)
 		return err
 	}
 	return cmd

@@ -17,14 +17,50 @@ import (
 // mergeRequestService implements ermiteconnect.MergeRequestServiceHandler.
 type mergeRequestService struct{ mrs ports.MergeRequestService }
 
-// EditComment is implemented with the note RPC adapter in phase P4a.
-func (s *mergeRequestService) EditComment(context.Context, *connect.Request[pb.EditCommentRequest]) (*connect.Response[pb.EditCommentResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("EditComment is not implemented"))
+func (s *mergeRequestService) EditComment(ctx context.Context, req *connect.Request[pb.EditCommentRequest]) (*connect.Response[pb.EditCommentResponse], error) {
+	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	c, err := s.mrs.EditComment(ctx, caller(ctx), name, req.Msg.GetNumber(), commentID(req.Msg.GetCommentId()), req.Msg.GetText())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.EditCommentResponse{Comment: commentToPB(c)}), nil
 }
 
-// DeleteComment is implemented with the note RPC adapter in phase P4a.
-func (s *mergeRequestService) DeleteComment(context.Context, *connect.Request[pb.DeleteCommentRequest]) (*connect.Response[pb.DeleteCommentResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("DeleteComment is not implemented"))
+func (s *mergeRequestService) DeleteComment(ctx context.Context, req *connect.Request[pb.DeleteCommentRequest]) (*connect.Response[pb.DeleteCommentResponse], error) {
+	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	c, err := s.mrs.DeleteComment(ctx, caller(ctx), name, req.Msg.GetNumber(), commentID(req.Msg.GetCommentId()))
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.DeleteCommentResponse{Comment: commentToPB(c)}), nil
+}
+
+func verdictToPB(v domain.Verdict) pb.Verdict {
+	switch v {
+	case domain.VerdictApprove:
+		return pb.Verdict_VERDICT_APPROVE
+	case domain.VerdictChangesRequested:
+		return pb.Verdict_VERDICT_CHANGES_REQUESTED
+	}
+	return pb.Verdict_VERDICT_UNSPECIFIED
+}
+
+func verdictFromPB(v pb.Verdict) (domain.Verdict, error) {
+	switch v {
+	case pb.Verdict_VERDICT_UNSPECIFIED:
+		return domain.VerdictNone, nil
+	case pb.Verdict_VERDICT_APPROVE:
+		return domain.VerdictApprove, nil
+	case pb.Verdict_VERDICT_CHANGES_REQUESTED:
+		return domain.VerdictChangesRequested, nil
+	}
+	return domain.VerdictNone, fmt.Errorf("%w: verdict %v", domain.ErrInvalid, v)
 }
 
 func mergeRequestStateToPB(s domain.MRState) pb.MergeRequestState {
@@ -106,7 +142,17 @@ func commentToPB(c domain.Comment) *pb.Comment {
 		Text:      c.Text.String(),
 		Resolved:  c.Resolved,
 		CreatedAt: timestamp(c.CreatedAt),
+		ReplyTo:   optionalCommentID(c.ReplyTo),
+		StartLine: int32(c.StartLine), //nolint:gosec // validated diff line
+		Verdict:   verdictToPB(c.Verdict), EditedAt: timestamp(c.EditedAt), Deleted: c.Deleted,
 	}
+}
+
+func optionalCommentID(id int64) string {
+	if id == 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
 }
 
 // commentID parses the opaque id of a comment. One that this server never
@@ -195,6 +241,9 @@ func (s *mergeRequestService) GetMergeRequest(ctx context.Context, req *connect.
 	for _, c := range d.Comments {
 		out.Comments = append(out.Comments, commentToPB(c))
 	}
+	for _, v := range d.Verdicts {
+		out.Verdicts = append(out.Verdicts, &pb.AuthorVerdict{Author: v.Author, Verdict: verdictToPB(v.Verdict), CommentId: strconv.FormatInt(v.CommentID, 10), CommitId: v.CommitID.String(), CreatedAt: timestamp(v.At), Stale: v.Stale})
+	}
 	return connect.NewResponse(out), nil
 }
 
@@ -207,7 +256,18 @@ func (s *mergeRequestService) AddComment(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
+	verdict, err := verdictFromPB(req.Msg.GetVerdict())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	replyTo := commentID(req.Msg.GetReplyTo())
+	if req.Msg.GetReplyTo() != "" && replyTo == 0 {
+		var v domain.Violations
+		v.Add("reply_to", "is not a note id")
+		return nil, connectError(ctx, v.Err())
+	}
 	c, err := s.mrs.AddComment(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.AddCommentParams{
+		ReplyTo: replyTo, StartLine: int(req.Msg.GetStartLine()), Verdict: verdict,
 		Path: req.Msg.GetPath(), Line: int(req.Msg.GetLine()), Side: side, Text: req.Msg.GetText(),
 	})
 	if err != nil {
