@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -127,27 +128,62 @@ func TestNoteMutationRetries(t *testing.T) {
 			text, err := domain.ParsePlainText("before")
 			require.NoError(t, err)
 			c := domain.Comment{ID: 1, Author: "root", Text: text}
-			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(mr, nil).Twice()
-			u.store.EXPECT().GetComment(mock.Anything, u.repo.Name, int64(1), int64(1)).Return(c, nil).Twice()
+			freshMR := mr
+			freshMR.Version = 2
+			fresh := c
+			fresh.Version = 3
+			fresh.CreatedAt = now.Add(-time.Hour)
+			if action != "resolve" {
+				fresh.Resolved = true
+			}
+			want := fresh
+			switch action {
+			case "edit":
+				want.Text, err = domain.ParsePlainText("after")
+				require.NoError(t, err)
+				want.EditedAt = now.UTC()
+			case "delete":
+				want.Text, err = domain.ParsePlainText("")
+				require.NoError(t, err)
+				want.Deleted = true
+				want.EditedAt = now.UTC()
+			case "resolve":
+				want.Resolved = true
+			}
+			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(mr, nil).Once()
+			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(freshMR, nil).Once()
+			u.store.EXPECT().GetComment(mock.Anything, u.repo.Name, int64(1), int64(1)).Return(c, nil).Once()
+			u.store.EXPECT().GetComment(mock.Anything, u.repo.Name, int64(1), int64(1)).Return(fresh, nil).Once()
 			u.store.EXPECT().SaveComment(mock.Anything, mock.Anything, mock.Anything).Return(domain.ErrConflict).Once()
-			u.store.EXPECT().SaveComment(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-			// The bus expectation must be exactly once despite the conflict.
+			u.store.EXPECT().SaveComment(mock.Anything, mock.MatchedBy(func(saved domain.MergeRequest) bool {
+				return saved.Version == freshMR.Version
+			}), mock.MatchedBy(func(saved domain.Comment) bool { return saved == want })).Return(nil).Once()
 			bus := mocks.NewEventBus(t)
 			bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(e domain.Event) bool {
-				return e.EventKind() == "mr.comment_"+map[string]string{"edit": "edited", "delete": "deleted", "resolve": "resolved"}[action]
+				switch event := e.(type) {
+				case domain.CommentEdited:
+					return action == "edit" && event.Comment == want
+				case domain.CommentDeleted:
+					return action == "delete" && event.Comment == want
+				case domain.CommentResolved:
+					return action == "resolve" && event.Comment == want
+				}
+				return false
 			})).Return().Once()
 			clock := mocks.NewClock(t)
 			clock.EXPECT().Now().Return(now)
 			svc := usecase.NewMergeRequests(usecase.MergeRequestsConfig{Meta: u.meta, Store: u.store, Bus: bus, Clock: clock})
+			var got domain.Comment
 			switch action {
 			case "edit":
-				_, err = svc.EditComment(context.Background(), domain.Root(), u.repo.Name, 1, 1, "after")
+				got, err = svc.EditComment(context.Background(), domain.Root(), u.repo.Name, 1, 1, "after")
 			case "delete":
-				_, err = svc.DeleteComment(context.Background(), domain.Root(), u.repo.Name, 1, 1)
+				got, err = svc.DeleteComment(context.Background(), domain.Root(), u.repo.Name, 1, 1)
 			case "resolve":
-				_, err = svc.ResolveComment(context.Background(), domain.Root(), u.repo.Name, 1, 1, true)
+				got, err = svc.ResolveComment(context.Background(), domain.Root(), u.repo.Name, 1, 1, true)
 			}
 			require.NoError(t, err)
+			assert.Equal(t, want, got)
 		})
 	}
 }

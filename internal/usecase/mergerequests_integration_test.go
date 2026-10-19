@@ -1347,6 +1347,22 @@ func TestCommentsPerMergeRequestAreBounded(t *testing.T) {
 }
 
 func TestNoteThreadsRangesAndVerdicts(t *testing.T) {
+	t.Run("start outside diff", func(t *testing.T) {
+		r := newMRRig(t)
+		r.seed()
+		before := strings.Repeat("unchanged\n", 30)
+		r.commit(author, "long.txt", before, "long base")
+		r.push("main")
+		r.sh("checkout", "-q", "-B", "range", "main")
+		r.commit(author, "long.txt", before+"changed\n", "late hunk")
+		r.push("range")
+		mr := r.open("range")
+		_, err := r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{Path: "long.txt", Line: 31, Side: domain.SideNew, Text: "valid"})
+		require.NoError(t, err)
+		_, err = r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{Path: "long.txt", StartLine: 1, Line: 31, Side: domain.SideNew, Text: "invalid range"})
+		require.ErrorIs(t, err, domain.ErrInvalid)
+		assert.Contains(t, fieldsOf(t, err), "start_line")
+	})
 	r := newMRRig(t)
 	r.seed()
 	head := r.feature("feat")
