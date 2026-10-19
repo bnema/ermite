@@ -285,6 +285,10 @@ window.ermiteMR = (() => {
     let folded = false;
     try { folded = localStorage.getItem('mr-files-folded') === '1'; } catch { /* no storage: open */ }
     if (folded) foldFiles(true);
+    // The page answers a refused action from the address of the action: show
+    // the address of the request, so that a reload does not post again.
+    const canonical = $('#diffs[data-canonical]')?.dataset.canonical;
+    if (canonical && location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.hash);
     watch();
     // A link to a file or a comment that is not loaded yet.
     const hash = () => {

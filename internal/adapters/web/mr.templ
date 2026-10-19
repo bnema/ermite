@@ -187,6 +187,9 @@ templ MergeRequest(l Layout, p MRPage) {
 		<div
 			id="diffs"
 			data-mr
+			if p.Canonical != "" {
+				data-canonical={ p.Canonical }
+			}
 			if p.Both {
 				data-diff={ p.View }
 			} else {
@@ -518,11 +521,11 @@ templ mergeMenu(p MRPage) {
 					</fieldset>
 					if p.Box.Signed {
 						<p class="d-note" id="mr-signing">
-							squash and merge commits are signed with ermite's own key, generated automatically on first start.
+							squash and merge commits are signed with ermite's own key (generated on first start).
 							if p.Box.Fingerprint != "" {
-								{ " " }key <code>{ p.Box.Fingerprint }</code>.
+								fingerprint <code>{ p.Box.Fingerprint }</code>
 							}
-							{ " " }<code>ermite signing-key show</code> prints the public key to verify them.
+							<code>ermite signing-key show</code> prints it.
 						</p>
 					}
 					if p.Box.CanDeleteBranch {

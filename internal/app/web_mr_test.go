@@ -468,6 +468,9 @@ func TestWebMergeRequestDraft(t *testing.T) {
 
 	res := b.form("/proj/merge-requests/1/merge", token, url.Values{"mode": {"fast-forward"}, "head_id": {head}})
 	assert.Equal(t, http.StatusConflict, res.status, "a draft is not merged")
+	assert.Contains(t, res.body, `data-canonical="/proj/merge-requests/1"`, "the refused page names its own address")
+	assert.Contains(t, res.body, `class="d-err"`, "the reason stays inline")
+	assert.NotContains(t, b.get("/proj/merge-requests/1", as(token)).body, "data-canonical", "the plain page has no marker")
 
 	res = b.form("/proj/merge-requests/1/ready", token, nil)
 	require.Equal(t, http.StatusSeeOther, res.status, res.body)
@@ -777,7 +780,7 @@ func TestWebMergeRequestMergeabilityBadge(t *testing.T) {
 	assert.Contains(t, body, `name="mode" value="fast-forward" checked`)
 	assert.NotContains(t, body, `value="fast-forward" checked disabled`)
 	assert.Contains(t, body, `id="mr-signing"`, "squash and merge commits say who signs them")
-	assert.Contains(t, body, "signed with ermite's own key, generated automatically on first start")
+	assert.Contains(t, body, "signed with ermite's own key (generated on first start)")
 	assert.Contains(t, body, "<code>ermite signing-key show</code>")
 	assert.Contains(t, body, "SHA256:", "the fingerprint of the signing key")
 	assert.Contains(t, body, `:disabled="`, "the controls follow the badge")

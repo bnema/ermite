@@ -267,6 +267,10 @@ type MRPage struct {
 	// MergeError is why a merge was refused when the page has no merge box
 	// to show it in (the request is not open any more).
 	MergeError string
+	// Canonical is the address of the request, set when the page answers a
+	// refused action from the address of that action: the script puts it in
+	// the address bar, so that a reload does not post again.
+	Canonical string
 
 	Since     *SinceNav
 	SinceNote string
@@ -715,6 +719,9 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		if m.IsDraft() {
 			p.Box.ReadyAction = mrHref(d.name(), n, "ready")
 		}
+	}
+	if mergeErrorOf(ctx) != "" {
+		p.Canonical = self
 	}
 	if p.Box == nil {
 		p.MergeError = mergeErrorOf(ctx) // the request is not open any more

@@ -65,6 +65,12 @@
     & .menu-pop .btn kbd { margin-left: auto; }
   }
   .mmenu {
+    & .menu-pop { box-sizing: border-box; min-width: 0; overflow-wrap: anywhere; }
+    & .menu-pop > *, & form, & .d-modes, & .d-btns { min-width: 0; max-width: 100%; box-sizing: border-box; }
+    & .d-acts { display: grid; gap: var(--s3); }
+    & .d-modes label, & .d-check { min-width: 0; }
+    & code { overflow-wrap: anywhere; }
+    & .d-btns .btn { min-width: 0; max-width: 100%; white-space: normal; }
     & .d-modes { display: grid; gap: var(--s1); border: 0; padding: 0; margin: 0; }
     & .d-modes label, & .d-check {
       display: flex; gap: var(--s2); align-items: center; padding: 4px var(--s2); margin: 0 calc(-1 * var(--s2));
