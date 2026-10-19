@@ -87,9 +87,7 @@ type Config struct {
 	Secrets      ports.SecretService
 	Variables    ports.VariableService
 	Environments ports.EnvironmentService
-	// OIDCKeys rotates the key of the ID tokens of CI jobs; nil when the server
-	// issues none (GetVersion then does not list "ci.oidc"). Same rule as
-	// Sessions about typed nil pointers.
+	// OIDCKeys manages ID-token signing keys, including when OIDC is disabled.
 	OIDCKeys ports.OIDCKeyService
 	// JobArtifacts and Artifacts serve JobArtifactService and ArtifactService,
 	// and GetVersion lists "ci.artifacts", when both are set and Runner is.
@@ -138,7 +136,7 @@ func New(cfg Config) *API {
 	if artifacts {
 		features = append(features, FeatureCIArtifacts)
 	}
-	if cfg.OIDCKeys != nil {
+	if cfg.OIDCKeys != nil && cfg.OIDCKeys.Enabled() {
 		features = append(features, FeatureCIOIDC)
 	}
 	if cfg.TrustedKeys != nil {

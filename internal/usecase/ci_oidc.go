@@ -31,7 +31,7 @@ var _ ports.OIDCService = (*CI)(nil)
 // server issues none. j must be assigned (its AssignedAt is set).
 func (rs *runState) issueIDTokenRequest(j *domain.CIJob) string {
 	c := rs.c
-	if c.cfg.OIDC == nil || !domain.IDTokenAllowed(j.Permissions, rs.run.Trusted) {
+	if !c.cfg.OIDC.Enabled() || !domain.IDTokenAllowed(j.Permissions, rs.run.Trusted) {
 		return ""
 	}
 	now := c.now()
@@ -48,11 +48,11 @@ func (rs *runState) issueIDTokenRequest(j *domain.CIJob) string {
 }
 
 // OIDCEnabled reports whether the server issues ID tokens.
-func (c *CI) OIDCEnabled() bool { return c.cfg.OIDC != nil }
+func (c *CI) OIDCEnabled() bool { return c.cfg.OIDC.Enabled() }
 
 // OIDCDiscovery returns the OpenID Provider configuration.
 func (c *CI) OIDCDiscovery() ([]byte, error) {
-	if c.cfg.OIDC == nil {
+	if !c.cfg.OIDC.Enabled() {
 		return nil, domain.ErrNotFound
 	}
 	return c.cfg.OIDC.Discovery()
@@ -60,7 +60,7 @@ func (c *CI) OIDCDiscovery() ([]byte, error) {
 
 // OIDCKeys returns the JWKS.
 func (c *CI) OIDCKeys() ([]byte, error) {
-	if c.cfg.OIDC == nil {
+	if !c.cfg.OIDC.Enabled() {
 		return nil, domain.ErrNotFound
 	}
 	return c.cfg.OIDC.JWKS()
@@ -73,7 +73,7 @@ func (c *CI) OIDCKeys() ([]byte, error) {
 // "https://github.com/<owner>".
 func (c *CI) IDToken(ctx context.Context, secret, audience string) (string, error) {
 	o := c.cfg.OIDC
-	if o == nil {
+	if !o.Enabled() {
 		return "", domain.ErrNotFound
 	}
 	if len(audience) > domain.MaxOIDCAudienceLen {

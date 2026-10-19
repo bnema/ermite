@@ -74,8 +74,8 @@ type oidcKey struct {
 var _ ports.OIDCKeyService = (*OIDC)(nil)
 
 // NewOIDC loads the signing keys, generates the first one when there is none,
-// and forgets the retired keys whose publication is over. It returns nil
-// without error when cfg.Sealer is nil: the server issues no ID tokens. A
+// and forgets the retired keys whose publication is over. With cfg.Sealer nil
+// it returns a disabled service: no ID tokens are issued. A
 // stored key that does not open with the secrets key is an error: the server
 // must not start (the secrets key check already refuses another key, so this
 // is a damaged record).
@@ -83,7 +83,7 @@ func NewOIDC(ctx context.Context, cfg OIDCConfig) (*OIDC, error) {
 	log := zerowrap.FromCtx(ctx)
 	if cfg.Sealer == nil {
 		log.Info().Msg("ERMITE_SECRETS_KEY is not set: CI jobs get no OIDC ID tokens")
-		return nil, nil
+		return &OIDC{}, nil
 	}
 	if cfg.NewKey == nil {
 		cfg.NewKey = func() (*rsa.PrivateKey, error) { return rsa.GenerateKey(rand.Reader, OIDCKeyBits) }
@@ -180,6 +180,13 @@ func (o *OIDC) signing() (oidcKey, bool) {
 // and stays in the JWKS for domain.OIDCKeyRetention. Retired keys whose
 // publication is over are deleted with it. Only the owner may rotate.
 func (o *OIDC) RotateKey(ctx context.Context, p domain.Principal) (ports.OIDCRotation, error) {
+	if !o.Enabled() {
+		if !p.HasOwnerRights() {
+			return ports.OIDCRotation{}, domain.ErrForbidden
+		}
+		return ports.OIDCRotation{}, oidcDisabledError{}
+	}
+
 	switch {
 	case p.IsAnonymous():
 		return ports.OIDCRotation{}, domain.ErrUnauthenticated
@@ -234,6 +241,9 @@ func publicJWK(kid string, pub *rsa.PublicKey) jwk {
 
 // JWKS returns the JSON of the published keys.
 func (o *OIDC) JWKS() ([]byte, error) {
+	if !o.Enabled() {
+		return nil, domain.ErrNotFound
+	}
 	now := o.cfg.Clock.Now().UTC()
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -258,6 +268,9 @@ var oidcClaims = []string{
 // Discovery returns the JSON of the OpenID Provider configuration, in the
 // shape of GitHub's.
 func (o *OIDC) Discovery() ([]byte, error) {
+	if !o.Enabled() {
+		return nil, domain.ErrNotFound
+	}
 	return json.Marshal(ordered{
 		{"issuer", o.issuer},
 		{"jwks_uri", o.issuer + "/.well-known/jwks"},
@@ -303,3 +316,14 @@ func thumbprint(pub *rsa.PublicKey) string {
 }
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+
+// Enabled reports whether the provider issues ID tokens. A nil provider is disabled.
+func (o *OIDC) Enabled() bool { return o != nil && o.cfg.Sealer != nil }
+
+// oidcDisabledError preserves the public disabled-provider message and precondition code.
+type oidcDisabledError struct{}
+
+func (oidcDisabledError) Error() string {
+	return "the server issues no OIDC ID tokens: it has no ERMITE_SECRETS_KEY"
+}
+func (oidcDisabledError) Is(target error) bool { return target == domain.ErrPreconditionFailed }

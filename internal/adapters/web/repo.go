@@ -44,16 +44,12 @@ func (s *Server) repoView(ctx context.Context, name domain.RepoName) (ports.Repo
 
 // repoRecord reads the repository record only, without Git: its name,
 // visibility and settings (the defaults when it has none).
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter business rule replacing zero repository settings with defaults; pending move to domain/usecase
 func (s *Server) repoRecord(ctx context.Context, name domain.RepoName) (domain.Repo, error) {
 	repo, err := s.cfg.Repos.Get(ctx, principal(ctx), name)
 	if err != nil {
 		return domain.Repo{}, err
 	}
-	if repo.Settings.IsZero() {
-		repo.Settings = domain.DefaultRepoSettings()
-	}
+	repo.Settings = repo.EffectiveSettings()
 	return repo, nil
 }
 
@@ -157,7 +153,7 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		mrs.Count = s.openMRCount(ctx, d.repo.Name)
 		l.Sections = append(l.Sections, mrs)
 	}
-	if s.cfg.Issues != nil && d.repo.Settings.Issues.OrDefault() != domain.IssuesOff {
+	if s.cfg.Issues != nil && d.repo.EffectiveSettings().IssuesEnabled() {
 		l.Sections = append(l.Sections, mk("i", "Issues", issuesBase(d.name()), "issues"))
 	}
 	l.Sections = s.withActions(l.Sections, d.name(), section)

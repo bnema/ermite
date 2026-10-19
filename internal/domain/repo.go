@@ -92,3 +92,11 @@ func validTopic(t string) bool {
 	}
 	return true
 }
+
+// EffectiveSettings returns the repository settings, using defaults for an unset record.
+func (r Repo) EffectiveSettings() RepoSettings {
+	if r.Settings.IsZero() {
+		return DefaultRepoSettings()
+	}
+	return r.Settings
+}

@@ -53,6 +53,8 @@ type OIDCRotation struct {
 // OIDCKeyService manages the signing key of the ID tokens. *usecase.OIDC
 // implements it.
 type OIDCKeyService interface {
+	// Enabled reports whether the server issues ID tokens.
+	Enabled() bool
 	// RotateKey replaces the signing key by a new one. It needs owner rights.
 	RotateKey(ctx context.Context, p domain.Principal) (OIDCRotation, error)
 }

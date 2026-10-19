@@ -151,8 +151,7 @@ type forge struct {
 	CI *usecase.CI
 	// Settings are the secrets, variables and environments of CI.
 	Settings *usecase.CISettings
-	// OIDC is the provider of the ID tokens of CI jobs; nil without a secrets
-	// key.
+	// OIDC is the provider of ID tokens, disabled without a secrets key.
 	OIDC *usecase.OIDC
 	API  *rpc.API
 	Bus  ports.EventBus
@@ -394,10 +393,6 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if f.Passkeys != nil {
 		apiPasskeys = f.Passkeys
 	}
-	var apiOIDC ports.OIDCKeyService // same rule as apiPasskeys
-	if f.OIDC != nil {
-		apiOIDC = f.OIDC
-	}
 	var jobArtifacts ports.JobArtifactService
 	var artifacts ports.ArtifactService
 	if cfg.CIArtifacts {
@@ -421,7 +416,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Secrets:         f.Settings,
 		Variables:       f.Settings,
 		Environments:    f.Settings,
-		OIDCKeys:        apiOIDC,
+		OIDCKeys:        f.OIDC,
 		JobArtifacts:    jobArtifacts,
 		Artifacts:       artifacts,
 		Version:         serverVersion(),

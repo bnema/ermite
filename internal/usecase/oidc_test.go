@@ -123,7 +123,8 @@ func TestNoSecretsKeyNoOIDC(t *testing.T) {
 	f := newOIDCFixture(t)
 	o, err := usecase.NewOIDC(context.Background(), usecase.OIDCConfig{Store: f.store, Tokens: f.store.CI(), Clock: f.clock, PublicURL: "https://forge.test"})
 	require.NoError(t, err)
-	assert.Nil(t, o)
+	require.NotNil(t, o)
+	assert.False(t, o.Enabled())
 	keys, err := f.store.ListOIDCKeys(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, keys, "no key is generated")
@@ -337,4 +338,31 @@ func TestIDTokenClaimsPerEvent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDisabledOIDCRotationAuthorization(t *testing.T) {
+	o, err := usecase.NewOIDC(context.Background(), usecase.OIDCConfig{})
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name string
+		p    domain.Principal
+		want error
+	}{
+		{"anonymous", domain.Anonymous(), domain.ErrForbidden},
+		{"limited", domain.TokenPrincipal(domain.Token{ID: "limited"}), domain.ErrForbidden},
+		{"root", domain.Root(), domain.ErrPreconditionFailed},
+		{"owner", domain.Owner(), domain.ErrPreconditionFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := o.RotateKey(context.Background(), tc.p)
+			require.ErrorIs(t, err, tc.want)
+			if tc.want == domain.ErrPreconditionFailed {
+				assert.EqualError(t, err, "the server issues no OIDC ID tokens: it has no ERMITE_SECRETS_KEY")
+			}
+		})
+	}
+	_, err = o.Discovery()
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+	_, err = o.JWKS()
+	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
