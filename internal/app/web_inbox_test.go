@@ -48,17 +48,17 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	root := domain.Root()
 	_, err = r.forge.MergeRequests.Create(r.ctx, root, r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
-	ev := stream.next(t, watchWait)
+	ev := nextFragment(t, stream)
 	assert.Equal(t, "inbox", ev.name)
 	assert.Contains(t, ev.data, `id="inbox-counts"`)
 	for range 4 { // the other fragments of this event
-		stream.next(t, watchWait)
+		nextFragment(t, stream)
 	}
 	_, err = r.forge.Issues.Create(r.ctx, root, r.name("other"), ports.CreateIssueParams{Title: "search is slow"})
 	require.NoError(t, err)
 	var seen strings.Builder
 	for range 5 { // the five fragments of this event
-		seen.WriteString(stream.next(t, watchWait).data)
+		seen.WriteString(nextFragment(t, stream).data)
 	}
 	assert.Contains(t, seen.String(), "search is slow", "an event of the second repository")
 	_, err = r.forge.MergeRequests.Create(r.ctx, root, r.name("other"), ports.CreateMergeRequestParams{Title: "other work", Source: "feat/search", Target: "main"})
@@ -107,6 +107,18 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	assert.Equal(t, unknown.status, ownerAnon.status, "the answer to an unknown topic")
 	assert.Equal(t, strings.ReplaceAll(unknown.body, "nope", "owner"), ownerAnon.body)
 	assert.Equal(t, unknown.status, b.get("/-/events?topic=owner&view=inbox", map[string]string{"Authorization": "Bearer " + adminToken}).status)
+}
+
+// nextFragment returns the next event that carries a fragment. Events the
+// inbox does not show (a mergeability check) still send their id alone, so a
+// resumed stream starts after them; they are skipped.
+func nextFragment(t *testing.T, s *sseStream) sseEvent {
+	t.Helper()
+	for {
+		if ev := s.next(t, watchWait); ev.name != "" {
+			return ev
+		}
+	}
 }
 
 // ownerStream opens the owner topic with the session cookie.

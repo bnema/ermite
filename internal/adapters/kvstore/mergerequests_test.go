@@ -609,8 +609,11 @@ func TestStoredOldDefaultModesGainMerge(t *testing.T) {
 	assert.Equal(t, []domain.MergeMode{domain.MergeModeSquash}, single.Settings.AllowedMergeModes)
 
 	// An explicit {ff, squash} written now is kept.
-	old.Settings.AllowedMergeModes = []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}
-	require.NoError(t, s.Update(ctx, old))
+	_, err = s.Mutate(ctx, old.Name, func(r *domain.Repo) (bool, error) {
+		r.Settings.AllowedMergeModes = []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}
+		return true, nil
+	})
+	require.NoError(t, err)
 	again, err := s.Get(ctx, name(t, "old"))
 	require.NoError(t, err)
 	assert.Equal(t, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}, again.Settings.AllowedMergeModes)
