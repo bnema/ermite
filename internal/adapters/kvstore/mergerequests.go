@@ -380,6 +380,52 @@ func (m *MergeRequests) ListOpen(ctx context.Context, repo domain.RepoName) ([]d
 	return out, nil
 }
 
+// ListOpenAll returns the open merge requests of every repository, repository
+// by repository and highest number first, through the mropen/ index: the
+// requests it names are read, no other.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter reads the open merge requests of all repositories through their index: a storage concern, no policy
+func (m *MergeRequests) ListOpenAll(ctx context.Context) ([]domain.MergeRequest, error) {
+	type ref struct {
+		repo domain.RepoName
+		n    int64
+	}
+	var refs []ref
+	for key := range m.db.Snapshot(ctx).Prefix(ctx, []byte(mrOpenPrefix)) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		rest := strings.TrimPrefix(string(key), mrOpenPrefix)
+		repoName, _, ok := strings.Cut(rest, "/")
+		if !ok {
+			return nil, fmt.Errorf("index key %q", key)
+		}
+		repo, err := domain.ParseRepoName(repoName)
+		if err != nil {
+			return nil, fmt.Errorf("index key %q: %w", key, err)
+		}
+		n, err := strconv.ParseInt(rest[strings.LastIndexByte(rest, '/')+1:], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("index key %q: %w", key, err)
+		}
+		refs = append(refs, ref{repo, n})
+	}
+	var out []domain.MergeRequest
+	for _, r := range refs {
+		mr, err := m.Get(ctx, r.repo, r.n)
+		if errors.Is(err, domain.ErrNotFound) {
+			continue // closed or deleted since the snapshot of the index
+		}
+		if err != nil {
+			return nil, err
+		}
+		if mr.IsOpen() {
+			out = append(out, mr)
+		}
+	}
+	return out, nil
+}
+
 // CountOpen counts the open merge requests of the repository from the keys of
 // the index: no request is decoded.
 func (m *MergeRequests) CountOpen(ctx context.Context, repo domain.RepoName) (int, error) {

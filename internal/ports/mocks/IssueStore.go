@@ -400,6 +400,68 @@ func (_c *IssueStore_ListOpen_Call) RunAndReturn(run func(ctx context.Context, r
 	return _c
 }
 
+// ListOpenAll provides a mock function for the type IssueStore
+func (_mock *IssueStore) ListOpenAll(ctx context.Context) ([]domain.Issue, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListOpenAll")
+	}
+
+	var r0 []domain.Issue
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]domain.Issue, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) []domain.Issue); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.Issue)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// IssueStore_ListOpenAll_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListOpenAll'
+type IssueStore_ListOpenAll_Call struct {
+	*mock.Call
+}
+
+// ListOpenAll is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *IssueStore_Expecter) ListOpenAll(ctx any) *IssueStore_ListOpenAll_Call {
+	return &IssueStore_ListOpenAll_Call{Call: _e.mock.On("ListOpenAll", ctx)}
+}
+
+func (_c *IssueStore_ListOpenAll_Call) Run(run func(ctx context.Context)) *IssueStore_ListOpenAll_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *IssueStore_ListOpenAll_Call) Return(issues []domain.Issue, err error) *IssueStore_ListOpenAll_Call {
+	_c.Call.Return(issues, err)
+	return _c
+}
+
+func (_c *IssueStore_ListOpenAll_Call) RunAndReturn(run func(ctx context.Context) ([]domain.Issue, error)) *IssueStore_ListOpenAll_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SaveComment provides a mock function for the type IssueStore
 func (_mock *IssueStore) SaveComment(ctx context.Context, issue domain.Issue, c domain.IssueComment) error {
 	ret := _mock.Called(ctx, issue, c)

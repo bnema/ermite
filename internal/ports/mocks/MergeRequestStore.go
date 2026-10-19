@@ -611,6 +611,68 @@ func (_c *MergeRequestStore_ListOpen_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
+// ListOpenAll provides a mock function for the type MergeRequestStore
+func (_mock *MergeRequestStore) ListOpenAll(ctx context.Context) ([]domain.MergeRequest, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListOpenAll")
+	}
+
+	var r0 []domain.MergeRequest
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]domain.MergeRequest, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) []domain.MergeRequest); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.MergeRequest)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestStore_ListOpenAll_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListOpenAll'
+type MergeRequestStore_ListOpenAll_Call struct {
+	*mock.Call
+}
+
+// ListOpenAll is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MergeRequestStore_Expecter) ListOpenAll(ctx any) *MergeRequestStore_ListOpenAll_Call {
+	return &MergeRequestStore_ListOpenAll_Call{Call: _e.mock.On("ListOpenAll", ctx)}
+}
+
+func (_c *MergeRequestStore_ListOpenAll_Call) Run(run func(ctx context.Context)) *MergeRequestStore_ListOpenAll_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestStore_ListOpenAll_Call) Return(mergeRequests []domain.MergeRequest, err error) *MergeRequestStore_ListOpenAll_Call {
+	_c.Call.Return(mergeRequests, err)
+	return _c
+}
+
+func (_c *MergeRequestStore_ListOpenAll_Call) RunAndReturn(run func(ctx context.Context) ([]domain.MergeRequest, error)) *MergeRequestStore_ListOpenAll_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // OpenBySource provides a mock function for the type MergeRequestStore
 func (_mock *MergeRequestStore) OpenBySource(ctx context.Context, repo domain.RepoName, branches []string, limit int) ([]int64, bool, error) {
 	ret := _mock.Called(ctx, repo, branches, limit)

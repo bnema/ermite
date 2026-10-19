@@ -185,6 +185,50 @@ func (i *Issues) ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.I
 	return out, nil
 }
 
+// ListOpenAll returns the open issues of every repository through the isopen/
+// index: the issues it names are read, no other.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter reads the open issues of all repositories through their index: a storage concern, no policy
+func (i *Issues) ListOpenAll(ctx context.Context) ([]domain.Issue, error) {
+	type ref struct {
+		repo domain.RepoName
+		n    int64
+	}
+	var refs []ref
+	for key := range i.db.Snapshot(ctx).Prefix(ctx, []byte(issueOpenPrefix)) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		repoName, num, ok := strings.Cut(strings.TrimPrefix(string(key), issueOpenPrefix), "/")
+		if !ok {
+			return nil, fmt.Errorf("index key %q", key)
+		}
+		repo, err := domain.ParseRepoName(repoName)
+		if err != nil {
+			return nil, fmt.Errorf("index key %q: %w", key, err)
+		}
+		n, err := strconv.ParseInt(num, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("index key %q: %w", key, err)
+		}
+		refs = append(refs, ref{repo, n})
+	}
+	var out []domain.Issue
+	for _, r := range refs {
+		issue, err := i.Get(ctx, r.repo, r.n)
+		if errors.Is(err, domain.ErrNotFound) {
+			continue // closed or deleted since the snapshot of the index
+		}
+		if err != nil {
+			return nil, err
+		}
+		if issue.IsOpen() {
+			out = append(out, issue)
+		}
+	}
+	return out, nil
+}
+
 // Update replaces the issue with a version precondition and moves its index key
 // in the same batch. The repository must exist (see guardRepoKey), so that a
 // concurrent delete of the repository leaves no index key behind.

@@ -4,6 +4,7 @@ package kvstore_test
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -367,4 +368,60 @@ func TestDeleteVersusReopenLeavesNoIssueKeys(t *testing.T) {
 		}
 		assert.ErrorIs(t, is.Update(ctx, closed), domain.ErrNotFound)
 	}
+}
+
+func TestListOpenAllSpansRepositoriesThroughTheIndex(t *testing.T) {
+	ctx := context.Background()
+	s, mrs, n := repoWithMRs(t)
+	other := name(t, "other")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: other, CreatedAt: created, Visibility: domain.VisibilityPublic}))
+	is := s.Issues()
+
+	i1, err := is.Create(ctx, newIssue(t, n, "one"))
+	require.NoError(t, err)
+	i2, err := is.Create(ctx, newIssue(t, other, "two"))
+	require.NoError(t, err)
+	i3, err := is.Create(ctx, newIssue(t, other, "three"))
+	require.NoError(t, err)
+	i3.State = domain.IssueStateClosed
+	require.NoError(t, is.Update(ctx, i3))
+	_, err = mrs.Create(ctx, newMR(t, n, "mr1"))
+	require.NoError(t, err)
+	m2, err := mrs.Create(ctx, newMR(t, other, "mr2"))
+	require.NoError(t, err)
+	m3, err := mrs.Create(ctx, newMR(t, other, "mr3"))
+	require.NoError(t, err)
+	m3.State = domain.MRStateClosed
+	require.NoError(t, mrs.Update(ctx, m3))
+
+	issues, err := is.ListOpenAll(ctx)
+	require.NoError(t, err)
+	var got []string
+	for _, i := range issues {
+		got = append(got, i.Repo.String()+"#"+strconv.FormatInt(i.Number, 10))
+	}
+	assert.ElementsMatch(t, []string{
+		i1.Repo.String() + "#" + strconv.FormatInt(i1.Number, 10),
+		i2.Repo.String() + "#" + strconv.FormatInt(i2.Number, 10),
+	}, got)
+
+	open, err := mrs.ListOpenAll(ctx)
+	require.NoError(t, err)
+	got = nil
+	for _, m := range open {
+		got = append(got, m.Repo.String()+"#"+strconv.FormatInt(m.Number, 10))
+	}
+	assert.ElementsMatch(t, []string{"proj#2", m2.Repo.String() + "#" + strconv.FormatInt(m2.Number, 10)}, got)
+	assert.Len(t, open, 2)
+}
+
+func TestListOpenAllIsEmptyWithoutOpenItems(t *testing.T) {
+	ctx := context.Background()
+	s, mrs, _ := repoWithMRs(t)
+	issues, err := s.Issues().ListOpenAll(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, issues)
+	open, err := mrs.ListOpenAll(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, open)
 }

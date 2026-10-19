@@ -261,6 +261,9 @@ type IssueStore interface {
 	// ListOpen returns the open issues of the repository, highest number
 	// first, reading only the open ones (through an index).
 	ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.Issue, error)
+	// ListOpenAll returns the open issues of every repository, reading only
+	// the open ones (through the same index). The order is unspecified.
+	ListOpenAll(ctx context.Context) ([]domain.Issue, error)
 	// Update replaces the stored issue and keeps the index of the open issues
 	// in step. It returns domain.ErrNotFound if there is none and
 	// domain.ErrConflict if another write changed it since issue was read.
@@ -294,6 +297,10 @@ type MergeRequestStore interface {
 	// ListOpen returns the open merge requests of the repository, highest
 	// number first, reading only the open ones (through an index).
 	ListOpen(ctx context.Context, repo domain.RepoName) ([]domain.MergeRequest, error)
+	// ListOpenAll returns the open merge requests of every repository,
+	// reading only the open ones (through the same index). The order is
+	// unspecified.
+	ListOpenAll(ctx context.Context) ([]domain.MergeRequest, error)
 	// CountOpen returns the number of open merge requests of the repository
 	// from the index of keys: no request is read.
 	CountOpen(ctx context.Context, repo domain.RepoName) (int, error)
