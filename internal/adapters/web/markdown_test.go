@@ -136,3 +136,70 @@ func TestMarkdownGFM(t *testing.T) {
 	assert.Contains(t, out, "<del>gone</del>")
 	assert.Contains(t, out, `type="checkbox"`)
 }
+
+func renderUntrustedMD(t *testing.T, src string) string {
+	t.Helper()
+	h, err := newMarkdown().renderUntrusted([]byte(src), "issue-desc-")
+	require.NoError(t, err)
+	return string(h)
+}
+
+// An issue from the public form is rendered with the strictest policy.
+func TestMarkdownUntrusted(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, src string
+		absent    []string
+		present   []string
+	}{
+		{"script", "<script>alert(1)</script>\n", []string{"<script", "alert(1)</"}, nil},
+		{"img onerror", "a <img src=x onerror=alert(1)> b\n", []string{"<img", "onerror"}, []string{"<p>a "}},
+		{"javascript link", "[x](javascript:alert(1))\n", []string{"javascript", "href"}, []string{"<p>x</p>"}},
+		{"data link", "[x](data:text/html,<script>alert(1)</script>)\n", []string{"data:", "href", "<script"}, nil},
+		{"vbscript and file", "[a](vbscript:x) [b](file:///etc/passwd)\n", []string{"vbscript", "file:", "href"}, []string{"a b"}},
+		{"relative links lose the link", "[a](../../etc) [b](/proj/blob/main/x) [c](#frag)\n", []string{"href"}, []string{"a b c"}},
+		{"protocol relative", "[x](//evil.test/p)\n", []string{"href", "evil"}, nil},
+		{"https is kept with ugc", "[x](https://example.org/p?q=1)\n", nil,
+			[]string{`href="https://example.org/p?q=1"`, `rel="nofollow noopener noreferrer ugc"`}},
+		{"http is kept", "[x](http://example.org/)\n", nil, []string{`href="http://example.org/"`, "ugc"}},
+		{"credentials are refused", "[x](https://user:pw@example.org/)\n", []string{"href", "pw"}, nil},
+		{"mailto is kept", "[x](mailto:a@example.org)\n", nil, []string{`href="mailto:a@example.org"`, "ugc"}},
+		{"mailto with query is refused", "[x](mailto:a@example.org?cc=b@example.org)\n", []string{"href"}, nil},
+		{"autolink url", "<https://example.org/a> and <javascript:alert(1)>\n", []string{"href=\"javascript"}, []string{`rel="nofollow noopener noreferrer ugc"`}},
+		{"autolink email", "<a@example.org>\n", nil, []string{`href="mailto:a@example.org"`, "ugc"}},
+		{"bare url (GFM)", "see https://example.org/x now\n", nil, []string{`href="https://example.org/x"`, "ugc"}},
+		{"image is its alt text", "![pwn](https://evil.test/p.png)\n", []string{"<img", "evil.test"}, []string{`<span class="alt">[pwn]</span>`}},
+		{"reference link to javascript", "[x][r]\n\n[r]: javascript:alert(1)\n", []string{"javascript", "href"}, nil},
+		{"entity-encoded scheme", "[x](&#106;avascript:alert(1))\n", []string{"avascript:", "href"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			out := renderUntrustedMD(t, tt.src)
+			for _, a := range tt.absent {
+				assert.NotContains(t, out, a)
+			}
+			for _, p := range tt.present {
+				assert.Contains(t, out, p)
+			}
+		})
+	}
+}
+
+func TestMarkdownUntrustedBigInputs(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("a", 10000)
+	out := renderUntrustedMD(t, long)
+	assert.Contains(t, out, long)
+
+	rows := "| a | b |\n|---|---|\n" + strings.Repeat("| <b>x</b> | [l](javascript:1) |\n", 500)
+	out = renderUntrustedMD(t, rows)
+	assert.NotContains(t, out, "<b>")
+	assert.NotContains(t, out, "javascript")
+	assert.NotContains(t, out, "style=")
+
+	deep := strings.Repeat("> ", 200) + "[x](javascript:1)\n"
+	assert.NotContains(t, renderUntrustedMD(t, deep), "javascript")
+
+	assert.NotContains(t, renderUntrustedMD(t, "[x](https://a.test/\"onmouseover=\"alert(1))\n"), "onmouseover=\"")
+}

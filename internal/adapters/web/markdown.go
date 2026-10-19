@@ -62,9 +62,25 @@ func (m *markdown) render(source []byte, repo, ref, dir string) (template.HTML, 
 // #fragment links chosen, so that several documents on one page (the summaries
 // of a run) do not share ids.
 func (m *markdown) renderWithIDs(source []byte, repo, ref, dir, idPrefix string) (template.HTML, []Heading, error) {
-	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{prefix: idPrefix, inner: parser.NewContext().IDs()}))
+	return m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, dir: dir, idPrefix: idPrefix})
+}
+
+// renderUntrusted renders Markdown written by an anonymous visitor (an issue
+// approved from the public form). On top of the policy of render, which already
+// drops raw HTML and never loads an image:
+//   - only http, https and mailto links are kept, every one with
+//     rel="nofollow noopener noreferrer ugc"; relative links, #fragments and
+//     every other scheme lose their link and keep the text;
+//   - nothing points into the repository.
+func (m *markdown) renderUntrusted(source []byte, idPrefix string) (template.HTML, error) {
+	h, _, err := m.renderPolicy(source, linkPolicy{idPrefix: idPrefix, untrusted: true})
+	return h, err
+}
+
+func (m *markdown) renderPolicy(source []byte, pol linkPolicy) (template.HTML, []Heading, error) {
+	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{prefix: pol.idPrefix, inner: parser.NewContext().IDs()}))
 	doc := m.md.Parser().Parse(text.NewReader(source), parser.WithContext(pc))
-	pol := linkPolicy{repo: repo, ref: ref, dir: dir, source: source, idPrefix: idPrefix}
+	pol.source = source
 	pol.apply(doc)
 
 	var buf bytes.Buffer
@@ -131,6 +147,20 @@ type linkPolicy struct {
 	source         []byte
 	// idPrefix is the prefix of the heading ids that #fragment links point at.
 	idPrefix string
+	// untrusted is the policy of text from an anonymous visitor.
+	untrusted bool
+}
+
+const (
+	relExternal  = "nofollow noopener noreferrer"
+	relUntrusted = "nofollow noopener noreferrer ugc"
+)
+
+func (p linkPolicy) rel() []byte {
+	if p.untrusted {
+		return []byte(relUntrusted)
+	}
+	return []byte(relExternal)
 }
 
 func (p linkPolicy) apply(doc ast.Node) {
@@ -163,13 +193,17 @@ func (p linkPolicy) apply(doc ast.Node) {
 		l.Destination = []byte(dest)
 		l.Title = nil
 		if kind == external {
-			l.SetAttributeString("rel", []byte("nofollow noopener noreferrer"))
+			l.SetAttributeString("rel", p.rel())
 		}
 	}
 	for _, n := range autos {
 		a := n.(*ast.AutoLink)
 		if a.AutoLinkType == ast.AutoLinkURL && isWebURL(string(a.URL(p.source))) {
-			a.SetAttributeString("rel", []byte("nofollow noopener noreferrer"))
+			a.SetAttributeString("rel", p.rel())
+			continue
+		}
+		if p.untrusted && a.AutoLinkType == ast.AutoLinkEmail && validMailbox(string(a.Label(p.source))) {
+			a.SetAttributeString("rel", p.rel())
 			continue
 		}
 		// An email address or another scheme: the label as plain text.
@@ -208,6 +242,9 @@ func (p linkPolicy) target(dest string) (string, linkKind) {
 	dest = strings.TrimSpace(dest)
 	if dest == "" || strings.ContainsAny(dest, "\x00\r\n\t\\") {
 		return "", dropped
+	}
+	if p.untrusted {
+		return untrustedTarget(dest)
 	}
 	if strings.HasPrefix(dest, "#") {
 		frag := strings.ToLower(strings.TrimPrefix(dest, "#"))
@@ -254,6 +291,39 @@ func (p linkPolicy) target(dest string) (string, linkKind) {
 		href += "#" + url.PathEscape(u.Fragment)
 	}
 	return href, internal
+}
+
+// untrustedTarget keeps absolute http and https links with a host, and mailto
+// links to one plain address.
+func untrustedTarget(dest string) (string, linkKind) {
+	if strings.HasPrefix(dest, "//") {
+		return "", dropped
+	}
+	u, err := url.Parse(dest)
+	if err != nil {
+		return "", dropped
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		if u.Host == "" || u.User != nil {
+			return "", dropped
+		}
+		return u.String(), external
+	case "mailto":
+		if u.Opaque == "" || u.RawQuery != "" || !validMailbox(u.Opaque) {
+			return "", dropped
+		}
+		return "mailto:" + u.Opaque, external
+	}
+	return "", dropped
+}
+
+// validMailbox tells whether s is a bare address: no space, quote, angle
+// bracket, percent sign, comma or second at sign.
+func validMailbox(s string) bool {
+	local, host, ok := strings.Cut(s, "@")
+	return ok && local != "" && host != "" && len(s) <= 254 &&
+		!strings.ContainsAny(local+host, " \t\r\n\"'<>%,;?#\\@")
 }
 
 func isWebURL(s string) bool {

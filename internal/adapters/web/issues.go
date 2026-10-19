@@ -103,10 +103,21 @@ func (s *Server) issueRepo(ctx context.Context, rawName string) (*repoData, erro
 	return d, nil
 }
 
+// externalAuthor is the label a visitor gave, as plain text, or "anonymous".
+func (s *Server) externalAuthor(label string) string {
+	if a := strings.TrimSpace(visibleText(label)); a != "" {
+		return a
+	}
+	return "anonymous"
+}
+
 func (s *Server) issueRow(repo string, i domain.Issue) IssueRow {
 	row := IssueRow{
 		Number: "#" + strconv.FormatInt(i.Number, 10), Href: issueHref(repo, i.Number),
 		Title: visibleText(i.Title.String()), State: string(i.State), Author: s.who(i.Author),
+	}
+	if i.External {
+		row.Author = s.externalAuthor(i.Author)
 	}
 	ts := i.UpdatedAt
 	if ts.IsZero() {
@@ -117,6 +128,8 @@ func (s *Server) issueRow(repo string, i domain.Issue) IssueRow {
 }
 
 // issueList lists the issues of one state, a page at a time.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter builds the list page from the use case results; whether the New issue button shows only reads the mode
 func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Component, int, error) {
 	d, err := s.issueRepo(ctx, r.PathValue("repo"))
 	if err != nil {
@@ -228,13 +241,24 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 		State: string(i.State), Open: i.IsOpen(),
 	}
 	if body := i.Body.String(); strings.TrimSpace(body) != "" {
-		h, _, err := s.md.renderWithIDs([]byte(body), d.name(), d.repo.DefaultBranch, "", "issue-desc-")
+		var h template.HTML
+		var err error
+		if i.External {
+			// Written by an anonymous visitor: the untrusted policy.
+			h, err = s.md.renderUntrusted([]byte(body), "issue-desc-")
+		} else {
+			h, _, err = s.md.renderWithIDs([]byte(body), d.name(), d.repo.DefaultBranch, "", "issue-desc-")
+		}
 		if err != nil {
 			return nil, 0, err
 		}
 		p.Desc = h
 	}
 	p.Opened.Name = s.who(i.Author)
+	if i.External {
+		// The label is the visitor's, not the owner's: shown as plain text.
+		p.Opened.Name = s.externalAuthor(i.Author)
+	}
 	p.Opened.When, p.Opened.WhenAt = whenOf(now, i.CreatedAt)
 	if !i.CreatedAt.IsZero() {
 		p.Opened.Abs = absolute(i.CreatedAt)
