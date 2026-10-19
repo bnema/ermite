@@ -284,3 +284,28 @@ func TestOpenIndexIsBackfilledOnce(t *testing.T) {
 	assert.Equal(t, int64(5), five.Number)
 	assert.Equal(t, []int64{1, 5}, bySource(t, m2, old, "feat/one"))
 }
+
+// Issues and merge requests share a sequence, but only merge requests belong
+// to the indexes used by branch-move checks and mergeability rescans.
+func TestMergeabilityIndexesExcludeIssueNumbers(t *testing.T) {
+	ctx := context.Background()
+	s, mrs, repo := repoWithMRs(t)
+	issue, err := s.Issues().Create(ctx, newIssue(t, repo, "issue"))
+	require.NoError(t, err)
+	mr, err := mrs.Create(ctx, newMR(t, repo, "request"))
+	require.NoError(t, err)
+	require.Equal(t, issue.Number+1, mr.Number)
+
+	source, truncated, err := mrs.OpenBySource(ctx, repo, []string{"feat/x"}, 10)
+	require.NoError(t, err)
+	assert.False(t, truncated)
+	assert.Equal(t, []int64{mr.Number}, source)
+	target, truncated, err := mrs.OpenByTarget(ctx, repo, []string{"main"}, 10)
+	require.NoError(t, err)
+	assert.False(t, truncated)
+	assert.Equal(t, []int64{mr.Number}, target)
+	open, err := mrs.ListOpen(ctx, repo)
+	require.NoError(t, err)
+	require.Len(t, open, 1)
+	assert.Equal(t, mr.Number, open[0].Number)
+}
