@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	kv "bnema.dev/ermite-kv"
@@ -222,7 +223,13 @@ func (m *MergeRequests) Create(ctx context.Context, mr domain.MergeRequest) (dom
 // guardRepoKey): two concurrent creations, of either kind, never share a
 // number. It retries when the batch conflicts; a missing repository gives
 // domain.ErrNotFound.
+//
+// Creations in one repository are serialized in the process (numberLock), so
+// a burst of merge requests and issues never exhausts the retries; the version
+// checks still guard against any other writer.
 func createNumbered(ctx context.Context, db *kv.DB, repo domain.RepoName, add func(b *kv.Batch, number int64) error) error {
+	unlock := numberLock(repo)
+	defer unlock()
 	for range createTries {
 		repoItem, repoOK := db.Get(ctx, repoKey(repo))
 		if !repoOK {
@@ -257,6 +264,17 @@ func createNumbered(ctx context.Context, db *kv.DB, repo domain.RepoName, add fu
 		return err
 	}
 	return domain.ErrConflict
+}
+
+// numberLocks holds one mutex per repository for createNumbered.
+var numberLocks sync.Map // domain.RepoName -> *sync.Mutex
+
+// numberLock locks the numbering of repo and returns the unlock function.
+func numberLock(repo domain.RepoName) func() {
+	v, _ := numberLocks.LoadOrStore(repo, new(sync.Mutex))
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // Get reads mr/<repo>/<number>.
