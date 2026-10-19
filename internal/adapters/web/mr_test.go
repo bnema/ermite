@@ -63,7 +63,7 @@ func TestMergeBoxModes(t *testing.T) {
 	d := &repoData{repo: repoWithModes(domain.MergeModes()...)}
 	s := &Server{}
 
-	behind := s.mergeBox(d, 1, "feat", "abc", "", mergeabilityView(domain.Mergeability{State: domain.MergeabilityBehind, Behind: 1}, "main"))
+	behind := s.mergeBox(d, 1, "feat", "abc", true, mergeabilityView(domain.Mergeability{State: domain.MergeabilityBehind, Behind: 1}, "main"))
 	require.Len(t, behind.Modes, 3)
 	assert.True(t, behind.Modes[0].Disabled, "fast-forward is not possible when behind")
 	assert.NotEmpty(t, behind.Modes[0].Reason)
@@ -73,7 +73,7 @@ func TestMergeBoxModes(t *testing.T) {
 	assert.True(t, behind.CanMerge())
 	assert.True(t, behind.Signed)
 
-	conflict := s.mergeBox(d, 1, "feat", "abc", "", mergeabilityView(domain.Mergeability{State: domain.MergeabilityConflict}, "main"))
+	conflict := s.mergeBox(d, 1, "feat", "abc", true, mergeabilityView(domain.Mergeability{State: domain.MergeabilityConflict}, "main"))
 	assert.False(t, conflict.CanMerge())
 	assert.NotEmpty(t, conflict.MergeTitle(), "the button says why it is disabled")
 	assert.Equal(t, 0, conflict.Checked())
@@ -84,7 +84,7 @@ func TestMergeBoxModes(t *testing.T) {
 func TestMergeBoxOnlyFastForwardIsNotSigned(t *testing.T) {
 	t.Parallel()
 	d := &repoData{repo: repoWithModes(domain.MergeModeFastForward)}
-	b := (&Server{}).mergeBox(d, 1, "feat", "abc", "", mergeabilityView(domain.Mergeability{State: domain.MergeabilityUpToDate}, "main"))
+	b := (&Server{}).mergeBox(d, 1, "feat", "abc", true, mergeabilityView(domain.Mergeability{State: domain.MergeabilityUpToDate}, "main"))
 	assert.False(t, b.Signed, "no commit is created, nothing to explain")
 	assert.Len(t, b.Modes, 1)
 }
@@ -94,7 +94,7 @@ func TestMergeBoxNamesTheSigningKey(t *testing.T) {
 	key := mocks.NewSigningKeyService(t)
 	key.EXPECT().Info().Return(domain.SigningKeyInfo{Key: domain.SigningPublicKey{Fingerprint: "SHA256:abc"}})
 	d := &repoData{repo: repoWithModes(domain.MergeModes()...)}
-	b := (&Server{cfg: Config{SigningKey: key}}).mergeBox(d, 1, "feat", "abc", "", mergeabilityView(domain.Mergeability{}, "main"))
+	b := (&Server{cfg: Config{SigningKey: key}}).mergeBox(d, 1, "feat", "abc", true, mergeabilityView(domain.Mergeability{}, "main"))
 	assert.Equal(t, "SHA256:abc", b.Fingerprint)
 }
 

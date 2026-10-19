@@ -210,6 +210,90 @@ func (_c *MergeRequestService_Close_Call) RunAndReturn(run func(ctx context.Cont
 	return _c
 }
 
+// Compare provides a mock function for the type MergeRequestService
+func (_mock *MergeRequestService) Compare(ctx context.Context, p domain.Principal, repo domain.RepoName, target domain.ObjectID, source domain.ObjectID) (ports.CompareResult, error) {
+	ret := _mock.Called(ctx, p, repo, target, source)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Compare")
+	}
+
+	var r0 ports.CompareResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.ObjectID, domain.ObjectID) (ports.CompareResult, error)); ok {
+		return returnFunc(ctx, p, repo, target, source)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.ObjectID, domain.ObjectID) ports.CompareResult); ok {
+		r0 = returnFunc(ctx, p, repo, target, source)
+	} else {
+		r0 = ret.Get(0).(ports.CompareResult)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, domain.ObjectID, domain.ObjectID) error); ok {
+		r1 = returnFunc(ctx, p, repo, target, source)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestService_Compare_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Compare'
+type MergeRequestService_Compare_Call struct {
+	*mock.Call
+}
+
+// Compare is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - target domain.ObjectID
+//   - source domain.ObjectID
+func (_e *MergeRequestService_Expecter) Compare(ctx any, p any, repo any, target any, source any) *MergeRequestService_Compare_Call {
+	return &MergeRequestService_Compare_Call{Call: _e.mock.On("Compare", ctx, p, repo, target, source)}
+}
+
+func (_c *MergeRequestService_Compare_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, target domain.ObjectID, source domain.ObjectID)) *MergeRequestService_Compare_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 domain.ObjectID
+		if args[3] != nil {
+			arg3 = args[3].(domain.ObjectID)
+		}
+		var arg4 domain.ObjectID
+		if args[4] != nil {
+			arg4 = args[4].(domain.ObjectID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestService_Compare_Call) Return(compareResult ports.CompareResult, err error) *MergeRequestService_Compare_Call {
+	_c.Call.Return(compareResult, err)
+	return _c
+}
+
+func (_c *MergeRequestService_Compare_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, target domain.ObjectID, source domain.ObjectID) (ports.CompareResult, error)) *MergeRequestService_Compare_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CountOpen provides a mock function for the type MergeRequestService
 func (_mock *MergeRequestService) CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error) {
 	ret := _mock.Called(ctx, p, name)
@@ -1016,6 +1100,90 @@ func (_c *MergeRequestService_Mergeability_Call) Return(mergeability domain.Merg
 }
 
 func (_c *MergeRequestService_Mergeability_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Mergeability, error)) *MergeRequestService_Mergeability_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// PushSummary provides a mock function for the type MergeRequestService
+func (_mock *MergeRequestService) PushSummary(ctx context.Context, p domain.Principal, repo domain.RepoName, oldHead domain.ObjectID, newTip domain.ObjectID) (ports.PushSummary, error) {
+	ret := _mock.Called(ctx, p, repo, oldHead, newTip)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PushSummary")
+	}
+
+	var r0 ports.PushSummary
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.ObjectID, domain.ObjectID) (ports.PushSummary, error)); ok {
+		return returnFunc(ctx, p, repo, oldHead, newTip)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.ObjectID, domain.ObjectID) ports.PushSummary); ok {
+		r0 = returnFunc(ctx, p, repo, oldHead, newTip)
+	} else {
+		r0 = ret.Get(0).(ports.PushSummary)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, domain.ObjectID, domain.ObjectID) error); ok {
+		r1 = returnFunc(ctx, p, repo, oldHead, newTip)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeRequestService_PushSummary_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PushSummary'
+type MergeRequestService_PushSummary_Call struct {
+	*mock.Call
+}
+
+// PushSummary is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - repo domain.RepoName
+//   - oldHead domain.ObjectID
+//   - newTip domain.ObjectID
+func (_e *MergeRequestService_Expecter) PushSummary(ctx any, p any, repo any, oldHead any, newTip any) *MergeRequestService_PushSummary_Call {
+	return &MergeRequestService_PushSummary_Call{Call: _e.mock.On("PushSummary", ctx, p, repo, oldHead, newTip)}
+}
+
+func (_c *MergeRequestService_PushSummary_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, oldHead domain.ObjectID, newTip domain.ObjectID)) *MergeRequestService_PushSummary_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 domain.ObjectID
+		if args[3] != nil {
+			arg3 = args[3].(domain.ObjectID)
+		}
+		var arg4 domain.ObjectID
+		if args[4] != nil {
+			arg4 = args[4].(domain.ObjectID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeRequestService_PushSummary_Call) Return(pushSummary ports.PushSummary, err error) *MergeRequestService_PushSummary_Call {
+	_c.Call.Return(pushSummary, err)
+	return _c
+}
+
+func (_c *MergeRequestService_PushSummary_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, oldHead domain.ObjectID, newTip domain.ObjectID) (ports.PushSummary, error)) *MergeRequestService_PushSummary_Call {
 	_c.Call.Return(run)
 	return _c
 }

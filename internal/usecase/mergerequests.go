@@ -546,6 +546,7 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 	if d.LastReadID, err = m.store.GetRead(ctx, name, number); err != nil {
 		return ports.MergeRequestDetail{}, err
 	}
+	d.CanMarkRead = !mr.HeadID.IsZero() && mr.HeadID != d.LastReadID
 
 	exclude, base, err := m.rangeOf(ctx, mr)
 	if err != nil {
@@ -574,6 +575,14 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 			return ports.MergeRequestDetail{}, err
 		}
 		verifyCommits(ctx, m.verifier, name, d.Commits)
+		if !d.LastReadID.IsZero() {
+			for i, c := range d.Commits {
+				if c.ID == d.LastReadID {
+					d.NewCommits = i
+					break
+				}
+			}
+		}
 	}
 	if opts.SinceLastRead && !d.LastReadID.IsZero() {
 		switch ok, err := m.git.HasCommit(ctx, name, d.LastReadID); {
@@ -1437,4 +1446,48 @@ func (m *MergeRequests) replyRoot(ctx context.Context, name domain.RepoName, num
 		return domain.Comment{}, err
 	}
 	return root, nil
+}
+
+// Compare lists at most 500 source commits absent from target. Unlike bounded
+// history intersection, ancestry remains accurate even for deep histories.
+func (m *MergeRequests) Compare(ctx context.Context, p domain.Principal, repo domain.RepoName, target, source domain.ObjectID) (ports.CompareResult, error) {
+	if _, err := m.readable(ctx, p, repo); err != nil {
+		return ports.CompareResult{}, err
+	}
+	if target == source {
+		return ports.CompareResult{Exact: true}, nil
+	}
+	ancestor, err := m.git.IsAncestor(ctx, repo, target, source)
+	if err != nil {
+		return ports.CompareResult{}, err
+	}
+	commits, more, err := m.git.ListRange(ctx, repo, target, source, 500)
+	if err != nil {
+		return ports.CompareResult{}, err
+	}
+	verifyCommits(ctx, m.verifier, repo, commits)
+	return ports.CompareResult{Ahead: commits, Behind: !ancestor, Exact: !more}, nil
+}
+
+// PushSummary detects rewrites by ancestry, not log ordering, and counts at
+// most 100 new commits. More distinguishes a longer range from a rewrite.
+func (m *MergeRequests) PushSummary(ctx context.Context, p domain.Principal, repo domain.RepoName, oldHead, newTip domain.ObjectID) (ports.PushSummary, error) {
+	if _, err := m.readable(ctx, p, repo); err != nil {
+		return ports.PushSummary{}, err
+	}
+	if oldHead == newTip {
+		return ports.PushSummary{}, nil
+	}
+	ancestor, err := m.git.IsAncestor(ctx, repo, oldHead, newTip)
+	if err != nil {
+		return ports.PushSummary{}, err
+	}
+	if !ancestor {
+		return ports.PushSummary{Rewritten: true}, nil
+	}
+	commits, more, err := m.git.ListRange(ctx, repo, oldHead, newTip, 100)
+	if err != nil {
+		return ports.PushSummary{}, err
+	}
+	return ports.PushSummary{Count: len(commits), More: more}, nil
 }
