@@ -13,7 +13,7 @@ tool (
 
 require (
 	bnema.dev/ermite-actions v0.2.0
-	bnema.dev/ermite-api v0.12.0
+	bnema.dev/ermite-api v0.13.0
 	bnema.dev/ermite-git v0.1.0
 	bnema.dev/ermite-kv v0.1.0
 	connectrpc.com/connect v1.21.0
@@ -172,6 +172,3 @@ require (
 	mvdan.cc/xurls/v2 v2.6.0 // indirect
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 )
-
-// Temporary: removed once ermite-api is tagged.
-replace bnema.dev/ermite-api => /home/brice/dev/projects/ermite-workspace/ermite-api/.worktrees/issue-links
