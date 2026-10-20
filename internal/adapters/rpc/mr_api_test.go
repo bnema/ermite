@@ -149,8 +149,8 @@ func TestAutoMergeRPCCodesAndFields(t *testing.T) {
 
 	// Success: the mode and the request reach the service, the fields come back.
 	m := mocks.NewMergeRequestService(t)
-	m.EXPECT().EnableAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash}).Return(armed, nil).Once()
-	res, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode_MERGE_MODE_SQUASH}))
+	m.EXPECT().EnableAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash, HeadID: mustObjectID(t, strings.Repeat("a", domain.ObjectIDLen))}).Return(armed, nil).Once()
+	res, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode_MERGE_MODE_SQUASH, HeadId: strings.Repeat("a", domain.ObjectIDLen)}))
 	require.NoError(t, err)
 	assert.Equal(t, pbArmed, res.Msg.GetMergeRequest())
 	m.EXPECT().CancelAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1)).Return(idle, nil).Once()
@@ -159,7 +159,9 @@ func TestAutoMergeRPCCodesAndFields(t *testing.T) {
 	assert.Nil(t, cres.Msg.GetMergeRequest().GetAutoMerge())
 
 	// Bad input never reaches the service.
-	_, err = (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode(99)}))
+	_, err = (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode(99), HeadId: strings.Repeat("a", domain.ObjectIDLen)}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+	_, err = (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, HeadId: "abc"}))
 	requireCode(t, connect.CodeInvalidArgument, err)
 	_, err = (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), connect.NewRequest(&pb.CancelAutoMergeRequest{Repo: "", Number: 1}))
 	requireCode(t, connect.CodeInvalidArgument, err)
@@ -175,7 +177,7 @@ func TestAutoMergeRPCCodesAndFields(t *testing.T) {
 	} {
 		m := mocks.NewMergeRequestService(t)
 		m.EXPECT().EnableAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), mock.Anything).Return(domain.MergeRequest{}, tc.err).Once()
-		_, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1}))
+		_, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, HeadId: strings.Repeat("a", domain.ObjectIDLen)}))
 		requireCode(t, tc.code, err)
 		m.EXPECT().CancelAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1)).Return(domain.MergeRequest{}, tc.err).Once()
 		_, err = (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), connect.NewRequest(&pb.CancelAutoMergeRequest{Repo: "demo", Number: 1}))

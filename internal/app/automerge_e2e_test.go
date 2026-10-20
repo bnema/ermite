@@ -38,8 +38,10 @@ jobs:
 	allow := true
 	_, err := c.forge.Repos.Update(c.ctx, domain.Root(), repo, ports.UpdateRepoParams{AllowAutoMerge: &allow})
 	require.NoError(t, err)
+	headID, err := domain.ParseObjectID(head)
+	require.NoError(t, err)
 	events := c.forge.Bus.Subscribe(c.ctx)
-	enabled, err := c.forge.MergeRequests.EnableAutoMerge(c.ctx, domain.Owner(), repo, number, ports.EnableAutoMergeParams{})
+	enabled, err := c.forge.MergeRequests.EnableAutoMerge(c.ctx, domain.Owner(), repo, number, ports.EnableAutoMergeParams{HeadID: headID})
 	require.NoError(t, err)
 	require.NotNil(t, enabled.AutoMerge)
 	assert.Equal(t, head, enabled.AutoMerge.HeadID.String())
@@ -87,11 +89,11 @@ jobs:
     steps:
       - run: echo hello
 `}, "")
-	c.push("feat", map[string]string{"change.txt": "feature\n"}, "")
+	head := c.push("feat", map[string]string{"change.txt": "feature\n"}, "")
 	number := c.openMR(c.root, "feat")
 
 	// Off by default: the server refuses.
-	_, err := c.root.mr.EnableAutoMerge(c.ctx, connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: c.repo, Number: number}))
+	_, err := c.root.mr.EnableAutoMerge(c.ctx, connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: c.repo, Number: number, HeadId: head}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 
@@ -109,7 +111,7 @@ jobs:
 
 	w := c.watch(c.root, "", "home")
 	res, err := c.root.mr.EnableAutoMerge(c.ctx, connect.NewRequest(&pb.EnableAutoMergeRequest{
-		Repo: c.repo, Number: number, Mode: pb.MergeMode_MERGE_MODE_SQUASH,
+		Repo: c.repo, Number: number, Mode: pb.MergeMode_MERGE_MODE_SQUASH, HeadId: head,
 	}))
 	require.NoError(t, err)
 	am := res.Msg.GetMergeRequest().GetAutoMerge()

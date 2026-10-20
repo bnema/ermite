@@ -37,7 +37,7 @@ func autoEvaluator(r *mrRig, checks ports.CIChecksReader, activity ports.CIActiv
 
 func enableAuto(t *testing.T, r *mrRig, mr domain.MergeRequest) domain.MergeRequest {
 	t.Helper()
-	enabled, err := r.mrs.EnableAutoMerge(r.ctx, root, r.repo, mr.Number, ports.EnableAutoMergeParams{})
+	enabled, err := r.mrs.EnableAutoMerge(r.ctx, root, r.repo, mr.Number, ports.EnableAutoMergeParams{HeadID: r.head()})
 	require.NoError(t, err)
 	require.NotNil(t, enabled.AutoMerge)
 	return enabled
@@ -78,7 +78,7 @@ func TestEnableAutoMergeNeedsSettingScopeAndRef(t *testing.T) {
 				_, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowedMergeModes: ptr([]domain.MergeMode{domain.MergeModeSquash})})
 				require.NoError(t, err)
 			}
-			_, err := r.mrs.EnableAutoMerge(r.ctx, p, r.repo, mr.Number, ports.EnableAutoMergeParams{})
+			_, err := r.mrs.EnableAutoMerge(r.ctx, p, r.repo, mr.Number, ports.EnableAutoMergeParams{HeadID: r.head()})
 			require.ErrorIs(t, err, want)
 		})
 	}
@@ -90,7 +90,7 @@ func TestEnableAutoMergeRecordsEnablerModeHeadAndPublishes(t *testing.T) {
 	trigger.EXPECT().OnRepoChanged(mock.Anything, r.repo).Return().Twice()
 	r.mrs.WithAutoMerge(trigger)
 	r.drain()
-	got, err := r.mrs.EnableAutoMerge(r.ctx, domain.Owner(), r.repo, mr.Number, ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash})
+	got, err := r.mrs.EnableAutoMerge(r.ctx, domain.Owner(), r.repo, mr.Number, ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash, HeadID: r.head()})
 	require.NoError(t, err)
 	assert.Equal(t, &domain.AutoMerge{Mode: domain.MergeModeSquash, HeadID: r.head(), EnabledBy: domain.PusherOf(domain.Owner()), EnablerLabel: domain.AuthorName(domain.Owner()), EnabledAt: now}, got.AutoMerge)
 	events := r.drain()
@@ -226,7 +226,7 @@ func TestAutoMergeCancelsOnPermanentMergeFailure(t *testing.T) {
 	for _, mode := range []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash} {
 		t.Run(mode.String(), func(t *testing.T) {
 			r, mr, checks := autoRig(t)
-			_, err := r.mrs.EnableAutoMerge(r.ctx, root, r.repo, mr.Number, ports.EnableAutoMergeParams{Mode: mode})
+			_, err := r.mrs.EnableAutoMerge(r.ctx, root, r.repo, mr.Number, ports.EnableAutoMergeParams{Mode: mode, HeadID: r.head()})
 			require.NoError(t, err)
 			head := r.head()
 			r.sh("checkout", "main")
@@ -350,4 +350,25 @@ func TestAutoMergeRequiresSuccessfulCheck(t *testing.T) {
 		assert.True(t, storedAuto(t, r, mr).IsOpen())
 		assert.NotNil(t, storedAuto(t, r, mr).AutoMerge)
 	}
+}
+
+func TestEnableAutoMergeNeedsTheHeadTheCallerSaw(t *testing.T) {
+	t.Run("stale head", func(t *testing.T) {
+		r, mr, _ := autoRig(t)
+		stale := r.head()
+		r.commit(author, "later.txt", "later\n", "push after review")
+		r.push("feat")
+		r.drain()
+		_, err := r.mrs.EnableAutoMerge(r.ctx, root, r.repo, mr.Number, ports.EnableAutoMergeParams{HeadID: stale})
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+		assert.Contains(t, err.Error(), "branch moved, read again")
+		assert.Nil(t, storedAuto(t, r, mr).AutoMerge)
+		assert.Empty(t, r.drain(), "nothing is published")
+	})
+	t.Run("missing head", func(t *testing.T) {
+		r, mr, _ := autoRig(t)
+		_, err := r.mrs.EnableAutoMerge(r.ctx, root, r.repo, mr.Number, ports.EnableAutoMergeParams{})
+		require.ErrorIs(t, err, domain.ErrInvalid)
+		assert.Nil(t, storedAuto(t, r, mr).AutoMerge)
+	})
 }

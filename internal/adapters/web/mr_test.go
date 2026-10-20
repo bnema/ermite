@@ -241,12 +241,14 @@ func TestAutoMergeHandlers(t *testing.T) {
 	require.NoError(t, err)
 	ctx := context.Background()
 
+	head, err := domain.ParseObjectID(strings.Repeat("a", domain.ObjectIDLen))
+	require.NoError(t, err)
 	svc := mocks.NewMergeRequestService(t)
-	svc.EXPECT().EnableAutoMerge(mock.Anything, mock.Anything, name, int64(3), ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash}).
+	svc.EXPECT().EnableAutoMerge(mock.Anything, mock.Anything, name, int64(3), ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash, HeadID: head}).
 		Return(domain.MergeRequest{}, nil).Once()
 	svc.EXPECT().CancelAutoMerge(mock.Anything, mock.Anything, name, int64(3)).Return(domain.MergeRequest{}, nil).Once()
 	s := &Server{cfg: Config{MergeRequests: svc}}
-	to, _, err := s.mrAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge", "mode=squash"))
+	to, _, err := s.mrAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge", "mode=squash&head_id="+head.String()))
 	require.NoError(t, err)
 	assert.Equal(t, mrHref("demo", 3), to)
 	to, _, err = s.mrCancelAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge/cancel", ""))
@@ -266,7 +268,7 @@ func TestAutoMergeHandlers(t *testing.T) {
 	svc2.EXPECT().CancelAutoMerge(mock.Anything, mock.Anything, name, int64(3)).
 		Return(domain.MergeRequest{}, domain.ErrNotFound).Once()
 	s2 := &Server{cfg: Config{MergeRequests: svc2}}
-	_, _, err = s2.mrAutoMerge(ctx, autoMergeRequest("/x", "mode=squash"))
+	_, _, err = s2.mrAutoMerge(ctx, autoMergeRequest("/x", "mode=squash&head_id="+head.String()))
 	require.ErrorAs(t, err, &re)
 	assert.Equal(t, http.StatusConflict, re.status)
 	_, _, err = s2.mrCancelAutoMerge(ctx, autoMergeRequest("/x", ""))

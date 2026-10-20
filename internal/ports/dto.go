@@ -59,6 +59,9 @@ type UpdateRepoParams struct {
 type EnableAutoMergeParams struct {
 	// Mode is the merge mode to use; empty means fast-forward.
 	Mode domain.MergeMode
+	// HeadID is the head the caller saw; required. Auto-merge is enabled only
+	// if the source branch still points to it.
+	HeadID domain.ObjectID
 }
 
 // TokenPage is a page of stored tokens, newest first.

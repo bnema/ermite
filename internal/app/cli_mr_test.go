@@ -599,7 +599,7 @@ func autoMergeFake(t *testing.T, features ...string) (*fakeAPI, string) {
 
 func TestMRMergeAuto(t *testing.T) {
 	f, url := autoMergeFake(t, "merge_requests.auto_merge")
-	res := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto", "--mode", "squash").ok(t)
+	res := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto", "--mode", "squash", "--head", headA).ok(t)
 	assert.Equal(t, "auto-merge enabled on alpha!1: squash into main when ready (enabled by owner)\n", res.stdout)
 	calls, reqs := f.snapshot()
 	assert.Equal(t, []string{"GetVersion", "EnableAutoMerge"}, calls)
@@ -607,8 +607,9 @@ func TestMRMergeAuto(t *testing.T) {
 	assert.Equal(t, "alpha", got.GetRepo())
 	assert.EqualValues(t, 1, got.GetNumber())
 	assert.Equal(t, ermite.MergeMode_MERGE_MODE_SQUASH, got.GetMode())
+	assert.Equal(t, headA, got.GetHeadId())
 
-	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto", "--json").ok(t)
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto", "--head", headA, "--json").ok(t)
 	var out struct {
 		AutoMerge struct {
 			Mode      string `json:"mode"`
@@ -626,7 +627,7 @@ func TestMRMergeAuto(t *testing.T) {
 	assert.Equal(t, ermite.MergeMode_MERGE_MODE_FAST_FORWARD, reqs[len(reqs)-1].(*ermite.EnableAutoMergeRequest).GetMode(), "fast-forward by default")
 
 	for _, args := range [][]string{
-		{"--auto", "--cancel-auto"}, {"--auto", "--delete-branch"}, {"--auto", "--head", headA},
+		{"--auto", "--head", headA, "--cancel-auto"}, {"--auto", "--head", headA, "--delete-branch"}, {"--cancel-auto", "--head", headA}, {"--auto"},
 	} {
 		require.Error(t, runCLI(t, envFor(url), "", append([]string{"mr", "merge", "alpha", "1"}, args...)...).err, "%v", args)
 	}
@@ -634,7 +635,7 @@ func TestMRMergeAuto(t *testing.T) {
 
 func TestMRMergeAutoNeedsTheFeature(t *testing.T) {
 	f, url := autoMergeFake(t, "merge_requests")
-	res := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto")
+	res := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto", "--head", headA)
 	require.Error(t, res.err)
 	assert.Contains(t, res.err.Error(), "merge_requests.auto_merge")
 	calls, _ := f.snapshot()

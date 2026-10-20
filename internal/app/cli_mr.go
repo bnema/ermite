@@ -1112,8 +1112,8 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			"--auto does not merge now: it asks the server to merge by itself, with --mode, once CI has settled\n" +
 			"with at least one successful check on the head and every check allows it. Needs the mr:merge scope,\n" +
 			"a server with CI, and `ermite repo edit --allow-auto-merge` on the repository. A new push to the\n" +
-			"source branch, a change of the settings or of your permissions cancels it. --auto takes no --head:\n" +
-			"the server merges the head current when you enable it. --cancel-auto cancels a pending auto-merge." + jsonMRHelp +
+			"source branch, a change of the settings or of your permissions cancels it. --auto takes --head\n" +
+			"like a plain merge: it is enabled only if the source branch still points to it. --cancel-auto cancels a pending auto-merge." + jsonMRHelp +
 			"\n--json adds source_branch_deleted (true when the deletion was requested: the server deletes the branch right after the merge).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
@@ -1127,7 +1127,6 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("cancel-auto", "delete-branch")
 	cmd.MarkFlagsMutuallyExclusive("cancel-auto", "head")
 	cmd.MarkFlagsMutuallyExclusive("auto", "delete-branch")
-	cmd.MarkFlagsMutuallyExclusive("auto", "head")
 	_ = cmd.RegisterFlagCompletionFunc("mode", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{modeFastForward, modeSquash, modeMerge}, cobra.ShellCompDirectiveNoFileComp
 	})
@@ -1144,13 +1143,13 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if auto {
-			return runMREnableAuto(env, cmd, args[0], n, pbMode, *asJSON)
-		}
 		head = strings.TrimSpace(head)
 		if head == "" {
 			return fmt.Errorf("--head is required: run `ermite mr show %s %d` and give the head id it prints, "+
 				"so that only the commit you reviewed is merged", args[0], n)
+		}
+		if auto {
+			return runMREnableAuto(env, cmd, args[0], n, pbMode, head, *asJSON)
 		}
 		c, err := env.client(cmd)
 		if err != nil {
@@ -1188,7 +1187,7 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 }
 
 // runMREnableAuto is `mr merge --auto`: it asks the server to merge once ready.
-func runMREnableAuto(env *cliEnv, cmd *cobra.Command, repo string, n int64, mode ermite.MergeMode, asJSON bool) error {
+func runMREnableAuto(env *cliEnv, cmd *cobra.Command, repo string, n int64, mode ermite.MergeMode, head string, asJSON bool) error {
 	c, err := env.client(cmd)
 	if err != nil {
 		return err
@@ -1197,7 +1196,7 @@ func runMREnableAuto(env *cliEnv, cmd *cobra.Command, repo string, n int64, mode
 	if err := requireFeature(ctx, c, client.FeatureAutoMerge, "cannot merge by itself (--auto)"); err != nil {
 		return err
 	}
-	res, err := c.MergeRequests().EnableAutoMerge(ctx, connect.NewRequest(&ermite.EnableAutoMergeRequest{Repo: repo, Number: n, Mode: mode}))
+	res, err := c.MergeRequests().EnableAutoMerge(ctx, connect.NewRequest(&ermite.EnableAutoMergeRequest{Repo: repo, Number: n, Mode: mode, HeadId: head}))
 	if err != nil {
 		return c.Describe(err)
 	}

@@ -28,7 +28,11 @@ func (s *mergeRequestService) EnableAutoMerge(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mr, err := s.mrs.EnableAutoMerge(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.EnableAutoMergeParams{Mode: mode})
+	head, err := headID(req.Msg.GetHeadId())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	mr, err := s.mrs.EnableAutoMerge(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.EnableAutoMergeParams{Mode: mode, HeadID: head})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}

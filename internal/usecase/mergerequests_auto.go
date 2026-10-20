@@ -17,7 +17,8 @@ func (m *MergeRequests) WithAutoMerge(t ports.AutoMergeTrigger) *MergeRequests {
 	return m
 }
 
-// EnableAutoMerge records the actor and current head; re-enabling replaces the
+// EnableAutoMerge records the actor and the head the caller saw, which must be
+// the current head of the source branch; re-enabling replaces the
 // previous intent rather than preserving an older actor's authority.
 func (m *MergeRequests) EnableAutoMerge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.EnableAutoMergeParams) (domain.MergeRequest, error) {
 	if _, err := m.writable(ctx, p, name, domain.ScopeMRMerge); err != nil {
@@ -30,7 +31,14 @@ func (m *MergeRequests) EnableAutoMerge(ctx context.Context, p domain.Principal,
 	if mode == "" {
 		mode = domain.MergeModeFastForward
 	}
+	var v domain.Violations
 	if _, err := domain.ParseMergeMode(mode.String()); err != nil {
+		v.Add("mode", "is not a merge mode")
+	}
+	if params.HeadID.IsZero() {
+		v.Add("head_id", "is required")
+	}
+	if err := v.Err(); err != nil {
 		return domain.MergeRequest{}, err
 	}
 	unlock, err := m.lockRepo(ctx, name)
@@ -69,6 +77,9 @@ func (m *MergeRequests) EnableAutoMerge(ctx context.Context, p domain.Principal,
 		}
 		if head.IsZero() {
 			return domain.MergeRequest{}, fmt.Errorf("%w: the source branch %q no longer exists", domain.ErrPreconditionFailed, mr.Source)
+		}
+		if head != params.HeadID {
+			return domain.MergeRequest{}, fmt.Errorf("%w: branch moved, read again: %q is at %s, not %s", domain.ErrPreconditionFailed, mr.Source, head, params.HeadID)
 		}
 		mr.UpdatedAt = m.clock.Now().UTC()
 		mr.AutoMerge = &domain.AutoMerge{Mode: mode, HeadID: head, EnabledBy: domain.PusherOf(p), EnablerLabel: domain.AuthorName(p), EnabledAt: mr.UpdatedAt}
