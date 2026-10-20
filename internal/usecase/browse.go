@@ -339,7 +339,14 @@ func decodeCommitToken(tok string, path domain.TreePath) (domain.ObjectID, int, 
 // first parent, within the default diff limits or, with opts.Files, the limits
 // of that file window. An invalid window gives domain.ErrInvalid.
 func (b *Browse) GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, opts ports.GetCommitOptions) (domain.CommitDetail, error) {
-	limits, err := windowLimits(opts.Files)
+	if (opts.Page && opts.Files != nil) || (opts.Load != nil && !opts.Page) {
+		return domain.CommitDetail{}, fmt.Errorf("%w: commit page options", domain.ErrInvalid)
+	}
+	win := opts.Files
+	if opts.Page {
+		win = &ports.FileWindow{From: 0, To: domain.CommitPageFiles}
+	}
+	limits, err := windowLimits(win)
 	if err != nil {
 		return domain.CommitDetail{}, err
 	}
@@ -349,6 +356,18 @@ func (b *Browse) GetCommit(ctx context.Context, p domain.Principal, repo domain.
 	d, err := b.reader.GetCommit(ctx, repo, rev, limits)
 	if err != nil {
 		return domain.CommitDetail{}, err
+	}
+	if opts.Page {
+		d.Diff.CollapseFrom(domain.CommitPageFiles)
+		if i := opts.Load; i != nil && *i >= 0 && *i < len(d.Diff.Files) && d.Diff.Files[*i].Omitted.Collapsed() {
+			one, err := b.reader.GetCommit(ctx, repo, rev, domain.OneFileDiffLimits(*i))
+			if err != nil {
+				return domain.CommitDetail{}, err
+			}
+			if *i < len(one.Diff.Files) {
+				d.Diff.Files[*i] = one.Diff.Files[*i]
+			}
+		}
 	}
 	if b.verifier != nil {
 		one := []domain.Commit{d.Commit}

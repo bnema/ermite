@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -633,6 +634,38 @@ func TestBrowseVerifiesCommits(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, verified, d.Commit.Verification)
 		assert.Equal(t, 2, d.Stats.FilesChanged)
+	})
+
+	t.Run("GetCommit Page collapses past the window and loads one file", func(t *testing.T) {
+		t.Parallel()
+		f, v := newFixture(t)
+		v.EXPECT().VerifyCommits(ctx, pub.Name, mock.Anything).Return(nil).Maybe()
+		f.meta.EXPECT().Get(ctx, pub.Name).Return(pub, nil).Maybe()
+		files := make([]domain.FileDiff, domain.CommitPageFiles+2)
+		for i := range files {
+			files[i].Additions = 1
+		}
+		win := domain.DefaultDiffLimits()
+		win.MaxFiles, win.From, win.To, win.SkipGenerated = 0, 0, domain.CommitPageFiles, true
+		f.reader.EXPECT().GetCommit(ctx, pub.Name, mock.Anything, win).
+			Return(domain.CommitDetail{Diff: domain.Diff{Files: slices.Clone(files)}}, nil)
+		i := domain.CommitPageFiles + 1
+		loaded := slices.Clone(files)
+		loaded[i].Hunks = []domain.Hunk{{}}
+		f.reader.EXPECT().GetCommit(ctx, pub.Name, mock.Anything, domain.OneFileDiffLimits(i)).
+			Return(domain.CommitDetail{Diff: domain.Diff{Files: loaded}}, nil)
+
+		d, err := f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{}, ports.GetCommitOptions{Page: true, Load: &i})
+		require.NoError(t, err)
+		assert.Equal(t, domain.OmitNone, d.Diff.Files[0].Omitted)
+		assert.Equal(t, domain.OmitBudget, d.Diff.Files[domain.CommitPageFiles].Omitted)
+		assert.Equal(t, domain.OmitNone, d.Diff.Files[i].Omitted)
+		assert.NotEmpty(t, d.Diff.Files[i].Hunks)
+
+		_, err = f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{}, ports.GetCommitOptions{Load: &i})
+		assert.ErrorIs(t, err, domain.ErrInvalid)
+		_, err = f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{}, ports.GetCommitOptions{Page: true, Files: &ports.FileWindow{To: 1}})
+		assert.ErrorIs(t, err, domain.ErrInvalid)
 	})
 
 	t.Run("nothing is verified for an empty page or a failed read", func(t *testing.T) {

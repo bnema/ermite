@@ -88,8 +88,6 @@ type rawEntry struct {
 }
 
 // readDiff parses the output of diff-tree --raw --numstat -p.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter streams raw, numstat and patch sections; domain.DiffBudget decides window and hunk eligibility and accounts retained lines and bytes; adapter only skips sections and stops the process
 func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.DiffStats, error) {
 	entries, err := readRaw(r)
 	if err != nil {

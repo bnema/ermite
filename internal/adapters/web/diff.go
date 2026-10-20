@@ -490,6 +490,8 @@ func oneFileSrc(src string, i int) string {
 
 // collapseFiles gives the collapsed files of a diff their load address, and
 // the files too large to show a link to their raw blob. Nothing is read.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter only maps each file's domain omission (Omitted.Collapsed) to a load link, a ?file= anchor or a raw link; it decides nothing and reads nothing
 func collapseFiles(out []DiffFile, files []domain.FileDiff, l fileLinks) {
 	for i, f := range files {
 		if i >= len(out) {
@@ -521,14 +523,14 @@ func rawLink(f domain.FileDiff, l fileLinks) string {
 }
 
 // fileParam reads ?file= of a page without scripts: the index of a collapsed
-// file to read in full, in [0, n).
-func fileParam(r *http.Request, n int) (int, bool) {
+// file to read in full; nil when absent or malformed.
+func fileParam(r *http.Request) *int {
 	s := r.URL.Query().Get("file")
 	i, err := strconv.Atoi(s)
-	if err != nil || i < 0 || i >= n || strconv.Itoa(i) != s {
-		return 0, false
+	if err != nil || i < 0 || strconv.Itoa(i) != s {
+		return nil
 	}
-	return i, true
+	return &i
 }
 
 // fragmentView lays out a one-file fragment like the page that asks for it:

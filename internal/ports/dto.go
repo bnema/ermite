@@ -309,6 +309,11 @@ type GetMergeRequestOptions struct {
 	Base, Head domain.ObjectID
 	// DiffOnly skips the commits of the request (Commits stays empty).
 	DiffOnly bool
+	// Load, when set with Files, is the index of a collapsed file Get reads in
+	// full and splices into the diff in place of its collapsed entry (the page
+	// of a client without scripts). Ignored when the index is out of range,
+	// the file is not collapsed, or there is no diff.
+	Load *int
 }
 
 // FileWindow is the range [From, To) of files whose hunks are read.
@@ -327,6 +332,14 @@ type GetCommitOptions struct {
 	// GetMergeRequestOptions.Files does. Unset (the zero value), the diff is
 	// bounded by domain.DefaultDiffLimits.
 	Files *FileWindow
+	// Page, without Files, reads the diff for a page: every file listed, the
+	// hunks of the first domain.CommitPageFiles files read, generated files
+	// collapsed, and the files past the window collapsed too
+	// (domain.OmitBudget). Combined with Files it is domain.ErrInvalid.
+	Page bool
+	// Load is the index of a collapsed file read in full and spliced into the
+	// diff, as GetMergeRequestOptions.Load. It requires Page.
+	Load *int
 }
 
 // AddCommentParams describes the comment to add.

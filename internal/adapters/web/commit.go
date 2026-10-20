@@ -205,34 +205,12 @@ func diffNote(d domain.Diff) string {
 	return "this diff is incomplete: " + plural(gone, "file is", "files are") + " too large to show. the totals above count everything; clone the repository to read the rest."
 }
 
-// commitWindow is how many files of a commit get their hunks read with the
-// page; the files past it are collapsed, and load on their own.
-const commitWindow = 300
-
 // commitDiff reads a commit for its page (and the compare page): every file
-// listed, the hunks of the first commitWindow files read, generated files
-// collapsed. Files past the window are collapsed too. With ?file=i (the link
+// listed, the hunks of the first files read, generated files and files past
+// the window collapsed (ports.GetCommitOptions.Page). With ?file=i (the link
 // of a page without scripts) file i is read in full and replaces its entry.
 func (s *Server) commitDiff(ctx context.Context, r *http.Request, repo domain.RepoName, rev string) (domain.CommitDetail, error) {
-	res, err := s.getCommit(ctx, repo, rev, ports.GetCommitOptions{Files: &ports.FileWindow{From: 0, To: commitWindow}})
-	if err != nil {
-		return res, err
-	}
-	for i := commitWindow; i < len(res.Diff.Files); i++ {
-		if f := &res.Diff.Files[i]; !f.Binary && f.Omitted == domain.OmitNone && f.Additions+f.Deletions > 0 {
-			f.Omitted = domain.OmitBudget
-		}
-	}
-	if i, ok := fileParam(r, len(res.Diff.Files)); ok && res.Diff.Files[i].Omitted.Collapsed() {
-		one, err := s.getCommit(ctx, repo, rev, ports.GetCommitOptions{Files: &ports.FileWindow{From: i, To: i + 1, Full: true}})
-		if err != nil {
-			return res, err
-		}
-		if i < len(one.Diff.Files) {
-			res.Diff.Files[i] = one.Diff.Files[i]
-		}
-	}
-	return res, nil
+	return s.getCommit(ctx, repo, rev, ports.GetCommitOptions{Page: true, Load: fileParam(r)})
 }
 
 // commitLinks are the addresses a commit page loads its collapsed files from.

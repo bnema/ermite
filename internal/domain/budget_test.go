@@ -240,3 +240,21 @@ func TestDiffBudgetAdmitAloneLines(t *testing.T) {
 		t.Fatalf("over the cap: read=%v why=%v, want OmitUnavailable", read, why)
 	}
 }
+
+func TestDiffCollapseFrom(t *testing.T) {
+	d := Diff{Files: []FileDiff{
+		{Additions: 1},
+		{Additions: 1},
+		{Binary: true, Additions: 1},
+		{Omitted: OmitLarge, Additions: 1},
+		{},
+		{Deletions: 2},
+	}}
+	d.CollapseFrom(1)
+	want := []FileOmission{OmitNone, OmitBudget, OmitNone, OmitLarge, OmitNone, OmitBudget}
+	for i, f := range d.Files {
+		if f.Omitted != want[i] {
+			t.Errorf("file %d: omitted %v, want %v", i, f.Omitted, want[i])
+		}
+	}
+}

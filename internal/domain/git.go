@@ -693,3 +693,18 @@ func (t *Tree) BoundTree() {
 		t.Entries, t.Truncated = t.Entries[:MaxTreeEntries], true
 	}
 }
+
+// CommitPageFiles is how many files of a commit get their hunks read with its
+// page; the files past it are collapsed (see Diff.CollapseFrom) and load on
+// their own.
+const CommitPageFiles = 300
+
+// CollapseFrom marks the files from index n on that have lines to show (not
+// binary, not already omitted, with changes) as OmitBudget: listed, not read.
+func (d *Diff) CollapseFrom(n int) {
+	for i := max(n, 0); i < len(d.Files); i++ {
+		if f := &d.Files[i]; !f.Binary && f.Omitted == OmitNone && f.Additions+f.Deletions > 0 {
+			f.Omitted = OmitBudget
+		}
+	}
+}

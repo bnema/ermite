@@ -621,6 +621,16 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 	if d.Stats, d.Diff, err = m.git.DiffCommits(ctx, name, base, head, limits); err != nil {
 		return ports.MergeRequestDetail{}, err
 	}
+	// The page of a client without scripts reads one collapsed file in full.
+	if i := opts.Load; i != nil && *i >= 0 && *i < len(d.Diff.Files) && d.Diff.Files[*i].Omitted.Collapsed() {
+		_, one, err := m.git.DiffCommits(ctx, name, base, head, domain.OneFileDiffLimits(*i))
+		if err != nil {
+			return ports.MergeRequestDetail{}, err
+		}
+		if *i < len(one.Files) {
+			d.Diff.Files[*i] = one.Files[*i]
+		}
+	}
 	return d, nil
 }
 
