@@ -4,6 +4,7 @@ package web
 
 import (
 	"context"
+	"time"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -159,4 +160,28 @@ func TestMRPanelsAndMenus(t *testing.T) {
 	assert.Contains(t, bar, `href="#mr-checks"`)
 	assert.Contains(t, bar, "Merge settings")
 	assert.NotContains(t, bar, ">Close</button>")
+}
+
+func TestMRReadPresentationCommitCount(t *testing.T) {
+	commits := func(n int) []domain.Commit { return make([]domain.Commit, n) }
+	for _, tc := range []struct {
+		name      string
+		commits   []domain.Commit
+		truncated bool
+		count     string
+		note      string
+	}{
+		{"empty", nil, false, "0", ""},
+		{"complete", commits(2), false, "2", ""},
+		{"truncated", commits(3), true, "3+", "the branch has more commits than the 3 listed."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{cfg: Config{Now: time.Now}}
+			p := &MRPage{}
+			s.mrReadPresentation(p, "demo", 1, ports.MergeRequestDetail{Commits: tc.commits, CommitsTruncated: tc.truncated}, false, false)
+			assert.Equal(t, tc.count, p.CommitCount)
+			assert.Equal(t, tc.note, p.CommitsNote)
+			assert.Len(t, p.Commits, len(tc.commits))
+		})
+	}
 }

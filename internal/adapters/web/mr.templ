@@ -108,8 +108,9 @@ templ mrListRail(p MRListPage) {
 }
 
 // MergeRequest is a merge request: its facts, its description, the diff with
-// the notes under their lines, the general comments; and in the rail the merge
-// form, the checks, the settings, the commits and the files.
+// the notes under their lines, the general comments. The merge and More menus
+// sit in the toolbar, the commits and checks in the card footer, and the rail
+// holds the files and verdicts.
 templ MergeRequest(l Layout, p MRPage) {
 	@Shell(l, mrRail(p)) {
 		<section class="mr-card">

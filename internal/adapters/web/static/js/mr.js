@@ -314,7 +314,7 @@ window.ermiteMR = (() => {
     if (!footer || !nav) return;
     const tabs = $$('a', nav), panels = $$('[data-mr-panel]', footer);
     nav.setAttribute('role', 'tablist');
-    function select(index, focus = false) {
+    function select(index, focus = false, fromUser = false) {
       tabs.forEach((tab, i) => {
         tab.setAttribute('role', 'tab');
         tab.setAttribute('aria-controls', panels[i].id);
@@ -325,17 +325,19 @@ window.ermiteMR = (() => {
         panels[i].hidden = i !== index;
       });
       if (focus) tabs[index].focus();
+      if (fromUser && location.hash !== '#' + panels[index].id) history.replaceState(null, '', '#' + panels[index].id);
     }
     tabs.forEach((tab, i) => {
-      tab.addEventListener('click', (e) => { e.preventDefault(); select(i); });
+      tab.addEventListener('click', (e) => { e.preventDefault(); select(i, false, true); });
       tab.addEventListener('keydown', (e) => {
         const next = core.tabIndex(e.key, i, tabs.length);
         if (next === null) return;
-        e.preventDefault(); select(next, true);
+        e.preventDefault(); select(next, true, true);
       });
     });
     function hash() {
-      const index = location.hash === '#mr-checks' ? 1 : location.hash === '#mr-commits' ? 0 : -1;
+      const h = location.hash;
+      const index = h === '#mr-checks' || h === '#mr-checks-panel' ? 1 : h === '#mr-commits' ? 0 : -1;
       if (index < 0) return;
       footer.open = true; select(index);
     }
@@ -368,6 +370,7 @@ window.ermiteMR = (() => {
     diffs.prepend(bar);
     refreshTouchComments = () => { bar.hidden = !$('.ln a[href*="on="]', diffs); };
     refreshTouchComments();
+    const touch = window.matchMedia?.('(pointer: coarse), (hover: none)');
     let enabled = false, start = null, marker = null;
     const clear = () => { marker?.removeAttribute('data-range-start'); marker = null; start = null; };
     button.addEventListener('click', () => {
@@ -378,7 +381,7 @@ window.ermiteMR = (() => {
     });
     diffs.addEventListener('click', (e) => {
       const link = e.target.closest?.('.ln a[href*="on="]');
-      if (!enabled || !link || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!touch?.matches || !enabled || !link || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
       e.stopPropagation(); // do not alter the desktop shift-click anchor
       const next = core.touchRange(start, link.href, location.href);
@@ -388,6 +391,13 @@ window.ermiteMR = (() => {
       marker = link;
       marker.setAttribute('data-range-start', '');
       status.textContent = `Range starts at line ${link.textContent.trim()}. Tap the last line number (same file and side).`;
+    });
+    touch?.addEventListener('change', () => {
+      if (touch.matches) return;
+      enabled = false;
+      clear();
+      button.setAttribute('aria-pressed', 'false');
+      status.textContent = '';
     });
     // The server opens the line form. Scroll after layout without stealing
     // focus or forcing a mobile keyboard to appear.

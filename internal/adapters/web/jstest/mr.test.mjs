@@ -97,7 +97,10 @@ test('footer tabs switch panels, support arrows, and open on checks hash', () =>
   const oldDocument = globalThis.document;
   const oldLocation = globalThis.location;
   const oldAdd = globalThis.addEventListener;
+  const oldHistory = globalThis.history;
   const listeners = {};
+  const replaced = [];
+  globalThis.history = { replaceState: (...args) => replaced.push(args) };
   const node = (id) => ({ id, attrs: {}, events: {}, hidden: false,
     setAttribute(k,v) { this.attrs[k]=v; },
     addEventListener(k,v) { this.events[k]=v; }, focus() { this.focused=true; } });
@@ -115,13 +118,17 @@ test('footer tabs switch panels, support arrows, and open on checks hash', () =>
     assert.equal(footer.open,false);
     assert.equal(panels[0].hidden,false);
     assert.equal(panels[1].hidden,true);
+    assert.deepEqual(replaced, [], 'initial selection leaves the URL alone');
     tabs[1].events.click({preventDefault(){}});
+    assert.deepEqual(replaced, [[null, '', '#mr-checks-panel']]);
     assert.equal(panels[0].hidden,true);
     assert.equal(tabs[1].attrs['aria-selected'],'true');
     tabs[1].events.keydown({key:'ArrowRight',preventDefault(){}});
     assert.equal(tabs[0].focused,true);
     assert.equal(panels[0].hidden,false);
-    location.hash='#mr-checks'; listeners.hashchange();
+    assert.deepEqual(replaced.at(-1), [null, '', '#mr-commits']);
+    location.hash='#mr-checks'; replaced.length = 0; listeners.hashchange();
+    assert.deepEqual(replaced, [], 'hash navigation does not rewrite the URL');
     assert.equal(footer.open,true);
     assert.equal(panels[1].hidden,false);
     footer.open=false;
@@ -133,6 +140,44 @@ test('footer tabs switch panels, support arrows, and open on checks hash', () =>
     assert.equal(C.tabIndex('Escape',0,2),null);
   } finally {
     globalThis.document=oldDocument; globalThis.location=oldLocation; globalThis.addEventListener=oldAdd;
+    if (oldHistory === undefined) delete globalThis.history; else globalThis.history = oldHistory;
+  }
+});
+
+test('footer: #mr-ck syncs the checks label and a click opens the footer on Checks', () => {
+  const saved = Object.fromEntries(['document', 'location', 'addEventListener', 'history', 'MutationObserver'].map((k) => [k, globalThis[k]]));
+  const node = (id) => ({ id, attrs: {}, events: {}, hidden: false,
+    setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(k, v) { this.events[k] = v; }, focus() {} });
+  const tabs = [node('t0'), node('t1')];
+  const panels = [node('mr-commits'), node('mr-checks-panel')];
+  const footer = node('mr-panels'); footer.open = false; footer.querySelectorAll = () => panels;
+  const label = { textContent: '' };
+  const nav = node('tabs'); nav.querySelectorAll = () => tabs;
+  nav.querySelector = (s) => s === '[data-checks-label]' ? label : null;
+  const summary = { title: '1/2 failed', textContent: ' 1/2 ', parentElement: {} };
+  const listeners = {};
+  let observed = null, callback = null;
+  globalThis.MutationObserver = class { constructor(fn) { callback = fn; } observe(target, opts) { observed = [target, opts]; } };
+  globalThis.document = { querySelector: (s) => s === '#mr-panels' ? footer : s === '[data-mr-tabs]' ? nav : s === '#mr-ck' ? summary : null,
+    addEventListener(k, v) { listeners[k] = v; } };
+  globalThis.location = { hash: '' };
+  globalThis.addEventListener = () => {};
+  globalThis.history = { replaceState() {} };
+  try {
+    window.ermiteMR.panels();
+    assert.equal(label.textContent, '1/2 failed', 'initial label sync');
+    assert.equal(observed[0], summary.parentElement);
+    summary.title = ''; callback();
+    assert.equal(label.textContent, '1/2', 'observer re-syncs from the text');
+    summary.textContent = ' '; callback();
+    assert.equal(label.textContent, 'no checks');
+    listeners.click({ target: { closest: (s) => s === '#mr-ck' ? summary : null } });
+    assert.equal(footer.open, true);
+    assert.equal(panels[1].hidden, false);
+    assert.equal(panels[0].hidden, true);
+    assert.equal(tabs[1].attrs['aria-selected'], 'true');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; }
   }
 });
 
@@ -192,9 +237,12 @@ test('touch control: lazy links enable toolbar; ordinary taps pass through; rang
   };
   globalThis.location = { href: base, pathname: '/demo/merge-requests/1', hash: '', assign(url) { assigned = url; } };
   globalThis.addEventListener = () => {};
-  let resize;
-  const media = { matches: true, addEventListener(type, fn) { resize = fn; } };
-  globalThis.matchMedia = () => media;
+  const changes = {};
+  const medias = {};
+  globalThis.matchMedia = (q) => medias[q] ??= { matches: true, addEventListener(type, fn) { changes[q] = fn; } };
+  const media = globalThis.matchMedia('(max-width: 720px)');
+  const touchQuery = '(pointer: coarse), (hover: none)';
+  const resize = () => changes['(max-width: 720px)']();
   globalThis.fetch = async () => { loaded = true; return { ok: true, status: 200, text: async () => '' }; };
   globalThis.localStorage = globalThis.sessionStorage = { getItem: () => null };
   const click = (link, modifiers = {}) => {
@@ -235,6 +283,17 @@ test('touch control: lazy links enable toolbar; ordinary taps pass through; rang
     assert.equal(status.textContent, '');
     assert.equal('data-range-start' in a.attrs, false);
     assert.equal(click(b).prevented, false);
+    // The touch media query stops matching: range mode is switched off.
+    button.events.click();
+    click(a);
+    assert.equal(button.attrs['aria-pressed'], 'true');
+    assert.ok('data-range-start' in a.attrs);
+    medias[touchQuery].matches = false;
+    changes[touchQuery]();
+    assert.equal(button.attrs['aria-pressed'], 'false');
+    assert.equal(status.textContent, '');
+    assert.equal('data-range-start' in a.attrs, false);
+    assert.equal(click(b).prevented, false, 'clicks pass through once touch stops matching');
   } finally {
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete globalThis[k]; else globalThis[k] = v;
