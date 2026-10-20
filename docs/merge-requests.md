@@ -8,6 +8,8 @@ ermite mr show myrepo 1 --diff
 ermite mr merge myrepo 1 --head <commit> [--mode fast-forward|squash|merge] [--delete-branch]
 ```
 
+Naming an issue with `#N` links it, and `Fixes #N` closes it on merge: see [issues](issues.md#merge-request-links).
+
 `ermite mr create` and `ermite mr close` print a confirmation followed by the full
 merge request web URL on its own line. With `--json`, merge request objects
 (create, show, list, close and merge) include `url` alongside the other fields.

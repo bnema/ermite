@@ -172,3 +172,6 @@ require (
 	mvdan.cc/xurls/v2 v2.6.0 // indirect
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 )
+
+// Temporary: removed once ermite-api is tagged.
+replace bnema.dev/ermite-api => /home/brice/dev/projects/ermite-workspace/ermite-api/.worktrees/issue-links

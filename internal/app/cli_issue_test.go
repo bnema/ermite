@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -51,7 +52,7 @@ func TestIssueCreateMapsFlags(t *testing.T) {
 	assert.Equal(t, []string{"It crashes.", "from\nstdin", "piped", "from file"}, bodies)
 
 	res = runCLI(t, envFor(url), "", "issue", "create", "alpha", "--title", "t", "--json").ok(t)
-	assert.JSONEq(t, `{"repo":"alpha","number":2,"title":"Crash on start","body":"It crashes.","state":"open","author":"owner","created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-02T11:30:00Z","comment_count":1}`, res.stdout)
+	assert.JSONEq(t, `{"repo":"alpha","number":2,"title":"Crash on start","body":"It crashes.","state":"open","author":"owner","created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-02T11:30:00Z","comment_count":1,"closed_by_merge_request":0}`, res.stdout)
 
 	for _, args := range [][]string{
 		{"issue", "create", "alpha"},
@@ -261,4 +262,38 @@ func TestPrintIssueDetailReturnsWriteErrors(t *testing.T) {
 		assert.ErrorContains(t, err, "write failed", after)
 	}
 	t.Fatal("never completed")
+}
+
+func TestIssueShowMergeRequestLinks(t *testing.T) {
+	closed := &ermite.Issue{
+		Repo: "alpha", Number: 2, Title: "Crash on start", State: ermite.IssueState_ISSUE_STATE_CLOSED,
+		ClosedByMergeRequest: 5,
+	}
+	f := &fakeAPI{
+		getVersion: withIssues,
+		getIssue: func(*ermite.GetIssueRequest) (*ermite.GetIssueResponse, error) {
+			return &ermite.GetIssueResponse{Issue: closed, References: []*ermite.IssueReference{
+				{Number: 5, Title: "Fix the parser", State: ermite.MergeRequestState_MERGE_REQUEST_STATE_OPEN, Closes: true},
+				{Number: 7, Title: "Follow-up", State: ermite.MergeRequestState_MERGE_REQUEST_STATE_MERGED},
+			}}, nil
+		},
+	}
+	url := f.serve(t)
+	res := runCLI(t, envFor(url), "", "issue", "show", "alpha", "2").ok(t)
+	assert.Regexp(t, `state\s+closed\n.*closed by\s+!5\n`, res.stdout)
+	assert.Contains(t, res.stdout, "\nmerge requests (2)\n  !5 open   Fix the parser · closes\n  !7 merged Follow-up\n")
+	assert.Less(t, strings.Index(res.stdout, "merge requests (2)"), strings.Index(res.stdout, "comments (0)"))
+
+	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2", "--json").ok(t)
+	assert.JSONEq(t, `{"repo":"alpha","number":2,"title":"Crash on start","body":"","state":"closed","author":"","created_at":null,"updated_at":null,"comment_count":0,"closed_by_merge_request":5,"comments":[],"references":[{"number":5,"title":"Fix the parser","state":"open","closes":true},{"number":7,"title":"Follow-up","state":"merged","closes":false}]}`, res.stdout)
+
+	// No references: no block in text, an empty array in JSON.
+	f.getIssue = func(*ermite.GetIssueRequest) (*ermite.GetIssueResponse, error) {
+		return &ermite.GetIssueResponse{Issue: issueOne}, nil
+	}
+	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2").ok(t)
+	assert.NotContains(t, res.stdout, "merge requests")
+	assert.NotContains(t, res.stdout, "closed by")
+	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"references": []`)
 }
