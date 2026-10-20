@@ -34,6 +34,18 @@ ermite token create claude --preset agent --scope issue:write --repo <repo> --br
 
 Merge requests and issues of a repository draw `#n` from one sequence, so a number names one thing: `ermite mr show myrepo 1`, `ermite issue show myrepo 2`.
 
+## Merge request links
+
+A merge request and the issues of its repository are linked by `#N` in its text:
+
+- **Closing keywords** close the issue when the merge request is **merged**, and only then: `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved` (any case), then `#N`, with an optional `:` after the keyword. A list works: `fixes #3, #4 and #5`. They count in the title, the description and the commit messages, not in notes. Closing the merge request without merging closes nothing.
+- **Any `#N`** in the title, description, notes or commit messages shows the merge request on the issue (`ermite issue show`, the API `references`), with its state and whether it closes the issue.
+- A closed issue records the merge request that closed it ("closed by !N"). Reopening or closing by hand clears it.
+- The links are recomputed whenever the merge request changes (a note added, edited or deleted, a push to its branch, a merge), so removing a mention removes the link.
+- Words glued to the number (`abc#3`), `&#39;` and `##3` are not references. Code spans are not skipped.
+
+Limits: the first 100 commits of the merge request, 16 KiB of each text, 100 merge requests listed per issue. Only numbers of existing issues are linked: a mention of a number that does not exist yet is not filled in later. With issues `off`, nothing is closed.
+
 ## Inbox
 
 The signed-in owner has an Inbox at `/-/inbox`, reached from the **Inbox** button at the top left of the home page, which shows the number of open items. It lists the open merge requests and the open issues of every repository, most recently updated first. The counters at the top (`N merge requests · M issues`) always count everything; `?repo=<name>` restricts the two lists to one repository, and the repository links under the counters set it. Repositories with issues off contribute no issues.

@@ -3,6 +3,7 @@
 package app
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -24,7 +25,7 @@ type issueOut struct {
 	CommentCount int     `json:"comment_count"`
 }
 
-var issueKeys = []string{"author", "body", "comment_count", "created_at", "number", "repo", "state", "title", "updated_at"}
+var issueKeys = []string{"author", "body", "closed_by_merge_request", "comment_count", "created_at", "number", "repo", "state", "title", "updated_at"}
 
 type issueCommentOut struct {
 	ID     string `json:"id"`
@@ -106,7 +107,8 @@ func TestIssuesCLIEndToEnd(t *testing.T) {
 	res = c.cli(t, adminToken, "issue", "show", "proj", "2", "--json").ok(t)
 	type showOut struct {
 		issueOut
-		Comments []issueCommentOut `json:"comments"`
+		Comments   []issueCommentOut `json:"comments"`
+		References []json.RawMessage `json:"references"`
 	}
 	show := decode[showOut](t, res.stdout)
 	assert.Equal(t, 2, show.CommentCount)
@@ -115,6 +117,9 @@ func TestIssuesCLIEndToEnd(t *testing.T) {
 	res = c.cli(t, adminToken, "issue", "show", "proj", "2").ok(t)
 	assert.Contains(t, res.stdout, "Crash on start")
 	assert.Contains(t, res.stdout, "comments (2)")
+	assert.NotContains(t, res.stdout, "merge requests", "no merge request names the issue")
+	assert.NotNil(t, show.References, "references is always present")
+	assert.Empty(t, show.References)
 
 	// close and reopen.
 	res = c.cli(t, agent, "issue", "close", "proj", "2", "--json").ok(t)

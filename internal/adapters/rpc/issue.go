@@ -70,15 +70,16 @@ func issuesModeFromPB(m pb.IssuesMode) (domain.IssuesMode, error) {
 
 func issueToPB(i domain.Issue) *pb.Issue {
 	return &pb.Issue{
-		Repo:         i.Repo.String(),
-		Number:       i.Number,
-		Title:        i.Title.String(),
-		Body:         i.Body.String(),
-		State:        issueStateToPB(i.State),
-		Author:       i.Author,
-		CreatedAt:    timestamp(i.CreatedAt),
-		UpdatedAt:    timestamp(i.UpdatedAt),
-		CommentCount: int32(i.CommentSeq), //nolint:gosec // bounded by usecase.MaxCommentsPerIssue
+		Repo:                 i.Repo.String(),
+		Number:               i.Number,
+		Title:                i.Title.String(),
+		Body:                 i.Body.String(),
+		State:                issueStateToPB(i.State),
+		Author:               i.Author,
+		CreatedAt:            timestamp(i.CreatedAt),
+		UpdatedAt:            timestamp(i.UpdatedAt),
+		CommentCount:         int32(i.CommentSeq), //nolint:gosec // bounded by usecase.MaxCommentsPerIssue
+		ClosedByMergeRequest: i.ClosedByMergeRequest,
 	}
 }
 
@@ -137,6 +138,15 @@ func (s *issueService) GetIssue(ctx context.Context, req *connect.Request[pb.Get
 	out := &pb.GetIssueResponse{Issue: issueToPB(d.Issue), Comments: make([]*pb.IssueComment, 0, len(d.Comments))}
 	for _, c := range d.Comments {
 		out.Comments = append(out.Comments, issueCommentToPB(c))
+	}
+	out.References = make([]*pb.IssueReference, 0, len(d.References))
+	for _, r := range d.References {
+		out.References = append(out.References, &pb.IssueReference{
+			Number: r.Number,
+			Title:  r.Title.String(),
+			State:  mergeRequestStateToPB(r.State),
+			Closes: r.Closes,
+		})
 	}
 	return connect.NewResponse(out), nil
 }

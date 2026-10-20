@@ -243,3 +243,55 @@ func TestIssuesFeatureAndSettingOverTheAPI(t *testing.T) {
 	_, err = update(r.root, pb.IssuesMode_ISSUES_MODE_OFF)
 	require.NoError(t, err)
 }
+
+func TestIssueReferencesAndClosedByOverTheAPI(t *testing.T) {
+	r := newMRRig(t, domain.VisibilityPublic)
+	ctx := r.ctx
+	_, err := r.forge.Repos.Update(ctx, domain.Root(), r.name("proj"), ports.UpdateRepoParams{Issues: new(domain.IssuesOwner)})
+	require.NoError(t, err)
+	for _, title := range []string{"Crash", "Slow"} {
+		_, err = r.root.issue.CreateIssue(ctx, connect.NewRequest(&pb.CreateIssueRequest{Repo: "proj", Title: title}))
+		require.NoError(t, err)
+	}
+	// The merge request mentions #1 (closing) and #2 (plain).
+	created, err := r.merger.mr.CreateMergeRequest(ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+		Repo: "proj", Title: "Change a", Description: "Fixes #1, see also #2", SourceBranch: "feat",
+	}))
+	require.NoError(t, err)
+	number := created.Msg.GetMergeRequest().GetNumber()
+
+	get := func(n int64) *pb.GetIssueResponse {
+		res, err := r.anon.issue.GetIssue(ctx, connect.NewRequest(&pb.GetIssueRequest{Repo: "proj", Number: n}))
+		require.NoError(t, err)
+		return res.Msg
+	}
+	one := get(1)
+	require.Len(t, one.GetReferences(), 1)
+	ref := one.GetReferences()[0]
+	assert.Equal(t, number, ref.GetNumber())
+	assert.Equal(t, "Change a", ref.GetTitle())
+	assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN, ref.GetState())
+	assert.True(t, ref.GetCloses())
+	two := get(2)
+	require.Len(t, two.GetReferences(), 1)
+	assert.False(t, two.GetReferences()[0].GetCloses())
+	assert.Zero(t, one.GetIssue().GetClosedByMergeRequest())
+
+	_, err = r.merger.mr.MergeMergeRequest(ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: number, HeadId: r.head}))
+	require.NoError(t, err)
+	r.forge.MergeRequests.Wait(ctx)
+
+	one = get(1)
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_CLOSED, one.GetIssue().GetState())
+	assert.Equal(t, number, one.GetIssue().GetClosedByMergeRequest())
+	require.Len(t, one.GetReferences(), 1)
+	assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED, one.GetReferences()[0].GetState())
+	two = get(2)
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_OPEN, two.GetIssue().GetState(), "a plain mention does not close")
+	assert.Zero(t, two.GetIssue().GetClosedByMergeRequest())
+
+	// Reopening by hand clears "closed by".
+	reopened, err := r.root.issue.ReopenIssue(ctx, connect.NewRequest(&pb.ReopenIssueRequest{Repo: "proj", Number: 1}))
+	require.NoError(t, err)
+	assert.Zero(t, reopened.Msg.GetIssue().GetClosedByMergeRequest())
+}

@@ -57,6 +57,8 @@ type jsonIssue struct {
 	CreatedAt    *string `json:"created_at"`
 	UpdatedAt    *string `json:"updated_at"`
 	CommentCount int32   `json:"comment_count"`
+	// ClosedByMergeRequest is the merge request whose merge closed the issue; 0 for none.
+	ClosedByMergeRequest int64 `json:"closed_by_merge_request"`
 }
 
 func toJSONIssue(i *ermite.Issue) jsonIssue {
@@ -64,6 +66,7 @@ func toJSONIssue(i *ermite.Issue) jsonIssue {
 		Repo: i.GetRepo(), Number: i.GetNumber(), Title: i.GetTitle(), Body: i.GetBody(),
 		State: issueStateName(i.GetState()), Author: i.GetAuthor(),
 		CreatedAt: jsonTime(i.GetCreatedAt()), UpdatedAt: jsonTime(i.GetUpdatedAt()), CommentCount: i.GetCommentCount(),
+		ClosedByMergeRequest: i.GetClosedByMergeRequest(),
 	}
 }
 
@@ -82,15 +85,29 @@ func toJSONIssueComment(c *ermite.IssueComment) jsonIssueComment {
 // jsonIssueDetail is the stable JSON shape of `issue show --json`.
 type jsonIssueDetail struct {
 	jsonIssue
-	Comments []jsonIssueComment `json:"comments"`
+	Comments   []jsonIssueComment   `json:"comments"`
+	References []jsonIssueReference `json:"references"`
+}
+
+// jsonIssueReference is a merge request that names the issue.
+type jsonIssueReference struct {
+	Number int64  `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	Closes bool   `json:"closes"`
 }
 
 const jsonIssueHelp = `
 JSON fields of an issue (--json): repo, number, title, body, state ("open" or "closed"), author
-(token label), created_at and updated_at (RFC 3339 UTC), comment_count.`
+(token label), created_at and updated_at (RFC 3339 UTC), comment_count, closed_by_merge_request (number of
+the merge request whose merge closed the issue, 0 for none).`
 
 const jsonIssueCommentHelp = `
 JSON fields of an issue comment: id, author, text, created_at.`
+
+const jsonIssueReferenceHelp = `
+JSON fields of a merge request reference: number, title, state ("open", "merged" or "closed"), closes
+(true when merging it closes the issue).`
 
 func newIssueCmd(env *cliEnv) *cobra.Command {
 	issue := &cobra.Command{
@@ -298,8 +315,11 @@ func newIssueShowCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <repo> <number>",
 		Short: "Show an issue with its comments",
-		Long: "Show an issue: its fields, its body and its comments, oldest first." + jsonIssueHelp + jsonIssueCommentHelp +
-			"\n--json adds comments to the issue fields.",
+		Long: "Show an issue: its fields, its body, the merge requests that name it (#N in their title,\n" +
+			"description, notes or commits; \"closes\" when a closing keyword such as \"Fixes #N\" names it) and\n" +
+			"its comments, oldest first. \"closed by\" shows the merge request whose merge closed the issue." +
+			jsonIssueHelp + jsonIssueCommentHelp + jsonIssueReferenceHelp +
+			"\n--json adds comments and references (always present, possibly empty) to the issue fields.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeIssueRepoThenNumber(env),
 	}
@@ -322,6 +342,12 @@ func newIssueShowCmd(env *cliEnv) *cobra.Command {
 			for _, cm := range res.Msg.GetComments() {
 				out.Comments = append(out.Comments, toJSONIssueComment(cm))
 			}
+			out.References = []jsonIssueReference{}
+			for _, r := range res.Msg.GetReferences() {
+				out.References = append(out.References, jsonIssueReference{
+					Number: r.GetNumber(), Title: r.GetTitle(), State: stateName(r.GetState()), Closes: r.GetCloses(),
+				})
+			}
 			return writeJSON(cmd.OutOrStdout(), out)
 		}
 		return printIssueDetail(cmd.OutOrStdout(), res.Msg)
@@ -335,19 +361,39 @@ func printIssueDetail(w io.Writer, d *ermite.GetIssueResponse) error {
 	if body == "" {
 		body = "-"
 	}
-	err := fields(w, [][2]string{
+	rows := [][2]string{
 		{"issue", fmt.Sprintf("%s#%d", i.GetRepo(), i.GetNumber())},
 		{"title", i.GetTitle()},
 		{"state", issueStateName(i.GetState())},
-		{"author", i.GetAuthor()},
-		{"created", shortTime(i.GetCreatedAt(), "-")},
-		{"updated", shortTime(i.GetUpdatedAt(), "-")},
-	})
+	}
+	if n := i.GetClosedByMergeRequest(); n > 0 {
+		rows = append(rows, [2]string{"closed by", fmt.Sprintf("!%d", n)})
+	}
+	rows = append(rows,
+		[2]string{"author", i.GetAuthor()},
+		[2]string{"created", shortTime(i.GetCreatedAt(), "-")},
+		[2]string{"updated", shortTime(i.GetUpdatedAt(), "-")},
+	)
+	err := fields(w, rows)
 	if err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "\n%s\n", indentText(body)); err != nil {
 		return err
+	}
+	if refs := d.GetReferences(); len(refs) > 0 {
+		if _, err := fmt.Fprintf(w, "\nmerge requests (%d)\n", len(refs)); err != nil {
+			return err
+		}
+		for _, r := range refs {
+			line := fmt.Sprintf("  !%d %-6s %s", r.GetNumber(), stateName(r.GetState()), clean(r.GetTitle()))
+			if r.GetCloses() {
+				line += " · closes"
+			}
+			if _, err := fmt.Fprintln(w, line); err != nil {
+				return err
+			}
+		}
 	}
 	if _, err := fmt.Fprintf(w, "\ncomments (%d)\n", len(d.GetComments())); err != nil {
 		return err
