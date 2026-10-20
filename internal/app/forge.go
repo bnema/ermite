@@ -143,6 +143,7 @@ type forge struct {
 	SigningKey *usecase.SigningKey
 	// Mergeability keeps the mergeability of the open merge requests up to date.
 	Mergeability *usecase.Mergeability
+	AutoMerge    *usecase.AutoMerge
 	// Signatures are the trusted keys and the commit signature checks
 	// (ADR 0030).
 	Signatures *usecase.Signatures
@@ -368,6 +369,14 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
 		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(), Mergeability: f.Mergeability,
 	})
+	f.AutoMerge = usecase.NewAutoMerge(ctx, usecase.AutoMergeConfig{
+		MRs: f.MergeRequests, Store: store.MergeRequests(), Meta: store, Git: git,
+		Checks: f.CI, Activity: f.CI, Tokens: store.Tokens(), Bus: f.Bus, Clock: clock,
+	})
+	f.MergeRequests.WithAutoMerge(f.AutoMerge)
+	f.CI.SetAutoMergeTrigger(f.AutoMerge)
+	f.Repos.WithAutoMerge(f.AutoMerge)
+	f.Mergeability.WithAutoMerge(f.AutoMerge)
 	f.Mergeability.Start()
 	f.MergeRequests.WithVerifier(f.Signatures).WithMirror(f.Mirrors)
 	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
@@ -391,6 +400,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(),
 	})
 	f.CI.SetPullGate(f.MergeRequests)
+	f.AutoMerge.Start()
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
 
 	f.Sessions, err = usecase.NewSessions(ctx, store.Sessions(), clock, cfg.PublicURL)
@@ -542,6 +552,9 @@ func (f *forge) Close(ctx context.Context) {
 	log := zerowrap.FromCtx(ctx)
 	if f.hooks != nil {
 		f.hooks.Close(ctx)
+	}
+	if f.AutoMerge != nil {
+		f.AutoMerge.Close(ctx)
 	}
 	if f.MergeRequests != nil {
 		f.MergeRequests.Wait(ctx) // its side effects use CI and Mergeability
