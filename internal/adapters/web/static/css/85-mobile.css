@@ -13,7 +13,8 @@
     body:has(#diffs[data-mr]) :is(.card, .mr-card, .mr-desc, .dfile, .dscroll, .code, .rail section) {
       margin-inline: 0; border-inline: 0; border-radius: 0; min-width: 0; max-width: 100%;
     }
-    body:has(#diffs[data-mr]) :is(.mr-h, .mr-desc.prose, .card-h) { padding-inline: 4px; }
+    body:has(#diffs[data-mr]) :is(.mr-h, .mr-desc.prose, .card-h, .mr-footer) { padding-inline: 4px; }
+    body:has(#diffs[data-mr]) .mr-footer :is(th, td) { padding-inline: var(--s1); }
     body:has(#diffs[data-mr]) .mr-desc.prose > pre { margin-inline: -4px; padding-inline: 0; max-width: calc(100% + 8px); }
     #diffs[data-mr] .dfile > summary { padding-inline: 0; border-inline: 0; border-radius: 0; }
     #diffs[data-mr] :is(.dscroll, .code) { overflow-x: auto; overscroll-behavior-x: contain; padding-inline: 0; }
@@ -47,5 +48,6 @@
     #diffs[data-mr] .ln a[data-range-start] { outline: 2px solid var(--focus); background: var(--sel); }
     body:has(#diffs[data-mr]) :is(.cform .btn, .menu .btn, .mr-touch-range .btn, .c-act button) { min-height: 40px; height: auto; padding-block: var(--s2); }
     #diffs[data-mr] .cform { scroll-margin-block: calc(var(--hdr-h) + 12px); }
+    .mr-footer :is(summary, [data-mr-tabs] a) { display: inline-flex; align-items: center; min-height: 40px; }
   }
 }
