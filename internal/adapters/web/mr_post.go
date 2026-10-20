@@ -391,6 +391,68 @@ func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, 
 	return back, back, nil
 }
 
+// mrAutoMerge is POST /<repo>/merge-requests/<n>/auto-merge: the form of the
+// merge (mode, head_id) asks to merge once the checks pass. The server records
+// the head as it is when it enables (the params carry no head); head_id is only
+// validated.
+func (s *Server) mrAutoMerge(ctx context.Context, r *http.Request) (string, string, error) {
+	repo := r.PathValue("repo")
+	n, err := number(r)
+	if err != nil {
+		return "", "", err
+	}
+	back := mrHref(repo, n)
+	var mode domain.MergeMode
+	switch r.PostFormValue("mode") {
+	case "fast-forward":
+		mode = domain.MergeModeFastForward
+	case "squash":
+		mode = domain.MergeModeSquash
+	case "merge":
+		mode = domain.MergeModeMerge
+	default:
+		err := formError("mode must be fast-forward, squash or merge")
+		return "", back, &rerender{status: http.StatusBadRequest, msg: err.Error(), err: err}
+	}
+	name, err := domain.ParseRepoName(repo)
+	if err != nil {
+		return "", back, err
+	}
+	if _, err := headID(r.PostFormValue("head_id")); err != nil {
+		return "", back, err
+	}
+	_, err = s.cfg.MergeRequests.EnableAutoMerge(ctx, principal(ctx), name, n, ports.EnableAutoMergeParams{Mode: mode})
+	switch {
+	case errors.Is(err, domain.ErrPreconditionFailed), errors.Is(err, domain.ErrConflict):
+		return "", back, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
+	case err != nil:
+		return "", back, err
+	}
+	return back, back, nil
+}
+
+// mrCancelAutoMerge is POST /<repo>/merge-requests/<n>/auto-merge/cancel.
+func (s *Server) mrCancelAutoMerge(ctx context.Context, r *http.Request) (string, string, error) {
+	repo := r.PathValue("repo")
+	n, err := number(r)
+	if err != nil {
+		return "", "", err
+	}
+	back := mrHref(repo, n)
+	name, err := domain.ParseRepoName(repo)
+	if err != nil {
+		return "", back, err
+	}
+	_, err = s.cfg.MergeRequests.CancelAutoMerge(ctx, principal(ctx), name, n)
+	switch {
+	case errors.Is(err, domain.ErrPreconditionFailed), errors.Is(err, domain.ErrConflict):
+		return "", back, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
+	case err != nil:
+		return "", back, err
+	}
+	return back, back, nil
+}
+
 // mrRead is POST /<repo>/merge-requests/<n>/read: the owner marks the head
 // they were shown as read. Reading a page never does it (see the top of mr.go).
 func (s *Server) mrRead(ctx context.Context, r *http.Request) (string, string, error) {

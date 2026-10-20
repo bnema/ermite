@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 
@@ -202,6 +203,18 @@ type MergeBox struct {
 	Fingerprint string
 	// Error is why the last merge was refused, shown in the box.
 	Error string
+	// AutoAction and CancelAutoAction post to the auto-merge routes.
+	AutoAction, CancelAutoAction string
+	// CanAutoMerge offers "Merge when ready": the repository allows
+	// auto-merge and the server has CI to wait for.
+	CanAutoMerge bool
+	// AutoMerge is the pending auto-merge, nil when off.
+	AutoMerge *AutoMergeView
+}
+
+// AutoMergeView is a pending auto-merge, ready to show.
+type AutoMergeView struct {
+	Mode, EnabledBy, When, WhenAt, HeadShort string
 }
 
 // ModeOption is a merge mode the repository allows. Disabled says that the
@@ -666,7 +679,18 @@ func (s *Server) mrBox(ctx context.Context, d *repoData, res ports.MergeRequestD
 	if m.IsDraft() {
 		box.ReadyAction = mrHref(d.name(), m.Number, "ready")
 	}
+	box.AutoMerge = autoMergeView(s.cfg.Now(), m.AutoMerge)
 	return box
+}
+
+// autoMergeView is the pending auto-merge ready to show, nil when off.
+func autoMergeView(now time.Time, am *domain.AutoMerge) *AutoMergeView {
+	if am == nil {
+		return nil
+	}
+	v := &AutoMergeView{Mode: am.Mode.String(), EnabledBy: am.EnablerLabel, HeadShort: short(am.HeadID.String())}
+	v.When, v.WhenAt = whenOf(now, am.EnabledAt)
+	return v
 }
 
 // mrFacts formats the description, metadata, branch links and checks.
@@ -790,6 +814,8 @@ func (s *Server) mergeBox(d *repoData, n int64, source, head string, canMarkRead
 		CanMarkRead:     canMarkRead,
 		CanDeleteBranch: source != d.repo.DefaultBranch,
 		Mergeability:    mg,
+		AutoAction:      mrHref(d.name(), n, "auto-merge"), CancelAutoAction: mrHref(d.name(), n, "auto-merge/cancel"),
+		CanAutoMerge: d.repo.Settings.AllowAutoMerge && s.cfg.Runs != nil,
 	}
 	var lines []string
 	cmd := ""

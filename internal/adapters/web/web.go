@@ -231,6 +231,8 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/edit", s.mrAction(s.mrEditComment))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/delete", s.mrAction(s.mrDeleteComment))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/merge", s.mrAction(s.mrMerge))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/auto-merge", s.mrAction(s.mrAutoMerge))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/auto-merge/cancel", s.mrAction(s.mrCancelAutoMerge))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/close", s.mrAction(s.mrClose))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/ready", s.mrAction(s.mrReady))
 		mux.HandleFunc("POST /{repo}/merge-requests/{n}/read", s.mrAction(s.mrRead))

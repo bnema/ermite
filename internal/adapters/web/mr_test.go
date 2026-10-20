@@ -4,6 +4,9 @@ package web
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,4 +197,84 @@ func TestMRReadPresentationCommitCount(t *testing.T) {
 			assert.Len(t, p.Commits, len(tc.commits))
 		})
 	}
+}
+
+func TestMergeBoxAutoMerge(t *testing.T) {
+	t.Parallel()
+	mg := mergeabilityView(domain.Mergeability{State: domain.MergeabilityUpToDate}, "main")
+	mk := func(allow bool, runs ports.RunService) *MergeBox {
+		v := repoWithModes(domain.MergeModes()...)
+		v.Settings.AllowAutoMerge = allow
+		return (&Server{cfg: Config{Runs: runs}}).mergeBox(&repoData{repo: v}, 1, "feat", "abc", false, mg)
+	}
+	assert.False(t, mk(false, mocks.NewRunService(t)).CanAutoMerge)
+	assert.False(t, mk(true, nil).CanAutoMerge, "no CI, nothing to wait for")
+	on := mk(true, mocks.NewRunService(t))
+	assert.True(t, on.CanAutoMerge)
+
+	page := MRPage{Target: "main", Box: on}
+	html := renderToString(t, mergeMenu(page))
+	assert.Contains(t, html, "Merge when ready")
+	assert.Contains(t, html, `formaction="`+on.AutoAction+`"`)
+	assert.NotContains(t, html, "Cancel auto-merge")
+	page.Box = mk(false, mocks.NewRunService(t))
+	assert.NotContains(t, renderToString(t, mergeMenu(page)), "Merge when ready")
+
+	on.AutoMerge = &AutoMergeView{Mode: "squash", EnabledBy: "owner", HeadShort: "abc"}
+	html = renderToString(t, mergeMenu(MRPage{Target: "main", Box: on}))
+	assert.Contains(t, html, "Auto-merge: squash when ready, enabled by owner")
+	assert.Contains(t, html, `action="`+on.CancelAutoAction+`"`)
+	assert.Contains(t, html, "Cancel auto-merge")
+}
+
+func autoMergeRequest(path, body string) *http.Request {
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.SetPathValue("repo", "demo")
+	r.SetPathValue("n", "3")
+	return r
+}
+
+func TestAutoMergeHandlers(t *testing.T) {
+	t.Parallel()
+	name, err := domain.ParseRepoName("demo")
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	svc := mocks.NewMergeRequestService(t)
+	svc.EXPECT().EnableAutoMerge(mock.Anything, mock.Anything, name, int64(3), ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash}).
+		Return(domain.MergeRequest{}, nil).Once()
+	svc.EXPECT().CancelAutoMerge(mock.Anything, mock.Anything, name, int64(3)).Return(domain.MergeRequest{}, nil).Once()
+	s := &Server{cfg: Config{MergeRequests: svc}}
+	to, _, err := s.mrAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge", "mode=squash"))
+	require.NoError(t, err)
+	assert.Equal(t, mrHref("demo", 3), to)
+	to, _, err = s.mrCancelAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge/cancel", ""))
+	require.NoError(t, err)
+	assert.Equal(t, mrHref("demo", 3), to)
+
+	// A bad mode is refused before the service.
+	_, _, err = s.mrAutoMerge(ctx, autoMergeRequest("/x", "mode=rebase"))
+	var re *rerender
+	require.ErrorAs(t, err, &re)
+	assert.Equal(t, http.StatusBadRequest, re.status)
+
+	// A refusal of the use case is shown in the box, like a refused merge.
+	svc2 := mocks.NewMergeRequestService(t)
+	svc2.EXPECT().EnableAutoMerge(mock.Anything, mock.Anything, name, int64(3), mock.Anything).
+		Return(domain.MergeRequest{}, domain.ErrPreconditionFailed).Once()
+	svc2.EXPECT().CancelAutoMerge(mock.Anything, mock.Anything, name, int64(3)).
+		Return(domain.MergeRequest{}, domain.ErrNotFound).Once()
+	s2 := &Server{cfg: Config{MergeRequests: svc2}}
+	_, _, err = s2.mrAutoMerge(ctx, autoMergeRequest("/x", "mode=squash"))
+	require.ErrorAs(t, err, &re)
+	assert.Equal(t, http.StatusConflict, re.status)
+	_, _, err = s2.mrCancelAutoMerge(ctx, autoMergeRequest("/x", ""))
+	require.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestAutoMergeLiveEvents(t *testing.T) {
+	t.Parallel()
+	assert.True(t, liveEvent(watchOf(domain.MergeRequestAutoMergeEnabled{})))
+	assert.True(t, liveEvent(watchOf(domain.MergeRequestAutoMergeCancelled{})))
 }
