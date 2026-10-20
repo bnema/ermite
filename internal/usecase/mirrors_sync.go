@@ -37,7 +37,7 @@ func (m *Mirrors) Sync(ctx context.Context, p domain.Principal, repo domain.Repo
 		return ports.MirrorSyncResult{}, err
 	}
 	if queued {
-		return ports.MirrorSyncResult{Queued: true}, nil
+		return ports.MirrorSyncResult{Status: domain.MirrorStatus{Repo: repo}, Queued: true}, nil
 	}
 	select {
 	case <-m.ctx.Done():

@@ -136,6 +136,7 @@ func TestMirrorsSingleFlight(t *testing.T) {
 			v, err := f.m.Sync(context.Background(), domain.Root(), f.repo, true)
 			require.NoError(t, err)
 			require.True(t, v.Queued)
+			require.Equal(t, f.repo, v.Status.Repo)
 		}()
 	}
 	wg.Wait()

@@ -60,6 +60,11 @@ func transport() *http.Transport {
 // URL is the server address the client talks to.
 func (c *Client) URL() string { return c.cfg.URL }
 
+// Mirrors returns the MirrorService client.
+func (c *Client) Mirrors() ermiteconnect.MirrorServiceClient {
+	return ermiteconnect.NewMirrorServiceClient(c.http, c.base, c.opts...)
+}
+
 // Repos returns the RepoService client.
 func (c *Client) Repos() ermiteconnect.RepoServiceClient {
 	return ermiteconnect.NewRepoServiceClient(c.http, c.base, c.opts...)

@@ -523,6 +523,12 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	case domain.JobUpdated:
 		out.Time = timestamp(ev.At)
 		out.Kind = jobEventToPB(ev)
+	case domain.MirrorFailed:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MirrorFailed{MirrorFailed: &pb.MirrorFailed{Repo: ev.Repo.String(), State: mirrorStateToPB(ev.State), FailureClass: string(ev.Class), Reason: ev.Reason}}
+	case domain.MirrorRecovered:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MirrorRecovered{MirrorRecovered: &pb.MirrorRecovered{Repo: ev.Repo.String()}}
 	default:
 		// Web-only events, such as domain.IssuePendingRemoved (the API has
 		// no message for it; watchers list pending issues on demand).

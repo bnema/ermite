@@ -47,11 +47,13 @@ const FeatureCIOIDC = "ci.oidc"
 
 // Config configures the API.
 type Config struct {
-	Auth   ports.AuthService
-	Repos  ports.RepoService
-	Tokens ports.TokenService
-	Browse ports.BrowseService
-	Events ports.EventService
+	// Mirrors serves MirrorService when set; leave unset rather than a typed nil.
+	Mirrors ports.MirrorService
+	Auth    ports.AuthService
+	Repos   ports.RepoService
+	Tokens  ports.TokenService
+	Browse  ports.BrowseService
+	Events  ports.EventService
 	// MergeRequests serves MergeRequestService, SigningKey GetSigningKey.
 	MergeRequests ports.MergeRequestService
 	SigningKey    ports.SigningKeyService
@@ -125,6 +127,10 @@ func New(cfg Config) *API {
 	mux.Handle(ermiteconnect.NewTokenServiceHandler(&tokenService{cfg.Tokens}, opts...))
 	mux.Handle(ermiteconnect.NewEventServiceHandler(&eventService{cfg.Events}, opts...))
 	features := slices.Clone(Features)
+	if cfg.Mirrors != nil {
+		mux.Handle(ermiteconnect.NewMirrorServiceHandler(&mirrorService{cfg.Mirrors}, opts...))
+		features = append(features, FeatureMirror)
+	}
 	if cfg.Passkeys != nil {
 		features = append(features, FeaturePasskeys)
 	}
