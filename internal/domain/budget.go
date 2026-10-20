@@ -84,6 +84,8 @@ func (b DiffBudget) Admit(binary bool, path string, changed int) (read bool, why
 		return false, OmitNone
 	case b.limits.SkipGenerated && IsGeneratedPath(path):
 		return false, OmitGenerated
+	case b.limits.MaxAloneLines > 0 && changed > b.limits.MaxAloneLines:
+		return false, OmitUnavailable
 	case b.limits.MaxFileLines > 0 && changed > b.limits.MaxFileLines:
 		return false, OmitLarge
 	case b.limits.MaxTotalLines > 0 && changed > b.linesLeft, b.bytesLeft <= 0:

@@ -17,18 +17,19 @@ function placeholder(src, manual) {
   return { ph, link, details };
 }
 
-async function setup(phs, io = true) {
+async function setup(phs, io = true, opts = {}) {
   const observed = [];
   const urls = [];
   if (io) globalThis.IntersectionObserver = class { observe(p) { observed.push(p); } unobserve() {} disconnect() {} };
   else delete globalThis.IntersectionObserver;
-  globalThis.fetch = async (u) => { urls.push(u); return { status: 200, ok: true, text: async () => '' }; };
+  const reply = opts.reply || { status: 200, ok: true, body: '' };
+  globalThis.fetch = async (u) => { urls.push(u); return { status: reply.status, ok: reply.ok, text: async () => reply.body }; };
   globalThis.document = {
     readyState: 'complete',
     querySelector: (s) => (s === '#diffs' ? { dataset: {} } : null),
     querySelectorAll: (s) => (s.includes(':not([data-manual])') ? phs.filter((p) => !('manual' in p.dataset)) : phs),
-    getElementById: () => null,
-    createElement: () => ({ content: { querySelectorAll: () => [] } }),
+    getElementById: opts.getElementById || (() => null),
+    createElement: () => ({ content: { querySelectorAll: () => opts.files || [] } }),
     addEventListener() {},
   };
   delete globalThis.ermiteLazy;
@@ -37,6 +38,7 @@ async function setup(phs, io = true) {
 }
 const settle = () => new Promise((r) => setTimeout(r, 0));
 const restore = () => {
+  delete globalThis.ermiteLazy;
   for (const [k, v] of [['document', saved.document], ['fetch', saved.fetch], ['IntersectionObserver', saved.IO]]) {
     if (v === undefined) delete globalThis[k]; else globalThis[k] = v;
   }
@@ -151,6 +153,96 @@ test('reset clears the stale state; watch disconnects the previous observer', as
     window.ermiteLazy.reset();
     assert.ok(made[1].off);
     await window.ermiteLazy.load(b.ph);
+    assert.equal(urls.length, 1);
+  } finally { await settle(); restore(); }
+});
+
+
+// A file of the page (old) or of a fragment (new), with the queries swap makes.
+function fileEl(id, { lazy = false, manual = false, open = false } = {}) {
+  const f = { id, open, queried: [] };
+  f.querySelector = (sel) => {
+    if (sel === '.dlazy[data-manual]') return manual ? {} : null;
+    if (sel === '.dlazy') return lazy || manual ? {} : null;
+    if (sel === '.ln a') return f.line || null;
+    return null;
+  };
+  f.querySelectorAll = () => [];
+  return f;
+}
+
+test('a loaded manual file opens and takes the focus without scrolling', async () => {
+  const a = placeholder('/f?one=1&from=0', true);
+  const old = fileEl('f1', { manual: true });
+  const fresh = fileEl('f1');
+  const focused = [];
+  fresh.line = { focus: (o) => focused.push(o) };
+  let current = old;
+  old.replaceWith = (n) => { current = n; };
+  try {
+    await setup([a.ph], true, { reply: { status: 200, ok: true, body: '<x>' }, files: [fresh], getElementById: () => current });
+    window.ermiteLazy.onClick({ target: a.link, button: 0, preventDefault() {} });
+    await settle(); await settle();
+    assert.equal(current, fresh);
+    assert.equal(fresh.open, true);
+    assert.deepEqual(focused, [{ preventScroll: true }]);
+  } finally { await settle(); restore(); }
+});
+
+test('a window that still holds a collapsed file keeps it closed', async () => {
+  const w = placeholder('/w?from=25', false);
+  const old = fileEl('f26', { lazy: true, open: true });
+  const fresh = fileEl('f26', { manual: true, open: true });
+  let replaced = null;
+  old.replaceWith = (n) => { replaced = n; };
+  try {
+    await setup([w.ph], true, { reply: { status: 200, ok: true, body: '<x>' }, files: [fresh], getElementById: () => old });
+    await window.ermiteLazy.load(w.ph);
+    assert.equal(replaced, fresh);
+    assert.equal(fresh.open, false);
+  } finally { await settle(); restore(); }
+});
+
+test('a 409 makes the page stale: no later load fetches', async () => {
+  const a = placeholder('/f?one=1&from=0', true);
+  const b = placeholder('/f?one=1&from=1', true);
+  try {
+    const { urls } = await setup([a.ph, b.ph], true, { reply: { status: 409, ok: false, body: '<p>moved</p>' } });
+    await window.ermiteLazy.load(a.ph);
+    assert.equal(a.ph.innerHTML, '<p>moved</p>');
+    assert.equal(urls.length, 1);
+    await window.ermiteLazy.load(b.ph);
+    assert.equal(urls.length, 1, 'stale: nothing is fetched');
+  } finally { await settle(); restore(); }
+});
+
+test('a failed load clears the loading mark and can be retried', async () => {
+  const a = placeholder('/f?one=1&from=0', true);
+  const marks = new Set();
+  a.ph.setAttribute = (n) => marks.add(n);
+  a.ph.removeAttribute = (n) => marks.delete(n);
+  try {
+    const { urls } = await setup([a.ph], true, { reply: { status: 500, ok: false, body: 'boom' } });
+    const p = window.ermiteLazy.load(a.ph);
+    assert.ok(marks.has('data-loading'));
+    await p;
+    assert.equal(marks.has('data-loading'), false);
+    await window.ermiteLazy.load(a.ph);
+    assert.equal(urls.length, 2, 'a retry fetches again');
+  } finally { await settle(); restore(); }
+});
+
+test('Space is prevented on the link; a held key is ignored', async () => {
+  const a = placeholder('/f?one=1&from=1', true);
+  try {
+    const { urls } = await setup([a.ph]);
+    let prevented = 0;
+    const ev = (extra) => ({ target: a.link, key: ' ', preventDefault() { prevented++; }, ...extra });
+    assert.equal(window.ermiteLazy.onKey(ev({ repeat: true })), false);
+    assert.equal(prevented, 0);
+    assert.equal(urls.length, 0);
+    assert.equal(window.ermiteLazy.onKey(ev({})), true);
+    assert.equal(prevented, 1, 'Space does not scroll the page');
     assert.equal(urls.length, 1);
   } finally { await settle(); restore(); }
 });

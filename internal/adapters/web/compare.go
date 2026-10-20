@@ -85,7 +85,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 		contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", res.Commit.ID.String()))
 		collapseFiles(p.Files, res.Diff.Files, commitLinks(name, res.Commit.ID.String()))
 		p.NFiles, p.Adds, p.Dels = res.Stats.FilesChanged, res.Stats.Additions, res.Stats.Deletions
-		if n := diffNote(res.Diff, len(p.Files), p.NFiles); n != "" {
+		if n := diffNote(res.Diff); n != "" {
 			p.Note = n
 		}
 		lines, invisible := diffLines(p.Files)

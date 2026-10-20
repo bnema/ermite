@@ -102,7 +102,7 @@ func TestFileNotes(t *testing.T) {
 		{"generated", domain.FileDiff{Omitted: domain.OmitGenerated, Additions: 5}, "generated file: collapsed", true},
 		{"large", domain.FileDiff{Omitted: domain.OmitLarge, Additions: 2000, Deletions: 500}, "large diff (2500 lines changed): collapsed", true},
 		{"budget", domain.FileDiff{Omitted: domain.OmitBudget, Additions: 40}, "collapsed to keep the page light", true},
-		{"unavailable", domain.FileDiff{Omitted: domain.OmitUnavailable, Additions: 40}, "too large to show in the browser (over 8 MiB of text)", true},
+		{"unavailable", domain.FileDiff{Omitted: domain.OmitUnavailable, Additions: 40}, "too large to show in the browser", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -204,15 +204,9 @@ func TestDiffNote(t *testing.T) {
 		}
 		return d
 	}
-	assert.Empty(t, diffNote(files(domain.OmitGenerated, domain.OmitLarge, domain.OmitBudget), 3, 3), "collapsed files have no global note")
-	d := files(domain.OmitNone)
-	d.Truncated = true
-	assert.Equal(t, "this diff is incomplete: 299 files are not listed. the totals above count everything; clone the repository to read the rest.", diffNote(d, 1, 300))
+	assert.Empty(t, diffNote(files(domain.OmitGenerated, domain.OmitLarge, domain.OmitBudget)), "collapsed files have no global note")
 	assert.Equal(t, "this diff is incomplete: 2 files are too large to show. the totals above count everything; clone the repository to read the rest.",
-		diffNote(files(domain.OmitUnavailable, domain.OmitLarge, domain.OmitUnavailable), 3, 3))
-	d = files(domain.OmitUnavailable)
-	d.Truncated = true
-	assert.Contains(t, diffNote(d, 1, 5), "4 files are not listed, 1 file is too large to show")
+		diffNote(files(domain.OmitUnavailable, domain.OmitLarge, domain.OmitUnavailable)))
 }
 
 func TestCollapsedFileMarkup(t *testing.T) {
@@ -224,7 +218,8 @@ func TestCollapsedFileMarkup(t *testing.T) {
 		fs := diffFiles(raw)
 		collapseFiles(fs, raw, fileLinks{src: src, repo: "demo", rev: "abc1234"})
 		out := renderToString(t, DiffFileView(fs[0], view))
-		assert.NotContains(t, out, " open", "omission %d", why)
+		assert.NotRegexp(t, `<details[^>]*\sopen[\s>]`, out, "omission %d", why)
+		assert.Regexp(t, `<details `, out, "the file is a details element")
 		assert.Contains(t, out, `<div class="dlazy" data-src="/demo/commit/abc1234/files?one=1&amp;from=0" data-manual>`)
 		assert.Contains(t, out, `<a href="?file=0#f1">load diff</a>`)
 		assert.NotContains(t, out, "<table")

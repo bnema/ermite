@@ -219,9 +219,14 @@ func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component,
 	canWrite := signed && m.State == domain.MRStateOpen && !since
 	p := MRPage{Files: s.hl.files(ctx, res.Diff.Files), LooseInFiles: true, NoteAuthor: domain.AuthorName(principal(ctx))}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head.String()))
-	collapseFiles(p.Files, res.Diff.Files, fileLinks{
-		src: filesSrc(d.name(), n, since, base.String(), head.String()), from: from, repo: d.name(), rev: head.String(),
-	})
+	links := fileLinks{src: filesSrc(d.name(), n, since, base.String(), head.String()), from: from, repo: d.name(), rev: head.String()}
+	if one {
+		// A one-file read holds file from alone, at index from: the load
+		// addresses of a window do not apply, only the raw link.
+		p.Files[from].Raw = rawLink(res.Diff.Files[from], links)
+	} else {
+		collapseFiles(p.Files, res.Diff.Files, links)
+	}
 	s.placeComments(&p, d.name(), n, res.Comments, m.HeadID.String(), !since, canWrite, nil)
 	window := p.Files[from:min(from+mrWindow, len(p.Files))]
 	if one {

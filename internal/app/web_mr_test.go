@@ -944,7 +944,8 @@ func TestWebMergeRequestCollapsedFiles(t *testing.T) {
 	assert.Equal(t, 2, strings.Count(page.body, "data-manual"), "the large and the generated file")
 	assert.Contains(t, page.body, "generated file: collapsed")
 	assert.Contains(t, page.body, "large diff (2600 lines changed): collapsed")
-	assert.NotContains(t, page.body, "row 5<", "no rows for a collapsed file")
+	assert.NotRegexp(t, `row \d+`, page.body, "no rows for a collapsed file")
+	assert.NotContains(t, page.body, "generated line</td>")
 	assert.Contains(t, page.body, "small line")
 	assert.NotContains(t, page.body, "this diff is incomplete")
 	srcs := regexp.MustCompile(`data-src="([^"]*one=1&amp;from=(\d+))" data-manual`).FindAllStringSubmatch(page.body, -1)
@@ -969,4 +970,31 @@ func TestWebMergeRequestCollapsedFiles(t *testing.T) {
 		require.Equal(t, 200, own.status)
 		assert.Equal(t, 1, strings.Count(own.body, "data-manual"), "that one file is spliced in")
 	}
+}
+
+// The page of a window without scripts: ?file=i splices that collapsed file in
+// and the load link of a window keeps the window.
+func TestWebMergeRequestWindowFileSplice(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	for i := range 30 {
+		r.writeFile(r.wt, fmt.Sprintf("a/f%02d.txt", i), []byte(fmt.Sprintf("line %d\n", i)))
+	}
+	r.writeFile(r.wt, "vendor/gen.txt", []byte("generated line\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Window").ok(t)
+
+	// Files sort as a/f00..a/f29, search.go, vendor/gen.txt: the generated
+	// file is index 31, in the window that starts at 25.
+	win := b.get("/proj/merge-requests/1?from=25", nil)
+	require.Equal(t, 200, win.status)
+	m := regexp.MustCompile(`href="(\?from=25&amp;file=(\d+)#f\d+)"`).FindStringSubmatch(win.body)
+	require.Len(t, m, 3, "the load link keeps the window")
+	assert.Equal(t, "31", m[2])
+	assert.NotContains(t, win.body, "generated line</td>")
+
+	own := b.get("/proj/merge-requests/1?from=25&file=31", nil)
+	require.Equal(t, 200, own.status)
+	assert.Contains(t, own.body, "generated line</td>", "the file is spliced in")
+	assert.NotContains(t, own.body, "data-manual")
 }

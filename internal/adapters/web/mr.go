@@ -4,6 +4,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"html"
 	"html/template"
 	"io"
@@ -570,15 +571,17 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		return nil, 0, errNotFound
 	}
 	// A page without scripts: ?file=i reads that collapsed file in full.
-	if i, ok := fileParam(r, len(res.Diff.Files)); ok && res.Diff.Files[i].Omitted.Collapsed() {
+	// Without a pinned base, or when the pair moved since the first read, the
+	// page is shown unspliced.
+	if i, ok := fileParam(r, len(res.Diff.Files)); ok && res.Diff.Files[i].Omitted.Collapsed() && !res.DiffBaseID.IsZero() {
 		one, err := s.cfg.MergeRequests.Get(ctx, principal(ctx), d.repo.Name, n, ports.GetMergeRequestOptions{
 			SinceLastRead: since, DiffOnly: true, Base: res.DiffBaseID, Head: res.MergeRequest.HeadID,
 			Files: &ports.FileWindow{From: i, To: i + 1, Full: true},
 		})
-		if err != nil {
+		if err != nil && !errors.Is(err, domain.ErrConflict) {
 			return nil, 0, err
 		}
-		if i < len(one.Diff.Files) {
+		if err == nil && i < len(one.Diff.Files) {
 			res.Diff.Files[i] = one.Diff.Files[i]
 		}
 	}
@@ -612,7 +615,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		return nil, 0, err
 	}
 
-	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
+	p.Note = diffNote(res.Diff)
 	countNotes(p.Files, res.Comments)
 	if !res.DiffBaseID.IsZero() {
 		lazyFiles(p.Files, from, filesSrc(d.name(), n, since, res.DiffBaseID.String(), head))

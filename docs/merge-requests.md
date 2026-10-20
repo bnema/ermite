@@ -67,7 +67,7 @@ In the web merge box a mode that is not possible is disabled with its reason, an
 
 The merge request, commit and compare pages list every changed file. Generated files (lockfiles, `vendor/`, `node_modules/`, minified or generated code) and large files (over 2,000 changed lines) are collapsed: the header and the counts show, the lines do not. "load diff" fetches that one file in place, in full, and you can comment on its lines. Without scripts the link reloads the page with that file loaded. After the first 25 files of a merge request, the other files load as you scroll.
 
-A file over 8 MiB of text cannot be shown in the browser: the page links to its raw blob. A commit page lists at most 300 files; clone the repository to read the rest.
+A commit page reads the hunks of its first 300 files with the page; the other files are listed collapsed and load one at a time. A file that cannot be shown in the browser, over 8 MiB of text or over 50,000 changed lines when loaded alone, has no "load diff": the page links to its raw blob instead.
 
 ## Notes
 

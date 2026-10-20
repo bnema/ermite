@@ -156,4 +156,30 @@ func DiffOmissions(t *testing.T, mk Maker) {
 	for _, file := range d.Diff.Files {
 		assert.Equal(t, domain.OmitNone, file.Omitted)
 	}
+
+	// A one-file read is capped at MaxOneFileLines changed lines: the cap
+	// itself loads, one more line is OmitUnavailable (it cannot be loaded).
+	f.Lines("cap.txt", "c", domain.MaxOneFileLines).Lines("over.txt", "o", domain.MaxOneFileLines+1).Commit("caps")
+	d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, domain.DiffLimits{MaxTotalBytes: 1})
+	require.NoError(t, err)
+	capIdx, overIdx := -1, -1
+	for i, file := range d.Diff.Files {
+		switch file.NewPath {
+		case "cap.txt":
+			capIdx = i
+		case "over.txt":
+			overIdx = i
+		}
+	}
+	require.GreaterOrEqual(t, capIdx, 0)
+	require.GreaterOrEqual(t, overIdx, 0)
+	d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, domain.OneFileDiffLimits(capIdx))
+	require.NoError(t, err)
+	assert.Equal(t, domain.OmitNone, d.Diff.Files[capIdx].Omitted)
+	require.Len(t, d.Diff.Files[capIdx].Hunks, 1)
+	assert.Len(t, d.Diff.Files[capIdx].Hunks[0].Lines, domain.MaxOneFileLines)
+	d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, domain.OneFileDiffLimits(overIdx))
+	require.NoError(t, err)
+	assert.Equal(t, domain.OmitUnavailable, d.Diff.Files[overIdx].Omitted)
+	assert.Empty(t, d.Diff.Files[overIdx].Hunks)
 }

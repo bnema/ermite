@@ -147,7 +147,7 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 			p.Refs = append(p.Refs, "tag: "+t.ShortName)
 		}
 	}
-	p.Note = diffNote(res.Diff, len(p.Files), p.NFiles)
+	p.Note = diffNote(res.Diff)
 	p.Checks = checksSummary(d.repo.Name, cid, s.checksFor(ctx, d.repo.Name, cid))
 
 	lines, invisible := diffLines(p.Files)
@@ -190,26 +190,19 @@ func commitBody(c domain.Commit) string {
 }
 
 // diffNote says what is missing from an incomplete diff, "" for a complete one:
-// files past the limit of the listing, files too large for the browser at all.
-// Collapsed files say so on their own line and load on their own.
-func diffNote(d domain.Diff, shown, total int) string {
+// files too large for the browser at all. Collapsed files say so on their own
+// line and load on their own; every changed file is listed.
+func diffNote(d domain.Diff) string {
 	gone := 0
 	for _, f := range d.Files {
 		if f.Omitted == domain.OmitUnavailable {
 			gone++
 		}
 	}
-	var parts []string
-	if d.Truncated && shown < total {
-		parts = append(parts, plural(total-shown, "file is", "files are")+" not listed")
-	}
-	if gone > 0 {
-		parts = append(parts, plural(gone, "file is", "files are")+" too large to show")
-	}
-	if len(parts) == 0 {
+	if gone == 0 {
 		return ""
 	}
-	return "this diff is incomplete: " + strings.Join(parts, ", ") + ". the totals above count everything; clone the repository to read the rest."
+	return "this diff is incomplete: " + plural(gone, "file is", "files are") + " too large to show. the totals above count everything; clone the repository to read the rest."
 }
 
 // commitWindow is how many files of a commit get their hunks read with the
@@ -272,7 +265,7 @@ func (s *Server) commitFiles(ctx context.Context, r *http.Request) (templ.Compon
 	files := s.hl.files(ctx, raw)
 	files[0].ID = "f" + itoa(i+1)
 	contextGaps(files, raw, repoHref(d.name(), "context", cid))
-	collapseFiles(files, raw, commitLinks(d.name(), cid))
+	files[0].Raw = rawLink(raw[0], commitLinks(d.name(), cid))
 	lines, _ := diffLines(files)
 	return MRFiles(MRFilesPage{Files: files, DiffView: fragmentView(r, lines)}), http.StatusOK, nil
 }

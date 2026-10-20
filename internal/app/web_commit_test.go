@@ -41,6 +41,34 @@ func TestWebCommitGolden(t *testing.T) {
 	}
 }
 
+// A commit page reads the hunks of its first 300 files; the others are listed
+// collapsed and load on their own. A binary file or one without changed lines
+// past the window has nothing to load and gets no link.
+func TestWebCommitFileWindow(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	for i := range 305 {
+		require.NoError(t, os.MkdirAll(filepath.Join(r.wt, "many"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(r.wt, fmt.Sprintf("many/f%03d.txt", i)), []byte(fmt.Sprintf("line %d\n", i)), 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(r.wt, "zbin.bin"), []byte("a\x00b"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(r.wt, "zempty.txt"), nil, 0o644))
+	r.mustGit(r.wt, "add", ".")
+	r.mustGit(r.wt, "commit", "-q", "-m", "many files")
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+
+	page := b.get("/proj/commit/"+r.headOf("feat/search"), nil)
+	require.Equal(t, 200, page.status)
+	assert.Contains(t, page.body, "line 299</td>", "index 299 is read")
+	assert.NotContains(t, page.body, "line 300</td>", "index 300 is collapsed")
+	assert.Equal(t, 5, strings.Count(page.body, "collapsed to keep the page light"))
+	assert.Equal(t, 5, strings.Count(page.body, "data-manual"), "binary and empty files past the window have nothing to load")
+	assert.Contains(t, page.body, `<a href="?file=300#f301">load diff</a>`)
+	assert.NotContains(t, page.body, `?file=299#`)
+	assert.NotContains(t, page.body, `?file=305#`)
+	assert.NotContains(t, page.body, `?file=306#`)
+}
+
 // The behaviours of the commit pages, asserted on their own.
 func TestWebCommit(t *testing.T) {
 	h := newHarness(t, harnessOpts{})

@@ -587,19 +587,28 @@ type DiffLimits struct {
 	// MaxTotalLines and MaxTotalBytes. To == 0 means no end, so the zero values
 	// select every file. MaxFileLines applies to each file of the window.
 	From, To int
+	// MaxAloneLines is the most changed lines a file may have to be read at all;
+	// a file over it is OmitUnavailable (it cannot be shown even alone), unlike
+	// OmitLarge, which a read of that file alone can load. 0 means no limit.
+	MaxAloneLines int
 	// SkipGenerated omits the files of the window that IsGeneratedPath
 	// recognizes (OmitGenerated), without reading their hunks.
 	SkipGenerated bool
 }
 
-// OneFileDiffLimits reads the hunks of file i only, with no line cap and
-// MaxTotalBytes as the sole guard. i must be at least 0: From -1 with To 0
+// MaxOneFileLines is the most changed lines of a file read alone on the web
+// (OneFileDiffLimits). A file over it is OmitUnavailable, so a short-lines
+// file within the byte guard cannot produce millions of rows.
+const MaxOneFileLines = 50000
+
+// OneFileDiffLimits reads the hunks of file i only, with no MaxFileLines cap;
+// MaxAloneLines (MaxOneFileLines) and MaxTotalBytes are the guards. i must be at least 0: From -1 with To 0
 // would mean the whole diff, so a negative i reads no file at all.
 func OneFileDiffLimits(i int) DiffLimits {
 	if i < 0 {
-		return DiffLimits{From: 1, To: 1, MaxTotalBytes: DefaultDiffLimits().MaxTotalBytes}
+		return DiffLimits{From: 1, To: 1, MaxAloneLines: MaxOneFileLines, MaxTotalBytes: DefaultDiffLimits().MaxTotalBytes}
 	}
-	return DiffLimits{From: i, To: i + 1, MaxTotalBytes: DefaultDiffLimits().MaxTotalBytes}
+	return DiffLimits{From: i, To: i + 1, MaxAloneLines: MaxOneFileLines, MaxTotalBytes: DefaultDiffLimits().MaxTotalBytes}
 }
 
 // DefaultDiffLimits are the limits of the API contract: 300 files, 2,000

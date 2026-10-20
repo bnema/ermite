@@ -187,7 +187,7 @@ func TestFileOmissionCollapsed(t *testing.T) {
 
 func TestOneFileDiffLimits(t *testing.T) {
 	l := OneFileDiffLimits(3)
-	if l.From != 3 || l.To != 4 || l.MaxFileLines != 0 || l.MaxTotalLines != 0 || l.MaxFiles != 0 || l.MaxTotalBytes != DefaultDiffLimits().MaxTotalBytes {
+	if l.From != 3 || l.To != 4 || l.MaxFileLines != 0 || l.MaxAloneLines != MaxOneFileLines || l.MaxTotalLines != 0 || l.MaxFiles != 0 || l.MaxTotalBytes != DefaultDiffLimits().MaxTotalBytes {
 		t.Fatalf("got %+v", l)
 	}
 	// A negative index (an unchecked IndexFunc) selects no file, not the whole diff.
@@ -228,5 +228,15 @@ func TestDiffBudgetContext(t *testing.T) {
 	}
 	if b.ChargeLine(1, false) != OmitUnavailable {
 		t.Fatal("context must not exceed the byte budget")
+	}
+}
+
+func TestDiffBudgetAdmitAloneLines(t *testing.T) {
+	b := NewDiffBudget(OneFileDiffLimits(0))
+	if read, why := b.Admit(false, "a.go", MaxOneFileLines); !read || why != OmitNone {
+		t.Fatalf("at the cap: read=%v why=%v", read, why)
+	}
+	if read, why := b.Admit(false, "a.go", MaxOneFileLines+1); read || why != OmitUnavailable {
+		t.Fatalf("over the cap: read=%v why=%v, want OmitUnavailable", read, why)
 	}
 }

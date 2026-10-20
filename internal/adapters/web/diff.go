@@ -424,7 +424,7 @@ func fileNote(f domain.FileDiff) string {
 	case f.Omitted == domain.OmitBudget:
 		parts = append(parts, "collapsed to keep the page light")
 	case f.Omitted == domain.OmitUnavailable:
-		parts = append(parts, "too large to show in the browser (over 8 MiB of text)")
+		parts = append(parts, "too large to show in the browser")
 	}
 	if f.OldMode != 0 && f.NewMode != 0 && f.OldMode != f.NewMode {
 		parts = append(parts, fmt.Sprintf("mode %06o → %06o", f.OldMode, f.NewMode))
@@ -505,10 +505,19 @@ func collapseFiles(out []DiffFile, files []domain.FileDiff, l fileLinks) {
 				q = "?from=" + itoa(l.from) + "&file=" + itoa(i)
 			}
 			out[i].Href = q + "#" + out[i].ID
-		case f.Omitted == domain.OmitUnavailable && f.Status != domain.FileDeleted && l.rev != "":
-			out[i].Raw = repoHref(l.repo, "raw", l.rev, f.NewPath)
+		default:
+			out[i].Raw = rawLink(f, l)
 		}
 	}
+}
+
+// rawLink is the address of the raw blob of a file too large to show, "" for
+// any other file.
+func rawLink(f domain.FileDiff, l fileLinks) string {
+	if f.Omitted != domain.OmitUnavailable || f.Status == domain.FileDeleted || l.rev == "" {
+		return ""
+	}
+	return repoHref(l.repo, "raw", l.rev, f.NewPath)
 }
 
 // fileParam reads ?file= of a page without scripts: the index of a collapsed
