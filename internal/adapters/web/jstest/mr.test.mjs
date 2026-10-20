@@ -93,98 +93,98 @@ for (const dataset of [{diff:'split'}, {view:'split'}]) test(`reveal selects the
  }
 });
 
-test('footer tabs switch panels, support arrows, and open on checks hash', () => {
-  const oldDocument = globalThis.document;
-  const oldLocation = globalThis.location;
-  const oldAdd = globalThis.addEventListener;
-  const oldHistory = globalThis.history;
-  const listeners = {};
-  const replaced = [];
-  globalThis.history = { replaceState: (...args) => replaced.push(args) };
-  const node = (id) => ({ id, attrs: {}, events: {}, hidden: false,
-    setAttribute(k,v) { this.attrs[k]=v; },
-    addEventListener(k,v) { this.events[k]=v; }, focus() { this.focused=true; } });
-  const tabs = [node('mr-tab-commits'), node('mr-tab-checks')];
-  const panels = [node('mr-commits'), node('mr-checks-panel')];
-  const footer = node('mr-panels'); footer.open=false;
-  const nav = node('tabs'); nav.querySelectorAll=()=>tabs;
-  footer.querySelectorAll=()=>panels;
-  globalThis.document = {querySelector: (s) => s === '#mr-panels' ? footer : s === '[data-mr-tabs]' ? nav : null,
-    addEventListener(k,v) {listeners[k]=v;} };
-  globalThis.location = {hash:''};
-  globalThis.addEventListener = (k,v) => {listeners[k]=v;};
-  try {
-    window.ermiteMR.panels();
-    assert.equal(footer.open,false);
-    assert.equal(panels[0].hidden,false);
-    assert.equal(panels[1].hidden,true);
-    assert.deepEqual(replaced, [], 'initial selection leaves the URL alone');
-    tabs[1].events.click({preventDefault(){}});
-    assert.deepEqual(replaced, [[null, '', '#mr-checks-panel']]);
-    assert.equal(panels[0].hidden,true);
-    assert.equal(tabs[1].attrs['aria-selected'],'true');
-    tabs[1].events.keydown({key:'ArrowRight',preventDefault(){}});
-    assert.equal(tabs[0].focused,true);
-    assert.equal(panels[0].hidden,false);
-    assert.deepEqual(replaced.at(-1), [null, '', '#mr-commits']);
-    location.hash='#mr-checks'; replaced.length = 0; listeners.hashchange();
-    assert.deepEqual(replaced, [], 'hash navigation does not rewrite the URL');
-    assert.equal(footer.open,true);
-    assert.equal(panels[1].hidden,false);
-    footer.open=false;
-    listeners.click({target:{closest:()=>true}});
-    assert.equal(footer.open,true);
-    assert.equal(C.tabIndex('Home',1,2),0);
-    assert.equal(C.tabIndex('End',0,2),1);
-    assert.equal(C.tabIndex('ArrowLeft',0,2),1);
-    assert.equal(C.tabIndex('Escape',0,2),null);
-  } finally {
-    globalThis.document=oldDocument; globalThis.location=oldLocation; globalThis.addEventListener=oldAdd;
-    if (oldHistory === undefined) delete globalThis.history; else globalThis.history = oldHistory;
-  }
-});
-
-test('footer: #mr-ck syncs the checks label and a click opens the footer on Checks', () => {
+function footerHarness(extra = {}) {
   const saved = Object.fromEntries(['document', 'location', 'addEventListener', 'history', 'MutationObserver'].map((k) => [k, globalThis[k]]));
   const node = (id) => ({ id, attrs: {}, events: {}, hidden: false,
-    setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(k, v) { this.events[k] = v; }, focus() {} });
-  const tabs = [node('t0'), node('t1')];
+    setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k] ?? null; },
+    addEventListener(k, v) { this.events[k] = v; }, focus() { this.focused = true; } });
+  const tabs = [node('mr-tab-commits'), node('mr-tab-checks')];
   const panels = [node('mr-commits'), node('mr-checks-panel')];
-  const footer = node('mr-panels'); footer.open = false; footer.querySelectorAll = () => panels;
-  let writes = 0, text = '';
-  const label = { get textContent() { return text; }, set textContent(v) { writes++; text = v; } };
+  const footer = node('footer'); footer.querySelectorAll = () => panels;
   const nav = node('tabs'); nav.querySelectorAll = () => tabs;
-  nav.querySelector = (s) => s === '[data-checks-label]' ? label : null;
+  const listeners = {}, replaced = [];
+  globalThis.document = { querySelector: (s) => s === '.mr-footer' ? footer : s === '[data-mr-tabs]' ? nav : s === '#mr-ck' ? extra.summary ?? null : null,
+    querySelectorAll: (s) => s === '[data-mr-tabs] a' ? tabs : [], addEventListener(k, v) { listeners[k] = v; } };
+  globalThis.location = { hash: '', pathname: '/demo/merge-requests/1', search: '?x=1' };
+  globalThis.addEventListener = (k, v) => { listeners[k] = v; };
+  globalThis.history = { replaceState: (...args) => replaced.push(args) };
+  const restore = () => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; } };
+  const state = () => panels.map((p) => !p.hidden);
+  return { tabs, panels, listeners, replaced, restore, state };
+}
+
+test('footer tabs: closed by default, toggle, switch, arrows, hash', () => {
+  const h = footerHarness();
+  try {
+    window.ermiteMR.panels();
+    assert.deepEqual(h.state(), [false, false], 'initially closed');
+    assert.equal(h.tabs[0].attrs['aria-expanded'], 'false');
+    assert.deepEqual(h.replaced, [], 'initial state leaves the URL alone');
+    h.tabs[1].events.click({ preventDefault() {} });
+    assert.deepEqual(h.state(), [false, true]);
+    assert.equal(h.tabs[1].attrs['aria-expanded'], 'true');
+    assert.deepEqual(h.replaced, [[null, '', '#mr-checks-panel']]);
+    location.hash = '#mr-checks-panel';
+    h.tabs[1].events.click({ preventDefault() {} });
+    assert.deepEqual(h.state(), [false, false], 'a second click closes');
+    assert.deepEqual(h.replaced.at(-1), [null, '', '/demo/merge-requests/1?x=1'], 'closing clears the fragment');
+    location.hash = '';
+    h.tabs[1].events.click({ preventDefault() {} });
+    h.tabs[0].events.click({ preventDefault() {} });
+    assert.deepEqual(h.state(), [true, false], 'the other tab switches');
+    h.tabs[0].events.keydown({ key: 'ArrowRight', preventDefault() {} });
+    assert.equal(h.tabs[1].focused, true, 'arrows move focus only');
+    assert.deepEqual(h.state(), [true, false]);
+    location.hash = '#mr-checks'; h.replaced.length = 0; h.listeners.hashchange();
+    assert.deepEqual(h.state(), [false, true], 'hash opens checks');
+    assert.deepEqual(h.replaced, [], 'hash navigation does not rewrite the URL');
+    location.hash = '#mr-commits'; h.listeners.hashchange();
+    assert.deepEqual(h.state(), [true, false]);
+    assert.equal(C.tabIndex('Home', 1, 2), 0);
+    assert.equal(C.tabIndex('End', 0, 2), 1);
+    assert.equal(C.tabIndex('ArrowLeft', 0, 2), 1);
+    assert.equal(C.tabIndex('Escape', 0, 2), null);
+  } finally { h.restore(); }
+});
+
+test('footer: #mr-ck syncs the checks label; its click opens Checks without toggling', () => {
+  const text0 = { v: '' }; let writes = 0;
+  const label = { get textContent() { return text0.v; }, set textContent(v) { writes++; text0.v = v; } };
   const summary = { title: '1/2 failed', textContent: ' 1/2 ', parentElement: {} };
-  const listeners = {};
+  const h = footerHarness({ summary });
   let observed = null, callback = null;
   globalThis.MutationObserver = class { constructor(fn) { callback = fn; } observe(target, opts) { observed = [target, opts]; } };
-  globalThis.document = { querySelector: (s) => s === '#mr-panels' ? footer : s === '[data-mr-tabs]' ? nav : s === '#mr-ck' ? summary : null,
-    addEventListener(k, v) { listeners[k] = v; } };
-  globalThis.location = { hash: '' };
-  globalThis.addEventListener = () => {};
-  globalThis.history = { replaceState() {} };
+  const nav = document.querySelector('[data-mr-tabs]');
+  nav.querySelector = (s) => s === '[data-checks-label]' ? label : null;
   try {
     window.ermiteMR.panels();
     assert.equal(label.textContent, '1/2 failed', 'initial label sync');
     assert.equal(observed[0], summary.parentElement);
-    // A mutation elsewhere in the bar (hx-live rewriting a label) must not
-    // write the label again, or hx-live wakes up on its own write forever.
     assert.deepEqual(observed[1], { childList: true }, 'only #mr-ck replacements wake the observer');
     const before = writes; callback(); callback();
     assert.equal(writes, before, 'an unchanged label is not written');
     summary.title = ''; callback();
-    assert.equal(label.textContent, '1/2', 'observer re-syncs from the text');
+    assert.equal(label.textContent, '1/2');
     summary.textContent = ' '; callback();
     assert.equal(label.textContent, 'no checks');
-    listeners.click({ target: { closest: (s) => s === '#mr-ck' ? summary : null } });
-    assert.equal(footer.open, true);
-    assert.equal(panels[1].hidden, false);
-    assert.equal(panels[0].hidden, true);
-    assert.equal(tabs[1].attrs['aria-selected'], 'true');
-  } finally {
-    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; }
-  }
+    const click = { target: { closest: (s) => s === '#mr-ck' ? summary : null } };
+    h.listeners.click(click);
+    assert.deepEqual(h.state(), [false, true]);
+    h.listeners.click(click);
+    assert.deepEqual(h.state(), [false, true], 'a second badge click keeps it open');
+  } finally { h.restore(); }
+});
+
+test('footer: panels(index) restores the open panel without touching the URL', () => {
+  const h = footerHarness();
+  try {
+    window.ermiteMR.panels(1);
+    assert.deepEqual(h.state(), [false, true]);
+    assert.equal(h.tabs[1].attrs['aria-expanded'], 'true');
+    assert.deepEqual(h.replaced, []);
+    window.ermiteMR.panels(-1);
+    assert.deepEqual(h.state(), [false, false]);
+  } finally { h.restore(); }
 });
 
 test('touch range: first tap anchors, second tap opens the sorted range', () => {

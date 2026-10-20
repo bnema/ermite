@@ -107,10 +107,12 @@ because it owns the merge-git port.
 
 ### Review page panels
 
-The main request card ends with a collapsed Commits / Checks footer. With
-scripts, arrow keys (and Home / End) switch its tabs; without scripts, opening
-the footer shows both sections. The checks summary above the diff opens the
-Checks tab and continues to update live. Commit totals use `N+` when the branch
+The main request card ends with a footer of two tabs, Commits and Checks, both
+collapsed by default. Clicking a tab opens its panel, clicking the open tab
+folds it again, clicking the other tab switches. Arrow keys (and Home / End)
+move between the tabs. Without scripts the tabs are anchor links and the URL
+fragment (`#mr-commits`, `#mr-checks`) shows the panel. The checks summary above
+the diff opens the Checks panel and continues to update live. Commit totals use `N+` when the branch
 list is capped: the reader's existing count operation counts all reachable
 ancestors, not the source-minus-target range.
 
@@ -123,7 +125,7 @@ merge actions remain restricted to their existing permissions.
 
 A push to the source branch refreshes the web review in place: the diff, files
 rail, commits/checks footer, diff range and merge controls follow the new head.
-The review keeps its visible file/line, folded files and selected footer tab.
+The review keeps its visible file/line, folded files and open footer panel.
 The page request still reads only one 25-file window of hunks; the visible
 anchor's window is fetched too if needed, and other windows remain lazy.
 

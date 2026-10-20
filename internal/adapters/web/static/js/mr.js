@@ -315,42 +315,48 @@ window.ermiteMR = (() => {
 
   // Enhance the ordinary anchor navigation only when scripts are available.
   let disposePanels = () => {};
-  function panels() {
+  // The tabs are disclosure buttons (aria-expanded + aria-controls), not a
+  // tablist: a tablist always has a selected tab, and here every panel can be
+  // folded. State: the index of the open panel, or -1 for none.
+  function panels(initial = -1) {
     disposePanels();
-    const footer = $('#mr-panels'), nav = $('[data-mr-tabs]');
+    const footer = $('.mr-footer'), nav = $('[data-mr-tabs]');
     if (!footer || !nav) return;
     const tabs = $$('a', nav), panels = $$('[data-mr-panel]', footer);
-    nav.setAttribute('role', 'tablist');
-    function select(index, focus = false, fromUser = false) {
+    const ids = new Set(['#mr-commits', '#mr-checks', '#mr-checks-panel']);
+    let current = -1;
+    // show applies the state; fromUser also keeps the URL fragment in step.
+    function show(index, fromUser = false) {
+      current = index;
       tabs.forEach((tab, i) => {
-        tab.setAttribute('role', 'tab');
         tab.setAttribute('aria-controls', panels[i].id);
-        tab.setAttribute('aria-selected', String(i === index));
-        tab.tabIndex = i === index ? 0 : -1;
-        panels[i].setAttribute('role', 'tabpanel');
-        panels[i].tabIndex = 0;
+        tab.setAttribute('aria-expanded', String(i === index));
         panels[i].hidden = i !== index;
       });
-      if (focus) tabs[index].focus();
-      if (fromUser && location.hash !== '#' + panels[index].id) history.replaceState(null, '', '#' + panels[index].id);
+      if (!fromUser) return;
+      if (index >= 0) {
+        if (location.hash !== '#' + panels[index].id) history.replaceState(null, '', '#' + panels[index].id);
+      } else if (ids.has(location.hash)) {
+        history.replaceState(null, '', location.pathname + location.search);
+      }
     }
+    const toggle = (i) => show(i === current ? -1 : i, true);
     tabs.forEach((tab, i) => {
-      tab.addEventListener('click', (e) => { e.preventDefault(); select(i, false, true); });
+      tab.addEventListener('click', (e) => { e.preventDefault(); toggle(i); });
       tab.addEventListener('keydown', (e) => {
         const next = core.tabIndex(e.key, i, tabs.length);
         if (next === null) return;
-        e.preventDefault(); select(next, true, true);
+        e.preventDefault(); tabs[next].focus();
       });
     });
     function hash() {
       const h = location.hash;
       const index = h === '#mr-checks' || h === '#mr-checks-panel' ? 1 : h === '#mr-commits' ? 0 : -1;
-      if (index < 0) return;
-      footer.open = true; select(index);
+      if (index >= 0) show(index);
     }
-    // A repeated click on the same hash must also reopen a folded footer.
+    // The checks badge always opens Checks; it never folds it.
     const checksClick = (e) => {
-      if (e.target.closest?.('#mr-ck')) { footer.open = true; select(1); }
+      if (e.target.closest?.('#mr-ck')) show(1);
     };
     document.addEventListener('click', checksClick);
     let observer;
@@ -369,7 +375,7 @@ window.ermiteMR = (() => {
       observer.observe(summary.parentElement, { childList: true });
       sync();
     }
-    select(0); hash();
+    show(initial); hash();
     addEventListener('hashchange', hash);
     disposePanels = () => {
       document.removeEventListener?.('click', checksClick);
@@ -583,8 +589,7 @@ window.ermiteMR = (() => {
     const files = new Map($$('#diffs details.dfile').map((f) => [f.dataset.file, f.open]));
     const folded = $('.r-files')?.hasAttribute('data-folded');
     const railY = $('.rail')?.scrollTop, filesY = $('.r-files .files')?.scrollTop;
-    const footerOpen = $('#mr-panels')?.open;
-    const tab = $('[data-mr-tabs] [aria-selected="true"]')?.id;
+    const openPanel = $$('[data-mr-tabs] a').findIndex((t) => t.getAttribute('aria-expanded') === 'true');
     const active = document.activeElement;
     const focus = active && { file: active.closest?.('.files a')?.getAttribute('title'), region: regions.find((sel) => $(sel)?.contains(active)), menu: active.closest?.('details.menu')?.id, id: active.id, tag: active.tagName, name: active.getAttribute('name'), href: active.getAttribute('href') };
     for (const f of $$('#diffs details.dfile', page)) if (files.has(f.dataset.file)) f.open = files.get(f.dataset.file);
@@ -600,13 +605,7 @@ window.ermiteMR = (() => {
     const oldSHA = $('.hdr .ref .sha'), newSHA = $('.hdr .ref .sha', page);
     if (oldSHA && newSHA) oldSHA.textContent = newSHA.textContent;
     page = null;
-    panels();
-    if (tab) {
-      const oldURL = location.href;
-      document.getElementById(tab)?.click();
-      if (location.href !== oldURL) history.replaceState(history.state, '', oldURL);
-    }
-    if ($('#mr-panels')) $('#mr-panels').open = footerOpen;
+    panels(openPanel);
     foldFiles(!!folded);
     if ($('.rail')) $('.rail').scrollTop = railY;
     if ($('.r-files .files')) $('.r-files .files').scrollTop = filesY;

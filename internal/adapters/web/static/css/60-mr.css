@@ -10,17 +10,22 @@
 
   .mr-footer {
     border-top: 1px solid var(--border); padding: var(--s3) var(--s5);
+    /* a touch darker than the card body; the card's overflow clips the corners */
+    background: var(--bg-canvas);
     font-size: var(--fs-s);
-    & summary { cursor: pointer; color: var(--ink-dim); }
     & nav { display: flex; gap: var(--s3); padding-block: var(--s3); }
-    & [role="tab"] { padding: var(--s1) var(--s2); border-radius: var(--r-s); }
-    & [aria-selected="true"] { background: var(--bg-raised); color: var(--ink-hi); }
+    & [data-mr-tabs] a { padding: var(--s1) var(--s2); border-radius: var(--r-s); color: var(--ink-dim); cursor: pointer; }
+    & [data-mr-tabs] a:hover { background: var(--bg-raised); color: var(--ink-hi); }
+    & [data-mr-tabs] a[aria-expanded="true"] { background: var(--bg-strong); color: var(--ink-hi); }
     & [data-mr-panel] { overflow-x: auto; }
     & [hidden] { display: none; }
+    /* Without scripts the panels are shown by the URL fragment alone. */
+    html:not(.js) & [data-mr-panel][hidden]:is(:target, :has(:target)) { display: block; }
     & section h2 { font-size: var(--fs-s); color: var(--ink-dim); }
     & table { width: 100%; border-collapse: collapse; }
     & th, & td { text-align: left; padding: var(--s2); border-bottom: 1px solid var(--border); }
     & th { color: var(--ink-dim); font-weight: 500; }
+    & tbody tr:last-child > :is(td, th) { border-bottom: 0; }
   }
   .merge-settings { font-size: var(--fs-s); color: var(--ink-dim); }
   .merge-settings h2 { font-size: var(--fs-s); }

@@ -134,7 +134,11 @@ func TestMRPanelsAndMenus(t *testing.T) {
 	p := MRPage{CommitCount: "500+", CommitsNote: "more commits", Modes: []string{"squash", "merge"}, ChecksBlock: true,
 		ChecksSum: ChecksSummary{Total: 2, Label: "1/2", Title: "1/2 failed"}, Box: &MergeBox{Signed: true, Fingerprint: "fingerprint", HeadGone: true}}
 	footer := renderToString(t, mrFooter(p))
-	assert.Contains(t, footer, `<footer class="mr-footer"><details id="mr-panels">`)
+	assert.Contains(t, footer, `<footer class="mr-footer"><nav data-mr-tabs`)
+	assert.NotContains(t, footer, `<details`)
+	assert.NotContains(t, footer, `<summary`)
+	assert.Contains(t, footer, `id="mr-commits" data-mr-panel hidden`)
+	assert.Contains(t, footer, `id="mr-checks-panel" data-mr-panel hidden`)
 	assert.Contains(t, footer, `data-mr-tabs`)
 	assert.Contains(t, footer, `id="mr-commits"`)
 	assert.Contains(t, footer, `id="mr-checks"`)
