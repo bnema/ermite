@@ -89,8 +89,7 @@ func DiffOmissions(t *testing.T, mk Maker) {
 	f.Lines("z-big.txt", "line", 2500)
 	f.Commit("change")
 
-	limits := domain.DiffLimits{MaxTotalBytes: 1 << 20, MaxFileLines: 2000, SkipGenerated: true}
-	limits.MaxTotalBytes = 300
+	limits := domain.DiffLimits{MaxTotalBytes: 300, MaxFileLines: 2000, SkipGenerated: true}
 	d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
 	require.NoError(t, err)
 	require.Len(t, d.Diff.Files, 3)
@@ -107,15 +106,26 @@ func DiffOmissions(t *testing.T, mk Maker) {
 	assert.Empty(t, byPath["z-big.txt"].Hunks)
 	assert.False(t, d.Diff.Truncated)
 
+	// Read, go.sum overflows the bytes that a.txt, read before it, already
+	// spent: it may fit on its own, so it is OmitBudget, loadable alone.
 	limits.SkipGenerated = false
 	d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
 	require.NoError(t, err)
-	for _, file := range d.Diff.Files {
+	sum := -1
+	for i, file := range d.Diff.Files {
 		if file.NewPath == "go.sum" {
-			assert.Equal(t, domain.OmitUnavailable, file.Omitted, "read, it overflows the bytes")
+			sum = i
+			assert.Equal(t, domain.OmitBudget, file.Omitted, "earlier files spent bytes")
 			assert.Empty(t, file.Hunks)
 		}
 	}
+	require.GreaterOrEqual(t, sum, 0)
+	// Alone, it is still over the bytes: OmitUnavailable, a dead end.
+	alone := domain.DiffLimits{From: sum, To: sum + 1, MaxTotalBytes: 300}
+	d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, alone)
+	require.NoError(t, err)
+	assert.Equal(t, domain.OmitUnavailable, d.Diff.Files[sum].Omitted, "over the bytes on its own")
+	assert.Empty(t, d.Diff.Files[sum].Hunks)
 
 	// OneFileDiffLimits reads a file over 2,000 changed lines, and only it.
 	idx := -1

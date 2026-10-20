@@ -145,6 +145,7 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 			e.file.Omitted = why
 		default:
 			before := pr.budget
+			pr.budget.StartFile()
 			hunks, _, why, err := pr.file(sections, pr.budget.FileLines())
 			if err != nil {
 				return domain.Diff{}, domain.DiffStats{}, err

@@ -592,8 +592,13 @@ type DiffLimits struct {
 	SkipGenerated bool
 }
 
-// OneFileDiffLimits reads the hunks of file i only, with no line cap and MaxTotalBytes as the sole guard.
+// OneFileDiffLimits reads the hunks of file i only, with no line cap and
+// MaxTotalBytes as the sole guard. i must be at least 0: From -1 with To 0
+// would mean the whole diff, so a negative i reads no file at all.
 func OneFileDiffLimits(i int) DiffLimits {
+	if i < 0 {
+		return DiffLimits{From: 1, To: 1, MaxTotalBytes: DefaultDiffLimits().MaxTotalBytes}
+	}
 	return DiffLimits{From: i, To: i + 1, MaxTotalBytes: DefaultDiffLimits().MaxTotalBytes}
 }
 

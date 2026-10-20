@@ -53,10 +53,12 @@ func (b *CommitObjectBudget) Charge(id ObjectID, size int64) {
 type DiffBudget struct {
 	limits               DiffLimits
 	linesLeft, bytesLeft int
+	// fileBytes is bytesLeft when the current file started (StartFile).
+	fileBytes int
 }
 
 func NewDiffBudget(limits DiffLimits) DiffBudget {
-	return DiffBudget{limits: limits, linesLeft: limits.MaxTotalLines, bytesLeft: limits.MaxTotalBytes}
+	return DiffBudget{limits: limits, linesLeft: limits.MaxTotalLines, bytesLeft: limits.MaxTotalBytes, fileBytes: limits.MaxTotalBytes}
 }
 
 func (b DiffBudget) Window(files int) (kept, from, to int, truncated bool) {
@@ -103,10 +105,16 @@ func (b DiffBudget) FileLines() int {
 	return n
 }
 
+// StartFile marks the start of a file's lines, for ChargeLine to tell a file
+// over the byte limit on its own from one that met the bytes of earlier files.
+func (b *DiffBudget) StartFile() { b.fileBytes = b.bytesLeft }
+
 // ChargeLine accounts for decoded text bytes and, for additions or deletions,
 // one changed line. Context consumes bytes only. It returns OmitNone when the
-// line fits, OmitBudget when the changed lines ran out and OmitUnavailable when
-// the bytes ran out.
+// line fits and OmitBudget when the changed lines ran out. When the bytes run
+// out it returns OmitBudget if files read before this one (since StartFile)
+// spent some of them, as this file may still fit on its own, and
+// OmitUnavailable if this file alone is over MaxTotalBytes.
 func (b *DiffBudget) ChargeLine(bytes int, changed bool) FileOmission {
 	if changed && b.limits.MaxTotalLines > 0 {
 		b.linesLeft--
@@ -114,6 +122,8 @@ func (b *DiffBudget) ChargeLine(bytes int, changed bool) FileOmission {
 	b.bytesLeft -= bytes
 	switch {
 	case b.limits.MaxTotalLines > 0 && b.linesLeft < 0:
+		return OmitBudget
+	case b.bytesLeft < 0 && b.fileBytes < b.limits.MaxTotalBytes:
 		return OmitBudget
 	case b.bytesLeft < 0:
 		return OmitUnavailable

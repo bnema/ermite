@@ -190,6 +190,27 @@ func TestOneFileDiffLimits(t *testing.T) {
 	if l.From != 3 || l.To != 4 || l.MaxFileLines != 0 || l.MaxTotalLines != 0 || l.MaxFiles != 0 || l.MaxTotalBytes != DefaultDiffLimits().MaxTotalBytes {
 		t.Fatalf("got %+v", l)
 	}
+	// A negative index (an unchecked IndexFunc) selects no file, not the whole diff.
+	if _, from, to, _ := NewDiffBudget(OneFileDiffLimits(-1)).Window(10); from < to {
+		t.Fatalf("OneFileDiffLimits(-1) selects files [%d, %d)", from, to)
+	}
+}
+
+func TestDiffBudgetBytesOfEarlierFiles(t *testing.T) {
+	b := NewDiffBudget(DiffLimits{MaxTotalBytes: 10})
+	b.StartFile()
+	if b.ChargeLine(4, true) != OmitNone {
+		t.Fatal("the first file fits")
+	}
+	b.StartFile()
+	if got := b.ChargeLine(7, true); got != OmitBudget {
+		t.Fatalf("a file meeting the bytes of earlier files: got %v, want OmitBudget", got)
+	}
+	alone := NewDiffBudget(DiffLimits{MaxTotalBytes: 10})
+	alone.StartFile()
+	if got := alone.ChargeLine(11, true); got != OmitUnavailable {
+		t.Fatalf("a file over the bytes on its own: got %v, want OmitUnavailable", got)
+	}
 }
 
 func TestDiffBudgetContext(t *testing.T) {
