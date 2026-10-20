@@ -412,3 +412,49 @@ func TestHookScriptExecsTheBinaryWithQuotedPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "line\n", string(in), "stdin reaches the binary")
 }
+
+func TestMirrorPostReceiveWarning(t *testing.T) {
+	for _, warning := range []string{"ermite: mirror is failing: network unavailable", "ermite: mirror is paused: main diverged on remote", ""} {
+		t.Run(warning, func(t *testing.T) {
+			hooks := mocks.NewPushHookService(t)
+			hooks.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			srv, sock := startHooks(t, hooks)
+			w := mocks.NewMirrorWarner(t)
+			w.EXPECT().Warning(mock.Anything, repoName(t, "proj")).Return(warning)
+			srv.WithMirrorWarner(w)
+			token, release := srv.Register(t.Context(), repoName(t, "proj"), domain.Root())
+			defer release()
+			reply := raw(t, sock, `{"token":"`+token+`","hook":"post-receive","updates":[]}`)
+			assert.True(t, reply.OK)
+			if warning == "" {
+				assert.Empty(t, reply.Message)
+			} else {
+				assert.Equal(t, warning+"\n→ ermite mirror status proj", reply.Message)
+			}
+		})
+	}
+}
+
+func TestMirrorPostReceiveTimeout(t *testing.T) {
+	hooks := mocks.NewPushHookService(t)
+	hooks.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	srv, sock := startHooks(t, hooks)
+	w := mocks.NewMirrorWarner(t)
+	release := make(chan struct{})
+	defer close(release)
+	w.EXPECT().Warning(mock.Anything, repoName(t, "proj")).RunAndReturn(func(ctx context.Context, _ domain.RepoName) string {
+		deadline, ok := ctx.Deadline()
+		assert.True(t, ok)
+		assert.LessOrEqual(t, time.Until(deadline), 2*time.Second)
+		<-release // deliberately ignores cancellation
+		return "late warning"
+	})
+	srv.WithMirrorWarner(w)
+	token, revoke := srv.Register(t.Context(), repoName(t, "proj"), domain.Root())
+	defer revoke()
+	start := time.Now()
+	reply := raw(t, sock, `{"token":"`+token+`","hook":"post-receive","updates":[]}`)
+	assert.True(t, reply.OK)
+	assert.Empty(t, reply.Message)
+	assert.Less(t, time.Since(start), 2500*time.Millisecond)
+}

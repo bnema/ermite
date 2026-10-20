@@ -92,6 +92,17 @@ templ latestTagFact(t LatestTag) {
 }
 
 templ summaryRail(p SummaryPage) {
+	if p.Mirror != nil {
+		<section aria-labelledby="r-mirror">
+			<h2 id="r-mirror">Mirror</h2>
+			<p>⚠ Mirror { p.Mirror.State }</p>
+			if p.Mirror.Reason != "" {
+				<p>{ p.Mirror.Reason }</p>
+			}
+			<p>Run <code>{ p.Mirror.Command }</code></p>
+		</section>
+	}
+
 	<section aria-labelledby="r-clone"><h2 id="r-clone">Clone</h2>@CloneBlock(p.Clone)
 </section>
 	<section aria-labelledby="r-facts">

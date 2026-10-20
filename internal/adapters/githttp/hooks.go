@@ -37,8 +37,9 @@ type hookEntry struct {
 // HookServer registers the per-request hook tokens and serves the Unix
 // socket the hooks call back on. It implements HookTokens.
 type HookServer struct {
-	path  string
-	hooks ports.PushHookService
+	path    string
+	hooks   ports.PushHookService
+	mirrors ports.MirrorWarner
 
 	mu     sync.RWMutex
 	tokens map[string]hookEntry
@@ -54,6 +55,32 @@ var _ ports.HookTokens = (*HookServer)(nil)
 // NewHookServer builds a server for the socket at path. Call Serve to listen.
 func NewHookServer(path string, hooks ports.PushHookService) *HookServer {
 	return &HookServer{path: path, hooks: hooks, tokens: make(map[string]hookEntry), conns: make(map[net.Conn]struct{})}
+}
+
+// WithMirrorWarner enables best-effort mirror warnings. Configure before serving.
+func (s *HookServer) WithMirrorWarner(w ports.MirrorWarner) *HookServer {
+	s.mirrors = w
+	return s
+}
+
+// mirrorWarning bounds even a source that does not honor context cancellation.
+func (s *HookServer) mirrorWarning(ctx context.Context, repo domain.RepoName) string {
+	if s.mirrors == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	result := make(chan string, 1)
+	go func() { result <- s.mirrors.Warning(ctx, repo) }()
+	select {
+	case warning := <-result:
+		if ctx.Err() != nil || warning == "" {
+			return ""
+		}
+		return warning + "\n→ ermite mirror status " + repo.String()
+	case <-ctx.Done():
+		return ""
+	}
 }
 
 // Socket returns the path of the socket.
@@ -229,7 +256,7 @@ func (s *HookServer) handle(ctx context.Context, conn net.Conn) {
 			s.reply(ctx, conn, HookReply{OK: true, Message: "ermite: the push succeeded but recording it failed"})
 			return
 		}
-		s.reply(ctx, conn, HookReply{OK: true})
+		s.reply(ctx, conn, HookReply{OK: true, Message: s.mirrorWarning(rctx, entry.repo)})
 	}
 }
 

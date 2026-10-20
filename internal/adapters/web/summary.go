@@ -49,6 +49,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 	now := s.cfg.Now()
 
 	p := SummaryPage{
+		Mirror:  s.mirrorBadge(ctx, d.repo.Name),
 		AllHref: repoHref(d.name(), "commits", ref),
 		Clone:   Clone{ID: "clone-" + d.name(), Lines: []string{"git clone " + s.cloneURL(d.name())}},
 	}
