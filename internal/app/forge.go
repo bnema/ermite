@@ -26,6 +26,7 @@ import (
 	"bnema.dev/ermite/internal/adapters/githttp"
 	"bnema.dev/ermite/internal/adapters/githubapi"
 	"bnema.dev/ermite/internal/adapters/githubraw"
+	"bnema.dev/ermite/internal/adapters/gitpush"
 	"bnema.dev/ermite/internal/adapters/gitremote"
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/kvstore"
@@ -49,6 +50,9 @@ const maxReceiveBytes = githttp.DefaultMaxBodyBytes
 
 // options are the parts of the wiring that tests replace.
 type options struct {
+	// pusher and mirrors override mirror transport/settings in local tests only.
+	pusher  ports.MirrorPusher
+	mirrors func(*usecase.MirrorsConfig)
 	// hookExe is the executable the hook scripts exec; empty means this
 	// process's own executable.
 	hookExe string
@@ -151,6 +155,8 @@ type forge struct {
 	CI *usecase.CI
 	// Settings are the secrets, variables and environments of CI.
 	Settings *usecase.CISettings
+	// Mirrors exposes Warning and Badge for the hook server and web composition.
+	Mirrors *usecase.Mirrors
 	// OIDC is the provider of ID tokens, disabled without a secrets key.
 	OIDC *usecase.OIDC
 	API  *rpc.API
@@ -274,6 +280,26 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		}
 		sealer = box
 	}
+	pusher := opts.pusher
+	if pusher == nil {
+		pusher = gitpush.New(gitpush.Config{
+			Bin: cfg.Git, Path: path, Home: filepath.Join(cfg.DataDir, "run", "git-home"),
+			KnownHosts: filepath.Join(cfg.DataDir, "mirror_known_hosts"),
+			TempDir:    filepath.Join(cfg.DataDir, "run", "mirror"),
+			RepoDir:    func(name domain.RepoName) string { return gitcli.RepoDir(cfg.DataDir, name) },
+		})
+	}
+	mirrorCfg := usecase.MirrorsConfig{
+		Store: store, Keys: store, Sealer: sealer, Pusher: pusher,
+		Meta: store, Git: git, Reader: reader, Bus: f.Bus, Clock: clock, PublicURL: cfg.PublicURL,
+	}
+	if opts.mirrors != nil {
+		opts.mirrors(&mirrorCfg)
+	}
+	f.Mirrors = usecase.NewMirrors(mirrorCfg)
+	f.Pushes.WithMirror(f.Mirrors)
+	f.hooks.WithMirrorWarner(f.Mirrors)
+
 	f.Settings, err = usecase.NewCISettings(ctx, store, store.Settings(), sealer, clock)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", config.EnvSecretsKey, err)
@@ -400,6 +426,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	f.API = rpc.New(rpc.Config{
 		Auth:            f.Auth,
+		Mirrors:         f.Mirrors,
 		Repos:           f.Repos,
 		Tokens:          f.Tokens,
 		Browse:          f.Browse,
@@ -462,6 +489,9 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if err != nil {
 		return nil, fmt.Errorf("web: %w", err)
 	}
+	if s, ok := site.(*web.Server); ok {
+		s.WithMirrorWarner(f.Mirrors)
+	}
 	routes = append(routes, webRoutes(site)...)
 	f.server = httpserver.New(httpserver.Config{
 		Addr:         cfg.Addr,
@@ -489,6 +519,7 @@ func (f *forge) Run(ctx context.Context) error {
 // outlives the HTTP server: requests still in flight while it drains are
 // pushes whose hooks need it. A failure of either stops both.
 func (f *forge) Serve(ctx context.Context, ln net.Listener) error {
+	f.Mirrors.Start()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	hookCtx, stopHooks := context.WithCancel(context.WithoutCancel(ctx))
@@ -516,6 +547,9 @@ func (f *forge) Close(ctx context.Context) {
 	}
 	if f.MergeRequests != nil {
 		f.MergeRequests.Wait(ctx) // its side effects use CI and Mergeability
+	}
+	if f.Mirrors != nil {
+		f.Mirrors.Close(ctx)
 	}
 	if f.CI != nil {
 		f.CI.Close(ctx)
