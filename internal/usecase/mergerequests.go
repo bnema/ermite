@@ -780,9 +780,10 @@ func (m *MergeRequests) checkLine(ctx context.Context, mr domain.MergeRequest, p
 	// file's hunks within the default total limits would reject a comment on a
 	// file the earlier ones left no budget for. So a first read lists the files
 	// with no hunks (From past the end: cheap, git is stopped at once), and a
-	// second loads the one file in full (a Full window: no line cap, the byte
-	// guard only, generated files included), as the web view does when it loads
-	// a collapsed file: any line the page can show can be commented on.
+	// second loads the one file in full (a Full window: the byte guard and
+	// domain.MaxOneFileLines only, generated files included), as the web view
+	// does when it loads a collapsed file: any line the page can show can be
+	// commented on, and a file over those limits takes no line comment.
 	list := domain.DefaultDiffLimits()
 	list.MaxFiles, list.From = 0, math.MaxInt
 	_, diff, err := m.git.DiffCommits(ctx, mr.Repo, base, mr.HeadID, list)
