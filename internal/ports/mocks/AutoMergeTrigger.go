@@ -47,6 +47,52 @@ func (_m *AutoMergeTrigger) EXPECT() *AutoMergeTrigger_Expecter {
 	return &AutoMergeTrigger_Expecter{mock: &_m.Mock}
 }
 
+// OnAutoMergeEnabled provides a mock function for the type AutoMergeTrigger
+func (_mock *AutoMergeTrigger) OnAutoMergeEnabled(ctx context.Context, repo domain.RepoName) {
+	_mock.Called(ctx, repo)
+	return
+}
+
+// AutoMergeTrigger_OnAutoMergeEnabled_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OnAutoMergeEnabled'
+type AutoMergeTrigger_OnAutoMergeEnabled_Call struct {
+	*mock.Call
+}
+
+// OnAutoMergeEnabled is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+func (_e *AutoMergeTrigger_Expecter) OnAutoMergeEnabled(ctx any, repo any) *AutoMergeTrigger_OnAutoMergeEnabled_Call {
+	return &AutoMergeTrigger_OnAutoMergeEnabled_Call{Call: _e.mock.On("OnAutoMergeEnabled", ctx, repo)}
+}
+
+func (_c *AutoMergeTrigger_OnAutoMergeEnabled_Call) Run(run func(ctx context.Context, repo domain.RepoName)) *AutoMergeTrigger_OnAutoMergeEnabled_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *AutoMergeTrigger_OnAutoMergeEnabled_Call) Return() *AutoMergeTrigger_OnAutoMergeEnabled_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *AutoMergeTrigger_OnAutoMergeEnabled_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName)) *AutoMergeTrigger_OnAutoMergeEnabled_Call {
+	_c.Run(run)
+	return _c
+}
+
 // OnRepoChanged provides a mock function for the type AutoMergeTrigger
 func (_mock *AutoMergeTrigger) OnRepoChanged(ctx context.Context, repo domain.RepoName) {
 	_mock.Called(ctx, repo)

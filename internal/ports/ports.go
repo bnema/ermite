@@ -441,6 +441,7 @@ type MergeGit interface {
 // again. It only marks the repository and returns.
 type AutoMergeTrigger interface {
 	OnRepoChanged(ctx context.Context, repo domain.RepoName)
+	OnAutoMergeEnabled(ctx context.Context, repo domain.RepoName)
 }
 
 // MergeabilityTrigger queues mergeability checks. It only queues the work and

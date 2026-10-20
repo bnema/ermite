@@ -48,16 +48,16 @@ func (_m *CIActivity) EXPECT() *CIActivity_Expecter {
 }
 
 // Settled provides a mock function for the type CIActivity
-func (_mock *CIActivity) Settled(ctx context.Context, repo domain.RepoName, number int64, source string, head domain.ObjectID) bool {
-	ret := _mock.Called(ctx, repo, number, source, head)
+func (_mock *CIActivity) Settled(ctx context.Context, repo domain.RepoName, number int64) bool {
+	ret := _mock.Called(ctx, repo, number)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Settled")
 	}
 
 	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64, string, domain.ObjectID) bool); ok {
-		r0 = returnFunc(ctx, repo, number, source, head)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64) bool); ok {
+		r0 = returnFunc(ctx, repo, number)
 	} else {
 		r0 = ret.Get(0).(bool)
 	}
@@ -73,13 +73,11 @@ type CIActivity_Settled_Call struct {
 //   - ctx context.Context
 //   - repo domain.RepoName
 //   - number int64
-//   - source string
-//   - head domain.ObjectID
-func (_e *CIActivity_Expecter) Settled(ctx any, repo any, number any, source any, head any) *CIActivity_Settled_Call {
-	return &CIActivity_Settled_Call{Call: _e.mock.On("Settled", ctx, repo, number, source, head)}
+func (_e *CIActivity_Expecter) Settled(ctx any, repo any, number any) *CIActivity_Settled_Call {
+	return &CIActivity_Settled_Call{Call: _e.mock.On("Settled", ctx, repo, number)}
 }
 
-func (_c *CIActivity_Settled_Call) Run(run func(ctx context.Context, repo domain.RepoName, number int64, source string, head domain.ObjectID)) *CIActivity_Settled_Call {
+func (_c *CIActivity_Settled_Call) Run(run func(ctx context.Context, repo domain.RepoName, number int64)) *CIActivity_Settled_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -93,20 +91,10 @@ func (_c *CIActivity_Settled_Call) Run(run func(ctx context.Context, repo domain
 		if args[2] != nil {
 			arg2 = args[2].(int64)
 		}
-		var arg3 string
-		if args[3] != nil {
-			arg3 = args[3].(string)
-		}
-		var arg4 domain.ObjectID
-		if args[4] != nil {
-			arg4 = args[4].(domain.ObjectID)
-		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
-			arg4,
 		)
 	})
 	return _c
@@ -117,7 +105,7 @@ func (_c *CIActivity_Settled_Call) Return(b bool) *CIActivity_Settled_Call {
 	return _c
 }
 
-func (_c *CIActivity_Settled_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, number int64, source string, head domain.ObjectID) bool) *CIActivity_Settled_Call {
+func (_c *CIActivity_Settled_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, number int64) bool) *CIActivity_Settled_Call {
 	_c.Call.Return(run)
 	return _c
 }

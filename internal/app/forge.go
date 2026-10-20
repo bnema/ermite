@@ -371,7 +371,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	})
 	f.AutoMerge = usecase.NewAutoMerge(ctx, usecase.AutoMergeConfig{
 		MRs: f.MergeRequests, Store: store.MergeRequests(), Meta: store, Git: git,
-		Checks: f.CI, Activity: f.CI, Tokens: store.Tokens(), Bus: f.Bus, Clock: clock,
+		Checks: f.CI, Activity: f.CI, Tokens: store.Tokens(), Clock: clock,
 	})
 	f.MergeRequests.WithAutoMerge(f.AutoMerge)
 	f.CI.SetAutoMergeTrigger(f.AutoMerge)

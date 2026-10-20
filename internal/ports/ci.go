@@ -914,5 +914,5 @@ type CIJobSettings interface {
 type CIActivity interface {
 	// Settled reports that no push trigger of the repository and no pull event
 	// of the merge request is queued or being planned.
-	Settled(ctx context.Context, repo domain.RepoName, number int64, source string, head domain.ObjectID) bool
+	Settled(ctx context.Context, repo domain.RepoName, number int64) bool
 }

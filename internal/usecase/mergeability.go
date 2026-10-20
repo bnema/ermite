@@ -236,6 +236,7 @@ func (s *Mergeability) reconcile(repo domain.RepoName) bool {
 		return false
 	}
 	ok := true
+	changed := false
 	for _, mr := range mrs {
 		if ctx.Err() != nil {
 			return true
@@ -276,9 +277,10 @@ func (s *Mergeability) reconcile(repo domain.RepoName) bool {
 			Repo: repo, Number: mr.Number, Mergeability: res, At: res.CheckedAt,
 			Visibility: meta.Visibility, CreatedAt: meta.CreatedAt,
 		})
-		if s.cfg.AutoMerge != nil {
-			s.cfg.AutoMerge.OnRepoChanged(ctx, repo)
-		}
+		changed = true
+	}
+	if changed && s.cfg.AutoMerge != nil {
+		s.cfg.AutoMerge.OnRepoChanged(ctx, repo)
 	}
 	return ok
 }

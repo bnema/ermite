@@ -91,7 +91,7 @@ func (m *MergeRequests) EnableAutoMerge(ctx context.Context, p domain.Principal,
 		recordActivity(ctx, m.meta, name, mr.UpdatedAt)
 		m.bus.Publish(ctx, domain.MergeRequestAutoMergeEnabled{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		if m.autoMerge != nil {
-			m.autoMerge.OnRepoChanged(ctx, name)
+			m.autoMerge.OnAutoMergeEnabled(ctx, name)
 		}
 		return m.withHead(ctx, mr)
 	}

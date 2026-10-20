@@ -774,9 +774,9 @@ func (c *CI) kickAutoMerge(ctx context.Context, repo domain.RepoName) {
 
 // Settled reports whether all push planning and pull activities have finished.
 // Workflow-run events, schedules and dispatches are intentionally not counted.
-// Source and head are reserved for finer-grained accounting; repo-wide pushes
-// conservatively delay requests even when an unrelated branch is updated.
-func (c *CI) Settled(_ context.Context, repo domain.RepoName, number int64, _ string, _ domain.ObjectID) bool {
+// Repo-wide pushes conservatively delay requests even when an unrelated
+// branch is updated.
+func (c *CI) Settled(_ context.Context, repo domain.RepoName, number int64) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.pushes[repo] == 0 && c.pulls[pullKey{repo: repo, number: number}] == 0

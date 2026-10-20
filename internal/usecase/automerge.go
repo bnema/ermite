@@ -24,7 +24,6 @@ type AutoMergeConfig struct {
 	Checks   ports.CIChecksReader
 	Activity ports.CIActivity
 	Tokens   ports.TokenStore
-	Bus      ports.EventBus
 	Clock    ports.Clock
 	After    func(time.Duration) <-chan time.Time
 }
@@ -37,6 +36,7 @@ type AutoMerge struct {
 	cancel         context.CancelFunc
 	wg             sync.WaitGroup
 	mu             sync.Mutex
+	pending        map[domain.RepoName]bool
 	dirty          map[domain.RepoName]bool
 	order          []domain.RepoName
 	running, again map[domain.RepoName]bool
@@ -58,7 +58,7 @@ func NewAutoMerge(ctx context.Context, cfg AutoMergeConfig) *AutoMerge {
 	}
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	return &AutoMerge{cfg: cfg, ctx: ctx, cancel: cancel,
-		dirty: map[domain.RepoName]bool{}, running: map[domain.RepoName]bool{}, again: map[domain.RepoName]bool{}, wake: make(chan struct{}, 1),
+		pending: map[domain.RepoName]bool{}, dirty: map[domain.RepoName]bool{}, running: map[domain.RepoName]bool{}, again: map[domain.RepoName]bool{}, wake: make(chan struct{}, 1),
 		retries: map[domain.RepoName]int{}, scheduled: map[domain.RepoName]bool{}, retryKick: make(chan struct{}, 1)}
 }
 
@@ -76,7 +76,7 @@ func (s *AutoMerge) Start() {
 			if err == nil {
 				for _, repo := range repos {
 					if repo.AutoMerge != nil {
-						s.markDirty(repo.Repo)
+						s.OnAutoMergeEnabled(s.ctx, repo.Repo)
 					}
 				}
 				return
@@ -114,6 +114,10 @@ func (s *AutoMerge) signal() {
 
 func (s *AutoMerge) markDirty(repo domain.RepoName) {
 	s.mu.Lock()
+	if !s.pending[repo] {
+		s.mu.Unlock()
+		return
+	}
 	if s.running[repo] {
 		s.again[repo] = true
 	} else if !s.dirty[repo] {
@@ -172,6 +176,17 @@ func (s *AutoMerge) loop() {
 // OnRepoChanged marks and wakes only; it never merges on the caller's stack.
 func (s *AutoMerge) OnRepoChanged(_ context.Context, repo domain.RepoName) { s.markDirty(repo) }
 
+// OnAutoMergeEnabled remembers an intent before queuing evaluation.
+func (s *AutoMerge) OnAutoMergeEnabled(_ context.Context, repo domain.RepoName) {
+	s.mu.Lock()
+	s.pending[repo] = true
+	if s.running[repo] {
+		s.again[repo] = true
+	}
+	s.mu.Unlock()
+	s.markDirty(repo)
+}
+
 func (s *AutoMerge) evaluate(repo domain.RepoName) bool {
 	err := s.evaluateRepo(repo)
 	if err != nil && s.ctx.Err() == nil {
@@ -192,6 +207,16 @@ func (s *AutoMerge) evaluateRepo(repo domain.RepoName) error {
 	mrs, err := s.cfg.Store.ListOpen(ctx, repo)
 	if err != nil {
 		return err
+	}
+	hasIntent := slices.ContainsFunc(mrs, func(mr domain.MergeRequest) bool { return mr.AutoMerge != nil })
+	if !hasIntent {
+		s.mu.Lock()
+		// An enable arriving during this scan requests another pass. Do not
+		// erase its mark based on the older store snapshot.
+		if !s.again[repo] {
+			delete(s.pending, repo)
+		}
+		s.mu.Unlock()
 	}
 	var failures []error
 	for _, mr := range mrs {
@@ -231,29 +256,23 @@ func (s *AutoMerge) evaluateMR(ctx context.Context, repo domain.Repo, mr domain.
 	// An enabler that can no longer merge cancels at once, even while CI is
 	// pending: the intent must not stay shown as enabled. This check only
 	// cancels; the merge itself resolves the enabler again under the merge lock.
-	if fresh, valid, err := principalOfPusher(ctx, s.cfg.Tokens, intent.EnabledBy, s.cfg.Clock.Now()); err != nil {
+	if _, err := enablerCanMerge(ctx, s.cfg.Tokens, intent, mr, s.cfg.Clock.Now()); err != nil {
+		if errors.Is(err, domain.ErrForbidden) {
+			return cancel(autoMergeReason(err))
+		}
 		return err
-	} else if !valid || !fresh.Allows(domain.ScopeMRMerge, mr.Repo) || !fresh.AllowsRef("refs/heads/"+mr.Target) {
-		return cancel("the principal that enabled auto-merge can no longer merge " + mr.Target)
 	}
-	if s.cfg.Activity != nil && !s.cfg.Activity.Settled(ctx, mr.Repo, mr.Number, mr.Source, head) {
+	if s.cfg.Activity != nil && !s.cfg.Activity.Settled(ctx, mr.Repo, mr.Number) {
 		return nil
 	}
 	checks, err := s.cfg.Checks.CommitChecks(ctx, mr.Repo, head.String())
 	if err != nil {
 		return err
 	}
-	passed := false
-	for _, check := range checks {
-		if check.Status == domain.CICompleted && check.Conclusion == domain.CISuccess {
-			passed = true
-			break
-		}
-	}
-	if !passed {
+	if !hasSuccessfulCheck(checks) {
 		return nil
 	}
-	_, err = s.cfg.MRs.mergeAs(ctx, domain.Principal{}, mr.Repo, mr.Number, ports.MergeParams{Mode: intent.Mode, HeadID: intent.HeadID}, mergeOpts{auto: true, intent: intent, enabler: intent.EnabledBy, tokens: s.cfg.Tokens, activity: s.cfg.Activity})
+	_, err = s.cfg.MRs.mergeAs(ctx, domain.Principal{}, mr.Repo, mr.Number, ports.MergeParams{Mode: intent.Mode, HeadID: intent.HeadID}, mergeOpts{auto: &autoMergeOpts{intent: intent, tokens: s.cfg.Tokens, activity: s.cfg.Activity}})
 	switch {
 	case err == nil, errors.Is(err, errAutoMergeWait):
 		return nil
@@ -380,4 +399,15 @@ func (s *AutoMerge) retryDone(key domain.RepoName) {
 	default:
 	}
 	s.retryMu.Unlock()
+}
+
+func enablerCanMerge(ctx context.Context, tokens ports.TokenStore, intent *domain.AutoMerge, mr domain.MergeRequest, now time.Time) (domain.Principal, error) {
+	fresh, valid, err := principalOfPusher(ctx, tokens, intent.EnabledBy, now)
+	if err != nil {
+		return domain.Principal{}, err
+	}
+	if !valid || !fresh.Allows(domain.ScopeMRMerge, mr.Repo) || !fresh.AllowsRef("refs/heads/"+mr.Target) {
+		return domain.Principal{}, fmt.Errorf("%w: the principal that enabled auto-merge can no longer merge %s", domain.ErrForbidden, mr.Target)
+	}
+	return fresh, nil
 }

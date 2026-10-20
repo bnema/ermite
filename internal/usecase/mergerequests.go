@@ -1041,9 +1041,11 @@ func (m *MergeRequests) checkMode(ctx context.Context, mr domain.MergeRequest, m
 }
 
 type mergeOpts struct {
-	auto     bool
+	auto *autoMergeOpts
+}
+
+type autoMergeOpts struct {
 	intent   *domain.AutoMerge
-	enabler  domain.CIPusher
 	tokens   ports.TokenStore
 	activity ports.CIActivity
 }
@@ -1051,7 +1053,7 @@ type mergeOpts struct {
 var errAutoMergeWait = errors.New("auto-merge is waiting for checks")
 
 func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams, opts mergeOpts) (domain.MergeRequest, error) {
-	if !opts.auto {
+	if opts.auto == nil {
 		if _, err := m.writable(ctx, p, name, domain.ScopeMRMerge); err != nil {
 			return domain.MergeRequest{}, err
 		}
@@ -1083,18 +1085,14 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 	if err != nil {
 		return domain.MergeRequest{}, err
 	}
-	if opts.auto && (mr.AutoMerge == nil || opts.intent == nil || *mr.AutoMerge != *opts.intent) {
+	if opts.auto != nil && (mr.AutoMerge == nil || opts.auto.intent == nil || *mr.AutoMerge != *opts.auto.intent) {
 		return domain.MergeRequest{}, errAutoMergeWait
 	}
-	if opts.auto {
-		fresh, valid, err := principalOfPusher(ctx, opts.tokens, opts.enabler, m.clock.Now())
+	if opts.auto != nil {
+		p, err = enablerCanMerge(ctx, opts.auto.tokens, opts.auto.intent, mr, m.clock.Now())
 		if err != nil {
 			return domain.MergeRequest{}, err
 		}
-		if !valid || !fresh.Allows(domain.ScopeMRMerge, name) || !fresh.AllowsRef("refs/heads/"+mr.Target) {
-			return domain.MergeRequest{}, fmt.Errorf("%w: the principal that enabled auto-merge can no longer merge %s", domain.ErrForbidden, mr.Target)
-		}
-		p = fresh
 	}
 	// A merge moves the target and may delete the source: a token limited to
 	// branch prefixes may do so only within them.
@@ -1147,40 +1145,31 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 	} else if behind {
 		return domain.MergeRequest{}, fmt.Errorf("%w: nothing to merge, %q already contains %s", domain.ErrPreconditionFailed, mr.Target, head)
 	}
-	if opts.auto && opts.activity != nil && !opts.activity.Settled(ctx, name, number, mr.Source, head) {
+	if opts.auto != nil && opts.auto.activity != nil && !opts.auto.activity.Settled(ctx, name, number) {
 		return domain.MergeRequest{}, errAutoMergeWait
 	}
 	tree, err := m.checkMode(ctx, mr, mode, tip, head)
 	if err != nil {
-		if opts.auto && errors.Is(err, domain.ErrPreconditionFailed) {
+		if opts.auto != nil && errors.Is(err, domain.ErrPreconditionFailed) {
 			return domain.MergeRequest{}, errAutoMergeWait
 		}
 		return domain.MergeRequest{}, err
 	}
-	if opts.auto && !settings.AllowAutoMerge {
+	if opts.auto != nil && !settings.AllowAutoMerge {
 		return domain.MergeRequest{}, fmt.Errorf("%w: auto-merge is off in %s", domain.ErrPreconditionFailed, name)
 	}
-	if settings.FailingChecksBlock || opts.auto {
-		if err := m.checksAllow(ctx, name, head); err != nil {
-			if opts.auto && errors.Is(err, domain.ErrPreconditionFailed) {
+	if settings.FailingChecksBlock || opts.auto != nil {
+		checks, err := m.readMergeChecks(ctx, name, head)
+		if err == nil {
+			err = checksPolicy(checks)
+		}
+		if err != nil {
+			if opts.auto != nil && errors.Is(err, domain.ErrPreconditionFailed) {
 				return domain.MergeRequest{}, errAutoMergeWait
 			}
 			return domain.MergeRequest{}, err
 		}
-	}
-	if opts.auto {
-		checks, err := m.checks.CommitChecks(ctx, name, head.String())
-		if err != nil {
-			return domain.MergeRequest{}, err
-		}
-		passed := false
-		for _, check := range checks {
-			if check.Status == domain.CICompleted && check.Conclusion == domain.CISuccess {
-				passed = true
-				break
-			}
-		}
-		if !passed {
+		if opts.auto != nil && !hasSuccessfulCheck(checks) {
 			return domain.MergeRequest{}, errAutoMergeWait
 		}
 	}
@@ -1195,7 +1184,7 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 		return domain.MergeRequest{}, err
 	}
 	m.recordPush(ctx, name) // the target moved, whatever happens next
-	mr, err = m.markMerged(ctx, name, number, mode, tip, head, merged, opts.auto)
+	mr, err = m.markMerged(ctx, name, number, mode, tip, head, merged, opts.auto != nil)
 	if err != nil {
 		return domain.MergeRequest{}, err
 	}
@@ -1307,21 +1296,34 @@ func (m *MergeRequests) WhileOpen(ctx context.Context, name domain.RepoName, num
 	return fn()
 }
 
-// checksAllow is the merge rule of FailingChecksBlock: every check of the
-// head must have ended as success, skipped or neutral. A check still queued or
-// running blocks too (the merge could land code that then fails), and a head
-// without any check merges.
-func (m *MergeRequests) checksAllow(ctx context.Context, name domain.RepoName, head domain.ObjectID) error {
+// readMergeChecks reads one snapshot, classifying an incomplete result as a
+// failed precondition rather than treating it as a passing set of checks.
+func (m *MergeRequests) readMergeChecks(ctx context.Context, name domain.RepoName, head domain.ObjectID) ([]domain.CICheck, error) {
 	if m.checks == nil {
-		return nil
+		return nil, nil
 	}
 	checks, err := m.checks.CommitChecks(ctx, name, head.String())
 	if errors.Is(err, domain.ErrResourceExhausted) {
-		return fmt.Errorf("%w: too many checks to tell whether they passed: %v", domain.ErrPreconditionFailed, err)
+		return nil, fmt.Errorf("%w: too many checks to tell whether they passed: %v", domain.ErrPreconditionFailed, err)
 	}
 	if err != nil {
-		return fmt.Errorf("read the checks of %s: %w", head, err)
+		return nil, fmt.Errorf("read the checks of %s: %w", head, err)
 	}
+	return checks, nil
+}
+
+func hasSuccessfulCheck(checks []domain.CICheck) bool {
+	for _, check := range checks {
+		if check.Status == domain.CICompleted && check.Conclusion == domain.CISuccess {
+			return true
+		}
+	}
+	return false
+}
+
+// checksPolicy requires every check to have ended as success, skipped or
+// neutral. Queued and running checks block too; an empty set is allowed.
+func checksPolicy(checks []domain.CICheck) error {
 	var failing, pending []string
 	for _, c := range checks {
 		switch {
@@ -1335,7 +1337,7 @@ func (m *MergeRequests) checksAllow(ctx context.Context, name domain.RepoName, h
 	case len(failing) > 0:
 		return fmt.Errorf("%w: failing checks block the merge: %s (turn off failing_checks_block to merge anyway)", domain.ErrPreconditionFailed, strings.Join(failing, ", "))
 	case len(pending) > 0:
-		return fmt.Errorf("%w: %w: checks have not finished: %s", domain.ErrPreconditionFailed, errAutoMergeWait, strings.Join(pending, ", "))
+		return fmt.Errorf("%w: checks have not finished: %s", domain.ErrPreconditionFailed, strings.Join(pending, ", "))
 	}
 	return nil
 }
