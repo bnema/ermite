@@ -349,10 +349,13 @@ window.ermiteMR = (() => {
         e.preventDefault(); tabs[next].focus();
       });
     });
+    // hash opens the panel of the URL fragment. Its target was hidden when the
+    // browser scrolled, so the panel is brought in; never on a refresh, which
+    // keeps the scroll.
     function hash() {
       const h = location.hash;
       const index = h === '#mr-checks' || h === '#mr-checks-panel' ? 1 : h === '#mr-commits' ? 0 : -1;
-      if (index >= 0) show(index);
+      if (index >= 0) { show(index); panels[index].scrollIntoView?.({ block: 'nearest' }); }
     }
     // The checks badge always opens Checks; it never folds it.
     const checksClick = (e) => {
@@ -375,7 +378,9 @@ window.ermiteMR = (() => {
       observer.observe(summary.parentElement, { childList: true });
       sync();
     }
-    show(initial); hash();
+    show(initial);
+    footer.setAttribute('data-panels', '');
+    if (initial < 0) hash();
     addEventListener('hashchange', hash);
     disposePanels = () => {
       document.removeEventListener?.('click', checksClick);

@@ -137,8 +137,11 @@ func TestMRPanelsAndMenus(t *testing.T) {
 	assert.Contains(t, footer, `<footer class="mr-footer"><nav data-mr-tabs`)
 	assert.NotContains(t, footer, `<details`)
 	assert.NotContains(t, footer, `<summary`)
-	assert.Contains(t, footer, `id="mr-commits" data-mr-panel hidden`)
-	assert.Contains(t, footer, `id="mr-checks-panel" data-mr-panel hidden`)
+	// No hidden attribute: the CSS shows the panel of the URL fragment until
+	// mr.js takes over, so the tabs work as anchors without scripts.
+	assert.Contains(t, footer, `id="mr-commits" data-mr-panel role="region"`)
+	assert.Contains(t, footer, `id="mr-checks-panel" data-mr-panel role="region"`)
+	assert.NotContains(t, footer, `data-mr-panel hidden`)
 	assert.Contains(t, footer, `data-mr-tabs`)
 	assert.Contains(t, footer, `id="mr-commits"`)
 	assert.Contains(t, footer, `id="mr-checks"`)

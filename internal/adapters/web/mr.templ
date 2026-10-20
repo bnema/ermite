@@ -391,7 +391,7 @@ templ mrFooter(p MRPage) {
 				</span>
 			</a>
 		</nav>
-		<div id="mr-commits" data-mr-panel hidden aria-labelledby="mr-tab-commits">
+		<div id="mr-commits" data-mr-panel role="region" aria-labelledby="mr-tab-commits">
 			<table class="mr-commits">
 				<thead><tr><th>Commit</th><th>Subject</th><th>Author</th><th>Date</th><th>Signature</th><th>Status</th></tr></thead>
 				<tbody>
@@ -426,7 +426,7 @@ templ mrFooter(p MRPage) {
 				<p class="note">{ p.CommitsNote }</p>
 			}
 		</div>
-		<div id="mr-checks-panel" data-mr-panel hidden aria-labelledby="mr-tab-checks">
+		<div id="mr-checks-panel" data-mr-panel role="region" aria-labelledby="mr-tab-checks">
 			@MRChecks(p.Checks)
 		</div>
 	</footer>

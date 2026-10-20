@@ -112,8 +112,8 @@ collapsed by default. Clicking a tab opens its panel, clicking the open tab
 folds it again, clicking the other tab switches. Arrow keys (and Home / End)
 move between the tabs. Without scripts the tabs are anchor links and the URL
 fragment (`#mr-commits`, `#mr-checks`) shows the panel. The checks summary above
-the diff opens the Checks panel and continues to update live. Commit totals use `N+` when the branch
-list is capped: the reader's existing count operation counts all reachable
+the diff opens the Checks panel and continues to update live. Commit totals use
+`N+` when the branch list is capped: the reader's existing count operation counts all reachable
 ancestors, not the source-minus-target range.
 
 The rail keeps Files (including its `g f` shortcut) and Verdicts. Merge settings

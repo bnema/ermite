@@ -9,18 +9,29 @@
   }
 
   .mr-footer {
-    border-top: 1px solid var(--border); padding: var(--s3) var(--s5);
-    /* a touch darker than the card body; the card's overflow clips the corners */
-    background: var(--bg-canvas);
+    border-top: 1px solid var(--border); padding: var(--s2) var(--s4);
+    /* the shade of the card header; the card's overflow clips the corners */
+    background: var(--bg-raised);
     font-size: var(--fs-s);
-    & nav { display: flex; gap: var(--s3); padding-block: var(--s3); }
-    & [data-mr-tabs] a { padding: var(--s1) var(--s2); border-radius: var(--r-s); color: var(--ink-dim); cursor: pointer; }
-    & [data-mr-tabs] a:hover { background: var(--bg-raised); color: var(--ink-hi); }
-    & [data-mr-tabs] a[aria-expanded="true"] { background: var(--bg-strong); color: var(--ink-hi); }
+    /* the tabs are buttons: a thin border, the count in a darker badge;
+       the open one in the teal accent */
+    & nav { display: flex; flex-wrap: wrap; gap: var(--s2); }
+    & [data-mr-tabs] a {
+      display: inline-flex; align-items: center; gap: var(--s1);
+      padding: 2px var(--s2); border: 1px solid var(--border-strong); border-radius: var(--r-s);
+      color: var(--ink-dim); text-decoration: none; cursor: pointer;
+    }
+    & [data-checks-label] { color: var(--ink-dim); font-size: var(--fs-xs); }
+    & [data-mr-tabs] .count { margin-left: 0; color: var(--ink-hi); background: var(--bg-canvas); box-shadow: inset 0 0 0 1px var(--border); }
+    & [data-mr-tabs] a:hover { background: var(--bg-strong); color: var(--ink-hi); }
+    & [data-mr-tabs] a[aria-expanded="true"] { border-color: var(--teal); color: var(--teal); background: var(--bg-surface); }
+    & [data-mr-panel] { padding-block-start: var(--s2); }
     & [data-mr-panel] { overflow-x: auto; }
     & [hidden] { display: none; }
-    /* Without scripts the panels are shown by the URL fragment alone. */
-    html:not(.js) & [data-mr-panel][hidden]:is(:target, :has(:target)) { display: block; }
+    /* Until mr.js drives the panels (data-panels, then [hidden]), only the
+       panel of the URL fragment shows: the tabs work as anchors without
+       scripts, and no panel flashes open before the script runs. */
+    &:not([data-panels]) [data-mr-panel]:not(:target, :has(:target)) { display: none; }
     & section h2 { font-size: var(--fs-s); color: var(--ink-dim); }
     & table { width: 100%; border-collapse: collapse; }
     & th, & td { text-align: left; padding: var(--s2); border-bottom: 1px solid var(--border); }
