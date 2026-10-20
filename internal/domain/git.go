@@ -537,19 +537,19 @@ type CommitDetail struct {
 	Diff   Diff
 }
 
-// DiffLimits bound the size of a Diff. Lines are hunk lines, context included.
+// DiffLimits bound the size of a Diff. Line limits count additions plus deletions, not context.
 type DiffLimits struct {
 	// MaxFiles is the number of files kept; 0 means no limit on the number of
 	// files (every changed file is listed).
 	MaxFiles int
-	// MaxFileLines is the most lines one file may have; a file over it is
+	// MaxFileLines is the most changed lines one file may have; a file over it is
 	// truncated.
 	MaxFileLines int
-	// MaxTotalLines is the most lines of all the files. A file is truncated
+	// MaxTotalLines is the most changed lines of all the files. A file is truncated
 	// when it does not fit in what remains; a smaller one after it may still
 	// fit.
 	MaxTotalLines int
-	// MaxTotalBytes is the most text, in bytes, of all the lines. It bounds
+	// MaxTotalBytes is the most text, in bytes, of all the lines, including context. It bounds
 	// the memory of a diff whose lines are very long; files are truncated
 	// like for MaxTotalLines.
 	MaxTotalBytes int
@@ -563,7 +563,8 @@ type DiffLimits struct {
 }
 
 // DefaultDiffLimits are the limits of the API contract: 300 files, 2,000
-// lines per file, 20,000 lines in total, plus 8 MiB of text.
+// changed lines per file, 20,000 changed lines in total, plus 8 MiB of text
+// including context.
 func DefaultDiffLimits() DiffLimits {
 	return DiffLimits{MaxFiles: 300, MaxFileLines: 2000, MaxTotalLines: 20000, MaxTotalBytes: 8 << 20}
 }

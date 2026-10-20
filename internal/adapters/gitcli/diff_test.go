@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/readertest"
 )
 
@@ -327,10 +328,10 @@ func TestDiffLimits(t *testing.T) {
 		assert.Equal(t, domain.DiffStats{FilesChanged: 3, Additions: 4004}, d.Stats)
 	})
 
-	t.Run("context counts towards the file limit", func(t *testing.T) {
+	t.Run("context does not count towards the file limit", func(t *testing.T) {
 		f := readertest.NewFixture(t, data, "limit-context")
 		f.Lines("big", "l", 3000).Commit("v1")
-		// Every 7th line changes: ~428 changed lines, but the hunks merge
+		// Every 7th line changes: 429 additions plus 429 deletions, but the hunks merge
 		// into one that spans the file with its context.
 		var b strings.Builder
 		for i := range 3000 {
@@ -346,11 +347,13 @@ func TestDiffLimits(t *testing.T) {
 		d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, defaults)
 		require.NoError(t, err)
 		big, tiny := find(d.Diff, "big"), find(d.Diff, "tiny")
-		assert.True(t, big.Truncated)
-		assert.Empty(t, big.Hunks)
+		assert.False(t, big.Truncated)
+		require.Len(t, big.Hunks, 1)
+		assert.Len(t, big.Hunks[0].Lines, 3000+429)
+		assert.False(t, d.Diff.Truncated)
 		assert.Equal(t, 429, big.Additions)
 		assert.Equal(t, 429, big.Deletions)
-		assert.False(t, tiny.Truncated, "the file after a truncated one is still read")
+		assert.False(t, tiny.Truncated, "the following file still fits the changed-line budget")
 		assert.Equal(t, "x\n", strings.TrimPrefix(unified(tiny.Hunks), "@@ -0,0 +1 @@\n+"))
 		assert.Equal(t, id, d.Commit.ID.String())
 	})
@@ -658,5 +661,12 @@ func TestDiffLimitsWindow(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, d.Diff.Files, 300)
 		assert.True(t, d.Diff.Truncated)
+	})
+}
+
+func TestDiffChangedLineLimits(t *testing.T) {
+	readertest.DiffChangedLineLimits(t, func(t *testing.T) (ports.RepoReader, string) {
+		g, data := newReader(t, nil)
+		return g, data
 	})
 }

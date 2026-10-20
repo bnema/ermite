@@ -48,7 +48,7 @@ var maxDiffHLTotalBytes = 256 << 10
 
 const (
 	// maxDiffHLFileBytes is the most text of one file of a diff that is
-	// lexed. The diff limits (domain.DefaultDiffLimits) allow 2,000 lines a
+	// lexed. The diff limits (domain.DefaultDiffLimits) allow 2,000 changed lines a
 	// file; this keeps a file of very long lines out.
 	maxDiffHLFileBytes = 128 << 10
 	// maxDiffHLLine is the longest line that is lexed, in bytes: a minified

@@ -126,10 +126,10 @@ func TestDiffBudgetCharge(t *testing.T) {
 			if b.FileLines() != 1 {
 				t.Fatal("wrong file limit")
 			}
-			if b.ChargeLine(tt.bytes) != tt.fits {
+			if b.ChargeLine(tt.bytes, true) != tt.fits {
 				t.Fatal("wrong charge result")
 			}
-			if b.ChargeLine(0) {
+			if b.ChargeLine(0, true) {
 				t.Fatal("line budget exceeded")
 			}
 			b = before
@@ -137,5 +137,21 @@ func TestDiffBudgetCharge(t *testing.T) {
 				t.Fatal("discarded file consumed budget")
 			}
 		})
+	}
+}
+
+func TestDiffBudgetContext(t *testing.T) {
+	b := NewDiffBudget(DiffLimits{MaxFileLines: 2, MaxTotalLines: 2, MaxTotalBytes: 6})
+	if !b.ChargeLine(2, false) || b.FileLines() != 2 {
+		t.Fatal("context consumed changed-line budget")
+	}
+	if !b.ChargeLine(1, true) || !b.ChargeLine(1, true) || b.FileLines() != 0 {
+		t.Fatal("additions and deletions must consume changed-line budget")
+	}
+	if !b.ChargeLine(2, false) {
+		t.Fatal("context at the byte boundary must fit even without changed lines left")
+	}
+	if b.ChargeLine(1, false) {
+		t.Fatal("context must not exceed the byte budget")
 	}
 }

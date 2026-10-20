@@ -77,9 +77,12 @@ func (b DiffBudget) WantsHunks(binary bool, n int) bool {
 
 func (b DiffBudget) FileLines() int { return min(b.limits.MaxFileLines, b.linesLeft) }
 
-// ChargeLine accounts for one decoded hunk line and reports whether it fits.
-func (b *DiffBudget) ChargeLine(bytes int) bool {
-	b.linesLeft--
+// ChargeLine accounts for decoded text bytes and, for additions or deletions,
+// one changed line. Context consumes bytes only. It reports whether the line fits.
+func (b *DiffBudget) ChargeLine(bytes int, changed bool) bool {
+	if changed {
+		b.linesLeft--
+	}
 	b.bytesLeft -= bytes
 	return b.linesLeft >= 0 && b.bytesLeft >= 0
 }

@@ -31,6 +31,7 @@ func Conformance(t *testing.T, mk Maker) {
 		name string
 		fn   func(*testing.T, Maker)
 	}{
+		{"DiffChangedLineLimits", DiffChangedLineLimits},
 		{"ListRefs", testListRefs},
 		{"ListRefsEmptyAndMissing", testListRefsEmptyAndMissing},
 		{"DetachedHead", testDetachedHead},

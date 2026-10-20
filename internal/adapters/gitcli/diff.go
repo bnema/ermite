@@ -379,7 +379,7 @@ func (p *patchReader) skip(n int) error {
 }
 
 // file reads the sections of one file and returns its hunks, the number of
-// hunk lines, and whether it exceeded max lines or had a line over
+// changed lines, and whether it exceeded max changed lines or had a line over
 // maxDiffLine. When truncated, the rest of the file is skipped.
 func (p *patchReader) file(sections, max int) (hunks []domain.Hunk, lines int, truncated bool, err error) {
 	for done := range sections {
@@ -405,7 +405,7 @@ func (p *patchReader) file(sections, max int) (hunks []domain.Hunk, lines int, t
 }
 
 // section reads the hunks of the current section up to the next marker, which
-// stays pending. It gives up (truncated) after more than max lines.
+// stays pending. It gives up (truncated) after more than max changed lines.
 func (p *patchReader) section(max int) (hunks []domain.Hunk, lines int, truncated bool, err error) {
 	var cur *domain.Hunk
 	var oldN, newN int
@@ -459,8 +459,11 @@ func (p *patchReader) section(max int) (hunks []domain.Hunk, lines int, truncate
 		default:
 			continue
 		}
-		lines++
-		fits := p.budget.ChargeLine(len(text))
+		changed := l.Kind == domain.LineAddition || l.Kind == domain.LineDeletion
+		if changed {
+			lines++
+		}
+		fits := p.budget.ChargeLine(len(text), changed)
 		if lines > max || !fits {
 			return nil, lines, true, nil
 		}

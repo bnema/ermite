@@ -273,7 +273,7 @@ func goSource(n int) []string {
 }
 
 // largeDiff is n files of 1,000 lines of Go with 250 lines changed in place
-// and 250 added, 1,500 lines a file (the limit of the diffs is 2,000 lines a
+// and 250 added, 1,500 lines a file (the limit of the diffs is 2,000 changed lines a
 // file and 20,000 in all, domain.DefaultDiffLimits); a file is about 36 KB.
 func largeDiff(n int) []domain.FileDiff {
 	var files []domain.FileDiff
