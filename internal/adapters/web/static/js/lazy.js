@@ -64,8 +64,10 @@ window.ermiteLazy = (() => {
     for (const f of [...t.content.querySelectorAll('details[data-file]')]) {
       const old = document.getElementById(f.id);
       if (!old || !old.querySelector('.dlazy')) continue;
-      // A collapsed file opens once loaded; a file of a window keeps the fold.
-      f.open = old.querySelector('.dlazy[data-manual]') ? true : old.open;
+      // A file still collapsed stays closed; a collapsed file opens once
+      // loaded; a file of a window keeps the fold.
+      f.open = f.querySelector('.dlazy[data-manual]') ? false
+        : old.querySelector('.dlazy[data-manual]') ? true : old.open;
       for (const p of $$('.dlazy', old)) lazyIO?.unobserve(p);
       old.replaceWith(f);
       window.htmx?.process(f);
@@ -142,6 +144,8 @@ window.ermiteLazy = (() => {
   // Enter makes the browser click a link by itself; Space does not. Both are
   // handled here, once (a fragment is fetched once).
   function onKey(e) {
+    // A held key repeats: after the load, focus is on a line link.
+    if (e.repeat) return false;
     if ((e.key !== 'Enter' && e.key !== ' ') || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
     const a = manualLink(e.target);
     if (!a) return false;
