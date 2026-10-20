@@ -215,8 +215,25 @@ func TestMergeBoxAutoMerge(t *testing.T) {
 	page := MRPage{Target: "main", Box: on}
 	html := renderToString(t, mergeMenu(page))
 	assert.Contains(t, html, "Merge when ready")
-	assert.Contains(t, html, `formaction="`+on.AutoAction+`"`)
+	assert.Contains(t, html, `action="`+on.AutoAction+`"`)
 	assert.NotContains(t, html, "Cancel auto-merge")
+	// Current mergeability must only gate the immediate form. Every allowed
+	// mode remains selectable in the separate auto-merge form.
+	for i := range on.Modes {
+		on.Modes[i].Disabled = true
+	}
+	on.CanDeleteBranch = true
+	page.Source = "feat"
+	html = renderToString(t, mergeMenu(page))
+	_, autoForm, found := strings.Cut(html, `action="`+on.AutoAction+`"`)
+	require.True(t, found)
+	autoForm, _, _ = strings.Cut(autoForm, "</form>")
+	assert.NotContains(t, autoForm, "delete_branch")
+	assert.NotContains(t, autoForm, "disabled")
+	assert.Contains(t, autoForm, `name="head_id"`)
+	for _, mode := range on.Modes {
+		assert.Contains(t, autoForm, `value="`+mode.Value+`"`)
+	}
 	page.Box = mk(false, mocks.NewRunService(t))
 	assert.NotContains(t, renderToString(t, mergeMenu(page)), "Merge when ready")
 

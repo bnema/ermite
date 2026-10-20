@@ -558,17 +558,22 @@ templ mergeMenu(p MRPage) {
 							:disabled="!this.form.querySelector('input[name=mode]:checked:not(:disabled)')"
 							:title="(this.form.querySelector('input[name=mode]:checked') || {}).title || ''"
 						>Merge into { p.Target }</button>
-						if p.Box.CanAutoMerge {
-							<button
-								type="submit"
-								class="btn"
-								formaction={ templ.SafeURL(p.Box.AutoAction) }
-								disabled?={ len(p.Box.Modes) == 0 }
-								title="merge once the checks pass"
-							>Merge when ready</button>
-						}
 					</div>
 				</form>
+				if p.Box.CanAutoMerge {
+					<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.AutoAction) }>
+						<input type="hidden" name="head_id" value={ p.Box.Head }/>
+						<fieldset class="d-modes">
+							<legend>Auto-merge mode</legend>
+							for i, m := range p.Box.Modes {
+								<label><input type="radio" name="mode" value={ m.Value } checked?={ i == 0 }/> { m.Label }</label>
+							}
+						</fieldset>
+						<div class="d-btns">
+							<button type="submit" class="btn" disabled?={ len(p.Box.Modes) == 0 } title="merge once the checks pass">Merge when ready</button>
+						</div>
+					</form>
+				}
 			}
 		</div>
 	</details>
