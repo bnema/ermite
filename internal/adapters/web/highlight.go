@@ -166,7 +166,9 @@ func tokeniseInto(ctx context.Context, lx chroma.Lexer, src string, buf []chroma
 		}
 		toks = append(toks, t)
 	}
-	if !tokensMatch(toks, src) {
+	// The last tokens may have run past the deadline: the result is then
+	// dropped, as promised. One iterator call itself cannot be preempted.
+	if ctx.Err() != nil || !tokensMatch(toks, src) {
 		return nil, false
 	}
 	return toks, true

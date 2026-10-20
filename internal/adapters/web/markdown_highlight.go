@@ -69,6 +69,9 @@ func (fencedRenderer) RegisterFuncs(r renderer.NodeRendererFuncRegisterer) {
 			line := n.Lines().At(i)
 			remaining += len(line.Value(source))
 		}
+		// The tokens are not coalesced (chroma's coalescer copies strings
+		// quadratically): adjacent tokens of one class share a span here.
+		open := ""
 		for _, tk := range toks {
 			v := tk.Value
 			if len(v) > remaining {
@@ -78,14 +81,19 @@ func (fencedRenderer) RegisterFuncs(r renderer.NodeRendererFuncRegisterer) {
 			if v == "" {
 				continue
 			}
-			c := tokenClass(tk.Type)
-			if c != "" {
-				_, _ = w.WriteString(`<span class="` + c + `">`)
+			if c := tokenClass(tk.Type); c != open {
+				if open != "" {
+					_, _ = w.WriteString(`</span>`)
+				}
+				if c != "" {
+					_, _ = w.WriteString(`<span class="` + c + `">`)
+				}
+				open = c
 			}
 			writeMarked(w, v)
-			if c != "" {
-				_, _ = w.WriteString(`</span>`)
-			}
+		}
+		if open != "" {
+			_, _ = w.WriteString(`</span>`)
 		}
 		_, _ = w.WriteString("</code></pre>\n")
 		return ast.WalkSkipChildren, nil
@@ -152,6 +160,6 @@ func markdownTokens(n *ast.FencedCodeBlock, source []byte) ([]chroma.Token, stri
 	}
 	ctx, cancel := context.WithDeadline(context.Background(), budget.deadline)
 	defer cancel()
-	toks, ok := tokenise(ctx, chroma.Coalesce(lx), code.String())
+	toks, ok := tokenise(ctx, lx, code.String())
 	return toks, lang, ok
 }
