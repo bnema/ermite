@@ -358,3 +358,26 @@ test('activity moves a home row up only in newest activity order, preserving foc
     assert.ok(fresh.hasAttribute('data-cursor'));
   }
 });
+
+test('mobile MR layout shortcuts preserve the saved preference until back on desktop', () => {
+  const diffs = el('div', { id: 'diffs', attrs: { 'data-mr': '', 'data-diff': 'split', 'data-mobile': 'true' } });
+  dom.body.replaceChildren(diffs);
+  const oldQuery = doc.querySelector;
+  doc.querySelector = query.one;
+  const previous = globalThis.sessionStorage;
+  const writes = [];
+  globalThis.sessionStorage = { setItem: (...args) => writes.push(args) };
+  try {
+    window.ermite.layout('unified');
+    window.ermite.layout('split');
+    assert.equal(diffs.dataset.diff, 'split');
+    assert.deepEqual(writes, []);
+    diffs.dataset.mobile = 'false';
+    window.ermite.layout('unified');
+    assert.equal(diffs.dataset.diff, 'unified');
+    assert.deepEqual(writes, [['diff', 'unified']]);
+  } finally {
+    globalThis.sessionStorage = previous;
+    doc.querySelector = oldQuery;
+  }
+});

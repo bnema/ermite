@@ -183,6 +183,7 @@
     layout(mode) {
       const el = $('[data-diff]');
       if (!el) return;
+      if (el.hasAttribute('data-mr') && el.dataset.mobile === 'true') return;
       el.dataset.diff = mode;
       try { sessionStorage.setItem('diff', mode); } catch { /* storage refused: the layout holds for this page */ }
       for (const d of $$('[data-file]')) if ($('.dt', d)) d.open = true;
