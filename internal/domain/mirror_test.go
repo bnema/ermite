@@ -240,7 +240,7 @@ func TestMirrorRecoveryFromAnyState(t *testing.T) {
 }
 func TestMirrorRefs(t *testing.T) {
 	id, _ := ParseObjectID(strings.Repeat("a", 40))
-	refs := []Ref{{Name: "HEAD", ID: id}, {Name: "refs/heads/main", ID: id}, {Name: "refs/heads/other", ID: id}, {Name: "refs/tags/v1", ID: id}, {Name: "refs/pull/1", ID: id}, {Name: "refs/heads/unborn"}}
+	refs := []Ref{{Name: "HEAD", ID: id}, {Name: "refs/heads/main", ID: id}, {Name: "refs/heads/other", ID: id}, {Name: "refs/tags/v1", ID: id}, {Name: "refs/pull/1", ID: id}, {Name: "refs/heads/unborn"}, {Name: "refs/tags/\xff", ID: id}, {Name: "refs/heads/\xff", ID: id}}
 	for _, all := range []bool{false, true} {
 		got := MirrorRefspecs(refs, "main", all)
 		n := 2

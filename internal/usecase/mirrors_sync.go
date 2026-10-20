@@ -97,8 +97,8 @@ func (m *Mirrors) SyncAll(ctx context.Context, p domain.Principal, force bool) (
 	return out, nil
 }
 
-// Wait blocks until no sync is queued or running, or ctx is done. It is for tests and shutdown
-// paths that need a deterministic barrier.
+// Wait blocks until no sync is queued or running, or ctx is done. It is a test barrier: call it
+// only while nothing enqueues new syncs and before Close (queued jobs are not drained by Close).
 func (m *Mirrors) Wait(ctx context.Context) {
 	done := make(chan struct{})
 	go func() { m.flightWG.Wait(); close(done) }()
@@ -254,7 +254,8 @@ func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, req mirrorR
 }
 
 // record stores the outcome, unless the effective target changed during the push: the result
-// then describes a target that no longer applies and is discarded.
+// then describes a target that no longer applies and is discarded. The comparison includes the
+// cron on purpose, like resetIfChanged: a schedule change during a push costs one extra push.
 func (m *Mirrors) record(ctx context.Context, repo domain.RepoName, pl mirrorPlan, selected []domain.MirrorRef, noOp bool, failure *domain.MirrorError, runErr error) (ports.MirrorSyncResult, error) {
 	m.configMu.RLock()
 	defer m.configMu.RUnlock()

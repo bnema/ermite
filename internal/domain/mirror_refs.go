@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type MirrorRef struct {
@@ -23,11 +24,12 @@ type MirrorSnapshot struct {
 // MirrorRefspecs selects refs/heads/<default> (or every refs/heads/* with allBranches) and
 // refs/tags/*, from the refs of RepoReader.ListRefs (HEAD skipped, unborn default skipped).
 // Names are plain refs; the caller builds "<ref>:<ref>" (never "+", never a delete).
+// Refs whose name is not valid UTF-8 are skipped: they cannot be stored in the snapshot.
 // Returned sorted by ref name.
 func MirrorRefspecs(refs []Ref, defaultBranch string, allBranches bool) []MirrorRef {
 	var out []MirrorRef
 	for _, r := range refs {
-		if r.ID.IsZero() || r.ID.String() == ZeroOID {
+		if r.ID.IsZero() || r.ID.String() == ZeroOID || !utf8.ValidString(r.Name) {
 			continue
 		}
 		if strings.HasPrefix(r.Name, "refs/tags/") || strings.HasPrefix(r.Name, "refs/heads/") && (allBranches || r.Name == "refs/heads/"+defaultBranch) {

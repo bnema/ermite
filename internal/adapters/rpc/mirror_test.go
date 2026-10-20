@@ -85,7 +85,7 @@ func TestMirrorSyncAllReportsPerRepositoryErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res.Msg.Results, 2)
 	assert.Empty(t, res.Msg.Results[0].Error)
-	assert.Equal(t, "mirror diverged: rejected", res.Msg.Results[1].Error)
+	assert.Equal(t, "mirror diverged: see ermite mirror status", res.Msg.Results[1].Error)
 	assert.Equal(t, pb.MirrorState_MIRROR_STATE_PAUSED, res.Msg.Results[1].Status.State)
 }
 

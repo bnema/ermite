@@ -146,12 +146,12 @@ func (s *mirrorService) SyncMirror(ctx context.Context, req *connect.Request[pb.
 	return connect.NewResponse(&pb.SyncMirrorResponse{Results: out}), nil
 }
 
-// syncErrorText is the human reason a repository failed in SyncAll. The caller is an owner;
-// a mirror error is already redacted by the transport and carries no URL.
+// syncErrorText is the short reason a repository failed in SyncAll: the failure class only.
+// The remote's output stays in GetMirrorStatus, so the response stays small and URL-free.
 func syncErrorText(err error) string {
 	var me *domain.MirrorError
 	if errors.As(err, &me) {
-		return "mirror " + string(me.Class) + ": " + me.Detail
+		return "mirror " + string(me.Class) + ": see ermite mirror status"
 	}
 	switch {
 	case errors.Is(err, domain.ErrResourceExhausted):
