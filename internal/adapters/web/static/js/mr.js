@@ -356,9 +356,17 @@ window.ermiteMR = (() => {
     let observer;
     const summary = $('#mr-ck');
     if (summary) {
-      const sync = () => { $('[data-checks-label]', nav).textContent = $('#mr-ck')?.title || $('#mr-ck')?.textContent.trim() || 'no checks'; };
+      // The live stream replaces #mr-ck as a whole: watch only the children of
+      // its parent, and write the label only when it changes. hx-live rewrites
+      // other text in the same bar on every mutation of the document; a write
+      // here on each of them would wake hx-live again, a loop that never yields.
+      const sync = () => {
+        const label = $('[data-checks-label]', nav);
+        const text = $('#mr-ck')?.title || $('#mr-ck')?.textContent.trim() || 'no checks';
+        if (label && label.textContent !== text) label.textContent = text;
+      };
       observer = new MutationObserver(sync);
-      observer.observe(summary.parentElement, { childList: true, subtree: true, characterData: true });
+      observer.observe(summary.parentElement, { childList: true });
       sync();
     }
     select(0); hash();

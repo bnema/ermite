@@ -151,7 +151,8 @@ test('footer: #mr-ck syncs the checks label and a click opens the footer on Chec
   const tabs = [node('t0'), node('t1')];
   const panels = [node('mr-commits'), node('mr-checks-panel')];
   const footer = node('mr-panels'); footer.open = false; footer.querySelectorAll = () => panels;
-  const label = { textContent: '' };
+  let writes = 0, text = '';
+  const label = { get textContent() { return text; }, set textContent(v) { writes++; text = v; } };
   const nav = node('tabs'); nav.querySelectorAll = () => tabs;
   nav.querySelector = (s) => s === '[data-checks-label]' ? label : null;
   const summary = { title: '1/2 failed', textContent: ' 1/2 ', parentElement: {} };
@@ -167,6 +168,11 @@ test('footer: #mr-ck syncs the checks label and a click opens the footer on Chec
     window.ermiteMR.panels();
     assert.equal(label.textContent, '1/2 failed', 'initial label sync');
     assert.equal(observed[0], summary.parentElement);
+    // A mutation elsewhere in the bar (hx-live rewriting a label) must not
+    // write the label again, or hx-live wakes up on its own write forever.
+    assert.deepEqual(observed[1], { childList: true }, 'only #mr-ck replacements wake the observer');
+    const before = writes; callback(); callback();
+    assert.equal(writes, before, 'an unchanged label is not written');
     summary.title = ''; callback();
     assert.equal(label.textContent, '1/2', 'observer re-syncs from the text');
     summary.textContent = ' '; callback();
