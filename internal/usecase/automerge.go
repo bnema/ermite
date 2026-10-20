@@ -228,13 +228,6 @@ func (s *AutoMerge) evaluateMR(ctx context.Context, repo domain.Repo, mr domain.
 	if head != intent.HeadID {
 		return cancel("the branch moved to " + head.String()[:7])
 	}
-	p, valid, err := principalOfPusher(ctx, s.cfg.Tokens, intent.EnabledBy, s.cfg.Clock.Now())
-	if err != nil {
-		return err
-	}
-	if !valid || !p.Allows(domain.ScopeMRMerge, mr.Repo) || !p.AllowsRef("refs/heads/"+mr.Target) {
-		return cancel("the principal that enabled auto-merge can no longer merge " + mr.Target)
-	}
 	if s.cfg.Activity != nil && !s.cfg.Activity.Settled(ctx, mr.Repo, mr.Number, mr.Source, head) {
 		return nil
 	}
@@ -252,7 +245,7 @@ func (s *AutoMerge) evaluateMR(ctx context.Context, repo domain.Repo, mr domain.
 	if !passed {
 		return nil
 	}
-	_, err = s.cfg.MRs.mergeAs(ctx, p, mr.Repo, mr.Number, ports.MergeParams{Mode: intent.Mode, HeadID: intent.HeadID}, mergeOpts{auto: true, intent: intent})
+	_, err = s.cfg.MRs.mergeAs(ctx, domain.Principal{}, mr.Repo, mr.Number, ports.MergeParams{Mode: intent.Mode, HeadID: intent.HeadID}, mergeOpts{auto: true, intent: intent, enabler: intent.EnabledBy, tokens: s.cfg.Tokens, activity: s.cfg.Activity})
 	switch {
 	case err == nil, errors.Is(err, errAutoMergeWait):
 		return nil

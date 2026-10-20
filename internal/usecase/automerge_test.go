@@ -208,6 +208,7 @@ func TestAutoMergeCancelsWhenEnablerTokenRevokedOrExpired(t *testing.T) {
 			enabled.AutoMerge.EnabledBy = domain.CIPusher{Kind: domain.CIPusherToken, TokenID: "gone"}
 			require.NoError(t, r.store.MergeRequests().Update(r.ctx, enabled))
 			tokens := mocks.NewTokenStore(t)
+			checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}}, nil)
 			if expired {
 				tokens.EXPECT().Get(mock.Anything, "gone").Return(domain.Token{ExpiresAt: now.Add(-time.Hour)}, nil)
 			} else {
@@ -395,4 +396,31 @@ func TestMergeGateSettingsUpdateWaits(t *testing.T) {
 		_, err = r.repos.Update(r.ctx, root, r.repo, params)
 		require.NoError(t, err)
 	}
+}
+
+func TestAutoMergeResolvesEnablerAfterMergeGate(t *testing.T) {
+	r, mr, checks := autoRig(t)
+	enableAuto(t, r, mr)
+	enabled := storedAuto(t, r, mr)
+	enabled.AutoMerge.EnabledBy = domain.CIPusher{Kind: domain.CIPusherToken, TokenID: "revoked"}
+	require.NoError(t, r.store.MergeRequests().Update(r.ctx, enabled))
+	tokens := mocks.NewTokenStore(t)
+	tokens.EXPECT().Get(mock.Anything, "revoked").Return(domain.Token{}, domain.ErrNotFound).Once()
+	reached := make(chan struct{})
+	checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Run(func(context.Context, domain.RepoName, string) { close(reached) }).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}}, nil).Once()
+	a := autoEvaluator(r, checks, nil, tokens)
+	defer a.Close(r.ctx)
+	done := make(chan bool, 1)
+	require.NoError(t, r.mrs.WithMergeLock(r.ctx, r.repo, func() error {
+		go func() { done <- a.Evaluate(r.repo) }()
+		<-reached
+		// Evaluation has passed its fast-path checks, but cannot resolve the token
+		// until this lock is released. It now sees the revoked token, not old rights.
+		tokens.AssertNotCalled(t, "Get", mock.Anything, "revoked")
+		return nil
+	}))
+	require.True(t, <-done)
+	got := storedAuto(t, r, mr)
+	require.Nil(t, got.AutoMerge)
+	require.True(t, got.IsOpen())
 }

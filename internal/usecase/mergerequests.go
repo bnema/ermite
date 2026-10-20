@@ -1041,15 +1041,20 @@ func (m *MergeRequests) checkMode(ctx context.Context, mr domain.MergeRequest, m
 }
 
 type mergeOpts struct {
-	auto   bool
-	intent *domain.AutoMerge
+	auto     bool
+	intent   *domain.AutoMerge
+	enabler  domain.CIPusher
+	tokens   ports.TokenStore
+	activity ports.CIActivity
 }
 
 var errAutoMergeWait = errors.New("auto-merge is waiting for checks")
 
 func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams, opts mergeOpts) (domain.MergeRequest, error) {
-	if _, err := m.writable(ctx, p, name, domain.ScopeMRMerge); err != nil {
-		return domain.MergeRequest{}, err
+	if !opts.auto {
+		if _, err := m.writable(ctx, p, name, domain.ScopeMRMerge); err != nil {
+			return domain.MergeRequest{}, err
+		}
 	}
 	mode := params.Mode
 	if mode == "" {
@@ -1080,6 +1085,16 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 	}
 	if opts.auto && (mr.AutoMerge == nil || opts.intent == nil || *mr.AutoMerge != *opts.intent) {
 		return domain.MergeRequest{}, errAutoMergeWait
+	}
+	if opts.auto {
+		fresh, valid, err := principalOfPusher(ctx, opts.tokens, opts.enabler, m.clock.Now())
+		if err != nil {
+			return domain.MergeRequest{}, err
+		}
+		if !valid || !fresh.Allows(domain.ScopeMRMerge, name) || !fresh.AllowsRef("refs/heads/"+mr.Target) {
+			return domain.MergeRequest{}, fmt.Errorf("%w: the principal that enabled auto-merge can no longer merge %s", domain.ErrForbidden, mr.Target)
+		}
+		p = fresh
 	}
 	// A merge moves the target and may delete the source: a token limited to
 	// branch prefixes may do so only within them.
