@@ -203,7 +203,8 @@ message CIJob {
   // keeps its own attempt.
   int32 run_attempt = 38;
   // The contexts JSON given to the runner, computed when the job is planned
-  // (needs outputs are final then).
+  // (needs outputs are final then). No longer written: stored under jobctx/
+  // instead. Retained as a read fallback for legacy records.
   string contexts_json = 39;
   // The job's continue-on-error, evaluated when the job is planned: a failure
   // of the job does not fail the run, does not cancel the siblings of its

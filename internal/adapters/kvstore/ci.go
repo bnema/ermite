@@ -26,6 +26,7 @@ import (
 //	run/<repo>/<id:020d>                 CIRun
 //	runsrc/<id:020d>                     CIRunSource
 //	job/<run:020d>/<attempt:010d>/<id>   CIJob
+//	jobctx/<run:020d>/<attempt:010d>/<id> contexts JSON
 //	check/<repo>/<sha>/<check id>        CICheck
 //	runseq                               Sequence: last run id
 //	runnum/<repo>/<workflow path>        Sequence: last run number
@@ -46,6 +47,7 @@ const (
 	runPrefix     = "run/"
 	runSrcPrefix  = "runsrc/"
 	jobPrefix     = "job/"
+	jobCtxPrefix  = "jobctx/"
 	checkPrefix   = "check/"
 	runSeqKey     = "runseq"
 	runNumPrefix  = "runnum/"
@@ -85,6 +87,10 @@ func jobRef(runID int64, attempt int32, id string) string {
 	return jobAttemptPrefix(runID, attempt) + id
 }
 func jobKey(runID int64, attempt int32, id string) []byte { return []byte(jobRef(runID, attempt, id)) }
+func jobContextsKey(runID int64, attempt int32, id string) []byte {
+	return []byte(jobCtxPrefix + strings.TrimPrefix(jobRef(runID, attempt, id), jobPrefix))
+}
+
 func checksPrefix(repo domain.RepoName, sha string) string {
 	return checkPrefix + repo.String() + "/" + sha + "/"
 }
@@ -335,7 +341,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		Labels: j.Labels, Needs: j.Needs, RunnerId: j.RunnerID, RunnerName: j.RunnerName,
 		Isolation: encodeIsolation(j.Isolation), Steps: steps,
 		CreatedAt: encodeTime(j.CreatedAt), StartedAt: encodeTime(j.StartedAt), CompletedAt: encodeTime(j.CompletedAt),
-		Index: int32(j.Index), Combo: int32(j.Combo), MatrixJson: j.MatrixJSON, ContextsJson: j.ContextsJSON, ComboTotal: int32(j.ComboTotal), //nolint:gosec // bounded by the 256 job limit
+		Index: int32(j.Index), Combo: int32(j.Combo), MatrixJson: j.MatrixJSON, ComboTotal: int32(j.ComboTotal), //nolint:gosec // bounded by the 256 job limit
 		TimeoutMinutes: j.TimeoutMinutes, FailFast: j.FailFast, ContinueOnError: j.ContinueOnError, MaxParallel: int32(j.MaxParallel), //nolint:gosec // validated at planning
 		Outputs: j.Outputs, ReadyAt: encodeTime(j.ReadyAt), AssignedAt: encodeTime(j.AssignedAt),
 		AckedAt: encodeTime(j.AckedAt), AssignCancels: int32(j.AssignCancels), //nolint:gosec // at most 3
@@ -381,6 +387,19 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 			StartedAt: decodeTime(s.GetStartedAt()), CompletedAt: decodeTime(s.GetCompletedAt()),
 			LogStart: s.GetLogStart(), HasLines: s.GetHasLines(), Outcome: decodeConclusion(s.GetOutcome()),
 		})
+	}
+	return j, nil
+}
+
+// decodeJobWithContexts reads both parts from the same snapshot. The inline
+// field is retained only as a fallback for records written before the split.
+func decodeJobWithContexts(ctx context.Context, snap *kv.Snapshot, item kv.Item) (domain.CIJob, error) {
+	j, err := decodeJob(item)
+	if err != nil {
+		return domain.CIJob{}, err
+	}
+	if contexts, ok := snap.Get(ctx, jobContextsKey(j.RunID, j.RunAttempt, j.ID)); ok {
+		j.ContextsJSON = string(contexts.Value)
 	}
 	return j, nil
 }
@@ -514,6 +533,12 @@ func (c *CI) stageRecords(ctx context.Context, b *kv.Batch, w ports.CIWrite) (gu
 			if o, err := decodeJob(item); err == nil {
 				old = &o
 			}
+		}
+		// Compare the separate value, not the legacy inline field: an old
+		// record must materialize contexts before encodeJob drops that field.
+		contextsKey := jobContextsKey(j.RunID, j.RunAttempt, j.ID)
+		if contexts, ok := c.db.Get(ctx, contextsKey); !ok || string(contexts.Value) != j.ContextsJSON {
+			b.Put(contextsKey, []byte(j.ContextsJSON))
 		}
 		stage(b, key, val, j.Version)
 		c.jobIndexes(b, j, old)
@@ -746,19 +771,21 @@ func (c *CI) ListOpenRuns(ctx context.Context) ([]domain.CIRun, error) {
 
 // GetJob reads one job record.
 func (c *CI) GetJob(ctx context.Context, runID int64, runAttempt int32, jobID string) (domain.CIJob, error) {
-	item, ok := c.db.Get(ctx, jobKey(runID, runAttempt, jobID))
+	snap := c.db.Snapshot(ctx)
+	item, ok := snap.Get(ctx, jobKey(runID, runAttempt, jobID))
 	if !ok {
 		return domain.CIJob{}, domain.ErrNotFound
 	}
-	return decodeJob(item)
+	return decodeJobWithContexts(ctx, snap, item)
 }
 
 // ListJobs returns the jobs of a run at an attempt, ordered by index then
 // combination.
 func (c *CI) ListJobs(ctx context.Context, runID int64, runAttempt int32) ([]domain.CIJob, error) {
 	var out []domain.CIJob
-	for key, item := range c.db.Snapshot(ctx).Prefix(ctx, []byte(jobAttemptPrefix(runID, runAttempt))) {
-		j, err := decodeJob(item)
+	snap := c.db.Snapshot(ctx)
+	for key, item := range snap.Prefix(ctx, []byte(jobAttemptPrefix(runID, runAttempt))) {
+		j, err := decodeJobWithContexts(ctx, snap, item)
 		if err != nil {
 			return nil, fmt.Errorf("decode %s: %w", key, err)
 		}
@@ -778,7 +805,7 @@ func (c *CI) jobByRef(snap *kv.Snapshot, ctx context.Context, ref string) (domai
 	if !ok {
 		return domain.CIJob{}, domain.ErrNotFound
 	}
-	return decodeJob(item)
+	return decodeJobWithContexts(ctx, snap, item)
 }
 
 // FindJobByToken resolves the token index, then reads the job.
@@ -867,6 +894,9 @@ func (c *CI) runKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoNam
 	keys := [][]byte{runKey(repo, runID), runSrcKey(runID), openKey(runID)}
 	keys = append(keys, repoTokenKeys(ctx, snap, runID)...)
 	keys = append(keys, annotationKeys(ctx, snap, runID)...)
+	for key := range snap.Prefix(ctx, []byte(jobCtxPrefix+fmt.Sprintf(idFormat, runID)+"/")) {
+		keys = append(keys, slices.Clone(key))
+	}
 	for key, item := range snap.Prefix(ctx, []byte(jobsPrefix(runID))) {
 		keys = append(keys, slices.Clone(key))
 		if j, err := decodeJob(item); err == nil {

@@ -978,7 +978,8 @@ type CIJob struct {
 	// keeps its own attempt.
 	RunAttempt int32 `protobuf:"varint,38,opt,name=run_attempt,json=runAttempt,proto3" json:"run_attempt,omitempty"`
 	// The contexts JSON given to the runner, computed when the job is planned
-	// (needs outputs are final then).
+	// (needs outputs are final then). No longer written: stored under jobctx/
+	// instead. Retained as a read fallback for legacy records.
 	ContextsJson string `protobuf:"bytes,39,opt,name=contexts_json,json=contextsJson,proto3" json:"contexts_json,omitempty"`
 	// The job's continue-on-error, evaluated when the job is planned: a failure
 	// of the job does not fail the run, does not cancel the siblings of its
