@@ -181,7 +181,7 @@ func mergeRequestKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoNa
 	var keys [][]byte
 	for _, p := range []string{
 		mrRepoPrefix(repo), commentPrefix + repo.String() + "/", readPrefix + repo.String() + "/",
-		mrOpenRepoPrefix(repo), mrTargetPrefix + repo.String() + "/",
+		mrOpenRepoPrefix(repo), mrTargetPrefix + repo.String() + "/", mrRefPrefix + repo.String() + "/",
 		mergePrefix + repo.String() + "/",
 	} {
 		for k := range snap.Prefix(ctx, []byte(p)) {

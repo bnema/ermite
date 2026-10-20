@@ -186,6 +186,8 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.CommentAdded:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.IssueReferenced:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueOpened:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueClosed:
@@ -537,6 +539,8 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.CommentAdded:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.IssueReferenced:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.IssueOpened:
 		return e.deliverRepo(ctx, w, ev.Issue.Repo, false, be, out, send)
 	case domain.IssueClosed:
@@ -637,7 +641,7 @@ func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName
 // isIssueEvent reports whether ev is about an issue.
 func isIssueEvent(ev domain.Event) bool {
 	switch ev.(type) {
-	case domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented:
+	case domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueReferenced:
 		return true
 	}
 	return false
@@ -656,6 +660,8 @@ func isRepoLifecycleEvent(ev domain.Event) bool {
 // isItemEvent reports whether ev is about a merge request or an issue.
 func isItemEvent(ev domain.Event) bool {
 	switch ev.(type) {
+	case domain.IssueReferenced:
+		return false // back-reference refreshes do not change the inbox
 	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
 		domain.MergeRequestReady, domain.MergeRequestMergeability, domain.CommentAdded,
 		domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved:

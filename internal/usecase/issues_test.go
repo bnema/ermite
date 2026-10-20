@@ -65,8 +65,10 @@ func TestIssuesOffHidesEverything(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 		_, err = u.issues.Reopen(ctx, domain.Root(), n, 1)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
-		_, err = u.issues.Kind(ctx, domain.Root(), n, 1)
-		assert.ErrorIs(t, err, domain.ErrNotFound)
+		u.mrs.EXPECT().Get(mock.Anything, n, int64(1)).Return(domain.MergeRequest{Number: 1}, nil)
+		kind, err := u.issues.Kind(ctx, domain.Root(), n, 1)
+		require.NoError(t, err)
+		assert.Equal(t, domain.NumberMergeRequest, kind)
 	}
 }
 

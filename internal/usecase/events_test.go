@@ -1010,3 +1010,27 @@ func TestMergeabilityEventReachesOwnerTopic(t *testing.T) {
 		assert.Equal(t, priv, owner.next(t).Event.(domain.MergeRequestMergeability).Repo)
 	})
 }
+
+func TestIssueReferencedRepoOnly(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 16)
+		n := name(t, "linked")
+		settings := domain.DefaultRepoSettings()
+		settings.Issues = domain.IssuesOwner
+		r.meta.EXPECT().Get(mock.Anything, n).Return(domain.Repo{Name: n, Visibility: domain.VisibilityPublic, CreatedAt: now, Settings: settings}, nil).Maybe()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		repo := r.watch(ctx, domain.Root(), ports.WatchParams{Topics: []string{"repo:linked"}})
+		owner := r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"owner"}})
+		synctest.Wait()
+		ev := domain.IssueReferenced{Repo: n, Issue: 2, MergeRequest: 3, At: now, Visibility: domain.VisibilityPublic, CreatedAt: now}
+		r.feed <- ev
+		assert.Equal(t, ev, repo.next(t).Event)
+		synctest.Wait()
+		select {
+		case got := <-owner.got:
+			t.Fatalf("owner received %+v", got)
+		default:
+		}
+	})
+}

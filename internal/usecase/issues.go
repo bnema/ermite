@@ -274,16 +274,22 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 }
 
 // Kind tells what number n of the repository names. The principal needs the
-// access of reading the repository, and issues must be on there: otherwise it
-// is domain.ErrNotFound.
+// access of reading the repository. Issues are resolved only when enabled;
+// merge requests are resolved even when issues are off.
 func (i *Issues) Kind(ctx context.Context, p domain.Principal, name domain.RepoName, n int64) (domain.NumberKind, error) {
-	if _, err := i.readable(ctx, p, name); err != nil {
+	repo, err := lookupRepo(ctx, i.meta, name)
+	if err != nil {
 		return domain.NumberNone, err
 	}
-	if _, err := i.store.Get(ctx, name, n); err == nil {
-		return domain.NumberIssue, nil
-	} else if !errors.Is(err, domain.ErrNotFound) {
-		return domain.NumberNone, fmt.Errorf("read #%d of %q: %w", n, name, err)
+	if !canRead(p, repo) {
+		return domain.NumberNone, domain.ErrNotFound
+	}
+	if repo.Settings.IssuesEnabled() {
+		if _, err := i.store.Get(ctx, name, n); err == nil {
+			return domain.NumberIssue, nil
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			return domain.NumberNone, fmt.Errorf("read #%d of %q: %w", n, name, err)
+		}
 	}
 	if _, err := i.mrs.Get(ctx, name, n); err == nil {
 		return domain.NumberMergeRequest, nil
