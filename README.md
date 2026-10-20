@@ -132,6 +132,7 @@ Give the agent the [`skills/ermite`](skills/ermite/SKILL.md) skill so it knows t
 - [Configuration](docs/configuration.md): environment variables
 - [CLI](docs/cli.md): config file, commands, JSON output
 - [Git over HTTP](docs/git-http.md): URLs and authentication
+- [Push mirror](docs/mirror.md): push repositories to a remote over SSH
 - [Tokens](docs/tokens.md): scopes, presets, branch-limited tokens
 - [Merge requests](docs/merge-requests.md)
 - [Issues](docs/issues.md)

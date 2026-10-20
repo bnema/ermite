@@ -62,3 +62,12 @@ ermite workflow run <file> --repo <repo> [--ref <branch|tag>] [-f name=value …
 - Start on a push that creates or deletes a branch or tag (also a merge with `--delete-branch`).
 - No filters; `[skip ci]` does not apply. A push of more than three tags starts none.
 - Payload: `ref`, `ref_type`, `pusher_type`, `repository`, `sender`; `create` adds `master_branch` and `description`.
+
+## Mirror events
+
+Not workflow triggers: `ermite watch` reports them when a [push mirror](mirror.md) changes health, once per incident.
+
+- `mirror.failed`: the mirror started failing or was paused. Payload: `repo`, `state` (`failing` or `paused`), `failure_class` (`diverged`, `auth_denied`, `remote_not_found`, `host_key`, `transient`, `internal`), `reason`.
+- `mirror.recovered`: a failing or paused mirror pushed successfully. Payload: `repo`.
+
+The payload carries neither the remote URL nor the error detail; `ermite mirror status` shows the reason.

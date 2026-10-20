@@ -75,6 +75,10 @@ ermite secret set|list|delete …         # CI secrets (needs ERMITE_SECRETS_KEY
 ermite variable set|get|list|delete …
 ermite environment create|list|delete … --repo <repo>
 
+ermite mirror key show | rotate          # SSH key to add to the remote (rotate: owner only)
+ermite mirror config [--enabled] [--url …{repo}…] [--cron …] [--all-branches] | config show   # global policy, owner only
+ermite mirror add <repo> <url> [--cron …] [--all-branches] | remove <repo> | exclude <repo> | include <repo>
+ermite mirror status [repo] | sync <repo>|--all [--force]
 ermite web login                         # one-time sign-in link (60 s)
 ermite web logout --all                  # sign every browser out
 ermite web passkey list | remove <id>
@@ -87,9 +91,11 @@ ermite completion bash|zsh|fish
 
 Issues need a server with the `issues` feature and `ermite repo edit <repo> --issues owner` (or `--issues public`, which also opens a moderated form to visitors of a public repository); they are written with the `issue:write` scope. See [Issues](issues.md).
 
+Mirrors push repositories to a remote over SSH, never forcing. See [Push mirror](mirror.md).
+
 ## Output
 
-- `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list` and `version`.
+- `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list`, `mirror key|config|status` and `version`.
 - `watch --json` prints one object per line. `merge_request_mergeability` events carry `mergeability` (`state`, `behind`, `conflict_paths`…) and print as `repo!n mergeability: behind by 2`.
 - `mr merge --mode squash|merge` creates a commit signed by the server's own key (generated on first start); the output names its fingerprint, `ermite signing-key show` prints the key. Every mode is allowed by default; `repo edit --merge-modes fast-forward,squash` disables `merge`.
 - Errors are one line on stderr (`ermite: …`) with exit status 1.
