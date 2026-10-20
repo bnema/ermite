@@ -304,3 +304,26 @@ type EventGap struct{}
 
 // EventKind implements Event.
 func (EventGap) EventKind() string { return "gap" }
+
+// MirrorFailed is published when a mirror enters failing or paused (transitions only).
+type MirrorFailed struct {
+	Repo       RepoName
+	State      MirrorState
+	Class      MirrorFailureClass
+	Reason     string
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+func (MirrorFailed) EventKind() string { return "mirror.failed" }
+
+// MirrorRecovered is published when a failing or paused mirror succeeds again.
+type MirrorRecovered struct {
+	Repo       RepoName
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+func (MirrorRecovered) EventKind() string { return "mirror.recovered" }
