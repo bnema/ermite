@@ -129,6 +129,9 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 			if !metaDone {
 				return domain.Repo{}, headErr
 			}
+		} else if r.mirror != nil {
+			// The default branch decides which refs are mirrored.
+			r.mirror.OnPush(ctx, name, []domain.RefUpdate{{Ref: "HEAD"}})
 		}
 	}
 

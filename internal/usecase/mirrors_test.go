@@ -432,3 +432,165 @@ func TestMirrorsFileURLTestOption(t *testing.T) {
 		})
 	}
 }
+
+func TestMirrorsMergeNotifiesMirror(t *testing.T) {
+	r := newMRRig(t)
+	r.seed()
+	trigger := mocks.NewMirrorTrigger(t)
+	notified := make(chan []domain.RefUpdate, 1)
+	trigger.On("OnPush", mock.Anything, r.repo, mock.Anything).Run(func(a mock.Arguments) { notified <- a.Get(2).([]domain.RefUpdate) }).Return().Once()
+	r.mrs.WithMirror(trigger)
+	head := r.feature("f0")
+	mr := r.open("f0")
+	_, err := r.mrs.Merge(r.ctx, root, r.repo, mr.Number, ports.MergeParams{HeadID: head})
+	require.NoError(t, err)
+	r.mrs.Wait(r.ctx)
+	select {
+	case u := <-notified:
+		require.Equal(t, "refs/heads/main", u[0].Ref)
+	case <-time.After(time.Second):
+		t.Fatal("merge did not notify mirrors")
+	}
+}
+
+func TestMirrorsDefaultBranchChangeNotifiesMirror(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	n := name(t, "tools")
+	repo := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate}
+	trigger := mocks.NewMirrorTrigger(t)
+	trigger.On("OnPush", mock.Anything, n, mock.Anything).Return().Once()
+	f.repos.WithMirror(trigger)
+	f.meta.EXPECT().Get(ctx, n).Return(repo, nil)
+	f.git.EXPECT().HasBranch(ctx, n, "dev").Return(true, nil)
+	f.git.EXPECT().SetDefaultBranch(ctx, n, "dev").Return(nil)
+	f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
+	_, err := f.repos.Update(ctx, tokenPrincipal(domain.ScopeRepoAdmin, "tools"), n, ports.UpdateRepoParams{DefaultBranch: ptr("dev")})
+	require.NoError(t, err)
+}
+
+func TestMirrorsExternalMutationMakesNextDueTickSync(t *testing.T) {
+	f := newMirrorFixture(t)
+	f.push.On("Push", mock.Anything, mock.Anything).Return(ports.MirrorPushResult{}, nil).Once()
+	_, err := f.m.Sync(context.Background(), domain.Root(), f.repo, true)
+	require.NoError(t, err)
+	f.mu.Lock()
+	f.at = f.at.Add(24 * time.Hour).Truncate(time.Hour).Add(time.Minute)
+	f.mu.Unlock()
+	f.m.ScheduleNow(context.Background())
+	f.advance(4 * time.Minute)
+	f.m.ScheduleNow(context.Background()) // due and clean: skipped
+	f.reader.AssertNumberOfCalls(t, "ListRefs", 1)
+	// A merge and a default-branch change both call OnPush (idempotent dirty mark).
+	f.m.OnPush(context.Background(), f.repo, []domain.RefUpdate{{Ref: "refs/heads/main"}})
+	f.m.OnPush(context.Background(), f.repo, []domain.RefUpdate{{Ref: "HEAD"}})
+	read := make(chan struct{})
+	f.reader.ExpectedCalls = nil
+	f.reader.On("ListRefs", mock.Anything, f.repo).Run(func(mock.Arguments) { close(read) }).Return([]domain.Ref{{Name: "refs/heads/main", ID: mirrorOID(t)}}, nil).Once()
+	f.advance(5 * time.Minute)
+	f.m.ScheduleNow(context.Background())
+	select {
+	case <-read:
+	case <-time.After(time.Second):
+		t.Fatal("dirty repository not synced on the next due tick")
+	}
+}
+
+func setupRepoOverrideFixture(t *testing.T, global domain.MirrorGlobalConfig) *mirrorFixture {
+	f := newMirrorFixture(t)
+	f.store.ExpectedCalls = nil
+	f.store.On("GetGlobal", mock.Anything).Return(global, nil)
+	f.store.On("GetRepoConfig", mock.Anything, f.repo).Return(domain.MirrorRepoConfig{}, domain.ErrNotFound).Maybe()
+	f.store.On("GetStatus", mock.Anything, f.repo).Return(domain.MirrorStatus{Repo: f.repo}, nil).Maybe()
+	return f
+}
+
+func TestMirrorsOverrideWithoutCronRejectedWhenGlobalCronEmpty(t *testing.T) {
+	f := setupRepoOverrideFixture(t, domain.MirrorGlobalConfig{})
+	_, err := f.m.SetRepoMirror(context.Background(), domain.Root(), domain.MirrorRepoConfig{Repo: f.repo, URL: "git@example.com:acme/tools"})
+	var fe *domain.InvalidFieldsError
+	require.ErrorAs(t, err, &fe)
+	require.Equal(t, "cron", fe.Fields[0].Field)
+	// PutRepoConfig/PutStatus unexpected: strict mock fails if called.
+}
+
+func TestMirrorsGlobalChangeInvalidatingOverrideRejected(t *testing.T) {
+	f := setupRepoOverrideFixture(t, domain.MirrorGlobalConfig{Enabled: true, URLTemplate: "git@example.com:acme/{repo}", Cron: "*/5 * * * *"})
+	f.store.ExpectedCalls = nil
+	f.store.On("GetGlobal", mock.Anything).Return(domain.MirrorGlobalConfig{Enabled: true, URLTemplate: "git@example.com:acme/{repo}", Cron: "*/5 * * * *"}, nil)
+	f.store.On("GetRepoConfig", mock.Anything, f.repo).Return(domain.MirrorRepoConfig{Repo: f.repo, URL: "git@other.example:x/y"}, nil)
+	// Disabling the global with an empty cron leaves the inheriting override with no cron.
+	_, err := f.m.SetGlobalConfig(context.Background(), domain.Root(), ports.MirrorGlobalPatch{Enabled: ptr(false), Cron: ptr("")})
+	var fe *domain.InvalidFieldsError
+	require.ErrorAs(t, err, &fe)
+}
+
+func TestMirrorsGlobalChangeResetsInheritingURLOverride(t *testing.T) {
+	f := newMirrorFixture(t)
+	f.store.ExpectedCalls = nil
+	f.store.On("GetGlobal", mock.Anything).Return(domain.MirrorGlobalConfig{Enabled: true, URLTemplate: "git@example.com:acme/{repo}", Cron: "*/5 * * * *"}, nil)
+	f.store.On("GetRepoConfig", mock.Anything, f.repo).Return(domain.MirrorRepoConfig{Repo: f.repo, URL: "git@other.example:x/y"}, nil)
+	f.store.On("PutGlobal", mock.Anything, mock.Anything).Return(nil).Once()
+	f.store.On("GetStatus", mock.Anything, f.repo).Return(domain.MirrorStatus{Repo: f.repo, State: domain.MirrorPaused, Class: domain.MirrorClassDiverged}, nil)
+	reset := make(chan domain.MirrorStatus, 1)
+	f.store.On("PutStatus", mock.Anything, mock.Anything).Run(func(a mock.Arguments) { reset <- a.Get(1).(domain.MirrorStatus) }).Return(nil)
+	_, err := f.m.SetGlobalConfig(context.Background(), domain.Root(), ports.MirrorGlobalPatch{Cron: ptr("*/10 * * * *")})
+	require.NoError(t, err)
+	require.Equal(t, domain.MirrorOK, (<-reset).State)
+}
+
+func TestMirrorsSetRepoExcludedConcurrent(t *testing.T) {
+	f := newMirrorFixture(t)
+	var mu sync.Mutex
+	active, maxActive := 0, 0
+	f.store.On("PutRepoConfig", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
+		mu.Lock()
+		active++
+		if active > maxActive {
+			maxActive = active
+		}
+		mu.Unlock()
+		time.Sleep(2 * time.Millisecond)
+		mu.Lock()
+		active--
+		mu.Unlock()
+	}).Return(nil)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(ex bool) {
+			defer wg.Done()
+			_, err := f.m.SetRepoExcluded(context.Background(), domain.Root(), f.repo, ex)
+			require.NoError(t, err)
+		}(i%2 == 0)
+	}
+	wg.Wait()
+	require.Equal(t, 1, maxActive, "read-modify-write must be serialized")
+}
+
+func TestMirrorsCoalescedManualAppliesThrottle(t *testing.T) {
+	f := newMirrorFixture(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	f.push.On("Push", mock.Anything, mock.Anything).Run(func(mock.Arguments) { close(entered); <-release }).Return(ports.MirrorPushResult{}, nil).Once()
+	done := make(chan error, 1)
+	go func() { _, err := f.m.Sync(context.Background(), domain.Root(), f.repo, true); done <- err }()
+	<-entered
+	v, err := f.m.Sync(context.Background(), domain.Root(), f.repo, false)
+	require.NoError(t, err)
+	require.True(t, v.Queued)
+	close(release)
+	require.NoError(t, <-done)
+	// The rerun is manual and not forced: the throttle (just attempted) stops it, so no second push.
+	time.Sleep(200 * time.Millisecond)
+	f.push.AssertNumberOfCalls(t, "Push", 1)
+}
+
+func TestMirrorsSlowPushTimestamps(t *testing.T) {
+	f := newMirrorFixture(t)
+	start := f.at
+	f.push.On("Push", mock.Anything, mock.Anything).Run(func(mock.Arguments) { f.advance(10 * time.Minute) }).Return(ports.MirrorPushResult{}, &domain.MirrorError{Class: domain.MirrorClassTransient}).Once()
+	v, err := f.m.Sync(context.Background(), domain.Root(), f.repo, true)
+	require.Error(t, err)
+	require.True(t, v.Status.LastAttemptAt.Equal(start))
+	require.True(t, v.Status.NextRetryAt.Equal(start.Add(10*time.Minute+domain.MirrorBackoff(1))))
+}

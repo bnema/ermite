@@ -58,6 +58,7 @@ type MergeRequests struct {
 	tips      ports.CIRefTipStore      // nil: who merges is not recorded
 	verifier  ports.CommitVerifier     // nil: commits are not checked (ADR 0030)
 	mergeab   MergeabilityHook         // nil: no mergeability
+	mirror    ports.MirrorTrigger      // nil: no outbound mirror
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -114,6 +115,12 @@ func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips, mergeab: cfg.Mergeability,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
+}
+
+// WithMirror makes a merge notify outbound mirrors. Call before the first merge.
+func (m *MergeRequests) WithMirror(t ports.MirrorTrigger) *MergeRequests {
+	m.mirror = t
+	return m
 }
 
 // WithVerifier makes GetMergeRequest fill the signature state of the commits
@@ -1172,6 +1179,9 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 	m.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,
 	})
+	if m.mirror != nil {
+		m.mirror.OnPush(ctx, name, updates) // marks dirty only; never blocks
+	}
 	if m.pulls != nil {
 		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: mr.Number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID, Merged: true}, p)
 	}

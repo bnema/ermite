@@ -298,6 +298,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	f.Mirrors = usecase.NewMirrors(mirrorCfg)
 	f.Pushes.WithMirror(f.Mirrors)
+	f.Repos.WithMirror(f.Mirrors)
 	f.hooks.WithMirrorWarner(f.Mirrors)
 
 	f.Settings, err = usecase.NewCISettings(ctx, store, store.Settings(), sealer, clock)
@@ -368,7 +369,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(), Mergeability: f.Mergeability,
 	})
 	f.Mergeability.Start()
-	f.MergeRequests.WithVerifier(f.Signatures)
+	f.MergeRequests.WithVerifier(f.Signatures).WithMirror(f.Mirrors)
 	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
 		Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock,
 	})

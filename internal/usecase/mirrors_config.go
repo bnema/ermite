@@ -74,10 +74,11 @@ func (m *Mirrors) SetGlobalConfig(ctx context.Context, p domain.Principal, patch
 	}
 	m.configMu.Lock()
 	defer m.configMu.Unlock()
-	g, err := m.cfg.Store.GetGlobal(ctx)
+	old, err := m.cfg.Store.GetGlobal(ctx)
 	if err != nil {
-		return g, err
+		return old, err
 	}
+	g := old
 	if patch.Enabled != nil {
 		g.Enabled = *patch.Enabled
 	}
@@ -91,29 +92,54 @@ func (m *Mirrors) SetGlobalConfig(ctx context.Context, p domain.Principal, patch
 		g.AllBranches = *patch.AllBranches
 	}
 	if err := m.validateGlobal(g); err != nil {
-		return g, err
-	}
-	g.UpdatedAt = m.cfg.Clock.Now().UTC()
-	if err := m.cfg.Store.PutGlobal(ctx, g); err != nil {
-		return g, err
+		return old, err
 	}
 	repos, err := m.cfg.Meta.List(ctx)
 	if err != nil {
-		return g, err
+		return old, err
 	}
+	// Resolve every effective target before and after, and persist nothing
+	// unless all of them stay valid.
+	var changed []domain.RepoName
 	for _, r := range repos {
 		c, e := m.cfg.Store.GetRepoConfig(ctx, r.Name)
-		if e != nil && !errors.Is(e, domain.ErrNotFound) {
-			return g, e
+		var cp *domain.MirrorRepoConfig
+		if e == nil {
+			cp = &c
+		} else if !errors.Is(e, domain.ErrNotFound) {
+			return old, e
 		}
-		if c.URL != "" {
-			continue
+		before, _ := m.resolve(old, cp, r.Name)
+		after, e := m.resolve(g, cp, r.Name)
+		if e != nil {
+			return old, invalidCron(e)
 		}
-		if err := m.reset(ctx, r.Name); err != nil {
+		if !sameMirrorTarget(before, after) {
+			changed = append(changed, r.Name)
+		}
+	}
+	g.UpdatedAt = m.cfg.Clock.Now().UTC()
+	if err := m.cfg.Store.PutGlobal(ctx, g); err != nil {
+		return old, err
+	}
+	for _, name := range changed {
+		if err := m.reset(ctx, name); err != nil {
 			return g, err
 		}
 	}
 	return g, nil
+}
+
+func invalidCron(e error) error {
+	var inv *domain.InvalidFieldsError
+	if errors.As(e, &inv) {
+		return e
+	}
+	return &domain.InvalidFieldsError{Fields: []domain.FieldViolation{{Field: "cron", Reason: e.Error()}}}
+}
+
+func sameMirrorTarget(a, b domain.MirrorTarget) bool {
+	return a.Enabled == b.Enabled && a.URL == b.URL && a.CronSpec == b.CronSpec && a.AllBranches == b.AllBranches && a.Source == b.Source
 }
 func (m *Mirrors) reset(ctx context.Context, repo domain.RepoName) error {
 	t, err := m.target(ctx, repo)
@@ -146,6 +172,18 @@ func (m *Mirrors) SetRepoMirror(ctx context.Context, p domain.Principal, c domai
 	}
 	m.configMu.Lock()
 	defer m.configMu.Unlock()
+	return m.setRepoLocked(ctx, c)
+}
+
+// setRepoLocked validates the prospective target, then persists. configMu must be held.
+func (m *Mirrors) setRepoLocked(ctx context.Context, c domain.MirrorRepoConfig) (domain.MirrorTarget, error) {
+	g, err := m.cfg.Store.GetGlobal(ctx)
+	if err != nil {
+		return domain.MirrorTarget{}, err
+	}
+	if _, err := m.resolve(g, &c, c.Repo); err != nil {
+		return domain.MirrorTarget{}, invalidCron(err)
+	}
 	c.UpdatedAt = m.cfg.Clock.Now().UTC()
 	if err := m.cfg.Store.PutRepoConfig(ctx, c); err != nil {
 		return domain.MirrorTarget{}, err
@@ -174,12 +212,14 @@ func (m *Mirrors) SetRepoExcluded(ctx context.Context, p domain.Principal, repo 
 	if err := m.admin(ctx, p, repo); err != nil {
 		return domain.MirrorTarget{}, err
 	}
+	m.configMu.Lock()
+	defer m.configMu.Unlock()
 	c, err := m.cfg.Store.GetRepoConfig(ctx, repo)
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return domain.MirrorTarget{}, err
 	}
 	c.Repo, c.Excluded = repo, excluded
-	return m.SetRepoMirror(ctx, p, c)
+	return m.setRepoLocked(ctx, c)
 }
 
 // GetStatus returns a read-authorized status, redacting administrative diagnostics.

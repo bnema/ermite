@@ -14,6 +14,7 @@ import (
 type mirrorFlight struct {
 	pending, force, manual bool
 	pendingForce           bool
+	pendingManual          bool
 	done                   chan struct{}
 	completed              bool
 	result                 ports.MirrorSyncResult
@@ -77,6 +78,7 @@ func (m *Mirrors) enqueue(repo domain.RepoName, force, manual bool) (*mirrorFlig
 	if f := m.flights[repo]; f != nil {
 		f.pending = true
 		f.pendingForce = f.pendingForce || force
+		f.pendingManual = f.pendingManual || manual
 		return f, true, nil
 	}
 	f := &mirrorFlight{force: force, manual: manual, done: make(chan struct{})}
@@ -106,15 +108,12 @@ func (m *Mirrors) run(repo domain.RepoName) {
 			m.mu.Unlock()
 			return
 		}
-		f.force, f.manual = f.pendingForce, false
-		f.pending, f.pendingForce = false, false
+		f.force, f.manual = f.pendingForce, f.pendingManual
+		f.pending, f.pendingForce, f.pendingManual = false, false, false
 		m.mu.Unlock()
 	}
 }
 
-func (m *Mirrors) syncOnce(ctx context.Context, repo domain.RepoName, force bool) (ports.MirrorSyncResult, error) {
-	return m.attempt(ctx, repo, force, true)
-}
 func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, force, manual bool) (ports.MirrorSyncResult, error) {
 	m.configMu.RLock()
 	defer m.configMu.RUnlock()
@@ -130,7 +129,8 @@ func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, force, manu
 	if err != nil {
 		return ports.MirrorSyncResult{}, err
 	}
-	now := m.cfg.Clock.Now().UTC()
+	start := m.cfg.Clock.Now().UTC()
+	now := start
 	if !t.Enabled {
 		s := domain.MirrorDisable(prev, now)
 		if prev.State != domain.MirrorDisabled {
@@ -193,7 +193,11 @@ func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, force, manu
 			runErr = fmt.Errorf("%w: %s", domain.ErrPreconditionFailed, detail)
 		}
 	}
+	// The push may be slow: completion, retry and success times come from the
+	// clock after it returns; only LastAttemptAt marks when the attempt began.
+	now = m.cfg.Clock.Now().UTC()
 	transition := domain.ApplyMirrorOutcome(prev, domain.MirrorOutcome{Err: failure, NoOp: noOp}, now)
+	transition.Status.LastAttemptAt = start
 	if failure != nil && m.cfg.Sealer == nil {
 		transition.Status.Reason = failure.Detail
 	}

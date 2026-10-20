@@ -17,11 +17,12 @@ import (
 
 // Repos are the repository use cases.
 type Repos struct {
-	meta  ports.RepoMetaStore
-	git   ports.GitRepos
-	bus   ports.EventBus
-	clock ports.Clock
-	ci    ports.CIRunCleaner // nil: no CI logs to remove
+	meta   ports.RepoMetaStore
+	git    ports.GitRepos
+	bus    ports.EventBus
+	clock  ports.Clock
+	ci     ports.CIRunCleaner  // nil: no CI logs to remove
+	mirror ports.MirrorTrigger // nil: no outbound mirror
 }
 
 var _ ports.RepoService = (*Repos)(nil)
@@ -30,6 +31,13 @@ var _ ports.RepoService = (*Repos)(nil)
 // published on bus.
 func NewRepos(meta ports.RepoMetaStore, git ports.GitRepos, bus ports.EventBus, clock ports.Clock) *Repos {
 	return &Repos{meta: meta, git: git, bus: bus, clock: clock}
+}
+
+// WithMirror makes a default-branch change notify outbound mirrors. Call it
+// before the first request; it returns r.
+func (r *Repos) WithMirror(t ports.MirrorTrigger) *Repos {
+	r.mirror = t
+	return r
 }
 
 // WithCIRunCleaner makes Delete remove the CI logs of the repository. Call it
