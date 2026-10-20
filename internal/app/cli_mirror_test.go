@@ -3,11 +3,18 @@
 package app
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"bnema.dev/ermite/internal/config"
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/usecase"
 )
 
 func TestMirrorCLIArguments(t *testing.T) {
@@ -64,4 +71,47 @@ func TestMirrorCLIConfiguration(t *testing.T) {
 	assert.Contains(t, rotated.stderr, "remotes refuse pushes until this key is added")
 	assert.Equal(t, rotated.stdout, run("key", "show").ok(t).stdout)
 	assert.Equal(t, []string{"authorized_key", "created_at", "fingerprint"}, keys(t, run("key", "show", "--json").ok(t).stdout))
+}
+
+func TestMirrorCLISyncHelpDocumentsBackgroundSync(t *testing.T) {
+	r := runCLI(t, nil, "", "mirror", "sync", "--help").ok(t)
+	assert.Contains(t, r.stdout, "queued")
+	assert.Contains(t, r.stdout, "ermite mirror status")
+}
+
+type blockingPusher struct{ entered, release chan struct{} }
+
+func (p blockingPusher) Push(ctx context.Context, _ ports.MirrorPush) (ports.MirrorPushResult, error) {
+	p.entered <- struct{}{}
+	select {
+	case <-p.release:
+	case <-ctx.Done():
+	}
+	return ports.MirrorPushResult{}, nil
+}
+
+// A push that outlasts the server's wait bound answers "queued"; the CLI says it continues.
+func TestMirrorCLISyncReportsBackgroundSync(t *testing.T) {
+	p := blockingPusher{entered: make(chan struct{}, 4), release: make(chan struct{})}
+	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvSecretsKey: secretsKeyA}}, func(o *options) {
+		o.mirrors = func(c *usecase.MirrorsConfig) {
+			c.ValidateURL = func(string) error { return nil }
+			c.Pusher = p
+			c.SyncWait = 50 * time.Millisecond
+		}
+	})
+	h.createRepo("proj", domain.VisibilityPrivate)
+	c := &cliHarness{harness: h, url: h.srv.URL}
+	wt := h.workTree("main", "README.md")
+	h.mustGit(wt, "push", h.urlAuth(adminToken, "/proj.git"), "main")
+	c.cli(t, adminToken, "mirror", "add", "proj", "file:///nowhere", "--cron", "*/5 * * * *").ok(t)
+	for _, args := range [][]string{{"sync", "proj", "--force"}, {"sync", "--all", "--force"}} {
+		r := c.cli(t, adminToken, append([]string{"mirror"}, args...)...).ok(t)
+		assert.Contains(t, r.stdout, "proj")
+		assert.Contains(t, r.stdout, "true", "QUEUED column")
+		assert.Contains(t, r.stderr, "continue in the background")
+		assert.Contains(t, r.stderr, "ermite mirror status")
+	}
+	close(p.release)
+	h.forge.Mirrors.Wait(h.ctx)
 }

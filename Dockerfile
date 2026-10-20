@@ -26,9 +26,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -o /out/ermite ./cmd/ermite
 
 FROM alpine:3.24
-# git-daemon provides git-http-backend on alpine. tini runs as PID 1: it forwards signals
-# to ermite and reaps the git processes that detach from pushes (auto maintenance).
-RUN apk add --no-cache git git-daemon ca-certificates tini \
+# git-daemon provides git-http-backend on alpine. openssh-client lets push mirrors reach
+# their SSH remotes. tini runs as PID 1: it forwards signals to ermite and reaps the git
+# processes that detach from pushes (auto maintenance).
+RUN apk add --no-cache git git-daemon openssh-client ca-certificates tini \
  && adduser -D -u 10001 -h /home/ermite ermite \
  && mkdir /data \
  && chown ermite:ermite /data
