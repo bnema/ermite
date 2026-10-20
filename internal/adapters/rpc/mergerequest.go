@@ -4,7 +4,6 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -20,14 +19,32 @@ type mergeRequestService struct {
 	mrs ports.MergeRequestService
 }
 
-// EnableAutoMerge is not wired yet.
-func (s *mergeRequestService) EnableAutoMerge(context.Context, *connect.Request[pb.EnableAutoMergeRequest]) (*connect.Response[pb.EnableAutoMergeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auto-merge is not implemented yet"))
+func (s *mergeRequestService) EnableAutoMerge(ctx context.Context, req *connect.Request[pb.EnableAutoMergeRequest]) (*connect.Response[pb.EnableAutoMergeResponse], error) {
+	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	mode, err := mergeModeFromPB(req.Msg.GetMode())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	mr, err := s.mrs.EnableAutoMerge(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.EnableAutoMergeParams{Mode: mode})
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.EnableAutoMergeResponse{MergeRequest: mergeRequestToPB(mr)}), nil
 }
 
-// CancelAutoMerge is not wired yet.
-func (s *mergeRequestService) CancelAutoMerge(context.Context, *connect.Request[pb.CancelAutoMergeRequest]) (*connect.Response[pb.CancelAutoMergeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auto-merge is not implemented yet"))
+func (s *mergeRequestService) CancelAutoMerge(ctx context.Context, req *connect.Request[pb.CancelAutoMergeRequest]) (*connect.Response[pb.CancelAutoMergeResponse], error) {
+	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	mr, err := s.mrs.CancelAutoMerge(ctx, caller(ctx), name, req.Msg.GetNumber())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.CancelAutoMergeResponse{MergeRequest: mergeRequestToPB(mr)}), nil
 }
 
 func (s *mergeRequestService) EditComment(ctx context.Context, req *connect.Request[pb.EditCommentRequest]) (*connect.Response[pb.EditCommentResponse], error) {
@@ -144,6 +161,13 @@ func mergeRequestToPB(mr domain.MergeRequest) *pb.MergeRequest {
 		HeadId:         mr.HeadID.String(),
 		MergedCommitId: mr.MergedCommitID.String(),
 		MergeMode:      mergeModeToPB(mr.MergeMode),
+		AutoMerged:     mr.AutoMerged,
+	}
+	if am := mr.AutoMerge; am != nil {
+		out.AutoMerge = &pb.AutoMerge{
+			Mode: mergeModeToPB(am.Mode), HeadId: am.HeadID.String(),
+			EnabledBy: am.EnablerLabel, EnabledAt: timestamp(am.EnabledAt),
+		}
 	}
 	if mr.IsOpen() {
 		out.Mergeability = &pb.Mergeability{State: pb.MergeabilityState_MERGEABILITY_STATE_CHECKING}

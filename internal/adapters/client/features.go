@@ -57,11 +57,15 @@ const (
 	// FeatureMergeability is MergeRequest.mergeability and the
 	// merge_request_mergeability event.
 	FeatureMergeability = "merge_requests.mergeability"
+	// FeatureAutoMerge is MergeRequestService.EnableAutoMerge and
+	// CancelAutoMerge, RepoSettings.allow_auto_merge and the auto-merge events
+	// (`ermite mr merge --auto`).
+	FeatureAutoMerge = "merge_requests.auto_merge"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures}
+	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

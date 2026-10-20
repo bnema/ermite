@@ -3,6 +3,7 @@
 package rpc
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -121,4 +122,81 @@ func TestNoteVerdictsDetailAndScope(t *testing.T) {
 	m.EXPECT().AddComment(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.AddCommentParams{Verdict: domain.VerdictApprove}).Return(domain.Comment{}, domain.ErrForbidden).Once()
 	_, err = (&mergeRequestService{m}).AddComment(ownerCtx(), connect.NewRequest(&pb.AddCommentRequest{Repo: "demo", Number: 1, Verdict: pb.Verdict_VERDICT_APPROVE}))
 	requireCode(t, connect.CodePermissionDenied, err)
+}
+
+func TestAutoMergeRPCCodesAndFields(t *testing.T) {
+	now := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	head, err := domain.ParseObjectID(strings.Repeat("a", 40))
+	require.NoError(t, err)
+	armed := domain.MergeRequest{
+		Repo: mustRepoName(t, "demo"), Number: 1, State: domain.MRStateOpen, Source: "feat", Target: "main", HeadID: head,
+		AutoMerge: &domain.AutoMerge{Mode: domain.MergeModeSquash, HeadID: head, EnablerLabel: "owner", EnabledAt: now},
+	}
+	idle := armed
+	idle.AutoMerge = nil
+
+	pbArmed := mergeRequestToPB(armed)
+	require.NotNil(t, pbArmed.GetAutoMerge())
+	assert.Equal(t, pb.MergeMode_MERGE_MODE_SQUASH, pbArmed.GetAutoMerge().GetMode())
+	assert.Equal(t, head.String(), pbArmed.GetAutoMerge().GetHeadId())
+	assert.Equal(t, "owner", pbArmed.GetAutoMerge().GetEnabledBy())
+	assert.Equal(t, now, pbArmed.GetAutoMerge().GetEnabledAt().AsTime())
+	assert.False(t, pbArmed.GetAutoMerged())
+	assert.Nil(t, mergeRequestToPB(idle).GetAutoMerge())
+	done := idle
+	done.State, done.AutoMerged = domain.MRStateMerged, true
+	assert.True(t, mergeRequestToPB(done).GetAutoMerged())
+
+	// Success: the mode and the request reach the service, the fields come back.
+	m := mocks.NewMergeRequestService(t)
+	m.EXPECT().EnableAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash}).Return(armed, nil).Once()
+	res, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode_MERGE_MODE_SQUASH}))
+	require.NoError(t, err)
+	assert.Equal(t, pbArmed, res.Msg.GetMergeRequest())
+	m.EXPECT().CancelAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1)).Return(idle, nil).Once()
+	cres, err := (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), connect.NewRequest(&pb.CancelAutoMergeRequest{Repo: "demo", Number: 1}))
+	require.NoError(t, err)
+	assert.Nil(t, cres.Msg.GetMergeRequest().GetAutoMerge())
+
+	// Bad input never reaches the service.
+	_, err = (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode(99)}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+	_, err = (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), connect.NewRequest(&pb.CancelAutoMergeRequest{Repo: "", Number: 1}))
+	requireCode(t, connect.CodeInvalidArgument, err)
+
+	// Domain errors map like the other merge request calls.
+	for _, tc := range []struct {
+		err  error
+		code connect.Code
+	}{
+		{domain.ErrPreconditionFailed, connect.CodeFailedPrecondition},
+		{domain.ErrForbidden, connect.CodePermissionDenied},
+		{domain.ErrNotFound, connect.CodeNotFound},
+	} {
+		m := mocks.NewMergeRequestService(t)
+		m.EXPECT().EnableAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), mock.Anything).Return(domain.MergeRequest{}, tc.err).Once()
+		_, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1}))
+		requireCode(t, tc.code, err)
+		m.EXPECT().CancelAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1)).Return(domain.MergeRequest{}, tc.err).Once()
+		_, err = (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), connect.NewRequest(&pb.CancelAutoMergeRequest{Repo: "demo", Number: 1}))
+		requireCode(t, tc.code, err)
+	}
+}
+
+func TestAutoMergeWatchEventsAndSettingsToPB(t *testing.T) {
+	armed := domain.MergeRequest{Repo: mustRepoName(t, "demo"), Number: 1, State: domain.MRStateOpen,
+		AutoMerge: &domain.AutoMerge{Mode: domain.MergeModeMerge, EnablerLabel: "owner"}}
+	got := watchEventToPB(ports.WatchEvent{ID: "1", Event: domain.MergeRequestAutoMergeEnabled{MergeRequest: armed}})
+	require.NotNil(t, got.GetMergeRequestAutoMergeEnabled())
+	assert.Equal(t, pb.MergeMode_MERGE_MODE_MERGE_COMMIT, got.GetMergeRequestAutoMergeEnabled().GetMergeRequest().GetAutoMerge().GetMode())
+	got = watchEventToPB(ports.WatchEvent{ID: "2", Event: domain.MergeRequestAutoMergeCancelled{MergeRequest: armed, Reason: "the branch moved"}})
+	require.NotNil(t, got.GetMergeRequestAutoMergeCancelled())
+	assert.Equal(t, "the branch moved", got.GetMergeRequestAutoMergeCancelled().GetReason())
+	got = watchEventToPB(ports.WatchEvent{ID: "3", Event: domain.MergeRequestMerged{MergeRequest: armed, Auto: true}})
+	assert.True(t, got.GetMergeRequestMerged().GetAuto())
+	got = watchEventToPB(ports.WatchEvent{ID: "4", Event: domain.MergeRequestMerged{MergeRequest: armed}})
+	assert.False(t, got.GetMergeRequestMerged().GetAuto())
+
+	assert.True(t, settingsToPB(domain.RepoSettings{AllowAutoMerge: true}).GetAllowAutoMerge())
+	assert.False(t, settingsToPB(domain.RepoSettings{}).GetAllowAutoMerge())
 }

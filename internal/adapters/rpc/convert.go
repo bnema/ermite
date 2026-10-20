@@ -72,7 +72,7 @@ func repoToPB(v ports.RepoView) *pb.Repo {
 }
 
 func settingsToPB(s domain.RepoSettings) *pb.RepoSettings {
-	out := &pb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock, Issues: issuesModeToPB(s.Issues)}
+	out := &pb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock, AllowAutoMerge: s.AllowAutoMerge, Issues: issuesModeToPB(s.Issues)}
 	for _, m := range s.AllowedMergeModes {
 		out.AllowedMergeModes = append(out.AllowedMergeModes, mergeModeToPB(m))
 	}
@@ -483,7 +483,13 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 		out.Kind = &pb.Event_MergeRequestOpened{MergeRequestOpened: &pb.MergeRequestOpened{MergeRequest: mergeRequestToPB(ev.MergeRequest)}}
 	case domain.MergeRequestMerged:
 		out.Time = timestamp(ev.At)
-		out.Kind = &pb.Event_MergeRequestMerged{MergeRequestMerged: &pb.MergeRequestMerged{MergeRequest: mergeRequestToPB(ev.MergeRequest)}}
+		out.Kind = &pb.Event_MergeRequestMerged{MergeRequestMerged: &pb.MergeRequestMerged{MergeRequest: mergeRequestToPB(ev.MergeRequest), Auto: ev.Auto}}
+	case domain.MergeRequestAutoMergeEnabled:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MergeRequestAutoMergeEnabled{MergeRequestAutoMergeEnabled: &pb.MergeRequestAutoMergeEnabled{MergeRequest: mergeRequestToPB(ev.MergeRequest)}}
+	case domain.MergeRequestAutoMergeCancelled:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MergeRequestAutoMergeCancelled{MergeRequestAutoMergeCancelled: &pb.MergeRequestAutoMergeCancelled{MergeRequest: mergeRequestToPB(ev.MergeRequest), Reason: ev.Reason}}
 	case domain.MergeRequestClosed:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_MergeRequestClosed{MergeRequestClosed: &pb.MergeRequestClosed{MergeRequest: mergeRequestToPB(ev.MergeRequest)}}
