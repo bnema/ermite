@@ -45,11 +45,17 @@ jobs:
 	require.NoError(t, err)
 	require.NotNil(t, enabled.AutoMerge)
 	assert.Equal(t, head, enabled.AutoMerge.HeadID.String())
-	select {
-	case ev := <-events:
-		require.IsType(t, domain.MergeRequestAutoMergeEnabled{}, ev)
-	case <-time.After(5 * time.Second):
-		t.Fatal("no enabled event")
+	enabledDeadline := time.After(5 * time.Second)
+waitEnabled:
+	for {
+		select {
+		case ev := <-events:
+			if enabled, ok := ev.(domain.MergeRequestAutoMergeEnabled); ok && enabled.MergeRequest.Repo == repo && enabled.MergeRequest.Number == number {
+				break waitEnabled
+			}
+		case <-enabledDeadline:
+			t.Fatal("no enabled event")
+		}
 	}
 	c.finish(runner)
 	// A successful push check alone must not merge while the pull run is queued.

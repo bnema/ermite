@@ -21,7 +21,7 @@ func TestSettledCountsQueuedPushesAndPullEvents(t *testing.T) {
 	trigger.EXPECT().OnRepoChanged(mock.Anything, repo).Return().Times(3)
 	u.store.EXPECT().ListRunners(mock.Anything).Return(nil, nil).Once()
 	ctx := context.Background()
-	settled := func(n int64) bool { return u.ci.Settled(ctx, repo, n, "feat", domain.ObjectID{}) }
+	settled := func(n int64) bool { return u.ci.Settled(ctx, repo, n) }
 	assert.True(t, settled(1))
 	u.ci.QueuePush(ctx, repo)
 	u.ci.QueuePush(ctx, repo) // dropped: queue capacity is one
@@ -55,10 +55,10 @@ func TestSettledWaitsForPushDiscoveryAndReleasesOnError(t *testing.T) {
 	}()
 	<-entered
 	u.ci.PlanQueuedPush()
-	assert.False(t, u.ci.Settled(context.Background(), repo, 1, "feat", domain.ObjectID{}))
+	assert.False(t, u.ci.Settled(context.Background(), repo, 1))
 	close(release)
 	<-done
-	assert.True(t, u.ci.Settled(context.Background(), repo, 1, "feat", domain.ObjectID{}))
+	assert.True(t, u.ci.Settled(context.Background(), repo, 1))
 }
 
 func TestSettledReleasesQueuedPushOnShutdown(t *testing.T) {
@@ -66,7 +66,7 @@ func TestSettledReleasesQueuedPushOnShutdown(t *testing.T) {
 	repo := name(t, "proj")
 	u.ci.QueuePush(context.Background(), repo)
 	u.ci.Close(context.Background())
-	assert.True(t, u.ci.Settled(context.Background(), repo, 1, "feat", domain.ObjectID{}))
+	assert.True(t, u.ci.Settled(context.Background(), repo, 1))
 	u.ci.QueuePush(context.Background(), repo)
-	assert.True(t, u.ci.Settled(context.Background(), repo, 1, "feat", domain.ObjectID{}))
+	assert.True(t, u.ci.Settled(context.Background(), repo, 1))
 }
