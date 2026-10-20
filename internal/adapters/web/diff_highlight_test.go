@@ -162,7 +162,7 @@ func TestHighlightSkips(t *testing.T) {
 	binary := hunkOf("a.go", "+package a")
 	binary.Binary = true
 	truncated := hunkOf("a.go", "+package a")
-	truncated.Truncated = true
+	truncated.Omitted = domain.OmitLarge
 	for name, fd := range map[string]domain.FileDiff{
 		"no extension":   hunkOf("LICENSE.unknownext", "+package a", "+func f() {}"),
 		"plain text":     hunkOf("notes.txt", "+package a"),

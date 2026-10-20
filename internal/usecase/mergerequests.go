@@ -771,7 +771,7 @@ func (m *MergeRequests) checkLine(ctx context.Context, mr domain.MergeRequest, p
 	if err != nil {
 		return err
 	}
-	idx := slices.IndexFunc(diff.Files, func(f domain.FileDiff) bool { return diffFileName(f) == params.Path })
+	idx := slices.IndexFunc(diff.Files, func(f domain.FileDiff) bool { return f.CommentPath() == params.Path })
 	if idx >= 0 {
 		one := domain.DefaultDiffLimits()
 		one.MaxFiles, one.From, one.To = 0, idx, idx+1
@@ -786,14 +786,6 @@ func (m *MergeRequests) checkLine(ctx context.Context, mr domain.MergeRequest, p
 		v.Add("start_line", "is not a line of the diff")
 	}
 	return v.Err()
-}
-
-// diffFileName is the path a comment designates for f, as Diff.HasLine reads it.
-func diffFileName(f domain.FileDiff) string {
-	if f.Status == domain.FileDeleted {
-		return f.OldPath
-	}
-	return f.NewPath
 }
 
 // ResolveComment marks a comment resolved or unresolved. The principal needs

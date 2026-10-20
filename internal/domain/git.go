@@ -505,11 +505,37 @@ type FileDiff struct {
 	Additions, Deletions int
 	// Similarity is a percentage for a renamed or copied file, 0 otherwise.
 	Similarity int
-	// Truncated means the file exceeded a diff limit: Hunks is empty although
-	// the file changed. Additions and Deletions stay accurate. A file outside
-	// the DiffLimits window has no Hunks and is not Truncated.
-	Truncated bool
-	Hunks     []Hunk
+	// Omitted tells why the hunks were not kept: Hunks is empty although the
+	// file changed; Additions and Deletions stay accurate. A file outside the
+	// window is OmitNone with no Hunks.
+	Omitted FileOmission
+	Hunks   []Hunk
+}
+
+// CommentPath is the path a comment designates for f, as Diff.HasLine reads it:
+// the old path of a deleted file, the new path otherwise.
+func (f FileDiff) CommentPath() string {
+	if f.Status == FileDeleted {
+		return f.OldPath
+	}
+	return f.NewPath
+}
+
+// FileOmission tells why a changed file has no hunks.
+type FileOmission uint8
+
+// File omissions.
+const (
+	OmitNone        FileOmission = iota
+	OmitGenerated                // SkipGenerated and IsGeneratedPath: hunks not read
+	OmitLarge                    // changed lines > MaxFileLines
+	OmitBudget                   // did not fit in the remaining MaxTotalLines
+	OmitUnavailable              // retained text would exceed MaxTotalBytes
+)
+
+// Collapsed reports a file the web view folds and can load on its own.
+func (o FileOmission) Collapsed() bool {
+	return o == OmitGenerated || o == OmitLarge || o == OmitBudget
 }
 
 // Diff is the structured difference a commit introduces against its first
@@ -518,9 +544,8 @@ type Diff struct {
 	// Files are ordered as Git reports them (by path). Files past
 	// DiffLimits.MaxFiles (when it is not 0) are left out.
 	Files []FileDiff
-	// Truncated is true when files were left out or a listed file is truncated.
-	// Files listed without hunks because they are outside the DiffLimits window
-	// do not make it true.
+	// Truncated is true when files past DiffLimits.MaxFiles were left out. It
+	// says nothing of the listed files: see FileDiff.Omitted.
 	Truncated bool
 }
 
@@ -537,34 +562,44 @@ type CommitDetail struct {
 	Diff   Diff
 }
 
-// DiffLimits bound the size of a Diff. Line limits count additions plus deletions, not context.
+// DiffLimits bound the size of a Diff. Line limits count additions plus
+// deletions, not context. A file that does not fit is listed without hunks and
+// with an Omitted reason.
 type DiffLimits struct {
 	// MaxFiles is the number of files kept; 0 means no limit on the number of
 	// files (every changed file is listed).
 	MaxFiles int
 	// MaxFileLines is the most changed lines one file may have; a file over it is
-	// truncated.
+	// OmitLarge. 0 means no limit.
 	MaxFileLines int
-	// MaxTotalLines is the most changed lines of all the files. A file is truncated
-	// when it does not fit in what remains; a smaller one after it may still
-	// fit.
+	// MaxTotalLines is the most changed lines of all the files. A file is
+	// OmitBudget when it does not fit in what remains; a smaller one after it
+	// may still fit. 0 means no limit.
 	MaxTotalLines int
 	// MaxTotalBytes is the most text, in bytes, of all the lines, including context. It bounds
-	// the memory of a diff whose lines are very long; files are truncated
-	// like for MaxTotalLines.
+	// the memory of a diff whose lines are very long; a file whose
+	// text does not fit is OmitUnavailable.
 	MaxTotalBytes int
 	// From and To select the files whose hunks are read: those with an index in
 	// [From, To), counted from 0 in the order of Diff.Files. The other files
 	// are listed (paths, status, modes, ids, Binary, Additions, Deletions,
-	// Similarity) without hunks; they are not Truncated and use none of
+	// Similarity) without hunks; they are OmitNone and use none of
 	// MaxTotalLines and MaxTotalBytes. To == 0 means no end, so the zero values
 	// select every file. MaxFileLines applies to each file of the window.
 	From, To int
+	// SkipGenerated omits the files of the window that IsGeneratedPath
+	// recognizes (OmitGenerated), without reading their hunks.
+	SkipGenerated bool
+}
+
+// OneFileDiffLimits reads the hunks of file i only, with no line cap and MaxTotalBytes as the sole guard.
+func OneFileDiffLimits(i int) DiffLimits {
+	return DiffLimits{From: i, To: i + 1, MaxTotalBytes: DefaultDiffLimits().MaxTotalBytes}
 }
 
 // DefaultDiffLimits are the limits of the API contract: 300 files, 2,000
 // changed lines per file, 20,000 changed lines in total, plus 8 MiB of text
-// including context.
+// including context. Generated files are not skipped.
 func DefaultDiffLimits() DiffLimits {
 	return DiffLimits{MaxFiles: 300, MaxFileLines: 2000, MaxTotalLines: 20000, MaxTotalBytes: 8 << 20}
 }

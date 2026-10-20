@@ -63,7 +63,7 @@ func TestGetMergeRequestFilesWindow(t *testing.T) {
 		for i, f := range d.Diff.Files {
 			assert.Equal(t, fmt.Sprintf("m/f%03d", i), f.NewPath)
 			assert.Equal(t, 1, f.Additions)
-			assert.False(t, f.Truncated)
+			assert.Equal(t, domain.OmitNone, f.Omitted)
 			if i >= 305 && i < 310 {
 				require.Len(t, f.Hunks, 1, f.NewPath)
 				assert.Equal(t, fmt.Sprintf("line %d", i), f.Hunks[0].Lines[0].Text)

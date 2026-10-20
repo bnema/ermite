@@ -212,7 +212,7 @@ func escapeURLPath(p string) string {
 // (hunk headers and lines, no file headers). Absent for a binary file, a pure
 // rename and a file too large for the diff limits, as on GitHub.
 func filePatch(f domain.FileDiff) (string, bool) {
-	if f.Binary || f.Truncated || len(f.Hunks) == 0 {
+	if f.Binary || f.Omitted != domain.OmitNone || len(f.Hunks) == 0 {
 		return "", false
 	}
 	var b strings.Builder

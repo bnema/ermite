@@ -398,3 +398,21 @@ func TestMergeRequestToPBMergeabilityOnlyWhileOpen(t *testing.T) {
 		assert.Nil(t, got.GetMergeRequestClosed().GetMergeRequest().GetMergeability())
 	}
 }
+
+func TestFileDiffOmissionMapping(t *testing.T) {
+	for o, want := range map[domain.FileOmission]pb.FileOmission{
+		domain.OmitNone:        pb.FileOmission_FILE_OMISSION_UNSPECIFIED,
+		domain.OmitGenerated:   pb.FileOmission_FILE_OMISSION_GENERATED,
+		domain.OmitLarge:       pb.FileOmission_FILE_OMISSION_LARGE,
+		domain.OmitBudget:      pb.FileOmission_FILE_OMISSION_BUDGET,
+		domain.OmitUnavailable: pb.FileOmission_FILE_OMISSION_UNAVAILABLE,
+	} {
+		f := fileDiffToPB(domain.FileDiff{NewPath: "a", Omitted: o})
+		assert.Equal(t, want, f.GetOmitted())
+		assert.Equal(t, o != domain.OmitNone, f.GetTruncated())
+		d := diffToPB(domain.Diff{Files: []domain.FileDiff{{Omitted: o}}})
+		assert.Equal(t, o != domain.OmitNone, d.GetTruncated())
+	}
+	assert.True(t, diffToPB(domain.Diff{Truncated: true}).GetTruncated())
+	assert.False(t, diffToPB(domain.Diff{Files: []domain.FileDiff{{}}}).GetTruncated())
+}

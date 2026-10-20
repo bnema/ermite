@@ -94,21 +94,32 @@ func TestDiffBudgetWindow(t *testing.T) {
 	}
 }
 
-func TestDiffBudgetHunks(t *testing.T) {
+func TestDiffBudgetAdmit(t *testing.T) {
 	for _, tt := range []struct {
-		name            string
-		binary          bool
-		n, lines, bytes int
-		want            bool
+		name     string
+		limits   DiffLimits
+		binary   bool
+		path     string
+		n        int
+		wantRead bool
+		wantWhy  FileOmission
 	}{
-		{"fits", false, 3, 3, 1, true}, {"binary", true, 3, 3, 1, false},
-		{"no changes", false, 0, 3, 1, false}, {"file limit", false, 4, 5, 1, false},
-		{"total lines", false, 3, 2, 1, false}, {"no bytes", false, 1, 3, 0, false},
+		{"fits", DiffLimits{MaxFileLines: 3, MaxTotalLines: 3, MaxTotalBytes: 1}, false, "a.go", 3, true, OmitNone},
+		{"binary", DiffLimits{MaxTotalBytes: 1}, true, "a.bin", 3, false, OmitNone},
+		{"no changes", DiffLimits{MaxTotalBytes: 1}, false, "a.go", 0, false, OmitNone},
+		{"file limit", DiffLimits{MaxFileLines: 3, MaxTotalLines: 5, MaxTotalBytes: 1}, false, "a.go", 4, false, OmitLarge},
+		{"total lines", DiffLimits{MaxFileLines: 3, MaxTotalLines: 2, MaxTotalBytes: 1}, false, "a.go", 3, false, OmitBudget},
+		{"no bytes", DiffLimits{MaxFileLines: 3, MaxTotalLines: 3}, false, "a.go", 1, false, OmitBudget},
+		{"generated", DiffLimits{SkipGenerated: true, MaxTotalBytes: 1}, false, "go.sum", 1, false, OmitGenerated},
+		{"generated not skipped", DiffLimits{MaxTotalBytes: 1}, false, "go.sum", 1, true, OmitNone},
+		{"generated before large", DiffLimits{SkipGenerated: true, MaxFileLines: 1, MaxTotalBytes: 1}, false, "go.sum", 9, false, OmitGenerated},
+		{"unlimited lines", DiffLimits{MaxTotalBytes: 1}, false, "a.go", 1 << 20, true, OmitNone},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			b := NewDiffBudget(DiffLimits{MaxFileLines: 3, MaxTotalLines: tt.lines, MaxTotalBytes: tt.bytes})
-			if got := b.WantsHunks(tt.binary, tt.n); got != tt.want {
-				t.Fatalf("got %v", got)
+			b := NewDiffBudget(tt.limits)
+			read, why := b.Admit(tt.binary, tt.path, tt.n)
+			if read != tt.wantRead || why != tt.wantWhy {
+				t.Fatalf("got %v,%v", read, why)
 			}
 		})
 	}
@@ -118,42 +129,83 @@ func TestDiffBudgetCharge(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
 		bytes int
-		fits  bool
-	}{{"exact", 3, true}, {"over", 4, false}} {
+		want  FileOmission
+	}{{"exact", 3, OmitNone}, {"over", 4, OmitUnavailable}} {
 		t.Run(tt.name, func(t *testing.T) {
 			b := NewDiffBudget(DiffLimits{MaxFileLines: 2, MaxTotalLines: 1, MaxTotalBytes: 3})
 			before := b
 			if b.FileLines() != 1 {
 				t.Fatal("wrong file limit")
 			}
-			if b.ChargeLine(tt.bytes, true) != tt.fits {
-				t.Fatal("wrong charge result")
+			if got := b.ChargeLine(tt.bytes, true); got != tt.want {
+				t.Fatalf("wrong charge result %v", got)
 			}
-			if b.ChargeLine(0, true) {
+			if b.ChargeLine(0, true) == OmitNone {
 				t.Fatal("line budget exceeded")
 			}
 			b = before
-			if !b.WantsHunks(false, 1) {
+			if read, _ := b.Admit(false, "a", 1); !read {
 				t.Fatal("discarded file consumed budget")
 			}
 		})
 	}
 }
 
+func TestDiffBudgetChargeReasons(t *testing.T) {
+	b := NewDiffBudget(DiffLimits{MaxTotalLines: 1, MaxTotalBytes: 3})
+	if b.ChargeLine(2, false) != OmitNone || b.FileLines() != 1 {
+		t.Fatal("context consumes bytes only")
+	}
+	if b.ChargeLine(1, true) != OmitNone || b.FileLines() != 0 {
+		t.Fatal("first changed line fits")
+	}
+	if got := b.ChargeLine(0, true); got != OmitBudget {
+		t.Fatalf("lines ran out: %v", got)
+	}
+	b = NewDiffBudget(DiffLimits{MaxTotalLines: 9, MaxTotalBytes: 1})
+	if got := b.ChargeLine(2, false); got != OmitUnavailable {
+		t.Fatalf("bytes ran out: %v", got)
+	}
+	free := NewDiffBudget(DiffLimits{MaxTotalBytes: 5})
+	for range 100 {
+		if free.ChargeLine(0, true) != OmitNone {
+			t.Fatal("0 means no line limit")
+		}
+	}
+	if free.FileLines() < 1<<30 {
+		t.Fatal("unlimited FileLines")
+	}
+}
+
+func TestFileOmissionCollapsed(t *testing.T) {
+	for o, want := range map[FileOmission]bool{OmitNone: false, OmitGenerated: true, OmitLarge: true, OmitBudget: true, OmitUnavailable: false} {
+		if o.Collapsed() != want {
+			t.Errorf("%d: got %v", o, !want)
+		}
+	}
+}
+
+func TestOneFileDiffLimits(t *testing.T) {
+	l := OneFileDiffLimits(3)
+	if l.From != 3 || l.To != 4 || l.MaxFileLines != 0 || l.MaxTotalLines != 0 || l.MaxFiles != 0 || l.MaxTotalBytes != DefaultDiffLimits().MaxTotalBytes {
+		t.Fatalf("got %+v", l)
+	}
+}
+
 func TestDiffBudgetContext(t *testing.T) {
 	b := NewDiffBudget(DiffLimits{MaxFileLines: 2, MaxTotalLines: 2, MaxTotalBytes: 6})
-	if !b.ChargeLine(2, false) || b.FileLines() != 2 {
+	if b.ChargeLine(2, false) != OmitNone || b.FileLines() != 2 {
 		t.Fatal("context consumed changed-line budget")
 	}
 	first := b.ChargeLine(1, true)
 	second := b.ChargeLine(1, true)
-	if !first || !second || b.FileLines() != 0 {
+	if first != OmitNone || second != OmitNone || b.FileLines() != 0 {
 		t.Fatal("additions and deletions must consume changed-line budget")
 	}
-	if !b.ChargeLine(2, false) {
+	if b.ChargeLine(2, false) != OmitNone {
 		t.Fatal("context at the byte boundary must fit even without changed lines left")
 	}
-	if b.ChargeLine(1, false) {
+	if b.ChargeLine(1, false) != OmitUnavailable {
 		t.Fatal("context must not exceed the byte budget")
 	}
 }

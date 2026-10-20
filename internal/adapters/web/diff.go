@@ -163,7 +163,7 @@ const diffContextLines = 3
 // them: an added or a deleted file shows every line already.
 func contextGaps(out []DiffFile, files []domain.FileDiff, base string) {
 	for i, f := range files {
-		if i >= len(out) || f.Binary || f.Truncated || len(f.Hunks) == 0 || len(out[i].Hunks) != len(f.Hunks) {
+		if i >= len(out) || f.Binary || f.Omitted != domain.OmitNone || len(f.Hunks) == 0 || len(out[i].Hunks) != len(f.Hunks) {
 			continue
 		}
 		switch f.Status {
@@ -371,7 +371,7 @@ func diffFiles(files []domain.FileDiff) []DiffFile {
 			Add: f.Additions, Del: f.Deletions, Bin: f.Binary,
 			// A file that is shown in full opens; a file with nothing to read
 			// (binary, truncated) stays closed under its note.
-			Open: len(f.Hunks) > 0 && !f.Truncated,
+			Open: len(f.Hunks) > 0 && f.Omitted == domain.OmitNone,
 		}
 		df.Key = f.NewPath
 		switch f.Status {
@@ -406,7 +406,7 @@ func fileNote(f domain.FileDiff) string {
 	switch {
 	case f.Binary:
 		parts = append(parts, "binary file: no text diff")
-	case f.Truncated:
+	case f.Omitted != domain.OmitNone:
 		parts = append(parts, fmt.Sprintf("diff too large to show (%d lines changed): collapsed", f.Additions+f.Deletions))
 	}
 	if f.OldMode != 0 && f.NewMode != 0 && f.OldMode != f.NewMode {

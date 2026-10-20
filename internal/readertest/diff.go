@@ -36,7 +36,7 @@ func DiffChangedLineLimits(t *testing.T, mk Maker) {
 	require.NoError(t, err)
 	require.Len(t, d.Diff.Files, 1)
 	file := d.Diff.Files[0]
-	require.False(t, file.Truncated)
+	require.Equal(t, domain.OmitNone, file.Omitted)
 	assert.False(t, d.Diff.Truncated)
 	require.Len(t, file.Hunks, hunks)
 	var changed, patchLines, textBytes, changedBytes int
@@ -51,6 +51,10 @@ func DiffChangedLineLimits(t *testing.T, mk Maker) {
 		}
 	}
 	assert.Equal(t, hunks*2, changed)
+	// Every hunk is read with no line limit too.
+	free, err := g.GetCommit(context.Background(), f.Name, domain.Revision{}, domain.DiffLimits{MaxTotalBytes: 1 << 20})
+	require.NoError(t, err)
+	require.Len(t, free.Diff.Files[0].Hunks, hunks)
 	assert.Greater(t, patchLines, limits.MaxFileLines)
 	assert.Equal(t, hunks, file.Additions)
 	assert.Equal(t, hunks, file.Deletions)
@@ -59,12 +63,87 @@ func DiffChangedLineLimits(t *testing.T, mk Maker) {
 	limits.MaxTotalBytes = textBytes
 	d, err = g.GetCommit(context.Background(), f.Name, domain.Revision{}, limits)
 	require.NoError(t, err)
-	assert.False(t, d.Diff.Files[0].Truncated)
+	assert.Equal(t, domain.OmitNone, d.Diff.Files[0].Omitted)
 	limits.MaxTotalBytes--
 	require.Greater(t, limits.MaxTotalBytes, changedBytes)
 	d, err = g.GetCommit(context.Background(), f.Name, domain.Revision{}, limits)
 	require.NoError(t, err)
-	assert.True(t, d.Diff.Truncated)
-	assert.True(t, d.Diff.Files[0].Truncated)
+	assert.False(t, d.Diff.Truncated, "only MaxFiles sets Diff.Truncated")
+	assert.Equal(t, domain.OmitUnavailable, d.Diff.Files[0].Omitted)
 	assert.Empty(t, d.Diff.Files[0].Hunks)
+}
+
+// DiffOmissions checks the omission reasons: generated files skipped without
+// reading their hunks, one file read without a line cap, and the MaxFiles
+// overflow being the only thing that sets Diff.Truncated.
+func DiffOmissions(t *testing.T, mk Maker) {
+	g, data := mk(t)
+	ctx := context.Background()
+	f := NewFixture(t, data, "diff-omissions")
+	f.Write("base.txt", "x\n").Commit("base")
+	f.Write("a.txt", "small\n")
+	// The generated file (515 bytes) would overflow the 300-byte budget below
+	// if it were read: OmitGenerated, not OmitUnavailable, proves its hunks
+	// are not read.
+	f.Write("go.sum", strings.Repeat("h1:"+strings.Repeat("z", 100)+"\n", 5))
+	f.Lines("z-big.txt", "line", 2500)
+	f.Commit("change")
+
+	limits := domain.DiffLimits{MaxTotalBytes: 1 << 20, MaxFileLines: 2000, SkipGenerated: true}
+	limits.MaxTotalBytes = 300
+	d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
+	require.NoError(t, err)
+	require.Len(t, d.Diff.Files, 3)
+	byPath := map[string]domain.FileDiff{}
+	for _, file := range d.Diff.Files {
+		byPath[file.NewPath] = file
+	}
+	assert.Equal(t, domain.OmitNone, byPath["a.txt"].Omitted)
+	assert.Len(t, byPath["a.txt"].Hunks, 1)
+	assert.Equal(t, domain.OmitGenerated, byPath["go.sum"].Omitted)
+	assert.Empty(t, byPath["go.sum"].Hunks)
+	assert.Equal(t, 5, byPath["go.sum"].Additions)
+	assert.Equal(t, domain.OmitLarge, byPath["z-big.txt"].Omitted)
+	assert.Empty(t, byPath["z-big.txt"].Hunks)
+	assert.False(t, d.Diff.Truncated)
+
+	limits.SkipGenerated = false
+	d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
+	require.NoError(t, err)
+	for _, file := range d.Diff.Files {
+		if file.NewPath == "go.sum" {
+			assert.Equal(t, domain.OmitUnavailable, file.Omitted, "read, it overflows the bytes")
+			assert.Empty(t, file.Hunks)
+		}
+	}
+
+	// OneFileDiffLimits reads a file over 2,000 changed lines, and only it.
+	idx := -1
+	for i, file := range d.Diff.Files {
+		if file.NewPath == "z-big.txt" {
+			idx = i
+		}
+	}
+	require.GreaterOrEqual(t, idx, 0)
+	d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, domain.OneFileDiffLimits(idx))
+	require.NoError(t, err)
+	for i, file := range d.Diff.Files {
+		assert.Equal(t, domain.OmitNone, file.Omitted)
+		if i == idx {
+			require.Len(t, file.Hunks, 1)
+			assert.Len(t, file.Hunks[0].Lines, 2500)
+		} else {
+			assert.Empty(t, file.Hunks)
+		}
+	}
+	assert.False(t, d.Diff.Truncated)
+
+	// MaxFiles alone sets Diff.Truncated.
+	d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, domain.DiffLimits{MaxFiles: 2, MaxTotalBytes: 1 << 20})
+	require.NoError(t, err)
+	assert.Len(t, d.Diff.Files, 2)
+	assert.True(t, d.Diff.Truncated)
+	for _, file := range d.Diff.Files {
+		assert.Equal(t, domain.OmitNone, file.Omitted)
+	}
 }

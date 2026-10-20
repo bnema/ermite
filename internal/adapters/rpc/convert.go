@@ -394,12 +394,27 @@ func fileDiffToPB(f domain.FileDiff) *pb.FileDiff {
 		Additions:  int32(f.Additions),
 		Deletions:  int32(f.Deletions),
 		Similarity: int32(f.Similarity),
-		Truncated:  f.Truncated,
+		Truncated:  f.Omitted != domain.OmitNone,
+		Omitted:    fileOmissionToPB(f.Omitted),
 	}
 	for _, h := range f.Hunks {
 		out.Hunks = append(out.Hunks, hunkToPB(h))
 	}
 	return out
+}
+
+func fileOmissionToPB(o domain.FileOmission) pb.FileOmission {
+	switch o {
+	case domain.OmitGenerated:
+		return pb.FileOmission_FILE_OMISSION_GENERATED
+	case domain.OmitLarge:
+		return pb.FileOmission_FILE_OMISSION_LARGE
+	case domain.OmitBudget:
+		return pb.FileOmission_FILE_OMISSION_BUDGET
+	case domain.OmitUnavailable:
+		return pb.FileOmission_FILE_OMISSION_UNAVAILABLE
+	}
+	return pb.FileOmission_FILE_OMISSION_UNSPECIFIED
 }
 
 func diffStatsToPB(s domain.DiffStats) *pb.DiffStats {
@@ -413,6 +428,7 @@ func diffStatsToPB(s domain.DiffStats) *pb.DiffStats {
 func diffToPB(d domain.Diff) *pb.Diff {
 	out := &pb.Diff{Truncated: d.Truncated}
 	for _, f := range d.Files {
+		out.Truncated = out.Truncated || f.Omitted != domain.OmitNone
 		out.Files = append(out.Files, fileDiffToPB(f))
 	}
 	return out

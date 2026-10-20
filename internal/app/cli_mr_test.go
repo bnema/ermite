@@ -563,3 +563,18 @@ func TestMRWebURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) { assert.Equal(t, tt.want, mrWebURL(tt.base, tt.repo, 42)) })
 	}
 }
+
+func TestJSONFileOmitted(t *testing.T) {
+	d := &ermite.GetMergeRequestResponse{MergeRequest: mrOne, Diff: &ermite.Diff{Files: []*ermite.FileDiff{
+		{NewPath: "a"},
+		{NewPath: "go.sum", Omitted: ermite.FileOmission_FILE_OMISSION_GENERATED, Truncated: true},
+		{NewPath: "b", Omitted: ermite.FileOmission_FILE_OMISSION_UNAVAILABLE, Truncated: true},
+	}}}
+	got := toJSONDetail(d, false, "https://git.example.org")
+	assert.Equal(t, []string{"", "generated", "unavailable"}, []string{got.Files[0].Omitted, got.Files[1].Omitted, got.Files[2].Omitted})
+	raw, err := json.Marshal(got.Files)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"omitted":"generated"`)
+	assert.Contains(t, string(raw), `"truncated":true`)
+	assert.Equal(t, 2, strings.Count(string(raw), `"omitted"`))
+}

@@ -177,7 +177,7 @@ func TestGetCommitFileMetadata(t *testing.T) {
 	assert.Equal(t, domain.FileModified, bin.Status)
 	assert.True(t, bin.Binary)
 	assert.Empty(t, bin.Hunks)
-	assert.False(t, bin.Truncated)
+	assert.Equal(t, domain.OmitNone, bin.Omitted)
 
 	mode := files["d/f>d/f"]
 	assert.Equal(t, domain.FileModified, mode.Status)
@@ -185,7 +185,7 @@ func TestGetCommitFileMetadata(t *testing.T) {
 	assert.Equal(t, uint32(0o100755), mode.NewMode)
 	assert.Empty(t, mode.Hunks)
 	assert.False(t, mode.Binary)
-	assert.False(t, mode.Truncated)
+	assert.Equal(t, domain.OmitNone, mode.Omitted)
 
 	del := files["README.md>"]
 	assert.Equal(t, domain.FileDeleted, del.Status)
@@ -315,15 +315,15 @@ func TestDiffLimits(t *testing.T) {
 		require.NoError(t, err)
 		exact, over, small := find(d.Diff, "exact"), find(d.Diff, "over"), find(d.Diff, "small")
 
-		assert.False(t, exact.Truncated)
+		assert.Equal(t, domain.OmitNone, exact.Omitted)
 		require.Len(t, exact.Hunks, 1)
 		assert.Len(t, exact.Hunks[0].Lines, 2000)
-		assert.True(t, over.Truncated)
+		assert.NotEqual(t, domain.OmitNone, over.Omitted)
 		assert.Empty(t, over.Hunks)
 		assert.Equal(t, 2001, over.Additions, "counts stay accurate")
-		assert.False(t, small.Truncated)
+		assert.Equal(t, domain.OmitNone, small.Omitted)
 		assert.Len(t, small.Hunks, 1)
-		assert.True(t, d.Diff.Truncated)
+		assert.False(t, d.Diff.Truncated)
 		assert.Equal(t, domain.DiffStats{FilesChanged: 3, Additions: 4004}, d.Stats)
 	})
 
@@ -346,13 +346,13 @@ func TestDiffLimits(t *testing.T) {
 		d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, defaults)
 		require.NoError(t, err)
 		big, tiny := find(d.Diff, "big"), find(d.Diff, "tiny")
-		assert.False(t, big.Truncated)
+		assert.Equal(t, domain.OmitNone, big.Omitted)
 		require.Len(t, big.Hunks, 1)
 		assert.Len(t, big.Hunks[0].Lines, 3000+429)
 		assert.False(t, d.Diff.Truncated)
 		assert.Equal(t, 429, big.Additions)
 		assert.Equal(t, 429, big.Deletions)
-		assert.False(t, tiny.Truncated, "the following file still fits the changed-line budget")
+		assert.Equal(t, domain.OmitNone, tiny.Omitted, "the following file still fits the changed-line budget")
 		assert.Equal(t, "x\n", strings.TrimPrefix(unified(tiny.Hunks), "@@ -0,0 +1 @@\n+"))
 		assert.Equal(t, id, d.Commit.ID.String())
 	})
@@ -378,13 +378,13 @@ func TestDiffLimits(t *testing.T) {
 		}
 		assert.LessOrEqual(t, total, 20000)
 		for i := range 10 {
-			assert.False(t, find(d.Diff, fmt.Sprintf("f%02d", i)).Truncated)
+			assert.Equal(t, domain.OmitNone, find(d.Diff, fmt.Sprintf("f%02d", i)).Omitted)
 		}
-		assert.True(t, find(d.Diff, "f10").Truncated, "1,900 lines do not fit in the 1,000 left")
-		assert.False(t, find(d.Diff, "g-small").Truncated)
-		assert.True(t, find(d.Diff, "h-big").Truncated)
-		assert.False(t, find(d.Diff, "i-small").Truncated)
-		assert.True(t, d.Diff.Truncated)
+		assert.NotEqual(t, domain.OmitNone, find(d.Diff, "f10").Omitted, "1,900 lines do not fit in the 1,000 left")
+		assert.Equal(t, domain.OmitNone, find(d.Diff, "g-small").Omitted)
+		assert.NotEqual(t, domain.OmitNone, find(d.Diff, "h-big").Omitted)
+		assert.Equal(t, domain.OmitNone, find(d.Diff, "i-small").Omitted)
+		assert.False(t, d.Diff.Truncated)
 		assert.Equal(t, 11*1900+50+1500+10, d.Stats.Additions)
 		assert.Equal(t, 14, d.Stats.FilesChanged)
 	})
@@ -403,7 +403,7 @@ func TestDiffLimits(t *testing.T) {
 		assert.Equal(t, "many/f000", d.Diff.Files[0].NewPath)
 		assert.Equal(t, "many/f299", d.Diff.Files[299].NewPath)
 		for _, file := range d.Diff.Files {
-			assert.False(t, file.Truncated)
+			assert.Equal(t, domain.OmitNone, file.Omitted)
 			assert.Len(t, file.Hunks, 1)
 		}
 	})
@@ -426,16 +426,16 @@ func TestDiffLimits(t *testing.T) {
 		d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, domain.DiffLimits{MaxFiles: 2, MaxFileLines: 100, MaxTotalLines: 15, MaxTotalBytes: 1 << 20})
 		require.NoError(t, err)
 		require.Len(t, d.Diff.Files, 2)
-		assert.False(t, d.Diff.Files[0].Truncated)
-		assert.True(t, d.Diff.Files[1].Truncated, "10 lines do not fit in the 5 left")
+		assert.Equal(t, domain.OmitNone, d.Diff.Files[0].Omitted)
+		assert.NotEqual(t, domain.OmitNone, d.Diff.Files[1].Omitted, "10 lines do not fit in the 5 left")
 		assert.Equal(t, 3, d.Stats.FilesChanged)
 
 		d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, domain.DiffLimits{MaxFiles: 10, MaxFileLines: 100, MaxTotalLines: 100, MaxTotalBytes: 50})
 		require.NoError(t, err)
 		require.Len(t, d.Diff.Files, 3)
-		assert.False(t, d.Diff.Files[0].Truncated, "30 bytes of text fit in 50")
+		assert.Equal(t, domain.OmitNone, d.Diff.Files[0].Omitted, "30 bytes of text fit in 50")
 		for _, file := range d.Diff.Files[1:] {
-			assert.True(t, file.Truncated, "the byte budget has 20 bytes left for 30")
+			assert.NotEqual(t, domain.OmitNone, file.Omitted, "the byte budget has 20 bytes left for 30")
 			assert.Empty(t, file.Hunks)
 		}
 	})
@@ -446,9 +446,9 @@ func TestDiffLimits(t *testing.T) {
 		d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, defaults)
 		require.NoError(t, err)
 		long, short := find(d.Diff, "long"), find(d.Diff, "short")
-		assert.True(t, long.Truncated)
+		assert.NotEqual(t, domain.OmitNone, long.Omitted)
 		assert.Empty(t, long.Hunks)
-		assert.False(t, short.Truncated)
+		assert.Equal(t, domain.OmitNone, short.Omitted)
 		assert.Len(t, short.Hunks, 1)
 	})
 
@@ -460,10 +460,10 @@ func TestDiffLimits(t *testing.T) {
 		id := f.Commit("v2")
 		d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, defaults)
 		require.NoError(t, err)
-		assert.True(t, find(d.Diff, "a-big").Truncated)
+		assert.NotEqual(t, domain.OmitNone, find(d.Diff, "a-big").Omitted)
 		assert.True(t, find(d.Diff, "b-bin").Binary)
-		assert.False(t, find(d.Diff, "b-bin").Truncated)
-		assert.False(t, find(d.Diff, "c-mode").Truncated)
+		assert.Equal(t, domain.OmitNone, find(d.Diff, "b-bin").Omitted)
+		assert.Equal(t, domain.OmitNone, find(d.Diff, "c-mode").Omitted)
 		assert.Len(t, find(d.Diff, "d-text").Hunks, 1)
 		// What is kept matches git.
 		sections := showSections(f, id)
@@ -482,8 +482,8 @@ func TestGetCommitStopsGitEarly(t *testing.T) {
 	d, err := g.GetCommit(ctx, f.Name, domain.Revision{}, domain.DefaultDiffLimits())
 	require.NoError(t, err)
 	require.Len(t, d.Diff.Files, 2)
-	assert.False(t, d.Diff.Files[0].Truncated)
-	assert.True(t, d.Diff.Files[1].Truncated)
+	assert.Equal(t, domain.OmitNone, d.Diff.Files[0].Omitted)
+	assert.NotEqual(t, domain.OmitNone, d.Diff.Files[1].Omitted)
 	assert.Equal(t, 100005, d.Stats.Additions)
 }
 
@@ -582,23 +582,23 @@ func TestDiffLimitsWindow(t *testing.T) {
 		for i, file := range d.Diff.Files {
 			switch i {
 			case 3:
-				assert.False(t, file.Truncated)
+				assert.Equal(t, domain.OmitNone, file.Omitted)
 				assert.Len(t, file.Hunks, 1, "10 lines fit in 15")
 			case 4:
-				assert.True(t, file.Truncated, "the second file of the window does not fit in the 5 lines left")
+				assert.NotEqual(t, domain.OmitNone, file.Omitted, "the second file of the window does not fit in the 5 lines left")
 			default:
-				assert.False(t, file.Truncated)
+				assert.Equal(t, domain.OmitNone, file.Omitted)
 				assert.Empty(t, file.Hunks)
 				assert.Equal(t, 10, file.Additions, "counts stay accurate")
 			}
 		}
-		assert.True(t, d.Diff.Truncated, "a file of the window is truncated")
+		assert.False(t, d.Diff.Truncated, "an omitted file does not set Diff.Truncated")
 
 		limits.From, limits.To = 0, 0
 		limits.MaxTotalBytes = 25 // "a 0\n".."a 9\n" is 30 bytes of text per file
 		d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
 		require.NoError(t, err)
-		assert.True(t, d.Diff.Files[0].Truncated)
+		assert.NotEqual(t, domain.OmitNone, d.Diff.Files[0].Omitted)
 	})
 
 	t.Run("a file beyond the window is not truncated by its own size", func(t *testing.T) {
@@ -610,14 +610,14 @@ func TestDiffLimitsWindow(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, d.Diff.Files, 2)
 		assert.Len(t, d.Diff.Files[0].Hunks, 1)
-		assert.False(t, d.Diff.Files[1].Truncated)
+		assert.Equal(t, domain.OmitNone, d.Diff.Files[1].Omitted)
 		assert.Empty(t, d.Diff.Files[1].Hunks)
 		assert.False(t, d.Diff.Truncated)
 		limits.From, limits.To = 1, 2
 		d, err = g.GetCommit(ctx, f.Name, domain.Revision{}, limits)
 		require.NoError(t, err)
-		assert.True(t, d.Diff.Files[1].Truncated, "in the window, over the per-file limit")
-		assert.True(t, d.Diff.Truncated)
+		assert.NotEqual(t, domain.OmitNone, d.Diff.Files[1].Omitted, "in the window, over the per-file limit")
+		assert.False(t, d.Diff.Truncated)
 	})
 
 	t.Run("MaxFiles 0 lists every file", func(t *testing.T) {
@@ -652,7 +652,7 @@ func TestDiffLimitsWindow(t *testing.T) {
 			} else {
 				assert.Empty(t, file.Hunks)
 			}
-			assert.False(t, file.Truncated)
+			assert.Equal(t, domain.OmitNone, file.Omitted)
 		}
 
 		// The default limits still cut at 300.

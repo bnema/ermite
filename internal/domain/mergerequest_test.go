@@ -77,7 +77,7 @@ func hunkDiff() domain.Diff {
 		{OldPath: "gone.txt", Status: domain.FileDeleted, Hunks: []domain.Hunk{{
 			Lines: []domain.Line{{Kind: domain.LineDeletion, OldNumber: 1}},
 		}}},
-		{NewPath: "big.txt", Status: domain.FileAdded, Truncated: true},
+		{NewPath: "big.txt", Status: domain.FileAdded, Omitted: domain.OmitLarge},
 		{OldPath: "old.txt", NewPath: "new.txt", Status: domain.FileRenamed, Hunks: []domain.Hunk{{
 			Lines: []domain.Line{{Kind: domain.LineAddition, NewNumber: 2}},
 		}}},

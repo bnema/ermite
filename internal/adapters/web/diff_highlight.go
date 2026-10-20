@@ -446,7 +446,7 @@ func (c *hlCache) files(ctx context.Context, files []domain.FileDiff) []DiffFile
 
 	left := maxDiffHLTotalBytes
 	for i, f := range files {
-		if i >= len(out) || f.Binary || f.Truncated || len(f.Hunks) == 0 || len(out[i].Hunks) != len(f.Hunks) {
+		if i >= len(out) || f.Binary || f.Omitted != domain.OmitNone || len(f.Hunks) == 0 || len(out[i].Hunks) != len(f.Hunks) {
 			continue
 		}
 		if ctx.Err() != nil {

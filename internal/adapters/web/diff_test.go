@@ -99,7 +99,7 @@ func TestFileNotes(t *testing.T) {
 		{"rename", domain.FileDiff{Status: domain.FileRenamed, Similarity: 90, OldMode: 0o100644, NewMode: 0o100644}, "renamed, 90% similar", true},
 		{"copy", domain.FileDiff{Status: domain.FileCopied, Similarity: 80}, "copied, 80% similar", true},
 		{"type change", domain.FileDiff{Status: domain.FileTypeChanged}, "type changed", true},
-		{"truncated", domain.FileDiff{Truncated: true, Additions: 2500}, "too large", false},
+		{"truncated", domain.FileDiff{Omitted: domain.OmitLarge, Additions: 2500}, "too large", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,7 +120,7 @@ func TestDiffFilesPaths(t *testing.T) {
 		{Status: domain.FileAdded, NewPath: "a.go", Additions: 1, Hunks: []domain.Hunk{{Lines: []domain.Line{line(domain.LineAddition, 0, 1, "x")}}}},
 		{Status: domain.FileDeleted, OldPath: "b.go", Deletions: 1},
 		{Status: domain.FileRenamed, OldPath: "c\u202e.go", NewPath: "d.go"},
-		{Status: domain.FileModified, NewPath: "big.go", Truncated: true, Additions: 3000},
+		{Status: domain.FileModified, NewPath: "big.go", Omitted: domain.OmitLarge, Additions: 3000},
 	})
 	assert.Equal(t, "a.go", fs[0].Path)
 	assert.True(t, fs[0].Open)

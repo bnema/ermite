@@ -470,14 +470,16 @@ type jsonHunk struct {
 }
 
 type jsonFile struct {
-	OldPath   string     `json:"old_path"`
-	NewPath   string     `json:"new_path"`
-	Status    string     `json:"status"`
-	Additions int32      `json:"additions"`
-	Deletions int32      `json:"deletions"`
-	Binary    bool       `json:"binary"`
-	Truncated bool       `json:"truncated"`
-	Hunks     []jsonHunk `json:"hunks,omitempty"`
+	OldPath   string `json:"old_path"`
+	NewPath   string `json:"new_path"`
+	Status    string `json:"status"`
+	Additions int32  `json:"additions"`
+	Deletions int32  `json:"deletions"`
+	Binary    bool   `json:"binary"`
+	Truncated bool   `json:"truncated"`
+	// Omitted is generated, large, budget or unavailable; absent when the hunks are not omitted.
+	Omitted string     `json:"omitted,omitempty"`
+	Hunks   []jsonHunk `json:"hunks,omitempty"`
 }
 
 type jsonCommit struct {
@@ -516,6 +518,14 @@ func fileStatusName(s ermite.FileStatus) string {
 	return strings.ToLower(strings.TrimPrefix(s.String(), "FILE_STATUS_"))
 }
 
+// fileOmissionName is the lowercase reason of an omitted file, "" for none.
+func fileOmissionName(o ermite.FileOmission) string {
+	if o == ermite.FileOmission_FILE_OMISSION_UNSPECIFIED {
+		return ""
+	}
+	return strings.ToLower(strings.TrimPrefix(o.String(), "FILE_OMISSION_"))
+}
+
 func lineKindName(k ermite.LineKind) string {
 	return strings.ToLower(strings.TrimPrefix(k.String(), "LINE_KIND_"))
 }
@@ -540,6 +550,7 @@ func toJSONDetail(d *ermite.GetMergeRequestResponse, withDiff bool, baseURL stri
 		jf := jsonFile{
 			OldPath: f.GetOldPath(), NewPath: f.GetNewPath(), Status: fileStatusName(f.GetStatus()),
 			Additions: f.GetAdditions(), Deletions: f.GetDeletions(), Binary: f.GetBinary(), Truncated: f.GetTruncated(),
+			Omitted: fileOmissionName(f.GetOmitted()),
 		}
 		if withDiff {
 			for _, h := range f.GetHunks() {
@@ -581,8 +592,8 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 			"or in conflict with the paths that conflict (rebase needed)." + jsonMRHelp + jsonMergeabilityHelp + jsonCommentHelp + "\n" +
 			"--json adds to the merge request fields: commits (id, author, summary), commits_truncated,\n" +
 			"diff_base_id (the commit the diff starts from), stats (files_changed, additions, deletions),\n" +
-			"diff_truncated, files (old_path, new_path, status, additions, deletions, binary, truncated and,\n" +
-			"with --diff, hunks of lines with kind, old_number, new_number and text), comments, last_read_id\n" +
+			"diff_truncated, files (old_path, new_path, status, additions, deletions, binary, truncated, omitted (generated, large, budget or unavailable; absent when the hunks are\n" +
+			"not omitted) and, with --diff, hunks of lines with kind, old_number, new_number and text), comments, last_read_id\n" +
 			"and last_read_lost; verdicts (author, verdict, comment_id, commit_id, created_at, stale).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),

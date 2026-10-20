@@ -188,18 +188,18 @@ func commitBody(c domain.Commit) string {
 
 // diffNote says what is missing from an incomplete diff, "" for a complete one.
 func diffNote(d domain.Diff, shown, total int) string {
-	if !d.Truncated {
+	cut := 0
+	for _, f := range d.Files {
+		if f.Omitted != domain.OmitNone {
+			cut++
+		}
+	}
+	if !d.Truncated && cut == 0 {
 		return ""
 	}
 	var parts []string
 	if shown < total {
 		parts = append(parts, plural(total-shown, "file is", "files are")+" not listed")
-	}
-	cut := 0
-	for _, f := range d.Files {
-		if f.Truncated {
-			cut++
-		}
 	}
 	if cut > 0 {
 		parts = append(parts, plural(cut, "file is", "files are")+" too large to show")

@@ -2,7 +2,10 @@
 
 package domain
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // ValidateCommitObjects checks a request before any repository I/O. max is the
 // caller's commit-count limit.
@@ -45,7 +48,7 @@ func (b *CommitObjectBudget) Charge(id ObjectID, size int64) {
 	b.total += size
 }
 
-// DiffBudget owns file selection and retained hunk accounting. Truncated files
+// DiffBudget owns file selection and retained hunk accounting. Omitted files
 // consume no budget; streaming readers may use a copy while attempting a file.
 type DiffBudget struct {
 	limits               DiffLimits
@@ -69,20 +72,51 @@ func (b DiffBudget) Window(files int) (kept, from, to int, truncated bool) {
 	return
 }
 
-func (b DiffBudget) ChangedLines(binary bool, n int) bool { return !binary && n > 0 }
-
-func (b DiffBudget) WantsHunks(binary bool, n int) bool {
-	return b.ChangedLines(binary, n) && n <= b.limits.MaxFileLines && n <= b.linesLeft && b.bytesLeft > 0
+// Admit decides whether the hunks of a file are read. read is false with
+// OmitNone for a binary file or one without changed lines (nothing to show).
+// Otherwise read is false with the reason the file is omitted. path is the path
+// a comment designates (see FileDiff.CommentPath).
+func (b DiffBudget) Admit(binary bool, path string, changed int) (read bool, why FileOmission) {
+	switch {
+	case binary || changed <= 0:
+		return false, OmitNone
+	case b.limits.SkipGenerated && IsGeneratedPath(path):
+		return false, OmitGenerated
+	case b.limits.MaxFileLines > 0 && changed > b.limits.MaxFileLines:
+		return false, OmitLarge
+	case b.limits.MaxTotalLines > 0 && changed > b.linesLeft, b.bytesLeft <= 0:
+		return false, OmitBudget
+	}
+	return true, OmitNone
 }
 
-func (b DiffBudget) FileLines() int { return min(b.limits.MaxFileLines, b.linesLeft) }
+// FileLines is the most changed lines the next file may have; math.MaxInt when
+// neither MaxFileLines nor MaxTotalLines limits it.
+func (b DiffBudget) FileLines() int {
+	n := math.MaxInt
+	if b.limits.MaxFileLines > 0 {
+		n = b.limits.MaxFileLines
+	}
+	if b.limits.MaxTotalLines > 0 {
+		n = min(n, b.linesLeft)
+	}
+	return n
+}
 
 // ChargeLine accounts for decoded text bytes and, for additions or deletions,
-// one changed line. Context consumes bytes only. It reports whether the line fits.
-func (b *DiffBudget) ChargeLine(bytes int, changed bool) bool {
-	if changed {
+// one changed line. Context consumes bytes only. It returns OmitNone when the
+// line fits, OmitBudget when the changed lines ran out and OmitUnavailable when
+// the bytes ran out.
+func (b *DiffBudget) ChargeLine(bytes int, changed bool) FileOmission {
+	if changed && b.limits.MaxTotalLines > 0 {
 		b.linesLeft--
 	}
 	b.bytesLeft -= bytes
-	return b.linesLeft >= 0 && b.bytesLeft >= 0
+	switch {
+	case b.limits.MaxTotalLines > 0 && b.linesLeft < 0:
+		return OmitBudget
+	case b.bytesLeft < 0:
+		return OmitUnavailable
+	}
+	return OmitNone
 }

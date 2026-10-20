@@ -115,7 +115,7 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 	// rename, mode change) have a section without hunks.
 	lastRead := -1
 	for i := from; i < to; i++ {
-		if budget.WantsHunks(entries[i].file.Binary, entries[i].added+entries[i].del) {
+		if read, _ := budget.Admit(entries[i].file.Binary, entries[i].file.CommentPath(), entries[i].added+entries[i].del); read {
 			lastRead = i
 		}
 	}
@@ -134,19 +134,23 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 			sections = 2
 		}
 		inWindow := i >= from && i < to
+		read, why := false, domain.OmitNone
+		if inWindow {
+			read, why = pr.budget.Admit(e.file.Binary, e.file.CommentPath(), e.added+e.del)
+		}
 		switch {
-		case !inWindow, !pr.budget.ChangedLines(e.file.Binary, e.added+e.del):
+		case !inWindow:
 			// Nothing to show.
-		case !pr.budget.WantsHunks(e.file.Binary, e.added+e.del):
-			e.file.Truncated = true
+		case !read:
+			e.file.Omitted = why
 		default:
 			before := pr.budget
-			hunks, _, truncated, err := pr.file(sections, pr.budget.FileLines())
+			hunks, _, why, err := pr.file(sections, pr.budget.FileLines())
 			if err != nil {
 				return domain.Diff{}, domain.DiffStats{}, err
 			}
-			e.file.Hunks, e.file.Truncated = hunks, truncated
-			if truncated {
+			e.file.Hunks, e.file.Omitted = hunks, why
+			if why != domain.OmitNone {
 				pr.budget = before // nothing of this file is kept
 			}
 			sections = 0
@@ -156,7 +160,6 @@ func readDiff(r *bufio.Reader, limits domain.DiffLimits) (domain.Diff, domain.Di
 				return domain.Diff{}, domain.DiffStats{}, err
 			}
 		}
-		diff.Truncated = diff.Truncated || e.file.Truncated
 		diff.Files = append(diff.Files, e.file)
 	}
 	if lastRead < len(entries)-1 {
@@ -379,55 +382,56 @@ func (p *patchReader) skip(n int) error {
 }
 
 // file reads the sections of one file and returns its hunks, the number of
-// changed lines, and whether it exceeded max changed lines or had a line over
-// maxDiffLine. When truncated, the rest of the file is skipped.
-func (p *patchReader) file(sections, max int) (hunks []domain.Hunk, lines int, truncated bool, err error) {
+// changed lines, and why it was omitted: it exceeded max changed lines or the
+// budget, or had a line over maxDiffLine. When omitted, the rest of the file is
+// skipped.
+func (p *patchReader) file(sections, max int) (hunks []domain.Hunk, lines int, why domain.FileOmission, err error) {
 	for done := range sections {
 		ok, err := p.enterSection()
 		if err != nil {
-			return nil, 0, false, err
+			return nil, 0, domain.OmitNone, err
 		}
 		if !ok {
 			break
 		}
-		h, n, trunc, err := p.section(max - lines)
+		h, n, why, err := p.section(max - lines)
 		if err != nil {
-			return nil, 0, false, err
+			return nil, 0, domain.OmitNone, err
 		}
 		hunks = append(hunks, h...)
 		lines += n
-		if trunc {
+		if why != domain.OmitNone {
 			// Leave the stream at the start of the next file.
-			return nil, lines, true, p.skip(sections - done - 1)
+			return nil, lines, why, p.skip(sections - done - 1)
 		}
 	}
-	return hunks, lines, false, nil
+	return hunks, lines, domain.OmitNone, nil
 }
 
 // section reads the hunks of the current section up to the next marker, which
-// stays pending. It gives up (truncated) after more than max changed lines.
-func (p *patchReader) section(max int) (hunks []domain.Hunk, lines int, truncated bool, err error) {
+// stays pending. It gives up (with a reason) after more than max changed lines.
+func (p *patchReader) section(max int) (hunks []domain.Hunk, lines int, why domain.FileOmission, err error) {
 	var cur *domain.Hunk
 	var oldN, newN int
 	for {
 		line, ok, err := p.line()
 		if err != nil {
-			return nil, 0, false, err
+			return nil, 0, domain.OmitNone, err
 		}
 		if !ok {
-			return hunks, lines, false, nil
+			return hunks, lines, domain.OmitNone, nil
 		}
 		if bytes.HasPrefix(line, []byte(sectionMarker)) {
 			p.unread(line)
-			return hunks, lines, false, nil
+			return hunks, lines, domain.OmitNone, nil
 		}
 		if p.cut {
-			return nil, lines, true, nil
+			return nil, lines, domain.OmitUnavailable, nil
 		}
 		if bytes.HasPrefix(line, []byte("@@ ")) {
 			h, err := parseHunkHeader(string(line))
 			if err != nil {
-				return nil, 0, false, err
+				return nil, 0, domain.OmitNone, err
 			}
 			hunks = append(hunks, h)
 			cur = &hunks[len(hunks)-1]
@@ -463,9 +467,11 @@ func (p *patchReader) section(max int) (hunks []domain.Hunk, lines int, truncate
 		if changed {
 			lines++
 		}
-		fits := p.budget.ChargeLine(len(text), changed)
-		if lines > max || !fits {
-			return nil, lines, true, nil
+		if why := p.budget.ChargeLine(len(text), changed); why != domain.OmitNone {
+			return nil, lines, why, nil
+		}
+		if lines > max {
+			return nil, lines, domain.OmitLarge, nil
 		}
 		cur.Lines = append(cur.Lines, l)
 	}

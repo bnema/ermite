@@ -107,7 +107,7 @@ func TestFilePatch(t *testing.T) {
 	assert.Equal(t, "@@ -1,2 +1,2 @@ func x()\n a\n-b\n+c\n\\ No newline at end of file\n@@ -9 +9 @@\n+z", got)
 	_, ok = usecase.FilePatch(domain.FileDiff{Binary: true, Hunks: f.Hunks})
 	assert.False(t, ok, "binary")
-	_, ok = usecase.FilePatch(domain.FileDiff{Truncated: true})
+	_, ok = usecase.FilePatch(domain.FileDiff{Omitted: domain.OmitLarge})
 	assert.False(t, ok, "truncated")
 	_, ok = usecase.FilePatch(domain.FileDiff{Status: domain.FileRenamed})
 	assert.False(t, ok, "a pure rename has no hunk")
