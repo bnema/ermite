@@ -95,7 +95,7 @@ func TestWatchNDJSON(t *testing.T) {
 		assert.True(t, json.Valid([]byte(sc.Text())), "one JSON value per line: %s", sc.Text())
 	}
 	require.Len(t, lines, 5)
-	assert.JSONEq(t, `{"id":"1","time":"2026-10-10T12:00:00Z","type":"repo_created","repo":"beta","repository":{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false,"issues":"off"}}`, lines[0])
+	assert.JSONEq(t, `{"id":"1","time":"2026-10-10T12:00:00Z","type":"repo_created","repo":"beta","repository":{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false,"allow_auto_merge":false,"issues":"off"}}`, lines[0])
 	assert.JSONEq(t, `{"id":"3","time":"2026-10-10T12:00:00Z","type":"pushed","repo":"alpha","ref_updates":[
 		{"ref":"refs/heads/main","old_id":"1111111111111111","new_id":"2222222222222222"},
 		{"ref":"refs/heads/new","old_id":"","new_id":"3333333333333333"},
@@ -282,4 +282,58 @@ func TestMirrorWatchEvents(t *testing.T) {
 	assert.Equal(t, "mirror_recovered", recovered.Type)
 	assert.Contains(t, eventLine(recovered), "mirror_recovered  alpha")
 	assert.NotContains(t, eventLine(recovered), "  \n")
+}
+
+func TestWatchAutoMergeEvents(t *testing.T) {
+	events := []*ermite.WatchResponse{
+		evt("1", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestAutoMergeEnabled{MergeRequestAutoMergeEnabled: &ermite.MergeRequestAutoMergeEnabled{MergeRequest: &ermite.MergeRequest{
+				Repo: "alpha", Number: 1, SourceBranch: "feat/x", TargetBranch: "main",
+				AutoMerge: &ermite.AutoMerge{Mode: ermite.MergeMode_MERGE_MODE_SQUASH, HeadId: headA, EnabledBy: "owner"},
+			}}}
+		}),
+		evt("2", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestAutoMergeCancelled{MergeRequestAutoMergeCancelled: &ermite.MergeRequestAutoMergeCancelled{MergeRequest: mrOne, Reason: "the branch moved"}}
+		}),
+		evt("3", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestMerged{MergeRequestMerged: &ermite.MergeRequestMerged{MergeRequest: mrOne, Auto: true}}
+		}),
+		evt("4", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestMerged{MergeRequestMerged: &ermite.MergeRequestMerged{MergeRequest: mrOne}}
+		}),
+	}
+	f := &fakeAPI{watch: finishing(events)}
+	url := f.serve(t)
+
+	res := runCLI(t, envFor(url), "", "watch")
+	require.Error(t, res.err)
+	assert.Equal(t, ""+
+		"2026-10-10T12:00:00Z  merge_request_auto_merge_enabled  alpha!1 squash when ready\n"+
+		"2026-10-10T12:00:00Z  merge_request_auto_merge_cancelled  alpha!1: the branch moved\n"+
+		"2026-10-10T12:00:00Z  merge_request_merged  alpha!1 feat/x -> main (auto-merge)\n"+
+		"2026-10-10T12:00:00Z  merge_request_merged  alpha!1 feat/x -> main\n", res.stdout)
+
+	res = runCLI(t, envFor(url), "", "watch", "--json")
+	lines := strings.Split(strings.TrimSpace(res.stdout), "\n")
+	require.Len(t, lines, 4)
+	var enabled, cancelled, auto, manual struct {
+		Type         string `json:"type"`
+		Reason       string `json:"reason"`
+		Auto         bool   `json:"auto"`
+		MergeRequest *struct {
+			AutoMerge *struct {
+				Mode string `json:"mode"`
+			} `json:"auto_merge"`
+		} `json:"merge_request"`
+	}
+	for i, dst := range []any{&enabled, &cancelled, &auto, &manual} {
+		require.NoError(t, json.Unmarshal([]byte(lines[i]), dst))
+	}
+	assert.Equal(t, "merge_request_auto_merge_enabled", enabled.Type)
+	require.NotNil(t, enabled.MergeRequest.AutoMerge)
+	assert.Equal(t, "squash", enabled.MergeRequest.AutoMerge.Mode)
+	assert.Equal(t, "merge_request_auto_merge_cancelled", cancelled.Type)
+	assert.Equal(t, "the branch moved", cancelled.Reason)
+	assert.True(t, auto.Auto)
+	assert.False(t, manual.Auto)
 }

@@ -51,7 +51,7 @@ func TestMRCreateMapsFlags(t *testing.T) {
 	_ = res
 
 	res = runCLI(t, envFor(url), "", "mr", "create", "alpha", "--title", "t", "--source", "x", "--json").ok(t)
-	assert.JSONEq(t, `{"url":"`+url+`/alpha/merge-requests/1","repo":"alpha","number":1,"title":"Add search","description":"Finds things.","source_branch":"feat/x","target_branch":"main","state":"open","author":"agent-7","created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-02T11:30:00Z","head_id":"`+headA+`","merged_commit_id":"","merge_mode":""}`, res.stdout)
+	assert.JSONEq(t, `{"url":"`+url+`/alpha/merge-requests/1","repo":"alpha","number":1,"title":"Add search","description":"Finds things.","source_branch":"feat/x","target_branch":"main","state":"open","author":"agent-7","created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-02T11:30:00Z","head_id":"`+headA+`","merged_commit_id":"","merge_mode":"","auto_merge":null,"auto_merged":false}`, res.stdout)
 
 	for _, args := range [][]string{{"mr", "create", "alpha", "--source", "x"}, {"mr", "create", "alpha", "--title", "t"}, {"mr", "create", "--title", "t", "--source", "x"}} {
 		require.Error(t, runCLI(t, envFor(url), "", args...).err, "%v", args)
@@ -577,4 +577,114 @@ func TestJSONFileOmitted(t *testing.T) {
 	assert.Contains(t, string(raw), `"omitted":"generated"`)
 	assert.Contains(t, string(raw), `"truncated":true`)
 	assert.Equal(t, 2, strings.Count(string(raw), `"omitted"`))
+}
+
+func autoMergeFake(t *testing.T, features ...string) (*fakeAPI, string) {
+	t.Helper()
+	auto := proto.Clone(mrOne).(*ermite.MergeRequest)
+	auto.AutoMerge = &ermite.AutoMerge{Mode: ermite.MergeMode_MERGE_MODE_SQUASH, HeadId: headA, EnabledBy: "owner", EnabledAt: ts("2026-10-03T08:00:00Z")}
+	f := &fakeAPI{
+		enableAuto: func(*ermite.EnableAutoMergeRequest) (*ermite.EnableAutoMergeResponse, error) {
+			return &ermite.EnableAutoMergeResponse{MergeRequest: auto}, nil
+		},
+		cancelAuto: func(*ermite.CancelAutoMergeRequest) (*ermite.CancelAutoMergeResponse, error) {
+			return &ermite.CancelAutoMergeResponse{MergeRequest: mrOne}, nil
+		},
+		getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+			return &ermite.GetVersionResponse{Version: "test", Features: features}, nil
+		},
+	}
+	return f, f.serve(t)
+}
+
+func TestMRMergeAuto(t *testing.T) {
+	f, url := autoMergeFake(t, "merge_requests.auto_merge")
+	res := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto", "--mode", "squash").ok(t)
+	assert.Equal(t, "auto-merge enabled on alpha!1: squash into main when ready (enabled by owner)\n", res.stdout)
+	calls, reqs := f.snapshot()
+	assert.Equal(t, []string{"GetVersion", "EnableAutoMerge"}, calls)
+	got := reqs[1].(*ermite.EnableAutoMergeRequest)
+	assert.Equal(t, "alpha", got.GetRepo())
+	assert.EqualValues(t, 1, got.GetNumber())
+	assert.Equal(t, ermite.MergeMode_MERGE_MODE_SQUASH, got.GetMode())
+
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto", "--json").ok(t)
+	var out struct {
+		AutoMerge struct {
+			Mode      string `json:"mode"`
+			HeadID    string `json:"head_id"`
+			EnabledBy string `json:"enabled_by"`
+			EnabledAt string `json:"enabled_at"`
+		} `json:"auto_merge"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(res.stdout), &out))
+	assert.Equal(t, "squash", out.AutoMerge.Mode)
+	assert.Equal(t, headA, out.AutoMerge.HeadID)
+	assert.Equal(t, "owner", out.AutoMerge.EnabledBy)
+	assert.Equal(t, "2026-10-03T08:00:00Z", out.AutoMerge.EnabledAt)
+	_, reqs = f.snapshot()
+	assert.Equal(t, ermite.MergeMode_MERGE_MODE_FAST_FORWARD, reqs[len(reqs)-1].(*ermite.EnableAutoMergeRequest).GetMode(), "fast-forward by default")
+
+	for _, args := range [][]string{
+		{"--auto", "--cancel-auto"}, {"--auto", "--delete-branch"}, {"--auto", "--head", headA},
+	} {
+		require.Error(t, runCLI(t, envFor(url), "", append([]string{"mr", "merge", "alpha", "1"}, args...)...).err, "%v", args)
+	}
+}
+
+func TestMRMergeAutoNeedsTheFeature(t *testing.T) {
+	f, url := autoMergeFake(t, "merge_requests")
+	res := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--auto")
+	require.Error(t, res.err)
+	assert.Contains(t, res.err.Error(), "merge_requests.auto_merge")
+	calls, _ := f.snapshot()
+	assert.NotContains(t, calls, "EnableAutoMerge")
+}
+
+func TestMRMergeCancelAuto(t *testing.T) {
+	f, url := autoMergeFake(t, "merge_requests.auto_merge")
+	res := runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--cancel-auto").ok(t)
+	assert.Equal(t, "auto-merge cancelled on alpha!1\n", res.stdout)
+	calls, reqs := f.snapshot()
+	assert.Equal(t, []string{"GetVersion", "CancelAutoMerge"}, calls)
+	assert.EqualValues(t, 1, reqs[1].(*ermite.CancelAutoMergeRequest).GetNumber())
+
+	res = runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--cancel-auto", "--json").ok(t)
+	assert.Regexp(t, `"auto_merge":\s*null`, res.stdout)
+
+	for _, extra := range []string{"--delete-branch", "--head=" + headA} {
+		require.Error(t, runCLI(t, envFor(url), "", "mr", "merge", "alpha", "1", "--cancel-auto", extra).err, extra)
+	}
+}
+
+func TestMRShowAutoMerge(t *testing.T) {
+	m := proto.Clone(mrOne).(*ermite.MergeRequest)
+	m.AutoMerge = &ermite.AutoMerge{Mode: ermite.MergeMode_MERGE_MODE_SQUASH, HeadId: headA, EnabledBy: "owner", EnabledAt: ts("2026-10-03T08:00:00Z")}
+	cur := m
+	f := &fakeAPI{getMR: func(*ermite.GetMergeRequestRequest) (*ermite.GetMergeRequestResponse, error) {
+		return &ermite.GetMergeRequestResponse{MergeRequest: cur}, nil
+	}}
+	url := f.serve(t)
+
+	res := runCLI(t, envFor(url), "", "mr", "show", "alpha", "1").ok(t)
+	assert.Regexp(t, `(?m)^auto-merge\s+squash when ready \(enabled by owner\)$`, res.stdout)
+	res = runCLI(t, envFor(url), "", "mr", "show", "alpha", "1", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"mode": "squash"`)
+	assert.Contains(t, res.stdout, `"enabled_by": "owner"`)
+	assert.Contains(t, res.stdout, `"auto_merged": false`)
+
+	merged := proto.Clone(mrOne).(*ermite.MergeRequest)
+	merged.State, merged.AutoMerged = ermite.MergeRequestState_MERGE_REQUEST_STATE_MERGED, true
+	merged.MergedCommitId, merged.MergeMode = strings.Repeat("d", 40), ermite.MergeMode_MERGE_MODE_SQUASH
+	cur = merged
+	res = runCLI(t, envFor(url), "", "mr", "show", "alpha", "1").ok(t)
+	assert.Regexp(t, `(?m)^auto-merged\s+yes`, res.stdout)
+	assert.NotContains(t, res.stdout, "when ready")
+	res = runCLI(t, envFor(url), "", "mr", "show", "alpha", "1", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"auto_merged": true`)
+	assert.Regexp(t, `"auto_merge":\s*null`, res.stdout)
+
+	cur = mrOne
+	res = runCLI(t, envFor(url), "", "mr", "show", "alpha", "1").ok(t)
+	assert.NotContains(t, res.stdout, "auto-merge")
 }

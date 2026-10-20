@@ -62,6 +62,8 @@ type fakeAPI struct {
 	closeMR       func(*ermite.CloseMergeRequestRequest) (*ermite.CloseMergeRequestResponse, error)
 	mergeMR       func(*ermite.MergeMergeRequestRequest) (*ermite.MergeMergeRequestResponse, error)
 	markRead      func(*ermite.MarkReadRequest) (*ermite.MarkReadResponse, error)
+	enableAuto    func(*ermite.EnableAutoMergeRequest) (*ermite.EnableAutoMergeResponse, error)
+	cancelAuto    func(*ermite.CancelAutoMergeRequest) (*ermite.CancelAutoMergeResponse, error)
 	createIssue   func(*ermite.CreateIssueRequest) (*ermite.CreateIssueResponse, error)
 	listIssues    func(*ermite.ListIssuesRequest) (*ermite.ListIssuesResponse, error)
 	getIssue      func(*ermite.GetIssueRequest) (*ermite.GetIssueResponse, error)
@@ -151,6 +153,12 @@ func (f *fakeAPI) CloseMergeRequest(_ context.Context, r *connect.Request[ermite
 }
 func (f *fakeAPI) MergeMergeRequest(_ context.Context, r *connect.Request[ermite.MergeMergeRequestRequest]) (*connect.Response[ermite.MergeMergeRequestResponse], error) {
 	return respond(f, "MergeMergeRequest", r, f.mergeMR)
+}
+func (f *fakeAPI) EnableAutoMerge(_ context.Context, r *connect.Request[ermite.EnableAutoMergeRequest]) (*connect.Response[ermite.EnableAutoMergeResponse], error) {
+	return respond(f, "EnableAutoMerge", r, f.enableAuto)
+}
+func (f *fakeAPI) CancelAutoMerge(_ context.Context, r *connect.Request[ermite.CancelAutoMergeRequest]) (*connect.Response[ermite.CancelAutoMergeResponse], error) {
+	return respond(f, "CancelAutoMerge", r, f.cancelAuto)
 }
 func (f *fakeAPI) MarkRead(_ context.Context, r *connect.Request[ermite.MarkReadRequest]) (*connect.Response[ermite.MarkReadResponse], error) {
 	return respond(f, "MarkRead", r, f.markRead)

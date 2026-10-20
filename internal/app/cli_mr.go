@@ -121,6 +121,26 @@ type jsonMergeRequest struct {
 	HeadID         string  `json:"head_id"`
 	MergedCommitID string  `json:"merged_commit_id"`
 	MergeMode      string  `json:"merge_mode"`
+	// AutoMerge is the pending auto-merge, null when there is none.
+	AutoMerge *jsonAutoMerge `json:"auto_merge"`
+	// AutoMerged is true when the server merged the request by auto-merge.
+	AutoMerged bool `json:"auto_merged"`
+}
+
+// jsonAutoMerge is the stable JSON shape of a pending auto-merge.
+type jsonAutoMerge struct {
+	Mode      string  `json:"mode"`
+	HeadID    string  `json:"head_id"`
+	EnabledBy string  `json:"enabled_by"`
+	EnabledAt *string `json:"enabled_at"`
+}
+
+// toJSONAutoMerge maps an auto-merge; nil when there is none.
+func toJSONAutoMerge(a *ermite.AutoMerge) *jsonAutoMerge {
+	if a == nil {
+		return nil
+	}
+	return &jsonAutoMerge{Mode: modeName(a.GetMode()), HeadID: a.GetHeadId(), EnabledBy: a.GetEnabledBy(), EnabledAt: jsonTime(a.GetEnabledAt())}
 }
 
 // jsonMergeability is the stable JSON shape of the mergeability of an open
@@ -201,6 +221,7 @@ func toJSONMergeRequest(m *ermite.MergeRequest, baseURL string) jsonMergeRequest
 		SourceBranch: m.GetSourceBranch(), TargetBranch: m.GetTargetBranch(), State: stateName(m.GetState()),
 		Author: m.GetAuthor(), CreatedAt: jsonTime(m.GetCreatedAt()), UpdatedAt: jsonTime(m.GetUpdatedAt()),
 		HeadID: m.GetHeadId(), MergedCommitID: m.GetMergedCommitId(), MergeMode: modeName(m.GetMergeMode()),
+		AutoMerge: toJSONAutoMerge(m.GetAutoMerge()), AutoMerged: m.GetAutoMerged(),
 	}
 }
 
@@ -245,7 +266,8 @@ JSON fields of a merge request (--json): repo, url (full web URL), number, title
 target_branch, state ("open", "merged" or "closed"), author (token label), created_at and
 updated_at (RFC 3339 UTC), head_id (the commit the source branch points to; empty when the
 branch is gone), merged_commit_id and merge_mode ("fast-forward", "squash" or "merge"; both empty
-unless merged).`
+unless merged), auto_merge (null unless auto-merge is pending: mode, head_id, enabled_by,
+enabled_at) and auto_merged (true when the server merged the request by auto-merge).`
 
 const jsonMergeabilityHelp = `
 mr show --json adds mergeability, null unless the request is open: state ("checking", "up_to_date",
@@ -660,7 +682,14 @@ func printMRDetail(w io.Writer, d *ermite.GetMergeRequestResponse, withDiff, sin
 		{"head", orDash(m.GetHeadId())},
 	}
 	if m.GetState() == ermite.MergeRequestState_MERGE_REQUEST_STATE_MERGED {
-		pairs = append(pairs, [2]string{"merged", orDash(m.GetMergedCommitId()) + " (" + modeName(m.GetMergeMode()) + ")"})
+		merged := orDash(m.GetMergedCommitId()) + " (" + modeName(m.GetMergeMode()) + ")"
+		pairs = append(pairs, [2]string{"merged", merged})
+		if m.GetAutoMerged() {
+			pairs = append(pairs, [2]string{"auto-merged", "yes, by the server once the checks passed"})
+		}
+	}
+	if am := m.GetAutoMerge(); am != nil && m.GetState() == ermite.MergeRequestState_MERGE_REQUEST_STATE_OPEN {
+		pairs = append(pairs, [2]string{"auto-merge", modeName(am.GetMode()) + " when ready (enabled by " + am.GetEnabledBy() + ")"})
 	}
 	if mg := toJSONMergeability(m.GetMergeability()); mg != nil && m.GetState() == ermite.MergeRequestState_MERGE_REQUEST_STATE_OPEN {
 		pairs = append(pairs, [2]string{"mergeability", mergeabilityText(mg)})
@@ -1056,6 +1085,7 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 	var mode string
 	var deleteBranch bool
 	var head string
+	var auto, cancelAuto bool
 	cmd := &cobra.Command{
 		Use:   "merge <repo> <number>",
 		Short: "Merge a merge request",
@@ -1078,7 +1108,12 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			"The merge answers as soon as the target branch has moved. --delete-branch asks the server to delete\n" +
 			"the source branch right after, in the background. The merge is refused when the branch is the\n" +
 			"default branch or used by another open merge request. If the deletion later fails (the branch\n" +
-			"moved, say), the merge stands and the branch is kept." + jsonMRHelp +
+			"moved, say), the merge stands and the branch is kept.\n\n" +
+			"--auto does not merge now: it asks the server to merge by itself, with --mode, once CI has settled\n" +
+			"with at least one successful check on the head and every check allows it. Needs the mr:merge scope,\n" +
+			"a server with CI, and `ermite repo edit --allow-auto-merge` on the repository. A new push to the\n" +
+			"source branch, a change of the settings or of your permissions cancels it. --auto takes no --head:\n" +
+			"the server merges the head current when you enable it. --cancel-auto cancels a pending auto-merge." + jsonMRHelp +
 			"\n--json adds source_branch_deleted (true when the deletion was requested: the server deletes the branch right after the merge).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
@@ -1086,6 +1121,13 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 	cmd.Flags().StringVar(&mode, "mode", modeFastForward, "merge mode: fast-forward, squash or merge (a merge commit)")
 	cmd.Flags().StringVar(&head, "head", "", "full id of the head you reviewed, from `ermite mr show` (required)")
 	cmd.Flags().BoolVar(&deleteBranch, "delete-branch", false, "delete the source branch after the merge")
+	cmd.Flags().BoolVar(&auto, "auto", false, "merge by itself once the checks passed (needs `repo edit --allow-auto-merge`)")
+	cmd.Flags().BoolVar(&cancelAuto, "cancel-auto", false, "cancel the pending auto-merge")
+	cmd.MarkFlagsMutuallyExclusive("auto", "cancel-auto")
+	cmd.MarkFlagsMutuallyExclusive("cancel-auto", "delete-branch")
+	cmd.MarkFlagsMutuallyExclusive("cancel-auto", "head")
+	cmd.MarkFlagsMutuallyExclusive("auto", "delete-branch")
+	cmd.MarkFlagsMutuallyExclusive("auto", "head")
 	_ = cmd.RegisterFlagCompletionFunc("mode", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{modeFastForward, modeSquash, modeMerge}, cobra.ShellCompDirectiveNoFileComp
 	})
@@ -1095,9 +1137,15 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if cancelAuto {
+			return runMRCancelAuto(env, cmd, args[0], n, *asJSON)
+		}
 		pbMode, err := parseMode(mode)
 		if err != nil {
 			return err
+		}
+		if auto {
+			return runMREnableAuto(env, cmd, args[0], n, pbMode, *asJSON)
 		}
 		head = strings.TrimSpace(head)
 		if head == "" {
@@ -1137,6 +1185,51 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 		return err
 	}
 	return cmd
+}
+
+// runMREnableAuto is `mr merge --auto`: it asks the server to merge once ready.
+func runMREnableAuto(env *cliEnv, cmd *cobra.Command, repo string, n int64, mode ermite.MergeMode, asJSON bool) error {
+	c, err := env.client(cmd)
+	if err != nil {
+		return err
+	}
+	ctx := env.ctx(cmd)
+	if err := requireFeature(ctx, c, client.FeatureAutoMerge, "cannot merge by itself (--auto)"); err != nil {
+		return err
+	}
+	res, err := c.MergeRequests().EnableAutoMerge(ctx, connect.NewRequest(&ermite.EnableAutoMergeRequest{Repo: repo, Number: n, Mode: mode}))
+	if err != nil {
+		return c.Describe(err)
+	}
+	m := res.Msg.GetMergeRequest()
+	if asJSON {
+		return writeJSON(cmd.OutOrStdout(), toJSONMergeRequest(m, c.URL()))
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "auto-merge enabled on %s!%d: %s into %s when ready (enabled by %s)\n", clean(m.GetRepo()), m.GetNumber(),
+		modeName(m.GetAutoMerge().GetMode()), clean(m.GetTargetBranch()), clean(m.GetAutoMerge().GetEnabledBy()))
+	return err
+}
+
+// runMRCancelAuto is `mr merge --cancel-auto`.
+func runMRCancelAuto(env *cliEnv, cmd *cobra.Command, repo string, n int64, asJSON bool) error {
+	c, err := env.client(cmd)
+	if err != nil {
+		return err
+	}
+	ctx := env.ctx(cmd)
+	if err := requireFeature(ctx, c, client.FeatureAutoMerge, "has no auto-merge to cancel (--cancel-auto)"); err != nil {
+		return err
+	}
+	res, err := c.MergeRequests().CancelAutoMerge(ctx, connect.NewRequest(&ermite.CancelAutoMergeRequest{Repo: repo, Number: n}))
+	if err != nil {
+		return c.Describe(err)
+	}
+	m := res.Msg.GetMergeRequest()
+	if asJSON {
+		return writeJSON(cmd.OutOrStdout(), toJSONMergeRequest(m, c.URL()))
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "auto-merge cancelled on %s!%d\n", clean(m.GetRepo()), m.GetNumber())
+	return err
 }
 
 // signedNote says that a squash or merge commit is signed by the server's

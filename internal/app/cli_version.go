@@ -126,4 +126,5 @@ var featureUse = map[string]string{
 	client.FeatureCIArtifacts:         "`ermite run artifacts` and `run download` need: the commands will fail on this server",
 	client.FeaturePasskeys:            "`ermite web passkey` needs: the commands will fail on this server (passkeys need an https public URL with a DNS host name)",
 	client.FeatureCommitSignatures:    "`ermite signing-key trust` needs: the commands will fail on this server",
+	client.FeatureAutoMerge:           "`ermite mr merge --auto` and `repo edit --allow-auto-merge` need: the commands are refused",
 }

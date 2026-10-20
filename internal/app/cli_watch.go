@@ -34,6 +34,10 @@ type jsonEvent struct {
 	// State and FailureClass are set for a mirror_failed event.
 	State        string `json:"state,omitempty"`
 	FailureClass string `json:"failure_class,omitempty"`
+	// Auto is set for merge_request_merged: auto-merge made the merge.
+	Auto bool `json:"auto,omitempty"`
+	// Reason is set for merge_request_auto_merge_cancelled.
+	Reason string `json:"reason,omitempty"`
 }
 
 type jsonRefUpdate struct {
@@ -53,6 +57,8 @@ const (
 	eventMROpened        = "merge_request_opened"
 	eventMRMerged        = "merge_request_merged"
 	eventMRClosed        = "merge_request_closed"
+	eventMRAutoEnabled   = "merge_request_auto_merge_enabled"
+	eventMRAutoCancelled = "merge_request_auto_merge_cancelled"
 	eventCommentAdded    = "comment_added"
 	eventCommentEdited   = "comment_edited"
 	eventCommentDeleted  = "comment_deleted"
@@ -87,6 +93,14 @@ func toJSONEvent(ev *ermite.Event, baseURL string) (jsonEvent, bool) {
 	case *ermite.Event_MergeRequestMerged:
 		m := toJSONMergeRequest(k.MergeRequestMerged.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMRMerged, m.Repo, &m
+		out.Auto = k.MergeRequestMerged.GetAuto()
+	case *ermite.Event_MergeRequestAutoMergeEnabled:
+		m := toJSONMergeRequest(k.MergeRequestAutoMergeEnabled.GetMergeRequest(), baseURL)
+		out.Type, out.Repo, out.MergeRequest = eventMRAutoEnabled, m.Repo, &m
+	case *ermite.Event_MergeRequestAutoMergeCancelled:
+		m := toJSONMergeRequest(k.MergeRequestAutoMergeCancelled.GetMergeRequest(), baseURL)
+		out.Type, out.Repo, out.MergeRequest = eventMRAutoCancelled, m.Repo, &m
+		out.Reason = k.MergeRequestAutoMergeCancelled.GetReason()
 	case *ermite.Event_MergeRequestClosed:
 		m := toJSONMergeRequest(k.MergeRequestClosed.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMRClosed, m.Repo, &m
@@ -140,6 +154,13 @@ func eventLine(e jsonEvent) string {
 		detail = e.Repo + " " + strings.Join(parts, ", ")
 	case eventMROpened, eventMRMerged, eventMRClosed:
 		detail = fmt.Sprintf("%s!%d %s -> %s", e.Repo, e.MergeRequest.Number, e.MergeRequest.SourceBranch, e.MergeRequest.TargetBranch)
+		if e.Auto {
+			detail += " (auto-merge)"
+		}
+	case eventMRAutoEnabled:
+		detail = fmt.Sprintf("%s!%d %s when ready", e.Repo, e.MergeRequest.Number, e.MergeRequest.AutoMerge.Mode)
+	case eventMRAutoCancelled:
+		detail = fmt.Sprintf("%s!%d: %s", e.Repo, e.MergeRequest.Number, e.Reason)
 	case eventCommentAdded, eventCommentEdited, eventCommentDeleted, eventCommentResolved:
 		detail = fmt.Sprintf("%s!%d by %s", e.Repo, e.Number, e.Comment.Author)
 	case eventMRMergeability:
@@ -198,18 +219,19 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 		Use:   "watch [repo]",
 		Short: "Print repository events as they happen",
 		Long: "Print one line per event (repository created, updated or deleted, refs pushed, merge requests\n" +
-			"opened, merged or closed, notes added, edited, deleted or resolved) for every\n" +
+			"opened, merged (by auto-merge or not) or closed, auto-merge enabled or cancelled, notes added, edited, deleted or resolved) for every\n" +
 			"repository you can see, or only for [repo]. It runs until interrupted. When the connection drops it\n" +
 			"reconnects with a growing delay and resumes after the last event it printed; if the server no longer\n" +
 			"has that event it prints a gap event: reload what you display. Connection notices go to standard\n" +
 			"error.\n\n" +
 			"--json prints one JSON object per line (NDJSON). Fields: id, time (RFC 3339 UTC), type\n" +
 			"(repo_created, repo_updated, repo_deleted, pushed, merge_request_opened, merge_request_merged,\n" +
-			"merge_request_closed, comment_added, comment_edited, comment_deleted, comment_resolved or gap)\n" +
+			"merge_request_closed, merge_request_auto_merge_enabled, merge_request_auto_merge_cancelled\n" +
+			"(with reason), comment_added, comment_edited, comment_deleted, comment_resolved or gap)\n" +
 			"and, depending on the type, repo (name),\n" +
 			"repository (the repository fields of `repo show --json`), ref_updates (array of ref, old_id,\n" +
 			"new_id; an empty id means the ref was created or deleted), merge_request (the fields of\n" +
-			"`mr show --json`) and, for comment events, number (of the merge request) and comment. Unknown\n" +
+			"`mr show --json`; merge_request_merged also has auto, true for an auto-merge) and, for comment events, number (of the merge request) and comment. Unknown\n" +
 			"event types are skipped.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeRepoNames(env),

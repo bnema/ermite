@@ -33,7 +33,7 @@ type mrOut struct {
 	MergeMode      string  `json:"merge_mode"`
 }
 
-var mrKeys = []string{"author", "created_at", "description", "head_id", "merge_mode", "merged_commit_id", "number", "repo", "source_branch", "state", "target_branch", "title", "updated_at", "url"}
+var mrKeys = []string{"author", "auto_merge", "auto_merged", "created_at", "description", "head_id", "merge_mode", "merged_commit_id", "number", "repo", "source_branch", "state", "target_branch", "title", "updated_at", "url"}
 
 type commentOut struct {
 	ID       string `json:"id"`
