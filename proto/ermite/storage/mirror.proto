@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+package ermite.storage;
+import "google/protobuf/timestamp.proto";
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+message MirrorKey {
+  bytes sealed = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+message MirrorGlobal {
+  bool enabled = 1;
+  string url_template = 2;
+  string cron = 3;
+  bool all_branches = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+message MirrorRepo {
+  string url = 1;
+  string cron = 2;
+  optional bool all_branches = 3;
+  bool excluded = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+message MirrorState {
+  string state = 1;
+  string class = 2;
+  string reason = 3;
+  string detail = 4;
+  int32 consecutive_failures = 5;
+  google.protobuf.Timestamp last_attempt_at = 6;
+  google.protobuf.Timestamp last_success_at = 7;
+  google.protobuf.Timestamp next_retry_at = 8;
+  google.protobuf.Timestamp paused_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+message MirrorSnapshotRef {
+  string name = 1;
+  string id = 2;
+}
+message MirrorSnapshot {
+  string url = 1;
+  repeated MirrorSnapshotRef refs = 2;
+  bool all_branches = 3;
+  google.protobuf.Timestamp at = 4;
+}
