@@ -465,7 +465,7 @@ for (const control of [
   const saved = document;
   try {
     globalThis.document = { activeElement: null, querySelectorAll(sel) {
-      assert.equal(sel, ':is(form.cform, .cmt form) :is(textarea, input, select)');
+      assert.equal(sel, ':is(form.cform, .cmt form, form.d-acts) :is(textarea, input, select)');
       return [control];
     } };
     assert.equal(window.ermiteMR.hasDraft(), true);

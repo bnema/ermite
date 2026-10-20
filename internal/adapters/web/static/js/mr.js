@@ -456,8 +456,9 @@ window.ermiteMR = (() => {
   }
 
   function hasDraft() {
-    // Only form controls, never diff rows. Inline edits live in .cmt forms.
-    return $$(':is(form.cform, .cmt form) :is(textarea, input, select)').some((t) => {
+    // Only form controls, never diff rows. Inline edits live in .cmt forms; the
+    // merge form (d-acts) holds a chosen mode and the delete-branch box.
+    return $$(':is(form.cform, .cmt form, form.d-acts) :is(textarea, input, select)').some((t) => {
       if (['hidden', 'submit', 'button', 'reset', 'image'].includes(t.type)) return false;
       if (document.activeElement === t) return true;
       if (t.type === 'radio' || t.type === 'checkbox') return t.checked !== t.defaultChecked;
