@@ -889,14 +889,21 @@ func (c *CI) ListChecks(ctx context.Context, repo domain.RepoName, sha string, l
 
 // --- retention and deletion ---
 
+// jobCtxKeys lists the contexts keys of every attempt of a run.
+func jobCtxKeys(ctx context.Context, snap *kv.Snapshot, runID int64) [][]byte {
+	var keys [][]byte
+	for key := range snap.Prefix(ctx, []byte(jobCtxPrefix+fmt.Sprintf(idFormat, runID)+"/")) {
+		keys = append(keys, slices.Clone(key))
+	}
+	return keys
+}
+
 // runKeys lists every key of a run except its record: source, jobs, indexes.
 func (c *CI) runKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName, runID int64) [][]byte {
 	keys := [][]byte{runKey(repo, runID), runSrcKey(runID), openKey(runID)}
 	keys = append(keys, repoTokenKeys(ctx, snap, runID)...)
 	keys = append(keys, annotationKeys(ctx, snap, runID)...)
-	for key := range snap.Prefix(ctx, []byte(jobCtxPrefix+fmt.Sprintf(idFormat, runID)+"/")) {
-		keys = append(keys, slices.Clone(key))
-	}
+	keys = append(keys, jobCtxKeys(ctx, snap, runID)...)
 	for key, item := range snap.Prefix(ctx, []byte(jobsPrefix(runID))) {
 		keys = append(keys, slices.Clone(key))
 		if j, err := decodeJob(item); err == nil {
