@@ -17,6 +17,7 @@ import (
 
 // Pushes are the use cases around a Git push.
 type Pushes struct {
+	mirror  ports.MirrorTrigger // nil: no outbound mirror
 	meta    ports.RepoMetaStore
 	repos   *Repos
 	git     ports.GitRepos
@@ -41,6 +42,12 @@ var (
 // queues the maintenance that follows a push.
 func NewPushes(meta ports.RepoMetaStore, repos *Repos, git ports.GitRepos, bus ports.EventBus, clock ports.Clock, maint ports.MaintenanceScheduler, auth ports.Revalidator) *Pushes {
 	return &Pushes{meta: meta, repos: repos, git: git, bus: bus, clock: clock, maint: maint, auth: auth}
+}
+
+// WithMirror makes Record notify outbound mirrors. Call before the first push.
+func (u *Pushes) WithMirror(t ports.MirrorTrigger) *Pushes {
+	u.mirror = t
+	return u
 }
 
 // WithFreshener makes Record tell the reader that a repository changed, so that
@@ -262,6 +269,10 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 		Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now,
 		Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
 	})
+	if u.mirror != nil {
+		updates := append(make([]domain.RefUpdate, 0, len(updates)), updates...)
+		go u.mirror.OnPush(ctx, name, updates)
+	}
 	u.maint.Schedule(ctx, name)
 	log.Info().
 		Str("repo", name.String()).Int("refs", len(updates)).
