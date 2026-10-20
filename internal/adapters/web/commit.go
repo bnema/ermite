@@ -12,6 +12,7 @@ import (
 	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 )
 
 // bothViewsLines is the largest diff, in lines, that is sent in both the
@@ -105,7 +106,7 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 	if err != nil {
 		return nil, 0, err
 	}
-	res, err := s.getCommit(ctx, d.repo.Name, sha)
+	res, err := s.getCommit(ctx, d.repo.Name, sha, ports.GetCommitOptions{})
 	if err != nil {
 		return nil, 0, err
 	}

@@ -51,8 +51,8 @@ func (_m *BrowseService) EXPECT() *BrowseService_Expecter {
 }
 
 // GetCommit provides a mock function for the type BrowseService
-func (_mock *BrowseService) GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.CommitDetail, error) {
-	ret := _mock.Called(ctx, p, repo, rev)
+func (_mock *BrowseService) GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, opts ports.GetCommitOptions) (domain.CommitDetail, error) {
+	ret := _mock.Called(ctx, p, repo, rev, opts)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetCommit")
@@ -60,16 +60,16 @@ func (_mock *BrowseService) GetCommit(ctx context.Context, p domain.Principal, r
 
 	var r0 domain.CommitDetail
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision) (domain.CommitDetail, error)); ok {
-		return returnFunc(ctx, p, repo, rev)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision, ports.GetCommitOptions) (domain.CommitDetail, error)); ok {
+		return returnFunc(ctx, p, repo, rev, opts)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision) domain.CommitDetail); ok {
-		r0 = returnFunc(ctx, p, repo, rev)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision, ports.GetCommitOptions) domain.CommitDetail); ok {
+		r0 = returnFunc(ctx, p, repo, rev, opts)
 	} else {
 		r0 = ret.Get(0).(domain.CommitDetail)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision) error); ok {
-		r1 = returnFunc(ctx, p, repo, rev)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, domain.Revision, ports.GetCommitOptions) error); ok {
+		r1 = returnFunc(ctx, p, repo, rev, opts)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -86,11 +86,12 @@ type BrowseService_GetCommit_Call struct {
 //   - p domain.Principal
 //   - repo domain.RepoName
 //   - rev domain.Revision
-func (_e *BrowseService_Expecter) GetCommit(ctx any, p any, repo any, rev any) *BrowseService_GetCommit_Call {
-	return &BrowseService_GetCommit_Call{Call: _e.mock.On("GetCommit", ctx, p, repo, rev)}
+//   - opts ports.GetCommitOptions
+func (_e *BrowseService_Expecter) GetCommit(ctx any, p any, repo any, rev any, opts any) *BrowseService_GetCommit_Call {
+	return &BrowseService_GetCommit_Call{Call: _e.mock.On("GetCommit", ctx, p, repo, rev, opts)}
 }
 
-func (_c *BrowseService_GetCommit_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision)) *BrowseService_GetCommit_Call {
+func (_c *BrowseService_GetCommit_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, opts ports.GetCommitOptions)) *BrowseService_GetCommit_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -108,11 +109,16 @@ func (_c *BrowseService_GetCommit_Call) Run(run func(ctx context.Context, p doma
 		if args[3] != nil {
 			arg3 = args[3].(domain.Revision)
 		}
+		var arg4 ports.GetCommitOptions
+		if args[4] != nil {
+			arg4 = args[4].(ports.GetCommitOptions)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -123,7 +129,7 @@ func (_c *BrowseService_GetCommit_Call) Return(commitDetail domain.CommitDetail,
 	return _c
 }
 
-func (_c *BrowseService_GetCommit_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.CommitDetail, error)) *BrowseService_GetCommit_Call {
+func (_c *BrowseService_GetCommit_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, opts ports.GetCommitOptions) (domain.CommitDetail, error)) *BrowseService_GetCommit_Call {
 	_c.Call.Return(run)
 	return _c
 }

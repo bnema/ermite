@@ -298,8 +298,10 @@ type GetMergeRequestOptions struct {
 	SinceLastRead bool
 	// Files, when set, lists every changed file, without the file-count
 	// limit, and reads the hunks of the files in the window only, each within
-	// the per-file and the total limits of domain.DefaultDiffLimits. Unset,
-	// the diff is bounded by domain.DefaultDiffLimits (the API contract).
+	// the per-file and the total limits of domain.DefaultDiffLimits; generated
+	// files are listed collapsed (domain.OmitGenerated). With Full, the single
+	// file is read without the line limits. Unset, the diff is bounded by
+	// domain.DefaultDiffLimits and generated files are read (the API contract).
 	Files *FileWindow
 	// Base and Head, when not zero, are the diff the caller shows: Get
 	// returns domain.ErrConflict when the request's diff base or head differ
@@ -310,7 +312,22 @@ type GetMergeRequestOptions struct {
 }
 
 // FileWindow is the range [From, To) of files whose hunks are read.
-type FileWindow struct{ From, To int }
+//
+// Full asks for the one file From read in full: no line limit applies, only
+// the byte guard (domain.OneFileDiffLimits). It requires To == From+1; a
+// window with Full and any other To is domain.ErrInvalid.
+type FileWindow struct {
+	From, To int
+	Full     bool
+}
+
+// GetCommitOptions say which diff BrowseService.GetCommit reads.
+type GetCommitOptions struct {
+	// Files, when set, reads the hunks of a window of the files, as
+	// GetMergeRequestOptions.Files does. Unset (the zero value), the diff is
+	// bounded by domain.DefaultDiffLimits.
+	Files *FileWindow
+}
 
 // AddCommentParams describes the comment to add.
 type AddCommentParams struct {

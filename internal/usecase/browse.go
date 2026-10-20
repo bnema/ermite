@@ -336,12 +336,17 @@ func decodeCommitToken(tok string, path domain.TreePath) (domain.ObjectID, int, 
 }
 
 // GetCommit returns a commit with its statistics and its diff against the
-// first parent, within the default diff limits.
-func (b *Browse) GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision) (domain.CommitDetail, error) {
+// first parent, within the default diff limits or, with opts.Files, the limits
+// of that file window. An invalid window gives domain.ErrInvalid.
+func (b *Browse) GetCommit(ctx context.Context, p domain.Principal, repo domain.RepoName, rev domain.Revision, opts ports.GetCommitOptions) (domain.CommitDetail, error) {
+	limits, err := windowLimits(opts.Files)
+	if err != nil {
+		return domain.CommitDetail{}, err
+	}
 	if _, err := b.authorize(ctx, p, repo); err != nil {
 		return domain.CommitDetail{}, err
 	}
-	d, err := b.reader.GetCommit(ctx, repo, rev, domain.DefaultDiffLimits())
+	d, err := b.reader.GetCommit(ctx, repo, rev, limits)
 	if err != nil {
 		return domain.CommitDetail{}, err
 	}

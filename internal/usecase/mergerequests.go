@@ -493,6 +493,26 @@ func (m *MergeRequests) get(ctx context.Context, p domain.Principal, name domain
 	return repo, mr, nil
 }
 
+// windowLimits is the diff limits of a read: nil gives
+// domain.DefaultDiffLimits (the API contract, generated files read); a window
+// lists every file (MaxFiles 0), reads From..To and skips generated files; a
+// Full window reads the one file From with domain.OneFileDiffLimits. An invalid
+// window (negative, To < From, Full without To == From+1) is domain.ErrInvalid.
+func windowLimits(w *ports.FileWindow) (domain.DiffLimits, error) {
+	if w == nil {
+		return domain.DefaultDiffLimits(), nil
+	}
+	if w.From < 0 || w.To < 0 || (w.To != 0 && w.To < w.From) || (w.Full && w.To != w.From+1) {
+		return domain.DiffLimits{}, fmt.Errorf("%w: file window [%d, %d) full=%t", domain.ErrInvalid, w.From, w.To, w.Full)
+	}
+	if w.Full {
+		return domain.OneFileDiffLimits(w.From), nil
+	}
+	l := domain.DefaultDiffLimits()
+	l.MaxFiles, l.From, l.To, l.SkipGenerated = 0, w.From, w.To, true
+	return l, nil
+}
+
 // Get returns a merge request with its commits, its diff, its comments and the
 // read position. The diff compares the merge base of the target and the head
 // with the head ("target...head"), within domain.DefaultDiffLimits. With
@@ -507,12 +527,9 @@ func (m *MergeRequests) get(ctx context.Context, p domain.Principal, name domain
 // diff is no longer the one the caller shows (before any diff is read);
 // opts.DiffOnly skips the commits. An invalid window gives domain.ErrInvalid.
 func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, opts ports.GetMergeRequestOptions) (ports.MergeRequestDetail, error) {
-	limits := domain.DefaultDiffLimits()
-	if w := opts.Files; w != nil {
-		if w.From < 0 || w.To < 0 || (w.To != 0 && w.To < w.From) {
-			return ports.MergeRequestDetail{}, fmt.Errorf("%w: file window [%d, %d)", domain.ErrInvalid, w.From, w.To)
-		}
-		limits.MaxFiles, limits.From, limits.To = 0, w.From, w.To
+	limits, err := windowLimits(opts.Files)
+	if err != nil {
+		return ports.MergeRequestDetail{}, err
 	}
 	_, mr, err := m.get(ctx, p, name, number)
 	if err != nil {
@@ -773,8 +790,10 @@ func (m *MergeRequests) checkLine(ctx context.Context, mr domain.MergeRequest, p
 	}
 	idx := slices.IndexFunc(diff.Files, func(f domain.FileDiff) bool { return f.CommentPath() == params.Path })
 	if idx >= 0 {
-		one := domain.DefaultDiffLimits()
-		one.MaxFiles, one.From, one.To = 0, idx, idx+1
+		one, err := windowLimits(&ports.FileWindow{From: idx, To: idx + 1, Full: true})
+		if err != nil {
+			return err
+		}
 		if _, diff, err = m.git.DiffCommits(ctx, mr.Repo, base, mr.HeadID, one); err != nil {
 			return err
 		}

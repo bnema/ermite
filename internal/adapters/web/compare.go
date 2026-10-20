@@ -76,7 +76,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 
 	// The exact diff: one commit on top of the tip of the target.
 	if exact && !behind && len(ahead) == 1 {
-		res, err := s.getCommit(ctx, d.repo.Name, ahead[0].ID.String())
+		res, err := s.getCommit(ctx, d.repo.Name, ahead[0].ID.String(), ports.GetCommitOptions{})
 		if err != nil {
 			return nil, 0, err
 		}

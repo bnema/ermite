@@ -45,12 +45,12 @@ func (s *Server) getTree(ctx context.Context, repo domain.RepoName, rev, path st
 }
 
 // getCommit reads a commit with its diff.
-func (s *Server) getCommit(ctx context.Context, repo domain.RepoName, rev string) (domain.CommitDetail, error) {
+func (s *Server) getCommit(ctx context.Context, repo domain.RepoName, rev string, opts ports.GetCommitOptions) (domain.CommitDetail, error) {
 	r, err := domain.ParseRevision(rev)
 	if err != nil {
 		return domain.CommitDetail{}, err
 	}
-	return s.cfg.Browse.GetCommit(ctx, principal(ctx), repo, r)
+	return s.cfg.Browse.GetCommit(ctx, principal(ctx), repo, r, opts)
 }
 
 // openBlobAt opens the file path of the commit rev. The caller closes the

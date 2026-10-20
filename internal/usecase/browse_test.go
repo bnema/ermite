@@ -104,7 +104,7 @@ func browseOps() []browseOp {
 			r.EXPECT().ListCommits(mock.Anything, mock.Anything, mock.Anything).Return(ports.CommitPage{}, nil)
 		}},
 		{"GetCommit", func(b *usecase.Browse, ctx context.Context, p domain.Principal, repo domain.RepoName) error {
-			_, err := b.GetCommit(ctx, p, repo, domain.Revision{})
+			_, err := b.GetCommit(ctx, p, repo, domain.Revision{}, ports.GetCommitOptions{})
 			return err
 		}, func(r *mocks.RepoReader) {
 			r.EXPECT().GetCommit(mock.Anything, mock.Anything, mock.Anything, domain.DefaultDiffLimits()).Return(domain.CommitDetail{}, nil)
@@ -629,7 +629,7 @@ func TestBrowseVerifiesCommits(t *testing.T) {
 			Return(domain.CommitDetail{Commit: c, Stats: domain.DiffStats{FilesChanged: 2}}, nil)
 		v.EXPECT().VerifyCommits(ctx, pub.Name, []domain.Commit{c}).
 			Return(map[domain.ObjectID]domain.CommitVerification{oid("a"): verified})
-		d, err := f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{})
+		d, err := f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{}, ports.GetCommitOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, verified, d.Commit.Verification)
 		assert.Equal(t, 2, d.Stats.FilesChanged)
@@ -642,7 +642,7 @@ func TestBrowseVerifiesCommits(t *testing.T) {
 		_, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{})
 		require.NoError(t, err)
 		f.reader.EXPECT().GetCommit(ctx, pub.Name, mock.Anything, mock.Anything).Return(domain.CommitDetail{}, domain.ErrNotFound)
-		_, err = f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{})
+		_, err = f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{}, ports.GetCommitOptions{})
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
 
@@ -657,7 +657,7 @@ func TestBrowseVerifiesCommits(t *testing.T) {
 		page, err := f.browse.ListCommits(ctx, domain.Anonymous(), pub.Name, ports.ListCommitsParams{})
 		require.NoError(t, err)
 		assert.Equal(t, domain.CommitVerification{}, page.Commits[0].Verification)
-		d, err := f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{})
+		d, err := f.browse.GetCommit(ctx, domain.Anonymous(), pub.Name, domain.Revision{}, ports.GetCommitOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, domain.CommitVerification{}, d.Commit.Verification)
 	})

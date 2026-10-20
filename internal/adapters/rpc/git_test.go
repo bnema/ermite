@@ -157,7 +157,7 @@ func TestGitServiceGetCommitAndResolveRevision(t *testing.T) {
 	t.Run("GetCommit not found", func(t *testing.T) {
 		t.Parallel()
 		browse := mocks.NewBrowseService(t)
-		browse.EXPECT().GetCommit(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).Return(domain.CommitDetail{}, domain.ErrNotFound).Once()
+		browse.EXPECT().GetCommit(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything, mock.Anything).Return(domain.CommitDetail{}, domain.ErrNotFound).Once()
 		_, err := (&gitService{browse}).GetCommit(ownerCtx(), connect.NewRequest(&pb.GetCommitRequest{Repo: "demo", Revision: "main"}))
 		requireCode(t, connect.CodeNotFound, err)
 	})

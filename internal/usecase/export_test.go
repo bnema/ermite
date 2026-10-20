@@ -217,3 +217,6 @@ func (s *Mergeability) RetryDueForTest(repo domain.RepoName) (time.Time, bool) {
 func (s *Mergeability) PopDueForTest(repo domain.RepoName, due time.Time) []domain.RepoName {
 	return s.popDue(retryItem{key: repo, due: due})
 }
+
+// WindowLimits exposes windowLimits to the tests.
+var WindowLimits = windowLimits

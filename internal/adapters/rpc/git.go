@@ -180,7 +180,7 @@ func (s *gitService) GetCommit(ctx context.Context, req *connect.Request[pb.GetC
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	detail, err := s.browse.GetCommit(ctx, caller(ctx), name, rev)
+	detail, err := s.browse.GetCommit(ctx, caller(ctx), name, rev, ports.GetCommitOptions{})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
