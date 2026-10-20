@@ -12,6 +12,8 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
+const mirrorQueueSize = 64
+
 // MirrorsConfig supplies the mirror use case's dependencies.
 type MirrorsConfig struct {
 	Store        ports.MirrorStore
@@ -26,25 +28,38 @@ type MirrorsConfig struct {
 	PublicURL    string
 	ScheduleTick time.Duration
 	Workers      int
-	AllowAnyURL  bool
+	QueueSize    int // jobs waiting for a worker; default 64
+	// ValidateURL checks a resolved mirror URL; default domain.ValidateMirrorURL. Tests of
+	// local transports inject a permissive check.
+	ValidateURL func(string) error
+}
+
+// mirrorGen counts the changes of a repository (dirty) and the count the last successful
+// sync saw (clean, meaningful once cleanKnown).
+type mirrorGen struct {
+	dirty, clean uint64
+	cleanKnown   bool
 }
 
 // Mirrors manages outbound repository mirrors.
 type Mirrors struct {
-	cfg        MirrorsConfig
-	configMu   sync.RWMutex
-	mu         sync.Mutex
-	dirty      map[domain.RepoName]uint64
-	clean      map[domain.RepoName]uint64
-	flights    map[domain.RepoName]*mirrorFlight
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	start      sync.Once
-	closed     bool
-	jobs       chan domain.RepoName
+	cfg      MirrorsConfig
+	configMu sync.RWMutex // configuration changes; held for reads only around store reads and writes, never during a push
+	mu       sync.Mutex
+	gens     map[domain.RepoName]mirrorGen
+	flights  map[domain.RepoName]*mirrorFlight
+	flightWG sync.WaitGroup // one per flight, for tests that wait for the queue to drain
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	start    sync.Once
+	closed   bool
+	jobs     chan domain.RepoName
+
 	scheduleMu sync.Mutex
 	lastMinute time.Time
+	deferred   map[domain.RepoName]struct{} // due, but the queue was full
+
 	keyMu      sync.Mutex
 	key        ed25519.PrivateKey
 	keyCreated time.Time
@@ -58,16 +73,19 @@ func NewMirrors(cfg MirrorsConfig) *Mirrors {
 	if cfg.Workers <= 0 {
 		cfg.Workers = 2
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	return &Mirrors{cfg: cfg, ctx: ctx, cancel: cancel, dirty: make(map[domain.RepoName]uint64), clean: make(map[domain.RepoName]uint64), flights: make(map[domain.RepoName]*mirrorFlight), jobs: make(chan domain.RepoName, 64), lastMinute: cfg.Clock.Now().UTC().Truncate(time.Minute)}
-}
-
-// privateKey returns a copy so a transport cannot mutate the cached key.
-func (m *Mirrors) privateKey(ctx context.Context) (ed25519.PrivateKey, error) {
-	m.keyMu.Lock()
-	defer m.keyMu.Unlock()
-	if err := m.loadKey(ctx, false); err != nil {
-		return nil, err
+	if cfg.QueueSize <= 0 {
+		cfg.QueueSize = mirrorQueueSize
 	}
-	return append(ed25519.PrivateKey(nil), m.key...), nil
+	if cfg.ValidateURL == nil {
+		cfg.ValidateURL = domain.ValidateMirrorURL
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Mirrors{
+		cfg: cfg, ctx: ctx, cancel: cancel,
+		gens:       make(map[domain.RepoName]mirrorGen),
+		flights:    make(map[domain.RepoName]*mirrorFlight),
+		deferred:   make(map[domain.RepoName]struct{}),
+		jobs:       make(chan domain.RepoName, cfg.QueueSize),
+		lastMinute: cfg.Clock.Now().UTC().Truncate(time.Minute),
+	}
 }

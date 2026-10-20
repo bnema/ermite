@@ -5,7 +5,6 @@ package usecase
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -122,12 +121,14 @@ func (m *Mirrors) SetGlobalConfig(ctx context.Context, p domain.Principal, patch
 	if err := m.cfg.Store.PutGlobal(ctx, g); err != nil {
 		return old, err
 	}
+	// One failing reset must not leave the others stale: the policy is saved.
+	var errs []error
 	for _, name := range changed {
 		if err := m.reset(ctx, name); err != nil {
-			return g, err
+			errs = append(errs, err)
 		}
 	}
-	return g, nil
+	return g, errors.Join(errs...)
 }
 
 func invalidCron(e error) error {
@@ -141,6 +142,8 @@ func invalidCron(e error) error {
 func sameMirrorTarget(a, b domain.MirrorTarget) bool {
 	return a.Enabled == b.Enabled && a.URL == b.URL && a.CronSpec == b.CronSpec && a.AllBranches == b.AllBranches && a.Source == b.Source
 }
+
+// reset lifts the incident of a repository whose effective target changed and marks it dirty.
 func (m *Mirrors) reset(ctx context.Context, repo domain.RepoName) error {
 	t, err := m.target(ctx, repo)
 	if err != nil {
@@ -157,9 +160,23 @@ func (m *Mirrors) reset(ctx context.Context, repo domain.RepoName) error {
 		s = domain.MirrorDisable(s, now)
 	}
 	m.mu.Lock()
-	m.dirty[repo]++
+	g := m.gens[repo]
+	g.dirty++
+	m.gens[repo] = g
 	m.mu.Unlock()
 	return m.cfg.Store.PutStatus(ctx, s)
+}
+
+// resetIfChanged resets repo when its effective target is no longer before. configMu is held.
+func (m *Mirrors) resetIfChanged(ctx context.Context, repo domain.RepoName, before domain.MirrorTarget, beforeErr error) (domain.MirrorTarget, error) {
+	after, err := m.target(ctx, repo)
+	if err != nil {
+		return after, err
+	}
+	if beforeErr == nil && sameMirrorTarget(before, after) {
+		return after, nil
+	}
+	return after, m.reset(ctx, repo)
 }
 
 // SetRepoMirror sets a repository override.
@@ -184,14 +201,12 @@ func (m *Mirrors) setRepoLocked(ctx context.Context, c domain.MirrorRepoConfig) 
 	if _, err := m.resolve(g, &c, c.Repo); err != nil {
 		return domain.MirrorTarget{}, invalidCron(err)
 	}
+	before, beforeErr := m.target(ctx, c.Repo)
 	c.UpdatedAt = m.cfg.Clock.Now().UTC()
 	if err := m.cfg.Store.PutRepoConfig(ctx, c); err != nil {
 		return domain.MirrorTarget{}, err
 	}
-	if err := m.reset(ctx, c.Repo); err != nil {
-		return domain.MirrorTarget{}, err
-	}
-	return m.target(ctx, c.Repo)
+	return m.resetIfChanged(ctx, c.Repo, before, beforeErr)
 }
 
 // RemoveRepoMirror restores inherited policy.
@@ -201,10 +216,12 @@ func (m *Mirrors) RemoveRepoMirror(ctx context.Context, p domain.Principal, repo
 	}
 	m.configMu.Lock()
 	defer m.configMu.Unlock()
+	before, beforeErr := m.target(ctx, repo)
 	if err := m.cfg.Store.DeleteRepoConfig(ctx, repo); err != nil {
 		return err
 	}
-	return m.reset(ctx, repo)
+	_, err := m.resetIfChanged(ctx, repo, before, beforeErr)
+	return err
 }
 
 // SetRepoExcluded updates exclusion without discarding an override.
@@ -224,6 +241,11 @@ func (m *Mirrors) SetRepoExcluded(ctx context.Context, p domain.Principal, repo 
 
 // GetStatus returns a read-authorized status, redacting administrative diagnostics.
 func (m *Mirrors) GetStatus(ctx context.Context, p domain.Principal, repo domain.RepoName) (ports.MirrorStatusView, error) {
+	return m.statusView(ctx, p, repo, true)
+}
+
+// statusView builds the view of one repository; withNext computes the next scheduled run.
+func (m *Mirrors) statusView(ctx context.Context, p domain.Principal, repo domain.RepoName, withNext bool) (ports.MirrorStatusView, error) {
 	r, err := m.cfg.Meta.Get(ctx, repo)
 	if err != nil {
 		return ports.MirrorStatusView{}, err
@@ -239,22 +261,26 @@ func (m *Mirrors) GetStatus(ctx context.Context, p domain.Principal, repo domain
 	if err != nil {
 		return ports.MirrorStatusView{}, err
 	}
+	return m.view(p, t, s, withNext), nil
+}
+
+func (m *Mirrors) view(p domain.Principal, t domain.MirrorTarget, s domain.MirrorStatus, withNext bool) ports.MirrorStatusView {
 	var next time.Time
-	if t.Enabled && s.State != domain.MirrorPaused {
+	if withNext && t.Enabled && s.State != domain.MirrorPaused {
 		if s.State == domain.MirrorFailing {
 			next = s.NextRetryAt
 		} else {
 			next, _ = domain.NextCron(domain.CronSchedule{Cron: t.Cron, Loc: time.UTC}, m.cfg.Clock.Now())
 		}
 	}
-	if !p.Allows(domain.ScopeRepoAdmin, repo) {
+	if !p.Allows(domain.ScopeRepoAdmin, t.Repo) {
 		s.Detail, s.Reason = "", ""
 		t.URL = ""
 	}
-	return ports.MirrorStatusView{Target: t, Status: s, NextRunAt: next}, nil
+	return ports.MirrorStatusView{Target: t, Status: s, NextRunAt: next}
 }
 
-// ListStatus returns all statuses to an owner.
+// ListStatus returns all statuses to an owner, from three reads instead of three per repository.
 func (m *Mirrors) ListStatus(ctx context.Context, p domain.Principal) ([]ports.MirrorStatusView, error) {
 	if err := mirrorOwner(p); err != nil {
 		return nil, err
@@ -263,19 +289,51 @@ func (m *Mirrors) ListStatus(ctx context.Context, p domain.Principal) ([]ports.M
 	if err != nil {
 		return nil, err
 	}
+	g, err := m.cfg.Store.GetGlobal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	configs, err := m.cfg.Store.ListRepoConfigs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byRepo := make(map[domain.RepoName]domain.MirrorRepoConfig, len(configs))
+	for _, c := range configs {
+		byRepo[c.Repo] = c
+	}
+	statuses, err := m.cfg.Store.ListStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stored := make(map[domain.RepoName]domain.MirrorStatus, len(statuses))
+	for _, s := range statuses {
+		stored[s.Repo] = s
+	}
 	out := make([]ports.MirrorStatusView, 0, len(repos))
 	for _, r := range repos {
-		v, err := m.GetStatus(ctx, p, r.Name)
+		var cp *domain.MirrorRepoConfig
+		if c, ok := byRepo[r.Name]; ok {
+			cp = &c
+		}
+		t, err := m.resolve(g, cp, r.Name)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, v)
+		s, ok := stored[r.Name]
+		if !ok {
+			s = domain.MirrorStatus{Repo: r.Name, State: domain.MirrorDisabled}
+		}
+		out = append(out, m.view(p, t, s, true))
 	}
 	return out, nil
 }
 
-// Warning provides an administrative post-receive diagnostic.
-func (m *Mirrors) Warning(ctx context.Context, repo domain.RepoName) string {
+// Warning provides the post-receive diagnostic of a failing or paused mirror to the admins of
+// the repository only: it names the remote and the reason.
+func (m *Mirrors) Warning(ctx context.Context, p domain.Principal, repo domain.RepoName) string {
+	if !p.Allows(domain.ScopeRepoAdmin, repo) {
+		return ""
+	}
 	s, err := m.status(ctx, repo)
 	if err != nil || (s.State != domain.MirrorFailing && s.State != domain.MirrorPaused) {
 		return ""
@@ -289,45 +347,19 @@ func (m *Mirrors) Warning(ctx context.Context, repo domain.RepoName) string {
 
 // Badge returns a viewer-safe state and optional administrative reason.
 func (m *Mirrors) Badge(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.MirrorState, string) {
-	v, err := m.GetStatus(ctx, p, repo)
+	v, err := m.statusView(ctx, p, repo, false)
 	if err != nil {
 		return domain.MirrorDisabled, ""
 	}
 	return v.Status.State, v.Status.Reason
 }
 
-// testURL substitutes only during validation/resolution; stored and pushed URLs remain intact.
-func (m *Mirrors) testURL(url string) string {
-	if m.cfg.AllowAnyURL && strings.HasPrefix(url, "file://") {
-		return "git@mirror-test:" + strings.TrimPrefix(url, "file://")
-	}
-	return url
-}
 func (m *Mirrors) validateGlobal(g domain.MirrorGlobalConfig) error {
-	g.URLTemplate = m.testURL(g.URLTemplate)
-	return domain.ValidateMirrorGlobalConfig(g)
+	return domain.ValidateMirrorGlobalConfigWith(g, m.cfg.ValidateURL)
 }
 func (m *Mirrors) validateRepo(c domain.MirrorRepoConfig) error {
-	c.URL = m.testURL(c.URL)
-	return domain.ValidateMirrorRepoConfig(c)
+	return domain.ValidateMirrorRepoConfigWith(c, m.cfg.ValidateURL)
 }
 func (m *Mirrors) resolve(g domain.MirrorGlobalConfig, c *domain.MirrorRepoConfig, repo domain.RepoName) (domain.MirrorTarget, error) {
-	originalGlobal := g.URLTemplate
-	originalRepo := ""
-	g.URLTemplate = m.testURL(g.URLTemplate)
-	if c != nil {
-		copyConfig := *c
-		originalRepo = c.URL
-		copyConfig.URL = m.testURL(c.URL)
-		c = &copyConfig
-	}
-	t, err := domain.ResolveMirror(g, c, repo)
-	if err == nil && t.Enabled && m.cfg.AllowAnyURL {
-		if originalRepo != "" {
-			t.URL = originalRepo
-		} else if strings.HasPrefix(originalGlobal, "file://") {
-			t.URL, err = domain.ExpandMirrorURL(originalGlobal, repo)
-		}
-	}
-	return t, err
+	return domain.ResolveMirrorWith(g, c, repo, m.cfg.ValidateURL)
 }

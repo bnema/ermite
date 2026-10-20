@@ -4,6 +4,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -67,24 +68,32 @@ func (m *Mirrors) OnPush(_ context.Context, repo domain.RepoName, _ []domain.Ref
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.closed {
-		m.dirty[repo]++
+		g := m.gens[repo]
+		g.dirty++
+		m.gens[repo] = g
 	}
 }
 
-// ScheduleNow examines one current minute; missed minutes are not replayed.
+// ScheduleNow examines the current minute; missed minutes are not replayed. A repository that
+// was due but found the queue full is kept and retried on the next calls, so a full queue
+// delays a sync instead of skipping a period. Workers must be running (Start).
 func (m *Mirrors) ScheduleNow(ctx context.Context) {
-	m.Start()
 	m.scheduleMu.Lock()
 	defer m.scheduleMu.Unlock()
 	now := m.cfg.Clock.Now().UTC()
 	minute := now.Truncate(time.Minute)
-	if !minute.After(m.lastMinute) {
+	newMinute := minute.After(m.lastMinute)
+	if !newMinute && len(m.deferred) == 0 {
 		return
 	}
-	m.lastMinute = minute
+	log := zerowrap.FromCtx(ctx)
 	repos, err := m.cfg.Meta.List(ctx)
 	if err != nil {
+		log.Warn().Err(err).Msg("mirror schedule: cannot list repositories")
 		return
+	}
+	if newMinute {
+		m.lastMinute = minute
 	}
 	live := make(map[domain.RepoName]bool, len(repos))
 	for _, r := range repos {
@@ -92,6 +101,11 @@ func (m *Mirrors) ScheduleNow(ctx context.Context) {
 			return
 		}
 		live[r.Name] = true
+		_, wasDeferred := m.deferred[r.Name]
+		if !newMinute && !wasDeferred {
+			continue
+		}
+		delete(m.deferred, r.Name)
 		t, err := m.target(ctx, r.Name)
 		if err != nil || !t.Enabled {
 			continue
@@ -100,35 +114,40 @@ func (m *Mirrors) ScheduleNow(ctx context.Context) {
 		if err != nil || s.State == domain.MirrorPaused {
 			continue
 		}
-		due := false
-		if s.State == domain.MirrorFailing {
-			due = !now.Before(s.NextRetryAt)
-		} else {
-			due = (domain.CronSchedule{Cron: t.Cron, Loc: time.UTC}).Due(minute)
+		due := wasDeferred
+		if !due {
+			if s.State == domain.MirrorFailing {
+				due = !now.Before(s.NextRetryAt)
+			} else {
+				due = (domain.CronSchedule{Cron: t.Cron, Loc: time.UTC}).Due(minute)
+			}
 		}
 		if !due {
 			continue
 		}
 		m.mu.Lock()
-		clean, known := m.clean[r.Name]
-		dirty := m.dirty[r.Name]
+		g := m.gens[r.Name]
 		m.mu.Unlock()
-		if s.State == domain.MirrorOK && known && clean == dirty {
+		if s.State == domain.MirrorOK && g.cleanKnown && g.clean == g.dirty {
 			snapshot, e := m.cfg.Store.GetSnapshot(ctx, r.Name)
 			if e == nil && snapshot.URL == t.URL && snapshot.AllBranches == t.AllBranches {
 				continue
 			}
 		}
-		if _, _, err := m.enqueue(r.Name, false, false); err != nil {
-			log := zerowrap.FromCtx(ctx)
-			log.Warn().Str("repo", r.Name.String()).Msg("mirror queue full or closed")
+		if _, _, err := m.enqueue(r.Name, mirrorReq{}); errors.Is(err, domain.ErrResourceExhausted) {
+			m.deferred[r.Name] = struct{}{}
+			log.Warn().Str("repo", r.Name.String()).Msg("mirror queue full: sync deferred")
+		}
+	}
+	for repo := range m.deferred {
+		if !live[repo] {
+			delete(m.deferred, repo)
 		}
 	}
 	m.mu.Lock()
-	for repo := range m.dirty {
+	for repo := range m.gens {
 		if !live[repo] {
-			delete(m.dirty, repo)
-			delete(m.clean, repo)
+			delete(m.gens, repo)
 		}
 	}
 	m.mu.Unlock()

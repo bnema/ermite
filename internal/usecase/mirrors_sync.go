@@ -6,19 +6,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
+// mirrorReq is what a sync request asks for. Requests that coalesce merge by OR.
+type mirrorReq struct{ force, manual bool }
+
+func (r mirrorReq) merge(o mirrorReq) mirrorReq {
+	return mirrorReq{force: r.force || o.force, manual: r.manual || o.manual}
+}
+
+// mirrorFlight is the single in-flight sync of a repository: cur is running, next is the
+// merged request that arrived meanwhile (one rerun, whatever the number of requests).
 type mirrorFlight struct {
-	pending, force, manual bool
-	pendingForce           bool
-	pendingManual          bool
-	done                   chan struct{}
-	completed              bool
-	result                 ports.MirrorSyncResult
-	err                    error
+	cur       mirrorReq
+	next      *mirrorReq
+	done      chan struct{} // closed with the result of cur's first run
+	completed bool
+	result    ports.MirrorSyncResult
+	err       error
 }
 
 var (
@@ -33,12 +42,12 @@ func (m *Mirrors) Sync(ctx context.Context, p domain.Principal, repo domain.Repo
 		return ports.MirrorSyncResult{}, err
 	}
 	m.Start()
-	f, queued, err := m.enqueue(repo, force, true)
+	f, queued, err := m.enqueue(repo, mirrorReq{force: force, manual: true})
 	if err != nil {
 		return ports.MirrorSyncResult{}, err
 	}
 	if queued {
-		return ports.MirrorSyncResult{Status: domain.MirrorStatus{Repo: repo}, Queued: true}, nil
+		return ports.MirrorSyncResult{Repo: repo, Status: domain.MirrorStatus{Repo: repo}, Queued: true}, nil
 	}
 	select {
 	case <-m.ctx.Done():
@@ -46,11 +55,14 @@ func (m *Mirrors) Sync(ctx context.Context, p domain.Principal, repo domain.Repo
 	case <-ctx.Done():
 		return ports.MirrorSyncResult{}, ctx.Err()
 	case <-f.done:
+		f.result.Repo = repo
 		return f.result, f.err
 	}
 }
 
-// SyncAll requests a sync for every repository as an owner.
+// SyncAll syncs every repository whose mirror is enabled, as an owner. A failing repository
+// does not stop the others: its outcome carries the error. The returned error is only for
+// what prevents the whole request (authorization, listing, cancellation).
 func (m *Mirrors) SyncAll(ctx context.Context, p domain.Principal, force bool) ([]ports.MirrorSyncResult, error) {
 	if err := mirrorOwner(p); err != nil {
 		return nil, err
@@ -61,103 +73,159 @@ func (m *Mirrors) SyncAll(ctx context.Context, p domain.Principal, force bool) (
 	}
 	out := make([]ports.MirrorSyncResult, 0, len(repos))
 	for _, r := range repos {
-		v, err := m.Sync(ctx, p, r.Name, force)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return out, err
 		}
-		out = append(out, v)
+		t, err := m.target(ctx, r.Name)
+		if err == nil && !t.Enabled {
+			continue
+		}
+		var res ports.MirrorSyncResult
+		if err == nil {
+			res, err = m.Sync(ctx, p, r.Name, force)
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return out, ctxErr
+		}
+		res.Repo = r.Name
+		if res.Status.Repo == (domain.RepoName{}) {
+			res.Status.Repo = r.Name
+		}
+		res.Err = err
+		out = append(out, res)
 	}
 	return out, nil
 }
-func (m *Mirrors) enqueue(repo domain.RepoName, force, manual bool) (*mirrorFlight, bool, error) {
+
+// Wait blocks until no sync is queued or running, or ctx is done. It is for tests and shutdown
+// paths that need a deterministic barrier.
+func (m *Mirrors) Wait(ctx context.Context) {
+	done := make(chan struct{})
+	go func() { m.flightWG.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
+func (m *Mirrors) enqueue(repo domain.RepoName, req mirrorReq) (*mirrorFlight, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
 		return nil, false, context.Canceled
 	}
 	if f := m.flights[repo]; f != nil {
-		f.pending = true
-		f.pendingForce = f.pendingForce || force
-		f.pendingManual = f.pendingManual || manual
+		next := req
+		if f.next != nil {
+			next = f.next.merge(req)
+		}
+		f.next = &next
 		return f, true, nil
 	}
-	f := &mirrorFlight{force: force, manual: manual, done: make(chan struct{})}
-	m.flights[repo] = f
+	f := &mirrorFlight{cur: req, done: make(chan struct{})}
 	select {
 	case m.jobs <- repo:
+		m.flights[repo] = f
+		m.flightWG.Add(1)
 		return f, false, nil
 	default:
-		delete(m.flights, repo)
 		return nil, false, domain.ErrResourceExhausted
 	}
 }
+
 func (m *Mirrors) run(repo domain.RepoName) {
 	m.mu.Lock()
 	f := m.flights[repo]
 	m.mu.Unlock()
 	for {
-		result, err := m.attempt(m.ctx, repo, f.force, f.manual)
+		result, err := m.attempt(m.ctx, repo, f.cur)
 		m.mu.Lock()
 		if !f.completed {
 			f.result, f.err = result, err
 			f.completed = true
 			close(f.done)
 		}
-		if !f.pending || m.closed {
+		if f.next == nil || m.closed {
 			delete(m.flights, repo)
+			m.flightWG.Done()
 			m.mu.Unlock()
 			return
 		}
-		f.force, f.manual = f.pendingForce, f.pendingManual
-		f.pending, f.pendingForce, f.pendingManual = false, false, false
+		f.cur, f.next = *f.next, nil
 		m.mu.Unlock()
 	}
 }
 
-func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, force, manual bool) (ports.MirrorSyncResult, error) {
+// mirrorPlan is what attempt decided under the configuration lock, before pushing.
+type mirrorPlan struct {
+	meta       domain.Repo
+	target     domain.MirrorTarget
+	prev       domain.MirrorStatus
+	start      time.Time
+	generation uint64
+}
+
+// plan reads the target and status and applies the skip and throttle rules. When done is set
+// the attempt ends with result and err.
+func (m *Mirrors) plan(ctx context.Context, repo domain.RepoName, req mirrorReq) (pl mirrorPlan, result ports.MirrorSyncResult, done bool, err error) {
 	m.configMu.RLock()
 	defer m.configMu.RUnlock()
 	meta, err := m.cfg.Meta.Get(ctx, repo)
 	if err != nil {
-		return ports.MirrorSyncResult{}, err
+		return pl, result, true, err
 	}
 	t, err := m.target(ctx, repo)
 	if err != nil {
-		return ports.MirrorSyncResult{}, err
+		return pl, result, true, err
 	}
 	prev, err := m.status(ctx, repo)
 	if err != nil {
-		return ports.MirrorSyncResult{}, err
+		return pl, result, true, err
 	}
-	start := m.cfg.Clock.Now().UTC()
-	now := start
+	now := m.cfg.Clock.Now().UTC()
 	if !t.Enabled {
 		s := domain.MirrorDisable(prev, now)
 		if prev.State != domain.MirrorDisabled {
 			err = m.cfg.Store.PutStatus(ctx, s)
 		}
-		return ports.MirrorSyncResult{Status: s}, err
+		return pl, ports.MirrorSyncResult{Status: s}, true, err
 	}
-	if !force && (prev.State == domain.MirrorPaused || (!manual && prev.State == domain.MirrorFailing && now.Before(prev.NextRetryAt))) {
-		return ports.MirrorSyncResult{Status: prev}, nil
+	if !req.force && (prev.State == domain.MirrorPaused || (!req.manual && prev.State == domain.MirrorFailing && now.Before(prev.NextRetryAt))) {
+		return pl, ports.MirrorSyncResult{Status: prev}, true, nil
 	}
-	if manual && !force && !prev.LastAttemptAt.IsZero() && now.Sub(prev.LastAttemptAt) < domain.MirrorManualInterval {
-		return ports.MirrorSyncResult{Status: prev}, fmt.Errorf("%w: last sync %s ago; wait 60s or use --force", domain.ErrResourceExhausted, now.Sub(prev.LastAttemptAt))
+	if req.manual && !req.force && !prev.LastAttemptAt.IsZero() && now.Sub(prev.LastAttemptAt) < domain.MirrorManualInterval {
+		return pl, ports.MirrorSyncResult{Status: prev}, true, fmt.Errorf("%w: last sync %s ago; wait %s or use --force", domain.ErrResourceExhausted, now.Sub(prev.LastAttemptAt).Round(time.Second), domain.MirrorManualInterval)
 	}
 	m.mu.Lock()
-	generation := m.dirty[repo]
+	generation := m.gens[repo].dirty
 	m.mu.Unlock()
-	refs, runErr := m.cfg.Reader.ListRefs(ctx, repo)
+	return mirrorPlan{meta: meta, target: t, prev: prev, start: now, generation: generation}, result, false, nil
+}
+
+// attempt runs one sync. The configuration lock is held to read and to record, never while
+// pushing: a slow remote must not block configuration changes.
+func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, req mirrorReq) (ports.MirrorSyncResult, error) {
+	pl, result, done, err := m.plan(ctx, repo, req)
+	if done || err != nil {
+		return result, err
+	}
+	t := pl.target
+	// A missing sealer or an unreadable key fails the attempt before any repository I/O.
+	key, runErr := m.privateKey(ctx)
+	var refs []domain.Ref
 	var selected []domain.MirrorRef
 	if runErr == nil {
-		branch, _, e := m.cfg.Git.DefaultBranch(ctx, repo)
-		runErr = e
-		if e == nil {
+		refs, runErr = m.cfg.Reader.ListRefs(ctx, repo)
+	}
+	if runErr == nil {
+		var branch string
+		branch, _, runErr = m.cfg.Git.DefaultBranch(ctx, repo)
+		if runErr == nil {
 			selected = domain.MirrorRefspecs(refs, branch, t.AllBranches)
 		}
 	}
 	noOp := false
-	if runErr == nil && !force {
+	if runErr == nil && !req.force {
 		snapshot, e := m.cfg.Store.GetSnapshot(ctx, repo)
 		if e != nil && !errors.Is(e, domain.ErrNotFound) {
 			return ports.MirrorSyncResult{}, e
@@ -165,17 +233,13 @@ func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, force, manu
 		noOp = e == nil && snapshot.Equal(t.URL, selected, t.AllBranches)
 	}
 	if runErr == nil && !noOp {
-		key, e := m.privateKey(ctx)
-		runErr = e
-		if e == nil {
-			specs := make([]string, len(selected))
-			for i, ref := range selected {
-				specs[i] = ref.Name + ":" + ref.Name
-			}
-			// An empty ref list must not invoke git's implicit default push behavior.
-			if len(specs) > 0 {
-				_, runErr = m.cfg.Pusher.Push(ctx, ports.MirrorPush{Repo: repo, URL: t.URL, Refspecs: specs, PrivateKey: key})
-			}
+		specs := make([]string, len(selected))
+		for i, ref := range selected {
+			specs[i] = ref.Name + ":" + ref.Name
+		}
+		// An empty ref list must not invoke git's implicit default push behavior.
+		if len(specs) > 0 {
+			_, runErr = m.cfg.Pusher.Push(ctx, ports.MirrorPush{Repo: repo, URL: t.URL, Refspecs: specs, PrivateKey: key})
 		}
 	}
 	if ctx.Err() != nil {
@@ -183,24 +247,30 @@ func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, force, manu
 	}
 	var failure *domain.MirrorError
 	if runErr != nil && !errors.As(runErr, &failure) {
-		detail := "local mirror operation failed"
-		if m.cfg.Sealer == nil {
-			detail = "the server has no ERMITE_SECRETS_KEY, so it cannot store the mirror key"
-		}
-		failure = &domain.MirrorError{Class: domain.MirrorClassInternal, Detail: detail}
+		failure = &domain.MirrorError{Class: domain.MirrorClassInternal, Detail: "local mirror operation failed"}
 		runErr = failure
-		if m.cfg.Sealer == nil {
-			runErr = fmt.Errorf("%w: %s", domain.ErrPreconditionFailed, detail)
-		}
+	}
+	return m.record(ctx, repo, pl, selected, noOp, failure, runErr)
+}
+
+// record stores the outcome, unless the effective target changed during the push: the result
+// then describes a target that no longer applies and is discarded.
+func (m *Mirrors) record(ctx context.Context, repo domain.RepoName, pl mirrorPlan, selected []domain.MirrorRef, noOp bool, failure *domain.MirrorError, runErr error) (ports.MirrorSyncResult, error) {
+	m.configMu.RLock()
+	defer m.configMu.RUnlock()
+	t, err := m.target(ctx, repo)
+	if err != nil {
+		return ports.MirrorSyncResult{}, err
+	}
+	if !sameMirrorTarget(pl.target, t) {
+		s, err := m.status(ctx, repo)
+		return ports.MirrorSyncResult{Status: s}, err
 	}
 	// The push may be slow: completion, retry and success times come from the
 	// clock after it returns; only LastAttemptAt marks when the attempt began.
-	now = m.cfg.Clock.Now().UTC()
-	transition := domain.ApplyMirrorOutcome(prev, domain.MirrorOutcome{Err: failure, NoOp: noOp}, now)
-	transition.Status.LastAttemptAt = start
-	if failure != nil && m.cfg.Sealer == nil {
-		transition.Status.Reason = failure.Detail
-	}
+	now := m.cfg.Clock.Now().UTC()
+	transition := domain.ApplyMirrorOutcome(pl.prev, domain.MirrorOutcome{Err: failure, NoOp: noOp}, now)
+	transition.Status.LastAttemptAt = pl.start
 	if failure == nil {
 		if err := m.cfg.Store.PutSnapshot(ctx, repo, domain.MirrorSnapshot{URL: t.URL, Refs: selected, AllBranches: t.AllBranches, At: now}); err != nil {
 			return ports.MirrorSyncResult{}, err
@@ -211,15 +281,17 @@ func (m *Mirrors) attempt(ctx context.Context, repo domain.RepoName, force, manu
 	}
 	if failure == nil {
 		m.mu.Lock()
-		m.clean[repo] = generation
+		g := m.gens[repo]
+		g.clean, g.cleanKnown = pl.generation, true
+		m.gens[repo] = g
 		m.mu.Unlock()
 	}
 	if m.cfg.Bus != nil {
 		if transition.FailedEvent {
-			m.cfg.Bus.Publish(ctx, domain.MirrorFailed{Repo: repo, State: transition.Status.State, Class: transition.Status.Class, Reason: transition.Status.Reason, At: now, Visibility: meta.Visibility, CreatedAt: meta.CreatedAt})
+			m.cfg.Bus.Publish(ctx, domain.MirrorFailed{Repo: repo, State: transition.Status.State, Class: transition.Status.Class, At: now, Visibility: pl.meta.Visibility, CreatedAt: pl.meta.CreatedAt})
 		}
 		if transition.Recovered {
-			m.cfg.Bus.Publish(ctx, domain.MirrorRecovered{Repo: repo, At: now, Visibility: meta.Visibility, CreatedAt: meta.CreatedAt})
+			m.cfg.Bus.Publish(ctx, domain.MirrorRecovered{Repo: repo, At: now, Visibility: pl.meta.Visibility, CreatedAt: pl.meta.CreatedAt})
 		}
 	}
 	return ports.MirrorSyncResult{Status: transition.Status, NoOp: noOp}, runErr

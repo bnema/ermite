@@ -270,8 +270,7 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 		Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
 	})
 	if u.mirror != nil {
-		updates := append(make([]domain.RefUpdate, 0, len(updates)), updates...)
-		go u.mirror.OnPush(ctx, name, updates)
+		u.mirror.OnPush(ctx, name, updates) // marks only: never blocks
 	}
 	u.maint.Schedule(ctx, name)
 	log.Info().
