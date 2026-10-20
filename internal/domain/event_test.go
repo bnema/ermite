@@ -52,3 +52,10 @@ func TestEventKinds(t *testing.T) {
 	assert.Equal(t, "repo.pushed", domain.PushEvent{}.EventKind())
 	assert.Equal(t, "gap", domain.EventGap{}.EventKind())
 }
+
+func TestAutoMergeEventKinds(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "mr.auto_merge_enabled", domain.MergeRequestAutoMergeEnabled{}.EventKind())
+	assert.Equal(t, "mr.auto_merge_cancelled", domain.MergeRequestAutoMergeCancelled{}.EventKind())
+	assert.Equal(t, "mr.merged", domain.MergeRequestMerged{Auto: true}.EventKind())
+}

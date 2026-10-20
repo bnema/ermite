@@ -330,3 +330,9 @@ func TestMergeabilityAllowsAndIsFor(t *testing.T) {
 	assert.False(t, m.IsFor(oid(t, 'a'), oid(t, 'c')))
 	assert.False(t, domain.Mergeability{}.IsFor(domain.ObjectID{}, domain.ObjectID{}))
 }
+
+func TestRepoSettingsAllowAutoMergeDefaultOff(t *testing.T) {
+	t.Parallel()
+	assert.False(t, domain.DefaultRepoSettings().AllowAutoMerge)
+	assert.False(t, domain.RepoSettings{}.AllowAutoMerge)
+}

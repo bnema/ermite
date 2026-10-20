@@ -728,6 +728,18 @@ func encodeMergeRequest(mr domain.MergeRequest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	var autoMerge *storagepb.AutoMerge
+	if am := mr.AutoMerge; am != nil {
+		amMode, err := encodeMode(am.Mode)
+		if err != nil || amMode == storagepb.MergeMode_MERGE_MODE_UNSPECIFIED {
+			return nil, fmt.Errorf("%w: merge mode %q in the auto-merge", domain.ErrInvalid, am.Mode)
+		}
+		autoMerge = &storagepb.AutoMerge{
+			Mode: amMode, HeadId: am.HeadID.String(),
+			EnablerKind: string(am.EnabledBy.Kind), EnablerTokenId: am.EnabledBy.TokenID,
+			EnablerLabel: am.EnablerLabel, EnabledAt: encodeTime(am.EnabledAt),
+		}
+	}
 	return mustMarshal(&storagepb.MergeRequest{
 		Number:         mr.Number,
 		Title:          mr.Title.String(),
@@ -743,6 +755,8 @@ func encodeMergeRequest(mr domain.MergeRequest) ([]byte, error) {
 		MergedCommitId: mr.MergedCommitID.String(),
 		MergeMode:      mode,
 		CommentSeq:     mr.CommentSeq,
+		AutoMerge:      autoMerge,
+		AutoMerged:     mr.AutoMerged,
 	}), nil
 }
 
@@ -773,7 +787,23 @@ func decodeMergeRequest(repo domain.RepoName, item kv.Item) (domain.MergeRequest
 		CreatedAt: decodeTime(pb.GetCreatedAt()), UpdatedAt: decodeTime(pb.GetUpdatedAt()),
 		MergeMode:  decodeMode(pb.GetMergeMode()),
 		CommentSeq: pb.GetCommentSeq(),
+		AutoMerged: pb.GetAutoMerged(),
 		Version:    item.Version,
+	}
+	if am := pb.GetAutoMerge(); am != nil {
+		head, err := domain.ParseObjectID(am.GetHeadId())
+		if err != nil {
+			return fail(err)
+		}
+		mode := decodeMode(am.GetMode())
+		if mode == "" {
+			return fail(fmt.Errorf("unknown auto-merge mode %d", am.GetMode()))
+		}
+		mr.AutoMerge = &domain.AutoMerge{
+			Mode: mode, HeadID: head,
+			EnabledBy:    domain.CIPusher{Kind: domain.CIPusherKind(am.GetEnablerKind()), TokenID: am.GetEnablerTokenId()},
+			EnablerLabel: am.GetEnablerLabel(), EnabledAt: decodeTime(am.GetEnabledAt()),
+		}
 	}
 	for _, f := range []struct {
 		dst *domain.ObjectID
@@ -909,7 +939,7 @@ func decodeSide(s storagepb.DiffSide) domain.DiffSide {
 }
 
 func encodeSettings(s domain.RepoSettings) (*storagepb.RepoSettings, error) {
-	pb := &storagepb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock, MergeModesV2: true}
+	pb := &storagepb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock, MergeModesV2: true, AllowAutoMerge: s.AllowAutoMerge}
 	for _, m := range s.AllowedMergeModes {
 		mode, err := encodeMode(m)
 		if err != nil || mode == storagepb.MergeMode_MERGE_MODE_UNSPECIFIED {
@@ -949,5 +979,5 @@ func decodeSettings(pb *storagepb.RepoSettings) domain.RepoSettings {
 	if !pb.GetMergeModesV2() && slices.Equal(normalized, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}) {
 		normalized = domain.MergeModes()
 	}
-	return domain.RepoSettings{AllowedMergeModes: normalized, FailingChecksBlock: pb.GetFailingChecksBlock(), Issues: decodeIssuesMode(pb.GetIssues())}
+	return domain.RepoSettings{AllowedMergeModes: normalized, FailingChecksBlock: pb.GetFailingChecksBlock(), Issues: decodeIssuesMode(pb.GetIssues()), AllowAutoMerge: pb.GetAllowAutoMerge()}
 }

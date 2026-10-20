@@ -131,10 +131,38 @@ type MergeRequestMerged struct {
 	At           time.Time
 	Visibility   Visibility
 	CreatedAt    time.Time
+	// Auto says that auto-merge made the merge.
+	Auto bool
 }
 
 // EventKind implements Event.
 func (MergeRequestMerged) EventKind() string { return "mr.merged" }
+
+// MergeRequestAutoMergeEnabled is published when auto-merge was enabled on a
+// merge request.
+type MergeRequestAutoMergeEnabled struct {
+	MergeRequest MergeRequest
+	At           time.Time
+	Visibility   Visibility
+	CreatedAt    time.Time
+}
+
+// EventKind implements Event.
+func (MergeRequestAutoMergeEnabled) EventKind() string { return "mr.auto_merge_enabled" }
+
+// MergeRequestAutoMergeCancelled is published when auto-merge was cancelled
+// on a merge request, by hand or by the server.
+type MergeRequestAutoMergeCancelled struct {
+	MergeRequest MergeRequest
+	// Reason says why, in words.
+	Reason     string
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (MergeRequestAutoMergeCancelled) EventKind() string { return "mr.auto_merge_cancelled" }
 
 // MergeRequestClosed is published when a merge request was closed without
 // merging.

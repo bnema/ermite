@@ -50,6 +50,9 @@ type RepoSettings struct {
 	FailingChecksBlock bool
 	// Issues says who may write issues; the empty mode means IssuesOff.
 	Issues IssuesMode
+	// AllowAutoMerge says that merge requests may be set to merge themselves
+	// once their checks pass. Off by default.
+	AllowAutoMerge bool
 }
 
 // DefaultRepoSettings are the settings of a new repository: every mode, and
@@ -139,9 +142,27 @@ type MergeRequest struct {
 	MergeMode MergeMode
 	// CommentSeq is the id of the last comment of the request.
 	CommentSeq int64
+	// AutoMerge is the pending auto-merge; nil when off.
+	AutoMerge *AutoMerge
+	// AutoMerged says that the request was merged by auto-merge.
+	AutoMerged bool
 	// Version is set by the store on read: Update fails with ErrConflict when
 	// the stored request changed since. Opaque to everyone else.
 	Version uint64
+}
+
+// AutoMerge is the pending auto-merge of an open merge request.
+type AutoMerge struct {
+	// Mode is the merge mode chosen when auto-merge was enabled.
+	Mode MergeMode
+	// HeadID is the head it was enabled for; a new head cancels it.
+	HeadID ObjectID
+	// EnabledBy is who enabled it; the merge is made on their behalf.
+	EnabledBy CIPusher
+	// EnablerLabel is the display name of the enabler.
+	EnablerLabel string
+	// EnabledAt is when auto-merge was enabled.
+	EnabledAt time.Time
 }
 
 // draftPrefixes mark a draft at the start of a title, compared without regard

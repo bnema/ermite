@@ -94,6 +94,35 @@ func TestMergeRequestRoundTrip(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
 
+func TestMergeRequestAutoMergeRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	_, mrs, n := repoWithMRs(t)
+
+	set := newMR(t, n, "Auto")
+	set.AutoMerge = &domain.AutoMerge{
+		Mode: domain.MergeModeSquash, HeadID: oid('d'),
+		EnabledBy:    domain.CIPusher{Kind: domain.CIPusherToken, TokenID: "tok1"},
+		EnablerLabel: "ci-bot", EnabledAt: created,
+	}
+	created1, err := mrs.Create(ctx, set)
+	require.NoError(t, err)
+	got, err := mrs.Get(ctx, n, created1.Number)
+	require.NoError(t, err)
+	require.NotNil(t, got.AutoMerge)
+	assert.Equal(t, *set.AutoMerge, *got.AutoMerge)
+	assert.False(t, got.AutoMerged)
+
+	unset := newMR(t, n, "Merged by auto")
+	unset.State = domain.MRStateMerged
+	unset.AutoMerged = true
+	created2, err := mrs.Create(ctx, unset)
+	require.NoError(t, err)
+	got, err = mrs.Get(ctx, n, created2.Number)
+	require.NoError(t, err)
+	assert.Nil(t, got.AutoMerge)
+	assert.True(t, got.AutoMerged)
+}
+
 func TestMergeRequestListIsNewestFirstAndPerRepository(t *testing.T) {
 	ctx := context.Background()
 	s, mrs, n := repoWithMRs(t)
@@ -451,6 +480,24 @@ func TestRepoSettings(t *testing.T) {
 	got.Settings = domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{"rebase"}}
 	_, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) { r.Settings = got.Settings; return true, nil })
 	assert.ErrorIs(t, err, domain.ErrInvalid)
+}
+
+func TestRepoSettingsKeepAllowAutoMerge(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t, t.TempDir())
+	n := name(t, "proj")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: n, CreatedAt: created, Visibility: domain.VisibilityPrivate}))
+	got, err := s.Get(ctx, n)
+	require.NoError(t, err)
+	assert.False(t, got.Settings.AllowAutoMerge)
+
+	settings := domain.DefaultRepoSettings()
+	settings.AllowAutoMerge = true
+	_, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) { r.Settings = settings; return true, nil })
+	require.NoError(t, err)
+	got, err = s.Get(ctx, n)
+	require.NoError(t, err)
+	assert.Equal(t, settings, got.Settings)
 }
 
 // TestRepoWithoutStoredSettingsReadsTheDefaults: a repository stored before

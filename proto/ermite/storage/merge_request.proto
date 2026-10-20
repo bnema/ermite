@@ -30,6 +30,7 @@ message RepoSettings {
   // {fast-forward, squash} was the old default and gains MERGE_MODE_MERGE on
   // read.
   bool merge_modes_v2 = 4;
+  bool allow_auto_merge = 5;
 }
 
 // IssuesMode says who may write issues in a repository.
@@ -78,6 +79,20 @@ message MergeRequest {
   MergeMode merge_mode = 13;
   // Last comment id handed out for this request.
   int64 comment_seq = 14;
+  // Pending auto-merge; unset when off.
+  AutoMerge auto_merge = 15;
+  bool auto_merged = 16;
+}
+
+// AutoMerge is the pending auto-merge of an open merge request.
+message AutoMerge {
+  MergeMode mode = 1;
+  string head_id = 2;
+  // Kind and token id of the CIPusher that enabled it.
+  string enabler_kind = 3;
+  string enabler_token_id = 4;
+  string enabler_label = 5;
+  google.protobuf.Timestamp enabled_at = 6;
 }
 
 // Verdict is the immutable review decision of a note.

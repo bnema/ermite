@@ -352,9 +352,10 @@ type RepoSettings struct {
 	// choice of the owner. When false (settings stored before), exactly
 	// {fast-forward, squash} was the old default and gains MERGE_MODE_MERGE on
 	// read.
-	MergeModesV2  bool `protobuf:"varint,4,opt,name=merge_modes_v2,json=mergeModesV2,proto3" json:"merge_modes_v2,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	MergeModesV2   bool `protobuf:"varint,4,opt,name=merge_modes_v2,json=mergeModesV2,proto3" json:"merge_modes_v2,omitempty"`
+	AllowAutoMerge bool `protobuf:"varint,5,opt,name=allow_auto_merge,json=allowAutoMerge,proto3" json:"allow_auto_merge,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RepoSettings) Reset() {
@@ -415,6 +416,13 @@ func (x *RepoSettings) GetMergeModesV2() bool {
 	return false
 }
 
+func (x *RepoSettings) GetAllowAutoMerge() bool {
+	if x != nil {
+		return x.AllowAutoMerge
+	}
+	return false
+}
+
 // MergeRequest is stored under the key "mr/<repo>/<number:010d>".
 type MergeRequest struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
@@ -437,7 +445,10 @@ type MergeRequest struct {
 	MergedCommitId string    `protobuf:"bytes,12,opt,name=merged_commit_id,json=mergedCommitId,proto3" json:"merged_commit_id,omitempty"`
 	MergeMode      MergeMode `protobuf:"varint,13,opt,name=merge_mode,json=mergeMode,proto3,enum=ermite.storage.MergeMode" json:"merge_mode,omitempty"`
 	// Last comment id handed out for this request.
-	CommentSeq    int64 `protobuf:"varint,14,opt,name=comment_seq,json=commentSeq,proto3" json:"comment_seq,omitempty"`
+	CommentSeq int64 `protobuf:"varint,14,opt,name=comment_seq,json=commentSeq,proto3" json:"comment_seq,omitempty"`
+	// Pending auto-merge; unset when off.
+	AutoMerge     *AutoMerge `protobuf:"bytes,15,opt,name=auto_merge,json=autoMerge,proto3" json:"auto_merge,omitempty"`
+	AutoMerged    bool       `protobuf:"varint,16,opt,name=auto_merged,json=autoMerged,proto3" json:"auto_merged,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -570,6 +581,106 @@ func (x *MergeRequest) GetCommentSeq() int64 {
 	return 0
 }
 
+func (x *MergeRequest) GetAutoMerge() *AutoMerge {
+	if x != nil {
+		return x.AutoMerge
+	}
+	return nil
+}
+
+func (x *MergeRequest) GetAutoMerged() bool {
+	if x != nil {
+		return x.AutoMerged
+	}
+	return false
+}
+
+// AutoMerge is the pending auto-merge of an open merge request.
+type AutoMerge struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Mode   MergeMode              `protobuf:"varint,1,opt,name=mode,proto3,enum=ermite.storage.MergeMode" json:"mode,omitempty"`
+	HeadId string                 `protobuf:"bytes,2,opt,name=head_id,json=headId,proto3" json:"head_id,omitempty"`
+	// Kind and token id of the CIPusher that enabled it.
+	EnablerKind    string                 `protobuf:"bytes,3,opt,name=enabler_kind,json=enablerKind,proto3" json:"enabler_kind,omitempty"`
+	EnablerTokenId string                 `protobuf:"bytes,4,opt,name=enabler_token_id,json=enablerTokenId,proto3" json:"enabler_token_id,omitempty"`
+	EnablerLabel   string                 `protobuf:"bytes,5,opt,name=enabler_label,json=enablerLabel,proto3" json:"enabler_label,omitempty"`
+	EnabledAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=enabled_at,json=enabledAt,proto3" json:"enabled_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AutoMerge) Reset() {
+	*x = AutoMerge{}
+	mi := &file_ermite_storage_merge_request_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AutoMerge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AutoMerge) ProtoMessage() {}
+
+func (x *AutoMerge) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_merge_request_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AutoMerge.ProtoReflect.Descriptor instead.
+func (*AutoMerge) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AutoMerge) GetMode() MergeMode {
+	if x != nil {
+		return x.Mode
+	}
+	return MergeMode_MERGE_MODE_UNSPECIFIED
+}
+
+func (x *AutoMerge) GetHeadId() string {
+	if x != nil {
+		return x.HeadId
+	}
+	return ""
+}
+
+func (x *AutoMerge) GetEnablerKind() string {
+	if x != nil {
+		return x.EnablerKind
+	}
+	return ""
+}
+
+func (x *AutoMerge) GetEnablerTokenId() string {
+	if x != nil {
+		return x.EnablerTokenId
+	}
+	return ""
+}
+
+func (x *AutoMerge) GetEnablerLabel() string {
+	if x != nil {
+		return x.EnablerLabel
+	}
+	return ""
+}
+
+func (x *AutoMerge) GetEnabledAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EnabledAt
+	}
+	return nil
+}
+
 // Comment is stored under the key "mrc/<repo>/<number:010d>/<id:010d>".
 type Comment struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -593,7 +704,7 @@ type Comment struct {
 
 func (x *Comment) Reset() {
 	*x = Comment{}
-	mi := &file_ermite_storage_merge_request_proto_msgTypes[2]
+	mi := &file_ermite_storage_merge_request_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -605,7 +716,7 @@ func (x *Comment) String() string {
 func (*Comment) ProtoMessage() {}
 
 func (x *Comment) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_merge_request_proto_msgTypes[2]
+	mi := &file_ermite_storage_merge_request_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -618,7 +729,7 @@ func (x *Comment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Comment.ProtoReflect.Descriptor instead.
 func (*Comment) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{2}
+	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Comment) GetId() int64 {
@@ -730,7 +841,7 @@ type Sequence struct {
 
 func (x *Sequence) Reset() {
 	*x = Sequence{}
-	mi := &file_ermite_storage_merge_request_proto_msgTypes[3]
+	mi := &file_ermite_storage_merge_request_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -742,7 +853,7 @@ func (x *Sequence) String() string {
 func (*Sequence) ProtoMessage() {}
 
 func (x *Sequence) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_merge_request_proto_msgTypes[3]
+	mi := &file_ermite_storage_merge_request_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -755,7 +866,7 @@ func (x *Sequence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Sequence.ProtoReflect.Descriptor instead.
 func (*Sequence) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{3}
+	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Sequence) GetLast() int64 {
@@ -783,7 +894,7 @@ type Mergeability struct {
 
 func (x *Mergeability) Reset() {
 	*x = Mergeability{}
-	mi := &file_ermite_storage_merge_request_proto_msgTypes[4]
+	mi := &file_ermite_storage_merge_request_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +906,7 @@ func (x *Mergeability) String() string {
 func (*Mergeability) ProtoMessage() {}
 
 func (x *Mergeability) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_merge_request_proto_msgTypes[4]
+	mi := &file_ermite_storage_merge_request_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +919,7 @@ func (x *Mergeability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mergeability.ProtoReflect.Descriptor instead.
 func (*Mergeability) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{4}
+	return file_ermite_storage_merge_request_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Mergeability) GetState() MergeabilityState {
@@ -871,12 +982,13 @@ var File_ermite_storage_merge_request_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_merge_request_proto_rawDesc = "" +
 	"\n" +
-	"\"ermite/storage/merge_request.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe5\x01\n" +
+	"\"ermite/storage/merge_request.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8f\x02\n" +
 	"\fRepoSettings\x12I\n" +
 	"\x13allowed_merge_modes\x18\x01 \x03(\x0e2\x19.ermite.storage.MergeModeR\x11allowedMergeModes\x120\n" +
 	"\x14failing_checks_block\x18\x02 \x01(\bR\x12failingChecksBlock\x122\n" +
 	"\x06issues\x18\x03 \x01(\x0e2\x1a.ermite.storage.IssuesModeR\x06issues\x12$\n" +
-	"\x0emerge_modes_v2\x18\x04 \x01(\bR\fmergeModesV2\"\xa6\x04\n" +
+	"\x0emerge_modes_v2\x18\x04 \x01(\bR\fmergeModesV2\x12(\n" +
+	"\x10allow_auto_merge\x18\x05 \x01(\bR\x0eallowAutoMerge\"\x81\x05\n" +
 	"\fMergeRequest\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x03R\x06number\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -896,7 +1008,19 @@ const file_ermite_storage_merge_request_proto_rawDesc = "" +
 	"\n" +
 	"merge_mode\x18\r \x01(\x0e2\x19.ermite.storage.MergeModeR\tmergeMode\x12\x1f\n" +
 	"\vcomment_seq\x18\x0e \x01(\x03R\n" +
-	"commentSeq\"\xcf\x03\n" +
+	"commentSeq\x128\n" +
+	"\n" +
+	"auto_merge\x18\x0f \x01(\v2\x19.ermite.storage.AutoMergeR\tautoMerge\x12\x1f\n" +
+	"\vauto_merged\x18\x10 \x01(\bR\n" +
+	"autoMerged\"\x80\x02\n" +
+	"\tAutoMerge\x12-\n" +
+	"\x04mode\x18\x01 \x01(\x0e2\x19.ermite.storage.MergeModeR\x04mode\x12\x17\n" +
+	"\ahead_id\x18\x02 \x01(\tR\x06headId\x12!\n" +
+	"\fenabler_kind\x18\x03 \x01(\tR\venablerKind\x12(\n" +
+	"\x10enabler_token_id\x18\x04 \x01(\tR\x0eenablerTokenId\x12#\n" +
+	"\renabler_label\x18\x05 \x01(\tR\fenablerLabel\x129\n" +
+	"\n" +
+	"enabled_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tenabledAt\"\xcf\x03\n" +
 	"\aComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x16\n" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x12\n" +
@@ -970,7 +1094,7 @@ func file_ermite_storage_merge_request_proto_rawDescGZIP() []byte {
 }
 
 var file_ermite_storage_merge_request_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_ermite_storage_merge_request_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_ermite_storage_merge_request_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_ermite_storage_merge_request_proto_goTypes = []any{
 	(MergeMode)(0),                // 0: ermite.storage.MergeMode
 	(IssuesMode)(0),               // 1: ermite.storage.IssuesMode
@@ -980,29 +1104,33 @@ var file_ermite_storage_merge_request_proto_goTypes = []any{
 	(MergeabilityState)(0),        // 5: ermite.storage.MergeabilityState
 	(*RepoSettings)(nil),          // 6: ermite.storage.RepoSettings
 	(*MergeRequest)(nil),          // 7: ermite.storage.MergeRequest
-	(*Comment)(nil),               // 8: ermite.storage.Comment
-	(*Sequence)(nil),              // 9: ermite.storage.Sequence
-	(*Mergeability)(nil),          // 10: ermite.storage.Mergeability
-	(*timestamppb.Timestamp)(nil), // 11: google.protobuf.Timestamp
+	(*AutoMerge)(nil),             // 8: ermite.storage.AutoMerge
+	(*Comment)(nil),               // 9: ermite.storage.Comment
+	(*Sequence)(nil),              // 10: ermite.storage.Sequence
+	(*Mergeability)(nil),          // 11: ermite.storage.Mergeability
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_ermite_storage_merge_request_proto_depIdxs = []int32{
 	0,  // 0: ermite.storage.RepoSettings.allowed_merge_modes:type_name -> ermite.storage.MergeMode
 	1,  // 1: ermite.storage.RepoSettings.issues:type_name -> ermite.storage.IssuesMode
 	2,  // 2: ermite.storage.MergeRequest.state:type_name -> ermite.storage.MergeRequestState
-	11, // 3: ermite.storage.MergeRequest.created_at:type_name -> google.protobuf.Timestamp
-	11, // 4: ermite.storage.MergeRequest.updated_at:type_name -> google.protobuf.Timestamp
+	12, // 3: ermite.storage.MergeRequest.created_at:type_name -> google.protobuf.Timestamp
+	12, // 4: ermite.storage.MergeRequest.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 5: ermite.storage.MergeRequest.merge_mode:type_name -> ermite.storage.MergeMode
-	3,  // 6: ermite.storage.Comment.side:type_name -> ermite.storage.DiffSide
-	11, // 7: ermite.storage.Comment.created_at:type_name -> google.protobuf.Timestamp
-	4,  // 8: ermite.storage.Comment.verdict:type_name -> ermite.storage.Verdict
-	11, // 9: ermite.storage.Comment.edited_at:type_name -> google.protobuf.Timestamp
-	5,  // 10: ermite.storage.Mergeability.state:type_name -> ermite.storage.MergeabilityState
-	11, // 11: ermite.storage.Mergeability.checked_at:type_name -> google.protobuf.Timestamp
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	8,  // 6: ermite.storage.MergeRequest.auto_merge:type_name -> ermite.storage.AutoMerge
+	0,  // 7: ermite.storage.AutoMerge.mode:type_name -> ermite.storage.MergeMode
+	12, // 8: ermite.storage.AutoMerge.enabled_at:type_name -> google.protobuf.Timestamp
+	3,  // 9: ermite.storage.Comment.side:type_name -> ermite.storage.DiffSide
+	12, // 10: ermite.storage.Comment.created_at:type_name -> google.protobuf.Timestamp
+	4,  // 11: ermite.storage.Comment.verdict:type_name -> ermite.storage.Verdict
+	12, // 12: ermite.storage.Comment.edited_at:type_name -> google.protobuf.Timestamp
+	5,  // 13: ermite.storage.Mergeability.state:type_name -> ermite.storage.MergeabilityState
+	12, // 14: ermite.storage.Mergeability.checked_at:type_name -> google.protobuf.Timestamp
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_merge_request_proto_init() }
@@ -1016,7 +1144,7 @@ func file_ermite_storage_merge_request_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_merge_request_proto_rawDesc), len(file_ermite_storage_merge_request_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
