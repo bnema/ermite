@@ -39,6 +39,18 @@ git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=allowed_signers verify-commi
 
 The merge box of the web page and the output of `mr merge --mode squash|merge` repeat this with the fingerprint.
 
+## Auto-merge
+
+A merge request can merge by itself once its checks passed.
+
+- The repository setting `allow_auto_merge` is off by default: `ermite repo edit <repo> --allow-auto-merge` (`=false` to turn it off).
+- Enable it with `ermite mr merge <repo> <n> --head <commit> --auto --mode squash` (`--head` is required, as for a plain merge; a head that moved is refused with "branch moved"), or with **Merge when ready** in the web merge box. It needs `mr:merge` and a server with CI. Re-enabling replaces the previous mode and enabler.
+- The server merges when CI has settled on the head with every run complete and at least one check passed. A failing or unfinished check always blocks, whatever `failing_checks_block` says. The mode must still be allowed.
+- The merge is made as the person who enabled it. Their token is checked again at merge time: it must still be valid and allow `mr:merge` on the repository and the target branch.
+- A pending auto-merge shows in `mr show` (`auto_merge`), in the web merge box and as `merge_request_auto_merge_enabled` in `ermite watch`. A merge request merged this way has `auto_merged` true.
+- It is cancelled, with the reason in the `merge_request_auto_merge_cancelled` event, when: the source branch gets a new head or is deleted, a check fails, the merge conflicts, the mode is no longer allowed, `allow_auto_merge` is turned off, the enabler's token is revoked or no longer allowed to merge, the request is merged manually or closed.
+- Cancel it with `ermite mr merge <repo> <n> --cancel-auto` or **Cancel auto-merge** in the web merge box.
+
 ## Mergeability
 
 The server checks in the background whether each open request merges with its target, and again whenever the source or the target moves. `mr show` prints it; the web merge box shows it as a live badge; `ermite watch` reports each change.

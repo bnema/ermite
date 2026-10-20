@@ -11,10 +11,10 @@ Errors are one line on standard error (`ermite: ...`) with exit status 1. `--jso
 | `repo list [--json]` | none | repositories you can see |
 | `repo show <name> [--json]` | none | |
 | `repo create <name> [--description TEXT] [--visibility public]` | `repo:write` | private by default |
-| `repo edit <name> [--description TEXT] [--visibility V] [--default-branch B] [--merge-modes fast-forward,squash,merge] [--failing-checks-block=false]` | `repo:admin` | only the given flags change; every merge mode is allowed by default, list the ones to keep; `--description ""` clears it; the branch must exist |
+| `repo edit <name> [--description TEXT] [--visibility V] [--default-branch B] [--merge-modes fast-forward,squash,merge] [--failing-checks-block=false] [--allow-auto-merge]` | `repo:admin` | only the given flags change; every merge mode is allowed by default, list the ones to keep; `--description ""` clears it; the branch must exist |
 | `repo delete <name> [--yes]` | `repo:admin` | |
 
-Repository JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before the first push), `merge_modes`, `failing_checks_block`.
+Repository JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before the first push), `merge_modes`, `failing_checks_block`, `allow_auto_merge`.
 
 ## Tokens
 
@@ -62,6 +62,7 @@ A token can never grant more than the token that creates it. `--repo` (repeatabl
 | `mr delete-comment <repo> <n> <comment-id>` | `mr:write` | author only; the text is lost, the verdict is kept |
 | `mr resolve <repo> <n> <comment-id> [--undo]` | `mr:write` | on the thread root, covers its replies; doing it twice is not an error |
 | `mr merge <repo> <n> --head <full-id> [--mode fast-forward\|squash\|merge] [--delete-branch]` | `mr:merge` | refused if the branch moved, if `fast-forward` and the target is not an ancestor of the head (behind: use `squash` or `merge`), or if `squash`/`merge` conflict; squash and merge commits are signed by the server key (`signing-key show`); answers once the target moved; `--delete-branch` deletes the source after the merge (refused for the default branch or a branch another open request uses; JSON adds `source_branch_deleted`) |
+| `mr merge <repo> <n> --head <full-id> --auto [--mode M]` / `mr merge <repo> <n> --cancel-auto` | `mr:merge` | the server merges as you once CI settled on the head with a passed check and no failing one; needs `repo edit --allow-auto-merge`; cancelled by a new head, a failing check, a conflict, a disallowed mode, the setting turned off or your token losing `mr:merge`; JSON `auto_merge` (null unless pending), `auto_merged` |
 | `mr close <repo> <n>` | `mr:write` | a closed merge request cannot be reopened |
 
 `ermite mr create` and `ermite mr close` print a confirmation followed by the full
@@ -106,6 +107,7 @@ Workflow JSON: `repo`, `file` (always `.github/workflows/<file>`), `name` (the `
 | `repo_created`, `repo_updated`, `repo_deleted` | `repo`, `repository` |
 | `pushed` | `repo`, `ref_updates` (`ref`, `old_id`, `new_id`; an empty id means created or deleted) |
 | `merge_request_opened`, `merge_request_merged`, `merge_request_closed` | `repo`, `merge_request` |
+| `merge_request_auto_merge_enabled`, `merge_request_auto_merge_cancelled` | `repo`, `merge_request`; cancelled also has `reason`. `merge_request_merged` has `auto` true after an auto-merge |
 | `merge_request_mergeability` | `repo`, `number`, `mergeability` (`state`: `checking`, `up_to_date`, `behind`, `conflict`; `behind`, `behind_capped`, `conflict_paths`, `conflict_paths_truncated`); sent when the state changes |
 | `comment_added`, `comment_edited`, `comment_deleted`, `comment_resolved` | `repo`, `number`, `comment` (a verdict note has `verdict` set) |
 | `gap` | none: events were lost, reload the state |

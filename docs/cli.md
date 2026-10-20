@@ -48,7 +48,7 @@ It does not run:
 
 ```sh
 ermite repo list | show <name> | create <name> [--description …] [--visibility public]
-ermite repo edit <name> [--description …] [--visibility …] [--default-branch …] [--merge-modes …] [--failing-checks-block=false] [--issues off|owner|public]
+ermite repo edit <name> [--description …] [--visibility …] [--default-branch …] [--merge-modes …] [--failing-checks-block=false] [--allow-auto-merge] [--issues off|owner|public]
 ermite repo delete <name> [--yes]
 
 ermite token create <label> [--preset cli|agent|ci|runner] [--scope …] [--repo …] [--branch-prefix …] [--expires 30d]
@@ -57,7 +57,7 @@ ermite token list | revoke <id>
 ermite mr create <repo> --source <branch> --title … | list <repo> | show <repo> <n> [--diff]   # show prints the mergeability: up to date, behind, conflict
 ermite mr comment <repo> <n> -m … [--path … --line N|A-B --side old|new] [--reply <id>] [--approve|--request-changes]
 ermite mr resolve <repo> <n> <comment> | edit-comment <repo> <n> <comment> -m … | delete-comment <repo> <n> <comment>
-ermite mr merge <repo> <n> --head <id> [--mode fast-forward|squash|merge] [--delete-branch] | close <repo> <n>
+ermite mr merge <repo> <n> --head <id> [--mode fast-forward|squash|merge] [--delete-branch] | merge <repo> <n> --head <id> --auto [--mode …] | merge <repo> <n> --cancel-auto | close <repo> <n>
 
 ermite issue create <repo> --title … [--body … | --body-file …] | list <repo> [--state open|closed|all]
 ermite issue show <repo> <n> | comment <repo> <n> -m … | close <repo> <n> | reopen <repo> <n>
@@ -99,6 +99,7 @@ Mirrors push repositories to a remote over SSH, never forcing. See [Push mirror]
 - `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list`, `mirror key|config|status` and `version`.
 - `watch --json` prints one object per line. `merge_request_mergeability` events carry `mergeability` (`state`, `behind`, `conflict_paths`…) and print as `repo!n mergeability: behind by 2`.
 - `mr merge --mode squash|merge` creates a commit signed by the server's own key (generated on first start); the output names its fingerprint, `ermite signing-key show` prints the key. Every mode is allowed by default; `repo edit --merge-modes fast-forward,squash` disables `merge`.
+- `mr merge --auto` makes the server merge once CI passed on the head (`repo edit --allow-auto-merge` first); `--cancel-auto` cancels it; both are exclusive with each other and `--auto` with `--delete-branch`. `watch --json` adds `merge_request_auto_merge_enabled`, `merge_request_auto_merge_cancelled` (with `reason`), and `auto` (true) on `merge_request_merged` after an auto-merge. See [Merge requests](merge-requests.md#auto-merge).
 - Errors are one line on stderr (`ermite: …`) with exit status 1.
 - Shell completion completes repository names from the server.
 
