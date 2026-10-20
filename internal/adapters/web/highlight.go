@@ -166,7 +166,9 @@ func tokeniseInto(ctx context.Context, lx chroma.Lexer, src string, buf []chroma
 		}
 		toks = append(toks, t)
 	}
-	if !tokensMatch(toks, src) {
+	// The last tokens may have run past the deadline: the result is then
+	// dropped, as promised. One iterator call itself cannot be preempted.
+	if ctx.Err() != nil || !tokensMatch(toks, src) {
 		return nil, false
 	}
 	return toks, true
@@ -264,17 +266,17 @@ func invisibleName(r rune) string {
 // writeMarked writes s escaped for HTML, each invisible character replaced
 // by <span class="ctl" title="U+202E right-to-left override">&lt;U+202E&gt;
 // </span>. The character itself is never output.
-func writeMarked(b *strings.Builder, s string) {
+func writeMarked(b interface{ WriteString(string) (int, error) }, s string) {
 	for {
 		i := strings.IndexFunc(s, invisible)
 		if i < 0 {
-			b.WriteString(html.EscapeString(s))
+			_, _ = b.WriteString(html.EscapeString(s))
 			return
 		}
-		b.WriteString(html.EscapeString(s[:i]))
+		_, _ = b.WriteString(html.EscapeString(s[:i]))
 		r, size := utf8.DecodeRuneInString(s[i:])
 		cp := codePoint(r)
-		b.WriteString(`<span class="ctl" title="` + cp + ` ` + invisibleName(r) + `">&lt;` + cp + `&gt;</span>`)
+		_, _ = b.WriteString(`<span class="ctl" title="` + cp + ` ` + invisibleName(r) + `">&lt;` + cp + `&gt;</span>`)
 		s = s[i+size:]
 	}
 }

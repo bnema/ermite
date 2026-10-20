@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 	"github.com/yuin/goldmark"
@@ -46,7 +47,7 @@ func newMarkdown() *markdown {
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 		goldmark.WithRendererOptions(
-			renderer.WithNodeRenderers(util.Prioritized(altRenderer{}, 100)),
+			renderer.WithNodeRenderers(util.Prioritized(altRenderer{}, 100), util.Prioritized(fencedRenderer{}, 100)),
 			// No html.WithUnsafe(): raw HTML blocks and inline tags are dropped.
 			// Table alignment as an align attribute: the CSP forbids style="".
 			extension.WithTableCellAlignMethod(extension.TableCellAlignAttribute),
@@ -129,6 +130,7 @@ func (m *markdown) renderPolicy(source []byte, pol linkPolicy, res refResolver) 
 		references(t, source, res)
 	}
 
+	doc.SetAttributeString(markdownBudgetKey, &markdownLexBudget{deadline: time.Now().Add(markdownLexTime)})
 	var buf bytes.Buffer
 	if err := m.md.Renderer().Render(&buf, source, doc); err != nil {
 		return "", nil, err
