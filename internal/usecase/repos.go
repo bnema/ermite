@@ -23,6 +23,7 @@ type Repos struct {
 	clock     ports.Clock
 	ci        ports.CIRunCleaner // nil: no CI logs to remove
 	autoMerge ports.AutoMergeTrigger
+	mergeGate ports.MergeGate
 	mirror    ports.MirrorTrigger // nil: no outbound mirror
 }
 
@@ -237,3 +238,6 @@ func (r *Repos) Reconcile(ctx context.Context) (ReconcileReport, error) {
 
 // WithAutoMerge installs the settings-change trigger before serving requests.
 func (r *Repos) WithAutoMerge(t ports.AutoMergeTrigger) *Repos { r.autoMerge = t; return r }
+
+// WithMergeGate installs the settings-write gate before serving requests.
+func (r *Repos) WithMergeGate(g ports.MergeGate) *Repos { r.mergeGate = g; return r }

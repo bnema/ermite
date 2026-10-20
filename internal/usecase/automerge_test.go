@@ -372,3 +372,27 @@ func TestEnableAutoMergeNeedsTheHeadTheCallerSaw(t *testing.T) {
 		assert.Nil(t, storedAuto(t, r, mr).AutoMerge)
 	})
 }
+
+func TestMergeGateSettingsUpdateWaits(t *testing.T) {
+	for _, params := range []ports.UpdateRepoParams{
+		{AllowAutoMerge: ptr(false)},
+		{AllowedMergeModes: ptr([]domain.MergeMode{domain.MergeModeSquash})},
+		{FailingChecksBlock: ptr(false)},
+	} {
+		r, _, _ := autoRig(t)
+		r.repos.WithMergeGate(r.mrs)
+		entered, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+		go func() {
+			done <- r.mrs.WithMergeLock(r.ctx, r.repo, func() error { close(entered); <-release; return nil })
+		}()
+		<-entered
+		ctx, cancel := context.WithTimeout(r.ctx, 20*time.Millisecond)
+		_, err := r.repos.Update(ctx, root, r.repo, params)
+		cancel()
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		close(release)
+		require.NoError(t, <-done)
+		_, err = r.repos.Update(r.ctx, root, r.repo, params)
+		require.NoError(t, err)
+	}
+}

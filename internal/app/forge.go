@@ -375,7 +375,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	})
 	f.MergeRequests.WithAutoMerge(f.AutoMerge)
 	f.CI.SetAutoMergeTrigger(f.AutoMerge)
-	f.Repos.WithAutoMerge(f.AutoMerge)
+	f.Repos.WithAutoMerge(f.AutoMerge).WithMergeGate(f.MergeRequests)
 	f.Mergeability.WithAutoMerge(f.AutoMerge)
 	f.Mergeability.Start()
 	f.MergeRequests.WithVerifier(f.Signatures).WithMirror(f.Mirrors)

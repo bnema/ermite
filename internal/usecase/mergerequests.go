@@ -149,6 +149,9 @@ func (m *MergeRequests) Wait(ctx context.Context) {
 // lockRepo takes the merge lock of a repository, waiting until ctx ends. The
 // merges of one repository, and the creation of its merge requests, run one at
 // a time. The returned function releases the lock.
+// Lock order is merge lock → store (meta.Mutate / kv). Nothing holding a
+// store transaction or a CI lock may take this lock. MergeRequests never
+// calls Repos.Update.
 func (m *MergeRequests) lockRepo(ctx context.Context, name domain.RepoName) (unlock func(), err error) {
 	m.mu.Lock()
 	ch, ok := m.locks[name]
@@ -1555,4 +1558,14 @@ func (m *MergeRequests) PushSummary(ctx context.Context, p domain.Principal, rep
 		return ports.PushSummary{}, err
 	}
 	return ports.PushSummary{Count: len(commits), More: more}, nil
+}
+
+// WithMergeLock serializes fn with repository merges and closes.
+func (m *MergeRequests) WithMergeLock(ctx context.Context, repo domain.RepoName, fn func() error) error {
+	unlock, err := m.lockRepo(ctx, repo)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return fn()
 }

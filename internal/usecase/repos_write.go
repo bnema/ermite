@@ -117,7 +117,16 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	// repository or an I/O failure.
 	metaDone := false
 	if params.Description != nil || params.Topics != nil || params.Visibility != nil || params.AllowedMergeModes != nil || params.FailingChecksBlock != nil || params.AllowAutoMerge != nil || params.Issues != nil {
-		if repo, err = r.updateMeta(ctx, name, params); err != nil {
+		update := func() error {
+			repo, err = r.updateMeta(ctx, name, params)
+			return err
+		}
+		if r.mergeGate != nil && (params.AllowedMergeModes != nil || params.FailingChecksBlock != nil || params.AllowAutoMerge != nil) {
+			err = r.mergeGate.WithMergeLock(ctx, name, update)
+		} else {
+			err = update()
+		}
+		if err != nil {
 			return domain.Repo{}, err
 		}
 		metaDone = true

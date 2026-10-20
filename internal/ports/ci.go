@@ -367,6 +367,18 @@ type PullGate interface {
 	WhileOpen(ctx context.Context, repo domain.RepoName, number int64, fn func() error) error
 }
 
+// MergeGate serializes a change with the merges of a repository.
+// *usecase.MergeRequests implements it.
+// Lock order is merge lock → store (meta.Mutate / kv). Nothing holding a
+// store transaction or a CI lock may take the merge lock. MergeRequests never
+// calls Repos.Update.
+type MergeGate interface {
+	// WithMergeLock runs fn holding the repository merge lock (also taken by
+	// Merge, Close and auto-merge). fn must be short and must not call the
+	// merge request use cases.
+	WithMergeLock(ctx context.Context, repo domain.RepoName, fn func() error) error
+}
+
 // PullGit is what the refs/pull/<n>/{head,merge} of the merge requests need
 // from Git. Every method returns domain.ErrNotFound when the repository has no
 // directory.
