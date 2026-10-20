@@ -26,6 +26,7 @@ const MaxCommentsPerIssue = 1000
 // issue:write on it, which the branch prefixes of a token do not restrict:
 // an issue writes no ref.
 type Issues struct {
+	links ports.IssueLinkStore
 	meta  ports.RepoMetaStore
 	store ports.IssueStore
 	mrs   ports.MergeRequestStore
@@ -40,6 +41,7 @@ var (
 
 // IssuesConfig holds what the issue use cases need. Every field is required.
 type IssuesConfig struct {
+	Links ports.IssueLinkStore
 	Meta  ports.RepoMetaStore
 	Store ports.IssueStore
 	// MergeRequests tells which numbers name a merge request (Kind).
@@ -50,7 +52,7 @@ type IssuesConfig struct {
 
 // NewIssues builds the issue use cases.
 func NewIssues(cfg IssuesConfig) *Issues {
-	return &Issues{meta: cfg.Meta, store: cfg.Store, mrs: cfg.MergeRequests, bus: cfg.Bus, clock: cfg.Clock}
+	return &Issues{links: cfg.Links, meta: cfg.Meta, store: cfg.Store, mrs: cfg.MergeRequests, bus: cfg.Bus, clock: cfg.Clock}
 }
 
 // enabled looks the repository up and hides it when issues are off.
@@ -159,7 +161,24 @@ func (i *Issues) Get(ctx context.Context, p domain.Principal, name domain.RepoNa
 	if err != nil {
 		return ports.IssueDetail{}, fmt.Errorf("list comments of #%d of %q: %w", number, name, err)
 	}
-	return ports.IssueDetail{Issue: issue, Comments: comments}, nil
+	detail := ports.IssueDetail{Issue: issue, Comments: comments}
+	if i.links != nil {
+		links, err := i.links.LinksOfIssue(ctx, name, number, MaxIssueLinksPerIssue)
+		if err != nil {
+			return ports.IssueDetail{}, err
+		}
+		for _, link := range links {
+			mr, err := i.mrs.Get(ctx, name, link.MergeRequest)
+			if errors.Is(err, domain.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return ports.IssueDetail{}, err
+			}
+			detail.References = append(detail.References, ports.IssueReference{Number: mr.Number, Title: mr.Title, State: mr.State, Closes: link.Closes})
+		}
+	}
+	return detail, nil
 }
 
 // AddComment adds a comment and publishes IssueCommented. The principal needs
@@ -251,6 +270,7 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 		if issue.State != from {
 			return domain.Issue{}, fmt.Errorf("%w: #%d is %s", domain.ErrPreconditionFailed, number, issue.State)
 		}
+		issue.ClosedByMergeRequest = 0
 		issue.State, issue.UpdatedAt = to, i.clock.Now().UTC()
 		err = i.store.Update(ctx, issue)
 		if errors.Is(err, domain.ErrConflict) {

@@ -552,3 +552,11 @@ type IssueLinkStore interface {
 type Clock interface {
 	Now() time.Time
 }
+
+// IssueLinkTrigger updates derived links without failing the primary operation.
+type IssueLinkTrigger interface {
+	OnMergeRequestChanged(context.Context, domain.Repo, int64)
+	OnMergeRequestSettled(context.Context, domain.Repo, domain.MergeRequest)
+	OnBranchesMoved(context.Context, domain.RepoName, []domain.RefUpdate)
+	OnMerged(context.Context, domain.Principal, domain.Repo, domain.MergeRequest)
+}

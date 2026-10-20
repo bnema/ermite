@@ -17,6 +17,7 @@ import (
 
 // Pushes are the use cases around a Git push.
 type Pushes struct {
+	links   ports.IssueLinkTrigger
 	mirror  ports.MirrorTrigger // nil: no outbound mirror
 	meta    ports.RepoMetaStore
 	repos   *Repos
@@ -43,6 +44,9 @@ var (
 func NewPushes(meta ports.RepoMetaStore, repos *Repos, git ports.GitRepos, bus ports.EventBus, clock ports.Clock, maint ports.MaintenanceScheduler, auth ports.Revalidator) *Pushes {
 	return &Pushes{meta: meta, repos: repos, git: git, bus: bus, clock: clock, maint: maint, auth: auth}
 }
+
+// WithIssueLinks enables synchronous best-effort issue indexing before the first push.
+func (u *Pushes) WithIssueLinks(t ports.IssueLinkTrigger) *Pushes { u.links = t; return u }
 
 // WithMirror makes Record notify outbound mirrors. Call before the first push.
 func (u *Pushes) WithMirror(t ports.MirrorTrigger) *Pushes {
@@ -264,6 +268,9 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	}
 	if u.mergeab != nil {
 		u.mergeab.OnBranchesMoved(ctx, name, updates) // queues only
+	}
+	if u.links != nil {
+		u.links.OnBranchesMoved(ctx, name, updates)
 	}
 	u.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now,

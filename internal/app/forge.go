@@ -363,15 +363,17 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Store: store.MergeRequests(), Meta: store, Git: git, Bus: f.Bus, Clock: clock,
 	})
 	f.Pushes.WithMergeability(f.Mergeability)
+	links := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: store, Issues: store.Issues(), MRs: store.MergeRequests(), Links: store.IssueLinks(), Git: git, Bus: f.Bus, Clock: clock})
+	f.Pushes.WithIssueLinks(links)
 	f.MergeRequests = usecase.NewMergeRequests(usecase.MergeRequestsConfig{
-		Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
+		Links: links, Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
 		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(), Mergeability: f.Mergeability,
 	})
 	f.Mergeability.Start()
 	f.MergeRequests.WithVerifier(f.Signatures).WithMirror(f.Mirrors)
 	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
-		Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock,
+		Links: store.IssueLinks(), Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock,
 	})
 	f.IssueModeration = usecase.NewIssueModeration(usecase.IssueModerationConfig{
 		Meta: store, Pending: store.PendingIssues(), Bans: store.IssueBans(), Bus: f.Bus, Clock: clock,

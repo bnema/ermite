@@ -242,9 +242,19 @@ type CreateIssueParams struct {
 	Body  string
 }
 
-// IssueDetail is an issue with its comments.
+// IssueReference is a merge request of the same repository naming an issue.
+type IssueReference struct {
+	Number int64
+	Title  domain.MRTitle
+	State  domain.MRState
+	Closes bool
+}
+
+// IssueDetail is an issue with its comments and referencing merge requests.
 type IssueDetail struct {
-	Issue domain.Issue
+	// References are ascending by number, at most 100.
+	References []IssueReference
+	Issue      domain.Issue
 	// Comments are oldest first.
 	Comments []domain.IssueComment
 }
