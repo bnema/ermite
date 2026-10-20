@@ -27,6 +27,20 @@ window.ermiteMR = (() => {
       b.searchParams.set('on', `${y[1]}:${nums[0]}-${nums[1]}:${y[3]}`);
       return b.href;
     },
+    // Range mode is explicit: ordinary taps still open single-line forms.
+    touchRange(previous, current, base) {
+      if (!previous) return { start: current, url: null };
+      const url = core.rangeURL(previous, current, base);
+      if (url) return { start: null, url };
+      if (previous === current) return { start: null, url: current };
+      return { start: current, url: null }; // another file/side starts afresh
+    },
+    mobileURL(href, view, narrow) {
+      if (!narrow || view !== 'split') return null;
+      const url = new URL(href);
+      url.searchParams.set('view', 'unified');
+      return url.href;
+    },
     quote(button) {
       const thread = button.closest('.cmt').closest('[data-thread]');
       const details = thread?.querySelector(':scope > details[data-reply]');
@@ -67,6 +81,7 @@ window.ermiteMR = (() => {
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
   const loading = new Map(); // src -> promise of the swap
+  let refreshTouchComments = () => {};
   let moved = false;
   let lazyIO = null; // the observer of the placeholders (watch)
   let revealGen = 0; // the last reveal wins the scroll
@@ -115,6 +130,7 @@ window.ermiteMR = (() => {
       window.htmx?.process(f);
       window.ermite?.watchFile?.(f, old);
     }
+    refreshTouchComments();
   }
 
   // stale: the diff changed under the page. The placeholders say so; no file
@@ -137,7 +153,7 @@ window.ermiteMR = (() => {
       // A page with both layouts says which shows in data-diff; a large diff
       // rendered in one layout only says it in data-view.
       const diffs = $('#diffs')?.dataset;
-      if (/^c\d+$/.test(id) && (diffs?.diff || diffs?.view) === 'split') {
+      if (/^c\d+$/.test(id) && !window.matchMedia?.('(max-width: 720px)').matches && (diffs?.diff || diffs?.view) === 'split') {
         const split = document.getElementById(id + '-s');
         if (split) return split;
       }
@@ -337,9 +353,71 @@ window.ermiteMR = (() => {
     addEventListener('hashchange', hash);
   }
 
+  function touchComments() {
+    const diffs = $('#diffs');
+    const bar = document.createElement('div');
+    bar.className = 'mr-touch-range';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn';
+    button.textContent = 'Select line range';
+    button.setAttribute('aria-pressed', 'false');
+    const status = document.createElement('span');
+    status.setAttribute('role', 'status');
+    bar.append(button, status);
+    diffs.prepend(bar);
+    refreshTouchComments = () => { bar.hidden = !$('.ln a[href*="on="]', diffs); };
+    refreshTouchComments();
+    let enabled = false, start = null, marker = null;
+    const clear = () => { marker?.removeAttribute('data-range-start'); marker = null; start = null; };
+    button.addEventListener('click', () => {
+      enabled = !enabled;
+      clear();
+      button.setAttribute('aria-pressed', String(enabled));
+      status.textContent = enabled ? 'Tap the first line number, then the last. Tap the same line for one line.' : '';
+    });
+    diffs.addEventListener('click', (e) => {
+      const link = e.target.closest?.('.ln a[href*="on="]');
+      if (!enabled || !link || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault();
+      e.stopPropagation(); // do not alter the desktop shift-click anchor
+      const next = core.touchRange(start, link.href, location.href);
+      clear();
+      if (next.url) { location.assign(next.url); return; }
+      start = next.start;
+      marker = link;
+      marker.setAttribute('data-range-start', '');
+      status.textContent = `Range starts at line ${link.textContent.trim()}. Tap the last line number (same file and side).`;
+    });
+    // The server opens the line form. Scroll after layout without stealing
+    // focus or forcing a mobile keyboard to appear.
+    if (new URL(location.href).searchParams.has('on')) requestAnimationFrame(() => {
+      const form = $$('.fnote .cform', diffs).find((f) => f.getClientRects().length);
+      form?.scrollIntoView({ block: 'center' });
+    });
+  }
+
   function start() {
     if (!$('#diffs[data-mr]')) return;
     panels();
+    // Large diffs may contain only the split table. Ask the existing server
+    // route for unified rather than writing the saved session preference.
+    const narrow = window.matchMedia?.('(max-width: 720px)');
+    const unify = () => {
+      $('#diffs').dataset.mobile = String(!!narrow?.matches);
+      const url = core.mobileURL(location.href, $('#diffs')?.dataset.view, narrow?.matches);
+      if (url) { location.replace(url); return true; }
+      return false;
+    };
+    if (unify()) return;
+    narrow?.addEventListener('change', unify);
+    addEventListener('click', (e) => {
+      if (narrow?.matches && e.target.closest?.('.vbtn[data-view="split"]')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }, true);
+    touchComments();
     let folded = false;
     try { folded = localStorage.getItem('mr-files-folded') === '1'; } catch { /* no storage: open */ }
     if (folded) foldFiles(true);

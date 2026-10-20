@@ -122,12 +122,12 @@
 </span>
 <details class="menu vmenu">
 <summary class="btn" aria-label="Diff view">
-<span hx-live="this.textContent = q('#diffs').attr['data-diff'] === 'split' ? 'Split' : 'Unified'">Unified</span>
+<span hx-live="this.textContent = q('#diffs').attr['data-mobile'] !== 'true' && q('#diffs').attr['data-diff'] === 'split' ? 'Split' : 'Unified'">Unified</span>
 </summary>
 <div class="menu-pop" role="group" aria-label="Diff view">
-<a href="/diffs/commit/SHA40?view=unified" class="btn vbtn" data-view="unified" aria-keyshortcuts="u" aria-current="true" data-fire="unified" :aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false">Unified<kbd aria-hidden="true">u</kbd>
+<a href="/diffs/commit/SHA40?view=unified" class="btn vbtn" data-view="unified" aria-keyshortcuts="u" aria-current="true" data-fire="unified" :aria-current="(q('#diffs').attr['data-mobile'] === 'true' ? 'unified' : q('#diffs').attr['data-diff']) === this.dataset.view ? 'true' : false">Unified<kbd aria-hidden="true">u</kbd>
 </a>
-<a href="/diffs/commit/SHA40?view=split" class="btn vbtn" data-view="split" aria-keyshortcuts="d" data-fire="split" :aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false">Split<kbd aria-hidden="true">d</kbd>
+<a href="/diffs/commit/SHA40?view=split" class="btn vbtn" data-view="split" aria-keyshortcuts="d" :aria-disabled="q('#diffs').attr['data-mobile'] === 'true' ? 'true' : false" :title="q('#diffs').attr['data-mobile'] === 'true' ? 'Split view requires a wider screen' : 'Split view'" data-fire="split" :aria-current="(q('#diffs').attr['data-mobile'] === 'true' ? 'unified' : q('#diffs').attr['data-diff']) === this.dataset.view ? 'true' : false">Split<kbd aria-hidden="true">d</kbd>
 </a>
 <button type="button" aria-keyshortcuts="x" data-js data-fire="collapse" class="btn">
 <span hx-live="this.textContent = q('[data-file][open]').count || !q('[data-file]').count ? 'Collapse all' : 'Expand all'">Collapse all</span>

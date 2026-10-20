@@ -117,7 +117,7 @@ templ diffViewMenu(p DiffView) {
 	<details class="menu vmenu">
 		<summary class="btn" aria-label="Diff view">
 			if p.Both {
-				<span hx-live="this.textContent = q('#diffs').attr['data-diff'] === 'split' ? 'Split' : 'Unified'">{ viewLabel(p.View) }</span>
+				<span hx-live="this.textContent = q('#diffs').attr['data-mobile'] !== 'true' && q('#diffs').attr['data-diff'] === 'split' ? 'Split' : 'Unified'">{ viewLabel(p.View) }</span>
 			} else {
 				{ viewLabel(p.View) }
 			}
@@ -139,12 +139,16 @@ templ viewLink(p DiffView, view, label, key, href string) {
 		class="btn vbtn"
 		data-view={ view }
 		aria-keyshortcuts={ key }
+		if view == "split" {
+			:aria-disabled="q('#diffs').attr['data-mobile'] === 'true' ? 'true' : false"
+			:title="q('#diffs').attr['data-mobile'] === 'true' ? 'Split view requires a wider screen' : 'Split view'"
+		}
 		if p.View == view {
 			aria-current="true"
 		}
 		if p.Both {
 			data-fire={ view }
-			:aria-current="q('#diffs').attr['data-diff'] === this.dataset.view ? 'true' : false"
+			:aria-current="(q('#diffs').attr['data-mobile'] === 'true' ? 'unified' : q('#diffs').attr['data-diff']) === this.dataset.view ? 'true' : false"
 		}
 	>{ label }<kbd aria-hidden="true">{ key }</kbd></a>
 }

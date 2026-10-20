@@ -1,0 +1,51 @@
+@layer components {
+  .mr-touch-range { display: none; }
+
+  /* MR only: retain the shell's desktop layout and other pages' spacing. */
+  @media (max-width: 720px) {
+    body:has(#diffs[data-mr]) {
+      --pad: 0px;
+      --hdr-h: 97px;
+      overflow-x: clip;
+    }
+    body:has(#diffs[data-mr]) .work { padding-inline: 0; margin-inline: 0; gap: var(--s3); }
+    body:has(#diffs[data-mr]) main { min-width: 0; padding-inline: 0; }
+    body:has(#diffs[data-mr]) :is(.card, .mr-card, .mr-desc, .dfile, .dscroll, .code, .rail section) {
+      margin-inline: 0; border-inline: 0; border-radius: 0; min-width: 0; max-width: 100%;
+    }
+    body:has(#diffs[data-mr]) :is(.mr-h, .mr-desc.prose, .card-h) { padding-inline: 4px; }
+    body:has(#diffs[data-mr]) .mr-desc.prose > pre { margin-inline: -4px; padding-inline: 0; max-width: calc(100% + 8px); }
+    #diffs[data-mr] .dfile > summary { padding-inline: 0; border-inline: 0; border-radius: 0; }
+    #diffs[data-mr] :is(.dscroll, .code) { overflow-x: auto; overscroll-behavior-x: contain; padding-inline: 0; }
+    #diffs[data-mr] .dt .ln { width: calc(var(--lnw) + .5ch); min-width: calc(var(--lnw) + .5ch); padding-inline: .25ch; }
+    #diffs[data-mr] .dt .m { width: 1ch; }
+    #diffs[data-mr][data-diff] .uni { display: table; }
+    #diffs[data-mr][data-diff] .spl { display: none; }
+    #diffs[data-mr] .fnote td { padding-inline: 0; }
+    #diffs[data-mr] :is(.cform, .cmt) { width: min(65ch, calc(100vw - 5rem)); max-width: calc(100vw - 5rem); overflow-wrap: anywhere; }
+    body:has(#diffs[data-mr]) :is(input, textarea, select) { font-size: 16px; }
+    body:has(#diffs[data-mr]) .f-btns { flex-wrap: wrap; }
+    body:has(#diffs[data-mr]) .menu .menu-pop {
+      position: fixed; inset: auto 0 0; width: auto; max-width: 100%;
+      max-height: 75dvh; overflow-y: auto; border-radius: var(--r) var(--r) 0 0;
+      padding-bottom: max(var(--s4), env(safe-area-inset-bottom));
+    }
+    body:has(#diffs[data-mr]) .mr-bar { position: static; }
+    /* A wrapping toolbar has no reliable fixed sticky height. */
+    body:has(#diffs[data-mr]) { --bar-h: 0px; }
+  }
+
+  @media (pointer: coarse), (hover: none) {
+    .mr-touch-range { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+    /* Real, disjoint cells: never expand invisible targets into other lines
+       or into the neighbouring old/new gutter. */
+    #diffs[data-mr] .dt { line-height: max(var(--lh-code), 40px); }
+    #diffs[data-mr] .dt .ln { width: max(calc(var(--lnw) + .5ch), 40px); min-width: 40px; padding: 0; }
+    #diffs[data-mr] .spl .c-ln { width: max(calc(var(--lnw) + .5ch), 40px); }
+    #diffs[data-mr] .ln a { display: block; width: 100%; min-height: 40px; text-align: center; text-decoration: underline; }
+    .mr-touch-range[hidden] { display: none; }
+    #diffs[data-mr] .ln a[data-range-start] { outline: 2px solid var(--focus); background: var(--sel); }
+    body:has(#diffs[data-mr]) :is(.cform .btn, .menu .btn, .mr-touch-range .btn, .c-act button) { min-height: 40px; height: auto; padding-block: var(--s2); }
+    #diffs[data-mr] .cform { scroll-margin-block: calc(var(--hdr-h) + 12px); }
+  }
+}

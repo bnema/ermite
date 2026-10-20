@@ -135,3 +135,109 @@ test('footer tabs switch panels, support arrows, and open on checks hash', () =>
     globalThis.document=oldDocument; globalThis.location=oldLocation; globalThis.addEventListener=oldAdd;
   }
 });
+
+test('touch range: first tap anchors, second tap opens the sorted range', () => {
+  const base = 'https://forge.test/demo/merge-requests/1';
+  const first = base + '?on=new:24:a.go#f1';
+  const last = base + '?on=new:10:a.go#f1';
+  assert.deepEqual(C.touchRange(null, first, base), { start: first, url: null });
+  const result = C.touchRange(first, last, base);
+  assert.equal(result.start, null);
+  assert.equal(new URL(result.url).searchParams.get('on'), 'new:10-24:a.go');
+  assert.deepEqual(C.touchRange(first, first, base), { start: null, url: first });
+});
+
+test('touch range: a different file, side or request becomes a new anchor', () => {
+  const base = 'https://forge.test/demo/merge-requests/1';
+  const first = base + '?on=new:24:a.go#f1';
+  for (const next of [first.replace('new:', 'old:'), first.replace('a.go', 'b.go'), first.replace('/1?', '/2?')]) {
+    assert.deepEqual(C.touchRange(first, next, base), { start: next, url: null });
+  }
+});
+
+test('mobile unified fallback only redirects single-layout split pages and preserves query/hash', () => {
+  const href = 'https://forge.test/demo/merge-requests/1?view=split&from=25&on=new:3:a.go#f26';
+  assert.equal(C.mobileURL(href, 'split', false), null);
+  assert.equal(C.mobileURL(href, undefined, true), null, 'both layouts are switched by CSS');
+  assert.equal(C.mobileURL(href, 'unified', true), null, 'no redirect loop');
+  const url = new URL(C.mobileURL(href, 'split', true));
+  assert.equal(url.searchParams.get('view'), 'unified');
+  assert.equal(url.searchParams.get('from'), '25');
+  assert.equal(url.searchParams.get('on'), 'new:3:a.go');
+  assert.equal(url.hash, '#f26');
+});
+
+test('touch control: lazy links enable toolbar; ordinary taps pass through; ranges navigate and cancel', async () => {
+  const saved = Object.fromEntries(['document', 'location', 'addEventListener', 'localStorage', 'sessionStorage', 'fetch', 'matchMedia'].map((k) => [k, globalThis[k]]));
+  const make = () => ({
+    attrs: {}, events: {}, children: [], textContent: '',
+    setAttribute(k, v) { this.attrs[k] = v; },
+    removeAttribute(k) { delete this.attrs[k]; },
+    addEventListener(k, fn) { this.events[k] = fn; },
+    append(...nodes) { this.children.push(...nodes); },
+    prepend(node) { this.children.unshift(node); },
+    querySelector() { return null; }, querySelectorAll() { return []; },
+  });
+  const diffs = make();
+  diffs.dataset = { diff: 'split' };
+  const base = 'https://forge.test/demo/merge-requests/1';
+  const line = (n) => Object.assign(make(), { href: `${base}?on=new:${n}:a.go#f1`, textContent: String(n) });
+  const a = line(20), b = line(10);
+  let loaded = false;
+  diffs.querySelector = () => loaded ? a : null;
+  let assigned = null;
+  globalThis.document = {
+    querySelector: (sel) => sel === '#diffs[data-mr]' || sel === '#diffs' ? diffs : null,
+    querySelectorAll: () => [], createElement: (tag) => tag === 'template' ? { content: { querySelectorAll: () => [] } } : make(),
+  };
+  globalThis.location = { href: base, pathname: '/demo/merge-requests/1', hash: '', assign(url) { assigned = url; } };
+  globalThis.addEventListener = () => {};
+  let resize;
+  const media = { matches: true, addEventListener(type, fn) { resize = fn; } };
+  globalThis.matchMedia = () => media;
+  globalThis.fetch = async () => { loaded = true; return { ok: true, status: 200, text: async () => '' }; };
+  globalThis.localStorage = globalThis.sessionStorage = { getItem: () => null };
+  const click = (link, modifiers = {}) => {
+    const e = { target: { closest: () => link }, prevented: false, stopped: false,
+      preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }, ...modifiers };
+    diffs.events.click(e);
+    return e;
+  };
+  try {
+    window.ermiteMR.start();
+    const bar = diffs.children[0];
+    const [button, status] = bar.children;
+    assert.equal(bar.hidden, true, 'no commentable links in the initial window');
+    assert.equal(typeof diffs.events.click, 'function', 'delegation installed before lazy load');
+    await window.ermiteMR.load({ dataset: { src: '/files?from=25' } });
+    assert.equal(bar.hidden, false, 'lazy window refresh reveals range control');
+    assert.equal(diffs.dataset.mobile, 'true');
+    assert.equal(diffs.dataset.diff, 'split', 'preferred layout is retained');
+    media.matches = false;
+    resize();
+    assert.equal(diffs.dataset.mobile, 'false', 'desktop menu returns to preferred layout');
+    assert.equal(diffs.dataset.diff, 'split');
+    assert.equal(click(a).prevented, false, 'normal single-line navigation is untouched');
+    button.events.click();
+    assert.equal(button.attrs['aria-pressed'], 'true');
+    assert.equal(click(a, { shiftKey: true }).prevented, false, 'desktop range selection is untouched');
+    const event = click(a);
+    assert.equal(event.prevented, true);
+    assert.equal(event.stopped, true);
+    assert.ok('data-range-start' in a.attrs);
+    assert.match(status.textContent, /20/);
+    click(b);
+    assert.equal(new URL(assigned).searchParams.get('on'), 'new:10-20:a.go');
+    assert.equal('data-range-start' in a.attrs, false);
+    click(a);
+    button.events.click();
+    assert.equal(button.attrs['aria-pressed'], 'false');
+    assert.equal(status.textContent, '');
+    assert.equal('data-range-start' in a.attrs, false);
+    assert.equal(click(b).prevented, false);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete globalThis[k]; else globalThis[k] = v;
+    }
+  }
+});
