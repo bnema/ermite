@@ -18,6 +18,7 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"github.com/bnema/zerowrap"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -52,7 +53,7 @@ func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'")
 // Empty sources, wildcards, force prefixes and revision expressions never reach git.
 func validRefspec(s string) bool {
 	a, b, ok := strings.Cut(s, ":")
-	if !ok || a != b || !(strings.HasPrefix(a, "refs/heads/") || strings.HasPrefix(a, "refs/tags/")) {
+	if !ok || a != b || !strings.HasPrefix(a, "refs/heads/") && !strings.HasPrefix(a, "refs/tags/") {
 		return false
 	}
 	if strings.ContainsAny(a, "+*?[:\\^~ ") || strings.Contains(a, "..") || strings.Contains(a, "@{") || strings.Contains(a, "//") || strings.HasSuffix(a, "/") || strings.HasSuffix(a, ".") {
@@ -104,7 +105,14 @@ func (p *Pusher) Push(parent context.Context, req ports.MirrorPush) (result port
 	if e != nil {
 		return result, internal("create temporary mirror directory")
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		// The directory holds the private key: a leftover is reported, and resetRunDir wipes it at
+		// the next start.
+		if e := os.RemoveAll(dir); e != nil {
+			log := zerowrap.FromCtx(parent)
+			log.Warn().Err(e).Msg("remove the temporary mirror key directory")
+		}
+	}()
 	block, e := ssh.MarshalPrivateKey(req.PrivateKey, "")
 	if e != nil {
 		return result, internal("encode mirror private key")
