@@ -6,7 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -139,7 +142,7 @@ func TestMarkdownGFM(t *testing.T) {
 
 func renderUntrustedMD(t *testing.T, src string) string {
 	t.Helper()
-	h, err := newMarkdown().renderUntrusted([]byte(src), "issue-desc-")
+	h, err := newMarkdown().renderUntrusted([]byte(src), "issue-desc-", nil)
 	require.NoError(t, err)
 	return string(h)
 }
@@ -218,17 +221,90 @@ func TestNoteMarkdown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.source, func(t *testing.T) {
 			t.Parallel()
-			h, err := newMarkdown().renderNote([]byte(tt.source), "demo", "main", "c1-", func(n int64) bool { return n == 2 })
+			h, err := newMarkdown().renderNote([]byte(tt.source), "demo", "main", "c1-", refResolver{notes: func(n int64) bool { return n == 2 }})
 			require.NoError(t, err)
 			assert.Equal(t, tt.links, strings.Count(string(h), `href="#c2"`), string(h))
 			assert.NotContains(t, string(h), `href="#c99"`)
 			assert.NotContains(t, string(h), "javascript:")
 		})
 	}
-	h, err := newMarkdown().renderNote([]byte("# Heading\n\n<script>alert(1)</script>\n\n**bold** ^2"), "demo", "main", "c1-", func(n int64) bool { return n == 2 })
+	h, err := newMarkdown().renderNote([]byte("# Heading\n\n<script>alert(1)</script>\n\n**bold** ^2"), "demo", "main", "c1-", refResolver{notes: func(n int64) bool { return n == 2 }})
 	require.NoError(t, err)
 	assert.Contains(t, string(h), `id="c1-heading"`)
 	assert.Contains(t, string(h), "<strong>bold</strong>")
 	assert.NotContains(t, string(h), "<script")
 	assert.Contains(t, string(h), `title="note 2"`)
+}
+
+func TestNumberReferences(t *testing.T) {
+	t.Parallel()
+	numbers := func(n int64) (string, bool) {
+		switch n {
+		case 3:
+			return "/demo/issues/3", true
+		case 4:
+			return "/demo/merge-requests/4", true
+		}
+		return "", false
+	}
+	tests := []struct {
+		source string
+		want   []string
+		not    []string
+	}{
+		{"fix #3 and #4, not #9", []string{`<a href="/demo/issues/3" title="issue 3" class="ref">#3</a>`, `title="merge request 4"`}, []string{"/issues/9", "#9</a>"}},
+		{"abc#3 _#3 ##3 1#3", nil, []string{"<a "}},
+		{"&#39; &#3;", nil, []string{"<a "}},
+		{"`#3`\n\n```\n#3\n```", nil, []string{"<a "}},
+		{"[#3](https://example.org)", []string{`href="https://example.org"`}, []string{"/demo/issues/3"}},
+		{"#3\n#3", []string{`href="/demo/issues/3"`}, nil},
+		{"#03 #12345678901", nil, []string{"<a "}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			t.Parallel()
+			h, err := newMarkdown().renderIssue([]byte(tt.source), "demo", "main", "i-", numbers)
+			require.NoError(t, err)
+			for _, w := range tt.want {
+				assert.Contains(t, string(h), w)
+			}
+			for _, w := range tt.not {
+				assert.NotContains(t, string(h), w)
+			}
+			u, err := newMarkdown().renderUntrusted([]byte(tt.source), "i-", numbers)
+			require.NoError(t, err)
+			assert.Equal(t, strings.Count(string(h), `class="ref"`), strings.Count(string(u), `class="ref"`))
+		})
+	}
+	// Without a resolver nothing links.
+	h, err := newMarkdown().renderUntrusted([]byte("#3"), "i-", nil)
+	require.NoError(t, err)
+	assert.NotContains(t, string(h), "<a ")
+}
+
+func TestNumberAndNoteReferencesTogether(t *testing.T) {
+	t.Parallel()
+	h, err := newMarkdown().renderNote([]byte("see ^2 and #3."), "demo", "main", "c1-", refResolver{
+		notes:   func(n int64) bool { return n == 2 },
+		numbers: func(n int64) (string, bool) { return "/demo/issues/3", n == 3 },
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(h), `href="#c2"`)
+	assert.Contains(t, string(h), `href="/demo/issues/3"`)
+	assert.Contains(t, string(h), "and ")
+}
+
+func TestNumberResolverCapsLookups(t *testing.T) {
+	t.Parallel()
+	nums := mocks.NewIssueNumberResolver(t)
+	nums.EXPECT().Kind(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(domain.NumberIssue, nil).Times(maxNumberLookups)
+	srv := &Server{cfg: Config{IssueNumbers: nums}}
+	resolve := srv.numberResolver(t.Context(), "demo")
+	require.NotNil(t, resolve)
+	for n := int64(1); n <= maxNumberLookups+10; n++ {
+		_, ok := resolve(n)
+		assert.Equal(t, n <= maxNumberLookups, ok, n)
+	}
+	_, ok := resolve(1) // memoized
+	assert.True(t, ok)
 }

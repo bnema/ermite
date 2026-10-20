@@ -227,7 +227,7 @@ func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component,
 	} else {
 		collapseFiles(p.Files, res.Diff.Files, links)
 	}
-	s.placeComments(&p, d.name(), n, res.Comments, m.HeadID.String(), !since, canWrite, nil)
+	s.placeComments(ctx, &p, d.name(), n, res.Comments, m.HeadID.String(), !since, canWrite, nil)
 	window := p.Files[from:min(from+mrWindow, len(p.Files))]
 	if one {
 		window = p.Files[from : from+1]

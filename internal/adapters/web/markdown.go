@@ -64,13 +64,30 @@ func (m *markdown) render(source []byte, repo, ref, dir string) (template.HTML, 
 // #fragment links chosen, so that several documents on one page (the summaries
 // of a run) do not share ids.
 func (m *markdown) renderWithIDs(source []byte, repo, ref, dir, idPrefix string) (template.HTML, []Heading, error) {
-	return m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, dir: dir, idPrefix: idPrefix}, nil)
+	return m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, dir: dir, idPrefix: idPrefix}, refResolver{})
 }
 
-// renderNote uses the repository Markdown policy, then adds local note links.
-func (m *markdown) renderNote(source []byte, repo, ref, idPrefix string, notes func(int64) bool) (template.HTML, error) {
-	h, _, err := m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, idPrefix: idPrefix}, notes)
+// renderNote uses the repository Markdown policy, then adds local note links
+// and links to issues and merge requests.
+func (m *markdown) renderNote(source []byte, repo, ref, idPrefix string, refs refResolver) (template.HTML, error) {
+	h, _, err := m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, idPrefix: idPrefix}, refs)
 	return h, err
+}
+
+// renderIssue renders the trusted body of an issue: the policy of render, plus
+// links to issues and merge requests.
+func (m *markdown) renderIssue(source []byte, repo, ref, idPrefix string, numbers func(int64) (string, bool)) (template.HTML, error) {
+	h, _, err := m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, idPrefix: idPrefix}, refResolver{numbers: numbers})
+	return h, err
+}
+
+// refResolver tells which references of a text are links.
+type refResolver struct {
+	// notes tells whether ^N names a note of the page (nil: no ^N links).
+	notes func(int64) bool
+	// numbers gives the page of the issue or merge request #N, when it exists
+	// (nil: no #N links). The href is built by the server, never from the text.
+	numbers func(int64) (href string, ok bool)
 }
 
 // renderUntrusted renders Markdown written by an anonymous visitor (an issue
@@ -80,19 +97,19 @@ func (m *markdown) renderNote(source []byte, repo, ref, idPrefix string, notes f
 //     rel="nofollow noopener noreferrer ugc"; relative links, #fragments and
 //     every other scheme lose their link and keep the text;
 //   - nothing points into the repository.
-func (m *markdown) renderUntrusted(source []byte, idPrefix string) (template.HTML, error) {
-	h, _, err := m.renderPolicy(source, linkPolicy{idPrefix: idPrefix, untrusted: true}, nil)
+func (m *markdown) renderUntrusted(source []byte, idPrefix string, numbers func(int64) (string, bool)) (template.HTML, error) {
+	h, _, err := m.renderPolicy(source, linkPolicy{idPrefix: idPrefix, untrusted: true}, refResolver{numbers: numbers})
 	return h, err
 }
 
-func (m *markdown) renderPolicy(source []byte, pol linkPolicy, notes func(int64) bool) (template.HTML, []Heading, error) {
+func (m *markdown) renderPolicy(source []byte, pol linkPolicy, res refResolver) (template.HTML, []Heading, error) {
 	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{prefix: pol.idPrefix, inner: parser.NewContext().IDs()}))
 	doc := m.md.Parser().Parse(text.NewReader(source), parser.WithContext(pc))
 	pol.source = source
 	// Collect eligible text before the policy unwraps rejected links: their
 	// labels must not accidentally become references either.
 	var refs []*ast.Text
-	if notes != nil {
+	if res.notes != nil || res.numbers != nil {
 		_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 			if !entering {
 				return ast.WalkContinue, nil
@@ -108,7 +125,7 @@ func (m *markdown) renderPolicy(source []byte, pol linkPolicy, notes func(int64)
 	}
 	pol.apply(doc)
 	for _, t := range refs {
-		noteReferences(t, source, notes)
+		references(t, source, res)
 	}
 
 	var buf bytes.Buffer
@@ -390,42 +407,74 @@ func (altRenderer) RegisterFuncs(r renderer.NodeRendererFuncRegisterer) {
 	})
 }
 
-var noteReferencePattern = regexp.MustCompile(`(^|[^0-9A-Za-z_^])\^([1-9][0-9]{0,5})\b`)
+// referencePattern matches ^N (groups 1-2) and #N (groups 3-4). The preceding
+// character is not part of a word; #N also rejects & and # so that numeric
+// entities such as &#39; stay text.
+var referencePattern = regexp.MustCompile(`(^|[^0-9A-Za-z_^])\^([1-9][0-9]{0,5})\b|(^|[^0-9A-Za-z_&#])#([1-9][0-9]{0,9})\b`)
 
-// noteReferences changes only text segments; code and link labels never enter
-// this function. New fragment links deliberately bypass heading-prefix rewriting.
-func noteReferences(t *ast.Text, source []byte, exists func(int64) bool) {
+// references changes only text segments; code and link labels never enter
+// this function. New links deliberately bypass heading-prefix rewriting.
+func references(t *ast.Text, source []byte, res refResolver) {
 	parent := t.Parent()
 	if parent == nil {
 		return
 	}
 	value := t.Value(source)
 	offset := 0
-	for _, match := range noteReferencePattern.FindAllSubmatchIndex(value, -1) {
-		id := string(value[match[4]:match[5]])
-		n, err := strconv.ParseInt(id, 10, 64)
-		if err != nil || !exists(n) {
+	for _, match := range referencePattern.FindAllSubmatchIndex(value, -1) {
+		isNote := match[4] >= 0
+		var from, to int
+		if isNote {
+			from, to = match[4], match[5]
+		} else {
+			from, to = match[8], match[9]
+		}
+		if (isNote && res.notes == nil) || (!isNote && res.numbers == nil) {
 			continue
 		}
-		start := match[4] - 1
+		id := string(value[from:to])
+		n, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			continue
+		}
+		start := from - 1
 		// Markdown punctuation may split adjacent text into separate AST nodes.
 		// Check the original preceding byte as well as the segment-local regex.
 		if at := t.Segment.Start + start; at > 0 {
 			prev := source[at-1]
-			if prev >= '0' && prev <= '9' || prev >= 'A' && prev <= 'Z' || prev >= 'a' && prev <= 'z' || prev == '_' || prev == '^' {
+			if prev >= '0' && prev <= '9' || prev >= 'A' && prev <= 'Z' || prev >= 'a' && prev <= 'z' || prev == '_' {
 				continue
 			}
+			if isNote && prev == '^' || !isNote && (prev == '&' || prev == '#') {
+				continue
+			}
+		}
+		link := ast.NewLink()
+		if isNote {
+			if !res.notes(n) {
+				continue
+			}
+			link.Destination = []byte("#c" + id)
+			link.Title = []byte("note " + id)
+		} else {
+			href, ok := res.numbers(n)
+			if !ok {
+				continue
+			}
+			link.Destination = []byte(href)
+			title := "issue "
+			if strings.Contains(href, "/merge-requests/") {
+				title = "merge request "
+			}
+			link.Title = []byte(title + id)
 		}
 		if start > offset {
 			parent.InsertBefore(parent, t, ast.NewTextSegment(text.NewSegment(t.Segment.Start+offset, t.Segment.Start+start)))
 		}
-		link := ast.NewLink()
-		link.Destination = []byte("#c" + id)
-		link.Title = []byte("note " + id)
 		link.SetAttributeString("class", []byte("ref"))
-		link.AppendChild(link, ast.NewString(value[start:match[5]]))
+		link.AppendChild(link, ast.NewString(value[start:to]))
 		parent.InsertBefore(parent, t, link)
-		offset = match[5]
+		offset = to
 	}
 	if offset == 0 {
 		return

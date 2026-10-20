@@ -616,7 +616,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	if canWrite {
 		on = parseOn(r.URL.Query().Get("on"))
 	}
-	s.placeComments(&p, d.name(), n, res.Comments, head, !since, canWrite, on)
+	s.placeComments(ctx, &p, d.name(), n, res.Comments, head, !since, canWrite, on)
 	lines, invisible := diffLines(p.Files)
 	p.Invisible = invisible
 	p.DiffView = newDiffView(r, lines, withFrom(self+"?view=unified", from), withFrom(self+"?view=split", from))
@@ -680,7 +680,7 @@ func (s *Server) mrFacts(ctx context.Context, r *http.Request, d *repoData, p *M
 		// Relative links point into the source branch as it is now (its head
 		// commit); the heading ids carry their own prefix, apart from the
 		// ids of the diff.
-		h, err := s.md.renderNote([]byte(desc), d.name(), head, "mr-desc-", noteIDs(res.Comments))
+		h, err := s.md.renderNote([]byte(desc), d.name(), head, "mr-desc-", refResolver{notes: noteIDs(res.Comments), numbers: s.numberResolver(ctx, d.name())})
 		if err != nil {
 			return err
 		}
@@ -905,7 +905,7 @@ func parseOn(s string) *lineRef {
 // as links to the form of their line; on designates the line whose form shows.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter places comments under the lines of the diff shown; display only
-func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domain.Comment, head string, inline, canWrite bool, on *lineRef) {
+func (s *Server) placeComments(ctx context.Context, p *MRPage, repo string, n int64, comments []domain.Comment, head string, inline, canWrite bool, on *lineRef) {
 	now := s.cfg.Now()
 	self := mrHref(repo, n)
 	resolveAction := func(id string) string { return mrHref(repo, n, "comments", id, "resolve") }
@@ -953,7 +953,7 @@ func (s *Server) placeComments(p *MRPage, repo string, n int64, comments []domai
 		return index[lineKey{path, side, line}]
 	}
 
-	exists := noteIDs(comments)
+	exists := refResolver{notes: noteIDs(comments), numbers: s.numberResolver(ctx, repo)}
 	children := map[int64][]domain.Comment{}
 	for _, c := range comments {
 		if c.ReplyTo != 0 && !c.Deleted {

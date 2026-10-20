@@ -149,6 +149,10 @@ templ IssueShow(l Layout, p IssuePage) {
 							{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
 						}
 					</dd>
+					if p.ClosedBy != nil {
+						<dt>closed by</dt>
+						<dd><a class="ref" href={ templ.SafeURL(p.ClosedBy.Href) }>{ p.ClosedBy.Label }</a></dd>
+					}
 					if p.UpdatedAt != "" {
 						<dt>updated</dt>
 						<dd><time datetime={ p.UpdatedAt }>{ p.Updated }</time></dd>
@@ -178,6 +182,23 @@ templ IssueShow(l Layout, p IssuePage) {
 }
 
 templ issueRail(p IssuePage) {
+	if len(p.References) > 0 {
+		<section aria-labelledby="r-refs">
+			<h2 id="r-refs">Merge requests</h2>
+			<ul>
+				for _, r := range p.References {
+					<li>
+						<a class="ref" href={ templ.SafeURL(r.Href) }>{ r.Number }</a>
+						{ " " + r.Title + " " }
+						<span class="mr-state" data-state={ r.State }>{ r.State }</span>
+						if r.Closes {
+							{ " · closes" }
+						}
+					</li>
+				}
+			</ul>
+		</section>
+	}
 	if p.Transition != nil {
 		<section aria-labelledby="r-act">
 			<h2 id="r-act">Issue</h2>

@@ -83,6 +83,57 @@ type IssuePage struct {
 	Form       *CommentForm
 	Transition *IssueActions
 	Live       bool
+	// ClosedBy is the merge request whose merge closed the issue.
+	ClosedBy *Link
+	// References are the merge requests naming the issue.
+	References []IssueRefView
+}
+
+// IssueRefView is a merge request naming an issue.
+type IssueRefView struct {
+	Number, Title, State, Href string
+	Closes                     bool
+}
+
+// maxNumberLookups bounds the lookups of #N references of one render.
+const maxNumberLookups = 50
+
+// numberResolver resolves #N to the page of an issue or a merge request of
+// the repository. It is meant for one render: answers are memoized and at most
+// maxNumberLookups numbers are asked, the others do not resolve.
+func (s *Server) numberResolver(ctx context.Context, repo string) func(int64) (string, bool) {
+	if s.cfg.IssueNumbers == nil {
+		return nil
+	}
+	name, err := domain.ParseRepoName(repo)
+	if err != nil {
+		return nil
+	}
+	type answer struct {
+		href string
+		ok   bool
+	}
+	seen := map[int64]answer{}
+	return func(n int64) (string, bool) {
+		if a, ok := seen[n]; ok {
+			return a.href, a.ok
+		}
+		if len(seen) >= maxNumberLookups {
+			return "", false
+		}
+		var a answer
+		kind, err := s.cfg.IssueNumbers.Kind(ctx, principal(ctx), name, n)
+		if err == nil {
+			switch kind {
+			case domain.NumberIssue:
+				a = answer{issueHref(repo, n), true}
+			case domain.NumberMergeRequest:
+				a = answer{mrHref(repo, n), true}
+			}
+		}
+		seen[n] = a
+		return a.href, a.ok
+	}
 }
 
 // IssueNewPage is the form that opens an issue.
@@ -243,14 +294,23 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 		var err error
 		if i.External {
 			// Written by an anonymous visitor: the untrusted policy.
-			h, err = s.md.renderUntrusted([]byte(body), "issue-desc-")
+			h, err = s.md.renderUntrusted([]byte(body), "issue-desc-", s.numberResolver(ctx, d.name()))
 		} else {
-			h, _, err = s.md.renderWithIDs([]byte(body), d.name(), d.repo.DefaultBranch, "", "issue-desc-")
+			h, err = s.md.renderIssue([]byte(body), d.name(), d.repo.DefaultBranch, "issue-desc-", s.numberResolver(ctx, d.name()))
 		}
 		if err != nil {
 			return nil, 0, err
 		}
 		p.Desc = h
+	}
+	if i.ClosedByMergeRequest > 0 {
+		p.ClosedBy = &Link{Label: "!" + strconv.FormatInt(i.ClosedByMergeRequest, 10), Href: mrHref(d.name(), i.ClosedByMergeRequest)}
+	}
+	for _, ref := range res.References {
+		p.References = append(p.References, IssueRefView{
+			Number: "!" + strconv.FormatInt(ref.Number, 10), Title: visibleText(ref.Title.String()),
+			State: string(ref.State), Href: mrHref(d.name(), ref.Number), Closes: ref.Closes,
+		})
 	}
 	p.Opened.Name = s.who(i.Author)
 	if i.External {
