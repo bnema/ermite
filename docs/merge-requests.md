@@ -69,6 +69,8 @@ The merge request, commit and compare pages list every changed file. Generated f
 
 A commit page reads the hunks of its first 300 files with the page; the other files are listed collapsed and load one at a time. A file that cannot be shown in the browser, over 8 MiB of text or over 50,000 changed lines when loaded alone, has no "load diff": the page links to its raw blob instead, and its lines take no comment.
 
+The API and `mr show --diff --json` keep their limits (300 files, 2,000 changed lines per file, 20,000 in total, 8 MiB). A file read without its hunks has `truncated` set and `omitted` giving the reason: `large`, `budget` (the earlier files used the limits) or `unavailable` (too large to read even alone).
+
 ## Notes
 
 A note is the only review object. It is published as soon as it is written: there is no draft and no submit step.

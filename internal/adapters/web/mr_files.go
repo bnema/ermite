@@ -241,12 +241,6 @@ func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component,
 	}
 	lines, _ := diffLines(window)
 	v := newDiffView(r, lines, withFrom(self+"?view=unified", from), withFrom(self+"?view=split", from))
-	switch r.URL.Query().Get("layouts") {
-	case "both":
-		v.Both = true
-	case "one":
-		v.Both = false
-	}
-	v.ShowUnified, v.ShowSplit = v.Both || v.View == "unified", v.Both || v.View == "split"
+	v.pageLayouts(r)
 	return MRFiles(MRFilesPage{Files: window, DiffView: v}), http.StatusOK, nil
 }

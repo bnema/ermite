@@ -380,7 +380,7 @@ func diffFiles(files []domain.FileDiff) []DiffFile {
 			ID: "f" + itoa(i+1), Status: statusLetter(f.Status),
 			Add: f.Additions, Del: f.Deletions, Bin: f.Binary,
 			// A file that is shown in full opens; a file with nothing to read
-			// (binary, truncated) stays closed under its note.
+			// (binary, omitted) stays closed under its note.
 			Open:   len(f.Hunks) > 0 && f.Omitted == domain.OmitNone,
 			Manual: f.Omitted.Collapsed(),
 		}
@@ -535,6 +535,14 @@ func fileParam(r *http.Request, n int) (int, bool) {
 // ?view= is the layout shown and ?layouts= says whether the page holds both.
 func fragmentView(r *http.Request, lines int) DiffView {
 	v := newDiffView(r, lines, "", "")
+	v.pageLayouts(r)
+	return v
+}
+
+// pageLayouts makes a fragment send the layouts of the page that asks for
+// it: ?layouts=both when the page holds both and switches them itself,
+// ?layouts=one when it holds only the shown one.
+func (v *DiffView) pageLayouts(r *http.Request) {
 	switch r.URL.Query().Get("layouts") {
 	case "both":
 		v.Both = true
@@ -542,5 +550,4 @@ func fragmentView(r *http.Request, lines int) DiffView {
 		v.Both = false
 	}
 	v.ShowUnified, v.ShowSplit = v.Both || v.View == "unified", v.Both || v.View == "split"
-	return v
 }
