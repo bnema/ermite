@@ -854,13 +854,6 @@
 // repository is gone, the session ended) makes the page reload.
 window.ermiteLive = (() => {
   let connection = null;
-  let tearingDown = 0;
-  // hx-sse has no public close API. Its cleanup aborts the fetch and leaves
-  // reader.cancel() uncaught. Suppress only AbortError during our delete swap
-  // (through the rejection-reporting task), not ordinary stream/app failures.
-  window.addEventListener?.('unhandledrejection', (event) => {
-    if (tearingDown && event.reason?.name === 'AbortError') event.preventDefault();
-  });
   window.addEventListener?.('htmx:sse:after:connection', (event) => {
     if (event.target.matches?.('.hint-live')) connection = event.detail.connection;
   });
@@ -918,10 +911,15 @@ window.ermiteLive = (() => {
   // fitIn lays out the one-line chip lists of a fragment now in the page.
   const fitIn = (el) => { for (const ul of el.querySelectorAll('[data-fit]')) window.ermiteFit?.fit(ul); };
   return {
+    // teardown runs remove, which deletes the stream element. hx-sse has no
+    // public close API: its cleanup aborts the fetch, then calls
+    // connection.reader.cancel() without catching the AbortError it rejects
+    // with. Wrapping that one reader handles exactly this rejection, with no
+    // timing window and no global filter.
     async teardown(remove) {
-      ++tearingDown;
-      try { return await remove(); }
-      finally { setTimeout(() => { --tearingDown; }, 0); }
+      const reader = connection?.reader;
+      if (reader) connection.reader = { cancel: () => reader.cancel().catch(() => {}) };
+      return remove();
     },
     resumeStream(element) {
       // The public connection includes id-only messages as well as named ones.

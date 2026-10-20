@@ -40,22 +40,26 @@ test('a drop that lasts shows offline, once, until the stream is back', (t) => {
   assert.equal(hint.dataset.state, 'live');
 });
 
-test('controlled stream deletion suppresses only teardown AbortError rejections', async (t) => {
+test('stream teardown handles the reader cancellation that hx-sse leaves uncaught', async (t) => {
   const { live, listeners } = setup(t);
-  const rejection = (name) => {
-    const event = { reason: { name }, prevented: false, preventDefault() { this.prevented = true; } };
-    listeners.unhandledrejection(event);
-    return event.prevented;
-  };
-  assert.equal(rejection('AbortError'), false);
-  await live.teardown(async () => {
-    assert.equal(rejection('AbortError'), true, 'no AbortError escapes the delete swap');
-    assert.equal(rejection('TypeError'), false);
-    await Promise.resolve();
-  });
-  assert.equal(rejection('AbortError'), true, 'async cancellation reporting is covered');
-  t.mock.timers.tick(1);
-  assert.equal(rejection('AbortError'), false, 'unrelated later aborts remain visible');
+  assert.equal(listeners.unhandledrejection, undefined, 'no global rejection filter');
+  const abort = Object.assign(new Error('signal is aborted without reason'), { name: 'AbortError' });
+  let cancelled = 0;
+  const connection = { reader: { cancel: () => { cancelled++; return Promise.reject(abort); } } };
+  listeners['htmx:sse:after:connection']({ target: { matches: () => true }, detail: { connection } });
+  const escaped = [];
+  const onRejection = (reason) => escaped.push(reason);
+  process.on('unhandledRejection', onRejection);
+  try {
+    // remove stands for hx-sse's cleanup: r.reader?.cancel?.(), result ignored.
+    await live.teardown(() => { connection.reader?.cancel?.(); });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    process.off('unhandledRejection', onRejection);
+  }
+  assert.equal(cancelled, 1, 'the real reader is still cancelled');
+  assert.deepEqual(escaped, [], 'no AbortError escapes the teardown');
 });
 
 test('replacement stream URL carries the last connection id, including id-only events', (t) => {
