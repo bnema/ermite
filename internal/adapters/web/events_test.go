@@ -507,6 +507,7 @@ func TestMRPushBothBranches(t *testing.T) {
 	t.Parallel()
 	for _, refs := range [][]string{{"feature", "main"}, {"main", "feature"}} {
 		t.Run(strings.Join(refs, "-"), func(t *testing.T) {
+			t.Parallel()
 			svc := mocks.NewMergeRequestService(t)
 			svc.EXPECT().Mergeability(mock.Anything, mock.Anything, mock.Anything, int64(1)).Return(domain.Mergeability{State: domain.MergeabilityUpToDate}, nil).Once()
 			l := liveStream{s: &Server{cfg: Config{MergeRequests: svc}}, repo: "demo", view: "mr", n: "1", ref: "feature", target: "main"}
