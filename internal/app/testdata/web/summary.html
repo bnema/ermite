@@ -226,6 +226,7 @@
            htmx:sse:error -> ermiteLive.error(event.detail.status);
            htmx:sse:before:connection -> ermiteLive.gate(event);
            home-list, repo-last-push, refs-list, commits-head, mr-notice, mr-mergeability, ci-run, ci-job, inbox -> ermiteLive.swap(event.detail.data);
+           mr-head -> ermiteMR.headChanged();
            gap -> ermiteLive.reload()">
 </span>
 </div>

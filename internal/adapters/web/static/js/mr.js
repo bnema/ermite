@@ -84,11 +84,13 @@ window.ermiteMR = (() => {
   let refreshTouchComments = () => {};
   let moved = false;
   let lazyIO = null; // the observer of the placeholders (watch)
+  let diffGeneration = 0;
   let revealGen = 0; // the last reveal wins the scroll
 
   // load fetches the window of a placeholder and swaps its files in. The
   // promise resolves once they are in the page (or the page said to reload).
   function load(ph) {
+    const generation = diffGeneration;
     const src = ph?.dataset.src;
     if (!src || moved) return Promise.resolve();
     if (loading.has(src)) return loading.get(src);
@@ -102,12 +104,14 @@ window.ermiteMR = (() => {
     const p = fetch(url, { headers: { Accept: 'text/html' }, credentials: 'same-origin' })
       .then(async (res) => {
         const html = await res.text();
+        if (generation !== diffGeneration) return;
         if (res.status === 409) return stale(html);
         if (!res.ok) throw new Error('loading files: ' + res.status);
         // A window of the old diff after the page went stale stays out.
         if (!moved) swap(html);
       })
       .catch((err) => {
+        if (generation !== diffGeneration) return;
         loading.delete(src);
         for (const p of $$('.dlazy[data-loading]')) if (p.dataset.src === src) p.removeAttribute('data-loading');
         window.ermite?.flash?.(err.message, 4000);
@@ -195,6 +199,7 @@ window.ermiteMR = (() => {
   // that come in are marked in the list of files (ermite.js marks the one in
   // view).
   function watch() {
+    lazyIO?.disconnect();
     if (!('IntersectionObserver' in window)) {
       for (const p of $$('.dlazy[data-src]')) load(p);
       return;
@@ -309,7 +314,9 @@ window.ermiteMR = (() => {
   }
 
   // Enhance the ordinary anchor navigation only when scripts are available.
+  let disposePanels = () => {};
   function panels() {
+    disposePanels();
     const footer = $('#mr-panels'), nav = $('[data-mr-tabs]');
     if (!footer || !nav) return;
     const tabs = $$('a', nav), panels = $$('[data-mr-panel]', footer);
@@ -342,20 +349,30 @@ window.ermiteMR = (() => {
       footer.open = true; select(index);
     }
     // A repeated click on the same hash must also reopen a folded footer.
-    document.addEventListener('click', (e) => {
+    const checksClick = (e) => {
       if (e.target.closest?.('#mr-ck')) { footer.open = true; select(1); }
-    });
+    };
+    document.addEventListener('click', checksClick);
+    let observer;
     const summary = $('#mr-ck');
     if (summary) {
       const sync = () => { $('[data-checks-label]', nav).textContent = $('#mr-ck')?.title || $('#mr-ck')?.textContent.trim() || 'no checks'; };
-      new MutationObserver(sync).observe(summary.parentElement, { childList: true, subtree: true, characterData: true });
+      observer = new MutationObserver(sync);
+      observer.observe(summary.parentElement, { childList: true, subtree: true, characterData: true });
       sync();
     }
     select(0); hash();
     addEventListener('hashchange', hash);
+    disposePanels = () => {
+      document.removeEventListener?.('click', checksClick);
+      window.removeEventListener?.('hashchange', hash);
+      observer?.disconnect?.();
+    };
   }
 
-  function touchComments() {
+  let disposeTouch = () => {};
+  function touchComments(scroll = true) {
+    disposeTouch();
     const diffs = $('#diffs');
     const bar = document.createElement('div');
     bar.className = 'mr-touch-range';
@@ -392,23 +409,252 @@ window.ermiteMR = (() => {
       marker.setAttribute('data-range-start', '');
       status.textContent = `Range starts at line ${link.textContent.trim()}. Tap the last line number (same file and side).`;
     });
-    touch?.addEventListener('change', () => {
+    const changed = () => {
       if (touch.matches) return;
       enabled = false;
       clear();
       button.setAttribute('aria-pressed', 'false');
       status.textContent = '';
-    });
+    };
+    touch?.addEventListener('change', changed);
+    disposeTouch = () => { touch?.removeEventListener?.('change', changed); bar.remove?.(); };
     // The server opens the line form. Scroll after layout without stealing
     // focus or forcing a mobile keyboard to appear.
-    if (new URL(location.href).searchParams.has('on')) requestAnimationFrame(() => {
+    if (scroll && new URL(location.href).searchParams.has('on')) requestAnimationFrame(() => {
       const form = $$('.fnote .cform', diffs).find((f) => f.getClientRects().length);
       form?.scrollIntoView({ block: 'center' });
     });
   }
 
+  // A refresh scheduler has one request in flight, a trailing debounce, and
+  // a dirty bit for pushes received during that request. Drafts are checked
+  // again after the fetch: typing while the network is slow is safe too.
+  function refresher({ blocked, fetchPage, apply, notice, failed, delay = 300 }) {
+    let timer, busy = false, pending = false, force = false;
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(run, delay); };
+    async function run() {
+      if (busy || !pending) return;
+      if (!force && blocked()) { notice(true); return; }
+      busy = true;
+      pending = false;
+      const manual = force; force = false;
+      try {
+        const page = await fetchPage();
+        if (!manual && blocked()) { pending = true; notice(true); return; }
+        if (await apply(page, manual) === false) { pending = true; notice(true); }
+        else notice(false);
+      } catch { failed(); }
+      finally {
+        busy = false;
+        if (pending && (force || !blocked())) schedule();
+      }
+    }
+    return {
+      request(manual = false) { pending = true; force ||= manual; schedule(); },
+      resume() { if (pending) schedule(); },
+      pending() { return pending || busy; },
+    };
+  }
+
+  function hasDraft() {
+    return $$('textarea').some((t) => (t.value.length > 0 && t.value !== t.defaultValue) || document.activeElement === t) ||
+      !!document.activeElement?.closest?.('.cform');
+  }
+
+  // Path + side + line is stable when files are inserted before this one;
+  // fN is only a positional anchor. Hidden unified/split rows are ignored.
+  function scrollAnchor() {
+    const top = Math.max(0, $('.hdr')?.getBoundingClientRect().bottom || 0,
+      $('.mr-bar')?.getBoundingClientRect().bottom || 0);
+    const diffs = $('#diffs');
+    const bounds = diffs.getBoundingClientRect();
+    const x = Math.max(1, Math.min(innerWidth - 1, bounds.left + Math.min(100, bounds.width / 2)));
+    // A bounded number of probes, independent of the number of diff lines.
+    for (const y of [top + 2, top + 24, top + 64, top + 128]) {
+      if (y >= innerHeight) break;
+      const hit = document.elementFromPoint(x, y);
+      const file = hit?.closest('details.dfile');
+      if (!file || !diffs.contains(file)) continue;
+      const row = hit.closest('tr');
+      const link = row && $('.ln a[href*="on="]', row);
+      const header = $(':scope > summary', file);
+      return { file: file.dataset.file,
+        on: link && new URL(link.href, location.href).searchParams.get('on'),
+        offset: (link ? row : header).getBoundingClientRect().top,
+        headerOffset: header.getBoundingClientRect().top, y: scrollY };
+    }
+    return { y: scrollY };
+  }
+
+  function restoreAnchor(anchor) {
+    const file = $$('#diffs details.dfile').find((f) => f.dataset.file === anchor.file);
+    let el, offset = anchor.offset;
+    if (file && anchor.on) {
+      // Exact href suffix: no traversal or measurement of every line. URLSearchParams
+      // uses the same form encoding as the Go line links (space is '+').
+      const parts = /^(new|old):(\d+):(.+)$/.exec(anchor.on);
+      const path = parts && new URLSearchParams({ path: parts[3] }).toString().slice(5);
+      const suffix = parts && 'on=' + parts[1] + ':' + parts[2] + ':' + path + '#' + file.id;
+      const layout = $('#diffs').dataset.diff || $('#diffs').dataset.view;
+      const table = $(layout === 'split' && !window.matchMedia?.('(max-width: 720px)').matches ? '.dt.spl' : '.dt.uni', file) || file;
+      if (suffix) el = $('a[href$="' + CSS.escape(suffix) + '"]', table)?.closest('tr');
+    }
+    if (!el && file) { el = $(':scope > summary', file); offset = anchor.headerOffset ?? anchor.offset; }
+    if (el) window.scrollBy({ top: el.getBoundingClientRect().top - offset, behavior: 'instant' });
+    else window.scrollTo({ top: Math.max(0, Math.min(anchor.y, document.documentElement.scrollHeight - innerHeight)), behavior: 'instant' });
+  }
+
+  async function fetchPage() {
+    const res = await fetch(location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+    if (!res.ok || res.redirected) throw new Error('MR refresh refused');
+    const page = new DOMParser().parseFromString(await res.text(), 'text/html');
+    if (!$('#diffs[data-mr]', page) || !$('.mr-bar', page) || !$('.hint-live', page)) throw new Error('not an MR page');
+    return page;
+  }
+
+  // Use htmx's swap rather than replaceWith: its cleanup retires the old SSE
+  // reader and hx-live bindings, and process activates the inserted controls.
+  async function replaceRegion(old, fresh) {
+    if (!old || !fresh) throw new Error('missing MR refresh region');
+    for (const el of $$('[autofocus]', fresh)) el.removeAttribute('autofocus');
+    await window.htmx.swap({ sourceElement: old, target: old, text: fresh.outerHTML,
+      swap: 'outerHTML settle:0 transition:false focusScroll:false', push: false, replace: false });
+  }
+
+  async function refreshPage(page, manual = false) {
+    const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '.rail', '.hint-live'];
+    for (const sel of regions) if (!$(sel) || !$(sel, page)) throw new Error('missing MR region');
+    let anchor = scrollAnchor();
+    const anchorFile = $$('#diffs details.dfile', page).find((f) => f.dataset.file === anchor.file);
+    const placeholder = anchorFile && $('.dlazy[data-src]', anchorFile);
+    if (placeholder) {
+      const d = $('#diffs').dataset;
+      const url = placeholder.dataset.src + '&view=' + encodeURIComponent(d.diff || d.view || 'unified') + '&layouts=' + (d.diff ? 'both' : 'one');
+      const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+      if (!res.ok || res.redirected) throw new Error('anchor window changed');
+      const windowPage = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const byID = new Map($$('#diffs details.dfile', page).map((f) => [f.id, f]));
+      for (const f of $$('details.dfile', windowPage)) byID.get(f.id)?.replaceWith(f);
+      if (!manual && hasDraft()) return false;
+      anchor = scrollAnchor();
+    }
+    const files = new Map($$('#diffs details.dfile').map((f) => [f.dataset.file, f.open]));
+    const folded = $('.r-files')?.hasAttribute('data-folded');
+    const railY = $('.rail')?.scrollTop, filesY = $('.r-files .files')?.scrollTop;
+    const footerOpen = $('#mr-panels')?.open;
+    const tab = $('[data-mr-tabs] [aria-selected="true"]')?.id;
+    const active = document.activeElement;
+    const focus = active && { menu: active.closest?.('details.menu')?.id, id: active.id, tag: active.tagName, name: active.getAttribute('name'), href: active.getAttribute('href') };
+    // Manual refresh keeps even an active draft whose line disappeared. It
+    // stays an ordinary form, under an explicit previous-diff label.
+    const drafts = [...new Set($$('#diffs textarea').filter((t) => t.value !== t.defaultValue || t === active || t.closest('form')?.contains(active)).map((t) => t.closest('form')).filter(Boolean))];
+    let draftID = 0;
+    for (const form of drafts) {
+      for (const t of $$('textarea', form)) {
+        if (!t.id) t.id = 'mr-preserved-draft-' + (++draftID);
+        if (t === active) focus.id = t.id;
+      }
+      const id = $('textarea', form)?.id;
+      const replacement = id && $$('textarea', page).find((t) => t.id === id)?.closest('.cform');
+      const copy = form.cloneNode(true);
+      const originalFields = $$('textarea, input, select', form);
+      $$('textarea, input, select', copy).forEach((field, i) => {
+        const original = originalFields[i];
+        if (field.tagName === 'TEXTAREA') field.textContent = original.defaultValue;
+        else if (field.tagName === 'INPUT') { field.setAttribute('value', original.value); field.toggleAttribute('checked', original.checked); }
+      });
+      if (replacement) replacement.replaceWith(copy);
+      else {
+        const box = page.createElement('div');
+        const label = page.createElement('p'); label.className = 'notice';
+        label.textContent = 'Unsent comment on the previous diff (the line may have moved).';
+        box.append(label, copy); $('#diffs', page).prepend(box);
+      }
+    }
+    // Serializing markup does not retain textarea.value or selection. Restore
+    // values after the htmx swap, without ever clearing the source drafts.
+    const values = drafts.flatMap((f) => $$('textarea', f).map((t) => ({ id: t.id, value: t.value, start: t.selectionStart, end: t.selectionEnd })));
+    for (const f of $$('#diffs details.dfile', page)) if (files.has(f.dataset.file)) f.open = files.get(f.dataset.file);
+    ++diffGeneration; ++revealGen; moved = false; loading.clear(); lazyIO?.disconnect();
+    // Keep the chosen client-side layout when the URL was not pinned.
+    const layout = $('#diffs')?.dataset;
+    if (layout?.diff && $('#diffs', page).dataset.diff) $('#diffs', page).dataset.diff = layout.diff;
+    $('#diffs', page).dataset.mrStarted = 'true';
+    for (const sel of regions) {
+      const fresh = $(sel, page);
+      await replaceRegion($(sel), fresh);
+      fresh.remove(); // release each parsed region as soon as it is consumed
+    }
+    for (const v of values) {
+      const t = document.getElementById(v.id);
+      if (t) { t.value = v.value; t.setSelectionRange(v.start, v.end); }
+    }
+    for (const key of ['ref', 'sha', 'paths', 'blob']) {
+      if (page.body.dataset[key] !== undefined) document.body.dataset[key] = page.body.dataset[key];
+    }
+    const oldSHA = $('.hdr .ref .sha'), newSHA = $('.hdr .ref .sha', page);
+    if (oldSHA && newSHA) oldSHA.textContent = newSHA.textContent;
+    panels();
+    if (tab) {
+      const oldURL = location.href;
+      document.getElementById(tab)?.click();
+      if (location.href !== oldURL) history.replaceState(history.state, '', oldURL);
+    }
+    if ($('#mr-panels')) $('#mr-panels').open = footerOpen;
+    foldFiles(!!folded);
+    if ($('.rail')) $('.rail').scrollTop = railY;
+    if ($('.r-files .files')) $('.r-files .files').scrollTop = filesY;
+    touchComments(false);
+    $('#diffs').dataset.mobile = String(!!window.matchMedia?.('(max-width: 720px)').matches);
+    window.ermite?.refreshFiles?.();
+    watch();
+    if (focus && active !== document.body) {
+      const same = (e) => e.tagName === focus.tag && (focus.id ? e.id === focus.id :
+        focus.href ? e.getAttribute('href') === focus.href : focus.name && e.getAttribute('name') === focus.name);
+      const el = focus.menu && !focus.id && !focus.name && !focus.href ? document.getElementById(focus.menu)?.querySelector(':scope > summary') : focus.id ? document.getElementById(focus.id) : focus.href ? $('a[href="' + CSS.escape(focus.href) + '"]') : focus.name ? $('[name="' + CSS.escape(focus.name) + '"]') : null;
+      if (el && (same(el) || focus.menu)) el.focus({ preventScroll: true });
+    }
+    restoreAnchor(anchor);
+  }
+
+  function refreshNotice(deferred) {
+    let slot = $('#mr-refresh-status');
+    if (!slot) {
+      slot = document.createElement('div'); slot.id = 'mr-refresh-status'; slot.className = 'live-slot';
+      slot.setAttribute('role', 'status'); slot.setAttribute('aria-live', 'polite');
+      $('#mr-notice')?.after(slot);
+    }
+    slot.className = deferred ? 'live-slot' : 'sr';
+    slot.replaceChildren();
+    if (!deferred) {
+      const text = document.createElement('span'); text.textContent = 'branch updated'; slot.append(text);
+      return;
+    }
+    slot.append('branch updated — refreshing after your comment. ');
+    const a = document.createElement('a'); a.href = location.href; a.textContent = 'refresh now';
+    a.addEventListener('click', (e) => { e.preventDefault(); headRefresh.request(true); });
+    slot.append(a);
+  }
+  const headRefresh = refresher({ blocked: hasDraft, fetchPage, apply: refreshPage, notice: refreshNotice,
+    failed: () => { if (hasDraft()) refreshNotice(true); else window.ermiteLive?.reload(); } });
+  function headChanged() { if ($('#diffs[data-mr]')) headRefresh.request(); }
+
   function start() {
     if (!$('#diffs[data-mr]')) return;
+    // Global delegation is installed once; replacement regions have their own
+    // disposable panel/touch hooks below.
+    if ($('#diffs').dataset.mrStarted) return;
+    $('#diffs').dataset.mrStarted = 'true';
+    for (const type of ['input', 'focusout', 'reset', 'submit']) document.addEventListener?.(type, () => headRefresh.resume());
+    document.addEventListener?.('click', (e) => {
+      const cancel = e.target.closest?.('.cform .f-btns a');
+      if (!cancel || !headRefresh.pending() || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      const form = cancel.closest('.cform');
+      for (const t of $$('textarea', form)) t.value = '';
+      if (form.contains(document.activeElement)) document.activeElement.blur();
+      headRefresh.resume();
+    });
     panels();
     // Large diffs may contain only the split table. Ask the existing server
     // route for unified rather than writing the saved session preference.
@@ -457,7 +703,7 @@ window.ermiteMR = (() => {
     });
   }
 
-  return { core, panels, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
+  return { core, refresher, hasDraft, fetchPage, scrollAnchor, restoreAnchor, headChanged, panels, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
 })();
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.ermiteMR.start());

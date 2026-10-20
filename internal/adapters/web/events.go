@@ -31,7 +31,7 @@ import (
 //	GET /-/events?topic=repo:<name>&view=summary|refs
 //	GET /-/events?topic=repo:<name>&view=commits&ref=<branch>&head=<sha>
 //	GET /-/events?topic=repo:<name>&view=mrs
-//	GET /-/events?topic=repo:<name>&view=mr&n=<number>&ref=<source branch>&target=<target branch>
+//	GET /-/events?topic=repo:<name>&view=mr&n=<number>&ref=<source branch>&head=<sha>&target=<target branch>
 //	GET /-/events?topic=repo:<name>&view=issues
 //	GET /-/events?topic=repo:<name>&view=issue&n=<number>
 //	GET /-/events?topic=repo:<name>&view=actions
@@ -60,6 +60,10 @@ import (
 //	                the badge of the merge box (a slot like mr-notice), when the
 //	                mergeability of the request shown settles or a push moves its
 //	                source or target
+//	mr-head         data: <div id="mr-head"></div>; the source branch moved.
+//	                ermiteMR fetches the current page and refreshes its head-dependent
+//	                regions in place, preserving the reader's position and drafts.
+//	                The replacement stream uses the new head for CI filtering.
 //	mr-notice       data: <div id="mr-notice">…</div>, on the merge request and issue pages:
 //	                something changed, with the link that reloads the page
 //	ci-run          data: <tr id="run-<id>">…</tr> (the list of runs),

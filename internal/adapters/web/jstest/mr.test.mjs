@@ -300,3 +300,111 @@ test('touch control: lazy links enable toolbar; ordinary taps pass through; rang
     }
   }
 });
+
+// Deterministic timers: no sleeps, and each test restores every mocked global.
+function clock() {
+  const saved = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+  const tasks = new Map(); let n = 0;
+  globalThis.setTimeout = (fn) => { tasks.set(++n, fn); return n; };
+  globalThis.clearTimeout = (id) => tasks.delete(id);
+  return { async tick() { const batch = [...tasks.values()]; tasks.clear(); for (const fn of batch) await fn(); },
+    size: () => tasks.size, restore() { Object.assign(globalThis, saved); } };
+}
+
+test('head refresh defers a real textarea draft, resumes after emptying and blurring', async () => {
+  const saved = globalThis.document, c = clock();
+  const text = { value: 'unsent', defaultValue: '' };
+  let fetched = 0, applied = 0; const notices = [];
+  globalThis.document = { activeElement: text, querySelectorAll: () => [text] };
+  const r = window.ermiteMR.refresher({ blocked: window.ermiteMR.hasDraft,
+    fetchPage: async () => { fetched++; return 'page'; }, apply: () => applied++,
+    notice: (v) => notices.push(v), failed: () => assert.fail('unexpected fallback') });
+  try {
+    r.request(); await c.tick();
+    assert.equal(fetched, 0); assert.deepEqual(notices, [true]);
+    text.value = ''; r.resume(); await c.tick();
+    assert.equal(fetched, 0, 'focus still protects an empty draft');
+    document.activeElement = null; r.resume(); await c.tick();
+    assert.equal(fetched, 1); assert.equal(applied, 1); assert.equal(r.pending(), false);
+  } finally { globalThis.document = saved; c.restore(); }
+});
+
+test('head refresh debounces bursts, serializes requests, and reruns after an in-flight push', async () => {
+  const c = clock(); let fetched = 0, applied = 0, resolve;
+  const r = window.ermiteMR.refresher({ blocked: () => false,
+    fetchPage: () => { fetched++; return new Promise((r) => { resolve = r; }); },
+    apply: () => applied++, notice() {}, failed: () => assert.fail('unexpected failure') });
+  try {
+    r.request(); r.request(); r.request(); assert.equal(c.size(), 1);
+    const first = c.tick(); assert.equal(fetched, 1);
+    r.request(); await c.tick(); assert.equal(fetched, 1, 'one fetch in flight');
+    resolve('one'); await first; assert.equal(applied, 1); assert.equal(c.size(), 1);
+    const second = c.tick(); assert.equal(fetched, 2); resolve('two'); await second;
+    assert.equal(applied, 2); assert.equal(c.size(), 0);
+  } finally { c.restore(); }
+});
+
+test('typing during fetch defers the swap; manual refresh bypasses deferral', async () => {
+  const c = clock(); let blocked = false, applied = 0, resolve; const notices = [];
+  const r = window.ermiteMR.refresher({ blocked: () => blocked,
+    fetchPage: () => new Promise((r) => { resolve = r; }), apply: (_page, manual) => { applied++; assert.equal(manual, true); },
+    notice: (v) => notices.push(v), failed: () => assert.fail('unexpected failure') });
+  try {
+    r.request(); const first = c.tick(); blocked = true; resolve('page'); await first;
+    assert.equal(applied, 0); assert.deepEqual(notices, [true]);
+    r.request(true); const second = c.tick(); resolve('new page'); await second;
+    assert.equal(applied, 1); assert.equal(notices.at(-1), false);
+  } finally { c.restore(); }
+});
+
+test('fetch failures and non-MR responses take the fallback, never apply', async () => {
+  const saved = { fetch: globalThis.fetch, location: globalThis.location, DOMParser: globalThis.DOMParser };
+  const c = clock(); let fallback = 0;
+  globalThis.location = { href: 'https://forge.test/demo/merge-requests/1?view=split&from=25' };
+  const r = window.ermiteMR.refresher({ blocked: () => false, fetchPage: window.ermiteMR.fetchPage,
+    apply: () => assert.fail('must not swap'), notice() {}, failed: () => fallback++ });
+  try {
+    for (const result of ['network', { ok: false }, { ok: true, redirected: true }, { ok: true, text: async () => '<html>login</html>' }]) {
+      globalThis.fetch = async (url, opts) => {
+        assert.equal(url, location.href); assert.equal(opts.credentials, 'same-origin');
+        if (result === 'network') throw new Error('offline'); return result;
+      };
+      globalThis.DOMParser = class { parseFromString() { return { querySelector: () => null }; } };
+      r.request(); await c.tick();
+    }
+    assert.equal(fallback, 4);
+  } finally {
+    for (const [k,v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; }
+    c.restore();
+  }
+});
+
+test('viewport probe finds a stable path/side/line and restores its offset without line scans', () => {
+  const names = ['document', 'location', 'innerHeight', 'innerWidth', 'scrollY', 'scrollBy', 'scrollTo', 'CSS', 'matchMedia'];
+  const saved = Object.fromEntries(names.map((k) => [k, globalThis[k]]));
+  const rect = (top, bottom = top + 20) => ({ top, bottom, left: 0, width: 900 });
+  let lineTop = 160, headerTop = -200, found = true; const calls = [];
+  const header = { getBoundingClientRect: () => rect(headerTop) };
+  const row = { getBoundingClientRect: () => rect(lineTop), querySelector: () => link };
+  const link = { href: 'https://forge.test/demo/merge-requests/1?on=new:42:a.go#f2', closest: () => row };
+  const file = { id: 'f2', dataset: { file: 'a.go' }, querySelector: (s) => s.includes('summary') ? header : s.includes('href$') ? (assert.ok(s.includes('on=new:42:a.go#f3')), found ? link : null) : null };
+  const hit = { closest: (s) => s === 'tr' ? row : file };
+  const diffs = { dataset: { diff: 'unified' }, getBoundingClientRect: () => rect(120), contains: () => true };
+  globalThis.document = {
+    querySelector: (s) => s === '#diffs' ? diffs : s === '.hdr' ? { getBoundingClientRect: () => rect(0, 100) } : null,
+    querySelectorAll: (s) => { assert.equal(s, '#diffs details.dfile', 'only files, never every line'); return found === 'gone' ? [] : [file]; },
+    elementFromPoint: () => hit, documentElement: { scrollHeight: 10000 },
+  };
+  Object.assign(globalThis, { location: { href: link.href }, innerHeight: 800, innerWidth: 1200, scrollY: 2500,
+    scrollBy: (arg) => calls.push(['by', arg]), scrollTo: (arg) => calls.push(['to', arg]), CSS: { escape: (s) => s }, matchMedia: () => ({ matches: false }) });
+  try {
+    const a = window.ermiteMR.scrollAnchor();
+    assert.equal(a.file, 'a.go'); assert.equal(a.on, 'new:42:a.go'); assert.equal(a.offset, 160);
+    file.id = 'f3'; lineTop = 260; window.ermiteMR.restoreAnchor(a);
+    assert.deepEqual(calls.pop(), ['by', { top: 100, behavior: 'instant' }]);
+    found = false; headerTop = -100; window.ermiteMR.restoreAnchor(a);
+    assert.deepEqual(calls.pop(), ['by', { top: 100, behavior: 'instant' }]);
+    found = 'gone'; window.ermiteMR.restoreAnchor({ ...a, y: 20000 });
+    assert.deepEqual(calls.pop(), ['to', { top: 9200, behavior: 'instant' }]);
+  } finally { for (const [k,v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; } }
+});

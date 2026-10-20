@@ -118,3 +118,17 @@ The rail keeps Files (including its `g f` shortcut) and Verdicts. Merge settings
 are read-only information in the More (⋯) menu, available to every viewer.
 Signing-key information is also there when a merge box offers signed modes;
 merge actions remain restricted to their existing permissions.
+
+## Live source-branch updates
+
+A push to the source branch refreshes the web review in place: the diff, files
+rail, commits/checks footer, diff range and merge controls follow the new head.
+The review keeps its visible file/line, folded files and selected footer tab.
+The page request still reads only one 25-file window of hunks; the visible
+anchor's window is fetched too if needed, and other windows remain lazy.
+
+While a comment is focused or has unsent edits, the refresh waits. A small
+“branch updated” status offers **refresh now**, which also refreshes in place
+and keeps unsent forms (including a comment whose old line disappeared).
+Emptying or cancelling the draft lets the pending refresh proceed. Submitting
+an ordinary comment navigates to the server's current review as usual.

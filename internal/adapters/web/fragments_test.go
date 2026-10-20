@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"bnema.dev/ermite/internal/domain"
+
 	"github.com/a-h/templ"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,4 +78,24 @@ func TestDiffControlsPassDataThroughAttributes(t *testing.T) {
 	assert.Contains(t, link, `data-fire="split"`)
 	assert.Contains(t, link, `this.dataset.view`)
 	assert.NotContains(t, link, "=== 'split'")
+}
+
+// The push signal is intentionally constant-sized: diff work belongs to the
+// subsequent windowed page request, not to each subscriber's event handler.
+func TestMRPushedHeadSignal(t *testing.T) {
+	t.Parallel()
+	l := liveStream{s: &Server{}, repo: "demo", view: "mr", n: "1", ref: "feature", target: "main"}
+	for _, tt := range []struct {
+		ref  string
+		want int
+	}{{"refs/heads/feature", 1}, {"refs/heads/main", 0}, {"refs/heads/other", 0}} {
+		fs, err := l.mrPushed(t.Context(), domain.PushEvent{Updates: []domain.RefUpdate{{Ref: tt.ref}}})
+		require.NoError(t, err)
+		require.Len(t, fs, tt.want)
+		if tt.want > 0 {
+			assert.Equal(t, "mr-head", fs[0].event)
+			assert.Equal(t, `<div id="mr-head"></div>`, fs[0].html)
+			assert.NotContains(t, fs[0].html, "the branch changed")
+		}
+	}
 }

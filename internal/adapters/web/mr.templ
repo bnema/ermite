@@ -157,35 +157,39 @@ templ MergeRequest(l Layout, p MRPage) {
 			<p class="d-err" role="alert">{ p.MergeError }</p>
 		}
 		@LiveSlot("mr-notice")
-		if p.Since != nil {
-			<nav class="since" aria-label="Diff range">
-				<a
-					href={ templ.SafeURL(p.Since.AllHref) }
-					if !p.Since.Current {
-						aria-current="page"
-					}
-				>all changes <span class="mute">vs { p.Target }</span></a>
-				<a
-					href={ templ.SafeURL(p.Since.SinceHref) }
-					if p.Since.Current {
-						aria-current="page"
-					}
-				>since your last read <span class="mute">{ p.Since.ReadShort } → { p.Since.HeadShort }</span></a>
-			</nav>
-		}
-		if p.SinceNote != "" {
-			<p class="notice">{ p.SinceNote }</p>
-		}
+		<div id="mr-range" hidden?={ p.Since == nil && p.SinceNote == "" }>
+			if p.Since != nil {
+				<nav class="since" aria-label="Diff range">
+					<a
+						href={ templ.SafeURL(p.Since.AllHref) }
+						if !p.Since.Current {
+							aria-current="page"
+						}
+					>all changes <span class="mute">vs { p.Target }</span></a>
+					<a
+						href={ templ.SafeURL(p.Since.SinceHref) }
+						if p.Since.Current {
+							aria-current="page"
+						}
+					>since your last read <span class="mute">{ p.Since.ReadShort } → { p.Since.HeadShort }</span></a>
+				</nav>
+			}
+			if p.SinceNote != "" {
+				<p class="notice">{ p.SinceNote }</p>
+			}
+		</div>
 		@mrBar(p)
-		if p.Invisible {
-			<p class="notice">
-				this diff holds invisible characters (direction controls, zero-width characters). They are shown as
-				<span class="inv">&lt;U+XXXX&gt;</span> markers, never applied.
-			</p>
-		}
-		if p.Note != "" {
-			<p class="notice">{ p.Note }</p>
-		}
+		<div id="mr-diff-notices" hidden?={ !p.Invisible && p.Note == "" }>
+			if p.Invisible {
+				<p class="notice">
+					this diff holds invisible characters (direction controls, zero-width characters). They are shown as
+					<span class="inv">&lt;U+XXXX&gt;</span> markers, never applied.
+				</p>
+			}
+			if p.Note != "" {
+				<p class="notice">{ p.Note }</p>
+			}
+		</div>
 		<div
 			id="diffs"
 			data-mr

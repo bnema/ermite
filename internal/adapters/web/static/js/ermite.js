@@ -731,13 +731,21 @@
       mark();
     }, { rootMargin: '0px 0px -67% 0px' });
     for (const f of files) io.observe(f);
+    // A refreshed MR replaced the rail and the windowed diff. Rebuild once,
+    // not once per file (which would make a large file list quadratic).
+    ermite.refreshFiles = () => {
+      io.disconnect(); inBand.clear(); current = null;
+      files = $$('.dfile'); links.clear();
+      for (const a of $$('.files a[href^="#"]')) links.set(a.hash.slice(1), a);
+      for (const f of files) io.observe(f);
+    };
     // A window of files of a merge request came in (mr.js): its files replace
     // placeholders, which the observer and the list knew by element.
     ermite.watchFile = (f, old) => {
       if (old) { io.unobserve(old); inBand.delete(old); }
       files = $$('.dfile');
       for (const x of [...inBand]) if (!x.isConnected) inBand.delete(x);
-      if (current && !current.isConnected) current = document.getElementById(current.id);
+      if (current && !current.isConnected) current = null;
       io.observe(f);
     };
   }

@@ -595,8 +595,9 @@ func TestWebMergeRequestEvents(t *testing.T) {
 
 	r.writeFile(r.wt, "more.txt", []byte("more\n"))
 	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
-	ev = nextNamed(t, one, "mr-notice")
-	assert.Contains(t, ev.data, "the branch changed")
+	ev = nextNamed(t, one, "mr-head")
+	assert.Equal(t, `<div id="mr-head"></div>`, ev.data)
+	assert.NotContains(t, ev.data, "the branch changed")
 
 	r.cli(t, adminToken, "mr", "close", "proj", "1").ok(t)
 	assert.Contains(t, nextNamed(t, one, "mr-notice").data, "was closed")

@@ -8,5 +8,10 @@
     padding: var(--s3) var(--s4); font-weight: 700;
     background: var(--bg-surface); border: 1px solid var(--border-strong); border-left: 3px solid var(--teal); border-radius: var(--r-s);
   }
+  /* A deferred MR refresh must not insert height above a long diff. */
+  #mr-refresh-status:has(a) {
+    position: fixed; bottom: var(--s4); left: var(--s4); z-index: 24;
+    max-width: min(42rem, calc(100vw - 2 * var(--s4))); font-size: var(--fs-s);
+  }
   .live-slot a { color: var(--ink-hi); }
 }

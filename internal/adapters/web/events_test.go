@@ -478,3 +478,27 @@ func TestCommitsBannerWithoutMergeRequests(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Contains(t, got[0].html, "the branch moved — reload")
 }
+
+func TestMRPushEventsKeepMergeability(t *testing.T) {
+	t.Parallel()
+	svc := mocks.NewMergeRequestService(t)
+	svc.EXPECT().Mergeability(mock.Anything, mock.Anything, mock.Anything, int64(1)).
+		Return(domain.Mergeability{State: domain.MergeabilityUpToDate}, nil).Twice()
+	l := liveStream{s: &Server{cfg: Config{MergeRequests: svc}}, repo: "demo", view: "mr", n: "1", ref: "feature", target: "main"}
+	ctx := context.WithValue(t.Context(), signedInKey{}, struct{}{})
+	for _, ref := range []string{"feature", "main"} {
+		fs, err := l.mrPushed(ctx, domain.PushEvent{Updates: []domain.RefUpdate{{Ref: "refs/heads/" + ref}}})
+		require.NoError(t, err)
+		if ref == "feature" {
+			require.Len(t, fs, 2)
+			assert.Equal(t, "mr-head", fs[0].event)
+			assert.Equal(t, "event: mr-head\nid: b-1\ndata: <div id=\"mr-head\"></div>\n\n", formatEvent("b-1", fs[0].event, fs[0].html, true))
+		} else {
+			require.Len(t, fs, 1)
+		}
+		assert.Equal(t, "mr-mergeability", fs[len(fs)-1].event)
+		for _, f := range fs {
+			assert.NotEqual(t, "mr-notice", f.event)
+		}
+	}
+}

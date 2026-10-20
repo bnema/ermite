@@ -474,8 +474,7 @@ func (l *liveStream) issueNotice(ctx context.Context, number int64, text string)
 // mrPushed announces a push to the source branch of the merge request shown,
 // and has the badge follow a push to its source or its target.
 func (l *liveStream) mrPushed(ctx context.Context, p domain.PushEvent) ([]fragment, error) {
-	n, err := strconv.ParseInt(l.n, 10, 64)
-	if err != nil {
+	if _, err := strconv.ParseInt(l.n, 10, 64); err != nil {
 		return nil, nil
 	}
 	var out []fragment
@@ -483,11 +482,7 @@ func (l *liveStream) mrPushed(ctx context.Context, p domain.PushEvent) ([]fragme
 	for _, u := range p.Updates {
 		switch {
 		case l.ref != "" && u.Ref == "refs/heads/"+l.ref:
-			notice, err := l.notice(ctx, "the branch changed — reload", mrHref(l.repo, n))
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, notice...)
+			out = append(out, fragment{event: "mr-head", html: `<div id="mr-head"></div>`})
 			moved = true
 		case l.target != "" && u.Ref == "refs/heads/"+l.target:
 			moved = true
