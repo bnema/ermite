@@ -290,29 +290,11 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 		Number: "#" + strconv.FormatInt(n, 10), Title: visibleText(i.Title.String()),
 		State: string(i.State), Open: i.IsOpen(),
 	}
-	if body := i.Body.String(); strings.TrimSpace(body) != "" {
-		var h template.HTML
-		var err error
-		if i.External {
-			// Written by an anonymous visitor: the untrusted policy.
-			h, err = s.md.renderUntrusted([]byte(body), "issue-desc-", s.numberResolver(ctx, d.name()))
-		} else {
-			h, err = s.md.renderIssue([]byte(body), d.name(), d.repo.DefaultBranch, "issue-desc-", s.numberResolver(ctx, d.name()))
-		}
-		if err != nil {
-			return nil, 0, err
-		}
-		p.Desc = h
+	if p.Desc, err = s.issueBody(ctx, d, i); err != nil {
+		return nil, 0, err
 	}
-	if i.ClosedByMergeRequest > 0 {
-		p.ClosedBy = &Link{Label: "!" + strconv.FormatInt(i.ClosedByMergeRequest, 10), Href: mrHref(d.name(), i.ClosedByMergeRequest)}
-	}
-	for _, ref := range res.References {
-		p.References = append(p.References, IssueRefView{
-			Number: "!" + strconv.FormatInt(ref.Number, 10), Title: visibleText(ref.Title.String()),
-			State: string(ref.State), Href: mrHref(d.name(), ref.Number), Closes: ref.Closes,
-		})
-	}
+	p.ClosedBy = numberLink(d.name(), i.ClosedByMergeRequest)
+	p.References = issueRefViews(d.name(), res.References)
 	p.Opened.Name = s.who(i.Author)
 	if i.External {
 		// The label is the visitor's, not the owner's: shown as plain text.
@@ -354,6 +336,40 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=issue&n="+strconv.FormatInt(n, 10))
 	l.HasRail = true
 	return IssueShow(l, p), http.StatusOK, nil
+}
+
+// issueBody renders the description of an issue; an issue from the public form
+// was written by an anonymous visitor and gets the untrusted policy.
+func (s *Server) issueBody(ctx context.Context, d *repoData, i domain.Issue) (template.HTML, error) {
+	body := i.Body.String()
+	if strings.TrimSpace(body) == "" {
+		return "", nil
+	}
+	numbers := s.numberResolver(ctx, d.name())
+	if i.External {
+		return s.md.renderUntrusted([]byte(body), "issue-desc-", numbers)
+	}
+	return s.md.renderIssue([]byte(body), d.name(), d.repo.DefaultBranch, "issue-desc-", numbers)
+}
+
+// numberLink links merge request n of repo; nil for 0.
+func numberLink(repo string, n int64) *Link {
+	if n == 0 {
+		return nil
+	}
+	return &Link{Label: "!" + strconv.FormatInt(n, 10), Href: mrHref(repo, n)}
+}
+
+// issueRefViews are the merge requests that mention an issue.
+func issueRefViews(repo string, refs []ports.IssueReference) []IssueRefView {
+	views := make([]IssueRefView, 0, len(refs))
+	for _, ref := range refs {
+		views = append(views, IssueRefView{
+			Number: "!" + strconv.FormatInt(ref.Number, 10), Title: visibleText(ref.Title.String()),
+			State: string(ref.State), Href: mrHref(repo, ref.Number), Closes: ref.Closes,
+		})
+	}
+	return views
 }
 
 // pageOrRedirect is page(), except that a page that is not found may be the
