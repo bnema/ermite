@@ -127,6 +127,7 @@ type Config struct {
 
 // Server serves the pages. It is an http.Handler.
 type Server struct {
+	mirrors  ports.MirrorWarner
 	cfg      Config
 	instance string
 	origin   string // scheme://host of the public URL, what a POST must come from

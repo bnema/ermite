@@ -203,6 +203,7 @@ type CommitRow struct {
 
 // SummaryPage is the repository summary.
 type SummaryPage struct {
+	Mirror  *MirrorBadge
 	Facts   []Fact
 	Clone   Clone
 	Recent  []CommitRow
