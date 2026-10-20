@@ -57,7 +57,7 @@ type MirrorOutcome struct {
 } // Err nil == success
 type MirrorTransition struct {
 	Status      MirrorStatus
-	FailedEvent bool // State moved into Failing or Paused from OK/Disabled, or Failing -> Paused
+	FailedEvent bool // State moved into Failing or Paused from OK/Disabled: once per incident
 	Recovered   bool // State moved from Failing/Paused to OK
 }
 
@@ -113,7 +113,8 @@ func MirrorBackoff(n int) time.Duration {
 }
 
 // MirrorDisable/MirrorReset are the config-change transitions: reset lifts Paused/Failing to OK
-// with counters cleared (config changed, or sync --force before the attempt); disable -> Disabled.
+// with counters cleared (config changed); disable -> Disabled. sync --force does not reset: the
+// attempt is judged against the previous status so a recovery still reports Recovered.
 func MirrorReset(p MirrorStatus, now time.Time) MirrorStatus {
 	p.State = MirrorOK
 	p.Class = MirrorClassNone
@@ -158,7 +159,7 @@ func ApplyMirrorOutcome(prev MirrorStatus, out MirrorOutcome, now time.Time) Mir
 		p.NextRetryAt = now.Add(MirrorBackoff(p.ConsecutiveFailures))
 	}
 	p.Reason = MirrorReason(p)
-	return MirrorTransition{Status: p, FailedEvent: prev.State != MirrorFailing && prev.State != MirrorPaused || prev.State == MirrorFailing && p.State == MirrorPaused}
+	return MirrorTransition{Status: p, FailedEvent: prev.State != MirrorFailing && prev.State != MirrorPaused}
 }
 
 // MirrorReason is the human sentence of a status, e.g.

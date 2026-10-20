@@ -138,7 +138,7 @@ func TestMirrorTransitions(t *testing.T) {
 				if fatal || n >= 5 {
 					want = MirrorPaused
 				}
-				if tr.Status.State != want || tr.Status.ConsecutiveFailures != n || tr.FailedEvent != (n == 1 || !fatal && n == 5) {
+				if tr.Status.State != want || tr.Status.ConsecutiveFailures != n || tr.FailedEvent != (n == 1) {
 					t.Fatalf("n=%d %+v", n, tr)
 				}
 				if want == MirrorFailing && !tr.Status.NextRetryAt.Equal(now.Add(MirrorBackoff(n))) {
