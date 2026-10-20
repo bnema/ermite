@@ -490,3 +490,93 @@ func TestMirrorsAuthorizationAndMissingSecretsKey(t *testing.T) {
 	_, err = f.m.RotateKey(context.Background(), tokenPrincipal(domain.ScopeRepoRead))
 	require.ErrorIs(t, err, domain.ErrForbidden)
 }
+
+// gatedPush makes every push announce itself on entered and block until release is closed.
+func (f *mirrorFixture) gatedPush(release <-chan struct{}) <-chan struct{} {
+	entered := make(chan struct{}, 16)
+	f.push.EXPECT().Push(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, _ ports.MirrorPush) (ports.MirrorPushResult, error) {
+		entered <- struct{}{}
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return ports.MirrorPushResult{}, nil
+	}).Maybe()
+	return entered
+}
+
+func TestMirrorsSyncAllRunsRepositoriesConcurrently(t *testing.T) {
+	f := newMirrorFixtureWith(t, func(c *usecase.MirrorsConfig) { c.Workers = 3; c.SyncWait = time.Minute })
+	f.addRepo(name(t, "b"))
+	f.addRepo(name(t, "c"))
+	release := make(chan struct{})
+	entered := f.gatedPush(release)
+	type outcome struct {
+		got []ports.MirrorSyncResult
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		got, err := f.m.SyncAll(context.Background(), domain.Root(), true)
+		done <- outcome{got, err}
+	}()
+	// All three pushes are in flight together: a sequential SyncAll would never get past the first.
+	for i := 0; i < 3; i++ {
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("only %d pushes started: repositories are not synced concurrently", i)
+		}
+	}
+	close(release)
+	o := <-done
+	require.NoError(t, o.err)
+	require.Len(t, o.got, 3)
+	for i, want := range []string{"tools", "b", "c"} {
+		r := o.got[i]
+		require.Equal(t, want, r.Repo.String(), "results keep the listing order")
+		require.NoError(t, r.Err)
+		require.False(t, r.Queued)
+		require.Equal(t, domain.MirrorOK, r.Status.State)
+	}
+}
+
+func TestMirrorsSyncReturnsQueuedWhenPushOutlastsTheWait(t *testing.T) {
+	f := newMirrorFixtureWith(t, func(c *usecase.MirrorsConfig) { c.SyncWait = 20 * time.Millisecond })
+	other := name(t, "other")
+	f.addRepo(other)
+	release := make(chan struct{})
+	entered := f.gatedPush(release)
+
+	res, err := f.m.Sync(context.Background(), domain.Root(), f.repo, true)
+	require.NoError(t, err)
+	require.True(t, res.Queued, "the push is still running at the bound")
+	require.Equal(t, f.repo, res.Repo)
+	<-entered
+
+	all, err := f.m.SyncAll(context.Background(), domain.Root(), true)
+	require.NoError(t, err)
+	require.Len(t, all, 2)
+	for _, r := range all {
+		require.NoError(t, r.Err)
+		require.True(t, r.Queued, "%s is coalesced or still running", r.Repo)
+		require.Equal(t, r.Repo, r.Status.Repo)
+	}
+
+	close(release)
+	f.drain(t)
+	require.Equal(t, domain.MirrorOK, f.statusOf(f.repo).State, "the sync completed in the background")
+}
+
+func TestMirrorsSyncAllHonoursCallerCancellation(t *testing.T) {
+	f := newMirrorFixtureWith(t, func(c *usecase.MirrorsConfig) { c.SyncWait = time.Minute })
+	release := make(chan struct{})
+	entered := f.gatedPush(release)
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() { _, err := f.m.SyncAll(ctx, domain.Root(), true); errc <- err }()
+	<-entered
+	cancel()
+	require.ErrorIs(t, <-errc, context.Canceled)
+	close(release)
+}

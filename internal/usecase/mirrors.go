@@ -29,6 +29,9 @@ type MirrorsConfig struct {
 	ScheduleTick time.Duration
 	Workers      int
 	QueueSize    int // jobs waiting for a worker; default 64
+	// SyncWait bounds how long a manual sync (Sync, SyncAll) holds its caller; past it the
+	// result is Queued and the push continues. Default DefaultMirrorSyncWait.
+	SyncWait time.Duration
 	// ValidateURL checks a resolved mirror URL; default domain.ValidateMirrorURL. Tests of
 	// local transports inject a permissive check.
 	ValidateURL func(string) error
@@ -75,6 +78,9 @@ func NewMirrors(cfg MirrorsConfig) *Mirrors {
 	}
 	if cfg.QueueSize <= 0 {
 		cfg.QueueSize = mirrorQueueSize
+	}
+	if cfg.SyncWait <= 0 {
+		cfg.SyncWait = DefaultMirrorSyncWait
 	}
 	if cfg.ValidateURL == nil {
 		cfg.ValidateURL = domain.ValidateMirrorURL
