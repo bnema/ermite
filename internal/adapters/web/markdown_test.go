@@ -232,3 +232,67 @@ func TestNoteMarkdown(t *testing.T) {
 	assert.NotContains(t, string(h), "<script")
 	assert.Contains(t, string(h), `title="note 2"`)
 }
+
+func TestMarkdownFencedHighlight(t *testing.T) {
+	tests := []struct {
+		name, info, code string
+		highlighted      bool
+	}{
+		{"go", "go", "package main\nfunc main() {}\n", true},
+		{"info suffix", "go example", "package main\n", true},
+		{"unknown", "not-a-real-language", "<script>\n", false},
+		{"empty", "", "<script>\n", false},
+		{"html", "html", "<script>alert(1)</script>\n", true},
+		{"injection", `go" onmouseover=x`, "package main\n", false},
+		{"oversize", "go", strings.Repeat("x", markdownBlockBytes+1) + "\n", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "```" + tt.info + "\n" + tt.code + "```\n"
+			for _, untrusted := range []bool{false, true} {
+				var h string
+				if untrusted {
+					out, err := newMarkdown().renderUntrusted([]byte(src), "test-")
+					require.NoError(t, err)
+					h = string(out)
+				} else {
+					h, _ = renderMD(t, src)
+				}
+				assert.Equal(t, tt.highlighted, strings.Contains(h, `<pre class="chroma">`))
+				assert.NotContains(t, h, "<script>")
+				assert.NotContains(t, h, `style=`)
+				assert.NotContains(t, h, `onmouseover`)
+				if tt.name == "go" {
+					assert.Contains(t, h, `<span class="kn">package</span>`)
+				}
+				if tt.name == "html" {
+					assert.Contains(t, h, "&lt;")
+					assert.Contains(t, h, "script")
+				}
+				if !tt.highlighted {
+					assert.NotContains(t, h, "<span")
+					assert.Contains(t, h, "<pre><code")
+				}
+			}
+		})
+	}
+}
+
+func TestMarkdownHighlightMarkers(t *testing.T) {
+	h, _ := renderMD(t, "```go\n// invisible \u202e\n```\n")
+	assert.Contains(t, h, `class="ctl"`)
+	assert.Contains(t, h, "U+202E")
+	assert.NotContains(t, h, "\u202e")
+}
+
+func TestMarkdownHighlightDocumentBudget(t *testing.T) {
+	// Even thousands of tiny blocks may only attempt 128 lexes per document.
+	h, _ := renderMD(t, strings.Repeat("```go\npackage main\n```\n\n", 1000))
+	assert.LessOrEqual(t, strings.Count(h, `<pre class="chroma">`), 128)
+	assert.Contains(t, h, "<pre><code")
+	// The byte budget also stops blocks before the block-count budget.
+	block := "```go\n//" + strings.Repeat("x", markdownBlockBytes-4) + "\n```\n\n"
+	h, _ = renderMD(t, strings.Repeat(block, 6))
+	assert.LessOrEqual(t, strings.Count(h, `<pre class="chroma">`), 4)
+	assert.Contains(t, h, "<pre><code")
+}
