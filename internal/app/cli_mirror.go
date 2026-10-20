@@ -275,9 +275,10 @@ func newMirrorStatusCmd(env *cliEnv) *cobra.Command {
 	return cmd
 }
 
+// newMirrorSyncCmd describes the server's wait bound (usecase.DefaultMirrorSyncWait, 8 s).
 func newMirrorSyncCmd(env *cliEnv) *cobra.Command {
 	var all, force bool
-	cmd := &cobra.Command{Use: "sync <repo>|--all", Short: "Sync mirrors now", Long: "Sync one repository, or every repository with --all (owner only).\nRepositories are pushed concurrently. The command waits about 8 s; a push still running then is reported as queued,\nkeeps running on the server, and its outcome is shown by `ermite mirror status`.\n--force never force-pushes: it only skips the no-op check and throttle and lifts a pause.", Args: func(_ *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "sync <repo>|--all", Short: "Sync mirrors now", Long: "Sync one repository, or every repository with --all (owner only).\nThe server pushes a few repositories at a time. The command waits about 8 s; a sync still running or waiting\nthen is reported as queued, keeps going on the server, and its outcome is shown by `ermite mirror status`.\n--force never force-pushes: it only skips the no-op check and throttle and lifts a pause.", Args: func(_ *cobra.Command, args []string) error {
 		if (all && len(args) == 0) || (!all && len(args) == 1) {
 			return nil
 		}

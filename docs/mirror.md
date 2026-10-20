@@ -44,7 +44,7 @@ URLs are `git@host:path` or `ssh://[user@]host[:port]/path`, with no password. T
 
 - On the cron schedule. A push to ermite only marks the repository as changed; the next due cron tick syncs it. A tick with nothing new does nothing.
 - `ermite mirror sync <repo>` or `ermite mirror sync --all` (owner only) syncs now; a repository needs admin rights. `--all` skips repositories without a mirror, continues past failures, prints one row per repository and exits with status 1 if any failed.
-- A manual sync waits at most about 8 s (the edge proxy cuts responses at 10 s, the CLI at 30 s, while an SSH push to an unreachable host can take 30 s or more). `--all` starts every repository at once, so the wait is one push, not one per repository. A push still running then is shown as `QUEUED true`; the CLI says so on stderr, the sync continues on the server, and `ermite mirror status` shows its outcome.
+- A manual sync waits at most about 8 s (the edge proxy cuts responses at 10 s, the CLI at 30 s, while an SSH push to an unreachable host can take 30 s or more). `--all` queues every repository at once and the server pushes a few at a time (2 in parallel), so the wait stays one bound, not one per repository. A sync still running or still waiting for its turn then is shown as `QUEUED true`; the CLI says so on stderr, the sync continues on the server, and `ermite mirror status` shows its outcome.
 - `--force` skips the no-op check and the 60 s throttle and lifts a pause. It never force-pushes.
 - Overlapping syncs of a repository coalesce; only one push runs at a time per repository.
 

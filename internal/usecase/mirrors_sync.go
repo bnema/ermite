@@ -81,9 +81,8 @@ func (m *Mirrors) await(ctx, wctx context.Context, repo domain.RepoName, f *mirr
 		}
 	case <-f.done:
 	}
-	m.mu.Lock()
+	// run writes result and err before close(f.done): the close orders them before this read.
 	res, err := f.result, f.err
-	m.mu.Unlock()
 	res.Repo = repo
 	return res, err
 }
