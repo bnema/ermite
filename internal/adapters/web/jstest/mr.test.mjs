@@ -97,7 +97,8 @@ function footerHarness(extra = {}) {
   const saved = Object.fromEntries(['document', 'location', 'addEventListener', 'history', 'MutationObserver'].map((k) => [k, globalThis[k]]));
   const node = (id) => ({ id, attrs: {}, events: {}, hidden: false,
     setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k] ?? null; },
-    addEventListener(k, v) { this.events[k] = v; }, focus() { this.focused = true; } });
+    addEventListener(k, v) { this.events[k] = v; }, focus() { this.focused = true; },
+    scrollIntoView() { this.scrolled = (this.scrolled ?? 0) + 1; } });
   const tabs = [node('mr-tab-commits'), node('mr-tab-checks')];
   const panels = [node('mr-commits'), node('mr-checks-panel')];
   const footer = node('footer'); footer.querySelectorAll = () => panels;
@@ -110,7 +111,7 @@ function footerHarness(extra = {}) {
   globalThis.history = { replaceState: (...args) => replaced.push(args) };
   const restore = () => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; } };
   const state = () => panels.map((p) => !p.hidden);
-  return { tabs, panels, listeners, replaced, restore, state };
+  return { tabs, panels, footer, listeners, replaced, restore, state };
 }
 
 test('footer tabs: closed by default, toggle, switch, arrows, hash', () => {
@@ -178,12 +179,30 @@ test('footer: #mr-ck syncs the checks label; its click opens Checks without togg
 test('footer: panels(index) restores the open panel without touching the URL', () => {
   const h = footerHarness();
   try {
+    location.hash = '#mr-commits';
     window.ermiteMR.panels(1);
-    assert.deepEqual(h.state(), [false, true]);
+    assert.deepEqual(h.state(), [false, true], 'a restore ignores the fragment');
     assert.equal(h.tabs[1].attrs['aria-expanded'], 'true');
     assert.deepEqual(h.replaced, []);
+    assert.equal(h.panels[0].scrolled, undefined, 'a restore does not scroll');
+    assert.equal(h.panels[1].scrolled, undefined);
+    location.hash = '';
     window.ermiteMR.panels(-1);
     assert.deepEqual(h.state(), [false, false]);
+  } finally { h.restore(); }
+});
+
+test('footer: scripts take over the panels; a fragment opens and scrolls to its panel', () => {
+  const h = footerHarness();
+  try {
+    location.hash = '#mr-checks';
+    window.ermiteMR.panels();
+    assert.equal(h.footer.attrs['data-panels'], '', 'the CSS fallback of the fragment stops');
+    assert.deepEqual(h.state(), [false, true]);
+    assert.equal(h.panels[1].scrolled, 1, 'the panel of the fragment is brought in');
+    location.hash = '#mr-commits'; h.listeners.hashchange();
+    assert.deepEqual(h.state(), [true, false]);
+    assert.equal(h.panels[0].scrolled, 1);
   } finally { h.restore(); }
 });
 

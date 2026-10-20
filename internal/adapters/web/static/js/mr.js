@@ -600,6 +600,13 @@ window.ermiteMR = (() => {
     for (const f of $$('#diffs details.dfile', page)) if (files.has(f.dataset.file)) f.open = files.get(f.dataset.file);
     ++diffGeneration; ++revealGen; moved = false; loading.clear(); lazyIO?.disconnect();
     $('#diffs', page).dataset.mrStarted = 'true';
+    // The fresh footer comes in with the panels as they are, so that an open
+    // panel does not fold and open again while the other regions swap.
+    const freshFooter = $('.mr-footer', page);
+    if (freshFooter) {
+      freshFooter.setAttribute('data-panels', '');
+      $$('[data-mr-panel]', freshFooter).forEach((p, i) => { p.hidden = i !== openPanel; });
+    }
     for (const sel of regions) {
       const fresh = $(sel, page);
       await replaceRegion($(sel), fresh);
