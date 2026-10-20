@@ -167,6 +167,10 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return bufferedEvent{known: true, vis: ev.Visibility, created: ev.CreatedAt}
 	case domain.RepoDeleted:
 		return bufferedEvent{known: true, vis: ev.Visibility, created: ev.CreatedAt}
+	case domain.MirrorFailed:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.MirrorRecovered:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.PushEvent:
 		if ev.CreatedAt.IsZero() {
 			return bufferedEvent{} // repository unknown at publish time: nobody is told
@@ -517,6 +521,10 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRepo(ctx, w, ev.Repo, true, be, out, send)
 	case domain.RepoUpdated:
 		return e.deliverRepo(ctx, w, ev.Repo, true, be, out, send)
+	case domain.MirrorFailed:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.MirrorRecovered:
+		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.PushEvent:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.MergeRequestOpened:
