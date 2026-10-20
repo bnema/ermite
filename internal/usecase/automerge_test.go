@@ -208,7 +208,7 @@ func TestAutoMergeCancelsWhenEnablerTokenRevokedOrExpired(t *testing.T) {
 			enabled.AutoMerge.EnabledBy = domain.CIPusher{Kind: domain.CIPusherToken, TokenID: "gone"}
 			require.NoError(t, r.store.MergeRequests().Update(r.ctx, enabled))
 			tokens := mocks.NewTokenStore(t)
-			checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}}, nil)
+			// The enabler is checked before CI: no check is read.
 			if expired {
 				tokens.EXPECT().Get(mock.Anything, "gone").Return(domain.Token{ExpiresAt: now.Add(-time.Hour)}, nil)
 			} else {
@@ -405,6 +405,10 @@ func TestAutoMergeResolvesEnablerAfterMergeGate(t *testing.T) {
 	enabled.AutoMerge.EnabledBy = domain.CIPusher{Kind: domain.CIPusherToken, TokenID: "revoked"}
 	require.NoError(t, r.store.MergeRequests().Update(r.ctx, enabled))
 	tokens := mocks.NewTokenStore(t)
+	// Valid when the evaluator looks before CI, revoked by the time it holds the
+	// merge lock: the merge must use the fresh answer.
+	validTok := domain.Token{ID: "revoked", Scopes: []domain.Scope{domain.ScopeMRMerge}, Repos: []domain.RepoName{r.repo}}
+	tokens.EXPECT().Get(mock.Anything, "revoked").Return(validTok, nil).Once()
 	tokens.EXPECT().Get(mock.Anything, "revoked").Return(domain.Token{}, domain.ErrNotFound).Once()
 	reached := make(chan struct{})
 	checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Run(func(context.Context, domain.RepoName, string) { close(reached) }).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}}, nil).Once()
@@ -414,9 +418,8 @@ func TestAutoMergeResolvesEnablerAfterMergeGate(t *testing.T) {
 	require.NoError(t, r.mrs.WithMergeLock(r.ctx, r.repo, func() error {
 		go func() { done <- a.Evaluate(r.repo) }()
 		<-reached
-		// Evaluation has passed its fast-path checks, but cannot resolve the token
-		// until this lock is released. It now sees the revoked token, not old rights.
-		tokens.AssertNotCalled(t, "Get", mock.Anything, "revoked")
+		// Evaluation has passed its fast-path checks with the then-valid token
+		// and waits for this lock. The token is revoked meanwhile (second Get).
 		return nil
 	}))
 	require.True(t, <-done)

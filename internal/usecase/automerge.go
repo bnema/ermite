@@ -228,6 +228,14 @@ func (s *AutoMerge) evaluateMR(ctx context.Context, repo domain.Repo, mr domain.
 	if head != intent.HeadID {
 		return cancel("the branch moved to " + head.String()[:7])
 	}
+	// An enabler that can no longer merge cancels at once, even while CI is
+	// pending: the intent must not stay shown as enabled. This check only
+	// cancels; the merge itself resolves the enabler again under the merge lock.
+	if fresh, valid, err := principalOfPusher(ctx, s.cfg.Tokens, intent.EnabledBy, s.cfg.Clock.Now()); err != nil {
+		return err
+	} else if !valid || !fresh.Allows(domain.ScopeMRMerge, mr.Repo) || !fresh.AllowsRef("refs/heads/"+mr.Target) {
+		return cancel("the principal that enabled auto-merge can no longer merge " + mr.Target)
+	}
 	if s.cfg.Activity != nil && !s.cfg.Activity.Settled(ctx, mr.Repo, mr.Number, mr.Source, head) {
 		return nil
 	}
