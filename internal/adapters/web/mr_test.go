@@ -128,3 +128,35 @@ func TestMergeabilityLiveEvents(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, fs)
 }
+
+func TestMRPanelsAndMenus(t *testing.T) {
+	p := MRPage{CommitCount: "500+", CommitsNote: "more commits", Modes: []string{"squash", "merge"}, ChecksBlock: true,
+		ChecksSum: ChecksSummary{Total: 2, Label: "1/2", Title: "1/2 failed"}, Box: &MergeBox{Signed: true, Fingerprint: "fingerprint", HeadGone: true}}
+	footer := renderToString(t, mrFooter(p))
+	assert.Contains(t, footer, `<footer class="mr-footer"><details id="mr-panels">`)
+	assert.Contains(t, footer, `data-mr-tabs`)
+	assert.Contains(t, footer, `id="mr-commits"`)
+	assert.Contains(t, footer, `id="mr-checks"`)
+	assert.Contains(t, footer, `<table class="mr-commits">`)
+	assert.Contains(t, footer, "500+")
+	assert.Contains(t, footer, "more commits")
+	assert.Contains(t, footer, "1/2 failed")
+	rail := renderToString(t, mrRail(p))
+	assert.Contains(t, rail, "g f")
+	for _, text := range []string{"Checks", "Commits", "Settings", "mr-checks"} {
+		assert.NotContains(t, rail, text)
+	}
+	more := renderToString(t, moreMenu(p))
+	for _, text := range []string{"Merge settings", "squash, merge", "failing ones block", `id="mr-signing"`, "fingerprint", "ermite signing-key show"} {
+		assert.Contains(t, more, text)
+	}
+	merge := renderToString(t, mergeMenu(p))
+	assert.NotContains(t, merge, `<dl`)
+	assert.NotContains(t, merge, `mr-signing`)
+	assert.Contains(t, merge, "the source branch was deleted")
+	bar := renderToString(t, mrBar(MRPage{}))
+	assert.Contains(t, bar, `id="mr-ck"`)
+	assert.Contains(t, bar, `href="#mr-checks"`)
+	assert.Contains(t, bar, "Merge settings")
+	assert.NotContains(t, bar, ">Close</button>")
+}

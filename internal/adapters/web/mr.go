@@ -291,6 +291,7 @@ type MRPage struct {
 
 	Commits     []MRCommit
 	CommitsNote string
+	CommitCount string
 	Modes       []string
 	ChecksBlock bool
 	// Checks are the CI checks of the head of the request, ChecksSum their
@@ -734,7 +735,9 @@ func (s *Server) mrReadPresentation(p *MRPage, name string, n int64, res ports.M
 		})
 	}
 	lastRead := res.LastReadID.String()
+	p.CommitCount = itoa(len(p.Commits))
 	if res.CommitsTruncated {
+		p.CommitCount += "+"
 		p.CommitsNote = "the branch has more commits than the " + itoa(len(p.Commits)) + " listed."
 	}
 

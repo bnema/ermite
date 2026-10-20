@@ -3020,7 +3020,7 @@ func CommitChecks(c ChecksSummary) templ.Component {
 }
 
 // MRChecksSum is the state of the checks of a merge request in the bar above
-// the diff, a link to the checks of the rail. The event stream replaces it
+// the diff, a link to the checks of the card footer. The event stream replaces it
 // with the checks section (same event, fragments.go).
 func MRChecksSum(c ChecksSummary) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -3096,7 +3096,7 @@ func MRChecksSum(c ChecksSummary) templ.Component {
 	})
 }
 
-// MRChecks is the checks section of the rail of a merge request.
+// MRChecks is the checks section of the footer of a merge request.
 func MRChecks(c ChecksSection) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

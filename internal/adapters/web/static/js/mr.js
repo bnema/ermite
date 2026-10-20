@@ -49,6 +49,13 @@ window.ermiteMR = (() => {
       if (/^[1-9]$/.test(key) && Number(key) <= modes) return { mode: Number(key) - 1 };
       return null;
     },
+    tabIndex(key, index, count) {
+      if (key === 'Home') return 0;
+      if (key === 'End') return count - 1;
+      if (key === 'ArrowRight') return (index + 1) % count;
+      if (key === 'ArrowLeft') return (index + count - 1) % count;
+      return null;
+    },
     // step moves an index within [0, n).
     step(i, d, n) {
       if (n === 0) return -1;
@@ -285,8 +292,54 @@ window.ermiteMR = (() => {
     reveal(id);
   }
 
+  // Enhance the ordinary anchor navigation only when scripts are available.
+  function panels() {
+    const footer = $('#mr-panels'), nav = $('[data-mr-tabs]');
+    if (!footer || !nav) return;
+    const tabs = $$('a', nav), panels = $$('[data-mr-panel]', footer);
+    nav.setAttribute('role', 'tablist');
+    function select(index, focus = false) {
+      tabs.forEach((tab, i) => {
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-controls', panels[i].id);
+        tab.setAttribute('aria-selected', String(i === index));
+        tab.tabIndex = i === index ? 0 : -1;
+        panels[i].setAttribute('role', 'tabpanel');
+        panels[i].tabIndex = 0;
+        panels[i].hidden = i !== index;
+      });
+      if (focus) tabs[index].focus();
+    }
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', (e) => { e.preventDefault(); select(i); });
+      tab.addEventListener('keydown', (e) => {
+        const next = core.tabIndex(e.key, i, tabs.length);
+        if (next === null) return;
+        e.preventDefault(); select(next, true);
+      });
+    });
+    function hash() {
+      const index = location.hash === '#mr-checks' ? 1 : location.hash === '#mr-commits' ? 0 : -1;
+      if (index < 0) return;
+      footer.open = true; select(index);
+    }
+    // A repeated click on the same hash must also reopen a folded footer.
+    document.addEventListener('click', (e) => {
+      if (e.target.closest?.('#mr-ck')) { footer.open = true; select(1); }
+    });
+    const summary = $('#mr-ck');
+    if (summary) {
+      const sync = () => { $('[data-checks-label]', nav).textContent = $('#mr-ck')?.title || $('#mr-ck')?.textContent.trim() || 'no checks'; };
+      new MutationObserver(sync).observe(summary.parentElement, { childList: true, subtree: true, characterData: true });
+      sync();
+    }
+    select(0); hash();
+    addEventListener('hashchange', hash);
+  }
+
   function start() {
     if (!$('#diffs[data-mr]')) return;
+    panels();
     let folded = false;
     try { folded = localStorage.getItem('mr-files-folded') === '1'; } catch { /* no storage: open */ }
     if (folded) foldFiles(true);
@@ -316,7 +369,7 @@ window.ermiteMR = (() => {
     });
   }
 
-  return { core, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
+  return { core, panels, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
 })();
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.ermiteMR.start());

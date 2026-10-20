@@ -8,6 +8,23 @@
     & > .mr-desc.prose { border: 0; border-top: 1px solid var(--border); border-radius: 0; }
   }
 
+  .mr-footer {
+    border-top: 1px solid var(--border); padding: var(--s3) var(--s5);
+    font-size: var(--fs-s);
+    & summary { cursor: pointer; color: var(--ink-dim); }
+    & nav { display: flex; gap: var(--s3); padding-block: var(--s3); }
+    & [role="tab"] { padding: var(--s1) var(--s2); border-radius: var(--r-s); }
+    & [aria-selected="true"] { background: var(--bg-raised); color: var(--ink-hi); }
+    & [data-mr-panel] { overflow-x: auto; }
+    & [hidden] { display: none; }
+    & section h2 { font-size: var(--fs-s); color: var(--ink-dim); }
+    & table { width: 100%; border-collapse: collapse; }
+    & th, & td { text-align: left; padding: var(--s2); border-bottom: 1px solid var(--border); }
+    & th { color: var(--ink-dim); font-weight: 500; }
+  }
+  .merge-settings { font-size: var(--fs-s); color: var(--ink-dim); }
+  .merge-settings h2 { font-size: var(--fs-s); }
+
   .mr-state[data-state="open"]::before { content: "● "; color: var(--teal); }
   .mr-state[data-state="merged"]::before { content: "✓ "; color: var(--teal); }
   .mr-state[data-state="closed"]::before { content: "✗ "; color: var(--red); }
@@ -112,11 +129,11 @@
     & .d-or > summary:hover { color: var(--ink-hi); }
     & .d-or[open] > .clone { margin-top: var(--s2); }
     & .clone code { white-space: pre-wrap; overflow-wrap: anywhere; }
+    & #mr-signing code { overflow-wrap: anywhere; }
   }
 
   /* the rail of a merge request follows the review: it sticks under the
-     header, one screen high, and scrolls on its own to its checks, commits
-     and settings. The list of files keeps its own scroll, under a height, so
+     header, one screen high, and scrolls on its own to its verdicts. The list of files keeps its own scroll, under a height, so
      that the blocks below it stay in reach. Only on a two-column layout. */
   @media (min-width: 1081px) {
     .rail:has(.r-files) {

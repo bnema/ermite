@@ -145,7 +145,7 @@ func TestCommitPageShowsTheSignature(t *testing.T) {
 func TestMergeRequestCommitsShowTheSignatureBadge(t *testing.T) {
 	t.Parallel()
 	signed := signatureBadge(verification(domain.FormatGPG, domain.StatusVerified, gpgFP, ""), false)
-	got := renderToString(t, mrRail(MRPage{Commits: []MRCommit{
+	got := renderToString(t, mrFooter(MRPage{Commits: []MRCommit{
 		{Short: "aaaaaaa", Href: "/r/commit/a", Subject: "signed", Sig: signed},
 		{Short: "bbbbbbb", Href: "/r/commit/b", Subject: "unsigned"},
 	}}))

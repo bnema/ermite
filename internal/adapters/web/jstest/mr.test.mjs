@@ -92,3 +92,46 @@ for (const dataset of [{diff:'split'}, {view:'split'}]) test(`reveal selects the
    globalThis.requestAnimationFrame=savedRAF;
  }
 });
+
+test('footer tabs switch panels, support arrows, and open on checks hash', () => {
+  const oldDocument = globalThis.document;
+  const oldLocation = globalThis.location;
+  const oldAdd = globalThis.addEventListener;
+  const listeners = {};
+  const node = (id) => ({ id, attrs: {}, events: {}, hidden: false,
+    setAttribute(k,v) { this.attrs[k]=v; },
+    addEventListener(k,v) { this.events[k]=v; }, focus() { this.focused=true; } });
+  const tabs = [node('mr-tab-commits'), node('mr-tab-checks')];
+  const panels = [node('mr-commits'), node('mr-checks-panel')];
+  const footer = node('mr-panels'); footer.open=false;
+  const nav = node('tabs'); nav.querySelectorAll=()=>tabs;
+  footer.querySelectorAll=()=>panels;
+  globalThis.document = {querySelector: (s) => s === '#mr-panels' ? footer : s === '[data-mr-tabs]' ? nav : null,
+    addEventListener(k,v) {listeners[k]=v;} };
+  globalThis.location = {hash:''};
+  globalThis.addEventListener = (k,v) => {listeners[k]=v;};
+  try {
+    window.ermiteMR.panels();
+    assert.equal(footer.open,false);
+    assert.equal(panels[0].hidden,false);
+    assert.equal(panels[1].hidden,true);
+    tabs[1].events.click({preventDefault(){}});
+    assert.equal(panels[0].hidden,true);
+    assert.equal(tabs[1].attrs['aria-selected'],'true');
+    tabs[1].events.keydown({key:'ArrowRight',preventDefault(){}});
+    assert.equal(tabs[0].focused,true);
+    assert.equal(panels[0].hidden,false);
+    location.hash='#mr-checks'; listeners.hashchange();
+    assert.equal(footer.open,true);
+    assert.equal(panels[1].hidden,false);
+    footer.open=false;
+    listeners.click({target:{closest:()=>true}});
+    assert.equal(footer.open,true);
+    assert.equal(C.tabIndex('Home',1,2),0);
+    assert.equal(C.tabIndex('End',0,2),1);
+    assert.equal(C.tabIndex('ArrowLeft',0,2),1);
+    assert.equal(C.tabIndex('Escape',0,2),null);
+  } finally {
+    globalThis.document=oldDocument; globalThis.location=oldLocation; globalThis.addEventListener=oldAdd;
+  }
+});
