@@ -74,7 +74,7 @@ func (c *CI) GetRepo(ctx context.Context, p domain.Principal, owner, name string
 	for k, v := range map[string]any{
 		"network_count": 0, "subscribers_count": 0, "allow_squash_merge": repo.Settings.Allows(domain.MergeModeSquash),
 		"allow_merge_commit": false, "allow_rebase_merge": repo.Settings.Allows(domain.MergeModeFastForward),
-		"allow_auto_merge": false, "delete_branch_on_merge": false, "allow_update_branch": false,
+		"allow_auto_merge": repo.EffectiveSettings().AllowAutoMerge, "delete_branch_on_merge": false, "allow_update_branch": false,
 		"use_squash_pr_title_as_default": false, "has_pull_requests": true,
 	} {
 		obj[k] = v

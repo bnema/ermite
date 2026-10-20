@@ -182,6 +182,10 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.MergeRequestClosed:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.MergeRequestAutoMergeEnabled:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.MergeRequestAutoMergeCancelled:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.MergeRequestReady:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.CommentAdded:
@@ -533,6 +537,10 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.MergeRequestClosed:
 		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
+	case domain.MergeRequestAutoMergeEnabled:
+		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
+	case domain.MergeRequestAutoMergeCancelled:
+		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.MergeRequestReady:
 		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.CommentAdded:
@@ -657,6 +665,7 @@ func isRepoLifecycleEvent(ev domain.Event) bool {
 func isItemEvent(ev domain.Event) bool {
 	switch ev.(type) {
 	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
+		domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled,
 		domain.MergeRequestReady, domain.MergeRequestMergeability, domain.CommentAdded,
 		domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved:
 		return true

@@ -220,3 +220,51 @@ func (s *Mergeability) PopDueForTest(repo domain.RepoName, due time.Time) []doma
 
 // WindowLimits exposes windowLimits to the tests.
 var WindowLimits = windowLimits
+
+// SetChecks installs a checks reader before starting a test evaluator.
+func (m *MergeRequests) SetChecks(checks ports.CIChecksReader) { m.checks = checks }
+
+// Evaluate exposes a single synchronous pass without starting workers.
+func (s *AutoMerge) Evaluate(repo domain.RepoName) bool { return s.evaluate(repo) }
+
+// QueuePush exposes the normal trigger queue for activity accounting tests.
+func (c *CI) QueuePush(ctx context.Context, repo domain.RepoName) {
+	c.enqueue(ctx, repo, []domain.RefUpdate{{Ref: "refs/heads/main"}}, "owner", domain.PusherOf(domain.Root()), true)
+}
+
+// PlanQueuedPush handles the next queued trigger without starting workers.
+func (c *CI) PlanQueuedPush() { c.planPush(<-c.queue) }
+
+// QueuePull exposes the pull activity queue for accounting tests.
+func (c *CI) QueuePull(repo domain.RepoName, number int64) {
+	c.queuePullEvent(pullEvent{repo: repo, number: number})
+}
+
+// FinishQueuedPull completes one test activity without planning workflows.
+func (c *CI) FinishQueuedPull() {
+	e := <-c.pull.events
+	c.finishPull(pullKey{repo: e.repo, number: e.number})
+	c.kickAutoMerge(c.ctx, e.repo)
+}
+
+// SetWorkflowTrigger installs the merge hook before evaluation.
+func (m *MergeRequests) SetWorkflowTrigger(t ports.WorkflowTrigger) { m.ci = t }
+
+// UnderRunLock exposes the production run lock to test nonblocking triggers.
+func (c *CI) UnderRunLock(id int64, fn func()) {
+	lock := c.runLock(id)
+	lock.Lock()
+	defer lock.Unlock()
+	fn()
+}
+
+// UnderRepoLock holds the production merge lock while a test interleaves a kick.
+func (m *MergeRequests) UnderRepoLock(ctx context.Context, repo domain.RepoName, fn func()) error {
+	unlock, err := m.lockRepo(ctx, repo)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	fn()
+	return nil
+}

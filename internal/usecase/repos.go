@@ -17,12 +17,13 @@ import (
 
 // Repos are the repository use cases.
 type Repos struct {
-	meta   ports.RepoMetaStore
-	git    ports.GitRepos
-	bus    ports.EventBus
-	clock  ports.Clock
-	ci     ports.CIRunCleaner  // nil: no CI logs to remove
-	mirror ports.MirrorTrigger // nil: no outbound mirror
+	meta      ports.RepoMetaStore
+	git       ports.GitRepos
+	bus       ports.EventBus
+	clock     ports.Clock
+	ci        ports.CIRunCleaner // nil: no CI logs to remove
+	autoMerge ports.AutoMergeTrigger
+	mirror    ports.MirrorTrigger // nil: no outbound mirror
 }
 
 var _ ports.RepoService = (*Repos)(nil)
@@ -233,3 +234,6 @@ func (r *Repos) Reconcile(ctx context.Context) (ReconcileReport, error) {
 	}
 	return rep, nil
 }
+
+// WithAutoMerge installs the settings-change trigger before serving requests.
+func (r *Repos) WithAutoMerge(t ports.AutoMergeTrigger) *Repos { r.autoMerge = t; return r }

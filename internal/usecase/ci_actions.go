@@ -271,31 +271,39 @@ func (c *CI) pusherCanRead(ctx context.Context, by pusherAccess, runRepo domain.
 	if repo.Name == runRepo {
 		return true, nil
 	}
-	var p domain.Principal
-	switch by.pusher.Kind {
-	case domain.CIPusherRoot:
-		p = domain.Root()
-	case domain.CIPusherOwner:
-		p = domain.Owner()
-	case domain.CIPusherToken:
-		if c.cfg.Tokens == nil {
-			return false, nil
-		}
-		tok, err := c.cfg.Tokens.Get(ctx, by.pusher.TokenID)
-		if errors.Is(err, domain.ErrNotFound) {
-			return false, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		if tok.Expired(c.now()) {
-			return false, nil
-		}
-		p = domain.TokenPrincipal(tok)
-	default:
-		p = domain.Anonymous()
+	p, _, err := principalOfPusher(ctx, c.cfg.Tokens, by.pusher, c.now())
+	if err != nil {
+		return false, err
 	}
 	return canRead(p, repo), nil
+}
+
+// principalOfPusher re-resolves a recorded actor without substituting a more
+// privileged identity when its token no longer exists or has expired.
+func principalOfPusher(ctx context.Context, tokens ports.TokenStore, by domain.CIPusher, now time.Time) (domain.Principal, bool, error) {
+	switch by.Kind {
+	case domain.CIPusherRoot:
+		return domain.Root(), true, nil
+	case domain.CIPusherOwner:
+		return domain.Owner(), true, nil
+	case domain.CIPusherToken:
+		if tokens == nil {
+			return domain.Anonymous(), false, nil
+		}
+		tok, err := tokens.Get(ctx, by.TokenID)
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.Anonymous(), false, nil
+		}
+		if err != nil {
+			return domain.Anonymous(), false, err
+		}
+		if tok.Expired(now) {
+			return domain.Anonymous(), false, nil
+		}
+		return domain.TokenPrincipal(tok), true, nil
+	default:
+		return domain.Anonymous(), false, nil
+	}
 }
 
 // actionRef is a parsed "uses": owner/repo[/path]@ref.

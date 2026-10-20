@@ -482,6 +482,9 @@ func (c *CI) wakePull() {
 func (c *CI) queuePullEvent(e pullEvent) {
 	c.mu.Lock()
 	closed := c.closed
+	if !closed {
+		c.pulls[pullKey{repo: e.repo, number: e.number}]++
+	}
 	c.mu.Unlock()
 	if closed {
 		return
@@ -489,6 +492,7 @@ func (c *CI) queuePullEvent(e pullEvent) {
 	select {
 	case c.pull.events <- e:
 	default:
+		c.finishPull(pullKey{repo: e.repo, number: e.number})
 		e.log.Error().Str("repo", e.repo.String()).Int64("number", e.number).Str("action", e.action).Msg("ci pull request queue is full: this activity of a merge request is not run")
 	}
 }
@@ -614,6 +618,8 @@ func (c *CI) pullLoop() {
 			return
 		case e := <-c.pull.events:
 			c.guardPull(e.log, e.repo, func(ctx context.Context) error { return c.handlePullEvent(ctx, e) })
+			c.finishPull(pullKey{repo: e.repo, number: e.number})
+			c.kickAutoMerge(c.ctx, e.repo)
 		}
 	}
 }

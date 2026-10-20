@@ -15,6 +15,7 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 	"bnema.dev/ermite/internal/usecase"
 )
 
@@ -26,6 +27,22 @@ func TestUpdate(t *testing.T) {
 	n := name(t, "tools")
 	priv := domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, Description: "old"}
 	admin := tokenPrincipal(domain.ScopeRepoAdmin, "tools")
+
+	t.Run("auto-merge setting is stored and kicks evaluator", func(t *testing.T) {
+		f := newFixture(t)
+		trigger := mocks.NewAutoMergeTrigger(t)
+		f.repos.WithAutoMerge(trigger)
+		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Once()
+		want := priv
+		want.Settings = domain.DefaultRepoSettings()
+		want.Settings.AllowAutoMerge = true
+		expectRepoMutation(t, f.meta, priv, want)
+		trigger.EXPECT().OnRepoChanged(ctx, n).Return().Once()
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
+		got, err := f.repos.Update(ctx, admin, n, ports.UpdateRepoParams{AllowAutoMerge: ptr(true)})
+		require.NoError(t, err)
+		assert.True(t, got.EffectiveSettings().AllowAutoMerge)
+	})
 
 	t.Run("description and visibility are stored and RepoUpdated is published", func(t *testing.T) {
 		t.Parallel()

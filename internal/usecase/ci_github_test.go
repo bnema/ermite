@@ -5,14 +5,17 @@ package usecase_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"testing"
 
+	"bnema.dev/ermite/internal/ports/mocks"
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite-actions/workflow"
@@ -107,5 +110,23 @@ func TestCheckRunID(t *testing.T) {
 		assert.Contains(t, logs.String(), `"run_id":`+strconv.FormatInt(c.run.ID, 10), name)
 		assert.Contains(t, logs.String(), `"attempt":`+strconv.Itoa(int(c.run.Attempt)), name)
 		assert.Contains(t, logs.String(), `"job_index":`+strconv.Itoa(c.index), name)
+	}
+}
+
+func TestGitHubRepoReportsAllowAutoMerge(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		t.Run(strconv.FormatBool(allow), func(t *testing.T) {
+			repos := mocks.NewGitRepos(t)
+			u := newCIUnit(t, func(cfg *usecase.CIConfig) { cfg.Repos = repos })
+			repo := domain.Repo{Name: name(t, "proj"), Visibility: domain.VisibilityPublic, Settings: domain.DefaultRepoSettings()}
+			repo.Settings.AllowAutoMerge = allow
+			u.meta.EXPECT().Get(mock.Anything, repo.Name).Return(repo, nil)
+			repos.EXPECT().HeadBranch(mock.Anything, repo.Name).Return("main", nil)
+			data, err := u.ci.GetRepo(context.Background(), domain.Root(), "owner", "proj")
+			require.NoError(t, err)
+			var obj map[string]any
+			require.NoError(t, json.Unmarshal(data, &obj))
+			assert.Equal(t, allow, obj["allow_auto_merge"])
+		})
 	}
 }

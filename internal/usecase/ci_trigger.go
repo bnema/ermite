@@ -101,6 +101,9 @@ func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain
 	t := ciTrigger{repo: repo, updates: kept, actor: actor, pusher: pusher, trusted: trusted, at: c.now(), log: zerowrap.FromCtx(ctx)}
 	c.mu.Lock()
 	closed := c.closed
+	if !closed {
+		c.pushes[repo]++
+	}
 	c.mu.Unlock()
 	if closed {
 		return
@@ -108,6 +111,7 @@ func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain
 	select {
 	case c.queue <- t:
 	default:
+		c.finishPush(repo)
 		t.log.Error().Str("repo", repo.String()).Int("refs", len(kept)).Msg("ci trigger queue is full: the workflows of this push are not run")
 	}
 }
@@ -127,6 +131,7 @@ func (c *CI) triggerLoop() {
 // planPush plans one push; a panic or an error is logged and never escapes.
 func (c *CI) planPush(t ciTrigger) {
 	ctx := zerowrap.WithCtx(c.ctx, t.log)
+	defer func() { c.finishPush(t.repo); c.kickAutoMerge(ctx, t.repo) }()
 	defer func() {
 		if r := recover(); r != nil {
 			t.log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Str("repo", t.repo.String()).Msg("ci trigger panicked")

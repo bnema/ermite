@@ -35,12 +35,13 @@ func mergeBackoff(attempt int) time.Duration {
 
 // MergeabilityConfig holds the dependencies of the repository reconciler.
 type MergeabilityConfig struct {
-	Store   ports.MergeRequestStore
-	Meta    ports.RepoMetaStore
-	Git     ports.MergeGit
-	Bus     ports.EventBus
-	Clock   ports.Clock
-	Workers int // defaults to 2
+	AutoMerge ports.AutoMergeTrigger
+	Store     ports.MergeRequestStore
+	Meta      ports.RepoMetaStore
+	Git       ports.MergeGit
+	Bus       ports.EventBus
+	Clock     ports.Clock
+	Workers   int // defaults to 2
 	// After is injectable to drive backoff without wall-clock waits in tests.
 	After func(time.Duration) <-chan time.Time
 }
@@ -275,6 +276,9 @@ func (s *Mergeability) reconcile(repo domain.RepoName) bool {
 			Repo: repo, Number: mr.Number, Mergeability: res, At: res.CheckedAt,
 			Visibility: meta.Visibility, CreatedAt: meta.CreatedAt,
 		})
+		if s.cfg.AutoMerge != nil {
+			s.cfg.AutoMerge.OnRepoChanged(ctx, repo)
+		}
 	}
 	return ok
 }
@@ -464,4 +468,10 @@ func (s *Mergeability) compute(ctx context.Context, repo domain.RepoName, number
 	}
 	m.Behind, m.BehindCapped = domain.BoundBehind(n)
 	return m, nil
+}
+
+// WithAutoMerge installs the evaluator before Start.
+func (s *Mergeability) WithAutoMerge(t ports.AutoMergeTrigger) *Mergeability {
+	s.cfg.AutoMerge = t
+	return s
 }

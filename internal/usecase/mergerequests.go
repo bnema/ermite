@@ -58,7 +58,8 @@ type MergeRequests struct {
 	tips      ports.CIRefTipStore      // nil: who merges is not recorded
 	verifier  ports.CommitVerifier     // nil: commits are not checked (ADR 0030)
 	mergeab   MergeabilityHook         // nil: no mergeability
-	mirror    ports.MirrorTrigger      // nil: no outbound mirror
+	autoMerge ports.AutoMergeTrigger
+	mirror    ports.MirrorTrigger // nil: no outbound mirror
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -899,6 +900,8 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 		if err != nil {
 			return domain.MergeRequest{}, err
 		}
+		hadAutoMerge := mr.AutoMerge != nil
+		mr.AutoMerge = nil
 		mr.State, mr.BaseID, mr.UpdatedAt = domain.MRStateClosed, base, m.clock.Now().UTC()
 		err = m.store.Update(ctx, mr)
 		if errors.Is(err, domain.ErrConflict) {
@@ -912,6 +915,9 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("merge request closed")
 		recordActivity(ctx, m.meta, repo.Name, mr.UpdatedAt)
 		m.bus.Publish(ctx, domain.MergeRequestClosed{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		if hadAutoMerge {
+			m.bus.Publish(ctx, domain.MergeRequestAutoMergeCancelled{MergeRequest: mr, Reason: "closed", At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		}
 		if m.pulls != nil {
 			m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID}, p)
 		}
@@ -989,7 +995,7 @@ func (m *MergeRequests) MarkRead(ctx context.Context, p domain.Principal, name d
 // the CI and mergeability hooks. Wait waits for them. SourceDeleted therefore
 // only says that the deletion was requested.
 func (m *MergeRequests) Merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams) (ports.MergeResult, error) {
-	mr, err := m.merge(ctx, p, name, number, params)
+	mr, err := m.mergeAs(ctx, p, name, number, params, mergeOpts{})
 	return ports.MergeResult{MergeRequest: mr, SourceDeleted: err == nil && params.DeleteSource}, err
 }
 
@@ -1031,7 +1037,14 @@ func (m *MergeRequests) checkMode(ctx context.Context, mr domain.MergeRequest, m
 	return res.Tree, nil
 }
 
-func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams) (domain.MergeRequest, error) {
+type mergeOpts struct {
+	auto   bool
+	intent *domain.AutoMerge
+}
+
+var errAutoMergeWait = errors.New("auto-merge is waiting for checks")
+
+func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams, opts mergeOpts) (domain.MergeRequest, error) {
 	if _, err := m.writable(ctx, p, name, domain.ScopeMRMerge); err != nil {
 		return domain.MergeRequest{}, err
 	}
@@ -1061,6 +1074,9 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	mr, err := m.store.Get(ctx, name, number)
 	if err != nil {
 		return domain.MergeRequest{}, err
+	}
+	if opts.auto && (mr.AutoMerge == nil || opts.intent == nil || *mr.AutoMerge != *opts.intent) {
+		return domain.MergeRequest{}, errAutoMergeWait
 	}
 	// A merge moves the target and may delete the source: a token limited to
 	// branch prefixes may do so only within them.
@@ -1117,9 +1133,28 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 	if err != nil {
 		return domain.MergeRequest{}, err
 	}
-	if settings.FailingChecksBlock {
+	if opts.auto && !settings.AllowAutoMerge {
+		return domain.MergeRequest{}, fmt.Errorf("%w: auto-merge is off in %s", domain.ErrPreconditionFailed, name)
+	}
+	if settings.FailingChecksBlock || opts.auto {
 		if err := m.checksAllow(ctx, name, head); err != nil {
 			return domain.MergeRequest{}, err
+		}
+	}
+	if opts.auto {
+		checks, err := m.checks.CommitChecks(ctx, name, head.String())
+		if err != nil {
+			return domain.MergeRequest{}, err
+		}
+		passed := false
+		for _, check := range checks {
+			if check.Status == domain.CICompleted && check.Conclusion == domain.CISuccess {
+				passed = true
+				break
+			}
+		}
+		if !passed {
+			return domain.MergeRequest{}, errAutoMergeWait
 		}
 	}
 	if params.DeleteSource {
@@ -1133,7 +1168,7 @@ func (m *MergeRequests) merge(ctx context.Context, p domain.Principal, name doma
 		return domain.MergeRequest{}, err
 	}
 	m.recordPush(ctx, name) // the target moved, whatever happens next
-	mr, err = m.markMerged(ctx, name, number, mode, tip, head, merged)
+	mr, err = m.markMerged(ctx, name, number, mode, tip, head, merged, opts.auto)
 	if err != nil {
 		return domain.MergeRequest{}, err
 	}
@@ -1175,7 +1210,7 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 	}
 	at := mr.UpdatedAt
 	recordActivity(ctx, m.meta, repo.Name, at)
-	m.bus.Publish(ctx, domain.MergeRequestMerged{MergeRequest: mr, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+	m.bus.Publish(ctx, domain.MergeRequestMerged{MergeRequest: mr, Auto: mr.AutoMerged, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	m.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,
 	})
@@ -1273,7 +1308,7 @@ func (m *MergeRequests) checksAllow(ctx context.Context, name domain.RepoName, h
 	case len(failing) > 0:
 		return fmt.Errorf("%w: failing checks block the merge: %s (turn off failing_checks_block to merge anyway)", domain.ErrPreconditionFailed, strings.Join(failing, ", "))
 	case len(pending) > 0:
-		return fmt.Errorf("%w: checks have not finished: %s", domain.ErrPreconditionFailed, strings.Join(pending, ", "))
+		return fmt.Errorf("%w: %w: checks have not finished: %s", domain.ErrPreconditionFailed, errAutoMergeWait, strings.Join(pending, ", "))
 	}
 	return nil
 }
@@ -1365,7 +1400,7 @@ func (m *MergeRequests) moveTarget(ctx context.Context, mr domain.MergeRequest, 
 
 // markMerged records the merge. The target already moved, so a write that
 // loses a race (a comment added meanwhile) is repeated on the fresh request.
-func (m *MergeRequests) markMerged(ctx context.Context, name domain.RepoName, number int64, mode domain.MergeMode, base, head, merged domain.ObjectID) (domain.MergeRequest, error) {
+func (m *MergeRequests) markMerged(ctx context.Context, name domain.RepoName, number int64, mode domain.MergeMode, base, head, merged domain.ObjectID, auto bool) (domain.MergeRequest, error) {
 	// The merge must be recorded even when the caller gives up.
 	ctx = context.WithoutCancel(ctx)
 	for range maxWriteRetries {
@@ -1373,6 +1408,7 @@ func (m *MergeRequests) markMerged(ctx context.Context, name domain.RepoName, nu
 		if err != nil {
 			return domain.MergeRequest{}, fmt.Errorf("record the merge of !%d in %q: %w", number, name, err)
 		}
+		mr.AutoMerge, mr.AutoMerged = nil, auto
 		mr.State, mr.HeadID, mr.BaseID, mr.MergedCommitID, mr.MergeMode = domain.MRStateMerged, head, base, merged, mode
 		mr.UpdatedAt = m.clock.Now().UTC()
 		err = m.store.Update(ctx, mr)
@@ -1519,14 +1555,4 @@ func (m *MergeRequests) PushSummary(ctx context.Context, p domain.Principal, rep
 		return ports.PushSummary{}, err
 	}
 	return ports.PushSummary{Count: len(commits), More: more}, nil
-}
-
-// EnableAutoMerge is not implemented yet.
-func (m *MergeRequests) EnableAutoMerge(_ context.Context, _ domain.Principal, _ domain.RepoName, _ int64, _ ports.EnableAutoMergeParams) (domain.MergeRequest, error) {
-	return domain.MergeRequest{}, fmt.Errorf("%w: auto-merge is not implemented yet", domain.ErrPreconditionFailed)
-}
-
-// CancelAutoMerge is not implemented yet.
-func (m *MergeRequests) CancelAutoMerge(_ context.Context, _ domain.Principal, _ domain.RepoName, _ int64) (domain.MergeRequest, error) {
-	return domain.MergeRequest{}, fmt.Errorf("%w: auto-merge is not implemented yet", domain.ErrPreconditionFailed)
 }

@@ -53,8 +53,9 @@ const (
 // Git, Diff, Bus, Clock, Owner and PublicURL are required (the config supplies
 // the defaults of Owner and Retention).
 type CIConfig struct {
-	Store ports.CIStore
-	Logs  ports.CILogStore
+	AutoMerge ports.AutoMergeTrigger
+	Store     ports.CIStore
+	Logs      ports.CILogStore
 	// Summaries keeps the job summaries, deleted with the logs of their run.
 	Summaries ports.CISummaryStore
 	Meta      ports.RepoMetaStore
@@ -266,6 +267,9 @@ type CI struct {
 	pending     notifier // woken when a job may be ready or a runner was removed
 	flows       *wfCache
 
+	pushes     map[domain.RepoName]int
+	pulls      map[pullKey]int
+	autoMerge  ports.AutoMergeTrigger
 	mu         sync.Mutex
 	heartbeats map[string]time.Time // job reference -> last heartbeat
 	seen       map[string]time.Time // runner id -> last seen
@@ -311,6 +315,7 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 	cfg = cfg.withDefaults()
 	run, stop := context.WithCancel(context.WithoutCancel(ctx))
 	return &CI{
+		pushes: map[domain.RepoName]int{}, pulls: map[pullKey]int{}, autoMerge: cfg.AutoMerge,
 		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue), runEvents: make(chan runEvent, cfg.TriggerQueue), sched: newScheduler(cfg.Clock.Now()), pull: newPullQueue(cfg.TriggerQueue, cfg.PullRefreshes, cfg.PullAttempts),
 		ctx: run, stop: stop, flows: newWfCache(64), remoteSlots: make(chan struct{}, cfg.RemoteConcurrency), remoteCache: newRefsCache(),
 		heartbeats: map[string]time.Time{}, seen: map[string]time.Time{}, polls: map[string]pollRecord{},
@@ -560,6 +565,7 @@ func (rs *runState) flush(ctx context.Context) error {
 	}
 	if completing {
 		c.onRunEvent(ctx, rs.run, runCompleted)
+		c.kickAutoMerge(ctx, rs.run.Repo)
 	}
 	return nil
 }
@@ -739,4 +745,48 @@ func isHex40(s string) bool {
 		return false
 	}
 	return strings.Trim(s, "0123456789abcdef") == ""
+}
+
+// SetAutoMergeTrigger installs the evaluator after constructing the merge use cases.
+func (c *CI) SetAutoMergeTrigger(t ports.AutoMergeTrigger) {
+	c.mu.Lock()
+	c.autoMerge = t
+	c.mu.Unlock()
+}
+
+func (c *CI) kickAutoMerge(ctx context.Context, repo domain.RepoName) {
+	c.mu.Lock()
+	t := c.autoMerge
+	c.mu.Unlock()
+	if t != nil {
+		t.OnRepoChanged(ctx, repo)
+	}
+}
+
+// Settled reports whether all push planning and pull activities have finished.
+// Workflow-run events, schedules and dispatches are intentionally not counted.
+// Source and head are reserved for finer-grained accounting; repo-wide pushes
+// conservatively delay requests even when an unrelated branch is updated.
+func (c *CI) Settled(_ context.Context, repo domain.RepoName, number int64, _ string, _ domain.ObjectID) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pushes[repo] == 0 && c.pulls[pullKey{repo: repo, number: number}] == 0
+}
+
+func (c *CI) finishPush(repo domain.RepoName) {
+	c.mu.Lock()
+	c.pushes[repo]--
+	if c.pushes[repo] == 0 {
+		delete(c.pushes, repo)
+	}
+	c.mu.Unlock()
+}
+
+func (c *CI) finishPull(key pullKey) {
+	c.mu.Lock()
+	c.pulls[key]--
+	if c.pulls[key] == 0 {
+		delete(c.pulls, key)
+	}
+	c.mu.Unlock()
 }
