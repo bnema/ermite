@@ -430,34 +430,33 @@ window.ermiteMR = (() => {
   // a dirty bit for pushes received during that request. Drafts are checked
   // again after the fetch: typing while the network is slow is safe too.
   function refresher({ blocked, fetchPage, apply, notice, failed, delay = 300 }) {
-    let timer, busy = false, pending = false, force = false;
+    let timer, busy = false, pending = false;
     const schedule = () => { clearTimeout(timer); timer = setTimeout(run, delay); };
     async function run() {
       if (busy || !pending) return;
-      if (!force && blocked()) { notice(true); return; }
+      if (blocked()) { notice(true); return; }
       busy = true;
       pending = false;
-      const manual = force; force = false;
       try {
         const page = await fetchPage();
-        if (!manual && blocked()) { pending = true; notice(true); return; }
-        if (await apply(page, manual) === false) { pending = true; notice(true); }
+        if (blocked()) { pending = true; notice(true); return; }
+        if (await apply(page) === false) { pending = true; notice(true); }
         else notice(false);
-      } catch { failed(); }
+      } catch { if (blocked()) { pending = true; notice(true); } else failed(); }
       finally {
         busy = false;
-        if (pending && (force || !blocked())) schedule();
+        if (pending && !blocked()) schedule();
       }
     }
     return {
-      request(manual = false) { pending = true; force ||= manual; schedule(); },
+      request() { pending = true; schedule(); },
       resume() { if (pending) schedule(); },
       pending() { return pending || busy; },
     };
   }
 
   function hasDraft() {
-    return $$('textarea').some((t) => (t.value.length > 0 && t.value !== t.defaultValue) || document.activeElement === t) ||
+    return $$('textarea').some((t) => (t.value !== t.defaultValue) || document.activeElement === t) ||
       !!document.activeElement?.closest?.('.cform');
   }
 
@@ -470,19 +469,24 @@ window.ermiteMR = (() => {
     const bounds = diffs.getBoundingClientRect();
     const x = Math.max(1, Math.min(innerWidth - 1, bounds.left + Math.min(100, bounds.width / 2)));
     // A bounded number of probes, independent of the number of diff lines.
-    for (const y of [top + 2, top + 24, top + 64, top + 128]) {
-      if (y >= innerHeight) break;
+    let y = top + 2, fallback;
+    for (let probe = 0; probe < 6 && y < innerHeight; probe++) {
       const hit = document.elementFromPoint(x, y);
       const file = hit?.closest('details.dfile');
-      if (!file || !diffs.contains(file)) continue;
+      if (!file || !diffs.contains(file)) { y += 32; continue; }
       const row = hit.closest('tr');
       const link = row && $('.ln a[href*="on="]', row);
       const header = $(':scope > summary', file);
-      return { file: file.dataset.file,
-        on: link && new URL(link.href, location.href).searchParams.get('on'),
-        offset: (link ? row : header).getBoundingClientRect().top,
-        headerOffset: header.getBoundingClientRect().top, y: scrollY };
+      const headerOffset = file.getBoundingClientRect().top;
+      fallback = { file: file.dataset.file, offset: headerOffset, headerOffset, y: scrollY };
+      if (link) return { ...fallback,
+        on: new URL(link.href, location.href).searchParams.get('on'),
+        suffix: link.getAttribute('href').split('on=')[1].split('#')[0],
+        offset: row.getBoundingClientRect().top };
+      if (file.open && header) y = Math.max(y + 24, header.getBoundingClientRect().bottom + 2);
+      else return fallback;
     }
+    if (fallback) return fallback;
     return { y: scrollY };
   }
 
@@ -490,110 +494,92 @@ window.ermiteMR = (() => {
     const file = $$('#diffs details.dfile').find((f) => f.dataset.file === anchor.file);
     let el, offset = anchor.offset;
     if (file && anchor.on) {
-      // Exact href suffix: no traversal or measurement of every line. URLSearchParams
-      // uses the same form encoding as the Go line links (space is '+').
-      const parts = /^(new|old):(\d+):(.+)$/.exec(anchor.on);
-      const path = parts && new URLSearchParams({ path: parts[3] }).toString().slice(5);
-      const suffix = parts && 'on=' + parts[1] + ':' + parts[2] + ':' + path + '#' + file.id;
+      const suffix = anchor.suffix && 'on=' + anchor.suffix + '#' + file.id;
       const layout = $('#diffs').dataset.diff || $('#diffs').dataset.view;
       const table = $(layout === 'split' && !window.matchMedia?.('(max-width: 720px)').matches ? '.dt.spl' : '.dt.uni', file) || file;
       if (suffix) el = $('a[href$="' + CSS.escape(suffix) + '"]', table)?.closest('tr');
     }
-    if (!el && file) { el = $(':scope > summary', file); offset = anchor.headerOffset ?? anchor.offset; }
+    if (!el && file) { el = file; offset = anchor.headerOffset ?? anchor.offset; }
     if (el) window.scrollBy({ top: el.getBoundingClientRect().top - offset, behavior: 'instant' });
     else window.scrollTo({ top: Math.max(0, Math.min(anchor.y, document.documentElement.scrollHeight - innerHeight)), behavior: 'instant' });
   }
 
-  async function fetchPage() {
-    const res = await fetch(location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+  async function fetchPage(url = location.href, mobileRetry = false) {
+    const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
     if (!res.ok || res.redirected) throw new Error('MR refresh refused');
     const page = new DOMParser().parseFromString(await res.text(), 'text/html');
     if (!$('#diffs[data-mr]', page) || !$('.mr-bar', page) || !$('.hint-live', page)) throw new Error('not an MR page');
+    const unified = core.mobileURL(url, $('#diffs', page).dataset.view,
+      !!window.matchMedia?.('(max-width: 720px)').matches);
+    if (unified && !mobileRetry) return fetchPage(unified, true);
     return page;
   }
 
-  // Use htmx's swap rather than replaceWith: its cleanup retires the old SSE
-  // reader and hx-live bindings, and process activates the inserted controls.
+  // htmx 4's public delete swap invokes recursive before:cleanup (including
+  // hx-sse's abort/reader.cancel and hx-live's binding disposal). Only an empty
+  // string is parsed; the fetched nodes themselves are adopted, never serialized.
   async function replaceRegion(old, fresh) {
     if (!old || !fresh) throw new Error('missing MR refresh region');
     for (const el of $$('[autofocus]', fresh)) el.removeAttribute('autofocus');
-    await window.htmx.swap({ sourceElement: old, target: old, text: fresh.outerHTML,
-      swap: 'outerHTML settle:0 transition:false focusScroll:false', push: false, replace: false });
+    const marker = document.createComment('MR region');
+    old.before(marker);
+    await window.htmx.swap({ sourceElement: old, target: old, text: '',
+      swap: 'delete settle:0 transition:false', push: false, replace: false });
+    const node = document.adoptNode(fresh);
+    marker.replaceWith(node);
+    window.htmx.process(node);
   }
 
-  async function refreshPage(page, manual = false) {
-    const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '.rail', '.hint-live'];
+  async function refreshPage(page) {
+    const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '#mr-comments', '.rail', '.hint-live'];
     for (const sel of regions) if (!$(sel) || !$(sel, page)) throw new Error('missing MR region');
     let anchor = scrollAnchor();
+    const nextDiffs = $('#diffs', page);
+    const mobile = !!window.matchMedia?.('(max-width: 720px)').matches;
+    const chosen = mobile ? 'unified' : ($('#diffs').dataset.diff || $('#diffs').dataset.view);
+    if (nextDiffs.dataset.diff) nextDiffs.dataset.diff = chosen;
+    // A one-layout response must use its own contract, never the old page's.
+    if (mobile && nextDiffs.dataset.view === 'split') throw new Error('mobile needs unified');
     const anchorFile = $$('#diffs details.dfile', page).find((f) => f.dataset.file === anchor.file);
     const placeholder = anchorFile && $('.dlazy[data-src]', anchorFile);
     if (placeholder) {
-      const d = $('#diffs').dataset;
+      const d = nextDiffs.dataset;
       const url = placeholder.dataset.src + '&view=' + encodeURIComponent(d.diff || d.view || 'unified') + '&layouts=' + (d.diff ? 'both' : 'one');
       const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
       if (!res.ok || res.redirected) throw new Error('anchor window changed');
-      const windowPage = new DOMParser().parseFromString(await res.text(), 'text/html');
-      const byID = new Map($$('#diffs details.dfile', page).map((f) => [f.id, f]));
-      for (const f of $$('details.dfile', windowPage)) byID.get(f.id)?.replaceWith(f);
-      if (!manual && hasDraft()) return false;
+      let windowPage = new DOMParser().parseFromString(await res.text(), 'text/html');
+      if (hasDraft()) return false;
       anchor = scrollAnchor();
+      const windowFiles = $$('details.dfile', windowPage);
+      // If the reader moved outside this window, discard it; lazy loading will
+      // fetch the new position rather than committing an unrelated window.
+      if (windowFiles.some((f) => f.dataset.file === anchor.file)) {
+        const byID = new Map($$('#diffs details.dfile', page).map((f) => [f.id, f]));
+        for (const f of windowFiles) byID.get(f.id)?.replaceWith(f);
+      }
+      windowPage = null;
     }
+    if (hasDraft()) return false;
     const files = new Map($$('#diffs details.dfile').map((f) => [f.dataset.file, f.open]));
     const folded = $('.r-files')?.hasAttribute('data-folded');
     const railY = $('.rail')?.scrollTop, filesY = $('.r-files .files')?.scrollTop;
     const footerOpen = $('#mr-panels')?.open;
     const tab = $('[data-mr-tabs] [aria-selected="true"]')?.id;
     const active = document.activeElement;
-    const focus = active && { menu: active.closest?.('details.menu')?.id, id: active.id, tag: active.tagName, name: active.getAttribute('name'), href: active.getAttribute('href') };
-    // Manual refresh keeps even an active draft whose line disappeared. It
-    // stays an ordinary form, under an explicit previous-diff label.
-    const drafts = [...new Set($$('#diffs textarea').filter((t) => t.value !== t.defaultValue || t === active || t.closest('form')?.contains(active)).map((t) => t.closest('form')).filter(Boolean))];
-    let draftID = 0;
-    for (const form of drafts) {
-      for (const t of $$('textarea', form)) {
-        if (!t.id) t.id = 'mr-preserved-draft-' + (++draftID);
-        if (t === active) focus.id = t.id;
-      }
-      const id = $('textarea', form)?.id;
-      const replacement = id && $$('textarea', page).find((t) => t.id === id)?.closest('.cform');
-      const copy = form.cloneNode(true);
-      const originalFields = $$('textarea, input, select', form);
-      $$('textarea, input, select', copy).forEach((field, i) => {
-        const original = originalFields[i];
-        if (field.tagName === 'TEXTAREA') field.textContent = original.defaultValue;
-        else if (field.tagName === 'INPUT') { field.setAttribute('value', original.value); field.toggleAttribute('checked', original.checked); }
-      });
-      if (replacement) replacement.replaceWith(copy);
-      else {
-        const box = page.createElement('div');
-        const label = page.createElement('p'); label.className = 'notice';
-        label.textContent = 'Unsent comment on the previous diff (the line may have moved).';
-        box.append(label, copy); $('#diffs', page).prepend(box);
-      }
-    }
-    // Serializing markup does not retain textarea.value or selection. Restore
-    // values after the htmx swap, without ever clearing the source drafts.
-    const values = drafts.flatMap((f) => $$('textarea', f).map((t) => ({ id: t.id, value: t.value, start: t.selectionStart, end: t.selectionEnd })));
+    const focus = active && { file: active.closest?.('.files a')?.getAttribute('title'), region: regions.find((sel) => $(sel)?.contains(active)), menu: active.closest?.('details.menu')?.id, id: active.id, tag: active.tagName, name: active.getAttribute('name'), href: active.getAttribute('href') };
     for (const f of $$('#diffs details.dfile', page)) if (files.has(f.dataset.file)) f.open = files.get(f.dataset.file);
     ++diffGeneration; ++revealGen; moved = false; loading.clear(); lazyIO?.disconnect();
-    // Keep the chosen client-side layout when the URL was not pinned.
-    const layout = $('#diffs')?.dataset;
-    if (layout?.diff && $('#diffs', page).dataset.diff) $('#diffs', page).dataset.diff = layout.diff;
     $('#diffs', page).dataset.mrStarted = 'true';
     for (const sel of regions) {
       const fresh = $(sel, page);
       await replaceRegion($(sel), fresh);
-      fresh.remove(); // release each parsed region as soon as it is consumed
-    }
-    for (const v of values) {
-      const t = document.getElementById(v.id);
-      if (t) { t.value = v.value; t.setSelectionRange(v.start, v.end); }
     }
     for (const key of ['ref', 'sha', 'paths', 'blob']) {
       if (page.body.dataset[key] !== undefined) document.body.dataset[key] = page.body.dataset[key];
     }
     const oldSHA = $('.hdr .ref .sha'), newSHA = $('.hdr .ref .sha', page);
     if (oldSHA && newSHA) oldSHA.textContent = newSHA.textContent;
+    page = null;
     panels();
     if (tab) {
       const oldURL = location.href;
@@ -609,38 +595,40 @@ window.ermiteMR = (() => {
     window.ermite?.refreshFiles?.();
     watch();
     if (focus && active !== document.body) {
-      const same = (e) => e.tagName === focus.tag && (focus.id ? e.id === focus.id :
-        focus.href ? e.getAttribute('href') === focus.href : focus.name && e.getAttribute('name') === focus.name);
-      const el = focus.menu && !focus.id && !focus.name && !focus.href ? document.getElementById(focus.menu)?.querySelector(':scope > summary') : focus.id ? document.getElementById(focus.id) : focus.href ? $('a[href="' + CSS.escape(focus.href) + '"]') : focus.name ? $('[name="' + CSS.escape(focus.name) + '"]') : null;
-      if (el && (same(el) || focus.menu)) el.focus({ preventScroll: true });
+      const region = focus.region ? $(focus.region) : document;
+      const menu = focus.menu && document.getElementById(focus.menu);
+      if (menu) menu.open = true;
+      const el = focus.file ? $('a[title="' + CSS.escape(focus.file) + '"]', region) :
+        focus.id ? document.getElementById(focus.id) :
+        focus.href ? $('a[href="' + CSS.escape(focus.href) + '"]', region) :
+        focus.name ? $('[name="' + CSS.escape(focus.name) + '"]', region) :
+        menu?.querySelector(':scope > summary');
+      el?.focus({ preventScroll: true });
     }
     restoreAnchor(anchor);
   }
 
   function refreshNotice(deferred) {
-    let slot = $('#mr-refresh-status');
-    if (!slot) {
-      slot = document.createElement('div'); slot.id = 'mr-refresh-status'; slot.className = 'live-slot';
-      slot.setAttribute('role', 'status'); slot.setAttribute('aria-live', 'polite');
-      $('#mr-notice')?.after(slot);
-    }
-    slot.className = deferred ? 'live-slot' : 'sr';
+    const slot = $('#mr-refresh-status');
+    if (!slot) return;
     slot.replaceChildren();
     if (!deferred) {
-      const text = document.createElement('span'); text.textContent = 'branch updated'; slot.append(text);
+      const text = document.createElement('span'); text.className = 'sr'; text.textContent = 'branch updated'; slot.append(text);
       return;
     }
     slot.append('branch updated — refreshing after your comment. ');
-    const a = document.createElement('a'); a.href = location.href; a.textContent = 'refresh now';
-    a.addEventListener('click', (e) => { e.preventDefault(); headRefresh.request(true); });
-    slot.append(a);
+
   }
   const headRefresh = refresher({ blocked: hasDraft, fetchPage, apply: refreshPage, notice: refreshNotice,
-    failed: () => { if (hasDraft()) refreshNotice(true); else window.ermiteLive?.reload(); } });
+    failed: () => window.ermiteLive?.reload() });
   function headChanged() { if ($('#diffs[data-mr]')) headRefresh.request(); }
 
   function start() {
     if (!$('#diffs[data-mr]')) return;
+    if (window.ermiteLive) window.ermiteLive.canReload = () => {
+      if (!hasDraft()) return true;
+      headRefresh.request(); refreshNotice(true); return false;
+    };
     // Global delegation is installed once; replacement regions have their own
     // disposable panel/touch hooks below.
     if ($('#diffs').dataset.mrStarted) return;
@@ -651,7 +639,7 @@ window.ermiteMR = (() => {
       if (!cancel || !headRefresh.pending() || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       const form = cancel.closest('.cform');
-      for (const t of $$('textarea', form)) t.value = '';
+      for (const t of $$('textarea', form)) t.value = t.defaultValue;
       if (form.contains(document.activeElement)) document.activeElement.blur();
       headRefresh.resume();
     });

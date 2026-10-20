@@ -965,7 +965,10 @@ window.ermiteLive = (() => {
     reload() {
       if (reloading) return;
       reloading = true;
-      setTimeout(() => location.reload(), 300);
+      setTimeout(() => {
+        reloading = false;
+        if (window.ermiteLive.canReload?.() !== false) location.reload();
+      }, 300);
     },
     // error handles htmx:sse:error (detail.status is the status of a refused
     // reconnection). hx-sse retries for ever; a 404 or a 401 will not change by

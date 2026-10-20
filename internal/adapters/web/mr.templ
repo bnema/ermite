@@ -13,6 +13,7 @@ templ MRList(l Layout, p MRListPage) {
 	@Shell(l, mrListRail(p)) {
 		if p.Live {
 			@LiveSlot("mr-notice")
+		<div id="mr-refresh-status" role="status" aria-live="polite"></div>
 		}
 		<div class="filter">
 			<label for="mr-filter" class="sr">filter</label>
@@ -157,6 +158,7 @@ templ MergeRequest(l Layout, p MRPage) {
 			<p class="d-err" role="alert">{ p.MergeError }</p>
 		}
 		@LiveSlot("mr-notice")
+		<div id="mr-refresh-status" role="status" aria-live="polite"></div>
 		<div id="mr-range" hidden?={ p.Since == nil && p.SinceNote == "" }>
 			if p.Since != nil {
 				<nav class="since" aria-label="Diff range">
@@ -212,6 +214,7 @@ templ MergeRequest(l Layout, p MRPage) {
 				<p class="note">no changed files.</p>
 			}
 		</div>
+		<div id="mr-comments">
 		<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(p.NUnresolved) } open / { itoa(p.NComments) }</span></h2>
 		for _, c := range p.Loose {
 			@commentView(c, "")
@@ -225,6 +228,7 @@ templ MergeRequest(l Layout, p MRPage) {
 		if p.GeneralForm != nil {
 			@commentForm(*p.GeneralForm, "")
 		}
+		</div>
 	}
 }
 

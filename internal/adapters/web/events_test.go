@@ -502,3 +502,28 @@ func TestMRPushEventsKeepMergeability(t *testing.T) {
 		}
 	}
 }
+
+func TestMRPushBothBranches(t *testing.T) {
+	t.Parallel()
+	for _, refs := range [][]string{{"feature", "main"}, {"main", "feature"}} {
+		t.Run(strings.Join(refs, "-"), func(t *testing.T) {
+			svc := mocks.NewMergeRequestService(t)
+			svc.EXPECT().Mergeability(mock.Anything, mock.Anything, mock.Anything, int64(1)).Return(domain.Mergeability{State: domain.MergeabilityUpToDate}, nil).Once()
+			l := liveStream{s: &Server{cfg: Config{MergeRequests: svc}}, repo: "demo", view: "mr", n: "1", ref: "feature", target: "main"}
+			ctx := context.WithValue(t.Context(), signedInKey{}, struct{}{})
+			fs, err := l.mrPushed(ctx, domain.PushEvent{Updates: []domain.RefUpdate{{Ref: "refs/heads/" + refs[0]}, {Ref: "refs/heads/" + refs[1]}}})
+			require.NoError(t, err)
+			require.Len(t, fs, 2)
+			assert.Equal(t, "mr-head", fs[0].event)
+			assert.Equal(t, "mr-mergeability", fs[1].event)
+		})
+	}
+}
+
+func TestNonMRPushRoutingNeverEmitsMRHead(t *testing.T) {
+	t.Parallel()
+	l := liveStream{s: &Server{}, repo: "demo", view: "mrs", n: "1", ref: "feature", target: "main"}
+	fs, err := l.render(t.Context(), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "demo"), Updates: []domain.RefUpdate{{Ref: "refs/heads/feature"}}}})
+	require.NoError(t, err)
+	assert.Empty(t, fs)
+}

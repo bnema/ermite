@@ -304,10 +304,10 @@ test('touch control: lazy links enable toolbar; ordinary taps pass through; rang
 // Deterministic timers: no sleeps, and each test restores every mocked global.
 function clock() {
   const saved = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
-  const tasks = new Map(); let n = 0;
-  globalThis.setTimeout = (fn) => { tasks.set(++n, fn); return n; };
+  const tasks = new Map(); let n = 0, now = 0;
+  globalThis.setTimeout = (fn, delay = 0) => { tasks.set(++n, { fn, at: now + delay }); return n; };
   globalThis.clearTimeout = (id) => tasks.delete(id);
-  return { async tick() { const batch = [...tasks.values()]; tasks.clear(); for (const fn of batch) await fn(); },
+  return { async tick(ms = 300) { now += ms; const batch = [...tasks].filter(([, t]) => t.at <= now); for (const [id] of batch) tasks.delete(id); for (const [, t] of batch) await t.fn(); },
     size: () => tasks.size, restore() { Object.assign(globalThis, saved); } };
 }
 
@@ -336,7 +336,9 @@ test('head refresh debounces bursts, serializes requests, and reruns after an in
     apply: () => applied++, notice() {}, failed: () => assert.fail('unexpected failure') });
   try {
     r.request(); r.request(); r.request(); assert.equal(c.size(), 1);
-    const first = c.tick(); assert.equal(fetched, 1);
+    await c.tick(299); assert.equal(fetched, 0);
+    await c.tick(0); assert.equal(fetched, 0);
+    const first = c.tick(1); assert.equal(fetched, 1);
     r.request(); await c.tick(); assert.equal(fetched, 1, 'one fetch in flight');
     resolve('one'); await first; assert.equal(applied, 1); assert.equal(c.size(), 1);
     const second = c.tick(); assert.equal(fetched, 2); resolve('two'); await second;
@@ -344,15 +346,16 @@ test('head refresh debounces bursts, serializes requests, and reruns after an in
   } finally { c.restore(); }
 });
 
-test('typing during fetch defers the swap; manual refresh bypasses deferral', async () => {
+test('typing during fetch defers even manual refresh until the draft ends', async () => {
   const c = clock(); let blocked = false, applied = 0, resolve; const notices = [];
   const r = window.ermiteMR.refresher({ blocked: () => blocked,
-    fetchPage: () => new Promise((r) => { resolve = r; }), apply: (_page, manual) => { applied++; assert.equal(manual, true); },
+    fetchPage: () => new Promise((r) => { resolve = r; }), apply: () => { applied++; },
     notice: (v) => notices.push(v), failed: () => assert.fail('unexpected failure') });
   try {
     r.request(); const first = c.tick(); blocked = true; resolve('page'); await first;
     assert.equal(applied, 0); assert.deepEqual(notices, [true]);
-    r.request(true); const second = c.tick(); resolve('new page'); await second;
+    r.request(true); await c.tick(); assert.equal(applied, 0);
+    blocked = false; r.resume(); const second = c.tick(); resolve('new page'); await second;
     assert.equal(applied, 1); assert.equal(notices.at(-1), false);
   } finally { c.restore(); }
 });
@@ -386,8 +389,8 @@ test('viewport probe finds a stable path/side/line and restores its offset witho
   let lineTop = 160, headerTop = -200, found = true; const calls = [];
   const header = { getBoundingClientRect: () => rect(headerTop) };
   const row = { getBoundingClientRect: () => rect(lineTop), querySelector: () => link };
-  const link = { href: 'https://forge.test/demo/merge-requests/1?on=new:42:a.go#f2', closest: () => row };
-  const file = { id: 'f2', dataset: { file: 'a.go' }, querySelector: (s) => s.includes('summary') ? header : s.includes('href$') ? (assert.ok(s.includes('on=new:42:a.go#f3')), found ? link : null) : null };
+  const link = { href: 'https://forge.test/demo/merge-requests/1?on=new:42:a.go#f2', closest: () => row, getAttribute: () => link.href };
+  const file = { getBoundingClientRect: () => rect(headerTop), id: 'f2', dataset: { file: 'a.go' }, querySelector: (s) => s.includes('summary') ? header : s.includes('href$') ? (assert.ok(s.includes('on=new:42:a.go#f3')), found ? link : null) : null };
   const hit = { closest: (s) => s === 'tr' ? row : file };
   const diffs = { dataset: { diff: 'unified' }, getBoundingClientRect: () => rect(120), contains: () => true };
   globalThis.document = {
@@ -407,4 +410,46 @@ test('viewport probe finds a stable path/side/line and restores its offset witho
     found = 'gone'; window.ermiteMR.restoreAnchor({ ...a, y: 20000 });
     assert.deepEqual(calls.pop(), ['to', { top: 9200, behavior: 'instant' }]);
   } finally { for (const [k,v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; } }
+});
+
+test('empty edited default and focused cform controls protect drafts', () => {
+  const saved = document;
+  try {
+    globalThis.document = { querySelectorAll: () => [{ value: '', defaultValue: 'existing' }], activeElement: null };
+    assert.equal(window.ermiteMR.hasDraft(), true);
+    document.querySelectorAll = () => [];
+    document.activeElement = { closest: (s) => s === '.cform' ? {} : null };
+    assert.equal(window.ermiteMR.hasDraft(), true);
+  } finally { globalThis.document = saved; }
+});
+
+test('failure during a draft keeps pending and resumes after the draft ends', async () => {
+  const c = clock(); let blocked = false, reject, applied = 0, count = 0;
+  const r = window.ermiteMR.refresher({ blocked: () => blocked,
+    fetchPage: () => ++count === 1 ? new Promise((_, no) => { reject = no; }) : Promise.resolve('page'),
+    apply: () => applied++, notice() {}, failed: () => assert.fail('draft must defer fallback') });
+  try {
+    r.request(); const first = c.tick(); blocked = true; reject(new Error('offline')); await first;
+    assert.equal(r.pending(), true); assert.equal(applied, 0);
+    blocked = false; r.resume(); await c.tick(); assert.equal(applied, 1);
+  } finally { c.restore(); }
+});
+
+test('anchor restoration retains the server encoding of tilde and star paths', () => {
+  const saved = { document, CSS: globalThis.CSS, scrollBy: globalThis.scrollBy };
+  try {
+    globalThis.CSS = { escape: (s) => s };
+    globalThis.scrollBy = () => {};
+    for (const path of ['a~.go', 'a*.go']) {
+      const encoded = path.replace('*', '%2A');
+      const row = { getBoundingClientRect: () => ({ top: 5 }) };
+      const file = { id: 'f9', dataset: { file: path }, querySelector: (s) => {
+        if (s === '.dt.uni') return file;
+        assert.equal(s, 'a[href$="on=new:12:' + encoded + '#f9"]');
+        return { closest: () => row };
+      } };
+      globalThis.document = { querySelectorAll: () => [file], querySelector: () => ({ dataset: { diff: 'unified' } }) };
+      window.ermiteMR.restoreAnchor({ file: path, suffix: 'new:12:' + encoded, on: 'new:12:' + path, offset: 5 });
+    }
+  } finally { Object.assign(globalThis, saved); }
 });
