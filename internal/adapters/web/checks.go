@@ -81,7 +81,7 @@ func checksSummary(repo domain.RepoName, sha string, checks []ports.CheckView) C
 	return sum
 }
 
-// checksSection is the checks of the rail of a merge request, with the rule of
+// checksSection is the checks of the footer of a merge request, with the rule of
 // the repository that applies to them.
 func checksSection(repo domain.Repo, checks []ports.CheckView) ChecksSection {
 	sec := ChecksSection{}

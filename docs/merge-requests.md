@@ -104,3 +104,17 @@ report whether more exist; ancestry, rather than the bounded list, detects a
 rewrite. Merge-request details include at most `ports.MaxMergeRequestCommits`
 (100) commits. These history queries remain on the merge-request service
 because it owns the merge-git port.
+
+### Review page panels
+
+The main request card ends with a collapsed Commits / Checks footer. With
+scripts, arrow keys (and Home / End) switch its tabs; without scripts, opening
+the footer shows both sections. The checks summary above the diff opens the
+Checks tab and continues to update live. Commit totals use `N+` when the branch
+list is capped: the reader's existing count operation counts all reachable
+ancestors, not the source-minus-target range.
+
+The rail keeps Files (including its `g f` shortcut) and Verdicts. Merge settings
+are read-only information in the More (⋯) menu, available to every viewer.
+Signing-key information is also there when a merge box offers signed modes;
+merge actions remain restricted to their existing permissions.

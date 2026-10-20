@@ -434,7 +434,7 @@ templ CommitChecks(c ChecksSummary) {
 }
 
 // MRChecksSum is the state of the checks of a merge request in the bar above
-// the diff, a link to the checks of the rail. The event stream replaces it
+// the diff, a link to the checks of the card footer. The event stream replaces it
 // with the checks section (same event, fragments.go).
 templ MRChecksSum(c ChecksSummary) {
 	<a class="ck-sum mr-ck" id="mr-ck" href="#mr-checks" title={ c.Title }>
@@ -447,7 +447,7 @@ templ MRChecksSum(c ChecksSummary) {
 	</a>
 }
 
-// MRChecks is the checks section of the rail of a merge request.
+// MRChecks is the checks section of the footer of a merge request.
 templ MRChecks(c ChecksSection) {
 	<section aria-labelledby="r-checks" id="mr-checks">
 		<h2 id="r-checks">Checks <span class="count">{ itoa(len(c.Rows)) }</span></h2>

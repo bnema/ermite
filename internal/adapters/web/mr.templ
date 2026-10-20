@@ -147,6 +147,7 @@ templ MergeRequest(l Layout, p MRPage) {
 					@templ.Raw(string(p.Desc))
 				</article>
 			}
+			@mrFooter(p)
 		</section>
 		if p.Deleting != "" {
 			<p class="note" role="status">merged. the branch { p.Deleting } is being deleted.</p>
@@ -366,6 +367,65 @@ templ commentForm(f CommentForm, suffix string) {
 	</form>
 }
 
+templ mrFooter(p MRPage) {
+	<footer class="mr-footer">
+		<details id="mr-panels">
+			<summary>Commits <span class="count">{ p.CommitCount }</span> · Checks</summary>
+			<nav data-mr-tabs aria-label="Branch details">
+				<a id="mr-tab-commits" href="#mr-commits">Commits <span class="count">{ p.CommitCount }</span></a>
+				<a id="mr-tab-checks" href="#mr-checks">
+					{ "Checks " }
+					<span data-checks-label>
+						if p.ChecksSum.Total > 0 {
+							{ p.ChecksSum.Title }
+						} else {
+							no checks
+						}
+					</span>
+				</a>
+			</nav>
+			<div id="mr-commits" data-mr-panel aria-labelledby="mr-tab-commits">
+				<table class="mr-commits">
+					<thead><tr><th>Commit</th><th>Subject</th><th>Author</th><th>Date</th><th>Signature</th><th>Status</th></tr></thead>
+					<tbody>
+						for _, c := range p.Commits {
+							<tr data-new?={ c.New }>
+								<td><a href={ templ.SafeURL(c.Href) }>{ c.Short }</a></td>
+								<td>{ c.Subject }</td>
+								<td>{ c.Author }</td>
+								<td>
+									if c.WhenAt != "" {
+										<time datetime={ c.WhenAt }>{ c.When }</time>
+									}
+								</td>
+								<td>
+									if c.Sig != nil {
+										@signaturePill(c.Sig)
+									}
+								</td>
+								<td>
+									if c.New {
+										<span>new</span>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+				if len(p.Commits) == 0 {
+					<p class="dim">no commit to merge.</p>
+				}
+				if p.CommitsNote != "" {
+					<p class="note">{ p.CommitsNote }</p>
+				}
+			</div>
+			<div id="mr-checks-panel" data-mr-panel aria-labelledby="mr-tab-checks">
+				@MRChecks(p.Checks)
+			</div>
+		</details>
+	</footer>
+}
+
 templ mrRail(p MRPage) {
 	<section aria-labelledby="r-files" class="r-files">
 		<h2 id="r-files">
@@ -391,51 +451,6 @@ templ mrRail(p MRPage) {
 			</ul>
 		</section>
 	}
-	@MRChecks(p.Checks)
-	<section aria-labelledby="r-commits">
-		<h2 id="r-commits">Commits <span class="count">{ itoa(len(p.Commits)) }</span></h2>
-		<ul class="pcommits">
-			for _, c := range p.Commits {
-				<li data-new?={ c.New }>
-					<a href={ templ.SafeURL(c.Href) }>{ c.Short }</a>
-					<span class="s">{ c.Subject }</span>
-					if c.Sig != nil {
-						@signaturePill(c.Sig)
-					}
-					<span class="mute">
-						{ c.Author }
-						if c.WhenAt != "" {
-							{ " · " }<time datetime={ c.WhenAt }>{ c.When }</time>
-						}
-						if c.New {
-							{ " · new" }
-						}
-					</span>
-				</li>
-			}
-		</ul>
-		if len(p.Commits) == 0 {
-			<p class="dim">no commit to merge.</p>
-		}
-		if p.CommitsNote != "" {
-			<p class="note">{ p.CommitsNote }</p>
-		}
-	</section>
-	<section aria-labelledby="r-settings">
-		<h2 id="r-settings">Settings</h2>
-		<dl class="kv">
-			<dt>modes</dt>
-			<dd>{ strings.Join(p.Modes, ", ") }</dd>
-			<dt>checks</dt>
-			<dd>
-				if p.ChecksBlock {
-					failing ones block the merge
-				} else {
-					do not block the merge
-				}
-			</dd>
-		</dl>
-	</section>
 }
 
 // mrBar is the bar above the diff, which follows the review: the totals, the
@@ -450,8 +465,8 @@ templ mrBar(p MRPage) {
 		@MRChecksSum(p.ChecksSum)
 		if p.Box != nil {
 			@mergeMenu(p)
-			@moreMenu(p)
 		}
+		@moreMenu(p)
 	</div>
 }
 
@@ -474,18 +489,9 @@ templ mergeMenu(p MRPage) {
 			<kbd aria-hidden="true">M</kbd>
 		</summary>
 		<div class="menu-pop" role="group" aria-label="Merge">
-			<dl class="kv">
-				<dt>head</dt>
-				<dd>
-					if p.Box.HeadGone {
-						gone: the source branch was deleted
-					} else {
-						{ p.HeadShort }
-					}
-				</dd>
-				<dt>into</dt>
-				<dd>{ p.Target }</dd>
-			</dl>
+			if p.Box.HeadGone {
+				<p class="dim">the source branch was deleted</p>
+			}
 			if p.Box.Error != "" {
 				<p class="d-err" role="alert">{ p.Box.Error }</p>
 			}
@@ -519,15 +525,6 @@ templ mergeMenu(p MRPage) {
 							</label>
 						}
 					</fieldset>
-					if p.Box.Signed {
-						<p class="d-note" id="mr-signing">
-							squash and merge commits are signed with ermite's own key (generated on first start).
-							if p.Box.Fingerprint != "" {
-								fingerprint <code>{ p.Box.Fingerprint }</code>
-							}
-							<code>ermite signing-key show</code> prints it.
-						</p>
-					}
 					if p.Box.CanDeleteBranch {
 						<label class="d-check"><input type="checkbox" name="delete_branch" value="1"/> delete { p.Source } after the merge <kbd aria-hidden="true">D</kbd></label>
 					}
@@ -589,26 +586,52 @@ templ MRMergeabilityFragment(v MergeabilityView) {
 	@mrMergeabilitySlot(v)
 }
 
-// moreMenu is what else the owner does with an open request: mark the head
-// read, close it, merge it from a terminal.
+// moreMenu shows read-only settings to every viewer, and keeps owner actions
+// behind the same merge-box permission as before.
 templ moreMenu(p MRPage) {
 	<details class="menu omenu">
 		<summary class="btn icon" aria-label="More actions" title="more actions">⋯</summary>
 		<div class="menu-pop" role="group" aria-label="More actions">
-			if p.Box.CanMarkRead {
-				<form method="post" action={ templ.SafeURL(p.Box.ReadAction) }>
-					<input type="hidden" name="head_id" value={ p.Box.Head }/>
-					<button type="submit" title="the next visit can show only what changed after this head" class="btn" aria-keyshortcuts="Shift+R" data-read>Mark read <kbd aria-hidden="true">R</kbd></button>
+			<section class="merge-settings">
+				<h2>Merge settings</h2>
+				<dl class="kv">
+					<dt>modes</dt>
+					<dd>{ strings.Join(p.Modes, ", ") }</dd>
+					<dt>checks</dt>
+					<dd>
+						if p.ChecksBlock {
+							failing ones block the merge
+						} else {
+							do not block the merge
+						}
+					</dd>
+				</dl>
+			</section>
+			if p.Box != nil {
+				if p.Box.Signed {
+					<p class="d-note" id="mr-signing">
+						squash and merge commits are signed with ermite's own key (generated on first start).
+						if p.Box.Fingerprint != "" {
+							fingerprint <code>{ p.Box.Fingerprint }</code>
+						}
+						<code>ermite signing-key show</code> prints it.
+					</p>
+				}
+				if p.Box.CanMarkRead {
+					<form method="post" action={ templ.SafeURL(p.Box.ReadAction) }>
+						<input type="hidden" name="head_id" value={ p.Box.Head }/>
+						<button type="submit" title="the next visit can show only what changed after this head" class="btn" aria-keyshortcuts="Shift+R" data-read>Mark read <kbd aria-hidden="true">R</kbd></button>
+					</form>
+				}
+				<form method="post" action={ templ.SafeURL(p.Box.CloseAction) }>
+					<button type="submit" title="close without merging; the branch is kept" class="btn danger">Close</button>
 				</form>
-			}
-			<form method="post" action={ templ.SafeURL(p.Box.CloseAction) }>
-				<button type="submit" title="close without merging; the branch is kept" class="btn danger">Close</button>
-			</form>
-			if !p.Box.HeadGone && p.Box.ReadyAction == "" {
-				<details class="d-or">
-					<summary class="mute">or from a terminal</summary>
-					@CloneBlock(p.Box.CLI)
-				</details>
+				if !p.Box.HeadGone && p.Box.ReadyAction == "" {
+					<details class="d-or">
+						<summary class="mute">or from a terminal</summary>
+						@CloneBlock(p.Box.CLI)
+					</details>
+				}
 			}
 		</div>
 	</details>

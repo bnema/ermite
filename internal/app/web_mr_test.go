@@ -335,7 +335,7 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	all := b.get(base, as(token))
 	assert.Contains(t, all.body, `href="/proj/merge-requests/1/since"`)
 	assert.Contains(t, all.body, "since your last read")
-	assert.Contains(t, all.body, "<li data-new>", "the commit pushed since is marked")
+	assert.Contains(t, all.body, "<tr data-new>", "the commit pushed since is marked")
 	assert.Contains(t, all.body, "data-read>Mark read")
 	assert.Contains(t, all.body, "outdated", "the notes were written on the earlier head")
 	since := b.get(base+"/since", as(token))
