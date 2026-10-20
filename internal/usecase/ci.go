@@ -348,6 +348,15 @@ func (c *CI) Close(_ context.Context) {
 	c.mu.Unlock()
 	c.stop()
 	c.wg.Wait()
+	// Workers stop on cancellation; release the planning parts they did not take.
+	for {
+		select {
+		case t := <-c.queue:
+			t.done()
+		default:
+			return
+		}
+	}
 }
 
 func (c *CI) now() time.Time { return c.cfg.Clock.Now().UTC() }

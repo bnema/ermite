@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bnema/zerowrap"
@@ -33,6 +34,7 @@ const (
 
 // ciTrigger is a push waiting to be planned.
 type ciTrigger struct {
+	done    func()
 	repo    domain.RepoName
 	updates []domain.RefUpdate
 	actor   string
@@ -54,6 +56,9 @@ type ciTrigger struct {
 // with GITHUB_TOKEN start no run): that is what stops a workflow that pushes
 // from running itself again.
 func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, pusher domain.Principal) {
+	done := c.pushLifecycle(ctx, repo, 2)
+	defer done()
+
 	// Whoever pushed, the workflow files of the default branch may have changed.
 	// (Who pushed was recorded before the refs moved: Pushes.Check.)
 	c.markSchedulesDirty(repo, updates)
@@ -63,9 +68,10 @@ func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.
 	if pusher.ViaJobToken() {
 		log := zerowrap.FromCtx(ctx)
 		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("push by a job token starts no run")
+		done()
 		return
 	}
-	c.enqueue(ctx, repo, updates, domain.AuthorName(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher))
+	c.enqueuePush(ctx, repo, updates, domain.AuthorName(pusher), domain.PusherOf(pusher), domain.TrustedActor(pusher), done)
 }
 
 // OnMerge queues the move of a target branch by a merge. The actor of the run is
@@ -75,6 +81,9 @@ func (c *CI) OnPush(ctx context.Context, repo domain.RepoName, updates []domain.
 // merging. For the same reason the run is trusted (gets secrets) only when the
 // merger is: the displayed actor is not the one that decides.
 func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, merger domain.Principal) {
+	done := c.pushLifecycle(ctx, repo, 2)
+	defer done()
+
 	c.markSchedulesDirty(repo, updates)
 	// The merge moved a target branch: the test merges of the other requests
 	// into it are computed again (a merge starts no synchronize run), after the
@@ -83,12 +92,32 @@ func (c *CI) OnMerge(ctx context.Context, repo domain.RepoName, updates []domain
 	if merger.ViaJobToken() {
 		log := zerowrap.FromCtx(ctx)
 		log.Debug().Str("repo", repo.String()).Int("refs", len(updates)).Msg("merge by a job token starts no run")
+		done()
 		return
 	}
-	c.enqueue(ctx, repo, updates, domain.AuthorName(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger))
+	c.enqueuePush(ctx, repo, updates, domain.AuthorName(domain.Owner()), domain.PusherOf(merger), domain.TrustedActor(merger), done)
 }
 
 func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted bool) {
+	c.enqueuePush(ctx, repo, updates, actor, pusher, trusted, c.pushLifecycle(ctx, repo, 1))
+}
+
+// pushLifecycle holds one repository activity count until all parts finish.
+func (c *CI) pushLifecycle(ctx context.Context, repo domain.RepoName, parts int32) func() {
+	c.mu.Lock()
+	c.pushes[repo]++
+	c.mu.Unlock()
+	var remaining atomic.Int32
+	remaining.Store(parts)
+	return func() {
+		if remaining.Add(-1) == 0 {
+			c.finishPush(repo)
+			c.kickAutoMerge(ctx, repo)
+		}
+	}
+}
+
+func (c *CI) enqueuePush(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate, actor string, pusher domain.CIPusher, trusted bool, done func()) {
 	var kept []domain.RefUpdate
 	for _, u := range updates {
 		if strings.HasPrefix(u.Ref, "refs/heads/") || strings.HasPrefix(u.Ref, "refs/tags/") {
@@ -96,24 +125,25 @@ func (c *CI) enqueue(ctx context.Context, repo domain.RepoName, updates []domain
 		}
 	}
 	if len(kept) == 0 {
+		done()
 		return
 	}
-	t := ciTrigger{repo: repo, updates: kept, actor: actor, pusher: pusher, trusted: trusted, at: c.now(), log: zerowrap.FromCtx(ctx)}
+	t := ciTrigger{done: done, repo: repo, updates: kept, actor: actor, pusher: pusher, trusted: trusted, at: c.now(), log: zerowrap.FromCtx(ctx)}
 	c.mu.Lock()
-	closed := c.closed
-	if !closed {
-		c.pushes[repo]++
-	}
-	c.mu.Unlock()
-	if closed {
+	if c.closed {
+		c.mu.Unlock()
+		done()
 		return
 	}
 	select {
 	case c.queue <- t:
+		c.mu.Unlock()
 	default:
-		c.finishPush(repo)
+		c.mu.Unlock()
+		done()
 		t.log.Error().Str("repo", repo.String()).Int("refs", len(kept)).Msg("ci trigger queue is full: the workflows of this push are not run")
 	}
+
 }
 
 func (c *CI) triggerLoop() {
@@ -131,7 +161,7 @@ func (c *CI) triggerLoop() {
 // planPush plans one push; a panic or an error is logged and never escapes.
 func (c *CI) planPush(t ciTrigger) {
 	ctx := zerowrap.WithCtx(c.ctx, t.log)
-	defer func() { c.finishPush(t.repo); c.kickAutoMerge(ctx, t.repo) }()
+	defer t.done()
 	defer func() {
 		if r := recover(); r != nil {
 			t.log.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Str("repo", t.repo.String()).Msg("ci trigger panicked")

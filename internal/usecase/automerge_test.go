@@ -122,7 +122,7 @@ func TestAutoMergeWaitsWhileCINotSettledOrChecksPending(t *testing.T) {
 	enableAuto(t, r, mr)
 	activity := mocks.NewCIActivity(t)
 	activity.EXPECT().Settled(mock.Anything, r.repo, mr.Number, mr.Source, r.head()).Return(false).Once()
-	activity.EXPECT().Settled(mock.Anything, r.repo, mr.Number, mr.Source, r.head()).Return(true).Once()
+	activity.EXPECT().Settled(mock.Anything, r.repo, mr.Number, mr.Source, r.head()).Return(true).Twice()
 	checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}, {Status: domain.CIQueued, Name: "pending"}}, nil)
 	a := autoEvaluator(r, checks, activity, nil)
 	defer a.Close(r.ctx)
@@ -223,7 +223,7 @@ func TestAutoMergeCancelsWhenEnablerTokenRevokedOrExpired(t *testing.T) {
 	}
 }
 
-func TestAutoMergeCancelsOnPermanentMergeFailure(t *testing.T) {
+func TestAutoMergeWaitsOnConflictingOrBehindHead(t *testing.T) {
 	for _, mode := range []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash} {
 		t.Run(mode.String(), func(t *testing.T) {
 			r, mr, checks := autoRig(t)
@@ -237,7 +237,7 @@ func TestAutoMergeCancelsOnPermanentMergeFailure(t *testing.T) {
 			a := autoEvaluator(r, checks, nil, nil)
 			defer a.Close(r.ctx)
 			require.True(t, a.Evaluate(r.repo))
-			assert.Nil(t, storedAuto(t, r, mr).AutoMerge)
+			assert.NotNil(t, storedAuto(t, r, mr).AutoMerge)
 			assert.True(t, storedAuto(t, r, mr).IsOpen())
 		})
 	}
@@ -423,4 +423,18 @@ func TestAutoMergeResolvesEnablerAfterMergeGate(t *testing.T) {
 	got := storedAuto(t, r, mr)
 	require.Nil(t, got.AutoMerge)
 	require.True(t, got.IsOpen())
+}
+
+func TestAutoMergeRechecksSettledUnderMergeGate(t *testing.T) {
+	r, mr, checks := autoRig(t)
+	enableAuto(t, r, mr)
+	activity := mocks.NewCIActivity(t)
+	activity.EXPECT().Settled(mock.Anything, r.repo, mr.Number, mr.Source, r.head()).Return(true).Once()
+	activity.EXPECT().Settled(mock.Anything, r.repo, mr.Number, mr.Source, r.head()).Return(false).Once()
+	checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}}, nil).Once()
+	a := autoEvaluator(r, checks, activity, nil)
+	defer a.Close(r.ctx)
+	require.True(t, a.Evaluate(r.repo))
+	require.True(t, storedAuto(t, r, mr).IsOpen())
+	require.NotNil(t, storedAuto(t, r, mr).AutoMerge)
 }

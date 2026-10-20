@@ -1147,8 +1147,14 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 	} else if behind {
 		return domain.MergeRequest{}, fmt.Errorf("%w: nothing to merge, %q already contains %s", domain.ErrPreconditionFailed, mr.Target, head)
 	}
+	if opts.auto && opts.activity != nil && !opts.activity.Settled(ctx, name, number, mr.Source, head) {
+		return domain.MergeRequest{}, errAutoMergeWait
+	}
 	tree, err := m.checkMode(ctx, mr, mode, tip, head)
 	if err != nil {
+		if opts.auto && errors.Is(err, domain.ErrPreconditionFailed) {
+			return domain.MergeRequest{}, errAutoMergeWait
+		}
 		return domain.MergeRequest{}, err
 	}
 	if opts.auto && !settings.AllowAutoMerge {
@@ -1156,6 +1162,9 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 	}
 	if settings.FailingChecksBlock || opts.auto {
 		if err := m.checksAllow(ctx, name, head); err != nil {
+			if opts.auto && errors.Is(err, domain.ErrPreconditionFailed) {
+				return domain.MergeRequest{}, errAutoMergeWait
+			}
 			return domain.MergeRequest{}, err
 		}
 	}
