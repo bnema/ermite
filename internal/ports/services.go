@@ -125,6 +125,11 @@ type MergeRequestService interface {
 	Merge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params MergeParams) (MergeResult, error)
 	// MarkReady takes a draft out of draft: its title loses its "WIP:" prefix.
 	MarkReady(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error)
+	// EnableAutoMerge sets an open merge request to merge itself once its
+	// checks pass; enabling again replaces the mode and the head.
+	EnableAutoMerge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params EnableAutoMergeParams) (domain.MergeRequest, error)
+	// CancelAutoMerge turns auto-merge off on an open merge request.
+	CancelAutoMerge(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error)
 	// CountOpen is the number of open merge requests of a repository the
 	// principal can read. It reads no Git: the tab of every page shows it.
 	CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error)

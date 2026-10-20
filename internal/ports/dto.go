@@ -51,6 +51,14 @@ type UpdateRepoParams struct {
 	FailingChecksBlock *bool
 	// Issues replaces the issues mode.
 	Issues *domain.IssuesMode
+	// AllowAutoMerge replaces the setting of that name.
+	AllowAutoMerge *bool
+}
+
+// EnableAutoMergeParams are the settings of EnableAutoMerge.
+type EnableAutoMergeParams struct {
+	// Mode is the merge mode to use; empty means fast-forward.
+	Mode domain.MergeMode
 }
 
 // TokenPage is a page of stored tokens, newest first.

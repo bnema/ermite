@@ -4,6 +4,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -17,6 +18,16 @@ import (
 // mergeRequestService implements ermiteconnect.MergeRequestServiceHandler.
 type mergeRequestService struct {
 	mrs ports.MergeRequestService
+}
+
+// EnableAutoMerge is not wired yet.
+func (s *mergeRequestService) EnableAutoMerge(context.Context, *connect.Request[pb.EnableAutoMergeRequest]) (*connect.Response[pb.EnableAutoMergeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auto-merge is not implemented yet"))
+}
+
+// CancelAutoMerge is not wired yet.
+func (s *mergeRequestService) CancelAutoMerge(context.Context, *connect.Request[pb.CancelAutoMergeRequest]) (*connect.Response[pb.CancelAutoMergeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("auto-merge is not implemented yet"))
 }
 
 func (s *mergeRequestService) EditComment(ctx context.Context, req *connect.Request[pb.EditCommentRequest]) (*connect.Response[pb.EditCommentResponse], error) {

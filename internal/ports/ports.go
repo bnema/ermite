@@ -437,6 +437,12 @@ type MergeGit interface {
 	CountBehind(ctx context.Context, repo domain.RepoName, head, target domain.ObjectID, limit int) (n int, err error)
 }
 
+// AutoMergeTrigger asks the auto-merge evaluator to look at a repository
+// again. It only marks the repository and returns.
+type AutoMergeTrigger interface {
+	OnRepoChanged(ctx context.Context, repo domain.RepoName)
+}
+
 // MergeabilityTrigger queues mergeability checks. It only queues the work and
 // returns.
 type MergeabilityTrigger interface {

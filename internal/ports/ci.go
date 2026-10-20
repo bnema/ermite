@@ -896,3 +896,11 @@ type JobSettings struct {
 type CIJobSettings interface {
 	Resolve(ctx context.Context, req JobSettingsRequest) (JobSettings, error)
 }
+
+// CIActivity tells whether CI still has queued work that may create runs for a
+// head. *usecase.CI implements it.
+type CIActivity interface {
+	// Settled reports that no push trigger of the repository and no pull event
+	// of the merge request is queued or being planned.
+	Settled(ctx context.Context, repo domain.RepoName, number int64, source string, head domain.ObjectID) bool
+}

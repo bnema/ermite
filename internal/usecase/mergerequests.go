@@ -1520,3 +1520,13 @@ func (m *MergeRequests) PushSummary(ctx context.Context, p domain.Principal, rep
 	}
 	return ports.PushSummary{Count: len(commits), More: more}, nil
 }
+
+// EnableAutoMerge is not implemented yet.
+func (m *MergeRequests) EnableAutoMerge(_ context.Context, _ domain.Principal, _ domain.RepoName, _ int64, _ ports.EnableAutoMergeParams) (domain.MergeRequest, error) {
+	return domain.MergeRequest{}, fmt.Errorf("%w: auto-merge is not implemented yet", domain.ErrPreconditionFailed)
+}
+
+// CancelAutoMerge is not implemented yet.
+func (m *MergeRequests) CancelAutoMerge(_ context.Context, _ domain.Principal, _ domain.RepoName, _ int64) (domain.MergeRequest, error) {
+	return domain.MergeRequest{}, fmt.Errorf("%w: auto-merge is not implemented yet", domain.ErrPreconditionFailed)
+}
