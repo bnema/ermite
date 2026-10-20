@@ -346,15 +346,17 @@ test('head refresh debounces bursts, serializes requests, and reruns after an in
   } finally { c.restore(); }
 });
 
-test('typing during fetch defers even manual refresh until the draft ends', async () => {
-  const c = clock(); let blocked = false, applied = 0, resolve; const notices = [];
+test('typing during fetch defers even manual refresh until the draft ends', { timeout: 2000 }, async () => {
+  const c = clock(); let blocked = false, applied = 0, resolve, fetched = 0; const notices = [];
   const r = window.ermiteMR.refresher({ blocked: () => blocked,
-    fetchPage: () => new Promise((r) => { resolve = r; }), apply: () => { applied++; },
+    fetchPage: () => { fetched++; return new Promise((r) => { resolve = r; }); }, apply: () => { applied++; },
     notice: (v) => notices.push(v), failed: () => assert.fail('unexpected failure') });
   try {
     r.request(); const first = c.tick(); blocked = true; resolve('page'); await first;
     assert.equal(applied, 0); assert.deepEqual(notices, [true]);
-    r.request(true); await c.tick(); assert.equal(applied, 0);
+    r.request(true); const manual = c.tick();
+    assert.equal(fetched, 1, 'manual refresh must not start a fetch during a draft');
+    await manual; assert.equal(applied, 0);
     blocked = false; r.resume(); const second = c.tick(); resolve('new page'); await second;
     assert.equal(applied, 1); assert.equal(notices.at(-1), false);
   } finally { c.restore(); }
@@ -452,4 +454,46 @@ test('anchor restoration retains the server encoding of tilde and star paths', (
       window.ermiteMR.restoreAnchor({ file: path, suffix: 'new:12:' + encoded, on: 'new:12:' + path, offset: 5 });
     }
   } finally { Object.assign(globalThis, saved); }
+});
+
+for (const control of [
+  { type: 'radio', checked: true, defaultChecked: false },
+  { type: 'checkbox', checked: false, defaultChecked: true },
+  { type: 'number', name: 'start_line', value: '10', defaultValue: '12' },
+  { tagName: 'SELECT', options: [{ selected: true, defaultSelected: false }] },
+]) test(`changed ${control.name || control.type || control.tagName} remains a draft after blur`, () => {
+  const saved = document;
+  try {
+    globalThis.document = { activeElement: null, querySelectorAll(sel) {
+      assert.equal(sel, ':is(form.cform, .cmt form) :is(textarea, input, select)');
+      return [control];
+    } };
+    assert.equal(window.ermiteMR.hasDraft(), true);
+  } finally { globalThis.document = saved; }
+});
+
+test('intercepted Cancel resets the entire comment form', () => {
+  const saved = Object.fromEntries(['document', 'location', 'addEventListener', 'matchMedia'].map(k => [k, globalThis[k]]));
+  const c = clock(), handlers = {};
+  const diffs = { dataset: { view: 'split' }, querySelector() { return null; }, querySelectorAll() { return []; } };
+  const radio = { type: 'radio', checked: true, defaultChecked: false };
+  const line = { type: 'number', value: '2', defaultValue: '4' };
+  let reset = 0, prevented = false;
+  const form = { reset() { reset++; radio.checked = radio.defaultChecked; line.value = line.defaultValue; }, contains() { return false; } };
+  const cancel = { closest: () => form };
+  globalThis.document = { activeElement: null,
+    querySelector: s => ['#diffs', '#diffs[data-mr]'].includes(s) ? diffs : null,
+    querySelectorAll: s => s.includes('form.cform') ? [radio, line] : [],
+    addEventListener: (type, fn) => { handlers[type] = fn; } };
+  globalThis.location = { pathname: '/demo/merge-requests/1', hash: '', href: 'https://forge.test/demo/merge-requests/1', replace() {} };
+  globalThis.addEventListener = () => {};
+  globalThis.matchMedia = () => ({ matches: true, addEventListener() {} });
+  try {
+    window.ermiteMR.start();
+    window.ermiteMR.headChanged();
+    handlers.click({ target: { closest: () => cancel }, preventDefault() { prevented = true; } });
+    assert.equal(prevented, true);
+    assert.equal(reset, 1);
+    assert.equal(window.ermiteMR.hasDraft(), false);
+  } finally { Object.assign(globalThis, saved); c.restore(); }
 });

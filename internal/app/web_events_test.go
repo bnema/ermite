@@ -245,12 +245,19 @@ func TestWebEventsResumeAndGap(t *testing.T) {
 	}
 	s.cancel()
 
-	r := h.sse("topic=home", ids[0])
-	for _, want := range ids[1:] {
-		ev := r.next(t, watchWait)
-		assert.Equal(t, want, ev.id)
-		assert.Equal(t, "home-list", ev.name)
+	// A replacement stream resumes via the URL; reconnect headers still win.
+	for _, r := range []*sseStream{
+		h.sse("topic=home&after="+ids[0], ""),
+		h.sse("topic=home&after=invalid", ids[0]),
+	} {
+		for _, want := range ids[1:] {
+			ev := r.next(t, watchWait)
+			assert.Equal(t, want, ev.id)
+			assert.Equal(t, "home-list", ev.name)
+		}
+		r.cancel()
 	}
+	r := h.sse("topic=home", ids[2])
 	h.writeFile(wt, "live.txt", []byte("x\n"))
 	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/pub.git"), "main")
 	live := r.next(t, watchWait)

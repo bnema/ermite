@@ -44,7 +44,9 @@ import (
 // lists first: the banner counts the commits between that head and the new
 // tip, so it stays right however many pushes came in and however often the
 // stream reconnected. A Last-Event-ID header resumes the stream
-// (resume_after).
+// (resume_after). With no header, after=<event id> supplies the resume cursor
+// for a replacement stream. The header wins. Both use Watch's parseID
+// validation: an invalid or expired cursor produces a gap.
 //
 // Events, each with the id of the Watch event it comes from:
 //
@@ -188,8 +190,12 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	var startOnce sync.Once
 	start := func() { startOnce.Do(func() { close(started) }) }
 	finished := make(chan struct{})
+	resume := r.Header.Get("Last-Event-ID")
+	if resume == "" {
+		resume = q.Get("after")
+	}
 	params := ports.WatchParams{
-		Topics: []string{topic}, ResumeAfter: r.Header.Get("Last-Event-ID"),
+		Topics: []string{topic}, ResumeAfter: resume,
 		// The visitor is the client of the watch, for the limit per client.
 		Client: clientlimit.Key(clientlimit.ClientAddr(r, s.cfg.TrustedProxies)),
 		Ready:  start,

@@ -853,6 +853,17 @@
 // reloads the page. A stream the server refuses on reconnection (the
 // repository is gone, the session ended) makes the page reload.
 window.ermiteLive = (() => {
+  let connection = null;
+  let tearingDown = 0;
+  // hx-sse has no public close API. Its cleanup aborts the fetch and leaves
+  // reader.cancel() uncaught. Suppress only AbortError during our delete swap
+  // (through the rejection-reporting task), not ordinary stream/app failures.
+  window.addEventListener?.('unhandledrejection', (event) => {
+    if (tearingDown && event.reason?.name === 'AbortError') event.preventDefault();
+  });
+  window.addEventListener?.('htmx:sse:after:connection', (event) => {
+    if (event.target.matches?.('.hint-live')) connection = event.detail.connection;
+  });
   let reloading = false;
   let stopped = false;
   // A stream that drops and comes back within LOST_AFTER (a proxy or the
@@ -907,6 +918,19 @@ window.ermiteLive = (() => {
   // fitIn lays out the one-line chip lists of a fragment now in the page.
   const fitIn = (el) => { for (const ul of el.querySelectorAll('[data-fit]')) window.ermiteFit?.fit(ul); };
   return {
+    async teardown(remove) {
+      ++tearingDown;
+      try { return await remove(); }
+      finally { setTimeout(() => { --tearingDown; }, 0); }
+    },
+    resumeStream(element) {
+      // The public connection includes id-only messages as well as named ones.
+      const id = connection?.lastEventId;
+      if (!id) return;
+      const url = new URL(element.getAttribute('hx-sse:connect'), location.href);
+      url.searchParams.set('after', id);
+      element.setAttribute('hx-sse:connect', url.pathname + url.search);
+    },
     // lost is htmx:sse:close and htmx:sse:error: "live updates paused" shows
     // only if the stream is still down LOST_AFTER later.
     lost() {

@@ -456,7 +456,14 @@ window.ermiteMR = (() => {
   }
 
   function hasDraft() {
-    return $$('textarea').some((t) => (t.value !== t.defaultValue) || document.activeElement === t) ||
+    // Only form controls, never diff rows. Inline edits live in .cmt forms.
+    return $$(':is(form.cform, .cmt form) :is(textarea, input, select)').some((t) => {
+      if (['hidden', 'submit', 'button', 'reset', 'image'].includes(t.type)) return false;
+      if (document.activeElement === t) return true;
+      if (t.type === 'radio' || t.type === 'checkbox') return t.checked !== t.defaultChecked;
+      if (t.tagName === 'SELECT') return [...t.options].some((o) => o.selected !== o.defaultSelected);
+      return t.value !== t.defaultValue;
+    }) ||
       !!document.activeElement?.closest?.('.cform');
   }
 
@@ -523,8 +530,12 @@ window.ermiteMR = (() => {
     for (const el of $$('[autofocus]', fresh)) el.removeAttribute('autofocus');
     const marker = document.createComment('MR region');
     old.before(marker);
-    await window.htmx.swap({ sourceElement: old, target: old, text: '',
+    const remove = () => window.htmx.swap({ sourceElement: old, target: old, text: '',
       swap: 'delete settle:0 transition:false', push: false, replace: false });
+    if (old.matches('.hint-live')) {
+      window.ermiteLive.resumeStream(fresh);
+      await window.ermiteLive.teardown(remove);
+    } else await remove();
     const node = document.adoptNode(fresh);
     marker.replaceWith(node);
     window.htmx.process(node);
@@ -639,7 +650,7 @@ window.ermiteMR = (() => {
       if (!cancel || !headRefresh.pending() || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       const form = cancel.closest('.cform');
-      for (const t of $$('textarea', form)) t.value = t.defaultValue;
+      form.reset();
       if (form.contains(document.activeElement)) document.activeElement.blur();
       headRefresh.resume();
     });
