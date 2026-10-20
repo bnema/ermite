@@ -120,16 +120,16 @@ func (_c *MirrorWarner_Badge_Call) RunAndReturn(run func(ctx context.Context, p 
 }
 
 // Warning provides a mock function for the type MirrorWarner
-func (_mock *MirrorWarner) Warning(ctx context.Context, repo domain.RepoName) string {
-	ret := _mock.Called(ctx, repo)
+func (_mock *MirrorWarner) Warning(ctx context.Context, p domain.Principal, repo domain.RepoName) string {
+	ret := _mock.Called(ctx, p, repo)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Warning")
 	}
 
 	var r0 string
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) string); ok {
-		r0 = returnFunc(ctx, repo)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) string); ok {
+		r0 = returnFunc(ctx, p, repo)
 	} else {
 		r0 = ret.Get(0).(string)
 	}
@@ -143,24 +143,30 @@ type MirrorWarner_Warning_Call struct {
 
 // Warning is a helper method to define mock.On call
 //   - ctx context.Context
+//   - p domain.Principal
 //   - repo domain.RepoName
-func (_e *MirrorWarner_Expecter) Warning(ctx any, repo any) *MirrorWarner_Warning_Call {
-	return &MirrorWarner_Warning_Call{Call: _e.mock.On("Warning", ctx, repo)}
+func (_e *MirrorWarner_Expecter) Warning(ctx any, p any, repo any) *MirrorWarner_Warning_Call {
+	return &MirrorWarner_Warning_Call{Call: _e.mock.On("Warning", ctx, p, repo)}
 }
 
-func (_c *MirrorWarner_Warning_Call) Run(run func(ctx context.Context, repo domain.RepoName)) *MirrorWarner_Warning_Call {
+func (_c *MirrorWarner_Warning_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName)) *MirrorWarner_Warning_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 domain.RepoName
+		var arg1 domain.Principal
 		if args[1] != nil {
-			arg1 = args[1].(domain.RepoName)
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
 		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -171,7 +177,7 @@ func (_c *MirrorWarner_Warning_Call) Return(s string) *MirrorWarner_Warning_Call
 	return _c
 }
 
-func (_c *MirrorWarner_Warning_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName) string) *MirrorWarner_Warning_Call {
+func (_c *MirrorWarner_Warning_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName) string) *MirrorWarner_Warning_Call {
 	_c.Call.Return(run)
 	return _c
 }

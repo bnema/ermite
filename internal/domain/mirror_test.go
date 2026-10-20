@@ -19,6 +19,7 @@ func TestMirrorURL(t *testing.T) {
 	}{
 		{"git@host:acme/repo", true}, {"host:repo", true}, {"ssh://git@host:2222/acme/repo", true}, {"ssh://[::1]/repo", true},
 		{"https://host/repo", false}, {"file:///repo", false}, {"git@host:-path", false}, {"ssh://host/-path", false}, {":repo", false}, {"ssh:///repo", false}, {"ssh://git:secret@host/repo", false}, {"user:secret@host:repo", false}, {"host:repo\n", false}, {"ssh://host:0/repo", false},
+		{"-oProxyCommand=x@h:p", false}, {"-oProxyCommand=x@h:p/q", false}, {"ssh://-ofoo@h/p", false}, {"ssh://-oHost/p", false}, {"-h:repo", false}, {"git@-h:repo", false}, {"ssh://git@-h/repo", false},
 	} {
 		t.Run(tt.s, func(t *testing.T) {
 			e := ValidateMirrorURL(tt.s)
@@ -79,7 +80,11 @@ func TestMirrorCronValidation(t *testing.T) {
 		spec  string
 		gap   time.Duration
 		valid bool
-	}{{"*/5 * * * *", 5 * time.Minute, true}, {"*/4 * * * *", 4 * time.Minute, false}, {"0 3 * * *", 24 * time.Hour, true}, {"0 0 29 2 *", 0, true}, {"bad", 0, false}} {
+	}{{"*/5 * * * *", 5 * time.Minute, true}, {"*/4 * * * *", 4 * time.Minute, false}, {"0 3 * * *", 24 * time.Hour, true}, {"0 0 29 2 *", 0, true}, {"bad", 0, false},
+		{"0,59 0,23 1,31 1,12 *", time.Minute, false}, // 31 Dec 23:59 and 1 Jan 00:00
+		{"0,59 0,23 1,28 2,3 *", time.Minute, false},  // 28 Feb 23:59 and 1 Mar 00:00 of a non-leap year
+		{"0,59 0,23 29 2 *", 59 * time.Minute, true},
+	} {
 		t.Run(tt.spec, func(t *testing.T) {
 			c, e := ParseCron(tt.spec)
 			if e == nil && CronMinGap(c) != tt.gap {
@@ -124,6 +129,22 @@ func TestMirrorNextCron(t *testing.T) {
 	}
 	if _, ok := NextCron(CronSchedule{}, start); ok {
 		t.Fatal("empty cron fired")
+	}
+	// A wall clock repeated by a fall-back transition fires once.
+	c, _ = ParseCron("30 1 * * *")
+	got, ok = NextCron(CronSchedule{Cron: c, Loc: loc}, time.Date(2024, 11, 3, 5, 30, 0, 0, time.UTC))
+	if want := time.Date(2024, 11, 4, 1, 30, 0, 0, loc); !ok || !got.Equal(want) {
+		t.Fatal(got, ok)
+	}
+	// A rare entry is found within a year, not beyond.
+	c, _ = ParseCron("0 0 29 2 *")
+	got, ok = NextCron(CronSchedule{Cron: c}, time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC))
+	if ok {
+		t.Fatal("Feb 29 is more than a year away", got)
+	}
+	got, ok = NextCron(CronSchedule{Cron: c}, time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC))
+	if want := time.Date(2028, 2, 29, 0, 0, 0, 0, time.UTC); !ok || !got.Equal(want) {
+		t.Fatal(got, ok)
 	}
 }
 func TestMirrorTransitions(t *testing.T) {
@@ -192,13 +213,29 @@ func TestMirrorClassify(t *testing.T) {
 	for _, tt := range []struct {
 		s string
 		c MirrorFailureClass
-	}{{"non-fast-forward", MirrorClassDiverged}, {"fetch first", MirrorClassDiverged}, {"Permission denied (publickey)", MirrorClassAuthDenied}, {"Repository not found", MirrorClassRemoteNotFound}, {"does not appear to be a git repository", MirrorClassRemoteNotFound}, {"REMOTE HOST IDENTIFICATION HAS CHANGED", MirrorClassHostKey}, {"Host key verification failed", MirrorClassHostKey}, {"timeout", MirrorClassTransient}} {
-		if c := ClassifyMirrorOutput(tt.s, errors.New("exit"), false); c != tt.c {
-			t.Fatal(tt, c)
-		}
+	}{{"non-fast-forward", MirrorClassDiverged}, {"fetch first", MirrorClassDiverged}, {"Permission denied (publickey)", MirrorClassAuthDenied}, {"Repository not found", MirrorClassRemoteNotFound}, {"does not appear to be a git repository", MirrorClassRemoteNotFound}, {"REMOTE HOST IDENTIFICATION HAS CHANGED", MirrorClassHostKey}, {"Host key verification failed", MirrorClassHostKey}, {"timeout", MirrorClassTransient},
+		{"Permission denied (publickey,password).", MirrorClassAuthDenied}, {"Permission denied (password,publickey,keyboard-interactive).", MirrorClassAuthDenied},
+		{"ERROR: Permission to x/y.git denied to deploy key", MirrorClassAuthDenied}, {"remote: Permission to x/y.git denied to someone.", MirrorClassAuthDenied},
+	} {
+		t.Run(tt.s, func(t *testing.T) {
+			if c := ClassifyMirrorOutput(tt.s, errors.New("exit"), false); c != tt.c {
+				t.Fatal(c)
+			}
+		})
 	}
 	if ClassifyMirrorOutput("", nil, false) != MirrorClassNone || ClassifyMirrorOutput("non-fast-forward", nil, true) != MirrorClassTransient {
 		t.Fatal("classification")
+	}
+}
+func TestMirrorRecoveryFromAnyState(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, state := range []MirrorState{MirrorDisabled, MirrorOK, MirrorFailing, MirrorPaused} {
+		for _, noop := range []bool{false, true} {
+			tr := ApplyMirrorOutcome(MirrorStatus{State: state, ConsecutiveFailures: 2, Class: MirrorClassTransient, Detail: "old"}, MirrorOutcome{NoOp: noop}, now)
+			if tr.Recovered != (state == MirrorFailing || state == MirrorPaused) || tr.FailedEvent || tr.Status.ConsecutiveFailures != 0 || tr.Status.Class != "" || tr.Status.Reason != "" || !tr.Status.NextRetryAt.IsZero() {
+				t.Fatal(state, tr)
+			}
+		}
 	}
 }
 func TestMirrorRefs(t *testing.T) {
@@ -253,43 +290,6 @@ func TestMirrorKey(t *testing.T) {
 	}
 }
 
-func TestMirrorRecoveryFromFailing(t *testing.T) {
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for _, state := range []MirrorState{MirrorDisabled, MirrorOK, MirrorFailing, MirrorPaused} {
-		for _, noop := range []bool{false, true} {
-			tr := ApplyMirrorOutcome(MirrorStatus{State: state, ConsecutiveFailures: 2, Class: MirrorClassTransient, Detail: "old"}, MirrorOutcome{NoOp: noop}, now)
-			if tr.Recovered != (state == MirrorFailing || state == MirrorPaused) || tr.FailedEvent || tr.Status.ConsecutiveFailures != 0 || tr.Status.Class != "" || tr.Status.Reason != "" || !tr.Status.NextRetryAt.IsZero() {
-				t.Fatal(state, tr)
-			}
-		}
-	}
-}
-func TestMirrorNextCronFallBack(t *testing.T) {
-	loc, _ := time.LoadLocation("America/New_York")
-	c, _ := ParseCron("30 1 * * *")
-	// After the first 01:30, the repeated 01:30 must not fire again.
-	start := time.Date(2024, 11, 3, 5, 30, 0, 0, time.UTC)
-	got, ok := NextCron(CronSchedule{Cron: c, Loc: loc}, start)
-	want := time.Date(2024, 11, 4, 1, 30, 0, 0, loc)
-	if !ok || !got.Equal(want) {
-		t.Fatal(got, ok)
-	}
-}
-
-func TestMirrorCronYearBoundary(t *testing.T) {
-	spec := "0,59 0,23 1,31 1,12 *"
-	c, err := ParseCron(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := CronMinGap(c); got != time.Minute {
-		t.Fatal(got)
-	}
-	if err := ValidateMirrorRepoConfig(MirrorRepoConfig{Cron: spec}); err == nil {
-		t.Fatal("accepted one-minute year-boundary gap")
-	}
-}
-
 func TestMirrorResolutionOnlyParsesCron(t *testing.T) {
 	g := MirrorGlobalConfig{Enabled: true, URLTemplate: "host:{repo}", Cron: "* * * * *"}
 	repo, _ := ParseRepoName("demo")
@@ -298,18 +298,5 @@ func TestMirrorResolutionOnlyParsesCron(t *testing.T) {
 	}
 	if ValidateMirrorGlobalConfig(g) == nil {
 		t.Fatal("mutation must still reject short gap")
-	}
-}
-
-func TestMirrorClassifyAuthVariants(t *testing.T) {
-	for _, s := range []string{
-		"Permission denied (publickey,password).",
-		"Permission denied (password,publickey,keyboard-interactive).",
-		"ERROR: Permission to x/y.git denied to deploy key",
-		"remote: Permission to x/y.git denied to someone.",
-	} {
-		if got := ClassifyMirrorOutput(s, errors.New("exit"), false); got != MirrorClassAuthDenied {
-			t.Fatalf("%q: %s", s, got)
-		}
 	}
 }

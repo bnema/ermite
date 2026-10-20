@@ -318,22 +318,22 @@ func (_c *MirrorService_RemoveRepoMirror_Call) RunAndReturn(run func(ctx context
 }
 
 // RotateKey provides a mock function for the type MirrorService
-func (_mock *MirrorService) RotateKey(ctx context.Context, p domain.Principal) (domain.MirrorPublicKey, error) {
+func (_mock *MirrorService) RotateKey(ctx context.Context, p domain.Principal) (ports.MirrorKeyRotation, error) {
 	ret := _mock.Called(ctx, p)
 
 	if len(ret) == 0 {
 		panic("no return value specified for RotateKey")
 	}
 
-	var r0 domain.MirrorPublicKey
+	var r0 ports.MirrorKeyRotation
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (domain.MirrorPublicKey, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (ports.MirrorKeyRotation, error)); ok {
 		return returnFunc(ctx, p)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) domain.MirrorPublicKey); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) ports.MirrorKeyRotation); ok {
 		r0 = returnFunc(ctx, p)
 	} else {
-		r0 = ret.Get(0).(domain.MirrorPublicKey)
+		r0 = ret.Get(0).(ports.MirrorKeyRotation)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal) error); ok {
 		r1 = returnFunc(ctx, p)
@@ -373,12 +373,12 @@ func (_c *MirrorService_RotateKey_Call) Run(run func(ctx context.Context, p doma
 	return _c
 }
 
-func (_c *MirrorService_RotateKey_Call) Return(mirrorPublicKey domain.MirrorPublicKey, err error) *MirrorService_RotateKey_Call {
-	_c.Call.Return(mirrorPublicKey, err)
+func (_c *MirrorService_RotateKey_Call) Return(mirrorKeyRotation ports.MirrorKeyRotation, err error) *MirrorService_RotateKey_Call {
+	_c.Call.Return(mirrorKeyRotation, err)
 	return _c
 }
 
-func (_c *MirrorService_RotateKey_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (domain.MirrorPublicKey, error)) *MirrorService_RotateKey_Call {
+func (_c *MirrorService_RotateKey_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (ports.MirrorKeyRotation, error)) *MirrorService_RotateKey_Call {
 	_c.Call.Return(run)
 	return _c
 }

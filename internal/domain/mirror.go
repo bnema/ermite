@@ -72,7 +72,7 @@ func mirrorURLParts(s string) (host, path string, err error) {
 			if _, ok := u.User.Password(); ok {
 				return bad()
 			}
-			if u.User.Username() == "" {
+			if u.User.Username() == "" || strings.HasPrefix(u.User.Username(), "-") {
 				return bad()
 			}
 		}
@@ -95,7 +95,7 @@ func mirrorURLParts(s string) (host, path string, err error) {
 		}
 		if strings.Contains(host, "@") {
 			user, h, _ := strings.Cut(host, "@")
-			if user == "" || strings.ContainsAny(user, ":/@") {
+			if user == "" || strings.HasPrefix(user, "-") || strings.ContainsAny(user, ":/@") {
 				return bad()
 			}
 			host = h
@@ -156,12 +156,18 @@ func mirrorCron(spec string) (Cron, error) {
 // "url_template", "cron", "url": cron parsed with ParseCron and checked by CronMinGap >= MirrorMinInterval;
 // url_template must contain the placeholder; when Enabled both are required.
 func ValidateMirrorGlobalConfig(g MirrorGlobalConfig) error {
+	return ValidateMirrorGlobalConfigWith(g, ValidateMirrorURL)
+}
+
+// ValidateMirrorGlobalConfigWith is ValidateMirrorGlobalConfig with another URL check, for
+// deployments and tests that accept more than SSH URLs.
+func ValidateMirrorGlobalConfigWith(g MirrorGlobalConfig, validateURL func(string) error) error {
 	var fields []FieldViolation
 	if g.Enabled || g.URLTemplate != "" {
 		repo, _ := ParseRepoName("repo")
 		u, e := ExpandMirrorURL(g.URLTemplate, repo)
 		if e == nil {
-			e = ValidateMirrorURL(u)
+			e = validateURL(u)
 		}
 		if e != nil {
 			fields = append(fields, FieldViolation{"url_template", "must be an SSH URL template containing {repo}"})
@@ -178,9 +184,14 @@ func ValidateMirrorGlobalConfig(g MirrorGlobalConfig) error {
 	return nil
 }
 func ValidateMirrorRepoConfig(r MirrorRepoConfig) error {
+	return ValidateMirrorRepoConfigWith(r, ValidateMirrorURL)
+}
+
+// ValidateMirrorRepoConfigWith is ValidateMirrorRepoConfig with another URL check.
+func ValidateMirrorRepoConfigWith(r MirrorRepoConfig, validateURL func(string) error) error {
 	var fields []FieldViolation
 	if r.URL != "" {
-		if e := ValidateMirrorURL(r.URL); e != nil {
+		if e := validateURL(r.URL); e != nil {
 			fields = append(fields, FieldViolation{"url", e.Error()})
 		}
 	}
@@ -197,6 +208,11 @@ func ValidateMirrorRepoConfig(r MirrorRepoConfig) error {
 
 // ResolveMirror: override wins even when global is disabled; else global, unless excluded.
 func ResolveMirror(g MirrorGlobalConfig, r *MirrorRepoConfig, repo RepoName) (MirrorTarget, error) {
+	return ResolveMirrorWith(g, r, repo, ValidateMirrorURL)
+}
+
+// ResolveMirrorWith is ResolveMirror with another URL check.
+func ResolveMirrorWith(g MirrorGlobalConfig, r *MirrorRepoConfig, repo RepoName, validateURL func(string) error) (MirrorTarget, error) {
 	t := MirrorTarget{Repo: repo, Source: MirrorSourceNone}
 	if r != nil && r.URL != "" {
 		t.URL = r.URL
@@ -224,7 +240,7 @@ func ResolveMirror(g MirrorGlobalConfig, r *MirrorRepoConfig, repo RepoName) (Mi
 			t.AllBranches = *r.AllBranches
 		}
 	}
-	if e := ValidateMirrorURL(t.URL); e != nil {
+	if e := validateURL(t.URL); e != nil {
 		return t, e
 	}
 	// Mutation boundaries validate the minimum gap; resolution only parses.

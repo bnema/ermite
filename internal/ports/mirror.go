@@ -16,10 +16,10 @@ type MirrorStore interface {
 	GetRepoConfig(ctx context.Context, repo domain.RepoName) (domain.MirrorRepoConfig, error) // domain.ErrNotFound when none
 	PutRepoConfig(ctx context.Context, c domain.MirrorRepoConfig) error                       // ErrNotFound when the repository is gone (guardRepoKey)
 	DeleteRepoConfig(ctx context.Context, repo domain.RepoName) error                         // missing is not an error
-	ListRepoConfigs(ctx context.Context) ([]domain.MirrorRepoConfig, error)                   // by repo name
+	ListRepoConfigs(ctx context.Context) ([]domain.MirrorRepoConfig, error)                   // by repo name; with ListStatus, what ListStatus of the service reads
 	GetStatus(ctx context.Context, repo domain.RepoName) (domain.MirrorStatus, error)         // ErrNotFound when none
 	PutStatus(ctx context.Context, s domain.MirrorStatus) error
-	ListStatus(ctx context.Context) ([]domain.MirrorStatus, error)
+	ListStatus(ctx context.Context) ([]domain.MirrorStatus, error)                        // stored statuses only
 	GetSnapshot(ctx context.Context, repo domain.RepoName) (domain.MirrorSnapshot, error) // ErrNotFound when none
 	PutSnapshot(ctx context.Context, repo domain.RepoName, s domain.MirrorSnapshot) error
 }
@@ -72,15 +72,24 @@ type MirrorTrigger interface {
 
 // MirrorWarner is what the post-receive hook and the web ask. *usecase.Mirrors implements it.
 type MirrorWarner interface {
-	// Warning is non-empty when the mirror of repo is failing or paused ("mirror to github.com:x/y is paused: <reason>").
-	Warning(ctx context.Context, repo domain.RepoName) string
+	// Warning is non-empty when the mirror of repo is failing or paused ("mirror to github.com:x/y is paused: <reason>")
+	// and p has repo:admin on repo: the remote and the reason are for admins only.
+	Warning(ctx context.Context, p domain.Principal, repo domain.RepoName) string
 	// Badge is the state and reason for a viewer: reason is "" unless p may administer the repository.
 	Badge(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.MirrorState, string)
 }
 type MirrorSyncResult struct {
+	Repo   domain.RepoName
 	Status domain.MirrorStatus
 	Queued bool
 	NoOp   bool
+	Err    error // SyncAll only: why this repository failed; the other repositories still ran
+}
+
+// MirrorKeyRotation is the outcome of RotateKey; Previous is zero when no key existed.
+type MirrorKeyRotation struct {
+	Key      domain.MirrorPublicKey
+	Previous domain.MirrorPublicKey
 }
 
 // MirrorService is the inbound port of the API. Authorization: key show needs a non-anonymous
@@ -88,7 +97,7 @@ type MirrorSyncResult struct {
 // Sync need Allows(ScopeRepoAdmin, repo); GetStatus needs read access to the repository.
 type MirrorService interface {
 	ShowKey(ctx context.Context, p domain.Principal) (domain.MirrorPublicKey, error) // generates lazily
-	RotateKey(ctx context.Context, p domain.Principal) (domain.MirrorPublicKey, error)
+	RotateKey(ctx context.Context, p domain.Principal) (MirrorKeyRotation, error)
 	GetGlobalConfig(ctx context.Context, p domain.Principal) (domain.MirrorGlobalConfig, error)
 	SetGlobalConfig(ctx context.Context, p domain.Principal, patch MirrorGlobalPatch) (domain.MirrorGlobalConfig, error)
 	SetRepoMirror(ctx context.Context, p domain.Principal, c domain.MirrorRepoConfig) (domain.MirrorTarget, error)
@@ -97,6 +106,7 @@ type MirrorService interface {
 	GetStatus(ctx context.Context, p domain.Principal, repo domain.RepoName) (MirrorStatusView, error)
 	ListStatus(ctx context.Context, p domain.Principal) ([]MirrorStatusView, error)
 	Sync(ctx context.Context, p domain.Principal, repo domain.RepoName, force bool) (MirrorSyncResult, error)
+	// SyncAll skips disabled mirrors and continues past failures, reported per repository in Err.
 	SyncAll(ctx context.Context, p domain.Principal, force bool) ([]MirrorSyncResult, error)
 }
 type MirrorGlobalPatch struct {

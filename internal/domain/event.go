@@ -310,7 +310,6 @@ type MirrorFailed struct {
 	Repo       RepoName
 	State      MirrorState
 	Class      MirrorFailureClass
-	Reason     string
 	At         time.Time
 	Visibility Visibility
 	CreatedAt  time.Time
