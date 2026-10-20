@@ -100,17 +100,21 @@ func TestCheckLineBeyondFileLimit(t *testing.T) {
 	r.seed()
 	r.sh("checkout", "-q", "-B", "feat", "main")
 	r.commit(author, "big.txt", bigContent(3000), "big")
+	r.commit(author, "go.sum", "h1:x\nh1:y\n", "sum")
 	r.push("feat")
 	n := r.open("feat").Number
 
-	add := func(line int) error {
-		_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, n, ports.AddCommentParams{Path: "big.txt", Line: line, Side: domain.SideNew, Text: "c"})
+	add := func(path string, line int) error {
+		_, err := r.mrs.AddComment(r.ctx, mrW, r.repo, n, ports.AddCommentParams{Path: path, Line: line, Side: domain.SideNew, Text: "c"})
 		return err
 	}
-	require.NoError(t, add(1))
-	require.NoError(t, add(2500))
-	require.NoError(t, add(3000))
-	require.ErrorIs(t, add(3001), domain.ErrInvalid)
+	require.NoError(t, add("big.txt", 1))
+	require.NoError(t, add("big.txt", 2500))
+	require.NoError(t, add("big.txt", 3000))
+	require.ErrorIs(t, add("big.txt", 3001), domain.ErrInvalid)
+	// A generated file is collapsed in the web windows, but loadable: its
+	// lines can be commented on.
+	require.NoError(t, add("go.sum", 2))
 }
 
 func TestBrowseGetCommitFullWindow(t *testing.T) {
@@ -138,4 +142,25 @@ func TestBrowseGetCommitFullWindow(t *testing.T) {
 
 	_, err = b.GetCommit(r.ctx, root, r.repo, rev, ports.GetCommitOptions{Files: &ports.FileWindow{From: 0, To: 2, Full: true}})
 	require.ErrorIs(t, err, domain.ErrInvalid)
+}
+
+func TestBrowseGetCommitWindowCollapsesGenerated(t *testing.T) {
+	r := newMRRig(t)
+	r.seed()
+	r.commit(author, "go.sum", "h1:x\n", "sum")
+	id := r.head()
+	r.push("main")
+	b := usecase.NewBrowse(r.store, r.git)
+	rev := domain.RevisionOf(id)
+
+	d, err := b.GetCommit(r.ctx, root, r.repo, rev, ports.GetCommitOptions{})
+	require.NoError(t, err)
+	require.Len(t, d.Diff.Files, 1)
+	assert.Equal(t, domain.OmitNone, d.Diff.Files[0].Omitted, "API reads keep generated files")
+
+	d, err = b.GetCommit(r.ctx, root, r.repo, rev, ports.GetCommitOptions{Files: &ports.FileWindow{From: 0, To: 25}})
+	require.NoError(t, err)
+	require.Len(t, d.Diff.Files, 1)
+	assert.Equal(t, domain.OmitGenerated, d.Diff.Files[0].Omitted, "web windows collapse them")
+	assert.Empty(t, d.Diff.Files[0].Hunks)
 }
