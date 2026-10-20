@@ -67,6 +67,9 @@ type Layout struct {
 	// Passkeys tells that the passkey routes exist: the header then links to
 	// them.
 	Passkeys bool
+	// Lazy loads the loader of the collapsed and lazy files of a diff
+	// (lazy.js): the commit, compare and merge request pages.
+	Lazy bool
 	// MR loads the script of the merge request page (mr.js).
 	MR bool
 	// IssueForm loads the script of the public issue form (issue-form.js).

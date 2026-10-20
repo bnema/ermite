@@ -99,7 +99,10 @@ func TestFileNotes(t *testing.T) {
 		{"rename", domain.FileDiff{Status: domain.FileRenamed, Similarity: 90, OldMode: 0o100644, NewMode: 0o100644}, "renamed, 90% similar", true},
 		{"copy", domain.FileDiff{Status: domain.FileCopied, Similarity: 80}, "copied, 80% similar", true},
 		{"type change", domain.FileDiff{Status: domain.FileTypeChanged}, "type changed", true},
-		{"truncated", domain.FileDiff{Omitted: domain.OmitLarge, Additions: 2500}, "too large", false},
+		{"generated", domain.FileDiff{Omitted: domain.OmitGenerated, Additions: 5}, "generated file: collapsed", true},
+		{"large", domain.FileDiff{Omitted: domain.OmitLarge, Additions: 2000, Deletions: 500}, "large diff (2500 lines changed): collapsed", true},
+		{"budget", domain.FileDiff{Omitted: domain.OmitBudget, Additions: 40}, "collapsed to keep the page light", true},
+		{"unavailable", domain.FileDiff{Omitted: domain.OmitUnavailable, Additions: 40}, "too large to show in the browser (over 8 MiB of text)", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -190,4 +193,55 @@ func TestContextGaps(t *testing.T) {
 	o := diffFiles(odd)
 	contextGaps(o, odd, "/r/context/c")
 	assert.Nil(t, o[0].Hunks[0].Gap)
+}
+
+func TestDiffNote(t *testing.T) {
+	t.Parallel()
+	files := func(w ...domain.FileOmission) domain.Diff {
+		var d domain.Diff
+		for _, o := range w {
+			d.Files = append(d.Files, domain.FileDiff{Omitted: o})
+		}
+		return d
+	}
+	assert.Empty(t, diffNote(files(domain.OmitGenerated, domain.OmitLarge, domain.OmitBudget), 3, 3), "collapsed files have no global note")
+	d := files(domain.OmitNone)
+	d.Truncated = true
+	assert.Equal(t, "this diff is incomplete: 299 files are not listed. the totals above count everything; clone the repository to read the rest.", diffNote(d, 1, 300))
+	assert.Equal(t, "this diff is incomplete: 2 files are too large to show. the totals above count everything; clone the repository to read the rest.",
+		diffNote(files(domain.OmitUnavailable, domain.OmitLarge, domain.OmitUnavailable), 3, 3))
+	d = files(domain.OmitUnavailable)
+	d.Truncated = true
+	assert.Contains(t, diffNote(d, 1, 5), "4 files are not listed, 1 file is too large to show")
+}
+
+func TestCollapsedFileMarkup(t *testing.T) {
+	t.Parallel()
+	view := DiffView{ShowUnified: true}
+	src := "/demo/commit/abc1234/files"
+	for _, why := range []domain.FileOmission{domain.OmitGenerated, domain.OmitLarge, domain.OmitBudget} {
+		raw := []domain.FileDiff{{Status: domain.FileModified, NewPath: "go.sum", Additions: 3, Omitted: why}}
+		fs := diffFiles(raw)
+		collapseFiles(fs, raw, fileLinks{src: src, repo: "demo", rev: "abc1234"})
+		out := renderToString(t, DiffFileView(fs[0], view))
+		assert.NotContains(t, out, " open", "omission %d", why)
+		assert.Contains(t, out, `<div class="dlazy" data-src="/demo/commit/abc1234/files?one=1&amp;from=0" data-manual>`)
+		assert.Contains(t, out, `<a href="?file=0#f1">load diff</a>`)
+		assert.NotContains(t, out, "<table")
+	}
+	raw := []domain.FileDiff{{Status: domain.FileModified, NewPath: "huge.txt", Additions: 3, Omitted: domain.OmitUnavailable}}
+	fs := diffFiles(raw)
+	collapseFiles(fs, raw, fileLinks{src: src, repo: "demo", rev: "abc1234"})
+	out := renderToString(t, DiffFileView(fs[0], view))
+	assert.Contains(t, out, "too large to show in the browser")
+	assert.NotContains(t, out, "load diff")
+	assert.NotContains(t, out, "data-manual")
+	assert.Contains(t, out, `<a href="/demo/raw/abc1234/huge.txt">view raw</a>`)
+
+	// Past the first window of a merge request the link keeps the window.
+	raw = []domain.FileDiff{{NewPath: "a", Additions: 1, Omitted: domain.OmitLarge}}
+	fs = diffFiles(raw)
+	collapseFiles(fs, raw, fileLinks{src: "/d/merge-requests/1/files?base=b&head=h", from: 25})
+	assert.Equal(t, "/d/merge-requests/1/files?base=b&head=h&one=1&from=0", fs[0].Src)
+	assert.Equal(t, "?from=25&file=0#f1", fs[0].Href)
 }

@@ -569,6 +569,19 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	if from > 0 && from >= len(res.Diff.Files) {
 		return nil, 0, errNotFound
 	}
+	// A page without scripts: ?file=i reads that collapsed file in full.
+	if i, ok := fileParam(r, len(res.Diff.Files)); ok && res.Diff.Files[i].Omitted.Collapsed() {
+		one, err := s.cfg.MergeRequests.Get(ctx, principal(ctx), d.repo.Name, n, ports.GetMergeRequestOptions{
+			SinceLastRead: since, DiffOnly: true, Base: res.DiffBaseID, Head: res.MergeRequest.HeadID,
+			Files: &ports.FileWindow{From: i, To: i + 1, Full: true},
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		if i < len(one.Diff.Files) {
+			res.Diff.Files[i] = one.Diff.Files[i]
+		}
+	}
 	m := res.MergeRequest
 	signed := SignedIn(ctx)
 	open := m.State == domain.MRStateOpen
@@ -590,6 +603,11 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		Files:  s.hl.files(ctx, res.Diff.Files),
 	}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head))
+	src := ""
+	if !res.DiffBaseID.IsZero() {
+		src = filesSrc(d.name(), n, since, res.DiffBaseID.String(), head)
+	}
+	collapseFiles(p.Files, res.Diff.Files, fileLinks{src: src, from: from, repo: d.name(), rev: head})
 	if err := s.mrFacts(ctx, r, d, &p, res); err != nil {
 		return nil, 0, err
 	}
@@ -649,7 +667,7 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 	p.Live = true
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mr&n="+strconv.FormatInt(n, 10)+"&ref="+url.QueryEscape(m.Source)+"&head="+url.QueryEscape(head)+"&target="+url.QueryEscape(m.Target))
 	l.HasRail = true
-	l.MR = true
+	l.MR, l.Lazy = true, true
 	return MergeRequest(l, p), http.StatusOK, nil
 }
 

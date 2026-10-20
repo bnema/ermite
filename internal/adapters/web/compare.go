@@ -76,13 +76,14 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 
 	// The exact diff: one commit on top of the tip of the target.
 	if exact && !behind && len(ahead) == 1 {
-		res, err := s.getCommit(ctx, d.repo.Name, ahead[0].ID.String(), ports.GetCommitOptions{})
+		res, err := s.commitDiff(ctx, r, d.repo.Name, ahead[0].ID.String())
 		if err != nil {
 			return nil, 0, err
 		}
 		p.HasDiff = true
 		p.Files = s.hl.files(ctx, res.Diff.Files)
 		contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", res.Commit.ID.String()))
+		collapseFiles(p.Files, res.Diff.Files, commitLinks(name, res.Commit.ID.String()))
 		p.NFiles, p.Adds, p.Dels = res.Stats.FilesChanged, res.Stats.Additions, res.Stats.Deletions
 		if n := diffNote(res.Diff, len(p.Files), p.NFiles); n != "" {
 			p.Note = n
@@ -131,6 +132,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 		Crumb{Label: p.Source, Current: true},
 	)
 	l.HasRail = true
+	l.Lazy = true
 	return Compare(l, p), http.StatusOK, nil
 }
 

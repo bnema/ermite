@@ -106,7 +106,7 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 	if err != nil {
 		return nil, 0, err
 	}
-	res, err := s.getCommit(ctx, d.repo.Name, sha, ports.GetCommitOptions{})
+	res, err := s.commitDiff(ctx, r, d.repo.Name, sha)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -129,6 +129,7 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 		Verification: c.Verification,
 	}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", cid))
+	collapseFiles(p.Files, res.Diff.Files, commitLinks(d.name(), cid))
 	if cm := person(c.Committer, now); cm != p.Author || c.Committer.Email != c.Author.Email {
 		p.Committer = &cm
 	}
@@ -167,6 +168,7 @@ func (s *Server) commit(ctx context.Context, r *http.Request) (templ.Component, 
 		{Label: p.Short, Current: true},
 	}
 	l.HasRail = true
+	l.Lazy = true
 	return Commit(l, p), http.StatusOK, nil
 }
 
@@ -187,23 +189,90 @@ func commitBody(c domain.Commit) string {
 	return messageText(strings.TrimSpace(body))
 }
 
-// diffNote says what is missing from an incomplete diff, "" for a complete one.
+// diffNote says what is missing from an incomplete diff, "" for a complete one:
+// files past the limit of the listing, files too large for the browser at all.
+// Collapsed files say so on their own line and load on their own.
 func diffNote(d domain.Diff, shown, total int) string {
-	cut := 0
+	gone := 0
 	for _, f := range d.Files {
-		if f.Omitted != domain.OmitNone {
-			cut++
+		if f.Omitted == domain.OmitUnavailable {
+			gone++
 		}
 	}
-	if !d.Truncated && cut == 0 {
-		return ""
-	}
 	var parts []string
-	if shown < total {
+	if d.Truncated && shown < total {
 		parts = append(parts, plural(total-shown, "file is", "files are")+" not listed")
 	}
-	if cut > 0 {
-		parts = append(parts, plural(cut, "file is", "files are")+" too large to show")
+	if gone > 0 {
+		parts = append(parts, plural(gone, "file is", "files are")+" too large to show")
+	}
+	if len(parts) == 0 {
+		return ""
 	}
 	return "this diff is incomplete: " + strings.Join(parts, ", ") + ". the totals above count everything; clone the repository to read the rest."
+}
+
+// commitWindow is how many files of a commit get their hunks read with the
+// page; the files past it are collapsed, and load on their own.
+const commitWindow = 300
+
+// commitDiff reads a commit for its page (and the compare page): every file
+// listed, the hunks of the first commitWindow files read, generated files
+// collapsed. Files past the window are collapsed too. With ?file=i (the link
+// of a page without scripts) file i is read in full and replaces its entry.
+func (s *Server) commitDiff(ctx context.Context, r *http.Request, repo domain.RepoName, rev string) (domain.CommitDetail, error) {
+	res, err := s.getCommit(ctx, repo, rev, ports.GetCommitOptions{Files: &ports.FileWindow{From: 0, To: commitWindow}})
+	if err != nil {
+		return res, err
+	}
+	for i := commitWindow; i < len(res.Diff.Files); i++ {
+		if f := &res.Diff.Files[i]; !f.Binary && f.Omitted == domain.OmitNone && f.Additions+f.Deletions > 0 {
+			f.Omitted = domain.OmitBudget
+		}
+	}
+	if i, ok := fileParam(r, len(res.Diff.Files)); ok && res.Diff.Files[i].Omitted.Collapsed() {
+		one, err := s.getCommit(ctx, repo, rev, ports.GetCommitOptions{Files: &ports.FileWindow{From: i, To: i + 1, Full: true}})
+		if err != nil {
+			return res, err
+		}
+		if i < len(one.Diff.Files) {
+			res.Diff.Files[i] = one.Diff.Files[i]
+		}
+	}
+	return res, nil
+}
+
+// commitLinks are the addresses a commit page loads its collapsed files from.
+func commitLinks(repo, rev string) fileLinks {
+	return fileLinks{src: repoHref(repo, "commit", rev, "files"), repo: repo, rev: rev}
+}
+
+// commitFiles is GET /<repo>/commit/<sha>/files?one=1&from=i[&view=&layouts=]:
+// the one file i of the commit with its hunks, in full, as the one
+// details.dfile the page swaps for its placeholder.
+func (s *Server) commitFiles(ctx context.Context, r *http.Request) (templ.Component, int, error) {
+	sha := r.PathValue("sha")
+	i, err := parseOne(r)
+	if err != nil || !isCommitID(sha) {
+		return nil, 0, errNotFound
+	}
+	d, err := s.loadRepo(ctx, r.PathValue("repo"))
+	if err != nil {
+		return nil, 0, err
+	}
+	res, err := s.getCommit(ctx, d.repo.Name, sha, ports.GetCommitOptions{Files: &ports.FileWindow{From: i, To: i + 1, Full: true}})
+	if err != nil {
+		return nil, 0, err
+	}
+	if i >= len(res.Diff.Files) {
+		return nil, 0, errNotFound
+	}
+	cid := res.Commit.ID.String()
+	raw := res.Diff.Files[i : i+1]
+	files := s.hl.files(ctx, raw)
+	files[0].ID = "f" + itoa(i+1)
+	contextGaps(files, raw, repoHref(d.name(), "context", cid))
+	collapseFiles(files, raw, commitLinks(d.name(), cid))
+	lines, _ := diffLines(files)
+	return MRFiles(MRFilesPage{Files: files, DiffView: fragmentView(r, lines)}), http.StatusOK, nil
 }

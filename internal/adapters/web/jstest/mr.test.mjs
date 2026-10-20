@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 globalThis.window = globalThis;
 globalThis.document = { readyState: 'complete', querySelector: () => null, querySelectorAll: () => [] };
+await import('../static/js/lazy.js');
 await import('../static/js/mr.js');
 const C = window.ermiteMR.core;
 

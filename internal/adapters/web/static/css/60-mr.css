@@ -191,7 +191,9 @@
     &.dlazy-1 { height: 120px; } &.dlazy-2 { height: 360px; } &.dlazy-3 { height: 900px; } &.dlazy-4 { height: 1600px; }
     /* with scripts the window comes by itself: the link of the page without
        scripts would only flash */
-    html.js & > a { visibility: hidden; }
+    html.js &:not([data-manual]) > a { visibility: hidden; }
+    &[data-manual] { height: auto; padding: var(--s3); }
+    &[data-manual][data-loading] > a { opacity: .5; }
     & .notice { margin: 0; }
   }
   .dloose {

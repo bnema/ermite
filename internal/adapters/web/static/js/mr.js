@@ -1,10 +1,9 @@
 // mr.js: the merge request page beyond what htmx and hx-live give.
 //
 //  1. Windows of files. The page holds the hunks of one window of files; the
-//     other files are placeholders (.dlazy[data-src]). A placeholder that comes
-//     near the screen fetches its window (/files?from=&base=&head=), whose
-//     files replace the placeholders of the same ids. A window is fetched once;
-//     a link to a file or to a comment of a placeholder fetches it first.
+//     other files are placeholders (.dlazy[data-src]), loaded by lazy.js (which
+//     the commit and compare pages use too) when they come near the screen. A
+//     link to a file or to a comment of a placeholder loads it first (reveal).
 //  2. The menus of the bar (merge, more) and their keys: M opens the merge menu
 //     on its button, 1-9 pick a mode, D toggles the branch deletion, Enter
 //     submits (the browser does it: the focus is on the button), Esc closes.
@@ -80,72 +79,10 @@ window.ermiteMR = (() => {
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-  const loading = new Map(); // src -> promise of the swap
   let refreshTouchComments = () => {};
-  let moved = false;
-  let lazyIO = null; // the observer of the placeholders (watch)
-  let diffGeneration = 0;
   let revealGen = 0; // the last reveal wins the scroll
-
-  // load fetches the window of a placeholder and swaps its files in. The
-  // promise resolves once they are in the page (or the page said to reload).
-  function load(ph) {
-    const generation = diffGeneration;
-    const src = ph?.dataset.src;
-    if (!src || moved) return Promise.resolve();
-    if (loading.has(src)) return loading.get(src);
-    for (const p of $$('.dlazy[data-src]')) if (p.dataset.src === src) p.setAttribute('data-loading', '');
-    // The window renders like the page: the layout shown, and both layouts
-    // when the page switches them itself (data-diff) or one (data-view).
-    const d = $('#diffs')?.dataset || {};
-    const view = d.diff || d.view;
-    const layouts = d.diff ? 'both' : d.view ? 'one' : '';
-    const url = src + (view ? '&view=' + encodeURIComponent(view) : '') + (layouts ? '&layouts=' + layouts : '');
-    const p = fetch(url, { headers: { Accept: 'text/html' }, credentials: 'same-origin' })
-      .then(async (res) => {
-        const html = await res.text();
-        if (generation !== diffGeneration) return;
-        if (res.status === 409) return stale(html);
-        if (!res.ok) throw new Error('loading files: ' + res.status);
-        // A window of the old diff after the page went stale stays out.
-        if (!moved) swap(html);
-      })
-      .catch((err) => {
-        if (generation !== diffGeneration) return;
-        loading.delete(src);
-        for (const p of $$('.dlazy[data-loading]')) if (p.dataset.src === src) p.removeAttribute('data-loading');
-        window.ermite?.flash?.(err.message, 4000);
-      });
-    loading.set(src, p);
-    return p;
-  }
-
-  // swap replaces each placeholder file with the file of the same id. A
-  // file the reader folded stays folded.
-  function swap(html) {
-    const t = document.createElement('template');
-    t.innerHTML = html;
-    for (const f of [...t.content.querySelectorAll('details[data-file]')]) {
-      const old = document.getElementById(f.id);
-      if (!old || !old.querySelector('.dlazy')) continue;
-      f.open = old.open;
-      for (const p of $$('.dlazy', old)) lazyIO?.unobserve(p);
-      old.replaceWith(f);
-      window.htmx?.process(f);
-      window.ermite?.watchFile?.(f, old);
-    }
-    refreshTouchComments();
-  }
-
-  // stale: the diff changed under the page. The placeholders say so; no file
-  // of another diff comes in.
-  function stale(html) {
-    moved = true;
-    for (const p of $$('.dlazy')) {
-      p.removeAttribute('data-loading');
-      p.innerHTML = html;
-    }
-  }
+  const load = (ph) => window.ermiteLazy.load(ph);
+  window.ermiteLazy.onSwap(() => refreshTouchComments());
 
   // reveal loads the file of an id (a file "f12" or a comment "c3") when it is
   // a placeholder, then scrolls to it. It returns false when there is nothing
@@ -163,7 +100,7 @@ window.ermiteMR = (() => {
       }
       return document.getElementById(id);
     };
-    let ph = document.getElementById(id)?.querySelector(':scope > .dlazy');
+    let ph = document.getElementById(id)?.querySelector(':scope > .dlazy:not([data-manual])');
     if (!ph && /^c\d+/.test(id) && !document.getElementById(id)) {
       const base = id.replace(/-s$/, '');
       ph = $$('.dlazy[data-notes]').find((p) => p.dataset.notes.split(' ').includes(base));
@@ -193,25 +130,6 @@ window.ermiteMR = (() => {
       }));
     });
     return true;
-  }
-
-  // Placeholders load as they come within two screens of the view; files
-  // that come in are marked in the list of files (ermite.js marks the one in
-  // view).
-  function watch() {
-    lazyIO?.disconnect();
-    if (!('IntersectionObserver' in window)) {
-      for (const p of $$('.dlazy[data-src]')) load(p);
-      return;
-    }
-    lazyIO = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        lazyIO.unobserve(e.target);
-        load(e.target);
-      }
-    }, { rootMargin: '200% 0px 200% 0px' });
-    for (const p of $$('.dlazy[data-src]')) lazyIO.observe(p);
   }
 
   // The merge menu.
@@ -598,7 +516,7 @@ window.ermiteMR = (() => {
     const active = document.activeElement;
     const focus = active && { file: active.closest?.('.files a')?.getAttribute('title'), region: regions.find((sel) => $(sel)?.contains(active)), menu: active.closest?.('details.menu')?.id, id: active.id, tag: active.tagName, name: active.getAttribute('name'), href: active.getAttribute('href') };
     for (const f of $$('#diffs details.dfile', page)) if (files.has(f.dataset.file)) f.open = files.get(f.dataset.file);
-    ++diffGeneration; ++revealGen; moved = false; loading.clear(); lazyIO?.disconnect();
+    ++revealGen; window.ermiteLazy.reset();
     $('#diffs', page).dataset.mrStarted = 'true';
     // The fresh footer comes in with the panels as they are, so that an open
     // panel does not fold and open again while the other regions swap.
@@ -624,7 +542,7 @@ window.ermiteMR = (() => {
     touchComments(false);
     $('#diffs').dataset.mobile = String(!!window.matchMedia?.('(max-width: 720px)').matches);
     window.ermite?.refreshFiles?.();
-    watch();
+    window.ermiteLazy.watch();
     if (focus && active !== document.body) {
       const region = focus.region ? $(focus.region) : document;
       const menu = focus.menu && document.getElementById(focus.menu);
@@ -700,7 +618,6 @@ window.ermiteMR = (() => {
     // the address of the request, so that a reload does not post again.
     const canonical = $('#diffs[data-canonical]')?.dataset.canonical;
     if (canonical && location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.hash);
-    watch();
     // A link to a file or a comment that is not loaded yet.
     const hash = () => {
       const id = decodeURIComponent(location.hash.slice(1));

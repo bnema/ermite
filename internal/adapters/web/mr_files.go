@@ -73,6 +73,18 @@ func parseFrom(r *http.Request) (int, error) {
 	return n, nil
 }
 
+// parseOne reads ?one=1&from=i of a one-file fragment: the index i of the
+// file, any non-negative number.
+func parseOne(r *http.Request) (int, error) {
+	q := r.URL.Query()
+	s := q.Get("from")
+	n, err := strconv.Atoi(s)
+	if q.Get("one") != "1" || err != nil || n < 0 || strconv.Itoa(n) != s {
+		return 0, errNotFound
+	}
+	return n, nil
+}
+
 // lazyFiles marks the files outside [from, from+mrWindow) lazy: the page shows
 // a placeholder that loads their window. src is the URL of /files with the
 // base and the head of the diff; self the page, for the links of a page
@@ -167,7 +179,13 @@ func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component,
 	if since && !SignedIn(ctx) {
 		return nil, 0, errNotFound
 	}
-	from, err := parseFrom(r)
+	one := q.Get("one") == "1"
+	var from int
+	if one {
+		from, err = parseOne(r)
+	} else {
+		from, err = parseFrom(r)
+	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -180,9 +198,12 @@ func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component,
 	if err != nil {
 		return nil, 0, err
 	}
+	win := &ports.FileWindow{From: from, To: from + mrWindow}
+	if one {
+		win = &ports.FileWindow{From: from, To: from + 1, Full: true}
+	}
 	res, err := s.cfg.MergeRequests.Get(ctx, principal(ctx), d.repo.Name, n, ports.GetMergeRequestOptions{
-		SinceLastRead: since, DiffOnly: true, Base: base, Head: head,
-		Files: &ports.FileWindow{From: from, To: from + mrWindow},
+		SinceLastRead: since, DiffOnly: true, Base: base, Head: head, Files: win,
 	})
 	if errors.Is(err, domain.ErrConflict) {
 		return MRFilesMoved(), http.StatusConflict, nil
@@ -198,8 +219,14 @@ func (s *Server) mrFiles(ctx context.Context, r *http.Request) (templ.Component,
 	canWrite := signed && m.State == domain.MRStateOpen && !since
 	p := MRPage{Files: s.hl.files(ctx, res.Diff.Files), LooseInFiles: true, NoteAuthor: domain.AuthorName(principal(ctx))}
 	contextGaps(p.Files, res.Diff.Files, repoHref(d.name(), "context", head.String()))
+	collapseFiles(p.Files, res.Diff.Files, fileLinks{
+		src: filesSrc(d.name(), n, since, base.String(), head.String()), from: from, repo: d.name(), rev: head.String(),
+	})
 	s.placeComments(&p, d.name(), n, res.Comments, m.HeadID.String(), !since, canWrite, nil)
 	window := p.Files[from:min(from+mrWindow, len(p.Files))]
+	if one {
+		window = p.Files[from : from+1]
+	}
 	// The layouts follow the page: it sends ?view= (the layout shown) and
 	// ?layouts=both when it holds both layouts and switches them itself, so
 	// that every window of the page renders the same way.

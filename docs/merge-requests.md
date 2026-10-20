@@ -63,6 +63,12 @@ In `mr show --json`, `mergeability` holds `state`, `behind`, `behind_capped`, `c
 
 In the web merge box a mode that is not possible is disabled with its reason, and the Merge button too when no mode is possible. A merge the server refuses (target moved, conflict, branch moved) shows the page again with the reason in the box.
 
+## Large diffs on the web
+
+The merge request, commit and compare pages list every changed file. Generated files (lockfiles, `vendor/`, `node_modules/`, minified or generated code) and large files (over 2,000 changed lines) are collapsed: the header and the counts show, the lines do not. "load diff" fetches that one file in place, in full, and you can comment on its lines. Without scripts the link reloads the page with that file loaded. After the first 25 files of a merge request, the other files load as you scroll.
+
+A file over 8 MiB of text cannot be shown in the browser: the page links to its raw blob. A commit page lists at most 300 files; clone the repository to read the rest.
+
 ## Notes
 
 A note is the only review object. It is published as soon as it is written: there is no draft and no submit step.

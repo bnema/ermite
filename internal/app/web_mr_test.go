@@ -921,3 +921,52 @@ func TestWebMergeRequestMergeabilityLive(t *testing.T) {
 		break
 	}
 }
+
+// Collapsed files of a merge request: a generated file and a file over the
+// line cap are listed closed, with no rows and a manual placeholder; /files
+// with one=1 reads exactly one file in full, whatever its index; the page
+// without scripts (?file=i) splices the file in.
+func TestWebMergeRequestCollapsedFiles(t *testing.T) {
+	r := newMRRepo(t, domain.VisibilityPublic)
+	b := browser{r.harness}
+	var big strings.Builder
+	for i := range 2600 {
+		fmt.Fprintf(&big, "row %d\n", i)
+	}
+	r.writeFile(r.wt, "zz/big.txt", []byte(big.String()))
+	r.writeFile(r.wt, "vendor/lib/gen.txt", []byte("generated line\n"))
+	r.writeFile(r.wt, "zz/small.txt", []byte("small line\n"))
+	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
+	r.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/search", "--title", "Collapsed").ok(t)
+
+	page := b.get("/proj/merge-requests/1", nil)
+	require.Equal(t, 200, page.status)
+	assert.Equal(t, 2, strings.Count(page.body, "data-manual"), "the large and the generated file")
+	assert.Contains(t, page.body, "generated file: collapsed")
+	assert.Contains(t, page.body, "large diff (2600 lines changed): collapsed")
+	assert.NotContains(t, page.body, "row 5<", "no rows for a collapsed file")
+	assert.Contains(t, page.body, "small line")
+	assert.NotContains(t, page.body, "this diff is incomplete")
+	srcs := regexp.MustCompile(`data-src="([^"]*one=1&amp;from=(\d+))" data-manual`).FindAllStringSubmatch(page.body, -1)
+	require.Len(t, srcs, 2)
+
+	for _, m := range srcs {
+		one := b.get(html.UnescapeString(m[1]), nil)
+		require.Equal(t, 200, one.status, one.body)
+		assert.Equal(t, 1, strings.Count(one.body, `<details class="dfile`), "exactly one file")
+		assert.NotContains(t, one.body, "data-manual")
+	}
+	bigOne := b.get(html.UnescapeString(srcs[1][1]), nil)
+	genOne := b.get(html.UnescapeString(srcs[0][1]), nil)
+	assert.True(t, strings.Contains(bigOne.body, "row 2599") != strings.Contains(genOne.body, "row 2599"))
+	assert.Contains(t, bigOne.body+genOne.body, "generated line")
+
+	assert.Equal(t, 404, b.get(strings.Replace(html.UnescapeString(srcs[0][1]), "from="+srcs[0][2], "from=999", 1), nil).status)
+	assert.Equal(t, 404, b.get(strings.Replace(html.UnescapeString(srcs[0][1]), "from="+srcs[0][2], "from=-1", 1), nil).status)
+
+	for _, m := range srcs {
+		own := b.get("/proj/merge-requests/1?file="+m[2], nil)
+		require.Equal(t, 200, own.status)
+		assert.Equal(t, 1, strings.Count(own.body, "data-manual"), "that one file is spliced in")
+	}
+}

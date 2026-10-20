@@ -30,6 +30,9 @@ templ Shell(l Layout, rail templ.Component) {
 			<script src={ l.Assets.Files } defer></script>
 			<script src={ l.Assets.Passkey } defer></script>
 			<script src={ l.Assets.Log } defer></script>
+			if l.Lazy {
+				<script src={ l.Assets.Lazy } defer></script>
+			}
 			if l.MR {
 				<script src={ l.Assets.MR } defer></script>
 			}

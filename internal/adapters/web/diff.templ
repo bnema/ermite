@@ -237,11 +237,18 @@ templ DiffFileView(f DiffFile, p DiffView) {
 			}
 		</summary>
 		if f.Lazy {
-			// A placeholder: mr.js fetches the window of the file when it comes
+			// A placeholder: lazy.js fetches the window of the file when it comes
 			// near the screen and swaps the files of the window in. Without
 			// scripts the link opens the page of that window.
 			<div class={ "dlazy", "dlazy-" + itoa(f.Height) } data-src={ f.Src } data-notes={ f.Comments }>
 				<a href={ templ.SafeURL("?from=" + itoa(f.From) + "#" + f.ID) }>show this file</a>
+			</div>
+		} else if f.Manual {
+			// A collapsed file (generated, large, over the page budget): no
+			// rows. "load diff" reads this one file and swaps it in place
+			// (lazy.js); without scripts the link reloads the page with the file.
+			<div class="dlazy" data-src={ f.Src } data-manual>
+				<a href={ templ.SafeURL(f.Href) }>load diff</a>
 			</div>
 		} else if len(f.Hunks) > 0 {
 			<div class="dscroll">
@@ -306,6 +313,8 @@ templ DiffFileView(f DiffFile, p DiffView) {
 					</table>
 				}
 			</div>
+		} else if f.Raw != "" {
+			<p class="note pad">{ f.Note } <a href={ templ.SafeURL(f.Raw) }>view raw</a></p>
 		} else {
 			<p class="note pad">
 				if f.Note != "" {

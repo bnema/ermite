@@ -112,12 +112,42 @@ func TestWebCommit(t *testing.T) {
 		assert.Contains(t, body, "holds invisible characters")
 	})
 
-	t.Run("truncated", func(t *testing.T) {
+	t.Run("large file is collapsed and loads on its own", func(t *testing.T) {
 		body := get("/diffs/commit/"+f.big, 200)
-		assert.Contains(t, body, "diff too large to show (2600 lines changed): collapsed")
-		assert.Contains(t, body, "this diff is incomplete")
-		assert.NotRegexp(t, `<details class="dfile" id="f1"[^>]* open`, body, "a truncated file is collapsed")
-		assert.NotContains(t, body, "line 2000", "no lines of a truncated file")
+		assert.Contains(t, body, "large diff (2600 lines changed): collapsed")
+		assert.NotContains(t, body, "this diff is incomplete", "a collapsed file is not a global note")
+		assert.NotRegexp(t, `<details class="dfile[^"]*" id="f1"[^>]* open`, body, "a collapsed file is closed")
+		assert.Contains(t, body, `<div class="dlazy" data-src="/diffs/commit/`+f.big+`/files?one=1&amp;from=0" data-manual>`)
+		assert.Contains(t, body, `<a href="?file=0#f1">load diff</a>`)
+		assert.NotContains(t, body, "line 2000", "no rows for a collapsed file")
+
+		// One file, in full, over the 2,000 lines of the page.
+		frag := get("/diffs/commit/"+f.big+"/files?one=1&from=0", 200)
+		assert.NotContains(t, frag, "<html")
+		assert.Equal(t, 1, strings.Count(frag, `<details class="dfile`))
+		assert.Contains(t, frag, "line 2599")
+		assert.NotContains(t, frag, "data-manual")
+		assert.Contains(t, frag, `id="f1"`)
+		both := get("/diffs/commit/"+f.big+"/files?one=1&from=0&view=split&layouts=one", 200)
+		assert.NotContains(t, both, `class="dt uni"`)
+		assert.Contains(t, both, `class="dt spl"`)
+
+		// Without scripts: the page splices the file in.
+		page := get("/diffs/commit/"+f.big+"?file=0", 200)
+		assert.Contains(t, page, "line 2599")
+		assert.NotContains(t, page, "data-manual")
+		assert.Contains(t, get("/diffs/commit/"+f.big+"?file=9", 200), "data-manual", "out of range: ignored")
+	})
+
+	t.Run("one file route", func(t *testing.T) {
+		for _, p := range []string{
+			"/files?one=1&from=1", "/files?one=1&from=-1", "/files?one=1&from=x", "/files?from=0", "/files?one=1",
+		} {
+			st, _, _ := h.get("/diffs/commit/" + f.big + p)
+			assert.Equal(t, 404, st, p)
+		}
+		st, _, _ := h.get("/diffs/commit/main/files?one=1&from=0")
+		assert.Equal(t, 404, st)
 	})
 
 	t.Run("not found", func(t *testing.T) {

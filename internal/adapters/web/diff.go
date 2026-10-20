@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -123,6 +125,14 @@ type DiffFile struct {
 	Note  string
 	Open  bool
 	Hunks []DiffHunk
+	// Manual is true for a collapsed file (generated, large, over the page
+	// budget): no hunks, a placeholder with a "load diff" control that reads
+	// that one file (Src, empty when it cannot be loaded in place; Href is the
+	// page without scripts).
+	Manual bool
+	Href   string
+	// Raw is the address of the raw blob of a file too large to show.
+	Raw string
 	// Digits is the width of the largest line number of the file, at least 2
 	// and at most 7: the gutter is as wide as the file needs (class lnw-N).
 	Digits int
@@ -371,7 +381,8 @@ func diffFiles(files []domain.FileDiff) []DiffFile {
 			Add: f.Additions, Del: f.Deletions, Bin: f.Binary,
 			// A file that is shown in full opens; a file with nothing to read
 			// (binary, truncated) stays closed under its note.
-			Open: len(f.Hunks) > 0 && f.Omitted == domain.OmitNone,
+			Open:   len(f.Hunks) > 0 && f.Omitted == domain.OmitNone,
+			Manual: f.Omitted.Collapsed(),
 		}
 		df.Key = f.NewPath
 		switch f.Status {
@@ -406,8 +417,14 @@ func fileNote(f domain.FileDiff) string {
 	switch {
 	case f.Binary:
 		parts = append(parts, "binary file: no text diff")
-	case f.Omitted != domain.OmitNone:
-		parts = append(parts, fmt.Sprintf("diff too large to show (%d lines changed): collapsed", f.Additions+f.Deletions))
+	case f.Omitted == domain.OmitGenerated:
+		parts = append(parts, "generated file: collapsed")
+	case f.Omitted == domain.OmitLarge:
+		parts = append(parts, fmt.Sprintf("large diff (%d lines changed): collapsed", f.Additions+f.Deletions))
+	case f.Omitted == domain.OmitBudget:
+		parts = append(parts, "collapsed to keep the page light")
+	case f.Omitted == domain.OmitUnavailable:
+		parts = append(parts, "too large to show in the browser (over 8 MiB of text)")
 	}
 	if f.OldMode != 0 && f.NewMode != 0 && f.OldMode != f.NewMode {
 		parts = append(parts, fmt.Sprintf("mode %06o → %06o", f.OldMode, f.NewMode))
@@ -448,4 +465,73 @@ func codeLine(ln DiffLine) templ.Component {
 		_, err := io.WriteString(w, b.String())
 		return err
 	})
+}
+
+// fileLinks says where the collapsed files of a diff are loaded from.
+type fileLinks struct {
+	// src is the address of the fragment route of the diff ("" when files
+	// cannot be loaded in place); one file is src plus one=1&from=i.
+	src string
+	// from is the window of the page, kept in the links of a page without
+	// scripts.
+	from int
+	// repo and rev name the raw blob of a file that cannot be shown.
+	repo, rev string
+}
+
+// oneFileSrc is the address of the fragment holding file i alone.
+func oneFileSrc(src string, i int) string {
+	sep := "?"
+	if strings.Contains(src, "?") {
+		sep = "&"
+	}
+	return src + sep + "one=1&from=" + itoa(i)
+}
+
+// collapseFiles gives the collapsed files of a diff their load address, and
+// the files too large to show a link to their raw blob. Nothing is read.
+func collapseFiles(out []DiffFile, files []domain.FileDiff, l fileLinks) {
+	for i, f := range files {
+		if i >= len(out) {
+			break
+		}
+		switch {
+		case f.Omitted.Collapsed():
+			if l.src != "" {
+				out[i].Src = oneFileSrc(l.src, i)
+			}
+			q := "?file=" + itoa(i)
+			if l.from > 0 {
+				q = "?from=" + itoa(l.from) + "&file=" + itoa(i)
+			}
+			out[i].Href = q + "#" + out[i].ID
+		case f.Omitted == domain.OmitUnavailable && f.Status != domain.FileDeleted && l.rev != "":
+			out[i].Raw = repoHref(l.repo, "raw", l.rev, f.NewPath)
+		}
+	}
+}
+
+// fileParam reads ?file= of a page without scripts: the index of a collapsed
+// file to read in full, in [0, n).
+func fileParam(r *http.Request, n int) (int, bool) {
+	s := r.URL.Query().Get("file")
+	i, err := strconv.Atoi(s)
+	if err != nil || i < 0 || i >= n || strconv.Itoa(i) != s {
+		return 0, false
+	}
+	return i, true
+}
+
+// fragmentView lays out a one-file fragment like the page that asks for it:
+// ?view= is the layout shown and ?layouts= says whether the page holds both.
+func fragmentView(r *http.Request, lines int) DiffView {
+	v := newDiffView(r, lines, "", "")
+	switch r.URL.Query().Get("layouts") {
+	case "both":
+		v.Both = true
+	case "one":
+		v.Both = false
+	}
+	v.ShowUnified, v.ShowSplit = v.Both || v.View == "unified", v.Both || v.View == "split"
+	return v
 }

@@ -30,6 +30,8 @@
 </script>
 <script src="/-/static/js/log.HASH.js" defer>
 </script>
+<script src="/-/static/js/lazy.HASH.js" defer>
+</script>
 </head>
 <body data-ref="" data-sha="SHA40" data-sel="" data-nav="" data-paths="/diffs/paths/SHA40" data-blob="/diffs/blob/SHA40">
 <a class="skip" href="#main">skip to content</a>
@@ -141,7 +143,6 @@
 </div>
 </details>
 </div>
-<p class="notice">this diff is incomplete: 1 file is too large to show. the totals above count everything; clone the repository to read the rest.</p>
 <div id="diffs" data-diff="unified" hx-live="this.dataset.diff = sessionStorage.getItem('diff') || this.dataset.diff">
 <details class="dfile lnw-2" id="f1" data-file="big.txt">
 <summary>
@@ -149,9 +150,11 @@
 <span class="p">big.txt</span>
 <span class="plus">+2600</span>
 <span class="minus">-0</span>
-<span class="note">diff too large to show (2600 lines changed): collapsed</span>
+<span class="note">large diff (2600 lines changed): collapsed</span>
 </summary>
-<p class="note pad">diff too large to show (2600 lines changed): collapsed</p>
+<div class="dlazy" data-src="/diffs/commit/SHA40/files?one=1&amp;from=0" data-manual>
+<a href="?file=0#f1">load diff</a>
+</div>
 </details>
 </div>
 </main>
