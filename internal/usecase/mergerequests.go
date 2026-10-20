@@ -1217,6 +1217,9 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 	if m.mergeab != nil {
 		m.mergeab.OnBranchesMoved(ctx, name, updates) // the other requests of the moved target
 	}
+	if m.links != nil {
+		m.links.OnBranchesMoved(ctx, name, updates) // open requests whose source moved
+	}
 }
 
 // deleteSource deletes the source branch of a merged request if it is still

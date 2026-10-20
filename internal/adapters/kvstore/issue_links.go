@@ -57,8 +57,10 @@ func (l *IssueLinks) ReplaceLinks(ctx context.Context, repo domain.RepoName, mr 
 			return nil, nil, domain.ErrInvalid
 		}
 	}
+	issueSet, closeSet := toSet(issues), toSet(closes)
+	oldIssues, oldCloses := toSet(old.GetIssues()), toSet(old.GetCloses())
 	for _, n := range closes {
-		if !slices.Contains(issues, n) {
+		if _, ok := issueSet[n]; !ok {
 			return nil, nil, domain.ErrInvalid
 		}
 	}
@@ -72,18 +74,20 @@ func (l *IssueLinks) ReplaceLinks(ctx context.Context, repo domain.RepoName, mr 
 		b.RequireAbsent(key)
 	}
 	for _, n := range old.GetIssues() {
-		wasClosing := slices.Contains(old.GetCloses(), n)
-		if !slices.Contains(issues, n) {
+		_, wasClosing := oldCloses[n]
+		if _, ok := issueSet[n]; !ok {
 			b.Delete(issueRefKey(repo, n, mr))
 			removed = append(removed, domain.IssueLink{Issue: n, MergeRequest: mr, Closes: wasClosing})
-		} else if wasClosing && !slices.Contains(closes, n) {
+		} else if _, still := closeSet[n]; wasClosing && !still {
 			removed = append(removed, domain.IssueLink{Issue: n, MergeRequest: mr, Closes: true})
 		}
 	}
 	for _, n := range issues {
-		closing := slices.Contains(closes, n)
+		_, closing := closeSet[n]
 		b.Put(issueRefKey(repo, n, mr), mustMarshal(&storagepb.IssueLink{Closes: closing}))
-		if !slices.Contains(old.GetIssues(), n) || closing && !slices.Contains(old.GetCloses(), n) {
+		_, was := oldIssues[n]
+		_, wasClosing := oldCloses[n]
+		if !was || closing && !wasClosing {
 			added = append(added, domain.IssueLink{Issue: n, MergeRequest: mr, Closes: closing})
 		}
 	}
@@ -136,4 +140,12 @@ func (l *IssueLinks) LinksOfMergeRequest(ctx context.Context, repo domain.RepoNa
 		result = append(result, domain.IssueLink{Issue: n, MergeRequest: mr, Closes: slices.Contains(pb.GetCloses(), n)})
 	}
 	return result, nil
+}
+
+func toSet(numbers []int64) map[int64]struct{} {
+	set := make(map[int64]struct{}, len(numbers))
+	for _, n := range numbers {
+		set[n] = struct{}{}
+	}
+	return set
 }

@@ -101,7 +101,7 @@ const maxNumberLookups = 50
 // numberResolver resolves #N to the page of an issue or a merge request of
 // the repository. It is meant for one render: answers are memoized and at most
 // maxNumberLookups numbers are asked, the others do not resolve.
-func (s *Server) numberResolver(ctx context.Context, repo string) func(int64) (string, bool) {
+func (s *Server) numberResolver(ctx context.Context, repo string) func(int64) (string, domain.NumberKind, bool) {
 	if s.cfg.IssueNumbers == nil {
 		return nil
 	}
@@ -111,28 +111,29 @@ func (s *Server) numberResolver(ctx context.Context, repo string) func(int64) (s
 	}
 	type answer struct {
 		href string
+		kind domain.NumberKind
 		ok   bool
 	}
 	seen := map[int64]answer{}
-	return func(n int64) (string, bool) {
+	return func(n int64) (string, domain.NumberKind, bool) {
 		if a, ok := seen[n]; ok {
-			return a.href, a.ok
+			return a.href, a.kind, a.ok
 		}
 		if len(seen) >= maxNumberLookups {
-			return "", false
+			return "", domain.NumberNone, false
 		}
 		var a answer
 		kind, err := s.cfg.IssueNumbers.Kind(ctx, principal(ctx), name, n)
 		if err == nil {
 			switch kind {
 			case domain.NumberIssue:
-				a = answer{issueHref(repo, n), true}
+				a = answer{issueHref(repo, n), kind, true}
 			case domain.NumberMergeRequest:
-				a = answer{mrHref(repo, n), true}
+				a = answer{mrHref(repo, n), kind, true}
 			}
 		}
 		seen[n] = a
-		return a.href, a.ok
+		return a.href, a.kind, a.ok
 	}
 }
 

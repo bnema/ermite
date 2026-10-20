@@ -6,8 +6,6 @@ import (
 	"strconv"
 )
 
-const maxReferenceDigits = 10
-
 // MaxReferenceTextBytes bounds each title, description, note and commit message scanned.
 const MaxReferenceTextBytes = 16 << 10
 
@@ -73,13 +71,25 @@ type MergeRequestReferences struct {
 
 // ScanMergeRequest scans titles, descriptions, notes and commit messages for
 // references. Notes can mention issues but cannot close them. Each individual
-// text is truncated to MaxReferenceTextBytes before scanning; no Markdown or
+// text is truncated to MaxReferenceTextBytes, without a trailing partial token, before scanning; no Markdown or
 // cross-repository interpretation is performed.
 func ScanMergeRequest(title, description string, notes, commitMessages []string) MergeRequestReferences {
 	mentions, closes := make(map[int64]struct{}), make(map[int64]struct{})
 	scan := func(text string, closing bool) {
 		if len(text) > MaxReferenceTextBytes {
-			text = text[:MaxReferenceTextBytes]
+			// Drop the trailing partial token: back off to the last ASCII
+			// whitespace at or before the limit.
+			cut := -1
+			for i := MaxReferenceTextBytes; i >= 0; i-- {
+				if i < len(text) && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r') {
+					cut = i
+					break
+				}
+			}
+			if cut < 0 {
+				return
+			}
+			text = text[:cut]
 		}
 		for _, n := range FindReferences(text) {
 			mentions[n] = struct{}{}

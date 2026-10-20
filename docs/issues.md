@@ -44,7 +44,7 @@ A merge request and the issues of its repository are linked by `#N` in its text:
 - The links are recomputed whenever the merge request changes (a note added, edited or deleted, a push to its branch, a merge), so removing a mention removes the link.
 - Words glued to the number (`abc#3`), `&#39;` and `##3` are not references. Code spans are not skipped.
 
-Limits: the first 100 commits of the merge request, 16 KiB of each text, 100 merge requests listed per issue. Only numbers of existing issues are linked: a mention of a number that does not exist yet is not filled in later. With issues `off`, nothing is closed.
+Limits: the 100 most recent commits of the merge request, 16 KiB of each text, 100 merge requests listed per issue. Only numbers of existing issues are linked: a mention of a number that does not exist yet is not filled in later. With issues `off`, nothing is closed.
 
 ## Inbox
 

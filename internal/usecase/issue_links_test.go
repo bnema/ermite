@@ -3,8 +3,11 @@
 package usecase_test
 
 import (
+	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -128,4 +131,105 @@ func TestIssueLinksMergeClosing(t *testing.T) {
 			}
 		})
 	}
+}
+
+type gatedBranchGit struct {
+	ports.MergeGit
+	entered atomic.Int32
+	started chan struct{}
+	gate    chan struct{}
+}
+
+func (g *gatedBranchGit) BranchHead(ctx context.Context, name domain.RepoName, branch string) (domain.ObjectID, error) {
+	if g.entered.Add(1) == 1 {
+		close(g.started)
+		<-g.gate
+	}
+	return g.MergeGit.BranchHead(ctx, name, branch)
+}
+
+func TestIssueLinksReindexSerializedPerMergeRequest(t *testing.T) {
+	r, _, issues := linkedRig(t)
+	issue, err := issues.Create(r.ctx, root, r.repo, ports.CreateIssueParams{Title: "bug"})
+	require.NoError(t, err)
+	r.feature("feat")
+	mr := r.open("feat")
+	g := &gatedBranchGit{MergeGit: r.git, started: make(chan struct{}), gate: make(chan struct{})}
+	links := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: r.store, Issues: r.store.Issues(), MRs: r.store.MergeRequests(), Links: r.store.IssueLinks(), Git: g, Bus: r.bus, Clock: fixedClock{}})
+	repo, err := r.store.Get(r.ctx, r.repo)
+	require.NoError(t, err)
+	done := make(chan error, 2)
+	go func() { done <- links.Reindex(r.ctx, repo, mr.Number) }()
+	<-g.started
+	// The first reindex read the old texts; a note is added afterwards.
+	_, err = r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{Text: fmt.Sprintf("see #%d", issue.Number)})
+	require.NoError(t, err)
+	go func() { done <- links.Reindex(r.ctx, repo, mr.Number) }()
+	time.Sleep(100 * time.Millisecond)
+	assert.EqualValues(t, 1, g.entered.Load(), "the second reindex waits for the first")
+	close(g.gate)
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
+	got, err := r.store.IssueLinks().LinksOfMergeRequest(r.ctx, r.repo, mr.Number)
+	require.NoError(t, err)
+	require.Len(t, got, 1, "the final index reflects the latest content")
+}
+
+func TestIssueLinksNotifiesRemovalsAndClosingFlips(t *testing.T) {
+	r, links, issues := linkedRig(t)
+	issue, err := issues.Create(r.ctx, root, r.repo, ports.CreateIssueParams{Title: "bug"})
+	require.NoError(t, err)
+	r.feature("feat")
+	mr := r.open("feat")
+	referenced := func() (n int) {
+		for _, ev := range r.drain() {
+			if e, ok := ev.(domain.IssueReferenced); ok && e.Issue == issue.Number {
+				n++
+			}
+		}
+		return n
+	}
+	note, err := r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{Text: fmt.Sprintf("see #%d", issue.Number)})
+	require.NoError(t, err)
+	assert.Equal(t, 1, referenced())
+	_, err = r.mrs.EditComment(r.ctx, root, r.repo, mr.Number, note.ID, "nothing")
+	require.NoError(t, err)
+	assert.Equal(t, 1, referenced(), "removing the last mention notifies")
+
+	// closes true -> false emits one event: a commit message fixes the issue,
+	// then is rewritten to a plain mention.
+	head := r.commit(author, "fix.txt", "fix", fmt.Sprintf("Fixes #%d", issue.Number))
+	r.push("feat")
+	links.OnBranchesMoved(r.ctx, r.repo, []domain.RefUpdate{{Ref: "refs/heads/feat", New: head.String()}})
+	referenced()
+	r.sh("commit", "-q", "--amend", "-m", fmt.Sprintf("See #%d", issue.Number))
+	r.push("feat")
+	links.OnBranchesMoved(r.ctx, r.repo, []domain.RefUpdate{{Ref: "refs/heads/feat", New: r.branchHead("feat").String()}})
+	assert.Equal(t, 1, referenced(), "a closing flip notifies once")
+}
+
+func TestIssueLinksMergeReindexesRequestsWhoseSourceMoved(t *testing.T) {
+	r, _, issues := linkedRig(t)
+	issue, err := issues.Create(r.ctx, root, r.repo, ports.CreateIssueParams{Title: "bug"})
+	require.NoError(t, err)
+	r.sh("checkout", "-q", "-B", "x", "main")
+	r.commit(author, "x.txt", "x", "work on x")
+	r.push("x")
+	r.sh("checkout", "-q", "-B", "feat", "x")
+	head := r.commit(author, "fix.txt", "fix", fmt.Sprintf("Fixes #%d", issue.Number))
+	r.push("feat")
+	b, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "B", Source: "x"})
+	require.NoError(t, err)
+	a, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "A", Source: "feat", Target: "x"})
+	require.NoError(t, err)
+	before, err := r.store.IssueLinks().LinksOfMergeRequest(r.ctx, r.repo, b.Number)
+	require.NoError(t, err)
+	require.Empty(t, before)
+	_, err = r.mrs.Merge(r.ctx, root, r.repo, a.Number, ports.MergeParams{HeadID: head, Mode: domain.MergeModeFastForward})
+	require.NoError(t, err)
+	r.mrs.Wait(r.ctx)
+	after, err := r.store.IssueLinks().LinksOfMergeRequest(r.ctx, r.repo, b.Number)
+	require.NoError(t, err)
+	require.Len(t, after, 1)
+	assert.Equal(t, issue.Number, after[0].Issue)
 }

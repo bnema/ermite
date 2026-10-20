@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -29,11 +30,55 @@ type IssueLinksConfig struct {
 }
 
 // IssueLinks maintains the derived index and applies closing references on merge.
-type IssueLinks struct{ cfg IssueLinksConfig }
+type IssueLinks struct {
+	cfg   IssueLinksConfig
+	mu    sync.Mutex
+	locks map[linkKey]*linkLock
+}
+
+type linkKey struct {
+	repo   domain.RepoName
+	number int64
+}
+
+type linkLock struct {
+	ch   chan struct{}
+	refs int
+}
+
+// lockMR serializes reindexes of one merge request, waiting until ctx ends.
+// Entries are removed when no one holds or waits for them.
+func (l *IssueLinks) lockMR(ctx context.Context, repo domain.RepoName, number int64) (func(), error) {
+	key := linkKey{repo, number}
+	l.mu.Lock()
+	e, ok := l.locks[key]
+	if !ok {
+		e = &linkLock{ch: make(chan struct{}, 1)}
+		l.locks[key] = e
+	}
+	e.refs++
+	l.mu.Unlock()
+	release := func() {
+		l.mu.Lock()
+		if e.refs--; e.refs == 0 {
+			delete(l.locks, key)
+		}
+		l.mu.Unlock()
+	}
+	select {
+	case e.ch <- struct{}{}:
+		return func() { <-e.ch; release() }, nil
+	case <-ctx.Done():
+		release()
+		return nil, ctx.Err()
+	}
+}
 
 var _ ports.IssueLinkTrigger = (*IssueLinks)(nil)
 
-func NewIssueLinks(cfg IssueLinksConfig) *IssueLinks { return &IssueLinks{cfg: cfg} }
+func NewIssueLinks(cfg IssueLinksConfig) *IssueLinks {
+	return &IssueLinks{cfg: cfg, locks: map[linkKey]*linkLock{}}
+}
 
 // Reindex replaces links from the current texts and bounded commit range.
 func (l *IssueLinks) Reindex(ctx context.Context, repo domain.Repo, number int64) error {
@@ -41,6 +86,11 @@ func (l *IssueLinks) Reindex(ctx context.Context, repo domain.Repo, number int64
 	return err
 }
 func (l *IssueLinks) reindex(ctx context.Context, repo domain.Repo, number int64) ([]int64, error) {
+	unlock, err := l.lockMR(ctx, repo.Name, number)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	mr, err := l.cfg.MRs.Get(ctx, repo.Name, number)
 	if err != nil {
 		return nil, err
@@ -103,14 +153,21 @@ func (l *IssueLinks) reindex(ctx context.Context, repo domain.Repo, number int64
 		}
 	}
 	for range maxWriteRetries {
-		added, _, err := l.cfg.Links.ReplaceLinks(ctx, repo.Name, number, mentions, closes)
+		added, removed, err := l.cfg.Links.ReplaceLinks(ctx, repo.Name, number, mentions, closes)
 		if errors.Is(err, domain.ErrConflict) {
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
-		for _, link := range added {
+		type pair struct{ issue, mr int64 }
+		sent := map[pair]struct{}{}
+		for _, link := range slices.Concat(added, removed) {
+			p := pair{link.Issue, link.MergeRequest}
+			if _, ok := sent[p]; ok {
+				continue
+			}
+			sent[p] = struct{}{}
 			l.notify(ctx, repo, link)
 		}
 		return closes, nil

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"bnema.dev/ermite/internal/domain"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -76,7 +77,7 @@ func (m *markdown) renderNote(source []byte, repo, ref, idPrefix string, refs re
 
 // renderIssue renders the trusted body of an issue: the policy of render, plus
 // links to issues and merge requests.
-func (m *markdown) renderIssue(source []byte, repo, ref, idPrefix string, numbers func(int64) (string, bool)) (template.HTML, error) {
+func (m *markdown) renderIssue(source []byte, repo, ref, idPrefix string, numbers func(int64) (string, domain.NumberKind, bool)) (template.HTML, error) {
 	h, _, err := m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, idPrefix: idPrefix}, refResolver{numbers: numbers})
 	return h, err
 }
@@ -87,7 +88,7 @@ type refResolver struct {
 	notes func(int64) bool
 	// numbers gives the page of the issue or merge request #N, when it exists
 	// (nil: no #N links). The href is built by the server, never from the text.
-	numbers func(int64) (href string, ok bool)
+	numbers func(int64) (href string, kind domain.NumberKind, ok bool)
 }
 
 // renderUntrusted renders Markdown written by an anonymous visitor (an issue
@@ -97,7 +98,7 @@ type refResolver struct {
 //     rel="nofollow noopener noreferrer ugc"; relative links, #fragments and
 //     every other scheme lose their link and keep the text;
 //   - nothing points into the repository.
-func (m *markdown) renderUntrusted(source []byte, idPrefix string, numbers func(int64) (string, bool)) (template.HTML, error) {
+func (m *markdown) renderUntrusted(source []byte, idPrefix string, numbers func(int64) (string, domain.NumberKind, bool)) (template.HTML, error) {
 	h, _, err := m.renderPolicy(source, linkPolicy{idPrefix: idPrefix, untrusted: true}, refResolver{numbers: numbers})
 	return h, err
 }
@@ -457,13 +458,13 @@ func references(t *ast.Text, source []byte, res refResolver) {
 			link.Destination = []byte("#c" + id)
 			link.Title = []byte("note " + id)
 		} else {
-			href, ok := res.numbers(n)
+			href, kind, ok := res.numbers(n)
 			if !ok {
 				continue
 			}
 			link.Destination = []byte(href)
 			title := "issue "
-			if strings.Contains(href, "/merge-requests/") {
+			if kind == domain.NumberMergeRequest {
 				title = "merge request "
 			}
 			link.Title = []byte(title + id)

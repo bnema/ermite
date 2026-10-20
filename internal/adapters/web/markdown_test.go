@@ -238,14 +238,14 @@ func TestNoteMarkdown(t *testing.T) {
 
 func TestNumberReferences(t *testing.T) {
 	t.Parallel()
-	numbers := func(n int64) (string, bool) {
+	numbers := func(n int64) (string, domain.NumberKind, bool) {
 		switch n {
 		case 3:
-			return "/demo/issues/3", true
+			return "/demo/issues/3", domain.NumberIssue, true
 		case 4:
-			return "/demo/merge-requests/4", true
+			return "/demo/merge-requests/4", domain.NumberMergeRequest, true
 		}
-		return "", false
+		return "", domain.NumberNone, false
 	}
 	tests := []struct {
 		source string
@@ -286,7 +286,7 @@ func TestNumberAndNoteReferencesTogether(t *testing.T) {
 	t.Parallel()
 	h, err := newMarkdown().renderNote([]byte("see ^2 and #3."), "demo", "main", "c1-", refResolver{
 		notes:   func(n int64) bool { return n == 2 },
-		numbers: func(n int64) (string, bool) { return "/demo/issues/3", n == 3 },
+		numbers: func(n int64) (string, domain.NumberKind, bool) { return "/demo/issues/3", domain.NumberIssue, n == 3 },
 	})
 	require.NoError(t, err)
 	assert.Contains(t, string(h), `href="#c2"`)
@@ -302,9 +302,20 @@ func TestNumberResolverCapsLookups(t *testing.T) {
 	resolve := srv.numberResolver(t.Context(), "demo")
 	require.NotNil(t, resolve)
 	for n := int64(1); n <= maxNumberLookups+10; n++ {
-		_, ok := resolve(n)
+		_, _, ok := resolve(n)
 		assert.Equal(t, n <= maxNumberLookups, ok, n)
 	}
-	_, ok := resolve(1) // memoized
+	_, _, ok := resolve(1) // memoized
 	assert.True(t, ok)
+}
+
+func TestNumberReferenceTitleFromKindNotHref(t *testing.T) {
+	t.Parallel()
+	numbers := func(n int64) (string, domain.NumberKind, bool) {
+		return "/owner/merge-requests/issues/3", domain.NumberIssue, true
+	}
+	h, err := newMarkdown().renderIssue([]byte("see #3"), "merge-requests", "main", "i-", numbers)
+	require.NoError(t, err)
+	assert.Contains(t, string(h), `title="issue 3"`)
+	assert.NotContains(t, string(h), "merge request 3")
 }

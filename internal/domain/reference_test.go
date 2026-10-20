@@ -57,3 +57,22 @@ func TestScanMergeRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestScanMergeRequestTruncationDropsPartialToken(t *testing.T) {
+	prefix := strings.Repeat(" ", MaxReferenceTextBytes-len("fixes #123"))
+	got := ScanMergeRequest("", "", nil, []string{prefix + "fixes #12345"})
+	if len(got.Mentions) != 0 || len(got.Closes) != 0 {
+		t.Errorf("split number reported: %+v", got)
+	}
+	// Fully before the limit, followed by a split token.
+	full := "fixes #7 " + strings.Repeat("a", MaxReferenceTextBytes)
+	got = ScanMergeRequest("", "", nil, []string{full})
+	if !reflect.DeepEqual(got, MergeRequestReferences{Mentions: []int64{7}, Closes: []int64{7}}) {
+		t.Errorf("got %+v", got)
+	}
+	// No whitespace at all: nothing scanned.
+	got = ScanMergeRequest("", "", nil, []string{strings.Repeat("a", MaxReferenceTextBytes-3) + " #1" + "2"})
+	if len(got.Mentions) != 0 {
+		t.Errorf("got %+v", got)
+	}
+}
