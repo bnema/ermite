@@ -78,7 +78,8 @@ ermite environment create|list|delete … --repo <repo>
 ermite mirror key show | rotate          # SSH key to add to the remote (rotate: owner only)
 ermite mirror config [--enabled] [--url …{repo}…] [--cron …] [--all-branches] | config show   # global policy, owner only
 ermite mirror add <repo> <url> [--cron …] [--all-branches] | remove <repo> | exclude <repo> | include <repo>
-ermite mirror status [repo] | sync <repo>|--all [--force]
+ermite mirror status [repo] | sync <repo>|--all [--force]   # sync --all: one row per repository, exit 1 if any failed
+
 ermite web login                         # one-time sign-in link (60 s)
 ermite web logout --all                  # sign every browser out
 ermite web passkey list | remove <id>

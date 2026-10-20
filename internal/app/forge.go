@@ -490,9 +490,6 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	if err != nil {
 		return nil, fmt.Errorf("web: %w", err)
 	}
-	if s, ok := site.(*web.Server); ok {
-		s.WithMirrorWarner(f.Mirrors)
-	}
 	routes = append(routes, webRoutes(site)...)
 	f.server = httpserver.New(httpserver.Config{
 		Addr:         cfg.Addr,

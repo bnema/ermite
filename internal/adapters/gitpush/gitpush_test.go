@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
@@ -103,7 +104,10 @@ func TestBoundsAndKeyEnvironment(t *testing.T) {
 			require.NoError(t, os.WriteFile(script, []byte(body), 0700))
 			cfg.Bin = script
 			cfg.MaxOutput = 1024
-			cfg.Timeout = 200 * time.Millisecond
+			cfg.Timeout = 5 * time.Second
+			if mode == "timeout" {
+				cfg.Timeout = 200 * time.Millisecond // the only case that must wait for the deadline
+			}
 			t.Setenv("ERMITE_PRIVATE_TEST", "not-forwarded")
 			ctx := context.Background()
 			if mode == "cancel" {
@@ -134,6 +138,9 @@ func TestBoundsAndKeyEnvironment(t *testing.T) {
 			require.Contains(t, string(env), "BatchMode=yes")
 			require.Contains(t, string(env), "StrictHostKeyChecking=accept-new")
 			require.Contains(t, string(env), "UserKnownHostsFile=")
+			require.Contains(t, string(env), "ConnectTimeout=30")
+			require.Contains(t, string(env), "ServerAliveInterval=15")
+			require.Contains(t, string(env), "ServerAliveCountMax=3")
 		})
 	}
 }
@@ -156,4 +163,35 @@ func TestSafeDetail(t *testing.T) {
 	require.LessOrEqual(t, len(s), 4096)
 	require.NotContains(t, s, "password")
 	require.NotContains(t, s, "user@")
+}
+
+func TestSafeDetailKeepsValidUTF8(t *testing.T) {
+	// The cut falls inside a multibyte character, and the remote sent a stray byte.
+	in := "\xff" + strings.Repeat("x", 3) + strings.Repeat("é", 4097) + "\xff end"
+	var s string
+	require.NotPanics(t, func() { s = safeDetail(in, "ssh://host/repo") })
+	require.True(t, utf8.ValidString(s))
+	require.LessOrEqual(t, len(s), maxDetail)
+	require.True(t, strings.HasSuffix(s, "? end"))
+}
+
+func TestClassifyIgnoresRemoteLines(t *testing.T) {
+	stderr := "remote: Permission denied (publickey) is what your CI says\nfatal: unable to access: Could not resolve hostname\n"
+	require.Equal(t, domain.MirrorClassTransient, domain.ClassifyMirrorOutput(withoutRemoteLines(stderr), errors.New("exit 128"), false))
+	require.Contains(t, withoutRemoteLines("remote: a\n  remote: b\nkept"), "kept")
+	require.NotContains(t, withoutRemoteLines("remote: a\n  remote: b\nkept"), "remote:")
+}
+
+func TestRemoteLinesStayInDetailButNotInClass(t *testing.T) {
+	cfg, req := setup(t)
+	req.URL = "file:///unused"
+	script := filepath.Join(t.TempDir(), "git")
+	body := "#!/bin/sh\necho 'remote: error: non-fast-forward hook says no' >&2\necho 'fatal: Could not read from remote repository.' >&2\nexit 1\n"
+	require.NoError(t, os.WriteFile(script, []byte(body), 0700))
+	cfg.Bin = script
+	_, err := New(cfg).Push(context.Background(), req)
+	var me *domain.MirrorError
+	require.ErrorAs(t, err, &me)
+	require.Equal(t, domain.MirrorClassTransient, me.Class, "a message from the remote does not pick the class")
+	require.Contains(t, me.Detail, "remote: error")
 }

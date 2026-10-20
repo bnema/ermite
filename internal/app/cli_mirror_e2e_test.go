@@ -29,7 +29,7 @@ func TestMirrorCLIEndToEnd(t *testing.T) {
 	var dataDir string
 	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvSecretsKey: secretsKeyA}}, func(o *options) {
 		o.mirrors = func(c *usecase.MirrorsConfig) {
-			c.AllowAnyURL = true
+			c.ValidateURL = func(string) error { return nil } // file:// remotes
 			c.Clock = clk
 			c.ScheduleTick = time.Hour
 			c.Pusher = gitpush.New(gitpush.Config{
@@ -56,6 +56,7 @@ func TestMirrorCLIEndToEnd(t *testing.T) {
 	assert.Equal(t, "ssh-ed25519", pub.Type())
 	assert.Equal(t, 1, strings.Count(key.stdout, "\n"))
 	assert.Contains(t, c.cli(t, adminToken, "version").ok(t).stdout, "mirror")
+	h.forge.Mirrors.Start()
 	events := h.forge.Bus.Subscribe(h.ctx)
 	wt := h.workTree("main", "README.md")
 	h.mustGit(wt, "tag", "v1")
@@ -88,7 +89,7 @@ func TestMirrorCLIEndToEnd(t *testing.T) {
 	status := run("status", "proj").ok(t).stdout
 	assert.Contains(t, status, "paused")
 	assert.Contains(t, status, "remote has commits")
-	assert.Contains(t, run("status", "proj", "--json").ok(t).stdout, `"failure_class":"diverged"`)
+	assert.Contains(t, run("status", "proj", "--json").ok(t).stdout, `"failure_class": "diverged"`)
 	h.mustGit(wt, "commit", "--allow-empty", "-m", "warning")
 	warning := h.mustGit(wt, "push", h.urlAuth(adminToken, "/proj.git"), "main")
 	assert.Contains(t, warning, "remote: ermite: mirror")

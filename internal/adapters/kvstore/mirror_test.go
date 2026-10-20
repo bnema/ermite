@@ -5,7 +5,9 @@ package kvstore_test
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
@@ -95,4 +97,29 @@ func TestMirrorRoundTripsAndDelete(t *testing.T) {
 	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, Visibility: domain.VisibilityPrivate}))
 	_, err = s.GetStatus(ctx, repo)
 	require.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestMirrorStatusInvalidUTF8IsRepairedNotPanicking(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t, t.TempDir())
+	repo := name(t, "mirror")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: repo, Visibility: domain.VisibilityPrivate}))
+	detail := strings.Repeat("é", 2048) + "\xff tail"
+	require.NotPanics(t, func() {
+		require.NoError(t, s.PutStatus(ctx, domain.MirrorStatus{Repo: repo, State: domain.MirrorFailing, Detail: detail, Reason: "bad \xfe"}))
+	})
+	got, err := s.GetStatus(ctx, repo)
+	require.NoError(t, err)
+	require.True(t, utf8.ValidString(got.Detail))
+	require.True(t, utf8.ValidString(got.Reason))
+	require.Contains(t, got.Detail, "? tail")
+	// Other records refuse invalid text instead of panicking.
+	require.NotPanics(t, func() {
+		err := s.PutGlobal(ctx, domain.MirrorGlobalConfig{URLTemplate: "\xff"})
+		require.ErrorIs(t, err, domain.ErrInvalid)
+	})
+	require.NotPanics(t, func() {
+		err := s.PutRepoConfig(ctx, domain.MirrorRepoConfig{Repo: repo, URL: "\xff"})
+		require.ErrorIs(t, err, domain.ErrInvalid)
+	})
 }

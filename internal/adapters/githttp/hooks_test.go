@@ -420,7 +420,7 @@ func TestMirrorPostReceiveWarning(t *testing.T) {
 			hooks.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			srv, sock := startHooks(t, hooks)
 			w := mocks.NewMirrorWarner(t)
-			w.EXPECT().Warning(mock.Anything, repoName(t, "proj")).Return(warning)
+			w.EXPECT().Warning(mock.Anything, domain.Root(), repoName(t, "proj")).Return(warning)
 			srv.WithMirrorWarner(w)
 			token, release := srv.Register(t.Context(), repoName(t, "proj"), domain.Root())
 			defer release()
@@ -442,7 +442,7 @@ func TestMirrorPostReceiveTimeout(t *testing.T) {
 	w := mocks.NewMirrorWarner(t)
 	release := make(chan struct{})
 	defer close(release)
-	w.EXPECT().Warning(mock.Anything, repoName(t, "proj")).RunAndReturn(func(ctx context.Context, _ domain.RepoName) string {
+	w.EXPECT().Warning(mock.Anything, domain.Root(), repoName(t, "proj")).RunAndReturn(func(ctx context.Context, _ domain.Principal, _ domain.RepoName) string {
 		deadline, ok := ctx.Deadline()
 		assert.True(t, ok)
 		assert.LessOrEqual(t, time.Until(deadline), 2*time.Second)

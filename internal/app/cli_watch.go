@@ -31,6 +31,9 @@ type jsonEvent struct {
 	Comment      *jsonComment      `json:"comment,omitempty"`
 	// Mergeability is set for a merge_request_mergeability event.
 	Mergeability *jsonMergeability `json:"mergeability,omitempty"`
+	// State and FailureClass are set for a mirror_failed event.
+	State        string `json:"state,omitempty"`
+	FailureClass string `json:"failure_class,omitempty"`
 }
 
 type jsonRefUpdate struct {
@@ -55,6 +58,8 @@ const (
 	eventCommentDeleted  = "comment_deleted"
 	eventCommentResolved = "comment_resolved"
 	eventMRMergeability  = "merge_request_mergeability"
+	eventMirrorFailed    = "mirror_failed"
+	eventMirrorRecovered = "mirror_recovered"
 )
 
 // toJSONEvent maps an event; ok is false for kinds this client does not know,
@@ -100,6 +105,11 @@ func toJSONEvent(ev *ermite.Event, baseURL string) (jsonEvent, bool) {
 	case *ermite.Event_MergeRequestMergeability:
 		out.Type, out.Repo, out.Number = eventMRMergeability, k.MergeRequestMergeability.GetRepo(), k.MergeRequestMergeability.GetNumber()
 		out.Mergeability = toJSONMergeability(k.MergeRequestMergeability.GetMergeability())
+	case *ermite.Event_MirrorFailed:
+		out.Type, out.Repo = eventMirrorFailed, k.MirrorFailed.GetRepo()
+		out.State, out.FailureClass = mirrorStateName(k.MirrorFailed.GetState()), k.MirrorFailed.GetFailureClass()
+	case *ermite.Event_MirrorRecovered:
+		out.Type, out.Repo = eventMirrorRecovered, k.MirrorRecovered.GetRepo()
 	case *ermite.Event_Gap:
 		out.Type = eventGap
 	default:
@@ -134,6 +144,10 @@ func eventLine(e jsonEvent) string {
 		detail = fmt.Sprintf("%s!%d by %s", e.Repo, e.Number, e.Comment.Author)
 	case eventMRMergeability:
 		detail = fmt.Sprintf("%s!%d mergeability: %s", e.Repo, e.Number, mergeabilityEventText(e.Mergeability))
+	case eventMirrorFailed:
+		detail = e.Repo + " " + e.State + " (" + e.FailureClass + ")"
+	case eventMirrorRecovered:
+		detail = e.Repo
 	case eventGap:
 		detail = "events were lost, reload what you display"
 	}

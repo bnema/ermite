@@ -43,7 +43,7 @@ func TestMirrorSyncResponse(t *testing.T) {
 	require.NoError(t, err)
 	status := domain.MirrorStatus{Repo: name, State: domain.MirrorPaused, Class: domain.MirrorClassDiverged, Reason: "remote diverged", ConsecutiveFailures: 1}
 	target := domain.MirrorTarget{Repo: name, Enabled: true, Source: domain.MirrorSourceOverride}
-	service.EXPECT().Sync(mock.Anything, domain.Principal{}, name, true).Return(ports.MirrorSyncResult{Status: status}, nil).Once()
+	service.EXPECT().Sync(mock.Anything, domain.Principal{}, name, true).Return(ports.MirrorSyncResult{Repo: name, Status: status}, nil).Once()
 	service.EXPECT().GetStatus(mock.Anything, domain.Principal{}, name).Return(ports.MirrorStatusView{Target: target, Status: status}, nil).Once()
 	s := &mirrorService{service}
 	res, err := s.SyncMirror(context.Background(), connect.NewRequest(&pb.SyncMirrorRequest{Repo: "repo", Force: true}))
@@ -58,10 +58,10 @@ func TestMirrorEvents(t *testing.T) {
 	name, err := domain.ParseRepoName("repo")
 	require.NoError(t, err)
 	now := time.Now().UTC()
-	failed := watchEventToPB(ports.WatchEvent{Event: domain.MirrorFailed{Repo: name, State: domain.MirrorPaused, Class: domain.MirrorClassDiverged, Reason: "remote diverged", At: now}})
+	failed := watchEventToPB(ports.WatchEvent{Event: domain.MirrorFailed{Repo: name, State: domain.MirrorPaused, Class: domain.MirrorClassDiverged, At: now}})
 	require.NotNil(t, failed)
 	assert.Equal(t, now, failed.Time.AsTime())
-	assert.Equal(t, &pb.MirrorFailed{Repo: "repo", State: pb.MirrorState_MIRROR_STATE_PAUSED, FailureClass: "diverged", Reason: "remote diverged"}, failed.GetMirrorFailed())
+	assert.Equal(t, &pb.MirrorFailed{Repo: "repo", State: pb.MirrorState_MIRROR_STATE_PAUSED, FailureClass: "diverged"}, failed.GetMirrorFailed())
 	recovered := watchEventToPB(ports.WatchEvent{Event: domain.MirrorRecovered{Repo: name, At: now}})
 	require.NotNil(t, recovered)
 	assert.Equal(t, "repo", recovered.GetMirrorRecovered().Repo)
@@ -69,4 +69,40 @@ func TestMirrorEvents(t *testing.T) {
 	fields := failed.GetMirrorFailed().ProtoReflect().Descriptor().Fields()
 	assert.Nil(t, fields.ByName("url"))
 	assert.Nil(t, fields.ByName("detail"))
+	assert.Nil(t, fields.ByName("reason"))
+}
+
+func TestMirrorSyncAllReportsPerRepositoryErrors(t *testing.T) {
+	service := mocks.NewMirrorService(t)
+	good, bad := repoN(t, "good"), repoN(t, "bad")
+	service.EXPECT().SyncAll(mock.Anything, domain.Principal{}, false).Return([]ports.MirrorSyncResult{
+		{Repo: good, Status: domain.MirrorStatus{Repo: good, State: domain.MirrorOK}},
+		{Repo: bad, Status: domain.MirrorStatus{Repo: bad, State: domain.MirrorPaused}, Err: &domain.MirrorError{Class: domain.MirrorClassDiverged, Detail: "rejected"}},
+	}, nil).Once()
+	service.EXPECT().GetStatus(mock.Anything, domain.Principal{}, good).Return(ports.MirrorStatusView{Status: domain.MirrorStatus{Repo: good, State: domain.MirrorOK}}, nil).Once()
+	service.EXPECT().GetStatus(mock.Anything, domain.Principal{}, bad).Return(ports.MirrorStatusView{Status: domain.MirrorStatus{Repo: bad, State: domain.MirrorPaused}}, nil).Once()
+	res, err := (&mirrorService{service}).SyncMirror(context.Background(), connect.NewRequest(&pb.SyncMirrorRequest{All: true}))
+	require.NoError(t, err)
+	require.Len(t, res.Msg.Results, 2)
+	assert.Empty(t, res.Msg.Results[0].Error)
+	assert.Equal(t, "mirror diverged: rejected", res.Msg.Results[1].Error)
+	assert.Equal(t, pb.MirrorState_MIRROR_STATE_PAUSED, res.Msg.Results[1].Status.State)
+}
+
+func TestMirrorRotateReturnsPreviousFingerprint(t *testing.T) {
+	service := mocks.NewMirrorService(t)
+	service.EXPECT().RotateKey(mock.Anything, domain.Principal{}).Return(ports.MirrorKeyRotation{
+		Key: domain.MirrorPublicKey{Fingerprint: "SHA256:new"}, Previous: domain.MirrorPublicKey{Fingerprint: "SHA256:old"},
+	}, nil).Once()
+	res, err := (&mirrorService{service}).RotateMirrorKey(context.Background(), connect.NewRequest(&pb.RotateMirrorKeyRequest{}))
+	require.NoError(t, err)
+	assert.Equal(t, "SHA256:new", res.Msg.Key.Fingerprint)
+	assert.Equal(t, "SHA256:old", res.Msg.PreviousFingerprint)
+}
+
+func repoN(t *testing.T, s string) domain.RepoName {
+	t.Helper()
+	n, err := domain.ParseRepoName(s)
+	require.NoError(t, err)
+	return n
 }

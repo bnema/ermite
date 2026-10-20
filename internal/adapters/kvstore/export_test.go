@@ -65,3 +65,9 @@ func (i *Issues) PutRawIssueForTest(ctx context.Context, repo domain.RepoName, n
 	_, err := i.db.Apply(ctx, &b)
 	return err
 }
+
+// RawMirrorKey is the stored protobuf of the mirror key, for encryption-at-rest tests.
+func (s *Store) RawMirrorKey(ctx context.Context) ([]byte, bool) {
+	item, ok := s.db.Get(ctx, []byte(domain.MirrorKeyPath))
+	return item.Value, ok
+}

@@ -525,7 +525,7 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 		out.Kind = jobEventToPB(ev)
 	case domain.MirrorFailed:
 		out.Time = timestamp(ev.At)
-		out.Kind = &pb.Event_MirrorFailed{MirrorFailed: &pb.MirrorFailed{Repo: ev.Repo.String(), State: mirrorStateToPB(ev.State), FailureClass: string(ev.Class), Reason: ev.Reason}}
+		out.Kind = &pb.Event_MirrorFailed{MirrorFailed: &pb.MirrorFailed{Repo: ev.Repo.String(), State: mirrorStateToPB(ev.State), FailureClass: string(ev.Class)}}
 	case domain.MirrorRecovered:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_MirrorRecovered{MirrorRecovered: &pb.MirrorRecovered{Repo: ev.Repo.String()}}

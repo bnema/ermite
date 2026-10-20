@@ -35,7 +35,7 @@ func TestMirrorBadge(t *testing.T) {
 			if tc.lookup {
 				w.EXPECT().Badge(mock.Anything, tc.p, repo).Return(tc.state, "main diverged on remote")
 			}
-			s := (&Server{}).WithMirrorWarner(w)
+			s := &Server{cfg: Config{Mirrors: w}}
 			badge := s.mirrorBadge(domain.ContextWithPrincipal(t.Context(), tc.p), repo)
 			out := renderRail(t, SummaryPage{Mirror: badge})
 			if tc.shown {

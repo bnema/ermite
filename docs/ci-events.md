@@ -67,7 +67,7 @@ ermite workflow run <file> --repo <repo> [--ref <branch|tag>] [-f name=value …
 
 Not workflow triggers: `ermite watch` reports them when a [push mirror](mirror.md) changes health, once per incident.
 
-- `mirror.failed`: the mirror started failing or was paused. Payload: `repo`, `state` (`failing` or `paused`), `failure_class` (`diverged`, `auth_denied`, `remote_not_found`, `host_key`, `transient`, `internal`), `reason`.
+- `mirror.failed`: the mirror started failing or was paused. Payload: `repo`, `state` (`failing` or `paused`), `failure_class` (`diverged`, `auth_denied`, `remote_not_found`, `host_key`, `transient`, `internal`). In `ermite watch --json` they are `mirror_failed` (with `state`, `failure_class`) and `mirror_recovered`.
 - `mirror.recovered`: a failing or paused mirror pushed successfully. Payload: `repo`.
 
-The payload carries neither the remote URL nor the error detail; `ermite mirror status` shows the reason.
+The payload carries neither the remote URL, the reason nor the error detail; `ermite mirror status` shows the reason to repository admins.

@@ -47,6 +47,9 @@ const requestTimeout = 30 * time.Second
 
 // Config configures a Server.
 type Config struct {
+	// Mirrors answers the push mirror badge shown to repository admins. Without it there is
+	// no badge. Leave it unset rather than assigning a typed nil pointer.
+	Mirrors ports.MirrorWarner
 	// Repos and Browse are the use cases the pages are built from.
 	Repos  ports.RepoService
 	Browse ports.BrowseService
@@ -127,7 +130,6 @@ type Config struct {
 
 // Server serves the pages. It is an http.Handler.
 type Server struct {
-	mirrors  ports.MirrorWarner
 	cfg      Config
 	instance string
 	origin   string // scheme://host of the public URL, what a POST must come from

@@ -37,12 +37,13 @@ URLs are `git@host:path` or `ssh://[user@]host[:port]/path`, with no password. T
 
 - The default branch and all tags; every branch with `--all-branches`.
 - Never a force push, never a deletion: a branch or tag deleted here stays on the remote.
-- If the remote has commits ermite lacks (diverged), the mirror is **paused**. To fix it, fast-forward ermite with the remote's commits (push them here), then run `ermite mirror sync <repo> --force`.
+- The push is atomic: if the remote refuses **any** ref, nothing is updated and the mirror is **paused** as diverged. Besides a branch the remote has moved ahead, this happens when a tag was moved or rewritten here (an existing remote tag is never overwritten), and for any other ref the remote rejects.
+- To fix a diverged branch, fast-forward ermite with the remote's commits (push them here). To fix a tag, restore it here to the commit the remote has, or delete that tag on the remote yourself (ermite never deletes anything there). Then run `ermite mirror sync <repo> --force`.
 
 ## When it syncs
 
 - On the cron schedule. A push to ermite only marks the repository as changed; the next due cron tick syncs it. A tick with nothing new does nothing.
-- `ermite mirror sync <repo>` or `ermite mirror sync --all` (owner only) syncs now; a repository needs admin rights.
+- `ermite mirror sync <repo>` or `ermite mirror sync --all` (owner only) syncs now; a repository needs admin rights. `--all` skips repositories without a mirror, continues past failures, prints one row per repository and exits with status 1 if any failed.
 - `--force` skips the no-op check and the 60 s throttle and lifts a pause. It never force-pushes.
 - Overlapping syncs of a repository coalesce; only one push runs at a time per repository.
 
@@ -62,13 +63,20 @@ A paused mirror is not retried by the schedule. Changing the mirror configuratio
 ## See what happens
 
 - `ermite mirror status [<repo>] [--json]`: state (`ok`, `failing`, `paused`, `disabled`), reason, last success, next run, failures.
-- A `git push` to a repository whose mirror is failing or paused prints a `remote:` warning, to people with admin rights.
+- A `git push` to a repository whose mirror is failing or paused prints a `remote:` warning, **only to people with admin rights on the repository**: it names the remote and the reason, which other pushers do not see. The same holds for the URL and the reason in `mirror status` and the web badge.
 - The repository page shows a badge to owners and admins.
 - `ermite watch` receives `mirror.failed` once when a mirror starts failing, and `mirror.recovered` when it succeeds again. See [events](ci-events.md#mirror-events).
 
 ## Security
 
 - The private key is sealed at rest with `ERMITE_SECRETS_KEY`. It is never printed and never in logs; URLs are logged without credentials or user.
-- Host keys are trusted on first use, kept in `<data dir>/mirror_known_hosts`. If a remote's key changes, the mirror is paused (`host_key`). After checking the change is legitimate, remove that host's line from the file and run `ermite mirror sync <repo> --force`.
-- `ermite mirror key rotate` (owner only) makes a new key at once. Every mirror fails until the new key is added to the remotes.
+- Host keys are trusted on first use (TOFU), kept in `<data dir>/mirror_known_hosts`. The first connection to a host accepts whatever key it presents, so to be sure of it, pre-seed the file before configuring the mirror and compare with what the host publishes:
+
+  ```sh
+  ssh-keyscan -t ed25519,rsa,ecdsa github.com | tee -a <data dir>/mirror_known_hosts
+  ssh-keygen -lf <data dir>/mirror_known_hosts   # compare with https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+  ```
+
+  Remove any line whose fingerprint does not match. If a remote's key changes, the mirror is paused (`host_key`). After checking the change is legitimate, remove that host's line from the file and run `ermite mirror sync <repo> --force`.
+- `ermite mirror key rotate` (owner only) makes a new key at once and prints the fingerprint of the replaced one on stderr. Every mirror fails until the new key is added to the remotes.
 - The scheduler runs in the server process: run a single ermite instance per data directory.

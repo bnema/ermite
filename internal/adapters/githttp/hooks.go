@@ -64,14 +64,14 @@ func (s *HookServer) WithMirrorWarner(w ports.MirrorWarner) *HookServer {
 }
 
 // mirrorWarning bounds even a source that does not honor context cancellation.
-func (s *HookServer) mirrorWarning(ctx context.Context, repo domain.RepoName) string {
+func (s *HookServer) mirrorWarning(ctx context.Context, p domain.Principal, repo domain.RepoName) string {
 	if s.mirrors == nil {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	result := make(chan string, 1)
-	go func() { result <- s.mirrors.Warning(ctx, repo) }()
+	go func() { result <- s.mirrors.Warning(ctx, p, repo) }()
 	select {
 	case warning := <-result:
 		if ctx.Err() != nil || warning == "" {
@@ -256,7 +256,7 @@ func (s *HookServer) handle(ctx context.Context, conn net.Conn) {
 			s.reply(ctx, conn, HookReply{OK: true, Message: "ermite: the push succeeded but recording it failed"})
 			return
 		}
-		s.reply(ctx, conn, HookReply{OK: true, Message: s.mirrorWarning(rctx, entry.repo)})
+		s.reply(ctx, conn, HookReply{OK: true, Message: s.mirrorWarning(rctx, entry.principal, entry.repo)})
 	}
 }
 

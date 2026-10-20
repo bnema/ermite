@@ -48,7 +48,10 @@ func (s *Store) readMirror(ctx context.Context, key string, pb proto.Message) er
 }
 
 func (s *Store) writeMirror(ctx context.Context, key string, repo domain.RepoName, pb proto.Message) error {
-	val := mustMarshal(pb)
+	val, err := marshalMirror(pb)
+	if err != nil {
+		return err
+	}
 	for range updateAttempts {
 		var b kv.Batch
 		if key != mirrorConfigKey {
@@ -67,6 +70,16 @@ func (s *Store) writeMirror(ctx context.Context, key string, repo domain.RepoNam
 		return nil
 	}
 	return domain.ErrConflict
+}
+
+// marshalMirror refuses what protobuf cannot encode: a status detail comes from remote output
+// and may hold invalid UTF-8, which would make mustMarshal panic.
+func marshalMirror(pb proto.Message) ([]byte, error) {
+	val, err := proto.MarshalOptions{Deterministic: true}.Marshal(pb)
+	if err != nil {
+		return nil, fmt.Errorf("%w: mirror record is not valid UTF-8", domain.ErrInvalid)
+	}
+	return val, nil
 }
 
 func (s *Store) GetGlobal(ctx context.Context) (domain.MirrorGlobalConfig, error) {
@@ -124,6 +137,10 @@ func (s *Store) GetStatus(ctx context.Context, repo domain.RepoName) (domain.Mir
 	return decodeMirrorStatus(repo, &pb), err
 }
 func (s *Store) PutStatus(ctx context.Context, c domain.MirrorStatus) error {
+	// Detail is the tail of a remote's stderr, whose bytes are not ours: repair rather than lose
+	// the status (which would stall the incident).
+	c.Detail = strings.ToValidUTF8(c.Detail, "?")
+	c.Reason = strings.ToValidUTF8(c.Reason, "?")
 	return s.writeMirror(ctx, mirrorStatePrefix+c.Repo.String(), c.Repo, &storagepb.MirrorState{State: string(c.State), Class: string(c.Class), Reason: c.Reason, Detail: c.Detail, ConsecutiveFailures: int32(c.ConsecutiveFailures), LastAttemptAt: encodeTime(c.LastAttemptAt), LastSuccessAt: encodeTime(c.LastSuccessAt), NextRetryAt: encodeTime(c.NextRetryAt), PausedAt: encodeTime(c.PausedAt), UpdatedAt: encodeTime(c.UpdatedAt)})
 }
 func (s *Store) ListStatus(ctx context.Context) ([]domain.MirrorStatus, error) {
@@ -172,7 +189,7 @@ func (s *Store) PutMirrorKey(ctx context.Context, sealed []byte, at time.Time, i
 	if ifAbsent {
 		b.RequireAbsent(key)
 	}
-	b.Put(key, mustMarshal(&storagepb.MirrorKey{Sealed: sealed, CreatedAt: encodeTime(at)}))
+	b.Put(key, mustMarshal(&storagepb.MirrorKey{Sealed: sealed, CreatedAt: encodeTime(at)})) // bytes and a timestamp: always encodable
 	_, err := s.db.Apply(ctx, &b)
 	if ifAbsent && errors.Is(err, kv.ErrConflict) {
 		return domain.ErrAlreadyExists
@@ -181,10 +198,4 @@ func (s *Store) PutMirrorKey(ctx context.Context, sealed []byte, at time.Time, i
 		return fmt.Errorf("store mirror key: %w", err)
 	}
 	return nil
-}
-
-// RawMirrorKey exposes the stored protobuf for encryption-at-rest tests.
-func (s *Store) RawMirrorKey(ctx context.Context) ([]byte, bool) {
-	item, ok := s.db.Get(ctx, []byte(domain.MirrorKeyPath))
-	return item.Value, ok
 }

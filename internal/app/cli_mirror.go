@@ -9,32 +9,87 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 
 	"bnema.dev/ermite-api/gen/ermite"
 )
 
-// mirrorJSON keeps the API's snake_case field names, including unset defaults.
-func mirrorJSON(cmd *cobra.Command, msg proto.Message) error {
-	b, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(msg)
-	if err != nil {
-		return err
+const jsonMirrorKeyHelp = `
+JSON fields of a key (--json): authorized_key, fingerprint, created_at (RFC 3339, UTC).`
+
+const jsonMirrorConfigHelp = `
+JSON fields of the policy (--json): enabled, url_template, cron, all_branches, updated_at (RFC 3339, UTC, null if never set).`
+
+const jsonMirrorStatusHelp = `
+JSON fields of a status (--json): repo, enabled, source (disabled, global, override, excluded), url
+(admins only, else empty), cron, all_branches, state (disabled, ok, failing, paused), failure_class,
+reason, detail (admins only), consecutive_failures, last_attempt_at, last_success_at, next_retry_at,
+next_run_at, paused_at (RFC 3339, UTC, null when unset).`
+
+type jsonMirrorKey struct {
+	AuthorizedKey string  `json:"authorized_key"`
+	Fingerprint   string  `json:"fingerprint"`
+	CreatedAt     *string `json:"created_at"`
+}
+
+type jsonMirrorConfig struct {
+	Enabled     bool    `json:"enabled"`
+	URLTemplate string  `json:"url_template"`
+	Cron        string  `json:"cron"`
+	AllBranches bool    `json:"all_branches"`
+	UpdatedAt   *string `json:"updated_at"`
+}
+
+type jsonMirrorStatus struct {
+	Repo                string  `json:"repo"`
+	Enabled             bool    `json:"enabled"`
+	Source              string  `json:"source"`
+	URL                 string  `json:"url"`
+	Cron                string  `json:"cron"`
+	AllBranches         bool    `json:"all_branches"`
+	State               string  `json:"state"`
+	FailureClass        string  `json:"failure_class"`
+	Reason              string  `json:"reason"`
+	Detail              string  `json:"detail"`
+	ConsecutiveFailures int32   `json:"consecutive_failures"`
+	LastAttemptAt       *string `json:"last_attempt_at"`
+	LastSuccessAt       *string `json:"last_success_at"`
+	NextRetryAt         *string `json:"next_retry_at"`
+	NextRunAt           *string `json:"next_run_at"`
+	PausedAt            *string `json:"paused_at"`
+}
+
+func toJSONMirrorKey(k *ermite.MirrorKey) jsonMirrorKey {
+	return jsonMirrorKey{AuthorizedKey: k.GetAuthorizedKey(), Fingerprint: k.GetFingerprint(), CreatedAt: jsonTime(k.GetCreatedAt())}
+}
+
+func toJSONMirrorConfig(g *ermite.MirrorConfig) jsonMirrorConfig {
+	return jsonMirrorConfig{Enabled: g.GetEnabled(), URLTemplate: g.GetUrlTemplate(), Cron: g.GetCron(), AllBranches: g.GetAllBranches(), UpdatedAt: jsonTime(g.GetUpdatedAt())}
+}
+
+func mirrorSourceName(s ermite.MirrorSource) string {
+	return strings.ToLower(strings.TrimPrefix(s.String(), "MIRROR_SOURCE_"))
+}
+
+func toJSONMirrorStatus(s *ermite.MirrorStatus) jsonMirrorStatus {
+	t := s.GetTarget()
+	return jsonMirrorStatus{
+		Repo: t.GetRepo(), Enabled: t.GetEnabled(), Source: mirrorSourceName(t.GetSource()), URL: t.GetUrl(), Cron: t.GetCron(), AllBranches: t.GetAllBranches(),
+		State: mirrorStateName(s.GetState()), FailureClass: s.GetFailureClass(), Reason: s.GetReason(), Detail: s.GetDetail(), ConsecutiveFailures: s.GetConsecutiveFailures(),
+		LastAttemptAt: jsonTime(s.GetLastAttemptAt()), LastSuccessAt: jsonTime(s.GetLastSuccessAt()), NextRetryAt: jsonTime(s.GetNextRetryAt()), NextRunAt: jsonTime(s.GetNextRunAt()), PausedAt: jsonTime(s.GetPausedAt()),
 	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), string(b))
-	return err
 }
 
 func newMirrorCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "mirror", Short: "Manage non-forcing push mirrors"}
 	key := &cobra.Command{Use: "key", Short: "Show or rotate the mirror SSH key"}
 	for _, rotate := range []bool{false, true} {
-		name := "show"
+		name, short := "show", "Print the mirror authorized_keys line"
+		long := "Print only the authorized_keys line on stdout; requires authentication and ERMITE_SECRETS_KEY on the server.\nPipe it into: gh ssh-key add - --title \"ermite mirror\"." + jsonMirrorKeyHelp
 		if rotate {
-			name = "rotate"
+			name, short = "rotate", "Replace the mirror SSH key (owner only)"
+			long = "Replace the mirror SSH key at once and print the new authorized_keys line on stdout; the replaced\nkey's fingerprint goes to stderr. Every mirror fails until the new key is added to the remotes.\nRequires owner rights and ERMITE_SECRETS_KEY on the server." + jsonMirrorKeyHelp
 		}
-		sub := &cobra.Command{Use: name, Short: "Print the mirror authorized_keys line", Args: cobra.NoArgs,
-			Long: "Print only the authorized_keys line on stdout; requires authentication and ERMITE_SECRETS_KEY on the server.\nPipe show into: gh ssh-key add - --title \"ermite mirror\". Rotation requires owner rights and takes effect immediately."}
+		sub := &cobra.Command{Use: name, Short: short, Args: cobra.NoArgs, Long: long}
 		asJSON := addJSONFlag(sub)
 		sub.RunE = func(cmd *cobra.Command, _ []string) error {
 			c, err := env.client(cmd)
@@ -48,6 +103,9 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 					return c.Describe(e)
 				}
 				k = res.Msg.GetKey()
+				if prev := res.Msg.GetPreviousFingerprint(); prev != "" {
+					noticef(cmd, "replaced key %s", clean(prev))
+				}
 				noticef(cmd, "remotes refuse pushes until this key is added")
 			} else {
 				res, e := c.Mirrors().GetMirrorKey(env.ctx(cmd), connect.NewRequest(&ermite.GetMirrorKeyRequest{}))
@@ -57,7 +115,7 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 				k = res.Msg.GetKey()
 			}
 			if *asJSON {
-				return mirrorJSON(cmd, k)
+				return writeJSON(cmd.OutOrStdout(), toJSONMirrorKey(k))
 			}
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), clean(k.GetAuthorizedKey()))
 			return err
@@ -91,7 +149,7 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 func newMirrorConfigCmd(env *cliEnv) *cobra.Command {
 	var enabled, all bool
 	var url, cron string
-	cmd := &cobra.Command{Use: "config", Short: "Patch the global mirror policy (owner only)", Args: cobra.NoArgs}
+	cmd := &cobra.Command{Use: "config", Short: "Patch the global mirror policy (owner only)", Long: "Change the flags given and keep the other settings; use `config show` to read the policy." + jsonMirrorConfigHelp, Args: cobra.NoArgs}
 	cmd.Flags().BoolVar(&enabled, "enabled", false, "enable the global mirror policy")
 	cmd.Flags().StringVar(&url, "url", "", "SSH URL template containing {repo}")
 	cmd.Flags().StringVar(&cron, "cron", "", "five-field UTC cron (minimum gap five minutes)")
@@ -99,7 +157,7 @@ func newMirrorConfigCmd(env *cliEnv) *cobra.Command {
 	asJSON := addJSONFlag(cmd)
 	output := func(cmd *cobra.Command, g *ermite.MirrorConfig, json bool) error {
 		if json {
-			return mirrorJSON(cmd, g)
+			return writeJSON(cmd.OutOrStdout(), toJSONMirrorConfig(g))
 		}
 		return fields(cmd.OutOrStdout(), [][2]string{{"enabled", strconv.FormatBool(g.GetEnabled())}, {"url", g.GetUrlTemplate()}, {"cron (UTC)", g.GetCron()}, {"all branches", strconv.FormatBool(g.GetAllBranches())}})
 	}
@@ -130,7 +188,7 @@ func newMirrorConfigCmd(env *cliEnv) *cobra.Command {
 		}
 		return output(cmd, res.Msg.GetConfig(), *asJSON)
 	}
-	show := &cobra.Command{Use: "show", Short: "Show the global mirror policy", Args: cobra.NoArgs}
+	show := &cobra.Command{Use: "show", Short: "Show the global mirror policy", Long: "Show the global mirror policy (owner only)." + jsonMirrorConfigHelp, Args: cobra.NoArgs}
 	showJSON := addJSONFlag(show)
 	show.RunE = func(cmd *cobra.Command, _ []string) error {
 		c, err := env.client(cmd)
@@ -177,7 +235,7 @@ func mirrorStateName(s ermite.MirrorState) string {
 }
 
 func newMirrorStatusCmd(env *cliEnv) *cobra.Command {
-	cmd := &cobra.Command{Use: "status [repo]", Short: "Show mirror states, reasons and next runs", Args: cobra.MaximumNArgs(1)}
+	cmd := &cobra.Command{Use: "status [repo]", Short: "Show mirror states, reasons and next runs", Long: "Show one repository, or every repository (owner only).\n--json prints an object for one repository and an array for all." + jsonMirrorStatusHelp, Args: cobra.MaximumNArgs(1)}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		c, err := env.client(cmd)
@@ -191,7 +249,7 @@ func newMirrorStatusCmd(env *cliEnv) *cobra.Command {
 				return c.Describe(err)
 			}
 			if *asJSON {
-				return mirrorJSON(cmd, res.Msg.GetStatus())
+				return writeJSON(cmd.OutOrStdout(), toJSONMirrorStatus(res.Msg.GetStatus()))
 			}
 			statuses = append(statuses, res.Msg.GetStatus())
 		} else {
@@ -200,17 +258,11 @@ func newMirrorStatusCmd(env *cliEnv) *cobra.Command {
 				return c.Describe(err)
 			}
 			if *asJSON {
-				// Marshal each status with proto JSON, but retain the CLI list convention: an array.
-				items := make([]string, 0, len(res.Msg.GetStatuses()))
-				for _, s := range res.Msg.GetStatuses() {
-					b, e := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(s)
-					if e != nil {
-						return e
-					}
-					items = append(items, string(b))
+				items := make([]jsonMirrorStatus, 0, len(res.Msg.GetStatuses()))
+				for _, st := range res.Msg.GetStatuses() {
+					items = append(items, toJSONMirrorStatus(st))
 				}
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), "["+strings.Join(items, ",")+"]")
-				return err
+				return writeJSON(cmd.OutOrStdout(), items)
 			}
 			statuses = res.Msg.GetStatuses()
 		}
@@ -246,11 +298,23 @@ func newMirrorSyncCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return c.Describe(err)
 		}
+		failed := 0
 		rows := make([][]string, 0, len(res.Msg.GetResults()))
 		for _, r := range res.Msg.GetResults() {
-			rows = append(rows, []string{r.GetRepo(), mirrorStateName(r.GetStatus().GetState()), strconv.FormatBool(r.GetQueued()), strconv.FormatBool(r.GetNoOp()), r.GetStatus().GetReason()})
+			reason := r.GetStatus().GetReason()
+			if r.GetError() != "" {
+				failed++
+				reason = r.GetError()
+			}
+			rows = append(rows, []string{r.GetRepo(), mirrorStateName(r.GetStatus().GetState()), strconv.FormatBool(r.GetQueued()), strconv.FormatBool(r.GetNoOp()), reason})
 		}
-		return table(cmd.OutOrStdout(), []string{"REPO", "STATE", "QUEUED", "NO-OP", "REASON"}, rows)
+		if err := table(cmd.OutOrStdout(), []string{"REPO", "STATE", "QUEUED", "NO-OP", "REASON"}, rows); err != nil {
+			return err
+		}
+		if failed > 0 {
+			return fmt.Errorf("%d of %d mirror syncs failed", failed, len(rows))
+		}
+		return nil
 	}
 	return cmd
 }

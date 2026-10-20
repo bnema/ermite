@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -121,7 +122,7 @@ func (p *Pusher) Push(parent context.Context, req ports.MirrorPush) (result port
 	// -F /dev/null prevents ~/.ssh/config and system config from adding credentials
 	// or weakening the required options. Required options precede caller extras.
 	command := "ssh -F /dev/null -i " + quote(keyPath)
-	for _, opt := range append([]string{"IdentitiesOnly=yes", "BatchMode=yes", "StrictHostKeyChecking=accept-new", "UserKnownHostsFile=" + p.cfg.KnownHosts}, p.cfg.SSHOptions...) {
+	for _, opt := range append([]string{"IdentitiesOnly=yes", "BatchMode=yes", "StrictHostKeyChecking=accept-new", "UserKnownHostsFile=" + p.cfg.KnownHosts, "ConnectTimeout=30", "ServerAliveInterval=15", "ServerAliveCountMax=3"}, p.cfg.SSHOptions...) {
 		command += " -o " + quote(opt)
 	}
 	cleanup := max(min(2*time.Second, p.cfg.Timeout/8), time.Millisecond)
@@ -169,7 +170,9 @@ func (p *Pusher) Push(parent context.Context, req ports.MirrorPush) (result port
 		return result, &domain.MirrorError{Class: domain.MirrorClassTransient, Detail: "mirror push timed out"}
 	}
 	if runErr != nil || rejected {
-		class := domain.ClassifyMirrorOutput(stderr.buf.String()+"\n"+stdout.buf.String(), runErr, false)
+		// The remote's own messages ("remote: ...") are not ssh/git diagnostics: a hosting
+		// message must not pick the failure class. They stay in the detail.
+		class := domain.ClassifyMirrorOutput(withoutRemoteLines(stderr.buf.String())+"\n"+stdout.buf.String(), runErr, false)
 		if rejected && class == domain.MirrorClassNone {
 			class = domain.MirrorClassDiverged
 		}
@@ -186,6 +189,18 @@ func (p *Pusher) Push(parent context.Context, req ports.MirrorPush) (result port
 	return result, nil
 }
 
+// withoutRemoteLines drops the lines the remote sent through git ("remote: ...").
+func withoutRemoteLines(s string) string {
+	lines := strings.Split(s, "\n")
+	kept := lines[:0]
+	for _, l := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(l), "remote:") {
+			kept = append(kept, l)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
 func localGitError(stderr string) bool {
 	for _, marker := range []string{"cannot change to", "not a git repository", "src refspec", "bad object", "unable to read"} {
 		if strings.Contains(strings.ToLower(stderr), marker) {
@@ -194,6 +209,9 @@ func localGitError(stderr string) bool {
 	}
 	return false
 }
+
+// maxDetail caps a detail in bytes; a cut inside a multibyte character is repaired.
+const maxDetail = 4096
 
 // safeDetail removes the complete target before taking a bounded stderr tail.
 // SSH diagnostics may repeat the user separately, so suppress user@ tokens too.
@@ -206,10 +224,13 @@ func safeDetail(s, url string) string {
 		}
 	}
 	s = strings.Join(words, " ")
-	if len(s) > 4096 {
-		s = s[len(s)-4096:]
+	if len(s) > maxDetail {
+		s = s[len(s)-maxDetail:]
+		for len(s) > 0 && !utf8.RuneStart(s[0]) { // do not start inside a character
+			s = s[1:]
+		}
 	}
-	return s
+	return strings.ToValidUTF8(s, "?")
 }
 
 type limitWriter struct {

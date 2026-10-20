@@ -4,6 +4,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
@@ -27,16 +28,11 @@ func (s *mirrorService) GetMirrorKey(ctx context.Context, _ *connect.Request[pb.
 	return connect.NewResponse(&pb.GetMirrorKeyResponse{Key: mirrorKeyToPB(k)}), nil
 }
 func (s *mirrorService) RotateMirrorKey(ctx context.Context, _ *connect.Request[pb.RotateMirrorKeyRequest]) (*connect.Response[pb.RotateMirrorKeyResponse], error) {
-	// The use case owns authorization for both operations.
-	previous, err := s.mirrors.ShowKey(ctx, caller(ctx))
+	r, err := s.mirrors.RotateKey(ctx, caller(ctx))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	k, err := s.mirrors.RotateKey(ctx, caller(ctx))
-	if err != nil {
-		return nil, connectError(ctx, err)
-	}
-	return connect.NewResponse(&pb.RotateMirrorKeyResponse{Key: mirrorKeyToPB(k), PreviousFingerprint: previous.Fingerprint}), nil
+	return connect.NewResponse(&pb.RotateMirrorKeyResponse{Key: mirrorKeyToPB(r.Key), PreviousFingerprint: r.Previous.Fingerprint}), nil
 }
 func (s *mirrorService) GetMirrorConfig(ctx context.Context, _ *connect.Request[pb.GetMirrorConfigRequest]) (*connect.Response[pb.GetMirrorConfigResponse], error) {
 	g, err := s.mirrors.GetGlobalConfig(ctx, caller(ctx))
@@ -129,20 +125,43 @@ func (s *mirrorService) SyncMirror(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, connectError(ctx, err)
 		}
+		result.Repo = name
 		results = []ports.MirrorSyncResult{result}
 	}
 	out := make([]*pb.SyncMirrorResult, 0, len(results))
 	for _, result := range results {
-		v, err := s.mirrors.GetStatus(ctx, caller(ctx), result.Status.Repo)
+		v, err := s.mirrors.GetStatus(ctx, caller(ctx), result.Repo)
 		if err != nil {
 			return nil, connectError(ctx, err)
 		}
 		if !result.Queued {
 			v.Status = result.Status
 		}
-		out = append(out, &pb.SyncMirrorResult{Repo: result.Status.Repo.String(), Queued: result.Queued, NoOp: result.NoOp, Status: mirrorStatusToPB(v)})
+		item := &pb.SyncMirrorResult{Repo: result.Repo.String(), Queued: result.Queued, NoOp: result.NoOp, Status: mirrorStatusToPB(v)}
+		if result.Err != nil {
+			item.Error = syncErrorText(result.Err)
+		}
+		out = append(out, item)
 	}
 	return connect.NewResponse(&pb.SyncMirrorResponse{Results: out}), nil
+}
+
+// syncErrorText is the human reason a repository failed in SyncAll. The caller is an owner;
+// a mirror error is already redacted by the transport and carries no URL.
+func syncErrorText(err error) string {
+	var me *domain.MirrorError
+	if errors.As(err, &me) {
+		return "mirror " + string(me.Class) + ": " + me.Detail
+	}
+	switch {
+	case errors.Is(err, domain.ErrResourceExhausted):
+		return err.Error()
+	case errors.Is(err, domain.ErrNotFound):
+		return "repository not found"
+	case errors.Is(err, domain.ErrInvalid):
+		return "invalid mirror configuration"
+	}
+	return "sync failed"
 }
 
 func mirrorKeyToPB(k domain.MirrorPublicKey) *pb.MirrorKey {

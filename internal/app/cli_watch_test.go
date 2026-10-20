@@ -266,3 +266,20 @@ func TestNoteWatchEvents(t *testing.T) {
 		assert.Contains(t, string(raw), `"edited_at":"2026-10-10T12:00:00Z"`)
 	}
 }
+
+func TestMirrorWatchEvents(t *testing.T) {
+	failed, ok := toJSONEvent(&ermite.Event{Kind: &ermite.Event_MirrorFailed{MirrorFailed: &ermite.MirrorFailed{Repo: "alpha", State: ermite.MirrorState_MIRROR_STATE_PAUSED, FailureClass: "diverged"}}}, "")
+	require.True(t, ok)
+	assert.Equal(t, "mirror_failed", failed.Type)
+	assert.Equal(t, "alpha", failed.Repo)
+	assert.Contains(t, eventLine(failed), "mirror_failed  alpha paused (diverged)")
+	raw, err := json.Marshal(failed)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"state":"paused"`)
+	assert.Contains(t, string(raw), `"failure_class":"diverged"`)
+	recovered, ok := toJSONEvent(&ermite.Event{Kind: &ermite.Event_MirrorRecovered{MirrorRecovered: &ermite.MirrorRecovered{Repo: "alpha"}}}, "")
+	require.True(t, ok)
+	assert.Equal(t, "mirror_recovered", recovered.Type)
+	assert.Contains(t, eventLine(recovered), "mirror_recovered  alpha")
+	assert.NotContains(t, eventLine(recovered), "  \n")
+}
