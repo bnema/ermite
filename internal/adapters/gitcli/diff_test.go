@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/domain"
-	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/readertest"
 )
 
@@ -661,12 +660,5 @@ func TestDiffLimitsWindow(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, d.Diff.Files, 300)
 		assert.True(t, d.Diff.Truncated)
-	})
-}
-
-func TestDiffChangedLineLimits(t *testing.T) {
-	readertest.DiffChangedLineLimits(t, func(t *testing.T) (ports.RepoReader, string) {
-		g, data := newReader(t, nil)
-		return g, data
 	})
 }

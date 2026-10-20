@@ -145,7 +145,9 @@ func TestDiffBudgetContext(t *testing.T) {
 	if !b.ChargeLine(2, false) || b.FileLines() != 2 {
 		t.Fatal("context consumed changed-line budget")
 	}
-	if !b.ChargeLine(1, true) || !b.ChargeLine(1, true) || b.FileLines() != 0 {
+	first := b.ChargeLine(1, true)
+	second := b.ChargeLine(1, true)
+	if !first || !second || b.FileLines() != 0 {
 		t.Fatal("additions and deletions must consume changed-line budget")
 	}
 	if !b.ChargeLine(2, false) {
