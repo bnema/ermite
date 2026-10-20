@@ -5,7 +5,8 @@ import "time"
 
 func CronMinGap(c Cron) time.Duration {
 	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	end := start.AddDate(1, 0, 0)
+	// Include the next January so adjacent December/January runs are compared.
+	end := start.AddDate(1, 1, 0)
 	var prev time.Time
 	var gap time.Duration
 	for t := start; t.Before(end); t = t.Add(time.Minute) {

@@ -84,6 +84,17 @@ func ClassifyMirrorOutput(stderr string, exitErr error, timedOut bool) MirrorFai
 		return MirrorClassTransient
 	}
 	s := strings.ToLower(stderr)
+	for _, line := range strings.Split(s, "\n") {
+		if i := strings.Index(line, "permission denied ("); i >= 0 {
+			methods, _, closed := strings.Cut(line[i+len("permission denied ("):], ")")
+			if closed && strings.Contains(methods, "publickey") {
+				return MirrorClassAuthDenied
+			}
+		}
+		if strings.Contains(line, "permission to ") && strings.Contains(line, " denied") {
+			return MirrorClassAuthDenied
+		}
+	}
 	for _, entry := range []struct {
 		class   MirrorFailureClass
 		markers []string

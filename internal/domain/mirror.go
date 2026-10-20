@@ -227,7 +227,8 @@ func ResolveMirror(g MirrorGlobalConfig, r *MirrorRepoConfig, repo RepoName) (Mi
 	if e := ValidateMirrorURL(t.URL); e != nil {
 		return t, e
 	}
-	c, e := mirrorCron(t.CronSpec)
+	// Mutation boundaries validate the minimum gap; resolution only parses.
+	c, e := ParseCron(t.CronSpec)
 	if e != nil {
 		return t, e
 	}

@@ -275,3 +275,41 @@ func TestMirrorNextCronFallBack(t *testing.T) {
 		t.Fatal(got, ok)
 	}
 }
+
+func TestMirrorCronYearBoundary(t *testing.T) {
+	spec := "0,59 0,23 1,31 1,12 *"
+	c, err := ParseCron(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := CronMinGap(c); got != time.Minute {
+		t.Fatal(got)
+	}
+	if err := ValidateMirrorRepoConfig(MirrorRepoConfig{Cron: spec}); err == nil {
+		t.Fatal("accepted one-minute year-boundary gap")
+	}
+}
+
+func TestMirrorResolutionOnlyParsesCron(t *testing.T) {
+	g := MirrorGlobalConfig{Enabled: true, URLTemplate: "host:{repo}", Cron: "* * * * *"}
+	repo, _ := ParseRepoName("demo")
+	if _, err := ResolveMirror(g, nil, repo); err != nil {
+		t.Fatal(err)
+	}
+	if ValidateMirrorGlobalConfig(g) == nil {
+		t.Fatal("mutation must still reject short gap")
+	}
+}
+
+func TestMirrorClassifyAuthVariants(t *testing.T) {
+	for _, s := range []string{
+		"Permission denied (publickey,password).",
+		"Permission denied (password,publickey,keyboard-interactive).",
+		"ERROR: Permission to x/y.git denied to deploy key",
+		"remote: Permission to x/y.git denied to someone.",
+	} {
+		if got := ClassifyMirrorOutput(s, errors.New("exit"), false); got != MirrorClassAuthDenied {
+			t.Fatalf("%q: %s", s, got)
+		}
+	}
+}
