@@ -59,6 +59,8 @@ type Config struct {
 	SigningKey    ports.SigningKeyService
 	// Issues serves IssueService.
 	Issues ports.IssueService
+	// Releases serves ReleaseService when set; leave unset rather than a typed nil.
+	Releases ports.ReleaseService
 	// IssueModeration serves the moderation calls of IssueService.
 	IssueModeration ports.IssueModerationService
 	Version         string
@@ -142,6 +144,9 @@ func New(cfg Config) *API {
 	if artifacts {
 		features = append(features, FeatureCIArtifacts)
 	}
+	if cfg.Releases != nil {
+		features = append(features, FeatureReleases)
+	}
 	if cfg.OIDCKeys != nil && cfg.OIDCKeys.Enabled() {
 		features = append(features, FeatureCIOIDC)
 	}
@@ -161,6 +166,10 @@ func New(cfg Config) *API {
 		mux.Handle(ermiteconnect.NewSecretServiceHandler(&secretService{cfg.Secrets}, opts...))
 		mux.Handle(ermiteconnect.NewVariableServiceHandler(&variableService{cfg.Variables}, opts...))
 		mux.Handle(ermiteconnect.NewEnvironmentServiceHandler(&environmentService{cfg.Environments}, opts...))
+	}
+	if cfg.Releases != nil {
+		releaseOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))
+		mux.Handle(ermiteconnect.NewReleaseServiceHandler(&releaseService{cfg.Releases}, releaseOpts...))
 	}
 	if cfg.Runner != nil {
 		runnerOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))

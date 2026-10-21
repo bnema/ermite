@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -36,4 +37,29 @@ func (s *eventService) Watch(ctx context.Context, req *connect.Request[pb.WatchR
 		return stream.Send(&pb.WatchResponse{Event: ev})
 	})
 	return connectError(ctx, err)
+}
+
+func releaseEventToPB(we ports.WatchEvent) *pb.Event {
+	out := &pb.Event{Id: we.ID}
+	switch ev := we.Event.(type) {
+	case domain.ReleasePublished:
+		r := ev.Release
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_ReleasePublished{ReleasePublished: &pb.ReleasePublished{Repo: r.Repo.String(), Id: r.ID, Tag: r.Tag, Draft: r.Draft, Prerelease: r.Prerelease}}
+	case domain.ReleaseUpdated:
+		r := ev.Release
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_ReleaseUpdated{ReleaseUpdated: &pb.ReleaseUpdated{Repo: r.Repo.String(), Id: r.ID, Tag: r.Tag, Draft: r.Draft, Prerelease: r.Prerelease}}
+	case domain.ReleaseDeleted:
+		r := ev.Release
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_ReleaseDeleted{ReleaseDeleted: &pb.ReleaseDeleted{Repo: r.Repo.String(), Id: r.ID, Tag: r.Tag}}
+	case domain.ReleaseUnpublished:
+		r := ev.Release
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_ReleaseUnpublished{ReleaseUnpublished: &pb.ReleaseUnpublished{Repo: r.Repo.String(), Id: r.ID, Tag: r.Tag, Draft: r.Draft, Prerelease: r.Prerelease}}
+	default:
+		return nil
+	}
+	return out
 }

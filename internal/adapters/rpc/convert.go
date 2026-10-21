@@ -538,9 +538,9 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_MirrorRecovered{MirrorRecovered: &pb.MirrorRecovered{Repo: ev.Repo.String()}}
 	default:
-		// Web-only events, such as domain.IssueReferenced and
-		// domain.IssuePendingRemoved: the API has no messages for them.
-		return nil
+		// Release lifecycle conversions live alongside the event service.
+		// Web-only events have no representation in the API.
+		return releaseEventToPB(we)
 	}
 	return out
 }
@@ -564,6 +564,30 @@ func passkeysToPB(list []domain.Passkey) []*pb.Passkey {
 			LastUsedAt: timestamp(p.LastUsedAt),
 			Synced:     p.BackupState,
 		})
+	}
+	return out
+}
+
+func releaseToPB(r domain.Release) *pb.Release {
+	return &pb.Release{
+		Id: r.ID, Repo: r.Repo.String(), Tag: r.Tag, Title: r.Title, Notes: r.Notes,
+		Draft: r.Draft, Prerelease: r.Prerelease, TargetCommitish: r.TargetCommitish, Author: r.Author,
+		CreatedAt: timestamp(r.CreatedAt), PublishedAt: timestamp(r.PublishedAt), UpdatedAt: timestamp(r.UpdatedAt),
+	}
+}
+
+func assetToPB(a domain.ReleaseAsset) *pb.ReleaseAsset {
+	return &pb.ReleaseAsset{
+		Id: a.ID, ReleaseId: a.ReleaseID, Name: a.Name, Label: a.Label, ContentType: a.ContentType,
+		Size: a.Size, Digest: a.Digest, Uploader: a.Uploader,
+		CreatedAt: timestamp(a.CreatedAt), UpdatedAt: timestamp(a.UpdatedAt),
+	}
+}
+
+func assetsToPB(assets []domain.ReleaseAsset) []*pb.ReleaseAsset {
+	out := make([]*pb.ReleaseAsset, 0, len(assets))
+	for _, a := range assets {
+		out = append(out, assetToPB(a))
 	}
 	return out
 }
