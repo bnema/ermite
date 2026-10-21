@@ -51,6 +51,9 @@ Downloads are relayed through ermite with repository authorization and Range
 support: no redirects or presigned URLs. Multipart uploads use 8 MiB parts.
 The daily sweep removes unreferenced blobs and unfinished uploads older than
 24 hours. Release metadata with a missing blob is removed only after two sweeps.
+MinIO lists unfinished uploads only for an exact object key, so the sweep does
+not see them there; MinIO removes them itself (`stale_uploads_expiry`, 24 hours
+by default).
 
 ## Backend changes
 

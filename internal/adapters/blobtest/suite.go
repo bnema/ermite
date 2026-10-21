@@ -18,9 +18,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Option adapts Run to a provider quirk.
+type Option func(*options)
+
+type options struct{ exactKeyUploadList bool }
+
+// ExactKeyUploadList is for providers (MinIO) that list unfinished multipart
+// uploads only when the prefix is a whole object key: the suite then lists by
+// key instead of by directory prefix.
+func ExactKeyUploadList() Option { return func(o *options) { o.exactKeyUploadList = true } }
+
 // Run checks the blob contract against a fresh store for each subtest.
-func Run(t *testing.T, newStore func(*testing.T) ports.BlobStore) {
+func Run(t *testing.T, newStore func(*testing.T) ports.BlobStore, opts ...Option) {
 	ctx := context.Background()
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	// uploadPrefix is the ListMultipart prefix for key: dir, or key itself
+	// on a provider that lists by whole key only.
+	uploadPrefix := func(dir, key string) string {
+		if o.exactKeyUploadList {
+			return key
+		}
+		return dir
+	}
 	t.Run("roundtrip", func(t *testing.T) {
 		s := newStore(t)
 		require.NoError(t, s.Check(ctx))
@@ -136,7 +158,7 @@ func Run(t *testing.T, newStore func(*testing.T) ports.BlobStore) {
 			require.NoError(t, e)
 			require.NoError(t, u.UploadPart(ctx, 1, strings.NewReader("x"), 1))
 			var uploads []ports.MultipartInfo
-			require.NoError(t, s.ListMultipart(ctx, "ci/", func(i ports.MultipartInfo) error { uploads = append(uploads, i); return nil }))
+			require.NoError(t, s.ListMultipart(ctx, uploadPrefix("ci/", "ci/abort"), func(i ports.MultipartInfo) error { uploads = append(uploads, i); return nil }))
 			require.Len(t, uploads, 1)
 			require.Equal(t, u.ID(), uploads[0].ID)
 			require.Equal(t, "ci/abort", uploads[0].Key)
@@ -149,7 +171,7 @@ func Run(t *testing.T, newStore func(*testing.T) ports.BlobStore) {
 			_, e = s.Stat(ctx, "ci/abort")
 			require.ErrorIs(t, e, domain.ErrNotFound)
 			uploads = nil
-			require.NoError(t, s.ListMultipart(ctx, "", func(i ports.MultipartInfo) error { uploads = append(uploads, i); return nil }))
+			require.NoError(t, s.ListMultipart(ctx, uploadPrefix("", "ci/abort"), func(i ports.MultipartInfo) error { uploads = append(uploads, i); return nil }))
 			require.Empty(t, uploads)
 		}
 	})
@@ -199,7 +221,7 @@ func Run(t *testing.T, newStore func(*testing.T) ports.BlobStore) {
 			_, e = s.Stat(ctx, "ci/badlarge")
 			require.ErrorIs(t, e, domain.ErrNotFound)
 		}
-		require.NoError(t, s.ListMultipart(ctx, "", func(ports.MultipartInfo) error { t.Error("unfinished upload after Put"); return nil }))
+		require.NoError(t, s.ListMultipart(ctx, uploadPrefix("", "ci/badlarge"), func(ports.MultipartInfo) error { t.Error("unfinished upload after Put"); return nil }))
 	})
 
 	t.Run("cancel_put", func(t *testing.T) {

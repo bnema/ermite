@@ -23,6 +23,11 @@ func TestIntegration_Contract(t *testing.T) {
 	if region == "" {
 		region = "us-east-1"
 	}
+	var opts []blobtest.Option
+	// MinIO lists unfinished uploads by whole key only.
+	if get("EXACT_KEY_UPLOAD_LIST") == "1" {
+		opts = append(opts, blobtest.ExactKeyUploadList())
+	}
 	blobtest.Run(t, func(t *testing.T) ports.BlobStore {
 		b := make([]byte, 16)
 		_, e := rand.Read(b)
@@ -35,5 +40,5 @@ func TestIntegration_Contract(t *testing.T) {
 			require.NoError(t, s.ListMultipart(ctx, "", func(i ports.MultipartInfo) error { return s.AbortMultipart(ctx, i.Key, i.ID) }))
 		})
 		return s
-	})
+	}, opts...)
 }
