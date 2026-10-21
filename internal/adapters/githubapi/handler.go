@@ -185,6 +185,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // route recognises the endpoints. ref is "" for /tarball.
 func route(rest string) (kind, owner, repo, ref string, ok bool) {
+	// go-github's enterprise client (used by GoReleaser) appends api/v3
+	// to a custom API base. Keep the canonical URLs, accepting that alias too.
+	if strings.HasPrefix(rest, "/api/v3/") {
+		rest = strings.TrimPrefix(rest, "/api/v3")
+	}
 	if kind, owner, repo, ref, ok = releaseRoute(rest); ok {
 		return
 	}

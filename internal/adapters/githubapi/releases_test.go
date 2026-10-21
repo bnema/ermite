@@ -75,6 +75,26 @@ func TestReleaseRoutes(t *testing.T) {
 		require.False(t, ok, path)
 	}
 }
+
+// GoReleaser's go-github enterprise client appends api/v3 to the documented
+// custom API URL. The alias must dispatch writes through the same auth/service.
+func TestReleaseEnterpriseBase(t *testing.T) {
+	api := mocks.NewGitHubReleaseAPI(t)
+	h := New(Config{Releases: api})
+	body := []byte(`{"tag_name":"v1"}`)
+	api.EXPECT().CreateRelease(mock.Anything, domain.Anonymous(), "acme", "proj", body).Return([]byte(`{"id":4}`), nil).Once()
+	w := releaseRequest(t, h, "POST", "/api/v3"+releasePath, string(body), nil)
+	require.Equal(t, 201, w.Code)
+	require.JSONEq(t, `{"id":4}`, w.Body.String())
+	for _, path := range []string{releasePath, releasePath + "/4", releasePath + "/4/assets", releaseAssetPath, releasePath + "/latest", releasePath + "/tags/v1/patch"} {
+		kind, owner, repo, ref, ok := route(path)
+		aliasKind, aliasOwner, aliasRepo, aliasRef, aliasOK := route("/api/v3" + path)
+		require.Equal(t, []any{kind, owner, repo, ref, ok}, []any{aliasKind, aliasOwner, aliasRepo, aliasRef, aliasOK})
+	}
+	_, _, _, _, ok := route("/api/v3repos/acme/proj/releases")
+	require.False(t, ok)
+}
+
 func TestReleaseDispatch(t *testing.T) {
 	for _, method := range []string{"GET", "HEAD"} {
 		t.Run(method, func(t *testing.T) {
