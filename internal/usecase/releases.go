@@ -298,14 +298,15 @@ func (r *Releases) ListReleases(ctx context.Context, p domain.Principal, name do
 		return 0
 	})
 	start := token == ""
+	writer := releaseWriter(p, name)
 	for _, rel := range all {
+		if rel.Draft && !writer {
+			continue // a hidden draft is not even a valid cursor
+		}
 		if !start {
 			if rel.ID == cursor {
 				start = true
 			}
-			continue
-		}
-		if rel.Draft && !releaseWriter(p, name) {
 			continue
 		}
 		if len(out.Releases) == n {
@@ -362,7 +363,11 @@ func (r *Releases) UpdateRelease(ctx context.Context, p domain.Principal, name d
 		if params.MakeLatest != nil {
 			rel.MakeLatest = *params.MakeLatest
 		}
-		if err = r.bind(ctx, p, &rel, "", false); err != nil {
+		target := ""
+		if params.TargetCommitish != nil {
+			target = *params.TargetCommitish
+		}
+		if err = r.bind(ctx, p, &rel, target, target != ""); err != nil {
 			return err
 		}
 		kind = "updated"

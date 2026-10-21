@@ -273,3 +273,64 @@ func TestReleaseWriteRetriesUsageConflict(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, rel.ID)
 }
+
+func TestReleaseListHidesDraftCursors(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	pub := r.create(t, "v1", false)
+	d1 := r.create(t, "d1", true)
+	d2 := r.create(t, "d2", true)
+	anon := domain.Anonymous()
+
+	_, errDraft := r.svc.ListReleases(r.ctx, anon, r.repo, 1, fmt.Sprint(d1.ID))
+	_, errUnknown := r.svc.ListReleases(r.ctx, anon, r.repo, 1, "999999")
+	require.ErrorIs(t, errUnknown, domain.ErrInvalidPageToken)
+	require.Equal(t, errUnknown, errDraft)
+
+	// A writer still pages through drafts, newest first.
+	var got []int64
+	token := ""
+	for {
+		page, err := r.svc.ListReleases(r.ctx, domain.Root(), r.repo, 1, token)
+		require.NoError(t, err)
+		for _, rel := range page.Releases {
+			got = append(got, rel.ID)
+		}
+		if page.NextPageToken == "" {
+			break
+		}
+		token = page.NextPageToken
+	}
+	require.ElementsMatch(t, []int64{pub.ID, d1.ID, d2.ID}, got)
+}
+
+func TestReleaseUpdateTargetCreatesMissingTag(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	r.resolve(t, "missing", domain.ErrNotFound)
+	draft, err := r.svc.CreateRelease(r.ctx, domain.Root(), r.repo, ports.CreateReleaseParams{Tag: "missing", Draft: true})
+	require.NoError(t, err)
+	no := false
+	_, err = r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Draft: &no})
+	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+
+	v, err := domain.ParseRevision("main")
+	require.NoError(t, err)
+	oid, err := domain.ParseObjectID(oidA)
+	require.NoError(t, err)
+	r.reader.EXPECT().ResolveRevision(r.ctx, r.repo, v).Return(domain.ResolvedRevision{CommitID: oid}, nil).Once()
+	r.tags.EXPECT().CreateTag(r.ctx, r.repo, "missing", oid).Return(nil).Once()
+	r.pushes.EXPECT().Record(r.ctx, domain.Root(), r.repo, []domain.RefUpdate{{Ref: "refs/tags/missing", Old: domain.ZeroOID, New: oidA}}).Return(nil).Once()
+	main := "main"
+	rel, err := r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, draft.ID, ports.UpdateReleaseParams{Draft: &no, TargetCommitish: &main})
+	require.NoError(t, err)
+	require.False(t, rel.Draft)
+	require.Equal(t, oidA, rel.TargetCommitish)
+}
+
+func TestReleaseUpdateTargetNeverMovesExistingTag(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	rel := r.create(t, "v1", false)
+	other := "other" // never resolved: the mock would fail the test
+	got, err := r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, rel.ID, ports.UpdateReleaseParams{TargetCommitish: &other})
+	require.NoError(t, err)
+	require.Equal(t, oidA, got.TargetCommitish)
+}

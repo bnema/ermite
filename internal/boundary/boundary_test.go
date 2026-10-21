@@ -35,6 +35,7 @@ const (
 	layerUsecase     packageLayer = "usecase"
 	layerAdapter     packageLayer = "adapter"
 	layerClientLimit packageLayer = "clientlimit"
+	layerHTTPRange   packageLayer = "httprange"
 	layerConfig      packageLayer = "config"
 	layerPorts       packageLayer = "ports"
 	layerDomain      packageLayer = "domain"
@@ -55,13 +56,16 @@ const (
 //     each other, and keeps the web adapter off the generated API code: like
 //     every other adapter it reads and writes through the ports (ADR 0020).
 //   - internal/clientlimit is infrastructure shared by the HTTP adapters.
+//   - internal/httprange is infrastructure shared by the HTTP adapters that
+//     serve byte ranges; it imports nothing of the module.
 //   - internal/config parses the environment into plain values.
 var productionDependencies = map[packageLayer]map[packageLayer]bool{
 	layerCommand:     {layerApp: true},
-	layerApp:         {layerUsecase: true, layerAdapter: true, layerClientLimit: true, layerConfig: true, layerPorts: true, layerDomain: true, layerGenerated: true},
+	layerApp:         {layerUsecase: true, layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerConfig: true, layerPorts: true, layerDomain: true, layerGenerated: true},
 	layerUsecase:     {layerUsecase: true, layerPorts: true, layerDomain: true},
-	layerAdapter:     {layerAdapter: true, layerClientLimit: true, layerPorts: true, layerDomain: true, layerGenerated: true},
+	layerAdapter:     {layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerPorts: true, layerDomain: true, layerGenerated: true},
 	layerClientLimit: {layerPorts: true},
+	layerHTTPRange:   {},
 	layerConfig:      {},
 	layerPorts:       {layerDomain: true},
 	layerDomain:      {layerDomain: true},
@@ -149,6 +153,12 @@ func TestImportBoundaryFixtures(t *testing.T) {
 		{"adapter rejects config", p("internal/adapters/rpc"), p("internal/config"), false, false},
 		{"adapter rejects sibling adapter", p("internal/adapters/web"), p("internal/adapters/gitcli"), false, false},
 		{"adapter test may import sibling adapter", p("internal/adapters/ermitegit"), p("internal/adapters/gitcli"), true, true},
+		{"app accepts httprange", p("internal/app"), p("internal/httprange"), false, true},
+		{"usecase rejects httprange", p("internal/usecase"), p("internal/httprange"), false, false},
+		{"domain rejects httprange", p("internal/domain"), p("internal/httprange"), false, false},
+		{"ports reject httprange", p("internal/ports"), p("internal/httprange"), false, false},
+		{"adapter accepts httprange", p("internal/adapters/web"), p("internal/httprange"), false, true},
+		{"httprange rejects domain", p("internal/httprange"), p("internal/domain"), false, false},
 		{"clientlimit accepts ports", p("internal/clientlimit"), p("internal/ports"), false, true},
 		{"clientlimit rejects usecase", p("internal/clientlimit"), p("internal/usecase"), false, false},
 		{"config rejects domain", p("internal/config"), p("internal/domain"), false, false},
@@ -319,6 +329,8 @@ func classifyPackage(path string) (packageLayer, error) {
 		return layerAdapter, nil
 	case under(path, p("internal/clientlimit")):
 		return layerClientLimit, nil
+	case under(path, p("internal/httprange")):
+		return layerHTTPRange, nil
 	case under(path, p("internal/config")):
 		return layerConfig, nil
 	case path == p("internal/ports"):

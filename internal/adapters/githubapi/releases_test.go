@@ -166,6 +166,7 @@ func TestReleaseUpload(t *testing.T) {
 	require.Equal(t, 201, w.Code)
 	w = releaseRequest(t, h, "POST", releaseUploadPath, "abc", nil)
 	require.Equal(t, 422, w.Code)
+	require.Equal(t, `{"message":"Validation Failed","errors":[{"resource":"ReleaseAsset","code":"invalid","field":"name"}]}`, w.Body.String())
 	for _, ct := range []string{"", "text/plain"} {
 		expectedType := ct
 		if ct == "" {
@@ -281,7 +282,7 @@ func TestReleaseDownload(t *testing.T) {
 		{"zero suffix", "GET", "bytes=-0", "", 416, 0, 0, "", "bytes */10"},
 		{"conditional", "GET", "", `"sha256-abcdef"`, 304, 0, 0, "", ""},
 		{"head", "HEAD", "", "", 200, 0, 10, "", ""},
-		{"head range", "HEAD", "bytes=2-5", "", 206, 2, 4, "", "bytes 2-5/10"},
+		{"head ignores range", "HEAD", "bytes=2-5", "", 200, 0, 10, "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -380,7 +381,7 @@ func TestReleaseEmptyAndMissingDownload(t *testing.T) {
 		err  error
 		want int
 	}{
-		{"empty", 0, domain.ErrOutOfRange, 200},
+		{"empty", 0, nil, 200},
 		{"missing empty", 0, domain.ErrNotFound, 404},
 		{"store range", 10, domain.ErrOutOfRange, 416},
 	} {
@@ -425,4 +426,41 @@ func TestReleaseDownloadGlobalSlot(t *testing.T) {
 	require.Empty(t, w.Header().Get("Content-Length"))
 	require.Contains(t, w.Body.String(), "Server busy")
 	require.NotContains(t, h.clients, "192.0.2.1")
+}
+
+func TestReleaseDownloadIfRange(t *testing.T) {
+	for _, tc := range []struct {
+		name, ifRange string
+		status        int
+		offset        int64
+		length        int64
+		body, cr      string
+	}{
+		{"matching", `"sha256-abcdef"`, 206, 2, 4, "2345", "bytes 2-5/10"},
+		{"stale", `"sha256-other"`, 200, 0, 10, "0123456789", ""},
+		{"date", "Wed, 21 Oct 2026 12:00:00 GMT", 200, 0, 10, "0123456789", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := mocks.NewGitHubReleaseAPI(t)
+			dl := mocks.NewReleaseService(t)
+			a := downloadAsset(t)
+			api.EXPECT().AssetByID(mock.Anything, domain.Anonymous(), "acme", "proj", int64(7)).Return(a, nil).Once()
+			dl.EXPECT().DownloadAsset(mock.Anything, domain.Anonymous(), a.Repo, ports.AssetRef{ID: 7}, tc.offset, tc.length, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.Principal, _ domain.RepoName, _ ports.AssetRef, offset, length int64, send func(ports.AssetChunk) error) error {
+				require.NoError(t, send(ports.AssetChunk{Asset: &a}))
+				return send(ports.AssetChunk{Data: []byte("0123456789")[offset : offset+length]})
+			}).Once()
+			w := releaseRequest(t, New(Config{Releases: api, ReleaseDownload: dl}), "GET", releaseAssetPath, "", map[string]string{"Accept": "application/octet-stream", "Range": "bytes=2-5", "If-Range": tc.ifRange})
+			require.Equal(t, tc.status, w.Code)
+			require.Equal(t, tc.body, w.Body.String())
+			require.Equal(t, tc.cr, w.Header().Get("Content-Range"))
+		})
+	}
+}
+
+func TestReleaseAssetValidationResource(t *testing.T) {
+	api := mocks.NewGitHubReleaseAPI(t)
+	api.EXPECT().UpdateAsset(mock.Anything, domain.Anonymous(), "acme", "proj", int64(7), mock.Anything).Return(nil, fmt.Errorf("%w: asset name is empty", domain.ErrInvalid)).Once()
+	w := releaseRequest(t, New(Config{Releases: api}), "PATCH", releaseAssetPath, `{"name":""}`, nil)
+	require.Equal(t, 422, w.Code)
+	require.Equal(t, `{"message":"Validation Failed","errors":[{"resource":"ReleaseAsset","code":"invalid","field":"name"}]}`, w.Body.String())
 }

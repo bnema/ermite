@@ -21,6 +21,11 @@ components:
     role: adapter
     paths:
       - internal/clientlimit/**
+  httprange:
+    # Byte-range selection: infrastructure shared by the HTTP adapters.
+    role: adapter
+    paths:
+      - internal/httprange/**
   entrypoints:
     # cmd/ermite only calls app.Run.
     role: entrypoint
@@ -80,7 +85,7 @@ allow:
     reason: rate-limits Git clients with internal/clientlimit
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/githubapi/**
-    reason: rate-limits the clients of the REST subset with internal/clientlimit
+    reason: rate-limits the clients of the REST subset with internal/clientlimit and selects byte ranges with internal/httprange
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/oidchttp/**
     reason: rate-limits the clients of the OIDC token endpoint with internal/clientlimit
@@ -89,4 +94,4 @@ allow:
     reason: rate-limits API clients with internal/clientlimit
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/web/**
-    reason: rate-limits login attempts with internal/clientlimit
+    reason: rate-limits login attempts with internal/clientlimit and selects byte ranges with internal/httprange

@@ -287,3 +287,22 @@ func TestReleaseAssetQuotaAcrossReleasesAndWrongRepository(t *testing.T) {
 	_, err = r.svc.UploadAsset(r.ctx, domain.Root(), other, ports.UploadAssetParams{ReleaseID: b.ID, Name: "wrong"}, bytes.NewReader(nil))
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 }
+
+func TestReleaseAssetDownloadZeroBytes(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{AssetMax: 10, Quota: 10})
+	rel := r.create(t, "v1", false)
+	a := r.upload(t, rel, "empty", nil)
+	var chunks []ports.AssetChunk
+	err := r.svc.DownloadAsset(r.ctx, domain.Anonymous(), r.repo, ports.AssetRef{ID: a.ID}, 0, -1, func(c ports.AssetChunk) error {
+		chunks = append(chunks, c)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, chunks, 1)
+	require.Equal(t, a.ID, chunks[0].Asset.ID)
+
+	// A missing blob stays an error.
+	require.NoError(t, r.blobs.Delete(r.ctx, a.BlobKey()))
+	err = r.svc.DownloadAsset(r.ctx, domain.Anonymous(), r.repo, ports.AssetRef{ID: a.ID}, 0, -1, func(ports.AssetChunk) error { return nil })
+	require.ErrorIs(t, err, domain.ErrNotFound)
+}

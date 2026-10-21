@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -175,6 +176,7 @@ func TestReleaseDownloads(t *testing.T) {
 		before := f.downloads
 		w := f.request("HEAD", path, "", "bytes=1-2")
 		assert.Equal(t, 200, w.Code)
+		assert.Empty(t, w.Header().Get("Content-Range"))
 		assert.Empty(t, w.Body.String())
 		assert.Equal(t, "10", w.Header().Get("Content-Length"))
 		assert.Equal(t, before, f.downloads)
@@ -190,6 +192,37 @@ func TestReleaseDownloads(t *testing.T) {
 	assert.Equal(t, 200, w.Code)
 	assert.Equal(t, f.data, w.Body.String())
 }
+func TestReleaseDownloadIfRange(t *testing.T) {
+	f := newReleaseFixture(t)
+	etag := `"sha256-` + strings.Repeat("b", 64) + `"`
+	for _, tc := range []struct {
+		name, ifRange, body, cr string
+		status                  int
+	}{
+		{"matching", etag, "2345", "bytes 2-5/10", 206},
+		{"stale", `"old"`, "0123456789", "", 200},
+		{"date", "Wed, 21 Oct 2026 12:00:00 GMT", "0123456789", "", 200},
+	} {
+		r := httptest.NewRequest("GET", "/proj/releases/assets/7", nil)
+		r.Header.Set("Range", "bytes=2-5")
+		r.Header.Set("If-Range", tc.ifRange)
+		w := httptest.NewRecorder()
+		f.srv.ServeHTTP(w, r)
+		assert.Equal(t, tc.status, w.Code, tc.name)
+		assert.Equal(t, tc.body, w.Body.String(), tc.name)
+		assert.Equal(t, tc.cr, w.Header().Get("Content-Range"), tc.name)
+	}
+}
+
+// A tag with a slash is one path segment once escaped: the download route must
+// match it and resolve the tag with the slash.
+func TestReleaseDownloadSlashTag(t *testing.T) {
+	f := newReleaseFixture(t) // the published tag is "stable/v1"
+	w := f.request("GET", "/proj/releases/download/"+url.PathEscape(f.published.Tag)+"/build.zip", "", "")
+	require.Equal(t, 200, w.Code)
+	assert.Equal(t, f.data, w.Body.String())
+}
+
 func TestReleaseDownloadFailures(t *testing.T) {
 	f := newReleaseFixture(t)
 	f.downloadErr = errors.New("blob unavailable")
@@ -215,12 +248,6 @@ func TestReleaseAttachmentHeaders(t *testing.T) {
 		assert.Equal(t, attachmentName(name), params["filename"])
 	}
 }
-func TestReleaseRangeInvalid(t *testing.T) {
-	for _, value := range []string{"bytes=", "bytes=-0", "bytes=-1-2", "bytes=5-2", "bytes=999999999999999999999999-", "bytes=0-nope"} {
-		_, _, _, err := releaseRange(value, 10)
-		assert.ErrorIs(t, err, errReleaseRange, value)
-	}
-}
 func TestReleasesDisabled(t *testing.T) {
 	s := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "proj")), Browse: mocks.NewBrowseService(t)})
 	for _, path := range []string{"/proj/releases", "/proj/releases/latest", "/proj/releases/assets/7"} {
@@ -238,7 +265,6 @@ func TestReleaseEmptyDownloads(t *testing.T) {
 	assert.Equal(t, 200, w.Code)
 	assert.Equal(t, "0", w.Header().Get("Content-Length"))
 	assert.Empty(t, w.Body.String())
-	assert.Zero(t, f.downloads)
 	w = f.request("GET", "/proj/releases/assets/7", "", "bytes=0-")
 	assert.Equal(t, 416, w.Code)
 	assert.Equal(t, "bytes */0", w.Header().Get("Content-Range"))

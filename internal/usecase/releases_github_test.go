@@ -162,7 +162,7 @@ func TestGitHubReleaseAssetsAndRetry(t *testing.T) {
 		URL string `json:"browser_download_url"`
 	}
 	require.NoError(t, json.Unmarshal(b, &asset))
-	require.Equal(t, "http://localhost:7341/releases/releases/download/v1/slash/%C3%A9%20%23%3F.txt", asset.URL)
+	require.Equal(t, "http://localhost:7341/releases/releases/download/v1%2Fslash/%C3%A9%20%23%3F.txt", asset.URL)
 	_, err = upload("é #?.txt")
 	require.ErrorIs(t, err, domain.ErrAlreadyExists)
 	b, err = g.UpdateAsset(r.ctx, p, "acme", repo, asset.ID, []byte(`{"label":""}`))
@@ -273,6 +273,19 @@ func TestGitHubReleaseTargetAndMissingTag(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(b, &got))
 	require.Equal(t, oidA, got.Target)
+
+	// PATCH with target_commitish publishes a draft whose tag is missing.
+	r.resolve(t, "patched", domain.ErrNotFound)
+	b, err = g.CreateRelease(r.ctx, p, "acme", repo, []byte(`{"tag_name":"patched","draft":true}`))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(b, &got))
+	r.reader.EXPECT().ResolveRevision(r.ctx, r.repo, v).Return(domain.ResolvedRevision{CommitID: oid}, nil).Once()
+	r.tags.EXPECT().CreateTag(r.ctx, r.repo, "patched", oid).Return(nil).Once()
+	r.pushes.EXPECT().Record(r.ctx, p, r.repo, []domain.RefUpdate{{Ref: "refs/tags/patched", Old: domain.ZeroOID, New: oidA}}).Return(nil).Once()
+	b, err = g.UpdateRelease(r.ctx, p, "acme", repo, got.ID, []byte(`{"draft":false,"target_commitish":"main"}`))
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"draft":false`)
+	require.Contains(t, string(b), `"target_commitish":"`+oidA+`"`)
 }
 
 // A real HTTP round trip through the facade, metadata store and disk blob

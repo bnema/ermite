@@ -67,7 +67,7 @@ func (g *ReleasesGitHub) assetObj(a domain.ReleaseAsset, tag string) ordered {
 		{"uploader", g.user(a.Uploader)}, {"content_type", a.ContentType}, {"state", "uploaded"},
 		{"size", a.Size}, {"digest", a.Digest}, {"download_count", 0},
 		{"created_at", a.CreatedAt.UTC().Format(timeLayout)}, {"updated_at", a.UpdatedAt.UTC().Format(timeLayout)},
-		{"browser_download_url", g.publicURL + "/" + a.Repo.String() + "/releases/download/" + escapeReleaseTag(tag) + "/" + url.PathEscape(a.Name)},
+		{"browser_download_url", g.publicURL + "/" + a.Repo.String() + "/releases/download/" + url.PathEscape(tag) + "/" + url.PathEscape(a.Name)},
 	}
 }
 func (g *ReleasesGitHub) releaseObj(ctx context.Context, p domain.Principal, r domain.Release) (ordered, error) {

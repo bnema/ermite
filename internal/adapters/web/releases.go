@@ -16,6 +16,7 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/httprange"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -146,40 +147,6 @@ func (s *Server) releaseLatest(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, releaseHref(repo.String(), rel.Tag), http.StatusSeeOther)
 }
 
-var errReleaseRange = errors.New("web: unsatisfiable byte range")
-
-// releaseRange accepts a single byte range, including open-ended and suffix
-// ranges. Multiple ranges are intentionally ignored (ADR 0034).
-func releaseRange(value string, size int64) (offset, length int64, partial bool, err error) {
-	if value == "" || strings.Contains(value, ",") || !strings.HasPrefix(value, "bytes=") {
-		return 0, size, false, nil
-	}
-	a, b, ok := strings.Cut(strings.TrimPrefix(value, "bytes="), "-")
-	if !ok || size == 0 {
-		return 0, 0, false, errReleaseRange
-	}
-	if a == "" {
-		n, e := strconv.ParseInt(b, 10, 64)
-		if e != nil || n <= 0 {
-			return 0, 0, false, errReleaseRange
-		}
-		n = min(n, size)
-		return size - n, n, true, nil
-	}
-	start, e := strconv.ParseInt(a, 10, 64)
-	if e != nil || start < 0 || start >= size {
-		return 0, 0, false, errReleaseRange
-	}
-	end := size - 1
-	if b != "" {
-		end, e = strconv.ParseInt(b, 10, 64)
-		if e != nil || end < start {
-			return 0, 0, false, errReleaseRange
-		}
-		end = min(end, size-1)
-	}
-	return start, end - start + 1, true, nil
-}
 func releaseHeaders(h http.Header, a domain.ReleaseAsset) {
 	// Reuse the artifact sandbox and attachment policy; never trust an
 	// uploader's media type to execute content in the forge's origin.
@@ -224,15 +191,9 @@ func (s *Server) releaseDownload(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	releaseHeaders(h, a)
 	cacheHeaders(ctx, h, "no-cache", sessionCache)
-	offset, length, partial, err := releaseRange(strings.Join(r.Header.Values("Range"), ","), a.Size)
-	if r.Method == http.MethodHead {
-		offset, length, partial, err = 0, a.Size, false, nil
-	}
-	if r.Header.Get("If-Range") != "" && r.Header.Get("If-Range") != h.Get("ETag") {
-		offset, length, partial, err = 0, a.Size, false, nil
-	}
+	offset, length, partial, err := httprange.Select(r, a.Size, h.Get("ETag"))
 	if err != nil {
-		h.Set("Content-Range", "bytes */"+strconv.FormatInt(a.Size, 10))
+		h.Set("Content-Range", httprange.Unsatisfied(a.Size))
 		h.Set("Content-Length", "0")
 		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 		return
@@ -240,10 +201,10 @@ func (s *Server) releaseDownload(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	if partial {
 		status = http.StatusPartialContent
-		h.Set("Content-Range", "bytes "+strconv.FormatInt(offset, 10)+"-"+strconv.FormatInt(offset+length-1, 10)+"/"+strconv.FormatInt(a.Size, 10))
+		h.Set("Content-Range", httprange.ContentRange(offset, length, a.Size))
 	}
 	h.Set("Content-Length", strconv.FormatInt(length, 10))
-	if r.Method == http.MethodHead || a.Size == 0 {
+	if r.Method == http.MethodHead {
 		w.WriteHeader(status)
 		return
 	}

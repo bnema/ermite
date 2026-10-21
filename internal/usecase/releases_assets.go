@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -391,7 +392,15 @@ func (r *Releases) DownloadAsset(ctx context.Context, p domain.Principal, repo d
 	if err != nil {
 		return err
 	}
-	body, _, err := r.blobs.Open(ctx, a.BlobKey(), offset, length)
+	var body io.ReadCloser
+	if a.Size == 0 && offset == 0 {
+		// Blob stores reject Open on an empty object: stat it instead.
+		if _, err = r.blobs.Stat(ctx, a.BlobKey()); err == nil {
+			body = io.NopCloser(strings.NewReader(""))
+		}
+	} else {
+		body, _, err = r.blobs.Open(ctx, a.BlobKey(), offset, length)
+	}
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			ctxLog(ctx).Error().Int64("asset", a.ID).Msg("asset blob missing")

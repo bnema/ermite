@@ -540,13 +540,13 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 	case domain.MirrorRecovered:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.ReleasePublished:
-		return e.deliverRepo(ctx, w, ev.Release.Repo, false, be, out, send)
+		return e.deliverRelease(ctx, w, ev.Release, be, out, send)
 	case domain.ReleaseUpdated:
-		return e.deliverRepo(ctx, w, ev.Release.Repo, false, be, out, send)
+		return e.deliverRelease(ctx, w, ev.Release, be, out, send)
 	case domain.ReleaseDeleted:
-		return e.deliverRepo(ctx, w, ev.Release.Repo, false, be, out, send)
+		return e.deliverRelease(ctx, w, ev.Release, be, out, send)
 	case domain.ReleaseUnpublished:
-		return e.deliverRepo(ctx, w, ev.Release.Repo, false, be, out, send)
+		return e.deliverRelease(ctx, w, ev.Release, be, out, send)
 	case domain.PushEvent:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.MergeRequestOpened:
@@ -660,6 +660,15 @@ func (e *Events) deliverRepo(ctx context.Context, w *watch, name domain.RepoName
 		out.Repo = &view
 	}
 	return send(out)
+}
+
+// deliverRelease sends a release event. The event of a draft goes only to
+// release writers: a draft is invisible to every other reader.
+func (e *Events) deliverRelease(ctx context.Context, w *watch, rel domain.Release, be bufferedEvent, out ports.WatchEvent, send func(ports.WatchEvent) error) error {
+	if rel.Draft && !releaseWriter(w.p, rel.Repo) {
+		return nil
+	}
+	return e.deliverRepo(ctx, w, rel.Repo, false, be, out, send)
 }
 
 // isIssueEvent reports whether ev is about an issue.

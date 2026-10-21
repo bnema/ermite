@@ -420,3 +420,53 @@ func TestReleaseRPCRejectsInvalidMasksAndSelectors(t *testing.T) {
 	}
 	requireCode(t, connect.CodeInvalidArgument, err)
 }
+
+func TestReleaseRPCListResolvesLatestOnce(t *testing.T) {
+	repo := mustRepoName(t, "demo")
+	rel := mocks.NewReleaseService(t)
+	c, _ := releaseClient(t, rel)
+	p := domain.Anonymous()
+	rows := []domain.Release{{ID: 3, Repo: repo, Tag: "c"}, {ID: 2, Repo: repo, Tag: "b"}, {ID: 1, Repo: repo, Tag: "a"}}
+	rel.EXPECT().ListReleases(mock.Anything, p, repo, 0, "").Return(ports.ReleasePage{Releases: rows}, nil).Once()
+	rel.EXPECT().GetRelease(mock.Anything, p, repo, ports.ReleaseRef{Latest: true}).Return(rows[1], nil).Once()
+	for _, r := range rows {
+		rel.EXPECT().ListAssets(mock.Anything, p, repo, r.ID).Return(nil, nil).Once()
+	}
+	res, err := c.ListReleases(context.Background(), connect.NewRequest(&pb.ListReleasesRequest{Repo: "demo"}))
+	require.NoError(t, err)
+	require.Len(t, res.Msg.Releases, 3)
+	for _, m := range res.Msg.Releases {
+		assert.Equal(t, m.Id == 2, m.Latest, m.Tag)
+	}
+}
+
+func TestReleaseRPCListWithoutLatest(t *testing.T) {
+	repo := mustRepoName(t, "demo")
+	rel := mocks.NewReleaseService(t)
+	c, _ := releaseClient(t, rel)
+	p := domain.Anonymous()
+	rel.EXPECT().ListReleases(mock.Anything, p, repo, 0, "").Return(ports.ReleasePage{Releases: []domain.Release{{ID: 1, Repo: repo}}}, nil).Once()
+	rel.EXPECT().GetRelease(mock.Anything, p, repo, ports.ReleaseRef{Latest: true}).Return(domain.Release{}, domain.ErrNotFound).Once()
+	rel.EXPECT().ListAssets(mock.Anything, p, repo, int64(1)).Return(nil, nil).Once()
+	res, err := c.ListReleases(context.Background(), connect.NewRequest(&pb.ListReleasesRequest{Repo: "demo"}))
+	require.NoError(t, err)
+	require.Len(t, res.Msg.Releases, 1)
+	assert.False(t, res.Msg.Releases[0].Latest)
+}
+
+func TestReleaseRPCDownloadZeroByteAsset(t *testing.T) {
+	rel := mocks.NewReleaseService(t)
+	c, _ := releaseClient(t, rel)
+	a := domain.ReleaseAsset{ID: 9, ReleaseID: 7, Name: "empty", Size: 0}
+	// The use case sends the metadata and no data for an empty asset.
+	rel.EXPECT().DownloadAsset(mock.Anything, domain.Anonymous(), mustRepoName(t, "demo"), ports.AssetRef{ID: 9}, int64(0), int64(-1), mock.Anything).RunAndReturn(func(_ context.Context, _ domain.Principal, _ domain.RepoName, _ ports.AssetRef, _, _ int64, send func(ports.AssetChunk) error) error {
+		return send(ports.AssetChunk{Asset: &a})
+	}).Once()
+	stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}}))
+	require.NoError(t, err)
+	defer stream.Close()
+	require.True(t, stream.Receive())
+	assert.True(t, proto.Equal(assetToPB(a), stream.Msg().Asset))
+	assert.False(t, stream.Receive())
+	require.NoError(t, stream.Err())
+}

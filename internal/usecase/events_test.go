@@ -1034,3 +1034,98 @@ func TestIssueReferencedRepoOnly(t *testing.T) {
 		}
 	})
 }
+
+func TestDraftReleaseEventsReachOnlyReleaseWriters(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 64)
+		pub := r.repo("pub", domain.VisibilityPublic)
+		other := r.repo("other", domain.VisibilityPublic)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		job := func(repo domain.RepoName, level string) domain.Principal {
+			return domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "j", Repo: repo, Permissions: map[string]string{"contents": level}})
+		}
+		writerBranch := scopedToken(domain.ScopeReleaseWrite, []string{"agent/"}, "pub")
+		cases := []struct {
+			name string
+			p    domain.Principal
+			want bool
+		}{
+			{"anonymous", domain.Anonymous(), false},
+			{"reader", tokenPrincipal(domain.ScopeRepoRead), false},
+			{"branch-limited writer", writerBranch, false},
+			{"job token of another repo", job(other, "write"), false},
+			{"job token contents:read", job(pub, "read"), false},
+			{"release:write token", tokenPrincipal(domain.ScopeReleaseWrite, "pub"), true},
+			{"job token contents:write", job(pub, "write"), true},
+		}
+
+		anchor := r.watch(ctx, domain.Root(), ports.WatchParams{})
+		synctest.Wait()
+		r.push(pub, 1)
+		anchorID := anchor.next(t).ID
+
+		draft := domain.Release{ID: 1, Repo: pub, Tag: "d", Draft: true}
+		published := domain.Release{ID: 2, Repo: pub, Tag: "v1"}
+		events := func(rel domain.Release) []domain.Event {
+			return []domain.Event{
+				domain.ReleasePublished{Release: rel, At: now, CreatedAt: now, Visibility: domain.VisibilityPublic},
+				domain.ReleaseUpdated{Release: rel, At: now, CreatedAt: now, Visibility: domain.VisibilityPublic},
+				domain.ReleaseDeleted{Release: rel, At: now, CreatedAt: now, Visibility: domain.VisibilityPublic},
+				domain.ReleaseUnpublished{Release: rel, At: now, CreatedAt: now, Visibility: domain.VisibilityPublic},
+			}
+		}
+		check := func(t *testing.T, w *watcher, want bool) {
+			t.Helper()
+			if want {
+				for _, ev := range events(draft) {
+					require.Equal(t, ev.EventKind(), w.next(t).Event.EventKind())
+				}
+			}
+			for _, ev := range events(published) {
+				e := w.next(t).Event
+				require.Equal(t, ev.EventKind(), e.EventKind())
+				require.EqualValues(t, 2, releaseOf(e))
+			}
+			w.quiet(t, r, pub)
+		}
+
+		var live []*watcher
+		for _, tc := range cases {
+			live = append(live, r.watch(ctx, tc.p, ports.WatchParams{}))
+		}
+		synctest.Wait()
+		for _, ev := range events(draft) {
+			r.feed <- ev
+		}
+		for _, ev := range events(published) {
+			r.feed <- ev
+		}
+		for i, tc := range cases {
+			t.Log("live", tc.name)
+			check(t, live[i], tc.want)
+		}
+		for _, tc := range cases {
+			t.Log("replay", tc.name)
+			w := r.watch(ctx, tc.p, ports.WatchParams{ResumeAfter: anchorID})
+			check(t, w, tc.want)
+		}
+	})
+}
+
+// releaseOf returns the id of the release an event is about.
+func releaseOf(ev domain.Event) int64 {
+	switch ev := ev.(type) {
+	case domain.ReleasePublished:
+		return ev.Release.ID
+	case domain.ReleaseUpdated:
+		return ev.Release.ID
+	case domain.ReleaseDeleted:
+		return ev.Release.ID
+	case domain.ReleaseUnpublished:
+		return ev.Release.ID
+	}
+	return 0
+}

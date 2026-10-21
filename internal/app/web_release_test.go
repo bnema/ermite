@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/usecase"
 )
 
 // Releases and web use the production forge wiring.
@@ -84,6 +86,21 @@ func TestWebRelease(t *testing.T) {
 	status, _, body = get("GET", "/demo/releases/tag/series/v1", "")
 	assert.Equal(t, 200, status)
 	assert.Contains(t, body, slash.Title)
+	// The browser_download_url of the REST API for a slash tag is served by
+	// the web route.
+	slashAsset, err := releases.UploadAsset(h.ctx, domain.Root(), repo, ports.UploadAssetParams{ReleaseID: slash.ID, Name: "s.bin", Size: 5}, strings.NewReader("slash"))
+	require.NoError(t, err)
+	gh := usecase.NewReleasesGitHub(releases, "owner", ts.URL)
+	raw, err := gh.GetAsset(h.ctx, domain.Root(), "owner", "demo", slashAsset.ID)
+	require.NoError(t, err)
+	var obj struct {
+		URL string `json:"browser_download_url"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &obj))
+	require.Equal(t, ts.URL+"/demo/releases/download/series%2Fv1/s.bin", obj.URL)
+	status, _, body = get("GET", strings.TrimPrefix(obj.URL, ts.URL), "")
+	assert.Equal(t, 200, status)
+	assert.Equal(t, "slash", body)
 	// A missing blob is a 404 page before any binary headers are written.
 	require.NoError(t, blobs.Delete(context.Background(), asset.BlobKey()))
 	status, headers, body := get("GET", "/demo/releases/assets/"+strconv.FormatInt(asset.ID, 10), "")

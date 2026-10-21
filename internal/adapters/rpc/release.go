@@ -27,16 +27,31 @@ var _ ermiteconnect.ReleaseServiceHandler = (*releaseService)(nil)
 // releaseMessage fills the computed latest flag and uploaded assets using the
 // same caller's read permissions. No latest release is a normal repository state.
 func (s *releaseService) releaseMessage(ctx context.Context, repo domain.RepoName, r domain.Release) (*pb.Release, error) {
-	latest, err := s.rel.GetRelease(ctx, caller(ctx), repo, ports.ReleaseRef{Latest: true})
-	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+	latest, err := s.latestID(ctx, repo)
+	if err != nil {
 		return nil, err
 	}
+	return s.releaseRow(ctx, repo, r, latest)
+}
+
+// latestID is the id of the latest release, or 0 when the repository has none.
+func (s *releaseService) latestID(ctx context.Context, repo domain.RepoName) (int64, error) {
+	latest, err := s.rel.GetRelease(ctx, caller(ctx), repo, ports.ReleaseRef{Latest: true})
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return 0, err
+	}
+	return latest.ID, nil
+}
+
+// releaseRow converts one release given the id of the latest one, so a list
+// resolves the latest release once.
+func (s *releaseService) releaseRow(ctx context.Context, repo domain.RepoName, r domain.Release, latest int64) (*pb.Release, error) {
 	assets, err := s.rel.ListAssets(ctx, caller(ctx), repo, r.ID)
 	if err != nil {
 		return nil, err
 	}
 	out := releaseToPB(r)
-	out.Latest = latest.ID != 0 && latest.ID == r.ID
+	out.Latest = latest != 0 && latest == r.ID
 	out.Assets = assetsToPB(assets)
 	return out, nil
 }
@@ -106,8 +121,12 @@ func (s *releaseService) ListReleases(ctx context.Context, req *connect.Request[
 		return nil, connectError(ctx, err)
 	}
 	out := &pb.ListReleasesResponse{Releases: make([]*pb.Release, 0, len(page.Releases)), NextPageToken: page.NextPageToken}
+	latest, err := s.latestID(ctx, repo)
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
 	for _, r := range page.Releases {
-		m, err := s.releaseMessage(ctx, repo, r)
+		m, err := s.releaseRow(ctx, repo, r, latest)
 		if err != nil {
 			return nil, connectError(ctx, err)
 		}

@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/httprange"
 	"bnema.dev/ermite/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -235,11 +236,14 @@ type releaseValidationError struct {
 
 func writeReleaseValidation(w http.ResponseWriter, err error, kind, field string) {
 	resource, code, doc := "Release", "invalid", ""
+	asset := kind == "release-upload" || kind == "release-asset"
+	if asset {
+		resource = "ReleaseAsset"
+	}
 	if errors.Is(err, domain.ErrAlreadyExists) {
 		code = "already_exists"
 		field = "tag_name"
-		if kind == "release-upload" || kind == "release-asset" {
-			resource = "ReleaseAsset"
+		if asset {
 			field = "name"
 		}
 		if kind == "release-upload" {
@@ -280,39 +284,6 @@ func releaseErrorField(text string) string {
 	return ""
 }
 
-// assetRange returns a single byte range. Multiple ranges and unknown units are
-// ignored. Unsatisfiable or malformed byte ranges return false.
-func assetRange(header string, size int64) (offset, length int64, partial, ok bool) {
-	if header == "" || !strings.HasPrefix(header, "bytes=") || strings.Contains(header, ",") {
-		return 0, size, false, true
-	}
-	spec := strings.TrimSpace(strings.TrimPrefix(header, "bytes="))
-	a, b, found := strings.Cut(spec, "-")
-	if !found || size <= 0 {
-		return 0, 0, false, false
-	}
-	if a == "" {
-		n, err := strconv.ParseInt(b, 10, 64)
-		if err != nil || n <= 0 {
-			return 0, 0, false, false
-		}
-		n = min(n, size)
-		return size - n, n, true, true
-	}
-	start, err := strconv.ParseInt(a, 10, 64)
-	if err != nil || start < 0 || start >= size {
-		return 0, 0, false, false
-	}
-	end := size - 1
-	if b != "" {
-		end, err = strconv.ParseInt(b, 10, 64)
-		if err != nil || end < start {
-			return 0, 0, false, false
-		}
-		end = min(end, size-1)
-	}
-	return start, end - start + 1, true, true
-}
 func releaseContentDisposition(name string) string {
 	name = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || r == '"' || r == '\\' || r == '/' || r == unicode.ReplacementChar {
@@ -386,16 +357,16 @@ func (h *Handler) downloadRelease(w http.ResponseWriter, r *http.Request, p doma
 		w.WriteHeader(304)
 		return
 	}
-	offset, length, partial, ok := assetRange(r.Header.Get("Range"), a.Size)
-	if !ok {
-		w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(a.Size, 10))
+	offset, length, partial, err := httprange.Select(r, a.Size, etag)
+	if err != nil {
+		w.Header().Set("Content-Range", httprange.Unsatisfied(a.Size))
 		w.WriteHeader(416)
 		return
 	}
 	status := 200
 	if partial {
 		status = 206
-		w.Header().Set("Content-Range", "bytes "+strconv.FormatInt(offset, 10)+"-"+strconv.FormatInt(offset+length-1, 10)+"/"+strconv.FormatInt(a.Size, 10))
+		w.Header().Set("Content-Range", httprange.ContentRange(offset, length, a.Size))
 	}
 	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
 	if r.Method == http.MethodHead {
@@ -421,9 +392,7 @@ func (h *Handler) downloadRelease(w http.ResponseWriter, r *http.Request, p doma
 		_, e := writer.Write(chunk.Data)
 		return e
 	})
-	// BlobStore.Open reports offset >= size as out of range, including the
-	// valid empty object at offset zero. It has still checked existence.
-	if err == nil || (a.Size == 0 && errors.Is(err, domain.ErrOutOfRange)) {
+	if err == nil {
 		if !started {
 			w.WriteHeader(status)
 		}
