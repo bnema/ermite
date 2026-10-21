@@ -302,6 +302,7 @@ func TestMergeIgnoreChecks(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"bad", "running", "ok", ""} {
 		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
 			box := (&Server{}).mergeBox(&repoData{repo: repoWithModes(domain.MergeModes()...)}, 3, "feat", "abc", true, mergeabilityView(domain.Mergeability{State: domain.MergeabilityUpToDate}, "main"))
 			html := renderToString(t, mergeMenu(MRPage{Box: box, ChecksSum: ChecksSummary{Kind: kind}}))
 			if kind == "bad" || kind == "running" {

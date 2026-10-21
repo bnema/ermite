@@ -345,6 +345,10 @@ type RepoSettings struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Never empty once stored.
 	AllowedMergeModes []MergeMode `protobuf:"varint,1,rep,packed,name=allowed_merge_modes,json=allowedMergeModes,proto3,enum=ermite.storage.MergeMode" json:"allowed_merge_modes,omitempty"`
+	// Unused: never read, never written.
+	//
+	// Deprecated: Marked as deprecated in ermite/storage/merge_request.proto.
+	FailingChecksBlock bool `protobuf:"varint,2,opt,name=failing_checks_block,json=failingChecksBlock,proto3" json:"failing_checks_block,omitempty"`
 	// Who may write issues; unspecified reads as off.
 	Issues IssuesMode `protobuf:"varint,3,opt,name=issues,proto3,enum=ermite.storage.IssuesMode" json:"issues,omitempty"`
 	// Set on every write since merge commits exist: the modes are the explicit
@@ -392,6 +396,14 @@ func (x *RepoSettings) GetAllowedMergeModes() []MergeMode {
 		return x.AllowedMergeModes
 	}
 	return nil
+}
+
+// Deprecated: Marked as deprecated in ermite/storage/merge_request.proto.
+func (x *RepoSettings) GetFailingChecksBlock() bool {
+	if x != nil {
+		return x.FailingChecksBlock
+	}
+	return false
 }
 
 func (x *RepoSettings) GetIssues() IssuesMode {
@@ -974,12 +986,13 @@ var File_ermite_storage_merge_request_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_merge_request_proto_rawDesc = "" +
 	"\n" +
-	"\"ermite/storage/merge_request.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf9\x01\n" +
+	"\"ermite/storage/merge_request.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x02\n" +
 	"\fRepoSettings\x12I\n" +
-	"\x13allowed_merge_modes\x18\x01 \x03(\x0e2\x19.ermite.storage.MergeModeR\x11allowedMergeModes\x122\n" +
+	"\x13allowed_merge_modes\x18\x01 \x03(\x0e2\x19.ermite.storage.MergeModeR\x11allowedMergeModes\x124\n" +
+	"\x14failing_checks_block\x18\x02 \x01(\bB\x02\x18\x01R\x12failingChecksBlock\x122\n" +
 	"\x06issues\x18\x03 \x01(\x0e2\x1a.ermite.storage.IssuesModeR\x06issues\x12$\n" +
 	"\x0emerge_modes_v2\x18\x04 \x01(\bR\fmergeModesV2\x12(\n" +
-	"\x10allow_auto_merge\x18\x05 \x01(\bR\x0eallowAutoMergeJ\x04\b\x02\x10\x03R\x14failing_checks_block\"\x81\x05\n" +
+	"\x10allow_auto_merge\x18\x05 \x01(\bR\x0eallowAutoMerge\"\x81\x05\n" +
 	"\fMergeRequest\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x03R\x06number\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +

@@ -241,6 +241,7 @@ func TestMergeRequestServiceMarkReady(t *testing.T) {
 		{name: "without mr:write", err: domain.ErrForbidden, code: connect.CodePermissionDenied},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mrs := mocks.NewMergeRequestService(t)
 			title, err := domain.ParseMRTitle("Ready")
 			require.NoError(t, err)

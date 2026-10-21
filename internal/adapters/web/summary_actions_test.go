@@ -133,6 +133,7 @@ func TestMRChecksLiveMergeControls(t *testing.T) {
 	head := strings.Repeat("a", domain.ObjectIDLen)
 	for _, kind := range []string{"bad", "running", "ok", ""} {
 		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
 			runs := mocks.NewRunService(t)
 			var checks []ports.CheckView
 			if kind != "" {
