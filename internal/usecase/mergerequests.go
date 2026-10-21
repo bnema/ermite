@@ -995,8 +995,9 @@ func (m *MergeRequests) MarkRead(ctx context.Context, p domain.Principal, name d
 // allowed by the settings of the repository, the source branch no longer
 // points to the head ("branch moved, read again") or is gone, the target is
 // gone, the mode's own condition does not hold (see below), or the branch
-// brings nothing. Checks come with CI (CI-1): there are none yet, so the
-// setting that lets failing checks block the merge has nothing to act on.
+// brings nothing. Checks on the head must pass: none may be failed, queued
+// or running; a head with no checks may be merged. params.IgnoreChecks bypasses
+// this requirement and needs mr:force-merge.
 //
 // The conditions are always checked with Git, under the lock, never from the
 // stored mergeability. A fast-forward needs the target to be an ancestor of

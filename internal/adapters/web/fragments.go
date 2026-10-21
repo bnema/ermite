@@ -36,6 +36,8 @@ type liveStream struct {
 	// head shown (its checks are on that head); a job event does not carry
 	// its commit, so its run is read once. One stream reads it, no lock.
 	headRuns map[int64]bool
+	// mergeChecksHTML is the last merge-form part sent, not sent again unchanged.
+	mergeChecksHTML string
 }
 
 // maxHeadRuns bounds headRuns: past it the map starts again.
@@ -625,7 +627,22 @@ func (l *liveStream) mrChecks(ctx context.Context) ([]fragment, error) {
 		return nil, err
 	}
 	sum, err := renderFragment(ctx, "ci-run", MRChecksSum(checksSummary(name, l.head, checks)))
-	return []fragment{f, sum}, err
+	if err != nil {
+		return nil, err
+	}
+	// The merge form is the owner's: a visitor's stream never carries it.
+	if !SignedIn(ctx) {
+		return []fragment{f, sum}, nil
+	}
+	controls, err := renderFragment(ctx, "ci-run", MRMergeChecks(checksSummary(name, l.head, checks)))
+	if err != nil {
+		return nil, err
+	}
+	if controls.html == l.mergeChecksHTML {
+		return []fragment{f, sum}, nil
+	}
+	l.mergeChecksHTML = controls.html
+	return []fragment{f, sum, controls}, nil
 }
 
 // recentActions is the "Recent actions" block of the summary rail, read again

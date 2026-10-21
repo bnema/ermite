@@ -966,6 +966,13 @@ window.ermiteLive = (() => {
           continue;
         }
         if (old.hasAttribute('data-cursor')) el.setAttribute('data-cursor', '');
+        // data-keep-checks: the checkboxes the user ticked stay ticked.
+        if (old.hasAttribute('data-keep-checks')) {
+          for (const box of old.querySelectorAll('input[type=checkbox][name]:checked')) {
+            const same = el.querySelector(`input[type=checkbox][name="${CSS.escape(box.name)}"]`);
+            if (same) same.checked = true;
+          }
+        }
         old.replaceWith(el);
         const rows = document.getElementById('repo-rows');
         if (rows && el.parentElement === rows && rows.dataset.sort === 'activity' &&

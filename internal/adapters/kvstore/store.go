@@ -39,8 +39,9 @@ import (
 // (meta/issuekey). The upgrade also adds mr:review and issue:write (each only
 // if missing) to the stored tokens that held all nine original scopes with no
 // repository list and no branch prefix, so that they keep the owner rights (see
-// upgradeTokens).
-const SchemaVersion = 4
+// upgradeTokens). Version 5 grants mr:force-merge to unrestricted tokens
+// holding all eleven previous scopes, preserving their owner rights.
+const SchemaVersion = 5
 
 const schemaKey = "meta/schema"
 
@@ -109,7 +110,7 @@ func (s *Store) Check(ctx context.Context) error {
 func (s *Store) checkSchema(ctx context.Context) error {
 	log := zerowrap.FromCtx(ctx)
 	key := []byte(schemaKey)
-	for range 2 {
+	for range 4 {
 		item, ok := s.db.Get(ctx, key)
 		if !ok {
 			var b kv.Batch
@@ -140,6 +141,10 @@ func (s *Store) checkSchema(ctx context.Context) error {
 			// the new version is recorded so that older builds refuse it.
 			// The tokens are upgraded in the same batch, so that a crash
 			// leaves the old version and the upgrade runs again.
+			target := uint32(SchemaVersion)
+			if sv.GetVersion() < 4 {
+				target = 4
+			}
 			var b kv.Batch
 			b.RequireVersion(key, item.Version)
 			if sv.GetVersion() < 4 {
@@ -147,7 +152,12 @@ func (s *Store) checkSchema(ctx context.Context) error {
 					return err
 				}
 			}
-			b.Put(key, mustMarshal(&storagepb.SchemaVersion{Version: SchemaVersion}))
+			if sv.GetVersion() == 4 {
+				if err := s.upgradeForceMergeTokens(ctx, &b); err != nil {
+					return err
+				}
+			}
+			b.Put(key, mustMarshal(&storagepb.SchemaVersion{Version: target}))
 			_, err := s.db.Apply(ctx, &b)
 			if errors.Is(err, kv.ErrConflict) {
 				continue // changed meanwhile: read it again
@@ -155,7 +165,10 @@ func (s *Store) checkSchema(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("upgrade storage schema: %w", err)
 			}
-			log.Info().Uint32("from", sv.GetVersion()).Uint32("schema", SchemaVersion).Msg("storage schema upgraded")
+			log.Info().Uint32("from", sv.GetVersion()).Uint32("schema", target).Msg("storage schema upgraded")
+			if target < SchemaVersion {
+				continue
+			}
 			return nil
 		}
 		log.Info().Uint32("schema", sv.GetVersion()).Msg("storage schema checked")
@@ -182,11 +195,26 @@ var preIssueScopes = []domain.Scope{
 
 // upgradeTokens adds to b the schema 4 upgrade of the tokens: a token that
 // holds all of preIssueScopes, limited to no repository and no branch prefix,
-// had the owner rights, which AllScopes now needs mr:review and issue:write
+// had the owner rights, which schema 4 needed mr:review and issue:write
 // for, so it gets each of them if missing (this is no escalation). Every other
 // token is left as it is. The batch requires each token to be at the version it
 // was read at.
 func (s *Store) upgradeTokens(ctx context.Context, b *kv.Batch) error {
+	return s.upgradeTokenScopes(ctx, b, preIssueScopes, []domain.Scope{domain.ScopeMRReview, domain.ScopeIssueWrite})
+}
+
+// preForceMergeScopes are the eleven scopes of schema 4, before mr:force-merge.
+var preForceMergeScopes = append(slices.Clone(preIssueScopes), domain.ScopeMRReview, domain.ScopeIssueWrite)
+
+// upgradeForceMergeTokens adds to b the schema 5 upgrade of the tokens: a
+// token that holds all of preForceMergeScopes, limited to no repository and no
+// branch prefix, had the owner rights, which AllScopes also needs
+// mr:force-merge for, so it gets it. Every other token is left as it is.
+func (s *Store) upgradeForceMergeTokens(ctx context.Context, b *kv.Batch) error {
+	return s.upgradeTokenScopes(ctx, b, preForceMergeScopes, []domain.Scope{domain.ScopeMRForceMerge})
+}
+
+func (s *Store) upgradeTokenScopes(ctx context.Context, b *kv.Batch, required, addedScopes []domain.Scope) error {
 	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte(tokenPrefix)) {
 		pb := &storagepb.Token{}
 		if err := proto.Unmarshal(item.Value, pb); err != nil {
@@ -196,7 +224,7 @@ func (s *Store) upgradeTokens(ctx context.Context, b *kv.Batch) error {
 			continue
 		}
 		full := true
-		for _, sc := range preIssueScopes {
+		for _, sc := range required {
 			if !slices.Contains(pb.GetScopes(), sc.String()) {
 				full = false
 				break
@@ -206,7 +234,7 @@ func (s *Store) upgradeTokens(ctx context.Context, b *kv.Batch) error {
 			continue
 		}
 		added := false
-		for _, sc := range []domain.Scope{domain.ScopeMRReview, domain.ScopeIssueWrite} {
+		for _, sc := range addedScopes {
 			if !slices.Contains(pb.GetScopes(), sc.String()) {
 				pb.Scopes = append(pb.Scopes, sc.String())
 				added = true

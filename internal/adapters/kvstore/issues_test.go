@@ -271,7 +271,7 @@ func TestRepoSettingsKeepTheIssuesMode(t *testing.T) {
 
 // TestSchema4UpgradesTheTokensWithAllScopes: the tokens that held every
 // original scope keep their owner rights, gaining mr:review and issue:write
-// (each only if missing); no other token changes.
+// (each only if missing), then mr:force-merge in schema 5; no other token changes.
 func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -309,17 +309,20 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	full := get("full")
 	assert.Contains(t, full.Scopes, domain.ScopeIssueWrite)
 	assert.Contains(t, full.Scopes, domain.ScopeMRReview)
-	assert.Len(t, full.Scopes, 11)
+	assert.Len(t, full.Scopes, 12)
 	full10 := get("full10")
-	assert.Len(t, full10.Scopes, 11)
+	assert.Len(t, full10.Scopes, 12)
 	assert.Equal(t, 1, countScope(full10.Scopes, domain.ScopeMRReview))
 	assert.Contains(t, full10.Scopes, domain.ScopeIssueWrite)
-	assert.False(t, domain.TokenPrincipal(full10).HasOwnerRights(), "historical migration does not grant mr:force-merge")
+	assert.True(t, domain.TokenPrincipal(full10).HasOwnerRights())
 	assert.Len(t, get("reposmr").Scopes, 10)
 	assert.NotContains(t, get("reposmr").Scopes, domain.ScopeIssueWrite)
-	assert.False(t, domain.TokenPrincipal(full).HasOwnerRights(), "historical migration does not grant mr:force-merge")
-	assert.False(t, domain.TokenPrincipal(get("otherfull")).HasOwnerRights(), "historical migration does not grant mr:force-merge")
+	assert.True(t, domain.TokenPrincipal(full).HasOwnerRights())
+	assert.True(t, domain.TokenPrincipal(get("otherfull")).HasOwnerRights())
 
+	for _, id := range []string{"missing", "reposmr", "repos", "prefix", "small"} {
+		assert.NotContains(t, get(id).Scopes, domain.ScopeMRForceMerge)
+	}
 	assert.NotContains(t, get("missing").Scopes, domain.ScopeIssueWrite)
 	assert.NotContains(t, get("missing").Scopes, domain.ScopeMRReview)
 	assert.NotContains(t, get("repos").Scopes, domain.ScopeMRReview)
@@ -335,7 +338,7 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	assert.Equal(t, "full", full.ID)
 
 	require.NoError(t, s.Close(ctx))
-	assert.Equal(t, uint32(4), readSchema(t, dir))
+	assert.Equal(t, uint32(5), readSchema(t, dir))
 
 	// A second open changes nothing.
 	s2, err := kvstore.Open(ctx, dir)
@@ -355,7 +358,7 @@ func TestSchemaNewerThanThisBuildStopsIssuesData(t *testing.T) {
 	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: kvstore.SchemaVersion + 1}))
 	_, err := kvstore.Open(ctx, dir)
 	require.ErrorIs(t, err, kvstore.ErrSchemaTooNew)
-	assert.Equal(t, uint32(4), uint32(kvstore.SchemaVersion))
+	assert.Equal(t, uint32(5), uint32(kvstore.SchemaVersion))
 }
 
 // A reopen racing the delete of the repository either lands before the delete
@@ -560,4 +563,48 @@ func countScope(scopes []domain.Scope, want domain.Scope) int {
 		}
 	}
 	return n
+}
+
+func TestSchema5UpgradesOwnerEquivalentTokens(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 4}))
+	var previous []string
+	for _, sc := range domain.AllScopes() {
+		if sc != domain.ScopeMRForceMerge {
+			previous = append(previous, sc.String())
+		}
+	}
+	tokens := map[string]*storagepb.Token{
+		"owner":   {Id: "owner", Scopes: previous},
+		"repos":   {Id: "repos", Scopes: previous, Repos: []string{"proj"}},
+		"branch":  {Id: "branch", Scopes: previous, BranchPrefixes: []string{"agent/"}},
+		"partial": {Id: "partial", Scopes: previous[:10]},
+	}
+	for id, tok := range tokens {
+		tok.Hash = make([]byte, 32)
+		putRaw(t, dir, "token/"+id, mustProto(t, tok))
+	}
+	for range 2 {
+		s, err := kvstore.Open(ctx, dir)
+		require.NoError(t, err)
+		for id, original := range tokens {
+			tok, err := s.Tokens().Get(ctx, id)
+			require.NoError(t, err)
+			if id == "owner" {
+				assert.True(t, domain.TokenPrincipal(tok).HasOwnerRights())
+				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeMRForceMerge))
+				assert.Len(t, tok.Scopes, 12)
+			} else {
+				assert.NotContains(t, tok.Scopes, domain.ScopeMRForceMerge)
+				var got []string
+				for _, sc := range tok.Scopes {
+					got = append(got, sc.String())
+				}
+				assert.Equal(t, original.Scopes, got)
+			}
+		}
+		require.NoError(t, s.Close(ctx))
+		assert.Equal(t, uint32(5), readSchema(t, dir))
+	}
 }

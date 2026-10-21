@@ -4,6 +4,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -124,4 +125,55 @@ func TestRunUpdatedOnSummaryWhenCIIsNotReadable(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Contains(t, got[0].html, "hidden", "the block empties and hides, no run leaks")
 	assert.NotContains(t, got[0].html, "rr-name")
+}
+
+func TestMRChecksLiveMergeControls(t *testing.T) {
+	t.Parallel()
+	repo := repoName(t, "proj")
+	head := strings.Repeat("a", domain.ObjectIDLen)
+	for _, kind := range []string{"bad", "running", "ok", ""} {
+		t.Run(kind, func(t *testing.T) {
+			runs := mocks.NewRunService(t)
+			var checks []ports.CheckView
+			if kind != "" {
+				check := domain.CICheck{Name: "ci", Status: domain.CICompleted, Conclusion: domain.CISuccess}
+				if kind == "bad" {
+					check.Conclusion = domain.CIFailure
+				}
+				if kind == "running" {
+					check.Status, check.Conclusion = domain.CIQueued, ""
+				}
+				checks = []ports.CheckView{{CICheck: check}}
+			}
+			runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{Checks: checks}, nil)
+			srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "proj")), Browse: mocks.NewBrowseService(t), Runs: runs})
+
+			// A visitor's stream never carries the owner's merge form.
+			visitor, err := (&liveStream{s: srv, repo: "proj", head: head, view: "mr"}).mrChecks(t.Context())
+			require.NoError(t, err)
+			require.Len(t, visitor, 2)
+			for _, f := range visitor {
+				assert.NotContains(t, f.html, `mr-merge-checks`)
+			}
+
+			owner := context.WithValue(t.Context(), signedInKey{}, struct{}{})
+			ls := &liveStream{s: srv, repo: "proj", head: head, view: "mr"}
+			got, err := ls.mrChecks(owner)
+			require.NoError(t, err)
+			require.Len(t, got, 3)
+			assert.Contains(t, got[2].html, `data-keep-checks`, "a swap keeps the ticked box")
+			assert.Equal(t, "ci-run", got[2].event)
+			assert.Contains(t, got[2].html, `id="mr-merge-checks"`)
+			assert.Equal(t, renderToString(t, MRMergeChecks(checksSummary(repo, head, checks))), got[2].html)
+			if kind == "bad" || kind == "running" {
+				assert.Contains(t, got[2].html, `name="ignore_checks"`)
+			} else {
+				assert.NotContains(t, got[2].html, `name="ignore_checks"`)
+			}
+			// An unrelated job event with identical checks must not reset the checkbox.
+			got, err = ls.mrChecks(owner)
+			require.NoError(t, err)
+			require.Len(t, got, 2)
+		})
+	}
 }

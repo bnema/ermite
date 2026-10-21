@@ -545,10 +545,7 @@ templ mergeMenu(p MRPage) {
 							</label>
 						}
 					</fieldset>
-					if p.ChecksSum.Kind == "bad" || p.ChecksSum.Kind == "running" {
-						<p class="d-note">{ p.ChecksSum.State + ": a failing or unfinished check blocks the merge." }</p>
-						<label class="d-check"><input type="checkbox" name="ignore_checks"/> Ignore checks</label>
-					}
+					@MRMergeChecks(p.ChecksSum)
 					if p.Box.CanDeleteBranch {
 						<label class="d-check"><input type="checkbox" name="delete_branch" value="1"/> delete { p.Source } after the merge <kbd aria-hidden="true">D</kbd></label>
 					}
@@ -769,4 +766,15 @@ templ compareRail(p ComparePage) {
 		<h2 id="r-cli">From a terminal</h2>
 		@CloneBlock(p.CLI)
 	</section>
+}
+
+// MRMergeChecks is the part of the owner's merge form that depends on the
+// checks: a live update replaces it and keeps "Ignore checks" ticked.
+templ MRMergeChecks(c ChecksSummary) {
+	<div id="mr-merge-checks" data-keep-checks>
+		if c.Kind == "bad" || c.Kind == "running" {
+			<p class="d-note">{ c.State + ": a failing or unfinished check blocks the merge." }</p>
+			<label class="d-check"><input type="checkbox" name="ignore_checks"/> Ignore checks</label>
+		}
+	</div>
 }
