@@ -36,6 +36,18 @@ message Issue {
   // True for an issue approved from the public form: its text comes from
   // an anonymous visitor and is rendered as untrusted.
   bool external = 9;
+  int64 closed_by_merge_request = 10;
+}
+
+// IssueLink is stored under isref/<repo>/<issue:010d>/<mr:010d>.
+message IssueLink {
+  bool closes = 1;
+}
+
+// MergeRequestReferences is stored under mrref/<repo>/<mr:010d>.
+message MergeRequestReferences {
+  repeated int64 issues = 1;
+  repeated int64 closes = 2;
 }
 
 // IssueComment is stored under the key

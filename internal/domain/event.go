@@ -214,6 +214,18 @@ type IssueOpened struct {
 // EventKind implements Event.
 func (IssueOpened) EventKind() string { return "issue.opened" }
 
+// IssueReferenced refreshes an issue's merge request back-references.
+type IssueReferenced struct {
+	Repo                RepoName
+	Issue, MergeRequest int64
+	At                  time.Time
+	Visibility          Visibility
+	CreatedAt           time.Time
+}
+
+// EventKind implements Event.
+func (IssueReferenced) EventKind() string { return "issue.referenced" }
+
 // IssueClosed is published when an issue was closed.
 type IssueClosed struct {
 	Issue      Issue

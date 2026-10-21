@@ -63,7 +63,7 @@ func liveEvent(we ports.WatchEvent) bool {
 	case domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
 		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled, domain.MergeRequestMergeability, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
 		domain.RunUpdated, domain.JobUpdated,
-		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved:
+		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved, domain.IssueReferenced:
 		return true
 	}
 	return false
@@ -214,6 +214,8 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 		return l.issueNotice(ctx, ev.Issue.Number, "this issue was reopened — reload")
 	case domain.IssueCommented:
 		return l.issueNotice(ctx, ev.Number, "a comment was added — reload")
+	case domain.IssueReferenced:
+		return l.issueNotice(ctx, ev.Issue, "a merge request mentions this issue — reload")
 	case domain.PushEvent:
 		switch l.view {
 		case "mr":

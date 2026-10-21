@@ -72,7 +72,7 @@ func indexOpenIssue(b *kv.Batch, issue domain.Issue) {
 func issueKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]byte {
 	var keys [][]byte
 	for _, p := range []string{
-		issueRepoPrefix(repo), issueCommentPrefix + repo.String() + "/", issueOpenRepoPrefix(repo),
+		issueRepoPrefix(repo), issueCommentPrefix + repo.String() + "/", issueOpenRepoPrefix(repo), issueRefPrefix + repo.String() + "/",
 	} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))
@@ -312,15 +312,16 @@ func encodeIssue(issue domain.Issue) ([]byte, error) {
 		return nil, err
 	}
 	return mustMarshal(&storagepb.Issue{
-		Number:     issue.Number,
-		Title:      issue.Title.String(),
-		Body:       issue.Body.String(),
-		State:      state,
-		Author:     issue.Author,
-		CreatedAt:  encodeTime(issue.CreatedAt),
-		UpdatedAt:  encodeTime(issue.UpdatedAt),
-		CommentSeq: issue.CommentSeq,
-		External:   issue.External,
+		Number:               issue.Number,
+		Title:                issue.Title.String(),
+		Body:                 issue.Body.String(),
+		State:                state,
+		Author:               issue.Author,
+		CreatedAt:            encodeTime(issue.CreatedAt),
+		UpdatedAt:            encodeTime(issue.UpdatedAt),
+		CommentSeq:           issue.CommentSeq,
+		External:             issue.External,
+		ClosedByMergeRequest: issue.ClosedByMergeRequest,
 	}), nil
 }
 
@@ -348,9 +349,10 @@ func decodeIssue(repo domain.RepoName, item kv.Item) (domain.Issue, error) {
 		Repo: repo, Number: pb.GetNumber(), Title: title, Body: body, State: state,
 		Author:    pb.GetAuthor(),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), UpdatedAt: decodeTime(pb.GetUpdatedAt()),
-		CommentSeq: pb.GetCommentSeq(),
-		External:   pb.GetExternal(),
-		Version:    item.Version,
+		CommentSeq:           pb.GetCommentSeq(),
+		External:             pb.GetExternal(),
+		ClosedByMergeRequest: pb.GetClosedByMergeRequest(),
+		Version:              item.Version,
 	}, nil
 }
 

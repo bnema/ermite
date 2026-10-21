@@ -43,6 +43,7 @@ const mrTokenPrefix = "mp1:"
 // merging mr:merge, on the repository (see scopeAccess), and that scope also
 // makes a private repository visible for the action (see writable).
 type MergeRequests struct {
+	links     ports.IssueLinkTrigger
 	meta      ports.RepoMetaStore
 	store     ports.MergeRequestStore
 	repos     ports.GitRepos
@@ -78,6 +79,7 @@ var (
 // MergeRequestsConfig holds what the merge request use cases need. Every field
 // is required.
 type MergeRequestsConfig struct {
+	Links ports.IssueLinkTrigger // Optional derived issue links.
 	Meta  ports.RepoMetaStore
 	Store ports.MergeRequestStore
 	// Repos gives the default branch of a repository.
@@ -112,7 +114,7 @@ type MergeRequestsConfig struct {
 // NewMergeRequests builds the merge request use cases.
 func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 	return &MergeRequests{
-		meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
+		links: cfg.Links, meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
 		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips, mergeab: cfg.Mergeability,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
@@ -292,6 +294,9 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	}
 	recordActivity(ctx, m.meta, repo.Name, now)
 	m.bus.Publish(ctx, domain.MergeRequestOpened{MergeRequest: mr, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+	if m.links != nil {
+		m.links.OnMergeRequestChanged(ctx, repo, mr.Number)
+	}
 	if m.mergeab != nil {
 		m.mergeab.OnOpened(ctx, mr)
 	}
@@ -434,6 +439,9 @@ func (m *MergeRequests) MarkReady(ctx context.Context, p domain.Principal, name 
 		}
 		recordActivity(ctx, m.meta, repo.Name, mr.UpdatedAt)
 		m.bus.Publish(ctx, domain.MergeRequestReady{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		if m.links != nil {
+			m.links.OnMergeRequestChanged(ctx, repo, number)
+		}
 		return m.withHead(ctx, mr)
 	}
 	return domain.MergeRequest{}, fmt.Errorf("mark !%d of %q ready: %w", number, name, domain.ErrConflict)
@@ -651,17 +659,24 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 // the head; both are zero when the target is gone or shares no history with
 // the head. A merged or closed request keeps the base it stored for both.
 func (m *MergeRequests) rangeOf(ctx context.Context, mr domain.MergeRequest) (exclude, base domain.ObjectID, err error) {
+	return mrRange(ctx, m.git, mr)
+}
+
+func mrRange(ctx context.Context, git ports.MergeGit, mr domain.MergeRequest) (exclude, base domain.ObjectID, err error) {
 	if !mr.IsOpen() {
 		return mr.BaseID, mr.BaseID, nil
 	}
 	if mr.HeadID.IsZero() {
 		return domain.ObjectID{}, domain.ObjectID{}, nil
 	}
-	tip, err := m.branchOrZero(ctx, mr.Repo, mr.Target)
+	tip, err := git.BranchHead(ctx, mr.Repo, mr.Target)
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.ObjectID{}, domain.ObjectID{}, nil
+	}
 	if err != nil || tip.IsZero() {
 		return domain.ObjectID{}, domain.ObjectID{}, err
 	}
-	base, err = m.git.MergeBase(ctx, mr.Repo, tip, mr.HeadID)
+	base, err = git.MergeBase(ctx, mr.Repo, tip, mr.HeadID)
 	if errors.Is(err, domain.ErrNotFound) {
 		return tip, domain.ObjectID{}, nil
 	}
@@ -781,6 +796,9 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 	m.bus.Publish(ctx, domain.CommentAdded{
 		Repo: name, Number: number, Comment: c, At: c.CreatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
 	})
+	if m.links != nil {
+		m.links.OnMergeRequestChanged(ctx, repo, number)
+	}
 	return c, nil
 }
 
@@ -920,6 +938,9 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 		m.bus.Publish(ctx, domain.MergeRequestClosed{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		if hadAutoMerge {
 			m.bus.Publish(ctx, domain.MergeRequestAutoMergeCancelled{MergeRequest: mr, Reason: "closed", At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		}
+		if m.links != nil {
+			m.links.OnMergeRequestSettled(ctx, repo, mr)
 		}
 		if m.pulls != nil {
 			m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID}, p)
@@ -1219,6 +1240,9 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 // never returned. mr is the merged request, tip the old target and merged the
 // new one.
 func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo domain.Repo, mr domain.MergeRequest, head, tip, merged domain.ObjectID, deleteSource bool) {
+	if m.links != nil {
+		m.links.OnMerged(ctx, p, repo, mr)
+	}
 	name := repo.Name
 	updates := []domain.RefUpdate{{Old: tip.String(), New: merged.String(), Ref: "refs/heads/" + mr.Target}}
 	if deleteSource && m.deleteSource(ctx, p, name, mr, head) {
@@ -1243,6 +1267,9 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 	}
 	if m.mergeab != nil {
 		m.mergeab.OnBranchesMoved(ctx, name, updates) // the other requests of the moved target
+	}
+	if m.links != nil {
+		m.links.OnBranchesMoved(ctx, name, updates) // open requests whose source moved
 	}
 }
 
@@ -1517,6 +1544,9 @@ func (m *MergeRequests) changeComment(ctx context.Context, p domain.Principal, n
 			m.bus.Publish(ctx, domain.CommentDeleted{Repo: name, Number: number, Comment: c, At: c.EditedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		} else {
 			m.bus.Publish(ctx, domain.CommentEdited{Repo: name, Number: number, Comment: c, At: c.EditedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		}
+		if m.links != nil {
+			m.links.OnMergeRequestChanged(ctx, repo, number)
 		}
 		return c, nil
 	}

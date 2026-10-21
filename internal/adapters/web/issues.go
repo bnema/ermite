@@ -83,6 +83,58 @@ type IssuePage struct {
 	Form       *CommentForm
 	Transition *IssueActions
 	Live       bool
+	// ClosedBy is the merge request whose merge closed the issue.
+	ClosedBy *Link
+	// References are the merge requests naming the issue.
+	References []IssueRefView
+}
+
+// IssueRefView is a merge request naming an issue.
+type IssueRefView struct {
+	Number, Title, State, Href string
+	Closes                     bool
+}
+
+// maxNumberLookups bounds the lookups of #N references of one render.
+const maxNumberLookups = 50
+
+// numberResolver resolves #N to the page of an issue or a merge request of
+// the repository. It is meant for one render: answers are memoized and at most
+// maxNumberLookups numbers are asked, the others do not resolve.
+func (s *Server) numberResolver(ctx context.Context, repo string) func(int64) (string, domain.NumberKind, bool) {
+	if s.cfg.IssueNumbers == nil {
+		return nil
+	}
+	name, err := domain.ParseRepoName(repo)
+	if err != nil {
+		return nil
+	}
+	type answer struct {
+		href string
+		kind domain.NumberKind
+		ok   bool
+	}
+	seen := map[int64]answer{}
+	return func(n int64) (string, domain.NumberKind, bool) {
+		if a, ok := seen[n]; ok {
+			return a.href, a.kind, a.ok
+		}
+		if len(seen) >= maxNumberLookups {
+			return "", domain.NumberNone, false
+		}
+		var a answer
+		kind, err := s.cfg.IssueNumbers.Kind(ctx, principal(ctx), name, n)
+		if err == nil {
+			switch kind {
+			case domain.NumberIssue:
+				a = answer{issueHref(repo, n), kind, true}
+			case domain.NumberMergeRequest:
+				a = answer{mrHref(repo, n), kind, true}
+			}
+		}
+		seen[n] = a
+		return a.href, a.kind, a.ok
+	}
 }
 
 // IssueNewPage is the form that opens an issue.
@@ -238,20 +290,11 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 		Number: "#" + strconv.FormatInt(n, 10), Title: visibleText(i.Title.String()),
 		State: string(i.State), Open: i.IsOpen(),
 	}
-	if body := i.Body.String(); strings.TrimSpace(body) != "" {
-		var h template.HTML
-		var err error
-		if i.External {
-			// Written by an anonymous visitor: the untrusted policy.
-			h, err = s.md.renderUntrusted([]byte(body), "issue-desc-")
-		} else {
-			h, _, err = s.md.renderWithIDs([]byte(body), d.name(), d.repo.DefaultBranch, "", "issue-desc-")
-		}
-		if err != nil {
-			return nil, 0, err
-		}
-		p.Desc = h
+	if p.Desc, err = s.issueBody(ctx, d, i); err != nil {
+		return nil, 0, err
 	}
+	p.ClosedBy = numberLink(d.name(), i.ClosedByMergeRequest)
+	p.References = issueRefViews(d.name(), res.References)
 	p.Opened.Name = s.who(i.Author)
 	if i.External {
 		// The label is the visitor's, not the owner's: shown as plain text.
@@ -293,6 +336,40 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=issue&n="+strconv.FormatInt(n, 10))
 	l.HasRail = true
 	return IssueShow(l, p), http.StatusOK, nil
+}
+
+// issueBody renders the description of an issue; an issue from the public form
+// was written by an anonymous visitor and gets the untrusted policy.
+func (s *Server) issueBody(ctx context.Context, d *repoData, i domain.Issue) (template.HTML, error) {
+	body := i.Body.String()
+	if strings.TrimSpace(body) == "" {
+		return "", nil
+	}
+	numbers := s.numberResolver(ctx, d.name())
+	if i.External {
+		return s.md.renderUntrusted([]byte(body), "issue-desc-", numbers)
+	}
+	return s.md.renderIssue([]byte(body), d.name(), d.repo.DefaultBranch, "issue-desc-", numbers)
+}
+
+// numberLink links merge request n of repo; nil for 0.
+func numberLink(repo string, n int64) *Link {
+	if n == 0 {
+		return nil
+	}
+	return &Link{Label: "!" + strconv.FormatInt(n, 10), Href: mrHref(repo, n)}
+}
+
+// issueRefViews are the merge requests that mention an issue.
+func issueRefViews(repo string, refs []ports.IssueReference) []IssueRefView {
+	views := make([]IssueRefView, 0, len(refs))
+	for _, ref := range refs {
+		views = append(views, IssueRefView{
+			Number: "!" + strconv.FormatInt(ref.Number, 10), Title: visibleText(ref.Title.String()),
+			State: string(ref.State), Href: mrHref(repo, ref.Number), Closes: ref.Closes,
+		})
+	}
+	return views
 }
 
 // pageOrRedirect is page(), except that a page that is not found may be the

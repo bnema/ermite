@@ -73,9 +73,17 @@ type Issue struct {
 	// External is true for an issue approved from the public form: its text
 	// comes from an anonymous visitor and is rendered as untrusted.
 	External bool
+	// ClosedByMergeRequest is zero unless a merge closed the issue.
+	ClosedByMergeRequest int64
 	// Version is set by the store on read: Update fails with ErrConflict when
 	// the stored issue changed since. Opaque to everyone else.
 	Version uint64
+}
+
+// IssueLink is a merge request naming an issue in the same repository.
+type IssueLink struct {
+	Issue, MergeRequest int64
+	Closes              bool
 }
 
 // IsOpen reports whether the issue is open.

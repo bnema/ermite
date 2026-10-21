@@ -309,6 +309,8 @@ func TestIssueLiveNotices(t *testing.T) {
 		{domain.IssueReopened{Issue: issue}, "issue", "5", "this issue was reopened"},
 		{domain.IssueCommented{Repo: issue.Repo, Number: 5}, "issue", "5", "a comment was added"},
 		{domain.IssueCommented{Repo: issue.Repo, Number: 6}, "issue", "5", ""},
+		{domain.IssueReferenced{Repo: issue.Repo, Issue: 5, MergeRequest: 2}, "issue", "5", "a merge request mentions this issue"},
+		{domain.IssueReferenced{Repo: issue.Repo, Issue: 6, MergeRequest: 2}, "issue", "5", ""},
 		{domain.IssueClosed{Issue: issue}, "mrs", "", ""},
 		{domain.IssueClosed{Issue: issue}, "summary", "", ""},
 	}
@@ -329,4 +331,47 @@ func TestIssueLiveNotices(t *testing.T) {
 	got, err := (&liveStream{s: r.srv, repo: "proj", view: "issues"}).render(t.Context(), ports.WatchEvent{Event: domain.MergeRequestClosed{}})
 	require.NoError(t, err)
 	assert.Empty(t, got)
+}
+
+func TestIssueShowReferences(t *testing.T) {
+	t.Parallel()
+	r := newIssueRig(t, domain.IssuesPublic, true)
+	title, err := domain.ParseMRTitle("fix <b>it</b>")
+	require.NoError(t, err)
+	issue := testIssue(t, 5, domain.IssueStateClosed, "bug", "see #7 and #8")
+	issue.ClosedByMergeRequest = 2
+	r.issues.EXPECT().Get(mock.Anything, mock.Anything, repoName(t, "proj"), int64(5)).Return(ports.IssueDetail{
+		Issue: issue,
+		References: []ports.IssueReference{
+			{Number: 2, Title: title, State: domain.MRStateMerged, Closes: true},
+			{Number: 3, Title: title, State: domain.MRStateOpen},
+		},
+	}, nil)
+	r.nums.EXPECT().Kind(mock.Anything, mock.Anything, repoName(t, "proj"), int64(7)).Return(domain.NumberMergeRequest, nil)
+	r.nums.EXPECT().Kind(mock.Anything, mock.Anything, repoName(t, "proj"), int64(8)).Return(domain.NumberNone, nil)
+
+	rec := r.do("GET", "/proj/issues/5", false, nil)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.Contains(t, body, "closed by")
+	assert.Contains(t, body, `href="/proj/merge-requests/2"`)
+	assert.Contains(t, body, ">!2<")
+	assert.Contains(t, body, ">!3<")
+	assert.Contains(t, body, `id="r-refs"`)
+	assert.Contains(t, body, "closes")
+	assert.Contains(t, body, "fix &lt;b&gt;it&lt;/b&gt;")
+	assert.Contains(t, body, `href="/proj/merge-requests/7"`, "#7 in the body")
+	assert.Contains(t, body, `title="merge request 7"`)
+	assert.NotContains(t, body, `/issues/8"`)
+}
+
+func TestIssueShowWithoutReferences(t *testing.T) {
+	t.Parallel()
+	r := newIssueRig(t, domain.IssuesPublic, false)
+	r.issues.EXPECT().Get(mock.Anything, mock.Anything, mock.Anything, int64(5)).Return(ports.IssueDetail{
+		Issue: testIssue(t, 5, domain.IssueStateOpen, "bug", ""),
+	}, nil)
+	body := r.do("GET", "/proj/issues/5", false, nil).Body.String()
+	assert.NotContains(t, body, "r-refs")
+	assert.NotContains(t, body, "closed by")
 }

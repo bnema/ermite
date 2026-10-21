@@ -543,7 +543,27 @@ type EventBus interface {
 	Subscribe(ctx context.Context) <-chan domain.Event
 }
 
+// IssueLinkStore keeps which merge requests name which issues.
+type IssueLinkStore interface {
+	// ReplaceLinks atomically replaces an MR's links (closes is a subset of issues).
+	// Added includes new links and links whose closes flag turned on.
+	// Returns ErrNotFound for a missing repository, ErrConflict on a race.
+	ReplaceLinks(ctx context.Context, repo domain.RepoName, mr int64, issues, closes []int64) (added, removed []domain.IssueLink, err error)
+	// LinksOfIssue returns links ascending by MR number, at most limit.
+	LinksOfIssue(ctx context.Context, repo domain.RepoName, issue int64, limit int) ([]domain.IssueLink, error)
+	// LinksOfMergeRequest returns the issues named by an MR.
+	LinksOfMergeRequest(ctx context.Context, repo domain.RepoName, mr int64) ([]domain.IssueLink, error)
+}
+
 // Clock tells the time.
 type Clock interface {
 	Now() time.Time
+}
+
+// IssueLinkTrigger updates derived links without failing the primary operation.
+type IssueLinkTrigger interface {
+	OnMergeRequestChanged(context.Context, domain.Repo, int64)
+	OnMergeRequestSettled(context.Context, domain.Repo, domain.MergeRequest)
+	OnBranchesMoved(context.Context, domain.RepoName, []domain.RefUpdate)
+	OnMerged(context.Context, domain.Principal, domain.Repo, domain.MergeRequest)
 }

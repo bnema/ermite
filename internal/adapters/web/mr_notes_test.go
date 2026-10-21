@@ -43,7 +43,7 @@ func TestNoteThreads(t *testing.T) {
 		{ID: 6, Author: "alice", Text: text, Verdict: domain.VerdictApprove, Resolved: true},
 	}
 	p := MRPage{NoteAuthor: "alice"}
-	s.placeComments(&p, "demo", 1, comments, "", true, true, nil)
+	s.placeComments(t.Context(), &p, "demo", 1, comments, "", true, true, nil)
 	require.Len(t, p.General, 3)
 	assert.Equal(t, 4, p.NComments)
 	assert.Equal(t, 1, p.NUnresolved)
@@ -117,7 +117,7 @@ func TestDeletedNoteRendering(t *testing.T) {
 	require.NoError(t, err)
 	s := &Server{cfg: Config{Now: time.Now}, md: newMarkdown()}
 	p := MRPage{}
-	s.placeComments(&p, "demo", 1, []domain.Comment{
+	s.placeComments(t.Context(), &p, "demo", 1, []domain.Comment{
 		{ID: 1, Author: "reviewer", Deleted: true, Verdict: domain.VerdictApprove},
 		{ID: 2, Deleted: true},
 		{ID: 3, ReplyTo: 2, Deleted: true},
@@ -147,7 +147,7 @@ func TestInlineNoteHeadingIDs(t *testing.T) {
 	require.NoError(t, err)
 	s := &Server{cfg: Config{Now: time.Now}, md: newMarkdown()}
 	p := MRPage{Files: []DiffFile{{Key: "a", ID: "f1", Hunks: []DiffHunk{{Lines: []DiffLine{{Kind: "add", newN: 1}}}}}}}
-	s.placeComments(&p, "demo", 1, []domain.Comment{{ID: 12, Path: "a", Side: domain.SideNew, Line: 1, Text: text}}, "", true, true, nil)
+	s.placeComments(t.Context(), &p, "demo", 1, []domain.Comment{{ID: 12, Path: "a", Side: domain.SideNew, Line: 1, Text: text}}, "", true, true, nil)
 	notes := p.Files[0].Hunks[0].Lines[0].Notes
 	require.Len(t, notes, 1)
 	var b bytes.Buffer

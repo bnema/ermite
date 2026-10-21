@@ -61,6 +61,7 @@ ermite mr merge <repo> <n> --head <id> [--mode fast-forward|squash|merge] [--del
 
 ermite issue create <repo> --title … [--body … | --body-file …] | list <repo> [--state open|closed|all]
 ermite issue show <repo> <n> | comment <repo> <n> -m … | close <repo> <n> | reopen <repo> <n>
+# issue show prints `closed by !N` when a merge closed it, and a `merge requests (K)` block (`!5 open  <title> · closes`); --json adds closed_by_merge_request and references
 
 ermite run list <repo> [--workflow …] [--branch …] [--status …]
 ermite run view <repo> <id> [--attempt n] [--log [--job …]] [--summary]

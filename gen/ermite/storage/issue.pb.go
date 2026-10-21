@@ -97,9 +97,10 @@ type Issue struct {
 	CommentSeq int64 `protobuf:"varint,8,opt,name=comment_seq,json=commentSeq,proto3" json:"comment_seq,omitempty"`
 	// True for an issue approved from the public form: its text comes from
 	// an anonymous visitor and is rendered as untrusted.
-	External      bool `protobuf:"varint,9,opt,name=external,proto3" json:"external,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	External             bool  `protobuf:"varint,9,opt,name=external,proto3" json:"external,omitempty"`
+	ClosedByMergeRequest int64 `protobuf:"varint,10,opt,name=closed_by_merge_request,json=closedByMergeRequest,proto3" json:"closed_by_merge_request,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Issue) Reset() {
@@ -195,6 +196,111 @@ func (x *Issue) GetExternal() bool {
 	return false
 }
 
+func (x *Issue) GetClosedByMergeRequest() int64 {
+	if x != nil {
+		return x.ClosedByMergeRequest
+	}
+	return 0
+}
+
+// IssueLink is stored under isref/<repo>/<issue:010d>/<mr:010d>.
+type IssueLink struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Closes        bool                   `protobuf:"varint,1,opt,name=closes,proto3" json:"closes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueLink) Reset() {
+	*x = IssueLink{}
+	mi := &file_ermite_storage_issue_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueLink) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueLink) ProtoMessage() {}
+
+func (x *IssueLink) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_issue_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueLink.ProtoReflect.Descriptor instead.
+func (*IssueLink) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *IssueLink) GetCloses() bool {
+	if x != nil {
+		return x.Closes
+	}
+	return false
+}
+
+// MergeRequestReferences is stored under mrref/<repo>/<mr:010d>.
+type MergeRequestReferences struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Issues        []int64                `protobuf:"varint,1,rep,packed,name=issues,proto3" json:"issues,omitempty"`
+	Closes        []int64                `protobuf:"varint,2,rep,packed,name=closes,proto3" json:"closes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MergeRequestReferences) Reset() {
+	*x = MergeRequestReferences{}
+	mi := &file_ermite_storage_issue_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MergeRequestReferences) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MergeRequestReferences) ProtoMessage() {}
+
+func (x *MergeRequestReferences) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_issue_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MergeRequestReferences.ProtoReflect.Descriptor instead.
+func (*MergeRequestReferences) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *MergeRequestReferences) GetIssues() []int64 {
+	if x != nil {
+		return x.Issues
+	}
+	return nil
+}
+
+func (x *MergeRequestReferences) GetCloses() []int64 {
+	if x != nil {
+		return x.Closes
+	}
+	return nil
+}
+
 // IssueComment is stored under the key
 // "isc/<repo>/<number:010d>/<id:010d>".
 type IssueComment struct {
@@ -209,7 +315,7 @@ type IssueComment struct {
 
 func (x *IssueComment) Reset() {
 	*x = IssueComment{}
-	mi := &file_ermite_storage_issue_proto_msgTypes[1]
+	mi := &file_ermite_storage_issue_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -221,7 +327,7 @@ func (x *IssueComment) String() string {
 func (*IssueComment) ProtoMessage() {}
 
 func (x *IssueComment) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_issue_proto_msgTypes[1]
+	mi := &file_ermite_storage_issue_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -234,7 +340,7 @@ func (x *IssueComment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueComment.ProtoReflect.Descriptor instead.
 func (*IssueComment) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{1}
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *IssueComment) GetId() int64 {
@@ -283,7 +389,7 @@ type PendingIssue struct {
 
 func (x *PendingIssue) Reset() {
 	*x = PendingIssue{}
-	mi := &file_ermite_storage_issue_proto_msgTypes[2]
+	mi := &file_ermite_storage_issue_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -295,7 +401,7 @@ func (x *PendingIssue) String() string {
 func (*PendingIssue) ProtoMessage() {}
 
 func (x *PendingIssue) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_issue_proto_msgTypes[2]
+	mi := &file_ermite_storage_issue_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -308,7 +414,7 @@ func (x *PendingIssue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingIssue.ProtoReflect.Descriptor instead.
 func (*PendingIssue) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{2}
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PendingIssue) GetTitle() string {
@@ -356,7 +462,7 @@ type IssueBan struct {
 
 func (x *IssueBan) Reset() {
 	*x = IssueBan{}
-	mi := &file_ermite_storage_issue_proto_msgTypes[3]
+	mi := &file_ermite_storage_issue_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -368,7 +474,7 @@ func (x *IssueBan) String() string {
 func (*IssueBan) ProtoMessage() {}
 
 func (x *IssueBan) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_issue_proto_msgTypes[3]
+	mi := &file_ermite_storage_issue_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -381,7 +487,7 @@ func (x *IssueBan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueBan.ProtoReflect.Descriptor instead.
 func (*IssueBan) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{3}
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *IssueBan) GetUntil() *timestamppb.Timestamp {
@@ -401,7 +507,7 @@ type IssueKey struct {
 
 func (x *IssueKey) Reset() {
 	*x = IssueKey{}
-	mi := &file_ermite_storage_issue_proto_msgTypes[4]
+	mi := &file_ermite_storage_issue_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -413,7 +519,7 @@ func (x *IssueKey) String() string {
 func (*IssueKey) ProtoMessage() {}
 
 func (x *IssueKey) ProtoReflect() protoreflect.Message {
-	mi := &file_ermite_storage_issue_proto_msgTypes[4]
+	mi := &file_ermite_storage_issue_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -426,7 +532,7 @@ func (x *IssueKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueKey.ProtoReflect.Descriptor instead.
 func (*IssueKey) Descriptor() ([]byte, []int) {
-	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{4}
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *IssueKey) GetKey() []byte {
@@ -440,7 +546,7 @@ var File_ermite_storage_issue_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_issue_proto_rawDesc = "" +
 	"\n" +
-	"\x1aermite/storage/issue.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc6\x02\n" +
+	"\x1aermite/storage/issue.proto\x12\x0eermite.storage\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfd\x02\n" +
 	"\x05Issue\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x03R\x06number\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
@@ -453,7 +559,14 @@ const file_ermite_storage_issue_proto_rawDesc = "" +
 	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1f\n" +
 	"\vcomment_seq\x18\b \x01(\x03R\n" +
 	"commentSeq\x12\x1a\n" +
-	"\bexternal\x18\t \x01(\bR\bexternal\"\x85\x01\n" +
+	"\bexternal\x18\t \x01(\bR\bexternal\x125\n" +
+	"\x17closed_by_merge_request\x18\n" +
+	" \x01(\x03R\x14closedByMergeRequest\"#\n" +
+	"\tIssueLink\x12\x16\n" +
+	"\x06closes\x18\x01 \x01(\bR\x06closes\"H\n" +
+	"\x16MergeRequestReferences\x12\x16\n" +
+	"\x06issues\x18\x01 \x03(\x03R\x06issues\x12\x16\n" +
+	"\x06closes\x18\x02 \x03(\x03R\x06closes\"\x85\x01\n" +
 	"\fIssueComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x16\n" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x12\n" +
@@ -491,23 +604,25 @@ func file_ermite_storage_issue_proto_rawDescGZIP() []byte {
 }
 
 var file_ermite_storage_issue_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ermite_storage_issue_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_ermite_storage_issue_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_ermite_storage_issue_proto_goTypes = []any{
-	(IssueState)(0),               // 0: ermite.storage.IssueState
-	(*Issue)(nil),                 // 1: ermite.storage.Issue
-	(*IssueComment)(nil),          // 2: ermite.storage.IssueComment
-	(*PendingIssue)(nil),          // 3: ermite.storage.PendingIssue
-	(*IssueBan)(nil),              // 4: ermite.storage.IssueBan
-	(*IssueKey)(nil),              // 5: ermite.storage.IssueKey
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(IssueState)(0),                // 0: ermite.storage.IssueState
+	(*Issue)(nil),                  // 1: ermite.storage.Issue
+	(*IssueLink)(nil),              // 2: ermite.storage.IssueLink
+	(*MergeRequestReferences)(nil), // 3: ermite.storage.MergeRequestReferences
+	(*IssueComment)(nil),           // 4: ermite.storage.IssueComment
+	(*PendingIssue)(nil),           // 5: ermite.storage.PendingIssue
+	(*IssueBan)(nil),               // 6: ermite.storage.IssueBan
+	(*IssueKey)(nil),               // 7: ermite.storage.IssueKey
+	(*timestamppb.Timestamp)(nil),  // 8: google.protobuf.Timestamp
 }
 var file_ermite_storage_issue_proto_depIdxs = []int32{
 	0, // 0: ermite.storage.Issue.state:type_name -> ermite.storage.IssueState
-	6, // 1: ermite.storage.Issue.created_at:type_name -> google.protobuf.Timestamp
-	6, // 2: ermite.storage.Issue.updated_at:type_name -> google.protobuf.Timestamp
-	6, // 3: ermite.storage.IssueComment.created_at:type_name -> google.protobuf.Timestamp
-	6, // 4: ermite.storage.PendingIssue.created_at:type_name -> google.protobuf.Timestamp
-	6, // 5: ermite.storage.IssueBan.until:type_name -> google.protobuf.Timestamp
+	8, // 1: ermite.storage.Issue.created_at:type_name -> google.protobuf.Timestamp
+	8, // 2: ermite.storage.Issue.updated_at:type_name -> google.protobuf.Timestamp
+	8, // 3: ermite.storage.IssueComment.created_at:type_name -> google.protobuf.Timestamp
+	8, // 4: ermite.storage.PendingIssue.created_at:type_name -> google.protobuf.Timestamp
+	8, // 5: ermite.storage.IssueBan.until:type_name -> google.protobuf.Timestamp
 	6, // [6:6] is the sub-list for method output_type
 	6, // [6:6] is the sub-list for method input_type
 	6, // [6:6] is the sub-list for extension type_name
@@ -526,7 +641,7 @@ func file_ermite_storage_issue_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_issue_proto_rawDesc), len(file_ermite_storage_issue_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

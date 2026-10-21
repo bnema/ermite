@@ -26,6 +26,7 @@ const MaxCommentsPerIssue = 1000
 // issue:write on it, which the branch prefixes of a token do not restrict:
 // an issue writes no ref.
 type Issues struct {
+	links ports.IssueLinkStore
 	meta  ports.RepoMetaStore
 	store ports.IssueStore
 	mrs   ports.MergeRequestStore
@@ -40,6 +41,7 @@ var (
 
 // IssuesConfig holds what the issue use cases need. Every field is required.
 type IssuesConfig struct {
+	Links ports.IssueLinkStore
 	Meta  ports.RepoMetaStore
 	Store ports.IssueStore
 	// MergeRequests tells which numbers name a merge request (Kind).
@@ -50,7 +52,7 @@ type IssuesConfig struct {
 
 // NewIssues builds the issue use cases.
 func NewIssues(cfg IssuesConfig) *Issues {
-	return &Issues{meta: cfg.Meta, store: cfg.Store, mrs: cfg.MergeRequests, bus: cfg.Bus, clock: cfg.Clock}
+	return &Issues{links: cfg.Links, meta: cfg.Meta, store: cfg.Store, mrs: cfg.MergeRequests, bus: cfg.Bus, clock: cfg.Clock}
 }
 
 // enabled looks the repository up and hides it when issues are off.
@@ -159,7 +161,24 @@ func (i *Issues) Get(ctx context.Context, p domain.Principal, name domain.RepoNa
 	if err != nil {
 		return ports.IssueDetail{}, fmt.Errorf("list comments of #%d of %q: %w", number, name, err)
 	}
-	return ports.IssueDetail{Issue: issue, Comments: comments}, nil
+	detail := ports.IssueDetail{Issue: issue, Comments: comments}
+	if i.links != nil {
+		links, err := i.links.LinksOfIssue(ctx, name, number, MaxIssueLinksPerIssue)
+		if err != nil {
+			return ports.IssueDetail{}, err
+		}
+		for _, link := range links {
+			mr, err := i.mrs.Get(ctx, name, link.MergeRequest)
+			if errors.Is(err, domain.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return ports.IssueDetail{}, err
+			}
+			detail.References = append(detail.References, ports.IssueReference{Number: mr.Number, Title: mr.Title, State: mr.State, Closes: link.Closes})
+		}
+	}
+	return detail, nil
 }
 
 // AddComment adds a comment and publishes IssueCommented. The principal needs
@@ -251,6 +270,7 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 		if issue.State != from {
 			return domain.Issue{}, fmt.Errorf("%w: #%d is %s", domain.ErrPreconditionFailed, number, issue.State)
 		}
+		issue.ClosedByMergeRequest = 0
 		issue.State, issue.UpdatedAt = to, i.clock.Now().UTC()
 		err = i.store.Update(ctx, issue)
 		if errors.Is(err, domain.ErrConflict) {
@@ -274,16 +294,22 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 }
 
 // Kind tells what number n of the repository names. The principal needs the
-// access of reading the repository, and issues must be on there: otherwise it
-// is domain.ErrNotFound.
+// access of reading the repository. Issues are resolved only when enabled;
+// merge requests are resolved even when issues are off.
 func (i *Issues) Kind(ctx context.Context, p domain.Principal, name domain.RepoName, n int64) (domain.NumberKind, error) {
-	if _, err := i.readable(ctx, p, name); err != nil {
+	repo, err := lookupRepo(ctx, i.meta, name)
+	if err != nil {
 		return domain.NumberNone, err
 	}
-	if _, err := i.store.Get(ctx, name, n); err == nil {
-		return domain.NumberIssue, nil
-	} else if !errors.Is(err, domain.ErrNotFound) {
-		return domain.NumberNone, fmt.Errorf("read #%d of %q: %w", n, name, err)
+	if !canRead(p, repo) {
+		return domain.NumberNone, domain.ErrNotFound
+	}
+	if repo.Settings.IssuesEnabled() {
+		if _, err := i.store.Get(ctx, name, n); err == nil {
+			return domain.NumberIssue, nil
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			return domain.NumberNone, fmt.Errorf("read #%d of %q: %w", n, name, err)
+		}
 	}
 	if _, err := i.mrs.Get(ctx, name, n); err == nil {
 		return domain.NumberMergeRequest, nil

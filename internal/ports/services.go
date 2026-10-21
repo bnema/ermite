@@ -208,7 +208,8 @@ type IssueSubmissionService interface {
 // implements it.
 type IssueNumberResolver interface {
 	// Kind needs the access of reading the repository and answers
-	// domain.ErrNotFound otherwise, also when issues are off.
+	// domain.ErrNotFound otherwise. Issues are hidden when disabled; merge
+	// requests are resolved even when issues are off.
 	Kind(ctx context.Context, p domain.Principal, name domain.RepoName, n int64) (domain.NumberKind, error)
 }
 
