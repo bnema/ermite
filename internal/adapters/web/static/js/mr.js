@@ -81,6 +81,16 @@ window.ermiteMR = (() => {
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
   let refreshTouchComments = () => {};
   let revealGen = 0; // the last reveal wins the scroll
+  // The bar wraps only when its items do not fit: the file headers stick
+  // under its measured height (--mr-bar-h), not under a guessed one.
+  let barObserver = null;
+  function watchBar() {
+    barObserver?.disconnect();
+    const bar = $('.mr-bar');
+    if (!bar || typeof ResizeObserver !== 'function') return;
+    barObserver = new ResizeObserver(() => document.body.style.setProperty('--mr-bar-h', bar.offsetHeight + 'px'));
+    barObserver.observe(bar);
+  }
   const load = (ph) => window.ermiteLazy.load(ph);
   window.ermiteLazy.onSwap(() => refreshTouchComments());
 
@@ -536,6 +546,7 @@ window.ermiteMR = (() => {
     if (oldSHA && newSHA) oldSHA.textContent = newSHA.textContent;
     page = null;
     panels(openPanel);
+    watchBar();
     foldFiles(!!folded);
     if ($('.rail')) $('.rail').scrollTop = railY;
     if ($('.r-files .files')) $('.r-files .files').scrollTop = filesY;
@@ -593,6 +604,7 @@ window.ermiteMR = (() => {
       headRefresh.resume();
     });
     panels();
+    watchBar();
     // Large diffs may contain only the split table. Ask the existing server
     // route for unified rather than writing the saved session preference.
     const narrow = window.matchMedia?.('(max-width: 720px)');

@@ -61,14 +61,12 @@
 
   /* the bar above the diff of a merge request: the diff tools, the checks and
      the menus of the owner, on one line that follows the review */
-  /* on a narrow screen the bar takes two lines: the diff tools, then the
-     checks and the menus; the file headers stick under both */
-  @media (max-width: 860px) {
-    body:has(.mr-bar) { --bar-h: 96px; }
-    .mr-bar .grow { flex-basis: 100%; height: 0; }
-  }
+  /* the checks and the menus stay on the right, also when they wrap under the
+     diff tools; mr.js measures the height of the bar (--mr-bar-h) */
+  body:has(.mr-bar) { --bar-h: var(--mr-bar-h, 48px); }
   .mr-bar {
     gap: var(--s2);
+    & .mr-acts { display: flex; gap: var(--s2); align-items: center; margin-left: auto; }
     & .mr-ck { margin-left: 0; height: 32px; padding: 0 var(--s2); border-radius: var(--r-s); text-decoration: none; color: var(--ink-dim); font-size: var(--fs-s); }
     & .mr-ck:hover { background: var(--bg-raised); color: var(--ink-hi); }
   }

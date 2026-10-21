@@ -467,12 +467,13 @@ templ mrBar(p MRPage) {
 	<div class="diff-tools mr-bar" role="group" aria-label="Diff view and merge">
 		<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 		@diffViewMenu(p.DiffView)
-		<span class="grow"></span>
-		@MRChecksSum(p.ChecksSum)
-		if p.Box != nil {
-			@mergeMenu(p)
-		}
-		@moreMenu(p)
+		<div class="mr-acts">
+			@MRChecksSum(p.ChecksSum)
+			if p.Box != nil {
+				@mergeMenu(p)
+			}
+			@moreMenu(p)
+		</div>
 	</div>
 }
 
