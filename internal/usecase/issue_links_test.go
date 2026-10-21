@@ -11,8 +11,10 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/ermite/internal/ports/mocks"
 	"bnema.dev/ermite/internal/usecase"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -232,4 +234,29 @@ func TestIssueLinksMergeReindexesRequestsWhoseSourceMoved(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, after, 1)
 	assert.Equal(t, issue.Number, after[0].Issue)
+}
+
+func TestAutoMergeClosesLinkedIssue(t *testing.T) {
+	r, _, issues := linkedRig(t)
+	issue, err := issues.Create(r.ctx, root, r.repo, ports.CreateIssueParams{Title: "bug"})
+	require.NoError(t, err)
+	r.feature("feat")
+	mr, err := r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "fix", Source: "feat", Description: fmt.Sprintf("closes #%d", issue.Number)})
+	require.NoError(t, err)
+	_, err = r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowAutoMerge: ptr(true)})
+	require.NoError(t, err)
+	checks := mocks.NewCIChecksReader(t)
+	r.mrs.SetChecks(checks)
+	enableAuto(t, r, mr)
+	checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}}, nil).Twice()
+	a := autoEvaluator(r, checks, nil, nil)
+	defer a.Close(r.ctx)
+	require.True(t, a.Evaluate(r.repo))
+	r.mrs.Wait(r.ctx)
+	merged := storedAuto(t, r, mr)
+	require.Equal(t, domain.MRStateMerged, merged.State)
+	require.True(t, merged.AutoMerged)
+	got, err := issues.Get(r.ctx, root, r.repo, issue.Number)
+	require.NoError(t, err)
+	assert.False(t, got.Issue.IsOpen())
 }
