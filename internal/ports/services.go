@@ -390,3 +390,20 @@ type EnvironmentService interface {
 	ListEnvironments(ctx context.Context, p domain.Principal, repo domain.RepoName, size int, token string) (EnvironmentPage, error)
 	DeleteEnvironment(ctx context.Context, p domain.Principal, repo domain.RepoName, name string) error
 }
+
+// GitHubReleaseAPI is the Releases part of the REST subset. owner/repo follow
+// GitHubAPIService; bodies are GitHub JSON. *usecase.ReleasesGitHub implements it.
+type GitHubReleaseAPI interface {
+	CreateRelease(ctx context.Context, p domain.Principal, owner, repo string, body []byte) ([]byte, error)
+	GetRelease(ctx context.Context, p domain.Principal, owner, repo string, ref ReleaseRef) ([]byte, error)
+	ListReleases(ctx context.Context, p domain.Principal, owner, repo string, page, perPage int) (body []byte, link string, err error)
+	UpdateRelease(ctx context.Context, p domain.Principal, owner, repo string, id int64, body []byte) ([]byte, error)
+	DeleteRelease(ctx context.Context, p domain.Principal, owner, repo string, id int64) error
+	ListAssets(ctx context.Context, p domain.Principal, owner, repo string, id int64, page, perPage int) (body []byte, link string, err error)
+	UploadAsset(ctx context.Context, p domain.Principal, owner, repo string, id int64, name, label, contentType string, size int64, r io.Reader) ([]byte, error)
+	GetAsset(ctx context.Context, p domain.Principal, owner, repo string, assetID int64) ([]byte, error)
+	UpdateAsset(ctx context.Context, p domain.Principal, owner, repo string, assetID int64, body []byte) ([]byte, error)
+	DeleteAsset(ctx context.Context, p domain.Principal, owner, repo string, assetID int64) error
+	// AssetByID resolves metadata for a download through ReleaseService.
+	AssetByID(ctx context.Context, p domain.Principal, owner, repo string, assetID int64) (domain.ReleaseAsset, error)
+}

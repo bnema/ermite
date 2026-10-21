@@ -68,6 +68,10 @@ const (
 type Config struct {
 	Auth ports.AuthService
 	API  ports.GitHubAPIService
+	// Releases and ReleaseDownload enable the release REST routes. Nil services
+	// leave their routes unavailable with GitHub's 404 JSON.
+	Releases        ports.GitHubReleaseAPI
+	ReleaseDownload ports.ReleaseService
 	// TrustedProxies are the networks allowed to set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
 	// Limiter counts failed authentications; nil builds a default one.
@@ -124,8 +128,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
+	if strings.HasPrefix(kind, "release") && h.cfg.Releases == nil {
+		notFound(w)
+		return
+	}
+	allowed := releaseMethods(kind)
+	if !methodAllowed(r.Method, allowed) {
+		w.Header().Set("Allow", allowed)
 		jsonError(w, http.StatusMethodNotAllowed, "Method Not Allowed")
 		return
 	}
@@ -148,6 +157,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasPrefix(kind, "release") {
+		h.releaseRequest(w, r, p, kind, owner, repo, ref, clientlimit.Key(addr))
+		return
+	}
 	switch kind {
 	case "repo":
 		body, err := h.cfg.API.GetRepo(ctx, p, owner, repo)
@@ -172,6 +185,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // route recognises the endpoints. ref is "" for /tarball.
 func route(rest string) (kind, owner, repo, ref string, ok bool) {
+	if kind, owner, repo, ref, ok = releaseRoute(rest); ok {
+		return
+	}
 	parts := strings.Split(strings.TrimPrefix(rest, "/"), "/")
 	if len(parts) < 3 || parts[0] != "repos" || parts[1] == "" || parts[2] == "" {
 		return "", "", "", "", false
