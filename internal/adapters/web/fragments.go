@@ -62,7 +62,8 @@ func liveEvent(we ports.WatchEvent) bool {
 		return true
 	}
 	switch we.Event.(type) {
-	case domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
+	case domain.ReleasePublished, domain.ReleaseUpdated, domain.ReleaseDeleted, domain.ReleaseUnpublished,
+		domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
 		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled, domain.MergeRequestMergeability, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
 		domain.RunUpdated, domain.JobUpdated,
 		domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved, domain.IssueReferenced:
@@ -164,6 +165,11 @@ func (l *liveStream) gone(ctx context.Context, name string) ([]fragment, error) 
 // repoPage handles the events of the topic of one repository.
 func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	switch ev := we.Event.(type) {
+	case domain.ReleasePublished, domain.ReleaseUpdated, domain.ReleaseDeleted, domain.ReleaseUnpublished:
+		if l.view == "releases" || l.view == "release" {
+			return gap, nil // notes, assets, latest or visibility changed: reload
+		}
+		return nil, nil
 	case domain.RunUpdated:
 		return l.runEvent(ctx, ev)
 	case domain.JobUpdated:
@@ -179,7 +185,7 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 			return gap, nil // no longer visible
 		case err != nil:
 			return nil, err
-		case l.view == "summary", l.view == "refs":
+		case l.view == "summary", l.view == "refs", l.view == "releases", l.view == "release":
 			return gap, nil // the description, the default branch
 		}
 		return nil, nil

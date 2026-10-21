@@ -1,0 +1,67 @@
+package web
+
+// ReleaseBadges are textual as well as visual, including the computed latest.
+templ ReleaseBadges(r ReleaseRow) {
+	if r.Draft {
+		<span class="pill">Draft</span>
+	}
+	if r.Prerelease {
+		<span class="pill">Pre-release</span>
+	}
+	if r.Latest {
+		<span class="pill">Latest</span>
+	}
+}
+
+templ Releases(l Layout, p ReleaseListPage) {
+	@Shell(l, nil) {
+		<h1>Releases</h1>
+		if len(p.Rows) == 0 {
+			<p class="dim">no releases yet.</p>
+		} else {
+			<table class="list" aria-label="Releases">
+				<thead><tr><th>tag</th><th>title</th><th>published</th><th>assets</th></tr></thead>
+				<tbody>
+					for _, r := range p.Rows {
+						<tr>
+							<td><a href={ templ.SafeURL(r.Href) }>{ r.Tag }</a></td>
+							<td>{ r.Title } @ReleaseBadges(r)</td>
+							<td>{ r.Published }</td><td>{ itoa(r.AssetCount) }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+		if p.Older != "" {
+			<p class="more"><a href={ templ.SafeURL(p.Older) } rel="next">older releases</a></p>
+		}
+	}
+}
+
+templ ReleaseDetail(l Layout, p ReleaseDetailPage) {
+	@Shell(l, nil) {
+		<h1>{ p.Title }</h1>
+		<p>
+			<span class="pill">{ p.Tag }</span> @ReleaseBadges(p.ReleaseRow)
+			if p.SHA != "" {
+				<a href={ templ.SafeURL(p.CommitHref) }><code>{ p.SHA }</code></a>
+			}
+			<span class="dim">{ p.Published }</span>
+		</p>
+		<div class="md">@templ.Raw(string(p.Notes))</div>
+		<h2>Assets</h2>
+		if len(p.Assets) == 0 {
+			<p class="dim">no assets.</p>
+		} else {
+			<table class="list" aria-label="Release assets">
+				<thead><tr><th>name</th><th>size</th><th>content type</th></tr></thead>
+				<tbody>
+					for _, a := range p.Assets {
+						<tr><td><a href={ templ.SafeURL(a.Href) } download>{ a.Name }</a></td><td>{ a.Size }</td><td>{ a.ContentType }</td></tr>
+					}
+				</tbody>
+			</table>
+		}
+		<p><a href={ templ.SafeURL(p.SourceHref) }>Source</a></p>
+	}
+}

@@ -91,6 +91,8 @@ type Config struct {
 	// their download and their deletion. It needs Runs. Without it there is
 	// neither. Leave it unset rather than assigning a typed nil pointer.
 	Artifacts ports.ArtifactService
+	// Releases serves the release pages and streamed assets. Nil disables them.
+	Releases ports.ReleaseService
 	// Events is the source of the event stream behind /-/events. Without
 	// it the pages are not live and the route answers 404. Leave it unset
 	// rather than assigning a typed nil pointer.
@@ -251,6 +253,15 @@ func (s *Server) routes() *http.ServeMux {
 	if s.cfg.IssueForm != nil {
 		mux.HandleFunc("GET /{repo}/issues/submitted", s.issueSubmittedPage)
 		mux.HandleFunc("POST /{repo}/issues/new", s.issueFormPost)
+	}
+	if s.cfg.Releases != nil {
+		mux.HandleFunc("GET /{repo}/releases", s.page(s.releaseList))
+		mux.HandleFunc("GET /{repo}/releases/{$}", s.page(s.releaseList))
+		mux.HandleFunc("GET /{repo}/releases/tag/{tag...}", s.page(s.releaseShow))
+		mux.HandleFunc("GET /{repo}/releases/latest", s.releaseLatest)
+		mux.HandleFunc("GET /{repo}/releases/download/{tag}/{asset}", s.releaseDownload)
+		mux.HandleFunc("GET /{repo}/releases/latest/download/{asset}", s.releaseDownload)
+		mux.HandleFunc("GET /{repo}/releases/assets/{id}", s.releaseDownload)
 	}
 	if s.cfg.Runs != nil {
 		mux.HandleFunc("GET /{repo}/actions", s.page(s.actions))

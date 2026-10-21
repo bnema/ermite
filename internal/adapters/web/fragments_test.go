@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 
 	"github.com/a-h/templ"
 	"github.com/stretchr/testify/assert"
@@ -96,6 +97,25 @@ func TestMRPushedHeadSignal(t *testing.T) {
 			assert.Equal(t, "mr-head", fs[0].event)
 			assert.Equal(t, `<div id="mr-head"></div>`, fs[0].html)
 			assert.NotContains(t, fs[0].html, "the branch changed")
+		}
+	}
+}
+
+// Release lifecycle events invalidate the release pages without putting notes
+// or asset metadata in SSE payloads. Other views need no release fragments.
+func TestReleaseLiveUpdates(t *testing.T) {
+	for _, ev := range []domain.Event{domain.ReleasePublished{}, domain.ReleaseUpdated{}, domain.ReleaseDeleted{}, domain.ReleaseUnpublished{}} {
+		we := ports.WatchEvent{Event: ev}
+		require.True(t, liveEvent(we), ev.EventKind())
+		for _, view := range []string{"releases", "release", "summary", "refs", "mr"} {
+			st := &liveStream{repo: "proj", view: view}
+			got, err := st.render(t.Context(), we)
+			require.NoError(t, err)
+			if view == "release" || view == "releases" {
+				assert.Equal(t, gap, got)
+			} else {
+				assert.Empty(t, got)
+			}
 		}
 	}
 }

@@ -156,6 +156,9 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 	if s.cfg.Issues != nil && d.repo.EffectiveSettings().IssuesEnabled() {
 		l.Sections = append(l.Sections, mk("i", "Issues", issuesBase(d.name()), "issues"))
 	}
+	if s.cfg.Releases != nil {
+		l.Sections = append(l.Sections, mk("l", "Releases", releasesBase(d.name()), "releases"))
+	}
 	l.Sections = s.withActions(l.Sections, d.name(), section)
 	l.Crumbs = []Crumb{{Label: d.name(), Href: repoHref(d.name()), Current: section == "summary"}}
 
