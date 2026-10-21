@@ -271,7 +271,8 @@ func TestRepoSettingsKeepTheIssuesMode(t *testing.T) {
 
 // TestSchema4UpgradesTheTokensWithAllScopes: the tokens that held every
 // original scope keep their owner rights, gaining mr:review and issue:write
-// (each only if missing), then mr:force-merge in schema 5; no other token changes.
+// (each only if missing), then mr:force-merge in schema 5 and release:write in
+// schema 6; no other token changes.
 func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -309,9 +310,14 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	full := get("full")
 	assert.Contains(t, full.Scopes, domain.ScopeIssueWrite)
 	assert.Contains(t, full.Scopes, domain.ScopeMRReview)
-	assert.Len(t, full.Scopes, 12)
+	assert.Len(t, full.Scopes, 13)
+	assert.Contains(t, full.Scopes, domain.ScopeReleaseWrite)
 	full10 := get("full10")
-	assert.Len(t, full10.Scopes, 12)
+	assert.Len(t, full10.Scopes, 13)
+	assert.Contains(t, full10.Scopes, domain.ScopeReleaseWrite)
+	for _, id := range []string{"repos", "prefix", "missing", "reposmr", "small"} {
+		assert.NotContains(t, get(id).Scopes, domain.ScopeReleaseWrite)
+	}
 	assert.Equal(t, 1, countScope(full10.Scopes, domain.ScopeMRReview))
 	assert.Contains(t, full10.Scopes, domain.ScopeIssueWrite)
 	assert.True(t, domain.TokenPrincipal(full10).HasOwnerRights())
@@ -338,7 +344,7 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	assert.Equal(t, "full", full.ID)
 
 	require.NoError(t, s.Close(ctx))
-	assert.Equal(t, uint32(5), readSchema(t, dir))
+	assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 
 	// A second open changes nothing.
 	s2, err := kvstore.Open(ctx, dir)
@@ -358,7 +364,7 @@ func TestSchemaNewerThanThisBuildStopsIssuesData(t *testing.T) {
 	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: kvstore.SchemaVersion + 1}))
 	_, err := kvstore.Open(ctx, dir)
 	require.ErrorIs(t, err, kvstore.ErrSchemaTooNew)
-	assert.Equal(t, uint32(5), uint32(kvstore.SchemaVersion))
+	assert.Equal(t, uint32(6), uint32(kvstore.SchemaVersion))
 }
 
 // A reopen racing the delete of the repository either lands before the delete
@@ -571,7 +577,7 @@ func TestSchema5UpgradesOwnerEquivalentTokens(t *testing.T) {
 	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 4}))
 	var previous []string
 	for _, sc := range domain.AllScopes() {
-		if sc != domain.ScopeMRForceMerge {
+		if sc != domain.ScopeMRForceMerge && sc != domain.ScopeReleaseWrite {
 			previous = append(previous, sc.String())
 		}
 	}
@@ -594,9 +600,11 @@ func TestSchema5UpgradesOwnerEquivalentTokens(t *testing.T) {
 			if id == "owner" {
 				assert.True(t, domain.TokenPrincipal(tok).HasOwnerRights())
 				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeMRForceMerge))
-				assert.Len(t, tok.Scopes, 12)
+				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeReleaseWrite))
+				assert.Len(t, tok.Scopes, 13)
 			} else {
 				assert.NotContains(t, tok.Scopes, domain.ScopeMRForceMerge)
+				assert.NotContains(t, tok.Scopes, domain.ScopeReleaseWrite)
 				var got []string
 				for _, sc := range tok.Scopes {
 					got = append(got, sc.String())
@@ -605,6 +613,6 @@ func TestSchema5UpgradesOwnerEquivalentTokens(t *testing.T) {
 			}
 		}
 		require.NoError(t, s.Close(ctx))
-		assert.Equal(t, uint32(5), readSchema(t, dir))
+		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 	}
 }

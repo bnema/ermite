@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+syntax = "proto3";
+package ermite.storage;
+import "google/protobuf/timestamp.proto";
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// Release stores release metadata, not object contents.
+message Release {
+  int64 id = 1;
+  string repo = 2;
+  string tag = 3;
+  string title = 4;
+  string notes = 5;
+  bool draft = 6;
+  bool prerelease = 7;
+  bool make_latest = 8;
+  string target_commitish = 9;
+  string author = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp published_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+// ReleaseAsset stores release metadata, not object contents.
+message ReleaseAsset {
+  int64 id = 1;
+  int64 release_id = 2;
+  string repo = 3;
+  string name = 4;
+  string label = 5;
+  string content_type = 6;
+  int64 size = 7;
+  string digest = 8;
+  string state = 9;
+  string uploader = 10;
+  int64 charged = 11;
+  string multipart_id = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+// ReleaseUsage stores release metadata, not object contents.
+message ReleaseUsage {
+  int64 used = 1;
+}

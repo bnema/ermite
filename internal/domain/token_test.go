@@ -16,7 +16,11 @@ import (
 func TestScopes(t *testing.T) {
 	t.Parallel()
 	all := domain.AllScopes()
-	assert.Len(t, all, 12)
+	assert.Len(t, all, 13)
+	assert.Equal(t, domain.ScopeMRForceMerge, all[5])
+	assert.Equal(t, domain.ScopeReleaseWrite, all[len(all)-1])
+	assert.Contains(t, all, domain.ScopeReleaseWrite)
+	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[:len(all)-1]}).HasOwnerRights(), "missing only release:write")
 	assert.Contains(t, all, domain.ScopeIssueWrite)
 	got, err := domain.ParseScope("issue:write")
 	require.NoError(t, err)

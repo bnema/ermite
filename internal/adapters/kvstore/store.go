@@ -40,8 +40,10 @@ import (
 // if missing) to the stored tokens that held all nine original scopes with no
 // repository list and no branch prefix, so that they keep the owner rights (see
 // upgradeTokens). Version 5 grants mr:force-merge to unrestricted tokens
-// holding all eleven previous scopes, preserving their owner rights.
-const SchemaVersion = 5
+// holding all eleven previous scopes, preserving their owner rights. Version 6
+// adds releases and release:write; older builds cannot clean up their metadata
+// or preserve the owner rights of upgraded tokens (see upgradeReleaseTokens).
+const SchemaVersion = 6
 
 const schemaKey = "meta/schema"
 
@@ -110,7 +112,7 @@ func (s *Store) Check(ctx context.Context) error {
 func (s *Store) checkSchema(ctx context.Context) error {
 	log := zerowrap.FromCtx(ctx)
 	key := []byte(schemaKey)
-	for range 4 {
+	for range 5 {
 		item, ok := s.db.Get(ctx, key)
 		if !ok {
 			var b kv.Batch
@@ -142,8 +144,11 @@ func (s *Store) checkSchema(ctx context.Context) error {
 			// The tokens are upgraded in the same batch, so that a crash
 			// leaves the old version and the upgrade runs again.
 			target := uint32(SchemaVersion)
-			if sv.GetVersion() < 4 {
+			switch {
+			case sv.GetVersion() < 4:
 				target = 4
+			case sv.GetVersion() == 4:
+				target = 5
 			}
 			var b kv.Batch
 			b.RequireVersion(key, item.Version)
@@ -154,6 +159,11 @@ func (s *Store) checkSchema(ctx context.Context) error {
 			}
 			if sv.GetVersion() == 4 {
 				if err := s.upgradeForceMergeTokens(ctx, &b); err != nil {
+					return err
+				}
+			}
+			if sv.GetVersion() == 5 {
+				if err := s.upgradeReleaseTokens(ctx, &b); err != nil {
 					return err
 				}
 			}
@@ -212,6 +222,17 @@ var preForceMergeScopes = append(slices.Clone(preIssueScopes), domain.ScopeMRRev
 // mr:force-merge for, so it gets it. Every other token is left as it is.
 func (s *Store) upgradeForceMergeTokens(ctx context.Context, b *kv.Batch) error {
 	return s.upgradeTokenScopes(ctx, b, preForceMergeScopes, []domain.Scope{domain.ScopeMRForceMerge})
+}
+
+// preReleaseScopes are the twelve scopes of schema 5, before release:write.
+var preReleaseScopes = append(slices.Clone(preForceMergeScopes), domain.ScopeMRForceMerge)
+
+// upgradeReleaseTokens adds to b the schema 6 upgrade of the tokens: a token
+// that holds all of preReleaseScopes, limited to no repository and no branch
+// prefix, had the owner rights, which AllScopes also needs release:write for,
+// so it gets it. Restricted or partial tokens are left as they are.
+func (s *Store) upgradeReleaseTokens(ctx context.Context, b *kv.Batch) error {
+	return s.upgradeTokenScopes(ctx, b, preReleaseScopes, []domain.Scope{domain.ScopeReleaseWrite})
 }
 
 func (s *Store) upgradeTokenScopes(ctx context.Context, b *kv.Batch, required, addedScopes []domain.Scope) error {

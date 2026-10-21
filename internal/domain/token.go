@@ -45,16 +45,18 @@ const (
 	// ScopeIssueWrite creates, comments on, closes and reopens issues. Moderation
 	// is not part of it: it stays with the owner.
 	ScopeIssueWrite Scope = "issue:write"
+	// ScopeReleaseWrite creates, edits and deletes releases and their assets.
+	ScopeReleaseWrite Scope = "release:write"
 )
 
-// AllScopes returns the twelve scopes in a stable order.
+// AllScopes returns the thirteen scopes in a stable order.
 func AllScopes() []Scope {
 	return []Scope{
 		ScopeRepoRead, ScopeRepoWrite, ScopeRepoAdmin,
 		ScopeMRWrite, ScopeMRMerge, ScopeMRForceMerge, ScopeMRReview,
 		ScopeCIWrite, ScopeSecretsWrite, ScopeRunnerRegister,
 		ScopeTokenAdmin,
-		ScopeIssueWrite,
+		ScopeIssueWrite, ScopeReleaseWrite,
 	}
 }
 

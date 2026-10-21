@@ -363,3 +363,60 @@ func TestRepoWithoutTopicsReadsNil(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"a", "b"}, got.Topics)
 }
+
+func TestSchema6TokenUpgrade(t *testing.T) {
+	ctx := context.Background()
+	for _, from := range []uint32{3, 4, 5} {
+		t.Run(fmt.Sprint(from), func(t *testing.T) {
+			dir := t.TempDir()
+			putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: from}))
+			all := domain.AllScopes()
+			scopes := make([]string, 0, len(all)-1)
+			for _, sc := range all {
+				if sc != domain.ScopeReleaseWrite {
+					scopes = append(scopes, sc.String())
+				}
+			}
+			for _, tc := range []struct {
+				id              string
+				scopes          []string
+				repos, prefixes []string
+				upgraded        bool
+			}{
+				{id: "full", scopes: scopes, upgraded: true},
+				{id: "partial", scopes: []string{"repo:read"}},
+				{id: "missing-review", scopes: func() []string {
+					var out []string
+					for _, s := range scopes {
+						if s != "mr:review" {
+							out = append(out, s)
+						}
+					}
+					return out
+				}(), upgraded: from < 4},
+				{id: "repo", scopes: scopes, repos: []string{"a"}},
+				{id: "branch", scopes: scopes, prefixes: []string{"bot/"}},
+			} {
+				putRaw(t, dir, "token/"+tc.id, mustProto(t, &storagepb.Token{Id: tc.id, Scopes: tc.scopes, Repos: tc.repos, BranchPrefixes: tc.prefixes}))
+			}
+			s, err := kvstore.Open(ctx, dir)
+			require.NoError(t, err)
+			require.NoError(t, s.Close(ctx))
+			assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
+			db, err := kv.Open(ctx, dir, kv.Options{})
+			require.NoError(t, err)
+			defer db.Close(ctx)
+			for _, id := range []string{"full", "partial", "missing-review", "repo", "branch"} {
+				item, ok := db.Get(ctx, []byte("token/"+id))
+				require.True(t, ok)
+				var pb storagepb.Token
+				require.NoError(t, proto.Unmarshal(item.Value, &pb))
+				if id == "full" || (id == "missing-review" && from < 4) {
+					assert.Contains(t, pb.Scopes, "release:write")
+				} else {
+					assert.NotContains(t, pb.Scopes, "release:write")
+				}
+			}
+		})
+	}
+}

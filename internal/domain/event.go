@@ -366,3 +366,47 @@ type MirrorRecovered struct {
 }
 
 func (MirrorRecovered) EventKind() string { return "mirror.recovered" }
+
+// ReleasePublished records a release lifecycle change.
+type ReleasePublished struct {
+	Release    Release
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (ReleasePublished) EventKind() string { return "release.published" }
+
+// ReleaseUpdated records a release lifecycle change.
+type ReleaseUpdated struct {
+	Release    Release
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (ReleaseUpdated) EventKind() string { return "release.updated" }
+
+// ReleaseDeleted records a release lifecycle change.
+type ReleaseDeleted struct {
+	Release    Release
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (ReleaseDeleted) EventKind() string { return "release.deleted" }
+
+// ReleaseUnpublished records a release lifecycle change.
+type ReleaseUnpublished struct {
+	Release    Release
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (ReleaseUnpublished) EventKind() string { return "release.unpublished" }
