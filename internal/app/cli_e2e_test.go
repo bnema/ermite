@@ -334,9 +334,9 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	assert.JSONEq(t, `[]`, res.stdout)
 
 	// version: no token needed. This server runs on http://127.0.0.1, where
-	// passkeys are not available. Releases are wired by P8; this rig predates it.
+	// passkeys are not available.
 	res = c.cli(t, "", "version", "--json").ok(t)
-	assert.Equal(t, 2, strings.Count(res.stderr, "warning:"), res.stderr)
+	assert.Equal(t, 1, strings.Count(res.stderr, "warning:"), res.stderr)
 	assert.Contains(t, res.stderr, "the server does not support passkeys")
 	type versionOut struct {
 		Client struct{ Version string }
@@ -350,12 +350,12 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	ver := decode[versionOut](t, res.stdout)
 	assert.Equal(t, c.url, ver.Server.URL)
 	assert.NotEmpty(t, ver.Server.Version)
-	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready"}, ver.Server.Features)
-	assert.Equal(t, []string{"releases", "passkeys"}, ver.Server.MissingFeatures)
+	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready", "releases"}, ver.Server.Features)
+	assert.Equal(t, []string{"passkeys"}, ver.Server.MissingFeatures)
 	stdout, stderr, code = c.bin(t, secret, "version")
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, stdout, "server")
-	assert.Equal(t, 2, strings.Count(stderr, "warning:"), stderr)
+	assert.Equal(t, 1, strings.Count(stderr, "warning:"), stderr)
 	assert.Contains(t, stderr, "the server does not support passkeys")
 
 	// Tokens: create a second one, list, revoke it, see it stop working.
@@ -389,8 +389,8 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 		assert.Empty(t, tk.Secret, "list never shows secrets")
 		byLabel[tk.Label] = tk
 	}
-	assert.Len(t, byLabel["daily"].Scopes, len(client.AllScopes())-1, "the cli preset drops release:write until P8 wires releases")
-	assert.NotContains(t, byLabel["daily"].Scopes, "release:write")
+	assert.Len(t, byLabel["daily"].Scopes, len(client.AllScopes()))
+	assert.Contains(t, byLabel["daily"].Scopes, "release:write")
 	assert.Equal(t, tmp.ID, byLabel["tmp"].ID)
 	assert.NotContains(t, res.stdout, `"secret"`)
 	res = c.cli(t, secret, "token", "list").ok(t)

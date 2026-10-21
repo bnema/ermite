@@ -15,6 +15,14 @@ The secret is printed once. Presets and `--scope` add up (`issue:write` lets a t
 | `ci` | `repo:read` |
 | `runner` | `runner:register`: a runner host. It can read the code and secrets of every repository, so give it only to runners you operate |
 
+## Release publishing
+
+`release:write` permits creating, editing and deleting releases and their assets;
+it is included in the `cli` preset, not `agent` or `ci`. Private repository reads
+also need `repo:read`. Branch-limited tokens cannot write releases, even with
+that scope. CI jobs publish using their job token with `contents: write` under
+`permissions`, not a stored-token scope. See [releases](releases.md).
+
 ## Branch-limited tokens
 
 For an AI agent that should propose changes, not publish them:
@@ -38,6 +46,7 @@ The token **cannot**:
 
 - push any other ref (`main`, other branches, tags, notes). The whole push is refused and the message names the ref;
 - create, delete or configure a repository;
+- create, edit or delete releases or upload assets;
 - open web sessions or get owner rights, even with every scope;
 - manage runners, even with `runner:register`;
 - get trusted CI runs (no secrets). See [CI trust](ci.md#trust).

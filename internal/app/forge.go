@@ -17,6 +17,8 @@ import (
 
 	"github.com/bnema/zerowrap"
 
+	"bnema.dev/ermite/internal/adapters/blobdisk"
+	"bnema.dev/ermite/internal/adapters/blobs3"
 	"bnema.dev/ermite/internal/adapters/ciartifacts"
 	"bnema.dev/ermite/internal/adapters/cilogs"
 	"bnema.dev/ermite/internal/adapters/cisummaries"
@@ -153,7 +155,9 @@ type forge struct {
 	EventLog *usecase.Events
 	// CI is the CI engine: workflow trigger, planner, runner protocol and the
 	// owner side. It starts with the server and stops with it.
-	CI *usecase.CI
+	CI       *usecase.CI
+	Releases *usecase.Releases
+	Blobs    ports.BlobStore
 	// Settings are the secrets, variables and environments of CI.
 	Settings *usecase.CISettings
 	// Mirrors exposes Warning and Badge for the hook server and web composition.
@@ -268,6 +272,13 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	log.Info().Str("reader", cfg.GitReader).Msg("git reader selected")
 	f.Browse = usecase.NewBrowse(store, reader)
+	f.Blobs, err = blobStore(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	f.Releases = usecase.NewReleases(store.Releases(), f.Blobs, store, reader, git, f.Pushes, f.Bus, clock, ports.ReleaseLimits{AssetMax: cfg.ReleaseAssetMax, AssetsMax: int64(cfg.ReleaseAssetsMax), Quota: cfg.ReleaseQuota})
+	f.Pushes.WithReleases(f.Releases)
+	f.Repos.WithReleases(f.Releases)
 
 	// Secrets, variables and environments (ADR 0019, CI-3). With a key the
 	// secrets are sealed under it, and the server refuses to start when the
@@ -335,6 +346,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		OIDC:          f.OIDC,
 	}
 	artifacts(&ciCfg, cfg, store)
+	ciCfg.Blobs = f.Blobs
+	ciCfg.ReleaseSweeper = f.Releases
 	f.pullRequests(&ciCfg, store, git, committer)
 	if opts.ci != nil {
 		opts.ci(&ciCfg)
@@ -459,6 +472,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		OIDCKeys:        f.OIDC,
 		JobArtifacts:    jobArtifacts,
 		Artifacts:       artifacts,
+		Releases:        f.Releases,
 		Version:         serverVersion(),
 		TrustedProxies:  cfg.TrustedProxies,
 		Limiter:         limiter,
@@ -487,7 +501,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: gh})
 	}
 	// The REST subset the actions call on github.api_url.
-	api := githubapi.New(githubapi.Config{Auth: f.Auth, API: f.CI, TrustedProxies: cfg.TrustedProxies, Limiter: limiter, MaxArchivesPerClient: opts.archivesPerClient})
+	releaseAPI := usecase.NewReleasesGitHub(f.Releases, cfg.Owner, cfg.PublicURL)
+	api := githubapi.New(githubapi.Config{Auth: f.Auth, API: f.CI, Releases: releaseAPI, ReleaseDownload: f.Releases, TrustedProxies: cfg.TrustedProxies, Limiter: limiter, MaxArchivesPerClient: opts.archivesPerClient})
 	for _, p := range githubapi.Patterns {
 		routes = append(routes, httpserver.Route{Pattern: p, Handler: api})
 	}
@@ -593,14 +608,44 @@ func (f *forge) Close(ctx context.Context) {
 }
 
 // artifacts gives the CI the stores and limits of the artifacts (CI-4 D3):
-// records in the kv store, contents under ci/artifacts. ERMITE_CI_ARTIFACTS=0
+// records in the kv store, legacy contents under ci/artifacts. ERMITE_CI_ARTIFACTS=0
 // gives none, and the API then serves no artifact service.
 func artifacts(ci *usecase.CIConfig, cfg config.Config, store *kvstore.Store) {
 	if !cfg.CIArtifacts {
 		return
 	}
-	ci.Artifacts, ci.ArtifactFiles = store.Artifacts(), ciartifacts.New(ciartifacts.Dir(cfg.DataDir))
+	ci.Artifacts = store.Artifacts()
+	if info, err := os.Stat(ciartifacts.Dir(cfg.DataDir)); err == nil && info.IsDir() {
+		ci.ArtifactFiles = ciartifacts.New(ciartifacts.Dir(cfg.DataDir))
+	}
 	ci.ArtifactLimits = ports.ArtifactLimits{Retention: cfg.CIArtifactRetention, Quota: cfg.CIArtifactQuota, MaxSize: cfg.CIArtifactMax}
+}
+
+// blobStore selects and probes the content backend before any engine starts.
+func blobStore(ctx context.Context, cfg config.Config) (ports.BlobStore, error) {
+	var blobs ports.BlobStore
+	backend, location := "disk", blobdisk.Dir(cfg.DataDir)
+	if cfg.S3Bucket == "" {
+		blobs = blobdisk.New(location)
+	} else {
+		backend, location = "s3", cfg.S3Bucket
+		store, err := blobs3.New(ctx, blobs3.Config{Bucket: cfg.S3Bucket, Prefix: cfg.S3Prefix, Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, AccessKeyID: cfg.S3AccessKeyID, SecretAccessKey: cfg.S3SecretAccessKey, ForcePathStyle: cfg.S3ForcePathStyle})
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", config.EnvS3Bucket, err)
+		}
+		blobs = store
+	}
+	probe, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := blobs.Check(probe); err != nil {
+		if backend == "s3" {
+			return nil, fmt.Errorf("%s: %w", config.EnvS3Bucket, err)
+		}
+		return nil, fmt.Errorf("blob store: %w", err)
+	}
+	log := zerowrap.FromCtx(ctx)
+	log.Info().Str("backend", backend).Str("location", location).Msg("blob store ready")
+	return blobs, nil
 }
 
 // pullRequests gives the CI the merge requests, the refs/pull refs and the

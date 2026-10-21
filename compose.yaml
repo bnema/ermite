@@ -24,13 +24,52 @@ services:
       ERMITE_ADMIN_TOKEN: dev-only-admin-token-do-not-use-0123456789
       ERMITE_LOG_FORMAT: console
       ERMITE_LOG_LEVEL: debug
+      # Empty bucket keeps the disk backend, even with the s3 profile active.
+      ERMITE_S3_BUCKET: ${ERMITE_S3_BUCKET:-}
+      ERMITE_S3_ENDPOINT: ${ERMITE_S3_ENDPOINT:-}
+      ERMITE_S3_REGION: ${ERMITE_S3_REGION:-}
+      ERMITE_S3_ACCESS_KEY_ID: ${ERMITE_S3_ACCESS_KEY_ID:-}
+      ERMITE_S3_SECRET_ACCESS_KEY: ${ERMITE_S3_SECRET_ACCESS_KEY:-}
+      ERMITE_S3_FORCE_PATH_STYLE: ${ERMITE_S3_FORCE_PATH_STYLE:-0}
+      ERMITE_S3_PREFIX: ${ERMITE_S3_PREFIX:-}
     volumes:
       - .:/src
       - go-mod:/go/pkg/mod
       - go-build:/root/.cache/go-build
       - data:/data
 
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    profiles: [s3]
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # Development provisioning only. The ermite process never creates buckets.
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    profiles: [s3]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "mc alias set dev http://minio:9000 minioadmin minioadmin && mc mb --ignore-existing dev/ermite && mc mb --ignore-existing dev/ermite-test"
+    restart: "no"
+
 volumes:
+  minio-data:
   go-mod:
   go-build:
   data:

@@ -49,18 +49,11 @@ jobs:
       - run: echo down
 `
 
-// newArtifactHarness supplies the P8 blob wiring through the existing test
-// hook. Production wiring remains owned by P8.
+// newArtifactHarness uses the production blob wiring.
 func newArtifactHarness(t *testing.T, tweak func(*usecase.CIConfig)) *ciHarness {
 	t.Helper()
-	root := t.TempDir()
-	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
-		cfg.Blobs = blobdisk.New(blobdisk.Dir(root))
-		if tweak != nil {
-			tweak(cfg)
-		}
-	})
-	c.artifactRoot = blobdisk.Dir(root)
+	c := newCIHarness(t, tweak)
+	c.artifactRoot = blobdisk.Dir(c.data)
 	return c
 }
 
@@ -583,7 +576,9 @@ func TestCIArtifactLimits(t *testing.T) {
 
 func TestCIArtifactsSweep(t *testing.T) {
 	clk := &shiftClock{}
+	legacyRoot := ciartifacts.Dir(t.TempDir())
 	c := newArtifactHarness(t, func(cfg *usecase.CIConfig) {
+		cfg.ArtifactFiles = ciartifacts.New(legacyRoot)
 		cfg.Clock = clk
 		cfg.Tick = 20 * time.Millisecond
 		cfg.ArtifactLimits.Retention = 2 * 24 * time.Hour
@@ -599,10 +594,10 @@ func TestCIArtifactsSweep(t *testing.T) {
 	crashed := up.mustCreate("crashed")
 	_, err := up.block(crashed, "x", []byte("stale"))
 	require.NoError(t, err)
-	stray := filepath.Join(ciartifacts.Dir(c.data), fmt.Sprintf("%020d", runID), fmt.Sprintf("%020d", int64(999999)))
+	stray := filepath.Join(legacyRoot, fmt.Sprintf("%020d", runID), fmt.Sprintf("%020d", int64(999999)))
 	require.NoError(t, os.MkdirAll(filepath.Dir(stray), 0o700))
 	require.NoError(t, os.WriteFile(stray, []byte("orphan"), 0o600))
-	strayRun := filepath.Join(ciartifacts.Dir(c.data), fmt.Sprintf("%020d", int64(888888)))
+	strayRun := filepath.Join(legacyRoot, fmt.Sprintf("%020d", int64(888888)))
 	require.NoError(t, os.MkdirAll(strayRun, 0o700))
 	start := clk.Now()
 
@@ -807,7 +802,9 @@ func TestCIArtifactCaps(t *testing.T) {
 
 // Both storage generations remain downloadable through the real RPC handlers.
 func TestCIArtifactBlobAndLegacyDownload(t *testing.T) {
-	c := newArtifactHarness(t, nil)
+	// This test inserts legacy data after startup; supply its reader explicitly.
+	legacyRoot := ciartifacts.Dir(t.TempDir())
+	c := newArtifactHarness(t, func(cfg *usecase.CIConfig) { cfg.ArtifactFiles = ciartifacts.New(legacyRoot) })
 	runner := c.registerRunner("alpha", "ubuntu-latest")
 	_, job, _ := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
 	up := c.jobArtifacts(job)
@@ -829,7 +826,7 @@ func TestCIArtifactBlobAndLegacyDownload(t *testing.T) {
 	legacy := up.upload("old", []byte("old disk"))
 	a, err = store.GetArtifact(c.ctx, legacy.GetId())
 	require.NoError(t, err)
-	oldPath := filepath.Join(ciartifacts.Dir(c.data), fmt.Sprintf("%020d", a.RunID), fmt.Sprintf("%020d", a.ID))
+	oldPath := filepath.Join(legacyRoot, fmt.Sprintf("%020d", a.RunID), fmt.Sprintf("%020d", a.ID))
 	require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0o700))
 	require.NoError(t, os.WriteFile(oldPath, []byte("old disk"), 0o600))
 	require.NoError(t, os.Remove(filepath.Join(c.artifactRoot, "objects", filepath.FromSlash(a.BlobKey()))))

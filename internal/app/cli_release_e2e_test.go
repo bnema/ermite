@@ -13,10 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/adapters/blobdisk"
 	"bnema.dev/ermite/internal/adapters/rpc"
-	"bnema.dev/ermite/internal/ports"
-	"bnema.dev/ermite/internal/usecase"
 )
 
 func TestReleaseCLIEndToEnd(t *testing.T) {
@@ -26,17 +23,6 @@ func TestReleaseCLIEndToEnd(t *testing.T) {
 	c.mustGit(wt, "tag", "v1")
 	c.mustGit(wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), "main", "refs/tags/v1")
 
-	// P8 owns production wiring. Compose the real release service and RPC here,
-	// sharing the forge's database, auth, git reader, pushes and event bus.
-	f := c.forge
-	releases := usecase.NewReleases(f.store.Releases(), blobdisk.New(filepath.Join(c.data, "release-test-blobs")), f.store, f.git, f.git, f.Pushes, f.Bus, systemClock{}, ports.ReleaseLimits{})
-	api := rpc.New(rpc.Config{Auth: f.Auth, Releases: releases, SigningKey: f.SigningKey, Sessions: f.Sessions})
-	mux := http.NewServeMux()
-	mux.Handle("/-/api/", http.StripPrefix("/-/api", api.Handler()))
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	oldURL := c.url
-	c.url = srv.URL
 	bin := func(args ...string) string {
 		t.Helper()
 		out, stderr, code := c.bin(t, adminToken, args...)
@@ -67,8 +53,13 @@ func TestReleaseCLIEndToEnd(t *testing.T) {
 	bin("release", "delete", "proj", "v1", "--yes")
 	_, stderr, code = c.bin(t, adminToken, "release", "view", "proj", "v1")
 	requireOneLineError(t, stderr, code, "not found")
-	// The unmodified forge intentionally has no release wiring yet.
-	c.url = oldURL
+	// An older server without the service still gets a clear refusal.
+	api := rpc.New(rpc.Config{Auth: c.forge.Auth, SigningKey: c.forge.SigningKey, Sessions: c.forge.Sessions})
+	mux := http.NewServeMux()
+	mux.Handle("/-/api/", http.StripPrefix("/-/api", api.Handler()))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c.url = srv.URL
 	_, stderr, code = c.bin(t, adminToken, "release", "list", "proj")
 	requireOneLineError(t, stderr, code, "the server has no releases (it lacks the releases feature)")
 }

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -56,6 +57,16 @@ const (
 	EnvCIArtifactRetention = "ERMITE_CI_ARTIFACT_RETENTION"
 	EnvCIArtifactQuota     = "ERMITE_CI_ARTIFACT_QUOTA"
 	EnvCIArtifactMax       = "ERMITE_CI_ARTIFACT_MAX"
+	EnvS3Bucket            = "ERMITE_S3_BUCKET"
+	EnvS3Endpoint          = "ERMITE_S3_ENDPOINT"
+	EnvS3Region            = "ERMITE_S3_REGION"
+	EnvS3AccessKeyID       = "ERMITE_S3_ACCESS_KEY_ID"
+	EnvS3SecretAccessKey   = "ERMITE_S3_SECRET_ACCESS_KEY"
+	EnvS3ForcePathStyle    = "ERMITE_S3_FORCE_PATH_STYLE"
+	EnvS3Prefix            = "ERMITE_S3_PREFIX"
+	EnvReleaseAssetMax     = "ERMITE_RELEASE_ASSET_MAX"
+	EnvReleaseAssetsMax    = "ERMITE_RELEASE_ASSETS_MAX"
+	EnvReleaseQuota        = "ERMITE_RELEASE_QUOTA"
 )
 
 // SecretsKeyLen is the length of the secrets key in bytes (AES-256).
@@ -140,6 +151,12 @@ type Config struct {
 	CIArtifactRetention time.Duration
 	CIArtifactQuota     int64
 	CIArtifactMax       int64
+	// S3Bucket selects S3; empty selects local disk. Credentials are secrets.
+	S3Bucket, S3Endpoint, S3Region, S3AccessKeyID, S3SecretAccessKey, S3Prefix string
+	S3ForcePathStyle                                                           bool
+	// Zero release limits leave defaults to the release use case.
+	ReleaseAssetMax, ReleaseQuota int64
+	ReleaseAssetsMax              int
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -167,6 +184,7 @@ func Load(get func(string) string) (Config, error) {
 	bad := func(key, format string, args ...any) {
 		problems = append(problems, key+": "+fmt.Sprintf(format, args...))
 	}
+	get = resolveFiles(get, &problems)
 	var c Config
 
 	c.Addr = get(EnvAddr)
@@ -342,10 +360,109 @@ func Load(get func(string) string) (Config, error) {
 		}
 	}
 
+	loadStorage(get, &c, &problems)
 	if len(problems) > 0 {
 		return Config{}, &Error{Problems: problems}
 	}
 	return c, nil
+}
+
+// resolveFiles resolves only the four supported secrets, once at startup.
+// Neither file paths, file errors nor secret contents enter diagnostics.
+func resolveFiles(get func(string) string, problems *[]string) func(string) string {
+	values := make(map[string]string)
+	for _, key := range []string{EnvAdminToken, EnvSecretsKey, EnvS3AccessKeyID, EnvS3SecretAccessKey} {
+		value, file := get(key), get(key+"_FILE")
+		if value != "" && file != "" {
+			*problems = append(*problems, key+": cannot set both variable and _FILE")
+		} else if file != "" {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				*problems = append(*problems, key+"_FILE: cannot read secret file")
+			} else {
+				value = strings.TrimRight(string(data), "\r\n")
+				if value == "" {
+					*problems = append(*problems, key+"_FILE: secret file is empty")
+				}
+			}
+		}
+		values[key] = value
+	}
+	return func(key string) string {
+		if value, ok := values[key]; ok {
+			return value
+		}
+		return get(key)
+	}
+}
+
+func loadStorage(get func(string) string, c *Config, problems *[]string) {
+	bad := func(key, message string) { *problems = append(*problems, key+": "+message) }
+	c.S3Bucket = get(EnvS3Bucket)
+	c.S3Endpoint = get(EnvS3Endpoint)
+	c.S3Region = get(EnvS3Region)
+	c.S3AccessKeyID = get(EnvS3AccessKeyID)
+	c.S3SecretAccessKey = get(EnvS3SecretAccessKey)
+	c.S3Prefix = strings.Trim(get(EnvS3Prefix), "/")
+	if c.S3Prefix != "" {
+		valid := len(c.S3Prefix) <= 512
+		for _, part := range strings.Split(c.S3Prefix, "/") {
+			if part == "" || part == "." || part == ".." {
+				valid = false
+			}
+		}
+		for _, r := range c.S3Prefix {
+			if r < 0x21 || r > 0x7e || r == '\\' {
+				valid = false
+			}
+		}
+		if !valid {
+			bad(EnvS3Prefix, "must be an ASCII key prefix without empty, dot or dot-dot segments")
+		}
+		c.S3Prefix += "/"
+	}
+	if c.S3Endpoint != "" {
+		if endpoint, err := parseURL(c.S3Endpoint, false); err != nil {
+			bad(EnvS3Endpoint, "must be an http(s) URL without credentials, path, query or fragment")
+		} else {
+			c.S3Endpoint = endpoint
+		}
+	}
+	switch get(EnvS3ForcePathStyle) {
+	case "", "0", "false":
+	case "1", "true":
+		c.S3ForcePathStyle = true
+	default:
+		bad(EnvS3ForcePathStyle, "must be 0, 1, false or true")
+	}
+	if c.S3Bucket != "" {
+		for _, v := range []struct{ key, value string }{{EnvS3Region, c.S3Region}, {EnvS3AccessKeyID, c.S3AccessKeyID}, {EnvS3SecretAccessKey, c.S3SecretAccessKey}} {
+			if strings.TrimSpace(v.value) == "" {
+				bad(v.key, "required when ERMITE_S3_BUCKET is set")
+			}
+		}
+	}
+	for _, v := range []struct {
+		key string
+		dst *int64
+	}{{EnvReleaseAssetMax, &c.ReleaseAssetMax}, {EnvReleaseQuota, &c.ReleaseQuota}} {
+		if raw := strings.TrimSpace(get(v.key)); raw != "" {
+			n, err := parseSize(raw)
+			if err != nil {
+				bad(v.key, err.Error())
+			} else {
+				*v.dst = n
+			}
+		}
+	}
+	if raw := get(EnvReleaseAssetsMax); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			bad(EnvReleaseAssetsMax, "must be a positive integer")
+		} else {
+			c.ReleaseAssetsMax = n
+		}
+	}
 }
 
 // sizeUnits are the suffixes of parseSize, longest first.

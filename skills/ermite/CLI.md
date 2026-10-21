@@ -44,6 +44,7 @@ Scopes:
 | `mr:merge` | merge, and delete the merged source branch with `--delete-branch` |
 | `mr:force-merge` | bypass failing or unfinished checks with `--ignore-checks` |
 | `issue:write` | open, comment on, close and reopen issues |
+| `release:write` | create, edit and delete releases and their assets; included in `cli`; refused for branch-limited tokens |
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
 
@@ -92,6 +93,25 @@ Issues share the numbering of merge requests and must be enabled per repository:
 | `issue close <repo> <n>` / `issue reopen <repo> <n>` | `issue:write` | |
 
 Issue JSON: `repo`, `number`, `title`, `body`, `state`, `author` (token label), `created_at`, `updated_at`, `comment_count`. `issue show --json` adds `comments` (`id`, `author`, `text`, `created_at`). `repo show --json` has `issues`.
+
+## Releases
+
+Needs the `releases` server feature. Read access follows repository visibility;
+drafts need write access. Writes need `release:write`, never a branch-limited
+token, or a CI job's `contents: write` permission. Select a release by tag or id;
+`view` and `download` also accept `latest`.
+
+| Command | Notes |
+|---|---|
+| `release create <repo> <tag> [--title T] [--notes TEXT\|--notes-file F\|-] [--target REF] [--draft] [--prerelease] [--latest] [--asset FILE[#LABEL]] [--json]` | existing tags never move; target creates a missing tag |
+| `release list <repo> [--limit N] [--json]` | newest first |
+| `release view <repo> <tag\|id\|latest> [--json\|--notes]` | metadata and assets |
+| `release edit <repo> <tag\|id> [--title T] [--notes TEXT\|--notes-file F\|-] [--tag T] [--target REF] [--draft\|--publish] [--prerelease\|--no-prerelease] [--latest] [--json]` | only supplied fields change |
+| `release delete <repo> <tag\|id> [--yes]` | leaves the Git tag |
+| `release upload <repo> <tag\|id> <file[#label]>… [--clobber] [--content-type TYPE] [--json]` | clobber replaces same-named assets |
+| `release download <repo> <tag\|id\|latest> [--name N]… [--pattern GLOB]… [--dir D]` | refuses existing local files |
+
+See [publishing and storage](../../docs/releases.md).
 
 ## Workflows
 

@@ -60,10 +60,38 @@ head -c 32 /dev/urandom | base64
 - The server refuses to start with a different key than the one the secrets were sealed with.
 - Losing the key loses every secret. A backup without the key reveals none.
 
+## Blob storage and releases
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ERMITE_S3_BUCKET` | empty | selects S3 when nonempty; otherwise disk under `$ERMITE_DATA_DIR/blobs` |
+| `ERMITE_S3_ENDPOINT` | empty | http(s) endpoint; empty uses AWS region resolution; no credentials, path, query or fragment |
+| `ERMITE_S3_REGION` | empty | required with a bucket, including custom endpoints |
+| `ERMITE_S3_ACCESS_KEY_ID` | empty | explicit key, required with a bucket |
+| `ERMITE_S3_SECRET_ACCESS_KEY` | empty | explicit secret, required with a bucket |
+| `ERMITE_S3_FORCE_PATH_STYLE` | `0` | `0`/`1` or `false`/`true`; `1` for MinIO without wildcard DNS |
+| `ERMITE_S3_PREFIX` | empty | ASCII key prefix, normalized to a trailing `/`; no empty, `.` or `..` segments |
+| `ERMITE_RELEASE_ASSET_MAX` | `2GiB` | one release asset |
+| `ERMITE_RELEASE_ASSETS_MAX` | `1000` | positive integer, per release |
+| `ERMITE_RELEASE_QUOTA` | `20GiB` | per repository, including uploads in progress |
+
+Sizes accept bytes or `KiB`, `MiB`, `GiB`, `TiB`, from 1 MiB to 1 PiB.
+See [storage](storage.md) for AWS, Scaleway, R2, MinIO, permissions and backups,
+and [releases](releases.md) for publishing.
+
+### Secret files
+
+`ERMITE_ADMIN_TOKEN`, `ERMITE_SECRETS_KEY`, `ERMITE_S3_ACCESS_KEY_ID` and
+`ERMITE_S3_SECRET_ACCESS_KEY` each support a `_FILE` variant, for example
+`ERMITE_ADMIN_TOKEN_FILE=/run/secrets/admin-token`. Set either the direct value
+or its file, never both. Files are read once at startup; trailing CR/LF is
+removed. Empty or unreadable files fail validation. Secret contents and file
+paths are not included in file-resolution errors. No AWS credential chain is used.
+
 ## Runtime files
 
 The hook socket and scripts git calls on each push live in `$ERMITE_DATA_DIR/run/`. The socket path must stay under about 100 bytes, so keep `ERMITE_DATA_DIR` short.
 
 ## Storage schema
 
-This build uses storage schema 4. Once it has run on your data, an older ermite refuses to start. To downgrade, restore the backup taken before the upgrade.
+This build uses storage schema 5. Once it has run on your data, an older ermite refuses to start. To downgrade, restore the backup taken before the upgrade.

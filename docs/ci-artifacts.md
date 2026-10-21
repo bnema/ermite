@@ -13,7 +13,8 @@ The run page lists them with download links.
 
 - A job sees only the artifacts of its own run. A re-run that uploads again replaces the earlier one.
 - Never served anonymously, even for a public repository: `repo:read` to list and download, `ci:write` to delete.
-- Stored under `$ERMITE_DATA_DIR/ci/artifacts`. Removed when they expire, or with their run or repository.
+- Contents use the shared [blob store](storage.md): `$ERMITE_DATA_DIR/blobs/objects/ci/` by default, or the configured S3 bucket/prefix. Metadata stays in kv. Removed when they expire, or with their run or repository.
+- Legacy artifacts under `$ERMITE_DATA_DIR/ci/artifacts` remain readable until expiry, with no copy or migration. Keep that tree until its last artifact expires. Changing backends does not move blob-backed artifacts; keep the backend stable while they are live.
 - An upload not finished when its job ends is dropped.
 
 ## Limits

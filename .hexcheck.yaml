@@ -68,6 +68,11 @@ mocking:
   generatedMockNamePatterns:
     - '{{Interface}}'
 allow:
+  # Secret-source exclusivity and file decoding are configuration validation,
+  # not domain policy; config is intentionally a composition-root helper.
+  - rule: suspicious-business-logic-in-adapter
+    path: internal/config/config.go
+    reason: validates explicit environment and secret-file sources at startup
   # clientlimit is a shared infrastructure library, not a sibling adapter: the
   # HTTP adapters that rate-limit clients import it by design.
   - rule: no-adapter-to-adapter-imports

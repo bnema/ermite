@@ -18,6 +18,7 @@
 - **Isolated runner**: [ermite-runner](https://github.com/bnema/ermite-runner) runs each job in a Firecracker microVM when KVM is available, else in a container
 - **CLI-first**: repositories, merge requests, reviews and CI all work from the `ermite` CLI, for you and for AI agents
 - **Safe for agents**: an agent token can only push its own branches; you review and merge
+- **[Releases](docs/releases.md)** with a GitHub-compatible API, CLI and web downloads; assets and CI artifacts on [disk or S3-compatible storage](docs/storage.md)
 - Git over HTTPS, web interface with live updates
 
 Status: early development.

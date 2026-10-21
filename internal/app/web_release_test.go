@@ -6,7 +6,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,20 +13,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"bnema.dev/ermite/internal/adapters/blobdisk"
-	"bnema.dev/ermite/internal/adapters/web"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
-	"bnema.dev/ermite/internal/usecase"
 )
 
-// P8 owns production wiring. Until then, this test wires the real release
-// use case, forge metadata/Git, disk blobs and web in a test-local server.
+// Releases and web use the production forge wiring.
 func TestWebRelease(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	h.webRepo("demo")
-	blobs := blobdisk.New(t.TempDir())
-	releases := usecase.NewReleases(h.forge.store.Releases(), blobs, h.forge.store, h.forge.git, h.forge.git, h.forge.Pushes, h.forge.Bus, systemClock{}, ports.ReleaseLimits{})
+	blobs, releases := h.forge.Blobs, h.forge.Releases
 	repo := h.name("demo")
 	rel, err := releases.CreateRelease(h.ctx, domain.Root(), repo, ports.CreateReleaseParams{Tag: "v0.2.0", Title: "Demo release", Notes: "## Install\n\n**Download** the binary. <script>alert(1)</script>"})
 	require.NoError(t, err)
@@ -38,10 +32,7 @@ func TestWebRelease(t *testing.T) {
 	require.NoError(t, err)
 	draftAsset, err := releases.UploadAsset(h.ctx, domain.Root(), repo, ports.UploadAssetParams{ReleaseID: draft.ID, Name: "hidden.bin", Size: 1}, strings.NewReader("x"))
 	require.NoError(t, err)
-	srv, err := web.New(web.Config{Repos: h.forge.Repos, Browse: h.forge.Browse, Releases: releases, PublicURL: "http://example.test"})
-	require.NoError(t, err)
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
+	ts := h.srv
 	get := func(method, path, byteRange string) (int, http.Header, string) {
 		t.Helper()
 		req, err := http.NewRequestWithContext(t.Context(), method, ts.URL+path, nil)
