@@ -29,9 +29,10 @@ func (r *Releases) Sweep(ctx context.Context) {
 	for _, a := range all {
 		seen[a.ID] = true
 		remove := false
-		if a.State == domain.ReleaseAssetUploading {
+		switch a.State {
+		case domain.ReleaseAssetUploading:
 			remove = now.Sub(a.UpdatedAt) > domain.ReleaseAssetPendingMax
-		} else if a.State == domain.ReleaseAssetUploaded {
+		case domain.ReleaseAssetUploaded:
 			_, err := r.blobs.Stat(ctx, a.BlobKey())
 			switch {
 			case errors.Is(err, domain.ErrNotFound):

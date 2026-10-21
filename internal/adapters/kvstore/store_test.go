@@ -405,7 +405,7 @@ func TestSchema6TokenUpgrade(t *testing.T) {
 			assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 			db, err := kv.Open(ctx, dir, kv.Options{})
 			require.NoError(t, err)
-			defer db.Close(ctx)
+			defer func() { _ = db.Close(ctx) }()
 			for _, id := range []string{"full", "partial", "missing-review", "repo", "branch"} {
 				item, ok := db.Get(ctx, []byte("token/"+id))
 				require.True(t, ok)

@@ -307,7 +307,7 @@ func TestGitHubReleaseHTTPWorkflow(t *testing.T) {
 		}
 		resp, err := srv.Client().Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		b, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		return resp, string(b)

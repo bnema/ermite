@@ -256,7 +256,7 @@ func TestReleaseRPCDownload(t *testing.T) {
 			}).Once()
 			stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(req))
 			require.NoError(t, err)
-			defer stream.Close()
+			defer func() { _ = stream.Close() }()
 			require.True(t, stream.Receive())
 			assert.True(t, proto.Equal(assetToPB(a), stream.Msg().Asset))
 			assert.Empty(t, stream.Msg().Chunk)
@@ -285,7 +285,7 @@ func TestReleaseRPCErrors(t *testing.T) {
 			rel.EXPECT().DownloadAsset(mock.Anything, domain.Anonymous(), mustRepoName(t, "demo"), ports.AssetRef{ID: 9}, int64(0), int64(-1), mock.Anything).Return(tt.err).Once()
 			stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}}))
 			if err == nil {
-				defer stream.Close()
+				defer func() { _ = stream.Close() }()
 				assert.False(t, stream.Receive())
 				err = stream.Err()
 			}
@@ -395,7 +395,7 @@ func TestReleaseRPCDownloadFullChunk(t *testing.T) {
 	}).Once()
 	stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}}))
 	require.NoError(t, err)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	require.True(t, stream.Receive())
 	require.NotNil(t, stream.Msg().Asset)
 	require.True(t, stream.Receive())
@@ -414,7 +414,7 @@ func TestReleaseRPCRejectsInvalidMasksAndSelectors(t *testing.T) {
 	requireCode(t, connect.CodeInvalidArgument, err)
 	stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_Latest{Latest: &pb.ReleaseAssetLatest{Name: "a"}}}))
 	if err == nil {
-		defer stream.Close()
+		defer func() { _ = stream.Close() }()
 		assert.False(t, stream.Receive())
 		err = stream.Err()
 	}
@@ -464,7 +464,7 @@ func TestReleaseRPCDownloadZeroByteAsset(t *testing.T) {
 	}).Once()
 	stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}}))
 	require.NoError(t, err)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	require.True(t, stream.Receive())
 	assert.True(t, proto.Equal(assetToPB(a), stream.Msg().Asset))
 	assert.False(t, stream.Receive())

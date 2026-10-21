@@ -76,7 +76,7 @@ func TestReleaseBlobForge(t *testing.T) {
 			require.NoError(t, err)
 			body, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
-			res.Body.Close()
+			_ = res.Body.Close()
 			assert.Equal(t, 206, res.StatusCode)
 			assert.Equal(t, "ayl", string(body))
 			assert.Empty(t, res.Header.Get("Location"))
@@ -84,7 +84,7 @@ func TestReleaseBlobForge(t *testing.T) {
 			require.NoError(t, err)
 			var obj map[string]any
 			require.NoError(t, json.NewDecoder(res.Body).Decode(&obj))
-			res.Body.Close()
+			_ = res.Body.Close()
 			assert.Equal(t, 200, res.StatusCode)
 			assert.Contains(t, obj["upload_url"], "http://example.test/-/github/api/uploads/")
 			// New artifacts use the same production backend, not a test-local blob store.

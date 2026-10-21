@@ -589,7 +589,7 @@ func downloadReleaseAsset(ctx context.Context, c *client.Client, repo string, a 
 			return ctx.Err()
 		}
 		code := connect.CodeOf(err)
-		if attempt == 1 || !(code == connect.CodeUnavailable || code == connect.CodeInternal || errors.Is(err, io.ErrUnexpectedEOF)) {
+		if attempt == 1 || (code != connect.CodeUnavailable && code != connect.CodeInternal && !errors.Is(err, io.ErrUnexpectedEOF)) {
 			return c.Describe(err)
 		}
 	}

@@ -75,7 +75,7 @@ func TestCheckDeniedHeadFallsBack(t *testing.T) {
 		}
 		listed = true
 		w.Header().Set("Content-Type", "application/xml")
-		w.Write([]byte(`<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>b</Name><IsTruncated>false</IsTruncated></ListBucketResult>`))
+		_, _ = w.Write([]byte(`<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>b</Name><IsTruncated>false</IsTruncated></ListBucketResult>`))
 	}))
 	defer srv.Close()
 	s, e := blobs3.New(context.Background(), blobs3.Config{Bucket: "b", Prefix: "pfx", Endpoint: srv.URL, Region: "test-region", AccessKeyID: "test", SecretAccessKey: "test-secret", ForcePathStyle: true})

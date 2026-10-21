@@ -106,7 +106,7 @@ func TestReleaseStorage(t *testing.T) {
 	require.NoError(t, s.Close(ctx))
 	db, err := kv.Open(ctx, dir, kv.Options{})
 	require.NoError(t, err)
-	defer db.Close(ctx)
+	defer func() { _ = db.Close(ctx) }()
 	for _, prefix := range []string{"rel/", "reltag/", "relid/", "relasset/", "relassets/", "reluse/"} {
 		for key := range db.Snapshot(ctx).Prefix(ctx, []byte(prefix)) {
 			t.Errorf("repository deletion left release key %q", key)

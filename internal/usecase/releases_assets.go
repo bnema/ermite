@@ -66,7 +66,7 @@ func (r *Releases) UploadAsset(ctx context.Context, p domain.Principal, name dom
 			if old.Name != a.Name {
 				continue
 			}
-			if !(old.State == domain.ReleaseAssetUploading && r.clock.Now().Sub(old.UpdatedAt) > 60*time.Second) && !(old.State == domain.ReleaseAssetUploaded && params.Replace) {
+			if (old.State != domain.ReleaseAssetUploading || r.clock.Now().Sub(old.UpdatedAt) <= 60*time.Second) && (old.State != domain.ReleaseAssetUploaded || !params.Replace) {
 				return fmt.Errorf("%w: an asset named %q already exists", domain.ErrAlreadyExists, a.Name)
 			}
 			replaced = append(replaced, old)
@@ -199,7 +199,7 @@ func validReleaseDigest(s string) bool {
 		return false
 	}
 	for _, c := range s[7:] {
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}
@@ -407,7 +407,7 @@ func (r *Releases) DownloadAsset(ctx context.Context, p domain.Principal, repo d
 		}
 		return err
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	if err = send(ports.AssetChunk{Asset: &a}); err != nil {
 		return err
 	}

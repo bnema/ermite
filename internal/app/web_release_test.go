@@ -44,7 +44,7 @@ func TestWebRelease(t *testing.T) {
 		}
 		res, err := ts.Client().Do(req)
 		require.NoError(t, err)
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		body, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		return res.StatusCode, res.Header, string(body)

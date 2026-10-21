@@ -183,7 +183,7 @@ func (s *Store) Put(ctx context.Context, key string, r io.Reader, size int64) (p
 	if e != nil {
 		return ports.BlobInfo{}, e
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	h := sha256.New()
 	n, e := io.Copy(io.MultiWriter(f, h), ctxReader{ctx, r})
 	if e == nil && n != size {
@@ -256,7 +256,7 @@ func (s *Store) Open(ctx context.Context, key string, offset, length int64) (io.
 		return nil, info, translate(e)
 	}
 	if _, e = f.Seek(offset, io.SeekStart); e != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, info, e
 	}
 	var r io.Reader = ctxReader{ctx, f}
@@ -364,15 +364,15 @@ func (s *Store) NewMultipart(ctx context.Context, key string) (ports.MultipartUp
 		return nil, e
 	}
 	if e := writeMetadata(stage, metadata{key, time.Now().UTC()}); e != nil {
-		os.RemoveAll(stage)
+		_ = os.RemoveAll(stage)
 		return nil, e
 	}
 	if e := os.Rename(stage, u.dir()); e != nil {
-		os.RemoveAll(stage)
+		_ = os.RemoveAll(stage)
 		return nil, e
 	}
 	if e := syncDir(filepath.Join(s.root, "multipart")); e != nil {
-		os.RemoveAll(u.dir())
+		_ = os.RemoveAll(u.dir())
 		return nil, e
 	}
 	return u, nil
@@ -396,7 +396,7 @@ func writeMetadata(dir string, m metadata) error {
 		e = os.Rename(f.Name(), filepath.Join(dir, "metadata"))
 	}
 	if e != nil {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return e
 	}
 	return syncDir(dir)
@@ -412,7 +412,7 @@ func (u *upload) UploadPart(ctx context.Context, n int, r io.Reader, size int64)
 	if e != nil {
 		return e
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	count, e := io.Copy(f, ctxReader{ctx, r})
 	if e == nil && count != size {
 		e = domain.ErrInvalid
@@ -433,7 +433,7 @@ func (u *upload) Complete(ctx context.Context) (ports.BlobInfo, error) {
 		return ports.BlobInfo{}, domain.ErrInvalid
 	}
 	u.done = true
-	defer os.RemoveAll(u.dir())
+	defer func() { _ = os.RemoveAll(u.dir()) }()
 	entries, e := os.ReadDir(u.dir())
 	if e != nil {
 		return ports.BlobInfo{}, e
@@ -453,7 +453,7 @@ func (u *upload) Complete(ctx context.Context) (ports.BlobInfo, error) {
 	var files []*os.File
 	defer func() {
 		for _, f := range files {
-			f.Close()
+			_ = f.Close()
 		}
 	}()
 	for i, n := range names {
