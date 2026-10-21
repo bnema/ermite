@@ -52,12 +52,78 @@ func translate(err error) error {
 	}
 	return err
 }
-func syncDir(path string) error {
+
+// tmpGrace is how long leftovers in root/tmp (and malformed multipart dirs)
+// are kept before reclamation.
+const tmpGrace = time.Hour
+
+// now is the clock used for reclamation; tests may replace it.
+var now = time.Now
+
+// syncDir fsyncs a directory; tests may replace it to record calls.
+var syncDir = func(path string) error {
 	f, e := os.Open(path)
 	if e != nil {
 		return e
 	}
 	return errors.Join(f.Sync(), f.Close())
+}
+
+// mkdirAllSync creates dir (under root) with 0700, fsyncing the parent of
+// every directory it creates so the new entries are durable.
+func mkdirAllSync(root, dir string) error {
+	var missing []string
+	for d := filepath.Clean(dir); d != filepath.Clean(root) && d != filepath.Dir(d); d = filepath.Dir(d) {
+		if fi, e := os.Stat(d); e == nil {
+			if !fi.IsDir() {
+				return fmt.Errorf("%s: not a directory", d)
+			}
+			break
+		} else if !errors.Is(e, fs.ErrNotExist) {
+			return e
+		}
+		missing = append(missing, d)
+	}
+	for i := len(missing) - 1; i >= 0; i-- {
+		if e := os.Mkdir(missing[i], 0700); e != nil && !errors.Is(e, fs.ErrExist) {
+			return e
+		}
+		if e := syncDir(filepath.Dir(missing[i])); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+// reclaimTmp removes entries (files or directories) in root/tmp whose mtime
+// is older than olderThan.
+func (s *Store) reclaimTmp(ctx context.Context, olderThan time.Duration) error {
+	dir := filepath.Join(s.root, "tmp")
+	entries, e := os.ReadDir(dir)
+	if errors.Is(e, fs.ErrNotExist) {
+		return nil
+	}
+	if e != nil {
+		return e
+	}
+	cutoff := now().Add(-olderThan)
+	var errs []error
+	for _, d := range entries {
+		if e = ctx.Err(); e != nil {
+			return e
+		}
+		fi, e := d.Info()
+		if e != nil || !fi.ModTime().Before(cutoff) {
+			continue
+		}
+		if e = os.RemoveAll(filepath.Join(dir, d.Name())); e != nil {
+			errs = append(errs, e)
+			continue
+		}
+		logEntry := zerowrap.FromCtx(ctx)
+		logEntry.Info().Str("entry", d.Name()).Msg("blobdisk: reclaimed stale tmp entry")
+	}
+	return errors.Join(errs...)
 }
 
 type ctxReader struct {
@@ -89,6 +155,9 @@ func (s *Store) Check(ctx context.Context) error {
 	logEntry.Debug().Msg("blobdisk: Check")
 	if e := s.init(ctx); e != nil {
 		return e
+	}
+	if e := s.reclaimTmp(ctx, tmpGrace); e != nil {
+		logEntry.Warn().Err(e).Msg("blobdisk: tmp reclamation failed")
 	}
 	f, e := os.CreateTemp(filepath.Join(s.root, "tmp"), ".probe-*")
 	if e != nil {
@@ -131,7 +200,7 @@ func (s *Store) Put(ctx context.Context, key string, r io.Reader, size int64) (p
 		return ports.BlobInfo{}, e
 	}
 	path := s.object(key)
-	if e = os.MkdirAll(filepath.Dir(path), 0700); e == nil {
+	if e = mkdirAllSync(filepath.Join(s.root, "objects"), filepath.Dir(path)); e == nil {
 		e = os.Rename(f.Name(), path)
 	}
 	if e == nil {
@@ -290,15 +359,47 @@ func (s *Store) NewMultipart(ctx context.Context, key string) (ports.MultipartUp
 		return nil, e
 	}
 	u := &upload{s: s, key: key, id: hex.EncodeToString(b)}
-	if e := os.Mkdir(u.dir(), 0700); e != nil {
+	stage := filepath.Join(s.root, "tmp", "mp-"+u.id)
+	if e := os.Mkdir(stage, 0700); e != nil {
 		return nil, e
 	}
-	data, _ := json.Marshal(metadata{key, time.Now().UTC()})
-	if e := os.WriteFile(filepath.Join(u.dir(), "metadata"), data, 0600); e != nil {
+	if e := writeMetadata(stage, metadata{key, time.Now().UTC()}); e != nil {
+		os.RemoveAll(stage)
+		return nil, e
+	}
+	if e := os.Rename(stage, u.dir()); e != nil {
+		os.RemoveAll(stage)
+		return nil, e
+	}
+	if e := syncDir(filepath.Join(s.root, "multipart")); e != nil {
 		os.RemoveAll(u.dir())
 		return nil, e
 	}
 	return u, nil
+}
+
+// writeMetadata durably writes dir/metadata via temp file and rename.
+func writeMetadata(dir string, m metadata) error {
+	data, e := json.Marshal(m)
+	if e != nil {
+		return e
+	}
+	f, e := os.CreateTemp(dir, ".meta-*")
+	if e != nil {
+		return e
+	}
+	_, e = f.Write(data)
+	if e == nil {
+		e = f.Sync()
+	}
+	if e = errors.Join(e, f.Close()); e == nil {
+		e = os.Rename(f.Name(), filepath.Join(dir, "metadata"))
+	}
+	if e != nil {
+		os.Remove(f.Name())
+		return e
+	}
+	return syncDir(dir)
 }
 func (u *upload) ID() string { return u.id }
 func (u *upload) UploadPart(ctx context.Context, n int, r io.Reader, size int64) error {
@@ -431,6 +532,9 @@ func (s *Store) ListMultipart(ctx context.Context, prefix string, fn func(ports.
 	if e != nil {
 		return e
 	}
+	if e = s.reclaimTmp(ctx, tmpGrace); e != nil {
+		logEntry.Warn().Err(e).Msg("blobdisk: tmp reclamation failed")
+	}
 	for _, d := range entries {
 		if e = ctx.Err(); e != nil {
 			return e
@@ -438,13 +542,25 @@ func (s *Store) ListMultipart(ctx context.Context, prefix string, fn func(ports.
 		if !d.IsDir() || !validID(d.Name()) {
 			continue
 		}
-		b, e := os.ReadFile(filepath.Join(s.root, "multipart", d.Name(), "metadata"))
-		if e != nil {
-			return e
-		}
+		dir := filepath.Join(s.root, "multipart", d.Name())
 		var m metadata
-		if e = json.Unmarshal(b, &m); e != nil {
-			return e
+		b, e := os.ReadFile(filepath.Join(dir, "metadata"))
+		if e == nil {
+			e = json.Unmarshal(b, &m)
+		}
+		if e == nil && !ports.ValidBlobKey(m.Key) {
+			e = domain.ErrInvalid
+		}
+		if e != nil {
+			logEntry.Warn().Err(e).Str("id", d.Name()).Msg("blobdisk: skipping malformed multipart upload")
+			if fi, ie := d.Info(); ie == nil && fi.ModTime().Before(now().Add(-tmpGrace)) {
+				if re := os.RemoveAll(dir); re != nil {
+					logEntry.Warn().Err(re).Str("id", d.Name()).Msg("blobdisk: remove malformed multipart failed")
+				} else {
+					logEntry.Info().Str("id", d.Name()).Msg("blobdisk: removed malformed multipart upload")
+				}
+			}
+			continue
 		}
 		if strings.HasPrefix(m.Key, prefix) {
 			if e = fn(ports.MultipartInfo{Key: m.Key, ID: d.Name(), Started: m.Started}); e != nil {
