@@ -239,13 +239,36 @@ func TestJobTokenWithContentsWritePushesButNotWorkflows(t *testing.T) {
 	// None of the pushes of the job token started a run; a push of the owner
 	// does, and queues after them.
 	c.push("sentinel", map[string]string{"s.txt": "s"}, "")
-	c.waitFor("the owner's runs", func() bool { return len(c.runs()) >= runsBefore+4 })
+	// rworkflow carries both p.yml and moved.yml, each on push and create.
+	// sentinel branches from ok (p.yml only), so adds two more runs. Wait for
+	// its create run: planning is queued, and a total alone can be reached
+	// before the owner's pushes have finished being planned.
+	c.waitFor("the sentinel's create run", func() bool {
+		for _, r := range c.runs() {
+			if r.GetRef() == "refs/heads/sentinel" && r.GetEvent() == "create" {
+				return true
+			}
+		}
+		return false
+	})
+	var ownerRuns []string
 	for _, r := range c.runs() {
+		if r.GetRef() == "refs/heads/rworkflow" || r.GetRef() == "refs/heads/sentinel" {
+			ownerRuns = append(ownerRuns, r.GetRef()+" "+r.GetWorkflowPath()+" "+r.GetEvent())
+		}
 		assert.NotEqual(t, "refs/heads/orphan", r.GetRef(), "no run for a job token's push")
 		assert.NotEqual(t, "refs/tags/v0", r.GetRef())
 		assert.NotEqual(t, "delete", r.GetEvent(), "no run for a job token's deletes")
 	}
-	assert.Len(t, c.runs(), runsBefore+4, "push and create of the owner's rworkflow and sentinel only")
+	assert.ElementsMatch(t, []string{
+		"refs/heads/rworkflow .github/workflows/p.yml push",
+		"refs/heads/rworkflow .github/workflows/p.yml create",
+		"refs/heads/rworkflow .github/workflows/moved.yml push",
+		"refs/heads/rworkflow .github/workflows/moved.yml create",
+		"refs/heads/sentinel .github/workflows/p.yml push",
+		"refs/heads/sentinel .github/workflows/p.yml create",
+	}, ownerRuns)
+	assert.Len(t, c.runs(), runsBefore+6, "only the owner's two workflows on rworkflow and one on sentinel, each on push and create")
 }
 
 func TestJobTokenCannotPushToAnotherRepository(t *testing.T) {
