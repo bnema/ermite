@@ -22,7 +22,8 @@ enum MergeMode {
 message RepoSettings {
   // Never empty once stored.
   repeated MergeMode allowed_merge_modes = 1;
-  bool failing_checks_block = 2;
+  reserved 2;
+  reserved "failing_checks_block";
   // Who may write issues; unspecified reads as off.
   IssuesMode issues = 3;
   // Set on every write since merge commits exist: the modes are the explicit

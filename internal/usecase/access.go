@@ -36,7 +36,7 @@ func canReadAs(p domain.Principal, name domain.RepoName, vis domain.Visibility) 
 // repo:admin on it, and no branch prefixes. A token limited to some branches
 // may not delete the repository (that deletes every branch, those outside its
 // prefixes included), nor change its default branch, visibility, description,
-// merge modes or failing-checks rule: these decide what happens to branches the
+// merge modes or auto-merge settings: these decide what happens to branches the
 // token may not write. A caller that may not administer it learns nothing it
 // could not already read: not found when it cannot see the repository,
 // unauthenticated when it is anonymous, forbidden otherwise.

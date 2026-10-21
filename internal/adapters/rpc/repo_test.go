@@ -284,24 +284,18 @@ func TestRepoToPBTopics(t *testing.T) {
 func TestUpdateParamsAllowAutoMerge(t *testing.T) {
 	t.Parallel()
 	mask := func(paths ...string) *fieldmaskpb.FieldMask { return &fieldmaskpb.FieldMask{Paths: paths} }
-	settings := &pb.RepoSettings{AllowAutoMerge: true, FailingChecksBlock: true, AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}}
+	settings := &pb.RepoSettings{AllowAutoMerge: true, AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}}
 
 	params, err := updateParams(&pb.UpdateRepoRequest{UpdateMask: mask("settings.allow_auto_merge"), Settings: settings})
 	require.NoError(t, err)
 	require.NotNil(t, params.AllowAutoMerge)
 	assert.True(t, *params.AllowAutoMerge)
-	assert.Nil(t, params.FailingChecksBlock, "only the masked setting is set")
 	assert.Nil(t, params.AllowedMergeModes)
 
 	params, err = updateParams(&pb.UpdateRepoRequest{UpdateMask: mask("settings"), Settings: settings})
 	require.NoError(t, err)
 	require.NotNil(t, params.AllowAutoMerge, "settings covers allow_auto_merge")
 	assert.True(t, *params.AllowAutoMerge)
-	require.NotNil(t, params.FailingChecksBlock)
 	require.NotNil(t, params.AllowedMergeModes)
 
-	params, err = updateParams(&pb.UpdateRepoRequest{UpdateMask: mask("settings.failing_checks_block"), Settings: settings})
-	require.NoError(t, err)
-	assert.Nil(t, params.AllowAutoMerge)
-	require.NotNil(t, params.FailingChecksBlock)
 }

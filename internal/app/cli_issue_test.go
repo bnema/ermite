@@ -202,7 +202,7 @@ func TestRepoShowIssues(t *testing.T) {
 	}}
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "repo", "show", "alpha").ok(t)
-	assert.Contains(t, res.stdout, "issues                owner\n")
+	assert.Contains(t, res.stdout, "issues            owner\n")
 	res = runCLI(t, envFor(url), "", "repo", "show", "alpha", "--json").ok(t)
 	assert.Contains(t, res.stdout, `"issues": "owner"`)
 }

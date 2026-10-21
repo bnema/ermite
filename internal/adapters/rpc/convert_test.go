@@ -214,12 +214,12 @@ func TestRepoToPBAlwaysHasSettings(t *testing.T) {
 	// A repository value without settings (never stored with them) reads as the defaults.
 	r := repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustName(t, "x")}})
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH, pb.MergeMode_MERGE_MODE_MERGE_COMMIT}, r.GetSettings().GetAllowedMergeModes())
-	assert.True(t, r.GetSettings().GetFailingChecksBlock())
+	assert.False(t, r.GetSettings().GetAllowAutoMerge())
 
 	custom := domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}}
 	r = repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustName(t, "x"), Settings: custom}})
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}, r.GetSettings().GetAllowedMergeModes())
-	assert.False(t, r.GetSettings().GetFailingChecksBlock())
+	assert.False(t, r.GetSettings().GetAllowAutoMerge())
 }
 
 func mustName(t *testing.T, s string) domain.RepoName {
@@ -235,8 +235,8 @@ func TestUpdateParamsSettingsPaths(t *testing.T) {
 		return &pb.UpdateRepoRequest{
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
 			Settings: &pb.RepoSettings{
-				AllowedMergeModes:  []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH},
-				FailingChecksBlock: true,
+				AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH},
+				AllowAutoMerge:    true,
 			},
 		}
 	}
@@ -244,18 +244,18 @@ func TestUpdateParamsSettingsPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, p.AllowedMergeModes)
 	assert.Equal(t, []domain.MergeMode{domain.MergeModeSquash}, *p.AllowedMergeModes)
-	require.NotNil(t, p.FailingChecksBlock)
-	assert.True(t, *p.FailingChecksBlock)
+	require.NotNil(t, p.AllowAutoMerge)
+	assert.True(t, *p.AllowAutoMerge)
 
 	p, err = updateParams(msg("settings.allowed_merge_modes"))
 	require.NoError(t, err)
 	assert.NotNil(t, p.AllowedMergeModes)
-	assert.Nil(t, p.FailingChecksBlock, "not named: left alone")
+	assert.Nil(t, p.AllowAutoMerge, "not named: left alone")
 
-	p, err = updateParams(msg("settings.failing_checks_block"))
+	p, err = updateParams(msg("settings.allow_auto_merge"))
 	require.NoError(t, err)
 	assert.Nil(t, p.AllowedMergeModes)
-	assert.NotNil(t, p.FailingChecksBlock)
+	assert.NotNil(t, p.AllowAutoMerge)
 
 	// Modes named with nothing to take them from are an empty list, which the use case refuses.
 	p, err = updateParams(&pb.UpdateRepoRequest{UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"settings.allowed_merge_modes"}}})

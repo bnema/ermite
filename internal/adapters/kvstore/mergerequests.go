@@ -939,7 +939,7 @@ func decodeSide(s storagepb.DiffSide) domain.DiffSide {
 }
 
 func encodeSettings(s domain.RepoSettings) (*storagepb.RepoSettings, error) {
-	pb := &storagepb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock, MergeModesV2: true, AllowAutoMerge: s.AllowAutoMerge}
+	pb := &storagepb.RepoSettings{MergeModesV2: true, AllowAutoMerge: s.AllowAutoMerge}
 	for _, m := range s.AllowedMergeModes {
 		mode, err := encodeMode(m)
 		if err != nil || mode == storagepb.MergeMode_MERGE_MODE_UNSPECIFIED {
@@ -979,5 +979,5 @@ func decodeSettings(pb *storagepb.RepoSettings) domain.RepoSettings {
 	if !pb.GetMergeModesV2() && slices.Equal(normalized, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash}) {
 		normalized = domain.MergeModes()
 	}
-	return domain.RepoSettings{AllowedMergeModes: normalized, FailingChecksBlock: pb.GetFailingChecksBlock(), Issues: decodeIssuesMode(pb.GetIssues()), AllowAutoMerge: pb.GetAllowAutoMerge()}
+	return domain.RepoSettings{AllowedMergeModes: normalized, Issues: decodeIssuesMode(pb.GetIssues()), AllowAutoMerge: pb.GetAllowAutoMerge()}
 }

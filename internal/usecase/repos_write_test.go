@@ -224,13 +224,11 @@ func TestUpdate(t *testing.T) {
 	t.Run("a token limited to branches may not change any setting", func(t *testing.T) {
 		t.Parallel()
 		modes := []domain.MergeMode{domain.MergeModeSquash}
-		block := true
 		for name, params := range map[string]ports.UpdateRepoParams{
 			"default branch": {DefaultBranch: ptr("dev")},
 			"visibility":     {Visibility: ptr(domain.VisibilityPublic)},
 			"description":    {Description: ptr("x")},
 			"merge modes":    {AllowedMergeModes: &modes},
-			"checks rule":    {FailingChecksBlock: &block},
 			"issues":         {Issues: ptr(domain.IssuesOwner)},
 		} {
 			f := newFixture(t) // no HasBranch, no Update, no SetDefaultBranch, no Publish
@@ -289,7 +287,7 @@ func TestUpdateIssuesMode(t *testing.T) {
 		f := newFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(priv, nil).Once()
 		expectRepoMutation(t, f.meta, priv, mock.MatchedBy(func(r domain.Repo) bool {
-			return r.Settings.Issues == domain.IssuesOwner && r.Settings.FailingChecksBlock
+			return r.Settings.Issues == domain.IssuesOwner
 		}))
 		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().Once()
 		repo, err := f.repos.Update(ctx, domain.Root(), n, ports.UpdateRepoParams{Issues: ptr(domain.IssuesOwner)})

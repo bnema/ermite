@@ -25,7 +25,6 @@ func TestDefaultRepoSettings(t *testing.T) {
 	t.Parallel()
 	s := domain.DefaultRepoSettings()
 	assert.Equal(t, []domain.MergeMode{domain.MergeModeFastForward, domain.MergeModeSquash, domain.MergeModeMerge}, s.AllowedMergeModes)
-	assert.True(t, s.FailingChecksBlock)
 	assert.True(t, s.Allows(domain.MergeModeSquash))
 	assert.False(t, domain.RepoSettings{}.Allows(domain.MergeModeSquash))
 	assert.True(t, domain.RepoSettings{}.IsZero())

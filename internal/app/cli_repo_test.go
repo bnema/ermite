@@ -19,8 +19,7 @@ var (
 		Name: "alpha", Description: "The first one", Topics: []string{"cli", "go"}, Visibility: ermite.Visibility_VISIBILITY_PUBLIC,
 		DefaultBranch: "main", CreatedAt: ts("2026-01-02T03:04:05Z"), PushedAt: ts("2026-03-04T05:06:07Z"),
 		Settings: &ermite.RepoSettings{
-			AllowedMergeModes:  []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_FAST_FORWARD, ermite.MergeMode_MERGE_MODE_SQUASH},
-			FailingChecksBlock: true,
+			AllowedMergeModes: []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_FAST_FORWARD, ermite.MergeMode_MERGE_MODE_SQUASH},
 		},
 	}
 	repoBeta = &ermite.Repo{
@@ -54,8 +53,8 @@ func TestRepoList(t *testing.T) {
 		{
 			name: "json", repos: both, args: []string{"repo", "list", "--json"}, wantJSON: true,
 			wantStdout: `[
-				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true,"allow_auto_merge":false,"issues":"off"},
-				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false,"allow_auto_merge":false,"issues":"off"}
+				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"issues":"off"},
+				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"issues":"off"}
 			]`,
 		},
 		{
@@ -107,22 +106,21 @@ func TestRepoShow(t *testing.T) {
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "repo", "show", "alpha").ok(t)
 	assert.Equal(t, ""+
-		"name                  alpha\n"+
-		"visibility            public\n"+
-		"default branch        main\n"+
-		"description           The first one\n"+
-		"topics                cli, go\n"+
-		"created               2026-01-02 03:04\n"+
-		"last push             2026-03-04 05:06\n"+
-		"merge modes           fast-forward, squash\n"+
-		"failing checks block  true\n"+
-		"allow auto-merge      false\n"+
-		"issues                off\n", res.stdout)
+		"name              alpha\n"+
+		"visibility        public\n"+
+		"default branch    main\n"+
+		"description       The first one\n"+
+		"topics            cli, go\n"+
+		"created           2026-01-02 03:04\n"+
+		"last push         2026-03-04 05:06\n"+
+		"merge modes       fast-forward, squash\n"+
+		"allow auto-merge  false\n"+
+		"issues            off\n", res.stdout)
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.GetRepoRequest).GetRepo())
 
 	res = runCLI(t, envFor(url), "", "repo", "show", "alpha", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"failing_checks_block":true,"allow_auto_merge":false,"issues":"off"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"issues":"off"}`, res.stdout)
 }
 
 func TestRepoShowNeedsOneArg(t *testing.T) {
@@ -178,7 +176,7 @@ func TestRepoCreateJSON(t *testing.T) {
 		return &ermite.CreateRepoResponse{Repo: repoBeta}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "create", "beta", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"failing_checks_block":false,"allow_auto_merge":false,"issues":"off"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"issues":"off"}`, res.stdout)
 }
 
 func TestRepoEditMask(t *testing.T) {
@@ -209,16 +207,8 @@ func TestRepoEditMask(t *testing.T) {
 		{"merge modes", []string{"--merge-modes", "squash,ff"}, []string{"settings.allowed_merge_modes"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
 			assert.Equal(t, []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_SQUASH, ermite.MergeMode_MERGE_MODE_FAST_FORWARD}, r.GetSettings().GetAllowedMergeModes())
 		}},
-		{"failing checks do not block", []string{"--failing-checks-block=false"}, []string{"settings.failing_checks_block"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
-			assert.False(t, r.GetSettings().GetFailingChecksBlock())
-			assert.Empty(t, r.GetSettings().GetAllowedMergeModes())
-		}},
-		{"failing checks block", []string{"--failing-checks-block"}, []string{"settings.failing_checks_block"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
-			assert.True(t, r.GetSettings().GetFailingChecksBlock())
-		}},
 		{"allow auto-merge", []string{"--allow-auto-merge"}, []string{"settings.allow_auto_merge"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
 			assert.True(t, r.GetSettings().GetAllowAutoMerge())
-			assert.False(t, r.GetSettings().GetFailingChecksBlock())
 		}},
 		{"forbid auto-merge", []string{"--allow-auto-merge=false"}, []string{"settings.allow_auto_merge"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
 			assert.False(t, r.GetSettings().GetAllowAutoMerge())
@@ -460,9 +450,9 @@ func TestRepoEditAllowAutoMerge(t *testing.T) {
 	assert.Equal(t, []string{"settings.allow_auto_merge"}, got.GetUpdateMask().GetPaths())
 	assert.True(t, got.GetSettings().GetAllowAutoMerge())
 
-	res = runCLI(t, envFor(url), "", "repo", "edit", "alpha", "--allow-auto-merge", "--failing-checks-block=false", "--json").ok(t)
+	res = runCLI(t, envFor(url), "", "repo", "edit", "alpha", "--allow-auto-merge", "--json").ok(t)
 	assert.Contains(t, res.stdout, `"allow_auto_merge": true`)
 	_, reqs = f.snapshot()
 	got = reqs[1].(*ermite.UpdateRepoRequest)
-	assert.ElementsMatch(t, []string{"settings.allow_auto_merge", "settings.failing_checks_block"}, got.GetUpdateMask().GetPaths())
+	assert.ElementsMatch(t, []string{"settings.allow_auto_merge"}, got.GetUpdateMask().GetPaths())
 }

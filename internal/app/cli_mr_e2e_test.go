@@ -382,29 +382,17 @@ func TestRepoEditMergeSettingsCLI(t *testing.T) {
 	c.seed("proj", domain.VisibilityPublic)
 	res := c.cli(t, adminToken, "repo", "show", "proj", "--json").ok(t)
 	repo := decode[struct {
-		MergeModes         []string `json:"merge_modes"`
-		FailingChecksBlock bool     `json:"failing_checks_block"`
+		MergeModes []string `json:"merge_modes"`
 	}](t, res.stdout)
 	assert.Equal(t, []string{"fast-forward", "squash", "merge"}, repo.MergeModes)
-	assert.True(t, repo.FailingChecksBlock)
 
 	res = c.cli(t, adminToken, "repo", "edit", "proj", "--merge-modes", "squash", "--json").ok(t)
 	repo = decode[struct {
-		MergeModes         []string `json:"merge_modes"`
-		FailingChecksBlock bool     `json:"failing_checks_block"`
+		MergeModes []string `json:"merge_modes"`
 	}](t, res.stdout)
 	assert.Equal(t, []string{"squash"}, repo.MergeModes)
-	assert.True(t, repo.FailingChecksBlock, "untouched")
-	res = c.cli(t, adminToken, "repo", "edit", "proj", "--failing-checks-block=false", "--json").ok(t)
-	repo = decode[struct {
-		MergeModes         []string `json:"merge_modes"`
-		FailingChecksBlock bool     `json:"failing_checks_block"`
-	}](t, res.stdout)
-	assert.Equal(t, []string{"squash"}, repo.MergeModes, "untouched")
-	assert.False(t, repo.FailingChecksBlock)
 	res = c.cli(t, adminToken, "repo", "show", "proj").ok(t)
 	assert.Regexp(t, `(?m)^merge modes\s+squash$`, res.stdout)
-	assert.Regexp(t, `(?m)^failing checks block\s+false$`, res.stdout)
 
 	require.Error(t, c.cli(t, adminToken, "repo", "edit", "proj", "--merge-modes", "rebase").err)
 	require.Error(t, c.cli(t, adminToken, "repo", "edit", "proj", "--merge-modes", "").err)

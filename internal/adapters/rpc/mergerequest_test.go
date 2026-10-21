@@ -140,6 +140,7 @@ func TestMergeRequestServiceMerge(t *testing.T) {
 		wantCall bool
 	}{
 		{name: "ok", req: &pb.MergeMergeRequestRequest{Repo: "demo", Number: 1, HeadId: head, DeleteSourceBranch: true}, wantCall: true},
+		{name: "ignore checks", req: &pb.MergeMergeRequestRequest{Repo: "demo", Number: 1, HeadId: head, IgnoreChecks: true}, wantCall: true},
 		{name: "head is not a full id", req: &pb.MergeMergeRequestRequest{Repo: "demo", Number: 1, HeadId: "abc"}, wantCode: connect.CodeInvalidArgument},
 		{name: "invalid repo", req: &pb.MergeMergeRequestRequest{Repo: "../x", Number: 1}, wantCode: connect.CodeInvalidArgument},
 		{name: "head moved", req: &pb.MergeMergeRequestRequest{Repo: "demo", Number: 1, HeadId: head}, usecase: domain.ErrConflict, wantCode: connect.CodeAborted, wantCall: true},
@@ -152,7 +153,7 @@ func TestMergeRequestServiceMerge(t *testing.T) {
 			mrs := mocks.NewMergeRequestService(t)
 			if tt.wantCall {
 				mrs.EXPECT().Merge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), mock.MatchedBy(func(p ports.MergeParams) bool {
-					return p.DeleteSource == tt.req.GetDeleteSourceBranch() && (tt.req.GetHeadId() == "") == p.HeadID.IsZero()
+					return p.IgnoreChecks == tt.req.GetIgnoreChecks() && p.DeleteSource == tt.req.GetDeleteSourceBranch() && (tt.req.GetHeadId() == "") == p.HeadID.IsZero()
 				})).Return(ports.MergeResult{MergeRequest: domain.MergeRequest{Number: 1}, SourceDeleted: true}, tt.usecase).Once()
 			}
 			resp, err := (&mergeRequestService{mrs: mrs}).MergeMergeRequest(ownerCtx(), connect.NewRequest(tt.req))

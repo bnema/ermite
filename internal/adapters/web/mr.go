@@ -740,7 +740,7 @@ func (s *Server) mrFacts(ctx context.Context, r *http.Request, d *repoData, p *M
 			p.Modes = append(p.Modes, name)
 		}
 	}
-	p.ChecksBlock = d.repo.Settings.FailingChecksBlock
+	p.ChecksBlock = true
 	if head != "" {
 		checks := s.checksFor(ctx, d.repo.Name, head)
 		p.Checks = checksSection(d.repo.Repo, checks)

@@ -196,7 +196,7 @@ func TestAC2ReadAccess(t *testing.T) {
 		for _, who := range allPrincipals {
 			resp, err := r.who[who].server.GetVersion(ctx, connect.NewRequest(&pb.GetVersionRequest{}))
 			require.NoError(t, err, who)
-			assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge"}, resp.Msg.GetFeatures(), who)
+			assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks"}, resp.Msg.GetFeatures(), who)
 			assert.NotEmpty(t, resp.Msg.GetVersion())
 		}
 	})

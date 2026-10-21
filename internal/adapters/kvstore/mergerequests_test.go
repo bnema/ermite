@@ -470,7 +470,7 @@ func TestRepoSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.DefaultRepoSettings(), got.Settings)
 
-	got.Settings = domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, FailingChecksBlock: false, Issues: domain.IssuesOwner}
+	got.Settings = domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, Issues: domain.IssuesOwner}
 	_, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) { r.Settings = got.Settings; return true, nil })
 	require.NoError(t, err)
 	again, err := s.Get(ctx, n)
@@ -634,7 +634,7 @@ func TestStoredOldDefaultModesGainMerge(t *testing.T) {
 
 	put := func(db *kv.DB, repo string, modes ...storagepb.MergeMode) {
 		val, err := proto.Marshal(&storagepb.Repo{Name: repo, Visibility: storagepb.Visibility_VISIBILITY_PUBLIC,
-			Settings: &storagepb.RepoSettings{AllowedMergeModes: modes, FailingChecksBlock: true}})
+			Settings: &storagepb.RepoSettings{AllowedMergeModes: modes}})
 		require.NoError(t, err)
 		var b kv.Batch
 		b.Put([]byte("repo/"+repo), val)

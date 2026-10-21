@@ -28,6 +28,9 @@ var PresetNames = []string{presetCLI, presetAgent, presetCI, presetRunner}
 // ScopeName is the name of a scope as users type it and as the docs write
 // it: SCOPE_REPO_READ is "repo:read".
 func ScopeName(s ermite.Scope) string {
+	if s == ermite.Scope_SCOPE_MR_FORCE_MERGE {
+		return "mr:force-merge"
+	}
 	name, ok := ermite.Scope_name[int32(s)]
 	if !ok {
 		return strconv.Itoa(int(s))

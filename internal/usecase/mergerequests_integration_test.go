@@ -1205,19 +1205,19 @@ func TestUpdateRepoSettings(t *testing.T) {
 
 	modes := []domain.MergeMode{domain.MergeModeSquash, domain.MergeModeSquash}
 	off := false
-	got, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowedMergeModes: &modes, FailingChecksBlock: &off})
+	got, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowedMergeModes: &modes, AllowAutoMerge: &off})
 	require.NoError(t, err)
-	assert.Equal(t, domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, FailingChecksBlock: false, Issues: domain.IssuesOff}, got.Settings)
+	assert.Equal(t, domain.RepoSettings{AllowedMergeModes: []domain.MergeMode{domain.MergeModeSquash}, AllowAutoMerge: false, Issues: domain.IssuesOff}, got.Settings)
 	again, err := r.repos.Get(r.ctx, root, r.repo)
 	require.NoError(t, err)
 	assert.Equal(t, got.Settings, again.Settings)
 
 	// Only the named setting changes.
 	on := true
-	got, err = r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{FailingChecksBlock: &on})
+	got, err = r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{AllowAutoMerge: &on})
 	require.NoError(t, err)
 	assert.Equal(t, []domain.MergeMode{domain.MergeModeSquash}, got.Settings.AllowedMergeModes)
-	assert.True(t, got.Settings.FailingChecksBlock)
+	assert.True(t, got.Settings.AllowAutoMerge)
 
 	for _, bad := range [][]domain.MergeMode{{}, nil, {"rebase"}} {
 		bad := bad
@@ -1229,7 +1229,7 @@ func TestUpdateRepoSettings(t *testing.T) {
 	assert.Equal(t, got.Settings, again.Settings, "a refused change stores nothing")
 
 	// repo:admin is needed, like for any other field.
-	_, err = r.repos.Update(r.ctx, writer(domain.ScopeRepoRead, domain.ScopeMRMerge), r.repo, ports.UpdateRepoParams{FailingChecksBlock: &off})
+	_, err = r.repos.Update(r.ctx, writer(domain.ScopeRepoRead, domain.ScopeMRMerge), r.repo, ports.UpdateRepoParams{AllowAutoMerge: &off})
 	assert.ErrorIs(t, err, domain.ErrForbidden)
 }
 

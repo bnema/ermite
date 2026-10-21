@@ -16,7 +16,7 @@ import (
 func TestScopes(t *testing.T) {
 	t.Parallel()
 	all := domain.AllScopes()
-	assert.Len(t, all, 11)
+	assert.Len(t, all, 12)
 	assert.Contains(t, all, domain.ScopeIssueWrite)
 	got, err := domain.ParseScope("issue:write")
 	require.NoError(t, err)

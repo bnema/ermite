@@ -159,7 +159,7 @@ func TestAutoMergeMergesAsEnablerWhenAChecksPassed(t *testing.T) {
 	require.True(t, found)
 }
 
-func TestAutoMergeIgnoresFailingChecksBlockOff(t *testing.T) {
+func TestAutoMergeRequiresPassingChecks(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		check domain.CICheck
@@ -170,8 +170,6 @@ func TestAutoMergeIgnoresFailingChecksBlockOff(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r, mr, checks := autoRig(t)
 			enableAuto(t, r, mr)
-			_, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{FailingChecksBlock: ptr(false)})
-			require.NoError(t, err)
 			checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}, tc.check}, nil)
 			a := autoEvaluator(r, checks, nil, nil)
 			defer a.Close(r.ctx)
@@ -388,7 +386,6 @@ func TestMergeGateSettingsUpdateWaits(t *testing.T) {
 	for _, params := range []ports.UpdateRepoParams{
 		{AllowAutoMerge: ptr(false)},
 		{AllowedMergeModes: ptr([]domain.MergeMode{domain.MergeModeSquash})},
-		{FailingChecksBlock: ptr(false)},
 	} {
 		r, _, _ := autoRig(t)
 		r.repos.WithMergeGate(r.mrs)

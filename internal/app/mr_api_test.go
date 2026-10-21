@@ -299,7 +299,7 @@ func TestUpdateRepoSettingsOverTheAPI(t *testing.T) {
 	got, err := h.api("").repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "proj"}))
 	require.NoError(t, err)
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH, pb.MergeMode_MERGE_MODE_MERGE_COMMIT}, got.Msg.GetRepo().GetSettings().GetAllowedMergeModes())
-	assert.True(t, got.Msg.GetRepo().GetSettings().GetFailingChecksBlock())
+	assert.False(t, got.Msg.GetRepo().GetSettings().GetAllowAutoMerge())
 
 	update := func(c *clients, paths []string, s *pb.RepoSettings) (*pb.Repo, error) {
 		res, err := c.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{
@@ -311,23 +311,23 @@ func TestUpdateRepoSettingsOverTheAPI(t *testing.T) {
 		return res.Msg.GetRepo(), nil
 	}
 	repo, err := update(root, []string{"settings.allowed_merge_modes"}, &pb.RepoSettings{
-		AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}, FailingChecksBlock: false,
+		AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}, AllowAutoMerge: false,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}, repo.GetSettings().GetAllowedMergeModes())
-	assert.True(t, repo.GetSettings().GetFailingChecksBlock(), "not named in the mask: unchanged")
+	assert.False(t, repo.GetSettings().GetAllowAutoMerge(), "not named in the mask: unchanged")
 
-	repo, err = update(root, []string{"settings.failing_checks_block"}, &pb.RepoSettings{FailingChecksBlock: false})
+	repo, err = update(root, []string{"settings.allow_auto_merge"}, &pb.RepoSettings{AllowAutoMerge: false})
 	require.NoError(t, err)
-	assert.False(t, repo.GetSettings().GetFailingChecksBlock())
+	assert.False(t, repo.GetSettings().GetAllowAutoMerge())
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}, repo.GetSettings().GetAllowedMergeModes(), "not named in the mask: unchanged")
 
 	repo, err = update(root, []string{"settings"}, &pb.RepoSettings{
-		AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH, pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH}, FailingChecksBlock: true,
+		AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH, pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH}, AllowAutoMerge: true,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH}, repo.GetSettings().GetAllowedMergeModes(), "canonical order, no duplicates")
-	assert.True(t, repo.GetSettings().GetFailingChecksBlock())
+	assert.True(t, repo.GetSettings().GetAllowAutoMerge())
 
 	for name, s := range map[string]*pb.RepoSettings{
 		"no modes":     {},
@@ -341,11 +341,11 @@ func TestUpdateRepoSettingsOverTheAPI(t *testing.T) {
 	assert.Equal(t, "invalid_argument", codeName(err))
 
 	// repo:admin is needed.
-	_, err = update(h.api(h.token(scopes(domain.ScopeRepoRead, domain.ScopeMRMerge))), []string{"settings.failing_checks_block"}, &pb.RepoSettings{})
+	_, err = update(h.api(h.token(scopes(domain.ScopeRepoRead, domain.ScopeMRMerge))), []string{"settings.allow_auto_merge"}, &pb.RepoSettings{})
 	assert.Equal(t, "permission_denied", codeName(err))
 	got, err = root.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "proj"}))
 	require.NoError(t, err)
-	assert.True(t, got.Msg.GetRepo().GetSettings().GetFailingChecksBlock())
+	assert.True(t, got.Msg.GetRepo().GetSettings().GetAllowAutoMerge())
 }
 
 // AC4 over the API: a mode the settings do not allow is refused.

@@ -24,7 +24,7 @@ type mergeUnit struct {
 	head   domain.ObjectID
 }
 
-func newMergeUnit(t *testing.T, block bool) *mergeUnit {
+func newMergeUnit(t *testing.T) *mergeUnit {
 	t.Helper()
 	u := &mrUnit{
 		meta:  mocks.NewRepoMetaStore(t),
@@ -34,7 +34,6 @@ func newMergeUnit(t *testing.T, block bool) *mergeUnit {
 		repo:  domain.Repo{Name: name(t, "proj"), Visibility: domain.VisibilityPrivate},
 	}
 	u.repo.Settings = domain.DefaultRepoSettings()
-	u.repo.Settings.FailingChecksBlock = block
 	clock := mocks.NewClock(t)
 	clock.EXPECT().Now().Return(now).Maybe()
 	sched := mocks.NewMaintenanceScheduler(t)
@@ -63,8 +62,8 @@ func (m *mergeUnit) merge() error {
 	return err
 }
 
-// AC5: the merge rule under FailingChecksBlock.
-func TestMergeRuleOfFailingChecksBlock(t *testing.T) {
+// AC5: the merge rule under ChecksPolicy.
+func TestMergeRuleOfChecksPolicy(t *testing.T) {
 	t.Parallel()
 	check := func(status domain.CIStatus, c domain.CIConclusion, name string) domain.CICheck {
 		return domain.CICheck{Name: name, Status: status, Conclusion: c}
@@ -84,7 +83,7 @@ func TestMergeRuleOfFailingChecksBlock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newMergeUnit(t, true)
+			m := newMergeUnit(t)
 			m.checks.EXPECT().CommitChecks(mock.Anything, m.repo.Name, m.head.String()).Return(tt.checks, nil)
 			// The merge stops at the rule: the branch mock expects no move.
 			err := m.merge()
@@ -94,7 +93,7 @@ func TestMergeRuleOfFailingChecksBlock(t *testing.T) {
 	}
 	t.Run("too many checks to tell", func(t *testing.T) {
 		t.Parallel()
-		m := newMergeUnit(t, true)
+		m := newMergeUnit(t)
 		m.checks.EXPECT().CommitChecks(mock.Anything, m.repo.Name, m.head.String()).Return(nil, domain.ErrResourceExhausted)
 		err := m.merge()
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
@@ -173,4 +172,36 @@ func TestTokenShapes(t *testing.T) {
 	assert.False(t, domain.IsJobToken(good[:len(good)-1]))
 	assert.False(t, domain.IsJobToken("ermite_"+good[10:]))
 	assert.False(t, domain.IsJobToken(good+"="))
+}
+
+func TestMergeChecksAndOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		principal domain.Principal
+		checks    []domain.CICheck
+		ignore    bool
+		want      error
+	}{
+		{name: "no checks allowed", principal: writer(domain.ScopeRepoRead, domain.ScopeMRMerge)},
+		{name: "failure refused", principal: root, checks: []domain.CICheck{{Name: "build", Status: domain.CICompleted, Conclusion: domain.CIFailure}}, want: domain.ErrPreconditionFailed},
+		{name: "pending refused", principal: root, checks: []domain.CICheck{{Name: "build", Status: domain.CIQueued}}, want: domain.ErrPreconditionFailed},
+		{name: "force scope bypasses failure", principal: writer(domain.ScopeRepoRead, domain.ScopeMRMerge, domain.ScopeMRForceMerge), checks: []domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CIFailure}}, ignore: true},
+		{name: "missing force scope denied", principal: writer(domain.ScopeRepoRead, domain.ScopeMRMerge), ignore: true, want: domain.ErrForbidden},
+		{name: "force scope alone insufficient", principal: writer(domain.ScopeRepoRead, domain.ScopeMRForceMerge), ignore: true, want: domain.ErrForbidden},
+		{name: "root override", principal: domain.Root(), ignore: true},
+		{name: "owner override", principal: domain.Owner(), ignore: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, mr, checks := autoRig(t)
+			if !tc.ignore {
+				checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Return(tc.checks, nil).Once()
+			}
+			_, err := r.mrs.Merge(r.ctx, tc.principal, r.repo, mr.Number, ports.MergeParams{HeadID: r.head(), IgnoreChecks: tc.ignore})
+			if tc.want != nil {
+				require.ErrorIs(t, err, tc.want)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

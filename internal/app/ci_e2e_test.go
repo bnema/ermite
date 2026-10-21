@@ -13,7 +13,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
@@ -271,7 +270,7 @@ func TestCIPushRunsAWorkflowOnARunner(t *testing.T) {
 }
 
 // AC5: merge refused while checks are pending or failing, allowed when they
-// pass, and when failing_checks_block is off.
+// pass, or when explicitly bypassed by an authorized caller.
 func TestCIMergeIsBlockedByChecks(t *testing.T) {
 	c := newCIHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
@@ -302,14 +301,9 @@ func TestCIMergeIsBlockedByChecks(t *testing.T) {
 	assert.Equal(t, connect.CodeFailedPrecondition, ciErrCode(err))
 	assert.Contains(t, err.Error(), "failing checks block the merge")
 
-	// Off: the merge goes through.
-	_, err = c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
-		Repo:       "proj",
-		Settings:   &pb.RepoSettings{FailingChecksBlock: false},
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"settings.failing_checks_block"}},
-	}))
+	// An explicit override by root allows the merge despite failure.
+	_, err = c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: mr.Msg.GetMergeRequest().GetNumber(), HeadId: feat, IgnoreChecks: true}))
 	require.NoError(t, err)
-	require.NoError(t, merge())
 }
 
 // AC2: a job token works for its job only, and not once the job has ended.

@@ -72,7 +72,7 @@ func repoToPB(v ports.RepoView) *pb.Repo {
 }
 
 func settingsToPB(s domain.RepoSettings) *pb.RepoSettings {
-	out := &pb.RepoSettings{FailingChecksBlock: s.FailingChecksBlock, AllowAutoMerge: s.AllowAutoMerge, Issues: issuesModeToPB(s.Issues)}
+	out := &pb.RepoSettings{AllowAutoMerge: s.AllowAutoMerge, Issues: issuesModeToPB(s.Issues)}
 	for _, m := range s.AllowedMergeModes {
 		out.AllowedMergeModes = append(out.AllowedMergeModes, mergeModeToPB(m))
 	}
@@ -131,6 +131,7 @@ var scopeToPB = map[domain.Scope]pb.Scope{
 	domain.ScopeRepoAdmin:      pb.Scope_SCOPE_REPO_ADMIN,
 	domain.ScopeMRWrite:        pb.Scope_SCOPE_MR_WRITE,
 	domain.ScopeMRMerge:        pb.Scope_SCOPE_MR_MERGE,
+	domain.ScopeMRForceMerge:   pb.Scope_SCOPE_MR_FORCE_MERGE,
 	domain.ScopeCIWrite:        pb.Scope_SCOPE_CI_WRITE,
 	domain.ScopeSecretsWrite:   pb.Scope_SCOPE_SECRETS_WRITE,
 	domain.ScopeRunnerRegister: pb.Scope_SCOPE_RUNNER_REGISTER,

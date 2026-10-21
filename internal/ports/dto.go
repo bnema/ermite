@@ -47,8 +47,6 @@ type UpdateRepoParams struct {
 	// AllowedMergeModes replaces the allowed merge modes; it must hold at
 	// least one known mode.
 	AllowedMergeModes *[]domain.MergeMode
-	// FailingChecksBlock replaces the setting of that name.
-	FailingChecksBlock *bool
 	// Issues replaces the issues mode.
 	Issues *domain.IssuesMode
 	// AllowAutoMerge replaces the setting of that name.
@@ -381,6 +379,8 @@ type AddCommentParams struct {
 
 // MergeParams describes the merge to perform.
 type MergeParams struct {
+	// IgnoreChecks bypasses checks and requires mr:force-merge.
+	IgnoreChecks bool
 	// Mode defaults to fast-forward.
 	Mode domain.MergeMode
 	// HeadID is the commit the caller reviewed; the source branch must still

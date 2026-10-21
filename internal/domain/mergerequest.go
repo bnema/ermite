@@ -46,8 +46,6 @@ type RepoSettings struct {
 	// AllowedMergeModes is never empty, in canonical order, without
 	// duplicates.
 	AllowedMergeModes []MergeMode
-	// FailingChecksBlock says that a failing check prevents the merge.
-	FailingChecksBlock bool
 	// Issues says who may write issues; the empty mode means IssuesOff.
 	Issues IssuesMode
 	// AllowAutoMerge says that merge requests may be set to merge themselves
@@ -55,10 +53,10 @@ type RepoSettings struct {
 	AllowAutoMerge bool
 }
 
-// DefaultRepoSettings are the settings of a new repository: every mode, and
-// failing checks block the merge.
+// DefaultRepoSettings are the settings of a new repository: every merge mode,
+// with issues and auto-merge disabled.
 func DefaultRepoSettings() RepoSettings {
-	return RepoSettings{AllowedMergeModes: MergeModes(), FailingChecksBlock: true, Issues: IssuesOff}
+	return RepoSettings{AllowedMergeModes: MergeModes(), Issues: IssuesOff}
 }
 
 // IsZero reports whether s holds no mode, which only the zero value does.

@@ -111,10 +111,8 @@ func checksSection(repo domain.Repo, checks []ports.CheckView) ChecksSection {
 	switch {
 	case len(checks) == 0:
 		sec.Note = "no check on this commit: nothing blocks the merge."
-	case repo.Settings.FailingChecksBlock:
-		sec.Note = "a failing or unfinished check blocks the merge."
 	default:
-		sec.Note = "checks do not block the merge in this repository."
+		sec.Note = "a failing or unfinished check blocks the merge."
 	}
 	return sec
 }

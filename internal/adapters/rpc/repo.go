@@ -80,7 +80,7 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 
 // updateParams maps the field mask of an update. The mask must name at least
 // one of "description", "topics", "visibility", "default_branch", "settings",
-// "settings.allowed_merge_modes", "settings.failing_checks_block" and
+// "settings.allowed_merge_modes" and
 // "settings.allow_auto_merge", and nothing else; the optional issues field stands outside the mask, and alone
 // it is a valid update.
 func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
@@ -113,7 +113,7 @@ func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 			params.Visibility = &vis
 		case "default_branch":
 			params.DefaultBranch = new(msg.GetDefaultBranch())
-		case "settings", "settings.allowed_merge_modes", "settings.failing_checks_block", "settings.allow_auto_merge":
+		case "settings", "settings.allowed_merge_modes", "settings.allow_auto_merge":
 			all := path == "settings"
 			if all || path == "settings.allowed_merge_modes" {
 				modes, err := mergeModesFromPB(msg.GetSettings().GetAllowedMergeModes())
@@ -121,9 +121,6 @@ func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 					return params, err
 				}
 				params.AllowedMergeModes = &modes
-			}
-			if all || path == "settings.failing_checks_block" {
-				params.FailingChecksBlock = new(msg.GetSettings().GetFailingChecksBlock())
 			}
 			if all || path == "settings.allow_auto_merge" {
 				params.AllowAutoMerge = new(msg.GetSettings().GetAllowAutoMerge())

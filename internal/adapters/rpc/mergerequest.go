@@ -399,7 +399,7 @@ func (s *mergeRequestService) MergeMergeRequest(ctx context.Context, req *connec
 		return nil, connectError(ctx, err)
 	}
 	res, err := s.mrs.Merge(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.MergeParams{
-		Mode: mode, HeadID: head, DeleteSource: req.Msg.GetDeleteSourceBranch(),
+		Mode: mode, HeadID: head, DeleteSource: req.Msg.GetDeleteSourceBranch(), IgnoreChecks: req.Msg.GetIgnoreChecks(),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -422,4 +422,9 @@ func (s *mergeRequestService) MarkRead(ctx context.Context, req *connect.Request
 		return nil, connectError(ctx, err)
 	}
 	return connect.NewResponse(&pb.MarkReadResponse{}), nil
+}
+
+// MarkReady is implemented in the next server slice.
+func (s *mergeRequestService) MarkReady(context.Context, *connect.Request[pb.MarkReadyRequest]) (*connect.Response[pb.MarkReadyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("MarkReady is not implemented"))
 }

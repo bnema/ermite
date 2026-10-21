@@ -221,7 +221,6 @@ func TestIssuesFeatureAndSettingOverTheAPI(t *testing.T) {
 	updated, err := update(r.root, pb.IssuesMode_ISSUES_MODE_OWNER)
 	require.NoError(t, err)
 	assert.Equal(t, pb.IssuesMode_ISSUES_MODE_OWNER, updated.GetSettings().GetIssues())
-	assert.True(t, updated.GetSettings().GetFailingChecksBlock(), "the other settings are kept")
 	_, err = r.root.issue.CreateIssue(ctx, connect.NewRequest(&pb.CreateIssueRequest{Repo: "priv", Title: "t"}))
 	require.NoError(t, err)
 

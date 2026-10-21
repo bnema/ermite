@@ -8,6 +8,8 @@ import "slices"
 // ServerService.GetVersion. A server without one still works for everything
 // else: the CLI warns instead of failing.
 const (
+	// FeatureIgnoreChecks permits merging with checks bypassed.
+	FeatureIgnoreChecks = "merge_requests.ignore_checks"
 	// FeatureRepoUpdate is RepoService.UpdateRepo (`ermite repo edit`).
 	FeatureRepoUpdate = "repo.update"
 	// FeatureEventsResume is EventService.Watch with resume_after, which

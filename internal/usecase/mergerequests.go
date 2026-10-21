@@ -1075,8 +1075,14 @@ var errAutoMergeWait = errors.New("auto-merge is waiting for checks")
 
 func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.MergeParams, opts mergeOpts) (domain.MergeRequest, error) {
 	if opts.auto == nil {
-		if _, err := m.writable(ctx, p, name, domain.ScopeMRMerge); err != nil {
+		repo, err := m.writable(ctx, p, name, domain.ScopeMRMerge)
+		if err != nil {
 			return domain.MergeRequest{}, err
+		}
+		if params.IgnoreChecks {
+			if err := scopeAccess(p, repo, domain.ScopeMRForceMerge); err != nil {
+				return domain.MergeRequest{}, err
+			}
 		}
 	}
 	mode := params.Mode
@@ -1179,7 +1185,7 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 	if opts.auto != nil && !settings.AllowAutoMerge {
 		return domain.MergeRequest{}, fmt.Errorf("%w: auto-merge is off in %s", domain.ErrPreconditionFailed, name)
 	}
-	if settings.FailingChecksBlock || opts.auto != nil {
+	if !params.IgnoreChecks || opts.auto != nil {
 		checks, err := m.readMergeChecks(ctx, name, head)
 		if err == nil {
 			err = checksPolicy(checks)
@@ -1362,7 +1368,7 @@ func checksPolicy(checks []domain.CICheck) error {
 	}
 	switch {
 	case len(failing) > 0:
-		return fmt.Errorf("%w: failing checks block the merge: %s (turn off failing_checks_block to merge anyway)", domain.ErrPreconditionFailed, strings.Join(failing, ", "))
+		return fmt.Errorf("%w: failing checks block the merge: %s (merge with --ignore-checks, needs the mr:force-merge scope)", domain.ErrPreconditionFailed, strings.Join(failing, ", "))
 	case len(pending) > 0:
 		return fmt.Errorf("%w: checks have not finished: %s", domain.ErrPreconditionFailed, strings.Join(pending, ", "))
 	}

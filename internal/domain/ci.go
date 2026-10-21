@@ -42,7 +42,7 @@ const (
 )
 
 // PassesMerge reports whether a check that ended this way lets a merge go
-// through under FailingChecksBlock: success, skipped and neutral do.
+// through under the merge checks policy: success, skipped and neutral do.
 func (c CIConclusion) PassesMerge() bool {
 	return c == CISuccess || c == CISkipped || c == CINeutral
 }
