@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Internal, unversioned storage schema of the CI artifacts (artifacts v4,
-// CI-4 D3). The contents are not stored here: they are files under
-// $ERMITE_DATA_DIR/ci/artifacts.
+// CI-4 D3). Contents are stored separately, in the blob store or (for
+// legacy records) under $ERMITE_DATA_DIR/ci/artifacts.
 
 syntax = "proto3";
 
@@ -49,6 +49,8 @@ message CIArtifact {
   // list_digest: the SHA-256 of the block list of the commit, to recognize a
   // repeated commit.
   bytes list_digest = 15;
+  // "" or "disk": legacy files under ci/artifacts; "blob": the blob store.
+  string store = 16;
 }
 
 // CIArtifactBlock is stored under "artifactblk/<artifact:020d>/<hex(block id)>":

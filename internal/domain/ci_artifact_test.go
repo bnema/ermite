@@ -13,6 +13,13 @@ import (
 	"bnema.dev/ermite/internal/domain"
 )
 
+func TestCIArtifactBlobKeys(t *testing.T) {
+	a := domain.CIArtifact{RunID: 7, ID: 42, Name: "not-used-in-keys"}
+	assert.Equal(t, "ci/00000000000000000007/00000000000000000042", a.BlobKey())
+	assert.Equal(t, a.BlobKey()+".blocks/abcd.0123", a.BlockKey("abcd.0123"))
+	assert.Equal(t, domain.CIArtifactStoreLegacy, a.Store)
+}
+
 func TestParseArtifactName(t *testing.T) {
 	for _, ok := range []string{"dist", "my artifact (linux) v1.2", "é", strings.Repeat("é", 256), "..", "a.b-c_d"} {
 		assert.NoError(t, domain.ParseArtifactName(ok), "%q", ok)

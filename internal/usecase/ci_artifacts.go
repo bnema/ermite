@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,7 @@ import (
 // The artifacts of the runs (artifacts v4, CI-4 D3). The runner translates the
 // toolkit's protocol and calls JobArtifactService with the job token; owners
 // use ArtifactService. The records are in CIConfig.Artifacts, the contents in
-// CIConfig.ArtifactFiles, named by ids only.
+// CIConfig.Blobs (ArtifactFiles for legacy records), named by ids only.
 //
 // Every write of the artifacts of a repository goes through its usage record
 // (ports.CIArtifactWrite): a decision is made on the records read after it and
@@ -57,7 +58,7 @@ var (
 	errArtifactChanged = errors.New("artifact changed")
 )
 
-func (c *CI) artifactsOn() bool { return c.cfg.Artifacts != nil && c.cfg.ArtifactFiles != nil }
+func (c *CI) artifactsOn() bool { return c.cfg.Artifacts != nil && c.cfg.Blobs != nil }
 
 func artifactRef(a domain.CIArtifact) ports.CIArtifactRef {
 	return ports.CIArtifactRef{RunID: a.RunID, ID: a.ID}
@@ -309,7 +310,13 @@ func (c *CI) removeArtifacts(ctx context.Context, repo domain.RepoName, runID in
 // logged: the sweep removes the files that no record names.
 func (c *CI) removeArtifactFiles(ctx context.Context, arts []domain.CIArtifact) {
 	for _, a := range arts {
-		if err := c.cfg.ArtifactFiles.Remove(ctx, artifactRef(a)); err != nil {
+		var err error
+		if a.Store == domain.CIArtifactStoreBlob {
+			err = errors.Join(c.cfg.Blobs.Delete(ctx, a.BlobKey()), c.removeBlobBlocks(ctx, a))
+		} else if c.cfg.ArtifactFiles != nil {
+			err = c.cfg.ArtifactFiles.Remove(ctx, artifactRef(a))
+		}
+		if err != nil {
 			ctxLog(ctx).Warn().Err(err).Int64("artifact_id", a.ID).Msg("ci: remove the files of an artifact; the sweep will")
 		}
 	}
@@ -373,7 +380,7 @@ func (c *CI) CreateJobArtifact(ctx context.Context, secret string, params ports.
 	}
 	a := domain.CIArtifact{
 		ID: id, Repo: j.Repo, RunID: j.RunID, Attempt: j.RunAttempt, JobID: j.ID, Assignment: j.TokenHash,
-		Name: params.Name, MediaType: mediaType, State: domain.CIArtifactPending,
+		Name: params.Name, MediaType: mediaType, State: domain.CIArtifactPending, Store: domain.CIArtifactStoreBlob,
 		CreatedAt: now, ExpiresAt: domain.ArtifactExpiry(params.ExpiresAt, now, c.cfg.ArtifactLimits.Retention),
 	}
 	var discarded []domain.CIArtifact
@@ -466,9 +473,12 @@ func (c *CI) UploadJobArtifactBlock(ctx context.Context, secret, jobID string, a
 	src := &reservingReader{ctx: ctx, c: c, a: a, r: data}
 	defer func() { c.release(a, src.reserved) }()
 	limits := c.cfg.ArtifactLimits
-	ref, file := artifactRef(a), newBlockFile(blockID)
-	size, err := c.cfg.ArtifactFiles.PutBlock(ctx, ref, file, src)
+	file := newBlockFile(blockID)
+	size, err := c.putUnsized(ctx, a.BlockKey(file), src)
 	if err != nil {
+		if derr := c.cfg.Blobs.Delete(context.WithoutCancel(ctx), a.BlockKey(file)); derr != nil {
+			ctxLog(ctx).Warn().Err(derr).Msg("ci: remove a refused block; the sweep will")
+		}
 		return 0, err
 	}
 	var old *ports.CIArtifactBlock
@@ -509,13 +519,13 @@ func (c *CI) UploadJobArtifactBlock(ctx context.Context, secret, jobID string, a
 		return nil
 	})
 	if err != nil {
-		if rerr := c.cfg.ArtifactFiles.RemoveBlock(ctx, ref, file); rerr != nil {
+		if rerr := c.cfg.Blobs.Delete(context.WithoutCancel(ctx), a.BlockKey(file)); rerr != nil {
 			ctxLog(ctx).Warn().Err(rerr).Int64("artifact_id", a.ID).Msg("ci: remove a refused block; the sweep will")
 		}
 		return 0, err
 	}
 	if old != nil {
-		if err := c.cfg.ArtifactFiles.RemoveBlock(ctx, ref, old.File); err != nil {
+		if err := c.cfg.Blobs.Delete(ctx, a.BlockKey(old.File)); err != nil {
 			ctxLog(ctx).Warn().Err(err).Int64("artifact_id", a.ID).Msg("ci: remove a replaced block")
 		}
 	}
@@ -602,7 +612,7 @@ func (c *CI) CommitJobArtifact(ctx context.Context, secret, jobID string, artifa
 				return 0, "", err
 			}
 		}
-		size, digest, err := c.cfg.ArtifactFiles.Assemble(ctx, artifactRef(a), files)
+		size, digest, err := c.assembleBlobs(ctx, a, files, total)
 		if err != nil {
 			c.release(a, excess)
 		}
@@ -638,7 +648,7 @@ func (c *CI) CommitJobArtifact(ctx context.Context, secret, jobID string, artifa
 		if err != nil {
 			return 0, "", err
 		}
-		if err := c.cfg.ArtifactFiles.RemoveBlocks(ctx, artifactRef(a)); err != nil {
+		if err := c.removeBlobBlocks(ctx, a); err != nil {
 			ctxLog(ctx).Warn().Err(err).Int64("artifact_id", a.ID).Msg("ci: remove the blocks of a committed artifact")
 		}
 		c.dropIfEnded(ctx, j)
@@ -782,7 +792,23 @@ func (c *CI) streamArtifact(ctx context.Context, a domain.CIArtifact, offset int
 	if offset < 0 || offset > a.Size {
 		return fmt.Errorf("%w: offset %d is beyond the size %d", domain.ErrOutOfRange, offset, a.Size)
 	}
-	f, err := c.cfg.ArtifactFiles.Open(ctx, artifactRef(a), offset)
+	var f io.ReadCloser
+	var err error
+	if a.Store == domain.CIArtifactStoreBlob {
+		// BlobStore rejects offsets at EOF, while artifact downloads permit
+		// an empty resumed stream (including zero-byte artifacts).
+		if offset == a.Size {
+			_, err = c.cfg.Blobs.Stat(ctx, a.BlobKey())
+			f = io.NopCloser(bytes.NewReader(nil))
+		} else {
+			f, _, err = c.cfg.Blobs.Open(ctx, a.BlobKey(), offset, -1)
+		}
+	} else if c.cfg.ArtifactFiles != nil {
+		f, err = c.cfg.ArtifactFiles.Open(ctx, artifactRef(a), offset)
+	} else {
+		ctxLog(ctx).Error().Int64("artifact_id", a.ID).Msg("ci: legacy artifact reader is unavailable")
+		return domain.ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
@@ -1008,6 +1034,10 @@ func (c *CI) sweepArtifactOrphans(ctx context.Context) {
 			}
 		}
 	}
+	c.sweepArtifactBlobOrphans(ctx)
+	if c.cfg.ArtifactFiles == nil {
+		return
+	}
 	c.removeOrphans(ctx, "artifacts", "artifact directories", c.cfg.ArtifactFiles.RunIDs, c.cfg.ArtifactFiles.RemoveRuns)
 	runIDs, err := c.cfg.ArtifactFiles.RunIDs(ctx)
 	if err != nil {
@@ -1022,7 +1052,7 @@ func (c *CI) sweepArtifactOrphans(ctx context.Context) {
 		}
 		for _, id := range ids {
 			a, err := c.cfg.Artifacts.GetArtifact(ctx, id)
-			if err == nil && a.RunID == run {
+			if err == nil && a.RunID == run && a.Store != domain.CIArtifactStoreBlob {
 				continue
 			}
 			if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -1034,4 +1064,234 @@ func (c *CI) sweepArtifactOrphans(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// putUnsized buffers at most one toolkit block; Put requires an exact size.
+func (c *CI) putUnsized(ctx context.Context, key string, r io.Reader) (int64, error) {
+	// A fixed backing array prevents bytes.Buffer's geometric growth from
+	// allocating beyond the block bound. Probe the next byte separately.
+	buf := make([]byte, domain.CIArtifactMaxBlockSize)
+	n, err := io.ReadFull(r, buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return 0, err
+	}
+	if n == len(buf) {
+		var extra [1]byte
+		m, err := io.ReadFull(r, extra[:])
+		if m != 0 {
+			return 0, fmt.Errorf("%w: a block has at most 8 MiB", domain.ErrInvalid)
+		}
+		if err != io.EOF {
+			return 0, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	_, err = c.cfg.Blobs.Put(ctx, key, bytes.NewReader(buf[:n]), int64(n))
+	return int64(n), err
+}
+
+func (c *CI) removeBlobBlocks(ctx context.Context, a domain.CIArtifact) error {
+	return c.cfg.Blobs.List(ctx, a.BlobKey()+".blocks/", func(b ports.BlobInfo) error {
+		return c.cfg.Blobs.Delete(ctx, b.Key)
+	})
+}
+
+// assembleBlobs keeps one 8 MiB part in memory, even when a block crosses
+// part boundaries or is repeated in the commit list.
+func (c *CI) assembleBlobs(ctx context.Context, a domain.CIArtifact, files []string, total int64) (int64, string, error) {
+	var upload ports.MultipartUpload
+	if total > ports.BlobPartSize {
+		var err error
+		upload, err = c.cfg.Blobs.NewMultipart(ctx, a.BlobKey())
+		if err != nil {
+			return 0, "", err
+		}
+	}
+	completed := false
+	defer func() {
+		if upload != nil && !completed {
+			if err := upload.Abort(context.WithoutCancel(ctx)); err != nil {
+				ctxLog(ctx).Warn().Err(err).Msg("ci: abort artifact assembly; the sweep will")
+			}
+		}
+	}()
+	buf := make([]byte, ports.BlobPartSize)
+	used, part := 0, 1
+	var size int64
+	h := sha256.New()
+	flush := func() error {
+		if err := upload.UploadPart(ctx, part, bytes.NewReader(buf[:used]), int64(used)); err != nil {
+			return err
+		}
+		used = 0
+		part++
+		return nil
+	}
+	for _, file := range files {
+		r, info, err := c.cfg.Blobs.Open(ctx, a.BlockKey(file), 0, -1)
+		// Empty blocks cannot be opened under BlobStore's EOF contract.
+		if errors.Is(err, domain.ErrOutOfRange) {
+			info, err = c.cfg.Blobs.Stat(ctx, a.BlockKey(file))
+			if err == nil && info.Size == 0 {
+				continue
+			}
+			if err == nil {
+				return 0, "", domain.ErrOutOfRange
+			}
+		}
+		if err != nil {
+			return 0, "", err
+		}
+		if info.Size > total-size {
+			_ = r.Close()
+			return 0, "", fmt.Errorf("%w: artifact block size changed", domain.ErrInvalid)
+		}
+		left := info.Size
+		for left > 0 {
+			if err := ctx.Err(); err != nil {
+				_ = r.Close()
+				return 0, "", err
+			}
+			want := min(left, int64(len(buf)-used))
+			if want == 0 {
+				_ = r.Close()
+				return 0, "", fmt.Errorf("%w: artifact block size changed", domain.ErrInvalid)
+			}
+			n, err := io.ReadFull(r, buf[used:used+int(want)])
+			if err != nil {
+				_ = r.Close()
+				return 0, "", err
+			}
+			h.Write(buf[used : used+n])
+			used += n
+			size += int64(n)
+			left -= int64(n)
+			if used == len(buf) && upload != nil {
+				if err := flush(); err != nil {
+					_ = r.Close()
+					return 0, "", err
+				}
+			}
+		}
+		var extra [1]byte
+		n, err := io.ReadFull(r, extra[:])
+		cerr := r.Close()
+		if n != 0 || err != io.EOF {
+			return 0, "", fmt.Errorf("%w: artifact block size changed", domain.ErrInvalid)
+		}
+		if cerr != nil {
+			return 0, "", cerr
+		}
+	}
+	if size != total {
+		return 0, "", fmt.Errorf("%w: artifact block size changed", domain.ErrInvalid)
+	}
+	if upload == nil {
+		if _, err := c.cfg.Blobs.Put(ctx, a.BlobKey(), bytes.NewReader(buf[:used]), size); err != nil {
+			return 0, "", err
+		}
+	} else {
+		if used > 0 {
+			if err := flush(); err != nil {
+				return 0, "", err
+			}
+		}
+		if _, err := upload.Complete(ctx); err != nil {
+			return 0, "", err
+		}
+		completed = true
+	}
+	return size, "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func (c *CI) sweepArtifactBlobOrphans(ctx context.Context) {
+	log := ctxLog(ctx)
+	cutoff := c.now().Add(-domain.CIArtifactPendingMax)
+	err := c.cfg.Blobs.List(ctx, "ci/", func(b ports.BlobInfo) error {
+		if !b.ModTime.Before(cutoff) {
+			return nil
+		}
+		run, id, block, ok := artifactBlobIDs(b.Key)
+		if !ok {
+			return nil
+		}
+		a, err := c.cfg.Artifacts.GetArtifact(ctx, id)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil
+		}
+		if err == nil && a.RunID == run && a.Store == domain.CIArtifactStoreBlob && (!block || a.State == domain.CIArtifactPending) {
+			return nil
+		}
+		if err := c.cfg.Blobs.Delete(ctx, b.Key); err != nil {
+			log.Error().Err(err).Msg("ci: remove orphan artifact blob")
+		}
+		return nil
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("ci: list artifact blobs")
+	}
+	err = c.cfg.Blobs.ListMultipart(ctx, "ci/", func(m ports.MultipartInfo) error {
+		if m.Started.Before(cutoff) {
+			if err := c.cfg.Blobs.AbortMultipart(ctx, m.Key, m.ID); err != nil {
+				log.Error().Err(err).Msg("ci: abort abandoned artifact upload")
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("ci: list artifact multipart uploads")
+	}
+}
+
+func artifactBlobIDs(key string) (run, id int64, block, ok bool) {
+	rest, found := strings.CutPrefix(key, "ci/")
+	if !found {
+		return
+	}
+	r, tail, found := strings.Cut(rest, "/")
+	if !found || len(r) != 20 {
+		return
+	}
+	name, file, block := strings.Cut(tail, ".blocks/")
+	if len(name) != 20 || (block && file == "") {
+		return 0, 0, false, false
+	}
+	run, err := strconv.ParseInt(r, 10, 64)
+	if err != nil || run <= 0 {
+		return 0, 0, false, false
+	}
+	id, err = strconv.ParseInt(name, 10, 64)
+	return run, id, block, err == nil && id > 0
+}
+
+// removeArtifactRuns follows repository deletion, when records are already
+// gone. Run ids are global, so their blob prefixes cannot name another repo.
+func (c *CI) removeArtifactRuns(ctx context.Context, runIDs []int64) error {
+	var errs []error
+	if c.cfg.ArtifactFiles != nil {
+		errs = append(errs, c.cfg.ArtifactFiles.RemoveRuns(ctx, runIDs))
+	}
+	if c.cfg.Blobs != nil {
+		for _, run := range runIDs {
+			if run <= 0 {
+				continue
+			}
+			prefix := fmt.Sprintf("ci/%020d/", run)
+			errs = append(errs, c.cfg.Blobs.List(ctx, prefix, func(b ports.BlobInfo) error {
+				if err := c.cfg.Blobs.Delete(ctx, b.Key); err != nil {
+					errs = append(errs, err)
+				}
+				return nil
+			}))
+			errs = append(errs, c.cfg.Blobs.ListMultipart(ctx, prefix, func(m ports.MultipartInfo) error {
+				if err := c.cfg.Blobs.AbortMultipart(ctx, m.Key, m.ID); err != nil {
+					errs = append(errs, err)
+				}
+				return nil
+			}))
+		}
+	}
+	return errors.Join(errs...)
 }

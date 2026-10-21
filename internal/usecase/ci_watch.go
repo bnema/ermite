@@ -326,8 +326,6 @@ func (c *CI) RemoveLogs(ctx context.Context, runIDs []int64) error {
 		c.locks.Delete(id)
 	}
 	err := errors.Join(c.cfg.Logs.RemoveRuns(ctx, runIDs), c.cfg.Summaries.RemoveRuns(ctx, runIDs))
-	if c.artifactsOn() {
-		err = errors.Join(err, c.cfg.ArtifactFiles.RemoveRuns(ctx, runIDs))
-	}
+	err = errors.Join(err, c.removeArtifactRuns(ctx, runIDs))
 	return err
 }

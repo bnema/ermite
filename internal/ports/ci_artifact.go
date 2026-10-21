@@ -75,24 +75,14 @@ type CIArtifactRef struct {
 	ID    int64
 }
 
-// CIArtifactFiles keeps the contents of the CI artifacts and their staged
-// blocks, never in the metadata store. Files are named by ids only.
+// CIArtifactFiles reads and removes the artifacts recorded before the blob
+// store (ADR 0034); removed once they have all expired. *ciartifacts.Store
+// implements it. Files are named by ids only.
 type CIArtifactFiles interface {
-	// PutBlock writes src into a new block file of the artifact, synced, and
-	// returns its size. A failure of src or of the write leaves no file.
-	PutBlock(ctx context.Context, ref CIArtifactRef, file string, src io.Reader) (int64, error)
-	// RemoveBlock deletes one block file; a missing one is not an error.
-	RemoveBlock(ctx context.Context, ref CIArtifactRef, file string) error
-	// Assemble concatenates the block files in order into the content of the
-	// artifact, which replaces any earlier one whole, and returns its size and
-	// digest ("sha256:<hex>"). A missing block file is domain.ErrNotFound.
-	Assemble(ctx context.Context, ref CIArtifactRef, files []string) (size int64, digest string, err error)
 	// Open returns the content from offset, or domain.ErrNotFound.
 	Open(ctx context.Context, ref CIArtifactRef, offset int64) (io.ReadCloser, error)
 	// Remove deletes the content and the blocks of the artifact.
 	Remove(ctx context.Context, ref CIArtifactRef) error
-	// RemoveBlocks deletes the blocks of the artifact.
-	RemoveBlocks(ctx context.Context, ref CIArtifactRef) error
 	// RemoveRuns deletes the files of the runs.
 	RemoveRuns(ctx context.Context, runIDs []int64) error
 	// RunIDs lists the runs that have a directory, ArtifactIDs the artifacts

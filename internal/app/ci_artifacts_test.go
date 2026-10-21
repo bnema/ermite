@@ -25,6 +25,7 @@ import (
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
+	"bnema.dev/ermite/internal/adapters/blobdisk"
 	"bnema.dev/ermite/internal/adapters/ciartifacts"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -47,6 +48,21 @@ jobs:
     steps:
       - run: echo down
 `
+
+// newArtifactHarness supplies the P8 blob wiring through the existing test
+// hook. Production wiring remains owned by P8.
+func newArtifactHarness(t *testing.T, tweak func(*usecase.CIConfig)) *ciHarness {
+	t.Helper()
+	root := t.TempDir()
+	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
+		cfg.Blobs = blobdisk.New(blobdisk.Dir(root))
+		if tweak != nil {
+			tweak(cfg)
+		}
+	})
+	c.artifactRoot = blobdisk.Dir(root)
+	return c
+}
 
 // artifactAPI are the artifact clients of one caller.
 type artifactAPI struct {
@@ -202,11 +218,11 @@ func (c *ciHarness) usage() int64 {
 	return used
 }
 
-// artifactFiles lists every file under ci/artifacts.
+// artifactFiles lists the new CI objects under the test blob root.
 func (c *ciHarness) artifactFiles() []string {
 	c.t.Helper()
 	var out []string
-	root := ciartifacts.Dir(c.data)
+	root := filepath.Join(c.artifactRoot, "objects", "ci")
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			rel, _ := filepath.Rel(root, path)
@@ -249,7 +265,7 @@ func (c *ciHarness) newArtifactRun(r *fakeRunner, files map[string]string) (runI
 }
 
 func TestCIArtifactsPassBetweenJobs(t *testing.T) {
-	c := newCIHarness(t, nil)
+	c := newArtifactHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
 	_, upJob, downJob := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
 	up, down := c.jobArtifacts(upJob), c.jobArtifacts(downJob)
@@ -417,7 +433,7 @@ func TestCIArtifactsPassBetweenJobs(t *testing.T) {
 // AC3: a job token of another run reaches nothing of this run, and the calls
 // are refused once the job ended.
 func TestCIArtifactsAreIsolatedPerRunAndJob(t *testing.T) {
-	c := newCIHarness(t, nil)
+	c := newArtifactHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
 	runA, upA, downA := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
 	_, upB, _ := c.newArtifactRun(runner, map[string]string{"README": "two"})
@@ -505,7 +521,7 @@ func (s *shiftClock) since(t time.Time) time.Duration { return s.Now().Sub(t) }
 
 func TestCIArtifactLimits(t *testing.T) {
 	const mib = 1 << 20
-	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
+	c := newArtifactHarness(t, func(cfg *usecase.CIConfig) {
 		cfg.ArtifactLimits = ports.ArtifactLimits{Retention: 10 * 24 * time.Hour, Quota: 3 * mib, MaxSize: 2 * mib}
 	})
 	runner := c.registerRunner("alpha", "ubuntu-latest")
@@ -567,7 +583,7 @@ func TestCIArtifactLimits(t *testing.T) {
 
 func TestCIArtifactsSweep(t *testing.T) {
 	clk := &shiftClock{}
-	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
+	c := newArtifactHarness(t, func(cfg *usecase.CIConfig) {
 		cfg.Clock = clk
 		cfg.Tick = 20 * time.Millisecond
 		cfg.ArtifactLimits.Retention = 2 * 24 * time.Hour
@@ -584,6 +600,7 @@ func TestCIArtifactsSweep(t *testing.T) {
 	_, err := up.block(crashed, "x", []byte("stale"))
 	require.NoError(t, err)
 	stray := filepath.Join(ciartifacts.Dir(c.data), fmt.Sprintf("%020d", runID), fmt.Sprintf("%020d", int64(999999)))
+	require.NoError(t, os.MkdirAll(filepath.Dir(stray), 0o700))
 	require.NoError(t, os.WriteFile(stray, []byte("orphan"), 0o600))
 	strayRun := filepath.Join(ciartifacts.Dir(c.data), fmt.Sprintf("%020d", int64(888888)))
 	require.NoError(t, os.MkdirAll(strayRun, 0o700))
@@ -619,7 +636,7 @@ func TestCIArtifactsSweep(t *testing.T) {
 
 // Deleting the repository takes the records and the files of its artifacts.
 func TestCIArtifactsGoWithTheRepository(t *testing.T) {
-	c := newCIHarness(t, nil)
+	c := newArtifactHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
 	_, upJob, _ := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
 	a := c.jobArtifacts(upJob).upload("dist", []byte("x"))
@@ -648,7 +665,7 @@ func TestCIArtifactsOff(t *testing.T) {
 // before they are written, against the charges and the other writes.
 func TestCIArtifactLimitsHoldUnderConcurrency(t *testing.T) {
 	const kib, mib = 1 << 10, 1 << 20
-	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
+	c := newArtifactHarness(t, func(cfg *usecase.CIConfig) {
 		cfg.ArtifactLimits = ports.ArtifactLimits{Quota: 3 * mib, MaxSize: 2 * mib}
 	})
 	runner := c.registerRunner("alpha", "ubuntu-latest")
@@ -657,7 +674,7 @@ func TestCIArtifactLimitsHoldUnderConcurrency(t *testing.T) {
 
 	blockFiles := func() (total int64) {
 		for _, f := range c.artifactFiles() {
-			if info, err := os.Stat(filepath.Join(ciartifacts.Dir(c.data), f)); err == nil {
+			if info, err := os.Stat(filepath.Join(c.artifactRoot, "objects", "ci", f)); err == nil {
 				total += info.Size()
 			}
 		}
@@ -733,7 +750,7 @@ func TestCIArtifactLimitsHoldUnderConcurrency(t *testing.T) {
 }
 
 func TestCIArtifactCaps(t *testing.T) {
-	c := newCIHarness(t, nil)
+	c := newArtifactHarness(t, nil)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
 	_, upJob, downJob := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
 	up, down := c.jobArtifacts(upJob), c.jobArtifacts(downJob)
@@ -786,4 +803,88 @@ func TestCIArtifactCaps(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, bytes.Equal(content, body))
 	})
+}
+
+// Both storage generations remain downloadable through the real RPC handlers.
+func TestCIArtifactBlobAndLegacyDownload(t *testing.T) {
+	c := newArtifactHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	_, job, _ := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
+	up := c.jobArtifacts(job)
+	current := up.upload("new", []byte("new blob"))
+	store := c.forge.store.Artifacts()
+	a, err := store.GetArtifact(c.ctx, current.GetId())
+	require.NoError(t, err)
+	assert.Equal(t, domain.CIArtifactStoreBlob, a.Store)
+	path := filepath.Join(c.artifactRoot, "objects", filepath.FromSlash(a.BlobKey()))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "new blob", string(data))
+	_, got, err := up.download(a.ID, 0)
+	require.NoError(t, err)
+	assert.Equal(t, data, got)
+
+	// Simulate an on-disk record written by the pre-upgrade server: no store
+	// field and contents at the old id-only path, absent from the blob store.
+	legacy := up.upload("old", []byte("old disk"))
+	a, err = store.GetArtifact(c.ctx, legacy.GetId())
+	require.NoError(t, err)
+	oldPath := filepath.Join(ciartifacts.Dir(c.data), fmt.Sprintf("%020d", a.RunID), fmt.Sprintf("%020d", a.ID))
+	require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0o700))
+	require.NoError(t, os.WriteFile(oldPath, []byte("old disk"), 0o600))
+	require.NoError(t, os.Remove(filepath.Join(c.artifactRoot, "objects", filepath.FromSlash(a.BlobKey()))))
+	used, version, err := store.ArtifactUsage(c.ctx, a.Repo)
+	require.NoError(t, err)
+	a.Store = domain.CIArtifactStoreLegacy
+	require.NoError(t, store.ApplyArtifacts(c.ctx, ports.CIArtifactWrite{Repo: a.Repo, Used: used, UsageVersion: version, Put: []domain.CIArtifact{a}}))
+	_, got, err = up.download(a.ID, 0)
+	require.NoError(t, err)
+	assert.Equal(t, "old disk", string(got))
+	require.NoError(t, up.remove("old"))
+	_, err = os.Stat(oldPath)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestCIArtifactWithoutLegacyReader(t *testing.T) {
+	c := newArtifactHarness(t, func(cfg *usecase.CIConfig) { cfg.ArtifactFiles = nil })
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	_, job, _ := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
+	up := c.jobArtifacts(job)
+	a := up.upload("blob only", []byte("contents"))
+	_, got, err := up.download(a.GetId(), 0)
+	require.NoError(t, err)
+	assert.Equal(t, "contents", string(got))
+	require.NoError(t, c.forge.Repos.Delete(c.ctx, domain.Root(), c.name(c.repo)))
+	assert.Empty(t, c.artifactFiles())
+}
+
+func TestCIArtifactMultipartAndOversizedBlock(t *testing.T) {
+	c := newArtifactHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	_, job, _ := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
+	up := c.jobArtifacts(job)
+	id := up.mustCreate("multipart")
+	first, second := pattern(6<<20, 1), pattern(3<<20, 2)
+	_, err := up.block(id, "a", first)
+	require.NoError(t, err)
+	_, err = up.block(id, "b", second)
+	require.NoError(t, err)
+	committed, err := up.commit(id, "a", "b")
+	require.NoError(t, err)
+	_, err = up.finalize("multipart", committed.GetDigest())
+	require.NoError(t, err)
+	_, got, err := up.download(id, 0)
+	require.NoError(t, err)
+	assert.Equal(t, append(first, second...), got)
+	before := c.usage()
+	refused := up.mustCreate("too big")
+	_, err = up.block(refused, "a", make([]byte, domain.CIArtifactMaxBlockSize+1))
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	assert.Contains(t, err.Error(), "a block has at most 8 MiB")
+	assert.Equal(t, before, c.usage())
+	a, err := c.forge.store.Artifacts().GetArtifact(c.ctx, refused)
+	require.NoError(t, err)
+	assert.Zero(t, a.Charged)
+	require.NoError(t, blobdisk.New(c.artifactRoot).List(c.ctx, a.BlobKey()+".blocks/", func(ports.BlobInfo) error { t.Error("refused block survived"); return nil }))
 }

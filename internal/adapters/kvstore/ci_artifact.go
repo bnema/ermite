@@ -93,7 +93,7 @@ func encodeArtifact(a domain.CIArtifact) ([]byte, error) {
 		Id: a.ID, Repo: a.Repo.String(), RunId: a.RunID, Attempt: a.Attempt, JobId: a.JobID,
 		Name: a.Name, MediaType: a.MediaType, Size: a.Size, Digest: a.Digest,
 		CreatedAt: encodeTime(a.CreatedAt), ExpiresAt: encodeTime(a.ExpiresAt),
-		Charged: a.Charged, ListDigest: a.ListDigest,
+		Charged: a.Charged, ListDigest: a.ListDigest, Store: string(a.Store),
 	}
 	if a.Assignment != (domain.TokenHash{}) {
 		pb.Assignment = a.Assignment[:]
@@ -123,6 +123,7 @@ func decodeArtifact(item kv.Item) (domain.CIArtifact, error) {
 		Name: pb.GetName(), MediaType: pb.GetMediaType(), Size: pb.GetSize(), Digest: pb.GetDigest(),
 		CreatedAt: decodeTime(pb.GetCreatedAt()), ExpiresAt: decodeTime(pb.GetExpiresAt()),
 		Charged: pb.GetCharged(), ListDigest: pb.GetListDigest(), Version: item.Version,
+		Store: domain.CIArtifactStore(pb.GetStore()),
 	}
 	copy(a.Assignment[:], pb.GetAssignment())
 	for _, s := range artifactStates {

@@ -28,6 +28,8 @@ type ciHarness struct {
 	root *clients
 	wt   string
 	repo string
+	// artifactRoot is supplied by the artifact test rig until P8 wires blobs.
+	artifactRoot string
 }
 
 const ciWorkflow = `name: ci

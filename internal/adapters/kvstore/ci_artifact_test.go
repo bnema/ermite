@@ -40,12 +40,17 @@ func TestCIArtifactsRoundTripAndIndexes(t *testing.T) {
 	assert.Greater(t, id2, id1, "ids increase")
 
 	a := pendingArtifact(n, 7, id1, "dist")
+	a.Store = domain.CIArtifactStoreBlob
 	b := pendingArtifact(n, 7, id2, "logs")
 	require.NoError(t, arts.ApplyArtifacts(ctx, ports.CIArtifactWrite{Repo: n, Put: []domain.CIArtifact{a, b}}))
 
 	got, err := arts.GetArtifact(ctx, id1)
 	require.NoError(t, err)
 	assert.Equal(t, "dist", got.Name)
+	assert.Equal(t, domain.CIArtifactStoreBlob, got.Store)
+	legacy, err := arts.GetArtifact(ctx, id2)
+	require.NoError(t, err)
+	assert.Equal(t, domain.CIArtifactStoreLegacy, legacy.Store, "an absent proto field keeps the legacy layout")
 	assert.Equal(t, a.Assignment, got.Assignment)
 	assert.Equal(t, domain.CIArtifactPending, got.State)
 	assert.True(t, got.ExpiresAt.Equal(a.ExpiresAt))
