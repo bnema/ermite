@@ -276,6 +276,9 @@ func (c *CI) sweep(ctx context.Context) {
 	c.removeOrphans(ctx, "logs", "log directories", c.cfg.Logs.RunIDs, c.cfg.Logs.RemoveRuns)
 	c.removeOrphans(ctx, "summaries", "summary directories", c.cfg.Summaries.RunIDs, c.cfg.Summaries.RemoveRuns)
 	c.sweepArtifacts(ctx)
+	if c.cfg.ReleaseSweeper != nil {
+		c.cfg.ReleaseSweeper.Sweep(ctx)
+	}
 }
 
 // removeOrphans deletes what a file store (logs, summaries) holds for runs that

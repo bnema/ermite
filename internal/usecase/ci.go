@@ -186,6 +186,8 @@ type CIConfig struct {
 	// ScheduleVisit, when set, is called with each repository the scheduler
 	// looks at. Tests use it.
 	ScheduleVisit func(repo domain.RepoName)
+	// ReleaseSweeper collects abandoned release uploads during the daily sweep.
+	ReleaseSweeper ports.ReleaseSweeper
 }
 
 func (c CIConfig) withDefaults() CIConfig {

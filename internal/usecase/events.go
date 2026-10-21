@@ -171,6 +171,14 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.MirrorRecovered:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.ReleasePublished:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.ReleaseUpdated:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.ReleaseDeleted:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.ReleaseUnpublished:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.PushEvent:
 		if ev.CreatedAt.IsZero() {
 			return bufferedEvent{} // repository unknown at publish time: nobody is told
@@ -531,6 +539,14 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.MirrorRecovered:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.ReleasePublished:
+		return e.deliverRepo(ctx, w, ev.Release.Repo, false, be, out, send)
+	case domain.ReleaseUpdated:
+		return e.deliverRepo(ctx, w, ev.Release.Repo, false, be, out, send)
+	case domain.ReleaseDeleted:
+		return e.deliverRepo(ctx, w, ev.Release.Repo, false, be, out, send)
+	case domain.ReleaseUnpublished:
+		return e.deliverRepo(ctx, w, ev.Release.Repo, false, be, out, send)
 	case domain.PushEvent:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.MergeRequestOpened:
