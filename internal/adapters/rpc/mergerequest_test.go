@@ -227,3 +227,31 @@ func TestMergeRequestServiceGet(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeRequestServiceMarkReady(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		err  error
+		code connect.Code
+	}{
+		{name: "success"},
+		{name: "not a draft", err: domain.ErrPreconditionFailed, code: connect.CodeFailedPrecondition},
+		{name: "closed", err: domain.ErrPreconditionFailed, code: connect.CodeFailedPrecondition},
+		{name: "without mr:write", err: domain.ErrForbidden, code: connect.CodePermissionDenied},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mrs := mocks.NewMergeRequestService(t)
+			title, err := domain.ParseMRTitle("Ready")
+			require.NoError(t, err)
+			mrs.EXPECT().MarkReady(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1)).Return(domain.MergeRequest{Number: 1, Title: title, State: domain.MRStateOpen}, tt.err).Once()
+			res, err := (&mergeRequestService{mrs: mrs}).MarkReady(ownerCtx(), connect.NewRequest(&pb.MarkReadyRequest{Repo: "demo", Number: 1}))
+			if tt.code != 0 {
+				requireCode(t, tt.code, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "Ready", res.Msg.GetMergeRequest().GetTitle())
+		})
+	}
+}

@@ -424,7 +424,14 @@ func (s *mergeRequestService) MarkRead(ctx context.Context, req *connect.Request
 	return connect.NewResponse(&pb.MarkReadResponse{}), nil
 }
 
-// MarkReady is implemented in the next server slice.
-func (s *mergeRequestService) MarkReady(context.Context, *connect.Request[pb.MarkReadyRequest]) (*connect.Response[pb.MarkReadyResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("MarkReady is not implemented"))
+func (s *mergeRequestService) MarkReady(ctx context.Context, req *connect.Request[pb.MarkReadyRequest]) (*connect.Response[pb.MarkReadyResponse], error) {
+	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	mr, err := s.mrs.MarkReady(ctx, caller(ctx), name, req.Msg.GetNumber())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.MarkReadyResponse{MergeRequest: mergeRequestToPB(mr)}), nil
 }

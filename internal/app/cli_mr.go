@@ -291,7 +291,7 @@ func newMRCmd(env *cliEnv) *cobra.Command {
 	}
 	mr.AddCommand(
 		newMRCreateCmd(env), newMRListCmd(env), newMRShowCmd(env), newMRCommentCmd(env),
-		newMRResolveCmd(env), newMREditCommentCmd(env), newMRDeleteCommentCmd(env), newMRMergeCmd(env), newMRCloseCmd(env),
+		newMRResolveCmd(env), newMREditCommentCmd(env), newMRDeleteCommentCmd(env), newMRMergeCmd(env), newMRCloseCmd(env), newMRReadyCmd(env),
 	)
 	return mr
 }
@@ -1085,7 +1085,7 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 	var mode string
 	var deleteBranch bool
 	var head string
-	var auto, cancelAuto bool
+	var auto, cancelAuto, ignoreChecks bool
 	cmd := &cobra.Command{
 		Use:   "merge <repo> <number>",
 		Short: "Merge a merge request",
@@ -1105,6 +1105,9 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			"required: give the full id of the head that `ermite mr show <repo> <number>` printed when you\n" +
 			"reviewed the change. If the branch moved since, the merge is refused: review again. Needs the\n" +
 			"mr:merge scope.\n\n" +
+			"A merge needs the checks on the head to pass: none failed, none queued or running. A head\n" +
+			"without checks can be merged. --ignore-checks merges anyway and needs the mr:force-merge scope\n" +
+			"(the cli preset has it, the agent preset does not).\n\n" +
 			"The merge answers as soon as the target branch has moved. --delete-branch asks the server to delete\n" +
 			"the source branch right after, in the background. The merge is refused when the branch is the\n" +
 			"default branch or used by another open merge request. If the deletion later fails (the branch\n" +
@@ -1123,6 +1126,9 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 	cmd.Flags().BoolVar(&deleteBranch, "delete-branch", false, "delete the source branch after the merge")
 	cmd.Flags().BoolVar(&auto, "auto", false, "merge by itself once the checks passed (needs `repo edit --allow-auto-merge`)")
 	cmd.Flags().BoolVar(&cancelAuto, "cancel-auto", false, "cancel the pending auto-merge")
+	cmd.Flags().BoolVar(&ignoreChecks, "ignore-checks", false, "merge despite failing or unfinished checks (needs mr:force-merge)")
+	cmd.MarkFlagsMutuallyExclusive("ignore-checks", "auto")
+	cmd.MarkFlagsMutuallyExclusive("ignore-checks", "cancel-auto")
 	cmd.MarkFlagsMutuallyExclusive("auto", "cancel-auto")
 	cmd.MarkFlagsMutuallyExclusive("cancel-auto", "delete-branch")
 	cmd.MarkFlagsMutuallyExclusive("cancel-auto", "head")
@@ -1156,13 +1162,18 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			return err
 		}
 		ctx := env.ctx(cmd)
+		if ignoreChecks {
+			if err := requireFeature(ctx, c, client.FeatureIgnoreChecks, "cannot bypass checks (--ignore-checks)"); err != nil {
+				return err
+			}
+		}
 		if pbMode == ermite.MergeMode_MERGE_MODE_MERGE_COMMIT {
 			if err := requireFeature(ctx, c, client.FeatureMergeability, "has no merge commit mode (--mode merge)"); err != nil {
 				return err
 			}
 		}
 		res, err := c.MergeRequests().MergeMergeRequest(ctx, connect.NewRequest(&ermite.MergeMergeRequestRequest{
-			Repo: args[0], Number: n, Mode: pbMode, HeadId: head, DeleteSourceBranch: deleteBranch,
+			Repo: args[0], Number: n, Mode: pbMode, HeadId: head, DeleteSourceBranch: deleteBranch, IgnoreChecks: ignoreChecks,
 		}))
 		if err != nil {
 			return c.Describe(err)
@@ -1279,6 +1290,37 @@ func newMRCloseCmd(env *cliEnv) *cobra.Command {
 			return c.Describe(err)
 		}
 		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "closed", c.URL())
+	}
+	return cmd
+}
+
+func newMRReadyCmd(env *cliEnv) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "ready <repo> <number>",
+		Short:             "Mark a draft merge request ready for review",
+		Long:              "Remove the WIP: or [WIP] prefix from the title so the merge request can be merged.\nFails if it is not open or not a draft. Needs the mr:write scope.\nPrints a confirmation, then the full web URL on its own line." + jsonMRHelp,
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeMRRepoThenNumber(env),
+	}
+	asJSON := addJSONFlag(cmd)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		n, err := parseNumber(args[1])
+		if err != nil {
+			return err
+		}
+		c, err := env.client(cmd)
+		if err != nil {
+			return err
+		}
+		ctx := env.ctx(cmd)
+		if err := requireFeature(ctx, c, client.FeatureMarkReady, "cannot mark drafts ready (mr ready)"); err != nil {
+			return err
+		}
+		res, err := c.MergeRequests().MarkReady(ctx, connect.NewRequest(&ermite.MarkReadyRequest{Repo: args[0], Number: n}))
+		if err != nil {
+			return c.Describe(err)
+		}
+		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "marked ready", c.URL())
 	}
 	return cmd
 }
