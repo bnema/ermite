@@ -12,6 +12,8 @@ const (
 	FeatureMarkReady = "merge_requests.ready"
 	// FeatureIgnoreChecks permits merging with checks bypassed.
 	FeatureIgnoreChecks = "merge_requests.ignore_checks"
+	// FeatureReleases is ReleaseService (`ermite release`).
+	FeatureReleases = "releases"
 	// FeatureRepoUpdate is RepoService.UpdateRepo (`ermite repo edit`).
 	FeatureRepoUpdate = "repo.update"
 	// FeatureEventsResume is EventService.Watch with resume_after, which
@@ -69,7 +71,7 @@ const (
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge}
+	return []string{FeatureReleases, FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

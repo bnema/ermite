@@ -139,15 +139,15 @@ func TestDescribeBoundsLongMessages(t *testing.T) {
 func TestMissingFeatures(t *testing.T) {
 	assert.Empty(t, client.MissingFeatures(client.UsedFeatures()))
 	assert.Equal(t,
-		[]string{client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureIssues, client.FeatureMergeability, client.FeatureSigningKey, client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners, client.FeatureCISecrets, client.FeatureCIDispatch, client.FeatureCIWorkflows, client.FeatureCIArtifacts, client.FeatureCommitSignatures, client.FeatureAutoMerge},
+		[]string{client.FeatureReleases, client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureIssues, client.FeatureMergeability, client.FeatureSigningKey, client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners, client.FeatureCISecrets, client.FeatureCIDispatch, client.FeatureCIWorkflows, client.FeatureCIArtifacts, client.FeatureCommitSignatures, client.FeatureAutoMerge},
 		client.MissingFeatures([]string{client.FeatureRepoUpdate, client.FeatureSession, client.FeaturePasskeys, "other"}))
 	assert.Equal(t, []string{client.FeatureSigningKey}, client.MissingFeatures([]string{
-		client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureIssues, client.FeatureMergeability, client.FeatureSession,
+		client.FeatureReleases, client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureIssues, client.FeatureMergeability, client.FeatureSession,
 		client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners, client.FeatureCISecrets, client.FeatureCIDispatch, client.FeatureCIWorkflows,
 		client.FeatureCIArtifacts, client.FeaturePasskeys, client.FeatureCommitSignatures, client.FeatureAutoMerge,
 	}))
 	assert.Equal(t, []string{client.FeaturePasskeys}, client.MissingFeatures([]string{
-		client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureIssues, client.FeatureMergeability, client.FeatureSigningKey, client.FeatureSession,
+		client.FeatureReleases, client.FeatureRepoUpdate, client.FeatureEventsResume, client.FeatureMergeRequests, client.FeatureMergeDeleteBranch, client.FeatureIssues, client.FeatureMergeability, client.FeatureSigningKey, client.FeatureSession,
 		client.FeatureTokenBranchPrefixes, client.FeatureCIRuns, client.FeatureCIRunners, client.FeatureCISecrets, client.FeatureCIDispatch, client.FeatureCIWorkflows, client.FeatureCIArtifacts, client.FeatureCommitSignatures, client.FeatureAutoMerge,
 	}))
 	assert.Equal(t, client.UsedFeatures(), client.MissingFeatures(nil))

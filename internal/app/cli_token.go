@@ -145,6 +145,15 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "note: the server has no issues feature, so the token has no issue:write scope")
 			}
 		}
+		if slices.Contains(req.Scopes, ermite.Scope_SCOPE_RELEASE_WRITE) {
+			if err := requireReleases(env.ctx(cmd), c); err != nil {
+				if !errors.Is(err, errNoReleases) || explicitScope(scopes, ermite.Scope_SCOPE_RELEASE_WRITE) {
+					return fmt.Errorf("%w (needed for the release:write scope; nothing was created)", err)
+				}
+				req.Scopes = slices.DeleteFunc(req.Scopes, func(s ermite.Scope) bool { return s == ermite.Scope_SCOPE_RELEASE_WRITE })
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "note: the server has no releases feature, so the token has no release:write scope")
+			}
+		}
 		res, err := c.Tokens().CreateToken(env.ctx(cmd), connect.NewRequest(req))
 		if err != nil {
 			return c.Describe(err)

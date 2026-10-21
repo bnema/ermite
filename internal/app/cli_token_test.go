@@ -4,6 +4,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -174,7 +175,9 @@ func TestTokenCreatePresetExpansionOnTheWire(t *testing.T) {
 		"cli":   client.AllScopes(),
 	} {
 		t.Run(preset, func(t *testing.T) {
-			f := &fakeAPI{getVersion: withIssues, createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
+			f := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+				return &ermite.GetVersionResponse{Features: []string{"issues", "releases"}}, nil
+			}, createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
 				return &ermite.CreateTokenResponse{Token: &ermite.Token{Id: "t", Scopes: r.GetScopes()}, Secret: "s"}, nil
 			}}
 			runCLI(t, envFor(f.serve(t)), "", "token", "create", "x", "--preset", preset).ok(t)
@@ -272,4 +275,40 @@ func TestTokenCompletion(t *testing.T) {
 	assert.Contains(t, res.stdout, "repo:read")
 	res = runCLI(t, vars, "", "__complete", "token", "create", "x", "--repo", "").ok(t)
 	assert.Contains(t, res.stdout, "alpha")
+}
+
+func TestTokenReleaseWriteFeatureGuard(t *testing.T) {
+	for _, supported := range []bool{false, true} {
+		t.Run(fmt.Sprint(supported), func(t *testing.T) {
+			f := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+				features := []string{"issues"}
+				if supported {
+					features = append(features, "releases")
+				}
+				return &ermite.GetVersionResponse{Features: features}, nil
+			}, createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
+				return &ermite.CreateTokenResponse{Token: &ermite.Token{Id: "t", Scopes: r.GetScopes()}, Secret: "s"}, nil
+			}}
+			vars := envFor(f.serve(t))
+			res := runCLI(t, vars, "", "token", "create", "daily", "--preset", "cli").ok(t)
+			got := lastCreateToken(t, f).GetScopes()
+			if supported {
+				assert.Contains(t, got, ermite.Scope_SCOPE_RELEASE_WRITE)
+				assert.NotContains(t, res.stderr, "no release:write")
+			} else {
+				assert.NotContains(t, got, ermite.Scope_SCOPE_RELEASE_WRITE)
+				assert.Contains(t, res.stderr, "the server has no releases feature, so the token has no release:write scope")
+			}
+			before, _ := f.snapshot()
+			res = runCLI(t, vars, "", "token", "create", "explicit", "--scope", "release:write")
+			if supported {
+				res.ok(t)
+			} else {
+				require.ErrorIs(t, res.err, errNoReleases)
+				after, _ := f.snapshot()
+				assert.Equal(t, len(before)+1, len(after))
+				assert.Equal(t, "GetVersion", after[len(after)-1])
+			}
+		})
+	}
 }

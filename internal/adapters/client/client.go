@@ -80,6 +80,11 @@ func (c *Client) Artifacts() ermiteconnect.ArtifactServiceClient {
 	return ermiteconnect.NewArtifactServiceClient(c.http, c.base, c.opts...)
 }
 
+// Releases returns the ReleaseService client.
+func (c *Client) Releases() ermiteconnect.ReleaseServiceClient {
+	return ermiteconnect.NewReleaseServiceClient(c.http, c.base, c.opts...)
+}
+
 // Tokens returns the TokenService client.
 func (c *Client) Tokens() ermiteconnect.TokenServiceClient {
 	return ermiteconnect.NewTokenServiceClient(c.http, c.base, c.opts...)

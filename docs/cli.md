@@ -96,6 +96,51 @@ Issues need a server with the `issues` feature and `ermite repo edit <repo> --is
 
 Mirrors push repositories to a remote over SSH, never forcing. See [Push mirror](mirror.md).
 
+## Releases
+
+Releases need a server advertising the `releases` feature. Published releases follow
+repository visibility; drafts are visible only to release writers. Writes need
+`release:write` (included in the `cli` token preset); branch-limited tokens cannot
+write releases. On an older server the preset drops this scope with a note, while
+an explicit `--scope release:write` fails before creating a token.
+
+```sh
+ermite release create <repo> <tag> [--title T] [--notes TEXT | --notes-file F] [--target REF] [--draft] [--prerelease] [--latest] [--asset FILE[#LABEL]]… [--json]
+ermite release list <repo> [--limit N] [--json]
+ermite release view <repo> <tag|id|latest> [--json | --notes]
+ermite release edit <repo> <tag|id> [--title T] [--notes TEXT | --notes-file F] [--tag NEW] [--target REF] [--draft | --publish] [--prerelease | --no-prerelease] [--latest]
+ermite release delete <repo> <tag|id> [--yes]
+ermite release upload <repo> <tag|id> FILE[#LABEL]… [--clobber] [--content-type T]
+ermite release download <repo> <tag|id|latest> [--pattern GLOB]… [--name N]… [--dir D]
+```
+
+All-digit selectors are release ids; other selectors are tags. `latest` selects
+the latest release for view/download. `--latest` pins a release as latest.
+Non-draft releases require an existing tag, or `--target` to create one; an
+existing tag is never moved. `--notes-file -` reads Markdown from standard input.
+Edit changes only supplied fields: `--title=''` and `--notes=''` clear them;
+`--publish` and `--no-prerelease` clear the corresponding flags.
+
+Create uploads all `--asset` files, then prints the release web URL and id.
+Each asset's name is the file basename; an optional `#LABEL` sets its display
+label (quote it). Upload accepts multiple file arguments, including shell-expanded
+globs. For create, repeat `--asset` for each file. Content type is detected from
+the extension, or sniffed from the first bytes; upload's `--content-type` overrides
+it. A duplicate name fails with a hint to use `--clobber`. A failed upload after
+create leaves the release in place and reports its id.
+
+List defaults to 30 entries and follows server pagination up to `--limit`.
+View shows fields, notes and an asset table; `--notes` prints Markdown alone.
+Create, list and view support stable JSON (fields are listed in their help).
+Delete removes the release and assets, not its Git tag; it asks for confirmation
+only on a terminal unless `--yes` is given.
+
+Download defaults to all assets, into `--dir` (default `.`). Repeat `--name` or
+quote and repeat `--pattern` to select a union of names and globs. Files are never
+overwritten. One interrupted stream is resumed automatically from the bytes
+already received; size and SHA-256 digest are verified. Failed or mismatching
+downloads are removed. Resume is within the command, not across invocations.
+
 ## Output
 
 - `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list`, `mirror key|config|status` and `version`.
