@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -48,7 +48,7 @@ jobs:
       # treat it as a repository and `git diff a b` compares the two files instead.
       - name: Trust the workspace
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -90,7 +90,7 @@ jobs:
         with:
           # buf breaking compares with the base branch.
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
