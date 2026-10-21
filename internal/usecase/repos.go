@@ -24,7 +24,8 @@ type Repos struct {
 	ci        ports.CIRunCleaner // nil: no CI logs to remove
 	autoMerge ports.AutoMergeTrigger
 	mergeGate ports.MergeGate
-	mirror    ports.MirrorTrigger // nil: no outbound mirror
+	mirror    ports.MirrorTrigger      // nil: no outbound mirror
+	releases  ports.ReleaseRepoCleaner // nil: no release blobs to remove
 }
 
 var _ ports.RepoService = (*Repos)(nil)
@@ -39,6 +40,13 @@ func NewRepos(meta ports.RepoMetaStore, git ports.GitRepos, bus ports.EventBus, 
 // before the first request; it returns r.
 func (r *Repos) WithMirror(t ports.MirrorTrigger) *Repos {
 	r.mirror = t
+	return r
+}
+
+// WithReleases makes Delete remove release blobs after metadata deletion.
+// Call it before the first request; it returns r.
+func (r *Repos) WithReleases(c ports.ReleaseRepoCleaner) *Repos {
+	r.releases = c
 	return r
 }
 

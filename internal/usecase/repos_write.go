@@ -226,8 +226,19 @@ func (r *Repos) Delete(ctx context.Context, p domain.Principal, name domain.Repo
 			log.Warn().Err(err).Str("repo", name.String()).Msg("list the CI runs of the repository; their logs are left to the sweep")
 		}
 	}
+	var assets []domain.ReleaseAsset
+	if r.releases != nil {
+		var err error
+		assets, err = r.releases.AssetsOf(ctx, name)
+		if err != nil {
+			log.Warn().Err(err).Str("repo", name.String()).Msg("list release assets; orphan sweep will remove their blobs")
+		}
+	}
 	if err := r.meta.Delete(ctx, name); err != nil {
 		return fmt.Errorf("delete metadata of %q: %w", name, err)
+	}
+	if r.releases != nil {
+		r.releases.OnRepoDeleted(context.WithoutCancel(ctx), name, assets)
 	}
 	if r.ci != nil {
 		r.ci.ForgetRepo(name)

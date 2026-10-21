@@ -98,6 +98,12 @@ type ReleaseService interface {
 	Usage(ctx context.Context, p domain.Principal, repo domain.RepoName) (ReleaseUsage, error)
 }
 
+// ReleaseTagWriter creates lightweight tags without moving existing refs.
+// *gitcli.Git implements it. An existing ref returns domain.ErrAlreadyExists.
+type ReleaseTagWriter interface {
+	CreateTag(ctx context.Context, repo domain.RepoName, tag string, target domain.ObjectID) error
+}
+
 // ReleaseTagTrigger handles tag deletion; *usecase.Releases implements it.
 type ReleaseTagTrigger interface {
 	OnRefsMoved(ctx context.Context, repo domain.RepoName, updates []domain.RefUpdate)

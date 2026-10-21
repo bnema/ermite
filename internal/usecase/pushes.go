@@ -17,20 +17,21 @@ import (
 
 // Pushes are the use cases around a Git push.
 type Pushes struct {
-	links   ports.IssueLinkTrigger
-	mirror  ports.MirrorTrigger // nil: no outbound mirror
-	meta    ports.RepoMetaStore
-	repos   *Repos
-	git     ports.GitRepos
-	bus     ports.EventBus
-	clock   ports.Clock
-	maint   ports.MaintenanceScheduler
-	auth    ports.Revalidator
-	fresh   ports.RepoFreshener       // nil: the reader needs no telling
-	ci      ports.WorkflowTrigger     // nil: no CI
-	trees   ports.PushTreeReader      // nil: pushes by job tokens are refused
-	tips    ports.CIRefTipStore       // nil: who pushes a ref is not recorded
-	mergeab ports.MergeabilityTrigger // nil: mergeability is not tracked
+	releases ports.ReleaseTagTrigger
+	links    ports.IssueLinkTrigger
+	mirror   ports.MirrorTrigger // nil: no outbound mirror
+	meta     ports.RepoMetaStore
+	repos    *Repos
+	git      ports.GitRepos
+	bus      ports.EventBus
+	clock    ports.Clock
+	maint    ports.MaintenanceScheduler
+	auth     ports.Revalidator
+	fresh    ports.RepoFreshener       // nil: the reader needs no telling
+	ci       ports.WorkflowTrigger     // nil: no CI
+	trees    ports.PushTreeReader      // nil: pushes by job tokens are refused
+	tips     ports.CIRefTipStore       // nil: who pushes a ref is not recorded
+	mergeab  ports.MergeabilityTrigger // nil: mergeability is not tracked
 }
 
 var (
@@ -44,6 +45,9 @@ var (
 func NewPushes(meta ports.RepoMetaStore, repos *Repos, git ports.GitRepos, bus ports.EventBus, clock ports.Clock, maint ports.MaintenanceScheduler, auth ports.Revalidator) *Pushes {
 	return &Pushes{meta: meta, repos: repos, git: git, bus: bus, clock: clock, maint: maint, auth: auth}
 }
+
+// WithReleases enables synchronous release tag-deletion handling before the first push.
+func (u *Pushes) WithReleases(t ports.ReleaseTagTrigger) *Pushes { u.releases = t; return u }
 
 // WithIssueLinks enables synchronous best-effort issue indexing before the first push.
 func (u *Pushes) WithIssueLinks(t ports.IssueLinkTrigger) *Pushes { u.links = t; return u }
@@ -271,6 +275,9 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	}
 	if u.links != nil {
 		u.links.OnBranchesMoved(ctx, name, updates)
+	}
+	if u.releases != nil {
+		u.releases.OnRefsMoved(ctx, name, updates)
 	}
 	u.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now,
