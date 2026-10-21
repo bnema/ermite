@@ -51,6 +51,44 @@ const (
 	commitTries = 5
 )
 
+// ciArtifactUploadSlots bounds the artifact block uploads and assemblies that
+// hold an 8 MiB buffer at the same time, server-wide.
+const ciArtifactUploadSlots = 16
+
+// blockBufs pools the 8 MiB buffers of uploads and assemblies. CIArtifactMaxBlockSize
+// and ports.BlobPartSize are both 8 MiB.
+var blockBufs = sync.Pool{New: func() any {
+	b := make([]byte, max(domain.CIArtifactMaxBlockSize, ports.BlobPartSize))
+	return &b
+}}
+
+// acquireUploadSlot takes an upload slot without waiting; release frees it.
+func (c *CI) acquireUploadSlot() (release func(), err error) {
+	if c.uploadSlots == nil {
+		return func() {}, nil
+	}
+	select {
+	case c.uploadSlots <- struct{}{}:
+		return func() { <-c.uploadSlots }, nil
+	default:
+		return nil, fmt.Errorf("%w: too many artifact uploads in progress, retry", domain.ErrResourceExhausted)
+	}
+}
+
+// waitUploadSlot takes an upload slot, waiting for one until ctx ends: a
+// commit must not fail because block uploads are in flight.
+func (c *CI) waitUploadSlot(ctx context.Context) (release func(), err error) {
+	if c.uploadSlots == nil {
+		return func() {}, nil
+	}
+	select {
+	case c.uploadSlots <- struct{}{}:
+		return func() { <-c.uploadSlots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 var (
 	// errNoArtifactWrite ends updateArtifacts without a write.
 	errNoArtifactWrite = errors.New("no write")
@@ -467,6 +505,12 @@ func (c *CI) UploadJobArtifactBlock(ctx context.Context, secret, jobID string, a
 	if a.State != domain.CIArtifactPending {
 		return 0, errCommitted(a.ID)
 	}
+	// The slot is taken before anything is reserved, read or allocated.
+	freeSlot, err := c.acquireUploadSlot()
+	if err != nil {
+		return 0, err
+	}
+	defer freeSlot()
 	// Every byte is reserved before it is written, against the charges and
 	// the other writes in flight (a block it replaces counts until the record
 	// drops it): nothing beyond the limits ever reaches the disk.
@@ -1070,7 +1114,9 @@ func (c *CI) sweepArtifactOrphans(ctx context.Context) {
 func (c *CI) putUnsized(ctx context.Context, key string, r io.Reader) (int64, error) {
 	// A fixed backing array prevents bytes.Buffer's geometric growth from
 	// allocating beyond the block bound. Probe the next byte separately.
-	buf := make([]byte, domain.CIArtifactMaxBlockSize)
+	bp := blockBufs.Get().(*[]byte)
+	defer blockBufs.Put(bp)
+	buf := (*bp)[:domain.CIArtifactMaxBlockSize]
 	n, err := io.ReadFull(r, buf)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		return 0, err
@@ -1101,6 +1147,11 @@ func (c *CI) removeBlobBlocks(ctx context.Context, a domain.CIArtifact) error {
 // assembleBlobs keeps one 8 MiB part in memory, even when a block crosses
 // part boundaries or is repeated in the commit list.
 func (c *CI) assembleBlobs(ctx context.Context, a domain.CIArtifact, files []string, total int64) (int64, string, error) {
+	freeSlot, err := c.waitUploadSlot(ctx)
+	if err != nil {
+		return 0, "", err
+	}
+	defer freeSlot()
 	var upload ports.MultipartUpload
 	if total > ports.BlobPartSize {
 		var err error
@@ -1117,7 +1168,9 @@ func (c *CI) assembleBlobs(ctx context.Context, a domain.CIArtifact, files []str
 			}
 		}
 	}()
-	buf := make([]byte, ports.BlobPartSize)
+	bp := blockBufs.Get().(*[]byte)
+	defer blockBufs.Put(bp)
+	buf := (*bp)[:ports.BlobPartSize]
 	used, part := 0, 1
 	var size int64
 	h := sha256.New()

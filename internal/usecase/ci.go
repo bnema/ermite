@@ -249,9 +249,12 @@ func (c CIConfig) withDefaults() CIConfig {
 // calls (a runner's update and an owner's cancel) never lose one another's
 // write. Assignment takes the assignment lock before the lock of the run.
 type CI struct {
-	cfg   CIConfig
-	boot  time.Time
-	queue chan ciTrigger
+	cfg CIConfig
+	// uploadSlots bounds the artifact uploads and assemblies buffering a
+	// block in memory at once; nil (hand-built CI in tests) means unbounded.
+	uploadSlots chan struct{}
+	boot        time.Time
+	queue       chan ciTrigger
 	// runEvents are the requested and completed events of runs, for the
 	// workflow_run workflows (ci_workflowrun.go).
 	runEvents chan runEvent
@@ -320,7 +323,7 @@ func NewCI(ctx context.Context, cfg CIConfig) *CI {
 	cfg = cfg.withDefaults()
 	run, stop := context.WithCancel(context.WithoutCancel(ctx))
 	return &CI{
-		pushes: map[domain.RepoName]int{}, pulls: map[pullKey]int{}, autoMerge: cfg.AutoMerge,
+		pushes: map[domain.RepoName]int{}, uploadSlots: make(chan struct{}, ciArtifactUploadSlots), pulls: map[pullKey]int{}, autoMerge: cfg.AutoMerge,
 		cfg: cfg, boot: cfg.Clock.Now(), queue: make(chan ciTrigger, cfg.TriggerQueue), runEvents: make(chan runEvent, cfg.TriggerQueue), sched: newScheduler(cfg.Clock.Now()), pull: newPullQueue(cfg.TriggerQueue, cfg.PullRefreshes, cfg.PullAttempts),
 		ctx: run, stop: stop, flows: newWfCache(64), remoteSlots: make(chan struct{}, cfg.RemoteConcurrency), remoteCache: newRefsCache(),
 		heartbeats: map[string]time.Time{}, seen: map[string]time.Time{}, polls: map[string]pollRecord{},
