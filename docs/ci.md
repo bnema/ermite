@@ -44,7 +44,7 @@ Like `gh workflow disable`: a disabled workflow starts no run for any event (`pu
 - A disabled **reusable** workflow (`on: workflow_call`) can still be called with `uses:` from an enabled workflow: it then runs inside the caller's run, not as a run of its own, as on GitHub. Disable the caller to stop it.
 - The state is checked again in the transaction that stores a run, so a disable takes effect for every run not yet stored, even one being planned at that moment.
 
-The **Actions** tab of a repository shows the same. With `failing_checks_block` on (default), a merge waits for every check to pass. Turn it off with `ermite repo edit <repo> --failing-checks-block=false`.
+The **Actions** tab of a repository shows the same. A merge needs passing checks on the head: none failed, queued or running. A head with no checks can merge. `ermite mr merge <repo> <n> --head <id> --ignore-checks` bypasses checks, needs `mr:force-merge`, and cannot be combined with `--auto`.
 
 ## Trust
 

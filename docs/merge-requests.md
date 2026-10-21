@@ -14,6 +14,8 @@ Naming an issue with `#N` links it, and `Fixes #N` closes it on merge: see [issu
 merge request web URL on its own line. With `--json`, merge request objects
 (create, show, list, close and merge) include `url` alongside the other fields.
 
+A draft cannot merge. `ermite mr ready <repo> <n>` removes the `WIP:` or `[WIP]` title prefix; it needs `mr:write` and an open draft.
+
 ## Merge modes
 
 | Mode | Result | Needs |
@@ -25,10 +27,10 @@ merge request web URL on its own line. With `--json`, merge request objects
 - The server never rebases. A branch behind its target merges with `squash` or `merge`, or is rebased and pushed again for a fast-forward.
 - The server checks the mode again when it merges, whatever the badge showed, and refuses with the reason (the target moved, a conflict with the paths).
 - The merge is also refused when the branch moved since the reviewed `--head`.
-- With `failing_checks_block` on (default), the merge is refused while a check of the head failed or is still running.
+- A merge needs passing checks on the head: no failed, queued or running checks. A head with no checks can merge. `--ignore-checks` bypasses this, needs `mr:force-merge`, and cannot be combined with `--auto` or `--cancel-auto`. The owner web merge form offers **Ignore checks** when checks fail or are pending.
 - The merge answers as soon as the target has moved. `--delete-branch` then deletes the source branch right after, in the background (unless it is the default branch or another open request uses it); if the branch moved meanwhile, it is kept.
 - Every mode is allowed by default, including in repositories that had only `fast-forward` and `squash` before `merge` existed: those gain `merge`. Disable a mode per repository with `ermite repo edit <repo> --merge-modes fast-forward,squash` (list the modes to keep).
-- Scopes: `mr:write` to open and comment, `mr:review` to give a verdict, `mr:merge` to merge.
+- Scopes: `mr:write` to open and comment, `mr:review` to give a verdict, `mr:merge` to merge, `mr:force-merge` to bypass checks. The `cli` preset includes the bypass scope; `agent` does not. Adding `--scope mr:merge` lets an agent merge only with passing checks.
 
 ## Signed commits
 
@@ -47,7 +49,7 @@ A merge request can merge by itself once its checks passed.
 
 - The repository setting `allow_auto_merge` is off by default: `ermite repo edit <repo> --allow-auto-merge` (`=false` to turn it off).
 - Enable it with `ermite mr merge <repo> <n> --head <commit> --auto --mode squash` (`--head` is required, as for a plain merge; a head that moved is refused with "branch moved"), or with **Merge when ready** in the web merge box. Its separate mode choice offers every repository-allowed mode, even while the head conflicts or is behind. Auto-merge keeps the source branch; the delete-source checkbox applies only to an immediate merge. It needs `mr:merge` and a server with CI. Re-enabling replaces the previous mode and enabler.
-- The server merges when CI has settled on the head with every run complete and at least one check passed. A failing or unfinished check always blocks, whatever `failing_checks_block` says. The mode must still be allowed.
+- The server merges when CI has settled on the head with every run complete and at least one check passed. A failing or unfinished check always blocks. The mode must still be allowed.
 - The merge is made as the person who enabled it. Their token is checked at every evaluation, even while checks are pending, and again at merge time under the merge lock: it must still be valid and allow `mr:merge` on the repository and the target branch. A token that no longer qualifies cancels the auto-merge.
 - A pending auto-merge shows in `mr show` (`auto_merge`), in the web merge box and as `merge_request_auto_merge_enabled` in `ermite watch`. A merge request merged this way has `auto_merged` true.
 - A failing, unfinished or conflicting head waits with auto-merge still on. A re-run or a target fix can make it pass; pushing a new source head cancels the recorded intent (the reason names the new head).

@@ -37,9 +37,11 @@ git push https://git.example.com/<repo>.git main             # password = token,
 2. Read: `ermite mr show <repo> <n> --diff --json`. Keep `head_id`; take line numbers from the hunks.
 3. Comment on a line: `ermite mr comment <repo> <n> -m "text" --path <file> --line <n> --side new`; `--line 10-14` covers a range on one side. Without `--path` the comment is general. The line must appear in the diff. Notes are Markdown; `^N` refers to note N.
 4. End a review with a verdict (needs `mr:review`): `--approve` or `--request-changes`, alone or with a message. Verdicts are informative and cannot be edited; a new verdict replaces the previous one.
-5. Merge only when asked: `ermite mr merge <repo> <n> --head <head_id>`, with `--mode squash` for one commit or `--mode merge` for a merge commit (both signed by the server's key, see `ermite signing-key show`) and `--delete-branch` to delete the source branch afterwards.
+5. Merge only when the human asks explicitly. If the request is a draft, run `ermite mr ready <repo> <n>` first (removes the `WIP:` or `[WIP]` prefix; needs `mr:write`). Merge: `ermite mr merge <repo> <n> --head <head_id>`, with `--mode squash` for one commit or `--mode merge` for a merge commit (both signed by the server's key, see `ermite signing-key show`) and `--delete-branch` to delete the source branch afterwards.
 
-To merge once CI passed instead of now, add `--auto` (`ermite mr merge <repo> <n> --head <head_id> --auto --mode squash`; needs `repo edit --allow-auto-merge`); `--cancel-auto` cancels it.
+To merge once CI passed automatically, add `--auto` (`ermite mr merge <repo> <n> --head <head_id> --auto --mode squash`; needs `repo edit --allow-auto-merge`); `--cancel-auto` cancels it.
+
+A merge needs passing checks on the head (none failed, queued or running); a head with no checks can merge. Never use `--ignore-checks` unless the human asks for it. It needs `mr:force-merge` and cannot be combined with `--auto` or `--cancel-auto`.
 
 The merge is refused when the branch moved since `head_id` (review again) or, for `fast-forward`, when the target is not an ancestor of the head (rebase and push again, or use `squash`/`merge`), or when `squash`/`merge` conflict. `ermite mr show` prints the `mergeability` line (up to date, behind by N, conflict with paths). The repository may allow only some merge modes.
 
@@ -63,7 +65,7 @@ Open one: `ermite mr create <repo> --source <branch> --title "..."`. After new p
 ermite token create my-agent --preset agent --repo <repo> --expires 30d
 ```
 
-The secret is printed once. Presets: `agent` (push, open and comment on merge requests; no verdicts), `ci` (read), `cli` (everything). Add `--scope mr:review` to let an agent give verdicts, `--scope mr:merge` to let it merge. A token can never grant more than the token that creates it. Full scope list: [CLI.md](CLI.md).
+The secret is printed once. Presets: `agent` (push, open and comment on merge requests; no verdicts), `ci` (read), `cli` (every scope, including `mr:force-merge`). Add `--scope mr:review` to let an agent give verdicts, `--scope mr:merge` to let it merge only with passing checks. The `agent` preset does not include `mr:force-merge`. A token can never grant more than the token that creates it. Full scope list: [CLI.md](CLI.md).
 
 ## Follow events
 

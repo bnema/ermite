@@ -11,10 +11,10 @@ Errors are one line on standard error (`ermite: ...`) with exit status 1. `--jso
 | `repo list [--json]` | none | repositories you can see |
 | `repo show <name> [--json]` | none | |
 | `repo create <name> [--description TEXT] [--visibility public]` | `repo:write` | private by default |
-| `repo edit <name> [--description TEXT] [--visibility V] [--default-branch B] [--merge-modes fast-forward,squash,merge] [--failing-checks-block=false] [--allow-auto-merge]` | `repo:admin` | only the given flags change; every merge mode is allowed by default, list the ones to keep; `--description ""` clears it; the branch must exist |
+| `repo edit <name> [--description TEXT] [--visibility V] [--default-branch B] [--merge-modes fast-forward,squash,merge] [--allow-auto-merge]` | `repo:admin` | only the given flags change; every merge mode is allowed by default, list the ones to keep; `--description ""` clears it; the branch must exist |
 | `repo delete <name> [--yes]` | `repo:admin` | |
 
-Repository JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before the first push), `merge_modes`, `failing_checks_block`, `allow_auto_merge`.
+Repository JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before the first push), `merge_modes`, `allow_auto_merge`.
 
 ## Tokens
 
@@ -28,7 +28,7 @@ Presets add up with `--scope` (repeatable or comma-separated):
 
 | Preset | Scopes |
 |---|---|
-| `cli` | every scope (including `mr:review`), for the owner's daily use; a token created before `mr:review` existed lacks it and loses owner rights: recreate it with `--preset cli` using the root token or from a signed-in owner web session (an old token lacking `mr:review` cannot grant it), then replace the stored CLI secret and revoke the old token |
+| `cli` | every scope, including `mr:review` and `mr:force-merge`, for the owner's daily use |
 | `agent` | `repo:write`, `mr:write` |
 | `ci` | `repo:read` |
 
@@ -42,6 +42,7 @@ Scopes:
 | `mr:write` | open, comment on, reply, edit and delete own notes, resolve, close, mark read |
 | `mr:review` | give a verdict (`--approve`, `--request-changes`) |
 | `mr:merge` | merge, and delete the merged source branch with `--delete-branch` |
+| `mr:force-merge` | bypass failing or unfinished checks with `--ignore-checks` |
 | `issue:write` | open, comment on, close and reopen issues |
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
@@ -49,6 +50,8 @@ Scopes:
 A token can never grant more than the token that creates it. `--repo` (repeatable) limits it to those repositories; the default is all. Labels are free text up to 100 bytes; `owner` and `root` are reserved. Token JSON: `id`, `label`, `scopes`, `repos`, `branch_prefixes`, `expires_at`, `created_at`, `last_used_at`.
 
 `--branch-prefix` (repeatable, up to 8, each ending with `/`, for example `agent/claude/`) limits the branches the token may write; the default is all. A limited token pushes, force-pushes and deletes only `refs/heads/<prefix>…`: any other ref (`main`, tags, notes) refuses the whole push, naming the ref. It cannot create or delete a repository or change its settings (`repo edit`: default branch, visibility, description, merge modes), merges only into branches under its prefixes (and deletes only a source branch under them), never has owner rights, and creates only tokens within its own prefixes. A token for an agent: `ermite token create claude --preset agent --scope repo:read --repo <repo> --branch-prefix agent/claude/`. If you hold such a token, work on a branch under your prefix and open a merge request; do not try `main` or tags.
+
+The `agent` preset lacks `mr:force-merge`; adding `--scope mr:merge` lets an agent merge only with passing checks.
 
 ## Merge requests
 
@@ -61,9 +64,12 @@ A token can never grant more than the token that creates it. `--repo` (repeatabl
 | `mr edit-comment <repo> <n> <comment-id> -m TEXT\|-` | `mr:write` | author only, open merge request; the verdict is unchanged |
 | `mr delete-comment <repo> <n> <comment-id>` | `mr:write` | author only; the text is lost, the verdict is kept |
 | `mr resolve <repo> <n> <comment-id> [--undo]` | `mr:write` | on the thread root, covers its replies; doing it twice is not an error |
-| `mr merge <repo> <n> --head <full-id> [--mode fast-forward\|squash\|merge] [--delete-branch]` | `mr:merge` | refused if the branch moved, if `fast-forward` and the target is not an ancestor of the head (behind: use `squash` or `merge`), or if `squash`/`merge` conflict; squash and merge commits are signed by the server key (`signing-key show`); answers once the target moved; `--delete-branch` deletes the source after the merge (refused for the default branch or a branch another open request uses; JSON adds `source_branch_deleted`) |
+| `mr merge <repo> <n> --head <full-id> [--mode fast-forward\|squash\|merge] [--delete-branch] [--ignore-checks]` | `mr:merge` | refused if the branch moved, if `fast-forward` and the target is not an ancestor of the head (behind: use `squash` or `merge`), or if `squash`/`merge` conflict; squash and merge commits are signed by the server key (`signing-key show`); answers once the target moved; `--delete-branch` deletes the source after the merge (refused for the default branch or a branch another open request uses; JSON adds `source_branch_deleted`) |
 | `mr merge <repo> <n> --head <full-id> --auto [--mode M]` / `mr merge <repo> <n> --cancel-auto` | `mr:merge` | the server merges as you once CI settled on the head with a passed check and no failing one; needs `repo edit --allow-auto-merge`; failing checks or conflicts wait with auto-merge on; a new head cancels it, as do a deleted source, a disallowed mode, the setting turned off or your token losing merge rights; a manual merge supersedes it (`merge_request_merged`, `auto=false`, no cancelled event); a manual close clears it (`merge_request_closed` then cancelled with reason `closed`); JSON `auto_merge` (null unless pending), `auto_merged` |
+| `mr ready <repo> <n>` | `mr:write` | removes the `WIP:` or `[WIP]` title prefix; needs an open draft |
 | `mr close <repo> <n>` | `mr:write` | a closed merge request cannot be reopened |
+
+A merge needs passing checks on the head: none failed, queued or running. A head with no checks can merge. `mr merge --ignore-checks` bypasses checks, needs `mr:force-merge`, and cannot be combined with `--auto` or `--cancel-auto`.
 
 `ermite mr create` and `ermite mr close` print a confirmation followed by the full
 merge request web URL on its own line. With `--json`, merge request objects

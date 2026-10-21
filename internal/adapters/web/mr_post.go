@@ -377,6 +377,7 @@ func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, 
 	}
 	res, err := s.cfg.MergeRequests.Merge(ctx, principal(ctx), name, n, ports.MergeParams{
 		Mode: mode, HeadID: head, DeleteSource: r.PostFormValue("delete_branch") == "1",
+		IgnoreChecks: r.PostFormValue("ignore_checks") == "on",
 	})
 	switch {
 	case errors.Is(err, domain.ErrPreconditionFailed), errors.Is(err, domain.ErrConflict):

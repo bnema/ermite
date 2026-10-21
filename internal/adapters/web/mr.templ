@@ -545,6 +545,10 @@ templ mergeMenu(p MRPage) {
 							</label>
 						}
 					</fieldset>
+					if p.ChecksSum.Kind == "bad" || p.ChecksSum.Kind == "running" {
+						<p class="d-note">{ p.ChecksSum.State + ": a failing or unfinished check blocks the merge." }</p>
+						<label class="d-check"><input type="checkbox" name="ignore_checks"/> Ignore checks</label>
+					}
 					if p.Box.CanDeleteBranch {
 						<label class="d-check"><input type="checkbox" name="delete_branch" value="1"/> delete { p.Source } after the merge <kbd aria-hidden="true">D</kbd></label>
 					}
@@ -634,7 +638,7 @@ templ moreMenu(p MRPage) {
 					<dt>checks</dt>
 					<dd>
 						if p.ChecksBlock {
-							failing ones block the merge
+							failing or unfinished checks block the merge
 						} else {
 							do not block the merge
 						}

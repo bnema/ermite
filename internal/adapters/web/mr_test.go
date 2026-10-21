@@ -161,7 +161,7 @@ func TestMRPanelsAndMenus(t *testing.T) {
 		assert.NotContains(t, rail, text)
 	}
 	more := renderToString(t, moreMenu(p))
-	for _, text := range []string{"Merge settings", "squash, merge", "failing ones block", `id="mr-signing"`, "fingerprint", "ermite signing-key show"} {
+	for _, text := range []string{"Merge settings", "squash, merge", "failing or unfinished checks block", `id="mr-signing"`, "fingerprint", "ermite signing-key show"} {
 		assert.Contains(t, more, text)
 	}
 	merge := renderToString(t, mergeMenu(p))
@@ -296,4 +296,37 @@ func TestAutoMergeLiveEvents(t *testing.T) {
 	t.Parallel()
 	assert.True(t, liveEvent(watchOf(domain.MergeRequestAutoMergeEnabled{})))
 	assert.True(t, liveEvent(watchOf(domain.MergeRequestAutoMergeCancelled{})))
+}
+
+func TestMergeIgnoreChecks(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"bad", "running", "ok", ""} {
+		t.Run(kind, func(t *testing.T) {
+			box := (&Server{}).mergeBox(&repoData{repo: repoWithModes(domain.MergeModes()...)}, 3, "feat", "abc", true, mergeabilityView(domain.Mergeability{State: domain.MergeabilityUpToDate}, "main"))
+			html := renderToString(t, mergeMenu(MRPage{Box: box, ChecksSum: ChecksSummary{Kind: kind}}))
+			if kind == "bad" || kind == "running" {
+				assert.Contains(t, html, `name="ignore_checks"`)
+				assert.Contains(t, html, "Ignore checks")
+			} else {
+				assert.NotContains(t, html, `name="ignore_checks"`)
+			}
+			assert.True(t, box.CanMerge())
+		})
+	}
+	name, err := domain.ParseRepoName("demo")
+	require.NoError(t, err)
+	head, err := domain.ParseObjectID(strings.Repeat("a", domain.ObjectIDLen))
+	require.NoError(t, err)
+	for _, ignore := range []bool{false, true} {
+		svc := mocks.NewMergeRequestService(t)
+		svc.EXPECT().Merge(mock.Anything, mock.Anything, name, int64(3), ports.MergeParams{Mode: domain.MergeModeSquash, HeadID: head, IgnoreChecks: ignore}).Return(ports.MergeResult{}, nil).Once()
+		body := "mode=squash&head_id=" + head.String()
+		if ignore {
+			body += "&ignore_checks=on"
+		}
+		s := &Server{cfg: Config{MergeRequests: svc}}
+		to, _, err := s.mrMerge(context.Background(), autoMergeRequest("/demo/merge-requests/3/merge", body))
+		require.NoError(t, err)
+		assert.Equal(t, mrHref("demo", 3), to)
+	}
 }
