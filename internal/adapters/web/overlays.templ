@@ -11,7 +11,7 @@ import (
 // show on that page only.
 templ OverlayHelp(mr bool) {
 	<dialog id="panel-help" class="panel modal" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
-		<div class="panel-head"><h2>Keyboard shortcuts</h2><button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd> close</button></div>
+		<div class="panel-head"><h2>Keyboard shortcuts</h2><button type="button" class="panel-x" aria-label="Close (esc)" hx-on:click="closest('dialog').close()"><kbd>esc</kbd> close</button></div>
 		<div class="keys-pref">
 			<label><input type="checkbox" id="keys-off" aria-describedby="keys-note" hx-on:change="ermite.setKeysOff(this.checked)"/> Turn off single-key shortcuts</label>
 			<p id="keys-note" class="dim">Single-key shortcuts are on. ctrl k and esc work whatever this says.</p>
@@ -60,7 +60,7 @@ templ OverlayRefs(l Layout) {
 					data-pick="#panel-refs li"
 					hx-on:input="ermite.filter(this)"
 				/>
-				<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
+				<button type="button" class="panel-x" aria-label="Close (esc)" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
 			</div>
 			<div class="panel-cols" data-picklist>
 				<section aria-label="Branches">
@@ -123,13 +123,13 @@ templ OverlayCmd(items []CmdItem) {
 				hx-on:input="ermite.cmdFilter(this); ermiteFinder.palette(this)"
 				hx-on:keydown="ermite.cmdKey(event)"
 			/>
-			<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
+			<button type="button" class="panel-x" aria-label="Close (esc)" hx-on:click="closest('dialog').close()"><kbd>esc</kbd></button>
 		</div>
 		<ul id="cmd-list" class="cmd-list" role="listbox" aria-label="Targets">
 			for i, c := range items {
-				<li id={ "cmd-o" + itoa(i) } role="option" aria-selected={ strconv.FormatBool(i == 0) } data-k={ strings.ToLower(c.Kind + " " + c.Label) } data-cursor?={ i == 0 }><a href={ templ.SafeURL(c.Href) } tabindex="-1"><span class="lbl">{ c.Label }</span><span class="k">{ c.Kind }</span></a></li>
+				<li id={ "cmd-o" + itoa(i) } role="option" aria-selected={ strconv.FormatBool(i == 0) } data-k={ strings.ToLower(c.Kind + " " + c.Label) } data-cursor?={ i == 0 }><a role="presentation" data-href={ c.Href }><span class="lbl">{ c.Label }</span><span class="k">{ c.Kind }</span></a></li>
 			}
-			<li id={ "cmd-o" + itoa(len(items)) } role="option" aria-selected="false" data-k="action turn single-key shortcuts on off keyboard"><a href="#" data-fire="keys" tabindex="-1"><span class="lbl">turn single-key shortcuts off</span><span class="k">action</span></a></li>
+			<li id={ "cmd-o" + itoa(len(items)) } role="option" aria-selected={ strconv.FormatBool(len(items) == 0) } data-cursor?={ len(items) == 0 } data-k="action turn single-key shortcuts on off keyboard"><a role="presentation" data-fire="keys"><span class="lbl">turn single-key shortcuts off</span><span class="k">action</span></a></li>
 		</ul>
 		<p class="panel-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>enter</kbd> open</span><span><kbd>esc</kbd> close</span></p>
 	</dialog>

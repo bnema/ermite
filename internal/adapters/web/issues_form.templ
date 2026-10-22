@@ -29,22 +29,52 @@ templ IssueForm(l Layout, p IssueFormPage) {
 			<input type="hidden" name="form_token" value={ p.FormToken }/>
 			<input type="hidden" name="solution" value=""/>
 			<label for="issue-title">title</label>
-			<input id="issue-title" name="title" type="text" required autocomplete="off" value={ p.Title }/>
-			<output data-for="issue-title" data-max={ itoa(p.MaxTitle) } for="issue-title">{ itoa(runeCount(p.Title)) } / { itoa(p.MaxTitle) }</output>
+			<input
+				id="issue-title"
+				aria-describedby={ issueFieldDescription("title", p.ErrorField) }
+				if p.ErrorField == "title" {
+					aria-invalid="true"
+				}
+				name="title"
+				type="text"
+				required
+				autocomplete="off"
+				value={ p.Title }
+			/>
+			<output id="issue-title-count" aria-live="off" data-for="issue-title" data-max={ itoa(p.MaxTitle) } for="issue-title">{ itoa(runeCount(p.Title)) } / { itoa(p.MaxTitle) }</output>
 			if p.ErrorField == "title" {
-				<p class="f-error" role="alert">{ p.Error }</p>
+				<p id="issue-title-error" class="f-error" role="alert">{ p.Error }</p>
 			}
 			<label for="issue-body">description</label>
-			<textarea id="issue-body" name="body" rows="8" placeholder="Markdown, optional">{ p.Body }</textarea>
-			<output data-for="issue-body" data-max={ itoa(p.MaxBody) } for="issue-body">{ itoa(runeCount(p.Body)) } / { itoa(p.MaxBody) }</output>
+			<textarea
+				id="issue-body"
+				aria-describedby={ issueFieldDescription("body", p.ErrorField) }
+				if p.ErrorField == "body" {
+					aria-invalid="true"
+				}
+				name="body"
+				rows="8"
+				placeholder="Markdown, optional"
+			>{ p.Body }</textarea>
+			<output id="issue-body-count" aria-live="off" data-for="issue-body" data-max={ itoa(p.MaxBody) } for="issue-body">{ itoa(runeCount(p.Body)) } / { itoa(p.MaxBody) }</output>
 			if p.ErrorField == "body" {
-				<p class="f-error" role="alert">{ p.Error }</p>
+				<p id="issue-body-error" class="f-error" role="alert">{ p.Error }</p>
 			}
 			<label for="issue-author">name (optional, not verified)</label>
-			<input id="issue-author" name="author" type="text" autocomplete="off" value={ p.Author }/>
-			<output data-for="issue-author" data-max={ itoa(p.MaxAuthor) } for="issue-author">{ itoa(runeCount(p.Author)) } / { itoa(p.MaxAuthor) }</output>
+			<input
+				id="issue-author"
+				aria-describedby={ issueFieldDescription("author", p.ErrorField) }
+				if p.ErrorField == "author" {
+					aria-invalid="true"
+				}
+				name="author"
+				type="text"
+				autocomplete="off"
+				value={ p.Author }
+			/>
+			<output id="issue-author-count" aria-live="off" data-for="issue-author" data-max={ itoa(p.MaxAuthor) } for="issue-author">{ itoa(runeCount(p.Author)) } / { itoa(p.MaxAuthor) }</output>
 			if p.ErrorField == "author" {
-				<p class="f-error" role="alert">{ p.Error }</p>
+				<p id="issue-author-error" class="f-error" role="alert">{ p.Error }</p>
 			}
 			<div class="hp" aria-hidden="true">
 				<label for="issue-website">Leave this field empty</label>
@@ -64,4 +94,12 @@ templ issueFormRail() {
 		<h2 id="r-about">Before you write</h2>
 		<p class="dim">The owner reads every issue before it appears. Plain text and Markdown only; no address of yours is kept.</p>
 	</section>
+}
+
+func issueFieldDescription(field, invalid string) string {
+	ids := "issue-" + field + "-count"
+	if field == invalid {
+		ids += " issue-" + field + "-error"
+	}
+	return ids
 }

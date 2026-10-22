@@ -48,6 +48,6 @@
     #diffs[data-mr] .ln a[data-range-start] { outline: 2px solid var(--focus); background: var(--sel); }
     body:has(#diffs[data-mr]) :is(.cform .btn, .menu .btn, .mr-touch-range .btn, .c-act button) { min-height: 40px; height: auto; padding-block: var(--s2); }
     #diffs[data-mr] .cform { scroll-margin-block: calc(var(--hdr-h) + 12px); }
-    .mr-footer [data-mr-tabs] a { display: inline-flex; align-items: center; min-height: 40px; }
+    .mr-footer [data-mr-tabs] button { display: inline-flex; align-items: center; min-height: 40px; }
   }
 }

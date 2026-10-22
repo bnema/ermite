@@ -241,7 +241,7 @@ window.ermiteMR = (() => {
     reveal(id);
   }
 
-  // Enhance the ordinary anchor navigation only when scripts are available.
+  // Enhance the server-rendered disclosures when scripts are available.
   let disposePanels = () => {};
   // The tabs are disclosure buttons (aria-expanded + aria-controls), not a
   // tablist: a tablist always has a selected tab, and here every panel can be
@@ -250,7 +250,7 @@ window.ermiteMR = (() => {
     disposePanels();
     const footer = $('.mr-footer'), nav = $('[data-mr-tabs]');
     if (!footer || !nav) return;
-    const tabs = $$('a', nav), panels = $$('[data-mr-panel]', footer);
+    const tabs = $$('button', nav), panels = $$('[data-mr-panel]', footer);
     const ids = new Set(['#mr-commits', '#mr-checks', '#mr-checks-panel']);
     let current = -1;
     // show applies the state; fromUser also keeps the URL fragment in step.
@@ -522,7 +522,7 @@ window.ermiteMR = (() => {
     const files = new Map($$('#diffs details.dfile').map((f) => [f.dataset.file, f.open]));
     const folded = $('.r-files')?.hasAttribute('data-folded');
     const railY = $('.rail')?.scrollTop, filesY = $('.r-files .files')?.scrollTop;
-    const openPanel = $$('[data-mr-tabs] a').findIndex((t) => t.getAttribute('aria-expanded') === 'true');
+    const openPanel = $$('[data-mr-tabs] button').findIndex((t) => t.getAttribute('aria-expanded') === 'true');
     const active = document.activeElement;
     const focus = active && { file: active.closest?.('.files a')?.getAttribute('title'), region: regions.find((sel) => $(sel)?.contains(active)), menu: active.closest?.('details.menu')?.id, id: active.id, tag: active.tagName, name: active.getAttribute('name'), href: active.getAttribute('href') };
     for (const f of $$('#diffs details.dfile', page)) if (files.has(f.dataset.file)) f.open = files.get(f.dataset.file);

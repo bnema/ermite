@@ -192,14 +192,16 @@
 <button type="button" class="foot-keys" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?">
 <kbd aria-hidden="true">?</kbd> keyboard shortcuts</button>
 </footer>
-<div class="hint" role="status" aria-live="polite">
-<span class="hint-nav" :text="document.body.dataset.nav || ''">
+<div class="hint">
+<span aria-hidden="true" class="hint-nav" :text="document.body.dataset.nav || ''">
 </span>
+<span role="status" aria-live="polite">
 <span class="hint-sel" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y permalink' : ''">
 </span>
 <span class="hint-flash" :text="document.body.dataset.flash || ''">
 </span>
-<span class="hint-live" data-state="connecting" hx-sse:connect="/-/events?topic=repo%3Ademo&amp;view=refs" hx-swap="none" :text="data.state === 'offline' ? 'live updates paused' : ''" hx-on="htmx:sse:after:connection -> ermiteLive.back();
+</span>
+<span class="hint-live" role="status" data-state="connecting" hx-sse:connect="/-/events?topic=repo%3Ademo&amp;view=refs" hx-swap="none" :text="data.state === 'offline' ? 'live updates paused' : ''" hx-on="htmx:sse:after:connection -> ermiteLive.back();
            htmx:sse:close, htmx:sse:error -> ermiteLive.lost();
            htmx:sse:error -> ermiteLive.error(event.detail.status);
            htmx:sse:before:connection -> ermiteLive.gate(event);
@@ -211,7 +213,7 @@
 <dialog id="panel-help" class="panel modal" aria-label="Keyboard shortcuts" hx-on:keydown="event.key === 'Escape' && (event.preventDefault(), this.close())" hx-on:click="event.target === this && this.close()">
 <div class="panel-head">
 <h2>Keyboard shortcuts</h2>
-<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
+<button type="button" class="panel-x" aria-label="Close (esc)" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd> close</button>
 </div>
 <div class="keys-pref">
@@ -345,7 +347,7 @@
 <div class="panel-head">
 <label for="refs-filter" class="sr">filter branches and tags</label>
 <input id="refs-filter" type="search" placeholder="Switch branch or tag…" autocomplete="off" data-pick="#panel-refs li" hx-on:input="ermite.filter(this)">
-<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
+<button type="button" class="panel-x" aria-label="Close (esc)" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd>
 </button>
 </div>
@@ -384,91 +386,91 @@
 <div class="panel-head">
 <label for="cmd-q" class="sr">go to</label>
 <input id="cmd-q" type="search" placeholder="Go to a section, branch, tag, file or repository…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="cmd-list" aria-activedescendant="cmd-o0" hx-on:input="ermite.cmdFilter(this); ermiteFinder.palette(this)" hx-on:keydown="ermite.cmdKey(event)">
-<button type="button" class="panel-x" aria-label="Close" hx-on:click="closest('dialog').close()">
+<button type="button" class="panel-x" aria-label="Close (esc)" hx-on:click="closest('dialog').close()">
 <kbd>esc</kbd>
 </button>
 </div>
 <ul id="cmd-list" class="cmd-list" role="listbox" aria-label="Targets">
 <li id="cmd-o0" role="option" aria-selected="true" data-k="go home" data-cursor>
-<a href="/" tabindex="-1">
+<a role="presentation" data-href="/">
 <span class="lbl">home</span>
 <span class="k">go</span>
 </a>
 </li>
 <li id="cmd-o1" role="option" aria-selected="false" data-k="section summary">
-<a href="/demo" tabindex="-1">
+<a role="presentation" data-href="/demo">
 <span class="lbl">summary</span>
 <span class="k">section</span>
 </a>
 </li>
 <li id="cmd-o2" role="option" aria-selected="false" data-k="section files">
-<a href="/demo/tree/main" tabindex="-1">
+<a role="presentation" data-href="/demo/tree/main">
 <span class="lbl">files</span>
 <span class="k">section</span>
 </a>
 </li>
 <li id="cmd-o3" role="option" aria-selected="false" data-k="section commits">
-<a href="/demo/commits/main" tabindex="-1">
+<a role="presentation" data-href="/demo/commits/main">
 <span class="lbl">commits</span>
 <span class="k">section</span>
 </a>
 </li>
 <li id="cmd-o4" role="option" aria-selected="false" data-k="section branches &amp; tags">
-<a href="/demo/refs" tabindex="-1">
+<a role="presentation" data-href="/demo/refs">
 <span class="lbl">branches &amp; tags</span>
 <span class="k">section</span>
 </a>
 </li>
 <li id="cmd-o5" role="option" aria-selected="false" data-k="section merge requests">
-<a href="/demo/merge-requests" tabindex="-1">
+<a role="presentation" data-href="/demo/merge-requests">
 <span class="lbl">merge requests</span>
 <span class="k">section</span>
 </a>
 </li>
 <li id="cmd-o6" role="option" aria-selected="false" data-k="section releases">
-<a href="/demo/releases" tabindex="-1">
+<a role="presentation" data-href="/demo/releases">
 <span class="lbl">releases</span>
 <span class="k">section</span>
 </a>
 </li>
 <li id="cmd-o7" role="option" aria-selected="false" data-k="section actions">
-<a href="/demo/actions" tabindex="-1">
+<a role="presentation" data-href="/demo/actions">
 <span class="lbl">actions</span>
 <span class="k">section</span>
 </a>
 </li>
 <li id="cmd-o8" role="option" aria-selected="false" data-k="branch feature/x">
-<a href="/demo/tree/feature/x" tabindex="-1">
+<a role="presentation" data-href="/demo/tree/feature/x">
 <span class="lbl">feature/x</span>
 <span class="k">branch</span>
 </a>
 </li>
 <li id="cmd-o9" role="option" aria-selected="false" data-k="branch main">
-<a href="/demo/tree/main" tabindex="-1">
+<a role="presentation" data-href="/demo/tree/main">
 <span class="lbl">main</span>
 <span class="k">branch</span>
 </a>
 </li>
 <li id="cmd-o10" role="option" aria-selected="false" data-k="tag v0.1.0">
-<a href="/demo/tree/v0.1.0" tabindex="-1">
+<a role="presentation" data-href="/demo/tree/v0.1.0">
 <span class="lbl">v0.1.0</span>
 <span class="k">tag</span>
 </a>
 </li>
 <li id="cmd-o11" role="option" aria-selected="false" data-k="tag v0.2.0">
-<a href="/demo/tree/v0.2.0" tabindex="-1">
+<a role="presentation" data-href="/demo/tree/v0.2.0">
 <span class="lbl">v0.2.0</span>
 <span class="k">tag</span>
 </a>
 </li>
 <li id="cmd-o12" role="option" aria-selected="false" data-k="repo quiet">
-<a href="/quiet" tabindex="-1">
+<a role="presentation" data-href="/quiet">
 <span class="lbl">quiet</span>
 <span class="k">repo</span>
 </a>
 </li>
 <li id="cmd-o13" role="option" aria-selected="false" data-k="action turn single-key shortcuts on off keyboard">
-<a href="#" data-fire="keys" tabindex="-1">
+<a role="presentation" data-fire="keys">
 <span class="lbl">turn single-key shortcuts off</span>
 <span class="k">action</span>
 </a>

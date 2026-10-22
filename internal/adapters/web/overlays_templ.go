@@ -38,7 +38,7 @@ func OverlayHelp(mr bool) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<dialog id=\"panel-help\" class=\"panel modal\" aria-label=\"Keyboard shortcuts\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><h2>Keyboard shortcuts</h2><button type=\"button\" class=\"panel-x\" aria-label=\"Close\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd> close</button></div><div class=\"keys-pref\"><label><input type=\"checkbox\" id=\"keys-off\" aria-describedby=\"keys-note\" hx-on:change=\"ermite.setKeysOff(this.checked)\"> Turn off single-key shortcuts</label><p id=\"keys-note\" class=\"dim\">Single-key shortcuts are on. ctrl k and esc work whatever this says.</p></div><dl class=\"keys\"><div><dt><kbd>ctrl k</kbd> <kbd>:</kbd></dt><dd>go to a section, branch, tag, file or repository</dd></div><div><dt><kbd>?</kbd></dt><dd>this list</dd></div><div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>move the row cursor down / up</dd></div><div><dt><kbd>enter</kbd></dt><dd>open the row under the cursor; on Files, a directory opens or closes in place</dd></div><div><dt><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> <kbd>home</kbd> <kbd>end</kbd></dt><dd>in the file tree (focus on a row): previous / next row, close / open a directory or go to its parent / first entry, first / last row. They never open a file</dd></div><div><dt><kbd>l</kbd> <kbd>h</kbd></dt><dd>on Files: open a directory or a file / close a directory or go up to its parent, then to the parent page. Elsewhere: into the side panel (on a merge request, its files) / back to the content; there j k move between its controls</dd></div><div><dt><kbd>g g</kbd> <kbd>G</kbd></dt><dd>first / last row</dd></div><div><dt><kbd>/</kbd></dt><dd>filter the list; on Files, find a file anywhere in the repository (esc clears, enter opens the best match)</dd></div><div><dt><kbd>b</kbd></dt><dd>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<dialog id=\"panel-help\" class=\"panel modal\" aria-label=\"Keyboard shortcuts\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><h2>Keyboard shortcuts</h2><button type=\"button\" class=\"panel-x\" aria-label=\"Close (esc)\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd> close</button></div><div class=\"keys-pref\"><label><input type=\"checkbox\" id=\"keys-off\" aria-describedby=\"keys-note\" hx-on:change=\"ermite.setKeysOff(this.checked)\"> Turn off single-key shortcuts</label><p id=\"keys-note\" class=\"dim\">Single-key shortcuts are on. ctrl k and esc work whatever this says.</p></div><dl class=\"keys\"><div><dt><kbd>ctrl k</kbd> <kbd>:</kbd></dt><dd>go to a section, branch, tag, file or repository</dd></div><div><dt><kbd>?</kbd></dt><dd>this list</dd></div><div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>move the row cursor down / up</dd></div><div><dt><kbd>enter</kbd></dt><dd>open the row under the cursor; on Files, a directory opens or closes in place</dd></div><div><dt><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> <kbd>home</kbd> <kbd>end</kbd></dt><dd>in the file tree (focus on a row): previous / next row, close / open a directory or go to its parent / first entry, first / last row. They never open a file</dd></div><div><dt><kbd>l</kbd> <kbd>h</kbd></dt><dd>on Files: open a directory or a file / close a directory or go up to its parent, then to the parent page. Elsewhere: into the side panel (on a merge request, its files) / back to the content; there j k move between its controls</dd></div><div><dt><kbd>g g</kbd> <kbd>G</kbd></dt><dd>first / last row</dd></div><div><dt><kbd>/</kbd></dt><dd>filter the list; on Files, find a file anywhere in the repository (esc clears, enter opens the best match)</dd></div><div><dt><kbd>b</kbd></dt><dd>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -102,7 +102,7 @@ func OverlayRefs(l Layout) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if l.Ref != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<dialog id=\"panel-refs\" class=\"panel modal\" aria-label=\"Switch ref\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><label for=\"refs-filter\" class=\"sr\">filter branches and tags</label> <input id=\"refs-filter\" type=\"search\" placeholder=\"Switch branch or tag…\" autocomplete=\"off\" data-pick=\"#panel-refs li\" hx-on:input=\"ermite.filter(this)\"> <button type=\"button\" class=\"panel-x\" aria-label=\"Close\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd></button></div><div class=\"panel-cols\" data-picklist><section aria-label=\"Branches\"><h2>Branches <span class=\"count\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<dialog id=\"panel-refs\" class=\"panel modal\" aria-label=\"Switch ref\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><label for=\"refs-filter\" class=\"sr\">filter branches and tags</label> <input id=\"refs-filter\" type=\"search\" placeholder=\"Switch branch or tag…\" autocomplete=\"off\" data-pick=\"#panel-refs li\" hx-on:input=\"ermite.filter(this)\"> <button type=\"button\" class=\"panel-x\" aria-label=\"Close (esc)\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd></button></div><div class=\"panel-cols\" data-picklist><section aria-label=\"Branches\"><h2>Branches <span class=\"count\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -260,7 +260,7 @@ func OverlayCmd(items []CmdItem) templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<dialog id=\"panel-cmd\" class=\"panel modal\" aria-label=\"Go to\" hx-on:close=\"ermiteFinder.paletteClose()\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><label for=\"cmd-q\" class=\"sr\">go to</label> <input id=\"cmd-q\" type=\"search\" placeholder=\"Go to a section, branch, tag, file or repository…\" autocomplete=\"off\" spellcheck=\"false\" role=\"combobox\" aria-autocomplete=\"list\" aria-expanded=\"true\" aria-controls=\"cmd-list\" aria-activedescendant=\"cmd-o0\" hx-on:input=\"ermite.cmdFilter(this); ermiteFinder.palette(this)\" hx-on:keydown=\"ermite.cmdKey(event)\"> <button type=\"button\" class=\"panel-x\" aria-label=\"Close\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd></button></div><ul id=\"cmd-list\" class=\"cmd-list\" role=\"listbox\" aria-label=\"Targets\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<dialog id=\"panel-cmd\" class=\"panel modal\" aria-label=\"Go to\" hx-on:close=\"ermiteFinder.paletteClose()\" hx-on:keydown=\"event.key === 'Escape' && (event.preventDefault(), this.close())\" hx-on:click=\"event.target === this && this.close()\"><div class=\"panel-head\"><label for=\"cmd-q\" class=\"sr\">go to</label> <input id=\"cmd-q\" type=\"search\" placeholder=\"Go to a section, branch, tag, file or repository…\" autocomplete=\"off\" spellcheck=\"false\" role=\"combobox\" aria-autocomplete=\"list\" aria-expanded=\"true\" aria-controls=\"cmd-list\" aria-activedescendant=\"cmd-o0\" hx-on:input=\"ermite.cmdFilter(this); ermiteFinder.palette(this)\" hx-on:keydown=\"ermite.cmdKey(event)\"> <button type=\"button\" class=\"panel-x\" aria-label=\"Close (esc)\" hx-on:click=\"closest('dialog').close()\"><kbd>esc</kbd></button></div><ul id=\"cmd-list\" class=\"cmd-list\" role=\"listbox\" aria-label=\"Targets\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -314,27 +314,27 @@ func OverlayCmd(items []CmdItem) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "><a role=\"presentation\" data-href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var13 templ.SafeURL
-			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(c.Href))
+			var templ_7745c5c3_Var13 string
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(c.Href)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 130, Col: 198}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 130, Col: 208}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" tabindex=\"-1\"><span class=\"lbl\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"><span class=\"lbl\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(c.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 130, Col: 242}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 130, Col: 238}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -347,7 +347,7 @@ func OverlayCmd(items []CmdItem) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(c.Kind)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 130, Col: 275}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 130, Col: 271}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -371,7 +371,30 @@ func OverlayCmd(items []CmdItem) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" role=\"option\" aria-selected=\"false\" data-k=\"action turn single-key shortcuts on off keyboard\"><a href=\"#\" data-fire=\"keys\" tabindex=\"-1\"><span class=\"lbl\">turn single-key shortcuts off</span><span class=\"k\">action</span></a></li></ul><p class=\"panel-foot\"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>enter</kbd> open</span><span><kbd>esc</kbd> close</span></p></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" role=\"option\" aria-selected=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var17 string
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(len(items) == 0))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/overlays.templ`, Line: 132, Col: 106}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if len(items) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, " data-cursor")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, " data-k=\"action turn single-key shortcuts on off keyboard\"><a role=\"presentation\" data-fire=\"keys\"><span class=\"lbl\">turn single-key shortcuts off</span><span class=\"k\">action</span></a></li></ul><p class=\"panel-foot\"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>enter</kbd> open</span><span><kbd>esc</kbd> close</span></p></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

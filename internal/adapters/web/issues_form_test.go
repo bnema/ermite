@@ -79,9 +79,9 @@ func TestIssueFormGet(t *testing.T) {
 		`action="/proj/issues/new"`, ` hidden`, `data-issue-form`, `data-nonce="AAECAwQFBgcICQoLDA0ODw"`,
 		`data-difficulty="18"`, `data-min-submit-at="1700000003000"`, `data-worker="/-/static/js/pow-worker.`,
 		`name="token" value="tok-1.sig"`, `name="form_token" value="form-1"`, `name="solution" value=""`,
-		`name="title" type="text" required`, `<output data-for="issue-body" data-max="10000"`, `<output data-for="issue-author" data-max="40"`,
+		`name="title" type="text" required`, `<output id="issue-body-count" aria-live="off" data-for="issue-body" data-max="10000"`, `<output id="issue-author-count" aria-live="off" data-for="issue-author" data-max="40"`,
 		`<div class="hp" aria-hidden="true">`, `name="website" type="text" tabindex="-1" autocomplete="off"`,
-		`<output data-for="issue-title" data-max="120"`, `0 / 10000`, `Checking your browser… (this takes a few seconds)`,
+		`<output id="issue-title-count" aria-live="off" data-for="issue-title" data-max="120"`, `0 / 10000`, `Checking your browser… (this takes a few seconds)`,
 		`/-/static/js/issue-form.`,
 	} {
 		assert.Contains(t, body, want)

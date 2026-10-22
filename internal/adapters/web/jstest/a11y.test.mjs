@@ -83,7 +83,7 @@ function keydown(target, key, elementHandler, extra = {}) {
 // ---- the palette --------------------------------------------------------
 
 function palette() {
-  const li = (k, label) => el('li', { attrs: { 'data-k': k } }, el('a', { attrs: { href: '/' + label } }));
+  const li = (k, label) => el('li', { attrs: { 'data-k': k } }, el('a', { attrs: { 'data-href': '/' + label, role: 'presentation' } }));
   const items = [li('go home', 'home'), li('section files', 'files'), li('branch main', 'main')];
   items[0].setAttribute('data-cursor', '');
   const input = el('input', { id: 'cmd-q', attrs: { role: 'combobox', 'aria-controls': 'cmd-list' } });
@@ -137,6 +137,8 @@ test('the palette: the file hits that arrive later get ids, roles and the active
   assert.ok(hits.length > 0, 'a file hit came');
   for (const h of hits) {
     assert.equal(h.getAttribute('role'), 'option');
+    assert.equal(h.querySelector('a[href]'), null);
+    assert.equal(h.querySelector('a').hasAttribute('tabindex'), false);
     assert.ok(h.id);
   }
   assert.equal(p.list.children.length, new Set(p.list.children.map((i) => i.id)).size, 'ids stay unique');
@@ -173,6 +175,7 @@ test('Escape in the finder clears the query, keeps the focus in the field and do
   f.q.closest = () => f.q; // the global handler sees a field being typed in
   const e = keydown(f.q, 'Escape', (ev) => F.key(f.q, ev));
   assert.equal(f.q.value, '');
+  assert.equal(doc.getElementById('finder-status').textContent, '');
   assert.equal(e.stopped, true);
   assert.equal(e.prevented, true);
   assert.equal(blurred, false, 'the field keeps the focus');
@@ -380,4 +383,79 @@ test('mobile MR layout shortcuts preserve the saved preference until back on des
     globalThis.sessionStorage = previous;
     doc.querySelector = oldQuery;
   }
+});
+
+test('dialog restores its row opener on close, but not over a replacement dialog', () => {
+  const row = el('li', { tabindex: '0' });
+  const first = el('dialog', { id: 'focus-first' });
+  const second = el('dialog', { id: 'focus-second' });
+  dom.body.append(row, first, second);
+  const queued = [];
+  const all = doc.querySelectorAll;
+  const one = doc.querySelector;
+  const open = () => [first, second].filter((d) => d.hasAttribute('open'));
+  doc.querySelectorAll = (sel) => sel === 'dialog[open]' ? open() : all.call(doc, sel);
+  doc.querySelector = (sel) => sel === 'dialog[open]' ? open()[0] ?? null : one.call(doc, sel);
+  for (const d of [first, second]) {
+    let onClose;
+    d.addEventListener = (type, fn) => { if (type === 'close') onClose = fn; };
+    d.showModal = () => { d.setAttribute('open', ''); d.focus(); };
+    d.close = () => { d.removeAttribute('open'); queued.push(onClose); };
+  }
+  row.focus();
+  window.ermite.dialog('focus-first');
+  first.close();
+  queued.shift()();
+  assert.equal(doc.activeElement, row);
+
+  row.focus();
+  window.ermite.dialog('focus-first');
+  window.ermite.dialog('focus-second');
+  queued.shift()();
+  assert.equal(doc.activeElement, second);
+  second.close();
+  queued.shift()();
+  doc.querySelectorAll = all;
+  doc.querySelector = one;
+});
+
+
+test('listbox result wrappers have no links; Enter and delegated clicks navigate', async () => {
+  doc.querySelector = query.one;
+  doc.querySelectorAll = query.all;
+  const assigned = [];
+  location.assign = (href) => assigned.push(href);
+  const activate = (anchor) => {
+    const e = { target: anchor, button: 0, preventDefault() {} };
+    listeners.click.find((fn) => fn.toString().includes('location.assign'))(e);
+  };
+  const p = palette();
+  p.list.setAttribute('role', 'listbox');
+  window.ermiteCmd.sync();
+  for (const item of p.items) assert.equal(item.querySelector('a[href]'), null);
+  const a = p.items[0].querySelector('a');
+  a.click = () => activate(a);
+  window.ermite.cmdKey({ key: 'Enter', preventDefault() {} });
+  assert.deepEqual(assigned, ['/home']);
+  activate(p.items[1].querySelector('a'));
+  assert.deepEqual(assigned, ['/home', '/files']);
+
+  const f = finder();
+  f.list.setAttribute('role', 'listbox');
+  f.q.value = 'main';
+  F.input(f.q);
+  flushFrames();
+  await settle();
+  assert.equal(f.list.querySelector('a[href]'), null);
+  const hit = f.list.children[0].querySelector('a');
+  assert.equal(hit.hasAttribute('tabindex'), false);
+  hit.click = () => activate(hit);
+  F.key(f.q, { key: 'Enter', preventDefault() {} });
+  assert.equal(assigned.at(-1), hit.dataset.href);
+  activate(hit);
+  assert.equal(assigned.at(-1), hit.dataset.href);
+  assert.notEqual(doc.getElementById('finder-status').textContent, '');
+  f.q.value = '';
+  F.input(f.q);
+  assert.equal(doc.getElementById('finder-status').textContent, '');
 });

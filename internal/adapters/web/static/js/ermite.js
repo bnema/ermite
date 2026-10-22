@@ -134,7 +134,12 @@
     dialog(id, focusId) {
       const d = document.getElementById(id);
       if (!d) return;
+      const opener = document.activeElement;
       ermite.closeDialogs();
+      d.addEventListener('close', () => {
+        // close events are queued: a replacement dialog may already be open.
+        if (!document.querySelector('dialog[open]') && opener?.isConnected) opener.focus();
+      }, { once: true });
       d.showModal();
       if (id === 'panel-cmd') window.ermiteCmd?.sync();
       if (focusId) document.getElementById(focusId)?.focus();
@@ -672,6 +677,16 @@
     const menu = el.closest('details.menu');
     if (menu) closeMenu(menu);
   });
+  // Listbox options own the interaction; their anchors are presentation only.
+  // Keyboard activation also clicks this wrapper (palette, finder and j/k).
+  addEventListener('click', (e) => {
+    const target = e.target.closest?.('a[data-href]');
+    const list = target?.closest?.('[role="listbox"]');
+    if (!list || !['cmd-list', 'finder-list'].includes(list.id) || e.button) return;
+    e.preventDefault();
+    location.assign(target.dataset.href);
+  });
+
   // A click outside an open menu closes it.
   addEventListener('click', (e) => {
     for (const d of $$('details.menu[open]')) if (!d.contains(e.target)) d.open = false;

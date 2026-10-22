@@ -137,21 +137,22 @@ func TestMRPanelsAndMenus(t *testing.T) {
 	p := MRPage{CommitCount: "500+", CommitsNote: "more commits", Modes: []string{"squash", "merge"}, ChecksBlock: true,
 		ChecksSum: ChecksSummary{Total: 2, Label: "1/2", Title: "1/2 failed"}, Box: &MergeBox{Signed: true, Fingerprint: "fingerprint", HeadGone: true}}
 	footer := renderToString(t, mrFooter(p))
-	assert.Contains(t, footer, `<footer class="mr-footer"><nav data-mr-tabs`)
+	assert.Contains(t, footer, `<footer class="mr-footer"><div data-mr-tabs data-js role="group"`)
 	assert.NotContains(t, footer, `<details`)
 	assert.NotContains(t, footer, `<summary`)
-	// No hidden attribute: the CSS shows the panel of the URL fragment until
-	// mr.js takes over, so the tabs work as anchors without scripts.
-	assert.Contains(t, footer, `id="mr-commits" data-mr-panel role="region"`)
-	assert.Contains(t, footer, `id="mr-checks-panel" data-mr-panel role="region"`)
+	// Both panels are readable without scripts; JS enhances native buttons.
+	assert.Contains(t, footer, `id="mr-commits" data-mr-panel role="group"`)
+	assert.Contains(t, footer, `id="mr-checks-panel" data-mr-panel role="group"`)
 	assert.NotContains(t, footer, `data-mr-panel hidden`)
 	css, err := staticFS.ReadFile("static/css/60-mr.css")
 	require.NoError(t, err)
-	assert.Contains(t, string(css), `&:not([data-panels]) [data-mr-panel]:not(:target, :has(:target)) { display: none; }`)
+	assert.NotContains(t, string(css), `:not([data-panels])`)
+	assert.Contains(t, footer, `<button type="button" id="mr-tab-commits" aria-expanded="true" aria-controls="mr-commits">`)
+	assert.Contains(t, footer, `<button type="button" id="mr-tab-checks" aria-expanded="true" aria-controls="mr-checks-panel">`)
 	assert.Contains(t, footer, `data-mr-tabs`)
 	assert.Contains(t, footer, `id="mr-commits"`)
 	assert.Contains(t, footer, `id="mr-checks"`)
-	assert.Contains(t, footer, `<table class="mr-commits">`)
+	assert.Contains(t, footer, `<table class="mr-commits" aria-label="Commits">`)
 	assert.Contains(t, footer, "500+")
 	assert.Contains(t, footer, "more commits")
 	assert.Contains(t, footer, "1/2 failed")

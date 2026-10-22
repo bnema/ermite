@@ -635,12 +635,12 @@ window.ermiteFinder = (() => {
     return lbl;
   }
 
-  // hitLink is the link of path i of the result: its label, out of the tab order.
+  // hitLink is the presentation wrapper of path i; the option owns activation.
   function hitLink(res, i) {
     const path = res.idx.paths[i];
     const a = document.createElement('a');
-    a.href = blobHref(path);
-    a.tabIndex = -1;
+    a.dataset.href = blobHref(path);
+    a.setAttribute('role', 'presentation');
     a.append(label(path, positions(res.idx, i, res.q)));
     return a;
   }
@@ -684,6 +684,7 @@ window.ermiteFinder = (() => {
 
   // showTree: no query, the directory again, with j/k and Enter on its rows.
   function showTree(el) {
+    status('');
     rendered = null;
     pendingEnter = null;
     $('finder').hidden = true;

@@ -1555,14 +1555,14 @@ func commentView(c CommentView, suffix string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "\"><textarea name=\"text\" maxlength=\"8000\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "\"><textarea name=\"text\" maxlength=\"8000\" aria-label=\"Edit note\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var72 string
 			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(c.Edit.Text)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/mr.templ`, Line: 299, Col: 209}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/mr.templ`, Line: 299, Col: 232}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 			if templ_7745c5c3_Err != nil {
@@ -1961,20 +1961,20 @@ func mrFooter(p MRPage) templ.Component {
 			templ_7745c5c3_Var91 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "<footer class=\"mr-footer\"><nav data-mr-tabs aria-label=\"Branch details\"><a id=\"mr-tab-commits\" href=\"#mr-commits\">Commits <span class=\"count\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "<footer class=\"mr-footer\"><div data-mr-tabs data-js role=\"group\" aria-label=\"Branch details\"><button type=\"button\" id=\"mr-tab-commits\" aria-expanded=\"true\" aria-controls=\"mr-commits\">Commits <span class=\"count\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var92 string
 		templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(p.CommitCount)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/mr.templ`, Line: 377, Col: 88}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/adapters/web/mr.templ`, Line: 377, Col: 136}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "</span></a> <a id=\"mr-tab-checks\" href=\"#mr-checks\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "</span></button> <button type=\"button\" id=\"mr-tab-checks\" aria-expanded=\"true\" aria-controls=\"mr-checks-panel\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2007,7 +2007,7 @@ func mrFooter(p MRPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 186, "</span></a></nav><div id=\"mr-commits\" data-mr-panel role=\"region\" aria-labelledby=\"mr-tab-commits\"><table class=\"mr-commits\"><thead><tr><th>Commit</th><th>Subject</th><th>Author</th><th>Date</th><th>Signature</th><th>Status</th></tr></thead> <tbody>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 186, "</span></button></div><div id=\"mr-commits\" data-mr-panel role=\"group\" aria-labelledby=\"mr-tab-commits\"><table class=\"mr-commits\" aria-label=\"Commits\"><thead><tr><th>Commit</th><th>Subject</th><th>Author</th><th>Date</th><th>Signature</th><th>Status</th></tr></thead> <tbody>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2164,7 +2164,7 @@ func mrFooter(p MRPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 205, "</div><div id=\"mr-checks-panel\" data-mr-panel role=\"region\" aria-labelledby=\"mr-tab-checks\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 205, "</div><div id=\"mr-checks-panel\" data-mr-panel role=\"group\" aria-labelledby=\"mr-tab-checks\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

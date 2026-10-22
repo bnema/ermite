@@ -296,7 +296,7 @@ templ commentView(c CommentView, suffix string) {
 			<button type="button" class="btn" data-js data-quote={ c.Quote }>Quote</button>
 		}
 		if c.Edit != nil {
-			<details><summary>Edit</summary><form method="post" action={ templ.SafeURL(c.Edit.Action) }><input type="hidden" name="from" value={ itoa(c.Edit.From) }/><textarea name="text" maxlength="8000">{ c.Edit.Text }</textarea><button class="btn" type="submit">Save</button></form></details>
+			<details><summary>Edit</summary><form method="post" action={ templ.SafeURL(c.Edit.Action) }><input type="hidden" name="from" value={ itoa(c.Edit.From) }/><textarea name="text" maxlength="8000" aria-label="Edit note">{ c.Edit.Text }</textarea><button class="btn" type="submit">Save</button></form></details>
 		}
 		if c.Delete != nil {
 			<details><summary>Delete</summary><form method="post" action={ templ.SafeURL(c.Delete.Action) }><input type="hidden" name="from" value={ itoa(c.Delete.From) }/><p>Delete this note?</p><button class="btn" type="submit">Confirm delete</button></form></details>
@@ -373,9 +373,9 @@ templ commentForm(f CommentForm, suffix string) {
 
 templ mrFooter(p MRPage) {
 	<footer class="mr-footer">
-		<nav data-mr-tabs aria-label="Branch details">
-			<a id="mr-tab-commits" href="#mr-commits">Commits <span class="count">{ p.CommitCount }</span></a>
-			<a id="mr-tab-checks" href="#mr-checks">
+		<div data-mr-tabs data-js role="group" aria-label="Branch details">
+			<button type="button" id="mr-tab-commits" aria-expanded="true" aria-controls="mr-commits">Commits <span class="count">{ p.CommitCount }</span></button>
+			<button type="button" id="mr-tab-checks" aria-expanded="true" aria-controls="mr-checks-panel">
 				{ "Checks " }
 				<span data-checks-label>
 					if p.ChecksSum.Total > 0 {
@@ -384,10 +384,10 @@ templ mrFooter(p MRPage) {
 						no checks
 					}
 				</span>
-			</a>
-		</nav>
-		<div id="mr-commits" data-mr-panel role="region" aria-labelledby="mr-tab-commits">
-			<table class="mr-commits">
+			</button>
+		</div>
+		<div id="mr-commits" data-mr-panel role="group" aria-labelledby="mr-tab-commits">
+			<table class="mr-commits" aria-label="Commits">
 				<thead><tr><th>Commit</th><th>Subject</th><th>Author</th><th>Date</th><th>Signature</th><th>Status</th></tr></thead>
 				<tbody>
 					for _, c := range p.Commits {
@@ -421,7 +421,7 @@ templ mrFooter(p MRPage) {
 				<p class="note">{ p.CommitsNote }</p>
 			}
 		</div>
-		<div id="mr-checks-panel" data-mr-panel role="region" aria-labelledby="mr-tab-checks">
+		<div id="mr-checks-panel" data-mr-panel role="group" aria-labelledby="mr-tab-checks">
 			@MRChecks(p.Checks)
 		</div>
 	</footer>

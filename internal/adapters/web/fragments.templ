@@ -94,6 +94,7 @@ templ Live(l Layout) {
 	if l.Live && l.LiveURL != "" {
 		<span
 			class="hint-live"
+			role="status"
 			data-state="connecting"
 			hx-sse:connect={ l.LiveURL }
 			hx-swap="none"

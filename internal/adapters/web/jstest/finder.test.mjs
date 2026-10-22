@@ -53,7 +53,7 @@ const key = (k, extra = {}) => {
   return e;
 };
 const status = () => document.getElementById('finder-status').textContent;
-const hrefs = (list) => list.children.map((li) => li.querySelector('a').href);
+const hrefs = (list) => list.children.map((li) => li.querySelector('a').dataset.href);
 
 test('Enter before the results opens the top hit once they come', async () => {
   const p = page();
@@ -66,8 +66,8 @@ test('Enter before the results opens the top hit once they come', async () => {
   await settle();
   assert.equal(p.finderList.children.length > 0, true);
   assert.equal(dom.clicked.length, 1);
-  assert.equal(dom.clicked[0].href, hrefs(p.finderList)[0]);
-  assert.match(dom.clicked[0].href, /^\/blob\/main\/.*tree/);
+  assert.equal(dom.clicked[0].dataset.href, hrefs(p.finderList)[0]);
+  assert.match(dom.clicked[0].dataset.href, /^\/blob\/main\/.*tree/);
   assert.equal(fetches, 1);
 });
 
@@ -112,7 +112,7 @@ test('Enter on current results opens the cursor row, whichever way the cursor mo
   assert.equal(items[2].getAttribute('aria-selected'), 'true');
   assert.equal(items[0].getAttribute('aria-selected'), 'false');
   assert.equal(p.q.getAttribute('aria-activedescendant'), items[2].id);
-  assert.equal(dom.clicked[0].href, items[2].querySelector('a').href);
+  assert.equal(dom.clicked[0].dataset.href, items[2].querySelector('a').dataset.href);
   // The arrows move from there.
   F.key(p.q, key('ArrowUp'));
   assert.equal(p.q.getAttribute('aria-activedescendant'), items[1].id);
@@ -179,13 +179,14 @@ test('the palette lists the file hits under its entries', async () => {
   const hits = p.cmdList.children.filter((li) => li.className === 'finder-hit');
   assert.equal(hits.length, 4);
   assert.equal(p.cmdList.children[0].className, 'entry', 'the entries stay first');
-  assert.deepEqual(hits.map((li) => li.querySelector('a').href).sort(), [
+  assert.deepEqual(hits.map((li) => li.querySelector('a').dataset.href).sort(), [
     '/blob/main/docs/web/tree-view.md',
     '/blob/main/internal/adapters/web/tree.go',
     '/blob/main/internal/adapters/web/tree.templ',
     '/blob/main/src/treehouse.txt',
   ]);
-  assert.equal(hits[0].querySelector('a').tabIndex, -1);
+  assert.equal(hits[0].querySelector('a').hasAttribute('href'), false);
+  assert.equal(hits[0].querySelector('a').hasAttribute('tabindex'), false);
   assert.equal(hits[0].querySelector('.k').textContent, 'file');
   assert.equal(p.cmdList.children.filter((li) => li.hasAttribute('data-cursor')).length, 1, 'one cursor');
 
@@ -213,7 +214,7 @@ test('Enter typed before the frame of the query runs opens the top hit', async (
     assert.equal(dom.clicked.length, 0, 'nothing to open before the frame');
     flushFrames();
     await settle();
-    assert.deepEqual(dom.clicked.map((a) => a.href), ['/blob/main/cmd/ermite/main.go']);
+    assert.deepEqual(dom.clicked.map((a) => a.dataset.href), ['/blob/main/cmd/ermite/main.go']);
   } finally {
     dom.holdFrames = false;
   }
@@ -257,7 +258,7 @@ test('the palette drops the results of a query that is stale', async () => {
   p.cmdQ.value = 'readme'; // typed before the search of "tree" finished
   F.palette(p.cmdQ);
   await settle();
-  const got = p.cmdList.children.filter((li) => li.className === 'finder-hit').map((li) => li.querySelector('a').href);
+  const got = p.cmdList.children.filter((li) => li.className === 'finder-hit').map((li) => li.querySelector('a').dataset.href);
   assert.deepEqual(got, ['/blob/main/README.md']);
 
   // A field changed without a new call: the pending search is dropped.

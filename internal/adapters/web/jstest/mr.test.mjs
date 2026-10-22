@@ -106,7 +106,7 @@ function footerHarness(extra = {}) {
   const nav = node('tabs'); nav.querySelectorAll = () => tabs;
   const listeners = {}, replaced = [];
   globalThis.document = { querySelector: (s) => s === '.mr-footer' ? footer : s === '[data-mr-tabs]' ? nav : s === '#mr-ck' ? extra.summary ?? null : null,
-    querySelectorAll: (s) => s === '[data-mr-tabs] a' ? tabs : [], addEventListener(k, v) { listeners[k] = v; } };
+    querySelectorAll: (s) => s === '[data-mr-tabs] button' ? tabs : [], addEventListener(k, v) { listeners[k] = v; } };
   globalThis.location = { hash: '', pathname: '/demo/merge-requests/1', search: '?x=1' };
   globalThis.addEventListener = (k, v) => { listeners[k] = v; };
   globalThis.history = { replaceState: (...args) => replaced.push(args) };
@@ -530,4 +530,36 @@ test('intercepted Cancel resets the entire comment form', () => {
     assert.equal(reset, 1);
     assert.equal(window.ermiteMR.hasDraft(), false);
   } finally { Object.assign(globalThis, saved); c.restore(); }
+});
+
+
+test('live refresh preserves the open button panel even when the hash points elsewhere', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../static/js/mr.js', import.meta.url), 'utf8');
+  const start = src.indexOf('  async function refreshPage(page)');
+  const end = src.indexOf('  function refreshNotice', start);
+  const { el, installDom } = await import('./dom.mjs');
+  const saved = globalThis.document;
+  const h = footerHarness();
+  try {
+    window.ermiteMR.panels();
+    h.tabs[1].events.click({ preventDefault() {} });
+    location.hash = '#f99';
+    const doc = installDom();
+    Object.defineProperty(doc, 'activeElement', { get: () => null });
+    const diffs = el('div');
+    diffs.dataset.diff = 'unified';
+    const fresh = el('footer', {}, el('section', { attrs: { 'data-mr-panel': '' } }), el('section', { attrs: { 'data-mr-panel': '' } }));
+    const page = { body: { dataset: {} } };
+    const $ = (s, root) => s === '#diffs' ? diffs : s === '.mr-footer' ? (root === page ? fresh : h.footer) : el('div');
+    const $$ = (s, root) => s === '[data-mr-tabs] button' ? h.tabs : s === '[data-mr-panel]' ? fresh.children : [];
+    let selected;
+    const lazy = { reset() {}, watch() {} };
+    const refresh = new Function('$', '$$', 'scrollAnchor', 'hasDraft', 'replaceRegion', 'panels', 'watchBar', 'foldFiles', 'touchComments', 'restoreAnchor', 'window', 'document',
+      'let revealGen = 0; ' + src.slice(start, end) + '; return refreshPage;')(
+      $, $$, () => ({}), () => false, async () => {}, (i) => { selected = i; }, () => {}, () => {}, () => {}, () => {}, { ermiteLazy: lazy }, doc);
+    await refresh(page);
+    assert.equal(selected, 1);
+    assert.deepEqual(fresh.children.map((p) => p.hidden), [true, false]);
+  } finally { h.restore(); globalThis.document = saved; }
 });
