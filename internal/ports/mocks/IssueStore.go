@@ -332,6 +332,80 @@ func (_c *IssueStore_ListComments_Call) RunAndReturn(run func(ctx context.Contex
 	return _c
 }
 
+// ListEvents provides a mock function for the type IssueStore
+func (_mock *IssueStore) ListEvents(ctx context.Context, repo domain.RepoName, number int64) ([]domain.IssueEvent, error) {
+	ret := _mock.Called(ctx, repo, number)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListEvents")
+	}
+
+	var r0 []domain.IssueEvent
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64) ([]domain.IssueEvent, error)); ok {
+		return returnFunc(ctx, repo, number)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64) []domain.IssueEvent); ok {
+		r0 = returnFunc(ctx, repo, number)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.IssueEvent)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, int64) error); ok {
+		r1 = returnFunc(ctx, repo, number)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// IssueStore_ListEvents_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListEvents'
+type IssueStore_ListEvents_Call struct {
+	*mock.Call
+}
+
+// ListEvents is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - number int64
+func (_e *IssueStore_Expecter) ListEvents(ctx any, repo any, number any) *IssueStore_ListEvents_Call {
+	return &IssueStore_ListEvents_Call{Call: _e.mock.On("ListEvents", ctx, repo, number)}
+}
+
+func (_c *IssueStore_ListEvents_Call) Run(run func(ctx context.Context, repo domain.RepoName, number int64)) *IssueStore_ListEvents_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *IssueStore_ListEvents_Call) Return(issueEvents []domain.IssueEvent, err error) *IssueStore_ListEvents_Call {
+	_c.Call.Return(issueEvents, err)
+	return _c
+}
+
+func (_c *IssueStore_ListEvents_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, number int64) ([]domain.IssueEvent, error)) *IssueStore_ListEvents_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListOpenAll provides a mock function for the type IssueStore
 func (_mock *IssueStore) ListOpenAll(ctx context.Context) ([]domain.Issue, error) {
 	ret := _mock.Called(ctx)
@@ -458,16 +532,22 @@ func (_c *IssueStore_SaveComment_Call) RunAndReturn(run func(ctx context.Context
 }
 
 // Update provides a mock function for the type IssueStore
-func (_mock *IssueStore) Update(ctx context.Context, issue domain.Issue) error {
-	ret := _mock.Called(ctx, issue)
+func (_mock *IssueStore) Update(ctx context.Context, issue domain.Issue, events ...domain.IssueEvent) error {
+	var tmpRet mock.Arguments
+	if len(events) > 0 {
+		tmpRet = _mock.Called(ctx, issue, events)
+	} else {
+		tmpRet = _mock.Called(ctx, issue)
+	}
+	ret := tmpRet
 
 	if len(ret) == 0 {
 		panic("no return value specified for Update")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Issue) error); ok {
-		r0 = returnFunc(ctx, issue)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Issue, ...domain.IssueEvent) error); ok {
+		r0 = returnFunc(ctx, issue, events...)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -482,11 +562,13 @@ type IssueStore_Update_Call struct {
 // Update is a helper method to define mock.On call
 //   - ctx context.Context
 //   - issue domain.Issue
-func (_e *IssueStore_Expecter) Update(ctx any, issue any) *IssueStore_Update_Call {
-	return &IssueStore_Update_Call{Call: _e.mock.On("Update", ctx, issue)}
+//   - events ...domain.IssueEvent
+func (_e *IssueStore_Expecter) Update(ctx any, issue any, events ...any) *IssueStore_Update_Call {
+	return &IssueStore_Update_Call{Call: _e.mock.On("Update",
+		append([]any{ctx, issue}, events...)...)}
 }
 
-func (_c *IssueStore_Update_Call) Run(run func(ctx context.Context, issue domain.Issue)) *IssueStore_Update_Call {
+func (_c *IssueStore_Update_Call) Run(run func(ctx context.Context, issue domain.Issue, events ...domain.IssueEvent)) *IssueStore_Update_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -496,9 +578,16 @@ func (_c *IssueStore_Update_Call) Run(run func(ctx context.Context, issue domain
 		if args[1] != nil {
 			arg1 = args[1].(domain.Issue)
 		}
+		var arg2 []domain.IssueEvent
+		var variadicArgs []domain.IssueEvent
+		if len(args) > 2 {
+			variadicArgs = args[2].([]domain.IssueEvent)
+		}
+		arg2 = variadicArgs
 		run(
 			arg0,
 			arg1,
+			arg2...,
 		)
 	})
 	return _c
@@ -509,7 +598,7 @@ func (_c *IssueStore_Update_Call) Return(err error) *IssueStore_Update_Call {
 	return _c
 }
 
-func (_c *IssueStore_Update_Call) RunAndReturn(run func(ctx context.Context, issue domain.Issue) error) *IssueStore_Update_Call {
+func (_c *IssueStore_Update_Call) RunAndReturn(run func(ctx context.Context, issue domain.Issue, events ...domain.IssueEvent) error) *IssueStore_Update_Call {
 	_c.Call.Return(run)
 	return _c
 }

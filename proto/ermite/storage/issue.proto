@@ -17,6 +17,7 @@ enum IssueState {
   ISSUE_STATE_CLOSED = 2;
   // Awaiting moderation. Not stored yet.
   ISSUE_STATE_PENDING = 3;
+  ISSUE_STATE_RESOLVED = 4;
 }
 
 // Issue is stored under the key "is/<repo>/<number:010d>". The numbers come
@@ -36,6 +37,7 @@ message Issue {
   // True for an issue approved from the public form: its text comes from
   // an anonymous visitor and is rendered as untrusted.
   bool external = 9;
+  // Set only while RESOLVED by a merge.
   int64 closed_by_merge_request = 10;
 }
 
@@ -80,4 +82,31 @@ message IssueBan {
 // IssueKey is stored under the key "meta/issuekey".
 message IssueKey {
   bytes key = 1;
+}
+
+// IssueEventKind describes an issue history entry.
+enum IssueEventKind {
+  ISSUE_EVENT_KIND_UNSPECIFIED = 0;
+  // Closes says whether this is a closing reference.
+  ISSUE_EVENT_KIND_REFERENCED = 1;
+  ISSUE_EVENT_KIND_CLOSED = 2;
+  ISSUE_EVENT_KIND_REOPENED = 3;
+  // Merge_request is set when a merge resolved the issue.
+  ISSUE_EVENT_KIND_RESOLVED = 4;
+}
+
+// IssueEvent is stored under "isev/<repo>/<issue:010d>/<seq:010d>" and,
+// when merge_request != 0, copied verbatim under
+// "mrev/<repo>/<mr:010d>/<issue:010d>/<seq:010d>". Append-only: never
+// updated or deleted except with the repository.
+message IssueEvent {
+  int64 seq = 1;
+  IssueEventKind kind = 2;
+  // Zero if none.
+  int64 merge_request = 3;
+  // REFERENCED only.
+  bool closes = 4;
+  // Label, like Issue.author.
+  string actor = 5;
+  google.protobuf.Timestamp created_at = 6;
 }

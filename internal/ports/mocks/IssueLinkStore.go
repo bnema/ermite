@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -45,6 +46,80 @@ type IssueLinkStore_Expecter struct {
 
 func (_m *IssueLinkStore) EXPECT() *IssueLinkStore_Expecter {
 	return &IssueLinkStore_Expecter{mock: &_m.Mock}
+}
+
+// EventsOfMergeRequest provides a mock function for the type IssueLinkStore
+func (_mock *IssueLinkStore) EventsOfMergeRequest(ctx context.Context, repo domain.RepoName, mr int64) ([]domain.IssueEvent, error) {
+	ret := _mock.Called(ctx, repo, mr)
+
+	if len(ret) == 0 {
+		panic("no return value specified for EventsOfMergeRequest")
+	}
+
+	var r0 []domain.IssueEvent
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64) ([]domain.IssueEvent, error)); ok {
+		return returnFunc(ctx, repo, mr)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64) []domain.IssueEvent); ok {
+		r0 = returnFunc(ctx, repo, mr)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.IssueEvent)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, int64) error); ok {
+		r1 = returnFunc(ctx, repo, mr)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// IssueLinkStore_EventsOfMergeRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'EventsOfMergeRequest'
+type IssueLinkStore_EventsOfMergeRequest_Call struct {
+	*mock.Call
+}
+
+// EventsOfMergeRequest is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - mr int64
+func (_e *IssueLinkStore_Expecter) EventsOfMergeRequest(ctx any, repo any, mr any) *IssueLinkStore_EventsOfMergeRequest_Call {
+	return &IssueLinkStore_EventsOfMergeRequest_Call{Call: _e.mock.On("EventsOfMergeRequest", ctx, repo, mr)}
+}
+
+func (_c *IssueLinkStore_EventsOfMergeRequest_Call) Run(run func(ctx context.Context, repo domain.RepoName, mr int64)) *IssueLinkStore_EventsOfMergeRequest_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *IssueLinkStore_EventsOfMergeRequest_Call) Return(issueEvents []domain.IssueEvent, err error) *IssueLinkStore_EventsOfMergeRequest_Call {
+	_c.Call.Return(issueEvents, err)
+	return _c
+}
+
+func (_c *IssueLinkStore_EventsOfMergeRequest_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, mr int64) ([]domain.IssueEvent, error)) *IssueLinkStore_EventsOfMergeRequest_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // LinksOfIssue provides a mock function for the type IssueLinkStore
@@ -202,8 +277,8 @@ func (_c *IssueLinkStore_LinksOfMergeRequest_Call) RunAndReturn(run func(ctx con
 }
 
 // ReplaceLinks provides a mock function for the type IssueLinkStore
-func (_mock *IssueLinkStore) ReplaceLinks(ctx context.Context, repo domain.RepoName, mr int64, issues []int64, closes []int64) ([]domain.IssueLink, []domain.IssueLink, error) {
-	ret := _mock.Called(ctx, repo, mr, issues, closes)
+func (_mock *IssueLinkStore) ReplaceLinks(ctx context.Context, repo domain.RepoName, mr int64, issues []int64, closes []int64, ref ports.ReferenceEvent) ([]domain.IssueLink, []domain.IssueLink, error) {
+	ret := _mock.Called(ctx, repo, mr, issues, closes, ref)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ReplaceLinks")
@@ -212,25 +287,25 @@ func (_mock *IssueLinkStore) ReplaceLinks(ctx context.Context, repo domain.RepoN
 	var r0 []domain.IssueLink
 	var r1 []domain.IssueLink
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64, []int64, []int64) ([]domain.IssueLink, []domain.IssueLink, error)); ok {
-		return returnFunc(ctx, repo, mr, issues, closes)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64, []int64, []int64, ports.ReferenceEvent) ([]domain.IssueLink, []domain.IssueLink, error)); ok {
+		return returnFunc(ctx, repo, mr, issues, closes, ref)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64, []int64, []int64) []domain.IssueLink); ok {
-		r0 = returnFunc(ctx, repo, mr, issues, closes)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, int64, []int64, []int64, ports.ReferenceEvent) []domain.IssueLink); ok {
+		r0 = returnFunc(ctx, repo, mr, issues, closes, ref)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]domain.IssueLink)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, int64, []int64, []int64) []domain.IssueLink); ok {
-		r1 = returnFunc(ctx, repo, mr, issues, closes)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, int64, []int64, []int64, ports.ReferenceEvent) []domain.IssueLink); ok {
+		r1 = returnFunc(ctx, repo, mr, issues, closes, ref)
 	} else {
 		if ret.Get(1) != nil {
 			r1 = ret.Get(1).([]domain.IssueLink)
 		}
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, int64, []int64, []int64) error); ok {
-		r2 = returnFunc(ctx, repo, mr, issues, closes)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, int64, []int64, []int64, ports.ReferenceEvent) error); ok {
+		r2 = returnFunc(ctx, repo, mr, issues, closes, ref)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -248,11 +323,12 @@ type IssueLinkStore_ReplaceLinks_Call struct {
 //   - mr int64
 //   - issues []int64
 //   - closes []int64
-func (_e *IssueLinkStore_Expecter) ReplaceLinks(ctx any, repo any, mr any, issues any, closes any) *IssueLinkStore_ReplaceLinks_Call {
-	return &IssueLinkStore_ReplaceLinks_Call{Call: _e.mock.On("ReplaceLinks", ctx, repo, mr, issues, closes)}
+//   - ref ports.ReferenceEvent
+func (_e *IssueLinkStore_Expecter) ReplaceLinks(ctx any, repo any, mr any, issues any, closes any, ref any) *IssueLinkStore_ReplaceLinks_Call {
+	return &IssueLinkStore_ReplaceLinks_Call{Call: _e.mock.On("ReplaceLinks", ctx, repo, mr, issues, closes, ref)}
 }
 
-func (_c *IssueLinkStore_ReplaceLinks_Call) Run(run func(ctx context.Context, repo domain.RepoName, mr int64, issues []int64, closes []int64)) *IssueLinkStore_ReplaceLinks_Call {
+func (_c *IssueLinkStore_ReplaceLinks_Call) Run(run func(ctx context.Context, repo domain.RepoName, mr int64, issues []int64, closes []int64, ref ports.ReferenceEvent)) *IssueLinkStore_ReplaceLinks_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -274,12 +350,17 @@ func (_c *IssueLinkStore_ReplaceLinks_Call) Run(run func(ctx context.Context, re
 		if args[4] != nil {
 			arg4 = args[4].([]int64)
 		}
+		var arg5 ports.ReferenceEvent
+		if args[5] != nil {
+			arg5 = args[5].(ports.ReferenceEvent)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
 			arg4,
+			arg5,
 		)
 	})
 	return _c
@@ -290,7 +371,7 @@ func (_c *IssueLinkStore_ReplaceLinks_Call) Return(added []domain.IssueLink, rem
 	return _c
 }
 
-func (_c *IssueLinkStore_ReplaceLinks_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, mr int64, issues []int64, closes []int64) ([]domain.IssueLink, []domain.IssueLink, error)) *IssueLinkStore_ReplaceLinks_Call {
+func (_c *IssueLinkStore_ReplaceLinks_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, mr int64, issues []int64, closes []int64, ref ports.ReferenceEvent) ([]domain.IssueLink, []domain.IssueLink, error)) *IssueLinkStore_ReplaceLinks_Call {
 	_c.Call.Return(run)
 	return _c
 }

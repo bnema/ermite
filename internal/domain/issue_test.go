@@ -136,3 +136,22 @@ func TestIssueEventKinds(t *testing.T) {
 	assert.Equal(t, "issue.reopened", domain.IssueReopened{}.EventKind())
 	assert.Equal(t, "issue.commented", domain.IssueCommented{}.EventKind())
 }
+
+func TestIssueIsDone(t *testing.T) {
+	t.Parallel()
+	for _, state := range []domain.IssueState{"", "unknown", domain.IssueStateOpen, domain.IssueStateClosed, domain.IssueStateResolved} {
+		t.Run(string(state), func(t *testing.T) {
+			issue := domain.Issue{State: state}
+			assert.Equal(t, state == domain.IssueStateClosed || state == domain.IssueStateResolved, issue.IsDone())
+			assert.Equal(t, state == domain.IssueStateOpen, issue.IsOpen())
+		})
+	}
+}
+
+func TestIssueHistoryEventKinds(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "referenced", string(domain.IssueEventReferenced))
+	assert.Equal(t, "closed", string(domain.IssueEventClosed))
+	assert.Equal(t, "reopened", string(domain.IssueEventReopened))
+	assert.Equal(t, "resolved", string(domain.IssueEventResolved))
+}

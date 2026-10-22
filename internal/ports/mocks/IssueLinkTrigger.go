@@ -48,8 +48,8 @@ func (_m *IssueLinkTrigger) EXPECT() *IssueLinkTrigger_Expecter {
 }
 
 // OnBranchesMoved provides a mock function for the type IssueLinkTrigger
-func (_mock *IssueLinkTrigger) OnBranchesMoved(context1 context.Context, repoName domain.RepoName, refUpdates []domain.RefUpdate) {
-	_mock.Called(context1, repoName, refUpdates)
+func (_mock *IssueLinkTrigger) OnBranchesMoved(context1 context.Context, principal domain.Principal, repoName domain.RepoName, refUpdates []domain.RefUpdate) {
+	_mock.Called(context1, principal, repoName, refUpdates)
 	return
 }
 
@@ -60,30 +60,36 @@ type IssueLinkTrigger_OnBranchesMoved_Call struct {
 
 // OnBranchesMoved is a helper method to define mock.On call
 //   - context1 context.Context
+//   - principal domain.Principal
 //   - repoName domain.RepoName
 //   - refUpdates []domain.RefUpdate
-func (_e *IssueLinkTrigger_Expecter) OnBranchesMoved(context1 any, repoName any, refUpdates any) *IssueLinkTrigger_OnBranchesMoved_Call {
-	return &IssueLinkTrigger_OnBranchesMoved_Call{Call: _e.mock.On("OnBranchesMoved", context1, repoName, refUpdates)}
+func (_e *IssueLinkTrigger_Expecter) OnBranchesMoved(context1 any, principal any, repoName any, refUpdates any) *IssueLinkTrigger_OnBranchesMoved_Call {
+	return &IssueLinkTrigger_OnBranchesMoved_Call{Call: _e.mock.On("OnBranchesMoved", context1, principal, repoName, refUpdates)}
 }
 
-func (_c *IssueLinkTrigger_OnBranchesMoved_Call) Run(run func(context1 context.Context, repoName domain.RepoName, refUpdates []domain.RefUpdate)) *IssueLinkTrigger_OnBranchesMoved_Call {
+func (_c *IssueLinkTrigger_OnBranchesMoved_Call) Run(run func(context1 context.Context, principal domain.Principal, repoName domain.RepoName, refUpdates []domain.RefUpdate)) *IssueLinkTrigger_OnBranchesMoved_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 domain.RepoName
+		var arg1 domain.Principal
 		if args[1] != nil {
-			arg1 = args[1].(domain.RepoName)
+			arg1 = args[1].(domain.Principal)
 		}
-		var arg2 []domain.RefUpdate
+		var arg2 domain.RepoName
 		if args[2] != nil {
-			arg2 = args[2].([]domain.RefUpdate)
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 []domain.RefUpdate
+		if args[3] != nil {
+			arg3 = args[3].([]domain.RefUpdate)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -94,14 +100,14 @@ func (_c *IssueLinkTrigger_OnBranchesMoved_Call) Return() *IssueLinkTrigger_OnBr
 	return _c
 }
 
-func (_c *IssueLinkTrigger_OnBranchesMoved_Call) RunAndReturn(run func(context1 context.Context, repoName domain.RepoName, refUpdates []domain.RefUpdate)) *IssueLinkTrigger_OnBranchesMoved_Call {
+func (_c *IssueLinkTrigger_OnBranchesMoved_Call) RunAndReturn(run func(context1 context.Context, principal domain.Principal, repoName domain.RepoName, refUpdates []domain.RefUpdate)) *IssueLinkTrigger_OnBranchesMoved_Call {
 	_c.Run(run)
 	return _c
 }
 
 // OnMergeRequestChanged provides a mock function for the type IssueLinkTrigger
-func (_mock *IssueLinkTrigger) OnMergeRequestChanged(context1 context.Context, repo domain.Repo, n int64) {
-	_mock.Called(context1, repo, n)
+func (_mock *IssueLinkTrigger) OnMergeRequestChanged(context1 context.Context, principal domain.Principal, repo domain.Repo, n int64) {
+	_mock.Called(context1, principal, repo, n)
 	return
 }
 
@@ -112,30 +118,36 @@ type IssueLinkTrigger_OnMergeRequestChanged_Call struct {
 
 // OnMergeRequestChanged is a helper method to define mock.On call
 //   - context1 context.Context
+//   - principal domain.Principal
 //   - repo domain.Repo
 //   - n int64
-func (_e *IssueLinkTrigger_Expecter) OnMergeRequestChanged(context1 any, repo any, n any) *IssueLinkTrigger_OnMergeRequestChanged_Call {
-	return &IssueLinkTrigger_OnMergeRequestChanged_Call{Call: _e.mock.On("OnMergeRequestChanged", context1, repo, n)}
+func (_e *IssueLinkTrigger_Expecter) OnMergeRequestChanged(context1 any, principal any, repo any, n any) *IssueLinkTrigger_OnMergeRequestChanged_Call {
+	return &IssueLinkTrigger_OnMergeRequestChanged_Call{Call: _e.mock.On("OnMergeRequestChanged", context1, principal, repo, n)}
 }
 
-func (_c *IssueLinkTrigger_OnMergeRequestChanged_Call) Run(run func(context1 context.Context, repo domain.Repo, n int64)) *IssueLinkTrigger_OnMergeRequestChanged_Call {
+func (_c *IssueLinkTrigger_OnMergeRequestChanged_Call) Run(run func(context1 context.Context, principal domain.Principal, repo domain.Repo, n int64)) *IssueLinkTrigger_OnMergeRequestChanged_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 domain.Repo
+		var arg1 domain.Principal
 		if args[1] != nil {
-			arg1 = args[1].(domain.Repo)
+			arg1 = args[1].(domain.Principal)
 		}
-		var arg2 int64
+		var arg2 domain.Repo
 		if args[2] != nil {
-			arg2 = args[2].(int64)
+			arg2 = args[2].(domain.Repo)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -146,7 +158,7 @@ func (_c *IssueLinkTrigger_OnMergeRequestChanged_Call) Return() *IssueLinkTrigge
 	return _c
 }
 
-func (_c *IssueLinkTrigger_OnMergeRequestChanged_Call) RunAndReturn(run func(context1 context.Context, repo domain.Repo, n int64)) *IssueLinkTrigger_OnMergeRequestChanged_Call {
+func (_c *IssueLinkTrigger_OnMergeRequestChanged_Call) RunAndReturn(run func(context1 context.Context, principal domain.Principal, repo domain.Repo, n int64)) *IssueLinkTrigger_OnMergeRequestChanged_Call {
 	_c.Run(run)
 	return _c
 }

@@ -318,3 +318,8 @@ func (i *Issues) Kind(ctx context.Context, p domain.Principal, name domain.RepoN
 	}
 	return domain.NumberNone, nil
 }
+
+// Resolve is reserved for Phase A; no state is changed by this contract stub.
+func (i *Issues) Resolve(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error) {
+	return domain.Issue{}, domain.ErrUnavailable
+}

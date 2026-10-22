@@ -221,7 +221,7 @@ func (i *Issues) ListOpenAll(ctx context.Context) ([]domain.Issue, error) {
 // Update replaces the issue with a version precondition and moves its index key
 // in the same batch. The repository must exist (see guardRepoKey), so that a
 // concurrent delete of the repository leaves no index key behind.
-func (i *Issues) Update(ctx context.Context, issue domain.Issue) error {
+func (i *Issues) Update(ctx context.Context, issue domain.Issue, events ...domain.IssueEvent) error {
 	val, err := encodeIssue(issue)
 	if err != nil {
 		return err
@@ -428,4 +428,13 @@ func decodeIssuesMode(m storagepb.IssuesMode) domain.IssuesMode {
 		return domain.IssuesPublic
 	}
 	return domain.IssuesOff
+}
+
+// MaxIssueEvents caps the append-only history of each issue. Further events
+// are silently dropped without preventing the associated write.
+const MaxIssueEvents = 500
+
+// ListEvents returns issue history. Persistence is implemented in Phase A.
+func (i *Issues) ListEvents(ctx context.Context, repo domain.RepoName, number int64) ([]domain.IssueEvent, error) {
+	return nil, nil
 }

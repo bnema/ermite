@@ -146,6 +146,7 @@ type IssueService interface {
 	// Get returns the issue with its comments, oldest first.
 	Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (IssueDetail, error)
 	AddComment(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, text string) (domain.IssueComment, error)
+	Resolve(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error)
 	Close(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error)
 	Reopen(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error)
 }

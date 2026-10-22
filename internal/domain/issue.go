@@ -51,8 +51,10 @@ type IssueState string
 const (
 	// IssueStateOpen is being worked on.
 	IssueStateOpen IssueState = "open"
-	// IssueStateClosed is done with; it can be reopened.
+	// IssueStateClosed is closed without being resolved; it can be reopened.
 	IssueStateClosed IssueState = "closed"
+	// IssueStateResolved is resolved; it can be reopened.
+	IssueStateResolved IssueState = "resolved"
 )
 
 // Issue is a problem or a request about a repository. It shares its number
@@ -73,7 +75,7 @@ type Issue struct {
 	// External is true for an issue approved from the public form: its text
 	// comes from an anonymous visitor and is rendered as untrusted.
 	External bool
-	// ClosedByMergeRequest is zero unless a merge closed the issue.
+	// ClosedByMergeRequest is set only while resolved by a merge.
 	ClosedByMergeRequest int64
 	// Version is set by the store on read: Update fails with ErrConflict when
 	// the stored issue changed since. Opaque to everyone else.
@@ -112,3 +114,28 @@ const (
 	// NumberMergeRequest: the number names a merge request.
 	NumberMergeRequest
 )
+
+// IsDone reports whether the issue is closed or resolved.
+func (i Issue) IsDone() bool { return i.State == IssueStateClosed || i.State == IssueStateResolved }
+
+// IssueEventKind describes an entry in an issue's append-only history.
+type IssueEventKind string
+
+// Issue event kinds.
+const (
+	IssueEventReferenced IssueEventKind = "referenced"
+	IssueEventClosed     IssueEventKind = "closed"
+	IssueEventReopened   IssueEventKind = "reopened"
+	IssueEventResolved   IssueEventKind = "resolved"
+)
+
+// IssueEvent is a timestamped history entry with a per-issue sequence ID.
+type IssueEvent struct {
+	ID           int64
+	Kind         IssueEventKind
+	Issue        int64
+	MergeRequest int64
+	Closes       bool
+	Actor        string
+	CreatedAt    time.Time
+}

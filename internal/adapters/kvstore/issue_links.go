@@ -39,7 +39,7 @@ func issueRefKey(repo domain.RepoName, issue, mr int64) []byte {
 }
 
 // ReplaceLinks atomically replaces both directions of the index.
-func (l *IssueLinks) ReplaceLinks(ctx context.Context, repo domain.RepoName, mr int64, issues, closes []int64) (added, removed []domain.IssueLink, err error) {
+func (l *IssueLinks) ReplaceLinks(ctx context.Context, repo domain.RepoName, mr int64, issues, closes []int64, ref ports.ReferenceEvent) (added, removed []domain.IssueLink, err error) {
 	key := mrRefKey(repo, mr)
 	item, exists := l.db.Get(ctx, key)
 	var old storagepb.MergeRequestReferences
@@ -148,4 +148,9 @@ func toSet(numbers []int64) map[int64]struct{} {
 		set[n] = struct{}{}
 	}
 	return set
+}
+
+// EventsOfMergeRequest returns MR issue history. Persistence is implemented in Phase A.
+func (l *IssueLinks) EventsOfMergeRequest(ctx context.Context, repo domain.RepoName, mr int64) ([]domain.IssueEvent, error) {
+	return nil, nil
 }

@@ -237,6 +237,17 @@ type IssueClosed struct {
 // EventKind implements Event.
 func (IssueClosed) EventKind() string { return "issue.closed" }
 
+// IssueResolved is published when an issue was resolved.
+type IssueResolved struct {
+	Issue      Issue
+	At         time.Time
+	Visibility Visibility
+	CreatedAt  time.Time
+}
+
+// EventKind implements Event.
+func (IssueResolved) EventKind() string { return "issue.resolved" }
+
 // IssueReopened is published when a closed issue was reopened.
 type IssueReopened struct {
 	Issue      Issue

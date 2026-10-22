@@ -59,3 +59,9 @@ func TestAutoMergeEventKinds(t *testing.T) {
 	assert.Equal(t, "mr.auto_merge_cancelled", domain.MergeRequestAutoMergeCancelled{}.EventKind())
 	assert.Equal(t, "mr.merged", domain.MergeRequestMerged{Auto: true}.EventKind())
 }
+
+func TestIssueResolvedEventKind(t *testing.T) {
+	t.Parallel()
+	var ev domain.Event = domain.IssueResolved{}
+	assert.Equal(t, "issue.resolved", ev.EventKind())
+}

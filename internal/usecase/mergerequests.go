@@ -295,7 +295,7 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 	recordActivity(ctx, m.meta, repo.Name, now)
 	m.bus.Publish(ctx, domain.MergeRequestOpened{MergeRequest: mr, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	if m.links != nil {
-		m.links.OnMergeRequestChanged(ctx, repo, mr.Number)
+		m.links.OnMergeRequestChanged(ctx, p, repo, mr.Number)
 	}
 	if m.mergeab != nil {
 		m.mergeab.OnOpened(ctx, mr)
@@ -440,7 +440,7 @@ func (m *MergeRequests) MarkReady(ctx context.Context, p domain.Principal, name 
 		recordActivity(ctx, m.meta, repo.Name, mr.UpdatedAt)
 		m.bus.Publish(ctx, domain.MergeRequestReady{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		if m.links != nil {
-			m.links.OnMergeRequestChanged(ctx, repo, number)
+			m.links.OnMergeRequestChanged(ctx, p, repo, number)
 		}
 		return m.withHead(ctx, mr)
 	}
@@ -797,7 +797,7 @@ func (m *MergeRequests) AddComment(ctx context.Context, p domain.Principal, name
 		Repo: name, Number: number, Comment: c, At: c.CreatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt,
 	})
 	if m.links != nil {
-		m.links.OnMergeRequestChanged(ctx, repo, number)
+		m.links.OnMergeRequestChanged(ctx, p, repo, number)
 	}
 	return c, nil
 }
@@ -1276,7 +1276,7 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 		m.mergeab.OnBranchesMoved(ctx, name, updates) // the other requests of the moved target
 	}
 	if m.links != nil {
-		m.links.OnBranchesMoved(ctx, name, updates) // open requests whose source moved
+		m.links.OnBranchesMoved(ctx, p, name, updates) // open requests whose source moved
 	}
 }
 
@@ -1553,7 +1553,7 @@ func (m *MergeRequests) changeComment(ctx context.Context, p domain.Principal, n
 			m.bus.Publish(ctx, domain.CommentEdited{Repo: name, Number: number, Comment: c, At: c.EditedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		}
 		if m.links != nil {
-			m.links.OnMergeRequestChanged(ctx, repo, number)
+			m.links.OnMergeRequestChanged(ctx, p, repo, number)
 		}
 		return c, nil
 	}

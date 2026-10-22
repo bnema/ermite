@@ -270,3 +270,8 @@ func (s *issueService) RejectIssue(ctx context.Context, req *connect.Request[pb.
 	}
 	return connect.NewResponse(&pb.RejectIssueResponse{}), nil
 }
+
+// ResolveIssue is reserved for Phase A; the RPC is not implemented yet.
+func (s *issueService) ResolveIssue(ctx context.Context, req *connect.Request[pb.ResolveIssueRequest]) (*connect.Response[pb.ResolveIssueResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("ResolveIssue is not implemented"))
+}

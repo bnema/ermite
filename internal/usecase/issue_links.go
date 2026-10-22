@@ -81,11 +81,11 @@ func NewIssueLinks(cfg IssueLinksConfig) *IssueLinks {
 }
 
 // Reindex replaces links from the current texts and bounded commit range.
-func (l *IssueLinks) Reindex(ctx context.Context, repo domain.Repo, number int64) error {
-	_, err := l.reindex(ctx, repo, number)
+func (l *IssueLinks) Reindex(ctx context.Context, p domain.Principal, repo domain.Repo, number int64) error {
+	_, err := l.reindex(ctx, p, repo, number)
 	return err
 }
-func (l *IssueLinks) reindex(ctx context.Context, repo domain.Repo, number int64) ([]int64, error) {
+func (l *IssueLinks) reindex(ctx context.Context, p domain.Principal, repo domain.Repo, number int64) ([]int64, error) {
 	unlock, err := l.lockMR(ctx, repo.Name, number)
 	if err != nil {
 		return nil, err
@@ -153,7 +153,7 @@ func (l *IssueLinks) reindex(ctx context.Context, repo domain.Repo, number int64
 		}
 	}
 	for range maxWriteRetries {
-		added, removed, err := l.cfg.Links.ReplaceLinks(ctx, repo.Name, number, mentions, closes)
+		added, removed, err := l.cfg.Links.ReplaceLinks(ctx, repo.Name, number, mentions, closes, ports.ReferenceEvent{})
 		if errors.Is(err, domain.ErrConflict) {
 			continue
 		}
@@ -186,10 +186,10 @@ func linkWarning(ctx context.Context, err error) {
 		log.Warn().Err(err).Msg("issue links not updated")
 	}
 }
-func (l *IssueLinks) OnMergeRequestChanged(ctx context.Context, repo domain.Repo, number int64) {
+func (l *IssueLinks) OnMergeRequestChanged(ctx context.Context, p domain.Principal, repo domain.Repo, number int64) {
 	ctx, cancel := linkContext(ctx)
 	defer cancel()
-	linkWarning(ctx, l.Reindex(ctx, repo, number))
+	linkWarning(ctx, l.Reindex(ctx, p, repo, number))
 }
 func (l *IssueLinks) settled(ctx context.Context, repo domain.Repo, mr domain.MergeRequest) {
 	links, err := l.cfg.Links.LinksOfMergeRequest(ctx, repo.Name, mr.Number)
@@ -205,7 +205,7 @@ func (l *IssueLinks) OnMergeRequestSettled(ctx context.Context, repo domain.Repo
 	defer cancel()
 	l.settled(ctx, repo, mr)
 }
-func (l *IssueLinks) OnBranchesMoved(ctx context.Context, name domain.RepoName, updates []domain.RefUpdate) {
+func (l *IssueLinks) OnBranchesMoved(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) {
 	ctx, cancel := linkContext(ctx)
 	defer cancel()
 	var branches []string
@@ -232,14 +232,14 @@ func (l *IssueLinks) OnBranchesMoved(ctx context.Context, name domain.RepoName, 
 		log.Warn().Str("repo", name.String()).Msg("issue link merge requests truncated")
 	}
 	for _, n := range numbers {
-		linkWarning(ctx, l.Reindex(ctx, repo, n))
+		linkWarning(ctx, l.Reindex(ctx, p, repo, n))
 	}
 }
 func (l *IssueLinks) OnMerged(ctx context.Context, p domain.Principal, repo domain.Repo, mr domain.MergeRequest) {
 	ctx, cancel := linkContext(ctx)
 	defer cancel()
 	defer l.settled(ctx, repo, mr)
-	closes, err := l.reindex(ctx, repo, mr.Number)
+	closes, err := l.reindex(ctx, p, repo, mr.Number)
 	if err != nil {
 		linkWarning(ctx, err)
 		return

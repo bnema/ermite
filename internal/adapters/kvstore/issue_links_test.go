@@ -3,6 +3,7 @@ package kvstore_test
 
 import (
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	"context"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,30 +14,30 @@ func TestIssueLinksReplace(t *testing.T) {
 	ctx := context.Background()
 	s, _, repo := repoWithMRs(t)
 	links := s.IssueLinks()
-	added, removed, err := links.ReplaceLinks(ctx, repo, 9, []int64{3, 2, 3}, []int64{2})
+	added, removed, err := links.ReplaceLinks(ctx, repo, 9, []int64{3, 2, 3}, []int64{2}, ports.ReferenceEvent{})
 	require.NoError(t, err)
 	assert.Equal(t, []domain.IssueLink{{Issue: 2, MergeRequest: 9, Closes: true}, {Issue: 3, MergeRequest: 9}}, added)
 	assert.Empty(t, removed)
 	got, err := links.LinksOfMergeRequest(ctx, repo, 9)
 	require.NoError(t, err)
 	assert.Equal(t, added, got)
-	added, removed, err = links.ReplaceLinks(ctx, repo, 9, []int64{2, 3}, []int64{2})
+	added, removed, err = links.ReplaceLinks(ctx, repo, 9, []int64{2, 3}, []int64{2}, ports.ReferenceEvent{})
 	require.NoError(t, err)
 	assert.Empty(t, added)
 	assert.Empty(t, removed)
-	added, removed, err = links.ReplaceLinks(ctx, repo, 9, []int64{3, 4}, []int64{3})
+	added, removed, err = links.ReplaceLinks(ctx, repo, 9, []int64{3, 4}, []int64{3}, ports.ReferenceEvent{})
 	require.NoError(t, err)
 	assert.Equal(t, []domain.IssueLink{{Issue: 3, MergeRequest: 9, Closes: true}, {Issue: 4, MergeRequest: 9}}, added)
 	assert.Equal(t, []domain.IssueLink{{Issue: 2, MergeRequest: 9, Closes: true}}, removed)
 	got, err = links.LinksOfIssue(ctx, repo, 2, 100)
 	require.NoError(t, err)
 	assert.Empty(t, got)
-	added, removed, err = links.ReplaceLinks(ctx, repo, 9, []int64{3}, nil)
+	added, removed, err = links.ReplaceLinks(ctx, repo, 9, []int64{3}, nil, ports.ReferenceEvent{})
 	require.NoError(t, err)
 	assert.Empty(t, added)
 	assert.Equal(t, []domain.IssueLink{{Issue: 3, MergeRequest: 9, Closes: true}, {Issue: 4, MergeRequest: 9}}, removed)
 	for _, mr := range []int64{12, 1, 5} {
-		_, _, err = links.ReplaceLinks(ctx, repo, mr, []int64{3}, nil)
+		_, _, err = links.ReplaceLinks(ctx, repo, mr, []int64{3}, nil, ports.ReferenceEvent{})
 		require.NoError(t, err)
 	}
 	got, err = links.LinksOfIssue(ctx, repo, 3, 2)
@@ -45,7 +46,7 @@ func TestIssueLinksReplace(t *testing.T) {
 	require.NoError(t, s.Delete(ctx, repo))
 	assert.Zero(t, countKeys(t, s, "isref/"+repo.String()+"/"))
 	assert.Zero(t, countKeys(t, s, "mrref/"+repo.String()+"/"))
-	_, _, err = links.ReplaceLinks(ctx, repo, 9, []int64{2}, nil)
+	_, _, err = links.ReplaceLinks(ctx, repo, 9, []int64{2}, nil, ports.ReferenceEvent{})
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
 

@@ -59,7 +59,7 @@ func TestIssueLinksTextsPushAndReferences(t *testing.T) {
 	assert.Empty(t, got.References)
 	head := r.commit(author, "push.txt", "push", fmt.Sprintf("Fixes #%d", other.Number))
 	r.push("feat")
-	links.OnBranchesMoved(r.ctx, r.repo, []domain.RefUpdate{{Ref: "refs/heads/feat", New: head.String()}})
+	links.OnBranchesMoved(r.ctx, domain.Principal{}, r.repo, []domain.RefUpdate{{Ref: "refs/heads/feat", New: head.String()}})
 	got, err = issues.Get(r.ctx, root, r.repo, other.Number)
 	require.NoError(t, err)
 	require.Len(t, got.References, 1)
@@ -161,12 +161,12 @@ func TestIssueLinksReindexSerializedPerMergeRequest(t *testing.T) {
 	repo, err := r.store.Get(r.ctx, r.repo)
 	require.NoError(t, err)
 	done := make(chan error, 2)
-	go func() { done <- links.Reindex(r.ctx, repo, mr.Number) }()
+	go func() { done <- links.Reindex(r.ctx, domain.Principal{}, repo, mr.Number) }()
 	<-g.started
 	// The first reindex read the old texts; a note is added afterwards.
 	_, err = r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{Text: fmt.Sprintf("see #%d", issue.Number)})
 	require.NoError(t, err)
-	go func() { done <- links.Reindex(r.ctx, repo, mr.Number) }()
+	go func() { done <- links.Reindex(r.ctx, domain.Principal{}, repo, mr.Number) }()
 	time.Sleep(100 * time.Millisecond)
 	assert.EqualValues(t, 1, g.entered.Load(), "the second reindex waits for the first")
 	close(g.gate)
@@ -202,11 +202,11 @@ func TestIssueLinksNotifiesRemovalsAndClosingFlips(t *testing.T) {
 	// then is rewritten to a plain mention.
 	head := r.commit(author, "fix.txt", "fix", fmt.Sprintf("Fixes #%d", issue.Number))
 	r.push("feat")
-	links.OnBranchesMoved(r.ctx, r.repo, []domain.RefUpdate{{Ref: "refs/heads/feat", New: head.String()}})
+	links.OnBranchesMoved(r.ctx, domain.Principal{}, r.repo, []domain.RefUpdate{{Ref: "refs/heads/feat", New: head.String()}})
 	referenced()
 	r.sh("commit", "-q", "--amend", "-m", fmt.Sprintf("See #%d", issue.Number))
 	r.push("feat")
-	links.OnBranchesMoved(r.ctx, r.repo, []domain.RefUpdate{{Ref: "refs/heads/feat", New: r.branchHead("feat").String()}})
+	links.OnBranchesMoved(r.ctx, domain.Principal{}, r.repo, []domain.RefUpdate{{Ref: "refs/heads/feat", New: r.branchHead("feat").String()}})
 	assert.Equal(t, 1, referenced(), "a closing flip notifies once")
 }
 

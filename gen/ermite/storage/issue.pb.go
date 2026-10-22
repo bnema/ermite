@@ -34,7 +34,8 @@ const (
 	IssueState_ISSUE_STATE_OPEN        IssueState = 1
 	IssueState_ISSUE_STATE_CLOSED      IssueState = 2
 	// Awaiting moderation. Not stored yet.
-	IssueState_ISSUE_STATE_PENDING IssueState = 3
+	IssueState_ISSUE_STATE_PENDING  IssueState = 3
+	IssueState_ISSUE_STATE_RESOLVED IssueState = 4
 )
 
 // Enum value maps for IssueState.
@@ -44,12 +45,14 @@ var (
 		1: "ISSUE_STATE_OPEN",
 		2: "ISSUE_STATE_CLOSED",
 		3: "ISSUE_STATE_PENDING",
+		4: "ISSUE_STATE_RESOLVED",
 	}
 	IssueState_value = map[string]int32{
 		"ISSUE_STATE_UNSPECIFIED": 0,
 		"ISSUE_STATE_OPEN":        1,
 		"ISSUE_STATE_CLOSED":      2,
 		"ISSUE_STATE_PENDING":     3,
+		"ISSUE_STATE_RESOLVED":    4,
 	}
 )
 
@@ -80,6 +83,64 @@ func (IssueState) EnumDescriptor() ([]byte, []int) {
 	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{0}
 }
 
+// IssueEventKind describes an issue history entry.
+type IssueEventKind int32
+
+const (
+	IssueEventKind_ISSUE_EVENT_KIND_UNSPECIFIED IssueEventKind = 0
+	// Closes says whether this is a closing reference.
+	IssueEventKind_ISSUE_EVENT_KIND_REFERENCED IssueEventKind = 1
+	IssueEventKind_ISSUE_EVENT_KIND_CLOSED     IssueEventKind = 2
+	IssueEventKind_ISSUE_EVENT_KIND_REOPENED   IssueEventKind = 3
+	// Merge_request is set when a merge resolved the issue.
+	IssueEventKind_ISSUE_EVENT_KIND_RESOLVED IssueEventKind = 4
+)
+
+// Enum value maps for IssueEventKind.
+var (
+	IssueEventKind_name = map[int32]string{
+		0: "ISSUE_EVENT_KIND_UNSPECIFIED",
+		1: "ISSUE_EVENT_KIND_REFERENCED",
+		2: "ISSUE_EVENT_KIND_CLOSED",
+		3: "ISSUE_EVENT_KIND_REOPENED",
+		4: "ISSUE_EVENT_KIND_RESOLVED",
+	}
+	IssueEventKind_value = map[string]int32{
+		"ISSUE_EVENT_KIND_UNSPECIFIED": 0,
+		"ISSUE_EVENT_KIND_REFERENCED":  1,
+		"ISSUE_EVENT_KIND_CLOSED":      2,
+		"ISSUE_EVENT_KIND_REOPENED":    3,
+		"ISSUE_EVENT_KIND_RESOLVED":    4,
+	}
+)
+
+func (x IssueEventKind) Enum() *IssueEventKind {
+	p := new(IssueEventKind)
+	*p = x
+	return p
+}
+
+func (x IssueEventKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (IssueEventKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_ermite_storage_issue_proto_enumTypes[1].Descriptor()
+}
+
+func (IssueEventKind) Type() protoreflect.EnumType {
+	return &file_ermite_storage_issue_proto_enumTypes[1]
+}
+
+func (x IssueEventKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use IssueEventKind.Descriptor instead.
+func (IssueEventKind) EnumDescriptor() ([]byte, []int) {
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{1}
+}
+
 // Issue is stored under the key "is/<repo>/<number:010d>". The numbers come
 // from the sequence of the merge requests ("mrseq/<repo>"). The open ones are
 // indexed under "isopen/<repo>/<number:010d>".
@@ -97,7 +158,8 @@ type Issue struct {
 	CommentSeq int64 `protobuf:"varint,8,opt,name=comment_seq,json=commentSeq,proto3" json:"comment_seq,omitempty"`
 	// True for an issue approved from the public form: its text comes from
 	// an anonymous visitor and is rendered as untrusted.
-	External             bool  `protobuf:"varint,9,opt,name=external,proto3" json:"external,omitempty"`
+	External bool `protobuf:"varint,9,opt,name=external,proto3" json:"external,omitempty"`
+	// Set only while RESOLVED by a merge.
 	ClosedByMergeRequest int64 `protobuf:"varint,10,opt,name=closed_by_merge_request,json=closedByMergeRequest,proto3" json:"closed_by_merge_request,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
@@ -542,6 +604,97 @@ func (x *IssueKey) GetKey() []byte {
 	return nil
 }
 
+// IssueEvent is stored under "isev/<repo>/<issue:010d>/<seq:010d>" and,
+// when merge_request != 0, copied verbatim under
+// "mrev/<repo>/<mr:010d>/<issue:010d>/<seq:010d>". Append-only: never
+// updated or deleted except with the repository.
+type IssueEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Seq   int64                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	Kind  IssueEventKind         `protobuf:"varint,2,opt,name=kind,proto3,enum=ermite.storage.IssueEventKind" json:"kind,omitempty"`
+	// Zero if none.
+	MergeRequest int64 `protobuf:"varint,3,opt,name=merge_request,json=mergeRequest,proto3" json:"merge_request,omitempty"`
+	// REFERENCED only.
+	Closes bool `protobuf:"varint,4,opt,name=closes,proto3" json:"closes,omitempty"`
+	// Label, like Issue.author.
+	Actor         string                 `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueEvent) Reset() {
+	*x = IssueEvent{}
+	mi := &file_ermite_storage_issue_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueEvent) ProtoMessage() {}
+
+func (x *IssueEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_ermite_storage_issue_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueEvent.ProtoReflect.Descriptor instead.
+func (*IssueEvent) Descriptor() ([]byte, []int) {
+	return file_ermite_storage_issue_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *IssueEvent) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *IssueEvent) GetKind() IssueEventKind {
+	if x != nil {
+		return x.Kind
+	}
+	return IssueEventKind_ISSUE_EVENT_KIND_UNSPECIFIED
+}
+
+func (x *IssueEvent) GetMergeRequest() int64 {
+	if x != nil {
+		return x.MergeRequest
+	}
+	return 0
+}
+
+func (x *IssueEvent) GetCloses() bool {
+	if x != nil {
+		return x.Closes
+	}
+	return false
+}
+
+func (x *IssueEvent) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *IssueEvent) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
 var File_ermite_storage_issue_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_issue_proto_rawDesc = "" +
@@ -583,13 +736,29 @@ const file_ermite_storage_issue_proto_rawDesc = "" +
 	"\bIssueBan\x120\n" +
 	"\x05until\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05until\"\x1c\n" +
 	"\bIssueKey\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\fR\x03key*p\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key\"\xe0\x01\n" +
+	"\n" +
+	"IssueEvent\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x03R\x03seq\x122\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1e.ermite.storage.IssueEventKindR\x04kind\x12#\n" +
+	"\rmerge_request\x18\x03 \x01(\x03R\fmergeRequest\x12\x16\n" +
+	"\x06closes\x18\x04 \x01(\bR\x06closes\x12\x14\n" +
+	"\x05actor\x18\x05 \x01(\tR\x05actor\x129\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\x8a\x01\n" +
 	"\n" +
 	"IssueState\x12\x1b\n" +
 	"\x17ISSUE_STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10ISSUE_STATE_OPEN\x10\x01\x12\x16\n" +
 	"\x12ISSUE_STATE_CLOSED\x10\x02\x12\x17\n" +
-	"\x13ISSUE_STATE_PENDING\x10\x03B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
+	"\x13ISSUE_STATE_PENDING\x10\x03\x12\x18\n" +
+	"\x14ISSUE_STATE_RESOLVED\x10\x04*\xae\x01\n" +
+	"\x0eIssueEventKind\x12 \n" +
+	"\x1cISSUE_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bISSUE_EVENT_KIND_REFERENCED\x10\x01\x12\x1b\n" +
+	"\x17ISSUE_EVENT_KIND_CLOSED\x10\x02\x12\x1d\n" +
+	"\x19ISSUE_EVENT_KIND_REOPENED\x10\x03\x12\x1d\n" +
+	"\x19ISSUE_EVENT_KIND_RESOLVED\x10\x04B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
 var (
 	file_ermite_storage_issue_proto_rawDescOnce sync.Once
@@ -603,31 +772,35 @@ func file_ermite_storage_issue_proto_rawDescGZIP() []byte {
 	return file_ermite_storage_issue_proto_rawDescData
 }
 
-var file_ermite_storage_issue_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ermite_storage_issue_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_ermite_storage_issue_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_ermite_storage_issue_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_ermite_storage_issue_proto_goTypes = []any{
 	(IssueState)(0),                // 0: ermite.storage.IssueState
-	(*Issue)(nil),                  // 1: ermite.storage.Issue
-	(*IssueLink)(nil),              // 2: ermite.storage.IssueLink
-	(*MergeRequestReferences)(nil), // 3: ermite.storage.MergeRequestReferences
-	(*IssueComment)(nil),           // 4: ermite.storage.IssueComment
-	(*PendingIssue)(nil),           // 5: ermite.storage.PendingIssue
-	(*IssueBan)(nil),               // 6: ermite.storage.IssueBan
-	(*IssueKey)(nil),               // 7: ermite.storage.IssueKey
-	(*timestamppb.Timestamp)(nil),  // 8: google.protobuf.Timestamp
+	(IssueEventKind)(0),            // 1: ermite.storage.IssueEventKind
+	(*Issue)(nil),                  // 2: ermite.storage.Issue
+	(*IssueLink)(nil),              // 3: ermite.storage.IssueLink
+	(*MergeRequestReferences)(nil), // 4: ermite.storage.MergeRequestReferences
+	(*IssueComment)(nil),           // 5: ermite.storage.IssueComment
+	(*PendingIssue)(nil),           // 6: ermite.storage.PendingIssue
+	(*IssueBan)(nil),               // 7: ermite.storage.IssueBan
+	(*IssueKey)(nil),               // 8: ermite.storage.IssueKey
+	(*IssueEvent)(nil),             // 9: ermite.storage.IssueEvent
+	(*timestamppb.Timestamp)(nil),  // 10: google.protobuf.Timestamp
 }
 var file_ermite_storage_issue_proto_depIdxs = []int32{
-	0, // 0: ermite.storage.Issue.state:type_name -> ermite.storage.IssueState
-	8, // 1: ermite.storage.Issue.created_at:type_name -> google.protobuf.Timestamp
-	8, // 2: ermite.storage.Issue.updated_at:type_name -> google.protobuf.Timestamp
-	8, // 3: ermite.storage.IssueComment.created_at:type_name -> google.protobuf.Timestamp
-	8, // 4: ermite.storage.PendingIssue.created_at:type_name -> google.protobuf.Timestamp
-	8, // 5: ermite.storage.IssueBan.until:type_name -> google.protobuf.Timestamp
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0,  // 0: ermite.storage.Issue.state:type_name -> ermite.storage.IssueState
+	10, // 1: ermite.storage.Issue.created_at:type_name -> google.protobuf.Timestamp
+	10, // 2: ermite.storage.Issue.updated_at:type_name -> google.protobuf.Timestamp
+	10, // 3: ermite.storage.IssueComment.created_at:type_name -> google.protobuf.Timestamp
+	10, // 4: ermite.storage.PendingIssue.created_at:type_name -> google.protobuf.Timestamp
+	10, // 5: ermite.storage.IssueBan.until:type_name -> google.protobuf.Timestamp
+	1,  // 6: ermite.storage.IssueEvent.kind:type_name -> ermite.storage.IssueEventKind
+	10, // 7: ermite.storage.IssueEvent.created_at:type_name -> google.protobuf.Timestamp
+	8,  // [8:8] is the sub-list for method output_type
+	8,  // [8:8] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_issue_proto_init() }
@@ -640,8 +813,8 @@ func file_ermite_storage_issue_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ermite_storage_issue_proto_rawDesc), len(file_ermite_storage_issue_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   7,
+			NumEnums:      2,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

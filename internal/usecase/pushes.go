@@ -274,7 +274,7 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 		u.mergeab.OnBranchesMoved(ctx, name, updates) // queues only
 	}
 	if u.links != nil {
-		u.links.OnBranchesMoved(ctx, name, updates)
+		u.links.OnBranchesMoved(ctx, p, name, updates)
 	}
 	if u.releases != nil {
 		u.releases.OnRefsMoved(ctx, name, updates)

@@ -261,6 +261,8 @@ type IssueReference struct {
 
 // IssueDetail is an issue with its comments and referencing merge requests.
 type IssueDetail struct {
+	// Events are oldest first.
+	Events []IssueEventDetail
 	// References are ascending by number, at most 100.
 	References []IssueReference
 	Issue      domain.Issue
@@ -284,6 +286,10 @@ type PushSummary struct {
 
 // MergeRequestDetail is a merge request with its review data.
 type MergeRequestDetail struct {
+	// Issues are current links ascending by number, at most 100; empty when issues are off.
+	Issues []MergeRequestIssue
+	// IssueEvents are append-only history, including links since removed.
+	IssueEvents  []IssueEventDetail
 	MergeRequest domain.MergeRequest
 	// NewCommits is the unread prefix of Commits; zero if the read head is absent.
 	NewCommits int
@@ -439,3 +445,23 @@ const (
 	// MaxPushSummaryCommits bounds the commits counted in a push summary.
 	MaxPushSummaryCommits = 100
 )
+
+// ReferenceEvent says who and when a reference was recorded.
+type ReferenceEvent struct {
+	Actor string
+	At    time.Time
+}
+
+// IssueEventDetail includes the current MR title, empty if the MR is gone.
+type IssueEventDetail struct {
+	Event             domain.IssueEvent
+	MergeRequestTitle domain.MRTitle
+}
+
+// MergeRequestIssue is a current issue link on a merge request.
+type MergeRequestIssue struct {
+	Number int64
+	Title  domain.IssueTitle
+	State  domain.IssueState
+	Closes bool
+}

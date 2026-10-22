@@ -267,7 +267,11 @@ type IssueStore interface {
 	// Update replaces the stored issue and keeps the index of the open issues
 	// in step. It returns domain.ErrNotFound if there is none and
 	// domain.ErrConflict if another write changed it since issue was read.
-	Update(ctx context.Context, issue domain.Issue) error
+	// Events are appended atomically with the write, with sequence IDs assigned
+	// by the store. Events beyond kvstore.MaxIssueEvents (500) are silently dropped.
+	Update(ctx context.Context, issue domain.Issue, events ...domain.IssueEvent) error
+	// ListEvents returns history oldest first.
+	ListEvents(ctx context.Context, repo domain.RepoName, number int64) ([]domain.IssueEvent, error)
 	// SaveComment writes a comment and the issue it belongs to in one batch: a
 	// new comment (Version 0) must not exist yet, an existing one must be
 	// unchanged since it was read, and so must issue. It returns
@@ -548,7 +552,11 @@ type IssueLinkStore interface {
 	// ReplaceLinks atomically replaces an MR's links (closes is a subset of issues).
 	// Added includes new links and links whose closes flag turned on.
 	// Returns ErrNotFound for a missing repository, ErrConflict on a race.
-	ReplaceLinks(ctx context.Context, repo domain.RepoName, mr int64, issues, closes []int64) (added, removed []domain.IssueLink, err error)
+	ReplaceLinks(ctx context.Context, repo domain.RepoName, mr int64, issues, closes []int64, ref ReferenceEvent) (added, removed []domain.IssueLink, err error)
+	// EventsOfMergeRequest returns at most 500 events, oldest CreatedAt first,
+	// breaking ties by issue number then sequence ID. Events can name issues
+	// absent from the current links.
+	EventsOfMergeRequest(ctx context.Context, repo domain.RepoName, mr int64) ([]domain.IssueEvent, error)
 	// LinksOfIssue returns links ascending by MR number, at most limit.
 	LinksOfIssue(ctx context.Context, repo domain.RepoName, issue int64, limit int) ([]domain.IssueLink, error)
 	// LinksOfMergeRequest returns the issues named by an MR.
@@ -562,8 +570,8 @@ type Clock interface {
 
 // IssueLinkTrigger updates derived links without failing the primary operation.
 type IssueLinkTrigger interface {
-	OnMergeRequestChanged(context.Context, domain.Repo, int64)
+	OnMergeRequestChanged(context.Context, domain.Principal, domain.Repo, int64)
 	OnMergeRequestSettled(context.Context, domain.Repo, domain.MergeRequest)
-	OnBranchesMoved(context.Context, domain.RepoName, []domain.RefUpdate)
+	OnBranchesMoved(context.Context, domain.Principal, domain.RepoName, []domain.RefUpdate)
 	OnMerged(context.Context, domain.Principal, domain.Repo, domain.MergeRequest)
 }
