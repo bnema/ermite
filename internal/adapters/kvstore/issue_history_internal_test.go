@@ -14,7 +14,7 @@ func TestPreparedEventSequenceConflict(t *testing.T) {
 	ctx := context.Background()
 	db, err := kv.Open(ctx, t.TempDir(), kv.Options{})
 	require.NoError(t, err)
-	defer db.Close(ctx)
+	t.Cleanup(func() { require.NoError(t, db.Close(ctx)) })
 	repo, err := domain.ParseRepoName("proj")
 	require.NoError(t, err)
 	events := []domain.IssueEvent{{Kind: domain.IssueEventClosed, MergeRequest: 9}}

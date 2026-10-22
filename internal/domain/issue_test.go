@@ -141,6 +141,7 @@ func TestIssueIsDone(t *testing.T) {
 	t.Parallel()
 	for _, state := range []domain.IssueState{"", "unknown", domain.IssueStateOpen, domain.IssueStateClosed, domain.IssueStateResolved} {
 		t.Run(string(state), func(t *testing.T) {
+			t.Parallel()
 			issue := domain.Issue{State: state}
 			assert.Equal(t, state == domain.IssueStateClosed || state == domain.IssueStateResolved, issue.IsDone())
 			assert.Equal(t, state == domain.IssueStateOpen, issue.IsOpen())

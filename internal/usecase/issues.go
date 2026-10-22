@@ -277,10 +277,11 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 	}
 	verb := "close"
 	kind := domain.IssueEventClosed
-	if to == domain.IssueStateOpen {
+	switch to {
+	case domain.IssueStateOpen:
 		verb = "reopen"
 		kind = domain.IssueEventReopened
-	} else if to == domain.IssueStateResolved {
+	case domain.IssueStateResolved:
 		verb = "resolve"
 		kind = domain.IssueEventResolved
 	}
@@ -305,11 +306,12 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 		log.Info().Str("repo", name.String()).Int64("number", number).
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue " + verb + "d")
 		recordActivity(ctx, i.meta, repo.Name, issue.UpdatedAt)
-		if to == domain.IssueStateOpen {
+		switch to {
+		case domain.IssueStateOpen:
 			i.bus.Publish(ctx, domain.IssueReopened{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
-		} else if to == domain.IssueStateResolved {
+		case domain.IssueStateResolved:
 			i.bus.Publish(ctx, domain.IssueResolved{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
-		} else {
+		default:
 			i.bus.Publish(ctx, domain.IssueClosed{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		}
 		return issue, nil
