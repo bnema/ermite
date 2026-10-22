@@ -3,6 +3,7 @@
 package kvstore
 
 import (
+	"container/heap"
 	"context"
 	"errors"
 	"fmt"
@@ -158,7 +159,7 @@ func toSet(numbers []int64) map[int64]struct{} {
 // EventsOfMergeRequest returns history, including references no longer linked,
 // ordered by time, then issue and sequence, capped at MaxIssueEvents.
 func (l *IssueLinks) EventsOfMergeRequest(ctx context.Context, repo domain.RepoName, mr int64) ([]domain.IssueEvent, error) {
-	var out []domain.IssueEvent
+	out := make(issueEventMaxHeap, 0, MaxIssueEvents)
 	prefix := mrEventsPrefix(repo, mr)
 	for key, item := range l.db.Snapshot(ctx).Prefix(ctx, []byte(prefix)) {
 		if err := ctx.Err(); err != nil {
@@ -176,11 +177,29 @@ func (l *IssueLinks) EventsOfMergeRequest(ctx context.Context, repo domain.RepoN
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, ev)
+		if len(out) < MaxIssueEvents {
+			heap.Push(&out, ev)
+		} else if domain.CompareIssueEvents(ev, out[0]) < 0 {
+			out[0] = ev
+			heap.Fix(&out, 0)
+		}
 	}
 	slices.SortFunc(out, domain.CompareIssueEvents)
-	if len(out) > MaxIssueEvents {
-		out = out[:MaxIssueEvents]
-	}
 	return out, ctx.Err()
+}
+
+// issueEventMaxHeap keeps the latest retained event at the root.
+type issueEventMaxHeap []domain.IssueEvent
+
+func (h issueEventMaxHeap) Len() int           { return len(h) }
+func (h issueEventMaxHeap) Less(i, j int) bool { return domain.CompareIssueEvents(h[i], h[j]) > 0 }
+func (h issueEventMaxHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *issueEventMaxHeap) Push(x any)        { *h = append(*h, x.(domain.IssueEvent)) }
+func (h *issueEventMaxHeap) Pop() any {
+	old := *h
+	n := len(old) - 1
+	x := old[n]
+	old[n] = domain.IssueEvent{}
+	*h = old[:n]
+	return x
 }

@@ -2,12 +2,15 @@
 package kvstore_test
 
 import (
+	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"context"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"slices"
 	"testing"
+	"time"
 )
 
 func TestIssueLinksReplace(t *testing.T) {
@@ -64,4 +67,30 @@ func TestIssueClosedByRoundTrip(t *testing.T) {
 	stored, err = s.Issues().Get(ctx, repo, stored.Number)
 	require.NoError(t, err)
 	assert.Zero(t, stored.ClosedByMergeRequest)
+}
+
+func TestMRHistoryKeepsEarliestEvents(t *testing.T) {
+	ctx := context.Background()
+	s, _, repo := repoWithMRs(t)
+	var want []domain.IssueEvent
+	// Issue keys and insertion order both differ from timestamp order. Equal
+	// timestamps across issues also exercise the issue/sequence tie breakers.
+	for i := 0; i < 3; i++ {
+		issue, err := s.Issues().Create(ctx, newIssue(t, repo, "history"))
+		require.NoError(t, err)
+		var events []domain.IssueEvent
+		for j := 0; j < 240; j++ {
+			events = append(events, domain.IssueEvent{Kind: domain.IssueEventReferenced, MergeRequest: 9, CreatedAt: time.Unix(int64(240-j), 0)})
+		}
+		require.NoError(t, s.Issues().Update(ctx, issue, events...))
+		stored, err := s.Issues().ListEvents(ctx, repo, issue.Number)
+		require.NoError(t, err)
+		want = append(want, stored...)
+	}
+	slices.SortFunc(want, domain.CompareIssueEvents)
+	require.Greater(t, len(want), kvstore.MaxIssueEvents)
+	got, err := s.IssueLinks().EventsOfMergeRequest(ctx, repo, 9)
+	require.NoError(t, err)
+	assert.Equal(t, want[:kvstore.MaxIssueEvents], got)
+	assert.Equal(t, kvstore.MaxIssueEvents, cap(got))
 }
