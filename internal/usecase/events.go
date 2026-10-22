@@ -202,6 +202,8 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueOpened:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.IssueResolved:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueClosed:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueReopened:
@@ -567,6 +569,8 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.IssueOpened:
 		return e.deliverRepo(ctx, w, ev.Issue.Repo, false, be, out, send)
+	case domain.IssueResolved:
+		return e.deliverRepo(ctx, w, ev.Issue.Repo, false, be, out, send)
 	case domain.IssueClosed:
 		return e.deliverRepo(ctx, w, ev.Issue.Repo, false, be, out, send)
 	case domain.IssueReopened:
@@ -674,7 +678,7 @@ func (e *Events) deliverRelease(ctx context.Context, w *watch, rel domain.Releas
 // isIssueEvent reports whether ev is about an issue.
 func isIssueEvent(ev domain.Event) bool {
 	switch ev.(type) {
-	case domain.IssueOpened, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueReferenced:
+	case domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueReferenced:
 		return true
 	}
 	return false

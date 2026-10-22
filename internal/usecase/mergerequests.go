@@ -43,24 +43,26 @@ const mrTokenPrefix = "mp1:"
 // merging mr:merge, on the repository (see scopeAccess), and that scope also
 // makes a private repository visible for the action (see writable).
 type MergeRequests struct {
-	links     ports.IssueLinkTrigger
-	meta      ports.RepoMetaStore
-	store     ports.MergeRequestStore
-	repos     ports.GitRepos
-	git       ports.MergeGit
-	signer    ports.CommitSigner
-	committer domain.Identity
-	bus       ports.EventBus
-	clock     ports.Clock
-	maint     ports.MaintenanceScheduler
-	ci        ports.WorkflowTrigger    // nil: no CI
-	checks    ports.CIChecksReader     // nil: no CI, so no check blocks a merge
-	pulls     ports.PullRequestTrigger // nil: no pull_request workflows
-	tips      ports.CIRefTipStore      // nil: who merges is not recorded
-	verifier  ports.CommitVerifier     // nil: commits are not checked (ADR 0030)
-	mergeab   MergeabilityHook         // nil: no mergeability
-	autoMerge ports.AutoMergeTrigger
-	mirror    ports.MirrorTrigger // nil: no outbound mirror
+	issues     ports.IssueStore
+	issueLinks ports.IssueLinkStore
+	links      ports.IssueLinkTrigger
+	meta       ports.RepoMetaStore
+	store      ports.MergeRequestStore
+	repos      ports.GitRepos
+	git        ports.MergeGit
+	signer     ports.CommitSigner
+	committer  domain.Identity
+	bus        ports.EventBus
+	clock      ports.Clock
+	maint      ports.MaintenanceScheduler
+	ci         ports.WorkflowTrigger    // nil: no CI
+	checks     ports.CIChecksReader     // nil: no CI, so no check blocks a merge
+	pulls      ports.PullRequestTrigger // nil: no pull_request workflows
+	tips       ports.CIRefTipStore      // nil: who merges is not recorded
+	verifier   ports.CommitVerifier     // nil: commits are not checked (ADR 0030)
+	mergeab    MergeabilityHook         // nil: no mergeability
+	autoMerge  ports.AutoMergeTrigger
+	mirror     ports.MirrorTrigger // nil: no outbound mirror
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -79,9 +81,12 @@ var (
 // MergeRequestsConfig holds what the merge request use cases need. Every field
 // is required.
 type MergeRequestsConfig struct {
-	Links ports.IssueLinkTrigger // Optional derived issue links.
-	Meta  ports.RepoMetaStore
-	Store ports.MergeRequestStore
+	// Issues and IssueLinks optionally enrich merge request details.
+	Issues     ports.IssueStore
+	IssueLinks ports.IssueLinkStore
+	Links      ports.IssueLinkTrigger // Optional derived issue links.
+	Meta       ports.RepoMetaStore
+	Store      ports.MergeRequestStore
 	// Repos gives the default branch of a repository.
 	Repos ports.GitRepos
 	Git   ports.MergeGit
@@ -114,7 +119,7 @@ type MergeRequestsConfig struct {
 // NewMergeRequests builds the merge request use cases.
 func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 	return &MergeRequests{
-		links: cfg.Links, meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
+		issues: cfg.Issues, issueLinks: cfg.IssueLinks, links: cfg.Links, meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
 		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips, mergeab: cfg.Mergeability,
 		locks: make(map[domain.RepoName]chan struct{}),
 	}
@@ -550,7 +555,7 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 	if err != nil {
 		return ports.MergeRequestDetail{}, err
 	}
-	_, mr, err := m.get(ctx, p, name, number)
+	repo, mr, err := m.get(ctx, p, name, number)
 	if err != nil {
 		return ports.MergeRequestDetail{}, err
 	}
@@ -568,6 +573,42 @@ func (m *MergeRequests) Get(ctx context.Context, p domain.Principal, name domain
 		return nil
 	}
 	d := ports.MergeRequestDetail{MergeRequest: mr}
+	if m.issues != nil && m.issueLinks != nil && repo.Settings.IssuesEnabled() {
+		links, err := m.issueLinks.LinksOfMergeRequest(ctx, name, number)
+		if err != nil {
+			return ports.MergeRequestDetail{}, err
+		}
+		links = slices.Clone(links)
+		slices.SortFunc(links, func(a, b domain.IssueLink) int {
+			if a.Issue < b.Issue {
+				return -1
+			}
+			if a.Issue > b.Issue {
+				return 1
+			}
+			return 0
+		})
+		if len(links) > MaxIssueLinksPerIssue {
+			links = links[:MaxIssueLinksPerIssue]
+		}
+		for _, link := range links {
+			issue, err := m.issues.Get(ctx, name, link.Issue)
+			if errors.Is(err, domain.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return ports.MergeRequestDetail{}, err
+			}
+			d.Issues = append(d.Issues, ports.MergeRequestIssue{Number: issue.Number, Title: issue.Title, State: issue.State, Closes: link.Closes})
+		}
+		events, err := m.issueLinks.EventsOfMergeRequest(ctx, name, number)
+		if err != nil {
+			return ports.MergeRequestDetail{}, err
+		}
+		for _, event := range events {
+			d.IssueEvents = append(d.IssueEvents, ports.IssueEventDetail{Event: event, MergeRequestTitle: mr.Title})
+		}
+	}
 	if m.mergeab != nil && mr.IsOpen() {
 		tip, err := m.branchOrZero(ctx, name, mr.Target)
 		if err != nil {

@@ -136,7 +136,7 @@ func TestIssueCreateAndTransitions(t *testing.T) {
 		t.Parallel()
 		u := newIssueUnit(t, domain.VisibilityPublic, domain.IssuesOwner)
 		u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(3)).Return(open, nil)
-		u.store.EXPECT().Update(mock.Anything, mock.Anything).Return(domain.ErrConflict)
+		u.store.EXPECT().Update(mock.Anything, mock.Anything, mock.Anything).Return(domain.ErrConflict)
 		_, err := u.issues.Close(ctx, p, u.repo.Name, 3)
 		assert.ErrorIs(t, err, domain.ErrConflict)
 	})
@@ -145,8 +145,8 @@ func TestIssueCreateAndTransitions(t *testing.T) {
 		t.Parallel()
 		u := newIssueUnit(t, domain.VisibilityPublic, domain.IssuesOwner)
 		u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(3)).Return(open, nil).Twice()
-		u.store.EXPECT().Update(mock.Anything, mock.Anything).Return(domain.ErrConflict).Once()
-		u.store.EXPECT().Update(mock.Anything, mock.MatchedBy(func(i domain.Issue) bool { return i.State == domain.IssueStateClosed })).Return(nil).Once()
+		u.store.EXPECT().Update(mock.Anything, mock.Anything, mock.Anything).Return(domain.ErrConflict).Once()
+		u.store.EXPECT().Update(mock.Anything, mock.MatchedBy(func(i domain.Issue) bool { return i.State == domain.IssueStateClosed }), mock.Anything).Return(nil).Once()
 		u.bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev domain.Event) bool {
 			c, ok := ev.(domain.IssueClosed)
 			return ok && c.Issue.State == domain.IssueStateClosed
@@ -172,7 +172,7 @@ func TestIssueCreateAndTransitions(t *testing.T) {
 		closed := open
 		closed.State = domain.IssueStateClosed
 		u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(3)).Return(closed, nil)
-		u.store.EXPECT().Update(mock.Anything, mock.Anything).Return(nil)
+		u.store.EXPECT().Update(mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		u.bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(ev domain.Event) bool { _, ok := ev.(domain.IssueReopened); return ok })).Return()
 		got, err := u.issues.Reopen(ctx, p, u.repo.Name, 3)
 		require.NoError(t, err)
@@ -277,4 +277,80 @@ func TestIssueKind(t *testing.T) {
 		_, err := u.issues.Kind(ctx, domain.Anonymous(), u.repo.Name, 1)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
+}
+
+func TestIssueTransitionMatrix(t *testing.T) {
+	for _, from := range []domain.IssueState{domain.IssueStateOpen, domain.IssueStateClosed, domain.IssueStateResolved} {
+		for _, to := range []domain.IssueState{domain.IssueStateOpen, domain.IssueStateClosed, domain.IssueStateResolved} {
+			t.Run(string(from)+"/"+string(to), func(t *testing.T) {
+				u := newIssueUnit(t, domain.VisibilityPublic, domain.IssuesOwner)
+				ctx, p := context.Background(), issuePrincipal(domain.ScopeIssueWrite)
+				u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(3)).Return(domain.Issue{Repo: u.repo.Name, Number: 3, State: from, ClosedByMergeRequest: 9}, nil)
+				allowed := (from == domain.IssueStateOpen && to != domain.IssueStateOpen) || (from != domain.IssueStateOpen && to == domain.IssueStateOpen)
+				kind := map[domain.IssueState]domain.IssueEventKind{domain.IssueStateOpen: domain.IssueEventReopened, domain.IssueStateClosed: domain.IssueEventClosed, domain.IssueStateResolved: domain.IssueEventResolved}[to]
+				if allowed {
+					u.store.EXPECT().Update(mock.Anything, mock.MatchedBy(func(i domain.Issue) bool {
+						return i.State == to && i.ClosedByMergeRequest == 0 && i.UpdatedAt.Equal(now)
+					}), mock.MatchedBy(func(e []domain.IssueEvent) bool {
+						return len(e) == 1 && e[0].Kind == kind && e[0].Actor == "agent-1" && e[0].CreatedAt.Equal(now) && e[0].MergeRequest == 0
+					})).Return(nil).Once()
+					u.bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(e domain.Event) bool { return e.EventKind() == "issue."+string(kind) })).Return().Once()
+				}
+				fn := u.issues.Close
+				if to == domain.IssueStateOpen {
+					fn = u.issues.Reopen
+				}
+				if to == domain.IssueStateResolved {
+					fn = u.issues.Resolve
+				}
+				got, err := fn(ctx, p, u.repo.Name, 3)
+				if allowed {
+					require.NoError(t, err)
+					assert.Equal(t, to, got.State)
+				} else {
+					require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+				}
+			})
+		}
+	}
+}
+
+func TestIssueHistoryTitles(t *testing.T) {
+	u := newIssueUnit(t, domain.VisibilityPublic, domain.IssuesOwner)
+	u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(3)).Return(domain.Issue{Number: 3}, nil)
+	u.store.EXPECT().ListComments(mock.Anything, u.repo.Name, int64(3)).Return(nil, nil)
+	events := []domain.IssueEvent{{ID: 1, MergeRequest: 4}, {ID: 2, MergeRequest: 4}, {ID: 3, MergeRequest: 5}, {ID: 4}}
+	u.store.EXPECT().ListEvents(mock.Anything, u.repo.Name, int64(3)).Return(events, nil)
+	title, err := domain.ParseMRTitle("Fix crash")
+	require.NoError(t, err)
+	u.mrs.EXPECT().Get(mock.Anything, u.repo.Name, int64(4)).Return(domain.MergeRequest{Title: title}, nil).Once()
+	u.mrs.EXPECT().Get(mock.Anything, u.repo.Name, int64(5)).Return(domain.MergeRequest{}, domain.ErrNotFound).Once()
+	d, err := u.issues.Get(context.Background(), domain.Root(), u.repo.Name, 3)
+	require.NoError(t, err)
+	require.Len(t, d.Events, 4)
+	for n, event := range events {
+		assert.Equal(t, event, d.Events[n].Event)
+	}
+	assert.Equal(t, title, d.Events[0].MergeRequestTitle)
+	assert.Equal(t, title, d.Events[1].MergeRequestTitle)
+	assert.True(t, d.Events[2].MergeRequestTitle == (domain.MRTitle{}))
+}
+
+func TestResolveAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode domain.IssuesMode
+		p    domain.Principal
+		want error
+	}{
+		{"off", domain.IssuesOff, domain.Root(), domain.ErrNotFound},
+		{"anonymous", domain.IssuesOwner, domain.Anonymous(), domain.ErrUnauthenticated},
+		{"read only", domain.IssuesOwner, issuePrincipal(domain.ScopeRepoRead), domain.ErrForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := newIssueUnit(t, domain.VisibilityPublic, tc.mode)
+			_, err := u.issues.Resolve(context.Background(), tc.p, u.repo.Name, 1)
+			require.ErrorIs(t, err, tc.want)
+		})
+	}
 }

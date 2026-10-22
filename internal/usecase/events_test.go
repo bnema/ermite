@@ -227,8 +227,8 @@ func TestWatchDropsIssueEventsOnceIssuesAreOff(t *testing.T) {
 
 		r.push(n, 1)
 		pushID := first.next(t).ID
-		r.feed <- domain.IssueCommented{Repo: n, Number: 1, Comment: domain.IssueComment{ID: 1}, At: now, Visibility: domain.VisibilityPublic, CreatedAt: now}
-		_, ok := first.next(t).Event.(domain.IssueCommented)
+		r.feed <- domain.IssueResolved{Issue: domain.Issue{Repo: n, Number: 1}, At: now, Visibility: domain.VisibilityPublic, CreatedAt: now}
+		_, ok := first.next(t).Event.(domain.IssueResolved)
 		require.True(t, ok, "delivered while issues are on")
 		r.push(n, 2)
 		first.next(t)
@@ -244,7 +244,7 @@ func TestWatchDropsIssueEventsOnceIssuesAreOff(t *testing.T) {
 		require.True(t, isPush, "got %T", e.Event)
 		w.quiet(t, r, n)
 
-		r.feed <- domain.IssueOpened{Issue: domain.Issue{Repo: n, Number: 2}, At: now, Visibility: domain.VisibilityPublic, CreatedAt: now}
+		r.feed <- domain.IssueResolved{Issue: domain.Issue{Repo: n, Number: 2}, At: now, Visibility: domain.VisibilityPublic, CreatedAt: now}
 		w.quiet(t, r, n)
 	})
 }

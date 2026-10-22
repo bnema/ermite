@@ -377,3 +377,38 @@ func TestHistoryAuthorizationAndEqualTips(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeRequestIssueDetails(t *testing.T) {
+	for _, mode := range []domain.IssuesMode{domain.IssuesOwner, domain.IssuesOff} {
+		t.Run(string(mode), func(t *testing.T) {
+			u := newMRUnit(t)
+			u.repo.Settings.Issues = mode
+			issues, links := mocks.NewIssueStore(t), mocks.NewIssueLinkStore(t)
+			mrs := usecase.NewMergeRequests(usecase.MergeRequestsConfig{Meta: u.meta, Store: u.store, Git: u.git, Issues: issues, IssueLinks: links})
+			title, err := domain.ParseMRTitle("Fix")
+			require.NoError(t, err)
+			mr := domain.MergeRequest{Repo: u.repo.Name, Number: 2, State: domain.MRStateClosed, Title: title}
+			u.meta.EXPECT().Get(mock.Anything, u.repo.Name).Return(u.repo, nil)
+			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(2)).Return(mr, nil)
+			u.store.EXPECT().ListComments(mock.Anything, u.repo.Name, int64(2)).Return(nil, nil)
+			u.store.EXPECT().GetRead(mock.Anything, u.repo.Name, int64(2)).Return(domain.ObjectID{}, nil)
+			event := domain.IssueEvent{Issue: 1, MergeRequest: 2, Kind: domain.IssueEventResolved}
+			if mode == domain.IssuesOwner {
+				links.EXPECT().LinksOfMergeRequest(mock.Anything, u.repo.Name, int64(2)).Return([]domain.IssueLink{{Issue: 1, Closes: true}}, nil)
+				issues.EXPECT().Get(mock.Anything, u.repo.Name, int64(1)).Return(domain.Issue{Number: 1, State: domain.IssueStateResolved}, nil)
+				links.EXPECT().EventsOfMergeRequest(mock.Anything, u.repo.Name, int64(2)).Return([]domain.IssueEvent{event}, nil)
+			}
+			d, err := mrs.Get(context.Background(), domain.Root(), u.repo.Name, 2, ports.GetMergeRequestOptions{})
+			require.NoError(t, err)
+			if mode == domain.IssuesOff {
+				assert.Empty(t, d.Issues)
+				assert.Empty(t, d.IssueEvents)
+			} else {
+				require.Len(t, d.Issues, 1)
+				assert.Equal(t, domain.IssueStateResolved, d.Issues[0].State)
+				assert.True(t, d.Issues[0].Closes)
+				assert.Equal(t, []ports.IssueEventDetail{{Event: event, MergeRequestTitle: title}}, d.IssueEvents)
+			}
+		})
+	}
+}

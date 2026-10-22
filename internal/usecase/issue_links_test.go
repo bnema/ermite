@@ -5,6 +5,7 @@ package usecase_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -24,9 +25,10 @@ func linkedRig(t *testing.T) (*mrRig, *usecase.IssueLinks, *usecase.Issues) {
 	r.seed()
 	_, err := r.store.Mutate(r.ctx, r.repo, func(repo *domain.Repo) (bool, error) { repo.Settings.Issues = domain.IssuesOwner; return true, nil })
 	require.NoError(t, err)
-	links := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: r.store, Issues: r.store.Issues(), MRs: r.store.MergeRequests(), Links: r.store.IssueLinks(), Git: r.git, Bus: r.bus, Clock: fixedClock{}})
+	issueStore := &linkIssueStore{IssueStore: r.store.Issues(), issues: make(map[int64]domain.Issue)}
+	links := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: r.store, Issues: issueStore, MRs: r.store.MergeRequests(), Links: r.store.IssueLinks(), Git: r.git, Bus: r.bus, Clock: fixedClock{}})
 	r.mrs = usecase.NewMergeRequests(usecase.MergeRequestsConfig{Meta: r.store, Store: r.store.MergeRequests(), Repos: r.git, Git: r.git, Bus: r.bus, Clock: fixedClock{}, Maint: r.sched, Links: links})
-	issues := usecase.NewIssues(usecase.IssuesConfig{Meta: r.store, Store: r.store.Issues(), MergeRequests: r.store.MergeRequests(), Links: r.store.IssueLinks(), Bus: r.bus, Clock: fixedClock{}})
+	issues := usecase.NewIssues(usecase.IssuesConfig{Meta: r.store, Store: issueStore, MergeRequests: r.store.MergeRequests(), Links: r.store.IssueLinks(), Bus: r.bus, Clock: fixedClock{}})
 	return r, links, issues
 }
 
@@ -99,8 +101,15 @@ func TestIssueLinksMergeClosing(t *testing.T) {
 			_, err = r.mrs.Merge(r.ctx, root, r.repo, mr.Number, ports.MergeParams{HeadID: head, Mode: domain.MergeModeFastForward, DeleteSource: true})
 			require.NoError(t, err)
 			events := r.drain()
-			got, err := r.store.Issues().Get(r.ctx, r.repo, issue.Number)
-			require.NoError(t, err)
+			detail, err := issues.Get(r.ctx, root, r.repo, issue.Number)
+			if mode == "off" {
+				stored, readErr := r.store.Issues().Get(r.ctx, r.repo, issue.Number)
+				require.NoError(t, readErr)
+				detail.Issue = stored
+			} else {
+				require.NoError(t, err)
+			}
+			got := detail.Issue
 			refs, err := r.store.IssueLinks().LinksOfMergeRequest(r.ctx, r.repo, mr.Number)
 			require.NoError(t, err)
 			require.Len(t, refs, 1)
@@ -108,7 +117,7 @@ func TestIssueLinksMergeClosing(t *testing.T) {
 			closedEvents, referenced := 0, 0
 			for _, ev := range events {
 				switch ev.(type) {
-				case domain.IssueClosed:
+				case domain.IssueResolved:
 					closedEvents++
 				case domain.IssueReferenced:
 					referenced++
@@ -117,7 +126,7 @@ func TestIssueLinksMergeClosing(t *testing.T) {
 			assert.Positive(t, referenced)
 			if mode == "open" {
 				assert.Equal(t, mr.Number, got.ClosedByMergeRequest)
-				assert.False(t, got.IsOpen())
+				assert.Equal(t, domain.IssueStateResolved, got.State)
 				assert.Equal(t, 1, closedEvents)
 				reopened, err := issues.Reopen(r.ctx, root, r.repo, issue.Number)
 				require.NoError(t, err)
@@ -259,4 +268,62 @@ func TestAutoMergeClosesLinkedIssue(t *testing.T) {
 	got, err := issues.Get(r.ctx, root, r.repo, issue.Number)
 	require.NoError(t, err)
 	assert.False(t, got.Issue.IsOpen())
+}
+
+// linkIssueStore isolates merge state writes from the independently developed
+// kvstore resolved-state encoder. All other operations use the existing rig.
+type linkIssueStore struct {
+	ports.IssueStore
+	mu     sync.Mutex
+	issues map[int64]domain.Issue
+}
+
+func (s *linkIssueStore) Get(ctx context.Context, repo domain.RepoName, n int64) (domain.Issue, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if issue, ok := s.issues[n]; ok {
+		return issue, nil
+	}
+	return s.IssueStore.Get(ctx, repo, n)
+}
+func (s *linkIssueStore) Update(ctx context.Context, issue domain.Issue, events ...domain.IssueEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if issue.State == domain.IssueStateResolved {
+		s.issues[issue.Number] = issue
+		return nil
+	}
+	if _, ok := s.issues[issue.Number]; ok {
+		s.issues[issue.Number] = issue
+		return nil
+	}
+	return s.IssueStore.Update(ctx, issue, events...)
+}
+
+func TestMergeResolutionActorAndReferenceEvent(t *testing.T) {
+	for _, state := range []domain.IssueState{domain.IssueStateOpen, domain.IssueStateClosed, domain.IssueStateResolved} {
+		t.Run(string(state), func(t *testing.T) {
+			u := newIssueUnit(t, domain.VisibilityPublic, domain.IssuesOwner)
+			links := mocks.NewIssueLinkStore(t)
+			clock := mocks.NewClock(t)
+			clock.EXPECT().Now().Return(now).Maybe()
+			p := issuePrincipal(domain.ScopeIssueWrite)
+			title, err := domain.ParseMRTitle("Fixes #3")
+			require.NoError(t, err)
+			mr := domain.MergeRequest{Repo: u.repo.Name, Number: 4, Title: title, State: domain.MRStateMerged}
+			u.mrs.EXPECT().Get(mock.Anything, u.repo.Name, int64(4)).Return(mr, nil)
+			u.mrs.EXPECT().ListComments(mock.Anything, u.repo.Name, int64(4)).Return(nil, nil)
+			u.store.EXPECT().Get(mock.Anything, u.repo.Name, int64(3)).Return(domain.Issue{Repo: u.repo.Name, Number: 3, State: state}, nil).Twice()
+			links.EXPECT().ReplaceLinks(mock.Anything, u.repo.Name, int64(4), []int64{3}, []int64{3}, ports.ReferenceEvent{Actor: "agent-1", At: now}).Return(nil, nil, nil)
+			links.EXPECT().LinksOfMergeRequest(mock.Anything, u.repo.Name, int64(4)).Return(nil, nil)
+			if state == domain.IssueStateOpen {
+				u.store.EXPECT().Update(mock.Anything, mock.MatchedBy(func(i domain.Issue) bool { return i.State == domain.IssueStateResolved && i.ClosedByMergeRequest == 4 }), mock.MatchedBy(func(events []domain.IssueEvent) bool {
+					return len(events) == 1 && events[0].Kind == domain.IssueEventResolved && events[0].MergeRequest == 4 && events[0].Actor == "agent-1" && events[0].CreatedAt.Equal(now)
+				})).Return(nil).Once()
+				u.bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(e domain.Event) bool { return e.EventKind() == "issue.resolved" })).Return().Once()
+			}
+			svc := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: u.meta, Issues: u.store, MRs: u.mrs, Links: links, Bus: u.bus, Clock: clock})
+			svc.OnMerged(context.Background(), p, u.repo, mr)
+		})
+	}
 }

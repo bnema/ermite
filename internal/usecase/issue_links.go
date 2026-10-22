@@ -153,7 +153,7 @@ func (l *IssueLinks) reindex(ctx context.Context, p domain.Principal, repo domai
 		}
 	}
 	for range maxWriteRetries {
-		added, removed, err := l.cfg.Links.ReplaceLinks(ctx, repo.Name, number, mentions, closes, ports.ReferenceEvent{})
+		added, removed, err := l.cfg.Links.ReplaceLinks(ctx, repo.Name, number, mentions, closes, ports.ReferenceEvent{Actor: domain.AuthorName(p), At: l.cfg.Clock.Now().UTC()})
 		if errors.Is(err, domain.ErrConflict) {
 			continue
 		}
@@ -250,14 +250,14 @@ func (l *IssueLinks) OnMerged(ctx context.Context, p domain.Principal, repo doma
 		return
 	}
 	for _, n := range closes {
-		err := l.close(ctx, p, repo, mr.Number, n)
+		err := l.resolve(ctx, p, repo, mr.Number, n)
 		if err != nil {
 			log := zerowrap.FromCtx(ctx)
-			log.Warn().Err(err).Str("repo", repo.Name.String()).Int64("number", n).Int64("merge_request", mr.Number).Msg("issue not closed by the merge")
+			log.Warn().Err(err).Str("repo", repo.Name.String()).Int64("number", n).Int64("merge_request", mr.Number).Msg("issue not resolved by the merge")
 		}
 	}
 }
-func (l *IssueLinks) close(ctx context.Context, p domain.Principal, repo domain.Repo, mr, n int64) error {
+func (l *IssueLinks) resolve(ctx context.Context, p domain.Principal, repo domain.Repo, mr, n int64) error {
 	for range maxWriteRetries {
 		issue, err := l.cfg.Issues.Get(ctx, repo.Name, n)
 		if err != nil {
@@ -266,10 +266,10 @@ func (l *IssueLinks) close(ctx context.Context, p domain.Principal, repo domain.
 		if !issue.IsOpen() {
 			return nil
 		}
-		issue.State = domain.IssueStateClosed
+		issue.State = domain.IssueStateResolved
 		issue.ClosedByMergeRequest = mr
 		issue.UpdatedAt = l.cfg.Clock.Now().UTC()
-		err = l.cfg.Issues.Update(ctx, issue)
+		err = l.cfg.Issues.Update(ctx, issue, domain.IssueEvent{Kind: domain.IssueEventResolved, MergeRequest: mr, Actor: domain.AuthorName(p), CreatedAt: issue.UpdatedAt})
 		if errors.Is(err, domain.ErrConflict) {
 			continue
 		}
@@ -278,8 +278,8 @@ func (l *IssueLinks) close(ctx context.Context, p domain.Principal, repo domain.
 		}
 		recordActivity(ctx, l.cfg.Meta, repo.Name, issue.UpdatedAt)
 		log := zerowrap.FromCtx(ctx)
-		log.Info().Str("repo", repo.Name.String()).Int64("number", n).Int64("merge_request", mr).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue closed by merge")
-		l.cfg.Bus.Publish(ctx, domain.IssueClosed{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		log.Info().Str("repo", repo.Name.String()).Int64("number", n).Int64("merge_request", mr).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue resolved by merge")
+		l.cfg.Bus.Publish(ctx, domain.IssueResolved{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		return nil
 	}
 	return domain.ErrConflict

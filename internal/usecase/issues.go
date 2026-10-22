@@ -162,6 +162,23 @@ func (i *Issues) Get(ctx context.Context, p domain.Principal, name domain.RepoNa
 		return ports.IssueDetail{}, fmt.Errorf("list comments of #%d of %q: %w", number, name, err)
 	}
 	detail := ports.IssueDetail{Issue: issue, Comments: comments}
+	events, err := i.store.ListEvents(ctx, name, number)
+	if err != nil {
+		return ports.IssueDetail{}, fmt.Errorf("list events of #%d of %q: %w", number, name, err)
+	}
+	titles := make(map[int64]domain.MRTitle)
+	for _, event := range events {
+		if event.MergeRequest != 0 {
+			if _, ok := titles[event.MergeRequest]; !ok {
+				mr, err := i.mrs.Get(ctx, name, event.MergeRequest)
+				if err != nil && !errors.Is(err, domain.ErrNotFound) {
+					return ports.IssueDetail{}, err
+				}
+				titles[event.MergeRequest] = mr.Title
+			}
+		}
+		detail.Events = append(detail.Events, ports.IssueEventDetail{Event: event, MergeRequestTitle: titles[event.MergeRequest]})
+	}
 	if i.links != nil {
 		links, err := i.links.LinksOfIssue(ctx, name, number, MaxIssueLinksPerIssue)
 		if err != nil {
@@ -241,38 +258,43 @@ func (i *Issues) AddComment(ctx context.Context, p domain.Principal, name domain
 // Close closes an open issue and publishes IssueClosed. The principal needs
 // issue:write. An issue that is not open gives domain.ErrPreconditionFailed.
 func (i *Issues) Close(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error) {
-	return i.transition(ctx, p, name, number, domain.IssueStateOpen, domain.IssueStateClosed)
+	return i.transition(ctx, p, name, number, domain.IssueStateClosed)
 }
 
-// Reopen reopens a closed issue and publishes IssueReopened. The principal
-// needs issue:write. An issue that is not closed gives
+// Reopen reopens a closed or resolved issue and publishes IssueReopened. The principal
+// needs issue:write. An issue that is not done gives
 // domain.ErrPreconditionFailed.
 func (i *Issues) Reopen(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error) {
-	return i.transition(ctx, p, name, number, domain.IssueStateClosed, domain.IssueStateOpen)
+	return i.transition(ctx, p, name, number, domain.IssueStateOpen)
 }
 
 // transition moves an issue from one state to the other, retrying when another
 // write changes it in between.
-func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, from, to domain.IssueState) (domain.Issue, error) {
+func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, to domain.IssueState) (domain.Issue, error) {
 	repo, err := i.writable(ctx, p, name)
 	if err != nil {
 		return domain.Issue{}, err
 	}
 	verb := "close"
+	kind := domain.IssueEventClosed
 	if to == domain.IssueStateOpen {
 		verb = "reopen"
+		kind = domain.IssueEventReopened
+	} else if to == domain.IssueStateResolved {
+		verb = "resolve"
+		kind = domain.IssueEventResolved
 	}
 	for range maxWriteRetries {
 		issue, err := i.store.Get(ctx, name, number)
 		if err != nil {
 			return domain.Issue{}, err
 		}
-		if issue.State != from {
+		if (to == domain.IssueStateOpen && !issue.IsDone()) || (to != domain.IssueStateOpen && !issue.IsOpen()) {
 			return domain.Issue{}, fmt.Errorf("%w: #%d is %s", domain.ErrPreconditionFailed, number, issue.State)
 		}
 		issue.ClosedByMergeRequest = 0
 		issue.State, issue.UpdatedAt = to, i.clock.Now().UTC()
-		err = i.store.Update(ctx, issue)
+		err = i.store.Update(ctx, issue, domain.IssueEvent{Kind: kind, Actor: domain.AuthorName(p), CreatedAt: issue.UpdatedAt})
 		if errors.Is(err, domain.ErrConflict) {
 			continue
 		}
@@ -285,6 +307,8 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 		recordActivity(ctx, i.meta, repo.Name, issue.UpdatedAt)
 		if to == domain.IssueStateOpen {
 			i.bus.Publish(ctx, domain.IssueReopened{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
+		} else if to == domain.IssueStateResolved {
+			i.bus.Publish(ctx, domain.IssueResolved{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		} else {
 			i.bus.Publish(ctx, domain.IssueClosed{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		}
@@ -319,7 +343,7 @@ func (i *Issues) Kind(ctx context.Context, p domain.Principal, name domain.RepoN
 	return domain.NumberNone, nil
 }
 
-// Resolve is reserved for Phase A; no state is changed by this contract stub.
+// Resolve marks an open issue resolved. The principal needs issue:write.
 func (i *Issues) Resolve(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.Issue, error) {
-	return domain.Issue{}, domain.ErrUnavailable
+	return i.transition(ctx, p, name, number, domain.IssueStateResolved)
 }
