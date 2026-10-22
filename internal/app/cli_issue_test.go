@@ -308,7 +308,9 @@ func TestIssueResolveAndHistory(t *testing.T) {
 		{Id: "1", Kind: ermite.IssueEventKind_ISSUE_EVENT_KIND_REFERENCED, Issue: 2, MergeRequest: 5, MergeRequestTitle: "Fix", Closes: true, Actor: "owner", CreatedAt: ts("2026-10-01T10:00:00Z")},
 		{Id: "2", Kind: ermite.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED, Issue: 2, MergeRequest: 5, Actor: "merger", CreatedAt: ts("2026-10-03T10:00:00Z")},
 	}
-	f := &fakeAPI{getVersion: withIssues,
+	f := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+		return &ermite.GetVersionResponse{Features: []string{"issues", "issues.resolve"}}, nil
+	},
 		resolveIssue: func(r *ermite.ResolveIssueRequest) (*ermite.ResolveIssueResponse, error) {
 			assert.Equal(t, "alpha", r.GetRepo())
 			assert.EqualValues(t, 2, r.GetNumber())
@@ -337,4 +339,15 @@ func TestIssueResolveAndHistory(t *testing.T) {
 	assert.Contains(t, res.stdout, `"events": [`)
 	assert.Contains(t, res.stdout, `"merge_request_title": "Fix"`)
 	assert.Contains(t, res.stdout, `"kind": "resolved"`)
+}
+
+func TestIssueResolveRequiresFeature(t *testing.T) {
+	f := &fakeAPI{getVersion: withIssues, resolveIssue: func(*ermite.ResolveIssueRequest) (*ermite.ResolveIssueResponse, error) {
+		t.Error("ResolveIssue must not be called")
+		return nil, errors.New("unexpected ResolveIssue")
+	}}
+	res := runCLI(t, envFor(f.serve(t)), "", "issue", "resolve", "alpha", "2")
+	require.Error(t, res.err)
+	assert.Contains(t, res.err.Error(), "the server does not support issues.resolve")
+	assert.Contains(t, res.err.Error(), "cannot resolve issues")
 }

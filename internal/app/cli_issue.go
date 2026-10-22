@@ -487,6 +487,9 @@ func newIssueCloseCmd(env *cliEnv) *cobra.Command {
 func newIssueResolveCmd(env *cliEnv) *cobra.Command {
 	return newIssueStateCmd(env, "resolve", "resolved", "Resolve an issue", "Mark an open issue as resolved (fixed). `ermite issue reopen` opens it again. Needs the issue:write scope.",
 		func(ctx context.Context, c *client.Client, repo string, n int64) (*ermite.Issue, error) {
+			if err := requireFeature(ctx, c, "issues.resolve", "cannot resolve issues (issue resolve)"); err != nil {
+				return nil, err
+			}
 			res, err := c.Issues().ResolveIssue(ctx, connect.NewRequest(&ermite.ResolveIssueRequest{Repo: repo, Number: n}))
 			if err != nil {
 				return nil, err
