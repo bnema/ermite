@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+templ issueTimeline(items []TimelineItem) {
+	if len(items) > 0 {
+		<ol class="timeline" aria-label="Conversation history">
+			for _, item := range items {
+				<li>
+					if item.Comment != nil {
+						@commentView(*item.Comment, "")
+					} else if item.Event != nil {
+						@issueEventRow(*item.Event)
+					}
+				</li>
+			}
+		</ol>
+	}
+}
+
+templ issueEventRow(e IssueEventView) {
+	<div class="sys" id={ "e" + e.ID } data-kind={ e.Kind }>
+		<span class="sys-icon" aria-hidden="true">{ e.Icon }</span>
+		<span>
+			{ e.Actor } { e.Text }
+			if e.MR != nil {
+				{ " " }<a class="ref" href={ templ.SafeURL(e.MR.Href) }>{ e.MR.Label }</a>
+			}
+		</span>
+		if e.WhenAt != "" {
+			{ " · " }<time datetime={ e.WhenAt } title={ e.Abs }>{ e.When }</time>
+		}
+	</div>
+}

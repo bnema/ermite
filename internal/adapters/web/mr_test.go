@@ -332,3 +332,38 @@ func TestMergeIgnoreChecks(t *testing.T) {
 		assert.Equal(t, mrHref("demo", 3), to)
 	}
 }
+
+func TestMRLinkedIssuesAndHistory(t *testing.T) {
+	t.Parallel()
+	r := newIssueRig(t, domain.IssuesOwner, false)
+	at := time.Date(2026, 1, 2, 12, 0, 0, 123, time.UTC)
+	title, err := domain.ParseIssueTitle("Fix <login>")
+	require.NoError(t, err)
+	text, err := domain.ParsePlainText("between issue events")
+	require.NoError(t, err)
+	r.mrs.EXPECT().Get(mock.Anything, mock.Anything, repoName(t, "proj"), int64(12), mock.Anything).Return(ports.MergeRequestDetail{
+		MergeRequest: domain.MergeRequest{Repo: repoName(t, "proj"), Number: 12, State: domain.MRStateMerged, Source: "feature", Target: "main"},
+		Issues:       []ports.MergeRequestIssue{{Number: 3, Title: title, State: domain.IssueStateResolved, Closes: true}, {Number: 4, Title: title, State: domain.IssueStateOpen}},
+		Comments:     []domain.Comment{{ID: 7, Author: "owner", Text: text, CreatedAt: at}},
+		IssueEvents: []ports.IssueEventDetail{
+			{Event: domain.IssueEvent{ID: 1, Issue: 3, Kind: domain.IssueEventReferenced, Actor: "owner", CreatedAt: at.Add(-time.Second)}},
+			{Event: domain.IssueEvent{ID: 2, Issue: 3, Kind: domain.IssueEventReferenced, Closes: true, Actor: "owner", CreatedAt: at}},
+			{Event: domain.IssueEvent{ID: 3, Issue: 3, Kind: domain.IssueEventResolved, Actor: "owner", CreatedAt: at.Add(time.Second)}},
+			{Event: domain.IssueEvent{ID: 1, Issue: 9, Kind: domain.IssueEventReferenced, Actor: "owner", CreatedAt: at.Add(2 * time.Second)}},
+		},
+	}, nil)
+	rec := r.do("GET", "/proj/merge-requests/12", false, nil)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.Contains(t, body, `id="r-issues">Issues`)
+	assert.Contains(t, body, `href="/proj/issues/3">#3 Fix &lt;login&gt;</a>`)
+	assert.Contains(t, body, `data-state="resolved"`)
+	assert.Contains(t, body, " · resolves")
+	assert.Contains(t, body, "owner referenced")
+	assert.Contains(t, body, "owner will resolve")
+	assert.Contains(t, body, "owner resolved")
+	assert.Contains(t, body, `href="/proj/issues/9">#9</a>`, "removed links keep their history")
+	assert.Less(t, strings.Index(body, `id="e3-1"`), strings.Index(body, `id="c7"`))
+	assert.Less(t, strings.Index(body, `id="c7"`), strings.Index(body, `id="e3-2"`))
+	assert.Less(t, strings.Index(body, `id="e3-2"`), strings.Index(body, `id="e3-3"`))
+}

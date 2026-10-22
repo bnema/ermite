@@ -379,7 +379,7 @@ func TestActivityEventsRefreshTheHomeRow(t *testing.T) {
 		domain.MergeRequestOpened{MergeRequest: mr}, domain.MergeRequestMerged{MergeRequest: mr},
 		domain.MergeRequestClosed{MergeRequest: mr}, domain.MergeRequestReady{MergeRequest: mr},
 		domain.CommentAdded{Repo: repo.Name}, domain.IssueOpened{Issue: issue},
-		domain.IssueClosed{Issue: issue}, domain.IssueReopened{Issue: issue}, domain.IssueCommented{Repo: repo.Name},
+		domain.IssueResolved{Issue: issue}, domain.IssueClosed{Issue: issue}, domain.IssueReopened{Issue: issue}, domain.IssueCommented{Repo: repo.Name},
 	} {
 		t.Run(ev.EventKind(), func(t *testing.T) {
 			t.Parallel()

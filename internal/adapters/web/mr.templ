@@ -214,9 +214,7 @@ templ MergeRequest(l Layout, p MRPage) {
 			for _, c := range p.Loose {
 				@commentView(c, "")
 			}
-			for _, c := range p.General {
-				@commentView(c, "")
-			}
+			@issueTimeline(p.Timeline)
 			if p.NComments == 0 {
 				<p class="dim">no comments yet.</p>
 			}
@@ -267,7 +265,8 @@ templ commentView(c CommentView, suffix string) {
 			}
 		</p>
 		if len(c.Parts) > 0 {
-			<p class="c-text">@userText(c.Parts)</p>
+			<p class="c-text">@userText(c.Parts)
+</p>
 		} else if c.Deleted {
 			if c.Verdict != "" {
 				<p class="mute">text deleted</p>
@@ -428,6 +427,21 @@ templ mrFooter(p MRPage) {
 }
 
 templ mrRail(p MRPage) {
+	if len(p.Issues) > 0 {
+		<section aria-labelledby="r-issues">
+			<h2 id="r-issues">Issues</h2>
+			<ul>
+				for _, i := range p.Issues {
+					<li>
+						<a class="ref" href={ templ.SafeURL(i.Href) }>{ i.Number } { i.Title }</a>{ " " }<span class="mr-state" data-state={ i.State }>{ i.State }</span>
+						if i.Closes {
+							{ " · resolves" }
+						}
+					</li>
+				}
+			</ul>
+		</section>
+	}
 	<section aria-labelledby="r-files" class="r-files">
 		<h2 id="r-files">
 			Files <span class="count">{ itoa(len(p.Files)) }</span><kbd aria-hidden="true">l</kbd>
@@ -808,7 +822,7 @@ templ mrActions(p MRPage, fragment bool) {
 
 // MRActionStatus remains visible even when the request detail cannot be read.
 templ MRActionStatus(message, href string) {
- <div id="mr-actions" class="mr-acts" hx-swap-oob="true">
- <p class="d-err" role="alert">{ message } <a href={ templ.SafeURL(href) }>reload</a></p>
- </div>
+	<div id="mr-actions" class="mr-acts" hx-swap-oob="true">
+		<p class="d-err" role="alert">{ message } <a href={ templ.SafeURL(href) }>reload</a></p>
+	</div>
 }

@@ -1,4 +1,12 @@
 @layer components {
+  .timeline { list-style: none; padding: 0; margin: 0; }
+  .sys { margin-block: var(--s3); padding: var(--s2) var(--s3); border-left: 2px solid var(--border); color: var(--ink-dim); font-size: var(--fs-s); overflow-wrap: anywhere; }
+  .sys-icon { margin-inline-end: var(--s2); }
+  .sys[data-kind="resolved"] .sys-icon { color: var(--teal); }
+  .sys[data-kind="closed"] .sys-icon { color: var(--red); }
+  .mr-state[data-state="resolved"]::before { content: "✓ "; color: var(--teal); }
+  .mrs tr[data-state="resolved"] .c-state::before { content: "✓ "; color: var(--teal); }
+
   /* merge requests: the review page. Hue only where it carries a verdict. */
   .mr-h .show-kv { margin-top: 0; }
   #merge-menu .htmx-indicator { display: none; }
@@ -281,6 +289,14 @@
 }
 
 @layer components {
+  .timeline { list-style: none; padding: 0; margin: 0; }
+  .sys { margin-block: var(--s3); padding: var(--s2) var(--s3); border-left: 2px solid var(--border); color: var(--ink-dim); font-size: var(--fs-s); overflow-wrap: anywhere; }
+  .sys-icon { margin-inline-end: var(--s2); }
+  .sys[data-kind="resolved"] .sys-icon { color: var(--teal); }
+  .sys[data-kind="closed"] .sys-icon { color: var(--red); }
+  .mr-state[data-state="resolved"]::before { content: "✓ "; color: var(--teal); }
+  .mrs tr[data-state="resolved"] .c-state::before { content: "✓ "; color: var(--teal); }
+
   .c-body { white-space: normal; overflow-wrap: anywhere; }
   .c-body.prose > * { margin-block: .5em; }
   .c-body .ref { font-variant-numeric: tabular-nums; text-decoration: underline; }

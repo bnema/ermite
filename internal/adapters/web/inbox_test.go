@@ -188,6 +188,11 @@ func TestInboxLiveFragments(t *testing.T) {
 	assert.Contains(t, frags[4].html, `id="inbox-mrs"`)
 	assert.Contains(t, frags[5].html, `id="inbox-issues"`)
 
+	resolved, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssueResolved{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
+	require.NoError(t, err)
+	require.Len(t, resolved, 6)
+	assert.Contains(t, resolved[5].html, `id="inbox-issues"`)
+
 	none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "beta")}})
 	require.NoError(t, err)
 	assert.Empty(t, none, "a push is not inbox news")

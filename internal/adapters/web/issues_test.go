@@ -304,6 +304,9 @@ func TestIssueLiveNotices(t *testing.T) {
 	}{
 		{domain.IssueOpened{Issue: issue}, "issues", "", "issues changed"},
 		{domain.IssueClosed{Issue: issue}, "issues", "", "issues changed"},
+		{domain.IssueResolved{Issue: issue}, "issues", "", "issues changed"},
+		{domain.IssueResolved{Issue: issue}, "issue", "5", "this issue was resolved"},
+		{domain.IssueResolved{Issue: issue}, "issue", "6", ""},
 		{domain.IssueOpened{Issue: issue}, "issue", "5", "an issue was opened"},
 		{domain.IssueClosed{Issue: issue}, "issue", "5", "this issue was closed"},
 		{domain.IssueReopened{Issue: issue}, "issue", "5", "this issue was reopened"},
@@ -338,7 +341,7 @@ func TestIssueShowReferences(t *testing.T) {
 	r := newIssueRig(t, domain.IssuesPublic, true)
 	title, err := domain.ParseMRTitle("fix <b>it</b>")
 	require.NoError(t, err)
-	issue := testIssue(t, 5, domain.IssueStateClosed, "bug", "see #7 and #8")
+	issue := testIssue(t, 5, domain.IssueStateResolved, "bug", "see #7 and #8")
 	issue.ClosedByMergeRequest = 2
 	r.issues.EXPECT().Get(mock.Anything, mock.Anything, repoName(t, "proj"), int64(5)).Return(ports.IssueDetail{
 		Issue: issue,
@@ -353,12 +356,12 @@ func TestIssueShowReferences(t *testing.T) {
 	rec := r.do("GET", "/proj/issues/5", false, nil)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
-	assert.Contains(t, body, "closed by")
+	assert.Contains(t, body, "resolved by")
 	assert.Contains(t, body, `href="/proj/merge-requests/2"`)
 	assert.Contains(t, body, ">!2<")
 	assert.Contains(t, body, ">!3<")
 	assert.Contains(t, body, `id="r-refs"`)
-	assert.Contains(t, body, "closes")
+	assert.Contains(t, body, "resolves")
 	assert.Contains(t, body, "fix &lt;b&gt;it&lt;/b&gt;")
 	assert.Contains(t, body, `href="/proj/merge-requests/7"`, "#7 in the body")
 	assert.Contains(t, body, `title="merge request 7"`)
@@ -373,5 +376,91 @@ func TestIssueShowWithoutReferences(t *testing.T) {
 	}, nil)
 	body := r.do("GET", "/proj/issues/5", false, nil).Body.String()
 	assert.NotContains(t, body, "r-refs")
-	assert.NotContains(t, body, "closed by")
+	assert.NotContains(t, body, "resolved by")
+}
+
+func TestIssueResolvedList(t *testing.T) {
+	t.Parallel()
+	r := newIssueRig(t, domain.IssuesOwner, false)
+	for _, token := range []string{"", "next"} {
+		r.issues.EXPECT().List(mock.Anything, mock.Anything, repoName(t, "proj"), ports.ListIssuesParams{State: domain.IssueStateResolved, PageSize: pageSize, PageToken: token}).Return(ports.IssuePage{Issues: []domain.Issue{testIssue(t, 5, domain.IssueStateResolved, "fixed", "")}, NextPageToken: "next"}, nil)
+		path := "/proj/issues?state=resolved"
+		if token != "" {
+			path += "&page=" + token
+		}
+		rec := r.do("GET", path, false, nil)
+		require.Equal(t, 200, rec.Code)
+		body := rec.Body.String()
+		assert.Contains(t, body, `href="/proj/issues?state=resolved" aria-current="page"`)
+		assert.Contains(t, body, `data-state="resolved"`)
+		assert.Contains(t, body, `href="/proj/issues?page=next&amp;state=resolved"`)
+	}
+}
+
+func TestIssueResolvedTimeline(t *testing.T) {
+	t.Parallel()
+	r := newIssueRig(t, domain.IssuesOwner, false)
+	at := time.Date(2026, 1, 2, 12, 0, 0, 123, time.UTC)
+	issue := testIssue(t, 5, domain.IssueStateResolved, "fixed", "")
+	issue.ClosedByMergeRequest = 12
+	text, err := domain.ParseIssueBody("comment between events")
+	require.NoError(t, err)
+	title, err := domain.ParseMRTitle("Fix login")
+	require.NoError(t, err)
+	r.issues.EXPECT().Get(mock.Anything, mock.Anything, mock.Anything, int64(5)).Return(ports.IssueDetail{
+		Issue:    issue,
+		Comments: []domain.IssueComment{{ID: 7, Author: "owner", Text: text, CreatedAt: at}},
+		Events: []ports.IssueEventDetail{
+			{Event: domain.IssueEvent{ID: 1, Kind: domain.IssueEventReferenced, MergeRequest: 12, Actor: "owner", CreatedAt: at.Add(-time.Second)}, MergeRequestTitle: title},
+			{Event: domain.IssueEvent{ID: 2, Kind: domain.IssueEventResolved, MergeRequest: 12, Actor: "owner", CreatedAt: at}, MergeRequestTitle: title},
+		},
+	}, nil)
+	for _, owner := range []bool{false, true} {
+		rec := r.do("GET", "/proj/issues/5", owner, nil)
+		require.Equal(t, 200, rec.Code)
+		body := rec.Body.String()
+		assert.Contains(t, body, `data-state="resolved"`)
+		assert.Contains(t, body, "resolved by")
+		assert.Contains(t, body, "!12 Fix login")
+		assert.Contains(t, body, `datetime="2026-01-02T12:00:00Z"`)
+		assert.Less(t, strings.Index(body, `id="e1"`), strings.Index(body, `id="c7"`))
+		assert.Less(t, strings.Index(body, `id="c7"`), strings.Index(body, `id="e2"`), "comment precedes event on exact timestamp tie")
+		assert.NotContains(t, body, `/5/resolve`)
+		assert.NotContains(t, body, `/5/close`)
+		if owner {
+			assert.Contains(t, body, `action="/proj/issues/5/reopen"`)
+		} else {
+			assert.NotContains(t, body, `/5/reopen`)
+		}
+	}
+}
+
+func TestIssueHistoryEventKinds(t *testing.T) {
+	t.Parallel()
+	s := &Server{cfg: Config{Now: time.Now}}
+	for _, tc := range []struct {
+		kind   domain.IssueEventKind
+		mr     int64
+		closes bool
+		text   string
+	}{
+		{domain.IssueEventReferenced, 12, false, "referenced this in"},
+		{domain.IssueEventReferenced, 12, true, "will resolve this in"},
+		{domain.IssueEventClosed, 0, false, "closed this"},
+		{domain.IssueEventReopened, 0, false, "reopened this"},
+		{domain.IssueEventResolved, 0, false, "resolved this"},
+		{domain.IssueEventResolved, 12, false, "resolved this with"},
+	} {
+		items := s.issueTimeline("proj", nil, []ports.IssueEventDetail{{Event: domain.IssueEvent{ID: 1, Kind: tc.kind, MergeRequest: tc.mr, Closes: tc.closes, Actor: "owner", CreatedAt: time.Now()}}}, false)
+		require.Len(t, items, 1)
+		body := renderToString(t, issueTimeline(items))
+		assert.Contains(t, body, "owner "+tc.text)
+		assert.Contains(t, body, `data-kind="`+string(tc.kind)+`"`)
+		assert.Contains(t, body, `<ol class="timeline" aria-label="Conversation history">`)
+		if tc.mr != 0 {
+			assert.Contains(t, body, `href="/proj/merge-requests/12">!12</a>`)
+		} else {
+			assert.NotContains(t, body, `/merge-requests/`)
+		}
+	}
 }

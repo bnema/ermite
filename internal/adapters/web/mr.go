@@ -99,6 +99,7 @@ type MRListPage struct {
 
 // CommentView is a comment of a merge request, ready to show.
 type CommentView struct {
+	createdAt       time.Time
 	ID              string
 	Author          string
 	When            string
@@ -296,6 +297,8 @@ type MRPage struct {
 	// loaded later) the loose comments of a listed file go under the file
 	// instead (DiffFile.Loose).
 	General, Loose []CommentView
+	Timeline       []TimelineItem
+	Issues         []IssueLinkView
 	LooseInFiles   bool
 	NComments      int
 	NUnresolved    int
@@ -634,6 +637,24 @@ func (s *Server) mrPageView(ctx context.Context, r *http.Request, since, fragmen
 		on = parseOn(r.URL.Query().Get("on"))
 	}
 	s.placeComments(ctx, &p, d.name(), n, res.Comments, head, !since, canWrite, on)
+	p.Timeline = s.issueTimeline(d.name(), p.General, res.IssueEvents, true)
+	// Event DTOs carry MR titles, not issue titles. Enrich from current links
+	// when available; removed references still retain a numbered history link.
+	issueTitles := make(map[string]string, len(res.Issues))
+	for _, issue := range res.Issues {
+		issueTitles[issueHref(d.name(), issue.Number)] = visibleText(issue.Title.String())
+	}
+	for _, item := range p.Timeline {
+		if item.Event != nil && item.Event.MR != nil {
+			if title := issueTitles[item.Event.MR.Href]; title != "" {
+				item.Event.MR.Label += " " + title
+			}
+		}
+	}
+	for _, issue := range res.Issues {
+		p.Issues = append(p.Issues, IssueLinkView{Number: "#" + strconv.FormatInt(issue.Number, 10), Title: visibleText(issue.Title.String()), State: string(issue.State), Href: issueHref(d.name(), issue.Number), Closes: issue.Closes})
+	}
+
 	lines, invisible := diffLines(p.Files)
 	p.Invisible = invisible
 	p.DiffView = newDiffView(r, lines, withFrom(self+"?view=unified", from), withFrom(self+"?view=split", from))
@@ -1010,7 +1031,7 @@ func (s *Server) placeComments(ctx context.Context, p *MRPage, repo string, n in
 		if err != nil {
 			bodySplit = ""
 		}
-		v := CommentView{BodySplit: bodySplit, ID: cid, Author: s.who(c.Author), Body: body, Resolved: c.Resolved, Deleted: c.Deleted, Edited: !c.EditedAt.IsZero(), Verdict: c.Verdict.String(), Outdated: !c.CommitID.IsZero() && c.CommitID.String() != head}
+		v := CommentView{createdAt: c.CreatedAt, BodySplit: bodySplit, ID: cid, Author: s.who(c.Author), Body: body, Resolved: c.Resolved, Deleted: c.Deleted, Edited: !c.EditedAt.IsZero(), Verdict: c.Verdict.String(), Outdated: !c.CommitID.IsZero() && c.CommitID.String() != head}
 		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
 		if !c.CreatedAt.IsZero() {
 			v.Abs = absolute(c.CreatedAt)

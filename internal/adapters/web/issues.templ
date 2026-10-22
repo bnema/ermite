@@ -11,7 +11,7 @@ templ IssueList(l Layout, p IssueListPage) {
 		<nav class="since" aria-label="State">
 			<a
 				href={ templ.SafeURL(p.OpenHref) }
-				if !p.Closed {
+				if !p.Closed && !p.Resolved {
 					aria-current="page"
 				}
 			>open</a>
@@ -21,6 +21,12 @@ templ IssueList(l Layout, p IssueListPage) {
 					aria-current="page"
 				}
 			>closed</a>
+			<a
+				href={ templ.SafeURL(p.ResolvedHref) }
+				if p.Resolved {
+					aria-current="page"
+				}
+			>resolved</a>
 		</nav>
 		<div class="filter">
 			<label for="issue-filter" class="sr">filter</label>
@@ -34,7 +40,9 @@ templ IssueList(l Layout, p IssueListPage) {
 			/>
 		</div>
 		<h2 class="rule-h">
-			if p.Closed {
+			if p.Resolved {
+				<span>Resolved</span>
+			} else if p.Closed {
 				<span>Closed</span>
 			} else {
 				<span>Open</span>
@@ -43,7 +51,9 @@ templ IssueList(l Layout, p IssueListPage) {
 		</h2>
 		@issueRows(p.Rows)
 		if len(p.Rows) == 0 {
-			if p.Closed {
+			if p.Resolved {
+				<p class="lede dim">no resolved issues.</p>
+			} else if p.Closed {
 				<p class="lede dim">no closed issues.</p>
 			} else {
 				<p class="lede dim">no open issues.</p>
@@ -95,7 +105,9 @@ templ issueListRail(p IssueListPage) {
 			<dt>open</dt>
 			<dd>being worked on</dd>
 			<dt>closed</dt>
-			<dd>done with, can be reopened</dd>
+			<dd>closed without resolution</dd>
+			<dt>resolved</dt>
+			<dd>fixed, can be reopened</dd>
 		</dl>
 	</section>
 	if p.NewHref != "" {
@@ -149,9 +161,9 @@ templ IssueShow(l Layout, p IssuePage) {
 							{ " · " }<time datetime={ p.Opened.WhenAt } title={ p.Opened.Abs }>{ p.Opened.When }</time>
 						}
 					</dd>
-					if p.ClosedBy != nil {
-						<dt>closed by</dt>
-						<dd><a class="ref" href={ templ.SafeURL(p.ClosedBy.Href) }>{ p.ClosedBy.Label }</a></dd>
+					if p.ResolvedBy != nil {
+						<dt>resolved by</dt>
+						<dd><a class="ref" href={ templ.SafeURL(p.ResolvedBy.Href) }>{ p.ResolvedBy.Label }</a></dd>
 					}
 					if p.UpdatedAt != "" {
 						<dt>updated</dt>
@@ -169,9 +181,7 @@ templ IssueShow(l Layout, p IssuePage) {
 			@LiveSlot("mr-notice")
 		}
 		<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(len(p.Comments)) }</span></h2>
-		for _, c := range p.Comments {
-			@commentView(c, "")
-		}
+		@issueTimeline(p.Timeline)
 		if len(p.Comments) == 0 {
 			<p class="dim">no comments yet.</p>
 		}
@@ -192,7 +202,7 @@ templ issueRail(p IssuePage) {
 						{ " " + r.Title + " " }
 						<span class="mr-state" data-state={ r.State }>{ r.State }</span>
 						if r.Closes {
-							{ " · closes" }
+							{ " · resolves" }
 						}
 					</li>
 				}

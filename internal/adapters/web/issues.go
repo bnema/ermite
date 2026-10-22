@@ -25,7 +25,7 @@ import (
 //
 // Routes:
 //
-//	GET  /<repo>/issues             the list, open or closed (?state=), paged (?page=)
+//	GET  /<repo>/issues             the list, open, closed or resolved (?state=), paged (?page=)
 //	GET  /<repo>/issues/new         the form that opens one (owner)
 //	GET  /<repo>/issues/<n>         the issue with its comments
 //
@@ -55,11 +55,11 @@ type IssueRow struct {
 type IssueListPage struct {
 	Rows []IssueRow
 	// Closed is true on the tab of the closed issues.
-	Closed               bool
-	OpenHref, ClosedHref string
-	Older, Newest        string
-	NewHref              string // the form that opens an issue; "" unless the owner
-	Live                 bool
+	Closed, Resolved                   bool
+	OpenHref, ClosedHref, ResolvedHref string
+	Older, Newest                      string
+	NewHref                            string // the form that opens an issue; "" unless the owner
+	Live                               bool
 }
 
 // IssueActions are the buttons of the owner on an issue.
@@ -80,11 +80,12 @@ type IssuePage struct {
 	// Desc is the body rendered as Markdown, "" when it is empty.
 	Desc       template.HTML
 	Comments   []CommentView
+	Timeline   []TimelineItem
 	Form       *CommentForm
 	Transition *IssueActions
 	Live       bool
-	// ClosedBy is the merge request whose merge closed the issue.
-	ClosedBy *Link
+	// ResolvedBy is the merge request whose merge resolved the issue.
+	ResolvedBy *Link
 	// References are the merge requests naming the issue.
 	References []IssueRefView
 }
@@ -192,6 +193,8 @@ func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Componen
 	case "", "open":
 	case "closed":
 		state = domain.IssueStateClosed
+	case "resolved":
+		state = domain.IssueStateResolved
 	default:
 		return nil, 0, errNotFound
 	}
@@ -200,8 +203,8 @@ func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Componen
 	closed := state == domain.IssueStateClosed
 	link := func(page string) string {
 		q := url.Values{}
-		if closed {
-			q.Set("state", "closed")
+		if state != domain.IssueStateOpen {
+			q.Set("state", string(state))
 		}
 		if page != "" {
 			q.Set("page", page)
@@ -218,7 +221,7 @@ func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Componen
 	if err != nil {
 		return nil, 0, err
 	}
-	p := IssueListPage{Closed: closed, OpenHref: base, ClosedHref: base + "?state=closed"}
+	p := IssueListPage{Closed: closed, OpenHref: base, ClosedHref: base + "?state=closed", Resolved: state == domain.IssueStateResolved, ResolvedHref: base + "?state=resolved"}
 	for _, i := range res.Issues {
 		p.Rows = append(p.Rows, s.issueRow(d.name(), i))
 	}
@@ -293,7 +296,7 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	if p.Desc, err = s.issueBody(ctx, d, i); err != nil {
 		return nil, 0, err
 	}
-	p.ClosedBy = numberLink(d.name(), i.ClosedByMergeRequest)
+	p.ResolvedBy = numberLink(d.name(), i.ClosedByMergeRequest)
 	p.References = issueRefViews(d.name(), res.References)
 	p.Opened.Name = s.who(i.Author)
 	if i.External {
@@ -307,7 +310,7 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	p.Updated, p.UpdatedAt = whenOf(now, i.UpdatedAt)
 	for _, c := range res.Comments {
 		v := CommentView{
-			ID: strconv.FormatInt(c.ID, 10), Author: s.who(c.Author), Parts: plainParts(c.Text.String()),
+			createdAt: c.CreatedAt, ID: strconv.FormatInt(c.ID, 10), Author: s.who(c.Author), Parts: plainParts(c.Text.String()),
 		}
 		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
 		if !c.CreatedAt.IsZero() {
@@ -315,12 +318,13 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 		}
 		p.Comments = append(p.Comments, v)
 	}
+	p.Timeline = s.issueTimeline(d.name(), p.Comments, res.Events, false)
 	if signed {
 		p.Form = &CommentForm{ID: "cf-general", Action: issueHref(d.name(), n, "comments"), Title: "comment on the issue", Plain: true}
 		switch i.State {
 		case domain.IssueStateOpen:
 			p.Transition = &IssueActions{Action: issueHref(d.name(), n, "close"), Label: "Close issue"}
-		case domain.IssueStateClosed:
+		case domain.IssueStateClosed, domain.IssueStateResolved:
 			p.Transition = &IssueActions{Action: issueHref(d.name(), n, "reopen"), Label: "Reopen issue"}
 		}
 	}
