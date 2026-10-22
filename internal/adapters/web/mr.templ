@@ -13,7 +13,7 @@ templ MRList(l Layout, p MRListPage) {
 	@Shell(l, mrListRail(p)) {
 		if p.Live {
 			@LiveSlot("mr-notice")
-		<div id="mr-refresh-status" role="status" aria-live="polite"></div>
+			<div id="mr-refresh-status" role="status" aria-live="polite"></div>
 		}
 		<div class="filter">
 			<label for="mr-filter" class="sr">filter</label>
@@ -119,12 +119,7 @@ templ MergeRequest(l Layout, p MRPage) {
 				<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
 				<dl class="kv show-kv">
 					<dt>state</dt>
-					<dd class="mr-state" data-state={ p.State }>
-						{ p.State }
-						if p.MergedShort != "" {
-							{ " · " }<a href={ templ.SafeURL(p.MergedHref) }>{ p.MergedShort }</a>{ " · " + p.MergeMode }
-						}
-					</dd>
+					@mrState(p)
 					<dt>branch</dt>
 					<dd>
 						@branchLink(p.Source, p.SourceHref)
@@ -215,19 +210,19 @@ templ MergeRequest(l Layout, p MRPage) {
 			}
 		</div>
 		<div id="mr-comments">
-		<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(p.NUnresolved) } open / { itoa(p.NComments) }</span></h2>
-		for _, c := range p.Loose {
-			@commentView(c, "")
-		}
-		for _, c := range p.General {
-			@commentView(c, "")
-		}
-		if p.NComments == 0 {
-			<p class="dim">no comments yet.</p>
-		}
-		if p.GeneralForm != nil {
-			@commentForm(*p.GeneralForm, "")
-		}
+			<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(p.NUnresolved) } open / { itoa(p.NComments) }</span></h2>
+			for _, c := range p.Loose {
+				@commentView(c, "")
+			}
+			for _, c := range p.General {
+				@commentView(c, "")
+			}
+			if p.NComments == 0 {
+				<p class="dim">no comments yet.</p>
+			}
+			if p.GeneralForm != nil {
+				@commentForm(*p.GeneralForm, "")
+			}
 		</div>
 	}
 }
@@ -467,13 +462,7 @@ templ mrBar(p MRPage) {
 	<div class="diff-tools mr-bar" role="group" aria-label="Diff view and merge">
 		<span class="dim">{ plural(p.NFiles, "file", "files") } · <span class="plus">+{ itoa(p.Adds) }</span> <span class="minus">-{ itoa(p.Dels) }</span></span>
 		@diffViewMenu(p.DiffView)
-		<div class="mr-acts">
-			@MRChecksSum(p.ChecksSum)
-			if p.Box != nil {
-				@mergeMenu(p)
-			}
-			@moreMenu(p)
-		</div>
+		@mrActions(p, false)
 	</div>
 }
 
@@ -523,7 +512,15 @@ templ mergeMenu(p MRPage) {
 						</div>
 					</form>
 				}
-				<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.MergeAction) }>
+				<form
+					class="d-acts"
+					method="post"
+					action={ templ.SafeURL(p.Box.MergeAction) }
+					hx-post={ p.Box.MergeAction }
+					hx-swap="none"
+					hx-sync="this:drop"
+					hx-disable="find button[type=submit]"
+				>
 					<input type="hidden" name="head_id" value={ p.Box.Head }/>
 					<fieldset class="d-modes">
 						<legend class="sr">merge mode</legend>
@@ -557,9 +554,10 @@ templ mergeMenu(p MRPage) {
 							data-default
 							disabled?={ !p.Box.CanMerge() }
 							title={ p.Box.MergeTitle() }
-							:disabled="!this.form.querySelector('input[name=mode]:checked:not(:disabled)')"
+							:disabled="this.form.classList.contains('htmx-request') || !this.form.querySelector('input[name=mode]:checked:not(:disabled)')"
 							:title="(this.form.querySelector('input[name=mode]:checked') || {}).title || ''"
 						>Merge into { p.Target }</button>
+						<span class="htmx-indicator" role="status">Merging…</span>
 					</div>
 				</form>
 				if p.Box.CanAutoMerge {
@@ -778,4 +776,39 @@ templ MRMergeChecks(c ChecksSummary) {
 			<label class="d-check"><input type="checkbox" name="ignore_checks"/> Ignore checks</label>
 		}
 	</div>
+}
+
+// MRStateFragment updates only state and actions, leaving review drafts alone.
+templ MRStateFragment(p MRPage) {
+	@mrState(p)
+	@mrActions(p, true)
+}
+
+templ mrState(p MRPage) {
+	<dd id="mr-state" hx-swap-oob="true" class="mr-state" data-state={ p.State }>
+		{ p.State }
+		if p.MergedShort != "" {
+			{ " · " }<a href={ templ.SafeURL(p.MergedHref) }>{ p.MergedShort }</a>{ " · " + p.MergeMode }
+		}
+	</dd>
+}
+
+templ mrActions(p MRPage, fragment bool) {
+	<div id="mr-actions" hx-swap-oob="true" class="mr-acts">
+		@MRChecksSum(p.ChecksSum)
+		if p.Box != nil {
+			@mergeMenu(p)
+		}
+		@moreMenu(p)
+		if fragment && p.MergeError != "" {
+			<p class="d-err" role="alert">{ p.MergeError }</p>
+		}
+	</div>
+}
+
+// MRActionStatus remains visible even when the request detail cannot be read.
+templ MRActionStatus(message, href string) {
+ <div id="mr-actions" class="mr-acts" hx-swap-oob="true">
+ <p class="d-err" role="alert">{ message } <a href={ templ.SafeURL(href) }>reload</a></p>
+ </div>
 }

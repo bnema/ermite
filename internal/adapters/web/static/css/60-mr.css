@@ -1,6 +1,8 @@
 @layer components {
   /* merge requests: the review page. Hue only where it carries a verdict. */
   .mr-h .show-kv { margin-top: 0; }
+  #merge-menu .htmx-indicator { display: none; }
+  #merge-menu .htmx-request .htmx-indicator { display: inline; }
   /* one card: the header (title, facts) a shade lighter, the description below */
   .mr-card {
     background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;

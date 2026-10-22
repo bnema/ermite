@@ -152,8 +152,10 @@ test('footer tabs: closed by default, toggle, switch, arrows, hash', () => {
 test('footer: #mr-ck syncs the checks label; its click opens Checks without toggling', () => {
   const text0 = { v: '' }; let writes = 0;
   const label = { get textContent() { return text0.v; }, set textContent(v) { writes++; text0.v = v; } };
-  const summary = { title: '1/2 failed', textContent: ' 1/2 ', parentElement: {} };
-  const h = footerHarness({ summary });
+  const bar = {};
+  const summary = { title: '1/2 failed', textContent: ' 1/2 ', closest: (s) => s === '.mr-bar' ? bar : null };
+  const extra = { summary };
+  const h = footerHarness(extra);
   let observed = null, callback = null;
   globalThis.MutationObserver = class { constructor(fn) { callback = fn; } observe(target, opts) { observed = [target, opts]; } };
   const nav = document.querySelector('[data-mr-tabs]');
@@ -161,8 +163,14 @@ test('footer: #mr-ck syncs the checks label; its click opens Checks without togg
   try {
     window.ermiteMR.panels();
     assert.equal(label.textContent, '1/2 failed', 'initial label sync');
-    assert.equal(observed[0], summary.parentElement);
-    assert.deepEqual(observed[1], { childList: true }, 'only #mr-ck replacements wake the observer');
+    assert.equal(observed[0], bar);
+    assert.deepEqual(observed[1], { childList: true, subtree: true }, 'the stable bar observes action and badge replacements');
+    // Replace #mr-actions, including its badge, then replace the badge alone.
+    extra.summary = { title: 'checks running', textContent: '' }; callback();
+    assert.equal(label.textContent, 'checks running');
+    extra.summary = { title: 'checks passed', textContent: '' }; callback();
+    assert.equal(label.textContent, 'checks passed');
+    extra.summary = summary; callback();
     const before = writes; callback(); callback();
     assert.equal(writes, before, 'an unchanged label is not written');
     summary.title = ''; callback();

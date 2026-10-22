@@ -558,6 +558,10 @@ func (s *Server) mrSince(ctx context.Context, r *http.Request) (templ.Component,
 }
 
 func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ.Component, int, error) {
+	return s.mrPageView(ctx, r, since, false)
+}
+
+func (s *Server) mrPageView(ctx context.Context, r *http.Request, since, fragment bool) (templ.Component, int, error) {
 	if since && !SignedIn(ctx) {
 		return nil, 0, errNotFound
 	}
@@ -649,6 +653,9 @@ func (s *Server) mrPage(ctx context.Context, r *http.Request, since bool) (templ
 		}
 	}
 
+	if fragment {
+		return MRStateFragment(p), http.StatusOK, nil
+	}
 	l := s.repoLayout(ctx, d, "merge-requests")
 	l.Title = p.Number + " " + p.Title + " · " + d.name() + " · " + s.instance
 	if head != "" {

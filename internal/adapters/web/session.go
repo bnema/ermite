@@ -178,11 +178,11 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request) bool {
 	// Host header, which the client chooses. A missing header, "null" and any
 	// other origin are refused.
 	if r.Header.Get("Origin") != s.origin {
-		denyForbidden(w)
+		s.denyMergeGate(w, r, "the request origin was not accepted. reload this page and try again.")
 		return false
 	}
 	if !SignedIn(r.Context()) && !s.anonymousPost(r) {
-		denyForbidden(w)
+		s.denyMergeGate(w, r, "your session has expired. sign in again and reload.")
 		return false
 	}
 	return true
@@ -334,4 +334,14 @@ func (s *Server) stateOnly(crumb, code, title string, lines ...string) templ.Com
 func (s *Server) loginRejectedPage() templ.Component {
 	return s.stateOnly("sign in", "404", "login link not valid",
 		"this link has expired, was already used, or never existed.", "run `ermite web login` for a new one.")
+}
+
+// denyMergeGate keeps gate refusals visible to the enhanced merge form.
+func (s *Server) denyMergeGate(w http.ResponseWriter, r *http.Request, message string) {
+	if !isHXMerge(r) {
+		denyForbidden(w)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	s.write(r.Context(), w, r, http.StatusForbidden, MRActionStatus(message, strings.TrimSuffix(r.URL.Path, "/merge")))
 }

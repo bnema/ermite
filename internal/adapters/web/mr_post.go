@@ -68,6 +68,20 @@ func (s *Server) mrAction(h func(ctx context.Context, r *http.Request) (to strin
 			s.actionFailed(ctx, w, r, err, back)
 			return
 		}
+		if isHXMerge(r) {
+			c, _, err := s.mrPageView(ctx, r, false, true)
+			if err != nil {
+				id := requestID()
+				log := zerowrap.FromCtx(ctx)
+				log.Error().Err(err).Str("request_id", id).Msg("web merged state failed")
+				w.Header().Set("Cache-Control", "no-store")
+				s.write(ctx, w, r, http.StatusOK, MRActionStatus("merged, but the updated page could not be loaded. reload to see the result. reference: "+id, back))
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			s.write(ctx, w, r, http.StatusOK, c)
+			return
+		}
 		seeOther(w, r, to)
 	}
 }
@@ -100,7 +114,7 @@ func mergeErrorOf(ctx context.Context) string {
 // It reports false when the page cannot be built; the caller then answers as
 // for any refused action.
 func (s *Server) rerenderMR(ctx context.Context, w http.ResponseWriter, r *http.Request, re *rerender) bool {
-	c, _, err := s.mrPage(withMergeError(ctx, re.msg), r, false)
+	c, _, err := s.mrPageView(withMergeError(ctx, re.msg), r, false, isHXMerge(r))
 	if err != nil {
 		return false
 	}
@@ -120,6 +134,10 @@ func (s *Server) actionFailed(ctx context.Context, w http.ResponseWriter, r *htt
 		// The browser is gone.
 	case errors.Is(err, domain.ErrNotFound):
 		w.Header().Set("Cache-Control", "no-store")
+		if isHXMerge(r) {
+			s.write(ctx, w, r, http.StatusNotFound, MRActionStatus("the merge request was not found. reload to check its state.", back))
+			return
+		}
 		s.write(ctx, w, r, http.StatusNotFound, s.notFoundPage())
 	case errors.Is(err, domain.ErrAlreadyExists):
 		s.reject(ctx, w, r, http.StatusConflict, "already there", rule(msg, "this already exists."), back)
@@ -143,6 +161,10 @@ func (s *Server) internalFailure(ctx context.Context, w http.ResponseWriter, r *
 	log := zerowrap.FromCtx(ctx)
 	log.Error().Err(err).Str("request_id", id).Str("path", logPath(r.URL.Path)).Msg("web action failed")
 	w.Header().Set("Cache-Control", "no-store")
+	if isHXMerge(r) {
+		s.write(ctx, w, r, http.StatusInternalServerError, MRActionStatus("the merge could not be completed. reload to check its state. reference: "+id, strings.TrimSuffix(r.URL.Path, "/merge")))
+		return
+	}
 	s.write(ctx, w, r, http.StatusInternalServerError, s.errorPage(id))
 }
 
@@ -160,6 +182,11 @@ func rule(msg, fallback string) string {
 func (s *Server) reject(ctx context.Context, w http.ResponseWriter, r *http.Request, status int, title, line, back string) {
 	if back == "" {
 		back = "/"
+	}
+	if isHXMerge(r) {
+		w.Header().Set("Cache-Control", "no-store")
+		s.write(ctx, w, r, status, MRActionStatus(line, back))
+		return
 	}
 	l := s.stateLayout(title, []Crumb{{Label: title, Current: true}})
 	w.Header().Set("Cache-Control", "no-store")
@@ -522,4 +549,9 @@ func (s *Server) mrDeleteComment(ctx context.Context, r *http.Request) (string, 
 	}
 	c, err := s.cfg.MergeRequests.DeleteComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")))
 	return back + "#c" + strconv.FormatInt(c.ID, 10), back, err
+}
+
+// isHXMerge limits fragment responses to the progressively enhanced merge form.
+func isHXMerge(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true" && strings.HasSuffix(r.URL.Path, "/merge")
 }

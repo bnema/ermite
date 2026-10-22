@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -192,6 +193,20 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 	case domain.MergeRequestOpened:
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "a merge request was opened — reload")
 	case domain.MergeRequestMerged:
+		if l.view == "mr" && strconv.FormatInt(ev.MergeRequest.Number, 10) == l.n {
+			r, err := http.NewRequestWithContext(ctx, http.MethodGet, mrHref(l.repo, ev.MergeRequest.Number), nil)
+			if err != nil {
+				return nil, err
+			}
+			r.SetPathValue("repo", l.repo)
+			r.SetPathValue("n", l.n)
+			c, _, err := l.s.mrPageView(ctx, r, false, true)
+			if err != nil {
+				return nil, err
+			}
+			f, err := renderFragment(ctx, "mr-mergeability", c)
+			return []fragment{f}, err
+		}
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request was merged — reload")
 	case domain.MergeRequestClosed:
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request was closed — reload")

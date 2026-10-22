@@ -293,8 +293,8 @@ window.ermiteMR = (() => {
     let observer;
     const summary = $('#mr-ck');
     if (summary) {
-      // The live stream replaces #mr-ck as a whole: watch only the children of
-      // its parent, and write the label only when it changes. hx-live rewrites
+      // Both #mr-ck and #mr-actions can be replaced: observe the stable bar,
+      // and write the label only when it changes. hx-live rewrites
       // other text in the same bar on every mutation of the document; a write
       // here on each of them would wake hx-live again, a loop that never yields.
       const sync = () => {
@@ -303,7 +303,7 @@ window.ermiteMR = (() => {
         if (label && label.textContent !== text) label.textContent = text;
       };
       observer = new MutationObserver(sync);
-      observer.observe(summary.parentElement, { childList: true });
+      observer.observe(summary.closest('.mr-bar'), { childList: true, subtree: true });
       sync();
     }
     show(initial);
