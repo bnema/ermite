@@ -242,10 +242,19 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 	case domain.IssueOpened:
 		return l.issueNotice(ctx, ev.Issue.Number, "an issue was opened — reload")
 	case domain.IssueResolved:
+		if l.view == "mr" {
+			return l.notice(ctx, "issues changed — reload", mrBase(l.repo)+"/"+l.n)
+		}
 		return l.issueNotice(ctx, ev.Issue.Number, "this issue was resolved — reload")
 	case domain.IssueClosed:
+		if l.view == "mr" {
+			return l.notice(ctx, "issues changed — reload", mrBase(l.repo)+"/"+l.n)
+		}
 		return l.issueNotice(ctx, ev.Issue.Number, "this issue was closed — reload")
 	case domain.IssueReopened:
+		if l.view == "mr" {
+			return l.notice(ctx, "issues changed — reload", mrBase(l.repo)+"/"+l.n)
+		}
 		return l.issueNotice(ctx, ev.Issue.Number, "this issue was reopened — reload")
 	case domain.IssueCommented:
 		return l.issueNotice(ctx, ev.Number, "a comment was added — reload")

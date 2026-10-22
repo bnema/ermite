@@ -119,3 +119,17 @@ func TestReleaseLiveUpdates(t *testing.T) {
 		}
 	}
 }
+
+func TestIssueTransitionsRefreshMRRail(t *testing.T) {
+	for _, ev := range []domain.Event{domain.IssueClosed{}, domain.IssueReopened{}, domain.IssueResolved{}} {
+		t.Run(ev.EventKind(), func(t *testing.T) {
+			l := liveStream{repo: "demo", view: "mr", n: "7"}
+			fs, err := l.repoPage(t.Context(), ports.WatchEvent{Event: ev})
+			require.NoError(t, err)
+			require.Len(t, fs, 1)
+			assert.Equal(t, "mr-notice", fs[0].event)
+			assert.Contains(t, fs[0].html, "issues changed — reload")
+			assert.Contains(t, fs[0].html, `/demo/merge-requests/7`)
+		})
+	}
+}
