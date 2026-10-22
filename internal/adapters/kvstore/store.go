@@ -44,7 +44,9 @@ import (
 // adds releases and release:write; older builds cannot clean up their metadata
 // or preserve the owner rights of upgraded tokens (see upgradeReleaseTokens).
 // Version 7 adds the latest-release index; older writers would leave it stale.
-const SchemaVersion = 7
+// Version 8 adds resolved issues and history (isev/, mrev/), and rewrites
+// merge-closed issues as resolved; older builds cannot decode state 4.
+const SchemaVersion = 8
 
 const schemaKey = "meta/schema"
 
@@ -172,6 +174,11 @@ func (s *Store) checkSchema(ctx context.Context) error {
 					return err
 				}
 			}
+			if target == SchemaVersion {
+				if err := s.upgradeResolvedIssues(ctx, &b); err != nil {
+					return err
+				}
+			}
 			b.Put(key, mustMarshal(&storagepb.SchemaVersion{Version: target}))
 			_, err := s.db.Apply(ctx, &b)
 			if errors.Is(err, kv.ErrConflict) {
@@ -273,4 +280,30 @@ func (s *Store) upgradeTokenScopes(ctx context.Context, b *kv.Batch, required, a
 		b.Put(slices.Clone(key), mustMarshal(pb))
 	}
 	return nil
+}
+
+// upgradeResolvedIssues runs in the schema batch, without retroactive events or
+// timestamp/index changes. Typical records are <1 KiB; the 16 MiB batch limit
+// accommodates over 10k issues, consistent with the unchunked token upgrades.
+func (s *Store) upgradeResolvedIssues(ctx context.Context, b *kv.Batch) error {
+	count := 0
+	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte(issuePrefix)) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var pb storagepb.Issue
+		if err := proto.Unmarshal(item.Value, &pb); err != nil {
+			return fmt.Errorf("upgrade issue %s: %w", key, err)
+		}
+		if pb.GetState() != storagepb.IssueState_ISSUE_STATE_CLOSED || pb.GetClosedByMergeRequest() == 0 {
+			continue
+		}
+		pb.State = storagepb.IssueState_ISSUE_STATE_RESOLVED
+		b.RequireVersion(key, item.Version)
+		b.Put(key, mustMarshal(&pb))
+		count++
+	}
+	log := zerowrap.FromCtx(ctx)
+	log.Info().Int("count", count).Msg("merge-closed issues upgraded to resolved")
+	return ctx.Err()
 }

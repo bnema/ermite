@@ -90,3 +90,21 @@ service, use the same environment variables with its existing bucket, endpoint,
 region and keys, and `docker compose up ermite` without the profile. These are
 development settings; never use the placeholder admin token or MinIO keys in
 production.
+
+## Issue history (schema 8)
+
+Issue events are protobuf `IssueEvent` records under
+`isev/<repo>/<issue:010d>/<seq:010d>`. Sequences are dense, per-issue and
+1-based. Events naming a merge request are copied verbatim to
+`mrev/<repo>/<mr:010d>/<issue:010d>/<seq:010d>` in the same atomic batch as
+the issue update or link diff. Issue history is read in sequence order; MR
+history is ordered by timestamp, then issue and sequence (at most 500 rows).
+Each issue retains at most 500 events; further events are silently dropped
+without preventing state or link updates. Removing a link preserves history;
+deleting its repository removes both prefixes.
+
+Schema 8 adds the resolved issue state and migrates closed issues with a
+nonzero `closed_by_merge_request` to resolved, without changing timestamps,
+open indexes, or creating retroactive events. The migration and schema bump
+are atomic and idempotent. Like token upgrades, this uses a single batch
+(16 MiB limit, typically over 10k issue records). Older builds refuse schema 8.

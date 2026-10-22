@@ -23,6 +23,8 @@ import (
 // from the sequence of the merge requests (mrseq/<repo>): an issue and a merge
 // request never share one.
 const (
+	issueEventPrefix   = "isev/"
+	mrEventPrefix      = "mrev/"
 	issuePrefix        = "is/"     // is/<repo>/<number:010d>
 	issueCommentPrefix = "isc/"    // isc/<repo>/<number:010d>/<id:010d>
 	issueOpenPrefix    = "isopen/" // isopen/<repo>/<number:010d>, written with the issue
@@ -72,6 +74,7 @@ func indexOpenIssue(b *kv.Batch, issue domain.Issue) {
 func issueKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]byte {
 	var keys [][]byte
 	for _, p := range []string{
+		issueEventPrefix + repo.String() + "/", mrEventPrefix + repo.String() + "/",
 		issueRepoPrefix(repo), issueCommentPrefix + repo.String() + "/", issueOpenRepoPrefix(repo), issueRefPrefix + repo.String() + "/",
 	} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
@@ -240,6 +243,9 @@ func (i *Issues) Update(ctx context.Context, issue domain.Issue, events ...domai
 	b.RequireVersion(key, issue.Version)
 	b.Put(key, val)
 	indexOpenIssue(&b, issue)
+	if err := prepareIssueEvents(ctx, i.db, &b, issue.Repo, issue.Number, events); err != nil {
+		return err
+	}
 	if _, err := i.db.Apply(ctx, &b); err != nil {
 		if errors.Is(err, kv.ErrConflict) {
 			return domain.ErrConflict
@@ -387,6 +393,8 @@ func encodeIssueState(s domain.IssueState) (storagepb.IssueState, error) {
 	switch s {
 	case domain.IssueStateOpen:
 		return storagepb.IssueState_ISSUE_STATE_OPEN, nil
+	case domain.IssueStateResolved:
+		return storagepb.IssueState_ISSUE_STATE_RESOLVED, nil
 	case domain.IssueStateClosed:
 		return storagepb.IssueState_ISSUE_STATE_CLOSED, nil
 	}
@@ -397,6 +405,8 @@ func decodeIssueState(s storagepb.IssueState) (domain.IssueState, error) {
 	switch s {
 	case storagepb.IssueState_ISSUE_STATE_OPEN:
 		return domain.IssueStateOpen, nil
+	case storagepb.IssueState_ISSUE_STATE_RESOLVED:
+		return domain.IssueStateResolved, nil
 	case storagepb.IssueState_ISSUE_STATE_CLOSED:
 		return domain.IssueStateClosed, nil
 	case storagepb.IssueState_ISSUE_STATE_PENDING:
@@ -434,7 +444,112 @@ func decodeIssuesMode(m storagepb.IssuesMode) domain.IssuesMode {
 // are silently dropped without preventing the associated write.
 const MaxIssueEvents = 500
 
-// ListEvents returns issue history. Persistence is implemented in Phase A.
+// ListEvents returns the append-only issue history in sequence order.
 func (i *Issues) ListEvents(ctx context.Context, repo domain.RepoName, number int64) ([]domain.IssueEvent, error) {
-	return nil, nil
+	var out []domain.IssueEvent
+	for _, item := range i.db.Snapshot(ctx).Prefix(ctx, []byte(issueEventsPrefix(repo, number))) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		ev, err := decodeIssueEvent(item.Value, number)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
+		if len(out) == MaxIssueEvents {
+			break
+		}
+	}
+	return out, ctx.Err()
+}
+
+func issueEventsPrefix(repo domain.RepoName, issue int64) string {
+	return issueEventPrefix + repo.String() + "/" + fmt.Sprintf(numberFormat, issue) + "/"
+}
+
+// prepareIssueEvents allocates dense per-issue sequences. RequireAbsent makes
+// concurrent appenders conflict; callers retry the entire associated write.
+// Scan once for a group so multiple events in one batch get distinct sequences.
+func prepareIssueEvents(ctx context.Context, db *kv.DB, b *kv.Batch, repo domain.RepoName, issue int64, events []domain.IssueEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	prefix := issueEventsPrefix(repo, issue)
+	var seq int64
+	count := 0
+	for key := range db.Snapshot(ctx).Prefix(ctx, []byte(prefix)) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, err := strconv.ParseInt(strings.TrimPrefix(string(key), prefix), 10, 64)
+		if err != nil {
+			return fmt.Errorf("decode issue event key: %w", err)
+		}
+		seq = max(seq, n)
+		count++
+	}
+	for _, ev := range events {
+		if count >= MaxIssueEvents {
+			break
+		}
+		seq++
+		ev.ID = seq
+		val, err := encodeIssueEvent(ev)
+		if err != nil {
+			return err
+		}
+		key := []byte(prefix + fmt.Sprintf(numberFormat, seq))
+		b.RequireAbsent(key)
+		b.Put(key, val)
+		if ev.MergeRequest != 0 {
+			b.Put([]byte(mrEventsPrefix(repo, ev.MergeRequest)+fmt.Sprintf(numberFormat, issue)+"/"+fmt.Sprintf(numberFormat, seq)), val)
+		}
+		count++
+	}
+	return ctx.Err()
+}
+
+func mrEventsPrefix(repo domain.RepoName, mr int64) string {
+	return mrEventPrefix + repo.String() + "/" + fmt.Sprintf(numberFormat, mr) + "/"
+}
+
+func encodeIssueEvent(ev domain.IssueEvent) ([]byte, error) {
+	var kind storagepb.IssueEventKind
+	switch ev.Kind {
+	case domain.IssueEventReferenced:
+		kind = storagepb.IssueEventKind_ISSUE_EVENT_KIND_REFERENCED
+	case domain.IssueEventClosed:
+		kind = storagepb.IssueEventKind_ISSUE_EVENT_KIND_CLOSED
+	case domain.IssueEventReopened:
+		kind = storagepb.IssueEventKind_ISSUE_EVENT_KIND_REOPENED
+	case domain.IssueEventResolved:
+		kind = storagepb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED
+	default:
+		return nil, fmt.Errorf("%w: issue event kind %q", domain.ErrInvalid, ev.Kind)
+	}
+	if !utf8.ValidString(ev.Actor) {
+		return nil, errors.New("issue event actor is not valid UTF-8")
+	}
+	return mustMarshal(&storagepb.IssueEvent{Seq: ev.ID, Kind: kind, MergeRequest: ev.MergeRequest, Closes: ev.Closes, Actor: ev.Actor, CreatedAt: encodeTime(ev.CreatedAt)}), nil
+}
+
+func decodeIssueEvent(val []byte, issue int64) (domain.IssueEvent, error) {
+	var pb storagepb.IssueEvent
+	if err := proto.Unmarshal(val, &pb); err != nil {
+		return domain.IssueEvent{}, fmt.Errorf("decode issue event: %w", err)
+	}
+	var kind domain.IssueEventKind
+	switch pb.GetKind() {
+	case storagepb.IssueEventKind_ISSUE_EVENT_KIND_REFERENCED:
+		kind = domain.IssueEventReferenced
+	case storagepb.IssueEventKind_ISSUE_EVENT_KIND_CLOSED:
+		kind = domain.IssueEventClosed
+	case storagepb.IssueEventKind_ISSUE_EVENT_KIND_REOPENED:
+		kind = domain.IssueEventReopened
+	case storagepb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED:
+		kind = domain.IssueEventResolved
+	default:
+		return domain.IssueEvent{}, fmt.Errorf("unknown issue event kind %d", pb.GetKind())
+	}
+	return domain.IssueEvent{ID: pb.GetSeq(), Issue: issue, Kind: kind, MergeRequest: pb.GetMergeRequest(), Closes: pb.GetCloses(), Actor: pb.GetActor(), CreatedAt: decodeTime(pb.GetCreatedAt())}, nil
 }

@@ -91,6 +91,11 @@ func (l *IssueLinks) ReplaceLinks(ctx context.Context, repo domain.RepoName, mr 
 			added = append(added, domain.IssueLink{Issue: n, MergeRequest: mr, Closes: closing})
 		}
 	}
+	for _, link := range added {
+		if err := prepareIssueEvents(ctx, l.db, &b, repo, link.Issue, []domain.IssueEvent{{Kind: domain.IssueEventReferenced, MergeRequest: mr, Closes: link.Closes, Actor: ref.Actor, CreatedAt: ref.At}}); err != nil {
+			return nil, nil, err
+		}
+	}
 	b.Put(key, mustMarshal(&storagepb.MergeRequestReferences{Issues: issues, Closes: closes}))
 	if _, err := l.db.Apply(ctx, &b); err != nil {
 		if errors.Is(err, kv.ErrConflict) {
@@ -150,7 +155,49 @@ func toSet(numbers []int64) map[int64]struct{} {
 	return set
 }
 
-// EventsOfMergeRequest returns MR issue history. Persistence is implemented in Phase A.
+// EventsOfMergeRequest returns history, including references no longer linked,
+// ordered by time, then issue and sequence, capped at MaxIssueEvents.
 func (l *IssueLinks) EventsOfMergeRequest(ctx context.Context, repo domain.RepoName, mr int64) ([]domain.IssueEvent, error) {
-	return nil, nil
+	var out []domain.IssueEvent
+	prefix := mrEventsPrefix(repo, mr)
+	for key, item := range l.db.Snapshot(ctx).Prefix(ctx, []byte(prefix)) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		num, _, ok := strings.Cut(strings.TrimPrefix(string(key), prefix), "/")
+		if !ok {
+			return nil, fmt.Errorf("invalid MR event key %q", key)
+		}
+		issue, err := strconv.ParseInt(num, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("decode MR event key: %w", err)
+		}
+		ev, err := decodeIssueEvent(item.Value, issue)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
+	}
+	slices.SortFunc(out, func(a, b domain.IssueEvent) int {
+		if c := a.CreatedAt.Compare(b.CreatedAt); c != 0 {
+			return c
+		}
+		if a.Issue < b.Issue {
+			return -1
+		}
+		if a.Issue > b.Issue {
+			return 1
+		}
+		if a.ID < b.ID {
+			return -1
+		}
+		if a.ID > b.ID {
+			return 1
+		}
+		return 0
+	})
+	if len(out) > MaxIssueEvents {
+		out = out[:MaxIssueEvents]
+	}
+	return out, ctx.Err()
 }
