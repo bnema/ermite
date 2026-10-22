@@ -3,6 +3,7 @@
 package domain
 
 import (
+	"cmp"
 	"fmt"
 	"time"
 )
@@ -138,4 +139,16 @@ type IssueEvent struct {
 	Closes       bool
 	Actor        string
 	CreatedAt    time.Time
+}
+
+// CompareIssueEvents orders events by time, then issue number, then id. It
+// suits slices.SortFunc.
+func CompareIssueEvents(a, b IssueEvent) int {
+	if c := a.CreatedAt.Compare(b.CreatedAt); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.Issue, b.Issue); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.ID, b.ID)
 }

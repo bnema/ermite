@@ -178,24 +178,7 @@ func (l *IssueLinks) EventsOfMergeRequest(ctx context.Context, repo domain.RepoN
 		}
 		out = append(out, ev)
 	}
-	slices.SortFunc(out, func(a, b domain.IssueEvent) int {
-		if c := a.CreatedAt.Compare(b.CreatedAt); c != 0 {
-			return c
-		}
-		if a.Issue < b.Issue {
-			return -1
-		}
-		if a.Issue > b.Issue {
-			return 1
-		}
-		if a.ID < b.ID {
-			return -1
-		}
-		if a.ID > b.ID {
-			return 1
-		}
-		return 0
-	})
+	slices.SortFunc(out, domain.CompareIssueEvents)
 	if len(out) > MaxIssueEvents {
 		out = out[:MaxIssueEvents]
 	}
