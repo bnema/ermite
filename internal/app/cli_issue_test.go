@@ -266,7 +266,7 @@ func TestPrintIssueDetailReturnsWriteErrors(t *testing.T) {
 
 func TestIssueShowMergeRequestLinks(t *testing.T) {
 	closed := &ermite.Issue{
-		Repo: "alpha", Number: 2, Title: "Crash on start", State: ermite.IssueState_ISSUE_STATE_CLOSED,
+		Repo: "alpha", Number: 2, Title: "Crash on start", State: ermite.IssueState_ISSUE_STATE_RESOLVED,
 		ClosedByMergeRequest: 5,
 	}
 	f := &fakeAPI{
@@ -280,12 +280,12 @@ func TestIssueShowMergeRequestLinks(t *testing.T) {
 	}
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "issue", "show", "alpha", "2").ok(t)
-	assert.Regexp(t, `state\s+closed\n.*closed by\s+!5\n`, res.stdout)
-	assert.Contains(t, res.stdout, "\nmerge requests (2)\n  !5 open   Fix the parser · closes\n  !7 merged Follow-up\n")
+	assert.Regexp(t, `state\s+resolved\n.*resolved by\s+!5\n`, res.stdout)
+	assert.Contains(t, res.stdout, "\nmerge requests (2)\n  !5 open   Fix the parser · resolves\n  !7 merged Follow-up\n")
 	assert.Less(t, strings.Index(res.stdout, "merge requests (2)"), strings.Index(res.stdout, "comments (0)"))
 
 	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2", "--json").ok(t)
-	assert.JSONEq(t, `{"url":"`+url+`/alpha/issues/2","repo":"alpha","number":2,"title":"Crash on start","body":"","state":"closed","author":"","created_at":null,"updated_at":null,"comment_count":0,"closed_by_merge_request":5,"comments":[],"references":[{"number":5,"title":"Fix the parser","state":"open","closes":true},{"number":7,"title":"Follow-up","state":"merged","closes":false}]}`, res.stdout)
+	assert.JSONEq(t, `{"url":"`+url+`/alpha/issues/2","repo":"alpha","number":2,"title":"Crash on start","body":"","state":"resolved","author":"","created_at":null,"updated_at":null,"comment_count":0,"closed_by_merge_request":5,"comments":[],"events":[],"references":[{"number":5,"title":"Fix the parser","state":"open","closes":true},{"number":7,"title":"Follow-up","state":"merged","closes":false}]}`, res.stdout)
 
 	// No references: no block in text, an empty array in JSON.
 	f.getIssue = func(*ermite.GetIssueRequest) (*ermite.GetIssueResponse, error) {
@@ -293,7 +293,7 @@ func TestIssueShowMergeRequestLinks(t *testing.T) {
 	}
 	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2").ok(t)
 	assert.NotContains(t, res.stdout, "merge requests")
-	assert.NotContains(t, res.stdout, "closed by")
+	assert.NotContains(t, res.stdout, "resolved by")
 	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2", "--json").ok(t)
 	assert.Contains(t, res.stdout, `"references": []`)
 }
@@ -301,4 +301,40 @@ func TestIssueShowMergeRequestLinks(t *testing.T) {
 func TestIssueWebURL(t *testing.T) {
 	assert.Equal(t, "https://git.example.org/my-repo/issues/42", issueWebURL("https://git.example.org/", "my-repo", 42))
 	assert.Equal(t, "https://git.example.org/team%2Frepo%20%23%3F%25/issues/42", issueWebURL("https://git.example.org", "team/repo #?%", 42))
+}
+
+func TestIssueResolveAndHistory(t *testing.T) {
+	events := []*ermite.IssueEvent{
+		{Id: "1", Kind: ermite.IssueEventKind_ISSUE_EVENT_KIND_REFERENCED, Issue: 2, MergeRequest: 5, MergeRequestTitle: "Fix", Closes: true, Actor: "owner", CreatedAt: ts("2026-10-01T10:00:00Z")},
+		{Id: "2", Kind: ermite.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED, Issue: 2, MergeRequest: 5, Actor: "merger", CreatedAt: ts("2026-10-03T10:00:00Z")},
+	}
+	f := &fakeAPI{getVersion: withIssues,
+		resolveIssue: func(r *ermite.ResolveIssueRequest) (*ermite.ResolveIssueResponse, error) {
+			assert.Equal(t, "alpha", r.GetRepo())
+			assert.EqualValues(t, 2, r.GetNumber())
+			return &ermite.ResolveIssueResponse{Issue: &ermite.Issue{Repo: "alpha", Number: 2, Title: "Fix", State: ermite.IssueState_ISSUE_STATE_RESOLVED}}, nil
+		},
+		getIssue: func(*ermite.GetIssueRequest) (*ermite.GetIssueResponse, error) {
+			return &ermite.GetIssueResponse{Issue: issueOne, Events: events, Comments: []*ermite.IssueComment{{Id: "1", Author: "reviewer", Text: "checking", CreatedAt: ts("2026-10-02T10:00:00Z")}}}, nil
+		},
+		listIssues: func(r *ermite.ListIssuesRequest) (*ermite.ListIssuesResponse, error) {
+			assert.Equal(t, ermite.IssueState_ISSUE_STATE_RESOLVED, r.GetState())
+			return &ermite.ListIssuesResponse{}, nil
+		},
+	}
+	url := f.serve(t)
+	res := runCLI(t, envFor(url), "", "issue", "resolve", "alpha", "#2").ok(t)
+	assert.Equal(t, "resolved alpha#2 (Fix)\n"+url+"/alpha/issues/2\n", res.stdout)
+	res = runCLI(t, envFor(url), "", "issue", "resolve", "alpha", "2", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"state": "resolved"`)
+	runCLI(t, envFor(url), "", "issue", "list", "alpha", "--state", "resolved").ok(t)
+	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2").ok(t)
+	assert.Contains(t, res.stdout, "owner referenced this in !5 (will resolve)")
+	assert.Contains(t, res.stdout, "merger resolved this by merging !5")
+	assert.Less(t, strings.Index(res.stdout, "owner referenced"), strings.Index(res.stdout, "reviewer"))
+	assert.Less(t, strings.Index(res.stdout, "reviewer"), strings.Index(res.stdout, "merger resolved"))
+	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"events": [`)
+	assert.Contains(t, res.stdout, `"merge_request_title": "Fix"`)
+	assert.Contains(t, res.stdout, `"kind": "resolved"`)
 }

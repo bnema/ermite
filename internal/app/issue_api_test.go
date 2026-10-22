@@ -74,6 +74,10 @@ func TestIssueAccessMatrixOverTheAPI(t *testing.T) {
 				_, err := c.issue.AddIssueComment(ctx, connect.NewRequest(&pb.AddIssueCommentRequest{Repo: repo, Number: 1, Text: "x"}))
 				return err
 			},
+			"ResolveIssue": func(c *clients) error {
+				_, err := c.issue.ResolveIssue(ctx, connect.NewRequest(&pb.ResolveIssueRequest{Repo: repo, Number: 1}))
+				return err
+			},
 			"CloseIssue": func(c *clients) error {
 				_, err := c.issue.CloseIssue(ctx, connect.NewRequest(&pb.CloseIssueRequest{Repo: repo, Number: 1}))
 				return err
@@ -204,6 +208,7 @@ func TestIssuesFeatureAndSettingOverTheAPI(t *testing.T) {
 	ver, err := r.anon.server.GetVersion(ctx, connect.NewRequest(&pb.GetVersionRequest{}))
 	require.NoError(t, err)
 	assert.Contains(t, ver.Msg.GetFeatures(), "issues")
+	assert.Contains(t, ver.Msg.GetFeatures(), "issues.resolve")
 
 	update := func(c *clients, mode pb.IssuesMode) (*pb.Repo, error) {
 		res, err := c.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{
@@ -276,13 +281,41 @@ func TestIssueReferencesAndClosedByOverTheAPI(t *testing.T) {
 	assert.False(t, two.GetReferences()[0].GetCloses())
 	assert.Zero(t, one.GetIssue().GetClosedByMergeRequest())
 
+	watch := r.watch(r.anon, "", "repo:proj")
 	_, err = r.merger.mr.MergeMergeRequest(ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: number, HeadId: r.head}))
 	require.NoError(t, err)
 	r.forge.MergeRequests.Wait(ctx)
+	var streamed *pb.IssueResolved
+	for range 8 {
+		event := watch.next(t, watchWait)
+		if streamed = event.GetIssueResolved(); streamed != nil {
+			break
+		}
+	}
+	require.NotNil(t, streamed, "merge publishes issue_resolved")
+	assert.EqualValues(t, 1, streamed.GetIssue().GetNumber())
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_RESOLVED, streamed.GetIssue().GetState())
 
 	one = get(1)
-	assert.Equal(t, pb.IssueState_ISSUE_STATE_CLOSED, one.GetIssue().GetState())
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_RESOLVED, one.GetIssue().GetState())
 	assert.Equal(t, number, one.GetIssue().GetClosedByMergeRequest())
+	require.Len(t, one.GetEvents(), 2)
+	referenced, resolved := one.GetEvents()[0], one.GetEvents()[1]
+	assert.Equal(t, pb.IssueEventKind_ISSUE_EVENT_KIND_REFERENCED, referenced.GetKind())
+	assert.True(t, referenced.GetCloses())
+	assert.Equal(t, "Change a", referenced.GetMergeRequestTitle())
+	assert.Equal(t, pb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED, resolved.GetKind())
+	assert.Equal(t, number, resolved.GetMergeRequest())
+	assert.NotEmpty(t, resolved.GetActor())
+	assert.Equal(t, referenced.GetActor(), resolved.GetActor(), "same token opened and merged")
+	detail, err := r.anon.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: number}))
+	require.NoError(t, err)
+	require.Len(t, detail.Msg.GetIssues(), 2)
+	assert.EqualValues(t, 1, detail.Msg.GetIssues()[0].GetNumber())
+	assert.Equal(t, pb.MergeRequestIssueState_MERGE_REQUEST_ISSUE_STATE_RESOLVED, detail.Msg.GetIssues()[0].GetState())
+	assert.True(t, detail.Msg.GetIssues()[0].GetCloses())
+	require.Len(t, detail.Msg.GetIssueEvents(), 3)
+
 	require.Len(t, one.GetReferences(), 1)
 	assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED, one.GetReferences()[0].GetState())
 	two = get(2)
@@ -293,4 +326,29 @@ func TestIssueReferencesAndClosedByOverTheAPI(t *testing.T) {
 	reopened, err := r.root.issue.ReopenIssue(ctx, connect.NewRequest(&pb.ReopenIssueRequest{Repo: "proj", Number: 1}))
 	require.NoError(t, err)
 	assert.Zero(t, reopened.Msg.GetIssue().GetClosedByMergeRequest())
+}
+
+func TestIssueResolveRoundTripOverTheAPI(t *testing.T) {
+	r := newIssueRig(t)
+	r.mode("pub", domain.IssuesOwner)
+	_, err := r.root.issue.CreateIssue(r.ctx, connect.NewRequest(&pb.CreateIssueRequest{Repo: "pub", Title: "Fix"}))
+	require.NoError(t, err)
+	resolved, err := r.root.issue.ResolveIssue(r.ctx, connect.NewRequest(&pb.ResolveIssueRequest{Repo: "pub", Number: 1}))
+	require.NoError(t, err)
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_RESOLVED, resolved.Msg.GetIssue().GetState())
+	assert.Zero(t, resolved.Msg.GetIssue().GetClosedByMergeRequest())
+	_, err = r.root.issue.ResolveIssue(r.ctx, connect.NewRequest(&pb.ResolveIssueRequest{Repo: "pub", Number: 1}))
+	assert.Equal(t, "failed_precondition", codeName(err))
+	list, err := r.anon.issue.ListIssues(r.ctx, connect.NewRequest(&pb.ListIssuesRequest{Repo: "pub", State: pb.IssueState_ISSUE_STATE_RESOLVED}))
+	require.NoError(t, err)
+	require.Len(t, list.Msg.GetIssues(), 1)
+	reopened, err := r.root.issue.ReopenIssue(r.ctx, connect.NewRequest(&pb.ReopenIssueRequest{Repo: "pub", Number: 1}))
+	require.NoError(t, err)
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_OPEN, reopened.Msg.GetIssue().GetState())
+	d, err := r.anon.issue.GetIssue(r.ctx, connect.NewRequest(&pb.GetIssueRequest{Repo: "pub", Number: 1}))
+	require.NoError(t, err)
+	require.Len(t, d.Msg.GetEvents(), 2)
+	assert.Equal(t, pb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED, d.Msg.GetEvents()[0].GetKind())
+	assert.Equal(t, "root", d.Msg.GetEvents()[0].GetActor())
+	assert.Equal(t, pb.IssueEventKind_ISSUE_EVENT_KIND_REOPENED, d.Msg.GetEvents()[1].GetKind())
 }

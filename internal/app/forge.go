@@ -380,6 +380,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	links := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: store, Issues: store.Issues(), MRs: store.MergeRequests(), Links: store.IssueLinks(), Git: git, Bus: f.Bus, Clock: clock})
 	f.Pushes.WithIssueLinks(links)
 	f.MergeRequests = usecase.NewMergeRequests(usecase.MergeRequestsConfig{
+		Issues: store.Issues(), IssueLinks: store.IssueLinks(),
 		Links: links, Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
 		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(), Mergeability: f.Mergeability,

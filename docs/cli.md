@@ -60,9 +60,10 @@ ermite mr resolve <repo> <n> <comment> | edit-comment <repo> <n> <comment> -m �
 ermite mr ready <repo> <n>                 # removes WIP:/[WIP], needs mr:write
 ermite mr merge <repo> <n> --head <id> [--mode fast-forward|squash|merge] [--delete-branch] [--ignore-checks] | merge <repo> <n> --head <id> --auto [--mode …] | merge <repo> <n> --cancel-auto | close <repo> <n>
 
-ermite issue create <repo> --title … [--body … | --body-file …] | list <repo> [--state open|closed|all]
-ermite issue show <repo> <n> | comment <repo> <n> -m … | close <repo> <n> | reopen <repo> <n>
-# issue show prints `closed by !N` when a merge closed it, and a `merge requests (K)` block (`!5 open  <title> · closes`); --json adds closed_by_merge_request and references
+ermite issue create <repo> --title … [--body … | --body-file …] | list <repo> [--state open|closed|resolved|all]
+ermite issue show <repo> <n> | comment <repo> <n> -m … | close <repo> <n> | resolve <repo> <n> | reopen <repo> <n>
+# issue show prints `resolved by !N` when a merge resolved it, linked merge requests, and timestamped history interleaved with comments; --json adds closed_by_merge_request, references and events
+# mr show lists linked issues (number, state, resolves marker) and their history; --json adds issues and issue_events
 
 ermite run list <repo> [--workflow …] [--branch …] [--status …]
 ermite run view <repo> <id> [--attempt n] [--log [--job …]] [--summary]
@@ -92,7 +93,7 @@ ermite version                           # client and server versions
 ermite completion bash|zsh|fish
 ```
 
-Issues need a server with the `issues` feature and `ermite repo edit <repo> --issues owner` (or `--issues public`, which also opens a moderated form to visitors of a public repository); they are written with the `issue:write` scope. See [Issues](issues.md).
+Issues need a server with the `issues` feature and `ermite repo edit <repo> --issues owner` (or `--issues public`, which also opens a moderated form to visitors of a public repository); they are written with the `issue:write` scope. An issue is `open`, `closed` (not resolved), or `resolved`. `issue resolve <repo> <n>` marks an open issue fixed (`issues.resolve` feature); merging a request with `Fixes #N` resolves it too. `issue reopen` accepts closed and resolved issues. History records references, closing, reopening and resolution with the actor and timestamp; removed references keep their history. See [Issues](issues.md).
 
 Mirrors push repositories to a remote over SSH, never forcing. See [Push mirror](mirror.md).
 
@@ -143,7 +144,7 @@ downloads are removed. Resume is within the command, not across invocations.
 
 ## Output
 
-- `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list`, `mirror key|config|status` and `version`.
+- `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|resolve|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list`, `mirror key|config|status` and `version`.
 - `watch --json` prints one object per line. `merge_request_mergeability` events carry `mergeability` (`state`, `behind`, `conflict_paths`…) and print as `repo!n mergeability: behind by 2`.
 - A merge needs passing checks on the head (no failed, queued or running checks); a head with no checks can merge. `mr merge --ignore-checks` bypasses this, needs `mr:force-merge`, and cannot be combined with `--auto` or `--cancel-auto`. The `cli` preset includes `mr:force-merge`; `agent` does not. Adding `--scope mr:merge` lets an agent merge only with passing checks.
 - `mr merge --mode squash|merge` creates a commit signed by the server's own key (generated on first start); the output names its fingerprint, `ermite signing-key show` prints the key. Every mode is allowed by default; `repo edit --merge-modes fast-forward,squash` disables `merge`.

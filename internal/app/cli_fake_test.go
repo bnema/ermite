@@ -68,6 +68,7 @@ type fakeAPI struct {
 	listIssues    func(*ermite.ListIssuesRequest) (*ermite.ListIssuesResponse, error)
 	getIssue      func(*ermite.GetIssueRequest) (*ermite.GetIssueResponse, error)
 	addIssueCmt   func(*ermite.AddIssueCommentRequest) (*ermite.AddIssueCommentResponse, error)
+	resolveIssue  func(*ermite.ResolveIssueRequest) (*ermite.ResolveIssueResponse, error)
 	closeIssue    func(*ermite.CloseIssueRequest) (*ermite.CloseIssueResponse, error)
 	reopenIssue   func(*ermite.ReopenIssueRequest) (*ermite.ReopenIssueResponse, error)
 	getSigningKey func(*ermite.GetSigningKeyRequest) (*ermite.GetSigningKeyResponse, error)
@@ -177,6 +178,9 @@ func (f *fakeAPI) AddIssueComment(_ context.Context, r *connect.Request[ermite.A
 }
 func (f *fakeAPI) CloseIssue(_ context.Context, r *connect.Request[ermite.CloseIssueRequest]) (*connect.Response[ermite.CloseIssueResponse], error) {
 	return respond(f, "CloseIssue", r, f.closeIssue)
+}
+func (f *fakeAPI) ResolveIssue(_ context.Context, r *connect.Request[ermite.ResolveIssueRequest]) (*connect.Response[ermite.ResolveIssueResponse], error) {
+	return respond(f, "ResolveIssue", r, f.resolveIssue)
 }
 func (f *fakeAPI) ReopenIssue(_ context.Context, r *connect.Request[ermite.ReopenIssueRequest]) (*connect.Response[ermite.ReopenIssueResponse], error) {
 	return respond(f, "ReopenIssue", r, f.reopenIssue)

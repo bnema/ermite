@@ -24,6 +24,8 @@ func issueStateToPB(s domain.IssueState) pb.IssueState {
 	switch s {
 	case domain.IssueStateOpen:
 		return pb.IssueState_ISSUE_STATE_OPEN
+	case domain.IssueStateResolved:
+		return pb.IssueState_ISSUE_STATE_RESOLVED
 	case domain.IssueStateClosed:
 		return pb.IssueState_ISSUE_STATE_CLOSED
 	}
@@ -38,6 +40,8 @@ func issueStateFromPB(s pb.IssueState) (domain.IssueState, error) {
 		return "", nil
 	case pb.IssueState_ISSUE_STATE_OPEN:
 		return domain.IssueStateOpen, nil
+	case pb.IssueState_ISSUE_STATE_RESOLVED:
+		return domain.IssueStateResolved, nil
 	case pb.IssueState_ISSUE_STATE_CLOSED:
 		return domain.IssueStateClosed, nil
 	}
@@ -138,6 +142,9 @@ func (s *issueService) GetIssue(ctx context.Context, req *connect.Request[pb.Get
 	out := &pb.GetIssueResponse{Issue: issueToPB(d.Issue), Comments: make([]*pb.IssueComment, 0, len(d.Comments))}
 	for _, c := range d.Comments {
 		out.Comments = append(out.Comments, issueCommentToPB(c))
+	}
+	for _, e := range d.Events {
+		out.Events = append(out.Events, issueEventToPB(e))
 	}
 	out.References = make([]*pb.IssueReference, 0, len(d.References))
 	for _, r := range d.References {
@@ -271,7 +278,44 @@ func (s *issueService) RejectIssue(ctx context.Context, req *connect.Request[pb.
 	return connect.NewResponse(&pb.RejectIssueResponse{}), nil
 }
 
-// ResolveIssue is reserved for Phase A; the RPC is not implemented yet.
+// ResolveIssue marks an open issue as resolved.
 func (s *issueService) ResolveIssue(ctx context.Context, req *connect.Request[pb.ResolveIssueRequest]) (*connect.Response[pb.ResolveIssueResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("ResolveIssue is not implemented"))
+	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	issue, err := s.issues.Resolve(ctx, caller(ctx), name, req.Msg.GetNumber())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.ResolveIssueResponse{Issue: issueToPB(issue)}), nil
+}
+
+func issueEventToPB(d ports.IssueEventDetail) *pb.IssueEvent {
+	e := d.Event
+	kind := pb.IssueEventKind_ISSUE_EVENT_KIND_UNSPECIFIED
+	switch e.Kind {
+	case domain.IssueEventReferenced:
+		kind = pb.IssueEventKind_ISSUE_EVENT_KIND_REFERENCED
+	case domain.IssueEventClosed:
+		kind = pb.IssueEventKind_ISSUE_EVENT_KIND_CLOSED
+	case domain.IssueEventReopened:
+		kind = pb.IssueEventKind_ISSUE_EVENT_KIND_REOPENED
+	case domain.IssueEventResolved:
+		kind = pb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED
+	}
+	return &pb.IssueEvent{Id: strconv.FormatInt(e.ID, 10), Kind: kind, Issue: e.Issue, MergeRequest: e.MergeRequest, MergeRequestTitle: d.MergeRequestTitle.String(), Closes: e.Closes, Actor: e.Actor, CreatedAt: timestamp(e.CreatedAt)}
+}
+
+func mergeRequestIssueToPB(i ports.MergeRequestIssue) *pb.MergeRequestIssue {
+	state := pb.MergeRequestIssueState_MERGE_REQUEST_ISSUE_STATE_UNSPECIFIED
+	switch i.State {
+	case domain.IssueStateOpen:
+		state = pb.MergeRequestIssueState_MERGE_REQUEST_ISSUE_STATE_OPEN
+	case domain.IssueStateClosed:
+		state = pb.MergeRequestIssueState_MERGE_REQUEST_ISSUE_STATE_CLOSED
+	case domain.IssueStateResolved:
+		state = pb.MergeRequestIssueState_MERGE_REQUEST_ISSUE_STATE_RESOLVED
+	}
+	return &pb.MergeRequestIssue{Number: i.Number, Title: i.Title.String(), State: state, Closes: i.Closes}
 }

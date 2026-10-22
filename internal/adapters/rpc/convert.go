@@ -501,6 +501,9 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	case domain.IssueOpened:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_IssueOpened{IssueOpened: &pb.IssueOpened{Issue: issueToPB(ev.Issue)}}
+	case domain.IssueResolved:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_IssueResolved{IssueResolved: &pb.IssueResolved{Issue: issueToPB(ev.Issue)}}
 	case domain.IssueClosed:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_IssueClosed{IssueClosed: &pb.IssueClosed{Issue: issueToPB(ev.Issue)}}

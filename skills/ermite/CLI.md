@@ -43,7 +43,7 @@ Scopes:
 | `mr:review` | give a verdict (`--approve`, `--request-changes`) |
 | `mr:merge` | merge, and delete the merged source branch with `--delete-branch` |
 | `mr:force-merge` | bypass failing or unfinished checks with `--ignore-checks` |
-| `issue:write` | open, comment on, close and reopen issues |
+| `issue:write` | open, comment on, close, resolve and reopen issues |
 | `release:write` | create, edit and delete releases and their assets; included in `cli`; refused for branch-limited tokens |
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
@@ -87,14 +87,22 @@ Issues share the numbering of merge requests and must be enabled per repository:
 | Command | Scope | Notes |
 |---|---|---|
 | `issue create <repo> --title T [--body TEXT\|-] [--body-file F\|-]` | `issue:write` | title of 120 characters max |
-| `issue list <repo> [--state open\|closed\|all] [--json]` | read access (public repository, or `repo:read` on a private one) | default `open`; `issue:write` alone does not grant reading |
-| `issue show <repo> <n> [--json]` | read access (public repository, or `repo:read` on a private one) | issue and comments; `issue:write` alone does not grant reading |
+| `issue list <repo> [--state open\|closed\|resolved\|all] [--json]` | read access (public repository, or `repo:read` on a private one) | default `open`; `issue:write` alone does not grant reading |
+| `issue show <repo> <n> [--json]` | read access (public repository, or `repo:read` on a private one) | issue, comments and history; `issue:write` alone does not grant reading |
 | `issue comment <repo> <n> -m TEXT\|-` | `issue:write` | |
-| `issue close <repo> <n>` / `issue reopen <repo> <n>` | `issue:write` | |
+| `issue close <repo> <n>` / `issue resolve <repo> <n>` / `issue reopen <repo> <n>` | `issue:write` | |
 
-`issue create`, `issue close` and `issue reopen` print a confirmation followed by the full issue web URL on its own line.
+`issue create`, `issue close`, `issue resolve` and `issue reopen` print a confirmation followed by the full issue web URL on its own line.
 
-Issue JSON: `repo`, `url` (full web URL), `number`, `title`, `body`, `state`, `author` (token label), `created_at`, `updated_at`, `comment_count`. `issue show --json` adds `comments` (`id`, `author`, `text`, `created_at`). `repo show --json` has `issues`.
+Issue JSON: `repo`, `url` (full web URL), `number`, `title`, `body`, `state`, `author` (token label), `created_at`, `updated_at`, `comment_count`, `closed_by_merge_request` (0 for none). `issue show --json` adds `comments` (`id`, `author`, `text`, `created_at`), `references`, and `events` (`id`, `kind`, `issue`, `merge_request`, `merge_request_title`, `closes`, `actor`, `created_at`). `repo show --json` has `issues`.
+
+Issues have three states: `open`, `closed` (not resolved), and `resolved` (fixed).
+`issue resolve` needs the `issues.resolve` server feature; `issue reopen` opens a closed or resolved issue.
+Merging an MR with `Fixes #N` resolves the open issue. `issue show` prints `resolved by !N`
+and timestamped reference/close/reopen/resolve history interleaved with comments.
+`mr show` lists linked issues with their state and a `resolves` marker, plus history rows;
+its JSON adds `issues` (number, title, state, closes) and `issue_events` (the same event fields).
+History remains when a reference is removed; MR history can name issues absent from its current links.
 
 ## Releases
 

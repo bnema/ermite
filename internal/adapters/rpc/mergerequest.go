@@ -318,6 +318,12 @@ func (s *mergeRequestService) GetMergeRequest(ctx context.Context, req *connect.
 		LastReadId:       d.LastReadID.String(),
 		LastReadLost:     d.LastReadLost,
 	}
+	for _, i := range d.Issues {
+		out.Issues = append(out.Issues, mergeRequestIssueToPB(i))
+	}
+	for _, e := range d.IssueEvents {
+		out.IssueEvents = append(out.IssueEvents, issueEventToPB(e))
+	}
 	for _, c := range d.Commits {
 		out.Commits = append(out.Commits, commitToPB(c))
 	}

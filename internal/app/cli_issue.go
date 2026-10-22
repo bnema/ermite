@@ -20,11 +20,14 @@ import (
 )
 
 const statePending = "pending"
+const stateResolved = "resolved"
 
 func issueStateName(s ermite.IssueState) string {
 	switch s {
 	case ermite.IssueState_ISSUE_STATE_OPEN:
 		return stateOpen
+	case ermite.IssueState_ISSUE_STATE_RESOLVED:
+		return stateResolved
 	case ermite.IssueState_ISSUE_STATE_CLOSED:
 		return stateClosed
 	case ermite.IssueState_ISSUE_STATE_PENDING:
@@ -38,12 +41,14 @@ func parseIssueState(s string) (ermite.IssueState, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case stateOpen:
 		return ermite.IssueState_ISSUE_STATE_OPEN, nil
+	case stateResolved:
+		return ermite.IssueState_ISSUE_STATE_RESOLVED, nil
 	case stateClosed:
 		return ermite.IssueState_ISSUE_STATE_CLOSED, nil
 	case stateAll:
 		return ermite.IssueState_ISSUE_STATE_UNSPECIFIED, nil
 	}
-	return 0, fmt.Errorf("invalid state %q: use %s, %s or %s", s, stateOpen, stateClosed, stateAll)
+	return 0, fmt.Errorf("invalid state %q: use %s, %s, %s or %s", s, stateOpen, stateClosed, stateResolved, stateAll)
 }
 
 // jsonIssue is the stable JSON shape of an issue.
@@ -58,7 +63,7 @@ type jsonIssue struct {
 	CreatedAt    *string `json:"created_at"`
 	UpdatedAt    *string `json:"updated_at"`
 	CommentCount int32   `json:"comment_count"`
-	// ClosedByMergeRequest is the merge request whose merge closed the issue; 0 for none.
+	// ClosedByMergeRequest is the merge request whose merge resolved the issue; 0 for none.
 	ClosedByMergeRequest int64 `json:"closed_by_merge_request"`
 }
 
@@ -94,6 +99,7 @@ type jsonIssueDetail struct {
 	jsonIssue
 	Comments   []jsonIssueComment   `json:"comments"`
 	References []jsonIssueReference `json:"references"`
+	Events     []jsonIssueEvent     `json:"events"`
 }
 
 // jsonIssueReference is a merge request that names the issue.
@@ -105,16 +111,16 @@ type jsonIssueReference struct {
 }
 
 const jsonIssueHelp = `
-JSON fields of an issue (--json): repo, url (full web URL), number, title, body, state ("open" or "closed"), author
+JSON fields of an issue (--json): repo, url (full web URL), number, title, body, state ("open", "closed" or "resolved"), author
 (token label), created_at and updated_at (RFC 3339 UTC), comment_count, closed_by_merge_request (number of
-the merge request whose merge closed the issue, 0 for none).`
+the merge request whose merge resolved the issue, 0 for none).`
 
 const jsonIssueCommentHelp = `
 JSON fields of an issue comment: id, author, text, created_at.`
 
 const jsonIssueReferenceHelp = `
 JSON fields of a merge request reference: number, title, state ("open", "merged" or "closed"), closes
-(true when merging it closes the issue).`
+(true when merging it resolves the issue).`
 
 func newIssueCmd(env *cliEnv) *cobra.Command {
 	issue := &cobra.Command{
@@ -127,7 +133,7 @@ func newIssueCmd(env *cliEnv) *cobra.Command {
 	}
 	issue.AddCommand(
 		newIssueCreateCmd(env), newIssueListCmd(env), newIssueShowCmd(env), newIssueCommentCmd(env),
-		newIssueCloseCmd(env), newIssueReopenCmd(env),
+		newIssueCloseCmd(env), newIssueResolveCmd(env), newIssueReopenCmd(env),
 	)
 	return issue
 }
@@ -274,14 +280,14 @@ func newIssueListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <repo>",
 		Short: "List the issues of a repository",
-		Long: "List the issues of a repository, newest first. --state restricts them to open or closed ones\n" +
+		Long: "List the issues of a repository, newest first. --state restricts them to open, closed or resolved ones\n" +
 			"(default: open; all shows every state)." + jsonIssueHelp + "\n--json prints an array of issues.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
-	cmd.Flags().StringVar(&state, "state", stateOpen, "state: open, closed or all")
+	cmd.Flags().StringVar(&state, "state", stateOpen, "state: open, closed, resolved or all")
 	_ = cmd.RegisterFlagCompletionFunc("state", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-		return []string{stateOpen, stateClosed, stateAll}, cobra.ShellCompDirectiveNoFileComp
+		return []string{stateOpen, stateClosed, stateResolved, stateAll}, cobra.ShellCompDirectiveNoFileComp
 	})
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -325,10 +331,10 @@ func newIssueShowCmd(env *cliEnv) *cobra.Command {
 		Use:   "show <repo> <number>",
 		Short: "Show an issue with its comments",
 		Long: "Show an issue: its fields, its body, the merge requests that name it (#N in their title,\n" +
-			"description, notes or commits; \"closes\" when a closing keyword such as \"Fixes #N\" names it) and\n" +
-			"its comments, oldest first. \"closed by\" shows the merge request whose merge closed the issue." +
-			jsonIssueHelp + jsonIssueCommentHelp + jsonIssueReferenceHelp +
-			"\n--json adds comments and references (always present, possibly empty) to the issue fields.",
+			"description, notes or commits; a closing keyword such as \"Fixes #N\" resolves it on merge) and\n" +
+			"its comments and history, oldest first. \"resolved by\" shows the merge request whose merge resolved the issue." +
+			jsonIssueHelp + jsonIssueCommentHelp + jsonIssueReferenceHelp + jsonIssueEventHelp +
+			"\n--json adds comments, references and events (always present, possibly empty) to the issue fields.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeIssueRepoThenNumber(env),
 	}
@@ -347,7 +353,7 @@ func newIssueShowCmd(env *cliEnv) *cobra.Command {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			out := jsonIssueDetail{jsonIssue: toJSONIssue(res.Msg.GetIssue(), c.URL()), Comments: []jsonIssueComment{}}
+			out := jsonIssueDetail{jsonIssue: toJSONIssue(res.Msg.GetIssue(), c.URL()), Comments: []jsonIssueComment{}, Events: toJSONIssueEvents(res.Msg.GetEvents())}
 			for _, cm := range res.Msg.GetComments() {
 				out.Comments = append(out.Comments, toJSONIssueComment(cm))
 			}
@@ -376,7 +382,7 @@ func printIssueDetail(w io.Writer, d *ermite.GetIssueResponse) error {
 		{"state", issueStateName(i.GetState())},
 	}
 	if n := i.GetClosedByMergeRequest(); n > 0 {
-		rows = append(rows, [2]string{"closed by", fmt.Sprintf("!%d", n)})
+		rows = append(rows, [2]string{"resolved by", fmt.Sprintf("!%d", n)})
 	}
 	rows = append(rows,
 		[2]string{"author", i.GetAuthor()},
@@ -397,7 +403,7 @@ func printIssueDetail(w io.Writer, d *ermite.GetIssueResponse) error {
 		for _, r := range refs {
 			line := fmt.Sprintf("  !%d %-6s %s", r.GetNumber(), stateName(r.GetState()), clean(r.GetTitle()))
 			if r.GetCloses() {
-				line += " · closes"
+				line += " · resolves"
 			}
 			if _, err := fmt.Fprintln(w, line); err != nil {
 				return err
@@ -407,10 +413,17 @@ func printIssueDetail(w io.Writer, d *ermite.GetIssueResponse) error {
 	if _, err := fmt.Fprintf(w, "\ncomments (%d)\n", len(d.GetComments())); err != nil {
 		return err
 	}
+	var timeline []issueTimelineRow
 	for _, c := range d.GetComments() {
-		if _, err := fmt.Fprintf(w, "  #%s %s, %s\n%s\n", c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), indentText(c.GetText())); err != nil {
+		c := c
+		timeline = append(timeline, issueTimelineRow{at: c.GetCreatedAt(), print: func(w io.Writer) error {
+			_, err := fmt.Fprintf(w, "  #%s %s, %s\n%s\n", c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), indentText(c.GetText()))
 			return err
-		}
+		}})
+	}
+	timeline = append(timeline, newIssueTimeline(d.GetEvents(), false)...)
+	if err := printIssueTimeline(w, timeline); err != nil {
+		return err
 	}
 	return nil
 }
@@ -471,8 +484,19 @@ func newIssueCloseCmd(env *cliEnv) *cobra.Command {
 		})
 }
 
+func newIssueResolveCmd(env *cliEnv) *cobra.Command {
+	return newIssueStateCmd(env, "resolve", "resolved", "Resolve an issue", "Mark an open issue as resolved (fixed). `ermite issue reopen` opens it again. Needs the issue:write scope.",
+		func(ctx context.Context, c *client.Client, repo string, n int64) (*ermite.Issue, error) {
+			res, err := c.Issues().ResolveIssue(ctx, connect.NewRequest(&ermite.ResolveIssueRequest{Repo: repo, Number: n}))
+			if err != nil {
+				return nil, err
+			}
+			return res.Msg.GetIssue(), nil
+		})
+}
+
 func newIssueReopenCmd(env *cliEnv) *cobra.Command {
-	return newIssueStateCmd(env, "reopen", "reopened", "Reopen a closed issue", "Reopen a closed issue. Needs the issue:write scope.",
+	return newIssueStateCmd(env, "reopen", "reopened", "Reopen a closed or resolved issue", "Reopen a closed or resolved issue. Needs the issue:write scope.",
 		func(ctx context.Context, c *client.Client, repo string, n int64) (*ermite.Issue, error) {
 			res, err := c.Issues().ReopenIssue(ctx, connect.NewRequest(&ermite.ReopenIssueRequest{Repo: repo, Number: n}))
 			if err != nil {

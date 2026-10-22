@@ -59,6 +59,18 @@ merge request web URL on its own line. With `--json`, merge request objects
 
 Open one: `ermite mr create <repo> --source <branch> --title "..."`. After new pushes, `mr show --since-last-read` shows only what changed since `--mark-read`.
 
+## Issues
+
+Enable issues with `ermite repo edit <repo> --issues owner` (or `public`).
+Use `issue create <repo> --title "..."`, `issue list <repo> --state open|closed|resolved|all`,
+and `issue show <repo> <n> --json`. `issue close` means closed without resolution;
+`issue resolve <repo> <n>` marks an open issue fixed (needs `issues.resolve`), and
+`issue reopen <repo> <n>` reopens a closed or resolved issue. Writes need `issue:write`.
+Merging an MR with `Fixes #N` resolves the open issue. Issue detail shows `resolved by !N`
+and timestamped history with actors alongside comments; JSON includes `events` and `references`.
+`mr show` lists linked issues, their states and the resolves marker, with history rows;
+JSON includes `issues` and `issue_events`. Removed references retain their history.
+
 ## Tokens
 
 ```sh

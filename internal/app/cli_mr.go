@@ -517,6 +517,8 @@ type jsonCommit struct {
 
 // jsonMRDetail is the stable JSON shape of `mr show --json`.
 type jsonMRDetail struct {
+	Issues      []jsonMRIssue    `json:"issues"`
+	IssueEvents []jsonIssueEvent `json:"issue_events"`
 	jsonMergeRequest
 	// Mergeability is null unless the request is open and the server computes it.
 	Mergeability     *jsonMergeability   `json:"mergeability"`
@@ -530,6 +532,13 @@ type jsonMRDetail struct {
 	Verdicts         []jsonAuthorVerdict `json:"verdicts"`
 	LastReadID       string              `json:"last_read_id"`
 	LastReadLost     bool                `json:"last_read_lost"`
+}
+
+type jsonMRIssue struct {
+	Number int64  `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	Closes bool   `json:"closes"`
 }
 
 type jsonAuthorVerdict struct {
@@ -560,8 +569,9 @@ func lineKindName(k ermite.LineKind) string {
 func toJSONDetail(d *ermite.GetMergeRequestResponse, withDiff bool, baseURL string) jsonMRDetail {
 	out := jsonMRDetail{
 		jsonMergeRequest: toJSONMergeRequest(d.GetMergeRequest(), baseURL),
-		Mergeability:     toJSONMergeability(d.GetMergeRequest().GetMergeability()),
-		Commits:          []jsonCommit{}, CommitsTruncated: d.GetCommitsTruncated(),
+		Issues:           []jsonMRIssue{}, IssueEvents: toJSONIssueEvents(d.GetIssueEvents()),
+		Mergeability: toJSONMergeability(d.GetMergeRequest().GetMergeability()),
+		Commits:      []jsonCommit{}, CommitsTruncated: d.GetCommitsTruncated(),
 		DiffBaseID: d.GetDiffBaseId(),
 		Stats: jsonStats{
 			FilesChanged: d.GetStats().GetFilesChanged(), Additions: d.GetStats().GetAdditions(), Deletions: d.GetStats().GetDeletions(),
@@ -569,6 +579,9 @@ func toJSONDetail(d *ermite.GetMergeRequestResponse, withDiff bool, baseURL stri
 		DiffTruncated: d.GetDiff().GetTruncated(),
 		Files:         []jsonFile{}, Comments: []jsonComment{}, Verdicts: []jsonAuthorVerdict{},
 		LastReadID: d.GetLastReadId(), LastReadLost: d.GetLastReadLost(),
+	}
+	for _, i := range d.GetIssues() {
+		out.Issues = append(out.Issues, jsonMRIssue{Number: i.GetNumber(), Title: i.GetTitle(), State: mrIssueStateName(i.GetState()), Closes: i.GetCloses()})
 	}
 	for _, c := range d.GetCommits() {
 		out.Commits = append(out.Commits, jsonCommit{ID: c.GetId(), Author: c.GetAuthor().GetName(), Summary: c.GetSummary()})
@@ -616,8 +629,8 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 			"whole change is shown and the output says so. --mark-read records the head shown as read; it needs\n" +
 			"the mr:write scope. The mergeability line says whether the branch merges with its target now: up to\n" +
 			"date (can be fast-forwarded), behind by N commits (merges without conflicts, squash or merge commit),\n" +
-			"or in conflict with the paths that conflict (rebase needed)." + jsonMRHelp + jsonMergeabilityHelp + jsonCommentHelp + "\n" +
-			"--json adds to the merge request fields: commits (id, author, summary), commits_truncated,\n" +
+			"or in conflict with the paths that conflict (rebase needed)." + jsonMRHelp + jsonMergeabilityHelp + jsonCommentHelp + jsonIssueEventHelp + "\n" +
+			"--json adds issues (number, title, state: open/closed/resolved, closes), issue_events and commits (id, author, summary), commits_truncated,\n" +
 			"diff_base_id (the commit the diff starts from), stats (files_changed, additions, deletions),\n" +
 			"diff_truncated, files (old_path, new_path, status, additions, deletions, binary, truncated, omitted (generated, large, budget or unavailable; absent when the hunks are\n" +
 			"not omitted) and, with --diff, hunks of lines with kind, old_number, new_number and text), comments, last_read_id\n" +
@@ -749,7 +762,18 @@ func printMRDetail(w io.Writer, d *ermite.GetMergeRequestResponse, withDiff, sin
 		_, _ = fmt.Fprintln(w, "  (the diff is truncated)")
 	}
 
+	if len(d.GetIssues()) > 0 {
+		_, _ = fmt.Fprintf(w, "\nissues (%d)\n", len(d.GetIssues()))
+		for _, i := range d.GetIssues() {
+			marker := ""
+			if i.GetCloses() {
+				marker = " · resolves"
+			}
+			_, _ = fmt.Fprintf(w, "  #%d %s %s%s\n", i.GetNumber(), mrIssueStateName(i.GetState()), clean(i.GetTitle()), marker)
+		}
+	}
 	_, _ = fmt.Fprintf(w, "\ncomments (%d)\n", len(d.GetComments()))
+	var timeline []issueTimelineRow
 	var ordered []*ermite.Comment
 	for _, root := range d.GetComments() {
 		if root.GetReplyTo() != "" {
@@ -763,33 +787,40 @@ func printMRDetail(w io.Writer, d *ermite.GetMergeRequestResponse, withDiff, sin
 		}
 	}
 	for _, c := range ordered {
-		where := "general"
-		if c.GetPath() != "" {
-			where = fmt.Sprintf("%s:%d (%s)", clean(c.GetPath()), c.GetLine(), sideName(c.GetSide()))
-		}
-		if c.GetStartLine() > 0 {
-			where = fmt.Sprintf("%s:lines %d-%d (%s)", clean(c.GetPath()), c.GetStartLine(), c.GetLine(), sideName(c.GetSide()))
-		}
-		mark := ""
-		if c.GetEditedAt() != nil {
-			mark += " (edited)"
-		}
-		if c.GetDeleted() {
-			mark += " [deleted]"
-		}
-		if c.GetVerdict() != ermite.Verdict_VERDICT_UNSPECIFIED {
-			mark += " [" + verdictName(c.GetVerdict()) + "]"
-		}
-		if c.GetResolved() {
-			mark += " [resolved]"
-		}
-		prefix := "  "
-		body := indentText(c.GetText())
-		if c.GetReplyTo() != "" {
-			prefix += "    "
-			body = "    " + strings.ReplaceAll(body, "\n", "\n    ")
-		}
-		_, _ = fmt.Fprintf(w, "%s#%s %s, %s, %s%s\n%s\n", prefix, c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), where, mark, body)
+		timeline = append(timeline, issueTimelineRow{at: c.GetCreatedAt(), print: func(w io.Writer) error {
+			where := "general"
+			if c.GetPath() != "" {
+				where = fmt.Sprintf("%s:%d (%s)", clean(c.GetPath()), c.GetLine(), sideName(c.GetSide()))
+			}
+			if c.GetStartLine() > 0 {
+				where = fmt.Sprintf("%s:lines %d-%d (%s)", clean(c.GetPath()), c.GetStartLine(), c.GetLine(), sideName(c.GetSide()))
+			}
+			mark := ""
+			if c.GetEditedAt() != nil {
+				mark += " (edited)"
+			}
+			if c.GetDeleted() {
+				mark += " [deleted]"
+			}
+			if c.GetVerdict() != ermite.Verdict_VERDICT_UNSPECIFIED {
+				mark += " [" + verdictName(c.GetVerdict()) + "]"
+			}
+			if c.GetResolved() {
+				mark += " [resolved]"
+			}
+			prefix := "  "
+			body := indentText(c.GetText())
+			if c.GetReplyTo() != "" {
+				prefix += "    "
+				body = "    " + strings.ReplaceAll(body, "\n", "\n    ")
+			}
+			_, err := fmt.Fprintf(w, "%s#%s %s, %s, %s%s\n%s\n", prefix, c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), where, mark, body)
+			return err
+		}})
+	}
+	timeline = append(timeline, newIssueTimeline(d.GetIssueEvents(), true)...)
+	if err := printIssueTimeline(w, timeline); err != nil {
+		return err
 	}
 	if withDiff {
 		printDiff(w, d.GetDiff())

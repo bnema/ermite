@@ -416,3 +416,34 @@ func TestFileDiffOmissionMapping(t *testing.T) {
 	assert.True(t, diffToPB(domain.Diff{Truncated: true}).GetTruncated())
 	assert.False(t, diffToPB(domain.Diff{Files: []domain.FileDiff{{}}}).GetTruncated())
 }
+
+func TestResolvedIssueContract(t *testing.T) {
+	title, err := domain.ParseMRTitle("Fix")
+	require.NoError(t, err)
+	for _, state := range []domain.IssueState{domain.IssueStateOpen, domain.IssueStateClosed, domain.IssueStateResolved} {
+		back, err := issueStateFromPB(issueStateToPB(state))
+		require.NoError(t, err)
+		assert.Equal(t, state, back)
+		assert.NotEqual(t, pb.MergeRequestIssueState_MERGE_REQUEST_ISSUE_STATE_UNSPECIFIED, mergeRequestIssueToPB(ports.MergeRequestIssue{State: state}).GetState())
+	}
+	for kind, want := range map[domain.IssueEventKind]pb.IssueEventKind{
+		domain.IssueEventReferenced: pb.IssueEventKind_ISSUE_EVENT_KIND_REFERENCED,
+		domain.IssueEventClosed:     pb.IssueEventKind_ISSUE_EVENT_KIND_CLOSED,
+		domain.IssueEventReopened:   pb.IssueEventKind_ISSUE_EVENT_KIND_REOPENED,
+		domain.IssueEventResolved:   pb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED,
+	} {
+		at := time.Now().UTC()
+		got := issueEventToPB(ports.IssueEventDetail{Event: domain.IssueEvent{ID: 3, Kind: kind, Issue: 4, MergeRequest: 5, Closes: true, Actor: "merger", CreatedAt: at}, MergeRequestTitle: title})
+		assert.Equal(t, want, got.GetKind())
+		assert.Equal(t, "3", got.GetId())
+		assert.EqualValues(t, 4, got.GetIssue())
+		assert.EqualValues(t, 5, got.GetMergeRequest())
+		assert.True(t, got.GetCloses())
+		assert.Equal(t, "merger", got.GetActor())
+		assert.Equal(t, "Fix", got.GetMergeRequestTitle())
+		assert.Equal(t, at, got.GetCreatedAt().AsTime())
+	}
+	ev := watchEventToPB(ports.WatchEvent{Event: domain.IssueResolved{Issue: domain.Issue{Number: 4, State: domain.IssueStateResolved}}})
+	require.NotNil(t, ev.GetIssueResolved())
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_RESOLVED, ev.GetIssueResolved().GetIssue().GetState())
+}
