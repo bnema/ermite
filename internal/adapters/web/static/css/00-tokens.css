@@ -27,7 +27,11 @@
    cursor, links in prose, open folders. */
 @layer tokens {
   :root {
+    /* the system's scheme, unless the theme switch forces one
+       (html[data-theme], set by store.js) */
     color-scheme: light dark;
+    &[data-theme="light"] { color-scheme: light; }
+    &[data-theme="dark"] { color-scheme: dark; }
 
     /* surfaces, bottom to top */
     --bg-canvas: light-dark(#f3f3f3, #050505); /* the page */

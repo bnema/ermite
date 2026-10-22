@@ -30,6 +30,9 @@
   .i-split { --i: url(icons/split.svg); }
   .i-compact { --i: url(icons/compact.svg); }
   .i-mailbox { --i: url(icons/mailbox.svg); }
+  .i-sun-moon { --i: url(icons/sun-moon.svg); }
+  .i-sun { --i: url(icons/sun.svg); }
+  .i-moon { --i: url(icons/moon.svg); }
 
   .pill {
     display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2); margin-left: var(--s1);
@@ -185,7 +188,7 @@
     & .l4, & .l5, & .l6 { padding-left: var(--s6); }
   }
 
-  /* footer: version and source (AGPL §13) */
+  /* footer: version and source (AGPL §13), then shortcuts and theme */
   .foot {
     display: flex; flex-wrap: wrap; gap: var(--s4); align-items: center;
     width: 100%; max-width: var(--page); margin: 0 auto; padding: var(--s4) var(--pad) var(--s5);
@@ -194,6 +197,11 @@
     & a { color: var(--ink-dim); }
     & .foot-keys { margin-left: auto; color: var(--ink-dim); }
     & .foot-keys:hover { color: var(--ink-hi); }
+    & .foot-theme {
+      display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+      margin: -6px 0; color: var(--ink-dim); border-radius: var(--r-s);
+    }
+    & .foot-theme:hover { color: var(--ink-hi); background: var(--bg-raised); }
   }
 
   /* hint: bottom right, only while it has something to say */

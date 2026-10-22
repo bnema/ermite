@@ -15,6 +15,7 @@
 //  8. Chip lists kept on one line, with a … chip (ermiteFit).
 //  9. The layout of the home page, remembered in the browser (ermiteLayout).
 // 10. The wide mode: every page takes the whole width (ermiteWide).
+// 11. The theme switch of the footer (ermiteThemeSwitch).
 //
 // Preferences are kept by ermiteStore (store.js, loaded first).
 (() => {
@@ -598,6 +599,41 @@
     pref.watch(apply);
     apply();
     return { toggle, apply };
+  })();
+
+  // The theme switch: the footer button [data-theme-switch] cycles the theme
+  // of ermiteTheme (store.js, which applies it before the first paint):
+  // auto → light → dark → auto. Its icon, label and title say the current
+  // mode and the next one; a click flashes the new mode in the hint (a live
+  // region). Another tab's change applies here at once, and on a page back
+  // from the back/forward cache.
+  // Self-contained with store.js: jstest/theme.test.mjs evaluates this block.
+  window.ermiteThemeSwitch = (() => {
+    const T = window.ermiteTheme;
+    const icons = { auto: 'i-sun-moon', light: 'i-sun', dark: 'i-moon' };
+    function apply() {
+      const mode = T.apply();
+      const label = `theme: ${mode} (switch to ${T.next(mode)})`;
+      for (const b of document.querySelectorAll('[data-theme-switch]')) {
+        b.setAttribute('aria-label', label);
+        b.setAttribute('title', label);
+        const ico = b.querySelector('.ico');
+        if (ico) ico.className = 'ico ' + icons[mode];
+      }
+    }
+    function cycle() {
+      const mode = T.next(T.get());
+      T.set(mode);
+      apply();
+      window.ermite?.flash('theme: ' + mode);
+    }
+    addEventListener('click', (e) => {
+      if (e.target.closest?.('[data-theme-switch]')) cycle();
+    });
+    addEventListener('pageshow', (e) => { if (e.persisted) apply(); });
+    T.watch(apply);
+    apply();
+    return { cycle, apply };
   })();
 
   // The menus of the bars (<details class="menu">: the diff view, the merge

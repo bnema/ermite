@@ -44,7 +44,7 @@ El.prototype.focus = function (opts) {
 const doc = installDom({ parseHTML: (text) => parsed[text] });
 const parsed = {};
 Object.defineProperty(doc, 'activeElement', { get: () => active ?? dom.body });
-doc.documentElement = { classList: { add() {} } };
+doc.documentElement = { classList: { add() {} }, setAttribute() {}, removeAttribute() {} };
 const query = { all: doc.querySelectorAll, one: doc.querySelector };
 doc.querySelectorAll = () => []; // the page-wide queries of the top of ermite.js
 doc.querySelector = () => null;

@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>notes.txt · files · example.test</title>
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0c0c0c">
+<meta name="theme-color" data-scheme="light" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" data-scheme="dark" media="(prefers-color-scheme: dark)" content="#0c0c0c">
 <meta name="apple-mobile-web-app-title" content="ermite">
 <link rel="icon" type="image/svg+xml" href="/-/static/img/icon.HASH.svg">
 <link rel="apple-touch-icon" href="/-/static/app/apple-touch-icon.HASH.png">
@@ -160,6 +160,10 @@
 <a href="http://example.test/ermite" rel="noopener" title="source of this version (AGPL-3.0-or-later)">source</a>
 <button type="button" class="foot-keys" data-js data-fire="help" aria-haspopup="dialog" aria-controls="panel-help" aria-keyshortcuts="?">
 <kbd aria-hidden="true">?</kbd> keyboard shortcuts</button>
+<button type="button" class="foot-theme" data-js data-theme-switch aria-label="theme: auto (switch to light)" title="theme: auto (switch to light)">
+<span class="ico i-sun-moon" aria-hidden="true">
+</span>
+</button>
 </footer>
 <div class="hint">
 <span aria-hidden="true" class="hint-nav" :text="document.body.dataset.nav || ''">
