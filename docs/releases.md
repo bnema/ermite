@@ -57,21 +57,60 @@ the S3 endpoint. Stored-token publishers need `release:write` and, for private
 repository reads, `repo:read`. The owner component is `ERMITE_OWNER` (`owner` by
 default).
 
-GoReleaser configuration (replace the host and repository):
+GoReleaser does not read `GITHUB_API_URL` or `GITHUB_SERVER_URL` by itself, so
+template `github_urls` from them (replace the fallback host and repository):
 
 ```yaml
 version: 2
+# In CI the runner sets GITHUB_API_URL and GITHUB_SERVER_URL to the address the
+# job can reach; the public URLs are the fallback for a local run.
 github_urls:
-  api: https://git.example.org/-/github/api/
-  upload: https://git.example.org/-/github/api/uploads/
-  download: https://git.example.org/
+  api: '{{ or (index .Env "GITHUB_API_URL") "https://git.example.org/-/github/api" }}/'
+  upload: '{{ or (index .Env "GITHUB_API_URL") "https://git.example.org/-/github/api" }}/uploads/'
+  download: '{{ or (index .Env "GITHUB_SERVER_URL") "https://git.example.org" }}/'
 release:
   github:
     owner: owner
     name: app
 ```
 
-Run `GITHUB_TOKEN=<token> goreleaser release --clean` from a tagged checkout.
+In a CI job the runner rewrites the server and API URLs to an origin the job
+can reach, which may differ from the public URL (for example `http://ermite:7341`
+with a relayed forge). Sandboxes block private and CGNAT ranges, so a job that
+targets only the public URL times out (`dial tcp 100.x:443: i/o timeout`). A
+plain-http relay needs no TLS option. The API base gets `api/v3/` appended by
+the client; ermite accepts that alias. Locally, run
+`GITHUB_TOKEN=<token> goreleaser release --clean` from a tagged checkout; the
+fallbacks apply.
+
+Workflow:
+
+```yaml
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+An existing GitHub workflow must be enabled on ermite:
+`ermite workflow enable <repo> .github/workflows/release.yml`.
 
 On an ermite runner, the job supplies `GITHUB_API_URL`, `GITHUB_SERVER_URL` and
 `GITHUB_TOKEN`; no endpoint override is needed for action-gh-release:

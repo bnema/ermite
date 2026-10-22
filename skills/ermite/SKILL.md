@@ -85,6 +85,19 @@ docker run -d -p 127.0.0.1:7341:7341 -v ermite-data:/data \
 - Owner web access: `ermite web login` prints a one-time link (about 60 s, 12 h session).
 - If a page or a read looks wrong, set `ERMITE_GIT_READER=cli` and restart: every read then uses the `git` binary.
 
+## Releases from CI
+
+In a CI job, `GITHUB_API_URL` and `GITHUB_SERVER_URL` point at an address the job can reach (not necessarily the public URL). `softprops/action-gh-release` uses them as is. GoReleaser and other tools with hard-coded GitHub URLs must take them from these variables, never the public URL alone (the job times out):
+
+```yaml
+github_urls:
+  api: '{{ or (index .Env "GITHUB_API_URL") "https://git.example.org/-/github/api" }}/'
+  upload: '{{ or (index .Env "GITHUB_API_URL") "https://git.example.org/-/github/api" }}/uploads/'
+  download: '{{ or (index .Env "GITHUB_SERVER_URL") "https://git.example.org" }}/'
+```
+
+The workflow needs `permissions: contents: write` and `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`. Enable an existing one with `ermite workflow enable <repo> .github/workflows/release.yml`. Full example: `docs/releases.md` in the ermite repository.
+
 ## Output conventions
 
 `--json` prints stable field names, listed in each command's `--help`. Errors are one line on standard error (`ermite: ...`) with exit status 1. `ermite completion bash|zsh|fish` completes repository names.
