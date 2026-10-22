@@ -108,3 +108,36 @@ func TestInboxListsPendingIssuesWithoutTheirHash(t *testing.T) {
 	assert.Nil(t, ov.Pending[0].IPHash)
 	assert.Equal(t, []domain.RepoName{name(t, "on")}, ov.Repos)
 }
+
+func TestInboxRuns(t *testing.T) {
+	t.Parallel()
+	mrs, issues, meta, ci := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewCIStore(t)
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	issues.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	alpha, beta := name(t, "alpha"), name(t, "beta")
+	ci.EXPECT().ListOpenRuns(mock.Anything).Return([]domain.CIRun{
+		{Repo: alpha, ID: 1, Status: domain.CIQueued, CreatedAt: now},
+		{Repo: beta, ID: 2, Status: domain.CIInProgress, CreatedAt: now.Add(time.Hour)},
+		{Repo: alpha, ID: 3, Status: domain.CICompleted, CreatedAt: now.Add(2 * time.Hour)},
+		{Repo: name(t, "gone"), ID: 4, Status: domain.CIQueued, CreatedAt: now},
+	}, nil)
+	for _, n := range []string{"alpha", "beta"} {
+		meta.EXPECT().Get(mock.Anything, name(t, n)).Return(repoWithIssues(t, n, domain.IssuesOff), nil)
+	}
+	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: issues, CI: ci})
+	all, err := in.Overview(t.Context(), domain.Owner(), domain.RepoName{})
+	require.NoError(t, err)
+	assert.True(t, all.RunsEnabled)
+	assert.Equal(t, 2, all.Counts.Running)
+	require.Len(t, all.Runs, 2)
+	assert.Equal(t, int64(2), all.Runs[0].ID)
+	assert.Equal(t, int64(1), all.Runs[1].ID)
+	assert.Equal(t, []domain.RepoName{alpha, beta}, all.Repos)
+	filtered, err := in.Overview(t.Context(), domain.Owner(), alpha)
+	require.NoError(t, err)
+	assert.Equal(t, 2, filtered.Counts.Running)
+	require.Len(t, filtered.Runs, 1)
+	assert.Equal(t, alpha, filtered.Runs[0].Repo)
+}

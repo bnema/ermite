@@ -12,6 +12,7 @@ templ Inbox(l Layout, p InboxPage) {
 			@InboxCounters(p)
 			@InboxRepos(p)
 			@InboxPending(p)
+			@InboxRuns(p)
 			@InboxMRs(p)
 			@InboxIssues(p)
 		</div>
@@ -20,7 +21,7 @@ templ Inbox(l Layout, p InboxPage) {
 
 templ InboxCounters(p InboxPage) {
 	<p id="inbox-counts" class="inbox-counts">
-		<strong>{ itoa(p.MergeRequests) }</strong> merge requests · <strong>{ itoa(p.Issues) }</strong> issues · <strong>{ itoa(p.PendingCount) }</strong> awaiting moderation
+		<strong>{ itoa(p.MergeRequests) }</strong> merge requests · <strong>{ itoa(p.Issues) }</strong> issues · <strong>{ itoa(p.PendingCount) }</strong> awaiting moderation · <strong>{ itoa(p.Running) }</strong> running
 	</p>
 }
 
@@ -112,4 +113,36 @@ templ inboxRows(rows []InboxRow, label string) {
 			</tbody>
 		</table>
 	}
+}
+
+// InboxRuns stays as an empty fragment when CI is disabled.
+templ InboxRuns(p InboxPage) {
+	<section id="inbox-runs" hidden?={ !p.RunsEnabled }
+        if p.RunsEnabled {
+            aria-labelledby="inbox-runs-h"
+        }
+    >
+		if p.RunsEnabled {
+			<h2 id="inbox-runs-h" class="rule-h"><span>Running</span><span class="count">{ itoa(len(p.Runs)) }</span></h2>
+			if len(p.Runs) == 0 {
+				<p class="lede dim">no runs in progress.</p>
+			} else {
+				<table class="list mrs" aria-label="Running">
+					<tbody data-rows>
+						for _, r := range p.Runs {
+							<tr>
+								<td class="c-st">@CheckIcon(r.Kind, r.State)<span class="dim">{ r.State }</span></td>
+								<td class="c-subject"><a href={ templ.SafeURL(r.Href) }>{ r.Workflow }{ " " }{ r.Number }</a> <a class="mute" href={ templ.SafeURL(r.RepoHref) }>{ r.Repo }</a> <span class="dim">{ r.Ref }{ " " }{ r.Event }</span></td>
+								<td class="c-when nowrap dim">
+									if r.WhenAt != "" {
+										<time datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		}
+	</section>
 }

@@ -412,7 +412,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		BaseDifficulty: opts.issuePoW, MaxDifficulty: opts.issuePoW, MinFillTime: fastFill(opts.issuePoW),
 	})
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
-		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(),
+		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(), CI: store.CI(),
 	})
 	f.CI.SetPullGate(f.MergeRequests)
 	f.AutoMerge.Start()

@@ -27,6 +27,9 @@ templ OverlayHelp(mr bool) {
 			<div><dt><kbd>/</kbd></dt><dd>filter the list; on Files, find a file anywhere in the repository (esc clears, enter opens the best match)</dd></div>
 			<div><dt><kbd>b</kbd></dt><dd>{ "switch" } branch or tag</dd></div>
 			<div><dt><kbd>s</kbd> <kbd>t</kbd> <kbd>c</kbd> <kbd>r</kbd> <kbd>m</kbd> <kbd>i</kbd></dt><dd>tabs: summary, files, commits, branches &amp; tags, merge requests, issues</dd></div>
+			if SignedIn(ctx) {
+				<div><dt><kbd>I</kbd></dt><dd>inbox</dd></div>
+			}
 			<div><dt><kbd>g h</kbd></dt><dd>home</dd></div>
 			<div><dt><kbd>w</kbd></dt><dd>wide mode: use the whole width of the screen, or not (remembered)</dd></div>
 			<div><dt><kbd>y</kbd></dt><dd>copy a permalink pinned to the commit</dd></div>

@@ -408,13 +408,16 @@ type LoginLink struct {
 
 // InboxCounts are the numbers of open items across every repository, whatever
 // the filter.
-type InboxCounts struct{ MergeRequests, Issues, Pending int }
+type InboxCounts struct{ MergeRequests, Issues, Pending, Running int }
 
 // InboxOverview is what the owner has to look at across every repository: the
-// open merge requests and the open issues, most recently updated first. A
-// section for the items awaiting moderation can be added next to them.
+// open merge requests and issues, ongoing CI runs, and issues awaiting moderation.
 type InboxOverview struct {
 	Counts InboxCounts
+	// Runs are queued or in progress, newest first, respecting the filter.
+	Runs []domain.CIRun
+	// RunsEnabled distinguishes disabled CI from an empty queue.
+	RunsEnabled bool
 	// MergeRequests and Issues are those of the filtered repository, or of
 	// every repository when there is no filter. Counts always counts all.
 	MergeRequests []domain.MergeRequest

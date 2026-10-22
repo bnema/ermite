@@ -67,6 +67,9 @@ templ Shell(l Layout, rail templ.Component) {
 			</div>
 			@Footer(l)
 			@Hint(l)
+			if SignedIn(ctx) {
+				<a hidden data-inbox href={ inboxPath }>Inbox</a>
+			}
 			@OverlayHelp(l.MR)
 			@OverlayRefs(l)
 			@OverlayCmd(l.Cmd)
@@ -87,7 +90,8 @@ templ Header(l Layout) {
 				<a
 					class="btn inbox-btn"
 					href={ templ.SafeURL(l.Inbox.Href) }
-					title="inbox"
+					title="inbox (I)"
+					aria-keyshortcuts="Shift+I"
 				>
 					<span class="ico i-mailbox" aria-hidden="true"></span>
 					Inbox

@@ -690,12 +690,12 @@ func isRepoLifecycleEvent(ev domain.Event) bool {
 	return false
 }
 
-// isItemEvent reports whether ev is about a merge request or an issue.
+// isItemEvent reports whether ev changes an inbox item, including CI runs.
 func isItemEvent(ev domain.Event) bool {
 	switch ev.(type) {
 	case domain.IssueReferenced:
 		return false // back-reference refreshes do not change the inbox
-	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
+	case domain.RunUpdated, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
 		domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled,
 		domain.MergeRequestReady, domain.MergeRequestMergeability, domain.CommentAdded,
 		domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved:

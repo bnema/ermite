@@ -24,11 +24,12 @@ type Inbox struct {
 	issues ports.IssueStore
 	// pending is nil when the public form is not wired.
 	pending ports.PendingIssueStore
+	ci      ports.CIStore
 }
 
 var _ ports.InboxService = (*Inbox)(nil)
 
-// InboxConfig holds what the inbox needs. Every field is required.
+// InboxConfig holds what the inbox needs; Pending and CI are optional.
 type InboxConfig struct {
 	Meta          ports.RepoMetaStore
 	MergeRequests ports.MergeRequestStore
@@ -36,11 +37,12 @@ type InboxConfig struct {
 	// Pending lists the issues awaiting moderation. Optional: without it the
 	// inbox has no pending section.
 	Pending ports.PendingIssueStore
+	CI      ports.CIStore
 }
 
 // NewInbox builds the inbox use case.
 func NewInbox(cfg InboxConfig) *Inbox {
-	return &Inbox{meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending}
+	return &Inbox{meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending, ci: cfg.CI}
 }
 
 // Overview lists what is open, through the indexes of open items. The counts
@@ -124,6 +126,33 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 			repos[pi.Repo] = true
 		}
 		out.Counts.Pending = len(out.Pending)
+	}
+
+	if in.ci != nil {
+		out.RunsEnabled = true
+		runs, err := in.ci.ListOpenRuns(ctx)
+		if err != nil {
+			return out, fmt.Errorf("list open runs: %w", err)
+		}
+		for _, run := range runs {
+			if run.Status != domain.CIQueued && run.Status != domain.CIInProgress {
+				continue
+			}
+			if err := look(run.Repo); err != nil {
+				return out, err
+			}
+			if !exists[run.Repo] {
+				continue
+			}
+			repos[run.Repo] = true
+			out.Counts.Running++
+			if filter.IsZero() || run.Repo == filter {
+				out.Runs = append(out.Runs, run)
+			}
+		}
+		slices.SortStableFunc(out.Runs, func(a, b domain.CIRun) int {
+			return compareRecent(a.CreatedAt, a.CreatedAt, a.Repo, a.ID, b.CreatedAt, b.CreatedAt, b.Repo, b.ID)
+		})
 	}
 
 	slices.SortStableFunc(out.MergeRequests, func(a, b domain.MergeRequest) int {

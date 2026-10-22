@@ -612,7 +612,7 @@
 
   // 1. Keys.
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
-    s: 's', t: 't', c: 'c', r: 'r', m: 'm', i: 'i', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', w: 'wide', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
+    s: 's', t: 't', c: 'c', r: 'r', m: 'm', i: 'i', I: 'inbox', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', w: 'wide', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
     // the merge request page (mr.js): the merge menu, mark read
     M: 'merge', R: 'read' };
   // "g t" is the key "t": the tabs have one event each.
@@ -654,7 +654,7 @@
     // page-level keys, as on the other lists.
     if (!e.shiftKey && e.target.closest?.('#tree-rows') && window.ermiteTree?.arrow(e.key)) { e.preventDefault(); return; }
     const name = single[e.key];
-    if (!name) return;
+    if (!name || (name === 'inbox' && !$('[data-inbox]'))) return;
     if (e.key !== 'Enter' || !$('dialog[open]')) e.preventDefault();
     ermite.fire(name);
   });

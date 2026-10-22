@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,8 +43,37 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	assert.Contains(t, empty.body, "no open merge requests.")
 	assert.Contains(t, empty.body, "no open issues.")
 
+	// A queued run is visible and its run-level events refresh the owner stream.
+	draft, err := r.forge.store.CI().CreateRun(r.ctx, r.name("proj"), ".github/workflows/build.yml", func(id, number int64) ports.CIRunDraft {
+		return ports.CIRunDraft{Run: domain.CIRun{Repo: r.name("proj"), ID: id, Number: number, Attempt: 1, WorkflowName: "Inbox build", Status: domain.CIQueued, Ref: "refs/heads/main", Event: "push", CreatedAt: time.Now()}}
+	})
+	require.NoError(t, err)
+	runs := b.get("/-/inbox", as(token))
+	assert.Contains(t, runs.body, "Inbox build")
+	assert.Contains(t, runs.body, "<strong>1</strong> running")
+	assert.Contains(t, runs.body, `data-inbox href="/-/inbox"`)
+
 	// The owner stream sees both repositories.
 	stream := ownerStream(t, r.harness, token)
+
+	r.forge.Bus.Publish(r.ctx, domain.RunUpdated{Run: draft.Run, At: time.Now(), Visibility: domain.VisibilityPublic, CreatedAt: time.Now()})
+	var runFragments strings.Builder
+	for range 6 {
+		runFragments.WriteString(nextFragment(t, stream).data)
+	}
+	assert.Contains(t, runFragments.String(), "Inbox build")
+	// Completion removes the row and updates the total in the same live fragments.
+	draft.Run.Status, draft.Run.Conclusion = domain.CICompleted, domain.CISuccess
+	_, err = r.forge.store.CI().Apply(r.ctx, ports.CIWrite{Runs: []domain.CIRun{draft.Run}})
+	require.NoError(t, err)
+	r.forge.Bus.Publish(r.ctx, domain.RunUpdated{Run: draft.Run, At: time.Now(), Visibility: domain.VisibilityPublic, CreatedAt: time.Now()})
+	runFragments.Reset()
+	for range 6 {
+		runFragments.WriteString(nextFragment(t, stream).data)
+	}
+	assert.NotContains(t, runFragments.String(), "Inbox build")
+	assert.Contains(t, runFragments.String(), "no runs in progress.")
+	assert.Contains(t, runFragments.String(), "<strong>0</strong> running")
 
 	root := domain.Root()
 	_, err = r.forge.MergeRequests.Create(r.ctx, root, r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
@@ -51,13 +81,13 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	ev := nextFragment(t, stream)
 	assert.Equal(t, "inbox", ev.name)
 	assert.Contains(t, ev.data, `id="inbox-counts"`)
-	for range 4 { // the other fragments of this event
+	for range 5 { // the other fragments of this event
 		nextFragment(t, stream)
 	}
 	_, err = r.forge.Issues.Create(r.ctx, root, r.name("other"), ports.CreateIssueParams{Title: "search is slow"})
 	require.NoError(t, err)
 	var seen strings.Builder
-	for range 5 { // the five fragments of this event
+	for range 6 { // the six fragments of this event
 		seen.WriteString(nextFragment(t, stream).data)
 	}
 	assert.Contains(t, seen.String(), "search is slow", "an event of the second repository")

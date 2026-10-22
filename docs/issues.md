@@ -50,7 +50,9 @@ Limits: the 100 most recent commits of the merge request, 16 KiB of each text, 1
 
 The signed-in owner has an Inbox at `/-/inbox`, reached from the **Inbox** button at the top left of the home page, which shows the number of open items. It lists the open merge requests and the open issues of every repository, most recently updated first. The counters at the top (`N merge requests · M issues`) always count everything; `?repo=<name>` restricts the two lists to one repository, and the repository links under the counters set it. Repositories with issues off contribute no issues.
 
-The page updates live: merge request and issue events of any repository refresh the counters and the lists. Anyone who is not the signed-in owner, including a token, gets the same 404 as for an unknown page, and the same answer for the `owner` event stream it follows.
+The **Running** section, after **Awaiting moderation**, lists queued and in-progress CI runs newest first, with links to each run, its repository, ref, and start time. The `N running` counter counts every repository; the repository filter also applies to this section. **Shift+I** (`I`) opens the inbox from any page for the signed-in owner, unless single-key shortcuts are off; lowercase `i` still opens the issues tab.
+
+The page updates live: run status changes, merge request and issue events of any repository refresh the counters and the lists. Anyone who is not the signed-in owner, including a token, gets the same 404 as for an unknown page, and the same answer for the `owner` event stream it follows.
 
 ## Public form and moderation
 
