@@ -39,6 +39,9 @@ type liveStream struct {
 	headRuns map[int64]bool
 	// mergeChecksHTML is the last merge-form part sent, not sent again unchanged.
 	mergeChecksHTML string
+	// issuesNoticeSent says the "issues changed" notice of a merge request
+	// page was sent: a merge resolving several issues sends it once.
+	issuesNoticeSent bool
 }
 
 // maxHeadRuns bounds headRuns: past it the map starts again.
@@ -243,17 +246,17 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 		return l.issueNotice(ctx, ev.Issue.Number, "an issue was opened — reload")
 	case domain.IssueResolved:
 		if l.view == "mr" {
-			return l.notice(ctx, "issues changed — reload", mrBase(l.repo)+"/"+l.n)
+			return l.issuesChanged(ctx)
 		}
 		return l.issueNotice(ctx, ev.Issue.Number, "this issue was resolved — reload")
 	case domain.IssueClosed:
 		if l.view == "mr" {
-			return l.notice(ctx, "issues changed — reload", mrBase(l.repo)+"/"+l.n)
+			return l.issuesChanged(ctx)
 		}
 		return l.issueNotice(ctx, ev.Issue.Number, "this issue was closed — reload")
 	case domain.IssueReopened:
 		if l.view == "mr" {
-			return l.notice(ctx, "issues changed — reload", mrBase(l.repo)+"/"+l.n)
+			return l.issuesChanged(ctx)
 		}
 		return l.issueNotice(ctx, ev.Issue.Number, "this issue was reopened — reload")
 	case domain.IssueCommented:
@@ -575,6 +578,16 @@ func (l *liveStream) mrMergeability(ctx context.Context) ([]fragment, error) {
 	}
 	f, err := renderFragment(ctx, "mr-mergeability", MRMergeabilityFragment(mergeabilityView(m, l.target)))
 	return []fragment{f}, err
+}
+
+// issuesChanged tells a merge request page that its issues changed, once per
+// stream: the notice already asks for a reload.
+func (l *liveStream) issuesChanged(ctx context.Context) ([]fragment, error) {
+	if l.issuesNoticeSent {
+		return nil, nil
+	}
+	l.issuesNoticeSent = true
+	return l.notice(ctx, "issues changed — reload", mrBase(l.repo)+"/"+l.n)
 }
 
 func (l *liveStream) notice(ctx context.Context, text, href string) ([]fragment, error) {

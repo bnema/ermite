@@ -133,3 +133,14 @@ func TestIssueTransitionsRefreshMRRail(t *testing.T) {
 		})
 	}
 }
+
+func TestIssueTransitionsNoticeMROnce(t *testing.T) {
+	l := liveStream{repo: "demo", view: "mr", n: "7"}
+	var notices int
+	for _, ev := range []domain.Event{domain.IssueResolved{}, domain.IssueResolved{}, domain.IssueReopened{}} {
+		fs, err := l.repoPage(t.Context(), ports.WatchEvent{Event: ev})
+		require.NoError(t, err)
+		notices += len(fs)
+	}
+	assert.Equal(t, 1, notices)
+}
