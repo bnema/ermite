@@ -59,7 +59,13 @@ Per-event rules are in [ci-events.md](ci-events.md).
 
 ## Job token
 
-Every job gets `github.token` (`ermitegh_…`). It reads the run's repository (even private) over Git and the REST subset below, writes nothing, and expires with the job. It is not listed in `ermite token list`.
+Every job gets `github.token` (`ermitegh_…`). It expires with the job and is not listed in `ermite token list`.
+
+- By default it reads the run's repository (even private) over Git and the REST subset below, and writes nothing.
+- In a trusted run, `permissions: contents: write` lets it push branches and tags to that repository and publish [releases](releases.md). A push that changes `.github/workflows` is refused, as on GitHub.
+- `pull-requests: write` gives it `mr:write` on that repository.
+- An untrusted run gets every `write` lowered to `read`.
+- A push or a tag made with it starts no run. A workflow that creates a tag and releases it does both in the same run (`needs:`).
 
 ## Actions
 
