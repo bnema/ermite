@@ -157,7 +157,7 @@ func TestMRPanelsAndMenus(t *testing.T) {
 	assert.Contains(t, footer, "more commits")
 	assert.Contains(t, footer, "1/2 failed")
 	rail := renderToString(t, mrRail(p))
-	assert.Contains(t, rail, "g f")
+	assert.Contains(t, rail, `<kbd aria-hidden="true">l</kbd>`)
 	for _, text := range []string{"Checks", "Commits", "Settings", "mr-checks"} {
 		assert.NotContains(t, rail, text)
 	}

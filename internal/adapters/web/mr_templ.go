@@ -2214,7 +2214,7 @@ func mrRail(p MRPage) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 208, "</span><kbd aria-hidden=\"true\">g f</kbd> <button type=\"button\" class=\"btn icon fold\" data-js aria-expanded=\"true\" title=\"fold the list of files\" hx-on:click=\"ermiteMR.foldFiles()\"><span class=\"ico i-chevron\" aria-hidden=\"true\"></span><span class=\"sr\">fold the list of files</span></button></h2>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 208, "</span><kbd aria-hidden=\"true\">l</kbd> <button type=\"button\" class=\"btn icon fold\" data-js aria-expanded=\"true\" title=\"fold the list of files\" hx-on:click=\"ermiteMR.foldFiles()\"><span class=\"ico i-chevron\" aria-hidden=\"true\"></span><span class=\"sr\">fold the list of files</span></button></h2>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

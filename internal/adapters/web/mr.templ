@@ -430,7 +430,7 @@ templ mrFooter(p MRPage) {
 templ mrRail(p MRPage) {
 	<section aria-labelledby="r-files" class="r-files">
 		<h2 id="r-files">
-			Files <span class="count">{ itoa(len(p.Files)) }</span><kbd aria-hidden="true">g f</kbd>
+			Files <span class="count">{ itoa(len(p.Files)) }</span><kbd aria-hidden="true">l</kbd>
 			<button type="button" class="btn icon fold" data-js aria-expanded="true" title="fold the list of files" hx-on:click="ermiteMR.foldFiles()">
 				<span class="ico i-chevron" aria-hidden="true"></span><span class="sr">fold the list of files</span>
 			</button>

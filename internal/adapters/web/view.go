@@ -211,10 +211,16 @@ type SummaryPage struct {
 	Outline []Heading
 	AllHref string
 	// Latest is the newest tag, nil when the repository has none.
-	Latest *LatestTag
+	Latest  *LatestTag
+	Release *LatestRelease
 	// Actions is the recent runs of the rail, nil when the viewer cannot read
 	// CI (or the server runs none).
 	Actions *RecentActions
+}
+
+// LatestRelease is the published release selected as Latest by the release service.
+type LatestRelease struct {
+	Tag, Href, When, WhenAt, AllHref string
 }
 
 // RecentActions is the "Recent actions" block of the summary rail: the newest

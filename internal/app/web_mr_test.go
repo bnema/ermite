@@ -93,7 +93,7 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	require.Equal(t, 200, list.status)
 	assert.Contains(t, list.body, "no open merge requests")
 	assert.Contains(t, list.body, `href="/proj/compare/feat/search"`)
-	assert.Contains(t, list.body, `data-key="m"`, "the section of the nav")
+	assert.Contains(t, list.body, `data-key="g m"`, "the section of the nav")
 	assert.NotContains(t, strings.ToLower(list.body), "proposal")
 
 	// Open one from the compare page.

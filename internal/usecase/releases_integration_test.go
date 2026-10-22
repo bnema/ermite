@@ -263,6 +263,7 @@ func TestReleaseWriteRetriesUsageConflict(t *testing.T) {
 	reader.EXPECT().ResolveRevision(ctx, repo, rev).Return(domain.ResolvedRevision{}, domain.ErrNotFound)
 	store.EXPECT().GetReleaseByTag(ctx, repo, "v1").Return(domain.Release{}, domain.ErrNotFound)
 	store.EXPECT().NextReleaseID(ctx).Return(int64(1), nil)
+	store.EXPECT().ListReleases(ctx, repo).Return(nil, nil).Twice()
 	store.EXPECT().ReleaseUsage(ctx, repo).Return(int64(0), uint64(1), nil).Once()
 	store.EXPECT().ApplyReleases(ctx, mock.MatchedBy(func(w ports.ReleaseWrite) bool { return w.UsageVersion == 1 && len(w.PutReleases) == 1 })).Return(domain.ErrConflict).Once()
 	store.EXPECT().ReleaseUsage(ctx, repo).Return(int64(0), uint64(2), nil).Once()
@@ -333,4 +334,62 @@ func TestReleaseUpdateTargetNeverMovesExistingTag(t *testing.T) {
 	got, err := r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, rel.ID, ports.UpdateReleaseParams{TargetCommitish: &other})
 	require.NoError(t, err)
 	require.Equal(t, oidA, got.TargetCommitish)
+}
+
+func TestReleaseLatestIndexTransitions(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	latest := func(id int64) {
+		t.Helper()
+		got, err := r.svc.GetRelease(r.ctx, domain.Anonymous(), r.repo, ports.ReleaseRef{Latest: true})
+		if id == 0 {
+			require.ErrorIs(t, err, domain.ErrNotFound)
+			return
+		}
+		require.NoError(t, err)
+		require.Equal(t, id, got.ID)
+	}
+	update := func(id int64, p ports.UpdateReleaseParams) {
+		t.Helper()
+		_, err := r.svc.UpdateRelease(r.ctx, domain.Root(), r.repo, id, p)
+		require.NoError(t, err)
+	}
+	yes, no := true, false
+	draft := r.create(t, "draft", true)
+	latest(0)
+	first := r.create(t, "v1", false)
+	latest(first.ID)
+	update(draft.ID, ports.UpdateReleaseParams{Draft: &no})
+	latest(first.ID) // equal creation times: higher ID wins
+	second := r.create(t, "v2", false)
+	latest(second.ID)
+	update(second.ID, ports.UpdateReleaseParams{Prerelease: &yes})
+	latest(first.ID)
+	update(second.ID, ports.UpdateReleaseParams{Prerelease: &no})
+	latest(second.ID)
+	update(first.ID, ports.UpdateReleaseParams{MakeLatest: &yes})
+	latest(first.ID)
+	tag := "renamed"
+	r.resolve(t, tag, nil)
+	update(first.ID, ports.UpdateReleaseParams{Tag: &tag})
+	latest(first.ID)
+	require.NoError(t, r.svc.DeleteRelease(r.ctx, domain.Root(), r.repo, first.ID))
+	latest(second.ID)
+	update(second.ID, ports.UpdateReleaseParams{Draft: &yes})
+	latest(draft.ID)
+	update(draft.ID, ports.UpdateReleaseParams{Draft: &yes})
+	latest(0)
+}
+
+// No ListReleases expectation: latest resolution must use only point reads.
+func TestReleaseLatestUsesIndex(t *testing.T) {
+	ctx := t.Context()
+	repo := name(t, "indexed")
+	store := mocks.NewReleaseStore(t)
+	meta := mocks.NewRepoMetaStore(t)
+	meta.EXPECT().Get(ctx, repo).Return(domain.Repo{Name: repo, Visibility: domain.VisibilityPublic}, nil)
+	store.EXPECT().GetLatestRelease(ctx, repo).Return(domain.Release{ID: 42, Repo: repo}, nil).Once()
+	svc := usecase.NewReleases(store, nil, meta, nil, nil, nil, nil, nil, ports.ReleaseLimits{})
+	got, err := svc.GetRelease(ctx, domain.Anonymous(), repo, ports.ReleaseRef{Latest: true})
+	require.NoError(t, err)
+	require.EqualValues(t, 42, got.ID)
 }

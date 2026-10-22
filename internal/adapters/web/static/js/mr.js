@@ -8,7 +8,7 @@
 //     on its button, 1-9 pick a mode, D toggles the branch deletion, Enter
 //     submits (the browser does it: the focus is on the button), Esc closes.
 //     R marks the head read. Nothing merges on one key.
-//  3. g f puts the focus in the list of files (opening it when folded); j / k
+//  3. l puts the focus in the list of files (opening it when folded); j / k
 //     move in it, Enter opens the file, Esc goes back to the diff. The button
 //     of its header folds the list, and the choice is remembered.
 //
@@ -186,7 +186,7 @@ window.ermiteMR = (() => {
     return true;
   }
 
-  // The list of files by keyboard: g f focuses the current file.
+  // The list of files by keyboard: l focuses the current file.
   const links = () => $$('.r-files .files > li:not([hidden]) > a');
   function focusFiles() {
     foldFiles(false);

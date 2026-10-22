@@ -36,7 +36,26 @@ func relNamePrefix(repo domain.RepoName, id int64) string {
 func relNameKey(a domain.ReleaseAsset) []byte {
 	return []byte(relNamePrefix(a.Repo, a.ReleaseID) + a.Name)
 }
-func relUseKey(repo domain.RepoName) []byte { return []byte("reluse/" + repo.String()) }
+func relLatestKey(repo domain.RepoName) []byte { return []byte("rellatest/" + repo.String()) }
+func relUseKey(repo domain.RepoName) []byte    { return []byte("reluse/" + repo.String()) }
+
+// GetLatestRelease resolves the index and release from the same snapshot.
+func (c *Releases) GetLatestRelease(ctx context.Context, repo domain.RepoName) (domain.Release, error) {
+	snap := c.db.Snapshot(ctx)
+	item, ok := snap.Get(ctx, relLatestKey(repo))
+	if !ok {
+		return domain.Release{}, domain.ErrNotFound
+	}
+	id, err := strconv.ParseInt(string(item.Value), 10, 64)
+	if err != nil {
+		return domain.Release{}, err
+	}
+	item, ok = snap.Get(ctx, relKey(repo, id))
+	if !ok {
+		return domain.Release{}, domain.ErrNotFound
+	}
+	return decodeRelease(item)
+}
 func encodeRelease(r domain.Release) []byte {
 	return mustMarshal(&storagepb.Release{
 		Id:              r.ID,
@@ -285,6 +304,13 @@ func (c *Releases) ApplyReleases(ctx context.Context, w ports.ReleaseWrite) erro
 		b.RequireVersion(relUseKey(w.Repo), w.UsageVersion)
 	}
 	b.Put(relUseKey(w.Repo), mustMarshal(&storagepb.ReleaseUsage{Used: w.Used}))
+	if w.SetLatest {
+		if w.LatestID > 0 {
+			b.Put(relLatestKey(w.Repo), []byte(strconv.FormatInt(w.LatestID, 10)))
+		} else {
+			b.Delete(relLatestKey(w.Repo))
+		}
+	}
 	snap := c.db.Snapshot(ctx)
 	for _, r := range w.DeleteReleases {
 		if r.Repo != w.Repo || r.Version == 0 {
@@ -388,7 +414,7 @@ func (c *Releases) ApplyReleases(ctx context.Context, w ports.ReleaseWrite) erro
 
 // releaseKeys collects all repository-owned release keys, including global indexes.
 func releaseKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]byte {
-	keys := [][]byte{relUseKey(repo)}
+	keys := [][]byte{relUseKey(repo), relLatestKey(repo)}
 	for _, prefix := range []string{"rel/", "reltag/", "relassets/"} {
 		for key, item := range snap.Prefix(ctx, []byte(prefix+repo.String()+"/")) {
 			keys = append(keys, slices.Clone(key))

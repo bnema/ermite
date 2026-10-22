@@ -28,7 +28,7 @@ func TestWebIssuePagesEndToEnd(t *testing.T) {
 	// Off by default: no page, no tab, for the owner as well.
 	assert.Equal(t, 404, b.get("/proj/issues", as(token)).status)
 	assert.Equal(t, 404, b.get("/proj/issues/new", as(token)).status)
-	assert.NotContains(t, b.get("/proj", as(token)).body, `data-key="i"`)
+	assert.NotContains(t, b.get("/proj", as(token)).body, `data-key="g i"`)
 
 	mode := domain.IssuesOwner
 	_, err := r.forge.Repos.Update(r.ctx, domain.Root(), r.name("proj"), ports.UpdateRepoParams{Issues: &mode})

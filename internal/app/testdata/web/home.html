@@ -277,14 +277,16 @@
 </div>
 <div>
 <dt>
-<kbd>s</kbd>
-<kbd>t</kbd>
-<kbd>c</kbd>
-<kbd>r</kbd>
-<kbd>m</kbd>
-<kbd>i</kbd>
+<kbd>g s</kbd>
+<kbd>g f</kbd>
+<kbd>g c</kbd>
+<kbd>g b</kbd>
+<kbd>g m</kbd>
+<kbd>g i</kbd>
+<kbd>g r</kbd>
+<kbd>g a</kbd>
 </dt>
-<dd>tabs: summary, files, commits, branches &amp; tags, merge requests, issues</dd>
+<dd>tabs: summary, files, commits, branches &amp; tags, merge requests, issues, releases, actions (when available)</dd>
 </div>
 <div>
 <dt>
@@ -391,7 +393,9 @@
          k-filter from:body -> ermite.focusFilter();
          k-gh from:body -> ermite.go('.brand');
          k-s from:body -> ermite.tab('s');
-         k-t from:body -> ermite.tab('t');
+         k-f from:body -> ermite.tab('f');
+         k-b from:body -> ermite.tab('b');
+         k-a from:body -> ermite.tab('a');
          k-c from:body -> ermite.tab('c');
          k-r from:body -> ermite.tab('r');
          k-m from:body -> ermite.tab('m');
@@ -407,7 +411,6 @@
          k-permalink from:body -> ermite.permalink();
          k-merge from:body -> window.ermiteMR?.openMerge();
          k-read from:body -> window.ermiteMR?.markRead();
-         k-gf from:body -> window.ermiteMR?.focusFiles();
          k-keys from:body -> ermite.toggleKeys()">
 </div>
 </body>

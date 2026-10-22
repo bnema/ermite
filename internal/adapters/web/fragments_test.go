@@ -101,8 +101,8 @@ func TestMRPushedHeadSignal(t *testing.T) {
 	}
 }
 
-// Release lifecycle events invalidate the release pages without putting notes
-// or asset metadata in SSE payloads. Other views need no release fragments.
+// Release lifecycle events invalidate release pages and the summary's release
+// fact without putting notes or asset metadata in SSE payloads.
 func TestReleaseLiveUpdates(t *testing.T) {
 	for _, ev := range []domain.Event{domain.ReleasePublished{}, domain.ReleaseUpdated{}, domain.ReleaseDeleted{}, domain.ReleaseUnpublished{}} {
 		we := ports.WatchEvent{Event: ev}
@@ -111,7 +111,7 @@ func TestReleaseLiveUpdates(t *testing.T) {
 			st := &liveStream{repo: "proj", view: view}
 			got, err := st.render(t.Context(), we)
 			require.NoError(t, err)
-			if view == "release" || view == "releases" {
+			if view == "release" || view == "releases" || view == "summary" {
 				assert.Equal(t, gap, got)
 			} else {
 				assert.Empty(t, got)

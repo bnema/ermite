@@ -115,6 +115,14 @@ templ summaryRail(p SummaryPage) {
 			if p.Latest != nil {
 				@latestTagFact(*p.Latest)
 			}
+			if r := p.Release; r != nil {
+				<dt>release</dt>
+				<dd>
+					<a href={ templ.SafeURL(r.Href) }>{ r.Tag }</a>{ " · " }
+					<time datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>{ " · " }
+					<a href={ templ.SafeURL(r.AllHref) }>all releases</a>
+				</dd>
+			}
 		</dl>
 	</section>
 	if len(p.Recent) > 0 {

@@ -112,7 +112,7 @@
       $(sel)?.click();
     },
     tab(key) {
-      $(`.tabs [data-key=${key}]`)?.click();
+      $(`.tabs [data-key="g ${key}"]`)?.click();
     },
 
     // The preference "single-key shortcuts" (ermiteKeys): the checkbox of the
@@ -617,11 +617,11 @@
 
   // 1. Keys.
   const single = { j: 'j', k: 'k', G: 'bottom', '/': 'filter', '?': 'help', b: 'refs', f: 'cmd', ':': 'cmd', y: 'permalink',
-    s: 's', t: 't', c: 'c', r: 'r', m: 'm', i: 'i', I: 'inbox', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', w: 'wide', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
+    I: 'inbox', n: 'next', h: 'left', l: 'right', d: 'split', u: 'unified', x: 'collapse', w: 'wide', e: 'expand', E: 'expandAll', Enter: 'open', Escape: 'esc',
     // the merge request page (mr.js): the merge menu, mark read
     M: 'merge', R: 'read' };
-  // "g t" is the key "t": the tabs have one event each.
-  const goto = { h: 'gh', t: 't', c: 'c', r: 'r', m: 'm', i: 'i', g: 'top', f: 'gf' };
+  // Section keys are the second letter of the g sequence.
+  const goto = { h: 'gh', s: 's', f: 'f', c: 'c', b: 'b', m: 'm', i: 'i', r: 'r', a: 'a', g: 'top' };
   let pending = 0;
   let pendingTimer = 0;
   addEventListener('keydown', (e) => {
@@ -647,6 +647,15 @@
     // behind it does not react (scripted clicks would go through inert).
     if ($('dialog[open]') && !['?', 'b', ':', 'f', 'Enter'].includes(e.key)) { pending = 0; return; }
     if (e.key === 'Enter' && e.target.closest('a, button, summary')) return;
+    // Some layouts report lowercase e.key even with Shift. Uppercase actions
+    // also interrupt a pending g rather than being swallowed by it.
+    const actionKey = e.shiftKey ? e.key.toUpperCase() : e.key;
+    if (['G', 'M', 'R', 'E', 'I'].includes(actionKey)) {
+      pending = 0;
+      if (actionKey === 'I' && !$('[data-inbox]')) return;
+      e.preventDefault();
+      return ermite.fire(single[actionKey]);
+    }
     if (pending) {
       const name = goto[e.key];
       pending = 0;

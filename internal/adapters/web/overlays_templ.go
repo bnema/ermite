@@ -51,7 +51,7 @@ func OverlayHelp(mr bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " branch or tag</dd></div><div><dt><kbd>s</kbd> <kbd>t</kbd> <kbd>c</kbd> <kbd>r</kbd> <kbd>m</kbd> <kbd>i</kbd></dt><dd>tabs: summary, files, commits, branches &amp; tags, merge requests, issues</dd></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " branch or tag</dd></div><div><dt><kbd>g s</kbd> <kbd>g f</kbd> <kbd>g c</kbd> <kbd>g b</kbd> <kbd>g m</kbd> <kbd>g i</kbd> <kbd>g r</kbd> <kbd>g a</kbd></dt><dd>tabs: summary, files, commits, branches &amp; tags, merge requests, issues, releases, actions (when available)</dd></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -66,7 +66,7 @@ func OverlayHelp(mr bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if mr {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div><dt><kbd>g f</kbd></dt><dd>merge request: the list of files (j k move, enter opens, esc back)</dd></div><div><dt><kbd>M</kbd></dt><dd>merge request: the merge menu; there 1–3 pick the mode, D deletes the branch, enter merges</dd></div><div><dt><kbd>R</kbd></dt><dd>merge request: mark the head read</dd></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div><dt><kbd>l</kbd></dt><dd>merge request: the list of files (j k move, enter opens, esc back)</dd></div><div><dt><kbd>M</kbd></dt><dd>merge request: the merge menu; there 1–3 pick the mode, D deletes the branch, enter merges</dd></div><div><dt><kbd>R</kbd></dt><dd>merge request: mark the head read</dd></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

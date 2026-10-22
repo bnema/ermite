@@ -144,9 +144,9 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 	}
 	l.Sections = []Section{
 		mk("s", "Summary", repoHref(d.name()), "summary"),
-		mk("t", "Files", repoHref(d.name(), "tree", def), "tree"),
+		mk("f", "Files", repoHref(d.name(), "tree", def), "tree"),
 		mk("c", "Commits", repoHref(d.name(), "commits", def), "commits"),
-		mk("r", "Branches & tags", repoHref(d.name(), "refs"), "refs"),
+		mk("b", "Branches & tags", repoHref(d.name(), "refs"), "refs"),
 	}
 	if s.cfg.MergeRequests != nil {
 		mrs := mk("m", "Merge requests", mrBase(d.name()), "merge-requests")
@@ -157,14 +157,14 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		l.Sections = append(l.Sections, mk("i", "Issues", issuesBase(d.name()), "issues"))
 	}
 	if s.cfg.Releases != nil {
-		l.Sections = append(l.Sections, mk("l", "Releases", releasesBase(d.name()), "releases"))
+		l.Sections = append(l.Sections, mk("r", "Releases", releasesBase(d.name()), "releases"))
 	}
 	l.Sections = s.withActions(l.Sections, d.name(), section)
 	l.Crumbs = []Crumb{{Label: d.name(), Href: repoHref(d.name()), Current: section == "summary"}}
 
 	l.Cmd = append(l.Cmd, CmdItem{Kind: "go", Label: "home", Href: "/"})
 	for _, sec := range l.Sections {
-		l.Cmd = append(l.Cmd, CmdItem{Kind: "section", Label: strings.ToLower(sec.Label), Href: sec.Href})
+		l.Cmd = append(l.Cmd, CmdItem{Kind: "section", Label: strings.ToLower(sec.Label) + " (g " + sec.Key + ")", Href: sec.Href})
 	}
 	if l.Ref != "" {
 		for _, b := range d.branches {

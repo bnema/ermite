@@ -43,7 +43,8 @@ import (
 // holding all eleven previous scopes, preserving their owner rights. Version 6
 // adds releases and release:write; older builds cannot clean up their metadata
 // or preserve the owner rights of upgraded tokens (see upgradeReleaseTokens).
-const SchemaVersion = 6
+// Version 7 adds the latest-release index; older writers would leave it stale.
+const SchemaVersion = 7
 
 const schemaKey = "meta/schema"
 
@@ -73,6 +74,10 @@ func Open(ctx context.Context, dir string) (*Store, error) {
 	}
 	// Part of the schema 3 upgrade: the index of the open merge requests.
 	if err := s.BuildOpenIndex(ctx); err != nil {
+		_ = db.Close(context.WithoutCancel(ctx))
+		return nil, err
+	}
+	if err := s.buildReleaseLatestIndex(ctx); err != nil {
 		_ = db.Close(context.WithoutCancel(ctx))
 		return nil, err
 	}

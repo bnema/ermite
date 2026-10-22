@@ -311,6 +311,72 @@ func (_c *ReleaseStore_GetAssetByName_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// GetLatestRelease provides a mock function for the type ReleaseStore
+func (_mock *ReleaseStore) GetLatestRelease(ctx context.Context, repo domain.RepoName) (domain.Release, error) {
+	ret := _mock.Called(ctx, repo)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetLatestRelease")
+	}
+
+	var r0 domain.Release
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) (domain.Release, error)); ok {
+		return returnFunc(ctx, repo)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) domain.Release); ok {
+		r0 = returnFunc(ctx, repo)
+	} else {
+		r0 = ret.Get(0).(domain.Release)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName) error); ok {
+		r1 = returnFunc(ctx, repo)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// ReleaseStore_GetLatestRelease_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetLatestRelease'
+type ReleaseStore_GetLatestRelease_Call struct {
+	*mock.Call
+}
+
+// GetLatestRelease is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+func (_e *ReleaseStore_Expecter) GetLatestRelease(ctx any, repo any) *ReleaseStore_GetLatestRelease_Call {
+	return &ReleaseStore_GetLatestRelease_Call{Call: _e.mock.On("GetLatestRelease", ctx, repo)}
+}
+
+func (_c *ReleaseStore_GetLatestRelease_Call) Run(run func(ctx context.Context, repo domain.RepoName)) *ReleaseStore_GetLatestRelease_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *ReleaseStore_GetLatestRelease_Call) Return(release domain.Release, err error) *ReleaseStore_GetLatestRelease_Call {
+	_c.Call.Return(release, err)
+	return _c
+}
+
+func (_c *ReleaseStore_GetLatestRelease_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName) (domain.Release, error)) *ReleaseStore_GetLatestRelease_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetRelease provides a mock function for the type ReleaseStore
 func (_mock *ReleaseStore) GetRelease(ctx context.Context, repo domain.RepoName, id int64) (domain.Release, error) {
 	ret := _mock.Called(ctx, repo, id)

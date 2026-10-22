@@ -92,6 +92,30 @@ func (r *Releases) updateReleases(ctx context.Context, repo domain.RepoName, fn 
 		if err = fn(&w); err != nil {
 			return err
 		}
+		if len(w.PutReleases) > 0 || len(w.DeleteReleases) > 0 {
+			w.SetLatest = true
+			all, err := r.store.ListReleases(ctx, repo)
+			if err != nil {
+				return err
+			}
+			byID := make(map[int64]domain.Release, len(all)+len(w.PutReleases))
+			for _, rel := range all {
+				byID[rel.ID] = rel
+			}
+			for _, rel := range w.DeleteReleases {
+				delete(byID, rel.ID)
+			}
+			for _, rel := range w.PutReleases {
+				byID[rel.ID] = rel
+			}
+			all = all[:0]
+			for _, rel := range byID {
+				all = append(all, rel)
+			}
+			if latest, ok := domain.LatestRelease(all); ok {
+				w.LatestID = latest.ID
+			}
+		}
 		err = r.store.ApplyReleases(ctx, w)
 		if errors.Is(err, domain.ErrConflict) {
 			continue
@@ -245,15 +269,7 @@ func (r *Releases) GetRelease(ctx context.Context, p domain.Principal, name doma
 	case ref.Tag != "":
 		rel, err = r.store.GetReleaseByTag(ctx, name, ref.Tag)
 	default:
-		var all []domain.Release
-		all, err = r.store.ListReleases(ctx, name)
-		if err == nil {
-			var ok bool
-			rel, ok = domain.LatestRelease(all)
-			if !ok {
-				err = domain.ErrNotFound
-			}
-		}
+		rel, err = r.store.GetLatestRelease(ctx, name)
 	}
 	if err == nil && rel.Draft && !releaseWriter(p, name) {
 		err = domain.ErrNotFound

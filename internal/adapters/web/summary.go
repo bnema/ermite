@@ -68,6 +68,7 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 
 	p.Facts = s.facts(d, now)
 	p.Latest = s.latest(ctx, d)
+	p.Release = s.summaryRelease(ctx, d.repo.Name, now)
 	p.Actions = s.recentActions(ctx, d.repo.Name, now)
 
 	if rd, err := s.readme(ctx, d, ref); err != nil {
@@ -271,4 +272,24 @@ func (s *Server) listRecentActions(ctx context.Context, repo domain.RepoName, no
 		a.Runs = append(a.Runs, s.runRow(repo.String(), run, now))
 	}
 	return a, nil
+}
+
+// summaryRelease uses the same Latest selection as the releases page. A
+// missing service or an unavailable release must not prevent repository browsing.
+func (s *Server) summaryRelease(ctx context.Context, repo domain.RepoName, now time.Time) *LatestRelease {
+	if s.cfg.Releases == nil {
+		return nil
+	}
+	rel, err := s.cfg.Releases.GetRelease(ctx, principal(ctx), repo, ports.ReleaseRef{Latest: true})
+	if err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			log := zerowrap.FromCtx(ctx)
+			log.Warn().Err(err).Str("repo", repo.String()).Msg("read the latest release")
+		}
+		return nil
+	}
+	if rel.Draft || rel.PublishedAt.IsZero() {
+		return nil
+	}
+	return &LatestRelease{Tag: rel.Tag, Href: releaseHref(repo.String(), rel.Tag), When: ago(now, rel.PublishedAt), WhenAt: rfc3339(rel.PublishedAt), AllHref: releasesBase(repo.String())}
 }

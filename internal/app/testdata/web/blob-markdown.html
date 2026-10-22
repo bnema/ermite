@@ -76,31 +76,31 @@
 <nav class="tabs" aria-label="Sections">
 <ul>
 <li>
-<a href="/files" data-key="s" aria-keyshortcuts="s">Summary <kbd aria-hidden="true">s</kbd>
+<a href="/files" data-key="g s">Summary <kbd aria-hidden="true">g s</kbd>
 </a>
 </li>
 <li>
-<a href="/files/tree/main" data-key="t" aria-keyshortcuts="t" aria-current="page">Files <kbd aria-hidden="true">t</kbd>
+<a href="/files/tree/main" data-key="g f" aria-current="page">Files <kbd aria-hidden="true">g f</kbd>
 </a>
 </li>
 <li>
-<a href="/files/commits/main" data-key="c" aria-keyshortcuts="c">Commits <kbd aria-hidden="true">c</kbd>
+<a href="/files/commits/main" data-key="g c">Commits <kbd aria-hidden="true">g c</kbd>
 </a>
 </li>
 <li>
-<a href="/files/refs" data-key="r" aria-keyshortcuts="r">Branches &amp; tags <kbd aria-hidden="true">r</kbd>
+<a href="/files/refs" data-key="g b">Branches &amp; tags <kbd aria-hidden="true">g b</kbd>
 </a>
 </li>
 <li>
-<a href="/files/merge-requests" data-key="m" aria-keyshortcuts="m">Merge requests <kbd aria-hidden="true">m</kbd>
+<a href="/files/merge-requests" data-key="g m">Merge requests <kbd aria-hidden="true">g m</kbd>
 </a>
 </li>
 <li>
-<a href="/files/releases" data-key="l" aria-keyshortcuts="l">Releases <kbd aria-hidden="true">l</kbd>
+<a href="/files/releases" data-key="g r">Releases <kbd aria-hidden="true">g r</kbd>
 </a>
 </li>
 <li>
-<a href="/files/actions" data-key="a" aria-keyshortcuts="a">Actions <kbd aria-hidden="true">a</kbd>
+<a href="/files/actions" data-key="g a">Actions <kbd aria-hidden="true">g a</kbd>
 </a>
 </li>
 </ul>
@@ -295,14 +295,16 @@
 </div>
 <div>
 <dt>
-<kbd>s</kbd>
-<kbd>t</kbd>
-<kbd>c</kbd>
-<kbd>r</kbd>
-<kbd>m</kbd>
-<kbd>i</kbd>
+<kbd>g s</kbd>
+<kbd>g f</kbd>
+<kbd>g c</kbd>
+<kbd>g b</kbd>
+<kbd>g m</kbd>
+<kbd>g i</kbd>
+<kbd>g r</kbd>
+<kbd>g a</kbd>
 </dt>
-<dd>tabs: summary, files, commits, branches &amp; tags, merge requests, issues</dd>
+<dd>tabs: summary, files, commits, branches &amp; tags, merge requests, issues, releases, actions (when available)</dd>
 </div>
 <div>
 <dt>
@@ -401,45 +403,45 @@
 <span class="k">go</span>
 </a>
 </li>
-<li id="cmd-o1" role="option" aria-selected="false" data-k="section summary">
+<li id="cmd-o1" role="option" aria-selected="false" data-k="section summary (g s)">
 <a role="presentation" data-href="/files">
-<span class="lbl">summary</span>
+<span class="lbl">summary (g s)</span>
 <span class="k">section</span>
 </a>
 </li>
-<li id="cmd-o2" role="option" aria-selected="false" data-k="section files">
+<li id="cmd-o2" role="option" aria-selected="false" data-k="section files (g f)">
 <a role="presentation" data-href="/files/tree/main">
-<span class="lbl">files</span>
+<span class="lbl">files (g f)</span>
 <span class="k">section</span>
 </a>
 </li>
-<li id="cmd-o3" role="option" aria-selected="false" data-k="section commits">
+<li id="cmd-o3" role="option" aria-selected="false" data-k="section commits (g c)">
 <a role="presentation" data-href="/files/commits/main">
-<span class="lbl">commits</span>
+<span class="lbl">commits (g c)</span>
 <span class="k">section</span>
 </a>
 </li>
-<li id="cmd-o4" role="option" aria-selected="false" data-k="section branches &amp; tags">
+<li id="cmd-o4" role="option" aria-selected="false" data-k="section branches &amp; tags (g b)">
 <a role="presentation" data-href="/files/refs">
-<span class="lbl">branches &amp; tags</span>
+<span class="lbl">branches &amp; tags (g b)</span>
 <span class="k">section</span>
 </a>
 </li>
-<li id="cmd-o5" role="option" aria-selected="false" data-k="section merge requests">
+<li id="cmd-o5" role="option" aria-selected="false" data-k="section merge requests (g m)">
 <a role="presentation" data-href="/files/merge-requests">
-<span class="lbl">merge requests</span>
+<span class="lbl">merge requests (g m)</span>
 <span class="k">section</span>
 </a>
 </li>
-<li id="cmd-o6" role="option" aria-selected="false" data-k="section releases">
+<li id="cmd-o6" role="option" aria-selected="false" data-k="section releases (g r)">
 <a role="presentation" data-href="/files/releases">
-<span class="lbl">releases</span>
+<span class="lbl">releases (g r)</span>
 <span class="k">section</span>
 </a>
 </li>
-<li id="cmd-o7" role="option" aria-selected="false" data-k="section actions">
+<li id="cmd-o7" role="option" aria-selected="false" data-k="section actions (g a)">
 <a role="presentation" data-href="/files/actions">
-<span class="lbl">actions</span>
+<span class="lbl">actions (g a)</span>
 <span class="k">section</span>
 </a>
 </li>
@@ -492,7 +494,9 @@
          k-filter from:body -> ermite.focusFilter();
          k-gh from:body -> ermite.go('.brand');
          k-s from:body -> ermite.tab('s');
-         k-t from:body -> ermite.tab('t');
+         k-f from:body -> ermite.tab('f');
+         k-b from:body -> ermite.tab('b');
+         k-a from:body -> ermite.tab('a');
          k-c from:body -> ermite.tab('c');
          k-r from:body -> ermite.tab('r');
          k-m from:body -> ermite.tab('m');
@@ -508,7 +512,6 @@
          k-permalink from:body -> ermite.permalink();
          k-merge from:body -> window.ermiteMR?.openMerge();
          k-read from:body -> window.ermiteMR?.markRead();
-         k-gf from:body -> window.ermiteMR?.focusFiles();
          k-keys from:body -> ermite.toggleKeys()">
 </div>
 </body>

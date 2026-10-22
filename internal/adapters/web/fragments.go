@@ -167,7 +167,7 @@ func (l *liveStream) gone(ctx context.Context, name string) ([]fragment, error) 
 func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	switch ev := we.Event.(type) {
 	case domain.ReleasePublished, domain.ReleaseUpdated, domain.ReleaseDeleted, domain.ReleaseUnpublished:
-		if l.view == "releases" || l.view == "release" {
+		if l.view == "releases" || l.view == "release" || l.view == "summary" {
 			return gap, nil // notes, assets, latest or visibility changed: reload
 		}
 		return nil, nil

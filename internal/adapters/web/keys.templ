@@ -23,7 +23,9 @@ templ Keys() {
          k-filter from:body -> ermite.focusFilter();
          k-gh from:body -> ermite.go('.brand');
          k-s from:body -> ermite.tab('s');
-         k-t from:body -> ermite.tab('t');
+         k-f from:body -> ermite.tab('f');
+         k-b from:body -> ermite.tab('b');
+         k-a from:body -> ermite.tab('a');
          k-c from:body -> ermite.tab('c');
          k-r from:body -> ermite.tab('r');
          k-m from:body -> ermite.tab('m');
@@ -39,7 +41,6 @@ templ Keys() {
          k-permalink from:body -> ermite.permalink();
          k-merge from:body -> window.ermiteMR?.openMerge();
          k-read from:body -> window.ermiteMR?.markRead();
-         k-gf from:body -> window.ermiteMR?.focusFiles();
          k-keys from:body -> ermite.toggleKeys()"
 	></div>
 }

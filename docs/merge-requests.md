@@ -142,7 +142,7 @@ the diff opens the Checks panel and continues to update live. Commit totals use
 `N+` when the branch list is capped: the reader's existing count operation counts all reachable
 ancestors, not the source-minus-target range.
 
-The rail keeps Files (including its `g f` shortcut) and Verdicts. Merge settings
+The rail keeps Files (including its `l` shortcut) and Verdicts. Merge settings
 are read-only information in the More (⋯) menu, available to every viewer.
 Signing-key information is also there when a merge box offers signed modes;
 merge actions remain restricted to their existing permissions.

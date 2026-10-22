@@ -100,7 +100,7 @@ func TestIssueList(t *testing.T) {
 	assert.Contains(t, body, "crash &lt;b&gt;on&lt;/b&gt; start")
 	assert.Contains(t, body, `href="/proj/issues?page=tok2"`, "older page")
 	assert.Contains(t, body, `href="/proj/issues?state=closed"`, "closed tab")
-	assert.Contains(t, body, `href="/proj/issues" data-key="i"`, "the Issues tab")
+	assert.Contains(t, body, `href="/proj/issues" data-key="g i"`, "the Issues tab")
 	assert.NotContains(t, body, "New issue", "no form for an anonymous visitor")
 	assert.Equal(t, "no-cache", rec.Header().Get("Cache-Control"))
 
@@ -169,7 +169,7 @@ func TestIssueNotFound(t *testing.T) {
 	}
 	summary := off.do("GET", "/proj", false, nil)
 	require.Equal(t, 200, summary.Code)
-	assert.NotContains(t, summary.Body.String(), `data-key="i"`)
+	assert.NotContains(t, summary.Body.String(), `data-key="g i"`)
 
 	// The mode is unset in the settings: off as well.
 	unset := newIssueRig(t, "", false)
@@ -257,7 +257,7 @@ func TestIssueRoutesAbsentWithoutService(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/proj", nil))
-	assert.NotContains(t, rec.Body.String(), `data-key="i"`)
+	assert.NotContains(t, rec.Body.String(), `data-key="g i"`)
 }
 
 func TestIssueNumberRedirects(t *testing.T) {

@@ -38,7 +38,7 @@ func newReleaseFixture(t *testing.T) *releaseFixture {
 	t.Helper()
 	repo := repoName(t, "proj")
 	f := &releaseFixture{svc: mocks.NewReleaseService(t), data: "0123456789"}
-	f.published = domain.Release{ID: 1, Repo: repo, Tag: "stable/v1", Title: "First release", Notes: "# Notes\n\n**Ready** [bad](javascript:alert(1)) <script>alert(1)</script>\n\n[guide](guide.md)", TargetCommitish: strings.Repeat("a", 40), PublishedAt: fixedNow, Prerelease: true}
+	f.published = domain.Release{ID: 1, Repo: repo, Tag: "stable/v1", Title: "First release", Notes: "# Notes\n\n**Ready** [bad](javascript:alert(1)) <script>alert(1)</script>\n\n[guide](guide.md)\n\n```sh\ncurl https://example.com\n```", TargetCommitish: strings.Repeat("a", 40), PublishedAt: fixedNow, Prerelease: true}
 	f.draft = domain.Release{ID: 2, Repo: repo, Tag: "unpublished", Title: "Secret draft", Draft: true, MakeLatest: true}
 	f.asset = domain.ReleaseAsset{ID: 7, ReleaseID: 1, Repo: repo, Name: "build.zip", Size: 10, ContentType: "application/zip", Digest: "sha256:" + strings.Repeat("b", 64)}
 	f.svc.EXPECT().GetRelease(mock.Anything, mock.Anything, repo, mock.Anything).RunAndReturn(func(_ context.Context, p domain.Principal, _ domain.RepoName, ref ports.ReleaseRef) (domain.Release, error) {
@@ -120,7 +120,8 @@ func TestReleasePages(t *testing.T) {
 		assert.Contains(t, body, "2026-10-12")
 		assert.Contains(t, body, `<td>1</td>`)
 		assert.Contains(t, body, `?page=next%2B%2F%3D`)
-		assert.Contains(t, body, `aria-keyshortcuts="l"`)
+		assert.Contains(t, body, `data-key="g r"`)
+		assert.NotContains(t, body, `aria-keyshortcuts="g r"`)
 		assert.Contains(t, body, "view=releases")
 	}
 	owner := f.request("GET", "/proj/releases?page=cursor%2B%2F%3D", "tok", "")
@@ -137,6 +138,15 @@ func TestReleasePages(t *testing.T) {
 	for _, text := range []string{"<strong>Ready</strong>", "build.zip", humanSize(10), "application/zip", `href="/proj/releases/assets/7"`, `href="/proj/tree/stable/v1"`, `href="/proj/commit/` + strings.Repeat("a", 40) + `"`, "view=release"} {
 		assert.Contains(t, body, text)
 	}
+	notes := strings.SplitN(body, `<article class="mr-desc prose">`, 2)
+	require.Len(t, notes, 2)
+	notesBody := strings.SplitN(notes[1], "</article>", 2)[0]
+	assert.Contains(t, notesBody, "<pre")
+	assert.Contains(t, notesBody, "<code")
+	assert.Contains(t, notesBody, "curl")
+	assert.Contains(t, notesBody, "</code></pre>")
+	assert.Contains(t, notesBody, `<h1 id="md-notes">Notes</h1>`)
+	assert.Contains(t, body, `<section class="mr-card">`)
 	assert.NotContains(t, body, "<script>alert")
 	assert.NotContains(t, body, `href="javascript:`)
 	assert.Contains(t, body, `href="/proj/blob/stable/v1/guide.md"`)

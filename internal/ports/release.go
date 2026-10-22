@@ -13,6 +13,8 @@ import (
 // Used includes both uploading and uploaded assets.
 type ReleaseWrite struct {
 	Repo                        domain.RepoName
+	SetLatest                   bool  // false leaves the latest index unchanged
+	LatestID                    int64 // zero means no eligible release when SetLatest
 	Used                        int64
 	UsageVersion                uint64
 	PutReleases, DeleteReleases []domain.Release
@@ -21,6 +23,7 @@ type ReleaseWrite struct {
 
 // ReleaseStore keeps metadata, never contents. *kvstore.Releases implements it.
 type ReleaseStore interface {
+	GetLatestRelease(ctx context.Context, repo domain.RepoName) (domain.Release, error)
 	NextReleaseID(ctx context.Context) (int64, error)
 	ReleaseUsage(ctx context.Context, repo domain.RepoName) (used int64, version uint64, err error)
 	GetRelease(ctx context.Context, repo domain.RepoName, id int64) (domain.Release, error)

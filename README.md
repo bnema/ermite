@@ -139,6 +139,7 @@ Give the agent the [`skills/ermite`](skills/ermite/SKILL.md) skill so it knows t
 - [Issues](docs/issues.md)
 - [Commit signatures](docs/commit-signatures.md): SSH and OpenPGP badges, trusted keys
 - [Web sign-in](docs/web-sign-in.md): passkeys and one-time links
+- [Keyboard shortcuts](docs/keyboard-shortcuts.md): web section navigation and page actions
 - [CI](docs/ci.md): runners, trust, concurrency, reusable workflows
   - [CI events](docs/ci-events.md)
   - [OIDC](docs/ci-oidc.md)

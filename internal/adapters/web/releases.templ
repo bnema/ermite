@@ -40,15 +40,22 @@ templ Releases(l Layout, p ReleaseListPage) {
 
 templ ReleaseDetail(l Layout, p ReleaseDetailPage) {
 	@Shell(l, nil) {
-		<h1>{ p.Title }</h1>
-		<p>
-			<span class="pill">{ p.Tag }</span> @ReleaseBadges(p.ReleaseRow)
-			if p.SHA != "" {
-				<a href={ templ.SafeURL(p.CommitHref) }><code>{ p.SHA }</code></a>
-			}
-			<span class="dim">{ p.Published }</span>
-		</p>
-		<div class="md">@templ.Raw(string(p.Notes))</div>
+		<section class="mr-card">
+			<header class="show mr-h">
+				<h1>{ p.Title }</h1>
+				<dl class="kv show-kv">
+					<dt>tag</dt>
+					<dd><span class="pill">{ p.Tag }</span> @ReleaseBadges(p.ReleaseRow)</dd>
+					if p.SHA != "" {
+						<dt>commit</dt>
+						<dd><a href={ templ.SafeURL(p.CommitHref) }><code>{ p.SHA }</code></a></dd>
+					}
+					<dt>published</dt>
+					<dd>{ p.Published }</dd>
+				</dl>
+			</header>
+			<article class="mr-desc prose">@templ.Raw(string(p.Notes))</article>
+		</section>
 		<h2>Assets</h2>
 		if len(p.Assets) == 0 {
 			<p class="dim">no assets.</p>

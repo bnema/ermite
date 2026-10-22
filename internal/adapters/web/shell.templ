@@ -172,8 +172,7 @@ templ Header(l Layout) {
 						<li>
 							<a
 								href={ templ.SafeURL(s.Href) }
-								data-key={ s.Key }
-								aria-keyshortcuts={ s.Key }
+								data-key={ "g " + s.Key }
 								if s.Current {
 									aria-current="page"
 								}
@@ -182,7 +181,7 @@ templ Header(l Layout) {
 								if s.Count != "" {
 									<span class="count">{ s.Count }<span class="sr">{ " open" }</span></span>
 								}
-								<kbd aria-hidden="true">{ s.Key }</kbd>
+								<kbd aria-hidden="true">{ "g " + s.Key }</kbd>
 							</a>
 						</li>
 					}
