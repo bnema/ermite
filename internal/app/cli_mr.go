@@ -774,48 +774,50 @@ func printMRDetail(w io.Writer, d *ermite.GetMergeRequestResponse, withDiff, sin
 	}
 	_, _ = fmt.Fprintf(w, "\ncomments (%d)\n", len(d.GetComments()))
 	var timeline []issueTimelineRow
-	var ordered []*ermite.Comment
 	for _, root := range d.GetComments() {
 		if root.GetReplyTo() != "" {
 			continue
 		}
-		ordered = append(ordered, root)
+		thread := []*ermite.Comment{root}
 		for _, reply := range d.GetComments() {
 			if reply.GetReplyTo() == root.GetId() {
-				ordered = append(ordered, reply)
+				thread = append(thread, reply)
 			}
 		}
-	}
-	for _, c := range ordered {
-		timeline = append(timeline, issueTimelineRow{at: c.GetCreatedAt(), print: func(w io.Writer) error {
-			where := "general"
-			if c.GetPath() != "" {
-				where = fmt.Sprintf("%s:%d (%s)", clean(c.GetPath()), c.GetLine(), sideName(c.GetSide()))
+		timeline = append(timeline, issueTimelineRow{at: root.GetCreatedAt(), print: func(w io.Writer) error {
+			for _, c := range thread {
+				where := "general"
+				if c.GetPath() != "" {
+					where = fmt.Sprintf("%s:%d (%s)", clean(c.GetPath()), c.GetLine(), sideName(c.GetSide()))
+				}
+				if c.GetStartLine() > 0 {
+					where = fmt.Sprintf("%s:lines %d-%d (%s)", clean(c.GetPath()), c.GetStartLine(), c.GetLine(), sideName(c.GetSide()))
+				}
+				mark := ""
+				if c.GetEditedAt() != nil {
+					mark += " (edited)"
+				}
+				if c.GetDeleted() {
+					mark += " [deleted]"
+				}
+				if c.GetVerdict() != ermite.Verdict_VERDICT_UNSPECIFIED {
+					mark += " [" + verdictName(c.GetVerdict()) + "]"
+				}
+				if c.GetResolved() {
+					mark += " [resolved]"
+				}
+				prefix := "  "
+				body := indentText(c.GetText())
+				if c.GetReplyTo() != "" {
+					prefix += "    "
+					body = "    " + strings.ReplaceAll(body, "\n", "\n    ")
+				}
+				_, err := fmt.Fprintf(w, "%s#%s %s, %s, %s%s\n%s\n", prefix, c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), where, mark, body)
+				if err != nil {
+					return err
+				}
 			}
-			if c.GetStartLine() > 0 {
-				where = fmt.Sprintf("%s:lines %d-%d (%s)", clean(c.GetPath()), c.GetStartLine(), c.GetLine(), sideName(c.GetSide()))
-			}
-			mark := ""
-			if c.GetEditedAt() != nil {
-				mark += " (edited)"
-			}
-			if c.GetDeleted() {
-				mark += " [deleted]"
-			}
-			if c.GetVerdict() != ermite.Verdict_VERDICT_UNSPECIFIED {
-				mark += " [" + verdictName(c.GetVerdict()) + "]"
-			}
-			if c.GetResolved() {
-				mark += " [resolved]"
-			}
-			prefix := "  "
-			body := indentText(c.GetText())
-			if c.GetReplyTo() != "" {
-				prefix += "    "
-				body = "    " + strings.ReplaceAll(body, "\n", "\n    ")
-			}
-			_, err := fmt.Fprintf(w, "%s#%s %s, %s, %s%s\n%s\n", prefix, c.GetId(), clean(c.GetAuthor()), shortTime(c.GetCreatedAt(), "-"), where, mark, body)
-			return err
+			return nil
 		}})
 	}
 	timeline = append(timeline, newIssueTimeline(d.GetIssueEvents(), true)...)

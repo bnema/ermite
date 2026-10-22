@@ -689,3 +689,21 @@ func TestMRShowAutoMerge(t *testing.T) {
 	res = runCLI(t, envFor(url), "", "mr", "show", "alpha", "1").ok(t)
 	assert.NotContains(t, res.stdout, "auto-merge")
 }
+
+func TestMRHistoryPreservesThreads(t *testing.T) {
+	d := &ermite.GetMergeRequestResponse{MergeRequest: mrOne, Comments: []*ermite.Comment{
+		{Id: "a", Text: "root A", CreatedAt: ts("2026-10-01T10:00:00Z")},
+		{Id: "b", Text: "root B", CreatedAt: ts("2026-10-01T12:00:00Z")},
+		{Id: "reply", ReplyTo: "a", Text: "reply A", CreatedAt: ts("2026-10-01T13:00:00Z")},
+	}, IssueEvents: []*ermite.IssueEvent{
+		{Id: "1", Kind: ermite.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED, Issue: 2, Actor: "merger", CreatedAt: ts("2026-10-01T11:00:00Z")},
+	}}
+	var out strings.Builder
+	require.NoError(t, printMRDetail(&out, d, false, false))
+	text := out.String()
+	a, reply, event, b := strings.Index(text, "root A"), strings.Index(text, "reply A"), strings.Index(text, "merger resolved"), strings.Index(text, "root B")
+	require.NotEqual(t, -1, event)
+	assert.Less(t, a, reply)
+	assert.Less(t, reply, event)
+	assert.Less(t, event, b)
+}
