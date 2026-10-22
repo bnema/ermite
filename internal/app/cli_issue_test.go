@@ -30,7 +30,7 @@ func TestIssueCreateMapsFlags(t *testing.T) {
 	}}
 	url := f.serve(t)
 	res := runCLI(t, envFor(url), "", "issue", "create", "alpha", "--title", "Crash on start", "--body", "It crashes.").ok(t)
-	assert.Equal(t, "opened alpha#2 (Crash on start)\n", res.stdout)
+	assert.Equal(t, "opened alpha#2 (Crash on start)\n"+url+"/alpha/issues/2\n", res.stdout)
 	_, reqs := f.snapshot()
 	got := reqs[1].(*ermite.CreateIssueRequest)
 	assert.Equal(t, "alpha", got.GetRepo())
@@ -52,7 +52,7 @@ func TestIssueCreateMapsFlags(t *testing.T) {
 	assert.Equal(t, []string{"It crashes.", "from\nstdin", "piped", "from file"}, bodies)
 
 	res = runCLI(t, envFor(url), "", "issue", "create", "alpha", "--title", "t", "--json").ok(t)
-	assert.JSONEq(t, `{"repo":"alpha","number":2,"title":"Crash on start","body":"It crashes.","state":"open","author":"owner","created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-02T11:30:00Z","comment_count":1,"closed_by_merge_request":0}`, res.stdout)
+	assert.JSONEq(t, `{"url":"`+url+`/alpha/issues/2","repo":"alpha","number":2,"title":"Crash on start","body":"It crashes.","state":"open","author":"owner","created_at":"2026-10-01T10:00:00Z","updated_at":"2026-10-02T11:30:00Z","comment_count":1,"closed_by_merge_request":0}`, res.stdout)
 
 	for _, args := range [][]string{
 		{"issue", "create", "alpha"},
@@ -143,7 +143,7 @@ func TestIssueShowCommentCloseReopen(t *testing.T) {
 	require.Error(t, runCLI(t, envFor(url), "", "issue", "comment", "alpha", "2").err)
 
 	res = runCLI(t, envFor(url), "", "issue", "close", "alpha", "2").ok(t)
-	assert.Equal(t, "closed alpha#2 (Crash on start)\n", res.stdout)
+	assert.Equal(t, "closed alpha#2 (Crash on start)\n"+url+"/alpha/issues/2\n", res.stdout)
 	res = runCLI(t, envFor(url), "", "issue", "reopen", "alpha", "2", "--json").ok(t)
 	assert.Contains(t, res.stdout, `"state": "open"`)
 
@@ -285,7 +285,7 @@ func TestIssueShowMergeRequestLinks(t *testing.T) {
 	assert.Less(t, strings.Index(res.stdout, "merge requests (2)"), strings.Index(res.stdout, "comments (0)"))
 
 	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2", "--json").ok(t)
-	assert.JSONEq(t, `{"repo":"alpha","number":2,"title":"Crash on start","body":"","state":"closed","author":"","created_at":null,"updated_at":null,"comment_count":0,"closed_by_merge_request":5,"comments":[],"references":[{"number":5,"title":"Fix the parser","state":"open","closes":true},{"number":7,"title":"Follow-up","state":"merged","closes":false}]}`, res.stdout)
+	assert.JSONEq(t, `{"url":"`+url+`/alpha/issues/2","repo":"alpha","number":2,"title":"Crash on start","body":"","state":"closed","author":"","created_at":null,"updated_at":null,"comment_count":0,"closed_by_merge_request":5,"comments":[],"references":[{"number":5,"title":"Fix the parser","state":"open","closes":true},{"number":7,"title":"Follow-up","state":"merged","closes":false}]}`, res.stdout)
 
 	// No references: no block in text, an empty array in JSON.
 	f.getIssue = func(*ermite.GetIssueRequest) (*ermite.GetIssueResponse, error) {
@@ -296,4 +296,9 @@ func TestIssueShowMergeRequestLinks(t *testing.T) {
 	assert.NotContains(t, res.stdout, "closed by")
 	res = runCLI(t, envFor(url), "", "issue", "show", "alpha", "2", "--json").ok(t)
 	assert.Contains(t, res.stdout, `"references": []`)
+}
+
+func TestIssueWebURL(t *testing.T) {
+	assert.Equal(t, "https://git.example.org/my-repo/issues/42", issueWebURL("https://git.example.org/", "my-repo", 42))
+	assert.Equal(t, "https://git.example.org/team%2Frepo%20%23%3F%25/issues/42", issueWebURL("https://git.example.org", "team/repo #?%", 42))
 }

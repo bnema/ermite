@@ -12,6 +12,9 @@ ermite issue close myrepo 2
 ermite issue reopen myrepo 2
 ```
 
+`ermite issue create` prints a confirmation followed by the full issue web URL on its own line
+(`issue close` and `issue reopen` do the same). With `--json`, issue objects include `url`.
+
 All commands take `--json`. `--body -` and `--body-file -` read standard input. A server needs the `issues` feature (`ermite version`); without it the commands, `repo edit --issues` and `token create --scope issue:write` are refused.
 
 ## The `issues` setting

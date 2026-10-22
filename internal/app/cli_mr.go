@@ -403,7 +403,12 @@ func trimBranch(s string) string { return strings.TrimPrefix(strings.TrimSpace(s
 // mrWebURL builds the web route with the repository as a single path segment.
 // Repository names currently forbid slashes, but escape all path delimiters defensively.
 func mrWebURL(baseURL, repo string, number int64) string {
-	return strings.TrimRight(baseURL, "/") + "/" + url.PathEscape(repo) + "/merge-requests/" + strconv.FormatInt(number, 10)
+	return itemWebURL(baseURL, repo, "merge-requests", number)
+}
+
+// itemWebURL builds <base>/<repo>/<kind>/<number>.
+func itemWebURL(baseURL, repo, kind string, number int64) string {
+	return strings.TrimRight(baseURL, "/") + "/" + url.PathEscape(repo) + "/" + kind + "/" + strconv.FormatInt(number, 10)
 }
 
 // outputMR prints a merge request as JSON, or a confirmation followed by its URL.

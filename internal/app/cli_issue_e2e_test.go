@@ -15,6 +15,7 @@ import (
 
 type issueOut struct {
 	Repo         string  `json:"repo"`
+	URL          string  `json:"url"`
 	Number       int64   `json:"number"`
 	Title        string  `json:"title"`
 	Body         string  `json:"body"`
@@ -25,7 +26,7 @@ type issueOut struct {
 	CommentCount int     `json:"comment_count"`
 }
 
-var issueKeys = []string{"author", "body", "closed_by_merge_request", "comment_count", "created_at", "number", "repo", "state", "title", "updated_at"}
+var issueKeys = []string{"author", "body", "closed_by_merge_request", "comment_count", "created_at", "number", "repo", "state", "title", "updated_at", "url"}
 
 type issueCommentOut struct {
 	ID     string `json:"id"`
@@ -79,12 +80,13 @@ func TestIssuesCLIEndToEnd(t *testing.T) {
 	assert.Equal(t, issueKeys, keys(t, res.stdout))
 	issue := decode[issueOut](t, res.stdout)
 	assert.EqualValues(t, 2, issue.Number, "shared numbering with merge requests")
+	assert.Equal(t, c.url+"/proj/issues/2", issue.URL)
 	assert.Equal(t, "open", issue.State)
 	assert.Equal(t, "agent-7", issue.Author)
 	assert.Equal(t, "It crashes.\nSecond line.", issue.Body)
 
 	res = runCLI(t, c.vars(agent), "from stdin\n", "issue", "create", "proj", "--title", "Second", "--body-file", "-").ok(t)
-	assert.Equal(t, "opened proj#3 (Second)\n", res.stdout)
+	assert.Equal(t, "opened proj#3 (Second)\n"+c.url+"/proj/issues/3\n", res.stdout)
 
 	// list.
 	res = c.cli(t, adminToken, "issue", "list", "proj", "--json").ok(t)
@@ -131,7 +133,7 @@ func TestIssuesCLIEndToEnd(t *testing.T) {
 	res = c.cli(t, adminToken, "issue", "list", "proj", "--state", "all", "--json").ok(t)
 	assert.Len(t, decode[[]issueOut](t, res.stdout), 2)
 	res = c.cli(t, agent, "issue", "reopen", "proj", "2").ok(t)
-	assert.Equal(t, "reopened proj#2 (Crash on start)\n", res.stdout)
+	assert.Equal(t, "reopened proj#2 (Crash on start)\n"+c.url+"/proj/issues/2\n", res.stdout)
 
 	// An issue is not a merge request and the other way round.
 	_, stderr, code := c.bin(t, adminToken, "issue", "show", "proj", "1")

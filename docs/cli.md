@@ -154,3 +154,6 @@ downloads are removed. Resume is within the command, not across invocations.
 `ermite mr create` and `ermite mr close` print a confirmation followed by the full
 merge request web URL on its own line. With `--json`, merge request objects
 (create, show, list, close and merge) include `url` alongside the other fields.
+
+`ermite issue create` prints a confirmation followed by the full issue web URL on its own line
+(`issue close` and `issue reopen` do the same). With `--json`, issue objects include `url`.

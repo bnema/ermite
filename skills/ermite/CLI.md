@@ -92,7 +92,9 @@ Issues share the numbering of merge requests and must be enabled per repository:
 | `issue comment <repo> <n> -m TEXT\|-` | `issue:write` | |
 | `issue close <repo> <n>` / `issue reopen <repo> <n>` | `issue:write` | |
 
-Issue JSON: `repo`, `number`, `title`, `body`, `state`, `author` (token label), `created_at`, `updated_at`, `comment_count`. `issue show --json` adds `comments` (`id`, `author`, `text`, `created_at`). `repo show --json` has `issues`.
+`issue create`, `issue close` and `issue reopen` print a confirmation followed by the full issue web URL on its own line.
+
+Issue JSON: `repo`, `url` (full web URL), `number`, `title`, `body`, `state`, `author` (token label), `created_at`, `updated_at`, `comment_count`. `issue show --json` adds `comments` (`id`, `author`, `text`, `created_at`). `repo show --json` has `issues`.
 
 ## Releases
 

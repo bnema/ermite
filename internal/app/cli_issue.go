@@ -49,6 +49,7 @@ func parseIssueState(s string) (ermite.IssueState, error) {
 // jsonIssue is the stable JSON shape of an issue.
 type jsonIssue struct {
 	Repo         string  `json:"repo"`
+	URL          string  `json:"url"`
 	Number       int64   `json:"number"`
 	Title        string  `json:"title"`
 	Body         string  `json:"body"`
@@ -61,8 +62,14 @@ type jsonIssue struct {
 	ClosedByMergeRequest int64 `json:"closed_by_merge_request"`
 }
 
-func toJSONIssue(i *ermite.Issue) jsonIssue {
+// issueWebURL is the web page of an issue.
+func issueWebURL(baseURL, repo string, number int64) string {
+	return itemWebURL(baseURL, repo, "issues", number)
+}
+
+func toJSONIssue(i *ermite.Issue, baseURL string) jsonIssue {
 	return jsonIssue{
+		URL:  issueWebURL(baseURL, i.GetRepo(), i.GetNumber()),
 		Repo: i.GetRepo(), Number: i.GetNumber(), Title: i.GetTitle(), Body: i.GetBody(),
 		State: issueStateName(i.GetState()), Author: i.GetAuthor(),
 		CreatedAt: jsonTime(i.GetCreatedAt()), UpdatedAt: jsonTime(i.GetUpdatedAt()), CommentCount: i.GetCommentCount(),
@@ -98,7 +105,7 @@ type jsonIssueReference struct {
 }
 
 const jsonIssueHelp = `
-JSON fields of an issue (--json): repo, number, title, body, state ("open" or "closed"), author
+JSON fields of an issue (--json): repo, url (full web URL), number, title, body, state ("open" or "closed"), author
 (token label), created_at and updated_at (RFC 3339 UTC), comment_count, closed_by_merge_request (number of
 the merge request whose merge closed the issue, 0 for none).`
 
@@ -200,12 +207,13 @@ func listIssues(ctx context.Context, c *client.Client, repo string, state ermite
 	})
 }
 
-// outputIssue prints an issue as JSON, or as one confirmation line.
-func outputIssue(cmd *cobra.Command, i *ermite.Issue, asJSON bool, verb string) error {
+// outputIssue prints an issue as JSON, or a confirmation followed by its URL.
+func outputIssue(cmd *cobra.Command, i *ermite.Issue, asJSON bool, verb, baseURL string) error {
 	if asJSON {
-		return writeJSON(cmd.OutOrStdout(), toJSONIssue(i))
+		return writeJSON(cmd.OutOrStdout(), toJSONIssue(i, baseURL))
 	}
-	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s#%d (%s)\n", verb, clean(i.GetRepo()), i.GetNumber(), clean(i.GetTitle()))
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s#%d (%s)\n%s\n", verb, clean(i.GetRepo()), i.GetNumber(), clean(i.GetTitle()),
+		issueWebURL(baseURL, i.GetRepo(), i.GetNumber()))
 	return err
 }
 
@@ -217,7 +225,8 @@ func newIssueCreateCmd(env *cliEnv) *cobra.Command {
 		Long: "Open an issue. The title is one line of at most 120 characters, the body Markdown of at most\n" +
 			"10,000 characters; disallowed control characters are stripped (a body may hold line breaks).\n" +
 			"--body - and --body-file - read the body from standard input; --body-file reads it\n" +
-			"from a file otherwise. Needs the issue:write scope." + jsonIssueHelp,
+			"from a file otherwise. Prints a confirmation, then the full web URL on its own line.\n" +
+			"Needs the issue:write scope." + jsonIssueHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -255,7 +264,7 @@ func newIssueCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputIssue(cmd, res.Msg.GetIssue(), *asJSON, "opened")
+		return outputIssue(cmd, res.Msg.GetIssue(), *asJSON, "opened", c.URL())
 	}
 	return cmd
 }
@@ -291,7 +300,7 @@ func newIssueListCmd(env *cliEnv) *cobra.Command {
 		if *asJSON {
 			out := make([]jsonIssue, 0, len(issues))
 			for _, i := range issues {
-				out = append(out, toJSONIssue(i))
+				out = append(out, toJSONIssue(i, c.URL()))
 			}
 			return writeJSON(cmd.OutOrStdout(), out)
 		}
@@ -338,7 +347,7 @@ func newIssueShowCmd(env *cliEnv) *cobra.Command {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			out := jsonIssueDetail{jsonIssue: toJSONIssue(res.Msg.GetIssue()), Comments: []jsonIssueComment{}}
+			out := jsonIssueDetail{jsonIssue: toJSONIssue(res.Msg.GetIssue(), c.URL()), Comments: []jsonIssueComment{}}
 			for _, cm := range res.Msg.GetComments() {
 				out.Comments = append(out.Comments, toJSONIssueComment(cm))
 			}
@@ -495,7 +504,7 @@ func newIssueStateCmd(env *cliEnv, use, verb, short, long string, do func(contex
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputIssue(cmd, i, *asJSON, verb)
+		return outputIssue(cmd, i, *asJSON, verb, c.URL())
 	}
 	return cmd
 }
