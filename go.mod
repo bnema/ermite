@@ -1,6 +1,6 @@
 module bnema.dev/ermite
 
-go 1.27.1
+go 1.27
 
 tool (
 	github.com/a-h/templ/cmd/templ
@@ -12,10 +12,10 @@ tool (
 )
 
 require (
-	bnema.dev/ermite-actions v0.2.0
-	bnema.dev/ermite-api v0.16.0
-	bnema.dev/ermite-git v0.1.0
-	bnema.dev/ermite-kv v0.1.0
+	bnema.dev/ermite-actions v0.2.1
+	bnema.dev/ermite-api v0.16.1
+	bnema.dev/ermite-git v0.1.1
+	bnema.dev/ermite-kv v0.1.1
 	connectrpc.com/connect v1.21.0
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/a-h/templ v0.3.1020
