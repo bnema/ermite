@@ -15,7 +15,8 @@
   .readme .prose { padding: var(--s5) var(--s6) var(--s6); }
   .doc-tabs {
     display: flex; flex-wrap: wrap; gap: var(--s4);
-    & a { color: var(--ink-dim); }
+    /* side by side from the left: .card-h pushes its links to the right */
+    & a { margin-left: 0; color: var(--ink-dim); }
     & a[aria-current] { color: var(--teal); text-decoration: underline; text-underline-offset: 5px; }
   }
 
