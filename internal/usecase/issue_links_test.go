@@ -5,7 +5,6 @@ package usecase_test
 import (
 	"context"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,7 +24,7 @@ func linkedRig(t *testing.T) (*mrRig, *usecase.IssueLinks, *usecase.Issues) {
 	r.seed()
 	_, err := r.store.Mutate(r.ctx, r.repo, func(repo *domain.Repo) (bool, error) { repo.Settings.Issues = domain.IssuesOwner; return true, nil })
 	require.NoError(t, err)
-	issueStore := &linkIssueStore{IssueStore: r.store.Issues(), issues: make(map[int64]domain.Issue)}
+	issueStore := r.store.Issues()
 	links := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: r.store, Issues: issueStore, MRs: r.store.MergeRequests(), Links: r.store.IssueLinks(), Git: r.git, Bus: r.bus, Clock: fixedClock{}})
 	r.mrs = usecase.NewMergeRequests(usecase.MergeRequestsConfig{Meta: r.store, Store: r.store.MergeRequests(), Repos: r.git, Git: r.git, Bus: r.bus, Clock: fixedClock{}, Maint: r.sched, Links: links})
 	issues := usecase.NewIssues(usecase.IssuesConfig{Meta: r.store, Store: issueStore, MergeRequests: r.store.MergeRequests(), Links: r.store.IssueLinks(), Bus: r.bus, Clock: fixedClock{}})
@@ -128,9 +127,35 @@ func TestIssueLinksMergeClosing(t *testing.T) {
 				assert.Equal(t, mr.Number, got.ClosedByMergeRequest)
 				assert.Equal(t, domain.IssueStateResolved, got.State)
 				assert.Equal(t, 1, closedEvents)
+				persisted, err := r.store.Issues().Get(r.ctx, r.repo, issue.Number)
+				require.NoError(t, err)
+				assert.Equal(t, got, persisted)
+				history, err := r.store.Issues().ListEvents(r.ctx, r.repo, issue.Number)
+				require.NoError(t, err)
+				require.NotEmpty(t, history)
+				last := history[len(history)-1]
+				assert.Equal(t, domain.IssueEventResolved, last.Kind)
+				assert.Equal(t, domain.AuthorName(root), last.Actor)
+				assert.Equal(t, mr.Number, last.MergeRequest)
+				page, err := r.store.Issues().List(r.ctx, r.repo, ports.ListIssuesParams{State: domain.IssueStateOpen})
+				require.NoError(t, err)
+				assert.Empty(t, page.Issues)
+
 				reopened, err := issues.Reopen(r.ctx, root, r.repo, issue.Number)
 				require.NoError(t, err)
 				assert.Zero(t, reopened.ClosedByMergeRequest)
+				persisted, err = r.store.Issues().Get(r.ctx, r.repo, issue.Number)
+				require.NoError(t, err)
+				assert.Equal(t, domain.IssueStateOpen, persisted.State)
+				assert.Zero(t, persisted.ClosedByMergeRequest)
+				history, err = r.store.Issues().ListEvents(r.ctx, r.repo, issue.Number)
+				require.NoError(t, err)
+				assert.Equal(t, domain.IssueEventReopened, history[len(history)-1].Kind)
+				page, err = r.store.Issues().List(r.ctx, r.repo, ports.ListIssuesParams{State: domain.IssueStateOpen})
+				require.NoError(t, err)
+				require.Len(t, page.Issues, 1)
+				assert.Equal(t, persisted, page.Issues[0])
+
 			} else {
 				assert.Zero(t, got.ClosedByMergeRequest)
 				assert.Equal(t, 0, closedEvents)
@@ -268,36 +293,6 @@ func TestAutoMergeClosesLinkedIssue(t *testing.T) {
 	got, err := issues.Get(r.ctx, root, r.repo, issue.Number)
 	require.NoError(t, err)
 	assert.False(t, got.Issue.IsOpen())
-}
-
-// linkIssueStore isolates merge state writes from the independently developed
-// kvstore resolved-state encoder. All other operations use the existing rig.
-type linkIssueStore struct {
-	ports.IssueStore
-	mu     sync.Mutex
-	issues map[int64]domain.Issue
-}
-
-func (s *linkIssueStore) Get(ctx context.Context, repo domain.RepoName, n int64) (domain.Issue, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if issue, ok := s.issues[n]; ok {
-		return issue, nil
-	}
-	return s.IssueStore.Get(ctx, repo, n)
-}
-func (s *linkIssueStore) Update(ctx context.Context, issue domain.Issue, events ...domain.IssueEvent) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if issue.State == domain.IssueStateResolved {
-		s.issues[issue.Number] = issue
-		return nil
-	}
-	if _, ok := s.issues[issue.Number]; ok {
-		s.issues[issue.Number] = issue
-		return nil
-	}
-	return s.IssueStore.Update(ctx, issue, events...)
 }
 
 func TestMergeResolutionActorAndReferenceEvent(t *testing.T) {
