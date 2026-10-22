@@ -8,13 +8,17 @@ ermite mr show myrepo 1 --diff
 ermite mr merge myrepo 1 --head <commit> [--mode fast-forward|squash|merge] [--delete-branch]
 ```
 
-Naming an issue with `#N` links it, and `Fixes #N` closes it on merge: see [issues](issues.md#merge-request-links).
+Naming an issue with `#N` links it, and `Fixes #N` resolves it on merge: see [issues](issues.md#merge-request-links).
 
 `ermite mr create` and `ermite mr close` print a confirmation followed by the full
 merge request web URL on its own line. With `--json`, merge request objects
 (create, show, list, close and merge) include `url` alongside the other fields.
 
 A draft cannot merge. `ermite mr ready <repo> <n>` removes the `WIP:` or `[WIP]` title prefix; it needs `mr:write` and an open draft.
+
+## Linked issues and history
+
+The web Issues rail lists current linked issues with their state and a **resolves** marker for closing references. Links lead to the issue. The conversation includes timestamped system rows for references and resolutions, interleaved with general comments. Removing a reference removes its current link, not its history; historical rows may name issues no longer in the rail.
 
 ## Merge modes
 

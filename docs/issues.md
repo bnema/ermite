@@ -1,13 +1,14 @@
 # Issues
 
-An issue records a task, a bug or a question about a repository: a title, a body, comments, and an open or closed state. Issues share the numbering of merge requests: after merge request 1, the next issue is number 2.
+An issue records a task, a bug or a question about a repository: a title, a body, comments, and an open, closed or resolved state. Issues share the numbering of merge requests: after merge request 1, the next issue is number 2.
 
 ```sh
 ermite repo edit myrepo --issues owner
 ermite issue create myrepo --title "Crash on start" --body "It crashes."
-ermite issue list myrepo [--state open|closed|all]
+ermite issue list myrepo [--state open|closed|resolved|all]
 ermite issue show myrepo 2
 ermite issue comment myrepo 2 -m "Reproduced."
+ermite issue resolve myrepo 2
 ermite issue close myrepo 2
 ermite issue reopen myrepo 2
 ```
@@ -16,6 +17,16 @@ ermite issue reopen myrepo 2
 (`issue close` and `issue reopen` do the same). With `--json`, issue objects include `url`.
 
 All commands take `--json`. `--body -` and `--body-file -` read standard input. A server needs the `issues` feature (`ermite version`); without it the commands, `repo edit --issues` and `token create --scope issue:write` are refused.
+
+## States and history
+
+- **Open**: work remains.
+- **Closed**: closed without being resolved.
+- **Resolved**: fixed, either with `ermite issue resolve <repo> <n>` or by merging a closing reference.
+
+The web list has Open, Closed and Resolved tabs. The web offers Close for open issues and Reopen for closed or resolved issues; manual resolution is CLI-only. Reopening clears the resolving merge request. A merge does not resolve an already closed issue. Existing issues closed by a merge are migrated to resolved without adding historical events.
+
+The issue conversation interleaves comments and timestamped system rows for references, closure, reopening and resolution, with actor and merge request links. History is append-only: removing a current reference does not remove its history. At most 500 events are retained per issue; later events are omitted without preventing state changes or merges.
 
 ## The `issues` setting
 
@@ -41,13 +52,13 @@ Merge requests and issues of a repository draw `#n` from one sequence, so a numb
 
 A merge request and the issues of its repository are linked by `#N` in its text:
 
-- **Closing keywords** close the issue when the merge request is **merged**, and only then: `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved` (any case), then `#N`, with an optional `:` after the keyword. A list works: `fixes #3, #4 and #5`. They count in the title, the description and the commit messages, not in notes. Closing the merge request without merging closes nothing.
-- **Any `#N`** in the title, description, notes or commit messages shows the merge request on the issue (`ermite issue show`, the API `references`), with its state and whether it closes the issue.
-- A closed issue records the merge request that closed it ("closed by !N"). Reopening or closing by hand clears it.
+- **Closing keywords** resolve an open issue when the merge request is **merged**, and only then: `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved` (any case), then `#N`, with an optional `:` after the keyword. A list works: `fixes #3, #4 and #5`. They count in the title, the description and the commit messages, not in notes. Closing the merge request without merging resolves nothing.
+- **Any `#N`** in the title, description, notes or commit messages shows the merge request on the issue (`ermite issue show`, the API `references`), with its state and whether it resolves the issue on merge.
+- A merge-resolved issue records the merge request that resolved it ("resolved by !N"). Reopening clears it.
 - The links are recomputed whenever the merge request changes (a note added, edited or deleted, a push to its branch, a merge), so removing a mention removes the link.
 - Words glued to the number (`abc#3`), `&#39;` and `##3` are not references. Code spans are not skipped.
 
-Limits: the 100 most recent commits of the merge request, 16 KiB of each text, 100 merge requests listed per issue. Only numbers of existing issues are linked: a mention of a number that does not exist yet is not filled in later. With issues `off`, nothing is closed.
+Limits: the 100 most recent commits of the merge request, 16 KiB of each text, 100 merge requests listed per issue. Only numbers of existing issues are linked: a mention of a number that does not exist yet is not filled in later. With issues `off`, nothing is resolved.
 
 ## Inbox
 
