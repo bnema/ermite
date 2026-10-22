@@ -62,7 +62,7 @@ Limits: a title of at most 120 characters, a description of at most 10,000, an o
 
 The owner moderates in the Inbox, in the first section, **Awaiting moderation**, whose count is in the counters row. Each submission shows its repository, age, name (or "anonymous"), title and the start of the description, as plain text, with three buttons: **Approve** opens it as the next issue of the repository (numbers are shared with merge requests), **Reject** deletes it, **Reject and ban** deletes it and refuses further submissions from the same network for 30 days. The section updates live when a submission arrives.
 
-An approved issue is rendered as untrusted Markdown: raw HTML is dropped, images are never loaded (their alt text is shown), only `http`, `https` and `mailto` links are kept, each with `rel="nofollow noopener noreferrer ugc"`, and every other link loses its link and keeps its text.
+An approved issue is rendered as untrusted Markdown: raw HTML is dropped, images and videos are never loaded (image alt text is shown), only `http`, `https` and `mailto` links are kept, each with `rel="nofollow noopener noreferrer ugc"`, and every other link loses its link and keeps its text.
 
 No IP address is written to disk. The rate limiter keys on the normalized network address (the IPv4 address, or the IPv6 /64) for at most 24 hours and keeps it only in memory. Pending submissions and bans store only a keyed hash (HMAC) of that network, made with a server key.
 

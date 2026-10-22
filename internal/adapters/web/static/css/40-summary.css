@@ -55,5 +55,6 @@
     & hr { margin: var(--s5) 0; }
     & .alt { color: var(--ink-mute); }
     & img { display: none; }
+    & video { display: block; max-width: 100%; margin-inline: auto; }
   }
 }

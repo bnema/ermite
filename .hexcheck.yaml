@@ -26,6 +26,11 @@ components:
     role: adapter
     paths:
       - internal/httprange/**
+  mediapolicy:
+    # Video host validation and CSP sources: shared HTTP infrastructure.
+    role: adapter
+    paths:
+      - internal/mediapolicy/**
   entrypoints:
     # cmd/ermite only calls app.Run.
     role: entrypoint
@@ -94,4 +99,8 @@ allow:
     reason: rate-limits API clients with internal/clientlimit
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/web/**
-    reason: rate-limits login attempts with internal/clientlimit and selects byte ranges with internal/httprange
+    reason: rate-limits login attempts with internal/clientlimit, selects byte ranges with internal/httprange and shares video hosts with internal/mediapolicy
+
+  - rule: no-adapter-to-adapter-imports
+    path: internal/adapters/httpserver/**
+    reason: shares external video hosts and CSP sources with internal/mediapolicy

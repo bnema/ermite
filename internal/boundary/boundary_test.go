@@ -36,6 +36,7 @@ const (
 	layerAdapter     packageLayer = "adapter"
 	layerClientLimit packageLayer = "clientlimit"
 	layerHTTPRange   packageLayer = "httprange"
+	layerMediaPolicy packageLayer = "mediapolicy"
 	layerConfig      packageLayer = "config"
 	layerPorts       packageLayer = "ports"
 	layerDomain      packageLayer = "domain"
@@ -58,15 +59,18 @@ const (
 //   - internal/clientlimit is infrastructure shared by the HTTP adapters.
 //   - internal/httprange is infrastructure shared by the HTTP adapters that
 //     serve byte ranges; it imports nothing of the module.
+//   - internal/mediapolicy validates hostnames and shares the video origin policy;
+//     it imports nothing of the module.
 //   - internal/config parses the environment into plain values.
 var productionDependencies = map[packageLayer]map[packageLayer]bool{
 	layerCommand:     {layerApp: true},
-	layerApp:         {layerUsecase: true, layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerConfig: true, layerPorts: true, layerDomain: true, layerGenerated: true},
+	layerApp:         {layerUsecase: true, layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerMediaPolicy: true, layerConfig: true, layerPorts: true, layerDomain: true, layerGenerated: true},
 	layerUsecase:     {layerUsecase: true, layerPorts: true, layerDomain: true},
-	layerAdapter:     {layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerPorts: true, layerDomain: true, layerGenerated: true},
+	layerAdapter:     {layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerMediaPolicy: true, layerPorts: true, layerDomain: true, layerGenerated: true},
 	layerClientLimit: {layerPorts: true},
 	layerHTTPRange:   {},
-	layerConfig:      {},
+	layerConfig:      {layerMediaPolicy: true},
+	layerMediaPolicy: {},
 	layerPorts:       {layerDomain: true},
 	layerDomain:      {layerDomain: true},
 	layerGenerated:   {layerGenerated: true},
@@ -331,6 +335,8 @@ func classifyPackage(path string) (packageLayer, error) {
 		return layerClientLimit, nil
 	case under(path, p("internal/httprange")):
 		return layerHTTPRange, nil
+	case under(path, p("internal/mediapolicy")):
+		return layerMediaPolicy, nil
 	case under(path, p("internal/config")):
 		return layerConfig, nil
 	case path == p("internal/ports"):

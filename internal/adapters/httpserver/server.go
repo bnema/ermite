@@ -34,6 +34,8 @@ type Route struct {
 
 // Config configures a Server.
 type Config struct {
+	// VideoHosts are exact external video hosts; nil uses the defaults.
+	VideoHosts []string
 	// Addr is the listen address, "host:port".
 	Addr string
 	// PublicURL is the public base URL of the server. When it is https://,
@@ -76,7 +78,7 @@ func New(cfg Config) *Server {
 	for _, r := range cfg.Routes {
 		mux.Handle(r.Pattern, r.Handler)
 	}
-	return &Server{addr: cfg.Addr, handler: withRequestLog(withSecurityHeaders(mux, isHTTPS(cfg.PublicURL))), onShutdown: cfg.OnShutdown}
+	return &Server{addr: cfg.Addr, handler: withRequestLog(withSecurityHeaders(mux, isHTTPS(cfg.PublicURL), cfg.VideoHosts)), onShutdown: cfg.OnShutdown}
 }
 
 // Handler returns the root handler, for tests.

@@ -203,14 +203,14 @@ func assertNoInline(t *testing.T, body string) {
 }
 
 // AC6: the CSP forbids inline scripts and styles, nothing is loaded from
-// another origin, no page has an inline script or a style attribute, and
+// another origin except allowlisted media, no page has inline scripts or styles, and
 // every page carries the security headers.
 func TestWebContentSecurity(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	h.webRepo("demo")
 	h.seed("quiet", domain.VisibilityPublic)
 
-	const csp = "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+	const csp = "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; media-src 'self' https://github.com http://github.com https://user-images.githubusercontent.com http://user-images.githubusercontent.com https://private-user-images.githubusercontent.com http://private-user-images.githubusercontent.com https://github-production-user-asset-6210df.s3.amazonaws.com http://github-production-user-asset-6210df.s3.amazonaws.com"
 	for _, p := range []string{"/", "/demo", "/demo/refs", "/quiet", "/nope", "/demo/commits/main"} {
 		status, hdr, body := h.get(p)
 		assert.Contains(t, []int{200, 404}, status, p)

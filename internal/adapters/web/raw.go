@@ -3,8 +3,8 @@
 package web
 
 import (
+	"bytes"
 	"context"
-	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -15,6 +15,7 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/httprange"
 )
 
 // rawTimeout bounds the stream of one file to the visitor.
@@ -28,7 +29,7 @@ const rawChunkSize = 64 << 10
 const rawCSP = "default-src 'none'; sandbox"
 
 // raw streams the content of a file. Text is served as text/plain, the four
-// image types (by their bytes, never SVG) as images, and anything else as an
+// image types and videos (by their bytes, never SVG) inline, and anything else as an
 // attachment of unknown type. A file is never served as HTML or SVG, so what
 // a repository holds cannot run in the origin of the forge.
 func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
@@ -79,35 +80,40 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+
+	// Git blob readers are forward-only. Seeking discards the prefix for each
+	// request: bounded memory, but O(offset) I/O, intended for small video clips.
+	// Reuse the single-range policy; multipart ranges are ignored, never buffered.
+	h.Set("Accept-Ranges", "bytes")
+	offset, length, partial, err := httprange.Select(r, b.info.Size, h.Get("ETag"))
+	if err != nil {
+		h.Set("Content-Range", httprange.Unsatisfied(b.info.Size))
+		h.Set("Content-Length", "0")
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+	status := http.StatusOK
+	if partial {
+		status = http.StatusPartialContent
+		h.Set("Content-Range", httprange.ContentRange(offset, length, b.info.Size))
+	}
+	h.Set("Content-Length", strconv.FormatInt(length, 10))
+	w.WriteHeader(status)
 	if r.Method == http.MethodHead {
 		return
 	}
-	if _, err := w.Write(b.buf); err != nil {
-		return
+	reader := io.MultiReader(bytes.NewReader(b.buf), b.body)
+	if _, err = io.CopyN(io.Discard, reader, offset); err == nil {
+		var written int64
+		written, err = io.CopyBuffer(w, io.LimitReader(reader, length), make([]byte, rawChunkSize))
+		if err == nil && written != length {
+			err = io.ErrUnexpectedEOF
+		}
 	}
-	b.buf = nil
-	if b.eof {
-		return
-	}
-	chunk := make([]byte, rawChunkSize)
-	for {
-		n, rerr := b.body.Read(chunk)
-		if n > 0 {
-			if _, err := w.Write(chunk[:n]); err != nil {
-				return
-			}
-		}
-		if errors.Is(rerr, io.EOF) {
-			return
-		}
-		if rerr != nil {
-			// Headers are gone: all that is left is to cut the answer short,
-			// so that the client sees it is incomplete.
-			log := zerowrap.FromCtx(ctx)
-			log.Error().Err(rerr).Str("repo", repo.String()).Str("path", logPath(r.URL.Path)).Msg("raw stream failed")
-			panic(http.ErrAbortHandler)
-		}
+	if err != nil {
+		log := zerowrap.FromCtx(ctx)
+		log.Error().Err(err).Str("repo", repo.String()).Str("path", logPath(r.URL.Path)).Msg("raw stream failed")
+		panic(http.ErrAbortHandler)
 	}
 }
 
@@ -130,8 +136,34 @@ func rawType(b *blobStream) (typ string, attachment bool) {
 	if img := sniffImage(b.buf); img != "" {
 		return img, false
 	}
+	if video := sniffVideo(b.buf); video != "" {
+		return video, false
+	}
 	if !b.info.Binary {
 		return "text/plain; charset=utf-8", false
 	}
 	return "application/octet-stream", true
+}
+
+// sniffVideo admits known video signatures only, never HTML or SVG by extension.
+func sniffVideo(head []byte) string {
+	switch http.DetectContentType(head) {
+	case "video/mp4":
+		return "video/mp4"
+	case "video/webm":
+		return "video/webm"
+	}
+	if len(head) >= 12 && string(head[4:8]) == "ftyp" {
+		switch string(head[8:12]) {
+		case "qt  ":
+			return "video/quicktime"
+		case "M4V ", "isom", "iso2", "mp41", "mp42", "avc1":
+			return "video/mp4"
+		}
+	}
+	// Ogg is a container for audio as well: require the Theora identification packet.
+	if bytes.HasPrefix(head, []byte("OggS\x00")) && bytes.Contains(head, []byte("\x80theora")) {
+		return "video/ogg"
+	}
+	return ""
 }

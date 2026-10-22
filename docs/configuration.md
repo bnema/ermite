@@ -25,6 +25,7 @@ ermite serve
 | `ERMITE_TRUSTED_PROXIES` | empty | comma-separated CIDRs of your TLS proxy, so login rate limits see the real client (`X-Forwarded-For`) |
 | `ERMITE_OWNER` | `owner` | owner login: web header, passkey name, and `<owner>` in CI (`github.repository`). Same rules as repository names |
 | `ERMITE_SOURCE_URL` | `$ERMITE_PUBLIC_URL/ermite` | link to the source (AGPL) |
+| `ERMITE_VIDEO_HOSTS` | `github.com,user-images.githubusercontent.com,private-user-images.githubusercontent.com,github-production-user-asset-6210df.s3.amazonaws.com` | comma-separated exact external video hostnames, replacing the defaults; no URLs, wildcards or ports. The S3 host receives GitHub user-attachment redirects. |
 | `ERMITE_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
 
@@ -95,3 +96,18 @@ The hook socket and scripts git calls on each push live in `$ERMITE_DATA_DIR/run
 ## Storage schema
 
 This build uses storage schema 6. Once it has run on your data, an older ermite refuses to start. To downgrade, restore the backup taken before the upgrade.
+
+## README media
+
+Trusted Markdown renders video images (`![label](clip.mp4)`, also `.webm`, `.mov`,
+`.m4v` and `.ogv`) as native players. Repository-relative destinations use the raw
+route of the viewed ref; external HTTP(S) destinations require an
+`ERMITE_VIDEO_HOSTS` host. A standalone link or autolink to an allowed host
+renders as a player only when its path has a supported video extension or is an
+extensionless GitHub `github.com/user-attachments/assets/<id>` URL. Repository,
+issue and other ordinary URLs stay links.
+Other images show their alt text; other links keep the existing link policy.
+Raw HTML stays disabled. Untrusted public issue Markdown never loads videos.
+Raw video types are detected by bytes, not extensions. Seeking supports single
+byte ranges; it streams and discards the preceding bytes, so small clips work
+best. Multipart ranges are ignored.

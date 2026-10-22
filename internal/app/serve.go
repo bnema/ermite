@@ -24,7 +24,7 @@ func newServeCmd() *cobra.Command {
 		Long: "Run the server. It is configured by the environment only:\n" +
 			config.EnvAddr + ", " + config.EnvDataDir + ", " + config.EnvPublicURL + ", " + config.EnvAdminToken + ",\n" +
 			config.EnvTrustedProxies + ", " + config.EnvGit + ", " + config.EnvSourceURL + ", " +
-			config.EnvLogLevel + ", " + config.EnvLogFormat + ",\n" +
+			config.EnvVideoHosts + ", " + config.EnvLogLevel + ", " + config.EnvLogFormat + ",\n" +
 			config.EnvCommitterName + ", " + config.EnvCommitterEmail + ".",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

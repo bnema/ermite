@@ -521,6 +521,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.server = httpserver.New(httpserver.Config{
 		Addr:         cfg.Addr,
 		PublicURL:    cfg.PublicURL,
+		VideoHosts:   cfg.VideoHosts,
 		HealthChecks: []httpserver.Check{store.Check, httpserver.DirWritable(cfg.DataDir)},
 		Routes:       routes,
 		API:          f.API.Handler(),

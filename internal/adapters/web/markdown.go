@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/mediapolicy"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -36,14 +37,17 @@ const headingIDPrefix = "md-"
 //   - #fragments point at the (prefixed) heading ids;
 //   - everything else (javascript:, data:, vbscript:, file:, mailto:,
 //     protocol-relative //host, empty targets…) loses its link: the text stays;
-//   - images are never loaded (the CSP forbids other origins, and the design
-//     shows an image as its alt text): each becomes <span class="alt">[alt]</span>.
+//   - video images (.mp4, .webm, .mov, .m4v, .ogv) become native players
+//     from the raw route or an allowlisted HTTP(S) host; other images show alt text;
+//   - standalone links and autolinks to allowlisted hosts become players only
+//     for video extensions or GitHub /user-attachments/assets/<id> paths.
 type markdown struct {
-	md goldmark.Markdown
+	md         goldmark.Markdown
+	videoHosts []string
 }
 
-func newMarkdown() *markdown {
-	return &markdown{md: goldmark.New(
+func newMarkdown(hosts ...string) *markdown {
+	return &markdown{videoHosts: mediapolicy.Hosts(hosts), md: goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 		goldmark.WithRendererOptions(
@@ -94,7 +98,7 @@ type refResolver struct {
 
 // renderUntrusted renders Markdown written by an anonymous visitor (an issue
 // approved from the public form). On top of the policy of render, which already
-// drops raw HTML and never loads an image:
+// drops raw HTML, this renderer never loads an image or video:
 //   - only http, https and mailto links are kept, every one with
 //     rel="nofollow noopener noreferrer ugc"; relative links, #fragments and
 //     every other scheme lose their link and keep the text;
@@ -108,6 +112,7 @@ func (m *markdown) renderPolicy(source []byte, pol linkPolicy, res refResolver) 
 	pc := parser.NewContext(parser.WithIDs(&prefixedIDs{prefix: pol.idPrefix, inner: parser.NewContext().IDs()}))
 	doc := m.md.Parser().Parse(text.NewReader(source), parser.WithContext(pc))
 	pol.source = source
+	pol.videoHosts = m.videoHosts
 	// Collect eligible text before the policy unwraps rejected links: their
 	// labels must not accidentally become references either.
 	var refs []*ast.Text
@@ -196,7 +201,9 @@ type linkPolicy struct {
 	// idPrefix is the prefix of the heading ids that #fragment links point at.
 	idPrefix string
 	// untrusted is the policy of text from an anonymous visitor.
-	untrusted bool
+	untrusted  bool
+	videoHosts []string
+	rawVideo   bool
 }
 
 const (
@@ -233,6 +240,9 @@ func (p linkPolicy) apply(doc ast.Node) {
 	}
 	for _, n := range links {
 		l := n.(*ast.Link)
+		if p.standaloneVideo(l, string(l.Destination), plainText(l, p.source)) {
+			continue
+		}
 		dest, kind := p.target(string(l.Destination))
 		if kind == dropped {
 			unwrap(l)
@@ -246,6 +256,9 @@ func (p linkPolicy) apply(doc ast.Node) {
 	}
 	for _, n := range autos {
 		a := n.(*ast.AutoLink)
+		if p.standaloneVideo(a, string(a.URL(p.source)), string(a.Label(p.source))) {
+			continue
+		}
 		if a.AutoLinkType == ast.AutoLinkURL && isWebURL(string(a.URL(p.source))) {
 			a.SetAttributeString("rel", p.rel())
 			continue
@@ -268,11 +281,15 @@ func unwrap(n ast.Node) {
 	parent.RemoveChild(parent, n)
 }
 
-// image replaces an image by its alt text.
+// image replaces a video image with a player, otherwise its alt text.
 func (p linkPolicy) image(img *ast.Image) {
 	alt := plainText(img, p.source)
 	if alt == "" {
 		alt = "image"
+	}
+	if src, ok := p.videoTarget(string(img.Destination), true); ok {
+		img.Parent().ReplaceChild(img.Parent(), img, &videoNode{src: src, alt: alt})
+		return
 	}
 	img.Parent().ReplaceChild(img.Parent(), img, &altSpan{alt: alt})
 }
@@ -333,7 +350,11 @@ func (p linkPolicy) target(dest string) (string, linkKind) {
 	rel = strings.TrimPrefix(rel, "/")
 	href := repoHref(p.repo)
 	if rel != "" {
-		href = repoHref(p.repo, "blob", p.ref, rel)
+		route := "blob"
+		if p.rawVideo {
+			route = "raw"
+		}
+		href = repoHref(p.repo, route, p.ref, rel)
 	}
 	if u.Fragment != "" {
 		href += "#" + url.PathEscape(u.Fragment)
@@ -400,6 +421,17 @@ func (n *altSpan) Dump(source []byte, level int) { ast.DumpHelper(n, source, lev
 type altRenderer struct{}
 
 func (altRenderer) RegisterFuncs(r renderer.NodeRendererFuncRegisterer) {
+	r.Register(kindVideo, func(w util.BufWriter, _ []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			v := n.(*videoNode)
+			_, _ = w.WriteString(`<video controls preload="metadata" src="`)
+			_, _ = w.Write(util.EscapeHTML([]byte(v.src)))
+			_, _ = w.WriteString(`" aria-label="`)
+			_, _ = w.Write(util.EscapeHTML([]byte(v.alt)))
+			_, _ = w.WriteString(`"></video>`)
+		}
+		return ast.WalkSkipChildren, nil
+	})
 	r.Register(kindAlt, func(w util.BufWriter, _ []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			_, _ = w.WriteString(`<span class="alt">[`)
@@ -487,4 +519,76 @@ func references(t *ast.Text, source []byte, res refResolver) {
 	tail.SetHardLineBreak(t.HardLineBreak())
 	parent.InsertBefore(parent, t, tail)
 	parent.RemoveChild(parent, t)
+}
+
+// videoTarget uses the ordinary destination policy before restricting media origins.
+func (p linkPolicy) videoTarget(dest string, requireExtension bool) (string, bool) {
+	if p.untrusted {
+		return "", false
+	}
+	u, err := url.Parse(strings.TrimSpace(dest))
+	if err != nil {
+		return "", false
+	}
+	if requireExtension && !videoExtension(u.Path) {
+		return "", false
+	}
+	p.rawVideo = true
+	target, kind := p.target(dest)
+	if kind == dropped || strings.HasPrefix(target, "#") {
+		return "", false
+	}
+	if kind == external && !mediapolicy.Allows(u, p.videoHosts) {
+		return "", false
+	}
+	return target, true
+}
+
+func (p linkPolicy) standaloneVideo(n ast.Node, dest, label string) bool {
+	parent := n.Parent()
+	if parent == nil || parent.Kind() != ast.KindParagraph || parent.ChildCount() != 1 {
+		return false
+	}
+	u, err := url.Parse(dest)
+	if err != nil || !mediapolicy.Allows(u, p.videoHosts) {
+		return false
+	}
+	if !videoExtension(u.Path) && !githubAttachment(u) {
+		return false
+	}
+	src, ok := p.videoTarget(dest, false)
+	if !ok {
+		return false
+	}
+	parent.ReplaceChild(parent, n, &videoNode{src: src, alt: label})
+	return true
+}
+
+var kindVideo = ast.NewNodeKind("Video")
+
+type videoNode struct {
+	ast.BaseInline
+	src, alt string
+}
+
+func (n *videoNode) Kind() ast.NodeKind            { return kindVideo }
+func (n *videoNode) Dump(source []byte, level int) { ast.DumpHelper(n, source, level, nil, nil) }
+
+func videoExtension(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".mp4", ".webm", ".mov", ".m4v", ".ogv":
+		return true
+	default:
+		return false
+	}
+}
+
+// githubAttachment recognises only GitHub's extensionless attachment route,
+// not arbitrary extensionless pages on a host that also serves video files.
+func githubAttachment(u *url.URL) bool {
+	if !strings.EqualFold(u.Hostname(), "github.com") {
+		return false
+	}
+	id, ok := strings.CutPrefix(u.Path, "/user-attachments/assets/")
+	return ok && id != "" && id != "." && id != ".." && !strings.Contains(id, "/") && path.Ext(id) == ""
 }

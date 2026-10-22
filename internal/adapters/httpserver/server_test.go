@@ -27,7 +27,7 @@ import (
 )
 
 var securityHeaders = map[string]string{
-	"Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
+	"Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-eval'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; media-src 'self' https://github.com http://github.com https://user-images.githubusercontent.com http://user-images.githubusercontent.com https://private-user-images.githubusercontent.com http://private-user-images.githubusercontent.com https://github-production-user-asset-6210df.s3.amazonaws.com http://github-production-user-asset-6210df.s3.amazonaws.com",
 	"X-Frame-Options":         "DENY",
 	"X-Content-Type-Options":  "nosniff",
 	"Referrer-Policy":         "same-origin",
@@ -308,4 +308,21 @@ func TestRunListenError(t *testing.T) {
 	err = httpserver.New(httpserver.Config{Addr: ln.Addr().String()}).Run(context.Background())
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "listen on"), err.Error())
+}
+
+func TestVideoHostCSP(t *testing.T) {
+	for _, hosts := range [][]string{{"clips.example"}, {}} {
+		t.Run(strings.Join(hosts, ","), func(t *testing.T) {
+			srv := httpserver.New(httpserver.Config{VideoHosts: hosts})
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/missing", nil))
+			csp := rec.Header().Get("Content-Security-Policy")
+			assert.Contains(t, csp, "; media-src 'self'")
+			assert.NotContains(t, csp, "github.com")
+			assert.NotContains(t, csp, "unsafe-inline")
+			if len(hosts) > 0 {
+				assert.Contains(t, csp, "https://clips.example http://clips.example")
+			}
+		})
+	}
 }

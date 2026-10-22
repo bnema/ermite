@@ -96,3 +96,70 @@ func TestRawRevalidation(t *testing.T) {
 		})
 	}
 }
+
+func TestRawVideoTypes(t *testing.T) {
+	for _, tc := range []struct {
+		name, head, typ string
+		attachment      bool
+	}{
+		{"mp4", "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom", "video/mp4", false},
+		{"mov", "\x00\x00\x00\x14ftypqt  \x00\x00\x00\x00qt  ", "video/quicktime", false},
+		{"m4v", "\x00\x00\x00\x14ftypM4V \x00\x00\x00\x00M4V ", "video/mp4", false},
+		{"webm", "\x1a\x45\xdf\xa3\x87\x42\x82\x84webm", "video/webm", false},
+		{"ogg", "OggS\x00header\x80theora", "video/ogg", false},
+		{"ogg audio", "OggS\x00headerOpusHead", "application/octet-stream", true},
+		{"html", "<html><script>alert(1)</script>", "application/octet-stream", true},
+		{"svg", `<svg onload="alert(1)">`, "application/octet-stream", true},
+		{"unknown", "\x00unknown", "application/octet-stream", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			typ, attachment := rawType(&blobStream{buf: []byte(tc.head), info: domain.BlobInfo{Binary: true}})
+			assert.Equal(t, tc.typ, typ)
+			assert.Equal(t, tc.attachment, attachment)
+		})
+	}
+}
+
+func TestRawVideoRanges(t *testing.T) {
+	body := "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + strings.Repeat("0123456789", 100)
+	for _, tc := range []struct {
+		name, method, rng, ifRange string
+		status                     int
+		start, end                 int
+		cr                         string
+	}{
+		{"whole", "GET", "", "", 200, 0, len(body), ""},
+		{"prefix", "GET", "bytes=2-4", "", 206, 2, 5, "bytes 2-4/1024"},
+		{"after sniff buffer", "GET", "bytes=700-709", "", 206, 700, 710, "bytes 700-709/1024"},
+		{"suffix", "GET", "bytes=-4", "", 206, 1020, 1024, "bytes 1020-1023/1024"},
+		{"open", "GET", "bytes=1020-", "", 206, 1020, 1024, "bytes 1020-1023/1024"},
+		{"clipped end", "GET", "bytes=1020-9999", "", 206, 1020, 1024, "bytes 1020-1023/1024"},
+		{"past size", "GET", "bytes=1024-", "", 416, 0, 0, "bytes */1024"},
+		{"invalid", "GET", "bytes=a-b", "", 416, 0, 0, "bytes */1024"},
+		{"multiple ignored", "GET", "bytes=0-1,4-5", "", 200, 0, len(body), ""},
+		{"stale if-range", "GET", "bytes=2-4", `"old"`, 200, 0, len(body), ""},
+		{"matched if-range", "GET", "bytes=2-4", `"` + blobID + `"`, 206, 2, 5, "bytes 2-4/1024"},
+		{"head", "HEAD", "bytes=2-4", "", 200, 0, 0, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			browse := mocks.NewBrowseService(t)
+			browse.EXPECT().OpenBlob(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything, mock.Anything).Return(
+				domain.BlobInfo{ID: objectID(t, blobID), Path: "clip.mp4", Size: int64(len(body)), Binary: true}, io.NopCloser(strings.NewReader(body)), nil).Once()
+			browse.EXPECT().ListRefs(mock.Anything, domain.Anonymous(), repoName(t, "r"), mock.Anything).Return(ports.RefPage{Refs: []domain.Ref{{Name: "refs/heads/main", ShortName: "main", Kind: domain.RefKindBranch, ID: objectID(t, mainTip), CommitID: objectID(t, mainTip)}}}, nil).Maybe()
+			srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "r")), Browse: browse})
+			req := httptest.NewRequest(tc.method, "/r/raw/main/clip.mp4", nil)
+			req.Header.Set("Range", tc.rng)
+			req.Header.Set("If-Range", tc.ifRange)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			assert.Equal(t, tc.status, rec.Code)
+			assert.Equal(t, body[tc.start:tc.end], rec.Body.String())
+			assert.Equal(t, tc.cr, rec.Header().Get("Content-Range"))
+			assert.Equal(t, "bytes", rec.Header().Get("Accept-Ranges"))
+			assert.Equal(t, "video/mp4", rec.Header().Get("Content-Type"))
+			assert.Empty(t, rec.Header().Get("Content-Disposition"))
+			assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+			assert.Equal(t, rawCSP, rec.Header().Get("Content-Security-Policy"))
+		})
+	}
+}

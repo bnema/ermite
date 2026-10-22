@@ -47,6 +47,8 @@ const requestTimeout = 30 * time.Second
 
 // Config configures a Server.
 type Config struct {
+	// VideoHosts are exact external video hosts; nil uses the defaults.
+	VideoHosts []string
 	// Mirrors answers the push mirror badge shown to repository admins. Without it there is
 	// no badge. Leave it unset rather than assigning a typed nil pointer.
 	Mirrors ports.MirrorWarner
@@ -174,7 +176,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, errors.New("web: sessions need a failure limiter")
 	}
 	s := &Server{
-		cfg: cfg, instance: u.Host, assets: assets, md: newMarkdown(),
+		cfg: cfg, instance: u.Host, assets: assets, md: newMarkdown(cfg.VideoHosts...),
 		pathCache: newPathCache(pathCacheBytes, pathBuilds),
 		licenses:  newPathCache(1<<20, homeWorkers),
 		hl:        newHLCache(hlCacheBytes),

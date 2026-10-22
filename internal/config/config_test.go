@@ -360,3 +360,30 @@ func TestCIArtifacts(t *testing.T) {
 		require.Error(t, err, in)
 	}
 }
+
+func TestVideoHosts(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  []string
+		bad   bool
+	}{
+		{"", []string{"github.com", "user-images.githubusercontent.com", "private-user-images.githubusercontent.com", "github-production-user-asset-6210df.s3.amazonaws.com"}, false},
+		{" Clips.Example , other.example", []string{"clips.example", "other.example"}, false},
+		{"https://clips.example", nil, true},
+		{"*.example", nil, true},
+		{"example.com; script-src *", nil, true},
+		{"example.com:443", nil, true},
+		{"example.com,", nil, true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			cfg, err := config.Load(lookup(valid(map[string]string{config.EnvVideoHosts: tc.value})))
+			if tc.bad {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), config.EnvVideoHosts)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, cfg.VideoHosts)
+		})
+	}
+}

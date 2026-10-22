@@ -18,10 +18,13 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"bnema.dev/ermite/internal/mediapolicy"
 )
 
 // Variable names.
 const (
+	EnvVideoHosts     = "ERMITE_VIDEO_HOSTS"
 	EnvAddr           = "ERMITE_ADDR"
 	EnvDataDir        = "ERMITE_DATA_DIR"
 	EnvPublicURL      = "ERMITE_PUBLIC_URL"
@@ -107,6 +110,8 @@ const MinAdminTokenLen = 32
 
 // Config is the validated server configuration.
 type Config struct {
+	// VideoHosts are exact external hosts allowed to load README videos.
+	VideoHosts []string
 	// Addr is the listen address, "host:port".
 	Addr string
 	// DataDir is the absolute, clean data root.
@@ -186,6 +191,11 @@ func Load(get func(string) string) (Config, error) {
 	}
 	get = resolveFiles(get, &problems)
 	var c Config
+	var hostErr error
+	c.VideoHosts, hostErr = mediapolicy.Parse(get(EnvVideoHosts))
+	if hostErr != nil {
+		bad(EnvVideoHosts, "%v", hostErr)
+	}
 
 	c.Addr = get(EnvAddr)
 	if c.Addr == "" {

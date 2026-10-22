@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/bnema/zerowrap"
+
+	"bnema.dev/ermite/internal/mediapolicy"
 )
 
 // contentSecurityPolicy allows scripts from the origin plus 'unsafe-eval'
@@ -30,10 +32,11 @@ func isHTTPS(publicURL string) bool {
 // withSecurityHeaders sets the security headers on every response, before
 // the handler runs, so that errors and 404s carry them too. With hsts, the
 // browser is told to stay on https.
-func withSecurityHeaders(next http.Handler, hsts bool) http.Handler {
+func withSecurityHeaders(next http.Handler, hsts bool, hosts []string) http.Handler {
+	csp := contentSecurityPolicy + "; media-src 'self' " + mediapolicy.Sources(hosts)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("Content-Security-Policy", csp)
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")

@@ -62,6 +62,7 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 		Mirrors:       f.Mirrors,
 		Owner:         cfg.Owner,
 		PublicURL:     cfg.PublicURL,
+		VideoHosts:    cfg.VideoHosts,
 		SourceURL:     cfg.SourceURL,
 		Version:       serverVersion(),
 

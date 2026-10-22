@@ -383,3 +383,58 @@ func TestMarkdownHighlightDocumentBudget(t *testing.T) {
 	assert.LessOrEqual(t, strings.Count(h, `<pre class="chroma">`), 4)
 	assert.Contains(t, h, "<pre><code")
 }
+
+func TestMarkdownVideos(t *testing.T) {
+	for _, tc := range []struct {
+		name, source, want string
+		video              bool
+	}{
+		{"relative", `![demo](clips/demo.mp4)`, `src="/demo/raw/main/docs/clips/demo.mp4" aria-label="demo"`, true},
+		{"root mov", `![demo](/clip.MOV)`, `src="/demo/raw/main/clip.MOV"`, true},
+		{"webm", `![demo](clip.webm)`, `src="/demo/raw/main/docs/clip.webm"`, true},
+		{"m4v", `![demo](clip.m4v)`, `src="/demo/raw/main/docs/clip.m4v"`, true},
+		{"ogv", `![demo](clip.ogv)`, `src="/demo/raw/main/docs/clip.ogv"`, true},
+		{"external image", `![demo](https://github.com/demo.mp4)`, `src="https://github.com/demo.mp4"`, true},
+		{"autolink", `https://github.com/user-attachments/assets/uuid`, `src="https://github.com/user-attachments/assets/uuid"`, true},
+		{"angle autolink", `<https://github.com/user-attachments/assets/uuid>`, `src="https://github.com/user-attachments/assets/uuid"`, true},
+		{"standalone link", `[clip](https://github.com/user-attachments/assets/uuid)`, `aria-label="clip"`, true},
+		{"repo link", `[Source](https://github.com/org/project)`, `<a href="https://github.com/org/project"`, false},
+		{"issue link", `[Issue](https://github.com/org/project/issues/123)`, `<a href="https://github.com/org/project/issues/123"`, false},
+		{"root autolink", `https://github.com`, `<a href="https://github.com"`, false},
+		{"root link", `[GitHub](https://github.com/)`, `<a href="https://github.com/"`, false},
+		{"standalone video extension", `[clip](https://user-images.githubusercontent.com/demo.MP4?download=1)`, `<video controls`, true},
+		{"video autolink", `https://github.com/demo.webm`, `<video controls`, true},
+		{"attachment missing id", `https://github.com/user-attachments/assets/`, `<a href=`, false},
+		{"attachment extra segment", `https://github.com/user-attachments/assets/id/extra`, `<a href=`, false},
+		{"attachment nonvideo extension", `https://github.com/user-attachments/assets/id.png`, `<a href=`, false},
+		{"attachment other host", `https://user-images.githubusercontent.com/user-attachments/assets/id`, `<a href=`, false},
+		{"inline link", `see [clip](https://github.com/user-attachments/assets/uuid) here`, `<a href=`, false},
+		{"blocked image", `![demo](https://evil.example/demo.mp4)`, `<span class="alt">[demo]</span>`, false},
+		{"blocked link", `https://evil.example/demo.mp4`, `<a href=`, false},
+		{"host suffix", `![demo](https://github.com.evil.example/demo.mp4)`, `<span class="alt">`, false},
+		{"credentials", `![demo](https://evil@github.com/demo.mp4)`, `<span class="alt">`, false},
+		{"protocol relative", `![demo](//github.com/demo.mp4)`, `<span class="alt">`, false},
+		{"javascript", `![demo](javascript:demo.mp4)`, `<span class="alt">`, false},
+		{"ordinary image", `![demo](demo.png)`, `<span class="alt">`, false},
+		{"escaped alt", `![a " & \<b\>](clip.mp4)`, `aria-label="a &quot; &amp; \&lt;b\&gt;"`, true},
+		{"escaped path", `![demo](<a"&b.mp4>)`, `src="/demo/raw/main/docs/a%22&amp;b.mp4"`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := renderMD(t, tc.source)
+			assert.Contains(t, h, tc.want)
+			assert.Equal(t, tc.video, strings.Contains(h, `<video controls preload="metadata"`))
+			untrusted, err := newMarkdown().renderUntrusted([]byte(tc.source), "u-", nil)
+			require.NoError(t, err)
+			assert.NotContains(t, string(untrusted), "<video")
+		})
+	}
+	t.Run("configured host", func(t *testing.T) {
+		m := newMarkdown("clips.example")
+		h, _, err := m.render([]byte(`![demo](https://clips.example/a.mp4)`), "demo", "main", "")
+		require.NoError(t, err)
+		assert.Contains(t, string(h), "<video")
+		h, _, err = m.render([]byte(`![demo](https://github.com/a.mp4)`), "demo", "main", "")
+		require.NoError(t, err)
+		assert.NotContains(t, string(h), "<video")
+	})
+}
