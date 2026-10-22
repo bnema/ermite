@@ -79,3 +79,52 @@ test('replacement stream URL carries the last connection id, including id-only e
     assert.equal(url.searchParams.get('topic'), 'repo:demo');
   } finally { globalThis.location = saved; }
 });
+
+test('fresh home rows expire after a minute; later swaps still prepend and get a full minute', (t) => {
+  const { live } = setup(t);
+  let current = null, next = null;
+  let prepends = 0;
+  const rows = { dataset: { sort: 'activity', desc: 'true' }, prepend(el) {
+    prepends++;
+    current = el;
+    el.parentElement = this;
+  } };
+  const fresh = () => {
+    const attrs = new Set(['data-activity']);
+    const pill = { removed: false, remove() { this.removed = true; } };
+    return { id: 'repo-demo', pill, parentElement: rows,
+      querySelectorAll: () => [],
+      hasAttribute: (name) => attrs.has(name),
+      removeAttribute: (name) => attrs.delete(name),
+      querySelector: (sel) => sel === '.repo-activity' && !pill.removed ? pill : null,
+      replaceWith(el) { current = el; el.parentElement = rows; },
+    };
+  };
+  document.createElement = () => ({ set innerHTML(_) {}, content: { get children() { return [next]; } } });
+  document.getElementById = (id) => id === 'repo-rows' ? rows : current;
+  document.querySelectorAll = () => [];
+
+  next = fresh();
+  live.swap('first');
+  const first = current;
+  assert.equal(prepends, 1, 'a newly added repository is prepended');
+  t.mock.timers.tick(30000);
+  next = fresh();
+  live.swap('second');
+  const second = current;
+  assert.equal(prepends, 2, 'later activity reorders the existing row');
+  t.mock.timers.tick(30000);
+  assert.equal(first.pill.removed, true);
+  assert.equal(second.pill.removed, false, 'the old timer cannot remove the new badge');
+  t.mock.timers.tick(29999);
+  assert.equal(second.pill.removed, false);
+  t.mock.timers.tick(1);
+  assert.equal(second.pill.removed, true, 'removal also removes it from the accessibility tree');
+  assert.equal(second.hasAttribute('data-activity'), false);
+  next = fresh();
+  live.swap('third');
+  assert.equal(prepends, 3, 'activity still reorders after the previous badge expired');
+  assert.equal(current.pill.removed, false);
+  t.mock.timers.tick(60000);
+  assert.equal(current.pill.removed, true);
+});

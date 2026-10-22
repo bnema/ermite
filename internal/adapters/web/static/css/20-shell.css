@@ -29,15 +29,19 @@
   .i-cards { --i: url(icons/cards.svg); }
   .i-split { --i: url(icons/split.svg); }
   .i-compact { --i: url(icons/compact.svg); }
+  .i-refresh-cw { --i: url(icons/refresh-cw.svg); }
   .i-mailbox { --i: url(icons/mailbox.svg); }
   .i-sun-moon { --i: url(icons/sun-moon.svg); }
   .i-sun { --i: url(icons/sun.svg); }
   .i-moon { --i: url(icons/moon.svg); }
 
   .pill {
-    display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2); margin-left: var(--s1);
-    font: 600 var(--fs-xs) / 1 var(--mono); color: var(--ink-dim); vertical-align: 1px;
+    display: inline-flex; align-items: center; height: 18px; padding: 0 var(--s2); margin-left: var(--s1);
+    font: 600 var(--fs-2xs) / 1 var(--mono); color: var(--ink-dim); vertical-align: 1px;
     background: var(--bg-raised); border: 1px solid var(--border-strong); border-radius: 999px; white-space: nowrap;
+    /* a link pill: no underline; the border lightens on hover and focus */
+    &:is(a) { text-decoration: none; cursor: pointer; transition: border-color .12s; }
+    &:is(a):hover, &:is(a):focus-visible { text-decoration: none; border-color: var(--ink-dim); }
     &.tag::before { content: ""; width: 6px; height: 6px; margin-right: 6px; border: 1.5px solid currentColor; border-radius: 1px; transform: rotate(45deg); }
     &.new { color: var(--teal); border-color: currentColor; }
     /* the signature of a commit: the protocol, then the verdict, always as text

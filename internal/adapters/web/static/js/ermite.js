@@ -37,7 +37,8 @@
     flashTimer = setTimeout(() => (body().dataset.flash = ''), ms);
   };
 
-  const visibleRows = () => $$('[data-rows] > :not([hidden])');
+  // Rail tables are context, not the main row cursor.
+  const visibleRows = () => $$('[data-rows] > :not([hidden])').filter((r) => !r.closest('.rail'));
   // setCursor puts data-cursor on el and takes it from the others.
   const setCursor = (el, others) => {
     for (const o of others) if (o !== el) o.removeAttribute('data-cursor');
@@ -1007,6 +1008,14 @@ window.ermiteLive = (() => {
       const cursor = document.querySelector('[data-rows] > [data-cursor]');
       const cursorKey = cursor?.id || cursor?.querySelector('a')?.getAttribute('href');
       for (const el of [...t.content.children]) {
+        // Each fresh fragment owns its timer; an older swap cannot expire it.
+        // No animation, including for visitors who prefer reduced motion.
+        if (el.id.startsWith('repo-') && el.hasAttribute('data-activity')) {
+          setTimeout(() => {
+            el.querySelector('.repo-activity')?.remove();
+            el.removeAttribute('data-activity');
+          }, 60000);
+        }
         const old = el.id && document.getElementById(el.id);
         const had = old ? where(old) : null; // the focus is inside what is replaced
         if (el.hasAttribute('data-gone')) {

@@ -69,7 +69,7 @@ templ Home(l Layout, p HomePage) {
 templ Summary(l Layout, p SummaryPage) {
 	@Shell(l, summaryRail(p)) {
 		if p.Readme != nil {
-			@ReadmeCard(*p.Readme)
+			@ReadmeCard(*p.Readme, p.Docs...)
 		}
 	}
 }
@@ -111,6 +111,10 @@ templ summaryRail(p SummaryPage) {
 			for _, f := range p.Facts {
 				<dt>{ f.Key }</dt>
 				@FactValue(f)
+			}
+			if lic := p.License; lic != nil {
+				<dt>license</dt>
+				<dd><a href={ templ.SafeURL(lic.Href) }>{ lic.ID }</a></dd>
 			}
 			if p.Latest != nil {
 				@latestTagFact(*p.Latest)

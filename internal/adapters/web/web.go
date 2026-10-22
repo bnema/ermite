@@ -139,6 +139,8 @@ type Server struct {
 	md       *markdown
 	// pathCache holds the path lists the file finder fetches.
 	pathCache *pathCache
+	// licenses holds small display results, including missing licenses.
+	licenses *pathCache
 	// hl holds the colours of highlighted diffs.
 	hl  *hlCache
 	mux *http.ServeMux
@@ -174,6 +176,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg: cfg, instance: u.Host, assets: assets, md: newMarkdown(),
 		pathCache: newPathCache(pathCacheBytes, pathBuilds),
+		licenses:  newPathCache(1<<20, homeWorkers),
 		hl:        newHLCache(hlCacheBytes),
 		origin:    originOf(u),
 	}

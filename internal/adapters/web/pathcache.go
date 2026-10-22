@@ -70,6 +70,14 @@ func (c *pathCache) getLocked(id string) ([]byte, bool) {
 	return el.Value.(*pathEntry).body, true
 }
 
+// entryOverhead is what an entry costs besides its id and body: the list
+// element, the entry and the map slot. Counted so that tiny bodies (a cached
+// "no license") cannot pile up far past the budget.
+const entryOverhead = 128
+
+// cost is what an entry counts against the budget.
+func (e *pathEntry) cost() int { return len(e.id) + len(e.body) + entryOverhead }
+
 // putLocked stores a list, evicting the least recently used ones to stay in
 // budget. A list over a quarter of the budget is not stored.
 func (c *pathCache) putLocked(id string, body []byte) {
@@ -77,20 +85,22 @@ func (c *pathCache) putLocked(id string, body []byte) {
 		return
 	}
 	if el, ok := c.byID[id]; ok {
-		c.size -= len(el.Value.(*pathEntry).body)
-		el.Value.(*pathEntry).body = body
-		c.size += len(body)
+		e := el.Value.(*pathEntry)
+		c.size -= e.cost()
+		e.body = body
+		c.size += e.cost()
 		c.lru.MoveToFront(el)
 	} else {
-		c.byID[id] = c.lru.PushFront(&pathEntry{id: id, body: body})
-		c.size += len(body)
+		e := &pathEntry{id: id, body: body}
+		c.byID[id] = c.lru.PushFront(e)
+		c.size += e.cost()
 	}
 	for c.size > c.budget {
 		el := c.lru.Back()
 		e := el.Value.(*pathEntry)
 		c.lru.Remove(el)
 		delete(c.byID, e.id)
-		c.size -= len(e.body)
+		c.size -= e.cost()
 	}
 }
 

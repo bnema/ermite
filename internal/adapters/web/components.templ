@@ -41,11 +41,17 @@ templ HomeRowView(r HomeRow) {
 		<div class="repo-main">
 			<h2 class="repo-name">
 				<a href={ templ.SafeURL(r.Href) }>{ r.Name }</a>
+				if rel := r.Release; rel != nil {
+					<a class="pill repo-release" href={ templ.SafeURL(rel.Href) } title={ "Latest release: " + rel.Tag }>{ rel.Tag }</a>
+				}
 				if r.Private {
 					<span class="pill">private</span>
 				}
+				if lic := r.License; lic != nil {
+					<a class="pill repo-license" href={ templ.SafeURL(lic.Href) } title={ "License: " + lic.ID }>{ lic.ID }</a>
+				}
 				if r.Fresh {
-					<span class="pill new">new activity</span>
+					<span class="repo-activity" title="new activity"><span class="ico i-refresh-cw" aria-hidden="true"></span><span class="sr">new activity</span></span>
 				}
 			</h2>
 			if r.Desc != "" {
@@ -94,9 +100,9 @@ templ HomeRowView(r HomeRow) {
 				}
 			</dl>
 			if r.CI != nil {
-				<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Title }>
+				<a class="repo-ci" href={ templ.SafeURL(r.CI.Href) } title={ r.CI.Label + " · " + r.CI.Title }>
 					<span class={ "ck", "ck-" + r.CI.Kind } aria-hidden="true"></span>
-					<span class="sr">CI: </span><span class="ci-label">{ r.CI.Label }</span>
+					<span class="sr">{ "CI: " + r.CI.Label }</span>
 				</a>
 			}
 		</div>
@@ -153,12 +159,24 @@ templ Outline(headings []Heading) {
 }
 
 // ReadmeCard is a README in a card whose header names the file.
-templ ReadmeCard(r Readme) {
-	<section class="card readme" aria-labelledby="readme-h">
-		<h2 class="card-h" id="readme-h">
-			<span class="ico i-file" aria-hidden="true"></span>
-			{ r.Name }
-		</h2>
+templ ReadmeCard(r Readme, docs ...DocTab) {
+	<section class="card readme" aria-label={ r.Name }>
+		if len(docs) > 1 {
+			<nav class="card-h doc-tabs" aria-label="Repository documents">
+				for _, doc := range docs {
+					<a href={ templ.SafeURL(doc.Href) }
+						if doc.Current {
+							aria-current="page"
+						}
+					>{ doc.Name }</a>
+				}
+			</nav>
+		} else {
+			<h2 class="card-h" id="readme-h">
+				<span class="ico i-file" aria-hidden="true"></span>
+				{ r.Name }
+			</h2>
+		}
 		@ReadmeView(r)
 	</section>
 }

@@ -30,55 +30,72 @@ func (c *pathCache) has(id string) bool {
 	return ok
 }
 
+// entry is the budget an entry of a one-letter id and an n-byte body takes.
+func entry(n int) int { return 1 + n + entryOverhead }
+
 func TestPathCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	t.Parallel()
-	c := newPathCache(100, 1)
+	budget := 4 * entry(100)
+	c := newPathCache(budget, 1)
 	blob := func(n int) []byte { return make([]byte, n) }
-	c.store("a", blob(25))
-	c.store("b", blob(25))
-	c.store("e", blob(25))
+	c.store("a", blob(100))
+	c.store("b", blob(100))
+	c.store("e", blob(100))
 	require.True(t, c.has("a")) // a is now the most recent
-	c.store("c", blob(25))      // 100 fit
-	c.store("d", blob(10))      // 110 > 100: b, the least recent, goes
+	c.store("c", blob(100))     // four fit
+	c.store("d", blob(10))      // one more: b, the least recent, goes
 	assert.False(t, c.has("b"), "b was evicted")
 	assert.True(t, c.has("a") && c.has("c") && c.has("d") && c.has("e"))
-	assert.Equal(t, 85, c.size)
+	assert.Equal(t, 3*entry(100)+entry(10), c.size)
 
 	// Replacing an entry accounts for the old size.
 	c.store("a", blob(10))
-	assert.Equal(t, 70, c.size)
+	assert.Equal(t, 2*entry(100)+2*entry(10), c.size)
 
 	// A big one pushes out as many as needed.
-	c.store("f", blob(25))
-	c.store("g", blob(25))
-	assert.LessOrEqual(t, c.size, 100)
+	c.store("f", blob(100))
+	c.store("g", blob(100))
+	assert.LessOrEqual(t, c.size, budget)
 	assert.True(t, c.has("g"))
+}
+
+// Tiny bodies (a cached "no license") count their id and overhead too, so
+// their number stays bounded by the budget.
+func TestPathCacheBoundsTinyEntries(t *testing.T) {
+	t.Parallel()
+	c := newPathCache(1<<12, 1)
+	for i := range 10_000 {
+		c.store(fmt.Sprintf("repo\x00%040d", i), []byte("null"))
+	}
+	assert.LessOrEqual(t, c.size, 1<<12)
+	assert.Less(t, len(c.byID), (1<<12)/entryOverhead+1)
+	assert.Equal(t, len(c.byID), c.lru.Len())
 }
 
 // A list over a quarter of the budget is not kept, since it would push out the
 // others; one at the limit is.
 func TestPathCacheSkipsOversizedEntries(t *testing.T) {
 	t.Parallel()
-	c := newPathCache(100, 1)
+	c := newPathCache(1000, 1)
 	var builds atomic.Int32
 	big := func(n int) func() ([]byte, error) {
 		return func() ([]byte, error) { builds.Add(1); return make([]byte, n), nil }
 	}
 	for range 2 {
-		b, err := c.load(context.Background(), "r", "big", big(26))
+		b, err := c.load(context.Background(), "r", "big", big(251))
 		require.NoError(t, err)
-		assert.Len(t, b, 26, "the caller still gets the list")
+		assert.Len(t, b, 251, "the caller still gets the list")
 	}
 	assert.EqualValues(t, 2, builds.Load(), "not cached, so built again")
 	assert.False(t, c.has("big"))
 	assert.Zero(t, c.size)
 
 	for range 2 {
-		_, err := c.load(context.Background(), "r", "fits", big(25))
+		_, err := c.load(context.Background(), "r", "fits", big(250))
 		require.NoError(t, err)
 	}
 	assert.EqualValues(t, 3, builds.Load(), "at a quarter: kept")
-	assert.Equal(t, 25, c.size)
+	assert.Equal(t, len("fits")+250+entryOverhead, c.size)
 }
 
 func TestPathCacheConcurrent(t *testing.T) {
@@ -99,7 +116,7 @@ func TestPathCacheConcurrent(t *testing.T) {
 	assert.LessOrEqual(t, c.size, 1000)
 	sum := 0
 	for _, el := range c.byID {
-		sum += len(el.Value.(*pathEntry).body)
+		sum += el.Value.(*pathEntry).cost()
 	}
 	assert.Equal(t, sum, c.size, "the size is the sum of the entries")
 	assert.Equal(t, len(c.byID), c.lru.Len())

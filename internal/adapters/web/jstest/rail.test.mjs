@@ -62,3 +62,23 @@ test('h outside the panel leaves the focus alone; j / k outside it are not taken
   assert.equal(active, main);
   assert.equal(R.step(1), false, 'the row cursor keeps j / k');
 });
+
+test('j / k cross section and recent-commit table boundaries in document order', () => {
+  const controls = ['clone', 'about', 'commit-1', 'commit-2', 'actions', 'outline'].map((id) => el('a', { id, attrs: { href: '#' + id } }));
+  for (const e of controls) e.focus = () => { active = e; };
+  rail.append(
+    el('section', {}, controls[0]),
+    el('section', {}, controls[1]),
+    el('section', {}, el('table', {}, el('tbody', { attrs: { 'data-rows': '' } }, el('tr', {}, controls[2]), el('tr', {}, controls[3])))),
+    el('section', {}, controls[4]),
+    el('nav', {}, controls[5]),
+  );
+  active = close;
+  for (const e of controls) { assert.equal(R.step(1), true); assert.equal(active, e); }
+  R.step(1);
+  assert.equal(active, controls.at(-1));
+  for (const e of controls.slice(0, -1).reverse()) { R.step(-1); assert.equal(active, e); }
+  R.leave();
+  assert.equal(active, main);
+  assert.equal(R.step(1), false);
+});

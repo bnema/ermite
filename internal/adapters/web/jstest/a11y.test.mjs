@@ -339,7 +339,8 @@ test('the preference is read from storage when the page loads', async () => {
 });
 
 
-test('activity moves a home row up only in newest activity order, preserving focus and cursor', () => {
+test('activity moves a home row up only in newest activity order, preserving focus and cursor', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   for (const [sort, desc, activity, moves] of [
     ['activity', 'true', true, true],
     ['activity', 'false', true, false],

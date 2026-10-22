@@ -84,10 +84,12 @@ type Link struct{ Label, Href string }
 
 // HomeRow is one repository in the home list.
 type HomeRow struct {
-	ID   string
-	Name string
-	Href string
-	Desc string
+	Release *LatestRelease
+	License *LicenseBadge
+	ID      string
+	Name    string
+	Href    string
+	Desc    string
 	// Topics classify the repository, as on GitHub.
 	Topics []string
 	// Active is when the repository last changed (its last push or merge),
@@ -201,8 +203,16 @@ type CommitRow struct {
 	Sig *SignatureBadge
 }
 
+// DocTab links to a root document on the summary.
+type DocTab struct {
+	Name, Href string
+	Current    bool
+}
+
 // SummaryPage is the repository summary.
 type SummaryPage struct {
+	Docs    []DocTab
+	License *LicenseBadge
 	Mirror  *MirrorBadge
 	Facts   []Fact
 	Clone   Clone

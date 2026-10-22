@@ -162,6 +162,7 @@ func (s *Server) homeRows(ctx context.Context, repos []ports.RepoView, now time.
 // the newest commits of its default branch and the state of its latest run.
 func (s *Server) homeRowOf(ctx context.Context, r ports.RepoView, now time.Time, cursor bool) HomeRow {
 	row := homeRow(r, now, cursor, SignedIn(ctx))
+	row.Release = s.summaryRelease(ctx, r.Name, now)
 	if r.PushedAt.IsZero() || r.DefaultBranch == "" {
 		row.NoCommits = r.PushedAt.IsZero()
 		return row
@@ -169,6 +170,7 @@ func (s *Server) homeRowOf(ctx context.Context, r ports.RepoView, now time.Time,
 	var head string
 	row.Commits, head, row.NoCommits = s.homeCommits(ctx, r, now)
 	if head != "" {
+		row.License = s.repositoryLicense(ctx, r.Name, head)
 		row.CI = s.homeCI(ctx, r, head)
 		row.Stats = s.homeStats(ctx, r, head, now)
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,6 +51,7 @@ func homeCommits(t testing.TB, n int) []domain.Commit {
 func homeBrowse(t *testing.T) *mocks.BrowseService {
 	t.Helper()
 	b := mocks.NewBrowseService(t)
+	b.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(domain.Tree{}, nil).Maybe()
 	b.EXPECT().RepoStats(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(ports.RepoStats{Commits: 1234, Recent: 7}, nil).Maybe()
 	return b
@@ -63,6 +65,7 @@ func TestHomeRowFigures(t *testing.T) {
 	head := objectID(t, fmt.Sprintf("%040x", 2))
 	now := time.Now()
 	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().GetTree(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).Return(domain.Tree{}, nil).Maybe()
 	browse.EXPECT().ListCommits(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.HistoryPage{Commits: homeCommits(t, 2)}, nil)
 	browse.EXPECT().RepoStats(mock.Anything, mock.Anything, repo, head, now).Return(ports.RepoStats{
 		Commits: 12345, Recent: 42, LatestTag: &domain.TagInfo{Name: "v1.2.0", At: now.Add(-3 * time.Hour), CommitID: head},
@@ -212,8 +215,10 @@ func TestHomeRowCI(t *testing.T) {
 			}
 			require.NotNil(t, row.CI)
 			assert.Contains(t, out, `class="repo-ci" href="`+tt.href+`"`)
-			assert.Contains(t, out, `<span class="ci-label">`+tt.label+`</span>`, "the state has a word, not only a mark; compact hides it")
-			assert.Contains(t, out, `<span class="sr">CI: </span>`)
+			assert.Contains(t, out, `<span class="sr">CI: `+tt.label+`</span>`)
+			assert.NotContains(t, out, `class="ci-label"`)
+			assert.Contains(t, out, `title="`+html.EscapeString(tt.label+" · "+row.CI.Title)+`"`)
+			assert.Contains(t, out, `class="ck ck-`+row.CI.Kind+`" aria-hidden="true"`)
 		})
 	}
 }
@@ -391,5 +396,79 @@ func TestActivityEventsRefreshTheHomeRow(t *testing.T) {
 		got, err := (&liveStream{s: srv}).home(t.Context(), ports.WatchEvent{Event: ev})
 		require.NoError(t, err)
 		assert.Empty(t, got)
+	}
+}
+
+func TestHomeReleaseAndLicensePills(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		release domain.Release
+		err     error
+		visible bool
+	}{
+		{name: "official release", release: domain.Release{Tag: "v1.2.0", PublishedAt: fixedNow}, visible: true},
+		{name: "plain tag only", err: domain.ErrNotFound},
+		{name: "draft", release: domain.Release{Tag: "secret", Draft: true}},
+		{name: "unpublished", release: domain.Release{Tag: "pending"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			repo := publicRepo(t, "proj")
+			repo.Visibility = domain.VisibilityPrivate
+			svc := mocks.NewReleaseService(t)
+			svc.EXPECT().GetRelease(mock.Anything, mock.Anything, repo.Name, ports.ReleaseRef{Latest: true}).Return(tc.release, tc.err).Once()
+			srv := newTestServer(t, Config{Repos: reposServing(t, repo), Browse: mocks.NewBrowseService(t), Releases: svc})
+			row := srv.homeRowOf(t.Context(), repo, fixedNow, false)
+			row.Private, row.Fresh = true, true
+			row.License = &LicenseBadge{ID: "MIT", Href: "/proj/blob/main/LICENSE"}
+			out := renderRow(t, row)
+			assert.Contains(t, out, `class="pill repo-license" href="/proj/blob/main/LICENSE" title="License: MIT">MIT</a>`)
+			assert.Regexp(t, `(?s)>private</span>.*repo-license.*class="repo-activity" title="new activity"><span class="ico i-refresh-cw" aria-hidden="true"></span><span class="sr">new activity</span></span></h2>`, out)
+			if tc.visible {
+				assert.Regexp(t, `(?s)>proj</a>.*class="pill repo-release".*>v1.2.0</a>.*>private</span>`, out)
+				assert.Contains(t, out, `href="/proj/releases/tag/v1.2.0"`)
+			} else {
+				assert.NotContains(t, out, `repo-release`)
+			}
+		})
+	}
+	out := renderRow(t, HomeRow{Name: "bare"})
+	assert.NotContains(t, out, `repo-license`)
+	assert.NotContains(t, out, `repo-release`)
+}
+
+func TestReleaseEventsRefreshTheHomeRow(t *testing.T) {
+	t.Parallel()
+	repo := publicRepo(t, "proj")
+	rel := domain.Release{Repo: repo.Name, Tag: "v2", PublishedAt: fixedNow}
+	for _, tc := range []struct {
+		event  domain.Event
+		latest domain.Release
+		err    error
+	}{
+		{domain.ReleasePublished{Release: rel}, rel, nil},
+		{domain.ReleaseUpdated{Release: rel}, domain.Release{Tag: "v1", PublishedAt: fixedNow}, nil},
+		{domain.ReleaseDeleted{Release: rel}, domain.Release{}, domain.ErrNotFound},
+		{domain.ReleaseUnpublished{Release: rel}, domain.Release{}, domain.ErrNotFound},
+	} {
+		t.Run(tc.event.EventKind(), func(t *testing.T) {
+			t.Parallel()
+			releases := mocks.NewReleaseService(t)
+			releases.EXPECT().GetRelease(mock.Anything, mock.Anything, repo.Name, ports.ReleaseRef{Latest: true}).Return(tc.latest, tc.err).Once()
+			srv := newTestServer(t, Config{Repos: reposServing(t, repo), Browse: homeBrowse(t), Releases: releases})
+			got, err := (&liveStream{s: srv}).home(t.Context(), ports.WatchEvent{Event: tc.event})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Equal(t, "home-list", got[0].event)
+			assert.Contains(t, got[0].html, `id="repo-proj"`)
+			assert.NotContains(t, got[0].html, `data-activity`)
+			assert.NotContains(t, got[0].html, `new activity`)
+			if tc.err != nil {
+				assert.NotContains(t, got[0].html, `repo-release`)
+			} else {
+				assert.Contains(t, got[0].html, `href="/proj/releases/tag/`+tc.latest.Tag+`"`)
+			}
+		})
 	}
 }

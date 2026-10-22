@@ -135,6 +135,14 @@ func (l *liveStream) home(ctx context.Context, we ports.WatchEvent) ([]fragment,
 		name, fresh = ev.Issue.Repo.String(), true
 	case domain.IssueCommented:
 		name, fresh = ev.Repo.String(), true
+	case domain.ReleasePublished:
+		name = ev.Release.Repo.String()
+	case domain.ReleaseUpdated:
+		name = ev.Release.Repo.String()
+	case domain.ReleaseDeleted:
+		name = ev.Release.Repo.String()
+	case domain.ReleaseUnpublished:
+		name = ev.Release.Repo.String()
 	case domain.RunUpdated:
 		name = ev.Run.Repo.String() // the CI state of the row
 	case domain.JobUpdated:

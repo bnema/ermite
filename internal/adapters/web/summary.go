@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -59,22 +60,23 @@ func (s *Server) summary(ctx context.Context, r *http.Request) (templ.Component,
 		return nil, 0, err
 	}
 	branchesAt, tagsAt := namesAt(d.branches), namesAt(d.tags)
-	for i, c := range commits.Commits {
+	for _, c := range commits.Commits {
 		id := c.ID.String()
 		row := commitRow(d.name(), c, now)
-		row.Branches, row.Tags, row.Cursor = branchesAt[id], tagsAt[id], i == 0
+		row.Branches, row.Tags = branchesAt[id], tagsAt[id]
 		p.Recent = append(p.Recent, row)
 	}
 
+	p.License = s.repositoryLicense(ctx, d.repo.Name, d.head.CommitID.String())
 	p.Facts = s.facts(d, now)
 	p.Latest = s.latest(ctx, d)
 	p.Release = s.summaryRelease(ctx, d.repo.Name, now)
 	p.Actions = s.recentActions(ctx, d.repo.Name, now)
 
-	if rd, err := s.readme(ctx, d, ref); err != nil {
+	if rd, tabs, err := s.summaryDoc(ctx, d, ref, r.URL.Query().Get("doc")); err != nil {
 		return nil, 0, err
 	} else if rd != nil {
-		p.Readme, p.Outline = rd.readme, rd.outline
+		p.Readme, p.Outline, p.Docs = rd.readme, rd.outline, tabs
 	}
 
 	l := s.repoLayout(ctx, d, "summary")
@@ -147,40 +149,62 @@ type renderedReadme struct {
 	outline []Heading
 }
 
-// readme finds the README at the root of the tree of the head commit, reads
-// it and renders it. It is nil when the repository has none. Rendering
-// problems degrade to plain text; only use case failures are errors.
-func (s *Server) readme(ctx context.Context, d *repoData, ref string) (*renderedReadme, error) {
+// summaryDoc renders only a listed root document; unknown selections use the first.
+func (s *Server) summaryDoc(ctx context.Context, d *repoData, ref, selected string) (*renderedReadme, []DocTab, error) {
 	rev := d.head.CommitID.String()
 	tree, err := s.getTree(ctx, d.repo.Name, rev, "", false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return s.readmeIn(ctx, d.repo.Name, rev, ref, "", tree.Entries)
+	entries := summaryDocs(tree.Entries)
+	if len(entries) == 0 {
+		return nil, nil, nil
+	}
+	index := 0
+	for i, e := range entries {
+		if e.Name == selected {
+			index = i
+			break
+		}
+		if strings.EqualFold(e.Name, selected) {
+			index = i
+		}
+	}
+	tabs := make([]DocTab, 0, len(entries))
+	for i, e := range entries {
+		tabs = append(tabs, DocTab{Name: e.Name, Href: "?doc=" + url.QueryEscape(e.Name), Current: i == index})
+	}
+	rd, err := s.renderDoc(ctx, d.repo.Name, rev, ref, "", entries[index])
+	return rd, tabs, err
 }
 
-// readmeIn picks the README among the entries of the directory dir ("" for
-// the root) of the commit rev, reads it and renders it. Links in it are
-// relative to dir, on the ref ref. It is nil when the directory has none.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter picks the README among the entries of a directory to show; display only
-func (s *Server) readmeIn(ctx context.Context, repo domain.RepoName, rev, ref, dir string, entries []domain.TreeEntry) (*renderedReadme, error) {
-	var best *domain.TreeEntry
-	rank := len(readmeNames)
-	for i := range entries {
-		e := &entries[i]
-		if e.Kind != domain.EntryFile && e.Kind != domain.EntryExecutable {
-			continue
-		}
-		for i, n := range readmeNames {
-			if i < rank && strings.EqualFold(e.Name, n) {
-				best, rank = e, i
+// summaryDocs lists the preferred README, then the common project documents.
+func summaryDocs(entries []domain.TreeEntry) []domain.TreeEntry {
+	var docs []domain.TreeEntry
+	groups := [][]string{readmeNames}
+	for _, base := range []string{"license", "licence", "copying", "contributing", "code_of_conduct", "security"} {
+		groups = append(groups, []string{base, base + ".md", base + ".markdown", base + ".txt"})
+	}
+	for g, names := range groups {
+		for _, name := range names {
+			for _, e := range entries {
+				if (e.Kind == domain.EntryFile || e.Kind == domain.EntryExecutable) && strings.EqualFold(e.Name, name) {
+					docs = append(docs, e)
+				}
+			}
+			if g == 0 && len(docs) > 0 {
+				break
 			}
 		}
 	}
-	if best == nil {
-		return nil, nil
-	}
+	return docs
+}
+
+// renderDoc shares the README limits and rendering with the summary documents.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter reads and renders a root document to show; display only
+func (s *Server) renderDoc(ctx context.Context, repo domain.RepoName, rev, ref, dir string, entry domain.TreeEntry) (*renderedReadme, error) {
+	best := &entry
 	rd := &Readme{Name: best.Name}
 	if best.Size > maxReadmeBytes {
 		rd.Note = best.Name + " is too large to show here (" + humanSize(best.Size) + ")."
