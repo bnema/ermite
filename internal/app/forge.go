@@ -525,6 +525,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		VideoHosts:   cfg.VideoHosts,
 		HealthChecks: []httpserver.Check{store.Check, httpserver.DirWritable(cfg.DataDir)},
 		Routes:       routes,
+		RobotsTxt:    cfg.RobotsTxt,
 		API:          f.API.Handler(),
 		// Event streams never end by themselves: close them when the
 		// shutdown begins, or it would wait for them until its timeout.

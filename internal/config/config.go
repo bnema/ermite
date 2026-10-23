@@ -8,7 +8,9 @@ package config
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"net/url"
@@ -70,7 +72,14 @@ const (
 	EnvReleaseAssetMax     = "ERMITE_RELEASE_ASSET_MAX"
 	EnvReleaseAssetsMax    = "ERMITE_RELEASE_ASSETS_MAX"
 	EnvReleaseQuota        = "ERMITE_RELEASE_QUOTA"
+	// EnvRobotsTxtFile is a file whose content replaces the default
+	// robots.txt, read once at startup.
+	EnvRobotsTxtFile = "ERMITE_ROBOTS_TXT_FILE"
 )
+
+// MaxRobotsTxtSize is the largest robots.txt file accepted. Google reads the
+// first 500 KiB only.
+const MaxRobotsTxtSize = 500 << 10
 
 // SecretsKeyLen is the length of the secrets key in bytes (AES-256).
 const SecretsKeyLen = 32
@@ -162,6 +171,9 @@ type Config struct {
 	// Zero release limits leave defaults to the release use case.
 	ReleaseAssetMax, ReleaseQuota int64
 	ReleaseAssetsMax              int
+	// RobotsTxt is the content of ERMITE_ROBOTS_TXT_FILE; nil when unset, which
+	// serves the default robots.txt.
+	RobotsTxt []byte
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -370,11 +382,55 @@ func Load(get func(string) string) (Config, error) {
 		}
 	}
 
+	if path := strings.TrimSpace(get(EnvRobotsTxtFile)); path != "" {
+		body, err := readRobotsTxt(path)
+		if err != nil {
+			bad(EnvRobotsTxtFile, "%v", err)
+		} else {
+			c.RobotsTxt = body
+		}
+	}
+
 	loadStorage(get, &c, &problems)
 	if len(problems) > 0 {
 		return Config{}, &Error{Problems: problems}
 	}
 	return c, nil
+}
+
+// readRobotsTxt reads the robots.txt file at path: a regular file, nonempty,
+// at most MaxRobotsTxtSize bytes. It never reads more than one byte past the
+// limit, whatever the file.
+func readRobotsTxt(path string) ([]byte, error) {
+	cannotRead := func(err error) error {
+		var pe *os.PathError
+		if errors.As(err, &pe) {
+			err = pe.Err // the path is already in the message
+		}
+		return fmt.Errorf("cannot read %q: %w", path, err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, cannotRead(err)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, cannotRead(err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%q is not a regular file", path)
+	}
+	body, err := io.ReadAll(io.LimitReader(f, MaxRobotsTxtSize+1))
+	switch {
+	case err != nil:
+		return nil, cannotRead(err)
+	case len(body) == 0:
+		return nil, fmt.Errorf("%q is empty", path)
+	case len(body) > MaxRobotsTxtSize:
+		return nil, fmt.Errorf("%q is larger than %d KiB", path, MaxRobotsTxtSize>>10)
+	}
+	return body, nil
 }
 
 // resolveFiles resolves only the four supported secrets, once at startup.

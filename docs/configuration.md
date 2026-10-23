@@ -26,8 +26,15 @@ ermite serve
 | `ERMITE_OWNER` | `owner` | owner login: web header, passkey name, and `<owner>` in CI (`github.repository`). Same rules as repository names |
 | `ERMITE_SOURCE_URL` | `$ERMITE_PUBLIC_URL/ermite` | link to the source (AGPL) |
 | `ERMITE_VIDEO_HOSTS` | `github.com,user-images.githubusercontent.com,private-user-images.githubusercontent.com,github-production-user-asset-6210df.s3.amazonaws.com` | comma-separated exact external video hostnames, replacing the defaults; no URLs, wildcards or ports. The S3 host receives GitHub user-attachment redirects. |
+| `ERMITE_ROBOTS_TXT_FILE` | empty | file served as `/robots.txt` instead of the default, read once at startup. A missing, unreadable, empty or over 500 KiB file stops startup. See below |
 | `ERMITE_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `ERMITE_LOG_FORMAT` | `json` | `json` or `console` |
+
+### `/robots.txt`
+
+The default lets crawlers index the home page, repository summaries, issues, merge requests and releases. It keeps them off the views with no end or a high cost: files, directories, raw files, commits, history, compare, refs, merge request file diffs, the query variants of a merge request page (`?view=`, `?from=`, `?on=`), CI, release downloads, Git transfers and everything under `/-/` except static assets. It also asks for `Crawl-delay: 5`. Fetch `/robots.txt` on your instance to see it.
+
+`robots.txt` is a reserved repository name, so no repository hides the file. It is served with `Cache-Control: public, max-age=3600`.
 
 ## Git
 

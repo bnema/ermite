@@ -2,7 +2,8 @@
 
 // Package httpserver is the HTTP entry of ermite: the router, the security
 // headers, the request log and the graceful shutdown. Routes are added here
-// as the other adapters arrive: /-/health and the routes given in Config.
+// as the other adapters arrive: /-/health, /robots.txt and the routes given
+// in Config.
 package httpserver
 
 import (
@@ -47,6 +48,8 @@ type Config struct {
 	HealthChecks []Check
 	// Routes are added to the router next to /-/health.
 	Routes []Route
+	// RobotsTxt is the body of /robots.txt; nil serves DefaultRobotsTxt.
+	RobotsTxt []byte
 	// API serves the ConnectRPC API under /-/api/ (the prefix is stripped, so
 	// it sees "/ermite.RepoService/ListRepos"). Nil serves none.
 	API http.Handler
@@ -69,9 +72,16 @@ type Server struct {
 // New builds the server and its routes.
 func New(cfg Config) *Server {
 	mux := http.NewServeMux()
-	// "GET" patterns also match HEAD; other methods get 405 with Allow, and
-	// unknown paths get 404.
+	// "GET" patterns also match HEAD. Another method falls through to a
+	// less specific route that accepts it (the web's method-less "/"), or
+	// gets 405 with Allow when there is none; unknown paths get 404.
 	mux.HandleFunc("GET /-/health", healthHandler(cfg.HealthChecks))
+	// More specific than the web's "/", so no repository route sees it.
+	robots := cfg.RobotsTxt
+	if robots == nil {
+		robots = []byte(DefaultRobotsTxt)
+	}
+	mux.HandleFunc("GET "+robotsPath, robotsHandler(robots))
 	if cfg.API != nil {
 		mux.Handle(APIPrefix+"/", http.StripPrefix(APIPrefix, cfg.API))
 	}
