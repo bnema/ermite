@@ -732,7 +732,7 @@ func (s *Server) mrFacts(ctx context.Context, r *http.Request, d *repoData, p *M
 		// Relative links point into the source branch as it is now (its head
 		// commit); the heading ids carry their own prefix, apart from the
 		// ids of the diff.
-		h, err := s.md.renderNote([]byte(desc), d.name(), head, "mr-desc-", refResolver{notes: noteIDs(res.Comments), numbers: s.numberResolver(ctx, d.name())})
+		h, err := s.md.renderNote([]byte(desc), d.name(), head, "mr-desc-", s.noteResolver(ctx, d.name(), res.Comments))
 		if err != nil {
 			return err
 		}
@@ -1007,7 +1007,7 @@ func (s *Server) placeComments(ctx context.Context, p *MRPage, repo string, n in
 		return index[lineKey{path, side, line}]
 	}
 
-	exists := refResolver{notes: noteIDs(comments), numbers: s.numberResolver(ctx, repo)}
+	exists := s.noteResolver(ctx, repo, comments)
 	children := map[int64][]domain.Comment{}
 	for _, c := range comments {
 		if c.ReplyTo != 0 && !c.Deleted {

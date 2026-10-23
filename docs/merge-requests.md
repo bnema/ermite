@@ -163,3 +163,7 @@ While a comment is focused or has unsent edits, the refresh waits. A small
 “branch updated — refreshing after your comment” status explains the delay.
 Sending, cancelling, or reverting the draft and leaving its form lets the
 pending refresh proceed. Refresh never preserves or discards an unsent draft.
+
+### Markdown references
+
+Descriptions, comments, trusted issue bodies and release notes link `#N` to an existing issue or merge request, and `!N` only to an existing merge request. Commit IDs (7–40 hexadecimal characters) link to the repository commit page and display seven characters. Unknown references stay text; references inside words, URLs, code or existing links are not expanded. Commit and number lookups are cached and limited to 50 distinct values each per render. Anonymous issue bodies do not expand `!N` or commit IDs.

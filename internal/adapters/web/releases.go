@@ -112,7 +112,7 @@ func (s *Server) releaseShow(ctx context.Context, r *http.Request) (templ.Compon
 	if err != nil {
 		return nil, 0, err
 	}
-	notes, _, err := s.md.render([]byte(rel.Notes), d.name(), rel.Tag, "")
+	notes, err := s.md.renderNote([]byte(rel.Notes), d.name(), rel.Tag, headingIDPrefix, s.referenceResolver(ctx, d.name()))
 	if err != nil {
 		return nil, 0, err
 	}

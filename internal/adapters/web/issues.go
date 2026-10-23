@@ -353,7 +353,7 @@ func (s *Server) issueBody(ctx context.Context, d *repoData, i domain.Issue) (te
 	if i.External {
 		return s.md.renderUntrusted([]byte(body), "issue-desc-", numbers)
 	}
-	return s.md.renderIssue([]byte(body), d.name(), d.repo.DefaultBranch, "issue-desc-", numbers)
+	return s.md.renderNote([]byte(body), d.name(), d.repo.DefaultBranch, "issue-desc-", s.referenceResolver(ctx, d.name()))
 }
 
 // numberLink links merge request n of repo; nil for 0.

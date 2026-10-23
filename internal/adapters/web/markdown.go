@@ -83,7 +83,7 @@ func (m *markdown) renderNote(source []byte, repo, ref, idPrefix string, refs re
 // renderIssue renders the trusted body of an issue: the policy of render, plus
 // links to issues and merge requests.
 func (m *markdown) renderIssue(source []byte, repo, ref, idPrefix string, numbers func(int64) (string, domain.NumberKind, bool)) (template.HTML, error) {
-	h, _, err := m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, idPrefix: idPrefix}, refResolver{numbers: numbers})
+	h, _, err := m.renderPolicy(source, linkPolicy{repo: repo, ref: ref, idPrefix: idPrefix}, refResolver{numbers: numbers, mergeRequests: true})
 	return h, err
 }
 
@@ -91,6 +91,9 @@ func (m *markdown) renderIssue(source []byte, repo, ref, idPrefix string, number
 type refResolver struct {
 	// notes tells whether ^N names a note of the page (nil: no ^N links).
 	notes func(int64) bool
+	// commits resolves a hex prefix to a server-built commit href.
+	commits       func(string) (href, label string, ok bool)
+	mergeRequests bool
 	// numbers gives the page of the issue or merge request #N, when it exists
 	// (nil: no #N links). The href is built by the server, never from the text.
 	numbers func(int64) (href string, kind domain.NumberKind, ok bool)
@@ -116,7 +119,11 @@ func (m *markdown) renderPolicy(source []byte, pol linkPolicy, res refResolver) 
 	// Collect eligible text before the policy unwraps rejected links: their
 	// labels must not accidentally become references either.
 	var refs []*ast.Text
-	if res.notes != nil || res.numbers != nil {
+	if pol.untrusted {
+		res.commits = nil
+		res.mergeRequests = false
+	}
+	if res.notes != nil || res.numbers != nil || res.commits != nil {
 		_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 			if !entering {
 				return ast.WalkContinue, nil
@@ -442,10 +449,11 @@ func (altRenderer) RegisterFuncs(r renderer.NodeRendererFuncRegisterer) {
 	})
 }
 
-// referencePattern matches ^N (groups 1-2) and #N (groups 3-4). The preceding
+// referencePattern matches ^N (groups 1-2), #N/!N (groups 3-4),
+// and commit prefixes (groups 5-6). The preceding
 // character is not part of a word; #N also rejects & and # so that numeric
 // entities such as &#39; stay text.
-var referencePattern = regexp.MustCompile(`(^|[^0-9A-Za-z_^])\^([1-9][0-9]{0,5})\b|(^|[^0-9A-Za-z_&#])#([1-9][0-9]{0,9})\b`)
+var referencePattern = regexp.MustCompile(`(^|[^0-9A-Za-z_^])\^([1-9][0-9]{0,5})\b|(^|[^0-9A-Za-z_&#])[#!]([1-9][0-9]{0,9})\b|(^|[^0-9A-Za-z_])([0-9A-Fa-f]{7,40})\b`)
 
 // references changes only text segments; code and link labels never enter
 // this function. New links deliberately bypass heading-prefix rewriting.
@@ -458,34 +466,55 @@ func references(t *ast.Text, source []byte, res refResolver) {
 	offset := 0
 	for _, match := range referencePattern.FindAllSubmatchIndex(value, -1) {
 		isNote := match[4] >= 0
+		isCommit := match[12] >= 0
 		var from, to int
-		if isNote {
+		if isCommit {
+			from, to = match[12], match[13]
+		} else if isNote {
 			from, to = match[4], match[5]
 		} else {
 			from, to = match[8], match[9]
 		}
-		if (isNote && res.notes == nil) || (!isNote && res.numbers == nil) {
+		if (isCommit && res.commits == nil) || (isNote && res.notes == nil) || (!isNote && !isCommit && res.numbers == nil) {
 			continue
 		}
 		id := string(value[from:to])
 		n, err := strconv.ParseInt(id, 10, 64)
-		if err != nil {
+		if err != nil && !isCommit {
 			continue
 		}
 		start := from - 1
+		if isCommit {
+			start = from
+		}
+		isMR := !isCommit && !isNote && value[start] == '!'
+		if isMR && !res.mergeRequests {
+			continue
+		}
 		// Markdown punctuation may split adjacent text into separate AST nodes.
 		// Check the original preceding byte as well as the segment-local regex.
 		if at := t.Segment.Start + start; at > 0 {
 			prev := source[at-1]
-			if prev >= '0' && prev <= '9' || prev >= 'A' && prev <= 'Z' || prev >= 'a' && prev <= 'z' || prev == '_' {
+			if referenceWord(prev) {
 				continue
 			}
-			if isNote && prev == '^' || !isNote && (prev == '&' || prev == '#') {
+			if isNote && prev == '^' || !isNote && (prev == '&' || prev == '#') || isCommit && strings.ContainsRune("/.:@%-", rune(prev)) {
 				continue
 			}
 		}
 		link := ast.NewLink()
-		if isNote {
+		label := value[start:to]
+		if isCommit {
+			if at := t.Segment.Start + to; at < len(source) && (referenceWord(source[at]) || strings.ContainsRune("/", rune(source[at]))) {
+				continue
+			}
+			href, short, ok := res.commits(id)
+			if !ok {
+				continue
+			}
+			link.Destination = []byte(href)
+			label = []byte(short)
+		} else if isNote {
 			if !res.notes(n) {
 				continue
 			}
@@ -493,7 +522,7 @@ func references(t *ast.Text, source []byte, res refResolver) {
 			link.Title = []byte("note " + id)
 		} else {
 			href, kind, ok := res.numbers(n)
-			if !ok {
+			if !ok || isMR && kind != domain.NumberMergeRequest {
 				continue
 			}
 			link.Destination = []byte(href)
@@ -507,7 +536,7 @@ func references(t *ast.Text, source []byte, res refResolver) {
 			parent.InsertBefore(parent, t, ast.NewTextSegment(text.NewSegment(t.Segment.Start+offset, t.Segment.Start+start)))
 		}
 		link.SetAttributeString("class", []byte("ref"))
-		link.AppendChild(link, ast.NewString(value[start:to]))
+		link.AppendChild(link, ast.NewString(label))
 		parent.InsertBefore(parent, t, link)
 		offset = to
 	}
@@ -591,4 +620,8 @@ func githubAttachment(u *url.URL) bool {
 	}
 	id, ok := strings.CutPrefix(u.Path, "/user-attachments/assets/")
 	return ok && id != "" && id != "." && id != ".." && !strings.Contains(id, "/") && path.Ext(id) == ""
+}
+
+func referenceWord(b byte) bool {
+	return b >= '0' && b <= '9' || b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z' || b == '_' || b >= 128
 }

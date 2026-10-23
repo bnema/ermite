@@ -438,3 +438,52 @@ func TestMarkdownVideos(t *testing.T) {
 		assert.NotContains(t, string(h), "<video")
 	})
 }
+
+func TestMarkdownCommitAndMRReferences(t *testing.T) {
+	t.Parallel()
+	full := "f25742a" + strings.Repeat("b", 33)
+	for _, tt := range []struct {
+		source         string
+		links, lookups int
+	}{
+		{"f25742a", 1, 1}, {full, 1, 1}, {"abcdef0", 0, 1},
+		{"`" + full + " !37`", 0, 0}, {"```\n" + full + " !37\n```", 0, 0},
+		{"[" + full + " !37](https://example.com)", 0, 0},
+		{"[" + full + "](javascript:bad)", 0, 0},
+		{"word" + full, 0, 0}, {full + "word", 0, 0}, {full + "a", 0, 0},
+		{"é" + full, 0, 0}, {"https://example.com/" + full, 0, 0}, {"path/" + full, 0, 0},
+		{"(!37)", 1, 0}, {"!38", 0, 0}, {"!39", 0, 0}, {"word!37", 0, 0},
+		{"f25742a !37 #37", 3, 1},
+	} {
+		t.Run(tt.source, func(t *testing.T) {
+			t.Parallel()
+			calls := 0
+			res := refResolver{mergeRequests: true, commits: func(sha string) (string, string, bool) {
+				calls++
+				return "/demo/commit/" + full, full[:7], strings.HasPrefix(sha, "f25742a")
+			}, numbers: func(n int64) (string, domain.NumberKind, bool) {
+				if n == 39 {
+					return "/demo/issues/39", domain.NumberIssue, true
+				}
+				return "/demo/merge-requests/37", domain.NumberMergeRequest, n == 37
+			}}
+			h, err := newMarkdown().renderNote([]byte(tt.source), "demo", "main", "r-", res)
+			require.NoError(t, err)
+			assert.Equal(t, tt.links, strings.Count(string(h), `class="ref"`), string(h))
+			assert.Equal(t, tt.lookups, calls)
+			if tt.source == full {
+				assert.Contains(t, string(h), `href="/demo/commit/`+full+`" class="ref">f25742a</a>`)
+			}
+		})
+	}
+}
+
+func TestMarkdownUntrustedNoNewReferences(t *testing.T) {
+	t.Parallel()
+	h, err := newMarkdown().renderUntrusted([]byte("f25742a !37"), "u-", func(int64) (string, domain.NumberKind, bool) {
+		t.Fatal("untrusted !N must not look up a number")
+		return "", domain.NumberNone, false
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "<p>f25742a !37</p>\n", string(h))
+}

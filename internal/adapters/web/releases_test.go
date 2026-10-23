@@ -306,3 +306,24 @@ func TestReleaseRowFallbacks(t *testing.T) {
 	assert.Equal(t, "draft", row.Published)
 	assert.False(t, row.Latest)
 }
+
+func TestReleaseNotesReferences(t *testing.T) {
+	f := newReleaseFixture(t)
+	full := "f25742a" + strings.Repeat("b", 33)
+	id, err := domain.ParseObjectID(full)
+	require.NoError(t, err)
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repoName(t, "proj"), mock.Anything).Return(ports.RefPage{}, nil).Maybe()
+	browse.EXPECT().ResolveRevision(mock.Anything, domain.Anonymous(), repoName(t, "proj"), mock.Anything).Return(domain.ResolvedRevision{CommitID: id}, nil).Once()
+	nums := mocks.NewIssueNumberResolver(t)
+	nums.EXPECT().Kind(mock.Anything, domain.Anonymous(), repoName(t, "proj"), int64(37)).Return(domain.NumberMergeRequest, nil).Once()
+	f.srv.cfg.Browse = browse
+	f.srv.cfg.IssueNumbers = nums
+	f.published.Notes = full + " (!37) #37"
+	w := f.request("GET", "/proj/releases/tag/stable/v1", "", "")
+	require.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), `href="/proj/commit/`+full+`" class="ref">f25742a</a>`)
+	assert.Contains(t, w.Body.String(), `href="/proj/merge-requests/37"`)
+	assert.Contains(t, w.Body.String(), `>!37</a>`)
+	assert.Contains(t, w.Body.String(), `>#37</a>`)
+}
