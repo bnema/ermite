@@ -110,7 +110,7 @@ func loadAssets() (*assetSet, error) {
 			dir := path.Base(path.Dir(f))
 			u := put(dir, path.Base(f), b, sa.typ)
 			refs = append(refs, "url("+dir+"/"+path.Base(f)+")", "url("+u+")")
-			if f == "static/fonts/atkinson-next.woff2" {
+			if f == "static/fonts/mona-sans.woff2" {
 				s.urls.Font = u
 			}
 		}
@@ -131,7 +131,7 @@ func loadAssets() (*assetSet, error) {
 		css.Write(b)
 	}
 	if s.urls.Font == "" {
-		return nil, errors.New("web: the UI font static/fonts/atkinson-next.woff2 is missing")
+		return nil, errors.New("web: the UI font static/fonts/mona-sans.woff2 is missing")
 	}
 	sheet := strings.NewReplacer(refs...).Replace(css.String())
 	s.urls.CSS = put("css", "ermite.css", []byte(sheet), "text/css; charset=utf-8")
