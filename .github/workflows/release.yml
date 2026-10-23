@@ -5,36 +5,53 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   GOWORK: "off"
 
 jobs:
+  # Every check of ci.yml, end-to-end tests included, on the tagged commit.
+  check:
+    name: Check
+    if: github.server_url != 'https://github.com'
+    uses: ./.github/workflows/ci.yml
+
   release:
     name: Release
+    needs: check
     # Releases are published on ermite (git.bnema.dev); the GitHub mirror
     # receives the tags but must not publish a second release.
     if: github.server_url != 'https://github.com'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # GoReleaser builds the changelog from the previous tag.
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - name: GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      # Build and test the binaries before anything is published.
+      - name: Build
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --clean
+      - name: Smoke test
+        run: |
+          ./dist/ermite_linux_amd64_v1/ermite version | tee /dev/stderr | grep -qF "ermite ${GITHUB_REF_NAME}"
+      # Rebuilds the same binaries (-trimpath, commit timestamp) and publishes them.
+      - name: Publish
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Smoke test
-        run: |
-          ./dist/ermite_linux_amd64_v1/ermite version | tee /dev/stderr | grep -qF "ermite ${GITHUB_REF_NAME}"

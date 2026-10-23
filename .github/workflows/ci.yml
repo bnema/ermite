@@ -12,6 +12,8 @@ on:
       - 'LICENSE'
   pull_request:
     paths-ignore: *docs-only
+  # The release workflow runs every check on the tagged commit before publishing.
+  workflow_call:
 
 env:
   # Test the module alone, with the versions in go.mod (never a go.work).

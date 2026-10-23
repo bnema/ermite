@@ -30,7 +30,7 @@ Alpine with git, runs as uid 10001, data in `/data`. Behind a private route, `--
 
 ## Release
 
-Pushing a `v*` tag runs `.github/workflows/release.yml` on ermite: GoReleaser builds static Linux amd64 and arm64 binaries and publishes them on the ermite release of the tag, with `checksums.txt` and a changelog. A tag with a suffix (`v1.2.0-rc.1`) is a prerelease. The GitHub mirror publishes nothing.
+Pushing a `v*` tag runs `.github/workflows/release.yml` on ermite. It first runs the checks of `ci.yml`, end-to-end tests included, on the tagged commit. Then GoReleaser builds static Linux amd64 and arm64 binaries, smoke-tests the amd64 one and publishes both on the ermite release of the tag, with `checksums.txt` and a changelog. A tag with a suffix (`v1.2.0-rc.1`) is a prerelease. The GitHub mirror publishes nothing.
 
 Check the configuration locally: `goreleaser check && goreleaser release --snapshot --clean`.
 
