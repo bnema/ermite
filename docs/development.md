@@ -28,6 +28,12 @@ docker build --build-arg VERSION="$(git describe --tags --always --dirty)" -t er
 
 Alpine with git, runs as uid 10001, data in `/data`. Behind a private route, `--build-arg GIT_REWRITE_BASE=<url>` rewrites the git host of the `bnema.dev/ermite-*` modules.
 
+## Release
+
+Pushing a `v*` tag runs `.github/workflows/release.yml` on ermite: GoReleaser builds static Linux amd64 and arm64 binaries and publishes them on the ermite release of the tag, with `checksums.txt` and a changelog. A tag with a suffix (`v1.2.0-rc.1`) is a prerelease. The GitHub mirror publishes nothing.
+
+Check the configuration locally: `goreleaser check && goreleaser release --snapshot --clean`.
+
 ## Tools
 
 Pinned in `go.mod`:

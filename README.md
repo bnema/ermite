@@ -59,7 +59,7 @@ docker run -d -p 127.0.0.1:7341:7341 -v ermite-data:/data \
   -e ERMITE_PUBLIC_URL=http://localhost:7341 -e ERMITE_ADMIN_TOKEN="$token" ermite
 ```
 
-Without Docker, set `ERMITE_DATA_DIR`, `ERMITE_PUBLIC_URL` and `ERMITE_ADMIN_TOKEN`, then run `ermite serve`. Requires git 2.45 or newer. Put a TLS proxy in front of it.
+Without Docker, download a Linux binary (amd64 or arm64) from the [releases](https://git.bnema.dev/ermite/releases), set `ERMITE_DATA_DIR`, `ERMITE_PUBLIC_URL` and `ERMITE_ADMIN_TOKEN`, then run `ermite serve`. Requires git 2.45 or newer. Put a TLS proxy in front of it.
 
 All settings: [docs/configuration.md](docs/configuration.md).
 

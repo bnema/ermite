@@ -1,0 +1,69 @@
+version: 2
+
+# Releases are published on ermite. In CI the runner sets GITHUB_API_URL and
+# GITHUB_SERVER_URL to an address the job can reach; the public URLs are the
+# fallback for a local run.
+github_urls:
+  api: '{{ or (index .Env "GITHUB_API_URL") "https://git.bnema.dev/-/github/api" }}/'
+  upload: '{{ or (index .Env "GITHUB_API_URL") "https://git.bnema.dev/-/github/api" }}/uploads/'
+  download: '{{ or (index .Env "GITHUB_SERVER_URL") "https://git.bnema.dev" }}/'
+
+git:
+  prerelease_suffix: "-"
+
+release:
+  github:
+    owner: bnema
+    name: ermite
+  prerelease: auto
+
+builds:
+  - id: ermite
+    main: ./cmd/ermite
+    binary: ermite
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+      - GOWORK=off
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    # The tag (v1.2.3), as in the image build: `ermite version` prints it.
+    ldflags:
+      - -s -w -X bnema.dev/ermite/internal/app.stamped={{ .Tag }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^test"
+      - "^ci"
+      - "^chore"
+      - "^style"
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Other changes
+      order: 999

@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  GOWORK: "off"
+
+jobs:
+  release:
+    name: Release
+    # Releases are published on ermite (git.bnema.dev); the GitHub mirror
+    # receives the tags but must not publish a second release.
+    if: github.server_url != 'https://github.com'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # GoReleaser builds the changelog from the previous tag.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Smoke test
+        run: |
+          ./dist/ermite_linux_amd64_v1/ermite version | tee /dev/stderr | grep -qF "ermite ${GITHUB_REF_NAME}"
