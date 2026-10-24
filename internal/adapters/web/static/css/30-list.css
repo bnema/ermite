@@ -142,8 +142,11 @@
     & .rc-sha:hover { color: var(--ink-hi); text-decoration: underline; }
     & .rc-subject { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-hi); }
     & .repo-commits time { flex: none; white-space: nowrap; }
-    /* a full list goes on: its last commit fades */
-    & .repo-commits[data-full] li:last-child { opacity: .65; }
+    /* the commits fade with age: full colour on top, 30% on the fifth row */
+    & .repo-commits li:nth-child(2) { opacity: .825; }
+    & .repo-commits li:nth-child(3) { opacity: .65; }
+    & .repo-commits li:nth-child(4) { opacity: .475; }
+    & .repo-commits li:nth-child(5) { opacity: .3; }
     @media (max-width: 720px) {
       & .repo { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "head" "recent"; grid-template-rows: none; }
       & .repo-head { flex-wrap: wrap; }
@@ -187,8 +190,7 @@
     & .repo-stats .rs-tag dd { max-width: 12ch; }
     & .repo-commits { grid-area: recent; min-height: calc(2 * (var(--lh) + 4px)); margin-top: var(--s2); }
     & .repo-commits li:nth-child(n+3) { display: none; }
-    & .repo-commits[data-full] li:last-child { opacity: 1; }
-    & .repo-commits[data-full] li:nth-child(2) { opacity: .65; }
+    & .repo-commits li:nth-child(2) { opacity: .3; }
   }
   @media (max-width: 900px) {
     .home[data-layout="split"] .repos { grid-template-columns: minmax(0, 1fr); }

@@ -107,11 +107,7 @@ templ HomeRowView(r HomeRow) {
 			}
 		</div>
 		if len(r.Commits) > 0 {
-			<ul
-				class="repo-commits"
-				data-full?={ len(r.Commits) == homeRecent }
-				aria-label={ "Recent commits of " + r.Name }
-			>
+			<ul class="repo-commits" aria-label={ "Recent commits of " + r.Name }>
 				for _, c := range r.Commits {
 					<li>
 						<a class="rc-sha" href={ templ.SafeURL(c.CHref) }>{ c.Short }</a>

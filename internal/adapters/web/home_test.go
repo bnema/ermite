@@ -154,7 +154,6 @@ func TestHomeRowShowsFiveCommits(t *testing.T) {
 
 	out := renderRow(t, row)
 	assert.Equal(t, homeRecent, strings.Count(out, `class="rc-sha"`))
-	assert.Contains(t, out, `class="repo-commits" data-full`, "a full list fades its last commit")
 	assert.Contains(t, out, `href="/proj/commit/`+fmt.Sprintf("%040x", 7)+`"`)
 	assert.Contains(t, out, `aria-label="Recent commits of proj"`)
 	assert.NotContains(t, out, `class="repo-ci"`)
