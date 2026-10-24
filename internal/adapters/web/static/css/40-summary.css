@@ -12,6 +12,10 @@
   .tagged { color: var(--ink); font-weight: 700; white-space: nowrap; }
   .list.commits .c-subject { overflow: hidden; text-overflow: ellipsis; }
 
+  /* A rendered document (README, a Markdown file) fills its card, as on
+     GitHub: the page width bounds its lines, not the reading measure, so no
+     empty band sits on the right of the card. */
+  .prose.doc { max-width: none; }
   .readme .prose { padding: var(--s5) var(--s6) var(--s6); }
   /* .card-h.doc-tabs, not .doc-tabs: .card-h pushes its links to the right
      with :is(.card-h, .rail h2) a, which weighs as .rail h2 a */

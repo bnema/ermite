@@ -180,7 +180,7 @@ templ ReadmeCard(r Readme, docs ...DocTab) {
 // ReadmeView is a rendered README. Its HTML comes from the Markdown
 // renderer, which drops raw HTML and filters URLs.
 templ ReadmeView(r Readme) {
-	<article class="prose" aria-label={ r.Name } hx-ignore>
+	<article class="prose doc" aria-label={ r.Name } hx-ignore>
 		if r.Note != "" {
 			<p class="dim">{ r.Note }</p>
 		} else {
