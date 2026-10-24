@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 (() => {
   function mount(rail) {
+    const original = { role: rail.getAttribute('role'), label: rail.getAttribute('aria-label') };
     const mobile = matchMedia('(max-width: 1080px)');
     const make = (tag, cls) => {
       const el = document.createElement(tag);
@@ -40,7 +41,10 @@
     }
     function close(restore = true) {
       selected = null;
-      rail.removeAttribute('role');
+      for (const [attr, value] of [['role', original.role], ['aria-label', original.label]]) {
+        if (value == null) rail.removeAttribute(attr);
+        else rail.setAttribute(attr, value);
+      }
       rail.removeAttribute('aria-modal');
       for (const [el, was] of inert) el.inert = was;
       inert = [];
@@ -114,7 +118,7 @@
     });
     document.addEventListener('keydown', e => {
       if (selected === null) return;
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !document.querySelector('dialog[open]')) {
         e.preventDefault();
         e.stopImmediatePropagation();
         close();

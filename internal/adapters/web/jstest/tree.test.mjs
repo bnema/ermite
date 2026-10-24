@@ -521,3 +521,52 @@ test('saved tree replays parents before children, cursor and scroll', async () =
   assert.equal(pending.size, 0, 'missing paths are skipped');
   delete globalThis.sessionStorage;
 });
+
+test('replay shares an interactive load and yields cursor, collapse and scroll to interaction', async () => {
+  const storage = new Map();
+  globalThis.sessionStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k), clear: () => storage.clear() };
+  const body = table('P/', 'f');
+  const key = 'ermite:tree:' + location.pathname + location.search;
+  click(body.children[0]);
+  storage.set(key, JSON.stringify({ dirs: [{ path: 'P/', open: false }], cursor: 'P/', y: 900 }));
+  let requests = 0, scrolled = false;
+  const original = globalThis.fetch;
+  globalThis.fetch = (...args) => { requests++; return original(...args); };
+  window.scrollTo = () => { scrolled = true; };
+  const replay = T.init();
+  assert.equal(requests, 0, 'restore awaits the existing request');
+  T.sync(body.children[1]);
+  await answer('/rows/P/', 'a');
+  await replay;
+  assert.equal(isOpen(body.children[0]), true, 'saved collapse is abandoned');
+  assert.equal(cursorName(body), 'f');
+  assert.equal(scrolled, false);
+  assert.equal(JSON.parse(storage.get(key)).cursor, 'f');
+  globalThis.fetch = original;
+  delete globalThis.sessionStorage;
+});
+
+test('scroll saves are deferred and pagehide flushes; cache evicts the least recent URL', () => {
+  const storage = new Map(), events = {};
+  let writes = 0;
+  globalThis.sessionStorage = { getItem: k => storage.get(k) ?? null, setItem(k, v) { writes++; storage.set(k, v); }, removeItem: k => storage.delete(k), clear: () => storage.clear() };
+  const add = window.addEventListener;
+  window.addEventListener = (name, fn) => { events[name] = fn; };
+  table('a', 'b');
+  const key = 'ermite:tree:' + location.pathname + location.search;
+  const before = writes;
+  window.scrollY = 700;
+  events.scroll(); events.scroll(); events.scroll();
+  assert.equal(writes, before, 'scroll does not synchronously serialize or write');
+  events.pagehide();
+  assert.equal(JSON.parse(storage.get(key)).y, 700);
+  const keys = Array.from({ length: 50 }, (_, i) => 'ermite:tree:/old/' + i);
+  keys.forEach(k => storage.set(k, '{}'));
+  storage.set('ermite:tree:index', JSON.stringify(keys));
+  T.sync(dom.body.children[0].children[1]);
+  assert.equal(storage.has(keys[0]), false);
+  assert.equal(JSON.parse(storage.get('ermite:tree:index')).length, 50);
+  assert.equal(JSON.parse(storage.get('ermite:tree:index')).at(-1), key);
+  window.addEventListener = add;
+  delete globalThis.sessionStorage;
+});

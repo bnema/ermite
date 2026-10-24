@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../static/js/ermite.js', import.meta.url), 'utf8');
-function keyboard({ owner = true, off = false, typing = false, dialog = false } = {}) {
+function keyboard({ owner = true, off = false, typing = false, dialog = false, drawer = false } = {}) {
   let handler;
   const fired = [];
   const timers = new Map();
@@ -13,7 +13,7 @@ function keyboard({ owner = true, off = false, typing = false, dialog = false } 
     addEventListener: (_, fn) => { handler = fn; },
     window: { ermiteKeys: { blocks: () => off } },
     ermite: { fire: name => fired.push(name) },
-    $: selector => (owner && selector === '[data-inbox]') || (dialog && selector === 'dialog[open]'),
+    $: selector => (owner && selector === '[data-inbox]') || (dialog && selector === 'dialog[open]') || (drawer && selector === '[data-drawer-open]'),
     closeMenus: () => false,
     clearTimeout: id => timers.delete(id),
     setTimeout: fn => { timers.set(++timerID, fn); return timerID; },
@@ -22,8 +22,8 @@ function keyboard({ owner = true, off = false, typing = false, dialog = false } 
     const callbacks = [...timers.values()];
     timers.clear();
     for (const callback of callbacks) callback();
-  }, press(key, shiftKey = false) {
-    handler({ key, shiftKey, target: { closest: selector => typing && selector.startsWith('input'), blur() {} }, preventDefault() {} });
+  }, press(key, shiftKey = false, mods = {}) {
+    handler({ key, shiftKey, ...mods, target: { closest: selector => typing && selector.startsWith('input'), blur() {} }, preventDefault() {} });
   } };
 }
 test('sections require g and have no old t alias', () => {
@@ -73,4 +73,12 @@ test('g prefix expires without scheduling real timers', () => {
   assert.deepEqual(k.fired, []);
   k.press('g'); k.press('s');
   assert.deepEqual(k.fired, ['s']);
+});
+
+test('drawer blocks background navigation and modal shortcuts, including command-k', () => {
+  const k = keyboard({ drawer: true });
+  for (const key of ['G', 'j', 'k', 'g', 'f', '?', ':', 'Enter', 'Escape']) k.press(key);
+  k.press('k', false, { ctrlKey: true });
+  k.press('k', false, { metaKey: true });
+  assert.deepEqual(k.fired, []);
 });

@@ -27,34 +27,80 @@ window.ermiteTree = (() => {
   const isLoaded = (li) => { const n = li.nextElementSibling; return !!n && depthOf(n) > depthOf(li); };
   const nameLink = (li) => li.querySelector('a.t-name');
 
-  let restoring = false;
+  let restoring = false, generation = 0, scrollTimer = null, snapshot = null;
+  let replayScroll = null;
+  const loads = new WeakMap();
   const stateKey = () => 'ermite:tree:' + location.pathname + location.search;
+  const indexKey = 'ermite:tree:index';
 
-  // Storage is best effort: a private window or a full quota must not stop
-  // navigation. DOM order keeps parents before children, even when hidden.
-  function save() {
-    if (restoring || !rowsEl()) return;
+  // A newer gesture owns the tree, even while a replay request is pending.
+  function cancelReplay() {
+    generation++;
+    restoring = false;
+    replayScroll = null;
+  }
+
+  // Keep the per-URL cache bounded; quota failures get one eviction and retry.
+  function persist() {
+    if (restoring || !snapshot) return;
     try {
-      const rows = Array.from(rowsEl().children);
-      sessionStorage.setItem(stateKey(), JSON.stringify({
-        dirs: rows.filter((r) => isDir(r) && (isLoaded(r) || isOpen(r)))
-          .map((r) => ({ path: r.dataset.path, open: isOpen(r) })),
-        cursor: cursorRow()?.dataset.path,
-        x: window.scrollX, y: window.scrollY,
-      }));
+      const key = stateKey();
+      let keys = JSON.parse(sessionStorage.getItem(indexKey) || '[]');
+      if (!Array.isArray(keys)) keys = [];
+      keys = keys.filter((k) => typeof k === 'string' && k.startsWith('ermite:tree:') && k !== indexKey && k !== key);
+      while (keys.length >= 50) sessionStorage.removeItem(keys.shift());
+      const value = JSON.stringify({ ...snapshot, x: window.scrollX, y: window.scrollY });
+      try { sessionStorage.setItem(key, value); }
+      catch (e) {
+        if (e.name !== 'QuotaExceededError' || !keys.length) throw e;
+        sessionStorage.removeItem(keys.shift());
+        sessionStorage.setItem(key, value);
+      }
+      keys.push(key);
+      sessionStorage.setItem(indexKey, JSON.stringify(keys));
     } catch (e) { /* Storage may be unavailable. */ }
+  }
+
+  // Only tree changes scan rows; scrolling writes the cached shape later.
+  function save() {
+    if (!rowsEl()) return;
+    const rows = Array.from(rowsEl().children);
+    snapshot = {
+      dirs: rows.filter((r) => isDir(r) && (isLoaded(r) || isOpen(r)))
+        .map((r) => ({ path: r.dataset.path, open: isOpen(r) })),
+      cursor: cursorRow()?.dataset.path,
+    };
+    persist();
+  }
+  function flush() {
+    clearTimeout(scrollTimer);
+    scrollTimer = null;
+    persist();
+  }
+  function scroll() {
+    // scrollTo dispatches asynchronously; its matching event is not a gesture.
+    if (replayScroll && window.scrollX === replayScroll[0] && window.scrollY === replayScroll[1]) {
+      replayScroll = null;
+      return;
+    }
+    cancelReplay();
+    if (!snapshot) snapshot = { dirs: [], cursor: cursorRow()?.dataset.path };
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(flush, 200);
   }
 
   // Replay loads before closing anything: an open descendant of a collapsed
   // directory still needs its rows, but must finish hidden under its parent.
   async function restore(state) {
     restoring = true;
+    const token = ++generation;
     try {
       for (const dir of state.dirs) {
         const li = Array.from(rowsEl().children).find((r) => r.dataset.path === dir.path && isDir(r));
         if (!li) continue;
         if (!isLoaded(li)) await load(li, true);
         else expand(li);
+        if (token !== generation) return;
       }
       for (const dir of state.dirs) {
         const li = Array.from(rowsEl().children).find((r) => r.dataset.path === dir.path && isDir(r));
@@ -62,9 +108,10 @@ window.ermiteTree = (() => {
       }
       const cur = Array.from(rowsEl().children).find((r) => r.dataset.path === state.cursor && !r.hidden);
       if (cur) mark(cur, false);
-      window.scrollTo(state.x || 0, state.y || 0);
+      replayScroll = [state.x || 0, state.y || 0];
+      window.scrollTo(...replayScroll);
     } finally {
-      restoring = false;
+      if (token === generation) { restoring = false; save(); }
     }
   }
 
@@ -130,7 +177,15 @@ window.ermiteTree = (() => {
     save();
   }
 
-  async function load(li, quiet = false) {
+  function load(li, quiet = false) {
+    if (loads.has(li)) return loads.get(li);
+    if (li.getAttribute('aria-busy') === 'true') return Promise.resolve();
+    const promise = fetchRows(li, quiet).finally(() => loads.delete(li));
+    loads.set(li, promise);
+    return promise;
+  }
+
+  async function fetchRows(li, quiet) {
     li.setAttribute('aria-busy', 'true');
     try {
       const res = await fetch(li.dataset.expand, { headers: { Accept: 'text/html' } });
@@ -162,7 +217,9 @@ window.ermiteTree = (() => {
   }
 
   function toggle(li) {
-    if (!isDir(li) || li.getAttribute('aria-busy') === 'true') return;
+    cancelReplay();
+    if (!isDir(li)) return;
+    if (loads.has(li)) return loads.get(li);
     if (isOpen(li)) collapse(li);
     else if (isLoaded(li)) expand(li);
     else load(li);
@@ -186,6 +243,7 @@ window.ermiteTree = (() => {
     // node; any modified or other click, and a click on the last commit, keep
     // their own navigation.
     click(event) {
+      cancelReplay();
       const li = event.target.closest('li');
       if (!li || !li.parentElement) return;
       mark(li, true);
@@ -206,6 +264,7 @@ window.ermiteTree = (() => {
         state = JSON.parse(sessionStorage.getItem(stateKey()));
         if (!Array.isArray(state?.dirs) || !state.dirs.every((d) => d && typeof d.path === 'string' && typeof d.open === 'boolean')) state = null;
       } catch (e) { /* Storage may be unavailable or from an older page. */ }
+      snapshot = null;
       restoring = !!state;
       const lis = Array.from(rows.children);
       for (const li of lis) prep(li);
@@ -213,14 +272,15 @@ window.ermiteTree = (() => {
       if (cur) mark(cur, false);
       // A bfcache return keeps this document and does not run init again.
       // Only a fresh document replays the saved requests and scroll.
-      window.addEventListener?.('pagehide', save);
-      window.addEventListener?.('scroll', save, { passive: true });
+      window.addEventListener?.('pagehide', flush);
+      window.addEventListener?.('scroll', scroll, { passive: true });
       if (state) return restore(state);
     },
 
     // sync follows a cursor that ermite.js moved (j k gg G): the focus goes
     // with it, and the tab stop.
     sync(li) {
+      cancelReplay();
       if (li.parentElement && li.parentElement.id === 'tree-rows') mark(li, true);
     },
 
@@ -237,6 +297,7 @@ window.ermiteTree = (() => {
     // open is Enter on the row under the cursor: a directory opens or closes
     // in place, a file opens. It answers whether the tree took the key.
     open() {
+      cancelReplay();
       const li = this.active() && cursorRow();
       if (!li) return false;
       if (isDir(li)) toggle(li);
@@ -255,6 +316,7 @@ window.ermiteTree = (() => {
     //  Left:  an open directory closes, any other row moves to its directory,
     //         and a top-level row does nothing.
     arrow(key) {
+      cancelReplay();
       if (!this.active()) return false;
       const li = cursorRow();
       if (!li) return false;
@@ -286,6 +348,7 @@ window.ermiteTree = (() => {
     //  h: an open directory closes, any other row goes to its directory, and a
     //     top-level row to the parent directory's page.
     key(into) {
+      cancelReplay();
       if (!this.active()) return false;
       const li = cursorRow();
       if (!li) return false;

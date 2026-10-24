@@ -58,7 +58,7 @@
     // Row cursor: j / k. In the side panel they move the focus between its
     // controls instead.
     move(d) {
-      if ($('dialog[open]')) return;
+      if ($('dialog[open]') || $('[data-drawer-open]')) return;
       if (window.ermiteMR?.stepFiles(d) || window.ermiteRail.step(d)) return;
       const rows = visibleRows();
       if (!rows.length) {
@@ -87,7 +87,7 @@
       window.ermiteFinder?.sync();
     },
     open() {
-      if ($('dialog[open]') || window.ermiteTree?.open()) return;
+      if ($('dialog[open]') || $('[data-drawer-open]') || window.ermiteTree?.open()) return;
       $('[data-cursor] a')?.click();
     },
     // l / h: in the Files view, open a directory or a file / close a directory
@@ -95,7 +95,7 @@
     // request, else its main action, else its first control) and back to the
     // content. Enter then activates the control.
     rail(into) {
-      if ($('dialog[open]')) return;
+      if ($('dialog[open]') || $('[data-drawer-open]')) return;
       if (window.ermiteTree?.key(into)) return;
       if (into && window.ermiteMR?.focusFiles()) return flash('files · j k move · enter open · h back');
       if (!into && window.ermiteMR?.leaveFiles()) return;
@@ -136,6 +136,7 @@
     dialog(id, focusId) {
       const d = document.getElementById(id);
       if (!d) return;
+      document.querySelector('[data-drawer-open] .rail-close')?.click();
       const opener = document.activeElement;
       ermite.closeDialogs();
       d.addEventListener('close', () => {
@@ -662,6 +663,8 @@
   let pending = 0;
   let pendingTimer = 0;
   addEventListener('keydown', (e) => {
+    // The custom drawer owns its keys just like a native modal.
+    if ($('[data-drawer-open]')) { pending = 0; return; }
     const typing = e.target.closest('input:not([type=checkbox], [type=radio], [type=submit], [type=button]), textarea, select, [contenteditable]');
     // ctrl k / cmd k opens the palette; in a field only cmd k, so that the
     // field keeps ctrl k (kill to end of line on macOS).
@@ -682,7 +685,7 @@
     if (typing) return;
     // An open dialog takes only the keys that move between dialogs: the page
     // behind it does not react (scripted clicks would go through inert).
-    if ($('dialog[open]') && !['?', 'b', ':', 'f', 'Enter'].includes(e.key)) { pending = 0; return; }
+    if (($('dialog[open]') || $('[data-drawer-open]')) && !['?', 'b', ':', 'f', 'Enter'].includes(e.key)) { pending = 0; return; }
     if (e.key === 'Enter' && e.target.closest('a, button, summary')) return;
     // Some layouts report lowercase e.key even with Shift. Uppercase actions
     // also interrupt a pending g rather than being swallowed by it.
@@ -706,7 +709,7 @@
     if (!e.shiftKey && e.target.closest?.('#tree-rows') && window.ermiteTree?.arrow(e.key)) { e.preventDefault(); return; }
     const name = single[e.key];
     if (!name || (name === 'inbox' && !$('[data-inbox]'))) return;
-    if (e.key !== 'Enter' || !$('dialog[open]')) e.preventDefault();
+    if (e.key !== 'Enter' || !($('dialog[open]') || $('[data-drawer-open]'))) e.preventDefault();
     ermite.fire(name);
   });
 

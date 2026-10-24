@@ -30,8 +30,10 @@ function setup() {
   body.append(header);
   body.append(work); work.append(main, rail);
   const section = (id, label) => { const s = new Element('section'), h = new Element('h2'); s.id = id; h.textContent = label; s.append(h); return s; };
+  rail.setAttribute('aria-label', 'Context');
+  rail.setAttribute('role', 'complementary');
   rail.append(section('about', 'About'), section('files', 'Files 12'));
-  document = { body, querySelector: () => header, createElement: t => new Element(t), createTextNode: t => ({ textContent: t }), querySelectorAll: () => [], addEventListener(k, fn) { this[k] = fn; } };
+  document = { body, querySelector: s => s === '.hdr' ? header : document.nativeDialog, createElement: t => new Element(t), createTextNode: t => ({ textContent: t }), querySelectorAll: () => [], addEventListener(k, fn) { this[k] = fn; } };
   const media = { matches: true, addEventListener(k, fn) { this.change = fn; } };
   // ermite.js defines ermiteRail (the keys of the rail) before this file runs.
   const keys = { step() {} };
@@ -102,4 +104,16 @@ test('context trigger opens the first section and receives focus on close', () =
   s.closeButton.events.click();
   assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
   assert.equal(s.document.activeElement, s.trigger);
+});
+
+test('Escape defers to a native dialog and close restores the aside semantics', () => {
+  const s = setup();
+  s.trigger.events.click();
+  s.document.nativeDialog = {};
+  s.document.keydown({ key: 'Escape', preventDefault() { assert.fail('native dialog owns Escape'); } });
+  assert.equal(s.rail.getAttribute('data-drawer-open'), '');
+  s.document.nativeDialog = null;
+  s.closeButton.events.click();
+  assert.equal(s.rail.getAttribute('aria-label'), 'Context');
+  assert.equal(s.rail.getAttribute('role'), 'complementary');
 });
