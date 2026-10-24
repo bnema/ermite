@@ -300,7 +300,10 @@ window.ermiteMR = (() => {
       // here on each of them would wake hx-live again, a loop that never yields.
       const sync = () => {
         const label = $('[data-checks-label]', nav);
-        const text = $('#mr-ck')?.title || $('#mr-ck')?.textContent.trim() || 'no checks';
+        // No checks: the tab says "Checks" alone, not "no checks" beside it.
+        const ck = $('#mr-ck');
+        let text = ck?.title || ck?.textContent.trim() || '';
+        if (text === 'no checks') text = '';
         if (label && label.textContent !== text) label.textContent = text;
       };
       observer = new MutationObserver(sync);

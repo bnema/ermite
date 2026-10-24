@@ -18,7 +18,8 @@
     for (const nav of [bar, tabs]) nav.setAttribute('aria-label', 'Context sections');
     header.append(tabs, closeButton);
     rail.prepend(header);
-    rail.parentNode.insertBefore(bar, rail.parentNode.querySelector('main'));
+    // First in the page, above the description: it meets the header.
+    rail.parentNode.prepend(bar);
     document.body.append(backdrop);
     let sections = [], selected = null, opener = null, signature = '', inert = [], serial = 0;
     const buttons = () => [...bar.children, ...tabs.children];

@@ -177,7 +177,9 @@ test('footer: #mr-ck syncs the checks label; its click opens Checks without togg
     summary.title = ''; callback();
     assert.equal(label.textContent, '1/2');
     summary.textContent = ' '; callback();
-    assert.equal(label.textContent, 'no checks');
+    assert.equal(label.textContent, '', 'no checks: the tab is "Checks" alone');
+    summary.textContent = ' no checks '; callback();
+    assert.equal(label.textContent, '', 'the empty summary of the bar is not repeated');
     const click = { target: { closest: (s) => s === '#mr-ck' ? summary : null } };
     h.listeners.click(click);
     assert.deepEqual(h.state(), [false, true]);
