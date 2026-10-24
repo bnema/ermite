@@ -43,6 +43,9 @@ templ MRList(l Layout, p MRListPage) {
 							for _, b := range p.Branches {
 								<a href={ templ.SafeURL(b.Href) }>{ b.Name }</a>
 							}
+							if p.AllBranches != "" {
+								<a class="dim" href={ templ.SafeURL(p.AllBranches) }>all branches…</a>
+							}
 						</nav>
 					} else {
 						<p class="dim">there is no other branch to merge yet.</p>

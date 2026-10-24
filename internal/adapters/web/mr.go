@@ -63,8 +63,9 @@ const (
 	// maxOpenPages bounds the pages read for the open merge requests, which
 	// the first list page shows in full.
 	maxOpenPages = 5
-	// railBranches is how many branches the list offers to compare.
-	railBranches = 15
+	// menuBranches is how many branches the New merge request menu offers to
+	// compare; the others are one link away, on the branches page.
+	menuBranches = 15
 )
 
 // MRRow is one merge request in the list.
@@ -93,8 +94,10 @@ type MRListPage struct {
 	// Older and Newest are the paging links of the decided requests.
 	Older, Newest string
 	Branches      []BranchLink
-	Default       string
-	CLI           Clone
+	// AllBranches links to every branch when the menu cuts the list.
+	AllBranches string
+	Default     string
+	CLI         Clone
 	// Live is true when the page announces changes.
 	Live bool
 }
@@ -477,8 +480,17 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 	if err != nil {
 		return nil, 0, err
 	}
+	// The tab is "open" (the default) or "done"; any other state is a page
+	// that does not exist, as on the issue list, not the open tab in disguise.
+	p := MRListPage{Default: visibleText(d.repo.DefaultBranch)}
+	switch r.URL.Query().Get("state") {
+	case "", "open":
+	case "done":
+		p.DoneState = true
+	default:
+		return nil, 0, errNotFound
+	}
 	token := r.URL.Query().Get("page")
-	p := MRListPage{Default: visibleText(d.repo.DefaultBranch), DoneState: r.URL.Query().Get("state") == "done"}
 	p.CLI = Clone{ID: "cli-new", Lines: []string{"ermite mr create " + shellWord(d.name()) + " --source <branch> --title <title>"}}
 	base := mrBase(d.name())
 	p.OpenHref, p.DoneHref = base, base+"?state=done"
@@ -539,6 +551,10 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 	for _, b := range d.branches {
 		if b.ShortName == d.repo.DefaultBranch {
 			continue
+		}
+		if len(p.Branches) == menuBranches {
+			p.AllBranches = repoHref(d.name(), "refs")
+			break
 		}
 		p.Branches = append(p.Branches, BranchLink{Name: visibleText(b.ShortName), Href: repoHref(d.name(), "compare", b.ShortName)})
 	}

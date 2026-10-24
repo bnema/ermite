@@ -434,6 +434,21 @@ func TestMRListNewMenu(t *testing.T) {
 	assert.Contains(t, body, `href="/proj/compare/feature">feature</a>`)
 	assert.Contains(t, body, `ermite mr create proj`)
 	assert.NotContains(t, body, `<aside class="rail"`)
+	assert.NotContains(t, body, `all branches`, "a short list needs no way out")
+
+	cut := renderToString(t, MRList(Layout{}, MRListPage{
+		Default: "main", Branches: []BranchLink{{Name: "feature", Href: "/proj/compare/feature"}}, AllBranches: "/proj/refs",
+	}))
+	assert.Contains(t, cut, `href="/proj/refs">all branches…</a>`, "a cut menu links to every branch")
+}
+
+func TestMRListUnknownStateIsNotFound(t *testing.T) {
+	t.Parallel()
+	r := newIssueRig(t, domain.IssuesOwner, false)
+	for _, state := range []string{"closed", "merged", "typo"} {
+		rec := r.do("GET", "/proj/merge-requests?state="+state, false, nil)
+		assert.Equal(t, http.StatusNotFound, rec.Code, state)
+	}
 }
 
 func TestMRListNoticeKeepsDoneTab(t *testing.T) {
