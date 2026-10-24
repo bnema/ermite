@@ -2152,7 +2152,7 @@ func mrFooter(p MRPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if c.Sig != nil {
-				templ_7745c5c3_Err = signaturePill(c.Sig).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = signatureIcon(c.Sig).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

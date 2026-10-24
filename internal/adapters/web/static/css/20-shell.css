@@ -34,6 +34,10 @@
   .i-sun-moon { --i: url(icons/sun-moon.svg); }
   .i-sun { --i: url(icons/sun.svg); }
   .i-moon { --i: url(icons/moon.svg); }
+  .i-lock { --i: url(icons/lock.svg); }
+  .i-shield-check { --i: url(icons/shield-check.svg); }
+  .i-shield-alert { --i: url(icons/shield-alert.svg); }
+  .i-shield-x { --i: url(icons/shield-x.svg); }
 
   .pill {
     display: inline-flex; align-items: center; height: 18px; padding: 0 var(--s2); margin-left: var(--s1);
@@ -54,6 +58,17 @@
     &.sig-warn { color: var(--ink-hi); border-style: dashed; }
     &.sig-bad { color: var(--red); border-color: currentColor; }
     &.sig-none { color: var(--ink-mute); border-style: dotted; font-weight: 400; }
+    /* private: a lock on a red pill, to stand out from the neutral ones */
+    &.priv { padding: 0 6px; color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); border-color: color-mix(in srgb, var(--red) 55%, transparent); }
+    &.priv .ico { width: 12px; height: 12px; }
+  }
+  /* the signature in a list: the shield alone, its shape carries the verdict,
+     the tooltip and the hidden text say which and why */
+  .sig-ico {
+    display: inline-flex; vertical-align: -2px; margin-left: var(--s1); cursor: help;
+    &.sig-ok { color: var(--teal); }
+    &.sig-warn { color: var(--ink-dim); }
+    &.sig-bad { color: var(--red); }
   }
   /* Why a signature is or is not verified, as text: a title alone is not
      reachable by keyboard, touch or every screen reader. */
