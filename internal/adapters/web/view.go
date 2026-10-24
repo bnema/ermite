@@ -74,6 +74,8 @@ type Layout struct {
 	MR bool
 	// IssueForm loads the script of the public issue form (issue-form.js).
 	IssueForm bool
+	// MDEditor enhances Markdown textareas on writing pages.
+	MDEditor bool
 	// Inbox is the button to the owner's inbox, next to the logo; set on the
 	// home page only, for the signed-in owner.
 	Inbox *InboxButton

@@ -124,7 +124,7 @@ func (s *Server) writeIssueForm(ctx context.Context, w http.ResponseWriter, r *h
 		Crumb{Label: "new", Current: true},
 	)
 	l.HasRail = true
-	l.IssueForm = true
+	l.IssueForm, l.MDEditor = true, true
 	w.Header().Set("Cache-Control", noStore)
 	s.write(ctx, w, r, status, IssueForm(l, p))
 }

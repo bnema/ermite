@@ -91,7 +91,7 @@ window.ermiteIssueForm = (() => {
     const fields = { title: $('[name="title"]'), body: $('[name="body"]'), author: $('[name="author"]') };
     if (storage) {
       const d = core.restoreDraft(storage, draftKey);
-      if (d) for (const k of Object.keys(fields)) if (fields[k]) fields[k].value = d[k];
+      if (d) for (const k of Object.keys(fields)) if (fields[k]) { fields[k].value = d[k]; fields[k].dispatchEvent(new Event('input', {bubbles:true})); }
     }
     window.addEventListener('pageshow', (e) => {
       if (core.onPageShow(e.persisted) !== 'reload') return;

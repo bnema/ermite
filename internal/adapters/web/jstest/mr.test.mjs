@@ -53,8 +53,8 @@ test('rangeURL requires the same file, side and MR and sorts endpoints', () => {
 });
 
 test('quote opens the thread reply and prefills and focuses its textarea', () => {
- let focused=false;
- const field={value:'',focus(){focused=true;}};
+ let focused=false, input=false;
+ const field={value:'',focus(){focused=true;},dispatchEvent(e){input=e.type==='input' && e.bubbles;}};
  const details={open:false,querySelector(){return field;}};
  const thread={querySelector(){return details;}};
  const button={dataset:{quote:'> source\n\n^2 '},closest(){return {closest(){return thread;}};}};
@@ -62,6 +62,7 @@ test('quote opens the thread reply and prefills and focuses its textarea', () =>
  assert.equal(details.open,true);
  assert.equal(field.value,'> source\n\n^2 ');
  assert.equal(focused,true);
+ assert.equal(input,true);
 });
 
 for (const dataset of [{diff:'split'}, {view:'split'}]) test(`reveal selects the split note (${JSON.stringify(dataset)}), including after lazy loading`, async () => {

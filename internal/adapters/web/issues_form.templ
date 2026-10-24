@@ -46,7 +46,7 @@ templ IssueForm(l Layout, p IssueFormPage) {
 				<p id="issue-title-error" class="f-error" role="alert">{ p.Error }</p>
 			}
 			<label for="issue-body">description</label>
-			<textarea
+			<textarea data-md
 				id="issue-body"
 				aria-describedby={ issueFieldDescription("body", p.ErrorField) }
 				if p.ErrorField == "body" {

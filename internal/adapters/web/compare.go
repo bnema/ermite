@@ -123,6 +123,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 	}
 
 	l := s.repoLayout(ctx, d, "merge-requests")
+	l.MDEditor = p.Create != nil
 	l.Title = "compare " + p.Source + " · " + name + " · " + s.instance
 	pinRef(&l, target{rev: src.CommitID.String(), name: src.ShortName})
 	l.Crumbs[0].Current = false

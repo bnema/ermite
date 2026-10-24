@@ -1,0 +1,26 @@
+@layer components {
+  .md-editor { min-width: 0; width: 100%; }
+  .md-toolbar { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s1); }
+  .md-toolbar button { background: var(--bg-raised); color: var(--ink-dim); border: 1px solid var(--border); border-radius: var(--r-s); padding: .25em .5em; font-size: var(--fs-s); cursor: pointer; }
+  .md-toolbar button:hover { color: var(--ink-hi); }
+  .md-surface { position: relative; min-width: 0; background: var(--bg-surface); border-radius: var(--r-s); }
+  .md-surface .md-backdrop, .md-surface textarea {
+    box-sizing: border-box; margin: 0; width: 100%; padding: var(--s2) var(--s3);
+    font: var(--fs)/1.6 var(--mono); letter-spacing: 0; tab-size: 4;
+    scrollbar-gutter: stable; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
+    border: 1px solid transparent; border-radius: var(--r-s);
+  }
+  .md-surface .md-backdrop { position: absolute; inset: 0; height: 100%; overflow: auto; scrollbar-width: auto; pointer-events: none; color: var(--ink); background: transparent; }
+  .md-surface textarea { position: relative; display: block; color: transparent; caret-color: var(--ink-hi); background: transparent; border-color: var(--border-strong); resize: vertical; }
+  .md-surface textarea::selection { background: var(--bg-strong); color: var(--ink); }
+  .md-marker { color: var(--ink-mute); }
+  .md-heading, .md-bold { font-weight: 700; color: var(--ink-hi); }
+  .md-italic { font-style: italic; }
+  .md-code { background: var(--bg-raised); }
+  .md-quote { color: var(--ink-dim); }
+  .md-link { color: var(--accent); }
+  @media (forced-colors: active) {
+    .md-surface textarea { color: CanvasText; }
+    .md-backdrop { visibility: hidden; }
+  }
+}

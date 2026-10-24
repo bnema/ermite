@@ -295,7 +295,7 @@ templ commentView(c CommentView, suffix string) {
 			<button type="button" class="btn" data-js data-quote={ c.Quote }>Quote</button>
 		}
 		if c.Edit != nil {
-			<details><summary>Edit</summary><form method="post" action={ templ.SafeURL(c.Edit.Action) }><input type="hidden" name="from" value={ itoa(c.Edit.From) }/><textarea name="text" maxlength="8000" aria-label="Edit note">{ c.Edit.Text }</textarea><button class="btn" type="submit">Save</button></form></details>
+			<details><summary>Edit</summary><form method="post" action={ templ.SafeURL(c.Edit.Action) }><input type="hidden" name="from" value={ itoa(c.Edit.From) }/><textarea data-md name="text" maxlength="8000" aria-label="Edit note">{ c.Edit.Text }</textarea><button class="btn" type="submit">Save</button></form></details>
 		}
 		if c.Delete != nil {
 			<details><summary>Delete</summary><form method="post" action={ templ.SafeURL(c.Delete.Action) }><input type="hidden" name="from" value={ itoa(c.Delete.From) }/><p>Delete this note?</p><button class="btn" type="submit">Confirm delete</button></form></details>
@@ -331,17 +331,15 @@ func boolText(b bool) string {
 templ commentForm(f CommentForm, suffix string) {
 	<form class="cform" method="post" action={ templ.SafeURL(f.Action) }>
 		<label for={ f.ID + suffix }>{ f.Title }</label>
-		<textarea
+		<textarea data-md
 			id={ f.ID + suffix }
 			name="text"
 			rows="3"
 			maxlength="8000"
-			if f.Plain {
+			if f.Issue {
 				required
-				placeholder="plain text, 8000 characters at most"
-			} else {
-				placeholder="Markdown, 8000 characters at most"
 			}
+			placeholder="Markdown, 8000 characters at most"
 			if f.Focus {
 				autofocus
 			}
@@ -355,7 +353,7 @@ templ commentForm(f CommentForm, suffix string) {
 		if f.ReplyTo != "" {
 			<input type="hidden" name="reply_to" value={ f.ReplyTo }/>
 		}
-		if f.Path == "" && f.ReplyTo == "" && !f.Plain {
+		if f.Path == "" && f.ReplyTo == "" && !f.Issue {
 			<fieldset><legend>Verdict</legend><label><input type="radio" name="verdict" value="" checked/>Note</label><label><input type="radio" name="verdict" value="approve"/>Approve</label><label><input type="radio" name="verdict" value="changes_requested"/>Request changes</label></fieldset>
 		}
 		if f.From > 0 {
@@ -711,7 +709,7 @@ templ Compare(l Layout, p ComparePage) {
 				<label for="mr-title">title</label>
 				<input id="mr-title" name="title" type="text" maxlength="120" required value={ p.Create.Title } autocomplete="off"/>
 				<label for="mr-desc">description</label>
-				<textarea id="mr-desc" name="description" rows="4" maxlength="8000" placeholder="Markdown, optional"></textarea>
+				<textarea data-md id="mr-desc" name="description" rows="4" maxlength="8000" placeholder="Markdown, optional"></textarea>
 				<div class="f-btns">
 					<button type="submit" class="btn primary">Create merge request</button>
 				</div>

@@ -120,7 +120,7 @@ func TestIssueShow(t *testing.T) {
 	t.Parallel()
 	r := newIssueRig(t, domain.IssuesPublic, false)
 	c := domain.IssueComment{ID: 1, Author: "owner", CreatedAt: time.Now()}
-	c.Text, _ = domain.ParseIssueBody("see https://example.org <script>x</script>")
+	c.Text, _ = domain.ParseIssueBody("## Title\n\n- item\n\n`code`\n\nsee https://example.org <script>x</script> [bad](javascript:alert(1))")
 	r.issues.EXPECT().Get(mock.Anything, mock.Anything, repoName(t, "proj"), int64(5)).Return(ports.IssueDetail{
 		Issue:    testIssue(t, 5, domain.IssueStateOpen, "bug", "# Title\n\n**bold**\n\n<script>alert(1)</script>"),
 		Comments: []domain.IssueComment{c},
@@ -133,7 +133,11 @@ func TestIssueShow(t *testing.T) {
 	assert.NotContains(t, body, "<script>alert")
 	assert.Contains(t, body, `id="c1"`)
 	assert.Contains(t, body, `href="https://example.org"`)
-	assert.Contains(t, body, "&lt;script&gt;x&lt;/script&gt;")
+	assert.Contains(t, body, `<h2 id="c1-title">Title</h2>`)
+	assert.Contains(t, body, "<li>item</li>")
+	assert.Contains(t, body, "<code>code</code>")
+	assert.NotContains(t, body, "<script>x")
+	assert.NotContains(t, body, `href="javascript:`)
 	assert.NotContains(t, body, `class="cform"`)
 	assert.NotContains(t, body, "/proj/issues/5/close")
 	assert.Contains(t, body, `view=issue`)
@@ -473,4 +477,19 @@ func TestEditedIssueHistoryEscapesActor(t *testing.T) {
 	body := renderToString(t, issueTimeline(items))
 	assert.Contains(t, body, "ci &lt;script&gt;alert(1)&lt;/script&gt; edited title and body")
 	assert.NotContains(t, body, "<script>")
+}
+
+func TestIssueCommentsShareReferenceCache(t *testing.T) {
+	t.Parallel()
+	r := newIssueRig(t, domain.IssuesPublic, true)
+	text, err := domain.ParseIssueBody("see #7")
+	require.NoError(t, err)
+	r.issues.EXPECT().Get(mock.Anything, mock.Anything, repoName(t, "proj"), int64(5)).Return(ports.IssueDetail{
+		Issue:    testIssue(t, 5, domain.IssueStateOpen, "bug", ""),
+		Comments: []domain.IssueComment{{ID: 1, Text: text}, {ID: 2, Text: text}},
+	}, nil)
+	r.nums.EXPECT().Kind(mock.Anything, mock.Anything, repoName(t, "proj"), int64(7)).Return(domain.NumberIssue, nil).Once()
+	rec := r.do("GET", "/proj/issues/5", false, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 2, strings.Count(rec.Body.String(), `href="/proj/issues/7"`))
 }

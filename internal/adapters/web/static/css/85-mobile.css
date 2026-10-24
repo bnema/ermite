@@ -24,7 +24,7 @@
     #diffs[data-mr][data-diff] .spl { display: none; }
     #diffs[data-mr] .fnote td { padding-inline: 0; }
     #diffs[data-mr] :is(.cform, .cmt) { width: min(65ch, calc(100vw - 5rem)); max-width: calc(100vw - 5rem); overflow-wrap: anywhere; }
-    body:has(#diffs[data-mr]) :is(input, textarea, select) { font-size: 16px; }
+    body:has(#diffs[data-mr]) :is(input, textarea, select, .md-backdrop) { font-size: 16px; line-height: 1.6; }
     body:has(#diffs[data-mr]) .f-btns { flex-wrap: wrap; }
     body:has(#diffs[data-mr]) .menu .menu-pop {
       position: fixed; inset: auto 0 0; width: auto; max-width: 100%;

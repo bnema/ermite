@@ -146,7 +146,7 @@ test('onPageShow reloads only for a bfcache restore', () => {
 
 test('init restores a draft and reloads on a bfcache pageshow', () => {
   const listeners = {};
-  const mk = (o) => ({ listeners: {}, addEventListener(t, f) { this.listeners[t] = f; }, ...o });
+  const mk = (o) => ({ listeners: {}, events: [], dispatchEvent(e) { this.events.push(e.type); }, addEventListener(t, f) { this.listeners[t] = f; }, ...o });
   const title = mk({ id: 'issue-title', name: 'title', value: '' });
   const body = mk({ id: 'issue-body', name: 'body', value: '' });
   const author = mk({ id: 'issue-author', name: 'author', value: '' });
@@ -167,6 +167,7 @@ test('init restores a draft and reloads on a bfcache pageshow', () => {
     C.saveDraft(st, C.draftKey('/r/issues/new'), { title: 'Hello', body: 'B', author: 'me' });
     window.ermiteIssueForm.init(form);
     assert.equal(title.value, 'Hello');
+    assert.deepEqual(body.events, ['input']);
     assert.equal(outs[0].textContent, '5 / 120');
     assert.equal(st.m.size, 0);
     assert.equal(button.disabled, true);

@@ -27,6 +27,9 @@ templ Shell(l Layout, rail templ.Component) {
 			<script src={ l.Assets.SSE } defer></script>
 			<script src={ l.Assets.Store }></script>
 			<script src={ l.Assets.App } defer></script>
+			if l.MDEditor {
+				<script src={ l.Assets.MDEditor } defer></script>
+			}
 			<script src={ l.Assets.Files } defer></script>
 			<script src={ l.Assets.Passkey } defer></script>
 			<script src={ l.Assets.Log } defer></script>

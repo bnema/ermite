@@ -158,8 +158,8 @@ type CommentForm struct {
 	// Path, Line and Side designate the line; empty for a general comment.
 	Path, Line, Side   string
 	StartLine, ReplyTo string
-	// Plain is a form of an issue comment: plain text, no verdict.
-	Plain  bool
+	// Issue requires text and omits MR verdict fields.
+	Issue  bool
 	Cancel string
 	Focus  bool
 	// From is the window of the page the form is on (see mrWindow), sent
@@ -678,6 +678,7 @@ func (s *Server) mrPageView(ctx context.Context, r *http.Request, since, fragmen
 		return MRStateFragment(p), http.StatusOK, nil
 	}
 	l := s.repoLayout(ctx, d, "merge-requests")
+	l.MDEditor = true
 	l.Title = p.Number + " " + p.Title + " · " + d.name() + " · " + s.instance
 	if head != "" {
 		pinRef(&l, target{rev: head, name: m.Source})

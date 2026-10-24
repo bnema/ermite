@@ -527,7 +527,7 @@ func IssueNew(l Layout, p IssueNewPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\"><label for=\"issue-title\">title</label> <input id=\"issue-title\" name=\"title\" type=\"text\" maxlength=\"120\" required autocomplete=\"off\" autofocus> <label for=\"issue-body\">description</label> <textarea id=\"issue-body\" name=\"body\" rows=\"8\" maxlength=\"10000\" placeholder=\"Markdown, optional\"></textarea><div class=\"f-btns\"><button type=\"submit\" class=\"btn primary\">Create issue</button> <a class=\"btn\" href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\"><label for=\"issue-title\">title</label> <input id=\"issue-title\" name=\"title\" type=\"text\" maxlength=\"120\" required autocomplete=\"off\" autofocus> <label for=\"issue-body\">description</label> <textarea data-md id=\"issue-body\" name=\"body\" rows=\"8\" maxlength=\"10000\" placeholder=\"Markdown, optional\"></textarea><div class=\"f-btns\"><button type=\"submit\" class=\"btn primary\">Create issue</button> <a class=\"btn\" href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

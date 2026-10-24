@@ -47,6 +47,7 @@ window.ermiteMR = (() => {
       if (!field) return false;
       details.open = true;
       field.value = button.dataset.quote;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
       field.focus();
       return true;
     },

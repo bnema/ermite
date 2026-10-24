@@ -260,6 +260,7 @@ func (s *Server) issueNew(ctx context.Context, r *http.Request) (templ.Component
 		return nil, 0, errNotFound
 	}
 	l := s.repoLayout(ctx, d, "issues")
+	l.MDEditor = true
 	l.Title = "new issue · " + d.name() + " · " + s.instance
 	l.Crumbs[0].Current = false
 	l.Crumbs = append(l.Crumbs,
@@ -308,9 +309,14 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 		p.Opened.Abs = absolute(i.CreatedAt)
 	}
 	p.Updated, p.UpdatedAt = whenOf(now, i.UpdatedAt)
+	refs := s.referenceResolver(ctx, d.name())
 	for _, c := range res.Comments {
 		v := CommentView{
 			createdAt: c.CreatedAt, ID: strconv.FormatInt(c.ID, 10), Author: s.who(c.Author), Parts: plainParts(c.Text.String()),
+		}
+		if body, err := s.md.renderNote([]byte(c.Text.String()), d.name(), d.repo.DefaultBranch, "c"+v.ID+"-", refs); err == nil {
+			v.Body = body
+			v.Parts = nil
 		}
 		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
 		if !c.CreatedAt.IsZero() {
@@ -320,7 +326,7 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	}
 	p.Timeline = s.issueTimeline(d.name(), p.Comments, res.Events, false)
 	if signed {
-		p.Form = &CommentForm{ID: "cf-general", Action: issueHref(d.name(), n, "comments"), Title: "comment on the issue", Plain: true}
+		p.Form = &CommentForm{ID: "cf-general", Action: issueHref(d.name(), n, "comments"), Title: "comment on the issue", Issue: true}
 		switch i.State {
 		case domain.IssueStateOpen:
 			p.Transition = &IssueActions{Action: issueHref(d.name(), n, "close"), Label: "Close issue"}
@@ -330,6 +336,7 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	}
 
 	l := s.repoLayout(ctx, d, "issues")
+	l.MDEditor = signed
 	l.Title = p.Number + " " + p.Title + " · " + d.name() + " · " + s.instance
 	l.Crumbs[0].Current = false
 	l.Crumbs = append(l.Crumbs,
