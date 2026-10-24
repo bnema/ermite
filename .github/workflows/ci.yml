@@ -24,7 +24,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -45,7 +45,7 @@ jobs:
       # nodejs runs the tests of the file finder (internal/adapters/web/jstest).
       - name: System packages
         run: pacman -Syu --noconfirm --needed git gcc openssh nodejs
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # The workspace belongs to the runner user, not root: without this, git does not
       # treat it as a repository and `git diff a b` compares the two files instead.
       - name: Trust the workspace
@@ -88,7 +88,7 @@ jobs:
     name: Protobuf and generated code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # buf breaking compares with the base branch.
           fetch-depth: 0
@@ -118,7 +118,7 @@ jobs:
     # the runner image provides the docker CLI and daemon.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # git describe needs the tags for the image version.
           fetch-depth: 0
