@@ -4,30 +4,35 @@ package web
 
 // IssueList is the list of the issues of a repository, open or closed.
 templ IssueList(l Layout, p IssueListPage) {
-	@Shell(l, issueListRail(p)) {
+	@Shell(l, nil) {
 		if p.Live {
 			@LiveSlot("mr-notice")
 		}
-		<nav class="since" aria-label="State">
-			<a
-				href={ templ.SafeURL(p.OpenHref) }
-				if !p.Closed && !p.Resolved {
-					aria-current="page"
-				}
-			>open</a>
-			<a
-				href={ templ.SafeURL(p.ClosedHref) }
-				if p.Closed {
-					aria-current="page"
-				}
-			>closed</a>
-			<a
-				href={ templ.SafeURL(p.ResolvedHref) }
-				if p.Resolved {
-					aria-current="page"
-				}
-			>resolved</a>
-		</nav>
+		<div class="list-toolbar">
+			<nav class="since" aria-label="State">
+				<a
+					href={ templ.SafeURL(p.OpenHref) }
+					if !p.Closed && !p.Resolved {
+						aria-current="page"
+					}
+				>open</a>
+				<a
+					href={ templ.SafeURL(p.ClosedHref) }
+					if p.Closed {
+						aria-current="page"
+					}
+				>closed</a>
+				<a
+					href={ templ.SafeURL(p.ResolvedHref) }
+					if p.Resolved {
+						aria-current="page"
+					}
+				>resolved</a>
+			</nav>
+			if p.NewHref != "" {
+				<a class="btn primary" href={ templ.SafeURL(p.NewHref) }>New issue</a>
+			}
+		</div>
 		<div class="filter">
 			<label for="issue-filter" class="sr">filter</label>
 			<input
@@ -95,26 +100,6 @@ templ issueRows(rows []IssueRow) {
 				}
 			</tbody>
 		</table>
-	}
-}
-
-templ issueListRail(p IssueListPage) {
-	<section aria-labelledby="r-states">
-		<h2 id="r-states">States</h2>
-		<dl class="kv">
-			<dt>open</dt>
-			<dd>being worked on</dd>
-			<dt>closed</dt>
-			<dd>closed without resolution</dd>
-			<dt>resolved</dt>
-			<dd>fixed, can be reopened</dd>
-		</dl>
-	</section>
-	if p.NewHref != "" {
-		<section aria-labelledby="r-new">
-			<h2 id="r-new">Open one</h2>
-			<a class="btn primary" href={ templ.SafeURL(p.NewHref) }>New issue</a>
-		</section>
 	}
 }
 

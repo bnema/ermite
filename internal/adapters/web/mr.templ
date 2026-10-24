@@ -7,14 +7,50 @@ import (
 	"strings"
 )
 
-// MRList is the list of the merge requests of a repository: the open ones,
-// then the merged and closed ones.
+// MRList shows open or decided merge requests of a repository.
 templ MRList(l Layout, p MRListPage) {
-	@Shell(l, mrListRail(p)) {
+	@Shell(l, nil) {
 		if p.Live {
 			@LiveSlot("mr-notice")
 			<div id="mr-refresh-status" role="status" aria-live="polite"></div>
 		}
+		<div class="list-toolbar">
+			<nav class="since" aria-label="State">
+				<a
+					href={ templ.SafeURL(p.OpenHref) }
+					if !p.DoneState {
+						aria-current="page"
+					}
+				>
+					open
+					if !p.DoneState {
+						<span class="count">{ itoa(len(p.Open)) }</span>
+					}
+				</a>
+				<a
+					href={ templ.SafeURL(p.DoneHref) }
+					if p.DoneState {
+						aria-current="page"
+					}
+				>merged and closed</a>
+			</nav>
+			<details class="menu">
+				<summary class="btn primary">New merge request</summary>
+				<div class="menu-pop">
+					<p class="dim">compare with { p.Default }</p>
+					if len(p.Branches) > 0 {
+						<nav class="outline" aria-label="Branches">
+							for _, b := range p.Branches {
+								<a href={ templ.SafeURL(b.Href) }>{ b.Name }</a>
+							}
+						</nav>
+					} else {
+						<p class="dim">there is no other branch to merge yet.</p>
+					}
+					@CloneBlock(p.CLI)
+				</div>
+			</details>
+		</div>
 		<div class="filter">
 			<label for="mr-filter" class="sr">filter</label>
 			<input
@@ -26,7 +62,7 @@ templ MRList(l Layout, p MRListPage) {
 				hx-on:input="ermite.filter(this)"
 			/>
 		</div>
-		if p.Newest == "" {
+		if !p.DoneState {
 			<h2 class="rule-h"><span>Open</span><span class="count">{ itoa(len(p.Open)) }</span></h2>
 			@mrRows(p.Open, "Open merge requests")
 			if len(p.Open) == 0 {
@@ -35,11 +71,12 @@ templ MRList(l Layout, p MRListPage) {
 			if p.OpenNote != "" {
 				<p class="note">{ p.OpenNote }</p>
 			}
-		}
-		<h2 class="rule-h"><span>Merged and closed</span><span class="count">{ itoa(len(p.Done)) }</span></h2>
-		@mrRows(p.Done, "Merged and closed merge requests")
-		if len(p.Done) == 0 {
-			<p class="lede dim">nothing merged or closed yet.</p>
+		} else {
+			<h2 class="rule-h"><span>Merged and closed</span><span class="count">{ itoa(len(p.Done)) }</span></h2>
+			@mrRows(p.Done, "Merged and closed merge requests")
+			if len(p.Done) == 0 {
+				<p class="lede dim">nothing merged or closed yet.</p>
+			}
 		}
 		if p.Older != "" || p.Newest != "" {
 			<nav class="pager" aria-label="Pages">
@@ -78,34 +115,6 @@ templ mrRows(rows []MRRow, label string) {
 			</tbody>
 		</table>
 	}
-}
-
-templ mrListRail(p MRListPage) {
-	<section aria-labelledby="r-states">
-		<h2 id="r-states">States</h2>
-		<dl class="kv">
-			<dt>open</dt>
-			<dd>awaits review</dd>
-			<dt>merged</dt>
-			<dd>the target took the branch</dd>
-			<dt>closed</dt>
-			<dd>refused, branch kept</dd>
-		</dl>
-	</section>
-	<section aria-labelledby="r-new">
-		<h2 id="r-new">Open one</h2>
-		if len(p.Branches) > 0 {
-			<p class="dim">compare a branch with { p.Default }:</p>
-			<nav class="outline" aria-label="Branches">
-				for _, b := range p.Branches {
-					<a href={ templ.SafeURL(b.Href) }>{ b.Name }</a>
-				}
-			</nav>
-		} else {
-			<p class="dim">there is no other branch to merge yet.</p>
-		}
-		@CloneBlock(p.CLI)
-	</section>
 }
 
 // MergeRequest is a merge request: its facts, its description, the diff with

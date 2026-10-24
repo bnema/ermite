@@ -97,6 +97,9 @@ func TestIssueList(t *testing.T) {
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
 	assert.Contains(t, body, `href="/proj/issues/3"`)
+	assert.Contains(t, body, `class="list-toolbar"`)
+	assert.NotContains(t, body, `<aside class="rail"`)
+	assert.Contains(t, body, `href="/proj/issues" aria-current="page"`)
 	assert.Contains(t, body, "crash &lt;b&gt;on&lt;/b&gt; start")
 	assert.Contains(t, body, `href="/proj/issues?page=tok2"`, "older page")
 	assert.Contains(t, body, `href="/proj/issues?state=closed"`, "closed tab")
@@ -107,6 +110,7 @@ func TestIssueList(t *testing.T) {
 	closed := r.do("GET", "/proj/issues?state=closed", false, nil)
 	require.Equal(t, 200, closed.Code)
 	assert.Contains(t, closed.Body.String(), `href="/proj/issues/2"`)
+	assert.Contains(t, closed.Body.String(), `href="/proj/issues?state=closed" aria-current="page"`)
 
 	assert.Equal(t, 404, r.do("GET", "/proj/issues?state=weird", false, nil).Code)
 

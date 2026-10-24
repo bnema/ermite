@@ -367,3 +367,80 @@ func TestMRLinkedIssuesAndHistory(t *testing.T) {
 	assert.Less(t, strings.Index(body, `id="c7"`), strings.Index(body, `id="e3-2"`))
 	assert.Less(t, strings.Index(body, `id="e3-2"`), strings.Index(body, `id="e3-3"`))
 }
+
+func TestMRListTabs(t *testing.T) {
+	t.Parallel()
+	for _, done := range []bool{false, true} {
+		t.Run(map[bool]string{false: "open", true: "done"}[done], func(t *testing.T) {
+			r := newIssueRig(t, domain.IssuesOwner, false)
+			params := ports.ListMergeRequestsParams{PageSize: pageSize}
+			path := "/proj/merge-requests"
+			state := domain.MRStateOpen
+			if done {
+				path += "?state=done"
+				state = domain.MRStateMerged
+			} else {
+				params.State = domain.MRStateOpen
+			}
+			r.mrs.EXPECT().List(mock.Anything, mock.Anything, repoName(t, "proj"), params).Return(ports.MergeRequestPage{MergeRequests: []domain.MergeRequest{{Number: 1, State: state, Source: "feature", Target: "main"}}}, nil).Once()
+			rec := r.do("GET", path, false, nil)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			body := rec.Body.String()
+			assert.Contains(t, body, `class="list-toolbar"`)
+			assert.NotContains(t, body, `<aside class="rail"`)
+			assert.Contains(t, body, `data-cursor`)
+			assert.Contains(t, body, `id="mr-notice"`)
+			assert.Contains(t, body, `id="mr-refresh-status"`)
+			assert.Contains(t, body, `view=mrs`)
+			assert.Contains(t, body, `New merge request`)
+			assert.Contains(t, body, `there is no other branch to merge yet.`)
+			assert.Contains(t, body, `ermite mr create`)
+			if done {
+				assert.Contains(t, body, `href="/proj/merge-requests?state=done" aria-current="page"`)
+				assert.NotContains(t, body, `aria-label="Open merge requests"`)
+			} else {
+				assert.Contains(t, body, `href="/proj/merge-requests" aria-current="page"`)
+				assert.NotContains(t, body, `aria-label="Merged and closed merge requests"`)
+			}
+		})
+	}
+}
+
+func TestMRListDonePager(t *testing.T) {
+	t.Parallel()
+	r := newIssueRig(t, domain.IssuesOwner, false)
+	rows := make([]domain.MergeRequest, mrPerPage)
+	for i := range rows {
+		rows[i] = domain.MergeRequest{Number: int64(i + 1), State: domain.MRStateClosed}
+	}
+	r.mrs.EXPECT().List(mock.Anything, mock.Anything, repoName(t, "proj"), ports.ListMergeRequestsParams{PageSize: pageSize, PageToken: "second"}).Return(ports.MergeRequestPage{MergeRequests: rows, NextPageToken: "third"}, nil).Once()
+	rec := r.do("GET", "/proj/merge-requests?state=done&page=second", false, nil)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	body := rec.Body.String()
+	assert.Contains(t, body, `href="/proj/merge-requests?state=done&amp;page=third"`)
+	assert.Contains(t, body, `href="/proj/merge-requests?state=done">← Newest`)
+	assert.NotContains(t, body, `id="mr-notice"`)
+	assert.NotContains(t, body, `view=mrs`)
+}
+
+func TestMRListNewMenu(t *testing.T) {
+	t.Parallel()
+	body := renderToString(t, MRList(Layout{}, MRListPage{
+		Default: "main", Branches: []BranchLink{{Name: "feature", Href: "/proj/compare/feature"}},
+		CLI: Clone{ID: "cli-new", Lines: []string{"ermite mr create proj"}},
+	}))
+	assert.Contains(t, body, `<details class="menu">`)
+	assert.Contains(t, body, `compare with main`)
+	assert.Contains(t, body, `href="/proj/compare/feature">feature</a>`)
+	assert.Contains(t, body, `ermite mr create proj`)
+	assert.NotContains(t, body, `<aside class="rail"`)
+}
+
+func TestMRListNoticeKeepsDoneTab(t *testing.T) {
+	t.Parallel()
+	l := &liveStream{view: "mrs", repo: "proj", state: "done"}
+	fs, err := l.mrNotice(context.Background(), 1, "changed")
+	require.NoError(t, err)
+	require.Len(t, fs, 1)
+	assert.Contains(t, fs[0].html, `/proj/merge-requests?state=done`)
+}

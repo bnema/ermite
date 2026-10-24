@@ -246,7 +246,7 @@ func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Componen
 		p.Live = true
 		l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=issues")
 	}
-	l.HasRail = true
+	l.HasRail = false
 	return IssueList(l, p), http.StatusOK, nil
 }
 

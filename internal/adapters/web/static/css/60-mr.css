@@ -49,6 +49,11 @@
   .mr-desc.prose > * { max-width: var(--measure); }
   .mr-desc.prose > pre, .mr-desc.prose > table { max-width: 100%; }
 
+  .list-toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3);
+    & > .since { margin-right: auto; }
+  }
+
   .since {
     display: inline-flex; flex-wrap: wrap; gap: var(--s1); padding: var(--s1);
     background: var(--bg-raised); border-radius: var(--r-s);

@@ -24,6 +24,7 @@ type liveStream struct {
 	repo string // "" on the home page
 	// filter is the repository the inbox is filtered on, "" for all.
 	filter string
+	state  string // mrs: the selected list tab
 	view   string // "summary", "refs" or "commits"
 	ref    string // commits: the branch listed
 	head   string // commits: the commit listed first
@@ -508,7 +509,11 @@ func (l *liveStream) mrNotice(ctx context.Context, number int64, text string) ([
 	switch l.view {
 	case "mrs":
 		text = "merge requests changed — reload"
-		return l.notice(ctx, text, mrBase(l.repo))
+		href := mrBase(l.repo)
+		if l.state == "done" {
+			href += "?state=done"
+		}
+		return l.notice(ctx, text, href)
 	case "mr":
 		if strconv.FormatInt(number, 10) != l.n {
 			return nil, nil

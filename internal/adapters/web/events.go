@@ -268,7 +268,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	st := &liveStream{s: s, repo: repo, view: q.Get("view"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), target: q.Get("target"), job: q.Get("job"), sha: sha}
+	st := &liveStream{s: s, repo: repo, view: q.Get("view"), state: q.Get("state"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), target: q.Get("target"), job: q.Get("job"), sha: sha}
 	if topic == ownerTopic {
 		st.filter = q.Get("repo")
 	}

@@ -85,7 +85,9 @@ type BranchLink struct{ Name, Href string }
 
 // MRListPage is the list of the merge requests of a repository.
 type MRListPage struct {
-	Open, Done []MRRow
+	Open, Done         []MRRow
+	DoneState          bool
+	OpenHref, DoneHref string
 	// OpenNote says the open list was cut.
 	OpenNote string
 	// Older and Newest are the paging links of the decided requests.
@@ -476,11 +478,12 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 		return nil, 0, err
 	}
 	token := r.URL.Query().Get("page")
-	p := MRListPage{Default: visibleText(d.repo.DefaultBranch)}
+	p := MRListPage{Default: visibleText(d.repo.DefaultBranch), DoneState: r.URL.Query().Get("state") == "done"}
 	p.CLI = Clone{ID: "cli-new", Lines: []string{"ermite mr create " + shellWord(d.name()) + " --source <branch> --title <title>"}}
 	base := mrBase(d.name())
+	p.OpenHref, p.DoneHref = base, base+"?state=done"
 
-	if token == "" {
+	if !p.DoneState {
 		tok := ""
 		for i := 0; i < maxOpenPages; i++ {
 			res, err := s.cfg.MergeRequests.List(ctx, principal(ctx), d.repo.Name, ports.ListMergeRequestsParams{
@@ -501,29 +504,31 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 		}
 	}
 
-	tok := token
-	for i := 0; i < maxMRPages; i++ {
-		res, err := s.cfg.MergeRequests.List(ctx, principal(ctx), d.repo.Name, ports.ListMergeRequestsParams{
-			PageSize: pageSize, PageToken: tok,
-		})
-		if err != nil {
-			return nil, 0, err
-		}
-		for _, m := range res.MergeRequests {
-			if m.State != domain.MRStateOpen {
-				p.Done = append(p.Done, s.mrRow(d.name(), m))
+	if p.DoneState {
+		tok := token
+		for i := 0; i < maxMRPages; i++ {
+			res, err := s.cfg.MergeRequests.List(ctx, principal(ctx), d.repo.Name, ports.ListMergeRequestsParams{
+				PageSize: pageSize, PageToken: tok,
+			})
+			if err != nil {
+				return nil, 0, err
+			}
+			for _, m := range res.MergeRequests {
+				if m.State != domain.MRStateOpen {
+					p.Done = append(p.Done, s.mrRow(d.name(), m))
+				}
+			}
+			tok = res.NextPageToken
+			if tok == "" || len(p.Done) >= mrPerPage {
+				break
 			}
 		}
-		tok = res.NextPageToken
-		if tok == "" || len(p.Done) >= mrPerPage {
-			break
+		if tok != "" {
+			p.Older = p.DoneHref + "&page=" + url.QueryEscape(tok)
 		}
-	}
-	if tok != "" {
-		p.Older = base + "?page=" + url.QueryEscape(tok)
-	}
-	if token != "" {
-		p.Newest = base
+		if token != "" {
+			p.Newest = p.DoneHref
+		}
 	}
 	switch {
 	case len(p.Open) > 0:
@@ -532,7 +537,7 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 		p.Done[0].Cursor = true
 	}
 	for _, b := range d.branches {
-		if b.ShortName == d.repo.DefaultBranch || len(p.Branches) >= railBranches {
+		if b.ShortName == d.repo.DefaultBranch {
 			continue
 		}
 		p.Branches = append(p.Branches, BranchLink{Name: visibleText(b.ShortName), Href: repoHref(d.name(), "compare", b.ShortName)})
@@ -545,8 +550,11 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 	if token == "" {
 		p.Live = true
 		l.Live, l.LiveURL = true, liveURL("repo:"+d.name(), "view=mrs")
+		if p.DoneState {
+			l.LiveURL += "&state=done"
+		}
 	}
-	l.HasRail = true
+	l.HasRail = false
 	return MRList(l, p), http.StatusOK, nil
 }
 
