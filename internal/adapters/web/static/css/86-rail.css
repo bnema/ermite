@@ -1,0 +1,46 @@
+@layer components {
+  .rail-tabs, .rail-drawer-head, .rail-backdrop { display: none; }
+
+  @media (max-width: 1080px) {
+    .work > .rail-tabs {
+      display: flex; position: sticky; top: var(--hdr-h); z-index: 19;
+      min-width: 0; margin-block: calc(-1 * var(--s2));
+      background: var(--bg-surface); border-block: 1px solid var(--border);
+    }
+    .rail-tabs {
+      gap: var(--s1); padding: var(--s2); overflow-x: auto; overscroll-behavior-x: contain;
+      & .btn { flex: none; min-height: 40px; border-color: transparent; background: transparent; }
+      & .btn[aria-expanded="true"] { color: var(--ink-hi); border-bottom-color: var(--accent); background: var(--bg-raised); }
+    }
+    .work > .rail-tabs[hidden] { display: none; }
+    .rail[data-drawer] { display: none; }
+    .rail[data-drawer][data-drawer-open] {
+      display: block; position: fixed; inset: auto 0 0; z-index: 41;
+      max-height: 80dvh; overflow-y: auto; overscroll-behavior: contain;
+      padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
+      background: var(--bg-surface); border: 1px solid var(--border-strong);
+      border-radius: var(--r) var(--r) 0 0; box-shadow: var(--shadow);
+    }
+    .rail[data-drawer] > section:not([data-rail-selected]) { display: none; }
+    .rail-drawer-head {
+      display: flex; align-items: center; position: sticky; top: 0; z-index: 1;
+      gap: var(--s2); padding-right: var(--s2); background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      & .rail-tabs { display: flex; flex: 1; min-width: 0; }
+      & > .btn { flex: none; min-height: 40px; }
+    }
+    .rail-open { overflow: hidden; }
+    .rail-open > .rail-backdrop {
+      display: block; position: fixed; inset: 0; z-index: 40;
+      background: #0008;
+    }
+    /* Hash navigation must clear both the repository header and context bar. */
+    body:has(.rail[data-drawer]) :is(.dfile, [data-rows] > *) {
+      scroll-margin-top: calc(var(--hdr-h) + 64px);
+    }
+  }
+  @media (max-width: 720px) {
+    body { --hdr-h: 53px; }
+    body:has(.hdr .tabs) { --hdr-h: 97px; }
+  }
+}
