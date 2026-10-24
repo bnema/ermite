@@ -30,6 +30,20 @@
       border-radius: var(--r) var(--r) 0 0; box-shadow: var(--shadow);
     }
     .rail[data-drawer] > section:not([data-rail-selected]) { display: none; }
+    /* In the drawer, a section is its content: the chips above already name
+       it, and the drawer is its frame. No second title, no inner card whose
+       rounded corners would sit inside the drawer's own. */
+    .rail[data-drawer-open] > section { border: 0; border-radius: 0; background: none; }
+    /* the title text goes (font-size 0), its links and buttons stay: "View
+       all", "History", the fold of the files, on a slim right-aligned row */
+    .rail[data-drawer-open] > section > h2 {
+      justify-content: flex-end; min-height: 0; padding: var(--s2) var(--s4) 0; border: 0;
+      font-size: 0; line-height: 0;
+      & > :is(.count, kbd) { display: none; }
+      & > :is(a, button) { line-height: 20px; }
+    }
+    .rail[data-drawer-open] > section > h2:not(:has(a, button)) { display: none; }
+    .rail[data-drawer-open] > section > h2:not(:has(a, button)) + * { margin-top: var(--s3); }
     /* Controls stay reachable while long sections scroll. */
     .rail-controls {
       display: flex; align-items: center; gap: var(--s2); padding: var(--s2);
