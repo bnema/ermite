@@ -28,6 +28,8 @@ The web list has Open, Closed and Resolved tabs. The web offers Close for open i
 
 The issue conversation interleaves comments and timestamped system rows for references, closure, reopening and resolution, with actor and merge request links. History is append-only: removing a current reference does not remove its history. At most 500 events are retained per issue; later events are omitted without preventing state changes or merges.
 
+Comments are Markdown, up to 8000 characters, rendered like merge request notes: no raw HTML, and `#N`, `!N` and commit SHAs become links. In the web, every Markdown field has a formatting toolbar (Ctrl/Cmd+B, I, K), continues lists on Enter and highlights the Markdown as you type.
+
 ## The `issues` setting
 
 `ermite repo edit <repo> --issues off|owner|public`, shown by `repo show` (JSON field `issues`):
