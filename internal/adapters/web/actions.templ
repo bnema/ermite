@@ -24,7 +24,7 @@ templ Actions(l Layout, p ActionsPage) {
 		} else {
 			<table class="list runs" aria-label="Runs">
 				<thead>
-					<tr><th class="c-st"></th><th class="c-name">workflow</th><th class="c-sub">commit</th><th class="c-ref">ref</th><th class="c-who">actor</th><th class="c-dur">time</th><th class="c-when">created</th></tr>
+					<tr><th class="c-st"></th><th class="c-name">workflow</th><th class="c-sub c-main">commit</th><th class="c-ref">ref</th><th class="c-who">actor</th><th class="c-dur">time</th><th class="c-when">created</th></tr>
 				</thead>
 				<tbody id="run-rows" data-rows>
 					for _, r := range p.Runs {
@@ -54,7 +54,7 @@ templ RunListRow(r RunRow) {
 				<span class="pill">attempt { itoa(int(r.Attempt)) }</span>
 			}
 		</td>
-		<td class="c-sub"><a href={ templ.SafeURL(r.CHref) }>{ r.Short }</a> { r.Title }</td>
+		<td class="c-sub c-main"><a href={ templ.SafeURL(r.CHref) }>{ r.Short }</a> { r.Title }</td>
 		<td class="c-ref"><a href={ templ.SafeURL(r.RefHref) }>{ r.Ref }</a></td>
 		<td class="c-who dim">{ r.Actor }</td>
 		<td class="c-dur dim">{ r.State }{ " " }{ r.Duration }</td>
@@ -222,12 +222,12 @@ templ RunArtifacts(a ArtifactsView) {
 		<h3 id="run-artifacts">Artifacts <span class="count">{ itoa(len(a.Rows)) }</span></h3>
 		<table class="list" aria-label="Artifacts">
 			<thead>
-				<tr><th class="c-name">name</th><th class="c-sub">size</th><th class="c-who">job</th><th class="c-when">expires</th><th></th></tr>
+				<tr><th class="c-name c-main">name</th><th class="c-sub">size</th><th class="c-who">job</th><th class="c-when">expires</th><th></th></tr>
 			</thead>
 			<tbody>
 				for _, r := range a.Rows {
 					<tr>
-						<td class="c-name"><a href={ templ.SafeURL(r.Href) } download>{ r.Name }</a></td>
+						<td class="c-name c-main"><a href={ templ.SafeURL(r.Href) } download>{ r.Name }</a></td>
 						<td class="c-sub dim">{ r.Size }</td>
 						<td class="c-who">
 							if r.JobHref != "" {

@@ -394,12 +394,12 @@ templ mrFooter(p MRPage) {
 		</div>
 		<div id="mr-commits" data-mr-panel role="group" aria-labelledby="mr-tab-commits">
 			<table class="mr-commits" aria-label="Commits">
-				<thead><tr><th>Commit</th><th>Subject</th><th>Author</th><th>Date</th><th>Signature</th><th>Status</th></tr></thead>
+				<thead><tr><th>Commit</th><th class="c-main">Subject</th><th>Author</th><th>Date</th><th>Signature</th><th>Status</th></tr></thead>
 				<tbody>
 					for _, c := range p.Commits {
 						<tr data-new?={ c.New }>
 							<td><a href={ templ.SafeURL(c.Href) }>{ c.Short }</a></td>
-							<td>{ c.Subject }</td>
+							<td class="c-main">{ c.Subject }</td>
 							<td>{ c.Author }</td>
 							<td>
 								if c.WhenAt != "" {

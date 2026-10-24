@@ -15,18 +15,6 @@
   @media (prefers-reduced-motion: reduce) { .ck-running { animation: none; border-top-color: var(--teal); } }
 
   .ck-sum { display: inline-flex; align-items: center; gap: var(--s1); margin-left: var(--s2); font-size: var(--fs-xs); white-space: nowrap; }
-  /* The lists are table-layout: fixed, where a percentage is only a sliver:
-     the check column holds the mark, its count and the padding of the cells;
-     the refs list has the mark next to the sha. */
-  .c-ck { width: 1%; white-space: nowrap; }
-  .list .c-ck { width: 92px; }
-  /* the commit table of a rail lays out on its content (50-code.css) */
-  .rail .list.commits .c-ck { width: 1%; }
-  .list.refs .c-sha { width: 150px; }
-
-  /* the table is fixed: the status column is the icon, its margin and the
-     padding of the cells (a percentage would leave a sliver) */
-  .runs .c-st { width: calc(14px + var(--s1) + 2 * var(--s3)); }
   /* the recent runs of the summary rail */
   .rruns {
     display: grid; padding: 0; list-style: none; font-size: var(--fs-s);
@@ -36,6 +24,9 @@
     & .rr-name:hover { text-decoration: underline; }
     & .rr-ref { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: var(--s1); font-family: var(--mono); color: var(--ink-dim); text-decoration: none; }
     & time { flex: none; margin-left: auto; padding-left: var(--s2); white-space: nowrap; }
+  }
+  @media (max-width: 720px) {
+    .list.runs .c-name { width: auto; max-width: 0; }
   }
   .runs .c-dur, .runs .c-who { white-space: nowrap; }
   .runs tr[data-new] { background: var(--bg-raised); }

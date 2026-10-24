@@ -158,7 +158,7 @@ templ Refs(l Layout, p RefsPage) {
 		</div>
 		<table class="list refs" aria-label="Branches and tags">
 			<thead>
-				<tr><th class="c-kind">kind</th><th class="c-name">name</th><th class="c-sha">commit</th><th class="c-sub">subject</th><th class="c-when">date</th></tr>
+				<tr><th class="c-kind">kind</th><th class="c-name">name</th><th class="c-sha">commit</th><th class="c-sub c-main">subject</th><th class="c-when">date</th></tr>
 			</thead>
 			@RefsBody(p)
 		</table>
@@ -185,7 +185,7 @@ templ refRow(kind string, r RefRow) {
 			}
 			@CommitChecks(r.Checks)
 		</td>
-		<td class="c-sub">{ r.Subject }</td>
+		<td class="c-sub c-main">{ r.Subject }</td>
 		<td class="c-when dim">
 			if r.WhenAt != "" {
 				<time datetime={ r.WhenAt } title={ r.WhenAt }>{ r.When }</time>
@@ -269,7 +269,7 @@ templ Passkeys(l Layout, p PasskeysPage) {
 			<table class="list passkeys" aria-label="Passkeys">
 				<thead>
 					<tr>
-						<th class="c-name">Name</th>
+						<th class="c-name c-main">Name</th>
 						<th class="c-when">Created</th>
 						<th class="c-when">Last used</th>
 						<th class="c-sync">Synced</th>
@@ -279,7 +279,7 @@ templ Passkeys(l Layout, p PasskeysPage) {
 				<tbody>
 					for _, r := range p.Rows {
 						<tr>
-							<td class="c-name">{ r.Name }</td>
+							<td class="c-name c-main">{ r.Name }</td>
 							<td class="c-when nowrap">
 								<time
 									if r.CreatedAt != "" {

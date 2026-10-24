@@ -203,19 +203,21 @@ templ CommitRows(rows []CommitRow) {
 				>
 					<td class="c-sha mute">{ c.Short }</td>
 					<td class="c-subject">
-						<a href={ templ.SafeURL(c.CHref) }>{ c.Subject }</a>
-						if c.Merge {
-							<span class="pill">merge</span>
-						}
-						if c.Sig != nil {
-							@signaturePill(c.Sig)
-						}
-						for _, b := range c.Branches {
-							<span class="pill">{ b }</span>
-						}
-						for _, t := range c.Tags {
-							<span class="pill tag"><span class="sr">tag </span>{ t }</span>
-						}
+						<span class="subject-line">
+							<a href={ templ.SafeURL(c.CHref) }>{ c.Subject }</a>
+							if c.Merge {
+								<span class="pill">merge</span>
+							}
+							if c.Sig != nil {
+								@signaturePill(c.Sig)
+							}
+							for _, b := range c.Branches {
+								<span class="pill">{ b }</span>
+							}
+							for _, t := range c.Tags {
+								<span class="pill tag"><span class="sr">tag </span>{ t }</span>
+							}
+						</span>
 					</td>
 					<td class="c-ck">@CommitChecks(c.Checks)</td>
 					<td class="c-who dim">{ c.Author }</td>

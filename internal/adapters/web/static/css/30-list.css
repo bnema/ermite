@@ -1,7 +1,7 @@
 @layer components {
   /* tables in a card, with a row cursor (j/k) */
   .list {
-    width: 100%; table-layout: fixed;
+    width: 100%; table-layout: auto;
     background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
     border-collapse: separate; overflow: hidden;
     & th {
@@ -12,7 +12,9 @@
     & th a { text-decoration: none; }
     & th a:hover { color: var(--ink-hi); }
     & th[aria-sort="ascending"], & th[aria-sort="descending"] { color: var(--ink-hi); }
-    & td { height: 40px; padding: 0 var(--s3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-top: 1px solid var(--border); }
+    & td { width: 1%; height: 40px; padding: 0 var(--s3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-top: 1px solid var(--border); }
+    /* Secondary cells fit their text; only the main cell gives way. */
+    & .c-subject, & .c-main { width: auto; max-width: 0; }
     & tbody tr:first-child td { border-top: 0; }
     & tbody tr:hover { background: var(--bg-raised); }
     /* the cursor: the row raised, framed by one even line. The frame is drawn
@@ -257,10 +259,10 @@
     .home[data-layout="compact"] .repo-stats .rs-tag { display: flex; }
   }
   .list.passkeys {
-    & .c-name { width: auto; font-weight: 600; }
-    & .c-when { width: 120px; font-size: var(--fs-s); }
-    & .c-sync { width: 80px; font-size: var(--fs-s); }
-    & .c-act { width: 110px; text-align: right; }
+    & .c-name { font-weight: 600; }
+    & .c-when { font-size: var(--fs-s); }
+    & .c-sync { font-size: var(--fs-s); }
+    & .c-act { text-align: right; }
   }
   .passkey-add {
     display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s4);
@@ -271,11 +273,11 @@
     & input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-color: transparent; }
     & input::placeholder { color: var(--ink-mute); opacity: 1; }
   }
-  .list.commits, .list.refs {
-    & .c-sha { width: 96px; }
-    & .c-who { width: 140px; }
-    & .c-when { width: 100px; }
-  }
+  /* Keep badges beside the subject, without letting them swallow its ellipsis. */
+  .subject-line { display: flex; align-items: center; gap: var(--s1); min-width: 0; }
+  .subject-line > a:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-decoration: none; color: var(--ink-hi); }
+  .subject-line > :not(:first-child) { flex: none; }
+  .list tr:is(:hover, [data-cursor]) .subject-line > a:first-child { text-decoration: underline; }
 
   /* filter: a search field above a list */
   .filter {

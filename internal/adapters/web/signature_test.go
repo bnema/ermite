@@ -99,6 +99,7 @@ func TestCommitRowsShowTheSignatureBadge(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := renderToString(t, CommitRows([]CommitRow{rowOf(tt.v)}))
+			assert.Contains(t, got, `class="subject-line"><a`)
 			if tt.none {
 				assert.NotContains(t, got, "sig")
 				assert.NotContains(t, got, "unsigned")

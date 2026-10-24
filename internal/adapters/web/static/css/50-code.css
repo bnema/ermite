@@ -150,21 +150,19 @@
   .pager { display: flex; gap: var(--s3); justify-content: center; }
   .days section[hidden] { display: none; }
   .list.refs {
-    & .c-kind { width: 80px; color: var(--ink-mute); }
-    & .c-name { width: 32%; font-family: var(--mono); font-size: var(--fs-s); }
-    & .c-sha { width: 96px; }
-    & .c-sub { width: auto; }
+    & .c-kind { color: var(--ink-mute); }
+    & .c-name { font-family: var(--mono); font-size: var(--fs-s); }
   }
   /* the commit table inside a rail block: no frame of its own. The id, the
      checks and the date take the width of their text (an empty checks cell
      next to nothing); the subject takes the rest, cut at its end only. */
   .rail .list.commits {
-    border: 0; border-radius: 0; background: none; table-layout: auto;
-    & td { height: 34px; padding: 0 var(--s2); width: 1%; white-space: nowrap; }
+    border: 0; border-radius: 0; background: none;
+    & td { height: 34px; padding: 0 var(--s2); }
     & td:first-child { padding-left: var(--s3); }
     & td:last-child { padding-right: var(--s4); }
     & .c-who { display: none; }
-    & .c-subject { width: auto; max-width: 0; font-size: var(--fs-s); }
+    & .c-subject { font-size: var(--fs-s); }
     /* the pills are hidden here, the signature one too: the rail is narrow and
        the subject is what the row is for; the commit page shows the badge. */
     & .c-subject .pill { display: none; }
@@ -173,8 +171,8 @@
   }
   .rail section > p { overflow-wrap: anywhere; }
   @media (max-width: 700px) {
-    /* the name takes what the fixed columns leave */
-    .list.refs .c-name { width: auto; }
+    /* When the subject is hidden, the ref name takes the remaining width. */
+    .list.refs .c-name { width: auto; max-width: 0; }
   }
 }
 

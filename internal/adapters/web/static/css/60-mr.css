@@ -32,6 +32,9 @@
     /* Without scripts both panels remain visible; disclosure controls use data-js. */
     & section h2 { font-size: var(--fs-s); color: var(--ink-dim); }
     & table { width: 100%; border-collapse: collapse; }
+    & .mr-commits { table-layout: auto; }
+    & .mr-commits td { width: 1%; white-space: nowrap; }
+    & .mr-commits .c-main { width: auto; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
     & th, & td { text-align: left; padding: var(--s2); border-bottom: 1px solid var(--border); }
     & th { color: var(--ink-dim); font-weight: 500; }
     & tbody tr:last-child > :is(td, th) { border-bottom: 0; }
@@ -259,13 +262,7 @@
   .pending .p-btns { display: flex; gap: var(--s2); flex-wrap: wrap; }
   .pending .p-btns form { margin: 0; }
 
-  /* every column fits its text; the title takes the rest. The auto layout
-     sizes on content, width: 1% shrinks a cell to it, and max-width: 0 lets
-     the title give way (and truncate) instead of widening the table. */
   .list.mrs {
-    table-layout: auto;
-    & td { width: 1%; }
-    & .c-subject { width: auto; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
     & tr[data-state="open"] .c-state { font-weight: bold; }
     & tr[data-state="open"] .c-state::before { content: "● "; color: var(--teal); }
     & tr[data-state="merged"] .c-state::before { content: "✓ "; color: var(--teal); }

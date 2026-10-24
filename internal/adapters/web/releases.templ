@@ -20,12 +20,12 @@ templ Releases(l Layout, p ReleaseListPage) {
 			<p class="dim">no releases yet.</p>
 		} else {
 			<table class="list" aria-label="Releases">
-				<thead><tr><th>tag</th><th>title</th><th>published</th><th>assets</th></tr></thead>
+				<thead><tr><th>tag</th><th class="c-main">title</th><th>published</th><th>assets</th></tr></thead>
 				<tbody>
 					for _, r := range p.Rows {
 						<tr>
 							<td><a href={ templ.SafeURL(r.Href) }>{ r.Tag }</a></td>
-							<td>{ r.Title } @ReleaseBadges(r)</td>
+							<td class="c-main">{ r.Title } @ReleaseBadges(r)</td>
 							<td>{ r.Published }</td><td>{ itoa(r.AssetCount) }</td>
 						</tr>
 					}
@@ -61,10 +61,10 @@ templ ReleaseDetail(l Layout, p ReleaseDetailPage) {
 			<p class="dim">no assets.</p>
 		} else {
 			<table class="list" aria-label="Release assets">
-				<thead><tr><th>name</th><th>size</th><th>content type</th></tr></thead>
+				<thead><tr><th class="c-main">name</th><th>size</th><th>content type</th></tr></thead>
 				<tbody>
 					for _, a := range p.Assets {
-						<tr><td><a href={ templ.SafeURL(a.Href) } download>{ a.Name }</a></td><td>{ a.Size }</td><td>{ a.ContentType }</td></tr>
+						<tr><td class="c-main"><a href={ templ.SafeURL(a.Href) } download>{ a.Name }</a></td><td>{ a.Size }</td><td>{ a.ContentType }</td></tr>
 					}
 				</tbody>
 			</table>
