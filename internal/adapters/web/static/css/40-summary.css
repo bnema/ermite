@@ -48,7 +48,8 @@
       background: var(--bg-raised); border: 1px solid var(--border); border-radius: 4px;
     }
     & blockquote { padding-left: var(--s4); border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--border-strong)); color: var(--ink-dim); }
-    & table { display: block; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-s); font-size: var(--fs-s); line-height: 20px; }
+    /* the box fits its columns, and scrolls when they overflow the text */
+    & table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-s); font-size: var(--fs-s); line-height: 20px; }
     & th, & td { padding: 6px var(--s3); white-space: nowrap; vertical-align: top; border-top: 1px solid var(--border); }
     & th { background: var(--bg-raised); border-top: 0; font-weight: 700; }
     & td code { white-space: nowrap; }
