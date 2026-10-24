@@ -9,7 +9,7 @@ import { dom, El, el, installDom } from './dom.mjs';
 // row, "more" the tree-more row of a truncated directory.
 function row(name, depth) {
   const dir = name.endsWith('/');
-  const li = el('li', { cls: name === 'more' ? 'tree-more' : '', attrs: { 'data-depth': depth } });
+  const li = el('li', { cls: name === 'more' ? 'tree-more' : '', attrs: { 'data-depth': depth, 'data-path': name } });
   li.name = name;
   if (dir) {
     li.setAttribute('data-expand', '/rows/' + name);
@@ -52,6 +52,8 @@ const isOpen = (tr) => tr.getAttribute('aria-expanded') === 'true';
 
 // table builds the page: the list of rows, with the cursor on the first.
 function table(...names) {
+  // Each fixture is a new visit, not a Back navigation to the last fixture.
+  globalThis.sessionStorage?.clear?.();
   const ul = el('ul', { id: 'tree-rows', attrs: { 'data-rows': '' } }, ...names.map((n) => row(n, 0)));
   dom.body.replaceChildren(ul);
   ul.children[0]?.setAttribute('data-cursor', '');
@@ -477,4 +479,45 @@ test('the tree takes no arrow key while the finder shows its results, nor any ot
   body.setAttribute('data-rows', '');
   assert.equal(T.arrow('x'), false);
   assert.equal(T.arrow('PageDown'), false);
+});
+
+test('saved tree replays parents before children, cursor and scroll', async () => {
+  const storage = new Map();
+  globalThis.sessionStorage = { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) };
+  location.pathname = '/repo/tree/main';
+  location.search = '';
+  window.scrollX = 0;
+  window.scrollY = 430;
+  let scrolled;
+  window.scrollTo = (x, y) => { scrolled = [x, y]; };
+  const body = table('P/', 'f');
+  click(byName(body, 'P/'));
+  await answer('/rows/P/', 'C/,x');
+  click(byName(body, 'C/'));
+  await answer('/rows/C/', 'leaf');
+  T.mark(byName(body, 'leaf'));
+  const saved = storage.get('ermite:tree:/repo/tree/main');
+  assert.deepEqual(JSON.parse(saved).dirs, [{ path: 'P/', open: true }, { path: 'C/', open: true }]);
+  pending.clear();
+  const fresh = el('ul', { id: 'tree-rows', attrs: { 'data-rows': '' } }, row('P/', 0), row('f', 0));
+  dom.body.replaceChildren(fresh);
+  const restoring = T.init();
+  assert.deepEqual([...pending.keys()], ['/rows/P/']);
+  await answer('/rows/P/', 'C/,x');
+  assert.ok(pending.has('/rows/C/'));
+  await answer('/rows/C/', 'leaf');
+  await restoring;
+  assert.ok(byName(fresh, 'leaf').hasAttribute('data-cursor'));
+  assert.deepEqual(scrolled, [0, 430]);
+  click(byName(fresh, 'P/'));
+  const collapsed = JSON.parse(storage.get('ermite:tree:/repo/tree/main'));
+  assert.equal(collapsed.dirs[0].open, false);
+  pending.clear();
+  await T.init();
+  assert.equal(pending.size, 0, 'loaded rows are reused');
+  assert.deepEqual(shown(fresh), ['P/', 'f']);
+  storage.set('ermite:tree:/repo/tree/main', JSON.stringify({ dirs: [{ path: 'gone/', open: true }], x: 0, y: 0 }));
+  await T.init();
+  assert.equal(pending.size, 0, 'missing paths are skipped');
+  delete globalThis.sessionStorage;
 });

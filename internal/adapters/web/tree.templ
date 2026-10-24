@@ -99,6 +99,7 @@ templ TreeRowView(r TreeRow) {
 		aria-posinset={ itoa(r.Pos) }
 		aria-setsize={ itoa(r.Set) }
 		data-kind={ r.Kind }
+		data-path={ r.Path }
 		data-depth="0"
 		data-cursor?={ r.Cursor }
 		if r.Expand != "" {

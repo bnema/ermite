@@ -27,6 +27,47 @@ window.ermiteTree = (() => {
   const isLoaded = (li) => { const n = li.nextElementSibling; return !!n && depthOf(n) > depthOf(li); };
   const nameLink = (li) => li.querySelector('a.t-name');
 
+  let restoring = false;
+  const stateKey = () => 'ermite:tree:' + location.pathname + location.search;
+
+  // Storage is best effort: a private window or a full quota must not stop
+  // navigation. DOM order keeps parents before children, even when hidden.
+  function save() {
+    if (restoring || !rowsEl()) return;
+    try {
+      const rows = Array.from(rowsEl().children);
+      sessionStorage.setItem(stateKey(), JSON.stringify({
+        dirs: rows.filter((r) => isDir(r) && (isLoaded(r) || isOpen(r)))
+          .map((r) => ({ path: r.dataset.path, open: isOpen(r) })),
+        cursor: cursorRow()?.dataset.path,
+        x: window.scrollX, y: window.scrollY,
+      }));
+    } catch (e) { /* Storage may be unavailable. */ }
+  }
+
+  // Replay loads before closing anything: an open descendant of a collapsed
+  // directory still needs its rows, but must finish hidden under its parent.
+  async function restore(state) {
+    restoring = true;
+    try {
+      for (const dir of state.dirs) {
+        const li = Array.from(rowsEl().children).find((r) => r.dataset.path === dir.path && isDir(r));
+        if (!li) continue;
+        if (!isLoaded(li)) await load(li, true);
+        else expand(li);
+      }
+      for (const dir of state.dirs) {
+        const li = Array.from(rowsEl().children).find((r) => r.dataset.path === dir.path && isDir(r));
+        if (li && !dir.open) collapse(li);
+      }
+      const cur = Array.from(rowsEl().children).find((r) => r.dataset.path === state.cursor && !r.hidden);
+      if (cur) mark(cur, false);
+      window.scrollTo(state.x || 0, state.y || 0);
+    } finally {
+      restoring = false;
+    }
+  }
+
   // tab puts a row in or out of the tab order, with its link to the last commit.
   function tab(li, on) {
     li.setAttribute('tabindex', on ? '0' : '-1');
@@ -50,6 +91,7 @@ window.ermiteTree = (() => {
     li.setAttribute('data-cursor', '');
     tab(li, true);
     if (focus) li.focus({ preventScroll: true });
+    save();
   }
 
   // setCursor moves the cursor, and so the focus, to li, and shows it.
@@ -71,6 +113,7 @@ window.ermiteTree = (() => {
       if (r.contains(document.activeElement)) lostFocus = true;
     }
     if (lostCursor || lostFocus) mark(li, lostFocus);
+    save();
   }
 
   // expand shows the rows under li that no collapsed directory between hides.
@@ -84,9 +127,10 @@ window.ermiteTree = (() => {
       r.hidden = rd > closedAt;
       if (closedAt === Infinity && isDir(r) && !isOpen(r)) closedAt = rd;
     }
+    save();
   }
 
-  async function load(li) {
+  async function load(li, quiet = false) {
     li.setAttribute('aria-busy', 'true');
     try {
       const res = await fetch(li.dataset.expand, { headers: { Accept: 'text/html' } });
@@ -110,8 +154,10 @@ window.ermiteTree = (() => {
       li.removeAttribute('aria-busy');
       if (covered) li.setAttribute('aria-expanded', 'true');
       else expand(li);
+      save();
     } catch (e) {
-      location.href = nameLink(li).href;
+      li.removeAttribute('aria-busy');
+      if (!quiet) location.href = nameLink(li).href;
     }
   }
 
@@ -155,10 +201,21 @@ window.ermiteTree = (() => {
     init() {
       const rows = typeof document === 'undefined' ? null : rowsEl();
       if (!rows) return;
+      let state;
+      try {
+        state = JSON.parse(sessionStorage.getItem(stateKey()));
+        if (!Array.isArray(state?.dirs) || !state.dirs.every((d) => d && typeof d.path === 'string' && typeof d.open === 'boolean')) state = null;
+      } catch (e) { /* Storage may be unavailable or from an older page. */ }
+      restoring = !!state;
       const lis = Array.from(rows.children);
       for (const li of lis) prep(li);
       const cur = cursorRow() ?? lis[0];
       if (cur) mark(cur, false);
+      // A bfcache return keeps this document and does not run init again.
+      // Only a fresh document replays the saved requests and scroll.
+      window.addEventListener?.('pagehide', save);
+      window.addEventListener?.('scroll', save, { passive: true });
+      if (state) return restore(state);
     },
 
     // sync follows a cursor that ermite.js moved (j k gg G): the focus goes
