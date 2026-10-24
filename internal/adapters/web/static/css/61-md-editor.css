@@ -1,17 +1,44 @@
 @layer components {
-  .md-editor { min-width: 0; width: 100%; }
-  .md-toolbar { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s1); }
-  .md-toolbar button { background: var(--bg-raised); color: var(--ink-dim); border: 1px solid var(--border); border-radius: var(--r-s); padding: .25em .5em; font-size: var(--fs-s); cursor: pointer; }
-  .md-toolbar button:hover { color: var(--ink-hi); }
-  .md-surface { position: relative; min-width: 0; background: var(--bg-surface); border-radius: var(--r-s); }
+  /* one block: the toolbar is the header strip of the field */
+  .md-editor {
+    min-width: 0; width: 100%; background: var(--bg-surface);
+    border: 1px solid var(--border-strong); border-radius: var(--r-s); overflow: clip;
+  }
+  /* the field's focus ring is drawn around the whole block */
+  .md-editor:has(textarea:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .md-toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: var(--s1);
+    border-bottom: 1px solid var(--border); background: var(--bg-inset);
+  }
+  .md-toolbar button {
+    display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+    background: transparent; color: var(--ink-dim); border: 0; border-radius: var(--r-s); cursor: pointer;
+  }
+  .md-toolbar button::before { content: ""; width: 16px; height: 16px; background: currentColor; mask: var(--i) center / contain no-repeat; }
+  .md-toolbar button:hover { color: var(--ink-hi); background: var(--bg-raised); }
+  .md-toolbar button:active { background: var(--bg-strong); }
+  .md-toolbar button:focus-visible { outline-offset: -2px; }
+  .md-sep { width: 1px; height: 16px; margin: 0 var(--s1); background: var(--border-strong); }
+  .md-i-heading { --i: url(icons/md-heading.svg); }
+  .md-i-bold { --i: url(icons/md-bold.svg); }
+  .md-i-italic { --i: url(icons/md-italic.svg); }
+  .md-i-code { --i: url(icons/md-code.svg); }
+  .md-i-fence { --i: url(icons/md-fence.svg); }
+  .md-i-link { --i: url(icons/md-link.svg); }
+  .md-i-quote { --i: url(icons/md-quote.svg); }
+  .md-i-bullet { --i: url(icons/md-bullet.svg); }
+  .md-i-number { --i: url(icons/md-number.svg); }
+  .md-i-task { --i: url(icons/md-task.svg); }
+  .md-surface { position: relative; min-width: 0; }
   .md-surface .md-backdrop, .md-surface textarea {
     box-sizing: border-box; margin: 0; width: 100%; padding: var(--s2) var(--s3);
     font: var(--fs)/1.6 var(--mono); letter-spacing: 0; tab-size: 4;
     scrollbar-gutter: stable; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
-    border: 1px solid transparent; border-radius: var(--r-s);
+    border: 0; border-radius: 0;
   }
   .md-surface .md-backdrop { position: absolute; inset: 0; height: 100%; overflow: auto; scrollbar-width: auto; pointer-events: none; color: var(--ink); background: transparent; }
-  .md-surface textarea { position: relative; display: block; color: transparent; caret-color: var(--ink-hi); background: transparent; border-color: var(--border-strong); resize: vertical; }
+  .md-surface textarea { position: relative; display: block; color: transparent; caret-color: var(--ink-hi); background: transparent; resize: vertical; }
+  .md-surface textarea:focus-visible { outline: none; }
   .md-surface textarea::selection { background: var(--bg-strong); color: var(--ink); }
   .md-marker { color: var(--ink-mute); }
   .md-heading, .md-bold { font-weight: 700; color: var(--ink-hi); }
@@ -22,5 +49,6 @@
   @media (forced-colors: active) {
     .md-surface textarea { color: CanvasText; }
     .md-backdrop { visibility: hidden; }
+    .md-toolbar button::before { background: ButtonText; }
   }
 }

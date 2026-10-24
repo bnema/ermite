@@ -90,11 +90,21 @@ window.ermiteMdEditor = (() => {
       const surface = document.createElement('div'); surface.className = 'md-surface';
       const back = document.createElement('pre'); back.className = 'md-backdrop'; back.setAttribute('aria-hidden','true');
       t.before(box); box.append(bar,surface); surface.append(back,t);
-      const labels = {bold:'Bold',italic:'Italic',heading:'Heading',code:'Code',fence:'Code block',link:'Link',quote:'Quote',bullet:'Bullets',number:'Numbers',task:'Tasks'};
+      // Groups of buttons, separated by a thin rule; the icon is a CSS mask.
+      const groups = [
+        {heading:'Heading',bold:'Bold (Ctrl+B)',italic:'Italic (Ctrl+I)'},
+        {code:'Code',fence:'Code block',link:'Link (Ctrl+K)',quote:'Quote'},
+        {bullet:'Bulleted list',number:'Numbered list',task:'Task list'},
+      ];
       const act = kind => apply(t,format(t.value,t.selectionStart,t.selectionEnd,kind));
-      Object.entries(labels).forEach(([kind,label]) => {
-        const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = label; b.setAttribute('aria-label',label);
-        b.addEventListener('click',() => act(kind)); bar.append(b);
+      groups.forEach((group,i) => {
+        if (i) { const sep = document.createElement('span'); sep.className = 'md-sep'; bar.append(sep); }
+        Object.entries(group).forEach(([kind,label]) => {
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'md-i-'+kind; b.title = label; b.setAttribute('aria-label',label);
+          // Keep the textarea's selection: a click must not move the focus first.
+          b.addEventListener('mousedown',e => e.preventDefault());
+          b.addEventListener('click',() => act(kind)); bar.append(b);
+        });
       });
       const sync = () => { back.scrollTop = t.scrollTop; back.scrollLeft = t.scrollLeft; };
       let pending = false;
