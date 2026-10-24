@@ -335,7 +335,9 @@
   ul.tree {
     --indent: 22px; --rowh: 32px; --guide: var(--border-strong);
     & > li {
-      display: grid; grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1.2fr) 96px; align-items: center;
+      /* the size column holds "1023.9 KiB" on one line: 10ch of the mono
+         face plus its padding; the rows share it, so the sizes line up */
+      display: grid; grid-template-columns: minmax(0, 1fr) calc(10ch + var(--s4)) minmax(0, 1.2fr) 96px; align-items: center;
       min-height: var(--rowh); padding-right: var(--s4); font-size: var(--fs-s);
     }
     & > li:hover, & > li[data-cursor] { background: var(--bg-raised); }
@@ -379,7 +381,7 @@
     & > li[data-kind="dir"] .t-name { font-weight: 700; color: var(--ink-hi); }
     & > li[data-kind="link"] .t-name, & > li[data-kind="module"] .t-name { color: var(--ink-dim); cursor: default; }
     & > li:hover .t-name, & > li[data-cursor] .t-name { text-decoration: underline; }
-    & .t-size { padding-right: var(--s4); text-align: right; font: var(--fs-xs) / 1 var(--mono); color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+    & .t-size { padding-right: var(--s4); text-align: right; white-space: nowrap; font: var(--fs-xs) / 1 var(--mono); color: var(--ink-mute); font-variant-numeric: tabular-nums; }
     & .t-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-dim); }
     & .t-sub a { color: inherit; text-decoration: none; }
     & .t-sub a:hover { color: var(--ink-hi); text-decoration: underline; }
