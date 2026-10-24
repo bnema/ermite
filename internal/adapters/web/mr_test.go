@@ -372,6 +372,7 @@ func TestMRListTabs(t *testing.T) {
 	t.Parallel()
 	for _, done := range []bool{false, true} {
 		t.Run(map[bool]string{false: "open", true: "done"}[done], func(t *testing.T) {
+			t.Parallel()
 			r := newIssueRig(t, domain.IssuesOwner, false)
 			params := ports.ListMergeRequestsParams{PageSize: pageSize}
 			path := "/proj/merge-requests"
