@@ -26,7 +26,7 @@ import (
 // ports (ADR 0020), like the API and Git over HTTP.
 //
 // The owner's session cookie turns a request into the owner's (web.Server
-// checks it with sessions); every other request is anonymous. The web passes
+// checks it with sessions); release downloads also accept explicit token headers. The web passes
 // the principal of the request to each use case call itself.
 func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Handler, error) {
 	// A nil *usecase.Passkeys must not become a non-nil interface (the web
@@ -46,6 +46,7 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 		artifacts = f.CI
 	}
 	return web.New(web.Config{
+		Auth:          f.Auth,
 		Repos:         f.Repos,
 		Browse:        f.Browse,
 		MergeRequests: f.MergeRequests,

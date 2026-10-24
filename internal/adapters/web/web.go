@@ -47,6 +47,8 @@ const requestTimeout = 30 * time.Second
 
 // Config configures a Server.
 type Config struct {
+	// Auth authenticates Authorization headers on release downloads only.
+	Auth ports.AuthService
 	// VideoHosts are exact external video hosts; nil uses the defaults.
 	VideoHosts []string
 	// Mirrors answers the push mirror badge shown to repository admins. Without it there is

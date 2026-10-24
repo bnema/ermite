@@ -327,3 +327,107 @@ func TestReleaseNotesReferences(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `>!37</a>`)
 	assert.Contains(t, w.Body.String(), `>#37</a>`)
 }
+
+// Private-repository authorization is represented by the release port: the
+// adapter must pass the authenticated principal on both metadata and bytes.
+func TestReleaseDownloadCredentials(t *testing.T) {
+	repo := repoName(t, "proj")
+	reader := domain.TokenPrincipal(domain.Token{ID: "reader", Scopes: []domain.Scope{domain.ScopeRepoRead}, Repos: []domain.RepoName{repo}})
+	job := domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "job", Repo: repo, Permissions: map[string]string{domain.PermContents: domain.PermissionRead}})
+	for _, tc := range []struct {
+		name, header, cookie string
+		p                    domain.Principal
+		authErr              error
+		status               int
+	}{
+		{name: "bearer", header: "Bearer stored", p: reader, status: 200},
+		{name: "basic", header: "Basic dXNlcjpzdG9yZWQ=", p: reader, status: 200},
+		{name: "job", header: "Bearer job", p: job, status: 200},
+		{name: "empty overrides cookie", cookie: "tok", authErr: domain.ErrUnauthenticated, status: 401},
+		{name: "malformed", header: "Unsupported credentials", authErr: domain.ErrUnauthenticated, status: 401},
+		{name: "invalid", header: "Bearer revoked", authErr: domain.ErrUnauthenticated, status: 401},
+		{name: "invalid overrides cookie", header: "Bearer revoked", cookie: "tok", authErr: domain.ErrUnauthenticated, status: 401},
+		{name: "header overrides cookie", header: "Bearer stored", cookie: "tok", p: reader, status: 200},
+		{name: "anonymous", p: domain.Anonymous(), status: 404},
+		{name: "cookie", cookie: "tok", p: domain.Owner(), status: 200},
+		{name: "auth unavailable", header: "Bearer stored", authErr: errors.New("unavailable"), status: 500},
+	} {
+		for _, path := range []string{"/proj/releases/download/v1/build.zip", "/proj/releases/latest/download/build.zip", "/proj/releases/assets/7"} {
+			t.Run(tc.name+path, func(t *testing.T) {
+				auth := mocks.NewAuthService(t)
+				svc := mocks.NewReleaseService(t)
+				if tc.header != "" || tc.name == "empty overrides cookie" {
+					secret := "stored"
+					if tc.name == "job" {
+						secret = "job"
+					}
+					if tc.authErr == domain.ErrUnauthenticated {
+						secret = "revoked"
+					}
+					if tc.name == "empty overrides cookie" || tc.name == "malformed" {
+						secret = ""
+					}
+					auth.EXPECT().Authenticate(mock.Anything, secret).Return(tc.p, tc.authErr).Once()
+				}
+				if tc.authErr == nil {
+					ref := ports.AssetRef{Tag: "v1", Name: "build.zip"}
+					if strings.Contains(path, "latest") {
+						ref = ports.AssetRef{Latest: true, Name: "build.zip"}
+					}
+					if strings.Contains(path, "assets/7") {
+						ref = ports.AssetRef{ID: 7}
+					}
+					a := domain.ReleaseAsset{ID: 7, Name: "build.zip", Size: 4, Digest: "sha256:abcd"}
+					var getErr error
+					if tc.status == 404 {
+						getErr = domain.ErrNotFound
+					}
+					svc.EXPECT().GetAsset(mock.Anything, tc.p, repo, ref).Return(a, getErr).Once()
+					if tc.status == 200 {
+						svc.EXPECT().DownloadAsset(mock.Anything, tc.p, repo, ports.AssetRef{ID: 7}, int64(0), int64(4), mock.Anything).RunAndReturn(func(_ context.Context, _ domain.Principal, _ domain.RepoName, _ ports.AssetRef, _, _ int64, send func(ports.AssetChunk) error) error {
+							if err := send(ports.AssetChunk{Asset: &a}); err != nil {
+								return err
+							}
+							return send(ports.AssetChunk{Data: []byte("data")})
+						}).Once()
+					}
+				}
+				srv := newTestServer(t, Config{Auth: auth, Releases: svc, Repos: reposServing(t, publicRepo(t, "proj")), Browse: mocks.NewBrowseService(t), Sessions: newSessions(t, "tok"), Limiter: &blockingLimiter{}})
+				r := httptest.NewRequest("GET", path, nil)
+				if tc.header != "" || tc.name == "empty overrides cookie" {
+					r.Header.Set("Authorization", tc.header)
+				}
+				if tc.cookie != "" {
+					r.AddCookie(&http.Cookie{Name: CookieName, Value: tc.cookie})
+				}
+				w := httptest.NewRecorder()
+				srv.ServeHTTP(w, r)
+				require.Equal(t, tc.status, w.Code, w.Body.String())
+				if tc.status == 401 {
+					assert.Equal(t, `Basic realm="ermite"`, w.Header().Get("WWW-Authenticate"))
+				} else {
+					assert.Empty(t, w.Header().Get("WWW-Authenticate"))
+				}
+				if tc.status == 200 {
+					assert.Equal(t, "data", w.Body.String())
+					assert.Empty(t, w.Header().Get("Location"))
+				}
+				if tc.header != "" || tc.name == "empty overrides cookie" {
+					assert.Contains(t, w.Header().Get("Cache-Control"), "no-store")
+				}
+			})
+		}
+	}
+}
+
+func TestReleaseTokenDoesNotAuthorizeWebPage(t *testing.T) {
+	repo := repoName(t, "proj")
+	repos := mocks.NewRepoService(t)
+	repos.EXPECT().Get(mock.Anything, domain.Anonymous(), repo).Return(domain.Repo{}, domain.ErrNotFound).Once()
+	srv := newTestServer(t, Config{Auth: mocks.NewAuthService(t), Repos: repos, Browse: mocks.NewBrowseService(t), Releases: mocks.NewReleaseService(t)})
+	r := httptest.NewRequest("GET", "/proj/releases", nil)
+	r.Header.Set("Authorization", "Bearer stored")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+	require.Equal(t, http.StatusNotFound, w.Code)
+}

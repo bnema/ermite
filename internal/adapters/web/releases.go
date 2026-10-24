@@ -15,7 +15,9 @@ import (
 	"github.com/a-h/templ"
 	"github.com/bnema/zerowrap"
 
+	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/httpauth"
 	"bnema.dev/ermite/internal/httprange"
 	"bnema.dev/ermite/internal/ports"
 )
@@ -165,6 +167,37 @@ func releaseHeaders(h http.Header, a domain.ReleaseAsset) {
 func (s *Server) releaseDownload(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Minute)
 	defer cancel()
+	// An explicit header overrides the session, including when invalid. Only
+	// downloads opt in: token credentials never authorize web UI mutations.
+	p := principal(ctx)
+	if secret, present := httpauth.Credentials(r); present || len(r.Header.Values("Authorization")) > 0 {
+		w.Header().Set("Cache-Control", noStore)
+		addr := clientlimit.ClientAddr(r, s.cfg.TrustedProxies)
+		if s.cfg.Limiter != nil {
+			if blocked, _ := s.cfg.Limiter.Blocked(ctx, addr); blocked {
+				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+				return
+			}
+		}
+		var authErr error
+		if s.cfg.Auth == nil {
+			authErr = domain.ErrUnauthenticated
+		} else {
+			p, authErr = s.cfg.Auth.Authenticate(ctx, secret)
+		}
+		if authErr != nil {
+			if errors.Is(authErr, domain.ErrUnauthenticated) {
+				if s.cfg.Limiter != nil {
+					s.cfg.Limiter.Fail(ctx, addr)
+				}
+				w.Header().Set("WWW-Authenticate", `Basic realm="ermite"`)
+				http.Error(w, "Bad credentials", http.StatusUnauthorized)
+			} else {
+				http.Error(w, "Server Error", http.StatusInternalServerError)
+			}
+			return
+		}
+	}
 	repo, err := domain.ParseRepoName(r.PathValue("repo"))
 	if err != nil {
 		s.fail(ctx, w, r, errNotFound)
@@ -180,7 +213,7 @@ func (s *Server) releaseDownload(w http.ResponseWriter, r *http.Request) {
 	} else if ref.Tag == "" {
 		ref.Latest = true
 	}
-	a, err := s.cfg.Releases.GetAsset(ctx, principal(ctx), repo, ref)
+	a, err := s.cfg.Releases.GetAsset(ctx, p, repo, ref)
 	if err != nil {
 		s.fail(ctx, w, r, errNotFound)
 		return
@@ -211,7 +244,7 @@ func (s *Server) releaseDownload(w http.ResponseWriter, r *http.Request) {
 	started := false
 	rc := http.NewResponseController(w)
 	defer func() { _ = rc.SetWriteDeadline(time.Time{}) }()
-	err = s.cfg.Releases.DownloadAsset(ctx, principal(ctx), repo, ref, offset, length, func(c ports.AssetChunk) error {
+	err = s.cfg.Releases.DownloadAsset(ctx, p, repo, ref, offset, length, func(c ports.AssetChunk) error {
 		if !started {
 			if c.Asset == nil || c.Asset.ID != a.ID || c.Asset.Digest != a.Digest || c.Asset.Size != a.Size {
 				return errors.New("web: release asset changed before download")

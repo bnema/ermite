@@ -32,7 +32,7 @@ import (
 // State changes are POST only and pass one gate (ServeHTTP): an Origin equal to
 // the origin of the public URL, and a valid session, except the login POST,
 // which needs the link instead. The routes read the cookie and never the
-// Authorization header; the API does the opposite, it reads the header and no cookie.
+// Authorization header except on release downloads; the API reads headers only.
 
 // CookieName is the session cookie. The __Host- prefix makes browsers accept
 // it only with Secure, Path=/ and no Domain, and refuse it from a sibling

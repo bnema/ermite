@@ -35,6 +35,7 @@ const (
 	layerUsecase     packageLayer = "usecase"
 	layerAdapter     packageLayer = "adapter"
 	layerClientLimit packageLayer = "clientlimit"
+	layerHTTPAuth    packageLayer = "httpauth"
 	layerHTTPRange   packageLayer = "httprange"
 	layerMediaPolicy packageLayer = "mediapolicy"
 	layerConfig      packageLayer = "config"
@@ -64,11 +65,12 @@ const (
 //   - internal/config parses the environment into plain values.
 var productionDependencies = map[packageLayer]map[packageLayer]bool{
 	layerCommand:     {layerApp: true},
-	layerApp:         {layerUsecase: true, layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerMediaPolicy: true, layerConfig: true, layerPorts: true, layerDomain: true, layerGenerated: true},
+	layerApp:         {layerUsecase: true, layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerHTTPAuth: true, layerMediaPolicy: true, layerConfig: true, layerPorts: true, layerDomain: true, layerGenerated: true},
 	layerUsecase:     {layerUsecase: true, layerPorts: true, layerDomain: true},
-	layerAdapter:     {layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerMediaPolicy: true, layerPorts: true, layerDomain: true, layerGenerated: true},
+	layerAdapter:     {layerAdapter: true, layerClientLimit: true, layerHTTPRange: true, layerHTTPAuth: true, layerMediaPolicy: true, layerPorts: true, layerDomain: true, layerGenerated: true},
 	layerClientLimit: {layerPorts: true},
 	layerHTTPRange:   {},
+	layerHTTPAuth:    {},
 	layerConfig:      {layerMediaPolicy: true},
 	layerMediaPolicy: {},
 	layerPorts:       {layerDomain: true},
@@ -163,6 +165,12 @@ func TestImportBoundaryFixtures(t *testing.T) {
 		{"ports reject httprange", p("internal/ports"), p("internal/httprange"), false, false},
 		{"adapter accepts httprange", p("internal/adapters/web"), p("internal/httprange"), false, true},
 		{"httprange rejects domain", p("internal/httprange"), p("internal/domain"), false, false},
+		{"app accepts httpauth", p("internal/app"), p("internal/httpauth"), false, true},
+		{"usecase rejects httpauth", p("internal/usecase"), p("internal/httpauth"), false, false},
+		{"domain rejects httpauth", p("internal/domain"), p("internal/httpauth"), false, false},
+		{"ports reject httpauth", p("internal/ports"), p("internal/httpauth"), false, false},
+		{"adapter accepts httpauth", p("internal/adapters/web"), p("internal/httpauth"), false, true},
+		{"httpauth rejects domain", p("internal/httpauth"), p("internal/domain"), false, false},
 		{"clientlimit accepts ports", p("internal/clientlimit"), p("internal/ports"), false, true},
 		{"clientlimit rejects usecase", p("internal/clientlimit"), p("internal/usecase"), false, false},
 		{"config rejects domain", p("internal/config"), p("internal/domain"), false, false},
@@ -333,6 +341,8 @@ func classifyPackage(path string) (packageLayer, error) {
 		return layerAdapter, nil
 	case under(path, p("internal/clientlimit")):
 		return layerClientLimit, nil
+	case under(path, p("internal/httpauth")):
+		return layerHTTPAuth, nil
 	case under(path, p("internal/httprange")):
 		return layerHTTPRange, nil
 	case under(path, p("internal/mediapolicy")):

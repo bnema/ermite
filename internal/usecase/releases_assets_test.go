@@ -306,3 +306,42 @@ func TestReleaseAssetDownloadZeroBytes(t *testing.T) {
 	err = r.svc.DownloadAsset(r.ctx, domain.Anonymous(), r.repo, ports.AssetRef{ID: a.ID}, 0, -1, func(ports.AssetChunk) error { return nil })
 	require.ErrorIs(t, err, domain.ErrNotFound)
 }
+
+func TestPrivateReleaseAssetReadScopes(t *testing.T) {
+	r := newReleaseRig(t, ports.ReleaseLimits{})
+	rel := r.create(t, "v1", false)
+	a := r.upload(t, rel, "binary", []byte("data"))
+	_, err := r.store.Mutate(r.ctx, r.repo, func(repo *domain.Repo) (bool, error) { repo.Visibility = domain.VisibilityPrivate; return true, nil })
+	require.NoError(t, err)
+	other := name(t, "other")
+	for _, tc := range []struct {
+		name    string
+		p       domain.Principal
+		allowed bool
+	}{
+		{"stored read", domain.TokenPrincipal(domain.Token{ID: "read", Scopes: []domain.Scope{domain.ScopeRepoRead}}), true},
+		{"stored without read", domain.TokenPrincipal(domain.Token{ID: "write", Scopes: []domain.Scope{domain.ScopeReleaseWrite}}), false},
+		{"job read", domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "j", Repo: r.repo, Permissions: map[string]string{"contents": "read"}}), true},
+		{"job other repository", domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "j", Repo: other, Permissions: map[string]string{"contents": "read"}}), false},
+		{"job without contents read", domain.RepoTokenPrincipal(domain.CIRepoToken{ID: "j", Repo: r.repo, Permissions: map[string]string{domain.PermContents: domain.PermissionNone}}), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ref := ports.AssetRef{ID: a.ID}
+			_, err := r.svc.GetAsset(r.ctx, tc.p, r.repo, ref)
+			if tc.allowed {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, domain.ErrNotFound)
+			}
+			sent := false
+			err = r.svc.DownloadAsset(r.ctx, tc.p, r.repo, ref, 0, 4, func(ports.AssetChunk) error { sent = true; return nil })
+			if tc.allowed {
+				require.NoError(t, err)
+				require.True(t, sent)
+			} else {
+				require.ErrorIs(t, err, domain.ErrNotFound)
+				require.False(t, sent)
+			}
+		})
+	}
+}

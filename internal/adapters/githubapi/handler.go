@@ -32,6 +32,7 @@ import (
 
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/httpauth"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -352,19 +353,7 @@ func (h *Handler) authenticate(r *http.Request, addr string) (domain.Principal, 
 // credentials extracts the token of an Authorization header: the password of
 // Basic (the user is ignored, checkout sends x-access-token), or the value of
 // "Bearer" or "token".
-func credentials(r *http.Request) (secret string, present bool) {
-	auth := r.Header.Get("Authorization")
-	if auth == "" {
-		return "", false
-	}
-	if _, pass, ok := r.BasicAuth(); ok {
-		return pass, true
-	}
-	if scheme, tok, ok := strings.Cut(auth, " "); ok && (strings.EqualFold(scheme, "Bearer") || strings.EqualFold(scheme, "token")) {
-		return strings.TrimSpace(tok), true
-	}
-	return "", true
-}
+func credentials(r *http.Request) (string, bool) { return httpauth.Credentials(r) }
 
 // fail answers an error of a use case. A repository the caller cannot read is
 // as not found as one that does not exist.

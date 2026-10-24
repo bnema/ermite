@@ -27,6 +27,7 @@ import (
 
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/httpauth"
 	"bnema.dev/ermite/internal/ports"
 )
 
@@ -311,19 +312,7 @@ func (h *Handler) authenticate(r *http.Request, addr string) (domain.Principal, 
 // the value of "Bearer" or "token". present is true when the
 // header exists, even if it carries nothing usable, which then fails
 // authentication.
-func credentials(r *http.Request) (secret string, present bool) {
-	auth := r.Header.Get("Authorization")
-	if auth == "" {
-		return "", false
-	}
-	if _, pass, ok := r.BasicAuth(); ok {
-		return pass, true
-	}
-	if scheme, tok, ok := strings.Cut(auth, " "); ok && (strings.EqualFold(scheme, "Bearer") || strings.EqualFold(scheme, "token")) {
-		return strings.TrimSpace(tok), true
-	}
-	return "", true
-}
+func credentials(r *http.Request) (string, bool) { return httpauth.Credentials(r) }
 
 // denied answers an authorization failure. A caller without valid
 // credentials is asked for them wherever the repository does not show itself,

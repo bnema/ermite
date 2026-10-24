@@ -21,6 +21,11 @@ components:
     role: adapter
     paths:
       - internal/clientlimit/**
+  httpauth:
+    # Token credential decoding: infrastructure shared by HTTP adapters.
+    role: adapter
+    paths:
+      - internal/httpauth/**
   httprange:
     # Byte-range selection: infrastructure shared by the HTTP adapters.
     role: adapter
@@ -87,10 +92,10 @@ allow:
   # HTTP adapters that rate-limit clients import it by design.
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/githttp/**
-    reason: rate-limits Git clients with internal/clientlimit
+    reason: shares HTTP infrastructure internal/clientlimit and internal/httpauth
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/githubapi/**
-    reason: rate-limits the clients of the REST subset with internal/clientlimit and selects byte ranges with internal/httprange
+    reason: rate-limits the clients of the REST subset with internal/clientlimit and selects byte ranges with internal/httprange and decodes credentials with internal/httpauth
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/oidchttp/**
     reason: rate-limits the clients of the OIDC token endpoint with internal/clientlimit
@@ -99,7 +104,7 @@ allow:
     reason: rate-limits API clients with internal/clientlimit
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/web/**
-    reason: rate-limits login attempts with internal/clientlimit, selects byte ranges with internal/httprange and shares video hosts with internal/mediapolicy
+    reason: rate-limits login attempts with internal/clientlimit, selects byte ranges with internal/httprange and decodes credentials with internal/httpauth and shares video hosts with internal/mediapolicy and decodes credentials with internal/httpauth
 
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/httpserver/**
