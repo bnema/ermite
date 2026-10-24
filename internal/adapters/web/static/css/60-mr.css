@@ -259,12 +259,13 @@
   .pending .p-btns { display: flex; gap: var(--s2); flex-wrap: wrap; }
   .pending .p-btns form { margin: 0; }
 
+  /* every column fits its text; the title takes the rest. The auto layout
+     sizes on content, width: 1% shrinks a cell to it, and max-width: 0 lets
+     the title give way (and truncate) instead of widening the table. */
   .list.mrs {
-    & .c-n { width: 64px; }
-    & .c-state { width: 110px; }
-    & .c-subject { overflow: hidden; text-overflow: ellipsis; }
-    & .c-who { width: 140px; }
-    & .c-when { width: 100px; }
+    table-layout: auto;
+    & td { width: 1%; }
+    & .c-subject { width: auto; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
     & tr[data-state="open"] .c-state { font-weight: bold; }
     & tr[data-state="open"] .c-state::before { content: "● "; color: var(--teal); }
     & tr[data-state="merged"] .c-state::before { content: "✓ "; color: var(--teal); }
