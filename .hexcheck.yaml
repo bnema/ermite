@@ -104,7 +104,7 @@ allow:
     reason: rate-limits API clients with internal/clientlimit
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/web/**
-    reason: rate-limits login attempts with internal/clientlimit, selects byte ranges with internal/httprange and decodes credentials with internal/httpauth and shares video hosts with internal/mediapolicy and decodes credentials with internal/httpauth
+    reason: rate-limits login attempts with internal/clientlimit, selects byte ranges with internal/httprange, decodes credentials with internal/httpauth and shares video hosts with internal/mediapolicy
 
   - rule: no-adapter-to-adapter-imports
     path: internal/adapters/httpserver/**

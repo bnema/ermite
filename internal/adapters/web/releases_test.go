@@ -420,6 +420,33 @@ func TestReleaseDownloadCredentials(t *testing.T) {
 	}
 }
 
+func TestReleaseDownloadCredentialLimiter(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		blocked bool
+		status  int
+		fails   int
+	}{
+		{name: "blocked client skips authentication", blocked: true, status: http.StatusTooManyRequests},
+		{name: "bad credentials count as a failure", status: http.StatusUnauthorized, fails: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			auth := mocks.NewAuthService(t)
+			if !tc.blocked {
+				auth.EXPECT().Authenticate(mock.Anything, "revoked").Return(domain.Principal{}, domain.ErrUnauthenticated).Once()
+			}
+			limiter := &blockingLimiter{blocked: tc.blocked}
+			srv := newTestServer(t, Config{Auth: auth, Releases: mocks.NewReleaseService(t), Repos: reposServing(t, publicRepo(t, "proj")), Browse: mocks.NewBrowseService(t), Limiter: limiter})
+			r := httptest.NewRequest("GET", "/proj/releases/download/v1/build.zip", nil)
+			r.Header.Set("Authorization", "Bearer revoked")
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, r)
+			require.Equal(t, tc.status, w.Code)
+			assert.Equal(t, tc.fails, limiter.fails)
+		})
+	}
+}
+
 func TestReleaseTokenDoesNotAuthorizeWebPage(t *testing.T) {
 	repo := repoName(t, "proj")
 	repos := mocks.NewRepoService(t)
