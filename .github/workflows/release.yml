@@ -62,10 +62,10 @@ jobs:
   # subject repo:bnema/ermite:environment:production, for that app, service
   # and image repository. The new ermite restarts the server running this job,
   # so the job may end in error after a successful deploy: check the server
-  # version.
+  # version. It runs after the release so the restart cannot cut the upload.
   deploy:
     name: Deploy
-    needs: check
+    needs: release
     if: github.server_url != 'https://github.com'
     runs-on: ubuntu-latest
     environment: production
