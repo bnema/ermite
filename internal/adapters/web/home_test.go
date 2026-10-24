@@ -232,7 +232,7 @@ func TestHomeRowPrivateBadge(t *testing.T) {
 	srv := newTestServer(t, Config{Repos: reposServing(t, priv, pushedRepo(t, "open")), Browse: browse})
 
 	signed := context.WithValue(context.Background(), signedInKey{}, struct{}{})
-	assert.Contains(t, renderRow(t, srv.homeRowOf(signed, priv, time.Now(), false)), `<span class="pill">private</span>`)
+	assert.Contains(t, renderRow(t, srv.homeRowOf(signed, priv, time.Now(), false)), `<span class="pill priv" title="Private repository"><span class="ico i-lock" aria-hidden="true"></span><span class="sr">private</span></span>`)
 	assert.NotContains(t, renderRow(t, srv.homeRowOf(context.Background(), priv, time.Now(), false)), "private")
 	assert.NotContains(t, renderRow(t, srv.homeRowOf(signed, pushedRepo(t, "open"), time.Now(), false)), "private")
 }

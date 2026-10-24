@@ -15,6 +15,27 @@ type SignatureBadge struct {
 	Label, Proto, Class, Title, Reason string
 }
 
+// Short is the protocol and the verdict, "SSH Verified": the text of the
+// icon of a list, for screen readers.
+func (b *SignatureBadge) Short() string {
+	if b.Proto == "" {
+		return b.Label
+	}
+	return b.Proto + " " + b.Label
+}
+
+// sigIconClass is the shield of a verdict: checked when verified, crossed
+// when the signature is bad, with an alert mark otherwise.
+func sigIconClass(class string) string {
+	switch class {
+	case "sig-ok":
+		return "i-shield-check"
+	case "sig-bad":
+		return "i-shield-x"
+	}
+	return "i-shield-alert"
+}
+
 // signatureProto is the display name of a signature format.
 func signatureProto(f domain.SignatureFormat) string {
 	switch f {

@@ -86,13 +86,13 @@ func TestCommitRowsShowTheSignatureBadge(t *testing.T) {
 		none bool
 	}{
 		{name: "ssh verified", v: verification(domain.FormatSSH, domain.StatusVerified, sshFP, "laptop"),
-			want: []string{`class="pill sig sig-ok"`, `<span class="sig-proto">SSH</span> Verified`, `title="Signed with SSH key ` + sshFP}},
+			want: []string{`class="sig-ico sig-ok"`, `class="ico i-shield-check"`, `<span class="sr">SSH Verified</span>`, `title="Signed with SSH key ` + sshFP}},
 		{name: "gpg verified", v: verification(domain.FormatGPG, domain.StatusVerified, gpgFP, ""),
-			want: []string{`class="pill sig sig-ok"`, `<span class="sig-proto">GPG</span> Verified`}},
+			want: []string{`class="sig-ico sig-ok"`, `<span class="sr">GPG Verified</span>`}},
 		{name: "unknown key", v: verification(domain.FormatGPG, domain.StatusUnknownKey, gpgFP, ""),
-			want: []string{`class="pill sig sig-warn"`, `GPG</span> Unverified`, `unknown GPG key`}},
+			want: []string{`class="sig-ico sig-warn"`, `class="ico i-shield-alert"`, `<span class="sr">GPG Unverified</span>`, `unknown GPG key`}},
 		{name: "bad signature", v: verification(domain.FormatSSH, domain.StatusBadSignature, "", ""),
-			want: []string{`class="pill sig sig-bad"`, `SSH</span> Bad signature`}},
+			want: []string{`class="sig-ico sig-bad"`, `class="ico i-shield-x"`, `<span class="sr">SSH Bad signature</span>`}},
 		{name: "unsigned", v: verification("", domain.StatusUnsigned, "", ""), none: true},
 		{name: "unchecked", v: domain.CommitVerification{}, none: true},
 	} {
@@ -150,6 +150,6 @@ func TestMergeRequestCommitsShowTheSignatureBadge(t *testing.T) {
 		{Short: "aaaaaaa", Href: "/r/commit/a", Subject: "signed", Sig: signed},
 		{Short: "bbbbbbb", Href: "/r/commit/b", Subject: "unsigned"},
 	}}))
-	assert.Equal(t, 1, strings.Count(got, `class="pill sig sig-ok"`), "only the signed commit has a pill")
-	assert.Contains(t, got, `<span class="sig-proto">GPG</span> Verified`)
+	assert.Equal(t, 1, strings.Count(got, `class="sig-ico sig-ok"`), "only the signed commit has a shield")
+	assert.Contains(t, got, `<span class="sr">GPG Verified</span>`)
 }

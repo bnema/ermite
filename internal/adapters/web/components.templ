@@ -45,7 +45,7 @@ templ HomeRowView(r HomeRow) {
 					<a class="pill repo-release" href={ templ.SafeURL(rel.Href) } title={ "Latest release: " + rel.Tag }>{ rel.Tag }</a>
 				}
 				if r.Private {
-					<span class="pill">private</span>
+					<span class="pill priv" title="Private repository"><span class="ico i-lock" aria-hidden="true"></span><span class="sr">private</span></span>
 				}
 				if lic := r.License; lic != nil {
 					<a class="pill repo-license" href={ templ.SafeURL(lic.Href) } title={ "License: " + lic.ID }>{ lic.ID }</a>
@@ -209,7 +209,7 @@ templ CommitRows(rows []CommitRow) {
 								<span class="pill">merge</span>
 							}
 							if c.Sig != nil {
-								@signaturePill(c.Sig)
+								@signatureIcon(c.Sig)
 							}
 							for _, b := range c.Branches {
 								<span class="pill">{ b }</span>
@@ -236,5 +236,16 @@ templ signaturePill(b *SignatureBadge) {
 			<span class="sig-proto">{ b.Proto }</span>
 		}
 		{ b.Label }
+	</span>
+}
+
+// signatureIcon is the badge of a signed commit in a list: a shield whose
+// shape carries the verdict (check, alert, cross), the protocol and verdict
+// for screen readers, the reason in the tooltip. The commit page keeps the
+// pill, with room for the text.
+templ signatureIcon(b *SignatureBadge) {
+	<span class={ "sig-ico", b.Class } title={ b.Title }>
+		<span class={ "ico", sigIconClass(b.Class) } aria-hidden="true"></span>
+		<span class="sr">{ b.Short() }</span>
 	</span>
 }
