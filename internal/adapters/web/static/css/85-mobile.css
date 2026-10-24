@@ -5,7 +5,7 @@
   @media (max-width: 720px) {
     body:has(#diffs[data-mr]) {
       --pad: 0px;
-      --hdr-h: 97px;
+      --hdr-h: 40px;
       overflow-x: clip;
     }
     body:has(#diffs[data-mr]) .work { padding-inline: 0; margin-inline: 0; gap: var(--s3); }

@@ -7,19 +7,27 @@
       el.className = cls;
       return el;
     };
-    // One row of tabs: the bar on top stays above the backdrop while the
-    // drawer is open and switches its section, so the drawer repeats none.
+    // Keep live swap targets in place; only the controls belong to the drawer.
     const bar = make('nav', 'rail-tabs');
-    bar.setAttribute('aria-label', 'Context sections');
+    bar.setAttribute('aria-label', 'Panel sections');
+    // "Panel" and a side-panel icon: the button opens what the side panel
+    // shows on a wide screen.
+    const trigger = make('button', 'btn rail-context');
+    trigger.type = 'button';
+    const icon = make('span', 'ico i-panel-right-open');
+    icon.setAttribute('aria-hidden', 'true');
+    trigger.append(icon, document.createTextNode('Panel'));
+    const header = document.querySelector('.hdr');
+    header.append(trigger);
+    const controls = make('div', 'rail-controls');
     const closeButton = make('button', 'btn rail-close');
     closeButton.type = 'button';
     closeButton.textContent = '×';
     closeButton.setAttribute('aria-label', 'Close');
     const backdrop = make('div', 'rail-backdrop');
     backdrop.setAttribute('aria-hidden', 'true');
-    rail.prepend(closeButton);
-    // First in the page, above the description: it meets the header.
-    rail.parentNode.prepend(bar);
+    controls.append(bar, closeButton);
+    rail.prepend(controls);
     document.body.append(backdrop);
     let sections = [], selected = null, opener = null, signature = '', inert = [], serial = 0;
     const buttons = () => [...bar.children];
@@ -27,11 +35,13 @@
       const open = mobile.matches && selected !== null;
       rail.toggleAttribute('data-drawer-open', open);
       for (const section of sections) section.toggleAttribute('data-rail-selected', section.id === selected);
+      trigger.setAttribute('aria-expanded', String(open));
       for (const button of buttons()) button.setAttribute('aria-expanded', String(open && button.getAttribute('aria-controls') === selected));
     }
     function close(restore = true) {
       selected = null;
       rail.removeAttribute('role');
+      rail.removeAttribute('aria-modal');
       for (const [el, was] of inert) el.inert = was;
       inert = [];
       document.body.classList.remove('rail-open');
@@ -42,11 +52,11 @@
       if (!mobile.matches) return;
       if (selected === id) return close();
       if (selected === null) {
-        opener = button;
+        opener = trigger;
         // Inert the branches outside the aside, without moving swap targets.
         for (let node = rail; node.parentElement; node = node.parentElement) {
           for (const sibling of node.parentElement.children) {
-            if (sibling === node || sibling === backdrop || sibling === bar) continue;
+            if (sibling === node || sibling === backdrop) continue;
             inert.push([sibling, sibling.inert]);
             sibling.inert = true;
           }
@@ -54,13 +64,13 @@
         }
       }
       selected = id;
-      // A dialog, not a modal one: the bar of tabs above it stays usable.
+      // All section controls stay inside the modal drawer.
       rail.setAttribute('role', 'dialog');
-      rail.setAttribute('aria-label', button?.textContent || 'Context');
+      rail.setAttribute('aria-modal', 'true');
+      rail.setAttribute('aria-label', button?.textContent || 'Panel');
       document.body.classList.add('rail-open');
       paint();
-      // The focus stays on the tab that was pressed: the next tap, Tab or
-      // Escape acts from there.
+      buttons().find(b => b.getAttribute('aria-controls') === selected)?.focus();
     }
     function refresh() {
       sections = [...rail.children].filter(el => el.tagName === 'SECTION' && el.querySelector('h2'));
@@ -78,7 +88,6 @@
       if (signature !== next) {
         signature = next;
         const focusedTab = bar.contains(document.activeElement);
-        const openerID = opener?.getAttribute('aria-controls');
         bar.replaceChildren();
         sections.forEach((section, i) => {
           const button = make('button', 'btn');
@@ -88,13 +97,15 @@
           button.addEventListener('click', () => choose(section.id, button));
           bar.append(button);
         });
-        opener = [...bar.children].find(b => b.getAttribute('aria-controls') === openerID) || bar.children[0];
         if (focusedTab && selected) [...bar.children].find(b => b.getAttribute('aria-controls') === selected)?.focus();
       }
       if (selected && !sections.some(s => s.id === selected)) close();
-      bar.hidden = !sections.length;
+      trigger.hidden = !sections.length;
       paint();
     }
+    trigger.addEventListener('click', () => {
+      if (sections.length) choose(sections[0].id, buttons()[0]);
+    });
     closeButton.addEventListener('click', () => close());
     backdrop.addEventListener('click', () => close());
     rail.addEventListener('click', e => {

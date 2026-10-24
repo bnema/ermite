@@ -35,6 +35,7 @@
   .i-sun { --i: url(icons/sun.svg); }
   .i-moon { --i: url(icons/moon.svg); }
   .i-lock { --i: url(icons/lock.svg); }
+  .i-panel-right-open { --i: url(icons/panel-right-open.svg); }
   .i-shield-check { --i: url(icons/shield-check.svg); }
   .i-shield-alert { --i: url(icons/shield-alert.svg); }
   .i-shield-x { --i: url(icons/shield-x.svg); }

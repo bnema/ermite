@@ -1,31 +1,26 @@
 @layer components {
-  .rail-tabs, .rail-close, .rail-backdrop { display: none; }
+  .rail-controls, .rail-context, .rail-backdrop { display: none; }
 
   @media (max-width: 1080px) {
-    .work > .rail-tabs {
-      display: flex; position: sticky; top: var(--hdr-h); z-index: 19;
-      /* a band from edge to edge, out of the padding of .work: the gap of
-         the grid is the only space, and it comes after the band */
-      grid-column: 1 / -1; min-width: 0; margin-inline: calc(-1 * var(--pad));
-      background: var(--bg-surface); border-block: 1px solid var(--border);
+    body { --hdr-h: 0px; }
+    body:has(.hdr .tabs, .rail-context:not([hidden])) { --hdr-h: 40px; }
+    /* Review tools scroll away too, leaving file headers directly below the band. */
+    body:has(#diffs[data-mr]) { --bar-h: 0px; }
+    body:has(#diffs[data-mr]) .mr-bar { position: static; }
+    /* The identity row scrolls away; only the compact navigation remains. */
+    .hdr { position: static; }
+    .hdr:has(.tabs, .rail-context:not([hidden])) { position: sticky; top: -48px; }
+    .hdr-top { height: 48px; gap: var(--s2); }
+    .tabs { height: 39px; padding-inline: var(--s2); }
+    .tabs a { height: 39px; padding-inline: var(--s2); font-size: var(--fs-s); }
+    .tabs kbd { display: none; }
+    .hdr:has(.rail-context:not([hidden])) .tabs { margin-right: 88px; }
+    .rail-context:not([hidden]) {
+      display: inline-flex; position: absolute; right: var(--s2); bottom: 4px;
+      gap: 6px; height: 31px; padding-inline: var(--s2); font-size: var(--fs-xs);
     }
-    /* first in .work (no description above): it meets the header */
-    .work:has(> .rail-tabs:first-child:not([hidden])) { padding-top: 0; }
-    .work > .rail-tabs:first-child { border-top: 0; }
-    .rail-tabs {
-      gap: var(--s1); padding: var(--s2); overflow-x: auto; overscroll-behavior-x: contain;
-      /* real buttons that share the bar: they grow to fill it (one section
-         alone is a full-width button) and a chevron says they open a panel.
-         The open one is pressed: stronger fill and border, its chevron up. */
-      & .btn { flex: 1 0 auto; justify-content: center; min-height: 40px; }
-      & .btn::after {
-        content: ""; width: 14px; height: 14px; flex: none; background: currentColor;
-        mask: url(icons/chevron.svg) center / contain no-repeat; opacity: .7;
-      }
-      & .btn[aria-expanded="true"] { color: var(--ink-hi); background: var(--bg-strong); border-color: var(--ink-mute); }
-      & .btn[aria-expanded="true"]::after { transform: rotate(180deg); opacity: 1; }
-    }
-    .work > .rail-tabs[hidden] { display: none; }
+    .rail-context .ico { width: 14px; height: 14px; }
+    .hdr:has(.rail-context:not([hidden])):not(:has(.tabs)) { padding-bottom: 39px; }
     .rail[data-drawer] { display: none; }
     .rail[data-drawer][data-drawer-open] {
       display: block; position: fixed; inset: auto 0 0; z-index: 41;
@@ -35,26 +30,19 @@
       border-radius: var(--r) var(--r) 0 0; box-shadow: var(--shadow);
     }
     .rail[data-drawer] > section:not([data-rail-selected]) { display: none; }
-    /* the close button sits in the corner of the section title, and stays
-       there while the section scrolls */
-    .rail[data-drawer-open] > .rail-close {
-      display: inline-flex; justify-content: center; position: sticky; top: var(--s2); z-index: 1;
-      float: right; width: 32px; padding: 0; margin: var(--s2) var(--s2) 0 0; font-size: 18px;
+    /* Controls stay reachable while long sections scroll. */
+    .rail-controls {
+      display: flex; align-items: center; gap: var(--s2); padding: var(--s2);
+      position: sticky; top: 0; z-index: 1; background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
     }
-    /* the bar of tabs stays above the backdrop: it switches the section */
-    .rail-open .work > .rail-tabs { z-index: 42; }
+    .rail-tabs { display: flex; gap: var(--s2); overflow-x: auto; flex: 1; min-width: 0; }
+    .rail-tabs .btn { height: 28px; border-radius: 999px; font-size: var(--fs-xs); }
+    .rail-tabs .btn[aria-expanded="true"] { color: var(--ink-hi); background: var(--bg-strong); border-color: var(--ink-mute); }
+    .rail-close { display: inline-flex; justify-content: center; flex: none; width: 28px; height: 28px; padding: 0; font-size: 18px; }
     .rail-open { overflow: hidden; }
     .rail-open > .rail-backdrop {
-      display: block; position: fixed; inset: 0; z-index: 40;
-      background: #0008;
+      display: block; position: fixed; inset: 0; z-index: 40; background: #0008;
     }
-    /* Hash navigation must clear both the repository header and context bar. */
-    body:has(.rail[data-drawer]) :is(.dfile, [data-rows] > *) {
-      scroll-margin-top: calc(var(--hdr-h) + 64px);
-    }
-  }
-  @media (max-width: 720px) {
-    body { --hdr-h: 53px; }
-    body:has(.hdr .tabs) { --hdr-h: 97px; }
   }
 }
