@@ -179,6 +179,13 @@ func (u *Pushes) Check(ctx context.Context, p domain.Principal, name domain.Repo
 	if !canWrite(p, name) {
 		return fmt.Errorf("%w: no write access to %s", domain.ErrRejected, name)
 	}
+	repo, err := lookupRepo(ctx, u.meta, name)
+	if err != nil {
+		return err
+	}
+	if repo.Archived {
+		return fmt.Errorf("%w: %w", domain.ErrRejected, domain.ErrArchived)
+	}
 	for _, up := range updates {
 		// refs/pull/* belong to ermite (the head and the test merge of the merge
 		// requests): nobody pushes there, whatever the token, the workflow

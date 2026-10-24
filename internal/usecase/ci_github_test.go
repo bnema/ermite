@@ -113,13 +113,14 @@ func TestCheckRunID(t *testing.T) {
 	}
 }
 
-func TestGitHubRepoReportsAllowAutoMerge(t *testing.T) {
+func TestGitHubRepoReportsAllowAutoMergeAndArchived(t *testing.T) {
 	for _, allow := range []bool{false, true} {
 		t.Run(strconv.FormatBool(allow), func(t *testing.T) {
 			repos := mocks.NewGitRepos(t)
 			u := newCIUnit(t, func(cfg *usecase.CIConfig) { cfg.Repos = repos })
 			repo := domain.Repo{Name: name(t, "proj"), Visibility: domain.VisibilityPublic, Settings: domain.DefaultRepoSettings()}
 			repo.Settings.AllowAutoMerge = allow
+			repo.Archived = allow
 			u.meta.EXPECT().Get(mock.Anything, repo.Name).Return(repo, nil)
 			repos.EXPECT().HeadBranch(mock.Anything, repo.Name).Return("main", nil)
 			data, err := u.ci.GetRepo(context.Background(), domain.Root(), "owner", "proj")
@@ -127,6 +128,7 @@ func TestGitHubRepoReportsAllowAutoMerge(t *testing.T) {
 			var obj map[string]any
 			require.NoError(t, json.Unmarshal(data, &obj))
 			assert.Equal(t, allow, obj["allow_auto_merge"])
+			assert.Equal(t, repo.Archived, obj["archived"])
 		})
 	}
 }

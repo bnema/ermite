@@ -40,3 +40,8 @@ func TestIsInvalid(t *testing.T) {
 		})
 	}
 }
+
+func TestErrArchived(t *testing.T) {
+	assert.ErrorIs(t, ErrArchived, ErrPreconditionFailed)
+	assert.Contains(t, ErrArchived.Error(), "repository is archived")
+}

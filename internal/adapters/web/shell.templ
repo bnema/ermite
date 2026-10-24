@@ -130,6 +130,9 @@ templ Header(l Layout) {
 					</ol>
 				</nav>
 			}
+			if l.Archived {
+				<span class="pill">Archived</span>
+			}
 			<div class="hdr-acts">
 				if l.Ref != "" {
 					<a

@@ -299,3 +299,22 @@ func TestUpdateParamsAllowAutoMerge(t *testing.T) {
 	require.NotNil(t, params.AllowedMergeModes)
 
 }
+
+func TestArchivedMapping(t *testing.T) {
+	for _, archived := range []bool{false, true} {
+		params, err := updateParams(&pb.UpdateRepoRequest{Archived: new(archived), UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"archived"}}})
+		require.NoError(t, err)
+		require.NotNil(t, params.Archived)
+		assert.Equal(t, archived, *params.Archived)
+		got := repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustRepoName(t, "demo"), Archived: archived}})
+		assert.Equal(t, archived, got.GetArchived())
+	}
+	params, err := updateParams(&pb.UpdateRepoRequest{Archived: new(true), UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}}})
+	require.NoError(t, err)
+	assert.Nil(t, params.Archived)
+	params, err = updateParams(&pb.UpdateRepoRequest{UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"archived"}}})
+	require.NoError(t, err)
+	require.NotNil(t, params.Archived)
+	assert.False(t, *params.Archived)
+	assert.Contains(t, Features, "repos.archived")
+}

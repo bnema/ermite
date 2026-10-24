@@ -25,6 +25,9 @@ type Inbox struct {
 	// pending is nil when the public form is not wired.
 	pending ports.PendingIssueStore
 	ci      ports.CIStore
+	// deps is nil when Bernard is off.
+	deps  ports.DepsStore
+	clock ports.Clock
 }
 
 var _ ports.InboxService = (*Inbox)(nil)
@@ -38,11 +41,14 @@ type InboxConfig struct {
 	// inbox has no pending section.
 	Pending ports.PendingIssueStore
 	CI      ports.CIStore
+	// Deps and Clock add the Bernard section; optional.
+	Deps  ports.DepsStore
+	Clock ports.Clock
 }
 
 // NewInbox builds the inbox use case.
 func NewInbox(cfg InboxConfig) *Inbox {
-	return &Inbox{meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending, ci: cfg.CI}
+	return &Inbox{meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending, ci: cfg.CI, deps: cfg.Deps, clock: cfg.Clock}
 }
 
 // Overview lists what is open, through the indexes of open items. The counts
@@ -153,6 +159,34 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 		slices.SortStableFunc(out.Runs, func(a, b domain.CIRun) int {
 			return compareRecent(a.CreatedAt, a.CreatedAt, a.Repo, a.ID, b.CreatedAt, b.CreatedAt, b.Repo, b.ID)
 		})
+	}
+
+	if in.deps != nil && in.clock != nil {
+		all, err := in.deps.List(ctx)
+		if err != nil {
+			return out, fmt.Errorf("list dependency updates: %w", err)
+		}
+		now := in.clock.Now()
+		for _, d := range all {
+			if len(d.Updates) == 0 || d.SnoozedUntil.After(now) {
+				continue
+			}
+			repo, err := lookupRepo(ctx, in.meta, d.Repo)
+			switch {
+			case errors.Is(err, domain.ErrNotFound):
+				continue
+			case err != nil:
+				return out, fmt.Errorf("read repository %q: %w", d.Repo, err)
+			}
+			if repo.Archived {
+				continue
+			}
+			repos[d.Repo] = true
+			out.Counts.Deps++
+			if filter.IsZero() || d.Repo == filter {
+				out.Deps = append(out.Deps, d)
+			}
+		}
 	}
 
 	slices.SortStableFunc(out.MergeRequests, func(a, b domain.MergeRequest) int {

@@ -271,7 +271,7 @@ func (c *CI) pusherCanRead(ctx context.Context, by pusherAccess, runRepo domain.
 	if repo.Name == runRepo {
 		return true, nil
 	}
-	p, _, err := principalOfPusher(ctx, c.cfg.Tokens, by.pusher, c.now())
+	p, _, err := principalOfPusher(ctx, c.cfg.Tokens, by.pusher, runRepo, c.now())
 	if err != nil {
 		return false, err
 	}
@@ -280,12 +280,18 @@ func (c *CI) pusherCanRead(ctx context.Context, by pusherAccess, runRepo domain.
 
 // principalOfPusher re-resolves a recorded actor without substituting a more
 // privileged identity when its token no longer exists or has expired.
-func principalOfPusher(ctx context.Context, tokens ports.TokenStore, by domain.CIPusher, now time.Time) (domain.Principal, bool, error) {
+func principalOfPusher(ctx context.Context, tokens ports.TokenStore, by domain.CIPusher, repo domain.RepoName, now time.Time) (domain.Principal, bool, error) {
 	switch by.Kind {
 	case domain.CIPusherRoot:
 		return domain.Root(), true, nil
 	case domain.CIPusherOwner:
 		return domain.Owner(), true, nil
+	case domain.CIPusherBot:
+		// Bernard is bound to one repository: a record for another one is void.
+		if by.TokenID != repo.String() {
+			return domain.Principal{}, false, nil
+		}
+		return domain.Bot(repo), true, nil
 	case domain.CIPusherToken:
 		if tokens == nil {
 			return domain.Anonymous(), false, nil

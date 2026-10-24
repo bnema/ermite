@@ -166,6 +166,7 @@ func (s *Store) Delete(ctx context.Context, name domain.RepoName) error {
 		keys = append(keys, releaseKeys(ctx, snap, name)...)
 		keys = append(keys, settingsKeys(ctx, snap, name)...)
 		keys = append(keys, mirrorKeys(ctx, snap, name)...)
+		keys = append(keys, depsKeys(ctx, snap, name)...)
 		for len(keys) > deleteChunk {
 			var b kv.Batch
 			for _, k := range keys[:deleteChunk] {
@@ -223,6 +224,7 @@ func encodeRepo(r domain.Repo) ([]byte, error) {
 		CreatedAt:   encodeTime(r.CreatedAt),
 		PushedAt:    encodeTime(r.PushedAt),
 		ActiveAt:    encodeTime(r.ActiveAt),
+		Archived:    r.Archived,
 		Settings:    pbSettings,
 	}
 	return mustMarshal(pb), nil
@@ -245,6 +247,7 @@ func decodeRepo(val []byte) (domain.Repo, error) {
 		CreatedAt:   decodeTime(pb.GetCreatedAt()),
 		PushedAt:    decodeTime(pb.GetPushedAt()),
 		ActiveAt:    decodeTime(pb.GetActiveAt()),
+		Archived:    pb.GetArchived(),
 		Settings:    decodeSettings(pb.GetSettings()),
 	}, nil
 }

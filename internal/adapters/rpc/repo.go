@@ -81,7 +81,7 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 // updateParams maps the field mask of an update. The mask must name at least
 // one of "description", "topics", "visibility", "default_branch", "settings",
 // "settings.allowed_merge_modes" and
-// "settings.allow_auto_merge", and nothing else; the optional issues field stands outside the mask, and alone
+// "settings.allow_auto_merge", "archived", and nothing else; the optional issues field stands outside the mask, and alone
 // it is a valid update.
 func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 	var params ports.UpdateRepoParams
@@ -100,6 +100,8 @@ func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 		switch path {
 		case "description":
 			params.Description = new(msg.GetDescription())
+		case "archived":
+			params.Archived = new(msg.GetArchived())
 		case "topics":
 			params.Topics = new(msg.GetTopics())
 		case "visibility":

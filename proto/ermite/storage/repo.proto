@@ -34,6 +34,7 @@ message Repo {
   repeated string topics = 7;
   // Latest push, merge request or issue activity; unset until recorded.
   google.protobuf.Timestamp active_at = 8;
+  bool archived = 9;
 }
 
 // SchemaVersion is stored under the key "meta/schema".

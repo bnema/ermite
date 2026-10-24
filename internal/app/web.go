@@ -53,6 +53,7 @@ func newWeb(cfg config.Config, f *forge, limiter *clientlimit.Limiter) (http.Han
 		Issues:        f.Issues,
 		IssueNumbers:  f.Issues,
 		Inbox:         f.Inbox,
+		Deps:          f.Deps,
 		IssueForm:     f.IssueSubmissions,
 		Moderation:    f.IssueModeration,
 		SigningKey:    signing,

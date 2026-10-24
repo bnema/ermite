@@ -56,7 +56,7 @@ func newSubFixture(t *testing.T) *subFixture {
 		addr: "ip:203.0.113.7", now: time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC),
 	}
 	f.repo = domain.Repo{Name: name(t, "proj"), Visibility: domain.VisibilityPublic, CreatedAt: f.now, Settings: withIssues(domain.IssuesPublic)}
-	f.meta.EXPECT().Get(mock.Anything, f.repo.Name).Return(f.repo, nil).Maybe()
+	f.meta.EXPECT().Get(mock.Anything, f.repo.Name).RunAndReturn(func(context.Context, domain.RepoName) (domain.Repo, error) { return f.repo, nil }).Maybe()
 	clock := mocks.NewClock(t)
 	clock.EXPECT().Now().RunAndReturn(func() time.Time {
 		f.mu.Lock()
@@ -667,4 +667,13 @@ func TestIssueChallengeRevealsNoState(t *testing.T) {
 	f.limiter.EXPECT().Recent(mock.Anything, f.addr).Return(50, 500).Once()
 	_, err := f.uc.Challenge(context.Background(), f.repo.Name, f.addr)
 	require.NoError(t, err)
+}
+
+func TestArchivedAnonymousIssueSubmission(t *testing.T) {
+	f := newSubFixture(t)
+	f.repo.Archived = true
+	_, err := f.uc.Challenge(t.Context(), f.repo.Name, f.addr)
+	require.ErrorIs(t, err, domain.ErrArchived)
+	err = f.uc.Submit(t.Context(), f.repo.Name, f.addr, ports.IssueSubmission{})
+	require.ErrorIs(t, err, domain.ErrArchived)
 }

@@ -439,8 +439,14 @@ func TestMRListNewMenu(t *testing.T) {
 
 	cut := renderToString(t, MRList(Layout{}, MRListPage{
 		Default: "main", Branches: []BranchLink{{Name: "feature", Href: "/proj/compare/feature"}}, AllBranches: "/proj/refs",
+		CLI: Clone{ID: "cli-new", Lines: []string{"ermite mr create proj"}},
 	}))
 	assert.Contains(t, cut, `href="/proj/refs">all branches…</a>`, "a cut menu links to every branch")
+
+	archived := renderToString(t, MRList(Layout{}, MRListPage{
+		Default: "main", Branches: []BranchLink{{Name: "feature", Href: "/proj/compare/feature"}},
+	}))
+	assert.NotContains(t, archived, `<details class="menu">`, "an archived repository offers no new merge request")
 }
 
 func TestMRListUnknownStateIsNotFound(t *testing.T) {

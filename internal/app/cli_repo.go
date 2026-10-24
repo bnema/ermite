@@ -36,6 +36,7 @@ type jsonRepo struct {
 	// MergeModes are the allowed merge modes ("fast-forward", "squash", "merge").
 	MergeModes     []string `json:"merge_modes"`
 	AllowAutoMerge bool     `json:"allow_auto_merge"`
+	Archived       bool     `json:"archived"`
 	// Issues is the issue mode ("off", "owner" or "public").
 	Issues string `json:"issues"`
 }
@@ -48,6 +49,7 @@ func toJSONRepo(r *ermite.Repo) jsonRepo {
 	return jsonRepo{
 		MergeModes:     modes,
 		AllowAutoMerge: r.GetSettings().GetAllowAutoMerge(),
+		Archived:       r.GetArchived(),
 		Issues:         issuesModeName(r.GetSettings().GetIssues()),
 		Name:           r.GetName(),
 		Description:    r.GetDescription(),
@@ -230,6 +232,7 @@ func printRepo(w io.Writer, r *ermite.Repo) error {
 		{"merge modes", orDash(strings.Join(modes, ", "))},
 		{"allow auto-merge", strconv.FormatBool(r.GetSettings().GetAllowAutoMerge())},
 		{"issues", issuesModeName(r.GetSettings().GetIssues())},
+		{"archived", strconv.FormatBool(r.GetArchived())},
 	})
 }
 
@@ -308,7 +311,7 @@ func buildCreateRepo(name, description string, topics []string, visibility strin
 func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	var description, visibility, defaultBranch string
 	var topics, mergeModes []string
-	var allowAutoMerge bool
+	var allowAutoMerge, archived bool
 	var issues string
 	cmd := &cobra.Command{
 		Use:   "edit <name>",
@@ -330,6 +333,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	cmd.Flags().StringVar(&defaultBranch, "default-branch", "", "short name of the new default branch")
 	cmd.Flags().StringSliceVar(&mergeModes, "merge-modes", nil, "allowed merge modes, comma-separated: fast-forward, squash, merge (all by default; list the ones to keep)")
 	cmd.Flags().BoolVar(&allowAutoMerge, "allow-auto-merge", false, "allow auto-merge on merge requests (--allow-auto-merge=false to forbid it)")
+	cmd.Flags().BoolVar(&archived, "archived", false, "archive the repository (--archived=false to unarchive it)")
 	cmd.Flags().StringVar(&issues, "issues", "", "issue mode: off, owner or public")
 	_ = cmd.RegisterFlagCompletionFunc("issues", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{issuesOff, issuesOwner, issuesPublic}, cobra.ShellCompDirectiveNoFileComp
@@ -340,7 +344,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	})
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		req, err := buildUpdateRepo(cmd, args[0], description, topics, visibility, defaultBranch, mergeModes, allowAutoMerge, issues)
+		req, err := buildUpdateRepo(cmd, args[0], description, topics, visibility, defaultBranch, mergeModes, allowAutoMerge, archived, issues)
 		if err != nil {
 			return err
 		}
@@ -364,7 +368,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 
 // buildUpdateRepo maps the flags of `repo edit` to the request: only the flags
 // the user passed go into the update mask.
-func buildUpdateRepo(cmd *cobra.Command, name, description string, topics []string, visibility, defaultBranch string, mergeModes []string, allowAutoMerge bool, issues string) (*ermite.UpdateRepoRequest, error) {
+func buildUpdateRepo(cmd *cobra.Command, name, description string, topics []string, visibility, defaultBranch string, mergeModes []string, allowAutoMerge, archived bool, issues string) (*ermite.UpdateRepoRequest, error) {
 	req := &ermite.UpdateRepoRequest{Repo: name}
 	var paths []string
 	if cmd.Flags().Changed("description") {
@@ -406,6 +410,10 @@ func buildUpdateRepo(cmd *cobra.Command, name, description string, topics []stri
 		req.Settings = &ermite.RepoSettings{AllowedMergeModes: modes}
 		paths = append(paths, "settings.allowed_merge_modes")
 	}
+	if cmd.Flags().Changed("archived") {
+		req.Archived = new(archived)
+		paths = append(paths, "archived")
+	}
 	if cmd.Flags().Changed("allow-auto-merge") {
 		if req.Settings == nil {
 			req.Settings = &ermite.RepoSettings{}
@@ -422,7 +430,7 @@ func buildUpdateRepo(cmd *cobra.Command, name, description string, topics []stri
 		req.Issues = &mode
 	}
 	if len(paths) == 0 && req.Issues == nil {
-		return nil, errors.New("nothing to change: give at least one of --description, --topics, --visibility, --default-branch, --merge-modes, --allow-auto-merge, --issues")
+		return nil, errors.New("nothing to change: give at least one of --description, --topics, --visibility, --default-branch, --merge-modes, --allow-auto-merge, --archived, --issues")
 	}
 	req.UpdateMask = &fieldmaskpb.FieldMask{Paths: paths}
 	return req, nil

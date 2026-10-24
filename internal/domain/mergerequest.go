@@ -325,6 +325,63 @@ func NewSquashCommit(mr MergeRequest, tree, parent ObjectID, commits []Commit, c
 	}
 }
 
+// BotCommitSubject returns the subject line of Bernard's commit, which is also
+// the title of its merge request.
+func BotCommitSubject(n int) string {
+	if n == 1 {
+		return "build(deps): update 1 dependency"
+	}
+	return fmt.Sprintf("build(deps): update %d dependencies", n)
+}
+
+// BotCommitBody returns the list of updates, one line each.
+func BotCommitBody(ups []DepUpdate) string {
+	var b strings.Builder
+	for _, u := range ups {
+		fmt.Fprintf(&b, "- %s %s \u2192 %s", asciiLine(u.Name), asciiLine(u.Current), asciiLine(u.Version))
+		if u.Directory != "" {
+			fmt.Fprintf(&b, " (%s)", asciiLine(u.Directory))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// NewBotCommit builds Bernard's commit of dependency updates on parent. The
+// author is Bernard, with an address on the domain of the committer, which is
+// the instance identity, unless author sets them; the message lists the
+// updates.
+func NewBotCommit(tree, parent ObjectID, ups []DepUpdate, author, committer Identity, at time.Time) ServerCommit {
+	host := "localhost"
+	if i := strings.LastIndex(committer.Email, "@"); i >= 0 && i+1 < len(committer.Email) {
+		host = asciiLine(committer.Email[i+1:])
+	}
+	name, email := "Bernard", "bernard@"+host
+	if author.Name != "" {
+		name = asciiLine(author.Name)
+	}
+	if author.Email != "" {
+		email = asciiLine(author.Email)
+	}
+	return ServerCommit{
+		Tree: tree, Parents: []ObjectID{parent},
+		Author:    Signature{Name: name, Email: email, Time: at.UTC()},
+		Committer: Signature{Name: committer.Name, Email: committer.Email, Time: at.UTC()},
+		Message:   BotCommitSubject(len(ups)) + "\n\n" + BotCommitBody(ups),
+	}
+}
+
+// asciiLine keeps printable ASCII and replaces anything else, newlines
+// included, with '?'.
+func asciiLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r > 0x7e {
+			return '?'
+		}
+		return r
+	}, s)
+}
+
 // NewMergeCommit builds the merge commit of a merge request: the tree of the
 // merge, the target tip and the head as parents, and the server identity as
 // author and committer.

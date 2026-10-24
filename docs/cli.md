@@ -48,7 +48,7 @@ It does not run:
 
 ```sh
 ermite repo list | show <name> | create <name> [--description …] [--visibility public]
-ermite repo edit <name> [--description …] [--visibility …] [--default-branch …] [--merge-modes …] [--allow-auto-merge] [--issues off|owner|public]
+ermite repo edit <name> [--description …] [--visibility …] [--default-branch …] [--merge-modes …] [--allow-auto-merge] [--archived[=false]] [--issues off|owner|public]
 ermite repo delete <name> [--yes]
 
 ermite token create <label> [--preset cli|agent|ci|runner] [--scope …] [--repo …] [--branch-prefix …] [--expires 30d]
@@ -83,6 +83,10 @@ ermite mirror config [--enabled] [--url …{repo}…] [--cron …] [--all-branch
 ermite mirror add <repo> <url> [--cron …] [--all-branches] | remove <repo> | exclude <repo> | include <repo>
 ermite mirror status [repo] | sync <repo>|--all [--force]   # sync --all: one row per repository, exit 1 if any failed
 
+ermite deps list [--repo <repo>] [--json]   # pending dependency updates (Bernard), owner only
+ermite deps check <repo>                 # check one repository now
+ermite deps open|ignore|snooze <repo>    # open/update the merge request, ignore these versions, hide for 7 days
+
 ermite web login                         # one-time sign-in link (60 s)
 ermite web logout --all                  # sign every browser out
 ermite web passkey list | remove <id>
@@ -92,6 +96,20 @@ ermite watch [repo] [--json]             # follow live events
 ermite version                           # client and server versions
 ermite completion bash|zsh|fish
 ```
+
+### Archived repositories
+
+`ermite repo edit <repo> --archived` makes a repository read-only; `--archived=false` unarchives it and restores writes. Archiving needs `repo:admin` and a server with the `repos.archived` feature (`ermite version`).
+
+Archived repositories reject pushes of any ref, new or edited merge requests and issues, comments, merges (including auto-merge), release writes, workflow dispatches and reruns with “repository is archived”. Cron schedules do not fire. Reads, clones and closing existing merge requests or issues remain available. Other repository edits require unarchiving in the same request, which may include other flags.
+
+The web shows an **Archived** badge and hides write actions. `repo show` displays the state; CLI and GitHub repository JSON include `archived`.
+
+### Dependency updates
+
+`ermite deps` drives Bernard, which needs a server with the `deps` feature and owner rights. `deps list` shows the pending updates, snoozed repositories included; `--json` prints `repo`, `updates` (`ecosystem`, `name`, `directory`, `current`, `latest`, `kind`, `new`), `checked_at`, `snoozed_until`, `merge_request_number`, `state` and `error`. `deps check <repo>` runs a check now. `deps open` and `deps ignore` read the current list and send it back as the versions you confirm, so a list that changed in between is refused with a failed precondition. When the server runs with `ERMITE_DEPS_ENABLED=0`, `deps list` is empty and the other commands answer “Bernard is disabled”. See [Bernard](bernard.md).
+
+### Issues and mirrors
 
 Issues need a server with the `issues` feature and `ermite repo edit <repo> --issues owner` (or `--issues public`, which also opens a moderated form to visitors of a public repository); they are written with the `issue:write` scope. An issue is `open`, `closed` (not resolved), or `resolved`. `issue resolve <repo> <n>` marks an open issue fixed (`issues.resolve` feature); merging a request with `Fixes #N` resolves it too. `issue reopen` accepts closed and resolved issues. History records references, closing, reopening and resolution with the actor and timestamp; removed references keep their history. See [Issues](issues.md).
 

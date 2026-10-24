@@ -34,25 +34,27 @@ templ MRList(l Layout, p MRListPage) {
 					}
 				>merged and closed</a>
 			</nav>
-			<details class="menu">
-				<summary class="btn primary">New merge request</summary>
-				<div class="menu-pop">
-					<p class="dim">compare with { p.Default }</p>
-					if len(p.Branches) > 0 {
-						<nav class="outline" aria-label="Branches">
-							for _, b := range p.Branches {
-								<a href={ templ.SafeURL(b.Href) }>{ b.Name }</a>
-							}
-							if p.AllBranches != "" {
-								<a class="dim" href={ templ.SafeURL(p.AllBranches) }>all branches…</a>
-							}
-						</nav>
-					} else {
-						<p class="dim">there is no other branch to merge yet.</p>
-					}
-					@CloneBlock(p.CLI)
-				</div>
-			</details>
+			if p.CLI.ID != "" {
+				<details class="menu">
+					<summary class="btn primary">New merge request</summary>
+					<div class="menu-pop">
+						<p class="dim">compare with { p.Default }</p>
+						if len(p.Branches) > 0 {
+							<nav class="outline" aria-label="Branches">
+								for _, b := range p.Branches {
+									<a href={ templ.SafeURL(b.Href) }>{ b.Name }</a>
+								}
+								if p.AllBranches != "" {
+									<a class="dim" href={ templ.SafeURL(p.AllBranches) }>all branches…</a>
+								}
+							</nav>
+						} else {
+							<p class="dim">there is no other branch to merge yet.</p>
+						}
+						@CloneBlock(p.CLI)
+					</div>
+				</details>
+			}
 		</div>
 		<div class="filter">
 			<label for="mr-filter" class="sr">filter</label>
@@ -783,10 +785,12 @@ templ compareRail(p ComparePage) {
 			@FileList(p.Files)
 		</section>
 	}
-	<section aria-labelledby="r-cli">
-		<h2 id="r-cli">From a terminal</h2>
-		@CloneBlock(p.CLI)
-	</section>
+	if p.CLI.ID != "" {
+		<section aria-labelledby="r-cli">
+			<h2 id="r-cli">From a terminal</h2>
+			@CloneBlock(p.CLI)
+		</section>
+	}
 }
 
 // MRMergeChecks is the part of the owner's merge form that depends on the
@@ -822,6 +826,9 @@ templ mrActions(p MRPage, fragment bool) {
 			@mergeMenu(p)
 		}
 		@moreMenu(p)
+		if p.CloseAction != "" {
+			<form method="post" action={ templ.SafeURL(p.CloseAction) }><button type="submit" class="btn danger">Close</button></form>
+		}
 		if fragment && p.MergeError != "" {
 			<p class="d-err" role="alert">{ p.MergeError }</p>
 		}

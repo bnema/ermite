@@ -162,7 +162,15 @@ func (c *CI) FetchJob(ctx context.Context, secret string, params ports.FetchJobP
 	defer deadline.Stop()
 	for {
 		wake := c.pending.wait(queueKey) // before looking: a job made meanwhile wakes us
-		job, err := c.assignTo(ctx, runner, offered, params.PollID)
+		if dj, ok := c.nextDeps(ctx, runner, params.Kinds, offered, params.PollID); ok {
+			c.markSeen(runner.ID)
+			return ports.FetchJobResult{Job: dj}, nil
+		}
+		var job *ports.RunnerJob
+		err := errNoJob
+		if len(params.Kinds) == 0 || slices.Contains(params.Kinds, "workflow") {
+			job, err = c.assignTo(ctx, runner, offered, params.PollID)
+		}
 		switch {
 		case err == nil:
 			c.markSeen(runner.ID)
@@ -224,6 +232,10 @@ func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID stri
 	c.mu.Unlock()
 	if !ok || rec.pollID != pollID {
 		return nil, false, nil
+	}
+	if rec.deps != nil {
+		j, ok := c.repeatDeps(rec, runner.ID)
+		return j, ok, nil
 	}
 	var rid int64
 	var ra int32
@@ -427,6 +439,18 @@ func logRef(j domain.CIJob) ports.CILogRef {
 // at all. The annotations of each step they name replace those stored, whether
 // the step is completed or not.
 func (c *CI) UpdateJob(ctx context.Context, secret, jobID string, steps []ports.StepUpdate, annotations []domain.CIAnnotation) error {
+	if isDepsJob(jobID) {
+		r, err := c.runnerFor(ctx, secret)
+		if err != nil {
+			return err
+		}
+		dj := c.depsQueue()
+		if dj == nil {
+			return domain.ErrNotFound
+		}
+		c.forgetPoll(jobID)
+		return dj.Update(ctx, r.ID, jobID, steps, annotations)
+	}
 	j, err := c.jobFor(ctx, secret, jobID)
 	if err != nil {
 		return err
@@ -603,6 +627,20 @@ func checkLines(step int32, offset int64, lines []domain.CILogLine) error {
 // for the rules of offsets. The metadata store is written only when a step
 // gets its first line.
 func (c *CI) AppendLog(ctx context.Context, secret, jobID string, step int32, offset int64, lines []domain.CILogLine) (int64, error) {
+	if isDepsJob(jobID) {
+		r, err := c.runnerFor(ctx, secret)
+		if err != nil {
+			return 0, err
+		}
+		dj := c.depsQueue()
+		if dj == nil {
+			return 0, domain.ErrNotFound
+		}
+		if err := checkLines(step, offset, lines); err != nil {
+			return 0, err
+		}
+		return dj.AppendLog(ctx, r.ID, jobID, offset, lines)
+	}
 	j, err := c.jobFor(ctx, secret, jobID)
 	if err != nil {
 		return 0, err
@@ -716,6 +754,19 @@ func (c *CI) stopForLogLimit(ctx context.Context, j domain.CIJob) error {
 // Heartbeat tells the server that the runner is alive. The first one
 // acknowledges the assignment; the others only move the deadline.
 func (c *CI) Heartbeat(ctx context.Context, secret, jobID string) error {
+	if isDepsJob(jobID) {
+		r, err := c.runnerFor(ctx, secret)
+		if err != nil {
+			return err
+		}
+		dj := c.depsQueue()
+		if dj == nil {
+			return domain.ErrNotFound
+		}
+		c.markSeen(r.ID)
+		c.forgetPoll(jobID)
+		return dj.Heartbeat(ctx, r.ID, jobID)
+	}
 	j, err := c.jobFor(ctx, secret, jobID)
 	if err != nil {
 		return err
@@ -819,6 +870,9 @@ func (c *CI) WatchJob(ctx context.Context, secret, jobID string, ready func(), s
 
 // CompleteJob ends a job, once. A later call returns the stored result.
 func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.CompleteJobParams) (ports.CompleteJobResult, error) {
+	if isDepsJob(params.JobID) {
+		return c.completeDeps(ctx, secret, params)
+	}
 	j, err := c.jobFor(ctx, secret, params.JobID)
 	if err != nil {
 		return ports.CompleteJobResult{}, err

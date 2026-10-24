@@ -424,7 +424,16 @@ type MergeGit interface {
 	// WriteCommit stores a commit object, given as the text of the object,
 	// and returns its id.
 	WriteCommit(ctx context.Context, repo domain.RepoName, object []byte) (domain.ObjectID, error)
-	// UpdateBranch moves refs/heads/<branch> from old to new. It returns
+	// WriteTree returns the id of the tree that is base with the content of
+	// the given files replaced. base is a tree or a commit id. An existing
+	// regular (or executable) file keeps its mode. A path that does not exist
+	// is created as a regular file (mode 100644), new parent directories
+	// included, unless an ancestor is a file, symlink or submodule. A
+	// directory, a symlink or a submodule at the path yields domain.ErrInvalid. Nothing in the refs, index or worktree of the repository
+	// is touched; only objects are added.
+	WriteTree(ctx context.Context, repo domain.RepoName, base domain.ObjectID, changes map[domain.TreePath][]byte) (domain.ObjectID, error)
+	// UpdateBranch moves refs/heads/<branch> from old to new. A zero old
+	// creates the branch and conflicts when it exists. It returns
 	// domain.ErrConflict when the branch no longer points to old.
 	UpdateBranch(ctx context.Context, repo domain.RepoName, branch string, old, new domain.ObjectID) error
 	// DeleteBranch deletes refs/heads/<branch> if it still points to old. It

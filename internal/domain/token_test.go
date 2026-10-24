@@ -247,3 +247,42 @@ func TestBranchLimitedAndCoversBranchPrefix(t *testing.T) {
 	assert.False(t, corrupt.CoversBranchPrefix("main"))
 	assert.False(t, corrupt.CoversBranchPrefix(""))
 }
+
+func TestBotPrincipal(t *testing.T) {
+	t.Parallel()
+	home, err := domain.ParseRepoName("home")
+	require.NoError(t, err)
+	other, err := domain.ParseRepoName("other")
+	require.NoError(t, err)
+	b := domain.Bot(home)
+
+	for _, s := range domain.AllScopes() {
+		granted := s == domain.ScopeRepoRead || s == domain.ScopeRepoWrite || s == domain.ScopeMRWrite
+		assert.Equal(t, granted, b.Allows(s, home), "%s on the bound repository", s)
+		assert.False(t, b.Allows(s, other), "%s on another repository", s)
+	}
+	for ref, want := range map[string]bool{
+		"refs/heads/bernard/x": true,
+		"refs/heads/main":      false,
+		"refs/heads/bernard":   false,
+		"refs/heads/Bernard/x": false,
+		"refs/tags/bernard/x":  false,
+		"bernard/x":            false,
+	} {
+		assert.Equal(t, want, b.AllowsRef(ref), ref)
+	}
+	assert.False(t, b.HasOwnerRights())
+	assert.False(t, domain.TrustedActor(b))
+	assert.False(t, b.IsRoot())
+	assert.False(t, b.IsOwner())
+	assert.False(t, b.IsAnonymous())
+	assert.False(t, b.ViaJobToken())
+	assert.False(t, b.JobPermits("contents", domain.PermissionRead, home))
+	assert.True(t, b.IsBranchLimited())
+	assert.Empty(t, b.TokenID())
+	assert.Equal(t, "bot", b.Label())
+	assert.Equal(t, "bernard", domain.AuthorName(b))
+	_, _, archive := b.ArchiveGrant()
+	assert.False(t, archive)
+	assert.Equal(t, domain.CIPusher{Kind: domain.CIPusherBot, TokenID: "home"}, domain.PusherOf(b))
+}

@@ -21,6 +21,8 @@ const (
 	// scope at all, only a grant to download one commit of one repository (see
 	// ArchivePrincipal).
 	kindArchive
+	// kindBot is Bernard, bound to one repository (see Bot).
+	kindBot
 )
 
 // Principal is the authenticated identity of a caller: nobody, the root
@@ -43,6 +45,12 @@ type Principal struct {
 	jobPerms map[string]string
 }
 
+// botBranchPrefix is the only branch namespace Bernard may write.
+const botBranchPrefix = "bernard/"
+
+// botScopes are the scopes Bernard holds, on its bound repository only.
+var botScopes = []Scope{ScopeRepoRead, ScopeRepoWrite, ScopeMRWrite}
+
 // Anonymous returns the principal of a caller without credentials.
 func Anonymous() Principal { return Principal{kind: kindAnonymous} }
 
@@ -53,6 +61,24 @@ func Root() Principal { return Principal{kind: kindRoot} }
 // rights of root, labelled "owner" in logs and messages. Only the web
 // middleware creates it, for a valid session cookie; no secret maps to it.
 func Owner() Principal { return Principal{kind: kindOwner} }
+
+// Bot returns the principal of Bernard, the in-process assistant, bound to one
+// repository: repo:read, repo:write and mr:write on repo only, and writes
+// limited to the branches under "bernard/". It has no owner rights, so it is
+// never a trusted actor, and it is no job token.
+//
+// Authentication never produces it: no secret and no stored token maps to it.
+// Only the server code that runs Bernard creates it, or re-creates it from a
+// recorded CIPusher (see PusherOf).
+func Bot(repo RepoName) Principal {
+	return Principal{
+		kind:           kindBot,
+		scopes:         slices.Clone(botScopes),
+		repos:          []RepoName{repo},
+		branchPrefixes: []string{botBranchPrefix},
+		label:          "bernard",
+	}
+}
 
 // TokenPrincipal returns the principal of the holder of a stored token.
 func TokenPrincipal(t Token) Principal {
@@ -68,7 +94,7 @@ func TokenPrincipal(t Token) Principal {
 }
 
 // Label names the kind of principal for logs and messages: "anonymous",
-// "root", "owner" or "token".
+// "root", "owner", "token", "archive" or "bot".
 func (p Principal) Label() string {
 	switch p.kind {
 	case kindRoot:
@@ -79,6 +105,8 @@ func (p Principal) Label() string {
 		return "token"
 	case kindArchive:
 		return "archive"
+	case kindBot:
+		return "bot"
 	}
 	return "anonymous"
 }
@@ -198,7 +226,7 @@ func (p Principal) HasScope(s Scope) bool {
 	switch p.kind {
 	case kindRoot, kindOwner:
 		return true
-	case kindToken:
+	case kindToken, kindBot:
 		return slices.Contains(p.scopes, s)
 	}
 	return false
@@ -210,7 +238,7 @@ func (p Principal) Allows(s Scope, repo RepoName) bool {
 	if !p.HasScope(s) {
 		return false
 	}
-	if p.kind == kindToken && len(p.repos) > 0 {
+	if (p.kind == kindToken && len(p.repos) > 0) || p.kind == kindBot {
 		return slices.Contains(p.repos, repo)
 	}
 	return true
@@ -240,8 +268,18 @@ func AuthorName(p Principal) string {
 		return "owner"
 	case p.IsRoot():
 		return "root"
+	case p.kind == kindBot:
+		return "bernard"
 	case p.TokenLabel() != "":
 		return p.TokenLabel()
 	}
 	return "owner"
+}
+
+// botRepo returns the repository a bot principal is bound to.
+func (p Principal) botRepo() RepoName {
+	if len(p.repos) == 0 {
+		return RepoName{}
+	}
+	return p.repos[0]
 }

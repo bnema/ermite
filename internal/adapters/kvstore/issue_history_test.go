@@ -128,7 +128,7 @@ func TestMRHistoryOrderAndCap(t *testing.T) {
 
 func TestResolvedMigrationAndRestart(t *testing.T) {
 	ctx := context.Background()
-	for _, version := range []uint32{5, 7} {
+	for _, version := range []uint32{5, 7, 8} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			dir := t.TempDir()
 			putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: version}))
@@ -152,6 +152,10 @@ func TestResolvedMigrationAndRestart(t *testing.T) {
 				for n, state := range []domain.IssueState{domain.IssueStateResolved, domain.IssueStateClosed, domain.IssueStateOpen} {
 					issue, err := s.Issues().Get(ctx, repo, int64(n+1))
 					require.NoError(t, err)
+					if version == 8 && n == 0 {
+						// Schema 8 already ran the rewrite; 8→9 only bumps the version.
+						state = domain.IssueStateClosed
+					}
 					assert.Equal(t, state, issue.State)
 					assert.True(t, issue.UpdatedAt.IsZero())
 					if n == 0 {
@@ -167,7 +171,7 @@ func TestResolvedMigrationAndRestart(t *testing.T) {
 				assert.Zero(t, countKeys(t, s, "isev/"))
 				assert.Zero(t, countKeys(t, s, "mrev/"))
 				require.NoError(t, s.Close(ctx))
-				assert.Equal(t, uint32(8), readSchema(t, dir))
+				assert.Equal(t, uint32(9), readSchema(t, dir))
 			}
 		})
 	}

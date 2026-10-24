@@ -51,6 +51,8 @@ type UpdateRepoParams struct {
 	Issues *domain.IssuesMode
 	// AllowAutoMerge replaces the setting of that name.
 	AllowAutoMerge *bool
+	// Archived replaces the read-only state.
+	Archived *bool
 }
 
 // EnableAutoMergeParams are the settings of EnableAutoMerge.
@@ -414,11 +416,13 @@ type LoginLink struct {
 
 // InboxCounts are the numbers of open items across every repository, whatever
 // the filter.
-type InboxCounts struct{ MergeRequests, Issues, Pending, Running int }
+type InboxCounts struct{ MergeRequests, Issues, Pending, Running, Deps int }
 
 // InboxOverview is what the owner has to look at across every repository: the
 // open merge requests and issues, ongoing CI runs, and issues awaiting moderation.
 type InboxOverview struct {
+	// Deps are pending updates for non-archived repositories, excluding snoozed records.
+	Deps   []domain.RepoDeps
 	Counts InboxCounts
 	// Runs are queued or in progress, newest first, respecting the filter.
 	Runs []domain.CIRun

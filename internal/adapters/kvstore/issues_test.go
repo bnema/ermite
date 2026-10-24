@@ -364,7 +364,7 @@ func TestSchemaNewerThanThisBuildStopsIssuesData(t *testing.T) {
 	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: kvstore.SchemaVersion + 1}))
 	_, err := kvstore.Open(ctx, dir)
 	require.ErrorIs(t, err, kvstore.ErrSchemaTooNew)
-	assert.Equal(t, uint32(8), uint32(kvstore.SchemaVersion))
+	assert.Equal(t, uint32(9), uint32(kvstore.SchemaVersion))
 }
 
 // A reopen racing the delete of the repository either lands before the delete

@@ -42,6 +42,9 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 		}},
 	}
 
+	if d.repo.Archived {
+		p.CLI = Clone{}
+	}
 	same := src.ShortName == tgt.ShortName
 	var ahead []domain.Commit
 	exact, behind := false, false
@@ -109,7 +112,7 @@ func (s *Server) compare(ctx context.Context, r *http.Request) (templ.Component,
 	switch {
 	case existing != nil:
 		p.Existing = &Link{Label: "#" + itoa(int(existing.Number)) + " " + visibleText(existing.Title.String()), Href: mrHref(name, existing.Number)}
-	case SignedIn(ctx) && !same && len(ahead) > 0:
+	case SignedIn(ctx) && !d.repo.Archived && !same && len(ahead) > 0:
 		title := ""
 		if len(ahead) == 1 {
 			title = ahead[0].Summary

@@ -278,6 +278,9 @@ func (c *CI) startPass(ctx context.Context, minute time.Time) *schedulePass {
 	}
 	names := make([]domain.RepoName, 0, len(repos))
 	for _, r := range repos {
+		if r.Archived {
+			continue
+		}
 		names = append(names, r.Name)
 	}
 	c.sched.prune(names)
@@ -412,6 +415,10 @@ func (c *CI) scheduleRepo(ctx context.Context, repo domain.RepoName, minute time
 		c.sched.drop(repo)
 		return nil // deleted meanwhile
 	}
+	if meta.Archived {
+		c.sched.drop(repo)
+		return nil
+	}
 	def, _, err := c.cfg.Repos.DefaultBranch(ctx, repo)
 	if err != nil {
 		return nil
@@ -429,6 +436,9 @@ func (c *CI) scheduleRepo(ctx context.Context, repo domain.RepoName, minute time
 
 // fireSchedule starts the run of one scheduled workflow.
 func (c *CI) fireSchedule(ctx context.Context, repo domain.Repo, def string, e *scheduleEntry, head domain.Commit, sw scheduledWorkflow, spec string) error {
+	if repo.Archived {
+		return nil
+	}
 	// The cache holds the disabled workflows too; the state is read now (and the
 	// store checks it again when the run is stored).
 	if off, err := c.workflowDisabled(ctx, repo.Name, sw.path); err != nil || off {

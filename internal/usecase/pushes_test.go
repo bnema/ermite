@@ -438,6 +438,7 @@ var mockAny = mock.Anything
 
 // check is Pushes.Check for a push with nothing in quarantine.
 func (f *pushFixture) check(ctx context.Context, p domain.Principal, n domain.RepoName, ups []domain.RefUpdate) error {
+	f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n}, nil).Maybe()
 	return f.pushes.Check(ctx, p, n, ups, ports.PushObjects{})
 }
 
@@ -492,6 +493,7 @@ func TestPushesCheckRefusesWorkflowChangesOfJobTokens(t *testing.T) {
 
 	build := func(t *testing.T, g *fakePushTrees) *pushFixture {
 		f := newPushFixture(t)
+		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{Name: n}, nil).Maybe()
 		if g != nil {
 			f.pushes.WithPushTreeReader(g)
 		}
@@ -583,8 +585,22 @@ func TestPushesCheckRefusesWorkflowChangesOfJobTokens(t *testing.T) {
 	})
 	t.Run("a job token never creates a repository on push", func(t *testing.T) {
 		t.Parallel()
-		f := build(t, &fakePushTrees{})
+		f := newPushFixture(t)
 		f.meta.EXPECT().Get(ctx, n).Return(domain.Repo{}, domain.ErrNotFound)
 		assert.ErrorIs(t, f.pushes.Open(ctx, job, n, true), domain.ErrNotFound)
 	})
+}
+
+func TestPushArchivedAnyRef(t *testing.T) {
+	for _, ref := range []string{"refs/heads/main", "refs/tags/v1", "refs/notes/test"} {
+		t.Run(ref, func(t *testing.T) {
+			f := newPushFixture(t)
+			n := name(t, "tools")
+			f.meta.EXPECT().Get(mock.Anything, n).Return(domain.Repo{Name: n, Archived: true}, nil).Once()
+			err := f.pushes.Check(t.Context(), domain.Root(), n, []domain.RefUpdate{{Ref: ref, Old: oidA, New: domain.ZeroOID}}, ports.PushObjects{})
+			require.ErrorIs(t, err, domain.ErrArchived)
+			require.ErrorIs(t, err, domain.ErrRejected)
+			require.ErrorContains(t, err, "repository is archived")
+		})
+	}
 }

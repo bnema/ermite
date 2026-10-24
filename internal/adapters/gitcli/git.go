@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -141,6 +142,12 @@ func (g *Git) runInput(ctx context.Context, stdin io.Reader, args ...string) (st
 // runCapture is runInput that also returns the standard output of a failed
 // run.
 func (g *Git) runCapture(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
+	return g.runCaptureEnv(ctx, nil, stdin, args...)
+}
+
+// runCaptureEnv is runCapture with extra environment variables added to the
+// isolated environment.
+func (g *Git) runCaptureEnv(ctx context.Context, extra []string, stdin io.Reader, args ...string) (string, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, commandTimeout)
@@ -153,6 +160,9 @@ func (g *Git) runCapture(ctx context.Context, stdin io.Reader, args ...string) (
 	defer release()
 	cmd := exec.CommandContext(ctx, g.bin, args...)
 	cmd.Env = g.env
+	if len(extra) > 0 {
+		cmd.Env = append(slices.Clone(g.env), extra...)
+	}
 	cmd.Dir = g.dataDir
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Stdin = stdin

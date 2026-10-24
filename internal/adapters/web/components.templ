@@ -44,6 +44,9 @@ templ HomeRowView(r HomeRow) {
 				if rel := r.Release; rel != nil {
 					<a class="pill repo-release" href={ templ.SafeURL(rel.Href) } title={ "Latest release: " + rel.Tag }>{ rel.Tag }</a>
 				}
+				if r.Archived {
+					<span class="pill">Archived</span>
+				}
 				if r.Private {
 					<span class="pill priv" title="Private repository"><span class="ico i-lock" aria-hidden="true"></span><span class="sr">private</span></span>
 				}

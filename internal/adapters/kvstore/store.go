@@ -46,7 +46,11 @@ import (
 // Version 7 adds the latest-release index; older writers would leave it stale.
 // Version 8 adds resolved issues and history (isev/, mrev/), and rewrites
 // merge-closed issues as resolved; older builds cannot decode state 4.
-const SchemaVersion = 8
+// Version 9 adds archived repositories (an older build would accept writes to
+// them) and the Bernard records dpend/ (snooze, job and merge request state
+// included) and dign/ (an older build would not remove them with their
+// repository), plus the global dseen/.
+const SchemaVersion = 9
 
 const schemaKey = "meta/schema"
 
@@ -174,7 +178,7 @@ func (s *Store) checkSchema(ctx context.Context) error {
 					return err
 				}
 			}
-			if target == SchemaVersion {
+			if target == SchemaVersion && sv.GetVersion() < 8 {
 				if err := s.upgradeResolvedIssues(ctx, &b); err != nil {
 					return err
 				}

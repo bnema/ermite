@@ -75,6 +75,19 @@ const (
 	// EnvRobotsTxtFile is a file whose content replaces the default
 	// robots.txt, read once at startup.
 	EnvRobotsTxtFile = "ERMITE_ROBOTS_TXT_FILE"
+	// EnvDepsEnabled turns the Bernard dependency checks off when "0" or
+	// "false"; they are on by default.
+	EnvDepsEnabled = "ERMITE_DEPS_ENABLED"
+	// EnvDepsCheckAt is the cron expression (UTC) of the dependency checks.
+	EnvDepsCheckAt = "ERMITE_DEPS_CHECK_AT"
+	// EnvDepsCooldown is how long a release must exist before Bernard
+	// proposes it, EnvDepsSnooze how long a declined update stays quiet,
+	// EnvDepsJobTimeout the time limit of one check job.
+	EnvDepsCooldown   = "ERMITE_DEPS_COOLDOWN"
+	EnvDepsSnooze     = "ERMITE_DEPS_SNOOZE"
+	EnvDepsJobTimeout = "ERMITE_DEPS_JOB_TIMEOUT"
+	// EnvDepsRunnerLabel is the runner label of the dependency check jobs.
+	EnvDepsRunnerLabel = "ERMITE_DEPS_RUNNER_LABEL"
 )
 
 // MaxRobotsTxtSize is the largest robots.txt file accepted. Google reads the
@@ -95,6 +108,12 @@ const (
 	DefaultCommitterName = "ermite"
 	// DefaultOwner is the owner login when ERMITE_OWNER is not set.
 	DefaultOwner = "owner"
+	// Defaults of the Bernard dependency checks.
+	DefaultDepsCheckAt     = "0 6 * * *"
+	DefaultDepsCooldown    = 72 * time.Hour
+	DefaultDepsSnooze      = 168 * time.Hour
+	DefaultDepsJobTimeout  = 10 * time.Minute
+	DefaultDepsRunnerLabel = "ubuntu-latest"
 )
 
 // Values of ERMITE_GIT_READER.
@@ -174,6 +193,14 @@ type Config struct {
 	// RobotsTxt is the content of ERMITE_ROBOTS_TXT_FILE; nil when unset, which
 	// serves the default robots.txt.
 	RobotsTxt []byte
+	// DepsEnabled is false when ERMITE_DEPS_ENABLED turns Bernard off.
+	DepsEnabled bool
+	// DepsCheckAt is the cron expression (UTC) of the dependency checks.
+	DepsCheckAt string
+	// DepsCooldown, DepsSnooze and DepsJobTimeout are positive durations.
+	DepsCooldown, DepsSnooze, DepsJobTimeout time.Duration
+	// DepsRunnerLabel is the runner label of the check jobs; never empty.
+	DepsRunnerLabel string
 }
 
 // Error lists every configuration problem found, in variable order.
@@ -391,11 +418,59 @@ func Load(get func(string) string) (Config, error) {
 		}
 	}
 
+	loadDeps(get, &c, bad)
+
 	loadStorage(get, &c, &problems)
 	if len(problems) > 0 {
 		return Config{}, &Error{Problems: problems}
 	}
 	return c, nil
+}
+
+// loadDeps reads the Bernard dependency check settings.
+func loadDeps(get func(string) string, c *Config, bad func(key, format string, args ...any)) {
+	switch raw := strings.ToLower(strings.TrimSpace(get(EnvDepsEnabled))); raw {
+	case "", "1", "true":
+		c.DepsEnabled = true
+	case "0", "false":
+	default:
+		bad(EnvDepsEnabled, "must be 0, 1, false or true (got %q)", raw)
+	}
+
+	c.DepsCheckAt = strings.TrimSpace(get(EnvDepsCheckAt))
+	if c.DepsCheckAt == "" {
+		c.DepsCheckAt = DefaultDepsCheckAt
+	}
+	// The cron syntax is the domain's; config imports nothing, so internal/app
+	// checks it (see loadConfig).
+
+	for _, v := range []struct {
+		env string
+		def time.Duration
+		dst *time.Duration
+	}{
+		{EnvDepsCooldown, DefaultDepsCooldown, &c.DepsCooldown},
+		{EnvDepsSnooze, DefaultDepsSnooze, &c.DepsSnooze},
+		{EnvDepsJobTimeout, DefaultDepsJobTimeout, &c.DepsJobTimeout},
+	} {
+		*v.dst = v.def
+		if raw := strings.TrimSpace(get(v.env)); raw != "" {
+			d, err := time.ParseDuration(raw)
+			switch {
+			case err != nil:
+				bad(v.env, "must be a duration such as 72h (got %q)", raw)
+			case d <= 0:
+				bad(v.env, "must be greater than zero (got %q)", raw)
+			default:
+				*v.dst = d
+			}
+		}
+	}
+
+	c.DepsRunnerLabel = strings.TrimSpace(get(EnvDepsRunnerLabel))
+	if c.DepsRunnerLabel == "" {
+		c.DepsRunnerLabel = DefaultDepsRunnerLabel
+	}
 }
 
 // readRobotsTxt reads the robots.txt file at path: a regular file, nonempty,

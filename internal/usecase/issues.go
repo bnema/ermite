@@ -83,6 +83,18 @@ func (i *Issues) readable(ctx context.Context, p domain.Principal, name domain.R
 // neither read the repository nor holds the scope on it gets
 // domain.ErrNotFound, one that cannot write the error of scopeAccess.
 func (i *Issues) writable(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error) {
+	repo, err := i.writeAccess(ctx, p, name)
+	if err != nil {
+		return domain.Repo{}, err
+	}
+	if repo.Archived {
+		return domain.Repo{}, domain.ErrArchived
+	}
+	return repo, nil
+}
+
+// writeAccess authorizes writes, including closing existing issues on archived repositories.
+func (i *Issues) writeAccess(ctx context.Context, p domain.Principal, name domain.RepoName) (domain.Repo, error) {
 	repo, err := i.enabled(ctx, name)
 	if err != nil {
 		return domain.Repo{}, err
@@ -271,9 +283,12 @@ func (i *Issues) Reopen(ctx context.Context, p domain.Principal, name domain.Rep
 // transition moves an issue from one state to the other, retrying when another
 // write changes it in between.
 func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, to domain.IssueState) (domain.Issue, error) {
-	repo, err := i.writable(ctx, p, name)
+	repo, err := i.writeAccess(ctx, p, name)
 	if err != nil {
 		return domain.Issue{}, err
+	}
+	if repo.Archived && to != domain.IssueStateClosed {
+		return domain.Issue{}, domain.ErrArchived
 	}
 	verb := "close"
 	kind := domain.IssueEventClosed

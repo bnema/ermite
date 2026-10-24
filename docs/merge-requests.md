@@ -51,6 +51,7 @@ The merge box of the web page and the output of `mr merge --mode squash|merge` r
 
 A merge request can merge by itself once its checks passed.
 
+- [Archived repositories](cli.md#archived-repositories) do not accept merges, including auto-merge. Closing existing requests remains available.
 - The repository setting `allow_auto_merge` is off by default: `ermite repo edit <repo> --allow-auto-merge` (`=false` to turn it off).
 - Enable it with `ermite mr merge <repo> <n> --head <commit> --auto --mode squash` (`--head` is required, as for a plain merge; a head that moved is refused with "branch moved"), or with **Merge when ready** in the web merge box. Its separate mode choice offers every repository-allowed mode, even while the head conflicts or is behind. Auto-merge keeps the source branch; the delete-source checkbox applies only to an immediate merge. It needs `mr:merge` and a server with CI. Re-enabling replaces the previous mode and enabler.
 - The server merges when CI has settled on the head with every run complete and at least one check passed. A failing or unfinished check always blocks. The mode must still be allowed.

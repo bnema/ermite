@@ -46,6 +46,7 @@ type Repo struct {
 	// Settings are the merge settings; the stores always fill them in, with
 	// the defaults for a repository that never stored any.
 	Settings RepoSettings
+	Archived bool
 }
 
 // Limits of the topics of a repository.

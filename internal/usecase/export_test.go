@@ -268,3 +268,8 @@ func (m *MergeRequests) UnderRepoLock(ctx context.Context, repo domain.RepoName,
 	fn()
 	return nil
 }
+
+// Enqueue exposes enqueue to the tests.
+func (b *Bernard) Enqueue(repo domain.RepoName, sha string, updates []domain.DepRef, goVersion string) string {
+	return b.enqueue(repo, sha, updates, goVersion)
+}

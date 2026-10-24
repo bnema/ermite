@@ -234,7 +234,7 @@ func (s *Server) issueList(ctx context.Context, r *http.Request) (templ.Componen
 	if token != "" {
 		p.Newest = link("")
 	}
-	if SignedIn(ctx) || (s.cfg.IssueForm != nil && d.repo.Settings.AcceptsAnonymousIssues()) {
+	if !d.repo.Archived && (SignedIn(ctx) || (s.cfg.IssueForm != nil && d.repo.Settings.AcceptsAnonymousIssues())) {
 		p.NewHref = issuesBase(d.name()) + "/new"
 	}
 
@@ -256,7 +256,7 @@ func (s *Server) issueNew(ctx context.Context, r *http.Request) (templ.Component
 	if err != nil {
 		return nil, 0, err
 	}
-	if !SignedIn(ctx) {
+	if !SignedIn(ctx) || d.repo.Archived {
 		return nil, 0, errNotFound
 	}
 	l := s.repoLayout(ctx, d, "issues")
@@ -327,12 +327,16 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	}
 	p.Timeline = s.issueTimeline(d.name(), p.Comments, res.Events, false)
 	if signed {
-		p.Form = &CommentForm{ID: "cf-general", Action: issueHref(d.name(), n, "comments"), Title: "comment on the issue", Issue: true}
+		if !d.repo.Archived {
+			p.Form = &CommentForm{ID: "cf-general", Action: issueHref(d.name(), n, "comments"), Title: "comment on the issue", Issue: true}
+		}
 		switch i.State {
 		case domain.IssueStateOpen:
 			p.Transition = &IssueActions{Action: issueHref(d.name(), n, "close"), Label: "Close issue"}
 		case domain.IssueStateClosed, domain.IssueStateResolved:
-			p.Transition = &IssueActions{Action: issueHref(d.name(), n, "reopen"), Label: "Reopen issue"}
+			if !d.repo.Archived {
+				p.Transition = &IssueActions{Action: issueHref(d.name(), n, "reopen"), Label: "Reopen issue"}
+			}
 		}
 	}
 

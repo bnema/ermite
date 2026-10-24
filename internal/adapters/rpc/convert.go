@@ -65,6 +65,7 @@ func repoToPB(v ports.RepoView) *pb.Repo {
 		Topics:        v.Topics,
 		Visibility:    visibilityToPB(v.Visibility),
 		DefaultBranch: v.DefaultBranch,
+		Archived:      v.Archived,
 		CreatedAt:     timestamp(v.CreatedAt),
 		PushedAt:      timestamp(v.PushedAt),
 		Settings:      settingsToPB(settings),
@@ -522,6 +523,9 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	case domain.IssueSubmitted:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_IssueSubmitted{IssueSubmitted: &pb.IssueSubmitted{Repo: ev.Repo.String(), Id: ev.ID.String()}}
+	case domain.DependencyUpdatesFound:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_DependencyUpdatesFound{DependencyUpdatesFound: &pb.DependencyUpdatesFound{Repo: ev.Repo.String(), Count: int32(ev.Count)}}
 	case domain.CommentEdited:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_CommentEdited{CommentEdited: &pb.CommentEdited{Repo: ev.Repo.String(), Number: ev.Number, Comment: commentToPB(ev.Comment)}}

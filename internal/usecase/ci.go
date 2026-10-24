@@ -53,9 +53,14 @@ const (
 // Git, Diff, Bus, Clock, Owner and PublicURL are required (the config supplies
 // the defaults of Owner and Retention).
 type CIConfig struct {
-	AutoMerge ports.AutoMergeTrigger
-	Store     ports.CIStore
-	Logs      ports.CILogStore
+	// DepsJobs is Bernard's queue of dependency jobs; nil serves none (also
+	// installable later with SetDepsJobs). DepsRunnerLabel is the runner label
+	// that gets them.
+	DepsJobs        ports.DepsJobs
+	DepsRunnerLabel string
+	AutoMerge       ports.AutoMergeTrigger
+	Store           ports.CIStore
+	Logs            ports.CILogStore
 	// Summaries keeps the job summaries, deleted with the logs of their run.
 	Summaries ports.CISummaryStore
 	Meta      ports.RepoMetaStore
@@ -312,6 +317,10 @@ type pollRecord struct {
 	ghToken string
 	idToken string
 	hash    domain.TokenHash
+	// deps is the whole assignment of a deps job (ref is then its job id),
+	// repeated until it is updated, heartbeated or completed, or until until.
+	deps  *ports.RunnerJob
+	until time.Time
 }
 
 // NewCI builds the CI use cases. ctx carries the logger; its cancellation is

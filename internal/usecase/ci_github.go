@@ -193,7 +193,7 @@ func (c *CI) repoObj(repo domain.Repo, u ghURLs, defaultBranch string, at time.T
 		desc = repo.Description
 	}
 	r := map[string]any{
-		"allow_forking": true, "archived": false, "clone_url": u.repo + ".git",
+		"allow_forking": true, "archived": repo.Archived, "clone_url": u.repo + ".git",
 		"created_at": repo.CreatedAt.Unix(), "default_branch": defaultBranch, "description": desc,
 		"disabled": false, "fork": false, "forks": 0, "forks_count": 0, "full_name": u.full,
 		"git_url":         "git://" + u.host + "/" + u.full + ".git",

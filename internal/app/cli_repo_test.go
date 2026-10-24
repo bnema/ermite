@@ -53,8 +53,8 @@ func TestRepoList(t *testing.T) {
 		{
 			name: "json", repos: both, args: []string{"repo", "list", "--json"}, wantJSON: true,
 			wantStdout: `[
-				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"issues":"off"},
-				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"issues":"off"}
+				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"archived":false,"issues":"off"},
+				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"archived":false,"issues":"off"}
 			]`,
 		},
 		{
@@ -115,12 +115,13 @@ func TestRepoShow(t *testing.T) {
 		"last push         2026-03-04 05:06\n"+
 		"merge modes       fast-forward, squash\n"+
 		"allow auto-merge  false\n"+
-		"issues            off\n", res.stdout)
+		"issues            off\n"+
+		"archived          false\n", res.stdout)
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.GetRepoRequest).GetRepo())
 
 	res = runCLI(t, envFor(url), "", "repo", "show", "alpha", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"issues":"off"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"archived":false,"issues":"off"}`, res.stdout)
 }
 
 func TestRepoShowNeedsOneArg(t *testing.T) {
@@ -176,7 +177,7 @@ func TestRepoCreateJSON(t *testing.T) {
 		return &ermite.CreateRepoResponse{Repo: repoBeta}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "create", "beta", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"issues":"off"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"archived":false,"issues":"off"}`, res.stdout)
 }
 
 func TestRepoEditMask(t *testing.T) {
@@ -227,6 +228,7 @@ func TestRepoEditMask(t *testing.T) {
 			got := reqs[0].(*ermite.UpdateRepoRequest)
 			assert.Equal(t, "alpha", got.GetRepo())
 			assert.ElementsMatch(t, tt.paths, got.GetUpdateMask().GetPaths())
+			assert.Nil(t, got.Archived, "an omitted flag leaves archived unchanged")
 			tt.check(t, got)
 		})
 	}
@@ -455,4 +457,25 @@ func TestRepoEditAllowAutoMerge(t *testing.T) {
 	_, reqs = f.snapshot()
 	got = reqs[1].(*ermite.UpdateRepoRequest)
 	assert.ElementsMatch(t, []string{"settings.allow_auto_merge"}, got.GetUpdateMask().GetPaths())
+}
+
+func TestRepoEditArchived(t *testing.T) {
+	for _, tc := range []struct {
+		flag string
+		want bool
+	}{{"--archived", true}, {"--archived=false", false}} {
+		t.Run(tc.flag, func(t *testing.T) {
+			f := &fakeAPI{updateRepo: func(r *ermite.UpdateRepoRequest) (*ermite.UpdateRepoResponse, error) {
+				return &ermite.UpdateRepoResponse{Repo: &ermite.Repo{Name: "alpha", Archived: r.GetArchived()}}, nil
+			}}
+			res := runCLI(t, envFor(f.serve(t)), "", "repo", "edit", "alpha", tc.flag, "--json").ok(t)
+			_, reqs := f.snapshot()
+			got := reqs[0].(*ermite.UpdateRepoRequest)
+			require.NotNil(t, got.Archived)
+			assert.Equal(t, tc.want, got.GetArchived())
+			assert.Equal(t, []string{"archived"}, got.GetUpdateMask().GetPaths())
+			assert.Equal(t, tc.want, toJSONRepo(&ermite.Repo{Archived: tc.want}).Archived)
+			assert.Contains(t, res.stdout, `"archived":`)
+		})
+	}
 }

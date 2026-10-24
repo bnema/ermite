@@ -387,3 +387,47 @@ func TestVideoHosts(t *testing.T) {
 		})
 	}
 }
+
+func TestDeps(t *testing.T) {
+	c, err := config.Load(lookup(valid(nil)))
+	require.NoError(t, err)
+	assert.True(t, c.DepsEnabled)
+	assert.Equal(t, "0 6 * * *", c.DepsCheckAt)
+	assert.Equal(t, 72*time.Hour, c.DepsCooldown)
+	assert.Equal(t, 168*time.Hour, c.DepsSnooze)
+	assert.Equal(t, 10*time.Minute, c.DepsJobTimeout)
+	assert.Equal(t, "ubuntu-latest", c.DepsRunnerLabel)
+
+	c, err = config.Load(lookup(valid(map[string]string{
+		config.EnvDepsEnabled: "false", config.EnvDepsCheckAt: "*/30 1 * * 1",
+		config.EnvDepsCooldown: "24h", config.EnvDepsSnooze: "48h",
+		config.EnvDepsJobTimeout: "90s", config.EnvDepsRunnerLabel: "self-hosted",
+	})))
+	require.NoError(t, err)
+	assert.False(t, c.DepsEnabled)
+	assert.Equal(t, "*/30 1 * * 1", c.DepsCheckAt)
+	assert.Equal(t, 24*time.Hour, c.DepsCooldown)
+	assert.Equal(t, 48*time.Hour, c.DepsSnooze)
+	assert.Equal(t, 90*time.Second, c.DepsJobTimeout)
+	assert.Equal(t, "self-hosted", c.DepsRunnerLabel)
+}
+
+func TestDepsInvalid(t *testing.T) {
+	for env, in := range map[string]string{
+		config.EnvDepsEnabled:    "maybe",
+		config.EnvDepsCooldown:   "soon",
+		config.EnvDepsSnooze:     "0s",
+		config.EnvDepsJobTimeout: "-5m",
+	} {
+		_, err := config.Load(lookup(valid(map[string]string{env: in})))
+		var ce *config.Error
+		require.True(t, errors.As(err, &ce), env)
+		assert.Contains(t, ce.Problems[0], env)
+	}
+}
+
+func TestDepsRunnerLabelBlankFallsBack(t *testing.T) {
+	c, err := config.Load(lookup(valid(map[string]string{config.EnvDepsRunnerLabel: "   "})))
+	require.NoError(t, err)
+	assert.Equal(t, "ubuntu-latest", c.DepsRunnerLabel)
+}

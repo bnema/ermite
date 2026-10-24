@@ -83,6 +83,10 @@ type Config struct {
 	// leads to it. Without it there is neither. Leave it unset rather than
 	// assigning a typed nil pointer.
 	Inbox ports.InboxService
+	// Deps serves the Open MR, Ignore and Snooze buttons of the dependency
+	// cards in the inbox. It needs Inbox. Without it there are no such routes.
+	// Leave it unset rather than assigning a typed nil pointer.
+	Deps ports.DepsService
 	// SigningKey tells the key that signs the squash and merge commits, shown
 	// in the merge box. Without it the box does not name the key. Leave it
 	// unset rather than assigning a typed nil pointer.
@@ -206,6 +210,11 @@ func (s *Server) routes() *http.ServeMux {
 	}
 	if s.cfg.Inbox != nil {
 		mux.HandleFunc("GET "+inboxPath, s.page(s.inbox))
+		if s.cfg.Deps != nil {
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/open", s.mrAction(s.depsAction(depsOpen)))
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/ignore", s.mrAction(s.depsAction(depsIgnore)))
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/snooze", s.mrAction(s.depsAction(depsSnooze)))
+		}
 		if s.cfg.Moderation != nil {
 			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/approve", s.mrAction(s.pendingApprove))
 			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/reject", s.mrAction(s.pendingReject(false)))

@@ -412,3 +412,64 @@ func TestListPage(t *testing.T) {
 	_, err = f.repos.ListPage(ctx, domain.Root(), -1, "")
 	assert.ErrorIs(t, err, domain.ErrInvalidPageSize)
 }
+
+func TestUpdateArchived(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		archived bool
+		params   ports.UpdateRepoParams
+		reject   bool
+	}{
+		{"archive", false, ports.UpdateRepoParams{Archived: ptr(true)}, false},
+		{"unarchive", true, ports.UpdateRepoParams{Archived: ptr(false)}, false},
+		{"edit archived", true, ports.UpdateRepoParams{Description: ptr("new")}, true},
+		{"archive again", true, ports.UpdateRepoParams{Archived: ptr(true)}, true},
+		{"unarchive and edit", true, ports.UpdateRepoParams{Archived: ptr(false), Description: ptr("new")}, false},
+		{"change branch while archived", true, ports.UpdateRepoParams{DefaultBranch: ptr("dev")}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			f := newFixture(t)
+			repo := domain.Repo{Name: name(t, "tools"), Visibility: domain.VisibilityPrivate, Archived: tc.archived}
+			f.meta.EXPECT().Get(ctx, repo.Name).Return(repo, nil).Once()
+			if !tc.reject {
+				want := repo
+				want.Archived = *tc.params.Archived
+				want.Settings = domain.DefaultRepoSettings()
+				if tc.params.Description != nil {
+					want.Description = *tc.params.Description
+				}
+				expectRepoMutation(t, f.meta, repo, want)
+				f.bus.EXPECT().Publish(ctx, mock.MatchedBy(func(ev domain.Event) bool { _, ok := ev.(domain.RepoUpdated); return ok })).Return().Once()
+			}
+			got, err := f.repos.Update(ctx, domain.Owner(), repo.Name, tc.params)
+			if tc.reject {
+				require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+				require.ErrorContains(t, err, "repository is archived")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, *tc.params.Archived, got.Archived)
+			if tc.params.Description != nil {
+				assert.Equal(t, *tc.params.Description, got.Description)
+			}
+		})
+	}
+}
+
+func TestUpdateRejectsConcurrentArchive(t *testing.T) {
+	ctx := t.Context()
+	f := newFixture(t)
+	repo := domain.Repo{Name: name(t, "tools"), Visibility: domain.VisibilityPrivate}
+	f.meta.EXPECT().Get(ctx, repo.Name).Return(repo, nil).Once()
+	f.meta.EXPECT().Mutate(ctx, repo.Name, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.RepoName, fn func(*domain.Repo) (bool, error)) (domain.Repo, error) {
+		repo.Archived = true
+		changed, err := fn(&repo)
+		require.False(t, changed)
+		require.Empty(t, repo.Description)
+		return repo, err
+	}).Once()
+	_, err := f.repos.Update(ctx, domain.Owner(), repo.Name, ports.UpdateRepoParams{Description: ptr("new")})
+	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	require.ErrorContains(t, err, "repository is archived")
+}

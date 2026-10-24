@@ -45,7 +45,7 @@ func (r *Repos) View(ctx context.Context, repo domain.Repo) (ports.RepoView, err
 }
 
 // Update changes the description, the topics, the visibility, the default branch and the
-// merge settings of a repository, and publishes RepoUpdated. The principal needs repo:admin on it
+// merge settings and archived state of a repository, and publishes RepoUpdated. The principal needs repo:admin on it
 // (see adminAccess for what the others learn) and no branch prefixes. At least one field must be set,
 // else domain.ErrInvalid. A default branch that does not exist gives
 // domain.ErrPreconditionFailed; nothing is written before every check passed.
@@ -60,9 +60,12 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	if err := adminAccess(p, repo); err != nil {
 		return domain.Repo{}, err
 	}
+	if repo.Archived && (params.Archived == nil || *params.Archived) {
+		return domain.Repo{}, domain.ErrArchived
+	}
 	before := repo
 	if params.Description == nil && params.Topics == nil && params.Visibility == nil && params.DefaultBranch == nil &&
-		params.AllowedMergeModes == nil && params.AllowAutoMerge == nil && params.Issues == nil {
+		params.AllowedMergeModes == nil && params.AllowAutoMerge == nil && params.Issues == nil && params.Archived == nil {
 		return domain.Repo{}, fmt.Errorf("%w: nothing to update", domain.ErrInvalid)
 	}
 	if params.AllowedMergeModes != nil {
@@ -116,12 +119,14 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 	// branch was checked above, so the remaining causes are a vanished
 	// repository or an I/O failure.
 	metaDone := false
-	if params.Description != nil || params.Topics != nil || params.Visibility != nil || params.AllowedMergeModes != nil || params.AllowAutoMerge != nil || params.Issues != nil {
+	if params.Description != nil || params.Topics != nil || params.Visibility != nil || params.AllowedMergeModes != nil || params.AllowAutoMerge != nil || params.Issues != nil || params.Archived != nil {
 		update := func() error {
 			repo, err = r.updateMeta(ctx, name, params)
 			return err
 		}
-		if r.mergeGate != nil && (params.AllowedMergeModes != nil || params.AllowAutoMerge != nil) {
+		// Archiving takes the merge lock too, so that a merge which read the
+		// repository as writable cannot move a branch once it is archived.
+		if r.mergeGate != nil && (params.AllowedMergeModes != nil || params.AllowAutoMerge != nil || params.Archived != nil) {
 			err = r.mergeGate.WithMergeLock(ctx, name, update)
 		} else {
 			err = update()
@@ -171,6 +176,12 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 // recording pushed_at) gets in between.
 func (r *Repos) updateMeta(ctx context.Context, name domain.RepoName, params ports.UpdateRepoParams) (domain.Repo, error) {
 	repo, err := r.meta.Mutate(ctx, name, func(repo *domain.Repo) (bool, error) {
+		if repo.Archived && (params.Archived == nil || *params.Archived) {
+			return false, domain.ErrArchived
+		}
+		if params.Archived != nil {
+			repo.Archived = *params.Archived
+		}
 		if params.Description != nil {
 			repo.Description = *params.Description
 		}

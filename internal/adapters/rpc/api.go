@@ -31,11 +31,17 @@ const MaxRequestBytes = 1 << 20
 // for the envelope (job id, step number, block id, framing).
 const RunnerMaxRequestBytes = MaxRequestBytes + 64<<10
 
+// CompleteJobMaxRequestBytes bounds the size of a CompleteJob request message,
+// which may carry a deps report of up to 8 MiB of file content (bytes fields
+// are not inflated on the wire in protobuf binary, but JSON encodes them as
+// base64, a 4/3 growth) plus a 1 MiB envelope.
+const CompleteJobMaxRequestBytes = 8<<20*4/3 + 1<<20
+
 // Features are the optional capabilities of the contract that this server
 // always implements, as GetVersion lists them. FeaturePasskeys comes on top
 // when Config.Passkeys is set, and FeatureCISecrets when the settings services
 // are, and FeatureCommitSignatures when Config.TrustedKeys is set.
-var Features = []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache", "ci.workflows", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready"}
+var Features = []string{"repos.archived", "repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache", "ci.workflows", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
 // FeatureCIArtifacts (artifact.go) when the artifact services are served.
@@ -102,6 +108,9 @@ type Config struct {
 	// "commit_signatures", when set (ADR 0030). Same rule as Sessions about
 	// typed nil pointers.
 	TrustedKeys ports.TrustedKeyService
+	// Deps serves DepsService (Bernard); GetVersion lists "deps" when set.
+	// Same rule as Sessions about typed nil pointers.
+	Deps ports.DepsService
 }
 
 // API is the set of Connect handlers of the contract.
@@ -153,6 +162,10 @@ func New(cfg Config) *API {
 	if cfg.TrustedKeys != nil {
 		features = append(features, FeatureCommitSignatures)
 	}
+	if cfg.Deps != nil {
+		mux.Handle(ermiteconnect.NewDepsServiceHandler(&depsService{cfg.Deps}, opts...))
+		features = append(features, FeatureDeps)
+	}
 	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{mrs: cfg.MergeRequests}, opts...))
 	mux.Handle(ermiteconnect.NewIssueServiceHandler(&issueService{issues: cfg.Issues, moderation: cfg.IssueModeration}, opts...))
@@ -174,7 +187,18 @@ func New(cfg Config) *API {
 	if cfg.Runner != nil {
 		runnerOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))
 		runners := &runnerService{runners: cfg.Runner, limiter: cfg.Limiter}
-		mux.Handle(ermiteconnect.NewRunnerServiceHandler(runners, runnerOpts...))
+		runnerPath, runnerHandler := ermiteconnect.NewRunnerServiceHandler(runners, runnerOpts...)
+		// Only CompleteJob may carry a large deps report: it gets its own
+		// handler with a larger read limit.
+		completeOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(CompleteJobMaxRequestBytes))
+		_, completeHandler := ermiteconnect.NewRunnerServiceHandler(runners, completeOpts...)
+		mux.Handle(runnerPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == ermiteconnect.RunnerServiceCompleteJobProcedure {
+				completeHandler.ServeHTTP(w, r)
+				return
+			}
+			runnerHandler.ServeHTTP(w, r)
+		}))
 		if artifacts {
 			// A block message carries up to 1 MiB of data, like a summary.
 			mux.Handle(ermiteconnect.NewJobArtifactServiceHandler(&jobArtifactService{artifacts: cfg.JobArtifacts, runner: runners}, runnerOpts...))

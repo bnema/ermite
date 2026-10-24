@@ -410,3 +410,15 @@ type GitHubReleaseAPI interface {
 	// AssetByID resolves metadata for a download through ReleaseService.
 	AssetByID(ctx context.Context, p domain.Principal, owner, repo string, assetID int64) (domain.ReleaseAsset, error)
 }
+
+// DepsService is Bernard. Every method needs owner rights and answers
+// domain.ErrNotFound to anyone else. *usecase.Bernard implements it.
+type DepsService interface {
+	// List returns the records with pending updates (snoozed included, so
+	// clients can show them), or only repo's when repo is not zero.
+	List(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]domain.RepoDeps, error)
+	Check(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.RepoDeps, error)
+	Open(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error)
+	Ignore(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error)
+	Snooze(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.RepoDeps, error)
+}

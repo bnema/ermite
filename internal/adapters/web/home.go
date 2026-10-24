@@ -267,7 +267,8 @@ func homeRow(r ports.RepoView, now time.Time, cursor, signed bool) HomeRow {
 	row := HomeRow{
 		ID: "repo-" + name, Name: name, Href: repoHref(name),
 		Desc: r.Description, Topics: r.Topics, Cursor: cursor,
-		Private: signed && r.Visibility == domain.VisibilityPrivate,
+		Private:  signed && r.Visibility == domain.VisibilityPrivate,
+		Archived: r.Archived,
 	}
 	if at := repoActiveAt(r); !at.IsZero() {
 		row.Active, row.ActiveAt = ago(now, at), rfc3339(at)

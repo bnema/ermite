@@ -386,6 +386,7 @@ func TestMergeGateSettingsUpdateWaits(t *testing.T) {
 	for _, params := range []ports.UpdateRepoParams{
 		{AllowAutoMerge: ptr(false)},
 		{AllowedMergeModes: ptr([]domain.MergeMode{domain.MergeModeSquash})},
+		{Archived: ptr(true)},
 	} {
 		r, _, _ := autoRig(t)
 		r.repos.WithMergeGate(r.mrs)
@@ -447,4 +448,23 @@ func TestAutoMergeRechecksSettledUnderMergeGate(t *testing.T) {
 	require.True(t, a.Evaluate(r.repo))
 	require.True(t, storedAuto(t, r, mr).IsOpen())
 	require.NotNil(t, storedAuto(t, r, mr).AutoMerge)
+}
+
+func TestAutoMergeArchivedRepositoryDoesNotMoveTarget(t *testing.T) {
+	r, mr, checks := autoRig(t)
+	enableAuto(t, r, mr)
+	before, err := r.git.BranchHead(r.ctx, r.repo, "main")
+	require.NoError(t, err)
+	_, err = r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{Archived: ptr(true)})
+	require.NoError(t, err)
+	checks.EXPECT().CommitChecks(mock.Anything, r.repo, r.head().String()).Return([]domain.CICheck{{Status: domain.CICompleted, Conclusion: domain.CISuccess}}, nil).Once()
+	a := autoEvaluator(r, checks, nil, nil)
+	defer a.Close(r.ctx)
+	require.True(t, a.Evaluate(r.repo))
+	got := storedAuto(t, r, mr)
+	require.True(t, got.IsOpen())
+	require.Nil(t, got.AutoMerge)
+	after, err := r.git.BranchHead(r.ctx, r.repo, "main")
+	require.NoError(t, err)
+	require.Equal(t, before, after)
 }

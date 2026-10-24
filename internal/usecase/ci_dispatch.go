@@ -36,6 +36,9 @@ func (c *CI) DispatchWorkflow(ctx context.Context, p domain.Principal, name doma
 	if err != nil {
 		return domain.CIRun{}, err
 	}
+	if repo.Archived {
+		return domain.CIRun{}, domain.ErrArchived
+	}
 	wfPath, err := dispatchPath(params.WorkflowPath)
 	if err != nil {
 		return domain.CIRun{}, err

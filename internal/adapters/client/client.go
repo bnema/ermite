@@ -70,6 +70,11 @@ func (c *Client) Repos() ermiteconnect.RepoServiceClient {
 	return ermiteconnect.NewRepoServiceClient(c.http, c.base, c.opts...)
 }
 
+// Deps returns the DepsService client.
+func (c *Client) Deps() ermiteconnect.DepsServiceClient {
+	return ermiteconnect.NewDepsServiceClient(c.http, c.base, c.opts...)
+}
+
 // Runs returns the RunService client.
 func (c *Client) Runs() ermiteconnect.RunServiceClient {
 	return ermiteconnect.NewRunServiceClient(c.http, c.base, c.opts...)

@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+package ermite.storage;
+import "google/protobuf/timestamp.proto";
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// DepRef identifies an ignored or proposed dependency version.
+message DepRef {
+  string ecosystem = 1;
+  string directory = 2;
+  string name = 3;
+  string version = 4;
+}
+message DepUpdate {
+  DepRef ref = 1;
+  string current = 2;
+  int32 kind = 3;
+  bool new = 4;
+}
+// RepoDeps is the whole record under dpend/<repo>.
+message RepoDeps {
+  string repo = 1;
+  repeated DepUpdate updates = 2;
+  google.protobuf.Timestamp checked_at = 3;
+  google.protobuf.Timestamp snoozed_until = 4;
+  int32 state = 5;
+  string error = 6;
+  string job_id = 7;
+  int64 mr = 8;
+  repeated DepRef mr_versions = 9;
+}
+// DepFirstSeen is global, under dseen/<ecosystem>/<name>@<version>@<sha>.
+message DepFirstSeen {
+  google.protobuf.Timestamp at = 1;
+}

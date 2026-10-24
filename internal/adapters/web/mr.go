@@ -256,6 +256,7 @@ type SinceNav struct {
 
 // MRPage is a merge request with its diff and comments.
 type MRPage struct {
+	CloseAction    string
 	Number         string
 	Title          string
 	State          string
@@ -491,7 +492,9 @@ func (s *Server) mrList(ctx context.Context, r *http.Request) (templ.Component, 
 		return nil, 0, errNotFound
 	}
 	token := r.URL.Query().Get("page")
-	p.CLI = Clone{ID: "cli-new", Lines: []string{"ermite mr create " + shellWord(d.name()) + " --source <branch> --title <title>"}}
+	if !d.repo.Archived {
+		p.CLI = Clone{ID: "cli-new", Lines: []string{"ermite mr create " + shellWord(d.name()) + " --source <branch> --title <title>"}}
+	}
 	base := mrBase(d.name())
 	p.OpenHref, p.DoneHref = base, base+"?state=done"
 
@@ -655,7 +658,7 @@ func (s *Server) mrPageView(ctx context.Context, r *http.Request, since, fragmen
 
 	// Comments: under their line, else in the list below the diff. The forms
 	// are the owner's, on the whole diff of an open request.
-	canWrite := signed && open && !since
+	canWrite := signed && open && !since && !d.repo.Archived
 	var on *lineRef
 	if canWrite {
 		on = parseOn(r.URL.Query().Get("on"))
@@ -683,7 +686,11 @@ func (s *Server) mrPageView(ctx context.Context, r *http.Request, since, fragmen
 	p.Invisible = invisible
 	p.DiffView = newDiffView(r, lines, withFrom(self+"?view=unified", from), withFrom(self+"?view=split", from))
 	if signed && open {
-		p.Box = s.mrBox(ctx, d, res)
+		if d.repo.Archived {
+			p.CloseAction = mrHref(d.name(), n, "close")
+		} else {
+			p.Box = s.mrBox(ctx, d, res)
+		}
 	}
 
 	if mergeErrorOf(ctx) != "" {

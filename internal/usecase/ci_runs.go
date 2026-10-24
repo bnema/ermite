@@ -355,6 +355,9 @@ func (c *CI) RerunRun(ctx context.Context, p domain.Principal, name domain.RepoN
 	if err != nil {
 		return domain.CIRun{}, err
 	}
+	if repo.Archived {
+		return domain.CIRun{}, domain.ErrArchived
+	}
 	run, err := c.runOf(ctx, name, runID)
 	if err != nil {
 		return domain.CIRun{}, err

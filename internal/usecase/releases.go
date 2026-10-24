@@ -71,6 +71,9 @@ func (r *Releases) writable(ctx context.Context, p domain.Principal, name domain
 		return repo, fmt.Errorf("%w: a branch-limited token cannot manage releases", domain.ErrForbidden)
 	}
 	if releaseWriter(p, name) {
+		if repo.Archived {
+			return repo, domain.ErrArchived
+		}
 		return repo, nil
 	}
 	if p.IsAnonymous() {

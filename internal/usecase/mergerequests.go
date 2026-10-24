@@ -197,6 +197,18 @@ func (m *MergeRequests) readable(ctx context.Context, p domain.Principal, name d
 // repository, still get domain.ErrNotFound; one that can read the repository
 // but lacks the scope gets the error of scopeAccess.
 func (m *MergeRequests) writable(ctx context.Context, p domain.Principal, name domain.RepoName, scope domain.Scope) (domain.Repo, error) {
+	repo, err := m.writeAccess(ctx, p, name, scope)
+	if err != nil {
+		return domain.Repo{}, err
+	}
+	if repo.Archived {
+		return domain.Repo{}, domain.ErrArchived
+	}
+	return repo, nil
+}
+
+// writeAccess authorizes writes, including closing existing requests on archived repositories.
+func (m *MergeRequests) writeAccess(ctx context.Context, p domain.Principal, name domain.RepoName, scope domain.Scope) (domain.Repo, error) {
 	repo, err := lookupRepo(ctx, m.meta, name)
 	if err != nil {
 		return domain.Repo{}, err
@@ -938,7 +950,7 @@ func (m *MergeRequests) ResolveComment(ctx context.Context, p domain.Principal, 
 // gives domain.ErrPreconditionFailed. The request keeps the head it had and
 // its merge base, so that its diff stays readable.
 func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (domain.MergeRequest, error) {
-	repo, err := m.writable(ctx, p, name, domain.ScopeMRWrite)
+	repo, err := m.writeAccess(ctx, p, name, domain.ScopeMRWrite)
 	if err != nil {
 		return domain.MergeRequest{}, err
 	}
@@ -997,7 +1009,7 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 // is not a commit of the repository gives domain.ErrInvalid. It returns the
 // head recorded.
 func (m *MergeRequests) MarkRead(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, head domain.ObjectID) (domain.ObjectID, error) {
-	if _, err := m.writable(ctx, p, name, domain.ScopeMRWrite); err != nil {
+	if _, err := m.writeAccess(ctx, p, name, domain.ScopeMRWrite); err != nil {
 		return domain.ObjectID{}, err
 	}
 	mr, err := m.store.Get(ctx, name, number)
@@ -1184,6 +1196,9 @@ func (m *MergeRequests) mergeAs(ctx context.Context, p domain.Principal, name do
 			return domain.MergeRequest{}, err // deleted meanwhile
 		}
 		return domain.MergeRequest{}, fmt.Errorf("get repository %q: %w", name, err)
+	}
+	if repo.Archived {
+		return domain.MergeRequest{}, domain.ErrArchived
 	}
 	settings := repo.EffectiveSettings()
 	if !settings.Allows(mode) {

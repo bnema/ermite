@@ -188,3 +188,51 @@ func TestResolveActionNamesTheActionGitHubDidNotAnswer(t *testing.T) {
 type stillClock struct{}
 
 func (stillClock) Now() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+
+func TestPrincipalOfPusherBotIsBoundToItsRepository(t *testing.T) {
+	t.Parallel()
+	home, err := domain.ParseRepoName("home")
+	require.NoError(t, err)
+	other, err := domain.ParseRepoName("other")
+	require.NoError(t, err)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	by := domain.PusherOf(domain.Bot(home))
+
+	p, ok, err := principalOfPusher(context.Background(), nil, by, home, now)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, domain.Bot(home), p)
+
+	p, ok, err = principalOfPusher(context.Background(), nil, by, other, now)
+	require.NoError(t, err)
+	assert.False(t, ok, "a record of another repository is void")
+	assert.Equal(t, domain.Principal{}, p)
+}
+
+// A bot pusher reads nothing of another private repository, so an action of
+// that repository is not resolved on its behalf.
+func TestPusherCanReadBotCannotReadAnotherPrivateRepository(t *testing.T) {
+	t.Parallel()
+	home, err := domain.ParseRepoName("home")
+	require.NoError(t, err)
+	secret, err := domain.ParseRepoName("secret")
+	require.NoError(t, err)
+	c := &CI{cfg: CIConfig{Clock: stillClock{}}}
+	by := pusherAccess{pusher: domain.PusherOf(domain.Bot(home))}
+
+	ok, err := c.pusherCanRead(context.Background(), by, home, domain.Repo{Name: secret, Visibility: domain.VisibilityPrivate})
+	require.NoError(t, err)
+	assert.False(t, ok, "another private repository")
+	ok, err = c.pusherCanRead(context.Background(), by, home, domain.Repo{Name: secret, Visibility: domain.VisibilityPublic})
+	require.NoError(t, err)
+	assert.True(t, ok, "a public one")
+	ok, err = c.pusherCanRead(context.Background(), by, home, domain.Repo{Name: home, Visibility: domain.VisibilityPrivate})
+	require.NoError(t, err)
+	assert.True(t, ok, "its own")
+
+	// A record bound to another repository than the run's reads nothing.
+	forged := pusherAccess{pusher: domain.PusherOf(domain.Bot(secret))}
+	ok, err = c.pusherCanRead(context.Background(), forged, home, domain.Repo{Name: secret, Visibility: domain.VisibilityPrivate})
+	require.NoError(t, err)
+	assert.False(t, ok)
+}

@@ -165,6 +165,9 @@ func (s *IssueSubmissions) openRepo(ctx context.Context, repo domain.RepoName) e
 	if !canRead(domain.Anonymous(), r) || !r.Settings.AcceptsAnonymousIssues() {
 		return domain.ErrNotFound
 	}
+	if r.Archived {
+		return domain.ErrArchived
+	}
 	return nil
 }
 

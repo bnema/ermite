@@ -1,0 +1,5 @@
+steps:
+  - uses: "actions/checkout@v4" # keep me
+  - uses: 'actions/checkout/sub@v4'
+  - uses: actions/setup-go@v5
+  - run: echo actions/checkout@v4

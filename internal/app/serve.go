@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"strings"
@@ -87,6 +88,12 @@ func loadConfig(get func(string) string) (config.Config, error) {
 	if owner := strings.TrimSpace(get(config.EnvOwner)); owner != "" {
 		if _, perr := domain.ParseRepoName(owner); perr != nil {
 			problems = append(problems, config.EnvOwner+": must follow the rules of repository names ("+perr.Error()+")")
+		}
+	}
+	if at := strings.TrimSpace(get(config.EnvDepsCheckAt)); at != "" {
+		if _, perr := domain.ParseCron(at); perr != nil {
+			problems = append(problems, fmt.Sprintf("%s: must be a cron expression such as %q (got %q): %v",
+				config.EnvDepsCheckAt, config.DefaultDepsCheckAt, at, perr))
 		}
 	}
 	if len(problems) > 0 {

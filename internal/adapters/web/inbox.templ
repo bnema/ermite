@@ -13,6 +13,7 @@ templ Inbox(l Layout, p InboxPage) {
 			@InboxRepos(p)
 			@InboxPending(p)
 			@InboxRuns(p)
+			@InboxDeps(p)
 			@InboxMRs(p)
 			@InboxIssues(p)
 		</div>
@@ -21,7 +22,7 @@ templ Inbox(l Layout, p InboxPage) {
 
 templ InboxCounters(p InboxPage) {
 	<p id="inbox-counts" class="inbox-counts">
-		<strong>{ itoa(p.MergeRequests) }</strong> merge requests · <strong>{ itoa(p.Issues) }</strong> issues · <strong>{ itoa(p.PendingCount) }</strong> awaiting moderation · <strong>{ itoa(p.Running) }</strong> running
+		<strong>{ itoa(p.MergeRequests) }</strong> merge requests · <strong>{ itoa(p.Issues) }</strong> issues · <strong>{ itoa(p.PendingCount) }</strong> awaiting moderation · <strong>{ itoa(p.Running) }</strong> running · <strong>{ itoa(p.DepsCount) }</strong> dependency updates
 	</p>
 }
 
@@ -145,4 +146,92 @@ templ InboxRuns(p InboxPage) {
 			}
 		}
 	</section>
+}
+
+// InboxDeps is Bernard's card per repository. It stays as an empty fragment
+// when there is nothing to show.
+templ InboxDeps(p InboxPage) {
+	<section id="inbox-deps" hidden?={ len(p.Deps) == 0 }
+		if len(p.Deps) > 0 {
+			aria-labelledby="inbox-deps-h"
+		}
+	>
+		if len(p.Deps) > 0 {
+			<h2 id="inbox-deps-h" class="rule-h"><span>Dependency updates</span><span class="count">{ itoa(len(p.Deps)) }</span></h2>
+			<ul class="pending-list">
+				for _, d := range p.Deps {
+					<li class="pending">
+						<div class="p-head">
+							<a href={ templ.SafeURL(d.RepoHref) }>{ d.Repo }</a>
+							if d.MR != 0 {
+								<a href={ templ.SafeURL(d.MRHref) }>MR !{ itoa(int(d.MR)) }</a>
+							}
+							if d.State != "" {
+								<span class="badge">{ d.State }</span>
+							}
+						</div>
+						if d.UpToDate && d.State != "FAILED" {
+							<p class="mute">
+								if len(d.Updates) == 1 {
+									1 update in the merge request
+								} else {
+									{ itoa(len(d.Updates)) } updates in the merge request
+								}
+							</p>
+							<div class="p-btns">
+								<a class="btn primary" href={ templ.SafeURL(d.MRHref) }>View MR</a>
+								if d.Snooze != "" {
+									@depsForm(d, d.Snooze, "Snooze", "btn", false)
+								}
+							</div>
+						} else {
+							<ul class="deps-list">
+								for _, u := range d.Updates {
+									<li>
+										<code>{ u.Name }</code> { u.Current } → { u.Latest } <span class="dim">({ u.Kind })</span>
+										if u.New {
+											<span class="badge">new</span>
+										}
+										if u.Directory != "" {
+											<span class="mute">{ u.Directory }</span>
+										}
+									</li>
+								}
+							</ul>
+							if d.Error != "" {
+								<p class="p-body">{ d.Error }</p>
+							}
+							if d.Open != "" {
+								<div class="p-btns">
+									if d.MR != 0 {
+										@depsForm(d, d.Open, "Update MR", "btn primary", true)
+									} else {
+										@depsForm(d, d.Open, "Open MR", "btn primary", true)
+									}
+									@depsForm(d, d.Ignore, "Ignore", "btn", true)
+									@depsForm(d, d.Snooze, "Snooze", "btn", false)
+								</div>
+							}
+						}
+					</li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+// depsForm is one POST button of a card. The expected versions go in hidden
+// fields (four per update, in the same order) for Open MR and Ignore.
+templ depsForm(d InboxDepsRow, action, label, class string, refs bool) {
+	<form method="post" action={ templ.SafeURL(action) }>
+		if refs {
+			for _, u := range d.Updates {
+				<input type="hidden" name="ecosystem" value={ u.Ecosystem }/>
+				<input type="hidden" name="directory" value={ u.Directory }/>
+				<input type="hidden" name="name" value={ u.Name }/>
+				<input type="hidden" name="version" value={ u.Latest }/>
+			}
+		}
+		<button type="submit" class={ class }>{ label }</button>
+	</form>
 }

@@ -37,7 +37,8 @@ type CmdItem struct{ Kind, Label, Href string }
 
 // Layout is the input of the page shell.
 type Layout struct {
-	Title string
+	Archived bool
+	Title    string
 	// Owner is the owner's name (ERMITE_OWNER), shown when signed in.
 	Owner     string
 	Version   string
@@ -86,12 +87,13 @@ type Link struct{ Label, Href string }
 
 // HomeRow is one repository in the home list.
 type HomeRow struct {
-	Release *LatestRelease
-	License *LicenseBadge
-	ID      string
-	Name    string
-	Href    string
-	Desc    string
+	Archived bool
+	Release  *LatestRelease
+	License  *LicenseBadge
+	ID       string
+	Name     string
+	Href     string
+	Desc     string
 	// Topics classify the repository, as on GitHub.
 	Topics []string
 	// Active is when the repository last changed (its last push or merge),

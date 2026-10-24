@@ -58,7 +58,7 @@ func TestWebInboxEndToEnd(t *testing.T) {
 
 	r.forge.Bus.Publish(r.ctx, domain.RunUpdated{Run: draft.Run, At: time.Now(), Visibility: domain.VisibilityPublic, CreatedAt: time.Now()})
 	var runFragments strings.Builder
-	for range 6 {
+	for range 7 {
 		runFragments.WriteString(nextFragment(t, stream).data)
 	}
 	assert.Contains(t, runFragments.String(), "Inbox build")
@@ -68,7 +68,7 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	r.forge.Bus.Publish(r.ctx, domain.RunUpdated{Run: draft.Run, At: time.Now(), Visibility: domain.VisibilityPublic, CreatedAt: time.Now()})
 	runFragments.Reset()
-	for range 6 {
+	for range 7 {
 		runFragments.WriteString(nextFragment(t, stream).data)
 	}
 	assert.NotContains(t, runFragments.String(), "Inbox build")
@@ -81,13 +81,13 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	ev := nextFragment(t, stream)
 	assert.Equal(t, "inbox", ev.name)
 	assert.Contains(t, ev.data, `id="inbox-counts"`)
-	for range 5 { // the other fragments of this event
+	for range 6 { // the other fragments of this event
 		nextFragment(t, stream)
 	}
 	_, err = r.forge.Issues.Create(r.ctx, root, r.name("other"), ports.CreateIssueParams{Title: "search is slow"})
 	require.NoError(t, err)
 	var seen strings.Builder
-	for range 6 { // the six fragments of this event
+	for range 7 { // the seven fragments of this event
 		seen.WriteString(nextFragment(t, stream).data)
 	}
 	assert.Contains(t, seen.String(), "search is slow", "an event of the second repository")

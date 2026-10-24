@@ -111,6 +111,8 @@ const (
 	CIPusherRoot  CIPusherKind = "root"
 	CIPusherOwner CIPusherKind = "owner"
 	CIPusherToken CIPusherKind = "token"
+	// CIPusherBot is Bernard; TokenID holds the repository it is bound to.
+	CIPusherBot CIPusherKind = "bot"
 )
 
 // CIPusher is who pushed the commit of a run, as recorded with the run. A
@@ -126,6 +128,8 @@ type CIPusher struct {
 // holders of job tokens, which cannot either, are recorded as nobody.
 func PusherOf(p Principal) CIPusher {
 	switch {
+	case p.kind == kindBot:
+		return CIPusher{Kind: CIPusherBot, TokenID: p.botRepo().String()}
 	case p.IsOwner():
 		return CIPusher{Kind: CIPusherOwner}
 	case p.IsRoot():

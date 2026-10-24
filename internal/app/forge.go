@@ -22,6 +22,8 @@ import (
 	"bnema.dev/ermite/internal/adapters/ciartifacts"
 	"bnema.dev/ermite/internal/adapters/cilogs"
 	"bnema.dev/ermite/internal/adapters/cisummaries"
+	"bnema.dev/ermite/internal/adapters/deps"
+	"bnema.dev/ermite/internal/adapters/depsregistry"
 	"bnema.dev/ermite/internal/adapters/ermitegit"
 	"bnema.dev/ermite/internal/adapters/eventbus"
 	"bnema.dev/ermite/internal/adapters/gitcli"
@@ -75,6 +77,9 @@ type options struct {
 	// remote replaces the lister of github.com refs (tests never reach the
 	// network).
 	remoteLister ports.GitRemote
+	// depsRegistry replaces the registry Bernard queries (tests never reach
+	// the network).
+	depsRegistry ports.DepsRegistry
 	// workflowFetcher replaces the downloader of github.com reusable workflows
 	// (tests never reach the network).
 	workflowFetcher ports.WorkflowFetcher
@@ -155,7 +160,11 @@ type forge struct {
 	EventLog *usecase.Events
 	// CI is the CI engine: workflow trigger, planner, runner protocol and the
 	// owner side. It starts with the server and stops with it.
-	CI       *usecase.CI
+	CI *usecase.CI
+	// Deps is Bernard, or usecase.DisabledBernard with ERMITE_DEPS_ENABLED=0.
+	Deps ports.DepsService
+	// bernard is nil when disabled; it starts and stops with the server.
+	bernard  *usecase.Bernard
 	Releases *usecase.Releases
 	Blobs    ports.BlobStore
 	// Settings are the secrets, variables and environments of CI.
@@ -344,6 +353,8 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Settings:      f.Settings,
 		Workflows:     opts.workflows(githubraw.New(githubraw.Config{})),
 		OIDC:          f.OIDC,
+		// Bernard is built after CI: SetDepsJobs installs the queue.
+		DepsRunnerLabel: cfg.DepsRunnerLabel,
 	}
 	artifacts(&ciCfg, cfg, store)
 	ciCfg.Blobs = f.Blobs
@@ -412,8 +423,33 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Keys: f.IssueKeys, Bus: f.Bus, Clock: clock,
 		BaseDifficulty: opts.issuePoW, MaxDifficulty: opts.issuePoW, MinFillTime: fastFill(opts.issuePoW),
 	})
+	f.Deps = usecase.DisabledBernard{}
+	var inboxDeps ports.DepsStore
+	if cfg.DepsEnabled {
+		var base ports.DepsRegistry = depsregistry.New(depsregistry.Config{GitRemote: ciCfg.Remote})
+		if opts.depsRegistry != nil {
+			base = opts.depsRegistry
+		}
+		f.bernard, err = usecase.NewBernard(usecase.BernardConfig{
+			Store: store.Deps(), Meta: store, Reader: reader,
+			Ecosystems: []ports.DepsEcosystem{deps.GoMod{}, deps.Actions{}},
+			Registry:   func() ports.DepsRegistry { return depsregistry.NewCached(base) },
+			Bus:        f.Bus, Clock: clock,
+			CheckAt: cfg.DepsCheckAt, Cooldown: cfg.DepsCooldown, Snooze: cfg.DepsSnooze,
+			Repos: git, Git: git, Signer: signer, Committer: committer, Tips: store.CI(),
+			CI: f.CI, MRs: f.MergeRequests, MRStore: store.MergeRequests(),
+			JobTimeout: cfg.DepsJobTimeout, RevokeJob: f.CI.RevokeDepsJob,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("bernard: %w", err)
+		}
+		f.Deps, inboxDeps = f.bernard, store.Deps()
+		f.CI.SetDepsJobs(f.bernard)
+		f.bernard.Start()
+	}
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
 		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(), CI: store.CI(),
+		Deps: inboxDeps, Clock: clock,
 	})
 	f.CI.SetPullGate(f.MergeRequests)
 	f.AutoMerge.Start()
@@ -465,6 +501,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		TrustedKeys:     f.Signatures,
 		Sessions:        f.Sessions,
 		Passkeys:        apiPasskeys,
+		Deps:            f.Deps,
 		Runner:          f.CI,
 		Runs:            f.CI,
 		Secrets:         f.Settings,
@@ -581,6 +618,9 @@ func (f *forge) Close(ctx context.Context) {
 	}
 	if f.Mirrors != nil {
 		f.Mirrors.Close(ctx)
+	}
+	if f.bernard != nil {
+		f.bernard.Close(ctx)
 	}
 	if f.CI != nil {
 		f.CI.Close(ctx)

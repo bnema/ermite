@@ -218,6 +218,7 @@ func logLineToPB(l ports.JobLogLine) *pb.JobLogLine {
 
 func runnerJobToPB(j *ports.RunnerJob) *pb.Job {
 	return &pb.Job{
+		Deps:  depsJobToPB(j.Deps),
 		JobId: j.Job.ID, RunId: j.Job.RunID, Attempt: j.Job.RunAttempt, JobToken: j.Token,
 		WorkflowPath: j.WorkflowPath, WorkflowYaml: j.WorkflowYAML, JobKey: j.Job.Key, Matrix: j.Job.MatrixJSON,
 		Contexts: j.Job.ContextsJSON, Labels: j.Job.Labels, TimeoutMinutes: j.Job.TimeoutMinutes,
@@ -227,6 +228,30 @@ func runnerJobToPB(j *ports.RunnerJob) *pb.Job {
 		Cache:       &pb.JobCache{Repository: j.Cache.Repository, WriteRef: j.Cache.WriteRef, ReadRefs: j.Cache.ReadRefs},
 		IdTokenUrl:  j.IDTokenURL, IdTokenRequestToken: j.IDTokenRequestToken,
 	}
+}
+
+func depsJobToPB(j *ports.DepsJob) *pb.DepsJob {
+	if j == nil {
+		return nil
+	}
+	out := &pb.DepsJob{GoVersion: j.GoVersion, Updates: make([]*pb.DepsJobUpdate, 0, len(j.Updates))}
+	for _, u := range j.Updates {
+		out.Updates = append(out.Updates, &pb.DepsJobUpdate{
+			Ecosystem: string(u.Ecosystem), Directory: u.Directory, Name: u.Name, Version: u.Version,
+		})
+	}
+	return out
+}
+
+func depsReportFromPB(r *pb.DepsReport) *ports.DepsReport {
+	if r == nil {
+		return nil
+	}
+	out := &ports.DepsReport{Error: r.GetError(), Files: make([]ports.DepsFile, 0, len(r.GetFiles()))}
+	for _, f := range r.GetFiles() {
+		out.Files = append(out.Files, ports.DepsFile{Path: f.GetPath(), Content: f.GetContent()})
+	}
+	return out
 }
 
 func resolvedActionToPB(a ports.ResolvedAction) *pb.ResolvedAction {

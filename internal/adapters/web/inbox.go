@@ -83,10 +83,15 @@ type InboxPage struct {
 	// PendingCount counts every issue awaiting moderation.
 	PendingCount int
 	Pending      []PendingRow
-	Filter       string // the repository filtered on, "" for all
-	Repos        []InboxRepoLink
-	MRs          []InboxRow
-	IssueRows    []InboxRow
+	// DepsCount counts every repository with pending dependency updates;
+	// DepsEnabled tells that the buttons are wired.
+	DepsCount   int
+	DepsEnabled bool
+	Deps        []InboxDepsRow
+	Filter      string // the repository filtered on, "" for all
+	Repos       []InboxRepoLink
+	MRs         []InboxRow
+	IssueRows   []InboxRow
 }
 
 // inboxHref is the inbox page, filtered on repo when it is not "".
@@ -116,6 +121,10 @@ func (s *Server) inboxPage(ov ports.InboxOverview, filter domain.RepoName) Inbox
 	now := s.cfg.Now()
 	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Filter: filter.String()}
 	p.Running, p.RunsEnabled = ov.Counts.Running, ov.RunsEnabled
+	p.DepsCount, p.DepsEnabled = ov.Counts.Deps, s.cfg.Deps != nil
+	for _, d := range ov.Deps {
+		p.Deps = append(p.Deps, s.depsRow(d, filter))
+	}
 	for _, run := range ov.Runs {
 		r := InboxRunRow{RunRow: s.runRow(run.Repo.String(), run, now), Repo: run.Repo.String(), RepoHref: repoHref(run.Repo.String())}
 		if run.Status == domain.CIInProgress {
@@ -288,7 +297,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 	switch we.Event.(type) {
 	case domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
 		domain.IssueEdited, domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved,
-		domain.RepoUpdated, domain.RepoDeleted, domain.RunUpdated:
+		domain.RepoUpdated, domain.RepoDeleted, domain.RunUpdated, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged:
 	default:
 		return nil, nil
 	}
@@ -305,7 +314,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 	}
 	p := l.s.inboxPage(ov, filter)
 	var out []fragment
-	for _, c := range []templ.Component{InboxCounters(p), InboxRepos(p), InboxPending(p), InboxRuns(p), InboxMRs(p), InboxIssues(p)} {
+	for _, c := range []templ.Component{InboxCounters(p), InboxRepos(p), InboxPending(p), InboxRuns(p), InboxDeps(p), InboxMRs(p), InboxIssues(p)} {
 		f, err := renderFragment(ctx, inboxEvent, c)
 		if err != nil {
 			return nil, err

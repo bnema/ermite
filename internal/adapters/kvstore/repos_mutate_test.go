@@ -12,6 +12,29 @@ import (
 	"bnema.dev/ermite/internal/domain"
 )
 
+func TestRepoArchivedRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	s := openStore(t, t.TempDir())
+	n := name(t, "archived")
+	require.NoError(t, s.Create(ctx, domain.Repo{Name: n, Visibility: domain.VisibilityPrivate, Archived: true}))
+	got, err := s.Get(ctx, n)
+	require.NoError(t, err)
+	require.True(t, got.Archived)
+	repos, err := s.List(ctx)
+	require.NoError(t, err)
+	require.Len(t, repos, 1)
+	require.True(t, repos[0].Archived)
+	got, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) {
+		r.Archived = false
+		return true, nil
+	})
+	require.NoError(t, err)
+	require.False(t, got.Archived)
+	got, err = s.Get(ctx, n)
+	require.NoError(t, err)
+	require.False(t, got.Archived)
+}
+
 func TestRepoMutateInterleavedWrites(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t, t.TempDir())

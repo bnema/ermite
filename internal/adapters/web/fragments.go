@@ -71,7 +71,8 @@ func liveEvent(we ports.WatchEvent) bool {
 		domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
 		domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled, domain.MergeRequestMergeability, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
 		domain.RunUpdated, domain.JobUpdated,
-		domain.IssueEdited, domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved, domain.IssueReferenced:
+		domain.IssueEdited, domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved, domain.IssueReferenced,
+		domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged:
 		return true
 	}
 	return false

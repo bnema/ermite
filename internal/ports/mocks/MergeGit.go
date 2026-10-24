@@ -978,3 +978,81 @@ func (_c *MergeGit_WriteCommit_Call) RunAndReturn(run func(ctx context.Context, 
 	_c.Call.Return(run)
 	return _c
 }
+
+// WriteTree provides a mock function for the type MergeGit
+func (_mock *MergeGit) WriteTree(ctx context.Context, repo domain.RepoName, base domain.ObjectID, changes map[domain.TreePath][]byte) (domain.ObjectID, error) {
+	ret := _mock.Called(ctx, repo, base, changes)
+
+	if len(ret) == 0 {
+		panic("no return value specified for WriteTree")
+	}
+
+	var r0 domain.ObjectID
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, map[domain.TreePath][]byte) (domain.ObjectID, error)); ok {
+		return returnFunc(ctx, repo, base, changes)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, map[domain.TreePath][]byte) domain.ObjectID); ok {
+		r0 = returnFunc(ctx, repo, base, changes)
+	} else {
+		r0 = ret.Get(0).(domain.ObjectID)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, map[domain.TreePath][]byte) error); ok {
+		r1 = returnFunc(ctx, repo, base, changes)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MergeGit_WriteTree_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'WriteTree'
+type MergeGit_WriteTree_Call struct {
+	*mock.Call
+}
+
+// WriteTree is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - base domain.ObjectID
+//   - changes map[domain.TreePath][]byte
+func (_e *MergeGit_Expecter) WriteTree(ctx any, repo any, base any, changes any) *MergeGit_WriteTree_Call {
+	return &MergeGit_WriteTree_Call{Call: _e.mock.On("WriteTree", ctx, repo, base, changes)}
+}
+
+func (_c *MergeGit_WriteTree_Call) Run(run func(ctx context.Context, repo domain.RepoName, base domain.ObjectID, changes map[domain.TreePath][]byte)) *MergeGit_WriteTree_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 domain.ObjectID
+		if args[2] != nil {
+			arg2 = args[2].(domain.ObjectID)
+		}
+		var arg3 map[domain.TreePath][]byte
+		if args[3] != nil {
+			arg3 = args[3].(map[domain.TreePath][]byte)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MergeGit_WriteTree_Call) Return(objectID domain.ObjectID, err error) *MergeGit_WriteTree_Call {
+	_c.Call.Return(objectID, err)
+	return _c
+}
+
+func (_c *MergeGit_WriteTree_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, base domain.ObjectID, changes map[domain.TreePath][]byte) (domain.ObjectID, error)) *MergeGit_WriteTree_Call {
+	_c.Call.Return(run)
+	return _c
+}

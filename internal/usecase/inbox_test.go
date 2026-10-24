@@ -141,3 +141,30 @@ func TestInboxRuns(t *testing.T) {
 	require.Len(t, filtered.Runs, 1)
 	assert.Equal(t, alpha, filtered.Runs[0].Repo)
 }
+
+func TestInboxDepsSkipsSnoozedArchivedAndEmpty(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
+	rec := func(repo string) domain.RepoDeps { return domain.RepoDeps{Repo: name(t, repo), Updates: upd} }
+	snoozed, expired, empty := rec("snoozed"), rec("expired"), domain.RepoDeps{Repo: name(t, "empty")}
+	snoozed.SnoozedUntil = now.Add(time.Hour)
+	expired.SnoozedUntil = now.Add(-time.Hour)
+
+	mrs, is, meta, store, clock := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Deps: store, Clock: clock})
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	is.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	clock.EXPECT().Now().Return(now)
+	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{rec("alpha"), rec("archived"), rec("gone"), snoozed, expired, empty}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "alpha")).Return(domain.Repo{Name: name(t, "alpha")}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "expired")).Return(domain.Repo{Name: name(t, "expired")}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "archived")).Return(domain.Repo{Name: name(t, "archived"), Archived: true}, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound)
+
+	got, err := in.Overview(context.Background(), domain.Owner(), name(t, "alpha"))
+	require.NoError(t, err)
+	assert.Equal(t, 2, got.Counts.Deps, "the filter does not change the count")
+	require.Len(t, got.Deps, 1, "the filter limits the list")
+	assert.Equal(t, "alpha", got.Deps[0].Repo.String())
+}

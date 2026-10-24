@@ -1464,3 +1464,28 @@ func TestMergeRequestRecordsRepositoryActivity(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, repo.ActiveAt.Equal(now))
 }
+
+func TestArchivedMergeRequestWritesAndClose(t *testing.T) {
+	r := newMRRig(t)
+	r.seed()
+	r.feature("feat")
+	mr := r.open("feat")
+	head := r.head()
+	_, err := r.repos.Update(r.ctx, root, r.repo, ports.UpdateRepoParams{Archived: ptr(true)})
+	require.NoError(t, err)
+	_, err = r.mrs.Create(r.ctx, root, r.repo, ports.CreateMergeRequestParams{Title: "new", Source: "feat"})
+	require.ErrorIs(t, err, domain.ErrArchived)
+	_, err = r.mrs.Edit(r.ctx, root, r.repo, mr.Number, ports.EditMergeRequestParams{Title: ptr("edited")})
+	require.ErrorIs(t, err, domain.ErrArchived)
+	_, err = r.mrs.Merge(r.ctx, root, r.repo, mr.Number, ports.MergeParams{HeadID: head})
+	require.ErrorIs(t, err, domain.ErrArchived)
+	_, err = r.mrs.Get(r.ctx, root, r.repo, mr.Number, ports.GetMergeRequestOptions{})
+	require.NoError(t, err)
+	_, err = r.mrs.MarkRead(r.ctx, root, r.repo, mr.Number, head)
+	require.NoError(t, err)
+	_, err = r.mrs.AddComment(r.ctx, root, r.repo, mr.Number, ports.AddCommentParams{})
+	require.ErrorIs(t, err, domain.ErrArchived)
+	closed, err := r.mrs.Close(r.ctx, root, r.repo, mr.Number)
+	require.NoError(t, err)
+	require.Equal(t, domain.MRStateClosed, closed.State)
+}

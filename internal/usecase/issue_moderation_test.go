@@ -250,3 +250,12 @@ func TestIssuePendingRemovedReachesOnlyOwnerTopics(t *testing.T) {
 		}
 	})
 }
+
+func TestArchivedIssueApproval(t *testing.T) {
+	meta := mocks.NewRepoMetaStore(t)
+	repo := domain.Repo{Name: name(t, "proj"), Archived: true, Settings: withIssues(domain.IssuesPublic)}
+	meta.EXPECT().Get(mock.Anything, repo.Name).Return(repo, nil).Once()
+	mod := usecase.NewIssueModeration(usecase.IssueModerationConfig{Meta: meta, Pending: mocks.NewPendingIssueStore(t)})
+	_, err := mod.Approve(t.Context(), root, repo.Name, domain.PendingIssueID(""))
+	require.ErrorIs(t, err, domain.ErrArchived)
+}

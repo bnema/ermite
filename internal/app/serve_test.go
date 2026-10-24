@@ -12,6 +12,23 @@ import (
 	"bnema.dev/ermite/internal/config"
 )
 
+func TestLoadConfigChecksTheDepsCron(t *testing.T) {
+	t.Parallel()
+	env := map[string]string{
+		config.EnvDataDir: "/data", config.EnvPublicURL: "https://forge.example.org",
+		config.EnvAdminToken: "0123456789abcdef0123456789abcdef", config.EnvDepsCheckAt: "not a cron",
+	}
+	_, err := loadConfig(func(k string) string { return env[k] })
+	var ce *config.Error
+	require.True(t, errors.As(err, &ce))
+	assert.Contains(t, ce.Problems[0], config.EnvDepsCheckAt)
+
+	env[config.EnvDepsCheckAt] = "30 5 * * 1"
+	cfg, err := loadConfig(func(k string) string { return env[k] })
+	require.NoError(t, err)
+	assert.Equal(t, "30 5 * * 1", cfg.DepsCheckAt)
+}
+
 func TestLoadConfigChecksTheOwnerName(t *testing.T) {
 	t.Parallel()
 	base := map[string]string{

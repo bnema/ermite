@@ -132,6 +132,7 @@ func (s *Server) openMRCount(ctx context.Context, name domain.RepoName) string {
 func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) Layout {
 	l := s.base()
 	l.Repo = d.name()
+	l.Archived = d.repo.Archived
 	def := d.repo.DefaultBranch
 	if d.head != nil {
 		def = d.head.ShortName

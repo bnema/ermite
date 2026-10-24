@@ -74,6 +74,9 @@ func (m *IssueModeration) Approve(ctx context.Context, p domain.Principal, repo 
 	if !r.Settings.IssuesEnabled() {
 		return domain.Issue{}, domain.ErrNotFound
 	}
+	if r.Archived {
+		return domain.Issue{}, domain.ErrArchived
+	}
 	now := m.clock.Now().UTC()
 	issue, err := m.pending.Approve(ctx, repo, id, now)
 	if err != nil {

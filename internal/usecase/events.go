@@ -214,7 +214,7 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueCommented:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
-	case domain.IssueSubmitted, domain.IssuePendingRemoved:
+	case domain.IssueSubmitted, domain.IssuePendingRemoved, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged:
 		return bufferedEvent{known: true} // owner topic only: no repository snapshot
 	case domain.CommentEdited:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
@@ -537,6 +537,12 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverOwnerOnly(ctx, w, ev.Repo, out, send)
 	case domain.IssuePendingRemoved:
 		return e.deliverOwnerOnly(ctx, w, ev.Repo, out, send)
+	case domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged:
+		// Owner topic only, like IssueSubmitted, but not tied to the issue tracker.
+		if !w.owner {
+			return nil
+		}
+		return send(out)
 	case domain.RepoCreated:
 		return e.deliverRepo(ctx, w, ev.Repo, true, be, out, send)
 	case domain.RepoUpdated:

@@ -93,6 +93,7 @@ type Repo struct {
 	Topics []string `protobuf:"bytes,7,rep,name=topics,proto3" json:"topics,omitempty"`
 	// Latest push, merge request or issue activity; unset until recorded.
 	ActiveAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=active_at,json=activeAt,proto3" json:"active_at,omitempty"`
+	Archived      bool                   `protobuf:"varint,9,opt,name=archived,proto3" json:"archived,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -181,6 +182,13 @@ func (x *Repo) GetActiveAt() *timestamppb.Timestamp {
 		return x.ActiveAt
 	}
 	return nil
+}
+
+func (x *Repo) GetArchived() bool {
+	if x != nil {
+		return x.Archived
+	}
+	return false
 }
 
 // SchemaVersion is stored under the key "meta/schema".
@@ -349,7 +357,7 @@ var File_ermite_storage_repo_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_repo_proto_rawDesc = "" +
 	"\n" +
-	"\x19ermite/storage/repo.proto\x12\x0eermite.storage\x1a\"ermite/storage/merge_request.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf7\x02\n" +
+	"\x19ermite/storage/repo.proto\x12\x0eermite.storage\x1a\"ermite/storage/merge_request.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x03\n" +
 	"\x04Repo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12:\n" +
@@ -361,7 +369,8 @@ const file_ermite_storage_repo_proto_rawDesc = "" +
 	"\tpushed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bpushedAt\x128\n" +
 	"\bsettings\x18\x06 \x01(\v2\x1c.ermite.storage.RepoSettingsR\bsettings\x12\x16\n" +
 	"\x06topics\x18\a \x03(\tR\x06topics\x127\n" +
-	"\tactive_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bactiveAt\")\n" +
+	"\tactive_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bactiveAt\x12\x1a\n" +
+	"\barchived\x18\t \x01(\bR\barchived\")\n" +
 	"\rSchemaVersion\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\"\xcc\x02\n" +
 	"\x05Token\x12\x0e\n" +

@@ -402,7 +402,7 @@ func (s *AutoMerge) retryDone(key domain.RepoName) {
 }
 
 func enablerCanMerge(ctx context.Context, tokens ports.TokenStore, intent *domain.AutoMerge, mr domain.MergeRequest, now time.Time) (domain.Principal, error) {
-	fresh, valid, err := principalOfPusher(ctx, tokens, intent.EnabledBy, now)
+	fresh, valid, err := principalOfPusher(ctx, tokens, intent.EnabledBy, mr.Repo, now)
 	if err != nil {
 		return domain.Principal{}, err
 	}

@@ -296,6 +296,30 @@ type IssuePendingRemoved struct {
 // EventKind implements Event.
 func (IssuePendingRemoved) EventKind() string { return "issue.pending_removed" }
 
+// DependencyUpdatesFound is published when a dependency check finds updates
+// absent from the previous check. Count is the number of new ones. It carries
+// no version details and is delivered to the owner topic only.
+type DependencyUpdatesFound struct {
+	Repo  RepoName
+	Count int
+	At    time.Time
+}
+
+// EventKind implements Event.
+func (DependencyUpdatesFound) EventKind() string { return "deps.updates_found" }
+
+// DependencyUpdatesChanged is published after a Bernard record changed in any
+// way the owner sees: updates, state, merge request, ignore or snooze. It
+// carries no details, goes to the owner topic of the internal bus only and has
+// no API representation: it is a signal for the web live view to refresh.
+type DependencyUpdatesChanged struct {
+	Repo RepoName
+	At   time.Time
+}
+
+// EventKind implements Event.
+func (DependencyUpdatesChanged) EventKind() string { return "deps.changed" }
+
 // CommentEdited is published when the text of a note was edited.
 type CommentEdited struct {
 	Repo       RepoName

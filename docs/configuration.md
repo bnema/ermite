@@ -57,6 +57,17 @@ The default lets crawlers index the home page, repository summaries, issues, mer
 | `ERMITE_CI_ARTIFACT_QUOTA` | `10GiB` | artifact space per repository, uploads in progress included. Bytes or `KiB`, `MiB`, `GiB`, `TiB` |
 | `ERMITE_CI_ARTIFACT_MAX` | `5GiB` | size of one artifact |
 
+## Bernard
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ERMITE_DEPS_ENABLED` | `1` | `0` turns Bernard's dependency checks off |
+| `ERMITE_DEPS_CHECK_AT` | `0 6 * * *` | Bernard checks dependencies daily at 06:00 UTC by default; a five-field cron expression, evaluated in UTC |
+| `ERMITE_DEPS_COOLDOWN` | `72h` | Bernard waits this long after a release before proposing it. Go duration, above zero |
+| `ERMITE_DEPS_SNOOZE` | `168h` | Bernard stays quiet this long about an update that was declined. Go duration, above zero |
+| `ERMITE_DEPS_JOB_TIMEOUT` | `10m` | Bernard stops a dependency check job after this time. Go duration, above zero |
+| `ERMITE_DEPS_RUNNER_LABEL` | `ubuntu-latest` | runner label Bernard's check jobs ask for, not empty |
+
 ### `ERMITE_SECRETS_KEY`
 
 ```sh

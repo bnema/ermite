@@ -482,7 +482,9 @@ type RegisteredRunner struct {
 
 // RunnerJob is a job given to a runner.
 type RunnerJob struct {
-	Job   domain.CIJob
+	Job domain.CIJob
+	// Deps identifies a dependency update job; nil for workflow jobs.
+	Deps  *DepsJob
 	Token string
 	// GithubToken is the job repository token, the "github.token" of the job.
 	GithubToken  string
@@ -534,6 +536,8 @@ func (j RunnerJob) GoString() string { return j.String() }
 
 // FetchJobParams selects the job a runner asks for.
 type FetchJobParams struct {
+	// Kinds are the supported job kinds; empty means workflow only.
+	Kinds  []string
 	Labels []string
 	PollID string
 	// Version is the version of the running runner, "" from an older runner.
@@ -562,6 +566,8 @@ type StepUpdate struct {
 
 // CompleteJobParams end a job.
 type CompleteJobParams struct {
+	// DepsReport is present only for a deps job.
+	DepsReport     *DepsReport
 	JobID          string
 	Conclusion     domain.CIConclusion
 	Outputs        map[string]string

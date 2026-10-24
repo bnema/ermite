@@ -35,6 +35,7 @@ type fakeAPI struct {
 	ermiteconnect.UnimplementedSessionServiceHandler
 	ermiteconnect.UnimplementedRunServiceHandler
 	ermiteconnect.UnimplementedTrustedKeyServiceHandler
+	ermiteconnect.UnimplementedDepsServiceHandler
 
 	runners []*ermite.Runner // ListRunners answer; nil means one default runner
 
@@ -81,6 +82,12 @@ type fakeAPI struct {
 	listTrustedKeys  func(*ermite.ListTrustedKeysRequest) (*ermite.ListTrustedKeysResponse, error)
 	addTrustedKey    func(*ermite.AddTrustedKeyRequest) (*ermite.AddTrustedKeyResponse, error)
 	removeTrustedKey func(*ermite.RemoveTrustedKeyRequest) (*ermite.RemoveTrustedKeyResponse, error)
+
+	listDeps   func(*ermite.ListDependencyUpdatesRequest) (*ermite.ListDependencyUpdatesResponse, error)
+	checkDeps  func(*ermite.CheckDependenciesRequest) (*ermite.CheckDependenciesResponse, error)
+	openDeps   func(*ermite.OpenDependencyUpdatesRequest) (*ermite.OpenDependencyUpdatesResponse, error)
+	ignoreDeps func(*ermite.IgnoreDependencyUpdatesRequest) (*ermite.IgnoreDependencyUpdatesResponse, error)
+	snoozeDeps func(*ermite.SnoozeDependencyUpdatesRequest) (*ermite.SnoozeDependencyUpdatesResponse, error)
 }
 
 func (f *fakeAPI) record(name string, h http.Header, req any) {
@@ -236,6 +243,8 @@ func (f *fakeAPI) serve(t *testing.T) string {
 	mount(p, h)
 	p, h = ermiteconnect.NewTrustedKeyServiceHandler(f)
 	mount(p, h)
+	p, h = ermiteconnect.NewDepsServiceHandler(f)
+	mount(p, h)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -309,4 +318,20 @@ func (f *fakeAPI) EditIssue(_ context.Context, r *connect.Request[ermite.EditIss
 }
 func (f *fakeAPI) EditMergeRequest(_ context.Context, r *connect.Request[ermite.EditMergeRequestRequest]) (*connect.Response[ermite.EditMergeRequestResponse], error) {
 	return respond(f, "EditMergeRequest", r, f.editMR)
+}
+
+func (f *fakeAPI) ListDependencyUpdates(_ context.Context, r *connect.Request[ermite.ListDependencyUpdatesRequest]) (*connect.Response[ermite.ListDependencyUpdatesResponse], error) {
+	return respond(f, "ListDependencyUpdates", r, f.listDeps)
+}
+func (f *fakeAPI) CheckDependencies(_ context.Context, r *connect.Request[ermite.CheckDependenciesRequest]) (*connect.Response[ermite.CheckDependenciesResponse], error) {
+	return respond(f, "CheckDependencies", r, f.checkDeps)
+}
+func (f *fakeAPI) OpenDependencyUpdates(_ context.Context, r *connect.Request[ermite.OpenDependencyUpdatesRequest]) (*connect.Response[ermite.OpenDependencyUpdatesResponse], error) {
+	return respond(f, "OpenDependencyUpdates", r, f.openDeps)
+}
+func (f *fakeAPI) IgnoreDependencyUpdates(_ context.Context, r *connect.Request[ermite.IgnoreDependencyUpdatesRequest]) (*connect.Response[ermite.IgnoreDependencyUpdatesResponse], error) {
+	return respond(f, "IgnoreDependencyUpdates", r, f.ignoreDeps)
+}
+func (f *fakeAPI) SnoozeDependencyUpdates(_ context.Context, r *connect.Request[ermite.SnoozeDependencyUpdatesRequest]) (*connect.Response[ermite.SnoozeDependencyUpdatesResponse], error) {
+	return respond(f, "SnoozeDependencyUpdates", r, f.snoozeDeps)
 }

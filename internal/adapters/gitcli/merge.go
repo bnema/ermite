@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -257,4 +259,131 @@ func (g *Git) DeleteBranch(ctx context.Context, repo domain.RepoName, branch str
 		return fmt.Errorf("branch %q of %q is at %s, not %s: %w", branch, repo, cur, old, domain.ErrConflict)
 	}
 	return fmt.Errorf("delete branch %q of %q: %w", branch, repo, err)
+}
+
+// WriteTree builds the tree in a throwaway index: `read-tree base`, a check of
+// the mode of every path with `ls-files -s` (an absent path becomes a new
+// 100644 file when no ancestor is a non-directory entry), `hash-object -w` of the new
+// content, `update-index --cacheinfo`, then `write-tree`. The index lives in a
+// temporary directory that is removed afterwards; the repository's own index,
+// refs and worktree are not touched.
+func (g *Git) WriteTree(ctx context.Context, repo domain.RepoName, base domain.ObjectID, changes map[domain.TreePath][]byte) (domain.ObjectID, error) {
+	dir, err := g.repoDir(repo)
+	if err != nil {
+		return domain.ObjectID{}, err
+	}
+	if base.IsZero() {
+		return domain.ObjectID{}, fmt.Errorf("write tree in %q: no base: %w", repo, domain.ErrInvalid)
+	}
+	tmp, err := os.MkdirTemp("", "ermite-index-")
+	if err != nil {
+		return domain.ObjectID{}, fmt.Errorf("write tree in %q: %w", repo, err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	idx := []string{"GIT_INDEX_FILE=" + filepath.Join(tmp, "index")}
+	gitDir := "--git-dir=" + dir
+	runIdx := func(stdin io.Reader, args ...string) (string, error) {
+		return g.runCaptureEnv(ctx, idx, stdin, append([]string{gitDir, "--literal-pathspecs"}, args...)...)
+	}
+
+	if _, err := runIdx(nil, "read-tree", base.String()); err != nil {
+		return domain.ObjectID{}, fmt.Errorf("read tree %s of %q: %w", base, repo, err)
+	}
+	modes, err := fileModes(changes, func(p string) (string, error) {
+		return runIdx(nil, "ls-files", "-s", "-z", "--", p)
+	})
+	if err != nil {
+		return domain.ObjectID{}, fmt.Errorf("write tree in %q: %w", repo, err)
+	}
+	for p, content := range changes {
+		out, err := g.runInput(ctx, bytes.NewReader(content), gitDir, "hash-object", "-t", "blob", "-w", "--stdin")
+		if err != nil {
+			return domain.ObjectID{}, fmt.Errorf("write blob of %q in %q: %w", p, repo, err)
+		}
+		blob, err := parseID(out)
+		if err != nil {
+			return domain.ObjectID{}, err
+		}
+		if _, err := runIdx(nil, "update-index", "--add", "--cacheinfo", modes[p]+","+blob.String()+","+p.String()); err != nil {
+			return domain.ObjectID{}, fmt.Errorf("update %q in %q: %w", p, repo, err)
+		}
+	}
+	out, err := runIdx(nil, "write-tree")
+	if err != nil {
+		return domain.ObjectID{}, fmt.Errorf("write tree in %q: %w", repo, err)
+	}
+	return parseID(out)
+}
+
+// fileModes returns the mode of every changed path, looked up with lookup
+// (the `ls-files -s -z` output of a literal path), or an error when one is not
+// a regular file.
+func fileModes(changes map[domain.TreePath][]byte, lookup func(path string) (string, error)) (map[domain.TreePath]string, error) {
+	modes := make(map[domain.TreePath]string, len(changes))
+	for p := range changes {
+		if p.String() == "" {
+			return nil, fmt.Errorf("the root is not a file: %w", domain.ErrInvalid)
+		}
+		out, err := lookup(p.String())
+		if err != nil {
+			return nil, fmt.Errorf("look up %q: %w", p, err)
+		}
+		if out == "" {
+			// A new file: no parent may be an entry other than a directory.
+			if err := checkParents(p.String(), lookup); err != nil {
+				return nil, err
+			}
+			modes[p] = "100644"
+			continue
+		}
+		if modes[p], err = regularFileMode(out, p.String()); err != nil {
+			return nil, err
+		}
+	}
+	return modes, nil
+}
+
+// checkParents verifies that no proper ancestor of path is itself an entry
+// (a file, symlink or submodule): an ancestor is either a directory of the
+// base (entries below it) or absent.
+func checkParents(path string, lookup func(path string) (string, error)) error {
+	for i := 0; i < len(path); i++ {
+		if path[i] != '/' {
+			continue
+		}
+		parent := path[:i]
+		out, err := lookup(parent)
+		if err != nil {
+			return fmt.Errorf("look up %q: %w", parent, err)
+		}
+		for _, e := range strings.Split(strings.TrimSuffix(out, "\x00"), "\x00") {
+			if _, name, ok := strings.Cut(e, "\t"); ok && name == parent {
+				return fmt.Errorf("%q is below %q, which is not a directory: %w", path, parent, domain.ErrInvalid)
+			}
+		}
+	}
+	return nil
+}
+
+// regularFileMode reads the `ls-files -s -z` output for one literal path and
+// returns its mode when it is exactly one regular or executable file.
+func regularFileMode(out, path string) (string, error) {
+	entries := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
+	if out == "" {
+		return "", fmt.Errorf("%q does not exist: %w", path, domain.ErrInvalid)
+	}
+	meta, name, ok := strings.Cut(entries[0], "\t")
+	if len(entries) != 1 || !ok || name != path {
+		// Several entries, or entries below it: a directory.
+		return "", fmt.Errorf("%q is not a file: %w", path, domain.ErrInvalid)
+	}
+	fields := strings.Fields(meta)
+	if len(fields) != 3 || fields[2] != "0" {
+		return "", fmt.Errorf("%q is not a plain entry: %w", path, domain.ErrInvalid)
+	}
+	switch fields[0] {
+	case "100644", "100755":
+		return fields[0], nil
+	}
+	return "", fmt.Errorf("%q is not a regular file (mode %s): %w", path, fields[0], domain.ErrInvalid)
 }

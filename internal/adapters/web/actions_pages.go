@@ -380,7 +380,7 @@ func (s *Server) runPage(ctx context.Context, d *repoData, id int64, attempt int
 		base := runHref(d.name(), id)
 		if p.Active {
 			p.CancelAction = base + "/cancel"
-		} else if len(detail.Jobs) > 0 {
+		} else if len(detail.Jobs) > 0 && !d.repo.Archived {
 			p.RerunAction = base + "/rerun"
 			for _, j := range detail.Jobs {
 				if j.Conclusion.IsFailure() || j.Conclusion == domain.CICancelled {
