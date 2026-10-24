@@ -122,6 +122,7 @@
     refresh();
     return { refresh, choose, close };
   }
-  window.ermiteRail = { mount };
+  // Not ermiteRail: ermite.js owns that name for the keys of the rail.
+  window.ermiteRailDrawer = { mount };
   document.querySelectorAll('.work > .rail').forEach(mount);
 })();

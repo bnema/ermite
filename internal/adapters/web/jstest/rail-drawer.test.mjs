@@ -31,12 +31,15 @@ function setup() {
   rail.append(section('about', 'About'), section('files', 'Files 12'));
   document = { body, createElement: t => new Element(t), querySelectorAll: () => [], addEventListener(k, fn) { this[k] = fn; } };
   const media = { matches: true, addEventListener(k, fn) { this.change = fn; } };
-  const window = {};
+  // ermite.js defines ermiteRail (the keys of the rail) before this file runs.
+  const keys = { step() {} };
+  const window = { ermiteRail: keys };
   vm.runInNewContext(readFileSync(new URL('../static/js/rail.js', import.meta.url), 'utf8'), {
     window, document, matchMedia: () => media,
     MutationObserver: class { constructor(fn) { observer = fn; } observe() {} },
   });
-  const api = window.ermiteRail.mount(rail);
+  assert.equal(window.ermiteRail, keys, 'the drawer must not replace the keys of the rail');
+  const api = window.ermiteRailDrawer.mount(rail);
   return { api, rail, bar: work.children[0], header: rail.children[0], main, document, media, section, refresh: () => observer(), backdrop: body.children.at(-1) };
 }
 

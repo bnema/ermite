@@ -4,13 +4,26 @@
   @media (max-width: 1080px) {
     .work > .rail-tabs {
       display: flex; position: sticky; top: var(--hdr-h); z-index: 19;
-      min-width: 0; margin-block: calc(-1 * var(--s2));
+      /* a band from edge to edge, out of the padding of .work: the gap of
+         the grid is the only space, and it comes after the band */
+      grid-column: 1 / -1; min-width: 0; margin-inline: calc(-1 * var(--pad));
       background: var(--bg-surface); border-block: 1px solid var(--border);
     }
+    /* first in .work (no description above): it meets the header */
+    .work:has(> .rail-tabs:first-child:not([hidden])) { padding-top: 0; }
+    .work > .rail-tabs:first-child { border-top: 0; }
     .rail-tabs {
       gap: var(--s1); padding: var(--s2); overflow-x: auto; overscroll-behavior-x: contain;
-      & .btn { flex: none; min-height: 40px; border-color: transparent; background: transparent; }
-      & .btn[aria-expanded="true"] { color: var(--ink-hi); border-bottom-color: var(--accent); background: var(--bg-raised); }
+      /* real buttons that share the bar: they grow to fill it (one section
+         alone is a full-width button) and a chevron says they open a panel.
+         The open one is pressed: stronger fill and border, its chevron up. */
+      & .btn { flex: 1 0 auto; justify-content: center; min-height: 40px; }
+      & .btn::after {
+        content: ""; width: 14px; height: 14px; flex: none; background: currentColor;
+        mask: url(icons/chevron.svg) center / contain no-repeat; opacity: .7;
+      }
+      & .btn[aria-expanded="true"] { color: var(--ink-hi); background: var(--bg-strong); border-color: var(--ink-mute); }
+      & .btn[aria-expanded="true"]::after { transform: rotate(180deg); opacity: 1; }
     }
     .work > .rail-tabs[hidden] { display: none; }
     .rail[data-drawer] { display: none; }
