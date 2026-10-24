@@ -312,11 +312,12 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 	refs := s.referenceResolver(ctx, d.name())
 	for _, c := range res.Comments {
 		v := CommentView{
-			createdAt: c.CreatedAt, ID: strconv.FormatInt(c.ID, 10), Author: s.who(c.Author), Parts: plainParts(c.Text.String()),
+			createdAt: c.CreatedAt, ID: strconv.FormatInt(c.ID, 10), Author: s.who(c.Author),
 		}
 		if body, err := s.md.renderNote([]byte(c.Text.String()), d.name(), d.repo.DefaultBranch, "c"+v.ID+"-", refs); err == nil {
 			v.Body = body
-			v.Parts = nil
+		} else {
+			v.Parts = plainParts(c.Text.String())
 		}
 		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
 		if !c.CreatedAt.IsZero() {

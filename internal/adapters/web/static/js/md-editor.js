@@ -37,10 +37,19 @@ window.ermiteMdEditor = (() => {
       return prefix + (cls ? '<span class="md-' + cls + '">' + out + '</span>' : out);
     }).join('\n');
   }
-  const formats = {bold: ['**','**'], italic: ['*','*'], code: ['`','`'], fence: ['```\n','\n```'], link: ['[','](url)']};
+  const formats = {bold: ['**','**'], italic: ['*','*'], code: ['`','`'], link: ['[','](url)']};
   const prefixes = {heading: '## ', quote: '> ', bullet: '- ', number: '1. ', task: '- [ ] '};
   const blockPatterns = {heading: /^#{1,6} /, quote: /^> /, bullet: /^[-+*] /, number: /^\d+\. /, task: /^- \[[ xX]\] /};
   function format(value, start, end, kind) {
+    if (kind === 'fence') {
+      const sel = value.slice(start,end);
+      if (sel.length >= 8 && sel.startsWith('```\n') && sel.endsWith('\n```')) return {start,end,text:sel.slice(4,-4),select:[start,end-8]};
+      // Fences sit on their own lines, whatever surrounds the selection.
+      const lead = start > 0 && value[start-1] !== '\n' ? '\n' : '';
+      const tail = end < value.length && value[end] !== '\n' ? '\n' : '';
+      const open = lead+'```\n', body = value.slice(start,end);
+      return {start,end,text:open+body+'\n```'+tail,select:[start+open.length,start+open.length+body.length]};
+    }
     if (formats[kind]) {
       const [a,b] = formats[kind];
       if (value.slice(start, end).startsWith(a) && value.slice(start, end).endsWith(b) && end-start >= a.length+b.length) {
@@ -65,7 +74,9 @@ window.ermiteMdEditor = (() => {
     const beginning = start === 0 ? 0 : value.lastIndexOf('\n',start-1)+1;
     const m = list.exec(value.slice(beginning,start));
     if (!m) return null;
-    if (!m[5].trim()) return {start:beginning,end:start,text:''};
+    const rest = value.indexOf('\n',start);
+    // Only an item empty on both sides of the caret ends the list.
+    if (!m[5].trim() && !value.slice(start, rest < 0 ? value.length : rest).trim()) return {start:beginning,end:start,text:''};
     const bullet = /^\d/.test(m[2]) ? (Number.parseInt(m[2],10)+1)+'.' : m[2];
     return {start,end:start,text:'\n'+m[1]+bullet+' '+(m[4] ? '[ ] ' : '')};
   }

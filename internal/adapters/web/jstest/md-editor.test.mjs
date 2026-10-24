@@ -13,6 +13,15 @@ test('inline formats wrap and unwrap selected text and adjacent markers',()=>{
   assert.equal(changed('**hello**',2,7,'bold'),'hello');
   assert.deepEqual(C.format('',0,0,'bold').select,[2,2]);
 });
+test('a code block puts its fences on their own lines',()=>{
+  assert.equal(changed('before word after',7,11,'fence'),'before \n```\nword\n```\n after');
+  assert.equal(changed('a\nword\nb',2,6,'fence'),'a\n```\nword\n```\nb');
+});
+test('Enter right after the marker of a non-empty item splits it, keeping the list',()=>{
+  for (const [s,at,want] of [['- abc',2,'\n- '],['1. abc',3,'\n2. '],['- [x] abc',6,'\n- [ ] ']]) {
+    assert.equal(C.continuation(s,at).text,want);
+  }
+});
 test('block formats toggle whole selected lines, not the next line',()=>{
   for (const k of ['heading','quote','bullet','number','task']) {
     const wrapped=changed('one\ntwo',0,7,k);
