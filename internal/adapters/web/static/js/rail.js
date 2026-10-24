@@ -7,22 +7,22 @@
       el.className = cls;
       return el;
     };
+    // One row of tabs: the bar on top stays above the backdrop while the
+    // drawer is open and switches its section, so the drawer repeats none.
     const bar = make('nav', 'rail-tabs');
-    const header = make('div', 'rail-drawer-head');
-    const tabs = make('nav', 'rail-tabs');
-    const closeButton = make('button', 'btn');
+    bar.setAttribute('aria-label', 'Context sections');
+    const closeButton = make('button', 'btn rail-close');
     closeButton.type = 'button';
-    closeButton.textContent = 'Close';
+    closeButton.textContent = '×';
+    closeButton.setAttribute('aria-label', 'Close');
     const backdrop = make('div', 'rail-backdrop');
     backdrop.setAttribute('aria-hidden', 'true');
-    for (const nav of [bar, tabs]) nav.setAttribute('aria-label', 'Context sections');
-    header.append(tabs, closeButton);
-    rail.prepend(header);
+    rail.prepend(closeButton);
     // First in the page, above the description: it meets the header.
     rail.parentNode.prepend(bar);
     document.body.append(backdrop);
     let sections = [], selected = null, opener = null, signature = '', inert = [], serial = 0;
-    const buttons = () => [...bar.children, ...tabs.children];
+    const buttons = () => [...bar.children];
     function paint() {
       const open = mobile.matches && selected !== null;
       rail.toggleAttribute('data-drawer-open', open);
@@ -32,7 +32,6 @@
     function close(restore = true) {
       selected = null;
       rail.removeAttribute('role');
-      rail.removeAttribute('aria-modal');
       for (const [el, was] of inert) el.inert = was;
       inert = [];
       document.body.classList.remove('rail-open');
@@ -47,7 +46,7 @@
         // Inert the branches outside the aside, without moving swap targets.
         for (let node = rail; node.parentElement; node = node.parentElement) {
           for (const sibling of node.parentElement.children) {
-            if (sibling === node || sibling === backdrop) continue;
+            if (sibling === node || sibling === backdrop || sibling === bar) continue;
             inert.push([sibling, sibling.inert]);
             sibling.inert = true;
           }
@@ -55,11 +54,13 @@
         }
       }
       selected = id;
+      // A dialog, not a modal one: the bar of tabs above it stays usable.
       rail.setAttribute('role', 'dialog');
-      rail.setAttribute('aria-modal', 'true');
+      rail.setAttribute('aria-label', button?.textContent || 'Context');
       document.body.classList.add('rail-open');
       paint();
-      [...tabs.children].find(b => b.getAttribute('aria-controls') === id)?.focus();
+      // The focus stays on the tab that was pressed: the next tap, Tab or
+      // Escape acts from there.
     }
     function refresh() {
       sections = [...rail.children].filter(el => el.tagName === 'SECTION' && el.querySelector('h2'));
@@ -76,21 +77,19 @@
       const next = JSON.stringify(sections.map((s, i) => [s.id, labels[i]]));
       if (signature !== next) {
         signature = next;
-        const focusedTab = tabs.contains(document.activeElement);
+        const focusedTab = bar.contains(document.activeElement);
         const openerID = opener?.getAttribute('aria-controls');
-        for (const nav of [bar, tabs]) {
-          nav.replaceChildren();
-          sections.forEach((section, i) => {
-            const button = make('button', 'btn');
-            button.type = 'button';
-            button.textContent = labels[i];
-            button.setAttribute('aria-controls', section.id);
-            button.addEventListener('click', () => choose(section.id, button));
-            nav.append(button);
-          });
-        }
+        bar.replaceChildren();
+        sections.forEach((section, i) => {
+          const button = make('button', 'btn');
+          button.type = 'button';
+          button.textContent = labels[i];
+          button.setAttribute('aria-controls', section.id);
+          button.addEventListener('click', () => choose(section.id, button));
+          bar.append(button);
+        });
         opener = [...bar.children].find(b => b.getAttribute('aria-controls') === openerID) || bar.children[0];
-        if (focusedTab && selected) [...tabs.children].find(b => b.getAttribute('aria-controls') === selected)?.focus();
+        if (focusedTab && selected) [...bar.children].find(b => b.getAttribute('aria-controls') === selected)?.focus();
       }
       if (selected && !sections.some(s => s.id === selected)) close();
       bar.hidden = !sections.length;
@@ -108,12 +107,6 @@
         e.preventDefault();
         e.stopImmediatePropagation();
         close();
-      } else if (e.key === 'Tab') {
-        const focusable = [...rail.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')]
-          .filter(el => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
-        const first = focusable[0], last = focusable.at(-1);
-        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     }, true);
     mobile.addEventListener('change', () => close(false));

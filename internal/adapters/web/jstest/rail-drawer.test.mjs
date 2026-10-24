@@ -40,20 +40,23 @@ function setup() {
   });
   assert.equal(window.ermiteRail, keys, 'the drawer must not replace the keys of the rail');
   const api = window.ermiteRailDrawer.mount(rail);
-  return { api, rail, bar: work.children[0], header: rail.children[0], main, document, media, section, refresh: () => observer(), backdrop: body.children.at(-1) };
+  return { api, rail, bar: work.children[0], closeButton: rail.children[0], main, document, media, section, refresh: () => observer(), backdrop: body.children.at(-1) };
 }
 
 test('builds labels and controls without moving sections; opens, switches and closes', () => {
-  const { rail, bar, header, main, document } = setup();
+  const { rail, bar, main, document } = setup();
   assert.deepEqual(bar.children.map(b => b.textContent), ['About', 'Files 12']);
   assert.equal(bar.children[1].getAttribute('aria-controls'), 'files');
+  assert.equal(rail.children.filter(el => el.className === 'rail-tabs').length, 0, 'the drawer repeats no tabs');
   bar.children[0].events.click();
   assert.equal(rail.getAttribute('role'), 'dialog');
+  assert.equal(rail.getAttribute('aria-label'), 'About');
   assert.equal(main.inert, true);
-  assert.equal(document.activeElement, header.children[0].children[0]);
-  header.children[0].children[1].events.click();
+  assert.equal(bar.inert, false, 'the bar of tabs stays usable above the drawer');
+  // The bar on top switches the section, then closes it.
+  bar.children[1].events.click();
   assert.equal(rail.children[2].getAttribute('data-rail-selected'), '');
-  header.children[0].children[1].events.click();
+  bar.children[1].events.click();
   assert.equal(rail.getAttribute('data-drawer-open'), undefined);
   assert.equal(main.inert, false);
   assert.equal(document.activeElement, bar.children[0]);
@@ -61,7 +64,7 @@ test('builds labels and controls without moving sections; opens, switches and cl
 
 test('close button, backdrop, Escape and breakpoint close the drawer', () => {
   const s = setup();
-  for (const close of [() => s.header.children[1].events.click(), () => s.backdrop.events.click(),
+  for (const close of [() => s.closeButton.events.click(), () => s.backdrop.events.click(),
     () => s.document.keydown({ key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} }),
     () => { s.media.matches = false; s.media.change(); }]) {
     s.bar.children[0].events.click(); close();

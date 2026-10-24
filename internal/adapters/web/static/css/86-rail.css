@@ -1,5 +1,5 @@
 @layer components {
-  .rail-tabs, .rail-drawer-head, .rail-backdrop { display: none; }
+  .rail-tabs, .rail-close, .rail-backdrop { display: none; }
 
   @media (max-width: 1080px) {
     .work > .rail-tabs {
@@ -35,13 +35,14 @@
       border-radius: var(--r) var(--r) 0 0; box-shadow: var(--shadow);
     }
     .rail[data-drawer] > section:not([data-rail-selected]) { display: none; }
-    .rail-drawer-head {
-      display: flex; align-items: center; position: sticky; top: 0; z-index: 1;
-      gap: var(--s2); padding-right: var(--s2); background: var(--bg-surface);
-      border-bottom: 1px solid var(--border);
-      & .rail-tabs { display: flex; flex: 1; min-width: 0; }
-      & > .btn { flex: none; min-height: 40px; }
+    /* the close button sits in the corner of the section title, and stays
+       there while the section scrolls */
+    .rail[data-drawer-open] > .rail-close {
+      display: inline-flex; justify-content: center; position: sticky; top: var(--s2); z-index: 1;
+      float: right; width: 32px; padding: 0; margin: var(--s2) var(--s2) 0 0; font-size: 18px;
     }
+    /* the bar of tabs stays above the backdrop: it switches the section */
+    .rail-open .work > .rail-tabs { z-index: 42; }
     .rail-open { overflow: hidden; }
     .rail-open > .rail-backdrop {
       display: block; position: fixed; inset: 0; z-index: 40;
