@@ -122,7 +122,10 @@ func newHarnessWith(t *testing.T, o harnessOpts, tweak func(*options)) *harness 
 		h.srv.Close()
 		cancel()
 		select {
-		case <-h.hooksDone:
+		case err := <-h.hooksDone:
+			if err != nil {
+				t.Errorf("hook server stopped with an error: %v", err)
+			}
 		case <-time.After(10 * time.Second):
 			t.Error("hook server did not stop")
 		}

@@ -297,7 +297,8 @@ func TestAC4HooksFailClosed(t *testing.T) {
 	// The hook socket goes away: pre-receive cannot ask ermite and rejects.
 	h.forge.hooks.Close(h.ctx)
 	select {
-	case <-h.hooksDone:
+	case err := <-h.hooksDone:
+		require.NoError(t, err, "hook server stopped with an error")
 	case <-time.After(5 * time.Second):
 		t.Fatal("hook server did not stop")
 	}

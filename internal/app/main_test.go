@@ -363,7 +363,8 @@ func TestSecondServeLeavesRunDirUntouched(t *testing.T) {
 
 	require.NoError(t, first.Process.Signal(syscall.SIGTERM))
 	select {
-	case <-exited:
+	case err := <-exited:
+		require.NoError(t, err, "the first server must exit cleanly")
 	case <-time.After(15 * time.Second):
 		t.Fatal("first server did not stop")
 	}

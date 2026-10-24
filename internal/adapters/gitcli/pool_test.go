@@ -375,7 +375,7 @@ func TestExecSemaphoreBoundsOneShotCommands(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(gate, nil, 0o600))
 	for range 2 {
-		<-errs // their outcome is the version check's, not the subject
+		assert.NoError(t, <-errs, "a check that got a slot finishes once the gate opens")
 	}
 	require.Eventually(t, func() bool { _, taken := g.ExecSlots(); return taken == 0 }, 5*time.Second, time.Millisecond)
 }

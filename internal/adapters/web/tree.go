@@ -24,7 +24,9 @@ const (
 type TreeRow struct {
 	Kind string // kindDir, kindFile, kindLink or kindModule
 	Name string
-	Path string // repository-relative path, stable across row fetches
+	// Path is the URL-escaped repository-relative path: a stable key across row
+	// fetches that never carries a raw control or bidi character into the page.
+	Path string
 	Href string // "" for a submodule
 	// Expand is the URL of the rows of a directory (Href?rows); "" for any
 	// other entry.
@@ -95,7 +97,7 @@ func (s *Server) tree(ctx context.Context, r *http.Request) (templ.Component, in
 		p.Path = visibleText(t.path) + "/"
 	}
 	for i, e := range entries {
-		row := TreeRow{Kind: kindFile, Path: e.Path, Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0 && !rowsOnly}
+		row := TreeRow{Kind: kindFile, Path: escapePath(e.Path), Name: visibleText(e.Name), Size: humanSize(e.Size), Cursor: i == 0 && !rowsOnly}
 		switch e.Kind {
 		case domain.EntryDirectory:
 			row.Kind, row.Hint, row.Name, row.Size = kindDir, "directory", row.Name+"/", ""

@@ -377,12 +377,13 @@ func TestWebMergeRequestReviewAndFastForward(t *testing.T) {
 	late := b.form(base+"/comments", token, url.Values{"text": {"too late"}})
 	assert.Equal(t, http.StatusConflict, late.status)
 	assert.Equal(t, http.StatusConflict, b.form(base+"/close", token, nil).status)
-	list := b.get("/proj/merge-requests", nil)
+	list := b.get("/proj/merge-requests?state=done", nil)
 	assert.Contains(t, list.body, "Merged and closed")
 	assert.Regexp(t, `(?s)Merged and closed.*Add search`, list.body)
+	assert.NotContains(t, b.get("/proj/merge-requests", nil).body, "Add search", "the open tab lists open requests only")
 }
 
-// Squash and close, and the order of the list: open first, then the decided.
+// Squash and close, and the list tabs: open requests apart from the decided.
 func TestWebMergeRequestSquashCloseAndList(t *testing.T) {
 	r := newMRRepo(t, domain.VisibilityPublic)
 	b := browser{r.harness}
@@ -429,13 +430,16 @@ func TestWebMergeRequestSquashCloseAndList(t *testing.T) {
 	assert.NotContains(t, closed.body, "<form")
 	assert.Equal(t, http.StatusConflict, b.form("/proj/merge-requests/2/close", token, nil).status, "closing twice says so")
 
-	// Open one first, then merged and closed ones, newest first within each.
-	list := b.get("/proj/merge-requests", nil).body
-	third, squash, other := strings.Index(list, "Third change"), strings.Index(list, "Squash me"), strings.Index(list, "Other change")
-	require.True(t, third >= 0 && squash >= 0 && other >= 0, list)
-	assert.Less(t, third, squash, "the open request comes first")
-	assert.Less(t, third, other)
-	assert.Less(t, strings.Index(list, ">Open<"), strings.Index(list, "Merged and closed"))
+	// The open tab lists the open request; the done tab the merged and closed
+	// ones, newest first.
+	open := b.get("/proj/merge-requests", nil).body
+	assert.Contains(t, open, "Third change")
+	assert.NotContains(t, open, "Squash me")
+	assert.NotContains(t, open, "Other change")
+	done := b.get("/proj/merge-requests?state=done", nil).body
+	squash, other := strings.Index(done, "Squash me"), strings.Index(done, "Other change")
+	require.True(t, squash >= 0 && other >= 0, done)
+	assert.NotContains(t, done, "Third change")
 	assert.Less(t, other, squash, "newest first among the decided")
 
 	// A compare page of a branch that is behind says so.

@@ -213,8 +213,8 @@ func TestPathCacheLoadBoundsBuilds(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	assert.False(t, secondBuilt.Load(), "no slot, no build")
 	select {
-	case <-second:
-		t.Fatal("the second load did not wait for a slot")
+	case err := <-second:
+		t.Fatalf("the second load did not wait for a slot (err: %v)", err)
 	default:
 	}
 

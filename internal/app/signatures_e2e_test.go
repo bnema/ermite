@@ -151,7 +151,7 @@ func TestCommitSignaturesEndToEnd(t *testing.T) {
 	assert.Equal(t, pb.SignatureStatus_SIGNATURE_STATUS_VERIFIED, mr.Msg.GetCommits()[0].GetVerification().GetStatus())
 	code, _, body = h.get("/sig/merge-requests/1")
 	require.Equal(t, http.StatusOK, code)
-	assert.Contains(t, body, `<span class="pill sig sig-ok"`)
+	assert.Contains(t, body, `<span class="sig-ico sig-ok"`)
 
 	// Removing the key turns the commit unknown again.
 	_, err = trust.RemoveTrustedKey(ctx, connect.NewRequest(&pb.RemoveTrustedKeyRequest{Id: list.Msg.GetKeys()[1].GetId()}))
