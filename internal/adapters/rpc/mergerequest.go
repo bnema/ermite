@@ -441,3 +441,15 @@ func (s *mergeRequestService) MarkReady(ctx context.Context, req *connect.Reques
 	}
 	return connect.NewResponse(&pb.MarkReadyResponse{MergeRequest: mergeRequestToPB(mr)}), nil
 }
+
+func (s *mergeRequestService) EditMergeRequest(ctx context.Context, req *connect.Request[pb.EditMergeRequestRequest]) (*connect.Response[pb.EditMergeRequestResponse], error) {
+	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	item, err := s.mrs.Edit(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.EditMergeRequestParams{Title: req.Msg.Title, Description: req.Msg.Description})
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.EditMergeRequestResponse{MergeRequest: mergeRequestToPB(item)}), nil
+}

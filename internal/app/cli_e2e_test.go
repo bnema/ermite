@@ -350,7 +350,7 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	ver := decode[versionOut](t, res.stdout)
 	assert.Equal(t, c.url, ver.Server.URL)
 	assert.NotEmpty(t, ver.Server.Version)
-	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready", "releases"}, ver.Server.Features)
+	assert.ElementsMatch(t, []string{"repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready", "releases"}, ver.Server.Features)
 	assert.Equal(t, []string{"passkeys"}, ver.Server.MissingFeatures)
 	stdout, stderr, code = c.bin(t, secret, "version")
 	require.Equal(t, 0, code, stderr)
@@ -537,7 +537,7 @@ func TestIssueResolvedCLIEndToEnd(t *testing.T) {
 	cli := func(args ...string) result { return runCLI(t, env, "", args...).ok(t) }
 	cli("repo", "edit", "proj", "--issues", "owner")
 	cli("issue", "create", "proj", "--title", "Crash")
-	cli("mr", "create", "proj", "--source", "feat", "--title", "Fix crash", "--description", "Fixes #1")
+	runCLI(t, env, "Fixes #1", "mr", "create", "proj", "--source", "feat", "--title", "Fix crash", "--description-file", "-").ok(t)
 	before := cli("mr", "show", "proj", "2")
 	assert.Contains(t, before.stdout, "#1 open Crash · resolves")
 	cli("mr", "merge", "proj", "2", "--head", r.head)

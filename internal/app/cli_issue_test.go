@@ -29,7 +29,7 @@ func TestIssueCreateMapsFlags(t *testing.T) {
 		return &ermite.CreateIssueResponse{Issue: issueOne}, nil
 	}}
 	url := f.serve(t)
-	res := runCLI(t, envFor(url), "", "issue", "create", "alpha", "--title", "Crash on start", "--body", "It crashes.").ok(t)
+	res := runCLI(t, envFor(url), "It crashes.", "issue", "create", "alpha", "--title", "Crash on start", "--body-file", "-").ok(t)
 	assert.Equal(t, "opened alpha#2 (Crash on start)\n"+url+"/alpha/issues/2\n", res.stdout)
 	_, reqs := f.snapshot()
 	got := reqs[1].(*ermite.CreateIssueRequest)
@@ -37,7 +37,7 @@ func TestIssueCreateMapsFlags(t *testing.T) {
 	assert.Equal(t, "Crash on start", got.GetTitle())
 	assert.Equal(t, "It crashes.", got.GetBody())
 
-	runCLI(t, envFor(url), "from\nstdin\n", "issue", "create", "alpha", "--title", "t", "--body", "-").ok(t)
+	runCLI(t, envFor(url), "from\nstdin\n", "issue", "create", "alpha", "--title", "t", "--body-file", "-").ok(t)
 	runCLI(t, envFor(url), "piped\n", "issue", "create", "alpha", "--title", "t", "--body-file", "-").ok(t)
 	file := filepath.Join(t.TempDir(), "body.txt")
 	require.NoError(t, os.WriteFile(file, []byte("from file\n"), 0o600))

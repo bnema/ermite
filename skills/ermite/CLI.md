@@ -58,7 +58,7 @@ The `agent` preset lacks `mr:force-merge`; adding `--scope mr:merge` lets an age
 
 | Command | Scope | Notes |
 |---|---|---|
-| `mr create <repo> --source B --title T [--target B] [--description TEXT\|-]` | `mr:write` | target defaults to the default branch; title of 120 characters max; `-` reads standard input |
+| `mr create <repo> --source B --title T [--target B] [--description-file PATH\|-]` | `mr:write` | target defaults to the default branch; title of 120 characters max; `-` reads standard input |
 | `mr list <repo> [--state open\|merged\|closed\|all] [--json]` | none | default `open` |
 | `mr show <repo> <n> [--diff] [--since-last-read] [--mark-read] [--json]` | `mr:write` for `--mark-read` | commits, changed files and comments; `--diff` adds hunks with line numbers; the `mergeability` line (JSON `mergeability`, null unless open) is `up_to_date`, `behind` (N commits, merges cleanly), `conflict` (paths) or `checking` |
 | `mr comment <repo> <n> -m TEXT\|- [--path P --line N\|A-B --side old\|new] [--reply ID] [--approve\|--request-changes]` | `mr:write`; verdicts `mr:review` | Markdown note (8000 characters max); the lines must be in the current diff on one side; a deleted file uses its old path; `--reply` takes a root note (`12`, `#12` or `^12`), inherits its anchor and cannot carry a verdict; a verdict note may have no message |
@@ -86,7 +86,7 @@ Issues share the numbering of merge requests and must be enabled per repository:
 
 | Command | Scope | Notes |
 |---|---|---|
-| `issue create <repo> --title T [--body TEXT\|-] [--body-file F\|-]` | `issue:write` | title of 120 characters max |
+| `issue create <repo> --title T [--body-file PATH\|-]` | `issue:write` | title of 120 characters max |
 | `issue list <repo> [--state open\|closed\|resolved\|all] [--json]` | read access (public repository, or `repo:read` on a private one) | default `open`; `issue:write` alone does not grant reading |
 | `issue show <repo> <n> [--json]` | read access (public repository, or `repo:read` on a private one) | issue, comments and history; `issue:write` alone does not grant reading |
 | `issue comment <repo> <n> -m TEXT\|-` | `issue:write` | |
@@ -164,3 +164,16 @@ Workflow JSON: `repo`, `file` (always `.github/workflows/<file>`), `name` (the `
 | `web passkey remove <id>` | removes a passkey and signs every browser out; the id comes from `list` |
 
 Adding a passkey is a browser action (`/-/passkeys` once signed in); agents do not use passkeys.
+
+### Edit issue and merge request text
+
+| Command | Scope | Notes |
+| --- | --- | --- |
+| `issue edit <repo> <number> [--title T] [--body-file PATH\|-]` | `issue:write` | open, closed or resolved; pending rejected |
+| `mr edit <repo> <number> [--title T] [--description-file PATH\|-]` | `mr:write` | open or closed; merged rejected |
+
+Supply at least one flag. Text comes only from a file (1 MiB limit); `-` reads stdin and an empty file clears the text. Omitted fields stay unchanged. Both commands support `--json` and otherwise print “Edited” and the URL. Identical values preserve `updated_at`. Issue history includes `edited` and `changed_fields` (`title`, `body`).
+
+Text edits publish dedicated `issue_edited` and `merge_request_edited` live events, not comment events. `ermite watch` shows the repository, item number and `changed_fields` (`title`/`body` or `title`/`description`); unknown event kinds are ignored.
+
+Issue and merge request creation accept body/description text only from files: `issue create <repo> --title T [--body-file PATH|-]` and `mr create <repo> --source B --title T [--description-file PATH|-]`. Both file flags are optional; omitting them creates empty text. `-` reads stdin, with a 1 MiB limit shared with edit commands. Inline `--body` and `--description` are not accepted for these commands. Repository descriptions remain inline.

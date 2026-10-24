@@ -94,6 +94,8 @@ const (
 	IssueEventKind_ISSUE_EVENT_KIND_REOPENED   IssueEventKind = 3
 	// Merge_request is set when a merge resolved the issue.
 	IssueEventKind_ISSUE_EVENT_KIND_RESOLVED IssueEventKind = 4
+	// The issue title and/or body changed.
+	IssueEventKind_ISSUE_EVENT_KIND_EDITED IssueEventKind = 5
 )
 
 // Enum value maps for IssueEventKind.
@@ -104,6 +106,7 @@ var (
 		2: "ISSUE_EVENT_KIND_CLOSED",
 		3: "ISSUE_EVENT_KIND_REOPENED",
 		4: "ISSUE_EVENT_KIND_RESOLVED",
+		5: "ISSUE_EVENT_KIND_EDITED",
 	}
 	IssueEventKind_value = map[string]int32{
 		"ISSUE_EVENT_KIND_UNSPECIFIED": 0,
@@ -111,6 +114,7 @@ var (
 		"ISSUE_EVENT_KIND_CLOSED":      2,
 		"ISSUE_EVENT_KIND_REOPENED":    3,
 		"ISSUE_EVENT_KIND_RESOLVED":    4,
+		"ISSUE_EVENT_KIND_EDITED":      5,
 	}
 )
 
@@ -619,6 +623,7 @@ type IssueEvent struct {
 	// Label, like Issue.author.
 	Actor         string                 `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ChangedFields []string               `protobuf:"bytes,7,rep,name=changed_fields,json=changedFields,proto3" json:"changed_fields,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -695,6 +700,13 @@ func (x *IssueEvent) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *IssueEvent) GetChangedFields() []string {
+	if x != nil {
+		return x.ChangedFields
+	}
+	return nil
+}
+
 var File_ermite_storage_issue_proto protoreflect.FileDescriptor
 
 const file_ermite_storage_issue_proto_rawDesc = "" +
@@ -736,7 +748,7 @@ const file_ermite_storage_issue_proto_rawDesc = "" +
 	"\bIssueBan\x120\n" +
 	"\x05until\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05until\"\x1c\n" +
 	"\bIssueKey\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\fR\x03key\"\xe0\x01\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key\"\x87\x02\n" +
 	"\n" +
 	"IssueEvent\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x122\n" +
@@ -745,20 +757,22 @@ const file_ermite_storage_issue_proto_rawDesc = "" +
 	"\x06closes\x18\x04 \x01(\bR\x06closes\x12\x14\n" +
 	"\x05actor\x18\x05 \x01(\tR\x05actor\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*\x8a\x01\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12%\n" +
+	"\x0echanged_fields\x18\a \x03(\tR\rchangedFields*\x8a\x01\n" +
 	"\n" +
 	"IssueState\x12\x1b\n" +
 	"\x17ISSUE_STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10ISSUE_STATE_OPEN\x10\x01\x12\x16\n" +
 	"\x12ISSUE_STATE_CLOSED\x10\x02\x12\x17\n" +
 	"\x13ISSUE_STATE_PENDING\x10\x03\x12\x18\n" +
-	"\x14ISSUE_STATE_RESOLVED\x10\x04*\xae\x01\n" +
+	"\x14ISSUE_STATE_RESOLVED\x10\x04*\xcb\x01\n" +
 	"\x0eIssueEventKind\x12 \n" +
 	"\x1cISSUE_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bISSUE_EVENT_KIND_REFERENCED\x10\x01\x12\x1b\n" +
 	"\x17ISSUE_EVENT_KIND_CLOSED\x10\x02\x12\x1d\n" +
 	"\x19ISSUE_EVENT_KIND_REOPENED\x10\x03\x12\x1d\n" +
-	"\x19ISSUE_EVENT_KIND_RESOLVED\x10\x04B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
+	"\x19ISSUE_EVENT_KIND_RESOLVED\x10\x04\x12\x1b\n" +
+	"\x17ISSUE_EVENT_KIND_EDITED\x10\x05B/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
 var (
 	file_ermite_storage_issue_proto_rawDescOnce sync.Once

@@ -149,3 +149,5 @@ Give the agent the [`skills/ermite`](skills/ermite/SKILL.md) skill so it knows t
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).
+
+Issue and merge request creation accept body/description text only from files: `issue create <repo> --title T [--body-file PATH|-]` and `mr create <repo> --source B --title T [--description-file PATH|-]`. Both file flags are optional; omitting them creates empty text. `-` reads stdin, with a 1 MiB limit shared with edit commands. Inline `--body` and `--description` are not accepted for these commands. Repository descriptions remain inline.

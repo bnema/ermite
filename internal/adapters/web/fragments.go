@@ -68,9 +68,9 @@ func liveEvent(we ports.WatchEvent) bool {
 	switch we.Event.(type) {
 	case domain.ReleasePublished, domain.ReleaseUpdated, domain.ReleaseDeleted, domain.ReleaseUnpublished,
 		domain.RepoCreated, domain.RepoUpdated, domain.RepoDeleted, domain.PushEvent,
-		domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled, domain.MergeRequestMergeability, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
+		domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled, domain.MergeRequestMergeability, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
 		domain.RunUpdated, domain.JobUpdated,
-		domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved, domain.IssueReferenced:
+		domain.IssueEdited, domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved, domain.IssueReferenced:
 		return true
 	}
 	return false
@@ -120,6 +120,8 @@ func (l *liveStream) home(ctx context.Context, we ports.WatchEvent) ([]fragment,
 		name = ev.Repo.String()
 	case domain.PushEvent:
 		name, fresh = ev.Repo.String(), true
+	case domain.MergeRequestEdited:
+		name, fresh = ev.MergeRequest.Repo.String(), true
 	case domain.MergeRequestOpened:
 		name, fresh = ev.MergeRequest.Repo.String(), true
 	case domain.MergeRequestMerged:
@@ -128,8 +130,12 @@ func (l *liveStream) home(ctx context.Context, we ports.WatchEvent) ([]fragment,
 		name, fresh = ev.MergeRequest.Repo.String(), true
 	case domain.MergeRequestReady:
 		name, fresh = ev.MergeRequest.Repo.String(), true
+	case domain.CommentEdited:
+		name, fresh = ev.Repo.String(), true
 	case domain.CommentAdded:
 		name, fresh = ev.Repo.String(), true
+	case domain.IssueEdited:
+		name, fresh = ev.Issue.Repo.String(), true
 	case domain.IssueOpened:
 		name, fresh = ev.Issue.Repo.String(), true
 	case domain.IssueResolved:
@@ -203,6 +209,8 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 			return gap, nil // the description, the default branch
 		}
 		return nil, nil
+	case domain.MergeRequestEdited:
+		return l.mrNotice(ctx, ev.MergeRequest.Number, "this merge request was edited — reload")
 	case domain.MergeRequestOpened:
 		return l.mrNotice(ctx, ev.MergeRequest.Number, "a merge request was opened — reload")
 	case domain.MergeRequestMerged:
@@ -242,6 +250,8 @@ func (l *liveStream) repoPage(ctx context.Context, we ports.WatchEvent) ([]fragm
 		return l.mrNotice(ctx, ev.Number, "a thread was resolved — reload")
 	case domain.CommentAdded:
 		return l.mrNotice(ctx, ev.Number, "a comment was added — reload")
+	case domain.IssueEdited:
+		return l.issueNotice(ctx, ev.Issue.Number, "this issue was edited — reload")
 	case domain.IssueOpened:
 		return l.issueNotice(ctx, ev.Issue.Number, "an issue was opened — reload")
 	case domain.IssueResolved:

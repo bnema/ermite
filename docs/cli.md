@@ -60,7 +60,7 @@ ermite mr resolve <repo> <n> <comment> | edit-comment <repo> <n> <comment> -m �
 ermite mr ready <repo> <n>                 # removes WIP:/[WIP], needs mr:write
 ermite mr merge <repo> <n> --head <id> [--mode fast-forward|squash|merge] [--delete-branch] [--ignore-checks] | merge <repo> <n> --head <id> --auto [--mode …] | merge <repo> <n> --cancel-auto | close <repo> <n>
 
-ermite issue create <repo> --title … [--body … | --body-file …] | list <repo> [--state open|closed|resolved|all]
+ermite issue create <repo> --title … [--body-file PATH|-] | list <repo> [--state open|closed|resolved|all]
 ermite issue show <repo> <n> | comment <repo> <n> -m … | close <repo> <n> | resolve <repo> <n> | reopen <repo> <n>
 # issue show prints `resolved by !N` when a merge resolved it, linked merge requests, and timestamped history interleaved with comments; --json adds closed_by_merge_request, references and events
 # mr show lists linked issues (number, state, resolves marker) and their history; --json adds issues and issue_events
@@ -158,3 +158,16 @@ merge request web URL on its own line. With `--json`, merge request objects
 
 `ermite issue create` prints a confirmation followed by the full issue web URL on its own line
 (`issue close` and `issue reopen` do the same). With `--json`, issue objects include `url`.
+
+### Edit issue and merge request text
+
+```sh
+ermite issue edit <repo> <number> [--title T] [--body-file PATH|-] [--json]
+ermite mr edit <repo> <number> [--title T] [--description-file PATH|-] [--json]
+```
+
+Supply at least one edit flag. Bodies and descriptions come only from files; `-` reads stdin, with a 1 MiB limit. An empty file clears the text. Omitted fields stay unchanged. Commands print “Edited” and the item URL, or the updated object with `--json`. The scopes are `issue:write` and `mr:write`; servers advertise `issues.edit` and `merge_requests.edit`.
+
+Text edits publish dedicated `issue_edited` and `merge_request_edited` live events, not comment events. `ermite watch` shows the repository, item number and `changed_fields` (`title`/`body` or `title`/`description`); unknown event kinds are ignored.
+
+Issue and merge request creation accept body/description text only from files: `issue create <repo> --title T [--body-file PATH|-]` and `mr create <repo> --source B --title T [--description-file PATH|-]`. Both file flags are optional; omitting them creates empty text. `-` reads stdin, with a 1 MiB limit shared with edit commands. Inline `--body` and `--description` are not accepted for these commands. Repository descriptions remain inline.

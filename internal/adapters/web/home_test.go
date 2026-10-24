@@ -376,6 +376,7 @@ func TestActivityEventsRefreshTheHomeRow(t *testing.T) {
 	issue := domain.Issue{Repo: repo.Name}
 	for _, ev := range []domain.Event{
 		domain.PushEvent{Repo: repo.Name},
+		domain.MergeRequestEdited{MergeRequest: mr}, domain.IssueEdited{Issue: issue},
 		domain.MergeRequestOpened{MergeRequest: mr}, domain.MergeRequestMerged{MergeRequest: mr},
 		domain.MergeRequestClosed{MergeRequest: mr}, domain.MergeRequestReady{MergeRequest: mr},
 		domain.CommentAdded{Repo: repo.Name}, domain.IssueOpened{Issue: issue},

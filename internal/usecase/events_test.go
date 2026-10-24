@@ -1129,3 +1129,58 @@ func releaseOf(ev domain.Event) int64 {
 	}
 	return 0
 }
+
+func TestEditEventVisibilityAndTopics(t *testing.T) {
+	for _, kind := range []string{"issue.edited", "mr.edited"} {
+		for _, vis := range []domain.Visibility{domain.VisibilityPublic, domain.VisibilityPrivate} {
+			for _, tc := range []struct {
+				name, topic string
+				p           domain.Principal
+				want        bool
+			}{
+				{"anonymous home", "home", domain.Anonymous(), vis == domain.VisibilityPublic},
+				{"authorized home", "home", domain.Root(), true},
+				{"unauthorized home", "home", tokenPrincipal(domain.ScopeRepoRead, "other"), vis == domain.VisibilityPublic},
+				{"matching repo", "repo:proj", domain.Root(), true},
+				{"unrelated repo", "repo:other", domain.Root(), false},
+				{"owner", "owner", domain.Owner(), true},
+			} {
+				t.Run(kind+"/"+string(vis)+"/"+tc.name, func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						r := newEventRig(t, 16)
+						n := name(t, "proj")
+						r.meta.EXPECT().Get(mock.Anything, n).Return(domain.Repo{Name: n, Visibility: vis, CreatedAt: now, Settings: withIssues(domain.IssuesOwner)}, nil).Maybe()
+						other := r.repo("other", domain.VisibilityPublic)
+						ctx, cancel := context.WithCancel(context.Background())
+						defer cancel()
+						w := r.watch(ctx, tc.p, ports.WatchParams{Topics: []string{tc.topic}})
+						synctest.Wait()
+						require.Equal(t, 1, r.events.Watchers())
+						var event domain.Event = domain.IssueEdited{Issue: domain.Issue{Repo: n, Number: 1}, ChangedFields: []string{"title"}, At: now, Visibility: vis, CreatedAt: now}
+						if kind == "mr.edited" {
+							event = domain.MergeRequestEdited{MergeRequest: domain.MergeRequest{Repo: n, Number: 1}, ChangedFields: []string{"description"}, At: now, Visibility: vis, CreatedAt: now}
+						}
+						r.feed <- event
+						if tc.want {
+							assert.Equal(t, event, w.next(t).Event)
+						}
+						// Drain deterministic work before inspecting the absence of extra events.
+						synctest.Wait()
+						select {
+						case extra := <-w.got:
+							t.Fatalf("unexpected event: %+v", extra)
+						default:
+						}
+						if tc.topic != "owner" {
+							sentinel := other
+							if tc.topic == "repo:proj" {
+								sentinel = n
+							}
+							w.quiet(t, r, sentinel)
+						}
+					})
+				})
+			}
+		}
+	}
+}

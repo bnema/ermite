@@ -37,7 +37,8 @@ type jsonEvent struct {
 	// Auto is set for merge_request_merged: auto-merge made the merge.
 	Auto bool `json:"auto,omitempty"`
 	// Reason is set for merge_request_auto_merge_cancelled.
-	Reason string `json:"reason,omitempty"`
+	Reason        string   `json:"reason,omitempty"`
+	ChangedFields []string `json:"changed_fields,omitempty"`
 }
 
 type jsonRefUpdate struct {
@@ -54,6 +55,8 @@ const (
 	eventPushed      = "pushed"
 	eventGap         = "gap"
 
+	eventIssueEdited     = "issue_edited"
+	eventMREdited        = "merge_request_edited"
 	eventMROpened        = "merge_request_opened"
 	eventMRMerged        = "merge_request_merged"
 	eventMRClosed        = "merge_request_closed"
@@ -104,6 +107,12 @@ func toJSONEvent(ev *ermite.Event, baseURL string) (jsonEvent, bool) {
 	case *ermite.Event_MergeRequestClosed:
 		m := toJSONMergeRequest(k.MergeRequestClosed.GetMergeRequest(), baseURL)
 		out.Type, out.Repo, out.MergeRequest = eventMRClosed, m.Repo, &m
+	case *ermite.Event_IssueEdited:
+		item := k.IssueEdited.GetIssue()
+		out.Type, out.Repo, out.Number, out.ChangedFields = eventIssueEdited, item.GetRepo(), item.GetNumber(), k.IssueEdited.GetChangedFields()
+	case *ermite.Event_MergeRequestEdited:
+		item := k.MergeRequestEdited.GetMergeRequest()
+		out.Type, out.Repo, out.Number, out.ChangedFields = eventMREdited, item.GetRepo(), item.GetNumber(), k.MergeRequestEdited.GetChangedFields()
 	case *ermite.Event_CommentAdded:
 		c := toJSONComment(k.CommentAdded.GetComment())
 		out.Type, out.Repo, out.Number, out.Comment = eventCommentAdded, k.CommentAdded.GetRepo(), k.CommentAdded.GetNumber(), &c
@@ -161,6 +170,10 @@ func eventLine(e jsonEvent) string {
 		detail = fmt.Sprintf("%s!%d %s when ready", e.Repo, e.MergeRequest.Number, e.MergeRequest.AutoMerge.Mode)
 	case eventMRAutoCancelled:
 		detail = fmt.Sprintf("%s!%d: %s", e.Repo, e.MergeRequest.Number, e.Reason)
+	case eventIssueEdited:
+		detail = fmt.Sprintf("%s#%d %s", e.Repo, e.Number, strings.Join(e.ChangedFields, ", "))
+	case eventMREdited:
+		detail = fmt.Sprintf("%s!%d %s", e.Repo, e.Number, strings.Join(e.ChangedFields, ", "))
 	case eventCommentAdded, eventCommentEdited, eventCommentDeleted, eventCommentResolved:
 		detail = fmt.Sprintf("%s!%d by %s", e.Repo, e.Number, e.Comment.Author)
 	case eventMRMergeability:
@@ -227,11 +240,13 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 			"--json prints one JSON object per line (NDJSON). Fields: id, time (RFC 3339 UTC), type\n" +
 			"(repo_created, repo_updated, repo_deleted, pushed, merge_request_opened, merge_request_merged,\n" +
 			"merge_request_closed, merge_request_auto_merge_enabled, merge_request_auto_merge_cancelled\n" +
-			"(with reason), comment_added, comment_edited, comment_deleted, comment_resolved or gap)\n" +
+			"(with reason), issue_edited, merge_request_edited, comment_added, comment_edited, comment_deleted, comment_resolved or gap)\n" +
 			"and, depending on the type, repo (name),\n" +
 			"repository (the repository fields of `repo show --json`), ref_updates (array of ref, old_id,\n" +
 			"new_id; an empty id means the ref was created or deleted), merge_request (the fields of\n" +
-			"`mr show --json`; merge_request_merged also has auto, true for an auto-merge) and, for comment events, number (of the merge request) and comment. Unknown\n" +
+			"`mr show --json`; merge_request_merged also has auto, true for an auto-merge) and, for comment events, number (of the merge request) and comment.\n" +
+			"Edit events have repo (name), number (of the issue or merge request), and changed_fields\n" +
+			"(title and/or body for issue_edited; title and/or description for merge_request_edited). Unknown\n" +
 			"event types are skipped.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeRepoNames(env),

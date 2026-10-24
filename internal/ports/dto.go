@@ -465,3 +465,9 @@ type MergeRequestIssue struct {
 	State  domain.IssueState
 	Closes bool
 }
+
+// EditIssueParams updates only fields whose pointers are non-nil.
+type EditIssueParams struct{ Title, Body *string }
+
+// EditMergeRequestParams updates only fields whose pointers are non-nil.
+type EditMergeRequestParams struct{ Title, Description *string }

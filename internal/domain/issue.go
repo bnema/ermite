@@ -128,17 +128,19 @@ const (
 	IssueEventClosed     IssueEventKind = "closed"
 	IssueEventReopened   IssueEventKind = "reopened"
 	IssueEventResolved   IssueEventKind = "resolved"
+	IssueEventEdited     IssueEventKind = "edited"
 )
 
 // IssueEvent is a timestamped history entry with a per-issue sequence ID.
 type IssueEvent struct {
-	ID           int64
-	Kind         IssueEventKind
-	Issue        int64
-	MergeRequest int64
-	Closes       bool
-	Actor        string
-	CreatedAt    time.Time
+	ID            int64
+	ChangedFields []string
+	Kind          IssueEventKind
+	Issue         int64
+	MergeRequest  int64
+	Closes        bool
+	Actor         string
+	CreatedAt     time.Time
 }
 
 // CompareIssueEvents orders events by time, then issue number, then id. It

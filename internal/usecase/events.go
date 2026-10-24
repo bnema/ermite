@@ -184,6 +184,8 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 			return bufferedEvent{} // repository unknown at publish time: nobody is told
 		}
 		return bufferedEvent{known: true, vis: ev.Visibility, created: ev.CreatedAt}
+	case domain.MergeRequestEdited:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.MergeRequestOpened:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.MergeRequestMerged:
@@ -199,6 +201,8 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 	case domain.CommentAdded:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueReferenced:
+		return repoSnapshot(ev.Visibility, ev.CreatedAt)
+	case domain.IssueEdited:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueOpened:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
@@ -551,6 +555,8 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRelease(ctx, w, ev.Release, be, out, send)
 	case domain.PushEvent:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.MergeRequestEdited:
+		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.MergeRequestOpened:
 		return e.deliverRepo(ctx, w, ev.MergeRequest.Repo, false, be, out, send)
 	case domain.MergeRequestMerged:
@@ -567,6 +573,8 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
 	case domain.IssueReferenced:
 		return e.deliverRepo(ctx, w, ev.Repo, false, be, out, send)
+	case domain.IssueEdited:
+		return e.deliverRepo(ctx, w, ev.Issue.Repo, false, be, out, send)
 	case domain.IssueOpened:
 		return e.deliverRepo(ctx, w, ev.Issue.Repo, false, be, out, send)
 	case domain.IssueResolved:
@@ -678,7 +686,7 @@ func (e *Events) deliverRelease(ctx context.Context, w *watch, rel domain.Releas
 // isIssueEvent reports whether ev is about an issue.
 func isIssueEvent(ev domain.Event) bool {
 	switch ev.(type) {
-	case domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueReferenced:
+	case domain.IssueEdited, domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueReferenced:
 		return true
 	}
 	return false
@@ -699,7 +707,7 @@ func isItemEvent(ev domain.Event) bool {
 	switch ev.(type) {
 	case domain.IssueReferenced:
 		return false // back-reference refreshes do not change the inbox
-	case domain.RunUpdated, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
+	case domain.RunUpdated, domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
 		domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled,
 		domain.MergeRequestReady, domain.MergeRequestMergeability, domain.CommentAdded,
 		domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved:

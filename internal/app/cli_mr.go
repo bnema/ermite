@@ -290,7 +290,7 @@ func newMRCmd(env *cliEnv) *cobra.Command {
 			"A merge request is named by its repository and its number: `ermite mr show proj 3`.",
 	}
 	mr.AddCommand(
-		newMRCreateCmd(env), newMRListCmd(env), newMRShowCmd(env), newMRCommentCmd(env),
+		newMRCreateCmd(env), newMREditCmd(env), newMRListCmd(env), newMRShowCmd(env), newMRCommentCmd(env),
 		newMRResolveCmd(env), newMREditCommentCmd(env), newMRDeleteCommentCmd(env), newMRMergeCmd(env), newMRCloseCmd(env), newMRReadyCmd(env),
 	)
 	return mr
@@ -356,30 +356,36 @@ func listMergeRequests(ctx context.Context, c *client.Client, repo string, state
 }
 
 func newMRCreateCmd(env *cliEnv) *cobra.Command {
-	var title, description, source, target string
+	var title, descriptionFile, source, target string
 	cmd := &cobra.Command{
 		Use:   "create <repo>",
 		Short: "Open a merge request",
 		Long: "Open a merge request for a branch of the repository. --target defaults to the default branch.\n" +
 			"The title is one line of at most 120 characters, the description plain text of at most 8000;\n" +
 			"neither may hold control characters (a description may hold line breaks) or bidirectional\n" +
-			"override characters. --description - reads it from standard input. Fails if an open merge request\n" +
-			"already has the same source and target. Prints a confirmation, then the full web URL on its own line.\n" +
+			"override characters. --description-file PATH reads the optional description from a file; - reads\n" +
+			"standard input (1 MiB limit). Fails if an open merge request already has the same source and target.\n" +
+			"Prints a confirmation, then the full web URL on its own line.\n" +
 			"Needs the mr:write scope." + jsonMRHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
 	cmd.Flags().StringVar(&title, "title", "", "title of the merge request (required)")
-	cmd.Flags().StringVar(&description, "description", "", "description, or - to read standard input")
+	cmd.Flags().StringVar(&descriptionFile, "description-file", "", "read the description from this file, or - for standard input")
+	_ = cmd.MarkFlagFilename("description-file")
 	cmd.Flags().StringVar(&source, "source", "", "branch to merge (required)")
 	cmd.Flags().StringVar(&target, "target", "", "branch to merge into (default: the default branch)")
 	_ = cmd.MarkFlagRequired("title")
 	_ = cmd.MarkFlagRequired("source")
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		desc, err := readText(cmd, description)
-		if err != nil {
-			return err
+		var desc string
+		if cmd.Flags().Changed("description-file") {
+			value, err := readTextFile(cmd, descriptionFile)
+			if err != nil {
+				return fmt.Errorf("read --description-file: %w", err)
+			}
+			desc = value
 		}
 		req := &ermite.CreateMergeRequestRequest{
 			Repo: args[0], Title: title, Description: desc,

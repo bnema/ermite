@@ -522,6 +522,8 @@ func encodeIssueEvent(ev domain.IssueEvent) ([]byte, error) {
 		kind = storagepb.IssueEventKind_ISSUE_EVENT_KIND_CLOSED
 	case domain.IssueEventReopened:
 		kind = storagepb.IssueEventKind_ISSUE_EVENT_KIND_REOPENED
+	case domain.IssueEventEdited:
+		kind = storagepb.IssueEventKind_ISSUE_EVENT_KIND_EDITED
 	case domain.IssueEventResolved:
 		kind = storagepb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED
 	default:
@@ -530,7 +532,7 @@ func encodeIssueEvent(ev domain.IssueEvent) ([]byte, error) {
 	if !utf8.ValidString(ev.Actor) {
 		return nil, errors.New("issue event actor is not valid UTF-8")
 	}
-	return mustMarshal(&storagepb.IssueEvent{Seq: ev.ID, Kind: kind, MergeRequest: ev.MergeRequest, Closes: ev.Closes, Actor: ev.Actor, CreatedAt: encodeTime(ev.CreatedAt)}), nil
+	return mustMarshal(&storagepb.IssueEvent{Seq: ev.ID, Kind: kind, ChangedFields: ev.ChangedFields, MergeRequest: ev.MergeRequest, Closes: ev.Closes, Actor: ev.Actor, CreatedAt: encodeTime(ev.CreatedAt)}), nil
 }
 
 func decodeIssueEvent(val []byte, issue int64) (domain.IssueEvent, error) {
@@ -546,10 +548,12 @@ func decodeIssueEvent(val []byte, issue int64) (domain.IssueEvent, error) {
 		kind = domain.IssueEventClosed
 	case storagepb.IssueEventKind_ISSUE_EVENT_KIND_REOPENED:
 		kind = domain.IssueEventReopened
+	case storagepb.IssueEventKind_ISSUE_EVENT_KIND_EDITED:
+		kind = domain.IssueEventEdited
 	case storagepb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED:
 		kind = domain.IssueEventResolved
 	default:
 		return domain.IssueEvent{}, fmt.Errorf("unknown issue event kind %d", pb.GetKind())
 	}
-	return domain.IssueEvent{ID: pb.GetSeq(), Issue: issue, Kind: kind, MergeRequest: pb.GetMergeRequest(), Closes: pb.GetCloses(), Actor: pb.GetActor(), CreatedAt: decodeTime(pb.GetCreatedAt())}, nil
+	return domain.IssueEvent{ID: pb.GetSeq(), ChangedFields: pb.GetChangedFields(), Issue: issue, Kind: kind, MergeRequest: pb.GetMergeRequest(), Closes: pb.GetCloses(), Actor: pb.GetActor(), CreatedAt: decodeTime(pb.GetCreatedAt())}, nil
 }

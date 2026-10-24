@@ -421,3 +421,25 @@ type ReleaseUnpublished struct {
 
 // EventKind implements Event.
 func (ReleaseUnpublished) EventKind() string { return "release.unpublished" }
+
+// IssueEdited reports changed text fields.
+type IssueEdited struct {
+	Issue         Issue
+	ChangedFields []string
+	At            time.Time
+	Visibility    Visibility
+	CreatedAt     time.Time
+}
+
+func (IssueEdited) EventKind() string { return "issue.edited" }
+
+// MergeRequestEdited reports changed text fields.
+type MergeRequestEdited struct {
+	MergeRequest  MergeRequest
+	ChangedFields []string
+	At            time.Time
+	Visibility    Visibility
+	CreatedAt     time.Time
+}
+
+func (MergeRequestEdited) EventKind() string { return "mr.edited" }

@@ -301,10 +301,12 @@ func issueEventToPB(d ports.IssueEventDetail) *pb.IssueEvent {
 		kind = pb.IssueEventKind_ISSUE_EVENT_KIND_CLOSED
 	case domain.IssueEventReopened:
 		kind = pb.IssueEventKind_ISSUE_EVENT_KIND_REOPENED
+	case domain.IssueEventEdited:
+		kind = pb.IssueEventKind_ISSUE_EVENT_KIND_EDITED
 	case domain.IssueEventResolved:
 		kind = pb.IssueEventKind_ISSUE_EVENT_KIND_RESOLVED
 	}
-	return &pb.IssueEvent{Id: strconv.FormatInt(e.ID, 10), Kind: kind, Issue: e.Issue, MergeRequest: e.MergeRequest, MergeRequestTitle: d.MergeRequestTitle.String(), Closes: e.Closes, Actor: e.Actor, CreatedAt: timestamp(e.CreatedAt)}
+	return &pb.IssueEvent{Id: strconv.FormatInt(e.ID, 10), Kind: kind, ChangedFields: e.ChangedFields, Issue: e.Issue, MergeRequest: e.MergeRequest, MergeRequestTitle: d.MergeRequestTitle.String(), Closes: e.Closes, Actor: e.Actor, CreatedAt: timestamp(e.CreatedAt)}
 }
 
 func mergeRequestIssueToPB(i ports.MergeRequestIssue) *pb.MergeRequestIssue {
@@ -318,4 +320,16 @@ func mergeRequestIssueToPB(i ports.MergeRequestIssue) *pb.MergeRequestIssue {
 		state = pb.MergeRequestIssueState_MERGE_REQUEST_ISSUE_STATE_RESOLVED
 	}
 	return &pb.MergeRequestIssue{Number: i.Number, Title: i.Title.String(), State: state, Closes: i.Closes}
+}
+
+func (s *issueService) EditIssue(ctx context.Context, req *connect.Request[pb.EditIssueRequest]) (*connect.Response[pb.EditIssueResponse], error) {
+	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	item, err := s.issues.Edit(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.EditIssueParams{Title: req.Msg.Title, Body: req.Msg.Body})
+	if err != nil {
+		return nil, connectError(ctx, err)
+	}
+	return connect.NewResponse(&pb.EditIssueResponse{Issue: issueToPB(item)}), nil
 }

@@ -510,6 +510,12 @@ func watchEventToPB(we ports.WatchEvent) *pb.Event {
 	case domain.IssueReopened:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_IssueReopened{IssueReopened: &pb.IssueReopened{Issue: issueToPB(ev.Issue)}}
+	case domain.IssueEdited:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_IssueEdited{IssueEdited: &pb.IssueEdited{Issue: issueToPB(ev.Issue), ChangedFields: ev.ChangedFields}}
+	case domain.MergeRequestEdited:
+		out.Time = timestamp(ev.At)
+		out.Kind = &pb.Event_MergeRequestEdited{MergeRequestEdited: &pb.MergeRequestEdited{MergeRequest: mergeRequestToPB(ev.MergeRequest), ChangedFields: ev.ChangedFields}}
 	case domain.IssueCommented:
 		out.Time = timestamp(ev.At)
 		out.Kind = &pb.Event_IssueCommented{IssueCommented: &pb.IssueCommented{Repo: ev.Repo.String(), Number: ev.Number, Comment: issueCommentToPB(ev.Comment)}}

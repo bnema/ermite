@@ -4,7 +4,7 @@ An issue records a task, a bug or a question about a repository: a title, a body
 
 ```sh
 ermite repo edit myrepo --issues owner
-ermite issue create myrepo --title "Crash on start" --body "It crashes."
+printf '%s\n' "It crashes." | ermite issue create myrepo --title "Crash on start" --body-file -
 ermite issue list myrepo [--state open|closed|resolved|all]
 ermite issue show myrepo 2
 ermite issue comment myrepo 2 -m "Reproduced."
@@ -16,7 +16,7 @@ ermite issue reopen myrepo 2
 `ermite issue create` prints a confirmation followed by the full issue web URL on its own line
 (`issue close` and `issue reopen` do the same). With `--json`, issue objects include `url`.
 
-All commands take `--json`. `--body -` and `--body-file -` read standard input. A server needs the `issues` feature (`ermite version`); without it the commands, `repo edit --issues` and `token create --scope issue:write` are refused.
+All commands take `--json`. `--body-file -` reads standard input; `--body-file PATH` reads a file (1 MiB limit). A server needs the `issues` feature (`ermite version`); without it the commands, `repo edit --issues` and `token create --scope issue:write` are refused.
 
 ## States and history
 
@@ -81,3 +81,13 @@ An approved issue is rendered as untrusted Markdown: raw HTML is dropped, images
 No IP address is written to disk. The rate limiter keys on the normalized network address (the IPv4 address, or the IPv6 /64) for at most 24 hours and keeps it only in memory. Pending submissions and bans store only a keyed hash (HMAC) of that network, made with a server key.
 
 The limits see the address of the client only if `ERMITE_TRUSTED_PROXIES` lists your reverse proxy; otherwise every visitor shares the proxy's address and one budget (see [configuration](configuration.md)).
+
+## Edit text
+
+`ermite issue edit myrepo 2 --title "Revised title" --body-file issue.md` updates only supplied fields. `--body-file -` reads stdin; an empty file clears the body. At least one flag is required; inline body text is not accepted. Titles have at most 120 characters and bodies at most 10,000. The command needs `issue:write` and supports `--json`. Open, closed and resolved issues can be edited; pending submissions cannot. Identical values preserve `updated_at` and emit no event. History records `edited` with `changed_fields` naming `title` and/or `body`.
+
+Text edits publish dedicated `issue_edited` and `merge_request_edited` live events, not comment events. `ermite watch` shows the repository, item number and `changed_fields` (`title`/`body` or `title`/`description`); unknown event kinds are ignored.
+
+Issue history retains at most 500 entries. Once full, edits still persist, update `updated_at` and publish live events, but no new history entry is retained.
+
+Issue and merge request creation accept body/description text only from files: `issue create <repo> --title T [--body-file PATH|-]` and `mr create <repo> --source B --title T [--description-file PATH|-]`. Both file flags are optional; omitting them creates empty text. `-` reads stdin, with a 1 MiB limit shared with edit commands. Inline `--body` and `--description` are not accepted for these commands. Repository descriptions remain inline.

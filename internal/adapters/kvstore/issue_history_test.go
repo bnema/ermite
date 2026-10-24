@@ -224,3 +224,47 @@ func TestLinkEventsDropAtCapWithoutChangingIssueVersion(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, added, links)
 }
+
+func TestEditedIssueHistoryRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s, _, repo := repoWithMRs(t)
+	issue, err := s.Issues().Create(ctx, newIssue(t, repo, "before"))
+	require.NoError(t, err)
+	issue.Title, err = domain.ParseIssueTitle("after")
+	require.NoError(t, err)
+	require.NoError(t, s.Issues().Update(ctx, issue, domain.IssueEvent{Kind: domain.IssueEventEdited, Actor: "owner", ChangedFields: []string{"title", "body"}, CreatedAt: created}))
+	got, err := s.Issues().Get(ctx, repo, issue.Number)
+	require.NoError(t, err)
+	assert.Equal(t, "after", got.Title.String())
+	events, err := s.Issues().ListEvents(ctx, repo, issue.Number)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, domain.IssueEventEdited, events[0].Kind)
+	assert.Equal(t, []string{"title", "body"}, events[0].ChangedFields)
+}
+
+func TestIssueEditPersistsAtHistoryCap(t *testing.T) {
+	ctx := context.Background()
+	s, _, repo := repoWithMRs(t)
+	issue, err := s.Issues().Create(ctx, newIssue(t, repo, "before"))
+	require.NoError(t, err)
+	events := make([]domain.IssueEvent, kvstore.MaxIssueEvents)
+	for j := range events {
+		events[j] = domain.IssueEvent{Kind: domain.IssueEventClosed, CreatedAt: created}
+	}
+	require.NoError(t, s.Issues().Update(ctx, issue, events...))
+	issue, err = s.Issues().Get(ctx, repo, issue.Number)
+	require.NoError(t, err)
+	issue.Title, err = domain.ParseIssueTitle("after cap")
+	require.NoError(t, err)
+	issue.UpdatedAt = created.Add(time.Hour)
+	require.NoError(t, s.Issues().Update(ctx, issue, domain.IssueEvent{Kind: domain.IssueEventEdited, ChangedFields: []string{"title"}, CreatedAt: issue.UpdatedAt}))
+	got, err := s.Issues().Get(ctx, repo, issue.Number)
+	require.NoError(t, err)
+	assert.Equal(t, "after cap", got.Title.String())
+	assert.Equal(t, issue.UpdatedAt, got.UpdatedAt)
+	history, err := s.Issues().ListEvents(ctx, repo, issue.Number)
+	require.NoError(t, err)
+	require.Len(t, history, kvstore.MaxIssueEvents)
+	assert.Equal(t, domain.IssueEventClosed, history[len(history)-1].Kind)
+}

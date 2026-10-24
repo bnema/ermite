@@ -286,8 +286,8 @@ func (s *Server) inboxCount(ctx context.Context) (n int, show bool) {
 // on the inbox page: the counters, the filter and the two lists.
 func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	switch we.Event.(type) {
-	case domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
-		domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved,
+	case domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
+		domain.IssueEdited, domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved,
 		domain.RepoUpdated, domain.RepoDeleted, domain.RunUpdated:
 	default:
 		return nil, nil

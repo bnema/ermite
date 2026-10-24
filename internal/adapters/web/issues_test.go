@@ -310,7 +310,9 @@ func TestIssueLiveNotices(t *testing.T) {
 		{domain.IssueOpened{Issue: issue}, "issue", "5", "an issue was opened"},
 		{domain.IssueClosed{Issue: issue}, "issue", "5", "this issue was closed"},
 		{domain.IssueReopened{Issue: issue}, "issue", "5", "this issue was reopened"},
-		{domain.IssueCommented{Repo: issue.Repo, Number: 5}, "issue", "5", "a comment was added"},
+		{domain.IssueCommented{Repo: issue.Repo, Number: 5, Comment: domain.IssueComment{ID: 1}}, "issue", "5", "a comment was added"},
+		{domain.IssueEdited{Issue: issue}, "issue", "5", "this issue was edited"},
+		{domain.MergeRequestEdited{MergeRequest: domain.MergeRequest{Repo: issue.Repo, Number: 5}}, "mr", "5", "this merge request was edited"},
 		{domain.IssueCommented{Repo: issue.Repo, Number: 6}, "issue", "5", ""},
 		{domain.IssueReferenced{Repo: issue.Repo, Issue: 5, MergeRequest: 2}, "issue", "5", "a merge request mentions this issue"},
 		{domain.IssueReferenced{Repo: issue.Repo, Issue: 6, MergeRequest: 2}, "issue", "5", ""},
@@ -463,4 +465,12 @@ func TestIssueHistoryEventKinds(t *testing.T) {
 			assert.NotContains(t, body, `/merge-requests/`)
 		}
 	}
+}
+
+func TestEditedIssueHistoryEscapesActor(t *testing.T) {
+	s := &Server{cfg: Config{Now: time.Now}}
+	items := s.issueTimeline("proj", nil, []ports.IssueEventDetail{{Event: domain.IssueEvent{Kind: domain.IssueEventEdited, Actor: "ci <script>alert(1)</script>", ChangedFields: []string{"title", "body"}, CreatedAt: time.Now()}}}, false)
+	body := renderToString(t, issueTimeline(items))
+	assert.Contains(t, body, "ci &lt;script&gt;alert(1)&lt;/script&gt; edited title and body")
+	assert.NotContains(t, body, "<script>")
 }

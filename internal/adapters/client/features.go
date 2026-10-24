@@ -8,6 +8,10 @@ import "slices"
 // ServerService.GetVersion. A server without one still works for everything
 // else: the CLI warns instead of failing.
 const (
+	// FeatureIssueEdit permits editing issue titles and bodies.
+	FeatureIssueEdit = "issues.edit"
+	// FeatureMREdit permits editing merge request titles and descriptions.
+	FeatureMREdit = "merge_requests.edit"
 	// FeatureMarkReady permits marking draft merge requests ready.
 	FeatureMarkReady = "merge_requests.ready"
 	// FeatureIgnoreChecks permits merging with checks bypassed.
@@ -71,7 +75,7 @@ const (
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureReleases, FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge}
+	return []string{FeatureIssueEdit, FeatureMREdit, FeatureReleases, FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

@@ -337,3 +337,35 @@ func TestWatchAutoMergeEvents(t *testing.T) {
 	assert.True(t, auto.Auto)
 	assert.False(t, manual.Auto)
 }
+
+func TestWatchEditEventsOverRPC(t *testing.T) {
+	events := []*ermite.WatchResponse{
+		evt("edit-1", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_IssueEdited{IssueEdited: &ermite.IssueEdited{Issue: &ermite.Issue{Repo: "alpha", Number: 2}, ChangedFields: []string{"title", "body"}}}
+		}),
+		evt("edit-2", func(e *ermite.Event) {
+			e.Kind = &ermite.Event_MergeRequestEdited{MergeRequestEdited: &ermite.MergeRequestEdited{MergeRequest: &ermite.MergeRequest{Repo: "alpha", Number: 3}, ChangedFields: []string{"description"}}}
+		}),
+		{Event: &ermite.Event{Id: "future"}},
+	}
+	f := &fakeAPI{watch: finishing(events)}
+	url := f.serve(t)
+	human := runCLI(t, envFor(url), "", "watch")
+	require.Error(t, human.err)
+	assert.Contains(t, human.stdout, "issue_edited  alpha#2 title, body")
+	assert.Contains(t, human.stdout, "merge_request_edited  alpha!3 description")
+	assert.NotContains(t, human.stdout, "comment_edited")
+	out := runCLI(t, envFor(url), "", "watch", "--json")
+	require.Error(t, out.err)
+	lines := strings.Split(strings.TrimSpace(out.stdout), "\n")
+	require.Len(t, lines, 2)
+	for j, line := range lines {
+		var event jsonEvent
+		require.NoError(t, json.Unmarshal([]byte(line), &event))
+		assert.Nil(t, event.Comment)
+		assert.EqualValues(t, j+2, event.Number)
+		assert.NotEmpty(t, event.ChangedFields)
+	}
+	_, ok := toJSONEvent(&ermite.Event{}, url)
+	assert.False(t, ok, "unknown oneof kinds are ignored, as in older clients")
+}

@@ -130,6 +130,13 @@ func TestWatchOwnerTopicAccessMatrix(t *testing.T) {
 				r.feed <- domain.MergeRequestOpened{MergeRequest: domain.MergeRequest{Repo: b, Number: 2}, At: now, Visibility: domain.VisibilityPrivate, CreatedAt: now}
 				assert.Equal(t, a, w.next(t).Event.(domain.IssueOpened).Issue.Repo)
 				assert.Equal(t, b, w.next(t).Event.(domain.MergeRequestOpened).MergeRequest.Repo)
+				issueEdit := domain.IssueEdited{Issue: domain.Issue{Repo: a, Number: 1}, ChangedFields: []string{"body"}, At: now, Visibility: domain.VisibilityPrivate, CreatedAt: now}
+				mrEdit := domain.MergeRequestEdited{MergeRequest: domain.MergeRequest{Repo: b, Number: 2}, ChangedFields: []string{"title"}, At: now, Visibility: domain.VisibilityPrivate, CreatedAt: now}
+				r.feed <- issueEdit
+				r.feed <- mrEdit
+				assert.Equal(t, issueEdit, w.next(t).Event)
+				assert.Equal(t, mrEdit, w.next(t).Event)
+
 			})
 		})
 	}

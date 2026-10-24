@@ -54,6 +54,8 @@ type fakeAPI struct {
 	getVersion  func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error)
 	watch       func(context.Context, *ermite.WatchRequest, *connect.ServerStream[ermite.WatchResponse]) error
 
+	editMR        func(*ermite.EditMergeRequestRequest) (*ermite.EditMergeRequestResponse, error)
+	editIssue     func(*ermite.EditIssueRequest) (*ermite.EditIssueResponse, error)
 	createMR      func(*ermite.CreateMergeRequestRequest) (*ermite.CreateMergeRequestResponse, error)
 	listMR        func(*ermite.ListMergeRequestsRequest) (*ermite.ListMergeRequestsResponse, error)
 	getMR         func(*ermite.GetMergeRequestRequest) (*ermite.GetMergeRequestResponse, error)
@@ -300,4 +302,11 @@ func ts(s string) *timestamppb.Timestamp {
 		panic(err)
 	}
 	return timestamppb.New(v)
+}
+
+func (f *fakeAPI) EditIssue(_ context.Context, r *connect.Request[ermite.EditIssueRequest]) (*connect.Response[ermite.EditIssueResponse], error) {
+	return respond(f, "EditIssue", r, f.editIssue)
+}
+func (f *fakeAPI) EditMergeRequest(_ context.Context, r *connect.Request[ermite.EditMergeRequestRequest]) (*connect.Response[ermite.EditMergeRequestResponse], error) {
+	return respond(f, "EditMergeRequest", r, f.editMR)
 }

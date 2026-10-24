@@ -13,24 +13,25 @@ import (
 )
 
 const jsonIssueEventHelp = `
-JSON fields of a history event: id, kind (referenced, closed, reopened, resolved), issue,
-merge_request (0 for none), merge_request_title, closes, actor, created_at (RFC 3339 UTC).`
+JSON fields of a history event: id, kind (referenced, closed, reopened, resolved, edited), issue,
+merge_request (0 for none), merge_request_title, closes, actor, created_at (RFC 3339 UTC), changed_fields (edited fields, when present).`
 
 type jsonIssueEvent struct {
-	ID                string  `json:"id"`
-	Kind              string  `json:"kind"`
-	Issue             int64   `json:"issue"`
-	MergeRequest      int64   `json:"merge_request"`
-	MergeRequestTitle string  `json:"merge_request_title"`
-	Closes            bool    `json:"closes"`
-	Actor             string  `json:"actor"`
-	CreatedAt         *string `json:"created_at"`
+	ID                string   `json:"id"`
+	Kind              string   `json:"kind"`
+	Issue             int64    `json:"issue"`
+	MergeRequest      int64    `json:"merge_request"`
+	MergeRequestTitle string   `json:"merge_request_title"`
+	Closes            bool     `json:"closes"`
+	Actor             string   `json:"actor"`
+	CreatedAt         *string  `json:"created_at"`
+	ChangedFields     []string `json:"changed_fields,omitempty"`
 }
 
 func toJSONIssueEvents(events []*ermite.IssueEvent) []jsonIssueEvent {
 	out := make([]jsonIssueEvent, 0, len(events))
 	for _, e := range events {
-		out = append(out, jsonIssueEvent{ID: e.GetId(), Kind: strings.ToLower(strings.TrimPrefix(e.GetKind().String(), "ISSUE_EVENT_KIND_")), Issue: e.GetIssue(), MergeRequest: e.GetMergeRequest(), MergeRequestTitle: e.GetMergeRequestTitle(), Closes: e.GetCloses(), Actor: e.GetActor(), CreatedAt: jsonTime(e.GetCreatedAt())})
+		out = append(out, jsonIssueEvent{ID: e.GetId(), ChangedFields: e.GetChangedFields(), Kind: strings.ToLower(strings.TrimPrefix(e.GetKind().String(), "ISSUE_EVENT_KIND_")), Issue: e.GetIssue(), MergeRequest: e.GetMergeRequest(), MergeRequestTitle: e.GetMergeRequestTitle(), Closes: e.GetCloses(), Actor: e.GetActor(), CreatedAt: jsonTime(e.GetCreatedAt())})
 	}
 	return out
 }
@@ -52,6 +53,8 @@ func issueHistoryText(e *ermite.IssueEvent, mrSide bool) string {
 		if e.GetMergeRequest() > 0 {
 			text += fmt.Sprintf(" by merging !%d", e.GetMergeRequest())
 		}
+	case ermite.IssueEventKind_ISSUE_EVENT_KIND_EDITED:
+		text = "edited " + strings.Join(e.GetChangedFields(), " and ")
 	case ermite.IssueEventKind_ISSUE_EVENT_KIND_CLOSED:
 		text = "closed " + subject
 	case ermite.IssueEventKind_ISSUE_EVENT_KIND_REOPENED:

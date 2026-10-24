@@ -115,3 +115,11 @@ The workflow needs `permissions: contents: write` and `GITHUB_TOKEN: ${{ secrets
 `--json` prints stable field names, listed in each command's `--help`. Errors are one line on standard error (`ermite: ...`) with exit status 1. `ermite completion bash|zsh|fish` completes repository names.
 
 Every command, flag, scope and JSON field: [CLI.md](CLI.md).
+
+### Edit existing text
+
+Use `ermite issue edit <repo> <number> --title "..." --body-file issue.md` or `ermite mr edit <repo> <number> --title "..." --description-file mr.md`. Supply either or both flags; body/description text comes only from files, with `-` for stdin and an empty file to clear it. Both support `--json`. Issues need `issue:write`; merge requests need `mr:write`. Pending issues and merged requests cannot be edited.
+
+Text edits publish dedicated `issue_edited` and `merge_request_edited` live events, not comment events. `ermite watch` shows the repository, item number and `changed_fields` (`title`/`body` or `title`/`description`); unknown event kinds are ignored.
+
+Issue and merge request creation accept body/description text only from files: `issue create <repo> --title T [--body-file PATH|-]` and `mr create <repo> --source B --title T [--description-file PATH|-]`. Both file flags are optional; omitting them creates empty text. `-` reads stdin, with a 1 MiB limit shared with edit commands. Inline `--body` and `--description` are not accepted for these commands. Repository descriptions remain inline.

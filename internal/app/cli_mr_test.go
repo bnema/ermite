@@ -30,7 +30,7 @@ func TestMRCreateMapsFlags(t *testing.T) {
 		return &ermite.CreateMergeRequestResponse{MergeRequest: mrOne}, nil
 	}}
 	url := f.serve(t)
-	res := runCLI(t, envFor(url), "", "mr", "create", "alpha", "--title", "Add search", "--description", "Finds things.",
+	res := runCLI(t, envFor(url), "Finds things.", "mr", "create", "alpha", "--title", "Add search", "--description-file", "-",
 		"--source", "refs/heads/feat/x", "--target", " main ").ok(t)
 	assert.Equal(t, "opened alpha!1 (feat/x into main)\n"+url+"/alpha/merge-requests/1\n", res.stdout)
 	_, reqs := f.snapshot()
@@ -43,7 +43,7 @@ func TestMRCreateMapsFlags(t *testing.T) {
 
 	// The target defaults to nothing, which is the default branch for the server;
 	// the description comes from stdin with -.
-	res = runCLI(t, envFor(url), "line one\nline two\n", "mr", "create", "alpha", "--title", "t", "--source", "feat/x", "--description", "-").ok(t)
+	res = runCLI(t, envFor(url), "line one\nline two\n", "mr", "create", "alpha", "--title", "t", "--source", "feat/x", "--description-file", "-").ok(t)
 	_, reqs = f.snapshot()
 	got = reqs[1].(*ermite.CreateMergeRequestRequest)
 	assert.Empty(t, got.GetTargetBranch())

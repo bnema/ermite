@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -132,7 +131,7 @@ func newIssueCmd(env *cliEnv) *cobra.Command {
 			"`ermite version`). An issue is named by its repository and its number: `ermite issue show proj 3`.",
 	}
 	issue.AddCommand(
-		newIssueCreateCmd(env), newIssueListCmd(env), newIssueShowCmd(env), newIssueCommentCmd(env),
+		newIssueCreateCmd(env), newIssueEditCmd(env), newIssueListCmd(env), newIssueShowCmd(env), newIssueCommentCmd(env),
 		newIssueCloseCmd(env), newIssueResolveCmd(env), newIssueReopenCmd(env),
 	)
 	return issue
@@ -224,41 +223,31 @@ func outputIssue(cmd *cobra.Command, i *ermite.Issue, asJSON bool, verb, baseURL
 }
 
 func newIssueCreateCmd(env *cliEnv) *cobra.Command {
-	var title, body, bodyFile string
+	var title, bodyFile string
 	cmd := &cobra.Command{
 		Use:   "create <repo>",
 		Short: "Open an issue",
 		Long: "Open an issue. The title is one line of at most 120 characters, the body Markdown of at most\n" +
 			"10,000 characters; disallowed control characters are stripped (a body may hold line breaks).\n" +
-			"--body - and --body-file - read the body from standard input; --body-file reads it\n" +
-			"from a file otherwise. Prints a confirmation, then the full web URL on its own line.\n" +
+			"--body-file PATH reads the optional body from a file; - reads standard input (1 MiB limit).\n" +
+			"Inline body text is not accepted. Prints a confirmation, then the full web URL on its own line.\n" +
 			"Needs the issue:write scope." + jsonIssueHelp,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
 	cmd.Flags().StringVar(&title, "title", "", "title of the issue (required)")
-	cmd.Flags().StringVar(&body, "body", "", "body, or - to read standard input")
 	cmd.Flags().StringVar(&bodyFile, "body-file", "", "read the body from this file, or - for standard input")
-	cmd.MarkFlagsMutuallyExclusive("body", "body-file")
 	_ = cmd.MarkFlagRequired("title")
 	_ = cmd.MarkFlagFilename("body-file")
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		text := body
+		var text string
 		if cmd.Flags().Changed("body-file") {
-			if bodyFile == "-" {
-				text = "-"
-			} else {
-				b, err := os.ReadFile(bodyFile) //nolint:gosec // a path typed by the user
-				if err != nil {
-					return fmt.Errorf("read --body-file: %w", err)
-				}
-				text = strings.TrimRight(string(b), "\r\n")
+			value, err := readTextFile(cmd, bodyFile)
+			if err != nil {
+				return fmt.Errorf("read --body-file: %w", err)
 			}
-		}
-		text, err := readText(cmd, text)
-		if err != nil {
-			return err
+			text = value
 		}
 		c, err := env.issueClient(cmd)
 		if err != nil {

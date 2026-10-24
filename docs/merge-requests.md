@@ -167,3 +167,11 @@ pending refresh proceed. Refresh never preserves or discards an unsent draft.
 ### Markdown references
 
 Descriptions, comments, trusted issue bodies and release notes link `#N` to an existing issue or merge request, and `!N` only to an existing merge request. Commit IDs (7–40 hexadecimal characters) link to the repository commit page and display seven characters. Unknown references stay text; references inside words, URLs, code or existing links are not expanded. Commit and number lookups are cached and limited to 50 distinct values each per render. Anonymous issue bodies do not expand `!N` or commit IDs.
+
+## Edit text
+
+`ermite mr edit myrepo 1 --title "Revised title" --description-file mr.md` updates only supplied fields. `--description-file -` reads stdin; an empty file clears the description. At least one flag is required; inline description text is not accepted. Titles have at most 120 characters and descriptions at most 8,000. The command needs `mr:write` and supports `--json`. Open and closed requests can be edited; merged requests cannot. Identical values preserve `updated_at` and emit no event. Changes recompute issue references from the request's current text.
+
+Text edits publish dedicated `issue_edited` and `merge_request_edited` live events, not comment events. `ermite watch` shows the repository, item number and `changed_fields` (`title`/`body` or `title`/`description`); unknown event kinds are ignored.
+
+Issue and merge request creation accept body/description text only from files: `issue create <repo> --title T [--body-file PATH|-]` and `mr create <repo> --source B --title T [--description-file PATH|-]`. Both file flags are optional; omitting them creates empty text. `-` reads stdin, with a 1 MiB limit shared with edit commands. Inline `--body` and `--description` are not accepted for these commands. Repository descriptions remain inline.

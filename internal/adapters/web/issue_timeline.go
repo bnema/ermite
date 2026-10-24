@@ -5,6 +5,7 @@ package web
 import (
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -50,6 +51,8 @@ func (s *Server) issueTimeline(repo string, comments []CommentView, events []por
 			if e.Closes {
 				v.Text = "will resolve this in"
 			}
+		case domain.IssueEventEdited:
+			v.Text, v.Icon = "edited "+strings.Join(e.ChangedFields, " and "), "✎"
 		case domain.IssueEventClosed:
 			v.Text, v.Icon = "closed this", "✗"
 		case domain.IssueEventReopened:

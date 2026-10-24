@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite/internal/adapters/client"
+	"bnema.dev/ermite/internal/domain"
 )
 
 type issueOut struct {
@@ -76,7 +78,7 @@ func TestIssuesCLIEndToEnd(t *testing.T) {
 	c.mustGit(wt, "push", "-q", url, "feat/x")
 	c.cli(t, adminToken, "mr", "create", "proj", "--source", "feat/x", "--title", "First").ok(t)
 
-	res = c.cli(t, agent, "issue", "create", "proj", "--title", "Crash on start", "--body", "It crashes.\nSecond line.", "--json").ok(t)
+	res = runCLI(t, c.vars(agent), "It crashes.\nSecond line.", "issue", "create", "proj", "--title", "Crash on start", "--body-file", "-", "--json").ok(t)
 	assert.Equal(t, issueKeys, keys(t, res.stdout))
 	issue := decode[issueOut](t, res.stdout)
 	assert.EqualValues(t, 2, issue.Number, "shared numbering with merge requests")
@@ -84,6 +86,11 @@ func TestIssuesCLIEndToEnd(t *testing.T) {
 	assert.Equal(t, "open", issue.State)
 	assert.Equal(t, "agent-7", issue.Author)
 	assert.Equal(t, "It crashes.\nSecond line.", issue.Body)
+	edited := runCLI(t, c.vars(agent), "temporary body\n", "issue", "edit", "proj", "2", "--title", "Temporary", "--body-file", "-", "--json").ok(t)
+	assert.Equal(t, "temporary body", decode[issueOut](t, edited.stdout).Body)
+	restored := runCLI(t, c.vars(agent), "It crashes.\nSecond line.\n", "issue", "edit", "proj", "2", "--title", "Crash on start", "--body-file", "-", "--json").ok(t)
+	same := c.cli(t, agent, "issue", "edit", "proj", "2", "--title", "Crash on start", "--json").ok(t)
+	assert.Equal(t, decode[issueOut](t, restored.stdout).UpdatedAt, decode[issueOut](t, same.stdout).UpdatedAt)
 
 	res = runCLI(t, c.vars(agent), "from stdin\n", "issue", "create", "proj", "--title", "Second", "--body-file", "-").ok(t)
 	assert.Equal(t, "opened proj#3 (Second)\n"+c.url+"/proj/issues/3\n", res.stdout)
@@ -158,4 +165,31 @@ func TestIssueWriteTokenRefusedWithoutTheFeature(t *testing.T) {
 	assert.Empty(t, res.stdout)
 	calls, _ := f.snapshot()
 	assert.NotContains(t, calls, "CreateToken")
+}
+
+func TestEditIssueAndMRLinksCLIEndToEnd(t *testing.T) {
+	r := newMRRig(t, domain.VisibilityPublic)
+	env := envFor(r.srv.URL)
+	env[client.EnvToken] = adminToken
+	cli := func(args ...string) result { return runCLI(t, env, "", args...).ok(t) }
+	cli("repo", "edit", "proj", "--issues", "owner")
+	cli("issue", "create", "proj", "--title", "First")
+	cli("issue", "create", "proj", "--title", "Second")
+	runCLI(t, env, "Fixes #1", "mr", "create", "proj", "--source", "feat", "--title", "Fix", "--description-file", "-").ok(t)
+	first := decode[jsonIssueDetail](t, cli("issue", "show", "proj", "1", "--json").stdout)
+	require.Len(t, first.References, 1)
+	runCLI(t, env, "Fixes #2\n", "mr", "edit", "proj", "3", "--description-file", "-", "--json").ok(t)
+	first = decode[jsonIssueDetail](t, cli("issue", "show", "proj", "1", "--json").stdout)
+	assert.Empty(t, first.References)
+	second := decode[jsonIssueDetail](t, cli("issue", "show", "proj", "2", "--json").stdout)
+	require.Len(t, second.References, 1)
+	assert.True(t, second.References[0].Closes)
+	cli("issue", "edit", "proj", "2", "--title", "Revised")
+	shown := cli("issue", "show", "proj", "2")
+	assert.Contains(t, shown.stdout, "root edited title")
+	second = decode[jsonIssueDetail](t, cli("issue", "show", "proj", "2", "--json").stdout)
+	require.NotEmpty(t, second.Events)
+	event := second.Events[len(second.Events)-1]
+	assert.Equal(t, "edited", event.Kind)
+	assert.Equal(t, []string{"title"}, event.ChangedFields)
 }

@@ -101,7 +101,7 @@ func TestMergeRequestsCLIEndToEnd(t *testing.T) {
 	w := c.startWatch(t, secret)
 
 	// create: needs mr:write; the agent token has it.
-	res := c.cli(t, agent, "mr", "create", "proj", "--source", "feat/search", "--title", "Add search", "--description", "Finds things.\nSecond line.", "--json").ok(t)
+	res := runCLI(t, c.vars(agent), "Finds things.\nSecond line.", "mr", "create", "proj", "--source", "feat/search", "--title", "Add search", "--description-file", "-", "--json").ok(t)
 	assert.Equal(t, mrKeys, keys(t, res.stdout))
 	mr := decode[mrOut](t, res.stdout)
 	assert.EqualValues(t, 1, mr.Number)
@@ -114,6 +114,10 @@ func TestMergeRequestsCLIEndToEnd(t *testing.T) {
 	ev := decode[eventOut](t, w.next(t, 10*time.Second))
 	assert.Equal(t, "merge_request_opened", ev.Type)
 	assert.Equal(t, "proj", ev.Repo)
+
+	// An identical edit preserves the timestamp and emits no live event.
+	unchanged := c.cli(t, agent, "mr", "edit", "proj", "1", "--title", "Add search", "--json").ok(t)
+	assert.Equal(t, mr.UpdatedAt, decode[mrOut](t, unchanged.stdout).UpdatedAt)
 
 	// The human output is one line.
 	res = c.cli(t, agent, "mr", "create", "proj", "--source", "feat/search", "--target", "main", "--title", "dup")
@@ -288,6 +292,11 @@ func TestMergeRequestsCLIEndToEnd(t *testing.T) {
 	c.cli(t, secret, "mr", "create", "proj", "--source", "feat/three", "--title", "Third").ok(t)
 	res = c.cli(t, secret, "mr", "close", "proj", "3", "--json").ok(t)
 	assert.Equal(t, "closed", decode[mrOut](t, res.stdout).State)
+	edited := runCLI(t, c.vars(secret), "revised description\n", "mr", "edit", "proj", "3", "--title", "Revised third", "--description-file", "-", "--json").ok(t)
+	assert.Equal(t, "revised description", decode[mrOut](t, edited.stdout).Description)
+	assert.Equal(t, "Revised third", decode[mrOut](t, edited.stdout).Title)
+	require.Error(t, c.cli(t, secret, "mr", "edit", "proj", "2", "--title", "Cannot edit merged").err)
+
 	res = c.cli(t, secret, "mr", "close", "proj", "3")
 	require.Error(t, res.err)
 	_, stderr, code = c.bin(t, secret, "mr", "comment", "proj", "3", "-m", "late")

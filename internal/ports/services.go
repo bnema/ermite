@@ -109,6 +109,7 @@ type EventService interface {
 // MergeRequestService is the merge request use cases. *usecase.MergeRequests
 // implements it.
 type MergeRequestService interface {
+	Edit(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params EditMergeRequestParams) (domain.MergeRequest, error)
 	// Compare queries repository history; it stays here because this service owns the merge-git port.
 	Compare(ctx context.Context, p domain.Principal, repo domain.RepoName, target, source domain.ObjectID) (CompareResult, error)
 	// PushSummary queries repository history; it stays here because this service owns the merge-git port.
@@ -141,6 +142,7 @@ type MergeRequestService interface {
 
 // IssueService is the issue use cases. *usecase.Issues implements it.
 type IssueService interface {
+	Edit(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params EditIssueParams) (domain.Issue, error)
 	Create(ctx context.Context, p domain.Principal, name domain.RepoName, params CreateIssueParams) (domain.Issue, error)
 	List(ctx context.Context, p domain.Principal, name domain.RepoName, params ListIssuesParams) (IssuePage, error)
 	// Get returns the issue with its comments, oldest first.

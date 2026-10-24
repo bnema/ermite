@@ -93,6 +93,8 @@ enum IssueEventKind {
   ISSUE_EVENT_KIND_REOPENED = 3;
   // Merge_request is set when a merge resolved the issue.
   ISSUE_EVENT_KIND_RESOLVED = 4;
+  // The issue title and/or body changed.
+  ISSUE_EVENT_KIND_EDITED = 5;
 }
 
 // IssueEvent is stored under "isev/<repo>/<issue:010d>/<seq:010d>" and,
@@ -109,4 +111,5 @@ message IssueEvent {
   // Label, like Issue.author.
   string actor = 5;
   google.protobuf.Timestamp created_at = 6;
+  repeated string changed_fields = 7;
 }

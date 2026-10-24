@@ -288,6 +288,90 @@ func (_c *IssueService_Create_Call) RunAndReturn(run func(ctx context.Context, p
 	return _c
 }
 
+// Edit provides a mock function for the type IssueService
+func (_mock *IssueService) Edit(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.EditIssueParams) (domain.Issue, error) {
+	ret := _mock.Called(ctx, p, name, number, params)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Edit")
+	}
+
+	var r0 domain.Issue
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, ports.EditIssueParams) (domain.Issue, error)); ok {
+		return returnFunc(ctx, p, name, number, params)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, int64, ports.EditIssueParams) domain.Issue); ok {
+		r0 = returnFunc(ctx, p, name, number, params)
+	} else {
+		r0 = ret.Get(0).(domain.Issue)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, int64, ports.EditIssueParams) error); ok {
+		r1 = returnFunc(ctx, p, name, number, params)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// IssueService_Edit_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Edit'
+type IssueService_Edit_Call struct {
+	*mock.Call
+}
+
+// Edit is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - name domain.RepoName
+//   - number int64
+//   - params ports.EditIssueParams
+func (_e *IssueService_Expecter) Edit(ctx any, p any, name any, number any, params any) *IssueService_Edit_Call {
+	return &IssueService_Edit_Call{Call: _e.mock.On("Edit", ctx, p, name, number, params)}
+}
+
+func (_c *IssueService_Edit_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.EditIssueParams)) *IssueService_Edit_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		var arg3 int64
+		if args[3] != nil {
+			arg3 = args[3].(int64)
+		}
+		var arg4 ports.EditIssueParams
+		if args[4] != nil {
+			arg4 = args[4].(ports.EditIssueParams)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *IssueService_Edit_Call) Return(issue domain.Issue, err error) *IssueService_Edit_Call {
+	_c.Call.Return(issue, err)
+	return _c
+}
+
+func (_c *IssueService_Edit_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params ports.EditIssueParams) (domain.Issue, error)) *IssueService_Edit_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Get provides a mock function for the type IssueService
 func (_mock *IssueService) Get(ctx context.Context, p domain.Principal, name domain.RepoName, number int64) (ports.IssueDetail, error) {
 	ret := _mock.Called(ctx, p, name, number)
