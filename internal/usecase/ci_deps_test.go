@@ -247,6 +247,18 @@ func TestStartDepsRunOnAGoneRepository(t *testing.T) {
 	})
 }
 
+func TestStartDepsRunRefusesAnEmptyLabel(t *testing.T) {
+	t.Parallel()
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		for _, label := range []string{"", "  "} {
+			p := r.params(time.Minute)
+			p.Label = label
+			_, err := r.ci.StartDepsRun(r.ctx, p)
+			assert.ErrorIs(t, err, domain.ErrInvalid, "label %q", label)
+		}
+	})
+}
+
 // A dependency run waits 24 hours for a runner, like any job.
 func TestDepsRunUsesTheNormalQueueTimeout(t *testing.T) {
 	t.Parallel()

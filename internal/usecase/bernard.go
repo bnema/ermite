@@ -102,6 +102,10 @@ func NewBernard(cfg BernardConfig) (*Bernard, error) {
 	if cfg.Store == nil || cfg.Meta == nil || cfg.Reader == nil || cfg.Registry == nil || cfg.Bus == nil || cfg.Clock == nil {
 		return nil, fmt.Errorf("%w: bernard needs a store, meta, reader, registry, bus and clock", domain.ErrInvalid)
 	}
+	cfg.RunnerLabel = strings.TrimSpace(cfg.RunnerLabel)
+	if cfg.Runs != nil && cfg.RunnerLabel == "" {
+		return nil, fmt.Errorf("%w: bernard needs a runner label for its dependency jobs", domain.ErrInvalid)
+	}
 	cron, err := domain.ParseCron(cfg.CheckAt)
 	if err != nil {
 		return nil, fmt.Errorf("bernard check schedule: %w", err)

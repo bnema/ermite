@@ -40,13 +40,16 @@ func (c *CI) SetDepsObserver(o ports.DepsRunObserver) {
 // StartDepsRun creates the run of a dependency job, ready for a runner of the
 // label.
 func (c *CI) StartDepsRun(ctx context.Context, p ports.DepsRunParams) (domain.CIRun, error) {
+	label := strings.ToLower(strings.TrimSpace(p.Label))
+	if label == "" {
+		return domain.CIRun{}, fmt.Errorf("%w: a dependency run needs a runner label", domain.ErrInvalid)
+	}
 	repo, err := lookupRepo(ctx, c.cfg.Meta, p.Repo)
 	if err != nil {
 		return domain.CIRun{}, err
 	}
 	now := c.now()
 	minutes := max(int32(1), int32((p.Timeout+time.Minute-1)/time.Minute)) //nolint:gosec // a few minutes
-	label := strings.ToLower(p.Label)
 	pusher := domain.PusherOf(domain.Bot(p.Repo))
 	job := p.Job
 	draft, err := c.cfg.Store.CreateRun(ctx, p.Repo, domain.DepsWorkflowPath, func(id, number int64) ports.CIRunDraft {

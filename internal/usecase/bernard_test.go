@@ -382,6 +382,18 @@ func TestNewBernardRejectsBadConfig(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrInvalid)
 }
 
+func TestNewBernardRejectsRunsWithoutARunnerLabel(t *testing.T) {
+	t.Parallel()
+	for _, label := range []string{"", "  "} {
+		r := newBernardRig(t, "0 6 * * *")
+		_, err := usecase.NewBernard(usecase.BernardConfig{
+			Store: r.store, Meta: r.meta, Reader: r.reader, Registry: func() ports.DepsRegistry { return r.reg },
+			Bus: r.bus, Clock: r.clock, CheckAt: "0 6 * * *", Runs: mocks.NewDepsRunner(t), RunnerLabel: label,
+		})
+		assert.ErrorIs(t, err, domain.ErrInvalid, "label %q", label)
+	}
+}
+
 // TestBernardIgnoreWaitsForTheRepositoryLock: a transition made while Ignore
 // waits for the lock (an Open, say) is seen by Ignore, which then refuses.
 func TestBernardIgnoreWaitsForTheRepositoryLock(t *testing.T) {
