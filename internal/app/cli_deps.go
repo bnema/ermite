@@ -4,6 +4,7 @@ package app
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -85,7 +86,7 @@ func printDepsRepo(cmd *cobra.Command, r *ermite.RepoDependencyUpdates) error {
 		pairs = append(pairs, [2]string{"error", r.GetError()})
 	}
 	if r.GetRunId() != 0 {
-		pairs = append(pairs, [2]string{"run", fmt.Sprintf("#%d", r.GetRunId())})
+		pairs = append(pairs, [2]string{"run", strconv.FormatInt(r.GetRunId(), 10)})
 		if r.GetState() == ermite.RepoDependencyUpdates_STATE_FAILED {
 			pairs = append(pairs, [2]string{"log", fmt.Sprintf("ermite run view %s %d --log", r.GetRepo(), r.GetRunId())})
 		}

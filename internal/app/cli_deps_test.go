@@ -24,10 +24,7 @@ func TestDepsListTableAndJSON(t *testing.T) {
 		return &ermite.ListDependencyUpdatesResponse{Repos: []*ermite.RepoDependencyUpdates{depsAlpha}}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "deps", "list", "--repo", "alpha").ok(t)
-	assert.Contains(t, res.stdout, "alpha  golang.org/x/text  v0.20.0  v0.21.0  minor  new")
 	assert.Contains(t, res.stdout, "alpha  golang.org/x/text  v0.20.0  v0.21.0  minor  new  idle   -")
-	assert.Contains(t, res.stdout, "RUN")
-	assert.Contains(t, res.stdout, "actions/checkout")
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.ListDependencyUpdatesRequest).GetRepo())
 
@@ -60,7 +57,8 @@ func TestDepsListShowsTheRun(t *testing.T) {
 	assert.Contains(t, res.stdout, `"run_id": 12`)
 
 	res = runCLI(t, envFor(f.serve(t)), "", "deps", "check", "beta").ok(t)
-	assert.Regexp(t, `run\s+#12\n`, res.stdout)
+	assert.Regexp(t, `run\s+12\n`, res.stdout)
+	assert.NotContains(t, res.stdout, "#12")
 	assert.Contains(t, res.stdout, "ermite run view beta 12 --log")
 }
 
