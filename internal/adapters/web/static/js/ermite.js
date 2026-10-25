@@ -1045,6 +1045,18 @@ window.ermiteLive = (() => {
             if (same) same.checked = true;
           }
         }
+        // data-keep-open: the rows (li with an id) whose details were open stay
+        // open. The menus (details.menu) are not kept.
+        if (old.hasAttribute('data-keep-open')) {
+          const items = [...el.querySelectorAll('li')];
+          for (const open of old.querySelectorAll('details[open]')) {
+            const li = open.parentElement;
+            if (open.matches('.menu') || li?.tagName !== 'LI' || !li.id) continue;
+            const fresh = items.find((e) => e.id === li.id);
+            const same = [...(fresh?.children || [])].find((c) => c.tagName === 'DETAILS' && !c.matches('.menu'));
+            if (same) same.setAttribute('open', '');
+          }
+        }
         old.replaceWith(el);
         const rows = document.getElementById('repo-rows');
         if (rows && el.parentElement === rows && rows.dataset.sort === 'activity' &&

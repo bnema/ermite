@@ -167,7 +167,42 @@ func TestInboxDepsSkipsSnoozedArchivedAndEmpty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, got.Counts.Deps, "the filter does not change the count")
 	require.Len(t, got.Deps, 1, "the filter limits the list")
-	assert.Equal(t, "alpha", got.Deps[0].Repo.String())
+	assert.Equal(t, "alpha", got.Deps[0].Rec.Repo.String())
+	assert.Equal(t, 2, got.Counts.DepsUpdates, "one update per kept repository")
+}
+
+func TestInboxDepsJoinsTheRun(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
+	older, newer := now.Add(-48*time.Hour), now.Add(-time.Hour)
+	withRun := domain.RepoDeps{Repo: name(t, "alpha"), Updates: upd, State: domain.DepsApplying, RunID: 5, CheckedAt: older}
+	gone := domain.RepoDeps{Repo: name(t, "beta"), Updates: append(upd, upd...), State: domain.DepsFailed, RunID: 9, CheckedAt: newer}
+	none := domain.RepoDeps{Repo: name(t, "gamma"), Updates: upd, CheckedAt: older}
+
+	mrs, is, meta, store, clock, ci := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t), mocks.NewCIStore(t)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Deps: store, Clock: clock, CI: ci})
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	is.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	ci.EXPECT().ListOpenRuns(mock.Anything).Return(nil, nil)
+	clock.EXPECT().Now().Return(now)
+	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{withRun, gone, none}, nil)
+	for _, r := range []string{"alpha", "beta", "gamma"} {
+		meta.EXPECT().Get(mock.Anything, name(t, r)).Return(domain.Repo{Name: name(t, r)}, nil)
+	}
+	ci.EXPECT().GetRun(mock.Anything, name(t, "alpha"), int64(5)).Return(domain.CIRun{ID: 5, Number: 3, Status: domain.CIQueued}, nil)
+	ci.EXPECT().GetRun(mock.Anything, name(t, "beta"), int64(9)).Return(domain.CIRun{}, domain.ErrNotFound)
+
+	got, err := in.Overview(context.Background(), domain.Owner(), domain.RepoName{})
+	require.NoError(t, err)
+	require.Len(t, got.Deps, 3)
+	require.NotNil(t, got.Deps[0].Run)
+	assert.EqualValues(t, 3, got.Deps[0].Run.Number)
+	assert.Nil(t, got.Deps[1].Run, "a run that is gone is no run")
+	assert.Nil(t, got.Deps[2].Run, "a record without a run reads none")
+	assert.Equal(t, 3, got.Counts.Deps)
+	assert.Equal(t, 4, got.Counts.DepsUpdates)
+	assert.True(t, got.DepsCheckedAt.Equal(newer), "the latest check")
 }
 
 func TestInboxFillsHeadsFromGitForReturnedRequestsOnly(t *testing.T) {

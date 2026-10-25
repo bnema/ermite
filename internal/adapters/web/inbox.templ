@@ -229,71 +229,83 @@ templ InboxRuns(p InboxPage) {
 	</section>
 }
 
-// InboxDeps is Bernard's card per repository. It stays as an empty fragment
-// when there is nothing to show.
+// InboxDeps is Bernard's table: one row per repository with pending updates, a
+// disclosure for its updates, the status of its run or merge request, and the
+// actions. It stays as an empty fragment when there is nothing to show.
+// data-keep-open: the live swap keeps the open rows open.
 templ InboxDeps(p InboxPage) {
-	<section id="inbox-deps" hidden?={ len(p.Deps) == 0 }
+	<section id="inbox-deps" data-keep-open hidden?={ len(p.Deps) == 0 }
 		if len(p.Deps) > 0 {
 			aria-labelledby="inbox-deps-h"
 		}
 	>
 		if len(p.Deps) > 0 {
-			<h2 id="inbox-deps-h" class="rule-h"><span>Dependency updates</span><span class="count">{ itoa(len(p.Deps)) }</span></h2>
-			<ul class="pending-list">
+			<h2 id="inbox-deps-h" class="rule-h">
+				<span>Dependency updates</span>
+				<span class="dim">
+					if p.DepsCheckedAt != "" {
+						checked <time datetime={ p.DepsCheckedAt }>{ p.DepsChecked }</time> ·{ " " }
+					}
+					{ plural(len(p.Deps), "repo", "repos") } · { plural(p.DepsUpdates, "update", "updates") }
+				</span>
+			</h2>
+			<ul class="deps-rows">
 				for _, d := range p.Deps {
-					<li class="pending">
-						<div class="p-head">
-							<a href={ templ.SafeURL(d.RepoHref) }>{ d.Repo }</a>
-							if d.MR != 0 {
-								<a href={ templ.SafeURL(d.MRHref) }>MR !{ itoa(int(d.MR)) }</a>
-							}
-							if d.State != "" {
-								<span class="badge">{ d.State }</span>
-							}
-						</div>
-						if d.UpToDate && d.State != "FAILED" {
-							<p class="mute">
-								if len(d.Updates) == 1 {
-									1 update in the merge request
-								} else {
-									{ itoa(len(d.Updates)) } updates in the merge request
+					<li class="deps-row" id={ d.ID }>
+						<details class="deps-main">
+							<summary>
+								<span class="deps-repo">{ d.Repo }</span>
+								<span class="count">{ itoa(d.Count) }</span>
+								<span class="dim">{ d.Breakdown }</span>
+								if d.New > 0 {
+									<span class="pill deps-new">new { itoa(d.New) }</span>
 								}
-							</p>
-							<div class="p-btns">
-								<a class="btn primary" href={ templ.SafeURL(d.MRHref) }>View MR</a>
-								if d.Snooze != "" {
-									@depsForm(d, d.Snooze, "Snooze", "btn", false)
-								}
-							</div>
-						} else {
-							<ul class="deps-list">
-								for _, u := range d.Updates {
-									<li>
-										<code>{ u.Name }</code> { u.Current } → { u.Latest } <span class="dim">({ u.Kind })</span>
-										if u.New {
-											<span class="badge">new</span>
-										}
-										if u.Directory != "" {
-											<span class="mute">{ u.Directory }</span>
-										}
-									</li>
-								}
-							</ul>
-							if d.Error != "" {
-								<p class="p-body">{ d.Error }</p>
-							}
-							if d.Open != "" {
-								<div class="p-btns">
-									if d.MR != 0 {
-										@depsForm(d, d.Open, "Update MR", "btn primary", true)
-									} else {
-										@depsForm(d, d.Open, "Open MR", "btn primary", true)
+							</summary>
+							<p class="deps-repolink"><a href={ templ.SafeURL(d.RepoHref) }>{ d.Repo }</a></p>
+							<table class="deps-sub" aria-label={ "Updates of " + d.Repo }>
+								<thead class="sr">
+									<tr><th>name</th><th>version</th><th>kind</th><th>new</th><th>directory</th></tr>
+								</thead>
+								<tbody>
+									for _, u := range d.Updates {
+										<tr>
+											<td><code>{ u.Name }</code></td>
+											<td>{ u.Current } → { u.Latest }</td>
+											<td class="dim">{ u.Kind }</td>
+											<td>
+												if u.New {
+													<span class="pill">new</span>
+												}
+											</td>
+											<td class="mute">{ u.Directory }</td>
+										</tr>
 									}
-									@depsForm(d, d.Ignore, "Ignore", "btn", true)
-									@depsForm(d, d.Snooze, "Snooze", "btn", false)
-								</div>
+								</tbody>
+							</table>
+						</details>
+						<span class="deps-status">
+							@depsStatusCell(d.Status)
+						</span>
+						<span class="deps-act">
+							if d.Primary.Href != "" {
+								<a class="btn primary" href={ templ.SafeURL(d.Primary.Href) }>{ d.Primary.Label }</a>
+							} else if d.Primary.Action != "" {
+								@depsForm(d, d.Primary.Action, d.Primary.Label, "btn primary", true)
 							}
-						}
+							if d.Ignore != "" || d.Snooze != "" {
+								<details class="menu deps-menu">
+									<summary class="btn icon" aria-label={ "More actions for " + d.Repo }>⋯</summary>
+									<div class="menu-pop">
+										if d.Ignore != "" {
+											@depsForm(d, d.Ignore, "Ignore", "btn", true)
+										}
+										if d.Snooze != "" {
+											@depsForm(d, d.Snooze, "Snooze", "btn", false)
+										}
+									</div>
+								</details>
+							}
+						</span>
 					</li>
 				}
 			</ul>
@@ -301,7 +313,34 @@ templ InboxDeps(p InboxPage) {
 	</section>
 }
 
-// depsForm is one POST button of a card. The expected versions go in hidden
+// depsStatusCell is the state of the run, when there is one to tell, and the
+// open merge request. A failure shows its one-line reason as a tooltip.
+templ depsStatusCell(s InboxDepsStatus) {
+	if s.State != "" {
+		<span
+			class="deps-state"
+			if s.Href == "" && s.Title != "" {
+				title={ s.Title }
+			}
+		>
+			@CheckIcon(depsIconKind(s), s.State)
+			<span class="dim">{ s.State }</span>
+			if s.Href != "" {
+				<a
+					href={ templ.SafeURL(s.Href) }
+					if s.Title != "" {
+						title={ s.Title }
+					}
+				>{ s.Text }</a>
+			}
+		</span>
+	}
+	if s.MR != 0 {
+		<a href={ templ.SafeURL(s.MRHref) }>MR !{ itoa64(s.MR) }</a>
+	}
+}
+
+// depsForm is one POST button of a row. The expected versions go in hidden
 // fields (four per update, in the same order) for Open MR and Ignore.
 templ depsForm(d InboxDepsRow, action, label, class string, refs bool) {
 	<form method="post" action={ templ.SafeURL(action) }>

@@ -85,15 +85,19 @@ type InboxPage struct {
 	// PendingCount counts every issue awaiting moderation.
 	PendingCount int
 	Pending      []PendingRow
-	// DepsCount counts every repository with pending dependency updates;
-	// DepsEnabled tells that the buttons are wired.
+	// DepsCount counts every repository with pending dependency updates, whatever
+	// the filter; DepsEnabled tells that the buttons are wired.
 	DepsCount   int
 	DepsEnabled bool
 	Deps        []InboxDepsRow
-	Filter      string // the repository filtered on, "" for all
-	Repos       []InboxRepoLink
-	MRs         []InboxRow
-	IssueRows   []InboxRow
+	// DepsUpdates counts the updates of the rows of Deps; DepsChecked is the latest check
+	// (RFC 3339 and short date), empty when unknown.
+	DepsUpdates                int
+	DepsChecked, DepsCheckedAt string
+	Filter                     string // the repository filtered on, "" for all
+	Repos                      []InboxRepoLink
+	MRs                        []InboxRow
+	IssueRows                  []InboxRow
 	// Journal is the activity section; zero without a journal.
 	Journal JournalView
 }
@@ -289,7 +293,12 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 	p.Running, p.RunsEnabled = ov.Counts.Running, ov.RunsEnabled
 	p.DepsCount, p.DepsEnabled = ov.Counts.Deps, s.cfg.Deps != nil
 	for _, d := range ov.Deps {
-		p.Deps = append(p.Deps, s.depsRow(d, filter))
+		row := s.depsRow(d, filter)
+		p.Deps = append(p.Deps, row)
+		p.DepsUpdates += row.Count
+	}
+	if !ov.DepsCheckedAt.IsZero() {
+		p.DepsChecked, p.DepsCheckedAt = ov.DepsCheckedAt.UTC().Format("2006-01-02"), rfc3339(ov.DepsCheckedAt)
 	}
 	for _, run := range ov.Runs {
 		r := InboxRunRow{RunRow: s.runRow(run.Repo.String(), run, now), Repo: run.Repo.String(), RepoHref: repoHref(run.Repo.String())}

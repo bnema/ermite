@@ -472,14 +472,31 @@ type ActivityPage struct {
 
 // InboxCounts are the numbers of open items across every repository, whatever
 // the filter.
-type InboxCounts struct{ MergeRequests, Issues, Pending, Running, Deps int }
+type InboxCounts struct {
+	MergeRequests, Issues, Pending, Running int
+	// Deps counts the repositories with pending dependency updates, DepsUpdates
+	// the updates they hold.
+	Deps, DepsUpdates int
+}
+
+// InboxDeps is the pending dependency updates of one repository with the run
+// that applies them, or applied them last.
+type InboxDeps struct {
+	Rec domain.RepoDeps
+	// Run is the run of Rec.RunID; nil when the record has none or the run is
+	// gone.
+	Run *domain.CIRun
+}
 
 // InboxOverview is what the owner has to look at across every repository: the
 // open merge requests and issues, ongoing CI runs, and issues awaiting moderation.
 type InboxOverview struct {
 	// Deps are pending updates for non-archived repositories, excluding snoozed records.
-	Deps   []domain.RepoDeps
-	Counts InboxCounts
+	Deps []InboxDeps
+	// DepsCheckedAt is the latest check of the repositories counted in
+	// Counts.Deps; zero when there is none.
+	DepsCheckedAt time.Time
+	Counts        InboxCounts
 	// Runs are queued or in progress, newest first, respecting the filter.
 	Runs []domain.CIRun
 	// RunsEnabled distinguishes disabled CI from an empty queue.

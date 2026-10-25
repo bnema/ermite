@@ -264,6 +264,41 @@
   .pending .p-btns { display: flex; gap: var(--s2); flex-wrap: wrap; }
   .pending .p-btns form { margin: 0; }
 
+  /* the inbox: dependency updates, one compact row per repository. The updates
+     of a row are a <details> under its summary; the status and the actions sit
+     in the other columns of the grid. */
+  #inbox-deps > .rule-h { flex-wrap: wrap; }
+  .deps-rows { display: grid; list-style: none; padding: 0; margin: 0; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
+  .deps-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--s3); align-items: start; padding: var(--s2) var(--s3);
+    border-top: 1px solid var(--border);
+    &:first-child { border-top: 0; }
+    & .deps-main > summary {
+      display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-height: 32px; cursor: pointer; list-style: none;
+      &::-webkit-details-marker { display: none; }
+      &::before { content: "▸"; width: 1ch; color: var(--ink-mute); }
+    }
+    & .deps-main[open] > summary::before { content: "▾"; }
+    & .deps-repo { color: var(--ink-hi); font-weight: 600; overflow-wrap: anywhere; }
+    & .count, & .pill { margin-left: 0; }
+    & .deps-repolink { margin: var(--s1) 0 var(--s2); padding-left: calc(1ch + var(--s2)); font-size: var(--fs-s); }
+    & .deps-sub {
+      width: 100%; margin: 0 0 var(--s2); border-collapse: collapse; font-size: var(--fs-s);
+      & td { padding: 2px var(--s3) 2px 0; vertical-align: baseline; overflow-wrap: anywhere; }
+      & td:first-child { padding-left: calc(1ch + var(--s2)); }
+      & td:nth-child(2), & td:nth-child(3), & td:nth-child(4) { white-space: nowrap; }
+      & .pill { margin-left: 0; }
+    }
+    & .deps-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-height: 32px; font-size: var(--fs-s); }
+    & .deps-state { display: inline-flex; align-items: center; gap: var(--s2); }
+    & .deps-state .ck { margin-right: 0; }
+    & .deps-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); }
+    & .deps-act form { margin: 0; }
+    & .deps-menu .menu-pop { width: 140px; gap: var(--s1); padding: var(--s2); }
+    & .deps-menu .menu-pop .btn { width: 100%; justify-content: flex-start; border-color: transparent; background: none; }
+    & .deps-menu .menu-pop .btn:hover { background: var(--bg-raised); }
+  }
+
   .list.mrs {
     & tr[data-state="open"] .c-state { font-weight: bold; }
     & tr[data-state="open"] .c-state::before { content: "● "; color: var(--teal); }

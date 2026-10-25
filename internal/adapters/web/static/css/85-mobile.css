@@ -36,6 +36,16 @@
     body:has(#diffs[data-mr]) { --bar-h: 0px; }
   }
 
+  /* the dependency rows stack: the status and the actions go below */
+  @media (max-width: 720px) {
+    .deps-row {
+      grid-template-columns: minmax(0, 1fr);
+      & .deps-act { justify-content: stretch; }
+      & .deps-act > form { flex: 1; }
+      & .deps-act > form .btn { width: 100%; justify-content: center; }
+    }
+  }
+
   @media (pointer: coarse), (hover: none) {
     .mr-touch-range { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
     /* Real, disjoint cells: never expand invisible targets into other lines

@@ -266,6 +266,42 @@ test('a removed row skips the rows a filter hides', () => {
   assert.equal(active, r.main, 'no shown row left: the content');
 });
 
+// ---- the open rows of a section with data-keep-open ---------------------
+
+function depsSection(open = {}) {
+  const row = (id) => {
+    const attrs = open[id] ? { open: '' } : {};
+    return el('li', { id }, el('details', { cls: 'deps-main', attrs }), el('details', { cls: 'menu deps-menu', attrs: open[id + '-menu'] ? { open: '' } : {} }));
+  };
+  return el('section', { id: 'inbox-deps', attrs: { 'data-keep-open': '' } }, el('ul', {}, row('deps-a'), row('deps-b')));
+}
+
+test('a swap keeps the details of the rows that were open, and not their menus', () => {
+  dom.body.replaceChildren(depsSection({ 'deps-b': true, 'deps-b-menu': true }));
+  const fresh = depsSection();
+  swapWith('k1', fresh);
+  const [a, b] = fresh.querySelectorAll('li');
+  assert.equal(a.children[0].hasAttribute('open'), false, 'a row that was closed stays closed');
+  assert.equal(b.children[0].hasAttribute('open'), true, 'a row that was open stays open');
+  assert.equal(b.children[1].hasAttribute('open'), false, 'the menu is closed');
+});
+
+test('a swap does not open a row that left, and ignores a section without data-keep-open', () => {
+  dom.body.replaceChildren(depsSection({ 'deps-a': true, 'deps-b': true }));
+  const fresh = depsSection();
+  fresh.querySelector('ul').children[0].remove(); // deps-a is gone
+  swapWith('k2', fresh);
+  assert.equal(fresh.querySelector('ul').children.length, 1);
+  assert.equal(fresh.querySelectorAll('li')[0].children[0].hasAttribute('open'), true, 'deps-b');
+
+  const plain = depsSection({ 'deps-a': true });
+  plain.attrs.delete('data-keep-open');
+  dom.body.replaceChildren(plain);
+  const next = depsSection();
+  swapWith('k3', next);
+  assert.equal(next.querySelectorAll('li')[0].children[0].hasAttribute('open'), false);
+});
+
 // ---- single-character shortcuts -----------------------------------------
 
 test('shortcuts off: single characters do nothing, ctrl k, escape and enter still work', () => {

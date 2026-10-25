@@ -532,8 +532,22 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 			}
 			repos[d.Repo] = true
 			out.Counts.Deps++
+			out.Counts.DepsUpdates += len(d.Updates)
+			if d.CheckedAt.After(out.DepsCheckedAt) {
+				out.DepsCheckedAt = d.CheckedAt
+			}
 			if filter.IsZero() || d.Repo == filter {
-				out.Deps = append(out.Deps, d)
+				item := ports.InboxDeps{Rec: d}
+				if d.RunID != 0 && in.ci != nil {
+					run, err := in.ci.GetRun(ctx, d.Repo, d.RunID)
+					switch {
+					case err == nil:
+						item.Run = &run
+					case !errors.Is(err, domain.ErrNotFound):
+						return out, fmt.Errorf("read run %d of %q: %w", d.RunID, d.Repo, err)
+					}
+				}
+				out.Deps = append(out.Deps, item)
 			}
 		}
 	}
