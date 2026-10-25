@@ -1049,6 +1049,9 @@ window.ermiteLive = (() => {
         // open. The menus (details.menu) are not kept; the focus that was in
         // one goes to the "more" summary of the same row (<li id>-more).
         let menuOf = '';
+        // rowOf: the row (li with an id) holding the focus, for a control that
+        // leaves it (the ⋯ of a row whose run starts).
+        const rowOf = old.hasAttribute('data-keep-open') && had ? document.activeElement?.closest?.('li')?.id || '' : '';
         if (old.hasAttribute('data-keep-open')) {
           const items = [...el.querySelectorAll('li')];
           for (const open of old.querySelectorAll('details[open]')) {
@@ -1072,7 +1075,15 @@ window.ermiteLive = (() => {
         fitIn(el);
         const more = menuOf && focusables(el).find((e) => e.id === menuOf);
         if (more) take(more);
-        else if (had) refocus(el, had);
+        else if (had) {
+          // A control that left its row hands the focus to the first control of
+          // the same row, not to the control at the same index of another one.
+          const all = focusables(el);
+          const kept = had.id && all.some((e) => e.id === had.id);
+          const same = rowOf && !kept && all.find((e) => e.closest('li')?.id === rowOf);
+          if (same) take(same);
+          else refocus(el, had);
+        }
       }
       // The rows may have changed under an active filter: apply it again and
       // keep the cursor on its row while that row is still shown.

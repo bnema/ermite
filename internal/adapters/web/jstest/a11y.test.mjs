@@ -310,6 +310,22 @@ test('a swap with the focus in a closed menu or elsewhere in the section does no
   assert.equal(active, fresh.querySelector('#deps-b-more'), 'the focus follows its own control');
 });
 
+test('a swap that removes the ⋯ holding the focus puts it on the summary of the same row', () => {
+  // A row whose run starts loses its menu: the focus stays in the row.
+  const row = (id, menu) => el('li', { id },
+    el('details', { cls: 'deps-main' }, el('summary', { id: id + '-sum' })),
+    el('span', { cls: 'deps-act' }, ...(menu ? [el('details', { cls: 'menu deps-menu' }, el('summary', { id: id + '-more' }))] : [])));
+  const section = (menuB) => el('section', { id: 'inbox-deps', attrs: { 'data-keep-open': '' } },
+    el('ul', {}, row('deps-a', true), row('deps-b', menuB)));
+  const old = section(true);
+  dom.body.replaceChildren(old);
+  active = old.querySelector('#deps-b-more');
+  dom.focused = [];
+  const fresh = section(false);
+  swapWith('k6', fresh);
+  assert.equal(active, fresh.querySelector('#deps-b-sum'), 'deps-b-sum, not the ⋯ of deps-a');
+});
+
 test('a swap does not open a row that left, and ignores a section without data-keep-open', () => {
   dom.body.replaceChildren(depsSection({ 'deps-a': true, 'deps-b': true }));
   const fresh = depsSection();
