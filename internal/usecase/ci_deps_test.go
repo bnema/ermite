@@ -687,3 +687,46 @@ func TestDepsJobRefusesWorkflowCalls(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	})
 }
+
+// A panic of the observer is recovered: the next job is still announced.
+func TestDepsObserverPanicIsRecovered(t *testing.T) {
+	t.Parallel()
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		var calls atomic.Int32
+		obs := mocks.NewDepsRunObserver(t)
+		obs.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(
+			func(_ context.Context, run domain.CIRun, job domain.CIJob, report *ports.DepsReport) {
+				if calls.Add(1) == 1 {
+					panic("observer bug")
+				}
+				r.ended <- endedCall{run: run, job: job, report: report}
+			}).Times(2)
+		r.ci.SetDepsObserver(obs)
+
+		first := r.start(10 * time.Minute)
+		_, err := r.ci.CancelRun(r.ctx, domain.Root(), r.repo, first.ID)
+		require.NoError(t, err)
+		synctest.Wait()
+		assert.EqualValues(t, 1, calls.Load(), "the observer was told and panicked")
+		r.noEnded()
+
+		second := r.start(10 * time.Minute)
+		_, err = r.ci.CancelRun(r.ctx, domain.Root(), r.repo, second.ID)
+		require.NoError(t, err)
+		c := r.nextEnded()
+		assert.Equal(t, second.ID, c.run.ID)
+	})
+}
+
+// Once CI is closed no notification goes out: Bernard may be closed too.
+func TestDepsJobEndedAfterCloseIsNotAnnounced(t *testing.T) {
+	t.Parallel()
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		run := r.start(10 * time.Minute)
+		r.ci.Close(r.ctx)
+		_, err := r.ci.CancelRun(r.ctx, domain.Root(), r.repo, run.ID)
+		require.NoError(t, err)
+		assert.Equal(t, domain.CICancelled, r.run(run.ID).Conclusion, "the job ended")
+		r.noEnded()
+	})
+}

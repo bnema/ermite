@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -332,12 +333,16 @@ func TestBernardClosingTheMRCancelsTheRun(t *testing.T) {
 }
 
 func TestBernardClosingTheMRWithoutARunCancelsNothing(t *testing.T) {
-	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
-	rr.rec = domain.RepoDeps{Repo: rr.repo, MR: 4, RunID: 9, MRVersions: []domain.DepRef{goUpdate().DepRef}, Updates: []domain.DepUpdate{goUpdate()}}
-	rr.startWatch()
-	rr.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: rr.repo, Number: 4}}
-	require.Eventually(t, func() bool { return rr.snapshot().MR == 0 }, 5*time.Second, 5*time.Millisecond)
-	assert.EqualValues(t, 9, rr.snapshot().RunID) // CancelDepsRun is not expected: the mock would fail
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.rec = domain.RepoDeps{Repo: rr.repo, MR: 4, RunID: 9, MRVersions: []domain.DepRef{goUpdate().DepRef}, Updates: []domain.DepUpdate{goUpdate()}}
+		rr.startWatch()
+		rr.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: rr.repo, Number: 4}}
+		synctest.Wait()
+		assert.Zero(t, rr.snapshot().MR)
+		assert.EqualValues(t, 9, rr.snapshot().RunID) // CancelDepsRun is not expected: the mock would fail
+	})
 }
 
 func TestBernardReportDroppedWhenRecordLeftTheRun(t *testing.T) {
