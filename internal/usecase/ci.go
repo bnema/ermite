@@ -591,9 +591,7 @@ func (rs *runState) flush(ctx context.Context) error {
 		c.cfg.Bus.Publish(ctx, domain.RunUpdated{Run: rs.run, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	}
 	if completing {
-		if !rs.run.IsDeps() { // a dependency run starts no workflow_run workflow
-			c.onRunEvent(ctx, rs.run, runCompleted)
-		}
+		c.onRunEvent(ctx, rs.run, runCompleted) // it skips a dependency run
 		c.kickAutoMerge(ctx, rs.run.Repo)
 	}
 	return nil
