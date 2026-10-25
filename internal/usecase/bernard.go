@@ -125,7 +125,7 @@ func (b *Bernard) Start() {
 			return
 		}
 		sub := b.cfg.Bus.Subscribe(b.ctx) // before returning: no event is missed
-		b.reconcileRuns(b.ctx)            // the runs are the truth: settle the records left applying
+		b.reconcileRuns(b.ctx, 0)         // the runs are the truth: settle the records left applying
 		b.wg.Add(2)
 		go b.loop()
 		go b.watchMergeRequests(sub)
@@ -181,6 +181,7 @@ func (b *Bernard) ScheduleNow(ctx context.Context) {
 	if !b.cron.Due(minute) {
 		return
 	}
+	b.reconcileRuns(ctx, depsReconcileGrace) // a run that ended unseen would keep its record applying for ever
 	repos, err := b.cfg.Meta.List(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("bernard: list the repositories")

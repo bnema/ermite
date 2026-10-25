@@ -63,10 +63,16 @@ func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64
 	}
 }
 
-// reconcileRuns settles the records left applying by a previous process: the
-// run is the truth. One still open is left alone (the observer hears of its
-// end); one that ended unseen, or that is gone, fails the record.
-func (b *Bernard) reconcileRuns(ctx context.Context) {
+// depsReconcileGrace is how long the daily pass leaves a run that just ended to
+// the observer, which may still be publishing its result.
+const depsReconcileGrace = 10 * time.Minute
+
+// reconcileRuns settles the records left applying: the run is the truth. One
+// still open is left alone (the observer hears of its end); one that ended
+// unseen (a previous process, an observer that failed), or that is gone, fails
+// the record so that it can be retried. A run that ended less than grace ago is
+// left to the observer.
+func (b *Bernard) reconcileRuns(ctx context.Context, grace time.Duration) {
 	recs, err := b.cfg.Store.List(ctx)
 	if err != nil {
 		ctxLog(ctx).Error().Err(err).Msg("bernard: list the records")
@@ -86,8 +92,10 @@ func (b *Bernard) reconcileRuns(ctx context.Context) {
 			b.failRun(ctx, r.Repo, r.RunID, "the run no longer exists")
 		case err != nil:
 			ctxLog(ctx).Error().Err(err).Str("repo", r.Repo.String()).Int64("run_id", r.RunID).Msg("bernard: read the run to reconcile")
+		case run.Status == domain.CICompleted && b.cfg.Clock.Now().Sub(run.CompletedAt) < grace:
+			// The observer is probably applying it.
 		case run.Status == domain.CICompleted && run.Conclusion == domain.CISuccess:
-			b.failRun(ctx, r.Repo, r.RunID, "the server restarted before the result was applied")
+			b.failRun(ctx, r.Repo, r.RunID, "the result of the run was not applied")
 		case run.Status == domain.CICompleted:
 			b.failRun(ctx, r.Repo, r.RunID, fmt.Sprintf("the run ended: %s", run.Conclusion))
 		}
@@ -104,6 +112,12 @@ func (b *Bernard) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain
 			ctxLog(ctx).Error().Interface("panic", r).Bytes("stack", debug.Stack()).Str("repo", run.Repo.String()).Msg("bernard: a dependency run panicked")
 		}
 	}()
+	b.mu.Lock()
+	closed := b.closed
+	b.mu.Unlock()
+	if closed {
+		return // shutting down: the next start settles the record from the run
+	}
 	rec, err := b.currentRecord(ctx, run)
 	if err != nil {
 		ctxLog(ctx).Error().Err(err).Str("repo", run.Repo.String()).Msg("bernard: read the record of a dependency run")

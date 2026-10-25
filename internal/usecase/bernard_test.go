@@ -295,6 +295,7 @@ func TestBernardScheduleRunsOncePerDueMinute(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	r.repoReads()
 	r.meta.EXPECT().List(mock.Anything).Return([]domain.Repo{{Name: r.repo}, {Name: name(t, "old"), Archived: true}}, nil).Once()
+	r.store.EXPECT().List(mock.Anything).Return(nil, nil).Once() // the due pass settles the applying records first
 	r.cands = []domain.DepCandidate{goCand("a/mod", r.old("v0.21.0"))}
 	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
 	r.reg.EXPECT().Malicious(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)

@@ -133,7 +133,7 @@ func TestBernardStartReconcilesApplyingRecords(t *testing.T) {
 	}{
 		{"open run is left alone", domain.CIRun{ID: jobsRunID, Status: domain.CIInProgress}, nil, ""},
 		{"queued run is left alone", domain.CIRun{ID: jobsRunID, Status: domain.CIQueued}, nil, ""},
-		{"completed with success", domain.CIRun{ID: jobsRunID, Status: domain.CICompleted, Conclusion: domain.CISuccess}, nil, "the server restarted before the result was applied"},
+		{"completed with success", domain.CIRun{ID: jobsRunID, Status: domain.CICompleted, Conclusion: domain.CISuccess}, nil, "the result of the run was not applied"},
 		{"completed with failure", domain.CIRun{ID: jobsRunID, Status: domain.CICompleted, Conclusion: domain.CIFailure}, nil, "the run ended: failure"},
 		{"completed cancelled", domain.CIRun{ID: jobsRunID, Status: domain.CICompleted, Conclusion: domain.CICancelled}, nil, "the run ended: cancelled"},
 		{"run swept", domain.CIRun{}, domain.ErrNotFound, "the run no longer exists"},
@@ -180,6 +180,7 @@ func TestBernardStartFailsAnApplyingRecordWithoutARun(t *testing.T) {
 // is checked under the 60 s deadline of a manual check.
 func TestBernardScheduledCheckHasADeadline(t *testing.T) {
 	r, _ := jobsRig(t)
+	r.store.EXPECT().List(mock.Anything).Return(nil, nil) // the pass settles the applying records first
 	r.meta.EXPECT().List(mock.Anything).Return([]domain.Repo{{Name: r.repo}}, nil)
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
 	var left time.Duration
@@ -193,4 +194,53 @@ func TestBernardScheduledCheckHasADeadline(t *testing.T) {
 	r.b.ScheduleNow(context.Background())
 	assert.Positive(t, left)
 	assert.LessOrEqual(t, left, 60*time.Second)
+}
+
+// The daily pass settles an applying record whose run ended without the
+// observer applying it, so that the record can be retried.
+func TestBernardScheduleReconcilesApplyingRecords(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 24, 6, 0, 0, 0, time.UTC) // the time of the rig's clock
+	for _, c := range []struct {
+		name string
+		run  domain.CIRun
+		want string // "" = untouched
+	}{
+		{"open run is left alone", domain.CIRun{ID: jobsRunID, Status: domain.CIInProgress}, ""},
+		{"run that just ended is left to the observer", domain.CIRun{ID: jobsRunID, Status: domain.CICompleted, Conclusion: domain.CISuccess, CompletedAt: now.Add(-time.Minute)}, ""},
+		{"run that ended unseen", domain.CIRun{ID: jobsRunID, Status: domain.CICompleted, Conclusion: domain.CISuccess, CompletedAt: now.Add(-time.Hour)}, "the result of the run was not applied"},
+		{"failed run that ended unseen", domain.CIRun{ID: jobsRunID, Status: domain.CICompleted, Conclusion: domain.CIFailure, CompletedAt: now.Add(-time.Hour)}, "the run ended: failure"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			r, runs := jobsRig(t)
+			applying(r)
+			before := r.rec
+			r.meta.EXPECT().List(mock.Anything).Return(nil, nil)
+			r.store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{r.rec}, nil)
+			runs.EXPECT().GetDepsRun(mock.Anything, r.repo, int64(jobsRunID)).Return(c.run, nil).Once()
+			r.b.ScheduleNow(context.Background())
+			if c.want == "" {
+				assert.Equal(t, before, r.rec)
+				return
+			}
+			assert.Equal(t, domain.DepsFailed, r.rec.State)
+			assert.Equal(t, c.want, r.rec.Error)
+			assert.EqualValues(t, jobsRunID, r.rec.RunID)
+		})
+	}
+}
+
+// A job that ends while Bernard shuts down publishes nothing: the next start
+// settles the record from the run.
+func TestBernardDepsJobEndedAfterCloseDoesNothing(t *testing.T) {
+	t.Parallel()
+	r, _ := jobsRig(t)
+	applying(r)
+	before := r.rec
+	r.b.Close(context.Background())
+	run, job := endedJob(r, domain.CIFailure, "boom")
+	r.b.DepsJobEnded(context.Background(), run, job, &ports.DepsReport{Error: "late"}) // no store call is expected
+	assert.Equal(t, before, r.rec)
+	assert.Zero(t, r.changedCount())
 }
