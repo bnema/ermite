@@ -10,8 +10,13 @@
 | `workflow_run` | default branch | default branch tip | inherits the triggering run, never more |
 | `create` | created ref | created ref | pushed it |
 | `delete` | default branch | default branch tip | pushed the default branch tip |
+| `dependencies` | none (Bernard starts one job) | default branch tip | never trusted |
 
 `ermite run list`, `run view` and the Actions pages show the event of each run.
+
+## `dependencies`
+
+[Bernard](bernard.md) starts it to apply dependency updates. The run has one job, **Update dependencies**, with no workflow file: it is ready at once and goes to a runner that offers the `deps` job kind. It is never trusted, so its token is read-only and it gets no secrets. It posts no check, starts no `workflow_run` workflow and cannot be re-run. Workflow `Dependencies`, actor `bernard`.
 
 ## `pull_request`
 

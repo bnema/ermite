@@ -110,7 +110,7 @@ The web shows an **Archived** badge and hides write actions. `repo show` display
 
 ### Dependency updates
 
-`ermite deps` drives Bernard, which needs a server with the `deps` feature and owner rights. `deps list` shows the pending updates, snoozed repositories included; `--json` prints `repo`, `updates` (`ecosystem`, `name`, `directory`, `current`, `latest`, `kind`, `new`), `checked_at`, `snoozed_until`, `merge_request_number`, `state` and `error`. `deps check <repo>` runs a check now. `deps open` and `deps ignore` read the current list and send it back as the versions you confirm, so a list that changed in between is refused with a failed precondition. When the server runs with `ERMITE_DEPS_ENABLED=0`, `deps list` is empty and the other commands answer “Bernard is disabled”. See [Bernard](bernard.md).
+`ermite deps` drives Bernard, which needs a server with the `deps` feature and owner rights. `deps list` shows the pending updates, snoozed repositories included; `--json` prints `repo`, `updates` (`ecosystem`, `name`, `directory`, `current`, `latest`, `kind`, `new`), `checked_at`, `snoozed_until`, `merge_request_number`, `state`, `error` and `run_id`. The table has a `RUN` column with the run applying the updates, or the last one that tried (`-` for none); for a failed one, read its log with `ermite run view <repo> <run> --log`. `deps check <repo>` runs a check now. `deps open` and `deps ignore` read the current list and send it back as the versions you confirm, so a list that changed in between is refused with a failed precondition. When the server runs with `ERMITE_DEPS_ENABLED=0`, `deps list` is empty and the other commands answer “Bernard is disabled”. See [Bernard](bernard.md).
 
 ### Activity journal
 

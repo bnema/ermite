@@ -13,22 +13,28 @@ Bernard watches the dependencies of your repositories and lists the updates that
 
 ## How updates are applied
 
-GitHub Actions updates are applied by the server. Go module updates are applied by a runner: Bernard queues a job for the repository at the tip of the default branch and waits for a runner that offers the `deps` job kind and has the label set by `ERMITE_DEPS_RUNNER_LABEL` (`ubuntu-latest` by default). The job gets a read-only repository token for that commit, no secrets, no variables and no ID token. The runner runs `go get` and `go mod tidy` for the requested versions and reports the changed `go.mod` and `go.sum` files.
+GitHub Actions updates are applied by the server. Go module updates are applied by a runner, through a CI run: Bernard starts a run with the event `dependencies` on the tip of the default branch, with one job, **Update dependencies**. A runner that offers the `deps` job kind and has the label set by `ERMITE_DEPS_RUNNER_LABEL` (`ubuntu-latest` by default) takes it like any other job. The job gets a read-only repository token for that commit, no secrets, no variables and no ID token. The runner runs `go get` and `go mod tidy` for the requested versions and reports the changed `go.mod` and `go.sum` files.
 
 Bernard accepts a report only if it changes `go.mod` and `go.sum` of the requested directories, keeps `replace`, `exclude`, `retract`, `go` and `toolchain` as they were, sets each requested module to exactly the requested version and leaves the other direct requirements alone. It then commits the files, together with the Actions updates, on `bernard/deps` on top of the commit the job ran on, and opens or updates the merge request.
 
-A job has `ERMITE_DEPS_JOB_TIMEOUT` (10 minutes by default) to finish. Nothing is retried: a failed job leaves the card as it was, and you can click **Open MR** again. A job that no runner takes within the same time fails too. Older runners, which do not offer the `deps` kind, never receive these jobs.
+The run shows in the Actions tab, in `ermite run list` and in the Inbox under **Running**, as workflow `Dependencies` by `bernard`. Its log is on the run page and in `ermite run view <repo> <run> --log`. A run:
 
-## The Inbox card
+- can be cancelled (`ermite run cancel`), which fails the update; closing or merging the Bernard merge request cancels a run that is still going.
+- posts no check and cannot be re-run: click **Retry** in the Inbox to start a new one.
+- has `ERMITE_DEPS_JOB_TIMEOUT` (10 minutes by default) from the moment a runner takes it, as the `timeout-minutes` of the job. The wait for a runner is CI's: a run no runner takes within 24 hours fails.
+- survives a server restart. If the server stops after the run ended and before Bernard applied the result, the update fails with a reason and you can retry.
 
-The Inbox shows one card per repository with pending updates, after the running workflows. Each line reads `name current → latest (kind)`, where the kind is patch, minor or major, with a **new** badge for a version that appeared since the last check and the directory when it is not the repository root. The card shows `APPLYING` while a runner prepares Go module updates, and `FAILED` with the reason when it failed: the error of the runner, a rejected report, a timeout or a server restart, followed by the end of the job log. The counters at the top include the number of repositories with updates. The card updates live.
+Nothing is retried on its own. A failed update keeps its updates listed with a one-line reason, such as `the run ended: failure`, and a link to the run.
 
-Three buttons act on the card:
+## The Inbox table
 
-- **Open MR** opens the Bernard merge request, or updates it.
-- **Ignore** hides exactly the listed versions. A newer version shows up again.
-- **Snooze** hides the card for seven days (`ERMITE_DEPS_SNOOZE`), then it comes back.
+**Dependency updates** comes after the running workflows. The header shows when the dependencies were last checked and how many repositories and updates are pending. There is one row per repository with pending updates:
 
-Each button sends the versions you saw. If a check changed the list in the meantime, or an update is being applied, the server refuses and you reload. Only the owner sees the Inbox and these buttons; everyone else gets a 404.
+- A disclosure arrow, the repository name, the number of updates, their kinds (`1 major · 2 minor · 3 patch`, empty kinds left out) and a **new** badge for versions that appeared since the last check. Open the row to see each update: name, `current → latest`, kind, **new**, and the directory when it is not the repository root.
+- The status: `queued` or `running` with a link to the run while Bernard applies updates, `failed` with a link to the run (the reason is its tooltip), or the link to the open merge request (`MR !7`).
+- The main button: **Open MR** opens the Bernard merge request, **Update MR** updates it, **View MR** is a link when it already holds exactly the pending versions, **Retry** starts a new run after a failure. There is no button while a run is going.
+- The **⋯** menu holds **Ignore**, which hides exactly the listed versions (a newer version shows up again), and **Snooze**, which hides the repository for seven days (`ERMITE_DEPS_SNOOZE`).
+
+Each button sends the versions you saw. If a check changed the list in the meantime, or an update is being applied, the server refuses and you reload. The table updates live and keeps the rows you opened. Only the owner sees the Inbox and these buttons; everyone else gets a 404.
 
 The same actions are available as `ermite deps list|check|open|ignore|snooze` ([CLI](cli.md#dependency-updates)) and as `DepsService` in the API.
