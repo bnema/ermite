@@ -101,10 +101,17 @@ type RepoDeps struct {
 	CheckedAt    time.Time
 	SnoozedUntil time.Time // zero means not snoozed
 	State        DepsState
-	Error        string // failure reason, possibly with a bounded log tail
-	JobID        string // deps-… while applying
-	MR           int64  // open Bernard merge request; zero means none
-	MRVersions   []DepRef
+	Error        string // short failure reason, one line; the log is on the run
+	JobID string // deps-… while applying (replaced by RunID)
+	// RunID is the CI run applying the updates, or the last one that tried
+	// (kept after a failure or a success, so that the record links to its log);
+	// zero means none. The next run overwrites it.
+	RunID int64
+	// RunUpdates is the snapshot of every pending update when the run started,
+	// what the run commits: the daily check rewrites Updates meanwhile.
+	RunUpdates []DepUpdate
+	MR         int64 // open Bernard merge request; zero means none
+	MRVersions []DepRef
 }
 
 // Refs returns the proposed versions in update order, independently of Updates.

@@ -24,7 +24,11 @@ func fullDeps(n domain.RepoName) domain.RepoDeps {
 		SnoozedUntil: created.Add(time.Hour),
 		State:        domain.DepsFailed,
 		Error:        "boom",
-		JobID:        "deps-1",
+		RunID:        7,
+		RunUpdates: []domain.DepUpdate{
+			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "golang.org/x/mod", Version: "v0.2.0"}, Current: "v0.1.0", Kind: domain.DepMinor},
+			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"}, Current: "v4", Kind: domain.DepMajor, New: true},
+		},
 		MR:           42,
 		MRVersions:   []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Name: "a/b", Version: "v1.0.1"}},
 	}

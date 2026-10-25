@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	kv "bnema.dev/ermite-kv"
 	"github.com/bnema/zerowrap"
@@ -54,7 +55,11 @@ import (
 // previous scopes get it, so they keep the owner rights (see
 // upgradeJournalTokens); an older build would drop the unknown scope and
 // strip those rights again.
-const SchemaVersion = 10
+// Version 11 moves Bernard's jobs onto CI runs: RepoDeps.run_id and run_updates
+// replace job_id, and a CIJob may carry deps (an older build would plan it as a
+// workflow job and misread the records). The upgrade fails the applying records
+// and shortens the failed ones, see upgradeDepsRecords.
+const SchemaVersion = 11
 
 const schemaKey = "meta/schema"
 
@@ -186,12 +191,17 @@ func (s *Store) checkSchema(ctx context.Context) error {
 					return err
 				}
 			}
+			if target == SchemaVersion && sv.GetVersion() < 11 {
+				if err := s.upgradeDepsRecords(ctx, &b); err != nil {
+					return err
+				}
+			}
 			if target == SchemaVersion && sv.GetVersion() < 8 {
 				if err := s.upgradeResolvedIssues(ctx, &b); err != nil {
 					return err
 				}
 			}
-			if sv.GetVersion() >= 6 {
+			if sv.GetVersion() >= 6 && sv.GetVersion() < 10 {
 				if err := s.upgradeJournalTokens(ctx, &b); err != nil {
 					return err
 				}
@@ -337,5 +347,42 @@ func (s *Store) upgradeResolvedIssues(ctx context.Context, b *kv.Batch) error {
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Info().Int("count", count).Msg("merge-closed issues upgraded to resolved")
+	return ctx.Err()
+}
+
+// depsUpgradeError is the reason of an applying record that schema 11 meets:
+// its in-memory job was lost with the previous process.
+const depsUpgradeError = "interrupted by an upgrade: open the merge request again"
+
+// upgradeDepsRecords runs in the schema batch (schema 11): the record of a job
+// that was applying fails, because the job lived in memory and is gone, and a
+// failed record keeps the first line of its error, not the log tail it held.
+// There is one record per repository, far below the batch limit. Idempotent.
+func (s *Store) upgradeDepsRecords(ctx context.Context, b *kv.Batch) error {
+	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte(depsPendPrefix)) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var pb storagepb.RepoDeps
+		if err := proto.Unmarshal(item.Value, &pb); err != nil {
+			return fmt.Errorf("upgrade deps record %s: %w", key, err)
+		}
+		// The job lived in memory: its id means nothing any more.
+		changed := pb.GetJobId() != ""
+		pb.JobId = ""
+		switch domain.DepsState(pb.GetState()) {
+		case domain.DepsApplying:
+			pb.State, pb.Error, changed = int32(domain.DepsFailed), depsUpgradeError, true
+		case domain.DepsFailed:
+			if first, _, cut := strings.Cut(pb.GetError(), "\n"); cut {
+				pb.Error, changed = first, true
+			}
+		}
+		if !changed {
+			continue
+		}
+		b.RequireVersion(slices.Clone(key), item.Version)
+		b.Put(slices.Clone(key), mustMarshal(&pb))
+	}
 	return ctx.Err()
 }

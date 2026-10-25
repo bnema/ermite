@@ -8,6 +8,7 @@ syntax = "proto3";
 
 package ermite.storage;
 
+import "ermite/storage/deps.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
@@ -229,6 +230,15 @@ message CIJob {
   string scope = 44;
   string call_id = 45;
   CICall call = 46;
+  // Set on the only job of a dependency run (Bernard): the updates the runner
+  // applies. Such a job is created ready and never planned from a workflow.
+  CIDepsJob deps = 47;
+}
+
+// CIDepsJob is what a runner applies for a dependency job.
+message CIDepsJob {
+  repeated DepRef updates = 1;
+  string go_version = 2;
 }
 
 // CICall is the call a reusable-workflow job makes, set when the calling job is

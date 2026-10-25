@@ -163,16 +163,20 @@ func (x *DepUpdate) GetNew() bool {
 
 // RepoDeps is the whole record under dpend/<repo>.
 type RepoDeps struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	Updates       []*DepUpdate           `protobuf:"bytes,2,rep,name=updates,proto3" json:"updates,omitempty"`
-	CheckedAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=checked_at,json=checkedAt,proto3" json:"checked_at,omitempty"`
-	SnoozedUntil  *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=snoozed_until,json=snoozedUntil,proto3" json:"snoozed_until,omitempty"`
-	State         int32                  `protobuf:"varint,5,opt,name=state,proto3" json:"state,omitempty"`
-	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
-	JobId         string                 `protobuf:"bytes,7,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Mr            int64                  `protobuf:"varint,8,opt,name=mr,proto3" json:"mr,omitempty"`
-	MrVersions    []*DepRef              `protobuf:"bytes,9,rep,name=mr_versions,json=mrVersions,proto3" json:"mr_versions,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Repo         string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	Updates      []*DepUpdate           `protobuf:"bytes,2,rep,name=updates,proto3" json:"updates,omitempty"`
+	CheckedAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=checked_at,json=checkedAt,proto3" json:"checked_at,omitempty"`
+	SnoozedUntil *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=snoozed_until,json=snoozedUntil,proto3" json:"snoozed_until,omitempty"`
+	State        int32                  `protobuf:"varint,5,opt,name=state,proto3" json:"state,omitempty"`
+	Error        string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	JobId        string                 `protobuf:"bytes,7,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Mr           int64                  `protobuf:"varint,8,opt,name=mr,proto3" json:"mr,omitempty"`
+	MrVersions   []*DepRef              `protobuf:"bytes,9,rep,name=mr_versions,json=mrVersions,proto3" json:"mr_versions,omitempty"`
+	// The CI run applying the updates, or the last one that tried; 0 for none.
+	RunId int64 `protobuf:"varint,10,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	// Every pending update when the run started: what the run commits.
+	RunUpdates    []*DepUpdate `protobuf:"bytes,11,rep,name=run_updates,json=runUpdates,proto3" json:"run_updates,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -270,6 +274,20 @@ func (x *RepoDeps) GetMrVersions() []*DepRef {
 	return nil
 }
 
+func (x *RepoDeps) GetRunId() int64 {
+	if x != nil {
+		return x.RunId
+	}
+	return 0
+}
+
+func (x *RepoDeps) GetRunUpdates() []*DepUpdate {
+	if x != nil {
+		return x.RunUpdates
+	}
+	return nil
+}
+
 // DepFirstSeen is global, under dseen/<ecosystem>/<name>@<version>@<sha>.
 type DepFirstSeen struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -329,7 +347,7 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\x03ref\x18\x01 \x01(\v2\x16.ermite.storage.DepRefR\x03ref\x12\x18\n" +
 	"\acurrent\x18\x02 \x01(\tR\acurrent\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\x05R\x04kind\x12\x10\n" +
-	"\x03new\x18\x04 \x01(\bR\x03new\"\xdb\x02\n" +
+	"\x03new\x18\x04 \x01(\bR\x03new\"\xae\x03\n" +
 	"\bRepoDeps\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x123\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateR\aupdates\x129\n" +
@@ -341,7 +359,11 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\x06job_id\x18\a \x01(\tR\x05jobId\x12\x0e\n" +
 	"\x02mr\x18\b \x01(\x03R\x02mr\x127\n" +
 	"\vmr_versions\x18\t \x03(\v2\x16.ermite.storage.DepRefR\n" +
-	"mrVersions\":\n" +
+	"mrVersions\x12\x15\n" +
+	"\x06run_id\x18\n" +
+	" \x01(\x03R\x05runId\x12:\n" +
+	"\vrun_updates\x18\v \x03(\v2\x19.ermite.storage.DepUpdateR\n" +
+	"runUpdates\":\n" +
 	"\fDepFirstSeen\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02atB/Z-bnema.dev/ermite/gen/ermite/storage;storagepbb\x06proto3"
 
@@ -371,12 +393,13 @@ var file_ermite_storage_deps_proto_depIdxs = []int32{
 	4, // 2: ermite.storage.RepoDeps.checked_at:type_name -> google.protobuf.Timestamp
 	4, // 3: ermite.storage.RepoDeps.snoozed_until:type_name -> google.protobuf.Timestamp
 	0, // 4: ermite.storage.RepoDeps.mr_versions:type_name -> ermite.storage.DepRef
-	4, // 5: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	1, // 5: ermite.storage.RepoDeps.run_updates:type_name -> ermite.storage.DepUpdate
+	4, // 6: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_deps_proto_init() }

@@ -200,6 +200,23 @@ type CIRun struct {
 	Version uint64
 }
 
+// Dependency runs (Bernard): one CIRun with one job created ready, never planned
+// from a workflow file.
+const (
+	// CIEventDependencies is the event of a dependency run.
+	CIEventDependencies = "dependencies"
+	// DepsWorkflowPath is the sentinel workflow path of dependency runs. A real
+	// workflow path starts with ".github/workflows/", so it never equals this
+	// one; it only keys the run numbers (runnum/<repo>/bernard/deps) and the
+	// --workflow filter.
+	DepsWorkflowPath = "bernard/deps"
+	// DepsWorkflowName is the workflow name shown for dependency runs.
+	DepsWorkflowName = "Dependencies"
+)
+
+// IsDeps reports whether the run applies dependency updates for Bernard.
+func (r CIRun) IsDeps() bool { return r.Event == CIEventDependencies }
+
 // CheckSha is the commit the checks of the run attach to: the head of the merge
 // request for a pull_request run (as on GitHub, where the checks of the test
 // merge show on the head), the commit of the run otherwise.
@@ -313,6 +330,9 @@ type CIJob struct {
 	// Call is set on the record of a job that calls a reusable workflow: it never
 	// runs, it ends when the jobs of its scope have.
 	Call *CICall
+	// Deps marks the only job of a dependency run (Bernard) and holds what the
+	// runner applies. Nil for every workflow job.
+	Deps *CIDepsJob
 
 	// TokenHash is the hash of the job token of the current assignment; zero
 	// when there is none.
@@ -329,6 +349,12 @@ type CIJob struct {
 	CancelRequestedAt time.Time
 
 	Version uint64
+}
+
+// CIDepsJob is what a runner applies for a dependency job.
+type CIDepsJob struct {
+	Updates   []DepRef
+	GoVersion string
 }
 
 // CICall is what a job calling a reusable workflow resolved (CI-3, D7).

@@ -348,6 +348,7 @@ func encodeJob(j domain.CIJob) ([]byte, error) {
 		TokenValidUntil: encodeTime(j.TokenValidUntil), CancelReason: encodeCancelReason(j.CancelReason), CancelMessage: j.CancelMessage,
 		CancelRequestedAt: encodeTime(j.CancelRequestedAt), Planned: j.Planned, Environment: j.Environment, Permissions: j.Permissions,
 		Concurrency: encodeConcurrency(j.Concurrency), Scope: j.Scope, CallId: j.CallID, Call: encodeCall(j.Call),
+		Deps: encodeDepsJob(j.Deps),
 	}
 	if j.HasToken() {
 		pb.TokenHash = j.TokenHash[:]
@@ -377,7 +378,7 @@ func decodeJob(item kv.Item) (domain.CIJob, error) {
 		AssignedAt: decodeTime(pb.GetAssignedAt()), AckedAt: decodeTime(pb.GetAckedAt()), AssignCancels: int(pb.GetAssignCancels()),
 		CancelMessage: pb.GetCancelMessage(), CancelRequestedAt: decodeTime(pb.GetCancelRequestedAt()),
 		Environment: pb.GetEnvironment(), Permissions: pb.GetPermissions(), Concurrency: decodeConcurrency(pb.GetConcurrency()), Version: item.Version,
-		Scope: pb.GetScope(), CallID: pb.GetCallId(), Call: decodeCall(pb.GetCall()),
+		Scope: pb.GetScope(), CallID: pb.GetCallId(), Call: decodeCall(pb.GetCall()), Deps: decodeDepsJob(pb.GetDeps()),
 	}
 	j.CancelReason = decodeCancelReason(pb.GetCancelReason())
 	copy(j.TokenHash[:], pb.GetTokenHash())
@@ -1134,6 +1135,28 @@ func (c *CI) RemoveRunner(ctx context.Context, id string) (domain.CIRunner, erro
 		return r, nil
 	}
 	return domain.CIRunner{}, fmt.Errorf("remove runner %q: %w", id, domain.ErrConflict)
+}
+
+func encodeDepsJob(d *domain.CIDepsJob) *storagepb.CIDepsJob {
+	if d == nil {
+		return nil
+	}
+	pb := &storagepb.CIDepsJob{GoVersion: d.GoVersion}
+	for _, r := range d.Updates {
+		pb.Updates = append(pb.Updates, encodeDepRef(r))
+	}
+	return pb
+}
+
+func decodeDepsJob(pb *storagepb.CIDepsJob) *domain.CIDepsJob {
+	if pb == nil {
+		return nil
+	}
+	d := &domain.CIDepsJob{GoVersion: pb.GetGoVersion()}
+	for _, r := range pb.GetUpdates() {
+		d.Updates = append(d.Updates, decodeDepRef(r))
+	}
+	return d
 }
 
 func encodeCall(c *domain.CICall) *storagepb.CICall {

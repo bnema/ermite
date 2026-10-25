@@ -241,6 +241,14 @@ func decodeDepRef(pb *storagepb.DepRef) domain.DepRef {
 	return domain.DepRef{Ecosystem: domain.DepsEcosystem(pb.GetEcosystem()), Directory: pb.GetDirectory(), Name: pb.GetName(), Version: pb.GetVersion()}
 }
 
+func encodeDepUpdate(u domain.DepUpdate) *storagepb.DepUpdate {
+	return &storagepb.DepUpdate{Ref: encodeDepRef(u.DepRef), Current: u.Current, Kind: int32(u.Kind), New: u.New}
+}
+
+func decodeDepUpdate(u *storagepb.DepUpdate) domain.DepUpdate {
+	return domain.DepUpdate{DepRef: decodeDepRef(u.GetRef()), Current: u.GetCurrent(), Kind: domain.DepKind(u.GetKind()), New: u.GetNew()}
+}
+
 func encodeRepoDeps(rd domain.RepoDeps) ([]byte, error) {
 	if rd.Repo.IsZero() {
 		return nil, fmt.Errorf("%w: empty name", domain.ErrInvalidName)
@@ -252,12 +260,14 @@ func encodeRepoDeps(rd domain.RepoDeps) ([]byte, error) {
 		State:        int32(rd.State),
 		Error:        rd.Error,
 		JobId:        rd.JobID,
+		RunId:        rd.RunID,
 		Mr:           rd.MR,
 	}
 	for _, u := range rd.Updates {
-		pb.Updates = append(pb.Updates, &storagepb.DepUpdate{
-			Ref: encodeDepRef(u.DepRef), Current: u.Current, Kind: int32(u.Kind), New: u.New,
-		})
+		pb.Updates = append(pb.Updates, encodeDepUpdate(u))
+	}
+	for _, u := range rd.RunUpdates {
+		pb.RunUpdates = append(pb.RunUpdates, encodeDepUpdate(u))
 	}
 	for _, r := range rd.MRVersions {
 		pb.MrVersions = append(pb.MrVersions, encodeDepRef(r))
@@ -285,12 +295,14 @@ func decodeRepoDeps(val []byte) (domain.RepoDeps, error) {
 		State:        domain.DepsState(pb.GetState()),
 		Error:        pb.GetError(),
 		JobID:        pb.GetJobId(),
+		RunID:        pb.GetRunId(),
 		MR:           pb.GetMr(),
 	}
 	for _, u := range pb.GetUpdates() {
-		rd.Updates = append(rd.Updates, domain.DepUpdate{
-			DepRef: decodeDepRef(u.GetRef()), Current: u.GetCurrent(), Kind: domain.DepKind(u.GetKind()), New: u.GetNew(),
-		})
+		rd.Updates = append(rd.Updates, decodeDepUpdate(u))
+	}
+	for _, u := range pb.GetRunUpdates() {
+		rd.RunUpdates = append(rd.RunUpdates, decodeDepUpdate(u))
 	}
 	for _, r := range pb.GetMrVersions() {
 		rd.MRVersions = append(rd.MRVersions, decodeDepRef(r))

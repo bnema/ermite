@@ -420,3 +420,51 @@ func TestSchema6TokenUpgrade(t *testing.T) {
 		})
 	}
 }
+
+// Schema 10 fails the records left applying by an in-memory job, cuts the
+// error of the failed ones to its first line, clears the job id and leaves the
+// other records alone. Running it again changes nothing.
+func TestSchema10UpgradesDepsRecords(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 9}))
+	const (
+		applying = int32(domain.DepsApplying)
+		failed   = int32(domain.DepsFailed)
+		idle     = int32(domain.DepsIdle)
+	)
+	for _, rec := range []*storagepb.RepoDeps{
+		{Repo: "applying", State: applying, JobId: "deps-0123456789abcdef", Mr: 3},
+		{Repo: "failed", State: failed, Error: "the runner reported failure\nline two\nline three", JobId: "deps-fedcba9876543210"},
+		{Repo: "oneline", State: failed, Error: "boom"},
+		{Repo: "idle", State: idle, Mr: 9, Error: "kept\nas it is"},
+	} {
+		putRaw(t, dir, "dpend/"+rec.GetRepo(), mustProto(t, rec))
+	}
+
+	want := map[string]struct {
+		state domain.DepsState
+		err   string
+		mr    int64
+	}{
+		"applying": {domain.DepsFailed, "interrupted by an upgrade: open the merge request again", 3},
+		"failed":   {domain.DepsFailed, "the runner reported failure", 0},
+		"oneline":  {domain.DepsFailed, "boom", 0},
+		"idle":     {domain.DepsIdle, "kept\nas it is", 9},
+	}
+	for range 2 {
+		s, err := kvstore.Open(ctx, dir)
+		require.NoError(t, err)
+		for repo, w := range want {
+			got, err := s.Deps().Get(ctx, name(t, repo))
+			require.NoError(t, err)
+			assert.Equal(t, w.state, got.State, repo)
+			assert.Equal(t, w.err, got.Error, repo)
+			assert.Equal(t, w.mr, got.MR, repo)
+			assert.Empty(t, got.JobID, repo)
+			assert.Zero(t, got.RunID, repo)
+		}
+		require.NoError(t, s.Close(ctx))
+		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
+	}
+}

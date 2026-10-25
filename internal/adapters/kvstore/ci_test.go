@@ -448,3 +448,43 @@ func TestCIRunTrustedRoundTripsAndDefaultsToFalse(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, got.Trusted)
 }
+
+// A dependency job (CIJob.Deps) round-trips and is listed ready like any job.
+func TestCIDepsJobRoundTripsAndIsListedReady(t *testing.T) {
+	ctx := context.Background()
+	_, ci, n := ciRepo(t)
+	want := &domain.CIDepsJob{
+		GoVersion: "1.26.1",
+		Updates: []domain.DepRef{
+			{Ecosystem: domain.EcosystemGoMod, Name: "golang.org/x/mod", Version: "v0.2.0"},
+			{Ecosystem: domain.EcosystemGoMod, Directory: "tools", Name: "golang.org/x/text", Version: "v0.3.0"},
+		},
+	}
+	d, err := ci.CreateRun(ctx, n, domain.DepsWorkflowPath, func(id, number int64) ports.CIRunDraft {
+		d := draftOf(n, domain.DepsWorkflowPath, 1)(id, number)
+		d.Run.Event, d.Run.WorkflowName = domain.CIEventDependencies, domain.DepsWorkflowName
+		d.Jobs[0].Deps = want
+		d.Checks = nil
+		return d
+	})
+	require.NoError(t, err)
+
+	ready, err := ci.ListReadyJobs(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, ready, 1)
+	assert.Equal(t, want, ready[0].Deps)
+
+	got, err := ci.GetRun(ctx, n, d.Run.ID)
+	require.NoError(t, err)
+	assert.True(t, got.IsDeps())
+	jobs, err := ci.ListJobs(ctx, d.Run.ID, d.Run.Attempt)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, want, jobs[0].Deps)
+
+	plain, err := ci.CreateRun(ctx, n, "w.yml", draftOf(n, "w.yml", 1))
+	require.NoError(t, err)
+	jobs, err = ci.ListJobs(ctx, plain.Run.ID, plain.Run.Attempt)
+	require.NoError(t, err)
+	assert.Nil(t, jobs[0].Deps, "a workflow job has no deps")
+}
