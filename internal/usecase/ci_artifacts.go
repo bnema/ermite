@@ -112,6 +112,9 @@ func (c *CI) artifactJob(ctx context.Context, secret, jobID string) (domain.CIJo
 	if err != nil {
 		return domain.CIJob{}, err
 	}
+	if err := notDepsJob(j); err != nil {
+		return domain.CIJob{}, err
+	}
 	if j.Ended() {
 		return domain.CIJob{}, endedError(j)
 	}

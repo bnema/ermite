@@ -51,6 +51,9 @@ func (c *CI) resolveActions(ctx context.Context, secret, jobID string, uses []st
 	if err != nil {
 		return nil, err
 	}
+	if err := notDepsJob(j); err != nil {
+		return nil, err
+	}
 	if j.Ended() {
 		return nil, endedError(j)
 	}

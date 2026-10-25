@@ -407,6 +407,15 @@ func (c *CI) jobFor(ctx context.Context, secret, jobID string) (domain.CIJob, er
 	return j, nil
 }
 
+// notDepsJob refuses a call that a dependency job has no use for (workflow
+// actions, step summaries, artifacts): it runs no workflow.
+func notDepsJob(j domain.CIJob) error {
+	if j.Deps != nil {
+		return fmt.Errorf("%w: a dependency job has no workflow: %s is not available to it", domain.ErrPreconditionFailed, j.ID)
+	}
+	return nil
+}
+
 func endedError(j domain.CIJob) error {
 	return &domain.JobEndedError{Conclusion: j.Conclusion, Message: j.Error}
 }

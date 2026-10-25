@@ -45,6 +45,9 @@ func (c *CI) UploadSummary(ctx context.Context, secret, jobID string, step int32
 	if err != nil {
 		return err
 	}
+	if err := notDepsJob(j); err != nil {
+		return err
+	}
 	if j.Ended() {
 		return endedError(j)
 	}

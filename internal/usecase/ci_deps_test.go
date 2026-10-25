@@ -659,3 +659,19 @@ func TestOpenDepsRunIsNotPlannedAfterARestart(t *testing.T) {
 		assert.NotNil(t, r.fetch("deps"))
 	})
 }
+
+// A dependency job runs no workflow: it has no actions to resolve and no step
+// summary to store.
+func TestDepsJobRefusesWorkflowCalls(t *testing.T) {
+	t.Parallel()
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		r.start(10 * time.Minute)
+		j := r.fetch("deps")
+		require.NotNil(t, j)
+
+		_, err := r.ci.ResolveActions(r.ctx, j.Token, j.Job.ID, []string{"actions/checkout@v4"})
+		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
+		err = r.ci.UploadSummary(r.ctx, j.Token, j.Job.ID, 1, "# summary")
+		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	})
+}
