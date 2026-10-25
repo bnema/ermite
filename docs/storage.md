@@ -109,14 +109,14 @@ open indexes, or creating retroactive events. The migration and schema bump
 are atomic and idempotent. Like token upgrades, this uses a single batch
 (16 MiB limit, typically over 10k issue records). Older builds refuse schema 8.
 
-## Dependency runs (schema 10)
+## Dependency runs (schema 11)
 
 Bernard's dependency records live under `dpend/<repo>`. `run_id` links the run
 that is applying the updates, or the last one that tried; `run_updates` is the
 snapshot of every update that run commits. A `CIJob` of a dependency run carries
 `deps` (the updates the runner applies).
 
-Schema 10 fails the records that were applying (their job lived in memory) with
+Schema 11 fails the records that were applying (their job lived in memory) with
 "interrupted by an upgrade: open the merge request again", cuts the error of the
 failed ones to its first line and drops the old job id. The migration and the
-schema bump share one batch and are idempotent. Older builds refuse schema 10.
+schema bump share one batch and are idempotent. Older builds refuse schema 11.

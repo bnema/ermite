@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -431,60 +432,75 @@ func TestSchema6TokenUpgrade(t *testing.T) {
 	}
 }
 
-// Schema 10 fails the records left applying by an in-memory job, cuts the
+// Schema 11 fails the records left applying by an in-memory job, cuts the
 // error of the failed ones to its first line, clears the job id and leaves the
 // other records alone. Running it again changes nothing.
-func TestSchema10UpgradesDepsRecords(t *testing.T) {
-	ctx := context.Background()
-	dir := t.TempDir()
-	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 9}))
-	const (
-		applying = int32(domain.DepsApplying)
-		failed   = int32(domain.DepsFailed)
-		idle     = int32(domain.DepsIdle)
-	)
-	for _, rec := range []*storagepb.RepoDeps{
-		{Repo: "applying", State: applying, Mr: 3, JobId: "deps-0123456789abcdef"},
-		{Repo: "failed", State: failed, Error: "the runner reported failure\nline two\nline three", JobId: "deps-fedcba9876543210"},
-		{Repo: "oneline", State: failed, Error: "boom"},
-		{Repo: "idle", State: idle, Mr: 9, Error: "kept\nas it is"},
-	} {
-		putRaw(t, dir, "dpend/"+rec.GetRepo(), mustProto(t, rec))
-	}
+func TestSchema11UpgradesDepsRecords(t *testing.T) {
+	for _, from := range []uint32{9, 10} {
+		t.Run(fmt.Sprint(from), func(t *testing.T) {
+			ctx := context.Background()
+			dir := t.TempDir()
+			putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: from}))
+			var previous []string
+			for _, sc := range domain.AllScopes() {
+				if sc != domain.ScopeJournalRead {
+					previous = append(previous, sc.String())
+				}
+			}
+			// Deliberately missing journal:read: schema 9 must grant it, while
+			// schema 10 must not rerun that migration, even for an eligible token.
+			putRaw(t, dir, "token/owner", mustProto(t, &storagepb.Token{Id: "owner", Scopes: previous}))
+			const (
+				applying = int32(domain.DepsApplying)
+				failed   = int32(domain.DepsFailed)
+				idle     = int32(domain.DepsIdle)
+			)
+			for _, rec := range []*storagepb.RepoDeps{
+				{Repo: "applying", State: applying, Mr: 3, JobId: "deps-0123456789abcdef"},
+				{Repo: "failed", State: failed, Error: "the runner reported failure\nline two\nline three", JobId: "deps-fedcba9876543210"},
+				{Repo: "oneline", State: failed, Error: "boom"},
+				{Repo: "idle", State: idle, Mr: 9, Error: "kept\nas it is"},
+			} {
+				putRaw(t, dir, "dpend/"+rec.GetRepo(), mustProto(t, rec))
+			}
 
-	want := map[string]struct {
-		state domain.DepsState
-		err   string
-		mr    int64
-	}{
-		"applying": {domain.DepsFailed, "interrupted by an upgrade: open the merge request again", 3},
-		"failed":   {domain.DepsFailed, "the runner reported failure", 0},
-		"oneline":  {domain.DepsFailed, "boom", 0},
-		"idle":     {domain.DepsIdle, "kept\nas it is", 9},
-	}
-	for pass := range 2 {
-		if pass == 1 {
-			// Run the upgrade again on the upgraded records.
-			putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 9}))
-		}
-		s, err := kvstore.Open(ctx, dir)
-		require.NoError(t, err)
-		for repo, w := range want {
-			got, err := s.Deps().Get(ctx, name(t, repo))
-			require.NoError(t, err)
-			assert.Equal(t, w.state, got.State, repo)
-			assert.Equal(t, w.err, got.Error, repo)
-			assert.Equal(t, w.mr, got.MR, repo)
-			assert.Zero(t, got.RunID, repo)
-		}
-		require.NoError(t, s.Close(ctx))
-		for repo := range want {
-			raw, ok := rawGet(t, dir, "dpend/"+repo)
-			require.True(t, ok)
-			var pb storagepb.RepoDeps
-			require.NoError(t, proto.Unmarshal(raw, &pb))
-			assert.Empty(t, pb.GetJobId(), repo+": the job id is gone") //nolint:staticcheck // checks the deprecated field is cleared
-		}
-		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
+			want := map[string]struct {
+				state domain.DepsState
+				err   string
+				mr    int64
+			}{
+				"applying": {domain.DepsFailed, "interrupted by an upgrade: open the merge request again", 3},
+				"failed":   {domain.DepsFailed, "the runner reported failure", 0},
+				"oneline":  {domain.DepsFailed, "boom", 0},
+				"idle":     {domain.DepsIdle, "kept\nas it is", 9},
+			}
+			for pass := range 2 {
+				if pass == 1 {
+					// Run the upgrade again on the upgraded records.
+					putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: from}))
+				}
+				s, err := kvstore.Open(ctx, dir)
+				require.NoError(t, err)
+				for repo, w := range want {
+					got, err := s.Deps().Get(ctx, name(t, repo))
+					require.NoError(t, err)
+					assert.Equal(t, w.state, got.State, repo)
+					assert.Equal(t, w.err, got.Error, repo)
+					assert.Equal(t, w.mr, got.MR, repo)
+					assert.Zero(t, got.RunID, repo)
+				}
+				require.NoError(t, s.Close(ctx))
+				scopes := readTokenScopes(t, dir, "owner")["owner"]
+				assert.Equal(t, from < 10, slices.Contains(scopes, "journal:read"))
+				for repo := range want {
+					raw, ok := rawGet(t, dir, "dpend/"+repo)
+					require.True(t, ok)
+					var pb storagepb.RepoDeps
+					require.NoError(t, proto.Unmarshal(raw, &pb))
+					assert.Empty(t, pb.GetJobId(), repo+": the job id is gone") //nolint:staticcheck // checks the deprecated field is cleared
+				}
+				assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
+			}
+		})
 	}
 }

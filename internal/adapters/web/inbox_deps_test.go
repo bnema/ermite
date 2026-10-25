@@ -285,6 +285,7 @@ func TestDepsBreakdownOmitsZeroParts(t *testing.T) {
 func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
+	emptyJournal(svc)
 	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(depsOverview(t), nil)
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
