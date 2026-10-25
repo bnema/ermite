@@ -19,7 +19,7 @@ Bernard accepts a report only if it changes `go.mod` and `go.sum` of the request
 
 The run shows in the Actions tab, in `ermite run list` (`--workflow bernard/deps` keeps only these runs) and in the Inbox under **Running**, as workflow `Dependencies` by `bernard`. Its log is on the run page and in `ermite run view <repo> <run> --log`. A run:
 
-- can be cancelled (`ermite run cancel`), which fails the update; closing or merging the Bernard merge request cancels a run that is still going.
+- can be cancelled (`ermite run cancel`), which fails the update; closing the Bernard merge request cancels a run that is still going.
 - posts no check and cannot be re-run: click **Retry** in the Inbox to start a new one.
 - has `ERMITE_DEPS_JOB_TIMEOUT` (10 minutes by default) from the moment a runner takes it, as the `timeout-minutes` of the job. The wait for a runner is CI's: a run no runner takes within 24 hours fails.
 - survives a server restart. If the server stops after the run ended and before Bernard applied the result, the update fails with a reason and you can retry.
