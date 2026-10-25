@@ -39,6 +39,8 @@ type InboxRow struct {
 	When     string
 	WhenAt   string
 	Cursor   bool
+	// Checks is the CI state of the head of a merge request; zero otherwise.
+	Checks ChecksSummary
 }
 
 // PendingRow is one issue awaiting moderation. Everything in it is plain text:
@@ -117,7 +119,7 @@ func inboxFilter(r *http.Request) (domain.RepoName, error) {
 }
 
 // inboxPage builds the page from the overview.
-func (s *Server) inboxPage(ov ports.InboxOverview, filter domain.RepoName) InboxPage {
+func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, filter domain.RepoName) InboxPage {
 	now := s.cfg.Now()
 	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Filter: filter.String()}
 	p.Running, p.RunsEnabled = ov.Counts.Running, ov.RunsEnabled
@@ -153,7 +155,12 @@ func (s *Server) inboxPage(ov ports.InboxOverview, filter domain.RepoName) Inbox
 		return r
 	}
 	for _, m := range ov.MergeRequests {
-		p.MRs = append(p.MRs, row(m.Repo, m.Number, mrHref(m.Repo.String(), m.Number), m.Title.String(), m.UpdatedAt, m.CreatedAt))
+		r := row(m.Repo, m.Number, mrHref(m.Repo.String(), m.Number), m.Title.String(), m.UpdatedAt, m.CreatedAt)
+		if !m.HeadID.IsZero() {
+			head := m.HeadID.String()
+			r.Checks = checksSummary(m.Repo, head, s.checksFor(ctx, m.Repo, head))
+		}
+		p.MRs = append(p.MRs, r)
 	}
 	for _, i := range ov.Issues {
 		p.IssueRows = append(p.IssueRows, row(i.Repo, i.Number, issueHref(i.Repo.String(), i.Number), i.Title.String(), i.UpdatedAt, i.CreatedAt))
@@ -274,7 +281,7 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 		}
 		l.Live, l.LiveURL = true, liveURL("owner", q)
 	}
-	return Inbox(l, s.inboxPage(ov, filter)), http.StatusOK, nil
+	return Inbox(l, s.inboxPage(ctx, ov, filter)), http.StatusOK, nil
 }
 
 // inboxCount is the number of open items the home button shows, and whether
@@ -312,7 +319,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 	if err != nil {
 		return nil, err
 	}
-	p := l.s.inboxPage(ov, filter)
+	p := l.s.inboxPage(ctx, ov, filter)
 	var out []fragment
 	for _, c := range []templ.Component{InboxCounters(p), InboxRepos(p), InboxPending(p), InboxRuns(p), InboxDeps(p), InboxMRs(p), InboxIssues(p)} {
 		f, err := renderFragment(ctx, inboxEvent, c)

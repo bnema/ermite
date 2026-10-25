@@ -104,6 +104,7 @@ templ inboxRows(rows []InboxRow, label string) {
 					<tr data-cursor?={ m.Cursor } data-state="open">
 						<td class="c-n mute">{ m.Number }</td>
 						<td class="c-subject"><a href={ templ.SafeURL(m.Href) }>{ m.Title }</a> <a class="mute" href={ templ.SafeURL(m.RepoHref) }>{ m.Repo }</a></td>
+						<td class="c-ck">@CommitChecks(m.Checks)</td>
 						<td class="c-when nowrap dim">
 							if m.WhenAt != "" {
 								<time datetime={ m.WhenAt } title={ m.WhenAt }>{ m.When }</time>
