@@ -253,9 +253,9 @@ templ InboxDeps(p InboxPage) {
 				for _, d := range p.Deps {
 					<li class="deps-row" id={ d.ID }>
 						<details class="deps-main">
-							<summary>
+							<summary id={ d.ID + "-sum" }>
 								<span class="deps-repo">{ d.Repo }</span>
-								<span class="count">{ itoa(d.Count) }</span>
+								<span class="count">{ itoa(d.Count) }</span><span class="sr">{ " updates" }</span>
 								<span class="dim">{ d.Breakdown }</span>
 								if d.New > 0 {
 									<span class="pill deps-new">new { itoa(d.New) }</span>
@@ -288,19 +288,19 @@ templ InboxDeps(p InboxPage) {
 						</span>
 						<span class="deps-act">
 							if d.Primary.Href != "" {
-								<a class="btn primary" href={ templ.SafeURL(d.Primary.Href) }>{ d.Primary.Label }</a>
+								<a id={ d.ID + "-act" } class="btn primary" href={ templ.SafeURL(d.Primary.Href) }>{ d.Primary.Label }</a>
 							} else if d.Primary.Action != "" {
-								@depsForm(d, d.Primary.Action, d.Primary.Label, "btn primary", true)
+								@depsForm(d, d.Primary.Action, d.Primary.Label, "btn primary", true, d.ID+"-act")
 							}
 							if d.Ignore != "" || d.Snooze != "" {
 								<details class="menu deps-menu">
-									<summary class="btn icon" aria-label={ "More actions for " + d.Repo }>⋯</summary>
+									<summary id={ d.ID + "-more" } class="btn icon" aria-label={ "More actions for " + d.Repo }>⋯</summary>
 									<div class="menu-pop">
 										if d.Ignore != "" {
-											@depsForm(d, d.Ignore, "Ignore", "btn", true)
+											@depsForm(d, d.Ignore, "Ignore", "btn", true, "")
 										}
 										if d.Snooze != "" {
-											@depsForm(d, d.Snooze, "Snooze", "btn", false)
+											@depsForm(d, d.Snooze, "Snooze", "btn", false, "")
 										}
 									</div>
 								</details>
@@ -323,8 +323,13 @@ templ depsStatusCell(s InboxDepsStatus) {
 				title={ s.Title }
 			}
 		>
-			@CheckIcon(depsIconKind(s), s.State)
+			<span aria-hidden="true">
+				@CheckIcon(depsIconKind(s), s.State)
+			</span>
 			<span class="dim">{ s.State }</span>
+			if s.State == "failed" && s.Title != "" {
+				<span class="sr">: { s.Title }</span>
+			}
 			if s.Href != "" {
 				<a
 					href={ templ.SafeURL(s.Href) }
@@ -342,7 +347,7 @@ templ depsStatusCell(s InboxDepsStatus) {
 
 // depsForm is one POST button of a row. The expected versions go in hidden
 // fields (four per update, in the same order) for Open MR and Ignore.
-templ depsForm(d InboxDepsRow, action, label, class string, refs bool) {
+templ depsForm(d InboxDepsRow, action, label, class string, refs bool, id string) {
 	<form method="post" action={ templ.SafeURL(action) }>
 		if refs {
 			for _, u := range d.Updates {
@@ -352,6 +357,12 @@ templ depsForm(d InboxDepsRow, action, label, class string, refs bool) {
 				<input type="hidden" name="version" value={ u.Latest }/>
 			}
 		}
-		<button type="submit" class={ class }>{ label }</button>
+		<button
+			type="submit"
+			class={ class }
+			if id != "" {
+				id={ id }
+			}
+		>{ label }</button>
 	</form>
 }

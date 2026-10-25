@@ -1046,12 +1046,19 @@ window.ermiteLive = (() => {
           }
         }
         // data-keep-open: the rows (li with an id) whose details were open stay
-        // open. The menus (details.menu) are not kept.
+        // open. The menus (details.menu) are not kept; the focus that was in
+        // one goes to the "more" summary of the same row (<li id>-more).
+        let menuOf = '';
         if (old.hasAttribute('data-keep-open')) {
           const items = [...el.querySelectorAll('li')];
           for (const open of old.querySelectorAll('details[open]')) {
+            if (open.matches('.menu')) {
+              const row = open.closest('li');
+              if (row?.id && open.contains(document.activeElement)) menuOf = row.id + '-more';
+              continue;
+            }
             const li = open.parentElement;
-            if (open.matches('.menu') || li?.tagName !== 'LI' || !li.id) continue;
+            if (li?.tagName !== 'LI' || !li.id) continue;
             const fresh = items.find((e) => e.id === li.id);
             const same = [...(fresh?.children || [])].find((c) => c.tagName === 'DETAILS' && !c.matches('.menu'));
             if (same) same.setAttribute('open', '');
@@ -1063,7 +1070,9 @@ window.ermiteLive = (() => {
             rows.dataset.desc === 'true' && el.hasAttribute('data-activity')) rows.prepend(el);
         window.htmx?.process(el);
         fitIn(el);
-        if (had) refocus(el, had);
+        const more = menuOf && focusables(el).find((e) => e.id === menuOf);
+        if (more) take(more);
+        else if (had) refocus(el, had);
       }
       // The rows may have changed under an active filter: apply it again and
       // keep the cursor on its row while that row is still shown.

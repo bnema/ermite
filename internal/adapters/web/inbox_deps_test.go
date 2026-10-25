@@ -82,6 +82,14 @@ func TestInboxDepsTable(t *testing.T) {
 	}
 	assert.Contains(t, sec, `<a href="/alpha/actions/runs/12" title="the run ended: failure">run #3</a>`)
 	assert.Contains(t, sec, ">Retry<")
+	// stable ids keep the focus on the same control through a live update
+	for _, id := range []string{"deps-alpha-sum", "deps-alpha-act", "deps-alpha-more"} {
+		assert.Contains(t, sec, `id="`+id+`"`)
+	}
+	// the screen reader hears words, not the icon
+	assert.Contains(t, sec, `<span class="count">3</span><span class="sr"> updates</span>`)
+	assert.Contains(t, sec, `<span class="sr">: the run ended: failure</span>`)
+	assert.Contains(t, sec, `<span aria-hidden="true"><span class="ck ck-bad"`)
 	assert.Contains(t, sec, `action="/-/inbox/deps/alpha/open"`)
 	for _, a := range []string{"ignore", "snooze"} {
 		assert.Contains(t, sec, `action="/-/inbox/deps/alpha/`+a+`"`)

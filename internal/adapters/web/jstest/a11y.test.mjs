@@ -271,7 +271,10 @@ test('a removed row skips the rows a filter hides', () => {
 function depsSection(open = {}) {
   const row = (id) => {
     const attrs = open[id] ? { open: '' } : {};
-    return el('li', { id }, el('details', { cls: 'deps-main', attrs }), el('details', { cls: 'menu deps-menu', attrs: open[id + '-menu'] ? { open: '' } : {} }));
+    const menu = el('details', { cls: 'menu deps-menu', attrs: open[id + '-menu'] ? { open: '' } : {} },
+      el('summary', { id: id + '-more' }), el('div', { cls: 'menu-pop' }, el('button', { id: id + '-ignore' })));
+    // as in the page, the menu sits in the actions span of the row
+    return el('li', { id }, el('details', { cls: 'deps-main', attrs }), el('span', { cls: 'deps-act' }, menu));
   };
   return el('section', { id: 'inbox-deps', attrs: { 'data-keep-open': '' } }, el('ul', {}, row('deps-a'), row('deps-b')));
 }
@@ -283,7 +286,28 @@ test('a swap keeps the details of the rows that were open, and not their menus',
   const [a, b] = fresh.querySelectorAll('li');
   assert.equal(a.children[0].hasAttribute('open'), false, 'a row that was closed stays closed');
   assert.equal(b.children[0].hasAttribute('open'), true, 'a row that was open stays open');
-  assert.equal(b.children[1].hasAttribute('open'), false, 'the menu is closed');
+  assert.equal(b.querySelector('.menu').hasAttribute('open'), false, 'the menu is closed');
+});
+
+test('a swap that closes the menu holding the focus puts it on the ⋯ of the same row', () => {
+  const old = depsSection({ 'deps-b-menu': true });
+  dom.body.replaceChildren(old);
+  active = old.querySelector('#deps-b-ignore');
+  assert.ok(active, 'the button of the open menu');
+  dom.focused = [];
+  const fresh = depsSection();
+  swapWith('k4', fresh);
+  assert.equal(active, fresh.querySelector('#deps-b-more'), 'the ⋯ of deps-b, not of deps-a');
+  assert.equal(dom.focused.at(-1).opts.preventScroll, true);
+});
+
+test('a swap with the focus in a closed menu or elsewhere in the section does not use the ⋯', () => {
+  const old = depsSection({ 'deps-a-menu': true });
+  dom.body.replaceChildren(old);
+  active = old.querySelector('#deps-b-more'); // another row, its menu closed
+  const fresh = depsSection();
+  swapWith('k5', fresh);
+  assert.equal(active, fresh.querySelector('#deps-b-more'), 'the focus follows its own control');
 });
 
 test('a swap does not open a row that left, and ignores a section without data-keep-open', () => {
