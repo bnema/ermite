@@ -17,7 +17,7 @@ GitHub Actions updates are applied by the server. Go module updates are applied 
 
 Bernard accepts a report only if it changes `go.mod` and `go.sum` of the requested directories, keeps `replace`, `exclude`, `retract`, `go` and `toolchain` as they were, sets each requested module to exactly the requested version and leaves the other direct requirements alone. It then commits the files, together with the Actions updates, on `bernard/deps` on top of the commit the job ran on, and opens or updates the merge request.
 
-The run shows in the Actions tab, in `ermite run list` and in the Inbox under **Running**, as workflow `Dependencies` by `bernard`. Its log is on the run page and in `ermite run view <repo> <run> --log`. A run:
+The run shows in the Actions tab, in `ermite run list` (`--workflow bernard/deps` keeps only these runs) and in the Inbox under **Running**, as workflow `Dependencies` by `bernard`. Its log is on the run page and in `ermite run view <repo> <run> --log`. A run:
 
 - can be cancelled (`ermite run cancel`), which fails the update; closing or merging the Bernard merge request cancels a run that is still going.
 - posts no check and cannot be re-run: click **Retry** in the Inbox to start a new one.

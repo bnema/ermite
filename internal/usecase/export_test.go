@@ -268,3 +268,6 @@ func (m *MergeRequests) UnderRepoLock(ctx context.Context, repo domain.RepoName,
 	fn()
 	return nil
 }
+
+// WorkflowMatches exposes the --workflow filter of a run listing to the tests.
+func WorkflowMatches(r domain.CIRun, workflow string) bool { return workflowMatches(r, workflow) }

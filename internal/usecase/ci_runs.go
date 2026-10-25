@@ -76,11 +76,22 @@ func runFilter(p ports.ListRunsParams) func(domain.CIRun) bool {
 			return false
 		case p.Branch != "" && r.Ref != "refs/heads/"+p.Branch:
 			return false
-		case p.Workflow != "" && r.WorkflowPath != p.Workflow && path.Base(r.WorkflowPath) != p.Workflow:
+		case p.Workflow != "" && !workflowMatches(r, p.Workflow):
 			return false
 		}
 		return true
 	}
+}
+
+// workflowMatches reports whether the run belongs to the workflow file named by
+// its path or, for a workflow file, its file name. A dependency run has no file:
+// only its exact sentinel path (domain.DepsWorkflowPath) names it, so that
+// "deps" does not match a file name.
+func workflowMatches(r domain.CIRun, workflow string) bool {
+	if r.WorkflowPath == workflow {
+		return true
+	}
+	return !r.IsDeps() && path.Base(r.WorkflowPath) == workflow
 }
 
 // runOf finds a run of the repository; a run of another repository is not

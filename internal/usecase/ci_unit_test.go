@@ -205,3 +205,28 @@ func TestMergeChecksAndOverride(t *testing.T) {
 		})
 	}
 }
+
+// The --workflow filter takes a workflow file by path or file name; a
+// dependency run answers to its sentinel path only.
+func TestWorkflowFilterMatchesDependencyRunsByExactPath(t *testing.T) {
+	t.Parallel()
+	file := domain.CIRun{WorkflowPath: ".github/workflows/ci.yml"}
+	deps := domain.CIRun{Event: domain.CIEventDependencies, WorkflowPath: domain.DepsWorkflowPath}
+	for _, c := range []struct {
+		name     string
+		run      domain.CIRun
+		workflow string
+		want     bool
+	}{
+		{"file by path", file, ".github/workflows/ci.yml", true},
+		{"file by name", file, "ci.yml", true},
+		{"file by another name", file, "release.yml", false},
+		{"dependency run by its path", deps, "bernard/deps", true},
+		{"dependency run by its base name", deps, "deps", false},
+		{"dependency run by a file name", deps, "ci.yml", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			assert.Equal(t, c.want, usecase.WorkflowMatches(c.run, c.workflow))
+		})
+	}
+}

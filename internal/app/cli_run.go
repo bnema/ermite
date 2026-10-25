@@ -204,7 +204,8 @@ func newRunListCmd(env *cliEnv) *cobra.Command {
 		Use:   "list <repo>",
 		Short: "List the runs of a repository",
 		Long: "List the runs of a repository, newest first. --workflow keeps one workflow file (its path or its\n" +
-			"file name), --branch one branch, --status one status (queued, in_progress, completed)." + jsonRunHelp + "\n--json prints an array of runs.",
+			"file name; Bernard's dependency runs are bernard/deps), --branch one branch, --status one status\n" +
+			"(queued, in_progress, completed)." + jsonRunHelp + "\n--json prints an array of runs.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
