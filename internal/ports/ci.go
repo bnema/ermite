@@ -484,7 +484,7 @@ type RegisteredRunner struct {
 type RunnerJob struct {
 	Job domain.CIJob
 	// Deps identifies a dependency update job; nil for workflow jobs.
-	Deps  *DepsJob
+	Deps  *domain.CIDepsJob
 	Token string
 	// GithubToken is the job repository token, the "github.token" of the job.
 	GithubToken  string

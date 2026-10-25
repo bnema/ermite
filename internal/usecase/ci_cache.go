@@ -63,6 +63,9 @@ type cacheLinks struct {
 // was created with (domain.CIRunSource), so the default branch is the one of
 // that moment.
 func (c *CI) cacheScope(run domain.CIRun, githubJSON string) ports.JobCache {
+	if run.IsDeps() {
+		return ports.JobCache{} // a dependency job has no cache
+	}
 	var l cacheLinks
 	_ = json.Unmarshal([]byte(githubJSON), &l) // a context that does not read: no default branch known
 	sc := ports.JobCache{Repository: c.cfg.Owner + "/" + run.Repo.String()}

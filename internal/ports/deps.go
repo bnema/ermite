@@ -77,6 +77,46 @@ type DepsStore interface {
 	FirstSeen(ctx context.Context, eco domain.DepsEcosystem, name, version, sha string, at time.Time) (time.Time, error)
 }
 
+// DepsRunParams describes the CI run of one dependency job.
+type DepsRunParams struct {
+	Repo domain.RepoName
+	// Ref and Sha are the default branch and its tip, the commit the runner
+	// applies the updates to.
+	Ref, Sha string
+	// Title names the run (the subject of Bernard's commit).
+	Title string
+	Job   domain.CIDepsJob
+	// Label is the runner label that serves the job.
+	Label string
+	// Timeout is the time budget of the job once a runner has it, rounded up to
+	// the minute (at least one).
+	Timeout time.Duration
+}
+
+// DepsRunner starts and cancels the CI runs of dependency jobs. *usecase.CI
+// implements it for Bernard.
+type DepsRunner interface {
+	// StartDepsRun creates a run of one job, ready for a runner of the label.
+	// domain.ErrNotFound: the repository is gone.
+	StartDepsRun(ctx context.Context, p DepsRunParams) (domain.CIRun, error)
+	// CancelDepsRun cancels the run of a dependency job, without a principal
+	// (a server-side decision); a run that has completed is left alone.
+	CancelDepsRun(ctx context.Context, repo domain.RepoName, runID int64) error
+	// GetDepsRun returns the run, without a principal; domain.ErrNotFound when
+	// it is gone. (Not GetRun: CI's RunService.GetRun takes a principal.)
+	GetDepsRun(ctx context.Context, repo domain.RepoName, id int64) (domain.CIRun, error)
+}
+
+// DepsRunObserver is told when the job of a dependency run ended.
+// *usecase.Bernard implements it; CI.SetDepsObserver installs it.
+type DepsRunObserver interface {
+	// DepsJobEnded is called once per ended dependency job, after the write that
+	// ended it and outside the lock of the run. report is the runner's report;
+	// it is nil when the server ended the job (cancel, timeout, lost runner,
+	// queue timeout) or when the runner sent none.
+	DepsJobEnded(ctx context.Context, run domain.CIRun, job domain.CIJob, report *DepsReport)
+}
+
 // DepsAssignment is a deps job handed to a runner.
 type DepsAssignment struct {
 	// JobID starts with "deps-".

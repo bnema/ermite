@@ -28,7 +28,9 @@ const (
 // errJobSuperseded stops the publication of a job the record left.
 var errJobSuperseded = errors.New("the dependency job is no longer current")
 
-var _ ports.DepsJobs = (*Bernard)(nil)
+// depsJobPrefix starts the ids of the queued jobs (transitional: the queue is
+// replaced by CI runs).
+const depsJobPrefix = "deps-"
 
 // depsJob is a queued or running runner job. The queue is in memory: a restart
 // loses it and Start fails the records that were applying.

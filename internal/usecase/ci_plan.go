@@ -257,6 +257,9 @@ func (rs *runState) end(j *domain.CIJob, conclusion domain.CIConclusion, msg str
 	}
 	rs.revokeTokens(j)
 	rs.touch(j)
+	if j.Deps != nil {
+		rs.depsEnded = append(rs.depsEnded, j.ID)
+	}
 	rs.c.mu.Lock()
 	delete(rs.c.heartbeats, jobRef(*j))
 	rs.c.mu.Unlock()
@@ -309,6 +312,9 @@ func (rs *runState) advance(ctx context.Context) error {
 	if rs.run.CancelRequested {
 		rs.cancelAll("Canceled by the owner")
 		return nil
+	}
+	if rs.run.IsDeps() {
+		return nil // its only job was created ready: nothing to plan
 	}
 	wf, err := rs.c.flows.get(rs.run.ID, rs.run.WorkflowPath, rs.src.WorkflowYAML)
 	if err != nil {

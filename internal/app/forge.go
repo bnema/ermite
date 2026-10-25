@@ -359,8 +359,6 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Settings:      f.Settings,
 		Workflows:     opts.workflows(githubraw.New(githubraw.Config{})),
 		OIDC:          f.OIDC,
-		// Bernard is built after CI: SetDepsJobs installs the queue.
-		DepsRunnerLabel: cfg.DepsRunnerLabel,
 	}
 	artifacts(&ciCfg, cfg, store)
 	ciCfg.Blobs = f.Blobs
@@ -444,13 +442,12 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			CheckAt: cfg.DepsCheckAt, Cooldown: cfg.DepsCooldown, Snooze: cfg.DepsSnooze,
 			Repos: git, Git: git, Signer: signer, Committer: committer, Tips: store.CI(),
 			CI: f.CI, MRs: f.MergeRequests, MRStore: store.MergeRequests(),
-			JobTimeout: cfg.DepsJobTimeout, RevokeJob: f.CI.RevokeDepsJob,
+			JobTimeout: cfg.DepsJobTimeout,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("bernard: %w", err)
 		}
 		f.Deps, inboxDeps = f.bernard, store.Deps()
-		f.CI.SetDepsJobs(f.bernard)
 		f.bernard.Start()
 	}
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{

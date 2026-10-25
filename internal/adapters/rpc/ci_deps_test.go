@@ -24,13 +24,20 @@ func TestRunnerDepsFetchConversion(t *testing.T) {
 	for _, kinds := range [][]string{nil, {"workflow", "deps"}} {
 		runners := mocks.NewRunnerService(t)
 		runners.EXPECT().FetchJob(mock.Anything, mock.Anything, ports.FetchJobParams{Kinds: kinds, Labels: []string{"ubuntu-latest"}, PollID: "poll", Version: "test"}).Return(ports.FetchJobResult{Job: &ports.RunnerJob{
-			Job: domain.CIJob{ID: "deps-test", Labels: []string{"ubuntu-latest"}}, Repo: mustRepoName(t, "demo"), Sha: "sha", Token: "job-secret", GithubToken: "repo-secret",
-			Deps: &ports.DepsJob{GoVersion: "1.27.1", Updates: []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Directory: "sub", Name: "example.org/mod", Version: "v1.2.3"}}},
+			Job: domain.CIJob{ID: "12-0-0", RunID: 12, RunAttempt: 1, TimeoutMinutes: 10, Labels: []string{"ubuntu-latest"}}, Repo: mustRepoName(t, "demo"), Sha: "sha", Ref: "refs/heads/main", Token: "job-secret", GithubToken: "repo-secret",
+			Deps: &domain.CIDepsJob{GoVersion: "1.27.1", Updates: []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Directory: "sub", Name: "example.org/mod", Version: "v1.2.3"}}},
 		}}, nil).Once()
 		res, err := (&runnerService{runners: runners}).FetchJob(context.Background(), connect.NewRequest(&pb.FetchJobRequest{Kinds: kinds, Labels: []string{"ubuntu-latest"}, PollId: "poll", Version: "test"}))
 		require.NoError(t, err)
 		j := res.Msg.GetJob()
-		assert.Equal(t, "deps-test", j.GetJobId())
+		assert.Equal(t, "12-0-0", j.GetJobId())
+		assert.EqualValues(t, 12, j.GetRunId())
+		assert.EqualValues(t, 1, j.GetAttempt())
+		assert.EqualValues(t, 10, j.GetTimeoutMinutes())
+		assert.Equal(t, []string{"ubuntu-latest"}, j.GetLabels())
+		assert.Equal(t, "refs/heads/main", j.GetRef())
+		assert.Empty(t, j.GetWorkflowPath())
+		assert.Empty(t, j.GetWorkflowYaml())
 		assert.Equal(t, "demo", j.GetRepo())
 		assert.Equal(t, "sha", j.GetSha())
 		assert.Equal(t, "job-secret", j.GetJobToken())

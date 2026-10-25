@@ -162,15 +162,7 @@ func (c *CI) FetchJob(ctx context.Context, secret string, params ports.FetchJobP
 	defer deadline.Stop()
 	for {
 		wake := c.pending.wait(queueKey) // before looking: a job made meanwhile wakes us
-		if dj, ok := c.nextDeps(ctx, runner, params.Kinds, offered, params.PollID); ok {
-			c.markSeen(runner.ID)
-			return ports.FetchJobResult{Job: dj}, nil
-		}
-		var job *ports.RunnerJob
-		err := errNoJob
-		if len(params.Kinds) == 0 || slices.Contains(params.Kinds, "workflow") {
-			job, err = c.assignTo(ctx, runner, offered, params.PollID)
-		}
+		job, err := c.assignTo(ctx, runner, offered, params.Kinds, params.PollID)
 		switch {
 		case err == nil:
 			c.markSeen(runner.ID)
@@ -233,10 +225,6 @@ func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID stri
 	if !ok || rec.pollID != pollID {
 		return nil, false, nil
 	}
-	if rec.deps != nil {
-		j, ok := c.repeatDeps(rec, runner.ID)
-		return j, ok, nil
-	}
 	var rid int64
 	var ra int32
 	var id string
@@ -249,10 +237,14 @@ func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID stri
 		if j == nil || j.Phase != domain.CIPhaseAssigned || j.TokenHash != rec.hash || j.RunnerID != runner.ID {
 			return errNoJob
 		}
-		// The secrets are not kept with the poll: they are read again.
-		settings, err := c.settingsOf(ctx, rs, *j)
-		if err != nil {
-			return err
+		// The secrets are not kept with the poll: they are read again. A
+		// dependency job has none.
+		var settings ports.JobSettings
+		if j.Deps == nil {
+			var err error
+			if settings, err = c.settingsOf(ctx, rs, *j); err != nil {
+				return err
+			}
 		}
 		out = c.runnerJob(rs, *j, jobSecrets{token: rec.token, ghToken: rec.ghToken, idToken: rec.idToken}, settings)
 		return nil
@@ -277,6 +269,9 @@ func (c *CI) repeatPoll(ctx context.Context, runner domain.CIRunner, pollID stri
 // TODO(ci3-c2): the runner writes the "Set up job" log; it states there that
 // secrets were withheld when Trusted is false (the server adds no setup line).
 func (c *CI) runnerJob(rs *runState, j domain.CIJob, sec jobSecrets, settings ports.JobSettings) *ports.RunnerJob {
+	if j.Deps != nil {
+		return c.depsRunnerJob(rs, j, sec)
+	}
 	if settings.Vars != nil {
 		j.ContextsJSON = withVars(j.ContextsJSON, settings.Vars)
 	}
@@ -299,6 +294,16 @@ func (c *CI) runnerJob(rs *runState, j domain.CIJob, sec jobSecrets, settings po
 	return out
 }
 
+// depsRunnerJob is a dependency job as the runner gets it: no workflow, no
+// secrets, variables, environment, cache or ID token, and the read-only
+// repository token of an untrusted run.
+func (c *CI) depsRunnerJob(rs *runState, j domain.CIJob, sec jobSecrets) *ports.RunnerJob {
+	return &ports.RunnerJob{
+		Job: j, Deps: j.Deps, Token: sec.token, GithubToken: sec.ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
+		Trusted: false, Permissions: domain.TokenPermissions(nil, false),
+	}
+}
+
 // jobSecrets are the secrets issued with an assignment: the job token, the
 // repository token and the ID token request token ("" when the job gets
 // none).
@@ -306,9 +311,19 @@ type jobSecrets struct {
 	token, ghToken, idToken string
 }
 
-// assignTo gives the oldest queued job that matches the labels to the runner,
-// or errNoJob. The assignment lock makes the choice and the write one step.
-func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []string, pollID string) (*ports.RunnerJob, error) {
+// wantsKind reports whether a poll asking for kinds takes jobs of the kind
+// (an empty list asks for workflow jobs only, like the first runners did).
+func wantsKind(kinds []string, kind string) bool {
+	if len(kinds) == 0 {
+		return kind == "workflow"
+	}
+	return slices.Contains(kinds, kind)
+}
+
+// assignTo gives the oldest queued job that matches the labels and the kinds to
+// the runner, or errNoJob. The assignment lock makes the choice and the write
+// one step.
+func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered, kinds []string, pollID string) (*ports.RunnerJob, error) {
 	c.assign.Lock()
 	defer c.assign.Unlock()
 	ready, err := c.cfg.Store.ListReadyJobs(ctx, 0)
@@ -316,7 +331,11 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 		return nil, err
 	}
 	for _, cand := range ready {
-		if !domain.LabelsMatch(cand.Labels, offered) {
+		kind := "workflow"
+		if cand.Deps != nil {
+			kind = "deps"
+		}
+		if !wantsKind(kinds, kind) || !domain.LabelsMatch(cand.Labels, offered) {
 			continue
 		}
 		var out *ports.RunnerJob
@@ -325,10 +344,14 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered []str
 			if j == nil || j.Phase != domain.CIPhaseReady || rs.run.CancelRequested {
 				return errNoJob
 			}
-			// Before anything changes: a failure here leaves the job ready.
-			settings, err := c.settingsOf(ctx, rs, *j)
-			if err != nil {
-				return err
+			// Before anything changes: a failure here leaves the job ready. A
+			// dependency job gets no variables or secrets.
+			var settings ports.JobSettings
+			if j.Deps == nil {
+				var err error
+				if settings, err = c.settingsOf(ctx, rs, *j); err != nil {
+					return err
+				}
 			}
 			token := newToken(domain.JobTokenPrefix)
 			ghToken := rs.issueRepoToken(j)
@@ -439,18 +462,6 @@ func logRef(j domain.CIJob) ports.CILogRef {
 // at all. The annotations of each step they name replace those stored, whether
 // the step is completed or not.
 func (c *CI) UpdateJob(ctx context.Context, secret, jobID string, steps []ports.StepUpdate, annotations []domain.CIAnnotation) error {
-	if isDepsJob(jobID) {
-		r, err := c.runnerFor(ctx, secret)
-		if err != nil {
-			return err
-		}
-		dj := c.depsQueue()
-		if dj == nil {
-			return domain.ErrNotFound
-		}
-		c.forgetPoll(jobID)
-		return dj.Update(ctx, r.ID, jobID, steps, annotations)
-	}
 	j, err := c.jobFor(ctx, secret, jobID)
 	if err != nil {
 		return err
@@ -627,20 +638,6 @@ func checkLines(step int32, offset int64, lines []domain.CILogLine) error {
 // for the rules of offsets. The metadata store is written only when a step
 // gets its first line.
 func (c *CI) AppendLog(ctx context.Context, secret, jobID string, step int32, offset int64, lines []domain.CILogLine) (int64, error) {
-	if isDepsJob(jobID) {
-		r, err := c.runnerFor(ctx, secret)
-		if err != nil {
-			return 0, err
-		}
-		dj := c.depsQueue()
-		if dj == nil {
-			return 0, domain.ErrNotFound
-		}
-		if err := checkLines(step, offset, lines); err != nil {
-			return 0, err
-		}
-		return dj.AppendLog(ctx, r.ID, jobID, offset, lines)
-	}
 	j, err := c.jobFor(ctx, secret, jobID)
 	if err != nil {
 		return 0, err
@@ -754,19 +751,6 @@ func (c *CI) stopForLogLimit(ctx context.Context, j domain.CIJob) error {
 // Heartbeat tells the server that the runner is alive. The first one
 // acknowledges the assignment; the others only move the deadline.
 func (c *CI) Heartbeat(ctx context.Context, secret, jobID string) error {
-	if isDepsJob(jobID) {
-		r, err := c.runnerFor(ctx, secret)
-		if err != nil {
-			return err
-		}
-		dj := c.depsQueue()
-		if dj == nil {
-			return domain.ErrNotFound
-		}
-		c.markSeen(r.ID)
-		c.forgetPoll(jobID)
-		return dj.Heartbeat(ctx, r.ID, jobID)
-	}
 	j, err := c.jobFor(ctx, secret, jobID)
 	if err != nil {
 		return err
@@ -870,9 +854,6 @@ func (c *CI) WatchJob(ctx context.Context, secret, jobID string, ready func(), s
 
 // CompleteJob ends a job, once. A later call returns the stored result.
 func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.CompleteJobParams) (ports.CompleteJobResult, error) {
-	if isDepsJob(params.JobID) {
-		return c.completeDeps(ctx, secret, params)
-	}
 	j, err := c.jobFor(ctx, secret, params.JobID)
 	if err != nil {
 		return ports.CompleteJobResult{}, err
@@ -924,6 +905,10 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 		msg := ""
 		if params.RunnerShutdown {
 			msg = domain.CIShutdownMessage
+		}
+		if cur.Deps != nil {
+			rs.depsReport = params.DepsReport // outputs mean nothing to a dependency job
+			cur.Outputs = nil
 		}
 		rs.end(cur, params.Conclusion, msg)
 		if err := rs.advance(ctx); err != nil {

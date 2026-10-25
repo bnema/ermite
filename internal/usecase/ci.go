@@ -53,14 +53,9 @@ const (
 // Git, Diff, Bus, Clock, Owner and PublicURL are required (the config supplies
 // the defaults of Owner and Retention).
 type CIConfig struct {
-	// DepsJobs is Bernard's queue of dependency jobs; nil serves none (also
-	// installable later with SetDepsJobs). DepsRunnerLabel is the runner label
-	// that gets them.
-	DepsJobs        ports.DepsJobs
-	DepsRunnerLabel string
-	AutoMerge       ports.AutoMergeTrigger
-	Store           ports.CIStore
-	Logs            ports.CILogStore
+	AutoMerge ports.AutoMergeTrigger
+	Store     ports.CIStore
+	Logs      ports.CILogStore
 	// Summaries keeps the job summaries, deleted with the logs of their run.
 	Summaries ports.CISummaryStore
 	Meta      ports.RepoMetaStore
@@ -292,9 +287,11 @@ type CI struct {
 	// that resolves the same commit twice gets one token (memory only: a
 	// restart issues new ones).
 	archiveTokens map[string]map[string]string
-	streams       int
-	perClient     map[string]int
-	closed        bool
+	// depsObserver is told when a dependency job ends (SetDepsObserver).
+	depsObserver ports.DepsRunObserver
+	streams      int
+	perClient    map[string]int
+	closed       bool
 	// artifactLocks serialize the commits of each artifact (ci_artifacts.go).
 	artifactLocks map[int64]*artifactLock
 	// reservations are the artifact bytes being written (ci_artifacts.go).
@@ -317,10 +314,6 @@ type pollRecord struct {
 	ghToken string
 	idToken string
 	hash    domain.TokenHash
-	// deps is the whole assignment of a deps job (ref is then its job id),
-	// repeated until it is updated, heartbeated or completed, or until until.
-	deps  *ports.RunnerJob
-	until time.Time
 }
 
 // NewCI builds the CI use cases. ctx carries the logger; its cancellation is
@@ -463,6 +456,11 @@ type runState struct {
 	// executions of jobs, with the next flush.
 	annotations []ports.CIStepAnnotations
 	clear       []ports.CILogRef
+	// depsReport is the runner's report of the dependency job CompleteJob ends;
+	// depsEnded are the dependency jobs this state ended, told to the observer
+	// once the write is done.
+	depsReport *ports.DepsReport
+	depsEnded  []string
 }
 
 // withRun locks the run, loads it with the jobs of attempt (0 for the latest)
@@ -534,12 +532,14 @@ func (rs *runState) flush(ctx context.Context) error {
 			changedJobs = append(changedJobs, i)
 		}
 	}
-	if rs.latest() {
+	if rs.latest() && !rs.run.IsDeps() { // a dependency run posts no check
 		for i := range rs.jobs {
 			if rs.dirty[rs.jobs[i].ID] || rs.checks[rs.jobs[i].ID] {
 				w.Checks = append(w.Checks, rs.checkOf(rs.jobs[i]))
 			}
 		}
+	}
+	if rs.latest() {
 		if next := rs.recompute(now); next != rs.run {
 			completing = rs.run.Status != domain.CICompleted && next.Status == domain.CICompleted
 			rs.run, rs.runDirty = next, true
@@ -569,6 +569,7 @@ func (rs *runState) flush(ctx context.Context) error {
 	rs.dirty, rs.checks, rs.runDirty = map[string]bool{}, map[string]bool{}, false
 	rs.tokens, rs.revoke, rs.resolutions = nil, nil, nil
 	rs.annotations, rs.clear = nil, nil
+	defer rs.notifyDepsEnded(ctx, changedJobs)
 
 	repo, err := c.cfg.Meta.Get(ctx, rs.run.Repo)
 	if err != nil {
@@ -590,10 +591,31 @@ func (rs *runState) flush(ctx context.Context) error {
 		c.cfg.Bus.Publish(ctx, domain.RunUpdated{Run: rs.run, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	}
 	if completing {
-		c.onRunEvent(ctx, rs.run, runCompleted)
+		if !rs.run.IsDeps() { // a dependency run starts no workflow_run workflow
+			c.onRunEvent(ctx, rs.run, runCompleted)
+		}
 		c.kickAutoMerge(ctx, rs.run.Repo)
 	}
 	return nil
+}
+
+// notifyDepsEnded tells the observer of the dependency jobs this state ended
+// and wrote (changed lists the jobs written).
+func (rs *runState) notifyDepsEnded(ctx context.Context, changed []int) {
+	ended := rs.depsEnded
+	rs.depsEnded = nil
+	if len(ended) == 0 {
+		return
+	}
+	var jobs []domain.CIJob
+	for _, i := range changed {
+		if j := rs.jobs[i]; j.Ended() && slices.Contains(ended, j.ID) {
+			jobs = append(jobs, j)
+		}
+	}
+	if len(jobs) > 0 {
+		rs.c.notifyDepsEnded(ctx, rs.run, jobs, rs.depsReport)
+	}
 }
 
 // recompute returns the run with the status, the conclusion and the

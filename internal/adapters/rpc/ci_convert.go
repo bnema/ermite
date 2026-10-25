@@ -230,7 +230,7 @@ func runnerJobToPB(j *ports.RunnerJob) *pb.Job {
 	}
 }
 
-func depsJobToPB(j *ports.DepsJob) *pb.DepsJob {
+func depsJobToPB(j *domain.CIDepsJob) *pb.DepsJob {
 	if j == nil {
 		return nil
 	}

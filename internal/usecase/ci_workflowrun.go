@@ -48,6 +48,9 @@ type runEvent struct {
 // a worker handles it, so the run's lock is never held while workflows are read.
 // A full queue drops it, logged, like the queue of pushes.
 func (c *CI) onRunEvent(ctx context.Context, run domain.CIRun, action string) {
+	if run.IsDeps() {
+		return // a dependency run triggers no workflow
+	}
 	c.mu.Lock()
 	closed := c.closed
 	c.mu.Unlock()

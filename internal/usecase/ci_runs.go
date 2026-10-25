@@ -365,6 +365,9 @@ func (c *CI) RerunRun(ctx context.Context, p domain.Principal, name domain.RepoN
 	if err := runWriteAccess(p, run); err != nil {
 		return domain.CIRun{}, err
 	}
+	if run.IsDeps() {
+		return domain.CIRun{}, fmt.Errorf("%w: a dependency run is started again from the Inbox", domain.ErrPreconditionFailed)
+	}
 	err = c.withRun(ctx, runID, 0, func(rs *runState) error {
 		if rs.run.Status != domain.CICompleted {
 			return fmt.Errorf("%w: run %d has not completed", domain.ErrPreconditionFailed, runID)
