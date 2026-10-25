@@ -474,9 +474,8 @@ type ActivityPage struct {
 // the filter.
 type InboxCounts struct {
 	MergeRequests, Issues, Pending, Running int
-	// Deps counts the repositories with pending dependency updates, DepsUpdates
-	// the updates they hold.
-	Deps, DepsUpdates int
+	// Deps counts the repositories with pending dependency updates.
+	Deps int
 }
 
 // InboxDeps is the pending dependency updates of one repository with the run

@@ -41,7 +41,7 @@ func depsOverview(t testing.TB) ports.InboxOverview {
 	ov := inboxOverview(t)
 	ov.Deps = []ports.InboxDeps{{Rec: rec, Run: depsRun(3, domain.CICompleted)}}
 	ov.DepsCheckedAt = rec.CheckedAt
-	ov.Counts.Deps, ov.Counts.DepsUpdates = 1, len(rec.Updates)
+	ov.Counts.Deps = 1
 	return ov
 }
 

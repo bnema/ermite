@@ -532,11 +532,11 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 			}
 			repos[d.Repo] = true
 			out.Counts.Deps++
-			out.Counts.DepsUpdates += len(d.Updates)
-			if d.CheckedAt.After(out.DepsCheckedAt) {
-				out.DepsCheckedAt = d.CheckedAt
-			}
 			if filter.IsZero() || d.Repo == filter {
+				// The latest check of the rows shown, not of the other repositories.
+				if d.CheckedAt.After(out.DepsCheckedAt) {
+					out.DepsCheckedAt = d.CheckedAt
+				}
 				item := ports.InboxDeps{Rec: d}
 				if d.RunID != 0 && in.ci != nil {
 					run, err := in.ci.GetRun(ctx, d.Repo, d.RunID)
@@ -544,7 +544,9 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 					case err == nil:
 						item.Run = &run
 					case !errors.Is(err, domain.ErrNotFound):
-						return out, fmt.Errorf("read run %d of %q: %w", d.RunID, d.Repo, err)
+						// The row still tells the state of the record: a run that
+						// cannot be read must not hide the Inbox.
+						ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", d.RunID).Msg("inbox: read the run of a dependency record")
 					}
 				}
 				out.Deps = append(out.Deps, item)

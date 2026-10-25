@@ -4,6 +4,7 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -151,13 +152,15 @@ func TestInboxDepsSkipsSnoozedArchivedAndEmpty(t *testing.T) {
 	snoozed, expired, empty := rec("snoozed"), rec("expired"), domain.RepoDeps{Repo: name(t, "empty")}
 	snoozed.SnoozedUntil = now.Add(time.Hour)
 	expired.SnoozedUntil = now.Add(-time.Hour)
+	alpha, other := rec("alpha"), expired
+	alpha.CheckedAt, other.CheckedAt = now.Add(-48*time.Hour), now.Add(-time.Hour)
 
 	mrs, is, meta, store, clock := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t)
 	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Deps: store, Clock: clock})
 	mrs.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
 	is.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
 	clock.EXPECT().Now().Return(now)
-	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{rec("alpha"), rec("archived"), rec("gone"), snoozed, expired, empty}, nil)
+	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{alpha, rec("archived"), rec("gone"), snoozed, other, empty}, nil)
 	meta.EXPECT().Get(mock.Anything, name(t, "alpha")).Return(domain.Repo{Name: name(t, "alpha")}, nil)
 	meta.EXPECT().Get(mock.Anything, name(t, "expired")).Return(domain.Repo{Name: name(t, "expired")}, nil)
 	meta.EXPECT().Get(mock.Anything, name(t, "archived")).Return(domain.Repo{Name: name(t, "archived"), Archived: true}, nil)
@@ -168,7 +171,7 @@ func TestInboxDepsSkipsSnoozedArchivedAndEmpty(t *testing.T) {
 	assert.Equal(t, 2, got.Counts.Deps, "the filter does not change the count")
 	require.Len(t, got.Deps, 1, "the filter limits the list")
 	assert.Equal(t, "alpha", got.Deps[0].Rec.Repo.String())
-	assert.Equal(t, 2, got.Counts.DepsUpdates, "one update per kept repository")
+	assert.True(t, got.DepsCheckedAt.Equal(alpha.CheckedAt), "the check of the repository shown, not of the other one")
 }
 
 func TestInboxDepsJoinsTheRun(t *testing.T) {
@@ -201,8 +204,32 @@ func TestInboxDepsJoinsTheRun(t *testing.T) {
 	assert.Nil(t, got.Deps[1].Run, "a run that is gone is no run")
 	assert.Nil(t, got.Deps[2].Run, "a record without a run reads none")
 	assert.Equal(t, 3, got.Counts.Deps)
-	assert.Equal(t, 4, got.Counts.DepsUpdates)
 	assert.True(t, got.DepsCheckedAt.Equal(newer), "the latest check")
+}
+
+// A run that cannot be read does not fail the Inbox: the row shows the record
+// without it.
+func TestInboxDepsKeepsTheRowWhenTheRunCannotBeRead(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
+	rec := domain.RepoDeps{Repo: name(t, "alpha"), Updates: upd, State: domain.DepsApplying, RunID: 5}
+
+	mrs, is, meta, store, clock, ci := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t), mocks.NewCIStore(t)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Deps: store, Clock: clock, CI: ci})
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	is.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	ci.EXPECT().ListOpenRuns(mock.Anything).Return(nil, nil)
+	clock.EXPECT().Now().Return(now)
+	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{rec}, nil)
+	meta.EXPECT().Get(mock.Anything, rec.Repo).Return(domain.Repo{Name: rec.Repo}, nil)
+	ci.EXPECT().GetRun(mock.Anything, rec.Repo, int64(5)).Return(domain.CIRun{}, errors.New("disk"))
+
+	got, err := in.Overview(context.Background(), domain.Owner(), domain.RepoName{})
+	require.NoError(t, err)
+	require.Len(t, got.Deps, 1)
+	assert.Equal(t, rec, got.Deps[0].Rec)
+	assert.Nil(t, got.Deps[0].Run)
 }
 
 func TestInboxFillsHeadsFromGitForReturnedRequestsOnly(t *testing.T) {
