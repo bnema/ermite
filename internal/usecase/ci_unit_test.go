@@ -226,6 +226,7 @@ func TestWorkflowFilterMatchesDependencyRunsByExactPath(t *testing.T) {
 		{"dependency run by a file name", deps, "ci.yml", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, c.want, usecase.WorkflowMatches(c.run, c.workflow))
 		})
 	}
