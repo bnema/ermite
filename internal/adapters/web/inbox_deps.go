@@ -22,8 +22,7 @@ type InboxDepsUpdate struct {
 
 // InboxDepsStatus is the status cell of a row.
 type InboxDepsStatus struct {
-	// Kind is "" (nothing to say), "queued", "running", "failed", "mr" (a merge
-	// request is open) or "uptodate" (it holds exactly the pending versions).
+	// Kind picks the icon: "" (no run to tell), "queued", "running" or "failed".
 	Kind string
 	// State is the word shown beside the icon, empty for a merge request.
 	State string
@@ -107,15 +106,11 @@ func depsIconKind(s InboxDepsStatus) string {
 }
 
 // depsStatus is what the status cell says about the record and its run.
-func depsStatus(d domain.RepoDeps, run *domain.CIRun, upToDate bool) InboxDepsStatus {
+func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
 	repo := d.Repo.String()
 	var st InboxDepsStatus
 	if d.MR != 0 {
 		st.MR, st.MRHref = d.MR, mrHref(repo, d.MR)
-		st.Kind = "mr"
-		if upToDate {
-			st.Kind = "uptodate"
-		}
 	}
 	var runLink InboxDepsStatus
 	if run != nil {
@@ -128,9 +123,12 @@ func depsStatus(d domain.RepoDeps, run *domain.CIRun, upToDate bool) InboxDepsSt
 	switch d.State {
 	case domain.DepsApplying:
 		st.Kind, st.State = "running", "running"
-		if run == nil {
+		switch {
+		case run == nil || run.Status == domain.CICompleted:
+			// No run to tell, or the run ended and Bernard has not settled
+			// the record yet.
 			st.State = "applying"
-		} else if run.Status == domain.CIQueued || run.Status == domain.CIPending {
+		case run.Status == domain.CIQueued || run.Status == domain.CIPending:
 			st.Kind, st.State = "queued", "queued"
 		}
 		st.Text, st.Href = runLink.Text, runLink.Href
@@ -149,7 +147,7 @@ func (s *Server) depsRow(in ports.InboxDeps, filter domain.RepoName) InboxDepsRo
 		Count: len(d.Updates), Breakdown: depsBreakdown(d.Updates),
 	}
 	upToDate := d.MR != 0 && domain.SameRefs(d.Refs(), d.MRVersions)
-	row.Status = depsStatus(d, in.Run, upToDate)
+	row.Status = depsStatus(d, in.Run)
 	for _, u := range d.Updates {
 		if u.New {
 			row.New++

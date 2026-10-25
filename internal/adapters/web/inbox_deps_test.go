@@ -149,7 +149,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 				d.State, d.Error, d.RunID = domain.DepsIdle, "", 0
 				d.MR, d.MRVersions = 7, d.Refs()[:1]
 			},
-			status:  InboxDepsStatus{Kind: "mr", MR: 7, MRHref: "/alpha/merge-requests/7"},
+			status:  InboxDepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
 			primary: InboxDepsAction{Label: "Update MR", Action: base + "open"},
 			menu:    [2]string{base + "ignore", base + "snooze"},
 		},
@@ -160,7 +160,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 				d.MR, d.MRVersions = 7, d.Refs()
 			},
 			run:     run(3, domain.CICompleted),
-			status:  InboxDepsStatus{Kind: "uptodate", MR: 7, MRHref: "/alpha/merge-requests/7"},
+			status:  InboxDepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
 			primary: InboxDepsAction{Label: "View MR", Href: "/alpha/merge-requests/7"},
 			menu:    [2]string{"", base + "snooze"},
 		},
@@ -169,6 +169,23 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CIQueued),
 			status: InboxDepsStatus{Kind: "queued", State: "queued", Text: "run #3", Href: "/alpha/actions/runs/12"},
+		},
+		{
+			name:   "applying, run held back by a concurrency group",
+			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
+			run:    run(3, domain.CIPending),
+			status: InboxDepsStatus{Kind: "queued", State: "queued", Text: "run #3", Href: "/alpha/actions/runs/12"},
+		},
+		{
+			name:   "applying, the run is not readable",
+			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
+			status: InboxDepsStatus{Kind: "running", State: "applying"},
+		},
+		{
+			name:   "applying, the run ended and the record is not settled yet",
+			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
+			run:    run(3, domain.CICompleted),
+			status: InboxDepsStatus{Kind: "running", State: "applying", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name:   "applying, run in progress",
@@ -223,25 +240,24 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			rec := depsRec(t)
 			tc.mutate(&rec)
 			row := srv.depsRow(ports.InboxDeps{Rec: rec, Run: tc.run}, tc.filter)
-			// the run of a record with RunID 0 is never joined
-			if rec.RunID == 0 {
-				assert.Empty(t, row.Status.Href)
-			}
-			if rec.State == domain.DepsApplying || rec.State == domain.DepsFailed {
-				assert.Equal(t, tc.status, row.Status)
-			} else {
-				assert.Equal(t, tc.status.Kind, row.Status.Kind)
-				assert.Equal(t, tc.status.MR, row.Status.MR)
-				assert.Equal(t, tc.status.MRHref, row.Status.MRHref)
-			}
+			assert.Equal(t, tc.status, row.Status)
 			assert.Equal(t, tc.primary, row.Primary)
 			assert.Equal(t, tc.menu, [2]string{row.Ignore, row.Snooze})
-			assert.Equal(t, "deps-alpha", row.ID)
-			assert.Equal(t, 3, row.Count)
-			assert.Equal(t, 1, row.New)
-			assert.Equal(t, "1 major · 1 minor · 1 patch", row.Breakdown)
 		})
 	}
+}
+
+// Whatever the state, the row names the repository and summarises its updates.
+func TestInboxDepsRowSummarisesTheUpdates(t *testing.T) {
+	t.Parallel()
+	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
+	row := srv.depsRow(ports.InboxDeps{Rec: depsRec(t), Run: depsRun(3, domain.CICompleted)}, domain.RepoName{})
+	assert.Equal(t, "deps-alpha", row.ID)
+	assert.Equal(t, "alpha", row.Repo)
+	assert.Equal(t, 3, row.Count)
+	assert.Equal(t, 1, row.New)
+	assert.Equal(t, "1 major · 1 minor · 1 patch", row.Breakdown)
+	assert.Len(t, row.Updates, 3)
 }
 
 func TestDepsBreakdownOmitsZeroParts(t *testing.T) {
