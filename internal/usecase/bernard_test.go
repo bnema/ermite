@@ -395,7 +395,7 @@ func TestBernardIgnoreWaitsForTheRepositoryLock(t *testing.T) {
 		r.b.UnderRepoLock(r.repo, func() {
 			close(holding)
 			<-release
-			r.rec.State, r.rec.JobID = domain.DepsApplying, "deps-x" // Open won
+			r.rec.State, r.rec.RunID = domain.DepsApplying, 5 // Open won
 		})
 		close(locked)
 	}()

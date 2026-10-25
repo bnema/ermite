@@ -186,6 +186,16 @@ func putRaw(t *testing.T, dir, key string, val []byte) {
 	require.NoError(t, db.Close(ctx))
 }
 
+func rawGet(t *testing.T, dir, key string) ([]byte, bool) {
+	t.Helper()
+	ctx := context.Background()
+	db, err := kv.Open(ctx, dir, kv.Options{})
+	require.NoError(t, err)
+	defer func() { _ = db.Close(ctx) }()
+	item, ok := db.Get(ctx, []byte(key))
+	return item.Value, ok
+}
+
 func readSchema(t *testing.T, dir string) uint32 {
 	t.Helper()
 	ctx := context.Background()
@@ -434,7 +444,7 @@ func TestSchema10UpgradesDepsRecords(t *testing.T) {
 		idle     = int32(domain.DepsIdle)
 	)
 	for _, rec := range []*storagepb.RepoDeps{
-		{Repo: "applying", State: applying, JobId: "deps-0123456789abcdef", Mr: 3},
+		{Repo: "applying", State: applying, Mr: 3, JobId: "deps-0123456789abcdef"},
 		{Repo: "failed", State: failed, Error: "the runner reported failure\nline two\nline three", JobId: "deps-fedcba9876543210"},
 		{Repo: "oneline", State: failed, Error: "boom"},
 		{Repo: "idle", State: idle, Mr: 9, Error: "kept\nas it is"},
@@ -461,10 +471,16 @@ func TestSchema10UpgradesDepsRecords(t *testing.T) {
 			assert.Equal(t, w.state, got.State, repo)
 			assert.Equal(t, w.err, got.Error, repo)
 			assert.Equal(t, w.mr, got.MR, repo)
-			assert.Empty(t, got.JobID, repo)
 			assert.Zero(t, got.RunID, repo)
 		}
 		require.NoError(t, s.Close(ctx))
+		for repo := range want {
+			raw, ok := rawGet(t, dir, "dpend/"+repo)
+			require.True(t, ok)
+			var pb storagepb.RepoDeps
+			require.NoError(t, proto.Unmarshal(raw, &pb))
+			assert.Empty(t, pb.GetJobId(), repo+": the job id is gone") //nolint:staticcheck // checks the deprecated field is cleared
+		}
 		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 	}
 }

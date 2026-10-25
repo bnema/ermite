@@ -41,7 +41,7 @@ const CompleteJobMaxRequestBytes = 8<<20*4/3 + 1<<20
 // always implements, as GetVersion lists them. FeaturePasskeys comes on top
 // when Config.Passkeys is set, and FeatureCISecrets when the settings services
 // are, and FeatureCommitSignatures when Config.TrustedKeys is set.
-var Features = []string{"repos.archived", "repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache", "ci.workflows", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready"}
+var Features = []string{"repos.archived", "repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.cache", "ci.workflows", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready", "deps.runs"}
 
 // FeaturePasskeys is listed by GetVersion when passkeys are available.
 // FeatureCIArtifacts (artifact.go) when the artifact services are served.

@@ -106,13 +106,13 @@ func TestDepsMutateInterleavedRetries(t *testing.T) {
 			_, err := d.Mutate(ctx, n, func(c *domain.RepoDeps) (bool, error) { c.MR = 5; return true, nil })
 			require.NoError(t, err)
 		}
-		r.JobID = "j"
+		r.RunID = 11
 		return true, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, 2, calls)
 	require.EqualValues(t, 5, got.MR, "retry saw the winner's write")
-	require.Equal(t, "j", got.JobID)
+	require.EqualValues(t, 11, got.RunID)
 }
 
 func TestDepsMutateConcurrent(t *testing.T) {

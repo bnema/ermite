@@ -9,12 +9,6 @@ import (
 	"bnema.dev/ermite/internal/domain"
 )
 
-// DepsJob asks a runner to apply exact dependency versions.
-type DepsJob struct {
-	Updates   []domain.DepRef
-	GoVersion string
-}
-
 // DepsReport contains the changed files or the runner's application error.
 // Files remain a slice so duplicate paths and the original file count can be
 // checked by the use case without information being lost in conversion.
@@ -115,35 +109,4 @@ type DepsRunObserver interface {
 	// it is nil when the server ended the job (cancel, timeout, lost runner,
 	// queue timeout) or when the runner sent none.
 	DepsJobEnded(ctx context.Context, run domain.CIRun, job domain.CIJob, report *DepsReport)
-}
-
-// DepsAssignment is a deps job handed to a runner.
-type DepsAssignment struct {
-	// JobID starts with "deps-".
-	JobID string
-	Repo  domain.RepoName
-	Sha   string
-	Job   DepsJob
-	// Deadline is when the job times out; the job's repository token never
-	// outlives it by more than domain.RepoTokenGrace.
-	Deadline time.Time
-}
-
-// DepsJobs is the queue of dependency jobs that CI hands to runners (ids start
-// with "deps-"). CI authenticates the runner and passes its id; a job that is
-// unknown, or not assigned to that runner, is domain.ErrNotFound.
-// *usecase.Bernard implements it.
-type DepsJobs interface {
-	// Next hands a pending job to the runner, or ok=false when there is none.
-	Next(ctx context.Context, runnerID string) (a DepsAssignment, ok bool, err error)
-	// Update is UpdateJob: steps and annotations carry nothing for a deps job.
-	Update(ctx context.Context, runnerID, jobID string, steps []StepUpdate, annotations []domain.CIAnnotation) error
-	// AppendLog keeps the tail of the log and returns the next offset; an
-	// offset above the lines received is a *ErrCILogGap.
-	AppendLog(ctx context.Context, runnerID, jobID string, offset int64, lines []domain.CILogLine) (next int64, err error)
-	// Heartbeat tells that the runner is alive; a job past its deadline is
-	// failed and domain.ErrNotFound.
-	Heartbeat(ctx context.Context, runnerID, jobID string) error
-	// Complete ends the job with the runner's report (nil when it sent none).
-	Complete(ctx context.Context, runnerID, jobID string, report *DepsReport, conclusion domain.CIConclusion) error
 }

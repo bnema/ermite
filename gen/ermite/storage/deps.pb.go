@@ -170,9 +170,14 @@ type RepoDeps struct {
 	SnoozedUntil *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=snoozed_until,json=snoozedUntil,proto3" json:"snoozed_until,omitempty"`
 	State        int32                  `protobuf:"varint,5,opt,name=state,proto3" json:"state,omitempty"`
 	Error        string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
-	JobId        string                 `protobuf:"bytes,7,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Mr           int64                  `protobuf:"varint,8,opt,name=mr,proto3" json:"mr,omitempty"`
-	MrVersions   []*DepRef              `protobuf:"bytes,9,rep,name=mr_versions,json=mrVersions,proto3" json:"mr_versions,omitempty"`
+	// Unused since schema 10 (the job is a CI run, see run_id): never read,
+	// never written; the schema 10 upgrade clears it. Kept, not reserved, so that
+	// buf breaking accepts the change.
+	//
+	// Deprecated: Marked as deprecated in ermite/storage/deps.proto.
+	JobId      string    `protobuf:"bytes,7,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Mr         int64     `protobuf:"varint,8,opt,name=mr,proto3" json:"mr,omitempty"`
+	MrVersions []*DepRef `protobuf:"bytes,9,rep,name=mr_versions,json=mrVersions,proto3" json:"mr_versions,omitempty"`
 	// The CI run applying the updates, or the last one that tried; 0 for none.
 	RunId int64 `protobuf:"varint,10,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
 	// Every pending update when the run started: what the run commits.
@@ -253,6 +258,7 @@ func (x *RepoDeps) GetError() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in ermite/storage/deps.proto.
 func (x *RepoDeps) GetJobId() string {
 	if x != nil {
 		return x.JobId
@@ -347,7 +353,7 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\x03ref\x18\x01 \x01(\v2\x16.ermite.storage.DepRefR\x03ref\x12\x18\n" +
 	"\acurrent\x18\x02 \x01(\tR\acurrent\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\x05R\x04kind\x12\x10\n" +
-	"\x03new\x18\x04 \x01(\bR\x03new\"\xae\x03\n" +
+	"\x03new\x18\x04 \x01(\bR\x03new\"\xb2\x03\n" +
 	"\bRepoDeps\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x123\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateR\aupdates\x129\n" +
@@ -355,8 +361,8 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"checked_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcheckedAt\x12?\n" +
 	"\rsnoozed_until\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\fsnoozedUntil\x12\x14\n" +
 	"\x05state\x18\x05 \x01(\x05R\x05state\x12\x14\n" +
-	"\x05error\x18\x06 \x01(\tR\x05error\x12\x15\n" +
-	"\x06job_id\x18\a \x01(\tR\x05jobId\x12\x0e\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\x12\x19\n" +
+	"\x06job_id\x18\a \x01(\tB\x02\x18\x01R\x05jobId\x12\x0e\n" +
 	"\x02mr\x18\b \x01(\x03R\x02mr\x127\n" +
 	"\vmr_versions\x18\t \x03(\v2\x16.ermite.storage.DepRefR\n" +
 	"mrVersions\x12\x15\n" +

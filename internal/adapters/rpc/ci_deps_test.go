@@ -59,9 +59,9 @@ func TestRunnerDepsCompleteConversion(t *testing.T) {
 	runners := mocks.NewRunnerService(t)
 	report := &pb.DepsReport{Error: "runner error", Files: []*pb.DepsFile{{Path: "go.mod", Content: []byte("first")}, {Path: "go.mod", Content: []byte("second")}}}
 	runners.EXPECT().CompleteJob(mock.Anything, mock.Anything, mock.MatchedBy(func(p ports.CompleteJobParams) bool {
-		return p.JobID == "deps-test" && p.Conclusion == domain.CIFailure && assert.Equal(t, &ports.DepsReport{Error: "runner error", Files: []ports.DepsFile{{Path: "go.mod", Content: []byte("first")}, {Path: "go.mod", Content: []byte("second")}}}, p.DepsReport)
+		return p.JobID == "12-0-0" && p.Conclusion == domain.CIFailure && assert.Equal(t, &ports.DepsReport{Error: "runner error", Files: []ports.DepsFile{{Path: "go.mod", Content: []byte("first")}, {Path: "go.mod", Content: []byte("second")}}}, p.DepsReport)
 	})).Return(ports.CompleteJobResult{Conclusion: domain.CIFailure, Applied: true}, nil).Once()
-	res, err := (&runnerService{runners: runners}).CompleteJob(context.Background(), connect.NewRequest(&pb.CompleteJobRequest{JobId: "deps-test", Conclusion: pb.CiConclusion_CI_CONCLUSION_FAILURE, DepsReport: report}))
+	res, err := (&runnerService{runners: runners}).CompleteJob(context.Background(), connect.NewRequest(&pb.CompleteJobRequest{JobId: "12-0-0", Conclusion: pb.CiConclusion_CI_CONCLUSION_FAILURE, DepsReport: report}))
 	require.NoError(t, err)
 	assert.True(t, res.Msg.GetApplied())
 	assert.Nil(t, depsReportFromPB(nil))
@@ -78,7 +78,7 @@ func TestCompleteJobAcceptsLargeDepsReport(t *testing.T) {
 	srv := httptest.NewServer(New(Config{Runner: runners, Sessions: mocks.NewSessionService(t), SigningKey: mocks.NewSigningKeyService(t)}).Handler())
 	t.Cleanup(srv.Close)
 	c := ermiteconnect.NewRunnerServiceClient(srv.Client(), srv.URL)
-	req := connect.NewRequest(&pb.CompleteJobRequest{JobId: "deps-test", Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, DepsReport: &pb.DepsReport{Files: []*pb.DepsFile{{Path: "go.sum", Content: make([]byte, 3<<20)}}}})
+	req := connect.NewRequest(&pb.CompleteJobRequest{JobId: "12-0-0", Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, DepsReport: &pb.DepsReport{Files: []*pb.DepsFile{{Path: "go.sum", Content: make([]byte, 3<<20)}}}})
 	req.Header().Set("Authorization", "Bearer ermitejob_x")
 	res, err := c.CompleteJob(context.Background(), req)
 	require.NoError(t, err)

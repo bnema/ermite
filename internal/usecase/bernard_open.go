@@ -11,7 +11,6 @@ import (
 	"runtime/debug"
 	"slices"
 	"sync"
-	"unicode/utf8"
 
 	"golang.org/x/mod/semver"
 
@@ -116,8 +115,8 @@ func movedPrecondition(d domain.RepoDeps, expected []domain.DepRef) error {
 	return nil
 }
 
-// startRunnerJob queues the job of the runner-side updates at the tip of the
-// default branch and marks the record Applying. The caller holds the
+// startRunnerJob starts the CI run of the runner-side updates at the tip of the
+// default branch and marks the record Applying with it. The caller holds the
 // repository lock.
 func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, d domain.RepoDeps, expected []domain.DepRef) (domain.RepoDeps, error) {
 	cfg := b.cfg
@@ -142,20 +141,33 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, d do
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
-	id, existed := b.enqueueJob(name, tip.String(), runnerUps, d.Updates, goVersion)
-	if existed {
-		return domain.RepoDeps{}, fmt.Errorf("%w: a dependency job is queued already", domain.ErrPreconditionFailed)
+	if cfg.Runs == nil {
+		return domain.RepoDeps{}, fmt.Errorf("%w: dependency jobs are not available", domain.ErrPreconditionFailed)
 	}
+	refs := make([]domain.DepRef, len(runnerUps))
+	for i, u := range runnerUps {
+		refs[i] = u.DepRef
+	}
+	run, err := cfg.Runs.StartDepsRun(ctx, ports.DepsRunParams{
+		Repo: name, Ref: "refs/heads/" + target, Sha: tip.String(), Title: domain.BotCommitSubject(len(d.Updates)),
+		Job: domain.CIDepsJob{Updates: refs, GoVersion: goVersion}, Label: cfg.RunnerLabel, Timeout: cfg.JobTimeout,
+	})
+	if err != nil {
+		return domain.RepoDeps{}, fmt.Errorf("start the dependency run: %w", err)
+	}
+	snapshot := slices.Clone(d.Updates)
 	rec, err := cfg.Store.Mutate(ctx, name, func(r *domain.RepoDeps) (bool, error) {
 		if err := movedPrecondition(*r, expected); err != nil {
 			return false, err
 		}
-		r.Repo, r.State, r.JobID, r.Error = name, domain.DepsApplying, id, ""
+		r.Repo, r.State, r.RunID, r.RunUpdates, r.Error = name, domain.DepsApplying, run.ID, snapshot, ""
 		return true, nil
 	})
 	if err != nil {
-		b.dropJob(id)
-		return domain.RepoDeps{}, fmt.Errorf("record the dependency job: %w", err)
+		if cerr := cfg.Runs.CancelDepsRun(context.WithoutCancel(ctx), name, run.ID); cerr != nil {
+			ctxLog(ctx).Error().Err(cerr).Str("repo", name.String()).Int64("run_id", run.ID).Msg("bernard: cancel a run no record holds")
+		}
+		return domain.RepoDeps{}, fmt.Errorf("record the dependency run: %w", err)
 	}
 	b.changed(ctx, name)
 	return rec, nil
@@ -204,15 +216,9 @@ func (b *Bernard) ecosystem(name domain.DepsEcosystem) ports.DepsEcosystem {
 	return nil
 }
 
-// fail records the failure on the card, bounded.
+// fail records the failure on the card: its first line, bounded.
 func (b *Bernard) fail(ctx context.Context, name domain.RepoName, cause error) {
-	msg := cause.Error()
-	if len(msg) > maxDepsError {
-		msg = msg[:maxDepsError]
-		for !utf8.ValidString(msg) {
-			msg = msg[:len(msg)-1]
-		}
-	}
+	msg := oneLine(cause.Error())
 	_, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), name, func(d *domain.RepoDeps) (bool, error) {
 		d.Repo, d.State, d.Error = name, domain.DepsFailed, msg
 		return true, nil
@@ -307,7 +313,7 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 			}
 		}
 		d.Repo, d.MR, d.MRVersions = name, number, slices.Clone(refs)
-		d.State, d.Error, d.JobID = domain.DepsIdle, "", ""
+		d.State, d.Error, d.RunUpdates = domain.DepsIdle, "", nil // RunID stays: the link to the last run
 		return true, nil
 	})
 	if err != nil {
@@ -539,10 +545,13 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 		drop[v] = true
 	}
 	if !merged {
-		// A job still working on the closed request must not publish what the
-		// owner just refused.
-		if id := b.cancelJob(mr.Repo); id != "" && b.cfg.RevokeJob != nil {
-			b.cfg.RevokeJob(ctx, id)
+		// A run still working on the closed request must not publish what the
+		// owner just refused: it is cancelled, and its end finds the record
+		// moved on.
+		if d.State == domain.DepsApplying && d.RunID != 0 && b.cfg.Runs != nil {
+			if err := b.cfg.Runs.CancelDepsRun(ctx, mr.Repo, d.RunID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+				log.Error().Err(err).Str("repo", mr.Repo.String()).Int64("run_id", d.RunID).Msg("bernard: cancel the dependency run of the closed merge request")
+			}
 		}
 	}
 	_, err = b.cfg.Store.Mutate(ctx, mr.Repo, func(d *domain.RepoDeps) (bool, error) {
@@ -551,7 +560,7 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 		}
 		d.MR, d.MRVersions = 0, nil
 		if !merged && d.State == domain.DepsApplying {
-			d.State, d.JobID, d.Error = domain.DepsIdle, "", ""
+			d.State, d.Error, d.RunUpdates = domain.DepsIdle, "", nil
 		}
 		if !merged {
 			d.Updates = slices.DeleteFunc(slices.Clone(d.Updates), func(u domain.DepUpdate) bool { return drop[u.DepRef] })

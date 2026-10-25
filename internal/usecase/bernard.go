@@ -42,12 +42,15 @@ type BernardConfig struct {
 	Cooldown time.Duration
 	// Snooze is how long a snooze hides a repository.
 	Snooze time.Duration
-	// JobTimeout is the deadline of a runner job from its assignment; ten
-	// minutes when zero.
+	// JobTimeout is the time budget of a dependency job once a runner has it
+	// (rounded up to the minute); ten minutes when zero. The wait for a runner
+	// is CI's queue timeout.
 	JobTimeout time.Duration
-	// RevokeJob deletes the repository token of a deps job that left the
-	// queue; may be nil.
-	RevokeJob func(ctx context.Context, jobID string)
+	// Runs starts and cancels the CI runs of the dependency jobs; may be nil
+	// in a Bernard that does not open merge requests.
+	Runs ports.DepsRunner
+	// RunnerLabel is the runner label that serves the dependency jobs.
+	RunnerLabel string
 	// Tick is how often the schedule looks at the clock; one minute when zero.
 	Tick time.Duration
 
@@ -87,10 +90,6 @@ type Bernard struct {
 	runMu sync.Mutex // serialises ScheduleNow
 	last  time.Time  // last minute looked at
 
-	jobMu    sync.Mutex // guards jobs and jobOrder (bernard_jobs.go)
-	jobs     map[string]*depsJob
-	jobOrder []string
-
 	lockMu sync.Mutex
 	locks  map[domain.RepoName]*sync.Mutex // one lock per repository, for Open and the merge request events
 }
@@ -126,10 +125,9 @@ func (b *Bernard) Start() {
 			return
 		}
 		sub := b.cfg.Bus.Subscribe(b.ctx) // before returning: no event is missed
-		b.failInterrupted(b.ctx)          // the queue is in memory: applying records lost their job
-		b.wg.Add(3)
+		b.reconcileRuns(b.ctx)            // the runs are the truth: settle the records left applying
+		b.wg.Add(2)
 		go b.loop()
-		go b.expiryLoop()
 		go b.watchMergeRequests(sub)
 	})
 }
@@ -159,22 +157,6 @@ func (b *Bernard) loop() {
 		case <-t.C:
 		}
 		b.ScheduleNow(b.ctx)
-	}
-}
-
-// expiryLoop fails the jobs past their deadline on its own ticker, so a long
-// scheduled scan does not delay it.
-func (b *Bernard) expiryLoop() {
-	defer b.wg.Done()
-	t := time.NewTicker(b.cfg.Tick)
-	defer t.Stop()
-	for {
-		select {
-		case <-b.ctx.Done():
-			return
-		case <-t.C:
-		}
-		b.expireJobs(b.ctx)
 	}
 }
 

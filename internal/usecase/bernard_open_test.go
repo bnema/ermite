@@ -38,6 +38,7 @@ type openRig struct {
 	ci     *mocks.WorkflowTrigger
 	mrs    *mocks.MergeRequestService
 	mrst   *mocks.MergeRequestStore
+	runs   *mocks.DepsRunner
 	eco    *mocks.DepsEcosystem
 	bus    *mocks.EventBus
 	events chan domain.Event
@@ -80,7 +81,7 @@ func newOpenRigWith(t *testing.T, ecos func(*openRig) []ports.DepsEcosystem) *op
 		store: mocks.NewDepsStore(t), meta: mocks.NewRepoMetaStore(t), reader: mocks.NewRepoReader(t),
 		repos: mocks.NewGitRepos(t), git: mocks.NewMergeGit(t), signer: mocks.NewCommitSigner(t),
 		tips: mocks.NewCIRefTipStore(t), ci: mocks.NewWorkflowTrigger(t), mrs: mocks.NewMergeRequestService(t),
-		mrst: mocks.NewMergeRequestStore(t), eco: mocks.NewDepsEcosystem(t), bus: mocks.NewEventBus(t),
+		mrst: mocks.NewMergeRequestStore(t), runs: mocks.NewDepsRunner(t), eco: mocks.NewDepsEcosystem(t), bus: mocks.NewEventBus(t),
 		events: make(chan domain.Event, 4),
 	}
 	r.rec = domain.RepoDeps{Repo: r.repo}
@@ -93,7 +94,7 @@ func newOpenRigWith(t *testing.T, ecos func(*openRig) []ports.DepsEcosystem) *op
 		r.mu.Unlock()
 	}).Maybe()
 	r.bus.EXPECT().Subscribe(mock.Anything).Return((<-chan domain.Event)(r.events)).Maybe()
-	r.store.EXPECT().List(mock.Anything).Return(nil, nil).Maybe() // Start looks for interrupted jobs
+	r.store.EXPECT().List(mock.Anything).Return(nil, nil).Maybe() // Start settles the records left applying
 	r.store.EXPECT().Get(mock.Anything, r.repo).RunAndReturn(func(context.Context, domain.RepoName) (domain.RepoDeps, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -124,6 +125,7 @@ func newOpenRigWith(t *testing.T, ecos func(*openRig) []ports.DepsEcosystem) *op
 		Bus:      r.bus, Clock: clock, CheckAt: "0 6 * * *", Tick: time.Hour,
 		Repos: r.repos, Git: r.git, Signer: r.signer, Committer: domain.Identity{Name: "ermite", Email: "ermite@forge.test"},
 		Tips: r.tips, CI: r.ci, MRs: r.mrs, MRStore: r.mrst,
+		Runs: r.runs, RunnerLabel: "ubuntu-latest", JobTimeout: 10 * time.Minute,
 	})
 	require.NoError(t, err)
 	r.b = b

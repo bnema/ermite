@@ -3,8 +3,6 @@
 package usecase
 
 import (
-	"context"
-
 	"bnema.dev/ermite/internal/domain"
 )
 
@@ -13,6 +11,3 @@ func (b *Bernard) UnderRepoLock(repo domain.RepoName, fn func()) {
 	defer b.repoLock(repo)()
 	fn()
 }
-
-// SetRevokeJob replaces the revoke hook, before the tests start Bernard.
-func (b *Bernard) SetRevokeJob(fn func(context.Context, string)) { b.cfg.RevokeJob = fn }

@@ -442,12 +442,13 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			CheckAt: cfg.DepsCheckAt, Cooldown: cfg.DepsCooldown, Snooze: cfg.DepsSnooze,
 			Repos: git, Git: git, Signer: signer, Committer: committer, Tips: store.CI(),
 			CI: f.CI, MRs: f.MergeRequests, MRStore: store.MergeRequests(),
-			JobTimeout: cfg.DepsJobTimeout,
+			JobTimeout: cfg.DepsJobTimeout, Runs: f.CI, RunnerLabel: cfg.DepsRunnerLabel,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("bernard: %w", err)
 		}
 		f.Deps, inboxDeps = f.bernard, store.Deps()
+		f.CI.SetDepsObserver(f.bernard) // Bernard is built after CI
 		f.bernard.Start()
 	}
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{

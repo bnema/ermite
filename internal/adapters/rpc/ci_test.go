@@ -216,3 +216,10 @@ func TestUploadSummaryIsAJobCallWithRoomForOneMiB(t *testing.T) {
 	assert.Contains(t, Features, "ci.annotations")
 	assert.Contains(t, Features, "ci.summaries")
 }
+
+// deps.runs tells clients that a dependency job is a job of a run like any
+// other: its calls take the job token and WatchJob carries the cancel request.
+func TestDepsRunsFeatureIsListed(t *testing.T) {
+	t.Parallel()
+	assert.Contains(t, Features, "deps.runs")
+}

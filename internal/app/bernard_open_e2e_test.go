@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -164,10 +165,19 @@ func bernardGoMod(textVersion string) string {
 	return "module example.com/proj\n\ngo 1.24\n\nrequire golang.org/x/text " + textVersion + "\n"
 }
 
-// P4.2: Open on a repository with a Go module and an action queues a deps job
-// for a runner of the deps kind; its report is applied with the action update
-// in one signed commit on bernard/deps, authored by Bernard.
-func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
+// bernardGoRig is a repository with a Go module and an outdated action, a
+// runner of the deps kind, and the Dependencies client with the pending updates.
+type bernardGoRig struct {
+	*ciHarness
+	runner   *fakeRunner
+	deps     ermiteconnect.DepsServiceClient
+	expected []*pb.DependencyVersion
+	main     string
+	oldSum   string
+}
+
+func newBernardGoRig(t *testing.T) *bernardGoRig {
+	t.Helper()
 	remote := newFakeRemote(t)
 	remote.set("actions/checkout",
 		ports.RemoteRef{Name: "refs/tags/v3", ID: shaTag},
@@ -182,34 +192,90 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	c := &ciHarness{harness: h, root: h.api(adminToken), repo: "proj"}
 	h.seed("proj", domain.VisibilityPrivate)
 	c.wt = h.workTree("main")
-	runner := c.registerRunner("alpha", "ubuntu-latest")
-	oldSum := "golang.org/x/text v0.20.0 " + bernardSumHash + "\ngolang.org/x/text v0.20.0/go.mod " + bernardSumHash + "\n"
+	rig := &bernardGoRig{ciHarness: c, runner: c.registerRunner("alpha", "ubuntu-latest")}
+	rig.oldSum = "golang.org/x/text v0.20.0 " + bernardSumHash + "\ngolang.org/x/text v0.20.0/go.mod " + bernardSumHash + "\n"
 	c.push("main", map[string]string{
 		".github/workflows/ci.yml": bernardWorkflow,
 		"go.mod":                   bernardGoMod("v0.20.0"),
-		"go.sum":                   oldSum,
+		"go.sum":                   rig.oldSum,
 	}, "")
-	main := strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
+	rig.main = strings.TrimSpace(c.mustGit(c.wt, "rev-parse", "HEAD"))
 
-	deps := ermiteconnect.NewDepsServiceClient(&http.Client{Transport: bearerTransport{secret: adminToken, next: http.DefaultTransport}}, h.url("/-/api"))
+	rig.deps = ermiteconnect.NewDepsServiceClient(&http.Client{Transport: bearerTransport{secret: adminToken, next: http.DefaultTransport}}, h.url("/-/api"))
 	var pending *pb.RepoDependencyUpdates
 	c.waitFor("two pending updates", func() bool {
-		res, err := deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
+		res, err := rig.deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
 		require.NoError(t, err)
 		pending = res.Msg.GetUpdates()
 		return len(pending.GetUpdates()) == 2
 	})
-	var expected []*pb.DependencyVersion
 	for _, u := range pending.GetUpdates() {
-		expected = append(expected, &pb.DependencyVersion{Ecosystem: u.GetEcosystem(), Directory: u.GetDirectory(), Name: u.GetName(), Version: u.GetLatest()})
+		rig.expected = append(rig.expected, &pb.DependencyVersion{Ecosystem: u.GetEcosystem(), Directory: u.GetDirectory(), Name: u.GetName(), Version: u.GetLatest()})
 	}
+	return rig
+}
 
-	res, err := deps.OpenDependencyUpdates(c.ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: expected}))
-	require.NoError(t, err)
-	assert.Equal(t, pb.RepoDependencyUpdates_STATE_APPLYING, res.Msg.GetUpdates().GetState())
-	assert.Zero(t, res.Msg.GetUpdates().GetMergeRequestNumber())
+func (rig *bernardGoRig) open() *pb.RepoDependencyUpdates {
+	rig.t.Helper()
+	res, err := rig.deps.OpenDependencyUpdates(rig.ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: rig.expected}))
+	require.NoError(rig.t, err)
+	return res.Msg.GetUpdates()
+}
+
+// record is the dependency record of the repository.
+func (rig *bernardGoRig) record() *pb.RepoDependencyUpdates {
+	rig.t.Helper()
+	res, err := rig.deps.ListDependencyUpdates(rig.ctx, connect.NewRequest(&pb.ListDependencyUpdatesRequest{}))
+	require.NoError(rig.t, err)
+	for _, r := range res.Msg.GetRepos() {
+		if r.GetRepo() == "proj" {
+			return r
+		}
+	}
+	rig.t.Fatal("no record for proj")
+	return nil
+}
+
+// depsRun returns the only dependency run of the repository.
+func (rig *bernardGoRig) depsRun() *pb.Run {
+	rig.t.Helper()
+	var out *pb.Run
+	for _, r := range rig.runs() {
+		if r.GetEvent() == "dependencies" {
+			require.Nil(rig.t, out, "one dependency run")
+			out = r
+		}
+	}
+	require.NotNil(rig.t, out, "a dependency run")
+	return out
+}
+
+// P4.2: Open on a repository with a Go module and an action starts a
+// dependency run for a runner of the deps kind; its report is applied with the
+// action update in one signed commit on bernard/deps, authored by Bernard. The
+// job is an ordinary job of an ordinary run: it takes its job token, its log is
+// the run's log, and the Actions list shows it.
+func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
+	rig := newBernardGoRig(t)
+	c, runner, main := rig.ciHarness, rig.runner, rig.main
+
+	got := rig.open()
+	assert.Equal(t, pb.RepoDependencyUpdates_STATE_APPLYING, got.GetState())
+	assert.Zero(t, got.GetMergeRequestNumber())
 	_, gitErr := c.git(c.repoDir("proj"), "rev-parse", "--verify", "-q", "refs/heads/bernard/deps")
 	assert.Error(t, gitErr, "nothing is committed before the report")
+
+	// A queued run, visible in Actions, with no check on the commit.
+	run := rig.depsRun()
+	assert.Equal(t, pb.CiStatus_CI_STATUS_QUEUED, run.GetStatus())
+	assert.Equal(t, "bernard", run.GetActor())
+	assert.Equal(t, "Dependencies", run.GetWorkflowName())
+	assert.Equal(t, "bernard/deps", run.GetWorkflowPath())
+	assert.Equal(t, "build(deps): update 2 dependencies", run.GetTitle())
+	assert.Equal(t, "refs/heads/main", run.GetRef())
+	assert.Equal(t, main, run.GetSha())
+	assert.False(t, run.GetTrusted())
+	assert.Empty(t, c.checks(main), "a dependency run posts no check")
 
 	// A runner that did not ask for the deps kind never gets the job.
 	old, err := runner.fetch("")
@@ -221,8 +287,13 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	job := fetch.Msg.GetJob()
 	require.NotNil(t, job)
 	require.NotNil(t, job.GetDeps())
-	assert.Regexp(t, `^deps-[0-9a-f]{16}$`, job.GetJobId())
+	assert.Equal(t, run.GetId(), job.GetRunId())
+	assert.Equal(t, fmt.Sprintf("%d-0-0", run.GetId()), job.GetJobId())
+	assert.NotEmpty(t, job.GetJobToken())
+	assert.EqualValues(t, 10, job.GetTimeoutMinutes())
+	assert.Equal(t, []string{"ubuntu-latest"}, job.GetLabels())
 	assert.Equal(t, main, job.GetSha())
+	assert.Empty(t, job.GetWorkflowYaml())
 	assert.Equal(t, "1.24", job.GetDeps().GetGoVersion())
 	require.Len(t, job.GetDeps().GetUpdates(), 1)
 	assert.Equal(t, "golang.org/x/text", job.GetDeps().GetUpdates()[0].GetName())
@@ -232,16 +303,27 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	assert.Empty(t, job.GetVars())
 	assert.NotEmpty(t, job.GetGithubToken())
 
-	// The job runs with the runner secret: heartbeat, log, completion.
+	// The job runs with its job token: heartbeat, steps, log, completion. The
+	// runner token is no key to it.
 	_, err = runner.api.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	assert.Equal(t, connect.CodeUnauthenticated, ciErrCode(err))
+	jobAPI := runner.jobAPI(job)
+	_, err = jobAPI.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
 	require.NoError(t, err)
-	_, err = runner.api.runner.AppendLog(c.ctx, connect.NewRequest(&pb.AppendLogRequest{
-		JobId: job.GetJobId(), Step: 1, Lines: []*pb.LogLine{{Time: now(), Text: "go get golang.org/x/text@v0.21.0"}},
+	c.waitFor("the run to be in progress", func() bool { return c.getRun(run.GetId()).GetRun().GetStatus() == pb.CiStatus_CI_STATUS_IN_PROGRESS })
+	start := now()
+	_, err = jobAPI.runner.UpdateJob(c.ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: job.GetJobId(), Steps: []*pb.StepUpdate{
+		{Number: 1, Name: "Update dependencies", State: pb.StepState_STEP_STATE_IN_PROGRESS, StartedAt: start},
+	}}))
+	require.NoError(t, err)
+	_, err = jobAPI.runner.AppendLog(c.ctx, connect.NewRequest(&pb.AppendLogRequest{
+		JobId: job.GetJobId(), Step: 1, Lines: []*pb.LogLine{{Time: now(), Text: "go get golang.org/x/text@v0.21.0"}, {Time: now(), Text: "go mod tidy"}},
 	}))
 	require.NoError(t, err)
-	newSum := oldSum + "golang.org/x/text v0.21.0 " + bernardSumHash + "\ngolang.org/x/text v0.21.0/go.mod " + bernardSumHash + "\n"
-	done, err := runner.api.runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	newSum := rig.oldSum + "golang.org/x/text v0.21.0 " + bernardSumHash + "\ngolang.org/x/text v0.21.0/go.mod " + bernardSumHash + "\n"
+	done, err := jobAPI.runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
 		JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS,
+		Steps: []*pb.StepUpdate{{Number: 1, Name: "Update dependencies", State: pb.StepState_STEP_STATE_COMPLETED, Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, StartedAt: start, CompletedAt: now()}},
 		DepsReport: &pb.DepsReport{Files: []*pb.DepsFile{
 			{Path: "go.mod", Content: []byte(bernardGoMod("v0.21.0"))},
 			{Path: "go.sum", Content: []byte(newSum)},
@@ -250,7 +332,15 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, done.Msg.GetApplied())
 
-	// One signed commit on the job's commit: go.mod, go.sum and the workflow.
+	// The report is applied after the job ended: the card goes idle with its
+	// merge request, and keeps the link to the run.
+	var rec *pb.RepoDependencyUpdates
+	c.waitFor("the card to be idle", func() bool {
+		rec = rig.record()
+		return rec.GetState() == pb.RepoDependencyUpdates_STATE_IDLE && rec.GetMergeRequestNumber() != 0
+	})
+
+	// One signed commit on the run's commit: go.mod, go.sum and the workflow.
 	assert.Equal(t, "1", c.bareGit("proj", "rev-list", "--count", main+"..refs/heads/bernard/deps"))
 	head := c.bareGit("proj", "rev-parse", "refs/heads/bernard/deps")
 	assert.Equal(t, main, c.bareGit("proj", "rev-parse", head+"^"))
@@ -266,25 +356,88 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	require.Len(t, list.Msg.GetCommits(), 1)
 	assert.Equal(t, pb.SignatureStatus_SIGNATURE_STATUS_VERIFIED, list.Msg.GetCommits()[0].GetVerification().GetStatus())
 
-	// The card is idle again with the merge request, authored by bernard.
-	var number int64
-	c.waitFor("the card to be idle", func() bool {
-		res, err := deps.ListDependencyUpdates(c.ctx, connect.NewRequest(&pb.ListDependencyUpdatesRequest{}))
-		require.NoError(t, err)
-		for _, r := range res.Msg.GetRepos() {
-			if r.GetState() == pb.RepoDependencyUpdates_STATE_IDLE && r.GetMergeRequestNumber() != 0 {
-				number = r.GetMergeRequestNumber()
-				return true
-			}
-		}
-		return false
-	})
-	mr, err := c.root.mr.GetMergeRequest(c.ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: number}))
+	mr, err := c.root.mr.GetMergeRequest(c.ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: rec.GetMergeRequestNumber()}))
 	require.NoError(t, err)
 	assert.Equal(t, "bernard", mr.Msg.GetMergeRequest().GetAuthor())
 	assert.Equal(t, "bernard/deps", mr.Msg.GetMergeRequest().GetSourceBranch())
 
-	// The job is gone: a second completion is refused.
-	_, err = runner.api.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
-	assert.Equal(t, connect.CodeNotFound, ciErrCode(err))
+	// The run completed, with its steps and its log, and no check.
+	detail := c.getRun(run.GetId())
+	assert.Equal(t, pb.CiStatus_CI_STATUS_COMPLETED, detail.GetRun().GetStatus())
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_SUCCESS, detail.GetRun().GetConclusion())
+	require.Len(t, detail.GetJobs(), 1)
+	assert.Equal(t, "Update dependencies", detail.GetJobs()[0].GetName())
+	require.Len(t, detail.GetJobs()[0].GetSteps(), 1)
+	assert.EqualValues(t, 2, detail.GetJobs()[0].GetSteps()[0].GetLogEnd())
+	stream, err := c.root.run.GetJobLog(c.ctx, connect.NewRequest(&pb.GetJobLogRequest{Repo: "proj", JobId: job.GetJobId()}))
+	require.NoError(t, err)
+	var lines []string
+	for stream.Receive() {
+		for _, l := range stream.Msg().GetLines() {
+			lines = append(lines, l.GetText())
+		}
+	}
+	require.NoError(t, stream.Err())
+	assert.Equal(t, []string{"go get golang.org/x/text@v0.21.0", "go mod tidy"}, lines)
+	assert.Empty(t, c.checks(main))
+
+	// The job is over: another call answers with its end, and the run cannot be
+	// run again.
+	_, err = jobAPI.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	require.Error(t, err)
+	_, err = c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: run.GetId()}))
+	assert.Equal(t, connect.CodeFailedPrecondition, ciErrCode(err))
+}
+
+// The owner cancels the dependency run from the Actions list: the runner is
+// asked to stop, and the card fails with the reason.
+func TestBernardCancelingTheRunFailsTheCard(t *testing.T) {
+	rig := newBernardGoRig(t)
+	c, runner := rig.ciHarness, rig.runner
+
+	rig.open()
+	run := rig.depsRun()
+	fetch, err := runner.api.runner.FetchJob(c.ctx, connect.NewRequest(&pb.FetchJobRequest{Kinds: []string{"deps"}}))
+	require.NoError(t, err)
+	job := fetch.Msg.GetJob()
+	require.NotNil(t, job)
+	jobAPI := runner.jobAPI(job)
+	_, err = jobAPI.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	require.NoError(t, err)
+
+	// The runner watches the job.
+	watch, err := jobAPI.runner.WatchJob(c.ctx, connect.NewRequest(&pb.WatchJobRequest{JobId: job.GetJobId()}))
+	require.NoError(t, err)
+	cancelled := make(chan *pb.CancelRequest, 1)
+	go func() {
+		for watch.Receive() {
+			if watch.Msg().GetCancel() != nil {
+				cancelled <- watch.Msg().GetCancel()
+				return
+			}
+		}
+	}()
+
+	_, err = c.root.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()}))
+	require.NoError(t, err)
+	select {
+	case sig := <-cancelled:
+		assert.NotNil(t, sig)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the runner was not asked to stop")
+	}
+	_, err = jobAPI.runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED}))
+	require.NoError(t, err)
+
+	var rec *pb.RepoDependencyUpdates
+	c.waitFor("the card to fail", func() bool {
+		rec = rig.record()
+		return rec.GetState() == pb.RepoDependencyUpdates_STATE_FAILED
+	})
+	assert.Contains(t, rec.GetError(), "the run ended: cancelled")
+	assert.NotContains(t, rec.GetError(), "\n")
+	assert.Zero(t, rec.GetMergeRequestNumber())
+	_, gitErr := c.git(c.repoDir("proj"), "rev-parse", "--verify", "-q", "refs/heads/bernard/deps")
+	assert.Error(t, gitErr, "nothing was committed")
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.getRun(run.GetId()).GetRun().GetConclusion())
 }

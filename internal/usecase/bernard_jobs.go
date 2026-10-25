@@ -5,12 +5,12 @@ package usecase
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"path"
+	"runtime/debug"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -18,313 +18,123 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
-const (
-	// depsLogTailBytes bounds the log tail kept per deps job.
-	depsLogTailBytes = 64 << 10
-	// defaultDepsJobTimeout is the deadline of a job from its assignment.
-	defaultDepsJobTimeout = 10 * time.Minute
-)
+// defaultDepsJobTimeout is the time budget of a dependency job once a runner
+// has it.
+const defaultDepsJobTimeout = 10 * time.Minute
 
-// errJobSuperseded stops the publication of a job the record left.
-var errJobSuperseded = errors.New("the dependency job is no longer current")
+// errJobSuperseded stops the publication of a run the record left.
+var errJobSuperseded = errors.New("the dependency run is no longer current")
 
-// depsJobPrefix starts the ids of the queued jobs (transitional: the queue is
-// replaced by CI runs).
-const depsJobPrefix = "deps-"
+var _ ports.DepsRunObserver = (*Bernard)(nil)
 
-// depsJob is a queued or running runner job. The queue is in memory: a restart
-// loses it and Start fails the records that were applying.
-type depsJob struct {
-	id        string
-	repo      domain.RepoName
-	sha       string
-	updates   []domain.DepRef
-	goVersion string
-	// runnerUps are the updates the runner applies; all are those of the
-	// record when the job was queued, the ones applied in the server included.
-	runnerUps, all []domain.DepUpdate
-
-	runner   string    // "" while pending
-	deadline time.Time // from the assignment; while pending, from the enqueue
-	lines    int64     // lines received, for the offsets
-	tail     []byte    // last depsLogTailBytes of the log
-}
-
-func newDepsJobID() string {
-	var raw [8]byte
-	_, _ = rand.Read(raw[:])
-	return depsJobPrefix + hex.EncodeToString(raw[:])
-}
-
-// enqueue queues the job of a repository and returns its id; a repository
-// that already has a job keeps it and gets its id.
-func (b *Bernard) enqueue(repo domain.RepoName, sha string, updates []domain.DepRef, goVersion string) string {
-	ups := make([]domain.DepUpdate, len(updates))
-	for i, r := range updates {
-		ups[i] = domain.DepUpdate{DepRef: r}
-	}
-	id, _ := b.enqueueJob(repo, sha, ups, ups, goVersion)
-	return id
-}
-
-// enqueueJob queues the job of runnerUps at sha; all are the updates of the
-// record. existed is true when the repository had a job already: that one is
-// kept and its id returned.
-func (b *Bernard) enqueueJob(repo domain.RepoName, sha string, runnerUps, all []domain.DepUpdate, goVersion string) (id string, existed bool) {
-	b.jobMu.Lock()
-	defer b.jobMu.Unlock()
-	for _, j := range b.jobs {
-		if j.repo == repo {
-			return j.id, true
+// oneLine cuts a reason to its first line, within maxDepsError.
+func oneLine(s string) string {
+	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
+	s = strings.TrimSpace(s)
+	if len(s) > maxDepsError {
+		s = s[:maxDepsError]
+		for !utf8.ValidString(s) {
+			s = s[:len(s)-1]
 		}
 	}
-	refs := make([]domain.DepRef, len(runnerUps))
-	for i, u := range runnerUps {
-		refs[i] = u.DepRef
-	}
-	j := &depsJob{
-		id: newDepsJobID(), repo: repo, sha: sha, updates: refs, goVersion: goVersion,
-		runnerUps: slices.Clone(runnerUps), all: slices.Clone(all),
-		deadline: b.cfg.Clock.Now().Add(b.cfg.JobTimeout), // nobody may take it for longer than a run lasts
-	}
-	if b.jobs == nil {
-		b.jobs = map[string]*depsJob{}
-	}
-	b.jobs[j.id] = j
-	b.jobOrder = append(b.jobOrder, j.id)
-	return j.id, false
+	return s
 }
 
-// dropJob removes a job that was never started.
-func (b *Bernard) dropJob(id string) {
-	b.jobMu.Lock()
-	b.takeLocked(id)
-	b.jobMu.Unlock()
-}
-
-// cancelJob removes the queued or running job of a repository and returns its
-// id, empty when there is none.
-func (b *Bernard) cancelJob(repo domain.RepoName) string {
-	b.jobMu.Lock()
-	defer b.jobMu.Unlock()
-	for id, j := range b.jobs {
-		if j.repo == repo {
-			b.takeLocked(id)
-			return id
-		}
-	}
-	return ""
-}
-
-// takeLocked removes a job from the queue.
-func (b *Bernard) takeLocked(id string) {
-	delete(b.jobs, id)
-	for i, o := range b.jobOrder {
-		if o == id {
-			b.jobOrder = append(b.jobOrder[:i], b.jobOrder[i+1:]...)
-			break
-		}
-	}
-}
-
-// expireLocked removes the jobs past their deadline, assigned or still waiting
-// for a runner, and returns them.
-func (b *Bernard) expireLocked(now time.Time) []*depsJob {
-	var out []*depsJob
-	for _, id := range append([]string(nil), b.jobOrder...) {
-		if j := b.jobs[id]; !now.Before(j.deadline) {
-			b.takeLocked(id)
-			out = append(out, j)
-		}
-	}
-	return out
-}
-
-// expireJobs fails the jobs past their deadline. It runs on the tick, on Next
-// and on Heartbeat.
-func (b *Bernard) expireJobs(ctx context.Context) {
-	b.jobMu.Lock()
-	dead := b.expireLocked(b.cfg.Clock.Now())
-	b.jobMu.Unlock()
-	for _, j := range dead {
-		b.finishJob(ctx, j, "deps job timed out")
-	}
-}
-
-// finishJob ends a job that failed on the server side: revoke its token and
-// record the failure with the log tail.
-func (b *Bernard) finishJob(ctx context.Context, j *depsJob, reason string) {
-	if b.cfg.RevokeJob != nil {
-		b.cfg.RevokeJob(ctx, j.id)
-	}
-	b.failJob(ctx, j, reason)
-}
-
-// failJob sets the record of the job's repository to Failed with the reason and
-// the end of the log, within maxDepsError.
-func (b *Bernard) failJob(ctx context.Context, j *depsJob, reason string) {
-	msg := reason
-	if room := maxDepsError - len(msg) - 1; room > 0 && len(j.tail) > 0 {
-		tail := j.tail
-		if len(tail) > room {
-			tail = tail[len(tail)-room:]
-			for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
-				tail = tail[1:]
-			}
-		}
-		msg += "\n" + string(tail)
-	}
-	if len(msg) > maxDepsError {
-		msg = msg[:maxDepsError]
-		for !utf8.ValidString(msg) {
-			msg = msg[:len(msg)-1]
-		}
-	}
-	defer b.repoLock(j.repo)()
+// failRun sets the record to Failed with a one-line reason when it is still
+// applying that run. The log is on the run, which the record keeps linking.
+func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64, reason string) {
+	defer b.repoLock(repo)()
 	wrote := false
-	_, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), j.repo, func(d *domain.RepoDeps) (bool, error) {
+	_, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), repo, func(d *domain.RepoDeps) (bool, error) {
 		wrote = false
-		if j.id != "" && (d.State != domain.DepsApplying || d.JobID != j.id) {
-			return false, nil // the record left this job: the owner closed the merge request, say
+		if d.State != domain.DepsApplying || d.RunID != runID {
+			return false, nil // the record left this run: the owner closed the merge request, say
 		}
 		wrote = true
-		d.Repo, d.State, d.Error, d.JobID = j.repo, domain.DepsFailed, msg, ""
+		d.Repo, d.State, d.Error, d.RunUpdates = repo, domain.DepsFailed, oneLine(reason), nil
 		return true, nil
 	})
 	if err != nil {
-		ctxLog(ctx).Error().Err(err).Str("repo", j.repo.String()).Msg("bernard: record the failure of a deps job")
+		ctxLog(ctx).Error().Err(err).Str("repo", repo.String()).Msg("bernard: record the failure of a dependency run")
 		return
 	}
 	if wrote {
-		b.changed(ctx, j.repo)
+		b.changed(ctx, repo)
 	}
 }
 
-// failInterrupted fails every record left applying by a previous process.
-func (b *Bernard) failInterrupted(ctx context.Context) {
+// reconcileRuns settles the records left applying by a previous process: the
+// run is the truth. One still open is left alone (the observer hears of its
+// end); one that ended unseen, or that is gone, fails the record.
+func (b *Bernard) reconcileRuns(ctx context.Context) {
 	recs, err := b.cfg.Store.List(ctx)
 	if err != nil {
 		ctxLog(ctx).Error().Err(err).Msg("bernard: list the records")
 		return
 	}
 	for _, r := range recs {
-		if r.State == domain.DepsApplying {
-			b.failJob(ctx, &depsJob{repo: r.Repo}, "interrupted by a restart")
-		}
-	}
-}
-
-// ownedLocked returns the job when it is assigned to the runner.
-func (b *Bernard) ownedLocked(runnerID, jobID string) (*depsJob, error) {
-	j, ok := b.jobs[jobID]
-	if !ok || j.runner == "" || j.runner != runnerID {
-		return nil, domain.ErrNotFound
-	}
-	return j, nil
-}
-
-// Next hands the oldest pending job to the runner.
-func (b *Bernard) Next(ctx context.Context, runnerID string) (ports.DepsAssignment, bool, error) {
-	b.expireJobs(ctx)
-	b.jobMu.Lock()
-	defer b.jobMu.Unlock()
-	for _, id := range b.jobOrder {
-		j := b.jobs[id]
-		if j.runner != "" {
+		if r.State != domain.DepsApplying {
 			continue
 		}
-		j.runner, j.deadline = runnerID, b.cfg.Clock.Now().Add(b.cfg.JobTimeout)
-		return ports.DepsAssignment{
-			JobID: j.id, Repo: j.repo, Sha: j.sha, Deadline: j.deadline,
-			Job: ports.DepsJob{Updates: append([]domain.DepRef(nil), j.updates...), GoVersion: j.goVersion},
-		}, true, nil
-	}
-	return ports.DepsAssignment{}, false, nil
-}
-
-// Update checks the job; a deps job has no steps to keep.
-func (b *Bernard) Update(_ context.Context, runnerID, jobID string, _ []ports.StepUpdate, _ []domain.CIAnnotation) error {
-	b.jobMu.Lock()
-	defer b.jobMu.Unlock()
-	_, err := b.ownedLocked(runnerID, jobID)
-	return err
-}
-
-// AppendLog keeps the last 64 KiB of the log.
-func (b *Bernard) AppendLog(_ context.Context, runnerID, jobID string, offset int64, lines []domain.CILogLine) (int64, error) {
-	b.jobMu.Lock()
-	defer b.jobMu.Unlock()
-	j, err := b.ownedLocked(runnerID, jobID)
-	if err != nil {
-		return 0, err
-	}
-	if offset > j.lines {
-		return 0, &ports.ErrCILogGap{Count: j.lines}
-	}
-	skip := j.lines - offset
-	if skip >= int64(len(lines)) {
-		return j.lines, nil
-	}
-	for _, l := range lines[skip:] {
-		if j.lines > 0 && !l.Continued {
-			j.tail = append(j.tail, '\n')
+		if b.cfg.Runs == nil || r.RunID == 0 {
+			b.failRun(ctx, r.Repo, r.RunID, "the run no longer exists")
+			continue
 		}
-		j.tail = append(j.tail, l.Text...)
-		j.lines++
-	}
-	if len(j.tail) > depsLogTailBytes {
-		j.tail = append([]byte(nil), j.tail[len(j.tail)-depsLogTailBytes:]...)
-		for len(j.tail) > 0 && !utf8.RuneStart(j.tail[0]) {
-			j.tail = j.tail[1:]
+		run, err := b.cfg.Runs.GetDepsRun(ctx, r.Repo, r.RunID)
+		switch {
+		case errors.Is(err, domain.ErrNotFound):
+			b.failRun(ctx, r.Repo, r.RunID, "the run no longer exists")
+		case err != nil:
+			ctxLog(ctx).Error().Err(err).Str("repo", r.Repo.String()).Int64("run_id", r.RunID).Msg("bernard: read the run to reconcile")
+		case run.Status == domain.CICompleted && run.Conclusion == domain.CISuccess:
+			b.failRun(ctx, r.Repo, r.RunID, "the server restarted before the result was applied")
+		case run.Status == domain.CICompleted:
+			b.failRun(ctx, r.Repo, r.RunID, fmt.Sprintf("the run ended: %s", run.Conclusion))
 		}
 	}
-	return j.lines, nil
 }
 
-// Heartbeat checks the job and its deadline.
-func (b *Bernard) Heartbeat(ctx context.Context, runnerID, jobID string) error {
-	b.expireJobs(ctx)
-	b.jobMu.Lock()
-	defer b.jobMu.Unlock()
-	_, err := b.ownedLocked(runnerID, jobID)
-	return err
-}
-
-// Complete ends the job with the runner's report.
-func (b *Bernard) Complete(ctx context.Context, runnerID, jobID string, report *ports.DepsReport, conclusion domain.CIConclusion) error {
-	b.expireJobs(ctx)
-	b.jobMu.Lock()
-	j, err := b.ownedLocked(runnerID, jobID)
-	if err == nil {
-		b.takeLocked(jobID)
-	}
-	b.jobMu.Unlock()
+// DepsJobEnded applies the outcome of a dependency job that ended: the runner's
+// report is checked and published, or the record fails with a one-line reason
+// (the log is on the run). A run the record left (the owner closed the merge
+// request meanwhile) is dropped. It implements ports.DepsRunObserver.
+func (b *Bernard) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain.CIJob, report *ports.DepsReport) {
+	defer func() {
+		if r := recover(); r != nil {
+			ctxLog(ctx).Error().Interface("panic", r).Bytes("stack", debug.Stack()).Str("repo", run.Repo.String()).Msg("bernard: a dependency run panicked")
+		}
+	}()
+	rec, err := b.currentRecord(ctx, run)
 	if err != nil {
-		return err
+		ctxLog(ctx).Error().Err(err).Str("repo", run.Repo.String()).Msg("bernard: read the record of a dependency run")
+		return
 	}
-	if b.cfg.RevokeJob != nil {
-		b.cfg.RevokeJob(ctx, j.id)
+	if rec.State != domain.DepsApplying || rec.RunID != run.ID {
+		return // superseded
 	}
-	rep := ports.DepsReport{Error: "the runner sent no report"}
-	if report != nil {
-		rep = *report
-	}
-	b.onDepsJobDone(ctx, j, rep, conclusion)
-	return nil
-}
-
-// onDepsJobDone records the outcome of a job the runner ended.
-func (b *Bernard) onDepsJobDone(ctx context.Context, j *depsJob, report ports.DepsReport, conclusion domain.CIConclusion) {
 	switch {
-	case report.Error != "":
-		b.failJob(ctx, j, report.Error)
-	case conclusion != domain.CISuccess:
-		b.failJob(ctx, j, fmt.Sprintf("the runner reported %s", conclusion))
+	case report != nil && report.Error != "":
+		b.failRun(ctx, run.Repo, run.ID, report.Error)
+	case job.Conclusion != domain.CISuccess:
+		reason := fmt.Sprintf("the run ended: %s", job.Conclusion)
+		if msg := oneLine(job.Error); msg != "" {
+			reason += ": " + msg
+		}
+		b.failRun(ctx, run.Repo, run.ID, reason)
+	case report == nil:
+		b.failRun(ctx, run.Repo, run.ID, "the runner sent no report")
 	default:
-		if err := b.applyRunnerReport(ctx, j, report); err != nil {
-			b.failJob(ctx, j, err.Error())
+		if err := b.applyRunnerReport(ctx, rec, run, job, *report); err != nil {
+			b.failRun(ctx, run.Repo, run.ID, err.Error())
 		}
 	}
+}
+
+// currentRecord reads the record of the run's repository under its lock, so
+// that a transition in progress (Open recording the run) has finished.
+func (b *Bernard) currentRecord(ctx context.Context, run domain.CIRun) (domain.RepoDeps, error) {
+	defer b.repoLock(run.Repo)()
+	return b.cfg.Store.Get(ctx, run.Repo)
 }
 
 // Limits of a runner report.
@@ -338,12 +148,23 @@ const (
 // commit, applies the updates of the other ecosystems in the server, merges
 // both sets of changes and publishes them as the Bernard commit on top of that
 // commit.
-func (b *Bernard) applyRunnerReport(ctx context.Context, j *depsJob, report ports.DepsReport) error {
+func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, run domain.CIRun, job domain.CIJob, report ports.DepsReport) error {
+	if job.Deps == nil {
+		return fmt.Errorf("%w: the job holds no dependency update", domain.ErrInvalid)
+	}
+	// The updates the runner applied: those of the job among the ones the run
+	// started with (the daily check may have rewritten rec.Updates since).
+	var runnerUps []domain.DepUpdate
+	for _, u := range rec.RunUpdates {
+		if slices.Contains(job.Deps.Updates, u.DepRef) {
+			runnerUps = append(runnerUps, u)
+		}
+	}
 	eco := b.ecosystem(domain.EcosystemGoMod)
 	if eco == nil {
 		return fmt.Errorf("%w: no Go module ecosystem", domain.ErrPreconditionFailed)
 	}
-	base, err := domain.ParseObjectID(j.sha)
+	base, err := domain.ParseObjectID(run.Sha)
 	if err != nil {
 		return fmt.Errorf("%w: job commit: %v", domain.ErrInvalid, err)
 	}
@@ -351,7 +172,7 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, j *depsJob, report port
 		return fmt.Errorf("%w: the report has %d files, at most %d", domain.ErrInvalid, len(report.Files), maxReportFiles)
 	}
 	allowed := map[domain.TreePath]bool{}
-	for _, u := range j.runnerUps {
+	for _, u := range runnerUps {
 		for _, f := range []string{"go.mod", "go.sum"} {
 			p := path.Join(u.Directory, f)
 			tp, err := domain.ParseTreePath(p)
@@ -386,7 +207,7 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, j *depsJob, report port
 	rev := domain.RevisionOf(base)
 	before := map[domain.TreePath][]byte{}
 	for tp := range allowed {
-		content, ok, err := b.readManifest(ctx, j.repo, rev, tp)
+		content, ok, err := b.readManifest(ctx, run.Repo, rev, tp)
 		switch {
 		case errors.Is(err, domain.ErrNotFound) && path.Base(tp.String()) == "go.sum":
 			continue // a module without dependencies has none
@@ -397,7 +218,7 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, j *depsJob, report port
 		}
 		before[tp] = content
 	}
-	if err := eco.Validate(before, after, j.runnerUps); err != nil {
+	if err := eco.Validate(before, after, runnerUps); err != nil {
 		return fmt.Errorf("check the %s updates: %w", domain.EcosystemGoMod, err)
 	}
 	changes := map[domain.TreePath][]byte{}
@@ -408,13 +229,13 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, j *depsJob, report port
 	}
 
 	var serverUps []domain.DepUpdate
-	for _, u := range j.all {
+	for _, u := range rec.RunUpdates {
 		if e := b.ecosystem(u.Ecosystem); e != nil && e.ApplyInServer() {
 			serverUps = append(serverUps, u)
 		}
 	}
 	if len(serverUps) > 0 {
-		more, err := b.changes(ctx, j.repo, base, serverUps)
+		more, err := b.changes(ctx, run.Repo, base, serverUps)
 		if err != nil {
 			return err
 		}
@@ -426,13 +247,13 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, j *depsJob, report port
 		}
 	}
 
-	defer b.repoLock(j.repo)()
-	d, err := b.cfg.Store.Get(ctx, j.repo)
+	defer b.repoLock(run.Repo)()
+	d, err := b.cfg.Store.Get(ctx, run.Repo)
 	if err != nil {
 		return fmt.Errorf("read the dependency record: %w", err)
 	}
 	jobGuard := func(r domain.RepoDeps) error {
-		if r.State != domain.DepsApplying || r.JobID != j.id {
+		if r.State != domain.DepsApplying || r.RunID != run.ID {
 			return errJobSuperseded
 		}
 		return nil
@@ -440,13 +261,13 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, j *depsJob, report port
 	if jobGuard(d) != nil {
 		return nil // the owner closed the merge request meanwhile: drop the report
 	}
-	target, exists, err := b.cfg.Repos.DefaultBranch(ctx, j.repo)
+	target, exists, err := b.cfg.Repos.DefaultBranch(ctx, run.Repo)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("%w: %s has no default branch", domain.ErrPreconditionFailed, j.repo)
+		return fmt.Errorf("%w: %s has no default branch", domain.ErrPreconditionFailed, run.Repo)
 	}
-	_, err = b.publish(ctx, j.repo, target, base, changes, j.all, d.MR, jobGuard)
+	_, err = b.publish(ctx, run.Repo, target, base, changes, rec.RunUpdates, d.MR, jobGuard)
 	return err
 }

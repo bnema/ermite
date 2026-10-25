@@ -25,7 +25,10 @@ message RepoDeps {
   google.protobuf.Timestamp snoozed_until = 4;
   int32 state = 5;
   string error = 6;
-  string job_id = 7;
+  // Unused since schema 10 (the job is a CI run, see run_id): never read,
+  // never written; the schema 10 upgrade clears it. Kept, not reserved, so that
+  // buf breaking accepts the change.
+  string job_id = 7 [deprecated = true];
   int64 mr = 8;
   repeated DepRef mr_versions = 9;
   // The CI run applying the updates, or the last one that tried; 0 for none.

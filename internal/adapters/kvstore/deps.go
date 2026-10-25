@@ -259,7 +259,6 @@ func encodeRepoDeps(rd domain.RepoDeps) ([]byte, error) {
 		SnoozedUntil: encodeTime(rd.SnoozedUntil),
 		State:        int32(rd.State),
 		Error:        rd.Error,
-		JobId:        rd.JobID,
 		RunId:        rd.RunID,
 		Mr:           rd.MR,
 	}
@@ -294,7 +293,6 @@ func decodeRepoDeps(val []byte) (domain.RepoDeps, error) {
 		SnoozedUntil: decodeTime(pb.GetSnoozedUntil()),
 		State:        domain.DepsState(pb.GetState()),
 		Error:        pb.GetError(),
-		JobID:        pb.GetJobId(),
 		RunID:        pb.GetRunId(),
 		MR:           pb.GetMr(),
 	}

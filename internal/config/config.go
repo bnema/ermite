@@ -82,7 +82,9 @@ const (
 	EnvDepsCheckAt = "ERMITE_DEPS_CHECK_AT"
 	// EnvDepsCooldown is how long a release must exist before Bernard
 	// proposes it, EnvDepsSnooze how long a declined update stays quiet,
-	// EnvDepsJobTimeout the time limit of one check job.
+	// EnvDepsJobTimeout the time budget (timeout-minutes, rounded up to the
+	// minute) of one dependency job once a runner has it; the wait for a runner
+	// is the 24 hour queue timeout of CI.
 	EnvDepsCooldown   = "ERMITE_DEPS_COOLDOWN"
 	EnvDepsSnooze     = "ERMITE_DEPS_SNOOZE"
 	EnvDepsJobTimeout = "ERMITE_DEPS_JOB_TIMEOUT"

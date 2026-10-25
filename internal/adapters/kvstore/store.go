@@ -368,8 +368,8 @@ func (s *Store) upgradeDepsRecords(ctx context.Context, b *kv.Batch) error {
 			return fmt.Errorf("upgrade deps record %s: %w", key, err)
 		}
 		// The job lived in memory: its id means nothing any more.
-		changed := pb.GetJobId() != ""
-		pb.JobId = ""
+		changed := pb.GetJobId() != "" //nolint:staticcheck // the deprecated field is what the upgrade clears
+		pb.JobId = ""                  //nolint:staticcheck // idem
 		switch domain.DepsState(pb.GetState()) {
 		case domain.DepsApplying:
 			pb.State, pb.Error, changed = int32(domain.DepsFailed), depsUpgradeError, true
