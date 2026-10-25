@@ -51,7 +51,7 @@ func endedJob(r *bernardRig, conclusion domain.CIConclusion, msg string) (domain
 	}
 }
 
-func TestBernardDepsJobEndedFailsWithAOneLineReason(t *testing.T) {
+func TestBernardDepsJobEndedFailsWithABoundedReason(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
 		name       string
@@ -60,11 +60,11 @@ func TestBernardDepsJobEndedFailsWithAOneLineReason(t *testing.T) {
 		report     *ports.DepsReport
 		want       string
 	}{
-		{"report error", domain.CIFailure, "", &ports.DepsReport{Error: "go get: no such version\nstack\nmore"}, "go get: no such version"},
+		{"report error", domain.CIFailure, "", &ports.DepsReport{Error: "go get: no such version\nstack\nmore"}, "go get: no such version\nstack\nmore"},
 		{"report error wins over a success", domain.CISuccess, "", &ports.DepsReport{Error: "tidy failed"}, "tidy failed"},
 		{"cancelled", domain.CICancelled, "Canceled by owner", nil, "the run ended: cancelled: Canceled by owner"},
 		{"timed out", domain.CITimedOut, "The job exceeded its timeout of 10 minutes", nil, "the run ended: timed_out: The job exceeded its timeout of 10 minutes"},
-		{"lost runner", domain.CIFailure, "The runner alpha lost contact\nsecond line", nil, "the run ended: failure: The runner alpha lost contact"},
+		{"lost runner", domain.CIFailure, "The runner alpha lost contact\nsecond line", nil, "the run ended: failure: The runner alpha lost contact\nsecond line"},
 		{"failure with no message", domain.CIFailure, "", &ports.DepsReport{}, "the run ended: failure"},
 		{"success without a report", domain.CISuccess, "", nil, "the runner sent no report"},
 		{"unappliable report", domain.CISuccess, "", &ports.DepsReport{}, "failed precondition: no Go module ecosystem"},
@@ -79,7 +79,6 @@ func TestBernardDepsJobEndedFailsWithAOneLineReason(t *testing.T) {
 
 			assert.Equal(t, domain.DepsFailed, r.rec.State)
 			assert.Equal(t, c.want, r.rec.Error)
-			assert.NotContains(t, r.rec.Error, "\n")
 			assert.EqualValues(t, jobsRunID, r.rec.RunID, "the record keeps the link to the run")
 			assert.Empty(t, r.rec.RunUpdates)
 			assert.Equal(t, 1, r.changedCount(), "the Inbox is told")

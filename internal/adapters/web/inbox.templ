@@ -234,7 +234,10 @@ templ InboxRuns(p InboxPage) {
 // actions. It stays as an empty fragment when there is nothing to show.
 // data-keep-open: the live swap keeps the open rows open.
 templ InboxDeps(p InboxPage) {
-	<section id="inbox-deps" data-keep-open hidden?={ len(p.Deps) == 0 }
+	<section
+		id="inbox-deps"
+		data-keep-open
+		hidden?={ len(p.Deps) == 0 }
 		if len(p.Deps) > 0 {
 			aria-labelledby="inbox-deps-h"
 		}
@@ -261,6 +264,15 @@ templ InboxDeps(p InboxPage) {
 									<span class="pill deps-new">new { itoa(d.New) }</span>
 								}
 							</summary>
+							if d.Status.Title != "" {
+								<div class="deps-output prose" role="region" aria-label="Last output">
+									<p class="dim">Last output</p>
+									<pre>{ d.Status.Title }</pre>
+									if d.Status.Href != "" {
+										<a href={ templ.SafeURL(d.Status.Href) }>View log · { d.Status.Text }</a>
+									}
+								</div>
+							}
 							<p class="deps-repolink"><a href={ templ.SafeURL(d.RepoHref) }>{ d.Repo }</a></p>
 							<table class="deps-sub" aria-label={ "Updates of " + d.Repo }>
 								<thead class="sr">
@@ -285,6 +297,9 @@ templ InboxDeps(p InboxPage) {
 						</details>
 						<span class="deps-status">
 							@depsStatusCell(d.Status)
+							if d.Status.Title != "" {
+								<span class="deps-error-tail" title={ d.Status.Title }>{ depsErrorTail(d.Status.Title) }</span>
+							}
 						</span>
 						<span class="deps-act">
 							if d.Primary.Href != "" {
@@ -314,29 +329,16 @@ templ InboxDeps(p InboxPage) {
 }
 
 // depsStatusCell is the state of the run, when there is one to tell, and the
-// open merge request. A failure shows its one-line reason as a tooltip.
+// open merge request. The failure reason is shown in the row details.
 templ depsStatusCell(s InboxDepsStatus) {
 	if s.State != "" {
-		<span
-			class="deps-state"
-			if s.Href == "" && s.Title != "" {
-				title={ s.Title }
-			}
-		>
+		<span class="deps-state">
 			<span aria-hidden="true">
 				@CheckIcon(depsIconKind(s), s.State)
 			</span>
 			<span class="dim">{ s.State }</span>
-			if s.State == "failed" && s.Title != "" {
-				<span class="sr">: { s.Title }</span>
-			}
 			if s.Href != "" {
-				<a
-					href={ templ.SafeURL(s.Href) }
-					if s.Title != "" {
-						title={ s.Title }
-					}
-				>{ s.Text }</a>
+				<a href={ templ.SafeURL(s.Href) }>{ s.Text }</a>
 			}
 		</span>
 	}

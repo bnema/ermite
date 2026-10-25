@@ -83,7 +83,13 @@ func newDepsCmd(env *cliEnv) *cobra.Command {
 func printDepsRepo(cmd *cobra.Command, r *ermite.RepoDependencyUpdates) error {
 	pairs := [][2]string{{"repo", r.GetRepo()}, {"state", depsStateName(r.GetState())}}
 	if r.GetError() != "" {
-		pairs = append(pairs, [2]string{"error", r.GetError()})
+		for i, line := range strings.Split(r.GetError(), "\n") {
+			label := ""
+			if i == 0 {
+				label = "error"
+			}
+			pairs = append(pairs, [2]string{label, line})
+		}
 	}
 	if r.GetRunId() != 0 {
 		pairs = append(pairs, [2]string{"run", strconv.FormatInt(r.GetRunId(), 10)})

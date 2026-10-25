@@ -3,6 +3,7 @@
 package web
 
 import (
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -80,7 +81,7 @@ func TestInboxDepsTable(t *testing.T) {
 	for _, want := range []string{"golang.org/x/text", "v0.20.0 → v0.21.0", ">minor<", ">major<", ">patch<", ">tools<"} {
 		assert.Contains(t, sec, want)
 	}
-	assert.Contains(t, sec, `<a href="/alpha/actions/runs/12" title="the run ended: failure">run #3</a>`)
+	assert.Contains(t, sec, `<a href="/alpha/actions/runs/12">run #3</a>`)
 	assert.Contains(t, sec, ">Retry<")
 	// stable ids keep the focus on the same control through a live update
 	for _, id := range []string{"deps-alpha-sum", "deps-alpha-act", "deps-alpha-more"} {
@@ -88,7 +89,7 @@ func TestInboxDepsTable(t *testing.T) {
 	}
 	// the screen reader hears words, not the icon
 	assert.Contains(t, sec, `<span class="count">3</span><span class="sr"> updates</span>`)
-	assert.Contains(t, sec, `<span class="sr">: the run ended: failure</span>`)
+	assert.Contains(t, sec, `>the run ended: failure</span>`)
 	assert.Contains(t, sec, `<span aria-hidden="true"><span class="ck ck-bad"`)
 	assert.Contains(t, sec, `action="/-/inbox/deps/alpha/open"`)
 	for _, a := range []string{"ignore", "snooze"} {
@@ -401,4 +402,26 @@ func TestInboxDepsChangedRefreshesTheLiveView(t *testing.T) {
 	frags, err := ls.render(withOwner(t.Context()), ev)
 	require.NoError(t, err)
 	assert.NotEmpty(t, frags)
+}
+
+func TestInboxDepsFailureExcerpt(t *testing.T) {
+	for _, reason := range []string{"dependency command failed", "dependency command failed (exit 1)\ngo: requires go >= 1.26\n<script>alert(1)</script>\n"} {
+		t.Run(reason, func(t *testing.T) {
+			svc := mocks.NewInboxService(t)
+			ov := depsOverview(t)
+			ov.Deps[0].Rec.Error = reason
+			svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(ov, nil)
+			srv := depsServer(t, svc, mocks.NewDepsService(t))
+			body := inboxGet(srv, "/-/inbox", true).Body.String()
+			assert.Contains(t, body, `<pre>`+html.EscapeString(reason)+`</pre>`)
+			assert.Contains(t, body, `title="`+html.EscapeString(reason)+`">`+html.EscapeString(depsErrorTail(reason))+`</span>`)
+			assert.NotContains(t, body, "<script>alert(1)</script>")
+			assert.Contains(t, body, `<a href="/alpha/actions/runs/12">run #3</a>`)
+			if strings.Contains(reason, "<script>") {
+				start := strings.Index(body, `<li class="deps-row"`)
+				row := body[start:]
+				t.Log(row[:strings.Index(row, `</li>`)+len(`</li>`)])
+			}
+		})
+	}
 }

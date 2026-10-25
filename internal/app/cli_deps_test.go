@@ -130,3 +130,13 @@ func TestDepsSnooze(t *testing.T) {
 	calls, _ := f.snapshot()
 	assert.Equal(t, []string{"SnoozeDependencyUpdates"}, calls)
 }
+
+func TestDepsMultilineError(t *testing.T) {
+	r := &ermite.RepoDependencyUpdates{Repo: "alpha", State: ermite.RepoDependencyUpdates_STATE_FAILED, Error: "command failed\ngo: requires newer Go"}
+	f := &fakeAPI{checkDeps: func(_ *ermite.CheckDependenciesRequest) (*ermite.CheckDependenciesResponse, error) {
+		return &ermite.CheckDependenciesResponse{Updates: r}, nil
+	}}
+	res := runCLI(t, envFor(f.serve(t)), "", "deps", "check", "alpha").ok(t)
+	assert.Contains(t, res.stdout, "error          command failed\n               go: requires newer Go")
+	assert.Equal(t, r.Error, toJSONDepsRepo(r).Error)
+}

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"bnema.dev/ermite/internal/domain"
@@ -27,20 +28,28 @@ var errJobSuperseded = errors.New("the dependency run is no longer current")
 
 var _ ports.DepsRunObserver = (*Bernard)(nil)
 
-// oneLine cuts a reason to its first line, within maxDepsError.
-func oneLine(s string) string {
-	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
-	s = strings.TrimSpace(s)
+// keepDepsError keeps a bounded, printable excerpt of a failure report.
+func keepDepsError(s string) string {
+	s = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == '\n' || !unicode.IsControl(r) {
+			return r
+		}
+		return -1
+	}, strings.ToValidUTF8(s, "")))
+	lines := strings.SplitN(s, "\n", 13)
+	if len(lines) > 12 {
+		s = strings.Join(lines[:12], "\n")
+	}
 	if len(s) > maxDepsError {
 		s = s[:maxDepsError]
 		for !utf8.ValidString(s) {
 			s = s[:len(s)-1]
 		}
 	}
-	return s
+	return strings.TrimSpace(s)
 }
 
-// failRun sets the record to Failed with a one-line reason when it is still
+// failRun sets the record to Failed with a bounded reason when it is still
 // applying that run. The log is on the run, which the record keeps linking.
 func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64, reason string) {
 	defer b.repoLock(repo)()
@@ -51,7 +60,7 @@ func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64
 			return false, nil // the record left this run: the owner closed the merge request, say
 		}
 		wrote = true
-		d.Repo, d.State, d.Error, d.RunUpdates = repo, domain.DepsFailed, oneLine(reason), nil
+		d.Repo, d.State, d.Error, d.RunUpdates = repo, domain.DepsFailed, keepDepsError(reason), nil
 		return true, nil
 	})
 	if err != nil {
@@ -103,7 +112,7 @@ func (b *Bernard) reconcileRuns(ctx context.Context, grace time.Duration) {
 }
 
 // DepsJobEnded applies the outcome of a dependency job that ended: the runner's
-// report is checked and published, or the record fails with a one-line reason
+// report is checked and published, or the record fails with a bounded reason
 // (the log is on the run). A run the record left (the owner closed the merge
 // request meanwhile) is dropped. It implements ports.DepsRunObserver.
 func (b *Bernard) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain.CIJob, report *ports.DepsReport) {
@@ -131,7 +140,7 @@ func (b *Bernard) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain
 		b.failRun(ctx, run.Repo, run.ID, report.Error)
 	case job.Conclusion != domain.CISuccess:
 		reason := fmt.Sprintf("the run ended: %s", job.Conclusion)
-		if msg := oneLine(job.Error); msg != "" {
+		if msg := keepDepsError(job.Error); msg != "" {
 			reason += ": " + msg
 		}
 		b.failRun(ctx, run.Repo, run.ID, reason)

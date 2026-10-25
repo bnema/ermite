@@ -29,7 +29,7 @@ type InboxDepsStatus struct {
 	// Text and Href are the link to the run ("run #12"); without Href the text
 	// is plain (the run is gone).
 	Text, Href string
-	// Title is the failure reason, a tooltip.
+	// Title is the full failure reason.
 	Title string
 	// MR and MRHref are the open merge request of the repository, 0 = none.
 	MR     int64
@@ -225,4 +225,10 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 		}
 		return back, back, err
 	}
+}
+
+// depsErrorTail is the last nonblank output line for the collapsed row.
+func depsErrorTail(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
 }

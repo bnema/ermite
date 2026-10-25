@@ -24,14 +24,14 @@ The run shows in the Actions tab, in `ermite run list` (`--workflow bernard/deps
 - has `ERMITE_DEPS_JOB_TIMEOUT` (10 minutes by default) from the moment a runner takes it, as the `timeout-minutes` of the job. The wait for a runner is CI's: a run no runner takes within 24 hours fails.
 - survives a server restart. If the server stops after the run ended and before Bernard applied the result, the update fails with a reason and you can retry.
 
-Nothing is retried on its own. A failed update keeps its updates listed with a one-line reason, such as `the run ended: failure`, and a link to the run.
+Nothing is retried on its own. A failed update keeps its updates listed with a bounded failure reason, such as `the run ended: failure`, and a link to the run.
 
 ## The Inbox table
 
 **Dependency updates** comes after the running workflows. The header shows when the dependencies were last checked and how many repositories and updates are pending. There is one row per repository with pending updates:
 
 - A disclosure arrow, the repository name, the number of updates, their kinds (`1 major · 2 minor · 3 patch`, empty kinds left out) and a **new** badge for versions that appeared since the last check. Open the row to see each update: name, `current → latest`, kind, **new**, and the directory when it is not the repository root.
-- The status: `queued` or `running` with a link to the run while Bernard applies updates, `failed` with a link to the run (the reason is its tooltip), or the link to the open merge request (`MR !7`).
+- The status: `queued` or `running` with a link to the run while Bernard applies updates, `failed` with a link to the run (the Inbox shows the failure’s last output line; expand the row for the full excerpt), or the link to the open merge request (`MR !7`).
 - The main button: **Open MR** opens the Bernard merge request, **Update MR** updates it, **View MR** is a link when it already holds exactly the pending versions, **Retry** starts a new run after a failure. There is no button while a run is going.
 - The **⋯** menu holds **Ignore**, which hides exactly the listed versions (a newer version shows up again), and **Snooze**, which hides the repository for seven days (`ERMITE_DEPS_SNOOZE`).
 

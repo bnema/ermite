@@ -216,9 +216,9 @@ func (b *Bernard) ecosystem(name domain.DepsEcosystem) ports.DepsEcosystem {
 	return nil
 }
 
-// fail records the failure on the card: its first line, bounded.
+// fail records the failure on the card: a bounded excerpt.
 func (b *Bernard) fail(ctx context.Context, name domain.RepoName, cause error) {
-	msg := oneLine(cause.Error())
+	msg := keepDepsError(cause.Error())
 	_, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), name, func(d *domain.RepoDeps) (bool, error) {
 		d.Repo, d.State, d.Error = name, domain.DepsFailed, msg
 		return true, nil

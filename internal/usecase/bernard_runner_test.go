@@ -162,7 +162,7 @@ func TestBernardOpenStartFailureFailsTheRecord(t *testing.T) {
 	require.Error(t, err)
 	got := rr.snapshot()
 	assert.Equal(t, domain.DepsFailed, got.State)
-	assert.Equal(t, "start the dependency run: store down", got.Error, "one line")
+	assert.Equal(t, "start the dependency run: store down\nsecond line", got.Error)
 	assert.Zero(t, got.RunID)
 }
 
@@ -293,13 +293,13 @@ func TestBernardRunnerReportGoOnlyWithNoActions(t *testing.T) {
 	assert.EqualValues(t, 3, rr.rec.MR)
 }
 
-func TestBernardRunnerFailureIsOneLine(t *testing.T) {
+func TestBernardRunnerFailureKeepsOutput(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	rr.open(goUpdate())
 	rr.end(&ports.DepsReport{Error: "go get failed\ngo: example.com/x@v9: not found"}, domain.CIFailure)
 	got := rr.snapshot()
 	assert.Equal(t, domain.DepsFailed, got.State)
-	assert.Equal(t, "go get failed", got.Error, "the log is on the run")
+	assert.Equal(t, "go get failed\ngo: example.com/x@v9: not found", got.Error)
 	assert.EqualValues(t, runnerRunID, got.RunID)
 	assert.Empty(t, got.RunUpdates)
 }
