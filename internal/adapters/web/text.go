@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"bnema.dev/ermite/internal/domain"
 )
 
 // invisible reports whether r is a character that changes how code reads
@@ -30,10 +32,11 @@ func marker(r rune) string { return fmt.Sprintf("<U+%04X>", r) }
 // actor of a run. ermite has one user: the owner's web session, root and every
 // stored token act for the owner, so they show the owner's name (ERMITE_OWNER),
 // not the label of the token, which names a device ("laptop"). Only CI is
-// someone else, shown as stored: a job token ("ci job") and the workflows a job
-// dispatched ("github-actions[bot]").
+// someone else, shown as stored: a job token ("ci job"), the workflows a job
+// dispatched ("github-actions[bot]") and Bernard, whose merge requests and
+// dependency runs are not the owner's.
 func (s *Server) who(stored string) string {
-	if strings.HasPrefix(stored, "ci ") || strings.HasSuffix(stored, "[bot]") {
+	if strings.HasPrefix(stored, "ci ") || strings.HasSuffix(stored, "[bot]") || stored == botName {
 		return visibleText(stored)
 	}
 	if s.cfg.Owner != "" {
@@ -41,6 +44,9 @@ func (s *Server) who(stored string) string {
 	}
 	return "owner"
 }
+
+// botName is how Bernard's merge requests and runs are stored.
+var botName = domain.AuthorName(domain.Bot(domain.RepoName{}))
 
 // visibleText is s with every invisible character replaced by its marker,
 // for the places that show text as a plain string: paths, names, subjects.

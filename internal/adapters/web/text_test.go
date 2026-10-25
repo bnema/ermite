@@ -13,7 +13,7 @@ func TestWho(t *testing.T) {
 	s := &Server{cfg: Config{Owner: "alice"}}
 	for stored, want := range map[string]string{
 		"owner": "alice", "root": "alice", "laptop": "alice", "": "alice",
-		"ci job": "ci job", "github-actions[bot]": "github-actions[bot]",
+		"ci job": "ci job", "github-actions[bot]": "github-actions[bot]", "bernard": "bernard",
 	} {
 		assert.Equal(t, want, s.who(stored), stored)
 	}
