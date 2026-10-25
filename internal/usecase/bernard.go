@@ -329,7 +329,7 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 		return nil, fmt.Errorf("list the paths: %w", err)
 	}
 	now := b.cfg.Clock.Now()
-	var cbErr error // first error of the PickUpdate callbacks
+	var cbErr error // first error of the PickUpdates callbacks
 	var out []domain.DepUpdate
 	for _, eco := range b.cfg.Ecosystems {
 		files := map[domain.TreePath][]byte{}
@@ -372,9 +372,13 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 				}
 				return ok
 			}
-			up, ok := domain.PickUpdate(c, now, b.cfg.Cooldown, firstSeen, ignored)
+			ups := domain.PickUpdates(c, now, b.cfg.Cooldown, firstSeen, ignored)
 			if cbErr != nil {
 				return nil, cbErr
+			}
+			up, ok, err := fittingUpdate(ctx, reg, name, c, ups)
+			if err != nil {
+				return nil, err
 			}
 			if !ok {
 				continue
@@ -391,6 +395,35 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 		}
 	}
 	return out, nil
+}
+
+// fittingUpdate returns the first of ups, highest first, that can be applied:
+// for a Go module, the first whose go.mod go directive fits the one of the
+// module in c.Directory. A version whose go.mod cannot be read is skipped; a done ctx is an error.
+func fittingUpdate(ctx context.Context, reg ports.DepsRegistry, name domain.RepoName, c domain.DepCandidate, ups []domain.DepUpdate) (domain.DepUpdate, bool, error) {
+	if c.Ecosystem != domain.EcosystemGoMod {
+		if len(ups) == 0 {
+			return domain.DepUpdate{}, false, nil
+		}
+		return ups[0], true, nil
+	}
+	for _, up := range ups {
+		if err := ctx.Err(); err != nil {
+			return domain.DepUpdate{}, false, err
+		}
+		dep, err := reg.GoDirective(ctx, up.Name, up.Version)
+		if err != nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return domain.DepUpdate{}, false, cerr
+			}
+			ctxLog(ctx).Warn().Err(err).Str("repo", name.String()).Str("name", up.Name).Str("version", up.Version).Msg("bernard: go.mod lookup failed, version skipped")
+			continue
+		}
+		if domain.GoDirectiveFits(dep, c.GoDirective) {
+			return up, true, nil
+		}
+	}
+	return domain.DepUpdate{}, false, nil
 }
 
 // readManifest reads a file; ok is false when it is larger than the limit.

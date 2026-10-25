@@ -147,6 +147,10 @@ func (goDepsRegistry) GoVersions(_ context.Context, module, _ string) ([]domain.
 	return []domain.DepVersion{{Version: "v0.21.0", Published: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}}, nil
 }
 
+func (goDepsRegistry) GoDirective(context.Context, string, string) (string, error) {
+	return "1.21", nil
+}
+
 func (g goDepsRegistry) Malicious(ctx context.Context, eco domain.DepsEcosystem, name, version string) (bool, error) {
 	if eco == domain.EcosystemGoMod {
 		return false, nil

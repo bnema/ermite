@@ -12,9 +12,38 @@ import (
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 )
+
+// GoDirective reads the go directive of the module's go.mod at version.
+func (r *Registry) GoDirective(ctx context.Context, name, version string) (string, error) {
+	path, err := module.EscapePath(name)
+	if err != nil {
+		return "", fmt.Errorf("%w: module path: %v", domain.ErrInvalid, err)
+	}
+	escaped, err := module.EscapeVersion(version)
+	if err != nil {
+		return "", fmt.Errorf("%w: module version: %v", domain.ErrInvalid, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.proxy+"/"+path+"/@v/"+escaped+".mod", nil)
+	if err != nil {
+		return "", err
+	}
+	data, err := r.request(req, true)
+	if err != nil {
+		return "", err
+	}
+	f, err := modfile.ParseLax("go.mod", data, nil)
+	if err != nil {
+		return "", fmt.Errorf("go proxy go.mod: %w", err)
+	}
+	if f.Go == nil {
+		return "", nil
+	}
+	return f.Go.Version, nil
+}
 
 // GoVersions fetches at most the 50 newest valid versions above current.
 func (r *Registry) GoVersions(ctx context.Context, name, current string) ([]domain.DepVersion, error) {

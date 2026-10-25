@@ -82,6 +82,10 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 		if err != nil {
 			return nil, err
 		}
+		var goDirective string
+		if f.Go != nil {
+			goDirective = f.Go.Version
+		}
 		replaced := map[string]bool{}
 		// ParseLax omits main-module-only replace directives from File.Replace.
 		// Its syntax tree still contains them, including grouped replacements.
@@ -112,7 +116,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Directory: moduleDir(p.String()), Name: r.Mod.Path, Current: r.Mod.Version, Versions: versions})
+			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Directory: moduleDir(p.String()), Name: r.Mod.Path, Current: r.Mod.Version, Versions: versions, GoDirective: goDirective})
 		}
 	}
 	return out, nil

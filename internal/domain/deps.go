@@ -3,6 +3,8 @@
 package domain
 
 import (
+	goversion "go/version"
+	"slices"
 	"time"
 
 	"golang.org/x/mod/semver"
@@ -47,11 +49,31 @@ type DepRef struct {
 
 // DepCandidate is an installed dependency and its available versions.
 type DepCandidate struct {
-	Ecosystem DepsEcosystem
-	Directory string
-	Name      string
-	Current   string
-	Versions  []DepVersion
+	Ecosystem   DepsEcosystem
+	Directory   string
+	Name        string
+	Current     string
+	Versions    []DepVersion
+	GoDirective string // go directive of the module in Directory; Go only, empty when absent
+}
+
+// GoDirectiveFits reports whether a dependency whose go.mod declares dep can
+// be required by a module that declares repo, without the go directive having
+// to move. Versions compare as Go does: 1.25 < 1.25.0 < 1.26rc1 < 1.26.0. A
+// repo on 1.N also fits a dep on exactly 1.N.0, since `go get` only rewrites
+// the directive to that form. An empty dep (no go line) fits; a go.mod
+// without a go line is go 1.16; a dep that is not a Go version does not.
+func GoDirectiveFits(dep, repo string) bool {
+	if dep == "" {
+		return true
+	}
+	if repo == "" {
+		repo = "1.16"
+	}
+	if !goversion.IsValid("go" + dep) {
+		return false
+	}
+	return goversion.Compare("go"+dep, "go"+repo) <= 0 || (goversion.Lang("go"+repo) == "go"+repo && dep == repo+".0")
 }
 
 // DepUpdate is a proposed update; Version is the latest proposed version.
@@ -116,11 +138,21 @@ func SameRefs(a, b []DepRef) bool {
 // cooled down and is not ignored. Go updates stay within their current major;
 // actions may cross majors. Stable versions never opt into prereleases.
 func PickUpdate(c DepCandidate, now time.Time, cooldown time.Duration, firstSeen func(DepVersion) time.Time, ignored func(DepRef) bool) (DepUpdate, bool) {
-	if !semver.IsValid(c.Current) || (c.Ecosystem != EcosystemGoMod && c.Ecosystem != EcosystemActions) {
+	ups := PickUpdates(c, now, cooldown, firstSeen, ignored)
+	if len(ups) == 0 {
 		return DepUpdate{}, false
 	}
+	return ups[0], true
+}
+
+// PickUpdates returns every update PickUpdate could select, highest first and
+// without duplicate versions, so a caller can fall back to an older one.
+func PickUpdates(c DepCandidate, now time.Time, cooldown time.Duration, firstSeen func(DepVersion) time.Time, ignored func(DepRef) bool) []DepUpdate {
+	if !semver.IsValid(c.Current) || (c.Ecosystem != EcosystemGoMod && c.Ecosystem != EcosystemActions) {
+		return nil
+	}
 	floating := floatingMajor(c.Current)
-	var best DepUpdate
+	var out []DepUpdate
 	for _, v := range c.Versions {
 		if !semver.IsValid(v.Version) || semver.Compare(v.Version, c.Current) <= 0 {
 			continue
@@ -145,7 +177,7 @@ func PickUpdate(c DepCandidate, now time.Time, cooldown time.Duration, firstSeen
 		if ignored != nil && ignored(ref) {
 			continue
 		}
-		if best.Version != "" && semver.Compare(v.Version, best.Version) <= 0 {
+		if slices.ContainsFunc(out, func(u DepUpdate) bool { return semver.Compare(u.Version, v.Version) == 0 }) {
 			continue
 		}
 		kind := DepPatch
@@ -154,9 +186,10 @@ func PickUpdate(c DepCandidate, now time.Time, cooldown time.Duration, firstSeen
 		} else if semver.MajorMinor(v.Version) != semver.MajorMinor(c.Current) {
 			kind = DepMinor
 		}
-		best = DepUpdate{DepRef: ref, Current: c.Current, Kind: kind}
+		out = append(out, DepUpdate{DepRef: ref, Current: c.Current, Kind: kind})
 	}
-	return best, best.Version != ""
+	slices.SortStableFunc(out, func(a, b DepUpdate) int { return semver.Compare(b.Version, a.Version) })
+	return out
 }
 
 func floatingMajor(v string) bool {

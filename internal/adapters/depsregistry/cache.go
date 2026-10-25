@@ -20,6 +20,7 @@ type cached struct {
 	registry   ports.DepsRegistry
 	mu         sync.Mutex
 	goVersions map[[2]string]result[[]domain.DepVersion]
+	directives map[[2]string]result[string]
 	tags       map[[2]string]result[[]domain.DepTag]
 	malicious  map[[3]string]result[bool]
 }
@@ -27,7 +28,7 @@ type cached struct {
 // NewCached creates a memo cache owned by one check, not shared across checks.
 // Calls are serialized so concurrent requests for the same key query only once.
 func NewCached(registry ports.DepsRegistry) ports.DepsRegistry {
-	return &cached{registry: registry, goVersions: make(map[[2]string]result[[]domain.DepVersion]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
+	return &cached{registry: registry, goVersions: make(map[[2]string]result[[]domain.DepVersion]), directives: make(map[[2]string]result[string]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
 }
 func cacheable(err error) bool { return err == nil || errors.Is(err, domain.ErrNotFound) }
 
@@ -41,6 +42,19 @@ func (c *cached) GoVersions(ctx context.Context, name, current string) ([]domain
 	value, err := c.registry.GoVersions(ctx, name, current)
 	if cacheable(err) {
 		c.goVersions[key] = result[[]domain.DepVersion]{slices.Clone(value), err}
+	}
+	return value, err
+}
+func (c *cached) GoDirective(ctx context.Context, name, version string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := [2]string{name, version}
+	if v, ok := c.directives[key]; ok {
+		return v.value, v.err
+	}
+	value, err := c.registry.GoDirective(ctx, name, version)
+	if cacheable(err) {
+		c.directives[key] = result[string]{value, err}
 	}
 	return value, err
 }

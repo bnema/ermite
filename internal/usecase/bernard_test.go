@@ -36,6 +36,12 @@ type bernardRig struct {
 	cands  []domain.DepCandidate
 	b      *usecase.Bernard
 	regs   int
+	// goDirs answers GoDirective by "module@version"; a missing key has no go
+	// line. goDirErr fails those lookups.
+	goDirs   map[string]string
+	goDirErr map[string]error
+	goCalls  []string // the "module@version" keys looked up, in order
+	onGoDir  func()   // runs on each lookup, when set
 
 	changedMu sync.Mutex
 	changed   []domain.DependencyUpdatesChanged // the deps.changed events published
@@ -67,6 +73,14 @@ func newBernardRig(t *testing.T, checkAt string) *bernardRig {
 		r.changedMu.Unlock()
 	}).Maybe()
 	r.clock.EXPECT().Now().RunAndReturn(func() time.Time { return r.at }).Maybe()
+	r.reg.EXPECT().GoDirective(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, module, version string) (string, error) {
+		key := module + "@" + version
+		r.goCalls = append(r.goCalls, key)
+		if r.onGoDir != nil {
+			r.onGoDir()
+		}
+		return r.goDirs[key], r.goDirErr[key]
+	}).Maybe()
 	r.eco.EXPECT().Name().Return(domain.EcosystemGoMod).Maybe()
 	r.store.EXPECT().Mutate(mock.Anything, r.repo, mock.Anything).RunAndReturn(
 		func(_ context.Context, _ domain.RepoName, fn func(*domain.RepoDeps) (bool, error)) (domain.RepoDeps, error) {
@@ -199,6 +213,72 @@ func TestBernardCooldownAndIgnored(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got.Updates, 1)
 	assert.Equal(t, depRef("mix/mod", "v0.21.0"), got.Updates[0].DepRef)
+}
+
+func TestBernardProposesOnlyVersionsFittingTheGoDirective(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		repoGo string
+		dirs   map[string]string // version → go directive of its go.mod
+		errs   map[string]error
+		want   string // empty: nothing proposed
+		calls  int    // expected go.mod lookups, when not 0
+	}{
+		{name: "newest fits", repoGo: "1.25.3", dirs: map[string]string{"v0.23.0": "1.25.3"}, want: "v0.23.0", calls: 1},
+		{name: "newest too new, older fits", repoGo: "1.25.3", dirs: map[string]string{"v0.23.0": "1.26.0", "v0.22.0": "1.25.0"}, want: "v0.22.0"},
+		{name: "release candidate is newer", repoGo: "1.25.3", dirs: map[string]string{"v0.23.0": "1.26rc1", "v0.22.0": "1.24"}, want: "v0.22.0"},
+		{name: "none fits", repoGo: "1.25.3", dirs: map[string]string{"v0.23.0": "1.26.0", "v0.22.0": "1.26.0", "v0.21.0": "1.25.4"}},
+		{name: "missing go line fits", repoGo: "1.25.3", dirs: map[string]string{"v0.23.0": ""}, want: "v0.23.0"},
+		{name: "two-part repo fits its .0", repoGo: "1.25", dirs: map[string]string{"v0.23.0": "1.25.1", "v0.22.0": "1.25.0"}, want: "v0.22.0"},
+		{name: "unreadable go.mod skipped", repoGo: "1.25.3", errs: map[string]error{"v0.23.0": errors.New("proxy down")}, want: "v0.22.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newBernardRig(t, "0 6 * * *")
+			r.repoReads()
+			c := goCand("x/mod", r.old("v0.21.0"), r.old("v0.23.0"), r.old("v0.22.0"))
+			c.GoDirective = tc.repoGo
+			r.cands = []domain.DepCandidate{c}
+			r.goDirs, r.goDirErr = map[string]string{}, map[string]error{}
+			for v, d := range tc.dirs {
+				r.goDirs["x/mod@"+v] = d
+			}
+			for v, err := range tc.errs {
+				r.goDirErr["x/mod@"+v] = err
+			}
+			r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+			if tc.want != "" {
+				r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, "x/mod", tc.want).Return(false, nil).Once()
+				r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Once()
+			}
+			got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
+			require.NoError(t, err)
+			if tc.calls != 0 {
+				assert.Len(t, r.goCalls, tc.calls)
+			}
+			if tc.want == "" {
+				assert.Empty(t, got.Updates)
+				return
+			}
+			require.Len(t, got.Updates, 1)
+			assert.Equal(t, depRef("x/mod", tc.want), got.Updates[0].DepRef)
+		})
+	}
+}
+
+func TestBernardCancelledDuringGoModLookupProposesNothing(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	r.repoReads()
+	c := goCand("x/mod", r.old("v0.22.0"), r.old("v0.23.0"))
+	c.GoDirective = "1.25.3"
+	r.cands = []domain.DepCandidate{c}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.onGoDir = cancel
+	r.goDirErr = map[string]error{"x/mod@v0.23.0": context.Canceled}
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+	_, err := r.b.Check(ctx, domain.Owner(), r.repo)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, []string{"x/mod@v0.23.0"}, r.goCalls)
 }
 
 func TestBernardCallbackErrorFailsCheck(t *testing.T) {

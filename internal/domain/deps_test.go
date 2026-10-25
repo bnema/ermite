@@ -81,6 +81,47 @@ func TestPickUpdate(t *testing.T) {
 	}
 }
 
+func TestPickUpdatesHighestFirst(t *testing.T) {
+	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-96 * time.Hour)
+	c := DepCandidate{Ecosystem: EcosystemGoMod, Name: "module", Current: "v1.0.0", Versions: []DepVersion{
+		{Version: "v1.1.0", Published: old}, {Version: "v1.3.0", Published: old}, {Version: "v1.4.0", Published: now},
+		{Version: "v1.2.0", Published: old}, {Version: "v1.3.0", Published: old}, {Version: "v2.0.0", Published: old},
+	}}
+	var got []string
+	for _, u := range PickUpdates(c, now, 72*time.Hour, nil, func(r DepRef) bool { return r.Version == "v1.2.0" }) {
+		got = append(got, u.Version)
+	}
+	assert.Equal(t, []string{"v1.3.0", "v1.1.0"}, got, "young, ignored, duplicate and new-major versions are left out")
+	assert.Empty(t, PickUpdates(DepCandidate{Ecosystem: EcosystemGoMod, Current: "garbage", Versions: c.Versions}, now, 0, nil, nil))
+}
+
+func TestGoDirectiveFits(t *testing.T) {
+	for _, tc := range []struct {
+		dep, repo string
+		want      bool
+	}{
+		{"1.25.3", "1.25.3", true},
+		{"1.25.0", "1.25.3", true},
+		{"1.25", "1.25.3", true},
+		{"1.24", "1.25", true},
+		{"1.25.0", "1.25", true}, // go get only rewrites 1.25 to 1.25.0
+		{"1.25.1", "1.25", false},
+		{"1.25.4", "1.25.3", false},
+		{"1.26rc1", "1.25.3", false},
+		{"1.26rc1", "1.26.0", true},
+		{"1.26.0", "1.26rc1", false},
+		{"1.26.0", "1.25.3", false},
+		{"", "1.25.3", true}, // no go line
+		{"1.30", "", false},  // a go.mod without a go line is go 1.16
+		{"1.16", "", true},
+		{"", "", true},
+		{"junk", "1.25.3", false},
+	} {
+		assert.Equal(t, tc.want, GoDirectiveFits(tc.dep, tc.repo), "dep %q repo %q", tc.dep, tc.repo)
+	}
+}
+
 func TestDependencyRefs(t *testing.T) {
 	a := DepRef{Ecosystem: EcosystemGoMod, Name: "module", Version: "v1.1.0"}
 	b := DepRef{Ecosystem: EcosystemActions, Directory: "workflow.yml", Name: "owner/action", Version: "v5"}

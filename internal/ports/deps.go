@@ -34,6 +34,10 @@ type DepsRegistry interface {
 	// GoVersions returns the versions of module newer than current, each with
 	// its publish time. domain.ErrNotFound = unresolvable: skip the module.
 	GoVersions(ctx context.Context, module, current string) ([]domain.DepVersion, error)
+	// GoDirective returns the go directive of module@version's go.mod, empty
+	// when it has none. An error means unknown: the caller does not propose
+	// the version.
+	GoDirective(ctx context.Context, module, version string) (string, error)
 	// ActionTags returns the v* tags of github.com/owner/repo with their peeled
 	// commit. domain.ErrNotFound = missing repository: skip.
 	ActionTags(ctx context.Context, owner, repo string) ([]domain.DepTag, error)

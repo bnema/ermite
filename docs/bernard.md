@@ -6,7 +6,7 @@ Bernard watches the dependencies of your repositories and lists the updates that
 
 - Once a day (`ERMITE_DEPS_CHECK_AT`, 06:00 UTC by default) it checks every repository that is not [archived](cli.md#archived-repositories). Archived repositories are skipped.
 - It reads Go modules (`go.mod`) and GitHub Actions (`uses:` in workflows and `action.yml`). Vendored modules, `replace`d modules and actions pinned to a commit are left alone.
-- For each dependency it proposes the highest version that is older than the cooldown (`ERMITE_DEPS_COOLDOWN`, 72 hours by default) and has no malicious-package (`MAL-`) advisory. A version that cannot be checked is not proposed. Go modules never move to a new major path.
+- For each dependency it proposes the highest version that is older than the cooldown (`ERMITE_DEPS_COOLDOWN`, 72 hours by default) and has no malicious-package (`MAL-`) advisory. A version that cannot be checked is not proposed. Go modules never move to a new major path, and a Go module version is proposed only if its `go.mod` does not need a newer `go` directive than the requiring module's.
 - A check that finds a version the previous one did not publishes a `deps.updates_found` event, delivered to the owner only.
 
 `ermite deps check <repo>` runs the same check now. See [Configuration](configuration.md) for the `ERMITE_DEPS_*` settings; `ERMITE_DEPS_ENABLED=0` turns Bernard off.

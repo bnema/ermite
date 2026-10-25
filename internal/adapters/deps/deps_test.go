@@ -38,7 +38,7 @@ func TestGoModDetect(t *testing.T) {
 	reg.EXPECT().GoVersions(mock.Anything, "private.org/m", "v1.0.0").Return(nil, domain.ErrNotFound).Once()
 	files := map[domain.TreePath][]byte{
 		tp(t, "go.mod"):     []byte("module example.org/root\ngo 1.27\nrequire (\nexample.org/a v1.0.0 // indirect\nexample.org/replaced v1.0.0\nprivate.org/m v1.0.0\n)\nreplace example.org/replaced => ../local\n"),
-		tp(t, "sub/go.mod"): []byte("module example.org/sub\ngo 1.27\nrequire example.org/b/v2 v2.0.0\n"),
+		tp(t, "sub/go.mod"): []byte("module example.org/sub\ngo 1.25.3\nrequire example.org/b/v2 v2.0.0\n"),
 	}
 	got, err := (GoMod{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
@@ -46,6 +46,8 @@ func TestGoModDetect(t *testing.T) {
 	assert.Equal(t, "", got[0].Directory)
 	assert.Equal(t, "sub", got[1].Directory)
 	assert.Equal(t, "example.org/b/v2", got[1].Name)
+	assert.Equal(t, "1.27", got[0].GoDirective)
+	assert.Equal(t, "1.25.3", got[1].GoDirective, "each candidate carries the go directive of its own module")
 	assert.False(t, (GoMod{}).ApplyInServer())
 	_, err = (GoMod{}).Apply(files, nil)
 	require.Error(t, err)

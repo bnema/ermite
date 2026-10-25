@@ -45,6 +45,74 @@ func TestGoVersions(t *testing.T) {
 	}
 }
 
+func TestGoDirective(t *testing.T) {
+	mods := map[string]string{
+		"/example.com/!module/@v/v1.2.0.mod":       "module example.com/Module\n\ngo 1.26.0\n\nrequire golang.org/x/sys v0.1.0\n",
+		"/example.com/!module/@v/v1.1.0.mod":       "module example.com/Module\n",
+		"/example.com/!module/@v/v1.0.0-!r!c1.mod": "module example.com/Module\ngo 1.25rc1\nunknown directive\n",
+		"/example.com/!module/@v/v0.9.0.mod":       "module example.com/Module\ngo 1.25 garbage(\n",
+	}
+	calls := map[string]int{}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls[r.URL.Path]++
+		if r.Header.Get("User-Agent") != "ermite-bernard" {
+			t.Error("missing user agent")
+		}
+		body, ok := mods[r.URL.Path]
+		if !ok {
+			w.WriteHeader(http.StatusGone)
+			return
+		}
+		_, _ = fmt.Fprint(w, body)
+	}))
+	defer s.Close()
+	for _, tc := range []struct {
+		name, version, want string
+		err                 error // nil: success; otherwise errors.Is target, or any error for errAny
+		errAny              bool
+	}{
+		{name: "go line", version: "v1.2.0", want: "1.26.0"},
+		{name: "no go line", version: "v1.1.0", want: ""},
+		{name: "escaped version, lax parse", version: "v1.0.0-RC1", want: "1.25rc1"},
+		{name: "malformed go.mod", version: "v0.9.0", errAny: true},
+		{name: "gone", version: "v0.8.0", err: domain.ErrNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := New(Config{GoProxyURL: s.URL}).GoDirective(t.Context(), "example.com/Module", tc.version)
+			switch {
+			case tc.errAny:
+				if err == nil {
+					t.Fatalf("malformed accepted: %q", got)
+				}
+			case tc.err != nil:
+				if !errors.Is(err, tc.err) {
+					t.Fatal(err)
+				}
+			default:
+				if err != nil || got != tc.want {
+					t.Fatalf("%q %v", got, err)
+				}
+			}
+		})
+	}
+	if _, err := New(Config{GoProxyURL: s.URL}).GoDirective(t.Context(), "example.com/mod", "v1.0.0-!"); !errors.Is(err, domain.ErrInvalid) {
+		t.Fatal(err)
+	}
+
+	// The cache fetches each module version once, including a missing one.
+	c := NewCached(New(Config{GoProxyURL: s.URL}))
+	clear(calls)
+	for i := 0; i < 2; i++ {
+		if got, err := c.GoDirective(t.Context(), "example.com/Module", "v1.2.0"); err != nil || got != "1.26.0" {
+			t.Fatalf("%q %v", got, err)
+		}
+		_, _ = c.GoDirective(t.Context(), "example.com/Module", "v0.8.0")
+	}
+	if calls["/example.com/!module/@v/v1.2.0.mod"] != 1 || calls["/example.com/!module/@v/v0.8.0.mod"] != 1 {
+		t.Fatalf("calls %v", calls)
+	}
+}
+
 func TestGoVersionCap(t *testing.T) {
 	calls := 0
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
