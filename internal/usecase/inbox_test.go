@@ -4,6 +4,7 @@ package usecase_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -167,4 +168,41 @@ func TestInboxDepsSkipsSnoozedArchivedAndEmpty(t *testing.T) {
 	assert.Equal(t, 2, got.Counts.Deps, "the filter does not change the count")
 	require.Len(t, got.Deps, 1, "the filter limits the list")
 	assert.Equal(t, "alpha", got.Deps[0].Repo.String())
+}
+
+func TestInboxFillsHeadsFromGitForReturnedRequestsOnly(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	mrs, is, meta, git := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewMergeGit(t)
+	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Git: git})
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	stale, err := domain.ParseObjectID(strings.Repeat("a", 40))
+	require.NoError(t, err)
+	fresh, err := domain.ParseObjectID(strings.Repeat("b", 40))
+	require.NoError(t, err)
+	withSource := func(repo string, n int64, src string) domain.MergeRequest {
+		m := inboxMR(t, repo, n, t0)
+		m.Source, m.HeadID = src, stale
+		return m
+	}
+	mrs.EXPECT().ListOpenAll(mock.Anything).Return([]domain.MergeRequest{
+		withSource("alpha", 1, "topic"), withSource("alpha", 2, "gone"), withSource("beta", 3, "other"), withSource("ghost", 4, "x"),
+	}, nil)
+	is.EXPECT().ListOpenAll(mock.Anything).Return(nil, nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "alpha")).Return(repoWithIssues(t, "alpha", domain.IssuesOff), nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "beta")).Return(repoWithIssues(t, "beta", domain.IssuesOff), nil)
+	meta.EXPECT().Get(mock.Anything, name(t, "ghost")).Return(domain.Repo{}, domain.ErrNotFound)
+	git.EXPECT().BranchHead(mock.Anything, name(t, "alpha"), "topic").Return(fresh, nil).Once()
+	git.EXPECT().BranchHead(mock.Anything, name(t, "alpha"), "gone").Return(domain.ObjectID{}, domain.ErrNotFound).Once()
+	// beta is filtered out and ghost does not exist: neither is read from Git.
+
+	got, err := in.Overview(ctx, domain.Owner(), name(t, "alpha"))
+	require.NoError(t, err)
+	require.Len(t, got.MergeRequests, 2)
+	heads := map[int64]domain.ObjectID{}
+	for _, m := range got.MergeRequests {
+		heads[m.Number] = m.HeadID
+	}
+	assert.Equal(t, fresh, heads[1])
+	assert.True(t, heads[2].IsZero(), "a gone branch leaves the head zero")
 }

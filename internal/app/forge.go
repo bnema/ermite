@@ -449,7 +449,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
 		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(), CI: store.CI(),
-		Deps: inboxDeps, Clock: clock,
+		Git: git, Deps: inboxDeps, Clock: clock,
 	})
 	f.CI.SetPullGate(f.MergeRequests)
 	f.AutoMerge.Start()

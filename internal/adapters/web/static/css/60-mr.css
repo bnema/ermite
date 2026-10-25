@@ -52,6 +52,8 @@
   .mr-desc.prose > * { max-width: var(--measure); }
   .mr-desc.prose > pre, .mr-desc.prose > table { max-width: 100%; }
 
+  .list.mrs .c-ck:empty { padding: 0; }
+
   .list-toolbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3);
     & > .since { margin-right: auto; }

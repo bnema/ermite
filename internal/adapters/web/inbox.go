@@ -154,11 +154,18 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, filter d
 		r.When, r.WhenAt = whenOf(now, ts)
 		return r
 	}
+	sums := make(map[string]ChecksSummary) // one read per (repo, head)
 	for _, m := range ov.MergeRequests {
 		r := row(m.Repo, m.Number, mrHref(m.Repo.String(), m.Number), m.Title.String(), m.UpdatedAt, m.CreatedAt)
 		if !m.HeadID.IsZero() {
 			head := m.HeadID.String()
-			r.Checks = checksSummary(m.Repo, head, s.checksFor(ctx, m.Repo, head))
+			key := m.Repo.String() + "@" + head
+			sum, ok := sums[key]
+			if !ok {
+				sum = checksSummary(m.Repo, head, s.checksFor(ctx, m.Repo, head))
+				sums[key] = sum
+			}
+			r.Checks = sum
 		}
 		p.MRs = append(p.MRs, r)
 	}

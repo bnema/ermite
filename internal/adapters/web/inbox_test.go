@@ -5,6 +5,7 @@ package web
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -315,4 +316,77 @@ func TestInboxRefreshesOnRepoEvents(t *testing.T) {
 			assert.NotContains(t, all, "/beta", "the repository is gone from the filter")
 		})
 	}
+}
+
+func inboxOverviewWithHead(t testing.TB, head string) ports.InboxOverview {
+	t.Helper()
+	ov := inboxOverview(t)
+	if head != "" {
+		id, err := domain.ParseObjectID(head)
+		require.NoError(t, err)
+		ov.MergeRequests[0].HeadID = id
+	}
+	return ov
+}
+
+func inboxChecksServer(t *testing.T, svc ports.InboxService, runs ports.RunService) *Server {
+	t.Helper()
+	return newTestServer(t, Config{
+		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc, Runs: runs,
+		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
+	})
+}
+
+func TestInboxMRRowsShowTheCIIcon(t *testing.T) {
+	t.Parallel()
+	head := fmt.Sprintf("%040x", 7)
+	repo := repoName(t, "alpha")
+	svc := mocks.NewInboxService(t)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(inboxOverviewWithHead(t, head), nil).Twice()
+	runs := mocks.NewRunService(t)
+	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{Checks: []ports.CheckView{
+		{CICheck: domain.CICheck{Repo: repo, Sha: head, RunID: 9, Status: domain.CICompleted, Conclusion: domain.CISuccess}},
+	}}, nil).Twice()
+	srv := inboxChecksServer(t, svc, runs)
+
+	rec := inboxGet(srv, "/-/inbox", true)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `class="ck-sum"`)
+	assert.Contains(t, rec.Body.String(), `href="/alpha/actions"`)
+
+	frags, err := (&liveStream{s: srv, view: "inbox"}).render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
+	require.NoError(t, err)
+	require.Len(t, frags, 7)
+	assert.Contains(t, frags[5].html, `id="inbox-mrs"`)
+	assert.Contains(t, frags[5].html, `class="ck-sum"`)
+	assert.NotContains(t, frags[6].html, "ck-sum", "issue rows have no CI icon")
+}
+
+func TestInboxZeroHeadReadsNoChecks(t *testing.T) {
+	t.Parallel()
+	svc := mocks.NewInboxService(t)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(inboxOverviewWithHead(t, ""), nil)
+	runs := mocks.NewRunService(t) // any ListChecks call fails the test
+	srv := inboxChecksServer(t, svc, runs)
+
+	rec := inboxGet(srv, "/-/inbox", true)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), "ck-sum")
+}
+
+func TestInboxReadsChecksOncePerHead(t *testing.T) {
+	t.Parallel()
+	head := fmt.Sprintf("%040x", 7)
+	repo := repoName(t, "alpha")
+	ov := inboxOverviewWithHead(t, head)
+	second := ov.MergeRequests[0]
+	second.Number = 5
+	ov.MergeRequests = append(ov.MergeRequests, second)
+	svc := mocks.NewInboxService(t)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(ov, nil)
+	runs := mocks.NewRunService(t)
+	runs.EXPECT().ListChecks(mock.Anything, mock.Anything, repo, head).Return(ports.ChecksResult{}, nil).Once()
+	srv := inboxChecksServer(t, svc, runs)
+
+	require.Equal(t, 200, inboxGet(srv, "/-/inbox", true).Code)
 }

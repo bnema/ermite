@@ -25,6 +25,8 @@ type Inbox struct {
 	// pending is nil when the public form is not wired.
 	pending ports.PendingIssueStore
 	ci      ports.CIStore
+	// git gives the head of the source branch; nil leaves HeadID as stored.
+	git ports.MergeGit
 	// deps is nil when Bernard is off.
 	deps  ports.DepsStore
 	clock ports.Clock
@@ -41,6 +43,8 @@ type InboxConfig struct {
 	// inbox has no pending section.
 	Pending ports.PendingIssueStore
 	CI      ports.CIStore
+	// Git reads the head of each open request's source branch. Optional.
+	Git ports.MergeGit
 	// Deps and Clock add the Bernard section; optional.
 	Deps  ports.DepsStore
 	Clock ports.Clock
@@ -48,7 +52,7 @@ type InboxConfig struct {
 
 // NewInbox builds the inbox use case.
 func NewInbox(cfg InboxConfig) *Inbox {
-	return &Inbox{meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending, ci: cfg.CI, deps: cfg.Deps, clock: cfg.Clock}
+	return &Inbox{meta: cfg.Meta, mrs: cfg.MergeRequests, issues: cfg.Issues, pending: cfg.Pending, ci: cfg.CI, git: cfg.Git, deps: cfg.Deps, clock: cfg.Clock}
 }
 
 // Overview lists what is open, through the indexes of open items. The counts
@@ -185,6 +189,22 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 			out.Counts.Deps++
 			if filter.IsZero() || d.Repo == filter {
 				out.Deps = append(out.Deps, d)
+			}
+		}
+	}
+
+	if in.git != nil {
+		for i, m := range out.MergeRequests {
+			// Like MergeRequests.withHead: the head comes from the source
+			// branch, zero when the branch is gone.
+			head, err := in.git.BranchHead(ctx, m.Repo, m.Source)
+			switch {
+			case errors.Is(err, domain.ErrNotFound):
+				out.MergeRequests[i].HeadID = domain.ObjectID{}
+			case err != nil:
+				return out, fmt.Errorf("read the head of %q in %q: %w", m.Source, m.Repo, err)
+			default:
+				out.MergeRequests[i].HeadID = head
 			}
 		}
 	}
