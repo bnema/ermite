@@ -111,3 +111,39 @@ func TestAppendLogLine(t *testing.T) {
 	hidden := appendLogLine(nil, 40, line("a\u202eb", false))
 	assert.NotContains(t, hidden[0].Text, "\u202e")
 }
+
+// A dependency run is started again from the Inbox: its page offers Cancel while
+// it is going and no re-run once it ended, where a workflow run offers both.
+func TestRunPageOffersNoRerunOnDependencyRuns(t *testing.T) {
+	t.Parallel()
+	repo := publicRepo(t, "proj")
+	for _, tc := range []struct {
+		name       string
+		event      string
+		status     domain.CIStatus
+		wantCancel bool
+		wantRerun  bool
+	}{
+		{"dependency run going", domain.CIEventDependencies, domain.CIInProgress, true, false},
+		{"dependency run failed", domain.CIEventDependencies, domain.CICompleted, false, false},
+		{"workflow run failed", "push", domain.CICompleted, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			runs := mocks.NewRunService(t)
+			runs.EXPECT().GetRun(mock.Anything, mock.Anything, repo.Name, int64(1), int32(0)).Return(ports.RunDetail{
+				Run:           domain.CIRun{ID: 1, Repo: repo.Name, Attempt: 1, Event: tc.event, Status: tc.status},
+				LatestAttempt: 1,
+				Jobs:          []ports.JobView{{CIJob: domain.CIJob{Conclusion: domain.CIFailure}}},
+			}, nil)
+			runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo.Name, int64(1), int32(1), "").Return(ports.AnnotationList{}, nil)
+			s := &Server{cfg: Config{Runs: runs, Now: time.Now}}
+			p, err := s.runPage(withOwner(t.Context()), &repoData{repo: repo}, 1, 0)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantCancel, p.CancelAction != "")
+			assert.Equal(t, tc.wantRerun, p.RerunAction != "")
+			assert.Equal(t, tc.wantRerun, p.RerunFailedAction != "")
+			assert.Equal(t, tc.wantRerun, p.CanRerunFailed)
+		})
+	}
+}
