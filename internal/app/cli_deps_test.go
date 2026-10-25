@@ -25,6 +25,8 @@ func TestDepsListTableAndJSON(t *testing.T) {
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "deps", "list", "--repo", "alpha").ok(t)
 	assert.Contains(t, res.stdout, "alpha  golang.org/x/text  v0.20.0  v0.21.0  minor  new")
+	assert.Contains(t, res.stdout, "alpha  golang.org/x/text  v0.20.0  v0.21.0  minor  new  idle   -")
+	assert.Contains(t, res.stdout, "RUN")
 	assert.Contains(t, res.stdout, "actions/checkout")
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.ListDependencyUpdatesRequest).GetRepo())
@@ -33,9 +35,33 @@ func TestDepsListTableAndJSON(t *testing.T) {
 	assert.JSONEq(t, `[{"repo":"alpha","updates":[
 		{"ecosystem":"gomod","name":"golang.org/x/text","directory":"tools","current":"v0.20.0","latest":"v0.21.0","kind":"minor","new":true},
 		{"ecosystem":"github-actions","name":"actions/checkout","directory":"","current":"v4","latest":"v5","kind":"major","new":false}],
-		"checked_at":"2026-03-04T05:06:07Z","snoozed_until":null,"merge_request_number":0,"state":"idle","error":""}]`, res.stdout)
+		"checked_at":"2026-03-04T05:06:07Z","snoozed_until":null,"merge_request_number":0,"state":"idle","error":"","run_id":0}]`, res.stdout)
 	_, reqs = f.snapshot()
 	assert.Nil(t, reqs[1].(*ermite.ListDependencyUpdatesRequest).Repo, "no filter without --repo")
+}
+
+func TestDepsListShowsTheRun(t *testing.T) {
+	failed := &ermite.RepoDependencyUpdates{
+		Repo: "beta", State: ermite.RepoDependencyUpdates_STATE_FAILED, Error: "the run ended: failure", RunId: 12,
+		Updates: []*ermite.DependencyUpdate{{Name: "x/y", Current: "v1", Latest: "v2", Kind: ermite.DependencyUpdate_KIND_MAJOR}},
+	}
+	f := &fakeAPI{
+		listDeps: func(*ermite.ListDependencyUpdatesRequest) (*ermite.ListDependencyUpdatesResponse, error) {
+			return &ermite.ListDependencyUpdatesResponse{Repos: []*ermite.RepoDependencyUpdates{failed}}, nil
+		},
+		checkDeps: func(*ermite.CheckDependenciesRequest) (*ermite.CheckDependenciesResponse, error) {
+			return &ermite.CheckDependenciesResponse{Updates: failed}, nil
+		},
+	}
+	res := runCLI(t, envFor(f.serve(t)), "", "deps", "list").ok(t)
+	assert.Regexp(t, `beta\s+x/y\s+v1\s+v2\s+major\s+failed\s+12\n`, res.stdout)
+
+	res = runCLI(t, envFor(f.serve(t)), "", "deps", "list", "--json").ok(t)
+	assert.Contains(t, res.stdout, `"run_id": 12`)
+
+	res = runCLI(t, envFor(f.serve(t)), "", "deps", "check", "beta").ok(t)
+	assert.Regexp(t, `run\s+#12\n`, res.stdout)
+	assert.Contains(t, res.stdout, "ermite run view beta 12 --log")
 }
 
 func TestDepsCheck(t *testing.T) {

@@ -22,7 +22,7 @@ func TestRepoDepsToPB(t *testing.T) {
 	require.NoError(t, err)
 	at := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	got := repoDepsToPB(domain.RepoDeps{
-		Repo: repo, CheckedAt: at, State: domain.DepsFailed, Error: "boom", MR: 7,
+		Repo: repo, CheckedAt: at, State: domain.DepsFailed, Error: "boom", MR: 7, RunID: 12,
 		Updates: []domain.DepUpdate{{
 			DepRef:  domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"},
 			Current: "v4", Kind: domain.DepMajor, New: true,
@@ -32,6 +32,8 @@ func TestRepoDepsToPB(t *testing.T) {
 	assert.Equal(t, pb.RepoDependencyUpdates_STATE_FAILED, got.State)
 	assert.Equal(t, "boom", got.Error)
 	assert.EqualValues(t, 7, got.MergeRequestNumber)
+	assert.EqualValues(t, 12, got.RunId)
+	assert.Zero(t, repoDepsToPB(domain.RepoDeps{}).RunId)
 	assert.True(t, got.CheckedAt.AsTime().Equal(at))
 	assert.Nil(t, got.SnoozedUntil)
 	require.Len(t, got.Updates, 1)

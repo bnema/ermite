@@ -48,7 +48,7 @@ func depsStateToPB(s domain.DepsState) pb.RepoDependencyUpdates_State {
 func repoDepsToPB(d domain.RepoDeps) *pb.RepoDependencyUpdates {
 	out := &pb.RepoDependencyUpdates{
 		Repo: d.Repo.String(), CheckedAt: timestamp(d.CheckedAt), SnoozedUntil: timestamp(d.SnoozedUntil),
-		MergeRequestNumber: d.MR, State: depsStateToPB(d.State), Error: d.Error,
+		MergeRequestNumber: d.MR, State: depsStateToPB(d.State), Error: d.Error, RunId: d.RunID,
 	}
 	for _, u := range d.Updates {
 		out.Updates = append(out.Updates, &pb.DependencyUpdate{

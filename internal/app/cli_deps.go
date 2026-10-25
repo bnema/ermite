@@ -15,7 +15,8 @@ import (
 const jsonDepsHelp = `
 JSON fields of a repository (--json): repo, updates (ecosystem, name, directory, current, latest, kind
 (patch, minor, major), new), checked_at, snoozed_until (RFC 3339, UTC, null when unset),
-merge_request_number (0 = none), state (idle, applying, failed), error.`
+merge_request_number (0 = none), state (idle, applying, failed), error, run_id (the run applying the updates, or the
+last one that tried; 0 = none). The log of a run, failed ones included: ermite run view <repo> <run> --log.`
 
 type jsonDepsUpdate struct {
 	Ecosystem string `json:"ecosystem"`
@@ -35,12 +36,13 @@ type jsonDepsRepo struct {
 	MergeRequestNumber int64            `json:"merge_request_number"`
 	State              string           `json:"state"`
 	Error              string           `json:"error"`
+	RunID              int64            `json:"run_id"`
 }
 
 func toJSONDepsRepo(r *ermite.RepoDependencyUpdates) jsonDepsRepo {
 	out := jsonDepsRepo{
 		Repo: r.GetRepo(), Updates: []jsonDepsUpdate{}, CheckedAt: jsonTime(r.GetCheckedAt()), SnoozedUntil: jsonTime(r.GetSnoozedUntil()),
-		MergeRequestNumber: r.GetMergeRequestNumber(), State: depsStateName(r.GetState()), Error: r.GetError(),
+		MergeRequestNumber: r.GetMergeRequestNumber(), State: depsStateName(r.GetState()), Error: r.GetError(), RunID: r.GetRunId(),
 	}
 	for _, u := range r.GetUpdates() {
 		out.Updates = append(out.Updates, jsonDepsUpdate{
@@ -81,6 +83,12 @@ func printDepsRepo(cmd *cobra.Command, r *ermite.RepoDependencyUpdates) error {
 	pairs := [][2]string{{"repo", r.GetRepo()}, {"state", depsStateName(r.GetState())}}
 	if r.GetError() != "" {
 		pairs = append(pairs, [2]string{"error", r.GetError()})
+	}
+	if r.GetRunId() != 0 {
+		pairs = append(pairs, [2]string{"run", fmt.Sprintf("#%d", r.GetRunId())})
+		if r.GetState() == ermite.RepoDependencyUpdates_STATE_FAILED {
+			pairs = append(pairs, [2]string{"log", fmt.Sprintf("ermite run view %s %d --log", r.GetRepo(), r.GetRunId())})
+		}
 	}
 	if r.GetMergeRequestNumber() != 0 {
 		pairs = append(pairs, [2]string{"merge request", fmt.Sprintf("#%d", r.GetMergeRequestNumber())})
@@ -137,10 +145,14 @@ func newDepsListCmd(env *cliEnv) *cobra.Command {
 				if u.GetNew() {
 					mark = "new"
 				}
-				rows = append(rows, []string{r.GetRepo(), u.GetName(), u.GetCurrent(), u.GetLatest(), depsKindName(u.GetKind()), mark, depsStateName(r.GetState())})
+				run := "-"
+				if r.GetRunId() != 0 {
+					run = fmt.Sprint(r.GetRunId())
+				}
+				rows = append(rows, []string{r.GetRepo(), u.GetName(), u.GetCurrent(), u.GetLatest(), depsKindName(u.GetKind()), mark, depsStateName(r.GetState()), run})
 			}
 		}
-		return table(cmd.OutOrStdout(), []string{"REPO", "NAME", "CURRENT", "LATEST", "KIND", "", "STATE"}, rows)
+		return table(cmd.OutOrStdout(), []string{"REPO", "NAME", "CURRENT", "LATEST", "KIND", "", "STATE", "RUN"}, rows)
 	}
 	return cmd
 }
