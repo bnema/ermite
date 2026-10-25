@@ -462,7 +462,11 @@ func TestSchema10UpgradesDepsRecords(t *testing.T) {
 		"oneline":  {domain.DepsFailed, "boom", 0},
 		"idle":     {domain.DepsIdle, "kept\nas it is", 9},
 	}
-	for range 2 {
+	for pass := range 2 {
+		if pass == 1 {
+			// Run the upgrade again on the upgraded records.
+			putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 9}))
+		}
 		s, err := kvstore.Open(ctx, dir)
 		require.NoError(t, err)
 		for repo, w := range want {

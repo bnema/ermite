@@ -102,7 +102,6 @@ type RepoDeps struct {
 	SnoozedUntil time.Time // zero means not snoozed
 	State        DepsState
 	Error        string // short failure reason, one line; the log is on the run
-	JobID        string // deps-… while applying (replaced by RunID)
 	// RunID is the CI run applying the updates, or the last one that tried
 	// (kept after a failure or a success, so that the record links to its log);
 	// zero means none. The next run overwrites it.
