@@ -28,7 +28,8 @@ var errJobSuperseded = errors.New("the dependency run is no longer current")
 
 var _ ports.DepsRunObserver = (*Bernard)(nil)
 
-// keepDepsError keeps a bounded, printable excerpt of a failure report.
+// keepDepsError keeps the summary and the newest printable output of a failure
+// report, within 12 lines and maxDepsError bytes.
 func keepDepsError(s string) string {
 	s = strings.TrimSpace(strings.Map(func(r rune) rune {
 		if r == '\n' || !unicode.IsControl(r) {
@@ -36,17 +37,32 @@ func keepDepsError(s string) string {
 		}
 		return -1
 	}, strings.ToValidUTF8(s, "")))
-	lines := strings.SplitN(s, "\n", 13)
-	if len(lines) > 12 {
-		s = strings.Join(lines[:12], "\n")
+	summary, output, _ := strings.Cut(s, "\n")
+	// An oversized summary alone exhausts the budget.
+	if len(summary) >= maxDepsError {
+		summary = summary[:maxDepsError]
+		for !utf8.ValidString(summary) {
+			summary = summary[:len(summary)-1]
+		}
+		return strings.TrimSpace(summary)
 	}
-	if len(s) > maxDepsError {
-		s = s[:maxDepsError]
-		for !utf8.ValidString(s) {
-			s = s[:len(s)-1]
+	lines := strings.Split(output, "\n")
+	if len(lines) > 11 {
+		lines = lines[len(lines)-11:]
+	}
+	output = strings.Join(lines, "\n")
+	budget := maxDepsError - len(summary) - 1 // separator
+	if len(output) > budget {
+		output = output[len(output)-budget:]
+		for !utf8.ValidString(output) {
+			output = output[1:]
 		}
 	}
-	return strings.TrimSpace(s)
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return summary
+	}
+	return summary + "\n" + output
 }
 
 // failRun sets the record to Failed with a bounded reason when it is still

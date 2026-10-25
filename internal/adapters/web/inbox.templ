@@ -269,7 +269,7 @@ templ InboxDeps(p InboxPage) {
 									<p class="dim">Last output</p>
 									<pre>{ d.Status.Title }</pre>
 									if d.Status.Href != "" {
-										<a href={ templ.SafeURL(d.Status.Href) }>View log · { d.Status.Text }</a>
+										<a id={ d.ID + "-log" } href={ templ.SafeURL(d.Status.Href) }>View log · { d.Status.Text }</a>
 									}
 								</div>
 							}

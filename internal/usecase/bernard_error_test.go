@@ -3,6 +3,7 @@
 package usecase
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -28,5 +29,29 @@ func TestKeepDepsError(t *testing.T) {
 				t.Fatal("invalid bounds")
 			}
 		})
+	}
+}
+
+func TestKeepDepsErrorRetainsTail(t *testing.T) {
+	lines := []string{"dependency command failed (exit 1)"}
+	for i := 1; i <= 30; i++ {
+		lines = append(lines, fmt.Sprintf("output %02d", i))
+	}
+	lines = append(lines, "diagnostic: requires newer Go")
+	want := append([]string{lines[0]}, lines[len(lines)-11:]...)
+	if got := keepDepsError(strings.Join(lines, "\n")); got != strings.Join(want, "\n") {
+		t.Fatalf("wrong retained lines: %q", got)
+	}
+}
+
+func TestKeepDepsErrorRetainsUTF8ByteTail(t *testing.T) {
+	summary := "dependency command failed (exit 1)"
+	diagnostic := "diagnostic: requires newer Go"
+	suffix := strings.Repeat("€", 1000) + diagnostic
+	got := keepDepsError(summary + "\n" + suffix)
+	budget := maxDepsError - len(summary) - 1 - len(diagnostic)
+	want := summary + "\n" + strings.Repeat("€", budget/3) + diagnostic
+	if got != want || len(got) > maxDepsError || !utf8.ValidString(got) {
+		t.Fatalf("incorrect UTF-8 tail: %q", got)
 	}
 }

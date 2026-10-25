@@ -84,7 +84,7 @@ func TestInboxDepsTable(t *testing.T) {
 	assert.Contains(t, sec, `<a href="/alpha/actions/runs/12">run #3</a>`)
 	assert.Contains(t, sec, ">Retry<")
 	// stable ids keep the focus on the same control through a live update
-	for _, id := range []string{"deps-alpha-sum", "deps-alpha-act", "deps-alpha-more"} {
+	for _, id := range []string{"deps-alpha-sum", "deps-alpha-act", "deps-alpha-more", "deps-alpha-log"} {
 		assert.Contains(t, sec, `id="`+id+`"`)
 	}
 	// the screen reader hears words, not the icon

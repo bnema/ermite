@@ -274,7 +274,7 @@ function depsSection(open = {}) {
     const menu = el('details', { cls: 'menu deps-menu', attrs: open[id + '-menu'] ? { open: '' } : {} },
       el('summary', { id: id + '-more' }), el('div', { cls: 'menu-pop' }, el('button', { id: id + '-ignore' })));
     // as in the page, the menu sits in the actions span of the row
-    return el('li', { id }, el('details', { cls: 'deps-main', attrs }), el('span', { cls: 'deps-act' }, menu));
+    return el('li', { id }, el('details', { cls: 'deps-main', attrs }, el('summary', { id: id + '-sum' }), el('a', { id: id + '-log', attrs: { href: '/run/12' } })), el('span', { cls: 'deps-act' }, menu));
   };
   return el('section', { id: 'inbox-deps', attrs: { 'data-keep-open': '' } }, el('ul', {}, row('deps-a'), row('deps-b')));
 }
@@ -535,4 +535,15 @@ test('listbox result wrappers have no links; Enter and delegated clicks navigate
   f.q.value = '';
   F.input(f.q);
   assert.equal(doc.getElementById('finder-status').textContent, '');
+});
+
+test('a live swap keeps focus on the expanded dependency log link and the details open', () => {
+  const old = depsSection({ 'deps-b': true });
+  dom.body.replaceChildren(old);
+  active = old.querySelector('#deps-b-log');
+  const fresh = depsSection();
+  swapWith('deps-log-focus', fresh);
+  assert.equal(active, fresh.querySelector('#deps-b-log'));
+  assert.equal(fresh.querySelector('#deps-b').children[0].hasAttribute('open'), true);
+  assert.equal(fresh.querySelector('#deps-a').children[0].hasAttribute('open'), false);
 });
