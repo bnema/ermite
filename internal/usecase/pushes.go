@@ -32,6 +32,8 @@ type Pushes struct {
 	trees    ports.PushTreeReader      // nil: pushes by job tokens are refused
 	tips     ports.CIRefTipStore       // nil: who pushes a ref is not recorded
 	mergeab  ports.MergeabilityTrigger // nil: mergeability is not tracked
+	journal  ports.JournalRecorder     // nil: no activity journal
+	refs     ports.RefsObserver        // nil: nothing derived from the refs is cached
 }
 
 var (
@@ -77,6 +79,20 @@ func (u *Pushes) WithWorkflowTrigger(t ports.WorkflowTrigger) *Pushes {
 // returns u.
 func (u *Pushes) WithMergeability(t ports.MergeabilityTrigger) *Pushes {
 	u.mergeab = t
+	return u
+}
+
+// WithJournal makes Record write the tags and the pushes to the default branch
+// to the activity journal. Call it before the first push; it returns u.
+func (u *Pushes) WithJournal(j ports.JournalRecorder) *Pushes {
+	u.journal = j
+	return u
+}
+
+// WithRefsObserver makes Record tell o that the refs moved, before the
+// journal and the events. Call it before the first push; it returns u.
+func (u *Pushes) WithRefsObserver(o ports.RefsObserver) *Pushes {
+	u.refs = o
 	return u
 }
 
@@ -255,8 +271,8 @@ func workflowReadError(name domain.RepoName, err error) error {
 
 // Record is the post-receive step of an accepted push: it sets pushed_at and active_at,
 // repairs HEAD when it points to a missing branch, tells the reader that the
-// repository changed, queues the workflows the push triggers, publishes a
-// PushEvent and schedules maintenance. Every
+// repository changed, queues the workflows the push triggers, writes the
+// journal, publishes a PushEvent and schedules maintenance. Every
 // step runs even when an earlier one fails; the failures are returned together
 // and the push itself is not affected.
 func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.RepoName, updates []domain.RefUpdate) error {
@@ -274,6 +290,9 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	if u.fresh != nil {
 		u.fresh.Refresh(ctx, name)
 	}
+	if u.refs != nil {
+		u.refs.RefsChanged(name)
+	}
 	if u.ci != nil {
 		u.ci.OnPush(ctx, name, updates, p) // queues only: never slows or fails the push
 	}
@@ -285,6 +304,9 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	}
 	if u.releases != nil {
 		u.releases.OnRefsMoved(ctx, name, updates)
+	}
+	if u.journal != nil {
+		u.journal.OnPush(ctx, domain.AuthorName(p), name, updates)
 	}
 	u.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, Updates: append([]domain.RefUpdate(nil), updates...), At: now,

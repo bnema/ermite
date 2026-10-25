@@ -27,6 +27,8 @@ type IssueLinksConfig struct {
 	Git    ports.MergeGit
 	Bus    ports.EventBus
 	Clock  ports.Clock
+	// Journal records the issues a merge resolves as closed. Optional.
+	Journal ports.JournalRecorder
 }
 
 // IssueLinks maintains the derived index and applies closing references on merge.
@@ -277,6 +279,7 @@ func (l *IssueLinks) resolve(ctx context.Context, p domain.Principal, repo domai
 			return err
 		}
 		recordActivity(ctx, l.cfg.Meta, repo.Name, issue.UpdatedAt)
+		record(ctx, l.cfg.Journal, journalIssue(domain.JournalIssueClosed, domain.AuthorName(p), issue, issue.UpdatedAt))
 		log := zerowrap.FromCtx(ctx)
 		log.Info().Str("repo", repo.Name.String()).Int64("number", n).Int64("merge_request", mr).Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue resolved by merge")
 		l.cfg.Bus.Publish(ctx, domain.IssueResolved{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})

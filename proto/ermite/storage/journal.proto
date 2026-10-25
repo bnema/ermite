@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Internal, unversioned storage schema of the owner's activity journal.
+
+syntax = "proto3";
+
+package ermite.storage;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// JournalEntry is stored under "journal/<time><seq>/<repo>": one thing that
+// happened in a repository (domain.JournalEntry), kept 30 days.
+message JournalEntry {
+  google.protobuf.Timestamp at = 1;
+  string repo = 2;
+  string kind = 3;
+  string actor = 4;
+  int64 number = 5;
+  string title = 6;
+  string ref = 7;
+  int32 commits = 8;
+  bool more = 9;
+  // Hexadecimal object id, empty when unknown.
+  string commit = 10;
+  string summary = 11;
+}

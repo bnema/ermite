@@ -145,7 +145,8 @@ func TestAC5Resume(t *testing.T) {
 
 // AC5: a gap when the id fell out of a small ring.
 func TestAC5GapAfterOverflow(t *testing.T) {
-	h := newHarness(t, harnessOpts{eventBuffer: 4})
+	// The ring holds four pushes to the default branch.
+	h := newHarness(t, harnessOpts{eventBuffer: 4 * eventsPerDefaultPush})
 	h.seed("pub", domain.VisibilityPublic)
 	api := h.api(adminToken)
 	w := h.watch(api, "")

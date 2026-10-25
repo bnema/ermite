@@ -19,8 +19,12 @@ import (
 // FeatureReleases is listed by GetVersion when ReleaseService is served.
 const FeatureReleases = "releases"
 
-// releaseService implements ermiteconnect.ReleaseServiceHandler.
-type releaseService struct{ rel ports.ReleaseService }
+// releaseService implements ermiteconnect.ReleaseServiceHandler. journal
+// serves ListUnreleased; nil answers unimplemented.
+type releaseService struct {
+	rel     ports.ReleaseService
+	journal ports.JournalService
+}
 
 var _ ermiteconnect.ReleaseServiceHandler = (*releaseService)(nil)
 

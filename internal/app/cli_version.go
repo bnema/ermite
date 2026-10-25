@@ -130,4 +130,5 @@ var featureUse = map[string]string{
 	client.FeaturePasskeys:            "`ermite web passkey` needs: the commands will fail on this server (passkeys need an https public URL with a DNS host name)",
 	client.FeatureCommitSignatures:    "`ermite signing-key trust` needs: the commands will fail on this server",
 	client.FeatureAutoMerge:           "`ermite mr merge --auto` and `repo edit --allow-auto-merge` need: the commands are refused",
+	client.FeatureJournal:             "`ermite journal` and `release pending` need: the commands will fail on this server, and explicit journal:read scopes are refused",
 }

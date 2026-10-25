@@ -100,6 +100,8 @@ type Routes struct {
 	ListCommitsPath Backend
 	// ListPaths is the recursive list of the file paths of a revision.
 	ListPaths Backend
+	// TagDistance is the walk from a head to its nearest tag.
+	TagDistance Backend
 }
 
 // tree picks the route of a directory listing.
@@ -117,7 +119,7 @@ func (r Routes) tree(path domain.TreePath, lastCommits bool) Backend {
 // AllRoutes returns routes that send every method to b. The tests and the
 // benchmarks use it to exercise a backend whatever the production routes are.
 func AllRoutes(b Backend) Routes {
-	return Routes{b, b, b, b, b, b, b, b, b, b, b}
+	return Routes{b, b, b, b, b, b, b, b, b, b, b, b}
 }
 
 // Config configures an Adapter.
@@ -430,4 +432,32 @@ func (a *Adapter) CommitTimes(ctx context.Context, repo domain.RepoName, head do
 // LatestTag is served by the wrapped reader.
 func (a *Adapter) LatestTag(ctx context.Context, repo domain.RepoName) (domain.TagInfo, bool, error) {
 	return a.cli.LatestTag(ctx, repo)
+}
+
+// TagDistance walks from head to its nearest tag.
+func (a *Adapter) TagDistance(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int) (domain.TagDistance, bool, error) {
+	if head.IsZero() || limit < 1 {
+		return domain.TagDistance{}, false, fmt.Errorf("tag distance: %w: head %s, limit %d", domain.ErrInvalid, head, limit)
+	}
+	cli := func() (tagDistanceResult, error) {
+		d, ok, err := a.cli.TagDistance(ctx, repo, head, limit)
+		return tagDistanceResult{d, ok}, err
+	}
+	if a.routes.TagDistance == CLI {
+		res, err := cli()
+		return res.d, res.ok, err
+	}
+	res, err := serve(ctx, a, repo, func(r *git.Repo) (tagDistanceResult, error) {
+		d, ok, err := tagDistance(ctx, r, head, limit)
+		if err != nil {
+			return tagDistanceResult{}, fmt.Errorf("tag distance in %q: %w", repo, err)
+		}
+		return tagDistanceResult{d, ok}, nil
+	}, cli)
+	return res.d, res.ok, err
+}
+
+type tagDistanceResult struct {
+	d  domain.TagDistance
+	ok bool
 }

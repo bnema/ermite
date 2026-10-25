@@ -75,6 +75,11 @@ func (c *Client) Deps() ermiteconnect.DepsServiceClient {
 	return ermiteconnect.NewDepsServiceClient(c.http, c.base, c.opts...)
 }
 
+// Journal returns the JournalService client.
+func (c *Client) Journal() ermiteconnect.JournalServiceClient {
+	return ermiteconnect.NewJournalServiceClient(c.http, c.base, c.opts...)
+}
+
 // Runs returns the RunService client.
 func (c *Client) Runs() ermiteconnect.RunServiceClient {
 	return ermiteconnect.NewRunServiceClient(c.http, c.base, c.opts...)

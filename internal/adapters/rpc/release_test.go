@@ -356,7 +356,7 @@ func TestReleaseResponseEnrichment(t *testing.T) {
 			if tt.code != connect.CodeUnavailable {
 				rel.EXPECT().ListAssets(mock.Anything, domain.Owner(), repo, int64(7)).Return(nil, tt.assetsErr).Once()
 			}
-			res, err := (&releaseService{rel}).GetRelease(ownerCtx(), connect.NewRequest(&pb.GetReleaseRequest{Repo: "demo", Selector: &pb.GetReleaseRequest_Id{Id: 7}}))
+			res, err := (&releaseService{rel: rel}).GetRelease(ownerCtx(), connect.NewRequest(&pb.GetReleaseRequest{Repo: "demo", Selector: &pb.GetReleaseRequest_Id{Id: 7}}))
 			if tt.code != 0 {
 				requireCode(t, tt.code, err)
 				return

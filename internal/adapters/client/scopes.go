@@ -112,6 +112,28 @@ func MergeScopes(preset string, scopeFlags []string) ([]ermite.Scope, error) {
 	return slices.Compact(scopes), nil
 }
 
+// MaxDayDuration bounds ParseDayDuration: 100 years of 365 days.
+const MaxDayDuration = 100 * 365 * 24 * time.Hour
+
+// ParseDayDuration reads "<n>d" or "<n>w", n a whole number of days (24 h)
+// or weeks (7 d), as a duration. It reports false for another form, a
+// negative n or a duration beyond MaxDayDuration; the bound is checked
+// before the multiplication, which cannot overflow.
+func ParseDayDuration(s string) (time.Duration, bool) {
+	unit := 24 * time.Hour
+	switch {
+	case strings.HasSuffix(s, "w"):
+		unit *= 7
+	case !strings.HasSuffix(s, "d"):
+		return 0, false
+	}
+	n, err := strconv.Atoi(s[:len(s)-1])
+	if err != nil || n < 0 || n > int(MaxDayDuration/unit) {
+		return 0, false
+	}
+	return time.Duration(n) * unit, true
+}
+
 // ParseExpiry reads a lifetime such as "30d", "2w", "12h", "90m" or "1h30m"
 // (days and weeks are 24 h and 7 d), or an absolute date, "2027-01-31" (end of
 // that day, UTC) or an RFC 3339 instant. The result must lie in the future.
@@ -123,18 +145,11 @@ func ParseExpiry(s string, now time.Time) (time.Time, error) {
 	case s == "":
 		return time.Time{}, bad
 	case strings.HasSuffix(s, "d") || strings.HasSuffix(s, "w"):
-		n, err := strconv.Atoi(s[:len(s)-1])
-		if err != nil || n <= 0 {
+		d, ok := ParseDayDuration(s)
+		if !ok || d == 0 {
 			return time.Time{}, bad
 		}
-		unit := 24 * time.Hour
-		if strings.HasSuffix(s, "w") {
-			unit *= 7
-		}
-		if n > 100*365 {
-			return time.Time{}, bad
-		}
-		at = now.Add(time.Duration(n) * unit)
+		at = now.Add(d)
 	default:
 		if d, err := time.ParseDuration(s); err == nil {
 			at = now.Add(d)

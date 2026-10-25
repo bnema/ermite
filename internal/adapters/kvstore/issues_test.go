@@ -310,10 +310,11 @@ func TestSchema4UpgradesTheTokensWithAllScopes(t *testing.T) {
 	full := get("full")
 	assert.Contains(t, full.Scopes, domain.ScopeIssueWrite)
 	assert.Contains(t, full.Scopes, domain.ScopeMRReview)
-	assert.Len(t, full.Scopes, 13)
+	assert.Len(t, full.Scopes, 14)
 	assert.Contains(t, full.Scopes, domain.ScopeReleaseWrite)
+	assert.Contains(t, full.Scopes, domain.ScopeJournalRead)
 	full10 := get("full10")
-	assert.Len(t, full10.Scopes, 13)
+	assert.Len(t, full10.Scopes, 14)
 	assert.Contains(t, full10.Scopes, domain.ScopeReleaseWrite)
 	for _, id := range []string{"repos", "prefix", "missing", "reposmr", "small"} {
 		assert.NotContains(t, get(id).Scopes, domain.ScopeReleaseWrite)
@@ -364,7 +365,7 @@ func TestSchemaNewerThanThisBuildStopsIssuesData(t *testing.T) {
 	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: kvstore.SchemaVersion + 1}))
 	_, err := kvstore.Open(ctx, dir)
 	require.ErrorIs(t, err, kvstore.ErrSchemaTooNew)
-	assert.Equal(t, uint32(9), uint32(kvstore.SchemaVersion))
+	assert.Equal(t, uint32(10), uint32(kvstore.SchemaVersion))
 }
 
 // A reopen racing the delete of the repository either lands before the delete
@@ -577,7 +578,7 @@ func TestSchema5UpgradesOwnerEquivalentTokens(t *testing.T) {
 	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 4}))
 	var previous []string
 	for _, sc := range domain.AllScopes() {
-		if sc != domain.ScopeMRForceMerge && sc != domain.ScopeReleaseWrite {
+		if sc != domain.ScopeMRForceMerge && sc != domain.ScopeReleaseWrite && sc != domain.ScopeJournalRead {
 			previous = append(previous, sc.String())
 		}
 	}
@@ -601,7 +602,8 @@ func TestSchema5UpgradesOwnerEquivalentTokens(t *testing.T) {
 				assert.True(t, domain.TokenPrincipal(tok).HasOwnerRights())
 				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeMRForceMerge))
 				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeReleaseWrite))
-				assert.Len(t, tok.Scopes, 13)
+				assert.Equal(t, 1, countScope(tok.Scopes, domain.ScopeJournalRead))
+				assert.Len(t, tok.Scopes, 14)
 			} else {
 				assert.NotContains(t, tok.Scopes, domain.ScopeMRForceMerge)
 				assert.NotContains(t, tok.Scopes, domain.ScopeReleaseWrite)

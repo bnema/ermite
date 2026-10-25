@@ -68,6 +68,8 @@ The signed-in owner has an Inbox at `/-/inbox`, reached from the **Inbox** butto
 
 The **Running** section, after **Awaiting moderation**, lists queued and in-progress CI runs newest first, with links to each run, its repository, ref, and start time. The `N running` counter counts every repository; the repository filter also applies to this section. **Shift+I** (`I`) opens the inbox from any page for the signed-in owner, unless single-key shortcuts are off; `g i` opens the issues tab.
 
+The **Activity** section, last on the page, is a journal of the last 24 hours (`?range=24h`, the default) or 7 days (`?range=7d`), newest first: merge requests opened, merged or closed, issues opened or closed, releases published, tags created or deleted, and pushes to a repository's default branch with their commit count. Pushes to other branches and CI runs are not listed. Above it, a line per repository whose default branch has commits after its nearest tag, such as `ermite-api — 4 commits since v0.12.0 · 3d ago` (counted up to 500); repositories without a tag are not listed. The repository filter applies to both. Entries are kept 30 days.
+
 The page updates live: run status changes, merge request and issue events of any repository refresh the counters and the lists. Anyone who is not the signed-in owner, including a token, gets the same 404 as for an unknown page, and the same answer for the `owner` event stream it follows.
 
 ## Public form and moderation

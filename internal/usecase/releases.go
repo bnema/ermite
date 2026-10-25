@@ -30,6 +30,7 @@ type Releases struct {
 	uploads chan struct{}
 	sweepMu sync.Mutex
 	misses  map[int64]int
+	journal ports.JournalRecorder // nil: no activity journal
 }
 
 var _ ports.ReleaseService = (*Releases)(nil)
@@ -181,11 +182,22 @@ func (r *Releases) pin(ctx context.Context, w *ports.ReleaseWrite, rel domain.Re
 	}
 	return nil
 }
+
+// WithJournal makes the publication of a release a journal entry. Call it
+// before the first release; it returns r.
+func (r *Releases) WithJournal(j ports.JournalRecorder) *Releases {
+	r.journal = j
+	return r
+}
+
 func (r *Releases) emit(ctx context.Context, repo domain.Repo, rel domain.Release, kind string) {
 	at := r.clock.Now()
 	var ev domain.Event
 	switch kind {
 	case "published":
+		record(ctx, r.journal, domain.JournalEntry{
+			At: at, Repo: rel.Repo, Kind: domain.JournalReleasePublished, Actor: rel.Author, Title: rel.Title, Ref: rel.Tag,
+		})
 		ev = domain.ReleasePublished{Release: rel, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt}
 	case "updated":
 		ev = domain.ReleaseUpdated{Release: rel, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt}

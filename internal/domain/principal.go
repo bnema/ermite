@@ -244,6 +244,18 @@ func (p Principal) Allows(s Scope, repo RepoName) bool {
 	return true
 }
 
+// ReadsJournal reports whether p may read the activity journal and the
+// unreleased commits at all: owner rights or the journal:read scope.
+func (p Principal) ReadsJournal() bool {
+	return p.HasOwnerRights() || p.HasScope(ScopeJournalRead)
+}
+
+// ReadsJournalOf reports whether p may read the journal of the repository:
+// owner rights, or journal:read with the repository within the token's list.
+func (p Principal) ReadsJournalOf(repo RepoName) bool {
+	return p.HasOwnerRights() || p.Allows(ScopeJournalRead, repo)
+}
+
 // TokenLabel returns the label of the stored token, or "" for other
 // principals.
 func (p Principal) TokenLabel() string { return p.label }

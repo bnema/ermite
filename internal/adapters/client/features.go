@@ -71,11 +71,14 @@ const (
 	// CancelAutoMerge, RepoSettings.allow_auto_merge and the auto-merge events
 	// (`ermite mr merge --auto`).
 	FeatureAutoMerge = "merge_requests.auto_merge"
+	// FeatureJournal is JournalService, ReleaseService.ListUnreleased and the
+	// journal:read scope (`ermite journal`, `ermite release pending`).
+	FeatureJournal = "journal"
 )
 
 // UsedFeatures lists the features the CLI uses, in the order they are reported.
 func UsedFeatures() []string {
-	return []string{FeatureIssueEdit, FeatureMREdit, FeatureReleases, FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge}
+	return []string{FeatureIssueEdit, FeatureMREdit, FeatureReleases, FeatureRepoUpdate, FeatureEventsResume, FeatureMergeRequests, FeatureMergeDeleteBranch, FeatureIssues, FeatureMergeability, FeatureSigningKey, FeatureSession, FeatureTokenBranchPrefixes, FeatureCIRuns, FeatureCIRunners, FeatureCISecrets, FeatureCIDispatch, FeatureCIWorkflows, FeatureCIArtifacts, FeaturePasskeys, FeatureCommitSignatures, FeatureAutoMerge, FeatureJournal}
 }
 
 // MissingFeatures returns the features the CLI uses that have is lacking.

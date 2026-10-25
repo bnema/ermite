@@ -895,3 +895,87 @@ func (_c *RepoReader_ResolveRevision_Call) RunAndReturn(run func(ctx context.Con
 	_c.Call.Return(run)
 	return _c
 }
+
+// TagDistance provides a mock function for the type RepoReader
+func (_mock *RepoReader) TagDistance(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int) (domain.TagDistance, bool, error) {
+	ret := _mock.Called(ctx, repo, head, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TagDistance")
+	}
+
+	var r0 domain.TagDistance
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, int) (domain.TagDistance, bool, error)); ok {
+		return returnFunc(ctx, repo, head, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, domain.ObjectID, int) domain.TagDistance); ok {
+		r0 = returnFunc(ctx, repo, head, limit)
+	} else {
+		r0 = ret.Get(0).(domain.TagDistance)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName, domain.ObjectID, int) bool); ok {
+		r1 = returnFunc(ctx, repo, head, limit)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, domain.RepoName, domain.ObjectID, int) error); ok {
+		r2 = returnFunc(ctx, repo, head, limit)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// RepoReader_TagDistance_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TagDistance'
+type RepoReader_TagDistance_Call struct {
+	*mock.Call
+}
+
+// TagDistance is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - head domain.ObjectID
+//   - limit int
+func (_e *RepoReader_Expecter) TagDistance(ctx any, repo any, head any, limit any) *RepoReader_TagDistance_Call {
+	return &RepoReader_TagDistance_Call{Call: _e.mock.On("TagDistance", ctx, repo, head, limit)}
+}
+
+func (_c *RepoReader_TagDistance_Call) Run(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int)) *RepoReader_TagDistance_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 domain.ObjectID
+		if args[2] != nil {
+			arg2 = args[2].(domain.ObjectID)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *RepoReader_TagDistance_Call) Return(d domain.TagDistance, ok bool, err error) *RepoReader_TagDistance_Call {
+	_c.Call.Return(d, ok, err)
+	return _c
+}
+
+func (_c *RepoReader_TagDistance_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int) (domain.TagDistance, bool, error)) *RepoReader_TagDistance_Call {
+	_c.Call.Return(run)
+	return _c
+}

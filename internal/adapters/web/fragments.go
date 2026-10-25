@@ -24,6 +24,7 @@ type liveStream struct {
 	repo string // "" on the home page
 	// filter is the repository the inbox is filtered on, "" for all.
 	filter string
+	rng    string // inbox: the range of the journal (?range=), "" for the default
 	state  string // mrs: the selected list tab
 	view   string // "summary", "refs" or "commits"
 	ref    string // commits: the branch listed
@@ -72,7 +73,7 @@ func liveEvent(we ports.WatchEvent) bool {
 		domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled, domain.MergeRequestMergeability, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
 		domain.RunUpdated, domain.JobUpdated,
 		domain.IssueEdited, domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved, domain.IssueReferenced,
-		domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged:
+		domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.JournalUpdated:
 		return true
 	}
 	return false

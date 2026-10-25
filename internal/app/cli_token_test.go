@@ -176,7 +176,7 @@ func TestTokenCreatePresetExpansionOnTheWire(t *testing.T) {
 	} {
 		t.Run(preset, func(t *testing.T) {
 			f := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
-				return &ermite.GetVersionResponse{Features: []string{"issues", "releases"}}, nil
+				return &ermite.GetVersionResponse{Features: []string{"issues", "releases", "journal"}}, nil
 			}, createToken: func(r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
 				return &ermite.CreateTokenResponse{Token: &ermite.Token{Id: "t", Scopes: r.GetScopes()}, Secret: "s"}, nil
 			}}

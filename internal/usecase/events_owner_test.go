@@ -75,6 +75,36 @@ func TestWatchOwnerTopicSpansRepositoriesAndHonoursIssuesOff(t *testing.T) {
 	})
 }
 
+// The journal signal is the owner's: the owner topic receives it; the home
+// and repository topics (the web and the API streams) never do, whoever
+// watches them. The push that follows proves those streams had their turn.
+func TestJournalUpdatedReachesOnlyTheOwnerTopic(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		r := newEventRig(t, 16)
+		pub := r.repo("pub", domain.VisibilityPublic)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		owner := r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"owner"}})
+		others := map[string]*watcher{
+			"home, anonymous": r.watch(ctx, domain.Anonymous(), ports.WatchParams{Topics: []string{"home"}}),
+			"repo, anonymous": r.watch(ctx, domain.Anonymous(), ports.WatchParams{Topics: []string{"repo:pub"}}),
+			"home, root":      r.watch(ctx, domain.Root(), ports.WatchParams{Topics: []string{"home"}}),
+			"repo, owner":     r.watch(ctx, domain.Owner(), ports.WatchParams{Topics: []string{"repo:pub"}}),
+		}
+		synctest.Wait()
+
+		signal := domain.JournalUpdated{Repo: pub, At: now}
+		r.feed <- signal
+		r.push(pub, 0)
+		assert.Equal(t, signal, owner.next(t).Event)
+		for who, w := range others {
+			_, ok := w.next(t).Event.(domain.PushEvent)
+			assert.True(t, ok, "%s: the push comes first, the signal never", who)
+		}
+	})
+}
+
 func withIssues(m domain.IssuesMode) domain.RepoSettings {
 	st := domain.DefaultRepoSettings()
 	st.Issues = m

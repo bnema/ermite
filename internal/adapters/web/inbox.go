@@ -94,14 +94,178 @@ type InboxPage struct {
 	Repos       []InboxRepoLink
 	MRs         []InboxRow
 	IssueRows   []InboxRow
+	// Journal is the activity section; zero without a journal.
+	Journal JournalView
 }
 
-// inboxHref is the inbox page, filtered on repo when it is not "".
-func inboxHref(repo string) string {
-	if repo == "" {
-		return inboxPath
+// JournalView is the activity section of the inbox: the range toggle, the
+// repositories ahead of their nearest tag, then the entries newest first.
+type JournalView struct {
+	Ranges     []InboxRepoLink
+	RangeLabel string // "24 hours" or "7 days", for the empty state
+	Unreleased []UnreleasedRow
+	Rows       []JournalRow
+	// Truncated tells that the window held more than the rows shown.
+	Truncated bool
+}
+
+// UnreleasedRow is a repository whose default branch is ahead of its nearest
+// tag.
+type UnreleasedRow struct {
+	Repo, RepoHref string
+	// Commits is "4 commits" or "500+ commits", CommitsHref the history of
+	// the default branch.
+	Commits, CommitsHref string
+	Tag, TagHref         string
+	When, WhenAt, Title  string
+}
+
+// JournalRow is one entry of the activity journal.
+type JournalRow struct {
+	When, WhenAt, Title string
+	Repo, RepoHref      string
+	// Kind is the data-kind of the row, Label the word of the Type column.
+	Kind, Label string
+	// Ref is "!4", "#7", a tag or a branch; Text the title or the commit
+	// subject. Href links the row when there is a page for it.
+	Ref, Text, Href string
+	// Note follows the text: "3 commits" for a push.
+	Note  string
+	Actor string
+}
+
+// journalRanges are the windows of the activity section, by ?range=.
+var journalRanges = []struct {
+	param, label, long string
+	window             time.Duration
+}{
+	{"24h", "24 h", "24 hours", 24 * time.Hour},
+	{"7d", "7 days", "7 days", 7 * 24 * time.Hour},
+}
+
+// inboxRange reads ?range=: "24h" (the default) or "7d"; anything else is a
+// page that is not there. It returns the index in journalRanges.
+func inboxRange(raw string) (int, error) {
+	if raw == "" {
+		return 0, nil
 	}
-	return inboxPath + "?repo=" + url.QueryEscape(repo)
+	for i, r := range journalRanges {
+		if r.param == raw {
+			return i, nil
+		}
+	}
+	return 0, errNotFound
+}
+
+// inboxQuery is the query of the inbox for a filter and a range; the default
+// range is left out.
+func inboxQuery(repo string, rng int) string {
+	q := url.Values{}
+	if repo != "" {
+		q.Set("repo", repo)
+	}
+	if rng != 0 {
+		q.Set("range", journalRanges[rng].param)
+	}
+	return q.Encode()
+}
+
+// journalView builds the activity section.
+func (s *Server) journalView(j ports.InboxJournal, filter domain.RepoName, rng int) JournalView {
+	now := s.cfg.Now()
+	v := JournalView{RangeLabel: journalRanges[rng].long, Truncated: j.Truncated}
+	for i, r := range journalRanges {
+		href := inboxPath
+		if q := inboxQuery(filter.String(), i); q != "" {
+			href += "?" + q
+		}
+		v.Ranges = append(v.Ranges, InboxRepoLink{Label: r.label, Href: href + "#inbox-journal", Current: i == rng})
+	}
+	for _, u := range j.Unreleased {
+		repo := u.Repo.String()
+		n := itoa(u.Distance.Commits)
+		if u.Distance.More {
+			n += "+"
+		}
+		word := " commits"
+		if u.Distance.Commits == 1 && !u.Distance.More {
+			word = " commit"
+		}
+		row := UnreleasedRow{
+			Repo: repo, RepoHref: repoHref(repo),
+			Commits: n + word, CommitsHref: repoHref(repo, "commits", u.Branch),
+		}
+		if t := u.Distance.Tag; t.Name != "" {
+			row.Tag, row.TagHref = visibleText(t.Name), repoHref(repo, "tree", t.Name)
+			row.When, row.WhenAt = whenOf(now, t.At)
+			if !t.At.IsZero() {
+				row.Title = absolute(t.At)
+			}
+		}
+		v.Unreleased = append(v.Unreleased, row)
+	}
+	for _, e := range j.Entries {
+		v.Rows = append(v.Rows, journalRow(now, e))
+	}
+	return v
+}
+
+// journalRow is the row of an entry: the texts fit to display, a link to the
+// merge request, the issue, the release, the tag or the commit.
+func journalRow(now time.Time, e domain.JournalEntry) JournalRow {
+	repo := e.Repo.String()
+	row := JournalRow{
+		Repo: repo, RepoHref: repoHref(repo), Kind: string(e.Kind),
+		Text: visibleText(e.Title), Actor: visibleText(e.Actor), Title: absolute(e.At),
+	}
+	row.When, row.WhenAt = whenOf(now, e.At)
+	number := strconv.FormatInt(e.Number, 10)
+	switch e.Kind {
+	case domain.JournalMergeRequestOpened, domain.JournalMergeRequestMerged, domain.JournalMergeRequestClosed:
+		row.Ref, row.Href = "!"+number, mrHref(repo, e.Number)
+		row.Label = map[domain.JournalKind]string{
+			domain.JournalMergeRequestOpened: "opened", domain.JournalMergeRequestMerged: "merged", domain.JournalMergeRequestClosed: "closed",
+		}[e.Kind]
+	case domain.JournalIssueOpened, domain.JournalIssueClosed:
+		row.Ref, row.Href, row.Label = "#"+number, issueHref(repo, e.Number), "issue opened"
+		if e.Kind == domain.JournalIssueClosed {
+			row.Label = "issue closed"
+		}
+	case domain.JournalReleasePublished:
+		row.Label, row.Ref, row.Href = "release", visibleText(e.Ref), releaseHref(repo, e.Ref)
+	case domain.JournalTagCreated:
+		row.Label, row.Ref, row.Href = "tag", visibleText(e.Ref), repoHref(repo, "tree", e.Ref)
+	case domain.JournalTagDeleted:
+		row.Label, row.Ref = "tag deleted", visibleText(e.Ref)
+	case domain.JournalDefaultBranchPush:
+		row.Label, row.Ref, row.Text = "push", visibleText(e.Ref), visibleText(e.Summary)
+		if !e.Commit.IsZero() {
+			row.Href = repoHref(repo, "commit", e.Commit.String())
+		}
+		n := itoa(e.Commits)
+		if e.More {
+			n += "+"
+		}
+		switch {
+		case e.Commits == 0:
+		case e.Commits == 1 && !e.More:
+			row.Note = "1 commit"
+		default:
+			row.Note = n + " commits"
+		}
+	default:
+		row.Label = string(e.Kind)
+	}
+	return row
+}
+
+// inboxHref is the inbox page, filtered on repo when it is not "", on the
+// journal range rng.
+func inboxHref(repo string, rng int) string {
+	if q := inboxQuery(repo, rng); q != "" {
+		return inboxPath + "?" + q
+	}
+	return inboxPath
 }
 
 // inboxFilter reads ?repo=. A name that is not valid is a page that is not
@@ -118,8 +282,8 @@ func inboxFilter(r *http.Request) (domain.RepoName, error) {
 	return name, nil
 }
 
-// inboxPage builds the page from the overview.
-func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, filter domain.RepoName) InboxPage {
+// inboxPage builds the page from the overview and the journal.
+func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.InboxJournal, filter domain.RepoName, rng int) InboxPage {
 	now := s.cfg.Now()
 	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Filter: filter.String()}
 	p.Running, p.RunsEnabled = ov.Counts.Running, ov.RunsEnabled
@@ -178,11 +342,26 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, filter d
 	case len(p.IssueRows) > 0:
 		p.IssueRows[0].Cursor = true
 	}
-	p.Repos = append(p.Repos, InboxRepoLink{Label: "all", Href: inboxHref(""), Current: filter.IsZero()})
+	p.Repos = append(p.Repos, InboxRepoLink{Label: "all", Href: inboxHref("", rng), Current: filter.IsZero()})
 	for _, r := range ov.Repos {
-		p.Repos = append(p.Repos, InboxRepoLink{Label: r.String(), Href: inboxHref(r.String()), Current: r == filter})
+		p.Repos = append(p.Repos, InboxRepoLink{Label: r.String(), Href: inboxHref(r.String(), rng), Current: r == filter})
 	}
+	p.Journal = s.journalView(j, filter, rng)
 	return p
+}
+
+// inboxData reads what the page shows: the overview and the journal of the
+// range.
+func (s *Server) inboxData(ctx context.Context, filter domain.RepoName, rng int) (InboxPage, error) {
+	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx), filter)
+	if err != nil {
+		return InboxPage{}, err
+	}
+	j, err := s.cfg.Inbox.Journal(ctx, principal(ctx), filter, journalRanges[rng].window)
+	if err != nil {
+		return InboxPage{}, err
+	}
+	return s.inboxPage(ctx, ov, j, filter, rng), nil
 }
 
 // pendingRow is the row of a pending issue: the texts as plain strings, the
@@ -217,7 +396,7 @@ func (s *Server) pendingRow(now time.Time, pi domain.PendingIssue, filter domain
 // repository filter.
 func pendingBack(r *http.Request) string {
 	if f, err := inboxFilter(r); err == nil {
-		return inboxHref(f.String())
+		return inboxHref(f.String(), 0)
 	}
 	return inboxPath
 }
@@ -273,7 +452,11 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 	if err != nil {
 		return nil, 0, err
 	}
-	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx), filter)
+	rng, err := inboxRange(r.URL.Query().Get("range"))
+	if err != nil {
+		return nil, 0, err
+	}
+	page, err := s.inboxData(ctx, filter, rng)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -283,12 +466,12 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
 	if s.cfg.Events != nil {
 		q := "view=inbox"
-		if !filter.IsZero() {
-			q += "&repo=" + url.QueryEscape(filter.String())
+		if rest := inboxQuery(filter.String(), rng); rest != "" {
+			q += "&" + rest
 		}
 		l.Live, l.LiveURL = true, liveURL("owner", q)
 	}
-	return Inbox(l, s.inboxPage(ctx, ov, filter)), http.StatusOK, nil
+	return Inbox(l, page), http.StatusOK, nil
 }
 
 // inboxCount is the number of open items the home button shows, and whether
@@ -305,13 +488,15 @@ func (s *Server) inboxCount(ctx context.Context) (n int, show bool) {
 	return ov.Counts.MergeRequests + ov.Counts.Issues, true
 }
 
-// inbox renders the fragments an event of a merge request, an issue or a repository changes
-// on the inbox page: the counters, the filter and the two lists.
+// inbox renders the fragments an event of a merge request, an issue, a
+// release, a push or a repository changes on the inbox page: the counters,
+// the filter, the lists and the journal.
 func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	switch we.Event.(type) {
 	case domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
 		domain.IssueEdited, domain.IssueOpened, domain.IssueResolved, domain.IssueClosed, domain.IssueReopened, domain.IssueCommented, domain.IssueSubmitted, domain.IssuePendingRemoved,
-		domain.RepoUpdated, domain.RepoDeleted, domain.RunUpdated, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged:
+		domain.RepoUpdated, domain.RepoDeleted, domain.RunUpdated, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged,
+		domain.JournalUpdated, domain.ReleasePublished:
 	default:
 		return nil, nil
 	}
@@ -322,13 +507,13 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 	if l.filter != "" {
 		filter, _ = domain.ParseRepoName(l.filter)
 	}
-	ov, err := l.s.cfg.Inbox.Overview(ctx, principal(ctx), filter)
+	rng, _ := inboxRange(l.rng) // checked when the stream was opened
+	p, err := l.s.inboxData(ctx, filter, rng)
 	if err != nil {
 		return nil, err
 	}
-	p := l.s.inboxPage(ctx, ov, filter)
 	var out []fragment
-	for _, c := range []templ.Component{InboxCounters(p), InboxRepos(p), InboxPending(p), InboxRuns(p), InboxDeps(p), InboxMRs(p), InboxIssues(p)} {
+	for _, c := range []templ.Component{InboxCounters(p), InboxRepos(p), InboxPending(p), InboxRuns(p), InboxDeps(p), InboxMRs(p), InboxIssues(p), InboxJournal(p)} {
 		f, err := renderFragment(ctx, inboxEvent, c)
 		if err != nil {
 			return nil, err

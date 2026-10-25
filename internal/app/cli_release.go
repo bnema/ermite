@@ -94,7 +94,7 @@ const releaseJSONHelp = "\nJSON fields: id, repo, tag, title, notes, draft, prer
 
 func newReleaseCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "release", Short: "Manage releases and their assets", Long: "Create and manage tagged releases. Reads follow repository visibility; writes need release:write.\nNeeds a server with the releases feature. Select releases by tag, numeric id, or latest (view/download)."}
-	cmd.AddCommand(newReleaseCreateCmd(env), newReleaseListCmd(env), newReleaseViewCmd(env), newReleaseEditCmd(env), newReleaseDeleteCmd(env), newReleaseUploadCmd(env), newReleaseDownloadCmd(env))
+	cmd.AddCommand(newReleaseCreateCmd(env), newReleaseListCmd(env), newReleaseViewCmd(env), newReleaseEditCmd(env), newReleaseDeleteCmd(env), newReleaseUploadCmd(env), newReleaseDownloadCmd(env), newReleasePendingCmd(env))
 	return cmd
 }
 func releaseCommand(env *cliEnv, use, short string, n int) *cobra.Command {

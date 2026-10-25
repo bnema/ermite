@@ -415,6 +415,134 @@ func (w *pathWalker) add(name []byte) bool {
 	return w.list.Add(w.chunk.String()[start:], w.maxPaths, w.maxBytes)
 }
 
+// tagCheckEvery is how many tags a scan reads between two looks at its
+// context.
+const tagCheckEvery = 256
+
+// tagDistance walks at most limit+1 commits from head with IDOnly (no object
+// read where the commit-graph has the commit), which also tells a missing
+// head, then peels each tag and keeps only the most recent tag of the
+// nearest commit met: the memory of the scan is bounded by the limit, not by
+// the number of tags. A tag is dated only when its commit is at least as
+// near as the best so far.
+//
+// ermite-git v0.1.1 Repo.Refs still collects the matching refs in a slice
+// before it yields the first one: until the library streams them, the refs
+// themselves take memory in proportion to the number of tags.
+func tagDistance(ctx context.Context, r *git.Repo, head domain.ObjectID, limit int) (domain.TagDistance, bool, error) {
+	start, err := git.ParseID(head.String())
+	if err != nil {
+		return domain.TagDistance{}, false, err
+	}
+	pos := make(map[git.ObjectID]int, min(limit+1, 1024))
+	for c, err := range r.Walk(ctx, start, git.WalkOptions{Limit: limit + 1, IDOnly: true}) {
+		if err != nil {
+			return domain.TagDistance{}, false, err
+		}
+		pos[c.ID] = len(pos)
+	}
+	var (
+		anyTag bool
+		best   = nearestTag{pos: -1}
+		read   int
+	)
+	for ref, err := range r.Refs(tagsPrefix) {
+		if err != nil {
+			return domain.TagDistance{}, false, fmt.Errorf("list tags: %w", err)
+		}
+		if read++; read%tagCheckEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return domain.TagDistance{}, false, fmt.Errorf("list tags: %w", err)
+			}
+		}
+		commit, err := r.PeelRef(ref)
+		switch {
+		case errors.Is(err, git.ErrWrongType):
+			continue // a tag of a tree or a blob
+		case errors.Is(err, git.ErrNotFound):
+			return domain.TagDistance{}, false, fmt.Errorf("ref %s points to a missing object: %v", ref.Name, err)
+		case err != nil:
+			return domain.TagDistance{}, false, fmt.Errorf("follow %s: %w", ref.Name, err)
+		}
+		anyTag = true
+		if p, ok := pos[commit]; ok {
+			if err := best.offer(r, ref, commit, p); err != nil {
+				return domain.TagDistance{}, false, fmt.Errorf("date %s: %w", ref.Name, err)
+			}
+		}
+	}
+	if !anyTag {
+		return domain.TagDistance{}, false, nil
+	}
+	if best.pos < 0 {
+		return domain.TagDistance{Commits: min(len(pos), limit), More: len(pos) > limit}, true, nil
+	}
+	cid, err := domainID(best.commit)
+	if err != nil {
+		return domain.TagDistance{}, false, err
+	}
+	return domain.TagDistance{
+		Commits: best.pos,
+		Tag:     domain.TagInfo{Name: domain.ValidGitText(best.name), At: best.at, CommitID: cid},
+	}, true, nil
+}
+
+// nearestTag is the winner of a tag scan: the most recent tag of the nearest
+// commit offered so far. Tags are dated like `git for-each-ref
+// --sort=-creatordate`: an annotated tag by its tagger, a lightweight one by
+// the committer of the commit; of equal dates, the first offered wins.
+type nearestTag struct {
+	pos    int // distance from the head; -1 before the first offer
+	commit git.ObjectID
+	name   string // without tagsPrefix
+	at     time.Time
+
+	// committed is the committer time of commit, read once.
+	committed    int64
+	hasCommitted bool
+}
+
+// offer weighs ref, a tag of commit at distance p from the head: a farther
+// commit loses without a read, a nearer one starts over.
+func (n *nearestTag) offer(r *git.Repo, ref git.Ref, commit git.ObjectID, p int) error {
+	if n.pos >= 0 && p > n.pos {
+		return nil
+	}
+	if n.pos < 0 || p < n.pos {
+		*n = nearestTag{pos: p, commit: commit}
+	}
+	at, err := n.date(r, ref)
+	if err != nil {
+		return err
+	}
+	if n.name == "" || at.After(n.at) {
+		n.name, n.at = ref.Name[len(tagsPrefix):], at
+	}
+	return nil
+}
+
+func (n *nearestTag) date(r *git.Repo, ref git.Ref) (time.Time, error) {
+	typ, _, err := r.ObjectHeader(ref.ID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if typ == git.TypeTag {
+		var t git.Tag
+		if err := r.ReadTag(ref.ID, &t); err != nil {
+			return time.Time{}, err
+		}
+		return time.Unix(t.Tagger.Time, 0).UTC(), nil
+	}
+	if !n.hasCommitted {
+		var c git.Commit
+		if err := r.ReadCommit(n.commit, &c); err != nil {
+			return time.Time{}, err
+		}
+		n.committed, n.hasCommitted = c.Committer.Time, true
+	}
+	return time.Unix(n.committed, 0).UTC(), nil
+}
+
 // fillLastCommits sets the last commit of the first MaxLastCommitEntries
 // entries with one walk.
 //

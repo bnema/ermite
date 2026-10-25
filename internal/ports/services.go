@@ -222,6 +222,26 @@ type InboxService interface {
 	// Overview needs owner rights and answers domain.ErrNotFound to anyone
 	// else. The filter, when not zero, restricts the lists to that repository.
 	Overview(ctx context.Context, p domain.Principal, filter domain.RepoName) (InboxOverview, error)
+	// Journal is the activity of the window that ends now, newest first, and
+	// the repositories whose default branch is ahead of their nearest tag.
+	// Owner rights as for Overview; the filter, when not zero, restricts both.
+	Journal(ctx context.Context, p domain.Principal, filter domain.RepoName, window time.Duration) (InboxJournal, error)
+}
+
+// JournalService is the activity journal and the unreleased commits as API
+// clients read them. Callers need owner rights or the journal:read scope
+// (domain.ErrUnauthenticated for anonymous callers, domain.ErrForbidden for
+// the others); a token limited to repositories sees only theirs, and a repo
+// outside them is domain.ErrNotFound. *usecase.Inbox implements it.
+type JournalService interface {
+	// ListActivity returns a page of the entries at or after q.Since, newest
+	// first, filtered as Inbox.Journal filters them. A zero or future Since,
+	// a negative page size, an unknown kind or a page token that the server
+	// did not hand out is invalid.
+	ListActivity(ctx context.Context, p domain.Principal, q ActivityQuery) (ActivityPage, error)
+	// ListUnreleased returns the non-archived repositories (repo only, when
+	// not zero) whose default branch is ahead of its nearest tag, by name.
+	ListUnreleased(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]UnreleasedRepo, error)
 }
 
 // SigningKeyService tells which key signs the commits of the forge.

@@ -280,8 +280,46 @@
     & .since { align-self: flex-start; max-width: 100%; }
   }
 
+  /* the inbox activity: a heading with the range toggle, warnings as lines,
+     then a bare table (no box: hairlines between rows only) */
+  .journal {
+    & .journal-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s1) var(--s4); }
+    & .journal-head .rule-h { margin-block-end: 0; }
+    /* the count of the heading: plain muted figures, not a pill */
+    & .journal-count { font-size: var(--fs-s); font-weight: 400; color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+    & .journal-range { display: inline-flex; gap: var(--s2); font-size: var(--fs-s); }
+    & .journal-range a { color: var(--ink-dim); text-decoration: none; }
+    & .journal-range a:hover { color: var(--ink-hi); }
+    & .journal-range a[aria-current] { color: var(--ink-hi); font-weight: 700; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
+    & .unreleased { margin: var(--s3) 0 0; font-size: var(--fs-s); display: grid; gap: var(--s1); }
+    & .unreleased li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); }
+    & .unreleased a { text-decoration: none; }
+    & .unreleased a:hover { text-decoration: underline; }
+    & .u-mark { color: var(--red); }
+    & .u-repo { color: var(--ink-hi); font-weight: 600; }
+    & .u-tag, & .j-ref { font-family: var(--mono); font-size: var(--fs-s); }
+    & .journal-more { margin-top: var(--s2); font-size: var(--fs-s); }
+  }
+  .list.journal-list {
+    margin-top: var(--s3); background: none; border: 0; border-radius: 0;
+    font-variant-numeric: tabular-nums;
+    & th { height: 32px; padding-inline: 0 var(--s4); text-align: left; background: none; }
+    & td { height: 36px; padding-inline: 0 var(--s4); }
+    & th:last-child, & td:last-child { padding-inline-end: 0; }
+    & tbody tr:first-child td { border-top: 1px solid var(--border); }
+    & tbody tr:hover { background: none; }
+    & .c-repo a { color: var(--ink); }
+    & .c-main a { color: var(--ink-hi); }
+    & .c-main a:hover { text-decoration: underline; }
+    & .j-ref { color: var(--ink-dim); }
+    & .j-kind { font-size: var(--fs-xs); color: var(--ink-dim); }
+    & tr:is([data-kind="mr_merged"], [data-kind="release_published"], [data-kind="tag_created"]) .j-kind { color: var(--teal); }
+    & tr:is([data-kind="mr_closed"], [data-kind="tag_deleted"]) .j-kind { color: var(--red); }
+  }
+
   @media (max-width: 700px) {
-    .list.mrs .c-who { display: none; }
+    .list.mrs .c-who, .list.journal-list .c-who { display: none; }
+    .list.journal-list .c-main { white-space: normal; overflow-wrap: anywhere; padding-block: var(--s2); }
   }
 }
 

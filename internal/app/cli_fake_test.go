@@ -36,6 +36,8 @@ type fakeAPI struct {
 	ermiteconnect.UnimplementedRunServiceHandler
 	ermiteconnect.UnimplementedTrustedKeyServiceHandler
 	ermiteconnect.UnimplementedDepsServiceHandler
+	ermiteconnect.UnimplementedJournalServiceHandler
+	ermiteconnect.UnimplementedReleaseServiceHandler
 
 	runners []*ermite.Runner // ListRunners answer; nil means one default runner
 
@@ -88,6 +90,16 @@ type fakeAPI struct {
 	openDeps   func(*ermite.OpenDependencyUpdatesRequest) (*ermite.OpenDependencyUpdatesResponse, error)
 	ignoreDeps func(*ermite.IgnoreDependencyUpdatesRequest) (*ermite.IgnoreDependencyUpdatesResponse, error)
 	snoozeDeps func(*ermite.SnoozeDependencyUpdatesRequest) (*ermite.SnoozeDependencyUpdatesResponse, error)
+
+	listActivity   func(*ermite.ListActivityRequest) (*ermite.ListActivityResponse, error)
+	listUnreleased func(*ermite.ListUnreleasedRequest) (*ermite.ListUnreleasedResponse, error)
+}
+
+func (f *fakeAPI) ListActivity(_ context.Context, r *connect.Request[ermite.ListActivityRequest]) (*connect.Response[ermite.ListActivityResponse], error) {
+	return respond(f, "ListActivity", r, f.listActivity)
+}
+func (f *fakeAPI) ListUnreleased(_ context.Context, r *connect.Request[ermite.ListUnreleasedRequest]) (*connect.Response[ermite.ListUnreleasedResponse], error) {
+	return respond(f, "ListUnreleased", r, f.listUnreleased)
 }
 
 func (f *fakeAPI) record(name string, h http.Header, req any) {
@@ -244,6 +256,10 @@ func (f *fakeAPI) serve(t *testing.T) string {
 	p, h = ermiteconnect.NewTrustedKeyServiceHandler(f)
 	mount(p, h)
 	p, h = ermiteconnect.NewDepsServiceHandler(f)
+	mount(p, h)
+	p, h = ermiteconnect.NewJournalServiceHandler(f)
+	mount(p, h)
+	p, h = ermiteconnect.NewReleaseServiceHandler(f)
 	mount(p, h)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

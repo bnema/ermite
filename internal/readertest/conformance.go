@@ -53,6 +53,7 @@ func Conformance(t *testing.T, mk Maker) {
 		{"GetTreeRefusesAGitlinkToATree", testGetTreeRefusesAGitlinkToATree},
 		{"ListPaths", testListPaths},
 		{"CountCommitsAndLatestTag", testCountCommitsAndLatestTag},
+		{"TagDistance", testTagDistance},
 	} {
 		t.Run(tc.name, func(t *testing.T) { tc.fn(t, mk) })
 	}
@@ -179,6 +180,88 @@ func testCountCommitsAndLatestTag(t *testing.T, mk Maker) {
 	assert.True(t, tag.CommitID.IsZero(), "a tag of a tree has no commit")
 
 	_, _, err = g.LatestTag(ctx, RepoName(t, "nope"))
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func testTagDistance(t *testing.T, mk Maker) {
+	ctx := context.Background()
+	g, data := mk(t)
+	f := NewFixture(t, data, "distance")
+	base := f.Commit("base")
+
+	_, ok, err := g.TagDistance(ctx, f.Name, MustID(t, base), 10)
+	require.NoError(t, err)
+	assert.False(t, ok, "no tag")
+	missing := MustID(t, strings.Repeat("ab", 20))
+	_, _, err = g.TagDistance(ctx, f.Name, missing, 10)
+	assert.ErrorIs(t, err, domain.ErrNotFound, "a missing head, without any tag")
+
+	// Tags that lead to no commit: annotated and lightweight, of a tree and
+	// of a blob. git gives the lightweight ones no date.
+	blob := f.WriteObject("blob", "a blob\n")
+	f.Git("tag", "-a", "-m", "tree", "tree-tag", base+"^{tree}")
+	f.Git("tag", "light-tree", base+"^{tree}")
+	f.Git("tag", "light-blob", blob)
+	_, ok, err = g.TagDistance(ctx, f.Name, MustID(t, base), 10)
+	require.NoError(t, err)
+	assert.False(t, ok, "a tag of a tree or a blob leads to no commit")
+	_, _, err = g.TagDistance(ctx, f.Name, missing, 10)
+	assert.ErrorIs(t, err, domain.ErrNotFound, "a missing head, with tags of no commit")
+
+	// Two tags on the base: the annotated one made later wins.
+	f.Git("tag", "light", base)
+	f.When = f.When.Add(time.Hour)
+	f.Git("tag", "-a", "-m", "v1", "v1.0.0", base)
+	var ids []string
+	for i := range 3 {
+		ids = append(ids, f.Commit("after"+itoa(i)))
+	}
+	head := MustID(t, ids[2])
+	d, ok, err := g.TagDistance(ctx, f.Name, head, 10)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 3, d.Commits)
+	assert.False(t, d.More)
+	assert.Equal(t, "v1.0.0", d.Tag.Name)
+	assert.Equal(t, base, d.Tag.CommitID.String())
+	assert.True(t, d.Tag.At.Equal(f.When.Add(-3*time.Minute)), "the tagger date: %v", d.Tag.At)
+	assert.True(t, d.Ahead())
+
+	// The limit stops the walk.
+	d, ok, err = g.TagDistance(ctx, f.Name, head, 2)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, 2, d.Commits)
+	assert.True(t, d.More)
+	assert.Empty(t, d.Tag.Name)
+
+	// A tag on the head itself: nothing after it.
+	f.Git("tag", "v1.1.0", ids[2])
+	d, ok, err = g.TagDistance(ctx, f.Name, head, 10)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Zero(t, d.Commits)
+	assert.False(t, d.Ahead())
+	assert.Equal(t, "v1.1.0", d.Tag.Name)
+
+	// From an older commit, the nearer tag is the base again.
+	d, _, err = g.TagDistance(ctx, f.Name, MustID(t, ids[0]), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, d.Commits)
+	assert.Equal(t, "v1.0.0", d.Tag.Name)
+
+	// Lightweight tags of one commit share its date: the first by name wins.
+	f.Git("tag", "zz-light", ids[1])
+	f.Git("tag", "mm-light", ids[1])
+	d, _, err = g.TagDistance(ctx, f.Name, MustID(t, ids[1]), 10)
+	require.NoError(t, err)
+	assert.Zero(t, d.Commits)
+	assert.Equal(t, "mm-light", d.Tag.Name)
+	assert.Equal(t, ids[1], d.Tag.CommitID.String())
+
+	_, _, err = g.TagDistance(ctx, f.Name, MustID(t, strings.Repeat("ab", 20)), 10)
+	assert.ErrorIs(t, err, domain.ErrNotFound, "a missing head")
+	_, _, err = g.TagDistance(ctx, RepoName(t, "nope"), head, 10)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
 

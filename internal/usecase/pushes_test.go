@@ -326,6 +326,19 @@ func TestPushesRecord(t *testing.T) {
 		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
 	})
 
+	t.Run("tells the refs observer before publishing", func(t *testing.T) {
+		t.Parallel()
+		f := newPushFixture(t)
+		f.sched.EXPECT().Schedule(ctx, n).Return().Once()
+		refs := mocks.NewRefsObserver(t)
+		told := refs.EXPECT().RefsChanged(n).Return().Once()
+		f.pushes.WithRefsObserver(refs)
+		expectPushMutation(t, f.meta, domain.Repo{Name: n}, nil)
+		f.git.EXPECT().DefaultBranch(ctx, n).Return("main", true, nil)
+		f.bus.EXPECT().Publish(ctx, mock.Anything).Return().NotBefore(told)
+		require.NoError(t, f.pushes.Record(ctx, p, n, ups))
+	})
+
 	t.Run("pushed_at preserves a later push", func(t *testing.T) {
 		t.Parallel()
 		f := newPushFixture(t)

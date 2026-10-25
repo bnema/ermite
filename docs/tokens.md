@@ -11,7 +11,7 @@ The secret is printed once. Presets and `--scope` add up (`issue:write` lets a t
 | Preset | For |
 |---|---|
 | `cli` | every scope, the owner's daily use |
-| `agent` | `repo:write`, `mr:write` |
+| `agent` | `repo:write`, `mr:write`; add `--scope journal:read` to let an agent read the activity journal |
 | `ci` | `repo:read` |
 | `runner` | `runner:register`: a runner host. It can read the code and secrets of every repository, so give it only to runners you operate |
 
@@ -22,6 +22,15 @@ it is included in the `cli` preset, not `agent` or `ci`. Private repository read
 also need `repo:read`. Branch-limited tokens cannot write releases, even with
 that scope. CI jobs publish using their job token with `contents: write` under
 `permissions`, not a stored-token scope. See [releases](releases.md).
+
+## Activity journal
+
+`journal:read` lets a token read the activity journal and the unreleased commits
+(`ermite journal`, `ermite release pending`) of every repository, private ones
+included; with `--repo`, only of those repositories. It grants no other read.
+The `cli` preset includes it. Owner rights need every scope, `journal:read`
+included: on upgrade, the server adds it to stored tokens that held every other
+scope with no repository or branch limit, so they keep those rights.
 
 ## Branch-limited tokens
 

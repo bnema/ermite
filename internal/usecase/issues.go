@@ -32,6 +32,8 @@ type Issues struct {
 	mrs   ports.MergeRequestStore
 	bus   ports.EventBus
 	clock ports.Clock
+	// journal is nil without an activity journal.
+	journal ports.JournalRecorder
 }
 
 var (
@@ -48,11 +50,13 @@ type IssuesConfig struct {
 	MergeRequests ports.MergeRequestStore
 	Bus           ports.EventBus
 	Clock         ports.Clock
+	// Journal records the opened and closed issues. Optional.
+	Journal ports.JournalRecorder
 }
 
 // NewIssues builds the issue use cases.
 func NewIssues(cfg IssuesConfig) *Issues {
-	return &Issues{links: cfg.Links, meta: cfg.Meta, store: cfg.Store, mrs: cfg.MergeRequests, bus: cfg.Bus, clock: cfg.Clock}
+	return &Issues{links: cfg.Links, meta: cfg.Meta, store: cfg.Store, mrs: cfg.MergeRequests, bus: cfg.Bus, clock: cfg.Clock, journal: cfg.Journal}
 }
 
 // enabled looks the repository up and hides it when issues are off.
@@ -139,6 +143,7 @@ func (i *Issues) Create(ctx context.Context, p domain.Principal, name domain.Rep
 	log.Info().Str("repo", name.String()).Int64("number", issue.Number).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue opened")
 	recordActivity(ctx, i.meta, repo.Name, now)
+	record(ctx, i.journal, journalIssue(domain.JournalIssueOpened, domain.AuthorName(p), issue, now))
 	i.bus.Publish(ctx, domain.IssueOpened{Issue: issue, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	return issue, nil
 }
@@ -321,6 +326,9 @@ func (i *Issues) transition(ctx context.Context, p domain.Principal, name domain
 		log.Info().Str("repo", name.String()).Int64("number", number).
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("issue " + verb + "d")
 		recordActivity(ctx, i.meta, repo.Name, issue.UpdatedAt)
+		if to != domain.IssueStateOpen {
+			record(ctx, i.journal, journalIssue(domain.JournalIssueClosed, domain.AuthorName(p), issue, issue.UpdatedAt))
+		}
 		switch to {
 		case domain.IssueStateOpen:
 			i.bus.Publish(ctx, domain.IssueReopened{Issue: issue, At: issue.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})

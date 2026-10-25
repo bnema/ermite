@@ -32,7 +32,7 @@ func newRootCmdWith(env *cliEnv) *cobra.Command {
 		newServeCmd(), newHookCmd(),
 		newMirrorCmd(env), newVersionCmd(env), newRepoCmd(env), newTokenCmd(env), newWatchCmd(env),
 		newMRCmd(env), newIssueCmd(env), newReleaseCmd(env), newSigningKeyCmd(env), newWebCmd(env), newConfigCmd(env),
-		newRunCmd(env), newWorkflowCmd(env), newRunnerCmd(env), newSecretCmd(env), newVariableCmd(env), newEnvironmentCmd(env), newOIDCCmd(env), newDepsCmd(env),
+		newRunCmd(env), newWorkflowCmd(env), newRunnerCmd(env), newSecretCmd(env), newVariableCmd(env), newEnvironmentCmd(env), newOIDCCmd(env), newDepsCmd(env), newJournalCmd(env),
 	)
 	return root
 }

@@ -45,6 +45,7 @@ Scopes:
 | `mr:force-merge` | bypass failing or unfinished checks with `--ignore-checks` |
 | `issue:write` | open, comment on, close, resolve and reopen issues |
 | `release:write` | create, edit and delete releases and their assets; included in `cli`; refused for branch-limited tokens |
+| `journal:read` | read the activity journal and unreleased commits (`journal`, `release pending`) of every repository, or of the `--repo` list; included in `cli`, not `agent` |
 | `token:admin` | create, list and revoke tokens |
 | `ci:write`, `secrets:write`, `runner:register` | reserved for CI |
 
@@ -120,8 +121,13 @@ token, or a CI job's `contents: write` permission. Select a release by tag or id
 | `release delete <repo> <tag\|id> [--yes]` | leaves the Git tag |
 | `release upload <repo> <tag\|id> <file[#label]>… [--clobber] [--content-type TYPE]` | clobber replaces same-named assets |
 | `release download <repo> <tag\|id\|latest> [--name N]… [--pattern GLOB]… [--dir D]` | refuses existing local files |
+| `release pending [repo] [--json]` | repositories with commits after their nearest tag; needs owner rights or `journal:read` |
 
 See [publishing and storage](../../docs/releases.md).
+
+## Activity journal
+
+`ermite journal [--since 24h|7d|2026-10-01|<RFC 3339>] [--repo R] [--kind K,…] [--limit N] [--json]` lists merge requests and issues opened/merged/closed, tags, releases and default-branch pushes, newest first (kept 30 days). Kinds: `mr_opened`, `mr_merged`, `mr_closed`, `issue_opened`, `issue_closed`, `tag_created`, `tag_deleted`, `release_published`, `push`. JSON: `id`, `kind`, `repo`, `at`, `actor`, `number`, `ref`, `title`, `commit_count`, `commits_capped`, `commit`, `summary`. Needs the `journal` feature and owner rights or `journal:read`. Use it to catch up on what changed since your last session (`--since` your last run).
 
 ## Workflows
 

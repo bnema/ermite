@@ -18,7 +18,10 @@ import (
 )
 
 // DefaultEventBuffer is the number of events the Events use case remembers.
-const DefaultEventBuffer = 1024
+// The owner-only signals share the ring with the public events: a push to a
+// default branch buffers a PushEvent and a JournalUpdated, so the ring holds
+// about 1024 such pushes for the home and repository streams.
+const DefaultEventBuffer = 2048
 
 // Limits of the watchers.
 const (
@@ -214,7 +217,7 @@ func (e *Events) snapshot(ctx context.Context, ev domain.Event) bufferedEvent {
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
 	case domain.IssueCommented:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
-	case domain.IssueSubmitted, domain.IssuePendingRemoved, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged:
+	case domain.IssueSubmitted, domain.IssuePendingRemoved, domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.JournalUpdated:
 		return bufferedEvent{known: true} // owner topic only: no repository snapshot
 	case domain.CommentEdited:
 		return repoSnapshot(ev.Visibility, ev.CreatedAt)
@@ -537,7 +540,7 @@ func (e *Events) deliver(ctx context.Context, w *watch, be bufferedEvent, send f
 		return e.deliverOwnerOnly(ctx, w, ev.Repo, out, send)
 	case domain.IssuePendingRemoved:
 		return e.deliverOwnerOnly(ctx, w, ev.Repo, out, send)
-	case domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged:
+	case domain.DependencyUpdatesFound, domain.DependencyUpdatesChanged, domain.JournalUpdated:
 		// Owner topic only, like IssueSubmitted, but not tied to the issue tracker.
 		if !w.owner {
 			return nil
@@ -708,12 +711,13 @@ func isRepoLifecycleEvent(ev domain.Event) bool {
 	return false
 }
 
-// isItemEvent reports whether ev changes an inbox item, including CI runs.
+// isItemEvent reports whether ev changes an inbox item, including CI runs and
+// the journal (a published release).
 func isItemEvent(ev domain.Event) bool {
 	switch ev.(type) {
 	case domain.IssueReferenced:
 		return false // back-reference refreshes do not change the inbox
-	case domain.RunUpdated, domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
+	case domain.RunUpdated, domain.ReleasePublished, domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed,
 		domain.MergeRequestAutoMergeEnabled, domain.MergeRequestAutoMergeCancelled,
 		domain.MergeRequestReady, domain.MergeRequestMergeability, domain.CommentAdded,
 		domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved:

@@ -114,7 +114,7 @@ func parseTopic(topic string) (repo string, ok bool) {
 }
 
 // ownerStreamOK tells whether the request may follow the owner topic: the
-// signed-in owner, with the inbox view and a valid repository filter, on a
+// signed-in owner, with the inbox view, a valid repository filter and range, on a
 // server that has the inbox.
 func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
 	if s.cfg.Inbox == nil || !SignedIn(ctx) || q.Get("view") != "inbox" {
@@ -124,6 +124,9 @@ func (s *Server) ownerStreamOK(ctx context.Context, q url.Values) bool {
 		if _, err := domain.ParseRepoName(f); err != nil {
 			return false
 		}
+	}
+	if _, err := inboxRange(q.Get("range")); err != nil {
+		return false
 	}
 	return true
 }
@@ -270,7 +273,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 	st := &liveStream{s: s, repo: repo, view: q.Get("view"), state: q.Get("state"), ref: q.Get("ref"), head: q.Get("head"), n: q.Get("n"), target: q.Get("target"), job: q.Get("job"), sha: sha}
 	if topic == ownerTopic {
-		st.filter = q.Get("repo")
+		st.filter, st.rng = q.Get("repo"), q.Get("range")
 	}
 	handle := func(m recvd) bool {
 		if m.err != nil {

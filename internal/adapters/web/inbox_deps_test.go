@@ -33,6 +33,7 @@ func depsOverview(t testing.TB) ports.InboxOverview {
 
 func depsServer(t *testing.T, inbox ports.InboxService, deps ports.DepsService) *Server {
 	t.Helper()
+	emptyJournal(inbox)
 	return newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: inbox, Deps: deps,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},

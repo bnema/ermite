@@ -16,8 +16,88 @@ templ Inbox(l Layout, p InboxPage) {
 			@InboxDeps(p)
 			@InboxMRs(p)
 			@InboxIssues(p)
+			@InboxJournal(p)
 		</div>
 	}
+}
+
+// InboxJournal is the activity of the range, newest first: the repositories
+// whose default branch is ahead of their nearest tag, then one row per entry.
+// Plain lines and a plain table, like the other sections.
+templ InboxJournal(p InboxPage) {
+	{{ j := p.Journal }}
+	<section id="inbox-journal" class="journal" aria-labelledby="inbox-journal-h">
+		<div class="journal-head">
+			<h2 id="inbox-journal-h" class="rule-h"><span>Activity</span><span class="journal-count">{ itoa(len(j.Rows)) }</span></h2>
+			<nav class="journal-range" aria-label="Activity range">
+				for i, r := range j.Ranges {
+					<a
+						href={ templ.SafeURL(r.Href) }
+						if r.Current {
+							aria-current="page"
+						}
+					>{ r.Label }</a>
+					if i < len(j.Ranges)-1 {
+						<span class="mute" aria-hidden="true">·</span>
+					}
+				}
+			</nav>
+		</div>
+		if len(j.Unreleased) > 0 {
+			<ul class="unreleased" aria-label="Unreleased commits">
+				for _, u := range j.Unreleased {
+					<li>
+						<span class="u-mark" aria-hidden="true">⚠</span>
+						<a class="u-repo" href={ templ.SafeURL(u.RepoHref) }>{ u.Repo }</a>
+						<span class="mute">—</span>
+						<a class="num" href={ templ.SafeURL(u.CommitsHref) }>{ u.Commits }</a>
+						if u.Tag != "" {
+							<span class="dim">since</span> <a class="u-tag" href={ templ.SafeURL(u.TagHref) }>{ u.Tag }</a>
+							if u.WhenAt != "" {
+								<span class="mute">·</span> <time class="dim" datetime={ u.WhenAt } title={ u.Title }>{ u.When }</time>
+							}
+						} else {
+							<span class="dim">since the last tag</span>
+						}
+					</li>
+				}
+			</ul>
+		}
+		if len(j.Rows) > 0 {
+			<table class="list journal-list" aria-label="Activity">
+				<thead><tr><th>When</th><th>Repository</th><th>Type</th><th class="c-main">Detail</th><th class="c-who">Actor</th></tr></thead>
+				<tbody>
+					for _, r := range j.Rows {
+						<tr data-kind={ r.Kind }>
+							<td class="c-when nowrap dim">
+								if r.WhenAt != "" {
+									<time datetime={ r.WhenAt } title={ r.Title }>{ r.When }</time>
+								}
+							</td>
+							<td class="c-repo"><a href={ templ.SafeURL(r.RepoHref) }>{ r.Repo }</a></td>
+							<td class="c-kind"><span class="j-kind">{ r.Label }</span></td>
+							<td class="c-main">
+								if r.Href != "" {
+									<a href={ templ.SafeURL(r.Href) }><span class="j-ref">{ r.Ref }</span> { r.Text }</a>
+								} else {
+									<span class="j-ref">{ r.Ref }</span> { r.Text }
+								}
+								if r.Note != "" {
+									<span class="mute num">· { r.Note }</span>
+								}
+							</td>
+							<td class="c-who mute">{ r.Actor }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+			if j.Truncated {
+				<p class="mute journal-more">only the latest { itoa(len(j.Rows)) } entries are shown.</p>
+			}
+		} else {
+			<p class="lede dim">no activity in the last { j.RangeLabel }.</p>
+		}
+	</section>
 }
 
 templ InboxCounters(p InboxPage) {

@@ -193,6 +193,11 @@ type RepoReader interface {
 	// LatestTag is the most recently created tag (the commit date for a
 	// lightweight tag); ok is false when the repository has no tag.
 	LatestTag(ctx context.Context, repo domain.RepoName) (tag domain.TagInfo, ok bool, err error)
+	// TagDistance walks back from head, newest first, until a commit that a
+	// tag (refs/tags/*, peeled) points to, counting at most limit commits
+	// before it. ok is false when no tag of the repository leads to a commit.
+	// A missing head is domain.ErrNotFound.
+	TagDistance(ctx context.Context, repo domain.RepoName, head domain.ObjectID, limit int) (d domain.TagDistance, ok bool, err error)
 }
 
 // HTTPBackend tells how to run `git http-backend` for one request.
@@ -575,6 +580,44 @@ type IssueLinkStore interface {
 // Clock tells the time.
 type Clock interface {
 	Now() time.Time
+}
+
+// JournalStore keeps the owner's activity journal, ordered by time.
+// *kvstore.Journal implements it.
+type JournalStore interface {
+	// Append stores the entry. Entries of the same time keep the order of
+	// their appends, across restarts too.
+	Append(ctx context.Context, e domain.JournalEntry) error
+	// ListSince returns, newest first, at most limit of the entries at or
+	// after since, and older than the entry with ID before when it is not
+	// empty, that keep accepts (all when keep is nil); those of repo only when
+	// it is not zero. Truncated tells that more were accepted. One forward
+	// scan: the memory is bounded by limit, not by the range. Entries come
+	// back with their ID. A before that is not an ID is
+	// domain.ErrInvalidPageToken.
+	ListSince(ctx context.Context, since time.Time, before string, repo domain.RepoName, keep func(domain.JournalEntry) bool, limit int) (JournalList, error)
+	// Prune deletes the entries before the given time and returns how many.
+	Prune(ctx context.Context, before time.Time) (int, error)
+}
+
+// RefsObserver is told, synchronously and before the events of a push are
+// published, that refs of a repository moved: whatever it derived from them
+// is stale. *usecase.Inbox implements it (its tag warnings).
+type RefsObserver interface {
+	RefsChanged(repo domain.RepoName)
+}
+
+// JournalRecorder writes what the use cases do to the activity journal, before
+// they publish the event: a page refreshed by the event finds the entry. It
+// never fails the action: an entry that cannot be written is logged.
+// *usecase.Journal implements it.
+type JournalRecorder interface {
+	// Record appends the entry; a zero At is now.
+	Record(ctx context.Context, e domain.JournalEntry)
+	// OnPush records what an accepted push did: each tag created or deleted,
+	// and the commits it brought to the default branch. Other refs are not
+	// recorded. actor is who pushed, "" when unknown.
+	OnPush(ctx context.Context, actor string, repo domain.RepoName, updates []domain.RefUpdate)
 }
 
 // IssueLinkTrigger updates derived links without failing the primary operation.

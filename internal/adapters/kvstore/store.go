@@ -50,7 +50,11 @@ import (
 // them) and the Bernard records dpend/ (snooze, job and merge request state
 // included) and dign/ (an older build would not remove them with their
 // repository), plus the global dseen/.
-const SchemaVersion = 9
+// Version 10 adds journal:read: unrestricted tokens holding all thirteen
+// previous scopes get it, so they keep the owner rights (see
+// upgradeJournalTokens); an older build would drop the unknown scope and
+// strip those rights again.
+const SchemaVersion = 10
 
 const schemaKey = "meta/schema"
 
@@ -160,6 +164,10 @@ func (s *Store) checkSchema(ctx context.Context) error {
 				target = 4
 			case sv.GetVersion() == 4:
 				target = 5
+			case sv.GetVersion() == 5:
+				// Its own batch: the journal:read upgrade must read the
+				// tokens with release:write already granted.
+				target = 6
 			}
 			var b kv.Batch
 			b.RequireVersion(key, item.Version)
@@ -180,6 +188,11 @@ func (s *Store) checkSchema(ctx context.Context) error {
 			}
 			if target == SchemaVersion && sv.GetVersion() < 8 {
 				if err := s.upgradeResolvedIssues(ctx, &b); err != nil {
+					return err
+				}
+			}
+			if sv.GetVersion() >= 6 {
+				if err := s.upgradeJournalTokens(ctx, &b); err != nil {
 					return err
 				}
 			}
@@ -251,6 +264,21 @@ func (s *Store) upgradeReleaseTokens(ctx context.Context, b *kv.Batch) error {
 	return s.upgradeTokenScopes(ctx, b, preReleaseScopes, []domain.Scope{domain.ScopeReleaseWrite})
 }
 
+// preJournalScopes are the thirteen scopes of schemas 6 to 9, before journal:read.
+var preJournalScopes = append(slices.Clone(preReleaseScopes), domain.ScopeReleaseWrite)
+
+// upgradeJournalTokens adds to b the schema 10 upgrade of the tokens: a token
+// that holds all of preJournalScopes, limited to no repository and no branch
+// prefix, had the owner rights, which AllScopes also needs journal:read for,
+// so it gets it. Restricted or partial tokens are left as they are.
+func (s *Store) upgradeJournalTokens(ctx context.Context, b *kv.Batch) error {
+	return s.upgradeTokenScopes(ctx, b, preJournalScopes, []domain.Scope{domain.ScopeJournalRead})
+}
+
+// upgradeTokenScopes adds addedScopes to every unrestricted token that holds
+// all of required. Extra scopes, even unknown ones, do not exclude a token:
+// HasOwnerRights only asks for all the scopes, so such a superset was an
+// owner token before the upgrade and must stay one after it.
 func (s *Store) upgradeTokenScopes(ctx context.Context, b *kv.Batch, required, addedScopes []domain.Scope) error {
 	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte(tokenPrefix)) {
 		pb := &storagepb.Token{}

@@ -47,16 +47,19 @@ const (
 	ScopeIssueWrite Scope = "issue:write"
 	// ScopeReleaseWrite creates, edits and deletes releases and their assets.
 	ScopeReleaseWrite Scope = "release:write"
+	// ScopeJournalRead reads the activity journal and the unreleased commits
+	// of every repository within the token's list, private ones included.
+	ScopeJournalRead Scope = "journal:read"
 )
 
-// AllScopes returns the thirteen scopes in a stable order.
+// AllScopes returns the fourteen scopes in a stable order.
 func AllScopes() []Scope {
 	return []Scope{
 		ScopeRepoRead, ScopeRepoWrite, ScopeRepoAdmin,
 		ScopeMRWrite, ScopeMRMerge, ScopeMRForceMerge, ScopeMRReview,
 		ScopeCIWrite, ScopeSecretsWrite, ScopeRunnerRegister,
 		ScopeTokenAdmin,
-		ScopeIssueWrite, ScopeReleaseWrite,
+		ScopeIssueWrite, ScopeReleaseWrite, ScopeJournalRead,
 	}
 }
 

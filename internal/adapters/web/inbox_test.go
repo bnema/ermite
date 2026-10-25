@@ -40,8 +40,17 @@ func inboxOverview(t testing.TB) ports.InboxOverview {
 	return ov
 }
 
+// emptyJournal lets the inbox read an empty journal: the tests of the other
+// sections do not look at it.
+func emptyJournal(inbox ports.InboxService) {
+	if m, ok := inbox.(*mocks.InboxService); ok {
+		m.EXPECT().Journal(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.InboxJournal{}, nil).Maybe()
+	}
+}
+
 func inboxServer(t *testing.T, inbox ports.InboxService) *Server {
 	t.Helper()
+	emptyJournal(inbox)
 	return newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: inbox,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -181,7 +190,7 @@ func TestInboxLiveFragments(t *testing.T) {
 	ls := &liveStream{s: srv, view: "inbox"}
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
 	require.NoError(t, err)
-	require.Len(t, frags, 7)
+	require.Len(t, frags, 8)
 	assert.Contains(t, frags[0].html, `id="inbox-counts"`)
 	assert.Contains(t, frags[1].html, `id="inbox-repos"`)
 	assert.Contains(t, frags[2].html, `id="inbox-pending"`)
@@ -189,10 +198,11 @@ func TestInboxLiveFragments(t *testing.T) {
 	assert.Contains(t, frags[4].html, `id="inbox-deps"`)
 	assert.Contains(t, frags[5].html, `id="inbox-mrs"`)
 	assert.Contains(t, frags[6].html, `id="inbox-issues"`)
+	assert.Contains(t, frags[7].html, `id="inbox-journal"`, "the journal comes last")
 
 	resolved, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.IssueResolved{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
 	require.NoError(t, err)
-	require.Len(t, resolved, 7)
+	require.Len(t, resolved, 8)
 	assert.Contains(t, resolved[6].html, `id="inbox-issues"`)
 
 	none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "beta")}})
@@ -247,6 +257,7 @@ func TestInboxStreamEndsWhenTheSessionEnds(t *testing.T) {
 	sess, ended := newRevocable(t, "tok")
 	svc := mocks.NewInboxService(t)
 	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(inboxOverview(t), nil).Maybe()
+	emptyJournal(svc)
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t), Events: f.service(t), Inbox: svc,
 		Heartbeat: time.Hour, Sessions: sess, Limiter: &countingLimiter{},
@@ -306,7 +317,7 @@ func TestInboxRefreshesOnRepoEvents(t *testing.T) {
 			ls := &liveStream{s: srv, view: "inbox"}
 			frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
 			require.NoError(t, err)
-			require.Len(t, frags, 7)
+			require.Len(t, frags, 8)
 			all := ""
 			for _, f := range frags {
 				all += f.html
@@ -331,6 +342,7 @@ func inboxOverviewWithHead(t testing.TB, head string) ports.InboxOverview {
 
 func inboxChecksServer(t *testing.T, svc ports.InboxService, runs ports.RunService) *Server {
 	t.Helper()
+	emptyJournal(svc)
 	return newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc, Runs: runs,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -356,7 +368,7 @@ func TestInboxMRRowsShowTheCIIcon(t *testing.T) {
 
 	frags, err := (&liveStream{s: srv, view: "inbox"}).render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.IssueOpened{Issue: domain.Issue{Repo: repoName(t, "beta"), Number: 7}}})
 	require.NoError(t, err)
-	require.Len(t, frags, 7)
+	require.Len(t, frags, 8)
 	assert.Contains(t, frags[5].html, `id="inbox-mrs"`)
 	assert.Contains(t, frags[5].html, `class="ck-sum"`)
 	assert.NotContains(t, frags[6].html, "ck-sum", "issue rows have no CI icon")

@@ -270,9 +270,10 @@ func TestWebEventsResumeAndGap(t *testing.T) {
 	assert.Equal(t, "home-list", g.next(t, watchWait).name, "the oldest buffered event follows")
 }
 
-// A small ring: the id that fell out of it is a gap.
+// A small ring: the id that fell out of it is a gap. The ring holds three
+// pushes to the default branch.
 func TestWebEventsGapAfterOverflow(t *testing.T) {
-	h := newHarness(t, harnessOpts{eventBuffer: 3})
+	h := newHarness(t, harnessOpts{eventBuffer: 3 * eventsPerDefaultPush})
 	h.seed("pub", domain.VisibilityPublic)
 	s := h.sse("topic=home", "")
 	wt := h.workTree("main", "a.txt")

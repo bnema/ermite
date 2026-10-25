@@ -128,6 +128,8 @@ func BenchmarkRepoReader(b *testing.B) {
 	// pass, as a long-lived server would have.
 	require.NoError(b, drain(a, domain.Revision{}, path(t.file)))
 	time.Sleep(2100 * time.Millisecond)
+	headID, err := domain.ParseObjectID(t.head)
+	require.NoError(b, err)
 	type method struct {
 		name string
 		run  func(r ports.RepoReader) error
@@ -183,6 +185,10 @@ func BenchmarkRepoReader(b *testing.B) {
 		}},
 		{"ListCommits/dirpath", func(r ports.RepoReader) (err error) {
 			_, err = r.ListCommits(ctx, t.name, ports.CommitQuery{Path: path(t.treeDir), Limit: 30})
+			return
+		}},
+		{"TagDistance", func(r ports.RepoReader) (err error) {
+			_, _, err = r.TagDistance(ctx, t.name, headID, domain.MaxTagDistance)
 			return
 		}},
 	}

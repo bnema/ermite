@@ -136,6 +136,11 @@ package ermitegit
 //     (the bytes of the paths are kept in 32 KiB blocks, which is what brought
 //     the lazygit bytes under the CLI's: a single growing buffer lost them,
 //     699K against 433K). Routed.
+//   - TagDistance (the inbox: the commits since the nearest tag, one call per
+//     repository) peels the tags and walks with IDOnly from the commit-graph:
+//     on the fixture 1.5 ms 113K 158 against 11µs 5.1K 36 warm and 84µs
+//     21.7K 166 cold (ermite-git 0.1.1, same machine). Only its cold
+//     allocation count loses, as for ListRefs. Routed.
 func DefaultRoutes() Routes {
 	return Routes{
 		ListRefs:                 ErmiteGit,
@@ -149,5 +154,6 @@ func DefaultRoutes() Routes {
 		ListCommits:              ErmiteGit,
 		ListCommitsPath:          CLI,
 		ListPaths:                ErmiteGit,
+		TagDistance:              ErmiteGit,
 	}
 }

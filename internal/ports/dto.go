@@ -414,6 +414,62 @@ type LoginLink struct {
 	ExpiresAt time.Time
 }
 
+// MaxJournalEntries bounds the entries InboxService.Journal returns.
+const MaxJournalEntries = 500
+
+// JournalList is what JournalStore.ListSince returns: the newest entries
+// kept, newest first, and whether the range held more of them.
+type JournalList struct {
+	Entries   []domain.JournalEntry
+	Truncated bool
+}
+
+// InboxJournal is the recent activity of the repositories and what was not
+// released yet.
+type InboxJournal struct {
+	// Entries are newest first, at most MaxJournalEntries; Truncated tells
+	// that the window held more.
+	Entries   []domain.JournalEntry
+	Truncated bool
+	// Unreleased are the repositories whose default branch has commits after
+	// its nearest tag, by name. Repositories without a tag are left out.
+	Unreleased []UnreleasedRepo
+}
+
+// UnreleasedRepo is a repository whose default branch is ahead of its
+// nearest tag.
+type UnreleasedRepo struct {
+	Repo     domain.RepoName
+	Branch   string
+	Distance domain.TagDistance
+}
+
+// Page sizes of JournalService.ListActivity.
+const (
+	DefaultActivityPageSize = 100
+	MaxActivityPageSize     = 500
+)
+
+// ActivityQuery selects a page of the activity journal.
+type ActivityQuery struct {
+	Since time.Time
+	// Repo restricts the entries to one repository when not zero.
+	Repo domain.RepoName
+	// Kinds restricts the entries to these kinds; empty means every kind.
+	Kinds []domain.JournalKind
+	// PageSize is 0 for DefaultActivityPageSize; larger than
+	// MaxActivityPageSize is lowered to it.
+	PageSize  int
+	PageToken string
+}
+
+// ActivityPage is a page of the activity journal, newest first.
+type ActivityPage struct {
+	Entries []domain.JournalEntry
+	// NextPageToken continues with older entries; empty at the end.
+	NextPageToken string
+}
+
 // InboxCounts are the numbers of open items across every repository, whatever
 // the filter.
 type InboxCounts struct{ MergeRequests, Issues, Pending, Running, Deps int }

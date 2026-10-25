@@ -62,7 +62,8 @@ type MergeRequests struct {
 	verifier   ports.CommitVerifier     // nil: commits are not checked (ADR 0030)
 	mergeab    MergeabilityHook         // nil: no mergeability
 	autoMerge  ports.AutoMergeTrigger
-	mirror     ports.MirrorTrigger // nil: no outbound mirror
+	mirror     ports.MirrorTrigger   // nil: no outbound mirror
+	journal    ports.JournalRecorder // nil: no activity journal
 
 	mu    sync.Mutex
 	locks map[domain.RepoName]chan struct{}
@@ -114,6 +115,9 @@ type MergeRequestsConfig struct {
 	// Mergeability is queued when a request is opened, closed or merged and
 	// read by Get and List. Optional: without it Mergeability stays zero.
 	Mergeability MergeabilityHook
+	// Journal records the opened, merged and closed requests. Optional. A
+	// merge is recorded as such, not as a push to its target.
+	Journal ports.JournalRecorder
 }
 
 // NewMergeRequests builds the merge request use cases.
@@ -121,7 +125,7 @@ func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 	return &MergeRequests{
 		issues: cfg.Issues, issueLinks: cfg.IssueLinks, links: cfg.Links, meta: cfg.Meta, store: cfg.Store, repos: cfg.Repos, git: cfg.Git, signer: cfg.Signer,
 		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips, mergeab: cfg.Mergeability,
-		locks: make(map[domain.RepoName]chan struct{}),
+		journal: cfg.Journal, locks: make(map[domain.RepoName]chan struct{}),
 	}
 }
 
@@ -310,6 +314,7 @@ func (m *MergeRequests) Create(ctx context.Context, p domain.Principal, name dom
 		return domain.MergeRequest{}, err
 	}
 	recordActivity(ctx, m.meta, repo.Name, now)
+	record(ctx, m.journal, journalMR(domain.JournalMergeRequestOpened, domain.AuthorName(p), mr, now))
 	m.bus.Publish(ctx, domain.MergeRequestOpened{MergeRequest: mr, At: now, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	if m.links != nil {
 		m.links.OnMergeRequestChanged(ctx, p, repo, mr.Number)
@@ -988,6 +993,7 @@ func (m *MergeRequests) Close(ctx context.Context, p domain.Principal, name doma
 		log.Info().Str("repo", name.String()).Int64("number", number).
 			Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("merge request closed")
 		recordActivity(ctx, m.meta, repo.Name, mr.UpdatedAt)
+		record(ctx, m.journal, journalMR(domain.JournalMergeRequestClosed, domain.AuthorName(p), mr, mr.UpdatedAt))
 		m.bus.Publish(ctx, domain.MergeRequestClosed{MergeRequest: mr, At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 		if hadAutoMerge {
 			m.bus.Publish(ctx, domain.MergeRequestAutoMergeCancelled{MergeRequest: mr, Reason: "closed", At: mr.UpdatedAt, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
@@ -1313,6 +1319,7 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 	}
 	at := mr.UpdatedAt
 	recordActivity(ctx, m.meta, repo.Name, at)
+	record(ctx, m.journal, journalMR(domain.JournalMergeRequestMerged, domain.AuthorName(p), mr, at))
 	m.bus.Publish(ctx, domain.MergeRequestMerged{MergeRequest: mr, Auto: mr.AutoMerged, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt})
 	m.bus.Publish(ctx, domain.PushEvent{
 		Repo: name, At: at, Visibility: repo.Visibility, CreatedAt: repo.CreatedAt, Updates: updates,

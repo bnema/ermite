@@ -23,6 +23,7 @@ type IssueModeration struct {
 	bans    ports.IssueBanStore
 	bus     ports.EventBus
 	clock   ports.Clock
+	journal ports.JournalRecorder // nil: no activity journal
 }
 
 var _ ports.IssueModerationService = (*IssueModeration)(nil)
@@ -35,11 +36,13 @@ type IssueModerationConfig struct {
 	Bans    ports.IssueBanStore
 	Bus     ports.EventBus
 	Clock   ports.Clock
+	// Journal records the approved issues as opened. Optional.
+	Journal ports.JournalRecorder
 }
 
 // NewIssueModeration builds the moderation use case.
 func NewIssueModeration(cfg IssueModerationConfig) *IssueModeration {
-	return &IssueModeration{meta: cfg.Meta, pending: cfg.Pending, bans: cfg.Bans, bus: cfg.Bus, clock: cfg.Clock}
+	return &IssueModeration{meta: cfg.Meta, pending: cfg.Pending, bans: cfg.Bans, bus: cfg.Bus, clock: cfg.Clock, journal: cfg.Journal}
 }
 
 // ListPending lists the pending issues of a repository, or of every repository
@@ -89,6 +92,7 @@ func (m *IssueModeration) Approve(ctx context.Context, p domain.Principal, repo 
 	log.Info().Str("repo", repo.String()).Int64("number", issue.Number).
 		Str("principal", p.Label()).Str("token_id", p.TokenID()).Msg("pending issue approved")
 	recordActivity(ctx, m.meta, repo, now)
+	record(ctx, m.journal, journalIssue(domain.JournalIssueOpened, issue.Author, issue, now))
 	m.bus.Publish(ctx, domain.IssueOpened{Issue: issue, At: now, Visibility: r.Visibility, CreatedAt: r.CreatedAt})
 	return issue, nil
 }

@@ -37,6 +37,10 @@ type harness struct {
 	hooksDone chan error
 }
 
+// eventsPerDefaultPush is what a push to the default branch buffers in the
+// event ring: its PushEvent and the owner-only domain.JournalUpdated.
+const eventsPerDefaultPush = 2
+
 type harnessOpts struct {
 	trustedProxies string
 	maintenance    time.Duration
@@ -44,7 +48,8 @@ type harnessOpts struct {
 	hookExe string
 	// maxBody overrides the limit of a push body when positive.
 	maxBody int64
-	// eventBuffer overrides the size of the event ring when positive.
+	// eventBuffer overrides the size of the event ring when positive; see
+	// eventsPerDefaultPush.
 	eventBuffer int
 	// revalidateEvery overrides how often a watcher's token is re-checked.
 	revalidateEvery time.Duration

@@ -320,6 +320,18 @@ type DependencyUpdatesChanged struct {
 // EventKind implements Event.
 func (DependencyUpdatesChanged) EventKind() string { return "deps.changed" }
 
+// JournalUpdated is published after a push wrote to the activity journal (a
+// tag, or commits on the default branch). Like DependencyUpdatesChanged it
+// carries no details and goes to the owner topic only: a signal for the inbox
+// to refresh. The other entries come with events the inbox follows already.
+type JournalUpdated struct {
+	Repo RepoName
+	At   time.Time
+}
+
+// EventKind implements Event.
+func (JournalUpdated) EventKind() string { return "journal.updated" }
+
 // CommentEdited is published when the text of a note was edited.
 type CommentEdited struct {
 	Repo       RepoName

@@ -16,11 +16,11 @@ import (
 func TestScopes(t *testing.T) {
 	t.Parallel()
 	all := domain.AllScopes()
-	assert.Len(t, all, 13)
+	assert.Len(t, all, 14)
 	assert.Equal(t, domain.ScopeMRForceMerge, all[5])
-	assert.Equal(t, domain.ScopeReleaseWrite, all[len(all)-1])
+	assert.Equal(t, domain.ScopeJournalRead, all[len(all)-1])
 	assert.Contains(t, all, domain.ScopeReleaseWrite)
-	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[:len(all)-1]}).HasOwnerRights(), "missing only release:write")
+	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[:len(all)-1]}).HasOwnerRights(), "missing only journal:read")
 	assert.Contains(t, all, domain.ScopeIssueWrite)
 	got, err := domain.ParseScope("issue:write")
 	require.NoError(t, err)
@@ -120,6 +120,34 @@ func TestHasOwnerRights(t *testing.T) {
 	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[1:]}).HasOwnerRights(), "a scope short")
 	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all[:9]}).HasOwnerRights(), "without issue:write")
 	assert.False(t, domain.TokenPrincipal(domain.Token{Scopes: all, Repos: []domain.RepoName{a}}).HasOwnerRights(), "limited to a repository")
+}
+
+func TestReadsJournal(t *testing.T) {
+	t.Parallel()
+	a, b := mustName(t, "a"), mustName(t, "b")
+	reader := domain.TokenPrincipal(domain.Token{Scopes: []domain.Scope{domain.ScopeJournalRead}})
+	limited := domain.TokenPrincipal(domain.Token{Scopes: []domain.Scope{domain.ScopeJournalRead}, Repos: []domain.RepoName{a}})
+	branches := domain.TokenPrincipal(domain.Token{Scopes: []domain.Scope{domain.ScopeJournalRead}, BranchPrefixes: []string{"bot/"}})
+	other := domain.TokenPrincipal(domain.Token{Scopes: []domain.Scope{domain.ScopeRepoRead, domain.ScopeReleaseWrite}})
+	for _, tc := range []struct {
+		name      string
+		p         domain.Principal
+		any, a, b bool
+	}{
+		{"root", domain.Root(), true, true, true},
+		{"owner", domain.Owner(), true, true, true},
+		{"full token", domain.TokenPrincipal(domain.Token{Scopes: domain.AllScopes()}), true, true, true},
+		{"journal:read", reader, true, true, true},
+		{"journal:read on a", limited, true, true, false},
+		{"journal:read, branch-limited", branches, true, true, true},
+		{"other scopes", other, false, false, false},
+		{"anonymous", domain.Anonymous(), false, false, false},
+		{"bot", domain.Bot(a), false, false, false},
+	} {
+		assert.Equal(t, tc.any, tc.p.ReadsJournal(), tc.name)
+		assert.Equal(t, tc.a, tc.p.ReadsJournalOf(a), tc.name)
+		assert.Equal(t, tc.b, tc.p.ReadsJournalOf(b), tc.name)
+	}
 }
 
 func TestParseBranchPrefix(t *testing.T) {

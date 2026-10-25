@@ -29,6 +29,7 @@ func TestScopeWireNames(t *testing.T) {
 		ermite.Scope_SCOPE_TOKEN_ADMIN:     "token:admin",
 		ermite.Scope_SCOPE_ISSUE_WRITE:     "issue:write",
 		ermite.Scope_SCOPE_RELEASE_WRITE:   "release:write",
+		ermite.Scope_SCOPE_JOURNAL_READ:    "journal:read",
 	}
 	for s, name := range want {
 		assert.Equal(t, name, client.ScopeName(s))
@@ -81,6 +82,7 @@ func TestParseExpiry(t *testing.T) {
 	}{
 		{"30d", now.Add(30 * 24 * time.Hour)},
 		{"2w", now.Add(14 * 24 * time.Hour)},
+		{"5214w", now.Add(5214 * 7 * 24 * time.Hour)},
 		{"12h", now.Add(12 * time.Hour)},
 		{"1h30m", now.Add(90 * time.Minute)},
 		{"2027-01-31", time.Date(2027, 1, 31, 23, 59, 59, 0, time.UTC)},
@@ -91,7 +93,7 @@ func TestParseExpiry(t *testing.T) {
 		require.NoError(t, err, tt.in)
 		assert.True(t, tt.want.Equal(got), "%s: %s != %s", tt.in, tt.want, got)
 	}
-	for _, in := range []string{"", "soon", "0d", "-3d", "d", "1.5d", "2026-10-09", "-1h", "99999999d"} {
+	for _, in := range []string{"", "soon", "0d", "-3d", "d", "1.5d", "2026-10-09", "-1h", "99999999d", "0w", "5215w", "36500w"} {
 		_, err := client.ParseExpiry(in, now)
 		require.Error(t, err, in)
 		assert.Contains(t, err.Error(), "--expires")

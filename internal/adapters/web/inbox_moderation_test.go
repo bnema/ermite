@@ -33,6 +33,7 @@ func testPendingIssue(t testing.TB) domain.PendingIssue {
 
 func moderationServer(t *testing.T, inbox ports.InboxService, mod ports.IssueModerationService) *Server {
 	t.Helper()
+	emptyJournal(inbox)
 	return newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: inbox, Moderation: mod,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},

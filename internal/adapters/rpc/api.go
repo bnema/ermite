@@ -111,6 +111,10 @@ type Config struct {
 	// Deps serves DepsService (Bernard); GetVersion lists "deps" when set.
 	// Same rule as Sessions about typed nil pointers.
 	Deps ports.DepsService
+	// Journal serves JournalService and ReleaseService.ListUnreleased;
+	// GetVersion lists "journal" when it is set together with Releases. Same
+	// rule as Sessions about typed nil pointers.
+	Journal ports.JournalService
 }
 
 // API is the set of Connect handlers of the contract.
@@ -166,6 +170,12 @@ func New(cfg Config) *API {
 		mux.Handle(ermiteconnect.NewDepsServiceHandler(&depsService{cfg.Deps}, opts...))
 		features = append(features, FeatureDeps)
 	}
+	if cfg.Journal != nil && cfg.Releases != nil {
+		mux.Handle(ermiteconnect.NewJournalServiceHandler(&journalService{cfg.Journal}, opts...))
+		features = append(features, FeatureJournal)
+	} else {
+		cfg.Journal = nil // ListUnreleased answers unimplemented without the feature
+	}
 	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys}, opts...))
 	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{mrs: cfg.MergeRequests}, opts...))
 	mux.Handle(ermiteconnect.NewIssueServiceHandler(&issueService{issues: cfg.Issues, moderation: cfg.IssueModeration}, opts...))
@@ -182,7 +192,7 @@ func New(cfg Config) *API {
 	}
 	if cfg.Releases != nil {
 		releaseOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))
-		mux.Handle(ermiteconnect.NewReleaseServiceHandler(&releaseService{cfg.Releases}, releaseOpts...))
+		mux.Handle(ermiteconnect.NewReleaseServiceHandler(&releaseService{rel: cfg.Releases, journal: cfg.Journal}, releaseOpts...))
 	}
 	if cfg.Runner != nil {
 		runnerOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))

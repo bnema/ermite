@@ -171,7 +171,7 @@ func TestResolvedMigrationAndRestart(t *testing.T) {
 				assert.Zero(t, countKeys(t, s, "isev/"))
 				assert.Zero(t, countKeys(t, s, "mrev/"))
 				require.NoError(t, s.Close(ctx))
-				assert.Equal(t, uint32(9), readSchema(t, dir))
+				assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 			}
 		})
 	}

@@ -253,6 +253,11 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.Auth = usecase.NewAuth(cfg.AdminTokenHash, store.Tokens(), clock).WithRepoTokens(store.CI())
 	f.maint = usecase.NewMaintainer(ctx, git, opts.maintenanceDelay)
 	f.Pushes = usecase.NewPushes(store, f.Repos, git, f.Bus, clock, f.maint, f.Auth)
+	// The activity journal of the inbox, written where the events are
+	// published (the bus may drop them).
+	journalStore := store.Journal()
+	journal := usecase.NewJournal(journalStore, git, git, f.Bus, clock)
+	f.Pushes.WithJournal(journal)
 
 	exe := opts.hookExe
 	if exe == "" {
@@ -287,6 +292,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	f.Releases = usecase.NewReleases(store.Releases(), f.Blobs, store, reader, git, f.Pushes, f.Bus, clock, ports.ReleaseLimits{AssetMax: cfg.ReleaseAssetMax, AssetsMax: int64(cfg.ReleaseAssetsMax), Quota: cfg.ReleaseQuota})
 	f.Pushes.WithReleases(f.Releases)
+	f.Releases.WithJournal(journal)
 	f.Repos.WithReleases(f.Releases)
 
 	// Secrets, variables and environments (ADR 0019, CI-3). With a key the
@@ -388,13 +394,13 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Store: store.MergeRequests(), Meta: store, Git: git, Bus: f.Bus, Clock: clock,
 	})
 	f.Pushes.WithMergeability(f.Mergeability)
-	links := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: store, Issues: store.Issues(), MRs: store.MergeRequests(), Links: store.IssueLinks(), Git: git, Bus: f.Bus, Clock: clock})
+	links := usecase.NewIssueLinks(usecase.IssueLinksConfig{Meta: store, Issues: store.Issues(), MRs: store.MergeRequests(), Links: store.IssueLinks(), Git: git, Bus: f.Bus, Clock: clock, Journal: journal})
 	f.Pushes.WithIssueLinks(links)
 	f.MergeRequests = usecase.NewMergeRequests(usecase.MergeRequestsConfig{
 		Issues: store.Issues(), IssueLinks: store.IssueLinks(),
 		Links: links, Meta: store, Store: store.MergeRequests(), Repos: git, Git: git, Signer: signer,
 		Committer: committer, Bus: f.Bus, Clock: clock, Maint: f.maint,
-		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(), Mergeability: f.Mergeability,
+		CI: f.CI, Checks: f.CI, PullRequests: f.CI, RefTips: store.CI(), Mergeability: f.Mergeability, Journal: journal,
 	})
 	f.AutoMerge = usecase.NewAutoMerge(ctx, usecase.AutoMergeConfig{
 		MRs: f.MergeRequests, Store: store.MergeRequests(), Meta: store, Git: git,
@@ -407,10 +413,10 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.Mergeability.Start()
 	f.MergeRequests.WithVerifier(f.Signatures).WithMirror(f.Mirrors)
 	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
-		Links: store.IssueLinks(), Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock,
+		Links: store.IssueLinks(), Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock, Journal: journal,
 	})
 	f.IssueModeration = usecase.NewIssueModeration(usecase.IssueModerationConfig{
-		Meta: store, Pending: store.PendingIssues(), Bans: store.IssueBans(), Bus: f.Bus, Clock: clock,
+		Meta: store, Pending: store.PendingIssues(), Bans: store.IssueBans(), Bus: f.Bus, Clock: clock, Journal: journal,
 	})
 	f.SubmissionLimiter = clientlimit.NewSubmissionLimiter(nil)
 	f.PendingIssues, f.IssueBans = store.PendingIssues(), store.IssueBans()
@@ -449,8 +455,9 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	f.Inbox = usecase.NewInbox(usecase.InboxConfig{
 		Meta: store, MergeRequests: store.MergeRequests(), Issues: store.Issues(), Pending: store.PendingIssues(), CI: store.CI(),
-		Git: git, Deps: inboxDeps, Clock: clock,
+		Git: git, Deps: inboxDeps, Clock: clock, Journal: journalStore, Repos: git, Reader: reader,
 	})
+	f.Pushes.WithRefsObserver(f.Inbox) // a push makes its tag warning stale
 	f.CI.SetPullGate(f.MergeRequests)
 	f.AutoMerge.Start()
 	log.Info().Str("fingerprint", signer.PublicKey().Fingerprint).Msg("commit signing key ready")
@@ -502,6 +509,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		Sessions:        f.Sessions,
 		Passkeys:        apiPasskeys,
 		Deps:            f.Deps,
+		Journal:         f.Inbox,
 		Runner:          f.CI,
 		Runs:            f.CI,
 		Secrets:         f.Settings,

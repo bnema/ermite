@@ -87,6 +87,9 @@ ermite deps list [--repo <repo>] [--json]   # pending dependency updates (Bernar
 ermite deps check <repo>                 # check one repository now
 ermite deps open|ignore|snooze <repo>    # open/update the merge request, ignore these versions, hide for 7 days
 
+ermite journal [--since 24h|7d|2026-10-01|<RFC 3339>] [--repo R] [--kind mr_merged,tag_created,…] [--limit N] [--json]
+ermite release pending [repo] [--json]   # repositories with commits after their latest tag
+
 ermite web login                         # one-time sign-in link (60 s)
 ermite web logout --all                  # sign every browser out
 ermite web passkey list | remove <id>
@@ -108,6 +111,14 @@ The web shows an **Archived** badge and hides write actions. `repo show` display
 ### Dependency updates
 
 `ermite deps` drives Bernard, which needs a server with the `deps` feature and owner rights. `deps list` shows the pending updates, snoozed repositories included; `--json` prints `repo`, `updates` (`ecosystem`, `name`, `directory`, `current`, `latest`, `kind`, `new`), `checked_at`, `snoozed_until`, `merge_request_number`, `state` and `error`. `deps check <repo>` runs a check now. `deps open` and `deps ignore` read the current list and send it back as the versions you confirm, so a list that changed in between is refused with a failed precondition. When the server runs with `ERMITE_DEPS_ENABLED=0`, `deps list` is empty and the other commands answer “Bernard is disabled”. See [Bernard](bernard.md).
+
+### Activity journal
+
+`ermite journal` lists what happened in the repositories, newest first: merge requests and issues opened, merged or closed, tags created or deleted, releases published and pushes to default branches. Entries are kept 30 days. `--since` defaults to `24h` and takes a duration (`90m`, `7d`, `2w`), a date (midnight UTC) or an RFC 3339 time; `--kind` takes `mr_opened`, `mr_merged`, `mr_closed`, `issue_opened`, `issue_closed`, `tag_created`, `tag_deleted`, `release_published`, `push` (comma-separated or repeated); pages are followed up to `--limit` (default 100). The table shows `WHEN`, `REPO`, `KIND`, `DETAIL`, `ACTOR`. `--json` prints an array of `id`, `kind`, `repo`, `at`, `actor`, `number` (merge request or issue, 0 otherwise), `ref` (tag, pushed branch, or target branch of a merge request), `title`, `commit_count` (pushes, at most 100), `commits_capped`, `commit`, `summary`.
+
+`ermite release pending [repo]` lists the non-archived repositories whose default branch has commits after its nearest tag, for example `ermite-api  4 commits since v0.12.0 (3 days ago)`. Repositories without a tag are left out; counts stop at 500 (`500+`). `--json` prints an array of `repo`, `latest_tag`, `latest_tag_at`, `commits_since`, `commits_capped` (true when the walk stopped at the limit before finding a tag; `commits_since` is then a lower bound), `default_branch`.
+
+Both need a server with the `journal` feature and owner rights or the `journal:read` scope. A token limited with `--repo` sees only its repositories.
 
 ### Issues and mirrors
 
@@ -162,7 +173,7 @@ downloads are removed. Resume is within the command, not across invocations.
 
 ## Output
 
-- `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|resolve|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list`, `mirror key|config|status` and `version`.
+- `--json` prints stable field names (listed in each `--help`) on `repo list|show|create|edit`, `issue create|list|show|comment|close|resolve|reopen`, `token create|list`, `run list|view|cancel|rerun`, `runner list`, `mirror key|config|status`, `deps`, `journal`, `release pending` and `version`.
 - `watch --json` prints one object per line. `merge_request_mergeability` events carry `mergeability` (`state`, `behind`, `conflict_paths`…) and print as `repo!n mergeability: behind by 2`.
 - A merge needs passing checks on the head (no failed, queued or running checks); a head with no checks can merge. `mr merge --ignore-checks` bypasses this, needs `mr:force-merge`, and cannot be combined with `--auto` or `--cancel-auto`. The `cli` preset includes `mr:force-merge`; `agent` does not. Adding `--scope mr:merge` lets an agent merge only with passing checks.
 - `mr merge --mode squash|merge` creates a commit signed by the server's own key (generated on first start); the output names its fingerprint, `ermite signing-key show` prints the key. Every mode is allowed by default; `repo edit --merge-modes fast-forward,squash` disables `merge`.
