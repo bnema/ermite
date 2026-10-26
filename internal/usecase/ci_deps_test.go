@@ -85,6 +85,7 @@ func newDepsRig(t *testing.T, labels []string, tweak func(*usecase.CIConfig)) *d
 	t.Cleanup(func() { r.ci.Close(ctx) })
 
 	obs := mocks.NewDepsRunObserver(t)
+	obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	obs.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(
 		func(c context.Context, run domain.CIRun, job domain.CIJob, report *ports.DepsReport) {
 			stored, _ := store.CI().GetJob(c, job.RunID, job.RunAttempt, job.ID)
@@ -730,5 +731,38 @@ func TestDepsJobEndedAfterCloseIsNotAnnounced(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, domain.CICancelled, r.run(run.ID).Conclusion, "the job ended")
 		r.noEnded()
+	})
+}
+
+func TestDepsReportValidationRefusalFailsJobRunAndRecord(t *testing.T) {
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		run := r.start(10 * time.Minute)
+		rr.rec.RunID = run.ID
+		r.ci.SetDepsObserver(rr.b)
+		j := r.fetch("deps")
+		require.NotNil(t, j)
+		report := goReport(goModText("go 1.24", "", textOld), sumLine("golang.org/x/text", textOld))
+		res, err := r.ci.CompleteJob(r.ctx, j.Token, ports.CompleteJobParams{JobID: j.Job.ID, Conclusion: domain.CISuccess, DepsReport: report})
+		require.NoError(t, err)
+		require.True(t, res.Applied)
+		require.Equal(t, domain.CIFailure, res.Conclusion)
+		require.Contains(t, res.Error, "the server refused the dependency result: check the gomod updates:")
+		require.Contains(t, res.Error, "requested version missing")
+		synctest.Wait()
+		assert.Equal(t, domain.CIFailure, r.job(run).Conclusion)
+		assert.Equal(t, res.Error, r.job(run).Error)
+		assert.Equal(t, domain.CIFailure, r.run(run.ID).Conclusion)
+		assert.Equal(t, domain.DepsFailed, rr.rec.State)
+		assert.Equal(t, res.Error, rr.rec.Error)
+		lines, err := r.logs.Read(r.ctx, ports.CILogRef{RunID: run.ID, JobID: j.Job.ID, Attempt: j.Job.Attempt}, 0, 10, 4096)
+		require.NoError(t, err)
+		require.Len(t, lines, 1)
+		assert.Equal(t, "##[error]"+res.Error, lines[0].Text)
+		again, err := r.ci.CompleteJob(r.ctx, j.Token, ports.CompleteJobParams{JobID: j.Job.ID, Conclusion: domain.CISuccess, DepsReport: report})
+		require.NoError(t, err)
+		assert.False(t, again.Applied)
+		assert.Equal(t, res.Error, again.Error)
 	})
 }

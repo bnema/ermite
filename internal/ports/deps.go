@@ -48,7 +48,8 @@ type DepsEcosystem interface {
 	ApplyInServer() bool
 	// Apply is only called when ApplyInServer is true.
 	Apply(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error)
-	// Validate checks after (runner report or server Apply) against before.
+	// Validate checks after (runner report or server Apply) against before and
+	// returns accepted side effects, ordered by directory and module name.
 	Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error)
 }
 
@@ -101,9 +102,12 @@ type DepsRunner interface {
 	GetDepsRun(ctx context.Context, repo domain.RepoName, id int64) (domain.CIRun, error)
 }
 
-// DepsRunObserver is told when the job of a dependency run ended.
+// DepsRunObserver checks dependency reports before completion and is told
+// when the job of a dependency run ended.
 // *usecase.Bernard implements it; CI.SetDepsObserver installs it.
 type DepsRunObserver interface {
+	// CheckDepsReport checks a successful report before the job ends, outside the run lock.
+	CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report DepsReport) ([]domain.DepSideEffect, error)
 	// DepsJobEnded is called once per ended dependency job, after the write that
 	// ended it and outside the lock of the run. report is the runner's report;
 	// it is nil when the server ended the job (cancel, timeout, lost runner,

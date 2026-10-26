@@ -5,6 +5,7 @@ package deps
 import (
 	"errors"
 	"os"
+	"path"
 	"strings"
 	"testing"
 
@@ -259,4 +260,20 @@ func TestGoModRequestedIndirectTidyAndSideEffects(t *testing.T) {
 			require.Equal(t, []domain.DepSideEffect{{Ecosystem: domain.EcosystemGoMod, Directory: "sub", Name: "example.org/a", From: from, To: tc.to}}, effects)
 		})
 	}
+}
+
+func TestGoModSideEffectsAreSorted(t *testing.T) {
+	before, after := map[domain.TreePath][]byte{}, map[domain.TreePath][]byte{}
+	var ups []domain.DepUpdate
+	var want []domain.DepSideEffect
+	for _, dir := range []string{"", "sub"} {
+		p := tp(t, path.Join(dir, "go.mod"))
+		before[p] = []byte("module example.org/root\ngo 1.24\nrequire (\nexample.org/z v1.0.0 // indirect\nexample.org/b v1.0.0\nexample.org/a v1.0.0\n)\n")
+		after[p] = []byte("module example.org/root\ngo 1.24\nrequire (\nexample.org/b v1.2.0\nexample.org/a v1.3.0\n)\n")
+		ups = append(ups, update(domain.EcosystemGoMod, dir, "example.org/z", "v1.0.0", "v1.1.0"))
+		want = append(want, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: dir, Name: "example.org/a", From: "v1.0.0", To: "v1.3.0"}, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: dir, Name: "example.org/b", From: "v1.0.0", To: "v1.2.0"}, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: dir, Name: "example.org/z", From: "v1.0.0"})
+	}
+	effects, err := (GoMod{}).Validate(before, after, ups)
+	require.NoError(t, err)
+	require.Equal(t, want, effects)
 }

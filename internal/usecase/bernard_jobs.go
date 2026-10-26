@@ -188,84 +188,13 @@ const (
 // both sets of changes and publishes them as the Bernard commit on top of that
 // commit.
 func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, run domain.CIRun, job domain.CIJob, report ports.DepsReport) error {
-	if job.Deps == nil {
-		return fmt.Errorf("%w: the job holds no dependency update", domain.ErrInvalid)
-	}
-	// The updates the runner applied: those of the job among the ones the run
-	// started with (the daily check may have rewritten rec.Updates since).
-	var runnerUps []domain.DepUpdate
-	for _, u := range rec.RunUpdates {
-		if slices.Contains(job.Deps.Updates, u.DepRef) {
-			runnerUps = append(runnerUps, u)
-		}
-	}
-	eco := b.ecosystem(domain.EcosystemGoMod)
-	if eco == nil {
-		return fmt.Errorf("%w: no Go module ecosystem", domain.ErrPreconditionFailed)
+	changes, effects, err := b.checkRunnerReport(ctx, rec, run, job, report)
+	if err != nil {
+		return err
 	}
 	base, err := domain.ParseObjectID(run.Sha)
 	if err != nil {
-		return fmt.Errorf("%w: job commit: %v", domain.ErrInvalid, err)
-	}
-	if len(report.Files) > maxReportFiles {
-		return fmt.Errorf("%w: the report has %d files, at most %d", domain.ErrInvalid, len(report.Files), maxReportFiles)
-	}
-	allowed := map[domain.TreePath]bool{}
-	for _, u := range runnerUps {
-		for _, f := range []string{"go.mod", "go.sum"} {
-			p := path.Join(u.Directory, f)
-			tp, err := domain.ParseTreePath(p)
-			if err != nil {
-				return fmt.Errorf("%w: %v", domain.ErrInvalid, err)
-			}
-			allowed[tp] = true
-		}
-	}
-	after := map[domain.TreePath][]byte{}
-	total := 0
-	for _, f := range report.Files {
-		tp, err := domain.ParseTreePath(f.Path)
-		if err != nil {
-			return fmt.Errorf("%w: report path %q: %v", domain.ErrInvalid, f.Path, err)
-		}
-		if !allowed[tp] {
-			return fmt.Errorf("%w: unexpected report path %s", domain.ErrInvalid, f.Path)
-		}
-		if _, dup := after[tp]; dup {
-			return fmt.Errorf("%w: duplicate report path %s", domain.ErrInvalid, f.Path)
-		}
-		if len(f.Content) > maxReportFileBytes {
-			return fmt.Errorf("%w: %s is larger than %d bytes", domain.ErrInvalid, f.Path, maxReportFileBytes)
-		}
-		if total += len(f.Content); total > maxReportBytes {
-			return fmt.Errorf("%w: the report is larger than %d bytes", domain.ErrInvalid, maxReportBytes)
-		}
-		after[tp] = f.Content
-	}
-
-	rev := domain.RevisionOf(base)
-	before := map[domain.TreePath][]byte{}
-	for tp := range allowed {
-		content, ok, err := b.readManifest(ctx, run.Repo, rev, tp)
-		switch {
-		case errors.Is(err, domain.ErrNotFound) && path.Base(tp.String()) == "go.sum":
-			continue // a module without dependencies has none
-		case err != nil:
-			return err
-		case !ok:
-			return fmt.Errorf("%w: %s is larger than %d bytes", domain.ErrPreconditionFailed, tp, maxDepsManifestBytes)
-		}
-		before[tp] = content
-	}
-	effects, err := eco.Validate(before, after, runnerUps)
-	if err != nil {
-		return fmt.Errorf("check the %s updates: %w", domain.EcosystemGoMod, err)
-	}
-	changes := map[domain.TreePath][]byte{}
-	for tp, content := range after {
-		if old, ok := before[tp]; !ok || !bytes.Equal(old, content) {
-			changes[tp] = content
-		}
+		return err
 	}
 
 	var serverUps []domain.DepUpdate
@@ -310,4 +239,101 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	}
 	_, err = b.publish(ctx, run.Repo, target, base, changes, rec.RunUpdates, d.MR, jobGuard, effects)
 	return err
+}
+
+// CheckDepsReport checks the same report that asynchronous publication consumes.
+func (b *Bernard) CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) ([]domain.DepSideEffect, error) {
+	rec, err := b.currentRecord(ctx, run)
+	if err != nil {
+		return nil, err
+	}
+	if rec.State != domain.DepsApplying || rec.RunID != run.ID {
+		return nil, nil
+	}
+	_, effects, err := b.checkRunnerReport(ctx, rec, run, job, report)
+	return effects, err
+}
+
+func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, run domain.CIRun, job domain.CIJob, report ports.DepsReport) (map[domain.TreePath][]byte, []domain.DepSideEffect, error) {
+	if job.Deps == nil {
+		return nil, nil, fmt.Errorf("%w: the job holds no dependency update", domain.ErrInvalid)
+	}
+	// The updates the runner applied: those of the job among the ones the run
+	// started with (the daily check may have rewritten rec.Updates since).
+	var runnerUps []domain.DepUpdate
+	for _, u := range rec.RunUpdates {
+		if slices.Contains(job.Deps.Updates, u.DepRef) {
+			runnerUps = append(runnerUps, u)
+		}
+	}
+	eco := b.ecosystem(domain.EcosystemGoMod)
+	if eco == nil {
+		return nil, nil, fmt.Errorf("%w: no Go module ecosystem", domain.ErrPreconditionFailed)
+	}
+	base, err := domain.ParseObjectID(run.Sha)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: job commit: %v", domain.ErrInvalid, err)
+	}
+	if len(report.Files) > maxReportFiles {
+		return nil, nil, fmt.Errorf("%w: the report has %d files, at most %d", domain.ErrInvalid, len(report.Files), maxReportFiles)
+	}
+	allowed := map[domain.TreePath]bool{}
+	for _, u := range runnerUps {
+		for _, f := range []string{"go.mod", "go.sum"} {
+			p := path.Join(u.Directory, f)
+			tp, err := domain.ParseTreePath(p)
+			if err != nil {
+				return nil, nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+			}
+			allowed[tp] = true
+		}
+	}
+	after := map[domain.TreePath][]byte{}
+	total := 0
+	for _, f := range report.Files {
+		tp, err := domain.ParseTreePath(f.Path)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: report path %q: %v", domain.ErrInvalid, f.Path, err)
+		}
+		if !allowed[tp] {
+			return nil, nil, fmt.Errorf("%w: unexpected report path %s", domain.ErrInvalid, f.Path)
+		}
+		if _, dup := after[tp]; dup {
+			return nil, nil, fmt.Errorf("%w: duplicate report path %s", domain.ErrInvalid, f.Path)
+		}
+		if len(f.Content) > maxReportFileBytes {
+			return nil, nil, fmt.Errorf("%w: %s is larger than %d bytes", domain.ErrInvalid, f.Path, maxReportFileBytes)
+		}
+		if total += len(f.Content); total > maxReportBytes {
+			return nil, nil, fmt.Errorf("%w: the report is larger than %d bytes", domain.ErrInvalid, maxReportBytes)
+		}
+		after[tp] = f.Content
+	}
+
+	rev := domain.RevisionOf(base)
+	before := map[domain.TreePath][]byte{}
+	for tp := range allowed {
+		content, ok, err := b.readManifest(ctx, run.Repo, rev, tp)
+		switch {
+		case errors.Is(err, domain.ErrNotFound) && path.Base(tp.String()) == "go.sum":
+			continue // a module without dependencies has none
+		case err != nil:
+			return nil, nil, err
+		case !ok:
+			return nil, nil, fmt.Errorf("%w: %s is larger than %d bytes", domain.ErrPreconditionFailed, tp, maxDepsManifestBytes)
+		}
+		before[tp] = content
+	}
+	effects, err := eco.Validate(before, after, runnerUps)
+	if err != nil {
+		return nil, nil, fmt.Errorf("check the %s updates: %w", domain.EcosystemGoMod, err)
+	}
+	changes := map[domain.TreePath][]byte{}
+	for tp, content := range after {
+		if old, ok := before[tp]; !ok || !bytes.Equal(old, content) {
+			changes[tp] = content
+		}
+	}
+
+	return changes, effects, nil
 }

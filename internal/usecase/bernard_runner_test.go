@@ -432,3 +432,19 @@ func TestBernardRunnerReportListsGoSideEffects(t *testing.T) {
 	assert.Contains(t, rr.created.Description, "## Also changed by Go")
 	assert.Contains(t, rr.created.Description, "- `golang.org/x/net` v0.30.0 → v0.31.0")
 }
+
+func TestBernardCheckDepsReportDoesNotPublishAndDropsSupersededRuns(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	run, job := rr.endedRun(domain.CISuccess)
+	report := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
+	effects, err := rr.b.CheckDepsReport(context.Background(), run, job, *report)
+	require.NoError(t, err)
+	assert.Empty(t, effects)
+	assert.Equal(t, domain.DepsApplying, rr.rec.State)
+	assert.Zero(t, rr.rec.MR)
+	rr.rec.RunID++
+	effects, err = rr.b.CheckDepsReport(context.Background(), run, job, ports.DepsReport{Files: []ports.DepsFile{{Path: "evil.sh"}}})
+	require.NoError(t, err)
+	assert.Empty(t, effects)
+}

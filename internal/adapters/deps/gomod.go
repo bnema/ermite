@@ -175,7 +175,8 @@ func policy(f *modfile.File) modulePolicy {
 	return p
 }
 
-// Validate confines reports to requested module files and requested direct changes.
+// Validate confines reports to requested module files and policy-preserving
+// upgrades, allowing higher versions selected by Go and indirect tidy removals.
 func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error) {
 	var effects []domain.DepSideEffect
 	dirs := map[string]map[string]string{}

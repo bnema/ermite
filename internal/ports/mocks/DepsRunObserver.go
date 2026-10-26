@@ -48,6 +48,86 @@ func (_m *DepsRunObserver) EXPECT() *DepsRunObserver_Expecter {
 	return &DepsRunObserver_Expecter{mock: &_m.Mock}
 }
 
+// CheckDepsReport provides a mock function for the type DepsRunObserver
+func (_mock *DepsRunObserver) CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) ([]domain.DepSideEffect, error) {
+	ret := _mock.Called(ctx, run, job, report)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CheckDepsReport")
+	}
+
+	var r0 []domain.DepSideEffect
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.CIRun, domain.CIJob, ports.DepsReport) ([]domain.DepSideEffect, error)); ok {
+		return returnFunc(ctx, run, job, report)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.CIRun, domain.CIJob, ports.DepsReport) []domain.DepSideEffect); ok {
+		r0 = returnFunc(ctx, run, job, report)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.DepSideEffect)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.CIRun, domain.CIJob, ports.DepsReport) error); ok {
+		r1 = returnFunc(ctx, run, job, report)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// DepsRunObserver_CheckDepsReport_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CheckDepsReport'
+type DepsRunObserver_CheckDepsReport_Call struct {
+	*mock.Call
+}
+
+// CheckDepsReport is a helper method to define mock.On call
+//   - ctx context.Context
+//   - run domain.CIRun
+//   - job domain.CIJob
+//   - report ports.DepsReport
+func (_e *DepsRunObserver_Expecter) CheckDepsReport(ctx any, run any, job any, report any) *DepsRunObserver_CheckDepsReport_Call {
+	return &DepsRunObserver_CheckDepsReport_Call{Call: _e.mock.On("CheckDepsReport", ctx, run, job, report)}
+}
+
+func (_c *DepsRunObserver_CheckDepsReport_Call) Run(run func(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport)) *DepsRunObserver_CheckDepsReport_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.CIRun
+		if args[1] != nil {
+			arg1 = args[1].(domain.CIRun)
+		}
+		var arg2 domain.CIJob
+		if args[2] != nil {
+			arg2 = args[2].(domain.CIJob)
+		}
+		var arg3 ports.DepsReport
+		if args[3] != nil {
+			arg3 = args[3].(ports.DepsReport)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *DepsRunObserver_CheckDepsReport_Call) Return(depSideEffects []domain.DepSideEffect, err error) *DepsRunObserver_CheckDepsReport_Call {
+	_c.Call.Return(depSideEffects, err)
+	return _c
+}
+
+func (_c *DepsRunObserver_CheckDepsReport_Call) RunAndReturn(run func(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) ([]domain.DepSideEffect, error)) *DepsRunObserver_CheckDepsReport_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DepsJobEnded provides a mock function for the type DepsRunObserver
 func (_mock *DepsRunObserver) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain.CIJob, report *ports.DepsReport) {
 	_mock.Called(ctx, run, job, report)

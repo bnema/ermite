@@ -590,9 +590,9 @@ func depsMRBody(ups []domain.DepUpdate, effects []domain.DepSideEffect) string {
 	if len(effects) == 0 {
 		return body
 	}
-	body += "\n\n## Also changed by Go\n"
+	body += "\n## Also changed by Go\n"
 	for _, e := range effects {
-		body += fmt.Sprintf("\n- `%s` ", e.Name)
+		body += fmt.Sprintf("- `%s` ", e.Name)
 		if e.To == "" {
 			body += "removed, no longer needed"
 		} else {
@@ -601,6 +601,7 @@ func depsMRBody(ups []domain.DepUpdate, effects []domain.DepSideEffect) string {
 		if e.Directory != "" {
 			body += " (" + e.Directory + ")"
 		}
+		body += "\n"
 	}
-	return body + "\n"
+	return body
 }

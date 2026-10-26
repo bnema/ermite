@@ -891,6 +891,24 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 	if err := domain.CheckAnnotations(params.Annotations); err != nil {
 		return ports.CompleteJobResult{}, err
 	}
+	refusal := ""
+	if j.Deps != nil && params.Conclusion == domain.CISuccess && params.DepsReport != nil && params.DepsReport.Error == "" {
+		c.mu.Lock()
+		observer := c.depsObserver
+		c.mu.Unlock()
+		if observer != nil {
+			run, err := c.runOf(ctx, j.Repo, j.RunID)
+			if err != nil {
+				return ports.CompleteJobResult{}, err
+			}
+			if _, err := observer.CheckDepsReport(ctx, run, j, *params.DepsReport); err != nil {
+				refusal = trim(keepDepsError("the server refused the dependency result: " + err.Error()))
+				params.Conclusion = domain.CIFailure
+				params.DepsReport = &ports.DepsReport{Error: refusal}
+			}
+		}
+	}
+
 	var res ports.CompleteJobResult
 	err = c.withRun(ctx, j.RunID, j.RunAttempt, func(rs *runState) error {
 		cur := rs.find(j.ID)
@@ -915,7 +933,7 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 		rs.annotations = append(rs.annotations, writes...)
 		cur.Steps = steps
 		cur.Outputs = params.Outputs
-		msg := ""
+		msg := refusal
 		if params.RunnerShutdown {
 			msg = domain.CIShutdownMessage
 		}
@@ -923,6 +941,10 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 			rs.depsReport = params.DepsReport // outputs mean nothing to a dependency job
 			cur.Outputs = nil
 		}
+		if refusal != "" {
+			_, _ = c.cfg.Logs.AppendForced(ctx, logRef(*cur), []domain.CILogLine{{Time: c.now(), Text: "##[error]" + strings.ReplaceAll(refusal, "\n", " ")}})
+		}
+
 		rs.end(cur, params.Conclusion, msg)
 		if err := rs.advance(ctx); err != nil {
 			return err
