@@ -49,7 +49,7 @@ func newItemEditCmd(env *cliEnv, mr bool) *cobra.Command {
 		completion = completeMRRepoThenNumber(env)
 	}
 	flag := field + "-file"
-	cmd := &cobra.Command{Use: "edit <repo> <number>", Short: "edit " + label, Long: "Edit " + label + " title and/or " + field + ". Only supplied fields change.\n" +
+	cmd := &cobra.Command{Use: "edit <repo> <number>", Short: "Edit " + map[bool]string{true: "a merge request", false: "an issue"}[mr], Long: "Edit " + label + " title and/or " + field + ". Only supplied fields change.\n" +
 		"The title is one line of at most 120 characters. Read the " + field + " from a file only;\n" +
 		"--" + flag + " - reads standard input (at most 1 MiB). An empty file clears the " + field + ".\n" +
 		"At least one flag is required. Prints a confirmation, then the full web URL.\nNeeds the " + scope + " scope." + help, Args: cobra.ExactArgs(2), ValidArgsFunction: completion}

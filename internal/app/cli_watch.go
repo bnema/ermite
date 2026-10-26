@@ -230,13 +230,13 @@ func refUpdateText(u jsonRefUpdate) string {
 func newWatchCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "watch [repo]",
-		Short: "print repository events as they happen",
+		Short: "Print repository events as they happen",
 		Long: "Print one line per event for all visible repositories, or only [repo], until interrupted.\n" +
 			"Events cover repository creation/update/deletion, pushes, merge requests opened/merged\n" +
 			"(manually or automatically)/closed, auto-merge enabled/cancelled, and notes added/edited/\n" +
-			"deleted/resolved. Reconnect with increasing delay after a disconnect; resume after the\n" +
-			"last printed event. If it expired on the server, print a gap event: reload your display.\n" +
-			"Send connection notices to stderr. Skip unknown event types.\n" +
+			"deleted/resolved. The command reconnects with increasing delay after a disconnect; it resumes after the\n" +
+			"last printed event. If it expired on the server, the command prints a gap event: reload your display.\n" +
+			"Connection notices go to stderr. The command skips unknown event types.\n" +
 			"\n" +
 			"--json prints NDJSON (one object per line): id, time (RFC 3339 UTC), type\n" +
 			"(repo_created, repo_updated, repo_deleted, pushed, merge_request_opened,\n" +
