@@ -277,3 +277,58 @@ func TestGoModSideEffectsAreSorted(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, want, effects)
 }
+
+func TestGoModValidateRefusesDuplicateRequirements(t *testing.T) {
+	p := tp(t, "go.mod")
+	header := "module example.org/root\ngo 1.24\n"
+	clean := header + "require (\nexample.org/a v1.0.0\nexample.org/d v1.0.0\n)\n"
+	ups := []domain.DepUpdate{update(domain.EcosystemGoMod, "", "example.org/a", "v1.0.0", "v1.1.0")}
+	for _, tc := range []struct{ name, before, after string }{
+		{"incompatible twin after", clean, header + "require (\nexample.org/a v1.1.0\nexample.org/d v7.0.0+incompatible\nexample.org/d v1.0.0\n)\n"},
+		{"new module direct and indirect", clean, header + "require (\nexample.org/a v1.1.0\nexample.org/d v1.0.0\nexample.org/n v1.0.0\nexample.org/n v1.0.0 // indirect\n)\n"},
+		{"requested twice", clean, header + "require (\nexample.org/a v1.1.0\nexample.org/a v1.0.0\nexample.org/d v1.0.0\n)\n"},
+		{"duplicate before", header + "require (\nexample.org/a v1.0.0\nexample.org/d v1.0.0\nexample.org/d v1.0.0 // indirect\n)\n", header + "require (\nexample.org/a v1.1.0\nexample.org/d v1.0.0\n)\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := (GoMod{}).Validate(map[domain.TreePath][]byte{p: []byte(tc.before)}, map[domain.TreePath][]byte{p: []byte(tc.after)}, ups)
+			require.ErrorIs(t, err, domain.ErrInvalid)
+			assert.Contains(t, err.Error(), "duplicate requirement")
+		})
+	}
+}
+
+func TestGoModValidateRequestedModuleDirectness(t *testing.T) {
+	p := tp(t, "go.mod")
+	header := "module example.org/root\ngo 1.24\n"
+	ups := []domain.DepUpdate{update(domain.EcosystemGoMod, "", "example.org/a", "v1.0.0", "v1.1.0")}
+	for _, tc := range []struct{ name, before, after, want string }{
+		{"direct demoted", "require example.org/a v1.0.0\n", "require example.org/a v1.1.0 // indirect\n", "became indirect"},
+		{"indirect promoted", "require example.org/a v1.0.0 // indirect\n", "require example.org/a v1.1.0\n", "new direct requirement"},
+		{"direct stays direct", "require example.org/a v1.0.0\n", "require example.org/a v1.1.0\n", ""},
+		{"indirect stays indirect", "require example.org/a v1.0.0 // indirect\n", "require example.org/a v1.1.0 // indirect\n", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := (GoMod{}).Validate(map[domain.TreePath][]byte{p: []byte(header + tc.before)}, map[domain.TreePath][]byte{p: []byte(header + tc.after)}, ups)
+			if tc.want == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, domain.ErrInvalid)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+func TestGoModValidateRefusesSameVersionRespelled(t *testing.T) {
+	p := tp(t, "go.mod")
+	header := "module example.org/root\ngo 1.24\n"
+	ups := []domain.DepUpdate{update(domain.EcosystemGoMod, "", "example.org/a", "v1.0.0", "v1.1.0")}
+	before := map[domain.TreePath][]byte{p: []byte(header + "require (\nexample.org/a v1.0.0\nexample.org/b v1.0.0\n)\n")}
+	_, err := (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(header + "require (\nexample.org/a v1.1.0\nexample.org/b v1.0.0+incompatible\n)\n")}, ups)
+	require.ErrorIs(t, err, domain.ErrInvalid)
+	assert.Contains(t, err.Error(), `"example.org/b"`)
+	_, err = (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(header + "require (\nexample.org/a v1.1.0+incompatible\nexample.org/b v1.0.0\n)\n")}, ups)
+	require.ErrorIs(t, err, domain.ErrInvalid)
+	_, err = (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(header + "require (\nexample.org/a v1.1.0\nexample.org/b v1.0.0\n)\n")}, ups)
+	require.NoError(t, err)
+}
