@@ -32,13 +32,13 @@ func newSigningKeyCmd(env *cliEnv) *cobra.Command {
 	key := &cobra.Command{
 		Use:   "signing-key",
 		Short: "Show the server's signing key and manage the keys that verify pushed commits",
-		Long: "The server signs the commits it creates (squash merges) with its own SSH key, so that they show as\n" +
-			"verified: `show` prints that key. Needs a server with the signing_key feature (see `ermite version`).\n\n" +
-			"The server also checks the signatures of the commits you push, SSH and GPG, against the public keys\n" +
-			"you trust: `trust add|list|remove` manage them. A commit shows as verified when its signature is valid,\n" +
-			"made by a trusted key, and the key is trusted for the committer's email. The server's own key is\n" +
-			"always trusted (builtin) and cannot be removed. Needs the commit_signatures feature (see\n" +
-			"`ermite version`); adding and removing keys is for the owner.",
+		Long: "The server signs its commits (squash merges) with its SSH key so they appear verified.\n" +
+			"`show` prints the key and requires signing_key (see `ermite version`).\n" +
+			"\n" +
+			"`trust add|list|remove` manage public keys for verifying pushed SSH and GPG signatures.\n" +
+			"Verification requires a valid signature and a key trusted for the committer's email.\n" +
+			"The server's key is always trusted (builtin) and cannot be removed.\n" +
+			"Trust commands require commit_signatures; only the owner can add or remove keys.",
 	}
 	key.AddCommand(newSigningKeyShowCmd(env), newSigningKeyTrustCmd(env))
 	return key
@@ -99,7 +99,7 @@ func newSigningKeyTrustCmd(env *cliEnv) *cobra.Command {
 		Short: "Manage the keys commit signatures are verified against",
 		Long: "List, add and remove the public keys the server trusts to verify the signatures of commits (SSH and\n" +
 			"GPG). Each key is trusted for one to ten committer emails: a commit signed by the key but made\n" +
-			"under another email shows as unverified. Needs a server with the commit_signatures feature.",
+			"under another email shows as unverified. Needs a server with the commit_signatures feature." + jsonTrustedKeyHelp,
 	}
 	trust.AddCommand(newTrustListCmd(env), newTrustAddCmd(env), newTrustRemoveCmd(env))
 	return trust
@@ -109,7 +109,7 @@ func newTrustListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the trusted keys",
-		Long: "List the trusted keys, the server's own (builtin) key first. Any authenticated token may." + jsonTrustedKeyHelp +
+		Long: "List the trusted keys, the server's own (builtin) key first. Any authenticated token may." + "\nJSON: a trusted key; see `ermite signing-key trust --help`." +
 			"\n--json prints an array of keys.",
 		Args: cobra.NoArgs,
 	}
@@ -161,12 +161,14 @@ func newTrustAddCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add --format ssh|gpg --title <title> --email <email> <file|->",
 		Short: "Trust a public key",
-		Long: "Trust a public key for the given committer emails. The key is read from the file, or from standard\n" +
-			"input with -, up to 64 KiB: an authorized_keys line for --format ssh (for example ~/.ssh/id_ed25519.pub),\n" +
-			"an armored public key for --format gpg (`gpg --armor --export <fingerprint>`, exactly one key, never\n" +
-			"a private key). --email is required, repeatable, 1 to 10 addresses; the title is 1 to 100 bytes.\n" +
-			"Only the owner may add a key. Prints the key id on standard output, details on standard error;\n" +
-			"with --json, standard output is the key object." + jsonTrustedKeyHelp,
+		Long: "This command trusts a public key for the given committer emails. Only the owner can add keys.\n" +
+			"Input comes from a file, or stdin with -, up to 64 KiB:\n" +
+			"  ssh: authorized_keys line (e.g. ~/.ssh/id_ed25519.pub)\n" +
+			"  gpg: one armored public key (`gpg --armor --export <fingerprint>`), never a private key\n" +
+			"--format selects ssh or gpg. --email is required and repeatable: 1-10 addresses.\n" +
+			"The title allows 1-100 bytes. The command prints the key id on stdout and details on stderr.\n" +
+			"--json prints the key object on stdout.\n" +
+			"JSON: a trusted key; see `ermite signing-key trust --help`.",
 		Example: "  ermite signing-key trust add --format ssh --title laptop --email me@example.com ~/.ssh/id_ed25519.pub\n" +
 			"  gpg --armor --export 0xABCD | ermite signing-key trust add --format gpg --title work --email me@example.com -",
 		Args: cobra.ExactArgs(1),

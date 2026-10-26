@@ -24,8 +24,8 @@ func newWebCmd(env *cliEnv) *cobra.Command {
 	web := &cobra.Command{
 		Use:   "web",
 		Short: "Sign the owner in to the web interface of a remote server",
-		Long: "Manage the owner's browser sessions and passkeys on a remote server. They need the server's admin\n" +
-			"token, or a token that holds every scope and is limited neither to repositories nor to branches.",
+		Long: "These commands manage the owner's browser sessions and passkeys on a remote server.\n" +
+			"They require the admin token, or a token with every scope and no repository or branch restrictions.",
 	}
 	web.AddCommand(newWebLoginCmd(env), newWebLogoutCmd(env), newWebPasskeyCmd(env))
 	return web
@@ -35,12 +35,12 @@ func newWebLoginCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Print a one-time link that signs your browser in",
-		Long: "Ask the server for a login link and print it on standard output. Open it in your browser:\n" +
-			"the browser is then signed in as the owner for 12 hours (private repositories, merge requests).\n\n" +
-			"The link works once, for about a minute, and only until the server restarts. It is a secret: it is\n" +
-			"printed and nowhere else (not stored, not logged); do not paste it into a chat or a ticket. The page\n" +
-			"signs the browser in by itself; link previews, which run no script, cannot use it.\n\n" +
-			"JSON fields (--json): url, expires_at (RFC 3339 UTC).",
+		Long: "The command prints a one-time login link on stdout. It signs browsers in as owner\n" +
+			"for 12 hours (private repositories, merge requests). The link expires after about a minute\n" +
+			"or on server restart. It is secret: printed, never stored or logged. Keep it out of chats\n" +
+			"and tickets. The page signs in automatically; scriptless link previews cannot use it.\n" +
+			"\n" +
+			"JSON (--json): url, expires_at (RFC 3339 UTC).",
 		Args: cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)

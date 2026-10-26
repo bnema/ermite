@@ -16,15 +16,16 @@ func newRootCmdWith(env *cliEnv) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "ermite",
 		Short: "A single-user Git forge",
-		Long: "ermite is a single-user Git forge: `ermite serve` runs the server, the other commands\n" +
-			"drive a running server over its API.\n\n" +
-			"Remote commands need the server address (http:// or https://) and, except for public reads,\n" +
-			"a bearer token (see `ermite token create`). Each comes from, in order:\n\n" +
-			"  ERMITE_URL / ERMITE_TOKEN                    the environment\n" +
-			"  url / token.cmd in ~/.config/ermite/config   the config file (ERMITE_CONFIG selects another;\n                                               `ermite config show` prints its path)\n\n" +
-			"token.cmd is a command line that prints the token, run only when a command needs it, so the\n" +
-			"token stays in your secret manager (pass, gopass, op, bw, secret-tool…), never in the file.\n" +
-			"See `ermite config --help`.",
+		Long: "Run a single-user Git forge: `ermite serve` starts the server; other commands use its API.\n" +
+			"\n" +
+			"Remote commands need an http(s) server URL and, except for public reads, a bearer token\n" +
+			"(see `ermite token create`). Environment values take precedence:\n" +
+			"  ERMITE_URL / ERMITE_TOKEN   environment\n" +
+			"  url / token.cmd            ~/.config/ermite/config (override: ERMITE_CONFIG)\n" +
+			"`ermite config show` prints the file path.\n" +
+			"\n" +
+			"token.cmd runs only when needed and prints the token. Keep tokens in a secret manager\n" +
+			"(pass, gopass, op, bw, secret-tool…), never in the file. See `ermite config --help`.",
 		SilenceUsage:  true,
 		SilenceErrors: true, // cmd/ermite prints the error once
 	}

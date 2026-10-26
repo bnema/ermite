@@ -21,11 +21,10 @@ func newOIDCCmd(env *cliEnv) *cobra.Command {
 	oidc := &cobra.Command{
 		Use:   "oidc",
 		Short: "Manage the OIDC provider of CI jobs",
-		Long: "The server issues OIDC ID tokens to the CI jobs of trusted runs that have `permissions: id-token:\n" +
-			"write`, as GitHub does: a relying party (Vault, a cloud) that trusts the issuer\n" +
-			"<public URL>/-/oidc exchanges them for credentials. It signs them with its own key, sealed with\n" +
-			"ERMITE_SECRETS_KEY: a server without that key issues none. Needs a server with the ci.oidc\n" +
-			"feature (see `ermite version`).",
+		Long: "Manage OIDC ID tokens for trusted CI runs with `permissions: id-token: write`, as on GitHub.\n" +
+			"A relying party (Vault, a cloud) trusting issuer <public URL>/-/oidc exchanges them for credentials.\n" +
+			"The server signs tokens with its own key, sealed with ERMITE_SECRETS_KEY; without it, no tokens\n" +
+			"are issued. Requires ci.oidc (see `ermite version`).",
 	}
 	oidc.AddCommand(newOIDCRotateKeyCmd(env))
 	return oidc

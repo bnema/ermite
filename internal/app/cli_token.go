@@ -59,13 +59,14 @@ func toJSONToken(t *ermite.Token) jsonToken {
 const jsonTokenHelp = `
 JSON fields of a token (--json): id, label, scopes (array of names like "repo:read"),
 repos (array; empty means every repository), branch_prefixes (array; empty means every branch),
-expires_at, created_at and last_used_at (RFC 3339 UTC, null when unset or never used).`
+expires_at, created_at and last_used_at (RFC 3339 UTC, null when unset or never used).
+Create also returns secret (shown only once).`
 
 func newTokenCmd(env *cliEnv) *cobra.Command {
 	token := &cobra.Command{
 		Use:   "token",
 		Short: "Manage API tokens on a remote server",
-		Long:  "Create, list and revoke API tokens. Needs the token:admin scope (or the server's admin token).",
+		Long:  "Create, list and revoke API tokens. Needs the token:admin scope (or the server's admin token)." + jsonTokenHelp,
 	}
 	token.AddCommand(newTokenCreateCmd(env), newTokenListCmd(env), newTokenRevokeCmd(env))
 	return token
@@ -82,26 +83,28 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <label>",
 		Short: "Create a token and print its secret once",
-		Long: "Create a token. The secret is printed once on standard output (and nowhere else: pipe it\n" +
-			"or store it right away); details go to standard error. With --json, standard output is one\n" +
-			"object holding the token fields and the secret.\n\n" +
-			"What the token may do is chosen with --preset and/or --scope (they add up); there is no default:\n" +
-			"  cli    every scope, including mr:review for verdicts, for your own daily use\n" +
+		Long: "This command creates a token. It prints the secret once on stdout, nowhere else; store it immediately.\n" +
+			"Details go to stderr. --json prints one object with token fields and secret.\n" +
+			"\n" +
+			"--preset and --scope add up; neither has a default. Presets:\n" +
+			"  cli    every scope, including mr:review for verdicts; daily personal use\n" +
 			"  agent  repo:write, mr:write\n" +
-			"  runner runner:register (a CI runner host)\n" +
+			"  runner runner:register (CI runner host)\n" +
 			"  ci     repo:read\n" +
-			"Scopes are repo:read, repo:write, repo:admin, mr:write, mr:merge, issue:write and more; give\n" +
-			"issue:write (a server with the issues feature) to let a token write issues.\n" +
-			"A token cannot be more powerful than the one that creates it. --repo limits it to the named\n" +
-			"repositories (default: all). --expires takes 30d, 2w, 12h or a date; default: never.\n\n" +
-			"--branch-prefix limits the branches the token may write (default: all). Each prefix ends with /\n" +
-			"(for example agent/claude/). The token can push, force-push and delete only branches under its\n" +
-			"prefixes, and merge only into them; it cannot push tags, create repositories or delete one,\n" +
-			"and it never has the rights of the owner. It can only create tokens within its own prefixes.\n" +
-			"To give an AI agent its own space:\n" +
-			"  ermite token create claude --preset agent --scope repo:read --repo <repo> --branch-prefix agent/<name>/\n\n" +
-			"The label is free text of up to 100 bytes, except \"owner\" and \"root\" (in any case): they are\n" +
-			"what the audit trail shows for the admin token and the web owner, so the server refuses them." + jsonTokenHelp,
+			"Scopes include repo:read, repo:write, repo:admin, mr:write, mr:merge and issue:write.\n" +
+			"issue:write permits issue writes and requires the issues feature.\n" +
+			"The token cannot exceed its creator's powers. --repo restricts repositories (default: all).\n" +
+			"--expires accepts 30d, 2w, 12h or a date (default: never).\n" +
+			"\n" +
+			"--branch-prefix restricts writable branches (default: all). Prefixes end with / (e.g. agent/claude/).\n" +
+			"The token can push, force-push, delete and merge only within its prefixes. It cannot push tags,\n" +
+			"create or delete repositories, or hold owner rights. It can create tokens only within its prefixes.\n" +
+			"An agent can get its own space:\n" +
+			"  ermite token create claude --preset agent --scope repo:read --repo <repo> --branch-prefix agent/<name>/\n" +
+			"\n" +
+			"Labels allow free text up to 100 bytes. The server refuses \"owner\" and \"root\", case-insensitively:\n" +
+			"the audit trail reserves them for the admin token and web owner.\n" +
+			"JSON: a token; see `ermite token --help`.",
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&preset, "preset", "", "scope preset: "+strings.Join(client.PresetNames, ", "))
@@ -279,7 +282,7 @@ func newTokenListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List stored tokens",
-		Long:  "List stored tokens, newest first. Secrets are never shown. The server's admin token is not listed." + jsonTokenHelp + "\n--json prints an array of tokens.",
+		Long:  "List stored tokens, newest first. Secrets are never shown. The server's admin token is not listed." + "\nJSON: a token; see `ermite token --help`." + "\n--json prints an array of tokens.",
 		Args:  cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)
@@ -327,10 +330,10 @@ func newTokenRevokeCmd(env *cliEnv) *cobra.Command {
 	return &cobra.Command{
 		Use:   "revoke <id>",
 		Short: "Revoke a token",
-		Long: "Revoke a token by id (see `ermite token list`). It stops working immediately.\n\n" +
-			"A token with every scope, no --repo list and no --branch-prefix has the rights of the owner (it can open web\n" +
-			"sessions). Revoking one also signs every browser out, like `ermite web logout --all`:\n" +
-			"web sessions are not tied to the token that opened them. Sign in again with `ermite web login`.",
+		Long: "This command revokes a token by id (`ermite token list`); it stops working immediately.\n" +
+			"A token with every scope, no --repo list and no --branch-prefix has owner rights, including\n" +
+			"opening web sessions. Revoking it signs every browser out, like `ermite web logout --all`.\n" +
+			"Sessions are not tied to their opening token. `ermite web login` signs in again.",
 		Args: cobra.ExactArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) > 0 {

@@ -141,7 +141,7 @@ func noticef(cmd *cobra.Command, format string, args ...any) {
 
 // addJSONFlag registers --json and returns its value.
 func addJSONFlag(cmd *cobra.Command) *bool {
-	return cmd.Flags().Bool("json", false, "print machine-readable JSON (fields are listed in --help)")
+	return cmd.Flags().Bool("json", false, "print JSON (fields: see --help)")
 }
 
 // writeNDJSON prints v as one compact JSON line.
