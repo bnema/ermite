@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path"
 	"reflect"
+	"sort"
 	"strings"
 
 	"bnema.dev/ermite/internal/domain"
@@ -175,17 +176,18 @@ func policy(f *modfile.File) modulePolicy {
 }
 
 // Validate confines reports to requested module files and requested direct changes.
-func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) error {
+func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error) {
+	var effects []domain.DepSideEffect
 	dirs := map[string]map[string]string{}
 	for _, u := range ups {
 		if u.Ecosystem != domain.EcosystemGoMod || (u.Directory != "" && (path.Clean(u.Directory) != u.Directory || strings.HasPrefix(u.Directory, "/") || u.Directory == ".." || strings.HasPrefix(u.Directory, "../"))) {
-			return fmt.Errorf("%w: invalid Go update", domain.ErrInvalid)
+			return nil, fmt.Errorf("%w: invalid Go update", domain.ErrInvalid)
 		}
 		if dirs[u.Directory] == nil {
 			dirs[u.Directory] = map[string]string{}
 		}
 		if v, ok := dirs[u.Directory][u.Name]; ok && v != u.Version {
-			return fmt.Errorf("%w: conflicting Go updates", domain.ErrInvalid)
+			return nil, fmt.Errorf("%w: conflicting Go updates", domain.ErrInvalid)
 		}
 		dirs[u.Directory][u.Name] = u.Version
 	}
@@ -193,22 +195,22 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 		d := moduleDir(p.String())
 		base := path.Base(p.String())
 		if dirs[d] == nil || (base != "go.mod" && base != "go.sum") {
-			return fmt.Errorf("%w: unexpected report path %s", domain.ErrInvalid, p.String())
+			return nil, fmt.Errorf("%w: unexpected report path %s", domain.ErrInvalid, p.String())
 		}
 		if base == "go.sum" {
 			if err := validSum(b); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	for d, want := range dirs {
 		p, err := domain.ParseTreePath(path.Join(d, "go.mod"))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		old, ok := before[p]
 		if !ok {
-			return fmt.Errorf("%w: missing original go.mod", domain.ErrInvalid)
+			return nil, fmt.Errorf("%w: missing original go.mod", domain.ErrInvalid)
 		}
 		content := old
 		if b, ok := after[p]; ok {
@@ -216,14 +218,14 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 		}
 		a, err := modfile.Parse(p.String(), old, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		b, err := modfile.Parse(p.String(), content, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !reflect.DeepEqual(policy(a), policy(b)) {
-			return fmt.Errorf("%w: module directives changed", domain.ErrInvalid)
+			return nil, fmt.Errorf("%w: module directives changed", domain.ErrInvalid)
 		}
 		prev, next := map[string]*modfile.Require{}, map[string]*modfile.Require{}
 		for _, r := range a.Require {
@@ -234,8 +236,15 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 		}
 		for name, v := range want {
 			r := next[name]
-			if prev[name] == nil || r == nil || r.Mod.Version != v {
-				return fmt.Errorf("%w: requested version missing for %s", domain.ErrInvalid, name)
+			if prev[name] != nil && prev[name].Indirect && r == nil {
+				effects = append(effects, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: d, Name: name, From: prev[name].Mod.Version})
+				continue
+			}
+			if prev[name] == nil || r == nil || semver.Compare(r.Mod.Version, v) < 0 {
+				return nil, fmt.Errorf("%w: requested version missing for %s", domain.ErrInvalid, name)
+			}
+			if semver.Compare(r.Mod.Version, v) > 0 {
+				effects = append(effects, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: d, Name: name, From: v, To: r.Mod.Version})
 			}
 		}
 		for name, r := range prev {
@@ -243,8 +252,11 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 				continue
 			}
 			n := next[name]
-			if !r.Indirect && (n == nil || n.Indirect || n.Mod.Version != r.Mod.Version) {
-				return fmt.Errorf("%w: unrequested direct requirement %s", domain.ErrInvalid, name)
+			if !r.Indirect && (n == nil || n.Indirect || semver.Compare(n.Mod.Version, r.Mod.Version) < 0) {
+				return nil, fmt.Errorf("%w: unrequested direct requirement %s", domain.ErrInvalid, name)
+			}
+			if !r.Indirect && semver.Compare(n.Mod.Version, r.Mod.Version) > 0 {
+				effects = append(effects, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: d, Name: name, From: r.Mod.Version, To: n.Mod.Version})
 			}
 		}
 		for name, r := range next {
@@ -252,11 +264,17 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 				continue
 			}
 			if !r.Indirect && (prev[name] == nil || prev[name].Indirect) {
-				return fmt.Errorf("%w: new direct requirement %s", domain.ErrInvalid, name)
+				return nil, fmt.Errorf("%w: new direct requirement %s", domain.ErrInvalid, name)
 			}
 		}
 	}
-	return nil
+	sort.Slice(effects, func(i, j int) bool {
+		if effects[i].Directory != effects[j].Directory {
+			return effects[i].Directory < effects[j].Directory
+		}
+		return effects[i].Name < effects[j].Name
+	})
+	return effects, nil
 }
 
 func validSum(b []byte) error {

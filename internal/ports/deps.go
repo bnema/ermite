@@ -49,7 +49,7 @@ type DepsEcosystem interface {
 	// Apply is only called when ApplyInServer is true.
 	Apply(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error)
 	// Validate checks after (runner report or server Apply) against before.
-	Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) error
+	Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error)
 }
 
 // DepsStore keeps repository records and ignores, and global first-seen times.

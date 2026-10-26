@@ -223,7 +223,7 @@ func TestBernardRunnerReportIsRejected(t *testing.T) {
 		{"changed go directive", mk(file("go.mod", goModText("go 1.25", "", textNew))), "module directives changed"},
 		{"go 1.24 to 1.24.1 refused", mk(file("go.mod", goModText("go 1.24.1", "", textNew))), "module directives changed"},
 		{"go 1.24 to 1.25.0 refused", mk(file("go.mod", goModText("go 1.25.0", "", textNew))), "module directives changed"},
-		{"unrequested direct bump", mk(file("go.mod", strings.Replace(good, "x/net v0.30.0", "x/net v0.31.0", 1))), "unrequested direct requirement"},
+		{"unrequested direct downgrade", mk(file("go.mod", strings.Replace(good, "x/net v0.30.0", "x/net v0.29.0", 1))), "unrequested direct requirement"},
 		{"requested version missing", mk(file("go.mod", goModText("go 1.24", "", "v0.20.1"))), "requested version missing"},
 		{"malformed go.sum", mk(file("go.mod", good), file("go.sum", "nonsense\n")), "malformed go.sum"},
 	} {
@@ -258,7 +258,7 @@ func TestBernardRunnerReportSuccessPublishesFromTheJobCommit(t *testing.T) {
 	require.NoError(t, err)
 	rr.files[botWorkflow] = "old"
 	rr.eco.EXPECT().Apply(mock.Anything, mock.Anything).Return(map[domain.TreePath][]byte{wf: []byte("new")}, nil)
-	rr.eco.EXPECT().Validate(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	rr.eco.EXPECT().Validate(mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	mod, sum := mustPath(t, "go.mod"), mustPath(t, "go.sum")
 	rr.happyGit(domain.ObjectID{}, map[domain.TreePath][]byte{mod: []byte(goMod), sum: []byte(goSum), wf: []byte("new")})
 	rr.expectCreate(7)
@@ -418,4 +418,17 @@ func TestBernardGoVersionComesFromTheUpdatedModules(t *testing.T) {
 			assert.Equal(t, c.want, rr.started.Job.GoVersion)
 		})
 	}
+}
+
+func TestBernardRunnerReportListsGoSideEffects(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	mod := strings.Replace(goModText("go 1.24", "", textNew), "x/net v0.30.0", "x/net v0.31.0", 1)
+	sum := sumLine("golang.org/x/text", textNew)
+	rr.happyGit(domain.ObjectID{}, map[domain.TreePath][]byte{mustPath(t, "go.mod"): []byte(mod), mustPath(t, "go.sum"): []byte(sum)})
+	rr.expectCreate(7)
+	rr.open(goUpdate())
+	rr.end(goReport(mod, sum), domain.CISuccess)
+	assert.Equal(t, domain.DepsIdle, rr.rec.State)
+	assert.Contains(t, rr.created.Description, "## Also changed by Go")
+	assert.Contains(t, rr.created.Description, "- `golang.org/x/net` v0.30.0 → v0.31.0")
 }

@@ -147,7 +147,7 @@ func (r *openRig) happy(oldBranch domain.ObjectID) {
 	r.happyGit(oldBranch, map[domain.TreePath][]byte{tp: []byte("new")})
 	r.reader.EXPECT().OpenBlob(mock.Anything, r.repo, domain.RevisionOf(oid("a")), tp).Return(domain.BlobInfo{Size: 3}, io.NopCloser(strings.NewReader("old")), nil)
 	r.eco.EXPECT().Apply(mock.Anything, mock.Anything).Return(map[domain.TreePath][]byte{tp: []byte("new")}, nil)
-	r.eco.EXPECT().Validate(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	r.eco.EXPECT().Validate(mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 }
 
 // happyGit sets the git side of the publication of changes on the tip "a".

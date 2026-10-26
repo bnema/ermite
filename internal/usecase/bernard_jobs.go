@@ -257,7 +257,8 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 		}
 		before[tp] = content
 	}
-	if err := eco.Validate(before, after, runnerUps); err != nil {
+	effects, err := eco.Validate(before, after, runnerUps)
+	if err != nil {
 		return fmt.Errorf("check the %s updates: %w", domain.EcosystemGoMod, err)
 	}
 	changes := map[domain.TreePath][]byte{}
@@ -307,6 +308,6 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	if !exists {
 		return fmt.Errorf("%w: %s has no default branch", domain.ErrPreconditionFailed, run.Repo)
 	}
-	_, err = b.publish(ctx, run.Repo, target, base, changes, rec.RunUpdates, d.MR, jobGuard)
+	_, err = b.publish(ctx, run.Repo, target, base, changes, rec.RunUpdates, d.MR, jobGuard, effects)
 	return err
 }

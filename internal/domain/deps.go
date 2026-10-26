@@ -204,3 +204,10 @@ func PickUpdates(c DepCandidate, now time.Time, cooldown time.Duration, firstSee
 func floatingMajor(v string) bool {
 	return v == semver.Major(v)
 }
+
+// DepSideEffect describes a Go-selected change beyond the requested versions.
+// An empty To means tidy removed the module.
+type DepSideEffect struct {
+	Ecosystem                 DepsEcosystem
+	Directory, Name, From, To string
+}
