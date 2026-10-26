@@ -242,10 +242,15 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 }
 
 // CheckDepsReport checks the same report that asynchronous publication consumes.
+// It reads the record without the repository lock, which publication holds
+// during its git writes: only the state, the run and its updates are needed,
+// and DepsJobEnded checks the record again under the lock. An error that wraps
+// domain.ErrInvalid or domain.ErrPreconditionFailed means the report is
+// refused for good; any other error is transient.
 func (b *Bernard) CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) ([]domain.DepSideEffect, error) {
-	rec, err := b.currentRecord(ctx, run)
+	rec, err := b.cfg.Store.Get(ctx, run.Repo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read the dependency record: %w", err)
 	}
 	if rec.State != domain.DepsApplying || rec.RunID != run.ID {
 		return nil, nil
@@ -296,13 +301,13 @@ func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 			return nil, nil, fmt.Errorf("%w: report path %q: %v", domain.ErrInvalid, f.Path, err)
 		}
 		if !allowed[tp] {
-			return nil, nil, fmt.Errorf("%w: unexpected report path %s", domain.ErrInvalid, f.Path)
+			return nil, nil, fmt.Errorf("%w: unexpected report path %q", domain.ErrInvalid, f.Path)
 		}
 		if _, dup := after[tp]; dup {
-			return nil, nil, fmt.Errorf("%w: duplicate report path %s", domain.ErrInvalid, f.Path)
+			return nil, nil, fmt.Errorf("%w: duplicate report path %q", domain.ErrInvalid, f.Path)
 		}
 		if len(f.Content) > maxReportFileBytes {
-			return nil, nil, fmt.Errorf("%w: %s is larger than %d bytes", domain.ErrInvalid, f.Path, maxReportFileBytes)
+			return nil, nil, fmt.Errorf("%w: %q is larger than %d bytes", domain.ErrInvalid, f.Path, maxReportFileBytes)
 		}
 		if total += len(f.Content); total > maxReportBytes {
 			return nil, nil, fmt.Errorf("%w: the report is larger than %d bytes", domain.ErrInvalid, maxReportBytes)
@@ -317,10 +322,14 @@ func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 		switch {
 		case errors.Is(err, domain.ErrNotFound) && path.Base(tp.String()) == "go.sum":
 			continue // a module without dependencies has none
+		case errors.Is(err, domain.ErrNotFound), domain.IsInvalid(err):
+			// The file is not at the job's commit, or is not a file: the report
+			// can never be checked against it.
+			return nil, nil, fmt.Errorf("%w: %v", domain.ErrPreconditionFailed, err)
 		case err != nil:
-			return nil, nil, err
+			return nil, nil, err // a transient read failure
 		case !ok:
-			return nil, nil, fmt.Errorf("%w: %s is larger than %d bytes", domain.ErrPreconditionFailed, tp, maxDepsManifestBytes)
+			return nil, nil, fmt.Errorf("%w: %q is larger than %d bytes", domain.ErrPreconditionFailed, tp.String(), maxDepsManifestBytes)
 		}
 		before[tp] = content
 	}

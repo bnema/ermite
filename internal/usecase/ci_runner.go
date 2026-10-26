@@ -901,10 +901,19 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 			if err != nil {
 				return ports.CompleteJobResult{}, err
 			}
-			if _, err := observer.CheckDepsReport(ctx, run, j, *params.DepsReport); err != nil {
+			cctx, cancel := context.WithTimeout(ctx, depsCheckTimeout)
+			_, err = observer.CheckDepsReport(cctx, run, j, *params.DepsReport)
+			cancel()
+			switch {
+			case err == nil:
+			case errors.Is(err, domain.ErrInvalid), errors.Is(err, domain.ErrPreconditionFailed):
 				refusal = trim(keepDepsError("the server refused the dependency result: " + err.Error()))
 				params.Conclusion = domain.CIFailure
 				params.DepsReport = &ports.DepsReport{Error: refusal}
+			default:
+				// A deadline, a store or a git failure says nothing about the
+				// report: leave the job open so that the runner sends it again.
+				return ports.CompleteJobResult{}, fmt.Errorf("check the dependency report: %w", err)
 			}
 		}
 	}
@@ -941,16 +950,22 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 			rs.depsReport = params.DepsReport // outputs mean nothing to a dependency job
 			cur.Outputs = nil
 		}
-		if refusal != "" {
-			_, _ = c.cfg.Logs.AppendForced(ctx, logRef(*cur), []domain.CILogLine{{Time: c.now(), Text: "##[error]" + strings.ReplaceAll(refusal, "\n", " ")}})
-		}
-
 		rs.end(cur, params.Conclusion, msg)
 		if err := rs.advance(ctx); err != nil {
 			return err
 		}
 		res = ports.CompleteJobResult{Conclusion: cur.Conclusion, Error: cur.Error, Applied: true}
-		return rs.flush(ctx)
+		if err := rs.flush(ctx); err != nil {
+			return err
+		}
+		if refusal != "" { // after the flush, so that a retry does not log it twice
+			line := domain.CILogLine{Time: c.now(), Text: "##[error]" + strings.ReplaceAll(refusal, "\n", " ")}
+			if _, err := c.cfg.Logs.AppendForced(ctx, logRef(*cur), []domain.CILogLine{line}); err != nil {
+				log := zerowrap.FromCtx(ctx)
+				log.Error().Err(err).Str("job_id", j.ID).Int64("run_id", j.RunID).Msg("log the refusal of a dependency report")
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return ports.CompleteJobResult{}, err

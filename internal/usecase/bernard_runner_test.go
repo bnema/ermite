@@ -448,3 +448,55 @@ func TestBernardCheckDepsReportDoesNotPublishAndDropsSupersededRuns(t *testing.T
 	require.NoError(t, err)
 	assert.Empty(t, effects)
 }
+
+func TestBernardCheckDepsReportDoesNotWaitForTheRepositoryLock(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	run, job := rr.endedRun(domain.CISuccess)
+	report := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
+	done := make(chan error, 1)
+	rr.b.UnderRepoLock(rr.repo, func() {
+		go func() {
+			_, err := rr.b.CheckDepsReport(context.Background(), run, job, *report)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "CheckDepsReport waits for the repository lock")
+		}
+	})
+}
+
+func TestBernardCheckDepsReportClassifiesReadFailures(t *testing.T) {
+	good := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
+	t.Run("go.mod absent at the commit is a permanent refusal", func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		delete(rr.files, "go.mod")
+		run, job := rr.endedRun(domain.CISuccess)
+		_, err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	})
+	t.Run("a git failure stays transient", func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		boom := errors.New("git is down")
+		rr.reader.ExpectedCalls = nil
+		rr.reader.EXPECT().OpenBlob(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(domain.BlobInfo{}, nil, boom)
+		run, job := rr.endedRun(domain.CISuccess)
+		_, err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
+		require.ErrorIs(t, err, boom)
+		assert.NotErrorIs(t, err, domain.ErrInvalid)
+		assert.NotErrorIs(t, err, domain.ErrPreconditionFailed)
+	})
+	t.Run("an oversize go.mod is a permanent refusal", func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		rr.files["go.mod"] = strings.Repeat("x", 3<<20)
+		run, job := rr.endedRun(domain.CISuccess)
+		_, err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	})
+}
