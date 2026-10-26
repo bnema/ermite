@@ -18,27 +18,28 @@ import (
 // jsonEvent is the stable JSON shape of one event: one object per line with
 // `ermite watch --json`. Fields not meaningful for a type are omitted.
 type jsonEvent struct {
-	ID         string          `json:"id"`
-	Time       *string         `json:"time"`
-	Type       string          `json:"type"`
-	Repo       string          `json:"repo,omitempty"`
-	Repository *jsonRepo       `json:"repository,omitempty"`
-	RefUpdates []jsonRefUpdate `json:"ref_updates,omitempty"`
+	ID   string      `json:"id"`
+	Time jsonInstant `json:"time"`
+	Type string      `json:"type" help:"repo_created, repo_updated, repo_deleted, pushed, merge_request_opened, merge_request_merged, merge_request_closed, merge_request_auto_merge_enabled, merge_request_auto_merge_cancelled, merge_request_edited, merge_request_mergeability, issue_edited, comment_added, comment_edited, comment_deleted, comment_resolved, mirror_failed, mirror_recovered or gap"`
+	Repo string      `json:"repo,omitempty" help:"the repository name"`
+	// Repository is set for repo_created and repo_updated.
+	Repository *jsonRepo       `json:"repository,omitempty" help:"repo_created and repo_updated" see:"ermite repo"`
+	RefUpdates []jsonRefUpdate `json:"ref_updates,omitempty" help:"pushed; an empty id means creation or deletion"`
 	// MergeRequest is set for the merge_request_* events, Number and Comment
 	// for comment_added.
-	MergeRequest *jsonMergeRequest `json:"merge_request,omitempty"`
-	Number       int64             `json:"number,omitempty"`
-	Comment      *jsonComment      `json:"comment,omitempty"`
+	MergeRequest *jsonMergeRequest `json:"merge_request,omitempty" help:"the merge_request_* events except merge_request_edited and merge_request_mergeability" see:"ermite mr"`
+	Number       int64             `json:"number,omitempty" help:"the merge request or issue of comment, edit and mergeability events"`
+	Comment      *jsonComment      `json:"comment,omitempty" help:"comment events" see:"ermite mr"`
 	// Mergeability is set for a merge_request_mergeability event.
-	Mergeability *jsonMergeability `json:"mergeability,omitempty"`
+	Mergeability *jsonMergeability `json:"mergeability,omitempty" help:"merge_request_mergeability" see:"ermite mr show"`
 	// State and FailureClass are set for a mirror_failed event.
-	State        string `json:"state,omitempty"`
-	FailureClass string `json:"failure_class,omitempty"`
+	State        string `json:"state,omitempty" help:"mirror_failed"`
+	FailureClass string `json:"failure_class,omitempty" help:"mirror_failed"`
 	// Auto is set for merge_request_merged: auto-merge made the merge.
-	Auto bool `json:"auto,omitempty"`
+	Auto bool `json:"auto,omitempty" help:"merge_request_merged: true for auto-merge"`
 	// Reason is set for merge_request_auto_merge_cancelled.
-	Reason        string   `json:"reason,omitempty"`
-	ChangedFields []string `json:"changed_fields,omitempty"`
+	Reason        string   `json:"reason,omitempty" help:"merge_request_auto_merge_cancelled"`
+	ChangedFields []string `json:"changed_fields,omitempty" help:"title and body for issue_edited, title and description for merge_request_edited"`
 }
 
 type jsonRefUpdate struct {
@@ -238,19 +239,8 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 			"last printed event. If the server no longer has that event, the command prints a gap event: reload your display.\n" +
 			"Connection notices go to stderr. The command skips unknown event types.\n" +
 			"\n" +
-			"--json prints NDJSON (one object per line): id, time (RFC 3339 UTC), type\n" +
-			"(repo_created, repo_updated, repo_deleted, pushed, merge_request_opened,\n" +
-			"merge_request_merged, merge_request_closed, merge_request_auto_merge_enabled,\n" +
-			"merge_request_auto_merge_cancelled (with reason), issue_edited, merge_request_edited,\n" +
-			"comment_added, comment_edited, comment_deleted, comment_resolved, gap).\n" +
-			"Type-specific fields:\n" +
-			"  repo: name; repository: fields from `repo show --json`.\n" +
-			"  ref_updates: array of ref, old_id, new_id; empty id means creation/deletion.\n" +
-			"  merge_request: fields from `ermite mr --help`; merge_request_merged also has\n" +
-			"    auto (true for auto-merge).\n" +
-			"  Comment events: number (merge request number), comment (see `ermite mr --help`).\n" +
-			"  Edit events: repo, number (issue or merge request), changed_fields\n" +
-			"    (title/body for issue_edited; title/description for merge_request_edited).",
+			"--json prints NDJSON, one object per line. Fields that do not apply to the type are absent.\n" +
+			jsonFieldsHelp("an event", jsonEvent{}),
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}

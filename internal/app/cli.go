@@ -239,7 +239,7 @@ func fields(w io.Writer, pairs [][2]string) error {
 const timeFormat = "2006-01-02 15:04"
 
 // jsonTime is an RFC 3339 UTC string, or nil (JSON null) for an unset timestamp.
-func jsonTime(t *timestamppb.Timestamp) *string {
+func jsonTime(t *timestamppb.Timestamp) jsonInstant {
 	if !t.IsValid() {
 		return nil
 	}

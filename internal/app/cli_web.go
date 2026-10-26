@@ -16,8 +16,8 @@ import (
 
 // jsonLoginLink is the stable JSON shape of `ermite web login --json`.
 type jsonLoginLink struct {
-	URL       string  `json:"url"`
-	ExpiresAt *string `json:"expires_at"`
+	URL       string      `json:"url"`
+	ExpiresAt jsonInstant `json:"expires_at"`
 }
 
 func newWebCmd(env *cliEnv) *cobra.Command {
@@ -40,7 +40,7 @@ func newWebLoginCmd(env *cliEnv) *cobra.Command {
 			"or on server restart. It is secret: printed, never stored or logged. Keep it out of chats\n" +
 			"and tickets. The page signs in automatically; scriptless link previews cannot use it.\n" +
 			"\n" +
-			"JSON (--json): url, expires_at (RFC 3339 UTC).",
+			jsonFieldsHelp("the link", jsonLoginLink{}),
 		Args: cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)
@@ -93,15 +93,12 @@ func newWebLogoutCmd(env *cliEnv) *cobra.Command {
 // jsonPasskey is the stable JSON shape of a passkey. It never holds key
 // material.
 type jsonPasskey struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	CreatedAt  *string `json:"created_at"`
-	LastUsedAt *string `json:"last_used_at"`
-	Synced     bool    `json:"synced"`
+	ID         string      `json:"id" help:"credential id, base64url"`
+	Name       string      `json:"name"`
+	CreatedAt  jsonInstant `json:"created_at"`
+	LastUsedAt jsonInstant `json:"last_used_at" help:"null if never used"`
+	Synced     bool        `json:"synced" help:"the authenticator reports the passkey as backed up"`
 }
-
-const jsonPasskeyHelp = "\n\nJSON fields (--json): id (credential id, base64url), name, created_at (RFC 3339 UTC), last_used_at\n" +
-	"(null if never used), synced (the authenticator reports the passkey as backed up)."
 
 func newWebPasskeyCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
@@ -127,8 +124,8 @@ func newWebPasskeyListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the registered passkeys",
-		Long: "List the passkeys, oldest first, with the id to give to `ermite web passkey remove`." + jsonPasskeyHelp +
-			"\n--json prints an array of passkeys.",
+		Long: "List the passkeys, oldest first, with the id to give to `ermite web passkey remove`.\n\n" +
+			jsonFieldsHelp("a passkey", jsonPasskey{}) + " --json prints an array.",
 		Args: cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)

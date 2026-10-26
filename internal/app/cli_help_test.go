@@ -48,6 +48,7 @@ func TestWrapHelp(t *testing.T) {
 	assert.Equal(t, "aa bb\ncc", wrapHelp("aa bb cc", 5))
 	assert.Equal(t, "  indented line stays", wrapHelp("  indented line stays", 5), "examples keep their layout")
 	assert.Equal(t, "short\n\nnext", wrapHelp("short\n\nnext", 5), "blank lines stay")
+	assert.Equal(t, "see\n`ermite mr --help`", wrapHelp("see `ermite mr --help`", 12), "a code span is not split")
 }
 
 func walkCommands(cmd *cobra.Command, fn func(*cobra.Command)) {

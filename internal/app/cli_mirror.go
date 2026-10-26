@@ -13,49 +13,37 @@ import (
 	"bnema.dev/ermite-api/gen/ermite"
 )
 
-const jsonMirrorKeyHelp = `
-JSON fields of a key (--json): authorized_key, fingerprint, created_at (RFC 3339, UTC).`
-
-const jsonMirrorConfigHelp = `
-JSON fields of the policy (--json): enabled, url_template, cron, all_branches, updated_at (RFC 3339, UTC, null if never set).`
-
-const jsonMirrorStatusHelp = `
-JSON fields of a status (--json): repo, enabled, source (disabled, global, override, excluded), url
-(admins only, else empty), cron, all_branches, state (disabled, ok, failing, paused), failure_class,
-reason, detail (admins only), consecutive_failures, last_attempt_at, last_success_at, next_retry_at,
-next_run_at, paused_at (RFC 3339, UTC, null when unset).`
-
 type jsonMirrorKey struct {
-	AuthorizedKey string  `json:"authorized_key"`
-	Fingerprint   string  `json:"fingerprint"`
-	CreatedAt     *string `json:"created_at"`
+	AuthorizedKey string      `json:"authorized_key"`
+	Fingerprint   string      `json:"fingerprint"`
+	CreatedAt     jsonInstant `json:"created_at"`
 }
 
 type jsonMirrorConfig struct {
-	Enabled     bool    `json:"enabled"`
-	URLTemplate string  `json:"url_template"`
-	Cron        string  `json:"cron"`
-	AllBranches bool    `json:"all_branches"`
-	UpdatedAt   *string `json:"updated_at"`
+	Enabled     bool        `json:"enabled"`
+	URLTemplate string      `json:"url_template"`
+	Cron        string      `json:"cron"`
+	AllBranches bool        `json:"all_branches"`
+	UpdatedAt   jsonInstant `json:"updated_at" help:"null if never set"`
 }
 
 type jsonMirrorStatus struct {
-	Repo                string  `json:"repo"`
-	Enabled             bool    `json:"enabled"`
-	Source              string  `json:"source"`
-	URL                 string  `json:"url"`
-	Cron                string  `json:"cron"`
-	AllBranches         bool    `json:"all_branches"`
-	State               string  `json:"state"`
-	FailureClass        string  `json:"failure_class"`
-	Reason              string  `json:"reason"`
-	Detail              string  `json:"detail"`
-	ConsecutiveFailures int32   `json:"consecutive_failures"`
-	LastAttemptAt       *string `json:"last_attempt_at"`
-	LastSuccessAt       *string `json:"last_success_at"`
-	NextRetryAt         *string `json:"next_retry_at"`
-	NextRunAt           *string `json:"next_run_at"`
-	PausedAt            *string `json:"paused_at"`
+	Repo                string      `json:"repo"`
+	Enabled             bool        `json:"enabled"`
+	Source              string      `json:"source" help:"disabled, global, override or excluded"`
+	URL                 string      `json:"url" help:"admins only, else empty"`
+	Cron                string      `json:"cron"`
+	AllBranches         bool        `json:"all_branches"`
+	State               string      `json:"state" help:"disabled, ok, failing or paused"`
+	FailureClass        string      `json:"failure_class"`
+	Reason              string      `json:"reason"`
+	Detail              string      `json:"detail" help:"admins only"`
+	ConsecutiveFailures int32       `json:"consecutive_failures"`
+	LastAttemptAt       jsonInstant `json:"last_attempt_at"`
+	LastSuccessAt       jsonInstant `json:"last_success_at"`
+	NextRetryAt         jsonInstant `json:"next_retry_at"`
+	NextRunAt           jsonInstant `json:"next_run_at"`
+	PausedAt            jsonInstant `json:"paused_at"`
 }
 
 func toJSONMirrorKey(k *ermite.MirrorKey) jsonMirrorKey {
@@ -81,7 +69,7 @@ func toJSONMirrorStatus(s *ermite.MirrorStatus) jsonMirrorStatus {
 
 func newMirrorCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "mirror", Short: "Manage non-forcing push mirrors"}
-	key := &cobra.Command{Use: "key", Short: "Show or rotate the mirror SSH key", Long: "Manage the mirror SSH key." + jsonMirrorKeyHelp}
+	key := &cobra.Command{Use: "key", Short: "Show or rotate the mirror SSH key", Long: "Manage the mirror SSH key.\n" + jsonFieldsHelp("a key", jsonMirrorKey{})}
 	for _, rotate := range []bool{false, true} {
 		name, short := "show", "Print the mirror authorized_keys line"
 		long := "Print only the authorized_keys line to stdout. Access needs authentication; the server needs ERMITE_SECRETS_KEY.\nPipe it into: gh ssh-key add - --title \"ermite mirror\".\nJSON: a key; see `ermite mirror key --help`."
@@ -156,7 +144,7 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 func newMirrorConfigCmd(env *cliEnv) *cobra.Command {
 	var enabled, all bool
 	var url, cron string
-	cmd := &cobra.Command{Use: "config", Short: "Patch the global mirror policy (owner only)", Long: "Patch the global policy. Unspecified settings stay unchanged. `config show` reads it." + jsonMirrorConfigHelp, Args: cobra.NoArgs}
+	cmd := &cobra.Command{Use: "config", Short: "Patch the global mirror policy (owner only)", Long: "Patch the global policy. Unspecified settings stay unchanged. `config show` reads it.\n" + jsonFieldsHelp("the policy", jsonMirrorConfig{}), Args: cobra.NoArgs}
 	cmd.Flags().BoolVar(&enabled, "enabled", false, "enable the global mirror policy")
 	cmd.Flags().StringVar(&url, "url", "", "SSH URL template containing {repo}")
 	cmd.Flags().StringVar(&cron, "cron", "", "five-field UTC cron (minimum gap five minutes)")
@@ -195,7 +183,7 @@ func newMirrorConfigCmd(env *cliEnv) *cobra.Command {
 		}
 		return output(cmd, res.Msg.GetConfig(), *asJSON)
 	}
-	show := &cobra.Command{Use: "show", Short: "Show the global mirror policy", Long: "Show the global mirror policy (owner only)." + jsonMirrorConfigHelp, Args: cobra.NoArgs}
+	show := &cobra.Command{Use: "show", Short: "Show the global mirror policy", Long: "Show the global mirror policy (owner only).\n" + jsonFieldsHelp("the policy", jsonMirrorConfig{}), Args: cobra.NoArgs}
 	showJSON := addJSONFlag(show)
 	show.RunE = func(cmd *cobra.Command, _ []string) error {
 		c, err := env.client(cmd)
@@ -242,7 +230,7 @@ func mirrorStateName(s ermite.MirrorState) string {
 }
 
 func newMirrorStatusCmd(env *cliEnv) *cobra.Command {
-	cmd := &cobra.Command{Use: "status [repo]", Short: "Show mirror states, reasons and next runs", Long: "Show one repository or all (owner only). --json prints one object or an array, respectively." + jsonMirrorStatusHelp, Args: cobra.MaximumNArgs(1)}
+	cmd := &cobra.Command{Use: "status [repo]", Short: "Show mirror states, reasons and next runs", Long: "Show one repository or all (owner only). --json prints one object or an array, respectively.\n" + jsonFieldsHelp("a status", jsonMirrorStatus{}), Args: cobra.MaximumNArgs(1)}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		c, err := env.client(cmd)

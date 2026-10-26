@@ -11,10 +11,10 @@ import (
 
 // jsonOIDCRotation is the stable JSON shape of `oidc rotate-key --json`.
 type jsonOIDCRotation struct {
-	Issuer       string  `json:"issuer"`
-	Kid          string  `json:"kid"`
-	RetiredKid   *string `json:"retired_kid"`
-	RetiredUntil *string `json:"retired_until"`
+	Issuer       string      `json:"issuer"`
+	Kid          string      `json:"kid"`
+	RetiredKid   *string     `json:"retired_kid" help:"null when there was no previous key"`
+	RetiredUntil jsonInstant `json:"retired_until" help:"null when there was no previous key"`
 }
 
 func newOIDCCmd(env *cliEnv) *cobra.Command {
@@ -39,8 +39,7 @@ func newOIDCRotateKeyCmd(env *cliEnv) *cobra.Command {
 			"in the JWKS (<issuer>/.well-known/jwks) for 24 hours, so that the tokens it signed verify until they\n" +
 			"expire. Needs owner rights: the admin token, or a token with every scope, no repository list\n" +
 			"and no branch prefixes.\n\n" +
-			"JSON fields (--json): issuer, kid, retired_kid and retired_until (RFC 3339 UTC; both null when\n" +
-			"there was no previous key).",
+			jsonFieldsHelp("the rotation", jsonOIDCRotation{}),
 		Args: cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)

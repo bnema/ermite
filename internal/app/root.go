@@ -53,7 +53,8 @@ func wrapLongHelp(cmd *cobra.Command) {
 }
 
 // wrapHelp breaks the lines of text longer than width at spaces. Indented lines
-// (examples, tables) and words longer than width are kept as they are.
+// (examples, tables) and words longer than width are kept as they are. A `code`
+// span counts as one word, so that a command is never split over two lines.
 func wrapHelp(text string, width int) string {
 	lines := strings.Split(text, "\n")
 	out := make([]string, 0, len(lines))
@@ -63,7 +64,7 @@ func wrapHelp(text string, width int) string {
 			continue
 		}
 		var b strings.Builder
-		for _, word := range strings.Fields(line) {
+		for _, word := range helpWords(line) {
 			if b.Len() > 0 && b.Len()+1+len(word) > width {
 				out = append(out, b.String())
 				b.Reset()
@@ -76,4 +77,17 @@ func wrapHelp(text string, width int) string {
 		out = append(out, b.String())
 	}
 	return strings.Join(out, "\n")
+}
+
+// helpWords splits line at spaces, except inside a `code` span.
+func helpWords(line string) []string {
+	var words []string
+	for _, w := range strings.Fields(line) {
+		if n := len(words); n > 0 && strings.Count(words[n-1], "`")%2 == 1 {
+			words[n-1] += " " + w
+			continue
+		}
+		words = append(words, w)
+	}
+	return words
 }

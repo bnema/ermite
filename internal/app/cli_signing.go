@@ -22,7 +22,7 @@ import (
 // jsonSigningKey is the stable JSON shape of `signing-key show --json`.
 type jsonSigningKey struct {
 	PublicKey      string `json:"public_key"`
-	Fingerprint    string `json:"fingerprint"`
+	Fingerprint    string `json:"fingerprint" help:"SHA256:..."`
 	CommitterName  string `json:"committer_name"`
 	CommitterEmail string `json:"committer_email"`
 	AllowedSigners string `json:"allowed_signers"`
@@ -46,18 +46,14 @@ func newSigningKeyCmd(env *cliEnv) *cobra.Command {
 
 // jsonTrustedKey is the stable JSON shape of a trusted key.
 type jsonTrustedKey struct {
-	ID        string   `json:"id"`
-	Format    string   `json:"format"`
-	Title     string   `json:"title"`
-	PublicKey string   `json:"public_key"`
-	Emails    []string `json:"emails"`
-	Builtin   bool     `json:"builtin"`
-	CreatedAt *string  `json:"created_at"`
+	ID        string      `json:"id" help:"SHA256:... for ssh, the fingerprint in hex for gpg"`
+	Format    string      `json:"format" help:"ssh or gpg"`
+	Title     string      `json:"title"`
+	PublicKey string      `json:"public_key"`
+	Emails    []string    `json:"emails"`
+	Builtin   bool        `json:"builtin" help:"true for the server's own key"`
+	CreatedAt jsonInstant `json:"created_at" help:"null for the builtin key"`
 }
-
-const jsonTrustedKeyHelp = "\n\nJSON fields of a key (--json): id (SHA256:... for ssh, the fingerprint in hex for gpg), format\n" +
-	"(ssh, gpg), title, public_key, emails (array), builtin (true for the server's own key), created_at\n" +
-	"(RFC 3339 UTC, null for the builtin key)."
 
 func formatName(f ermite.SignatureFormat) string {
 	switch f {
@@ -99,7 +95,8 @@ func newSigningKeyTrustCmd(env *cliEnv) *cobra.Command {
 		Short: "Manage the keys commit signatures are verified against",
 		Long: "List, add and remove the public keys the server trusts to verify the signatures of commits (SSH and\n" +
 			"GPG). Each key is trusted for one to ten committer emails: a commit signed by the key but made\n" +
-			"under another email shows as unverified. Needs a server with the commit_signatures feature." + jsonTrustedKeyHelp,
+			"under another email shows as unverified. Needs a server with the commit_signatures feature.\n\n" +
+			jsonFieldsHelp("a key", jsonTrustedKey{}),
 	}
 	trust.AddCommand(newTrustListCmd(env), newTrustAddCmd(env), newTrustRemoveCmd(env))
 	return trust
@@ -290,8 +287,7 @@ func newSigningKeyShowCmd(env *cliEnv) *cobra.Command {
 			"  git log --show-signature\n\n" +
 			"--public-key prints only the authorized_keys line, --allowed-signers only the allowed-signers line\n" +
 			"(\"<committer email> <key>\"), each ready to be redirected into a file.\n\n" +
-			"JSON fields (--json): public_key, fingerprint (SHA256:...), committer_name, committer_email,\n" +
-			"allowed_signers.",
+			jsonFieldsHelp("the key", jsonSigningKey{}),
 		Args: cobra.NoArgs,
 	}
 	cmd.Flags().BoolVar(&publicKey, "public-key", false, "print only the key as an authorized_keys line")

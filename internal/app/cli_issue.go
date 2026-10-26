@@ -52,18 +52,18 @@ func parseIssueState(s string) (ermite.IssueState, error) {
 
 // jsonIssue is the stable JSON shape of an issue.
 type jsonIssue struct {
-	Repo         string  `json:"repo"`
-	URL          string  `json:"url"`
-	Number       int64   `json:"number"`
-	Title        string  `json:"title"`
-	Body         string  `json:"body"`
-	State        string  `json:"state"`
-	Author       string  `json:"author"`
-	CreatedAt    *string `json:"created_at"`
-	UpdatedAt    *string `json:"updated_at"`
-	CommentCount int32   `json:"comment_count"`
+	Repo         string      `json:"repo"`
+	URL          string      `json:"url" help:"full web URL"`
+	Number       int64       `json:"number"`
+	Title        string      `json:"title"`
+	Body         string      `json:"body"`
+	State        string      `json:"state" help:"open, closed or resolved"`
+	Author       string      `json:"author" help:"token label"`
+	CreatedAt    jsonInstant `json:"created_at"`
+	UpdatedAt    jsonInstant `json:"updated_at"`
+	CommentCount int32       `json:"comment_count"`
 	// ClosedByMergeRequest is the merge request whose merge resolved the issue; 0 for none.
-	ClosedByMergeRequest int64 `json:"closed_by_merge_request"`
+	ClosedByMergeRequest int64 `json:"closed_by_merge_request" help:"number of the merge request whose merge resolved the issue; 0 for none"`
 }
 
 // issueWebURL is the web page of an issue.
@@ -83,10 +83,10 @@ func toJSONIssue(i *ermite.Issue, baseURL string) jsonIssue {
 
 // jsonIssueComment is the stable JSON shape of an issue comment.
 type jsonIssueComment struct {
-	ID        string  `json:"id"`
-	Author    string  `json:"author"`
-	Text      string  `json:"text"`
-	CreatedAt *string `json:"created_at"`
+	ID        string      `json:"id"`
+	Author    string      `json:"author"`
+	Text      string      `json:"text"`
+	CreatedAt jsonInstant `json:"created_at"`
 }
 
 func toJSONIssueComment(c *ermite.IssueComment) jsonIssueComment {
@@ -95,31 +95,19 @@ func toJSONIssueComment(c *ermite.IssueComment) jsonIssueComment {
 
 // jsonIssueDetail is the stable JSON shape of `issue show --json`.
 type jsonIssueDetail struct {
-	jsonIssue
-	Comments   []jsonIssueComment   `json:"comments"`
-	References []jsonIssueReference `json:"references"`
-	Events     []jsonIssueEvent     `json:"events"`
+	jsonIssue  `help:"the issue fields" see:"ermite issue"`
+	Comments   []jsonIssueComment   `json:"comments" help:"always present, possibly empty" see:"ermite issue"`
+	References []jsonIssueReference `json:"references" help:"merge requests that name the issue; always present, possibly empty"`
+	Events     []jsonIssueEvent     `json:"events" help:"the history, always present, possibly empty"`
 }
 
 // jsonIssueReference is a merge request that names the issue.
 type jsonIssueReference struct {
 	Number int64  `json:"number"`
 	Title  string `json:"title"`
-	State  string `json:"state"`
-	Closes bool   `json:"closes"`
+	State  string `json:"state" help:"open, merged or closed"`
+	Closes bool   `json:"closes" help:"true when merging it resolves the issue"`
 }
-
-const jsonIssueHelp = `
-JSON fields of an issue (--json): repo, url (full web URL), number, title, body, state ("open", "closed" or "resolved"), author
-(token label), created_at and updated_at (RFC 3339 UTC), comment_count, closed_by_merge_request (number of
-the merge request whose merge resolved the issue, 0 for none).`
-
-const jsonIssueCommentHelp = `
-JSON fields of an issue comment: id, author, text, created_at.`
-
-const jsonIssueReferenceHelp = `
-JSON fields of a merge request reference: number, title, state ("open", "merged" or "closed"), closes
-(true when merging it resolves the issue).`
 
 func newIssueCmd(env *cliEnv) *cobra.Command {
 	issue := &cobra.Command{
@@ -128,7 +116,8 @@ func newIssueCmd(env *cliEnv) *cobra.Command {
 		Long: "Issues record a task, a bug or a question about a repository. They share the numbering of merge\n" +
 			"requests: the next issue after merge request 1 is number 2. Issues must be enabled for the\n" +
 			"repository (`ermite repo edit <repo> --issues owner`). Needs a server with the issues feature (see\n" +
-			"`ermite version`). Identify it by repository and number: `ermite issue show proj 3`." + jsonIssueHelp + jsonIssueCommentHelp,
+			"`ermite version`). Identify it by repository and number: `ermite issue show proj 3`.\n" +
+			jsonFieldsHelp("an issue", jsonIssue{}) + "\n" + jsonFieldsHelp("an issue comment", jsonIssueComment{}),
 	}
 	issue.AddCommand(
 		newIssueCreateCmd(env), newIssueEditCmd(env), newIssueListCmd(env), newIssueShowCmd(env), newIssueCommentCmd(env),
@@ -322,8 +311,7 @@ func newIssueShowCmd(env *cliEnv) *cobra.Command {
 		Long: "Show an issue: its fields, its body, the merge requests that name it (#N in their title,\n" +
 			"description, notes or commits; a closing keyword such as \"Fixes #N\" resolves it on merge) and\n" +
 			"its comments and history, oldest first. \"resolved by\" shows the merge request whose merge resolved the issue." +
-			"\nJSON: an issue (see `ermite issue --help`)." + "\nJSON: an issue comment (see `ermite issue --help`)." + jsonIssueReferenceHelp + jsonIssueEventHelp +
-			"\n--json adds comments, references and events (always present, possibly empty) to the issue fields.",
+			"\n" + jsonFieldsHelp("an issue with its history", jsonIssueDetail{}),
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeIssueRepoThenNumber(env),
 	}

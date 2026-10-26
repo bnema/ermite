@@ -26,19 +26,19 @@ const (
 
 // jsonRepo is the stable JSON shape of a repository.
 type jsonRepo struct {
-	Name          string   `json:"name"`
-	Description   string   `json:"description"`
-	Topics        []string `json:"topics"`
-	Visibility    string   `json:"visibility"`
-	DefaultBranch string   `json:"default_branch"`
-	CreatedAt     *string  `json:"created_at"`
-	PushedAt      *string  `json:"pushed_at"`
+	Name          string      `json:"name"`
+	Description   string      `json:"description"`
+	Topics        []string    `json:"topics"`
+	Visibility    string      `json:"visibility" help:"public or private"`
+	DefaultBranch string      `json:"default_branch"`
+	CreatedAt     jsonInstant `json:"created_at"`
+	PushedAt      jsonInstant `json:"pushed_at" help:"null until the first push"`
 	// MergeModes are the allowed merge modes ("fast-forward", "squash", "merge").
-	MergeModes     []string `json:"merge_modes"`
-	AllowAutoMerge bool     `json:"allow_auto_merge"`
+	MergeModes     []string `json:"merge_modes" help:"the allowed ones: fast-forward, squash, merge"`
+	AllowAutoMerge bool     `json:"allow_auto_merge" help:"whether auto-merge can be enabled"`
 	Archived       bool     `json:"archived"`
 	// Issues is the issue mode ("off", "owner" or "public").
-	Issues string `json:"issues"`
+	Issues string `json:"issues" help:"off, owner or public"`
 }
 
 func toJSONRepo(r *ermite.Repo) jsonRepo {
@@ -113,17 +113,12 @@ func parseVisibility(s string) (ermite.Visibility, error) {
 	}
 }
 
-const jsonRepoHelp = `
-JSON fields of a repository (--json): name, description, topics (array), visibility ("public" or
-"private"), default_branch, created_at, pushed_at (null until first push), merge_modes
-(array: "fast-forward", "squash", "merge"), allow_auto_merge (whether auto-merge can be enabled),
-archived, issues ("off", "owner", "public"). Times are RFC 3339 UTC.`
-
 func newRepoCmd(env *cliEnv) *cobra.Command {
 	repo := &cobra.Command{
 		Use:   "repo",
 		Short: "Manage repositories on a remote server",
-		Long:  "Manage repositories on the configured server (ERMITE_URL or the config file, see `ermite config`), authenticated with ERMITE_TOKEN or the token command of the config file." + jsonRepoHelp,
+		Long: "Manage repositories on the configured server (ERMITE_URL or the config file, see `ermite config`), authenticated with ERMITE_TOKEN or the token command of the config file.\n" +
+			jsonFieldsHelp("a repository", jsonRepo{}),
 	}
 	repo.AddCommand(
 		newRepoListCmd(env), newRepoShowCmd(env), newRepoCreateCmd(env),

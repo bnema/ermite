@@ -12,20 +12,16 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const jsonIssueEventHelp = `
-JSON fields of a history event: id, kind (referenced, closed, reopened, resolved, edited), issue,
-merge_request (0 for none), merge_request_title, closes, actor, created_at (RFC 3339 UTC), changed_fields (edited fields, when present).`
-
 type jsonIssueEvent struct {
-	ID                string   `json:"id"`
-	Kind              string   `json:"kind"`
-	Issue             int64    `json:"issue"`
-	MergeRequest      int64    `json:"merge_request"`
-	MergeRequestTitle string   `json:"merge_request_title"`
-	Closes            bool     `json:"closes"`
-	Actor             string   `json:"actor"`
-	CreatedAt         *string  `json:"created_at"`
-	ChangedFields     []string `json:"changed_fields,omitempty"`
+	ID                string      `json:"id"`
+	Kind              string      `json:"kind" help:"referenced, closed, reopened, resolved or edited"`
+	Issue             int64       `json:"issue"`
+	MergeRequest      int64       `json:"merge_request" help:"0 for none"`
+	MergeRequestTitle string      `json:"merge_request_title"`
+	Closes            bool        `json:"closes"`
+	Actor             string      `json:"actor"`
+	CreatedAt         jsonInstant `json:"created_at"`
+	ChangedFields     []string    `json:"changed_fields,omitempty" help:"the edited fields, when present"`
 }
 
 func toJSONIssueEvents(events []*ermite.IssueEvent) []jsonIssueEvent {

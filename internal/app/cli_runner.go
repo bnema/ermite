@@ -16,24 +16,18 @@ import (
 )
 
 type jsonRunner struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Labels       []string `json:"labels"`
-	Isolation    string   `json:"isolation"`
-	Version      string   `json:"version"`
-	Arch         string   `json:"arch"`
-	Os           string   `json:"os"`
-	RegisteredAt *string  `json:"registered_at"`
-	LastSeen     *string  `json:"last_seen"`
-	Busy         bool     `json:"busy"`
-	Online       bool     `json:"online"`
+	ID           string      `json:"id"`
+	Name         string      `json:"name"`
+	Labels       []string    `json:"labels"`
+	Isolation    string      `json:"isolation" help:"vm, container-sysbox or container-privileged"`
+	Version      string      `json:"version"`
+	Arch         string      `json:"arch"`
+	Os           string      `json:"os"`
+	RegisteredAt jsonInstant `json:"registered_at"`
+	LastSeen     jsonInstant `json:"last_seen" help:"null if never seen"`
+	Busy         bool        `json:"busy"`
+	Online       bool        `json:"online" help:"the server heard from it within 2 minutes by its own clock; older servers report false for all runners"`
 }
-
-const jsonRunnerHelp = `
-JSON fields of a runner (--json): id, name, labels, isolation (vm, container-sysbox,
-container-privileged), version, arch, os, registered_at, last_seen (RFC 3339 UTC, null if never
-seen), busy, online (the server heard from it within 2 minutes by its own clock; older servers
-without this field report false for all runners).`
 
 func newRunnerCmd(env *cliEnv) *cobra.Command {
 	runner := &cobra.Command{
@@ -49,7 +43,7 @@ func newRunnerListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List registered runners",
-		Long:  "List registered runners by name." + jsonRunnerHelp + "\n--json prints an array of runners.",
+		Long:  "List registered runners by name.\n" + jsonFieldsHelp("a runner", jsonRunner{}) + " --json prints an array.",
 		Args:  cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)

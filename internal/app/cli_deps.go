@@ -13,31 +13,25 @@ import (
 	"bnema.dev/ermite-api/gen/ermite"
 )
 
-const jsonDepsHelp = `
-JSON fields of a repository (--json): repo, updates (ecosystem, name, directory, current, latest, kind
-(patch, minor, major), new), checked_at, snoozed_until (RFC 3339, UTC, null when unset),
-merge_request_number (0 = none), state (idle, applying, failed), error, run_id (the run applying the updates, or the
-last one that tried; 0 = none). The log of a run, failed ones included: ermite run view <repo> <run> --log.`
-
 type jsonDepsUpdate struct {
 	Ecosystem string `json:"ecosystem"`
 	Name      string `json:"name"`
 	Directory string `json:"directory"`
 	Current   string `json:"current"`
 	Latest    string `json:"latest"`
-	Kind      string `json:"kind"`
-	New       bool   `json:"new"`
+	Kind      string `json:"kind" help:"patch, minor or major"`
+	New       bool   `json:"new" help:"absent from the previous check"`
 }
 
 type jsonDepsRepo struct {
 	Repo               string           `json:"repo"`
 	Updates            []jsonDepsUpdate `json:"updates"`
-	CheckedAt          *string          `json:"checked_at"`
-	SnoozedUntil       *string          `json:"snoozed_until"`
-	MergeRequestNumber int64            `json:"merge_request_number"`
-	State              string           `json:"state"`
+	CheckedAt          jsonInstant      `json:"checked_at"`
+	SnoozedUntil       jsonInstant      `json:"snoozed_until"`
+	MergeRequestNumber int64            `json:"merge_request_number" help:"0 = none"`
+	State              string           `json:"state" help:"idle, applying or failed"`
 	Error              string           `json:"error"`
-	RunID              int64            `json:"run_id"`
+	RunID              int64            `json:"run_id" help:"the run applying the updates, or the last one that tried; 0 = none"`
 }
 
 func toJSONDepsRepo(r *ermite.RepoDependencyUpdates) jsonDepsRepo {
@@ -72,7 +66,8 @@ func depsExpected(r *ermite.RepoDependencyUpdates) []*ermite.DependencyVersion {
 }
 
 func newDepsCmd(env *cliEnv) *cobra.Command {
-	cmd := &cobra.Command{Use: "deps", Short: "Bernard: pending dependency updates (owner only)", Long: "Manage pending dependency updates (owner only)." + jsonDepsHelp}
+	cmd := &cobra.Command{Use: "deps", Short: "Bernard: pending dependency updates (owner only)", Long: "Manage pending dependency updates (owner only).\n" +
+		jsonFieldsHelp("a repository", jsonDepsRepo{}) + " The log of a run, failed ones included: ermite run view <repo> <run> --log."}
 	cmd.AddCommand(newDepsListCmd(env), newDepsCheckCmd(env))
 	for _, name := range []string{"open", "ignore", "snooze"} {
 		cmd.AddCommand(newDepsActionCmd(env, name))

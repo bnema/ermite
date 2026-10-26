@@ -19,55 +19,55 @@ import (
 
 // jsonRun is the stable JSON shape of a run.
 type jsonRun struct {
-	ID           int64   `json:"id"`
-	Repo         string  `json:"repo"`
-	Number       int64   `json:"number"`
-	Attempt      int32   `json:"attempt"`
-	Workflow     string  `json:"workflow"`
-	Name         string  `json:"name"`
-	WorkflowPath string  `json:"workflow_path"`
-	Title        string  `json:"title"`
-	Event        string  `json:"event"`
-	Ref          string  `json:"ref"`
-	Sha          string  `json:"sha"`
-	Actor        string  `json:"actor"`
-	Status       string  `json:"status"`
-	Conclusion   string  `json:"conclusion"`
-	Error        string  `json:"error"`
-	CreatedAt    *string `json:"created_at"`
-	StartedAt    *string `json:"started_at"`
-	CompletedAt  *string `json:"completed_at"`
+	ID           int64       `json:"id"`
+	Repo         string      `json:"repo"`
+	Number       int64       `json:"number"`
+	Attempt      int32       `json:"attempt"`
+	Workflow     string      `json:"workflow"`
+	Name         string      `json:"name" help:"the run-name, else the workflow"`
+	WorkflowPath string      `json:"workflow_path"`
+	Title        string      `json:"title"`
+	Event        string      `json:"event"`
+	Ref          string      `json:"ref"`
+	Sha          string      `json:"sha"`
+	Actor        string      `json:"actor"`
+	Status       string      `json:"status" help:"queued, in_progress or completed"`
+	Conclusion   string      `json:"conclusion" help:"success, failure, cancelled, skipped, timed_out, neutral or action_required; empty until completed"`
+	Error        string      `json:"error"`
+	CreatedAt    jsonInstant `json:"created_at"`
+	StartedAt    jsonInstant `json:"started_at"`
+	CompletedAt  jsonInstant `json:"completed_at"`
 }
 
 type jsonStep struct {
 	Number     int32  `json:"number"`
 	Name       string `json:"name"`
-	State      string `json:"state"`
+	State      string `json:"state" help:"pending, in_progress or completed"`
 	Conclusion string `json:"conclusion"`
 	// Outcome is the result before continue-on-error; for a step stored without
 	// one it is the conclusion.
-	Outcome     string  `json:"outcome"`
-	StartedAt   *string `json:"started_at"`
-	CompletedAt *string `json:"completed_at"`
-	LogStart    int64   `json:"log_start"`
-	LogEnd      int64   `json:"log_end"`
+	Outcome     string      `json:"outcome" help:"the result before continue-on-error"`
+	StartedAt   jsonInstant `json:"started_at"`
+	CompletedAt jsonInstant `json:"completed_at"`
+	LogStart    int64       `json:"log_start"`
+	LogEnd      int64       `json:"log_end"`
 }
 
 type jsonRunJob struct {
-	ID          string     `json:"id"`
-	Attempt     int32      `json:"attempt"`
-	Key         string     `json:"key"`
-	Name        string     `json:"name"`
-	Status      string     `json:"status"`
-	Conclusion  string     `json:"conclusion"`
-	Error       string     `json:"error"`
-	Labels      []string   `json:"labels"`
-	Needs       []string   `json:"needs"`
-	Runner      string     `json:"runner"`
-	Isolation   string     `json:"isolation"`
-	Steps       []jsonStep `json:"steps"`
-	StartedAt   *string    `json:"started_at"`
-	CompletedAt *string    `json:"completed_at"`
+	ID          string      `json:"id"`
+	Attempt     int32       `json:"attempt"`
+	Key         string      `json:"key"`
+	Name        string      `json:"name"`
+	Status      string      `json:"status" help:"queued, pending, in_progress or completed"`
+	Conclusion  string      `json:"conclusion"`
+	Error       string      `json:"error"`
+	Labels      []string    `json:"labels"`
+	Needs       []string    `json:"needs"`
+	Runner      string      `json:"runner"`
+	Isolation   string      `json:"isolation" help:"vm, container-sysbox or container-privileged"`
+	Steps       []jsonStep  `json:"steps"`
+	StartedAt   jsonInstant `json:"started_at"`
+	CompletedAt jsonInstant `json:"completed_at"`
 }
 
 // jsonAnnotation is an annotation of a run, with the job and the step it belongs to.
@@ -75,7 +75,7 @@ type jsonAnnotation struct {
 	Job         string `json:"job"`
 	JobID       string `json:"job_id"`
 	Step        int32  `json:"step"`
-	Level       string `json:"level"`
+	Level       string `json:"level" help:"notice, warning or failure"`
 	Title       string `json:"title"`
 	Message     string `json:"message"`
 	File        string `json:"file"`
@@ -86,23 +86,13 @@ type jsonAnnotation struct {
 }
 
 type jsonRunDetail struct {
-	jsonRun
+	jsonRun       `help:"the run fields" see:"ermite run"`
 	LatestAttempt int32            `json:"latest_attempt"`
 	Jobs          []jsonRunJob     `json:"jobs"`
 	Annotations   []jsonAnnotation `json:"annotations"`
 	// AnnotationsTruncated is true when the server holds more annotations than it returned.
 	AnnotationsTruncated bool `json:"annotations_truncated"`
 }
-
-const jsonRunHelp = `
-JSON fields of a run (--json): id, repo, number, attempt, workflow, name (run-name, else workflow), workflow_path, title, event,
-ref, sha, actor, status (queued, in_progress, completed), conclusion (success, failure, cancelled,
-skipped, timed_out, neutral, action_required; empty until completed), error, created_at,
-started_at and completed_at (RFC 3339 UTC, null when unset). "run view" adds latest_attempt and
-jobs (id, attempt, key, name, status, conclusion, error, labels, needs, runner, isolation, steps
-with number, name, state, conclusion, outcome (the result before continue-on-error), log_start and log_end,
-started_at, completed_at), annotations (job, job_id, step, level notice|warning|failure, title, message,
-file, start_line, end_line, start_column, end_column) and annotations_truncated.`
 
 func statusText(s ermite.CiStatus) string {
 	return strings.ToLower(strings.TrimPrefix(s.String(), "CI_STATUS_"))
@@ -181,7 +171,8 @@ func newRunCmd(env *cliEnv) *cobra.Command {
 		Short: "Manage CI runs and download artifacts",
 		Long: "Manage repository CI runs (workflows in .github/workflows run on push).\n" +
 			"Reads need repository read access; cancel and rerun need ci:write.\n" +
-			"Artifacts need a token, even for public repositories." + jsonRunHelp,
+			"Artifacts need a token, even for public repositories.\n" +
+			jsonFieldsHelp("a run", jsonRun{}) + "\n" + jsonFieldsHelp("a run with its jobs", jsonRunDetail{}),
 	}
 	run.AddCommand(newRunListCmd(env), newRunViewCmd(env), newRunWatchCmd(env), newRunCancelCmd(env), newRunRerunCmd(env),
 		newRunArtifactsCmd(env), newRunDownloadCmd(env))
@@ -292,7 +283,7 @@ func newRunViewCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "view <repo> <run id>",
 		Short:             "Show a run, jobs, steps, annotations, logs or summaries",
-		Long:              "Show run state, jobs, steps and ANNOTATIONS (step notices, warnings and errors with job and file:line). --attempt reads an earlier attempt.\n--log prints the job logs instead, verbatim and unprefixed. --summary prints the job summaries instead\n(GITHUB_STEP_SUMMARY Markdown, unrendered). Both cover every job unless --job names one (id or name).\nJSON: a run; see `ermite run --help`.",
+		Long:              "Show run state, jobs, steps and ANNOTATIONS (step notices, warnings and errors with job and file:line). --attempt reads an earlier attempt.\n--log prints the job logs instead, verbatim and unprefixed. --summary prints the job summaries instead\n(GITHUB_STEP_SUMMARY Markdown, unrendered). Both cover every job unless --job names one (id or name).\nJSON: a run with its jobs; see `ermite run --help`.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -704,7 +695,7 @@ func newRunCancelCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "cancel <repo> <run id>",
 		Short:             "Cancel a run",
-		Long:              "Ask runners to stop an unfinished run. Unassigned jobs are cancelled immediately. Access needs ci:write.",
+		Long:              "Ask runners to stop an unfinished run. Unassigned jobs are cancelled immediately. Access needs ci:write.\nJSON: a run; see `ermite run --help`.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}

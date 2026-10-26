@@ -23,18 +23,18 @@ import (
 type jsonToken struct {
 	ID     string   `json:"id"`
 	Label  string   `json:"label"`
-	Scopes []string `json:"scopes"`
-	Repos  []string `json:"repos"`
+	Scopes []string `json:"scopes" help:"names like repo:read"`
+	Repos  []string `json:"repos" help:"empty means every repository"`
 	// BranchPrefixes limits the branches the token may write; empty means all.
-	BranchPrefixes []string `json:"branch_prefixes"`
-	ExpiresAt      *string  `json:"expires_at"`
-	CreatedAt      *string  `json:"created_at"`
-	LastUsedAt     *string  `json:"last_used_at"`
+	BranchPrefixes []string    `json:"branch_prefixes" help:"empty means every branch"`
+	ExpiresAt      jsonInstant `json:"expires_at" help:"null if it never expires"`
+	CreatedAt      jsonInstant `json:"created_at"`
+	LastUsedAt     jsonInstant `json:"last_used_at" help:"null if never used"`
 }
 
 type jsonCreatedToken struct {
-	jsonToken
-	Secret string `json:"secret"`
+	jsonToken `help:"the token fields" see:"ermite token"`
+	Secret    string `json:"secret" help:"shown only once"`
 }
 
 func toJSONToken(t *ermite.Token) jsonToken {
@@ -56,17 +56,12 @@ func toJSONToken(t *ermite.Token) jsonToken {
 	}
 }
 
-const jsonTokenHelp = `
-JSON fields of a token (--json): id, label, scopes (array of names like "repo:read"),
-repos (array; empty means every repository), branch_prefixes (array; empty means every branch),
-expires_at, created_at and last_used_at (RFC 3339 UTC, null when unset or never used).
-Create also returns secret (shown only once).`
-
 func newTokenCmd(env *cliEnv) *cobra.Command {
 	token := &cobra.Command{
 		Use:   "token",
 		Short: "Manage API tokens on a remote server",
-		Long:  "Create, list and revoke API tokens. Needs the token:admin scope (or the server's admin token)." + jsonTokenHelp,
+		Long: "Create, list and revoke API tokens. Needs the token:admin scope (or the server's admin token).\n" +
+			jsonFieldsHelp("a token", jsonToken{}),
 	}
 	token.AddCommand(newTokenCreateCmd(env), newTokenListCmd(env), newTokenRevokeCmd(env))
 	return token
@@ -84,7 +79,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 		Use:   "create <label>",
 		Short: "Create a token and print its secret once",
 		Long: "Create a token. The command prints the secret once on stdout, nowhere else; store it right away.\n" +
-			"Details go to stderr. --json prints one object with token fields and secret.\n" +
+			"Details go to stderr.\n" +
 			"\n" +
 			"--preset and --scope add up; neither has a default. Presets:\n" +
 			"  cli    every scope, including mr:review for verdicts; daily personal use\n" +
@@ -104,7 +99,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 			"\n" +
 			"Labels allow free text up to 100 bytes. The server refuses \"owner\" and \"root\", case-insensitively:\n" +
 			"the audit trail reserves them for the admin token and web owner.\n" +
-			"JSON: a token; see `ermite token --help`.",
+			jsonFieldsHelp("the created token", jsonCreatedToken{}),
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&preset, "preset", "", "scope preset: "+strings.Join(client.PresetNames, ", "))

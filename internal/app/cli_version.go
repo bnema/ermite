@@ -16,7 +16,7 @@ import (
 // jsonVersion is the stable JSON shape of `ermite version --json`.
 type jsonVersion struct {
 	Client jsonClientVersion  `json:"client"`
-	Server *jsonServerVersion `json:"server"`
+	Server *jsonServerVersion `json:"server" help:"null without a URL"`
 }
 
 type jsonClientVersion struct {
@@ -26,8 +26,8 @@ type jsonClientVersion struct {
 type jsonServerVersion struct {
 	URL             string   `json:"url"`
 	Version         string   `json:"version"`
-	Features        []string `json:"features"`
-	MissingFeatures []string `json:"missing_features"`
+	Features        []string `json:"features" help:"identifiers"`
+	MissingFeatures []string `json:"missing_features" help:"features this client uses that the server lacks"`
 }
 
 func newVersionCmd(env *cliEnv) *cobra.Command {
@@ -39,8 +39,7 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 			"this client uses that the server lacks. Without a URL, only the client is shown.\n" +
 			"The command never runs token.cmd.\n" +
 			"\n" +
-			"JSON (--json): client.version; server (null without a URL), containing url, version,\n" +
-			"features (identifier array), missing_features (features this client uses that the server lacks).",
+			jsonFieldsHelp("the versions", jsonVersion{}),
 		Args: cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)

@@ -244,8 +244,8 @@ func newSecretSetCmd(env *cliEnv) *cobra.Command {
 }
 
 type jsonSecret struct {
-	Name      string  `json:"name"`
-	UpdatedAt *string `json:"updated_at"`
+	Name      string      `json:"name"`
+	UpdatedAt jsonInstant `json:"updated_at"`
 }
 
 func newSecretListCmd(env *cliEnv) *cobra.Command {
@@ -254,7 +254,7 @@ func newSecretListCmd(env *cliEnv) *cobra.Command {
 		Use:   "list",
 		Short: "List secret names",
 		Long: "List names and update times for secrets set in one scope, not inherited secrets. Values are never shown.\n\n" +
-			"JSON fields of a secret (--json): name, updated_at (RFC 3339 UTC, null when unset).",
+			jsonFieldsHelp("a secret", jsonSecret{}),
 		Args: cobra.NoArgs,
 	}
 	f.add(cmd, env, "secrets")
@@ -339,7 +339,7 @@ func newVariableCmd(env *cliEnv) *cobra.Command {
 		Short: "Manage the variables CI jobs receive",
 		Long: "Manage workflow variables (${{ vars.NAME }}), like `gh variable`. Locations, names, precedence\n" +
 			"and access match `ermite secret`. Unlike secrets, variables are readable and may appear in logs.\n\n" +
-			"JSON fields of a variable (--json): name, value, updated_at (RFC 3339 UTC, null when unset).",
+			jsonFieldsHelp("a variable", jsonVariable{}),
 	}
 	v.AddCommand(newVariableSetCmd(env), newVariableGetCmd(env), newVariableListCmd(env), newVariableDeleteCmd(env))
 	return v
@@ -394,9 +394,9 @@ func newVariableSetCmd(env *cliEnv) *cobra.Command {
 }
 
 type jsonVariable struct {
-	Name      string  `json:"name"`
-	Value     string  `json:"value"`
-	UpdatedAt *string `json:"updated_at"`
+	Name      string      `json:"name"`
+	Value     string      `json:"value"`
+	UpdatedAt jsonInstant `json:"updated_at"`
 }
 
 func variableJSON(v *ermite.Variable) jsonVariable {
@@ -525,9 +525,9 @@ func newVariableDeleteCmd(env *cliEnv) *cobra.Command {
 // --- environment ---
 
 type jsonEnvironment struct {
-	Repo      string  `json:"repo"`
-	Name      string  `json:"name"`
-	CreatedAt *string `json:"created_at"`
+	Repo      string      `json:"repo"`
+	Name      string      `json:"name"`
+	CreatedAt jsonInstant `json:"created_at"`
 }
 
 func newEnvironmentCmd(env *cliEnv) *cobra.Command {
@@ -577,7 +577,7 @@ func newEnvironmentListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list --repo REPO",
 		Short: "List the environments of a repository",
-		Long:  "List repository environments by name.\n\nJSON fields of an environment (--json): repo, name, created_at (RFC 3339 UTC, null when unset).",
+		Long:  "List repository environments by name.\n\n" + jsonFieldsHelp("an environment", jsonEnvironment{}),
 		Args:  cobra.NoArgs,
 	}
 	addRepoFlag(cmd, env, &repo)

@@ -225,13 +225,16 @@ Bernard checks daily for updates to Go modules and GitHub Actions. It skips arch
 
 | Type | Fields |
 |---|---|
-| `repo_created`, `repo_updated`, `repo_deleted` | `repo`, `repository` |
+| `repo_created`, `repo_updated` | `repo`, `repository` |
+| `repo_deleted` | `repo` |
 | `pushed` | `repo`, `ref_updates` (`ref`, `old_id`, `new_id`; empty = created/deleted) |
 | `merge_request_opened`, `_merged`, `_closed` | `repo`, `merge_request`; merged has `auto` (true for an auto-merge) |
 | `merge_request_auto_merge_enabled`, `_cancelled` | `repo`, `merge_request`; cancelled has `reason` |
 | `merge_request_mergeability` | `repo`, `number`, `mergeability` (on change) |
 | `comment_added`, `_edited`, `_deleted`, `_resolved` | `repo`, `number`, `comment` (`verdict` set on verdict notes) |
 | `issue_edited`, `merge_request_edited` | `repo`, `number`, `changed_fields` |
+| `mirror_failed` | `repo`, `state`, `failure_class` |
+| `mirror_recovered` | `repo` |
 | `gap` | events were lost: reload the state |
 
 Unknown types are skipped.

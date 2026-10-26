@@ -50,8 +50,8 @@ func newConfigCmd(env *cliEnv) *cobra.Command {
 // jsonConfig is the stable JSON shape of `ermite config show --json`.
 type jsonConfig struct {
 	File     string  `json:"file"`
-	URL      *string `json:"url"`
-	TokenCmd *string `json:"token_cmd"`
+	URL      *string `json:"url" help:"null when unset"`
+	TokenCmd *string `json:"token_cmd" help:"null when unset"`
 }
 
 func newConfigShowCmd(env *cliEnv) *cobra.Command {
@@ -61,7 +61,7 @@ func newConfigShowCmd(env *cliEnv) *cobra.Command {
 		Long: "Print the file path, url and token.cmd; absent values show as (not set).\n" +
 			"The command never runs token.cmd; it warns when file permissions would block it.\n" +
 			"\n" +
-			"JSON (--json): file, url, token_cmd. Unset settings are null.",
+			jsonFieldsHelp("the settings", jsonConfig{}),
 		Args: cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)

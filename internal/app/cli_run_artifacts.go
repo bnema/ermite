@@ -37,16 +37,16 @@ const maxZipEntries = 100_000
 
 // jsonArtifact is the stable JSON shape of an artifact.
 type jsonArtifact struct {
-	ID        int64   `json:"id"`
-	Name      string  `json:"name"`
-	Size      int64   `json:"size"`
-	Digest    string  `json:"digest"`
-	MediaType string  `json:"media_type"`
-	RunID     int64   `json:"run_id"`
-	Attempt   int32   `json:"attempt"`
-	JobID     string  `json:"job_id"`
-	CreatedAt *string `json:"created_at"`
-	ExpiresAt *string `json:"expires_at"`
+	ID        int64       `json:"id"`
+	Name      string      `json:"name"`
+	Size      int64       `json:"size"`
+	Digest    string      `json:"digest"`
+	MediaType string      `json:"media_type"`
+	RunID     int64       `json:"run_id"`
+	Attempt   int32       `json:"attempt"`
+	JobID     string      `json:"job_id"`
+	CreatedAt jsonInstant `json:"created_at"`
+	ExpiresAt jsonInstant `json:"expires_at"`
 }
 
 type jsonArtifactList struct {
@@ -96,8 +96,7 @@ func newRunArtifactsCmd(env *cliEnv) *cobra.Command {
 		Short: "List the artifacts of a run",
 		Long: "List a run's job artifacts (actions/upload-artifact) and repository artifact usage.\n" +
 			"Access needs a repository-read token, even for public repositories.\n" +
-			"JSON fields (--json): artifacts (id, name, size, digest, media_type, run_id, attempt, job_id,\n" +
-			"created_at, expires_at), used_bytes and quota_bytes.",
+			jsonFieldsHelp("the artifacts", jsonArtifactList{}),
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}

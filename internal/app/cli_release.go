@@ -54,16 +54,16 @@ func releaseClient(env *cliEnv, cmd *cobra.Command) (*client.Client, error) {
 
 // jsonRelease and jsonReleaseAsset keep the CLI shape independent of protobuf JSON.
 type jsonReleaseAsset struct {
-	ID          int64   `json:"id"`
-	ReleaseID   int64   `json:"release_id"`
-	Name        string  `json:"name"`
-	Label       string  `json:"label"`
-	ContentType string  `json:"content_type"`
-	Size        int64   `json:"size"`
-	Digest      string  `json:"digest"`
-	Uploader    string  `json:"uploader"`
-	CreatedAt   *string `json:"created_at"`
-	UpdatedAt   *string `json:"updated_at"`
+	ID          int64       `json:"id"`
+	ReleaseID   int64       `json:"release_id"`
+	Name        string      `json:"name"`
+	Label       string      `json:"label"`
+	ContentType string      `json:"content_type"`
+	Size        int64       `json:"size"`
+	Digest      string      `json:"digest"`
+	Uploader    string      `json:"uploader"`
+	CreatedAt   jsonInstant `json:"created_at"`
+	UpdatedAt   jsonInstant `json:"updated_at"`
 }
 type jsonRelease struct {
 	ID              int64              `json:"id"`
@@ -76,9 +76,9 @@ type jsonRelease struct {
 	Latest          bool               `json:"latest"`
 	TargetCommitish string             `json:"target_commitish"`
 	Author          string             `json:"author"`
-	CreatedAt       *string            `json:"created_at"`
-	PublishedAt     *string            `json:"published_at"`
-	UpdatedAt       *string            `json:"updated_at"`
+	CreatedAt       jsonInstant        `json:"created_at"`
+	PublishedAt     jsonInstant        `json:"published_at"`
+	UpdatedAt       jsonInstant        `json:"updated_at"`
 	Assets          []jsonReleaseAsset `json:"assets"`
 }
 
@@ -90,10 +90,8 @@ func toJSONRelease(r *ermite.Release) jsonRelease {
 	return out
 }
 
-const releaseJSONHelp = "\nJSON fields of a release (--json): id, repo, tag, title, notes, draft, prerelease, latest, target_commitish, author,\ncreated_at, published_at, updated_at (RFC 3339 UTC or null), assets (id, release_id, name, label,\ncontent_type, size, digest, uploader, created_at, updated_at). list prints an array."
-
 func newReleaseCmd(env *cliEnv) *cobra.Command {
-	cmd := &cobra.Command{Use: "release", Short: "Manage releases and their assets", Long: "Manage tagged releases. Reads follow repository visibility; writes need release:write. The server must support releases. Select by tag, numeric id, or latest (view/download)." + releaseJSONHelp}
+	cmd := &cobra.Command{Use: "release", Short: "Manage releases and their assets", Long: "Manage tagged releases. Reads follow repository visibility; writes need release:write. The server must support releases. Select by tag, numeric id, or latest (view/download).\n" + jsonFieldsHelp("a release", jsonRelease{}) + " list prints an array."}
 	cmd.AddCommand(newReleaseCreateCmd(env), newReleaseListCmd(env), newReleaseViewCmd(env), newReleaseEditCmd(env), newReleaseDeleteCmd(env), newReleaseUploadCmd(env), newReleaseDownloadCmd(env), newReleasePendingCmd(env))
 	return cmd
 }

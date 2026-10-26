@@ -201,9 +201,4 @@ func TestSigningKeyHelpMentionsTrust(t *testing.T) {
 	assert.Contains(t, res.stdout, "commit_signatures")
 	res = runCLI(t, nil, "", "signing-key", "trust", "list", "--help").ok(t)
 	assert.Contains(t, res.stdout, "ermite signing-key trust --help")
-	assert.NotContains(t, res.stdout, "JSON fields")
-	res = runCLI(t, nil, "", "signing-key", "trust", "--help").ok(t)
-	assert.Contains(t, res.stdout, "JSON fields")
-	assert.Contains(t, res.stdout, "public_key")
-	assert.Contains(t, res.stdout, "null for the builtin key")
 }

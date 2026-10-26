@@ -107,32 +107,32 @@ func parseSide(s string) (ermite.DiffSide, error) {
 
 // jsonMergeRequest is the stable JSON shape of a merge request.
 type jsonMergeRequest struct {
-	Repo           string  `json:"repo"`
-	URL            string  `json:"url"`
-	Number         int64   `json:"number"`
-	Title          string  `json:"title"`
-	Description    string  `json:"description"`
-	SourceBranch   string  `json:"source_branch"`
-	TargetBranch   string  `json:"target_branch"`
-	State          string  `json:"state"`
-	Author         string  `json:"author"`
-	CreatedAt      *string `json:"created_at"`
-	UpdatedAt      *string `json:"updated_at"`
-	HeadID         string  `json:"head_id"`
-	MergedCommitID string  `json:"merged_commit_id"`
-	MergeMode      string  `json:"merge_mode"`
+	Repo           string      `json:"repo"`
+	URL            string      `json:"url" help:"full web URL"`
+	Number         int64       `json:"number"`
+	Title          string      `json:"title"`
+	Description    string      `json:"description"`
+	SourceBranch   string      `json:"source_branch"`
+	TargetBranch   string      `json:"target_branch"`
+	State          string      `json:"state" help:"open, merged or closed"`
+	Author         string      `json:"author" help:"token label"`
+	CreatedAt      jsonInstant `json:"created_at"`
+	UpdatedAt      jsonInstant `json:"updated_at"`
+	HeadID         string      `json:"head_id" help:"commit the source branch points to; empty when the branch is gone"`
+	MergedCommitID string      `json:"merged_commit_id" help:"empty unless merged"`
+	MergeMode      string      `json:"merge_mode" help:"fast-forward, squash or merge; empty unless merged"`
 	// AutoMerge is the pending auto-merge, null when there is none.
-	AutoMerge *jsonAutoMerge `json:"auto_merge"`
+	AutoMerge *jsonAutoMerge `json:"auto_merge" help:"null unless auto-merge is pending"`
 	// AutoMerged is true when the server merged the request by auto-merge.
-	AutoMerged bool `json:"auto_merged"`
+	AutoMerged bool `json:"auto_merged" help:"true when the server merged it by auto-merge"`
 }
 
 // jsonAutoMerge is the stable JSON shape of a pending auto-merge.
 type jsonAutoMerge struct {
-	Mode      string  `json:"mode"`
-	HeadID    string  `json:"head_id"`
-	EnabledBy string  `json:"enabled_by"`
-	EnabledAt *string `json:"enabled_at"`
+	Mode      string      `json:"mode"`
+	HeadID    string      `json:"head_id"`
+	EnabledBy string      `json:"enabled_by"`
+	EnabledAt jsonInstant `json:"enabled_at"`
 }
 
 // toJSONAutoMerge maps an auto-merge; nil when there is none.
@@ -147,16 +147,16 @@ func toJSONAutoMerge(a *ermite.AutoMerge) *jsonAutoMerge {
 // merge request.
 type jsonMergeability struct {
 	// State is "checking", "up_to_date", "behind" or "conflict".
-	State string `json:"state"`
+	State string `json:"state" help:"checking, up_to_date, behind or conflict"`
 	// Behind counts the commits of the target the head lacks (behind only);
 	// BehindCapped says it is a lower bound.
-	Behind        int32    `json:"behind"`
-	BehindCapped  bool     `json:"behind_capped"`
-	ConflictPaths []string `json:"conflict_paths"`
+	Behind        int32    `json:"behind" help:"commits of the target the head lacks; behind only"`
+	BehindCapped  bool     `json:"behind_capped" help:"true when behind is a lower bound"`
+	ConflictPaths []string `json:"conflict_paths" help:"conflict only"`
 	// ConflictPathsTruncated says that more paths conflict than listed.
-	ConflictPathsTruncated bool   `json:"conflict_paths_truncated"`
-	TargetID               string `json:"target_id"`
-	HeadID                 string `json:"head_id"`
+	ConflictPathsTruncated bool   `json:"conflict_paths_truncated" help:"true when more paths conflict than listed"`
+	TargetID               string `json:"target_id" help:"target commit the result is for"`
+	HeadID                 string `json:"head_id" help:"head commit the result is for"`
 }
 
 func mergeabilityName(s ermite.MergeabilityState) string {
@@ -210,8 +210,8 @@ func mergeabilityText(m *jsonMergeability) string {
 
 // jsonMerged is the output of `mr merge --json`.
 type jsonMerged struct {
-	jsonMergeRequest
-	SourceBranchDeleted bool `json:"source_branch_deleted"`
+	jsonMergeRequest    `help:"the merge request fields" see:"ermite mr"`
+	SourceBranchDeleted bool `json:"source_branch_deleted" help:"true when deletion was requested; it follows the merge"`
 }
 
 func toJSONMergeRequest(m *ermite.MergeRequest, baseURL string) jsonMergeRequest {
@@ -227,20 +227,20 @@ func toJSONMergeRequest(m *ermite.MergeRequest, baseURL string) jsonMergeRequest
 
 // jsonComment is the stable JSON shape of a comment.
 type jsonComment struct {
-	ID        string  `json:"id"`
-	Author    string  `json:"author"`
-	Path      string  `json:"path"`
-	Line      int32   `json:"line"`
-	Side      string  `json:"side"`
-	CommitID  string  `json:"commit_id"`
-	Text      string  `json:"text"`
-	Resolved  bool    `json:"resolved"`
-	CreatedAt *string `json:"created_at"`
-	ReplyTo   string  `json:"reply_to"`
-	StartLine int32   `json:"start_line"`
-	Verdict   string  `json:"verdict"`
-	EditedAt  *string `json:"edited_at"`
-	Deleted   bool    `json:"deleted"`
+	ID        string      `json:"id"`
+	Author    string      `json:"author"`
+	Path      string      `json:"path" help:"empty for a general comment"`
+	Line      int32       `json:"line" help:"0 for a general comment"`
+	Side      string      `json:"side" help:"old or new; empty for a general comment"`
+	CommitID  string      `json:"commit_id" help:"the head when it was written"`
+	Text      string      `json:"text"`
+	Resolved  bool        `json:"resolved"`
+	CreatedAt jsonInstant `json:"created_at"`
+	ReplyTo   string      `json:"reply_to" help:"empty for roots"`
+	StartLine int32       `json:"start_line" help:"0 for a single line"`
+	Verdict   string      `json:"verdict" help:"approve, changes_requested or empty"`
+	EditedAt  jsonInstant `json:"edited_at"`
+	Deleted   bool        `json:"deleted"`
 }
 
 func verdictName(v ermite.Verdict) string {
@@ -261,33 +261,14 @@ func toJSONComment(c *ermite.Comment) jsonComment {
 	}
 }
 
-const jsonMRHelp = `
-JSON fields of a merge request (--json): repo, url (full web URL), number, title, description, source_branch,
-target_branch, state ("open", "merged" or "closed"), author (token label), created_at and
-updated_at (RFC 3339 UTC), head_id (the commit the source branch points to; empty when the
-branch is gone), merged_commit_id and merge_mode ("fast-forward", "squash" or "merge"; both empty
-unless merged), auto_merge (null unless auto-merge is pending: mode, head_id, enabled_by,
-enabled_at) and auto_merged (true when the server merged the request by auto-merge).`
-
-const jsonMergeabilityHelp = `
-mr show --json adds mergeability, null unless the request is open: state ("checking", "up_to_date",
-"behind" or "conflict"), behind and behind_capped (commits of the target the head lacks; behind
-only), conflict_paths and conflict_paths_truncated (conflict only), target_id and head_id (the
-commits the result is for).`
-
-const jsonCommentHelp = `
-JSON fields of a comment: id, author, path, line and side ("old" or "new"; empty path, line 0
-and empty side for a general comment), commit_id (the head when it was written), text,
-resolved, created_at, reply_to (empty for roots), start_line (0 for a single line),
-verdict ("", "approve", "changes_requested"), edited_at (nullable RFC 3339), deleted.`
-
 func newMRCmd(env *cliEnv) *cobra.Command {
 	mr := &cobra.Command{
 		Use:   "mr",
 		Short: "Review and merge branches on a remote server",
 		Long: "Merge requests ask to merge one branch of a repository into another. They are about a branch,\n" +
 			"not about who wrote it. Needs a server with the merge_requests feature (see `ermite version`).\n" +
-			"Identify it by repository and number: `ermite mr show proj 3`." + jsonMRHelp + jsonCommentHelp,
+			"Identify it by repository and number: `ermite mr show proj 3`.\n" +
+			jsonFieldsHelp("a merge request", jsonMergeRequest{}) + "\n" + jsonFieldsHelp("a comment", jsonComment{}),
 	}
 	mr.AddCommand(
 		newMRCreateCmd(env), newMREditCmd(env), newMRListCmd(env), newMRShowCmd(env), newMRCommentCmd(env),
@@ -487,7 +468,7 @@ type jsonStats struct {
 }
 
 type jsonLine struct {
-	Kind      string `json:"kind"`
+	Kind      string `json:"kind" help:"context, addition or deletion"`
 	OldNumber int32  `json:"old_number"`
 	NewNumber int32  `json:"new_number"`
 	Text      string `json:"text"`
@@ -505,14 +486,14 @@ type jsonHunk struct {
 type jsonFile struct {
 	OldPath   string `json:"old_path"`
 	NewPath   string `json:"new_path"`
-	Status    string `json:"status"`
+	Status    string `json:"status" help:"added, deleted, modified, renamed, copied or type_changed"`
 	Additions int32  `json:"additions"`
 	Deletions int32  `json:"deletions"`
 	Binary    bool   `json:"binary"`
 	Truncated bool   `json:"truncated"`
 	// Omitted is generated, large, budget or unavailable; absent when the hunks are not omitted.
-	Omitted string     `json:"omitted,omitempty"`
-	Hunks   []jsonHunk `json:"hunks,omitempty"`
+	Omitted string     `json:"omitted,omitempty" help:"generated, large, budget or unavailable; absent when the hunks are not omitted"`
+	Hunks   []jsonHunk `json:"hunks,omitempty" help:"with --diff only"`
 }
 
 type jsonCommit struct {
@@ -523,37 +504,37 @@ type jsonCommit struct {
 
 // jsonMRDetail is the stable JSON shape of `mr show --json`.
 type jsonMRDetail struct {
-	Issues      []jsonMRIssue    `json:"issues"`
-	IssueEvents []jsonIssueEvent `json:"issue_events"`
-	jsonMergeRequest
+	Issues           []jsonMRIssue    `json:"issues"`
+	IssueEvents      []jsonIssueEvent `json:"issue_events"`
+	jsonMergeRequest `help:"the merge request fields" see:"ermite mr"`
 	// Mergeability is null unless the request is open and the server computes it.
-	Mergeability     *jsonMergeability   `json:"mergeability"`
+	Mergeability     *jsonMergeability   `json:"mergeability" help:"null unless the request is open"`
 	Commits          []jsonCommit        `json:"commits"`
 	CommitsTruncated bool                `json:"commits_truncated"`
-	DiffBaseID       string              `json:"diff_base_id"`
+	DiffBaseID       string              `json:"diff_base_id" help:"the commit the diff starts from"`
 	Stats            jsonStats           `json:"stats"`
 	DiffTruncated    bool                `json:"diff_truncated"`
 	Files            []jsonFile          `json:"files"`
-	Comments         []jsonComment       `json:"comments"`
+	Comments         []jsonComment       `json:"comments" see:"ermite mr"`
 	Verdicts         []jsonAuthorVerdict `json:"verdicts"`
-	LastReadID       string              `json:"last_read_id"`
-	LastReadLost     bool                `json:"last_read_lost"`
+	LastReadID       string              `json:"last_read_id" help:"head recorded as read"`
+	LastReadLost     bool                `json:"last_read_lost" help:"true when that commit is gone"`
 }
 
 type jsonMRIssue struct {
 	Number int64  `json:"number"`
 	Title  string `json:"title"`
-	State  string `json:"state"`
-	Closes bool   `json:"closes"`
+	State  string `json:"state" help:"open, closed or resolved"`
+	Closes bool   `json:"closes" help:"true when merging resolves it"`
 }
 
 type jsonAuthorVerdict struct {
-	Author    string  `json:"author"`
-	Verdict   string  `json:"verdict"`
-	CommentID string  `json:"comment_id"`
-	CommitID  string  `json:"commit_id"`
-	CreatedAt *string `json:"created_at"`
-	Stale     bool    `json:"stale"`
+	Author    string      `json:"author"`
+	Verdict   string      `json:"verdict" help:"approve or changes_requested"`
+	CommentID string      `json:"comment_id"`
+	CommitID  string      `json:"commit_id"`
+	CreatedAt jsonInstant `json:"created_at"`
+	Stale     bool        `json:"stale" help:"an approval given on a commit that is not the current head"`
 }
 
 func fileStatusName(s ermite.FileStatus) string {
@@ -635,12 +616,8 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 			"whole change is shown and the output says so. --mark-read records the head shown as read; it needs\n" +
 			"the mr:write scope. The mergeability line says whether the branch merges with its target now: up to\n" +
 			"date (can be fast-forwarded), behind by N commits (merges without conflicts, squash or merge commit),\n" +
-			"or in conflict with the paths that conflict (rebase needed)." + "\nJSON: a merge request (see `ermite mr --help`)." + jsonMergeabilityHelp + "\nJSON: a comment (see `ermite mr --help`)." + jsonIssueEventHelp + "\n" +
-			"--json adds issues (number, title, state: open/closed/resolved, closes), issue_events and commits (id, author, summary), commits_truncated,\n" +
-			"diff_base_id (the commit the diff starts from), stats (files_changed, additions, deletions),\n" +
-			"diff_truncated, files (old_path, new_path, status, additions, deletions, binary, truncated, omitted (generated, large, budget or unavailable; absent when the hunks are\n" +
-			"not omitted) and, with --diff, hunks of lines with kind, old_number, new_number and text), comments, last_read_id\n" +
-			"and last_read_lost; verdicts (author, verdict, comment_id, commit_id, created_at, stale).",
+			"or in conflict with the paths that conflict (rebase needed).\n" +
+			jsonFieldsHelp("a merge request with its detail", jsonMRDetail{}),
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
@@ -1158,8 +1135,8 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 			"`ermite repo edit --allow-auto-merge` on the repository. The server waits for CI to settle with at\n" +
 			"least one successful head check and every check allowing merge. A source push, settings\n" +
 			"change or permission change cancels it. --head must still match the source branch.\n" +
-			"--cancel-auto cancels pending auto-merge." + "\nJSON: a merge request (see `ermite mr --help`)." +
-			"\n--json adds source_branch_deleted (true when deletion was requested; deletion follows the merge).",
+			"--cancel-auto cancels pending auto-merge.\n" +
+			jsonFieldsHelp("a merge", jsonMerged{}) + " With --auto or --cancel-auto it prints the merge request fields only.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}

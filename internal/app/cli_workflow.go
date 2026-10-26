@@ -20,7 +20,7 @@ func newWorkflowCmd(env *cliEnv) *cobra.Command {
 	wf := &cobra.Command{
 		Use:   "workflow",
 		Short: "Start, list, disable and enable workflows",
-		Long:  "Manage repository workflows." + jsonWorkflowHelp,
+		Long:  "Manage repository workflows.\n" + jsonFieldsHelp("a workflow", jsonWorkflow{}),
 	}
 	wf.AddCommand(newWorkflowRunCmd(env), newWorkflowListCmd(env), newWorkflowDisableCmd(env), newWorkflowEnableCmd(env))
 	return wf
@@ -86,14 +86,10 @@ func newWorkflowRunCmd(env *cliEnv) *cobra.Command {
 
 type jsonWorkflow struct {
 	Repo  string `json:"repo"`
-	File  string `json:"file"`
-	Name  string `json:"name"`
-	State string `json:"state"`
+	File  string `json:"file" help:".github/workflows/<file>"`
+	Name  string `json:"name" help:"the default-branch workflow name:, else its path; empty if absent on the default branch"`
+	State string `json:"state" help:"enabled or disabled"`
 }
-
-const jsonWorkflowHelp = `
-JSON fields of a workflow (--json): repo, file (.github/workflows/<file>), name (default-branch
-workflow "name:"; path if unnamed; empty if absent on the default branch), state (enabled or disabled).`
 
 func workflowStateText(s ermite.WorkflowState) string {
 	if s == ermite.WorkflowState_WORKFLOW_STATE_DISABLED {

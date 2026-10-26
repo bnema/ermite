@@ -43,25 +43,19 @@ func journalClient(env *cliEnv, cmd *cobra.Command) (*client.Client, error) {
 	return c, nil
 }
 
-const jsonJournalHelp = `
-JSON fields of an entry (--json prints an array, newest first): id, kind, repo, at (RFC 3339, UTC),
-actor, number (merge request or issue, 0 otherwise), ref (tag, release tag, pushed branch, or
-target branch of a merge request), title, commit_count (pushes, at most 100), commits_capped
-(true when the push had more), commit (new head of a push), summary (subject of that commit).`
-
 type jsonActivity struct {
 	ID            string  `json:"id"`
 	Kind          string  `json:"kind"`
 	Repo          string  `json:"repo"`
 	At            *string `json:"at"`
 	Actor         string  `json:"actor"`
-	Number        int64   `json:"number"`
-	Ref           string  `json:"ref"`
+	Number        int64   `json:"number" help:"merge request or issue; 0 otherwise"`
+	Ref           string  `json:"ref" help:"tag, release tag, pushed branch, or target branch of a merge request"`
 	Title         string  `json:"title"`
-	CommitCount   int32   `json:"commit_count"`
-	CommitsCapped bool    `json:"commits_capped"`
-	Commit        string  `json:"commit"`
-	Summary       string  `json:"summary"`
+	CommitCount   int32   `json:"commit_count" help:"pushes; at most 100"`
+	CommitsCapped bool    `json:"commits_capped" help:"true when the push had more"`
+	Commit        string  `json:"commit" help:"new head of a push"`
+	Summary       string  `json:"summary" help:"subject of that commit"`
 }
 
 func toJSONActivity(e *ermite.ActivityEntry) jsonActivity {
@@ -186,7 +180,8 @@ func newJournalCmd(env *cliEnv) *cobra.Command {
 		Long: "Show activity, newest first: merge requests and issues opened, merged or closed, tags,\n" +
 			"releases and default-branch pushes. The server keeps entries 30 days. Needs owner rights or\n" +
 			"journal:read (repository-limited tokens see only their repositories) and a server with the journal\n" +
-			"feature.\n\nKinds: " + strings.Join(activityKindNames(), ", ") + "." + jsonJournalHelp,
+			"feature.\n\nKinds: " + strings.Join(activityKindNames(), ", ") + ".\n" +
+			jsonFieldsHelp("an entry", jsonActivity{}) + " --json prints an array, newest first.",
 		Example: "  ermite journal --since 7d --kind mr_merged,tag_created\n  ermite journal --repo app --since 2026-10-01 --json",
 		Args:    cobra.NoArgs,
 	}
@@ -257,18 +252,13 @@ func newJournalCmd(env *cliEnv) *cobra.Command {
 	return cmd
 }
 
-const jsonPendingHelp = `
-JSON fields (--json prints an array sorted by name): repo, latest_tag (empty when none within
-500 commits), latest_tag_at (RFC 3339 UTC or null), commits_since (at most 500), commits_capped
-(the walk hit the limit first; commits_since is then a lower bound), default_branch.`
-
 type jsonUnreleased struct {
-	Repo          string  `json:"repo"`
-	LatestTag     string  `json:"latest_tag"`
-	LatestTagAt   *string `json:"latest_tag_at"`
-	CommitsSince  int32   `json:"commits_since"`
-	CommitsCapped bool    `json:"commits_capped"`
-	DefaultBranch string  `json:"default_branch"`
+	Repo          string      `json:"repo"`
+	LatestTag     string      `json:"latest_tag" help:"empty when none within 500 commits"`
+	LatestTagAt   jsonInstant `json:"latest_tag_at"`
+	CommitsSince  int32       `json:"commits_since" help:"at most 500"`
+	CommitsCapped bool        `json:"commits_capped" help:"the walk hit the limit first; commits_since is then a lower bound"`
+	DefaultBranch string      `json:"default_branch"`
 }
 
 // agoText is a rough age: "just now", "5 minutes ago", "3 hours ago", "4 days ago".
@@ -296,8 +286,8 @@ func newReleasePendingCmd(env *cliEnv) *cobra.Command {
 		Use:   "pending [repo]",
 		Short: "List the repositories with commits after their latest tag",
 		Long: "List non-archived repositories whose default branch has commits after its nearest tag.\n" +
-			"Repositories without a tag are left out. Needs owner rights or journal:read, and the journal feature." +
-			jsonPendingHelp,
+			"Repositories without a tag are left out. Needs owner rights or journal:read, and the journal feature.\n" +
+			jsonFieldsHelp("a repository", jsonUnreleased{}) + " --json prints an array sorted by name.",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
