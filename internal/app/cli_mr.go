@@ -284,10 +284,10 @@ verdict ("", "approve", "changes_requested"), edited_at (nullable RFC 3339), del
 func newMRCmd(env *cliEnv) *cobra.Command {
 	mr := &cobra.Command{
 		Use:   "mr",
-		Short: "Review and merge branches on a remote server",
+		Short: "review and merge branches on a remote server",
 		Long: "Merge requests ask to merge one branch of a repository into another. They are about a branch,\n" +
 			"not about who wrote it. Needs a server with the merge_requests feature (see `ermite version`).\n" +
-			"A merge request is named by its repository and its number: `ermite mr show proj 3`.",
+			"Identify it by repository and number: `ermite mr show proj 3`." + jsonMRHelp + jsonCommentHelp,
 	}
 	mr.AddCommand(
 		newMRCreateCmd(env), newMREditCmd(env), newMRListCmd(env), newMRShowCmd(env), newMRCommentCmd(env),
@@ -359,14 +359,14 @@ func newMRCreateCmd(env *cliEnv) *cobra.Command {
 	var title, descriptionFile, source, target string
 	cmd := &cobra.Command{
 		Use:   "create <repo>",
-		Short: "Open a merge request",
+		Short: "open a merge request",
 		Long: "Open a merge request for a branch of the repository. --target defaults to the default branch.\n" +
 			"The title is one line of at most 120 characters, the description plain text of at most 8000;\n" +
 			"neither may hold control characters (a description may hold line breaks) or bidirectional\n" +
 			"override characters. --description-file PATH reads the optional description from a file; - reads\n" +
 			"standard input (1 MiB limit). Fails if an open merge request already has the same source and target.\n" +
 			"Prints a confirmation, then the full web URL on its own line.\n" +
-			"Needs the mr:write scope." + jsonMRHelp,
+			"Needs the mr:write scope." + "\nJSON: a merge request (see `ermite mr --help`).",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -431,9 +431,9 @@ func newMRListCmd(env *cliEnv) *cobra.Command {
 	var state string
 	cmd := &cobra.Command{
 		Use:   "list <repo>",
-		Short: "List the merge requests of a repository",
+		Short: "list the merge requests of a repository",
 		Long: "List the merge requests of a repository, newest first. --state restricts them to open, merged or\n" +
-			"closed ones (default: open; all shows every state)." + jsonMRHelp + "\n--json prints an array of merge requests.",
+			"closed ones (default: open; all shows every state)." + "\nJSON: a merge request (see `ermite mr --help`)." + "\n--json prints an array of merge requests.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -627,7 +627,7 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 	var sinceLastRead, withDiff, markRead bool
 	cmd := &cobra.Command{
 		Use:   "show <repo> <number>",
-		Short: "Show a merge request with its commits, comments and diff",
+		Short: "show a merge request with its commits, comments and diff",
 		Long: "Show a merge request: its fields, the commits of the branch that the target lacks, the changed\n" +
 			"files and the comments. --diff adds the diff, with the line numbers to use in `mr comment`.\n" +
 			"--since-last-read shows the diff since the head recorded by --mark-read (or by the web) instead of\n" +
@@ -635,7 +635,7 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 			"whole change is shown and the output says so. --mark-read records the head shown as read; it needs\n" +
 			"the mr:write scope. The mergeability line says whether the branch merges with its target now: up to\n" +
 			"date (can be fast-forwarded), behind by N commits (merges without conflicts, squash or merge commit),\n" +
-			"or in conflict with the paths that conflict (rebase needed)." + jsonMRHelp + jsonMergeabilityHelp + jsonCommentHelp + jsonIssueEventHelp + "\n" +
+			"or in conflict with the paths that conflict (rebase needed)." + "\nJSON: a merge request (see `ermite mr --help`)." + jsonMergeabilityHelp + "\nJSON: a comment (see `ermite mr --help`)." + jsonIssueEventHelp + "\n" +
 			"--json adds issues (number, title, state: open/closed/resolved, closes), issue_events and commits (id, author, summary), commits_truncated,\n" +
 			"diff_base_id (the commit the diff starts from), stats (files_changed, additions, deletions),\n" +
 			"diff_truncated, files (old_path, new_path, status, additions, deletions, binary, truncated, omitted (generated, large, budget or unavailable; absent when the hunks are\n" +
@@ -905,14 +905,14 @@ func newMRCommentCmd(env *cliEnv) *cobra.Command {
 	var approve, requestChanges bool
 	cmd := &cobra.Command{
 		Use:   "comment <repo> <number>",
-		Short: "Comment on a merge request",
+		Short: "comment on a merge request",
 		Long: "Add a Markdown note (at most 8000 characters); ^N refers to a note in this merge request.\n" +
 			"--reply replies to a root note. --line accepts N or A-B. --approve and --request-changes\n" +
 			"set a verdict (needs mr:review) and allow an empty message.\n" +
 			"-m - reads it from standard input. Without --path it is a general comment. With --path, --line and\n" +
 			"--side (default new) it is attached to a line of the current diff: the path as in `mr show --diff`\n" +
 			"(the new path, the old one for a deleted file), the line number on the old or new side; a line\n" +
-			"that is not in the diff is refused. Needs the mr:write scope." + jsonCommentHelp,
+			"that is not in the diff is refused. Needs the mr:write scope." + "\nJSON: a comment (see `ermite mr --help`).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
@@ -1034,7 +1034,7 @@ func newMRNoteMutationCmd(env *cliEnv, edit bool) *cobra.Command {
 		verb = "edit"
 	}
 	var message string
-	cmd := &cobra.Command{Use: verb + "-comment <repo> <number> <comment-id>", Short: verb + " your own merge request note", Long: "Edit or delete your own note on an open merge request. Needs mr:write. Verdicts are unchanged." + jsonCommentHelp, Args: cobra.ExactArgs(3), ValidArgsFunction: completeMRRepoThenNumber(env)}
+	cmd := &cobra.Command{Use: verb + "-comment <repo> <number> <comment-id>", Short: verb + " your own merge request note", Long: "Edit or delete your own note on an open merge request. Needs mr:write. Verdicts are unchanged." + "\nJSON: a comment (see `ermite mr --help`).", Args: cobra.ExactArgs(3), ValidArgsFunction: completeMRRepoThenNumber(env)}
 	if edit {
 		cmd.Flags().StringVarP(&message, "message", "m", "", "Markdown text, or - to read standard input (required)")
 		_ = cmd.MarkFlagRequired("message")
@@ -1088,9 +1088,9 @@ func newMRResolveCmd(env *cliEnv) *cobra.Command {
 	var undo bool
 	cmd := &cobra.Command{
 		Use:   "resolve <repo> <number> <comment-id>",
-		Short: "Mark a comment resolved",
+		Short: "mark a comment resolved",
 		Long: "Mark a comment of a merge request resolved, or unresolved with --undo. Doing it twice is not an\n" +
-			"error. Needs the mr:write scope." + jsonCommentHelp,
+			"error. Needs the mr:write scope." + "\nJSON: a comment (see `ermite mr --help`).",
 		Args:              cobra.ExactArgs(3),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
@@ -1132,43 +1132,40 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 	var auto, cancelAuto, ignoreChecks bool
 	cmd := &cobra.Command{
 		Use:   "merge <repo> <number>",
-		Short: "Merge a merge request",
-		Long: "Merge an open merge request with --mode (default fast-forward; the repository settings may allow\n" +
-			"only some modes, see `ermite repo edit --merge-modes`):\n" +
-			"  fast-forward  the target branch moves to the head and no commit is created. The target must be\n" +
-			"                an ancestor of the head, else rebase the branch and push it again, or use another mode.\n" +
-			"  squash        one new commit with the tree of the merge of the head and the target, the target tip\n" +
-			"                as only parent. The branch must merge without conflicts.\n" +
-			"  merge         a merge commit with two parents, the target tip and the head. The branch must merge\n" +
-			"                without conflicts.\n" +
-			"A squash and a merge commit are signed with the server's own key, generated automatically when the\n" +
-			"server first starts; `ermite signing-key show` prints it. The server never rebases. `ermite mr show`\n" +
-			"prints the mergeability (up to date, behind, conflict); the server checks again when merging and\n" +
-			"refuses a merge that is not possible, saying why.\n\n" +
-			"The server merges only if the source branch still points to the head you reviewed, so --head is\n" +
-			"required: give the full id of the head that `ermite mr show <repo> <number>` printed when you\n" +
-			"reviewed the change. If the branch moved since, the merge is refused: review again. Needs the\n" +
-			"mr:merge scope.\n\n" +
-			"A merge needs the checks on the head to pass: none failed, none queued or running. A head\n" +
-			"without checks can be merged. --ignore-checks merges anyway and needs the mr:force-merge scope\n" +
-			"(the cli preset has it, the agent preset does not).\n\n" +
-			"The merge answers as soon as the target branch has moved. --delete-branch asks the server to delete\n" +
-			"the source branch right after, in the background. The merge is refused when the branch is the\n" +
-			"default branch or used by another open merge request. If the deletion later fails (the branch\n" +
-			"moved, say), the merge stands and the branch is kept.\n\n" +
-			"--auto does not merge now: it asks the server to merge by itself, with --mode, once CI has settled\n" +
-			"with at least one successful check on the head and every check allows it. Needs the mr:merge scope,\n" +
-			"a server with CI, and `ermite repo edit --allow-auto-merge` on the repository. A new push to the\n" +
-			"source branch, a change of the settings or of your permissions cancels it. --auto takes --head\n" +
-			"like a plain merge: it is enabled only if the source branch still points to it. --cancel-auto cancels a pending auto-merge." + jsonMRHelp +
-			"\n--json adds source_branch_deleted (true when the deletion was requested: the server deletes the branch right after the merge).",
+		Short: "merge a merge request",
+		Long: "Merge an open merge request. Needs mr:merge. --mode defaults to fast-forward;\n" +
+			"repository settings may restrict modes (see `ermite repo edit --merge-modes`):\n" +
+			"  fast-forward  move the target to the head; create no commit. The target must be an\n" +
+			"                ancestor of the head; otherwise rebase and push again or use another mode.\n" +
+			"  squash        create one commit with the merged head/target tree and only the target tip\n" +
+			"                as parent. Refuse conflicts.\n" +
+			"  merge         create a merge commit with target tip and head as parents. Refuse conflicts.\n" +
+			"Squash and merge commits use the server's signing key, generated on first start;\n" +
+			"`ermite signing-key show` prints it. The server never rebases. `ermite mr show` reports\n" +
+			"mergeability (up to date, behind, conflict); merging rechecks it and explains refusals.\n" +
+			"\n" +
+			"--head requires the full reviewed head id from `ermite mr show <repo> <number>`.\n" +
+			"Refuse if the source branch moved: review again.\n" +
+			"Checks must have no failures or queued/running jobs; no checks is allowed.\n" +
+			"--ignore-checks bypasses this; needs mr:force-merge (cli preset, not agent preset).\n" +
+			"\n" +
+			"Return once the target moves. --delete-branch deletes the source afterward, in the\n" +
+			"background. Refuse the merge if that branch is default or used by another open merge\n" +
+			"request. If deletion later fails (e.g. the branch moved), keep the merge and branch.\n" +
+			"\n" +
+			"--auto schedules --mode instead of merging now. Needs mr:merge, server CI and\n" +
+			"`ermite repo edit --allow-auto-merge` on the repository. Wait for CI to settle with at\n" +
+			"least one successful head check and every check allowing merge. A source push, settings\n" +
+			"change or permission change cancels it. --head must still match the source branch.\n" +
+			"--cancel-auto cancels pending auto-merge." + "\nJSON: a merge request (see `ermite mr --help`)." +
+			"\n--json adds source_branch_deleted (true when deletion was requested; deletion follows the merge).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
 	cmd.Flags().StringVar(&mode, "mode", modeFastForward, "merge mode: fast-forward, squash or merge (a merge commit)")
-	cmd.Flags().StringVar(&head, "head", "", "full id of the head you reviewed, from `ermite mr show` (required)")
+	cmd.Flags().StringVar(&head, "head", "", "full reviewed head id from ermite mr show (required)")
 	cmd.Flags().BoolVar(&deleteBranch, "delete-branch", false, "delete the source branch after the merge")
-	cmd.Flags().BoolVar(&auto, "auto", false, "merge by itself once the checks passed (needs `repo edit --allow-auto-merge`)")
+	cmd.Flags().BoolVar(&auto, "auto", false, "auto-merge when checks pass (needs repo edit --allow-auto-merge)")
 	cmd.Flags().BoolVar(&cancelAuto, "cancel-auto", false, "cancel the pending auto-merge")
 	cmd.Flags().BoolVar(&ignoreChecks, "ignore-checks", false, "merge despite failing or unfinished checks (needs mr:force-merge)")
 	cmd.MarkFlagsMutuallyExclusive("ignore-checks", "auto")
@@ -1313,9 +1310,9 @@ func requireFeature(ctx context.Context, c *client.Client, feature, what string)
 func newMRCloseCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "close <repo> <number>",
-		Short: "Close a merge request without merging it",
+		Short: "close a merge request without merging it",
 		Long: "Close an open merge request without merging it. A closed merge request cannot be reopened: open a\n" +
-			"new one. Prints a confirmation, then the full web URL on its own line. Needs the mr:write scope." + jsonMRHelp,
+			"new one. Prints a confirmation, then the full web URL on its own line. Needs the mr:write scope." + "\nJSON: a merge request (see `ermite mr --help`).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}
@@ -1341,8 +1338,8 @@ func newMRCloseCmd(env *cliEnv) *cobra.Command {
 func newMRReadyCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "ready <repo> <number>",
-		Short:             "Mark a draft merge request ready for review",
-		Long:              "Remove the WIP: or [WIP] prefix from the title so the merge request can be merged.\nFails if it is not open or not a draft. Needs the mr:write scope.\nPrints a confirmation, then the full web URL on its own line." + jsonMRHelp,
+		Short:             "mark a draft merge request ready for review",
+		Long:              "Remove the WIP: or [WIP] prefix from the title so the merge request can be merged.\nFails if it is not open or not a draft. Needs the mr:write scope.\nPrints a confirmation, then the full web URL on its own line." + "\nJSON: a merge request (see `ermite mr --help`).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeMRRepoThenNumber(env),
 	}

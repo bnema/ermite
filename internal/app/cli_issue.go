@@ -124,11 +124,11 @@ JSON fields of a merge request reference: number, title, state ("open", "merged"
 func newIssueCmd(env *cliEnv) *cobra.Command {
 	issue := &cobra.Command{
 		Use:   "issue",
-		Short: "Track issues on a remote server",
+		Short: "track issues on a remote server",
 		Long: "Issues record a task, a bug or a question about a repository. They share the numbering of merge\n" +
 			"requests: the next issue after merge request 1 is number 2. Issues must be enabled for the\n" +
 			"repository (`ermite repo edit <repo> --issues owner`). Needs a server with the issues feature (see\n" +
-			"`ermite version`). An issue is named by its repository and its number: `ermite issue show proj 3`.",
+			"`ermite version`). Identify it by repository and number: `ermite issue show proj 3`." + jsonIssueHelp + jsonIssueCommentHelp,
 	}
 	issue.AddCommand(
 		newIssueCreateCmd(env), newIssueEditCmd(env), newIssueListCmd(env), newIssueShowCmd(env), newIssueCommentCmd(env),
@@ -226,12 +226,12 @@ func newIssueCreateCmd(env *cliEnv) *cobra.Command {
 	var title, bodyFile string
 	cmd := &cobra.Command{
 		Use:   "create <repo>",
-		Short: "Open an issue",
+		Short: "open an issue",
 		Long: "Open an issue. The title is one line of at most 120 characters, the body Markdown of at most\n" +
 			"10,000 characters; disallowed control characters are stripped (a body may hold line breaks).\n" +
 			"--body-file PATH reads the optional body from a file; - reads standard input (1 MiB limit).\n" +
 			"Inline body text is not accepted. Prints a confirmation, then the full web URL on its own line.\n" +
-			"Needs the issue:write scope." + jsonIssueHelp,
+			"Needs the issue:write scope." + "\nJSON: an issue (see `ermite issue --help`).",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -268,9 +268,9 @@ func newIssueListCmd(env *cliEnv) *cobra.Command {
 	var state string
 	cmd := &cobra.Command{
 		Use:   "list <repo>",
-		Short: "List the issues of a repository",
+		Short: "list the issues of a repository",
 		Long: "List the issues of a repository, newest first. --state restricts them to open, closed or resolved ones\n" +
-			"(default: open; all shows every state)." + jsonIssueHelp + "\n--json prints an array of issues.",
+			"(default: open; all shows every state)." + "\nJSON: an issue (see `ermite issue --help`)." + "\n--json prints an array of issues.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -318,11 +318,11 @@ func newIssueListCmd(env *cliEnv) *cobra.Command {
 func newIssueShowCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <repo> <number>",
-		Short: "Show an issue with its comments",
+		Short: "show an issue with its comments",
 		Long: "Show an issue: its fields, its body, the merge requests that name it (#N in their title,\n" +
 			"description, notes or commits; a closing keyword such as \"Fixes #N\" resolves it on merge) and\n" +
 			"its comments and history, oldest first. \"resolved by\" shows the merge request whose merge resolved the issue." +
-			jsonIssueHelp + jsonIssueCommentHelp + jsonIssueReferenceHelp + jsonIssueEventHelp +
+			"\nJSON: an issue (see `ermite issue --help`)." + "\nJSON: an issue comment (see `ermite issue --help`)." + jsonIssueReferenceHelp + jsonIssueEventHelp +
 			"\n--json adds comments, references and events (always present, possibly empty) to the issue fields.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeIssueRepoThenNumber(env),
@@ -421,9 +421,9 @@ func newIssueCommentCmd(env *cliEnv) *cobra.Command {
 	var message string
 	cmd := &cobra.Command{
 		Use:   "comment <repo> <number>",
-		Short: "Comment on an issue",
+		Short: "comment on an issue",
 		Long: "Add a plain-text comment (at most 10,000 characters; disallowed control characters are stripped).\n" +
-			"-m - reads it from standard input. Needs the issue:write scope." + jsonIssueCommentHelp,
+			"-m - reads it from standard input. Needs the issue:write scope." + "\nJSON: an issue comment (see `ermite issue --help`).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeIssueRepoThenNumber(env),
 	}
@@ -463,7 +463,7 @@ func newIssueCommentCmd(env *cliEnv) *cobra.Command {
 }
 
 func newIssueCloseCmd(env *cliEnv) *cobra.Command {
-	return newIssueStateCmd(env, "close", "closed", "Close an issue", "Close an open issue. `ermite issue reopen` opens it again. Needs the issue:write scope.",
+	return newIssueStateCmd(env, "close", "closed", "close an issue", "Close an open issue. `ermite issue reopen` opens it again. Needs the issue:write scope.",
 		func(ctx context.Context, c *client.Client, repo string, n int64) (*ermite.Issue, error) {
 			res, err := c.Issues().CloseIssue(ctx, connect.NewRequest(&ermite.CloseIssueRequest{Repo: repo, Number: n}))
 			if err != nil {
@@ -474,7 +474,7 @@ func newIssueCloseCmd(env *cliEnv) *cobra.Command {
 }
 
 func newIssueResolveCmd(env *cliEnv) *cobra.Command {
-	return newIssueStateCmd(env, "resolve", "resolved", "Resolve an issue", "Mark an open issue as resolved (fixed). `ermite issue reopen` opens it again. Needs the issue:write scope.",
+	return newIssueStateCmd(env, "resolve", "resolved", "resolve an issue", "Mark an open issue as resolved (fixed). `ermite issue reopen` opens it again. Needs the issue:write scope.",
 		func(ctx context.Context, c *client.Client, repo string, n int64) (*ermite.Issue, error) {
 			if err := requireFeature(ctx, c, "issues.resolve", "cannot resolve issues (issue resolve)"); err != nil {
 				return nil, err
@@ -488,7 +488,7 @@ func newIssueResolveCmd(env *cliEnv) *cobra.Command {
 }
 
 func newIssueReopenCmd(env *cliEnv) *cobra.Command {
-	return newIssueStateCmd(env, "reopen", "reopened", "Reopen a closed or resolved issue", "Reopen a closed or resolved issue. Needs the issue:write scope.",
+	return newIssueStateCmd(env, "reopen", "reopened", "reopen a closed or resolved issue", "Reopen a closed or resolved issue. Needs the issue:write scope.",
 		func(ctx context.Context, c *client.Client, repo string, n int64) (*ermite.Issue, error) {
 			res, err := c.Issues().ReopenIssue(ctx, connect.NewRequest(&ermite.ReopenIssueRequest{Repo: repo, Number: n}))
 			if err != nil {
@@ -502,7 +502,7 @@ func newIssueStateCmd(env *cliEnv, use, verb, short, long string, do func(contex
 	cmd := &cobra.Command{
 		Use:               use + " <repo> <number>",
 		Short:             short,
-		Long:              long + jsonIssueHelp,
+		Long:              long + "\nJSON: an issue (see `ermite issue --help`).",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeIssueRepoThenNumber(env),
 	}

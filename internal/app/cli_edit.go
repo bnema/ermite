@@ -41,15 +41,15 @@ func newMREditCmd(env *cliEnv) *cobra.Command    { return newItemEditCmd(env, tr
 func newItemEditCmd(env *cliEnv, mr bool) *cobra.Command {
 	var title, path string
 	label, field, scope, feature := "issue", "body", "issue:write", client.FeatureIssueEdit
-	help := jsonIssueHelp
+	help := "\nJSON: an issue (see `ermite issue --help`)."
 	completion := completeIssueRepoThenNumber(env)
 	if mr {
 		label, field, scope, feature = "merge request", "description", "mr:write", client.FeatureMREdit
-		help = jsonMRHelp
+		help = "\nJSON: a merge request (see `ermite mr --help`)."
 		completion = completeMRRepoThenNumber(env)
 	}
 	flag := field + "-file"
-	cmd := &cobra.Command{Use: "edit <repo> <number>", Short: "Edit an " + label, Long: "Edit the title and/or " + field + " of an " + label + ". Only supplied fields change.\n" +
+	cmd := &cobra.Command{Use: "edit <repo> <number>", Short: "edit " + label, Long: "Edit " + label + " title and/or " + field + ". Only supplied fields change.\n" +
 		"The title is one line of at most 120 characters. Read the " + field + " from a file only;\n" +
 		"--" + flag + " - reads standard input (at most 1 MiB). An empty file clears the " + field + ".\n" +
 		"At least one flag is required. Prints a confirmation, then the full web URL.\nNeeds the " + scope + " scope." + help, Args: cobra.ExactArgs(2), ValidArgsFunction: completion}
