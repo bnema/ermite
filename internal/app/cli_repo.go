@@ -114,17 +114,16 @@ func parseVisibility(s string) (ermite.Visibility, error) {
 }
 
 const jsonRepoHelp = `
-JSON fields of a repository (--json): name, description, visibility ("public" or
-"private"), default_branch, created_at and pushed_at (RFC 3339 UTC; pushed_at is
-null until the first push), merge_modes (array of the allowed merge modes, "fast-forward", "squash" and/or
-"merge"), allow_auto_merge (whether
-auto-merge can be enabled) and issues (the issue mode: "off", "owner" or "public").`
+JSON repository fields (--json): name, description, topics (array), visibility ("public" or
+"private"), default_branch, created_at, pushed_at (null until first push), merge_modes
+(array: "fast-forward", "squash", "merge"), allow_auto_merge (whether auto-merge can be enabled),
+archived, issues ("off", "owner", "public"). Times are RFC 3339 UTC.`
 
 func newRepoCmd(env *cliEnv) *cobra.Command {
 	repo := &cobra.Command{
 		Use:   "repo",
 		Short: "Manage repositories on a remote server",
-		Long:  "Manage repositories on the configured server (ERMITE_URL or the config file, see `ermite config`), authenticated with ERMITE_TOKEN or the token command of the config file.",
+		Long:  "Manage repositories on the configured server (ERMITE_URL or the config file, see `ermite config`), authenticated with ERMITE_TOKEN or the token command of the config file." + jsonRepoHelp,
 	}
 	repo.AddCommand(
 		newRepoListCmd(env), newRepoShowCmd(env), newRepoCreateCmd(env),
@@ -179,7 +178,7 @@ func newRepoListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the repositories you can see",
-		Long:  "List the repositories you can see: all public ones, and the private ones your token may read." + jsonRepoHelp + "\n--json prints an array of repositories ordered by name.",
+		Long:  "List the repositories you can see: all public ones, and the private ones your token may read." + "\nJSON: a repository; see `ermite repo --help`." + "\n--json prints an array of repositories ordered by name.",
 		Args:  cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)
@@ -240,7 +239,7 @@ func newRepoShowCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "show <name>",
 		Short:             "Show one repository",
-		Long:              "Show one repository." + jsonRepoHelp,
+		Long:              "Show one repository." + "\nJSON: a repository; see `ermite repo --help`.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -269,7 +268,7 @@ func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 		Use:   "create <name>",
 		Short: "Create an empty repository",
 		Long: "Create an empty repository. It is private unless --visibility public is given. Names are\n" +
-			"lowercase, 1-100 characters from [a-z0-9._-]. Needs the repo:write scope." + jsonRepoHelp,
+			"lowercase, 1-100 characters from [a-z0-9._-]. Needs the repo:write scope." + "\nJSON: a repository; see `ermite repo --help`.",
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&description, "description", "", "one-line description")
@@ -323,7 +322,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 			"commits are signed with the server's key, see `ermite signing-key show`), and\n" +
 			"--issues sets who may use issues: off (default), owner (the owner and tokens with issue:write) or\n" +
 			"public (visitors of a public repository may also propose issues through a moderated form).\nNeeds a server with the issues feature.\n" +
-			"Needs the repo:admin scope." + jsonRepoHelp,
+			"Needs the repo:admin scope." + "\nJSON: a repository; see `ermite repo --help`.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}

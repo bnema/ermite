@@ -59,13 +59,14 @@ func toJSONToken(t *ermite.Token) jsonToken {
 const jsonTokenHelp = `
 JSON fields of a token (--json): id, label, scopes (array of names like "repo:read"),
 repos (array; empty means every repository), branch_prefixes (array; empty means every branch),
-expires_at, created_at and last_used_at (RFC 3339 UTC, null when unset or never used).`
+expires_at, created_at and last_used_at (RFC 3339 UTC, null when unset or never used).
+Create also returns secret (shown only once).`
 
 func newTokenCmd(env *cliEnv) *cobra.Command {
 	token := &cobra.Command{
 		Use:   "token",
 		Short: "Manage API tokens on a remote server",
-		Long:  "Create, list and revoke API tokens. Needs the token:admin scope (or the server's admin token).",
+		Long:  "Create, list and revoke API tokens. Needs the token:admin scope (or the server's admin token)." + jsonTokenHelp,
 	}
 	token.AddCommand(newTokenCreateCmd(env), newTokenListCmd(env), newTokenRevokeCmd(env))
 	return token
@@ -101,7 +102,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 			"To give an AI agent its own space:\n" +
 			"  ermite token create claude --preset agent --scope repo:read --repo <repo> --branch-prefix agent/<name>/\n\n" +
 			"The label is free text of up to 100 bytes, except \"owner\" and \"root\" (in any case): they are\n" +
-			"what the audit trail shows for the admin token and the web owner, so the server refuses them." + jsonTokenHelp,
+			"what the audit trail shows for the admin token and the web owner, so the server refuses them." + "\nJSON: a token; see `ermite token --help`.",
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&preset, "preset", "", "scope preset: "+strings.Join(client.PresetNames, ", "))
@@ -279,7 +280,7 @@ func newTokenListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List stored tokens",
-		Long:  "List stored tokens, newest first. Secrets are never shown. The server's admin token is not listed." + jsonTokenHelp + "\n--json prints an array of tokens.",
+		Long:  "List stored tokens, newest first. Secrets are never shown. The server's admin token is not listed." + "\nJSON: a token; see `ermite token --help`." + "\n--json prints an array of tokens.",
 		Args:  cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)

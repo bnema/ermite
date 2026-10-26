@@ -25,21 +25,23 @@ func newConfigCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show and edit the config file of the remote commands",
-		Long: "The remote commands read the server address and a way to get a token from a config file,\n" +
-			"~/.config/ermite/config (the config directory of the platform on macOS and Windows; or the file\n" +
-			"named by ERMITE_CONFIG; `ermite config show` prints the path in use):\n\n" +
+		Long: "Configure remote commands in ~/.config/ermite/config (platform config directory on macOS\n" +
+			"and Windows). ERMITE_CONFIG overrides the path; `ermite config show` prints it.\n" +
+			"\n" +
 			"  url       = https://git.example.com\n" +
-			"  token.cmd = pass show ermite/token\n\n" +
-			"token.cmd is a command line run with the system shell when a command needs the token (at most\n" +
-			"once per run): it must print the token alone on one line. Use any secret manager (pass, gopass,\n" +
-			"op, bw, secret-tool…). The token itself never goes in the file. ERMITE_URL and ERMITE_TOKEN\n" +
-			"take precedence over the file. token.cmd belongs to the server of the file: it is not run when\n" +
-			"ERMITE_URL names another server than the url of the file (the call is then anonymous, with a\n" +
-			"notice: set ERMITE_TOKEN). `ermite version`, `ermite config` and shell completion never run it\n" +
-			"(completion stays anonymous unless ERMITE_TOKEN is set).\n\n" +
-			"token.cmd is also not run when the file belongs to another user, or when the file or its directory\n" +
-			"can be written by other users (Unix); `ermite config show` and `set` warn about it. On Windows\n" +
-			"this check does not exist: keep the file in your own profile (the default place).",
+			"  token.cmd = pass show ermite/token\n" +
+			"\n" +
+			"ERMITE_URL and ERMITE_TOKEN override the file. token.cmd runs through the system shell,\n" +
+			"only when needed, at most once per run. It must print only the token on one line.\n" +
+			"Use a secret manager (pass, gopass, op, bw, secret-tool…); never store the token itself.\n" +
+			"\n" +
+			"If ERMITE_URL differs from the file's url, token.cmd does not run: the call is anonymous,\n" +
+			"with a notice to set ERMITE_TOKEN. `ermite version`, `ermite config` and shell completion\n" +
+			"never run token.cmd; completion is anonymous unless ERMITE_TOKEN is set.\n" +
+			"\n" +
+			"On Unix, token.cmd is refused if another user owns the file or others can write the file\n" +
+			"or its directory. `ermite config show` and `set` warn. Windows has no such check:\n" +
+			"keep the file in your own profile (the default).",
 	}
 	cmd.AddCommand(newConfigShowCmd(env), newConfigSetCmd(env), newConfigUnsetCmd(env))
 	return cmd
@@ -56,9 +58,10 @@ func newConfigShowCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Print the config file path and its settings",
-		Long: "Print the path of the config file, then the url and token.cmd stored in it ((not set) when\n" +
-			"absent). It never runs token.cmd, and warns when token.cmd would be refused (file permissions).\n\n" +
-			"JSON fields (--json): file; url and token_cmd, null when not set.",
+		Long: "Print the file path, url and token.cmd; absent values show as (not set).\n" +
+			"Never runs token.cmd. Warns if file permissions would prevent running it.\n" +
+			"\n" +
+			"JSON (--json): file, url, token_cmd. Unset settings are null.",
 		Args: cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)
@@ -115,9 +118,9 @@ func newConfigSetCmd(env *cliEnv) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <url|token.cmd> <value>",
 		Short: "Set the server address or the token command in the config file",
-		Long: "Write a setting to the config file, keeping its comments, and create the file (mode 0600) if needed.\n" +
-			"url is checked: an http(s) address without credentials. token.cmd is a command line that prints the\n" +
-			"token, for example `pass show ermite/token`; it is stored as is and not run.",
+		Long: "Set a config value, preserving comments. Create the file with mode 0600 if needed.\n" +
+			"url must be http(s), without credentials. token.cmd prints the token (e.g. `pass show\n" +
+			"ermite/token`); store it unchanged, without running it.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeConfigKeys,
 		RunE: func(cmd *cobra.Command, args []string) error {

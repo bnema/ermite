@@ -99,7 +99,7 @@ func newSigningKeyTrustCmd(env *cliEnv) *cobra.Command {
 		Short: "Manage the keys commit signatures are verified against",
 		Long: "List, add and remove the public keys the server trusts to verify the signatures of commits (SSH and\n" +
 			"GPG). Each key is trusted for one to ten committer emails: a commit signed by the key but made\n" +
-			"under another email shows as unverified. Needs a server with the commit_signatures feature.",
+			"under another email shows as unverified. Needs a server with the commit_signatures feature." + jsonTrustedKeyHelp,
 	}
 	trust.AddCommand(newTrustListCmd(env), newTrustAddCmd(env), newTrustRemoveCmd(env))
 	return trust
@@ -109,7 +109,7 @@ func newTrustListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the trusted keys",
-		Long: "List the trusted keys, the server's own (builtin) key first. Any authenticated token may." + jsonTrustedKeyHelp +
+		Long: "List the trusted keys, the server's own (builtin) key first. Any authenticated token may." + "\nJSON: a trusted key; see `ermite signing-key trust --help`." +
 			"\n--json prints an array of keys.",
 		Args: cobra.NoArgs,
 	}
@@ -166,7 +166,7 @@ func newTrustAddCmd(env *cliEnv) *cobra.Command {
 			"an armored public key for --format gpg (`gpg --armor --export <fingerprint>`, exactly one key, never\n" +
 			"a private key). --email is required, repeatable, 1 to 10 addresses; the title is 1 to 100 bytes.\n" +
 			"Only the owner may add a key. Prints the key id on standard output, details on standard error;\n" +
-			"with --json, standard output is the key object." + jsonTrustedKeyHelp,
+			"with --json, standard output is the key object." + "\nJSON: a trusted key; see `ermite signing-key trust --help`.",
 		Example: "  ermite signing-key trust add --format ssh --title laptop --email me@example.com ~/.ssh/id_ed25519.pub\n" +
 			"  gpg --armor --export 0xABCD | ermite signing-key trust add --format gpg --title work --email me@example.com -",
 		Args: cobra.ExactArgs(1),
