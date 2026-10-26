@@ -364,3 +364,50 @@ func TestNewBotCommitSanitizes(t *testing.T) {
 	assert.Equal(t, "build(deps): update 1 dependency\n\n- n??x? v1? \u2192 v2? (d?ir)\n", c.Message)
 	assert.Equal(t, "bernard@ho?st", c.Author.Email)
 }
+
+func TestBotMRBody(t *testing.T) {
+	t.Parallel()
+	ups := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "example.org/a", Version: "v1.1.0"}, Current: "v1.0.0"}}
+	for _, tc := range []struct {
+		name        string
+		effects     []domain.DepSideEffect
+		wantLines   int // the list, a blank line, the heading and one line per effect
+		contains    []string
+		notContains []string
+	}{
+		{"no effects", nil, 1, []string{"- example.org/a v1.0.0 \u2192 v1.1.0\n"}, []string{"Also changed by Go"}},
+		{
+			"raised and removed",
+			[]domain.DepSideEffect{{Name: "example.org/b", From: "v1.0.0", To: "v1.2.0"}, {Directory: "sub", Name: "example.org/c", From: "v1.0.0"}},
+			5,
+			[]string{"\n## Also changed by Go\n", "- `example.org/b` v1.0.0 \u2192 v1.2.0\n", "- `example.org/c` removed, no longer needed (sub)\n"},
+			nil,
+		},
+		{
+			"hostile module name",
+			[]domain.DepSideEffect{{Name: "x`\n## Injected\n- `y", From: "v1.0.0", To: "v1.1.0"}},
+			4,
+			[]string{"- `x'?## Injected?- 'y` v1.0.0 \u2192 v1.1.0\n"},
+			[]string{"\n## Injected", "\n- `y"},
+		},
+		{
+			"hostile version and directory",
+			[]domain.DepSideEffect{{Directory: "d)\n## Dir", Name: "example.org/b", From: "v1\n## From", To: "v2\n## To"}},
+			4,
+			[]string{"- `example.org/b` v1?## From \u2192 v2?## To (d)?## Dir)\n"},
+			[]string{"\n## From", "\n## To", "\n## Dir"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			body := domain.BotMRBody(ups, tc.effects)
+			for _, s := range tc.contains {
+				assert.Contains(t, body, s)
+			}
+			for _, s := range tc.notContains {
+				assert.NotContains(t, body, s)
+			}
+			assert.Len(t, strings.Split(strings.TrimSpace(body), "\n"), tc.wantLines, "no line is added")
+		})
+	}
+}

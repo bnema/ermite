@@ -400,7 +400,7 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 	}
 	mr, err := b.cfg.MRs.Create(ctx, domain.Bot(name), name, ports.CreateMergeRequestParams{
 		Title:       domain.BotCommitSubject(len(ups)),
-		Description: depsMRBody(ups, effects),
+		Description: domain.BotMRBody(ups, effects),
 		Source:      depsBranch, Target: target,
 	})
 	if errors.Is(err, domain.ErrAlreadyExists) {
@@ -422,7 +422,7 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 // those generated for ups, as the bot (which holds mr:write on its repository).
 // A failure is logged: the branch is already updated.
 func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number int64, mr domain.MergeRequest, ups []domain.DepUpdate, effects []domain.DepSideEffect) {
-	title, desc := domain.BotCommitSubject(len(ups)), depsMRBody(ups, effects)
+	title, desc := domain.BotCommitSubject(len(ups)), domain.BotMRBody(ups, effects)
 	if mr.Title.String() == title && mr.Description.String() == desc {
 		return
 	}
@@ -583,25 +583,4 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 			}
 		}()
 	}
-}
-
-func depsMRBody(ups []domain.DepUpdate, effects []domain.DepSideEffect) string {
-	body := domain.BotCommitBody(ups)
-	if len(effects) == 0 {
-		return body
-	}
-	body += "\n## Also changed by Go\n"
-	for _, e := range effects {
-		body += fmt.Sprintf("- `%s` ", e.Name)
-		if e.To == "" {
-			body += "removed, no longer needed"
-		} else {
-			body += e.From + " → " + e.To
-		}
-		if e.Directory != "" {
-			body += " (" + e.Directory + ")"
-		}
-		body += "\n"
-	}
-	return body
 }
