@@ -35,9 +35,9 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 		Use:   "version",
 		Short: "Print client and configured server versions",
 		Long: "Print the client version. With a server URL (ERMITE_URL or config url; see `ermite config`),\n" +
-			"also print the server version and optional API features. Warn on stderr about features\n" +
-			"this client uses that the server lacks. Without a URL, show only the client.\n" +
-			"Never runs token.cmd.\n" +
+			"also print the server version and optional API features. A warning on stderr names the features\n" +
+			"this client uses that the server lacks. Without a URL, only the client is shown.\n" +
+			"The command never runs token.cmd.\n" +
 			"\n" +
 			"JSON (--json): client.version; server (null without a URL), containing url, version,\n" +
 			"features (identifier array), missing_features (features this client uses that the server lacks).",

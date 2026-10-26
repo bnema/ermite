@@ -98,7 +98,7 @@ const jsonRunHelp = `
 JSON fields of a run (--json): id, repo, number, attempt, workflow, name (run-name, else workflow), workflow_path, title, event,
 ref, sha, actor, status (queued, in_progress, completed), conclusion (success, failure, cancelled,
 skipped, timed_out, neutral, action_required; empty until completed), error, created_at,
-started_at, completed_at. Times are RFC 3339 UTC, null when unset. "run view" adds latest_attempt and
+started_at and completed_at (RFC 3339 UTC, null when unset). "run view" adds latest_attempt and
 jobs (id, attempt, key, name, status, conclusion, error, labels, needs, runner, isolation, steps
 with number, name, state, conclusion, outcome (the result before continue-on-error), log_start and log_end,
 started_at, completed_at), annotations (job, job_id, step, level notice|warning|failure, title, message,
@@ -292,7 +292,7 @@ func newRunViewCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "view <repo> <run id>",
 		Short:             "Show a run, jobs, steps, annotations, logs or summaries",
-		Long:              "Show run state, jobs, steps and ANNOTATIONS (step notices, warnings and errors with job and file:line). --attempt reads an earlier attempt.\n--log prints job logs verbatim, without prefixes. --summary prints unrendered job Markdown from GITHUB_STEP_SUMMARY. Both select all jobs unless --job specifies an id or name.\nJSON: a run; see `ermite run --help`.",
+		Long:              "Show run state, jobs, steps and ANNOTATIONS (step notices, warnings and errors with job and file:line). --attempt reads an earlier attempt.\n--log prints the job logs instead, verbatim and unprefixed. --summary prints the job summaries instead\n(GITHUB_STEP_SUMMARY Markdown, unrendered). Both cover every job unless --job names one (id or name).\nJSON: a run; see `ermite run --help`.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}

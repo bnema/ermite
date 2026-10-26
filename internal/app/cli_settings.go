@@ -182,7 +182,14 @@ func newSecretCmd(env *cliEnv) *cobra.Command {
 	secret := &cobra.Command{
 		Use:   "secret",
 		Short: "Manage the secrets CI jobs receive",
-		Long:  "Set, list and delete workflow secrets (${{ secrets.NAME }}), like `gh secret`.\nScopes: repository, environment (--env), instance (--instance). Precedence: environment > repository > instance.\nValues are write-only: no command prints one. Values are limited to 48 KiB. Names use letters, digits and underscores, never start with a digit or GITHUB_, and are stored uppercase.\nAccess needs secrets:write. Repository-limited tokens manage only those repositories; --instance needs a token without repository limits. Branch-prefix-limited tokens cannot manage secrets; their runs receive none. The server needs ERMITE_SECRETS_KEY for storage.",
+		Long: "Set, list and delete workflow secrets (${{ secrets.NAME }}), like `gh secret`.\n" +
+			"A secret lives in a repository, one of its environments (--env) or the instance (--instance).\n" +
+			"Precedence: environment > repository > instance. Values are write-only: no command prints one.\n" +
+			"Values are at most 48 KiB. Names use letters, digits and underscores, never start with a digit\n" +
+			"or GITHUB_, and are stored uppercase.\n\n" +
+			"Needs secrets:write. A repository-limited token manages only its repositories; --instance needs\n" +
+			"a token without repository limits. A branch-prefix token cannot manage secrets, and its runs\n" +
+			"receive none. The server needs ERMITE_SECRETS_KEY to store them.",
 	}
 	secret.AddCommand(newSecretSetCmd(env), newSecretListCmd(env), newSecretDeleteCmd(env))
 	return secret
@@ -197,7 +204,7 @@ func newSecretSetCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set [NAME]",
 		Short: "Create or update a secret",
-		Long:  "Create or update a secret from --body, stdin (pipe or redirection), or a hidden terminal prompt.\nThe command drops one trailing stdin line break. --env-file sets multiple secrets from NAME=value lines (\"-\" reads stdin); omit NAME.\n\n  ermite secret set AUR_KEY --repo dumber < key.pem\n  ermite secret set CODECOV_TOKEN --repo gordon --body \"$TOKEN\"\n  ermite secret set REGISTRY_PASSWORD --repo app --env production\n  ermite secret set --env-file .env --instance",
+		Long:  "Create or update a secret from --body, stdin (pipe or redirection), or a hidden terminal prompt.\nThe command drops trailing line breaks from stdin. --env-file sets multiple secrets from NAME=value lines (\"-\" reads stdin); omit NAME.\n\n  ermite secret set AUR_KEY --repo dumber < key.pem\n  ermite secret set CODECOV_TOKEN --repo gordon --body \"$TOKEN\"\n  ermite secret set REGISTRY_PASSWORD --repo app --env production\n  ermite secret set --env-file .env --instance",
 		Args:  cobra.MaximumNArgs(1),
 	}
 	f.add(cmd, env, "secret")
@@ -330,7 +337,9 @@ func newVariableCmd(env *cliEnv) *cobra.Command {
 	v := &cobra.Command{
 		Use:   "variable",
 		Short: "Manage the variables CI jobs receive",
-		Long:  "Manage workflow variables (${{ vars.NAME }}), like `gh variable`. Scopes, names, precedence and access match `ermite secret`. Variables are readable and may appear in logs.",
+		Long: "Manage workflow variables (${{ vars.NAME }}), like `gh variable`. Locations, names, precedence\n" +
+			"and access match `ermite secret`. Unlike secrets, variables are readable and may appear in logs.\n\n" +
+			"JSON fields of a variable (--json): name, value, updated_at (RFC 3339 UTC, null when unset).",
 	}
 	v.AddCommand(newVariableSetCmd(env), newVariableGetCmd(env), newVariableListCmd(env), newVariableDeleteCmd(env))
 	return v
@@ -399,8 +408,8 @@ func newVariableGetCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get NAME",
 		Short: "Print the value of a variable",
-		Long: "Print only one scope's variable value, for scripts.\n\n" +
-			"JSON fields (--json): name, value, updated_at (RFC 3339 UTC, null when unset).",
+		Long: "Print only the value of a variable in one scope, for scripts.\n" +
+			"JSON: a variable; see `ermite variable --help`.",
 		Args: cobra.ExactArgs(1),
 	}
 	f.add(cmd, env, "variable")
@@ -436,7 +445,7 @@ func newVariableListCmd(env *cliEnv) *cobra.Command {
 		Use:   "list",
 		Short: "List the variables with their values",
 		Long: "List one scope's variables, values and update times. Inherited variables are excluded.\n" +
-			"JSON: an array of variables; see `ermite variable get --help`.",
+			"JSON: an array of variables; see `ermite variable --help`.",
 		Args: cobra.NoArgs,
 	}
 	f.add(cmd, env, "variables")

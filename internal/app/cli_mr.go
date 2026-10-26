@@ -1029,12 +1029,12 @@ func newMREditCommentCmd(env *cliEnv) *cobra.Command   { return newMRNoteMutatio
 func newMRDeleteCommentCmd(env *cliEnv) *cobra.Command { return newMRNoteMutationCmd(env, false) }
 
 func newMRNoteMutationCmd(env *cliEnv, edit bool) *cobra.Command {
-	verb := "delete"
+	verb, short := "delete", "Delete your own merge request note"
 	if edit {
-		verb = "edit"
+		verb, short = "edit", "Edit your own merge request note"
 	}
 	var message string
-	cmd := &cobra.Command{Use: verb + "-comment <repo> <number> <comment-id>", Short: strings.ToUpper(verb[:1]) + verb[1:] + " your own merge request note", Long: "Edit or delete your own note on an open merge request. Needs mr:write. Verdicts are unchanged." + "\nJSON: a comment (see `ermite mr --help`).", Args: cobra.ExactArgs(3), ValidArgsFunction: completeMRRepoThenNumber(env)}
+	cmd := &cobra.Command{Use: verb + "-comment <repo> <number> <comment-id>", Short: short, Long: "Edit or delete your own note on an open merge request. Needs mr:write. Verdicts are unchanged.\nJSON: a comment (see `ermite mr --help`).", Args: cobra.ExactArgs(3), ValidArgsFunction: completeMRRepoThenNumber(env)}
 	if edit {
 		cmd.Flags().StringVarP(&message, "message", "m", "", "Markdown text, or - to read standard input (required)")
 		_ = cmd.MarkFlagRequired("message")
@@ -1135,11 +1135,12 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 		Short: "Merge a merge request",
 		Long: "Merge an open merge request. Needs mr:merge. --mode defaults to fast-forward;\n" +
 			"repository settings may restrict modes (see `ermite repo edit --merge-modes`):\n" +
-			"  fast-forward  move the target to the head; create no commit. The target must be an\n" +
+			"  fast-forward  the target moves to the head; no commit is created. The target must be an\n" +
 			"                ancestor of the head; otherwise rebase and push again or use another mode.\n" +
-			"  squash        create one commit with the merged head/target tree and only the target tip\n" +
-			"                as parent. The branch must merge without conflicts.\n" +
-			"  merge         create a merge commit with target tip and head as parents. The branch must merge without conflicts.\n" +
+			"  squash        one new commit with the merged head/target tree and the target tip as only\n" +
+			"                parent. The branch must merge without conflicts.\n" +
+			"  merge         a merge commit with the target tip and the head as parents. The branch must\n" +
+			"                merge without conflicts.\n" +
 			"Squash and merge commits use the server's signing key, generated on first start;\n" +
 			"`ermite signing-key show` prints it. The server never rebases. `ermite mr show` reports\n" +
 			"mergeability (up to date, behind, conflict); merging rechecks it and explains refusals.\n" +

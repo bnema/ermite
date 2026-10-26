@@ -21,7 +21,8 @@ func newOIDCCmd(env *cliEnv) *cobra.Command {
 	oidc := &cobra.Command{
 		Use:   "oidc",
 		Short: "Manage the OIDC provider of CI jobs",
-		Long: "Manage OIDC ID tokens for trusted CI runs with `permissions: id-token: write`, as on GitHub.\n" +
+		Long: "The server issues OIDC ID tokens to trusted CI runs with `permissions: id-token: write`, as on\n" +
+			"GitHub. These commands manage the key that signs them.\n" +
 			"A relying party (Vault, a cloud) trusting issuer <public URL>/-/oidc exchanges them for credentials.\n" +
 			"The server signs tokens with its own key, sealed with ERMITE_SECRETS_KEY; without it, no tokens\n" +
 			"are issued. Requires ci.oidc (see `ermite version`).",

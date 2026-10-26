@@ -114,7 +114,7 @@ func parseVisibility(s string) (ermite.Visibility, error) {
 }
 
 const jsonRepoHelp = `
-JSON repository fields (--json): name, description, topics (array), visibility ("public" or
+JSON fields of a repository (--json): name, description, topics (array), visibility ("public" or
 "private"), default_branch, created_at, pushed_at (null until first push), merge_modes
 (array: "fast-forward", "squash", "merge"), allow_auto_merge (whether auto-merge can be enabled),
 archived, issues ("off", "owner", "public"). Times are RFC 3339 UTC.`
@@ -315,8 +315,8 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit <name>",
 		Short: "Change a repository's description, topics, visibility, default branch, merge settings or issues",
-		Long: "This command changes only flagged fields. --description \"\" and --topics \"\" clear those fields.\n" +
-			"The default branch must exist. The command requires repo:admin.\n" +
+		Long: "Change only the fields given as flags. --description \"\" and --topics \"\" clear those fields.\n" +
+			"The default branch must exist. Needs repo:admin.\n" +
 			"\n" +
 			"--merge-modes lists allowed modes: fast-forward, squash, merge (all by default).\n" +
 			"It keeps only listed modes: --merge-modes fast-forward,squash disables merge commits.\n" +

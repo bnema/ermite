@@ -161,7 +161,7 @@ func newTrustAddCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add --format ssh|gpg --title <title> --email <email> <file|->",
 		Short: "Trust a public key",
-		Long: "This command trusts a public key for the given committer emails. Only the owner can add keys.\n" +
+		Long: "Trust a public key for the given committer emails. Only the owner can add keys.\n" +
 			"Input comes from a file, or stdin with -, up to 64 KiB:\n" +
 			"  ssh: authorized_keys line (e.g. ~/.ssh/id_ed25519.pub)\n" +
 			"  gpg: one armored public key (`gpg --armor --export <fingerprint>`), never a private key\n" +

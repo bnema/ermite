@@ -33,7 +33,7 @@ func newConfigCmd(env *cliEnv) *cobra.Command {
 			"\n" +
 			"ERMITE_URL and ERMITE_TOKEN override the file. token.cmd runs through the system shell,\n" +
 			"only when needed, at most once per run. It must print only the token on one line.\n" +
-			"Use a secret manager (pass, gopass, op, bw, secret-tool…); never store the token itself.\n" +
+			"Use a secret manager (pass, gopass, op, bw, secret-tool...); never store the token itself.\n" +
 			"\n" +
 			"If ERMITE_URL differs from the file's url, token.cmd does not run: the call is anonymous,\n" +
 			"with a notice to set ERMITE_TOKEN. `ermite version`, `ermite config` and shell completion\n" +
@@ -59,7 +59,7 @@ func newConfigShowCmd(env *cliEnv) *cobra.Command {
 		Use:   "show",
 		Short: "Print the config file path and its settings",
 		Long: "Print the file path, url and token.cmd; absent values show as (not set).\n" +
-			"Never runs token.cmd. Warns if file permissions would prevent running it.\n" +
+			"The command never runs token.cmd; it warns when file permissions would block it.\n" +
 			"\n" +
 			"JSON (--json): file, url, token_cmd. Unset settings are null.",
 		Args: cobra.NoArgs,
@@ -118,9 +118,9 @@ func newConfigSetCmd(env *cliEnv) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <url|token.cmd> <value>",
 		Short: "Set the server address or the token command in the config file",
-		Long: "Set a config value, preserving comments. Create the file with mode 0600 if needed.\n" +
+		Long: "Set a config value, preserving comments. The command creates the file (mode 0600) if needed.\n" +
 			"url must be http(s), without credentials. token.cmd prints the token (e.g. `pass show\n" +
-			"ermite/token`); store it unchanged, without running it.",
+			"ermite/token`); the command stores it as is and does not run it.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeConfigKeys,
 		RunE: func(cmd *cobra.Command, args []string) error {

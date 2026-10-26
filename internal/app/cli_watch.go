@@ -235,7 +235,7 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 			"Events cover repository creation/update/deletion, pushes, merge requests opened/merged\n" +
 			"(manually or automatically)/closed, auto-merge enabled/cancelled, and notes added/edited/\n" +
 			"deleted/resolved. The command reconnects with increasing delay after a disconnect; it resumes after the\n" +
-			"last printed event. If it expired on the server, the command prints a gap event: reload your display.\n" +
+			"last printed event. If the server no longer has that event, the command prints a gap event: reload your display.\n" +
 			"Connection notices go to stderr. The command skips unknown event types.\n" +
 			"\n" +
 			"--json prints NDJSON (one object per line): id, time (RFC 3339 UTC), type\n" +

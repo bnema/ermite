@@ -161,7 +161,7 @@ create leaves the release in place and reports its id.
 
 List defaults to 30 entries and follows server pagination up to `--limit`.
 View shows fields, notes and an asset table; `--notes` prints Markdown alone.
-Create, list and view support stable JSON (fields are listed in their help).
+Create, list and view support stable JSON (fields are listed in `ermite release --help`).
 Delete removes the release and assets, not its Git tag; it asks for confirmation
 only on a terminal unless `--yes` is given.
 

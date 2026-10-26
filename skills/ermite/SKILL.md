@@ -5,7 +5,7 @@ description: Explains how to use an ermite Git forge and its CLI - clone and pus
 
 # ermite
 
-A single-user Git forge in one binary. `ermite serve` runs the server; every other command is a client of its API. The owner holds the admin token and creates scoped tokens for agents and CI. Every command and flag: [CLI.md](CLI.md). `ermite <cmd> --help` is authoritative and lists the JSON fields.
+A single-user Git forge in one binary. `ermite serve` runs the server; every other command is a client of its API. The owner holds the admin token and creates scoped tokens for agents and CI. Every command and flag: [CLI.md](CLI.md). `ermite <cmd> --help` is authoritative; JSON fields are in it or its parent's.
 
 ## Connect
 

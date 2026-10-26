@@ -83,7 +83,7 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <label>",
 		Short: "Create a token and print its secret once",
-		Long: "This command creates a token. It prints the secret once on stdout, nowhere else; store it immediately.\n" +
+		Long: "Create a token. The command prints the secret once on stdout, nowhere else; store it right away.\n" +
 			"Details go to stderr. --json prints one object with token fields and secret.\n" +
 			"\n" +
 			"--preset and --scope add up; neither has a default. Presets:\n" +
@@ -330,7 +330,7 @@ func newTokenRevokeCmd(env *cliEnv) *cobra.Command {
 	return &cobra.Command{
 		Use:   "revoke <id>",
 		Short: "Revoke a token",
-		Long: "This command revokes a token by id (`ermite token list`); it stops working immediately.\n" +
+		Long: "Revoke a token by id (`ermite token list`). It stops working immediately.\n" +
 			"A token with every scope, no --repo list and no --branch-prefix has owner rights, including\n" +
 			"opening web sessions. Revoking it signs every browser out, like `ermite web logout --all`.\n" +
 			"Sessions are not tied to their opening token. `ermite web login` signs in again.",

@@ -90,7 +90,7 @@ func toJSONRelease(r *ermite.Release) jsonRelease {
 	return out
 }
 
-const releaseJSONHelp = "\nJSON fields: id, repo, tag, title, notes, draft, prerelease, latest, target_commitish, author,\ncreated_at, published_at, updated_at (RFC 3339 UTC or null), assets (id, release_id, name, label,\ncontent_type, size, digest, uploader, created_at, updated_at). list prints an array."
+const releaseJSONHelp = "\nJSON fields of a release (--json): id, repo, tag, title, notes, draft, prerelease, latest, target_commitish, author,\ncreated_at, published_at, updated_at (RFC 3339 UTC or null), assets (id, release_id, name, label,\ncontent_type, size, digest, uploader, created_at, updated_at). list prints an array."
 
 func newReleaseCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "release", Short: "Manage releases and their assets", Long: "Manage tagged releases. Reads follow repository visibility; writes need release:write. The server must support releases. Select by tag, numeric id, or latest (view/download)." + releaseJSONHelp}
