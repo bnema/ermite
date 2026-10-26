@@ -81,13 +81,13 @@ func toJSONMirrorStatus(s *ermite.MirrorStatus) jsonMirrorStatus {
 
 func newMirrorCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "mirror", Short: "Manage non-forcing push mirrors"}
-	key := &cobra.Command{Use: "key", Short: "Show or rotate the mirror SSH key"}
+	key := &cobra.Command{Use: "key", Short: "Show or rotate the mirror SSH key", Long: "Manage the mirror SSH key." + jsonMirrorKeyHelp}
 	for _, rotate := range []bool{false, true} {
 		name, short := "show", "Print the mirror authorized_keys line"
-		long := "Print only the authorized_keys line on stdout; requires authentication and ERMITE_SECRETS_KEY on the server.\nPipe it into: gh ssh-key add - --title \"ermite mirror\"." + jsonMirrorKeyHelp
+		long := "Print only the authorized_keys line on stdout; requires authentication and ERMITE_SECRETS_KEY on the server.\nPipe it into: gh ssh-key add - --title \"ermite mirror\"." + "\nJSON: a key; see `ermite mirror key --help`."
 		if rotate {
 			name, short = "rotate", "Replace the mirror SSH key (owner only)"
-			long = "Replace the mirror SSH key at once and print the new authorized_keys line on stdout; the replaced\nkey's fingerprint goes to stderr. Every mirror fails until the new key is added to the remotes.\nRequires owner rights and ERMITE_SECRETS_KEY on the server." + jsonMirrorKeyHelp
+			long = "Replace the mirror SSH key at once and print the new authorized_keys line on stdout; the replaced\nkey's fingerprint goes to stderr. Every mirror fails until the new key is added to the remotes.\nRequires owner rights and ERMITE_SECRETS_KEY on the server." + "\nJSON: a key; see `ermite mirror key --help`."
 		}
 		sub := &cobra.Command{Use: name, Short: short, Args: cobra.NoArgs, Long: long}
 		asJSON := addJSONFlag(sub)
@@ -124,7 +124,7 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 	}
 	cmd.AddCommand(key, newMirrorConfigCmd(env), newMirrorAddCmd(env), newMirrorStatusCmd(env), newMirrorSyncCmd(env))
 	for _, name := range []string{"remove", "exclude", "include"} {
-		sub := &cobra.Command{Use: name + " <repo>", Short: name + " a repository mirror", Args: cobra.ExactArgs(1)}
+		sub := &cobra.Command{Use: name + " <repo>", Short: strings.ToUpper(name[:1]) + name[1:] + " a repository mirror", Args: cobra.ExactArgs(1)}
 		sub.RunE = func(cmd *cobra.Command, args []string) error {
 			c, err := env.client(cmd)
 			if err != nil {

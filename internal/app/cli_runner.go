@@ -50,7 +50,7 @@ func newRunnerCmd(env *cliEnv) *cobra.Command {
 func newRunnerListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List the registered runners",
+		Short: "List registered runners",
 		Long:  "List the registered runners ordered by name." + jsonRunnerHelp + "\n--json prints an array of runners.",
 		Args:  cobra.NoArgs,
 	}
@@ -112,8 +112,8 @@ func newRunnerRemoveCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <runner id>",
 		Short: "Remove a runner",
-		Long: "Remove a runner: its token stops working at once and it gets no more jobs. A job it is running is not\n" +
-			"affected: it ends, or fails as a lost runner when its heartbeats stop.",
+		Long: "Remove a runner, immediately revoke its token and stop assigning jobs. Its running job continues\n" +
+			"until it ends or fails as a lost runner when heartbeats stop.",
 		Args: cobra.ExactArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
 			if len(args) > 0 {

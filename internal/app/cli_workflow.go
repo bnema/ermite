@@ -20,6 +20,7 @@ func newWorkflowCmd(env *cliEnv) *cobra.Command {
 	wf := &cobra.Command{
 		Use:   "workflow",
 		Short: "Start, list, disable and enable workflows",
+		Long:  "Manage repository workflows." + jsonWorkflowHelp,
 	}
 	wf.AddCommand(newWorkflowRunCmd(env), newWorkflowListCmd(env), newWorkflowDisableCmd(env), newWorkflowEnableCmd(env))
 	return wf
@@ -50,7 +51,7 @@ func newWorkflowRunCmd(env *cliEnv) *cobra.Command {
 		Short: "Run a workflow that has a workflow_dispatch trigger",
 		Long: "Start a run of a workflow file on a branch or a tag (the default branch without --ref). The workflow is read at\n" +
 			"that ref and must have a workflow_dispatch trigger; -f name=value gives the inputs it declares (checked by type,\n" +
-			"required inputs and choices). The workflow file is its path or its file name. Needs the ci:write scope." + jsonRunHelp,
+			"required inputs and choices). The workflow file is its path or its file name. Needs the ci:write scope." + "\nJSON: a run; see `ermite run --help`.",
 		Example: "  ermite workflow run release.yml --repo app -f version=1.2.3\n" +
 			"  ermite workflow run .github/workflows/ci.yml --repo app --ref feature/x",
 		Args:              cobra.ExactArgs(1),
@@ -93,9 +94,8 @@ type jsonWorkflow struct {
 }
 
 const jsonWorkflowHelp = `
-JSON fields of a workflow (--json): repo, file (the path, always .github/workflows/<file>), name (the
-"name:" of the workflow on the default branch, the path when it has none, empty when the default branch
-has no such file) and state (enabled or disabled).`
+JSON fields of a workflow (--json): repo, file (.github/workflows/<file>), name (default-branch
+workflow "name:"; path if unnamed; empty if absent on the default branch), state (enabled or disabled).`
 
 func workflowStateText(s ermite.WorkflowState) string {
 	if s == ermite.WorkflowState_WORKFLOW_STATE_DISABLED {
@@ -111,10 +111,10 @@ func toJSONWorkflow(repo string, w *ermite.Workflow) jsonWorkflow {
 func newWorkflowListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <repo>",
-		Short: "List the workflows of a repository and whether they are enabled",
+		Short: "List repository workflows and their states",
 		Long: "List the workflow files of .github/workflows on the default branch with their state, and the disabled\n" +
 			"workflows whose file is absent there (a disabled workflow is listed even in an empty repository), ordered\n" +
-			"by file. Needs the repo:read scope for a private repository." + jsonWorkflowHelp + "\n--json prints an array of workflows.",
+			"by file. Needs the repo:read scope for a private repository." + "\nJSON: an array of workflows; see `ermite workflow --help`.",
 		Example:           "  ermite workflow list app\n  ermite workflow list app --json",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
@@ -159,7 +159,7 @@ func newWorkflowDisableCmd(env *cliEnv) *cobra.Command {
 			"Runs already started go on. The state belongs to the repository and to the file path, not to a branch. The\n" +
 			"file is its path or its file name (release.yml) and does not have to exist: disable it right after\n" +
 			"`ermite repo create`, before the first push. Disabling a disabled workflow changes nothing. Undo with\n" +
-			"`ermite workflow enable`. Needs the repo:admin scope." + jsonWorkflowHelp,
+			"`ermite workflow enable`. Needs the repo:admin scope." + "\nJSON: a workflow; see `ermite workflow --help`.",
 		Example:           "  ermite workflow disable app release.yml\n  ermite workflow disable app .github/workflows/codeql.yml",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
@@ -185,7 +185,7 @@ func newWorkflowEnableCmd(env *cliEnv) *cobra.Command {
 		Short: "Let a disabled workflow start runs again",
 		Long: "Enable a workflow file of a repository, like `gh workflow enable`. The events that happened while it was\n" +
 			"disabled are not replayed. Enabling a workflow that is not disabled changes nothing. The file is its path\n" +
-			"or its file name. Needs the repo:admin scope." + jsonWorkflowHelp,
+			"or its file name. Needs the repo:admin scope." + "\nJSON: a workflow; see `ermite workflow --help`.",
 		Example:           "  ermite workflow enable app release.yml",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),

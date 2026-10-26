@@ -94,8 +94,8 @@ func newRunArtifactsCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "artifacts <repo> <run id>",
 		Short: "List the artifacts of a run",
-		Long: "List the artifacts that the jobs of a run uploaded (actions/upload-artifact), with the space the\n" +
-			"artifacts of the repository use. Needs a token that reads the repository, even a public one.\n" +
+		Long: "List a run’s job artifacts (actions/upload-artifact) and repository artifact usage.\n" +
+			"Needs a repository-read token, even for public repositories.\n" +
 			"JSON fields (--json): artifacts (id, name, size, digest, media_type, run_id, attempt, job_id,\n" +
 			"created_at, expires_at), used_bytes and quota_bytes.",
 		Args:              cobra.ExactArgs(2),

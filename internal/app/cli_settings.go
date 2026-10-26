@@ -259,9 +259,8 @@ func newSecretListCmd(env *cliEnv) *cobra.Command {
 	var f settingsFlags
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List the names of the secrets",
-		Long: "List the secrets of one scope with their last update. Only the secrets set in that scope are\n" +
-			"listed, not the ones it inherits. Values are never shown.\n\n" +
+		Short: "List secret names",
+		Long: "List names and update times for secrets set in one scope, not inherited secrets. Never shows values.\n\n" +
 			"JSON fields of a secret (--json): name, updated_at (RFC 3339 UTC, null when unset).",
 		Args: cobra.NoArgs,
 	}
@@ -417,7 +416,7 @@ func newVariableGetCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get NAME",
 		Short: "Print the value of a variable",
-		Long: "Print the value of a variable of one scope, and nothing else, so that it can be used in a script.\n\n" +
+		Long: "Print only one scope’s variable value, for scripts.\n\n" +
 			"JSON fields (--json): name, value, updated_at (RFC 3339 UTC, null when unset).",
 		Args: cobra.ExactArgs(1),
 	}
@@ -453,8 +452,8 @@ func newVariableListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the variables with their values",
-		Long: "List the variables of one scope with their values and last update; the ones the scope inherits are\n" +
-			"not listed.\n\nJSON fields of a variable (--json): name, value, updated_at (RFC 3339 UTC, null when unset).",
+		Long: "List variables set in one scope, with values and update times; excludes inherited variables.\n" +
+			"JSON: an array of variables; see `ermite variable get --help`.",
 		Args: cobra.NoArgs,
 	}
 	f.add(cmd, env, "variables")
@@ -564,7 +563,7 @@ func newEnvironmentCreateCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create NAME --repo REPO",
 		Short: "Create an environment",
-		Long:  "Create an environment. One that exists already (in any case) is left as it is.",
+		Long:  "Create an environment; leave existing ones unchanged (case-insensitive).",
 		Args:  cobra.ExactArgs(1),
 	}
 	addRepoFlag(cmd, env, &repo)
