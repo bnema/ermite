@@ -1,6 +1,6 @@
 # ermite CLI reference
 
-`ermite <cmd> --help` is authoritative and lists every JSON field. Most commands take `--json`. Errors: one line `ermite: ...` on stderr, exit 1.
+`ermite <cmd> --help` is authoritative. Shared JSON field lists sit on the parent (`ermite mr --help`, `ermite run --help`). Most commands take `--json`. Errors: one line `ermite: ...` on stderr, exit 1.
 
 ## Connection and config
 

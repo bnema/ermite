@@ -258,10 +258,9 @@ func newJournalCmd(env *cliEnv) *cobra.Command {
 }
 
 const jsonPendingHelp = `
-JSON fields of a repository (--json prints an array, by name): repo, latest_tag (empty when no tag
-was met within 500 commits), latest_tag_at (RFC 3339, UTC, or null), commits_since (at most 500),
-commits_capped (true when the walk stopped at the limit before finding a tag; commits_since is then
-a lower bound), default_branch.`
+JSON fields (--json prints an array sorted by name): repo, latest_tag (empty when none within
+500 commits), latest_tag_at (RFC 3339 UTC or null), commits_since (at most 500), commits_capped
+(the walk hit the limit first; commits_since is then a lower bound), default_branch.`
 
 type jsonUnreleased struct {
 	Repo          string  `json:"repo"`
@@ -296,9 +295,9 @@ func newReleasePendingCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pending [repo]",
 		Short: "List the repositories with commits after their latest tag",
-		Long: "List the non-archived repositories whose default branch has commits after its nearest tag.\n" +
-			"Repositories without a tag are left out. Needs owner rights or the journal:read scope and a server\n" +
-			"with the journal feature." + jsonPendingHelp,
+		Long: "List non-archived repositories whose default branch has commits after its nearest tag.\n" +
+			"Repositories without a tag are left out. Needs owner rights or journal:read, and the journal feature." +
+			jsonPendingHelp,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
