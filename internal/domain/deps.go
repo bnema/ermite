@@ -208,6 +208,5 @@ func floatingMajor(v string) bool {
 // DepSideEffect describes a Go-selected change beyond the requested versions.
 // An empty To means tidy removed the module.
 type DepSideEffect struct {
-	Ecosystem                 DepsEcosystem
 	Directory, Name, From, To string
 }

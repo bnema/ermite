@@ -5,7 +5,6 @@ package deps
 import (
 	"errors"
 	"os"
-	"path"
 	"strings"
 	"testing"
 
@@ -95,24 +94,16 @@ func TestActionsApplyGoldenAndValidate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, want, got[p])
 	assert.Equal(t, before, files[p])
-	{
-		_, validationErr := (Actions{}).Validate(files, got, ups)
-		require.NoError(t, validationErr)
-	}
+	_, err = (Actions{}).Validate(files, got, ups)
+	require.NoError(t, err)
 	for _, bad := range [][]byte{before, []byte(strings.ReplaceAll(string(want), "keep me", "changed")), append(append([]byte(nil), want...), '\n')} {
-		{
-			_, validationErr := (Actions{}).Validate(files, map[domain.TreePath][]byte{p: bad}, ups)
-			require.Error(t, validationErr)
-		}
+		_, err = (Actions{}).Validate(files, map[domain.TreePath][]byte{p: bad}, ups)
+		require.Error(t, err)
 	}
-	{
-		_, validationErr := (Actions{}).Validate(files, map[domain.TreePath][]byte{tp(t, "extra.yml"): want}, ups)
-		require.Error(t, validationErr)
-	}
-	{
-		_, validationErr := (Actions{}).Validate(files, nil, ups)
-		require.Error(t, validationErr)
-	}
+	_, err = (Actions{}).Validate(files, map[domain.TreePath][]byte{tp(t, "extra.yml"): want}, ups)
+	require.Error(t, err)
+	_, err = (Actions{}).Validate(files, nil, ups)
+	require.Error(t, err)
 	ups[0].Version = "v5\nrun: evil"
 	_, err = (Actions{}).Apply(files, ups)
 	require.Error(t, err)
@@ -188,24 +179,16 @@ func TestGoModValidate(t *testing.T) {
 		})
 	}
 	sum := "example.org/a v1.1.0/go.mod h1:" + strings.Repeat("A", 43) + "=\n"
-	{
-		_, validationErr := (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(good), tp(t, "sub/go.sum"): []byte(sum)}, ups)
-		require.NoError(t, validationErr)
-	}
+	_, err := (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(good), tp(t, "sub/go.sum"): []byte(sum)}, ups)
+	require.NoError(t, err)
 	for _, bad := range []string{"bad", "example.org/a v1.0.0 h1:bad", "example.org/a invalid h1:" + strings.Repeat("A", 43) + "="} {
-		{
-			_, validationErr := (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(good), tp(t, "sub/go.sum"): []byte(bad)}, ups)
-			require.Error(t, validationErr)
-		}
+		_, err = (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(good), tp(t, "sub/go.sum"): []byte(bad)}, ups)
+		require.Error(t, err)
 	}
-	{
-		_, validationErr := (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(good), tp(t, "extra.txt"): nil}, ups)
-		require.Error(t, validationErr)
-	}
-	{
-		_, validationErr := (GoMod{}).Validate(before, map[domain.TreePath][]byte{tp(t, "go.mod"): []byte(good)}, ups)
-		require.Error(t, validationErr)
-	}
+	_, err = (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(good), tp(t, "extra.txt"): nil}, ups)
+	require.Error(t, err)
+	_, err = (GoMod{}).Validate(before, map[domain.TreePath][]byte{tp(t, "go.mod"): []byte(good)}, ups)
+	require.Error(t, err)
 }
 
 func TestGoModGroupedReplacements(t *testing.T) {
@@ -223,55 +206,53 @@ func TestActionsApplyPreservesCRLFAndNoFinalNewline(t *testing.T) {
 	got, err := (Actions{}).Apply(before, ups)
 	require.NoError(t, err)
 	assert.Equal(t, "steps:\r\n - uses: owner/repo@v2 # comment\r\n - run: true", string(got[p]))
-	{
-		_, validationErr := (Actions{}).Validate(before, got, ups)
-		require.NoError(t, validationErr)
-	}
+	_, err = (Actions{}).Validate(before, got, ups)
+	require.NoError(t, err)
 }
 
 func TestGoModRequestedIndirectTidyAndSideEffects(t *testing.T) {
+	const a = "example.org/a"
 	for _, tc := range []struct {
 		name, after string
-		ok          bool
-		to          string
+		want        []domain.DepSideEffect
+		wantErr     bool
 	}{
-		{"tidy removed", "", true, ""},
-		{"higher", "require example.org/a v1.3.0 // indirect\n", true, "v1.3.0"},
-		{"exact", "require example.org/a v1.2.0 // indirect\n", true, ""},
-		{"below", "require example.org/a v1.1.0 // indirect\n", false, ""},
+		{"tidy removed", "", []domain.DepSideEffect{{Directory: "sub", Name: a, From: "v1.0.0"}}, false},
+		{"higher", "require example.org/a v1.3.0 // indirect\n", []domain.DepSideEffect{{Directory: "sub", Name: a, From: "v1.2.0", To: "v1.3.0"}}, false},
+		{"exact", "require example.org/a v1.2.0 // indirect\n", nil, false},
+		{"below", "require example.org/a v1.1.0 // indirect\n", nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := tp(t, "sub/go.mod")
 			header := "module example.org/root\ngo 1.24\n"
-			effects, err := (GoMod{}).Validate(map[domain.TreePath][]byte{p: []byte(header + "require example.org/a v1.0.0 // indirect\n")}, map[domain.TreePath][]byte{p: []byte(header + tc.after)}, []domain.DepUpdate{update(domain.EcosystemGoMod, "sub", "example.org/a", "v1.0.0", "v1.2.0")})
-			if !tc.ok {
-				require.Error(t, err)
+			effects, err := (GoMod{}).Validate(map[domain.TreePath][]byte{p: []byte(header + "require example.org/a v1.0.0 // indirect\n")}, map[domain.TreePath][]byte{p: []byte(header + tc.after)}, []domain.DepUpdate{update(domain.EcosystemGoMod, "sub", a, "v1.0.0", "v1.2.0")})
+			if tc.wantErr {
+				require.ErrorIs(t, err, domain.ErrInvalid)
 				return
 			}
 			require.NoError(t, err)
-			if tc.name == "exact" {
-				require.Empty(t, effects)
-				return
-			}
-			from := "v1.2.0"
-			if tc.after == "" {
-				from = "v1.0.0"
-			}
-			require.Equal(t, []domain.DepSideEffect{{Ecosystem: domain.EcosystemGoMod, Directory: "sub", Name: "example.org/a", From: from, To: tc.to}}, effects)
+			require.Equal(t, tc.want, effects)
 		})
 	}
 }
 
 func TestGoModSideEffectsAreSorted(t *testing.T) {
-	before, after := map[domain.TreePath][]byte{}, map[domain.TreePath][]byte{}
-	var ups []domain.DepUpdate
-	var want []domain.DepSideEffect
-	for _, dir := range []string{"", "sub"} {
-		p := tp(t, path.Join(dir, "go.mod"))
-		before[p] = []byte("module example.org/root\ngo 1.24\nrequire (\nexample.org/z v1.0.0 // indirect\nexample.org/b v1.0.0\nexample.org/a v1.0.0\n)\n")
-		after[p] = []byte("module example.org/root\ngo 1.24\nrequire (\nexample.org/b v1.2.0\nexample.org/a v1.3.0\n)\n")
-		ups = append(ups, update(domain.EcosystemGoMod, dir, "example.org/z", "v1.0.0", "v1.1.0"))
-		want = append(want, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: dir, Name: "example.org/a", From: "v1.0.0", To: "v1.3.0"}, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: dir, Name: "example.org/b", From: "v1.0.0", To: "v1.2.0"}, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: dir, Name: "example.org/z", From: "v1.0.0"})
+	const old = "module example.org/root\ngo 1.24\nrequire (\nexample.org/z v1.0.0 // indirect\nexample.org/b v1.0.0\nexample.org/a v1.0.0\n)\n"
+	const tidied = "module example.org/root\ngo 1.24\nrequire (\nexample.org/b v1.2.0\nexample.org/a v1.3.0\n)\n"
+	root, sub := tp(t, "go.mod"), tp(t, "sub/go.mod")
+	before := map[domain.TreePath][]byte{root: []byte(old), sub: []byte(old)}
+	after := map[domain.TreePath][]byte{root: []byte(tidied), sub: []byte(tidied)}
+	ups := []domain.DepUpdate{
+		update(domain.EcosystemGoMod, "sub", "example.org/z", "v1.0.0", "v1.1.0"),
+		update(domain.EcosystemGoMod, "", "example.org/z", "v1.0.0", "v1.1.0"),
+	}
+	want := []domain.DepSideEffect{
+		{Name: "example.org/a", From: "v1.0.0", To: "v1.3.0"},
+		{Name: "example.org/b", From: "v1.0.0", To: "v1.2.0"},
+		{Name: "example.org/z", From: "v1.0.0"},
+		{Directory: "sub", Name: "example.org/a", From: "v1.0.0", To: "v1.3.0"},
+		{Directory: "sub", Name: "example.org/b", From: "v1.0.0", To: "v1.2.0"},
+		{Directory: "sub", Name: "example.org/z", From: "v1.0.0"},
 	}
 	effects, err := (GoMod{}).Validate(before, after, ups)
 	require.NoError(t, err)
@@ -301,7 +282,7 @@ func TestGoModValidateRequestedModuleDirectness(t *testing.T) {
 	p := tp(t, "go.mod")
 	header := "module example.org/root\ngo 1.24\n"
 	ups := []domain.DepUpdate{update(domain.EcosystemGoMod, "", "example.org/a", "v1.0.0", "v1.1.0")}
-	for _, tc := range []struct{ name, before, after, want string }{
+	for _, tc := range []struct{ name, before, after, wantErr string }{
 		{"direct demoted", "require example.org/a v1.0.0\n", "require example.org/a v1.1.0 // indirect\n", "became indirect"},
 		{"indirect promoted", "require example.org/a v1.0.0 // indirect\n", "require example.org/a v1.1.0\n", "new direct requirement"},
 		{"direct stays direct", "require example.org/a v1.0.0\n", "require example.org/a v1.1.0\n", ""},
@@ -309,12 +290,12 @@ func TestGoModValidateRequestedModuleDirectness(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := (GoMod{}).Validate(map[domain.TreePath][]byte{p: []byte(header + tc.before)}, map[domain.TreePath][]byte{p: []byte(header + tc.after)}, ups)
-			if tc.want == "" {
+			if tc.wantErr == "" {
 				require.NoError(t, err)
 				return
 			}
 			require.ErrorIs(t, err, domain.ErrInvalid)
-			assert.Contains(t, err.Error(), tc.want)
+			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
 }
@@ -324,11 +305,23 @@ func TestGoModValidateRefusesSameVersionRespelled(t *testing.T) {
 	header := "module example.org/root\ngo 1.24\n"
 	ups := []domain.DepUpdate{update(domain.EcosystemGoMod, "", "example.org/a", "v1.0.0", "v1.1.0")}
 	before := map[domain.TreePath][]byte{p: []byte(header + "require (\nexample.org/a v1.0.0\nexample.org/b v1.0.0\n)\n")}
-	_, err := (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(header + "require (\nexample.org/a v1.1.0\nexample.org/b v1.0.0+incompatible\n)\n")}, ups)
-	require.ErrorIs(t, err, domain.ErrInvalid)
-	assert.Contains(t, err.Error(), `"example.org/b"`)
-	_, err = (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(header + "require (\nexample.org/a v1.1.0+incompatible\nexample.org/b v1.0.0\n)\n")}, ups)
-	require.ErrorIs(t, err, domain.ErrInvalid)
-	_, err = (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(header + "require (\nexample.org/a v1.1.0\nexample.org/b v1.0.0\n)\n")}, ups)
-	require.NoError(t, err)
+	for _, tc := range []struct {
+		name, a, b, wantName string
+		wantErr              bool
+	}{
+		{"unrequested respelled", "v1.1.0", "v1.0.0+incompatible", `"example.org/b"`, true},
+		{"requested respelled", "v1.1.0+incompatible", "v1.0.0", `"example.org/a"`, true},
+		{"as requested", "v1.1.0", "v1.0.0", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			after := header + "require (\nexample.org/a " + tc.a + "\nexample.org/b " + tc.b + "\n)\n"
+			_, err := (GoMod{}).Validate(before, map[domain.TreePath][]byte{p: []byte(after)}, ups)
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, domain.ErrInvalid)
+			assert.Contains(t, err.Error(), tc.wantName)
+		})
+	}
 }

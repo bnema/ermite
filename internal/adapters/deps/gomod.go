@@ -217,70 +217,11 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 		if b, ok := after[p]; ok {
 			content = b
 		}
-		a, err := modfile.Parse(p.String(), old, nil)
-		if err != nil {
-			return nil, fmt.Errorf("%w: original go.mod: %v", domain.ErrInvalid, err)
-		}
-		b, err := modfile.Parse(p.String(), content, nil)
-		if err != nil {
-			return nil, fmt.Errorf("%w: reported go.mod: %v", domain.ErrInvalid, err)
-		}
-		if !reflect.DeepEqual(policy(a), policy(b)) {
-			return nil, fmt.Errorf("%w: module directives changed", domain.ErrInvalid)
-		}
-		prev, err := requirements(a, "original")
+		more, err := validateModule(d, old, content, want)
 		if err != nil {
 			return nil, err
 		}
-		next, err := requirements(b, "reported")
-		if err != nil {
-			return nil, err
-		}
-		for name, v := range want {
-			p, r := prev[name], next[name]
-			if p != nil && p.Indirect && r == nil {
-				effects = append(effects, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: d, Name: name, From: p.Mod.Version})
-				continue
-			}
-			if p == nil || r == nil || semver.Compare(r.Mod.Version, v) < 0 {
-				return nil, fmt.Errorf("%w: requested version missing for %q", domain.ErrInvalid, name)
-			}
-			if !p.Indirect && r.Indirect {
-				return nil, fmt.Errorf("%w: requested direct requirement %q became indirect", domain.ErrInvalid, name)
-			}
-			if p.Indirect && !r.Indirect {
-				return nil, fmt.Errorf("%w: new direct requirement %q", domain.ErrInvalid, name)
-			}
-			if semver.Compare(r.Mod.Version, v) == 0 && r.Mod.Version != v {
-				return nil, fmt.Errorf("%w: requested version of %q changed to %q", domain.ErrInvalid, name, r.Mod.Version)
-			}
-			if semver.Compare(r.Mod.Version, v) > 0 {
-				effects = append(effects, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: d, Name: name, From: v, To: r.Mod.Version})
-			}
-		}
-		for name, r := range prev {
-			if _, requested := want[name]; requested {
-				continue
-			}
-			n := next[name]
-			if !r.Indirect && (n == nil || n.Indirect || semver.Compare(n.Mod.Version, r.Mod.Version) < 0) {
-				return nil, fmt.Errorf("%w: unrequested direct requirement %q", domain.ErrInvalid, name)
-			}
-			if !r.Indirect && semver.Compare(n.Mod.Version, r.Mod.Version) == 0 && n.Mod.Version != r.Mod.Version {
-				return nil, fmt.Errorf("%w: unrequested direct requirement %q changed from %q to %q", domain.ErrInvalid, name, r.Mod.Version, n.Mod.Version)
-			}
-			if !r.Indirect && semver.Compare(n.Mod.Version, r.Mod.Version) > 0 {
-				effects = append(effects, domain.DepSideEffect{Ecosystem: domain.EcosystemGoMod, Directory: d, Name: name, From: r.Mod.Version, To: n.Mod.Version})
-			}
-		}
-		for name, r := range next {
-			if _, requested := want[name]; requested {
-				continue
-			}
-			if !r.Indirect && (prev[name] == nil || prev[name].Indirect) {
-				return nil, fmt.Errorf("%w: new direct requirement %q", domain.ErrInvalid, name)
-			}
-		}
+		effects = append(effects, more...)
 	}
 	sort.Slice(effects, func(i, j int) bool {
 		if effects[i].Directory != effects[j].Directory {
@@ -288,6 +229,86 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 		}
 		return effects[i].Name < effects[j].Name
 	})
+	return effects, nil
+}
+
+func effect(dir, name, from, to string) domain.DepSideEffect {
+	return domain.DepSideEffect{Directory: dir, Name: name, From: from, To: to}
+}
+
+// validateModule checks the go.mod of one directory against the requested
+// versions (module name to version) and returns the changes Go made beyond them.
+func validateModule(dir string, old, content []byte, want map[string]string) ([]domain.DepSideEffect, error) {
+	file := path.Join(dir, "go.mod")
+	a, err := modfile.Parse(file, old, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: original go.mod: %v", domain.ErrInvalid, err)
+	}
+	b, err := modfile.Parse(file, content, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: reported go.mod: %v", domain.ErrInvalid, err)
+	}
+	if !reflect.DeepEqual(policy(a), policy(b)) {
+		return nil, fmt.Errorf("%w: module directives changed", domain.ErrInvalid)
+	}
+	prev, err := requirements(a, "original")
+	if err != nil {
+		return nil, err
+	}
+	next, err := requirements(b, "reported")
+	if err != nil {
+		return nil, err
+	}
+	var effects []domain.DepSideEffect
+	for name, v := range want {
+		p, r := prev[name], next[name]
+		if p != nil && p.Indirect && r == nil {
+			effects = append(effects, effect(dir, name, p.Mod.Version, ""))
+			continue
+		}
+		if p == nil || r == nil {
+			return nil, fmt.Errorf("%w: requested version missing for %q", domain.ErrInvalid, name)
+		}
+		cmp := semver.Compare(r.Mod.Version, v)
+		switch {
+		case cmp < 0:
+			return nil, fmt.Errorf("%w: requested version missing for %q", domain.ErrInvalid, name)
+		case !p.Indirect && r.Indirect:
+			return nil, fmt.Errorf("%w: requested direct requirement %q became indirect", domain.ErrInvalid, name)
+		case p.Indirect && !r.Indirect:
+			return nil, fmt.Errorf("%w: new direct requirement %q", domain.ErrInvalid, name)
+		case cmp == 0 && r.Mod.Version != v:
+			return nil, fmt.Errorf("%w: requested version of %q changed to %q", domain.ErrInvalid, name, r.Mod.Version)
+		case cmp > 0:
+			effects = append(effects, effect(dir, name, v, r.Mod.Version))
+		}
+	}
+	for name, r := range prev {
+		if _, requested := want[name]; requested || r.Indirect {
+			continue
+		}
+		n := next[name]
+		if n == nil || n.Indirect {
+			return nil, fmt.Errorf("%w: unrequested direct requirement %q", domain.ErrInvalid, name)
+		}
+		cmp := semver.Compare(n.Mod.Version, r.Mod.Version)
+		switch {
+		case cmp < 0:
+			return nil, fmt.Errorf("%w: unrequested direct requirement %q", domain.ErrInvalid, name)
+		case cmp == 0 && n.Mod.Version != r.Mod.Version:
+			return nil, fmt.Errorf("%w: unrequested direct requirement %q changed from %q to %q", domain.ErrInvalid, name, r.Mod.Version, n.Mod.Version)
+		case cmp > 0:
+			effects = append(effects, effect(dir, name, r.Mod.Version, n.Mod.Version))
+		}
+	}
+	for name, r := range next {
+		if _, requested := want[name]; requested {
+			continue
+		}
+		if !r.Indirect && (prev[name] == nil || prev[name].Indirect) {
+			return nil, fmt.Errorf("%w: new direct requirement %q", domain.ErrInvalid, name)
+		}
+	}
 	return effects, nil
 }
 
