@@ -23,7 +23,9 @@ var jsonInstantType = reflect.TypeOf(jsonInstant(nil))
 //
 // Nested structs, slices of structs and pointers to structs are listed as
 // "name (help; field, field)". An embedded struct is flattened, as encoding/json
-// does, unless it has a see tag: its help then stands for it.
+// does, unless it has a see tag: its help then stands for it. Maps, MarshalJSON
+// types and recursive types are not handled: the json structs have none (a
+// recursive one would overflow the stack in every test that builds the CLI).
 func jsonFieldsHelp(title string, v any) string {
 	times := false
 	list := jsonFieldList(indirectType(reflect.TypeOf(v)), &times)
@@ -56,7 +58,7 @@ func jsonFieldList(t reflect.Type, times *bool) []string {
 		sub := indirectType(f.Type)
 		if f.Anonymous && name == "" && sub.Kind() == reflect.Struct {
 			if see != "" {
-				out = append(out, jsonFieldItem(help, nil, see))
+				out = append(out, jsonFieldItem(help, "", see, nil))
 			} else {
 				out = append(out, jsonFieldList(sub, times)...)
 			}
@@ -65,6 +67,9 @@ func jsonFieldList(t reflect.Type, times *bool) []string {
 		if !f.IsExported() {
 			continue
 		}
+		if name == "" {
+			name = f.Name // as encoding/json does
+		}
 		if f.Type == jsonInstantType {
 			*times = true
 		}
@@ -72,18 +77,16 @@ func jsonFieldList(t reflect.Type, times *bool) []string {
 		if sub.Kind() == reflect.Struct && see == "" {
 			nested = jsonFieldList(sub, times)
 		}
-		out = append(out, jsonFieldItem(name, []string{help}, see, nested...))
+		out = append(out, jsonFieldItem(name, help, see, nested))
 	}
 	return out
 }
 
 // jsonFieldItem is "name (help; see `ermite X --help`; field, field)".
-func jsonFieldItem(name string, notes []string, see string, nested ...string) string {
+func jsonFieldItem(name, help, see string, nested []string) string {
 	var parts []string
-	for _, n := range notes {
-		if n != "" {
-			parts = append(parts, n)
-		}
+	if help != "" {
+		parts = append(parts, help)
 	}
 	if see != "" {
 		parts = append(parts, "see `"+see+" --help`")

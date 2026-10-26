@@ -44,18 +44,18 @@ func journalClient(env *cliEnv, cmd *cobra.Command) (*client.Client, error) {
 }
 
 type jsonActivity struct {
-	ID            string  `json:"id"`
-	Kind          string  `json:"kind"`
-	Repo          string  `json:"repo"`
-	At            *string `json:"at"`
-	Actor         string  `json:"actor"`
-	Number        int64   `json:"number" help:"merge request or issue; 0 otherwise"`
-	Ref           string  `json:"ref" help:"tag, release tag, pushed branch, or target branch of a merge request"`
-	Title         string  `json:"title"`
-	CommitCount   int32   `json:"commit_count" help:"pushes; at most 100"`
-	CommitsCapped bool    `json:"commits_capped" help:"true when the push had more"`
-	Commit        string  `json:"commit" help:"new head of a push"`
-	Summary       string  `json:"summary" help:"subject of that commit"`
+	ID            string      `json:"id"`
+	Kind          string      `json:"kind"`
+	Repo          string      `json:"repo"`
+	At            jsonInstant `json:"at"`
+	Actor         string      `json:"actor"`
+	Number        int64       `json:"number" help:"merge request or issue; 0 otherwise"`
+	Ref           string      `json:"ref" help:"tag, release tag, pushed branch, or target branch of a merge request"`
+	Title         string      `json:"title"`
+	CommitCount   int32       `json:"commit_count" help:"pushes; at most 100"`
+	CommitsCapped bool        `json:"commits_capped" help:"true when the push had more"`
+	Commit        string      `json:"commit" help:"new head of a push"`
+	Summary       string      `json:"summary" help:"subject of that commit"`
 }
 
 func toJSONActivity(e *ermite.ActivityEntry) jsonActivity {

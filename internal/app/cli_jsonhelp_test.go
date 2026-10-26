@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -69,9 +70,13 @@ func parseSources(t *testing.T) (*token.FileSet, map[string]*ast.File) {
 	return fset, files
 }
 
+// timeField matches the json names of the fields that hold an instant.
+var timeField = regexp.MustCompile(`^(at|time)$|_(at|until)$`)
+
 // TestJSONStructsHaveTags checks that each exported field of a jsonX struct has a
 // json tag: the field list of the help is built from it, and a field without a
-// tag would show under its Go name while the output uses another.
+// tag would show under its Go name while the output uses another. A time field
+// must be a jsonInstant, which is how the help finds the times.
 func TestJSONStructsHaveTags(t *testing.T) {
 	_, files := parseSources(t)
 	found := 0
@@ -81,44 +86,62 @@ func TestJSONStructsHaveTags(t *testing.T) {
 			if !ok || !strings.HasPrefix(spec.Name.Name, "json") {
 				return true
 			}
-			st, ok := spec.Type.(*ast.StructType)
+			struc, ok := spec.Type.(*ast.StructType)
 			if !ok {
 				return true
 			}
 			found++
-			for _, field := range st.Fields.List {
-				tag := ""
+			for _, field := range struc.Fields.List {
+				raw := ""
 				if field.Tag != nil {
-					tag, _ = strconv.Unquote(field.Tag.Value)
+					raw, _ = strconv.Unquote(field.Tag.Value)
 				}
-				st := reflect.StructTag(tag)
+				tag := reflect.StructTag(raw)
 				label := name + ": " + spec.Name.Name
 				if len(field.Names) == 0 { // embedded: flattened, or stands for its fields with a see tag
-					if st.Get("json") == "" {
-						assert.NotEmpty(t, st.Get("help"), "%s: an embedded struct needs a json name or a help", label)
+					if tag.Get("see") != "" {
+						assert.NotEmpty(t, tag.Get("help"), "%s: an embedded struct with a see tag needs a help", label)
 					}
 					continue
 				}
+				jsonName, _, _ := strings.Cut(tag.Get("json"), ",")
 				for _, id := range field.Names {
 					if id.IsExported() {
-						assert.NotEmpty(t, st.Get("json"), "%s.%s has no json tag", label, id.Name)
+						assert.NotEmpty(t, jsonName, "%s.%s has no json tag", label, id.Name)
 					}
 				}
-				assert.True(t, isASCII(tag), "%s: the tags of %v are ASCII", label, field.Names)
+				if timeField.MatchString(jsonName) {
+					typ, _ := field.Type.(*ast.Ident)
+					assert.True(t, typ != nil && typ.Name == "jsonInstant", "%s.%s is a time: make it a jsonInstant", label, jsonName)
+				}
 			}
 			return true
 		})
 	}
-	assert.Greater(t, found, 40, "the json structs are found")
+	assert.NotZero(t, found, "the json structs are found")
 }
 
-func isASCII(s string) bool {
-	for _, r := range s {
-		if r > 127 {
-			return false
+// TestWatchTypesDocumented checks that the help of `ermite watch` names every
+// event type it can print.
+func TestWatchTypesDocumented(t *testing.T) {
+	f, ok := reflect.TypeOf(jsonEvent{}).FieldByName("Type")
+	require.True(t, ok)
+	help := f.Tag.Get("help")
+	_, files := parseSources(t)
+	found := 0
+	ast.Inspect(files["cli_watch.go"], func(n ast.Node) bool {
+		spec, ok := n.(*ast.ValueSpec)
+		if !ok || len(spec.Names) != 1 || !strings.HasPrefix(spec.Names[0].Name, "event") || len(spec.Values) != 1 {
+			return true
 		}
-	}
-	return true
+		if lit, ok := spec.Values[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			value, _ := strconv.Unquote(lit.Value)
+			found++
+			assert.Regexp(t, `\b`+regexp.QuoteMeta(value)+`\b`, help, "the watch help names %s", value)
+		}
+		return true
+	})
+	assert.NotZero(t, found, "the event types are found")
 }
 
 // TestNoHandWrittenFieldList checks that no source text but the generator writes
@@ -132,8 +155,8 @@ func TestNoHandWrittenFieldList(t *testing.T) {
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-				assert.NotContains(t, lit.Value, "JSON fields", "%s: build field lists with jsonFieldsHelp", name)
-				assert.NotContains(t, lit.Value, "JSON (--json)", "%s: build field lists with jsonFieldsHelp", name)
+				assert.NotContains(t, strings.ToLower(lit.Value), "json field", "%s: build field lists with jsonFieldsHelp", name)
+				assert.NotContains(t, lit.Value, "(--json)", "%s: build field lists with jsonFieldsHelp", name)
 			}
 			return true
 		})

@@ -11,11 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// jsonPointer matches the line that sends a reader to the help holding the JSON fields.
-var jsonPointer = regexp.MustCompile("JSON: [^`]*`ermite ([a-z -]+) --help`")
+// jsonPointer matches a pointer to the help holding JSON fields: a "JSON: ..." line
+// of a subcommand, or a see tag in a generated field list.
+var jsonPointer = regexp.MustCompile("(?:JSON: [^`]*|see )`ermite ([a-z -]+) --help`")
 
-// TestHelpJSONPointersResolve checks every "JSON: … see `ermite X --help`" pointer:
-// X exists and its long help lists JSON fields.
+// TestHelpJSONPointersResolve checks every pointer to another help for JSON fields:
+// the command exists and its long help lists JSON fields.
 func TestHelpJSONPointersResolve(t *testing.T) {
 	root := newRootCmd()
 	found := 0

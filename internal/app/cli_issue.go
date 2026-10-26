@@ -58,7 +58,7 @@ type jsonIssue struct {
 	Title        string      `json:"title"`
 	Body         string      `json:"body"`
 	State        string      `json:"state" help:"open, closed or resolved"`
-	Author       string      `json:"author" help:"token label"`
+	Author       string      `json:"author" help:"token label, root for the admin token, owner for the web"`
 	CreatedAt    jsonInstant `json:"created_at"`
 	UpdatedAt    jsonInstant `json:"updated_at"`
 	CommentCount int32       `json:"comment_count"`

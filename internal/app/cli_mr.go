@@ -115,7 +115,7 @@ type jsonMergeRequest struct {
 	SourceBranch   string      `json:"source_branch"`
 	TargetBranch   string      `json:"target_branch"`
 	State          string      `json:"state" help:"open, merged or closed"`
-	Author         string      `json:"author" help:"token label"`
+	Author         string      `json:"author" help:"token label, root for the admin token, owner for the web"`
 	CreatedAt      jsonInstant `json:"created_at"`
 	UpdatedAt      jsonInstant `json:"updated_at"`
 	HeadID         string      `json:"head_id" help:"commit the source branch points to; empty when the branch is gone"`
