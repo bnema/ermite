@@ -203,7 +203,7 @@ By default the default branch and all tags are pushed; `--all-branches` pushes e
 
 ## Bernard (dependency updates, owner only)
 
-Bernard checks daily for updates to Go modules and GitHub Actions. It skips archived repos and versions younger than the cooldown. Go dependency jobs share a per-repository module cache isolated from workflow caches.
+Bernard checks daily for updates to Go modules and GitHub Actions. It skips archived repos and versions younger than the cooldown.
 
 | Command | Notes |
 |---|---|
@@ -213,7 +213,7 @@ Bernard checks daily for updates to Go modules and GitHub Actions. It skips arch
 | `deps ignore <repo>` | ignore the pending versions |
 | `deps snooze <repo>` | hide for `ERMITE_DEPS_SNOOZE` |
 
-`open` and `ignore` send back the list they read and are refused if it changed meanwhile. Go updates accept higher versions selected by Go and requested indirect modules removed by tidy; the MR lists these side effects. A report refused by the server fails the job and run before publication. Failed run logs: `run view <repo> <run_id> --log`.
+`open` and `ignore` send back the list they read and are refused if it changed meanwhile. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
 
 ## Activity journal
 
