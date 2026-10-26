@@ -203,7 +203,7 @@ By default the default branch and all tags are pushed; `--all-branches` pushes e
 
 ## Bernard (dependency updates, owner only)
 
-Bernard checks daily for updates to Go modules and GitHub Actions. It skips archived repos and versions younger than the cooldown.
+Bernard checks daily for updates to Go modules and GitHub Actions. It skips archived repos and versions younger than the cooldown. Go dependency jobs share a per-repository module cache isolated from workflow caches.
 
 | Command | Notes |
 |---|---|

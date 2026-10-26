@@ -4,6 +4,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -295,11 +296,14 @@ func (c *CI) runnerJob(rs *runState, j domain.CIJob, sec jobSecrets, settings po
 }
 
 // depsRunnerJob is a dependency job as the runner gets it: no workflow, no
-// secrets, variables, environment, cache or ID token, and the read-only
-// repository token of an untrusted run.
+// secrets, variables, environment or ID token, with an isolated module cache
+// and the read-only repository token of an untrusted run.
 func (c *CI) depsRunnerJob(rs *runState, j domain.CIJob, sec jobSecrets) *ports.RunnerJob {
+	contexts, _ := json.Marshal(map[string]any{"github": map[string]string{"repository": c.cfg.Owner + "/" + rs.run.Repo.String()}})
+	j.ContextsJSON = string(contexts)
 	return &ports.RunnerJob{
-		Job: j, Deps: j.Deps, Token: sec.token, GithubToken: sec.ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
+		Cache: c.cacheScope(rs.run, rs.src.GithubJSON),
+		Job:   j, Deps: j.Deps, Token: sec.token, GithubToken: sec.ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
 		Trusted: false, Permissions: domain.TokenPermissions(nil, false),
 	}
 }

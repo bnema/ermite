@@ -10,6 +10,9 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// DepsCacheRef isolates the deps module cache from workflow caches both ways.
+const DepsCacheRef = "refs/ermite/deps"
+
 // DepsEcosystem identifies a supported dependency ecosystem.
 type DepsEcosystem string
 

@@ -64,7 +64,7 @@ type cacheLinks struct {
 // that moment.
 func (c *CI) cacheScope(run domain.CIRun, githubJSON string) ports.JobCache {
 	if run.IsDeps() {
-		return ports.JobCache{} // a dependency job has no cache
+		return ports.JobCache{Repository: c.cfg.Owner + "/" + run.Repo.String(), WriteRef: domain.DepsCacheRef, ReadRefs: []string{domain.DepsCacheRef}}
 	}
 	var l cacheLinks
 	_ = json.Unmarshal([]byte(githubJSON), &l) // a context that does not read: no default branch known

@@ -339,12 +339,14 @@ func TestFetchJobGivesADepsJobItsReadOnlyContract(t *testing.T) {
 		assert.Empty(t, j.Environment)
 		assert.Empty(t, j.IDTokenURL)
 		assert.Empty(t, j.IDTokenRequestToken)
-		assert.Equal(t, ports.JobCache{}, j.Cache)
+		assert.Equal(t, ports.JobCache{Repository: "owner/proj", WriteRef: domain.DepsCacheRef, ReadRefs: []string{domain.DepsCacheRef}}, j.Cache)
+		assert.Equal(t, `{"github":{"repository":"owner/proj"}}`, j.Job.ContextsJSON)
 		assert.Equal(t, domain.TokenPermissions(nil, false), j.Permissions)
 		require.NotNil(t, j.Deps)
 		assert.Equal(t, r.params(0).Job, *j.Deps)
 
 		stored := r.job(run)
+		assert.Equal(t, "{}", stored.ContextsJSON, "runner contexts are derived, not stored")
 		assert.Equal(t, domain.CIPhaseAssigned, stored.Phase)
 		assert.Equal(t, domain.HashTokenSecret(j.Token), stored.TokenHash)
 
