@@ -295,11 +295,21 @@ func (c *CI) runnerJob(rs *runState, j domain.CIJob, sec jobSecrets, settings po
 	return out
 }
 
+// depsContexts is the only context a dependency job gets.
+type depsContexts struct {
+	Github struct {
+		Repository string `json:"repository"`
+	} `json:"github"`
+}
+
 // depsRunnerJob is a dependency job as the runner gets it: no workflow, no
 // secrets, variables, environment or ID token, with an isolated module cache
 // and the read-only repository token of an untrusted run.
 func (c *CI) depsRunnerJob(rs *runState, j domain.CIJob, sec jobSecrets) *ports.RunnerJob {
-	contexts, _ := json.Marshal(map[string]any{"github": map[string]string{"repository": c.cfg.Owner + "/" + rs.run.Repo.String()}})
+	// Contexts are derived here, not stored. A struct of strings always marshals.
+	contexts, _ := json.Marshal(depsContexts{Github: struct {
+		Repository string `json:"repository"`
+	}{c.repoFullName(rs.run.Repo)}})
 	j.ContextsJSON = string(contexts)
 	return &ports.RunnerJob{
 		Cache: c.cacheScope(rs.run, rs.src.GithubJSON),
@@ -891,31 +901,13 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 	if err := domain.CheckAnnotations(params.Annotations); err != nil {
 		return ports.CompleteJobResult{}, err
 	}
-	refusal := ""
-	if j.Deps != nil && params.Conclusion == domain.CISuccess && params.DepsReport != nil && params.DepsReport.Error == "" {
-		c.mu.Lock()
-		observer := c.depsObserver
-		c.mu.Unlock()
-		if observer != nil {
-			run, err := c.runOf(ctx, j.Repo, j.RunID)
-			if err != nil {
-				return ports.CompleteJobResult{}, err
-			}
-			cctx, cancel := context.WithTimeout(ctx, depsCheckTimeout)
-			_, err = observer.CheckDepsReport(cctx, run, j, *params.DepsReport)
-			cancel()
-			switch {
-			case err == nil:
-			case errors.Is(err, domain.ErrInvalid), errors.Is(err, domain.ErrPreconditionFailed):
-				refusal = trim(keepDepsError("the server refused the dependency result: " + err.Error()))
-				params.Conclusion = domain.CIFailure
-				params.DepsReport = &ports.DepsReport{Error: refusal}
-			default:
-				// A deadline, a store or a git failure says nothing about the
-				// report: leave the job open so that the runner sends it again.
-				return ports.CompleteJobResult{}, fmt.Errorf("check the dependency report: %w", err)
-			}
-		}
+	refusal, err := c.checkDepsResult(ctx, j, params)
+	if err != nil {
+		return ports.CompleteJobResult{}, err
+	}
+	if refusal != "" {
+		params.Conclusion = domain.CIFailure
+		params.DepsReport = &ports.DepsReport{Error: refusal}
 	}
 
 	var res ports.CompleteJobResult

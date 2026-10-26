@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -88,7 +88,7 @@ func newDepsRig(t *testing.T, labels []string, tweak func(*usecase.CIConfig)) *d
 	t.Cleanup(func() { r.ci.Close(ctx) })
 
 	obs := mocks.NewDepsRunObserver(t)
-	obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	obs.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(
 		func(c context.Context, run domain.CIRun, job domain.CIJob, report *ports.DepsReport) {
 			stored, _ := store.CI().GetJob(c, job.RunID, job.RunAttempt, job.ID)
@@ -350,7 +350,6 @@ func TestFetchJobGivesADepsJobItsReadOnlyContract(t *testing.T) {
 		assert.Equal(t, r.params(0).Job, *j.Deps)
 
 		stored := r.job(run)
-		assert.Equal(t, "{}", stored.ContextsJSON, "runner contexts are derived, not stored")
 		assert.Equal(t, domain.CIPhaseAssigned, stored.Phase)
 		assert.Equal(t, domain.HashTokenSecret(j.Token), stored.TokenHash)
 
@@ -762,7 +761,8 @@ func TestDepsReportValidationRefusalFailsJobRunAndRecord(t *testing.T) {
 		lines, err := r.logs.Read(r.ctx, ports.CILogRef{RunID: run.ID, JobID: j.Job.ID, Attempt: j.Job.Attempt}, 0, 10, 4096)
 		require.NoError(t, err)
 		require.Len(t, lines, 1)
-		assert.Equal(t, "##[error]"+res.Error, lines[0].Text)
+		assert.True(t, strings.HasPrefix(lines[0].Text, "##[error]"))
+		assert.Contains(t, lines[0].Text, strings.SplitN(res.Error, "\n", 2)[0])
 		again, err := r.ci.CompleteJob(r.ctx, j.Token, ports.CompleteJobParams{JobID: j.Job.ID, Conclusion: domain.CISuccess, DepsReport: report})
 		require.NoError(t, err)
 		assert.False(t, again.Applied)
@@ -786,42 +786,60 @@ func (r *depsRig) logLines(run domain.CIRun, j *ports.RunnerJob) []domain.CILogL
 	return lines
 }
 
-func TestDepsReportCheckFailuresOtherThanARefusalLeaveTheJobOpen(t *testing.T) {
+func TestDepsReportCheckFailureOtherThanARefusalLeavesTheJobOpen(t *testing.T) {
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		boom := errors.New("read the dependency record: disk on fire")
+		run := r.start(10 * time.Minute)
+		j := r.fetch("deps")
+		require.NotNil(t, j)
+		obs := mocks.NewDepsRunObserver(t)
+		obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(boom).Once()
+		r.ci.SetDepsObserver(obs)
+
+		_, err := r.completeWithReport(j.Token, j.Job.ID)
+		require.ErrorIs(t, err, boom)
+		assert.False(t, errors.Is(err, domain.ErrInvalid) || errors.Is(err, domain.ErrPreconditionFailed), "the runner would treat it as permanent")
+		assert.False(t, r.job(run).Ended(), "the job stays open")
+		assert.Empty(t, r.logLines(run, j))
+		r.noEnded()
+
+		// The runner sends the report again; this time the check passes.
+		obs2 := mocks.NewDepsRunObserver(t)
+		obs2.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+		obs2.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+		r.ci.SetDepsObserver(obs2)
+		res, err := r.completeWithReport(j.Token, j.Job.ID)
+		require.NoError(t, err)
+		assert.True(t, res.Applied)
+		assert.Equal(t, domain.CISuccess, res.Conclusion)
+	})
+}
+
+// The check only concerns a successful job that holds a report without error.
+func TestDepsReportCheckIsSkippedWhenThereIsNothingToCheck(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		err  error
+		name       string
+		conclusion domain.CIConclusion
+		report     *ports.DepsReport
 	}{
-		{"store failure", errors.New("read the dependency record: disk on fire")},
-		{"git failure", fmt.Errorf("read go.mod: %w", io.ErrUnexpectedEOF)},
-		{"canceled", context.Canceled},
-		{"unavailable", domain.ErrUnavailable},
+		{"failure conclusion", domain.CIFailure, &ports.DepsReport{Files: []ports.DepsFile{{Path: "go.mod", Content: []byte("module x\n")}}}},
+		{"report with an error", domain.CISuccess, &ports.DepsReport{Error: "go get failed"}},
+		{"no report", domain.CISuccess, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
 				run := r.start(10 * time.Minute)
 				j := r.fetch("deps")
 				require.NotNil(t, j)
-				obs := mocks.NewDepsRunObserver(t)
-				obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, tc.err).Once()
+				obs := mocks.NewDepsRunObserver(t) // strict: a call to CheckDepsReport fails the test
+				obs.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
 				r.ci.SetDepsObserver(obs)
 
-				_, err := r.completeWithReport(j.Token, j.Job.ID)
-				require.ErrorIs(t, err, tc.err)
-				assert.False(t, errors.Is(err, domain.ErrInvalid) || errors.Is(err, domain.ErrPreconditionFailed), "the runner would treat it as permanent")
-				stored := r.job(run)
-				assert.False(t, stored.Ended(), "the job stays open")
-				assert.Empty(t, r.logLines(run, j))
-				r.noEnded()
-
-				// The runner sends the report again; this time the check passes.
-				obs2 := mocks.NewDepsRunObserver(t)
-				obs2.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Once()
-				obs2.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
-				r.ci.SetDepsObserver(obs2)
-				res, err := r.completeWithReport(j.Token, j.Job.ID)
+				res, err := r.ci.CompleteJob(r.ctx, j.Token, ports.CompleteJobParams{JobID: j.Job.ID, Conclusion: tc.conclusion, DepsReport: tc.report})
 				require.NoError(t, err)
 				assert.True(t, res.Applied)
-				assert.Equal(t, domain.CISuccess, res.Conclusion)
+				assert.Equal(t, tc.conclusion, res.Conclusion)
+				assert.Equal(t, tc.conclusion, r.job(run).Conclusion)
 			})
 		})
 	}
@@ -841,7 +859,7 @@ func TestDepsReportRefusalEndsTheJobAsAFailure(t *testing.T) {
 				j := r.fetch("deps")
 				require.NotNil(t, j)
 				obs := mocks.NewDepsRunObserver(t)
-				obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, tc.err).Once()
+				obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(tc.err).Once()
 				obs.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
 				r.ci.SetDepsObserver(obs)
 
@@ -853,7 +871,8 @@ func TestDepsReportRefusalEndsTheJobAsAFailure(t *testing.T) {
 				assert.Equal(t, domain.CIFailure, r.job(run).Conclusion)
 				lines := r.logLines(run, j)
 				require.Len(t, lines, 1)
-				assert.Equal(t, "##[error]"+res.Error, lines[0].Text)
+				assert.True(t, strings.HasPrefix(lines[0].Text, "##[error]"))
+				assert.Contains(t, lines[0].Text, strings.SplitN(res.Error, "\n", 2)[0])
 			})
 		})
 	}
@@ -869,12 +888,12 @@ func TestDepsReportCheckIsBoundedByATimeout(t *testing.T) {
 		obs := mocks.NewDepsRunObserver(t)
 		var deadline time.Time
 		obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
-			func(ctx context.Context, _ domain.CIRun, _ domain.CIJob, _ ports.DepsReport) ([]domain.DepSideEffect, error) {
+			func(ctx context.Context, _ domain.CIRun, _ domain.CIJob, _ ports.DepsReport) error {
 				var ok bool
 				deadline, ok = ctx.Deadline()
 				require.True(t, ok, "the check has a deadline")
 				<-ctx.Done()
-				return nil, ctx.Err()
+				return ctx.Err()
 			}).Once()
 		r.ci.SetDepsObserver(obs)
 

@@ -106,8 +106,10 @@ type DepsRunner interface {
 // when the job of a dependency run ended.
 // *usecase.Bernard implements it; CI.SetDepsObserver installs it.
 type DepsRunObserver interface {
-	// CheckDepsReport checks a successful report before the job ends, outside the run lock.
-	CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report DepsReport) ([]domain.DepSideEffect, error)
+	// CheckDepsReport checks a successful report before the job ends, outside
+	// the run lock. The asynchronous path re-checks on purpose, under the
+	// repository lock, and stays authoritative.
+	CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report DepsReport) error
 	// DepsJobEnded is called once per ended dependency job, after the write that
 	// ended it and outside the lock of the run. report is the runner's report;
 	// it is nil when the server ended the job (cancel, timeout, lost runner,

@@ -49,31 +49,20 @@ func (_m *DepsRunObserver) EXPECT() *DepsRunObserver_Expecter {
 }
 
 // CheckDepsReport provides a mock function for the type DepsRunObserver
-func (_mock *DepsRunObserver) CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) ([]domain.DepSideEffect, error) {
+func (_mock *DepsRunObserver) CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) error {
 	ret := _mock.Called(ctx, run, job, report)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CheckDepsReport")
 	}
 
-	var r0 []domain.DepSideEffect
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.CIRun, domain.CIJob, ports.DepsReport) ([]domain.DepSideEffect, error)); ok {
-		return returnFunc(ctx, run, job, report)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.CIRun, domain.CIJob, ports.DepsReport) []domain.DepSideEffect); ok {
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.CIRun, domain.CIJob, ports.DepsReport) error); ok {
 		r0 = returnFunc(ctx, run, job, report)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]domain.DepSideEffect)
-		}
+		r0 = ret.Error(0)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.CIRun, domain.CIJob, ports.DepsReport) error); ok {
-		r1 = returnFunc(ctx, run, job, report)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
+	return r0
 }
 
 // DepsRunObserver_CheckDepsReport_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CheckDepsReport'
@@ -118,12 +107,12 @@ func (_c *DepsRunObserver_CheckDepsReport_Call) Run(run func(ctx context.Context
 	return _c
 }
 
-func (_c *DepsRunObserver_CheckDepsReport_Call) Return(depSideEffects []domain.DepSideEffect, err error) *DepsRunObserver_CheckDepsReport_Call {
-	_c.Call.Return(depSideEffects, err)
+func (_c *DepsRunObserver_CheckDepsReport_Call) Return(err error) *DepsRunObserver_CheckDepsReport_Call {
+	_c.Call.Return(err)
 	return _c
 }
 
-func (_c *DepsRunObserver_CheckDepsReport_Call) RunAndReturn(run func(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) ([]domain.DepSideEffect, error)) *DepsRunObserver_CheckDepsReport_Call {
+func (_c *DepsRunObserver_CheckDepsReport_Call) RunAndReturn(run func(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) error) *DepsRunObserver_CheckDepsReport_Call {
 	_c.Call.Return(run)
 	return _c
 }
