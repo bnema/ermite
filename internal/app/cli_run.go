@@ -98,7 +98,7 @@ const jsonRunHelp = `
 JSON fields of a run (--json): id, repo, number, attempt, workflow, name (run-name, else workflow), workflow_path, title, event,
 ref, sha, actor, status (queued, in_progress, completed), conclusion (success, failure, cancelled,
 skipped, timed_out, neutral, action_required; empty until completed), error, created_at,
-started_at and completed_at (RFC 3339 UTC, null when unset). "run view" adds latest_attempt and
+started_at, completed_at. Times are RFC 3339 UTC, null when unset. "run view" adds latest_attempt and
 jobs (id, attempt, key, name, status, conclusion, error, labels, needs, runner, isolation, steps
 with number, name, state, conclusion, outcome (the result before continue-on-error), log_start and log_end,
 started_at, completed_at), annotations (job, job_id, step, level notice|warning|failure, title, message,
@@ -201,11 +201,9 @@ func newRunListCmd(env *cliEnv) *cobra.Command {
 	var workflow, branch, status string
 	var limit int
 	cmd := &cobra.Command{
-		Use:   "list <repo>",
-		Short: "List the runs of a repository",
-		Long: "List the runs of a repository, newest first. --workflow keeps one workflow file (its path or its\n" +
-			"file name; Bernard's dependency runs are bernard/deps), --branch one branch, --status one status\n" +
-			"(queued, in_progress, completed)." + "\nJSON: an array of runs; see `ermite run --help`.",
+		Use:               "list <repo>",
+		Short:             "List the runs of a repository",
+		Long:              "List repository runs, newest first. Filters: --workflow path or filename (bernard/deps for Bernard dependency runs), --branch branch, --status queued|in_progress|completed.\nJSON: an array of runs; see `ermite run --help`.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -292,14 +290,9 @@ func newRunViewCmd(env *cliEnv) *cobra.Command {
 	var logFlag, summaryFlag bool
 	var jobFlag string
 	cmd := &cobra.Command{
-		Use:   "view <repo> <run id>",
-		Short: "Show a run, jobs, steps, annotations, logs or summaries",
-		Long: "Show a run: its state, its jobs and their steps, then its ANNOTATIONS (the notices, warnings and\n" +
-			"errors that the steps produced, with their job and file:line). --attempt reads an earlier attempt.\n" +
-			"With --log, print the log of the run's jobs (all of them, or the one chosen by --job: its id\n" +
-			"or its name) instead; the lines are printed as the runner sent them, prefixed by nothing.\n" +
-			"With --summary, print the job summaries (the Markdown the steps wrote to GITHUB_STEP_SUMMARY) of\n" +
-			"the run's jobs, or of the --job, as Markdown, not rendered." + "\nJSON: a run; see `ermite run --help`.",
+		Use:               "view <repo> <run id>",
+		Short:             "Show a run, jobs, steps, annotations, logs or summaries",
+		Long:              "Show run state, jobs, steps and ANNOTATIONS (step notices, warnings and errors with job and file:line). --attempt reads an earlier attempt.\n--log prints job logs verbatim, without prefixes. --summary prints unrendered job Markdown from GITHUB_STEP_SUMMARY. Both select all jobs unless --job specifies an id or name.\nJSON: a run; see `ermite run --help`.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -711,7 +704,7 @@ func newRunCancelCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "cancel <repo> <run id>",
 		Short:             "Cancel a run",
-		Long:              "Ask the runners to stop the jobs of a run that is not over; jobs that no runner has yet are cancelled at once. Needs the ci:write scope.",
+		Long:              "Ask runners to stop an unfinished run. Unassigned jobs are cancelled immediately. Access needs ci:write.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}
@@ -743,7 +736,7 @@ func newRunRerunCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "rerun <repo> <run id>",
 		Short:             "Run a completed run again",
-		Long:              "Start a new attempt of a completed run, with the same commit and workflow file. With --failed, only the jobs that did not succeed (and the jobs that need them) run again. Needs the ci:write scope." + "\nJSON: a run; see `ermite run --help`.",
+		Long:              "Start another attempt of a completed run with the same commit and workflow file. --failed reruns only unsuccessful jobs and their dependents. Access needs ci:write.\nJSON: a run; see `ermite run --help`.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}

@@ -93,7 +93,7 @@ func toJSONRelease(r *ermite.Release) jsonRelease {
 const releaseJSONHelp = "\nJSON fields: id, repo, tag, title, notes, draft, prerelease, latest, target_commitish, author,\ncreated_at, published_at, updated_at (RFC 3339 UTC or null), assets (id, release_id, name, label,\ncontent_type, size, digest, uploader, created_at, updated_at). list prints an array."
 
 func newReleaseCmd(env *cliEnv) *cobra.Command {
-	cmd := &cobra.Command{Use: "release", Short: "Manage releases and their assets", Long: "Create and manage tagged releases. Reads follow repository visibility; writes need release:write.\nNeeds a server with the releases feature. Select releases by tag, numeric id, or latest (view/download)." + releaseJSONHelp}
+	cmd := &cobra.Command{Use: "release", Short: "Manage releases and their assets", Long: "Manage tagged releases. Reads follow repository visibility; writes need release:write. The server must support releases. Select by tag, numeric id, or latest (view/download)." + releaseJSONHelp}
 	cmd.AddCommand(newReleaseCreateCmd(env), newReleaseListCmd(env), newReleaseViewCmd(env), newReleaseEditCmd(env), newReleaseDeleteCmd(env), newReleaseUploadCmd(env), newReleaseDownloadCmd(env), newReleasePendingCmd(env))
 	return cmd
 }
@@ -180,7 +180,7 @@ func newReleaseCreateCmd(env *cliEnv) *cobra.Command {
 	var f releaseFields
 	var assets []string
 	cmd := releaseCommand(env, "create <repo> <tag>", "Create a release", 2)
-	cmd.Long = "Create a release, then upload each --asset FILE[#LABEL] (repeatable; shell expands globs)." + "\nJSON: a release; see `ermite release --help`."
+	cmd.Long = "Create a release, then upload repeatable --asset FILE[#LABEL]. The shell expands globs.\nJSON: a release; see `ermite release --help`."
 	f.flags(cmd, false)
 	cmd.Flags().StringArrayVar(&assets, "asset", nil, "upload FILE[#LABEL] (repeatable)")
 	asJSON := addJSONFlag(cmd)

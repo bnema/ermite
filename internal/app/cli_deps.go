@@ -193,7 +193,7 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 	}[name]
 	long := short + "."
 	if name != "snooze" {
-		long += "\nConfirms the current pending versions. The server refuses if they change meanwhile (failed precondition)."
+		long += "\nThe command confirms the current pending versions. The server refuses if they change meanwhile (failed precondition)."
 	}
 	cmd := &cobra.Command{Use: name + " <repo>", Short: short, Long: long + "\nJSON: repository updates; see `ermite deps --help`.", Args: cobra.ExactArgs(1)}
 	asJSON := addJSONFlag(cmd)
