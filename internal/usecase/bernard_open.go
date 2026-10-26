@@ -251,14 +251,14 @@ func (b *Bernard) apply(ctx context.Context, name domain.RepoName, ups []domain.
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
-	return b.publish(ctx, name, target, tip, changes, ups, storedMR, guard)
+	return b.publish(ctx, name, target, tip, changes, ups, storedMR, guard, nil)
 }
 
 // publish commits changes on base, moves bernard/deps to the commit and opens
 // the merge request into target when there is none. ups are all the updates the
 // commit holds. The caller holds the repository lock; guard is checked on the
 // record inside the final Mutate and its error stops the transition.
-func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target string, tip domain.ObjectID, changes map[domain.TreePath][]byte, ups []domain.DepUpdate, storedMR int64, guard func(domain.RepoDeps) error) (domain.RepoDeps, error) {
+func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target string, tip domain.ObjectID, changes map[domain.TreePath][]byte, ups []domain.DepUpdate, storedMR int64, guard func(domain.RepoDeps) error, effects []domain.DepSideEffect) (domain.RepoDeps, error) {
 	cfg := b.cfg
 	tree, err := cfg.Git.WriteTree(ctx, name, tip, changes)
 	if err != nil {
@@ -298,7 +298,7 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 		cfg.CI.OnPush(ctx, name, upd, bot)
 	}
 
-	number, err := b.ensureMR(ctx, name, target, storedMR, ups)
+	number, err := b.ensureMR(ctx, name, target, storedMR, ups, effects)
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
@@ -363,7 +363,7 @@ func (b *Bernard) changes(ctx context.Context, name domain.RepoName, tip domain.
 		if err != nil {
 			return nil, fmt.Errorf("apply the %s updates: %w", ecoName, err)
 		}
-		if err := eco.Validate(before, after, list); err != nil {
+		if _, err := eco.Validate(before, after, list); err != nil {
 			return nil, fmt.Errorf("check the %s updates: %w", ecoName, err)
 		}
 		for tp, content := range after {
@@ -377,11 +377,11 @@ func (b *Bernard) changes(ctx context.Context, name domain.RepoName, tip domain.
 
 // ensureMR returns the number of the open Bernard merge request, creating it
 // when the stored one is gone or no longer open.
-func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target string, stored int64, ups []domain.DepUpdate) (int64, error) {
+func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target string, stored int64, ups []domain.DepUpdate, effects []domain.DepSideEffect) (int64, error) {
 	if stored != 0 {
 		mr, err := b.cfg.MRStore.Get(ctx, name, stored)
 		if err == nil && mr.IsOpen() {
-			b.refreshMR(ctx, name, stored, mr, ups)
+			b.refreshMR(ctx, name, stored, mr, ups, effects)
 			return stored, nil
 		}
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -393,14 +393,14 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 	if n, err := b.findOpenMR(ctx, name, target); err != nil || n != 0 {
 		if err == nil {
 			if mr, gerr := b.cfg.MRStore.Get(ctx, name, n); gerr == nil {
-				b.refreshMR(ctx, name, n, mr, ups)
+				b.refreshMR(ctx, name, n, mr, ups, effects)
 			}
 		}
 		return n, err
 	}
 	mr, err := b.cfg.MRs.Create(ctx, domain.Bot(name), name, ports.CreateMergeRequestParams{
 		Title:       domain.BotCommitSubject(len(ups)),
-		Description: domain.BotCommitBody(ups),
+		Description: domain.BotMRBody(ups, effects),
 		Source:      depsBranch, Target: target,
 	})
 	if errors.Is(err, domain.ErrAlreadyExists) {
@@ -421,8 +421,8 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 // refreshMR sets the title and the description of the kept merge request to
 // those generated for ups, as the bot (which holds mr:write on its repository).
 // A failure is logged: the branch is already updated.
-func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number int64, mr domain.MergeRequest, ups []domain.DepUpdate) {
-	title, desc := domain.BotCommitSubject(len(ups)), domain.BotCommitBody(ups)
+func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number int64, mr domain.MergeRequest, ups []domain.DepUpdate, effects []domain.DepSideEffect) {
+	title, desc := domain.BotCommitSubject(len(ups)), domain.BotMRBody(ups, effects)
 	if mr.Title.String() == title && mr.Description.String() == desc {
 		return
 	}

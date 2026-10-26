@@ -128,25 +128,25 @@ func (Actions) Apply(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (
 func validActionRef(s string) bool { return s != "" && !strings.ContainsAny(s, " \t\r\n\"'#@") }
 
 // Validate accepts only the exact requested substitutions, with no other byte changes.
-func (a Actions) Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) error {
+func (a Actions) Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error) {
 	expected, err := a.Apply(before, ups)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for p, b := range after {
 		want, ok := expected[p]
 		if !ok || !bytes.Equal(b, want) {
-			return fmt.Errorf("%w: unexpected action changes in %s", domain.ErrInvalid, p.String())
+			return nil, fmt.Errorf("%w: unexpected action changes in %s", domain.ErrInvalid, p.String())
 		}
 	}
 	for p, b := range expected {
 		if !bytes.Equal(b, before[p]) {
 			if actual, ok := after[p]; !ok || !bytes.Equal(actual, b) {
-				return fmt.Errorf("%w: missing action update in %s", domain.ErrInvalid, p.String())
+				return nil, fmt.Errorf("%w: missing action update in %s", domain.ErrInvalid, p.String())
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func filePaths(files map[domain.TreePath][]byte) []domain.TreePath {

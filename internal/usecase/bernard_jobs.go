@@ -188,83 +188,9 @@ const (
 // both sets of changes and publishes them as the Bernard commit on top of that
 // commit.
 func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, run domain.CIRun, job domain.CIJob, report ports.DepsReport) error {
-	if job.Deps == nil {
-		return fmt.Errorf("%w: the job holds no dependency update", domain.ErrInvalid)
-	}
-	// The updates the runner applied: those of the job among the ones the run
-	// started with (the daily check may have rewritten rec.Updates since).
-	var runnerUps []domain.DepUpdate
-	for _, u := range rec.RunUpdates {
-		if slices.Contains(job.Deps.Updates, u.DepRef) {
-			runnerUps = append(runnerUps, u)
-		}
-	}
-	eco := b.ecosystem(domain.EcosystemGoMod)
-	if eco == nil {
-		return fmt.Errorf("%w: no Go module ecosystem", domain.ErrPreconditionFailed)
-	}
-	base, err := domain.ParseObjectID(run.Sha)
+	changes, base, effects, err := b.checkRunnerReport(ctx, rec, run, job, report)
 	if err != nil {
-		return fmt.Errorf("%w: job commit: %v", domain.ErrInvalid, err)
-	}
-	if len(report.Files) > maxReportFiles {
-		return fmt.Errorf("%w: the report has %d files, at most %d", domain.ErrInvalid, len(report.Files), maxReportFiles)
-	}
-	allowed := map[domain.TreePath]bool{}
-	for _, u := range runnerUps {
-		for _, f := range []string{"go.mod", "go.sum"} {
-			p := path.Join(u.Directory, f)
-			tp, err := domain.ParseTreePath(p)
-			if err != nil {
-				return fmt.Errorf("%w: %v", domain.ErrInvalid, err)
-			}
-			allowed[tp] = true
-		}
-	}
-	after := map[domain.TreePath][]byte{}
-	total := 0
-	for _, f := range report.Files {
-		tp, err := domain.ParseTreePath(f.Path)
-		if err != nil {
-			return fmt.Errorf("%w: report path %q: %v", domain.ErrInvalid, f.Path, err)
-		}
-		if !allowed[tp] {
-			return fmt.Errorf("%w: unexpected report path %s", domain.ErrInvalid, f.Path)
-		}
-		if _, dup := after[tp]; dup {
-			return fmt.Errorf("%w: duplicate report path %s", domain.ErrInvalid, f.Path)
-		}
-		if len(f.Content) > maxReportFileBytes {
-			return fmt.Errorf("%w: %s is larger than %d bytes", domain.ErrInvalid, f.Path, maxReportFileBytes)
-		}
-		if total += len(f.Content); total > maxReportBytes {
-			return fmt.Errorf("%w: the report is larger than %d bytes", domain.ErrInvalid, maxReportBytes)
-		}
-		after[tp] = f.Content
-	}
-
-	rev := domain.RevisionOf(base)
-	before := map[domain.TreePath][]byte{}
-	for tp := range allowed {
-		content, ok, err := b.readManifest(ctx, run.Repo, rev, tp)
-		switch {
-		case errors.Is(err, domain.ErrNotFound) && path.Base(tp.String()) == "go.sum":
-			continue // a module without dependencies has none
-		case err != nil:
-			return err
-		case !ok:
-			return fmt.Errorf("%w: %s is larger than %d bytes", domain.ErrPreconditionFailed, tp, maxDepsManifestBytes)
-		}
-		before[tp] = content
-	}
-	if err := eco.Validate(before, after, runnerUps); err != nil {
-		return fmt.Errorf("check the %s updates: %w", domain.EcosystemGoMod, err)
-	}
-	changes := map[domain.TreePath][]byte{}
-	for tp, content := range after {
-		if old, ok := before[tp]; !ok || !bytes.Equal(old, content) {
-			changes[tp] = content
-		}
+		return err
 	}
 
 	var serverUps []domain.DepUpdate
@@ -307,6 +233,113 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	if !exists {
 		return fmt.Errorf("%w: %s has no default branch", domain.ErrPreconditionFailed, run.Repo)
 	}
-	_, err = b.publish(ctx, run.Repo, target, base, changes, rec.RunUpdates, d.MR, jobGuard)
+	_, err = b.publish(ctx, run.Repo, target, base, changes, rec.RunUpdates, d.MR, jobGuard, effects)
 	return err
+}
+
+// CheckDepsReport checks the same report that asynchronous publication consumes.
+// It reads the record without the repository lock, which publication holds
+// during its git writes: only the state, the run and its updates are needed,
+// and DepsJobEnded checks the record again under the lock (the asynchronous
+// path re-checks on purpose and stays authoritative). An error that wraps
+// domain.ErrInvalid or domain.ErrPreconditionFailed means the report is
+// refused for good; any other error is transient.
+func (b *Bernard) CheckDepsReport(ctx context.Context, run domain.CIRun, job domain.CIJob, report ports.DepsReport) error {
+	rec, err := b.cfg.Store.Get(ctx, run.Repo)
+	if err != nil {
+		return fmt.Errorf("read the dependency record: %w", err)
+	}
+	if rec.State != domain.DepsApplying || rec.RunID != run.ID {
+		return nil
+	}
+	_, _, _, err = b.checkRunnerReport(ctx, rec, run, job, report)
+	return err
+}
+
+func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, run domain.CIRun, job domain.CIJob, report ports.DepsReport) (map[domain.TreePath][]byte, domain.ObjectID, []domain.DepSideEffect, error) {
+	if job.Deps == nil {
+		return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: the job holds no dependency update", domain.ErrInvalid)
+	}
+	// The updates the runner applied: those of the job among the ones the run
+	// started with (the daily check may have rewritten rec.Updates since).
+	var runnerUps []domain.DepUpdate
+	for _, u := range rec.RunUpdates {
+		if slices.Contains(job.Deps.Updates, u.DepRef) {
+			runnerUps = append(runnerUps, u)
+		}
+	}
+	eco := b.ecosystem(domain.EcosystemGoMod)
+	if eco == nil {
+		return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: no Go module ecosystem", domain.ErrPreconditionFailed)
+	}
+	base, err := domain.ParseObjectID(run.Sha)
+	if err != nil {
+		return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: job commit: %v", domain.ErrInvalid, err)
+	}
+	if len(report.Files) > maxReportFiles {
+		return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: the report has %d files, at most %d", domain.ErrInvalid, len(report.Files), maxReportFiles)
+	}
+	allowed := map[domain.TreePath]bool{}
+	for _, u := range runnerUps {
+		for _, f := range []string{"go.mod", "go.sum"} {
+			p := path.Join(u.Directory, f)
+			tp, err := domain.ParseTreePath(p)
+			if err != nil {
+				return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+			}
+			allowed[tp] = true
+		}
+	}
+	after := map[domain.TreePath][]byte{}
+	total := 0
+	for _, f := range report.Files {
+		tp, err := domain.ParseTreePath(f.Path)
+		if err != nil {
+			return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: report path %q: %v", domain.ErrInvalid, f.Path, err)
+		}
+		if !allowed[tp] {
+			return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: unexpected report path %q", domain.ErrInvalid, f.Path)
+		}
+		if _, dup := after[tp]; dup {
+			return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: duplicate report path %q", domain.ErrInvalid, f.Path)
+		}
+		if len(f.Content) > maxReportFileBytes {
+			return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: %q is larger than %d bytes", domain.ErrInvalid, f.Path, maxReportFileBytes)
+		}
+		if total += len(f.Content); total > maxReportBytes {
+			return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: the report is larger than %d bytes", domain.ErrInvalid, maxReportBytes)
+		}
+		after[tp] = f.Content
+	}
+
+	rev := domain.RevisionOf(base)
+	before := map[domain.TreePath][]byte{}
+	for tp := range allowed {
+		content, ok, err := b.readManifest(ctx, run.Repo, rev, tp)
+		switch {
+		case errors.Is(err, domain.ErrNotFound) && path.Base(tp.String()) == "go.sum":
+			continue // a module without dependencies has none
+		case errors.Is(err, domain.ErrNotFound), domain.IsInvalid(err):
+			// The file is not at the job's commit, or is not a file: the report
+			// can never be checked against it.
+			return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: %v", domain.ErrPreconditionFailed, err)
+		case err != nil:
+			return nil, domain.ObjectID{}, nil, err // a transient read failure
+		case !ok:
+			return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: %q is larger than %d bytes", domain.ErrPreconditionFailed, tp.String(), maxDepsManifestBytes)
+		}
+		before[tp] = content
+	}
+	effects, err := eco.Validate(before, after, runnerUps)
+	if err != nil {
+		return nil, domain.ObjectID{}, nil, fmt.Errorf("check the %s updates: %w", domain.EcosystemGoMod, err)
+	}
+	changes := map[domain.TreePath][]byte{}
+	for tp, content := range after {
+		if old, ok := before[tp]; !ok || !bytes.Equal(old, content) {
+			changes[tp] = content
+		}
+	}
+
+	return changes, base, effects, nil
 }

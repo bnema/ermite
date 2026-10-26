@@ -4,6 +4,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,6 +36,13 @@ func (c *CI) SetDepsObserver(o ports.DepsRunObserver) {
 	c.mu.Lock()
 	c.depsObserver = o
 	c.mu.Unlock()
+}
+
+// observer returns the installed dependency observer, nil when there is none.
+func (c *CI) observer() ports.DepsRunObserver {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.depsObserver
 }
 
 // StartDepsRun creates the run of a dependency job, ready for a runner of the
@@ -106,13 +114,17 @@ func (c *CI) GetDepsRun(ctx context.Context, repo domain.RepoName, id int64) (do
 // the run, that the dependency jobs ended. It is called after the write that
 // ended them.
 func (c *CI) notifyDepsEnded(ctx context.Context, run domain.CIRun, jobs []domain.CIJob, report *ports.DepsReport) {
+	obs := c.observer()
+	if obs == nil {
+		return
+	}
 	c.mu.Lock()
-	obs, closed := c.depsObserver, c.closed
-	if obs != nil && !closed {
+	closed := c.closed
+	if !closed {
 		c.wg.Add(1)
 	}
 	c.mu.Unlock()
-	if obs == nil || closed {
+	if closed {
 		return
 	}
 	nctx := zerowrap.WithCtx(c.ctx, zerowrap.FromCtx(ctx))
@@ -122,4 +134,35 @@ func (c *CI) notifyDepsEnded(ctx context.Context, run domain.CIRun, jobs []domai
 			c.guard(fmt.Sprintf("dependency job %s", j.ID), func() { obs.DepsJobEnded(nctx, run, j, report) })
 		}
 	}()
+}
+
+// checkDepsResult asks the observer to check the report of a successful
+// dependency job before it ends. A non-empty refusal is the reason the server
+// refuses the report for good; an error is transient and leaves the job open
+// so that the runner sends the report again.
+func (c *CI) checkDepsResult(ctx context.Context, j domain.CIJob, params ports.CompleteJobParams) (refusal string, err error) {
+	if j.Deps == nil || params.Conclusion != domain.CISuccess || params.DepsReport == nil || params.DepsReport.Error != "" {
+		return "", nil
+	}
+	observer := c.observer()
+	if observer == nil {
+		return "", nil
+	}
+	run, err := c.runOf(ctx, j.Repo, j.RunID)
+	if err != nil {
+		return "", err
+	}
+	cctx, cancel := context.WithTimeout(ctx, depsCheckTimeout)
+	defer cancel()
+	err = observer.CheckDepsReport(cctx, run, j, *params.DepsReport)
+	switch {
+	case err == nil:
+		return "", nil
+	case errors.Is(err, domain.ErrInvalid), errors.Is(err, domain.ErrPreconditionFailed):
+		// keepDepsError bounds the reason below maxJobError.
+		return keepDepsError("the server refused the dependency result: " + err.Error()), nil
+	default:
+		// A deadline, a store or a git failure says nothing about the report.
+		return "", fmt.Errorf("check the dependency report: %w", err)
+	}
 }

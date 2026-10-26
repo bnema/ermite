@@ -213,7 +213,7 @@ Bernard checks daily for updates to Go modules and GitHub Actions. It skips arch
 | `deps ignore <repo>` | ignore the pending versions |
 | `deps snooze <repo>` | hide for `ERMITE_DEPS_SNOOZE` |
 
-`open` and `ignore` send back the list they read and are refused if it changed meanwhile. Failed run logs: `run view <repo> <run_id> --log`.
+`open` and `ignore` send back the list they read and are refused if it changed meanwhile. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
 
 ## Activity journal
 

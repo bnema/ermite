@@ -20,7 +20,8 @@ import (
 const (
 	// maxDepsManifestBytes bounds a manifest Bernard reads.
 	maxDepsManifestBytes = 1 << 20
-	// depsCheckTimeout bounds a synchronous check of one repository.
+	// depsCheckTimeout bounds a synchronous check of one repository and the
+	// check of a runner report when its job completes.
 	depsCheckTimeout = 60 * time.Second
 	// defaultBernardTick is how often the daily schedule looks at the clock.
 	defaultBernardTick = time.Minute

@@ -332,20 +332,31 @@ func (_c *DepsEcosystem_Name_Call) RunAndReturn(run func() domain.DepsEcosystem)
 }
 
 // Validate provides a mock function for the type DepsEcosystem
-func (_mock *DepsEcosystem) Validate(before map[domain.TreePath][]byte, after map[domain.TreePath][]byte, ups []domain.DepUpdate) error {
+func (_mock *DepsEcosystem) Validate(before map[domain.TreePath][]byte, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error) {
 	ret := _mock.Called(before, after, ups)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Validate")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(map[domain.TreePath][]byte, map[domain.TreePath][]byte, []domain.DepUpdate) error); ok {
+	var r0 []domain.DepSideEffect
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(map[domain.TreePath][]byte, map[domain.TreePath][]byte, []domain.DepUpdate) ([]domain.DepSideEffect, error)); ok {
+		return returnFunc(before, after, ups)
+	}
+	if returnFunc, ok := ret.Get(0).(func(map[domain.TreePath][]byte, map[domain.TreePath][]byte, []domain.DepUpdate) []domain.DepSideEffect); ok {
 		r0 = returnFunc(before, after, ups)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.DepSideEffect)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(map[domain.TreePath][]byte, map[domain.TreePath][]byte, []domain.DepUpdate) error); ok {
+		r1 = returnFunc(before, after, ups)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // DepsEcosystem_Validate_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Validate'
@@ -384,12 +395,12 @@ func (_c *DepsEcosystem_Validate_Call) Run(run func(before map[domain.TreePath][
 	return _c
 }
 
-func (_c *DepsEcosystem_Validate_Call) Return(err error) *DepsEcosystem_Validate_Call {
-	_c.Call.Return(err)
+func (_c *DepsEcosystem_Validate_Call) Return(depSideEffects []domain.DepSideEffect, err error) *DepsEcosystem_Validate_Call {
+	_c.Call.Return(depSideEffects, err)
 	return _c
 }
 
-func (_c *DepsEcosystem_Validate_Call) RunAndReturn(run func(before map[domain.TreePath][]byte, after map[domain.TreePath][]byte, ups []domain.DepUpdate) error) *DepsEcosystem_Validate_Call {
+func (_c *DepsEcosystem_Validate_Call) RunAndReturn(run func(before map[domain.TreePath][]byte, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error)) *DepsEcosystem_Validate_Call {
 	_c.Call.Return(run)
 	return _c
 }

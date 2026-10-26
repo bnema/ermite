@@ -347,6 +347,33 @@ func BotCommitBody(ups []DepUpdate) string {
 	return b.String()
 }
 
+// BotMRBody returns the description of Bernard's merge request: the list of
+// updates, then the changes Go made beyond them. Every field comes from a
+// runner report or a go.mod, so each is cut to one printable ASCII line and
+// cannot close the code span that holds a module name.
+func BotMRBody(ups []DepUpdate, effects []DepSideEffect) string {
+	var b strings.Builder
+	b.WriteString(BotCommitBody(ups))
+	if len(effects) == 0 {
+		return b.String()
+	}
+	line := func(s string) string { return strings.ReplaceAll(asciiLine(s), "`", "'") }
+	b.WriteString("\n## Also changed by Go\n")
+	for _, e := range effects {
+		fmt.Fprintf(&b, "- `%s` ", line(e.Name))
+		if e.To == "" {
+			b.WriteString("removed, no longer needed")
+		} else {
+			fmt.Fprintf(&b, "%s \u2192 %s", line(e.From), line(e.To))
+		}
+		if e.Directory != "" {
+			fmt.Fprintf(&b, " (%s)", line(e.Directory))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // NewBotCommit builds Bernard's commit of dependency updates on parent. The
 // author is Bernard, with an address on the domain of the committer, which is
 // the instance identity, unless author sets them; the message lists the

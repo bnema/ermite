@@ -223,7 +223,7 @@ func TestBernardRunnerReportIsRejected(t *testing.T) {
 		{"changed go directive", mk(file("go.mod", goModText("go 1.25", "", textNew))), "module directives changed"},
 		{"go 1.24 to 1.24.1 refused", mk(file("go.mod", goModText("go 1.24.1", "", textNew))), "module directives changed"},
 		{"go 1.24 to 1.25.0 refused", mk(file("go.mod", goModText("go 1.25.0", "", textNew))), "module directives changed"},
-		{"unrequested direct bump", mk(file("go.mod", strings.Replace(good, "x/net v0.30.0", "x/net v0.31.0", 1))), "unrequested direct requirement"},
+		{"unrequested direct downgrade", mk(file("go.mod", strings.Replace(good, "x/net v0.30.0", "x/net v0.29.0", 1))), "unrequested direct requirement"},
 		{"requested version missing", mk(file("go.mod", goModText("go 1.24", "", "v0.20.1"))), "requested version missing"},
 		{"malformed go.sum", mk(file("go.mod", good), file("go.sum", "nonsense\n")), "malformed go.sum"},
 	} {
@@ -258,7 +258,7 @@ func TestBernardRunnerReportSuccessPublishesFromTheJobCommit(t *testing.T) {
 	require.NoError(t, err)
 	rr.files[botWorkflow] = "old"
 	rr.eco.EXPECT().Apply(mock.Anything, mock.Anything).Return(map[domain.TreePath][]byte{wf: []byte("new")}, nil)
-	rr.eco.EXPECT().Validate(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	rr.eco.EXPECT().Validate(mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	mod, sum := mustPath(t, "go.mod"), mustPath(t, "go.sum")
 	rr.happyGit(domain.ObjectID{}, map[domain.TreePath][]byte{mod: []byte(goMod), sum: []byte(goSum), wf: []byte("new")})
 	rr.expectCreate(7)
@@ -418,4 +418,74 @@ func TestBernardGoVersionComesFromTheUpdatedModules(t *testing.T) {
 			assert.Equal(t, c.want, rr.started.Job.GoVersion)
 		})
 	}
+}
+
+func TestBernardRunnerReportListsGoSideEffects(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	mod := strings.Replace(goModText("go 1.24", "", textNew), "x/net v0.30.0", "x/net v0.31.0", 1)
+	sum := sumLine("golang.org/x/text", textNew)
+	rr.happyGit(domain.ObjectID{}, map[domain.TreePath][]byte{mustPath(t, "go.mod"): []byte(mod), mustPath(t, "go.sum"): []byte(sum)})
+	rr.expectCreate(7)
+	rr.open(goUpdate())
+	rr.end(goReport(mod, sum), domain.CISuccess)
+	assert.Equal(t, domain.DepsIdle, rr.rec.State)
+	assert.Contains(t, rr.created.Description, "## Also changed by Go")
+	assert.Contains(t, rr.created.Description, "- `golang.org/x/net` v0.30.0 → v0.31.0")
+}
+
+func TestBernardCheckDepsReportDoesNotPublishAndDropsSupersededRuns(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	run, job := rr.endedRun(domain.CISuccess)
+	report := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
+	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, *report))
+	assert.Equal(t, domain.DepsApplying, rr.rec.State)
+	assert.Zero(t, rr.rec.MR)
+	rr.rec.RunID++
+	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, ports.DepsReport{Files: []ports.DepsFile{{Path: "evil.sh"}}}))
+}
+
+// The check reads the record without the repository lock that publication
+// holds during its git writes. A regression deadlocks here, which go test
+// -timeout reports.
+func TestBernardCheckDepsReportDoesNotWaitForTheRepositoryLock(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	run, job := rr.endedRun(domain.CISuccess)
+	report := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
+	rr.b.UnderRepoLock(rr.repo, func() {
+		require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, *report))
+	})
+}
+
+func TestBernardCheckDepsReportClassifiesReadFailures(t *testing.T) {
+	good := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
+	t.Run("go.mod absent at the commit is a permanent refusal", func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		delete(rr.files, "go.mod")
+		run, job := rr.endedRun(domain.CISuccess)
+		err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	})
+	t.Run("a git failure stays transient", func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		boom := errors.New("git is down")
+		rr.reader.ExpectedCalls = nil
+		rr.reader.EXPECT().OpenBlob(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(domain.BlobInfo{}, nil, boom)
+		run, job := rr.endedRun(domain.CISuccess)
+		err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
+		require.ErrorIs(t, err, boom)
+		assert.NotErrorIs(t, err, domain.ErrInvalid)
+		assert.NotErrorIs(t, err, domain.ErrPreconditionFailed)
+	})
+	t.Run("an oversize go.mod is a permanent refusal", func(t *testing.T) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		rr.files["go.mod"] = strings.Repeat("x", 3<<20)
+		run, job := rr.endedRun(domain.CISuccess)
+		err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
+		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	})
 }

@@ -15,7 +15,15 @@ Bernard watches the dependencies of your repositories and lists the updates that
 
 GitHub Actions updates are applied by the server. Go module updates are applied by a runner, through a CI run: Bernard starts a run with the event `dependencies` on the tip of the default branch, with one job, **Update dependencies**. A runner that offers the `deps` job kind and has the label set by `ERMITE_DEPS_RUNNER_LABEL` (`ubuntu-latest` by default) takes it like any other job. The job gets a read-only repository token for that commit, no secrets, no variables and no ID token. The runner runs `go get` and `go mod tidy` for the requested versions and reports the changed `go.mod` and `go.sum` files.
 
-Bernard accepts a report only if it changes `go.mod` and `go.sum` of the requested directories, keeps `replace`, `exclude`, `retract`, `go` and `toolchain` as they were, sets each requested module to exactly the requested version and leaves the other direct requirements alone. It then commits the files, together with the Actions updates, on `bernard/deps` on top of the commit the job ran on, and opens or updates the merge request.
+Bernard accepts a report only if:
+
+- it changes only `go.mod` and `go.sum` of the requested directories;
+- `replace`, `exclude`, `retract`, `go` and `toolchain` are unchanged;
+- each requested module is at the requested version or higher when Go selects it, or removed when it was indirect and no longer needed;
+- other direct requirements may only be raised by Go, never lowered, removed, added or made indirect;
+- no `require` line is duplicated.
+
+The server checks the report when the job ends: a refused report fails the job and the run, with the reason in the log and in the Inbox. Otherwise Bernard commits the files, together with the Actions updates, on `bernard/deps` on top of the commit the job ran on, and opens or updates the merge request. The merge request lists the versions Go raised or removed under "Also changed by Go". Go module downloads are kept in a per-repository cache on the runner, separate from workflow caches.
 
 The run shows in the Actions tab, in `ermite run list` (`--workflow bernard/deps` keeps only these runs) and in the Inbox under **Running**, as workflow `Dependencies` by `bernard`. Its log is on the run page and in `ermite run view <repo> <run> --log`. A run:
 

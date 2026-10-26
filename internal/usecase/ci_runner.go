@@ -4,6 +4,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -294,12 +295,25 @@ func (c *CI) runnerJob(rs *runState, j domain.CIJob, sec jobSecrets, settings po
 	return out
 }
 
+// depsContexts is the only context a dependency job gets.
+type depsContexts struct {
+	Github struct {
+		Repository string `json:"repository"`
+	} `json:"github"`
+}
+
 // depsRunnerJob is a dependency job as the runner gets it: no workflow, no
-// secrets, variables, environment, cache or ID token, and the read-only
-// repository token of an untrusted run.
+// secrets, variables, environment or ID token, with an isolated module cache
+// and the read-only repository token of an untrusted run.
 func (c *CI) depsRunnerJob(rs *runState, j domain.CIJob, sec jobSecrets) *ports.RunnerJob {
+	// Contexts are derived here, not stored. A struct of strings always marshals.
+	contexts, _ := json.Marshal(depsContexts{Github: struct {
+		Repository string `json:"repository"`
+	}{c.repoFullName(rs.run.Repo)}})
+	j.ContextsJSON = string(contexts)
 	return &ports.RunnerJob{
-		Job: j, Deps: j.Deps, Token: sec.token, GithubToken: sec.ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
+		Cache: c.cacheScope(rs.run, rs.src.GithubJSON),
+		Job:   j, Deps: j.Deps, Token: sec.token, GithubToken: sec.ghToken, Repo: rs.run.Repo, Sha: rs.run.Sha, Ref: rs.run.Ref,
 		Trusted: false, Permissions: domain.TokenPermissions(nil, false),
 	}
 }
@@ -887,6 +901,15 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 	if err := domain.CheckAnnotations(params.Annotations); err != nil {
 		return ports.CompleteJobResult{}, err
 	}
+	refusal, err := c.checkDepsResult(ctx, j, params)
+	if err != nil {
+		return ports.CompleteJobResult{}, err
+	}
+	if refusal != "" {
+		params.Conclusion = domain.CIFailure
+		params.DepsReport = &ports.DepsReport{Error: refusal}
+	}
+
 	var res ports.CompleteJobResult
 	err = c.withRun(ctx, j.RunID, j.RunAttempt, func(rs *runState) error {
 		cur := rs.find(j.ID)
@@ -911,7 +934,7 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 		rs.annotations = append(rs.annotations, writes...)
 		cur.Steps = steps
 		cur.Outputs = params.Outputs
-		msg := ""
+		msg := refusal
 		if params.RunnerShutdown {
 			msg = domain.CIShutdownMessage
 		}
@@ -924,7 +947,17 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 			return err
 		}
 		res = ports.CompleteJobResult{Conclusion: cur.Conclusion, Error: cur.Error, Applied: true}
-		return rs.flush(ctx)
+		if err := rs.flush(ctx); err != nil {
+			return err
+		}
+		if refusal != "" { // after the flush, so that a retry does not log it twice
+			line := domain.CILogLine{Time: c.now(), Text: "##[error]" + strings.ReplaceAll(refusal, "\n", " ")}
+			if _, err := c.cfg.Logs.AppendForced(ctx, logRef(*cur), []domain.CILogLine{line}); err != nil {
+				log := zerowrap.FromCtx(ctx)
+				log.Error().Err(err).Str("job_id", j.ID).Int64("run_id", j.RunID).Msg("log the refusal of a dependency report")
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return ports.CompleteJobResult{}, err

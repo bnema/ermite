@@ -4,6 +4,9 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -85,6 +88,7 @@ func newDepsRig(t *testing.T, labels []string, tweak func(*usecase.CIConfig)) *d
 	t.Cleanup(func() { r.ci.Close(ctx) })
 
 	obs := mocks.NewDepsRunObserver(t)
+	obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	obs.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(
 		func(c context.Context, run domain.CIRun, job domain.CIJob, report *ports.DepsReport) {
 			stored, _ := store.CI().GetJob(c, job.RunID, job.RunAttempt, job.ID)
@@ -339,7 +343,8 @@ func TestFetchJobGivesADepsJobItsReadOnlyContract(t *testing.T) {
 		assert.Empty(t, j.Environment)
 		assert.Empty(t, j.IDTokenURL)
 		assert.Empty(t, j.IDTokenRequestToken)
-		assert.Equal(t, ports.JobCache{}, j.Cache)
+		assert.Equal(t, ports.JobCache{Repository: "owner/proj", WriteRef: domain.DepsCacheRef, ReadRefs: []string{domain.DepsCacheRef}}, j.Cache)
+		assert.Equal(t, `{"github":{"repository":"owner/proj"}}`, j.Job.ContextsJSON)
 		assert.Equal(t, domain.TokenPermissions(nil, false), j.Permissions)
 		require.NotNil(t, j.Deps)
 		assert.Equal(t, r.params(0).Job, *j.Deps)
@@ -728,5 +733,191 @@ func TestDepsJobEndedAfterCloseIsNotAnnounced(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, domain.CICancelled, r.run(run.ID).Conclusion, "the job ended")
 		r.noEnded()
+	})
+}
+
+func TestDepsReportValidationRefusalFailsJobRunAndRecord(t *testing.T) {
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+		rr.open(goUpdate())
+		run := r.start(10 * time.Minute)
+		rr.rec.RunID = run.ID
+		r.ci.SetDepsObserver(rr.b)
+		j := r.fetch("deps")
+		require.NotNil(t, j)
+		report := goReport(goModText("go 1.24", "", textOld), sumLine("golang.org/x/text", textOld))
+		res, err := r.ci.CompleteJob(r.ctx, j.Token, ports.CompleteJobParams{JobID: j.Job.ID, Conclusion: domain.CISuccess, DepsReport: report})
+		require.NoError(t, err)
+		require.True(t, res.Applied)
+		require.Equal(t, domain.CIFailure, res.Conclusion)
+		require.Contains(t, res.Error, "the server refused the dependency result: check the gomod updates:")
+		require.Contains(t, res.Error, "requested version missing")
+		synctest.Wait()
+		assert.Equal(t, domain.CIFailure, r.job(run).Conclusion)
+		assert.Equal(t, res.Error, r.job(run).Error)
+		assert.Equal(t, domain.CIFailure, r.run(run.ID).Conclusion)
+		assert.Equal(t, domain.DepsFailed, rr.rec.State)
+		assert.Equal(t, res.Error, rr.rec.Error)
+		lines, err := r.logs.Read(r.ctx, ports.CILogRef{RunID: run.ID, JobID: j.Job.ID, Attempt: j.Job.Attempt}, 0, 10, 4096)
+		require.NoError(t, err)
+		require.Len(t, lines, 1)
+		assert.True(t, strings.HasPrefix(lines[0].Text, "##[error]"))
+		assert.Contains(t, lines[0].Text, strings.SplitN(res.Error, "\n", 2)[0])
+		again, err := r.ci.CompleteJob(r.ctx, j.Token, ports.CompleteJobParams{JobID: j.Job.ID, Conclusion: domain.CISuccess, DepsReport: report})
+		require.NoError(t, err)
+		assert.False(t, again.Applied)
+		assert.Equal(t, res.Error, again.Error)
+	})
+}
+
+// completeWithReport fetches the deps job and completes it with a report.
+func (r *depsRig) completeWithReport(secret, id string) (ports.CompleteJobResult, error) {
+	report := &ports.DepsReport{Files: []ports.DepsFile{{Path: "go.mod", Content: []byte("module x\n")}}}
+	return r.ci.CompleteJob(r.ctx, secret, ports.CompleteJobParams{JobID: id, Conclusion: domain.CISuccess, DepsReport: report})
+}
+
+func (r *depsRig) logLines(run domain.CIRun, j *ports.RunnerJob) []domain.CILogLine {
+	r.t.Helper()
+	lines, err := r.logs.Read(r.ctx, ports.CILogRef{RunID: run.ID, JobID: j.Job.ID, Attempt: j.Job.Attempt}, 0, 10, 4096)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil // nothing was logged
+	}
+	require.NoError(r.t, err)
+	return lines
+}
+
+func TestDepsReportCheckFailureOtherThanARefusalLeavesTheJobOpen(t *testing.T) {
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		boom := errors.New("read the dependency record: disk on fire")
+		run := r.start(10 * time.Minute)
+		j := r.fetch("deps")
+		require.NotNil(t, j)
+		obs := mocks.NewDepsRunObserver(t)
+		obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(boom).Once()
+		r.ci.SetDepsObserver(obs)
+
+		_, err := r.completeWithReport(j.Token, j.Job.ID)
+		require.ErrorIs(t, err, boom)
+		assert.False(t, errors.Is(err, domain.ErrInvalid) || errors.Is(err, domain.ErrPreconditionFailed), "the runner would treat it as permanent")
+		assert.False(t, r.job(run).Ended(), "the job stays open")
+		assert.Empty(t, r.logLines(run, j))
+		r.noEnded()
+
+		// The runner sends the report again; this time the check passes.
+		obs2 := mocks.NewDepsRunObserver(t)
+		obs2.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+		obs2.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+		r.ci.SetDepsObserver(obs2)
+		res, err := r.completeWithReport(j.Token, j.Job.ID)
+		require.NoError(t, err)
+		assert.True(t, res.Applied)
+		assert.Equal(t, domain.CISuccess, res.Conclusion)
+	})
+}
+
+// The check only concerns a successful job that holds a report without error.
+func TestDepsReportCheckIsSkippedWhenThereIsNothingToCheck(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		conclusion domain.CIConclusion
+		report     *ports.DepsReport
+	}{
+		{"failure conclusion", domain.CIFailure, &ports.DepsReport{Files: []ports.DepsFile{{Path: "go.mod", Content: []byte("module x\n")}}}},
+		{"report with an error", domain.CISuccess, &ports.DepsReport{Error: "go get failed"}},
+		{"no report", domain.CISuccess, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+				run := r.start(10 * time.Minute)
+				j := r.fetch("deps")
+				require.NotNil(t, j)
+				obs := mocks.NewDepsRunObserver(t) // strict: a call to CheckDepsReport fails the test
+				obs.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+				r.ci.SetDepsObserver(obs)
+
+				res, err := r.ci.CompleteJob(r.ctx, j.Token, ports.CompleteJobParams{JobID: j.Job.ID, Conclusion: tc.conclusion, DepsReport: tc.report})
+				require.NoError(t, err)
+				assert.True(t, res.Applied)
+				assert.Equal(t, tc.conclusion, res.Conclusion)
+				assert.Equal(t, tc.conclusion, r.job(run).Conclusion)
+			})
+		})
+	}
+}
+
+func TestDepsReportRefusalEndsTheJobAsAFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"invalid", fmt.Errorf("%w: unexpected report path %q", domain.ErrInvalid, "evil.sh")},
+		{"precondition", fmt.Errorf("%w: %q is larger than 1 bytes", domain.ErrPreconditionFailed, "go.mod")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+				run := r.start(10 * time.Minute)
+				j := r.fetch("deps")
+				require.NotNil(t, j)
+				obs := mocks.NewDepsRunObserver(t)
+				obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(tc.err).Once()
+				obs.EXPECT().DepsJobEnded(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+				r.ci.SetDepsObserver(obs)
+
+				res, err := r.completeWithReport(j.Token, j.Job.ID)
+				require.NoError(t, err)
+				assert.True(t, res.Applied)
+				assert.Equal(t, domain.CIFailure, res.Conclusion)
+				assert.Contains(t, res.Error, "the server refused the dependency result: ")
+				assert.Equal(t, domain.CIFailure, r.job(run).Conclusion)
+				lines := r.logLines(run, j)
+				require.Len(t, lines, 1)
+				assert.True(t, strings.HasPrefix(lines[0].Text, "##[error]"))
+				assert.Contains(t, lines[0].Text, strings.SplitN(res.Error, "\n", 2)[0])
+			})
+		})
+	}
+}
+
+// A check that never answers is cut at depsCheckTimeout: the call fails with
+// the deadline, which the runner retries, and the job stays open.
+func TestDepsReportCheckIsBoundedByATimeout(t *testing.T) {
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		run := r.start(10 * time.Minute)
+		j := r.fetch("deps")
+		require.NotNil(t, j)
+		obs := mocks.NewDepsRunObserver(t)
+		var deadline time.Time
+		obs.EXPECT().CheckDepsReport(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+			func(ctx context.Context, _ domain.CIRun, _ domain.CIJob, _ ports.DepsReport) error {
+				var ok bool
+				deadline, ok = ctx.Deadline()
+				require.True(t, ok, "the check has a deadline")
+				<-ctx.Done()
+				return ctx.Err()
+			}).Once()
+		r.ci.SetDepsObserver(obs)
+
+		start := time.Now()
+		_, err := r.completeWithReport(j.Token, j.Job.ID)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Equal(t, start.Add(60*time.Second), deadline)
+		assert.Equal(t, 60*time.Second, time.Since(start))
+		assert.False(t, r.job(run).Ended())
+		r.noEnded()
+	})
+}
+
+func TestCompleteJobWithoutADepsObserverTrustsTheReport(t *testing.T) {
+	inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+		run := r.start(10 * time.Minute)
+		j := r.fetch("deps")
+		require.NotNil(t, j)
+		r.ci.SetDepsObserver(nil)
+		res, err := r.completeWithReport(j.Token, j.Job.ID)
+		require.NoError(t, err)
+		assert.True(t, res.Applied)
+		assert.Equal(t, domain.CISuccess, res.Conclusion)
+		assert.Equal(t, domain.CISuccess, r.job(run).Conclusion)
+		assert.Empty(t, r.logLines(run, j))
 	})
 }

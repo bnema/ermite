@@ -10,6 +10,9 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// DepsCacheRef isolates the deps module cache from workflow caches both ways.
+const DepsCacheRef = "refs/ermite/deps"
+
 // DepsEcosystem identifies a supported dependency ecosystem.
 type DepsEcosystem string
 
@@ -200,4 +203,10 @@ func PickUpdates(c DepCandidate, now time.Time, cooldown time.Duration, firstSee
 
 func floatingMajor(v string) bool {
 	return v == semver.Major(v)
+}
+
+// DepSideEffect describes a Go-selected change beyond the requested versions.
+// An empty To means tidy removed the module.
+type DepSideEffect struct {
+	Directory, Name, From, To string
 }
