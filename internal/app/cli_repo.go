@@ -315,14 +315,20 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit <name>",
 		Short: "Change a repository's description, topics, visibility, default branch, merge settings or issues",
-		Long: "Change the fields given as flags and leave the others alone; --description \"\" clears the\n" +
-			"description and --topics \"\" clears the topics. The default branch must already exist. --merge-modes lists the modes a merge request\n" +
-			"may be merged with (fast-forward, squash, merge; every mode is allowed by default, so to disable one,\n" +
-			"list the others: --merge-modes fast-forward,squash disables the merge commit; squash and merge\n" +
-			"commits are signed with the server's key, see `ermite signing-key show`), and\n" +
-			"--issues sets who may use issues: off (default), owner (the owner and tokens with issue:write) or\n" +
-			"public (visitors of a public repository may also propose issues through a moderated form).\nNeeds a server with the issues feature.\n" +
-			"Needs the repo:admin scope." + "\nJSON: a repository; see `ermite repo --help`.",
+		Long: "This command changes only flagged fields. --description \"\" and --topics \"\" clear those fields.\n" +
+			"The default branch must exist. The command requires repo:admin.\n" +
+			"\n" +
+			"--merge-modes lists allowed modes: fast-forward, squash, merge (all by default).\n" +
+			"It keeps only listed modes: --merge-modes fast-forward,squash disables merge commits.\n" +
+			"Squash and merge commits use the server's signing key (`ermite signing-key show`).\n" +
+			"\n" +
+			"--issues sets issue access: off (default), owner (owner and issue:write tokens), or public\n" +
+			"(public-repository visitors can also propose issues through a moderated form).\n" +
+			"It requires the issues feature.\n" +
+			"\n" +
+			"--archived makes the repository read-only; --archived=false restores writes.\n" +
+			"It requires repos.archived.\n" +
+			"JSON: a repository; see `ermite repo --help`.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}
