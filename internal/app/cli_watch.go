@@ -231,23 +231,26 @@ func newWatchCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "watch [repo]",
 		Short: "Print repository events as they happen",
-		Long: "Print one line per event (repository created, updated or deleted, refs pushed, merge requests\n" +
-			"opened, merged (by auto-merge or not) or closed, auto-merge enabled or cancelled, notes added, edited, deleted or resolved) for every\n" +
-			"repository you can see, or only for [repo]. It runs until interrupted. When the connection drops it\n" +
-			"reconnects with a growing delay and resumes after the last event it printed; if the server no longer\n" +
-			"has that event it prints a gap event: reload what you display. Connection notices go to standard\n" +
-			"error.\n\n" +
-			"--json prints one JSON object per line (NDJSON). Fields: id, time (RFC 3339 UTC), type\n" +
-			"(repo_created, repo_updated, repo_deleted, pushed, merge_request_opened, merge_request_merged,\n" +
-			"merge_request_closed, merge_request_auto_merge_enabled, merge_request_auto_merge_cancelled\n" +
-			"(with reason), issue_edited, merge_request_edited, comment_added, comment_edited, comment_deleted, comment_resolved or gap)\n" +
-			"and, depending on the type, repo (name),\n" +
-			"repository (the repository fields of `repo show --json`), ref_updates (array of ref, old_id,\n" +
-			"new_id; an empty id means the ref was created or deleted), merge_request (the fields of\n" +
-			"`mr show --json`; merge_request_merged also has auto, true for an auto-merge) and, for comment events, number (of the merge request) and comment.\n" +
-			"Edit events have repo (name), number (of the issue or merge request), and changed_fields\n" +
-			"(title and/or body for issue_edited; title and/or description for merge_request_edited). Unknown\n" +
-			"event types are skipped.",
+		Long: "Print one line per event for all visible repositories, or only [repo], until interrupted.\n" +
+			"Events cover repository creation/update/deletion, pushes, merge requests opened/merged\n" +
+			"(manually or automatically)/closed, auto-merge enabled/cancelled, and notes added/edited/\n" +
+			"deleted/resolved. The command reconnects with increasing delay after a disconnect; it resumes after the\n" +
+			"last printed event. If it expired on the server, the command prints a gap event: reload your display.\n" +
+			"Connection notices go to stderr. The command skips unknown event types.\n" +
+			"\n" +
+			"--json prints NDJSON (one object per line): id, time (RFC 3339 UTC), type\n" +
+			"(repo_created, repo_updated, repo_deleted, pushed, merge_request_opened,\n" +
+			"merge_request_merged, merge_request_closed, merge_request_auto_merge_enabled,\n" +
+			"merge_request_auto_merge_cancelled (with reason), issue_edited, merge_request_edited,\n" +
+			"comment_added, comment_edited, comment_deleted, comment_resolved, gap).\n" +
+			"Type-specific fields:\n" +
+			"  repo: name; repository: fields from `repo show --json`.\n" +
+			"  ref_updates: array of ref, old_id, new_id; empty id means creation/deletion.\n" +
+			"  merge_request: fields from `ermite mr --help`; merge_request_merged also has\n" +
+			"    auto (true for auto-merge).\n" +
+			"  Comment events: number (merge request number), comment (see `ermite mr --help`).\n" +
+			"  Edit events: repo, number (issue or merge request), changed_fields\n" +
+			"    (title/body for issue_edited; title/description for merge_request_edited).",
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeRepoNames(env),
 	}

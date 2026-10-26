@@ -182,10 +182,10 @@ func newJournalCmd(env *cliEnv) *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "journal",
-		Short: "Show the recent activity of the repositories",
-		Long: "Show the activity journal, newest first: merge requests and issues opened, merged or closed, tags,\n" +
-			"releases and pushes to default branches. Entries are kept 30 days. Needs owner rights or the\n" +
-			"journal:read scope (a token limited to repositories sees only theirs) and a server with the journal\n" +
+		Short: "Show recent repository activity",
+		Long: "Show activity, newest first: merge requests and issues opened, merged or closed, tags,\n" +
+			"releases and default-branch pushes. The server keeps entries 30 days. Needs owner rights or\n" +
+			"journal:read (repository-limited tokens see only their repositories) and a server with the journal\n" +
 			"feature.\n\nKinds: " + strings.Join(activityKindNames(), ", ") + "." + jsonJournalHelp,
 		Example: "  ermite journal --since 7d --kind mr_merged,tag_created\n  ermite journal --repo app --since 2026-10-01 --json",
 		Args:    cobra.NoArgs,
@@ -193,7 +193,7 @@ func newJournalCmd(env *cliEnv) *cobra.Command {
 	cmd.Flags().StringVar(&since, "since", "24h", "start: a duration back (24h, 7d, 2w), a date (2026-10-01) or an RFC 3339 time")
 	cmd.Flags().StringVar(&repo, "repo", "", "only this repository")
 	cmd.Flags().StringSliceVar(&kinds, "kind", nil, "only these kinds, comma-separated or repeated")
-	cmd.Flags().IntVar(&limit, "limit", 100, "maximum number of entries")
+	cmd.Flags().IntVar(&limit, "limit", 100, "maximum entries")
 	asJSON := addJSONFlag(cmd)
 	_ = cmd.RegisterFlagCompletionFunc("repo", completeRepoNames(env))
 	_ = cmd.RegisterFlagCompletionFunc("kind", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
