@@ -94,8 +94,8 @@ func newRunArtifactsCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "artifacts <repo> <run id>",
 		Short: "List the artifacts of a run",
-		Long: "List the artifacts that the jobs of a run uploaded (actions/upload-artifact), with the space the\n" +
-			"artifacts of the repository use. Needs a token that reads the repository, even a public one.\n" +
+		Long: "List a run's job artifacts (actions/upload-artifact) and repository artifact usage.\n" +
+			"Access needs a repository-read token, even for public repositories.\n" +
 			"JSON fields (--json): artifacts (id, name, size, digest, media_type, run_id, attempt, job_id,\n" +
 			"created_at, expires_at), used_bytes and quota_bytes.",
 		Args:              cobra.ExactArgs(2),
@@ -154,12 +154,9 @@ func newRunDownloadCmd(env *cliEnv) *cobra.Command {
 	var names []string
 	var dir string
 	cmd := &cobra.Command{
-		Use:   "download <repo> <run id>",
-		Short: "Download the artifacts of a run",
-		Long: "Download the artifacts of a run, all of them or those that --name chooses (repeat it for several).\n" +
-			"A zip artifact is extracted: into --dir when one artifact is downloaded, into <dir>/<name> when\n" +
-			"several are. An artifact that is not a zip (uploaded with archive: false) is saved as <dir>/<name>.\n" +
-			"Existing files are never overwritten. Needs a token that reads the repository, even a public one.",
+		Use:               "download <repo> <run id>",
+		Short:             "Download the artifacts of a run",
+		Long:              "Download all run artifacts, or select names with repeatable --name.\nThe command extracts zips into --dir for one downloaded artifact, or <dir>/<name> for several. Non-zips (archive: false uploads) are saved as <dir>/<name>. Existing files are never overwritten. Access needs a repository-read token, even for public repositories.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeRepoNames(env),
 	}

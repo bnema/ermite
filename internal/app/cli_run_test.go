@@ -184,6 +184,9 @@ func TestCLIWorkflowDisableEnableList(t *testing.T) {
 
 	help := h.cli(t, adminToken, "workflow", "disable", "--help")
 	require.NoError(t, help.err)
-	assert.Contains(t, help.stdout, "JSON fields of a workflow (--json): repo, file")
+	assert.Contains(t, help.stdout, "JSON: a workflow; see `ermite workflow --help`.")
+	parentHelp := h.cli(t, adminToken, "workflow", "--help")
+	require.NoError(t, parentHelp.err)
+	assert.Contains(t, parentHelp.stdout, "JSON fields of a workflow (--json): repo, file")
 	assert.Contains(t, help.stdout, "repo:admin")
 }

@@ -72,7 +72,7 @@ func depsExpected(r *ermite.RepoDependencyUpdates) []*ermite.DependencyVersion {
 }
 
 func newDepsCmd(env *cliEnv) *cobra.Command {
-	cmd := &cobra.Command{Use: "deps", Short: "Bernard: pending dependency updates (owner only)"}
+	cmd := &cobra.Command{Use: "deps", Short: "Bernard: pending dependency updates (owner only)", Long: "Manage pending dependency updates (owner only)." + jsonDepsHelp}
 	cmd.AddCommand(newDepsListCmd(env), newDepsCheckCmd(env))
 	for _, name := range []string{"open", "ignore", "snooze"} {
 		cmd.AddCommand(newDepsActionCmd(env, name))
@@ -122,7 +122,7 @@ func printDepsUpdates(cmd *cobra.Command, ups []*ermite.DependencyUpdate) error 
 func newDepsListCmd(env *cliEnv) *cobra.Command {
 	var repo string
 	cmd := &cobra.Command{Use: "list", Short: "List the repositories with pending dependency updates", Args: cobra.NoArgs,
-		Long: "List pending updates, snoozed repositories included (--repo limits to one)." + jsonDepsHelp}
+		Long: "List pending updates, snoozed repositories included (--repo limits to one)." + "\nJSON: repository updates; see `ermite deps --help`."}
 	cmd.Flags().StringVar(&repo, "repo", "", "only this repository")
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
@@ -166,7 +166,7 @@ func newDepsListCmd(env *cliEnv) *cobra.Command {
 
 func newDepsCheckCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "check <repo>", Short: "Check the dependencies of a repository now", Args: cobra.ExactArgs(1),
-		Long: "Check a non-archived repository now and print its pending updates." + jsonDepsHelp}
+		Long: "Check a non-archived repository now and print its pending updates." + "\nJSON: repository updates; see `ermite deps --help`."}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		c, err := env.client(cmd)
@@ -193,9 +193,9 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 	}[name]
 	long := short + "."
 	if name != "snooze" {
-		long += "\nThe pending list is read first and sent back as the versions you confirm: if it changes in\nbetween, the server refuses (failed precondition)."
+		long += "\nThe command confirms the current pending versions. The server refuses if they change meanwhile (failed precondition)."
 	}
-	cmd := &cobra.Command{Use: name + " <repo>", Short: short, Long: long + jsonDepsHelp, Args: cobra.ExactArgs(1)}
+	cmd := &cobra.Command{Use: name + " <repo>", Short: short, Long: long + "\nJSON: repository updates; see `ermite deps --help`.", Args: cobra.ExactArgs(1)}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		c, err := env.client(cmd)

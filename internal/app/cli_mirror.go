@@ -81,13 +81,13 @@ func toJSONMirrorStatus(s *ermite.MirrorStatus) jsonMirrorStatus {
 
 func newMirrorCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{Use: "mirror", Short: "Manage non-forcing push mirrors"}
-	key := &cobra.Command{Use: "key", Short: "Show or rotate the mirror SSH key"}
+	key := &cobra.Command{Use: "key", Short: "Show or rotate the mirror SSH key", Long: "Manage the mirror SSH key." + jsonMirrorKeyHelp}
 	for _, rotate := range []bool{false, true} {
 		name, short := "show", "Print the mirror authorized_keys line"
-		long := "Print only the authorized_keys line on stdout; requires authentication and ERMITE_SECRETS_KEY on the server.\nPipe it into: gh ssh-key add - --title \"ermite mirror\"." + jsonMirrorKeyHelp
+		long := "Print only the authorized_keys line to stdout. Access needs authentication; the server needs ERMITE_SECRETS_KEY.\nPipe it into: gh ssh-key add - --title \"ermite mirror\".\nJSON: a key; see `ermite mirror key --help`."
 		if rotate {
 			name, short = "rotate", "Replace the mirror SSH key (owner only)"
-			long = "Replace the mirror SSH key at once and print the new authorized_keys line on stdout; the replaced\nkey's fingerprint goes to stderr. Every mirror fails until the new key is added to the remotes.\nRequires owner rights and ERMITE_SECRETS_KEY on the server." + jsonMirrorKeyHelp
+			long = "Replace the SSH key immediately. The new authorized_keys line goes to stdout; the old fingerprint goes to stderr. Every mirror fails until remotes receive the new key. Access needs owner rights; the server needs ERMITE_SECRETS_KEY.\nJSON: a key; see `ermite mirror key --help`."
 		}
 		sub := &cobra.Command{Use: name, Short: short, Args: cobra.NoArgs, Long: long}
 		asJSON := addJSONFlag(sub)
@@ -124,7 +124,7 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 	}
 	cmd.AddCommand(key, newMirrorConfigCmd(env), newMirrorAddCmd(env), newMirrorStatusCmd(env), newMirrorSyncCmd(env))
 	for _, name := range []string{"remove", "exclude", "include"} {
-		sub := &cobra.Command{Use: name + " <repo>", Short: name + " a repository mirror", Args: cobra.ExactArgs(1)}
+		sub := &cobra.Command{Use: name + " <repo>", Short: strings.ToUpper(name[:1]) + name[1:] + " a repository mirror", Args: cobra.ExactArgs(1)}
 		sub.RunE = func(cmd *cobra.Command, args []string) error {
 			c, err := env.client(cmd)
 			if err != nil {
@@ -149,7 +149,7 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 func newMirrorConfigCmd(env *cliEnv) *cobra.Command {
 	var enabled, all bool
 	var url, cron string
-	cmd := &cobra.Command{Use: "config", Short: "Patch the global mirror policy (owner only)", Long: "Change the flags given and keep the other settings; use `config show` to read the policy." + jsonMirrorConfigHelp, Args: cobra.NoArgs}
+	cmd := &cobra.Command{Use: "config", Short: "Patch the global mirror policy (owner only)", Long: "Patch the global policy. Unspecified settings stay unchanged. `config show` reads it." + jsonMirrorConfigHelp, Args: cobra.NoArgs}
 	cmd.Flags().BoolVar(&enabled, "enabled", false, "enable the global mirror policy")
 	cmd.Flags().StringVar(&url, "url", "", "SSH URL template containing {repo}")
 	cmd.Flags().StringVar(&cron, "cron", "", "five-field UTC cron (minimum gap five minutes)")
@@ -235,7 +235,7 @@ func mirrorStateName(s ermite.MirrorState) string {
 }
 
 func newMirrorStatusCmd(env *cliEnv) *cobra.Command {
-	cmd := &cobra.Command{Use: "status [repo]", Short: "Show mirror states, reasons and next runs", Long: "Show one repository, or every repository (owner only).\n--json prints an object for one repository and an array for all." + jsonMirrorStatusHelp, Args: cobra.MaximumNArgs(1)}
+	cmd := &cobra.Command{Use: "status [repo]", Short: "Show mirror states, reasons and next runs", Long: "Show one repository or all (owner only). --json prints one object or an array, respectively." + jsonMirrorStatusHelp, Args: cobra.MaximumNArgs(1)}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		c, err := env.client(cmd)
@@ -278,7 +278,7 @@ func newMirrorStatusCmd(env *cliEnv) *cobra.Command {
 // newMirrorSyncCmd describes the server's wait bound (usecase.DefaultMirrorSyncWait, 8 s).
 func newMirrorSyncCmd(env *cliEnv) *cobra.Command {
 	var all, force bool
-	cmd := &cobra.Command{Use: "sync <repo>|--all", Short: "Sync mirrors now", Long: "Sync one repository, or every repository with --all (owner only).\nThe server pushes a few repositories at a time. The command waits about 8 s; a sync still running or waiting\nthen is reported as queued, keeps going on the server, and its outcome is shown by `ermite mirror status`.\n--force never force-pushes: it only skips the no-op check and throttle and lifts a pause.", Args: func(_ *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "sync <repo>|--all", Short: "Sync mirrors now", Long: "Sync one repository or --all (owner only). The server pushes a few repositories at a time.\nThe command waits about 8 s, then reports running or waiting syncs as queued. They continue on the server; `ermite mirror status` shows outcomes.\n--force never force-pushes: it skips the no-op check and throttle and lifts a pause.", Args: func(_ *cobra.Command, args []string) error {
 		if (all && len(args) == 0) || (!all && len(args) == 1) {
 			return nil
 		}

@@ -32,16 +32,14 @@ type jsonRunner struct {
 const jsonRunnerHelp = `
 JSON fields of a runner (--json): id, name, labels, isolation (vm, container-sysbox,
 container-privileged), version, arch, os, registered_at, last_seen (RFC 3339 UTC, null if never
-seen), busy and online (decided by the server: heard from within the last 2 minutes by its
-clock; a server older than the field reports false for every runner).`
+seen), busy, online (the server heard from it within 2 minutes by its own clock; older servers
+without this field report false for all runners).`
 
 func newRunnerCmd(env *cliEnv) *cobra.Command {
 	runner := &cobra.Command{
 		Use:   "runner",
 		Short: "List and remove CI runners",
-		Long: "Manage the CI runners registered on a remote server. A runner registers itself with a token\n" +
-			"made by `ermite token create --preset runner`. Needs the runner:register scope, on a token that is\n" +
-			"not limited to some repositories.",
+		Long:  "Manage remote CI runners. Runners self-register with a token from `ermite token create --preset runner`. Access needs runner:register on a token without repository limits.",
 	}
 	runner.AddCommand(newRunnerListCmd(env), newRunnerRemoveCmd(env))
 	return runner
@@ -50,8 +48,8 @@ func newRunnerCmd(env *cliEnv) *cobra.Command {
 func newRunnerListCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List the registered runners",
-		Long:  "List the registered runners ordered by name." + jsonRunnerHelp + "\n--json prints an array of runners.",
+		Short: "List registered runners",
+		Long:  "List registered runners by name." + jsonRunnerHelp + "\n--json prints an array of runners.",
 		Args:  cobra.NoArgs,
 	}
 	asJSON := addJSONFlag(cmd)
@@ -112,9 +110,8 @@ func newRunnerRemoveCmd(env *cliEnv) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <runner id>",
 		Short: "Remove a runner",
-		Long: "Remove a runner: its token stops working at once and it gets no more jobs. A job it is running is not\n" +
-			"affected: it ends, or fails as a lost runner when its heartbeats stop.",
-		Args: cobra.ExactArgs(1),
+		Long:  "Remove a runner. The server immediately revokes its token and stops assigning jobs. Its running job continues until completion or lost-runner failure when heartbeats stop.",
+		Args:  cobra.ExactArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveNoFileComp
