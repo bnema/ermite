@@ -55,18 +55,31 @@
     & .sort a:hover { color: var(--ink-hi); background: var(--bg-raised); }
     & .sort a[aria-current="true"] { color: var(--ink-hi); background: var(--bg-raised); border-color: var(--border-strong); }
   }
-  /* a row: name, description and facts on the left; the state of the latest
+  /* One surface holds every repository, in each layout. The rows are cut
+     by hairlines: each row draws the line under it and pulls the next one
+     up by 1px, so the line of the last shown row hides under the clipped
+     edge of the surface, whichever rows the filter hides.
+     A row: name, description and facts on the left; the state of the latest
      run at the top right, the newest commits under it. Stacked on a phone. */
   .repos {
-    display: flex; flex-direction: column; gap: var(--s3);
+    display: flex; flex-direction: column; gap: 0;
     margin: 0; padding: 0; list-style: none;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
     & .repo {
       display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-areas: "main head" "main recent";
       grid-template-rows: auto 1fr; column-gap: var(--s6); row-gap: var(--s3); min-width: 0;
-      padding: var(--s4); background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r);
+      position: relative; padding: var(--s4); margin-bottom: -1px; border-bottom: 1px solid var(--border);
     }
-    & .repo:hover { background: var(--bg-raised); border-color: var(--border-strong); }
-    & .repo[data-cursor] { background: var(--bg-raised); border-color: var(--accent); }
+    & .repo:hover { background: var(--bg-raised); }
+    /* the cursor (j/k, Enter opens it): raised, the name in the accent with a
+       prompt before it, as in a terminal picker. The prompt sits in the
+       padding of the row, on the line of the name, so nothing moves. */
+    & .repo[data-cursor] { background: var(--bg-raised); }
+    & .repo[data-cursor] .repo-name > a:first-child { color: var(--accent); }
+    & .repo[data-cursor] .repo-name::before {
+      content: "›"; content: "›" / ""; position: absolute; left: 3px;
+      font-family: var(--mono); font-weight: 700; color: var(--accent);
+    }
     & .repo[hidden] { display: none; }
     & .repo-main { grid-area: main; display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
     & .repo-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2); font-family: var(--mono); font-size: 17px; line-height: 26px; overflow-wrap: anywhere; }
@@ -77,10 +90,10 @@
     & .repo-name .repo-release { color: var(--accent); }
     & .repo-name .repo-license { color: var(--ink-dim); }
     & .repo-activity { display: inline-flex; align-items: center; flex: none; color: var(--accent); }
-    /* Every card has the same height: two lines of description, one of topics
+    /* Every row has the same height: two lines of description, one of topics
        (reserved when there are none), five of commits. */
     & .repo-desc {
-      color: var(--ink-dim); min-height: calc(2 * var(--lh));
+      color: var(--ink-dim); font-size: 14px; min-height: calc(2 * var(--lh));
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
     }
     & .repo-desc.mute { color: var(--ink-mute); font-style: italic; }
@@ -155,7 +168,7 @@
       & .repo-commits { min-height: 0; }
     }
   }
-  /* Home layouts. The server renders "cards" (the rules above); a script
+  /* Home layouts. The server renders the wide rows (the rules above); a script
      sets .home[data-layout] from the stored choice. The rows carry no markup
      of their own for a layout, so a row swapped in by a live update fits. */
   .home .layout-switch { display: flex; align-items: center; gap: 2px; }
@@ -166,33 +179,58 @@
   }
   .home .home-bar .sort { margin-left: auto; }
 
-  /* split: two denser cards side by side. Name and CI state on top, the
-     description, the pulse as a band from edge to edge, the figures in one
-     row and the two newest commits. One column on a narrow screen. */
-  .home[data-layout="split"] {
-    & .repos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
-    & .repo {
-      grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s3); row-gap: 0;
-      grid-template-areas: "name ci" "desc desc" "topics topics" "pulse pulse" "stats stats" "recent recent";
-      grid-template-rows: auto 1fr auto auto auto auto;
-      overflow: hidden;
-    }
+  /* split and compact: the dense rows. The name and the description on one
+     line each, the figures inline (the value before its label; the label of
+     the date and of the tag is left to screen readers), a small pulse with
+     a bigger dot to stay seen, no topics. */
+  .home:is([data-layout="split"], [data-layout="compact"]) {
+    & .repo { grid-template-rows: none; align-items: center; }
     & .repo-main, & .repo-head { display: contents; }
-    & .repo-name { grid-area: name; align-self: center; font-size: 16px; }
-    & .repo-ci { grid-area: ci; align-self: center; }
-    & .repo-desc { grid-area: desc; margin-top: var(--s2); }
-    & .repo-topics { grid-area: topics; margin-top: var(--s2); }
-    & .repo-topics:empty { display: none; }
-    & .repo-pulse { grid-area: pulse; margin: var(--s3) calc(-1 * var(--s4)) 0; padding: 0; border-block: 1px solid var(--border); }
-    /* one row while it fits; a narrow card wraps the figures instead of
-       letting them overlap */
-    & .repo-stats { grid-area: stats; flex-wrap: wrap; justify-content: space-between; gap: var(--s2) var(--s3); margin-top: var(--s3); }
-    & .repo-stats div { flex: none; }
-    & .repo-stats dd { font-size: var(--fs); }
-    & .repo-stats .rs-tag dd { max-width: 12ch; }
-    & .repo-commits { grid-area: recent; min-height: calc(2 * (var(--lh) + 4px)); margin-top: var(--s2); }
-    & .repo-commits li:nth-child(n+3) { display: none; }
-    & .repo-commits li:nth-child(2) { opacity: .3; }
+    & .repo-topics { display: none; }
+    /* min-width 0: a long name is cut, it does not widen its column */
+    & .repo-name { grid-area: name; min-width: 0; flex-wrap: nowrap; gap: var(--s2); font-size: var(--fs); line-height: 24px; overflow-wrap: normal; }
+    & .repo-name a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    & .repo-name .pill { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    & .repo-name a.pill { max-width: 12ch; }
+    & .repo-desc {
+      grid-area: desc; display: block; min-height: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: var(--fs-xs);
+    }
+    & .repo-stats { grid-area: stats; flex-wrap: nowrap; gap: var(--s3); overflow: hidden; }
+    & .repo-stats div { flex-direction: row; align-items: baseline; gap: 4px; flex: none; }
+    & .repo-stats dt { order: 1; font-size: var(--fs-xs); line-height: 16px; letter-spacing: 0; text-transform: none; }
+    & .repo-stats dd { line-height: 16px; }
+    & .repo-stats .rs-active dt, & .repo-stats .rs-tag dt {
+      position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+    }
+    & .repo-stats .rs-tag dd { max-width: 10ch; }
+    & .repo-pulse { grid-area: pulse; width: 100%; margin: 0; padding: 0; }
+    & div.repo-pulse { aspect-ratio: auto; box-sizing: border-box; }
+    & .pulse-grid { display: none; }
+    & .pulse-dot, & .repo:is(:hover, [data-cursor]) .pulse-dot { stroke: none; }
+  }
+
+  /* split: two cells side by side in the surface, four short lines each:
+     name and CI state, the description, the figures beside the pulse, the
+     newest commit. Each cell also draws the line left of it, pulled by 1px,
+     so the outer one hides under the edge. One column on a narrow screen. */
+  .home[data-layout="split"] {
+    & .repos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+    /* closes an odd last row with its column line; on an even count it sits
+       alone in a row of no height */
+    & .repos::after { content: ""; margin-left: -1px; border-left: 1px solid var(--border); }
+    & .repo {
+      margin-left: -1px; border-left: 1px solid var(--border);
+      grid-template-columns: minmax(0, 1fr) 120px; column-gap: var(--s4); row-gap: var(--s1);
+      grid-template-areas: "name ci" "desc desc" "stats pulse" "recent recent";
+      padding: var(--s3) var(--s4); overflow: hidden;
+    }
+    & .repo-ci { grid-area: ci; justify-self: end; }
+    & .repo-stats dd { font-size: var(--fs-s); }
+    & div.repo-pulse { height: 13px; }
+    & .pulse-dot { r: 8px; }
+    & .repo-commits { grid-area: recent; min-height: calc(var(--lh) + 4px); }
+    & .repo-commits li:nth-child(n+2) { display: none; }
   }
   @media (max-width: 900px) {
     .home[data-layout="split"] .repos { grid-template-columns: minmax(0, 1fr); }
@@ -206,44 +244,23 @@
   .home[data-layout="compact"] {
     & .repos {
       display: grid; grid-template-columns: fit-content(18rem) minmax(0, 1fr) auto auto 140px;
-      gap: var(--s2) var(--s4);
+      gap: 0 var(--s4);
     }
     & .repo {
       grid-column: 1 / -1; grid-template-columns: subgrid;
       grid-template-areas: "name desc stats ci pulse";
       /* normal: the row takes the gaps of the list */
-      grid-template-rows: none; column-gap: normal; row-gap: 0; align-items: center;
+      column-gap: normal; row-gap: 0;
       padding: var(--s2) var(--s4);
     }
-    & .repo-main, & .repo-head { display: contents; }
-    & .repo-topics, & .repo-commits { display: none; }
-    /* min-width 0: a long name is cut, it does not widen the column past its cap */
-    & .repo-name { grid-area: name; min-width: 0; flex-wrap: nowrap; gap: var(--s2); font-size: var(--fs); line-height: 24px; overflow-wrap: normal; }
-    & .repo-name a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    & .repo-name .pill { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    & .repo-name a.pill { max-width: 12ch; }
-    & .repo-desc {
-      grid-area: desc; display: block; min-height: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      font-size: var(--fs-s); color: var(--ink-mute);
-    }
-    /* figures inline, the value before its label; the label of the date and
-       of the tag is left to screen readers */
-    & .repo-stats { grid-area: stats; flex-wrap: nowrap; gap: var(--s3); overflow: hidden; }
-    & .repo-stats div { flex-direction: row; align-items: baseline; gap: 4px; flex: none; }
-    & .repo-stats dt { order: 1; font-size: var(--fs-xs); line-height: 16px; letter-spacing: 0; text-transform: none; }
-    & .repo-stats dd { font-size: var(--fs-xs); line-height: 16px; color: var(--ink-dim); }
-    & .repo-stats .rs-active dt, & .repo-stats .rs-tag dt {
-      position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
-    }
-    & .repo-stats .rs-tag dd { max-width: 10ch; }
+    & .repo-commits { display: none; }
+    & .repo-desc { color: var(--ink-mute); }
+    & .repo-stats dd { font-size: var(--fs-xs); color: var(--ink-dim); }
     /* the CI state is its mark; the word is in the tooltip and for screen readers */
     & .repo-ci { grid-area: ci; justify-self: center; }
-    /* the pulse: the same curve, small, with a bigger dot to stay seen */
-    & .repo-pulse { grid-area: pulse; width: 100%; height: 100%; min-height: 18px; margin: 0; padding: 0; }
-    & div.repo-pulse { aspect-ratio: auto; box-sizing: border-box; }
+    & .repo-pulse { height: 100%; min-height: 18px; }
     & .repo-pulse svg { position: relative; top: 50%; transform: translateY(-50%); }
-    & .pulse-grid { display: none; }
-    & .pulse-dot { r: 9px; stroke: none; }
+    & .pulse-dot { r: 9px; }
   }
   @media (max-width: 1100px) {
     .home[data-layout="compact"] .repos { grid-template-columns: fit-content(14rem) minmax(0, 1fr) auto auto 96px; column-gap: var(--s3); }
@@ -258,6 +275,9 @@
     .home[data-layout="compact"] .repo-pulse { display: none; }
     .home[data-layout="compact"] .repo-stats .rs-tag { display: flex; }
   }
+  /* a filter that leaves no row hides the surface too (after the layouts,
+     which set its display) */
+  .home .repos:not(:has(> .repo:not([hidden]))) { display: none; }
   .list.passkeys {
     & .c-name { font-weight: 600; }
     & .c-when { font-size: var(--fs-s); }
