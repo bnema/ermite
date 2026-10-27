@@ -355,14 +355,23 @@ func (rs *runState) advance(ctx context.Context) error {
 			changed = true
 		}
 	}
-	return rs.promote(ctx)
+	ended, err := rs.promote(ctx)
+	if err != nil || !ended {
+		return err
+	}
+	// A job that no runner can take ended: the jobs that needed it, and the
+	// instances max-parallel held back, are due.
+	return rs.advance(ctx)
 }
 
 // promote makes planned instances ready while max-parallel allows it and the
 // concurrency group of the job, if it has one of its own, gives it the turn.
-// An instance that waits for its group is pending.
-func (rs *runState) promote(ctx context.Context) error {
+// An instance that waits for its group is pending. A job that no registered
+// runner (online or not) can take ends at once, which promote reports.
+func (rs *runState) promote(ctx context.Context) (ended bool, err error) {
 	now := rs.c.now()
+	var runners []domain.CIRunner
+	listed := false
 	counts := map[string]int{}
 	for _, j := range rs.jobs {
 		if j.Phase == domain.CIPhaseReady || j.Active() {
@@ -377,10 +386,19 @@ func (rs *runState) promote(ctx context.Context) error {
 		if j.MaxParallel > 0 && counts[j.Scope+"\x00"+j.Key] >= j.MaxParallel {
 			continue
 		}
+		if !listed {
+			// A failed listing keeps the jobs queued: nothing is known.
+			runners, listed = rs.c.runnersForMatch(ctx)
+		}
+		if listed && !runnerMatches(*j, runners) {
+			rs.end(j, domain.CIFailure, noRunnerMessage(j.Labels))
+			ended = true
+			continue
+		}
 		if g := j.Concurrency; g.Group != "" && !g.FromRun {
 			st, err := rs.acquire(ctx, g.Group, domain.CIConcurrencyEntry{RunID: j.RunID, Attempt: j.RunAttempt, JobID: j.ID, Cancel: g.Cancel, Max: g.Max})
 			if err != nil {
-				return err
+				return ended, err
 			}
 			if st != g.State {
 				j.Concurrency.State = st
@@ -394,7 +412,23 @@ func (rs *runState) promote(ctx context.Context) error {
 		counts[j.Scope+"\x00"+j.Key]++
 		rs.touch(j)
 	}
-	return nil
+	return ended, nil
+}
+
+// runnersForMatch lists the registered runners, online or not.
+func (c *CI) runnersForMatch(ctx context.Context) ([]domain.CIRunner, bool) {
+	runners, err := c.cfg.Store.ListRunners(ctx)
+	return runners, err == nil
+}
+
+// runnerMatches reports whether a registered runner has the labels of the job,
+// with the same rule the runners use to claim it.
+func runnerMatches(j domain.CIJob, runners []domain.CIRunner) bool {
+	return slices.ContainsFunc(runners, func(r domain.CIRunner) bool { return domain.LabelsMatch(j.Labels, r.Labels) })
+}
+
+func noRunnerMessage(labels []string) string {
+	return "no registered runner matches runs-on: [" + strings.Join(labels, ", ") + "]"
 }
 
 // plan evaluates a job whose needs have ended: its condition, its strategy and

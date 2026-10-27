@@ -571,7 +571,7 @@ func (c *CI) noRunnerFor(ctx context.Context, ck domain.CICheck, runners []domai
 	if err != nil || j.Phase != domain.CIPhaseReady {
 		return false
 	}
-	return !slices.ContainsFunc(runners, func(r domain.CIRunner) bool { return domain.LabelsMatch(j.Labels, r.Labels) })
+	return !runnerMatches(j, runners)
 }
 
 // --- runners ---

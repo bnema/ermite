@@ -331,16 +331,59 @@ jobs:
 	assert.Contains(t, j.GetError(), "Unable to find reusable workflow '.github/workflows/callee.yml'")
 }
 
-// A job for a label no runner has is "waiting for a runner" and fails after the
-// queue timeout.
+// A job for a label that only an offline runner has stays queued and fails
+// after the queue timeout.
 func TestCIQueueTimeout(t *testing.T) {
 	c := newCIHarness(t, func(cfg *usecase.CIConfig) { cfg.QueueTimeout, cfg.Tick = 300*time.Millisecond, 20*time.Millisecond })
 	c.registerRunner("alpha", "ubuntu-latest")
+	c.registerRunner("offline-gpu", "gpu") // registered, never polls
 	c.push("main", map[string]string{".github/workflows/q.yml": strings.Replace(workflowWith("branches: [main]"), "ubuntu-latest", "gpu", 1)}, "")
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, pb.CiStatus_CI_STATUS_QUEUED, c.getRun(c.runs()[0].GetId()).GetJobs()[0].GetStatus(), "an offline matching runner keeps the job queued")
 	c.waitFor("the job fails", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 	j := c.getRun(c.runs()[0].GetId()).GetJobs()[0]
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, j.GetConclusion())
 	assert.Contains(t, j.GetError(), "was not acquired")
+}
+
+// A job whose runs-on matches no registered runner fails at once, also after
+// its needs; the other jobs still run and the run ends failed.
+func TestCIUnmatchedRunsOnFailsAtOnce(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	c.push("main", map[string]string{".github/workflows/u.yml": `on: push
+jobs:
+  ok:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+  mac:
+    runs-on: macos-latest
+    steps:
+      - run: echo mac
+  after:
+    needs: ok
+    runs-on: windows-latest
+    steps:
+      - run: echo win
+`}, "")
+	j := runner.await()
+	assert.Equal(t, "ok", j.GetJobKey())
+	runner.runJob(j, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "done")
+	c.waitFor("the run ends", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, c.runs()[0].GetConclusion())
+	for _, j := range c.getRun(c.runs()[0].GetId()).GetJobs() {
+		switch j.GetKey() {
+		case "ok":
+			assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_SUCCESS, j.GetConclusion())
+		case "mac":
+			assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, j.GetConclusion())
+			assert.Equal(t, "no registered runner matches runs-on: [macos-latest]", j.GetError())
+		case "after":
+			assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, j.GetConclusion())
+			assert.Equal(t, "no registered runner matches runs-on: [windows-latest]", j.GetError())
+		}
+	}
 }
 
 // The runner API validates what it is given.

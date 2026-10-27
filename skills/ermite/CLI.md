@@ -181,6 +181,8 @@ Writes need `secrets:write`. `--instance` needs a token without `--repo`. Branch
 | `runner remove <id>` | token stops at once; a running job ends or fails as lost |
 | `oidc rotate-key` | owner; old key stays in JWKS for 24 h; needs `ci.oidc` feature and `ERMITE_SECRETS_KEY` |
 
+A job whose `runs-on` labels match no registered runner (online or offline) fails at once with `no registered runner matches runs-on: [...]`; the other jobs still run. A job that only an offline runner matches stays queued until a runner returns or the queue timeout fails it.
+
 Jobs with `permissions: id-token: write` get OIDC tokens. The issuer is `<public URL>/-/oidc`.
 
 ## Mirrors
