@@ -114,7 +114,7 @@ func TestInboxDepsSummaryHasNoInteractiveContent(t *testing.T) {
 	svc := mocks.NewInboxService(t)
 	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
 	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/inbox?tab=deps", true).Body.String()
-	sec := body[strings.Index(body, `id="inbox-deps"`):len(body)]
+	sec := body[strings.Index(body, `id="inbox-deps"`):]
 	summaries := regexp.MustCompile(`(?s)<summary[^>]*>.*?</summary>`).FindAllString(sec, -1)
 	require.Len(t, summaries, 2, "the row and its menu")
 	for _, s := range summaries {
@@ -285,7 +285,7 @@ func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
 	})
 	body := inboxGet(srv, "/-/inbox?tab=deps", true).Body.String()
-	sec := body[strings.Index(body, `id="inbox-deps"`):len(body)]
+	sec := body[strings.Index(body, `id="inbox-deps"`):]
 	assert.NotContains(t, sec, "<form")
 	assert.NotContains(t, sec, "More actions")
 }
