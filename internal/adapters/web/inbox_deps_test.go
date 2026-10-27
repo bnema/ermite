@@ -65,9 +65,10 @@ func TestInboxDepsTable(t *testing.T) {
 	require.Equal(t, 200, rec.Code)
 	body := rec.Body.String()
 	assert.Contains(t, body, "Deps Updates (3)")
-	assert.Less(t, strings.Index(body, `id="inbox-runs"`), strings.Index(body, `id="inbox-deps"`))
-	assert.Less(t, strings.Index(body, `id="inbox-deps"`), len(body))
-	sec := body[strings.Index(body, `id="inbox-deps"`):len(body)]
+	assert.NotContains(t, body, `id="inbox-runs"`)
+	depsAt := strings.Index(body, `id="inbox-deps"`)
+	require.GreaterOrEqual(t, depsAt, 0)
+	sec := body[depsAt:]
 
 	assert.Contains(t, sec, " data-keep-open")
 	assert.Contains(t, sec, "Dependency updates")
