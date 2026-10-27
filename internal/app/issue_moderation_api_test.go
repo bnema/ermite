@@ -120,7 +120,7 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 
 	// The inbox lists what awaits.
 	r.pending("pub", "fourth")
-	ov, err := r.forge.Inbox.Overview(ctx, domain.Root(), domain.RepoName{})
+	ov, err := r.forge.Inbox.Overview(ctx, domain.Root())
 	require.NoError(t, err)
 	assert.Equal(t, 1, ov.Counts.Pending)
 	require.Len(t, ov.Pending, 1)

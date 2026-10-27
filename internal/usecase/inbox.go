@@ -169,7 +169,7 @@ func NewInbox(cfg InboxConfig) *Inbox {
 // domain.MaxTagDistance and served from the commit-graph, and cached until
 // the refs of the repository move. A repository whose walk fails is logged
 // and skipped.
-func (in *Inbox) Journal(ctx context.Context, p domain.Principal, filter domain.RepoName, window time.Duration) (ports.InboxJournal, error) {
+func (in *Inbox) Journal(ctx context.Context, p domain.Principal, window time.Duration) (ports.InboxJournal, error) {
 	var out ports.InboxJournal
 	if !p.HasOwnerRights() {
 		return out, domain.ErrNotFound
@@ -181,12 +181,12 @@ func (in *Inbox) Journal(ctx context.Context, p domain.Principal, filter domain.
 	if err != nil {
 		return out, err
 	}
-	listed, err := in.journal.ListSince(ctx, in.clock.Now().Add(-window), "", filter, repos.eligible(p, nil), ports.MaxJournalEntries)
+	listed, err := in.journal.ListSince(ctx, in.clock.Now().Add(-window), "", domain.RepoName{}, repos.eligible(p, nil), ports.MaxJournalEntries)
 	if err != nil {
 		return out, fmt.Errorf("read the journal: %w", err)
 	}
 	out.Entries, out.Truncated = listed.Entries, listed.Truncated
-	out.Unreleased, err = in.unreleasedOf(ctx, repos, func(r domain.Repo) bool { return filter.IsZero() || r.Name == filter })
+	out.Unreleased, err = in.unreleasedOf(ctx, repos, func(r domain.Repo) bool { return true })
 	return out, err
 }
 
@@ -400,9 +400,8 @@ func (in *Inbox) unreleased(ctx context.Context, repo domain.Repo) (ports.Unrele
 	return e.u, e.ok, nil
 }
 
-// Overview lists what is open, through the indexes of open items. The counts
-// and the list of repositories do not depend on the filter, the lists do.
-func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain.RepoName) (ports.InboxOverview, error) {
+// Overview lists what is open across every repository through the open-item indexes.
+func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxOverview, error) {
 	var out ports.InboxOverview
 	if !p.HasOwnerRights() {
 		return out, domain.ErrNotFound
@@ -436,7 +435,6 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 		return nil
 	}
 
-	repos := make(map[domain.RepoName]bool)
 	for _, m := range mrs {
 		if err := look(m.Repo); err != nil {
 			return out, err
@@ -444,11 +442,8 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 		if !exists[m.Repo] {
 			continue
 		}
-		repos[m.Repo] = true
 		out.Counts.MergeRequests++
-		if filter.IsZero() || m.Repo == filter {
-			out.MergeRequests = append(out.MergeRequests, m)
-		}
+		out.MergeRequests = append(out.MergeRequests, m)
 	}
 	for _, i := range issues {
 		if err := look(i.Repo); err != nil {
@@ -457,11 +452,8 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 		if !exists[i.Repo] || !issuesOn[i.Repo] {
 			continue
 		}
-		repos[i.Repo] = true
 		out.Counts.Issues++
-		if filter.IsZero() || i.Repo == filter {
-			out.Issues = append(out.Issues, i)
-		}
+		out.Issues = append(out.Issues, i)
 	}
 
 	if in.pending != nil {
@@ -478,7 +470,6 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 			}
 			pi.IPHash = nil // the hash is for bans, the page never needs it
 			out.Pending = append(out.Pending, pi)
-			repos[pi.Repo] = true
 		}
 		out.Counts.Pending = len(out.Pending)
 	}
@@ -499,11 +490,8 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 			if !exists[run.Repo] {
 				continue
 			}
-			repos[run.Repo] = true
 			out.Counts.Running++
-			if filter.IsZero() || run.Repo == filter {
-				out.Runs = append(out.Runs, run)
-			}
+			out.Runs = append(out.Runs, run)
 		}
 		slices.SortStableFunc(out.Runs, func(a, b domain.CIRun) int {
 			return compareRecent(a.CreatedAt, a.CreatedAt, a.Repo, a.ID, b.CreatedAt, b.CreatedAt, b.Repo, b.ID)
@@ -530,27 +518,24 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 			if repo.Archived {
 				continue
 			}
-			repos[d.Repo] = true
 			out.Counts.Deps++
-			if filter.IsZero() || d.Repo == filter {
-				// The latest check of the rows shown, not of the other repositories.
-				if d.CheckedAt.After(out.DepsCheckedAt) {
-					out.DepsCheckedAt = d.CheckedAt
-				}
-				item := ports.InboxDeps{Rec: d}
-				if d.RunID != 0 && in.ci != nil {
-					run, err := in.ci.GetRun(ctx, d.Repo, d.RunID)
-					switch {
-					case err == nil:
-						item.Run = &run
-					case !errors.Is(err, domain.ErrNotFound):
-						// The row still tells the state of the record: a run that
-						// cannot be read must not hide the Inbox.
-						ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", d.RunID).Msg("inbox: read the run of a dependency record")
-					}
-				}
-				out.Deps = append(out.Deps, item)
+			// The latest check across eligible repositories.
+			if d.CheckedAt.After(out.DepsCheckedAt) {
+				out.DepsCheckedAt = d.CheckedAt
 			}
+			item := ports.InboxDeps{Rec: d}
+			if d.RunID != 0 && in.ci != nil {
+				run, err := in.ci.GetRun(ctx, d.Repo, d.RunID)
+				switch {
+				case err == nil:
+					item.Run = &run
+				case !errors.Is(err, domain.ErrNotFound):
+					// The row still tells the state of the record: a run that
+					// cannot be read must not hide the Inbox.
+					ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", d.RunID).Msg("inbox: read the run of a dependency record")
+				}
+			}
+			out.Deps = append(out.Deps, item)
 		}
 	}
 
@@ -576,10 +561,6 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal, filter domain
 	slices.SortStableFunc(out.Issues, func(a, b domain.Issue) int {
 		return compareRecent(a.UpdatedAt, a.CreatedAt, a.Repo, a.Number, b.UpdatedAt, b.CreatedAt, b.Repo, b.Number)
 	})
-	for r := range repos {
-		out.Repos = append(out.Repos, r)
-	}
-	slices.SortFunc(out.Repos, func(a, b domain.RepoName) int { return strings.Compare(a.String(), b.String()) })
 	return out, nil
 }
 

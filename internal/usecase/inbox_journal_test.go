@@ -65,14 +65,14 @@ func TestInboxJournalIsOwnerOnly(t *testing.T) {
 	t.Parallel()
 	r := newInboxJournalRig(t) // nothing is read
 	for _, p := range []domain.Principal{domain.Anonymous(), issuePrincipal(domain.ScopeIssueWrite)} {
-		_, err := r.in.Journal(context.Background(), p, domain.RepoName{}, 24*time.Hour)
+		_, err := r.in.Journal(context.Background(), p, 24*time.Hour)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	}
 }
 
-// The window starts range before now, the filter goes to the store, and the
+// The window starts range before now, the repository eligibility predicate goes to the store, and the
 // entries of a repository that is gone or was created again are left out.
-func TestInboxJournalRangeFilterAndStaleRepositories(t *testing.T) {
+func TestInboxJournalRangeAndStaleRepositories(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	r := newInboxJournalRig(t)
@@ -91,14 +91,14 @@ func TestInboxJournalRangeFilterAndStaleRepositories(t *testing.T) {
 	r.repos.EXPECT().HeadBranch(mock.Anything, reborn).Return("main", nil)
 	r.reader.EXPECT().ResolveRevision(mock.Anything, reborn, domain.Revision{}).Return(domain.ResolvedRevision{}, domain.ErrNotFound)
 
-	j, err := r.in.Journal(ctx, domain.Owner(), domain.RepoName{}, 7*24*time.Hour)
+	j, err := r.in.Journal(ctx, domain.Owner(), 7*24*time.Hour)
 	require.NoError(t, err)
 	assert.Equal(t, entries[:1], j.Entries)
 	assert.False(t, j.Truncated)
 	assert.Empty(t, j.Unreleased)
 
-	r.journal.EXPECT().ListSince(mock.Anything, r.now.Add(-24*time.Hour), "", proj, mock.Anything, ports.MaxJournalEntries).RunAndReturn(scan(entries[:1])).Once()
-	j, err = r.in.Journal(ctx, domain.Owner(), proj, 24*time.Hour)
+	r.journal.EXPECT().ListSince(mock.Anything, r.now.Add(-24*time.Hour), "", domain.RepoName{}, mock.Anything, ports.MaxJournalEntries).RunAndReturn(scan(entries[:1])).Once()
+	j, err = r.in.Journal(ctx, domain.Owner(), 24*time.Hour)
 	require.NoError(t, err)
 	assert.Equal(t, entries[:1], j.Entries)
 }
@@ -115,13 +115,13 @@ func TestInboxJournalSkipsTheIssuesOfARepositoryWithIssuesOff(t *testing.T) {
 		{At: r.now.Add(-3 * time.Minute), Repo: off.Name, Kind: domain.JournalTagCreated, Ref: "v1"},
 	}
 	r.journal.EXPECT().ListSince(mock.Anything, mock.Anything, "", mock.Anything, mock.Anything, mock.Anything).RunAndReturn(scan(entries)).Once()
-	j, err := r.in.Journal(context.Background(), domain.Owner(), domain.RepoName{}, 24*time.Hour)
+	j, err := r.in.Journal(context.Background(), domain.Owner(), 24*time.Hour)
 	require.NoError(t, err)
 	assert.Equal(t, entries[2:], j.Entries)
 }
 
 // Entries left out (a repository gone, issues off) do not take the place of
-// older ones: the filter goes to the store, read once.
+// older ones: the repository eligibility predicate goes to the store, read once.
 func TestInboxJournalCapsAfterFiltering(t *testing.T) {
 	t.Parallel()
 	r := newInboxJournalRig(t)
@@ -142,7 +142,7 @@ func TestInboxJournalCapsAfterFiltering(t *testing.T) {
 	all = append(all, kept...)
 	r.journal.EXPECT().ListSince(mock.Anything, mock.Anything, "", domain.RepoName{}, mock.Anything, ports.MaxJournalEntries).RunAndReturn(scan(all)).Once()
 
-	j, err := r.in.Journal(context.Background(), domain.Owner(), domain.RepoName{}, 24*time.Hour)
+	j, err := r.in.Journal(context.Background(), domain.Owner(), 24*time.Hour)
 	require.NoError(t, err)
 	assert.Equal(t, kept, j.Entries)
 	assert.False(t, j.Truncated, "only two entries are eligible")
@@ -164,7 +164,7 @@ func TestInboxJournalTruncatedCountsEligibleEntries(t *testing.T) {
 		page = append(page, domain.JournalEntry{At: r.now.Add(-time.Duration(i) * time.Second), Repo: repo, Kind: domain.JournalTagCreated})
 	}
 	r.journal.EXPECT().ListSince(mock.Anything, mock.Anything, "", mock.Anything, mock.Anything, mock.Anything).RunAndReturn(scan(page)).Once()
-	j, err := r.in.Journal(context.Background(), domain.Owner(), domain.RepoName{}, 24*time.Hour)
+	j, err := r.in.Journal(context.Background(), domain.Owner(), 24*time.Hour)
 	require.NoError(t, err)
 	assert.Len(t, j.Entries, ports.MaxJournalEntries)
 	assert.False(t, j.Truncated)
@@ -180,7 +180,7 @@ func TestInboxJournalTruncates(t *testing.T) {
 		many[i] = domain.JournalEntry{At: r.now.Add(-time.Duration(i) * time.Second), Repo: proj, Kind: domain.JournalTagCreated}
 	}
 	r.journal.EXPECT().ListSince(mock.Anything, mock.Anything, "", mock.Anything, mock.Anything, mock.Anything).RunAndReturn(scan(many)).Once()
-	j, err := r.in.Journal(context.Background(), domain.Owner(), domain.RepoName{}, 24*time.Hour)
+	j, err := r.in.Journal(context.Background(), domain.Owner(), 24*time.Hour)
 	require.NoError(t, err)
 	assert.Len(t, j.Entries, ports.MaxJournalEntries)
 	assert.True(t, j.Truncated)
@@ -219,7 +219,7 @@ func TestInboxJournalUnreleased(t *testing.T) {
 	r.reader.EXPECT().TagDistance(mock.Anything, broken, oid("b"), domain.MaxTagDistance).Return(domain.TagDistance{}, false, errors.New("corrupt pack"))
 	r.repos.EXPECT().HeadBranch(mock.Anything, detached).Return("", nil)
 
-	j, err := r.in.Journal(ctx, domain.Owner(), domain.RepoName{}, 24*time.Hour)
+	j, err := r.in.Journal(ctx, domain.Owner(), 24*time.Hour)
 	require.NoError(t, err)
 	assert.Equal(t, []ports.UnreleasedRepo{
 		{Repo: ahead, Branch: "main", Distance: domain.TagDistance{Tag: domain.TagInfo{Name: "v0.12.0", At: tagAt}, Commits: 4}},
@@ -227,24 +227,6 @@ func TestInboxJournalUnreleased(t *testing.T) {
 	}, j.Unreleased, "by name, broken skipped")
 }
 
-func TestInboxJournalUnreleasedRespectsTheFilter(t *testing.T) {
-	t.Parallel()
-	r := newInboxJournalRig(t)
-	a, b := name(t, "aaa"), name(t, "bbb")
-	r.meta.EXPECT().List(mock.Anything).Return([]domain.Repo{{Name: a}, {Name: b}}, nil)
-	r.journal.EXPECT().ListSince(mock.Anything, mock.Anything, "", b, mock.Anything, mock.Anything).Return(ports.JournalList{}, nil)
-	r.repos.EXPECT().HeadBranch(mock.Anything, b).Return("main", nil).Once() // aaa is never read
-	r.reader.EXPECT().ResolveRevision(mock.Anything, b, domain.Revision{}).Return(domain.ResolvedRevision{CommitID: oid("c")}, nil)
-	r.reader.EXPECT().TagDistance(mock.Anything, b, oid("c"), domain.MaxTagDistance).Return(domain.TagDistance{Commits: 1, Tag: domain.TagInfo{Name: "v1"}}, true, nil)
-	j, err := r.in.Journal(context.Background(), domain.Owner(), b, 24*time.Hour)
-	require.NoError(t, err)
-	require.Len(t, j.Unreleased, 1)
-	assert.Equal(t, b, j.Unreleased[0].Repo)
-}
-
-// The tag warning of a repository is measured once: a refresh for something
-// else (a comment, a run) reuses it; a push, a new head, a new default branch
-// or the repository created again measures again. A failed walk is not kept.
 func TestInboxJournalCachesTagWarnings(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -261,7 +243,7 @@ func TestInboxJournalCachesTagWarnings(t *testing.T) {
 	four := domain.TagDistance{Commits: 4, Tag: domain.TagInfo{Name: "v1"}}
 	journal := func() ports.InboxJournal {
 		t.Helper()
-		j, err := r.in.Journal(ctx, domain.Owner(), domain.RepoName{}, 24*time.Hour)
+		j, err := r.in.Journal(ctx, domain.Owner(), 24*time.Hour)
 		require.NoError(t, err)
 		return j
 	}
@@ -294,7 +276,7 @@ func TestInboxJournalCachesTagWarnings(t *testing.T) {
 func TestInboxJournalWithoutAJournalIsEmpty(t *testing.T) {
 	t.Parallel()
 	in, _, _, _ := newInboxUnit(t)
-	j, err := in.Journal(context.Background(), domain.Owner(), domain.RepoName{}, 24*time.Hour)
+	j, err := in.Journal(context.Background(), domain.Owner(), 24*time.Hour)
 	require.NoError(t, err)
 	assert.Equal(t, ports.InboxJournal{}, j)
 }

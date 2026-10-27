@@ -42,7 +42,7 @@ func TestJournalAPIAccess(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrForbidden)
 	_, err = r.in.ListUnreleased(ctx, others, domain.RepoName{})
 	assert.ErrorIs(t, err, domain.ErrForbidden)
-	_, err = r.in.Journal(ctx, journalToken([]domain.Scope{domain.ScopeJournalRead}), domain.RepoName{}, time.Hour)
+	_, err = r.in.Journal(ctx, journalToken([]domain.Scope{domain.ScopeJournalRead}), time.Hour)
 	assert.ErrorIs(t, err, domain.ErrNotFound, "the web inbox stays owner-only")
 }
 

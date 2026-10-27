@@ -33,7 +33,7 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	r.writeFile(r.wt, "c.txt", []byte("c\n"))
 	r.mustGit(r.wt, "push", "-q", r.url, "feat/search")
 
-	stream := ownerStream(t, r.harness, token)
+	stream := ownerStream(t, r.harness, token, "activity")
 	mr, err := r.forge.MergeRequests.Create(ctx, domain.Root(), r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
 	var live strings.Builder
@@ -54,7 +54,7 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 
 	// The merge was recorded before Merge returned; the hooks of the pushes
 	// ran before git push returned.
-	page := b.get("/-/inbox", as(token)).body
+	page := b.get("/-/inbox?tab=activity", as(token)).body
 	require.Contains(t, page, `data-kind="mr_merged"`)
 	sec := page[strings.Index(page, `id="inbox-journal"`):]
 
@@ -75,11 +75,12 @@ func TestWebInboxJournalEndToEnd(t *testing.T) {
 	assert.Contains(t, sec, `href="/proj/commits/main">5 commits</a>`)
 	assert.Contains(t, sec, `<a class="u-tag" href="/proj/tree/v0.0.1">v0.0.1</a>`)
 
-	// The filter and the range.
-	other := b.get("/-/inbox?repo=other&range=7d", as(token))
+	// The activity tab keeps the range and includes every repository.
+	other := b.get("/-/inbox?tab=activity&range=7d", as(token))
 	require.Equal(t, 200, other.status)
-	assert.Contains(t, other.body, "no activity in the last 7 days.")
-	assert.NotContains(t, other.body, `class="unreleased"`)
+	assert.Contains(t, other.body, `data-kind="mr_merged"`)
+	assert.Contains(t, other.body, `aria-current="page">7 days</a>`)
+
 	assert.Equal(t, 404, b.get("/-/inbox?range=7d", nil).status)
 }
 

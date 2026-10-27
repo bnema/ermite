@@ -58,16 +58,16 @@ func depsServer(t *testing.T, inbox ports.InboxService, deps ports.DepsService) 
 func TestInboxDepsTable(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(depsOverview(t), nil)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
 	srv := depsServer(t, svc, mocks.NewDepsService(t))
 
-	rec := inboxGet(srv, "/-/inbox", true)
+	rec := inboxGet(srv, "/-/inbox?tab=deps", true)
 	require.Equal(t, 200, rec.Code)
 	body := rec.Body.String()
-	assert.Contains(t, body, "<strong>1</strong> dependency updates")
+	assert.Contains(t, body, "Deps Updates (3)")
 	assert.Less(t, strings.Index(body, `id="inbox-runs"`), strings.Index(body, `id="inbox-deps"`))
-	assert.Less(t, strings.Index(body, `id="inbox-deps"`), strings.Index(body, `id="inbox-mrs"`))
-	sec := body[strings.Index(body, `id="inbox-deps"`):strings.Index(body, `id="inbox-mrs"`)]
+	assert.Less(t, strings.Index(body, `id="inbox-deps"`), len(body))
+	sec := body[strings.Index(body, `id="inbox-deps"`):len(body)]
 
 	assert.Contains(t, sec, " data-keep-open")
 	assert.Contains(t, sec, "Dependency updates")
@@ -111,9 +111,9 @@ func TestInboxDepsTable(t *testing.T) {
 func TestInboxDepsSummaryHasNoInteractiveContent(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(depsOverview(t), nil)
-	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/inbox", true).Body.String()
-	sec := body[strings.Index(body, `id="inbox-deps"`):strings.Index(body, `id="inbox-mrs"`)]
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
+	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/inbox?tab=deps", true).Body.String()
+	sec := body[strings.Index(body, `id="inbox-deps"`):len(body)]
 	summaries := regexp.MustCompile(`(?s)<summary[^>]*>.*?</summary>`).FindAllString(sec, -1)
 	require.Len(t, summaries, 2, "the row and its menu")
 	for _, s := range summaries {
@@ -131,7 +131,6 @@ func TestInboxDepsSummaryHasNoInteractiveContent(t *testing.T) {
 func TestInboxDepsRowMapping(t *testing.T) {
 	t.Parallel()
 	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
-	alpha := repoName(t, "alpha")
 	const base = "/-/inbox/deps/alpha/"
 	run := func(n int64, st domain.CIStatus) *domain.CIRun { return depsRun(n, st) }
 
@@ -139,7 +138,6 @@ func TestInboxDepsRowMapping(t *testing.T) {
 		name   string
 		mutate func(d *domain.RepoDeps)
 		run    *domain.CIRun
-		filter domain.RepoName
 
 		status  InboxDepsStatus
 		primary InboxDepsAction
@@ -235,20 +233,13 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
 			menu:    [2]string{base + "ignore", base + "snooze"},
 		},
-		{
-			name:    "the filter is kept on the targets",
-			mutate:  func(d *domain.RepoDeps) { d.State, d.Error, d.RunID = domain.DepsIdle, "", 0 },
-			filter:  alpha,
-			primary: InboxDepsAction{Label: "Open MR", Action: base + "open?repo=alpha"},
-			menu:    [2]string{base + "ignore?repo=alpha", base + "snooze?repo=alpha"},
-		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rec := depsRec(t)
 			tc.mutate(&rec)
-			row := srv.depsRow(ports.InboxDeps{Rec: rec, Run: tc.run}, tc.filter)
+			row := srv.depsRow(ports.InboxDeps{Rec: rec, Run: tc.run})
 			assert.Equal(t, tc.status, row.Status)
 			assert.Equal(t, tc.primary, row.Primary)
 			assert.Equal(t, tc.menu, [2]string{row.Ignore, row.Snooze})
@@ -260,7 +251,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 func TestInboxDepsRowSummarisesTheUpdates(t *testing.T) {
 	t.Parallel()
 	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
-	row := srv.depsRow(ports.InboxDeps{Rec: depsRec(t), Run: depsRun(3, domain.CICompleted)}, domain.RepoName{})
+	row := srv.depsRow(ports.InboxDeps{Rec: depsRec(t), Run: depsRun(3, domain.CICompleted)})
 	assert.Equal(t, "deps-alpha", row.ID)
 	assert.Equal(t, "alpha", row.Repo)
 	assert.Equal(t, 3, row.Count)
@@ -287,13 +278,13 @@ func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
 	emptyJournal(svc)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(depsOverview(t), nil)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
 	})
-	body := inboxGet(srv, "/-/inbox", true).Body.String()
-	sec := body[strings.Index(body, `id="inbox-deps"`):strings.Index(body, `id="inbox-mrs"`)]
+	body := inboxGet(srv, "/-/inbox?tab=deps", true).Body.String()
+	sec := body[strings.Index(body, `id="inbox-deps"`):len(body)]
 	assert.NotContains(t, sec, "<form")
 	assert.NotContains(t, sec, "More actions")
 }
@@ -301,8 +292,8 @@ func TestInboxDepsWithoutDepsServiceHasNoButtons(t *testing.T) {
 func TestInboxDepsEmptyFragmentIsHidden(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(inboxOverview(t), nil)
-	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/inbox", true).Body.String()
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(inboxOverview(t), nil)
+	body := inboxGet(depsServer(t, svc, mocks.NewDepsService(t)), "/-/inbox?tab=deps", true).Body.String()
 	assert.Regexp(t, `<section id="inbox-deps" data-keep-open hidden>`, body)
 	assert.NotContains(t, body, "Dependency updates<")
 }
@@ -343,9 +334,9 @@ func TestInboxDepsActions(t *testing.T) {
 		t.Parallel()
 		deps := mocks.NewDepsService(t)
 		deps.EXPECT().Ignore(mock.Anything, mock.Anything, alpha, want).Return(domain.RepoDeps{}, nil).Once()
-		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/ignore?repo=alpha", form)
+		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/ignore", form)
 		assert.Equal(t, 303, rec.Code)
-		assert.Equal(t, "/-/inbox?repo=alpha", rec.Header().Get("Location"))
+		assert.Equal(t, "/-/inbox?tab=deps", rec.Header().Get("Location"))
 	})
 	t.Run("open", func(t *testing.T) {
 		t.Parallel()
@@ -353,7 +344,7 @@ func TestInboxDepsActions(t *testing.T) {
 		deps.EXPECT().Open(mock.Anything, mock.Anything, alpha, want).Return(domain.RepoDeps{}, nil).Once()
 		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/open", form)
 		assert.Equal(t, 303, rec.Code)
-		assert.Equal(t, "/-/inbox", rec.Header().Get("Location"))
+		assert.Equal(t, "/-/inbox?tab=deps", rec.Header().Get("Location"))
 	})
 	t.Run("snooze", func(t *testing.T) {
 		t.Parallel()
@@ -379,9 +370,9 @@ func TestInboxDepsActions(t *testing.T) {
 func TestInboxDepsLiveFragment(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(depsOverview(t), nil)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
 	srv := depsServer(t, svc, mocks.NewDepsService(t))
-	ls := &liveStream{s: srv, view: "inbox"}
+	ls := &liveStream{s: srv, view: "inbox", tab: "deps"}
 	frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: domain.DependencyUpdatesFound{Repo: repoName(t, "alpha"), Count: 2}})
 	require.NoError(t, err)
 	all := ""
@@ -395,8 +386,8 @@ func TestInboxDepsLiveFragment(t *testing.T) {
 func TestInboxDepsChangedRefreshesTheLiveView(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(depsOverview(t), nil)
-	ls := &liveStream{s: depsServer(t, svc, mocks.NewDepsService(t)), view: "inbox"}
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(depsOverview(t), nil)
+	ls := &liveStream{s: depsServer(t, svc, mocks.NewDepsService(t)), view: "inbox", tab: "deps"}
 	ev := ports.WatchEvent{ID: "b-2", Event: domain.DependencyUpdatesChanged{Repo: repoName(t, "alpha")}}
 	assert.True(t, liveEvent(ev))
 	frags, err := ls.render(withOwner(t.Context()), ev)
@@ -410,9 +401,9 @@ func TestInboxDepsFailureExcerpt(t *testing.T) {
 			svc := mocks.NewInboxService(t)
 			ov := depsOverview(t)
 			ov.Deps[0].Rec.Error = reason
-			svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(ov, nil)
+			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
 			srv := depsServer(t, svc, mocks.NewDepsService(t))
-			body := inboxGet(srv, "/-/inbox", true).Body.String()
+			body := inboxGet(srv, "/-/inbox?tab=deps", true).Body.String()
 			assert.Contains(t, body, `<pre>`+html.EscapeString(reason)+`</pre>`)
 			assert.Contains(t, body, `title="`+html.EscapeString(reason)+`">`+html.EscapeString(depsErrorTail(reason))+`</span>`)
 			assert.NotContains(t, body, "<script>alert(1)</script>")

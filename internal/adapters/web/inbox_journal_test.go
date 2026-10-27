@@ -22,7 +22,7 @@ import (
 
 func journalServer(t *testing.T, svc *mocks.InboxService) *Server {
 	t.Helper()
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil).Maybe()
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil).Maybe()
 	return newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "alpha")), Browse: homeBrowse(t), Inbox: svc,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -52,13 +52,13 @@ func sampleJournal(t *testing.T) ports.InboxJournal {
 func TestInboxJournalTable(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Journal(mock.Anything, mock.Anything, domain.RepoName{}, 24*time.Hour).Return(sampleJournal(t), nil)
-	rec := inboxGet(journalServer(t, svc), "/-/inbox", true)
+	svc.EXPECT().Journal(mock.Anything, mock.Anything, 24*time.Hour).Return(sampleJournal(t), nil)
+	rec := inboxGet(journalServer(t, svc), "/-/inbox?tab=activity", true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
 	sec := body[strings.Index(body, `id="inbox-journal"`):]
 
-	assert.Less(t, strings.Index(body, `id="inbox-issues"`), strings.Index(body, `id="inbox-journal"`), "the journal is last")
+	assert.NotContains(t, body, `id="inbox-issues"`)
 	assert.Contains(t, sec, `<span>Activity</span><span class="journal-count">5</span>`, "plain text, not the pill of .count")
 	assert.NotContains(t, sec, `class="count"`)
 	assert.Contains(t, sec, `<th>When</th><th>Repository</th><th>Type</th><th class="c-main">Detail</th><th class="c-who">Actor</th>`)
@@ -87,16 +87,16 @@ func TestInboxJournalTable(t *testing.T) {
 	assert.NotContains(t, sec, "card")
 }
 
-func TestInboxJournalRangeToggleKeepsTheFilter(t *testing.T) {
+func TestInboxJournalRangeToggleKeepsTheActivityTab(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Journal(mock.Anything, mock.Anything, repoName(t, "beta"), 7*24*time.Hour).Return(ports.InboxJournal{}, nil)
-	rec := inboxGet(journalServer(t, svc), "/-/inbox?repo=beta&range=7d", true)
+	svc.EXPECT().Journal(mock.Anything, mock.Anything, 7*24*time.Hour).Return(ports.InboxJournal{}, nil)
+	rec := inboxGet(journalServer(t, svc), "/-/inbox?tab=activity&range=7d", true)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := rec.Body.String()
-	assert.Contains(t, body, `<a href="/-/inbox?repo=beta#inbox-journal">24 h</a>`)
-	assert.Contains(t, body, `<a href="/-/inbox?range=7d&amp;repo=beta#inbox-journal" aria-current="page">7 days</a>`)
-	assert.Contains(t, body, `href="/-/inbox?range=7d"`, "the repository filter keeps the range")
+	assert.Contains(t, body, `<a href="/-/inbox?tab=activity#inbox-journal">24 h</a>`)
+	assert.Contains(t, body, `<a href="/-/inbox?range=7d&amp;tab=activity#inbox-journal" aria-current="page">7 days</a>`)
+	assert.Contains(t, body, `href="/-/inbox?range=7d&amp;tab=activity"`, "the tab keeps the range")
 	assert.Contains(t, body, "no activity in the last 7 days.")
 	assert.NotContains(t, body, `class="unreleased"`)
 	assert.NotContains(t, body, `journal-list`)
@@ -105,12 +105,12 @@ func TestInboxJournalRangeToggleKeepsTheFilter(t *testing.T) {
 func TestInboxJournalEmptyAndBadRange(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Journal(mock.Anything, mock.Anything, domain.RepoName{}, 24*time.Hour).Return(ports.InboxJournal{}, nil).Once()
+	svc.EXPECT().Journal(mock.Anything, mock.Anything, 24*time.Hour).Return(ports.InboxJournal{}, nil).Once()
 	srv := journalServer(t, svc)
-	rec := inboxGet(srv, "/-/inbox", true)
+	rec := inboxGet(srv, "/-/inbox?tab=activity", true)
 	require.Equal(t, 200, rec.Code)
 	assert.Contains(t, rec.Body.String(), "no activity in the last 24 hours.")
-	assert.Contains(t, rec.Body.String(), `<a href="/-/inbox#inbox-journal" aria-current="page">24 h</a>`)
+	assert.Contains(t, rec.Body.String(), `<a href="/-/inbox?tab=activity#inbox-journal" aria-current="page">24 h</a>`)
 
 	assert.Equal(t, 404, inboxGet(srv, "/-/inbox?range=1y", true).Code)
 	assert.Equal(t, 404, inboxGet(srv, "/-/inbox?range=7d", false).Code, "still the owner's alone")
@@ -121,8 +121,8 @@ func TestInboxJournalTruncatedNote(t *testing.T) {
 	svc := mocks.NewInboxService(t)
 	j := sampleJournal(t)
 	j.Truncated = true
-	svc.EXPECT().Journal(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(j, nil)
-	rec := inboxGet(journalServer(t, svc), "/-/inbox", true)
+	svc.EXPECT().Journal(mock.Anything, mock.Anything, mock.Anything).Return(j, nil)
+	rec := inboxGet(journalServer(t, svc), "/-/inbox?tab=activity", true)
 	assert.Contains(t, rec.Body.String(), "only the latest 5 entries are shown.")
 }
 
@@ -133,8 +133,8 @@ func TestInboxJournalStreamRange(t *testing.T) {
 	t.Parallel()
 	f := &watchProbe{release: make(chan struct{}), push: make(chan ports.WatchEvent)}
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(ports.InboxOverview{}, nil).Maybe()
-	svc.EXPECT().Journal(mock.Anything, mock.Anything, domain.RepoName{}, 7*24*time.Hour).Return(sampleJournal(t), nil).Once()
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ports.InboxOverview{}, nil).Maybe()
+	svc.EXPECT().Journal(mock.Anything, mock.Anything, 7*24*time.Hour).Return(sampleJournal(t), nil).Once()
 	srv := newTestServer(t, Config{
 		Repos: reposServing(t, publicRepo(t, "x")), Browse: mocks.NewBrowseService(t), Events: f.service(t), Inbox: svc,
 		Heartbeat: time.Hour, Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -158,7 +158,7 @@ func TestInboxJournalStreamRange(t *testing.T) {
 	_ = page.Body.Close()
 	assert.Equal(t, http.StatusNotFound, page.StatusCode, "the page")
 
-	resp, _ := open(t, ts, "topic=owner&view=inbox&range=7d", owner)
+	resp, _ := open(t, ts, "topic=owner&view=inbox&tab=activity&range=7d", owner)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	rd := bufio.NewReader(resp.Body)
 	f.push <- ports.WatchEvent{ID: "b-1", Event: domain.JournalUpdated{Repo: repoName(t, "alpha")}}
@@ -178,19 +178,19 @@ func TestInboxJournalStreamRange(t *testing.T) {
 func TestInboxJournalLive(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Journal(mock.Anything, mock.Anything, domain.RepoName{}, 7*24*time.Hour).Return(sampleJournal(t), nil)
+	svc.EXPECT().Journal(mock.Anything, mock.Anything, 7*24*time.Hour).Return(sampleJournal(t), nil)
 	srv := journalServer(t, svc)
-	ls := &liveStream{s: srv, view: "inbox", rng: "7d"}
+	ls := &liveStream{s: srv, view: "inbox", tab: "activity", rng: "7d"}
 	for _, ev := range []domain.Event{
 		domain.JournalUpdated{Repo: repoName(t, "alpha")},
 		domain.ReleasePublished{Release: domain.Release{Repo: repoName(t, "beta")}},
 	} {
 		frags, err := ls.render(withOwner(t.Context()), ports.WatchEvent{ID: "b-1", Event: ev})
 		require.NoError(t, err)
-		require.Len(t, frags, 8, "%T", ev)
-		assert.Contains(t, frags[7].html, `id="inbox-journal"`)
-		assert.Contains(t, frags[7].html, "add &lt;search&gt;")
-		assert.Contains(t, frags[7].html, `aria-current="page">7 days</a>`)
+		require.Len(t, frags, 1, "%T", ev)
+		assert.Contains(t, frags[0].html, `id="inbox-journal"`)
+		assert.Contains(t, frags[0].html, "add &lt;search&gt;")
+		assert.Contains(t, frags[0].html, `aria-current="page">7 days</a>`)
 	}
 	none, err := ls.render(withOwner(t.Context()), ports.WatchEvent{Event: domain.PushEvent{Repo: repoName(t, "alpha")}})
 	require.NoError(t, err)

@@ -220,12 +220,12 @@ type IssueNumberResolver interface {
 // *usecase.Inbox implements it.
 type InboxService interface {
 	// Overview needs owner rights and answers domain.ErrNotFound to anyone
-	// else. The filter, when not zero, restricts the lists to that repository.
-	Overview(ctx context.Context, p domain.Principal, filter domain.RepoName) (InboxOverview, error)
+	// else.
+	Overview(ctx context.Context, p domain.Principal) (InboxOverview, error)
 	// Journal is the activity of the window that ends now, newest first, and
 	// the repositories whose default branch is ahead of their nearest tag.
-	// Owner rights as for Overview; the filter, when not zero, restricts both.
-	Journal(ctx context.Context, p domain.Principal, filter domain.RepoName, window time.Duration) (InboxJournal, error)
+	// Owner rights as for Overview.
+	Journal(ctx context.Context, p domain.Principal, window time.Duration) (InboxJournal, error)
 }
 
 // JournalService is the activity journal and the unreleased commits as API

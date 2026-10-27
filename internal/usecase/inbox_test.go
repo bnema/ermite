@@ -49,12 +49,12 @@ func TestInboxIsOwnerOnly(t *testing.T) {
 	t.Parallel()
 	in, _, _, _ := newInboxUnit(t) // the stores are never read
 	for _, p := range []domain.Principal{domain.Anonymous(), issuePrincipal(domain.ScopeIssueWrite)} {
-		_, err := in.Overview(context.Background(), p, domain.RepoName{})
+		_, err := in.Overview(context.Background(), p)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	}
 }
 
-func TestInboxOverviewSortsFiltersAndSkipsIssuesOff(t *testing.T) {
+func TestInboxOverviewSortsAndSkipsIssuesOff(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -70,22 +70,14 @@ func TestInboxOverviewSortsFiltersAndSkipsIssuesOff(t *testing.T) {
 	meta.EXPECT().Get(mock.Anything, name(t, "quiet")).Return(repoWithIssues(t, "quiet", domain.IssuesOff), nil)
 	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound)
 
-	got, err := in.Overview(ctx, domain.Owner(), domain.RepoName{})
+	got, err := in.Overview(ctx, domain.Owner())
 	require.NoError(t, err)
 	assert.Equal(t, ports.InboxCounts{MergeRequests: 2, Issues: 2}, got.Counts)
 	require.Len(t, got.MergeRequests, 2)
 	assert.Equal(t, "beta", got.MergeRequests[0].Repo.String(), "most recently updated first")
 	require.Len(t, got.Issues, 2)
 	assert.Equal(t, "beta", got.Issues[0].Repo.String())
-	assert.Equal(t, []domain.RepoName{name(t, "alpha"), name(t, "beta")}, got.Repos)
 
-	got, err = in.Overview(ctx, domain.Root(), name(t, "alpha"))
-	require.NoError(t, err)
-	assert.Equal(t, ports.InboxCounts{MergeRequests: 2, Issues: 2}, got.Counts, "counts ignore the filter")
-	require.Len(t, got.MergeRequests, 1)
-	require.Len(t, got.Issues, 1)
-	assert.Equal(t, "alpha", got.Issues[0].Repo.String())
-	assert.Len(t, got.Repos, 2, "the filter list keeps every repository")
 }
 
 func TestInboxListsPendingIssuesWithoutTheirHash(t *testing.T) {
@@ -103,12 +95,11 @@ func TestInboxListsPendingIssuesWithoutTheirHash(t *testing.T) {
 		{ID: "a", Repo: name(t, "on"), Title: ti, IPHash: []byte("secret")},
 		{ID: "b", Repo: name(t, "off"), Title: ti},
 	}}, nil)
-	ov, err := in.Overview(ctx, domain.Owner(), name(t, "other"))
+	ov, err := in.Overview(ctx, domain.Owner())
 	require.NoError(t, err)
 	assert.Equal(t, 1, ov.Counts.Pending, "issues off hides pending ones too")
 	require.Len(t, ov.Pending, 1)
 	assert.Nil(t, ov.Pending[0].IPHash)
-	assert.Equal(t, []domain.RepoName{name(t, "on")}, ov.Repos)
 }
 
 func TestInboxRuns(t *testing.T) {
@@ -129,19 +120,13 @@ func TestInboxRuns(t *testing.T) {
 	}
 	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound)
 	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: issues, CI: ci})
-	all, err := in.Overview(t.Context(), domain.Owner(), domain.RepoName{})
+	all, err := in.Overview(t.Context(), domain.Owner())
 	require.NoError(t, err)
 	assert.True(t, all.RunsEnabled)
 	assert.Equal(t, 2, all.Counts.Running)
 	require.Len(t, all.Runs, 2)
 	assert.Equal(t, int64(2), all.Runs[0].ID)
 	assert.Equal(t, int64(1), all.Runs[1].ID)
-	assert.Equal(t, []domain.RepoName{alpha, beta}, all.Repos)
-	filtered, err := in.Overview(t.Context(), domain.Owner(), alpha)
-	require.NoError(t, err)
-	assert.Equal(t, 2, filtered.Counts.Running)
-	require.Len(t, filtered.Runs, 1)
-	assert.Equal(t, alpha, filtered.Runs[0].Repo)
 }
 
 func TestInboxDepsSkipsSnoozedArchivedAndEmpty(t *testing.T) {
@@ -166,12 +151,12 @@ func TestInboxDepsSkipsSnoozedArchivedAndEmpty(t *testing.T) {
 	meta.EXPECT().Get(mock.Anything, name(t, "archived")).Return(domain.Repo{Name: name(t, "archived"), Archived: true}, nil)
 	meta.EXPECT().Get(mock.Anything, name(t, "gone")).Return(domain.Repo{}, domain.ErrNotFound)
 
-	got, err := in.Overview(context.Background(), domain.Owner(), name(t, "alpha"))
+	got, err := in.Overview(context.Background(), domain.Owner())
 	require.NoError(t, err)
-	assert.Equal(t, 2, got.Counts.Deps, "the filter does not change the count")
-	require.Len(t, got.Deps, 1, "the filter limits the list")
+	assert.Equal(t, 2, got.Counts.Deps)
+	require.Len(t, got.Deps, 2)
 	assert.Equal(t, "alpha", got.Deps[0].Rec.Repo.String())
-	assert.True(t, got.DepsCheckedAt.Equal(alpha.CheckedAt), "the check of the repository shown, not of the other one")
+	assert.True(t, got.DepsCheckedAt.Equal(other.CheckedAt), "the latest check across repositories")
 }
 
 func TestInboxDepsJoinsTheRun(t *testing.T) {
@@ -196,7 +181,7 @@ func TestInboxDepsJoinsTheRun(t *testing.T) {
 	ci.EXPECT().GetRun(mock.Anything, name(t, "alpha"), int64(5)).Return(domain.CIRun{ID: 5, Number: 3, Status: domain.CIQueued}, nil)
 	ci.EXPECT().GetRun(mock.Anything, name(t, "beta"), int64(9)).Return(domain.CIRun{}, domain.ErrNotFound)
 
-	got, err := in.Overview(context.Background(), domain.Owner(), domain.RepoName{})
+	got, err := in.Overview(context.Background(), domain.Owner())
 	require.NoError(t, err)
 	require.Len(t, got.Deps, 3)
 	require.NotNil(t, got.Deps[0].Run)
@@ -225,7 +210,7 @@ func TestInboxDepsKeepsTheRowWhenTheRunCannotBeRead(t *testing.T) {
 	meta.EXPECT().Get(mock.Anything, rec.Repo).Return(domain.Repo{Name: rec.Repo}, nil)
 	ci.EXPECT().GetRun(mock.Anything, rec.Repo, int64(5)).Return(domain.CIRun{}, errors.New("disk"))
 
-	got, err := in.Overview(context.Background(), domain.Owner(), domain.RepoName{})
+	got, err := in.Overview(context.Background(), domain.Owner())
 	require.NoError(t, err)
 	require.Len(t, got.Deps, 1)
 	assert.Equal(t, rec, got.Deps[0].Rec)
@@ -256,11 +241,12 @@ func TestInboxFillsHeadsFromGitForReturnedRequestsOnly(t *testing.T) {
 	meta.EXPECT().Get(mock.Anything, name(t, "ghost")).Return(domain.Repo{}, domain.ErrNotFound)
 	git.EXPECT().BranchHead(mock.Anything, name(t, "alpha"), "topic").Return(fresh, nil).Once()
 	git.EXPECT().BranchHead(mock.Anything, name(t, "alpha"), "gone").Return(domain.ObjectID{}, domain.ErrNotFound).Once()
-	// beta is filtered out and ghost does not exist: neither is read from Git.
+	git.EXPECT().BranchHead(mock.Anything, name(t, "beta"), "other").Return(fresh, nil).Once()
+	// The ghost repository does not exist and is not read from Git.
 
-	got, err := in.Overview(ctx, domain.Owner(), name(t, "alpha"))
+	got, err := in.Overview(ctx, domain.Owner())
 	require.NoError(t, err)
-	require.Len(t, got.MergeRequests, 2)
+	require.Len(t, got.MergeRequests, 3)
 	heads := map[int64]domain.ObjectID{}
 	for _, m := range got.MergeRequests {
 		heads[m.Number] = m.HeadID

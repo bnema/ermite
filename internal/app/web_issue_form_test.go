@@ -141,9 +141,9 @@ func TestWebPublicIssueFormEndToEnd(t *testing.T) {
 	assert.NotEqual(t, v2.Get("token"), v3.Get("token"))
 
 	// The owner finds it awaiting moderation, as plain text.
-	inbox := b.get("/-/inbox", as(token))
+	inbox := b.get("/-/inbox?tab=moderation", as(token))
 	require.Equal(t, 200, inbox.status, inbox.body)
-	assert.Contains(t, inbox.body, "<strong>1</strong> awaiting moderation")
+	assert.Contains(t, inbox.body, "Awaiting Moderation (1)")
 	assert.Contains(t, inbox.body, "Search is &lt;b&gt;slow&lt;/b&gt;")
 	assert.Contains(t, inbox.body, "**bold**")
 	assert.NotContains(t, inbox.body, "<strong>bold")
@@ -160,7 +160,7 @@ func TestWebPublicIssueFormEndToEnd(t *testing.T) {
 	// The owner shares the numbers with merge requests and issues: approve.
 	ok := b.form(actions["approve"], token, nil)
 	require.Equal(t, 303, ok.status, ok.body)
-	assert.Equal(t, "/-/inbox", ok.hdr.Get("Location"))
+	assert.Equal(t, "/-/inbox?tab=moderation", ok.hdr.Get("Location"))
 	assert.Equal(t, 404, b.form(actions["approve"], token, nil).status, "approved once")
 	shown := b.get("/proj/issues/1", nil)
 	require.Equal(t, 200, shown.status, shown.body)
@@ -170,15 +170,15 @@ func TestWebPublicIssueFormEndToEnd(t *testing.T) {
 	assert.NotContains(t, shown.body, "javascript:")
 	assert.Contains(t, shown.body, "Alex")
 	assert.Contains(t, b.get("/proj/issues", nil).body, `href="/proj/issues/1"`)
-	empty := b.get("/-/inbox", as(token))
-	assert.Contains(t, empty.body, "<strong>0</strong> awaiting moderation")
+	empty := b.get("/-/inbox?tab=moderation", as(token))
+	assert.Contains(t, empty.body, "Awaiting Moderation (0)")
 
 	// Reject and ban: the same address is then refused with the generic page.
 	form4 := b.get("/proj/issues/new", nil)
 	v4 := formValues(t, form4.body)
 	v4.Set("title", "spam")
 	require.Equal(t, 303, b.do("POST", "/proj/issues/new", site, v4.Encode()).status)
-	inbox2 := b.get("/-/inbox", as(token))
+	inbox2 := b.get("/-/inbox?tab=moderation", as(token))
 	var ban string
 	for _, a := range rePendingActions.FindAllStringSubmatch(inbox2.body, -1) {
 		if a[2] == "ban" {
@@ -196,7 +196,7 @@ func TestWebPublicIssueFormEndToEnd(t *testing.T) {
 	assert.Equal(t, 400, banned.status)
 	assert.Contains(t, banned.body, "The submission could not be verified. Reload the page and try again.")
 	assert.NotContains(t, banned.body, "ban")
-	assert.Contains(t, b.get("/-/inbox", as(token)).body, "<strong>0</strong> awaiting moderation")
+	assert.Contains(t, b.get("/-/inbox?tab=moderation", as(token)).body, "Awaiting Moderation (0)")
 }
 
 // A repository that is not public with public issues has no form.

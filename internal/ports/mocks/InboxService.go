@@ -50,8 +50,8 @@ func (_m *InboxService) EXPECT() *InboxService_Expecter {
 }
 
 // Journal provides a mock function for the type InboxService
-func (_mock *InboxService) Journal(ctx context.Context, p domain.Principal, filter domain.RepoName, window time.Duration) (ports.InboxJournal, error) {
-	ret := _mock.Called(ctx, p, filter, window)
+func (_mock *InboxService) Journal(ctx context.Context, p domain.Principal, window time.Duration) (ports.InboxJournal, error) {
+	ret := _mock.Called(ctx, p, window)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Journal")
@@ -59,16 +59,16 @@ func (_mock *InboxService) Journal(ctx context.Context, p domain.Principal, filt
 
 	var r0 ports.InboxJournal
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, time.Duration) (ports.InboxJournal, error)); ok {
-		return returnFunc(ctx, p, filter, window)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, time.Duration) (ports.InboxJournal, error)); ok {
+		return returnFunc(ctx, p, window)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, time.Duration) ports.InboxJournal); ok {
-		r0 = returnFunc(ctx, p, filter, window)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, time.Duration) ports.InboxJournal); ok {
+		r0 = returnFunc(ctx, p, window)
 	} else {
 		r0 = ret.Get(0).(ports.InboxJournal)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, time.Duration) error); ok {
-		r1 = returnFunc(ctx, p, filter, window)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, time.Duration) error); ok {
+		r1 = returnFunc(ctx, p, window)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -83,13 +83,12 @@ type InboxService_Journal_Call struct {
 // Journal is a helper method to define mock.On call
 //   - ctx context.Context
 //   - p domain.Principal
-//   - filter domain.RepoName
 //   - window time.Duration
-func (_e *InboxService_Expecter) Journal(ctx any, p any, filter any, window any) *InboxService_Journal_Call {
-	return &InboxService_Journal_Call{Call: _e.mock.On("Journal", ctx, p, filter, window)}
+func (_e *InboxService_Expecter) Journal(ctx any, p any, window any) *InboxService_Journal_Call {
+	return &InboxService_Journal_Call{Call: _e.mock.On("Journal", ctx, p, window)}
 }
 
-func (_c *InboxService_Journal_Call) Run(run func(ctx context.Context, p domain.Principal, filter domain.RepoName, window time.Duration)) *InboxService_Journal_Call {
+func (_c *InboxService_Journal_Call) Run(run func(ctx context.Context, p domain.Principal, window time.Duration)) *InboxService_Journal_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -99,19 +98,14 @@ func (_c *InboxService_Journal_Call) Run(run func(ctx context.Context, p domain.
 		if args[1] != nil {
 			arg1 = args[1].(domain.Principal)
 		}
-		var arg2 domain.RepoName
+		var arg2 time.Duration
 		if args[2] != nil {
-			arg2 = args[2].(domain.RepoName)
-		}
-		var arg3 time.Duration
-		if args[3] != nil {
-			arg3 = args[3].(time.Duration)
+			arg2 = args[2].(time.Duration)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -122,14 +116,14 @@ func (_c *InboxService_Journal_Call) Return(inboxJournal ports.InboxJournal, err
 	return _c
 }
 
-func (_c *InboxService_Journal_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, filter domain.RepoName, window time.Duration) (ports.InboxJournal, error)) *InboxService_Journal_Call {
+func (_c *InboxService_Journal_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, window time.Duration) (ports.InboxJournal, error)) *InboxService_Journal_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Overview provides a mock function for the type InboxService
-func (_mock *InboxService) Overview(ctx context.Context, p domain.Principal, filter domain.RepoName) (ports.InboxOverview, error) {
-	ret := _mock.Called(ctx, p, filter)
+func (_mock *InboxService) Overview(ctx context.Context, p domain.Principal) (ports.InboxOverview, error) {
+	ret := _mock.Called(ctx, p)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Overview")
@@ -137,16 +131,16 @@ func (_mock *InboxService) Overview(ctx context.Context, p domain.Principal, fil
 
 	var r0 ports.InboxOverview
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) (ports.InboxOverview, error)); ok {
-		return returnFunc(ctx, p, filter)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) (ports.InboxOverview, error)); ok {
+		return returnFunc(ctx, p)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) ports.InboxOverview); ok {
-		r0 = returnFunc(ctx, p, filter)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal) ports.InboxOverview); ok {
+		r0 = returnFunc(ctx, p)
 	} else {
 		r0 = ret.Get(0).(ports.InboxOverview)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName) error); ok {
-		r1 = returnFunc(ctx, p, filter)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal) error); ok {
+		r1 = returnFunc(ctx, p)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -161,12 +155,11 @@ type InboxService_Overview_Call struct {
 // Overview is a helper method to define mock.On call
 //   - ctx context.Context
 //   - p domain.Principal
-//   - filter domain.RepoName
-func (_e *InboxService_Expecter) Overview(ctx any, p any, filter any) *InboxService_Overview_Call {
-	return &InboxService_Overview_Call{Call: _e.mock.On("Overview", ctx, p, filter)}
+func (_e *InboxService_Expecter) Overview(ctx any, p any) *InboxService_Overview_Call {
+	return &InboxService_Overview_Call{Call: _e.mock.On("Overview", ctx, p)}
 }
 
-func (_c *InboxService_Overview_Call) Run(run func(ctx context.Context, p domain.Principal, filter domain.RepoName)) *InboxService_Overview_Call {
+func (_c *InboxService_Overview_Call) Run(run func(ctx context.Context, p domain.Principal)) *InboxService_Overview_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -176,14 +169,9 @@ func (_c *InboxService_Overview_Call) Run(run func(ctx context.Context, p domain
 		if args[1] != nil {
 			arg1 = args[1].(domain.Principal)
 		}
-		var arg2 domain.RepoName
-		if args[2] != nil {
-			arg2 = args[2].(domain.RepoName)
-		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -194,7 +182,7 @@ func (_c *InboxService_Overview_Call) Return(inboxOverview ports.InboxOverview, 
 	return _c
 }
 
-func (_c *InboxService_Overview_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, filter domain.RepoName) (ports.InboxOverview, error)) *InboxService_Overview_Call {
+func (_c *InboxService_Overview_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal) (ports.InboxOverview, error)) *InboxService_Overview_Call {
 	_c.Call.Return(run)
 	return _c
 }

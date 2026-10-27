@@ -22,8 +22,8 @@ import (
 type liveStream struct {
 	s    *Server
 	repo string // "" on the home page
-	// filter is the repository the inbox is filtered on, "" for all.
-	filter string
+	// tab is the selected inbox tab.
+	tab    string
 	rng    string // inbox: the range of the journal (?range=), "" for the default
 	state  string // mrs: the selected list tab
 	view   string // "summary", "refs" or "commits"

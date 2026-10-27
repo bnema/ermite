@@ -470,8 +470,7 @@ type ActivityPage struct {
 	NextPageToken string
 }
 
-// InboxCounts are the numbers of open items across every repository, whatever
-// the filter.
+// InboxCounts are the numbers of open items across every repository.
 type InboxCounts struct {
 	MergeRequests, Issues, Pending, Running int
 	// Deps counts the repositories with pending dependency updates.
@@ -496,20 +495,16 @@ type InboxOverview struct {
 	// Counts.Deps; zero when there is none.
 	DepsCheckedAt time.Time
 	Counts        InboxCounts
-	// Runs are queued or in progress, newest first, respecting the filter.
+	// Runs are queued or in progress, newest first.
 	Runs []domain.CIRun
 	// RunsEnabled distinguishes disabled CI from an empty queue.
 	RunsEnabled bool
-	// MergeRequests and Issues are those of the filtered repository, or of
-	// every repository when there is no filter. Counts always counts all.
+	// MergeRequests and Issues are open items across every repository.
 	MergeRequests []domain.MergeRequest
 	Issues        []domain.Issue
 	// Pending are the issues awaiting moderation, in every repository
-	// whatever the filter, oldest first. At most domain.MaxPendingIssues.
+	// oldest first. At most domain.MaxPendingIssues.
 	Pending []domain.PendingIssue
-	// Repos are the repositories that have at least one open item, by name,
-	// whatever the filter: they feed the filter itself.
-	Repos []domain.RepoName
 }
 
 // History query limits.

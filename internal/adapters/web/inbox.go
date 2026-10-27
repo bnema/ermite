@@ -16,12 +16,8 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
-// The owner's inbox (ADR 0031): GET /-/inbox lists the open merge requests and
-// issues of every repository, newest activity first, with a filter by
-// repository (?repo=<name>, a plain link, so it works without scripts). Only a
-// signed-in owner sees it: for anyone else the path is as missing as any other.
-// It follows the stream "owner" with view=inbox: each event of a merge request
-// or an issue sends the counters, the two lists and the filter again.
+// The owner’s inbox shows open work, dependency updates, activity and moderation.
+// Only a signed-in owner may read it. Tabs use plain links and live fragments.
 
 // inboxPath is the page of the inbox.
 const inboxPath = "/-/inbox"
@@ -62,8 +58,8 @@ type PendingRow struct {
 // pendingPreviewRunes bounds the preview of a pending body.
 const pendingPreviewRunes = 300
 
-// InboxRepoLink is an entry of the repository filter.
-type InboxRepoLink struct {
+// InboxNavLink is a plain navigation link.
+type InboxNavLink struct {
 	Label   string
 	Href    string
 	Current bool
@@ -75,18 +71,18 @@ type InboxRunRow struct {
 	Repo, RepoHref, When, WhenAt string
 }
 
-// InboxPage is the inbox: counters, repository filter and item lists.
+// InboxPage is the inbox: tab counts and item lists.
 type InboxPage struct {
 	Running     int
 	RunsEnabled bool
 	Runs        []InboxRunRow
-	// MergeRequests and Issues count every open item, whatever the filter.
+	// MergeRequests and Issues count every open item, across repositories.
 	MergeRequests, Issues int
 	// PendingCount counts every issue awaiting moderation.
 	PendingCount int
 	Pending      []PendingRow
-	// DepsCount counts every repository with pending dependency updates, whatever
-	// the filter; DepsEnabled tells that the buttons are wired.
+	// DepsCount counts repositories with pending dependency updates;
+	// DepsEnabled tells that the buttons are wired.
 	DepsCount   int
 	DepsEnabled bool
 	Deps        []InboxDepsRow
@@ -94,8 +90,8 @@ type InboxPage struct {
 	// (RFC 3339 and short date), empty when unknown.
 	DepsUpdates                int
 	DepsChecked, DepsCheckedAt string
-	Filter                     string // the repository filtered on, "" for all
-	Repos                      []InboxRepoLink
+	Tab                        string
+	Tabs                       []InboxNavLink
 	MRs                        []InboxRow
 	IssueRows                  []InboxRow
 	// Journal is the activity section; zero without a journal.
@@ -105,7 +101,7 @@ type InboxPage struct {
 // JournalView is the activity section of the inbox: the range toggle, the
 // repositories ahead of their nearest tag, then the entries newest first.
 type JournalView struct {
-	Ranges     []InboxRepoLink
+	Ranges     []InboxNavLink
 	RangeLabel string // "24 hours" or "7 days", for the empty state
 	Unreleased []UnreleasedRow
 	Rows       []JournalRow
@@ -161,12 +157,12 @@ func inboxRange(raw string) (int, error) {
 	return 0, errNotFound
 }
 
-// inboxQuery is the query of the inbox for a filter and a range; the default
+// inboxQuery is the query of the inbox for a tab and a range; the default
 // range is left out.
-func inboxQuery(repo string, rng int) string {
+func inboxQuery(tab string, rng int) string {
 	q := url.Values{}
-	if repo != "" {
-		q.Set("repo", repo)
+	if tab != "work" {
+		q.Set("tab", tab)
 	}
 	if rng != 0 {
 		q.Set("range", journalRanges[rng].param)
@@ -175,15 +171,15 @@ func inboxQuery(repo string, rng int) string {
 }
 
 // journalView builds the activity section.
-func (s *Server) journalView(j ports.InboxJournal, filter domain.RepoName, rng int) JournalView {
+func (s *Server) journalView(j ports.InboxJournal, rng int) JournalView {
 	now := s.cfg.Now()
 	v := JournalView{RangeLabel: journalRanges[rng].long, Truncated: j.Truncated}
 	for i, r := range journalRanges {
 		href := inboxPath
-		if q := inboxQuery(filter.String(), i); q != "" {
+		if q := inboxQuery("activity", i); q != "" {
 			href += "?" + q
 		}
-		v.Ranges = append(v.Ranges, InboxRepoLink{Label: r.label, Href: href + "#inbox-journal", Current: i == rng})
+		v.Ranges = append(v.Ranges, InboxNavLink{Label: r.label, Href: href + "#inbox-journal", Current: i == rng})
 	}
 	for _, u := range j.Unreleased {
 		repo := u.Repo.String()
@@ -263,37 +259,31 @@ func journalRow(now time.Time, e domain.JournalEntry) JournalRow {
 	return row
 }
 
-// inboxHref is the inbox page, filtered on repo when it is not "", on the
-// journal range rng.
-func inboxHref(repo string, rng int) string {
-	if q := inboxQuery(repo, rng); q != "" {
+// inboxTab normalizes unknown or absent tabs to open work.
+func inboxTab(raw string) string {
+	switch raw {
+	case "deps", "activity", "moderation":
+		return raw
+	default:
+		return "work"
+	}
+}
+
+func inboxHref(tab string, rng int) string {
+	if q := inboxQuery(tab, rng); q != "" {
 		return inboxPath + "?" + q
 	}
 	return inboxPath
 }
 
-// inboxFilter reads ?repo=. A name that is not valid is a page that is not
-// there.
-func inboxFilter(r *http.Request) (domain.RepoName, error) {
-	raw := r.URL.Query().Get("repo")
-	if raw == "" {
-		return domain.RepoName{}, nil
-	}
-	name, err := domain.ParseRepoName(raw)
-	if err != nil {
-		return domain.RepoName{}, errNotFound
-	}
-	return name, nil
-}
-
 // inboxPage builds the page from the overview and the journal.
-func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.InboxJournal, filter domain.RepoName, rng int) InboxPage {
+func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.InboxJournal, tab string, rng int) InboxPage {
 	now := s.cfg.Now()
-	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Filter: filter.String()}
+	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Tab: tab}
 	p.Running, p.RunsEnabled = ov.Counts.Running, ov.RunsEnabled
 	p.DepsCount, p.DepsEnabled = ov.Counts.Deps, s.cfg.Deps != nil
 	for _, d := range ov.Deps {
-		row := s.depsRow(d, filter)
+		row := s.depsRow(d)
 		p.Deps = append(p.Deps, row)
 		p.DepsUpdates += row.Count
 	}
@@ -313,7 +303,7 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		p.Runs = append(p.Runs, r)
 	}
 	for _, pi := range ov.Pending {
-		p.Pending = append(p.Pending, s.pendingRow(now, pi, filter))
+		p.Pending = append(p.Pending, s.pendingRow(now, pi))
 	}
 	row := func(repo domain.RepoName, n int64, href, title string, updated, created time.Time) InboxRow {
 		ts := updated
@@ -351,31 +341,39 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 	case len(p.IssueRows) > 0:
 		p.IssueRows[0].Cursor = true
 	}
-	p.Repos = append(p.Repos, InboxRepoLink{Label: "all", Href: inboxHref("", rng), Current: filter.IsZero()})
-	for _, r := range ov.Repos {
-		p.Repos = append(p.Repos, InboxRepoLink{Label: r.String(), Href: inboxHref(r.String(), rng), Current: r == filter})
+	p.Journal = s.journalView(j, rng)
+	for _, t := range []struct {
+		key, label string
+		count      int
+	}{
+		{"deps", "Deps Updates", p.DepsUpdates},
+		{"work", "Open Issues & Merge Requests", p.MergeRequests + p.Issues},
+		{"activity", "Activity", len(p.Runs) + len(p.Journal.Rows) + len(p.Journal.Unreleased)},
+		{"moderation", "Awaiting Moderation", p.PendingCount},
+	} {
+		p.Tabs = append(p.Tabs, InboxNavLink{Label: t.label + " (" + itoa(t.count) + ")", Href: inboxHref(t.key, rng), Current: t.key == tab})
 	}
-	p.Journal = s.journalView(j, filter, rng)
+
 	return p
 }
 
 // inboxData reads what the page shows: the overview and the journal of the
 // range.
-func (s *Server) inboxData(ctx context.Context, filter domain.RepoName, rng int) (InboxPage, error) {
-	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx), filter)
+func (s *Server) inboxData(ctx context.Context, tab string, rng int) (InboxPage, error) {
+	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
 	if err != nil {
 		return InboxPage{}, err
 	}
-	j, err := s.cfg.Inbox.Journal(ctx, principal(ctx), filter, journalRanges[rng].window)
+	j, err := s.cfg.Inbox.Journal(ctx, principal(ctx), journalRanges[rng].window)
 	if err != nil {
 		return InboxPage{}, err
 	}
-	return s.inboxPage(ctx, ov, j, filter, rng), nil
+	return s.inboxPage(ctx, ov, j, tab, rng), nil
 }
 
 // pendingRow is the row of a pending issue: the texts as plain strings, the
 // invisible characters marked, the body cut.
-func (s *Server) pendingRow(now time.Time, pi domain.PendingIssue, filter domain.RepoName) PendingRow {
+func (s *Server) pendingRow(now time.Time, pi domain.PendingIssue) PendingRow {
 	repo := pi.Repo.String()
 	row := PendingRow{
 		Repo: repo, RepoHref: repoHref(repo), Author: "anonymous",
@@ -392,23 +390,13 @@ func (s *Server) pendingRow(now time.Time, pi domain.PendingIssue, filter domain
 	row.When, row.WhenAt = whenOf(now, pi.CreatedAt)
 	if s.cfg.Moderation != nil {
 		base := inboxPath + "/pending/" + url.PathEscape(repo) + "/" + url.PathEscape(pi.ID.String()) + "/"
-		var q string
-		if !filter.IsZero() {
-			q = "?repo=" + url.QueryEscape(filter.String())
-		}
-		row.Approve, row.Reject, row.Ban = base+"approve"+q, base+"reject"+q, base+"ban"+q
+		row.Approve, row.Reject, row.Ban = base+"approve", base+"reject", base+"ban"
 	}
 	return row
 }
 
-// pendingBack is where a moderation action returns: the inbox, on the same
-// repository filter.
-func pendingBack(r *http.Request) string {
-	if f, err := inboxFilter(r); err == nil {
-		return inboxHref(f.String(), 0)
-	}
-	return inboxPath
-}
+// pendingBack returns moderation actions to their tab.
+func pendingBack(r *http.Request) string { return inboxHref("moderation", 0) }
 
 // pendingID reads the repository and the id of the path.
 func pendingID(r *http.Request) (domain.RepoName, domain.PendingIssueID, error) {
@@ -457,15 +445,12 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 	if !SignedIn(ctx) {
 		return nil, 0, errNotFound
 	}
-	filter, err := inboxFilter(r)
-	if err != nil {
-		return nil, 0, err
-	}
+	tab := inboxTab(r.URL.Query().Get("tab"))
 	rng, err := inboxRange(r.URL.Query().Get("range"))
 	if err != nil {
 		return nil, 0, err
 	}
-	page, err := s.inboxData(ctx, filter, rng)
+	page, err := s.inboxData(ctx, tab, rng)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -475,7 +460,7 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 	l.Cmd = []CmdItem{{Kind: "go", Label: "home", Href: "/"}}
 	if s.cfg.Events != nil {
 		q := "view=inbox"
-		if rest := inboxQuery(filter.String(), rng); rest != "" {
+		if rest := inboxQuery(tab, rng); rest != "" {
 			q += "&" + rest
 		}
 		l.Live, l.LiveURL = true, liveURL("owner", q)
@@ -490,7 +475,7 @@ func (s *Server) inboxCount(ctx context.Context) (n int, show bool) {
 	if s.cfg.Inbox == nil || !SignedIn(ctx) {
 		return 0, false
 	}
-	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx), domain.RepoName{})
+	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
 	if err != nil {
 		return -1, true
 	}
@@ -499,7 +484,7 @@ func (s *Server) inboxCount(ctx context.Context) (n int, show bool) {
 
 // inbox renders the fragments an event of a merge request, an issue, a
 // release, a push or a repository changes on the inbox page: the counters,
-// the filter, the lists and the journal.
+// the tabs and their selected content.
 func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment, error) {
 	switch we.Event.(type) {
 	case domain.MergeRequestEdited, domain.MergeRequestOpened, domain.MergeRequestMerged, domain.MergeRequestClosed, domain.MergeRequestReady, domain.CommentAdded, domain.CommentEdited, domain.CommentDeleted, domain.CommentResolved,
@@ -512,17 +497,14 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 	if l.s.cfg.Inbox == nil {
 		return nil, nil
 	}
-	var filter domain.RepoName
-	if l.filter != "" {
-		filter, _ = domain.ParseRepoName(l.filter)
-	}
+	tab := inboxTab(l.tab)
 	rng, _ := inboxRange(l.rng) // checked when the stream was opened
-	p, err := l.s.inboxData(ctx, filter, rng)
+	p, err := l.s.inboxData(ctx, tab, rng)
 	if err != nil {
 		return nil, err
 	}
 	var out []fragment
-	for _, c := range []templ.Component{InboxCounters(p), InboxRepos(p), InboxPending(p), InboxRuns(p), InboxDeps(p), InboxMRs(p), InboxIssues(p), InboxJournal(p)} {
+	for _, c := range []templ.Component{InboxContent(p)} {
 		f, err := renderFragment(ctx, inboxEvent, c)
 		if err != nil {
 			return nil, err

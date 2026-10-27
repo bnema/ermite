@@ -2,23 +2,36 @@
 
 package web
 
-// Inbox is the owner's inbox: what is open across every repository. The
-// counters, the filter and the lists are fragments with an id that the live
-// stream replaces as a whole (ermiteLive.swap).
+// Inbox is the owner's inbox. The live stream replaces its content as a whole.
 templ Inbox(l Layout, p InboxPage) {
-	@Shell(l, nil) {
-		<h1 class="sr">Inbox</h1>
-		<div class="inbox">
-			@InboxCounters(p)
-			@InboxRepos(p)
-			@InboxPending(p)
-			@InboxRuns(p)
-			@InboxDeps(p)
-			@InboxMRs(p)
-			@InboxIssues(p)
-			@InboxJournal(p)
-		</div>
-	}
+ @Shell(l, nil) {
+  <h1 class="sr">Inbox</h1>
+  @InboxContent(p)
+ }
+}
+
+templ InboxContent(p InboxPage) {
+ <div id="inbox-content" class="inbox" data-keep-open>
+  <nav class="tabs" aria-label="Inbox sections">
+   <ul>
+    for _, t := range p.Tabs {
+     <li><a href={ templ.SafeURL(t.Href) } if t.Current { aria-current="page" }>{ t.Label }</a></li>
+    }
+   </ul>
+  </nav>
+  switch p.Tab {
+   case "deps":
+    @InboxDeps(p)
+   case "activity":
+    @InboxRuns(p)
+    @InboxJournal(p)
+   case "moderation":
+    @InboxPending(p)
+   default:
+    @InboxMRs(p)
+    @InboxIssues(p)
+  }
+ </div>
 }
 
 // InboxJournal is the activity of the range, newest first: the repositories
@@ -98,25 +111,6 @@ templ InboxJournal(p InboxPage) {
 			<p class="lede dim">no activity in the last { j.RangeLabel }.</p>
 		}
 	</section>
-}
-
-templ InboxCounters(p InboxPage) {
-	<p id="inbox-counts" class="inbox-counts">
-		<strong>{ itoa(p.MergeRequests) }</strong> merge requests · <strong>{ itoa(p.Issues) }</strong> issues · <strong>{ itoa(p.PendingCount) }</strong> awaiting moderation · <strong>{ itoa(p.Running) }</strong> running · <strong>{ itoa(p.DepsCount) }</strong> dependency updates
-	</p>
-}
-
-templ InboxRepos(p InboxPage) {
-	<nav id="inbox-repos" class="since" aria-label="Repository">
-		for _, r := range p.Repos {
-			<a
-				href={ templ.SafeURL(r.Href) }
-				if r.Current {
-					aria-current="page"
-				}
-			>{ r.Label }</a>
-		}
-	</nav>
 }
 
 // InboxPending is the issues awaiting moderation, first on the page. Their

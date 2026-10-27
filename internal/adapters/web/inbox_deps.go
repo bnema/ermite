@@ -139,7 +139,7 @@ func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
 	return st
 }
 
-func (s *Server) depsRow(in ports.InboxDeps, filter domain.RepoName) InboxDepsRow {
+func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 	d := in.Rec
 	repo := d.Repo.String()
 	row := InboxDepsRow{
@@ -166,13 +166,9 @@ func (s *Server) depsRow(in ports.InboxDeps, filter domain.RepoName) InboxDepsRo
 	}
 	if s.cfg.Deps != nil && d.State != domain.DepsApplying {
 		base := inboxPath + "/deps/" + url.PathEscape(repo) + "/"
-		var q string
-		if !filter.IsZero() {
-			q = "?repo=" + url.QueryEscape(filter.String())
-		}
-		row.Snooze = base + "snooze" + q
+		row.Snooze = base + "snooze"
 		if !merged {
-			row.Ignore = base + "ignore" + q
+			row.Ignore = base + "ignore"
 			label := "Open MR"
 			switch {
 			case failed:
@@ -180,7 +176,7 @@ func (s *Server) depsRow(in ports.InboxDeps, filter domain.RepoName) InboxDepsRo
 			case d.MR != 0:
 				label = "Update MR"
 			}
-			row.Primary = InboxDepsAction{Label: label, Action: base + "open" + q}
+			row.Primary = InboxDepsAction{Label: label, Action: base + "open"}
 		}
 	}
 	return row
@@ -202,7 +198,7 @@ func depsRefs(r *http.Request) ([]domain.DepRef, error) {
 // depsAction is POST /-/inbox/deps/<repo>/open, ignore or snooze.
 func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request) (string, string, error) {
 	return func(ctx context.Context, r *http.Request) (string, string, error) {
-		back := pendingBack(r)
+		back := inboxHref("deps", 0)
 		if !SignedIn(ctx) {
 			return "", back, errNotFound
 		}

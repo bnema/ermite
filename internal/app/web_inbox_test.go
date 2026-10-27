@@ -18,7 +18,7 @@ import (
 )
 
 // The owner's inbox end to end: two repositories with open merge requests and
-// issues, the filter, the home button, the owner stream, and a 404 for
+// issues, the tabs, the home button, the owner stream, and a 404 for
 // everyone who is not the signed-in owner.
 func TestWebInboxEndToEnd(t *testing.T) {
 	r := newMRRepo(t, domain.VisibilityPublic)
@@ -48,13 +48,13 @@ func TestWebInboxEndToEnd(t *testing.T) {
 		return ports.CIRunDraft{Run: domain.CIRun{Repo: r.name("proj"), ID: id, Number: number, Attempt: 1, WorkflowName: "Inbox build", Status: domain.CIQueued, Ref: "refs/heads/main", Event: "push", CreatedAt: time.Now()}}
 	})
 	require.NoError(t, err)
-	runs := b.get("/-/inbox", as(token))
+	runs := b.get("/-/inbox?tab=activity", as(token))
 	assert.Contains(t, runs.body, "Inbox build")
-	assert.Contains(t, runs.body, "<strong>1</strong> running")
+	assert.Contains(t, runs.body, `id="inbox-runs"`)
 	assert.Contains(t, runs.body, `data-inbox href="/-/inbox"`)
 
 	// The owner stream sees both repositories.
-	stream := ownerStream(t, r.harness, token)
+	stream := ownerStream(t, r.harness, token, "activity")
 
 	r.forge.Bus.Publish(r.ctx, domain.RunUpdated{Run: draft.Run, At: time.Now(), Visibility: domain.VisibilityPublic, CreatedAt: time.Now()})
 	var runFragments strings.Builder
@@ -73,14 +73,15 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	}
 	assert.NotContains(t, runFragments.String(), "Inbox build")
 	assert.Contains(t, runFragments.String(), "no runs in progress.")
-	assert.Contains(t, runFragments.String(), "<strong>0</strong> running")
+	assert.NotContains(t, runFragments.String(), "Inbox build")
+	stream = ownerStream(t, r.harness, token)
 
 	root := domain.Root()
 	_, err = r.forge.MergeRequests.Create(r.ctx, root, r.name("proj"), ports.CreateMergeRequestParams{Title: "add search", Source: "feat/search", Target: "main"})
 	require.NoError(t, err)
 	ev := nextFragment(t, stream)
 	assert.Equal(t, "inbox", ev.name)
-	assert.Contains(t, ev.data, `id="inbox-counts"`)
+	assert.Contains(t, ev.data, `id="inbox-content"`)
 	for range inboxFragments - 1 { // the other fragments of this event
 		nextFragment(t, stream)
 	}
@@ -99,25 +100,17 @@ func TestWebInboxEndToEnd(t *testing.T) {
 	all := b.get("/-/inbox", as(token))
 	require.Equal(t, 200, all.status, all.body)
 	assert.Equal(t, "private, no-store", all.hdr.Get("Cache-Control"))
-	assert.Contains(t, all.body, "<strong>2</strong> merge requests · <strong>2</strong> issues")
+	assert.Contains(t, all.body, "Open Issues &amp; Merge Requests (4)")
 	for _, want := range []string{"add search", "other work", "search is slow", "proj bug", `href="/other/issues/`, `href="/proj/merge-requests/`} {
 		assert.Contains(t, all.body, want)
 	}
-
-	only := b.get("/-/inbox?repo=other", as(token))
-	require.Equal(t, 200, only.status)
-	assert.Contains(t, only.body, "<strong>2</strong> merge requests · <strong>2</strong> issues", "the counters ignore the filter")
-	assert.Contains(t, only.body, "other work")
-	assert.Contains(t, only.body, "search is slow")
-	assert.NotContains(t, only.body, "add search")
-	assert.NotContains(t, only.body, "proj bug")
 
 	// Issues off: that repository's issues leave the inbox, its merge requests stay.
 	off := domain.IssuesOff
 	_, err = r.forge.Repos.Update(r.ctx, root, r.name("other"), ports.UpdateRepoParams{Issues: &off})
 	require.NoError(t, err)
 	hidden := b.get("/-/inbox", as(token))
-	assert.Contains(t, hidden.body, "<strong>2</strong> merge requests · <strong>1</strong> issues")
+	assert.Contains(t, hidden.body, "Open Issues &amp; Merge Requests (3)")
 	assert.NotContains(t, hidden.body, "search is slow")
 
 	// The home button, for the owner only.
@@ -140,7 +133,7 @@ func TestWebInboxEndToEnd(t *testing.T) {
 }
 
 // inboxFragments is the number of fragments one inbox event sends.
-const inboxFragments = 8
+const inboxFragments = 1
 
 // nextFragment returns the next event that carries a fragment. Events the
 // inbox does not show (a mergeability check) still send their id alone, so a
@@ -155,11 +148,15 @@ func nextFragment(t *testing.T, s *sseStream) sseEvent {
 }
 
 // ownerStream opens the owner topic with the session cookie.
-func ownerStream(t *testing.T, h *harness, token string) *sseStream {
+func ownerStream(t *testing.T, h *harness, token string, tabs ...string) *sseStream {
 	t.Helper()
 	ctx, cancel := context.WithCancel(h.ctx)
 	t.Cleanup(cancel)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url("/-/events?topic=owner&view=inbox"), nil)
+	path := "/-/events?topic=owner&view=inbox"
+	if len(tabs) > 0 {
+		path += "&tab=" + tabs[0]
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url(path), nil)
 	require.NoError(t, err)
 	req.Header.Set("Cookie", sessionCookie+"="+token)
 	resp, err := http.DefaultClient.Do(req)

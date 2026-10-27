@@ -40,21 +40,22 @@ func moderationServer(t *testing.T, inbox ports.InboxService, mod ports.IssueMod
 	})
 }
 
-func TestInboxShowsPendingIssuesAsPlainTextFirst(t *testing.T) {
+func TestInboxShowsPendingIssuesAsPlainText(t *testing.T) {
 	t.Parallel()
 	p := testPendingIssue(t)
 	ov := inboxOverview(t)
 	ov.Pending = []domain.PendingIssue{p, {ID: p.ID, Repo: repoName(t, "beta"), Title: p.Title, CreatedAt: time.Now()}}
 	ov.Counts.Pending = 2
 	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, domain.RepoName{}).Return(ov, nil)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
 	srv := moderationServer(t, svc, mocks.NewIssueModerationService(t))
 
-	rec := inboxGet(srv, "/-/inbox", true)
+	rec := inboxGet(srv, "/-/inbox?tab=moderation", true)
 	require.Equal(t, 200, rec.Code)
 	body := rec.Body.String()
-	assert.Contains(t, body, "<strong>2</strong> awaiting moderation")
-	assert.Less(t, strings.Index(body, `id="inbox-pending"`), strings.Index(body, `id="inbox-mrs"`), "first section")
+	assert.Contains(t, body, "Awaiting Moderation (2)")
+
+	assert.NotContains(t, body, `id="inbox-mrs"`)
 	assert.Contains(t, body, "&lt;script&gt;alert(1)&lt;/script&gt; crash")
 	assert.NotContains(t, body, "<script>alert")
 	assert.Contains(t, body, "**not bold**", "no Markdown")
@@ -68,19 +69,6 @@ func TestInboxShowsPendingIssuesAsPlainTextFirst(t *testing.T) {
 	assert.Contains(t, body, `/reject"`)
 	assert.Contains(t, body, `/ban"`)
 	assert.Contains(t, body, "Reject and ban")
-}
-
-func TestInboxPendingKeepsTheFilterInItsActions(t *testing.T) {
-	t.Parallel()
-	p := testPendingIssue(t)
-	ov := inboxOverview(t)
-	ov.Pending = []domain.PendingIssue{p}
-	ov.Counts.Pending = 1
-	svc := mocks.NewInboxService(t)
-	svc.EXPECT().Overview(mock.Anything, mock.Anything, repoName(t, "alpha")).Return(ov, nil)
-	srv := moderationServer(t, svc, mocks.NewIssueModerationService(t))
-	rec := inboxGet(srv, "/-/inbox?repo=alpha", true)
-	assert.Contains(t, rec.Body.String(), `/approve?repo=alpha"`)
 }
 
 func TestInboxModerationActions(t *testing.T) {
@@ -104,9 +92,9 @@ func TestInboxModerationActions(t *testing.T) {
 		t.Parallel()
 		mod := mocks.NewIssueModerationService(t)
 		mod.EXPECT().Approve(mock.Anything, mock.Anything, alpha, id).Return(domain.Issue{}, nil).Once()
-		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/inbox/pending/alpha/"+testPendingID+"/approve?repo=alpha", site)
+		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/inbox/pending/alpha/"+testPendingID+"/approve", site)
 		assert.Equal(t, 303, rec.Code)
-		assert.Equal(t, "/-/inbox?repo=alpha", rec.Header().Get("Location"))
+		assert.Equal(t, "/-/inbox?tab=moderation", rec.Header().Get("Location"))
 		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	})
 	t.Run("reject", func(t *testing.T) {
@@ -115,7 +103,7 @@ func TestInboxModerationActions(t *testing.T) {
 		mod.EXPECT().Reject(mock.Anything, mock.Anything, alpha, id, false).Return(nil).Once()
 		rec := post(moderationServer(t, mocks.NewInboxService(t), mod), "/-/inbox/pending/alpha/"+testPendingID+"/reject", site)
 		assert.Equal(t, 303, rec.Code)
-		assert.Equal(t, "/-/inbox", rec.Header().Get("Location"))
+		assert.Equal(t, "/-/inbox?tab=moderation", rec.Header().Get("Location"))
 	})
 	t.Run("ban", func(t *testing.T) {
 		t.Parallel()
