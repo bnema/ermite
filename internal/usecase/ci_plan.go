@@ -371,7 +371,7 @@ func (rs *runState) advance(ctx context.Context) error {
 func (rs *runState) promote(ctx context.Context) (ended bool, err error) {
 	now := rs.c.now()
 	var runners []domain.CIRunner
-	listed := false
+	listed, listFailed := false, false
 	counts := map[string]int{}
 	for _, j := range rs.jobs {
 		if j.Phase == domain.CIPhaseReady || j.Active() {
@@ -386,9 +386,15 @@ func (rs *runState) promote(ctx context.Context) (ended bool, err error) {
 		if j.MaxParallel > 0 && counts[j.Scope+"\x00"+j.Key] >= j.MaxParallel {
 			continue
 		}
-		if !listed {
-			// A failed listing keeps the jobs queued: nothing is known.
-			runners, listed = rs.c.runnersForMatch(ctx)
+		if !listed && !listFailed {
+			var err error
+			if runners, err = rs.c.cfg.Store.ListRunners(ctx); err != nil {
+				// A failed listing keeps the jobs queued: nothing is known.
+				ctxLog(ctx).Warn().Err(err).Msg("listing the runners to match runs-on failed")
+				listFailed = true
+			} else {
+				listed = true
+			}
 		}
 		if listed && !runnerMatches(*j, runners) {
 			rs.end(j, domain.CIFailure, noRunnerMessage(j.Labels))
@@ -413,12 +419,6 @@ func (rs *runState) promote(ctx context.Context) (ended bool, err error) {
 		rs.touch(j)
 	}
 	return ended, nil
-}
-
-// runnersForMatch lists the registered runners, online or not.
-func (c *CI) runnersForMatch(ctx context.Context) ([]domain.CIRunner, bool) {
-	runners, err := c.cfg.Store.ListRunners(ctx)
-	return runners, err == nil
 }
 
 // runnerMatches reports whether a registered runner has the labels of the job,

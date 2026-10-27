@@ -16,7 +16,7 @@ ermite runner remove <id>
 
 - CI is on once a runner is registered. Before that, pushes make no run.
 - The `runner` preset can read the code and secrets of **every** repository. Use it only on runners you operate.
-- A job goes to a runner that has every label of its `runs-on`. A job no runner takes within 24 hours fails.
+- A job goes to a runner that has every label of its `runs-on`. A job no runner takes within 24 hours fails. A job whose `runs-on` matches no registered runner (online or offline) fails at once with `no registered runner matches runs-on: [...]`; one matched only by an offline runner waits up to that limit.
 
 ## Control runs
 

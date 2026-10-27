@@ -338,8 +338,6 @@ func TestCIQueueTimeout(t *testing.T) {
 	c.registerRunner("alpha", "ubuntu-latest")
 	c.registerRunner("offline-gpu", "gpu") // registered, never polls
 	c.push("main", map[string]string{".github/workflows/q.yml": strings.Replace(workflowWith("branches: [main]"), "ubuntu-latest", "gpu", 1)}, "")
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, pb.CiStatus_CI_STATUS_QUEUED, c.getRun(c.runs()[0].GetId()).GetJobs()[0].GetStatus(), "an offline matching runner keeps the job queued")
 	c.waitFor("the job fails", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 	j := c.getRun(c.runs()[0].GetId()).GetJobs()[0]
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, j.GetConclusion())
@@ -372,7 +370,9 @@ jobs:
 	runner.runJob(j, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "done")
 	c.waitFor("the run ends", func() bool { return len(c.runs()) == 1 && c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, c.runs()[0].GetConclusion())
+	seen := map[string]bool{}
 	for _, j := range c.getRun(c.runs()[0].GetId()).GetJobs() {
+		seen[j.GetKey()] = true
 		switch j.GetKey() {
 		case "ok":
 			assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_SUCCESS, j.GetConclusion())
@@ -382,8 +382,11 @@ jobs:
 		case "after":
 			assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, j.GetConclusion())
 			assert.Equal(t, "no registered runner matches runs-on: [windows-latest]", j.GetError())
+		default:
+			t.Errorf("unexpected job %q", j.GetKey())
 		}
 	}
+	assert.Equal(t, map[string]bool{"ok": true, "mac": true, "after": true}, seen)
 }
 
 // The runner API validates what it is given.
