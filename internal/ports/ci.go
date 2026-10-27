@@ -50,9 +50,10 @@ type CIWrite struct {
 // CIConcurrencyGroup is a stored concurrency group: its repository, its key (the
 // group, canonical: ConcurrencyKey), its record and its marks.
 type CIConcurrencyGroup struct {
-	Repo  domain.RepoName
-	Group string
-	State domain.CIConcurrencyGroupState
+	Implicit bool
+	Repo     domain.RepoName
+	Group    string
+	State    domain.CIConcurrencyGroupState
 }
 
 // CIStepAnnotations are all the annotations of one step of one execution of a
@@ -176,6 +177,8 @@ type CIStore interface {
 	// on a conflict fn is called again on the new state and must be repeatable.
 	// A deleted repository is domain.ErrNotFound.
 	UpdateConcurrency(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error
+	// UpdateImplicitConcurrency uses the disjoint server-owned namespace.
+	UpdateImplicitConcurrency(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error
 	// ListConcurrency returns every concurrency group that has an entry, for
 	// the reconciliation at startup.
 	ListConcurrency(ctx context.Context) ([]CIConcurrencyGroup, error)

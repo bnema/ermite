@@ -86,7 +86,8 @@ func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.Up
 func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 	var params ports.UpdateRepoParams
 	paths := msg.GetUpdateMask().GetPaths()
-	if len(paths) == 0 && msg.Issues == nil {
+	params.CIAutoCancel = msg.CiAutoCancel
+	if len(paths) == 0 && msg.Issues == nil && msg.CiAutoCancel == nil {
 		return params, fmt.Errorf("%w: update_mask is empty", domain.ErrInvalid)
 	}
 	if msg.Issues != nil {

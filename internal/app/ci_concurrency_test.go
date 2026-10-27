@@ -28,6 +28,9 @@ func concurrencyHarness(t *testing.T) (*ciHarness, *fakeRunner) {
 	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
 		cfg.CancelGrace, cfg.Tick, cfg.PollTimeout = 300*time.Millisecond, 20*time.Millisecond, 100*time.Millisecond
 	})
+	disabled := false
+	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled}))
+	require.NoError(t, err)
 	return c, c.registerRunner("alpha", "ubuntu-latest")
 }
 
@@ -392,6 +395,9 @@ func flakyConcurrencyHarness(t *testing.T, retries int) (*ciHarness, *fakeRunner
 		cfg.ConcurrencyRetries = retries
 		fs.CIStore, cfg.Store = cfg.Store, fs
 	})
+	disabled := false
+	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled}))
+	require.NoError(t, err)
 	return c, c.registerRunner("alpha", "ubuntu-latest"), fs
 }
 
@@ -1292,4 +1298,125 @@ func TestCIConcurrencyQueueSingleCancelsTheMaxLine(t *testing.T) {
 	assert.Equal(t, r4.GetId(), job4.GetRunId())
 	runner.runJob(job4, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
 	c.waitFor("the single run completes", func() bool { return c.completed(r4) })
+}
+
+func TestCIImplicitConcurrencyCancelsSuperseded(t *testing.T) {
+	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
+		cfg.CancelGrace, cfg.Tick = 100*time.Millisecond, 20*time.Millisecond
+	})
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	r1 := c.pushN(1, workflowAt("", ""))
+	job := runner.await()
+	require.Equal(t, r1.GetId(), job.GetRunId())
+	runner.heartbeat(job)
+	r2 := c.pushN(2, workflowAt("", ""))
+	c.waitFor("superseded run cancelled", func() bool { return c.getRun(r1.GetId()).GetRun().GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.conclusionOf(r1))
+	next := runner.await()
+	assert.Equal(t, r2.GetId(), next.GetRunId())
+	runner.runJob(next, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+}
+
+func TestCIImplicitConcurrencyDisabled(t *testing.T) {
+	c, runner := concurrencyHarness(t)
+	r1 := c.pushN(1, workflowAt("", ""))
+	first := runner.await()
+	r2 := c.pushN(2, workflowAt("", ""))
+	second := runner.await()
+	assert.Equal(t, r1.GetId(), first.GetRunId())
+	assert.Equal(t, r2.GetId(), second.GetRunId())
+	assert.NotEqual(t, pb.CiStatus_CI_STATUS_COMPLETED, c.getRun(r1.GetId()).GetRun().GetStatus())
+}
+
+func TestCIImplicitConcurrencyExplicitOverride(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	r1 := c.pushN(1, workflowAt(wfGroup, ""))
+	first := runner.await()
+	r2 := c.pushN(2, workflowAt(wfGroup, ""))
+	c.waitJobs("explicit group queues without cancelling", r2, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+	assert.NotEqual(t, pb.CiStatus_CI_STATUS_COMPLETED, c.getRun(r1.GetId()).GetRun().GetStatus())
+	runner.runJob(first, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+	assert.Equal(t, r2.GetId(), runner.await().GetRunId())
+}
+
+func TestCIImplicitConcurrencyBranchesIndependent(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	wf := strings.Replace(workflowAt("", ""), "branches: [main]", "branches: [main, feat]", 1)
+	r1 := c.pushN(1, wf)
+	first := runner.await()
+	c.push("feat", map[string]string{"feature.txt": "feature"}, "feature")
+	c.waitFor("feature run", func() bool { return len(c.runs()) == 2 })
+	second := runner.await()
+	assert.NotEqual(t, first.GetRunId(), second.GetRunId())
+	assert.NotEqual(t, pb.CiStatus_CI_STATUS_COMPLETED, c.getRun(r1.GetId()).GetRun().GetStatus())
+}
+
+func TestCIImplicitConcurrencyReconciliation(t *testing.T) {
+	c := newCIHarness(t, nil)
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	run := c.pushN(1, workflowAt("", ""))
+	job := runner.await()
+	runner.heartbeat(job)
+	groups, err := c.forge.store.CI().ListConcurrency(c.ctx)
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+	require.True(t, groups[0].Implicit)
+	group := groups[0].Group
+	require.NoError(t, c.forge.store.CI().UpdateImplicitConcurrency(c.ctx, c.h(c.repo), group, func(st *domain.CIConcurrencyGroupState) error {
+		st.Record.Running.Canceling = true // persisted decision whose delivery was lost
+		return nil
+	}))
+	c.forge.CI.ReconcileConcurrency(c.ctx)
+	c.waitFor("reconciliation requests cancellation", func() bool {
+		stored, err := c.forge.store.CI().GetRun(c.ctx, c.h(c.repo), run.GetId())
+		return err == nil && stored.CancelRequested
+	})
+	_, err = runner.jobAPI(job).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+		JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
+	}))
+	require.NoError(t, err)
+	c.waitFor("reconciled run cancelled", func() bool { return c.conclusionOf(run) == pb.CiConclusion_CI_CONCLUSION_CANCELLED })
+}
+
+func TestCIImplicitConcurrencyPendingSupersession(t *testing.T) {
+	// Keep the first assignment open until this test explicitly completes it;
+	// cancellation delivery must not release its group ahead of the assertions.
+	c := newCIHarness(t, func(cfg *usecase.CIConfig) {
+		cfg.CancelGrace, cfg.AckTimeout = time.Hour, time.Hour
+	})
+	runner := c.registerRunner("alpha", "ubuntu-latest")
+	first := c.pushN(1, workflowAt("", ""))
+	job := runner.await()
+	require.Equal(t, first.GetId(), job.GetRunId())
+	runner.heartbeat(job)
+
+	middle := c.pushN(2, workflowAt("", ""))
+	c.waitJobs("middle run waits behind the open first job", middle, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+	newest := c.pushN(3, workflowAt("", ""))
+	c.waitFor("middle pending run is superseded", func() bool { return c.completed(middle) })
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.conclusionOf(middle))
+	c.waitJobs("only newest run waits behind the first", newest, allStatus(pb.CiStatus_CI_STATUS_PENDING))
+	assert.False(t, c.completed(first), "first job still holds the group")
+
+	groups, err := c.forge.store.CI().ListConcurrency(c.ctx)
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+	require.True(t, groups[0].Implicit)
+	require.NotNil(t, groups[0].State.Record.Running)
+	assert.Equal(t, first.GetId(), groups[0].State.Record.Running.RunID)
+	require.Len(t, groups[0].State.Record.Pending, 1)
+	assert.Equal(t, newest.GetId(), groups[0].State.Record.Pending[0].RunID)
+
+	_, err = runner.jobAPI(job).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+		JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
+	}))
+	require.NoError(t, err)
+	next := runner.await()
+	require.Equal(t, newest.GetId(), next.GetRunId(), "middle run never proceeds")
+	runner.runJob(next, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
+	c.waitFor("newest run succeeds", func() bool { return c.completed(newest) })
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_SUCCESS, c.conclusionOf(newest))
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.conclusionOf(first))
 }

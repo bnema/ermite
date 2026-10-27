@@ -931,7 +931,7 @@ func ciKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]by
 	}
 	keys = append(keys, repoReaderKeys(ctx, snap, repo)...)
 	keys = append(keys, artifactKeys(ctx, snap, repo)...)
-	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/", concurPrefix + repo.String() + "/", concurMarkPrefixAll + repo.String() + "/", refTipsPrefix(repo), workflowOffPrefixOf(repo)} {
+	for _, p := range []string{checkPrefix + repo.String() + "/", runNumPrefix + repo.String() + "/", implicitConcurPrefix + repo.String() + "/", implicitMarkPrefix + repo.String() + "/", concurPrefix + repo.String() + "/", concurMarkPrefixAll + repo.String() + "/", refTipsPrefix(repo), workflowOffPrefixOf(repo)} {
 		for k := range snap.Prefix(ctx, []byte(p)) {
 			keys = append(keys, slices.Clone(k))
 		}

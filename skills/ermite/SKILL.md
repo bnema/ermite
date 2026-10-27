@@ -62,6 +62,8 @@ The secret prints once. Presets: `agent` (`repo:write`, `mr:write`), `ci` (`repo
 
 ## CI
 
+New branch pushes supersede older runs of the same workflow and branch; MR runs supersede runs of the same workflow and MR. A superseded run is cancelled, not failed. Watch the latest run after pushing. Explicit workflow concurrency overrides this default; repository owners can disable it with `repo edit --ci-auto-cancel=false`.
+
 Workflows live in `.github/workflows` (GitHub Actions syntax).
 
 ```sh

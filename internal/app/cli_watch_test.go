@@ -95,7 +95,7 @@ func TestWatchNDJSON(t *testing.T) {
 		assert.True(t, json.Valid([]byte(sc.Text())), "one JSON value per line: %s", sc.Text())
 	}
 	require.Len(t, lines, 5)
-	assert.JSONEq(t, `{"id":"1","time":"2026-10-10T12:00:00Z","type":"repo_created","repo":"beta","repository":{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"archived":false,"issues":"off"}}`, lines[0])
+	assert.JSONEq(t, `{"id":"1","time":"2026-10-10T12:00:00Z","type":"repo_created","repo":"beta","repository":{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"}}`, lines[0])
 	assert.JSONEq(t, `{"id":"3","time":"2026-10-10T12:00:00Z","type":"pushed","repo":"alpha","ref_updates":[
 		{"ref":"refs/heads/main","old_id":"1111111111111111","new_id":"2222222222222222"},
 		{"ref":"refs/heads/new","old_id":"","new_id":"3333333333333333"},

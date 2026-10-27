@@ -40,7 +40,13 @@ func TestCITriggerRules(t *testing.T) {
 	c := newCIHarness(t, nil)
 	c.registerRunner("alpha", "ubuntu-latest")
 	count := func() int { return len(c.runs()) }
-	settle := func() { time.Sleep(300 * time.Millisecond) } // a push that runs nothing leaves nothing to wait for
+	// Post-receive registers CI activity before the Git push returns. Wait for
+	// the entire push to be planned, including pushes that create no run.
+	settle := func() {
+		c.waitFor("push planning is complete", func() bool {
+			return c.forge.CI.Settled(c.ctx, c.h(c.repo), 0)
+		})
+	}
 
 	// A workflow with a branch filter does not run for another branch.
 	c.push("main", map[string]string{".github/workflows/only-main.yml": workflowWith("branches: [main]"), "src/a.go": "package a\n"}, "")
@@ -92,6 +98,12 @@ func TestCITriggerRules(t *testing.T) {
 		}
 	}
 	assert.Equal(t, []string{".github/workflows/broken.yml"}, failed, "and a failed check on the commit")
+
+	// broken.yml is visited before only-main.yml. Seeing its failed run does
+	// not mean the latter has been created yet; finish planning before taking
+	// the deletion baseline. Cancellation/promotion changes no run count.
+	settle()
+	require.Equal(t, 7, count(), "the invalid-file push also runs only-main.yml")
 
 	// A push never fails for CI: the push above succeeded (mustGit). A deletion
 	// runs nothing.

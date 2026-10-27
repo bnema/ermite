@@ -497,6 +497,9 @@ func TestCIReusablePermissionsOnlyLowered(t *testing.T) {
 // D4: the job-level concurrency of a callee's job applies.
 func TestCIReusableCalleeJobConcurrency(t *testing.T) {
 	c, runner := newReusableHarness(t, newFakeRemote(t), newFakeWorkflows(t))
+	disabled := false
+	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled}))
+	require.NoError(t, err)
 	callee := "on:\n  workflow_call:\njobs:\n  j:\n    runs-on: ubuntu-latest\n    concurrency:\n      group: callee-job-group\n    steps:\n      - run: echo\n"
 	caller := "on: push\njobs:\n  c:\n    uses: ./.github/workflows/callee.yml\n"
 	c.push("main", map[string]string{".github/workflows/callee.yml": callee, ".github/workflows/ci.yml": caller}, "")
@@ -560,6 +563,7 @@ func TestCIReusableCallConcurrency(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c, runner := newReusableHarness(t, newFakeRemote(t), newFakeWorkflows(t))
+			c.disableAutoCancel()
 			callee := strings.Replace(concCallee, "%s\n", tt.callee, 1)
 			files := map[string]string{".github/workflows/callee.yml": callee, ".github/workflows/ci.yml": concCaller(tt.caller)}
 			c.push("main", files, "")
@@ -602,6 +606,7 @@ func TestCIReusableCallCancelInProgress(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c, runner := newReusableHarness(t, newFakeRemote(t), newFakeWorkflows(t))
+			c.disableAutoCancel()
 			callee := strings.Replace(concCallee, "%s\n", tt.callee, 1)
 			c.push("main", map[string]string{".github/workflows/callee.yml": callee, ".github/workflows/ci.yml": concCaller(tt.caller)}, "")
 			r1 := c.awaitRunOf(".github/workflows/ci.yml", 0)

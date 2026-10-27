@@ -36,6 +36,7 @@ type jsonRepo struct {
 	// MergeModes are the allowed merge modes ("fast-forward", "squash", "merge").
 	MergeModes     []string `json:"merge_modes" help:"the allowed ones: fast-forward, squash, merge"`
 	AllowAutoMerge bool     `json:"allow_auto_merge" help:"whether auto-merge can be enabled"`
+	CIAutoCancel   bool     `json:"ci_auto_cancel" help:"whether superseded CI runs are cancelled automatically"`
 	Archived       bool     `json:"archived"`
 	// Issues is the issue mode ("off", "owner" or "public").
 	Issues string `json:"issues" help:"off, owner or public"`
@@ -49,6 +50,7 @@ func toJSONRepo(r *ermite.Repo) jsonRepo {
 	return jsonRepo{
 		MergeModes:     modes,
 		AllowAutoMerge: r.GetSettings().GetAllowAutoMerge(),
+		CIAutoCancel:   r.GetSettings().GetCiAutoCancel(),
 		Archived:       r.GetArchived(),
 		Issues:         issuesModeName(r.GetSettings().GetIssues()),
 		Name:           r.GetName(),
@@ -225,6 +227,7 @@ func printRepo(w io.Writer, r *ermite.Repo) error {
 		{"last push", shortTime(r.GetPushedAt(), "never")},
 		{"merge modes", orDash(strings.Join(modes, ", "))},
 		{"allow auto-merge", strconv.FormatBool(r.GetSettings().GetAllowAutoMerge())},
+		{"CI auto-cancel", strconv.FormatBool(r.GetSettings().GetCiAutoCancel())},
 		{"issues", issuesModeName(r.GetSettings().GetIssues())},
 		{"archived", strconv.FormatBool(r.GetArchived())},
 	})
@@ -333,6 +336,7 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 	cmd.Flags().StringVar(&defaultBranch, "default-branch", "", "short name of the new default branch")
 	cmd.Flags().StringSliceVar(&mergeModes, "merge-modes", nil, "allowed merge modes, comma-separated: fast-forward, squash, merge (all by default; list the ones to keep)")
 	cmd.Flags().BoolVar(&allowAutoMerge, "allow-auto-merge", false, "allow auto-merge on merge requests (--allow-auto-merge=false to forbid it)")
+	cmd.Flags().Bool("ci-auto-cancel", true, "cancel superseded CI runs automatically (--ci-auto-cancel=false to disable)")
 	cmd.Flags().BoolVar(&archived, "archived", false, "archive the repository (--archived=false to unarchive it)")
 	cmd.Flags().StringVar(&issues, "issues", "", "issue mode: off, owner or public")
 	_ = cmd.RegisterFlagCompletionFunc("issues", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
@@ -429,8 +433,15 @@ func buildUpdateRepo(cmd *cobra.Command, name, description string, topics []stri
 		// The contract keeps issues out of the update mask.
 		req.Issues = &mode
 	}
-	if len(paths) == 0 && req.Issues == nil {
-		return nil, errors.New("nothing to change: give at least one of --description, --topics, --visibility, --default-branch, --merge-modes, --allow-auto-merge, --archived, --issues")
+	if cmd.Flags().Changed("ci-auto-cancel") {
+		value, err := cmd.Flags().GetBool("ci-auto-cancel")
+		if err != nil {
+			return nil, err
+		}
+		req.CiAutoCancel = &value
+	}
+	if len(paths) == 0 && req.Issues == nil && req.CiAutoCancel == nil {
+		return nil, errors.New("nothing to change: give at least one of --description, --topics, --visibility, --default-branch, --merge-modes, --allow-auto-merge, --archived, --issues, --ci-auto-cancel")
 	}
 	req.UpdateMask = &fieldmaskpb.FieldMask{Paths: paths}
 	return req, nil

@@ -4,10 +4,12 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"bnema.dev/ermite-actions/expr"
@@ -248,15 +250,19 @@ func (c *CI) prune(ctx context.Context, repo domain.RepoName, group string, st *
 // updateGroup is Store.UpdateConcurrency over the pruned group. It returns the
 // entry that holds the group after the change and did not before (the waiting
 // entry that was given the turn), or nil: its run is to be planned again.
-func (c *CI) updateGroup(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) (*domain.CIConcurrencyEntry, error) {
-	promoted, _, err := c.updateGroupMore(ctx, repo, group, fn)
+func (c *CI) updateGroup(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error, implicit ...bool) (*domain.CIConcurrencyEntry, error) {
+	promoted, _, err := c.updateGroupMore(ctx, repo, group, fn, implicit...)
 	return promoted, err
 }
 
 // updateGroupMore is updateGroup that also says whether the pruning stopped at
 // its bound, with stale marks left for another transaction.
-func (c *CI) updateGroupMore(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) (promoted *domain.CIConcurrencyEntry, more bool, err error) {
-	err = c.cfg.Store.UpdateConcurrency(ctx, repo, group, func(st *domain.CIConcurrencyGroupState) error {
+func (c *CI) updateGroupMore(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error, implicit ...bool) (promoted *domain.CIConcurrencyEntry, more bool, err error) {
+	update := c.cfg.Store.UpdateConcurrency
+	if len(implicit) > 0 && implicit[0] {
+		update = c.cfg.Store.UpdateImplicitConcurrency
+	}
+	err = update(ctx, repo, group, func(st *domain.CIConcurrencyGroupState) error {
 		promoted = nil
 		var was *domain.CIConcurrencyEntry
 		if r := st.Record.Running; r != nil {
@@ -395,7 +401,7 @@ func (c *CI) ReconcileConcurrency(ctx context.Context) {
 			_, more, err = c.updateGroupMore(ctx, g.Repo, g.Group, func(cur *domain.CIConcurrencyGroupState) error {
 				st = domain.CIConcurrencyGroupState{Record: cur.Record.Clone(), Marks: maps.Clone(cur.Marks)}
 				return nil
-			})
+			}, g.Implicit)
 		}
 		if err != nil {
 			if !errors.Is(err, domain.ErrNotFound) && ctx.Err() == nil {
@@ -486,7 +492,7 @@ func (rs *runState) acquire(ctx context.Context, group string, e domain.CIConcur
 			}
 		}
 		return nil
-	})
+	}, e.Implicit)
 	if err != nil {
 		return "", err
 	}
@@ -517,7 +523,7 @@ func (c *CI) releaseEntry(ctx context.Context, repo domain.RepoName, group strin
 		}
 		delete(st.Marks, e.Key())
 		return nil
-	})
+	}, e.Implicit)
 	if err != nil || promoted == nil {
 		return err
 	}
@@ -631,7 +637,7 @@ func (rs *runState) acquireRun(ctx context.Context, wf *workflow.Workflow) (bool
 	if run.Concurrency.Group == "" {
 		return true, nil
 	}
-	st, err := rs.acquire(ctx, run.Concurrency.Group, domain.CIConcurrencyEntry{RunID: run.ID, Attempt: run.Attempt, Cancel: run.Concurrency.Cancel, Max: run.Concurrency.Max})
+	st, err := rs.acquire(ctx, run.Concurrency.Group, domain.CIConcurrencyEntry{RunID: run.ID, Attempt: run.Attempt, Implicit: run.Concurrency.Implicit, Cancel: run.Concurrency.Cancel, Max: run.Concurrency.Max})
 	if err != nil {
 		return false, err
 	}
@@ -655,7 +661,18 @@ func (rs *runState) acquireRun(ctx context.Context, wf *workflow.Workflow) (bool
 
 func (rs *runState) evalRunConcurrency(ctx context.Context, wf *workflow.Workflow) (domain.CIConcurrency, error) {
 	if wf.Concurrency == nil {
-		return domain.CIConcurrency{}, nil
+		conc := implicitRunConcurrency(rs.run)
+		if conc.Group == "" {
+			return conc, nil
+		}
+		repo, err := rs.c.cfg.Meta.Get(ctx, rs.run.Repo)
+		if err != nil {
+			return domain.CIConcurrency{}, err
+		}
+		if repo.EffectiveSettings().CIAutoCancelDisabled {
+			return domain.CIConcurrency{}, nil
+		}
+		return conc, nil
 	}
 	gh, err := rs.githubValue("", rs.run.Attempt)
 	if err != nil {
@@ -695,9 +712,35 @@ func (rs *runState) releaseEnded(ctx context.Context, changed []int, runDone boo
 		}
 	}
 	if runDone && rs.run.Concurrency.Group != "" {
-		e := domain.CIConcurrencyEntry{RunID: rs.run.ID, Attempt: rs.run.Attempt}
+		e := domain.CIConcurrencyEntry{RunID: rs.run.ID, Attempt: rs.run.Attempt, Implicit: rs.run.Concurrency.Implicit}
 		if err := c.releaseEntry(ctx, rs.run.Repo, rs.run.Concurrency.Group, e); err != nil && !errors.Is(err, domain.ErrNotFound) {
 			ctxLog(ctx).Error().Err(err).Int64("run_id", rs.run.ID).Msg("ci: free a concurrency group")
 		}
 	}
+}
+
+// implicitRunConcurrency keeps ref and path identity case-sensitive. JSON array
+// encoding makes component boundaries unambiguous; repository is the store scope.
+func implicitRunConcurrency(run domain.CIRun) domain.CIConcurrency {
+	var scope string
+	switch run.Event {
+	case "push":
+		if !strings.HasPrefix(run.Ref, "refs/heads/") {
+			return domain.CIConcurrency{}
+		}
+		scope = run.Ref
+	case "pull_request", "pull_request_target":
+		if run.PullNumber <= 0 {
+			return domain.CIConcurrency{}
+		}
+		scope = fmt.Sprint(run.PullNumber)
+	default:
+		return domain.CIConcurrency{}
+	}
+	event := run.Event
+	if event == "pull_request_target" {
+		event = "pull_request"
+	}
+	key, _ := json.Marshal([]string{run.WorkflowPath, event, scope})
+	return domain.CIConcurrency{Group: string(key), Cancel: true, Implicit: true}
 }

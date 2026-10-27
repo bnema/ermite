@@ -493,6 +493,7 @@ func TestRepoSettingsKeepAllowAutoMerge(t *testing.T) {
 
 	settings := domain.DefaultRepoSettings()
 	settings.AllowAutoMerge = true
+	settings.CIAutoCancelDisabled = true
 	_, err = s.Mutate(ctx, n, func(r *domain.Repo) (bool, error) { r.Settings = settings; return true, nil })
 	require.NoError(t, err)
 	got, err = s.Get(ctx, n)

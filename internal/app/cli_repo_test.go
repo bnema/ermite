@@ -53,8 +53,8 @@ func TestRepoList(t *testing.T) {
 		{
 			name: "json", repos: both, args: []string{"repo", "list", "--json"}, wantJSON: true,
 			wantStdout: `[
-				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"archived":false,"issues":"off"},
-				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"archived":false,"issues":"off"}
+				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"},
+				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"}
 			]`,
 		},
 		{
@@ -115,13 +115,14 @@ func TestRepoShow(t *testing.T) {
 		"last push         2026-03-04 05:06\n"+
 		"merge modes       fast-forward, squash\n"+
 		"allow auto-merge  false\n"+
+		"CI auto-cancel    false\n"+
 		"issues            off\n"+
 		"archived          false\n", res.stdout)
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.GetRepoRequest).GetRepo())
 
 	res = runCLI(t, envFor(url), "", "repo", "show", "alpha", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"archived":false,"issues":"off"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"}`, res.stdout)
 }
 
 func TestRepoShowNeedsOneArg(t *testing.T) {
@@ -177,7 +178,7 @@ func TestRepoCreateJSON(t *testing.T) {
 		return &ermite.CreateRepoResponse{Repo: repoBeta}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "create", "beta", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"archived":false,"issues":"off"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"}`, res.stdout)
 }
 
 func TestRepoEditMask(t *testing.T) {
@@ -207,6 +208,14 @@ func TestRepoEditMask(t *testing.T) {
 		}},
 		{"merge modes", []string{"--merge-modes", "squash,ff"}, []string{"settings.allowed_merge_modes"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
 			assert.Equal(t, []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_SQUASH, ermite.MergeMode_MERGE_MODE_FAST_FORWARD}, r.GetSettings().GetAllowedMergeModes())
+		}},
+		{"disable CI auto-cancel", []string{"--ci-auto-cancel=false"}, nil, func(t *testing.T, r *ermite.UpdateRepoRequest) {
+			require.NotNil(t, r.CiAutoCancel)
+			assert.False(t, r.GetCiAutoCancel())
+		}},
+		{"enable CI auto-cancel", []string{"--ci-auto-cancel=true"}, nil, func(t *testing.T, r *ermite.UpdateRepoRequest) {
+			require.NotNil(t, r.CiAutoCancel)
+			assert.True(t, r.GetCiAutoCancel())
 		}},
 		{"allow auto-merge", []string{"--allow-auto-merge"}, []string{"settings.allow_auto_merge"}, func(t *testing.T, r *ermite.UpdateRepoRequest) {
 			assert.True(t, r.GetSettings().GetAllowAutoMerge())

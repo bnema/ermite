@@ -32,10 +32,11 @@ Order: `ERMITE_URL` / `ERMITE_TOKEN` env, then `url` / `token.cmd` in `~/.config
 - `--visibility public|private` and `--default-branch B` (the branch must exist).
 - `--merge-modes fast-forward,squash,merge`: list the modes to keep (all allowed by default).
 - `--allow-auto-merge[=false]`.
+- `--ci-auto-cancel=true|false` cancels superseded CI runs per workflow and branch (default true); MR runs group per MR, separately from pushes. Explicit workflow concurrency overrides it; tags, schedules and manual dispatches are excluded.
 - `--issues off|owner|public`: `public` adds a moderated form for visitors.
 - `--archived[=false]` (`repos.archived` feature): read-only. Blocks pushes, MR/issue writes, merges, release writes, dispatches, reruns and crons; reads and closing still work.
 
-JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before first push), `merge_modes`, `allow_auto_merge`, `issues`, `archived`.
+JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before first push), `merge_modes`, `allow_auto_merge`, `ci_auto_cancel`, `issues`, `archived`.
 
 ## Tokens
 

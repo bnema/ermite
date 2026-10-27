@@ -51,6 +51,8 @@ type UpdateRepoParams struct {
 	Issues *domain.IssuesMode
 	// AllowAutoMerge replaces the setting of that name.
 	AllowAutoMerge *bool
+	// CIAutoCancel replaces the positive automatic CI cancellation setting.
+	CIAutoCancel *bool
 	// Archived replaces the read-only state.
 	Archived *bool
 }

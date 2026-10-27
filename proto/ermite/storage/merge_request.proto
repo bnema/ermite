@@ -32,6 +32,7 @@ message RepoSettings {
   // read.
   bool merge_modes_v2 = 4;
   bool allow_auto_merge = 5;
+  bool ci_auto_cancel_disabled = 6;
 }
 
 // IssuesMode says who may write issues in a repository.

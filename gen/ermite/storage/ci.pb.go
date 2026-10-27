@@ -2214,10 +2214,11 @@ func (x *CIStepAnnotations) GetAnnotations() []*CIAnnotation {
 // CIConcurrency is the evaluated "concurrency:" of a run or a job, kept on its
 // record (CIRun.concurrency, CIJob.concurrency).
 type CIConcurrency struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Group  string                 `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
-	Cancel bool                   `protobuf:"varint,2,opt,name=cancel,proto3" json:"cancel,omitempty"`
-	State  CIConcurrencyState     `protobuf:"varint,3,opt,name=state,proto3,enum=ermite.storage.CIConcurrencyState" json:"state,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Implicit bool                   `protobuf:"varint,8,opt,name=implicit,proto3" json:"implicit,omitempty"`
+	Group    string                 `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
+	Cancel   bool                   `protobuf:"varint,2,opt,name=cancel,proto3" json:"cancel,omitempty"`
+	State    CIConcurrencyState     `protobuf:"varint,3,opt,name=state,proto3,enum=ermite.storage.CIConcurrencyState" json:"state,omitempty"`
 	// evaluated: the expressions were evaluated, whatever the result.
 	Evaluated bool `protobuf:"varint,4,opt,name=evaluated,proto3" json:"evaluated,omitempty"`
 	// from_run: a job that shows the group of its run and holds nothing itself.
@@ -2259,6 +2260,13 @@ func (x *CIConcurrency) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CIConcurrency.ProtoReflect.Descriptor instead.
 func (*CIConcurrency) Descriptor() ([]byte, []int) {
 	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *CIConcurrency) GetImplicit() bool {
+	if x != nil {
+		return x.Implicit
+	}
+	return false
 }
 
 func (x *CIConcurrency) GetGroup() string {
@@ -2312,11 +2320,12 @@ func (x *CIConcurrency) GetQueueMax() bool {
 
 // CIConcurrencyEntry is a run (job_id empty) or a job in a concurrency group.
 type CIConcurrencyEntry struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	RunId   int64                  `protobuf:"varint,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	Attempt int32                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	JobId   string                 `protobuf:"bytes,3,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Cancel  bool                   `protobuf:"varint,4,opt,name=cancel,proto3" json:"cancel,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Implicit bool                   `protobuf:"varint,7,opt,name=implicit,proto3" json:"implicit,omitempty"`
+	RunId    int64                  `protobuf:"varint,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	Attempt  int32                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	JobId    string                 `protobuf:"bytes,3,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Cancel   bool                   `protobuf:"varint,4,opt,name=cancel,proto3" json:"cancel,omitempty"`
 	// canceling: a waiting entry with cancel-in-progress asked this running one
 	// to stop; the entry stays until it has ended.
 	Canceling bool `protobuf:"varint,5,opt,name=canceling,proto3" json:"canceling,omitempty"`
@@ -2354,6 +2363,13 @@ func (x *CIConcurrencyEntry) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CIConcurrencyEntry.ProtoReflect.Descriptor instead.
 func (*CIConcurrencyEntry) Descriptor() ([]byte, []int) {
 	return file_ermite_storage_ci_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CIConcurrencyEntry) GetImplicit() bool {
+	if x != nil {
+		return x.Implicit
+	}
+	return false
 }
 
 func (x *CIConcurrencyEntry) GetRunId() int64 {
@@ -2892,16 +2908,18 @@ const file_ermite_storage_ci_proto_rawDesc = "" +
 	"\n" +
 	"end_column\x18\b \x01(\x05R\tendColumn\"S\n" +
 	"\x11CIStepAnnotations\x12>\n" +
-	"\vannotations\x18\x01 \x03(\v2\x1c.ermite.storage.CIAnnotationR\vannotations\"\xeb\x01\n" +
-	"\rCIConcurrency\x12\x14\n" +
+	"\vannotations\x18\x01 \x03(\v2\x1c.ermite.storage.CIAnnotationR\vannotations\"\x87\x02\n" +
+	"\rCIConcurrency\x12\x1a\n" +
+	"\bimplicit\x18\b \x01(\bR\bimplicit\x12\x14\n" +
 	"\x05group\x18\x01 \x01(\tR\x05group\x12\x16\n" +
 	"\x06cancel\x18\x02 \x01(\bR\x06cancel\x128\n" +
 	"\x05state\x18\x03 \x01(\x0e2\".ermite.storage.CIConcurrencyStateR\x05state\x12\x1c\n" +
 	"\tevaluated\x18\x04 \x01(\bR\tevaluated\x12\x19\n" +
 	"\bfrom_run\x18\x05 \x01(\bR\afromRun\x12\x1c\n" +
 	"\tpreempted\x18\x06 \x01(\bR\tpreempted\x12\x1b\n" +
-	"\tqueue_max\x18\a \x01(\bR\bqueueMax\"\xaf\x01\n" +
-	"\x12CIConcurrencyEntry\x12\x15\n" +
+	"\tqueue_max\x18\a \x01(\bR\bqueueMax\"\xcb\x01\n" +
+	"\x12CIConcurrencyEntry\x12\x1a\n" +
+	"\bimplicit\x18\a \x01(\bR\bimplicit\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\x03R\x05runId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x05R\aattempt\x12\x15\n" +
 	"\x06job_id\x18\x03 \x01(\tR\x05jobId\x12\x16\n" +

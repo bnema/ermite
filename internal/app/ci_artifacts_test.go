@@ -427,6 +427,7 @@ func TestCIArtifactsPassBetweenJobs(t *testing.T) {
 // are refused once the job ended.
 func TestCIArtifactsAreIsolatedPerRunAndJob(t *testing.T) {
 	c := newArtifactHarness(t, nil)
+	c.disableAutoCancel()
 	runner := c.registerRunner("alpha", "ubuntu-latest")
 	runA, upA, downA := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
 	_, upB, _ := c.newArtifactRun(runner, map[string]string{"README": "two"})

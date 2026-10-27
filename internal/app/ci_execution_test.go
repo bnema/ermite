@@ -1404,6 +1404,7 @@ func TestAnActionRepositoryOfTheServerNeverFallsThroughToGitHub(t *testing.T) {
 		remote := newFakeRemote(t)
 		remote.set("owner/b", ptrRef("refs/tags/v1", shaOther)) // the repository of the same name on github.com
 		c := newExecHarness(t, remote, nil)
+		c.disableAutoCancel()
 		return c, remote, c.registerRunner("alpha", "ubuntu-latest")
 	}
 	// run pushes the workflow (first) or a new commit as the secret and returns the

@@ -29,8 +29,10 @@ import (
 // The group key disappears only when both the record and its marks are empty.
 // Both prefixes are removed with their repository (ciKeys).
 const (
-	concurPrefix        = "concur/"
-	concurMarkPrefixAll = "concurmark/"
+	implicitConcurPrefix = "autoconcur/"
+	implicitMarkPrefix   = "autoconcurmark/"
+	concurPrefix         = "concur/"
+	concurMarkPrefixAll  = "concurmark/"
 )
 
 // updateConcurrencyTries bounds the retries of UpdateConcurrency under
@@ -61,7 +63,7 @@ func encodeConcurrency(c domain.CIConcurrency) *storagepb.CIConcurrency {
 	if c == (domain.CIConcurrency{}) {
 		return nil
 	}
-	out := &storagepb.CIConcurrency{Group: c.Group, Cancel: c.Cancel, Evaluated: c.Evaluated, FromRun: c.FromRun, Preempted: c.Preempted, QueueMax: c.Max}
+	out := &storagepb.CIConcurrency{Implicit: c.Implicit, Group: c.Group, Cancel: c.Cancel, Evaluated: c.Evaluated, FromRun: c.FromRun, Preempted: c.Preempted, QueueMax: c.Max}
 	for _, e := range concurrencyStates {
 		if e.d == c.State {
 			out.State = e.p
@@ -74,7 +76,7 @@ func decodeConcurrency(pb *storagepb.CIConcurrency) domain.CIConcurrency {
 	if pb == nil {
 		return domain.CIConcurrency{}
 	}
-	c := domain.CIConcurrency{Group: pb.GetGroup(), Cancel: pb.GetCancel(), Evaluated: pb.GetEvaluated(), FromRun: pb.GetFromRun(), Preempted: pb.GetPreempted(), Max: pb.GetQueueMax()}
+	c := domain.CIConcurrency{Implicit: pb.GetImplicit(), Group: pb.GetGroup(), Cancel: pb.GetCancel(), Evaluated: pb.GetEvaluated(), FromRun: pb.GetFromRun(), Preempted: pb.GetPreempted(), Max: pb.GetQueueMax()}
 	for _, e := range concurrencyStates {
 		if e.p == pb.GetState() {
 			c.State = e.d
@@ -87,7 +89,7 @@ func encodeConcurrencyEntry(e *domain.CIConcurrencyEntry) *storagepb.CIConcurren
 	if e == nil {
 		return nil
 	}
-	return &storagepb.CIConcurrencyEntry{RunId: e.RunID, Attempt: e.Attempt, JobId: e.JobID, Cancel: e.Cancel, Canceling: e.Canceling, QueueMax: e.Max}
+	return &storagepb.CIConcurrencyEntry{Implicit: e.Implicit, RunId: e.RunID, Attempt: e.Attempt, JobId: e.JobID, Cancel: e.Cancel, Canceling: e.Canceling, QueueMax: e.Max}
 }
 
 // encodeConcurrencyRecord writes the waiting entries to queue, and the head of
@@ -123,7 +125,7 @@ func decodeConcurrencyEntry(pb *storagepb.CIConcurrencyEntry) *domain.CIConcurre
 	if pb == nil {
 		return nil
 	}
-	return &domain.CIConcurrencyEntry{RunID: pb.GetRunId(), Attempt: pb.GetAttempt(), JobID: pb.GetJobId(), Cancel: pb.GetCancel(), Canceling: pb.GetCanceling(), Max: pb.GetQueueMax()}
+	return &domain.CIConcurrencyEntry{Implicit: pb.GetImplicit(), RunID: pb.GetRunId(), Attempt: pb.GetAttempt(), JobID: pb.GetJobId(), Cancel: pb.GetCancel(), Canceling: pb.GetCanceling(), Max: pb.GetQueueMax()}
 }
 
 // concurMarkPrefix is where the marks of a group are: the group key is escaped,
@@ -185,10 +187,22 @@ func encodeConcurrencyState(s domain.CIConcurrencyGroupState) []byte {
 // read (or its absence) whatever fn does, and every change rewrites the record,
 // so of two transactions that read the same state only one commits; the other
 // calls fn again on the new state.
-//
-//hexcheck:ignore suspicious-business-logic-in-adapter compare-and-swap loop over a record and its marks in one batch: the rule is fn, decided by the caller
 func (c *CI) UpdateConcurrency(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error {
+	return c.updateConcurrency(ctx, repo, group, fn, false)
+}
+
+// UpdateImplicitConcurrency stores server groups outside the user namespace.
+func (c *CI) UpdateImplicitConcurrency(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error {
+	return c.updateConcurrency(ctx, repo, group, fn, true)
+}
+
+//hexcheck:ignore suspicious-business-logic-in-adapter compare-and-swap loop over a record and its marks in one batch: the rule is fn, decided by the caller
+func (c *CI) updateConcurrency(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error, implicit bool) error {
 	key, mprefix := concurKey(repo, group), concurMarkPrefix(repo, group)
+	if implicit {
+		key = []byte(implicitConcurPrefix + repo.String() + "/" + group)
+		mprefix = implicitMarkPrefix + repo.String() + "/" + url.PathEscape(group) + "/"
+	}
 	for range updateConcurrencyTries {
 		var state domain.CIConcurrencyGroupState
 		var version uint64
@@ -256,7 +270,11 @@ func (c *CI) UpdateConcurrency(ctx context.Context, repo domain.RepoName, group 
 
 // ListConcurrency returns every stored group with its marks.
 func (c *CI) ListConcurrency(ctx context.Context) ([]ports.CIConcurrencyGroup, error) {
-	type id struct{ repo, group string }
+	type id struct {
+		repo, group string
+		implicit    bool
+	}
+	implicit := false
 	snap := c.db.Snapshot(ctx)
 	byID := map[id]*ports.CIConcurrencyGroup{}
 	get := func(repoName, group string) *ports.CIConcurrencyGroup {
@@ -264,50 +282,57 @@ func (c *CI) ListConcurrency(ctx context.Context) ([]ports.CIConcurrencyGroup, e
 		if err != nil {
 			return nil
 		}
-		g, ok := byID[id{repoName, group}]
+		g, ok := byID[id{repoName, group, implicit}]
 		if !ok {
-			g = &ports.CIConcurrencyGroup{Repo: repo, Group: group, State: domain.CIConcurrencyGroupState{Marks: map[string]domain.CIConcurrencyMark{}}}
-			byID[id{repoName, group}] = g
+			g = &ports.CIConcurrencyGroup{Implicit: implicit, Repo: repo, Group: group, State: domain.CIConcurrencyGroupState{Marks: map[string]domain.CIConcurrencyMark{}}}
+			byID[id{repoName, group, implicit}] = g
 		}
 		return g
 	}
-	for key, item := range snap.Prefix(ctx, []byte(concurPrefix)) {
-		repoName, group, ok := strings.Cut(strings.TrimPrefix(string(key), concurPrefix), "/")
-		if !ok {
-			continue
+	for _, namespace := range []bool{false, true} {
+		implicit = namespace
+		prefix, markPrefix := concurPrefix, concurMarkPrefixAll
+		if implicit {
+			prefix, markPrefix = implicitConcurPrefix, implicitMarkPrefix
 		}
-		g := get(repoName, group)
-		if g == nil {
-			continue
+		for key, item := range snap.Prefix(ctx, []byte(prefix)) {
+			repoName, group, ok := strings.Cut(strings.TrimPrefix(string(key), prefix), "/")
+			if !ok {
+				continue
+			}
+			g := get(repoName, group)
+			if g == nil {
+				continue
+			}
+			rec, err := decodeConcurrencyRecord(item.Value)
+			if err != nil {
+				return nil, err
+			}
+			g.State.Record = rec
 		}
-		rec, err := decodeConcurrencyRecord(item.Value)
-		if err != nil {
-			return nil, err
+		for key, item := range snap.Prefix(ctx, []byte(markPrefix)) {
+			repoName, rest, ok := strings.Cut(strings.TrimPrefix(string(key), markPrefix), "/")
+			if !ok {
+				continue
+			}
+			escaped, _, ok := strings.Cut(rest, "/")
+			if !ok {
+				continue
+			}
+			group, err := url.PathUnescape(escaped)
+			if err != nil {
+				continue
+			}
+			g := get(repoName, group)
+			if g == nil {
+				continue
+			}
+			m, err := decodeConcurrencyMark(item.Value)
+			if err != nil {
+				return nil, err
+			}
+			g.State.Marks[m.Entry.Key()] = m
 		}
-		g.State.Record = rec
-	}
-	for key, item := range snap.Prefix(ctx, []byte(concurMarkPrefixAll)) {
-		repoName, rest, ok := strings.Cut(strings.TrimPrefix(string(key), concurMarkPrefixAll), "/")
-		if !ok {
-			continue
-		}
-		escaped, _, ok := strings.Cut(rest, "/")
-		if !ok {
-			continue
-		}
-		group, err := url.PathUnescape(escaped)
-		if err != nil {
-			continue
-		}
-		g := get(repoName, group)
-		if g == nil {
-			continue
-		}
-		m, err := decodeConcurrencyMark(item.Value)
-		if err != nil {
-			return nil, err
-		}
-		g.State.Marks[m.Entry.Key()] = m
 	}
 	out := make([]ports.CIConcurrencyGroup, 0, len(byID))
 	for _, g := range byID {

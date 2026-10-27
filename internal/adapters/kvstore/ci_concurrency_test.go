@@ -356,3 +356,29 @@ func TestCIConcurrencyRecordOldLayout(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, rec, back, "the queue wins over the old field")
 }
+
+func TestCIImplicitConcurrencyNamespace(t *testing.T) {
+	_, ci, n := ciRepo(t)
+	ctx := context.Background()
+	const text = `[".github/workflows/ci.yml","push","refs/heads/main"]`
+	update(t, ci, n, text, func(st *domain.CIConcurrencyGroupState) { st.Record.Running = entry(1) })
+	require.NoError(t, ci.UpdateImplicitConcurrency(ctx, n, text, func(st *domain.CIConcurrencyGroupState) error {
+		assert.True(t, st.IsEmpty(), "identical user text cannot reach server namespace")
+		st.Record.Running = &domain.CIConcurrencyEntry{RunID: 2, Attempt: 1, Implicit: true}
+		return nil
+	}))
+	assert.EqualValues(t, 1, read(t, ci, n, text).Record.Running.RunID)
+	groups, err := ci.ListConcurrency(ctx)
+	require.NoError(t, err)
+	partitions := map[bool][]domain.CIConcurrencyEntry{}
+	for _, g := range groups {
+		require.NotNil(t, g.State.Record.Running)
+		partitions[g.Implicit] = append(partitions[g.Implicit], *g.State.Record.Running)
+	}
+	require.Len(t, partitions[false], 1, "exactly one user group")
+	require.Len(t, partitions[true], 1, "exactly one implicit group")
+	assert.EqualValues(t, 1, partitions[false][0].RunID)
+	assert.False(t, partitions[false][0].Implicit)
+	assert.EqualValues(t, 2, partitions[true][0].RunID)
+	assert.True(t, partitions[true][0].Implicit)
+}

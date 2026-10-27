@@ -1734,3 +1734,72 @@ func (_c *CIStore_UpdateConcurrency_Call) RunAndReturn(run func(ctx context.Cont
 	_c.Call.Return(run)
 	return _c
 }
+
+// UpdateImplicitConcurrency provides a mock function for the type CIStore
+func (_mock *CIStore) UpdateImplicitConcurrency(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error {
+	ret := _mock.Called(ctx, repo, group, fn)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateImplicitConcurrency")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName, string, func(*domain.CIConcurrencyGroupState) error) error); ok {
+		r0 = returnFunc(ctx, repo, group, fn)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// CIStore_UpdateImplicitConcurrency_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateImplicitConcurrency'
+type CIStore_UpdateImplicitConcurrency_Call struct {
+	*mock.Call
+}
+
+// UpdateImplicitConcurrency is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+//   - group string
+//   - fn func(*domain.CIConcurrencyGroupState) error
+func (_e *CIStore_Expecter) UpdateImplicitConcurrency(ctx any, repo any, group any, fn any) *CIStore_UpdateImplicitConcurrency_Call {
+	return &CIStore_UpdateImplicitConcurrency_Call{Call: _e.mock.On("UpdateImplicitConcurrency", ctx, repo, group, fn)}
+}
+
+func (_c *CIStore_UpdateImplicitConcurrency_Call) Run(run func(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error)) *CIStore_UpdateImplicitConcurrency_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 func(*domain.CIConcurrencyGroupState) error
+		if args[3] != nil {
+			arg3 = args[3].(func(*domain.CIConcurrencyGroupState) error)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *CIStore_UpdateImplicitConcurrency_Call) Return(err error) *CIStore_UpdateImplicitConcurrency_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *CIStore_UpdateImplicitConcurrency_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName, group string, fn func(*domain.CIConcurrencyGroupState) error) error) *CIStore_UpdateImplicitConcurrency_Call {
+	_c.Call.Return(run)
+	return _c
+}

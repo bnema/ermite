@@ -401,6 +401,7 @@ enum CIConcurrencyState {
 // CIConcurrency is the evaluated "concurrency:" of a run or a job, kept on its
 // record (CIRun.concurrency, CIJob.concurrency).
 message CIConcurrency {
+  bool implicit = 8;
   string group = 1;
   bool cancel = 2;
   CIConcurrencyState state = 3;
@@ -417,6 +418,7 @@ message CIConcurrency {
 
 // CIConcurrencyEntry is a run (job_id empty) or a job in a concurrency group.
 message CIConcurrencyEntry {
+  bool implicit = 7;
   int64 run_id = 1;
   int32 attempt = 2;
   string job_id = 3;

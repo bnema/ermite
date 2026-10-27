@@ -51,6 +51,9 @@ type RepoSettings struct {
 	// AllowAutoMerge says that merge requests may be set to merge themselves
 	// once their checks pass. Off by default.
 	AllowAutoMerge bool
+	// CIAutoCancelDisabled opts out of implicit workflow concurrency. Existing
+	// repositories keep the default-on behavior without a migration.
+	CIAutoCancelDisabled bool
 }
 
 // DefaultRepoSettings are the settings of a new repository: every merge mode,

@@ -441,3 +441,11 @@ func TestCIRetriedPollReturnsTheSameAssignment(t *testing.T) {
 	assert.Equal(t, first.GetJobId(), again.GetJobId())
 	assert.Equal(t, first.GetJobToken(), again.GetJobToken())
 }
+
+// disableAutoCancel lets tests of cross-run isolation keep old runs alive.
+func (c *ciHarness) disableAutoCancel() {
+	c.t.Helper()
+	enabled := false
+	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &enabled}))
+	require.NoError(c.t, err)
+}

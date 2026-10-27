@@ -122,3 +122,36 @@ func TestConcurrencyQueueLiteralIsChecked(t *testing.T) {
 	_, errs := workflow.Parse("w.yml", []byte(fmt.Sprintf(concurrencyYAML, "{group: g, queue: often}")))
 	require.NotEmpty(t, errs)
 }
+
+func TestImplicitRunConcurrencyPolicy(t *testing.T) {
+	base := domain.CIRun{WorkflowPath: ".github/workflows/ci.yml", Event: "push", Ref: "refs/heads/main"}
+	first := usecase.ImplicitRunConcurrency(base)
+	assert.True(t, first.Implicit)
+	assert.True(t, first.Cancel)
+	assert.Equal(t, first, usecase.ImplicitRunConcurrency(base))
+	other := base
+	other.Ref = "refs/heads/dev"
+	assert.NotEqual(t, first.Group, usecase.ImplicitRunConcurrency(other).Group)
+	other.Ref = "refs/heads/Main"
+	assert.NotEqual(t, first.Group, usecase.ImplicitRunConcurrency(other).Group)
+	other = base
+	other.WorkflowPath = ".github/workflows/other.yml"
+	assert.NotEqual(t, first.Group, usecase.ImplicitRunConcurrency(other).Group)
+	mr := base
+	mr.Event = "pull_request"
+	mr.PullNumber = 1
+	group := usecase.ImplicitRunConcurrency(mr)
+	assert.NotEqual(t, first.Group, group.Group)
+	mr.Ref = "refs/pull/1/merge"
+	assert.Equal(t, group, usecase.ImplicitRunConcurrency(mr))
+	mr.PullNumber = 2
+	assert.NotEqual(t, group.Group, usecase.ImplicitRunConcurrency(mr).Group)
+	for _, event := range []string{"schedule", "workflow_dispatch", "release", "unknown"} {
+		other = base
+		other.Event = event
+		assert.Empty(t, usecase.ImplicitRunConcurrency(other).Group, event)
+	}
+	other = base
+	other.Ref = "refs/tags/v1"
+	assert.Empty(t, usecase.ImplicitRunConcurrency(other).Group)
+}

@@ -86,7 +86,20 @@ Any other path is GitHub's `404`, so an action that needs more fails as on a Git
 
 ## Concurrency
 
-`concurrency:` works at workflow and job level, per repository, case-insensitive.
+By default, a newer branch push cancels running and pending runs of the same
+workflow file on that branch. Merge-request runs replace older runs of the same
+workflow and MR number, independently of push runs. Tags, schedules, manual
+`workflow_dispatch` runs and other events are not automatically grouped.
+
+`ermite repo edit <repo> --ci-auto-cancel=false` disables this default; use
+`--ci-auto-cancel=true` to restore it. Explicit workflow-level `concurrency`
+always takes precedence. Job-level groups still apply alongside the default
+run-level group. Superseded runs conclude as cancelled, not failed.
+
+Implicit groups use a separate storage namespace: even an identical user group
+name cannot interact with them. Workflow paths and branch refs are case-sensitive.
+
+Explicit `concurrency:` works at workflow and job level, per repository, case-insensitive.
 
 - `queue: single` (default): one runs, one waits; a newer waiting entry cancels the older.
 - `queue: max`: up to 100 wait, first in first out.

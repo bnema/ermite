@@ -53,6 +53,8 @@ const CIMaxConcurrencyQueue = 100
 // CIConcurrency is the evaluated "concurrency:" of a run (workflow level) or of
 // a job.
 type CIConcurrency struct {
+	// Implicit selects the server-owned namespace, never user groups.
+	Implicit bool
 	// Group is the evaluated group as written; "" for none. Groups are compared
 	// without regard to case (ConcurrencyKey).
 	Group string
@@ -114,9 +116,10 @@ func ConcurrencyQueueFullMessage(group string) string {
 // CIConcurrencyEntry is a run (JobID empty) or a job waiting for or holding a
 // concurrency group.
 type CIConcurrencyEntry struct {
-	RunID   int64
-	Attempt int32
-	JobID   string
+	Implicit bool
+	RunID    int64
+	Attempt  int32
+	JobID    string
 	// Cancel is the cancel-in-progress of the entry: while it waits, the
 	// running entry of the group is cancelled.
 	Cancel bool

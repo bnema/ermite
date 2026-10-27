@@ -318,3 +318,12 @@ func TestArchivedMapping(t *testing.T) {
 	assert.False(t, *params.Archived)
 	assert.Contains(t, Features, "repos.archived")
 }
+
+func TestUpdateParamsCIAutoCancel(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		params, err := updateParams(&pb.UpdateRepoRequest{CiAutoCancel: &enabled})
+		require.NoError(t, err)
+		require.NotNil(t, params.CIAutoCancel)
+		assert.Equal(t, enabled, *params.CIAutoCancel)
+	}
+}

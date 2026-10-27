@@ -73,7 +73,7 @@ func repoToPB(v ports.RepoView) *pb.Repo {
 }
 
 func settingsToPB(s domain.RepoSettings) *pb.RepoSettings {
-	out := &pb.RepoSettings{AllowAutoMerge: s.AllowAutoMerge, Issues: issuesModeToPB(s.Issues)}
+	out := &pb.RepoSettings{CiAutoCancel: !s.CIAutoCancelDisabled, AllowAutoMerge: s.AllowAutoMerge, Issues: issuesModeToPB(s.Issues)}
 	for _, m := range s.AllowedMergeModes {
 		out.AllowedMergeModes = append(out.AllowedMergeModes, mergeModeToPB(m))
 	}
