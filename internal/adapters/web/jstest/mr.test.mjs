@@ -29,6 +29,17 @@ test('menuKey: modes by number, D toggles the deletion, nothing else', () => {
   assert.equal(C.menuKey('M', 2), null);
 });
 
+test('merge prefs: one key per repository, tolerant parsing', () => {
+  assert.equal(C.mergePrefsKey('/team/app/merge-requests/12/merge'), 'merge-prefs:/team/app');
+  assert.equal(C.mergePrefsKey('/app/merge-requests/3/merge'), 'merge-prefs:/app');
+  assert.equal(C.mergePrefsKey('/app/merge-requests/3/auto-merge'), null);
+  assert.equal(C.mergePrefsKey(null), null);
+  assert.deepEqual(C.parseMergePrefs('{"mode":"squash","del":true}'), { mode: 'squash', del: true });
+  assert.deepEqual(C.parseMergePrefs('{"mode":3,"del":"yes"}'), { mode: null, del: false });
+  assert.equal(C.parseMergePrefs(null), null);
+  assert.equal(C.parseMergePrefs('nope'), null);
+});
+
 test('step: stays in the list', () => {
   assert.equal(C.step(0, 1, 3), 1);
   assert.equal(C.step(2, 1, 3), 2);
@@ -558,9 +569,9 @@ test('live refresh preserves the open button panel even when the hash points els
     const $$ = (s, root) => s === '[data-mr-tabs] button' ? h.tabs : s === '[data-mr-panel]' ? fresh.children : [];
     let selected;
     const lazy = { reset() {}, watch() {} };
-    const refresh = new Function('$', '$$', 'scrollAnchor', 'hasDraft', 'replaceRegion', 'panels', 'watchBar', 'foldFiles', 'touchComments', 'restoreAnchor', 'window', 'document',
+    const refresh = new Function('$', '$$', 'scrollAnchor', 'hasDraft', 'replaceRegion', 'panels', 'watchBar', 'restoreMergePrefs', 'foldFiles', 'touchComments', 'restoreAnchor', 'window', 'document',
       'let revealGen = 0; ' + src.slice(start, end) + '; return refreshPage;')(
-      $, $$, () => ({}), () => false, async () => {}, (i) => { selected = i; }, () => {}, () => {}, () => {}, () => {}, { ermiteLazy: lazy }, doc);
+      $, $$, () => ({}), () => false, async () => {}, (i) => { selected = i; }, () => {}, () => {}, () => {}, () => {}, () => {}, { ermiteLazy: lazy }, doc);
     await refresh(page);
     assert.equal(selected, 1);
     assert.deepEqual(fresh.children.map((p) => p.hidden), [true, false]);

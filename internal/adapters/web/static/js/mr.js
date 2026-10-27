@@ -7,7 +7,8 @@
 //  2. The menus of the bar (merge, more) and their keys: M opens the merge menu
 //     on its button, 1-9 pick a mode, D toggles the branch deletion, Enter
 //     submits (the browser does it: the focus is on the button), Esc closes.
-//     R marks the head read. Nothing merges on one key.
+//     R marks the head read. Nothing merges on one key. The chosen mode and
+//     the branch deletion are remembered per repository (ermiteStore).
 //  3. l puts the focus in the list of files (opening it when folded); j / k
 //     move in it, Enter opens the file, Esc goes back to the diff. The button
 //     of its header folds the list, and the choice is remembered.
@@ -62,6 +63,20 @@ window.ermiteMR = (() => {
       if (key === 'D') return { toggle: true };
       if (/^[1-9]$/.test(key) && Number(key) <= modes) return { mode: Number(key) - 1 };
       return null;
+    },
+    // mergePrefsKey is the storage key of the merge choices of a repository,
+    // from the merge action (/<repo>/merge-requests/<n>/merge); null otherwise.
+    mergePrefsKey(action) {
+      const m = /^(\/.+?)\/merge-requests\/\d+\/merge$/.exec(String(action || ''));
+      return m ? 'merge-prefs:' + m[1] : null;
+    },
+    // parseMergePrefs reads stored choices: { mode, del }, or null when unusable.
+    parseMergePrefs(raw) {
+      try {
+        const v = JSON.parse(raw);
+        if (!v || typeof v !== 'object') return null;
+        return { mode: typeof v.mode === 'string' ? v.mode : null, del: v.del === true };
+      } catch { return null; }
     },
     tabIndex(key, index, count) {
       if (key === 'Home') return 0;
@@ -168,7 +183,10 @@ window.ermiteMR = (() => {
     e.preventDefault();
     if (act.toggle) {
       const box = $('input[name="delete_branch"]', m);
-      if (box) box.checked = !box.checked;
+      if (box) {
+        box.checked = !box.checked;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     } else {
       const r = radios[act.mode];
       // A change event lets the live bindings enable the Merge button again.
@@ -179,6 +197,31 @@ window.ermiteMR = (() => {
     }
     $('[data-default]', m)?.focus();
     return true;
+  }
+  // The merge choices (mode, branch deletion) are remembered per repository.
+  const mergeForm = () => $$('#merge-menu form.d-acts').find((f) => core.mergePrefsKey(f.getAttribute('action')));
+  // restoreMergePrefs applies the stored choices as the form's defaults, so
+  // they do not count as a draft that holds the live refresh.
+  function restoreMergePrefs() {
+    const f = mergeForm();
+    const key = f && core.mergePrefsKey(f.getAttribute('action'));
+    const prefs = key && core.parseMergePrefs(window.ermiteStore?.get(key));
+    if (!prefs) return;
+    const radio = $$('input[name="mode"]', f).find((r) => r.value === prefs.mode);
+    if (radio && !radio.disabled) {
+      for (const r of $$('input[name="mode"]', f)) r.defaultChecked = r.checked = r === radio;
+    }
+    const box = $('input[name="delete_branch"]', f);
+    if (box) box.defaultChecked = box.checked = prefs.del;
+  }
+  function saveMergePrefs(e) {
+    const f = e.target.closest?.('form.d-acts');
+    if (!f || f !== mergeForm()) return;
+    const key = core.mergePrefsKey(f.getAttribute('action'));
+    const mode = $('input[name="mode"]:checked', f)?.value ?? null;
+    const box = $('input[name="delete_branch"]', f);
+    const old = core.parseMergePrefs(window.ermiteStore?.get(key)) || {};
+    window.ermiteStore?.set(key, JSON.stringify({ mode, del: box ? box.checked : !!old.del }));
   }
   function markRead() {
     const b = $('button[data-read]');
@@ -551,6 +594,7 @@ window.ermiteMR = (() => {
     page = null;
     panels(openPanel);
     watchBar();
+    restoreMergePrefs();
     foldFiles(!!folded);
     if ($('.rail')) $('.rail').scrollTop = railY;
     if ($('.r-files .files')) $('.r-files .files').scrollTop = filesY;
@@ -609,6 +653,8 @@ window.ermiteMR = (() => {
     });
     panels();
     watchBar();
+    restoreMergePrefs();
+    document.addEventListener?.('change', saveMergePrefs);
     // Large diffs may contain only the split table. Ask the existing server
     // route for unified rather than writing the saved session preference.
     const narrow = window.matchMedia?.('(max-width: 720px)');
