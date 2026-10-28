@@ -4,6 +4,7 @@ package gitcli_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,4 +50,35 @@ func TestListFileSizes(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrInvalid)
 	_, err = g.ListFileSizes(ctx, name(t, "missing"), id, 5)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestListFileSizesBounds(t *testing.T) {
+	g, data := newGit(t)
+	ctx := context.Background()
+	t.Cleanup(func() { _ = g.Close(ctx) })
+
+	f := readertest.NewFixture(t, data, "bounded")
+	f.Write("aaaa", "1")
+	f.Write("bbbb", "2")
+	f.Write("cccc", "3")
+	id := oidOf(t, f.Commit("files"))
+
+	got, err := g.ListFileSizesBounded(ctx, f.Name, id, 100, 8)
+	require.NoError(t, err)
+	assert.True(t, got.Truncated, "path bytes over the budget")
+	assert.Len(t, got.Files, 2)
+
+	got, err = g.ListFileSizesBounded(ctx, f.Name, id, 100, 12)
+	require.NoError(t, err)
+	assert.False(t, got.Truncated, "paths exactly at the budget")
+	assert.Len(t, got.Files, 3)
+
+	long := strings.Repeat("d", 5000)
+	f.Git("update-index", "--add", "--cacheinfo", "100644,"+f.Git("rev-parse", "HEAD:aaaa")+","+long)
+	f.Git("commit", "--quiet", "-m", "long")
+	id = oidOf(t, f.Git("rev-parse", "HEAD"))
+	got, err = g.ListFileSizes(ctx, f.Name, id, 100)
+	require.NoError(t, err)
+	assert.True(t, got.Truncated, "a record over the bound stops the listing")
+	assert.Len(t, got.Files, 3)
 }

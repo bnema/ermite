@@ -116,3 +116,8 @@ func ParseRevList(r io.Reader, maxCommits, maxIDs int) (int, error) {
 	c, err := parseRevList(bufio.NewReaderSize(r, 64*1024), maxCommits, maxIDs)
 	return len(c), err
 }
+
+// ListFileSizesBounded is ListFileSizes with a chosen bound on path bytes.
+func (g *Git) ListFileSizesBounded(ctx context.Context, repo domain.RepoName, commit domain.ObjectID, limit, maxBytes int) (domain.FileSizes, error) {
+	return g.listFileSizes(ctx, repo, commit, limit, maxBytes)
+}

@@ -123,6 +123,31 @@ func readToken(r *bufio.Reader) (string, error) {
 	return s[:len(s)-1], nil
 }
 
+var errTokenTooLong = errors.New("git output: record too long")
+
+// readTokenMax is readToken for a record of at most max bytes: a longer one
+// gives errTokenTooLong without reading it whole.
+func readTokenMax(r *bufio.Reader, max int) (string, error) {
+	var buf []byte
+	for {
+		chunk, err := r.ReadSlice(0)
+		if len(buf)+len(chunk) > max+1 {
+			return "", errTokenTooLong
+		}
+		buf = append(buf, chunk...)
+		switch {
+		case err == nil:
+			return string(buf[:len(buf)-1]), nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF) && len(buf) > 0:
+			return "", io.ErrUnexpectedEOF
+		default:
+			return "", err
+		}
+	}
+}
+
 // lineReader reads text lines, keeping at most max bytes of each: the rest of
 // a longer line is dropped, so a pathological line cannot use unbounded memory.
 type lineReader struct {

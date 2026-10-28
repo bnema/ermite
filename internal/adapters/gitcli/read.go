@@ -319,6 +319,17 @@ var _ ports.TreeFileLister = (*Git)(nil)
 // `git ls-tree -r -l -z`, in tree order. Symbolic links and submodules are
 // skipped. At most limit files are returned; Truncated tells there were more.
 func (g *Git) ListFileSizes(ctx context.Context, repo domain.RepoName, commit domain.ObjectID, limit int) (domain.FileSizes, error) {
+	return g.listFileSizes(ctx, repo, commit, limit, domain.MaxPathBytes)
+}
+
+// maxSizeRecordBytes bounds one `ls-tree -l` record: a path of at most 4096
+// bytes after a header of mode, type, id and size.
+const maxSizeRecordBytes = 4096 + 128
+
+// listFileSizes is ListFileSizes with an aggregate bound on the path bytes.
+// It stops, Truncated, at limit files, at maxBytes of paths or at a record
+// longer than maxSizeRecordBytes.
+func (g *Git) listFileSizes(ctx context.Context, repo domain.RepoName, commit domain.ObjectID, limit, maxBytes int) (domain.FileSizes, error) {
 	if limit < 1 || commit.IsZero() {
 		return domain.FileSizes{}, fmt.Errorf("file sizes: %w: limit %d", domain.ErrInvalid, limit)
 	}
@@ -327,11 +338,16 @@ func (g *Git) ListFileSizes(ctx context.Context, repo domain.RepoName, commit do
 		return domain.FileSizes{}, err
 	}
 	var out domain.FileSizes
+	var pathBytes int
 	err = g.pipe(ctx, readArgs(dir, "ls-tree", "-r", "-l", "-z", "--end-of-options", commit.String()), func(r *bufio.Reader) error {
 		for {
-			tok, err := readToken(r)
+			tok, err := readTokenMax(r, maxSizeRecordBytes)
 			if errors.Is(err, io.EOF) {
 				return nil
+			}
+			if errors.Is(err, errTokenTooLong) {
+				out.Truncated = true
+				return errStop
 			}
 			if err != nil {
 				return err
@@ -343,10 +359,11 @@ func (g *Git) ListFileSizes(ctx context.Context, repo domain.RepoName, commit do
 			if e.Mode != 0o100644 && e.Mode != 0o100755 {
 				continue
 			}
-			if len(out.Files) == limit {
+			if len(out.Files) == limit || pathBytes+len(e.Path) > maxBytes {
 				out.Truncated = true
 				return errStop
 			}
+			pathBytes += len(e.Path)
 			// A copy: the name would keep the whole entry alive.
 			out.Files = append(out.Files, domain.FileSize{Path: strings.Clone(e.Path), Size: e.Size})
 		}
