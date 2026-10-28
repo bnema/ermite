@@ -80,10 +80,10 @@ func (l *Languages) Put(ctx context.Context, rec domain.RepoLanguages) error {
 		if !repo.CreatedAt.Equal(rec.RepoCreatedAt) {
 			return domain.ErrNotFound
 		}
+		// Guard the very item that was validated, not a fresh read.
 		var b kv.Batch
-		if err := guardRepoKey(ctx, l.db, &b, rec.Repo); err != nil {
-			return err
-		}
+		b.RequireVersion(repoKey(rec.Repo), item.Version)
+		b.Put(repoKey(rec.Repo), item.Value)
 		b.Put(languagesKey(rec.Repo), val)
 		if _, err := l.db.Apply(ctx, &b); err != nil {
 			if errors.Is(err, kv.ErrConflict) {
