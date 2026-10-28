@@ -327,3 +327,17 @@ func TestUpdateParamsCIAutoCancel(t *testing.T) {
 		assert.Equal(t, enabled, *params.CIAutoCancel)
 	}
 }
+
+func TestRepoToPBLanguages(t *testing.T) {
+	t.Parallel()
+	got := repoToPB(ports.RepoView{
+		Repo:      domain.Repo{Name: mustRepoName(t, "demo")},
+		Languages: []domain.LanguageShare{{Name: "Go", Bytes: 3, Percent: 75}, {Name: "C++", Bytes: 1, Percent: 25}},
+	})
+	require.Len(t, got.GetLanguages(), 2)
+	assert.Equal(t, "Go", got.GetLanguages()[0].GetName())
+	assert.Equal(t, int64(3), got.GetLanguages()[0].GetBytes())
+	assert.InDelta(t, 25, got.GetLanguages()[1].GetPercent(), 1e-9)
+	assert.Empty(t, repoToPB(ports.RepoView{Repo: domain.Repo{Name: mustRepoName(t, "demo")}}).GetLanguages())
+	assert.Contains(t, Features, "repos.languages")
+}

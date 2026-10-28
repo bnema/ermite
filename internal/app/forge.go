@@ -150,7 +150,9 @@ type forge struct {
 	SigningKey *usecase.SigningKey
 	// Mergeability keeps the mergeability of the open merge requests up to date.
 	Mergeability *usecase.Mergeability
-	AutoMerge    *usecase.AutoMerge
+	// Languages counts the languages of each repository in the background.
+	Languages *usecase.Languages
+	AutoMerge *usecase.AutoMerge
 	// Signatures are the trusted keys and the commit signature checks
 	// (ADR 0030).
 	Signatures *usecase.Signatures
@@ -286,6 +288,11 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	}
 	log.Info().Str("reader", cfg.GitReader).Msg("git reader selected")
 	f.Browse = usecase.NewBrowse(store, reader)
+	f.Languages = usecase.NewLanguages(ctx, usecase.LanguagesConfig{
+		Meta: store, Store: store.Languages(), Reader: reader, Files: git, Clock: clock,
+	})
+	f.Pushes.WithLanguages(f.Languages)
+	f.Repos.WithLanguages(f.Languages, store.Languages())
 	f.Blobs, err = blobStore(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -409,7 +416,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 	f.Repos.WithAutoMerge(f.AutoMerge).WithMergeGate(f.MergeRequests)
 	f.Mergeability.WithAutoMerge(f.AutoMerge)
 	f.Mergeability.Start()
-	f.MergeRequests.WithVerifier(f.Signatures).WithMirror(f.Mirrors)
+	f.MergeRequests.WithVerifier(f.Signatures).WithMirror(f.Mirrors).WithLanguages(f.Languages)
 	f.Issues = usecase.NewIssues(usecase.IssuesConfig{
 		Links: store.IssueLinks(), Meta: store, Store: store.Issues(), MergeRequests: store.MergeRequests(), Bus: f.Bus, Clock: clock, Journal: journal,
 	})
@@ -591,6 +598,7 @@ func (f *forge) Run(ctx context.Context) error {
 // pushes whose hooks need it. A failure of either stops both.
 func (f *forge) Serve(ctx context.Context, ln net.Listener) error {
 	f.Mirrors.Start()
+	f.Languages.Start()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	hookCtx, stopHooks := context.WithCancel(context.WithoutCancel(ctx))
@@ -621,6 +629,9 @@ func (f *forge) Close(ctx context.Context) {
 	}
 	if f.MergeRequests != nil {
 		f.MergeRequests.Wait(ctx) // its side effects use CI and Mergeability
+	}
+	if f.Languages != nil {
+		f.Languages.Close(ctx) // it reads through the git reader and writes the store
 	}
 	if f.Mirrors != nil {
 		f.Mirrors.Close(ctx)

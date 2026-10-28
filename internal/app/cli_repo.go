@@ -38,8 +38,31 @@ type jsonRepo struct {
 	AllowAutoMerge bool     `json:"allow_auto_merge" help:"whether auto-merge can be enabled"`
 	CIAutoCancel   bool     `json:"ci_auto_cancel" help:"whether superseded CI runs are cancelled automatically"`
 	Archived       bool     `json:"archived"`
+	// Languages is never null: [] when unknown.
+	Languages []jsonLanguage `json:"languages" help:"default-branch languages, bytes descending; [] when unknown"`
 	// Issues is the issue mode ("off", "owner" or "public").
 	Issues string `json:"issues" help:"off, owner or public"`
+}
+
+// jsonLanguage is the share of one language in a repository.
+type jsonLanguage struct {
+	Name    string  `json:"name"`
+	Bytes   int64   `json:"bytes"`
+	Percent float64 `json:"percent" help:"0-100"`
+}
+
+// languagesLine is the top five languages, "Go 72.1%, Shell 3.0%", or "".
+func languagesLine(langs []jsonLanguage) string {
+	const top = 5
+	parts := make([]string, 0, top+1)
+	for i, l := range langs {
+		if i == top {
+			parts = append(parts, "…")
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s %.1f%%", l.Name, l.Percent))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func toJSONRepo(r *ermite.Repo) jsonRepo {
@@ -47,7 +70,12 @@ func toJSONRepo(r *ermite.Repo) jsonRepo {
 	for _, m := range r.GetSettings().GetAllowedMergeModes() {
 		modes = append(modes, modeName(m))
 	}
+	langs := make([]jsonLanguage, 0, len(r.GetLanguages()))
+	for _, l := range r.GetLanguages() {
+		langs = append(langs, jsonLanguage{Name: l.GetName(), Bytes: l.GetBytes(), Percent: l.GetPercent()})
+	}
 	return jsonRepo{
+		Languages:      langs,
 		MergeModes:     modes,
 		AllowAutoMerge: r.GetSettings().GetAllowAutoMerge(),
 		CIAutoCancel:   r.GetSettings().GetCiAutoCancel(),
@@ -217,7 +245,7 @@ func printRepo(w io.Writer, r *ermite.Repo) error {
 		desc = "-"
 	}
 	modes := toJSONRepo(r).MergeModes
-	return fields(w, [][2]string{
+	rows := [][2]string{
 		{"name", r.GetName()},
 		{"visibility", visibilityName(r.GetVisibility())},
 		{"default branch", r.GetDefaultBranch()},
@@ -230,7 +258,11 @@ func printRepo(w io.Writer, r *ermite.Repo) error {
 		{"CI auto-cancel", strconv.FormatBool(r.GetSettings().GetCiAutoCancel())},
 		{"issues", issuesModeName(r.GetSettings().GetIssues())},
 		{"archived", strconv.FormatBool(r.GetArchived())},
-	})
+	}
+	if line := languagesLine(toJSONRepo(r).Languages); line != "" {
+		rows = append(rows, [2]string{"languages", line})
+	}
+	return fields(w, rows)
 }
 
 func newRepoShowCmd(env *cliEnv) *cobra.Command {

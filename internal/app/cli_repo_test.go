@@ -21,6 +21,7 @@ var (
 		Settings: &ermite.RepoSettings{
 			AllowedMergeModes: []ermite.MergeMode{ermite.MergeMode_MERGE_MODE_FAST_FORWARD, ermite.MergeMode_MERGE_MODE_SQUASH},
 		},
+		Languages: []*ermite.RepoLanguage{{Name: "Go", Bytes: 721, Percent: 72.1}, {Name: "Shell", Bytes: 279, Percent: 27.9}},
 	}
 	repoBeta = &ermite.Repo{
 		Name: "beta", Visibility: ermite.Visibility_VISIBILITY_PRIVATE,
@@ -53,8 +54,8 @@ func TestRepoList(t *testing.T) {
 		{
 			name: "json", repos: both, args: []string{"repo", "list", "--json"}, wantJSON: true,
 			wantStdout: `[
-				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"},
-				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"}
+				{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off","languages":[{"name":"Go","bytes":721,"percent":72.1},{"name":"Shell","bytes":279,"percent":27.9}]},
+				{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off","languages":[]}
 			]`,
 		},
 		{
@@ -117,12 +118,24 @@ func TestRepoShow(t *testing.T) {
 		"allow auto-merge  false\n"+
 		"CI auto-cancel    false\n"+
 		"issues            off\n"+
-		"archived          false\n", res.stdout)
+		"archived          false\n"+
+		"languages         Go 72.1%, Shell 27.9%\n", res.stdout)
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.GetRepoRequest).GetRepo())
 
 	res = runCLI(t, envFor(url), "", "repo", "show", "alpha", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"alpha","description":"The first one","topics":["cli","go"],"visibility":"public","default_branch":"main","created_at":"2026-01-02T03:04:05Z","pushed_at":"2026-03-04T05:06:07Z","merge_modes":["fast-forward","squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off","languages":[{"name":"Go","bytes":721,"percent":72.1},{"name":"Shell","bytes":279,"percent":27.9}]}`, res.stdout)
+}
+
+func TestLanguagesLine(t *testing.T) {
+	assert.Empty(t, languagesLine(nil))
+	var many []jsonLanguage
+	for _, n := range []string{"A", "B", "C", "D", "E"} {
+		many = append(many, jsonLanguage{Name: n, Percent: 10})
+	}
+	assert.Equal(t, "A 10.0%, B 10.0%, C 10.0%, D 10.0%, E 10.0%", languagesLine(many))
+	many = append(many, jsonLanguage{Name: "F", Percent: 1})
+	assert.Equal(t, "A 10.0%, B 10.0%, C 10.0%, D 10.0%, E 10.0%, …", languagesLine(many))
 }
 
 func TestRepoShowNeedsOneArg(t *testing.T) {
@@ -178,7 +191,7 @@ func TestRepoCreateJSON(t *testing.T) {
 		return &ermite.CreateRepoResponse{Repo: repoBeta}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "create", "beta", "--json").ok(t)
-	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off"}`, res.stdout)
+	assert.JSONEq(t, `{"name":"beta","description":"","topics":[],"visibility":"private","default_branch":"trunk","created_at":"2026-02-02T00:00:00Z","pushed_at":null,"merge_modes":["squash"],"allow_auto_merge":false,"ci_auto_cancel":false,"archived":false,"issues":"off","languages":[]}`, res.stdout)
 }
 
 func TestRepoEditMask(t *testing.T) {

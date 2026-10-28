@@ -69,7 +69,16 @@ func repoToPB(v ports.RepoView) *pb.Repo {
 		CreatedAt:     timestamp(v.CreatedAt),
 		PushedAt:      timestamp(v.PushedAt),
 		Settings:      settingsToPB(settings),
+		Languages:     languagesToPB(v.Languages),
 	}
+}
+
+func languagesToPB(in []domain.LanguageShare) []*pb.RepoLanguage {
+	var out []*pb.RepoLanguage
+	for _, l := range in {
+		out = append(out, &pb.RepoLanguage{Name: l.Name, Bytes: l.Bytes, Percent: l.Percent})
+	}
+	return out
 }
 
 func settingsToPB(s domain.RepoSettings) *pb.RepoSettings {

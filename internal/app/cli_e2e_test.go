@@ -203,7 +203,7 @@ type eventOut struct {
 	MergeRequest *mrOut `json:"merge_request"`
 }
 
-var repoKeys = []string{"allow_auto_merge", "archived", "ci_auto_cancel", "created_at", "default_branch", "description", "issues", "merge_modes", "name", "pushed_at", "topics", "visibility"}
+var repoKeys = []string{"allow_auto_merge", "archived", "ci_auto_cancel", "created_at", "default_branch", "description", "issues", "languages", "merge_modes", "name", "pushed_at", "topics", "visibility"}
 
 // AC6: the CLI end to end against a real forge.
 func TestAC6CLIEndToEnd(t *testing.T) {
@@ -350,7 +350,7 @@ func TestAC6CLIEndToEnd(t *testing.T) {
 	ver := decode[versionOut](t, res.stdout)
 	assert.Equal(t, c.url, ver.Server.URL)
 	assert.NotEmpty(t, ver.Server.Version)
-	assert.ElementsMatch(t, []string{"repos.archived", "repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready", "deps.runs", "releases", "deps", "journal"}, ver.Server.Features)
+	assert.ElementsMatch(t, []string{"repos.archived", "repos.languages", "repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready", "deps.runs", "releases", "deps", "journal"}, ver.Server.Features)
 	assert.Equal(t, []string{"passkeys"}, ver.Server.MissingFeatures)
 	stdout, stderr, code = c.bin(t, secret, "version")
 	require.Equal(t, 0, code, stderr)
