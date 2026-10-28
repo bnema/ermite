@@ -313,6 +313,50 @@ func (g *Git) ListPaths(ctx context.Context, repo domain.RepoName, rev domain.Re
 	return list, nil
 }
 
+var _ ports.TreeFileLister = (*Git)(nil)
+
+// ListFileSizes lists the regular files of a commit with their sizes, with one
+// `git ls-tree -r -l -z`, in tree order. Symbolic links and submodules are
+// skipped. At most limit files are returned; Truncated tells there were more.
+func (g *Git) ListFileSizes(ctx context.Context, repo domain.RepoName, commit domain.ObjectID, limit int) (domain.FileSizes, error) {
+	if limit < 1 || commit.IsZero() {
+		return domain.FileSizes{}, fmt.Errorf("file sizes: %w: limit %d", domain.ErrInvalid, limit)
+	}
+	dir, err := g.repoDir(repo)
+	if err != nil {
+		return domain.FileSizes{}, err
+	}
+	var out domain.FileSizes
+	err = g.pipe(ctx, readArgs(dir, "ls-tree", "-r", "-l", "-z", "--end-of-options", commit.String()), func(r *bufio.Reader) error {
+		for {
+			tok, err := readToken(r)
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			e, err := parseTreeEntry(tok, domain.TreePath{})
+			if err != nil {
+				return err
+			}
+			if e.Mode != 0o100644 && e.Mode != 0o100755 {
+				continue
+			}
+			if len(out.Files) == limit {
+				out.Truncated = true
+				return errStop
+			}
+			// A copy: the name would keep the whole entry alive.
+			out.Files = append(out.Files, domain.FileSize{Path: strings.Clone(e.Path), Size: e.Size})
+		}
+	})
+	if err != nil {
+		return domain.FileSizes{}, fmt.Errorf("file sizes of %q at %s: %w", repo, commit, err)
+	}
+	return out, nil
+}
+
 // GetTree lists a directory with `git ls-tree -z -l`.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses git output into domain values; limits and rules come from the port
