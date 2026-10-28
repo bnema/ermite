@@ -110,7 +110,7 @@ The web shows an **Archived** badge and hides write actions. `repo show` display
 
 ### Repository languages
 
-`repo show` prints the top five languages of the default branch (`Go 72.1%, TypeScript 20.3%, …`), and the repository JSON of `repo show` and `repo list` has a `languages` array of `name`, `bytes` and `percent` (`[]` when unknown). The server counts them in the background from file extensions, skipping vendored, generated and documentation paths and files over 1 MiB; `.gitattributes` linguist attributes are ignored. It needs the `repos.languages` feature.
+`repo show` prints the top five languages of the default branch (`Go 72.1%, TypeScript 20.3%, …`), and the repository JSON of `repo show` and `repo list` has a `languages` array of `name`, `bytes` and `percent` (`[]` when unknown). The server counts them in the background from file extensions, skipping vendored, generated and documentation paths and files over 1 MiB, and reading at most the first 100,000 files in tree order; when that cuts the tree, `languages_truncated` is true and `repo show` appends ` (partial)`; `.gitattributes` linguist attributes are ignored. It needs the `repos.languages` feature.
 
 ### Dependency updates
 

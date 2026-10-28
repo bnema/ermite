@@ -36,9 +36,9 @@ Order: `ERMITE_URL` / `ERMITE_TOKEN` env, then `url` / `token.cmd` in `~/.config
 - `--issues off|owner|public`: `public` adds a moderated form for visitors.
 - `--archived[=false]` (`repos.archived` feature): read-only. Blocks pushes, MR/issue writes, merges, release writes, dispatches, reruns and crons; reads and closing still work.
 
-JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before first push), `merge_modes`, `allow_auto_merge`, `ci_auto_cancel`, `issues`, `archived`, `languages` (array of `name`, `bytes`, `percent`; `[]` when unknown; `repos.languages` feature).
+JSON: `name`, `description`, `visibility`, `default_branch`, `created_at`, `pushed_at` (null before first push), `merge_modes`, `allow_auto_merge`, `ci_auto_cancel`, `issues`, `archived`, `languages` (array of `name`, `bytes`, `percent`; `[]` when unknown; `repos.languages` feature), `languages_truncated` (true when the tree was only partly read).
 
-Languages come from the default branch head, computed in the background (may lag a push): file extensions only; vendored, generated and docs paths are excluded; files over 1 MiB are skipped; `.gitattributes` linguist attributes are ignored. `repo show` prints the top 5.
+Languages come from the default branch head, computed in the background (may lag a push): file extensions only; vendored, generated and docs paths are excluded; files over 1 MiB are skipped; only the first 100,000 files in tree order are read (`repo show` then appends ` (partial)`); `.gitattributes` linguist attributes are ignored. `repo show` prints the top 5.
 
 ## Tokens
 

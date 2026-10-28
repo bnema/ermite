@@ -40,6 +40,8 @@ type jsonRepo struct {
 	Archived       bool     `json:"archived"`
 	// Languages is never null: [] when unknown.
 	Languages []jsonLanguage `json:"languages" help:"default-branch languages, bytes descending; [] when unknown"`
+	// LanguagesTruncated is true when the percentages cover a partial tree.
+	LanguagesTruncated bool `json:"languages_truncated" help:"whether the languages cover only part of the tree"`
 	// Issues is the issue mode ("off", "owner" or "public").
 	Issues string `json:"issues" help:"off, owner or public"`
 }
@@ -75,19 +77,20 @@ func toJSONRepo(r *ermite.Repo) jsonRepo {
 		langs = append(langs, jsonLanguage{Name: l.GetName(), Bytes: l.GetBytes(), Percent: l.GetPercent()})
 	}
 	return jsonRepo{
-		Languages:      langs,
-		MergeModes:     modes,
-		AllowAutoMerge: r.GetSettings().GetAllowAutoMerge(),
-		CIAutoCancel:   r.GetSettings().GetCiAutoCancel(),
-		Archived:       r.GetArchived(),
-		Issues:         issuesModeName(r.GetSettings().GetIssues()),
-		Name:           r.GetName(),
-		Description:    r.GetDescription(),
-		Topics:         append([]string{}, r.GetTopics()...),
-		Visibility:     visibilityName(r.GetVisibility()),
-		DefaultBranch:  r.GetDefaultBranch(),
-		CreatedAt:      jsonTime(r.GetCreatedAt()),
-		PushedAt:       jsonTime(r.GetPushedAt()),
+		Languages:          langs,
+		LanguagesTruncated: r.GetLanguagesTruncated(),
+		MergeModes:         modes,
+		AllowAutoMerge:     r.GetSettings().GetAllowAutoMerge(),
+		CIAutoCancel:       r.GetSettings().GetCiAutoCancel(),
+		Archived:           r.GetArchived(),
+		Issues:             issuesModeName(r.GetSettings().GetIssues()),
+		Name:               r.GetName(),
+		Description:        r.GetDescription(),
+		Topics:             append([]string{}, r.GetTopics()...),
+		Visibility:         visibilityName(r.GetVisibility()),
+		DefaultBranch:      r.GetDefaultBranch(),
+		CreatedAt:          jsonTime(r.GetCreatedAt()),
+		PushedAt:           jsonTime(r.GetPushedAt()),
 	}
 }
 
@@ -260,6 +263,9 @@ func printRepo(w io.Writer, r *ermite.Repo) error {
 		{"archived", strconv.FormatBool(r.GetArchived())},
 	}
 	if line := languagesLine(toJSONRepo(r).Languages); line != "" {
+		if r.GetLanguagesTruncated() {
+			line += " (partial)"
+		}
 		rows = append(rows, [2]string{"languages", line})
 	}
 	return fields(w, rows)

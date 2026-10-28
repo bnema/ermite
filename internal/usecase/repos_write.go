@@ -53,6 +53,7 @@ func (r *Repos) View(ctx context.Context, repo domain.Repo) (ports.RepoView, err
 			}
 		case ok && rec.RepoCreatedAt.Equal(repo.CreatedAt):
 			view.Languages = rec.Shares()
+			view.LanguagesTruncated = rec.Truncated
 		}
 	}
 	return view, nil

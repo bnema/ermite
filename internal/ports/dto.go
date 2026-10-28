@@ -28,6 +28,8 @@ type RepoView struct {
 	// Languages is the language breakdown of the default branch head, bytes
 	// descending; nil when unknown.
 	Languages []domain.LanguageShare
+	// LanguagesTruncated is true when the count covers a partial tree.
+	LanguagesTruncated bool
 }
 
 // CreateRepoParams are the settings of a new repository.

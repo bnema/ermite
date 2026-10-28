@@ -60,16 +60,17 @@ func visibilityFromPB(v pb.Visibility) (domain.Visibility, error) {
 func repoToPB(v ports.RepoView) *pb.Repo {
 	settings := v.EffectiveSettings()
 	return &pb.Repo{
-		Name:          v.Name.String(),
-		Description:   v.Description,
-		Topics:        v.Topics,
-		Visibility:    visibilityToPB(v.Visibility),
-		DefaultBranch: v.DefaultBranch,
-		Archived:      v.Archived,
-		CreatedAt:     timestamp(v.CreatedAt),
-		PushedAt:      timestamp(v.PushedAt),
-		Settings:      settingsToPB(settings),
-		Languages:     languagesToPB(v.Languages),
+		Name:               v.Name.String(),
+		Description:        v.Description,
+		Topics:             v.Topics,
+		Visibility:         visibilityToPB(v.Visibility),
+		DefaultBranch:      v.DefaultBranch,
+		Archived:           v.Archived,
+		CreatedAt:          timestamp(v.CreatedAt),
+		PushedAt:           timestamp(v.PushedAt),
+		Settings:           settingsToPB(settings),
+		Languages:          languagesToPB(v.Languages),
+		LanguagesTruncated: v.LanguagesTruncated,
 	}
 }
 
