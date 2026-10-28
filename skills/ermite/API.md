@@ -69,6 +69,8 @@ For paginated procedures, pass `pageSize` and then the response's `nextPageToken
 | `EventService/Watch` (stream) | `topics`, `resumeAfter` | Repo read; `owner` topic is owner-only |
 | `ServerService/GetVersion`, `GetSigningKey` | `{}` | Public |
 
+A `Repo` carries `languages` (`name`, `bytes`, `percent`, largest first; empty until computed) and `languagesTruncated` (feature `repos.languages`).
+
 Journal reads respect the token's repository restrictions. Write, admin and runner procedures also exist and require their corresponding scoped tokens; see [CLI.md](CLI.md) for scopes.
 
 ## Events and streaming
