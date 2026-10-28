@@ -627,3 +627,29 @@ type IssueLinkTrigger interface {
 	OnBranchesMoved(context.Context, domain.Principal, domain.RepoName, []domain.RefUpdate)
 	OnMerged(context.Context, domain.Principal, domain.Repo, domain.MergeRequest)
 }
+
+// LanguageTrigger queues the language count of a repository. It only marks
+// the repository and returns. *usecase.Languages implements it.
+type LanguageTrigger interface {
+	OnRepoChanged(ctx context.Context, repo domain.RepoName)
+}
+
+// LanguageStore keeps the language count of each repository. The count is
+// derived data: it can always be computed again.
+type LanguageStore interface {
+	// Get returns the record; ok is false when there is none.
+	Get(ctx context.Context, repo domain.RepoName) (domain.RepoLanguages, bool, error)
+	// Put stores rec. domain.ErrNotFound: the repository is gone or was
+	// created again (its created_at is not rec.RepoCreatedAt).
+	Put(ctx context.Context, rec domain.RepoLanguages) error
+	// Delete removes the record; a missing record is not an error.
+	Delete(ctx context.Context, repo domain.RepoName) error
+}
+
+// TreeFileLister lists the regular files of a commit with their sizes.
+type TreeFileLister interface {
+	// ListFileSizes lists the regular files (no symlinks, no submodules) of
+	// the tree of commit, recursively, in tree order, at most max of them
+	// (FileSizes.Truncated tells). Unknown repository or commit: ErrNotFound.
+	ListFileSizes(ctx context.Context, repo domain.RepoName, commit domain.ObjectID, max int) (domain.FileSizes, error)
+}

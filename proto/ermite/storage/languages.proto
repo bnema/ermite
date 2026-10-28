@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+package ermite.storage;
+import "google/protobuf/timestamp.proto";
+option go_package = "bnema.dev/ermite/gen/ermite/storage;storagepb";
+
+// LanguageBytes is the bytes counted for one language.
+message LanguageBytes {
+  string name = 1;
+  int64 bytes = 2;
+}
+// RepoLanguages is the record under lang/<repo>. Only bytes are stored: the
+// percentages are computed on read. .gitattributes linguist-* attributes are
+// not supported.
+message RepoLanguages {
+  string repo = 1;
+  // created_at of the repository it was computed for: a repository deleted
+  // and created again under the same name does not inherit it.
+  google.protobuf.Timestamp repo_created_at = 2;
+  // Default-branch head counted.
+  string commit = 3;
+  // domain.LanguagesVersion of the algorithm.
+  uint32 version = 4;
+  google.protobuf.Timestamp computed_at = 5;
+  // Sorted by bytes descending, then name.
+  repeated LanguageBytes languages = 6;
+  // The file limit was hit: partial count.
+  bool truncated = 7;
+}

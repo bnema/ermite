@@ -25,6 +25,9 @@ type RepoView struct {
 	// DefaultBranch is the branch HEAD points to, even when it does not exist
 	// yet; empty when HEAD is detached or the directory is missing.
 	DefaultBranch string
+	// Languages is the language breakdown of the default branch head, bytes
+	// descending; nil when unknown.
+	Languages []domain.LanguageShare
 }
 
 // CreateRepoParams are the settings of a new repository.

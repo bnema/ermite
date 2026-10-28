@@ -167,6 +167,7 @@ func (s *Store) Delete(ctx context.Context, name domain.RepoName) error {
 		keys = append(keys, settingsKeys(ctx, snap, name)...)
 		keys = append(keys, mirrorKeys(ctx, snap, name)...)
 		keys = append(keys, depsKeys(ctx, snap, name)...)
+		keys = append(keys, languageKeys(ctx, snap, name)...)
 		for len(keys) > deleteChunk {
 			var b kv.Batch
 			for _, k := range keys[:deleteChunk] {
