@@ -120,3 +120,12 @@ Schema 11 fails the records that were applying (their job lived in memory) with
 "interrupted by an upgrade: open the merge request again", cuts the error of the
 failed ones to its first line and drops the old job id. The migration and the
 schema bump share one batch and are idempotent. Older builds refuse schema 11.
+
+## Languages (`lang/`)
+
+The language breakdown of a repository is a protobuf record under `lang/<repo>`:
+the default-branch commit it was computed from, the algorithm version, the
+creation time of the repository and the bytes per language. It is derived data:
+a background worker recomputes it after a push to the default branch and for
+every repository at startup, and deleting the repository removes it. There is
+no schema bump; a build without this key ignores it.

@@ -108,6 +108,10 @@ Archived repositories reject pushes of any ref, new or edited merge requests and
 
 The web shows an **Archived** badge and hides write actions. `repo show` displays the state; CLI and GitHub repository JSON include `archived`.
 
+### Repository languages
+
+`repo show` prints the top five languages of the default branch (`Go 72.1%, TypeScript 20.3%, …`), and the repository JSON of `repo show` and `repo list` has a `languages` array of `name`, `bytes` and `percent` (`[]` when unknown). The server counts them in the background from file extensions, skipping vendored, generated and documentation paths and files over 1 MiB; `.gitattributes` linguist attributes are ignored. It needs the `repos.languages` feature.
+
 ### Dependency updates
 
 `ermite deps` drives Bernard, which needs a server with the `deps` feature and owner rights. `deps list` shows the pending updates, snoozed repositories included; `--json` prints `repo`, `updates` (`ecosystem`, `name`, `directory`, `current`, `latest`, `kind`, `new`), `checked_at`, `snoozed_until`, `merge_request_number`, `state`, `error` and `run_id`. The table has a `RUN` column with the run applying the updates, or the last one that tried (`-` for none); for a failed one, read its log with `ermite run view <repo> <run> --log`. `deps check <repo>` runs a check now. `deps open` and `deps ignore` read the current list and send it back as the versions you confirm, so a list that changed in between is refused with a failed precondition. When the server runs with `ERMITE_DEPS_ENABLED=0`, `deps list` is empty and the other commands answer “Bernard is disabled”. See [Bernard](bernard.md).
