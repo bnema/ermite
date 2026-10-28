@@ -9,6 +9,8 @@ A single-user Git forge in one binary. `ermite serve` runs the server; every oth
 
 ## Connect
 
+Direct HTTP clients and website fetch: [API.md](API.md).
+
 ```sh
 export ERMITE_URL=https://git.example.com
 export ERMITE_TOKEN=ermite_...   # optional for public reads
