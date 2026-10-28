@@ -41,7 +41,21 @@ func (r *Repos) View(ctx context.Context, repo domain.Repo) (ports.RepoView, err
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return ports.RepoView{}, fmt.Errorf("read default branch of %q: %w", repo.Name, err)
 	}
-	return ports.RepoView{Repo: repo, DefaultBranch: branch}, nil
+	view := ports.RepoView{Repo: repo, DefaultBranch: branch}
+	if r.langStore != nil {
+		// Best effort: a failure or a count of another repository of that name
+		// leaves the languages out.
+		rec, ok, err := r.langStore.Get(ctx, repo.Name)
+		switch {
+		case err != nil:
+			if ctx.Err() == nil {
+				ctxLog(ctx).Warn().Err(err).Str("repo", repo.Name.String()).Msg("read the languages")
+			}
+		case ok && rec.RepoCreatedAt.Equal(repo.CreatedAt):
+			view.Languages = rec.Shares()
+		}
+	}
+	return view, nil
 }
 
 // Update changes the description, the topics, the visibility, the default branch and the
@@ -149,6 +163,9 @@ func (r *Repos) Update(ctx context.Context, p domain.Principal, name domain.Repo
 		} else if r.mirror != nil {
 			// The default branch decides which refs are mirrored.
 			r.mirror.OnPush(ctx, name, []domain.RefUpdate{{Ref: "HEAD"}})
+		}
+		if headErr == nil && r.langs != nil {
+			r.langs.OnRepoChanged(ctx, name) // the count follows the default branch
 		}
 	}
 

@@ -25,6 +25,8 @@ type Repos struct {
 	autoMerge ports.AutoMergeTrigger
 	mergeGate ports.MergeGate
 	mirror    ports.MirrorTrigger      // nil: no outbound mirror
+	langs     ports.LanguageTrigger    // nil: no language count
+	langStore ports.LanguageStore      // nil: no languages in views
 	releases  ports.ReleaseRepoCleaner // nil: no release blobs to remove
 }
 
@@ -40,6 +42,13 @@ func NewRepos(meta ports.RepoMetaStore, git ports.GitRepos, bus ports.EventBus, 
 // before the first request; it returns r.
 func (r *Repos) WithMirror(t ports.MirrorTrigger) *Repos {
 	r.mirror = t
+	return r
+}
+
+// WithLanguages makes a default-branch change queue the language count and
+// View add the stored one. Call it before the first request; it returns r.
+func (r *Repos) WithLanguages(t ports.LanguageTrigger, s ports.LanguageStore) *Repos {
+	r.langs, r.langStore = t, s
 	return r
 }
 

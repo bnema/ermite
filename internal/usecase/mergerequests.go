@@ -63,6 +63,7 @@ type MergeRequests struct {
 	mergeab    MergeabilityHook         // nil: no mergeability
 	autoMerge  ports.AutoMergeTrigger
 	mirror     ports.MirrorTrigger   // nil: no outbound mirror
+	langs      ports.LanguageTrigger // nil: no language count
 	journal    ports.JournalRecorder // nil: no activity journal
 
 	mu    sync.Mutex
@@ -127,6 +128,12 @@ func NewMergeRequests(cfg MergeRequestsConfig) *MergeRequests {
 		committer: cfg.Committer, bus: cfg.Bus, clock: cfg.Clock, maint: cfg.Maint, ci: cfg.CI, checks: cfg.Checks, pulls: cfg.PullRequests, tips: cfg.RefTips, mergeab: cfg.Mergeability,
 		journal: cfg.Journal, locks: make(map[domain.RepoName]chan struct{}),
 	}
+}
+
+// WithLanguages makes a merge queue the language count. Call before the first merge.
+func (m *MergeRequests) WithLanguages(t ports.LanguageTrigger) *MergeRequests {
+	m.langs = t
+	return m
 }
 
 // WithMirror makes a merge notify outbound mirrors. Call before the first merge.
@@ -1326,6 +1333,9 @@ func (m *MergeRequests) afterMerge(ctx context.Context, p domain.Principal, repo
 	})
 	if m.mirror != nil {
 		m.mirror.OnPush(ctx, name, updates) // marks dirty only; never blocks
+	}
+	if m.langs != nil {
+		m.langs.OnRepoChanged(ctx, name) // marks only; never blocks
 	}
 	if m.pulls != nil {
 		m.pulls.OnPullRequest(ctx, name, ports.PullRequestEvent{Number: mr.Number, Action: domain.PullClosed, Head: mr.HeadID, Base: mr.BaseID, Merged: true}, p)

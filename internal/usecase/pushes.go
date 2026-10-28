@@ -19,7 +19,8 @@ import (
 type Pushes struct {
 	releases ports.ReleaseTagTrigger
 	links    ports.IssueLinkTrigger
-	mirror   ports.MirrorTrigger // nil: no outbound mirror
+	mirror   ports.MirrorTrigger   // nil: no outbound mirror
+	langs    ports.LanguageTrigger // nil: no language count
 	meta     ports.RepoMetaStore
 	repos    *Repos
 	git      ports.GitRepos
@@ -53,6 +54,12 @@ func (u *Pushes) WithReleases(t ports.ReleaseTagTrigger) *Pushes { u.releases = 
 
 // WithIssueLinks enables synchronous best-effort issue indexing before the first push.
 func (u *Pushes) WithIssueLinks(t ports.IssueLinkTrigger) *Pushes { u.links = t; return u }
+
+// WithLanguages makes Record queue the language count. Call before the first push.
+func (u *Pushes) WithLanguages(t ports.LanguageTrigger) *Pushes {
+	u.langs = t
+	return u
+}
 
 // WithMirror makes Record notify outbound mirrors. Call before the first push.
 func (u *Pushes) WithMirror(t ports.MirrorTrigger) *Pushes {
@@ -286,6 +293,9 @@ func (u *Pushes) Record(ctx context.Context, p domain.Principal, name domain.Rep
 	}
 	if err := u.fixDefaultBranch(ctx, name, updates); err != nil {
 		errs = append(errs, err)
+	}
+	if u.langs != nil {
+		u.langs.OnRepoChanged(ctx, name) // marks only: the worker skips a head that did not move
 	}
 	if u.fresh != nil {
 		u.fresh.Refresh(ctx, name)
