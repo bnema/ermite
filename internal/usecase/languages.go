@@ -249,7 +249,13 @@ func (l *Languages) compute(ctx context.Context, repo domain.RepoName) error {
 	rec.Version, rec.ComputedAt = domain.LanguagesVersion, l.cfg.Clock.Now().UTC()
 
 	again, err := l.cfg.Reader.ResolveRevision(ctx, repo, domain.Revision{})
-	if err != nil || again.CommitID != head.CommitID {
+	if errors.Is(err, domain.ErrNotFound) { // the branch vanished meanwhile
+		return l.cfg.Store.Delete(ctx, repo)
+	}
+	if err != nil {
+		return fmt.Errorf("resolve HEAD again: %w", err)
+	}
+	if again.CommitID != head.CommitID {
 		l.markHot(repo) // the head moved: drop this result
 		return nil
 	}

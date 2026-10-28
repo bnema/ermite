@@ -4,8 +4,10 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -144,34 +146,78 @@ func TestLanguagesDropsAStaleResultAndComputesAgain(t *testing.T) {
 }
 
 func TestLanguagesTriggerDuringARunRunsExactlyOnceMore(t *testing.T) {
-	r := newLangRig(t)
-	n := name(t, "tools")
-	r.repo(n)
-	r.reader.EXPECT().ResolveRevision(mock.Anything, n, domain.Revision{}).Return(headA, nil)
-	r.store.EXPECT().Get(mock.Anything, n).Return(domain.RepoLanguages{}, false, nil)
-	entered, release := make(chan struct{}, 4), make(chan struct{})
-	var runs atomic.Int32
-	r.files.EXPECT().ListFileSizes(mock.Anything, n, mock.Anything, mock.Anything).RunAndReturn(func(context.Context, domain.RepoName, domain.ObjectID, int) (domain.FileSizes, error) {
-		runs.Add(1)
-		entered <- struct{}{}
-		<-release
-		return goFiles, nil
-	})
-	puts := make(chan struct{}, 4)
-	r.store.EXPECT().Put(mock.Anything, mock.Anything).Run(func(context.Context, domain.RepoLanguages) { puts <- struct{}{} }).Return(nil)
-	r.l.Start()
-	r.l.OnRepoChanged(context.Background(), n)
-	wait(t, entered, "first run")
-	for range 5 { // coalesced into one more run
+	synctest.Test(t, func(t *testing.T) {
+		r := newLangRig(t)
+		n := name(t, "tools")
+		r.repo(n)
+		r.reader.EXPECT().ResolveRevision(mock.Anything, n, domain.Revision{}).Return(headA, nil)
+		r.store.EXPECT().Get(mock.Anything, n).Return(domain.RepoLanguages{}, false, nil)
+		entered, release := make(chan struct{}, 4), make(chan struct{})
+		var runs atomic.Int32
+		r.files.EXPECT().ListFileSizes(mock.Anything, n, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, _ domain.RepoName, _ domain.ObjectID, _ int) (domain.FileSizes, error) {
+			runs.Add(1)
+			entered <- struct{}{}
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return domain.FileSizes{}, ctx.Err()
+			}
+			return goFiles, nil
+		})
+		puts := make(chan struct{}, 4)
+		r.store.EXPECT().Put(mock.Anything, mock.Anything).Run(func(context.Context, domain.RepoLanguages) { puts <- struct{}{} }).Return(nil)
+		r.l.Start()
 		r.l.OnRepoChanged(context.Background(), n)
+		wait(t, entered, "first run")
+		for range 5 { // coalesced into one more run
+			r.l.OnRepoChanged(context.Background(), n)
+		}
+		release <- struct{}{}
+		wait(t, puts, "first put")
+		wait(t, entered, "second run")
+		close(release)
+		wait(t, puts, "second put")
+		synctest.Wait() // every goroutine is idle: no third run is coming
+		assert.EqualValues(t, 2, runs.Load())
+		r.l.Close(context.Background())
+	})
+}
+
+func TestLanguagesFinalHeadCheck(t *testing.T) {
+	boom := errors.New("boom")
+	for _, tc := range []struct {
+		name    string
+		err     error
+		deletes bool
+	}{
+		{"branch vanished", domain.ErrNotFound, true},
+		{"resolution failed", boom, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := newLangRig(t)
+				n := name(t, "tools")
+				r.repo(n)
+				var resolves atomic.Int32
+				r.reader.EXPECT().ResolveRevision(mock.Anything, n, domain.Revision{}).RunAndReturn(func(context.Context, domain.RepoName, domain.Revision) (domain.ResolvedRevision, error) {
+					if resolves.Add(1) == 1 {
+						return headA, nil
+					}
+					return domain.ResolvedRevision{}, tc.err
+				})
+				r.store.EXPECT().Get(mock.Anything, n).Return(domain.RepoLanguages{}, false, nil)
+				r.files.EXPECT().ListFileSizes(mock.Anything, n, mock.Anything, mock.Anything).Return(goFiles, nil).Once() // no requeue
+				if tc.deletes {
+					r.store.EXPECT().Delete(mock.Anything, n).Return(nil).Once()
+				}
+				r.l.Start()
+				r.l.OnRepoChanged(context.Background(), n)
+				synctest.Wait()
+				assert.EqualValues(t, 2, resolves.Load(), "no hot requeue")
+				r.l.Close(context.Background())
+			})
+		})
 	}
-	release <- struct{}{}
-	wait(t, puts, "first put")
-	wait(t, entered, "second run")
-	close(release)
-	wait(t, puts, "second put")
-	time.Sleep(50 * time.Millisecond)
-	assert.EqualValues(t, 2, runs.Load())
 }
 
 func TestLanguagesPanicIsRecoveredAndTheNextRepositoryIsServed(t *testing.T) {
@@ -286,7 +332,7 @@ func TestLanguagesDefaultBranchChangeNotifies(t *testing.T) {
 func TestReposViewLanguages(t *testing.T) {
 	ctx := context.Background()
 	n := name(t, "tools")
-	rec := domain.RepoLanguages{Repo: n, RepoCreatedAt: now, Languages: []domain.LanguageBytes{{Name: "Go", Bytes: 3}, {Name: "Shell", Bytes: 1}}}
+	rec := domain.RepoLanguages{Repo: n, RepoCreatedAt: now, Truncated: true, Languages: []domain.LanguageBytes{{Name: "Go", Bytes: 3}, {Name: "Shell", Bytes: 1}}}
 
 	f := newFixture(t)
 	store := mocks.NewLanguageStore(t)
@@ -297,6 +343,7 @@ func TestReposViewLanguages(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, rec.Shares(), v.Languages)
 	assert.InDelta(t, 75, v.Languages[0].Percent, 1e-9)
+	assert.True(t, v.LanguagesTruncated)
 
 	// A record of a repository created again under the name is not served.
 	v, err = f.repos.View(ctx, domain.Repo{Name: n, CreatedAt: now.Add(time.Hour)})
