@@ -172,13 +172,21 @@ func TestBernardCheckChangedOnlyWhenBatchesMove(t *testing.T) {
 		batches []domain.DepBatch
 		want    int
 	}{
-		{"kept MR batch without updates", []domain.DepBatch{{}, major}, 0},
-		{"kept MR batch loses its updates", []domain.DepBatch{{}, {Key: major.Key, MR: 4, Updates: []domain.DepUpdate{{DepRef: depRef("x/v2", "v2.0.0")}}}}, 1},
-		{"idle batch dropped", []domain.DepBatch{{}, {Key: "gomod//y@v3", Updates: []domain.DepUpdate{{DepRef: depRef("y/v3", "v3.0.0")}}}}, 1},
+		{"kept MR batch without updates", []domain.DepBatch{{Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.20.0"}}}, major}, 0},
+		{"kept MR batch loses its updates", []domain.DepBatch{{Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.20.0"}}}, {Key: major.Key, MR: 4, Updates: []domain.DepUpdate{{DepRef: depRef("x/v2", "v2.0.0")}}}}, 1},
+		{"same version, other current", []domain.DepBatch{{Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.19.0"}}}}, 1},
+		{"MR snapshot now outdated", []domain.DepBatch{{MR: 2, Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.19.0"}}, MRVersions: []domain.DepRef{depRef("a/mod", "v0.20.1")}, MRUpdates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.19.0"}}}}, 1},
+		{"unchanged", []domain.DepBatch{{Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.20.0"}}}}, 0},
+		{"idle batch dropped", []domain.DepBatch{{Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.20.0"}}}, {Key: "gomod//y@v3", Updates: []domain.DepUpdate{{DepRef: depRef("y/v3", "v3.0.0")}}}}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newBernardRig(t, "0 6 * * *")
 			r.repoReads()
+			// The check proposes a/mod v0.20.1 from v0.20.0 (goCand's current).
+			r.cands = []domain.DepCandidate{goCand("a/mod", r.old("v0.20.1"))}
+			r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil).Maybe()
+			r.reg.EXPECT().Malicious(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil).Maybe()
+			r.bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(func(e domain.Event) bool { _, ok := e.(domain.DependencyUpdatesFound); return ok })).Maybe()
 			r.rec = domain.RepoDeps{Repo: r.repo, Batches: tc.batches}
 			_, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
 			require.NoError(t, err)

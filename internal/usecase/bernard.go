@@ -274,6 +274,11 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 					fresh++
 				}
 			}
+			// Same versions from another current version (an overlapping
+			// batch merged) change what the owner sees, and maybe Outdated.
+			if !sameCurrents(old.Updates, batch.Updates) || old.Outdated() != batch.Outdated() {
+				moved = true
+			}
 		}
 		for _, old := range d.Batches {
 			if slices.ContainsFunc(next, func(batch domain.DepBatch) bool { return batch.Key == old.Key }) {
@@ -310,6 +315,21 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 // called after the store mutation, never inside it.
 func (b *Bernard) changed(ctx context.Context, name domain.RepoName) {
 	b.cfg.Bus.Publish(context.WithoutCancel(ctx), domain.DependencyUpdatesChanged{Repo: name, At: b.cfg.Clock.Now()})
+}
+
+// sameCurrents reports whether every version in both lists updates from the
+// same current version.
+func sameCurrents(a, b []domain.DepUpdate) bool {
+	current := make(map[domain.DepRef]string, len(a))
+	for _, u := range a {
+		current[u.DepRef] = u.Current
+	}
+	for _, u := range b {
+		if c, ok := current[u.DepRef]; ok && c != u.Current {
+			return false
+		}
+	}
+	return true
 }
 
 func cmpStrings(pairs ...string) int {

@@ -225,6 +225,7 @@ func TestBernardOpenActions(t *testing.T) {
 	assert.Equal(t, []string{"sign", "commit", "tip", "branch", "ci", "mr"}, r.ops, "the tip is recorded before the branch moves")
 	assert.EqualValues(t, 9, got.Base().MR)
 	assert.Equal(t, []domain.DepRef{up.DepRef}, got.Base().MRVersions)
+	assert.Equal(t, []domain.DepUpdate{up}, got.Base().MRUpdates, "the snapshot keeps the current versions")
 	assert.Equal(t, domain.DepsIdle, got.Base().State)
 	assert.Empty(t, got.Base().Error)
 	assert.Contains(t, string(r.commit), "gpgsig -----BEGIN SSH SIGNATURE-----")
@@ -345,7 +346,7 @@ func TestBernardClosedMRIgnoresItsVersions(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
 	other := domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: botWorkflow, Name: "x/y", Version: "v2"}, Current: "v1"}
-	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up, other}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}}}}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up, other}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}, MRUpdates: []domain.DepUpdate{up}}}}
 	r.startWatch()
 
 	// Another merge request is none of Bernard's business.
@@ -355,6 +356,7 @@ func TestBernardClosedMRIgnoresItsVersions(t *testing.T) {
 
 	got := r.snapshot()
 	assert.Empty(t, got.Base().MRVersions)
+	assert.Empty(t, got.Base().MRUpdates)
 	assert.Equal(t, []domain.DepUpdate{other}, got.Base().Updates)
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -365,7 +367,7 @@ func TestBernardClosedMRIgnoresItsVersions(t *testing.T) {
 func TestBernardMergedMRClearsAndChecks(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}}}}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}, MRUpdates: []domain.DepUpdate{up}}}}
 	// The check finds an archived repository and stops there.
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo, Archived: true}, nil)
 	r.startWatch()
@@ -376,6 +378,7 @@ func TestBernardMergedMRClearsAndChecks(t *testing.T) {
 	got := r.snapshot()
 	assert.Zero(t, got.Base().MR)
 	assert.Empty(t, got.Base().MRVersions)
+	assert.Empty(t, got.Base().MRUpdates)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	assert.Empty(t, r.ignored, "a merge ignores nothing")
