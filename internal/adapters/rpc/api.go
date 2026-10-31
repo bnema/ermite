@@ -12,8 +12,8 @@ import (
 	"net/netip"
 	"slices"
 
-	"connectrpc.com/connect"
 	"bnema.dev/zerowrap"
+	"connectrpc.com/connect"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/clientlimit"

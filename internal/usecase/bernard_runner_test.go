@@ -627,6 +627,8 @@ func TestBernardPathMajorReportRefusesTruncatedLargeGoFile(t *testing.T) {
 	report := ports.DepsReport{Files: []ports.DepsFile{{Path: "go.mod", Content: []byte("module example.com/app\ngo 1.24\nrequire example.com/lib/v2 v2.0.0\n")}, {Path: "main.go", Content: []byte(truncated)}}}
 	err := rr.b.CheckDepsReport(context.Background(), run, job, report)
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	require.ErrorContains(t, err, "main.go")
+	require.ErrorContains(t, err, "larger than")
 }
 
 // An unchanged go.sum is not read at all, whatever its size.

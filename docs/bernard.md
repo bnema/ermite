@@ -57,7 +57,7 @@ The job's network allows the internet except private address ranges. Protection 
 
 The runner reports at most 64 changed files, 2 MiB per file and 8 MiB in total. Bernard accepts it only if every file is one an ecosystem allows:
 
-- Go: `go.mod` and `go.sum` of the requested directories, and for a new module path the `.go` files of that module, where only import paths from the old to the new path may change.
+- Go: `go.mod` and `go.sum` of the requested directories, and for a new module path the `.go` files of that module, where only import paths from the old to the new path may change. A changed `.go` file larger than 2 MiB makes the report fail.
 - npm: the `package.json` of each requested directory, byte for byte the original with only the requested specs changed, and the root's lockfile if it existed before. In `package-lock.json` and `npm-shrinkwrap.json`, every new or changed `resolved` entry must start with `https://registry.npmjs.org/`; when the original lockfile is over 2 MiB, Bernard reads only its header, so every resolution counts as new. pnpm, Yarn and Bun lockfiles are not checked: review them in the merge request.
 
 For `go.mod`:
