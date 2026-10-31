@@ -177,6 +177,17 @@ func TestNPMWorkspacePatterns(t *testing.T) {
 	}
 }
 
+func TestNPMManagerRefusesOldNPM(t *testing.T) {
+	for pm, ok := range map[string]bool{"npm@6.14.18": false, "npm@0.1.0": false, "npm@7.0.0": true, "npm@10.9.2": true, "pnpm@6.35.1": true} {
+		_, err := npmManager(nil, "", npmManifest{PackageManager: pm})
+		require.Equal(t, ok, err == nil, pm)
+	}
+	reg := mocks.NewDepsRegistry(t) // no lookup: the root is skipped
+	got, err := (NPM{}).Detect(t.Context(), npmFiles(t, map[string]string{"package.json": `{"dependencies":{"x":"1.0.0"},"packageManager":"npm@6.14.18"}`}), reg)
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
 func TestNPMManagerLockfiles(t *testing.T) {
 	_, err := npmManager(npmFiles(t, map[string]string{"pnpm-lock.yaml": "lockfileVersion: 5.4\n"}), "", npmManifest{})
 	require.Error(t, err, "pnpm 5.x lockfiles have no supported writer")

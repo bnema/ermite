@@ -97,6 +97,10 @@ func npmManager(files map[domain.TreePath][]byte, dir string, m npmManifest) (np
 		if pm == nil {
 			return root, fmt.Errorf("%w: unsupported packageManager %q", domain.ErrInvalid, m.PackageManager)
 		}
+		// npm 6 and older write lockfile v1 and ignore workspaces.
+		if major, _, _ := strings.Cut(pm[2], "."); pm[1] == "npm" && len(major) == 1 && major < "7" {
+			return root, fmt.Errorf("%w: packageManager %s is older than npm 7", domain.ErrInvalid, m.PackageManager)
+		}
 	}
 	for _, name := range npmLockOrder {
 		if npmFile(files, dir, name) == nil {

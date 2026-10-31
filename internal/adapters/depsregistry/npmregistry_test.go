@@ -62,8 +62,8 @@ func TestNPMVersionsFailures(t *testing.T) {
 func TestNPMVersionsCache(t *testing.T) {
 	reg := mocks.NewDepsRegistry(t)
 	// One document per name, whatever the current versions of the callers.
-	reg.EXPECT().NPMVersions(mock.Anything, "react", "v0.0.0").Return([]domain.DepVersion{{Version: "v2.0.0"}, {Version: "v1.5.0"}}, nil).Once()
-	reg.EXPECT().NPMVersions(mock.Anything, "missing", "v0.0.0").Return(nil, domain.ErrNotFound).Once()
+	reg.EXPECT().NPMVersions(mock.Anything, "react", "v0.0.0-0").Return([]domain.DepVersion{{Version: "v2.0.0"}, {Version: "v1.5.0"}, {Version: "v0.0.0-rc.2"}}, nil).Once()
+	reg.EXPECT().NPMVersions(mock.Anything, "missing", "v0.0.0-0").Return(nil, domain.ErrNotFound).Once()
 	c := NewCached(reg)
 	first, err := c.NPMVersions(t.Context(), "react", "v1.0.0")
 	require.NoError(t, err)
@@ -72,6 +72,9 @@ func TestNPMVersionsCache(t *testing.T) {
 	second, err := c.NPMVersions(t.Context(), "react", "v1.5.0")
 	require.NoError(t, err)
 	require.Equal(t, []domain.DepVersion{{Version: "v2.0.0"}}, second)
+	pre, err := c.NPMVersions(t.Context(), "react", "v0.0.0-rc.1")
+	require.NoError(t, err)
+	require.Len(t, pre, 3, "a 0.0.0-x prerelease newer than current is kept")
 	for range 2 {
 		_, err := c.NPMVersions(t.Context(), "missing", "v1.0.0")
 		require.ErrorIs(t, err, domain.ErrNotFound)
@@ -135,4 +138,15 @@ func TestNPMVersionsByteCap(t *testing.T) {
 	defer s.Close()
 	_, err := New(Config{NPMRegistryURL: s.URL}).NPMVersions(t.Context(), "huge", "v1.0.0")
 	require.ErrorIs(t, err, domain.ErrResourceExhausted)
+}
+
+// The cache's lower bound sorts below 0.0.0 prereleases in the real client.
+func TestNPMVersionsLowestBound(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"versions":{"0.0.0-rc.1":{}},"time":{"0.0.0-rc.1":"2026-01-01T00:00:00Z"}}`)
+	}))
+	defer s.Close()
+	got, err := New(Config{NPMRegistryURL: s.URL}).NPMVersions(t.Context(), "x", npmLowest)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
 }

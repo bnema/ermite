@@ -102,13 +102,17 @@ func (c *cached) GoMajorPaths(ctx context.Context, name string) ([]string, error
 }
 
 // NPMVersions fetches each package document once per check: the cache is
-// keyed by name and holds every version, filtered by current on each call.
+// keyed by name and holds every version (fetched from the lowest semver,
+// v0.0.0-0, so 0.0.0-x prereleases stay), filtered by current on each call.
+// npmLowest sorts below every valid semver version.
+const npmLowest = "v0.0.0-0"
+
 func (c *cached) NPMVersions(ctx context.Context, name, current string) ([]domain.DepVersion, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	v, ok := c.npmVersions[name]
 	if !ok {
-		value, err := c.registry.NPMVersions(ctx, name, "v0.0.0")
+		value, err := c.registry.NPMVersions(ctx, name, npmLowest)
 		if !cacheable(err) {
 			return nil, err
 		}
