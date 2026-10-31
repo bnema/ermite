@@ -224,7 +224,7 @@ Updates come in batches, one MR each: the base batch (patch and minor, branch `b
 
 `open` needs a registered runner with Bernard’s configured label and all required kinds: `deps`, plus `deps.gomod-path-majors` for import-path majors or `deps.npm` for npm updates. Capabilities are learned when the runner polls; otherwise the batch fails with `no runner supports <kind> updates` and no run starts.
 
-npm updates preserve the range operator and exact manifest formatting; only the existing root lockfile may also change. Unsupported specs (including git and workspace references) are skipped. A Bun root with a git dependency fails in the runner.
+npm updates preserve the range operator and exact manifest formatting; only the existing root lockfile may also change, and new `package-lock.json`/`npm-shrinkwrap.json` resolutions must come from `https://registry.npmjs.org/` (pnpm, Yarn and Bun lockfiles are not checked: review them). Unsupported specs (including git and workspace references), packages the registry lookup fails for, and roots whose `packageManager` differs from their lockfile are skipped. Yarn Berry `exec:`/git and Bun git dependencies fail in the runner.
 
 `open` and `ignore` send back the list they read and are refused if it changed meanwhile. An `outdated` MR holds other versions than the batch; `open` rebuilds it. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
 

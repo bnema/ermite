@@ -5,7 +5,7 @@ Bernard watches the dependencies of your repositories and lists the updates that
 ## What it does
 
 - Once a day (`ERMITE_DEPS_CHECK_AT`, 06:00 UTC by default) it checks every repository that is not [archived](cli.md#archived-repositories). Archived repositories are skipped.
-- It reads Go modules (`go.mod`), GitHub Actions (`uses:` in workflows and `action.yml`) and npm packages (`dependencies` and `devDependencies` of every `package.json` outside `node_modules`). Vendored modules, `replace`d modules and actions pinned to a commit are left alone.
+- It reads Go modules (`go.mod`), GitHub Actions (`uses:` in workflows and `action.yml`) and npm packages (`dependencies` and `devDependencies` of every `package.json` outside `node_modules`, `testdata`, `fixtures` and `__fixtures__`; an invalid `package.json` is skipped with a warning). Vendored modules, `replace`d modules and actions pinned to a commit are left alone.
 - For each dependency it proposes the highest version that is older than the cooldown (`ERMITE_DEPS_COOLDOWN`, 72 hours by default) and has no malicious-package (`MAL-`) advisory. A version that cannot be checked is not proposed. A Go module version is proposed only if its `go.mod` does not need a newer `go` directive than the requiring module's.
 - Go majors include new module paths: `foo` → `foo/v2` and `gopkg.in/x.v1` → `gopkg.in/x.v2` (up to five newer paths, stopping at the first missing one).
 - A check that finds a version the previous one did not publishes a `deps.updates_found` event, delivered to the owner only.
@@ -40,17 +40,17 @@ For Go, the runner runs `go get` and `go mod tidy` for the requested versions. F
 
 Each workspace root is updated by its own package manager. A directory is a root when its `package.json` has `workspaces` or it holds `pnpm-workspace.yaml`; a package matched by a root's patterns belongs to that root, any other package is its own root.
 
-- Manager: the root's `packageManager` field (`npm`, `pnpm`, `yarn` or `bun` with an exact version) wins. Otherwise the lockfile decides: `bun.lock` or `bun.lockb` → Bun, `pnpm-lock.yaml` → pnpm, `yarn.lock` → Yarn (Berry when `.yarnrc.yml` exists or the lockfile has `__metadata`), `package-lock.json` or `npm-shrinkwrap.json` → npm; no lockfile → npm. Without `packageManager`, the version comes from the lockfile format.
+- Manager: the lockfile decides: `bun.lock` or `bun.lockb` → Bun, `pnpm-lock.yaml` → pnpm, `yarn.lock` → Yarn (Berry when `.yarnrc.yml` exists or the lockfile has `__metadata`), `npm-shrinkwrap.json` (preferred) or `package-lock.json` → npm; no lockfile → npm. The root's `packageManager` field (`npm`, `pnpm`, `yarn` or `bun` with an exact version) sets the version; it must name the tool of the existing lockfile, otherwise the root is skipped. Without `packageManager`, the version comes from the lockfile format; a pnpm lockfile other than version 6 or 9 needs `packageManager`. npm older than 7 is refused.
 - Node: the major of the root's `engines.node` (`>=N`, `^N`, `~N`, `N`, `N.x`), clamped to 18–24; 22 otherwise.
-- Ranges: `X.Y.Z`, `^X.Y.Z`, `~X.Y.Z`, `>=X.Y.Z` and `=X.Y.Z` are updated with their operator kept (`^1.2.0` → `^1.9.0`). Other specs (`workspace:`, `file:`, git, URLs, tags, `*`, `||`, x-ranges, …) are skipped, and so is a package listed with different specs in both sections. Only the public registry (`registry.npmjs.org`) is read; a package whose registry document exceeds 128 MiB is skipped.
+- Ranges: `X.Y.Z`, `^X.Y.Z`, `~X.Y.Z`, `>=X.Y.Z` and `=X.Y.Z` are updated with their operator kept (`^1.2.0` → `^1.9.0`). Other specs (`workspace:`, `file:`, git, URLs, tags, `*`, `||`, x-ranges, …) are skipped, and so is a package listed with different specs in both sections. Only the public registry (`registry.npmjs.org`) is read; a package whose registry document exceeds 128 MiB, or whose lookup fails, is skipped.
 
 No repository code runs during the job:
 
 - lifecycle scripts are disabled for every manager;
 - pnpm ignores `.pnpmfile.cjs`;
 - Yarn loads no rc file from the repository (`yarnPath`, `yarn-path`, plugins);
-- Bun ignores the repository's `bunfig.toml`;
-- a Bun root with a git dependency fails: Bun cannot resolve it without running code.
+- Yarn Berry refuses `exec:` and git dependencies;
+- Bun ignores the repository's `bunfig.toml` and refuses git dependencies.
 
 The job's network allows the internet except private address ranges. Protection relies on the disabled scripts and on the server checking the report.
 
@@ -59,7 +59,7 @@ The job's network allows the internet except private address ranges. Protection 
 The runner reports at most 64 changed files, 2 MiB per file and 8 MiB in total. Bernard accepts it only if every file is one an ecosystem allows:
 
 - Go: `go.mod` and `go.sum` of the requested directories, and for a new module path the `.go` files of that module, where only import paths from the old to the new path may change.
-- npm: the `package.json` of each requested directory, byte for byte the original with only the requested specs changed, and the root's lockfile if it existed before. In `package-lock.json` every `resolved` entry must stay on the public registry. pnpm, Yarn and Bun lockfiles are not checked: review them in the merge request.
+- npm: the `package.json` of each requested directory, byte for byte the original with only the requested specs changed, and the root's lockfile if it existed before. In `package-lock.json` and `npm-shrinkwrap.json`, every new or changed `resolved` entry must start with `https://registry.npmjs.org/`; when the original lockfile is over 2 MiB, Bernard reads only its header, so every resolution counts as new. pnpm, Yarn and Bun lockfiles are not checked: review them in the merge request.
 
 For `go.mod`:
 
