@@ -41,7 +41,7 @@ func TestGoMajorPaths(t *testing.T) {
 					}
 					return
 				}
-				fmt.Fprintln(w, "v2.0.0")
+				_, _ = fmt.Fprintln(w, "v2.0.0")
 			}))
 			defer server.Close()
 			got, err := New(Config{GoProxyURL: server.URL}).GoMajorPaths(t.Context(), tc.name)
@@ -67,7 +67,7 @@ func TestGoMajorPaths(t *testing.T) {
 }
 
 func TestRequestCustomCap(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, strings.Repeat("x", 33)) }))
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, strings.Repeat("x", 33)) }))
 	defer s.Close()
 	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL, nil)
 	_, err := New(Config{}).request(req, true, 32, time.Second)
@@ -81,7 +81,7 @@ func TestGoMajorPathsCache(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if strings.Contains(r.URL.Path, "/v2/") {
-			fmt.Fprint(w, "v2.0.0")
+			_, _ = fmt.Fprint(w, "v2.0.0")
 		} else {
 			http.NotFound(w, r)
 		}

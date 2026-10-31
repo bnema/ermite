@@ -105,7 +105,7 @@ func (c *cappedReader) Read(p []byte) (int, error) {
 func (r *Registry) stream(req *http.Request, notFound bool, cap int64, timeout time.Duration, consume func(io.Reader) error) error {
 	parent := req.Context()
 	if req.Body != nil && req.GetBody != nil {
-		defer req.Body.Close()
+		defer func() { _ = req.Body.Close() }()
 	}
 	// Constructors usually supply GetBody; buffer other bodies once before sending.
 	if req.Body != nil && req.GetBody == nil {
@@ -147,7 +147,7 @@ func (r *Registry) stream(req *http.Request, notFound bool, cap int64, timeout t
 			err = fmt.Errorf("registry request: %w", err)
 			// A response alongside an error indicates a refused redirect,
 			// not a transient transport failure (Do already closed its body).
-			retry = res == nil && !(cap > largeBody && errors.Is(err, context.DeadlineExceeded))
+			retry = res == nil && (cap <= largeBody || !errors.Is(err, context.DeadlineExceeded))
 		} else {
 			status := res.StatusCode
 			switch {

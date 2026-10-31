@@ -89,7 +89,7 @@ func (GoMod) Inputs(ups []domain.DepUpdate, changed []domain.TreePath) []ports.D
 			continue
 		}
 		for _, c := range changed {
-			if !strings.HasSuffix(c.String(), ".go") || !(u.Directory == "" || strings.HasPrefix(c.String(), u.Directory+"/")) {
+			if !strings.HasSuffix(c.String(), ".go") || (u.Directory != "" && !strings.HasPrefix(c.String(), u.Directory+"/")) {
 				continue
 			}
 			for d := moduleDir(c.String()); d != u.Directory && d != ""; d = moduleDir(d) {
@@ -486,7 +486,7 @@ func validateImports(p domain.TreePath, before map[domain.TreePath][]byte, after
 	}
 	var allowed []domain.DepUpdate
 	for _, u := range ups {
-		if u.NewName == "" || !(u.Directory == "" || strings.HasPrefix(p.String(), u.Directory+"/")) {
+		if u.NewName == "" || (u.Directory != "" && !strings.HasPrefix(p.String(), u.Directory+"/")) {
 			continue
 		}
 		// Inputs probed the go.mod of every directory between the module and

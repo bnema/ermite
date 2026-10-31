@@ -52,7 +52,8 @@ func npmJSON(content []byte) (*npmJSONNode, error) {
 		case string:
 			n.value = v
 		case json.Delim:
-			if v == '{' {
+			switch v {
+			case '{':
 				n.object = map[string]*npmJSONNode{}
 				for d.More() {
 					key, err := d.Token()
@@ -69,7 +70,7 @@ func npmJSON(content []byte) (*npmJSONNode, error) {
 					}
 					n.object[k] = child
 				}
-			} else if v == '[' {
+			case '[':
 				for d.More() {
 					if _, err := parse(); err != nil {
 						return nil, err
