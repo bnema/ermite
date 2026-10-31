@@ -109,6 +109,32 @@ func TestInboxDepsTable(t *testing.T) {
 	assert.NotContains(t, sec, "APPLYING")
 }
 
+func TestInboxDepsSortsByUpdates(t *testing.T) {
+	t.Parallel()
+	ov := depsOverview(t)
+	few := depsRec(t)
+	few.Repo, few.Updates = repoName(t, "aaa"), few.Updates[:1]
+	many := depsRec(t)
+	many.Repo = repoName(t, "zzz")
+	ov.Deps = []ports.InboxDeps{{Rec: few}, {Rec: many}}
+	svc := mocks.NewInboxService(t)
+	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
+	srv := depsServer(t, svc, mocks.NewDepsService(t))
+
+	order := func(path string) (first, second int, body string) {
+		body = inboxGet(srv, path, true).Body.String()
+		return strings.Index(body, `id="deps-aaa"`), strings.Index(body, `id="deps-zzz"`), body
+	}
+	a, z, body := order("/-/inbox?tab=deps")
+	assert.Less(t, z, a, "most updates first by default")
+	assert.Contains(t, body, `<a href="/-/inbox?tab=deps#inbox-deps" aria-current="page">most updates</a>`)
+	assert.Contains(t, body, `<a href="/-/inbox?tab=deps&amp;sort=name#inbox-deps">name</a>`)
+
+	a, z, body = order("/-/inbox?tab=deps&sort=name")
+	assert.Less(t, a, z, "sort=name orders by repository name")
+	assert.Contains(t, body, `sort=name#inbox-deps" aria-current="page">name</a>`)
+}
+
 func TestInboxDepsSummaryHasNoInteractiveContent(t *testing.T) {
 	t.Parallel()
 	svc := mocks.NewInboxService(t)

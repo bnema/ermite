@@ -25,6 +25,7 @@ type liveStream struct {
 	// tab is the selected inbox tab.
 	tab    string
 	rng    string // inbox: the range of the journal (?range=), "" for the default
+	sort   string // inbox: the order of the deps rows (?sort=), "" for the default
 	state  string // mrs: the selected list tab
 	view   string // "summary", "refs" or "commits"
 	ref    string // commits: the branch listed

@@ -268,6 +268,10 @@
      of a row are a <details> under its summary; the status and the actions sit
      in the other columns of the grid. */
   #inbox-deps > .rule-h { flex-wrap: wrap; }
+  .deps-sort { display: flex; gap: var(--s2); justify-content: flex-end; margin-block-end: var(--s2); font-size: var(--fs-s); }
+  .deps-sort a { color: var(--ink-dim); text-decoration: none; }
+  .deps-sort a:hover { color: var(--ink-hi); }
+  .deps-sort a[aria-current] { color: var(--ink-hi); font-weight: 700; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
   .deps-rows { display: grid; list-style: none; padding: 0; margin: 0; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r); }
   .deps-row {
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 18rem) 10rem; gap: var(--s3); align-items: start; padding: var(--s2) var(--s3);

@@ -3,9 +3,11 @@
 package web
 
 import (
+	"cmp"
 	"context"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -90,10 +92,13 @@ type InboxPage struct {
 	// (RFC 3339 and short date), empty when unknown.
 	DepsUpdates                int
 	DepsChecked, DepsCheckedAt string
-	Tab                        string
-	Tabs                       []InboxNavLink
-	MRs                        []InboxRow
-	IssueRows                  []InboxRow
+	// DepsSorts toggles the order of the rows: most updates first (the
+	// default) or by repository name.
+	DepsSorts []InboxNavLink
+	Tab       string
+	Tabs      []InboxNavLink
+	MRs       []InboxRow
+	IssueRows []InboxRow
 	// Journal is the activity section; zero without a journal.
 	Journal JournalView
 }
@@ -269,6 +274,30 @@ func inboxTab(raw string) string {
 	}
 }
 
+// depsSortName is ?sort= for the deps rows by repository name; the default
+// puts the repositories with the most updates first.
+const depsSortName = "name"
+
+// depsSortParam reads ?sort=: "" (most updates first) or "name".
+func depsSortParam(raw string) string {
+	if raw == depsSortName {
+		return raw
+	}
+	return ""
+}
+
+// sortDepsRows orders the rows: by name, or most updates first then by name.
+func sortDepsRows(rows []InboxDepsRow, sort string) {
+	slices.SortStableFunc(rows, func(a, b InboxDepsRow) int {
+		if sort != depsSortName {
+			if c := cmp.Compare(b.Count, a.Count); c != 0 {
+				return c
+			}
+		}
+		return strings.Compare(a.Repo, b.Repo)
+	})
+}
+
 func inboxHref(tab string, rng int) string {
 	if q := inboxQuery(tab, rng); q != "" {
 		return inboxPath + "?" + q
@@ -277,7 +306,7 @@ func inboxHref(tab string, rng int) string {
 }
 
 // inboxPage builds the page from the overview and the journal.
-func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.InboxJournal, tab string, rng int) InboxPage {
+func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.InboxJournal, tab string, rng int, sort string) InboxPage {
 	now := s.cfg.Now()
 	p := InboxPage{MergeRequests: ov.Counts.MergeRequests, Issues: ov.Counts.Issues, PendingCount: ov.Counts.Pending, Tab: tab}
 	p.Running, p.RunsEnabled = ov.Counts.Running, ov.RunsEnabled
@@ -286,6 +315,18 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		row := s.depsRow(d)
 		p.Deps = append(p.Deps, row)
 		p.DepsUpdates += row.Count
+	}
+	sortDepsRows(p.Deps, sort)
+	for _, o := range []struct{ param, label string }{{"", "most updates"}, {depsSortName, "name"}} {
+		href := inboxHref("deps", rng)
+		if o.param != "" {
+			sep := "?"
+			if strings.Contains(href, "?") {
+				sep = "&"
+			}
+			href += sep + "sort=" + o.param
+		}
+		p.DepsSorts = append(p.DepsSorts, InboxNavLink{Label: o.label, Href: href + "#inbox-deps", Current: o.param == sort})
 	}
 	if !ov.DepsCheckedAt.IsZero() {
 		p.DepsChecked, p.DepsCheckedAt = ov.DepsCheckedAt.UTC().Format("2006-01-02"), rfc3339(ov.DepsCheckedAt)
@@ -359,7 +400,7 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 
 // inboxData reads what the page shows: the overview and the journal of the
 // range.
-func (s *Server) inboxData(ctx context.Context, tab string, rng int) (InboxPage, error) {
+func (s *Server) inboxData(ctx context.Context, tab string, rng int, sort string) (InboxPage, error) {
 	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
 	if err != nil {
 		return InboxPage{}, err
@@ -368,7 +409,7 @@ func (s *Server) inboxData(ctx context.Context, tab string, rng int) (InboxPage,
 	if err != nil {
 		return InboxPage{}, err
 	}
-	return s.inboxPage(ctx, ov, j, tab, rng), nil
+	return s.inboxPage(ctx, ov, j, tab, rng, sort), nil
 }
 
 // pendingRow is the row of a pending issue: the texts as plain strings, the
@@ -450,7 +491,8 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 	if err != nil {
 		return nil, 0, err
 	}
-	page, err := s.inboxData(ctx, tab, rng)
+	sort := depsSortParam(r.URL.Query().Get("sort"))
+	page, err := s.inboxData(ctx, tab, rng, sort)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -462,6 +504,9 @@ func (s *Server) inbox(ctx context.Context, r *http.Request) (templ.Component, i
 		q := "view=inbox"
 		if rest := inboxQuery(tab, rng); rest != "" {
 			q += "&" + rest
+		}
+		if sort != "" {
+			q += "&sort=" + sort
 		}
 		l.Live, l.LiveURL = true, liveURL("owner", q)
 	}
@@ -499,7 +544,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 	}
 	tab := inboxTab(l.tab)
 	rng, _ := inboxRange(l.rng) // checked when the stream was opened
-	p, err := l.s.inboxData(ctx, tab, rng)
+	p, err := l.s.inboxData(ctx, tab, rng, depsSortParam(l.sort))
 	if err != nil {
 		return nil, err
 	}

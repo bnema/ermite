@@ -246,6 +246,20 @@ templ InboxDeps(p InboxPage) {
 					{ plural(len(p.Deps), "repo", "repos") } · { plural(p.DepsUpdates, "update", "updates") }
 				</span>
 			</h2>
+			<nav class="deps-sort" aria-label="Sort repositories">
+				<span class="mute">sort:</span>
+				for i, o := range p.DepsSorts {
+					<a
+						href={ templ.SafeURL(o.Href) }
+						if o.Current {
+							aria-current="page"
+						}
+					>{ o.Label }</a>
+					if i < len(p.DepsSorts)-1 {
+						<span class="mute" aria-hidden="true">·</span>
+					}
+				}
+			</nav>
 			<ul class="deps-rows">
 				for _, d := range p.Deps {
 					<li class="deps-row" id={ d.ID }>
