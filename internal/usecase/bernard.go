@@ -251,11 +251,15 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 		}
 	}
 	ups = kept
+	allowed, err := b.allowedCarries(ctx, reg, name, ups, skipped)
+	if err != nil {
+		return domain.RepoDeps{}, err
+	}
 	now := b.cfg.Clock.Now()
 	fresh := 0
 	moved := false
 	rec, err := b.cfg.Store.Mutate(ctx, name, func(d *domain.RepoDeps) (bool, error) {
-		base, majors := domain.SplitBatches(carrySkipped(d, ups, skipped))
+		base, majors := domain.SplitBatches(carrySkipped(d, ups, skipped, allowed))
 		next := []domain.DepBatch{{Updates: base}}
 		for _, u := range majors {
 			next = append(next, domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}})
@@ -323,33 +327,103 @@ type depKey struct {
 
 func keyOf(u domain.DepUpdate) depKey { return depKey{u.Ecosystem, u.Directory, u.Name} }
 
-// carrySkipped adds to ups the stored updates of the dependencies the check
-// skipped, in each lane (same major, new major) the check found nothing for,
-// so a registry failure keeps them, in their batch and not new, instead of
-// dropping them until the next check proposes them again. skipped maps each
-// skipped dependency to its current version: a stored update from another
-// current version (the manifest moved meanwhile) is stale and dropped.
-func carrySkipped(d *domain.RepoDeps, ups []domain.DepUpdate, skipped map[depKey]string) []domain.DepUpdate {
+// skipLane is one lane (same major or new major) of a dependency.
+type skipLane struct {
+	key   depKey
+	major bool
+}
+
+func laneOf(u domain.DepUpdate) skipLane {
+	return skipLane{keyOf(u), semver.Major(u.Version) != semver.Major(u.Current)}
+}
+
+// laneSkip records why a lane was not looked up this time. current is the
+// manifest's version; recheck is true when nothing was known about the lane
+// (a registry failure, a spent budget), so its stored update must pass the
+// malicious-version check again before it is kept.
+type laneSkip struct {
+	current string
+	recheck bool
+}
+
+// carryRef identifies a stored update a check may carry over.
+type carryRef struct {
+	domain.DepRef
+	current string
+}
+
+// carriable lists the stored updates of skipped lanes the check found nothing
+// for, still from the manifest's current version, one per lane.
+func carriable(d domain.RepoDeps, ups []domain.DepUpdate, skipped map[skipLane]laneSkip) []domain.DepUpdate {
 	if len(skipped) == 0 {
-		return ups
+		return nil
 	}
-	type lane struct {
-		key   depKey
-		major bool
-	}
-	isMajor := func(u domain.DepUpdate) bool { return semver.Major(u.Version) != semver.Major(u.Current) }
-	found := map[lane]bool{}
+	found := map[skipLane]bool{}
 	for _, u := range ups {
-		found[lane{keyOf(u), isMajor(u)}] = true
+		found[laneOf(u)] = true
 	}
-	out := slices.Clone(ups)
+	var out []domain.DepUpdate
 	for _, batch := range d.Batches {
 		for _, u := range batch.Updates {
-			l := lane{keyOf(u), isMajor(u)}
-			if current, ok := skipped[l.key]; ok && current == u.Current && !found[l] {
+			l := laneOf(u)
+			if sk, ok := skipped[l]; ok && sk.current == u.Current && !found[l] {
 				found[l] = true
 				out = append(out, u)
 			}
+		}
+	}
+	return out
+}
+
+// allowedCarries decides, before the store mutation, which stored updates of
+// skipped lanes may be kept: not ignored, and for lanes nothing was known
+// about, not malicious. A failed advisory lookup drops the update (fail
+// closed). It reads the record under the repository lock the caller holds.
+func (b *Bernard) allowedCarries(ctx context.Context, reg ports.DepsRegistry, name domain.RepoName, ups []domain.DepUpdate, skipped map[skipLane]laneSkip) (map[carryRef]bool, error) {
+	if len(skipped) == 0 {
+		return nil, nil
+	}
+	d, err := b.cfg.Store.Get(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("read the dependency record: %w", err)
+	}
+	allowed := map[carryRef]bool{}
+	for _, u := range carriable(d, ups, skipped) {
+		ignored, err := b.cfg.Store.IsIgnored(ctx, name, u.DepRef)
+		if err != nil {
+			return nil, fmt.Errorf("ignored %s@%s: %w", u.Name, u.Version, err)
+		}
+		if ignored {
+			continue
+		}
+		if skipped[laneOf(u)].recheck {
+			mal, err := reg.Malicious(ctx, u.Ecosystem, versionName(u.Name, u.NewName), u.Version)
+			if err != nil {
+				if cerr := ctx.Err(); cerr != nil {
+					return nil, cerr
+				}
+				ctxLog(ctx).Warn().Err(err).Str("repo", name.String()).Str("name", u.Name).Str("version", u.Version).Msg("bernard: advisory lookup failed, kept update dropped")
+				continue
+			}
+			if mal {
+				continue
+			}
+		}
+		allowed[carryRef{u.DepRef, u.Current}] = true
+	}
+	return allowed, nil
+}
+
+// carrySkipped adds to ups the stored updates of skipped lanes the check
+// found nothing for, so a registry failure keeps them, in their batch and not
+// new, instead of dropping them until the next check proposes them again.
+// Only updates allowedCarries accepted are kept: Mutate may run fn again on a
+// newer record, and fn does no lookups.
+func carrySkipped(d *domain.RepoDeps, ups []domain.DepUpdate, skipped map[skipLane]laneSkip, allowed map[carryRef]bool) []domain.DepUpdate {
+	out := slices.Clone(ups)
+	for _, u := range carriable(*d, ups, skipped) {
+		if allowed[carryRef{u.DepRef, u.Current}] {
+			out = append(out, u)
 		}
 	}
 	return out
@@ -387,7 +461,7 @@ func cmpStrings(pairs ...string) int {
 
 // detect returns the updates to propose at the tip of the default branch and
 // the dependencies it could not look up this time.
-func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domain.RepoName) ([]domain.DepUpdate, map[depKey]string, error) {
+func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domain.RepoName) ([]domain.DepUpdate, map[skipLane]laneSkip, error) {
 	log := ctxLog(ctx)
 	res, err := b.cfg.Reader.ResolveRevision(ctx, name, domain.Revision{})
 	if errors.Is(err, domain.ErrNotFound) {
@@ -405,7 +479,7 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 		return nil, nil, fmt.Errorf("list the paths: %w", err)
 	}
 	now := b.cfg.Clock.Now()
-	skipped := map[depKey]string{}
+	skipped := map[skipLane]laneSkip{}
 	var cbErr error // first error of the PickUpdates callbacks
 	var out []domain.DepUpdate
 	for _, eco := range b.cfg.Ecosystems {
@@ -427,7 +501,11 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 		}
 		cands, skips, err := eco.Detect(ctx, files, reg)
 		for _, sk := range skips {
-			skipped[depKey{eco.Name(), sk.Directory, sk.Name}] = sk.Current
+			// Nothing is known about either lane of a dependency not looked up.
+			key := depKey{eco.Name(), sk.Directory, sk.Name}
+			for _, major := range []bool{false, true} {
+				skipped[skipLane{key, major}] = laneSkip{current: sk.Current, recheck: true}
+			}
 		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("detect %s dependencies: %w", eco.Name(), err)
@@ -472,7 +550,11 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 				mal, err := reg.Malicious(ctx, up.Ecosystem, versionName(up.Name, up.NewName), up.Version)
 				if err != nil {
 					log.Warn().Err(err).Str("repo", name.String()).Str("name", up.Name).Str("version", up.Version).Msg("bernard: advisory lookup failed, update skipped")
-					skipped[keyOf(up)] = up.Current
+					// Only this lane is unknown; the other lane's result,
+					// malicious or not, stands.
+					if l := laneOf(up); !skipped[l].recheck {
+						skipped[l] = laneSkip{current: up.Current}
+					}
 					continue
 				}
 				if !mal {

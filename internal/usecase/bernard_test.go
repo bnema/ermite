@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/semver"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -623,4 +624,85 @@ func TestBernardCheckKeepsSkippedDependencies(t *testing.T) {
 	require.Len(t, got.Batches, 2, "the major batch without a merge request stays")
 	assert.Equal(t, []domain.DepUpdate{major}, got.Batches[1].Updates)
 	assert.Equal(t, 1, r.changedCount(), "only the stale update left")
+}
+
+// laneCand is a Go candidate of x/mod from v1.0.0 offering versions.
+func (r *bernardRig) laneCand(versions ...string) domain.DepCandidate {
+	c := domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Name: "x/mod", Current: "v1.0.0"}
+	for _, v := range versions {
+		c.Versions = append(c.Versions, r.old(v))
+	}
+	return c
+}
+
+func xUpdate(version string, kind domain.DepKind) domain.DepUpdate {
+	return domain.DepUpdate{DepRef: depRef("x/mod", version), Current: "v1.0.0", Kind: kind}
+}
+
+func (r *bernardRig) skipRecord(ups ...domain.DepUpdate) {
+	r.rec = domain.RepoDeps{Repo: r.repo}
+	var base []domain.DepUpdate
+	for _, u := range ups {
+		if semver.Major(u.Version) != semver.Major(u.Current) {
+			r.rec.Batches = append(r.rec.Batches, domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}})
+		} else {
+			base = append(base, u)
+		}
+	}
+	r.rec.Batches = append([]domain.DepBatch{{Updates: base}}, r.rec.Batches...)
+}
+
+// A malicious result in one lane is not undone by an advisory failure in the
+// other: skips are per lane, so the stored malicious version is not carried.
+func TestBernardCheckSkipsAreLaneScoped(t *testing.T) {
+	boom := errors.New("osv down")
+	r := newBernardRig(t, "0 6 * * *")
+	r.repoReads()
+	r.cands = []domain.DepCandidate{r.laneCand("v1.3.0", "v2.0.0")}
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+	r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, "x/mod", "v1.3.0").Return(true, nil)
+	r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, "x/mod", "v2.0.0").Return(false, boom)
+	major := xUpdate("v2.0.0", domain.DepMajor)
+	r.skipRecord(xUpdate("v1.3.0", domain.DepMinor), major)
+	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
+	require.NoError(t, err)
+	assert.Empty(t, got.Base().Updates, "the malicious v1.3.0 is not carried")
+	require.Len(t, got.Batches, 2)
+	assert.Equal(t, []domain.DepUpdate{major}, got.Batches[1].Updates, "the major lane whose advisory failed keeps its update")
+}
+
+// An advisory failure in the base lane carries only that lane; a lane with no
+// fitting version this time is a deliberate miss and drops its batch.
+func TestBernardCheckOSVErrorCarriesOneLane(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	r.repoReads()
+	r.cands = []domain.DepCandidate{r.laneCand("v1.3.0")}
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+	r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, "x/mod", "v1.3.0").Return(false, errors.New("osv down")).Once()
+	stored := xUpdate("v1.2.0", domain.DepMinor)
+	r.skipRecord(stored, xUpdate("v2.0.0", domain.DepMajor))
+	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo) // no Malicious(v1.2.0): nothing new is known
+	require.NoError(t, err)
+	assert.Equal(t, []domain.DepUpdate{stored}, got.Base().Updates)
+	assert.Len(t, got.Batches, 1, "the major batch without a merge request is dropped")
+}
+
+// A dependency the ecosystem did not look up keeps only stored updates that
+// are still not malicious and not ignored; a failed advisory drops them.
+func TestBernardCheckRechecksRegistrySkips(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	r.repoReads()
+	mod := func(n string) domain.DepUpdate {
+		return domain.DepUpdate{DepRef: depRef(n, "v1.1.0"), Current: "v1.0.0", Kind: domain.DepMinor}
+	}
+	r.skips = []ports.DepsSkip{{Name: "mal", Current: "v1.0.0"}, {Name: "osv", Current: "v1.0.0"}, {Name: "ignored", Current: "v1.0.0"}, {Name: "ok", Current: "v1.0.0"}}
+	r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, "mal", "v1.1.0").Return(true, nil).Once()
+	r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, "osv", "v1.1.0").Return(false, errors.New("osv down")).Once()
+	r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, "ok", "v1.1.0").Return(false, nil).Once()
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mod("ignored").DepRef).Return(true, nil).Once()
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+	r.skipRecord(mod("ignored"), mod("mal"), mod("ok"), mod("osv"))
+	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
+	require.NoError(t, err)
+	assert.Equal(t, []domain.DepUpdate{mod("ok")}, got.Base().Updates)
 }
