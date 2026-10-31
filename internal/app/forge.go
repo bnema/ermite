@@ -449,7 +449,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 			CheckAt: cfg.DepsCheckAt, Cooldown: cfg.DepsCooldown, Snooze: cfg.DepsSnooze,
 			Repos: git, Git: git, Signer: signer, Committer: committer, Tips: store.CI(),
 			CI: f.CI, MRs: f.MergeRequests, MRStore: store.MergeRequests(),
-			JobTimeout: cfg.DepsJobTimeout, Runs: f.CI, RunnerLabel: cfg.DepsRunnerLabel,
+			JobTimeout: cfg.DepsJobTimeout, Runs: f.CI, Runners: store.CI(), RunnerLabel: cfg.DepsRunnerLabel,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("bernard: %w", err)

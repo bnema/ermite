@@ -266,7 +266,7 @@ func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	// started with (the daily check may have rewritten rec.Updates since).
 	var runnerUps []domain.DepUpdate
 	for _, u := range applyingBatch(&rec, run.ID).RunUpdates {
-		if slices.Contains(job.Deps.Updates, u.DepRef) {
+		if slices.ContainsFunc(job.Deps.Details, func(d domain.CIDepsUpdate) bool { return d.Ref == u.DepRef }) {
 			runnerUps = append(runnerUps, u)
 		}
 	}

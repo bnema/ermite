@@ -218,6 +218,8 @@ Bernard checks daily for updates to Go modules and GitHub Actions. Go detection 
 | `deps ignore <repo> [--batch KEY]` | ignore the selected batch’s pending versions |
 | `deps snooze <repo>` | hide for `ERMITE_DEPS_SNOOZE` |
 
+`open` needs a registered runner with Bernard’s configured label and all required kinds: `deps`, plus `deps.gomod-path-majors` for import-path majors. Capabilities are learned when the runner polls; no capable runner fails the batch without starting a run.
+
 `open` and `ignore` send back the list they read and are refused if it changed meanwhile. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
 
 ## Activity journal

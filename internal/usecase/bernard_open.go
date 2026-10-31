@@ -82,9 +82,6 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 			return domain.RepoDeps{}, fmt.Errorf("%w: unknown ecosystem %q", domain.ErrPreconditionFailed, u.Ecosystem)
 		}
 		if !eco.ApplyInServer() {
-			if u.Ecosystem != domain.EcosystemGoMod {
-				return domain.RepoDeps{}, fmt.Errorf("%w: %s updates cannot be applied by a runner", domain.ErrPreconditionFailed, u.Ecosystem)
-			}
 			runnerSide = true
 		}
 	}
@@ -119,6 +116,42 @@ func movedPrecondition(d domain.RepoDeps, key domain.DepBatchKey, expected []dom
 // repository lock.
 func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batch domain.DepBatch, expected []domain.DepRef) (domain.RepoDeps, error) {
 	cfg := b.cfg
+	var err error
+	var runnerUps []domain.DepUpdate
+	for _, u := range batch.Updates {
+		if !b.ecosystem(u.Ecosystem).ApplyInServer() {
+			runnerUps = append(runnerUps, u)
+		}
+	}
+	details := make([]domain.CIDepsUpdate, len(runnerUps))
+	requires := []string{"deps"}
+	for i, u := range runnerUps {
+		details[i] = domain.CIDepsUpdate{Ref: u.DepRef, NewName: u.NewName}
+		if string(u.Ecosystem) == "npm" && !slices.Contains(requires, "deps.npm") {
+			requires = append(requires, "deps.npm")
+		}
+		if u.NewName != "" && !slices.Contains(requires, "deps.gomod-path-majors") {
+			requires = append(requires, "deps.gomod-path-majors")
+		}
+	}
+	var runners []domain.CIRunner
+	if cfg.Runners != nil {
+		runners, err = cfg.Runners.ListRunners(ctx)
+		if err != nil {
+			return domain.RepoDeps{}, err
+		}
+	}
+	supported := false
+	missing := requires[len(requires)-1]
+	for _, r := range runners {
+		if domain.LabelsMatch([]string{cfg.RunnerLabel}, r.Labels) && supportsDeps(r.Kinds, requires) {
+			supported = true
+			break
+		}
+	}
+	if !supported {
+		return domain.RepoDeps{}, fmt.Errorf("%w: no runner supports %s updates", domain.ErrPreconditionFailed, missing)
+	}
 	target, exists, err := cfg.Repos.DefaultBranch(ctx, name)
 	if err != nil {
 		return domain.RepoDeps{}, err
@@ -130,12 +163,6 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("read %s: %w", target, err)
 	}
-	var runnerUps []domain.DepUpdate
-	for _, u := range batch.Updates {
-		if !b.ecosystem(u.Ecosystem).ApplyInServer() {
-			runnerUps = append(runnerUps, u)
-		}
-	}
 	goVersion, err := b.goVersionOf(ctx, name, tip, runnerUps)
 	if err != nil {
 		return domain.RepoDeps{}, err
@@ -143,13 +170,9 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 	if cfg.Runs == nil {
 		return domain.RepoDeps{}, fmt.Errorf("%w: dependency jobs are not available", domain.ErrPreconditionFailed)
 	}
-	refs := make([]domain.DepRef, len(runnerUps))
-	for i, u := range runnerUps {
-		refs[i] = u.DepRef
-	}
 	run, err := cfg.Runs.StartDepsRun(ctx, ports.DepsRunParams{
 		Repo: name, Ref: "refs/heads/" + target, Sha: tip.String(), Title: domain.BotSubject(batch),
-		Job: domain.CIDepsJob{Updates: refs, GoVersion: goVersion}, Label: cfg.RunnerLabel, Timeout: cfg.JobTimeout,
+		Job: domain.CIDepsJob{Details: details, GoVersion: goVersion, Requires: requires}, Label: cfg.RunnerLabel, Timeout: cfg.JobTimeout,
 	})
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("start the dependency run: %w", err)
@@ -183,6 +206,9 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 func (b *Bernard) goVersionOf(ctx context.Context, name domain.RepoName, tip domain.ObjectID, ups []domain.DepUpdate) (string, error) {
 	var dirs []string
 	for _, u := range ups {
+		if u.Ecosystem != domain.EcosystemGoMod {
+			continue
+		}
 		if !slices.Contains(dirs, u.Directory) {
 			dirs = append(dirs, u.Directory)
 		}

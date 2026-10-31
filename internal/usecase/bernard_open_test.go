@@ -49,6 +49,7 @@ type openRig struct {
 	ops       []string
 	ignored   []domain.DepRef
 	registers atomic.Int32
+	runners   []domain.CIRunner
 	commit    []byte
 	created   ports.CreateMergeRequestParams
 	creator   domain.Principal
@@ -118,6 +119,7 @@ func newOpenRigWith(t *testing.T, ecos func(*openRig) []ports.DepsEcosystem) *op
 			r.mu.Unlock()
 			return nil
 		}).Maybe()
+	r.runners = []domain.CIRunner{{Labels: []string{"ubuntu-latest"}, Kinds: []string{"deps", "deps.npm", "deps.gomod-path-majors"}}}
 	ecoList := ecos(r)
 	b, err := usecase.NewBernard(usecase.BernardConfig{
 		Store: r.store, Meta: r.meta, Reader: r.reader, Ecosystems: ecoList,
@@ -125,7 +127,7 @@ func newOpenRigWith(t *testing.T, ecos func(*openRig) []ports.DepsEcosystem) *op
 		Bus:      r.bus, Clock: clock, CheckAt: "0 6 * * *", Tick: time.Hour,
 		Repos: r.repos, Git: r.git, Signer: r.signer, Committer: domain.Identity{Name: "ermite", Email: "ermite@forge.test"},
 		Tips: r.tips, CI: r.ci, MRs: r.mrs, MRStore: r.mrst,
-		Runs: r.runs, RunnerLabel: "ubuntu-latest", JobTimeout: 10 * time.Minute,
+		Runs: r.runs, Runners: runnerList{r}, RunnerLabel: "ubuntu-latest", JobTimeout: 10 * time.Minute,
 	})
 	require.NoError(t, err)
 	r.b = b
@@ -489,3 +491,7 @@ func TestBernardOpenFailurePublishesTheChange(t *testing.T) {
 	defer r.mu.Unlock()
 	assert.Equal(t, []domain.DepsState{domain.DepsFailed}, r.changedStates)
 }
+
+type runnerList struct{ r *openRig }
+
+func (l runnerList) ListRunners(context.Context) ([]domain.CIRunner, error) { return l.r.runners, nil }

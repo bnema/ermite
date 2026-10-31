@@ -51,6 +51,10 @@ type BernardConfig struct {
 	// Runs starts and cancels the CI runs of the dependency jobs; may be nil
 	// in a Bernard that does not open merge requests.
 	Runs ports.DepsRunner
+	// Runners lists registered runner capabilities for Open.
+	Runners interface {
+		ListRunners(context.Context) ([]domain.CIRunner, error)
+	}
 	// RunnerLabel is the runner label that serves the dependency jobs.
 	RunnerLabel string
 	// Tick is how often the schedule looks at the clock; one minute when zero.

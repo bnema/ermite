@@ -84,7 +84,7 @@ func (c *CI) StartDepsRun(ctx context.Context, p ports.DepsRunParams) (domain.CI
 	}
 	c.wakeQueue()
 	lg := logRun(ctx, draft.Run)
-	lg.Info().Str("ref", p.Ref).Int("updates", len(p.Job.Updates)).Msg("dependency run created")
+	lg.Info().Str("ref", p.Ref).Int("updates", len(p.Job.Details)).Msg("dependency run created")
 	return draft.Run, nil
 }
 

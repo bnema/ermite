@@ -47,7 +47,7 @@ func endedJob(r *bernardRig, conclusion domain.CIConclusion, msg string) (domain
 	run := domain.CIRun{Repo: r.repo, ID: jobsRunID, Sha: strings.Repeat("a", 40), Event: domain.CIEventDependencies, Status: domain.CICompleted, Conclusion: conclusion}
 	return run, domain.CIJob{
 		ID: domain.NewJobID(jobsRunID, 0, 0), RunID: jobsRunID, Repo: r.repo, Phase: domain.CIPhaseEnded, Conclusion: conclusion, Error: msg,
-		Deps: &domain.CIDepsJob{Updates: oneRef},
+		Deps: &domain.CIDepsJob{Details: []domain.CIDepsUpdate{{Ref: oneRef[0]}}},
 	}
 }
 

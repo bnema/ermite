@@ -433,7 +433,7 @@ func decodeCheck(item kv.Item) (domain.CICheck, error) {
 
 func encodeRunner(r domain.CIRunner) []byte {
 	return mustMarshal(&storagepb.CIRunner{
-		Id: r.ID, Name: r.Name, Labels: r.Labels, Isolation: encodeIsolation(r.Isolation), Version: r.Version,
+		Id: r.ID, Name: r.Name, Labels: r.Labels, Kinds: r.Kinds, Isolation: encodeIsolation(r.Isolation), Version: r.Version,
 		Arch: r.Arch, Os: r.OS, RegisteredAt: encodeTime(r.RegisteredAt), TokenHash: r.TokenHash[:],
 	})
 }
@@ -444,7 +444,7 @@ func decodeRunner(val []byte) (domain.CIRunner, error) {
 		return domain.CIRunner{}, fmt.Errorf("decode runner: %w", err)
 	}
 	r := domain.CIRunner{
-		ID: pb.GetId(), Name: pb.GetName(), Labels: pb.GetLabels(), Isolation: decodeIsolation(pb.GetIsolation()),
+		ID: pb.GetId(), Name: pb.GetName(), Labels: pb.GetLabels(), Kinds: pb.GetKinds(), Isolation: decodeIsolation(pb.GetIsolation()),
 		Version: pb.GetVersion(), Arch: pb.GetArch(), OS: pb.GetOs(), RegisteredAt: decodeTime(pb.GetRegisteredAt()),
 	}
 	copy(r.TokenHash[:], pb.GetTokenHash())
@@ -1109,6 +1109,36 @@ func (c *CI) SetRunnerVersion(ctx context.Context, id, version string) error {
 	return fmt.Errorf("set runner %q version: %w", id, domain.ErrConflict)
 }
 
+// SetRunnerKinds records capabilities only when changed.
+func (c *CI) SetRunnerKinds(ctx context.Context, id string, kinds []string) error {
+	for range createRunTries {
+		item, ok := c.db.Get(ctx, runnerKey(id))
+		if !ok || id == "" || strings.Contains(id, "/") {
+			return domain.ErrNotFound
+		}
+		r, err := decodeRunner(item.Value)
+		if err != nil {
+			return err
+		}
+		if slices.Equal(r.Kinds, kinds) {
+			return nil
+		}
+		r.Kinds = slices.Clone(kinds)
+		var b kv.Batch
+		b.RequireVersion(runnerKey(id), item.Version)
+		b.Put(runnerKey(id), encodeRunner(r))
+		_, err = c.db.Apply(ctx, &b)
+		if errors.Is(err, kv.ErrConflict) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("set runner %q kinds: %w", id, err)
+		}
+		return nil
+	}
+	return fmt.Errorf("set runner %q kinds: %w", id, domain.ErrConflict)
+}
+
 // RemoveRunner removes the runner, its name and its token.
 func (c *CI) RemoveRunner(ctx context.Context, id string) (domain.CIRunner, error) {
 	for range createRunTries {
@@ -1141,9 +1171,9 @@ func encodeDepsJob(d *domain.CIDepsJob) *storagepb.CIDepsJob {
 	if d == nil {
 		return nil
 	}
-	pb := &storagepb.CIDepsJob{GoVersion: d.GoVersion}
-	for _, r := range d.Updates {
-		pb.Updates = append(pb.Updates, encodeDepRef(r))
+	pb := &storagepb.CIDepsJob{GoVersion: d.GoVersion, NodeVersion: d.NodeVersion, Requires: d.Requires}
+	for _, u := range d.Details {
+		pb.Details = append(pb.Details, &storagepb.CIDepsUpdate{Ref: encodeDepRef(u.Ref), NewName: u.NewName, Range: u.Range, Manager: u.Manager, ManagerVersion: u.ManagerVersion, Root: u.Root})
 	}
 	return pb
 }
@@ -1152,9 +1182,14 @@ func decodeDepsJob(pb *storagepb.CIDepsJob) *domain.CIDepsJob {
 	if pb == nil {
 		return nil
 	}
-	d := &domain.CIDepsJob{GoVersion: pb.GetGoVersion()}
-	for _, r := range pb.GetUpdates() {
-		d.Updates = append(d.Updates, decodeDepRef(r))
+	d := &domain.CIDepsJob{GoVersion: pb.GetGoVersion(), NodeVersion: pb.GetNodeVersion(), Requires: pb.GetRequires()}
+	for _, u := range pb.GetDetails() {
+		d.Details = append(d.Details, domain.CIDepsUpdate{Ref: decodeDepRef(u.GetRef()), NewName: u.GetNewName(), Range: u.GetRange(), Manager: u.GetManager(), ManagerVersion: u.GetManagerVersion(), Root: u.GetRoot()})
+	}
+	if len(d.Details) == 0 {
+		for _, r := range pb.GetUpdates() {
+			d.Details = append(d.Details, domain.CIDepsUpdate{Ref: decodeDepRef(r)})
+		}
 	}
 	return d
 }

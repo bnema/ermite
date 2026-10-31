@@ -234,10 +234,11 @@ func depsJobToPB(j *domain.CIDepsJob) *pb.DepsJob {
 	if j == nil {
 		return nil
 	}
-	out := &pb.DepsJob{GoVersion: j.GoVersion, Updates: make([]*pb.DepsJobUpdate, 0, len(j.Updates))}
-	for _, u := range j.Updates {
+	out := &pb.DepsJob{GoVersion: j.GoVersion, NodeVersion: j.NodeVersion, Updates: make([]*pb.DepsJobUpdate, 0, len(j.Details))}
+	for _, d := range j.Details {
+		u := d.Ref
 		out.Updates = append(out.Updates, &pb.DepsJobUpdate{
-			Ecosystem: string(u.Ecosystem), Directory: u.Directory, Name: u.Name, Version: u.Version,
+			Ecosystem: string(u.Ecosystem), Directory: u.Directory, Name: u.Name, Version: u.Version, NewName: d.NewName, Range: d.Range, Manager: d.Manager, ManagerVersion: d.ManagerVersion, Root: d.Root,
 		})
 	}
 	return out

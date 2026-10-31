@@ -235,10 +235,24 @@ message CIJob {
   CIDepsJob deps = 47;
 }
 
+// CIDepsUpdate holds a dependency identity and its runner application details.
+message CIDepsUpdate {
+  DepRef ref = 1;
+  string new_name = 2;
+  string range = 3;
+  string manager = 4;
+  string manager_version = 5;
+  string root = 6;
+}
+
 // CIDepsJob is what a runner applies for a dependency job.
 message CIDepsJob {
-  repeated DepRef updates = 1;
+  // Read only for jobs queued before schema 12.
+  repeated DepRef updates = 1 [deprecated = true];
   string go_version = 2;
+  repeated CIDepsUpdate details = 3;
+  string node_version = 4;
+  repeated string requires = 5;
 }
 
 // CICall is the call a reusable-workflow job makes, set when the calling job is
@@ -311,6 +325,7 @@ message CIRunner {
   string os = 7;
   google.protobuf.Timestamp registered_at = 8;
   bytes token_hash = 9;
+  repeated string kinds = 10;
 }
 
 // CIRepoToken is a job repository token (the "github.token" of a job, or the

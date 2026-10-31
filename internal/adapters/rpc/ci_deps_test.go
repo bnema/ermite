@@ -25,7 +25,7 @@ func TestRunnerDepsFetchConversion(t *testing.T) {
 		runners := mocks.NewRunnerService(t)
 		runners.EXPECT().FetchJob(mock.Anything, mock.Anything, ports.FetchJobParams{Kinds: kinds, Labels: []string{"ubuntu-latest"}, PollID: "poll", Version: "test"}).Return(ports.FetchJobResult{Job: &ports.RunnerJob{
 			Job: domain.CIJob{ID: "12-0-0", RunID: 12, RunAttempt: 1, TimeoutMinutes: 10, Labels: []string{"ubuntu-latest"}}, Repo: mustRepoName(t, "demo"), Sha: "sha", Ref: "refs/heads/main", Token: "job-secret", GithubToken: "repo-secret",
-			Deps: &domain.CIDepsJob{GoVersion: "1.27.1", Updates: []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Directory: "sub", Name: "example.org/mod", Version: "v1.2.3"}}},
+			Deps: &domain.CIDepsJob{GoVersion: "1.27.1", NodeVersion: "22", Details: []domain.CIDepsUpdate{{Ref: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Directory: "sub", Name: "example.org/mod", Version: "v1.2.3"}, NewName: "example.org/mod/v2", Range: "^2.0.0", Manager: "pnpm", ManagerVersion: "9.15.0", Root: "web"}}},
 		}}, nil).Once()
 		res, err := (&runnerService{runners: runners}).FetchJob(context.Background(), connect.NewRequest(&pb.FetchJobRequest{Kinds: kinds, Labels: []string{"ubuntu-latest"}, PollId: "poll", Version: "test"}))
 		require.NoError(t, err)
@@ -48,8 +48,9 @@ func TestRunnerDepsFetchConversion(t *testing.T) {
 		assert.Empty(t, j.GetIdTokenUrl())
 		require.NotNil(t, j.GetDeps())
 		assert.Equal(t, "1.27.1", j.GetDeps().GetGoVersion())
+		assert.Equal(t, "22", j.GetDeps().GetNodeVersion())
 		require.Len(t, j.GetDeps().GetUpdates(), 1)
-		assert.Equal(t, &pb.DepsJobUpdate{Ecosystem: "gomod", Directory: "sub", Name: "example.org/mod", Version: "v1.2.3"}, j.GetDeps().GetUpdates()[0])
+		assert.Equal(t, &pb.DepsJobUpdate{Ecosystem: "gomod", Directory: "sub", Name: "example.org/mod", Version: "v1.2.3", NewName: "example.org/mod/v2", Range: "^2.0.0", Manager: "pnpm", ManagerVersion: "9.15.0", Root: "web"}, j.GetDeps().GetUpdates()[0])
 	}
 	assert.Nil(t, runnerJobToPB(&ports.RunnerJob{}).GetDeps())
 }

@@ -201,6 +201,8 @@ type CIStore interface {
 	// when the stored version differs, and returns domain.ErrNotFound for a
 	// runner that is gone.
 	SetRunnerVersion(ctx context.Context, id, version string) error
+	// SetRunnerKinds records advertised capabilities, writing only when changed.
+	SetRunnerKinds(ctx context.Context, id string, kinds []string) error
 	// RemoveRunner removes the runner and its token, or returns
 	// domain.ErrNotFound.
 	RemoveRunner(ctx context.Context, id string) (domain.CIRunner, error)

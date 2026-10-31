@@ -195,6 +195,10 @@ func newBernardGoRig(t *testing.T) *bernardGoRig {
 	h.seed("proj", domain.VisibilityPrivate)
 	c.wt = h.workTree("main")
 	rig := &bernardGoRig{ciHarness: c, runner: c.registerRunner("alpha", "ubuntu-latest")}
+	// Capabilities are advertised by polling, not registration.
+	poll, err := rig.runner.api.runner.FetchJob(c.ctx, connect.NewRequest(&pb.FetchJobRequest{Kinds: []string{"workflow", "deps"}}))
+	require.NoError(t, err)
+	require.Nil(t, poll.Msg.GetJob())
 	rig.oldSum = "golang.org/x/text v0.20.0 " + bernardSumHash + "\ngolang.org/x/text v0.20.0/go.mod " + bernardSumHash + "\n"
 	c.push("main", map[string]string{
 		".github/workflows/ci.yml": bernardWorkflow,

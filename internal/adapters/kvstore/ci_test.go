@@ -454,10 +454,10 @@ func TestCIDepsJobRoundTripsAndIsListedReady(t *testing.T) {
 	ctx := context.Background()
 	_, ci, n := ciRepo(t)
 	want := &domain.CIDepsJob{
-		GoVersion: "1.26.1",
-		Updates: []domain.DepRef{
-			{Ecosystem: domain.EcosystemGoMod, Name: "golang.org/x/mod", Version: "v0.2.0"},
-			{Ecosystem: domain.EcosystemGoMod, Directory: "tools", Name: "golang.org/x/text", Version: "v0.3.0"},
+		GoVersion: "1.26.1", NodeVersion: "22", Requires: []string{"deps", "deps.npm"},
+		Details: []domain.CIDepsUpdate{
+			{Ref: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "golang.org/x/mod", Version: "v0.2.0"}, NewName: "example.com/mod/v2", Range: "^2.0.0", Manager: "pnpm", ManagerVersion: "9.15.0", Root: "web"},
+			{Ref: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Directory: "tools", Name: "golang.org/x/text", Version: "v0.3.0"}},
 		},
 	}
 	d, err := ci.CreateRun(ctx, n, domain.DepsWorkflowPath, func(id, number int64) ports.CIRunDraft {
@@ -487,4 +487,28 @@ func TestCIDepsJobRoundTripsAndIsListedReady(t *testing.T) {
 	jobs, err = ci.ListJobs(ctx, plain.Run.ID, plain.Run.Attempt)
 	require.NoError(t, err)
 	assert.Nil(t, jobs[0].Deps, "a workflow job has no deps")
+}
+
+func TestCISetRunnerKinds(t *testing.T) {
+	ctx := context.Background()
+	_, ci, _ := ciRepo(t)
+	h := domain.HashTokenSecret("ermiterun_v")
+	_, err := ci.CreateRunner(ctx, domain.CIRunner{ID: "r1", Name: "alpha", Version: "v1", TokenHash: h, RegisteredAt: created}, false)
+	require.NoError(t, err)
+
+	require.NoError(t, ci.SetRunnerKinds(ctx, "r1", []string{"deps", "deps.npm"}))
+	got, err := ci.GetRunner(ctx, "r1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"deps", "deps.npm"}, got.Kinds)
+	assert.Equal(t, h, got.TokenHash, "the rest of the record is kept")
+	assert.Equal(t, "alpha", got.Name)
+
+	// An unchanged version is not written.
+	before, ok := ci.RawVersionForTest(ctx, "r1")
+	require.True(t, ok)
+	require.NoError(t, ci.SetRunnerKinds(ctx, "r1", []string{"deps", "deps.npm"}))
+	after, _ := ci.RawVersionForTest(ctx, "r1")
+	assert.Equal(t, before, after)
+
+	assert.ErrorIs(t, ci.SetRunnerKinds(ctx, "gone", []string{"deps"}), domain.ErrNotFound)
 }

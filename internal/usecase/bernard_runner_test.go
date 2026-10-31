@@ -143,7 +143,7 @@ func TestBernardOpenGoStartsARunAtTheTip(t *testing.T) {
 
 			assert.Equal(t, ports.DepsRunParams{
 				Repo: rr.repo, Ref: "refs/heads/main", Sha: oid("a").String(), Title: "build(deps): update 2 dependencies",
-				Job:   domain.CIDepsJob{GoVersion: c.want, Updates: []domain.DepRef{goUpdate().DepRef}}, // only the runner-side updates
+				Job:   domain.CIDepsJob{GoVersion: c.want, Details: []domain.CIDepsUpdate{{Ref: goUpdate().DepRef}}, Requires: []string{"deps"}}, // only the runner-side updates
 				Label: "ubuntu-latest", Timeout: 10 * time.Minute,
 			}, rr.started)
 		})
@@ -543,6 +543,34 @@ func TestBernardPathMajorReport(t *testing.T) {
 			} else {
 				require.ErrorIs(t, err, domain.ErrInvalid)
 			}
+		})
+	}
+}
+
+func TestBernardOpenRequiresCapableRunner(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		kinds, labels []string
+		newName, want string
+	}{
+		{"no runners", nil, nil, "", "deps"},
+		{"wrong label", []string{"deps"}, []string{"other"}, "", "deps"},
+		{"old runner", []string{"deps"}, []string{"ubuntu-latest"}, "golang.org/x/text/v2", "deps.gomod-path-majors"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+			rr.runners = nil
+			if tc.labels != nil {
+				rr.runners = []domain.CIRunner{{Labels: tc.labels, Kinds: tc.kinds}}
+			}
+			u := goUpdate()
+			u.NewName = tc.newName
+			rr.rec.Base().Updates = []domain.DepUpdate{u}
+			_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, "", []domain.DepRef{u.DepRef})
+			require.ErrorContains(t, err, "no runner supports "+tc.want+" updates")
+			require.Equal(t, domain.DepsFailed, rr.rec.Base().State)
+			require.Contains(t, rr.rec.Base().Error, "no runner supports "+tc.want+" updates")
+			require.Zero(t, rr.starts)
 		})
 	}
 }

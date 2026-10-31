@@ -113,7 +113,7 @@ func advance(d time.Duration) {
 func (r *depsRig) params(timeout time.Duration) ports.DepsRunParams {
 	return ports.DepsRunParams{
 		Repo: r.repo, Ref: "refs/heads/main", Sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Title: "build(deps): update 1 dependency",
-		Job:   domain.CIDepsJob{GoVersion: "1.26.1", Updates: []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Name: "golang.org/x/text", Version: "v0.21.0"}}},
+		Job:   domain.CIDepsJob{GoVersion: "1.26.1", Details: []domain.CIDepsUpdate{{Ref: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "golang.org/x/text", Version: "v0.21.0"}}}},
 		Label: "Ubuntu-Latest", Timeout: timeout,
 	}
 }
@@ -920,4 +920,29 @@ func TestCompleteJobWithoutADepsObserverTrustsTheReport(t *testing.T) {
 		assert.Equal(t, domain.CISuccess, r.job(run).Conclusion)
 		assert.Empty(t, r.logLines(run, j))
 	})
+}
+
+func TestFetchDepsRequiresCapabilities(t *testing.T) {
+	for _, kinds := range [][]string{{"deps"}, {"deps.gomod-path-majors"}, {"deps", "deps.gomod-path-majors"}} {
+		t.Run(strings.Join(kinds, "+"), func(t *testing.T) {
+			inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+				p := r.params(10 * time.Minute)
+				p.Job.Requires = []string{"deps", "deps.gomod-path-majors"}
+				run, err := r.ci.StartDepsRun(r.ctx, p)
+				require.NoError(t, err)
+				j := r.fetch(kinds...)
+				runners, err := r.store.CI().ListRunners(r.ctx)
+				require.NoError(t, err)
+				require.Len(t, runners, 1)
+				require.Equal(t, kinds, runners[0].Kinds)
+				if len(kinds) == 2 {
+					require.NotNil(t, j)
+					require.Equal(t, run.ID, j.Job.RunID)
+				} else {
+					require.Nil(t, j)
+					require.Equal(t, domain.CIPhaseReady, r.job(run).Phase)
+				}
+			})
+		})
+	}
 }

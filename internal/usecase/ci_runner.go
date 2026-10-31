@@ -159,6 +159,12 @@ func (c *CI) FetchJob(ctx context.Context, secret string, params ports.FetchJobP
 	}
 	c.markSeen(runner.ID)
 	c.noteVersion(ctx, runner, params.Version)
+	if !slices.Equal(runner.Kinds, params.Kinds) {
+		if err := c.cfg.Store.SetRunnerKinds(ctx, runner.ID, params.Kinds); err != nil && !errors.Is(err, domain.ErrNotFound) {
+			log := zerowrap.FromCtx(ctx)
+			log.Warn().Err(err).Str("runner_id", runner.ID).Msg("runner kinds not recorded")
+		}
+	}
 	deadline := time.NewTimer(c.cfg.PollTimeout)
 	defer deadline.Stop()
 	for {
@@ -348,6 +354,9 @@ func (c *CI) assignTo(ctx context.Context, runner domain.CIRunner, offered, kind
 		kind := "workflow"
 		if cand.Deps != nil {
 			kind = "deps"
+			if !supportsDeps(kinds, cand.Deps.Requires) {
+				continue
+			}
 		}
 		if !wantsKind(kinds, kind) || !domain.LabelsMatch(cand.Labels, offered) {
 			continue
@@ -967,4 +976,13 @@ func (c *CI) CompleteJob(ctx context.Context, secret string, params ports.Comple
 		log.Info().Str("job_id", j.ID).Int64("run_id", j.RunID).Str("conclusion", string(res.Conclusion)).Msg("job completed")
 	}
 	return res, nil
+}
+
+func supportsDeps(kinds, requires []string) bool {
+	for _, required := range requires {
+		if !wantsKind(kinds, required) {
+			return false
+		}
+	}
+	return true
 }

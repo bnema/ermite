@@ -353,8 +353,15 @@ type CIJob struct {
 
 // CIDepsJob is what a runner applies for a dependency job.
 type CIDepsJob struct {
-	Updates   []DepRef
-	GoVersion string
+	Details                []CIDepsUpdate
+	GoVersion, NodeVersion string
+	Requires               []string
+}
+
+// CIDepsUpdate holds the identity and application details of one update.
+type CIDepsUpdate struct {
+	Ref                                           DepRef
+	NewName, Range, Manager, ManagerVersion, Root string
 }
 
 // CICall is what a job calling a reusable workflow resolved (CI-3, D7).
@@ -442,6 +449,7 @@ type CIRunner struct {
 	ID           string
 	Name         string
 	Labels       []string
+	Kinds        []string
 	Isolation    CIIsolation
 	Version      string
 	Arch         string
