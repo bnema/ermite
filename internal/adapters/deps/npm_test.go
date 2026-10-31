@@ -284,14 +284,14 @@ func TestNPMDetectLookupBudget(t *testing.T) {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		}).Once()
-		// A one-minute caller leaves 30 s of lookups, then its deadline ends it
+		// A one-minute caller leaves 45 s of lookups, then its deadline ends it
 		// only after Detect returned what it had.
 		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 		defer cancel()
 		start := time.Now()
 		got, skipped, err := (NPM{}).Detect(ctx, files, reg)
 		require.NoError(t, err)
-		require.Equal(t, 30*time.Second, time.Since(start))
+		require.Equal(t, 45*time.Second, time.Since(start))
 		require.Empty(t, got)
 		require.Len(t, skipped, 3)
 	})
@@ -304,5 +304,28 @@ func TestNPMDetectLookupBudget(t *testing.T) {
 		}).Once()
 		_, _, err := (NPM{}).Detect(ctx, files, reg)
 		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+func TestNPMLookupDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		for _, remaining := range []time.Duration{30 * time.Second, 5 * time.Minute, 100 * time.Second, time.Nanosecond, 0, -time.Second} {
+			ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(remaining))
+			budget := npmLookupDeadline(ctx)
+			require.LessOrEqual(t, budget, remaining)
+			require.LessOrEqual(t, budget, npmLookupBudget)
+			if remaining > 0 {
+				require.Positive(t, budget)
+				require.Equal(t, min(npmLookupBudget, remaining-min(30*time.Second, remaining/4)), budget)
+			}
+			if remaining == 30*time.Second {
+				require.Greater(t, budget, 15*time.Second)
+			}
+			if remaining == 5*time.Minute {
+				require.Equal(t, 3*time.Minute, budget)
+				require.GreaterOrEqual(t, remaining-budget, 30*time.Second)
+			}
+			cancel()
+		}
 	})
 }

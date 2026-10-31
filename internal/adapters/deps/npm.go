@@ -125,18 +125,22 @@ func npmDependencies(content []byte) (map[string]string, error) {
 }
 
 // npmLookupBudget bounds the registry lookups of one Detect; npmLookupMargin
-// is left of the caller's deadline for the other ecosystems and the store.
+// is the maximum reserve for the other ecosystems and the store.
 const (
 	npmLookupBudget = 3 * time.Minute
 	npmLookupMargin = 30 * time.Second
 )
 
 // npmLookupDeadline returns the budget of the registry lookups: three minutes,
-// or less to leave npmLookupMargin before the deadline of ctx.
+// or less to reserve a quarter of the remaining time, up to npmLookupMargin.
 func npmLookupDeadline(ctx context.Context) time.Duration {
 	budget := npmLookupBudget
 	if deadline, ok := ctx.Deadline(); ok {
-		budget = min(budget, time.Until(deadline)-npmLookupMargin)
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return remaining
+		}
+		budget = min(budget, remaining-min(npmLookupMargin, remaining/4))
 	}
 	return budget
 }

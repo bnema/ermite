@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -216,7 +217,7 @@ func newDepsCheckCmd(env *cliEnv) *cobra.Command {
 		Long: "Check a non-archived repository now and print its pending updates." + "\nJSON: repository updates; see `ermite deps --help`."}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		c, err := env.client(cmd)
+		c, err := env.clientWithTimeout(cmd, 90*time.Second)
 		if err != nil {
 			return err
 		}

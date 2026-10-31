@@ -3,7 +3,12 @@
 package app
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -236,4 +241,35 @@ func TestDepsBaseBatchAlias(t *testing.T) {
 	assert.Equal(t, []string{"", "", ""}, batches)
 	err := runCLI(t, envFor(url), "", "deps", "open", "alpha", "--batch", "go/x@v2").err
 	require.ErrorContains(t, err, `no dependency batch "go/x@v2" for alpha`)
+}
+
+// Inspect the actual Connect timeout header, after the client interceptor runs.
+func TestDepsCallTimeouts(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		timeout time.Duration
+	}{
+		{"check", []string{"deps", "check", "alpha", "--json"}, 90 * time.Second},
+		{"list", []string{"deps", "list", "--json"}, 30 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			timeouts := make(chan string, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				timeouts <- r.Header.Get("Connect-Timeout-Ms")
+				w.Header().Set("Content-Type", "application/proto")
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+			// runCLI adds a 20-second parent deadline, which would mask both timeouts.
+			root := newRootCmdWith(testEnv(t, envFor(server.URL)))
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			root.SetArgs(tc.args)
+			require.NoError(t, root.ExecuteContext(t.Context()))
+			millis, err := strconv.ParseInt(<-timeouts, 10, 64)
+			require.NoError(t, err)
+			assert.InDelta(t, tc.timeout.Milliseconds(), millis, 1000)
+		})
+	}
 }

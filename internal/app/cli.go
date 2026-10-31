@@ -105,10 +105,16 @@ func (e *cliEnv) buildConfig(cmd *cobra.Command, warn, runTokenCmd bool) (client
 // client builds the API client. It warns when the token would travel in the
 // clear.
 func (e *cliEnv) client(cmd *cobra.Command) (*client.Client, error) {
+	return e.clientWithTimeout(cmd, client.DefaultTimeout)
+}
+
+// clientWithTimeout overrides the unary timeout for a command with a longer server bound.
+func (e *cliEnv) clientWithTimeout(cmd *cobra.Command, timeout time.Duration) (*client.Client, error) {
 	cfg, err := e.buildConfig(cmd, true, true)
 	if err != nil {
 		return nil, err
 	}
+	cfg.Timeout = timeout
 	return newClient(cmd, cfg, true)
 }
 
