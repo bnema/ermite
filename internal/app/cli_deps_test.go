@@ -24,14 +24,14 @@ func TestDepsListTableAndJSON(t *testing.T) {
 		return &ermite.ListDependencyUpdatesResponse{Repos: []*ermite.RepoDependencyUpdates{depsAlpha}}, nil
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "deps", "list", "--repo", "alpha").ok(t)
-	assert.Contains(t, res.stdout, "alpha  golang.org/x/text  v0.20.0  v0.21.0  minor  new  idle   -")
+	assert.Contains(t, res.stdout, "alpha  base   golang.org/x/text  v0.20.0  v0.21.0  minor  new  idle   -")
 	_, reqs := f.snapshot()
 	assert.Equal(t, "alpha", reqs[0].(*ermite.ListDependencyUpdatesRequest).GetRepo())
 
 	res = runCLI(t, envFor(f.serve(t)), "", "deps", "list", "--json").ok(t)
-	assert.JSONEq(t, `[{"repo":"alpha","updates":[
-		{"ecosystem":"gomod","name":"golang.org/x/text","directory":"tools","current":"v0.20.0","latest":"v0.21.0","kind":"minor","new":true},
-		{"ecosystem":"github-actions","name":"actions/checkout","directory":"","current":"v4","latest":"v5","kind":"major","new":false}],
+	assert.JSONEq(t, `[{"batches":[],"repo":"alpha","updates":[
+		{"ecosystem":"gomod","name":"golang.org/x/text","directory":"tools","current":"v0.20.0","latest":"v0.21.0","kind":"minor","new":true,"new_name":""},
+		{"ecosystem":"github-actions","name":"actions/checkout","directory":"","current":"v4","latest":"v5","kind":"major","new":false,"new_name":""}],
 		"checked_at":"2026-03-04T05:06:07Z","snoozed_until":null,"merge_request_number":0,"state":"idle","error":"","run_id":0}]`, res.stdout)
 	_, reqs = f.snapshot()
 	assert.Nil(t, reqs[1].(*ermite.ListDependencyUpdatesRequest).Repo, "no filter without --repo")
@@ -51,7 +51,7 @@ func TestDepsListShowsTheRun(t *testing.T) {
 		},
 	}
 	res := runCLI(t, envFor(f.serve(t)), "", "deps", "list").ok(t)
-	assert.Regexp(t, `beta\s+x/y\s+v1\s+v2\s+major\s+failed\s+12\n`, res.stdout)
+	assert.Regexp(t, `beta\s+base\s+x/y\s+v1\s+v2\s+major\s+failed\s+12\n`, res.stdout)
 
 	res = runCLI(t, envFor(f.serve(t)), "", "deps", "list", "--json").ok(t)
 	assert.Contains(t, res.stdout, `"run_id": 12`)
@@ -139,4 +139,38 @@ func TestDepsMultilineError(t *testing.T) {
 	res := runCLI(t, envFor(f.serve(t)), "", "deps", "check", "alpha").ok(t)
 	assert.Contains(t, res.stdout, "error          command failed\n               go: requires newer Go")
 	assert.Equal(t, r.Error, toJSONDepsRepo(r).Error)
+}
+
+func TestDepsSelectBatch(t *testing.T) {
+	key := "npm/web/react@v19"
+	major := &ermite.DependencyBatch{Key: key, Updates: []*ermite.DependencyUpdate{{Name: "react", Latest: "v19.0.0", NewName: "new-react"}}, RunId: 8, State: ermite.RepoDependencyUpdates_STATE_APPLYING, Outdated: true}
+	repo := &ermite.RepoDependencyUpdates{Repo: "alpha", Batches: []*ermite.DependencyBatch{{Updates: depsAlpha.Updates}, major}}
+	f := &fakeAPI{
+		listDeps: func(*ermite.ListDependencyUpdatesRequest) (*ermite.ListDependencyUpdatesResponse, error) {
+			return &ermite.ListDependencyUpdatesResponse{Repos: []*ermite.RepoDependencyUpdates{repo}}, nil
+		},
+		openDeps: func(r *ermite.OpenDependencyUpdatesRequest) (*ermite.OpenDependencyUpdatesResponse, error) {
+			require.Equal(t, key, r.Batch)
+			require.Len(t, r.ExpectedVersions, 1)
+			require.Equal(t, "react", r.ExpectedVersions[0].Name)
+			return &ermite.OpenDependencyUpdatesResponse{Updates: repo}, nil
+		},
+		ignoreDeps: func(r *ermite.IgnoreDependencyUpdatesRequest) (*ermite.IgnoreDependencyUpdatesResponse, error) {
+			require.Equal(t, key, r.Batch)
+			require.Len(t, r.ExpectedVersions, 1)
+			return &ermite.IgnoreDependencyUpdatesResponse{Updates: repo}, nil
+		},
+	}
+	url := f.serve(t)
+	out := runCLI(t, envFor(url), "", "deps", "list").ok(t)
+	assert.Contains(t, out.stdout, "BATCH")
+	assert.Contains(t, out.stdout, key)
+	runCLI(t, envFor(url), "", "deps", "open", "alpha", "--batch", key).ok(t)
+	runCLI(t, envFor(url), "", "deps", "ignore", "alpha", "--batch", key).ok(t)
+	require.Error(t, runCLI(t, envFor(url), "", "deps", "open", "alpha", "--batch", "missing").err)
+	json := toJSONDepsRepo(repo)
+	require.Len(t, json.Batches, 2)
+	assert.Equal(t, key, json.Batches[1].Key)
+	assert.True(t, json.Batches[1].Outdated)
+	assert.Equal(t, "new-react", json.Batches[1].Updates[0].NewName)
 }

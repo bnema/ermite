@@ -113,3 +113,5 @@ docker run -d -p 127.0.0.1:7341:7341 -v ermite-data:/data \
 ## Output
 
 `--json` gives stable fields. Errors: one line `ermite: ...` on stderr, exit 1. `ermite completion bash|zsh|fish` completes repo names.
+
+Bernard uses one MR per major update; select it with `deps open|ignore --batch KEY` (omit for base).

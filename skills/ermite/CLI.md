@@ -214,8 +214,8 @@ Bernard checks daily for updates to Go modules and GitHub Actions. It skips arch
 |---|---|
 | `deps list [--repo R]` | pending updates, snoozed included |
 | `deps check <repo>` | check now |
-| `deps open <repo>` | open/update the MR on `bernard/deps` |
-| `deps ignore <repo>` | ignore the pending versions |
+| `deps open <repo> [--batch KEY]` | open/update the selected batch MR (default base) |
+| `deps ignore <repo> [--batch KEY]` | ignore the selected batch’s pending versions |
 | `deps snooze <repo>` | hide for `ERMITE_DEPS_SNOOZE` |
 
 `open` and `ignore` send back the list they read and are refused if it changed meanwhile. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
@@ -280,5 +280,6 @@ Full list: `docs/configuration.md` in the ermite repo.
 The owner’s web inbox (`/-/inbox`) uses `?tab=deps|work|activity|moderation`; absent or unknown tabs show open issues and merge requests (`work`). Tabs cover all repositories. Activity includes queued/running CI, journal entries and unreleased-commit notices; its journal window is `?range=24h|7d` (default `24h`).
 
 The server advertises `deps.batches`: RPC dependency records include independent
-batches, and Open/Ignore accept a batch key (empty selects base). The CLI and web
-actions currently select only the base batch.
+batches, and Open/Ignore accept a batch key (empty selects base). The CLI selects batches with `--batch KEY` (default base); list includes a BATCH
+column and JSON includes `batches` (key, updates, state, error, run ID, MR number,
+outdated). Updates include `new_name`.
