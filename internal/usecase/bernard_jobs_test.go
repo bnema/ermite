@@ -191,8 +191,9 @@ func TestBernardScheduledCheckHasADeadline(t *testing.T) {
 			return domain.ResolvedRevision{}, domain.ErrNotFound
 		})
 	r.b.ScheduleNow(context.Background())
-	assert.Positive(t, left)
-	assert.LessOrEqual(t, left, 60*time.Second)
+	// Five minutes: npm lookups may take three of them.
+	assert.Greater(t, left, 4*time.Minute)
+	assert.LessOrEqual(t, left, 5*time.Minute)
 }
 
 // The daily pass settles an applying record whose run ended without the

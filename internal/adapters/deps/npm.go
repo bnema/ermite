@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -123,13 +124,37 @@ func npmDependencies(content []byte) (map[string]string, error) {
 	return out, nil
 }
 
+// npmLookupBudget bounds the registry lookups of one Detect; npmLookupMargin
+// is left of the caller's deadline for the other ecosystems and the store.
+const (
+	npmLookupBudget = 3 * time.Minute
+	npmLookupMargin = 30 * time.Second
+)
+
+// npmLookupDeadline returns the budget of the registry lookups: three minutes,
+// or less to leave npmLookupMargin before the deadline of ctx.
+func npmLookupDeadline(ctx context.Context) time.Duration {
+	budget := npmLookupBudget
+	if deadline, ok := ctx.Deadline(); ok {
+		budget = min(budget, time.Until(deadline)-npmLookupMargin)
+	}
+	return budget
+}
+
 // Detect skips conflicting and unsupported dependency ranges, invalid
 // manifests, packages whose root cannot be updated and registry failures.
+// Registry lookups share a budget (npmLookupDeadline); once it runs out the
+// remaining packages are skipped and the candidates found so far returned,
+// so one slow package document does not cost the other ecosystems' results.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses package syntax and resolves versions through the registry port; update policy stays in domain.PickUpdates
 func (NPM) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, error) {
 	log := zerowrap.FromCtx(ctx)
-	var out []domain.DepCandidate
+	type lookup struct {
+		path            domain.TreePath
+		dir, name, curr string
+	}
+	var lookups []lookup
 	for _, p := range filePaths(files) {
 		if path.Base(p.String()) != "package.json" {
 			continue
@@ -161,27 +186,47 @@ func (NPM) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg por
 				log.Debug().Str("path", p.String()).Str("name", name).Msg("bernard: npm name the runner refuses skipped")
 				continue
 			}
-			versions, err := reg.NPMVersions(ctx, name, current)
-			if errors.Is(err, domain.ErrNotFound) {
-				continue
-			}
-			if err != nil {
-				if cerr := ctx.Err(); cerr != nil {
-					return nil, cerr
-				}
-				log.Warn().Err(err).Str("path", p.String()).Str("name", name).Msg("bernard: npm registry lookup failed, package skipped")
-				continue
-			}
-			kept := versions[:0:0]
-			for _, v := range versions {
-				if npmRangeRE.MatchString(strings.TrimPrefix(v.Version, "v")) {
-					kept = append(kept, v)
-				} else {
-					log.Debug().Str("name", name).Str("version", v.Version).Msg("bernard: npm version the runner refuses skipped")
-				}
-			}
-			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemNPM, Directory: dir, Name: name, Current: current, Versions: kept})
+			lookups = append(lookups, lookup{p, dir, name, current})
 		}
+	}
+	if len(lookups) == 0 {
+		return nil, nil
+	}
+	lctx, cancel := context.WithTimeout(ctx, npmLookupDeadline(ctx))
+	defer cancel()
+	var out []domain.DepCandidate
+	for i, l := range lookups {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if lctx.Err() != nil {
+			log.Warn().Int("skipped", len(lookups)-i).Msg("bernard: npm lookup budget spent, remaining packages skipped")
+			break
+		}
+		versions, err := reg.NPMVersions(lctx, l.name, l.curr)
+		if errors.Is(err, domain.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return nil, cerr
+			}
+			if lctx.Err() != nil {
+				log.Warn().Int("skipped", len(lookups)-i).Msg("bernard: npm lookup budget spent, remaining packages skipped")
+				break
+			}
+			log.Warn().Err(err).Str("path", l.path.String()).Str("name", l.name).Msg("bernard: npm registry lookup failed, package skipped")
+			continue
+		}
+		kept := versions[:0:0]
+		for _, v := range versions {
+			if npmRangeRE.MatchString(strings.TrimPrefix(v.Version, "v")) {
+				kept = append(kept, v)
+			} else {
+				log.Debug().Str("name", l.name).Str("version", v.Version).Msg("bernard: npm version the runner refuses skipped")
+			}
+		}
+		out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemNPM, Directory: l.dir, Name: l.name, Current: l.curr, Versions: kept})
 	}
 	return out, nil
 }

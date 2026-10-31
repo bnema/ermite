@@ -680,7 +680,7 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 		b.wg.Add(1)
 		go func() {
 			defer b.wg.Done()
-			cctx, cancel := context.WithTimeout(b.ctx, depsCheckTimeout)
+			cctx, cancel := context.WithTimeout(b.ctx, depsBackgroundCheckTimeout)
 			defer cancel()
 			if _, err := b.check(cctx, b.cfg.Registry(), mr.Repo); err != nil && cctx.Err() == nil {
 				log.Error().Err(err).Str("repo", mr.Repo.String()).Msg("bernard: check after a merge")

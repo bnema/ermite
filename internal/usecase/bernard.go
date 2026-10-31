@@ -25,6 +25,10 @@ const (
 	// depsCheckTimeout bounds a synchronous check of one repository and the
 	// check of a runner report when its job completes.
 	depsCheckTimeout = 60 * time.Second
+	// depsBackgroundCheckTimeout bounds a check nobody waits for: the daily
+	// one and the one after a merge. npm lookups take at most three minutes
+	// of it (deps.NPM), the rest is for Go, Actions and the store.
+	depsBackgroundCheckTimeout = 5 * time.Minute
 	// defaultBernardTick is how often the daily schedule looks at the clock.
 	defaultBernardTick = time.Minute
 )
@@ -207,7 +211,7 @@ func (b *Bernard) ScheduleNow(ctx context.Context) {
 		if r.Archived {
 			continue
 		}
-		rctx, cancel := context.WithTimeout(ctx, depsCheckTimeout)
+		rctx, cancel := context.WithTimeout(ctx, depsBackgroundCheckTimeout)
 		_, err := b.check(rctx, reg, r.Name)
 		cancel()
 		if err != nil && ctx.Err() == nil {

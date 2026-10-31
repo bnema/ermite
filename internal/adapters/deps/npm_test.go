@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
 func TestNPMDetect(t *testing.T) {
@@ -121,8 +123,7 @@ func TestNPMDetectRunnerRulesAndRegistryErrors(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	reg.EXPECT().NPMVersions(mock.Anything, "big", "v1.0.0").Return(nil, context.Canceled).Once()
-	_, err = (NPM{}).Detect(ctx, files, reg)
+	_, err = (NPM{}).Detect(ctx, files, reg) // done before the first lookup
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -200,4 +201,54 @@ func TestNPMManagerLockfiles(t *testing.T) {
 	root, err = npmManager(npmFiles(t, map[string]string{"yarn.lock": "# yarn lockfile\n\n__metadata:\n  version: 8\n  cacheKey: 10c0\n"}), "", npmManifest{})
 	require.NoError(t, err)
 	require.Equal(t, "4.5.3", root.Version, "Berry metadata read from a header")
+}
+
+// Once the lookup budget is spent, the remaining packages are skipped and the
+// candidates found so far kept; cancelling the caller still fails Detect.
+// synctest's fake clock makes the three-minute budget instant.
+func TestNPMDetectLookupBudget(t *testing.T) {
+	files := npmFiles(t, map[string]string{"package.json": `{"dependencies":{"a":"1.0.0","b":"1.0.0","c":"1.0.0"}}`})
+	synctest.Test(t, func(t *testing.T) {
+		reg := mocks.NewDepsRegistry(t)
+		reg.EXPECT().NPMVersions(mock.Anything, "a", "v1.0.0").Return([]domain.DepVersion{{Version: "v1.1.0"}}, nil).Once()
+		reg.EXPECT().NPMVersions(mock.Anything, "b", "v1.0.0").RunAndReturn(func(ctx context.Context, _, _ string) ([]domain.DepVersion, error) {
+			<-ctx.Done() // a document that never arrives
+			return nil, ctx.Err()
+		}).Once()
+		// The caller allows ten minutes: the lookups get npmLookupBudget.
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
+		defer cancel()
+		start := time.Now()
+		got, err := (NPM{}).Detect(ctx, files, reg)
+		require.NoError(t, err)
+		require.Equal(t, npmLookupBudget, time.Since(start))
+		require.Len(t, got, 1)
+		require.Equal(t, "a", got[0].Name)
+	})
+	synctest.Test(t, func(t *testing.T) {
+		reg := mocks.NewDepsRegistry(t)
+		reg.EXPECT().NPMVersions(mock.Anything, "a", "v1.0.0").RunAndReturn(func(ctx context.Context, _, _ string) ([]domain.DepVersion, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}).Once()
+		// A one-minute caller leaves 30 s of lookups, then its deadline ends it
+		// only after Detect returned what it had.
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		defer cancel()
+		start := time.Now()
+		got, err := (NPM{}).Detect(ctx, files, reg)
+		require.NoError(t, err)
+		require.Equal(t, 30*time.Second, time.Since(start))
+		require.Empty(t, got)
+	})
+	synctest.Test(t, func(t *testing.T) {
+		reg := mocks.NewDepsRegistry(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		reg.EXPECT().NPMVersions(mock.Anything, "a", "v1.0.0").RunAndReturn(func(ctx context.Context, _, _ string) ([]domain.DepVersion, error) {
+			cancel()
+			return nil, ctx.Err()
+		}).Once()
+		_, err := (NPM{}).Detect(ctx, files, reg)
+		require.ErrorIs(t, err, context.Canceled)
+	})
 }
