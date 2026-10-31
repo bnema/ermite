@@ -435,3 +435,69 @@ func TestRequestTransportAndAttemptTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestRequestRateLimitNamesTheHost(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(429)
+	}))
+	defer s.Close()
+	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL, nil)
+	_, err := New(Config{}).request(req, false, 1024, time.Second)
+	if !errors.Is(err, domain.ErrUnavailable) || strings.Contains(err.Error(), "GitHub") || !strings.Contains(err.Error(), req.URL.Host) {
+		t.Fatal(err)
+	}
+}
+
+// An error body is drained only up to maxDrainBytes, not up to the body cap.
+func TestRequestDrainsErrorBodiesBounded(t *testing.T) {
+	var sent atomic.Int64
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+		chunk := make([]byte, 32<<10)
+		for i := 0; i < 1024; i++ {
+			n, err := w.Write(chunk)
+			sent.Add(int64(n))
+			if err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+		}
+	}))
+	defer s.Close()
+	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL, nil)
+	_, err := New(Config{}).request(req, false, 64<<20, 5*time.Second)
+	if !errors.Is(err, domain.ErrUnavailable) {
+		t.Fatal(err)
+	}
+	if sent.Load() >= 32<<20 {
+		t.Fatalf("drained %d bytes", sent.Load())
+	}
+}
+
+// A large document that timed out is not fetched again; small requests retry.
+func TestRequestLargeBodyTimeoutNotRetried(t *testing.T) {
+	for _, tc := range []struct {
+		cap   int64
+		calls int32
+	}{{1024, 2}, {64 << 20, 1}} {
+		t.Run(fmt.Sprint(tc.cap), func(t *testing.T) {
+			var calls atomic.Int32
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if calls.Add(1) == 1 {
+					<-r.Context().Done()
+					return
+				}
+				_, _ = io.WriteString(w, "ok")
+			}))
+			defer s.Close()
+			reg := New(Config{})
+			reg.sleep = func(context.Context, time.Duration) error { return nil }
+			req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL, nil)
+			_, _ = reg.request(req, false, tc.cap, 50*time.Millisecond)
+			if calls.Load() != tc.calls {
+				t.Fatalf("calls=%d", calls.Load())
+			}
+		})
+	}
+}

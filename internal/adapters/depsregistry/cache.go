@@ -10,6 +10,7 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"golang.org/x/mod/semver"
 )
 
 type result[T any] struct {
@@ -21,7 +22,7 @@ type cached struct {
 	mu          sync.Mutex
 	majorPaths  map[string]result[[]string]
 	goVersions  map[[2]string]result[[]domain.DepVersion]
-	npmVersions map[[2]string]result[[]domain.DepVersion]
+	npmVersions map[string]result[[]domain.DepVersion]
 	directives  map[[2]string]result[string]
 	tags        map[[2]string]result[[]domain.DepTag]
 	malicious   map[[3]string]result[bool]
@@ -30,7 +31,7 @@ type cached struct {
 // NewCached creates a memo cache owned by one check, not shared across checks.
 // Calls are serialized so concurrent requests for the same key query only once.
 func NewCached(registry ports.DepsRegistry) ports.DepsRegistry {
-	return &cached{registry: registry, npmVersions: make(map[[2]string]result[[]domain.DepVersion]), majorPaths: make(map[string]result[[]string]), goVersions: make(map[[2]string]result[[]domain.DepVersion]), directives: make(map[[2]string]result[string]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
+	return &cached{registry: registry, npmVersions: make(map[string]result[[]domain.DepVersion]), majorPaths: make(map[string]result[[]string]), goVersions: make(map[[2]string]result[[]domain.DepVersion]), directives: make(map[[2]string]result[string]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
 }
 func cacheable(err error) bool { return err == nil || errors.Is(err, domain.ErrNotFound) }
 
@@ -100,16 +101,28 @@ func (c *cached) GoMajorPaths(ctx context.Context, name string) ([]string, error
 	return value, err
 }
 
+// NPMVersions fetches each package document once per check: the cache is
+// keyed by name and holds every version, filtered by current on each call.
 func (c *cached) NPMVersions(ctx context.Context, name, current string) ([]domain.DepVersion, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	key := [2]string{name, current}
-	if v, ok := c.npmVersions[key]; ok {
-		return slices.Clone(v.value), v.err
+	v, ok := c.npmVersions[name]
+	if !ok {
+		value, err := c.registry.NPMVersions(ctx, name, "v0.0.0")
+		if !cacheable(err) {
+			return nil, err
+		}
+		v = result[[]domain.DepVersion]{slices.Clone(value), err}
+		c.npmVersions[name] = v
 	}
-	value, err := c.registry.NPMVersions(ctx, name, current)
-	if cacheable(err) {
-		c.npmVersions[key] = result[[]domain.DepVersion]{slices.Clone(value), err}
+	if v.err != nil {
+		return nil, v.err
 	}
-	return value, err
+	var out []domain.DepVersion
+	for _, version := range v.value {
+		if semver.Compare(version.Version, current) > 0 {
+			out = append(out, version)
+		}
+	}
+	return out, nil
 }

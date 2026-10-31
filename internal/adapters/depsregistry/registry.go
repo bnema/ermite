@@ -6,6 +6,7 @@ package depsregistry
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -60,7 +61,48 @@ func New(cfg Config) *Registry {
 	}}
 }
 
+// Error bodies are drained at most this far to reuse the connection.
+const maxDrainBytes = 64 << 10
+
+// largeBody marks requests whose attempt timeout is spent reading a large
+// document: a second attempt would likely time out again.
+const largeBody = 1 << 20
+
 func (r *Registry) request(req *http.Request, notFound bool, cap int64, timeout time.Duration) ([]byte, error) {
+	var data []byte
+	err := r.stream(req, notFound, cap, timeout, func(body io.Reader) error {
+		var err error
+		data, err = io.ReadAll(body)
+		return err
+	})
+	return data, err
+}
+
+// cappedReader fails with domain.ErrResourceExhausted past n bytes.
+type cappedReader struct {
+	r   io.Reader
+	n   int64
+	cap int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.n > c.cap {
+		return 0, fmt.Errorf("%w: registry body exceeds %d bytes", domain.ErrResourceExhausted, c.cap)
+	}
+	if int64(len(p)) > c.cap+1-c.n {
+		p = p[:c.cap+1-c.n]
+	}
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	if c.n > c.cap {
+		return n, fmt.Errorf("%w: registry body exceeds %d bytes", domain.ErrResourceExhausted, c.cap)
+	}
+	return n, err
+}
+
+// stream sends req with retries and hands a successful body, bounded by cap,
+// to consume within the attempt deadline.
+func (r *Registry) stream(req *http.Request, notFound bool, cap int64, timeout time.Duration, consume func(io.Reader) error) error {
 	parent := req.Context()
 	if req.Body != nil && req.GetBody != nil {
 		defer req.Body.Close()
@@ -70,7 +112,7 @@ func (r *Registry) request(req *http.Request, notFound bool, cap int64, timeout 
 		data, err := io.ReadAll(req.Body)
 		_ = req.Body.Close()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		req = req.Clone(parent)
 		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
@@ -85,7 +127,7 @@ func (r *Registry) request(req *http.Request, notFound bool, cap int64, timeout 
 	}
 	for attempt := 0; ; attempt++ {
 		if err := parent.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		ctx, cancel := context.WithTimeout(parent, timeout)
 		current := req.Clone(ctx)
@@ -95,7 +137,7 @@ func (r *Registry) request(req *http.Request, notFound bool, cap int64, timeout 
 			current.Body, err = req.GetBody()
 			if err != nil {
 				cancel()
-				return nil, err
+				return err
 			}
 		}
 		res, err := r.client.Do(current)
@@ -105,7 +147,7 @@ func (r *Registry) request(req *http.Request, notFound bool, cap int64, timeout 
 			err = fmt.Errorf("registry request: %w", err)
 			// A response alongside an error indicates a refused redirect,
 			// not a transient transport failure (Do already closed its body).
-			retry = res == nil
+			retry = res == nil && !(cap > largeBody && errors.Is(err, context.DeadlineExceeded))
 		} else {
 			status := res.StatusCode
 			switch {
@@ -114,7 +156,7 @@ func (r *Registry) request(req *http.Request, notFound bool, cap int64, timeout 
 				if seconds, parseErr := strconv.ParseInt(reset, 10, 64); parseErr == nil {
 					reset = time.Unix(seconds, 0).UTC().Format(time.RFC3339)
 				}
-				err = fmt.Errorf("%w: registry HTTP %d: GitHub rate limit resets at %s", domain.ErrUnavailable, status, reset)
+				err = fmt.Errorf("%w: registry HTTP %d: %s rate limit resets at %s", domain.ErrUnavailable, status, req.URL.Host, reset)
 			case notFound && (status == 404 || status == 410):
 				err = domain.ErrNotFound
 			case status != http.StatusOK:
@@ -136,33 +178,29 @@ func (r *Registry) request(req *http.Request, notFound bool, cap int64, timeout 
 					}
 				}
 			default:
-				var data []byte
-				data, err = io.ReadAll(io.LimitReader(res.Body, cap+1))
+				err = consume(&cappedReader{r: res.Body, cap: cap})
 				_ = res.Body.Close()
 				cancel()
-				if err != nil {
-					return nil, err
+				if err != nil && parent.Err() != nil {
+					return parent.Err()
 				}
-				if int64(len(data)) > cap {
-					return nil, fmt.Errorf("%w: registry body exceeds %d bytes", domain.ErrResourceExhausted, cap)
-				}
-				return data, nil
+				return err
 			}
 			// Bound draining both by bytes and the attempt deadline.
-			_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, cap+1))
+			_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxDrainBytes))
 			_ = res.Body.Close()
 		}
 		cancel()
 		if parent.Err() != nil {
-			return nil, parent.Err()
+			return parent.Err()
 		}
 		if !retry || attempt == 2 {
-			return nil, err
+			return err
 		}
 		backoff := min(500*time.Millisecond*time.Duration(1<<attempt), 5*time.Second)
 		wait = max(wait, jitter(backoff))
 		if err := sleep(parent, wait); err != nil {
-			return nil, err
+			return err
 		}
 	}
 }
