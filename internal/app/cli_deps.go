@@ -14,7 +14,6 @@ import (
 )
 
 type jsonDepsUpdate struct {
-	NewName   string `json:"new_name"`
 	Ecosystem string `json:"ecosystem"`
 	Name      string `json:"name"`
 	Directory string `json:"directory"`
@@ -22,46 +21,43 @@ type jsonDepsUpdate struct {
 	Latest    string `json:"latest"`
 	Kind      string `json:"kind" help:"patch, minor or major"`
 	New       bool   `json:"new" help:"absent from the previous check"`
+	NewName   string `json:"new_name" help:"new module path, Go path major only"`
 }
 
 type jsonDepsBatch struct {
-	Key                string           `json:"key"`
+	Key                string           `json:"key" help:"empty = base"`
 	Updates            []jsonDepsUpdate `json:"updates"`
-	State              string           `json:"state"`
+	State              string           `json:"state" help:"idle, applying or failed"`
 	Error              string           `json:"error"`
-	RunID              int64            `json:"run_id"`
-	MergeRequestNumber int64            `json:"merge_request_number"`
-	Outdated           bool             `json:"outdated"`
+	RunID              int64            `json:"run_id" help:"0 = none"`
+	MergeRequestNumber int64            `json:"merge_request_number" help:"0 = none"`
+	Outdated           bool             `json:"outdated" help:"the merge request holds other versions"`
 }
 
 type jsonDepsRepo struct {
-	Batches            []jsonDepsBatch  `json:"batches"`
 	Repo               string           `json:"repo"`
-	Updates            []jsonDepsUpdate `json:"updates"`
+	Updates            []jsonDepsUpdate `json:"updates" help:"base batch"`
 	CheckedAt          jsonInstant      `json:"checked_at"`
 	SnoozedUntil       jsonInstant      `json:"snoozed_until"`
 	MergeRequestNumber int64            `json:"merge_request_number" help:"0 = none"`
 	State              string           `json:"state" help:"idle, applying or failed"`
 	Error              string           `json:"error"`
 	RunID              int64            `json:"run_id" help:"the run applying the updates, or the last one that tried; 0 = none"`
+	Batches            []jsonDepsBatch  `json:"batches"`
 }
 
 func toJSONDepsRepo(r *ermite.RepoDependencyUpdates) jsonDepsRepo {
 	out := jsonDepsRepo{
-		Batches: []jsonDepsBatch{}, Repo: r.GetRepo(), Updates: []jsonDepsUpdate{}, CheckedAt: jsonTime(r.GetCheckedAt()), SnoozedUntil: jsonTime(r.GetSnoozedUntil()),
+		Repo: r.GetRepo(), Updates: toJSONDepsRepoUpdates(r.GetUpdates()), CheckedAt: jsonTime(r.GetCheckedAt()), SnoozedUntil: jsonTime(r.GetSnoozedUntil()),
 		MergeRequestNumber: r.GetMergeRequestNumber(), State: depsStateName(r.GetState()), Error: r.GetError(), RunID: r.GetRunId(),
-	}
-	for _, u := range r.GetUpdates() {
-		out.Updates = append(out.Updates, jsonDepsUpdate{
-			Ecosystem: u.GetEcosystem(), Name: u.GetName(), Directory: u.GetDirectory(), Current: u.GetCurrent(),
-			Latest: u.GetLatest(), Kind: depsKindName(u.GetKind()), New: u.GetNew(), NewName: u.GetNewName(),
-		})
+		Batches: []jsonDepsBatch{},
 	}
 	for _, b := range r.GetBatches() {
-		ups := toJSONDepsRepoUpdates(b.GetUpdates())
-		out.Batches = append(out.Batches, jsonDepsBatch{Key: b.GetKey(), Updates: ups, State: depsStateName(b.GetState()), Error: b.GetError(), RunID: b.GetRunId(), MergeRequestNumber: b.GetMergeRequestNumber(), Outdated: b.GetOutdated()})
+		out.Batches = append(out.Batches, jsonDepsBatch{
+			Key: b.GetKey(), Updates: toJSONDepsRepoUpdates(b.GetUpdates()), State: depsStateName(b.GetState()), Error: b.GetError(),
+			RunID: b.GetRunId(), MergeRequestNumber: b.GetMergeRequestNumber(), Outdated: b.GetOutdated(),
+		})
 	}
-
 	return out
 }
 
@@ -92,10 +88,38 @@ func newDepsCmd(env *cliEnv) *cobra.Command {
 	return cmd
 }
 
+// depsBatchLabel is how tables and flags name a batch: "base" for the empty key.
+func depsBatchLabel(key string) string {
+	if key == "" {
+		return depsBaseBatch
+	}
+	return key
+}
+
+// depsBaseBatch names the base batch (empty key) in tables and in --batch.
+const depsBaseBatch = "base"
+
 func printDepsRepo(cmd *cobra.Command, r *ermite.RepoDependencyUpdates) error {
-	pairs := [][2]string{{"repo", r.GetRepo()}, {"state", depsStateName(r.GetState())}}
-	if r.GetError() != "" {
-		for i, line := range strings.Split(r.GetError(), "\n") {
+	pairs := [][2]string{{"repo", r.GetRepo()}, {"checked", shortTime(r.GetCheckedAt(), "never")}, {"snoozed until", shortTime(r.GetSnoozedUntil(), "-")}}
+	batches := depsBatches(r)
+	for _, b := range batches {
+		pairs = append(pairs, depsBatchDetails(r.GetRepo(), b)...)
+	}
+	if err := fields(cmd.OutOrStdout(), pairs); err != nil {
+		return err
+	}
+	rows := [][]string{}
+	for _, b := range batches {
+		rows = append(rows, depsBatchRows(b, true)...)
+	}
+	return table(cmd.OutOrStdout(), []string{"BATCH", "NAME", "CURRENT", "LATEST", "KIND", "DIRECTORY", "", "STATE", "RUN"}, rows)
+}
+
+// depsBatchDetails lists the state, error, run and merge request of a batch.
+func depsBatchDetails(repo string, b *ermite.DependencyBatch) [][2]string {
+	pairs := [][2]string{{"batch", depsBatchLabel(b.GetKey())}, {"state", depsStateName(b.GetState())}}
+	if b.GetError() != "" {
+		for i, line := range strings.Split(b.GetError(), "\n") {
 			label := ""
 			if i == 0 {
 				label = "error"
@@ -103,32 +127,42 @@ func printDepsRepo(cmd *cobra.Command, r *ermite.RepoDependencyUpdates) error {
 			pairs = append(pairs, [2]string{label, line})
 		}
 	}
-	if r.GetRunId() != 0 {
-		pairs = append(pairs, [2]string{"run", strconv.FormatInt(r.GetRunId(), 10)})
-		if r.GetState() == ermite.RepoDependencyUpdates_STATE_FAILED {
-			pairs = append(pairs, [2]string{"log", fmt.Sprintf("ermite run view %s %d --log", r.GetRepo(), r.GetRunId())})
+	if b.GetRunId() != 0 {
+		pairs = append(pairs, [2]string{"run", strconv.FormatInt(b.GetRunId(), 10)})
+		if b.GetState() == ermite.RepoDependencyUpdates_STATE_FAILED {
+			pairs = append(pairs, [2]string{"log", fmt.Sprintf("ermite run view %s %d --log", repo, b.GetRunId())})
 		}
 	}
-	if r.GetMergeRequestNumber() != 0 {
-		pairs = append(pairs, [2]string{"merge request", fmt.Sprintf("#%d", r.GetMergeRequestNumber())})
+	if b.GetMergeRequestNumber() != 0 {
+		mr := fmt.Sprintf("#%d", b.GetMergeRequestNumber())
+		if b.GetOutdated() {
+			mr += " (outdated)"
+		}
+		pairs = append(pairs, [2]string{"merge request", mr})
 	}
-	pairs = append(pairs, [2]string{"checked", shortTime(r.GetCheckedAt(), "never")}, [2]string{"snoozed until", shortTime(r.GetSnoozedUntil(), "-")})
-	if err := fields(cmd.OutOrStdout(), pairs); err != nil {
-		return err
-	}
-	return printDepsUpdates(cmd, r.GetUpdates())
+	return pairs
 }
 
-func printDepsUpdates(cmd *cobra.Command, ups []*ermite.DependencyUpdate) error {
-	rows := make([][]string, 0, len(ups))
-	for _, u := range ups {
+// depsBatchRows is one table row per update of a batch: BATCH, NAME, CURRENT,
+// LATEST, KIND, [DIRECTORY,] new mark, STATE, RUN.
+func depsBatchRows(b *ermite.DependencyBatch, withDir bool) [][]string {
+	run := "-"
+	if b.GetRunId() != 0 {
+		run = strconv.FormatInt(b.GetRunId(), 10)
+	}
+	rows := make([][]string, 0, len(b.GetUpdates()))
+	for _, u := range b.GetUpdates() {
 		mark := ""
 		if u.GetNew() {
 			mark = "new"
 		}
-		rows = append(rows, []string{u.GetName(), u.GetCurrent(), u.GetLatest(), depsKindName(u.GetKind()), u.GetDirectory(), mark})
+		row := []string{depsBatchLabel(b.GetKey()), u.GetName(), u.GetCurrent(), u.GetLatest(), depsKindName(u.GetKind())}
+		if withDir {
+			row = append(row, u.GetDirectory())
+		}
+		rows = append(rows, append(row, mark, depsStateName(b.GetState()), run))
 	}
-	return table(cmd.OutOrStdout(), []string{"NAME", "CURRENT", "LATEST", "KIND", "DIRECTORY", ""}, rows)
+	return rows
 }
 
 func newDepsListCmd(env *cliEnv) *cobra.Command {
@@ -160,20 +194,8 @@ func newDepsListCmd(env *cliEnv) *cobra.Command {
 		rows := [][]string{}
 		for _, r := range res.Msg.GetRepos() {
 			for _, batch := range depsBatches(r) {
-				label := batch.GetKey()
-				if label == "" {
-					label = "base"
-				}
-				for _, u := range batch.GetUpdates() {
-					mark := ""
-					if u.GetNew() {
-						mark = "new"
-					}
-					run := "-"
-					if batch.GetRunId() != 0 {
-						run = fmt.Sprint(batch.GetRunId())
-					}
-					rows = append(rows, []string{r.GetRepo(), label, u.GetName(), u.GetCurrent(), u.GetLatest(), depsKindName(u.GetKind()), mark, depsStateName(batch.GetState()), run})
+				for _, row := range depsBatchRows(batch, false) {
+					rows = append(rows, append([]string{r.GetRepo()}, row...))
 				}
 			}
 		}
@@ -206,8 +228,8 @@ func newDepsCheckCmd(env *cliEnv) *cobra.Command {
 func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 	var batchKey string
 	short := map[string]string{
-		"open":   "Open or update the Bernard merge request",
-		"ignore": "Ignore the pending versions of a repository",
+		"open":   "Open or update the Bernard merge request of a batch",
+		"ignore": "Ignore the pending versions of a batch",
 		"snooze": "Hide a repository's updates for the snooze delay",
 	}[name]
 	long := short + "."
@@ -216,7 +238,7 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 	}
 	cmd := &cobra.Command{Use: name + " <repo>", Short: short, Long: long + "\nJSON: repository updates; see `ermite deps --help`.", Args: cobra.ExactArgs(1)}
 	if name != "snooze" {
-		cmd.Flags().StringVar(&batchKey, "batch", "", "dependency batch key (empty selects base)")
+		cmd.Flags().StringVar(&batchKey, "batch", depsBaseBatch, "`KEY` of the batch, from the BATCH column of deps list; base = patch and minor updates")
 	}
 	asJSON := addJSONFlag(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -247,6 +269,9 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 			if cur == nil {
 				return fmt.Errorf("no pending dependency updates for %s", clean(repo))
 			}
+			if batchKey == depsBaseBatch {
+				batchKey = ""
+			}
 			var selected *ermite.DependencyBatch
 			for _, batch := range depsBatches(cur) {
 				if batch.GetKey() == batchKey {
@@ -255,7 +280,7 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 				}
 			}
 			if selected == nil {
-				return fmt.Errorf("no dependency batch %q for %s", clean(batchKey), clean(repo))
+				return fmt.Errorf("no dependency batch %q for %s", clean(depsBatchLabel(batchKey)), clean(repo))
 			}
 			expected := depsExpected(selected)
 			if name == "open" {

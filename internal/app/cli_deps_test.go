@@ -174,3 +174,53 @@ func TestDepsSelectBatch(t *testing.T) {
 	assert.True(t, json.Batches[1].Outdated)
 	assert.Equal(t, "new-react", json.Batches[1].Updates[0].NewName)
 }
+
+func TestDepsCheckPrintsEveryBatch(t *testing.T) {
+	key := "npm/web/react@v19"
+	repo := &ermite.RepoDependencyUpdates{Repo: "alpha", Batches: []*ermite.DependencyBatch{
+		{Updates: depsAlpha.Updates[:1], State: ermite.RepoDependencyUpdates_STATE_IDLE},
+		{Key: key, Updates: []*ermite.DependencyUpdate{{Name: "react", Directory: "web", Current: "v18.3.1", Latest: "v19.0.0", Kind: ermite.DependencyUpdate_KIND_MAJOR}},
+			State: ermite.RepoDependencyUpdates_STATE_FAILED, Error: "no runner supports deps.npm updates", MergeRequestNumber: 4, Outdated: true},
+	}}
+	f := &fakeAPI{checkDeps: func(*ermite.CheckDependenciesRequest) (*ermite.CheckDependenciesResponse, error) {
+		return &ermite.CheckDependenciesResponse{Updates: repo}, nil
+	}}
+	res := runCLI(t, envFor(f.serve(t)), "", "deps", "check", "alpha").ok(t)
+	assert.Contains(t, res.stdout, "BATCH")
+	assert.Regexp(t, `base\s+golang.org/x/text\s+v0.20.0\s+v0.21.0\s+minor\s+tools\s+new\s+idle\s+-\n`, res.stdout)
+	assert.Regexp(t, `npm/web/react@v19\s+react\s+v18.3.1\s+v19.0.0\s+major\s+web\s+failed\s+-\n`, res.stdout)
+	assert.Regexp(t, `batch\s+npm/web/react@v19\nstate\s+failed\nerror\s+no runner supports deps.npm updates\nmerge request\s+#4 \(outdated\)\n`, res.stdout)
+
+	// A server without batches: the legacy fields form the base batch.
+	f.checkDeps = func(*ermite.CheckDependenciesRequest) (*ermite.CheckDependenciesResponse, error) {
+		return &ermite.CheckDependenciesResponse{Updates: depsAlpha}, nil
+	}
+	res = runCLI(t, envFor(f.serve(t)), "", "deps", "check", "alpha").ok(t)
+	assert.Regexp(t, `base\s+actions/checkout\s+v4\s+v5\s+major\s+idle\s+-\n`, res.stdout)
+}
+
+func TestDepsBaseBatchAlias(t *testing.T) {
+	repo := &ermite.RepoDependencyUpdates{Repo: "alpha", Batches: []*ermite.DependencyBatch{{Updates: depsAlpha.Updates}}}
+	var batches []string
+	f := &fakeAPI{
+		listDeps: func(*ermite.ListDependencyUpdatesRequest) (*ermite.ListDependencyUpdatesResponse, error) {
+			return &ermite.ListDependencyUpdatesResponse{Repos: []*ermite.RepoDependencyUpdates{repo}}, nil
+		},
+		openDeps: func(r *ermite.OpenDependencyUpdatesRequest) (*ermite.OpenDependencyUpdatesResponse, error) {
+			batches = append(batches, r.Batch)
+			require.Len(t, r.ExpectedVersions, 2)
+			return &ermite.OpenDependencyUpdatesResponse{Updates: repo}, nil
+		},
+		ignoreDeps: func(r *ermite.IgnoreDependencyUpdatesRequest) (*ermite.IgnoreDependencyUpdatesResponse, error) {
+			batches = append(batches, r.Batch)
+			return &ermite.IgnoreDependencyUpdatesResponse{Updates: repo}, nil
+		},
+	}
+	url := f.serve(t)
+	runCLI(t, envFor(url), "", "deps", "open", "alpha", "--batch", "base").ok(t)
+	runCLI(t, envFor(url), "", "deps", "open", "alpha").ok(t)
+	runCLI(t, envFor(url), "", "deps", "ignore", "alpha", "--batch", "base").ok(t)
+	assert.Equal(t, []string{"", "", ""}, batches)
+	err := runCLI(t, envFor(url), "", "deps", "open", "alpha", "--batch", "go/x@v2").err
+	require.ErrorContains(t, err, `no dependency batch "go/x@v2" for alpha`)
+}
