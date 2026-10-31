@@ -169,7 +169,7 @@ func TestInboxDepsJoinsTheRun(t *testing.T) {
 	withRun := domain.RepoDeps{Repo: name(t, "alpha"), CheckedAt: older, Batches: []domain.DepBatch{{Updates: upd, State: domain.DepsApplying, RunID: 5}}}
 	withRun.Batches = append(withRun.Batches, domain.DepBatch{Key: "major", MR: 10})
 	gone := domain.RepoDeps{Repo: name(t, "beta"), CheckedAt: newer, Batches: []domain.DepBatch{{Updates: append(upd, upd...), State: domain.DepsFailed, RunID: 9}}}
-	none := domain.RepoDeps{Repo: name(t, "gamma"), CheckedAt: older, Batches: []domain.DepBatch{{Updates: upd}}}
+	none := domain.RepoDeps{Repo: name(t, "gamma"), CheckedAt: older, Batches: []domain.DepBatch{{Updates: upd}, {Key: "hidden", State: domain.DepsFailed, RunID: 1}}}
 
 	mrs, is, meta, store, clock, ci := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t), mocks.NewCIStore(t)
 	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Deps: store, Clock: clock, CI: ci})
@@ -192,7 +192,7 @@ func TestInboxDepsJoinsTheRun(t *testing.T) {
 	assert.EqualValues(t, 3, got.Deps[0].Run.Number)
 	assert.Nil(t, got.Deps[2].Run, "a run that is gone is no run")
 	assert.Nil(t, got.Deps[3].Run, "a record without a run reads none")
-	assert.Equal(t, 4, got.Counts.Deps)
+	assert.Equal(t, 4, got.Counts.Deps, "one per visible batch, not per repository")
 	assert.True(t, got.DepsCheckedAt.Equal(newer), "the latest check")
 }
 

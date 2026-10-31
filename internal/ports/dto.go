@@ -480,12 +480,13 @@ type ActivityPage struct {
 // InboxCounts are the numbers of open items across every repository.
 type InboxCounts struct {
 	MergeRequests, Issues, Pending, Running int
-	// Deps counts the repositories with pending dependency updates.
+	// Deps counts the visible dependency batches (domain.DepBatch.Visible), the
+	// rows of InboxOverview.Deps.
 	Deps int
 }
 
-// InboxDeps is the pending dependency updates of one repository with the run
-// that applies them, or applied them last.
+// InboxDeps is one visible dependency batch of a repository with the run that
+// applies it, or applied it last.
 type InboxDeps struct {
 	Batch domain.DepBatch
 	Rec   domain.RepoDeps
@@ -497,10 +498,11 @@ type InboxDeps struct {
 // InboxOverview is what the owner has to look at across every repository: the
 // open merge requests and issues, ongoing CI runs, and issues awaiting moderation.
 type InboxOverview struct {
-	// Deps are pending updates for non-archived repositories, excluding snoozed records.
+	// Deps are the visible batches of non-archived repositories, excluding
+	// snoozed records.
 	Deps []InboxDeps
-	// DepsCheckedAt is the latest check of the repositories counted in
-	// Counts.Deps; zero when there is none.
+	// DepsCheckedAt is the latest check of the repositories with a batch in
+	// Deps; zero when there is none.
 	DepsCheckedAt time.Time
 	Counts        InboxCounts
 	// Runs are queued or in progress, newest first.

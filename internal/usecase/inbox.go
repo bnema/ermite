@@ -505,9 +505,7 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 		}
 		now := in.clock.Now()
 		for _, d := range all {
-			if !slices.ContainsFunc(d.Batches, func(batch domain.DepBatch) bool {
-				return len(batch.Updates) > 0 || batch.MR != 0 || batch.State == domain.DepsApplying
-			}) || d.SnoozedUntil.After(now) {
+			if !slices.ContainsFunc(d.Batches, domain.DepBatch.Visible) || d.SnoozedUntil.After(now) {
 				continue
 			}
 			repo, err := lookupRepo(ctx, in.meta, d.Repo)
@@ -521,10 +519,10 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 				continue
 			}
 			for _, batch := range d.Batches {
-				if len(batch.Updates) == 0 && batch.MR == 0 && batch.State != domain.DepsApplying {
+				if !batch.Visible() {
 					continue
 				}
-				out.Counts.Deps++
+				out.Counts.Deps++ // one per batch: each is a row of out.Deps
 				// The latest check across eligible repositories.
 				if d.CheckedAt.After(out.DepsCheckedAt) {
 					out.DepsCheckedAt = d.CheckedAt
