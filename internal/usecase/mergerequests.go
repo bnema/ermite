@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"

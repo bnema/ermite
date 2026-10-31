@@ -8,7 +8,7 @@ import (
 	"runtime/debug"
 	"sync"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 const (

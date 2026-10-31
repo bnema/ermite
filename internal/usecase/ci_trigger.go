@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite-actions/expr"
 	"bnema.dev/ermite-actions/template"

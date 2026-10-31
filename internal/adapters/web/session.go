@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"

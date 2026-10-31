@@ -24,7 +24,7 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // Store is the disk implementation of ports.BlobStore.

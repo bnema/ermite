@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite/internal/config"

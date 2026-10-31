@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/mediapolicy"
 )

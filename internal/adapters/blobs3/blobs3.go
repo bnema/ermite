@@ -26,7 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // Store is a provider-independent S3 blob store.

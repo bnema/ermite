@@ -9,7 +9,7 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 var _ ports.ReleaseTagWriter = (*Git)(nil)

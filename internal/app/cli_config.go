@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/bnema/kvconf"
+	"bnema.dev/kvconf"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite/internal/adapters/client"

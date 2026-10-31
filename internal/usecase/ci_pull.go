@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite-actions/workflow"
 	"bnema.dev/ermite/internal/domain"

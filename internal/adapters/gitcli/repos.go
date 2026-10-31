@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 
 	"bnema.dev/ermite/internal/domain"

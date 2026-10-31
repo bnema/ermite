@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // Start starts the bounded worker pool and UTC scheduler exactly once.

@@ -16,7 +16,7 @@ import (
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/httprange"
 	"bnema.dev/ermite/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 func releaseRoute(rest string) (kind, owner, repo, ref string, ok bool) {

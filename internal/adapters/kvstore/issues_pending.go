@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 
 	kv "bnema.dev/ermite-kv"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"google.golang.org/protobuf/proto"
 
 	storagepb "bnema.dev/ermite/gen/ermite/storage"

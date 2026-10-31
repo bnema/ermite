@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/adapters/httpserver"
 	"bnema.dev/ermite/internal/adapters/web"

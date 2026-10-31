@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"google.golang.org/protobuf/proto"
 	"slices"
 	"strconv"

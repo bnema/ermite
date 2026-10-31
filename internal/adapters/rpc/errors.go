@@ -7,7 +7,7 @@ import (
 	"errors"
 
 	"connectrpc.com/connect"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
 	"bnema.dev/ermite/internal/domain"

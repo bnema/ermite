@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bnema/kvconf"
+	"bnema.dev/kvconf"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 

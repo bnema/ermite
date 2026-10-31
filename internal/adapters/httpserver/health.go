@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // healthCacheTTL is how long the result of the checks is reused. The endpoint

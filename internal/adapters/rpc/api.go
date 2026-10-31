@@ -13,7 +13,7 @@ import (
 	"slices"
 
 	"connectrpc.com/connect"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/clientlimit"

@@ -16,6 +16,8 @@ require (
 	bnema.dev/ermite-api v0.23.0
 	bnema.dev/ermite-git v0.1.1
 	bnema.dev/ermite-kv v0.1.1
+	bnema.dev/kvconf v0.2.0
+	bnema.dev/zerowrap v1.5.0
 	connectrpc.com/connect v1.21.1
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/a-h/templ v0.3.1070
@@ -23,8 +25,6 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.10
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.5
-	github.com/bnema/kvconf v0.1.2
-	github.com/bnema/zerowrap v1.4.1
 	github.com/descope/virtualwebauthn v1.0.5
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -81,6 +81,7 @@ require (
 	github.com/bep/helpers v0.12.0 // indirect
 	github.com/bits-and-blooms/bitset v1.26.0 // indirect
 	github.com/bnema/hexcheck v0.4.0 // indirect
+	github.com/bnema/zerowrap v1.4.1 // indirect
 	github.com/brunoga/deep v1.3.1 // indirect
 	github.com/bufbuild/buf v1.75.0 // indirect
 	github.com/bufbuild/protocompile v0.14.2-0.20261020145055-56248e843b50 // indirect

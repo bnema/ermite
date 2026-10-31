@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"github.com/golang-jwt/jwt/v5"
 
 	"bnema.dev/ermite/internal/domain"

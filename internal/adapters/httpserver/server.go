@@ -15,7 +15,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // ShutdownTimeout is how long Run waits for requests in flight after the

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite/internal/adapters/blobdisk"
 	"bnema.dev/ermite/internal/adapters/blobs3"

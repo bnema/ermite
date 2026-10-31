@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"bnema.dev/ermite-actions/workflow"
 	"bnema.dev/ermite/internal/domain"

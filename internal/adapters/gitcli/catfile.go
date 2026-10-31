@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // ErrClosed is returned by reads after Close.
