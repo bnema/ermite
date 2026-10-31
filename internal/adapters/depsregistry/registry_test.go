@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"bnema.dev/ermite/internal/domain"
@@ -476,28 +477,39 @@ func TestRequestDrainsErrorBodiesBounded(t *testing.T) {
 }
 
 // A large document that timed out is not fetched again; small requests retry.
+// The transport is in memory and the attempt deadline runs on synctest's fake
+// clock, so the test neither sleeps nor depends on scheduling.
 func TestRequestLargeBodyTimeoutNotRetried(t *testing.T) {
 	for _, tc := range []struct {
 		cap   int64
 		calls int32
 	}{{1024, 2}, {64 << 20, 1}} {
 		t.Run(fmt.Sprint(tc.cap), func(t *testing.T) {
-			var calls atomic.Int32
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if calls.Add(1) == 1 {
-					<-r.Context().Done()
-					return
+			synctest.Test(t, func(t *testing.T) {
+				var calls atomic.Int32
+				reg := New(Config{})
+				reg.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					if calls.Add(1) == 1 {
+						<-r.Context().Done() // a document that never arrives
+						return nil, r.Context().Err()
+					}
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok")), Header: http.Header{}, Request: r}, nil
+				})
+				reg.sleep = func(context.Context, time.Duration) error { return nil }
+				req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://registry.test/doc", nil)
+				start := time.Now()
+				_, err := reg.request(req, false, tc.cap, time.Minute)
+				if calls.Load() != tc.calls {
+					t.Fatalf("calls=%d err=%v", calls.Load(), err)
 				}
-				_, _ = io.WriteString(w, "ok")
-			}))
-			defer s.Close()
-			reg := New(Config{})
-			reg.sleep = func(context.Context, time.Duration) error { return nil }
-			req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, s.URL, nil)
-			_, _ = reg.request(req, false, tc.cap, 50*time.Millisecond)
-			if calls.Load() != tc.calls {
-				t.Fatalf("calls=%d", calls.Load())
-			}
+				if time.Since(start) != time.Minute {
+					t.Fatalf("took %v", time.Since(start))
+				}
+			})
 		})
 	}
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

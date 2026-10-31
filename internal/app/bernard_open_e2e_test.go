@@ -498,6 +498,9 @@ func TestBernardSeparateMinorAndMajorMergeRequests(t *testing.T) {
 	// makes the major MR outdated, with the same proposed version.
 	_, err = c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: numbers[""], HeadId: baseHead, IgnoreChecks: true}))
 	require.NoError(t, err)
+	// Polled: Bernard handles the merge event on the bus asynchronously and
+	// the harness has no hook to wait for it; each poll runs a check, and
+	// waitFor bounds the wait at 15 s.
 	c.waitFor("base merged, major preserved and outdated", func() bool {
 		res, err := deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
 		require.NoError(t, err)
