@@ -587,3 +587,29 @@ func TestBernardCheckDepsReportReadsOnlyTheUpdateInputs(t *testing.T) {
 	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, *report))
 	rr.reader.AssertNotCalled(t, "ListPaths", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
+
+// With two required kinds, the error names the first one no labelled runner
+// advertises, not the last one required.
+func TestBernardOpenNamesTheMissingRunnerKind(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		kinds []string
+		want  string
+	}{
+		{"first kind missing", []string{"deps.gomod-path-majors"}, "deps"},
+		{"second kind missing", []string{"deps"}, "deps.gomod-path-majors"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+			rr.runners = []domain.CIRunner{
+				{Labels: []string{"ubuntu-latest"}, Kinds: tc.kinds},
+				{Labels: []string{"other"}, Kinds: []string{"deps", "deps.gomod-path-majors"}},
+			}
+			u := goUpdate()
+			u.NewName = "golang.org/x/text/v2"
+			rr.rec.Base().Updates = []domain.DepUpdate{u}
+			_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, "", []domain.DepRef{u.DepRef})
+			require.EqualError(t, err, "failed precondition: no runner supports "+tc.want+" updates")
+		})
+	}
+}

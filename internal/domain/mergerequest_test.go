@@ -344,7 +344,7 @@ func TestNewBotCommit(t *testing.T) {
 		return domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: dir, Name: name, Version: latest}, Current: cur}
 	}
 
-	one := domain.NewBotCommit(oid(t, 'a'), oid(t, 'b'), []domain.DepUpdate{up(".github/workflows/ci.yml", "actions/checkout", "v3", "v4")}, domain.Identity{}, committer, at)
+	one := domain.NewBotCommit(oid(t, 'a'), oid(t, 'b'), domain.BotCommitSubject(1), []domain.DepUpdate{up(".github/workflows/ci.yml", "actions/checkout", "v3", "v4")}, domain.Identity{}, committer, at)
 	assert.Equal(t, oid(t, 'a'), one.Tree)
 	assert.Equal(t, []domain.ObjectID{oid(t, 'b')}, one.Parents)
 	assert.Equal(t, "Bernard", one.Author.Name)
@@ -353,14 +353,14 @@ func TestNewBotCommit(t *testing.T) {
 	assert.Equal(t, "ermite@forge.example", one.Committer.Email)
 	assert.Equal(t, "build(deps): update 1 dependency\n\n- actions/checkout v3 \u2192 v4 (.github/workflows/ci.yml)\n", one.Message)
 
-	two := domain.NewBotCommit(oid(t, 'a'), oid(t, 'b'), []domain.DepUpdate{up("", "a/b", "v1", "v2"), up("", "c/d", "v1", "v3")}, domain.Identity{}, committer, at)
-	assert.Equal(t, "build(deps): update 2 dependencies\n\n- a/b v1 \u2192 v2\n- c/d v1 \u2192 v3\n", two.Message)
+	two := domain.NewBotCommit(oid(t, 'a'), oid(t, 'b'), "build(deps): update a/b", []domain.DepUpdate{up("", "a/b", "v1", "v2"), up("", "c/d", "v1", "v3")}, domain.Identity{}, committer, at)
+	assert.Equal(t, "build(deps): update a/b\n\n- a/b v1 \u2192 v2\n- c/d v1 \u2192 v3\n", two.Message)
 }
 
 func TestNewBotCommitSanitizes(t *testing.T) {
 	t.Parallel()
 	bad := domain.DepUpdate{DepRef: domain.DepRef{Directory: "d\nir", Name: "n\r\nx\u00e9", Version: "v2\x00"}, Current: "v1\n"}
-	c := domain.NewBotCommit(oid(t, 'a'), oid(t, 'b'), []domain.DepUpdate{bad}, domain.Identity{}, domain.Identity{Name: "e", Email: "e@ho\nst"}, time.Unix(1, 0))
+	c := domain.NewBotCommit(oid(t, 'a'), oid(t, 'b'), domain.BotCommitSubject(1), []domain.DepUpdate{bad}, domain.Identity{}, domain.Identity{Name: "e", Email: "e@ho\nst"}, time.Unix(1, 0))
 	assert.Equal(t, "build(deps): update 1 dependency\n\n- n??x? v1? \u2192 v2? (d?ir)\n", c.Message)
 	assert.Equal(t, "bernard@ho?st", c.Author.Email)
 }

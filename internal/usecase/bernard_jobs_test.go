@@ -27,7 +27,7 @@ func jobsRig(t *testing.T) (*bernardRig, *mocks.DepsRunner) {
 	runs := mocks.NewDepsRunner(t)
 	b, err := usecase.NewBernard(usecase.BernardConfig{
 		Store: r.store, Meta: r.meta, Reader: r.reader, Registry: func() ports.DepsRegistry { return r.reg },
-		Bus: r.bus, Clock: r.clock, CheckAt: "0 6 * * *", Runs: runs, RunnerLabel: "ubuntu-latest", Tick: time.Hour,
+		Bus: r.bus, Clock: r.clock, CheckAt: "0 6 * * *", Runs: runs, Runners: mocks.NewRunnerLister(t), RunnerLabel: "ubuntu-latest", Tick: time.Hour,
 	})
 	require.NoError(t, err)
 	r.b = b

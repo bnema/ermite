@@ -52,10 +52,8 @@ type BernardConfig struct {
 	// Runs starts and cancels the CI runs of the dependency jobs; may be nil
 	// in a Bernard that does not open merge requests.
 	Runs ports.DepsRunner
-	// Runners lists registered runner capabilities for Open.
-	Runners interface {
-		ListRunners(context.Context) ([]domain.CIRunner, error)
-	}
+	// Runners lists registered runner capabilities for Open; required with Runs.
+	Runners ports.RunnerLister
 	// RunnerLabel is the runner label that serves the dependency jobs.
 	RunnerLabel string
 	// Tick is how often the schedule looks at the clock; one minute when zero.
@@ -112,6 +110,9 @@ func NewBernard(cfg BernardConfig) (*Bernard, error) {
 	cfg.RunnerLabel = strings.TrimSpace(cfg.RunnerLabel)
 	if cfg.Runs != nil && cfg.RunnerLabel == "" {
 		return nil, fmt.Errorf("%w: bernard needs a runner label for its dependency jobs", domain.ErrInvalid)
+	}
+	if cfg.Runs != nil && cfg.Runners == nil {
+		return nil, fmt.Errorf("%w: bernard needs the runner list for its dependency jobs", domain.ErrInvalid)
 	}
 	cron, err := domain.ParseCron(cfg.CheckAt)
 	if err != nil {
@@ -278,10 +279,14 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 			if slices.ContainsFunc(next, func(batch domain.DepBatch) bool { return batch.Key == old.Key }) {
 				continue
 			}
-			moved = true
 			if old.MR != 0 || old.State == domain.DepsApplying {
+				// Kept for its merge request or run: a change only when it
+				// loses its updates.
+				moved = moved || len(old.Updates) != 0
 				old.Updates = nil
 				next = append(next, old)
+			} else {
+				moved = true // dropped
 			}
 		}
 		slices.SortFunc(next[1:], func(a, b domain.DepBatch) int { return strings.Compare(string(a.Key), string(b.Key)) })
@@ -305,14 +310,6 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 // called after the store mutation, never inside it.
 func (b *Bernard) changed(ctx context.Context, name domain.RepoName) {
 	b.cfg.Bus.Publish(context.WithoutCancel(ctx), domain.DependencyUpdatesChanged{Repo: name, At: b.cfg.Clock.Now()})
-}
-
-func refsOf(ups []domain.DepUpdate) []domain.DepRef {
-	refs := make([]domain.DepRef, len(ups))
-	for i, u := range ups {
-		refs[i] = u.DepRef
-	}
-	return refs
 }
 
 func cmpStrings(pairs ...string) int {
@@ -567,7 +564,7 @@ func (b *Bernard) List(ctx context.Context, p domain.Principal, repo domain.Repo
 	}
 	var out []domain.RepoDeps
 	for _, d := range all {
-		if !d.Pending() || (!repo.IsZero() && d.Repo != repo) {
+		if !slices.ContainsFunc(d.Batches, domain.DepBatch.Visible) || (!repo.IsZero() && d.Repo != repo) {
 			continue
 		}
 		out = append(out, d)

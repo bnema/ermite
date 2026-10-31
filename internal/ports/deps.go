@@ -142,6 +142,13 @@ type DepsRunObserver interface {
 	DepsJobEnded(ctx context.Context, run domain.CIRun, job domain.CIJob, report *DepsReport)
 }
 
+// RunnerLister lists the registered runners with their labels and kinds.
+// CIStore implements it.
+type RunnerLister interface {
+	// ListRunners returns every runner ordered by name.
+	ListRunners(ctx context.Context) ([]domain.CIRunner, error)
+}
+
 // DepsJobPreparer derives ecosystem-specific runner inputs at the job commit.
 // Ecosystems without additional inputs need not implement it.
 type DepsJobPreparer interface {

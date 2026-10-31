@@ -111,6 +111,33 @@ func movedPrecondition(d domain.RepoDeps, key domain.DepBatchKey, expected []dom
 	return nil
 }
 
+// missingRunnerKind returns "" when one runner with label advertises every
+// required kind. Otherwise it names the first required kind no runner with
+// label advertises or, when each kind is advertised by some runner but none
+// has them all, the first kind the first such runner lacks.
+func missingRunnerKind(runners []domain.CIRunner, label string, requires []string) string {
+	var labelled []domain.CIRunner
+	for _, r := range runners {
+		if domain.LabelsMatch([]string{label}, r.Labels) {
+			if supportsDeps(r.Kinds, requires) {
+				return ""
+			}
+			labelled = append(labelled, r)
+		}
+	}
+	for _, kind := range requires {
+		if !slices.ContainsFunc(labelled, func(r domain.CIRunner) bool { return supportsDeps(r.Kinds, []string{kind}) }) {
+			return kind
+		}
+	}
+	for _, kind := range requires {
+		if !supportsDeps(labelled[0].Kinds, []string{kind}) {
+			return kind
+		}
+	}
+	return requires[0]
+}
+
 // startRunnerJob starts the CI run of the runner-side updates at the tip of the
 // default branch and marks the record Applying with it. The caller holds the
 // repository lock.
@@ -134,22 +161,14 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 			requires = append(requires, "deps.gomod-path-majors")
 		}
 	}
-	var runners []domain.CIRunner
-	if cfg.Runners != nil {
-		runners, err = cfg.Runners.ListRunners(ctx)
-		if err != nil {
-			return domain.RepoDeps{}, err
-		}
+	if cfg.Runners == nil {
+		return domain.RepoDeps{}, fmt.Errorf("%w: dependency jobs are not available", domain.ErrPreconditionFailed)
 	}
-	supported := false
-	missing := requires[len(requires)-1]
-	for _, r := range runners {
-		if domain.LabelsMatch([]string{cfg.RunnerLabel}, r.Labels) && supportsDeps(r.Kinds, requires) {
-			supported = true
-			break
-		}
+	runners, err := cfg.Runners.ListRunners(ctx)
+	if err != nil {
+		return domain.RepoDeps{}, err
 	}
-	if !supported {
+	if missing := missingRunnerKind(runners, cfg.RunnerLabel, requires); missing != "" {
 		return domain.RepoDeps{}, fmt.Errorf("%w: no runner supports %s updates", domain.ErrPreconditionFailed, missing)
 	}
 	target, exists, err := cfg.Repos.DefaultBranch(ctx, name)
@@ -187,7 +206,7 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 		}
 		files, _, err := b.readInputs(ctx, name, domain.RevisionOf(tip), eco.Inputs(own, nil), nil)
 		if errors.Is(err, domain.ErrNotFound) || errors.Is(err, errDepsOversize) {
-			return domain.RepoDeps{}, fmt.Errorf("%w: %s inputs: %v", domain.ErrPreconditionFailed, eco.Name(), err)
+			return domain.RepoDeps{}, fmt.Errorf("%w: read the %s files: %v", domain.ErrPreconditionFailed, eco.Name(), err)
 		}
 		if err != nil {
 			return domain.RepoDeps{}, err
@@ -335,8 +354,7 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("write the tree: %w", err)
 	}
-	commit := domain.NewBotCommit(tree, tip, ups, domain.Identity{}, cfg.Committer, cfg.Clock.Now())
-	commit.Message = domain.BotSubject(batch) + "\n\n" + domain.BotCommitBody(ups)
+	commit := domain.NewBotCommit(tree, tip, domain.BotSubject(batch), ups, domain.Identity{}, cfg.Committer, cfg.Clock.Now())
 	armored, err := cfg.Signer.Sign(commit.Payload())
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("sign the commit: %w", err)

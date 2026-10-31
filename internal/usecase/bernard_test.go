@@ -163,6 +163,30 @@ func TestBernardCheckNoNewDoesNotPublish(t *testing.T) {
 	require.NoError(t, err) // the bus mock fails the test on an unexpected Publish
 }
 
+// A major batch kept only for its merge request (no proposed updates) is not a
+// change on every later check; losing its updates or dropping a batch is.
+func TestBernardCheckChangedOnlyWhenBatchesMove(t *testing.T) {
+	major := domain.DepBatch{Key: "gomod//x@v2", MR: 4}
+	for _, tc := range []struct {
+		name    string
+		batches []domain.DepBatch
+		want    int
+	}{
+		{"kept MR batch without updates", []domain.DepBatch{{}, major}, 0},
+		{"kept MR batch loses its updates", []domain.DepBatch{{}, {Key: major.Key, MR: 4, Updates: []domain.DepUpdate{{DepRef: depRef("x/v2", "v2.0.0")}}}}, 1},
+		{"idle batch dropped", []domain.DepBatch{{}, {Key: "gomod//y@v3", Updates: []domain.DepUpdate{{DepRef: depRef("y/v3", "v3.0.0")}}}}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newBernardRig(t, "0 6 * * *")
+			r.repoReads()
+			r.rec = domain.RepoDeps{Repo: r.repo, Batches: tc.batches}
+			_, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, r.changedCount())
+		})
+	}
+}
+
 func TestBernardCheckSkipsArchived(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo, Archived: true}, nil)
@@ -339,10 +363,13 @@ func TestBernardList(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	other := name(t, "other")
 	withUp := domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{{DepRef: depRef("a", "v1.0.1")}}}}}
-	r.store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{withUp, {Repo: other}, {Repo: name(t, "z"), Batches: withUp.Batches}}, nil)
+	// Batches without updates still show while a merge request or a run holds them.
+	withMR := domain.RepoDeps{Repo: name(t, "mr"), Batches: []domain.DepBatch{{}, {Key: "gomod//x@v2", MR: 4}}}
+	applying := domain.RepoDeps{Repo: name(t, "run"), Batches: []domain.DepBatch{{State: domain.DepsApplying, RunID: 1}}}
+	r.store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{withUp, {Repo: other}, {Repo: name(t, "z"), Batches: withUp.Batches}, withMR, applying}, nil)
 	all, err := r.b.List(context.Background(), domain.Owner(), domain.RepoName{})
 	require.NoError(t, err)
-	assert.Len(t, all, 2)
+	assert.Len(t, all, 4)
 	one, err := r.b.List(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err)
 	assert.Len(t, one, 1)
@@ -392,6 +419,15 @@ func TestNewBernardRejectsRunsWithoutARunnerLabel(t *testing.T) {
 		})
 		assert.ErrorIs(t, err, domain.ErrInvalid, "label %q", label)
 	}
+}
+
+func TestNewBernardRejectsRunsWithoutRunners(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	_, err := usecase.NewBernard(usecase.BernardConfig{
+		Store: r.store, Meta: r.meta, Reader: r.reader, Registry: func() ports.DepsRegistry { return r.reg },
+		Bus: r.bus, Clock: r.clock, CheckAt: "0 6 * * *", Runs: mocks.NewDepsRunner(t), RunnerLabel: "ubuntu-latest",
+	})
+	assert.ErrorIs(t, err, domain.ErrInvalid)
 }
 
 // TestBernardIgnoreWaitsForTheRepositoryLock: a transition made while Ignore

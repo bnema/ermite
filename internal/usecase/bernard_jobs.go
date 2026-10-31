@@ -196,8 +196,9 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 		return err
 	}
 
+	started := applyingBatch(&rec, run.ID) // the caller checked it
 	var serverUps []domain.DepUpdate
-	for _, u := range applyingBatch(&rec, run.ID).RunUpdates {
+	for _, u := range started.RunUpdates {
 		if e := b.ecosystem(u.Ecosystem); e != nil && e.ApplyInServer() {
 			serverUps = append(serverUps, u)
 		}
@@ -226,7 +227,8 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 		}
 		return nil
 	}
-	if jobGuard(d) != nil {
+	current := applyingBatch(&d, run.ID)
+	if current == nil {
 		return nil // the owner closed the merge request meanwhile: drop the report
 	}
 	target, exists, err := b.cfg.Repos.DefaultBranch(ctx, run.Repo)
@@ -236,7 +238,7 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	if !exists {
 		return fmt.Errorf("%w: %s has no default branch", domain.ErrPreconditionFailed, run.Repo)
 	}
-	_, err = b.publish(ctx, run.Repo, target, base, changes, domain.DepBatch{Key: applyingBatch(&rec, run.ID).Key, Updates: applyingBatch(&rec, run.ID).RunUpdates, MR: applyingBatch(&d, run.ID).MR}, jobGuard, effects)
+	_, err = b.publish(ctx, run.Repo, target, base, changes, domain.DepBatch{Key: started.Key, Updates: started.RunUpdates, MR: current.MR}, jobGuard, effects)
 	return err
 }
 

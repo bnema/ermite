@@ -385,9 +385,9 @@ func BotMRBody(ups []DepUpdate, effects []DepSideEffect) string {
 
 // NewBotCommit builds Bernard's commit of dependency updates on parent. The
 // author is Bernard, with an address on the domain of the committer, which is
-// the instance identity, unless author sets them; the message lists the
-// updates.
-func NewBotCommit(tree, parent ObjectID, ups []DepUpdate, author, committer Identity, at time.Time) ServerCommit {
+// the instance identity, unless author sets them; the message is subject
+// followed by the list of the updates.
+func NewBotCommit(tree, parent ObjectID, subject string, ups []DepUpdate, author, committer Identity, at time.Time) ServerCommit {
 	host := "localhost"
 	if i := strings.LastIndex(committer.Email, "@"); i >= 0 && i+1 < len(committer.Email) {
 		host = asciiLine(committer.Email[i+1:])
@@ -403,7 +403,7 @@ func NewBotCommit(tree, parent ObjectID, ups []DepUpdate, author, committer Iden
 		Tree: tree, Parents: []ObjectID{parent},
 		Author:    Signature{Name: name, Email: email, Time: at.UTC()},
 		Committer: Signature{Name: committer.Name, Email: committer.Email, Time: at.UTC()},
-		Message:   BotCommitSubject(len(ups)) + "\n\n" + BotCommitBody(ups),
+		Message:   asciiLine(subject) + "\n\n" + BotCommitBody(ups),
 	}
 }
 
