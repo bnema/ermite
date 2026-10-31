@@ -441,3 +441,83 @@ func TestBernardCancelingTheRunFailsTheCard(t *testing.T) {
 	assert.Error(t, gitErr, "nothing was committed")
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.getRun(run.GetId()).GetRun().GetConclusion())
 }
+
+func TestBernardSeparateMinorAndMajorMergeRequests(t *testing.T) {
+	remote := newFakeRemote(t)
+	remote.set("actions/checkout",
+		ports.RemoteRef{Name: "refs/tags/v4.1.0", ID: shaTag},
+		ports.RemoteRef{Name: "refs/tags/v4.2.0", ID: shaTagObj, Peeled: shaPeeled},
+		ports.RemoteRef{Name: "refs/tags/v5.0.0", ID: shaTagObj, Peeled: shaPeeled},
+	)
+	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns"}}, func(o *options) { o.remoteLister = remote.m })
+	c := &ciHarness{harness: h, root: h.api(adminToken), repo: "proj"}
+	h.seed("proj", domain.VisibilityPrivate)
+	c.wt = h.workTree("main")
+	c.push("main", map[string]string{".github/workflows/ci.yml": bernardWorkflow}, "")
+	deps := ermiteconnect.NewDepsServiceClient(&http.Client{Transport: bearerTransport{secret: adminToken, next: http.DefaultTransport}}, h.url("/-/api"))
+	var pending *pb.RepoDependencyUpdates
+	c.waitFor("minor and major batches", func() bool {
+		res, err := deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
+		require.NoError(t, err)
+		pending = res.Msg.GetUpdates()
+		return len(pending.GetBatches()) == 2 && len(pending.GetBatches()[0].GetUpdates()) == 1
+	})
+	majorKey := pending.Batches[1].Key
+	numbers := map[string]int64{}
+	for _, batch := range pending.Batches {
+		expected := []*pb.DependencyVersion{}
+		for _, u := range batch.Updates {
+			expected = append(expected, &pb.DependencyVersion{Ecosystem: u.Ecosystem, Directory: u.Directory, Name: u.Name, Version: u.Latest})
+		}
+		res, err := deps.OpenDependencyUpdates(c.ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "proj", Batch: batch.Key, ExpectedVersions: expected}))
+		require.NoError(t, err)
+		for _, b := range res.Msg.Updates.Batches {
+			if b.Key == batch.Key {
+				numbers[b.Key] = b.MergeRequestNumber
+			}
+		}
+	}
+	require.NotZero(t, numbers[""])
+	require.NotZero(t, numbers[majorKey])
+	require.NotEqual(t, numbers[""], numbers[majorKey])
+	branch := domain.DepBatchKey(majorKey).Branch()
+	majorHead := c.bareGit("proj", "rev-parse", "refs/heads/"+branch)
+	baseHead := c.bareGit("proj", "rev-parse", "refs/heads/bernard/deps")
+	require.NotEqual(t, baseHead, majorHead)
+	mr, err := c.root.mr.GetMergeRequest(c.ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: numbers[majorKey]}))
+	require.NoError(t, err)
+	assert.Equal(t, branch, mr.Msg.MergeRequest.SourceBranch)
+	assert.Equal(t, "build(deps): update actions/checkout to v5", mr.Msg.MergeRequest.Title)
+	// A newer version in the same major keeps the MR, but marks its snapshot stale.
+	remote.set("actions/checkout",
+		ports.RemoteRef{Name: "refs/tags/v4.1.0", ID: shaTag},
+		ports.RemoteRef{Name: "refs/tags/v4.2.0", ID: shaTagObj, Peeled: shaPeeled},
+		ports.RemoteRef{Name: "refs/tags/v5.1.0", ID: shaTagObj, Peeled: shaPeeled},
+	)
+	c.waitFor("outdated major MR", func() bool {
+		res, err := deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
+		require.NoError(t, err)
+		for _, b := range res.Msg.Updates.Batches {
+			if b.Key == majorKey {
+				return b.Outdated && b.MergeRequestNumber == numbers[majorKey]
+			}
+		}
+		return false
+	})
+	_, err = c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: numbers[""], HeadId: baseHead, IgnoreChecks: true}))
+	require.NoError(t, err)
+	c.waitFor("base merged, major preserved", func() bool {
+		res, err := deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
+		require.NoError(t, err)
+		var baseDone, majorKept bool
+		for _, b := range res.Msg.Updates.Batches {
+			if b.Key == "" {
+				baseDone = b.MergeRequestNumber == 0 && len(b.Updates) == 0
+			}
+			if b.Key == majorKey {
+				majorKept = b.MergeRequestNumber == numbers[majorKey] && b.Outdated
+			}
+		}
+		return baseDone && majorKept
+	})
+}

@@ -356,7 +356,13 @@ func BotCommitBody(ups []DepUpdate) string {
 // cannot close the code span that holds a module name.
 func BotMRBody(ups []DepUpdate, effects []DepSideEffect) string {
 	var b strings.Builder
-	b.WriteString(BotCommitBody(ups))
+	named := slices.Clone(ups)
+	for i := range named {
+		if named[i].NewName != "" {
+			named[i].Name += " → " + named[i].NewName
+		}
+	}
+	b.WriteString(BotCommitBody(named))
 	if len(effects) == 0 {
 		return b.String()
 	}

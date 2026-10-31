@@ -4,6 +4,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 )
 
@@ -92,4 +94,35 @@ func TestBernardReconcilesEveryBatch(t *testing.T) {
 	b := Bernard{ctx: t.Context(), cfg: BernardConfig{Store: store, MRStore: mrs, Runs: runs}}
 	b.reconcileMergeRequests()
 	b.reconcileRuns(t.Context(), 0)
+}
+
+func TestBernardDropsEmptyMajorOnMRDone(t *testing.T) {
+	for _, merged := range []bool{false, true} {
+		t.Run(fmt.Sprint(merged), func(t *testing.T) {
+			repo, err := domain.ParseRepoName("proj")
+			require.NoError(t, err)
+			base := domain.DepBatch{MR: 2}
+			rec := domain.RepoDeps{Repo: repo, Batches: []domain.DepBatch{base, {Key: "major", MR: 3}}}
+			store := mocks.NewDepsStore(t)
+			bus := mocks.NewEventBus(t)
+			clock := mocks.NewClock(t)
+			clock.EXPECT().Now().Return(time.Time{}).Maybe()
+			bus.EXPECT().Publish(mock.Anything, mock.Anything).Once()
+			store.EXPECT().Get(mock.Anything, repo).Return(rec, nil).Once()
+			store.EXPECT().Mutate(mock.Anything, repo, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.RepoName, fn func(*domain.RepoDeps) (bool, error)) (domain.RepoDeps, error) {
+				_, err := fn(&rec)
+				return rec, err
+			}).Once()
+			// The merged path schedules a check; an archived repo makes it read-only.
+			meta := mocks.NewRepoMetaStore(t)
+			if merged {
+				meta.EXPECT().Get(mock.Anything, repo).Return(domain.Repo{Name: repo, Archived: true}, nil).Once()
+				store.EXPECT().Get(mock.Anything, repo).Return(domain.RepoDeps{Repo: repo}, nil).Once()
+			}
+			b := Bernard{ctx: t.Context(), cfg: BernardConfig{Store: store, Bus: bus, Clock: clock, Meta: meta, Registry: func() ports.DepsRegistry { return nil }}}
+			b.onMRDone(domain.MergeRequest{Repo: repo, Number: 3}, merged)
+			b.wg.Wait()
+			require.Equal(t, []domain.DepBatch{base}, rec.Batches)
+		})
+	}
 }

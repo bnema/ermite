@@ -319,3 +319,11 @@ func TestPickUpdatesPathMajor(t *testing.T) {
 		assert.Equal(t, want, ups[0].NewName)
 	}
 }
+
+func TestBotMRBodyNamesNewModulePath(t *testing.T) {
+	ups := []DepUpdate{{DepRef: DepRef{Name: "example.com/pkg", Version: "v2.0.0"}, NewName: "example.com/pkg/v2", Current: "v1.0.0"}}
+	body := BotMRBody(ups, nil)
+	assert.Contains(t, body, "example.com/pkg")
+	assert.Contains(t, body, "example.com/pkg/v2")
+	assert.Equal(t, "example.com/pkg", ups[0].Name, "body rendering does not change identity")
+}

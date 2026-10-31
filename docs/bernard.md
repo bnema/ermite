@@ -11,6 +11,30 @@ Bernard watches the dependencies of your repositories and lists the updates that
 
 `ermite deps check <repo>` runs the same check now. See [Configuration](configuration.md) for the `ERMITE_DEPS_*` settings; `ERMITE_DEPS_ENABLED=0` turns Bernard off.
 
+## Batches and merge requests
+
+Patch and minor updates share the base batch (key `""`), branch `bernard/deps`,
+and subject `build(deps): update N dependencies`. Each dependency with a newer
+major has a separate batch, keyed by ecosystem, directory, current name and
+major. Its branch is `bernard/deps-major/<slug>-<hash>` and its subject is
+`build(deps): update <name> to <major>`. The highest eligible same-major and
+cross-major versions can both be proposed for the same dependency. Floating
+Actions tags stay floating (`v4` → `v5`); pinned versions stay pinned
+(`v4.1.0` → `v5.0.0`).
+
+Open and Ignore act independently on each batch. Use `ermite deps list` to find
+the BATCH key, then `ermite deps open|ignore <repo> --batch KEY`; omitting the
+flag selects base. Snooze remains repository-wide. Merging or closing one MR
+leaves other batches alone; an empty major batch is removed when its MR ends.
+
+The daily check preserves each batch's run and MR state. If a proposal vanishes
+while a major MR is open or a run is applying, the batch remains with no pending
+updates. An MR is **outdated** when its committed version snapshot differs from
+the batch's current proposals, including a newer version in the same major or
+overlapping updates changed by another merge. It stays open; Open/Update MR
+rebuilds its branch from the current default-branch tip. No MR is opened or
+refreshed automatically.
+
 ## How updates are applied
 
 GitHub Actions updates are applied by the server. Go module updates are applied by a runner, through a CI run: Bernard starts a run with the event `dependencies` on the tip of the default branch, with one job, **Update dependencies**. A runner that offers the `deps` job kind and has the label set by `ERMITE_DEPS_RUNNER_LABEL` (`ubuntu-latest` by default) takes it like any other job. The job gets a read-only repository token for that commit, no secrets, no variables and no ID token. The runner runs `go get` and `go mod tidy` for the requested versions and reports the changed `go.mod` and `go.sum` files.
@@ -23,7 +47,7 @@ Bernard accepts a report only if:
 - other direct requirements may only be raised by Go, never lowered, removed, added or made indirect;
 - no `require` line is duplicated.
 
-The server checks the report when the job ends: a refused report fails the job and the run, with the reason in the log and in the Inbox. Otherwise Bernard commits the files, together with the Actions updates, on `bernard/deps` on top of the commit the job ran on, and opens or updates the merge request. The merge request lists the versions Go raised or removed under "Also changed by Go". Go module downloads are kept in a per-repository cache on the runner, separate from workflow caches.
+The server checks the report when the job ends: a refused report fails the job and the run, with the reason in the log and in the Inbox. Otherwise Bernard commits the files, together with the Actions updates, on the batch branch on top of the commit the job ran on, and opens or updates the merge request. The merge request lists the versions Go raised or removed under "Also changed by Go". Go module downloads are kept in a per-repository cache on the runner, separate from workflow caches.
 
 The run shows in the Actions tab, in `ermite run list` (`--workflow bernard/deps` keeps only these runs) and in the Inbox under **Running**, as workflow `Dependencies` by `bernard`. Its log is on the run page and in `ermite run view <repo> <run> --log`. A run:
 
@@ -36,7 +60,7 @@ Nothing is retried on its own. A failed update keeps its updates listed with a b
 
 ## The Inbox table
 
-**Dependency updates** comes after the running workflows. The header shows when the dependencies were last checked and how many repositories and updates are pending. There is one row per repository with pending updates:
+**Dependency updates** comes after the running workflows. The header shows when the dependencies were last checked and how many batches and updates are pending. There is one row per batch:
 
 - A disclosure arrow, the repository name, the number of updates, their kinds (`1 major · 2 minor · 3 patch`, empty kinds left out) and a **new** badge for versions that appeared since the last check. Open the row to see each update: name, `current → latest`, kind, **new**, and the directory when it is not the repository root.
 - The status: `queued` or `running` with a link to the run while Bernard applies updates, `failed` with a link to the run (the Inbox shows the failure’s last output line; expand the row for the full excerpt), or the link to the open merge request (`MR !7`).
