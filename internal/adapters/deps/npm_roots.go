@@ -49,8 +49,6 @@ var npmManagerDefaults = map[string]string{
 	"pnpm9": "9.15.0",  // lockfileVersion 9.x
 	"pnpm6": "8.15.9",  // lockfileVersion 6.x (pnpm 8)
 	"yarn1": "1.22.22", // yarn classic
-	"yarn3": "3.8.7",   // Berry, __metadata.version < 8
-	"yarn4": "4.5.3",   // Berry, __metadata.version >= 8
 	"bun":   "1.2.0",
 }
 
@@ -64,7 +62,7 @@ var npmNodeRE = regexp.MustCompile(`^(?:>=|\^|~)?([0-9]+)(?:\.x|\.[0-9]+(?:\.[0-
 
 // Lockfile versions sit at the top of the file: a header is enough.
 var pnpmLockVersionRE = regexp.MustCompile(`(?m)^lockfileVersion:[ \t]*['"]?([0-9]+)(?:\.[0-9]+)?['"]?[ \t]*$`)
-var yarnMetadataRE = regexp.MustCompile(`(?m)^__metadata:[ \t]*\r?\n(?:[ \t]+.*\r?\n)*?[ \t]+version:[ \t]*['"]?([0-9]+)`)
+var yarnMetadataRE = regexp.MustCompile(`(?m)^__metadata:`)
 
 func npmNode(spec string) string {
 	m := npmNodeRE.FindStringSubmatch(strings.TrimSpace(spec))
@@ -89,6 +87,10 @@ func npmFile(files map[domain.TreePath][]byte, dir, name string) []byte {
 // npmManager derives the manager of a root from its packageManager field and
 // the lockfile headers. A packageManager naming another tool than the
 // existing lockfile, or a lockfile format without a known writer, is refused.
+// errYarnBerry refuses Yarn 2 and later: the runner cannot keep repository
+// code from running there (exec: protocols, prepack of git sources).
+var errYarnBerry = fmt.Errorf("%w: Yarn Berry dependency updates are not supported", domain.ErrInvalid)
+
 func npmManager(files map[domain.TreePath][]byte, dir string, m npmManifest) (npmRoot, error) {
 	root := npmRoot{Directory: dir, Manager: "npm", NodeVersion: npmNode(m.Engines.Node)}
 	var pm []string
@@ -126,22 +128,23 @@ func npmManager(files map[domain.TreePath][]byte, dir string, m npmManifest) (np
 			return root, fmt.Errorf("%w: unsupported pnpm lockfile version in %s", domain.ErrInvalid, root.Lockfile)
 		}
 	case "yarn.lock":
-		root.Manager, root.Version = "yarn", npmManagerDefaults["yarn1"]
-		meta := yarnMetadataRE.FindSubmatch(lock)
-		if meta != nil || npmFile(files, dir, ".yarnrc.yml") != nil {
-			root.Version = npmManagerDefaults["yarn3"]
-			if meta != nil {
-				if n, err := strconv.Atoi(string(meta[1])); err == nil && n >= 8 {
-					root.Version = npmManagerDefaults["yarn4"]
-				}
-			}
+		// A Berry lockfile has __metadata; classic ones never do.
+		if yarnMetadataRE.Match(lock) {
+			return root, errYarnBerry
 		}
+		root.Manager, root.Version = "yarn", npmManagerDefaults["yarn1"]
 	}
 	if pm != nil {
 		if root.Lockfile != "" && root.Manager != pm[1] {
 			return root, fmt.Errorf("%w: packageManager %s does not write %s", domain.ErrInvalid, pm[1], root.Lockfile)
 		}
 		root.Manager, root.Version = pm[1], pm[2]
+	}
+	// A yarn@2+ packageManager is Berry, and so is a .yarnrc.yml (Berry's
+	// configuration) beside a yarn.lock or no lockfile.
+	berryRC := npmFile(files, dir, ".yarnrc.yml") != nil && (root.Manager == "yarn" || root.Lockfile == "")
+	if berryRC || (root.Manager == "yarn" && !strings.HasPrefix(root.Version, "1.")) {
+		return root, errYarnBerry
 	}
 	return root, nil
 }

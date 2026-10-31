@@ -208,7 +208,7 @@ By default the default branch and all tags are pushed; `--all-branches` pushes e
 
 ## Bernard (dependency updates, owner only)
 
-Bernard checks daily for updates to Go modules, GitHub Actions, and npm `dependencies`/`devDependencies` (npm, pnpm, Yarn v1/Berry, Bun; workspaces included). Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
+Bernard checks daily for updates to Go modules, GitHub Actions, and npm `dependencies`/`devDependencies` (npm, pnpm, Yarn v1, Bun; workspaces included; Yarn Berry is not supported). Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
 
 Updates come in batches, one MR each: the base batch (patch and minor, branch `bernard/deps`) and one batch per dependency major (branch `bernard/deps-major/<slug>`).
 
@@ -224,7 +224,7 @@ Updates come in batches, one MR each: the base batch (patch and minor, branch `b
 
 `open` needs a registered runner with Bernard’s configured label and all required kinds: `deps`, plus `deps.gomod-path-majors` for import-path majors or `deps.npm` for npm updates. Capabilities are learned when the runner polls; otherwise the batch fails with `no runner supports <kind> updates` and no run starts.
 
-npm updates preserve the range operator and exact manifest formatting; only the existing root lockfile may also change, and new `package-lock.json`/`npm-shrinkwrap.json` resolutions must come from `https://registry.npmjs.org/` (pnpm, Yarn and Bun lockfiles are not checked: review them). Unsupported specs (including git and workspace references), packages the registry lookup fails for, and roots whose `packageManager` differs from their lockfile are skipped. Yarn Berry `exec:`/git and Bun git dependencies fail in the runner.
+npm updates preserve the range operator and exact manifest formatting; only the existing root lockfile may also change, and new `package-lock.json`/`npm-shrinkwrap.json` resolutions must come from `https://registry.npmjs.org/` (pnpm, Yarn and Bun lockfiles are not checked: review them). Unsupported specs (including git and workspace references), packages the registry lookup fails for, and roots whose `packageManager` differs from their lockfile are skipped. Bun git dependencies fail in the runner.
 
 `open` and `ignore` send back the list they read and are refused if it changed meanwhile. An `outdated` MR holds other versions than the batch or was built from other current versions; `open` rebuilds it. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
 

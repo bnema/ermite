@@ -198,9 +198,37 @@ func TestNPMManagerLockfiles(t *testing.T) {
 	root, err = npmManager(npmFiles(t, map[string]string{"package-lock.json": "{}", "npm-shrinkwrap.json": "{}"}), "", npmManifest{})
 	require.NoError(t, err)
 	require.Equal(t, "npm-shrinkwrap.json", root.Lockfile)
-	root, err = npmManager(npmFiles(t, map[string]string{"yarn.lock": "# yarn lockfile\n\n__metadata:\n  version: 8\n  cacheKey: 10c0\n"}), "", npmManifest{})
+}
+
+// Yarn Berry roots are refused however they are recognised; classic Yarn is
+// still updated.
+func TestNPMManagerRefusesYarnBerry(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		pm    string
+	}{
+		{"lockfile metadata", map[string]string{"yarn.lock": "# yarn lockfile\n\n__metadata:\n  version: 8\n  cacheKey: 10c0\n"}, ""},
+		{"yarnrc", map[string]string{"yarn.lock": "# yarn lockfile v1\n", ".yarnrc.yml": "nodeLinker: node-modules\n"}, ""},
+		{"packageManager", map[string]string{"yarn.lock": "# yarn lockfile v1\n"}, "yarn@4.5.3"},
+		{"packageManager without lockfile", nil, "yarn@2.4.3"},
+		{"yarnrc without lockfile", map[string]string{".yarnrc.yml": "nodeLinker: pnp\n"}, ""},
+		{"metadata without version", map[string]string{"yarn.lock": "__metadata:\n  cacheKey: 8\n"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := npmManager(npmFiles(t, tc.files), "", npmManifest{PackageManager: tc.pm})
+			require.ErrorIs(t, err, errYarnBerry)
+		})
+	}
+	root, err := npmManager(npmFiles(t, map[string]string{"yarn.lock": "# yarn lockfile v1\n"}), "", npmManifest{PackageManager: "yarn@1.22.19"})
 	require.NoError(t, err)
-	require.Equal(t, "4.5.3", root.Version, "Berry metadata read from a header")
+	require.Equal(t, "1.22.19", root.Version)
+
+	// Detect proposes nothing for a Berry workspace, without a registry lookup.
+	files := npmFiles(t, map[string]string{"package.json": `{"workspaces":["packages/*"]}`, "yarn.lock": "__metadata:\n  version: 8\n", "packages/a/package.json": `{"dependencies":{"x":"1.0.0"}}`})
+	got, err := (NPM{}).Detect(t.Context(), files, mocks.NewDepsRegistry(t))
+	require.NoError(t, err)
+	require.Empty(t, got)
 }
 
 // Once the lookup budget is spent, the remaining packages are skipped and the

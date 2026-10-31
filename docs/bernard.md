@@ -40,7 +40,7 @@ For Go, the runner runs `go get` and `go mod tidy` for the requested versions. F
 
 Each workspace root is updated by its own package manager. A directory is a root when its `package.json` has `workspaces` or it holds `pnpm-workspace.yaml`; a package matched by a root's patterns belongs to that root, any other package is its own root.
 
-- Manager: the lockfile decides: `bun.lock` or `bun.lockb` → Bun, `pnpm-lock.yaml` → pnpm, `yarn.lock` → Yarn (Berry when `.yarnrc.yml` exists or the lockfile has `__metadata`), `npm-shrinkwrap.json` (preferred) or `package-lock.json` → npm; no lockfile → npm. The root's `packageManager` field (`npm`, `pnpm`, `yarn` or `bun` with an exact version) sets the version; it must name the tool of the existing lockfile, otherwise the root is skipped. Without `packageManager`, the version comes from the lockfile format; a pnpm lockfile other than version 6 or 9 needs `packageManager`. A root whose `packageManager` is npm older than 7 is skipped.
+- Manager: the lockfile decides: `bun.lock` or `bun.lockb` → Bun, `pnpm-lock.yaml` → pnpm, `yarn.lock` → Yarn, `npm-shrinkwrap.json` (preferred) or `package-lock.json` → npm; no lockfile → npm. The root's `packageManager` field (`npm`, `pnpm`, `yarn` or `bun` with an exact version) sets the version; it must name the tool of the existing lockfile, otherwise the root is skipped. Without `packageManager`, the version comes from the lockfile format; a pnpm lockfile other than version 6 or 9 needs `packageManager`. A root whose `packageManager` is npm older than 7 is skipped. Yarn Berry (Yarn 2 and later: a `yarn.lock` with `__metadata`, a `.yarnrc.yml`, or `packageManager` `yarn@2` or later) is not supported: its roots are skipped with a warning.
 - Node: the major of the root's `engines.node` (`>=N`, `^N`, `~N`, `N`, `N.x`), clamped to 18–24; 22 otherwise.
 - Ranges: `X.Y.Z`, `^X.Y.Z`, `~X.Y.Z`, `>=X.Y.Z` and `=X.Y.Z` are updated with their operator kept (`^1.2.0` → `^1.9.0`). Other specs (`workspace:`, `file:`, git, URLs, tags, `*`, `||`, x-ranges, …) are skipped, and so is a package listed with different specs in both sections. Only the public registry (`registry.npmjs.org`) is read; a package whose registry document exceeds 128 MiB, or whose lookup fails, is skipped. npm lookups share a budget of three minutes per check (less when the check has less time left); once it is spent, the remaining packages are skipped for that check and the other ecosystems' updates are kept. The daily check and the check after a merge have five minutes per repository, a check from the CLI or web one minute.
 
@@ -48,8 +48,7 @@ No repository code runs during the job:
 
 - lifecycle scripts are disabled for every manager;
 - pnpm ignores `.pnpmfile.cjs`;
-- Yarn loads no rc file from the repository (`yarnPath`, `yarn-path`, plugins);
-- Yarn Berry refuses `exec:` and git dependencies;
+- Yarn loads no rc file from the repository (`yarnPath`, `yarn-path`);
 - Bun ignores the repository's `bunfig.toml` and refuses git dependencies.
 
 The job's network allows the internet except private address ranges. Protection relies on the disabled scripts and on the server checking the report.

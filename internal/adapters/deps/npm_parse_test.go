@@ -66,7 +66,7 @@ func TestNPMEditSpec(t *testing.T) {
 }
 func TestNPMRoots(t *testing.T) {
 	for _, workspaces := range []string{`["packages/*","nested/**"]`, `{"packages":["packages/*","nested/**"]}`} {
-		files := npmFiles(t, map[string]string{"package.json": `{"workspaces":` + workspaces + `,"packageManager":"pnpm@9.15.0","engines":{"node":">=20"}}`, "packages/a/package.json": `{}`, "nested/root/package.json": `{"workspaces":["children/*"],"packageManager":"yarn@4.5.3"}`, "nested/root/children/a/package.json": `{}`, "other/package.json": `{}`})
+		files := npmFiles(t, map[string]string{"package.json": `{"workspaces":` + workspaces + `,"packageManager":"pnpm@9.15.0","engines":{"node":">=20"}}`, "packages/a/package.json": `{}`, "nested/root/package.json": `{"workspaces":["children/*"],"packageManager":"yarn@1.22.22"}`, "nested/root/children/a/package.json": `{}`, "other/package.json": `{}`})
 		roots := npmRootsOf(t, files, "packages/a", "nested/root/children/a", "other")
 		require.Equal(t, "", roots["packages/a"].Directory)
 		require.Equal(t, "pnpm", roots["packages/a"].Manager)
@@ -85,7 +85,7 @@ func TestNPMRoots(t *testing.T) {
 	}
 }
 func TestNPMManagersAndNode(t *testing.T) {
-	for _, tc := range []struct{ file, content, manager, version string }{{"package-lock.json", "{}", "npm", ""}, {"npm-shrinkwrap.json", "{}", "npm", ""}, {"pnpm-lock.yaml", "lockfileVersion: 9.0", "pnpm", "9.15.0"}, {"pnpm-lock.yaml", "lockfileVersion: '6.0'", "pnpm", "8.15.9"}, {"yarn.lock", "# yarn lockfile v1", "yarn", "1.22.22"}, {"yarn.lock", "__metadata:\n  version: 8", "yarn", "4.5.3"}, {"yarn.lock", "__metadata:\n  version: 6", "yarn", "3.8.7"}, {"bun.lock", "{}", "bun", "1.2.0"}, {"bun.lockb", "binary", "bun", "1.2.0"}} {
+	for _, tc := range []struct{ file, content, manager, version string }{{"package-lock.json", "{}", "npm", ""}, {"npm-shrinkwrap.json", "{}", "npm", ""}, {"pnpm-lock.yaml", "lockfileVersion: 9.0", "pnpm", "9.15.0"}, {"pnpm-lock.yaml", "lockfileVersion: '6.0'", "pnpm", "8.15.9"}, {"yarn.lock", "# yarn lockfile v1", "yarn", "1.22.22"}, {"bun.lock", "{}", "bun", "1.2.0"}, {"bun.lockb", "binary", "bun", "1.2.0"}} {
 		t.Run(tc.file+tc.version, func(t *testing.T) {
 			root, err := npmManager(npmFiles(t, map[string]string{tc.file: tc.content}), "", npmManifest{})
 			require.NoError(t, err)
