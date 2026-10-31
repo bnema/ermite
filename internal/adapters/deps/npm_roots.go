@@ -140,13 +140,41 @@ func npmManager(files map[domain.TreePath][]byte, dir string, m npmManifest) (np
 		}
 		root.Manager, root.Version = pm[1], pm[2]
 	}
-	// A yarn@2+ packageManager is Berry, and so is a .yarnrc.yml (Berry's
-	// configuration) beside a yarn.lock or no lockfile.
-	berryRC := npmFile(files, dir, ".yarnrc.yml") != nil && (root.Manager == "yarn" || root.Lockfile == "")
-	if berryRC || (root.Manager == "yarn" && !strings.HasPrefix(root.Version, "1.")) {
+	// A .yarnrc.yml (Berry's configuration) beside a yarn.lock or no
+	// lockfile is Berry.
+	if npmFile(files, dir, ".yarnrc.yml") != nil && (root.Manager == "yarn" || root.Lockfile == "") {
 		return root, errYarnBerry
 	}
+	if root.Manager == "yarn" {
+		return root, checkYarnVersion(root.Version)
+	}
 	return root, nil
+}
+
+// errYarnTooOld refuses Yarn classic before 1.22: older releases run a git
+// dependency's prepare script despite --ignore-scripts.
+var errYarnTooOld = fmt.Errorf("%w: Yarn 1.22 or later is required", domain.ErrInvalid)
+
+// checkYarnVersion accepts canonical Yarn classic versions from 1.22.0: 2 and
+// later are Berry, older or non-canonical ones (leading zeros) are refused.
+func checkYarnVersion(version string) error {
+	core, _, _ := strings.Cut(version, "+")
+	parts := strings.Split(core, ".")
+	var nums [3]int
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if len(parts) != 3 || err != nil || strconv.Itoa(n) != p {
+			return errYarnTooOld
+		}
+		nums[i] = n
+	}
+	switch {
+	case nums[0] >= 2:
+		return errYarnBerry
+	case nums[0] < 1 || nums[1] < 22:
+		return errYarnTooOld
+	}
+	return nil
 }
 
 // npmWorkspaceMatch matches rel against workspace patterns: per path segment

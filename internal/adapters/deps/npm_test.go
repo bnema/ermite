@@ -200,6 +200,27 @@ func TestNPMManagerLockfiles(t *testing.T) {
 	require.Equal(t, "npm-shrinkwrap.json", root.Lockfile)
 }
 
+// Yarn classic before 1.22 runs git dependencies' prepare scripts: refused,
+// like non-canonical versions; the default 1.22.22 and 1.22.0 are accepted.
+func TestNPMManagerYarnFloor(t *testing.T) {
+	lock := map[string]string{"yarn.lock": "# yarn lockfile v1\n"}
+	for _, v := range []string{"1.14.0", "1.9.4", "01.22.22", "1.022.0", "0.27.5"} {
+		_, err := npmManager(npmFiles(t, lock), "", npmManifest{PackageManager: "yarn@" + v})
+		require.ErrorIs(t, err, errYarnTooOld, v)
+	}
+	for _, v := range []string{"1.22.0", "1.22.19+sha512.ab"} {
+		root, err := npmManager(npmFiles(t, lock), "", npmManifest{PackageManager: "yarn@" + v})
+		require.NoError(t, err, v)
+		require.Equal(t, v, root.Version)
+	}
+	root, err := npmManager(npmFiles(t, lock), "", npmManifest{})
+	require.NoError(t, err)
+	require.Equal(t, "1.22.22", root.Version)
+	got, err := (NPM{}).Detect(t.Context(), npmFiles(t, map[string]string{"package.json": `{"dependencies":{"x":"1.0.0"},"packageManager":"yarn@1.14.0"}`, "yarn.lock": "# yarn lockfile v1\n"}), mocks.NewDepsRegistry(t))
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
 // Yarn Berry roots are refused however they are recognised; classic Yarn is
 // still updated.
 func TestNPMManagerRefusesYarnBerry(t *testing.T) {

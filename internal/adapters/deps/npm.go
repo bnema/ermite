@@ -170,8 +170,11 @@ func (NPM) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg por
 		dir := moduleDir(p.String())
 		if _, err := npmRootOf(files, dir); err != nil {
 			msg := "bernard: npm package without a usable root skipped"
-			if errors.Is(err, errYarnBerry) {
+			switch {
+			case errors.Is(err, errYarnBerry):
 				msg = "bernard: Yarn Berry dependency updates are not supported"
+			case errors.Is(err, errYarnTooOld):
+				msg = "bernard: Yarn 1.22 or later is required"
 			}
 			log.Warn().Err(err).Str("path", p.String()).Msg(msg)
 			continue
