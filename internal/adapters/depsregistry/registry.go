@@ -33,6 +33,7 @@ type Registry struct {
 	remote          ports.GitRemote
 	proxy, osv, npm string
 	client          *http.Client
+	npmBytes        int64 // the npm document cap; tests lower it
 	sleep           func(context.Context, time.Duration) error
 	jitter          func(time.Duration) time.Duration
 }
@@ -50,7 +51,7 @@ func New(cfg Config) *Registry {
 	if cfg.OSVURL == "" {
 		cfg.OSVURL = "https://api.osv.dev"
 	}
-	return &Registry{remote: cfg.GitRemote, npm: strings.TrimRight(cfg.NPMRegistryURL, "/"), proxy: strings.TrimRight(cfg.GoProxyURL, "/"), osv: strings.TrimRight(cfg.OSVURL, "/"), client: &http.Client{
+	return &Registry{remote: cfg.GitRemote, npm: strings.TrimRight(cfg.NPMRegistryURL, "/"), proxy: strings.TrimRight(cfg.GoProxyURL, "/"), osv: strings.TrimRight(cfg.OSVURL, "/"), npmBytes: npmDocBytes, client: &http.Client{
 		// Each request supplies its own timeout.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > 3 || req.URL.Host != via[0].URL.Host {

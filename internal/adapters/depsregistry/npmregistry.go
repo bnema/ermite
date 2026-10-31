@@ -5,6 +5,7 @@ package depsregistry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,7 +53,7 @@ func (r *Registry) NPMVersions(ctx context.Context, name, current string) ([]dom
 	}
 	var versions map[string]npmVersionMeta
 	var times map[string]json.RawMessage
-	err = r.stream(req, true, npmDocBytes, 60*time.Second, func(body io.Reader) error {
+	err = r.stream(req, true, r.npmBytes, 60*time.Second, func(body io.Reader) error {
 		var err error
 		versions, times, err = decodeNPMDoc(body)
 		return err
@@ -136,7 +137,12 @@ func decodeNPMVersions(d *json.Decoder, out map[string]npmVersionMeta) error {
 		}
 		var meta npmVersionMeta
 		if err := d.Decode(&meta); err != nil {
-			// A version that is not an object carries no deprecation.
+			// A version that is not an object carries no deprecation; any
+			// other error (the byte cap, a broken body) ends the read.
+			var typeErr *json.UnmarshalTypeError
+			if !errors.As(err, &typeErr) {
+				return err
+			}
 			meta = npmVersionMeta{}
 		}
 		out[key.(string)] = meta

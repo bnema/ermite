@@ -126,17 +126,19 @@ func TestNPMVersionsDocumentShapes(t *testing.T) {
 }
 
 func TestNPMVersionsByteCap(t *testing.T) {
+	const limit = 64 << 10
+	// A complete, valid document past the cap, served whole from memory: only
+	// the cap can fail the read, not a truncated body or a closed connection.
+	body := `{"versions":{` + strings.Repeat(`"0.0.1-x":{},`, limit/12) + `"1.0.0":{}}}`
+	require.Greater(t, len(body), limit)
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"versions":{`)
-		chunk := strings.Repeat(`"0.0.1-x":{},`, 4096)
-		for written := 0; written <= npmDocBytes; written += len(chunk) {
-			if _, err := io.WriteString(w, chunk); err != nil {
-				return
-			}
-		}
+		_, _ = io.WriteString(w, body)
 	}))
 	defer s.Close()
-	_, err := New(Config{NPMRegistryURL: s.URL}).NPMVersions(t.Context(), "huge", "v1.0.0")
+	reg := New(Config{NPMRegistryURL: s.URL})
+	require.EqualValues(t, npmDocBytes, reg.npmBytes)
+	reg.npmBytes = limit
+	_, err := reg.NPMVersions(t.Context(), "huge", "v1.0.0")
 	require.ErrorIs(t, err, domain.ErrResourceExhausted)
 }
 
