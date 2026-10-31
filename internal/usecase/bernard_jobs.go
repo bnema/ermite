@@ -233,7 +233,7 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	if !exists {
 		return fmt.Errorf("%w: %s has no default branch", domain.ErrPreconditionFailed, run.Repo)
 	}
-	_, err = b.publish(ctx, run.Repo, target, base, changes, rec.RunUpdates, d.MR, jobGuard, effects)
+	_, err = b.publish(ctx, run.Repo, target, base, changes, domain.DepBatch{Updates: rec.RunUpdates, MR: d.MR}, jobGuard, effects)
 	return err
 }
 

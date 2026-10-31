@@ -19,8 +19,6 @@ import (
 )
 
 const (
-	// depsBranch is the branch of Bernard's merge request, in its namespace.
-	depsBranch = "bernard/deps"
 	// maxDepsError bounds the error kept on a failed record.
 	maxDepsError = 2 << 10
 )
@@ -93,7 +91,7 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 	if runnerSide {
 		rec, err = b.startRunnerJob(ctx, repoName, d, expected)
 	} else {
-		rec, err = b.apply(ctx, repoName, d.Updates, d.MR, func(r domain.RepoDeps) error { return movedPrecondition(r, expected) })
+		rec, err = b.apply(ctx, repoName, domain.DepBatch{Updates: d.Updates, MR: d.MR}, func(r domain.RepoDeps) error { return movedPrecondition(r, expected) })
 	}
 	if err != nil {
 		if !errors.Is(err, errRecordMoved) { // the record is not ours to fail
@@ -149,7 +147,7 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, d do
 		refs[i] = u.DepRef
 	}
 	run, err := cfg.Runs.StartDepsRun(ctx, ports.DepsRunParams{
-		Repo: name, Ref: "refs/heads/" + target, Sha: tip.String(), Title: domain.BotCommitSubject(len(d.Updates)),
+		Repo: name, Ref: "refs/heads/" + target, Sha: tip.String(), Title: domain.BotSubject(domain.DepBatch{Updates: d.Updates}),
 		Job: domain.CIDepsJob{Updates: refs, GoVersion: goVersion}, Label: cfg.RunnerLabel, Timeout: cfg.JobTimeout,
 	})
 	if err != nil {
@@ -234,7 +232,7 @@ func (b *Bernard) fail(ctx context.Context, name domain.RepoName, cause error) {
 // moves bernard/deps to it and opens the merge request when there is none. The
 // caller holds the repository lock. guard validates the record at the final
 // transition.
-func (b *Bernard) apply(ctx context.Context, name domain.RepoName, ups []domain.DepUpdate, storedMR int64, guard func(domain.RepoDeps) error) (domain.RepoDeps, error) {
+func (b *Bernard) apply(ctx context.Context, name domain.RepoName, batch domain.DepBatch, guard func(domain.RepoDeps) error) (domain.RepoDeps, error) {
 	cfg := b.cfg
 	target, exists, err := cfg.Repos.DefaultBranch(ctx, name)
 	if err != nil {
@@ -247,24 +245,27 @@ func (b *Bernard) apply(ctx context.Context, name domain.RepoName, ups []domain.
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("read %s: %w", target, err)
 	}
-	changes, err := b.changes(ctx, name, tip, ups)
+	changes, err := b.changes(ctx, name, tip, batch.Updates)
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
-	return b.publish(ctx, name, target, tip, changes, ups, storedMR, guard, nil)
+	return b.publish(ctx, name, target, tip, changes, batch, guard, nil)
 }
 
 // publish commits changes on base, moves bernard/deps to the commit and opens
 // the merge request into target when there is none. ups are all the updates the
 // commit holds. The caller holds the repository lock; guard is checked on the
 // record inside the final Mutate and its error stops the transition.
-func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target string, tip domain.ObjectID, changes map[domain.TreePath][]byte, ups []domain.DepUpdate, storedMR int64, guard func(domain.RepoDeps) error, effects []domain.DepSideEffect) (domain.RepoDeps, error) {
+func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target string, tip domain.ObjectID, changes map[domain.TreePath][]byte, batch domain.DepBatch, guard func(domain.RepoDeps) error, effects []domain.DepSideEffect) (domain.RepoDeps, error) {
 	cfg := b.cfg
+	ups := batch.Updates
+	branch := batch.Key.Branch()
 	tree, err := cfg.Git.WriteTree(ctx, name, tip, changes)
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("write the tree: %w", err)
 	}
 	commit := domain.NewBotCommit(tree, tip, ups, domain.Identity{}, cfg.Committer, cfg.Clock.Now())
+	commit.Message = domain.BotSubject(batch) + "\n\n" + domain.BotCommitBody(ups)
 	armored, err := cfg.Signer.Sign(commit.Payload())
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("sign the commit: %w", err)
@@ -275,30 +276,30 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 	}
 
 	// Bernard's namespace: whatever bernard/deps holds is replaced.
-	old, err := cfg.Git.BranchHead(ctx, name, depsBranch)
+	old, err := cfg.Git.BranchHead(ctx, name, branch)
 	if errors.Is(err, domain.ErrNotFound) {
 		old, err = domain.ObjectID{}, nil
 	}
 	if err != nil {
-		return domain.RepoDeps{}, fmt.Errorf("read %s: %w", depsBranch, err)
+		return domain.RepoDeps{}, fmt.Errorf("read %s: %w", branch, err)
 	}
 	oldStr := domain.ZeroOID
 	if !old.IsZero() {
 		oldStr = old.String()
 	}
-	upd := []domain.RefUpdate{{Old: oldStr, New: head.String(), Ref: "refs/heads/" + depsBranch}}
+	upd := []domain.RefUpdate{{Old: oldStr, New: head.String(), Ref: "refs/heads/" + branch}}
 	bot := domain.Bot(name)
 	if err := recordRefTips(ctx, cfg.Tips, name, upd, domain.AuthorName(bot), domain.PusherOf(bot), false); err != nil {
 		return domain.RepoDeps{}, err
 	}
-	if err := cfg.Git.UpdateBranch(ctx, name, depsBranch, old, head); err != nil {
-		return domain.RepoDeps{}, fmt.Errorf("move %s: %w", depsBranch, err)
+	if err := cfg.Git.UpdateBranch(ctx, name, branch, old, head); err != nil {
+		return domain.RepoDeps{}, fmt.Errorf("move %s: %w", branch, err)
 	}
 	if cfg.CI != nil {
 		cfg.CI.OnPush(ctx, name, upd, bot)
 	}
 
-	number, err := b.ensureMR(ctx, name, target, storedMR, ups, effects)
+	number, err := b.ensureMR(ctx, name, target, batch, effects)
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
@@ -377,11 +378,12 @@ func (b *Bernard) changes(ctx context.Context, name domain.RepoName, tip domain.
 
 // ensureMR returns the number of the open Bernard merge request, creating it
 // when the stored one is gone or no longer open.
-func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target string, stored int64, ups []domain.DepUpdate, effects []domain.DepSideEffect) (int64, error) {
+func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target string, batch domain.DepBatch, effects []domain.DepSideEffect) (int64, error) {
+	stored, ups, branch := batch.MR, batch.Updates, batch.Key.Branch()
 	if stored != 0 {
 		mr, err := b.cfg.MRStore.Get(ctx, name, stored)
 		if err == nil && mr.IsOpen() {
-			b.refreshMR(ctx, name, stored, mr, ups, effects)
+			b.refreshMR(ctx, name, stored, mr, batch, effects)
 			return stored, nil
 		}
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -390,21 +392,21 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 	}
 	// An open request from bernard/deps may exist without being stored (a
 	// lost record, a request opened by hand): adopt it.
-	if n, err := b.findOpenMR(ctx, name, target); err != nil || n != 0 {
+	if n, err := b.findOpenMR(ctx, name, target, branch); err != nil || n != 0 {
 		if err == nil {
 			if mr, gerr := b.cfg.MRStore.Get(ctx, name, n); gerr == nil {
-				b.refreshMR(ctx, name, n, mr, ups, effects)
+				b.refreshMR(ctx, name, n, mr, batch, effects)
 			}
 		}
 		return n, err
 	}
 	mr, err := b.cfg.MRs.Create(ctx, domain.Bot(name), name, ports.CreateMergeRequestParams{
-		Title:       domain.BotCommitSubject(len(ups)),
+		Title:       domain.BotSubject(batch),
 		Description: domain.BotMRBody(ups, effects),
-		Source:      depsBranch, Target: target,
+		Source:      branch, Target: target,
 	})
 	if errors.Is(err, domain.ErrAlreadyExists) {
-		n, ferr := b.findOpenMR(ctx, name, target)
+		n, ferr := b.findOpenMR(ctx, name, target, branch)
 		if ferr != nil {
 			return 0, ferr
 		}
@@ -421,8 +423,8 @@ func (b *Bernard) ensureMR(ctx context.Context, name domain.RepoName, target str
 // refreshMR sets the title and the description of the kept merge request to
 // those generated for ups, as the bot (which holds mr:write on its repository).
 // A failure is logged: the branch is already updated.
-func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number int64, mr domain.MergeRequest, ups []domain.DepUpdate, effects []domain.DepSideEffect) {
-	title, desc := domain.BotCommitSubject(len(ups)), domain.BotMRBody(ups, effects)
+func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number int64, mr domain.MergeRequest, batch domain.DepBatch, effects []domain.DepSideEffect) {
+	title, desc := domain.BotSubject(batch), domain.BotMRBody(batch.Updates, effects)
 	if mr.Title.String() == title && mr.Description.String() == desc {
 		return
 	}
@@ -433,8 +435,8 @@ func (b *Bernard) refreshMR(ctx context.Context, name domain.RepoName, number in
 
 // findOpenMR returns the number of the open merge request from bernard/deps
 // into target, zero when there is none.
-func (b *Bernard) findOpenMR(ctx context.Context, name domain.RepoName, target string) (int64, error) {
-	nums, _, err := b.cfg.MRStore.OpenBySource(ctx, name, []string{depsBranch}, 16)
+func (b *Bernard) findOpenMR(ctx context.Context, name domain.RepoName, target, branch string) (int64, error) {
+	nums, _, err := b.cfg.MRStore.OpenBySource(ctx, name, []string{branch}, 16)
 	if err != nil {
 		return 0, fmt.Errorf("look for an open merge request: %w", err)
 	}
@@ -446,7 +448,7 @@ func (b *Bernard) findOpenMR(ctx context.Context, name domain.RepoName, target s
 		if err != nil {
 			return 0, fmt.Errorf("read !%d: %w", n, err)
 		}
-		if mr.IsOpen() && mr.Source == depsBranch && mr.Target == target {
+		if mr.IsOpen() && mr.Source == branch && mr.Target == target {
 			return n, nil
 		}
 	}
