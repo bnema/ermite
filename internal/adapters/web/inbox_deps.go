@@ -5,10 +5,11 @@ package web
 import (
 	"context"
 	"fmt"
-	"golang.org/x/mod/semver"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"golang.org/x/mod/semver"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
