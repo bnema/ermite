@@ -15,6 +15,7 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -244,22 +245,42 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 	fresh := 0
 	moved := false
 	rec, err := b.cfg.Store.Mutate(ctx, name, func(d *domain.RepoDeps) (bool, error) {
-		moved = !domain.SameRefs(d.Base().Refs(), refsOf(ups))
-		prev := make(map[domain.DepRef]bool, len(d.Base().Updates))
-		for _, u := range d.Base().Updates {
-			prev[u.DepRef] = true
+		base, majors := domain.SplitBatches(ups)
+		next := []domain.DepBatch{{Updates: base}}
+		for _, u := range majors {
+			next = append(next, domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}})
 		}
-		fresh = 0
-		next := make([]domain.DepUpdate, len(ups))
-		for i, u := range ups {
-			u.New = !prev[u.DepRef]
-			if u.New {
-				fresh++
+		fresh, moved = 0, false
+		for i := range next {
+			batch := &next[i]
+			old, _, exists := d.Batch(batch.Key)
+			if !domain.SameRefs(old.Refs(), batch.Refs()) {
+				moved = true
 			}
-			next[i] = u
+			updates := batch.Updates
+			if exists {
+				*batch = old
+			}
+			batch.Updates = slices.Clone(updates)
+			for j := range batch.Updates {
+				batch.Updates[j].New = !slices.Contains(old.Refs(), batch.Updates[j].DepRef)
+				if batch.Updates[j].New {
+					fresh++
+				}
+			}
 		}
-		d.Repo = name
-		d.Base().Updates = next
+		for _, old := range d.Batches {
+			if slices.ContainsFunc(next, func(batch domain.DepBatch) bool { return batch.Key == old.Key }) {
+				continue
+			}
+			moved = true
+			if old.MR != 0 || old.State == domain.DepsApplying {
+				old.Updates = nil
+				next = append(next, old)
+			}
+		}
+		slices.SortFunc(next[1:], func(a, b domain.DepBatch) int { return strings.Compare(string(a.Key), string(b.Key)) })
+		d.Repo, d.Batches = name, next
 		d.CheckedAt = now
 		return true, nil
 	})
@@ -341,7 +362,7 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 		}
 		for _, c := range cands {
 			firstSeen := func(v domain.DepVersion) time.Time {
-				at, err := b.cfg.Store.FirstSeen(ctx, c.Ecosystem, c.Name, v.Version, v.SHA, now)
+				at, err := b.cfg.Store.FirstSeen(ctx, c.Ecosystem, versionName(c.Name, v.Path), v.Version, v.SHA, now)
 				if err != nil {
 					if cbErr == nil {
 						cbErr = fmt.Errorf("first seen of %s@%s: %w", c.Name, v.Version, err)
@@ -364,22 +385,28 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 			if cbErr != nil {
 				return nil, cbErr
 			}
-			up, ok, err := fittingUpdate(ctx, reg, name, c, ups)
-			if err != nil {
-				return nil, err
+
+			// Fit same-major and cross-major candidates independently, preserving
+			// fallback to an older fitting version in each lane.
+			for _, major := range []bool{false, true} {
+				lane := slices.DeleteFunc(slices.Clone(ups), func(u domain.DepUpdate) bool { return (semver.Major(u.Version) != semver.Major(u.Current)) != major })
+				up, ok, err := fittingUpdate(ctx, reg, name, c, lane)
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					continue
+				}
+				mal, err := reg.Malicious(ctx, up.Ecosystem, versionName(up.Name, up.NewName), up.Version)
+				if err != nil {
+					log.Warn().Err(err).Str("repo", name.String()).Str("name", up.Name).Str("version", up.Version).Msg("bernard: advisory lookup failed, update skipped")
+					continue
+				}
+				if !mal {
+					out = append(out, up)
+				}
 			}
-			if !ok {
-				continue
-			}
-			mal, err := reg.Malicious(ctx, up.Ecosystem, up.Name, up.Version)
-			if err != nil {
-				log.Warn().Err(err).Str("repo", name.String()).Str("name", up.Name).Str("version", up.Version).Msg("bernard: advisory lookup failed, update skipped")
-				continue
-			}
-			if mal {
-				continue
-			}
-			out = append(out, up)
+
 		}
 	}
 	return out, nil
@@ -399,7 +426,7 @@ func fittingUpdate(ctx context.Context, reg ports.DepsRegistry, name domain.Repo
 		if err := ctx.Err(); err != nil {
 			return domain.DepUpdate{}, false, err
 		}
-		dep, err := reg.GoDirective(ctx, up.Name, up.Version)
+		dep, err := reg.GoDirective(ctx, versionName(up.Name, up.NewName), up.Version)
 		if err != nil {
 			if cerr := ctx.Err(); cerr != nil {
 				return domain.DepUpdate{}, false, cerr
@@ -538,4 +565,11 @@ func (b *Bernard) Snooze(ctx context.Context, p domain.Principal, repo domain.Re
 	}
 	b.changed(ctx, repo)
 	return rec, nil
+}
+
+func versionName(name, newName string) string {
+	if newName != "" && newName != name {
+		return newName
+	}
+	return name
 }

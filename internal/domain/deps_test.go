@@ -36,16 +36,16 @@ func TestPickUpdate(t *testing.T) {
 	}{
 		{name: "highest patch unordered", current: "v1.2.0", versions: versions("v1.2.3", "v1.2.1", "v1.2.2"), want: "v1.2.3", kind: DepPatch},
 		{name: "minor", current: "v1.2.0", versions: versions("v1.3.0"), want: "v1.3.0", kind: DepMinor},
-		{name: "Go never crosses major", current: "v1.2.0", versions: versions("v2.0.0", "v1.3.0"), want: "v1.3.0", kind: DepMinor},
-		{name: "Go v2 never crosses major", current: "v2.0.0", versions: versions("v3.0.0")},
-		{name: "Go v0 stays v0", current: "v0.1.0", versions: versions("v1.0.0", "v0.2.0"), want: "v0.2.0", kind: DepMinor},
+		{name: "Go crosses major", current: "v1.2.0", versions: versions("v2.0.0", "v1.3.0"), want: "v2.0.0", kind: DepMajor},
+		{name: "Go v2 crosses major", current: "v2.0.0", versions: versions("v3.0.0"), want: "v3.0.0", kind: DepMajor},
+		{name: "Go v0 stays v0", current: "v0.1.0", versions: versions("v1.0.0", "v0.2.0"), want: "v1.0.0", kind: DepMajor},
 		{name: "equal older invalid", current: "v1.2.0", versions: versions("v1.2.0", "v1.1.9", "garbage")},
 		{name: "invalid current", current: "garbage", versions: versions("v1.2.0")},
-		{name: "unknown ecosystem", eco: "unknown", current: "v1.0.0", versions: versions("v1.2.0")},
+		{name: "unknown ecosystem", eco: "unknown", current: "v1.0.0", versions: versions("v1.2.0"), want: "v1.2.0", kind: DepMinor},
 		{name: "stable skips prerelease", current: "v1.0.0", versions: versions("v1.2.0-rc.1", "v1.1.0"), want: "v1.1.0", kind: DepMinor},
 		{name: "prerelease accepts prerelease", current: "v1.0.0-beta.1", versions: versions("v1.0.0-rc.1"), want: "v1.0.0-rc.1", kind: DepPatch},
 		{name: "prerelease accepts stable", current: "v1.0.0-rc.1", versions: versions("v1.0.0"), want: "v1.0.0", kind: DepPatch},
-		{name: "incompatible", current: "v2.0.0+incompatible", versions: versions("v2.1.0+incompatible", "v3.0.0+incompatible"), want: "v2.1.0+incompatible", kind: DepMinor},
+		{name: "incompatible", current: "v2.0.0+incompatible", versions: versions("v2.1.0+incompatible", "v3.0.0+incompatible"), want: "v3.0.0+incompatible", kind: DepMajor},
 		{name: "metadata not newer", current: "v1.0.0", versions: versions("v1.0.0+incompatible")},
 		{name: "ignored highest", current: "v1.0.0", versions: versions("v1.2.0", "v1.1.0"), ignore: "v1.2.0", want: "v1.1.0", kind: DepMinor},
 		{name: "all ignored", current: "v1.0.0", versions: versions("v1.1.0"), ignore: "v1.1.0"},
@@ -95,7 +95,7 @@ func TestPickUpdatesHighestFirst(t *testing.T) {
 	for _, u := range PickUpdates(c, now, 72*time.Hour, nil, func(r DepRef) bool { return r.Version == "v1.2.0" }) {
 		got = append(got, u.Version)
 	}
-	assert.Equal(t, []string{"v1.3.0", "v1.1.0"}, got, "young, ignored, duplicate and new-major versions are left out")
+	assert.Equal(t, []string{"v2.0.0", "v1.3.0", "v1.1.0"}, got, "young, ignored, duplicate and new-major versions are left out")
 	assert.Empty(t, PickUpdates(DepCandidate{Ecosystem: EcosystemGoMod, Current: "garbage", Versions: c.Versions}, now, 0, nil, nil))
 }
 
@@ -302,5 +302,20 @@ func TestRepoDepsBase(t *testing.T) {
 			}
 		}
 		require.Equal(t, 1, count)
+	}
+}
+
+func TestPickUpdatesPathMajor(t *testing.T) {
+	now := time.Now()
+	for _, path := range []string{"", "example.com/pkg", "example.com/pkg/v2"} {
+		c := DepCandidate{Ecosystem: EcosystemGoMod, Name: "example.com/pkg", Current: "v0.9.0", Versions: []DepVersion{{Version: "v1.2.0", Path: path, Published: now.Add(-time.Hour)}}}
+		ups := PickUpdates(c, now, 0, nil, nil)
+		require.Len(t, ups, 1)
+		assert.Equal(t, DepMajor, ups[0].Kind)
+		want := path
+		if path == c.Name {
+			want = ""
+		}
+		assert.Equal(t, want, ups[0].NewName)
 	}
 }

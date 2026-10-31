@@ -149,8 +149,7 @@ func SameRefs(a, b []DepRef) bool {
 }
 
 // PickUpdate selects the highest newer version of the same tag style that has
-// cooled down and is not ignored. Go updates stay within their current major;
-// actions may cross majors. Stable versions never opt into prereleases.
+// cooled down and is not ignored. Updates may cross majors. Stable versions never opt into prereleases.
 func PickUpdate(c DepCandidate, now time.Time, cooldown time.Duration, firstSeen func(DepVersion) time.Time, ignored func(DepRef) bool) (DepUpdate, bool) {
 	ups := PickUpdates(c, now, cooldown, firstSeen, ignored)
 	if len(ups) == 0 {
@@ -162,16 +161,13 @@ func PickUpdate(c DepCandidate, now time.Time, cooldown time.Duration, firstSeen
 // PickUpdates returns every update PickUpdate could select, highest first and
 // without duplicate versions, so a caller can fall back to an older one.
 func PickUpdates(c DepCandidate, now time.Time, cooldown time.Duration, firstSeen func(DepVersion) time.Time, ignored func(DepRef) bool) []DepUpdate {
-	if !semver.IsValid(c.Current) || (c.Ecosystem != EcosystemGoMod && c.Ecosystem != EcosystemActions) {
+	if !semver.IsValid(c.Current) {
 		return nil
 	}
 	floating := floatingMajor(c.Current)
 	var out []DepUpdate
 	for _, v := range c.Versions {
 		if !semver.IsValid(v.Version) || semver.Compare(v.Version, c.Current) <= 0 {
-			continue
-		}
-		if c.Ecosystem == EcosystemGoMod && semver.Major(v.Version) != semver.Major(c.Current) {
 			continue
 		}
 		if c.Ecosystem == EcosystemActions && floatingMajor(v.Version) != floating {
@@ -200,7 +196,11 @@ func PickUpdates(c DepCandidate, now time.Time, cooldown time.Duration, firstSee
 		} else if semver.MajorMinor(v.Version) != semver.MajorMinor(c.Current) {
 			kind = DepMinor
 		}
-		out = append(out, DepUpdate{DepRef: ref, Current: c.Current, Kind: kind})
+		newName := ""
+		if v.Path != "" && v.Path != c.Name {
+			newName = v.Path
+		}
+		out = append(out, DepUpdate{DepRef: ref, Current: c.Current, Kind: kind, NewName: newName})
 	}
 	slices.SortStableFunc(out, func(a, b DepUpdate) int { return semver.Compare(b.Version, a.Version) })
 	return out

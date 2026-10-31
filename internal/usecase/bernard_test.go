@@ -501,3 +501,52 @@ func TestBernardIgnoreMajorBatchByKey(t *testing.T) {
 	require.Equal(t, base, got.Batches[0])
 	require.Empty(t, got.Batches[1].Updates)
 }
+
+func TestBernardCheckMergesMajorBatches(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	r.repoReads()
+	c := goCand("pkg", r.old("v0.9.1"), r.old("v1.2.0"))
+	c.Current = "v0.9.0"
+	r.cands = []domain.DepCandidate{c}
+	major := domain.DepUpdate{DepRef: depRef("pkg", "v1.2.0")}
+	key := domain.MajorBatchKey(major)
+	kept := domain.DepBatch{Key: key, MR: 4, State: domain.DepsApplying, RunID: 10, Error: "keep", RunUpdates: []domain.DepUpdate{major}, MRVersions: []domain.DepRef{major.DepRef}}
+	r.rec.Batches = []domain.DepBatch{{}, kept, {Key: "gone"}, {Key: "stale-mr", MR: 9}, {Key: "stale-run", State: domain.DepsApplying, RunID: 11}}
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+	r.reg.EXPECT().Malicious(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
+	r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Maybe()
+	got, err := r.b.Check(t.Context(), domain.Owner(), r.repo)
+	require.NoError(t, err)
+	require.Len(t, got.Base().Updates, 1)
+	assert.Equal(t, "v0.9.1", got.Base().Updates[0].Version)
+	batch, _, ok := got.Batch(key)
+	require.True(t, ok)
+	updates := batch.Updates
+	batch.Updates = nil
+	require.Equal(t, kept, batch)
+	require.Len(t, updates, 1)
+	assert.Equal(t, "v1.2.0", updates[0].Version)
+	_, _, ok = got.Batch("gone")
+	require.False(t, ok)
+	require.Len(t, got.Batches, 4)
+	for _, k := range []domain.DepBatchKey{"stale-mr", "stale-run"} {
+		b, _, ok := got.Batch(k)
+		require.True(t, ok)
+		require.Empty(t, b.Updates)
+	}
+}
+
+func TestBernardIgnoredMajorLeavesMinor(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	r.repoReads()
+	c := goCand("pkg", r.old("v0.21.0"), r.old("v1.2.0"))
+	r.cands = []domain.DepCandidate{c}
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, depRef("pkg", "v1.2.0")).Return(true, nil)
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+	r.reg.EXPECT().Malicious(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
+	r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Maybe()
+	got, err := r.b.Check(t.Context(), domain.Owner(), r.repo)
+	require.NoError(t, err)
+	require.Len(t, got.Batches, 1)
+	require.Len(t, got.Base().Updates, 1)
+}

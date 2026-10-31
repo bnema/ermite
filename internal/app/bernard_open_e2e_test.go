@@ -31,7 +31,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4.1.0
       - run: echo hello
 `
 
@@ -41,8 +41,8 @@ jobs:
 func TestBernardOpenMRForActions(t *testing.T) {
 	remote := newFakeRemote(t)
 	remote.set("actions/checkout",
-		ports.RemoteRef{Name: "refs/tags/v3", ID: shaTag},
-		ports.RemoteRef{Name: "refs/tags/v4", ID: shaTagObj, Peeled: shaPeeled},
+		ports.RemoteRef{Name: "refs/tags/v4.1.0", ID: shaTag},
+		ports.RemoteRef{Name: "refs/tags/v4.2.0", ID: shaTagObj, Peeled: shaPeeled},
 	)
 	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns"}},
 		func(o *options) { o.remoteLister = remote.m })
@@ -70,7 +70,7 @@ func TestBernardOpenMRForActions(t *testing.T) {
 		}
 		return out
 	}
-	require.Equal(t, "v4", pending.GetUpdates()[0].GetLatest())
+	require.Equal(t, "v4.2.0", pending.GetUpdates()[0].GetLatest())
 
 	// A stale confirmation is refused.
 	_, err := deps.OpenDependencyUpdates(c.ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "proj"}))
@@ -88,7 +88,7 @@ func TestBernardOpenMRForActions(t *testing.T) {
 	assert.Equal(t, main, c.bareGit("proj", "rev-parse", head+"^"))
 	assert.Equal(t, "Bernard", c.bareGit("proj", "log", "-1", "--format=%an", head))
 	assert.Equal(t, "build(deps): update 1 dependency", c.bareGit("proj", "log", "-1", "--format=%s", head))
-	assert.Equal(t, strings.Replace(bernardWorkflow, "checkout@v3", "checkout@v4", 1), c.mustGit(c.repoDir("proj"), "show", head+":.github/workflows/ci.yml"))
+	assert.Equal(t, strings.Replace(bernardWorkflow, "checkout@v4.1.0", "checkout@v4.2.0", 1), c.mustGit(c.repoDir("proj"), "show", head+":.github/workflows/ci.yml"))
 	assert.Equal(t, strings.TrimSpace(c.bareGit("proj", "diff", "--numstat", main, head)), "1\t1\t.github/workflows/ci.yml")
 
 	list, err := c.root.git.ListCommits(c.ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: "proj", Revision: "bernard/deps", PageSize: 1}))
@@ -180,8 +180,8 @@ func newBernardGoRig(t *testing.T) *bernardGoRig {
 	t.Helper()
 	remote := newFakeRemote(t)
 	remote.set("actions/checkout",
-		ports.RemoteRef{Name: "refs/tags/v3", ID: shaTag},
-		ports.RemoteRef{Name: "refs/tags/v4", ID: shaTagObj, Peeled: shaPeeled},
+		ports.RemoteRef{Name: "refs/tags/v4.1.0", ID: shaTag},
+		ports.RemoteRef{Name: "refs/tags/v4.2.0", ID: shaTagObj, Peeled: shaPeeled},
 	)
 	h := newHarnessWith(t, harnessOpts{env: map[string]string{config.EnvDepsCooldown: "1ns"}},
 		func(o *options) {
@@ -350,7 +350,7 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	assert.ElementsMatch(t, []string{".github/workflows/ci.yml", "go.mod", "go.sum"}, changed)
 	assert.Equal(t, bernardGoMod("v0.21.0"), c.mustGit(c.repoDir("proj"), "show", head+":go.mod"))
 	assert.Equal(t, newSum, c.mustGit(c.repoDir("proj"), "show", head+":go.sum"))
-	assert.Equal(t, strings.Replace(bernardWorkflow, "checkout@v3", "checkout@v4", 1), c.mustGit(c.repoDir("proj"), "show", head+":.github/workflows/ci.yml"))
+	assert.Equal(t, strings.Replace(bernardWorkflow, "checkout@v4.1.0", "checkout@v4.2.0", 1), c.mustGit(c.repoDir("proj"), "show", head+":.github/workflows/ci.yml"))
 	list, err := c.root.git.ListCommits(c.ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: "proj", Revision: "bernard/deps", PageSize: 1}))
 	require.NoError(t, err)
 	require.Len(t, list.Msg.GetCommits(), 1)
