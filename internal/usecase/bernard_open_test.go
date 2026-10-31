@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -101,18 +102,18 @@ func newOpenRigWith(t *testing.T, ecos func(*openRig) []ports.DepsEcosystem) *op
 	r.store.EXPECT().Get(mock.Anything, r.repo).RunAndReturn(func(context.Context, domain.RepoName) (domain.RepoDeps, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.rec, nil
+		return cloneDeps(r.rec), nil
 	}).Maybe()
 	r.store.EXPECT().Mutate(mock.Anything, r.repo, mock.Anything).RunAndReturn(
 		func(_ context.Context, _ domain.RepoName, fn func(*domain.RepoDeps) (bool, error)) (domain.RepoDeps, error) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			cp := r.rec
+			cp := cloneDeps(r.rec)
 			if _, err := fn(&cp); err != nil {
 				return domain.RepoDeps{}, err
 			}
 			r.rec = cp
-			return cp, nil
+			return cloneDeps(cp), nil
 		}).Maybe()
 	r.store.EXPECT().Ignore(mock.Anything, r.repo, mock.Anything).RunAndReturn(
 		func(_ context.Context, _ domain.RepoName, refs []domain.DepRef) error {
@@ -336,10 +337,23 @@ func (r *openRig) startWatch() {
 	})
 }
 
+// snapshot returns a deep copy: the record's slices must not be shared with
+// Bernard's goroutines, whose Mutate callbacks write into them.
 func (r *openRig) snapshot() domain.RepoDeps {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.rec
+	return cloneDeps(r.rec)
+}
+
+// cloneDeps deep-copies a record the way the real store decodes a fresh one.
+func cloneDeps(d domain.RepoDeps) domain.RepoDeps {
+	d.Batches = slices.Clone(d.Batches)
+	for i := range d.Batches {
+		b := &d.Batches[i]
+		b.Updates, b.RunUpdates, b.MRUpdates = slices.Clone(b.Updates), slices.Clone(b.RunUpdates), slices.Clone(b.MRUpdates)
+		b.MRVersions = slices.Clone(b.MRVersions)
+	}
+	return d
 }
 
 func TestBernardClosedMRIgnoresItsVersions(t *testing.T) {
@@ -398,12 +412,12 @@ func TestBernardReconcilesOnStartAndOnGap(t *testing.T) {
 		func(_ context.Context, _ domain.RepoName, fn func(*domain.RepoDeps) (bool, error)) (domain.RepoDeps, error) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			cp := r.rec
+			cp := cloneDeps(r.rec)
 			if _, err := fn(&cp); err != nil {
 				return domain.RepoDeps{}, err
 			}
 			r.rec = cp
-			return cp, nil
+			return cloneDeps(cp), nil
 		}).Maybe()
 	r.store.EXPECT().Ignore(mock.Anything, r.repo, mock.Anything).RunAndReturn(
 		func(_ context.Context, _ domain.RepoName, refs []domain.DepRef) error {
