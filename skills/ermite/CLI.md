@@ -208,7 +208,7 @@ By default the default branch and all tags are pushed; `--all-branches` pushes e
 
 ## Bernard (dependency updates, owner only)
 
-Bernard checks daily for updates to Go modules and GitHub Actions. Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
+Bernard checks daily for updates to Go modules, GitHub Actions, and npm `dependencies`/`devDependencies` (npm, pnpm, Yarn v1/Berry, Bun; workspaces included). Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
 
 | Command | Notes |
 |---|---|
@@ -218,7 +218,9 @@ Bernard checks daily for updates to Go modules and GitHub Actions. Go detection 
 | `deps ignore <repo> [--batch KEY]` | ignore the selected batch’s pending versions |
 | `deps snooze <repo>` | hide for `ERMITE_DEPS_SNOOZE` |
 
-`open` needs a registered runner with Bernard’s configured label and all required kinds: `deps`, plus `deps.gomod-path-majors` for import-path majors. Capabilities are learned when the runner polls; no capable runner fails the batch without starting a run.
+`open` needs a registered runner with Bernard’s configured label and all required kinds: `deps`, plus `deps.gomod-path-majors` for import-path majors or `deps.npm` for npm updates. Capabilities are learned when the runner polls; no capable runner fails the batch without starting a run.
+
+npm updates preserve the range operator and exact manifest formatting; only the existing root lockfile may also change. Unsupported specs (including git and workspace references) are skipped. Bun roots containing git dependencies are still proposed, but the runner rejects their installation with a clear error.
 
 `open` and `ignore` send back the list they read and are refused if it changed meanwhile. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
 

@@ -49,6 +49,7 @@ type openRig struct {
 	ops       []string
 	ignored   []domain.DepRef
 	registers atomic.Int32
+	registry  ports.DepsRegistry
 	runners   []domain.CIRunner
 	commit    []byte
 	created   ports.CreateMergeRequestParams
@@ -123,8 +124,14 @@ func newOpenRigWith(t *testing.T, ecos func(*openRig) []ports.DepsEcosystem) *op
 	ecoList := ecos(r)
 	b, err := usecase.NewBernard(usecase.BernardConfig{
 		Store: r.store, Meta: r.meta, Reader: r.reader, Ecosystems: ecoList,
-		Registry: func() ports.DepsRegistry { r.registers.Add(1); return mocks.NewDepsRegistry(t) },
-		Bus:      r.bus, Clock: clock, CheckAt: "0 6 * * *", Tick: time.Hour,
+		Registry: func() ports.DepsRegistry {
+			r.registers.Add(1)
+			if r.registry != nil {
+				return r.registry
+			}
+			return mocks.NewDepsRegistry(t)
+		},
+		Bus: r.bus, Clock: clock, CheckAt: "0 6 * * *", Tick: time.Hour,
 		Repos: r.repos, Git: r.git, Signer: r.signer, Committer: domain.Identity{Name: "ermite", Email: "ermite@forge.test"},
 		Tips: r.tips, CI: r.ci, MRs: r.mrs, MRStore: r.mrst,
 		Runs: r.runs, Runners: runnerList{r}, RunnerLabel: "ubuntu-latest", JobTimeout: 10 * time.Minute,

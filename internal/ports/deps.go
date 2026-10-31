@@ -121,3 +121,9 @@ type DepsRunObserver interface {
 	// queue timeout) or when the runner sent none.
 	DepsJobEnded(ctx context.Context, run domain.CIRun, job domain.CIJob, report *DepsReport)
 }
+
+// DepsJobPreparer derives ecosystem-specific runner inputs at the job commit.
+// Ecosystems without additional inputs need not implement it.
+type DepsJobPreparer interface {
+	RunnerDetails(files map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.CIDepsUpdate, string, error)
+}

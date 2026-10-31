@@ -443,7 +443,7 @@ func newForge(ctx context.Context, cfg config.Config, opts options) (_ *forge, e
 		}
 		f.bernard, err = usecase.NewBernard(usecase.BernardConfig{
 			Store: store.Deps(), Meta: store, Reader: reader,
-			Ecosystems: []ports.DepsEcosystem{deps.GoMod{}, deps.Actions{}},
+			Ecosystems: []ports.DepsEcosystem{deps.GoMod{}, deps.Actions{}, deps.NPM{}},
 			Registry:   func() ports.DepsRegistry { return depsregistry.NewCached(base) },
 			Bus:        f.Bus, Clock: clock,
 			CheckAt: cfg.DepsCheckAt, Cooldown: cfg.DepsCooldown, Snooze: cfg.DepsSnooze,

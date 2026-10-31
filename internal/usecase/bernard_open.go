@@ -127,7 +127,7 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 	requires := []string{"deps"}
 	for i, u := range runnerUps {
 		details[i] = domain.CIDepsUpdate{Ref: u.DepRef, NewName: u.NewName}
-		if string(u.Ecosystem) == "npm" && !slices.Contains(requires, "deps.npm") {
+		if u.Ecosystem == domain.EcosystemNPM && !slices.Contains(requires, "deps.npm") {
 			requires = append(requires, "deps.npm")
 		}
 		if u.NewName != "" && !slices.Contains(requires, "deps.gomod-path-majors") {
@@ -170,9 +170,56 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 	if cfg.Runs == nil {
 		return domain.RepoDeps{}, fmt.Errorf("%w: dependency jobs are not available", domain.ErrPreconditionFailed)
 	}
+	nodeVersion := ""
+	for _, eco := range cfg.Ecosystems {
+		preparer, ok := eco.(ports.DepsJobPreparer)
+		if !ok {
+			continue
+		}
+		var own []domain.DepUpdate
+		for _, u := range runnerUps {
+			if u.Ecosystem == eco.Name() {
+				own = append(own, u)
+			}
+		}
+		if len(own) == 0 {
+			continue
+		}
+		rev := domain.RevisionOf(tip)
+		paths, err := cfg.Reader.ListPaths(ctx, name, rev, domain.MaxPathEntries, domain.MaxPathBytes)
+		if err != nil {
+			return domain.RepoDeps{}, err
+		}
+		if paths.Truncated {
+			return domain.RepoDeps{}, fmt.Errorf("%w: incomplete repository paths", domain.ErrPreconditionFailed)
+		}
+		files := map[domain.TreePath][]byte{}
+		for _, p := range eco.Manifests(paths) {
+			content, ok, err := b.readManifest(ctx, name, rev, p)
+			if err != nil {
+				return domain.RepoDeps{}, err
+			}
+			if !ok {
+				return domain.RepoDeps{}, fmt.Errorf("%w: oversized npm manifest %s", domain.ErrPreconditionFailed, p)
+			}
+			files[p] = content
+		}
+		more, node, err := preparer.RunnerDetails(files, own)
+		if err != nil {
+			return domain.RepoDeps{}, err
+		}
+		for i, d := range details {
+			for _, m := range more {
+				if d.Ref == m.Ref {
+					details[i] = m
+				}
+			}
+		}
+		nodeVersion = node
+	}
 	run, err := cfg.Runs.StartDepsRun(ctx, ports.DepsRunParams{
 		Repo: name, Ref: "refs/heads/" + target, Sha: tip.String(), Title: domain.BotSubject(batch),
-		Job: domain.CIDepsJob{Details: details, GoVersion: goVersion, Requires: requires}, Label: cfg.RunnerLabel, Timeout: cfg.JobTimeout,
+		Job: domain.CIDepsJob{Details: details, GoVersion: goVersion, NodeVersion: nodeVersion, Requires: requires}, Label: cfg.RunnerLabel, Timeout: cfg.JobTimeout,
 	})
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("start the dependency run: %w", err)

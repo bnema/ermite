@@ -114,4 +114,4 @@ docker run -d -p 127.0.0.1:7341:7341 -v ermite-data:/data \
 
 `--json` gives stable fields. Errors: one line `ermite: ...` on stderr, exit 1. `ermite completion bash|zsh|fish` completes repo names.
 
-For runner-applied updates, let a compatible runner poll before opening the batch (capability requirements: CLI.md). Bernard uses one MR per major update; select it with `deps open|ignore --batch KEY` (omit for base).
+npm updates include workspace dependencies and preserve range operators; Bun jobs reject roots with git dependencies. For runner-applied updates, let a compatible runner poll before opening the batch (capability requirements: CLI.md). Bernard uses one MR per major update; select it with `deps open|ignore --batch KEY` (omit for base).
