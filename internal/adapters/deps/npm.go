@@ -269,6 +269,7 @@ func (NPM) RunnerDetails(files map[domain.TreePath][]byte, ups []domain.DepUpdat
 
 // ReportAllowed admits candidates; Validate checks snapshot-dependent root and
 // pre-existing-lockfile restrictions against the original manifests.
+//hexcheck:ignore suspicious-business-logic-in-adapter maps update directories to npm manifest and lockfile paths; which batch runs where stays in the usecase
 func (NPM) ReportAllowed(ups []domain.DepUpdate, p domain.TreePath) bool {
 	for _, part := range strings.Split(p.String(), "/") {
 		if part == "node_modules" {
@@ -293,6 +294,7 @@ func (NPM) ReportAllowed(ups []domain.DepUpdate, p domain.TreePath) bool {
 // Validate accepts exactly the requested range edits and the root's existing
 // lockfile. package-lock.json and npm-shrinkwrap.json may only gain
 // resolutions from the public registry; other lockfiles are opaque.
+//hexcheck:ignore suspicious-business-logic-in-adapter checks package.json and package-lock syntax against the requested edits, like GoMod.Validate; update policy stays in domain.PickUpdates
 func (n NPM) Validate(before, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error) {
 	details, _, err := n.RunnerDetails(before, ups)
 	if err != nil {
