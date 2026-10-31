@@ -59,7 +59,9 @@ import (
 // replace job_id, and a CIJob may carry deps (an older build would plan it as a
 // workflow job and misread the records). The upgrade fails the applying records
 // and shortens the failed ones, see upgradeDepsRecords.
-const SchemaVersion = 11
+// Version 12 moves Bernard application state into independent batches. The upgrade
+// preserves the legacy base batch and fails interrupted dependency runs.
+const SchemaVersion = 12
 
 const schemaKey = "meta/schema"
 
@@ -191,8 +193,8 @@ func (s *Store) checkSchema(ctx context.Context) error {
 					return err
 				}
 			}
-			if target == SchemaVersion && sv.GetVersion() < 11 {
-				if err := s.upgradeDepsRecords(ctx, &b); err != nil {
+			if target == SchemaVersion && sv.GetVersion() < 12 {
+				if err := s.upgradeDepsRecords(ctx, &b, sv.GetVersion()); err != nil {
 					return err
 				}
 			}
@@ -354,11 +356,11 @@ func (s *Store) upgradeResolvedIssues(ctx context.Context, b *kv.Batch) error {
 // its in-memory job was lost with the previous process.
 const depsUpgradeError = "interrupted by an upgrade: open the merge request again"
 
-// upgradeDepsRecords runs in the schema batch (schema 11): the record of a job
+// upgradeDepsRecords runs once in the schema batch (schemas 11 and 12): the record of a job
 // that was applying fails, because the job lived in memory and is gone, and a
 // failed record keeps the first line of its error, not the log tail it held.
 // There is one record per repository, far below the batch limit. Idempotent.
-func (s *Store) upgradeDepsRecords(ctx context.Context, b *kv.Batch) error {
+func (s *Store) upgradeDepsRecords(ctx context.Context, b *kv.Batch, from uint32) error {
 	for key, item := range s.db.Snapshot(ctx).Prefix(ctx, []byte(depsPendPrefix)) {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -367,16 +369,28 @@ func (s *Store) upgradeDepsRecords(ctx context.Context, b *kv.Batch) error {
 		if err := proto.Unmarshal(item.Value, &pb); err != nil {
 			return fmt.Errorf("upgrade deps record %s: %w", key, err)
 		}
-		// The job lived in memory: its id means nothing any more.
-		changed := pb.GetJobId() != "" //nolint:staticcheck // the deprecated field is what the upgrade clears
-		pb.JobId = ""                  //nolint:staticcheck // idem
-		switch domain.DepsState(pb.GetState()) {
-		case domain.DepsApplying:
-			pb.State, pb.Error, changed = int32(domain.DepsFailed), depsUpgradeError, true
-		case domain.DepsFailed:
-			if first, _, cut := strings.Cut(pb.GetError(), "\n"); cut {
-				pb.Error, changed = first, true
+		changed := false
+		if from < 11 && len(pb.GetBatches()) == 0 {
+			// The job lived in memory: its id means nothing any more.
+			changed = pb.GetJobId() != "" //nolint:staticcheck // the deprecated field is what the upgrade clears
+			pb.JobId = ""                 //nolint:staticcheck // idem
+			switch domain.DepsState(pb.GetState()) {
+			case domain.DepsApplying:
+				pb.State, pb.Error, changed = int32(domain.DepsFailed), depsUpgradeError, true
+			case domain.DepsFailed:
+				if first, _, cut := strings.Cut(pb.GetError(), "\n"); cut {
+					pb.Error, changed = first, true
+				}
 			}
+		}
+		if from < 12 && len(pb.GetBatches()) == 0 {
+			state, reason := pb.GetState(), pb.GetError()
+			if domain.DepsState(state) == domain.DepsApplying {
+				state, reason = int32(domain.DepsFailed), depsUpgradeError
+			}
+			pb.Batches = []*storagepb.DepBatch{{Updates: pb.GetUpdates(), State: state, Error: reason, RunId: pb.GetRunId(), RunUpdates: pb.GetRunUpdates(), Mr: pb.GetMr(), MrVersions: pb.GetMrVersions()}}
+			pb.Updates, pb.State, pb.Error, pb.RunId, pb.RunUpdates, pb.Mr, pb.MrVersions = nil, 0, "", 0, nil, 0, nil
+			changed = true
 		}
 		if !changed {
 			continue

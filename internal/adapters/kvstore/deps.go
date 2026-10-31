@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -139,7 +141,20 @@ func (d *Deps) Mutate(ctx context.Context, repo domain.RepoName, fn func(*domain
 				return domain.RepoDeps{}, err
 			}
 		}
+		// Snapshot slices too: legacy callers may edit an update in place.
+		before := legacyDepBatch(rd)
+		before.Updates = slices.Clone(before.Updates)
+		before.RunUpdates = slices.Clone(before.RunUpdates)
+		before.MRVersions = slices.Clone(before.MRVersions)
 		changed, err := fn(&rd)
+		if !reflect.DeepEqual(before, legacyDepBatch(rd)) && len(rd.Batches) != 0 {
+			for i := range rd.Batches {
+				if rd.Batches[i].Key == "" {
+					rd.Batches[i] = legacyDepBatch(rd)
+					break
+				}
+			}
+		}
 		if err != nil {
 			return domain.RepoDeps{}, err
 		}
@@ -242,11 +257,11 @@ func decodeDepRef(pb *storagepb.DepRef) domain.DepRef {
 }
 
 func encodeDepUpdate(u domain.DepUpdate) *storagepb.DepUpdate {
-	return &storagepb.DepUpdate{Ref: encodeDepRef(u.DepRef), Current: u.Current, Kind: int32(u.Kind), New: u.New}
+	return &storagepb.DepUpdate{Ref: encodeDepRef(u.DepRef), Current: u.Current, Kind: int32(u.Kind), New: u.New, NewName: u.NewName}
 }
 
 func decodeDepUpdate(u *storagepb.DepUpdate) domain.DepUpdate {
-	return domain.DepUpdate{DepRef: decodeDepRef(u.GetRef()), Current: u.GetCurrent(), Kind: domain.DepKind(u.GetKind()), New: u.GetNew()}
+	return domain.DepUpdate{DepRef: decodeDepRef(u.GetRef()), Current: u.GetCurrent(), Kind: domain.DepKind(u.GetKind()), New: u.GetNew(), NewName: u.GetNewName()}
 }
 
 func encodeRepoDeps(rd domain.RepoDeps) ([]byte, error) {
@@ -257,19 +272,13 @@ func encodeRepoDeps(rd domain.RepoDeps) ([]byte, error) {
 		Repo:         rd.Repo.String(),
 		CheckedAt:    encodeTime(rd.CheckedAt),
 		SnoozedUntil: encodeTime(rd.SnoozedUntil),
-		State:        int32(rd.State),
-		Error:        rd.Error,
-		RunId:        rd.RunID,
-		Mr:           rd.MR,
 	}
-	for _, u := range rd.Updates {
-		pb.Updates = append(pb.Updates, encodeDepUpdate(u))
+	batches := rd.Batches
+	if len(batches) == 0 {
+		batches = []domain.DepBatch{legacyDepBatch(rd)}
 	}
-	for _, u := range rd.RunUpdates {
-		pb.RunUpdates = append(pb.RunUpdates, encodeDepUpdate(u))
-	}
-	for _, r := range rd.MRVersions {
-		pb.MrVersions = append(pb.MrVersions, encodeDepRef(r))
+	for _, batch := range batches {
+		pb.Batches = append(pb.Batches, encodeDepBatch(batch))
 	}
 	val, err := proto.MarshalOptions{Deterministic: true}.Marshal(pb)
 	if err != nil {
@@ -291,19 +300,46 @@ func decodeRepoDeps(val []byte) (domain.RepoDeps, error) {
 		Repo:         repo,
 		CheckedAt:    decodeTime(pb.GetCheckedAt()),
 		SnoozedUntil: decodeTime(pb.GetSnoozedUntil()),
-		State:        domain.DepsState(pb.GetState()),
-		Error:        pb.GetError(),
-		RunID:        pb.GetRunId(),
-		MR:           pb.GetMr(),
 	}
-	for _, u := range pb.GetUpdates() {
-		rd.Updates = append(rd.Updates, decodeDepUpdate(u))
+	for _, batch := range pb.GetBatches() {
+		rd.Batches = append(rd.Batches, decodeDepBatch(batch))
 	}
-	for _, u := range pb.GetRunUpdates() {
-		rd.RunUpdates = append(rd.RunUpdates, decodeDepUpdate(u))
-	}
-	for _, r := range pb.GetMrVersions() {
-		rd.MRVersions = append(rd.MRVersions, decodeDepRef(r))
+	if base, _, ok := rd.Batch(""); ok {
+		rd.Updates, rd.State, rd.Error, rd.RunID = base.Updates, base.State, base.Error, base.RunID
+		rd.RunUpdates, rd.MR, rd.MRVersions = base.RunUpdates, base.MR, base.MRVersions
 	}
 	return rd, nil
+}
+
+// legacyDepBatch bridges the base-only usecase until it switches to Batches.
+func legacyDepBatch(rd domain.RepoDeps) domain.DepBatch {
+	return domain.DepBatch{Updates: rd.Updates, State: rd.State, Error: rd.Error, RunID: rd.RunID, RunUpdates: rd.RunUpdates, MR: rd.MR, MRVersions: rd.MRVersions}
+}
+
+func encodeDepBatch(b domain.DepBatch) *storagepb.DepBatch {
+	pb := &storagepb.DepBatch{Key: string(b.Key), State: int32(b.State), Error: b.Error, RunId: b.RunID, Mr: b.MR}
+	for _, u := range b.Updates {
+		pb.Updates = append(pb.Updates, encodeDepUpdate(u))
+	}
+	for _, u := range b.RunUpdates {
+		pb.RunUpdates = append(pb.RunUpdates, encodeDepUpdate(u))
+	}
+	for _, r := range b.MRVersions {
+		pb.MrVersions = append(pb.MrVersions, encodeDepRef(r))
+	}
+	return pb
+}
+
+func decodeDepBatch(pb *storagepb.DepBatch) domain.DepBatch {
+	b := domain.DepBatch{Key: domain.DepBatchKey(pb.GetKey()), State: domain.DepsState(pb.GetState()), Error: pb.GetError(), RunID: pb.GetRunId(), MR: pb.GetMr()}
+	for _, u := range pb.GetUpdates() {
+		b.Updates = append(b.Updates, decodeDepUpdate(u))
+	}
+	for _, u := range pb.GetRunUpdates() {
+		b.RunUpdates = append(b.RunUpdates, decodeDepUpdate(u))
+	}
+	for _, r := range pb.GetMrVersions() {
+		b.MRVersions = append(b.MRVersions, decodeDepRef(r))
+	}
+	return b
 }

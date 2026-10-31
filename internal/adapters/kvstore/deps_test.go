@@ -47,6 +47,7 @@ func TestDepsRoundTripAndAbsent(t *testing.T) {
 	require.NoError(t, err)
 	got, err = d.Get(ctx, n)
 	require.NoError(t, err)
+	want.Batches = []domain.DepBatch{{Updates: want.Updates, State: want.State, Error: want.Error, RunID: want.RunID, RunUpdates: want.RunUpdates, MR: want.MR, MRVersions: want.MRVersions}}
 	require.Equal(t, want, got)
 }
 
@@ -240,4 +241,34 @@ func TestDepsDeletedWithRepository(t *testing.T) {
 	again, err := d.FirstSeen(ctx, domain.EcosystemGoMod, "a/b", "v1.0.0", "", created.Add(time.Hour))
 	require.NoError(t, err)
 	require.True(t, seen.Equal(again), "dseen survives repository deletion")
+}
+
+func TestDepsBatchRoundTripAndLegacyMutations(t *testing.T) {
+	ctx := t.Context()
+	d := openStore(t, t.TempDir()).Deps()
+	n := name(t, "batches")
+	u := domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "example.com/pkg", Version: "v2.1.0"}, NewName: "example.com/pkg/v2", Current: "v1.0.0", Kind: domain.DepMajor}
+	major := domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}, State: domain.DepsApplying, RunID: 12, RunUpdates: []domain.DepUpdate{u}, MR: 5, MRVersions: []domain.DepRef{u.DepRef}, Error: "major error"}
+	base := domain.DepBatch{Updates: []domain.DepUpdate{u}, State: domain.DepsFailed, Error: "base error", RunID: 4, RunUpdates: []domain.DepUpdate{u}, MR: 3, MRVersions: []domain.DepRef{u.DepRef}}
+	got, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.Batches = []domain.DepBatch{base, major}; return true, nil })
+	require.NoError(t, err)
+	require.Equal(t, []domain.DepBatch{base, major}, got.Batches)
+	require.Equal(t, base.Updates, got.Updates)
+	require.Equal(t, base.MRVersions, got.MRVersions)
+	got, err = d.Get(ctx, n)
+	require.NoError(t, err)
+	require.Equal(t, []domain.DepBatch{base, major}, got.Batches)
+	// Existing usecases only change legacy fields. Clearing them must clear the
+	// stored base too, without disturbing a major batch.
+	got, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) {
+		r.Updates, r.State, r.Error, r.RunID, r.RunUpdates, r.MR, r.MRVersions = nil, domain.DepsIdle, "", 0, nil, 0, nil
+		return true, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []domain.DepBatch{{}, major}, got.Batches)
+	// A batch-aware caller can also change the base directly.
+	got, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.Batches[0] = base; return true, nil })
+	require.NoError(t, err)
+	require.Equal(t, []domain.DepBatch{base, major}, got.Batches)
+	require.Equal(t, base.MR, got.MR)
 }

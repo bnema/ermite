@@ -129,3 +129,20 @@ creation time of the repository and the bytes per language. It is derived data:
 a background worker recomputes it after a push to the default branch and for
 every repository at startup, and deleting the repository removes it. There is
 no schema bump; a build without this key ignores it.
+
+## Schema 12: dependency batches
+
+Bernard records under `dpend/<repo>` now store application state in `batches`:
+base batch key `""`, followed by independent major batches. Updates can carry a
+`new_name` for Go module path-major changes. The deprecated per-repository
+updates, state, error, run and merge-request fields are cleared by the upgrade;
+normal reads and writes use only batches.
+
+The upgrade moves each legacy record into one base batch, preserving updates,
+run snapshots and merge-request versions. Applying records become Failed with
+"interrupted by an upgrade: open the merge request again". Upgrades from before
+schema 11 also perform its error shortening and old job-id cleanup in the same
+pass. Each record is written at most once, atomically with the schema bump;
+re-running the migration leaves existing batches unchanged. Older builds refuse
+schema 12. Back up the stopped server's data before upgrading; rollback requires
+restoring that backup.

@@ -435,8 +435,8 @@ func TestSchema6TokenUpgrade(t *testing.T) {
 // Schema 11 fails the records left applying by an in-memory job, cuts the
 // error of the failed ones to its first line, clears the job id and leaves the
 // other records alone. Running it again changes nothing.
-func TestSchema11UpgradesDepsRecords(t *testing.T) {
-	for _, from := range []uint32{9, 10} {
+func TestSchema12UpgradesDepsRecords(t *testing.T) {
+	for _, from := range []uint32{9, 10, 11} {
 		t.Run(fmt.Sprint(from), func(t *testing.T) {
 			ctx := context.Background()
 			dir := t.TempDir()
@@ -456,10 +456,10 @@ func TestSchema11UpgradesDepsRecords(t *testing.T) {
 				idle     = int32(domain.DepsIdle)
 			)
 			for _, rec := range []*storagepb.RepoDeps{
-				{Repo: "applying", State: applying, Mr: 3, JobId: "deps-0123456789abcdef"},
+				{Repo: "applying", State: applying, Mr: 3, JobId: "deps-0123456789abcdef", RunId: 17, RunUpdates: []*storagepb.DepUpdate{{Ref: &storagepb.DepRef{Name: "old", Version: "v2"}}}},
 				{Repo: "failed", State: failed, Error: "the runner reported failure\nline two\nline three", JobId: "deps-fedcba9876543210"},
 				{Repo: "oneline", State: failed, Error: "boom"},
-				{Repo: "idle", State: idle, Mr: 9, Error: "kept\nas it is"},
+				{Repo: "idle", State: idle, Mr: 9, Error: "kept\nas it is", Updates: []*storagepb.DepUpdate{{Ref: &storagepb.DepRef{Name: "pkg", Version: "v1"}}}, MrVersions: []*storagepb.DepRef{{Name: "pkg", Version: "v1"}}},
 			} {
 				putRaw(t, dir, "dpend/"+rec.GetRepo(), mustProto(t, rec))
 			}
@@ -485,9 +485,24 @@ func TestSchema11UpgradesDepsRecords(t *testing.T) {
 					got, err := s.Deps().Get(ctx, name(t, repo))
 					require.NoError(t, err)
 					assert.Equal(t, w.state, got.State, repo)
-					assert.Equal(t, w.err, got.Error, repo)
+					wantErr := w.err
+					if from == 11 && repo == "failed" {
+						wantErr = "the runner reported failure\nline two\nline three"
+					}
+					assert.Equal(t, wantErr, got.Error, repo)
 					assert.Equal(t, w.mr, got.MR, repo)
-					assert.Zero(t, got.RunID, repo)
+					if repo == "applying" {
+						assert.Equal(t, int64(17), got.RunID)
+						require.Len(t, got.RunUpdates, 1)
+					} else {
+						assert.Zero(t, got.RunID, repo)
+					}
+					require.Len(t, got.Batches, 1)
+					assert.Empty(t, got.Batches[0].Key)
+					if repo == "idle" {
+						require.Len(t, got.Updates, 1)
+						require.Len(t, got.MRVersions, 1)
+					}
 				}
 				require.NoError(t, s.Close(ctx))
 				scopes := readTokenScopes(t, dir, "owner")["owner"]
@@ -497,7 +512,17 @@ func TestSchema11UpgradesDepsRecords(t *testing.T) {
 					require.True(t, ok)
 					var pb storagepb.RepoDeps
 					require.NoError(t, proto.Unmarshal(raw, &pb))
-					assert.Empty(t, pb.GetJobId(), repo+": the job id is gone") //nolint:staticcheck // checks the deprecated field is cleared
+					if from < 11 {
+						assert.Empty(t, pb.GetJobId(), repo+": the job id is gone")
+					}
+					assert.Empty(t, pb.GetUpdates())
+					assert.Zero(t, pb.GetState())
+					assert.Empty(t, pb.GetError())
+					assert.Zero(t, pb.GetRunId())
+					assert.Empty(t, pb.GetRunUpdates())
+					assert.Zero(t, pb.GetMr())
+					assert.Empty(t, pb.GetMrVersions())
+					require.Len(t, pb.GetBatches(), 1)
 				}
 				assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 			}
