@@ -109,8 +109,8 @@ func depsIconKind(s InboxDepsStatus) string {
 func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
 	repo := d.Repo.String()
 	var st InboxDepsStatus
-	if d.MR != 0 {
-		st.MR, st.MRHref = d.MR, mrHref(repo, d.MR)
+	if d.Base().MR != 0 {
+		st.MR, st.MRHref = d.Base().MR, mrHref(repo, d.Base().MR)
 	}
 	var runLink InboxDepsStatus
 	if run != nil {
@@ -120,7 +120,7 @@ func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
 		}
 		runLink.Text, runLink.Href = fmt.Sprintf("run #%d", n), runHref(repo, run.ID)
 	}
-	switch d.State {
+	switch d.Base().State {
 	case domain.DepsApplying:
 		st.Kind, st.State = "running", "running"
 		switch {
@@ -133,7 +133,7 @@ func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
 		}
 		st.Text, st.Href = runLink.Text, runLink.Href
 	case domain.DepsFailed:
-		st.Kind, st.State, st.Title = "failed", "failed", d.Error
+		st.Kind, st.State, st.Title = "failed", "failed", d.Base().Error
 		st.Text, st.Href = runLink.Text, runLink.Href
 	}
 	return st
@@ -144,11 +144,11 @@ func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 	repo := d.Repo.String()
 	row := InboxDepsRow{
 		Repo: repo, RepoHref: repoHref(repo), ID: "deps-" + repo,
-		Count: len(d.Updates), Breakdown: depsBreakdown(d.Updates),
+		Count: len(d.Base().Updates), Breakdown: depsBreakdown(d.Base().Updates),
 	}
-	upToDate := d.MR != 0 && domain.SameRefs(d.Refs(), d.MRVersions)
+	upToDate := d.Base().MR != 0 && domain.SameRefs(d.Base().Refs(), d.Base().MRVersions)
 	row.Status = depsStatus(d, in.Run)
-	for _, u := range d.Updates {
+	for _, u := range d.Base().Updates {
 		if u.New {
 			row.New++
 		}
@@ -157,14 +157,14 @@ func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 			Current: u.Current, Latest: u.Version, Kind: depsKindLabel(u.Kind), New: u.New,
 		})
 	}
-	failed := d.State == domain.DepsFailed
+	failed := d.Base().State == domain.DepsFailed
 	// The merge request already holds these versions: nothing to apply, only to
 	// view. A run in progress has no button at all.
-	merged := upToDate && d.State == domain.DepsIdle
+	merged := upToDate && d.Base().State == domain.DepsIdle
 	if merged {
 		row.Primary = InboxDepsAction{Label: "View MR", Href: row.Status.MRHref}
 	}
-	if s.cfg.Deps != nil && d.State != domain.DepsApplying {
+	if s.cfg.Deps != nil && d.Base().State != domain.DepsApplying {
 		base := inboxPath + "/deps/" + url.PathEscape(repo) + "/"
 		row.Snooze = base + "snooze"
 		if !merged {
@@ -173,7 +173,7 @@ func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 			switch {
 			case failed:
 				label = "Retry"
-			case d.MR != 0:
+			case d.Base().MR != 0:
 				label = "Update MR"
 			}
 			row.Primary = InboxDepsAction{Label: label, Action: base + "open"}

@@ -244,9 +244,9 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 	fresh := 0
 	moved := false
 	rec, err := b.cfg.Store.Mutate(ctx, name, func(d *domain.RepoDeps) (bool, error) {
-		moved = !domain.SameRefs(d.Refs(), refsOf(ups))
-		prev := make(map[domain.DepRef]bool, len(d.Updates))
-		for _, u := range d.Updates {
+		moved = !domain.SameRefs(d.Base().Refs(), refsOf(ups))
+		prev := make(map[domain.DepRef]bool, len(d.Base().Updates))
+		for _, u := range d.Base().Updates {
 			prev[u.DepRef] = true
 		}
 		fresh = 0
@@ -259,7 +259,7 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 			next[i] = u
 		}
 		d.Repo = name
-		d.Updates = next
+		d.Base().Updates = next
 		d.CheckedAt = now
 		return true, nil
 	})
@@ -445,7 +445,7 @@ func (b *Bernard) List(ctx context.Context, p domain.Principal, repo domain.Repo
 	}
 	var out []domain.RepoDeps
 	for _, d := range all {
-		if len(d.Updates) == 0 || (!repo.IsZero() && d.Repo != repo) {
+		if !d.Pending() || (!repo.IsZero() && d.Repo != repo) {
 			continue
 		}
 		out = append(out, d)
@@ -490,7 +490,7 @@ func (b *Bernard) Ignore(ctx context.Context, p domain.Principal, repo domain.Re
 		if err := depsPrecondition(*d, expected); err != nil {
 			return false, err // the record moved since it was read
 		}
-		d.Updates = slices.DeleteFunc(slices.Clone(d.Updates), func(u domain.DepUpdate) bool { return drop[u.DepRef] })
+		d.Base().Updates = slices.DeleteFunc(slices.Clone(d.Base().Updates), func(u domain.DepUpdate) bool { return drop[u.DepRef] })
 		return true, nil
 	})
 	if err != nil {
@@ -503,10 +503,10 @@ func (b *Bernard) Ignore(ctx context.Context, p domain.Principal, repo domain.Re
 // depsPrecondition checks that the client saw the pending versions and that no
 // job is applying them.
 func depsPrecondition(d domain.RepoDeps, expected []domain.DepRef) error {
-	if d.State == domain.DepsApplying {
+	if d.Base().State == domain.DepsApplying {
 		return fmt.Errorf("%w: dependency updates are being applied", domain.ErrPreconditionFailed)
 	}
-	if !domain.SameRefs(expected, d.Refs()) {
+	if !domain.SameRefs(expected, d.Base().Refs()) {
 		return fmt.Errorf("%w: the pending dependency updates changed, reload and retry", domain.ErrPreconditionFailed)
 	}
 	return nil

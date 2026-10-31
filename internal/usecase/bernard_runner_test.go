@@ -84,7 +84,7 @@ func goUpdate() domain.DepUpdate {
 
 func (rr *runnerRig) open(ups ...domain.DepUpdate) domain.RepoDeps {
 	rr.t.Helper()
-	rr.rec.Updates = ups
+	rr.rec.Base().Updates = ups
 	refs := make([]domain.DepRef, len(ups))
 	for i, u := range ups {
 		refs[i] = u.DepRef
@@ -130,9 +130,9 @@ func TestBernardOpenGoStartsARunAtTheTip(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			rr := newRunnerRig(t, c.goMod)
 			got := rr.open(goUpdate(), actionUpdate())
-			assert.Equal(t, domain.DepsApplying, got.State)
-			assert.EqualValues(t, runnerRunID, got.RunID)
-			assert.Equal(t, []domain.DepUpdate{goUpdate(), actionUpdate()}, got.RunUpdates, "every pending update is kept for the commit")
+			assert.Equal(t, domain.DepsApplying, got.Base().State)
+			assert.EqualValues(t, runnerRunID, got.Base().RunID)
+			assert.Equal(t, []domain.DepUpdate{goUpdate(), actionUpdate()}, got.Base().RunUpdates, "every pending update is kept for the commit")
 
 			assert.Equal(t, ports.DepsRunParams{
 				Repo: rr.repo, Ref: "refs/heads/main", Sha: oid("a").String(), Title: "build(deps): update 2 dependencies",
@@ -149,21 +149,21 @@ func TestBernardOpenWhileApplyingStartsNoSecondRun(t *testing.T) {
 	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, []domain.DepRef{goUpdate().DepRef})
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	assert.Equal(t, 1, rr.starts)
-	assert.Equal(t, domain.DepsApplying, rr.snapshot().State, "the first run is still the record's")
-	assert.EqualValues(t, runnerRunID, rr.snapshot().RunID)
+	assert.Equal(t, domain.DepsApplying, rr.snapshot().Batches[0].State, "the first run is still the record's")
+	assert.EqualValues(t, runnerRunID, rr.snapshot().Batches[0].RunID)
 }
 
 func TestBernardOpenStartFailureFailsTheRecord(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	rr.runs.ExpectedCalls = nil
 	rr.runs.EXPECT().StartDepsRun(mock.Anything, mock.Anything).Return(domain.CIRun{}, errors.New("store down\nsecond line"))
-	rr.rec.Updates = []domain.DepUpdate{goUpdate()}
+	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
 	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, []domain.DepRef{goUpdate().DepRef})
 	require.Error(t, err)
 	got := rr.snapshot()
-	assert.Equal(t, domain.DepsFailed, got.State)
-	assert.Equal(t, "start the dependency run: store down\nsecond line", got.Error)
-	assert.Zero(t, got.RunID)
+	assert.Equal(t, domain.DepsFailed, got.Base().State)
+	assert.Equal(t, "start the dependency run: store down\nsecond line", got.Base().Error)
+	assert.Zero(t, got.Base().RunID)
 }
 
 // A record that moved while the run was being created does not keep it: the
@@ -174,27 +174,27 @@ func TestBernardOpenCancelsTheRunWhenTheRecordMoved(t *testing.T) {
 	rr.runs.EXPECT().StartDepsRun(mock.Anything, mock.Anything).RunAndReturn(
 		func(context.Context, ports.DepsRunParams) (domain.CIRun, error) {
 			rr.mu.Lock()
-			rr.rec.Updates = nil // the daily check ran meanwhile
+			rr.rec.Base().Updates = nil // the daily check ran meanwhile
 			rr.mu.Unlock()
 			return domain.CIRun{Repo: rr.repo, ID: 5}, nil
 		})
 	rr.runs.EXPECT().CancelDepsRun(mock.Anything, rr.repo, int64(5)).Return(nil).Once()
-	rr.rec.Updates = []domain.DepUpdate{goUpdate()}
+	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
 	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, []domain.DepRef{goUpdate().DepRef})
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	got := rr.snapshot()
-	assert.Equal(t, domain.DepsIdle, got.State)
-	assert.Zero(t, got.RunID)
+	assert.Equal(t, domain.DepsIdle, got.Base().State)
+	assert.Zero(t, got.Base().RunID)
 }
 
 func TestBernardOpenGoRefusesABadGoVersion(t *testing.T) {
 	for _, line := range []string{"go 1.25rc1", "go 2.0"} {
 		rr := newRunnerRig(t, goModText(line, "", textOld))
-		rr.rec.Updates = []domain.DepUpdate{goUpdate()}
+		rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
 		_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, []domain.DepRef{goUpdate().DepRef})
 		require.Error(t, err, line)
-		assert.Equal(t, domain.DepsFailed, rr.rec.State)
-		assert.Contains(t, rr.rec.Error, "Go version")
+		assert.Equal(t, domain.DepsFailed, rr.rec.Base().State)
+		assert.Contains(t, rr.rec.Base().Error, "Go version")
 		assert.Zero(t, rr.starts, "no run was started")
 	}
 }
@@ -231,11 +231,11 @@ func TestBernardRunnerReportIsRejected(t *testing.T) {
 			rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 			rr.open(goUpdate())
 			rr.end(c.report, domain.CISuccess)
-			assert.Equal(t, domain.DepsFailed, rr.rec.State)
-			assert.Contains(t, rr.rec.Error, c.want)
-			assert.NotContains(t, rr.rec.Error, "\n", "one line")
-			assert.EqualValues(t, runnerRunID, rr.rec.RunID, "the record keeps the link to the run")
-			assert.Zero(t, rr.rec.MR)
+			assert.Equal(t, domain.DepsFailed, rr.rec.Base().State)
+			assert.Contains(t, rr.rec.Base().Error, c.want)
+			assert.NotContains(t, rr.rec.Base().Error, "\n", "one line")
+			assert.EqualValues(t, runnerRunID, rr.rec.Base().RunID, "the record keeps the link to the run")
+			assert.Zero(t, rr.rec.Base().MR)
 		})
 	}
 }
@@ -248,7 +248,7 @@ func TestBernardRunnerReportOversizeTotal(t *testing.T) {
 	rr.end(&ports.DepsReport{Files: []ports.DepsFile{
 		{Path: "go.mod", Content: make([]byte, 2<<20)}, {Path: "go.sum", Content: make([]byte, 2<<20)},
 	}}, domain.CISuccess)
-	assert.Equal(t, domain.DepsFailed, rr.rec.State)
+	assert.Equal(t, domain.DepsFailed, rr.rec.Base().State)
 }
 
 func TestBernardRunnerReportSuccessPublishesFromTheJobCommit(t *testing.T) {
@@ -264,16 +264,16 @@ func TestBernardRunnerReportSuccessPublishesFromTheJobCommit(t *testing.T) {
 	rr.expectCreate(7)
 
 	got := rr.open(goUpdate(), actionUpdate())
-	require.Equal(t, domain.DepsApplying, got.State)
+	require.Equal(t, domain.DepsApplying, got.Base().State)
 	// The target moves while the runner works: the commit is still built on the run's.
 	rr.end(goReport(goMod, goSum), domain.CISuccess)
 
-	assert.Equal(t, domain.DepsIdle, rr.rec.State)
-	assert.Empty(t, rr.rec.Error)
-	assert.EqualValues(t, runnerRunID, rr.rec.RunID, "the record keeps the link to the last run")
-	assert.Empty(t, rr.rec.RunUpdates)
-	assert.EqualValues(t, 7, rr.rec.MR)
-	assert.ElementsMatch(t, []domain.DepRef{goUpdate().DepRef, actionUpdate().DepRef}, rr.rec.MRVersions)
+	assert.Equal(t, domain.DepsIdle, rr.rec.Base().State)
+	assert.Empty(t, rr.rec.Base().Error)
+	assert.EqualValues(t, runnerRunID, rr.rec.Base().RunID, "the record keeps the link to the last run")
+	assert.Empty(t, rr.rec.Base().RunUpdates)
+	assert.EqualValues(t, 7, rr.rec.Base().MR)
+	assert.ElementsMatch(t, []domain.DepRef{goUpdate().DepRef, actionUpdate().DepRef}, rr.rec.Base().MRVersions)
 	assert.Equal(t, []string{"sign", "commit", "tip", "branch", "ci", "mr"}, rr.ops)
 	assert.Contains(t, rr.created.Description, "golang.org/x/text v0.20.0 \u2192 v0.21.0")
 	assert.Contains(t, rr.created.Description, "actions/checkout")
@@ -289,8 +289,8 @@ func TestBernardRunnerReportGoOnlyWithNoActions(t *testing.T) {
 	rr.open(goUpdate())
 	// An unchanged go.sum is not part of the commit.
 	rr.end(goReport(goMod, rr.files["go.sum"]), domain.CISuccess)
-	assert.Equal(t, domain.DepsIdle, rr.rec.State)
-	assert.EqualValues(t, 3, rr.rec.MR)
+	assert.Equal(t, domain.DepsIdle, rr.rec.Base().State)
+	assert.EqualValues(t, 3, rr.rec.Base().MR)
 }
 
 func TestBernardRunnerFailureKeepsOutput(t *testing.T) {
@@ -298,33 +298,33 @@ func TestBernardRunnerFailureKeepsOutput(t *testing.T) {
 	rr.open(goUpdate())
 	rr.end(&ports.DepsReport{Error: "go get failed\ngo: example.com/x@v9: not found"}, domain.CIFailure)
 	got := rr.snapshot()
-	assert.Equal(t, domain.DepsFailed, got.State)
-	assert.Equal(t, "go get failed\ngo: example.com/x@v9: not found", got.Error)
-	assert.EqualValues(t, runnerRunID, got.RunID)
-	assert.Empty(t, got.RunUpdates)
+	assert.Equal(t, domain.DepsFailed, got.Base().State)
+	assert.Equal(t, "go get failed\ngo: example.com/x@v9: not found", got.Base().Error)
+	assert.EqualValues(t, runnerRunID, got.Base().RunID)
+	assert.Empty(t, got.Base().RunUpdates)
 }
 
 func TestBernardClosingTheMRCancelsTheRun(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	other := actionUpdate()
-	rr.rec.MR = 4
-	rr.rec.MRVersions = []domain.DepRef{goUpdate().DepRef}
+	rr.rec.Base().MR = 4
+	rr.rec.Base().MRVersions = []domain.DepRef{goUpdate().DepRef}
 	got := rr.open(goUpdate(), other)
-	require.Equal(t, domain.DepsApplying, got.State)
+	require.Equal(t, domain.DepsApplying, got.Base().State)
 	rr.mu.Lock()
-	rr.rec.Updates = []domain.DepUpdate{goUpdate(), other}
+	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate(), other}
 	rr.mu.Unlock()
 	rr.runs.EXPECT().CancelDepsRun(mock.Anything, rr.repo, int64(runnerRunID)).Return(nil).Once()
 
 	rr.startWatch()
 	rr.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: rr.repo, Number: 4}}
-	require.Eventually(t, func() bool { return rr.snapshot().State == domain.DepsIdle }, 5*time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return rr.snapshot().Batches[0].State == domain.DepsIdle }, 5*time.Second, 5*time.Millisecond)
 
 	snap := rr.snapshot()
-	assert.EqualValues(t, runnerRunID, snap.RunID, "the link to the cancelled run stays")
-	assert.Empty(t, snap.RunUpdates)
-	assert.Equal(t, []domain.DepUpdate{other}, snap.Updates, "the closed versions are gone, the rest remains")
-	assert.Zero(t, snap.MR)
+	assert.EqualValues(t, runnerRunID, snap.Base().RunID, "the link to the cancelled run stays")
+	assert.Empty(t, snap.Base().RunUpdates)
+	assert.Equal(t, []domain.DepUpdate{other}, snap.Base().Updates, "the closed versions are gone, the rest remains")
+	assert.Zero(t, snap.Base().MR)
 
 	// The cancelled job ends: the record left the run, nothing is published
 	// (no git mock is called) and nothing is written.
@@ -336,12 +336,12 @@ func TestBernardClosingTheMRWithoutARunCancelsNothing(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
-		rr.rec = domain.RepoDeps{Repo: rr.repo, MR: 4, RunID: 9, MRVersions: []domain.DepRef{goUpdate().DepRef}, Updates: []domain.DepUpdate{goUpdate()}}
+		rr.rec = domain.RepoDeps{Repo: rr.repo, Batches: []domain.DepBatch{{MR: 4, RunID: 9, MRVersions: []domain.DepRef{goUpdate().DepRef}, Updates: []domain.DepUpdate{goUpdate()}}}}
 		rr.startWatch()
 		rr.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: rr.repo, Number: 4}}
 		synctest.Wait()
-		assert.Zero(t, rr.snapshot().MR)
-		assert.EqualValues(t, 9, rr.snapshot().RunID) // CancelDepsRun is not expected: the mock would fail
+		assert.Zero(t, rr.snapshot().Batches[0].MR)
+		assert.EqualValues(t, 9, rr.snapshot().Batches[0].RunID) // CancelDepsRun is not expected: the mock would fail
 	})
 }
 
@@ -350,8 +350,8 @@ func TestBernardReportDroppedWhenRecordLeftTheRun(t *testing.T) {
 		name string
 		move func(*domain.RepoDeps)
 	}{
-		{"idle", func(r *domain.RepoDeps) { r.State = domain.DepsIdle }},
-		{"another run", func(r *domain.RepoDeps) { r.RunID = runnerRunID + 1 }},
+		{"idle", func(r *domain.RepoDeps) { r.Base().State = domain.DepsIdle }},
+		{"another run", func(r *domain.RepoDeps) { r.Base().RunID = runnerRunID + 1 }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
@@ -379,13 +379,13 @@ func TestBernardCommitsTheUpdatesTheRunStartedWith(t *testing.T) {
 	rr.expectCreate(8)
 	rr.open(goUpdate())
 	rr.mu.Lock()
-	rr.rec.Updates = []domain.DepUpdate{{DepRef: depRef("other/mod", "v1.0.0"), Current: "v0.9.0", Kind: domain.DepMajor, New: true}}
+	rr.rec.Base().Updates = []domain.DepUpdate{{DepRef: depRef("other/mod", "v1.0.0"), Current: "v0.9.0", Kind: domain.DepMajor, New: true}}
 	rr.mu.Unlock()
 
 	rr.end(goReport(goMod, goSum), domain.CISuccess)
 	got := rr.snapshot()
-	assert.Equal(t, domain.DepsIdle, got.State)
-	assert.Equal(t, []domain.DepRef{goUpdate().DepRef}, got.MRVersions)
+	assert.Equal(t, domain.DepsIdle, got.Base().State)
+	assert.Equal(t, []domain.DepRef{goUpdate().DepRef}, got.Base().MRVersions)
 	assert.Contains(t, rr.created.Description, "golang.org/x/text")
 	assert.NotContains(t, rr.created.Description, "other/mod")
 	assert.Equal(t, "build(deps): update 1 dependency", rr.created.Title)
@@ -428,7 +428,7 @@ func TestBernardRunnerReportListsGoSideEffects(t *testing.T) {
 	rr.expectCreate(7)
 	rr.open(goUpdate())
 	rr.end(goReport(mod, sum), domain.CISuccess)
-	assert.Equal(t, domain.DepsIdle, rr.rec.State)
+	assert.Equal(t, domain.DepsIdle, rr.rec.Base().State)
 	assert.Contains(t, rr.created.Description, "## Also changed by Go")
 	assert.Contains(t, rr.created.Description, "- `golang.org/x/net` v0.30.0 → v0.31.0")
 }
@@ -439,9 +439,9 @@ func TestBernardCheckDepsReportDoesNotPublishAndDropsSupersededRuns(t *testing.T
 	run, job := rr.endedRun(domain.CISuccess)
 	report := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
 	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, *report))
-	assert.Equal(t, domain.DepsApplying, rr.rec.State)
-	assert.Zero(t, rr.rec.MR)
-	rr.rec.RunID++
+	assert.Equal(t, domain.DepsApplying, rr.rec.Base().State)
+	assert.Zero(t, rr.rec.Base().MR)
+	rr.rec.Base().RunID++
 	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, ports.DepsReport{Files: []ports.DepsFile{{Path: "evil.sh"}}}))
 }
 

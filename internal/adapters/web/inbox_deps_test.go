@@ -23,14 +23,13 @@ import (
 
 func depsRec(t testing.TB) domain.RepoDeps {
 	return domain.RepoDeps{
-		Repo: repoName(t, "alpha"), State: domain.DepsFailed, Error: "the run ended: failure", RunID: 12,
-		CheckedAt: time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC),
-		Updates: []domain.DepUpdate{
-			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Directory: "tools", Name: "golang.org/x/text", Version: "v0.21.0"}, Current: "v0.20.0", Kind: domain.DepMinor, New: true},
-			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Name: "actions/checkout", Version: "v5"}, Current: "v4", Kind: domain.DepMajor},
-			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "example.com/p", Version: "v1.0.1"}, Current: "v1.0.0", Kind: domain.DepPatch},
-		},
-	}
+		Repo:      repoName(t, "alpha"),
+		CheckedAt: time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC), Batches: []domain.DepBatch{{State: domain.DepsFailed, Error: "the run ended: failure", RunID: 12,
+			Updates: []domain.DepUpdate{
+				{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Directory: "tools", Name: "golang.org/x/text", Version: "v0.21.0"}, Current: "v0.20.0", Kind: domain.DepMinor, New: true},
+				{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Name: "actions/checkout", Version: "v5"}, Current: "v4", Kind: domain.DepMajor},
+				{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "example.com/p", Version: "v1.0.1"}, Current: "v1.0.0", Kind: domain.DepPatch},
+			}}}}
 }
 
 func depsRun(number int64, status domain.CIStatus) *domain.CIRun {
@@ -173,7 +172,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 	}{
 		{
 			name:    "idle without a merge request",
-			mutate:  func(d *domain.RepoDeps) { d.State, d.Error, d.RunID = domain.DepsIdle, "", 0 },
+			mutate:  func(d *domain.RepoDeps) { d.Base().State, d.Base().Error, d.Base().RunID = domain.DepsIdle, "", 0 },
 			status:  InboxDepsStatus{},
 			primary: InboxDepsAction{Label: "Open MR", Action: base + "open"},
 			menu:    [2]string{base + "ignore", base + "snooze"},
@@ -181,8 +180,8 @@ func TestInboxDepsRowMapping(t *testing.T) {
 		{
 			name: "idle with a merge request that differs",
 			mutate: func(d *domain.RepoDeps) {
-				d.State, d.Error, d.RunID = domain.DepsIdle, "", 0
-				d.MR, d.MRVersions = 7, d.Refs()[:1]
+				d.Base().State, d.Base().Error, d.Base().RunID = domain.DepsIdle, "", 0
+				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()[:1]
 			},
 			status:  InboxDepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
 			primary: InboxDepsAction{Label: "Update MR", Action: base + "open"},
@@ -191,8 +190,8 @@ func TestInboxDepsRowMapping(t *testing.T) {
 		{
 			name: "idle with a merge request up to date",
 			mutate: func(d *domain.RepoDeps) {
-				d.State, d.Error = domain.DepsIdle, ""
-				d.MR, d.MRVersions = 7, d.Refs()
+				d.Base().State, d.Base().Error = domain.DepsIdle, ""
+				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()
 			},
 			run:     run(3, domain.CICompleted),
 			status:  InboxDepsStatus{MR: 7, MRHref: "/alpha/merge-requests/7"},
@@ -201,38 +200,38 @@ func TestInboxDepsRowMapping(t *testing.T) {
 		},
 		{
 			name:   "applying, run queued",
-			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
+			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CIQueued),
 			status: InboxDepsStatus{Kind: "queued", State: "queued", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name:   "applying, run held back by a concurrency group",
-			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
+			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CIPending),
 			status: InboxDepsStatus{Kind: "queued", State: "queued", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name:   "applying, the run is not readable",
-			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
+			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			status: InboxDepsStatus{Kind: "running", State: "applying"},
 		},
 		{
 			name:   "applying, the run ended and the record is not settled yet",
-			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
+			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CICompleted),
 			status: InboxDepsStatus{Kind: "running", State: "applying", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name:   "applying, run in progress",
-			mutate: func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsApplying, "" },
+			mutate: func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsApplying, "" },
 			run:    run(3, domain.CIInProgress),
 			status: InboxDepsStatus{Kind: "running", State: "running", Text: "run #3", Href: "/alpha/actions/runs/12"},
 		},
 		{
 			name: "applying with a merge request open keeps the link to it",
 			mutate: func(d *domain.RepoDeps) {
-				d.State, d.Error = domain.DepsApplying, ""
-				d.MR, d.MRVersions = 7, d.Refs()
+				d.Base().State, d.Base().Error = domain.DepsApplying, ""
+				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()
 			},
 			run:    run(3, domain.CIInProgress),
 			status: InboxDepsStatus{Kind: "running", State: "running", Text: "run #3", Href: "/alpha/actions/runs/12", MR: 7, MRHref: "/alpha/merge-requests/7"},
@@ -247,7 +246,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 		},
 		{
 			name:    "failed, the run is gone",
-			mutate:  func(d *domain.RepoDeps) { d.Error = "the run no longer exists" },
+			mutate:  func(d *domain.RepoDeps) { d.Base().Error = "the run no longer exists" },
 			status:  InboxDepsStatus{Kind: "failed", State: "failed", Title: "the run no longer exists"},
 			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
 			menu:    [2]string{base + "ignore", base + "snooze"},
@@ -255,7 +254,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 		{
 			name: "failed with a merge request that holds the versions still retries",
 			mutate: func(d *domain.RepoDeps) {
-				d.MR, d.MRVersions = 7, d.Refs()
+				d.Base().MR, d.Base().MRVersions = 7, d.Base().Refs()
 			},
 			status:  InboxDepsStatus{Kind: "failed", State: "failed", Title: "the run ended: failure", MR: 7, MRHref: "/alpha/merge-requests/7"},
 			primary: InboxDepsAction{Label: "Retry", Action: base + "open"},
@@ -429,7 +428,7 @@ func TestInboxDepsFailureExcerpt(t *testing.T) {
 		t.Run(reason, func(t *testing.T) {
 			svc := mocks.NewInboxService(t)
 			ov := depsOverview(t)
-			ov.Deps[0].Rec.Error = reason
+			ov.Deps[0].Rec.Base().Error = reason
 			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
 			srv := depsServer(t, svc, mocks.NewDepsService(t))
 			body := inboxGet(srv, "/-/inbox?tab=deps", true).Body.String()

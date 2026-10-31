@@ -37,8 +37,8 @@ func jobsRig(t *testing.T) (*bernardRig, *mocks.DepsRunner) {
 const jobsRunID = 31
 
 func applying(r *bernardRig) {
-	r.rec.State, r.rec.RunID = domain.DepsApplying, jobsRunID
-	r.rec.RunUpdates = []domain.DepUpdate{{DepRef: oneRef[0], Current: "v1.0.0", Kind: domain.DepMinor}}
+	r.rec.Base().State, r.rec.Base().RunID = domain.DepsApplying, jobsRunID
+	r.rec.Base().RunUpdates = []domain.DepUpdate{{DepRef: oneRef[0], Current: "v1.0.0", Kind: domain.DepMinor}}
 }
 
 var oneRef = []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Name: "x/y", Version: "v1.2.3"}}
@@ -77,10 +77,10 @@ func TestBernardDepsJobEndedFailsWithABoundedReason(t *testing.T) {
 			run, job := endedJob(r, c.conclusion, c.jobError)
 			r.b.DepsJobEnded(context.Background(), run, job, c.report)
 
-			assert.Equal(t, domain.DepsFailed, r.rec.State)
-			assert.Equal(t, c.want, r.rec.Error)
-			assert.EqualValues(t, jobsRunID, r.rec.RunID, "the record keeps the link to the run")
-			assert.Empty(t, r.rec.RunUpdates)
+			assert.Equal(t, domain.DepsFailed, r.rec.Base().State)
+			assert.Equal(t, c.want, r.rec.Base().Error)
+			assert.EqualValues(t, jobsRunID, r.rec.Base().RunID, "the record keeps the link to the run")
+			assert.Empty(t, r.rec.Base().RunUpdates)
 			assert.Equal(t, 1, r.changedCount(), "the Inbox is told")
 		})
 	}
@@ -92,9 +92,9 @@ func TestBernardDepsJobEndedFromASupersededRunWritesNothing(t *testing.T) {
 		name string
 		move func(*domain.RepoDeps)
 	}{
-		{"idle after the merge request was closed", func(d *domain.RepoDeps) { d.State = domain.DepsIdle }},
-		{"another run", func(d *domain.RepoDeps) { d.RunID = jobsRunID + 1 }},
-		{"failed already", func(d *domain.RepoDeps) { d.State, d.Error = domain.DepsFailed, "first" }},
+		{"idle after the merge request was closed", func(d *domain.RepoDeps) { d.Base().State = domain.DepsIdle }},
+		{"another run", func(d *domain.RepoDeps) { d.Base().RunID = jobsRunID + 1 }},
+		{"failed already", func(d *domain.RepoDeps) { d.Base().State, d.Base().Error = domain.DepsFailed, "first" }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -154,9 +154,9 @@ func TestBernardStartReconcilesApplyingRecords(t *testing.T) {
 				assert.Equal(t, before, r.rec)
 				return
 			}
-			assert.Equal(t, domain.DepsFailed, r.rec.State)
-			assert.Equal(t, c.want, r.rec.Error)
-			assert.EqualValues(t, jobsRunID, r.rec.RunID)
+			assert.Equal(t, domain.DepsFailed, r.rec.Base().State)
+			assert.Equal(t, c.want, r.rec.Base().Error)
+			assert.EqualValues(t, jobsRunID, r.rec.Base().RunID)
 		})
 	}
 }
@@ -164,15 +164,15 @@ func TestBernardStartReconcilesApplyingRecords(t *testing.T) {
 func TestBernardStartFailsAnApplyingRecordWithoutARun(t *testing.T) {
 	t.Parallel()
 	r, _ := jobsRig(t)
-	r.rec.State = domain.DepsApplying // a record of no run: GetDepsRun is not called
+	r.rec.Base().State = domain.DepsApplying // a record of no run: GetDepsRun is not called
 	r.store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{r.rec}, nil)
 	r.bus.EXPECT().Subscribe(mock.Anything).Return(make(<-chan domain.Event)).Maybe()
 	r.b.Start()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	r.b.Close(ctx)
-	assert.Equal(t, domain.DepsFailed, r.rec.State)
-	assert.Equal(t, "the run no longer exists", r.rec.Error)
+	assert.Equal(t, domain.DepsFailed, r.rec.Base().State)
+	assert.Equal(t, "the run no longer exists", r.rec.Base().Error)
 }
 
 // TestBernardScheduledCheckHasADeadline: each repository of a scheduled scan
@@ -223,9 +223,9 @@ func TestBernardScheduleReconcilesApplyingRecords(t *testing.T) {
 				assert.Equal(t, before, r.rec)
 				return
 			}
-			assert.Equal(t, domain.DepsFailed, r.rec.State)
-			assert.Equal(t, c.want, r.rec.Error)
-			assert.EqualValues(t, jobsRunID, r.rec.RunID)
+			assert.Equal(t, domain.DepsFailed, r.rec.Base().State)
+			assert.Equal(t, c.want, r.rec.Base().Error)
+			assert.EqualValues(t, jobsRunID, r.rec.Base().RunID)
 		})
 	}
 }

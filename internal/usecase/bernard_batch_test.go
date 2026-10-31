@@ -3,7 +3,9 @@
 package usecase
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -28,4 +30,66 @@ func TestBernardFindOpenMRUsesBatchBranch(t *testing.T) {
 			require.Equal(t, int64(4), got)
 		})
 	}
+}
+
+func TestBernardBatchFailureAndMRCloseAreIsolated(t *testing.T) {
+	for _, operation := range []string{"failed run", "closed MR"} {
+		t.Run(operation, func(t *testing.T) {
+			repo, err := domain.ParseRepoName("proj")
+			require.NoError(t, err)
+			u := domain.DepUpdate{DepRef: domain.DepRef{Name: "pkg", Version: "v2"}}
+			base := domain.DepBatch{Updates: []domain.DepUpdate{u}, MR: 2, State: domain.DepsApplying, RunID: 10}
+			rec := domain.RepoDeps{Repo: repo, Batches: []domain.DepBatch{base, {Key: "major", Updates: []domain.DepUpdate{u}, MR: 3, State: domain.DepsApplying, RunID: 11}}}
+			store := mocks.NewDepsStore(t)
+			bus := mocks.NewEventBus(t)
+			clock := mocks.NewClock(t)
+			clock.EXPECT().Now().Return(time.Time{}).Maybe()
+			bus.EXPECT().Publish(mock.Anything, mock.Anything).Return().Once()
+			store.EXPECT().Mutate(mock.Anything, repo, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.RepoName, fn func(*domain.RepoDeps) (bool, error)) (domain.RepoDeps, error) {
+				changed, err := fn(&rec)
+				require.True(t, changed)
+				return rec, err
+			}).Once()
+			b := Bernard{ctx: t.Context(), cfg: BernardConfig{Store: store, Bus: bus, Clock: clock}}
+			if operation == "failed run" {
+				b.failRun(t.Context(), repo, 11, "failed major")
+				require.Equal(t, domain.DepsFailed, rec.Batches[1].State)
+				require.Equal(t, "failed major", rec.Batches[1].Error)
+				require.Equal(t, int64(11), rec.Batches[1].RunID)
+			} else {
+				store.EXPECT().Get(mock.Anything, repo).Return(rec, nil).Once()
+				b.onMRDone(domain.MergeRequest{Repo: repo, Number: 3}, false)
+				require.Equal(t, int64(0), rec.Batches[1].MR)
+				require.Equal(t, domain.DepsIdle, rec.Batches[1].State)
+			}
+			require.Equal(t, base, rec.Batches[0])
+		})
+	}
+}
+
+func TestBernardBatchSelectors(t *testing.T) {
+	d := domain.RepoDeps{Batches: []domain.DepBatch{{MR: 1, RunID: 7}, {Key: "major", MR: 2, RunID: 8, State: domain.DepsApplying}}}
+	require.Nil(t, applyingBatch(&d, 7), "historical runs are not active")
+	require.Nil(t, applyingBatch(&d, 9))
+	require.Equal(t, &d.Batches[1], applyingBatch(&d, 8))
+	require.Nil(t, mrBatch(&d, 0))
+	require.Nil(t, mrBatch(&d, 3))
+	require.Equal(t, &d.Batches[1], mrBatch(&d, 2))
+}
+
+func TestBernardReconcilesEveryBatch(t *testing.T) {
+	repo, err := domain.ParseRepoName("proj")
+	require.NoError(t, err)
+	rec := domain.RepoDeps{Repo: repo, Batches: []domain.DepBatch{{MR: 2, State: domain.DepsApplying, RunID: 10}, {Key: "major", MR: 3, State: domain.DepsApplying, RunID: 11}}}
+	store := mocks.NewDepsStore(t)
+	mrs := mocks.NewMergeRequestStore(t)
+	runs := mocks.NewDepsRunner(t)
+	store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{rec}, nil).Twice()
+	for _, batch := range rec.Batches {
+		mrs.EXPECT().Get(mock.Anything, repo, batch.MR).Return(domain.MergeRequest{Repo: repo, Number: batch.MR, State: domain.MRStateOpen}, nil).Once()
+		runs.EXPECT().GetDepsRun(mock.Anything, repo, batch.RunID).Return(domain.CIRun{ID: batch.RunID, Status: domain.CIInProgress}, nil).Once()
+	}
+	b := Bernard{ctx: t.Context(), cfg: BernardConfig{Store: store, MRStore: mrs, Runs: runs}}
+	b.reconcileMergeRequests()
+	b.reconcileRuns(t.Context(), 0)
 }

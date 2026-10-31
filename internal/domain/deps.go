@@ -104,26 +104,25 @@ const (
 
 // RepoDeps holds Bernard's repository record, apart from ignores and first-seen.
 type RepoDeps struct {
-	Batches      []DepBatch
 	Repo         RepoName
-	Updates      []DepUpdate // sorted by ecosystem, directory, name
+	Batches      []DepBatch
 	CheckedAt    time.Time
-	SnoozedUntil time.Time // zero means not snoozed
-	State        DepsState
-	Error        string // short failure reason, one line; the log is on the run
-	// RunID is the CI run applying the updates, or the last one that tried
-	// (kept after a failure or a success, so that the record links to its log);
-	// zero means none. The next run overwrites it.
-	RunID int64
-	// RunUpdates is the snapshot of every pending update when the run started,
-	// what the run commits: the daily check rewrites Updates meanwhile.
-	RunUpdates []DepUpdate
-	MR         int64 // open Bernard merge request; zero means none
-	MRVersions []DepRef
+	SnoozedUntil time.Time
 }
 
-// Refs returns the proposed versions in update order, independently of Updates.
-func (d RepoDeps) Refs() []DepRef {
+// Base returns the base batch, installing it first when absent.
+func (d *RepoDeps) Base() *DepBatch {
+	for i := range d.Batches {
+		if d.Batches[i].Key == "" {
+			return &d.Batches[i]
+		}
+	}
+	d.Batches = append([]DepBatch{{}}, d.Batches...)
+	return &d.Batches[0]
+}
+
+// Refs returns the proposed versions in update order.
+func (d DepBatch) Refs() []DepRef {
 	refs := make([]DepRef, len(d.Updates))
 	for i, u := range d.Updates {
 		refs[i] = u.DepRef

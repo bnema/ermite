@@ -133,7 +133,9 @@ func TestInboxDepsSkipsSnoozedArchivedAndEmpty(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
-	rec := func(repo string) domain.RepoDeps { return domain.RepoDeps{Repo: name(t, repo), Updates: upd} }
+	rec := func(repo string) domain.RepoDeps {
+		return domain.RepoDeps{Repo: name(t, repo), Batches: []domain.DepBatch{{Updates: upd}}}
+	}
 	snoozed, expired, empty := rec("snoozed"), rec("expired"), domain.RepoDeps{Repo: name(t, "empty")}
 	snoozed.SnoozedUntil = now.Add(time.Hour)
 	expired.SnoozedUntil = now.Add(-time.Hour)
@@ -164,9 +166,9 @@ func TestInboxDepsJoinsTheRun(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
 	older, newer := now.Add(-48*time.Hour), now.Add(-time.Hour)
-	withRun := domain.RepoDeps{Repo: name(t, "alpha"), Updates: upd, State: domain.DepsApplying, RunID: 5, CheckedAt: older}
-	gone := domain.RepoDeps{Repo: name(t, "beta"), Updates: append(upd, upd...), State: domain.DepsFailed, RunID: 9, CheckedAt: newer}
-	none := domain.RepoDeps{Repo: name(t, "gamma"), Updates: upd, CheckedAt: older}
+	withRun := domain.RepoDeps{Repo: name(t, "alpha"), CheckedAt: older, Batches: []domain.DepBatch{{Updates: upd, State: domain.DepsApplying, RunID: 5}}}
+	gone := domain.RepoDeps{Repo: name(t, "beta"), CheckedAt: newer, Batches: []domain.DepBatch{{Updates: append(upd, upd...), State: domain.DepsFailed, RunID: 9}}}
+	none := domain.RepoDeps{Repo: name(t, "gamma"), CheckedAt: older, Batches: []domain.DepBatch{{Updates: upd}}}
 
 	mrs, is, meta, store, clock, ci := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t), mocks.NewCIStore(t)
 	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Deps: store, Clock: clock, CI: ci})
@@ -198,7 +200,7 @@ func TestInboxDepsKeepsTheRowWhenTheRunCannotBeRead(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
-	rec := domain.RepoDeps{Repo: name(t, "alpha"), Updates: upd, State: domain.DepsApplying, RunID: 5}
+	rec := domain.RepoDeps{Repo: name(t, "alpha"), Batches: []domain.DepBatch{{Updates: upd, State: domain.DepsApplying, RunID: 5}}}
 
 	mrs, is, meta, store, clock, ci := mocks.NewMergeRequestStore(t), mocks.NewIssueStore(t), mocks.NewRepoMetaStore(t), mocks.NewDepsStore(t), mocks.NewClock(t), mocks.NewCIStore(t)
 	in := usecase.NewInbox(usecase.InboxConfig{Meta: meta, MergeRequests: mrs, Issues: is, Deps: store, Clock: clock, CI: ci})

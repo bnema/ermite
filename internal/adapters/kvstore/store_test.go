@@ -484,24 +484,24 @@ func TestSchema12UpgradesDepsRecords(t *testing.T) {
 				for repo, w := range want {
 					got, err := s.Deps().Get(ctx, name(t, repo))
 					require.NoError(t, err)
-					assert.Equal(t, w.state, got.State, repo)
+					assert.Equal(t, w.state, got.Base().State, repo)
 					wantErr := w.err
 					if from == 11 && repo == "failed" {
 						wantErr = "the runner reported failure\nline two\nline three"
 					}
-					assert.Equal(t, wantErr, got.Error, repo)
-					assert.Equal(t, w.mr, got.MR, repo)
+					assert.Equal(t, wantErr, got.Base().Error, repo)
+					assert.Equal(t, w.mr, got.Base().MR, repo)
 					if repo == "applying" {
-						assert.Equal(t, int64(17), got.RunID)
-						require.Len(t, got.RunUpdates, 1)
+						assert.Equal(t, int64(17), got.Base().RunID)
+						require.Len(t, got.Base().RunUpdates, 1)
 					} else {
-						assert.Zero(t, got.RunID, repo)
+						assert.Zero(t, got.Base().RunID, repo)
 					}
 					require.Len(t, got.Batches, 1)
 					assert.Empty(t, got.Batches[0].Key)
 					if repo == "idle" {
-						require.Len(t, got.Updates, 1)
-						require.Len(t, got.MRVersions, 1)
+						require.Len(t, got.Base().Updates, 1)
+						require.Len(t, got.Base().MRVersions, 1)
 					}
 				}
 				require.NoError(t, s.Close(ctx))

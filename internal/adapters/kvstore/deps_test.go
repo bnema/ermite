@@ -15,23 +15,22 @@ import (
 
 func fullDeps(n domain.RepoName) domain.RepoDeps {
 	return domain.RepoDeps{
-		Repo: n,
-		Updates: []domain.DepUpdate{
-			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Directory: "", Name: "golang.org/x/mod", Version: "v0.2.0"}, Current: "v0.1.0", Kind: domain.DepMinor, New: true},
-			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"}, Current: "v4", Kind: domain.DepMajor},
-		},
+		Repo:         n,
 		CheckedAt:    created,
-		SnoozedUntil: created.Add(time.Hour),
-		State:        domain.DepsFailed,
-		Error:        "boom",
-		RunID:        7,
-		RunUpdates: []domain.DepUpdate{
-			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "golang.org/x/mod", Version: "v0.2.0"}, Current: "v0.1.0", Kind: domain.DepMinor},
-			{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"}, Current: "v4", Kind: domain.DepMajor, New: true},
-		},
-		MR:         42,
-		MRVersions: []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Name: "a/b", Version: "v1.0.1"}},
-	}
+		SnoozedUntil: created.Add(time.Hour), Batches: []domain.DepBatch{{
+			Updates: []domain.DepUpdate{
+				{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Directory: "", Name: "golang.org/x/mod", Version: "v0.2.0"}, Current: "v0.1.0", Kind: domain.DepMinor, New: true},
+				{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"}, Current: "v4", Kind: domain.DepMajor},
+			},
+			State: domain.DepsFailed,
+			Error: "boom",
+			RunID: 7,
+			RunUpdates: []domain.DepUpdate{
+				{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "golang.org/x/mod", Version: "v0.2.0"}, Current: "v0.1.0", Kind: domain.DepMinor},
+				{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"}, Current: "v4", Kind: domain.DepMajor, New: true},
+			},
+			MR:         42,
+			MRVersions: []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Name: "a/b", Version: "v1.0.1"}}}}}
 }
 
 func TestDepsRoundTripAndAbsent(t *testing.T) {
@@ -40,14 +39,14 @@ func TestDepsRoundTripAndAbsent(t *testing.T) {
 	n := name(t, "proj")
 	got, err := d.Get(ctx, n)
 	require.NoError(t, err)
-	require.Equal(t, domain.RepoDeps{Repo: n}, got)
+	require.Equal(t, domain.RepoDeps{Repo: n, Batches: []domain.DepBatch{{}}}, got)
 
 	want := fullDeps(n)
 	_, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { *r = want; return true, nil })
 	require.NoError(t, err)
 	got, err = d.Get(ctx, n)
 	require.NoError(t, err)
-	want.Batches = []domain.DepBatch{{Updates: want.Updates, State: want.State, Error: want.Error, RunID: want.RunID, RunUpdates: want.RunUpdates, MR: want.MR, MRVersions: want.MRVersions}}
+	want.Batches = []domain.DepBatch{{Updates: want.Base().Updates, State: want.Base().State, Error: want.Base().Error, RunID: want.Base().RunID, RunUpdates: want.Base().RunUpdates, MR: want.Base().MR, MRVersions: want.Base().MRVersions}}
 	require.Equal(t, want, got)
 }
 
@@ -55,7 +54,7 @@ func TestDepsListOrder(t *testing.T) {
 	ctx := t.Context()
 	d := openStore(t, t.TempDir()).Deps()
 	for _, s := range []string{"zeta", "alpha", "mid"} {
-		_, err := d.Mutate(ctx, name(t, s), func(r *domain.RepoDeps) (bool, error) { r.MR = 1; return true, nil })
+		_, err := d.Mutate(ctx, name(t, s), func(r *domain.RepoDeps) (bool, error) { r.Base().MR = 1; return true, nil })
 		require.NoError(t, err)
 	}
 	list, err := d.List(ctx)
@@ -72,24 +71,24 @@ func TestDepsMutate(t *testing.T) {
 	n := name(t, "proj")
 
 	got, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) {
-		require.Equal(t, domain.RepoDeps{Repo: n}, *r)
+		require.Equal(t, domain.RepoDeps{Repo: n, Batches: []domain.DepBatch{{}}}, *r)
 		return false, nil
 	})
 	require.NoError(t, err)
-	require.Equal(t, domain.RepoDeps{Repo: n}, got)
+	require.Equal(t, domain.RepoDeps{Repo: n, Batches: []domain.DepBatch{{}}}, got)
 	list, err := d.List(ctx)
 	require.NoError(t, err)
 	require.Empty(t, list, "changed=false must not create")
 
-	got, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.MR = 7; return true, nil })
+	got, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.Base().MR = 7; return true, nil })
 	require.NoError(t, err)
-	require.EqualValues(t, 7, got.MR)
-	got, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.MR = 8; return false, nil })
+	require.EqualValues(t, 7, got.Base().MR)
+	got, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.Base().MR = 8; return false, nil })
 	require.NoError(t, err)
-	require.EqualValues(t, 7, got.MR)
+	require.EqualValues(t, 7, got.Base().MR)
 	got, err = d.Get(ctx, n)
 	require.NoError(t, err)
-	require.EqualValues(t, 7, got.MR)
+	require.EqualValues(t, 7, got.Base().MR)
 
 	boom := errors.New("boom")
 	_, err = d.Mutate(ctx, n, func(*domain.RepoDeps) (bool, error) { return true, boom })
@@ -104,16 +103,16 @@ func TestDepsMutateInterleavedRetries(t *testing.T) {
 	got, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) {
 		calls++
 		if calls == 1 { // a concurrent create commits after our read of the absent record
-			_, err := d.Mutate(ctx, n, func(c *domain.RepoDeps) (bool, error) { c.MR = 5; return true, nil })
+			_, err := d.Mutate(ctx, n, func(c *domain.RepoDeps) (bool, error) { c.Base().MR = 5; return true, nil })
 			require.NoError(t, err)
 		}
-		r.RunID = 11
+		r.Base().RunID = 11
 		return true, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, 2, calls)
-	require.EqualValues(t, 5, got.MR, "retry saw the winner's write")
-	require.EqualValues(t, 11, got.RunID)
+	require.EqualValues(t, 5, got.Base().MR, "retry saw the winner's write")
+	require.EqualValues(t, 11, got.Base().RunID)
 }
 
 func TestDepsMutateConcurrent(t *testing.T) {
@@ -124,7 +123,7 @@ func TestDepsMutateConcurrent(t *testing.T) {
 	const workers = 4
 	for range workers {
 		wg.Go(func() {
-			_, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.MR++; return true, nil })
+			_, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.Base().MR++; return true, nil })
 			if err != nil {
 				require.ErrorIs(t, err, domain.ErrConflict)
 			}
@@ -133,7 +132,7 @@ func TestDepsMutateConcurrent(t *testing.T) {
 	wg.Wait()
 	got, err := d.Get(ctx, n)
 	require.NoError(t, err)
-	require.Positive(t, got.MR)
+	require.Positive(t, got.Base().MR)
 }
 
 func TestDepsIgnore(t *testing.T) {
@@ -217,7 +216,7 @@ func TestDepsDeletedWithRepository(t *testing.T) {
 	ref := domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "a/b", Version: "v1.0.0"}
 	for _, r := range []domain.RepoName{n, keep} {
 		require.NoError(t, s.Create(ctx, domain.Repo{Name: r, Visibility: domain.VisibilityPrivate, CreatedAt: created}))
-		_, err := d.Mutate(ctx, r, func(x *domain.RepoDeps) (bool, error) { x.MR = 3; return true, nil })
+		_, err := d.Mutate(ctx, r, func(x *domain.RepoDeps) (bool, error) { x.Base().MR = 3; return true, nil })
 		require.NoError(t, err)
 		require.NoError(t, d.Ignore(ctx, r, []domain.DepRef{ref}))
 	}
@@ -228,13 +227,13 @@ func TestDepsDeletedWithRepository(t *testing.T) {
 
 	got, err := d.Get(ctx, n)
 	require.NoError(t, err)
-	require.Equal(t, domain.RepoDeps{Repo: n}, got)
+	require.Equal(t, domain.RepoDeps{Repo: n, Batches: []domain.DepBatch{{}}}, got)
 	ok, err := d.IsIgnored(ctx, n, ref)
 	require.NoError(t, err)
 	require.False(t, ok)
 	got, err = d.Get(ctx, keep)
 	require.NoError(t, err)
-	require.EqualValues(t, 3, got.MR)
+	require.EqualValues(t, 3, got.Base().MR)
 	ok, err = d.IsIgnored(ctx, keep, ref)
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -243,7 +242,7 @@ func TestDepsDeletedWithRepository(t *testing.T) {
 	require.True(t, seen.Equal(again), "dseen survives repository deletion")
 }
 
-func TestDepsBatchRoundTripAndLegacyMutations(t *testing.T) {
+func TestDepsBatchRoundTripAndMutations(t *testing.T) {
 	ctx := t.Context()
 	d := openStore(t, t.TempDir()).Deps()
 	n := name(t, "batches")
@@ -253,15 +252,14 @@ func TestDepsBatchRoundTripAndLegacyMutations(t *testing.T) {
 	got, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.Batches = []domain.DepBatch{base, major}; return true, nil })
 	require.NoError(t, err)
 	require.Equal(t, []domain.DepBatch{base, major}, got.Batches)
-	require.Equal(t, base.Updates, got.Updates)
-	require.Equal(t, base.MRVersions, got.MRVersions)
+	require.Equal(t, base.Updates, got.Base().Updates)
+	require.Equal(t, base.MRVersions, got.Base().MRVersions)
 	got, err = d.Get(ctx, n)
 	require.NoError(t, err)
 	require.Equal(t, []domain.DepBatch{base, major}, got.Batches)
-	// Existing usecases only change legacy fields. Clearing them must clear the
-	// stored base too, without disturbing a major batch.
+	// Clearing the base must not disturb a major batch.
 	got, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) {
-		r.Updates, r.State, r.Error, r.RunID, r.RunUpdates, r.MR, r.MRVersions = nil, domain.DepsIdle, "", 0, nil, 0, nil
+		r.Base().Updates, r.Base().State, r.Base().Error, r.Base().RunID, r.Base().RunUpdates, r.Base().MR, r.Base().MRVersions = nil, domain.DepsIdle, "", 0, nil, 0, nil
 		return true, nil
 	})
 	require.NoError(t, err)
@@ -270,5 +268,5 @@ func TestDepsBatchRoundTripAndLegacyMutations(t *testing.T) {
 	got, err = d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.Batches[0] = base; return true, nil })
 	require.NoError(t, err)
 	require.Equal(t, []domain.DepBatch{base, major}, got.Batches)
-	require.Equal(t, base.MR, got.MR)
+	require.Equal(t, base.MR, got.Base().MR)
 }

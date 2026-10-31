@@ -136,20 +136,20 @@ func TestBernardCheckStoresPendingAndMarksNew(t *testing.T) {
 	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
 	r.reg.EXPECT().Malicious(mock.Anything, domain.EcosystemGoMod, mock.Anything, mock.Anything).Return(false, nil)
 	// a/mod was already pending, b/mod is new.
-	r.rec = domain.RepoDeps{Repo: r.repo, State: domain.DepsFailed, MR: 3, Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.20.0", Kind: domain.DepPatch}}}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{State: domain.DepsFailed, MR: 3, Updates: []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.20.0", Kind: domain.DepPatch}}}}}
 	r.bus.EXPECT().Publish(mock.Anything, domain.DependencyUpdatesFound{Repo: r.repo, Count: 1, At: r.at}).Once()
 
 	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err)
-	require.Len(t, got.Updates, 2)
-	assert.Equal(t, "a/mod", got.Updates[0].Name)
-	assert.False(t, got.Updates[0].New)
-	assert.Equal(t, "b/mod", got.Updates[1].Name)
-	assert.True(t, got.Updates[1].New)
-	assert.Equal(t, domain.DepMinor, got.Updates[1].Kind)
+	require.Len(t, got.Base().Updates, 2)
+	assert.Equal(t, "a/mod", got.Base().Updates[0].Name)
+	assert.False(t, got.Base().Updates[0].New)
+	assert.Equal(t, "b/mod", got.Base().Updates[1].Name)
+	assert.True(t, got.Base().Updates[1].New)
+	assert.Equal(t, domain.DepMinor, got.Base().Updates[1].Kind)
 	assert.Equal(t, r.at, got.CheckedAt)
-	assert.Equal(t, domain.DepsFailed, got.State, "the check touches only updates and checked-at")
-	assert.EqualValues(t, 3, got.MR)
+	assert.Equal(t, domain.DepsFailed, got.Base().State, "the check touches only updates and checked-at")
+	assert.EqualValues(t, 3, got.Base().MR)
 }
 
 func TestBernardCheckNoNewDoesNotPublish(t *testing.T) {
@@ -158,7 +158,7 @@ func TestBernardCheckNoNewDoesNotPublish(t *testing.T) {
 	r.cands = []domain.DepCandidate{goCand("a/mod", r.old("v0.20.1"))}
 	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
 	r.reg.EXPECT().Malicious(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
-	r.rec.Updates = []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1")}}
+	r.rec.Base().Updates = []domain.DepUpdate{{DepRef: depRef("a/mod", "v0.20.1")}}
 	_, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err) // the bus mock fails the test on an unexpected Publish
 }
@@ -168,7 +168,7 @@ func TestBernardCheckSkipsArchived(t *testing.T) {
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo, Archived: true}, nil)
 	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err)
-	assert.Empty(t, got.Updates)
+	assert.Empty(t, got.Base().Updates)
 }
 
 func TestBernardCheckEmptyRepository(t *testing.T) {
@@ -177,7 +177,7 @@ func TestBernardCheckEmptyRepository(t *testing.T) {
 	r.reader.EXPECT().ResolveRevision(mock.Anything, r.repo, domain.Revision{}).Return(domain.ResolvedRevision{}, domain.ErrNotFound)
 	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err)
-	assert.Empty(t, got.Updates)
+	assert.Empty(t, got.Base().Updates)
 	assert.Equal(t, r.at, got.CheckedAt)
 }
 
@@ -192,8 +192,8 @@ func TestBernardOSVErrorAndMaliciousSkip(t *testing.T) {
 	r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Once()
 	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err)
-	require.Len(t, got.Updates, 1)
-	assert.Equal(t, "ok/mod", got.Updates[0].Name)
+	require.Len(t, got.Base().Updates, 1)
+	assert.Equal(t, "ok/mod", got.Base().Updates[0].Name)
 }
 
 func TestBernardCooldownAndIgnored(t *testing.T) {
@@ -211,8 +211,8 @@ func TestBernardCooldownAndIgnored(t *testing.T) {
 	r.bus.EXPECT().Publish(mock.Anything, mock.Anything).Once()
 	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err)
-	require.Len(t, got.Updates, 1)
-	assert.Equal(t, depRef("mix/mod", "v0.21.0"), got.Updates[0].DepRef)
+	require.Len(t, got.Base().Updates, 1)
+	assert.Equal(t, depRef("mix/mod", "v0.21.0"), got.Base().Updates[0].DepRef)
 }
 
 func TestBernardProposesOnlyVersionsFittingTheGoDirective(t *testing.T) {
@@ -256,11 +256,11 @@ func TestBernardProposesOnlyVersionsFittingTheGoDirective(t *testing.T) {
 				assert.Len(t, r.goCalls, tc.calls)
 			}
 			if tc.want == "" {
-				assert.Empty(t, got.Updates)
+				assert.Empty(t, got.Base().Updates)
 				return
 			}
-			require.Len(t, got.Updates, 1)
-			assert.Equal(t, depRef("x/mod", tc.want), got.Updates[0].DepRef)
+			require.Len(t, got.Base().Updates, 1)
+			assert.Equal(t, depRef("x/mod", tc.want), got.Base().Updates[0].DepRef)
 		})
 	}
 }
@@ -288,7 +288,7 @@ func TestBernardCallbackErrorFailsCheck(t *testing.T) {
 	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, errors.New("disk"))
 	_, err := r.b.Check(context.Background(), domain.Owner(), r.repo)
 	require.Error(t, err)
-	assert.Empty(t, r.rec.Updates)
+	assert.Empty(t, r.rec.Base().Updates)
 }
 
 func TestBernardScheduleRunsOncePerDueMinute(t *testing.T) {
@@ -309,7 +309,7 @@ func TestBernardScheduleRunsOncePerDueMinute(t *testing.T) {
 	r.at = r.at.Add(20 * time.Second) // same minute
 	r.b.ScheduleNow(context.Background())
 	assert.Equal(t, 1, r.regs)
-	require.Len(t, r.rec.Updates, 1)
+	require.Len(t, r.rec.Base().Updates, 1)
 }
 
 func TestBernardOwnerOnly(t *testing.T) {
@@ -338,8 +338,8 @@ func TestBernardOpenUnavailable(t *testing.T) {
 func TestBernardList(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	other := name(t, "other")
-	withUp := domain.RepoDeps{Repo: r.repo, Updates: []domain.DepUpdate{{DepRef: depRef("a", "v1.0.1")}}}
-	r.store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{withUp, {Repo: other}, {Repo: name(t, "z"), Updates: withUp.Updates}}, nil)
+	withUp := domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{{DepRef: depRef("a", "v1.0.1")}}}}}
+	r.store.EXPECT().List(mock.Anything).Return([]domain.RepoDeps{withUp, {Repo: other}, {Repo: name(t, "z"), Batches: withUp.Batches}}, nil)
 	all, err := r.b.List(context.Background(), domain.Owner(), domain.RepoName{})
 	require.NoError(t, err)
 	assert.Len(t, all, 2)
@@ -351,27 +351,27 @@ func TestBernardList(t *testing.T) {
 func TestBernardIgnore(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
-	r.rec.Updates = []domain.DepUpdate{{DepRef: depRef("a", "v1.0.1")}, {DepRef: depRef("b", "v2.0.1")}}
+	r.rec.Base().Updates = []domain.DepUpdate{{DepRef: depRef("a", "v1.0.1")}, {DepRef: depRef("b", "v2.0.1")}}
 	ctx := context.Background()
 
 	_, err := r.b.Ignore(ctx, domain.Owner(), r.repo, []domain.DepRef{depRef("a", "v1.0.0")})
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed, "expected mismatch")
 
-	r.rec.State = domain.DepsApplying
-	_, err = r.b.Ignore(ctx, domain.Owner(), r.repo, r.rec.Refs())
+	r.rec.Base().State = domain.DepsApplying
+	_, err = r.b.Ignore(ctx, domain.Owner(), r.repo, r.rec.Base().Refs())
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed, "applying")
 
-	r.rec.State = domain.DepsIdle
+	r.rec.Base().State = domain.DepsIdle
 	r.store.EXPECT().Ignore(mock.Anything, r.repo, []domain.DepRef{depRef("b", "v2.0.1"), depRef("a", "v1.0.1")}).Return(nil).Once()
 	got, err := r.b.Ignore(ctx, domain.Owner(), r.repo, []domain.DepRef{depRef("b", "v2.0.1"), depRef("a", "v1.0.1")})
 	require.NoError(t, err)
-	assert.Empty(t, got.Updates)
+	assert.Empty(t, got.Base().Updates)
 }
 
 func TestBernardSnooze(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
-	r.rec.State = domain.DepsApplying // works in any state
+	r.rec.Base().State = domain.DepsApplying // works in any state
 	got, err := r.b.Snooze(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err)
 	assert.Equal(t, r.at.Add(7*24*time.Hour), got.SnoozedUntil)
@@ -400,7 +400,7 @@ func TestBernardIgnoreWaitsForTheRepositoryLock(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil).Maybe()
 	ref := depRef("a/mod", "v0.20.1")
-	r.rec.Updates = []domain.DepUpdate{{DepRef: ref}}
+	r.rec.Base().Updates = []domain.DepUpdate{{DepRef: ref}}
 
 	holding, release := make(chan struct{}), make(chan struct{})
 	locked := make(chan struct{})
@@ -408,7 +408,7 @@ func TestBernardIgnoreWaitsForTheRepositoryLock(t *testing.T) {
 		r.b.UnderRepoLock(r.repo, func() {
 			close(holding)
 			<-release
-			r.rec.State, r.rec.RunID = domain.DepsApplying, 5 // Open won
+			r.rec.Base().State, r.rec.Base().RunID = domain.DepsApplying, 5 // Open won
 		})
 		close(locked)
 	}()
@@ -443,7 +443,7 @@ func TestBernardCheckWaitsForTheRepositoryLock(t *testing.T) {
 		r.b.UnderRepoLock(r.repo, func() {
 			close(holding)
 			<-release
-			r.rec.MR = 11 // the holder's transition
+			r.rec.Base().MR = 11 // the holder's transition
 		})
 		close(locked)
 	}()
@@ -464,15 +464,15 @@ func TestBernardCheckWaitsForTheRepositoryLock(t *testing.T) {
 	close(release)
 	<-locked
 	got := <-done
-	assert.EqualValues(t, 11, got.MR, "installed on top of the holder's transition")
-	assert.Len(t, got.Updates, 1)
+	assert.EqualValues(t, 11, got.Base().MR, "installed on top of the holder's transition")
+	assert.Len(t, got.Base().Updates, 1)
 }
 
 func TestBernardSnoozeAndIgnorePublishTheChange(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil).Maybe()
 	ref := depRef("a/mod", "v0.20.1")
-	r.rec.Updates = []domain.DepUpdate{{DepRef: ref}}
+	r.rec.Base().Updates = []domain.DepUpdate{{DepRef: ref}}
 	r.store.EXPECT().Ignore(mock.Anything, r.repo, []domain.DepRef{ref}).Return(nil)
 
 	_, err := r.b.Snooze(context.Background(), domain.Owner(), r.repo)

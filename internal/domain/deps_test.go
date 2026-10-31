@@ -128,11 +128,11 @@ func TestGoDirectiveFits(t *testing.T) {
 func TestDependencyRefs(t *testing.T) {
 	a := DepRef{Ecosystem: EcosystemGoMod, Name: "module", Version: "v1.1.0"}
 	b := DepRef{Ecosystem: EcosystemActions, Directory: "workflow.yml", Name: "owner/action", Version: "v5"}
-	d := RepoDeps{Updates: []DepUpdate{{DepRef: a}, {DepRef: b}}}
-	refs := d.Refs()
+	d := RepoDeps{Batches: []DepBatch{{Updates: []DepUpdate{{DepRef: a}, {DepRef: b}}}}}
+	refs := d.Base().Refs()
 	assert.Equal(t, []DepRef{a, b}, refs)
 	refs[0] = b
-	assert.Equal(t, a, d.Updates[0].DepRef)
+	assert.Equal(t, a, d.Base().Updates[0].DepRef)
 	assert.True(t, SameRefs([]DepRef{a, b}, []DepRef{b, a}))
 	assert.True(t, SameRefs(nil, []DepRef{}))
 	assert.False(t, SameRefs([]DepRef{a}, nil))
@@ -185,7 +185,6 @@ func TestBatchLookupAndPending(t *testing.T) {
 		found, pending bool
 	}{
 		{"empty", RepoDeps{}, "", -1, false, false},
-		{"legacy ignored", RepoDeps{Updates: []DepUpdate{u}}, "", -1, false, false},
 		{"base", RepoDeps{Batches: []DepBatch{{}}}, "", 0, true, false},
 		{"major", RepoDeps{Batches: []DepBatch{{}, {Key: "major", Updates: []DepUpdate{u}}}}, "major", 1, true, true},
 		{"missing", RepoDeps{Batches: []DepBatch{{Updates: []DepUpdate{u}}}}, "missing", -1, false, true},
@@ -285,5 +284,23 @@ func TestSplitBatches(t *testing.T) {
 			assert.Equal(t, tc.majors, majors)
 			assert.Equal(t, before, tc.input)
 		})
+	}
+}
+
+func TestRepoDepsBase(t *testing.T) {
+	for _, initial := range [][]DepBatch{nil, {{Key: "major"}}, {{}, {Key: "major"}}} {
+		d := RepoDeps{Batches: initial}
+		base := d.Base()
+		require.Empty(t, base.Key)
+		base.MR = 7
+		require.Equal(t, int64(7), d.Base().MR)
+		require.Equal(t, base, d.Base())
+		count := 0
+		for _, b := range d.Batches {
+			if b.Key == "" {
+				count++
+			}
+		}
+		require.Equal(t, 1, count)
 	}
 }

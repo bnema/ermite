@@ -505,7 +505,7 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 		}
 		now := in.clock.Now()
 		for _, d := range all {
-			if len(d.Updates) == 0 || d.SnoozedUntil.After(now) {
+			if len(d.Base().Updates) == 0 || d.SnoozedUntil.After(now) {
 				continue
 			}
 			repo, err := lookupRepo(ctx, in.meta, d.Repo)
@@ -524,15 +524,15 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 				out.DepsCheckedAt = d.CheckedAt
 			}
 			item := ports.InboxDeps{Rec: d}
-			if d.RunID != 0 && in.ci != nil {
-				run, err := in.ci.GetRun(ctx, d.Repo, d.RunID)
+			if d.Base().RunID != 0 && in.ci != nil {
+				run, err := in.ci.GetRun(ctx, d.Repo, d.Base().RunID)
 				switch {
 				case err == nil:
 					item.Run = &run
 				case !errors.Is(err, domain.ErrNotFound):
 					// The row still tells the state of the record: a run that
 					// cannot be read must not hide the Inbox.
-					ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", d.RunID).Msg("inbox: read the run of a dependency record")
+					ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", d.Base().RunID).Msg("inbox: read the run of a dependency record")
 				}
 			}
 			out.Deps = append(out.Deps, item)

@@ -22,12 +22,11 @@ func TestRepoDepsToPB(t *testing.T) {
 	require.NoError(t, err)
 	at := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	got := repoDepsToPB(domain.RepoDeps{
-		Repo: repo, CheckedAt: at, State: domain.DepsFailed, Error: "boom", MR: 7, RunID: 12,
-		Updates: []domain.DepUpdate{{
-			DepRef:  domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"},
-			Current: "v4", Kind: domain.DepMajor, New: true,
-		}},
-	})
+		Repo: repo, CheckedAt: at, Batches: []domain.DepBatch{{State: domain.DepsFailed, Error: "boom", MR: 7, RunID: 12,
+			Updates: []domain.DepUpdate{{
+				DepRef:  domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: ".github/workflows/ci.yml", Name: "actions/checkout", Version: "v5"},
+				Current: "v4", Kind: domain.DepMajor, New: true,
+			}}}}})
 	assert.Equal(t, "app", got.Repo)
 	assert.Equal(t, pb.RepoDependencyUpdates_STATE_FAILED, got.State)
 	assert.Equal(t, "boom", got.Error)

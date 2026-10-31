@@ -72,11 +72,12 @@ func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64
 	wrote := false
 	_, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), repo, func(d *domain.RepoDeps) (bool, error) {
 		wrote = false
-		if d.State != domain.DepsApplying || d.RunID != runID {
+		batch := applyingBatch(d, runID)
+		if batch == nil {
 			return false, nil // the record left this run: the owner closed the merge request, say
 		}
 		wrote = true
-		d.Repo, d.State, d.Error, d.RunUpdates = repo, domain.DepsFailed, keepDepsError(reason), nil
+		batch.State, batch.Error, batch.RunUpdates = domain.DepsFailed, keepDepsError(reason), nil
 		return true, nil
 	})
 	if err != nil {
@@ -104,25 +105,27 @@ func (b *Bernard) reconcileRuns(ctx context.Context, grace time.Duration) {
 		return
 	}
 	for _, r := range recs {
-		if r.State != domain.DepsApplying {
-			continue
-		}
-		if b.cfg.Runs == nil || r.RunID == 0 {
-			b.failRun(ctx, r.Repo, r.RunID, "the run no longer exists")
-			continue
-		}
-		run, err := b.cfg.Runs.GetDepsRun(ctx, r.Repo, r.RunID)
-		switch {
-		case errors.Is(err, domain.ErrNotFound):
-			b.failRun(ctx, r.Repo, r.RunID, "the run no longer exists")
-		case err != nil:
-			ctxLog(ctx).Error().Err(err).Str("repo", r.Repo.String()).Int64("run_id", r.RunID).Msg("bernard: read the run to reconcile")
-		case run.Status == domain.CICompleted && b.cfg.Clock.Now().Sub(run.CompletedAt) < grace:
-			// The observer is probably applying it.
-		case run.Status == domain.CICompleted && run.Conclusion == domain.CISuccess:
-			b.failRun(ctx, r.Repo, r.RunID, "the result of the run was not applied")
-		case run.Status == domain.CICompleted:
-			b.failRun(ctx, r.Repo, r.RunID, fmt.Sprintf("the run ended: %s", run.Conclusion))
+		for _, batch := range r.Batches {
+			if batch.State != domain.DepsApplying {
+				continue
+			}
+			if b.cfg.Runs == nil || batch.RunID == 0 {
+				b.failRun(ctx, r.Repo, batch.RunID, "the run no longer exists")
+				continue
+			}
+			run, err := b.cfg.Runs.GetDepsRun(ctx, r.Repo, batch.RunID)
+			switch {
+			case errors.Is(err, domain.ErrNotFound):
+				b.failRun(ctx, r.Repo, batch.RunID, "the run no longer exists")
+			case err != nil:
+				ctxLog(ctx).Error().Err(err).Str("repo", r.Repo.String()).Int64("run_id", batch.RunID).Msg("bernard: read the run to reconcile")
+			case run.Status == domain.CICompleted && b.cfg.Clock.Now().Sub(run.CompletedAt) < grace:
+				// The observer is probably applying it.
+			case run.Status == domain.CICompleted && run.Conclusion == domain.CISuccess:
+				b.failRun(ctx, r.Repo, batch.RunID, "the result of the run was not applied")
+			case run.Status == domain.CICompleted:
+				b.failRun(ctx, r.Repo, batch.RunID, fmt.Sprintf("the run ended: %s", run.Conclusion))
+			}
 		}
 	}
 }
@@ -148,7 +151,7 @@ func (b *Bernard) DepsJobEnded(ctx context.Context, run domain.CIRun, job domain
 		ctxLog(ctx).Error().Err(err).Str("repo", run.Repo.String()).Msg("bernard: read the record of a dependency run")
 		return
 	}
-	if rec.State != domain.DepsApplying || rec.RunID != run.ID {
+	if applyingBatch(&rec, run.ID) == nil {
 		return // superseded
 	}
 	switch {
@@ -194,7 +197,7 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	}
 
 	var serverUps []domain.DepUpdate
-	for _, u := range rec.RunUpdates {
+	for _, u := range applyingBatch(&rec, run.ID).RunUpdates {
 		if e := b.ecosystem(u.Ecosystem); e != nil && e.ApplyInServer() {
 			serverUps = append(serverUps, u)
 		}
@@ -218,7 +221,7 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 		return fmt.Errorf("read the dependency record: %w", err)
 	}
 	jobGuard := func(r domain.RepoDeps) error {
-		if r.State != domain.DepsApplying || r.RunID != run.ID {
+		if applyingBatch(&r, run.ID) == nil {
 			return errJobSuperseded
 		}
 		return nil
@@ -233,7 +236,7 @@ func (b *Bernard) applyRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	if !exists {
 		return fmt.Errorf("%w: %s has no default branch", domain.ErrPreconditionFailed, run.Repo)
 	}
-	_, err = b.publish(ctx, run.Repo, target, base, changes, domain.DepBatch{Updates: rec.RunUpdates, MR: d.MR}, jobGuard, effects)
+	_, err = b.publish(ctx, run.Repo, target, base, changes, domain.DepBatch{Key: applyingBatch(&rec, run.ID).Key, Updates: applyingBatch(&rec, run.ID).RunUpdates, MR: applyingBatch(&d, run.ID).MR}, jobGuard, effects)
 	return err
 }
 
@@ -249,7 +252,7 @@ func (b *Bernard) CheckDepsReport(ctx context.Context, run domain.CIRun, job dom
 	if err != nil {
 		return fmt.Errorf("read the dependency record: %w", err)
 	}
-	if rec.State != domain.DepsApplying || rec.RunID != run.ID {
+	if applyingBatch(&rec, run.ID) == nil {
 		return nil
 	}
 	_, _, _, err = b.checkRunnerReport(ctx, rec, run, job, report)
@@ -263,7 +266,7 @@ func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	// The updates the runner applied: those of the job among the ones the run
 	// started with (the daily check may have rewritten rec.Updates since).
 	var runnerUps []domain.DepUpdate
-	for _, u := range rec.RunUpdates {
+	for _, u := range applyingBatch(&rec, run.ID).RunUpdates {
 		if slices.Contains(job.Deps.Updates, u.DepRef) {
 			runnerUps = append(runnerUps, u)
 		}
@@ -342,4 +345,15 @@ func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	}
 
 	return changes, base, effects, nil
+}
+
+// applyingBatch finds only an active run, never a historical RunID link.
+func applyingBatch(d *domain.RepoDeps, runID int64) *domain.DepBatch {
+	for i := range d.Batches {
+		batch := &d.Batches[i]
+		if batch.State == domain.DepsApplying && batch.RunID == runID {
+			return batch
+		}
+	}
+	return nil
 }

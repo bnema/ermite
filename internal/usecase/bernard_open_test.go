@@ -90,7 +90,7 @@ func newOpenRigWith(t *testing.T, ecos func(*openRig) []ports.DepsEcosystem) *op
 	r.bus.EXPECT().Publish(mock.Anything, mock.MatchedBy(isDepsChanged)).Run(func(_ context.Context, ev domain.Event) {
 		r.mu.Lock()
 		r.changedEvents = append(r.changedEvents, ev.(domain.DependencyUpdatesChanged))
-		r.changedStates = append(r.changedStates, r.rec.State)
+		r.changedStates = append(r.changedStates, r.rec.Base().State)
 		r.mu.Unlock()
 	}).Maybe()
 	r.bus.EXPECT().Subscribe(mock.Anything).Return((<-chan domain.Event)(r.events)).Maybe()
@@ -203,7 +203,7 @@ func (r *openRig) expectCreate(number int64) {
 func TestBernardOpenActions(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec.Updates = []domain.DepUpdate{up}
+	r.rec.Base().Updates = []domain.DepUpdate{up}
 	r.happy(domain.ObjectID{})
 	r.expectCreate(9)
 
@@ -211,10 +211,10 @@ func TestBernardOpenActions(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"sign", "commit", "tip", "branch", "ci", "mr"}, r.ops, "the tip is recorded before the branch moves")
-	assert.EqualValues(t, 9, got.MR)
-	assert.Equal(t, []domain.DepRef{up.DepRef}, got.MRVersions)
-	assert.Equal(t, domain.DepsIdle, got.State)
-	assert.Empty(t, got.Error)
+	assert.EqualValues(t, 9, got.Base().MR)
+	assert.Equal(t, []domain.DepRef{up.DepRef}, got.Base().MRVersions)
+	assert.Equal(t, domain.DepsIdle, got.Base().State)
+	assert.Empty(t, got.Base().Error)
 	assert.Contains(t, string(r.commit), "gpgsig -----BEGIN SSH SIGNATURE-----")
 	assert.Contains(t, string(r.commit), "build(deps): update 1 dependency\n\n- actions/checkout v3 \u2192 v4 ("+botWorkflow+")\n")
 
@@ -233,7 +233,7 @@ func TestBernardOpenActions(t *testing.T) {
 func TestBernardOpenUpdateKeepsMR(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec = domain.RepoDeps{Repo: r.repo, Updates: []domain.DepUpdate{up}, MR: 4, State: domain.DepsFailed, Error: "boom"}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up}, MR: 4, State: domain.DepsFailed, Error: "boom"}}}
 	r.happy(oid("d")) // an earlier Bernard head, possibly someone else's
 	r.mrst.EXPECT().Get(mock.Anything, r.repo, int64(4)).Return(domain.MergeRequest{Repo: r.repo, Number: 4, State: domain.MRStateOpen}, nil)
 	var edited ports.EditMergeRequestParams
@@ -252,39 +252,39 @@ func TestBernardOpenUpdateKeepsMR(t *testing.T) {
 	assert.Contains(t, *edited.Description, "- actions/checkout v3 \u2192 v4")
 	assert.Equal(t, "bernard", domain.AuthorName(editor), "edited as the bot")
 	assert.Equal(t, []string{"sign", "commit", "tip", "branch", "ci"}, r.ops, "no new merge request")
-	assert.EqualValues(t, 4, got.MR)
-	assert.Equal(t, domain.DepsIdle, got.State)
-	assert.Empty(t, got.Error)
+	assert.EqualValues(t, 4, got.Base().MR)
+	assert.Equal(t, domain.DepsIdle, got.Base().State)
+	assert.Empty(t, got.Base().Error)
 	assert.Equal(t, oid("d").String(), r.pushed[0].Old)
 }
 
 func TestBernardOpenRecreatesClosedMR(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec = domain.RepoDeps{Repo: r.repo, Updates: []domain.DepUpdate{up}, MR: 4}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up}, MR: 4}}}
 	r.happy(domain.ObjectID{})
 	r.mrst.EXPECT().Get(mock.Anything, r.repo, int64(4)).Return(domain.MergeRequest{Repo: r.repo, Number: 4, State: domain.MRStateClosed}, nil)
 	r.expectCreate(5)
 	got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
 	require.NoError(t, err)
-	assert.EqualValues(t, 5, got.MR)
+	assert.EqualValues(t, 5, got.Base().MR)
 }
 
 func TestBernardOpenPreconditions(t *testing.T) {
 	up := actionUpdate()
 	t.Run("stale expected", func(t *testing.T) {
 		r := newOpenRig(t, domain.EcosystemActions, true)
-		r.rec.Updates = []domain.DepUpdate{up}
+		r.rec.Base().Updates = []domain.DepUpdate{up}
 		r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
 		stale := up.DepRef
 		stale.Version = "v3.9"
 		_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{stale})
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
-		assert.Equal(t, domain.DepsIdle, r.rec.State)
+		assert.Equal(t, domain.DepsIdle, r.rec.Base().State)
 	})
 	t.Run("applying", func(t *testing.T) {
 		r := newOpenRig(t, domain.EcosystemActions, true)
-		r.rec.Updates, r.rec.State = []domain.DepUpdate{up}, domain.DepsApplying
+		r.rec.Base().Updates, r.rec.Base().State = []domain.DepUpdate{up}, domain.DepsApplying
 		r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
 		_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
@@ -300,7 +300,7 @@ func TestBernardOpenPreconditions(t *testing.T) {
 func TestBernardOpenFailureSetsFailed(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec.Updates = []domain.DepUpdate{up}
+	r.rec.Base().Updates = []domain.DepUpdate{up}
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
 	r.repos.EXPECT().DefaultBranch(mock.Anything, r.repo).Return("main", true, nil)
 	r.git.EXPECT().BranchHead(mock.Anything, r.repo, "main").Return(oid("a"), nil)
@@ -308,10 +308,10 @@ func TestBernardOpenFailureSetsFailed(t *testing.T) {
 
 	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
 	require.Error(t, err)
-	assert.Equal(t, domain.DepsFailed, r.rec.State)
-	assert.NotEmpty(t, r.rec.Error)
-	assert.LessOrEqual(t, len(r.rec.Error), 2048)
-	assert.Len(t, r.rec.Updates, 1)
+	assert.Equal(t, domain.DepsFailed, r.rec.Base().State)
+	assert.NotEmpty(t, r.rec.Base().Error)
+	assert.LessOrEqual(t, len(r.rec.Base().Error), 2048)
+	assert.Len(t, r.rec.Base().Updates, 1)
 }
 
 func (r *openRig) startWatch() {
@@ -333,17 +333,17 @@ func TestBernardClosedMRIgnoresItsVersions(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
 	other := domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: domain.EcosystemActions, Directory: botWorkflow, Name: "x/y", Version: "v2"}, Current: "v1"}
-	r.rec = domain.RepoDeps{Repo: r.repo, Updates: []domain.DepUpdate{up, other}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up, other}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}}}}
 	r.startWatch()
 
 	// Another merge request is none of Bernard's business.
 	r.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: r.repo, Number: 5}}
 	r.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: r.repo, Number: 4}}
-	require.Eventually(t, func() bool { return r.snapshot().MR == 0 }, 5*time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return r.snapshot().Batches[0].MR == 0 }, 5*time.Second, 5*time.Millisecond)
 
 	got := r.snapshot()
-	assert.Empty(t, got.MRVersions)
-	assert.Equal(t, []domain.DepUpdate{other}, got.Updates)
+	assert.Empty(t, got.Base().MRVersions)
+	assert.Equal(t, []domain.DepUpdate{other}, got.Base().Updates)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	assert.Equal(t, []domain.DepRef{up.DepRef}, r.ignored)
@@ -353,7 +353,7 @@ func TestBernardClosedMRIgnoresItsVersions(t *testing.T) {
 func TestBernardMergedMRClearsAndChecks(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec = domain.RepoDeps{Repo: r.repo, Updates: []domain.DepUpdate{up}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}}}}
 	// The check finds an archived repository and stops there.
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo, Archived: true}, nil)
 	r.startWatch()
@@ -362,8 +362,8 @@ func TestBernardMergedMRClearsAndChecks(t *testing.T) {
 	require.Eventually(t, func() bool { return r.registers.Load() == 1 }, 5*time.Second, 5*time.Millisecond)
 
 	got := r.snapshot()
-	assert.Zero(t, got.MR)
-	assert.Empty(t, got.MRVersions)
+	assert.Zero(t, got.Base().MR)
+	assert.Empty(t, got.Base().MRVersions)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	assert.Empty(t, r.ignored, "a merge ignores nothing")
@@ -372,7 +372,7 @@ func TestBernardMergedMRClearsAndChecks(t *testing.T) {
 func TestBernardReconcilesOnStartAndOnGap(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec = domain.RepoDeps{Repo: r.repo, Updates: []domain.DepUpdate{up}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{{Updates: []domain.DepUpdate{up}, MR: 4, MRVersions: []domain.DepRef{up.DepRef}}}}
 	other := name(t, "other")
 	r.store.ExpectedCalls = nil
 	r.store.EXPECT().List(mock.Anything).RunAndReturn(func(context.Context) ([]domain.RepoDeps, error) {
@@ -409,14 +409,14 @@ func TestBernardReconcilesOnStartAndOnGap(t *testing.T) {
 	// Closed while Bernard was down: reconciled on Start as a close.
 	states <- domain.MRStateClosed
 	r.startWatch()
-	require.Eventually(t, func() bool { return r.snapshot().MR == 0 }, 5*time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return r.snapshot().Batches[0].MR == 0 }, 5*time.Second, 5*time.Millisecond)
 	r.mu.Lock()
 	assert.Equal(t, []domain.DepRef{up.DepRef}, r.ignored)
 	r.mu.Unlock()
 
 	// Still open after a gap: nothing happens.
 	r.mu.Lock()
-	r.rec.MR, r.rec.MRVersions = 4, []domain.DepRef{up.DepRef}
+	r.rec.Base().MR, r.rec.Base().MRVersions = 4, []domain.DepRef{up.DepRef}
 	r.mu.Unlock()
 	r.events <- domain.EventGap{}
 	// Merged unseen: a gap reconciles it as a merge (a check follows).
@@ -424,7 +424,7 @@ func TestBernardReconcilesOnStartAndOnGap(t *testing.T) {
 	states <- domain.MRStateMerged
 	r.events <- domain.EventGap{}
 	require.Eventually(t, func() bool { return r.registers.Load() == 1 }, 5*time.Second, 5*time.Millisecond)
-	assert.Zero(t, r.snapshot().MR)
+	assert.Zero(t, r.snapshot().Batches[0].MR)
 }
 
 func TestBernardOpenAdoptsAnOpenDepsMR(t *testing.T) {
@@ -432,18 +432,18 @@ func TestBernardOpenAdoptsAnOpenDepsMR(t *testing.T) {
 	open := domain.MergeRequest{Repo: name(t, "proj"), Number: 8, State: domain.MRStateOpen, Source: "bernard/deps", Target: "main"}
 	t.Run("before creating", func(t *testing.T) {
 		r := newOpenRig(t, domain.EcosystemActions, true)
-		r.rec.Updates = []domain.DepUpdate{up}
+		r.rec.Base().Updates = []domain.DepUpdate{up}
 		r.happy(domain.ObjectID{})
 		r.mrst.EXPECT().OpenBySource(mock.Anything, r.repo, []string{"bernard/deps"}, mock.Anything).Return([]int64{8}, false, nil)
 		r.mrst.EXPECT().Get(mock.Anything, r.repo, int64(8)).Return(open, nil)
 		r.mrs.EXPECT().Edit(mock.Anything, mock.Anything, r.repo, int64(8), mock.Anything).Return(open, nil) // the adopted request is refreshed
 		got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
 		require.NoError(t, err)
-		assert.EqualValues(t, 8, got.MR) // Create is not expected: the mock fails on a call
+		assert.EqualValues(t, 8, got.Base().MR) // Create is not expected: the mock fails on a call
 	})
 	t.Run("after already exists", func(t *testing.T) {
 		r := newOpenRig(t, domain.EcosystemActions, true)
-		r.rec.Updates = []domain.DepUpdate{up}
+		r.rec.Base().Updates = []domain.DepUpdate{up}
 		r.happy(domain.ObjectID{})
 		calls := 0
 		r.mrst.EXPECT().OpenBySource(mock.Anything, r.repo, []string{"bernard/deps"}, mock.Anything).RunAndReturn(
@@ -458,14 +458,14 @@ func TestBernardOpenAdoptsAnOpenDepsMR(t *testing.T) {
 		r.mrs.EXPECT().Create(mock.Anything, mock.Anything, r.repo, mock.Anything).Return(domain.MergeRequest{}, domain.ErrAlreadyExists)
 		got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
 		require.NoError(t, err)
-		assert.EqualValues(t, 8, got.MR)
+		assert.EqualValues(t, 8, got.Base().MR)
 	})
 }
 
 func TestBernardOpenPublishesTheChangeAfterTheFinalMutation(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec.Updates = []domain.DepUpdate{up}
+	r.rec.Base().Updates = []domain.DepUpdate{up}
 	r.happy(domain.ObjectID{})
 	r.expectCreate(9)
 	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
@@ -480,7 +480,7 @@ func TestBernardOpenPublishesTheChangeAfterTheFinalMutation(t *testing.T) {
 func TestBernardOpenFailurePublishesTheChange(t *testing.T) {
 	r := newOpenRig(t, domain.EcosystemActions, true)
 	up := actionUpdate()
-	r.rec.Updates = []domain.DepUpdate{up}
+	r.rec.Base().Updates = []domain.DepUpdate{up}
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
 	r.repos.EXPECT().DefaultBranch(mock.Anything, r.repo).Return("", false, nil)
 	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})

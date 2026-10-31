@@ -6,8 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-	"slices"
 	"strings"
 	"time"
 
@@ -103,11 +101,11 @@ func depsKeys(ctx context.Context, snap *kv.Snapshot, repo domain.RepoName) [][]
 	return keys
 }
 
-// Get returns the record of repo, or RepoDeps{Repo: repo} when absent.
+// Get returns the record of repo, with an empty base batch when absent.
 func (d *Deps) Get(ctx context.Context, repo domain.RepoName) (domain.RepoDeps, error) {
 	item, ok := d.db.Get(ctx, depsPendKey(repo))
 	if !ok {
-		return domain.RepoDeps{Repo: repo}, nil
+		return domain.RepoDeps{Repo: repo, Batches: []domain.DepBatch{{}}}, nil
 	}
 	return decodeRepoDeps(item.Value)
 }
@@ -134,27 +132,14 @@ func (d *Deps) Mutate(ctx context.Context, repo domain.RepoName, fn func(*domain
 			return domain.RepoDeps{}, err
 		}
 		item, ok := d.db.Get(ctx, key)
-		rd := domain.RepoDeps{Repo: repo}
+		rd := domain.RepoDeps{Repo: repo, Batches: []domain.DepBatch{{}}}
 		if ok {
 			var err error
 			if rd, err = decodeRepoDeps(item.Value); err != nil {
 				return domain.RepoDeps{}, err
 			}
 		}
-		// Snapshot slices too: legacy callers may edit an update in place.
-		before := legacyDepBatch(rd)
-		before.Updates = slices.Clone(before.Updates)
-		before.RunUpdates = slices.Clone(before.RunUpdates)
-		before.MRVersions = slices.Clone(before.MRVersions)
 		changed, err := fn(&rd)
-		if !reflect.DeepEqual(before, legacyDepBatch(rd)) && len(rd.Batches) != 0 {
-			for i := range rd.Batches {
-				if rd.Batches[i].Key == "" {
-					rd.Batches[i] = legacyDepBatch(rd)
-					break
-				}
-			}
-		}
 		if err != nil {
 			return domain.RepoDeps{}, err
 		}
@@ -165,7 +150,7 @@ func (d *Deps) Mutate(ctx context.Context, repo domain.RepoName, fn func(*domain
 			if ok {
 				return decodeRepoDeps(item.Value)
 			}
-			return domain.RepoDeps{Repo: repo}, nil
+			return domain.RepoDeps{Repo: repo, Batches: []domain.DepBatch{{}}}, nil
 		}
 		val, err := encodeRepoDeps(rd)
 		if err != nil {
@@ -273,10 +258,8 @@ func encodeRepoDeps(rd domain.RepoDeps) ([]byte, error) {
 		CheckedAt:    encodeTime(rd.CheckedAt),
 		SnoozedUntil: encodeTime(rd.SnoozedUntil),
 	}
+	rd.Base()
 	batches := rd.Batches
-	if len(batches) == 0 {
-		batches = []domain.DepBatch{legacyDepBatch(rd)}
-	}
 	for _, batch := range batches {
 		pb.Batches = append(pb.Batches, encodeDepBatch(batch))
 	}
@@ -304,16 +287,8 @@ func decodeRepoDeps(val []byte) (domain.RepoDeps, error) {
 	for _, batch := range pb.GetBatches() {
 		rd.Batches = append(rd.Batches, decodeDepBatch(batch))
 	}
-	if base, _, ok := rd.Batch(""); ok {
-		rd.Updates, rd.State, rd.Error, rd.RunID = base.Updates, base.State, base.Error, base.RunID
-		rd.RunUpdates, rd.MR, rd.MRVersions = base.RunUpdates, base.MR, base.MRVersions
-	}
+	rd.Base()
 	return rd, nil
-}
-
-// legacyDepBatch bridges the base-only usecase until it switches to Batches.
-func legacyDepBatch(rd domain.RepoDeps) domain.DepBatch {
-	return domain.DepBatch{Updates: rd.Updates, State: rd.State, Error: rd.Error, RunID: rd.RunID, RunUpdates: rd.RunUpdates, MR: rd.MR, MRVersions: rd.MRVersions}
 }
 
 func encodeDepBatch(b domain.DepBatch) *storagepb.DepBatch {

@@ -741,7 +741,7 @@ func TestDepsReportValidationRefusalFailsJobRunAndRecord(t *testing.T) {
 		rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 		rr.open(goUpdate())
 		run := r.start(10 * time.Minute)
-		rr.rec.RunID = run.ID
+		rr.rec.Base().RunID = run.ID
 		r.ci.SetDepsObserver(rr.b)
 		j := r.fetch("deps")
 		require.NotNil(t, j)
@@ -756,8 +756,8 @@ func TestDepsReportValidationRefusalFailsJobRunAndRecord(t *testing.T) {
 		assert.Equal(t, domain.CIFailure, r.job(run).Conclusion)
 		assert.Equal(t, res.Error, r.job(run).Error)
 		assert.Equal(t, domain.CIFailure, r.run(run.ID).Conclusion)
-		assert.Equal(t, domain.DepsFailed, rr.rec.State)
-		assert.Equal(t, res.Error, rr.rec.Error)
+		assert.Equal(t, domain.DepsFailed, rr.rec.Base().State)
+		assert.Equal(t, res.Error, rr.rec.Base().Error)
 		lines, err := r.logs.Read(r.ctx, ports.CILogRef{RunID: run.ID, JobID: j.Job.ID, Attempt: j.Job.Attempt}, 0, 10, 4096)
 		require.NoError(t, err)
 		require.Len(t, lines, 1)

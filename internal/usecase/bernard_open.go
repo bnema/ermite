@@ -71,11 +71,11 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 	if err := depsPrecondition(d, expected); err != nil {
 		return domain.RepoDeps{}, err
 	}
-	if len(d.Updates) == 0 {
+	if len(d.Base().Updates) == 0 {
 		return domain.RepoDeps{}, fmt.Errorf("%w: no dependency update is pending", domain.ErrPreconditionFailed)
 	}
 	var runnerSide bool
-	for _, u := range d.Updates {
+	for _, u := range d.Base().Updates {
 		eco := b.ecosystem(u.Ecosystem)
 		if eco == nil {
 			return domain.RepoDeps{}, fmt.Errorf("%w: unknown ecosystem %q", domain.ErrPreconditionFailed, u.Ecosystem)
@@ -89,13 +89,13 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 	}
 	var rec domain.RepoDeps
 	if runnerSide {
-		rec, err = b.startRunnerJob(ctx, repoName, d, expected)
+		rec, err = b.startRunnerJob(ctx, repoName, *d.Base(), expected)
 	} else {
-		rec, err = b.apply(ctx, repoName, domain.DepBatch{Updates: d.Updates, MR: d.MR}, func(r domain.RepoDeps) error { return movedPrecondition(r, expected) })
+		rec, err = b.apply(ctx, repoName, *d.Base(), func(r domain.RepoDeps) error { return movedPrecondition(r, expected) })
 	}
 	if err != nil {
 		if !errors.Is(err, errRecordMoved) { // the record is not ours to fail
-			b.fail(ctx, repoName, err)
+			b.fail(ctx, repoName, "", err)
 		}
 		return domain.RepoDeps{}, err
 	}
@@ -116,7 +116,7 @@ func movedPrecondition(d domain.RepoDeps, expected []domain.DepRef) error {
 // startRunnerJob starts the CI run of the runner-side updates at the tip of the
 // default branch and marks the record Applying with it. The caller holds the
 // repository lock.
-func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, d domain.RepoDeps, expected []domain.DepRef) (domain.RepoDeps, error) {
+func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batch domain.DepBatch, expected []domain.DepRef) (domain.RepoDeps, error) {
 	cfg := b.cfg
 	target, exists, err := cfg.Repos.DefaultBranch(ctx, name)
 	if err != nil {
@@ -130,7 +130,7 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, d do
 		return domain.RepoDeps{}, fmt.Errorf("read %s: %w", target, err)
 	}
 	var runnerUps []domain.DepUpdate
-	for _, u := range d.Updates {
+	for _, u := range batch.Updates {
 		if !b.ecosystem(u.Ecosystem).ApplyInServer() {
 			runnerUps = append(runnerUps, u)
 		}
@@ -147,18 +147,23 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, d do
 		refs[i] = u.DepRef
 	}
 	run, err := cfg.Runs.StartDepsRun(ctx, ports.DepsRunParams{
-		Repo: name, Ref: "refs/heads/" + target, Sha: tip.String(), Title: domain.BotSubject(domain.DepBatch{Updates: d.Updates}),
+		Repo: name, Ref: "refs/heads/" + target, Sha: tip.String(), Title: domain.BotSubject(batch),
 		Job: domain.CIDepsJob{Updates: refs, GoVersion: goVersion}, Label: cfg.RunnerLabel, Timeout: cfg.JobTimeout,
 	})
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("start the dependency run: %w", err)
 	}
-	snapshot := slices.Clone(d.Updates)
+	snapshot := slices.Clone(batch.Updates)
 	rec, err := cfg.Store.Mutate(ctx, name, func(r *domain.RepoDeps) (bool, error) {
 		if err := movedPrecondition(*r, expected); err != nil {
 			return false, err
 		}
-		r.Repo, r.State, r.RunID, r.RunUpdates, r.Error = name, domain.DepsApplying, run.ID, snapshot, ""
+		_, i, ok := r.Batch(batch.Key)
+		if !ok {
+			return false, errRecordMoved
+		}
+		stored := &r.Batches[i]
+		stored.State, stored.RunID, stored.RunUpdates, stored.Error = domain.DepsApplying, run.ID, snapshot, ""
 		return true, nil
 	})
 	if err != nil {
@@ -215,10 +220,14 @@ func (b *Bernard) ecosystem(name domain.DepsEcosystem) ports.DepsEcosystem {
 }
 
 // fail records the failure on the card: a bounded excerpt.
-func (b *Bernard) fail(ctx context.Context, name domain.RepoName, cause error) {
+func (b *Bernard) fail(ctx context.Context, name domain.RepoName, key domain.DepBatchKey, cause error) {
 	msg := keepDepsError(cause.Error())
 	_, err := b.cfg.Store.Mutate(context.WithoutCancel(ctx), name, func(d *domain.RepoDeps) (bool, error) {
-		d.Repo, d.State, d.Error = name, domain.DepsFailed, msg
+		_, i, ok := d.Batch(key)
+		if !ok {
+			return false, nil
+		}
+		d.Batches[i].State, d.Batches[i].Error = domain.DepsFailed, msg
 		return true, nil
 	})
 	if err != nil {
@@ -313,8 +322,13 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 				return false, err
 			}
 		}
-		d.Repo, d.MR, d.MRVersions = name, number, slices.Clone(refs)
-		d.State, d.Error, d.RunUpdates = domain.DepsIdle, "", nil // RunID stays: the link to the last run
+		_, i, ok := d.Batch(batch.Key)
+		if !ok {
+			return false, errRecordMoved
+		}
+		stored := &d.Batches[i]
+		stored.MR, stored.MRVersions = number, slices.Clone(refs)
+		stored.State, stored.Error, stored.RunUpdates = domain.DepsIdle, "", nil // RunID stays: the link to the last run
 		return true, nil
 	})
 	if err != nil {
@@ -496,22 +510,24 @@ func (b *Bernard) reconcileMergeRequests() {
 		return
 	}
 	for _, d := range recs {
-		if d.MR == 0 || ctx.Err() != nil {
-			continue
-		}
-		mr, err := b.cfg.MRStore.Get(ctx, d.Repo, d.MR)
-		switch {
-		case errors.Is(err, domain.ErrNotFound):
-			continue
-		case err != nil:
-			log.Error().Err(err).Str("repo", d.Repo.String()).Msg("bernard: read the merge request to reconcile")
-			continue
-		}
-		switch mr.State {
-		case domain.MRStateClosed:
-			b.onMRDone(mr, false)
-		case domain.MRStateMerged:
-			b.onMRDone(mr, true)
+		for _, batch := range d.Batches {
+			if batch.MR == 0 || ctx.Err() != nil {
+				continue
+			}
+			mr, err := b.cfg.MRStore.Get(ctx, d.Repo, batch.MR)
+			switch {
+			case errors.Is(err, domain.ErrNotFound):
+				continue
+			case err != nil:
+				log.Error().Err(err).Str("repo", d.Repo.String()).Msg("bernard: read the merge request to reconcile")
+				continue
+			}
+			switch mr.State {
+			case domain.MRStateClosed:
+				b.onMRDone(mr, false)
+			case domain.MRStateMerged:
+				b.onMRDone(mr, true)
+			}
 		}
 	}
 }
@@ -532,10 +548,11 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 		log.Error().Err(err).Str("repo", mr.Repo.String()).Msg("bernard: read the record")
 		return
 	}
-	if d.MR == 0 || d.MR != mr.Number {
+	batch := mrBatch(&d, mr.Number)
+	if batch == nil {
 		return
 	}
-	versions := slices.Clone(d.MRVersions)
+	versions := slices.Clone(batch.MRVersions)
 	if !merged && len(versions) > 0 {
 		if err := b.cfg.Store.Ignore(ctx, mr.Repo, versions); err != nil {
 			log.Error().Err(err).Str("repo", mr.Repo.String()).Msg("bernard: ignore the versions of the closed merge request")
@@ -550,22 +567,27 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 		// A run still working on the closed request must not publish what the
 		// owner just refused: it is cancelled, and its end finds the record
 		// moved on.
-		if d.State == domain.DepsApplying && d.RunID != 0 && b.cfg.Runs != nil {
-			if err := b.cfg.Runs.CancelDepsRun(ctx, mr.Repo, d.RunID); err != nil && !errors.Is(err, domain.ErrNotFound) {
-				log.Error().Err(err).Str("repo", mr.Repo.String()).Int64("run_id", d.RunID).Msg("bernard: cancel the dependency run of the closed merge request")
+		if batch.State == domain.DepsApplying && batch.RunID != 0 && b.cfg.Runs != nil {
+			if err := b.cfg.Runs.CancelDepsRun(ctx, mr.Repo, batch.RunID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+				log.Error().Err(err).Str("repo", mr.Repo.String()).Int64("run_id", batch.RunID).Msg("bernard: cancel the dependency run of the closed merge request")
 			}
 		}
 	}
 	_, err = b.cfg.Store.Mutate(ctx, mr.Repo, func(d *domain.RepoDeps) (bool, error) {
-		if d.MR != mr.Number {
+		batch := mrBatch(d, mr.Number)
+		if batch == nil {
 			return false, nil
 		}
-		d.MR, d.MRVersions = 0, nil
-		if !merged && d.State == domain.DepsApplying {
-			d.State, d.Error, d.RunUpdates = domain.DepsIdle, "", nil
+		batch.MR, batch.MRVersions = 0, nil
+		if !merged && batch.State == domain.DepsApplying {
+			batch.State, batch.Error, batch.RunUpdates = domain.DepsIdle, "", nil
 		}
 		if !merged {
-			d.Updates = slices.DeleteFunc(slices.Clone(d.Updates), func(u domain.DepUpdate) bool { return drop[u.DepRef] })
+			batch.Updates = slices.DeleteFunc(slices.Clone(batch.Updates), func(u domain.DepUpdate) bool { return drop[u.DepRef] })
+		}
+		if batch.Key != "" && len(batch.Updates) == 0 {
+			_, i, _ := d.Batch(batch.Key)
+			d.Batches = slices.Delete(slices.Clone(d.Batches), i, i+1)
 		}
 		return true, nil
 	})
@@ -585,4 +607,16 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 			}
 		}()
 	}
+}
+
+func mrBatch(d *domain.RepoDeps, number int64) *domain.DepBatch {
+	if number == 0 {
+		return nil
+	}
+	for i := range d.Batches {
+		if d.Batches[i].MR == number {
+			return &d.Batches[i]
+		}
+	}
+	return nil
 }
