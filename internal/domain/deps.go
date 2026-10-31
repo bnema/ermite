@@ -22,6 +22,7 @@ type DepsEcosystem string
 // Supported dependency ecosystems.
 const (
 	EcosystemGoMod   DepsEcosystem = "gomod"
+	EcosystemNPM     DepsEcosystem = "npm"
 	EcosystemActions DepsEcosystem = "github-actions"
 )
 

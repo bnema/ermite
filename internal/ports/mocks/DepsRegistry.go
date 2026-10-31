@@ -412,3 +412,77 @@ func (_c *DepsRegistry_Malicious_Call) RunAndReturn(run func(ctx context.Context
 	_c.Call.Return(run)
 	return _c
 }
+
+// NPMVersions provides a mock function for the type DepsRegistry
+func (_mock *DepsRegistry) NPMVersions(ctx context.Context, name string, current string) ([]domain.DepVersion, error) {
+	ret := _mock.Called(ctx, name, current)
+
+	if len(ret) == 0 {
+		panic("no return value specified for NPMVersions")
+	}
+
+	var r0 []domain.DepVersion
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) ([]domain.DepVersion, error)); ok {
+		return returnFunc(ctx, name, current)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) []domain.DepVersion); ok {
+		r0 = returnFunc(ctx, name, current)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.DepVersion)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, name, current)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// DepsRegistry_NPMVersions_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'NPMVersions'
+type DepsRegistry_NPMVersions_Call struct {
+	*mock.Call
+}
+
+// NPMVersions is a helper method to define mock.On call
+//   - ctx context.Context
+//   - name string
+//   - current string
+func (_e *DepsRegistry_Expecter) NPMVersions(ctx any, name any, current any) *DepsRegistry_NPMVersions_Call {
+	return &DepsRegistry_NPMVersions_Call{Call: _e.mock.On("NPMVersions", ctx, name, current)}
+}
+
+func (_c *DepsRegistry_NPMVersions_Call) Run(run func(ctx context.Context, name string, current string)) *DepsRegistry_NPMVersions_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *DepsRegistry_NPMVersions_Call) Return(depVersions []domain.DepVersion, err error) *DepsRegistry_NPMVersions_Call {
+	_c.Call.Return(depVersions, err)
+	return _c
+}
+
+func (_c *DepsRegistry_NPMVersions_Call) RunAndReturn(run func(ctx context.Context, name string, current string) ([]domain.DepVersion, error)) *DepsRegistry_NPMVersions_Call {
+	_c.Call.Return(run)
+	return _c
+}

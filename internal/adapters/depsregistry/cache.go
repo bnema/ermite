@@ -17,19 +17,20 @@ type result[T any] struct {
 	err   error
 }
 type cached struct {
-	registry   ports.DepsRegistry
-	mu         sync.Mutex
-	majorPaths map[string]result[[]string]
-	goVersions map[[2]string]result[[]domain.DepVersion]
-	directives map[[2]string]result[string]
-	tags       map[[2]string]result[[]domain.DepTag]
-	malicious  map[[3]string]result[bool]
+	registry    ports.DepsRegistry
+	mu          sync.Mutex
+	majorPaths  map[string]result[[]string]
+	goVersions  map[[2]string]result[[]domain.DepVersion]
+	npmVersions map[[2]string]result[[]domain.DepVersion]
+	directives  map[[2]string]result[string]
+	tags        map[[2]string]result[[]domain.DepTag]
+	malicious   map[[3]string]result[bool]
 }
 
 // NewCached creates a memo cache owned by one check, not shared across checks.
 // Calls are serialized so concurrent requests for the same key query only once.
 func NewCached(registry ports.DepsRegistry) ports.DepsRegistry {
-	return &cached{registry: registry, majorPaths: make(map[string]result[[]string]), goVersions: make(map[[2]string]result[[]domain.DepVersion]), directives: make(map[[2]string]result[string]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
+	return &cached{registry: registry, npmVersions: make(map[[2]string]result[[]domain.DepVersion]), majorPaths: make(map[string]result[[]string]), goVersions: make(map[[2]string]result[[]domain.DepVersion]), directives: make(map[[2]string]result[string]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
 }
 func cacheable(err error) bool { return err == nil || errors.Is(err, domain.ErrNotFound) }
 
@@ -95,6 +96,20 @@ func (c *cached) GoMajorPaths(ctx context.Context, name string) ([]string, error
 	value, err := c.registry.GoMajorPaths(ctx, name)
 	if cacheable(err) {
 		c.majorPaths[name] = result[[]string]{slices.Clone(value), err}
+	}
+	return value, err
+}
+
+func (c *cached) NPMVersions(ctx context.Context, name, current string) ([]domain.DepVersion, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := [2]string{name, current}
+	if v, ok := c.npmVersions[key]; ok {
+		return slices.Clone(v.value), v.err
+	}
+	value, err := c.registry.NPMVersions(ctx, name, current)
+	if cacheable(err) {
+		c.npmVersions[key] = result[[]domain.DepVersion]{slices.Clone(value), err}
 	}
 	return value, err
 }

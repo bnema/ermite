@@ -18,6 +18,9 @@ import (
 func (r *Registry) Malicious(ctx context.Context, eco domain.DepsEcosystem, name, version string) (bool, error) {
 	var ecosystem string
 	switch eco {
+	case domain.EcosystemNPM:
+		ecosystem = "npm"
+		version = strings.TrimPrefix(version, "v")
 	case domain.EcosystemGoMod:
 		ecosystem = "Go"
 	case domain.EcosystemActions:

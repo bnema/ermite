@@ -16,18 +16,19 @@ import (
 )
 
 // Config supplies the GitHub remote and optional HTTP bases for tests.
-// Empty bases select the public Go proxy and OSV service.
+// Empty bases select the public Go proxy, npm registry and OSV service.
 type Config struct {
-	GitRemote  ports.GitRemote
-	GoProxyURL string
-	OSVURL     string
+	GitRemote      ports.GitRemote
+	GoProxyURL     string
+	OSVURL         string
+	NPMRegistryURL string
 }
 
 // Registry implements the dependency registry outbound port.
 type Registry struct {
-	remote     ports.GitRemote
-	proxy, osv string
-	client     *http.Client
+	remote          ports.GitRemote
+	proxy, osv, npm string
+	client          *http.Client
 }
 
 var _ ports.DepsRegistry = (*Registry)(nil)
@@ -37,10 +38,13 @@ func New(cfg Config) *Registry {
 	if cfg.GoProxyURL == "" {
 		cfg.GoProxyURL = "https://proxy.golang.org"
 	}
+	if cfg.NPMRegistryURL == "" {
+		cfg.NPMRegistryURL = "https://registry.npmjs.org"
+	}
 	if cfg.OSVURL == "" {
 		cfg.OSVURL = "https://api.osv.dev"
 	}
-	return &Registry{remote: cfg.GitRemote, proxy: strings.TrimRight(cfg.GoProxyURL, "/"), osv: strings.TrimRight(cfg.OSVURL, "/"), client: &http.Client{
+	return &Registry{remote: cfg.GitRemote, npm: strings.TrimRight(cfg.NPMRegistryURL, "/"), proxy: strings.TrimRight(cfg.GoProxyURL, "/"), osv: strings.TrimRight(cfg.OSVURL, "/"), client: &http.Client{
 		// Each request supplies its own timeout.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > 3 || req.URL.Host != via[0].URL.Host {

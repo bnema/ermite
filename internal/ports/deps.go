@@ -25,6 +25,8 @@ type DepsFile struct {
 
 // DepsRegistry resolves versions and malicious-package advisories for one check.
 type DepsRegistry interface {
+	// NPMVersions returns non-deprecated versions newer than current with publication times.
+	NPMVersions(ctx context.Context, name, current string) ([]domain.DepVersion, error)
 	// GoMajorPaths discovers up to five consecutive newer module-path majors.
 	GoMajorPaths(ctx context.Context, module string) ([]string, error)
 	// GoVersions returns the versions of module newer than current, each with
