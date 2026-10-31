@@ -39,7 +39,7 @@ func depsRun(number int64, status domain.CIStatus) *domain.CIRun {
 func depsOverview(t testing.TB) ports.InboxOverview {
 	rec := depsRec(t)
 	ov := inboxOverview(t)
-	ov.Deps = []ports.InboxDeps{{Rec: rec, Run: depsRun(3, domain.CICompleted)}}
+	ov.Deps = []ports.InboxDeps{{Rec: rec, Batch: *rec.Base(), Run: depsRun(3, domain.CICompleted)}}
 	ov.DepsCheckedAt = rec.CheckedAt
 	ov.Counts.Deps = 1
 	return ov
@@ -72,7 +72,7 @@ func TestInboxDepsTable(t *testing.T) {
 	assert.Contains(t, sec, " data-keep-open")
 	assert.Contains(t, sec, "Dependency updates")
 	assert.Contains(t, sec, `checked <time datetime="2026-03-04T05:06:07Z">2026-03-04</time>`)
-	assert.Contains(t, sec, "1 repo · 3 updates")
+	assert.Contains(t, sec, "1 batch · 3 updates")
 	assert.Contains(t, sec, `<li class="deps-row" id="deps-alpha">`)
 	assert.Contains(t, sec, "1 major · 1 minor · 1 patch")
 	assert.Contains(t, sec, "new 1")
@@ -266,7 +266,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 			t.Parallel()
 			rec := depsRec(t)
 			tc.mutate(&rec)
-			row := srv.depsRow(ports.InboxDeps{Rec: rec, Run: tc.run})
+			row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: *rec.Base(), Run: tc.run})
 			assert.Equal(t, tc.status, row.Status)
 			assert.Equal(t, tc.primary, row.Primary)
 			assert.Equal(t, tc.menu, [2]string{row.Ignore, row.Snooze})
@@ -278,7 +278,7 @@ func TestInboxDepsRowMapping(t *testing.T) {
 func TestInboxDepsRowSummarisesTheUpdates(t *testing.T) {
 	t.Parallel()
 	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
-	row := srv.depsRow(ports.InboxDeps{Rec: depsRec(t), Run: depsRun(3, domain.CICompleted)})
+	row := srv.depsRow(ports.InboxDeps{Rec: depsRec(t), Batch: depsRec(t).Batches[0], Run: depsRun(3, domain.CICompleted)})
 	assert.Equal(t, "deps-alpha", row.ID)
 	assert.Equal(t, "alpha", row.Repo)
 	assert.Equal(t, 3, row.Count)
@@ -367,9 +367,14 @@ func TestInboxDepsActions(t *testing.T) {
 	})
 	t.Run("open", func(t *testing.T) {
 		t.Parallel()
+		majorForm := url.Values{}
+		for k, v := range form {
+			majorForm[k] = v
+		}
+		majorForm.Set("batch", "npm/web/react@v19")
 		deps := mocks.NewDepsService(t)
-		deps.EXPECT().Open(mock.Anything, mock.Anything, alpha, domain.DepBatchKey(""), want).Return(domain.RepoDeps{}, nil).Once()
-		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/open", form)
+		deps.EXPECT().Open(mock.Anything, mock.Anything, alpha, domain.DepBatchKey("npm/web/react@v19"), want).Return(domain.RepoDeps{}, nil).Once()
+		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/open", majorForm)
 		assert.Equal(t, 303, rec.Code)
 		assert.Equal(t, "/-/inbox?tab=deps", rec.Header().Get("Location"))
 	})
@@ -428,7 +433,7 @@ func TestInboxDepsFailureExcerpt(t *testing.T) {
 		t.Run(reason, func(t *testing.T) {
 			svc := mocks.NewInboxService(t)
 			ov := depsOverview(t)
-			ov.Deps[0].Rec.Base().Error = reason
+			ov.Deps[0].Batch.Error = reason
 			svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
 			srv := depsServer(t, svc, mocks.NewDepsService(t))
 			body := inboxGet(srv, "/-/inbox?tab=deps", true).Body.String()
@@ -443,4 +448,18 @@ func TestInboxDepsFailureExcerpt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInboxMajorBatchRow(t *testing.T) {
+	srv := depsServer(t, mocks.NewInboxService(t), mocks.NewDepsService(t))
+	rec := depsRec(t)
+	batch := domain.DepBatch{Key: "npm/web/@scope/pkg@v2", MR: 9, Updates: []domain.DepUpdate{{DepRef: domain.DepRef{Name: "@scope/pkg", Version: "v2.1.0"}}}}
+	row := srv.depsRow(ports.InboxDeps{Rec: rec, Batch: batch})
+	assert.Equal(t, "@scope/pkg → v2", row.Title)
+	assert.Equal(t, string(batch.Key), row.Batch)
+	assert.True(t, row.Outdated)
+	assert.NotEqual(t, "deps-alpha", row.ID)
+	var buf strings.Builder
+	require.NoError(t, depsForm(row, row.Primary.Action, "Open", "btn", true, "").Render(t.Context(), &buf))
+	assert.Contains(t, buf.String(), `name="batch" value="npm/web/@scope/pkg@v2"`)
 }

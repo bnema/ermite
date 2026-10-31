@@ -167,6 +167,7 @@ func TestInboxDepsJoinsTheRun(t *testing.T) {
 	upd := []domain.DepUpdate{{DepRef: domain.DepRef{Name: "x/y", Version: "v1.1.0"}, Current: "v1.0.0", Kind: domain.DepMinor}}
 	older, newer := now.Add(-48*time.Hour), now.Add(-time.Hour)
 	withRun := domain.RepoDeps{Repo: name(t, "alpha"), CheckedAt: older, Batches: []domain.DepBatch{{Updates: upd, State: domain.DepsApplying, RunID: 5}}}
+	withRun.Batches = append(withRun.Batches, domain.DepBatch{Key: "major", MR: 10})
 	gone := domain.RepoDeps{Repo: name(t, "beta"), CheckedAt: newer, Batches: []domain.DepBatch{{Updates: append(upd, upd...), State: domain.DepsFailed, RunID: 9}}}
 	none := domain.RepoDeps{Repo: name(t, "gamma"), CheckedAt: older, Batches: []domain.DepBatch{{Updates: upd}}}
 
@@ -185,12 +186,13 @@ func TestInboxDepsJoinsTheRun(t *testing.T) {
 
 	got, err := in.Overview(context.Background(), domain.Owner())
 	require.NoError(t, err)
-	require.Len(t, got.Deps, 3)
+	require.Len(t, got.Deps, 4)
+	assert.Equal(t, domain.DepBatchKey("major"), got.Deps[1].Batch.Key)
 	require.NotNil(t, got.Deps[0].Run)
 	assert.EqualValues(t, 3, got.Deps[0].Run.Number)
-	assert.Nil(t, got.Deps[1].Run, "a run that is gone is no run")
-	assert.Nil(t, got.Deps[2].Run, "a record without a run reads none")
-	assert.Equal(t, 3, got.Counts.Deps)
+	assert.Nil(t, got.Deps[2].Run, "a run that is gone is no run")
+	assert.Nil(t, got.Deps[3].Run, "a record without a run reads none")
+	assert.Equal(t, 4, got.Counts.Deps)
 	assert.True(t, got.DepsCheckedAt.Equal(newer), "the latest check")
 }
 

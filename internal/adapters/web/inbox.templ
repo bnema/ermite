@@ -243,7 +243,7 @@ templ InboxDeps(p InboxPage) {
 					if p.DepsCheckedAt != "" {
 						checked <time datetime={ p.DepsCheckedAt }>{ p.DepsChecked }</time> ·{ " " }
 					}
-					{ plural(len(p.Deps), "repo", "repos") } · { plural(p.DepsUpdates, "update", "updates") }
+					{ plural(len(p.Deps), "batch", "batches") } · { plural(p.DepsUpdates, "update", "updates") }
 				</span>
 			</h2>
 			<nav class="deps-sort" aria-label="Sort repositories">
@@ -266,6 +266,10 @@ templ InboxDeps(p InboxPage) {
 						<details class="deps-main">
 							<summary id={ d.ID + "-sum" }>
 								<span class="deps-repo">{ d.Repo }</span>
+ <span>{ d.Title }</span>
+ if d.Outdated {
+ <span class="pill">outdated</span>
+ }
 								<span class="count">{ itoa(d.Count) }</span><span class="sr">{ " updates" }</span>
 								<span class="dim">{ d.Breakdown }</span>
 								if d.New > 0 {
@@ -360,6 +364,7 @@ templ depsStatusCell(s InboxDepsStatus) {
 templ depsForm(d InboxDepsRow, action, label, class string, refs bool, id string) {
 	<form method="post" action={ templ.SafeURL(action) }>
 		if refs {
+ <input type="hidden" name="batch" value={ d.Batch }/>
 			for _, u := range d.Updates {
 				<input type="hidden" name="ecosystem" value={ u.Ecosystem }/>
 				<input type="hidden" name="directory" value={ u.Directory }/>

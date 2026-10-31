@@ -5,6 +5,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"golang.org/x/mod/semver"
 	"net/http"
 	"net/url"
 	"strings"
@@ -44,6 +45,8 @@ type InboxDepsAction struct {
 
 // InboxDepsRow is the row of one repository with pending updates.
 type InboxDepsRow struct {
+	Batch, Title   string
+	Outdated       bool
 	Repo, RepoHref string
 	// ID is the id of the element: the live swap keeps its details open.
 	ID    string
@@ -106,11 +109,10 @@ func depsIconKind(s InboxDepsStatus) string {
 }
 
 // depsStatus is what the status cell says about the record and its run.
-func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
-	repo := d.Repo.String()
+func depsStatus(repo string, batch domain.DepBatch, run *domain.CIRun) InboxDepsStatus {
 	var st InboxDepsStatus
-	if d.Base().MR != 0 {
-		st.MR, st.MRHref = d.Base().MR, mrHref(repo, d.Base().MR)
+	if batch.MR != 0 {
+		st.MR, st.MRHref = batch.MR, mrHref(repo, batch.MR)
 	}
 	var runLink InboxDepsStatus
 	if run != nil {
@@ -120,7 +122,7 @@ func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
 		}
 		runLink.Text, runLink.Href = fmt.Sprintf("run #%d", n), runHref(repo, run.ID)
 	}
-	switch d.Base().State {
+	switch batch.State {
 	case domain.DepsApplying:
 		st.Kind, st.State = "running", "running"
 		switch {
@@ -133,7 +135,7 @@ func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
 		}
 		st.Text, st.Href = runLink.Text, runLink.Href
 	case domain.DepsFailed:
-		st.Kind, st.State, st.Title = "failed", "failed", d.Base().Error
+		st.Kind, st.State, st.Title = "failed", "failed", batch.Error
 		st.Text, st.Href = runLink.Text, runLink.Href
 	}
 	return st
@@ -141,14 +143,26 @@ func depsStatus(d domain.RepoDeps, run *domain.CIRun) InboxDepsStatus {
 
 func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 	d := in.Rec
+	batch := in.Batch
 	repo := d.Repo.String()
 	row := InboxDepsRow{
 		Repo: repo, RepoHref: repoHref(repo), ID: "deps-" + repo,
-		Count: len(d.Base().Updates), Breakdown: depsBreakdown(d.Base().Updates),
+		Count: len(batch.Updates), Breakdown: depsBreakdown(batch.Updates),
 	}
-	upToDate := d.Base().MR != 0 && domain.SameRefs(d.Base().Refs(), d.Base().MRVersions)
-	row.Status = depsStatus(d, in.Run)
-	for _, u := range d.Base().Updates {
+	row.Batch, row.Title = string(batch.Key), "Updates"
+	if batch.Key != "" {
+		row.ID += "-" + strings.TrimPrefix(batch.Key.Branch(), "bernard/deps-major/")
+		if len(batch.Updates) > 0 {
+			row.Title = batch.Updates[0].Name + " → " + semver.Major(batch.Updates[0].Version)
+		} else {
+			row.Title = strings.TrimPrefix(domain.BotSubject(batch), "build(deps): update ")
+			row.Title = strings.Replace(row.Title, " to ", " → ", 1)
+		}
+	}
+	row.Outdated = batch.MR != 0 && !domain.SameRefs(batch.Refs(), batch.MRVersions)
+	upToDate := batch.MR != 0 && domain.SameRefs(batch.Refs(), batch.MRVersions)
+	row.Status = depsStatus(repo, batch, in.Run)
+	for _, u := range batch.Updates {
 		if u.New {
 			row.New++
 		}
@@ -157,14 +171,14 @@ func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 			Current: u.Current, Latest: u.Version, Kind: depsKindLabel(u.Kind), New: u.New,
 		})
 	}
-	failed := d.Base().State == domain.DepsFailed
+	failed := batch.State == domain.DepsFailed
 	// The merge request already holds these versions: nothing to apply, only to
 	// view. A run in progress has no button at all.
-	merged := upToDate && d.Base().State == domain.DepsIdle
+	merged := upToDate && batch.State == domain.DepsIdle
 	if merged {
 		row.Primary = InboxDepsAction{Label: "View MR", Href: row.Status.MRHref}
 	}
-	if s.cfg.Deps != nil && d.Base().State != domain.DepsApplying {
+	if s.cfg.Deps != nil && batch.State != domain.DepsApplying {
 		base := inboxPath + "/deps/" + url.PathEscape(repo) + "/"
 		row.Snooze = base + "snooze"
 		if !merged {
@@ -173,7 +187,7 @@ func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 			switch {
 			case failed:
 				label = "Retry"
-			case d.Base().MR != 0:
+			case batch.MR != 0:
 				label = "Update MR"
 			}
 			row.Primary = InboxDepsAction{Label: label, Action: base + "open"}
@@ -218,9 +232,9 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 			return "", back, err
 		}
 		if op == depsOpen {
-			_, err = s.cfg.Deps.Open(ctx, principal(ctx), name, domain.DepBatchKey(""), refs)
+			_, err = s.cfg.Deps.Open(ctx, principal(ctx), name, domain.DepBatchKey(r.FormValue("batch")), refs)
 		} else {
-			_, err = s.cfg.Deps.Ignore(ctx, principal(ctx), name, domain.DepBatchKey(""), refs)
+			_, err = s.cfg.Deps.Ignore(ctx, principal(ctx), name, domain.DepBatchKey(r.FormValue("batch")), refs)
 		}
 		return back, back, err
 	}

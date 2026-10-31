@@ -505,7 +505,9 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 		}
 		now := in.clock.Now()
 		for _, d := range all {
-			if len(d.Base().Updates) == 0 || d.SnoozedUntil.After(now) {
+			if !slices.ContainsFunc(d.Batches, func(batch domain.DepBatch) bool {
+				return len(batch.Updates) > 0 || batch.MR != 0 || batch.State == domain.DepsApplying
+			}) || d.SnoozedUntil.After(now) {
 				continue
 			}
 			repo, err := lookupRepo(ctx, in.meta, d.Repo)
@@ -518,24 +520,29 @@ func (in *Inbox) Overview(ctx context.Context, p domain.Principal) (ports.InboxO
 			if repo.Archived {
 				continue
 			}
-			out.Counts.Deps++
-			// The latest check across eligible repositories.
-			if d.CheckedAt.After(out.DepsCheckedAt) {
-				out.DepsCheckedAt = d.CheckedAt
-			}
-			item := ports.InboxDeps{Rec: d}
-			if d.Base().RunID != 0 && in.ci != nil {
-				run, err := in.ci.GetRun(ctx, d.Repo, d.Base().RunID)
-				switch {
-				case err == nil:
-					item.Run = &run
-				case !errors.Is(err, domain.ErrNotFound):
-					// The row still tells the state of the record: a run that
-					// cannot be read must not hide the Inbox.
-					ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", d.Base().RunID).Msg("inbox: read the run of a dependency record")
+			for _, batch := range d.Batches {
+				if len(batch.Updates) == 0 && batch.MR == 0 && batch.State != domain.DepsApplying {
+					continue
 				}
+				out.Counts.Deps++
+				// The latest check across eligible repositories.
+				if d.CheckedAt.After(out.DepsCheckedAt) {
+					out.DepsCheckedAt = d.CheckedAt
+				}
+				item := ports.InboxDeps{Rec: d, Batch: batch}
+				if batch.RunID != 0 && in.ci != nil {
+					run, err := in.ci.GetRun(ctx, d.Repo, batch.RunID)
+					switch {
+					case err == nil:
+						item.Run = &run
+					case !errors.Is(err, domain.ErrNotFound):
+						// The row still tells the state of the record: a run that
+						// cannot be read must not hide the Inbox.
+						ctxLog(ctx).Error().Err(err).Str("repo", d.Repo.String()).Int64("run_id", batch.RunID).Msg("inbox: read the run of a dependency record")
+					}
+				}
+				out.Deps = append(out.Deps, item)
 			}
-			out.Deps = append(out.Deps, item)
 		}
 	}
 

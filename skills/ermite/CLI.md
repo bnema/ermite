@@ -283,3 +283,6 @@ The server advertises `deps.batches`: RPC dependency records include independent
 batches, and Open/Ignore accept a batch key (empty selects base). The CLI selects batches with `--batch KEY` (default base); list includes a BATCH
 column and JSON includes `batches` (key, updates, state, error, run ID, MR number,
 outdated). Updates include `new_name`.
+
+The web inbox shows one dependency row per batch, with an outdated badge when
+its MR holds older versions; Open/Ignore target that row, Snooze stays repo-wide.

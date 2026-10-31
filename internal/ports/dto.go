@@ -487,8 +487,9 @@ type InboxCounts struct {
 // InboxDeps is the pending dependency updates of one repository with the run
 // that applies them, or applied them last.
 type InboxDeps struct {
-	Rec domain.RepoDeps
-	// Run is the run of Rec.RunID; nil when the record has none or the run is
+	Batch domain.DepBatch
+	Rec   domain.RepoDeps
+	// Run is the run of Batch.RunID; nil when the record has none or the run is
 	// gone.
 	Run *domain.CIRun
 }
