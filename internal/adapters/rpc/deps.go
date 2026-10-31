@@ -55,7 +55,7 @@ func repoDepsToPB(d domain.RepoDeps) *pb.RepoDependencyUpdates {
 
 	for _, batch := range d.Batches {
 		updates := repoDepsToPBUpdates(batch.Updates)
-		out.Batches = append(out.Batches, &pb.DependencyBatch{Key: string(batch.Key), Updates: updates, State: depsStateToPB(batch.State), Error: batch.Error, RunId: batch.RunID, MergeRequestNumber: batch.MR, Outdated: batch.MR != 0 && !domain.SameRefs(batch.Refs(), batch.MRVersions)})
+		out.Batches = append(out.Batches, &pb.DependencyBatch{Key: string(batch.Key), Updates: updates, State: depsStateToPB(batch.State), Error: batch.Error, RunId: batch.RunID, MergeRequestNumber: batch.MR, Outdated: batch.Outdated()})
 	}
 
 	return out

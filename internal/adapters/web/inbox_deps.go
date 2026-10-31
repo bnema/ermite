@@ -160,8 +160,8 @@ func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 			row.Title = strings.Replace(row.Title, " to ", " → ", 1)
 		}
 	}
-	row.Outdated = batch.MR != 0 && !domain.SameRefs(batch.Refs(), batch.MRVersions)
-	upToDate := batch.MR != 0 && domain.SameRefs(batch.Refs(), batch.MRVersions)
+	row.Outdated = batch.Outdated()
+	upToDate := batch.MR != 0 && !row.Outdated
 	row.Status = depsStatus(repo, batch, in.Run)
 	for _, u := range batch.Updates {
 		if u.New {
