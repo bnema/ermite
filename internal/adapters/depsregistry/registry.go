@@ -41,7 +41,7 @@ func New(cfg Config) *Registry {
 		cfg.OSVURL = "https://api.osv.dev"
 	}
 	return &Registry{remote: cfg.GitRemote, proxy: strings.TrimRight(cfg.GoProxyURL, "/"), osv: strings.TrimRight(cfg.OSVURL, "/"), client: &http.Client{
-		Timeout: 15 * time.Second,
+		// Each request supplies its own timeout.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > 3 || req.URL.Host != via[0].URL.Host {
 				return fmt.Errorf("registry redirect refused")
@@ -51,7 +51,10 @@ func New(cfg Config) *Registry {
 	}}
 }
 
-func (r *Registry) request(req *http.Request, notFound bool) ([]byte, error) {
+func (r *Registry) request(req *http.Request, notFound bool, cap int64, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(req.Context(), timeout)
+	defer cancel()
+	req = req.Clone(ctx)
 	req.Header.Set("User-Agent", "ermite-bernard")
 	res, err := r.client.Do(req)
 	if err != nil {
@@ -64,13 +67,12 @@ func (r *Registry) request(req *http.Request, notFound bool) ([]byte, error) {
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w: registry HTTP %d", domain.ErrUnavailable, res.StatusCode)
 	}
-	const cap = 1 << 20
 	data, err := io.ReadAll(io.LimitReader(res.Body, cap+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > cap {
-		return nil, fmt.Errorf("%w: registry body exceeds 1 MiB", domain.ErrResourceExhausted)
+	if int64(len(data)) > cap {
+		return nil, fmt.Errorf("%w: registry body exceeds %d bytes", domain.ErrResourceExhausted, cap)
 	}
 	return data, nil
 }

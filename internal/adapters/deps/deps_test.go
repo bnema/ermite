@@ -33,6 +33,9 @@ func TestManifests(t *testing.T) {
 
 func TestGoModDetect(t *testing.T) {
 	reg := mocks.NewDepsRegistry(t)
+	reg.EXPECT().GoMajorPaths(mock.Anything, "example.org/a").Return([]string{"example.org/a/v2"}, nil).Once()
+	reg.EXPECT().GoMajorPaths(mock.Anything, "example.org/b/v2").Return(nil, nil).Once()
+	reg.EXPECT().GoVersions(mock.Anything, "example.org/a/v2", "v1.0.0").Return([]domain.DepVersion{{Version: "v2.0.0"}}, nil).Once()
 	reg.EXPECT().GoVersions(mock.Anything, "example.org/a", "v1.0.0").Return([]domain.DepVersion{{Version: "v1.1.0"}}, nil).Once()
 	reg.EXPECT().GoVersions(mock.Anything, "example.org/b/v2", "v2.0.0").Return([]domain.DepVersion{{Version: "v2.1.0"}}, nil).Once()
 	reg.EXPECT().GoVersions(mock.Anything, "private.org/m", "v1.0.0").Return(nil, domain.ErrNotFound).Once()
@@ -43,6 +46,7 @@ func TestGoModDetect(t *testing.T) {
 	got, err := (GoMod{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
+	assert.Equal(t, domain.DepVersion{Version: "v2.0.0", Path: "example.org/a/v2"}, got[0].Versions[1])
 	assert.Equal(t, "", got[0].Directory)
 	assert.Equal(t, "sub", got[1].Directory)
 	assert.Equal(t, "example.org/b/v2", got[1].Name)

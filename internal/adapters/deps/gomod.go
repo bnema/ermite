@@ -117,6 +117,23 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 			if err != nil {
 				return nil, err
 			}
+			paths, err := reg.GoMajorPaths(ctx, r.Mod.Path)
+			if err != nil {
+				return nil, err
+			}
+			for _, next := range paths {
+				more, err := reg.GoVersions(ctx, next, r.Mod.Version)
+				if errors.Is(err, domain.ErrNotFound) {
+					continue
+				}
+				if err != nil {
+					return nil, err
+				}
+				for i := range more {
+					more[i].Path = next
+				}
+				versions = append(versions, more...)
+			}
 			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Directory: moduleDir(p.String()), Name: r.Mod.Path, Current: r.Mod.Version, Versions: versions, GoDirective: goDirective})
 		}
 	}

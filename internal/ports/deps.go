@@ -25,6 +25,8 @@ type DepsFile struct {
 
 // DepsRegistry resolves versions and malicious-package advisories for one check.
 type DepsRegistry interface {
+	// GoMajorPaths discovers up to five consecutive newer module-path majors.
+	GoMajorPaths(ctx context.Context, module string) ([]string, error)
 	// GoVersions returns the versions of module newer than current, each with
 	// its publish time. domain.ErrNotFound = unresolvable: skip the module.
 	GoVersions(ctx context.Context, module, current string) ([]domain.DepVersion, error)

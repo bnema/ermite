@@ -5,9 +5,11 @@ package depsregistry
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +33,7 @@ func (r *Registry) GoDirective(ctx context.Context, name, version string) (strin
 	if err != nil {
 		return "", err
 	}
-	data, err := r.request(req, true)
+	data, err := r.request(req, true, 1<<20, 15*time.Second)
 	if err != nil {
 		return "", err
 	}
@@ -56,7 +58,7 @@ func (r *Registry) GoVersions(ctx context.Context, name, current string) ([]doma
 		if err != nil {
 			return nil, err
 		}
-		return r.request(req, true)
+		return r.request(req, true, 1<<20, 15*time.Second)
 	}
 	data, err := get(path + "/@v/list")
 	if err != nil {
@@ -91,4 +93,51 @@ func (r *Registry) GoVersions(ctx context.Context, name, current string) ([]doma
 		out = append(out, domain.DepVersion{Version: v, Published: info.Time})
 	}
 	return out, nil
+}
+
+// GoMajorPaths probes consecutive path majors, stopping at the first missing path.
+func (r *Registry) GoMajorPaths(ctx context.Context, name string) ([]string, error) {
+	if err := module.CheckPath(name); err != nil {
+		return nil, fmt.Errorf("%w: module path: %v", domain.ErrInvalid, err)
+	}
+	base, suffix, ok := module.SplitPathVersion(name)
+	if !ok {
+		return nil, domain.ErrInvalid
+	}
+	separator := "/v"
+	if strings.HasPrefix(name, "gopkg.in/") {
+		separator = ".v"
+	}
+	major := 1
+	if suffix != "" {
+		n, err := strconv.Atoi(strings.TrimPrefix(suffix, separator))
+		if err != nil {
+			return nil, domain.ErrInvalid
+		}
+		major = n
+	}
+	var paths []string
+	for n := major + 1; n <= major+5; n++ {
+		candidate := base + separator + strconv.Itoa(n)
+		escaped, err := module.EscapePath(candidate)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.proxy+"/"+escaped+"/@v/list", nil)
+		if err != nil {
+			return nil, err
+		}
+		data, err := r.request(req, true, 1<<20, 15*time.Second)
+		if errors.Is(err, domain.ErrNotFound) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(strings.Fields(string(data))) == 0 {
+			break
+		}
+		paths = append(paths, candidate)
+	}
+	return paths, nil
 }

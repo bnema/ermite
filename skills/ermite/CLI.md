@@ -208,7 +208,7 @@ By default the default branch and all tags are pushed; `--all-branches` pushes e
 
 ## Bernard (dependency updates, owner only)
 
-Bernard checks daily for updates to Go modules and GitHub Actions. It skips archived repos and versions younger than the cooldown.
+Bernard checks daily for updates to Go modules and GitHub Actions. Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
 
 | Command | Notes |
 |---|---|

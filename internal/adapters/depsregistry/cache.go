@@ -19,6 +19,7 @@ type result[T any] struct {
 type cached struct {
 	registry   ports.DepsRegistry
 	mu         sync.Mutex
+	majorPaths map[string]result[[]string]
 	goVersions map[[2]string]result[[]domain.DepVersion]
 	directives map[[2]string]result[string]
 	tags       map[[2]string]result[[]domain.DepTag]
@@ -28,7 +29,7 @@ type cached struct {
 // NewCached creates a memo cache owned by one check, not shared across checks.
 // Calls are serialized so concurrent requests for the same key query only once.
 func NewCached(registry ports.DepsRegistry) ports.DepsRegistry {
-	return &cached{registry: registry, goVersions: make(map[[2]string]result[[]domain.DepVersion]), directives: make(map[[2]string]result[string]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
+	return &cached{registry: registry, majorPaths: make(map[string]result[[]string]), goVersions: make(map[[2]string]result[[]domain.DepVersion]), directives: make(map[[2]string]result[string]), tags: make(map[[2]string]result[[]domain.DepTag]), malicious: make(map[[3]string]result[bool])}
 }
 func cacheable(err error) bool { return err == nil || errors.Is(err, domain.ErrNotFound) }
 
@@ -81,6 +82,19 @@ func (c *cached) Malicious(ctx context.Context, eco domain.DepsEcosystem, name, 
 	value, err := c.registry.Malicious(ctx, eco, name, version)
 	if cacheable(err) {
 		c.malicious[key] = result[bool]{value, err}
+	}
+	return value, err
+}
+
+func (c *cached) GoMajorPaths(ctx context.Context, name string) ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if v, ok := c.majorPaths[name]; ok {
+		return slices.Clone(v.value), v.err
+	}
+	value, err := c.registry.GoMajorPaths(ctx, name)
+	if cacheable(err) {
+		c.majorPaths[name] = result[[]string]{slices.Clone(value), err}
 	}
 	return value, err
 }

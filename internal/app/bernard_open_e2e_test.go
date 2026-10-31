@@ -148,6 +148,8 @@ func (goDepsRegistry) GoVersions(_ context.Context, module, _ string) ([]domain.
 	return []domain.DepVersion{{Version: "v0.21.0", Published: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}}, nil
 }
 
+func (goDepsRegistry) GoMajorPaths(context.Context, string) ([]string, error) { return nil, nil }
+
 func (goDepsRegistry) GoDirective(context.Context, string, string) (string, error) {
 	return "1.21", nil
 }

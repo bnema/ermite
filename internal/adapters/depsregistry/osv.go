@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 )
@@ -43,7 +44,7 @@ func (r *Registry) Malicious(ctx context.Context, eco domain.DepsEcosystem, name
 		return false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	data, err := r.request(req, false)
+	data, err := r.request(req, false, 1<<20, 15*time.Second)
 	if err != nil {
 		return false, err
 	}
