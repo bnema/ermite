@@ -146,3 +146,13 @@ pass. Each record is written at most once, atomically with the schema bump;
 re-running the migration leaves existing batches unchanged. Older builds refuse
 schema 12. Back up the stopped server's data before upgrading; rollback requires
 restoring that backup.
+
+Schema 12 also adds these CI fields, with no data rewrite:
+
+- `CIRunner.kinds` (10): the job kinds the runner polls for, recorded when they
+  change. Empty means workflow jobs only.
+- `CIDepsJob.details` (3): one entry per update with its ref, `new_name`, npm
+  range, package manager and root. `node_version` (4) and `requires` (5) hold
+  the Node.js version and the runner kinds the job needs.
+- `CIDepsJob.updates` (1) is deprecated: new jobs leave it empty, and it is
+  decoded only for jobs queued before schema 12, which have no `details`.
