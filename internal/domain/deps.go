@@ -3,8 +3,11 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"fmt"
 	goversion "go/version"
 	"slices"
+	"strings"
 	"time"
 
 	"golang.org/x/mod/semver"
@@ -35,6 +38,7 @@ const (
 // DepVersion is an available version. A zero Published uses first-seen instead.
 type DepVersion struct {
 	Version   string
+	Path      string // module path holding the version; empty means candidate name
 	Published time.Time
 	SHA       string // peeled action commit; empty for Go
 }
@@ -82,6 +86,7 @@ func GoDirectiveFits(dep, repo string) bool {
 // DepUpdate is a proposed update; Version is the latest proposed version.
 type DepUpdate struct {
 	DepRef
+	NewName string // new module path for path-major updates
 	Current string
 	Kind    DepKind
 	New     bool // absent from the previous check
@@ -99,6 +104,7 @@ const (
 
 // RepoDeps holds Bernard's repository record, apart from ignores and first-seen.
 type RepoDeps struct {
+	Batches      []DepBatch
 	Repo         RepoName
 	Updates      []DepUpdate // sorted by ecosystem, directory, name
 	CheckedAt    time.Time
@@ -209,4 +215,117 @@ func floatingMajor(v string) bool {
 // An empty To means tidy removed the module.
 type DepSideEffect struct {
 	Directory, Name, From, To string
+}
+
+// DepBatchKey identifies the base batch (empty) or a dependency major.
+type DepBatchKey string
+
+// DepBatch holds independently applied updates and their run and merge request.
+type DepBatch struct {
+	Key        DepBatchKey
+	Updates    []DepUpdate
+	State      DepsState
+	Error      string
+	RunID      int64
+	RunUpdates []DepUpdate
+	MR         int64
+	MRVersions []DepRef
+}
+
+// Batch finds a batch and its index, or returns index -1 when absent.
+func (d RepoDeps) Batch(k DepBatchKey) (DepBatch, int, bool) {
+	for i, b := range d.Batches {
+		if b.Key == k {
+			return b, i, true
+		}
+	}
+	return DepBatch{}, -1, false
+}
+
+// Pending reports whether any batch has proposed updates.
+func (d RepoDeps) Pending() bool {
+	return slices.ContainsFunc(d.Batches, func(b DepBatch) bool { return len(b.Updates) != 0 })
+}
+
+// MajorBatchKey uses the current dependency name, even for path-major updates.
+func MajorBatchKey(u DepUpdate) DepBatchKey {
+	return DepBatchKey(string(u.Ecosystem) + "/" + u.Directory + "/" + u.Name + "@" + semver.Major(u.Version))
+}
+
+// Branch returns a safe, stable branch name with a collision-resistant suffix.
+func (k DepBatchKey) Branch() string {
+	if k == "" {
+		return "bernard/deps"
+	}
+	var slug strings.Builder
+	for _, r := range strings.ToLower(string(k)) {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+			r = '-'
+		}
+		if r == '-' && (slug.Len() == 0 || strings.HasSuffix(slug.String(), "-")) {
+			continue
+		}
+		slug.WriteRune(r)
+	}
+	s := strings.Trim(slug.String(), "-")
+	if len(s) > 80 {
+		s = s[:80]
+	}
+	sum := sha256.Sum256([]byte(k))
+	return fmt.Sprintf("bernard/deps-major/%s-%x", s, sum[:4])
+}
+
+// BotSubject describes a batch. Stale major batches recover the name and major
+// from their key, splitting at the last @ to preserve scoped package names.
+func BotSubject(b DepBatch) string {
+	if b.Key == "" {
+		return BotCommitSubject(len(b.Updates))
+	}
+	if len(b.Updates) != 0 {
+		return "build(deps): update " + b.Updates[0].Name + " to " + semver.Major(b.Updates[0].Version)
+	}
+	parts := strings.SplitN(string(b.Key), "/", 3)
+	name := parts[len(parts)-1]
+	major := ""
+	if i := strings.LastIndex(name, "@"); i >= 0 {
+		name, major = name[:i], name[i+1:]
+	}
+	return "build(deps): update " + name + " to " + major
+}
+
+// SplitBatches selects the highest same-major and cross-major version per
+// dependency. It does not modify the input or consult the update's Kind.
+func SplitBatches(ups []DepUpdate) (base, majors []DepUpdate) {
+	type identity struct {
+		eco       DepsEcosystem
+		dir, name string
+	}
+	same, cross := map[identity]DepUpdate{}, map[identity]DepUpdate{}
+	for _, u := range ups {
+		k := identity{u.Ecosystem, u.Directory, u.Name}
+		target := same
+		if semver.Major(u.Version) != semver.Major(u.Current) {
+			target = cross
+		}
+		if old, ok := target[k]; !ok || semver.Compare(u.Version, old.Version) > 0 {
+			target[k] = u
+		}
+	}
+	for _, u := range same {
+		base = append(base, u)
+	}
+	for _, u := range cross {
+		majors = append(majors, u)
+	}
+	slices.SortFunc(base, func(a, b DepUpdate) int {
+		if c := strings.Compare(string(a.Ecosystem), string(b.Ecosystem)); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.Directory, b.Directory); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	slices.SortFunc(majors, func(a, b DepUpdate) int { return strings.Compare(string(MajorBatchKey(a)), string(MajorBatchKey(b))) })
+	return
 }

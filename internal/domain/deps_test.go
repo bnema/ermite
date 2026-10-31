@@ -3,6 +3,9 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,4 +173,117 @@ func TestPickUpdateNilCallbacksAndPureInput(t *testing.T) {
 	c.Versions[0].Published = time.Time{}
 	_, ok = PickUpdate(c, now, 72*time.Hour, nil, nil)
 	assert.False(t, ok)
+}
+
+func TestBatchLookupAndPending(t *testing.T) {
+	u := DepUpdate{DepRef: DepRef{Name: "pkg"}}
+	for _, tc := range []struct {
+		name           string
+		d              RepoDeps
+		key            DepBatchKey
+		index          int
+		found, pending bool
+	}{
+		{"empty", RepoDeps{}, "", -1, false, false},
+		{"legacy ignored", RepoDeps{Updates: []DepUpdate{u}}, "", -1, false, false},
+		{"base", RepoDeps{Batches: []DepBatch{{}}}, "", 0, true, false},
+		{"major", RepoDeps{Batches: []DepBatch{{}, {Key: "major", Updates: []DepUpdate{u}}}}, "major", 1, true, true},
+		{"missing", RepoDeps{Batches: []DepBatch{{Updates: []DepUpdate{u}}}}, "missing", -1, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, i, ok := tc.d.Batch(tc.key)
+			assert.Equal(t, tc.index, i)
+			assert.Equal(t, tc.found, ok)
+			assert.Equal(t, tc.pending, tc.d.Pending())
+			if ok {
+				assert.Equal(t, tc.d.Batches[i], b)
+			} else {
+				assert.Equal(t, DepBatch{}, b)
+			}
+		})
+	}
+}
+
+func TestMajorBatchKey(t *testing.T) {
+	for _, tc := range []struct {
+		eco                      DepsEcosystem
+		dir, name, version, want string
+	}{
+		{"npm", "web", "@scope/pkg", "v19.2.0", "npm/web/@scope/pkg@v19"},
+		{EcosystemGoMod, "", "gopkg.in/yaml.v2", "v3.0.1+incompatible", "gomod//gopkg.in/yaml.v2@v3"},
+		{EcosystemActions, ".github/workflows/ci.yml", "actions/checkout", "v5", "github-actions/.github/workflows/ci.yml/actions/checkout@v5"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			assert.Equal(t, DepBatchKey(tc.want), MajorBatchKey(DepUpdate{DepRef: DepRef{Ecosystem: tc.eco, Directory: tc.dir, Name: tc.name, Version: tc.version}, NewName: "ignored"}))
+		})
+	}
+}
+
+func TestDepBatchBranch(t *testing.T) {
+	for _, tc := range []struct{ key, slug string }{
+		{"", ""}, {"npm/web/@scope/pkg@v19", "npm-web-scope-pkg-v19"},
+		{"gomod//gopkg.in/yaml.v2@v3", "gomod-gopkg-in-yaml-v2-v3"},
+		{"---A__B...C---", "a__b-c"}, {"日本語/É/包", ""},
+		{strings.Repeat("A", 200), strings.Repeat("a", 80)},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			key := DepBatchKey(tc.key)
+			got := key.Branch()
+			_, err := ParseBranchName(got)
+			require.NoError(t, err)
+			if key == "" {
+				assert.Equal(t, "bernard/deps", got)
+			} else {
+				sum := sha256.Sum256([]byte(key))
+				assert.Equal(t, fmt.Sprintf("bernard/deps-major/%s-%x", tc.slug, sum[:4]), got)
+			}
+			assert.Equal(t, got, key.Branch())
+		})
+	}
+	assert.NotEqual(t, DepBatchKey("a/b").Branch(), DepBatchKey("a.b").Branch())
+}
+
+func TestBotSubject(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		batch DepBatch
+		want  string
+	}{
+		{"empty base", DepBatch{}, "build(deps): update 0 dependencies"},
+		{"base", DepBatch{Updates: make([]DepUpdate, 2)}, "build(deps): update 2 dependencies"},
+		{"major", DepBatch{Key: "npm/web/react@v19", Updates: []DepUpdate{{DepRef: DepRef{Name: "react", Version: "v19.2.0"}}}}, "build(deps): update react to v19"},
+		{"stale scoped", DepBatch{Key: "npm/web/@scope/pkg@v19"}, "build(deps): update @scope/pkg to v19"},
+		{"stale Go", DepBatch{Key: "gomod//gopkg.in/yaml.v2@v3"}, "build(deps): update gopkg.in/yaml.v2 to v3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, BotSubject(tc.batch)) })
+	}
+}
+
+func TestSplitBatches(t *testing.T) {
+	u := func(eco DepsEcosystem, dir, name, current, version string) DepUpdate {
+		return DepUpdate{DepRef: DepRef{Ecosystem: eco, Directory: dir, Name: name, Version: version}, Current: current}
+	}
+	a := u("npm", "", "a", "v1.0.0", "v1.9.0")
+	a2 := u("npm", "", "a", "v1.0.0", "v3.2.0")
+	b := u("npm", "web", "a", "v0.1.0", "v0.9.0")
+	c := u(EcosystemGoMod, "", "z", "v1.0.0", "v2.0.0+incompatible")
+	d := u("npm", "", "b", "v1.0.0", "v1.1.0")
+	e := u(EcosystemGoMod, "", "z", "v1.0.0", "v1.2.0")
+	for _, tc := range []struct {
+		name                string
+		input, base, majors []DepUpdate
+	}{
+		{"empty", nil, nil, nil},
+		{"base only", []DepUpdate{b, d, a, e}, []DepUpdate{e, a, d, b}, nil},
+		{"major only sorted", []DepUpdate{a2, c}, nil, []DepUpdate{c, a2}},
+		{"highest per identity", []DepUpdate{a2, b, a, c, d, e, u("npm", "", "a", "v1.0.0", "v2.9.0"), u("npm", "", "a", "v1.0.0", "v1.1.0")}, []DepUpdate{e, a, d, b}, []DepUpdate{c, a2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := append([]DepUpdate(nil), tc.input...)
+			base, majors := SplitBatches(tc.input)
+			assert.Equal(t, tc.base, base)
+			assert.Equal(t, tc.majors, majors)
+			assert.Equal(t, before, tc.input)
+		})
+	}
 }
