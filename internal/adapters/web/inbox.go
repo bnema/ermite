@@ -286,11 +286,17 @@ func depsSortParam(raw string) string {
 	return ""
 }
 
-// sortDepsRows orders the rows: by name, or most updates first then by name.
+// sortDepsRows orders the rows, one per batch, by repository: by name, or the
+// repositories with the most updates across their batches first, then by name.
+// The batches of a repository stay together, in the order of the overview.
 func sortDepsRows(rows []InboxDepsRow, sort string) {
+	total := map[string]int{}
+	for _, r := range rows {
+		total[r.Repo] += r.Count
+	}
 	slices.SortStableFunc(rows, func(a, b InboxDepsRow) int {
 		if sort != depsSortName {
-			if c := cmp.Compare(b.Count, a.Count); c != 0 {
+			if c := cmp.Compare(total[b.Repo], total[a.Repo]); c != 0 {
 				return c
 			}
 		}

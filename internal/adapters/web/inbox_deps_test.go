@@ -111,21 +111,34 @@ func TestInboxDepsTable(t *testing.T) {
 func TestInboxDepsSortsByUpdates(t *testing.T) {
 	t.Parallel()
 	ov := depsOverview(t)
-	few := depsRec(t)
-	few.Repo, few.Updates = repoName(t, "aaa"), few.Updates[:1]
-	many := depsRec(t)
-	many.Repo = repoName(t, "zzz")
-	ov.Deps = []ports.InboxDeps{{Rec: few}, {Rec: many}}
+	// aaa: 2 base updates and a major batch of 2 (4 in total); zzz: 3 base
+	// updates, the largest single row.
+	aaa := depsRec(t)
+	aaa.Repo = repoName(t, "aaa")
+	base := aaa.Batches[0]
+	base.Updates = base.Updates[:2]
+	major := domain.DepBatch{Key: "npm/web/react@v19", Updates: []domain.DepUpdate{
+		{DepRef: domain.DepRef{Ecosystem: domain.EcosystemNPM, Directory: "web", Name: "react", Version: "v19.0.0"}, Current: "v18.3.1", Kind: domain.DepMajor},
+		{DepRef: domain.DepRef{Ecosystem: domain.EcosystemNPM, Directory: "web", Name: "react-dom", Version: "v19.0.0"}, Current: "v18.3.1", Kind: domain.DepMajor},
+	}}
+	aaa.Batches = []domain.DepBatch{base, major}
+	zzz := depsRec(t)
+	zzz.Repo = repoName(t, "zzz")
+	ov.Deps = []ports.InboxDeps{{Rec: zzz, Batch: zzz.Batches[0]}, {Rec: aaa, Batch: base}, {Rec: aaa, Batch: major}}
 	svc := mocks.NewInboxService(t)
 	svc.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil)
 	srv := depsServer(t, svc, mocks.NewDepsService(t))
 
+	var majorAt int
 	order := func(path string) (first, second int, body string) {
 		body = inboxGet(srv, path, true).Body.String()
+		majorAt = strings.Index(body, `id="deps-aaa-`)
 		return strings.Index(body, `id="deps-aaa"`), strings.Index(body, `id="deps-zzz"`), body
 	}
 	a, z, body := order("/-/inbox?tab=deps")
-	assert.Less(t, z, a, "most updates first by default")
+	assert.Less(t, a, z, "the repository with the most updates across its batches comes first")
+	assert.Less(t, a, majorAt, "the batches of a repository stay together")
+	assert.Less(t, majorAt, z, "the batches of a repository stay together")
 	assert.Contains(t, body, `<a href="/-/inbox?tab=deps#inbox-deps" aria-current="page">most updates</a>`)
 	assert.Contains(t, body, `<a href="/-/inbox?tab=deps&amp;sort=name#inbox-deps">name</a>`)
 
@@ -133,6 +146,7 @@ func TestInboxDepsSortsByUpdates(t *testing.T) {
 	assert.Less(t, a, z, "sort=name orders by repository name")
 	assert.Contains(t, body, `sort=name#inbox-deps" aria-current="page">name</a>`)
 	assert.Contains(t, body, `action="/-/inbox/deps/aaa/snooze?sort=name"`, "the actions keep the order")
+	assert.Contains(t, body[majorAt:], `action="/-/inbox/deps/aaa/open?sort=name"><input type="hidden" name="batch" value="npm/web/react@v19">`, "the batch forms keep the order")
 }
 
 func TestInboxDepsSummaryHasNoInteractiveContent(t *testing.T) {
