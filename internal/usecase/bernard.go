@@ -443,19 +443,23 @@ func fittingUpdate(ctx context.Context, reg ports.DepsRegistry, name domain.Repo
 
 // readManifest reads a file; ok is false when it is larger than the limit.
 func (b *Bernard) readManifest(ctx context.Context, name domain.RepoName, rev domain.Revision, tp domain.TreePath) ([]byte, bool, error) {
+	return b.readDepsFile(ctx, name, rev, tp, maxDepsManifestBytes)
+}
+
+func (b *Bernard) readDepsFile(ctx context.Context, name domain.RepoName, rev domain.Revision, tp domain.TreePath, limit int) ([]byte, bool, error) {
 	info, rc, err := b.cfg.Reader.OpenBlob(ctx, name, rev, tp)
 	if err != nil {
 		return nil, false, fmt.Errorf("read %s: %w", tp, err)
 	}
 	defer func() { _ = rc.Close() }()
-	if info.Size > maxDepsManifestBytes {
+	if info.Size > int64(limit) {
 		return nil, false, nil
 	}
-	data, err := io.ReadAll(io.LimitReader(rc, maxDepsManifestBytes+1))
+	data, err := io.ReadAll(io.LimitReader(rc, int64(limit)+1))
 	if err != nil {
 		return nil, false, fmt.Errorf("read %s: %w", tp, err)
 	}
-	if len(data) > maxDepsManifestBytes {
+	if len(data) > limit {
 		return nil, false, nil
 	}
 	return data, true, nil

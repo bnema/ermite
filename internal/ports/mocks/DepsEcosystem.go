@@ -331,6 +331,63 @@ func (_c *DepsEcosystem_Name_Call) RunAndReturn(run func() domain.DepsEcosystem)
 	return _c
 }
 
+// ReportAllowed provides a mock function for the type DepsEcosystem
+func (_mock *DepsEcosystem) ReportAllowed(ups []domain.DepUpdate, p domain.TreePath) bool {
+	ret := _mock.Called(ups, p)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReportAllowed")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func([]domain.DepUpdate, domain.TreePath) bool); ok {
+		r0 = returnFunc(ups, p)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// DepsEcosystem_ReportAllowed_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReportAllowed'
+type DepsEcosystem_ReportAllowed_Call struct {
+	*mock.Call
+}
+
+// ReportAllowed is a helper method to define mock.On call
+//   - ups []domain.DepUpdate
+//   - p domain.TreePath
+func (_e *DepsEcosystem_Expecter) ReportAllowed(ups any, p any) *DepsEcosystem_ReportAllowed_Call {
+	return &DepsEcosystem_ReportAllowed_Call{Call: _e.mock.On("ReportAllowed", ups, p)}
+}
+
+func (_c *DepsEcosystem_ReportAllowed_Call) Run(run func(ups []domain.DepUpdate, p domain.TreePath)) *DepsEcosystem_ReportAllowed_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 []domain.DepUpdate
+		if args[0] != nil {
+			arg0 = args[0].([]domain.DepUpdate)
+		}
+		var arg1 domain.TreePath
+		if args[1] != nil {
+			arg1 = args[1].(domain.TreePath)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *DepsEcosystem_ReportAllowed_Call) Return(b bool) *DepsEcosystem_ReportAllowed_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *DepsEcosystem_ReportAllowed_Call) RunAndReturn(run func(ups []domain.DepUpdate, p domain.TreePath) bool) *DepsEcosystem_ReportAllowed_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Validate provides a mock function for the type DepsEcosystem
 func (_mock *DepsEcosystem) Validate(before map[domain.TreePath][]byte, after map[domain.TreePath][]byte, ups []domain.DepUpdate) ([]domain.DepSideEffect, error) {
 	ret := _mock.Called(before, after, ups)

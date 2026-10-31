@@ -67,7 +67,7 @@ func TestBernardDepsJobEndedFailsWithABoundedReason(t *testing.T) {
 		{"lost runner", domain.CIFailure, "The runner alpha lost contact\nsecond line", nil, "the run ended: failure: The runner alpha lost contact\nsecond line"},
 		{"failure with no message", domain.CIFailure, "", &ports.DepsReport{}, "the run ended: failure"},
 		{"success without a report", domain.CISuccess, "", nil, "the runner sent no report"},
-		{"unappliable report", domain.CISuccess, "", &ports.DepsReport{}, "failed precondition: no Go module ecosystem"},
+		{"unappliable report", domain.CISuccess, "", &ports.DepsReport{}, "failed precondition: no runner ecosystem gomod"},
 		{"long reason", domain.CIFailure, "", &ports.DepsReport{Error: strings.Repeat("é", 4000)}, strings.Repeat("é", 1024)},
 	} {
 		t.Run(c.name, func(t *testing.T) {

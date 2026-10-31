@@ -47,6 +47,7 @@ type DepsEcosystem interface {
 	Name() domain.DepsEcosystem
 	Manifests(paths domain.PathList) []domain.TreePath
 	Detect(ctx context.Context, files map[domain.TreePath][]byte, reg DepsRegistry) ([]domain.DepCandidate, error)
+	ReportAllowed(ups []domain.DepUpdate, p domain.TreePath) bool
 	ApplyInServer() bool
 	// Apply is only called when ApplyInServer is true.
 	Apply(files map[domain.TreePath][]byte, ups []domain.DepUpdate) (map[domain.TreePath][]byte, error)

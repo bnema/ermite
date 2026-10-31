@@ -157,3 +157,6 @@ func filePaths(files map[domain.TreePath][]byte) []domain.TreePath {
 	sort.Slice(out, func(i, j int) bool { return out[i].String() < out[j].String() })
 	return out
 }
+
+// ReportAllowed refuses runner edits: Actions apply in the server.
+func (Actions) ReportAllowed([]domain.DepUpdate, domain.TreePath) bool { return false }

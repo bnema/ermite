@@ -329,3 +329,31 @@ func TestGoModValidateRefusesSameVersionRespelled(t *testing.T) {
 		})
 	}
 }
+
+func TestGoModValidatePathMajor(t *testing.T) {
+	for _, c := range []struct {
+		name, source, req string
+		valid             bool
+	}{
+		{"valid", "import _ \"example.com/lib/v2/sub\"", "require example.com/lib/v2 v2.0.0", true},
+		{"old indirect", "import _ \"example.com/lib/v2/sub\"", "require (\nexample.com/lib/v2 v2.0.0\nexample.com/lib v1.0.0 // indirect\n)", true},
+		{"old direct", "import _ \"example.com/lib/v2/sub\"", "require (\nexample.com/lib/v2 v2.0.0\nexample.com/lib v1.0.0\n)", false},
+		{"wrong version", "import _ \"example.com/lib/v2/sub\"", "require example.com/lib/v2 v2.1.0", false},
+		{"wrong import", "import _ \"evil.com/lib\"", "require example.com/lib/v2 v2.0.0", false},
+		{"code edit", "import _ \"example.com/lib/v2/sub\"\nvar X = 1", "require example.com/lib/v2 v2.0.0", false},
+		{"alias edit", "import alias \"example.com/lib/v2/sub\"", "require example.com/lib/v2 v2.0.0", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			before := map[domain.TreePath][]byte{tp(t, "go.mod"): []byte("module example.com/app\nrequire example.com/lib v1.0.0\n"), tp(t, "main.go"): []byte("package main\nimport _ \"example.com/lib/sub\"\n")}
+			after := map[domain.TreePath][]byte{tp(t, "go.mod"): []byte("module example.com/app\n" + c.req + "\n"), tp(t, "main.go"): []byte("package main\n" + c.source + "\n")}
+			u := update(domain.EcosystemGoMod, "", "example.com/lib", "v1.0.0", "v2.0.0")
+			u.NewName = "example.com/lib/v2"
+			_, err := (GoMod{}).Validate(before, after, []domain.DepUpdate{u})
+			if c.valid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, domain.ErrInvalid)
+			}
+		})
+	}
+}

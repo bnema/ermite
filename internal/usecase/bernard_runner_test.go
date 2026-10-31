@@ -56,6 +56,13 @@ func newRunnerRig(t *testing.T, goMod string) *runnerRig {
 		r.eco.EXPECT().ApplyInServer().Return(true).Maybe()
 		return []ports.DepsEcosystem{deps.GoMod{}, r.eco}
 	})
+	rr.reader.EXPECT().ListPaths(mock.Anything, rr.repo, mock.Anything, domain.MaxPathEntries, domain.MaxPathBytes).RunAndReturn(func(context.Context, domain.RepoName, domain.Revision, int, int) (domain.PathList, error) {
+		var paths []string
+		for p := range rr.files {
+			paths = append(paths, p)
+		}
+		return domain.PathList{Paths: paths}, nil
+	}).Maybe()
 	rr.reader.EXPECT().OpenBlob(mock.Anything, rr.repo, domain.RevisionOf(oid("a")), mock.Anything).RunAndReturn(
 		func(_ context.Context, _ domain.RepoName, _ domain.Revision, p domain.TreePath) (domain.BlobInfo, io.ReadCloser, error) {
 			c, ok := rr.files[p.String()]
@@ -473,6 +480,7 @@ func TestBernardCheckDepsReportClassifiesReadFailures(t *testing.T) {
 		rr.open(goUpdate())
 		boom := errors.New("git is down")
 		rr.reader.ExpectedCalls = nil
+		rr.reader.EXPECT().ListPaths(mock.Anything, rr.repo, mock.Anything, domain.MaxPathEntries, domain.MaxPathBytes).Return(domain.PathList{Paths: []string{"go.mod"}}, nil)
 		rr.reader.EXPECT().OpenBlob(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(domain.BlobInfo{}, nil, boom)
 		run, job := rr.endedRun(domain.CISuccess)
 		err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
@@ -508,4 +516,33 @@ func TestBernardOpenMajorBatchByKey(t *testing.T) {
 	require.Equal(t, int64(runnerRunID), got.Batches[1].RunID)
 	require.Equal(t, []domain.DepUpdate{up}, got.Batches[1].RunUpdates)
 	require.Equal(t, domain.BotSubject(got.Batches[1]), rr.started.Title)
+}
+
+func TestBernardPathMajorReport(t *testing.T) {
+	for _, c := range []struct {
+		name, file, content string
+		valid               bool
+	}{
+		{"valid", "main.go", "package main\nimport _ \"example.com/lib/v2/sub\"\nvar X = 1\n", true},
+		{"non import", "main.go", "package main\nimport _ \"example.com/lib/v2/sub\"\nvar X = 2\n", false},
+		{"disallowed", "README.md", "oops", false},
+		{"nested module", "nested/main.go", "package main\nimport _ \"example.com/lib/v2/sub\"\nvar X = 1\n", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rr := newRunnerRig(t, "module example.com/app\ngo 1.24\nrequire example.com/lib v1.0.0\n")
+			rr.files["main.go"] = "package main\nimport _ \"example.com/lib/sub\"\nvar X = 1\n"
+			rr.files["nested/go.mod"] = "module example.com/nested\n"
+			rr.files["nested/main.go"] = rr.files["main.go"]
+			u := domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "example.com/lib", Version: "v2.0.0"}, Current: "v1.0.0", NewName: "example.com/lib/v2"}
+			rr.open(u)
+			run, job := rr.endedRun(domain.CISuccess)
+			report := ports.DepsReport{Files: []ports.DepsFile{{Path: "go.mod", Content: []byte("module example.com/app\ngo 1.24\nrequire example.com/lib/v2 v2.0.0\n")}, {Path: c.file, Content: []byte(c.content)}}}
+			err := rr.b.CheckDepsReport(context.Background(), run, job, report)
+			if c.valid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, domain.ErrInvalid)
+			}
+		})
+	}
 }

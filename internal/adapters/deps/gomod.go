@@ -3,13 +3,18 @@
 package deps
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"bnema.dev/ermite/internal/domain"
@@ -207,11 +212,21 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 		if v, ok := dirs[u.Directory][u.Name]; ok && v != u.Version {
 			return nil, fmt.Errorf("%w: conflicting Go updates", domain.ErrInvalid)
 		}
-		dirs[u.Directory][u.Name] = u.Version
+		name := u.Name
+		if u.NewName != "" {
+			name = u.NewName
+		}
+		dirs[u.Directory][name] = u.Version
 	}
 	for p, b := range after {
 		d := moduleDir(p.String())
 		base := path.Base(p.String())
+		if strings.HasSuffix(p.String(), ".go") {
+			if err := validateImports(p, before, b, ups); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if dirs[d] == nil || (base != "go.mod" && base != "go.sum") {
 			return nil, fmt.Errorf("%w: unexpected report path %q", domain.ErrInvalid, p.String())
 		}
@@ -233,6 +248,50 @@ func (GoMod) Validate(before, after map[domain.TreePath][]byte, ups []domain.Dep
 		content := old
 		if b, ok := after[p]; ok {
 			content = b
+		}
+		// Normalize only the old requested path in the comparison baseline.
+		f, parseErr := modfile.Parse(p.String(), old, nil)
+		if parseErr != nil {
+			return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, parseErr)
+		}
+		for _, u := range ups {
+			if u.Directory == d && u.NewName != "" {
+				var found bool
+				for _, r := range f.Require {
+					if r.Mod.Path == u.Name {
+						found = true
+						f.AddNewRequire(u.NewName, u.Version, r.Indirect)
+						break
+					}
+				}
+				if !found {
+					return nil, fmt.Errorf("%w: original requirement missing", domain.ErrInvalid)
+				}
+				_ = f.DropRequire(u.Name)
+				reported, err := modfile.Parse(p.String(), content, nil)
+				if err != nil {
+					return nil, fmt.Errorf("%w: %v", domain.ErrInvalid, err)
+				}
+				newFound := false
+				for _, r := range reported.Require {
+					if r.Mod.Path == u.NewName {
+						newFound = true
+					}
+					if r.Mod.Path == u.Name && !r.Indirect {
+						return nil, fmt.Errorf("%w: old path remains direct", domain.ErrInvalid)
+					}
+					if r.Mod.Path == u.NewName && r.Mod.Version != u.Version {
+						return nil, fmt.Errorf("%w: new path version mismatch", domain.ErrInvalid)
+					}
+				}
+				if !newFound {
+					return nil, fmt.Errorf("%w: new path missing", domain.ErrInvalid)
+				}
+			}
+		}
+		old, err = f.Format()
+		if err != nil {
+			return nil, err
 		}
 		more, err := validateModule(d, old, content, want)
 		if err != nil {
@@ -355,6 +414,112 @@ func validSum(b []byte) error {
 		hash, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(f[2], "h1:"))
 		if module.CheckPath(f[0]) != nil || !semver.IsValid(v) || !strings.HasPrefix(f[2], "h1:") || err != nil || len(hash) != 32 {
 			return fmt.Errorf("%w: malformed go.sum entry", domain.ErrInvalid)
+		}
+	}
+	return nil
+}
+
+// ReportAllowed admits module metadata and path-major import candidates.
+// Nested module boundaries are checked against original manifests in Validate.
+func (GoMod) ReportAllowed(ups []domain.DepUpdate, p domain.TreePath) bool {
+	for _, part := range strings.Split(p.String(), "/") {
+		if part == "vendor" || part == "testdata" {
+			return false
+		}
+	}
+	for _, u := range ups {
+		if u.Ecosystem != domain.EcosystemGoMod {
+			continue
+		}
+		if p.String() == path.Join(u.Directory, "go.mod") || p.String() == path.Join(u.Directory, "go.sum") {
+			return true
+		}
+		if u.NewName != "" && strings.HasSuffix(p.String(), ".go") && (u.Directory == "" || strings.HasPrefix(p.String(), u.Directory+"/")) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateImports(p domain.TreePath, before map[domain.TreePath][]byte, after []byte, ups []domain.DepUpdate) error {
+	invalid := func() error { return fmt.Errorf("%w: non-import or unexpected Go change in %s", domain.ErrInvalid, p) }
+	if !(GoMod{}).ReportAllowed(ups, p) {
+		return invalid()
+	}
+	var allowed []domain.DepUpdate
+	for _, u := range ups {
+		if u.NewName == "" || !(u.Directory == "" || strings.HasPrefix(p.String(), u.Directory+"/")) {
+			continue
+		}
+		nested := false
+		for m := range before {
+			d := moduleDir(m.String())
+			if path.Base(m.String()) == "go.mod" && d != u.Directory && (u.Directory == "" || strings.HasPrefix(d, u.Directory+"/")) && strings.HasPrefix(p.String(), d+"/") {
+				nested = true
+			}
+		}
+		if !nested {
+			allowed = append(allowed, u)
+		}
+	}
+	if len(allowed) == 0 {
+		return invalid()
+	}
+	a, ok := before[p]
+	if !ok {
+		return invalid()
+	}
+	// Compare all syntax and whitespace except import path literals. This is
+	// stricter than ignoring whole declarations: aliases/comments stay intact.
+	strip := func(src []byte) ([]byte, []string, error) {
+		fs := token.NewFileSet()
+		f, err := parser.ParseFile(fs, p.String(), src, parser.ImportsOnly)
+		if err != nil {
+			return nil, nil, err
+		}
+		var out []byte
+		var imports []string
+		end := 0
+		for _, decl := range f.Decls {
+			g, ok := decl.(*ast.GenDecl)
+			if !ok || g.Tok != token.IMPORT {
+				continue
+			}
+			for _, spec := range g.Specs {
+				imp := spec.(*ast.ImportSpec)
+				start, stop := fs.Position(imp.Path.Pos()).Offset, fs.Position(imp.Path.End()).Offset
+				v, err := strconv.Unquote(imp.Path.Value)
+				if err != nil {
+					return nil, nil, err
+				}
+				out = append(out, src[end:start]...)
+				imports = append(imports, v)
+				end = stop
+			}
+		}
+		out = append(out, src[end:]...)
+		return out, imports, nil
+	}
+	x, ai, err := strip(a)
+	if err != nil {
+		return invalid()
+	}
+	y, bi, err := strip(after)
+	if err != nil || !bytes.Equal(x, y) || len(ai) != len(bi) {
+		return invalid()
+	}
+	for i, old := range ai {
+		if old == bi[i] {
+			continue
+		}
+		valid := false
+		for _, u := range allowed {
+			if old == u.Name || strings.HasPrefix(old, u.Name+"/") {
+				valid = valid || bi[i] == u.NewName+strings.TrimPrefix(old, u.Name)
+			}
+		}
+		if !valid {
+			return invalid()
 		}
 	}
 	return nil
