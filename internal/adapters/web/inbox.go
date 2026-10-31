@@ -317,6 +317,17 @@ func (s *Server) inboxPage(ctx context.Context, ov ports.InboxOverview, j ports.
 		p.DepsUpdates += row.Count
 	}
 	sortDepsRows(p.Deps, sort)
+	if sort != "" {
+		// The actions bring the owner back to the same order.
+		for i := range p.Deps {
+			r := &p.Deps[i]
+			for _, u := range []*string{&r.Primary.Action, &r.Ignore, &r.Snooze} {
+				if *u != "" {
+					*u += "?sort=" + sort
+				}
+			}
+		}
+	}
 	for _, o := range []struct{ param, label string }{{"", "most updates"}, {depsSortName, "name"}} {
 		href := inboxHref("deps", rng)
 		if o.param != "" {

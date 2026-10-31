@@ -199,6 +199,9 @@ func depsRefs(r *http.Request) ([]domain.DepRef, error) {
 func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request) (string, string, error) {
 	return func(ctx context.Context, r *http.Request) (string, string, error) {
 		back := inboxHref("deps", 0)
+		if sort := depsSortParam(r.URL.Query().Get("sort")); sort != "" {
+			back += "&sort=" + sort
+		}
 		if !SignedIn(ctx) {
 			return "", back, errNotFound
 		}

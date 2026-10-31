@@ -133,6 +133,7 @@ func TestInboxDepsSortsByUpdates(t *testing.T) {
 	a, z, body = order("/-/inbox?tab=deps&sort=name")
 	assert.Less(t, a, z, "sort=name orders by repository name")
 	assert.Contains(t, body, `sort=name#inbox-deps" aria-current="page">name</a>`)
+	assert.Contains(t, body, `action="/-/inbox/deps/aaa/snooze?sort=name"`, "the actions keep the order")
 }
 
 func TestInboxDepsSummaryHasNoInteractiveContent(t *testing.T) {
@@ -377,8 +378,9 @@ func TestInboxDepsActions(t *testing.T) {
 		t.Parallel()
 		deps := mocks.NewDepsService(t)
 		deps.EXPECT().Snooze(mock.Anything, mock.Anything, alpha).Return(domain.RepoDeps{}, nil).Once()
-		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/snooze", nil)
+		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/snooze?sort=name", nil)
 		assert.Equal(t, 303, rec.Code)
+		assert.Equal(t, "/-/inbox?tab=deps&sort=name", rec.Header().Get("Location"), "the order survives the action")
 	})
 	t.Run("stale", func(t *testing.T) {
 		t.Parallel()
