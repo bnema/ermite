@@ -242,6 +242,12 @@ func (d RepoDeps) Batch(k DepBatchKey) (DepBatch, int, bool) {
 	return DepBatch{}, -1, false
 }
 
+// Visible reports whether the batch has something to show: proposed updates,
+// an open merge request or a run that is applying it.
+func (d DepBatch) Visible() bool {
+	return len(d.Updates) != 0 || d.MR != 0 || d.State == DepsApplying
+}
+
 // Pending reports whether any batch has proposed updates.
 func (d RepoDeps) Pending() bool {
 	return slices.ContainsFunc(d.Batches, func(b DepBatch) bool { return len(b.Updates) != 0 })
@@ -259,7 +265,7 @@ func (k DepBatchKey) Branch() string {
 	}
 	var slug strings.Builder
 	for _, r := range strings.ToLower(string(k)) {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '-' {
 			r = '-'
 		}
 		if r == '-' && (slug.Len() == 0 || strings.HasSuffix(slug.String(), "-")) {
@@ -267,30 +273,66 @@ func (k DepBatchKey) Branch() string {
 		}
 		slug.WriteRune(r)
 	}
-	s := strings.Trim(slug.String(), "-")
+	s := slug.String()
 	if len(s) > 80 {
 		s = s[:80]
 	}
+	s = strings.Trim(s, "-")
 	sum := sha256.Sum256([]byte(k))
 	return fmt.Sprintf("bernard/deps-major/%s-%x", s, sum[:4])
 }
 
-// BotSubject describes a batch. Stale major batches recover the name and major
-// from their key, splitting at the last @ to preserve scoped package names.
+// BotSubject describes a batch. A major batch without updates takes the name
+// and major from its merge request or run versions, and from its key last.
 func BotSubject(b DepBatch) string {
 	if b.Key == "" {
 		return BotCommitSubject(len(b.Updates))
 	}
-	if len(b.Updates) != 0 {
-		return "build(deps): update " + b.Updates[0].Name + " to " + semver.Major(b.Updates[0].Version)
+	var ref DepRef
+	switch {
+	case len(b.Updates) != 0:
+		ref = b.Updates[0].DepRef
+	case len(b.MRVersions) != 0:
+		ref = b.MRVersions[0]
+	case len(b.RunUpdates) != 0:
+		ref = b.RunUpdates[0].DepRef
+	default:
+		name, major := parseMajorBatchKey(b.Key)
+		return "build(deps): update " + name + " to " + major
 	}
-	parts := strings.SplitN(string(b.Key), "/", 3)
-	name := parts[len(parts)-1]
-	major := ""
-	if i := strings.LastIndex(name, "@"); i >= 0 {
-		name, major = name[:i], name[i+1:]
+	return "build(deps): update " + ref.Name + " to " + semver.Major(ref.Version)
+}
+
+// parseMajorBatchKey reverses MajorBatchKey. The major follows the last @,
+// which keeps scoped npm names whole. The directory may hold slashes, so the
+// name is cut by ecosystem: the owner/repo after an action file, the last
+// segment (two for a scoped npm package) for npm, and from the first segment
+// with a dot (the module host) for Go.
+func parseMajorBatchKey(k DepBatchKey) (name, major string) {
+	eco, rest, _ := strings.Cut(string(k), "/")
+	if i := strings.LastIndex(rest, "@"); i >= 0 {
+		rest, major = rest[:i], rest[i+1:]
 	}
-	return "build(deps): update " + name + " to " + major
+	segs := strings.Split(rest, "/")
+	start := len(segs) - 1
+	switch DepsEcosystem(eco) {
+	case EcosystemActions:
+		start = max(len(segs)-2, 0)
+		for i, s := range segs {
+			if strings.HasSuffix(s, ".yml") || strings.HasSuffix(s, ".yaml") {
+				start = i + 1
+			}
+		}
+	case EcosystemNPM:
+		if start > 0 && strings.HasPrefix(segs[start-1], "@") {
+			start--
+		}
+	case EcosystemGoMod:
+		if i := slices.IndexFunc(segs, func(s string) bool { return strings.Contains(s, ".") }); i >= 0 {
+			start = i
+		}
+	}
+	return strings.Join(segs[min(start, len(segs)-1):], "/"), major
 }
 
 // SplitBatches selects the highest same-major and cross-major version per

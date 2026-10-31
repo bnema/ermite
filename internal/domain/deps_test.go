@@ -38,7 +38,7 @@ func TestPickUpdate(t *testing.T) {
 		{name: "minor", current: "v1.2.0", versions: versions("v1.3.0"), want: "v1.3.0", kind: DepMinor},
 		{name: "Go crosses major", current: "v1.2.0", versions: versions("v2.0.0", "v1.3.0"), want: "v2.0.0", kind: DepMajor},
 		{name: "Go v2 crosses major", current: "v2.0.0", versions: versions("v3.0.0"), want: "v3.0.0", kind: DepMajor},
-		{name: "Go v0 stays v0", current: "v0.1.0", versions: versions("v1.0.0", "v0.2.0"), want: "v1.0.0", kind: DepMajor},
+		{name: "Go v0 crosses to v1", current: "v0.1.0", versions: versions("v1.0.0", "v0.2.0"), want: "v1.0.0", kind: DepMajor},
 		{name: "equal older invalid", current: "v1.2.0", versions: versions("v1.2.0", "v1.1.9", "garbage")},
 		{name: "invalid current", current: "garbage", versions: versions("v1.2.0")},
 		{name: "unknown ecosystem", eco: "unknown", current: "v1.0.0", versions: versions("v1.2.0"), want: "v1.2.0", kind: DepMinor},
@@ -95,7 +95,7 @@ func TestPickUpdatesHighestFirst(t *testing.T) {
 	for _, u := range PickUpdates(c, now, 72*time.Hour, nil, func(r DepRef) bool { return r.Version == "v1.2.0" }) {
 		got = append(got, u.Version)
 	}
-	assert.Equal(t, []string{"v2.0.0", "v1.3.0", "v1.1.0"}, got, "young, ignored, duplicate and new-major versions are left out")
+	assert.Equal(t, []string{"v2.0.0", "v1.3.0", "v1.1.0"}, got, "young, ignored and duplicate versions are left out")
 	assert.Empty(t, PickUpdates(DepCandidate{Ecosystem: EcosystemGoMod, Current: "garbage", Versions: c.Versions}, now, 0, nil, nil))
 }
 
@@ -203,6 +203,14 @@ func TestBatchLookupAndPending(t *testing.T) {
 	}
 }
 
+func TestDepBatchVisible(t *testing.T) {
+	assert.False(t, DepBatch{}.Visible())
+	assert.False(t, DepBatch{State: DepsFailed, RunID: 3}.Visible(), "a failed run without updates or MR is hidden")
+	assert.True(t, DepBatch{Updates: make([]DepUpdate, 1)}.Visible())
+	assert.True(t, DepBatch{MR: 7}.Visible())
+	assert.True(t, DepBatch{State: DepsApplying}.Visible())
+}
+
 func TestMajorBatchKey(t *testing.T) {
 	for _, tc := range []struct {
 		eco                      DepsEcosystem
@@ -224,6 +232,7 @@ func TestDepBatchBranch(t *testing.T) {
 		{"gomod//gopkg.in/yaml.v2@v3", "gomod-gopkg-in-yaml-v2-v3"},
 		{"---A__B...C---", "a__b-c"}, {"日本語/É/包", ""},
 		{strings.Repeat("A", 200), strings.Repeat("a", 80)},
+		{strings.Repeat("a", 79) + "/bcd", strings.Repeat("a", 79)},
 	} {
 		t.Run(tc.key, func(t *testing.T) {
 			key := DepBatchKey(tc.key)
@@ -253,6 +262,13 @@ func TestBotSubject(t *testing.T) {
 		{"major", DepBatch{Key: "npm/web/react@v19", Updates: []DepUpdate{{DepRef: DepRef{Name: "react", Version: "v19.2.0"}}}}, "build(deps): update react to v19"},
 		{"stale scoped", DepBatch{Key: "npm/web/@scope/pkg@v19"}, "build(deps): update @scope/pkg to v19"},
 		{"stale Go", DepBatch{Key: "gomod//gopkg.in/yaml.v2@v3"}, "build(deps): update gopkg.in/yaml.v2 to v3"},
+		{"stale Go nested", DepBatch{Key: "gomod/tools/lint/example.com/mod/v2@v3"}, "build(deps): update example.com/mod/v2 to v3"},
+		{"stale Go module", DepBatch{Key: "gomod/tools/lint/example.com/mod@v2"}, "build(deps): update example.com/mod to v2"},
+		{"stale nested scoped", DepBatch{Key: "npm/apps/web/@scope/pkg@v19"}, "build(deps): update @scope/pkg to v19"},
+		{"stale nested Actions", DepBatch{Key: "github-actions/.github/workflows/ci.yml/actions/checkout@v5"}, "build(deps): update actions/checkout to v5"},
+		{"stale nested action file", DepBatch{Key: "github-actions/tools/setup/action.yaml/actions/setup-go@v6"}, "build(deps): update actions/setup-go to v6"},
+		{"MR versions", DepBatch{Key: "github-actions/.github/workflows/ci.yml/actions/checkout@v5", MRVersions: []DepRef{{Name: "actions/checkout", Version: "v5.1.0"}}}, "build(deps): update actions/checkout to v5"},
+		{"run updates", DepBatch{Key: "npm/a/b/react@v19", RunUpdates: []DepUpdate{{DepRef: DepRef{Name: "react", Version: "v19.0.1"}}}}, "build(deps): update react to v19"},
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, BotSubject(tc.batch)) })
 	}
