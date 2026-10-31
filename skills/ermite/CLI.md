@@ -226,7 +226,7 @@ Updates come in batches, one MR each: the base batch (patch and minor, branch `b
 
 npm updates preserve the range operator and exact manifest formatting; only the existing root lockfile may also change, and new `package-lock.json`/`npm-shrinkwrap.json` resolutions must come from `https://registry.npmjs.org/` (pnpm, Yarn and Bun lockfiles are not checked: review them). Unsupported specs (including git and workspace references), packages the registry lookup fails for, and roots whose `packageManager` differs from their lockfile are skipped. Yarn Berry `exec:`/git and Bun git dependencies fail in the runner.
 
-`open` and `ignore` send back the list they read and are refused if it changed meanwhile. An `outdated` MR holds other versions than the batch; `open` rebuilds it. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
+`open` and `ignore` send back the list they read and are refused if it changed meanwhile. An `outdated` MR holds other versions than the batch or was built from other current versions; `open` rebuilds it. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
 
 The web inbox shows one dependency row per batch, with an outdated badge; Open/Ignore target that row, Snooze stays repo-wide.
 

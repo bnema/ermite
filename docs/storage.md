@@ -147,6 +147,11 @@ re-running the migration leaves existing batches unchanged. Older builds refuse
 schema 12. Back up the stopped server's data before upgrading; rollback requires
 restoring that backup.
 
+Schema 12 also adds `DepBatch.mr_updates` (9): the updates a merge request
+holds, with the current versions they update from. A batch whose merge request
+was opened before the field existed has none, and its outdated check compares
+versions only.
+
 Schema 12 also adds these CI fields, with no data rewrite:
 
 - `CIRunner.kinds` (10): the job kinds the runner polls for, recorded when they
