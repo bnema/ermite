@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -267,7 +270,9 @@ func TestCache(t *testing.T) {
 				}
 			}))
 			defer s.Close()
-			c := NewCached(New(Config{GoProxyURL: s.URL, OSVURL: s.URL}))
+			reg := New(Config{GoProxyURL: s.URL, OSVURL: s.URL})
+			reg.sleep = func(context.Context, time.Duration) error { return nil }
+			c := NewCached(reg)
 			for i := 0; i < 2; i++ {
 				_, _ = c.GoVersions(t.Context(), "example.com/mod", "v1.0.0")
 				_, _ = c.Malicious(t.Context(), domain.EcosystemGoMod, "mod", "v1")
@@ -277,7 +282,7 @@ func TestCache(t *testing.T) {
 				want = 3
 			}
 			if status == 500 {
-				want = 4
+				want = 12
 			}
 			if calls != want {
 				t.Fatalf("calls %d want %d", calls, want)
@@ -309,5 +314,124 @@ func TestCache(t *testing.T) {
 	remote.EXPECT().ListRefs(context.Background(), "o", "error").Return(nil, domain.ErrUnavailable).Twice()
 	for i := 0; i < 2; i++ {
 		_, _ = c.ActionTags(context.Background(), "o", "error")
+	}
+}
+
+func TestRequestRetries(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   int
+		after    string
+		rate     bool
+		attempts int
+		wantErr  error
+	}{
+		{name: "503 recovery", status: 503, attempts: 2},
+		{name: "429 seconds", status: 429, after: "2", attempts: 2},
+		{name: "429 date", status: 429, after: time.Now().Add(10 * time.Second).UTC().Format(http.TimeFormat), attempts: 2},
+		{name: "retry after too long", status: 503, after: "31", attempts: 1, wantErr: domain.ErrUnavailable},
+		{name: "404", status: 404, attempts: 1, wantErr: domain.ErrNotFound},
+		{name: "500 exhausted", status: 500, attempts: 3, wantErr: domain.ErrUnavailable},
+		{name: "github 403", status: 403, rate: true, attempts: 1, wantErr: domain.ErrUnavailable},
+		{name: "github 429", status: 429, rate: true, attempts: 1, wantErr: domain.ErrUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				body, _ := io.ReadAll(r.Body)
+				if string(body) != `{"query":"same"}` {
+					t.Errorf("body %q", body)
+				}
+				if calls == 1 || tc.status == 500 {
+					w.Header().Set("Retry-After", tc.after)
+					if tc.rate {
+						w.Header().Set("X-RateLimit-Remaining", "0")
+						w.Header().Set("X-RateLimit-Reset", "1800000000")
+					}
+					w.WriteHeader(tc.status)
+					return
+				}
+				_, _ = io.WriteString(w, "ok")
+			}))
+			defer s.Close()
+			reg := New(Config{})
+			var waits []time.Duration
+			reg.sleep = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
+			reg.jitter = func(d time.Duration) time.Duration { return d }
+			// Force the buffering path as well as the standard GetBody path.
+			req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL, strings.NewReader(`{"query":"same"}`))
+			if tc.status == 503 {
+				req.GetBody = nil
+			}
+			data, err := reg.request(req, true, 1024, time.Second)
+			if !errors.Is(err, tc.wantErr) || calls != tc.attempts {
+				t.Fatalf("data=%s err=%v calls=%d", data, err, calls)
+			}
+			if tc.rate && !strings.Contains(err.Error(), time.Unix(1800000000, 0).UTC().Format(time.RFC3339)) {
+				t.Fatal(err)
+			}
+			if len(waits) != tc.attempts-1 {
+				t.Fatalf("waits %v", waits)
+			}
+			if tc.after == "2" && waits[0] != 2*time.Second {
+				t.Fatal(waits)
+			}
+			if tc.name == "429 date" && (waits[0] < 8*time.Second || waits[0] > 10*time.Second) {
+				t.Fatal(waits)
+			}
+			if tc.status == 500 && (waits[0] != 500*time.Millisecond || waits[1] != time.Second) {
+				t.Fatal(waits)
+			}
+		})
+	}
+}
+
+func TestRequestCancelBackoff(t *testing.T) {
+	calls := 0
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(503) }))
+	defer s.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	reg := New(Config{})
+	reg.sleep = func(ctx context.Context, d time.Duration) error { cancel(); return sleepContext(ctx, time.Hour) }
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, s.URL, nil)
+	start := time.Now()
+	_, err := reg.request(req, false, 1024, time.Second)
+	if !errors.Is(err, context.Canceled) || calls != 1 || time.Since(start) > time.Second {
+		t.Fatalf("err=%v calls=%d", err, calls)
+	}
+}
+
+func TestRequestTransportAndAttemptTimeout(t *testing.T) {
+	for _, timeout := range []bool{false, true} {
+		t.Run(fmt.Sprint(timeout), func(t *testing.T) {
+			var calls atomic.Int32
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				if calls.Add(1) == 1 {
+					if timeout {
+						<-r.Context().Done()
+						return
+					}
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					_ = conn.Close()
+					return
+				}
+				_, _ = io.WriteString(w, "ok")
+			}))
+			defer s.Close()
+			reg := New(Config{})
+			reg.sleep = func(context.Context, time.Duration) error { return nil }
+			req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL, strings.NewReader("body"))
+			data, err := reg.request(req, false, 1024, 50*time.Millisecond)
+			if err != nil || string(data) != "ok" || calls.Load() != 2 {
+				t.Fatalf("data=%s err=%v calls=%d", data, err, calls.Load())
+			}
+		})
 	}
 }
