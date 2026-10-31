@@ -21,6 +21,30 @@ import (
 // maxVersionLen bounds RegisterRunner.version.
 const maxVersionLen = 64
 
+// maxKinds and maxKindLen bound the job kinds a runner advertises: they are
+// stored on the runner record.
+const (
+	maxKinds   = 16
+	maxKindLen = 64
+)
+
+// checkKinds refuses more than maxKinds kinds, or a kind that is empty, longer
+// than maxKindLen bytes or outside [a-z0-9.-].
+func checkKinds(kinds []string) error {
+	if len(kinds) > maxKinds {
+		return fmt.Errorf("%w: at most %d kinds", domain.ErrInvalid, maxKinds)
+	}
+	for i, k := range kinds {
+		if k == "" || len(k) > maxKindLen || strings.ContainsFunc(k, func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '-'
+		}) {
+			// The index, not the value: the value may be long.
+			return fmt.Errorf("%w: kind %d must be 1 to %d characters of a-z, 0-9, '.' and '-'", domain.ErrInvalid, i+1, maxKindLen)
+		}
+	}
+	return nil
+}
+
 // --- registration ---
 
 // Register adds a runner and returns its token, shown once. The principal
@@ -140,6 +164,9 @@ func (c *CI) FetchJob(ctx context.Context, secret string, params ports.FetchJobP
 	}
 	if len(params.Version) > maxVersionLen || !utf8.ValidString(params.Version) {
 		return ports.FetchJobResult{}, fmt.Errorf("%w: version is at most 64 characters", domain.ErrInvalid)
+	}
+	if err := checkKinds(params.Kinds); err != nil {
+		return ports.FetchJobResult{}, err
 	}
 	offered, err := offeredLabels(runner, params.Labels)
 	if err != nil {

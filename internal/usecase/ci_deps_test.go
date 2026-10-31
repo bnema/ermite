@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -387,6 +388,43 @@ func TestFetchJobRepeatedPollRepeatsADepsAssignment(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, none.Job, "acknowledged: nothing to repeat")
 	})
+}
+
+// The kinds of a poll are bounded in number, length and charset.
+func TestFetchJobRefusesInvalidKinds(t *testing.T) {
+	t.Parallel()
+	sixteen := make([]string, 16)
+	for i := range sixteen {
+		sixteen[i] = fmt.Sprintf("k%d", i)
+	}
+	for _, tc := range []struct {
+		name  string
+		kinds []string
+		ok    bool
+	}{
+		{"sixteen kinds", sixteen, true},
+		{"seventeen kinds", append(slices.Clone(sixteen), "k16"), false},
+		{"64 bytes", []string{strings.Repeat("a", 64)}, true},
+		{"65 bytes", []string{strings.Repeat("a", 65)}, false},
+		{"dots and dashes", []string{"deps.gomod-path-majors"}, true},
+		{"empty", []string{""}, false},
+		{"upper case", []string{"Deps"}, false},
+		{"underscore", []string{"deps_npm"}, false},
+		{"slash", []string{"deps/npm"}, false},
+		{"non ASCII", []string{"dépendances"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			inBubble(t, []string{depsLabel}, nil, func(t *testing.T, r *depsRig) {
+				if tc.ok {
+					assert.Nil(t, r.fetch(tc.kinds...))
+					return
+				}
+				_, err := r.ci.FetchJob(r.ctx, r.runner, ports.FetchJobParams{Kinds: tc.kinds})
+				require.ErrorIs(t, err, domain.ErrInvalid)
+			})
+		})
+	}
 }
 
 // A workflow job and a dependency job wait together: each kind gets its own.
