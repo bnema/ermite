@@ -438,7 +438,7 @@ type DepsService interface {
 	// clients can show them), or only repo's when repo is not zero.
 	List(ctx context.Context, p domain.Principal, repo domain.RepoName) ([]domain.RepoDeps, error)
 	Check(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.RepoDeps, error)
-	Open(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error)
-	Ignore(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error)
+	Open(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error)
+	Ignore(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error)
 	Snooze(ctx context.Context, p domain.Principal, repo domain.RepoName) (domain.RepoDeps, error)
 }

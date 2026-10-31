@@ -320,9 +320,9 @@ func TestBernardOwnerOnly(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 		_, err = r.b.Check(ctx, p, r.repo)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
-		_, err = r.b.Open(ctx, p, r.repo, nil)
+		_, err = r.b.Open(ctx, p, r.repo, domain.DepBatchKey(""), nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
-		_, err = r.b.Ignore(ctx, p, r.repo, nil)
+		_, err = r.b.Ignore(ctx, p, r.repo, domain.DepBatchKey(""), nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 		_, err = r.b.Snooze(ctx, p, r.repo)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
@@ -331,7 +331,7 @@ func TestBernardOwnerOnly(t *testing.T) {
 
 func TestBernardOpenUnavailable(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
-	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, nil)
+	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), nil)
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 }
 
@@ -354,16 +354,16 @@ func TestBernardIgnore(t *testing.T) {
 	r.rec.Base().Updates = []domain.DepUpdate{{DepRef: depRef("a", "v1.0.1")}, {DepRef: depRef("b", "v2.0.1")}}
 	ctx := context.Background()
 
-	_, err := r.b.Ignore(ctx, domain.Owner(), r.repo, []domain.DepRef{depRef("a", "v1.0.0")})
+	_, err := r.b.Ignore(ctx, domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{depRef("a", "v1.0.0")})
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed, "expected mismatch")
 
 	r.rec.Base().State = domain.DepsApplying
-	_, err = r.b.Ignore(ctx, domain.Owner(), r.repo, r.rec.Base().Refs())
+	_, err = r.b.Ignore(ctx, domain.Owner(), r.repo, domain.DepBatchKey(""), r.rec.Base().Refs())
 	assert.ErrorIs(t, err, domain.ErrPreconditionFailed, "applying")
 
 	r.rec.Base().State = domain.DepsIdle
 	r.store.EXPECT().Ignore(mock.Anything, r.repo, []domain.DepRef{depRef("b", "v2.0.1"), depRef("a", "v1.0.1")}).Return(nil).Once()
-	got, err := r.b.Ignore(ctx, domain.Owner(), r.repo, []domain.DepRef{depRef("b", "v2.0.1"), depRef("a", "v1.0.1")})
+	got, err := r.b.Ignore(ctx, domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{depRef("b", "v2.0.1"), depRef("a", "v1.0.1")})
 	require.NoError(t, err)
 	assert.Empty(t, got.Base().Updates)
 }
@@ -415,7 +415,7 @@ func TestBernardIgnoreWaitsForTheRepositoryLock(t *testing.T) {
 	<-holding
 	errc := make(chan error, 1)
 	go func() {
-		_, err := r.b.Ignore(context.Background(), domain.Owner(), r.repo, []domain.DepRef{ref})
+		_, err := r.b.Ignore(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{ref})
 		errc <- err
 	}()
 	close(release)
@@ -478,8 +478,26 @@ func TestBernardSnoozeAndIgnorePublishTheChange(t *testing.T) {
 	_, err := r.b.Snooze(context.Background(), domain.Owner(), r.repo)
 	require.NoError(t, err)
 	assert.Equal(t, 1, r.changedCount())
-	_, err = r.b.Ignore(context.Background(), domain.Owner(), r.repo, []domain.DepRef{ref})
+	_, err = r.b.Ignore(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{ref})
 	require.NoError(t, err)
 	assert.Equal(t, 2, r.changedCount())
 	assert.Equal(t, r.repo, r.changed[1].Repo)
+}
+
+func TestBernardIgnoreMajorBatchByKey(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
+	up := domain.DepUpdate{DepRef: depRef("pkg", "v2.0.0")}
+	key := domain.MajorBatchKey(up)
+	base := domain.DepBatch{State: domain.DepsApplying, RunID: 99}
+	r.rec.Batches = []domain.DepBatch{base, {Key: key, Updates: []domain.DepUpdate{up}}}
+	_, err := r.b.Ignore(t.Context(), domain.Owner(), r.repo, "missing", nil)
+	require.ErrorIs(t, err, domain.ErrNotFound)
+	_, err = r.b.Ignore(t.Context(), domain.Owner(), r.repo, key, nil)
+	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	r.store.EXPECT().Ignore(mock.Anything, r.repo, []domain.DepRef{up.DepRef}).Return(nil).Once()
+	got, err := r.b.Ignore(t.Context(), domain.Owner(), r.repo, key, []domain.DepRef{up.DepRef})
+	require.NoError(t, err)
+	require.Equal(t, base, got.Batches[0])
+	require.Empty(t, got.Batches[1].Updates)
 }

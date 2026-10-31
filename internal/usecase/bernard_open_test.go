@@ -207,7 +207,7 @@ func TestBernardOpenActions(t *testing.T) {
 	r.happy(domain.ObjectID{})
 	r.expectCreate(9)
 
-	got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+	got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"sign", "commit", "tip", "branch", "ci", "mr"}, r.ops, "the tip is recorded before the branch moves")
@@ -244,7 +244,7 @@ func TestBernardOpenUpdateKeepsMR(t *testing.T) {
 			return domain.MergeRequest{}, nil
 		})
 
-	got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+	got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 	require.NoError(t, err)
 	require.NotNil(t, edited.Title)
 	require.NotNil(t, edited.Description)
@@ -265,7 +265,7 @@ func TestBernardOpenRecreatesClosedMR(t *testing.T) {
 	r.happy(domain.ObjectID{})
 	r.mrst.EXPECT().Get(mock.Anything, r.repo, int64(4)).Return(domain.MergeRequest{Repo: r.repo, Number: 4, State: domain.MRStateClosed}, nil)
 	r.expectCreate(5)
-	got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+	got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 	require.NoError(t, err)
 	assert.EqualValues(t, 5, got.Base().MR)
 }
@@ -278,7 +278,7 @@ func TestBernardOpenPreconditions(t *testing.T) {
 		r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
 		stale := up.DepRef
 		stale.Version = "v3.9"
-		_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{stale})
+		_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{stale})
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 		assert.Equal(t, domain.DepsIdle, r.rec.Base().State)
 	})
@@ -286,13 +286,13 @@ func TestBernardOpenPreconditions(t *testing.T) {
 		r := newOpenRig(t, domain.EcosystemActions, true)
 		r.rec.Base().Updates, r.rec.Base().State = []domain.DepUpdate{up}, domain.DepsApplying
 		r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
-		_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+		_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 		assert.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	})
 	t.Run("archived", func(t *testing.T) {
 		r := newOpenRig(t, domain.EcosystemActions, true)
 		r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo, Archived: true}, nil)
-		_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, nil)
+		_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), nil)
 		assert.ErrorIs(t, err, domain.ErrArchived)
 	})
 }
@@ -306,7 +306,7 @@ func TestBernardOpenFailureSetsFailed(t *testing.T) {
 	r.git.EXPECT().BranchHead(mock.Anything, r.repo, "main").Return(oid("a"), nil)
 	r.reader.EXPECT().OpenBlob(mock.Anything, r.repo, mock.Anything, mock.Anything).Return(domain.BlobInfo{}, nil, errors.New(strings.Repeat("x", 5000)))
 
-	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 	require.Error(t, err)
 	assert.Equal(t, domain.DepsFailed, r.rec.Base().State)
 	assert.NotEmpty(t, r.rec.Base().Error)
@@ -437,7 +437,7 @@ func TestBernardOpenAdoptsAnOpenDepsMR(t *testing.T) {
 		r.mrst.EXPECT().OpenBySource(mock.Anything, r.repo, []string{"bernard/deps"}, mock.Anything).Return([]int64{8}, false, nil)
 		r.mrst.EXPECT().Get(mock.Anything, r.repo, int64(8)).Return(open, nil)
 		r.mrs.EXPECT().Edit(mock.Anything, mock.Anything, r.repo, int64(8), mock.Anything).Return(open, nil) // the adopted request is refreshed
-		got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+		got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 		require.NoError(t, err)
 		assert.EqualValues(t, 8, got.Base().MR) // Create is not expected: the mock fails on a call
 	})
@@ -456,7 +456,7 @@ func TestBernardOpenAdoptsAnOpenDepsMR(t *testing.T) {
 			})
 		r.mrst.EXPECT().Get(mock.Anything, r.repo, int64(8)).Return(open, nil)
 		r.mrs.EXPECT().Create(mock.Anything, mock.Anything, r.repo, mock.Anything).Return(domain.MergeRequest{}, domain.ErrAlreadyExists)
-		got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+		got, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 		require.NoError(t, err)
 		assert.EqualValues(t, 8, got.Base().MR)
 	})
@@ -468,7 +468,7 @@ func TestBernardOpenPublishesTheChangeAfterTheFinalMutation(t *testing.T) {
 	r.rec.Base().Updates = []domain.DepUpdate{up}
 	r.happy(domain.ObjectID{})
 	r.expectCreate(9)
-	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 	require.NoError(t, err)
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -483,7 +483,7 @@ func TestBernardOpenFailurePublishesTheChange(t *testing.T) {
 	r.rec.Base().Updates = []domain.DepUpdate{up}
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
 	r.repos.EXPECT().DefaultBranch(mock.Anything, r.repo).Return("", false, nil)
-	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, []domain.DepRef{up.DepRef})
+	_, err := r.b.Open(context.Background(), domain.Owner(), r.repo, domain.DepBatchKey(""), []domain.DepRef{up.DepRef})
 	require.Error(t, err)
 	r.mu.Lock()
 	defer r.mu.Unlock()

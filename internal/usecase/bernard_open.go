@@ -49,7 +49,7 @@ func (b *Bernard) canOpen() bool {
 // ecosystem that cannot be applied in the server (Go modules) go to a runner
 // as a job: the record is Applying until the runner reports (applyRunnerReport).
 // The others are applied in the server, at once or when the report arrives.
-func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error) {
+func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error) {
 	if !p.HasOwnerRights() {
 		return domain.RepoDeps{}, domain.ErrNotFound
 	}
@@ -68,14 +68,15 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("read the dependency record: %w", err)
 	}
-	if err := depsPrecondition(d, expected); err != nil {
+	if err := depsPrecondition(d, key, expected); err != nil {
 		return domain.RepoDeps{}, err
 	}
-	if len(d.Base().Updates) == 0 {
+	batch, _, _ := d.Batch(key)
+	if len(batch.Updates) == 0 {
 		return domain.RepoDeps{}, fmt.Errorf("%w: no dependency update is pending", domain.ErrPreconditionFailed)
 	}
 	var runnerSide bool
-	for _, u := range d.Base().Updates {
+	for _, u := range batch.Updates {
 		eco := b.ecosystem(u.Ecosystem)
 		if eco == nil {
 			return domain.RepoDeps{}, fmt.Errorf("%w: unknown ecosystem %q", domain.ErrPreconditionFailed, u.Ecosystem)
@@ -89,13 +90,13 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 	}
 	var rec domain.RepoDeps
 	if runnerSide {
-		rec, err = b.startRunnerJob(ctx, repoName, *d.Base(), expected)
+		rec, err = b.startRunnerJob(ctx, repoName, batch, expected)
 	} else {
-		rec, err = b.apply(ctx, repoName, *d.Base(), func(r domain.RepoDeps) error { return movedPrecondition(r, expected) })
+		rec, err = b.apply(ctx, repoName, batch, func(r domain.RepoDeps) error { return movedPrecondition(r, key, expected) })
 	}
 	if err != nil {
 		if !errors.Is(err, errRecordMoved) { // the record is not ours to fail
-			b.fail(ctx, repoName, "", err)
+			b.fail(ctx, repoName, key, err)
 		}
 		return domain.RepoDeps{}, err
 	}
@@ -106,8 +107,8 @@ func (b *Bernard) Open(ctx context.Context, p domain.Principal, repoName domain.
 // Open read it.
 var errRecordMoved = errors.New("the dependency record changed")
 
-func movedPrecondition(d domain.RepoDeps, expected []domain.DepRef) error {
-	if err := depsPrecondition(d, expected); err != nil {
+func movedPrecondition(d domain.RepoDeps, key domain.DepBatchKey, expected []domain.DepRef) error {
+	if err := depsPrecondition(d, key, expected); err != nil {
 		return fmt.Errorf("%w: %w", errRecordMoved, err)
 	}
 	return nil
@@ -155,7 +156,7 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 	}
 	snapshot := slices.Clone(batch.Updates)
 	rec, err := cfg.Store.Mutate(ctx, name, func(r *domain.RepoDeps) (bool, error) {
-		if err := movedPrecondition(*r, expected); err != nil {
+		if err := movedPrecondition(*r, batch.Key, expected); err != nil {
 			return false, err
 		}
 		_, i, ok := r.Batch(batch.Key)

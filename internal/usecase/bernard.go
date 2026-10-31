@@ -464,7 +464,7 @@ func (b *Bernard) Check(ctx context.Context, p domain.Principal, repo domain.Rep
 }
 
 // Ignore hides exactly the expected versions from now on.
-func (b *Bernard) Ignore(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error) {
+func (b *Bernard) Ignore(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error) {
 	if !p.HasOwnerRights() {
 		return domain.RepoDeps{}, domain.ErrNotFound
 	}
@@ -476,7 +476,7 @@ func (b *Bernard) Ignore(ctx context.Context, p domain.Principal, repo domain.Re
 	if err != nil {
 		return domain.RepoDeps{}, fmt.Errorf("read the dependency record: %w", err)
 	}
-	if err := depsPrecondition(d, expected); err != nil {
+	if err := depsPrecondition(d, key, expected); err != nil {
 		return domain.RepoDeps{}, err
 	}
 	if err := b.cfg.Store.Ignore(ctx, repo, expected); err != nil {
@@ -487,10 +487,12 @@ func (b *Bernard) Ignore(ctx context.Context, p domain.Principal, repo domain.Re
 		drop[r] = true
 	}
 	rec, err := b.cfg.Store.Mutate(ctx, repo, func(d *domain.RepoDeps) (bool, error) {
-		if err := depsPrecondition(*d, expected); err != nil {
+		if err := depsPrecondition(*d, key, expected); err != nil {
 			return false, err // the record moved since it was read
 		}
-		d.Base().Updates = slices.DeleteFunc(slices.Clone(d.Base().Updates), func(u domain.DepUpdate) bool { return drop[u.DepRef] })
+		_, i, _ := d.Batch(key)
+		batch := &d.Batches[i]
+		batch.Updates = slices.DeleteFunc(slices.Clone(batch.Updates), func(u domain.DepUpdate) bool { return drop[u.DepRef] })
 		return true, nil
 	})
 	if err != nil {
@@ -502,11 +504,15 @@ func (b *Bernard) Ignore(ctx context.Context, p domain.Principal, repo domain.Re
 
 // depsPrecondition checks that the client saw the pending versions and that no
 // job is applying them.
-func depsPrecondition(d domain.RepoDeps, expected []domain.DepRef) error {
-	if d.Base().State == domain.DepsApplying {
+func depsPrecondition(d domain.RepoDeps, key domain.DepBatchKey, expected []domain.DepRef) error {
+	batch, _, ok := d.Batch(key)
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if batch.State == domain.DepsApplying {
 		return fmt.Errorf("%w: dependency updates are being applied", domain.ErrPreconditionFailed)
 	}
-	if !domain.SameRefs(expected, d.Base().Refs()) {
+	if !domain.SameRefs(expected, batch.Refs()) {
 		return fmt.Errorf("%w: the pending dependency updates changed, reload and retry", domain.ErrPreconditionFailed)
 	}
 	return nil

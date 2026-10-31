@@ -50,12 +50,13 @@ func repoDepsToPB(d domain.RepoDeps) *pb.RepoDependencyUpdates {
 		Repo: d.Repo.String(), CheckedAt: timestamp(d.CheckedAt), SnoozedUntil: timestamp(d.SnoozedUntil),
 		MergeRequestNumber: d.Base().MR, State: depsStateToPB(d.Base().State), Error: d.Base().Error, RunId: d.Base().RunID,
 	}
-	for _, u := range d.Base().Updates {
-		out.Updates = append(out.Updates, &pb.DependencyUpdate{
-			Ecosystem: string(u.Ecosystem), Name: u.Name, Directory: u.Directory,
-			Current: u.Current, Latest: u.Version, Kind: depKindToPB(u.Kind), New: u.New,
-		})
+	out.Updates = repoDepsToPBUpdates(d.Base().Updates)
+
+	for _, batch := range d.Batches {
+		updates := repoDepsToPBUpdates(batch.Updates)
+		out.Batches = append(out.Batches, &pb.DependencyBatch{Key: string(batch.Key), Updates: updates, State: depsStateToPB(batch.State), Error: batch.Error, RunId: batch.RunID, MergeRequestNumber: batch.MR, Outdated: batch.MR != 0 && !domain.SameRefs(batch.Refs(), batch.MRVersions)})
 	}
+
 	return out
 }
 
@@ -103,7 +104,7 @@ func (s *depsService) OpenDependencyUpdates(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	d, err := s.deps.Open(ctx, caller(ctx), repo, depRefsFromPB(req.Msg.GetExpectedVersions()))
+	d, err := s.deps.Open(ctx, caller(ctx), repo, domain.DepBatchKey(req.Msg.GetBatch()), depRefsFromPB(req.Msg.GetExpectedVersions()))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -115,7 +116,7 @@ func (s *depsService) IgnoreDependencyUpdates(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	d, err := s.deps.Ignore(ctx, caller(ctx), repo, depRefsFromPB(req.Msg.GetExpectedVersions()))
+	d, err := s.deps.Ignore(ctx, caller(ctx), repo, domain.DepBatchKey(req.Msg.GetBatch()), depRefsFromPB(req.Msg.GetExpectedVersions()))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -132,4 +133,12 @@ func (s *depsService) SnoozeDependencyUpdates(ctx context.Context, req *connect.
 		return nil, connectError(ctx, err)
 	}
 	return connect.NewResponse(&pb.SnoozeDependencyUpdatesResponse{Updates: repoDepsToPB(d)}), nil
+}
+
+func repoDepsToPBUpdates(ups []domain.DepUpdate) []*pb.DependencyUpdate {
+	out := make([]*pb.DependencyUpdate, 0, len(ups))
+	for _, u := range ups {
+		out = append(out, &pb.DependencyUpdate{Ecosystem: string(u.Ecosystem), Name: u.Name, Directory: u.Directory, Current: u.Current, Latest: u.Version, Kind: depKindToPB(u.Kind), New: u.New, NewName: u.NewName})
+	}
+	return out
 }

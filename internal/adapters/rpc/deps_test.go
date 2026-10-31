@@ -56,14 +56,14 @@ func TestDepsExpectedVersionsAndErrors(t *testing.T) {
 	s := &depsService{svc}
 	ctx := context.Background()
 	want := []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Directory: "sub", Name: "x/y", Version: "v1.2.3"}}
-	svc.EXPECT().Ignore(mock.Anything, mock.Anything, repo, want).Return(domain.RepoDeps{Repo: repo}, nil).Once()
+	svc.EXPECT().Ignore(mock.Anything, mock.Anything, repo, domain.DepBatchKey("major"), want).Return(domain.RepoDeps{Repo: repo}, nil).Once()
 	res, err := s.IgnoreDependencyUpdates(ctx, connect.NewRequest(&pb.IgnoreDependencyUpdatesRequest{
-		Repo: "app", ExpectedVersions: []*pb.DependencyVersion{{Ecosystem: "gomod", Directory: "sub", Name: "x/y", Version: "v1.2.3"}},
+		Repo: "app", Batch: "major", ExpectedVersions: []*pb.DependencyVersion{{Ecosystem: "gomod", Directory: "sub", Name: "x/y", Version: "v1.2.3"}},
 	}))
 	require.NoError(t, err)
 	assert.Equal(t, "app", res.Msg.Updates.Repo)
 
-	svc.EXPECT().Open(mock.Anything, mock.Anything, repo, []domain.DepRef{}).Return(domain.RepoDeps{}, domain.ErrPreconditionFailed).Once()
+	svc.EXPECT().Open(mock.Anything, mock.Anything, repo, domain.DepBatchKey(""), []domain.DepRef{}).Return(domain.RepoDeps{}, domain.ErrPreconditionFailed).Once()
 	_, err = s.OpenDependencyUpdates(ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "app"}))
 	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 
@@ -92,4 +92,33 @@ func TestDepsListWithRepoFilter(t *testing.T) {
 	res, err := (&depsService{svc}).ListDependencyUpdates(context.Background(), connect.NewRequest(&pb.ListDependencyUpdatesRequest{Repo: &r}))
 	require.NoError(t, err)
 	require.Len(t, res.Msg.Repos, 1)
+}
+
+func TestRepoDepsBatchesToPB(t *testing.T) {
+	up := domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "example.com/pkg", Version: "v2.1.0"}, NewName: "example.com/pkg/v2", Current: "v1.0.0", Kind: domain.DepMajor}
+	for _, tc := range []struct {
+		name     string
+		mr       int64
+		refs     []domain.DepRef
+		outdated bool
+	}{
+		{"no MR", 0, nil, false}, {"outdated", 3, nil, true}, {"current", 3, []domain.DepRef{up.DepRef}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := domain.RepoDeps{Batches: []domain.DepBatch{{MR: 1}, {Key: domain.MajorBatchKey(up), Updates: []domain.DepUpdate{up}, State: domain.DepsFailed, Error: "failed major", RunID: 12, MR: tc.mr, MRVersions: tc.refs}}}
+			got := repoDepsToPB(d)
+			require.Len(t, got.Batches, 2)
+			require.EqualValues(t, 1, got.MergeRequestNumber)
+			require.Empty(t, got.Updates)
+			batch := got.Batches[1]
+			assert.Equal(t, string(d.Batches[1].Key), batch.Key)
+			assert.Equal(t, tc.outdated, batch.Outdated)
+			assert.Equal(t, tc.mr, batch.MergeRequestNumber)
+			assert.EqualValues(t, 12, batch.RunId)
+			assert.Equal(t, "failed major", batch.Error)
+			assert.Equal(t, pb.RepoDependencyUpdates_STATE_FAILED, batch.State)
+			require.Len(t, batch.Updates, 1)
+			assert.Equal(t, up.NewName, batch.Updates[0].NewName)
+		})
+	}
 }

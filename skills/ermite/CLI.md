@@ -278,3 +278,7 @@ Passkeys need an https (or localhost) public URL with a host name, not an IP; ot
 Full list: `docs/configuration.md` in the ermite repo.
 
 The owner’s web inbox (`/-/inbox`) uses `?tab=deps|work|activity|moderation`; absent or unknown tabs show open issues and merge requests (`work`). Tabs cover all repositories. Activity includes queued/running CI, journal entries and unreleased-commit notices; its journal window is `?range=24h|7d` (default `24h`).
+
+The server advertises `deps.batches`: RPC dependency records include independent
+batches, and Open/Ignore accept a batch key (empty selects base). The CLI and web
+actions currently select only the base batch.

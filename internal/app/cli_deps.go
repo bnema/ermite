@@ -222,13 +222,13 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 			}
 			expected := depsExpected(cur)
 			if name == "open" {
-				res, err := c.Deps().OpenDependencyUpdates(ctx, connect.NewRequest(&ermite.OpenDependencyUpdatesRequest{Repo: repo, ExpectedVersions: expected}))
+				res, err := c.Deps().OpenDependencyUpdates(ctx, connect.NewRequest(&ermite.OpenDependencyUpdatesRequest{Repo: repo, Batch: "", ExpectedVersions: expected}))
 				if err != nil {
 					return c.Describe(err)
 				}
 				got = res.Msg.GetUpdates()
 			} else {
-				res, err := c.Deps().IgnoreDependencyUpdates(ctx, connect.NewRequest(&ermite.IgnoreDependencyUpdatesRequest{Repo: repo, ExpectedVersions: expected}))
+				res, err := c.Deps().IgnoreDependencyUpdates(ctx, connect.NewRequest(&ermite.IgnoreDependencyUpdatesRequest{Repo: repo, Batch: "", ExpectedVersions: expected}))
 				if err != nil {
 					return c.Describe(err)
 				}

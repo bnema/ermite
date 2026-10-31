@@ -120,8 +120,8 @@ func (_c *DepsService_Check_Call) RunAndReturn(run func(ctx context.Context, p d
 }
 
 // Ignore provides a mock function for the type DepsService
-func (_mock *DepsService) Ignore(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error) {
-	ret := _mock.Called(ctx, p, repo, expected)
+func (_mock *DepsService) Ignore(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error) {
+	ret := _mock.Called(ctx, p, repo, key, expected)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Ignore")
@@ -129,16 +129,16 @@ func (_mock *DepsService) Ignore(ctx context.Context, p domain.Principal, repo d
 
 	var r0 domain.RepoDeps
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, []domain.DepRef) (domain.RepoDeps, error)); ok {
-		return returnFunc(ctx, p, repo, expected)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.DepBatchKey, []domain.DepRef) (domain.RepoDeps, error)); ok {
+		return returnFunc(ctx, p, repo, key, expected)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, []domain.DepRef) domain.RepoDeps); ok {
-		r0 = returnFunc(ctx, p, repo, expected)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.DepBatchKey, []domain.DepRef) domain.RepoDeps); ok {
+		r0 = returnFunc(ctx, p, repo, key, expected)
 	} else {
 		r0 = ret.Get(0).(domain.RepoDeps)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, []domain.DepRef) error); ok {
-		r1 = returnFunc(ctx, p, repo, expected)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, domain.DepBatchKey, []domain.DepRef) error); ok {
+		r1 = returnFunc(ctx, p, repo, key, expected)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -154,12 +154,13 @@ type DepsService_Ignore_Call struct {
 //   - ctx context.Context
 //   - p domain.Principal
 //   - repo domain.RepoName
+//   - key domain.DepBatchKey
 //   - expected []domain.DepRef
-func (_e *DepsService_Expecter) Ignore(ctx any, p any, repo any, expected any) *DepsService_Ignore_Call {
-	return &DepsService_Ignore_Call{Call: _e.mock.On("Ignore", ctx, p, repo, expected)}
+func (_e *DepsService_Expecter) Ignore(ctx any, p any, repo any, key any, expected any) *DepsService_Ignore_Call {
+	return &DepsService_Ignore_Call{Call: _e.mock.On("Ignore", ctx, p, repo, key, expected)}
 }
 
-func (_c *DepsService_Ignore_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef)) *DepsService_Ignore_Call {
+func (_c *DepsService_Ignore_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef)) *DepsService_Ignore_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -173,15 +174,20 @@ func (_c *DepsService_Ignore_Call) Run(run func(ctx context.Context, p domain.Pr
 		if args[2] != nil {
 			arg2 = args[2].(domain.RepoName)
 		}
-		var arg3 []domain.DepRef
+		var arg3 domain.DepBatchKey
 		if args[3] != nil {
-			arg3 = args[3].([]domain.DepRef)
+			arg3 = args[3].(domain.DepBatchKey)
+		}
+		var arg4 []domain.DepRef
+		if args[4] != nil {
+			arg4 = args[4].([]domain.DepRef)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -192,7 +198,7 @@ func (_c *DepsService_Ignore_Call) Return(repoDeps domain.RepoDeps, err error) *
 	return _c
 }
 
-func (_c *DepsService_Ignore_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error)) *DepsService_Ignore_Call {
+func (_c *DepsService_Ignore_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error)) *DepsService_Ignore_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -272,8 +278,8 @@ func (_c *DepsService_List_Call) RunAndReturn(run func(ctx context.Context, p do
 }
 
 // Open provides a mock function for the type DepsService
-func (_mock *DepsService) Open(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error) {
-	ret := _mock.Called(ctx, p, repo, expected)
+func (_mock *DepsService) Open(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error) {
+	ret := _mock.Called(ctx, p, repo, key, expected)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Open")
@@ -281,16 +287,16 @@ func (_mock *DepsService) Open(ctx context.Context, p domain.Principal, repo dom
 
 	var r0 domain.RepoDeps
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, []domain.DepRef) (domain.RepoDeps, error)); ok {
-		return returnFunc(ctx, p, repo, expected)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.DepBatchKey, []domain.DepRef) (domain.RepoDeps, error)); ok {
+		return returnFunc(ctx, p, repo, key, expected)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, []domain.DepRef) domain.RepoDeps); ok {
-		r0 = returnFunc(ctx, p, repo, expected)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName, domain.DepBatchKey, []domain.DepRef) domain.RepoDeps); ok {
+		r0 = returnFunc(ctx, p, repo, key, expected)
 	} else {
 		r0 = ret.Get(0).(domain.RepoDeps)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, []domain.DepRef) error); ok {
-		r1 = returnFunc(ctx, p, repo, expected)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName, domain.DepBatchKey, []domain.DepRef) error); ok {
+		r1 = returnFunc(ctx, p, repo, key, expected)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -306,12 +312,13 @@ type DepsService_Open_Call struct {
 //   - ctx context.Context
 //   - p domain.Principal
 //   - repo domain.RepoName
+//   - key domain.DepBatchKey
 //   - expected []domain.DepRef
-func (_e *DepsService_Expecter) Open(ctx any, p any, repo any, expected any) *DepsService_Open_Call {
-	return &DepsService_Open_Call{Call: _e.mock.On("Open", ctx, p, repo, expected)}
+func (_e *DepsService_Expecter) Open(ctx any, p any, repo any, key any, expected any) *DepsService_Open_Call {
+	return &DepsService_Open_Call{Call: _e.mock.On("Open", ctx, p, repo, key, expected)}
 }
 
-func (_c *DepsService_Open_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef)) *DepsService_Open_Call {
+func (_c *DepsService_Open_Call) Run(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef)) *DepsService_Open_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -325,15 +332,20 @@ func (_c *DepsService_Open_Call) Run(run func(ctx context.Context, p domain.Prin
 		if args[2] != nil {
 			arg2 = args[2].(domain.RepoName)
 		}
-		var arg3 []domain.DepRef
+		var arg3 domain.DepBatchKey
 		if args[3] != nil {
-			arg3 = args[3].([]domain.DepRef)
+			arg3 = args[3].(domain.DepBatchKey)
+		}
+		var arg4 []domain.DepRef
+		if args[4] != nil {
+			arg4 = args[4].([]domain.DepRef)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -344,7 +356,7 @@ func (_c *DepsService_Open_Call) Return(repoDeps domain.RepoDeps, err error) *De
 	return _c
 }
 
-func (_c *DepsService_Open_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, expected []domain.DepRef) (domain.RepoDeps, error)) *DepsService_Open_Call {
+func (_c *DepsService_Open_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, repo domain.RepoName, key domain.DepBatchKey, expected []domain.DepRef) (domain.RepoDeps, error)) *DepsService_Open_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -89,7 +89,7 @@ func (rr *runnerRig) open(ups ...domain.DepUpdate) domain.RepoDeps {
 	for i, u := range ups {
 		refs[i] = u.DepRef
 	}
-	got, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, refs)
+	got, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), refs)
 	require.NoError(rr.t, err)
 	return got
 }
@@ -146,7 +146,7 @@ func TestBernardOpenGoStartsARunAtTheTip(t *testing.T) {
 func TestBernardOpenWhileApplyingStartsNoSecondRun(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	rr.open(goUpdate())
-	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, []domain.DepRef{goUpdate().DepRef})
+	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	assert.Equal(t, 1, rr.starts)
 	assert.Equal(t, domain.DepsApplying, rr.snapshot().Batches[0].State, "the first run is still the record's")
@@ -158,7 +158,7 @@ func TestBernardOpenStartFailureFailsTheRecord(t *testing.T) {
 	rr.runs.ExpectedCalls = nil
 	rr.runs.EXPECT().StartDepsRun(mock.Anything, mock.Anything).Return(domain.CIRun{}, errors.New("store down\nsecond line"))
 	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
-	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, []domain.DepRef{goUpdate().DepRef})
+	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 	require.Error(t, err)
 	got := rr.snapshot()
 	assert.Equal(t, domain.DepsFailed, got.Base().State)
@@ -180,7 +180,7 @@ func TestBernardOpenCancelsTheRunWhenTheRecordMoved(t *testing.T) {
 		})
 	rr.runs.EXPECT().CancelDepsRun(mock.Anything, rr.repo, int64(5)).Return(nil).Once()
 	rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
-	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, []domain.DepRef{goUpdate().DepRef})
+	_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	got := rr.snapshot()
 	assert.Equal(t, domain.DepsIdle, got.Base().State)
@@ -191,7 +191,7 @@ func TestBernardOpenGoRefusesABadGoVersion(t *testing.T) {
 	for _, line := range []string{"go 1.25rc1", "go 2.0"} {
 		rr := newRunnerRig(t, goModText(line, "", textOld))
 		rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
-		_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, []domain.DepRef{goUpdate().DepRef})
+		_, err := rr.b.Open(context.Background(), domain.Owner(), rr.repo, domain.DepBatchKey(""), []domain.DepRef{goUpdate().DepRef})
 		require.Error(t, err, line)
 		assert.Equal(t, domain.DepsFailed, rr.rec.Base().State)
 		assert.Contains(t, rr.rec.Base().Error, "Go version")
@@ -488,4 +488,24 @@ func TestBernardCheckDepsReportClassifiesReadFailures(t *testing.T) {
 		err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
 		require.ErrorIs(t, err, domain.ErrPreconditionFailed)
 	})
+}
+
+func TestBernardOpenMajorBatchByKey(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	up := goUpdate()
+	key := domain.MajorBatchKey(up)
+	base := domain.DepBatch{State: domain.DepsApplying, RunID: 900, MR: 17}
+	rr.rec.Batches = []domain.DepBatch{base, {Key: key, Updates: []domain.DepUpdate{up}}}
+	_, err := rr.b.Open(t.Context(), domain.Owner(), rr.repo, "missing", []domain.DepRef{up.DepRef})
+	require.ErrorIs(t, err, domain.ErrNotFound)
+	require.Zero(t, rr.starts)
+	_, err = rr.b.Open(t.Context(), domain.Owner(), rr.repo, key, nil)
+	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+	got, err := rr.b.Open(t.Context(), domain.Owner(), rr.repo, key, []domain.DepRef{up.DepRef})
+	require.NoError(t, err)
+	require.Equal(t, base, got.Batches[0])
+	require.Equal(t, domain.DepsApplying, got.Batches[1].State)
+	require.Equal(t, int64(runnerRunID), got.Batches[1].RunID)
+	require.Equal(t, []domain.DepUpdate{up}, got.Batches[1].RunUpdates)
+	require.Equal(t, domain.BotSubject(got.Batches[1]), rr.started.Title)
 }

@@ -23,8 +23,14 @@ func TestDisabledBernard(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 	for _, call := range []func(p domain.Principal) error{
 		func(p domain.Principal) error { _, err := d.Check(ctx, p, repo); return err },
-		func(p domain.Principal) error { _, err := d.Open(ctx, p, repo, nil); return err },
-		func(p domain.Principal) error { _, err := d.Ignore(ctx, p, repo, nil); return err },
+		func(p domain.Principal) error {
+			_, err := d.Open(ctx, p, repo, domain.DepBatchKey(""), nil)
+			return err
+		},
+		func(p domain.Principal) error {
+			_, err := d.Ignore(ctx, p, repo, domain.DepBatchKey(""), nil)
+			return err
+		},
 		func(p domain.Principal) error { _, err := d.Snooze(ctx, p, repo); return err },
 	} {
 		err := call(domain.Owner())

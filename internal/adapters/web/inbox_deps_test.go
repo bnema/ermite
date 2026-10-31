@@ -360,7 +360,7 @@ func TestInboxDepsActions(t *testing.T) {
 	t.Run("ignore", func(t *testing.T) {
 		t.Parallel()
 		deps := mocks.NewDepsService(t)
-		deps.EXPECT().Ignore(mock.Anything, mock.Anything, alpha, want).Return(domain.RepoDeps{}, nil).Once()
+		deps.EXPECT().Ignore(mock.Anything, mock.Anything, alpha, domain.DepBatchKey(""), want).Return(domain.RepoDeps{}, nil).Once()
 		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/ignore", form)
 		assert.Equal(t, 303, rec.Code)
 		assert.Equal(t, "/-/inbox?tab=deps", rec.Header().Get("Location"))
@@ -368,7 +368,7 @@ func TestInboxDepsActions(t *testing.T) {
 	t.Run("open", func(t *testing.T) {
 		t.Parallel()
 		deps := mocks.NewDepsService(t)
-		deps.EXPECT().Open(mock.Anything, mock.Anything, alpha, want).Return(domain.RepoDeps{}, nil).Once()
+		deps.EXPECT().Open(mock.Anything, mock.Anything, alpha, domain.DepBatchKey(""), want).Return(domain.RepoDeps{}, nil).Once()
 		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/open", form)
 		assert.Equal(t, 303, rec.Code)
 		assert.Equal(t, "/-/inbox?tab=deps", rec.Header().Get("Location"))
@@ -384,7 +384,7 @@ func TestInboxDepsActions(t *testing.T) {
 	t.Run("stale", func(t *testing.T) {
 		t.Parallel()
 		deps := mocks.NewDepsService(t)
-		deps.EXPECT().Ignore(mock.Anything, mock.Anything, alpha, want).Return(domain.RepoDeps{}, domain.ErrPreconditionFailed).Once()
+		deps.EXPECT().Ignore(mock.Anything, mock.Anything, alpha, domain.DepBatchKey(""), want).Return(domain.RepoDeps{}, domain.ErrPreconditionFailed).Once()
 		rec := post(depsServer(t, mocks.NewInboxService(t), deps), "/-/inbox/deps/alpha/ignore", form)
 		assert.NotEqual(t, 303, rec.Code)
 	})

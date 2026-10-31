@@ -37,12 +37,12 @@ func (DisabledBernard) Check(_ context.Context, p domain.Principal, _ domain.Rep
 }
 
 // Open refuses: Bernard is disabled.
-func (DisabledBernard) Open(_ context.Context, p domain.Principal, _ domain.RepoName, _ []domain.DepRef) (domain.RepoDeps, error) {
+func (DisabledBernard) Open(_ context.Context, p domain.Principal, _ domain.RepoName, _ domain.DepBatchKey, _ []domain.DepRef) (domain.RepoDeps, error) {
 	return disabledBernard(p)
 }
 
 // Ignore refuses: Bernard is disabled.
-func (DisabledBernard) Ignore(_ context.Context, p domain.Principal, _ domain.RepoName, _ []domain.DepRef) (domain.RepoDeps, error) {
+func (DisabledBernard) Ignore(_ context.Context, p domain.Principal, _ domain.RepoName, _ domain.DepBatchKey, _ []domain.DepRef) (domain.RepoDeps, error) {
 	return disabledBernard(p)
 }
 

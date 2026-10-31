@@ -218,9 +218,9 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 			return "", back, err
 		}
 		if op == depsOpen {
-			_, err = s.cfg.Deps.Open(ctx, principal(ctx), name, refs)
+			_, err = s.cfg.Deps.Open(ctx, principal(ctx), name, domain.DepBatchKey(""), refs)
 		} else {
-			_, err = s.cfg.Deps.Ignore(ctx, principal(ctx), name, refs)
+			_, err = s.cfg.Deps.Ignore(ctx, principal(ctx), name, domain.DepBatchKey(""), refs)
 		}
 		return back, back, err
 	}
