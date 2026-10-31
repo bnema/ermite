@@ -67,8 +67,9 @@ func (GoMod) Manifests(paths domain.PathList) []ports.DepsInput {
 	return out
 }
 
-// Inputs reads go.mod and go.sum (absent in a module without dependencies)
-// of each update directory and probes, by header, the go.mod of every
+// Inputs reads the go.mod of each update directory (a changed go.sum is read
+// as a changed path; Validate never needs the original) and probes, by
+// header, the go.mod of every
 // directory between an update directory and a changed Go file, so nested
 // module boundaries are known without a full listing.
 func (GoMod) Inputs(ups []domain.DepUpdate, changed []domain.TreePath) []ports.DepsInput {
@@ -84,7 +85,6 @@ func (GoMod) Inputs(ups []domain.DepUpdate, changed []domain.TreePath) []ports.D
 			continue
 		}
 		add(path.Join(u.Directory, "go.mod"), ports.DepsInput{})
-		add(path.Join(u.Directory, "go.sum"), ports.DepsInput{Optional: true})
 		if u.NewName == "" {
 			continue
 		}

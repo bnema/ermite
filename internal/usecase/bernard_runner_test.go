@@ -613,3 +613,28 @@ func TestBernardOpenNamesTheMissingRunnerKind(t *testing.T) {
 		})
 	}
 }
+
+// A changed Go file larger than the report cap is never compared by its
+// header: a runner could otherwise replace it with its first kilobytes.
+func TestBernardPathMajorReportRefusesTruncatedLargeGoFile(t *testing.T) {
+	rr := newRunnerRig(t, "module example.com/app\ngo 1.24\nrequire example.com/lib v1.0.0\n")
+	head := "package main\nimport _ \"example.com/lib/sub\"\n"
+	rr.files["main.go"] = head + "var X = `" + strings.Repeat("x", 3<<20) + "`\n"
+	u := domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "example.com/lib", Version: "v2.0.0"}, Current: "v1.0.0", NewName: "example.com/lib/v2"}
+	rr.open(u)
+	run, job := rr.endedRun(domain.CISuccess)
+	truncated := strings.Replace(rr.files["main.go"][:4096], "example.com/lib/sub", "example.com/lib/v2/sub", 1)
+	report := ports.DepsReport{Files: []ports.DepsFile{{Path: "go.mod", Content: []byte("module example.com/app\ngo 1.24\nrequire example.com/lib/v2 v2.0.0\n")}, {Path: "main.go", Content: []byte(truncated)}}}
+	err := rr.b.CheckDepsReport(context.Background(), run, job, report)
+	require.ErrorIs(t, err, domain.ErrPreconditionFailed)
+}
+
+// An unchanged go.sum is not read at all, whatever its size.
+func TestBernardCheckDepsReportIgnoresUnchangedGoSum(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	rr.files["go.sum"] = strings.Repeat("x", 3<<19) // 1.5 MiB, over the manifest limit
+	run, job := rr.endedRun(domain.CISuccess)
+	report := ports.DepsReport{Files: []ports.DepsFile{{Path: "go.mod", Content: []byte(goModText("go 1.24", "", textNew))}}}
+	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, report))
+}

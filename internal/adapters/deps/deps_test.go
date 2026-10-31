@@ -411,11 +411,11 @@ func TestGoModValidateImportBoundaries(t *testing.T) {
 func TestGoModInputs(t *testing.T) {
 	u := update(domain.EcosystemGoMod, "svc", "example.com/lib", "v1.0.0", "v2.0.0")
 	plain := update(domain.EcosystemGoMod, "", "example.com/x", "v1.0.0", "v1.1.0")
-	assert.Equal(t, []ports.DepsInput{{Path: tp(t, "go.mod")}, {Path: tp(t, "go.sum"), Optional: true}}, (GoMod{}).Inputs([]domain.DepUpdate{plain}, nil))
+	assert.Equal(t, []ports.DepsInput{{Path: tp(t, "go.mod")}}, (GoMod{}).Inputs([]domain.DepUpdate{plain}, nil))
 	u.NewName = "example.com/lib/v2"
 	got := (GoMod{}).Inputs([]domain.DepUpdate{u}, []domain.TreePath{tp(t, "svc/a/b/main.go"), tp(t, "svc/go.mod")})
 	assert.Equal(t, []ports.DepsInput{
-		{Path: tp(t, "svc/go.mod")}, {Path: tp(t, "svc/go.sum"), Optional: true},
+		{Path: tp(t, "svc/go.mod")},
 		{Path: tp(t, "svc/a/b/go.mod"), Optional: true, Header: true}, {Path: tp(t, "svc/a/go.mod"), Optional: true, Header: true},
 	}, got)
 }

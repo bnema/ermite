@@ -450,14 +450,15 @@ var errDepsOversize = errors.New("dependency file too large")
 // readInputs reads the inputs of one ecosystem and the original content of
 // the changed report paths. Full inputs may be up to maxDepsManifestBytes;
 // header inputs hold at most ports.DepsHeaderBytes. Changed paths are
-// optional (new files) and read in full up to maxReportFileBytes; beyond, an
-// opaque one (not a full input) keeps only its header. A path requested
-// several ways is read the most complete way. partial lists the paths whose
+// optional (new files) and read in full up to maxReportFileBytes; beyond, only
+// one the ecosystem lists as a header input alone (an opaque lockfile) keeps
+// its header, any other is errDepsOversize. A path requested several ways is
+// read the most complete way. partial lists the paths whose
 // content is only a header. Absent optional inputs are left out.
 // Errors: domain.ErrNotFound (absent required input), errDepsOversize, or the
 // read failure.
 func (b *Bernard) readInputs(ctx context.Context, name domain.RepoName, rev domain.Revision, inputs []ports.DepsInput, changed []domain.TreePath) (files map[domain.TreePath][]byte, partial map[domain.TreePath]bool, err error) {
-	type want struct{ optional, header, full, changed bool }
+	type want struct{ optional, header, listedHeader, full, changed bool }
 	wants := map[domain.TreePath]*want{}
 	var order []domain.TreePath
 	add := func(tp domain.TreePath, w want) {
@@ -469,11 +470,12 @@ func (b *Bernard) readInputs(ctx context.Context, name domain.RepoName, rev doma
 		}
 		prev.optional = prev.optional && w.optional
 		prev.header = prev.header && w.header
+		prev.listedHeader = prev.listedHeader || w.listedHeader
 		prev.full = prev.full || w.full
 		prev.changed = prev.changed || w.changed
 	}
 	for _, in := range inputs {
-		add(in.Path, want{optional: in.Optional, header: in.Header, full: !in.Header})
+		add(in.Path, want{optional: in.Optional, header: in.Header, listedHeader: in.Header, full: !in.Header})
 	}
 	for _, tp := range changed {
 		add(tp, want{optional: true, changed: true})
@@ -487,7 +489,7 @@ func (b *Bernard) readInputs(ctx context.Context, name domain.RepoName, rev doma
 		case w.changed:
 			content, ok, err = b.readDepsFile(ctx, name, rev, tp, maxReportFileBytes)
 			if err == nil && !ok {
-				if w.full {
+				if w.full || !w.listedHeader {
 					err = fmt.Errorf("%w: %s is larger than %d bytes", errDepsOversize, tp, maxReportFileBytes)
 				} else {
 					content, err = b.readDepsHeader(ctx, name, rev, tp)
