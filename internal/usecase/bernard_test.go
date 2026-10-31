@@ -110,7 +110,7 @@ func (r *bernardRig) repoReads() {
 	r.reader.EXPECT().ResolveRevision(mock.Anything, r.repo, domain.Revision{}).Return(domain.ResolvedRevision{}, nil)
 	r.reader.EXPECT().ListPaths(mock.Anything, r.repo, mock.Anything, domain.MaxPathEntries, domain.MaxPathBytes).Return(domain.PathList{Paths: []string{"go.mod"}}, nil)
 	r.reader.EXPECT().OpenBlob(mock.Anything, r.repo, mock.Anything, tp).Return(domain.BlobInfo{Size: 4}, io.NopCloser(bytes.NewReader([]byte("mod\n"))), nil)
-	r.eco.EXPECT().Manifests(mock.Anything).Return([]domain.TreePath{tp})
+	r.eco.EXPECT().Manifests(mock.Anything).Return([]ports.DepsInput{{Path: tp}})
 	r.eco.EXPECT().Detect(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
 		func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) ([]domain.DepCandidate, error) {
 			return r.cands, nil

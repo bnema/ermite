@@ -3,11 +3,11 @@
 package deps
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"path"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -25,11 +25,46 @@ type npmManifest struct {
 	} `json:"engines"`
 }
 
+// parseNPMManifest decodes a package.json, refusing invalid JSON, duplicate
+// keys and values of the wrong type.
+func parseNPMManifest(content []byte) (npmManifest, error) {
+	var m npmManifest
+	if _, err := npmJSON(content); err != nil {
+		return m, err
+	}
+	d := json.NewDecoder(bytes.NewReader(content))
+	d.UseNumber()
+	if err := d.Decode(&m); err != nil {
+		return m, fmt.Errorf("%w: package.json: %v", domain.ErrInvalid, err)
+	}
+	return m, nil
+}
+
 type npmRoot struct{ Directory, Manager, Version, NodeVersion, Lockfile string }
 
-var npmManagerDefaults = map[string]string{"npm": "", "pnpm9": "9.15.0", "pnpm6": "8.15.9", "yarn1": "1.22.22", "yarn3": "3.8.7", "yarn4": "4.5.3", "bun": "1.2.0"}
+// npmManagerDefaults maps a lockfile format to the manager version that
+// writes it when packageManager is absent.
+var npmManagerDefaults = map[string]string{
+	"npm":   "",        // the image's npm
+	"pnpm9": "9.15.0",  // lockfileVersion 9.x
+	"pnpm6": "8.15.9",  // lockfileVersion 6.x (pnpm 8)
+	"yarn1": "1.22.22", // yarn classic
+	"yarn3": "3.8.7",   // Berry, __metadata.version < 8
+	"yarn4": "4.5.3",   // Berry, __metadata.version >= 8
+	"bun":   "1.2.0",
+}
+
+// npmLockOrder is the lockfile priority of a directory holding several.
+var npmLockOrder = []string{"bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock", "npm-shrinkwrap.json", "package-lock.json"}
+
+var npmLockManager = map[string]string{"bun.lock": "bun", "bun.lockb": "bun", "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn", "npm-shrinkwrap.json": "npm", "package-lock.json": "npm"}
+
 var npmPackageManagerRE = regexp.MustCompile(`^(npm|pnpm|yarn|bun)@([0-9]+\.[0-9]+\.[0-9]+(?:\+sha(?:1|224|256|512)\.[0-9a-f]+)?)$`)
 var npmNodeRE = regexp.MustCompile(`^(?:>=|\^|~)?([0-9]+)(?:\.x|\.[0-9]+(?:\.[0-9]+)?)?$`)
+
+// Lockfile versions sit at the top of the file: a header is enough.
+var pnpmLockVersionRE = regexp.MustCompile(`(?m)^lockfileVersion:[ \t]*['"]?([0-9]+)(?:\.[0-9]+)?['"]?[ \t]*$`)
+var yarnMetadataRE = regexp.MustCompile(`(?m)^__metadata:[ \t]*\r?\n(?:[ \t]+.*\r?\n)*?[ \t]+version:[ \t]*['"]?([0-9]+)`)
 
 func npmNode(spec string) string {
 	m := npmNodeRE.FindStringSubmatch(strings.TrimSpace(spec))
@@ -40,13 +75,7 @@ func npmNode(spec string) string {
 	if err != nil {
 		return "22"
 	}
-	if n < 18 {
-		n = 18
-	}
-	if n > 24 {
-		n = 24
-	}
-	return strconv.Itoa(n)
+	return strconv.Itoa(min(max(n, 18), 24))
 }
 
 func npmFile(files map[domain.TreePath][]byte, dir, name string) []byte {
@@ -57,60 +86,80 @@ func npmFile(files map[domain.TreePath][]byte, dir, name string) []byte {
 	return files[p]
 }
 
+// npmManager derives the manager of a root from its packageManager field and
+// the lockfile headers. A packageManager naming another tool than the
+// existing lockfile, or a lockfile format without a known writer, is refused.
 func npmManager(files map[domain.TreePath][]byte, dir string, m npmManifest) (npmRoot, error) {
 	root := npmRoot{Directory: dir, Manager: "npm", NodeVersion: npmNode(m.Engines.Node)}
-	// Lockfile priority is deterministic even when a repository contains several.
-	for _, name := range []string{"bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock", "package-lock.json", "npm-shrinkwrap.json"} {
-		if npmFile(files, dir, name) != nil {
-			root.Lockfile = path.Join(dir, name)
-			break
-		}
-	}
-	switch path.Base(root.Lockfile) {
-	case "bun.lock", "bun.lockb":
-		root.Manager = "bun"
-		root.Version = npmManagerDefaults["bun"]
-	case "pnpm-lock.yaml":
-		root.Manager = "pnpm"
-		root.Version = npmManagerDefaults["pnpm9"]
-		var lock struct {
-			Version string `yaml:"lockfileVersion"`
-		}
-		if err := yaml.Unmarshal(npmFile(files, dir, "pnpm-lock.yaml"), &lock); err != nil {
-			return root, err
-		}
-		if strings.HasPrefix(lock.Version, "6") {
-			root.Version = npmManagerDefaults["pnpm6"]
-		}
-	case "yarn.lock":
-		root.Manager = "yarn"
-		root.Version = npmManagerDefaults["yarn1"]
-		lock := npmFile(files, dir, "yarn.lock")
-		if npmFile(files, dir, ".yarnrc.yml") != nil || strings.Contains(string(lock), "__metadata:") {
-			root.Version = npmManagerDefaults["yarn3"]
-			var meta struct {
-				Metadata struct {
-					Version int `yaml:"version"`
-				} `yaml:"__metadata"`
-			}
-			if err := yaml.Unmarshal(lock, &meta); err == nil && meta.Metadata.Version >= 8 {
-				root.Version = npmManagerDefaults["yarn4"]
-			}
-		}
-	}
+	var pm []string
 	if m.PackageManager != "" {
-		match := npmPackageManagerRE.FindStringSubmatch(m.PackageManager)
-		if match == nil {
+		pm = npmPackageManagerRE.FindStringSubmatch(m.PackageManager)
+		if pm == nil {
 			return root, fmt.Errorf("%w: unsupported packageManager %q", domain.ErrInvalid, m.PackageManager)
 		}
-		root.Manager = match[1]
-		root.Version = match[2]
+	}
+	for _, name := range npmLockOrder {
+		if npmFile(files, dir, name) == nil {
+			continue
+		}
+		if root.Lockfile == "" || (pm != nil && npmLockManager[name] == pm[1] && npmLockManager[path.Base(root.Lockfile)] != pm[1]) {
+			root.Lockfile = path.Join(dir, name)
+		}
+	}
+	lock := npmFile(files, dir, path.Base(root.Lockfile))
+	switch path.Base(root.Lockfile) {
+	case "bun.lock", "bun.lockb":
+		root.Manager, root.Version = "bun", npmManagerDefaults["bun"]
+	case "pnpm-lock.yaml":
+		root.Manager = "pnpm"
+		v := pnpmLockVersionRE.FindSubmatch(lock)
+		switch {
+		case v != nil && string(v[1]) == "9":
+			root.Version = npmManagerDefaults["pnpm9"]
+		case v != nil && string(v[1]) == "6":
+			root.Version = npmManagerDefaults["pnpm6"]
+		case pm == nil:
+			return root, fmt.Errorf("%w: unsupported pnpm lockfile version in %s", domain.ErrInvalid, root.Lockfile)
+		}
+	case "yarn.lock":
+		root.Manager, root.Version = "yarn", npmManagerDefaults["yarn1"]
+		meta := yarnMetadataRE.FindSubmatch(lock)
+		if meta != nil || npmFile(files, dir, ".yarnrc.yml") != nil {
+			root.Version = npmManagerDefaults["yarn3"]
+			if meta != nil {
+				if n, err := strconv.Atoi(string(meta[1])); err == nil && n >= 8 {
+					root.Version = npmManagerDefaults["yarn4"]
+				}
+			}
+		}
+	}
+	if pm != nil {
+		if root.Lockfile != "" && root.Manager != pm[1] {
+			return root, fmt.Errorf("%w: packageManager %s does not write %s", domain.ErrInvalid, pm[1], root.Lockfile)
+		}
+		root.Manager, root.Version = pm[1], pm[2]
 	}
 	return root, nil
 }
 
-func npmWorkspaceMatch(pattern, rel string) bool {
-	a, b := strings.Split(strings.TrimSuffix(pattern, "/"), "/"), strings.Split(rel, "/")
+// npmWorkspaceMatch matches rel against workspace patterns: per path segment
+// with path.Match, a trailing /** matching any depth, and !pattern excluding.
+func npmWorkspaceMatch(patterns []string, rel string) bool {
+	matched := false
+	for _, pattern := range patterns {
+		negated := strings.HasPrefix(pattern, "!")
+		if npmPatternMatch(strings.TrimPrefix(pattern, "!"), rel) {
+			if negated {
+				return false
+			}
+			matched = true
+		}
+	}
+	return matched
+}
+
+func npmPatternMatch(pattern, rel string) bool {
+	a, b := strings.Split(path.Clean(pattern), "/"), strings.Split(rel, "/")
 	recursive := len(a) > 0 && a[len(a)-1] == "**"
 	if recursive {
 		a = a[:len(a)-1]
@@ -127,20 +176,16 @@ func npmWorkspaceMatch(pattern, rel string) bool {
 	return true
 }
 
-// npmRoots maps each package directory to its nearest matching workspace root.
-func npmRoots(files map[domain.TreePath][]byte) (map[string]npmRoot, error) {
-	manifests := map[string]npmManifest{}
-	patterns := map[string][]string{}
-	for _, p := range filePaths(files) {
-		if path.Base(p.String()) != "package.json" {
-			continue
+// npmWorkspaces returns the workspace patterns declared in dir, nil when dir
+// is not a workspace root.
+func npmWorkspaces(files map[domain.TreePath][]byte, dir string) ([]string, bool, error) {
+	var patterns []string
+	root := false
+	if content := npmFile(files, dir, "package.json"); content != nil {
+		m, err := parseNPMManifest(content)
+		if err != nil {
+			return nil, false, fmt.Errorf("%s: %w", path.Join(dir, "package.json"), err)
 		}
-		var m npmManifest
-		if err := json.Unmarshal(files[p], &m); err != nil {
-			return nil, err
-		}
-		dir := moduleDir(p.String())
-		manifests[dir] = m
 		if len(m.Workspaces) > 0 && string(m.Workspaces) != "null" {
 			var list []string
 			if err := json.Unmarshal(m.Workspaces, &list); err != nil {
@@ -148,65 +193,66 @@ func npmRoots(files map[domain.TreePath][]byte) (map[string]npmRoot, error) {
 					Packages []string `json:"packages"`
 				}
 				if err := json.Unmarshal(m.Workspaces, &object); err != nil {
-					return nil, err
+					return nil, false, fmt.Errorf("%w: workspaces in %s", domain.ErrInvalid, path.Join(dir, "package.json"))
 				}
 				list = object.Packages
 			}
-			patterns[dir] = list
+			patterns, root = append(patterns, list...), true
 		}
 	}
-	for _, p := range filePaths(files) {
-		if path.Base(p.String()) != "pnpm-workspace.yaml" {
-			continue
-		}
+	if content := npmFile(files, dir, "pnpm-workspace.yaml"); content != nil {
 		var w struct {
 			Packages []string `yaml:"packages"`
 		}
-		if err := yaml.Unmarshal(files[p], &w); err != nil {
-			return nil, err
+		if err := yaml.Unmarshal(content, &w); err != nil {
+			return nil, false, fmt.Errorf("%w: %s: %v", domain.ErrInvalid, path.Join(dir, "pnpm-workspace.yaml"), err)
 		}
-		patterns[moduleDir(p.String())] = w.Packages
+		patterns, root = append(patterns, w.Packages...), true
 	}
-	var roots []string
-	for dir := range patterns {
-		roots = append(roots, dir)
-	}
-	sort.Slice(roots, func(i, j int) bool { return len(roots[i]) > len(roots[j]) })
-	out := map[string]npmRoot{}
-	for dir, m := range manifests {
-		owner := dir
-		for _, candidate := range roots {
-			if candidate == dir {
-				owner = dir
-				break
-			}
-			prefix := candidate + "/"
-			if candidate == "" {
-				prefix = ""
-			}
-			if !strings.HasPrefix(dir, prefix) {
-				continue
-			}
-			rel := strings.TrimPrefix(dir, prefix)
-			matched := false
-			for _, pattern := range patterns[candidate] {
-				if npmWorkspaceMatch(pattern, rel) {
-					matched = true
-				}
-			}
-			if matched {
-				owner = candidate
-				break
-			}
-		}
-		if owner != dir {
-			m = manifests[owner]
-		}
-		root, err := npmManager(files, owner, m)
+	return patterns, root, nil
+}
+
+// npmRootOf finds the root of the package in dir: dir itself when it is a
+// workspace root, else the nearest ancestor whose workspaces match it, else
+// dir. It needs only the files of dir and its ancestors.
+func npmRootOf(files map[domain.TreePath][]byte, dir string) (npmRoot, error) {
+	owner := dir
+	for candidate := dir; ; candidate = moduleDir(candidate) {
+		patterns, isRoot, err := npmWorkspaces(files, candidate)
 		if err != nil {
-			return nil, err
+			return npmRoot{}, err
 		}
-		out[dir] = root
+		if isRoot && (candidate == dir || npmWorkspaceMatch(patterns, strings.TrimPrefix(dir, prefixOf(candidate)))) {
+			owner = candidate
+			break
+		}
+		if candidate == "" {
+			break
+		}
 	}
-	return out, nil
+	var m npmManifest
+	if content := npmFile(files, owner, "package.json"); content != nil {
+		var err error
+		if m, err = parseNPMManifest(content); err != nil {
+			return npmRoot{}, err
+		}
+	}
+	return npmManager(files, owner, m)
+}
+
+func prefixOf(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	return dir + "/"
+}
+
+// npmAncestors returns dir and its ancestors, the repository root last.
+func npmAncestors(dir string) []string {
+	out := []string{dir}
+	for dir != "" {
+		dir = moduleDir(dir)
+		out = append(out, dir)
+	}
+	return out
 }

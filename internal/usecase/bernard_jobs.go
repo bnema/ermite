@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -316,57 +317,31 @@ func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	}
 
 	rev := domain.RevisionOf(base)
-	paths, err := b.cfg.Reader.ListPaths(ctx, run.Repo, rev, domain.MaxPathEntries, domain.MaxPathBytes)
-	if err != nil {
-		return nil, domain.ObjectID{}, nil, err
-	}
-	if paths.Truncated {
-		return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: incomplete repository paths", domain.ErrPreconditionFailed)
-	}
-	manifests := map[domain.TreePath]bool{}
+	before, partial := map[domain.TreePath][]byte{}, map[domain.TreePath]bool{}
+	var effects []domain.DepSideEffect
 	for _, eco := range ecosystems {
-		for _, tp := range eco.Manifests(paths) {
-			manifests[tp] = true
+		ups := groups[eco.Name()]
+		var changed []domain.TreePath
+		ownAfter := map[domain.TreePath][]byte{}
+		for tp, content := range after {
+			if eco.ReportAllowed(ups, tp) {
+				changed = append(changed, tp)
+				ownAfter[tp] = content
+			}
 		}
-	}
-	reads := map[domain.TreePath]bool{}
-	for tp := range manifests {
-		reads[tp] = true
-	}
-	for tp := range after {
-		reads[tp] = true
-	}
-	before := map[domain.TreePath][]byte{}
-	for tp := range reads {
-		limit := maxReportFileBytes
-		if manifests[tp] {
-			limit = maxDepsManifestBytes
-		}
-		content, ok, err := b.readDepsFile(ctx, run.Repo, rev, tp, limit)
+		slices.SortFunc(changed, func(a, b domain.TreePath) int { return strings.Compare(a.String(), b.String()) })
+		ownBefore, ownPartial, err := b.readInputs(ctx, run.Repo, rev, eco.Inputs(ups, changed), changed)
 		if err != nil {
-			if errors.Is(err, domain.ErrNotFound) || domain.IsInvalid(err) {
+			if errors.Is(err, domain.ErrNotFound) || errors.Is(err, errDepsOversize) || domain.IsInvalid(err) {
+				// The file is not at the job's commit, is not a file or is too
+				// large: the report can never be checked against it.
 				err = fmt.Errorf("%w: %v", domain.ErrPreconditionFailed, err)
 			}
 			return nil, domain.ObjectID{}, nil, err
 		}
-		if !ok {
-			return nil, domain.ObjectID{}, nil, fmt.Errorf("%w: %q is larger than %d bytes", domain.ErrPreconditionFailed, tp, limit)
-		}
-		before[tp] = content
-	}
-	var effects []domain.DepSideEffect
-	for _, eco := range ecosystems {
-		ownBefore, ownAfter := map[domain.TreePath][]byte{}, map[domain.TreePath][]byte{}
-		for _, tp := range eco.Manifests(paths) {
-			ownBefore[tp] = before[tp]
-		}
-		for tp, content := range after {
-			if eco.ReportAllowed(groups[eco.Name()], tp) {
-				ownAfter[tp] = content
-				ownBefore[tp] = before[tp]
-			}
-		}
-		more, err := eco.Validate(ownBefore, ownAfter, groups[eco.Name()])
+		maps.Copy(before, ownBefore)
+		maps.Copy(partial, ownPartial)
+		more, err := eco.Validate(ownBefore, ownAfter, ups)
 		if err != nil {
 			return nil, domain.ObjectID{}, nil, fmt.Errorf("check the %s updates: %w", eco.Name(), err)
 		}
@@ -374,7 +349,7 @@ func (b *Bernard) checkRunnerReport(ctx context.Context, rec domain.RepoDeps, ru
 	}
 	changes := map[domain.TreePath][]byte{}
 	for tp, content := range after {
-		if old, ok := before[tp]; !ok || !bytes.Equal(old, content) {
+		if old, ok := before[tp]; !ok || partial[tp] || !bytes.Equal(old, content) {
 			changes[tp] = content
 		}
 	}

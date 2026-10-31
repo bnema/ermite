@@ -36,6 +36,7 @@ func npmJSON(content []byte) (*npmJSONNode, error) {
 		return nil, fmt.Errorf("%w: invalid package.json", domain.ErrInvalid)
 	}
 	d := json.NewDecoder(bytes.NewReader(content))
+	d.UseNumber() // numbers stay text: 1e400 is valid JSON
 	var parse func() (*npmJSONNode, error)
 	parse = func() (*npmJSONNode, error) {
 		start := int(d.InputOffset())
@@ -87,7 +88,13 @@ func npmJSON(content []byte) (*npmJSONNode, error) {
 
 // npmEditSpec replaces only matching dependency string values, preserving all
 // other bytes, including formatting, scripts and unrelated nested objects.
+//
+// newSpec is written as raw bytes, like the runner's edit script: it must
+// match the runner's range rule, which needs no JSON escaping.
 func npmEditSpec(content []byte, name, oldSpec, newSpec string) ([]byte, error) {
+	if !npmRangeRE.MatchString(newSpec) {
+		return nil, fmt.Errorf("%w: unsupported npm range %q", domain.ErrInvalid, newSpec)
+	}
 	root, err := npmJSON(content)
 	if err != nil {
 		return nil, err
@@ -111,7 +118,7 @@ func npmEditSpec(content []byte, name, oldSpec, newSpec string) ([]byte, error) 
 		return nil, fmt.Errorf("%w: dependency %q missing", domain.ErrInvalid, name)
 	}
 	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
-	replacement, _ := json.Marshal(newSpec)
+	replacement := []byte(`"` + newSpec + `"`)
 	out := bytes.Clone(content)
 	for _, n := range edits {
 		out = append(append(append([]byte{}, out[:n.start]...), replacement...), out[n.end:]...)

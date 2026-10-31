@@ -44,10 +44,30 @@ type DepsRegistry interface {
 	Malicious(ctx context.Context, eco domain.DepsEcosystem, name, version string) (bool, error)
 }
 
+// DepsHeaderBytes bounds the prefix of a DepsInput read with Header set.
+const DepsHeaderBytes = 4 << 10
+
+// DepsInput is one file an ecosystem reads at a commit.
+type DepsInput struct {
+	Path domain.TreePath
+	// Optional inputs may be absent at the commit; absent ones are left out of
+	// the files map.
+	Optional bool
+	// Header reads at most DepsHeaderBytes of a file of any size (lockfile
+	// versions, presence). The content may still be complete when the same
+	// path is read in full for another reason.
+	Header bool
+}
+
 // DepsEcosystem detects and applies updates in one dependency ecosystem.
 type DepsEcosystem interface {
 	Name() domain.DepsEcosystem
-	Manifests(paths domain.PathList) []domain.TreePath
+	// Manifests lists the files Detect reads, chosen from a possibly
+	// truncated listing.
+	Manifests(paths domain.PathList) []DepsInput
+	// Inputs lists the files RunnerDetails and Validate read for ups, beyond
+	// the changed report paths (nil before a report), without a full listing.
+	Inputs(ups []domain.DepUpdate, changed []domain.TreePath) []DepsInput
 	Detect(ctx context.Context, files map[domain.TreePath][]byte, reg DepsRegistry) ([]domain.DepCandidate, error)
 	ReportAllowed(ups []domain.DepUpdate, p domain.TreePath) bool
 	ApplyInServer() bool

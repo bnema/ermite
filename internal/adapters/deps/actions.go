@@ -32,8 +32,8 @@ func (Actions) Name() domain.DepsEcosystem { return domain.EcosystemActions }
 func (Actions) ApplyInServer() bool { return true }
 
 // Manifests selects workflow and composite action files.
-func (Actions) Manifests(paths domain.PathList) []domain.TreePath {
-	var out []domain.TreePath
+func (Actions) Manifests(paths domain.PathList) []ports.DepsInput {
+	var out []ports.DepsInput
 	for _, p := range paths.Paths {
 		base := path.Base(p)
 		workflow := path.Dir(p) == ".github/workflows" && (strings.HasSuffix(p, ".yml") || strings.HasSuffix(p, ".yaml"))
@@ -41,11 +41,14 @@ func (Actions) Manifests(paths domain.PathList) []domain.TreePath {
 			continue
 		}
 		if tp, err := domain.ParseTreePath(p); err == nil {
-			out = append(out, tp)
+			out = append(out, ports.DepsInput{Path: tp})
 		}
 	}
 	return out
 }
+
+// Inputs is empty: Actions apply in the server from the files of the updates.
+func (Actions) Inputs([]domain.DepUpdate, []domain.TreePath) []ports.DepsInput { return nil }
 
 // Detect returns one candidate per file, action and current ref.
 //

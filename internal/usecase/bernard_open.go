@@ -185,24 +185,12 @@ func (b *Bernard) startRunnerJob(ctx context.Context, name domain.RepoName, batc
 		if len(own) == 0 {
 			continue
 		}
-		rev := domain.RevisionOf(tip)
-		paths, err := cfg.Reader.ListPaths(ctx, name, rev, domain.MaxPathEntries, domain.MaxPathBytes)
+		files, _, err := b.readInputs(ctx, name, domain.RevisionOf(tip), eco.Inputs(own, nil), nil)
+		if errors.Is(err, domain.ErrNotFound) || errors.Is(err, errDepsOversize) {
+			return domain.RepoDeps{}, fmt.Errorf("%w: %s inputs: %v", domain.ErrPreconditionFailed, eco.Name(), err)
+		}
 		if err != nil {
 			return domain.RepoDeps{}, err
-		}
-		if paths.Truncated {
-			return domain.RepoDeps{}, fmt.Errorf("%w: incomplete repository paths", domain.ErrPreconditionFailed)
-		}
-		files := map[domain.TreePath][]byte{}
-		for _, p := range eco.Manifests(paths) {
-			content, ok, err := b.readManifest(ctx, name, rev, p)
-			if err != nil {
-				return domain.RepoDeps{}, err
-			}
-			if !ok {
-				return domain.RepoDeps{}, fmt.Errorf("%w: oversized npm manifest %s", domain.ErrPreconditionFailed, p)
-			}
-			files[p] = content
 		}
 		more, node, err := preparer.RunnerDetails(files, own)
 		if err != nil {

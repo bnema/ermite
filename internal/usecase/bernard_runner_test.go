@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -480,7 +481,6 @@ func TestBernardCheckDepsReportClassifiesReadFailures(t *testing.T) {
 		rr.open(goUpdate())
 		boom := errors.New("git is down")
 		rr.reader.ExpectedCalls = nil
-		rr.reader.EXPECT().ListPaths(mock.Anything, rr.repo, mock.Anything, domain.MaxPathEntries, domain.MaxPathBytes).Return(domain.PathList{Paths: []string{"go.mod"}}, nil)
 		rr.reader.EXPECT().OpenBlob(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(domain.BlobInfo{}, nil, boom)
 		run, job := rr.endedRun(domain.CISuccess)
 		err := rr.b.CheckDepsReport(context.Background(), run, job, *good)
@@ -573,4 +573,17 @@ func TestBernardOpenRequiresCapableRunner(t *testing.T) {
 			require.Zero(t, rr.starts)
 		})
 	}
+}
+
+// The report check reads only the files of the updates: no listing (which may
+// be truncated in a large repository) and no go.sum needed at the commit.
+func TestBernardCheckDepsReportReadsOnlyTheUpdateInputs(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	delete(rr.files, "go.sum") // a module without dependencies has none
+	rr.reader.ExpectedCalls = slices.DeleteFunc(rr.reader.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "ListPaths" })
+	run, job := rr.endedRun(domain.CISuccess)
+	report := goReport(goModText("go 1.24", "", textNew), sumLine("golang.org/x/text", textNew))
+	require.NoError(t, rr.b.CheckDepsReport(context.Background(), run, job, *report))
+	rr.reader.AssertNotCalled(t, "ListPaths", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

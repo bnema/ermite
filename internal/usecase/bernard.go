@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -346,16 +347,17 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 	var out []domain.DepUpdate
 	for _, eco := range b.cfg.Ecosystems {
 		files := map[domain.TreePath][]byte{}
-		for _, tp := range eco.Manifests(paths) {
-			content, ok, err := b.readManifest(ctx, name, rev, tp)
+		for _, in := range eco.Manifests(paths) {
+			in.Optional = true // the listing and the read are not atomic
+			more, _, err := b.readInputs(ctx, name, rev, []ports.DepsInput{in}, nil)
+			if errors.Is(err, errDepsOversize) {
+				log.Warn().Str("repo", name.String()).Str("path", in.Path.String()).Msg("bernard: manifest larger than 1 MiB skipped")
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
-			if !ok {
-				log.Warn().Str("repo", name.String()).Str("path", tp.String()).Msg("bernard: manifest larger than 1 MiB skipped")
-				continue
-			}
-			files[tp] = content
+			maps.Copy(files, more)
 		}
 		if len(files) == 0 {
 			continue
@@ -443,6 +445,91 @@ func fittingUpdate(ctx context.Context, reg ports.DepsRegistry, name domain.Repo
 		}
 	}
 	return domain.DepUpdate{}, false, nil
+}
+
+// errDepsOversize marks a full input larger than its limit.
+var errDepsOversize = errors.New("dependency file too large")
+
+// readInputs reads the inputs of one ecosystem and the original content of
+// the changed report paths. Full inputs may be up to maxDepsManifestBytes;
+// header inputs hold at most ports.DepsHeaderBytes. Changed paths are
+// optional (new files) and read in full up to maxReportFileBytes; beyond, an
+// opaque one (not a full input) keeps only its header. A path requested
+// several ways is read the most complete way. partial lists the paths whose
+// content is only a header. Absent optional inputs are left out.
+// Errors: domain.ErrNotFound (absent required input), errDepsOversize, or the
+// read failure.
+func (b *Bernard) readInputs(ctx context.Context, name domain.RepoName, rev domain.Revision, inputs []ports.DepsInput, changed []domain.TreePath) (files map[domain.TreePath][]byte, partial map[domain.TreePath]bool, err error) {
+	type want struct{ optional, header, full, changed bool }
+	wants := map[domain.TreePath]*want{}
+	var order []domain.TreePath
+	add := func(tp domain.TreePath, w want) {
+		prev, ok := wants[tp]
+		if !ok {
+			wants[tp] = &w
+			order = append(order, tp)
+			return
+		}
+		prev.optional = prev.optional && w.optional
+		prev.header = prev.header && w.header
+		prev.full = prev.full || w.full
+		prev.changed = prev.changed || w.changed
+	}
+	for _, in := range inputs {
+		add(in.Path, want{optional: in.Optional, header: in.Header, full: !in.Header})
+	}
+	for _, tp := range changed {
+		add(tp, want{optional: true, changed: true})
+	}
+	files, partial = map[domain.TreePath][]byte{}, map[domain.TreePath]bool{}
+	for _, tp := range order {
+		w := wants[tp]
+		var content []byte
+		var ok bool
+		switch {
+		case w.changed:
+			content, ok, err = b.readDepsFile(ctx, name, rev, tp, maxReportFileBytes)
+			if err == nil && !ok {
+				if w.full {
+					err = fmt.Errorf("%w: %s is larger than %d bytes", errDepsOversize, tp, maxReportFileBytes)
+				} else {
+					content, err = b.readDepsHeader(ctx, name, rev, tp)
+					partial[tp] = true
+				}
+			}
+		case w.header:
+			content, err = b.readDepsHeader(ctx, name, rev, tp)
+			partial[tp] = true
+		default:
+			content, ok, err = b.readDepsFile(ctx, name, rev, tp, maxDepsManifestBytes)
+			if err == nil && !ok {
+				err = fmt.Errorf("%w: %s is larger than %d bytes", errDepsOversize, tp, maxDepsManifestBytes)
+			}
+		}
+		if errors.Is(err, domain.ErrNotFound) && w.optional {
+			delete(partial, tp)
+			continue
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		files[tp] = content
+	}
+	return files, partial, nil
+}
+
+// readDepsHeader reads at most ports.DepsHeaderBytes of a file of any size.
+func (b *Bernard) readDepsHeader(ctx context.Context, name domain.RepoName, rev domain.Revision, tp domain.TreePath) ([]byte, error) {
+	_, rc, err := b.cfg.Reader.OpenBlob(ctx, name, rev, tp)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", tp, err)
+	}
+	defer func() { _ = rc.Close() }()
+	data, err := io.ReadAll(io.LimitReader(rc, ports.DepsHeaderBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", tp, err)
+	}
+	return data, nil
 }
 
 // readManifest reads a file; ok is false when it is larger than the limit.

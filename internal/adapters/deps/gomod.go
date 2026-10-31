@@ -41,12 +41,12 @@ func (GoMod) Apply(map[domain.TreePath][]byte, []domain.DepUpdate) (map[domain.T
 }
 
 // Manifests selects non-vendored modules outside vendor and testdata trees.
-func (GoMod) Manifests(paths domain.PathList) []domain.TreePath {
+func (GoMod) Manifests(paths domain.PathList) []ports.DepsInput {
 	all := map[string]bool{}
 	for _, p := range paths.Paths {
 		all[p] = true
 	}
-	var out []domain.TreePath
+	var out []ports.DepsInput
 	for _, p := range paths.Paths {
 		if path.Base(p) != "go.mod" {
 			continue
@@ -61,7 +61,40 @@ func (GoMod) Manifests(paths domain.PathList) []domain.TreePath {
 			continue
 		}
 		if tp, err := domain.ParseTreePath(p); err == nil {
-			out = append(out, tp)
+			out = append(out, ports.DepsInput{Path: tp})
+		}
+	}
+	return out
+}
+
+// Inputs reads go.mod and go.sum (absent in a module without dependencies)
+// of each update directory and probes, by header, the go.mod of every
+// directory between an update directory and a changed Go file, so nested
+// module boundaries are known without a full listing.
+func (GoMod) Inputs(ups []domain.DepUpdate, changed []domain.TreePath) []ports.DepsInput {
+	var out []ports.DepsInput
+	add := func(p string, in ports.DepsInput) {
+		if tp, err := domain.ParseTreePath(p); err == nil {
+			in.Path = tp
+			out = append(out, in)
+		}
+	}
+	for _, u := range ups {
+		if u.Ecosystem != domain.EcosystemGoMod {
+			continue
+		}
+		add(path.Join(u.Directory, "go.mod"), ports.DepsInput{})
+		add(path.Join(u.Directory, "go.sum"), ports.DepsInput{Optional: true})
+		if u.NewName == "" {
+			continue
+		}
+		for _, c := range changed {
+			if !strings.HasSuffix(c.String(), ".go") || !(u.Directory == "" || strings.HasPrefix(c.String(), u.Directory+"/")) {
+				continue
+			}
+			for d := moduleDir(c.String()); d != u.Directory && d != ""; d = moduleDir(d) {
+				add(path.Join(d, "go.mod"), ports.DepsInput{Optional: true, Header: true})
+			}
 		}
 	}
 	return out
@@ -122,9 +155,14 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 			if err != nil {
 				return nil, err
 			}
-			paths, err := reg.GoMajorPaths(ctx, r.Mod.Path)
-			if err != nil {
-				return nil, err
+			// Indirect requirements are not imported: a new major path
+			// would never be used.
+			var paths []string
+			if !r.Indirect {
+				paths, err = reg.GoMajorPaths(ctx, r.Mod.Path)
+				if err != nil {
+					return nil, err
+				}
 			}
 			for _, next := range paths {
 				more, err := reg.GoVersions(ctx, next, r.Mod.Version)
@@ -451,10 +489,11 @@ func validateImports(p domain.TreePath, before map[domain.TreePath][]byte, after
 		if u.NewName == "" || !(u.Directory == "" || strings.HasPrefix(p.String(), u.Directory+"/")) {
 			continue
 		}
+		// Inputs probed the go.mod of every directory between the module and
+		// the file: any present one is a nested module boundary.
 		nested := false
-		for m := range before {
-			d := moduleDir(m.String())
-			if path.Base(m.String()) == "go.mod" && d != u.Directory && (u.Directory == "" || strings.HasPrefix(d, u.Directory+"/")) && strings.HasPrefix(p.String(), d+"/") {
+		for d := moduleDir(p.String()); d != u.Directory && d != ""; d = moduleDir(d) {
+			if m, err := domain.ParseTreePath(path.Join(d, "go.mod")); err == nil && before[m] != nil {
 				nested = true
 			}
 		}
@@ -514,13 +553,50 @@ func validateImports(p domain.TreePath, before map[domain.TreePath][]byte, after
 		}
 		valid := false
 		for _, u := range allowed {
-			if old == u.Name || strings.HasPrefix(old, u.Name+"/") {
-				valid = valid || bi[i] == u.NewName+strings.TrimPrefix(old, u.Name)
+			if old != u.Name && !strings.HasPrefix(old, u.Name+"/") {
+				continue
 			}
+			// OLD/v3/... belongs to another major; a path inside another
+			// required module nested under OLD is not OLD's.
+			suffix := strings.TrimPrefix(old, u.Name)
+			if majorSuffix(suffix) || longestRequired(before, u.Directory, old) != u.Name {
+				continue
+			}
+			valid = valid || bi[i] == u.NewName+suffix
 		}
 		if !valid {
 			return invalid()
 		}
 	}
 	return nil
+}
+
+// majorSuffix reports whether suffix starts with a /vN path element.
+func majorSuffix(suffix string) bool {
+	elem, _, _ := strings.Cut(strings.TrimPrefix(suffix, "/"), "/")
+	if !strings.HasPrefix(suffix, "/v") || len(elem) < 2 {
+		return false
+	}
+	_, err := strconv.Atoi(elem[1:])
+	return err == nil
+}
+
+// longestRequired returns the longest module required by the go.mod of dir
+// that holds the import path imp, or "" when none does.
+func longestRequired(before map[domain.TreePath][]byte, dir, imp string) string {
+	p, err := domain.ParseTreePath(path.Join(dir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	f, err := modfile.ParseLax(p.String(), before[p], nil)
+	if err != nil {
+		return ""
+	}
+	best := ""
+	for _, r := range f.Require {
+		if (imp == r.Mod.Path || strings.HasPrefix(imp, r.Mod.Path+"/")) && len(r.Mod.Path) > len(best) {
+			best = r.Mod.Path
+		}
+	}
+	return best
 }

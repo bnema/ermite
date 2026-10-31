@@ -234,20 +234,79 @@ func (_c *DepsEcosystem_Detect_Call) RunAndReturn(run func(ctx context.Context, 
 	return _c
 }
 
+// Inputs provides a mock function for the type DepsEcosystem
+func (_mock *DepsEcosystem) Inputs(ups []domain.DepUpdate, changed []domain.TreePath) []ports.DepsInput {
+	ret := _mock.Called(ups, changed)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Inputs")
+	}
+
+	var r0 []ports.DepsInput
+	if returnFunc, ok := ret.Get(0).(func([]domain.DepUpdate, []domain.TreePath) []ports.DepsInput); ok {
+		r0 = returnFunc(ups, changed)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ports.DepsInput)
+		}
+	}
+	return r0
+}
+
+// DepsEcosystem_Inputs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Inputs'
+type DepsEcosystem_Inputs_Call struct {
+	*mock.Call
+}
+
+// Inputs is a helper method to define mock.On call
+//   - ups []domain.DepUpdate
+//   - changed []domain.TreePath
+func (_e *DepsEcosystem_Expecter) Inputs(ups any, changed any) *DepsEcosystem_Inputs_Call {
+	return &DepsEcosystem_Inputs_Call{Call: _e.mock.On("Inputs", ups, changed)}
+}
+
+func (_c *DepsEcosystem_Inputs_Call) Run(run func(ups []domain.DepUpdate, changed []domain.TreePath)) *DepsEcosystem_Inputs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 []domain.DepUpdate
+		if args[0] != nil {
+			arg0 = args[0].([]domain.DepUpdate)
+		}
+		var arg1 []domain.TreePath
+		if args[1] != nil {
+			arg1 = args[1].([]domain.TreePath)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *DepsEcosystem_Inputs_Call) Return(depsInputs []ports.DepsInput) *DepsEcosystem_Inputs_Call {
+	_c.Call.Return(depsInputs)
+	return _c
+}
+
+func (_c *DepsEcosystem_Inputs_Call) RunAndReturn(run func(ups []domain.DepUpdate, changed []domain.TreePath) []ports.DepsInput) *DepsEcosystem_Inputs_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Manifests provides a mock function for the type DepsEcosystem
-func (_mock *DepsEcosystem) Manifests(paths domain.PathList) []domain.TreePath {
+func (_mock *DepsEcosystem) Manifests(paths domain.PathList) []ports.DepsInput {
 	ret := _mock.Called(paths)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Manifests")
 	}
 
-	var r0 []domain.TreePath
-	if returnFunc, ok := ret.Get(0).(func(domain.PathList) []domain.TreePath); ok {
+	var r0 []ports.DepsInput
+	if returnFunc, ok := ret.Get(0).(func(domain.PathList) []ports.DepsInput); ok {
 		r0 = returnFunc(paths)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]domain.TreePath)
+			r0 = ret.Get(0).([]ports.DepsInput)
 		}
 	}
 	return r0
@@ -277,12 +336,12 @@ func (_c *DepsEcosystem_Manifests_Call) Run(run func(paths domain.PathList)) *De
 	return _c
 }
 
-func (_c *DepsEcosystem_Manifests_Call) Return(treePaths []domain.TreePath) *DepsEcosystem_Manifests_Call {
-	_c.Call.Return(treePaths)
+func (_c *DepsEcosystem_Manifests_Call) Return(depsInputs []ports.DepsInput) *DepsEcosystem_Manifests_Call {
+	_c.Call.Return(depsInputs)
 	return _c
 }
 
-func (_c *DepsEcosystem_Manifests_Call) RunAndReturn(run func(paths domain.PathList) []domain.TreePath) *DepsEcosystem_Manifests_Call {
+func (_c *DepsEcosystem_Manifests_Call) RunAndReturn(run func(paths domain.PathList) []ports.DepsInput) *DepsEcosystem_Manifests_Call {
 	_c.Call.Return(run)
 	return _c
 }

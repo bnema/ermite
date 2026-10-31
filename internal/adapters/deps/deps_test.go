@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"bnema.dev/ermite/internal/domain"
+	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -25,10 +26,19 @@ func update(eco domain.DepsEcosystem, dir, name, current, version string) domain
 	return domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: eco, Directory: dir, Name: name, Version: version}, Current: current}
 }
 
+func inputs(t *testing.T, paths ...string) []ports.DepsInput {
+	t.Helper()
+	var out []ports.DepsInput
+	for _, p := range paths {
+		out = append(out, ports.DepsInput{Path: tp(t, p)})
+	}
+	return out
+}
+
 func TestManifests(t *testing.T) {
 	paths := domain.PathList{Paths: []string{"go.mod", "sub/go.mod", "vendor/a/go.mod", "testdata/go.mod", "sub/testdata/go.mod", "vendored/go.mod", "vendored/vendor/modules.txt", "action.yml", "nested/action.yaml", ".github/workflows/a.yml", ".github/workflows/b.yaml", ".github/workflows/sub/c.yml", "other.yml"}}
-	assert.Equal(t, []domain.TreePath{tp(t, "go.mod"), tp(t, "sub/go.mod")}, (GoMod{}).Manifests(paths))
-	assert.Equal(t, []domain.TreePath{tp(t, "action.yml"), tp(t, "nested/action.yaml"), tp(t, ".github/workflows/a.yml"), tp(t, ".github/workflows/b.yaml")}, (Actions{}).Manifests(paths))
+	assert.Equal(t, inputs(t, "go.mod", "sub/go.mod"), (GoMod{}).Manifests(paths))
+	assert.Equal(t, inputs(t, "action.yml", "nested/action.yaml", ".github/workflows/a.yml", ".github/workflows/b.yaml"), (Actions{}).Manifests(paths))
 }
 
 func TestGoModDetect(t *testing.T) {
@@ -39,19 +49,23 @@ func TestGoModDetect(t *testing.T) {
 	reg.EXPECT().GoVersions(mock.Anything, "example.org/a", "v1.0.0").Return([]domain.DepVersion{{Version: "v1.1.0"}}, nil).Once()
 	reg.EXPECT().GoVersions(mock.Anything, "example.org/b/v2", "v2.0.0").Return([]domain.DepVersion{{Version: "v2.1.0"}}, nil).Once()
 	reg.EXPECT().GoVersions(mock.Anything, "private.org/m", "v1.0.0").Return(nil, domain.ErrNotFound).Once()
+	// No GoMajorPaths for an indirect requirement: it is not imported.
+	reg.EXPECT().GoVersions(mock.Anything, "example.org/ind", "v1.0.0").Return(nil, nil).Once()
 	files := map[domain.TreePath][]byte{
-		tp(t, "go.mod"):     []byte("module example.org/root\ngo 1.27\nrequire (\nexample.org/a v1.0.0 // indirect\nexample.org/replaced v1.0.0\nprivate.org/m v1.0.0\n)\nreplace example.org/replaced => ../local\n"),
+		tp(t, "go.mod"):     []byte("module example.org/root\ngo 1.27\nrequire (\nexample.org/a v1.0.0\nexample.org/ind v1.0.0 // indirect\nexample.org/replaced v1.0.0\nprivate.org/m v1.0.0\n)\nreplace example.org/replaced => ../local\n"),
 		tp(t, "sub/go.mod"): []byte("module example.org/sub\ngo 1.25.3\nrequire example.org/b/v2 v2.0.0\n"),
 	}
 	got, err := (GoMod{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
-	require.Len(t, got, 2)
+	require.Len(t, got, 3)
 	assert.Equal(t, domain.DepVersion{Version: "v2.0.0", Path: "example.org/a/v2"}, got[0].Versions[1])
 	assert.Equal(t, "", got[0].Directory)
-	assert.Equal(t, "sub", got[1].Directory)
-	assert.Equal(t, "example.org/b/v2", got[1].Name)
+	assert.Equal(t, "example.org/ind", got[1].Name)
+	assert.Empty(t, got[1].Versions)
+	assert.Equal(t, "sub", got[2].Directory)
+	assert.Equal(t, "example.org/b/v2", got[2].Name)
 	assert.Equal(t, "1.27", got[0].GoDirective)
-	assert.Equal(t, "1.25.3", got[1].GoDirective, "each candidate carries the go directive of its own module")
+	assert.Equal(t, "1.25.3", got[2].GoDirective, "each candidate carries the go directive of its own module")
 	assert.False(t, (GoMod{}).ApplyInServer())
 	_, err = (GoMod{}).Apply(files, nil)
 	require.Error(t, err)
@@ -356,4 +370,52 @@ func TestGoModValidatePathMajor(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGoModValidateImportBoundaries(t *testing.T) {
+	const goMod = "module example.com/app\nrequire (\nexample.com/lib v1.0.0\nexample.com/lib/tools v1.0.0\n)\n"
+	for _, c := range []struct {
+		name, before, after string
+		nested              bool
+		valid               bool
+	}{
+		{"import block with comment", "import (\n\t// keep me\n\t_ \"example.com/lib/sub\"\n)", "import (\n\t// keep me\n\t_ \"example.com/lib/v2/sub\"\n)", false, true},
+		{"comment only", "// uses example.com/lib\nimport _ \"example.com/lib/sub\"", "// uses example.com/lib/v2\nimport _ \"example.com/lib/sub\"", false, false},
+		{"other major suffix", "import _ \"example.com/lib/v3/x\"", "import _ \"example.com/lib/v2/v3/x\"", false, false},
+		{"nested required module", "import _ \"example.com/lib/tools/x\"", "import _ \"example.com/lib/v2/tools/x\"", false, false},
+		{"nested module boundary", "import _ \"example.com/lib/sub\"", "import _ \"example.com/lib/v2/sub\"", true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			src := tp(t, "pkg/inner/main.go")
+			before := map[domain.TreePath][]byte{tp(t, "go.mod"): []byte(goMod), src: []byte("package main\n" + c.before + "\n")}
+			if c.nested {
+				before[tp(t, "pkg/go.mod")] = []byte("module example.com/app/pkg\n")
+			}
+			reported := "module example.com/app\nrequire (\nexample.com/lib/v2 v2.0.0\nexample.com/lib/tools v1.0.0\n)\n"
+			after := map[domain.TreePath][]byte{tp(t, "go.mod"): []byte(reported), src: []byte("package main\n" + c.after + "\n")}
+			u := update(domain.EcosystemGoMod, "", "example.com/lib", "v1.0.0", "v2.0.0")
+			u.NewName = "example.com/lib/v2"
+			_, err := (GoMod{}).Validate(before, after, []domain.DepUpdate{u})
+			if c.valid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, domain.ErrInvalid)
+			}
+		})
+	}
+}
+
+// Inputs needs no listing: it probes every directory between the module and a
+// changed Go file, so a nested module with vendor/modules.txt (left out of
+// Manifests) still marks a boundary.
+func TestGoModInputs(t *testing.T) {
+	u := update(domain.EcosystemGoMod, "svc", "example.com/lib", "v1.0.0", "v2.0.0")
+	plain := update(domain.EcosystemGoMod, "", "example.com/x", "v1.0.0", "v1.1.0")
+	assert.Equal(t, []ports.DepsInput{{Path: tp(t, "go.mod")}, {Path: tp(t, "go.sum"), Optional: true}}, (GoMod{}).Inputs([]domain.DepUpdate{plain}, nil))
+	u.NewName = "example.com/lib/v2"
+	got := (GoMod{}).Inputs([]domain.DepUpdate{u}, []domain.TreePath{tp(t, "svc/a/b/main.go"), tp(t, "svc/go.mod")})
+	assert.Equal(t, []ports.DepsInput{
+		{Path: tp(t, "svc/go.mod")}, {Path: tp(t, "svc/go.sum"), Optional: true},
+		{Path: tp(t, "svc/a/b/go.mod"), Optional: true, Header: true}, {Path: tp(t, "svc/a/go.mod"), Optional: true, Header: true},
+	}, got)
 }
