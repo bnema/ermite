@@ -28,22 +28,36 @@ func TestRepoDepsToPB(t *testing.T) {
 				Current: "v4", Kind: domain.DepMajor, New: true,
 			}}}}})
 	assert.Equal(t, "app", got.Repo)
-	assert.Equal(t, pb.RepoDependencyUpdates_STATE_FAILED, got.State)
-	assert.Equal(t, "boom", got.Error)
-	assert.EqualValues(t, 7, got.MergeRequestNumber)
-	assert.EqualValues(t, 12, got.RunId)
-	assert.Zero(t, repoDepsToPB(domain.RepoDeps{}).RunId)
+	require.Len(t, got.Batches, 1)
+	base := got.Batches[0]
+	assert.Empty(t, base.Key)
+	assert.Equal(t, pb.RepoDependencyUpdates_STATE_FAILED, base.State)
+	assert.Equal(t, "boom", base.Error)
+	assert.EqualValues(t, 7, base.MergeRequestNumber)
+	assert.EqualValues(t, 12, base.RunId)
 	assert.True(t, got.CheckedAt.AsTime().Equal(at))
 	assert.Nil(t, got.SnoozedUntil)
-	require.Len(t, got.Updates, 1)
-	u := got.Updates[0]
+	require.Len(t, base.Updates, 1)
+	u := base.Updates[0]
 	assert.Equal(t, "github-actions", u.Ecosystem)
 	assert.Equal(t, "v5", u.Latest)
 	assert.Equal(t, "v4", u.Current)
 	assert.Equal(t, pb.DependencyUpdate_KIND_MAJOR, u.Kind)
 	assert.True(t, u.New)
 
-	assert.Equal(t, pb.RepoDependencyUpdates_STATE_IDLE, repoDepsToPB(domain.RepoDeps{}).State)
+	//nolint:staticcheck // checks the deprecated base fields older clients read
+	{
+		assert.Equal(t, pb.RepoDependencyUpdates_STATE_FAILED, got.State)
+		assert.Equal(t, "boom", got.Error)
+		assert.EqualValues(t, 7, got.MergeRequestNumber)
+		assert.EqualValues(t, 12, got.RunId)
+		assert.Equal(t, base.Updates, got.Updates)
+	}
+
+	empty := repoDepsToPB(domain.RepoDeps{})
+	require.Len(t, empty.Batches, 1, "the base batch is always present")
+	assert.Equal(t, pb.RepoDependencyUpdates_STATE_IDLE, empty.Batches[0].State)
+	assert.Zero(t, empty.Batches[0].RunId)
 	assert.Equal(t, pb.RepoDependencyUpdates_STATE_APPLYING, depsStateToPB(domain.DepsApplying))
 	assert.Equal(t, pb.DependencyUpdate_KIND_PATCH, depKindToPB(domain.DepPatch))
 	assert.Equal(t, pb.DependencyUpdate_KIND_MINOR, depKindToPB(domain.DepMinor))
@@ -108,8 +122,8 @@ func TestRepoDepsBatchesToPB(t *testing.T) {
 			d := domain.RepoDeps{Batches: []domain.DepBatch{{MR: 1}, {Key: domain.MajorBatchKey(up), Updates: []domain.DepUpdate{up}, State: domain.DepsFailed, Error: "failed major", RunID: 12, MR: tc.mr, MRVersions: tc.refs}}}
 			got := repoDepsToPB(d)
 			require.Len(t, got.Batches, 2)
-			require.EqualValues(t, 1, got.MergeRequestNumber)
-			require.Empty(t, got.Updates)
+			require.EqualValues(t, 1, got.Batches[0].MergeRequestNumber)
+			require.Empty(t, got.Batches[0].Updates)
 			batch := got.Batches[1]
 			assert.Equal(t, string(d.Batches[1].Key), batch.Key)
 			assert.Equal(t, tc.outdated, batch.Outdated)

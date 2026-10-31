@@ -47,9 +47,16 @@ type jsonDepsRepo struct {
 }
 
 func toJSONDepsRepo(r *ermite.RepoDependencyUpdates) jsonDepsRepo {
+	base := &ermite.DependencyBatch{}
+	for _, b := range depsBatches(r) {
+		if b.GetKey() == "" {
+			base = b
+			break
+		}
+	}
 	out := jsonDepsRepo{
-		Repo: r.GetRepo(), Updates: toJSONDepsRepoUpdates(r.GetUpdates()), CheckedAt: jsonTime(r.GetCheckedAt()), SnoozedUntil: jsonTime(r.GetSnoozedUntil()),
-		MergeRequestNumber: r.GetMergeRequestNumber(), State: depsStateName(r.GetState()), Error: r.GetError(), RunID: r.GetRunId(),
+		Repo: r.GetRepo(), Updates: toJSONDepsRepoUpdates(base.GetUpdates()), CheckedAt: jsonTime(r.GetCheckedAt()), SnoozedUntil: jsonTime(r.GetSnoozedUntil()),
+		MergeRequestNumber: base.GetMergeRequestNumber(), State: depsStateName(base.GetState()), Error: base.GetError(), RunID: base.GetRunId(),
 		Batches: []jsonDepsBatch{},
 	}
 	for _, b := range r.GetBatches() {
@@ -319,5 +326,6 @@ func depsBatches(r *ermite.RepoDependencyUpdates) []*ermite.DependencyBatch {
 	if len(r.GetBatches()) != 0 {
 		return r.GetBatches()
 	}
+	//nolint:staticcheck // reads the deprecated base fields of servers without batches
 	return []*ermite.DependencyBatch{{Updates: r.GetUpdates(), State: r.GetState(), Error: r.GetError(), RunId: r.GetRunId(), MergeRequestNumber: r.GetMergeRequestNumber()}}
 }

@@ -47,6 +47,7 @@ func depsStateToPB(s domain.DepsState) pb.RepoDependencyUpdates_State {
 
 func repoDepsToPB(d domain.RepoDeps) *pb.RepoDependencyUpdates {
 	base := d.Base()
+	//nolint:staticcheck // fills the deprecated base fields older clients read
 	out := &pb.RepoDependencyUpdates{
 		Repo: d.Repo.String(), CheckedAt: timestamp(d.CheckedAt), SnoozedUntil: timestamp(d.SnoozedUntil),
 		MergeRequestNumber: base.MR, State: depsStateToPB(base.State), Error: base.Error, RunId: base.RunID,

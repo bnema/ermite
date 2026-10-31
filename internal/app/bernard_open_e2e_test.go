@@ -61,16 +61,16 @@ func TestBernardOpenMRForActions(t *testing.T) {
 		res, err := deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
 		require.NoError(t, err)
 		pending = res.Msg.GetUpdates()
-		return len(pending.GetUpdates()) == 1
+		return len(depsBase(pending).GetUpdates()) == 1
 	})
 	expected := func() []*pb.DependencyVersion {
 		var out []*pb.DependencyVersion
-		for _, u := range pending.GetUpdates() {
+		for _, u := range depsBase(pending).GetUpdates() {
 			out = append(out, &pb.DependencyVersion{Ecosystem: u.GetEcosystem(), Directory: u.GetDirectory(), Name: u.GetName(), Version: u.GetLatest()})
 		}
 		return out
 	}
-	require.Equal(t, "v4.2.0", pending.GetUpdates()[0].GetLatest())
+	require.Equal(t, "v4.2.0", depsBase(pending).GetUpdates()[0].GetLatest())
 
 	// A stale confirmation is refused.
 	_, err := deps.OpenDependencyUpdates(c.ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "proj"}))
@@ -78,9 +78,9 @@ func TestBernardOpenMRForActions(t *testing.T) {
 
 	res, err := deps.OpenDependencyUpdates(c.ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: expected()}))
 	require.NoError(t, err)
-	number := res.Msg.GetUpdates().GetMergeRequestNumber()
+	number := depsBase(res.Msg.GetUpdates()).GetMergeRequestNumber()
 	require.NotZero(t, number)
-	assert.Equal(t, pb.RepoDependencyUpdates_STATE_IDLE, res.Msg.GetUpdates().GetState())
+	assert.Equal(t, pb.RepoDependencyUpdates_STATE_IDLE, depsBase(res.Msg.GetUpdates()).GetState())
 
 	// One signed commit on top of main that only changes the version.
 	assert.Equal(t, "1", c.bareGit("proj", "rev-list", "--count", main+"..refs/heads/bernard/deps"))
@@ -126,10 +126,10 @@ func TestBernardOpenMRForActions(t *testing.T) {
 	up, err := deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
 	require.NoError(t, err)
 	pending = up.Msg.GetUpdates()
-	require.Equal(t, number, pending.GetMergeRequestNumber())
+	require.Equal(t, number, depsBase(pending).GetMergeRequestNumber())
 	res, err = deps.OpenDependencyUpdates(c.ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "proj", ExpectedVersions: expected()}))
 	require.NoError(t, err)
-	assert.Equal(t, number, res.Msg.GetUpdates().GetMergeRequestNumber())
+	assert.Equal(t, number, depsBase(res.Msg.GetUpdates()).GetMergeRequestNumber())
 	head2 := c.bareGit("proj", "rev-parse", "refs/heads/bernard/deps")
 	assert.NotEqual(t, head, head2)
 	assert.Equal(t, main2, c.bareGit("proj", "rev-parse", head2+"^"))
@@ -213,9 +213,9 @@ func newBernardGoRig(t *testing.T) *bernardGoRig {
 		res, err := rig.deps.CheckDependencies(c.ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "proj"}))
 		require.NoError(t, err)
 		pending = res.Msg.GetUpdates()
-		return len(pending.GetUpdates()) == 2
+		return len(depsBase(pending).GetUpdates()) == 2
 	})
-	for _, u := range pending.GetUpdates() {
+	for _, u := range depsBase(pending).GetUpdates() {
 		rig.expected = append(rig.expected, &pb.DependencyVersion{Ecosystem: u.GetEcosystem(), Directory: u.GetDirectory(), Name: u.GetName(), Version: u.GetLatest()})
 	}
 	return rig
@@ -266,8 +266,8 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	c, runner, main := rig.ciHarness, rig.runner, rig.main
 
 	got := rig.open()
-	assert.Equal(t, pb.RepoDependencyUpdates_STATE_APPLYING, got.GetState())
-	assert.Zero(t, got.GetMergeRequestNumber())
+	assert.Equal(t, pb.RepoDependencyUpdates_STATE_APPLYING, depsBase(got).GetState())
+	assert.Zero(t, depsBase(got).GetMergeRequestNumber())
 	_, gitErr := c.git(c.repoDir("proj"), "rev-parse", "--verify", "-q", "refs/heads/bernard/deps")
 	assert.Error(t, gitErr, "nothing is committed before the report")
 
@@ -343,7 +343,7 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	var rec *pb.RepoDependencyUpdates
 	c.waitFor("the card to be idle", func() bool {
 		rec = rig.record()
-		return rec.GetState() == pb.RepoDependencyUpdates_STATE_IDLE && rec.GetMergeRequestNumber() != 0
+		return depsBase(rec).GetState() == pb.RepoDependencyUpdates_STATE_IDLE && depsBase(rec).GetMergeRequestNumber() != 0
 	})
 
 	// One signed commit on the run's commit: go.mod, go.sum and the workflow.
@@ -362,7 +362,7 @@ func TestBernardOpenMRForGoModulesThroughARunner(t *testing.T) {
 	require.Len(t, list.Msg.GetCommits(), 1)
 	assert.Equal(t, pb.SignatureStatus_SIGNATURE_STATUS_VERIFIED, list.Msg.GetCommits()[0].GetVerification().GetStatus())
 
-	mr, err := c.root.mr.GetMergeRequest(c.ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: rec.GetMergeRequestNumber()}))
+	mr, err := c.root.mr.GetMergeRequest(c.ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: depsBase(rec).GetMergeRequestNumber()}))
 	require.NoError(t, err)
 	assert.Equal(t, "bernard", mr.Msg.GetMergeRequest().GetAuthor())
 	assert.Equal(t, "bernard/deps", mr.Msg.GetMergeRequest().GetSourceBranch())
@@ -438,11 +438,11 @@ func TestBernardCancelingTheRunFailsTheCard(t *testing.T) {
 	var rec *pb.RepoDependencyUpdates
 	c.waitFor("the card to fail", func() bool {
 		rec = rig.record()
-		return rec.GetState() == pb.RepoDependencyUpdates_STATE_FAILED
+		return depsBase(rec).GetState() == pb.RepoDependencyUpdates_STATE_FAILED
 	})
-	assert.Contains(t, rec.GetError(), "the run ended: cancelled")
-	assert.NotContains(t, rec.GetError(), "\n")
-	assert.Zero(t, rec.GetMergeRequestNumber())
+	assert.Contains(t, depsBase(rec).GetError(), "the run ended: cancelled")
+	assert.NotContains(t, depsBase(rec).GetError(), "\n")
+	assert.Zero(t, depsBase(rec).GetMergeRequestNumber())
 	_, gitErr := c.git(c.repoDir("proj"), "rev-parse", "--verify", "-q", "refs/heads/bernard/deps")
 	assert.Error(t, gitErr, "nothing was committed")
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.getRun(run.GetId()).GetRun().GetConclusion())
@@ -512,4 +512,14 @@ func TestBernardSeparateMinorAndMajorMergeRequests(t *testing.T) {
 		}
 		return baseDone && majorKept
 	})
+}
+
+// depsBase is the base batch of a dependency record (nil when absent).
+func depsBase(r *pb.RepoDependencyUpdates) *pb.DependencyBatch {
+	for _, b := range r.GetBatches() {
+		if b.GetKey() == "" {
+			return b
+		}
+	}
+	return nil
 }
