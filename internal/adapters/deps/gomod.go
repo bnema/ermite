@@ -111,7 +111,7 @@ func moduleDir(p string) string {
 // Detect reads requirements, skipping replaced and unresolvable modules.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses module syntax and resolves versions through the registry port; update policy stays in domain.PickUpdate
-func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, error) {
+func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error) {
 	var out []domain.DepCandidate
 	for _, p := range filePaths(files) {
 		if path.Base(p.String()) != "go.mod" {
@@ -119,7 +119,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 		}
 		f, err := modfile.ParseLax(p.String(), files[p], nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		var goDirective string
 		if f.Go != nil {
@@ -153,7 +153,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 				continue
 			}
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			// Indirect requirements are not imported: a new major path
 			// would never be used.
@@ -161,7 +161,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 			if !r.Indirect {
 				paths, err = reg.GoMajorPaths(ctx, r.Mod.Path)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			for _, next := range paths {
@@ -170,7 +170,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 					continue
 				}
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				for i := range more {
 					more[i].Path = next
@@ -180,7 +180,7 @@ func (GoMod) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg p
 			out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemGoMod, Directory: moduleDir(p.String()), Name: r.Mod.Path, Current: r.Mod.Version, Versions: versions, GoDirective: goDirective})
 		}
 	}
-	return out, nil
+	return out, nil, nil
 }
 
 type modulePolicy struct {

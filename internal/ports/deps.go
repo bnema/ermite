@@ -59,6 +59,10 @@ type DepsInput struct {
 	Header bool
 }
 
+// DepsSkip names a dependency of the ecosystem that Detect skipped, with the
+// version the manifest holds now.
+type DepsSkip struct{ Directory, Name, Current string }
+
 // DepsEcosystem detects and applies updates in one dependency ecosystem.
 type DepsEcosystem interface {
 	Name() domain.DepsEcosystem
@@ -68,7 +72,10 @@ type DepsEcosystem interface {
 	// Inputs lists the files RunnerDetails and Validate read for ups, beyond
 	// the changed report paths (nil before a report), without a full listing.
 	Inputs(ups []domain.DepUpdate, changed []domain.TreePath) []DepsInput
-	Detect(ctx context.Context, files map[domain.TreePath][]byte, reg DepsRegistry) ([]domain.DepCandidate, error)
+	// Detect returns the candidates and the dependencies whose versions it
+	// could not look up this time (a registry failure, a spent budget): their
+	// stored updates are kept, not dropped. An error fails the whole check.
+	Detect(ctx context.Context, files map[domain.TreePath][]byte, reg DepsRegistry) ([]domain.DepCandidate, []DepsSkip, error)
 	ReportAllowed(ups []domain.DepUpdate, p domain.TreePath) bool
 	ApplyInServer() bool
 	// Apply is only called when ApplyInServer is true.

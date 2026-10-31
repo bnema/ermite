@@ -146,9 +146,10 @@ func npmLookupDeadline(ctx context.Context) time.Duration {
 // Registry lookups share a budget (npmLookupDeadline); once it runs out the
 // remaining packages are skipped and the candidates found so far returned,
 // so one slow package document does not cost the other ecosystems' results.
+// Packages whose lookup failed or was cut are reported as skipped.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses package syntax and resolves versions through the registry port; update policy stays in domain.PickUpdates
-func (NPM) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, error) {
+func (NPM) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error) {
 	log := zerowrap.FromCtx(ctx)
 	type lookup struct {
 		path            domain.TreePath
@@ -197,17 +198,24 @@ func (NPM) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg por
 		}
 	}
 	if len(lookups) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	lctx, cancel := context.WithTimeout(ctx, npmLookupDeadline(ctx))
 	defer cancel()
 	var out []domain.DepCandidate
+	var skipped []ports.DepsSkip
+	spent := func(i int) {
+		log.Warn().Int("skipped", len(lookups)-i).Msg("bernard: npm lookup budget spent, remaining packages skipped")
+		for _, l := range lookups[i:] {
+			skipped = append(skipped, ports.DepsSkip{Directory: l.dir, Name: l.name, Current: l.curr})
+		}
+	}
 	for i, l := range lookups {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if lctx.Err() != nil {
-			log.Warn().Int("skipped", len(lookups)-i).Msg("bernard: npm lookup budget spent, remaining packages skipped")
+			spent(i)
 			break
 		}
 		versions, err := reg.NPMVersions(lctx, l.name, l.curr)
@@ -216,13 +224,14 @@ func (NPM) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg por
 		}
 		if err != nil {
 			if cerr := ctx.Err(); cerr != nil {
-				return nil, cerr
+				return nil, nil, cerr
 			}
 			if lctx.Err() != nil {
-				log.Warn().Int("skipped", len(lookups)-i).Msg("bernard: npm lookup budget spent, remaining packages skipped")
+				spent(i)
 				break
 			}
 			log.Warn().Err(err).Str("path", l.path.String()).Str("name", l.name).Msg("bernard: npm registry lookup failed, package skipped")
+			skipped = append(skipped, ports.DepsSkip{Directory: l.dir, Name: l.name, Current: l.curr})
 			continue
 		}
 		kept := versions[:0:0]
@@ -235,7 +244,7 @@ func (NPM) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg por
 		}
 		out = append(out, domain.DepCandidate{Ecosystem: domain.EcosystemNPM, Directory: l.dir, Name: l.name, Current: l.curr, Versions: kept})
 	}
-	return out, nil
+	return out, skipped, nil
 }
 
 // RunnerDetails derives immutable job inputs from the manifests at its commit.

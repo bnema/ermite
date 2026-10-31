@@ -161,7 +161,7 @@ func (_c *DepsEcosystem_ApplyInServer_Call) RunAndReturn(run func() bool) *DepsE
 }
 
 // Detect provides a mock function for the type DepsEcosystem
-func (_mock *DepsEcosystem) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, error) {
+func (_mock *DepsEcosystem) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error) {
 	ret := _mock.Called(ctx, files, reg)
 
 	if len(ret) == 0 {
@@ -169,8 +169,9 @@ func (_mock *DepsEcosystem) Detect(ctx context.Context, files map[domain.TreePat
 	}
 
 	var r0 []domain.DepCandidate
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) ([]domain.DepCandidate, error)); ok {
+	var r1 []ports.DepsSkip
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error)); ok {
 		return returnFunc(ctx, files, reg)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) []domain.DepCandidate); ok {
@@ -180,12 +181,19 @@ func (_mock *DepsEcosystem) Detect(ctx context.Context, files map[domain.TreePat
 			r0 = ret.Get(0).([]domain.DepCandidate)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) []ports.DepsSkip); ok {
 		r1 = returnFunc(ctx, files, reg)
 	} else {
-		r1 = ret.Error(1)
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).([]ports.DepsSkip)
+		}
 	}
-	return r0, r1
+	if returnFunc, ok := ret.Get(2).(func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) error); ok {
+		r2 = returnFunc(ctx, files, reg)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
 }
 
 // DepsEcosystem_Detect_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Detect'
@@ -224,12 +232,12 @@ func (_c *DepsEcosystem_Detect_Call) Run(run func(ctx context.Context, files map
 	return _c
 }
 
-func (_c *DepsEcosystem_Detect_Call) Return(depCandidates []domain.DepCandidate, err error) *DepsEcosystem_Detect_Call {
-	_c.Call.Return(depCandidates, err)
+func (_c *DepsEcosystem_Detect_Call) Return(depCandidates []domain.DepCandidate, depsSkips []ports.DepsSkip, err error) *DepsEcosystem_Detect_Call {
+	_c.Call.Return(depCandidates, depsSkips, err)
 	return _c
 }
 
-func (_c *DepsEcosystem_Detect_Call) RunAndReturn(run func(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, error)) *DepsEcosystem_Detect_Call {
+func (_c *DepsEcosystem_Detect_Call) RunAndReturn(run func(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error)) *DepsEcosystem_Detect_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -20,7 +20,7 @@ func TestNPMDetect(t *testing.T) {
 	reg := mocks.NewDepsRegistry(t)
 	reg.EXPECT().NPMVersions(mock.Anything, "x", "v1.0.0").Return([]domain.DepVersion{{Version: "v1.1.0"}}, nil).Once()
 	files := npmFiles(t, map[string]string{"package.json": `{"dependencies":{"x":"^1.0.0","conflict":"1.0.0","local":"workspace:*"},"devDependencies":{"x":"^1.0.0","conflict":"2.0.0"}}`})
-	got, err := (NPM{}).Detect(t.Context(), files, reg)
+	got, _, err := (NPM{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Equal(t, "x", got[0].Name)
@@ -98,7 +98,7 @@ func TestNPMDetectSkipsInvalidManifests(t *testing.T) {
 		"mismatch/package.json":      `{"dependencies":{"x":"1.0.0"},"packageManager":"yarn@4.5.3"}`,
 		"mismatch/package-lock.json": `{}`,
 	})
-	got, err := (NPM{}).Detect(t.Context(), files, reg)
+	got, _, err := (NPM{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 	require.Equal(t, "good", got[0].Directory)
@@ -115,15 +115,17 @@ func TestNPMDetectRunnerRulesAndRegistryErrors(t *testing.T) {
 	reg.EXPECT().NPMVersions(mock.Anything, "down", "v1.0.0").Return(nil, domain.ErrUnavailable).Once()
 	reg.EXPECT().NPMVersions(mock.Anything, "ok", "v1.0.0").Return([]domain.DepVersion{{Version: "v1.2.0+build.5"}, {Version: "v1.1.0"}}, nil).Once()
 	files := npmFiles(t, map[string]string{"package.json": `{"dependencies":{"JSONStream":"1.0.0","big":"1.0.0","down":"1.0.0","ok":"^1.0.0"}}`})
-	got, err := (NPM{}).Detect(t.Context(), files, reg)
+	got, skipped, err := (NPM{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Equal(t, "ok", got[0].Name)
 	require.Equal(t, []domain.DepVersion{{Version: "v1.1.0"}}, got[0].Versions)
+	// Failed lookups are reported; names the runner refuses never had one.
+	require.Equal(t, []ports.DepsSkip{{Name: "big", Current: "v1.0.0"}, {Name: "down", Current: "v1.0.0"}}, skipped)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err = (NPM{}).Detect(ctx, files, reg) // done before the first lookup
+	_, _, err = (NPM{}).Detect(ctx, files, reg) // done before the first lookup
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -184,7 +186,7 @@ func TestNPMManagerRefusesOldNPM(t *testing.T) {
 		require.Equal(t, ok, err == nil, pm)
 	}
 	reg := mocks.NewDepsRegistry(t) // no lookup: the root is skipped
-	got, err := (NPM{}).Detect(t.Context(), npmFiles(t, map[string]string{"package.json": `{"dependencies":{"x":"1.0.0"},"packageManager":"npm@6.14.18"}`}), reg)
+	got, _, err := (NPM{}).Detect(t.Context(), npmFiles(t, map[string]string{"package.json": `{"dependencies":{"x":"1.0.0"},"packageManager":"npm@6.14.18"}`}), reg)
 	require.NoError(t, err)
 	require.Empty(t, got)
 }
@@ -216,7 +218,7 @@ func TestNPMManagerYarnFloor(t *testing.T) {
 	root, err := npmManager(npmFiles(t, lock), "", npmManifest{})
 	require.NoError(t, err)
 	require.Equal(t, "1.22.22", root.Version)
-	got, err := (NPM{}).Detect(t.Context(), npmFiles(t, map[string]string{"package.json": `{"dependencies":{"x":"1.0.0"},"packageManager":"yarn@1.14.0"}`, "yarn.lock": "# yarn lockfile v1\n"}), mocks.NewDepsRegistry(t))
+	got, _, err := (NPM{}).Detect(t.Context(), npmFiles(t, map[string]string{"package.json": `{"dependencies":{"x":"1.0.0"},"packageManager":"yarn@1.14.0"}`, "yarn.lock": "# yarn lockfile v1\n"}), mocks.NewDepsRegistry(t))
 	require.NoError(t, err)
 	require.Empty(t, got)
 }
@@ -247,7 +249,7 @@ func TestNPMManagerRefusesYarnBerry(t *testing.T) {
 
 	// Detect proposes nothing for a Berry workspace, without a registry lookup.
 	files := npmFiles(t, map[string]string{"package.json": `{"workspaces":["packages/*"]}`, "yarn.lock": "__metadata:\n  version: 8\n", "packages/a/package.json": `{"dependencies":{"x":"1.0.0"}}`})
-	got, err := (NPM{}).Detect(t.Context(), files, mocks.NewDepsRegistry(t))
+	got, _, err := (NPM{}).Detect(t.Context(), files, mocks.NewDepsRegistry(t))
 	require.NoError(t, err)
 	require.Empty(t, got)
 }
@@ -268,11 +270,13 @@ func TestNPMDetectLookupBudget(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 		defer cancel()
 		start := time.Now()
-		got, err := (NPM{}).Detect(ctx, files, reg)
+		got, skipped, err := (NPM{}).Detect(ctx, files, reg)
 		require.NoError(t, err)
 		require.Equal(t, npmLookupBudget, time.Since(start))
 		require.Len(t, got, 1)
 		require.Equal(t, "a", got[0].Name)
+		// b was cut by the budget, c never looked up: both are skipped.
+		require.Equal(t, []ports.DepsSkip{{Name: "b", Current: "v1.0.0"}, {Name: "c", Current: "v1.0.0"}}, skipped)
 	})
 	synctest.Test(t, func(t *testing.T) {
 		reg := mocks.NewDepsRegistry(t)
@@ -285,10 +289,11 @@ func TestNPMDetectLookupBudget(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 		defer cancel()
 		start := time.Now()
-		got, err := (NPM{}).Detect(ctx, files, reg)
+		got, skipped, err := (NPM{}).Detect(ctx, files, reg)
 		require.NoError(t, err)
 		require.Equal(t, 30*time.Second, time.Since(start))
 		require.Empty(t, got)
+		require.Len(t, skipped, 3)
 	})
 	synctest.Test(t, func(t *testing.T) {
 		reg := mocks.NewDepsRegistry(t)
@@ -297,7 +302,7 @@ func TestNPMDetectLookupBudget(t *testing.T) {
 			cancel()
 			return nil, ctx.Err()
 		}).Once()
-		_, err := (NPM{}).Detect(ctx, files, reg)
+		_, _, err := (NPM{}).Detect(ctx, files, reg)
 		require.ErrorIs(t, err, context.Canceled)
 	})
 }

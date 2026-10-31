@@ -230,7 +230,7 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 	if repo.Archived {
 		return b.cfg.Store.Get(ctx, name)
 	}
-	ups, err := b.detect(ctx, reg, name)
+	ups, skipped, err := b.detect(ctx, reg, name)
 	if err != nil {
 		return domain.RepoDeps{}, err
 	}
@@ -255,7 +255,7 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 	fresh := 0
 	moved := false
 	rec, err := b.cfg.Store.Mutate(ctx, name, func(d *domain.RepoDeps) (bool, error) {
-		base, majors := domain.SplitBatches(ups)
+		base, majors := domain.SplitBatches(carrySkipped(d, ups, skipped))
 		next := []domain.DepBatch{{Updates: base}}
 		for _, u := range majors {
 			next = append(next, domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}})
@@ -315,6 +315,46 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 	return rec, nil
 }
 
+// depKey identifies a dependency, whatever its versions.
+type depKey struct {
+	eco       domain.DepsEcosystem
+	dir, name string
+}
+
+func keyOf(u domain.DepUpdate) depKey { return depKey{u.Ecosystem, u.Directory, u.Name} }
+
+// carrySkipped adds to ups the stored updates of the dependencies the check
+// skipped, in each lane (same major, new major) the check found nothing for,
+// so a registry failure keeps them, in their batch and not new, instead of
+// dropping them until the next check proposes them again. skipped maps each
+// skipped dependency to its current version: a stored update from another
+// current version (the manifest moved meanwhile) is stale and dropped.
+func carrySkipped(d *domain.RepoDeps, ups []domain.DepUpdate, skipped map[depKey]string) []domain.DepUpdate {
+	if len(skipped) == 0 {
+		return ups
+	}
+	type lane struct {
+		key   depKey
+		major bool
+	}
+	isMajor := func(u domain.DepUpdate) bool { return semver.Major(u.Version) != semver.Major(u.Current) }
+	found := map[lane]bool{}
+	for _, u := range ups {
+		found[lane{keyOf(u), isMajor(u)}] = true
+	}
+	out := slices.Clone(ups)
+	for _, batch := range d.Batches {
+		for _, u := range batch.Updates {
+			l := lane{keyOf(u), isMajor(u)}
+			if current, ok := skipped[l.key]; ok && current == u.Current && !found[l] {
+				found[l] = true
+				out = append(out, u)
+			}
+		}
+	}
+	return out
+}
+
 // changed tells the owner's live view that the record of name changed. It is
 // called after the store mutation, never inside it.
 func (b *Bernard) changed(ctx context.Context, name domain.RepoName) {
@@ -345,25 +385,27 @@ func cmpStrings(pairs ...string) int {
 	return 0
 }
 
-// detect returns the updates to propose at the tip of the default branch.
-func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domain.RepoName) ([]domain.DepUpdate, error) {
+// detect returns the updates to propose at the tip of the default branch and
+// the dependencies it could not look up this time.
+func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domain.RepoName) ([]domain.DepUpdate, map[depKey]string, error) {
 	log := ctxLog(ctx)
 	res, err := b.cfg.Reader.ResolveRevision(ctx, name, domain.Revision{})
 	if errors.Is(err, domain.ErrNotFound) {
-		return nil, nil // no repository directory, no default branch: nothing to check
+		return nil, nil, nil // no repository directory, no default branch: nothing to check
 	}
 	if err != nil {
-		return nil, fmt.Errorf("resolve the default branch: %w", err)
+		return nil, nil, fmt.Errorf("resolve the default branch: %w", err)
 	}
 	rev := domain.RevisionOf(res.CommitID)
 	paths, err := b.cfg.Reader.ListPaths(ctx, name, rev, domain.MaxPathEntries, domain.MaxPathBytes)
 	if errors.Is(err, domain.ErrNotFound) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list the paths: %w", err)
+		return nil, nil, fmt.Errorf("list the paths: %w", err)
 	}
 	now := b.cfg.Clock.Now()
+	skipped := map[depKey]string{}
 	var cbErr error // first error of the PickUpdates callbacks
 	var out []domain.DepUpdate
 	for _, eco := range b.cfg.Ecosystems {
@@ -376,16 +418,19 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 				continue
 			}
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			maps.Copy(files, more)
 		}
 		if len(files) == 0 {
 			continue
 		}
-		cands, err := eco.Detect(ctx, files, reg)
+		cands, skips, err := eco.Detect(ctx, files, reg)
+		for _, sk := range skips {
+			skipped[depKey{eco.Name(), sk.Directory, sk.Name}] = sk.Current
+		}
 		if err != nil {
-			return nil, fmt.Errorf("detect %s dependencies: %w", eco.Name(), err)
+			return nil, nil, fmt.Errorf("detect %s dependencies: %w", eco.Name(), err)
 		}
 		for _, c := range cands {
 			firstSeen := func(v domain.DepVersion) time.Time {
@@ -410,7 +455,7 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 			}
 			ups := domain.PickUpdates(c, now, b.cfg.Cooldown, firstSeen, ignored)
 			if cbErr != nil {
-				return nil, cbErr
+				return nil, nil, cbErr
 			}
 
 			// Fit same-major and cross-major candidates independently, preserving
@@ -419,7 +464,7 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 				lane := slices.DeleteFunc(slices.Clone(ups), func(u domain.DepUpdate) bool { return (semver.Major(u.Version) != semver.Major(u.Current)) != major })
 				up, ok, err := fittingUpdate(ctx, reg, name, c, lane)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				if !ok {
 					continue
@@ -427,6 +472,7 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 				mal, err := reg.Malicious(ctx, up.Ecosystem, versionName(up.Name, up.NewName), up.Version)
 				if err != nil {
 					log.Warn().Err(err).Str("repo", name.String()).Str("name", up.Name).Str("version", up.Version).Msg("bernard: advisory lookup failed, update skipped")
+					skipped[keyOf(up)] = up.Current
 					continue
 				}
 				if !mal {
@@ -436,7 +482,7 @@ func (b *Bernard) detect(ctx context.Context, reg ports.DepsRegistry, name domai
 
 		}
 	}
-	return out, nil
+	return out, skipped, nil
 }
 
 // fittingUpdate returns the first of ups, highest first, that can be applied:

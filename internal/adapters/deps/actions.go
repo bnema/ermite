@@ -53,7 +53,7 @@ func (Actions) Inputs([]domain.DepUpdate, []domain.TreePath) []ports.DepsInput {
 // Detect returns one candidate per file, action and current ref.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter parses uses syntax and resolves tags through the registry port; update policy stays in domain.PickUpdate
-func (Actions) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, error) {
+func (Actions) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error) {
 	var out []domain.DepCandidate
 	seen := map[string]bool{}
 	for _, p := range filePaths(files) {
@@ -73,7 +73,7 @@ func (Actions) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg
 				continue
 			}
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			c := domain.DepCandidate{Ecosystem: domain.EcosystemActions, Directory: p.String(), Name: name, Current: current}
 			for _, tag := range tags {
@@ -82,7 +82,7 @@ func (Actions) Detect(ctx context.Context, files map[domain.TreePath][]byte, reg
 			out = append(out, c)
 		}
 	}
-	return out, nil
+	return out, nil, nil
 }
 
 // Apply changes only matched uses version bytes, preserving quotes and comments.

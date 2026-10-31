@@ -55,7 +55,7 @@ func TestGoModDetect(t *testing.T) {
 		tp(t, "go.mod"):     []byte("module example.org/root\ngo 1.27\nrequire (\nexample.org/a v1.0.0\nexample.org/ind v1.0.0 // indirect\nexample.org/replaced v1.0.0\nprivate.org/m v1.0.0\n)\nreplace example.org/replaced => ../local\n"),
 		tp(t, "sub/go.mod"): []byte("module example.org/sub\ngo 1.25.3\nrequire example.org/b/v2 v2.0.0\n"),
 	}
-	got, err := (GoMod{}).Detect(t.Context(), files, reg)
+	got, _, err := (GoMod{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
 	require.Len(t, got, 3)
 	assert.Equal(t, domain.DepVersion{Version: "v2.0.0", Path: "example.org/a/v2"}, got[0].Versions[1])
@@ -79,7 +79,7 @@ func TestActionsDetect(t *testing.T) {
 		tp(t, ".github/workflows/ci.yml"): []byte("steps:\n - uses: 'actions/checkout@v4' # comment\n - uses: actions/checkout/sub@v4\n - uses: ./local\n - uses: docker://image:tag\n - uses: actions/checkout@" + strings.Repeat("a", 40) + "\n - uses: gone/action@v1\n"),
 		tp(t, "action.yml"):               []byte("runs:\n using: composite\n steps:\n  - uses: \"actions/checkout@v3\"\n"),
 	}
-	got, err := (Actions{}).Detect(t.Context(), files, reg)
+	got, _, err := (Actions{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 	assert.Equal(t, ".github/workflows/ci.yml", got[0].Directory)
@@ -93,10 +93,10 @@ func TestRegistryErrors(t *testing.T) {
 	boom := errors.New("registry unavailable")
 	reg := mocks.NewDepsRegistry(t)
 	reg.EXPECT().ActionTags(mock.Anything, "a", "b").Return(nil, boom)
-	_, err := (Actions{}).Detect(t.Context(), map[domain.TreePath][]byte{tp(t, "action.yml"): []byte("uses: a/b@v1")}, reg)
+	_, _, err := (Actions{}).Detect(t.Context(), map[domain.TreePath][]byte{tp(t, "action.yml"): []byte("uses: a/b@v1")}, reg)
 	require.ErrorIs(t, err, boom)
 	reg.EXPECT().GoVersions(mock.Anything, "example.org/a", "v1.0.0").Return(nil, boom)
-	_, err = (GoMod{}).Detect(t.Context(), map[domain.TreePath][]byte{tp(t, "go.mod"): []byte("module example.org/root\nrequire example.org/a v1.0.0\n")}, reg)
+	_, _, err = (GoMod{}).Detect(t.Context(), map[domain.TreePath][]byte{tp(t, "go.mod"): []byte("module example.org/root\nrequire example.org/a v1.0.0\n")}, reg)
 	require.ErrorIs(t, err, boom)
 }
 
@@ -212,7 +212,7 @@ func TestGoModValidate(t *testing.T) {
 func TestGoModGroupedReplacements(t *testing.T) {
 	reg := mocks.NewDepsRegistry(t)
 	files := map[domain.TreePath][]byte{tp(t, "go.mod"): []byte("module example.org/root\nrequire (\nexample.org/a v1.0.0\nexample.org/b v1.0.0\n)\nreplace (\nexample.org/a v1.0.0 => ../a\n\"example.org/b\" => ../b\n)\n")}
-	got, err := (GoMod{}).Detect(t.Context(), files, reg)
+	got, _, err := (GoMod{}).Detect(t.Context(), files, reg)
 	require.NoError(t, err)
 	require.Empty(t, got)
 }

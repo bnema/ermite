@@ -34,6 +34,7 @@ type bernardRig struct {
 	at     time.Time
 	rec    domain.RepoDeps // the stored record
 	cands  []domain.DepCandidate
+	skips  []ports.DepsSkip
 	b      *usecase.Bernard
 	regs   int
 	// goDirs answers GoDirective by "module@version"; a missing key has no go
@@ -112,8 +113,8 @@ func (r *bernardRig) repoReads() {
 	r.reader.EXPECT().OpenBlob(mock.Anything, r.repo, mock.Anything, tp).Return(domain.BlobInfo{Size: 4}, io.NopCloser(bytes.NewReader([]byte("mod\n"))), nil)
 	r.eco.EXPECT().Manifests(mock.Anything).Return([]ports.DepsInput{{Path: tp}})
 	r.eco.EXPECT().Detect(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
-		func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) ([]domain.DepCandidate, error) {
-			return r.cands, nil
+		func(context.Context, map[domain.TreePath][]byte, ports.DepsRegistry) ([]domain.DepCandidate, []ports.DepsSkip, error) {
+			return r.cands, r.skips, nil
 		})
 }
 
@@ -593,4 +594,33 @@ func TestBernardIgnoredMajorLeavesMinor(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got.Batches, 1)
 	require.Len(t, got.Base().Updates, 1)
+}
+
+// A dependency Detect skipped (registry failure, spent npm budget) keeps its
+// stored updates: in the base batch and in its major batch without a merge
+// request, not new, and nothing is announced. A stored update from another
+// current version is stale and dropped.
+func TestBernardCheckKeepsSkippedDependencies(t *testing.T) {
+	r := newBernardRig(t, "0 6 * * *")
+	r.repoReads()
+	r.cands = []domain.DepCandidate{goCand("a/mod", r.old("v0.20.1"))}
+	r.skips = []ports.DepsSkip{{Name: "x/mod", Current: "v1.0.0"}, {Name: "stale/mod", Current: "v2.0.0"}}
+	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
+	r.reg.EXPECT().Malicious(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
+	known := domain.DepUpdate{DepRef: depRef("a/mod", "v0.20.1"), Current: "v0.20.0", Kind: domain.DepPatch}
+	minor := domain.DepUpdate{DepRef: depRef("x/mod", "v1.2.0"), Current: "v1.0.0", Kind: domain.DepMinor, New: true}
+	major := domain.DepUpdate{DepRef: depRef("x/mod", "v2.0.0"), Current: "v1.0.0", Kind: domain.DepMajor}
+	stale := domain.DepUpdate{DepRef: depRef("stale/mod", "v1.1.0"), Current: "v1.0.0", Kind: domain.DepMinor}
+	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{
+		{Updates: []domain.DepUpdate{known, minor, stale}},
+		{Key: domain.MajorBatchKey(major), Updates: []domain.DepUpdate{major}},
+	}}
+	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo) // the bus mock refuses DependencyUpdatesFound
+	require.NoError(t, err)
+	notNew := minor
+	notNew.New = false
+	assert.Equal(t, []domain.DepUpdate{known, notNew}, got.Base().Updates)
+	require.Len(t, got.Batches, 2, "the major batch without a merge request stays")
+	assert.Equal(t, []domain.DepUpdate{major}, got.Batches[1].Updates)
+	assert.Equal(t, 1, r.changedCount(), "only the stale update left")
 }
