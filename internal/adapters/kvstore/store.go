@@ -352,8 +352,8 @@ func (s *Store) upgradeResolvedIssues(ctx context.Context, b *kv.Batch) error {
 	return ctx.Err()
 }
 
-// depsUpgradeError is the reason of an applying record that schema 11 meets:
-// its in-memory job was lost with the previous process.
+// depsUpgradeError is the reason of an applying record that the schema 11 or
+// 12 upgrade meets: its in-memory job was lost with the previous process.
 const depsUpgradeError = "interrupted by an upgrade: open the merge request again"
 
 // upgradeDepsRecords runs once in the schema batch (schemas 11 and 12): the record of a job
@@ -372,24 +372,24 @@ func (s *Store) upgradeDepsRecords(ctx context.Context, b *kv.Batch, from uint32
 		changed := false
 		if from < 11 && len(pb.GetBatches()) == 0 {
 			// The job lived in memory: its id means nothing any more.
-			changed = pb.GetJobId() != "" //nolint:staticcheck // the deprecated field is what the upgrade clears
-			pb.JobId = ""                 //nolint:staticcheck // idem
-			switch domain.DepsState(pb.GetState()) {
+			changed = pb.GetJobId() != ""            //nolint:staticcheck // the deprecated field is what the upgrade clears
+			pb.JobId = ""                            //nolint:staticcheck // idem
+			switch domain.DepsState(pb.GetState()) { //nolint:staticcheck // the schema upgrade reads the deprecated fields
 			case domain.DepsApplying:
-				pb.State, pb.Error, changed = int32(domain.DepsFailed), depsUpgradeError, true
+				pb.State, pb.Error, changed = int32(domain.DepsFailed), depsUpgradeError, true //nolint:staticcheck // the schema upgrade reads the deprecated fields
 			case domain.DepsFailed:
-				if first, _, cut := strings.Cut(pb.GetError(), "\n"); cut {
-					pb.Error, changed = first, true
+				if first, _, cut := strings.Cut(pb.GetError(), "\n"); cut { //nolint:staticcheck // the schema upgrade reads the deprecated fields
+					pb.Error, changed = first, true //nolint:staticcheck // the schema upgrade reads the deprecated fields
 				}
 			}
 		}
 		if from < 12 && len(pb.GetBatches()) == 0 {
-			state, reason := pb.GetState(), pb.GetError()
+			state, reason := pb.GetState(), pb.GetError() //nolint:staticcheck // the schema upgrade reads the deprecated fields
 			if domain.DepsState(state) == domain.DepsApplying {
 				state, reason = int32(domain.DepsFailed), depsUpgradeError
 			}
-			pb.Batches = []*storagepb.DepBatch{{Updates: pb.GetUpdates(), State: state, Error: reason, RunId: pb.GetRunId(), RunUpdates: pb.GetRunUpdates(), Mr: pb.GetMr(), MrVersions: pb.GetMrVersions()}}
-			pb.Updates, pb.State, pb.Error, pb.RunId, pb.RunUpdates, pb.Mr, pb.MrVersions = nil, 0, "", 0, nil, 0, nil
+			pb.Batches = []*storagepb.DepBatch{{Updates: pb.GetUpdates(), State: state, Error: reason, RunId: pb.GetRunId(), RunUpdates: pb.GetRunUpdates(), Mr: pb.GetMr(), MrVersions: pb.GetMrVersions()}} //nolint:staticcheck // the schema upgrade reads the deprecated fields
+			pb.Updates, pb.State, pb.Error, pb.RunId, pb.RunUpdates, pb.Mr, pb.MrVersions = nil, 0, "", 0, nil, 0, nil                                                                                        //nolint:staticcheck // the schema upgrade reads the deprecated fields
 			changed = true
 		}
 		if !changed {

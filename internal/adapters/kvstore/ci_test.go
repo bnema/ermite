@@ -10,7 +10,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
+	storagepb "bnema.dev/ermite/gen/ermite/storage"
 	"bnema.dev/ermite/internal/adapters/kvstore"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -511,4 +513,16 @@ func TestCISetRunnerKinds(t *testing.T) {
 	assert.Equal(t, before, after)
 
 	assert.ErrorIs(t, ci.SetRunnerKinds(ctx, "gone", []string{"deps"}), domain.ErrNotFound)
+}
+
+func TestDecodeLegacyDepsJob(t *testing.T) {
+	old := &storagepb.CIDepsJob{GoVersion: "1.24", Updates: []*storagepb.DepRef{{Ecosystem: "gomod", Name: "example.com/lib", Version: "v1.2.0"}}} //nolint:staticcheck // a job queued before schema 12
+	data, err := proto.Marshal(old)
+	require.NoError(t, err)
+	var stored storagepb.CIDepsJob
+	require.NoError(t, proto.Unmarshal(data, &stored))
+	got := kvstore.DecodeDepsJob(&stored)
+	require.Equal(t, []domain.CIDepsUpdate{{Ref: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "example.com/lib", Version: "v1.2.0"}}}, got.Details)
+	require.Empty(t, kvstore.EncodeDepsJob(got).GetUpdates()) //nolint:staticcheck // new jobs leave the deprecated field empty
+	require.Len(t, kvstore.EncodeDepsJob(got).GetDetails(), 1)
 }

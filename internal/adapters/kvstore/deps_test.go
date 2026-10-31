@@ -46,7 +46,6 @@ func TestDepsRoundTripAndAbsent(t *testing.T) {
 	require.NoError(t, err)
 	got, err = d.Get(ctx, n)
 	require.NoError(t, err)
-	want.Batches = []domain.DepBatch{{Updates: want.Base().Updates, State: want.Base().State, Error: want.Base().Error, RunID: want.Base().RunID, RunUpdates: want.Base().RunUpdates, MR: want.Base().MR, MRVersions: want.Base().MRVersions}}
 	require.Equal(t, want, got)
 }
 

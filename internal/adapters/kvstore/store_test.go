@@ -513,15 +513,15 @@ func TestSchema12UpgradesDepsRecords(t *testing.T) {
 					var pb storagepb.RepoDeps
 					require.NoError(t, proto.Unmarshal(raw, &pb))
 					if from < 11 {
-						assert.Empty(t, pb.GetJobId(), repo+": the job id is gone")
+						assert.Empty(t, pb.GetJobId(), repo+": the job id is gone") //nolint:staticcheck // the schema upgrade clears the deprecated fields
 					}
-					assert.Empty(t, pb.GetUpdates())
-					assert.Zero(t, pb.GetState())
-					assert.Empty(t, pb.GetError())
-					assert.Zero(t, pb.GetRunId())
-					assert.Empty(t, pb.GetRunUpdates())
-					assert.Zero(t, pb.GetMr())
-					assert.Empty(t, pb.GetMrVersions())
+					assert.Empty(t, pb.GetUpdates())    //nolint:staticcheck // the schema upgrade clears the deprecated fields
+					assert.Zero(t, pb.GetState())       //nolint:staticcheck // idem
+					assert.Empty(t, pb.GetError())      //nolint:staticcheck // idem
+					assert.Zero(t, pb.GetRunId())       //nolint:staticcheck // idem
+					assert.Empty(t, pb.GetRunUpdates()) //nolint:staticcheck // idem
+					assert.Zero(t, pb.GetMr())          //nolint:staticcheck // idem
+					assert.Empty(t, pb.GetMrVersions()) //nolint:staticcheck // idem
 					require.Len(t, pb.GetBatches(), 1)
 				}
 				assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))

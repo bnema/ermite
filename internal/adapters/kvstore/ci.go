@@ -1187,7 +1187,7 @@ func decodeDepsJob(pb *storagepb.CIDepsJob) *domain.CIDepsJob {
 		d.Details = append(d.Details, domain.CIDepsUpdate{Ref: decodeDepRef(u.GetRef()), NewName: u.GetNewName(), Range: u.GetRange(), Manager: u.GetManager(), ManagerVersion: u.GetManagerVersion(), Root: u.GetRoot()})
 	}
 	if len(d.Details) == 0 {
-		for _, r := range pb.GetUpdates() {
+		for _, r := range pb.GetUpdates() { //nolint:staticcheck // jobs queued before schema 12 carry only the deprecated field
 			d.Details = append(d.Details, domain.CIDepsUpdate{Ref: decodeDepRef(r)})
 		}
 	}

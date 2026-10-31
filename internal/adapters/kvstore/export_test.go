@@ -25,6 +25,13 @@ var (
 	EncodeConcurrencyMark   = encodeConcurrencyMark
 )
 
+// DecodeDepsJob and EncodeDepsJob expose the stored layout of a dependency job
+// to the tests.
+var (
+	DecodeDepsJob = decodeDepsJob
+	EncodeDepsJob = encodeDepsJob
+)
+
 // RawVersionForTest is the kv version of a runner record: it moves on every
 // write.
 func (c *CI) RawVersionForTest(ctx context.Context, id string) (uint64, bool) {
