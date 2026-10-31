@@ -389,7 +389,7 @@ func (b *Bernard) publish(ctx context.Context, name domain.RepoName, target stri
 			return false, errRecordMoved
 		}
 		stored := &d.Batches[i]
-		stored.MR, stored.MRVersions = number, slices.Clone(refs)
+		stored.MR, stored.MRVersions, stored.MRUpdates = number, slices.Clone(refs), slices.Clone(ups)
 		stored.State, stored.Error, stored.RunUpdates = domain.DepsIdle, "", nil // RunID stays: the link to the last run
 		return true, nil
 	})
@@ -640,7 +640,7 @@ func (b *Bernard) onMRDone(mr domain.MergeRequest, merged bool) {
 		if batch == nil {
 			return false, nil
 		}
-		batch.MR, batch.MRVersions = 0, nil
+		batch.MR, batch.MRVersions, batch.MRUpdates = 0, nil, nil
 		if !merged && batch.State == domain.DepsApplying {
 			batch.State, batch.Error, batch.RunUpdates = domain.DepsIdle, "", nil
 		}

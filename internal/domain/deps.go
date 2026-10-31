@@ -230,6 +230,31 @@ type DepBatch struct {
 	RunUpdates []DepUpdate
 	MR         int64
 	MRVersions []DepRef
+	// MRUpdates are the updates the merge request holds, with the versions
+	// they update from.
+	MRUpdates []DepUpdate
+}
+
+// Outdated reports whether the batch has a merge request that no longer
+// matches its proposed updates: other versions, or the same versions from
+// other current versions (an overlapping batch was merged meanwhile).
+func (d DepBatch) Outdated() bool {
+	if d.MR == 0 {
+		return false
+	}
+	if !SameRefs(d.Refs(), d.MRVersions) {
+		return true
+	}
+	current := make(map[DepRef]string, len(d.MRUpdates))
+	for _, u := range d.MRUpdates {
+		current[u.DepRef] = u.Current
+	}
+	for _, u := range d.Updates {
+		if c, ok := current[u.DepRef]; ok && c != u.Current {
+			return true
+		}
+	}
+	return false
 }
 
 // Batch finds a batch and its index, or returns index -1 when absent.

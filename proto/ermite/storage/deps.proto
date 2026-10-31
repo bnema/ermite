@@ -27,6 +27,8 @@ message DepBatch {
   repeated DepUpdate run_updates = 6;
   int64 mr = 7;
   repeated DepRef mr_versions = 8;
+  // the updates the merge request holds, with their current versions
+  repeated DepUpdate mr_updates = 9;
 }
 // RepoDeps is the whole record under dpend/<repo>.
 message RepoDeps {

@@ -302,6 +302,9 @@ func encodeDepBatch(b domain.DepBatch) *storagepb.DepBatch {
 	for _, r := range b.MRVersions {
 		pb.MrVersions = append(pb.MrVersions, encodeDepRef(r))
 	}
+	for _, u := range b.MRUpdates {
+		pb.MrUpdates = append(pb.MrUpdates, encodeDepUpdate(u))
+	}
 	return pb
 }
 
@@ -315,6 +318,9 @@ func decodeDepBatch(pb *storagepb.DepBatch) domain.DepBatch {
 	}
 	for _, r := range pb.GetMrVersions() {
 		b.MRVersions = append(b.MRVersions, decodeDepRef(r))
+	}
+	for _, u := range pb.GetMrUpdates() {
+		b.MRUpdates = append(b.MRUpdates, decodeDepUpdate(u))
 	}
 	return b
 }

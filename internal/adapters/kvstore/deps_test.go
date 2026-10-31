@@ -246,7 +246,7 @@ func TestDepsBatchRoundTripAndMutations(t *testing.T) {
 	d := openStore(t, t.TempDir()).Deps()
 	n := name(t, "batches")
 	u := domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: domain.EcosystemGoMod, Name: "example.com/pkg", Version: "v2.1.0"}, NewName: "example.com/pkg/v2", Current: "v1.0.0", Kind: domain.DepMajor}
-	major := domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}, State: domain.DepsApplying, RunID: 12, RunUpdates: []domain.DepUpdate{u}, MR: 5, MRVersions: []domain.DepRef{u.DepRef}, Error: "major error"}
+	major := domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}, State: domain.DepsApplying, RunID: 12, RunUpdates: []domain.DepUpdate{u}, MR: 5, MRVersions: []domain.DepRef{u.DepRef}, MRUpdates: []domain.DepUpdate{u}, Error: "major error"}
 	base := domain.DepBatch{Updates: []domain.DepUpdate{u}, State: domain.DepsFailed, Error: "base error", RunID: 4, RunUpdates: []domain.DepUpdate{u}, MR: 3, MRVersions: []domain.DepRef{u.DepRef}}
 	got, err := d.Mutate(ctx, n, func(r *domain.RepoDeps) (bool, error) { r.Batches = []domain.DepBatch{base, major}; return true, nil })
 	require.NoError(t, err)

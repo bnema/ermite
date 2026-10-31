@@ -170,15 +170,17 @@ func (x *DepUpdate) GetNewName() string {
 }
 
 type DepBatch struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Updates       []*DepUpdate           `protobuf:"bytes,2,rep,name=updates,proto3" json:"updates,omitempty"`
-	State         int32                  `protobuf:"varint,3,opt,name=state,proto3" json:"state,omitempty"`
-	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
-	RunId         int64                  `protobuf:"varint,5,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	RunUpdates    []*DepUpdate           `protobuf:"bytes,6,rep,name=run_updates,json=runUpdates,proto3" json:"run_updates,omitempty"`
-	Mr            int64                  `protobuf:"varint,7,opt,name=mr,proto3" json:"mr,omitempty"`
-	MrVersions    []*DepRef              `protobuf:"bytes,8,rep,name=mr_versions,json=mrVersions,proto3" json:"mr_versions,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Key        string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Updates    []*DepUpdate           `protobuf:"bytes,2,rep,name=updates,proto3" json:"updates,omitempty"`
+	State      int32                  `protobuf:"varint,3,opt,name=state,proto3" json:"state,omitempty"`
+	Error      string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	RunId      int64                  `protobuf:"varint,5,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	RunUpdates []*DepUpdate           `protobuf:"bytes,6,rep,name=run_updates,json=runUpdates,proto3" json:"run_updates,omitempty"`
+	Mr         int64                  `protobuf:"varint,7,opt,name=mr,proto3" json:"mr,omitempty"`
+	MrVersions []*DepRef              `protobuf:"bytes,8,rep,name=mr_versions,json=mrVersions,proto3" json:"mr_versions,omitempty"`
+	// the updates the merge request holds, with their current versions
+	MrUpdates     []*DepUpdate `protobuf:"bytes,9,rep,name=mr_updates,json=mrUpdates,proto3" json:"mr_updates,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -265,6 +267,13 @@ func (x *DepBatch) GetMr() int64 {
 func (x *DepBatch) GetMrVersions() []*DepRef {
 	if x != nil {
 		return x.MrVersions
+	}
+	return nil
+}
+
+func (x *DepBatch) GetMrUpdates() []*DepUpdate {
+	if x != nil {
+		return x.MrUpdates
 	}
 	return nil
 }
@@ -498,7 +507,7 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"\acurrent\x18\x02 \x01(\tR\acurrent\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\x05R\x04kind\x12\x10\n" +
 	"\x03new\x18\x04 \x01(\bR\x03new\x12\x19\n" +
-	"\bnew_name\x18\x05 \x01(\tR\anewName\"\x99\x02\n" +
+	"\bnew_name\x18\x05 \x01(\tR\anewName\"\xd3\x02\n" +
 	"\bDepBatch\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateR\aupdates\x12\x14\n" +
@@ -509,7 +518,9 @@ const file_ermite_storage_deps_proto_rawDesc = "" +
 	"runUpdates\x12\x0e\n" +
 	"\x02mr\x18\a \x01(\x03R\x02mr\x127\n" +
 	"\vmr_versions\x18\b \x03(\v2\x16.ermite.storage.DepRefR\n" +
-	"mrVersions\"\x82\x04\n" +
+	"mrVersions\x128\n" +
+	"\n" +
+	"mr_updates\x18\t \x03(\v2\x19.ermite.storage.DepUpdateR\tmrUpdates\"\x82\x04\n" +
 	"\bRepoDeps\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x127\n" +
 	"\aupdates\x18\x02 \x03(\v2\x19.ermite.storage.DepUpdateB\x02\x18\x01R\aupdates\x129\n" +
@@ -556,18 +567,19 @@ var file_ermite_storage_deps_proto_depIdxs = []int32{
 	1,  // 1: ermite.storage.DepBatch.updates:type_name -> ermite.storage.DepUpdate
 	1,  // 2: ermite.storage.DepBatch.run_updates:type_name -> ermite.storage.DepUpdate
 	0,  // 3: ermite.storage.DepBatch.mr_versions:type_name -> ermite.storage.DepRef
-	1,  // 4: ermite.storage.RepoDeps.updates:type_name -> ermite.storage.DepUpdate
-	5,  // 5: ermite.storage.RepoDeps.checked_at:type_name -> google.protobuf.Timestamp
-	5,  // 6: ermite.storage.RepoDeps.snoozed_until:type_name -> google.protobuf.Timestamp
-	0,  // 7: ermite.storage.RepoDeps.mr_versions:type_name -> ermite.storage.DepRef
-	1,  // 8: ermite.storage.RepoDeps.run_updates:type_name -> ermite.storage.DepUpdate
-	2,  // 9: ermite.storage.RepoDeps.batches:type_name -> ermite.storage.DepBatch
-	5,  // 10: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	1,  // 4: ermite.storage.DepBatch.mr_updates:type_name -> ermite.storage.DepUpdate
+	1,  // 5: ermite.storage.RepoDeps.updates:type_name -> ermite.storage.DepUpdate
+	5,  // 6: ermite.storage.RepoDeps.checked_at:type_name -> google.protobuf.Timestamp
+	5,  // 7: ermite.storage.RepoDeps.snoozed_until:type_name -> google.protobuf.Timestamp
+	0,  // 8: ermite.storage.RepoDeps.mr_versions:type_name -> ermite.storage.DepRef
+	1,  // 9: ermite.storage.RepoDeps.run_updates:type_name -> ermite.storage.DepUpdate
+	2,  // 10: ermite.storage.RepoDeps.batches:type_name -> ermite.storage.DepBatch
+	5,  // 11: ermite.storage.DepFirstSeen.at:type_name -> google.protobuf.Timestamp
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_ermite_storage_deps_proto_init() }

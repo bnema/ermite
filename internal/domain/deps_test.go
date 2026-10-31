@@ -343,3 +343,22 @@ func TestBotMRBodyNamesNewModulePath(t *testing.T) {
 	assert.Contains(t, body, "example.com/pkg/v2")
 	assert.Equal(t, "example.com/pkg", ups[0].Name, "body rendering does not change identity")
 }
+
+func TestDepBatchOutdated(t *testing.T) {
+	t.Parallel()
+	ref := DepRef{Ecosystem: EcosystemGoMod, Name: "x", Version: "v1.2.0"}
+	up := func(current string) DepUpdate { return DepUpdate{DepRef: ref, Current: current} }
+	for _, tc := range []struct {
+		name  string
+		batch DepBatch
+		want  bool
+	}{
+		{"no MR", DepBatch{Updates: []DepUpdate{up("v1.0.0")}}, false},
+		{"same", DepBatch{MR: 1, Updates: []DepUpdate{up("v1.0.0")}, MRVersions: []DepRef{ref}, MRUpdates: []DepUpdate{up("v1.0.0")}}, false},
+		{"other versions", DepBatch{MR: 1, Updates: []DepUpdate{up("v1.0.0")}}, true},
+		{"other current", DepBatch{MR: 1, Updates: []DepUpdate{up("v1.1.0")}, MRVersions: []DepRef{ref}, MRUpdates: []DepUpdate{up("v1.0.0")}}, true},
+		{"record before mr_updates", DepBatch{MR: 1, Updates: []DepUpdate{up("v1.1.0")}, MRVersions: []DepRef{ref}}, false},
+	} {
+		assert.Equal(t, tc.want, tc.batch.Outdated(), tc.name)
+	}
+}
