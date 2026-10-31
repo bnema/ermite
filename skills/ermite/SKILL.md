@@ -96,6 +96,7 @@ The workflow needs `permissions: contents: write` and `GITHUB_TOKEN: ${{ secrets
 
 - `ermite journal --since 7d` lists MRs, issues, tags, releases and default-branch pushes (30 days kept).
 - `ermite watch [repo] --json` prints one event per line, reconnects by itself; a `gap` event means reload the state.
+- `ermite deps list` (owner) shows Bernard's dependency updates, one MR per batch: `deps open <repo> --batch KEY` with the BATCH column (`base` for patch and minor).
 
 ## Run a server
 
@@ -113,5 +114,3 @@ docker run -d -p 127.0.0.1:7341:7341 -v ermite-data:/data \
 ## Output
 
 `--json` gives stable fields. Errors: one line `ermite: ...` on stderr, exit 1. `ermite completion bash|zsh|fish` completes repo names.
-
-npm updates include workspace dependencies and preserve range operators; Bun jobs reject roots with git dependencies. For runner-applied updates, let a compatible runner poll before opening the batch (capability requirements: CLI.md). Bernard uses one MR per major update; select it with `deps open|ignore --batch KEY` (omit for base).

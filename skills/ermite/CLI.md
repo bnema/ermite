@@ -210,19 +210,25 @@ By default the default branch and all tags are pushed; `--all-branches` pushes e
 
 Bernard checks daily for updates to Go modules, GitHub Actions, and npm `dependencies`/`devDependencies` (npm, pnpm, Yarn v1/Berry, Bun; workspaces included). Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
 
+Updates come in batches, one MR each: the base batch (patch and minor, branch `bernard/deps`) and one batch per dependency major (branch `bernard/deps-major/<slug>`).
+
 | Command | Notes |
 |---|---|
-| `deps list [--repo R]` | pending updates, snoozed included |
-| `deps check <repo>` | check now |
-| `deps open <repo> [--batch KEY]` | open/update the selected batch MR (default base) |
-| `deps ignore <repo> [--batch KEY]` | ignore the selected batch’s pending versions |
-| `deps snooze <repo>` | hide for `ERMITE_DEPS_SNOOZE` |
+| `deps list [--repo R]` | pending updates per batch (BATCH column: `base` or the key), snoozed included |
+| `deps check <repo>` | check now; prints every batch |
+| `deps open <repo> [--batch KEY]` | open/update the batch MR |
+| `deps ignore <repo> [--batch KEY]` | ignore the batch’s pending versions |
+| `deps snooze <repo>` | hide the whole repo for `ERMITE_DEPS_SNOOZE` |
 
-`open` needs a registered runner with Bernard’s configured label and all required kinds: `deps`, plus `deps.gomod-path-majors` for import-path majors or `deps.npm` for npm updates. Capabilities are learned when the runner polls; no capable runner fails the batch without starting a run.
+`--batch` takes the BATCH column of `deps list`; it defaults to `base`. JSON: `batches` (`key`, empty = base; `updates`; `state`; `error`; `run_id`; `merge_request_number`; `outdated`); updates have `new_name` for Go path majors. Top-level `updates`, `state`, `run_id`, `merge_request_number` describe the base batch.
 
-npm updates preserve the range operator and exact manifest formatting; only the existing root lockfile may also change. Unsupported specs (including git and workspace references) are skipped. Bun roots containing git dependencies are still proposed, but the runner rejects their installation with a clear error.
+`open` needs a registered runner with Bernard’s configured label and all required kinds: `deps`, plus `deps.gomod-path-majors` for import-path majors or `deps.npm` for npm updates. Capabilities are learned when the runner polls; otherwise the batch fails with `no runner supports <kind> updates` and no run starts.
 
-`open` and `ignore` send back the list they read and are refused if it changed meanwhile. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
+npm updates preserve the range operator and exact manifest formatting; only the existing root lockfile may also change. Unsupported specs (including git and workspace references) are skipped. A Bun root with a git dependency fails in the runner.
+
+`open` and `ignore` send back the list they read and are refused if it changed meanwhile. An `outdated` MR holds other versions than the batch; `open` rebuilds it. The Go MR lists versions Go raised or removed under "Also changed by Go"; a refused report fails the run. Failed run logs: `run view <repo> <run_id> --log`.
+
+The web inbox shows one dependency row per batch, with an outdated badge; Open/Ignore target that row, Snooze stays repo-wide.
 
 ## Activity journal
 
@@ -282,11 +288,3 @@ Passkeys need an https (or localhost) public URL with a host name, not an IP; ot
 Full list: `docs/configuration.md` in the ermite repo.
 
 The owner’s web inbox (`/-/inbox`) uses `?tab=deps|work|activity|moderation`; absent or unknown tabs show open issues and merge requests (`work`). Tabs cover all repositories. Activity includes queued/running CI, journal entries and unreleased-commit notices; its journal window is `?range=24h|7d` (default `24h`).
-
-The server advertises `deps.batches`: RPC dependency records include independent
-batches, and Open/Ignore accept a batch key (empty selects base). The CLI selects batches with `--batch KEY` (default base); list includes a BATCH
-column and JSON includes `batches` (key, updates, state, error, run ID, MR number,
-outdated). Updates include `new_name`.
-
-The web inbox shows one dependency row per batch, with an outdated badge when
-its MR holds older versions; Open/Ignore target that row, Snooze stays repo-wide.
