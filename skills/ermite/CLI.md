@@ -208,7 +208,7 @@ By default the default branch and all tags are pushed; `--all-branches` pushes e
 
 ## Bernard (dependency updates, owner only)
 
-Bernard checks daily for updates to Go modules, GitHub Actions, and npm `dependencies`/`devDependencies` (npm, pnpm, Yarn v1.22+, Bun; workspaces included; Yarn Berry is not supported). Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
+Bernard checks daily for updates to Go modules, GitHub Actions, and npm `dependencies`/`devDependencies` (npm, pnpm, Yarn v1.22+, Bun; workspaces included; Yarn Berry is not supported because its installs can run repository code; see `docs/bernard.md`). Go detection includes consecutive newer `/vN` and `gopkg.in/*.vN` module paths (up to five probes, stopping at the first missing path). It skips archived repos and versions younger than the cooldown.
 
 Updates come in batches, one MR each: the base batch (patch and minor, branch `bernard/deps`) and one batch per dependency major (branch `bernard/deps-major/<slug>`).
 
