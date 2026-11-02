@@ -165,7 +165,7 @@ func (h headers) set(hd *connect.Header) {
 
 func (h headers) intercept(next connect.ClientFunc) connect.ClientFunc {
 	return func(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
-		ctx, info := connect.NewClientContext(ctx)
+		info, _ := connect.CallInfoForClientContext(ctx)
 		h.set(info.RequestHeader())
 		var cancel context.CancelFunc
 		if spec.StreamType == connect.StreamTypeUnary && h.timeout > 0 {

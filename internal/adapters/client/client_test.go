@@ -165,3 +165,20 @@ func TestDescribeStripsTerminalControls(t *testing.T) {
 	assert.NotContains(t, got, "\u2069")
 	assert.Contains(t, got, "bad?]0;pwn? name ?gpj.exe ?x?")
 }
+
+func TestCallerCallInfoSurvivesHeadersInterceptor(t *testing.T) {
+	f := &fake{version: func(ctx context.Context, _ *ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+		info, _ := connect.CallInfoForServerContext(ctx)
+		info.ResponseHeader().Set("Retry-After", "17")
+		return &ermite.GetVersionResponse{Version: info.RequestHeader().Get("X-Caller")}, nil
+	}}
+	c := start(t, f, client.Config{Token: "secret", UserAgent: "ermite/test"})
+	ctx, info := connect.NewClientContext(t.Context())
+	info.RequestHeader().Set("X-Caller", "keep-me")
+	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, "keep-me", res.GetVersion())
+	assert.Equal(t, "17", info.ResponseHeader().Get("Retry-After"))
+	assert.Equal(t, "Bearer secret", f.headers[0].Get("Authorization"))
+	assert.Equal(t, "ermite/test", f.headers[0].Get("User-Agent"))
+}
