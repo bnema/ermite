@@ -133,5 +133,6 @@
   }
   // Not ermiteRail: ermite.js owns that name for the keys of the rail.
   window.ermiteRailDrawer = { mount };
-  document.querySelectorAll('.work > .rail').forEach(mount);
+  // The merge request rail is a sheet on the right edge instead (mr.js).
+  document.querySelectorAll('.work > .rail').forEach(rail => { if (!rail.querySelector('.r-files')) mount(rail); });
 })();

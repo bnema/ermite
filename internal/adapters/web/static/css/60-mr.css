@@ -157,7 +157,7 @@
   /* the rail of a merge request follows the review: it sticks under the
      header, one screen high, and scrolls on its own to its verdicts. The list of files keeps its own scroll, under a height, so
      that the blocks below it stay in reach. Only on a two-column layout. */
-  @media (min-width: 1081px) {
+  @media (min-width: 1441px) {
     .rail:has(.r-files) {
       position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4));
       max-height: calc(100dvh - var(--hdr-h, 0px) - var(--s4) * 2);
@@ -167,15 +167,16 @@
     .rail:has(.r-files) > * { flex: none; }
     .rail .r-files > .files { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   }
-  /* between 1081px and 1200px two columns are cramped: the content takes the
-     whole width and the rail becomes a sheet on the right edge, over the
-     content (mr.js adds the slim < rail that opens it and the > that closes
-     it). Without scripts the two columns stay. */
+  /* up to 1440px two columns are cramped: the content takes the whole width
+     and the rail becomes a sheet on the right edge, over the content (mr.js
+     adds the slim < rail that opens it and the > that closes it). Without
+     scripts the rail keeps the shell's layout. */
   .mr-sheet-tab, .mr-sheet-close { display: none; }
-  @media (min-width: 1081px) and (max-width: 1200px) {
+  @media (max-width: 1440px) {
     /* the content keeps clear of the slim rail */
     html.js .work.has-rail:has(> .rail .r-files) { grid-template-columns: minmax(0, 1fr); padding-right: calc(var(--pad) + 20px); }
     html.js .rail:has(.r-files) {
+      display: flex; flex-direction: column; gap: var(--s4);
       position: fixed; top: var(--hdr-h, 0px); right: 0; bottom: 0; z-index: 30;
       width: min(var(--rail), 90vw); max-height: none; padding: var(--s3);
       overflow-y: auto; overscroll-behavior: contain;
@@ -201,11 +202,6 @@
     @media (prefers-reduced-motion: reduce) {
       html.js .rail:has(.r-files), html.js .rail[data-sheet-open] { transition: none; }
     }
-  }
-  /* on one column the rail goes under the diff: the list of files keeps its
-     own scroll, under a height */
-  @media (max-width: 1080px) {
-    .rail .r-files > .files { max-height: 50dvh; overflow-y: auto; overscroll-behavior: contain; }
   }
   .r-files {
     & > h2 kbd { margin-left: auto; }

@@ -254,6 +254,7 @@ window.ermiteMR = (() => {
   }
   function leaveFiles() {
     if (!links().includes(document.activeElement)) return false;
+    sheet.hide();
     document.getElementById('main')?.focus({ preventScroll: true });
     return true;
   }
@@ -279,10 +280,10 @@ window.ermiteMR = (() => {
     try { localStorage.setItem('mr-files-folded', fold ? '1' : ''); } catch { /* storage refused: holds for this page */ }
   }
 
-  // sheet: between 1081px and 1200px the rail is a sheet on the right edge,
-  // over the content. A slim rail (<) opens it; > / Esc / a click outside /
-  // choosing a file closes it. Wider, the layout is untouched; narrower,
-  // rail.js owns the rail (its bottom drawer).
+  // sheet: up to 1440px the rail is a sheet on the right edge, over the
+  // content. A slim rail (<) opens it; > / Esc / a click outside / choosing a
+  // file closes it. Wider, the rail is the second column. rail.js leaves this
+  // rail alone.
   const sheet = (() => {
     let rail, tab, closer, query;
     const active = () => !!(rail && query?.matches);
@@ -298,7 +299,7 @@ window.ermiteMR = (() => {
     function mount() {
       rail = $('.work > .rail');
       if (!rail || !$('.r-files', rail) || !window.matchMedia) { rail = null; return; }
-      query = matchMedia('(min-width: 1081px) and (max-width: 1200px)');
+      query = matchMedia('(max-width: 1440px)');
       rail.id ||= 'mr-rail';
       const button = (cls, label, title) => {
         const b = document.createElement('button');
@@ -332,7 +333,7 @@ window.ermiteMR = (() => {
       query.addEventListener('change', () => set(false, false));
     }
     // open(true) moves the focus to the close control; open(false) leaves it.
-    return { mount, open: (focus = true) => { if (active()) set(true, focus); }, close: () => set(false) };
+    return { mount, open: (focus = true) => { if (active()) set(true, focus); }, close: () => set(false), hide: () => set(false, false) };
   })();
 
   // openFile opens the file of a link of the list (and loads it first).

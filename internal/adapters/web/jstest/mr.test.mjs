@@ -577,3 +577,57 @@ test('live refresh preserves the open button panel even when the hash points els
     assert.deepEqual(fresh.children.map((p) => p.hidden), [true, false]);
   } finally { h.restore(); globalThis.document = saved; }
 });
+
+test('sheet: the < rail opens the panel, > / Esc / a file / a click outside close it', () => {
+  const saved = { document: globalThis.document, matchMedia: globalThis.matchMedia };
+  class El {
+    constructor(tag) { this.tagName = tag; this.attrs = {}; this.events = {}; this.kids = []; this.id = ''; }
+    setAttribute(k, v) { this.attrs[k] = String(v); }
+    getAttribute(k) { return this.attrs[k]; }
+    hasAttribute(k) { return k in this.attrs; }
+    toggleAttribute(k, on) { if (on) this.attrs[k] = ''; else delete this.attrs[k]; }
+    addEventListener(k, fn) { this.events[k] = fn; }
+    contains(el) { return el === this || this.kids.some((k) => k.contains(el)); }
+    focus() { globalThis.document.activeElement = this; }
+    querySelector(s) { return s === '.r-files' ? this.kids.find((k) => k.tagName === 'section') : null; }
+  }
+  const rail = new El('aside'), files = new El('section'), outside = new El('main');
+  rail.kids.push(files);
+  rail.before = (el) => { rail.tab = el; };
+  rail.prepend = (el) => { rail.kids.unshift(el); };
+  const docEvents = {};
+  globalThis.document = {
+    querySelector: (s) => s === '.work > .rail' ? rail : s === '.r-files' ? files : null,
+    createElement: (t) => new El(t),
+    addEventListener: (k, fn) => { docEvents[k] = fn; },
+  };
+  const media = { matches: true, addEventListener(k, fn) { this.change = fn; } };
+  globalThis.matchMedia = () => media;
+  try {
+    const S = window.ermiteMR.sheet;
+    S.mount();
+    const tab = rail.tab, closer = rail.kids[0];
+    assert.equal(tab.getAttribute('aria-controls'), 'mr-rail');
+    assert.equal(tab.getAttribute('aria-expanded'), 'false');
+    tab.events.click();
+    assert.ok(rail.hasAttribute('data-sheet-open'));
+    assert.equal(tab.getAttribute('aria-expanded'), 'true');
+    assert.equal(document.activeElement, closer, 'focus on the close control');
+    closer.events.click();
+    assert.ok(!rail.hasAttribute('data-sheet-open'));
+    assert.equal(document.activeElement, tab, 'focus back on the rail');
+    tab.events.click();
+    const esc = { key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} };
+    docEvents.keydown(esc);
+    assert.ok(!rail.hasAttribute('data-sheet-open'), 'Esc closes');
+    tab.events.click();
+    rail.events.click({ target: { closest: (s) => s === '.r-files a[href]' ? {} : null } });
+    assert.ok(!rail.hasAttribute('data-sheet-open'), 'a file closes');
+    tab.events.click();
+    docEvents.pointerdown({ target: outside });
+    assert.ok(!rail.hasAttribute('data-sheet-open'), 'a click outside closes');
+    media.matches = false;
+    tab.events.click();
+    assert.ok(!rail.hasAttribute('data-sheet-open'), 'wide: no sheet');
+  } finally { globalThis.document = saved.document; globalThis.matchMedia = saved.matchMedia; }
+});
