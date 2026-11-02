@@ -167,6 +167,41 @@
     .rail:has(.r-files) > * { flex: none; }
     .rail .r-files > .files { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   }
+  /* between 1081px and 1200px two columns are cramped: the content takes the
+     whole width and the rail becomes a sheet on the right edge, over the
+     content (mr.js adds the slim < rail that opens it and the > that closes
+     it). Without scripts the two columns stay. */
+  .mr-sheet-tab, .mr-sheet-close { display: none; }
+  @media (min-width: 1081px) and (max-width: 1200px) {
+    /* the content keeps clear of the slim rail */
+    html.js .work.has-rail:has(> .rail .r-files) { grid-template-columns: minmax(0, 1fr); padding-right: calc(var(--pad) + 20px); }
+    html.js .rail:has(.r-files) {
+      position: fixed; top: var(--hdr-h, 0px); right: 0; bottom: 0; z-index: 30;
+      width: min(var(--rail), 90vw); max-height: none; padding: var(--s3);
+      overflow-y: auto; overscroll-behavior: contain;
+      background: var(--bg-canvas); border-left: 1px solid var(--border-strong); box-shadow: var(--shadow);
+      transform: translateX(100%); visibility: hidden;
+      transition: transform .2s ease, visibility 0s .2s;
+    }
+    html.js .rail[data-sheet-open] { transform: none; visibility: visible; transition: transform .2s ease; }
+    .mr-sheet-tab {
+      display: flex; align-items: center; justify-content: center;
+      position: fixed; top: var(--hdr-h, 0px); right: 0; bottom: 0; z-index: 29;
+      width: 20px; height: auto; padding: 0;
+      background: var(--bg-surface); border: 0; border-left: 1px solid var(--border-strong); border-radius: 0;
+      color: var(--ink-dim);
+      &:hover { color: var(--ink-hi); }
+      & .ico { transform: rotate(90deg); }
+    }
+    .mr-sheet-close {
+      display: inline-flex; justify-content: center; align-self: flex-end; flex: none;
+      width: 28px; height: 28px; padding: 0;
+      & .ico { transform: rotate(-90deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html.js .rail:has(.r-files), html.js .rail[data-sheet-open] { transition: none; }
+    }
+  }
   /* on one column the rail goes under the diff: the list of files keeps its
      own scroll, under a height */
   @media (max-width: 1080px) {

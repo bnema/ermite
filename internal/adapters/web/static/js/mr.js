@@ -233,6 +233,7 @@ window.ermiteMR = (() => {
   // The list of files by keyboard: l focuses the current file.
   const links = () => $$('.r-files .files > li:not([hidden]) > a');
   function focusFiles() {
+    sheet.open(false);
     foldFiles(false);
     const all = links();
     if (!all.length) return false;
@@ -277,6 +278,62 @@ window.ermiteMR = (() => {
     }
     try { localStorage.setItem('mr-files-folded', fold ? '1' : ''); } catch { /* storage refused: holds for this page */ }
   }
+
+  // sheet: between 1081px and 1200px the rail is a sheet on the right edge,
+  // over the content. A slim rail (<) opens it; > / Esc / a click outside /
+  // choosing a file closes it. Wider, the layout is untouched; narrower,
+  // rail.js owns the rail (its bottom drawer).
+  const sheet = (() => {
+    let rail, tab, closer, query;
+    const active = () => !!(rail && query?.matches);
+    const isOpen = () => !!rail?.hasAttribute('data-sheet-open');
+    function set(open, focus = true) {
+      if (!rail) return;
+      open = open && active();
+      rail.toggleAttribute('data-sheet-open', open);
+      tab.setAttribute('aria-expanded', String(open));
+      closer.setAttribute('aria-expanded', String(open));
+      if (focus) (open ? closer : tab).focus({ preventScroll: true });
+    }
+    function mount() {
+      rail = $('.work > .rail');
+      if (!rail || !$('.r-files', rail) || !window.matchMedia) { rail = null; return; }
+      query = matchMedia('(min-width: 1081px) and (max-width: 1200px)');
+      rail.id ||= 'mr-rail';
+      const button = (cls, label, title) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn icon ' + cls;
+        b.title = title;
+        b.setAttribute('aria-label', label);
+        b.setAttribute('aria-controls', rail.id);
+        b.setAttribute('aria-expanded', 'false');
+        b.innerHTML = '<span class="ico i-chevron" aria-hidden="true"></span>';
+        return b;
+      };
+      tab = button('mr-sheet-tab', 'Open the side panel', 'open the side panel');
+      closer = button('mr-sheet-close', 'Close the side panel', 'close the side panel (esc)');
+      rail.before(tab);
+      rail.prepend(closer);
+      tab.addEventListener('click', () => set(true));
+      closer.addEventListener('click', () => set(false));
+      rail.addEventListener('click', (e) => {
+        if (isOpen() && e.target.closest?.('.r-files a[href]')) set(false, false);
+      });
+      document.addEventListener('pointerdown', (e) => {
+        if (isOpen() && !rail.contains(e.target) && !tab.contains(e.target)) set(false, false);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || !isOpen() || document.querySelector('dialog[open]')) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        set(false);
+      }, true);
+      query.addEventListener('change', () => set(false, false));
+    }
+    // open(true) moves the focus to the close control; open(false) leaves it.
+    return { mount, open: (focus = true) => { if (active()) set(true, focus); }, close: () => set(false) };
+  })();
 
   // openFile opens the file of a link of the list (and loads it first).
   function openFile(id) {
@@ -673,6 +730,7 @@ window.ermiteMR = (() => {
       }
     }, true);
     touchComments();
+    sheet.mount();
     let folded = false;
     try { folded = localStorage.getItem('mr-files-folded') === '1'; } catch { /* no storage: open */ }
     if (folded) foldFiles(true);
@@ -701,7 +759,7 @@ window.ermiteMR = (() => {
     });
   }
 
-  return { core, refresher, hasDraft, fetchPage, scrollAnchor, restoreAnchor, headChanged, panels, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
+  return { core, refresher, hasDraft, fetchPage, scrollAnchor, restoreAnchor, headChanged, panels, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile, sheet };
 })();
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.ermiteMR.start());
