@@ -23,7 +23,7 @@ require (
 	github.com/a-h/templ v0.3.1100
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aws/aws-sdk-go-v2 v1.47.5
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.12
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.6
 	github.com/descope/virtualwebauthn v1.0.5
 	github.com/go-webauthn/webauthn v0.18.2
@@ -31,14 +31,14 @@ require (
 	github.com/johannesboyne/gofakes3 v1.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
-	github.com/yuin/goldmark v1.8.6
+	github.com/yuin/goldmark v1.8.7
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/crypto v0.58.0
 	golang.org/x/mod v0.42.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 	golang.org/x/text v0.43.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e
 	google.golang.org/protobuf v1.37.0-rc.1
 )
 
@@ -46,8 +46,8 @@ require (
 	buf.build/gen/go/bufbuild/bufplugin/protocolbuffers/go v1.36.12-20261002170247-538130002972.2 // indirect
 	buf.build/gen/go/bufbuild/protodescriptor/protocolbuffers/go v1.36.12-20261012172039-ff528c23443f.2 // indirect
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect
-	buf.build/gen/go/bufbuild/registry/connectrpc/go/v2 v2.0.2-20261028191511-10a2296bfbef.1 // indirect
-	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.12-20261028191511-10a2296bfbef.2 // indirect
+	buf.build/gen/go/bufbuild/registry/connectrpc/go/v2 v2.0.2-20261029170924-54cd3c2f6265.1 // indirect
+	buf.build/gen/go/bufbuild/registry/protocolbuffers/go v1.36.12-20261029170924-54cd3c2f6265.2 // indirect
 	buf.build/gen/go/pluginrpc/pluginrpc/protocolbuffers/go v1.36.12-20241007202033-cf42259fcbfc.2 // indirect
 	buf.build/go/app v0.3.0 // indirect
 	buf.build/go/bufplugin v0.11.1 // indirect
@@ -57,7 +57,7 @@ require (
 	buf.build/go/protoyaml v0.7.0 // indirect
 	buf.build/go/spdx v0.3.0 // indirect
 	buf.build/go/standard v0.1.1-0.20260325175353-2b287e071df5 // indirect
-	cel.dev/cel-go v0.33.1 // indirect
+	cel.dev/cel-go v0.33.2 // indirect
 	cel.dev/expr v0.25.3 // indirect
 	connectrpc.com/connect v1.21.1 // indirect
 	connectrpc.com/otelconnect v0.12.0 // indirect
@@ -79,7 +79,7 @@ require (
 	github.com/bep/godartsass/v2 v2.5.0 // indirect
 	github.com/bep/golibsass v1.2.0 // indirect
 	github.com/bep/helpers v0.12.0 // indirect
-	github.com/bits-and-blooms/bitset v1.27.0 // indirect
+	github.com/bits-and-blooms/bitset v1.29.0 // indirect
 	github.com/bnema/hexcheck v0.4.0 // indirect
 	github.com/brunoga/deep v1.3.1 // indirect
 	github.com/bufbuild/buf v1.75.0 // indirect
@@ -142,7 +142,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
-	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
+	github.com/petermattis/goid v0.0.0-20261031113815-c1739d51dded // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.64.1 // indirect
@@ -184,7 +184,7 @@ require (
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	mvdan.cc/xurls/v2 v2.6.0 // indirect

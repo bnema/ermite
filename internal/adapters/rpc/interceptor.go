@@ -21,8 +21,6 @@ import (
 	"bnema.dev/ermite/internal/ports"
 )
 
-var errInternal = errors.New("internal error")
-
 // interceptor authenticates the caller of every call and logs it.
 //
 // A request that carries "Authorization: Bearer <secret>" is authenticated
