@@ -176,14 +176,17 @@
     /* the content keeps clear of the slim rail */
     html.js .work.has-rail:has(> .rail .r-files) { grid-template-columns: minmax(0, 1fr); padding-right: calc(var(--pad) + 20px); }
     html.js .rail:has(.r-files) {
-      display: flex; flex-direction: column; gap: var(--s4);
+      /* a column of full-width blocks, whatever the shell's narrow grid says */
+      display: flex; flex-direction: column; align-items: stretch; gap: var(--s4);
       position: fixed; top: var(--hdr-h, 0px); right: 0; bottom: 0; z-index: 30;
-      width: min(var(--rail), 90vw); max-height: none; padding: var(--s3);
+      width: min(var(--rail), calc(100vw - 20px)); max-height: none; padding: var(--s3);
       overflow-y: auto; overscroll-behavior: contain;
       background: var(--bg-canvas); border-left: 1px solid var(--border-strong); box-shadow: var(--shadow);
       transform: translateX(100%); visibility: hidden;
       transition: transform .2s ease, visibility 0s .2s;
     }
+    html.js .rail:has(.r-files) > section { width: 100%; max-width: none; margin: 0; }
+    html.js .rail:has(.r-files) .r-files > .files { max-height: none; }
     html.js .rail[data-sheet-open] { transform: none; visibility: visible; transition: transform .2s ease; }
     .mr-sheet-tab {
       display: flex; align-items: center; justify-content: center;
@@ -194,11 +197,14 @@
       &:hover { color: var(--ink-hi); }
       & .ico { transform: rotate(90deg); }
     }
+    /* > sits on the header row of the first block, which keeps room for it */
     .mr-sheet-close {
-      display: inline-flex; justify-content: center; align-self: flex-end; flex: none;
-      width: 28px; height: 28px; padding: 0;
+      display: inline-flex; justify-content: center;
+      position: absolute; top: calc(var(--s3) + 9px); right: calc(var(--s3) + var(--s2)); z-index: 1;
+      width: 26px; height: 26px; padding: 0;
       & .ico { transform: rotate(-90deg); }
     }
+    .mr-sheet-close + section > h2 { padding-right: calc(var(--s4) + 30px); }
     @media (prefers-reduced-motion: reduce) {
       html.js .rail:has(.r-files), html.js .rail[data-sheet-open] { transition: none; }
     }
