@@ -98,6 +98,7 @@
       if ($('dialog[open]') || $('[data-drawer-open]')) return;
       if (window.ermiteTree?.key(into)) return;
       if (into && window.ermiteMR?.focusFiles()) return flash('files · j k move · enter open · h back');
+      if (!into) window.ermiteMR?.sheet?.hide();
       if (!into && window.ermiteMR?.leaveFiles()) return;
       const msg = into ? window.ermiteRail.enter() : window.ermiteRail.leave();
       if (msg) flash(msg);

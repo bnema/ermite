@@ -88,12 +88,6 @@ test('live section changes rebuild labels and close a removed selection', () => 
   assert.equal(s.rail.getAttribute('data-drawer-open'), undefined);
 });
 
-test('MR file navigation closes without preventing the original link', () => {
-  const s = setup(); s.bar.children[1].events.click();
-  s.rail.events.click({ target: { closest: selector => selector === '.r-files a[href]' ? {} : null } });
-  assert.equal(s.rail.getAttribute('data-drawer-open'), undefined);
-});
-
 test('context trigger opens the first section and receives focus on close', () => {
   const s = setup();
   assert.equal(s.trigger.children.at(-1).textContent, 'Panel', 'the button names the side panel');
@@ -116,4 +110,13 @@ test('Escape defers to a native dialog and close restores the aside semantics', 
   s.closeButton.events.click();
   assert.equal(s.rail.getAttribute('aria-label'), 'Context');
   assert.equal(s.rail.getAttribute('role'), 'complementary');
+});
+
+test('the merge request rail (with .r-files) is left to mr.js', () => {
+  const header = { append() { throw new Error('no trigger on the MR page'); } };
+  const mrRail = { querySelector: s => s === '.r-files' ? {} : null };
+  const window = {};
+  const document = { querySelector: () => header, querySelectorAll: s => s === '.work > .rail' ? [mrRail] : [] };
+  vm.runInNewContext(readFileSync(new URL('../static/js/rail.js', import.meta.url), 'utf8'), { window, document, matchMedia: () => ({ matches: true, addEventListener() {} }) });
+  assert.equal(typeof window.ermiteRailDrawer.mount, 'function');
 });

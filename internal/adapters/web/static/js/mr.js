@@ -285,45 +285,69 @@ window.ermiteMR = (() => {
   // file closes it. Wider, the rail is the second column. rail.js leaves this
   // rail alone.
   const sheet = (() => {
-    let rail, tab, closer, query;
-    const active = () => !!(rail && query?.matches);
-    const isOpen = () => !!rail?.hasAttribute('data-sheet-open');
+    let tab, query, wasOpen = false;
+    // The rail is looked up live: a refresh replaces it (refreshPage).
+    const rail = () => { const r = $('.work > .rail'); return r && $('.r-files', r) ? r : null; };
+    const active = () => !!(tab && rail() && query.matches);
+    const isOpen = () => !!rail()?.hasAttribute('data-sheet-open');
     function set(open, focus = true) {
-      if (!rail) return;
+      const r = rail();
+      if (!r || !tab) return;
       open = open && active();
-      rail.toggleAttribute('data-sheet-open', open);
+      if (open) place();
+      r.toggleAttribute('data-sheet-open', open);
       tab.setAttribute('aria-expanded', String(open));
-      closer.setAttribute('aria-expanded', String(open));
-      if (focus) (open ? closer : tab).focus({ preventScroll: true });
+      if (focus) (open ? $('.mr-sheet-close', r) : tab)?.focus({ preventScroll: true });
     }
-    function mount() {
-      rail = $('.work > .rail');
-      if (!rail || !$('.r-files', rail) || !window.matchMedia) { rail = null; return; }
-      query = matchMedia('(max-width: 1440px)');
-      rail.id ||= 'mr-rail';
-      const button = (cls, label, title) => {
+    // place starts the sheet under the header, as much of it as is in view.
+    function place() {
+      const bottom = $('.hdr')?.getBoundingClientRect().bottom || 0;
+      document.body.style.setProperty('--sheet-top', Math.max(0, bottom) + 'px');
+    }
+    // attach marks the current rail as a sheet and gives it its close control;
+    // run again on each fresh rail. An open sheet stays open, focus unmoved.
+    function attach() {
+      const r = rail();
+      if (!r || !tab) return;
+      r.id ||= 'mr-rail';
+      r.setAttribute('data-sheet', '');
+      tab.setAttribute('aria-controls', r.id);
+      if (!$('.mr-sheet-close', r)) {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'btn icon ' + cls;
-        b.title = title;
-        b.setAttribute('aria-label', label);
-        b.setAttribute('aria-controls', rail.id);
-        b.setAttribute('aria-expanded', 'false');
+        b.className = 'btn mr-sheet-close';
+        b.title = 'close the side panel (esc)';
+        b.setAttribute('aria-label', 'Close the side panel');
+        b.setAttribute('aria-controls', r.id);
         b.innerHTML = '<span class="ico i-chevron" aria-hidden="true"></span>';
-        return b;
-      };
-      tab = button('mr-sheet-tab', 'Open the side panel', 'open the side panel');
-      closer = button('mr-sheet-close', 'Close the side panel', 'close the side panel (esc)');
-      rail.before(tab);
-      rail.prepend(closer);
+        b.addEventListener('click', () => set(false));
+        r.prepend(b);
+        r.addEventListener('click', (e) => {
+          if (isOpen() && e.target.closest?.('.r-files a[href]')) set(false, false);
+        });
+      }
+      set(wasOpen, false);
+    }
+    // mount: once per page. The document listeners and the media query are
+    // set here, never in attach.
+    function mount() {
+      const r = rail();
+      if (tab || !r || !window.matchMedia) return;
+      query = matchMedia('(width <= 1440px)');
+      tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'btn mr-sheet-tab';
+      tab.title = 'open the side panel';
+      tab.setAttribute('aria-label', 'Open the side panel');
+      tab.setAttribute('aria-expanded', 'false');
+      tab.innerHTML = '<span class="ico i-chevron" aria-hidden="true"></span>';
+      r.before(tab);
       tab.addEventListener('click', () => set(true));
-      closer.addEventListener('click', () => set(false));
-      rail.addEventListener('click', (e) => {
-        if (isOpen() && e.target.closest?.('.r-files a[href]')) set(false, false);
-      });
-      document.addEventListener('pointerdown', (e) => {
-        if (isOpen() && !rail.contains(e.target) && !tab.contains(e.target)) set(false, false);
-      });
+      const outside = (e) => {
+        if (isOpen() && !rail().contains(e.target) && !tab.contains(e.target)) set(false, false);
+      };
+      document.addEventListener('pointerdown', outside);
+      document.addEventListener('focusin', outside);
       document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape' || !isOpen() || document.querySelector('dialog[open]')) return;
         e.preventDefault();
@@ -331,9 +355,17 @@ window.ermiteMR = (() => {
         set(false);
       }, true);
       query.addEventListener('change', () => set(false, false));
+      addEventListener('scroll', () => { if (isOpen()) place(); }, { passive: true });
+      attach();
     }
-    // open(true) moves the focus to the close control; open(false) leaves it.
-    return { mount, open: (focus = true) => { if (active()) set(true, focus); }, close: () => set(false), hide: () => set(false, false) };
+    return {
+      mount, attach,
+      // before a refresh swaps the rail: remember whether it was open
+      keep: () => { wasOpen = isOpen(); },
+      // open(true) moves the focus to the close control; open(false) leaves it.
+      open: (focus = true) => { if (active()) set(true, focus); },
+      hide: () => set(false, false),
+    };
   })();
 
   // openFile opens the file of a link of the list (and loads it first).
@@ -626,6 +658,7 @@ window.ermiteMR = (() => {
     if (hasDraft()) return false;
     const files = new Map($$('#diffs details.dfile').map((f) => [f.dataset.file, f.open]));
     const folded = $('.r-files')?.hasAttribute('data-folded');
+    sheet.keep();
     const railY = $('.rail')?.scrollTop, filesY = $('.r-files .files')?.scrollTop;
     const openPanel = $$('[data-mr-tabs] button').findIndex((t) => t.getAttribute('aria-expanded') === 'true');
     const active = document.activeElement;
@@ -653,6 +686,7 @@ window.ermiteMR = (() => {
     panels(openPanel);
     watchBar();
     restoreMergePrefs();
+    sheet.attach();
     foldFiles(!!folded);
     if ($('.rail')) $('.rail').scrollTop = railY;
     if ($('.r-files .files')) $('.r-files .files').scrollTop = filesY;

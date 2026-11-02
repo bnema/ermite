@@ -112,10 +112,6 @@
     });
     closeButton.addEventListener('click', () => close());
     backdrop.addEventListener('click', () => close());
-    rail.addEventListener('click', e => {
-      // Let the original file link navigate or load its diff unchanged.
-      if (selected !== null && e.target.closest('.r-files a[href]')) close();
-    });
     document.addEventListener('keydown', e => {
       if (selected === null) return;
       if (e.key === 'Escape' && !document.querySelector('dialog[open]')) {

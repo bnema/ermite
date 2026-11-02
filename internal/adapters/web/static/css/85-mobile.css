@@ -9,6 +9,8 @@
       overflow-x: clip;
     }
     body:has(#diffs[data-mr]) .work { padding-inline: 0; margin-inline: 0; gap: var(--s3); }
+    /* clear of the slim rail of the MR sheet (60-mr.css) */
+    body:has(#diffs[data-mr]) .work:has(> .rail[data-sheet]) { padding-inline: 0 var(--sheet-tab, 20px); }
     body:has(#diffs[data-mr]) main { min-width: 0; padding-inline: 0; }
     body:has(#diffs[data-mr]) :is(.card, .mr-card, .mr-desc, .dfile, .dscroll, .code, .rail section) {
       margin-inline: 0; border-inline: 0; border-radius: 0; min-width: 0; max-width: 100%;

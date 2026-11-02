@@ -157,7 +157,7 @@
   /* the rail of a merge request follows the review: it sticks under the
      header, one screen high, and scrolls on its own to its verdicts. The list of files keeps its own scroll, under a height, so
      that the blocks below it stay in reach. Only on a two-column layout. */
-  @media (min-width: 1441px) {
+  @media (width > 1440px) {
     .rail:has(.r-files) {
       position: sticky; top: calc(var(--hdr-h, 0px) + var(--s4));
       max-height: calc(100dvh - var(--hdr-h, 0px) - var(--s4) * 2);
@@ -168,37 +168,42 @@
     .rail .r-files > .files { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   }
   /* up to 1440px two columns are cramped: the content takes the whole width
-     and the rail becomes a sheet on the right edge, over the content (mr.js
-     adds the slim < rail that opens it and the > that closes it). Without
-     scripts the rail keeps the shell's layout. */
+     and the rail becomes a sheet on the right edge, over the content. mr.js
+     marks the rail (data-sheet) and adds the slim < rail that opens it and
+     the > that closes it: without them the rail keeps the shell's layout.
+     --sheet-top is the bottom of the header (mr.js), which may scroll away. */
   .mr-sheet-tab, .mr-sheet-close { display: none; }
-  @media (max-width: 1440px) {
-    /* the content keeps clear of the slim rail */
-    html.js .work.has-rail:has(> .rail .r-files) { grid-template-columns: minmax(0, 1fr); padding-right: calc(var(--pad) + 20px); }
-    html.js .rail:has(.r-files) {
+  @media (width <= 1440px) {
+    body:has(.rail[data-sheet]) { --sheet-tab: 20px; }
+    /* the content and the footer keep clear of the slim rail */
+    .work.has-rail:has(> .rail[data-sheet]) { grid-template-columns: minmax(0, 1fr); padding-right: calc(var(--pad) + var(--sheet-tab)); }
+    body:has(.rail[data-sheet]) .foot { padding-right: calc(var(--pad) + var(--sheet-tab)); }
+    .rail[data-sheet] {
       /* a column of full-width blocks, whatever the shell's narrow grid says */
       display: flex; flex-direction: column; align-items: stretch; gap: var(--s4);
-      position: fixed; top: var(--hdr-h, 0px); right: 0; bottom: 0; z-index: 30;
-      width: min(var(--rail), calc(100vw - 20px)); max-height: none; padding: var(--s3);
+      position: fixed; top: var(--sheet-top, var(--hdr-h, 0px)); right: 0; bottom: 0; z-index: 30;
+      width: min(var(--rail), calc(100vw - var(--sheet-tab))); max-height: none; padding: var(--s3);
       overflow-y: auto; overscroll-behavior: contain;
       background: var(--bg-canvas); border-left: 1px solid var(--border-strong); box-shadow: var(--shadow);
       transform: translateX(100%); visibility: hidden;
       transition: transform .2s ease, visibility 0s .2s;
     }
-    html.js .rail:has(.r-files) > section { width: 100%; max-width: none; margin: 0; }
-    html.js .rail:has(.r-files) .r-files > .files { max-height: none; }
-    html.js .rail[data-sheet-open] { transform: none; visibility: visible; transition: transform .2s ease; }
-    .mr-sheet-tab {
+    .rail[data-sheet] > * { flex: none; }
+    .rail[data-sheet] > section { width: 100%; max-width: none; margin: 0; }
+    .rail[data-sheet] .r-files > .files { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+    .rail[data-sheet][data-sheet-open] { transform: none; visibility: visible; transition: transform .2s ease; }
+    /* under the header (z-index 20), which covers it while it is in view */
+    .btn.mr-sheet-tab {
       display: flex; align-items: center; justify-content: center;
-      position: fixed; top: var(--hdr-h, 0px); right: 0; bottom: 0; z-index: 29;
-      width: 20px; height: auto; padding: 0;
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 19;
+      width: var(--sheet-tab); height: auto; padding: 0;
       background: var(--bg-surface); border: 0; border-left: 1px solid var(--border-strong); border-radius: 0;
       color: var(--ink-dim);
       &:hover { color: var(--ink-hi); }
       & .ico { transform: rotate(90deg); }
     }
     /* > sits on the header row of the first block, which keeps room for it */
-    .mr-sheet-close {
+    .btn.mr-sheet-close {
       display: inline-flex; justify-content: center;
       position: absolute; top: calc(var(--s3) + 9px); right: calc(var(--s3) + var(--s2)); z-index: 1;
       width: 26px; height: 26px; padding: 0;
@@ -206,7 +211,7 @@
     }
     .mr-sheet-close + section > h2 { padding-right: calc(var(--s4) + 30px); }
     @media (prefers-reduced-motion: reduce) {
-      html.js .rail:has(.r-files), html.js .rail[data-sheet-open] { transition: none; }
+      .rail[data-sheet], .rail[data-sheet][data-sheet-open] { transition: none; }
     }
   }
   .r-files {
