@@ -5,7 +5,7 @@ package rpc
 import (
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -41,17 +41,17 @@ func TestMergeRequestServiceCreate(t *testing.T) {
 					Title: "t", Description: "d", Source: "feat", Target: "main",
 				}).Return(domain.MergeRequest{Number: 7, Source: "feat", Target: "main", State: domain.MRStateOpen}, tt.usecase).Once()
 			}
-			resp, err := (&mergeRequestService{mrs: mrs}).CreateMergeRequest(ownerCtx(), connect.NewRequest(&pb.CreateMergeRequestRequest{
+			resp, err := (&mergeRequestService{mrs: mrs}).CreateMergeRequest(ownerCtx(), &pb.CreateMergeRequestRequest{
 				Repo: tt.repo, Title: "t", Description: "d", SourceBranch: "feat", TargetBranch: "main",
-			}))
+			})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.EqualValues(t, 7, resp.Msg.GetMergeRequest().GetNumber())
-			assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN, resp.Msg.GetMergeRequest().GetState())
-			assert.Equal(t, pb.MergeabilityState_MERGEABILITY_STATE_CHECKING, resp.Msg.GetMergeRequest().GetMergeability().GetState())
+			assert.EqualValues(t, 7, resp.GetMergeRequest().GetNumber())
+			assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN, resp.GetMergeRequest().GetState())
+			assert.Equal(t, pb.MergeabilityState_MERGEABILITY_STATE_CHECKING, resp.GetMergeRequest().GetMergeability().GetState())
 		})
 	}
 }
@@ -59,7 +59,7 @@ func TestMergeRequestServiceCreate(t *testing.T) {
 func TestMergeRequestServiceListRejectsUnknownState(t *testing.T) {
 	t.Parallel()
 	_, err := (&mergeRequestService{mrs: mocks.NewMergeRequestService(t)}).ListMergeRequests(ownerCtx(),
-		connect.NewRequest(&pb.ListMergeRequestsRequest{Repo: "demo", State: pb.MergeRequestState(99)}))
+		&pb.ListMergeRequestsRequest{Repo: "demo", State: pb.MergeRequestState(99)})
 	requireCode(t, connect.CodeInvalidArgument, err)
 }
 
@@ -69,12 +69,12 @@ func TestMergeRequestServiceListFiltersByState(t *testing.T) {
 	mrs.EXPECT().List(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), ports.ListMergeRequestsParams{
 		State: domain.MRStateMerged, PageSize: 3, PageToken: "tok",
 	}).Return(ports.MergeRequestPage{MergeRequests: []domain.MergeRequest{{Number: 1}}, NextPageToken: "n"}, nil).Once()
-	resp, err := (&mergeRequestService{mrs: mrs}).ListMergeRequests(ownerCtx(), connect.NewRequest(&pb.ListMergeRequestsRequest{
+	resp, err := (&mergeRequestService{mrs: mrs}).ListMergeRequests(ownerCtx(), &pb.ListMergeRequestsRequest{
 		Repo: "demo", State: pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED, PageSize: 3, PageToken: "tok",
-	}))
+	})
 	require.NoError(t, err)
-	assert.Len(t, resp.Msg.GetMergeRequests(), 1)
-	assert.Equal(t, "n", resp.Msg.GetNextPageToken())
+	assert.Len(t, resp.GetMergeRequests(), 1)
+	assert.Equal(t, "n", resp.GetNextPageToken())
 }
 
 func TestMergeRequestServiceAddComment(t *testing.T) {
@@ -100,15 +100,15 @@ func TestMergeRequestServiceAddComment(t *testing.T) {
 				mrs.EXPECT().AddComment(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(2), mock.Anything).
 					Return(domain.Comment{ID: 5}, tt.usecase).Once()
 			}
-			resp, err := (&mergeRequestService{mrs: mrs}).AddComment(ownerCtx(), connect.NewRequest(&pb.AddCommentRequest{
+			resp, err := (&mergeRequestService{mrs: mrs}).AddComment(ownerCtx(), &pb.AddCommentRequest{
 				Repo: "demo", Number: 2, Path: "f.go", Line: 3, Side: tt.side, Text: "hi",
-			}))
+			})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "5", resp.Msg.GetComment().GetId())
+			assert.Equal(t, "5", resp.GetComment().GetId())
 		})
 	}
 }
@@ -121,9 +121,9 @@ func TestMergeRequestServiceResolveCommentMapsUnissuedIDsToZero(t *testing.T) {
 			mrs := mocks.NewMergeRequestService(t)
 			mrs.EXPECT().ResolveComment(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), int64(0), true).
 				Return(domain.Comment{}, domain.ErrNotFound).Once()
-			_, err := (&mergeRequestService{mrs: mrs}).ResolveComment(ownerCtx(), connect.NewRequest(&pb.ResolveCommentRequest{
+			_, err := (&mergeRequestService{mrs: mrs}).ResolveComment(ownerCtx(), &pb.ResolveCommentRequest{
 				Repo: "demo", Number: 1, CommentId: id, Resolved: true,
-			}))
+			})
 			requireCode(t, connect.CodeNotFound, err)
 		})
 	}
@@ -156,13 +156,13 @@ func TestMergeRequestServiceMerge(t *testing.T) {
 					return p.IgnoreChecks == tt.req.GetIgnoreChecks() && p.DeleteSource == tt.req.GetDeleteSourceBranch() && (tt.req.GetHeadId() == "") == p.HeadID.IsZero()
 				})).Return(ports.MergeResult{MergeRequest: domain.MergeRequest{Number: 1}, SourceDeleted: true}, tt.usecase).Once()
 			}
-			resp, err := (&mergeRequestService{mrs: mrs}).MergeMergeRequest(ownerCtx(), connect.NewRequest(tt.req))
+			resp, err := (&mergeRequestService{mrs: mrs}).MergeMergeRequest(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.True(t, resp.Msg.GetSourceBranchDeleted())
+			assert.True(t, resp.GetSourceBranchDeleted())
 		})
 	}
 }
@@ -173,28 +173,28 @@ func TestMergeRequestServiceCloseAndMarkRead(t *testing.T) {
 		t.Parallel()
 		mrs := mocks.NewMergeRequestService(t)
 		mrs.EXPECT().Close(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(9)).Return(domain.MergeRequest{}, domain.ErrNotFound).Once()
-		_, err := (&mergeRequestService{mrs: mrs}).CloseMergeRequest(ownerCtx(), connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "demo", Number: 9}))
+		_, err := (&mergeRequestService{mrs: mrs}).CloseMergeRequest(ownerCtx(), &pb.CloseMergeRequestRequest{Repo: "demo", Number: 9})
 		requireCode(t, connect.CodeNotFound, err)
 	})
 	t.Run("close ok", func(t *testing.T) {
 		t.Parallel()
 		mrs := mocks.NewMergeRequestService(t)
 		mrs.EXPECT().Close(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(9)).Return(domain.MergeRequest{Number: 9, State: domain.MRStateClosed}, nil).Once()
-		resp, err := (&mergeRequestService{mrs: mrs}).CloseMergeRequest(ownerCtx(), connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "demo", Number: 9}))
+		resp, err := (&mergeRequestService{mrs: mrs}).CloseMergeRequest(ownerCtx(), &pb.CloseMergeRequestRequest{Repo: "demo", Number: 9})
 		require.NoError(t, err)
-		assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_CLOSED, resp.Msg.GetMergeRequest().GetState())
+		assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_CLOSED, resp.GetMergeRequest().GetState())
 	})
 	t.Run("mark read rejects a short head", func(t *testing.T) {
 		t.Parallel()
 		_, err := (&mergeRequestService{mrs: mocks.NewMergeRequestService(t)}).MarkRead(ownerCtx(),
-			connect.NewRequest(&pb.MarkReadRequest{Repo: "demo", Number: 1, HeadId: "abc"}))
+			&pb.MarkReadRequest{Repo: "demo", Number: 1, HeadId: "abc"})
 		requireCode(t, connect.CodeInvalidArgument, err)
 	})
 	t.Run("mark read unauthenticated", func(t *testing.T) {
 		t.Parallel()
 		mrs := mocks.NewMergeRequestService(t)
 		mrs.EXPECT().MarkRead(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), domain.ObjectID{}).Return(domain.ObjectID{}, domain.ErrUnauthenticated).Once()
-		_, err := (&mergeRequestService{mrs: mrs}).MarkRead(ownerCtx(), connect.NewRequest(&pb.MarkReadRequest{Repo: "demo", Number: 1}))
+		_, err := (&mergeRequestService{mrs: mrs}).MarkRead(ownerCtx(), &pb.MarkReadRequest{Repo: "demo", Number: 1})
 		requireCode(t, connect.CodeUnauthenticated, err)
 	})
 }
@@ -216,14 +216,14 @@ func TestMergeRequestServiceGet(t *testing.T) {
 			mrs := mocks.NewMergeRequestService(t)
 			mrs.EXPECT().Get(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(4), ports.GetMergeRequestOptions{SinceLastRead: true}).
 				Return(ports.MergeRequestDetail{MergeRequest: domain.MergeRequest{Number: 4}, CommitsTruncated: true}, tt.usecase).Once()
-			resp, err := (&mergeRequestService{mrs: mrs}).GetMergeRequest(ownerCtx(), connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "demo", Number: 4, SinceLastRead: true}))
+			resp, err := (&mergeRequestService{mrs: mrs}).GetMergeRequest(ownerCtx(), &pb.GetMergeRequestRequest{Repo: "demo", Number: 4, SinceLastRead: true})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.EqualValues(t, 4, resp.Msg.GetMergeRequest().GetNumber())
-			assert.True(t, resp.Msg.GetCommitsTruncated())
+			assert.EqualValues(t, 4, resp.GetMergeRequest().GetNumber())
+			assert.True(t, resp.GetCommitsTruncated())
 		})
 	}
 }
@@ -246,13 +246,13 @@ func TestMergeRequestServiceMarkReady(t *testing.T) {
 			title, err := domain.ParseMRTitle("Ready")
 			require.NoError(t, err)
 			mrs.EXPECT().MarkReady(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1)).Return(domain.MergeRequest{Number: 1, Title: title, State: domain.MRStateOpen}, tt.err).Once()
-			res, err := (&mergeRequestService{mrs: mrs}).MarkReady(ownerCtx(), connect.NewRequest(&pb.MarkReadyRequest{Repo: "demo", Number: 1}))
+			res, err := (&mergeRequestService{mrs: mrs}).MarkReady(ownerCtx(), &pb.MarkReadyRequest{Repo: "demo", Number: 1})
 			if tt.code != 0 {
 				requireCode(t, tt.code, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "Ready", res.Msg.GetMergeRequest().GetTitle())
+			assert.Equal(t, "Ready", res.GetMergeRequest().GetTitle())
 		})
 	}
 }

@@ -4,13 +4,14 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"os"
 	"slices"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -386,16 +387,23 @@ jobs:
 		soft, hard = b, a
 	}
 	apiHard := runner.jobAPI(hard)
-	_, err := apiHard.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: hard.GetJobId()}))
+	_, err := apiHard.runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: hard.GetJobId()})
 	require.NoError(t, err)
 	runner.runJob(soft, pb.CiConclusion_CI_CONCLUSION_FAILURE, nil, "x")
 	// The sibling must not have been asked to stop.
-	watch, err := apiHard.runner.WatchJob(c.ctx, connect.NewRequest(&pb.WatchJobRequest{JobId: hard.GetJobId()}))
+	watch, err := apiHard.runner.WatchJob(c.ctx, &pb.WatchJobRequest{JobId: hard.GetJobId()})
 	require.NoError(t, err)
 	done := make(chan *pb.CancelReason, 1)
 	go func() {
-		for watch.Receive() {
-			if m := watch.Msg().GetCancel(); m != nil {
+		for {
+			msg, err := watch.Receive()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				return
+			}
+			if m := msg.GetCancel(); m != nil {
 				r := m.GetReason()
 				done <- &r
 				return

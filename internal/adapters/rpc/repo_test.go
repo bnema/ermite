@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -70,7 +70,7 @@ func TestRepoServiceGetRepo(t *testing.T) {
 				}
 			}
 			svc := &repoService{repos}
-			resp, err := svc.GetRepo(ownerCtx(), connect.NewRequest(&pb.GetRepoRequest{Repo: tt.repo}))
+			resp, err := svc.GetRepo(ownerCtx(), &pb.GetRepoRequest{Repo: tt.repo})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				if errors.Is(tt.usecase, boom) {
@@ -79,8 +79,8 @@ func TestRepoServiceGetRepo(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "demo", resp.Msg.GetRepo().GetName())
-			assert.Equal(t, "main", resp.Msg.GetRepo().GetDefaultBranch())
+			assert.Equal(t, "demo", resp.GetRepo().GetName())
+			assert.Equal(t, "main", resp.GetRepo().GetDefaultBranch())
 		})
 	}
 }
@@ -113,14 +113,14 @@ func TestRepoServiceCreateRepo(t *testing.T) {
 					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo}, nil).Once()
 				}
 			}
-			resp, err := (&repoService{repos}).CreateRepo(ownerCtx(), connect.NewRequest(tt.req))
+			resp, err := (&repoService{repos}).CreateRepo(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "demo", resp.Msg.GetRepo().GetName())
-			assert.Equal(t, pb.Visibility_VISIBILITY_PRIVATE, resp.Msg.GetRepo().GetVisibility())
+			assert.Equal(t, "demo", resp.GetRepo().GetName())
+			assert.Equal(t, pb.Visibility_VISIBILITY_PRIVATE, resp.GetRepo().GetVisibility())
 		})
 	}
 }
@@ -179,13 +179,13 @@ func TestRepoServiceUpdateRepoValidatesMask(t *testing.T) {
 					repos.EXPECT().View(mock.Anything, repo).Return(ports.RepoView{Repo: repo}, nil).Once()
 				}
 			}
-			resp, err := (&repoService{repos}).UpdateRepo(ownerCtx(), connect.NewRequest(tt.req))
+			resp, err := (&repoService{repos}).UpdateRepo(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "new", resp.Msg.GetRepo().GetDescription())
+			assert.Equal(t, "new", resp.GetRepo().GetDescription())
 		})
 	}
 }
@@ -211,7 +211,7 @@ func TestRepoServiceDeleteRepo(t *testing.T) {
 			if tt.wantCall {
 				repos.EXPECT().Delete(mock.Anything, domain.Owner(), mustRepoName(t, tt.repo)).Return(tt.usecase).Once()
 			}
-			_, err := (&repoService{repos}).DeleteRepo(ownerCtx(), connect.NewRequest(&pb.DeleteRepoRequest{Repo: tt.repo}))
+			_, err := (&repoService{repos}).DeleteRepo(ownerCtx(), &pb.DeleteRepoRequest{Repo: tt.repo})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
@@ -231,10 +231,10 @@ func TestRepoServiceListRepos(t *testing.T) {
 		repos.EXPECT().ListPage(mock.Anything, domain.Owner(), 2, "tok").Return(ports.RepoPage{Repos: []domain.Repo{a, b}, NextPageToken: "next"}, nil).Once()
 		repos.EXPECT().View(mock.Anything, a).Return(ports.RepoView{Repo: a}, nil).Once()
 		repos.EXPECT().View(mock.Anything, b).Return(ports.RepoView{Repo: b}, nil).Once()
-		resp, err := (&repoService{repos}).ListRepos(ownerCtx(), connect.NewRequest(&pb.ListReposRequest{PageSize: 2, PageToken: "tok"}))
+		resp, err := (&repoService{repos}).ListRepos(ownerCtx(), &pb.ListReposRequest{PageSize: 2, PageToken: "tok"})
 		require.NoError(t, err)
-		require.Len(t, resp.Msg.GetRepos(), 2)
-		assert.Equal(t, "next", resp.Msg.GetNextPageToken())
+		require.Len(t, resp.GetRepos(), 2)
+		assert.Equal(t, "next", resp.GetNextPageToken())
 	})
 	for name, tc := range map[string]struct {
 		err  error
@@ -248,7 +248,7 @@ func TestRepoServiceListRepos(t *testing.T) {
 			t.Parallel()
 			repos := mocks.NewRepoService(t)
 			repos.EXPECT().ListPage(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RepoPage{}, tc.err).Once()
-			_, err := (&repoService{repos}).ListRepos(ownerCtx(), connect.NewRequest(&pb.ListReposRequest{}))
+			_, err := (&repoService{repos}).ListRepos(ownerCtx(), &pb.ListReposRequest{})
 			requireCode(t, tc.code, err)
 		})
 	}

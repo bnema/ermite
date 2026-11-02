@@ -4,6 +4,7 @@ package app
 
 import (
 	"bytes"
+	"connectrpc.com/connect/v2/connecthttp"
 	"context"
 	"errors"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -55,7 +56,7 @@ type fakeAPI struct {
 	listTokens  func(*ermite.ListTokensRequest) (*ermite.ListTokensResponse, error)
 	revokeToken func(*ermite.RevokeTokenRequest) (*ermite.RevokeTokenResponse, error)
 	getVersion  func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error)
-	watch       func(context.Context, *ermite.WatchRequest, *connect.ServerStream[ermite.WatchResponse]) error
+	watch       func(context.Context, *ermite.WatchRequest, ermiteconnect.EventServiceWatchServerStream) error
 
 	editMR        func(*ermite.EditMergeRequestRequest) (*ermite.EditMergeRequestResponse, error)
 	editIssue     func(*ermite.EditIssueRequest) (*ermite.EditIssueResponse, error)
@@ -95,11 +96,11 @@ type fakeAPI struct {
 	listUnreleased func(*ermite.ListUnreleasedRequest) (*ermite.ListUnreleasedResponse, error)
 }
 
-func (f *fakeAPI) ListActivity(_ context.Context, r *connect.Request[ermite.ListActivityRequest]) (*connect.Response[ermite.ListActivityResponse], error) {
-	return respond(f, "ListActivity", r, f.listActivity)
+func (f *fakeAPI) ListActivity(ctx context.Context, r *ermite.ListActivityRequest) (*ermite.ListActivityResponse, error) {
+	return respond(ctx, f, "ListActivity", r, f.listActivity)
 }
-func (f *fakeAPI) ListUnreleased(_ context.Context, r *connect.Request[ermite.ListUnreleasedRequest]) (*connect.Response[ermite.ListUnreleasedResponse], error) {
-	return respond(f, "ListUnreleased", r, f.listUnreleased)
+func (f *fakeAPI) ListUnreleased(ctx context.Context, r *ermite.ListUnreleasedRequest) (*ermite.ListUnreleasedResponse, error) {
+	return respond(ctx, f, "ListUnreleased", r, f.listUnreleased)
 }
 
 func (f *fakeAPI) record(name string, h http.Header, req any) {
@@ -116,151 +117,144 @@ func (f *fakeAPI) snapshot() (calls []string, reqs []any) {
 	return append([]string(nil), f.calls...), append([]any(nil), f.reqs...)
 }
 
-func respond[Req, Res any](f *fakeAPI, name string, req *connect.Request[Req], fn func(*Req) (*Res, error)) (*connect.Response[Res], error) {
-	f.record(name, req.Header(), req.Msg)
+func respond[Req, Res any](ctx context.Context, f *fakeAPI, name string, req *Req, fn func(*Req) (*Res, error)) (*Res, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	f.record(name, headerHTTP(info.RequestHeader()), req)
 	if fn == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, nil)
+		return nil, connect.NewError(connect.CodeUnimplemented, "")
 	}
-	res, err := fn(req.Msg)
+	res, err := fn(req)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(res), nil
+	return res, nil
 }
 
-func (f *fakeAPI) ListRepos(_ context.Context, r *connect.Request[ermite.ListReposRequest]) (*connect.Response[ermite.ListReposResponse], error) {
-	return respond(f, "ListRepos", r, f.listRepos)
+func (f *fakeAPI) ListRepos(ctx context.Context, r *ermite.ListReposRequest) (*ermite.ListReposResponse, error) {
+	return respond(ctx, f, "ListRepos", r, f.listRepos)
 }
-func (f *fakeAPI) GetRepo(_ context.Context, r *connect.Request[ermite.GetRepoRequest]) (*connect.Response[ermite.GetRepoResponse], error) {
-	return respond(f, "GetRepo", r, f.getRepo)
+func (f *fakeAPI) GetRepo(ctx context.Context, r *ermite.GetRepoRequest) (*ermite.GetRepoResponse, error) {
+	return respond(ctx, f, "GetRepo", r, f.getRepo)
 }
-func (f *fakeAPI) CreateRepo(_ context.Context, r *connect.Request[ermite.CreateRepoRequest]) (*connect.Response[ermite.CreateRepoResponse], error) {
-	return respond(f, "CreateRepo", r, f.createRepo)
+func (f *fakeAPI) CreateRepo(ctx context.Context, r *ermite.CreateRepoRequest) (*ermite.CreateRepoResponse, error) {
+	return respond(ctx, f, "CreateRepo", r, f.createRepo)
 }
-func (f *fakeAPI) UpdateRepo(_ context.Context, r *connect.Request[ermite.UpdateRepoRequest]) (*connect.Response[ermite.UpdateRepoResponse], error) {
-	return respond(f, "UpdateRepo", r, f.updateRepo)
+func (f *fakeAPI) UpdateRepo(ctx context.Context, r *ermite.UpdateRepoRequest) (*ermite.UpdateRepoResponse, error) {
+	return respond(ctx, f, "UpdateRepo", r, f.updateRepo)
 }
-func (f *fakeAPI) DeleteRepo(_ context.Context, r *connect.Request[ermite.DeleteRepoRequest]) (*connect.Response[ermite.DeleteRepoResponse], error) {
-	return respond(f, "DeleteRepo", r, f.deleteRepo)
+func (f *fakeAPI) DeleteRepo(ctx context.Context, r *ermite.DeleteRepoRequest) (*ermite.DeleteRepoResponse, error) {
+	return respond(ctx, f, "DeleteRepo", r, f.deleteRepo)
 }
-func (f *fakeAPI) CreateToken(_ context.Context, r *connect.Request[ermite.CreateTokenRequest]) (*connect.Response[ermite.CreateTokenResponse], error) {
-	return respond(f, "CreateToken", r, f.createToken)
+func (f *fakeAPI) CreateToken(ctx context.Context, r *ermite.CreateTokenRequest) (*ermite.CreateTokenResponse, error) {
+	return respond(ctx, f, "CreateToken", r, f.createToken)
 }
-func (f *fakeAPI) ListTokens(_ context.Context, r *connect.Request[ermite.ListTokensRequest]) (*connect.Response[ermite.ListTokensResponse], error) {
-	return respond(f, "ListTokens", r, f.listTokens)
+func (f *fakeAPI) ListTokens(ctx context.Context, r *ermite.ListTokensRequest) (*ermite.ListTokensResponse, error) {
+	return respond(ctx, f, "ListTokens", r, f.listTokens)
 }
-func (f *fakeAPI) RevokeToken(_ context.Context, r *connect.Request[ermite.RevokeTokenRequest]) (*connect.Response[ermite.RevokeTokenResponse], error) {
-	return respond(f, "RevokeToken", r, f.revokeToken)
+func (f *fakeAPI) RevokeToken(ctx context.Context, r *ermite.RevokeTokenRequest) (*ermite.RevokeTokenResponse, error) {
+	return respond(ctx, f, "RevokeToken", r, f.revokeToken)
 }
-func (f *fakeAPI) GetVersion(_ context.Context, r *connect.Request[ermite.GetVersionRequest]) (*connect.Response[ermite.GetVersionResponse], error) {
-	return respond(f, "GetVersion", r, f.getVersion)
+func (f *fakeAPI) GetVersion(ctx context.Context, r *ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+	return respond(ctx, f, "GetVersion", r, f.getVersion)
 }
-func (f *fakeAPI) CreateMergeRequest(_ context.Context, r *connect.Request[ermite.CreateMergeRequestRequest]) (*connect.Response[ermite.CreateMergeRequestResponse], error) {
-	return respond(f, "CreateMergeRequest", r, f.createMR)
+func (f *fakeAPI) CreateMergeRequest(ctx context.Context, r *ermite.CreateMergeRequestRequest) (*ermite.CreateMergeRequestResponse, error) {
+	return respond(ctx, f, "CreateMergeRequest", r, f.createMR)
 }
-func (f *fakeAPI) ListMergeRequests(_ context.Context, r *connect.Request[ermite.ListMergeRequestsRequest]) (*connect.Response[ermite.ListMergeRequestsResponse], error) {
-	return respond(f, "ListMergeRequests", r, f.listMR)
+func (f *fakeAPI) ListMergeRequests(ctx context.Context, r *ermite.ListMergeRequestsRequest) (*ermite.ListMergeRequestsResponse, error) {
+	return respond(ctx, f, "ListMergeRequests", r, f.listMR)
 }
-func (f *fakeAPI) GetMergeRequest(_ context.Context, r *connect.Request[ermite.GetMergeRequestRequest]) (*connect.Response[ermite.GetMergeRequestResponse], error) {
-	return respond(f, "GetMergeRequest", r, f.getMR)
+func (f *fakeAPI) GetMergeRequest(ctx context.Context, r *ermite.GetMergeRequestRequest) (*ermite.GetMergeRequestResponse, error) {
+	return respond(ctx, f, "GetMergeRequest", r, f.getMR)
 }
-func (f *fakeAPI) AddComment(_ context.Context, r *connect.Request[ermite.AddCommentRequest]) (*connect.Response[ermite.AddCommentResponse], error) {
-	return respond(f, "AddComment", r, f.addComment)
+func (f *fakeAPI) AddComment(ctx context.Context, r *ermite.AddCommentRequest) (*ermite.AddCommentResponse, error) {
+	return respond(ctx, f, "AddComment", r, f.addComment)
 }
-func (f *fakeAPI) ResolveComment(_ context.Context, r *connect.Request[ermite.ResolveCommentRequest]) (*connect.Response[ermite.ResolveCommentResponse], error) {
-	return respond(f, "ResolveComment", r, f.resolveCmt)
+func (f *fakeAPI) ResolveComment(ctx context.Context, r *ermite.ResolveCommentRequest) (*ermite.ResolveCommentResponse, error) {
+	return respond(ctx, f, "ResolveComment", r, f.resolveCmt)
 }
-func (f *fakeAPI) CloseMergeRequest(_ context.Context, r *connect.Request[ermite.CloseMergeRequestRequest]) (*connect.Response[ermite.CloseMergeRequestResponse], error) {
-	return respond(f, "CloseMergeRequest", r, f.closeMR)
+func (f *fakeAPI) CloseMergeRequest(ctx context.Context, r *ermite.CloseMergeRequestRequest) (*ermite.CloseMergeRequestResponse, error) {
+	return respond(ctx, f, "CloseMergeRequest", r, f.closeMR)
 }
-func (f *fakeAPI) MergeMergeRequest(_ context.Context, r *connect.Request[ermite.MergeMergeRequestRequest]) (*connect.Response[ermite.MergeMergeRequestResponse], error) {
-	return respond(f, "MergeMergeRequest", r, f.mergeMR)
+func (f *fakeAPI) MergeMergeRequest(ctx context.Context, r *ermite.MergeMergeRequestRequest) (*ermite.MergeMergeRequestResponse, error) {
+	return respond(ctx, f, "MergeMergeRequest", r, f.mergeMR)
 }
-func (f *fakeAPI) EnableAutoMerge(_ context.Context, r *connect.Request[ermite.EnableAutoMergeRequest]) (*connect.Response[ermite.EnableAutoMergeResponse], error) {
-	return respond(f, "EnableAutoMerge", r, f.enableAuto)
+func (f *fakeAPI) EnableAutoMerge(ctx context.Context, r *ermite.EnableAutoMergeRequest) (*ermite.EnableAutoMergeResponse, error) {
+	return respond(ctx, f, "EnableAutoMerge", r, f.enableAuto)
 }
-func (f *fakeAPI) CancelAutoMerge(_ context.Context, r *connect.Request[ermite.CancelAutoMergeRequest]) (*connect.Response[ermite.CancelAutoMergeResponse], error) {
-	return respond(f, "CancelAutoMerge", r, f.cancelAuto)
+func (f *fakeAPI) CancelAutoMerge(ctx context.Context, r *ermite.CancelAutoMergeRequest) (*ermite.CancelAutoMergeResponse, error) {
+	return respond(ctx, f, "CancelAutoMerge", r, f.cancelAuto)
 }
-func (f *fakeAPI) MarkRead(_ context.Context, r *connect.Request[ermite.MarkReadRequest]) (*connect.Response[ermite.MarkReadResponse], error) {
-	return respond(f, "MarkRead", r, f.markRead)
+func (f *fakeAPI) MarkRead(ctx context.Context, r *ermite.MarkReadRequest) (*ermite.MarkReadResponse, error) {
+	return respond(ctx, f, "MarkRead", r, f.markRead)
 }
-func (f *fakeAPI) CreateIssue(_ context.Context, r *connect.Request[ermite.CreateIssueRequest]) (*connect.Response[ermite.CreateIssueResponse], error) {
-	return respond(f, "CreateIssue", r, f.createIssue)
+func (f *fakeAPI) CreateIssue(ctx context.Context, r *ermite.CreateIssueRequest) (*ermite.CreateIssueResponse, error) {
+	return respond(ctx, f, "CreateIssue", r, f.createIssue)
 }
-func (f *fakeAPI) ListIssues(_ context.Context, r *connect.Request[ermite.ListIssuesRequest]) (*connect.Response[ermite.ListIssuesResponse], error) {
-	return respond(f, "ListIssues", r, f.listIssues)
+func (f *fakeAPI) ListIssues(ctx context.Context, r *ermite.ListIssuesRequest) (*ermite.ListIssuesResponse, error) {
+	return respond(ctx, f, "ListIssues", r, f.listIssues)
 }
-func (f *fakeAPI) GetIssue(_ context.Context, r *connect.Request[ermite.GetIssueRequest]) (*connect.Response[ermite.GetIssueResponse], error) {
-	return respond(f, "GetIssue", r, f.getIssue)
+func (f *fakeAPI) GetIssue(ctx context.Context, r *ermite.GetIssueRequest) (*ermite.GetIssueResponse, error) {
+	return respond(ctx, f, "GetIssue", r, f.getIssue)
 }
-func (f *fakeAPI) AddIssueComment(_ context.Context, r *connect.Request[ermite.AddIssueCommentRequest]) (*connect.Response[ermite.AddIssueCommentResponse], error) {
-	return respond(f, "AddIssueComment", r, f.addIssueCmt)
+func (f *fakeAPI) AddIssueComment(ctx context.Context, r *ermite.AddIssueCommentRequest) (*ermite.AddIssueCommentResponse, error) {
+	return respond(ctx, f, "AddIssueComment", r, f.addIssueCmt)
 }
-func (f *fakeAPI) CloseIssue(_ context.Context, r *connect.Request[ermite.CloseIssueRequest]) (*connect.Response[ermite.CloseIssueResponse], error) {
-	return respond(f, "CloseIssue", r, f.closeIssue)
+func (f *fakeAPI) CloseIssue(ctx context.Context, r *ermite.CloseIssueRequest) (*ermite.CloseIssueResponse, error) {
+	return respond(ctx, f, "CloseIssue", r, f.closeIssue)
 }
-func (f *fakeAPI) ResolveIssue(_ context.Context, r *connect.Request[ermite.ResolveIssueRequest]) (*connect.Response[ermite.ResolveIssueResponse], error) {
-	return respond(f, "ResolveIssue", r, f.resolveIssue)
+func (f *fakeAPI) ResolveIssue(ctx context.Context, r *ermite.ResolveIssueRequest) (*ermite.ResolveIssueResponse, error) {
+	return respond(ctx, f, "ResolveIssue", r, f.resolveIssue)
 }
-func (f *fakeAPI) ReopenIssue(_ context.Context, r *connect.Request[ermite.ReopenIssueRequest]) (*connect.Response[ermite.ReopenIssueResponse], error) {
-	return respond(f, "ReopenIssue", r, f.reopenIssue)
+func (f *fakeAPI) ReopenIssue(ctx context.Context, r *ermite.ReopenIssueRequest) (*ermite.ReopenIssueResponse, error) {
+	return respond(ctx, f, "ReopenIssue", r, f.reopenIssue)
 }
-func (f *fakeAPI) GetSigningKey(_ context.Context, r *connect.Request[ermite.GetSigningKeyRequest]) (*connect.Response[ermite.GetSigningKeyResponse], error) {
-	return respond(f, "GetSigningKey", r, f.getSigningKey)
+func (f *fakeAPI) GetSigningKey(ctx context.Context, r *ermite.GetSigningKeyRequest) (*ermite.GetSigningKeyResponse, error) {
+	return respond(ctx, f, "GetSigningKey", r, f.getSigningKey)
 }
-func (f *fakeAPI) ListPasskeys(_ context.Context, r *connect.Request[ermite.ListPasskeysRequest]) (*connect.Response[ermite.ListPasskeysResponse], error) {
-	return respond(f, "ListPasskeys", r, f.listPasskeys)
+func (f *fakeAPI) ListPasskeys(ctx context.Context, r *ermite.ListPasskeysRequest) (*ermite.ListPasskeysResponse, error) {
+	return respond(ctx, f, "ListPasskeys", r, f.listPasskeys)
 }
-func (f *fakeAPI) RemovePasskey(_ context.Context, r *connect.Request[ermite.RemovePasskeyRequest]) (*connect.Response[ermite.RemovePasskeyResponse], error) {
-	return respond(f, "RemovePasskey", r, f.removePasskey)
+func (f *fakeAPI) RemovePasskey(ctx context.Context, r *ermite.RemovePasskeyRequest) (*ermite.RemovePasskeyResponse, error) {
+	return respond(ctx, f, "RemovePasskey", r, f.removePasskey)
 }
-func (f *fakeAPI) ListTrustedKeys(_ context.Context, r *connect.Request[ermite.ListTrustedKeysRequest]) (*connect.Response[ermite.ListTrustedKeysResponse], error) {
-	return respond(f, "ListTrustedKeys", r, f.listTrustedKeys)
+func (f *fakeAPI) ListTrustedKeys(ctx context.Context, r *ermite.ListTrustedKeysRequest) (*ermite.ListTrustedKeysResponse, error) {
+	return respond(ctx, f, "ListTrustedKeys", r, f.listTrustedKeys)
 }
-func (f *fakeAPI) AddTrustedKey(_ context.Context, r *connect.Request[ermite.AddTrustedKeyRequest]) (*connect.Response[ermite.AddTrustedKeyResponse], error) {
-	return respond(f, "AddTrustedKey", r, f.addTrustedKey)
+func (f *fakeAPI) AddTrustedKey(ctx context.Context, r *ermite.AddTrustedKeyRequest) (*ermite.AddTrustedKeyResponse, error) {
+	return respond(ctx, f, "AddTrustedKey", r, f.addTrustedKey)
 }
-func (f *fakeAPI) RemoveTrustedKey(_ context.Context, r *connect.Request[ermite.RemoveTrustedKeyRequest]) (*connect.Response[ermite.RemoveTrustedKeyResponse], error) {
-	return respond(f, "RemoveTrustedKey", r, f.removeTrustedKey)
+func (f *fakeAPI) RemoveTrustedKey(ctx context.Context, r *ermite.RemoveTrustedKeyRequest) (*ermite.RemoveTrustedKeyResponse, error) {
+	return respond(ctx, f, "RemoveTrustedKey", r, f.removeTrustedKey)
 }
-func (f *fakeAPI) Watch(ctx context.Context, r *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
-	f.record("Watch", r.Header(), r.Msg)
+func (f *fakeAPI) Watch(ctx context.Context, r *ermite.WatchRequest, st ermiteconnect.EventServiceWatchServerStream) error {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	f.record("Watch", headerHTTP(info.RequestHeader()), r)
 	if f.watch == nil {
-		return connect.NewError(connect.CodeUnimplemented, nil)
+		return connect.NewError(connect.CodeUnimplemented, "")
 	}
-	return f.watch(ctx, r.Msg, st)
+	return f.watch(ctx, r, st)
 }
 
 // serve starts the fake under /-/api and returns its base URL.
 func (f *fakeAPI) serve(t *testing.T) string {
 	t.Helper()
 	mux := http.NewServeMux()
-	mount := func(path string, h http.Handler) { mux.Handle("/-/api"+path, http.StripPrefix("/-/api", h)) }
-	p, h := ermiteconnect.NewRepoServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewTokenServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewServerServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewEventServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewMergeRequestServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewIssueServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewSessionServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewRunServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewTrustedKeyServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewDepsServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewJournalServiceHandler(f)
-	mount(p, h)
-	p, h = ermiteconnect.NewReleaseServiceHandler(f)
-	mount(p, h)
+	server := connect.NewServer()
+	ermiteconnect.RegisterRepoServiceHandler(server, f)
+	ermiteconnect.RegisterTokenServiceHandler(server, f)
+	ermiteconnect.RegisterServerServiceHandler(server, f)
+	ermiteconnect.RegisterEventServiceHandler(server, f)
+	ermiteconnect.RegisterMergeRequestServiceHandler(server, f)
+	ermiteconnect.RegisterIssueServiceHandler(server, f)
+	ermiteconnect.RegisterSessionServiceHandler(server, f)
+	ermiteconnect.RegisterRunServiceHandler(server, f)
+	ermiteconnect.RegisterTrustedKeyServiceHandler(server, f)
+	ermiteconnect.RegisterDepsServiceHandler(server, f)
+	ermiteconnect.RegisterJournalServiceHandler(server, f)
+	ermiteconnect.RegisterReleaseServiceHandler(server, f)
+	sub := http.NewServeMux()
+	connecthttp.Mount(sub, server, connecthttp.WithReadMaxBytes(0))
+	mux.Handle("/-/api/", http.StripPrefix("/-/api", sub))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -329,25 +323,33 @@ func ts(s string) *timestamppb.Timestamp {
 	return timestamppb.New(v)
 }
 
-func (f *fakeAPI) EditIssue(_ context.Context, r *connect.Request[ermite.EditIssueRequest]) (*connect.Response[ermite.EditIssueResponse], error) {
-	return respond(f, "EditIssue", r, f.editIssue)
+func (f *fakeAPI) EditIssue(ctx context.Context, r *ermite.EditIssueRequest) (*ermite.EditIssueResponse, error) {
+	return respond(ctx, f, "EditIssue", r, f.editIssue)
 }
-func (f *fakeAPI) EditMergeRequest(_ context.Context, r *connect.Request[ermite.EditMergeRequestRequest]) (*connect.Response[ermite.EditMergeRequestResponse], error) {
-	return respond(f, "EditMergeRequest", r, f.editMR)
+func (f *fakeAPI) EditMergeRequest(ctx context.Context, r *ermite.EditMergeRequestRequest) (*ermite.EditMergeRequestResponse, error) {
+	return respond(ctx, f, "EditMergeRequest", r, f.editMR)
 }
 
-func (f *fakeAPI) ListDependencyUpdates(_ context.Context, r *connect.Request[ermite.ListDependencyUpdatesRequest]) (*connect.Response[ermite.ListDependencyUpdatesResponse], error) {
-	return respond(f, "ListDependencyUpdates", r, f.listDeps)
+func (f *fakeAPI) ListDependencyUpdates(ctx context.Context, r *ermite.ListDependencyUpdatesRequest) (*ermite.ListDependencyUpdatesResponse, error) {
+	return respond(ctx, f, "ListDependencyUpdates", r, f.listDeps)
 }
-func (f *fakeAPI) CheckDependencies(_ context.Context, r *connect.Request[ermite.CheckDependenciesRequest]) (*connect.Response[ermite.CheckDependenciesResponse], error) {
-	return respond(f, "CheckDependencies", r, f.checkDeps)
+func (f *fakeAPI) CheckDependencies(ctx context.Context, r *ermite.CheckDependenciesRequest) (*ermite.CheckDependenciesResponse, error) {
+	return respond(ctx, f, "CheckDependencies", r, f.checkDeps)
 }
-func (f *fakeAPI) OpenDependencyUpdates(_ context.Context, r *connect.Request[ermite.OpenDependencyUpdatesRequest]) (*connect.Response[ermite.OpenDependencyUpdatesResponse], error) {
-	return respond(f, "OpenDependencyUpdates", r, f.openDeps)
+func (f *fakeAPI) OpenDependencyUpdates(ctx context.Context, r *ermite.OpenDependencyUpdatesRequest) (*ermite.OpenDependencyUpdatesResponse, error) {
+	return respond(ctx, f, "OpenDependencyUpdates", r, f.openDeps)
 }
-func (f *fakeAPI) IgnoreDependencyUpdates(_ context.Context, r *connect.Request[ermite.IgnoreDependencyUpdatesRequest]) (*connect.Response[ermite.IgnoreDependencyUpdatesResponse], error) {
-	return respond(f, "IgnoreDependencyUpdates", r, f.ignoreDeps)
+func (f *fakeAPI) IgnoreDependencyUpdates(ctx context.Context, r *ermite.IgnoreDependencyUpdatesRequest) (*ermite.IgnoreDependencyUpdatesResponse, error) {
+	return respond(ctx, f, "IgnoreDependencyUpdates", r, f.ignoreDeps)
 }
-func (f *fakeAPI) SnoozeDependencyUpdates(_ context.Context, r *connect.Request[ermite.SnoozeDependencyUpdatesRequest]) (*connect.Response[ermite.SnoozeDependencyUpdatesResponse], error) {
-	return respond(f, "SnoozeDependencyUpdates", r, f.snoozeDeps)
+func (f *fakeAPI) SnoozeDependencyUpdates(ctx context.Context, r *ermite.SnoozeDependencyUpdatesRequest) (*ermite.SnoozeDependencyUpdatesResponse, error) {
+	return respond(ctx, f, "SnoozeDependencyUpdates", r, f.snoozeDeps)
+}
+
+func headerHTTP(h *connect.Header) http.Header {
+	out := make(http.Header)
+	for k, v := range h.All() {
+		out[k] = v
+	}
+	return out
 }

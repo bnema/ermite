@@ -11,7 +11,7 @@ import (
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -35,10 +35,10 @@ func TestNoteRPCFields(t *testing.T) {
 	}
 	m := mocks.NewMergeRequestService(t)
 	m.EXPECT().AddComment(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.AddCommentParams{Text: "note", StartLine: 10, Line: 24, Verdict: domain.VerdictApprove}).Return(note, nil).Once()
-	res, err := (&mergeRequestService{m}).AddComment(ownerCtx(), connect.NewRequest(&pb.AddCommentRequest{Repo: "demo", Number: 1, Text: "note", StartLine: 10, Line: 24, Verdict: pb.Verdict_VERDICT_APPROVE}))
+	res, err := (&mergeRequestService{m}).AddComment(ownerCtx(), &pb.AddCommentRequest{Repo: "demo", Number: 1, Text: "note", StartLine: 10, Line: 24, Verdict: pb.Verdict_VERDICT_APPROVE})
 	require.NoError(t, err)
-	assert.Equal(t, got, res.Msg.GetComment())
-	_, err = (&mergeRequestService{m}).AddComment(ownerCtx(), connect.NewRequest(&pb.AddCommentRequest{Repo: "demo", Verdict: pb.Verdict(99)}))
+	assert.Equal(t, got, res.GetComment())
+	_, err = (&mergeRequestService{m}).AddComment(ownerCtx(), &pb.AddCommentRequest{Repo: "demo", Verdict: pb.Verdict(99)})
 	requireCode(t, connect.CodeInvalidArgument, err)
 }
 
@@ -50,10 +50,10 @@ func TestNoteMutationRPCCodes(t *testing.T) {
 			var err error
 			if edit {
 				m.EXPECT().EditComment(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), int64(2), "new").Return(note, failure).Once()
-				_, err = (&mergeRequestService{m}).EditComment(ownerCtx(), connect.NewRequest(&pb.EditCommentRequest{Repo: "demo", Number: 1, CommentId: "2", Text: "new"}))
+				_, err = (&mergeRequestService{m}).EditComment(ownerCtx(), &pb.EditCommentRequest{Repo: "demo", Number: 1, CommentId: "2", Text: "new"})
 			} else {
 				m.EXPECT().DeleteComment(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), int64(2)).Return(note, failure).Once()
-				_, err = (&mergeRequestService{m}).DeleteComment(ownerCtx(), connect.NewRequest(&pb.DeleteCommentRequest{Repo: "demo", Number: 1, CommentId: "2"}))
+				_, err = (&mergeRequestService{m}).DeleteComment(ownerCtx(), &pb.DeleteCommentRequest{Repo: "demo", Number: 1, CommentId: "2"})
 			}
 			switch failure {
 			case nil:
@@ -99,28 +99,28 @@ func TestNoteEventsRPC(t *testing.T) {
 
 func TestNoteReplyIDValidation(t *testing.T) {
 	for _, id := range []string{"abc", "0", "-1", "01", "9223372036854775808"} {
-		_, err := (&mergeRequestService{mocks.NewMergeRequestService(t)}).AddComment(ownerCtx(), connect.NewRequest(&pb.AddCommentRequest{Repo: "demo", Number: 1, ReplyTo: id, Text: "reply"}))
+		_, err := (&mergeRequestService{mocks.NewMergeRequestService(t)}).AddComment(ownerCtx(), &pb.AddCommentRequest{Repo: "demo", Number: 1, ReplyTo: id, Text: "reply"})
 		requireCode(t, connect.CodeInvalidArgument, err)
 		assert.Contains(t, err.Error(), "reply_to")
 		assert.Contains(t, err.Error(), "is not a note id")
 	}
 	m := mocks.NewMergeRequestService(t)
 	m.EXPECT().AddComment(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.AddCommentParams{ReplyTo: 2, Text: "reply"}).Return(domain.Comment{ID: 3, ReplyTo: 2}, nil).Once()
-	res, err := (&mergeRequestService{m}).AddComment(ownerCtx(), connect.NewRequest(&pb.AddCommentRequest{Repo: "demo", Number: 1, ReplyTo: "2", Text: "reply"}))
+	res, err := (&mergeRequestService{m}).AddComment(ownerCtx(), &pb.AddCommentRequest{Repo: "demo", Number: 1, ReplyTo: "2", Text: "reply"})
 	require.NoError(t, err)
-	assert.Equal(t, "2", res.Msg.GetComment().GetReplyTo())
+	assert.Equal(t, "2", res.GetComment().GetReplyTo())
 }
 
 func TestNoteVerdictsDetailAndScope(t *testing.T) {
 	m := mocks.NewMergeRequestService(t)
 	m.EXPECT().Get(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.GetMergeRequestOptions{}).Return(ports.MergeRequestDetail{Verdicts: []domain.AuthorVerdict{{Author: "owner", Verdict: domain.VerdictApprove, CommentID: 4, Stale: true}}}, nil).Once()
-	res, err := (&mergeRequestService{m}).GetMergeRequest(ownerCtx(), connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "demo", Number: 1}))
+	res, err := (&mergeRequestService{m}).GetMergeRequest(ownerCtx(), &pb.GetMergeRequestRequest{Repo: "demo", Number: 1})
 	require.NoError(t, err)
-	require.Len(t, res.Msg.GetVerdicts(), 1)
-	assert.Equal(t, "4", res.Msg.GetVerdicts()[0].GetCommentId())
-	assert.True(t, res.Msg.GetVerdicts()[0].GetStale())
+	require.Len(t, res.GetVerdicts(), 1)
+	assert.Equal(t, "4", res.GetVerdicts()[0].GetCommentId())
+	assert.True(t, res.GetVerdicts()[0].GetStale())
 	m.EXPECT().AddComment(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.AddCommentParams{Verdict: domain.VerdictApprove}).Return(domain.Comment{}, domain.ErrForbidden).Once()
-	_, err = (&mergeRequestService{m}).AddComment(ownerCtx(), connect.NewRequest(&pb.AddCommentRequest{Repo: "demo", Number: 1, Verdict: pb.Verdict_VERDICT_APPROVE}))
+	_, err = (&mergeRequestService{m}).AddComment(ownerCtx(), &pb.AddCommentRequest{Repo: "demo", Number: 1, Verdict: pb.Verdict_VERDICT_APPROVE})
 	requireCode(t, connect.CodePermissionDenied, err)
 }
 
@@ -150,20 +150,20 @@ func TestAutoMergeRPCCodesAndFields(t *testing.T) {
 	// Success: the mode and the request reach the service, the fields come back.
 	m := mocks.NewMergeRequestService(t)
 	m.EXPECT().EnableAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), ports.EnableAutoMergeParams{Mode: domain.MergeModeSquash, HeadID: mustObjectID(t, strings.Repeat("a", domain.ObjectIDLen))}).Return(armed, nil).Once()
-	res, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode_MERGE_MODE_SQUASH, HeadId: strings.Repeat("a", domain.ObjectIDLen)}))
+	res, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), &pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode_MERGE_MODE_SQUASH, HeadId: strings.Repeat("a", domain.ObjectIDLen)})
 	require.NoError(t, err)
-	assert.Equal(t, pbArmed, res.Msg.GetMergeRequest())
+	assert.Equal(t, pbArmed, res.GetMergeRequest())
 	m.EXPECT().CancelAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1)).Return(idle, nil).Once()
-	cres, err := (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), connect.NewRequest(&pb.CancelAutoMergeRequest{Repo: "demo", Number: 1}))
+	cres, err := (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), &pb.CancelAutoMergeRequest{Repo: "demo", Number: 1})
 	require.NoError(t, err)
-	assert.Nil(t, cres.Msg.GetMergeRequest().GetAutoMerge())
+	assert.Nil(t, cres.GetMergeRequest().GetAutoMerge())
 
 	// Bad input never reaches the service.
-	_, err = (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode(99), HeadId: strings.Repeat("a", domain.ObjectIDLen)}))
+	_, err = (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), &pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, Mode: pb.MergeMode(99), HeadId: strings.Repeat("a", domain.ObjectIDLen)})
 	requireCode(t, connect.CodeInvalidArgument, err)
-	_, err = (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, HeadId: "abc"}))
+	_, err = (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), &pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, HeadId: "abc"})
 	requireCode(t, connect.CodeInvalidArgument, err)
-	_, err = (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), connect.NewRequest(&pb.CancelAutoMergeRequest{Repo: "", Number: 1}))
+	_, err = (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), &pb.CancelAutoMergeRequest{Repo: "", Number: 1})
 	requireCode(t, connect.CodeInvalidArgument, err)
 
 	// Domain errors map like the other merge request calls.
@@ -177,10 +177,10 @@ func TestAutoMergeRPCCodesAndFields(t *testing.T) {
 	} {
 		m := mocks.NewMergeRequestService(t)
 		m.EXPECT().EnableAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1), mock.Anything).Return(domain.MergeRequest{}, tc.err).Once()
-		_, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, HeadId: strings.Repeat("a", domain.ObjectIDLen)}))
+		_, err := (&mergeRequestService{m}).EnableAutoMerge(ownerCtx(), &pb.EnableAutoMergeRequest{Repo: "demo", Number: 1, HeadId: strings.Repeat("a", domain.ObjectIDLen)})
 		requireCode(t, tc.code, err)
 		m.EXPECT().CancelAutoMerge(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(1)).Return(domain.MergeRequest{}, tc.err).Once()
-		_, err = (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), connect.NewRequest(&pb.CancelAutoMergeRequest{Repo: "demo", Number: 1}))
+		_, err = (&mergeRequestService{m}).CancelAutoMerge(ownerCtx(), &pb.CancelAutoMergeRequest{Repo: "demo", Number: 1})
 		requireCode(t, tc.code, err)
 	}
 }

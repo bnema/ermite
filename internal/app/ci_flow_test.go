@@ -5,7 +5,9 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -13,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -145,27 +147,34 @@ func TestCICancelReachesTheRunnerAndIsEnforced(t *testing.T) {
 	c.push("main", map[string]string{".github/workflows/ci.yml": ciWorkflow}, "")
 	job := runner.await()
 	api := runner.jobAPI(job)
-	_, err := api.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	_, err := api.runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: job.GetJobId()})
 	require.NoError(t, err)
 
-	watch, err := api.runner.WatchJob(c.ctx, connect.NewRequest(&pb.WatchJobRequest{JobId: job.GetJobId()}))
+	watch, err := api.runner.WatchJob(c.ctx, &pb.WatchJobRequest{JobId: job.GetJobId()})
 	require.NoError(t, err)
 	run := c.runs()[0]
 
 	// A reader without ci:write cannot cancel.
 	reader := c.api(c.token(scopes(domain.ScopeRepoRead)))
-	_, err = reader.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()}))
+	_, err = reader.run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()})
 	assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err))
 
-	_, err = c.root.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()}))
+	_, err = c.root.run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()})
 	require.NoError(t, err)
 	// Cancelling again changes nothing.
-	_, err = c.root.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()}))
+	_, err = c.root.run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()})
 	require.NoError(t, err)
 
 	var cancel *pb.CancelRequest
-	for watch.Receive() {
-		if m := watch.Msg().GetCancel(); m != nil {
+	for {
+		msg, err := watch.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatal(err)
+		}
+		if m := msg.GetCancel(); m != nil {
 			cancel = m
 			break
 		}
@@ -186,14 +195,14 @@ func TestCICancelReachesTheRunnerAndIsEnforced(t *testing.T) {
 	assert.Contains(t, detail.GetJobs()[0].GetError(), "did not answer")
 
 	// The runner's late CompleteJob returns the server's result.
-	res, err := api.runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	res, err := api.runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 		JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
-	}))
+	})
 	require.NoError(t, err)
-	assert.False(t, res.Msg.GetApplied())
+	assert.False(t, res.GetApplied())
 
 	// A completed run cannot be cancelled.
-	_, err = c.root.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()}))
+	_, err = c.root.run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()})
 	assert.Equal(t, connect.CodeFailedPrecondition, ciErrCode(err))
 }
 
@@ -205,7 +214,7 @@ func TestCILostRunnerFailsTheJob(t *testing.T) {
 	runner := c.registerRunner("alpha", "ubuntu-latest")
 	c.push("main", map[string]string{".github/workflows/ci.yml": strings.Split(ciWorkflow, "  test:")[0]}, "")
 	job := runner.await()
-	_, err := runner.jobAPI(job).runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	_, err := runner.jobAPI(job).runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: job.GetJobId()})
 	require.NoError(t, err)
 
 	c.waitFor("the job is lost", func() bool { return c.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
@@ -232,14 +241,14 @@ func TestCIRerun(t *testing.T) {
 
 	// A running run cannot be re-run; a completed one can, by who has ci:write.
 	reader := c.api(c.token(scopes(domain.ScopeRepoRead)))
-	_, err := reader.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: id}))
+	_, err := reader.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: id})
 	assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err))
 
-	res, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: id, FailedOnly: true}))
+	res, err := c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: id, FailedOnly: true})
 	require.NoError(t, err)
-	assert.Equal(t, id, res.Msg.GetRun().GetId())
-	assert.Equal(t, number, res.Msg.GetRun().GetNumber())
-	assert.EqualValues(t, 2, res.Msg.GetRun().GetAttempt())
+	assert.Equal(t, id, res.GetRun().GetId())
+	assert.Equal(t, number, res.GetRun().GetNumber())
+	assert.EqualValues(t, 2, res.GetRun().GetAttempt())
 
 	// build keeps its attempt-1 result; only test runs again.
 	again := runner.await()
@@ -257,13 +266,13 @@ func TestCIRerun(t *testing.T) {
 	assert.EqualValues(t, 2, detail.GetJobs()[1].GetAttempt())
 
 	// Attempt 1 is still readable, with its failure.
-	first, err := c.root.run.GetRun(c.ctx, connect.NewRequest(&pb.GetRunRequest{Repo: "proj", RunId: id, Attempt: 1}))
+	first, err := c.root.run.GetRun(c.ctx, &pb.GetRunRequest{Repo: "proj", RunId: id, Attempt: 1})
 	require.NoError(t, err)
-	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, first.Msg.GetRun().GetConclusion())
-	assert.EqualValues(t, 2, first.Msg.GetLatestAttempt())
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_FAILURE, first.GetRun().GetConclusion())
+	assert.EqualValues(t, 2, first.GetLatestAttempt())
 
 	// Re-running a run with nothing failed is refused with failed-only.
-	_, err = c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: id, FailedOnly: true}))
+	_, err = c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: id, FailedOnly: true})
 	assert.Equal(t, connect.CodeFailedPrecondition, ciErrCode(err))
 }
 
@@ -303,20 +312,27 @@ jobs:
 
 	// The first fails: fail-fast asks the second to stop.
 	apiB := runner.jobAPI(b)
-	_, err := apiB.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: b.GetJobId()}))
+	_, err := apiB.runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: b.GetJobId()})
 	require.NoError(t, err)
-	watch, err := apiB.runner.WatchJob(c.ctx, connect.NewRequest(&pb.WatchJobRequest{JobId: b.GetJobId()}))
+	watch, err := apiB.runner.WatchJob(c.ctx, &pb.WatchJobRequest{JobId: b.GetJobId()})
 	require.NoError(t, err)
 	runner.runJob(a, pb.CiConclusion_CI_CONCLUSION_FAILURE, nil, "x")
 	var reason pb.CancelReason
-	for watch.Receive() {
-		if m := watch.Msg().GetCancel(); m != nil {
+	for {
+		msg, err := watch.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatal(err)
+		}
+		if m := msg.GetCancel(); m != nil {
 			reason = m.GetReason()
 			break
 		}
 	}
 	assert.Equal(t, pb.CancelReason_CANCEL_REASON_FAIL_FAST, reason)
-	_, err = apiB.runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{JobId: b.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED}))
+	_, err = apiB.runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{JobId: b.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED})
 	require.NoError(t, err)
 
 	// "after" has if: always(), so it runs once both ended.
@@ -405,9 +421,9 @@ jobs:
 func TestCIRunnerRegistrationRules(t *testing.T) {
 	c := newCIHarness(t, nil)
 	reg := func(api *clients, name string, replace bool) error {
-		_, err := api.runner.RegisterRunner(c.ctx, connect.NewRequest(&pb.RegisterRunnerRequest{
+		_, err := api.runner.RegisterRunner(c.ctx, &pb.RegisterRunnerRequest{
 			Name: name, Version: "v1", Isolation: pb.RunnerIsolation_RUNNER_ISOLATION_VM, Arch: "x64", Os: "linux", Replace: replace,
-		}))
+		})
 		return err
 	}
 	assert.Equal(t, connect.CodeUnauthenticated, ciErrCode(reg(c.api(""), "a", false)))
@@ -419,10 +435,10 @@ func TestCIRunnerRegistrationRules(t *testing.T) {
 	require.NoError(t, reg(reg1, "a", true), "replace")
 	assert.Equal(t, connect.CodeInvalidArgument, ciErrCode(reg(reg1, "bad name!", false)))
 
-	list, err := reg1.run.ListRunners(c.ctx, connect.NewRequest(&pb.ListRunnersRequest{}))
+	list, err := reg1.run.ListRunners(c.ctx, &pb.ListRunnersRequest{})
 	require.NoError(t, err)
-	require.Len(t, list.Msg.GetRunners(), 1)
-	assert.Equal(t, []string{"linux", "self-hosted", "x64"}, list.Msg.GetRunners()[0].GetLabels(), "implicit labels, sorted")
+	require.Len(t, list.GetRunners(), 1)
+	assert.Equal(t, []string{"linux", "self-hosted", "x64"}, list.GetRunners()[0].GetLabels(), "implicit labels, sorted")
 }
 
 // AC2: after a restart of the server, running jobs go on with their tokens,
@@ -434,11 +450,11 @@ func TestCIRestartKeepsRunningAndQueuedJobs(t *testing.T) {
 	c.push("main", map[string]string{".github/workflows/ci.yml": ciWorkflow}, "")
 	job := runner.await() // "build"; "test" waits for it
 	api := runner.jobAPI(job)
-	_, err := api.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	_, err := api.runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: job.GetJobId()})
 	require.NoError(t, err)
-	_, err = api.runner.AppendLog(c.ctx, connect.NewRequest(&pb.AppendLogRequest{
+	_, err = api.runner.AppendLog(c.ctx, &pb.AppendLogRequest{
 		JobId: job.GetJobId(), Step: 2, Offset: 0, Lines: []*pb.LogLine{{Time: now(), Text: "before the restart"}},
-	}))
+	})
 	require.NoError(t, err)
 
 	// Stop the server and start another on the same data directory.
@@ -453,31 +469,31 @@ func TestCIRestartKeepsRunningAndQueuedJobs(t *testing.T) {
 	api2 := newClients(srv.URL+"/-/api", job.GetJobToken())
 
 	// The job token still works, and the log goes on from where it was.
-	_, err = api2.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	_, err = api2.runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: job.GetJobId()})
 	require.NoError(t, err, "the job token survives a restart")
-	next, err := api2.runner.AppendLog(c.ctx, connect.NewRequest(&pb.AppendLogRequest{
+	next, err := api2.runner.AppendLog(c.ctx, &pb.AppendLogRequest{
 		JobId: job.GetJobId(), Step: 2, Offset: 1, Lines: []*pb.LogLine{{Time: now(), Text: "after the restart"}},
-	}))
+	})
 	require.NoError(t, err)
-	assert.EqualValues(t, 2, next.Msg.GetNextOffset())
+	assert.EqualValues(t, 2, next.GetNextOffset())
 
 	root2 := newClients(srv.URL+"/-/api", adminToken)
-	runs, err := root2.run.ListRuns(c.ctx, connect.NewRequest(&pb.ListRunsRequest{Repo: "proj"}))
+	runs, err := root2.run.ListRuns(c.ctx, &pb.ListRunsRequest{Repo: "proj"})
 	require.NoError(t, err)
-	require.Len(t, runs.Msg.GetRuns(), 1)
-	assert.Equal(t, pb.CiStatus_CI_STATUS_IN_PROGRESS, runs.Msg.GetRuns()[0].GetStatus())
+	require.Len(t, runs.GetRuns(), 1)
+	assert.Equal(t, pb.CiStatus_CI_STATUS_IN_PROGRESS, runs.GetRuns()[0].GetStatus())
 
 	// Finish the job on the new server: its dependant is planned and ready.
-	_, err = api2.runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	_, err = api2.runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 		JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS,
-	}))
+	})
 	require.NoError(t, err)
 	got := make(chan *pb.Job, 1)
 	go func() {
 		for range 50 {
-			res, err := newClients(srv.URL+"/-/api", c.runnerSecret(runner)).runner.FetchJob(c.ctx, connect.NewRequest(&pb.FetchJobRequest{}))
-			if err == nil && res.Msg.GetJob() != nil {
-				got <- res.Msg.GetJob()
+			res, err := newClients(srv.URL+"/-/api", c.runnerSecret(runner)).runner.FetchJob(c.ctx, &pb.FetchJobRequest{})
+			if err == nil && res.GetJob() != nil {
+				got <- res.GetJob()
 				return
 			}
 		}
@@ -500,15 +516,15 @@ func TestCIMergeWithoutChecksAndWithPassingChecks(t *testing.T) {
 	c.push("main", map[string]string{"README": "x\n"}, "")
 	headOf := func(branch string) string { return strings.TrimSpace(c.bareGit("proj", "rev-parse", branch)) }
 	merge := func(n int64, head string) error {
-		_, err := c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: head}))
+		_, err := c.root.mr.MergeMergeRequest(c.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: head})
 		return err
 	}
 
 	// No workflow on the branch: no check, the merge goes through.
 	c.push("plain", map[string]string{"a.txt": "a\n"}, "")
-	mr1, err := c.root.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "plain", SourceBranch: "plain"}))
+	mr1, err := c.root.mr.CreateMergeRequest(c.ctx, &pb.CreateMergeRequestRequest{Repo: "proj", Title: "plain", SourceBranch: "plain"})
 	require.NoError(t, err)
-	require.NoError(t, merge(mr1.Msg.GetMergeRequest().GetNumber(), headOf("plain")))
+	require.NoError(t, merge(mr1.GetMergeRequest().GetNumber(), headOf("plain")))
 
 	// A branch with a workflow: merge after its check passed. The merge itself
 	// triggers the workflow on main (GitHub runs push workflows on a merge).
@@ -519,7 +535,7 @@ func TestCIMergeWithoutChecksAndWithPassingChecks(t *testing.T) {
 	c.mustGit(c.wt, "push", "-q", c.urlAuth(adminToken, "/proj.git"), "ci")
 	head := headOf("ci")
 	c.waitFor("the run on ci", func() bool { return len(c.checks(head)) == 1 })
-	mr2, err := c.root.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "ci", SourceBranch: "ci"}))
+	mr2, err := c.root.mr.CreateMergeRequest(c.ctx, &pb.CreateMergeRequestRequest{Repo: "proj", Title: "ci", SourceBranch: "ci"})
 	require.NoError(t, err)
 	job := runner.await()
 	runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "ok")
@@ -527,7 +543,7 @@ func TestCIMergeWithoutChecksAndWithPassingChecks(t *testing.T) {
 		cs := c.checks(head)
 		return len(cs) == 1 && cs[0].GetConclusion() == pb.CiConclusion_CI_CONCLUSION_SUCCESS
 	})
-	require.NoError(t, merge(mr2.Msg.GetMergeRequest().GetNumber(), head))
+	require.NoError(t, merge(mr2.GetMergeRequest().GetNumber(), head))
 
 	// The fast-forward merge moved main to the same commit: the workflow runs
 	// again for main, with the owner as the actor.
@@ -559,9 +575,9 @@ func TestCIRepositoryDeletionRemovesRunsAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, entries, "the log is a file under ci/logs")
 
-	_, err = c.root.repo.DeleteRepo(c.ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "proj"}))
+	_, err = c.root.repo.DeleteRepo(c.ctx, &pb.DeleteRepoRequest{Repo: "proj"})
 	require.NoError(t, err)
-	_, err = c.root.run.ListRuns(c.ctx, connect.NewRequest(&pb.ListRunsRequest{Repo: "proj"}))
+	_, err = c.root.run.ListRuns(c.ctx, &pb.ListRunsRequest{Repo: "proj"})
 	assert.Equal(t, connect.CodeNotFound, ciErrCode(err))
 	entries, err = os.ReadDir(logDir)
 	require.NoError(t, err)
@@ -610,7 +626,7 @@ func TestCIEventsAreStreamedOnTheRepositoryTopic(t *testing.T) {
 	assert.GreaterOrEqual(t, jobUpdates, 2)
 
 	home := c.watch(c.root, "", "home")
-	_, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: lastRun.GetId()}))
+	_, err := c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: lastRun.GetId()})
 	require.NoError(t, err)
 	ev := home.next(t, watchWait)
 	require.NotNil(t, ev.GetRunUpdated(), "home gets the run: %v", ev)
@@ -716,7 +732,7 @@ func TestCIAcknowledgedAssignmentIsNotRepeated(t *testing.T) {
 		job = j
 		return j != nil
 	})
-	_, err := runner.jobAPI(job).runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	_, err := runner.jobAPI(job).runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: job.GetJobId()})
 	require.NoError(t, err)
 	again, err := runner.fetch("poll-9")
 	require.NoError(t, err)
@@ -766,13 +782,13 @@ func TestCIRunnerListOnlineAndVersion(t *testing.T) {
 	c := newCIHarness(t, func(cfg *usecase.CIConfig) { cfg.PollTimeout = 50 * time.Millisecond })
 	r := c.registerRunner("alpha", "ubuntu-latest")
 	list := func() *pb.Runner {
-		res, err := c.root.run.ListRunners(c.ctx, connect.NewRequest(&pb.ListRunnersRequest{}))
+		res, err := c.root.run.ListRunners(c.ctx, &pb.ListRunnersRequest{})
 		require.NoError(t, err)
-		require.Len(t, res.Msg.GetRunners(), 1)
-		return res.Msg.GetRunners()[0]
+		require.Len(t, res.GetRunners(), 1)
+		return res.GetRunners()[0]
 	}
 	poll := func(version string) error {
-		_, err := r.api.runner.FetchJob(c.ctx, connect.NewRequest(&pb.FetchJobRequest{Version: version}))
+		_, err := r.api.runner.FetchJob(c.ctx, &pb.FetchJobRequest{Version: version})
 		return err
 	}
 	got := list()

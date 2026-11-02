@@ -4,12 +4,13 @@ package app
 
 import (
 	"context"
+	"errors"
+	"io"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -498,7 +499,7 @@ func TestCIReusablePermissionsOnlyLowered(t *testing.T) {
 func TestCIReusableCalleeJobConcurrency(t *testing.T) {
 	c, runner := newReusableHarness(t, newFakeRemote(t), newFakeWorkflows(t))
 	disabled := false
-	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled}))
+	_, err := c.root.repo.UpdateRepo(c.ctx, &pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled})
 	require.NoError(t, err)
 	callee := "on:\n  workflow_call:\njobs:\n  j:\n    runs-on: ubuntu-latest\n    concurrency:\n      group: callee-job-group\n    steps:\n      - run: echo\n"
 	caller := "on: push\njobs:\n  c:\n    uses: ./.github/workflows/callee.yml\n"
@@ -611,14 +612,21 @@ func TestCIReusableCallCancelInProgress(t *testing.T) {
 			c.push("main", map[string]string{".github/workflows/callee.yml": callee, ".github/workflows/ci.yml": concCaller(tt.caller)}, "")
 			r1 := c.awaitRunOf(".github/workflows/ci.yml", 0)
 			j1 := awaitRecord(c, runner, r1.GetId(), "c/j")
-			watch, err := runner.jobAPI(j1).runner.WatchJob(c.ctx, connect.NewRequest(&pb.WatchJobRequest{JobId: j1.GetJobId()}))
+			watch, err := runner.jobAPI(j1).runner.WatchJob(c.ctx, &pb.WatchJobRequest{JobId: j1.GetJobId()})
 			require.NoError(t, err)
 
 			c.push("main", map[string]string{"x.txt": "1"}, "second")
 			r2 := c.awaitRunOf(".github/workflows/ci.yml", r1.GetId())
 			var cancel *pb.CancelRequest
-			for watch.Receive() {
-				if m := watch.Msg().GetCancel(); m != nil {
+			for {
+				msg, err := watch.Receive()
+				if err != nil {
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					t.Fatal(err)
+				}
+				if m := msg.GetCancel(); m != nil {
 					cancel = m
 					break
 				}
@@ -627,9 +635,9 @@ func TestCIReusableCallCancelInProgress(t *testing.T) {
 			assert.Contains(t, cancel.GetMessage(), "higher priority waiting request for 'Cip'")
 			assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.cancelledCall(r1), "the call ends cancelled")
 
-			_, err = runner.jobAPI(j1).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+			_, err = runner.jobAPI(j1).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 				JobId: j1.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
-			}))
+			})
 			require.NoError(t, err)
 			j2 := awaitRecord(c, runner, r2.GetId(), "c/j")
 			runner.runJob(j2, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)

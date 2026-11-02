@@ -8,9 +8,8 @@ import (
 	"fmt"
 	"io"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
@@ -34,13 +33,13 @@ func target(repo, revision string) (domain.RepoName, domain.Revision, error) {
 	return name, rev, nil
 }
 
-func (s *gitService) ListRefs(ctx context.Context, req *connect.Request[pb.ListRefsRequest]) (*connect.Response[pb.ListRefsResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *gitService) ListRefs(ctx context.Context, req *pb.ListRefsRequest) (*pb.ListRefsResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	params := ports.ListRefsParams{PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken()}
-	for _, k := range req.Msg.GetKinds() {
+	params := ports.ListRefsParams{PageSize: int(req.GetPageSize()), PageToken: req.GetPageToken()}
+	for _, k := range req.GetKinds() {
 		kind, err := refKindFromPB(k)
 		if err != nil {
 			return nil, connectError(ctx, err)
@@ -55,19 +54,19 @@ func (s *gitService) ListRefs(ctx context.Context, req *connect.Request[pb.ListR
 	for _, r := range page.Refs {
 		out.Refs = append(out.Refs, refToPB(r))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *gitService) GetTree(ctx context.Context, req *connect.Request[pb.GetTreeRequest]) (*connect.Response[pb.GetTreeResponse], error) {
-	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
+func (s *gitService) GetTree(ctx context.Context, req *pb.GetTreeRequest) (*pb.GetTreeResponse, error) {
+	name, rev, err := target(req.GetRepo(), req.GetRevision())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	path, err := domain.ParseTreePath(req.Msg.GetPath())
+	path, err := domain.ParseTreePath(req.GetPath())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	tree, err := s.browse.GetTree(ctx, caller(ctx), name, rev, path, req.Msg.GetIncludeLastCommit())
+	tree, err := s.browse.GetTree(ctx, caller(ctx), name, rev, path, req.GetIncludeLastCommit())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -82,12 +81,12 @@ func (s *gitService) GetTree(ctx context.Context, req *connect.Request[pb.GetTre
 	for _, e := range tree.Entries {
 		out.Entries = append(out.Entries, treeEntryToPB(e))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 // ListPaths lists the paths of every file of a revision.
-func (s *gitService) ListPaths(ctx context.Context, req *connect.Request[pb.ListPathsRequest]) (*connect.Response[pb.ListPathsResponse], error) {
-	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
+func (s *gitService) ListPaths(ctx context.Context, req *pb.ListPathsRequest) (*pb.ListPathsResponse, error) {
+	name, rev, err := target(req.GetRepo(), req.GetRevision())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -95,25 +94,25 @@ func (s *gitService) ListPaths(ctx context.Context, req *connect.Request[pb.List
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.ListPathsResponse{
+	return &pb.ListPathsResponse{
 		CommitId:  list.CommitID.String(),
 		TreeId:    list.TreeID.String(),
 		Paths:     list.Paths,
 		Truncated: list.Truncated,
-	}), nil
+	}, nil
 }
 
 // GetBlob streams the blob in chunks of BlobChunkSize. The first message
 // carries the metadata and the first chunk.
-func (s *gitService) GetBlob(ctx context.Context, req *connect.Request[pb.GetBlobRequest], stream *connect.ServerStream[pb.GetBlobResponse]) error {
-	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
+func (s *gitService) GetBlob(ctx context.Context, req *pb.GetBlobRequest, stream ermiteconnect.GitServiceGetBlobServerStream) error {
+	name, rev, err := target(req.GetRepo(), req.GetRevision())
 	if err != nil {
 		return connectError(ctx, err)
 	}
-	if req.Msg.GetPath() == "" {
+	if req.GetPath() == "" {
 		return connectError(ctx, invalidPath("path is required"))
 	}
-	path, err := domain.ParseTreePath(req.Msg.GetPath())
+	path, err := domain.ParseTreePath(req.GetPath())
 	if err != nil {
 		return connectError(ctx, err)
 	}
@@ -153,17 +152,17 @@ func invalidPath(msg string) error {
 	return fmt.Errorf("%w: %s", domain.ErrInvalidPath, msg)
 }
 
-func (s *gitService) ListCommits(ctx context.Context, req *connect.Request[pb.ListCommitsRequest]) (*connect.Response[pb.ListCommitsResponse], error) {
-	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
+func (s *gitService) ListCommits(ctx context.Context, req *pb.ListCommitsRequest) (*pb.ListCommitsResponse, error) {
+	name, rev, err := target(req.GetRepo(), req.GetRevision())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	path, err := domain.ParseTreePath(req.Msg.GetPath())
+	path, err := domain.ParseTreePath(req.GetPath())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 	page, err := s.browse.ListCommits(ctx, caller(ctx), name, ports.ListCommitsParams{
-		Revision: rev, Path: path, PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken(),
+		Revision: rev, Path: path, PageSize: int(req.GetPageSize()), PageToken: req.GetPageToken(),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -172,11 +171,11 @@ func (s *gitService) ListCommits(ctx context.Context, req *connect.Request[pb.Li
 	for _, c := range page.Commits {
 		out.Commits = append(out.Commits, commitToPB(c))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *gitService) GetCommit(ctx context.Context, req *connect.Request[pb.GetCommitRequest]) (*connect.Response[pb.GetCommitResponse], error) {
-	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
+func (s *gitService) GetCommit(ctx context.Context, req *pb.GetCommitRequest) (*pb.GetCommitResponse, error) {
+	name, rev, err := target(req.GetRepo(), req.GetRevision())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -184,11 +183,11 @@ func (s *gitService) GetCommit(ctx context.Context, req *connect.Request[pb.GetC
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(commitDetailToPB(detail)), nil
+	return commitDetailToPB(detail), nil
 }
 
-func (s *gitService) ResolveRevision(ctx context.Context, req *connect.Request[pb.ResolveRevisionRequest]) (*connect.Response[pb.ResolveRevisionResponse], error) {
-	name, rev, err := target(req.Msg.GetRepo(), req.Msg.GetRevision())
+func (s *gitService) ResolveRevision(ctx context.Context, req *pb.ResolveRevisionRequest) (*pb.ResolveRevisionResponse, error) {
+	name, rev, err := target(req.GetRepo(), req.GetRevision())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -196,5 +195,5 @@ func (s *gitService) ResolveRevision(ctx context.Context, req *connect.Request[p
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.ResolveRevisionResponse{CommitId: res.CommitID.String(), Ref: res.Ref}), nil
+	return &pb.ResolveRevisionResponse{CommitId: res.CommitID.String(), Ref: res.Ref}, nil
 }

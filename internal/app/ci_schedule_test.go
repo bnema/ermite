@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -182,7 +181,7 @@ func TestScheduleIsRemovedWithTheRepository(t *testing.T) {
 	require.Len(t, c.scheduled(), 1)
 	require.Equal(t, 1, ci.CachedSchedules(c.name("proj")))
 
-	_, err := c.root.repo.DeleteRepo(c.ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "proj"}))
+	_, err := c.root.repo.DeleteRepo(c.ctx, &pb.DeleteRepoRequest{Repo: "proj"})
 	require.NoError(t, err)
 	assert.Equal(t, -1, ci.CachedSchedules(c.name("proj")), "the cached schedules go with the repository")
 

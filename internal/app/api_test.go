@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,7 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -78,11 +80,11 @@ func TestListPathsRPC(t *testing.T) {
 	root, anon := r.who[pRoot], r.who[pAnon]
 
 	list := func(c *clients, repo, rev string) (*pb.ListPathsResponse, error) {
-		resp, err := c.git.ListPaths(ctx, connect.NewRequest(&pb.ListPathsRequest{Repo: repo, Revision: rev}))
+		resp, err := c.git.ListPaths(ctx, &pb.ListPathsRequest{Repo: repo, Revision: rev})
 		if err != nil {
 			return nil, err
 		}
-		return resp.Msg, nil
+		return resp, nil
 	}
 
 	pub, err := list(root, "pub", "")
@@ -113,19 +115,19 @@ func TestAC2ReadAccess(t *testing.T) {
 
 	rpcs := map[string]func(c *clients, repo string) error{
 		"GetRepo": func(c *clients, repo string) error {
-			_, err := c.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: repo}))
+			_, err := c.repo.GetRepo(ctx, &pb.GetRepoRequest{Repo: repo})
 			return err
 		},
 		"ListRefs": func(c *clients, repo string) error {
-			_, err := c.git.ListRefs(ctx, connect.NewRequest(&pb.ListRefsRequest{Repo: repo}))
+			_, err := c.git.ListRefs(ctx, &pb.ListRefsRequest{Repo: repo})
 			return err
 		},
 		"GetTree": func(c *clients, repo string) error {
-			_, err := c.git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{Repo: repo}))
+			_, err := c.git.GetTree(ctx, &pb.GetTreeRequest{Repo: repo})
 			return err
 		},
 		"ListPaths": func(c *clients, repo string) error {
-			_, err := c.git.ListPaths(ctx, connect.NewRequest(&pb.ListPathsRequest{Repo: repo}))
+			_, err := c.git.ListPaths(ctx, &pb.ListPathsRequest{Repo: repo})
 			return err
 		},
 		"GetBlob": func(c *clients, repo string) error {
@@ -133,15 +135,15 @@ func TestAC2ReadAccess(t *testing.T) {
 			return err
 		},
 		"ListCommits": func(c *clients, repo string) error {
-			_, err := c.git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: repo}))
+			_, err := c.git.ListCommits(ctx, &pb.ListCommitsRequest{Repo: repo})
 			return err
 		},
 		"GetCommit": func(c *clients, repo string) error {
-			_, err := c.git.GetCommit(ctx, connect.NewRequest(&pb.GetCommitRequest{Repo: repo}))
+			_, err := c.git.GetCommit(ctx, &pb.GetCommitRequest{Repo: repo})
 			return err
 		},
 		"ResolveRevision": func(c *clients, repo string) error {
-			_, err := c.git.ResolveRevision(ctx, connect.NewRequest(&pb.ResolveRevisionRequest{Repo: repo, Revision: "main"}))
+			_, err := c.git.ResolveRevision(ctx, &pb.ResolveRevisionRequest{Repo: repo, Revision: "main"})
 			return err
 		},
 	}
@@ -174,12 +176,12 @@ func TestAC2ReadAccess(t *testing.T) {
 
 	t.Run("ListRepos shows what the caller may read", func(t *testing.T) {
 		names := func(who string) []string {
-			resp, err := r.who[who].repo.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{}))
+			resp, err := r.who[who].repo.ListRepos(ctx, &pb.ListReposRequest{})
 			if err != nil {
 				return []string{codeName(err)}
 			}
 			var out []string
-			for _, repo := range resp.Msg.GetRepos() {
+			for _, repo := range resp.GetRepos() {
 				out = append(out, repo.GetName())
 			}
 			return out
@@ -194,10 +196,10 @@ func TestAC2ReadAccess(t *testing.T) {
 
 	t.Run("GetVersion needs no authentication", func(t *testing.T) {
 		for _, who := range allPrincipals {
-			resp, err := r.who[who].server.GetVersion(ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+			resp, err := r.who[who].server.GetVersion(ctx, &pb.GetVersionRequest{})
 			require.NoError(t, err, who)
-			assert.ElementsMatch(t, []string{"repos.archived", "repos.languages", "repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready", "deps.runs", "deps.batches", "deps.npm", "releases", "deps", "journal"}, resp.Msg.GetFeatures(), who)
-			assert.NotEmpty(t, resp.Msg.GetVersion())
+			assert.ElementsMatch(t, []string{"repos.archived", "repos.languages", "repo.update", "events.resume", "merge_requests", "merge_requests.delete_branch", "issues", "issues.links", "issues.resolve", "issues.edit", "merge_requests.edit", "merge_requests.mergeability", "signing_key", "session", "git.list_paths", "token.branch_prefixes", "ci.runs", "ci.runs.filters", "ci.runners", "ci.actions", "ci.annotations", "ci.summaries", "ci.concurrency", "ci.dispatch", "ci.workflows", "ci.cache", "ci.secrets", "ci.artifacts", "commit_signatures", "mirror", "merge_requests.auto_merge", "merge_requests.ignore_checks", "merge_requests.ready", "deps.runs", "deps.batches", "deps.npm", "releases", "deps", "journal"}, resp.GetFeatures(), who)
+			assert.NotEmpty(t, resp.GetVersion())
 		}
 	})
 }
@@ -219,31 +221,31 @@ func TestAC2WriteAccess(t *testing.T) {
 	ctx := r.ctx
 
 	desc := func(c *clients, repo string) error {
-		_, err := c.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+		_, err := c.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{
 			Repo: repo, Description: "hello", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}},
-		}))
+		})
 		return err
 	}
 	del := func(c *clients, repo string) error {
-		_, err := c.repo.DeleteRepo(ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: repo}))
+		_, err := c.repo.DeleteRepo(ctx, &pb.DeleteRepoRequest{Repo: repo})
 		return err
 	}
 	create := func(c *clients, repo string) error {
-		_, err := c.repo.CreateRepo(ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: repo}))
+		_, err := c.repo.CreateRepo(ctx, &pb.CreateRepoRequest{Name: repo})
 		return err
 	}
 	createToken := func(c *clients, _ string) error {
-		_, err := c.token.CreateToken(ctx, connect.NewRequest(&pb.CreateTokenRequest{
+		_, err := c.token.CreateToken(ctx, &pb.CreateTokenRequest{
 			Label: "t", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}, Repos: []string{"m1"},
-		}))
+		})
 		return err
 	}
 	listTokens := func(c *clients, _ string) error {
-		_, err := c.token.ListTokens(ctx, connect.NewRequest(&pb.ListTokensRequest{}))
+		_, err := c.token.ListTokens(ctx, &pb.ListTokensRequest{})
 		return err
 	}
 	revoke := func(c *clients, _ string) error {
-		_, err := c.token.RevokeToken(ctx, connect.NewRequest(&pb.RevokeTokenRequest{Id: "0000000000000000"}))
+		_, err := c.token.RevokeToken(ctx, &pb.RevokeTokenRequest{Id: "0000000000000000"})
 		return err
 	}
 
@@ -287,13 +289,13 @@ func TestTokenRPCs(t *testing.T) {
 	root := r.who[pRoot]
 
 	exp := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
-	created, err := root.token.CreateToken(ctx, connect.NewRequest(&pb.CreateTokenRequest{
+	created, err := root.token.CreateToken(ctx, &pb.CreateTokenRequest{
 		Label: "laptop", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ, pb.Scope_SCOPE_REPO_WRITE},
 		Repos: []string{"a", "b"}, ExpiresAt: timestamppb.New(exp),
-	}))
+	})
 	require.NoError(t, err)
-	tok := created.Msg.GetToken()
-	assert.True(t, strings.HasPrefix(created.Msg.GetSecret(), "ermite_"))
+	tok := created.GetToken()
+	assert.True(t, strings.HasPrefix(created.GetSecret(), "ermite_"))
 	assert.Equal(t, "laptop", tok.GetLabel())
 	assert.Equal(t, []pb.Scope{pb.Scope_SCOPE_REPO_READ, pb.Scope_SCOPE_REPO_WRITE}, tok.GetScopes())
 	assert.Equal(t, []string{"a", "b"}, tok.GetRepos())
@@ -302,34 +304,34 @@ func TestTokenRPCs(t *testing.T) {
 	assert.Nil(t, tok.GetLastUsedAt())
 
 	// The secret works.
-	_, err = r.api(created.Msg.GetSecret()).repo.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{}))
+	_, err = r.api(created.GetSecret()).repo.ListRepos(ctx, &pb.ListReposRequest{})
 	require.NoError(t, err)
 
-	list, err := root.token.ListTokens(ctx, connect.NewRequest(&pb.ListTokensRequest{}))
+	list, err := root.token.ListTokens(ctx, &pb.ListTokensRequest{})
 	require.NoError(t, err)
 	var found bool
-	for _, tk := range list.Msg.GetTokens() {
+	for _, tk := range list.GetTokens() {
 		found = found || tk.GetId() == tok.GetId()
 	}
 	assert.True(t, found)
-	assert.NotContains(t, list.Msg.String(), created.Msg.GetSecret())
+	assert.NotContains(t, list.String(), created.GetSecret())
 
 	// Paging: one at a time, newest first, no repeats.
 	seen := map[string]bool{}
 	var pageToken string
 	for range 20 {
-		page, err := root.token.ListTokens(ctx, connect.NewRequest(&pb.ListTokensRequest{PageSize: 1, PageToken: pageToken}))
+		page, err := root.token.ListTokens(ctx, &pb.ListTokensRequest{PageSize: 1, PageToken: pageToken})
 		require.NoError(t, err)
-		for _, tk := range page.Msg.GetTokens() {
+		for _, tk := range page.GetTokens() {
 			assert.False(t, seen[tk.GetId()], "token listed twice")
 			seen[tk.GetId()] = true
 		}
-		if pageToken = page.Msg.GetNextPageToken(); pageToken == "" {
+		if pageToken = page.GetNextPageToken(); pageToken == "" {
 			break
 		}
 	}
-	assert.Len(t, seen, len(list.Msg.GetTokens()))
-	_, err = root.token.ListTokens(ctx, connect.NewRequest(&pb.ListTokensRequest{PageToken: "garbage"}))
+	assert.Len(t, seen, len(list.GetTokens()))
+	_, err = root.token.ListTokens(ctx, &pb.ListTokensRequest{PageToken: "garbage"})
 	assert.Equal(t, "invalid_argument", codeName(err))
 
 	// No escalation: the limited token cannot grant more than it has.
@@ -339,7 +341,7 @@ func TestTokenRPCs(t *testing.T) {
 		"no repository list":   {Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}},
 		"a repository outside": {Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}, Repos: []string{"other"}},
 	} {
-		_, err := limited.token.CreateToken(ctx, connect.NewRequest(req))
+		_, err := limited.token.CreateToken(ctx, req)
 		assert.Equal(t, "permission_denied", codeName(err), name)
 	}
 	// Invalid requests.
@@ -352,16 +354,16 @@ func TestTokenRPCs(t *testing.T) {
 		"expired":           {Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}, ExpiresAt: timestamppb.New(time.Now().Add(-time.Hour))},
 		"bad repository":    {Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}, Repos: []string{"Bad Name"}},
 	} {
-		_, err := root.token.CreateToken(ctx, connect.NewRequest(req))
+		_, err := root.token.CreateToken(ctx, req)
 		assert.Equal(t, "invalid_argument", codeName(err), name)
 	}
 
 	// Revoke: the token stops working at once.
-	_, err = root.token.RevokeToken(ctx, connect.NewRequest(&pb.RevokeTokenRequest{Id: tok.GetId()}))
+	_, err = root.token.RevokeToken(ctx, &pb.RevokeTokenRequest{Id: tok.GetId()})
 	require.NoError(t, err)
-	_, err = r.api(created.Msg.GetSecret()).repo.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{}))
+	_, err = r.api(created.GetSecret()).repo.ListRepos(ctx, &pb.ListReposRequest{})
 	assert.Equal(t, "unauthenticated", codeName(err))
-	_, err = root.token.RevokeToken(ctx, connect.NewRequest(&pb.RevokeTokenRequest{Id: tok.GetId()}))
+	_, err = root.token.RevokeToken(ctx, &pb.RevokeTokenRequest{Id: tok.GetId()})
 	assert.Equal(t, "not_found", codeName(err))
 }
 
@@ -372,7 +374,7 @@ func TestAuthFailuresAreCountedAndBlock(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	h.seed("pub", domain.VisibilityPublic, "README.md")
 	bad := h.api("ermite_" + strings.Repeat("y", 43))
-	req := func() *connect.Request[pb.GetRepoRequest] { return connect.NewRequest(&pb.GetRepoRequest{Repo: "pub"}) }
+	req := func() *pb.GetRepoRequest { return &pb.GetRepoRequest{Repo: "pub"} }
 
 	for range clientlimit.MaxFailures {
 		_, err := bad.repo.GetRepo(h.ctx, req())
@@ -380,11 +382,12 @@ func TestAuthFailuresAreCountedAndBlock(t *testing.T) {
 		var ce *connect.Error
 		require.ErrorAs(t, err, &ce)
 	}
-	_, err := bad.repo.GetRepo(h.ctx, req())
+	ctx, info := connect.NewClientContext(h.ctx)
+	_, err := bad.repo.GetRepo(ctx, req())
 	assert.Equal(t, "resource_exhausted", codeName(err))
 	var ce *connect.Error
 	require.ErrorAs(t, err, &ce)
-	assert.NotEmpty(t, ce.Meta().Get("Retry-After"))
+	assert.NotEmpty(t, info.ResponseHeader().Get("Retry-After"))
 
 	// Even a valid token and anonymous calls are refused while blocked ...
 	_, err = h.api(adminToken).repo.GetRepo(h.ctx, req())
@@ -431,18 +434,18 @@ func TestCodecsAndPaths(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	h.seed("pub", domain.VisibilityPublic, "README.md")
 
-	for name, opts := range map[string][]connect.ClientOption{
+	for name, opts := range map[string][]connecthttp.Option{
 		"binary":      nil,
-		"json":        {connect.WithProtoJSON()},
-		"grpc-binary": {connect.WithGRPC()},
+		"json":        {connecthttp.WithProtoJSON()},
+		"grpc-binary": {connecthttp.WithGRPC()},
 	} {
 		c := h.api("", opts...)
-		resp, err := c.repo.GetRepo(h.ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "pub"}))
+		resp, err := c.repo.GetRepo(h.ctx, &pb.GetRepoRequest{Repo: "pub"})
 		require.NoError(t, err, name)
-		assert.Equal(t, "pub", resp.Msg.GetRepo().GetName(), name)
-		assert.Equal(t, "main", resp.Msg.GetRepo().GetDefaultBranch(), name)
-		assert.Equal(t, pb.Visibility_VISIBILITY_PUBLIC, resp.Msg.GetRepo().GetVisibility(), name)
-		_, err = c.repo.GetRepo(h.ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "nothing"}))
+		assert.Equal(t, "pub", resp.GetRepo().GetName(), name)
+		assert.Equal(t, "main", resp.GetRepo().GetDefaultBranch(), name)
+		assert.Equal(t, pb.Visibility_VISIBILITY_PUBLIC, resp.GetRepo().GetVisibility(), name)
+		_, err = c.repo.GetRepo(h.ctx, &pb.GetRepoRequest{Repo: "nothing"})
 		assert.Equal(t, "not_found", codeName(err), name)
 	}
 
@@ -474,47 +477,47 @@ func TestRPCErrorCodes(t *testing.T) {
 
 	repoCases := map[string]func() error{
 		"get uppercase name": func() error {
-			_, err := root.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "Pub"}))
+			_, err := root.repo.GetRepo(ctx, &pb.GetRepoRequest{Repo: "Pub"})
 			return err
 		},
 		"get empty name": func() error {
-			_, err := root.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{}))
+			_, err := root.repo.GetRepo(ctx, &pb.GetRepoRequest{})
 			return err
 		},
 		"create invalid name": func() error {
-			_, err := root.repo.CreateRepo(ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "No Good"}))
+			_, err := root.repo.CreateRepo(ctx, &pb.CreateRepoRequest{Name: "No Good"})
 			return err
 		},
 		"create reserved name": func() error {
-			_, err := root.repo.CreateRepo(ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "-"}))
+			_, err := root.repo.CreateRepo(ctx, &pb.CreateRepoRequest{Name: "-"})
 			return err
 		},
 		"create with a .git suffix": func() error {
-			_, err := root.repo.CreateRepo(ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "x.git"}))
+			_, err := root.repo.CreateRepo(ctx, &pb.CreateRepoRequest{Name: "x.git"})
 			return err
 		},
 		"create multi-line description": func() error {
-			_, err := root.repo.CreateRepo(ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "ok1", Description: "a\nb"}))
+			_, err := root.repo.CreateRepo(ctx, &pb.CreateRepoRequest{Name: "ok1", Description: "a\nb"})
 			return err
 		},
 		"list negative page size": func() error {
-			_, err := root.repo.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{PageSize: -1}))
+			_, err := root.repo.ListRepos(ctx, &pb.ListReposRequest{PageSize: -1})
 			return err
 		},
 		"list bad page token": func() error {
-			_, err := root.repo.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{PageToken: "!!"}))
+			_, err := root.repo.ListRepos(ctx, &pb.ListReposRequest{PageToken: "!!"})
 			return err
 		},
 		"refs unspecified kind": func() error {
-			_, err := root.git.ListRefs(ctx, connect.NewRequest(&pb.ListRefsRequest{Repo: "pub", Kinds: []pb.RefKind{pb.RefKind_REF_KIND_UNSPECIFIED}}))
+			_, err := root.git.ListRefs(ctx, &pb.ListRefsRequest{Repo: "pub", Kinds: []pb.RefKind{pb.RefKind_REF_KIND_UNSPECIFIED}})
 			return err
 		},
 		"tree bad path": func() error {
-			_, err := root.git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{Repo: "pub", Path: "a/../b"}))
+			_, err := root.git.GetTree(ctx, &pb.GetTreeRequest{Repo: "pub", Path: "a/../b"})
 			return err
 		},
 		"tree on a file": func() error {
-			_, err := root.git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{Repo: "pub", Path: "README.md"}))
+			_, err := root.git.GetTree(ctx, &pb.GetTreeRequest{Repo: "pub", Path: "README.md"})
 			return err
 		},
 		"blob on a directory": func() error {
@@ -526,23 +529,23 @@ func TestRPCErrorCodes(t *testing.T) {
 			return err
 		},
 		"commits bad revision": func() error {
-			_, err := root.git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: "pub", Revision: "a..b"}))
+			_, err := root.git.ListCommits(ctx, &pb.ListCommitsRequest{Repo: "pub", Revision: "a..b"})
 			return err
 		},
 		"commits bad page token": func() error {
-			_, err := root.git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: "pub", PageToken: "zz"}))
+			_, err := root.git.ListCommits(ctx, &pb.ListCommitsRequest{Repo: "pub", PageToken: "zz"})
 			return err
 		},
 		"update visibility unspecified": func() error {
-			_, err := root.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: "pub", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}}}))
+			_, err := root.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{Repo: "pub", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}}})
 			return err
 		},
 		"update without mask": func() error {
-			_, err := root.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: "pub", Description: "x"}))
+			_, err := root.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{Repo: "pub", Description: "x"})
 			return err
 		},
 		"update unknown mask path": func() error {
-			_, err := root.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: "pub", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}}}))
+			_, err := root.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{Repo: "pub", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}}})
 			return err
 		},
 		"watch unknown topic": func() error { return watchErr(ctx, root, "everything") },
@@ -554,15 +557,15 @@ func TestRPCErrorCodes(t *testing.T) {
 
 	notFound := map[string]func() error{
 		"commits unknown revision": func() error {
-			_, err := root.git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: "pub", Revision: "nope"}))
+			_, err := root.git.ListCommits(ctx, &pb.ListCommitsRequest{Repo: "pub", Revision: "nope"})
 			return err
 		},
 		"resolve unknown revision": func() error {
-			_, err := root.git.ResolveRevision(ctx, connect.NewRequest(&pb.ResolveRevisionRequest{Repo: "pub", Revision: "nope"}))
+			_, err := root.git.ResolveRevision(ctx, &pb.ResolveRevisionRequest{Repo: "pub", Revision: "nope"})
 			return err
 		},
 		"tree unknown path": func() error {
-			_, err := root.git.GetTree(ctx, connect.NewRequest(&pb.GetTreeRequest{Repo: "pub", Path: "nowhere"}))
+			_, err := root.git.GetTree(ctx, &pb.GetTreeRequest{Repo: "pub", Path: "nowhere"})
 			return err
 		},
 		"blob unknown path": func() error {
@@ -570,11 +573,11 @@ func TestRPCErrorCodes(t *testing.T) {
 			return err
 		},
 		"update unknown repository": func() error {
-			_, err := root.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: "ghost", Description: "x", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}}}))
+			_, err := root.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{Repo: "ghost", Description: "x", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}}})
 			return err
 		},
 		"delete unknown repository": func() error {
-			_, err := root.repo.DeleteRepo(ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "ghost"}))
+			_, err := root.repo.DeleteRepo(ctx, &pb.DeleteRepoRequest{Repo: "ghost"})
 			return err
 		},
 		"watch unknown repository": func() error { return watchErr(ctx, root, "repo:ghost") },
@@ -585,42 +588,51 @@ func TestRPCErrorCodes(t *testing.T) {
 
 	// An empty repository has no commit to resolve.
 	h.seed("empty", domain.VisibilityPublic)
-	_, err := root.git.GetCommit(ctx, connect.NewRequest(&pb.GetCommitRequest{Repo: "empty"}))
+	_, err := root.git.GetCommit(ctx, &pb.GetCommitRequest{Repo: "empty"})
 	assert.Equal(t, "not_found", codeName(err))
-	refs, err := root.git.ListRefs(ctx, connect.NewRequest(&pb.ListRefsRequest{Repo: "empty"}))
+	refs, err := root.git.ListRefs(ctx, &pb.ListRefsRequest{Repo: "empty"})
 	require.NoError(t, err)
-	require.Len(t, refs.Msg.GetRefs(), 1, "HEAD of an unborn branch is listed")
+	require.Len(t, refs.GetRefs(), 1, "HEAD of an unborn branch is listed")
 
-	_, err = root.repo.CreateRepo(ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "pub"}))
+	_, err = root.repo.CreateRepo(ctx, &pb.CreateRepoRequest{Name: "pub"})
 	assert.Equal(t, "already_exists", codeName(err))
 
-	_, err = root.repo.CreateRepo(ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "big", Description: strings.Repeat("x", 2<<20)}))
+	_, err = root.repo.CreateRepo(ctx, &pb.CreateRepoRequest{Name: "big", Description: strings.Repeat("x", 2<<20)})
 	assert.Equal(t, "resource_exhausted", codeName(err), "a request over the size limit")
 
 	// A page past the end is empty, not an error.
-	page, err := root.git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: "pub", PageSize: 1}))
+	page, err := root.git.ListCommits(ctx, &pb.ListCommitsRequest{Repo: "pub", PageSize: 1})
 	require.NoError(t, err)
-	require.Len(t, page.Msg.GetCommits(), 1)
-	require.NotEmpty(t, page.Msg.GetNextPageToken())
-	page2, err := root.git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: "pub", PageSize: 1, PageToken: page.Msg.GetNextPageToken()}))
+	require.Len(t, page.GetCommits(), 1)
+	require.NotEmpty(t, page.GetNextPageToken())
+	page2, err := root.git.ListCommits(ctx, &pb.ListCommitsRequest{Repo: "pub", PageSize: 1, PageToken: page.GetNextPageToken()})
 	require.NoError(t, err)
-	require.Len(t, page2.Msg.GetCommits(), 1)
-	assert.NotEqual(t, page.Msg.GetCommits()[0].GetId(), page2.Msg.GetCommits()[0].GetId())
-	assert.Empty(t, page2.Msg.GetNextPageToken())
+	require.Len(t, page2.GetCommits(), 1)
+	assert.NotEqual(t, page.GetCommits()[0].GetId(), page2.GetCommits()[0].GetId())
+	assert.Empty(t, page2.GetNextPageToken())
 }
 
 // watchErr opens a Watch and returns the error it ends with.
 func watchErr(ctx context.Context, c *clients, topics ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	st, err := c.event.Watch(ctx, connect.NewRequest(&pb.WatchRequest{Topics: topics}))
+	st, err := c.event.Watch(ctx, &pb.WatchRequest{Topics: topics})
 	if err != nil {
 		return err
 	}
 	defer func() { _ = st.Close() }()
-	for st.Receive() {
+	var streamErr error
+	for {
+		_, err := st.Receive()
+		if err != nil {
+			streamErr = err
+			break
+		}
 	}
-	return st.Err()
+	if errors.Is(streamErr, io.EOF) {
+		streamErr = nil
+	}
+	return streamErr
 }
 
 // TestGetBlobStreamsInChunks: chunks of at most 64 KiB, metadata in the first
@@ -705,41 +717,41 @@ func TestUpdateRepoDefaultBranch(t *testing.T) {
 	ctx := h.ctx
 	mask := func(paths ...string) *fieldmaskpb.FieldMask { return &fieldmaskpb.FieldMask{Paths: paths} }
 
-	got, err := root.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "proj"}))
+	got, err := root.repo.GetRepo(ctx, &pb.GetRepoRequest{Repo: "proj"})
 	require.NoError(t, err)
-	assert.Equal(t, "main", got.Msg.GetRepo().GetDefaultBranch())
+	assert.Equal(t, "main", got.GetRepo().GetDefaultBranch())
 
 	// A missing branch changes nothing, even next to a valid field.
-	_, err = root.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err = root.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", DefaultBranch: "nope", Description: "never stored", UpdateMask: mask("default_branch", "description"),
-	}))
+	})
 	assert.Equal(t, "failed_precondition", codeName(err))
 	assert.Equal(t, "refs/heads/main", h.bareGit("proj", "symbolic-ref", "HEAD"))
-	got, err = root.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "proj"}))
+	got, err = root.repo.GetRepo(ctx, &pb.GetRepoRequest{Repo: "proj"})
 	require.NoError(t, err)
-	assert.Empty(t, got.Msg.GetRepo().GetDescription())
+	assert.Empty(t, got.GetRepo().GetDescription())
 
 	// A tag is not a branch.
 	h.bareGit("proj", "tag", "v1", "main")
-	_, err = root.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: "proj", DefaultBranch: "v1", UpdateMask: mask("default_branch")}))
+	_, err = root.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{Repo: "proj", DefaultBranch: "v1", UpdateMask: mask("default_branch")})
 	assert.Equal(t, "failed_precondition", codeName(err))
 
-	resp, err := root.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	resp, err := root.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", DefaultBranch: "dev", Description: "the project", Visibility: pb.Visibility_VISIBILITY_PRIVATE,
 		UpdateMask: mask("default_branch", "description", "visibility"),
-	}))
+	})
 	require.NoError(t, err)
-	assert.Equal(t, "dev", resp.Msg.GetRepo().GetDefaultBranch())
-	assert.Equal(t, "the project", resp.Msg.GetRepo().GetDescription())
-	assert.Equal(t, pb.Visibility_VISIBILITY_PRIVATE, resp.Msg.GetRepo().GetVisibility())
+	assert.Equal(t, "dev", resp.GetRepo().GetDefaultBranch())
+	assert.Equal(t, "the project", resp.GetRepo().GetDescription())
+	assert.Equal(t, pb.Visibility_VISIBILITY_PRIVATE, resp.GetRepo().GetVisibility())
 	assert.Equal(t, "refs/heads/dev", h.bareGit("proj", "symbolic-ref", "HEAD"))
 
 	// Reads follow HEAD, and the repository is now hidden from anonymous.
-	refs, err := root.git.ListRefs(ctx, connect.NewRequest(&pb.ListRefsRequest{Repo: "proj", Kinds: []pb.RefKind{pb.RefKind_REF_KIND_HEAD}}))
+	refs, err := root.git.ListRefs(ctx, &pb.ListRefsRequest{Repo: "proj", Kinds: []pb.RefKind{pb.RefKind_REF_KIND_HEAD}})
 	require.NoError(t, err)
-	require.Len(t, refs.Msg.GetRefs(), 1)
-	assert.Equal(t, "dev", refs.Msg.GetRefs()[0].GetShortName())
-	_, err = h.api("").repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "proj"}))
+	require.Len(t, refs.GetRefs(), 1)
+	assert.Equal(t, "dev", refs.GetRefs()[0].GetShortName())
+	_, err = h.api("").repo.GetRepo(ctx, &pb.GetRepoRequest{Repo: "proj"})
 	assert.Equal(t, "not_found", codeName(err))
 
 	// A clone gets the new default branch.
@@ -759,11 +771,11 @@ func TestDeleteRepoMovesToTrash(t *testing.T) {
 	oldHead := h.bareGit("doomed", "rev-parse", "HEAD")
 
 	// Warm the cat-file process of the old directory.
-	_, err := root.git.GetCommit(ctx, connect.NewRequest(&pb.GetCommitRequest{Repo: "doomed"}))
+	_, err := root.git.GetCommit(ctx, &pb.GetCommitRequest{Repo: "doomed"})
 	require.NoError(t, err)
 
 	before := time.Now().Unix()
-	_, err = root.repo.DeleteRepo(ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "doomed"}))
+	_, err = root.repo.DeleteRepo(ctx, &pb.DeleteRepoRequest{Repo: "doomed"})
 	require.NoError(t, err)
 
 	assert.NoDirExists(t, h.repoDir("doomed"))
@@ -778,28 +790,28 @@ func TestDeleteRepoMovesToTrash(t *testing.T) {
 
 	for name, call := range map[string]func() error{
 		"get": func() error {
-			_, err := root.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "doomed"}))
+			_, err := root.repo.GetRepo(ctx, &pb.GetRepoRequest{Repo: "doomed"})
 			return err
 		},
 		"refs": func() error {
-			_, err := root.git.ListRefs(ctx, connect.NewRequest(&pb.ListRefsRequest{Repo: "doomed"}))
+			_, err := root.git.ListRefs(ctx, &pb.ListRefsRequest{Repo: "doomed"})
 			return err
 		},
 		"delete again": func() error {
-			_, err := root.repo.DeleteRepo(ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "doomed"}))
+			_, err := root.repo.DeleteRepo(ctx, &pb.DeleteRepoRequest{Repo: "doomed"})
 			return err
 		},
 	} {
 		assert.Equal(t, "not_found", codeName(call()), name)
 	}
-	list, err := root.repo.ListRepos(ctx, connect.NewRequest(&pb.ListReposRequest{}))
+	list, err := root.repo.ListRepos(ctx, &pb.ListReposRequest{})
 	require.NoError(t, err)
-	assert.Empty(t, list.Msg.GetRepos())
+	assert.Empty(t, list.GetRepos())
 
 	// The name is free again, and the new repository is empty.
-	_, err = root.repo.CreateRepo(ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "doomed"}))
+	_, err = root.repo.CreateRepo(ctx, &pb.CreateRepoRequest{Name: "doomed"})
 	require.NoError(t, err)
-	_, err = root.git.GetCommit(ctx, connect.NewRequest(&pb.GetCommitRequest{Repo: "doomed"}))
+	_, err = root.git.GetCommit(ctx, &pb.GetCommitRequest{Repo: "doomed"})
 	assert.Equal(t, "not_found", codeName(err), "no commit of the deleted repository survives in a reader process")
 }
 
@@ -819,16 +831,16 @@ func TestNetworkRequestsIgnoreAPrincipalInTheContext(t *testing.T) {
 
 	list := func(secret string) []string {
 		c := newClients(srv.URL, secret)
-		resp, err := c.repo.ListRepos(h.ctx, connect.NewRequest(&pb.ListReposRequest{}))
+		resp, err := c.repo.ListRepos(h.ctx, &pb.ListReposRequest{})
 		require.NoError(t, err)
 		var out []string
-		for _, r := range resp.Msg.GetRepos() {
+		for _, r := range resp.GetRepos() {
 			out = append(out, r.GetName())
 		}
 		return out
 	}
 	assert.Equal(t, []string{"pub"}, list(""), "anonymous by its headers, not root by its context")
 	assert.Equal(t, []string{"priv", "pub"}, list(adminToken))
-	_, err := newClients(srv.URL, "").repo.CreateRepo(h.ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "nope"}))
+	_, err := newClients(srv.URL, "").repo.CreateRepo(h.ctx, &pb.CreateRepoRequest{Name: "nope"})
 	assert.Equal(t, "unauthenticated", codeName(err))
 }

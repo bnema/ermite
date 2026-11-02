@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 )
 
 // redirected matches the message Connect gives to a 3xx answer.
@@ -58,7 +58,7 @@ func (c *Client) Describe(err error) error {
 	case connect.CodeAlreadyExists:
 		text = with("already exists")
 	case connect.CodeInvalidArgument:
-		if !connect.IsWireError(err) {
+		if !ce.IsRemote() {
 			// Raised by the client library: the answer was cut or garbled.
 			text = "the connection to " + c.cfg.URL + " broke or the answer was malformed"
 			if msg != "" {

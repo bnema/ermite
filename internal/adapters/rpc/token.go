@@ -5,8 +5,6 @@ package rpc
 import (
 	"context"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -15,35 +13,35 @@ import (
 // tokenService implements ermiteconnect.TokenServiceHandler.
 type tokenService struct{ tokens ports.TokenService }
 
-func (s *tokenService) CreateToken(ctx context.Context, req *connect.Request[pb.CreateTokenRequest]) (*connect.Response[pb.CreateTokenResponse], error) {
+func (s *tokenService) CreateToken(ctx context.Context, req *pb.CreateTokenRequest) (*pb.CreateTokenResponse, error) {
 	params := ports.CreateTokenParams{
-		Label:     req.Msg.GetLabel(),
-		ExpiresAt: goTime(req.Msg.GetExpiresAt()),
+		Label:     req.GetLabel(),
+		ExpiresAt: goTime(req.GetExpiresAt()),
 	}
-	for _, sc := range req.Msg.GetScopes() {
+	for _, sc := range req.GetScopes() {
 		scope, err := scopeFromPB(sc)
 		if err != nil {
 			return nil, connectError(ctx, err)
 		}
 		params.Scopes = append(params.Scopes, scope)
 	}
-	for _, r := range req.Msg.GetRepos() {
+	for _, r := range req.GetRepos() {
 		name, err := domain.ParseRepoName(r)
 		if err != nil {
 			return nil, connectError(ctx, err)
 		}
 		params.Repos = append(params.Repos, name)
 	}
-	params.BranchPrefixes = req.Msg.GetBranchPrefixes()
+	params.BranchPrefixes = req.GetBranchPrefixes()
 	created, err := s.tokens.Create(ctx, caller(ctx), params)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.CreateTokenResponse{Token: tokenToPB(created.Token), Secret: created.Secret}), nil
+	return &pb.CreateTokenResponse{Token: tokenToPB(created.Token), Secret: created.Secret}, nil
 }
 
-func (s *tokenService) ListTokens(ctx context.Context, req *connect.Request[pb.ListTokensRequest]) (*connect.Response[pb.ListTokensResponse], error) {
-	page, err := s.tokens.ListPage(ctx, caller(ctx), int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+func (s *tokenService) ListTokens(ctx context.Context, req *pb.ListTokensRequest) (*pb.ListTokensResponse, error) {
+	page, err := s.tokens.ListPage(ctx, caller(ctx), int(req.GetPageSize()), req.GetPageToken())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -51,12 +49,12 @@ func (s *tokenService) ListTokens(ctx context.Context, req *connect.Request[pb.L
 	for _, t := range page.Tokens {
 		out.Tokens = append(out.Tokens, tokenToPB(t))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *tokenService) RevokeToken(ctx context.Context, req *connect.Request[pb.RevokeTokenRequest]) (*connect.Response[pb.RevokeTokenResponse], error) {
-	if err := s.tokens.Revoke(ctx, caller(ctx), req.Msg.GetId()); err != nil {
+func (s *tokenService) RevokeToken(ctx context.Context, req *pb.RevokeTokenRequest) (*pb.RevokeTokenResponse, error) {
+	if err := s.tokens.Revoke(ctx, caller(ctx), req.GetId()); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.RevokeTokenResponse{}), nil
+	return &pb.RevokeTokenResponse{}, nil
 }

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
@@ -73,8 +73,8 @@ func optionalRepo(s *string) (domain.RepoName, error) {
 	return domain.ParseRepoName(*s)
 }
 
-func (s *journalService) ListActivity(ctx context.Context, req *connect.Request[pb.ListActivityRequest]) (*connect.Response[pb.ListActivityResponse], error) {
-	m := req.Msg
+func (s *journalService) ListActivity(ctx context.Context, req *pb.ListActivityRequest) (*pb.ListActivityResponse, error) {
+	m := req
 	repo, err := optionalRepo(m.Repo)
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -101,17 +101,17 @@ func (s *journalService) ListActivity(ctx context.Context, req *connect.Request[
 	for _, e := range page.Entries {
 		out.Entries = append(out.Entries, activityEntryToPB(e))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 // errNoJournal answers ListUnreleased on a server without the journal.
 var errNoJournal = errors.New("the server has no journal")
 
-func (s *releaseService) ListUnreleased(ctx context.Context, req *connect.Request[pb.ListUnreleasedRequest]) (*connect.Response[pb.ListUnreleasedResponse], error) {
+func (s *releaseService) ListUnreleased(ctx context.Context, req *pb.ListUnreleasedRequest) (*pb.ListUnreleasedResponse, error) {
 	if s.journal == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errNoJournal)
+		return nil, connect.NewError(connect.CodeUnimplemented, errNoJournal.Error()).WithCause(errNoJournal)
 	}
-	repo, err := optionalRepo(req.Msg.Repo)
+	repo, err := optionalRepo(req.Repo)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -123,5 +123,5 @@ func (s *releaseService) ListUnreleased(ctx context.Context, req *connect.Reques
 	for _, u := range list {
 		out.Repos = append(out.Repos, unreleasedToPB(u))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }

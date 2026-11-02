@@ -10,7 +10,6 @@ import (
 
 	"bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/adapters/client"
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 )
 
@@ -84,17 +83,17 @@ func newItemEditCmd(env *cliEnv, mr bool) *cobra.Command {
 			return err
 		}
 		if mr {
-			res, err := c.MergeRequests().EditMergeRequest(env.ctx(cmd), connect.NewRequest(&ermite.EditMergeRequestRequest{Repo: args[0], Number: n, Title: t, Description: text}))
+			res, err := c.MergeRequests().EditMergeRequest(env.ctx(cmd), &ermite.EditMergeRequestRequest{Repo: args[0], Number: n, Title: t, Description: text})
 			if err != nil {
 				return c.Describe(err)
 			}
-			return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "Edited", c.URL())
+			return outputMR(cmd, res.GetMergeRequest(), *asJSON, "Edited", c.URL())
 		}
-		res, err := c.Issues().EditIssue(env.ctx(cmd), connect.NewRequest(&ermite.EditIssueRequest{Repo: args[0], Number: n, Title: t, Body: text}))
+		res, err := c.Issues().EditIssue(env.ctx(cmd), &ermite.EditIssueRequest{Repo: args[0], Number: n, Title: t, Body: text})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputIssue(cmd, res.Msg.GetIssue(), *asJSON, "Edited", c.URL())
+		return outputIssue(cmd, res.GetIssue(), *asJSON, "Edited", c.URL())
 	}
 	return cmd
 }

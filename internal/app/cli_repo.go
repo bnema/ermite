@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
@@ -163,11 +162,11 @@ func newRepoCmd(env *cliEnv) *cobra.Command {
 // listRepos reads every page of repositories.
 func listRepos(ctx context.Context, c *client.Client) ([]*ermite.Repo, error) {
 	return collect(ctx, func(token string) ([]*ermite.Repo, string, error) {
-		res, err := c.Repos().ListRepos(ctx, connect.NewRequest(&ermite.ListReposRequest{PageToken: token}))
+		res, err := c.Repos().ListRepos(ctx, &ermite.ListReposRequest{PageToken: token})
 		if err != nil {
 			return nil, "", c.Describe(err)
 		}
-		return res.Msg.GetRepos(), res.Msg.GetNextPageToken(), nil
+		return res.GetRepos(), res.GetNextPageToken(), nil
 	})
 }
 
@@ -285,11 +284,11 @@ func newRepoShowCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Repos().GetRepo(env.ctx(cmd), connect.NewRequest(&ermite.GetRepoRequest{Repo: args[0]}))
+		res, err := c.Repos().GetRepo(env.ctx(cmd), &ermite.GetRepoRequest{Repo: args[0]})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputRepo(cmd, res.Msg.GetRepo(), *asJSON)
+		return outputRepo(cmd, res.GetRepo(), *asJSON)
 	}
 	return cmd
 }
@@ -321,11 +320,11 @@ func newRepoCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Repos().CreateRepo(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.Repos().CreateRepo(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputRepo(cmd, res.Msg.GetRepo(), *asJSON)
+		return outputRepo(cmd, res.GetRepo(), *asJSON)
 	}
 	return cmd
 }
@@ -399,11 +398,11 @@ func newRepoEditCmd(env *cliEnv) *cobra.Command {
 				return err
 			}
 		}
-		res, err := c.Repos().UpdateRepo(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.Repos().UpdateRepo(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputRepo(cmd, res.Msg.GetRepo(), *asJSON)
+		return outputRepo(cmd, res.GetRepo(), *asJSON)
 	}
 	return cmd
 }
@@ -509,7 +508,7 @@ func newRepoDeleteCmd(env *cliEnv) *cobra.Command {
 				return err
 			}
 		}
-		if _, err := c.Repos().DeleteRepo(env.ctx(cmd), connect.NewRequest(&ermite.DeleteRepoRequest{Repo: name})); err != nil {
+		if _, err := c.Repos().DeleteRepo(env.ctx(cmd), &ermite.DeleteRepoRequest{Repo: name}); err != nil {
 			return c.Describe(err)
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted %s\n", name)

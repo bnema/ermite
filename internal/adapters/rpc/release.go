@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/domain"
@@ -60,8 +58,8 @@ func (s *releaseService) releaseRow(ctx context.Context, repo domain.RepoName, r
 	return out, nil
 }
 
-func (s *releaseService) CreateRelease(ctx context.Context, req *connect.Request[pb.CreateReleaseRequest]) (*connect.Response[pb.CreateReleaseResponse], error) {
-	m := req.Msg
+func (s *releaseService) CreateRelease(ctx context.Context, req *pb.CreateReleaseRequest) (*pb.CreateReleaseResponse, error) {
+	m := req
 	repo, err := repoOf(m.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -74,7 +72,7 @@ func (s *releaseService) CreateRelease(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.CreateReleaseResponse{Release: out}), nil
+	return &pb.CreateReleaseResponse{Release: out}, nil
 }
 
 func releaseRef(m *pb.GetReleaseRequest) (ports.ReleaseRef, error) {
@@ -95,12 +93,12 @@ func releaseRef(m *pb.GetReleaseRequest) (ports.ReleaseRef, error) {
 	return ports.ReleaseRef{}, fmt.Errorf("%w: select an id, tag or latest=true", domain.ErrInvalid)
 }
 
-func (s *releaseService) GetRelease(ctx context.Context, req *connect.Request[pb.GetReleaseRequest]) (*connect.Response[pb.GetReleaseResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) GetRelease(ctx context.Context, req *pb.GetReleaseRequest) (*pb.GetReleaseResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	ref, err := releaseRef(req.Msg)
+	ref, err := releaseRef(req)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -112,15 +110,15 @@ func (s *releaseService) GetRelease(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.GetReleaseResponse{Release: out}), nil
+	return &pb.GetReleaseResponse{Release: out}, nil
 }
 
-func (s *releaseService) ListReleases(ctx context.Context, req *connect.Request[pb.ListReleasesRequest]) (*connect.Response[pb.ListReleasesResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) ListReleases(ctx context.Context, req *pb.ListReleasesRequest) (*pb.ListReleasesResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	page, err := s.rel.ListReleases(ctx, caller(ctx), repo, int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+	page, err := s.rel.ListReleases(ctx, caller(ctx), repo, int(req.GetPageSize()), req.GetPageToken())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -136,7 +134,7 @@ func (s *releaseService) ListReleases(ctx context.Context, req *connect.Request[
 		}
 		out.Releases = append(out.Releases, m)
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func releaseUpdateParams(m *pb.UpdateReleaseRequest) (ports.UpdateReleaseParams, error) {
@@ -167,16 +165,16 @@ func releaseUpdateParams(m *pb.UpdateReleaseRequest) (ports.UpdateReleaseParams,
 	return p, nil
 }
 
-func (s *releaseService) UpdateRelease(ctx context.Context, req *connect.Request[pb.UpdateReleaseRequest]) (*connect.Response[pb.UpdateReleaseResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) UpdateRelease(ctx context.Context, req *pb.UpdateReleaseRequest) (*pb.UpdateReleaseResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	p, err := releaseUpdateParams(req.Msg)
+	p, err := releaseUpdateParams(req)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	r, err := s.rel.UpdateRelease(ctx, caller(ctx), repo, req.Msg.GetId(), p)
+	r, err := s.rel.UpdateRelease(ctx, caller(ctx), repo, req.GetId(), p)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -184,23 +182,23 @@ func (s *releaseService) UpdateRelease(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.UpdateReleaseResponse{Release: out}), nil
+	return &pb.UpdateReleaseResponse{Release: out}, nil
 }
 
-func (s *releaseService) DeleteRelease(ctx context.Context, req *connect.Request[pb.DeleteReleaseRequest]) (*connect.Response[pb.DeleteReleaseResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) DeleteRelease(ctx context.Context, req *pb.DeleteReleaseRequest) (*pb.DeleteReleaseResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	if err := s.rel.DeleteRelease(ctx, caller(ctx), repo, req.Msg.GetId()); err != nil {
+	if err := s.rel.DeleteRelease(ctx, caller(ctx), repo, req.GetId()); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteReleaseResponse{}), nil
+	return &pb.DeleteReleaseResponse{}, nil
 }
 
 // chunkReader retains at most one message; metadata belongs to the first only.
 type chunkReader struct {
-	stream *connect.ClientStream[pb.UploadReleaseAssetRequest]
+	stream ermiteconnect.ReleaseServiceUploadReleaseAssetServerStream
 	buf    []byte
 }
 
@@ -209,13 +207,13 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 		return 0, nil
 	}
 	for len(r.buf) == 0 {
-		if !r.stream.Receive() {
-			if err := r.stream.Err(); err != nil {
-				return 0, err
+		m, err := r.stream.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return 0, io.EOF
 			}
-			return 0, io.EOF
+			return 0, err
 		}
-		m := r.stream.Msg()
 		if m.GetRepo() != "" || m.GetReleaseId() != 0 || m.GetName() != "" || m.GetLabel() != "" || m.GetContentType() != "" || m.GetSize() != 0 || m.GetReplace() {
 			return 0, fmt.Errorf("%w: upload metadata is in the first message only", domain.ErrInvalid)
 		}
@@ -229,15 +227,14 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *releaseService) UploadReleaseAsset(ctx context.Context, stream *connect.ClientStream[pb.UploadReleaseAssetRequest]) (*connect.Response[pb.UploadReleaseAssetResponse], error) {
-	if !stream.Receive() {
-		err := stream.Err()
-		if err == nil {
+func (s *releaseService) UploadReleaseAsset(ctx context.Context, stream ermiteconnect.ReleaseServiceUploadReleaseAssetServerStream) (*pb.UploadReleaseAssetResponse, error) {
+	m, err := stream.Receive()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
 			err = fmt.Errorf("%w: the stream has no message", domain.ErrInvalid)
 		}
 		return nil, connectError(ctx, err)
 	}
-	m := stream.Msg()
 	repo, err := repoOf(m.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -252,7 +249,7 @@ func (s *releaseService) UploadReleaseAsset(ctx context.Context, stream *connect
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.UploadReleaseAssetResponse{Asset: assetToPB(a)}), nil
+	return &pb.UploadReleaseAssetResponse{Asset: assetToPB(a)}, nil
 }
 
 func assetUpdateParams(m *pb.UpdateReleaseAssetRequest) (ports.UpdateAssetParams, error) {
@@ -273,31 +270,31 @@ func assetUpdateParams(m *pb.UpdateReleaseAssetRequest) (ports.UpdateAssetParams
 	return p, nil
 }
 
-func (s *releaseService) UpdateReleaseAsset(ctx context.Context, req *connect.Request[pb.UpdateReleaseAssetRequest]) (*connect.Response[pb.UpdateReleaseAssetResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) UpdateReleaseAsset(ctx context.Context, req *pb.UpdateReleaseAssetRequest) (*pb.UpdateReleaseAssetResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	p, err := assetUpdateParams(req.Msg)
+	p, err := assetUpdateParams(req)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	a, err := s.rel.UpdateAsset(ctx, caller(ctx), repo, req.Msg.GetAssetId(), p)
+	a, err := s.rel.UpdateAsset(ctx, caller(ctx), repo, req.GetAssetId(), p)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.UpdateReleaseAssetResponse{Asset: assetToPB(a)}), nil
+	return &pb.UpdateReleaseAssetResponse{Asset: assetToPB(a)}, nil
 }
 
-func (s *releaseService) DeleteReleaseAsset(ctx context.Context, req *connect.Request[pb.DeleteReleaseAssetRequest]) (*connect.Response[pb.DeleteReleaseAssetResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) DeleteReleaseAsset(ctx context.Context, req *pb.DeleteReleaseAssetRequest) (*pb.DeleteReleaseAssetResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	if err := s.rel.DeleteAsset(ctx, caller(ctx), repo, req.Msg.GetAssetId()); err != nil {
+	if err := s.rel.DeleteAsset(ctx, caller(ctx), repo, req.GetAssetId()); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteReleaseAssetResponse{}), nil
+	return &pb.DeleteReleaseAssetResponse{}, nil
 }
 
 func assetRef(m *pb.DownloadReleaseAssetRequest) (ports.AssetRef, error) {
@@ -318,16 +315,16 @@ func assetRef(m *pb.DownloadReleaseAssetRequest) (ports.AssetRef, error) {
 	return ports.AssetRef{}, fmt.Errorf("%w: select an asset id, tag/name or latest=true/name", domain.ErrInvalid)
 }
 
-func (s *releaseService) DownloadReleaseAsset(ctx context.Context, req *connect.Request[pb.DownloadReleaseAssetRequest], stream *connect.ServerStream[pb.DownloadReleaseAssetResponse]) error {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) DownloadReleaseAsset(ctx context.Context, req *pb.DownloadReleaseAssetRequest, stream ermiteconnect.ReleaseServiceDownloadReleaseAssetServerStream) error {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return connectError(ctx, err)
 	}
-	ref, err := assetRef(req.Msg)
+	ref, err := assetRef(req)
 	if err != nil {
 		return connectError(ctx, err)
 	}
-	err = s.rel.DownloadAsset(ctx, caller(ctx), repo, ref, req.Msg.GetOffset(), -1, func(c ports.AssetChunk) error {
+	err = s.rel.DownloadAsset(ctx, caller(ctx), repo, ref, req.GetOffset(), -1, func(c ports.AssetChunk) error {
 		m := &pb.DownloadReleaseAssetResponse{Chunk: c.Data}
 		if c.Asset != nil {
 			m.Asset = assetToPB(*c.Asset)
@@ -337,20 +334,20 @@ func (s *releaseService) DownloadReleaseAsset(ctx context.Context, req *connect.
 	return connectError(ctx, err)
 }
 
-func (s *releaseService) ListReleaseAssets(ctx context.Context, req *connect.Request[pb.ListReleaseAssetsRequest]) (*connect.Response[pb.ListReleaseAssetsResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) ListReleaseAssets(ctx context.Context, req *pb.ListReleaseAssetsRequest) (*pb.ListReleaseAssetsResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	assets, err := s.rel.ListAssets(ctx, caller(ctx), repo, req.Msg.GetReleaseId())
+	assets, err := s.rel.ListAssets(ctx, caller(ctx), repo, req.GetReleaseId())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.ListReleaseAssetsResponse{Assets: assetsToPB(assets)}), nil
+	return &pb.ListReleaseAssetsResponse{Assets: assetsToPB(assets)}, nil
 }
 
-func (s *releaseService) GetReleaseUsage(ctx context.Context, req *connect.Request[pb.GetReleaseUsageRequest]) (*connect.Response[pb.GetReleaseUsageResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *releaseService) GetReleaseUsage(ctx context.Context, req *pb.GetReleaseUsageRequest) (*pb.GetReleaseUsageResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -358,5 +355,5 @@ func (s *releaseService) GetReleaseUsage(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.GetReleaseUsageResponse{UsedBytes: u.Used, QuotaBytes: u.Limits.Quota, AssetMaxBytes: u.Limits.AssetMax, AssetsMax: int32(u.Limits.AssetsMax)}), nil
+	return &pb.GetReleaseUsageResponse{UsedBytes: u.Used, QuotaBytes: u.Limits.Quota, AssetMaxBytes: u.Limits.AssetMax, AssetsMax: int32(u.Limits.AssetsMax)}, nil
 }

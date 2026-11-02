@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -89,13 +89,27 @@ func TestInterceptorAuthenticate(t *testing.T) {
 				limiter.EXPECT().Fail(mock.Anything, "203.0.113.7").Once()
 			}
 			i := newInterceptor(Config{Auth: auth, Limiter: limiter})
-			ctx, err := i.authenticate(context.Background(), tt.procedure, peer, tt.header)
+			var ctx context.Context
+			var authErr error
+			info := &connect.CallInfo{PeerAddr: peer}
+			for k, v := range tt.header {
+				info.RequestHeader().SetValues(k, v)
+			}
+			server := connect.NewServer(func(next connect.ServerFunc) connect.ServerFunc {
+				return func(c context.Context, spec connect.Spec, stream connect.ServerStream) error {
+					ctx, authErr = i.authenticate(c, spec.Procedure, peer, tt.header)
+					return authErr
+				}
+			})
+			server.Register(connect.Method{Spec: connect.Spec{Procedure: tt.procedure}, Handler: func(context.Context, connect.Spec, connect.ServerStream) error { return nil }})
+			err := server.Call(context.Background(), tt.procedure, info, nil)
+
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				if tt.wantRetry != "" {
 					var ce *connect.Error
 					require.ErrorAs(t, err, &ce)
-					assert.Equal(t, tt.wantRetry, ce.Meta().Get("Retry-After"))
+					assert.Equal(t, tt.wantRetry, info.ResponseHeader().Get("Retry-After"))
 				}
 				return
 			}

@@ -4,13 +4,14 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -219,15 +220,15 @@ func newRunListCmd(env *cliEnv) *cobra.Command {
 		var runs []*ermite.Run
 		token := ""
 		for len(runs) < limit {
-			res, err := c.Runs().ListRuns(ctx, connect.NewRequest(&ermite.ListRunsRequest{
+			res, err := c.Runs().ListRuns(ctx, &ermite.ListRunsRequest{
 				Repo: args[0], PageSize: int32(min(limit-len(runs), 100)), PageToken: token, //nolint:gosec // bounded
 				Workflow: workflow, Branch: branch, Status: st,
-			}))
+			})
 			if err != nil {
 				return err
 			}
-			runs = append(runs, res.Msg.GetRuns()...)
-			if token = res.Msg.GetNextPageToken(); token == "" {
+			runs = append(runs, res.GetRuns()...)
+			if token = res.GetNextPageToken(); token == "" {
 				break
 			}
 		}
@@ -304,26 +305,26 @@ func newRunViewCmd(env *cliEnv) *cobra.Command {
 			return err
 		}
 		ctx := env.ctx(cmd)
-		res, err := c.Runs().GetRun(ctx, connect.NewRequest(&ermite.GetRunRequest{Repo: args[0], RunId: id, Attempt: attempt}))
+		res, err := c.Runs().GetRun(ctx, &ermite.GetRunRequest{Repo: args[0], RunId: id, Attempt: attempt})
 		if err != nil {
 			return err
 		}
 		if logFlag {
-			return printRunLog(ctx, cmd.OutOrStdout(), c, args[0], res.Msg, jobFlag, false)
+			return printRunLog(ctx, cmd.OutOrStdout(), c, args[0], res, jobFlag, false)
 		}
 		if summaryFlag {
-			return printRunSummaries(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), c, args[0], res.Msg, jobFlag)
+			return printRunSummaries(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), c, args[0], res, jobFlag)
 		}
-		anns, err := runAnnotations(ctx, c, args[0], res.Msg)
+		anns, err := runAnnotations(ctx, c, args[0], res)
 		if err != nil {
 			return err
 		}
 		if *asJSON {
 			d := jsonRunDetail{
-				jsonRun: toJSONRun(res.Msg.GetRun()), LatestAttempt: res.Msg.GetLatestAttempt(), Jobs: []jsonRunJob{},
+				jsonRun: toJSONRun(res.GetRun()), LatestAttempt: res.GetLatestAttempt(), Jobs: []jsonRunJob{},
 				Annotations: []jsonAnnotation{}, AnnotationsTruncated: anns.truncated,
 			}
-			for _, j := range res.Msg.GetJobs() {
+			for _, j := range res.GetJobs() {
 				d.Jobs = append(d.Jobs, toJSONRunJob(j))
 			}
 			for _, a := range anns.items {
@@ -331,7 +332,7 @@ func newRunViewCmd(env *cliEnv) *cobra.Command {
 			}
 			return writeJSON(cmd.OutOrStdout(), d)
 		}
-		if err := printRun(cmd.OutOrStdout(), res.Msg); err != nil {
+		if err := printRun(cmd.OutOrStdout(), res); err != nil {
 			return err
 		}
 		return printAnnotations(cmd.OutOrStdout(), anns)
@@ -398,16 +399,16 @@ func runAnnotations(ctx context.Context, c *client.Client, repo string, r *ermit
 	for _, j := range r.GetJobs() {
 		out.jobs[j.GetId()] = j
 	}
-	res, err := c.Runs().ListAnnotations(ctx, connect.NewRequest(&ermite.ListAnnotationsRequest{
+	res, err := c.Runs().ListAnnotations(ctx, &ermite.ListAnnotationsRequest{
 		Repo: repo, RunId: r.GetRun().GetId(), Attempt: r.GetRun().GetAttempt(),
-	}))
+	})
 	if connect.CodeOf(err) == connect.CodeUnimplemented {
 		return out, nil
 	}
 	if err != nil {
 		return runNotes{}, err
 	}
-	out.items, out.truncated = res.Msg.GetAnnotations(), res.Msg.GetTruncated()
+	out.items, out.truncated = res.GetAnnotations(), res.GetTruncated()
 	return out, nil
 }
 
@@ -496,17 +497,17 @@ func printRunSummaries(ctx context.Context, w, errw io.Writer, c *client.Client,
 		if j.GetStatus() == ermite.CiStatus_CI_STATUS_QUEUED || j.GetStatus() == ermite.CiStatus_CI_STATUS_PENDING {
 			continue
 		}
-		res, err := c.Runs().GetStepSummaries(ctx, connect.NewRequest(&ermite.GetStepSummariesRequest{Repo: repo, JobId: j.GetId(), Attempt: j.GetAttempt()}))
+		res, err := c.Runs().GetStepSummaries(ctx, &ermite.GetStepSummariesRequest{Repo: repo, JobId: j.GetId(), Attempt: j.GetAttempt()})
 		if connect.CodeOf(err) == connect.CodeUnimplemented {
 			return fmt.Errorf("the server does not keep job summaries (it lacks the ci.summaries feature)")
 		}
 		if err != nil {
 			return err
 		}
-		for _, s := range res.Msg.GetSummaries() {
+		for _, s := range res.GetSummaries() {
 			all = append(all, found{j, s})
 		}
-		truncated = truncated || res.Msg.GetTruncated()
+		truncated = truncated || res.GetTruncated()
 	}
 	if len(all) == 0 {
 		noticef2(errw, "the run has no job summary")
@@ -593,16 +594,22 @@ func streamJobLog(ctx context.Context, w io.Writer, c *client.Client, repo strin
 		noticef2(w, "job %q has not started: no log yet", j.GetName())
 		return nil
 	}
-	stream, err := c.Runs().GetJobLog(ctx, connect.NewRequest(&ermite.GetJobLogRequest{
+	stream, err := c.Runs().GetJobLog(ctx, &ermite.GetJobLogRequest{
 		Repo: repo, JobId: j.GetId(), Attempt: j.GetAttempt(), Follow: follow,
-	}))
+	})
 	if err != nil {
 		return err
 	}
 	defer func() { _ = stream.Close() }()
 	open := false
-	for stream.Receive() {
-		for _, l := range stream.Msg().GetLines() {
+	var streamErr error
+	for {
+		msg, err := stream.Receive()
+		if err != nil {
+			streamErr = err
+			break
+		}
+		for _, l := range msg.GetLines() {
 			if l.GetContinued() && open {
 				_, _ = fmt.Fprint(w, clean(l.GetText()))
 				continue
@@ -614,10 +621,13 @@ func streamJobLog(ctx context.Context, w io.Writer, c *client.Client, repo strin
 			open = true
 		}
 	}
+	if errors.Is(streamErr, io.EOF) {
+		streamErr = nil
+	}
 	if open {
 		_, _ = fmt.Fprintln(w)
 	}
-	if err := stream.Err(); err != nil && connect.CodeOf(err) != connect.CodeNotFound {
+	if err := streamErr; err != nil && connect.CodeOf(err) != connect.CodeNotFound {
 		return err
 	}
 	return nil
@@ -653,22 +663,22 @@ func newRunWatchCmd(env *cliEnv) *cobra.Command {
 		w := cmd.OutOrStdout()
 		last := ""
 		for {
-			res, err := c.Runs().GetRun(ctx, connect.NewRequest(&ermite.GetRunRequest{Repo: args[0], RunId: id}))
+			res, err := c.Runs().GetRun(ctx, &ermite.GetRunRequest{Repo: args[0], RunId: id})
 			if err != nil {
 				return err
 			}
-			if line := watchLine(res.Msg); line != last {
+			if line := watchLine(res); line != last {
 				_, _ = fmt.Fprintln(w, line)
 				last = line
 			}
-			if res.Msg.GetRun().GetStatus() == ermite.CiStatus_CI_STATUS_COMPLETED {
+			if res.GetRun().GetStatus() == ermite.CiStatus_CI_STATUS_COMPLETED {
 				if logFlag {
-					if err := printRunLog(ctx, w, c, args[0], res.Msg, "", false); err != nil {
+					if err := printRunLog(ctx, w, c, args[0], res, "", false); err != nil {
 						return err
 					}
 				}
-				if res.Msg.GetRun().GetConclusion() != ermite.CiConclusion_CI_CONCLUSION_SUCCESS {
-					return fmt.Errorf("run %d: %s", id, runResult(res.Msg.GetRun().GetStatus(), res.Msg.GetRun().GetConclusion()))
+				if res.GetRun().GetConclusion() != ermite.CiConclusion_CI_CONCLUSION_SUCCESS {
+					return fmt.Errorf("run %d: %s", id, runResult(res.GetRun().GetStatus(), res.GetRun().GetConclusion()))
 				}
 				return nil
 			}
@@ -709,14 +719,14 @@ func newRunCancelCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Runs().CancelRun(env.ctx(cmd), connect.NewRequest(&ermite.CancelRunRequest{Repo: args[0], RunId: id}))
+		res, err := c.Runs().CancelRun(env.ctx(cmd), &ermite.CancelRunRequest{Repo: args[0], RunId: id})
 		if err != nil {
 			return err
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONRun(res.Msg.GetRun()))
+			return writeJSON(cmd.OutOrStdout(), toJSONRun(res.GetRun()))
 		}
-		noticef(cmd, "run %d: cancellation requested (%s)", id, runResult(res.Msg.GetRun().GetStatus(), res.Msg.GetRun().GetConclusion()))
+		noticef(cmd, "run %d: cancellation requested (%s)", id, runResult(res.GetRun().GetStatus(), res.GetRun().GetConclusion()))
 		return nil
 	}
 	return cmd
@@ -742,14 +752,14 @@ func newRunRerunCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Runs().RerunRun(env.ctx(cmd), connect.NewRequest(&ermite.RerunRunRequest{Repo: args[0], RunId: id, FailedOnly: failed}))
+		res, err := c.Runs().RerunRun(env.ctx(cmd), &ermite.RerunRunRequest{Repo: args[0], RunId: id, FailedOnly: failed})
 		if err != nil {
 			return err
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONRun(res.Msg.GetRun()))
+			return writeJSON(cmd.OutOrStdout(), toJSONRun(res.GetRun()))
 		}
-		noticef(cmd, "run %d: attempt %d started", id, res.Msg.GetRun().GetAttempt())
+		noticef(cmd, "run %d: attempt %d started", id, res.GetRun().GetAttempt())
 		return nil
 	}
 	return cmd

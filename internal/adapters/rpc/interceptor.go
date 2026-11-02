@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"bnema.dev/zerowrap"
+	"connectrpc.com/connect/v2"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/clientlimit"
@@ -60,8 +60,10 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 	ctx = context.WithValue(ctx, clientKey{}, clientlimit.Key(addr))
 	if blocked, wait := i.limiter.Blocked(ctx, addr); blocked {
 		log.Warn().Str("client", addr).Msg("too many failed authentications, api request blocked")
-		err := connect.NewError(connect.CodeResourceExhausted, errors.New("too many failed authentications"))
-		err.Meta().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		err := connect.NewError(connect.CodeResourceExhausted, "too many failed authentications")
+		if info, ok := connect.CallInfoForServerContext(ctx); ok {
+			info.ResponseHeader().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		}
 		return ctx, err
 	}
 
@@ -81,7 +83,7 @@ func (i *interceptor) authenticate(ctx context.Context, procedure, peerAddr stri
 	case errors.Is(err, domain.ErrUnauthenticated):
 		i.limiter.Fail(ctx, addr)
 		log.Debug().Str("client", addr).Msg("invalid api credentials")
-		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid token"))
+		return ctx, connect.NewError(connect.CodeUnauthenticated, "invalid token")
 	case err != nil:
 		return ctx, connectError(ctx, err)
 	}
@@ -138,35 +140,19 @@ func logCall(ctx context.Context, procedure string, start time.Time, err error) 
 		Msg("api call")
 }
 
-// WrapUnary implements connect.Interceptor.
-func (i *interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
-	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+func (i *interceptor) intercept(next connect.ServerFunc) connect.ServerFunc {
+	return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) (err error) {
 		start := time.Now()
-		ctx, err := i.authenticate(ctx, req.Spec().Procedure, req.Peer().Addr, req.Header())
-		var resp connect.AnyResponse
-		if err == nil {
-			resp, err = next(ctx, req)
+		info, _ := connect.CallInfoForServerContext(ctx)
+		h := make(http.Header)
+		for k, v := range info.RequestHeader().All() {
+			h[k] = v
 		}
-		logCall(ctx, req.Spec().Procedure, start, err)
-		return resp, err
-	}
-}
-
-// WrapStreamingClient implements connect.Interceptor; the server has no
-// client side.
-func (i *interceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return next
-}
-
-// WrapStreamingHandler implements connect.Interceptor.
-func (i *interceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		start := time.Now()
-		ctx, err := i.authenticate(ctx, conn.Spec().Procedure, conn.Peer().Addr, conn.RequestHeader())
+		ctx, err = i.authenticate(ctx, spec.Procedure, info.PeerAddr, h)
 		if err == nil {
-			err = next(ctx, conn)
+			err = next(ctx, spec, stream)
 		}
-		logCall(ctx, conn.Spec().Procedure, start, err)
+		logCall(ctx, spec.Procedure, start, err)
 		return err
 	}
 }

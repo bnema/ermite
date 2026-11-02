@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -16,8 +14,8 @@ import (
 // repoService implements ermiteconnect.RepoServiceHandler.
 type repoService struct{ repos ports.RepoService }
 
-func (s *repoService) ListRepos(ctx context.Context, req *connect.Request[pb.ListReposRequest]) (*connect.Response[pb.ListReposResponse], error) {
-	page, err := s.repos.ListPage(ctx, caller(ctx), int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+func (s *repoService) ListRepos(ctx context.Context, req *pb.ListReposRequest) (*pb.ListReposResponse, error) {
+	page, err := s.repos.ListPage(ctx, caller(ctx), int(req.GetPageSize()), req.GetPageToken())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -29,11 +27,11 @@ func (s *repoService) ListRepos(ctx context.Context, req *connect.Request[pb.Lis
 		}
 		out.Repos = append(out.Repos, repoToPB(view))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *repoService) GetRepo(ctx context.Context, req *connect.Request[pb.GetRepoRequest]) (*connect.Response[pb.GetRepoResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *repoService) GetRepo(ctx context.Context, req *pb.GetRepoRequest) (*pb.GetRepoResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -44,17 +42,17 @@ func (s *repoService) GetRepo(ctx context.Context, req *connect.Request[pb.GetRe
 	return respondRepo(ctx, s.repos, repo, func(r *pb.Repo) *pb.GetRepoResponse { return &pb.GetRepoResponse{Repo: r} })
 }
 
-func (s *repoService) CreateRepo(ctx context.Context, req *connect.Request[pb.CreateRepoRequest]) (*connect.Response[pb.CreateRepoResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetName())
+func (s *repoService) CreateRepo(ctx context.Context, req *pb.CreateRepoRequest) (*pb.CreateRepoResponse, error) {
+	name, err := domain.ParseRepoName(req.GetName())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	vis, err := visibilityFromPB(req.Msg.GetVisibility())
+	vis, err := visibilityFromPB(req.GetVisibility())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 	repo, err := s.repos.Create(ctx, caller(ctx), ports.CreateRepoParams{
-		Name: name, Description: req.Msg.GetDescription(), Topics: req.Msg.GetTopics(), Visibility: vis,
+		Name: name, Description: req.GetDescription(), Topics: req.GetTopics(), Visibility: vis,
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -62,12 +60,12 @@ func (s *repoService) CreateRepo(ctx context.Context, req *connect.Request[pb.Cr
 	return respondRepo(ctx, s.repos, repo, func(r *pb.Repo) *pb.CreateRepoResponse { return &pb.CreateRepoResponse{Repo: r} })
 }
 
-func (s *repoService) UpdateRepo(ctx context.Context, req *connect.Request[pb.UpdateRepoRequest]) (*connect.Response[pb.UpdateRepoResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *repoService) UpdateRepo(ctx context.Context, req *pb.UpdateRepoRequest) (*pb.UpdateRepoResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	params, err := updateParams(req.Msg)
+	params, err := updateParams(req)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -135,22 +133,22 @@ func updateParams(msg *pb.UpdateRepoRequest) (ports.UpdateRepoParams, error) {
 	return params, nil
 }
 
-func (s *repoService) DeleteRepo(ctx context.Context, req *connect.Request[pb.DeleteRepoRequest]) (*connect.Response[pb.DeleteRepoResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *repoService) DeleteRepo(ctx context.Context, req *pb.DeleteRepoRequest) (*pb.DeleteRepoResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 	if err := s.repos.Delete(ctx, caller(ctx), name); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteRepoResponse{}), nil
+	return &pb.DeleteRepoResponse{}, nil
 }
 
 // respondRepo adds the default branch to repo and wraps it in a response.
-func respondRepo[T any](ctx context.Context, repos ports.RepoService, repo domain.Repo, wrap func(*pb.Repo) *T) (*connect.Response[T], error) {
+func respondRepo[T any](ctx context.Context, repos ports.RepoService, repo domain.Repo, wrap func(*pb.Repo) *T) (*T, error) {
 	view, err := repos.View(ctx, repo)
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(wrap(repoToPB(view))), nil
+	return wrap(repoToPB(view)), nil
 }

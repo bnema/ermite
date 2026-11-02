@@ -4,7 +4,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -13,7 +15,6 @@ import (
 
 	"bnema.dev/ermite/internal/domain"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -29,7 +30,7 @@ func concurrencyHarness(t *testing.T) (*ciHarness, *fakeRunner) {
 		cfg.CancelGrace, cfg.Tick, cfg.PollTimeout = 300*time.Millisecond, 20*time.Millisecond, 100*time.Millisecond
 	})
 	disabled := false
-	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled}))
+	_, err := c.root.repo.UpdateRepo(c.ctx, &pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled})
 	require.NoError(t, err)
 	return c, c.registerRunner("alpha", "ubuntu-latest")
 }
@@ -139,13 +140,20 @@ func TestCIWorkflowConcurrencyCancelInProgress(t *testing.T) {
 			c, runner := concurrencyHarness(t)
 			r1 := c.pushN(1, workflowAt("concurrency:\n  group: Release\n  cancel-in-progress: "+tt.cancel+"\n", ""))
 			job1 := runner.await()
-			watch, err := runner.jobAPI(job1).runner.WatchJob(c.ctx, connect.NewRequest(&pb.WatchJobRequest{JobId: job1.GetJobId()}))
+			watch, err := runner.jobAPI(job1).runner.WatchJob(c.ctx, &pb.WatchJobRequest{JobId: job1.GetJobId()})
 			require.NoError(t, err)
 
 			r2 := c.pushN(2, workflowAt("concurrency:\n  group: RELEASE\n  cancel-in-progress: "+tt.cancel+"\n", ""))
 			var cancel *pb.CancelRequest
-			for watch.Receive() {
-				if m := watch.Msg().GetCancel(); m != nil {
+			for {
+				msg, err := watch.Receive()
+				if err != nil {
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					t.Fatal(err)
+				}
+				if m := msg.GetCancel(); m != nil {
 					cancel = m
 					break
 				}
@@ -154,9 +162,9 @@ func TestCIWorkflowConcurrencyCancelInProgress(t *testing.T) {
 			assert.Equal(t, pb.CancelReason_CANCEL_REASON_USER, cancel.GetReason())
 			assert.Contains(t, cancel.GetMessage(), "higher priority waiting request for 'RELEASE'")
 
-			_, err = runner.jobAPI(job1).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+			_, err = runner.jobAPI(job1).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 				JobId: job1.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
-			}))
+			})
 			require.NoError(t, err)
 			c.waitFor("the first run is cancelled", func() bool { return c.conclusionOf(r1) == pb.CiConclusion_CI_CONCLUSION_CANCELLED })
 			job2 := runner.await()
@@ -238,7 +246,7 @@ func TestCIConcurrencyFreedByCancelAndRerunRejoins(t *testing.T) {
 	c, runner := concurrencyHarness(t)
 	r1 := c.pushN(1, workflowAt(wfGroup, ""))
 	job1 := runner.await()
-	_, err := c.root.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: r1.GetId()}))
+	_, err := c.root.run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: r1.GetId()})
 	require.NoError(t, err)
 	runner.heartbeat(job1)
 	c.waitFor("the cancelled run completes", func() bool { return c.getRun(r1.GetId()).GetRun().GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
@@ -247,7 +255,7 @@ func TestCIConcurrencyFreedByCancelAndRerunRejoins(t *testing.T) {
 	job2 := runner.await()
 	assert.Equal(t, r2.GetId(), job2.GetRunId(), "a cancelled run freed the group")
 
-	_, err = c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: r1.GetId()}))
+	_, err = c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: r1.GetId()})
 	require.NoError(t, err)
 	c.waitJobs("the re-run waits for the group", r1, allStatus(pb.CiStatus_CI_STATUS_PENDING))
 	runner.runJob(job2, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
@@ -396,7 +404,7 @@ func flakyConcurrencyHarness(t *testing.T, retries int) (*ciHarness, *fakeRunner
 		fs.CIStore, cfg.Store = cfg.Store, fs
 	})
 	disabled := false
-	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled}))
+	_, err := c.root.repo.UpdateRepo(c.ctx, &pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &disabled})
 	require.NoError(t, err)
 	return c, c.registerRunner("alpha", "ubuntu-latest"), fs
 }
@@ -489,7 +497,7 @@ func TestCIConcurrencyReconcileAsksARunningVictimAgain(t *testing.T) {
 	top := "concurrency:\n  group: Deploy\n  cancel-in-progress: true\n"
 	r1 := c.pushN(1, workflowAt(top, ""))
 	job1 := runner.await()
-	watch, err := runner.jobAPI(job1).runner.WatchJob(c.ctx, connect.NewRequest(&pb.WatchJobRequest{JobId: job1.GetJobId()}))
+	watch, err := runner.jobAPI(job1).runner.WatchJob(c.ctx, &pb.WatchJobRequest{JobId: job1.GetJobId()})
 	require.NoError(t, err)
 
 	// The cancel of the running run cannot be written.
@@ -512,17 +520,24 @@ func TestCIConcurrencyReconcileAsksARunningVictimAgain(t *testing.T) {
 	fs.fails.Store(0)
 	c.forge.CI.ReconcileConcurrency(c.ctx)
 	var cancel *pb.CancelRequest
-	for watch.Receive() {
-		if m := watch.Msg().GetCancel(); m != nil {
+	for {
+		msg, err := watch.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatal(err)
+		}
+		if m := msg.GetCancel(); m != nil {
 			cancel = m
 			break
 		}
 	}
 	require.NotNil(t, cancel, "the runner is told after the reconciliation")
 	// The runner stops: its watch ends with the job.
-	_, err = runner.jobAPI(job1).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	_, err = runner.jobAPI(job1).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 		JobId: job1.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
-	}))
+	})
 	require.NoError(t, err)
 }
 
@@ -662,13 +677,20 @@ func TestCIJobConcurrencyCancelInProgress(t *testing.T) {
 			wf := jobWorkflow("    concurrency:\n      group: jobgroup\n      cancel-in-progress: " + tt.cancel + "\n")
 			r1 := c.pushN(1, wf)
 			grouped1, sibling1 := runner.awaitKey(r1.GetId(), "grouped"), runner.awaitKey(r1.GetId(), "sibling")
-			watch, err := runner.jobAPI(grouped1).runner.WatchJob(c.ctx, connect.NewRequest(&pb.WatchJobRequest{JobId: grouped1.GetJobId()}))
+			watch, err := runner.jobAPI(grouped1).runner.WatchJob(c.ctx, &pb.WatchJobRequest{JobId: grouped1.GetJobId()})
 			require.NoError(t, err)
 
 			r2 := c.pushN(2, wf)
 			var cancel *pb.CancelRequest
-			for watch.Receive() {
-				if m := watch.Msg().GetCancel(); m != nil {
+			for {
+				msg, err := watch.Receive()
+				if err != nil {
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					t.Fatal(err)
+				}
+				if m := msg.GetCancel(); m != nil {
 					cancel = m
 					break
 				}
@@ -684,9 +706,9 @@ func TestCIJobConcurrencyCancelInProgress(t *testing.T) {
 					assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_UNSPECIFIED, j.GetConclusion())
 				}
 			}
-			_, err = runner.jobAPI(grouped1).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+			_, err = runner.jobAPI(grouped1).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 				JobId: grouped1.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
-			}))
+			})
 			require.NoError(t, err)
 			runner.runJob(sibling1, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil)
 
@@ -744,9 +766,9 @@ func TestCIConcurrencyReconcileAtRestart(t *testing.T) {
 
 	var got *pb.Job
 	c.waitFor("the waiting run is planned by the startup repair", func() bool {
-		res, err := newClients(srv.URL+"/-/api", runner.secret).runner.FetchJob(c.ctx, connect.NewRequest(&pb.FetchJobRequest{}))
-		if err == nil && res.Msg.GetJob() != nil {
-			got = res.Msg.GetJob()
+		res, err := newClients(srv.URL+"/-/api", runner.secret).runner.FetchJob(c.ctx, &pb.FetchJobRequest{})
+		if err == nil && res.GetJob() != nil {
+			got = res.GetJob()
 		}
 		return got != nil
 	})
@@ -1373,9 +1395,9 @@ func TestCIImplicitConcurrencyReconciliation(t *testing.T) {
 		stored, err := c.forge.store.CI().GetRun(c.ctx, c.h(c.repo), run.GetId())
 		return err == nil && stored.CancelRequested
 	})
-	_, err = runner.jobAPI(job).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	_, err = runner.jobAPI(job).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 		JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
-	}))
+	})
 	require.NoError(t, err)
 	c.waitFor("reconciled run cancelled", func() bool { return c.conclusionOf(run) == pb.CiConclusion_CI_CONCLUSION_CANCELLED })
 }
@@ -1409,9 +1431,9 @@ func TestCIImplicitConcurrencyPendingSupersession(t *testing.T) {
 	require.Len(t, groups[0].State.Record.Pending, 1)
 	assert.Equal(t, newest.GetId(), groups[0].State.Record.Pending[0].RunID)
 
-	_, err = runner.jobAPI(job).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	_, err = runner.jobAPI(job).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 		JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_CANCELLED,
-	}))
+	})
 	require.NoError(t, err)
 	next := runner.await()
 	require.Equal(t, newest.GetId(), next.GetRunId(), "middle run never proceeds")

@@ -3,11 +3,12 @@
 package rpc
 
 import (
+	"connectrpc.com/connect/v2/connectproto"
 	"context"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -36,9 +37,9 @@ func TestRunServiceGetJob(t *testing.T) {
 
 	runs := mocks.NewRunService(t)
 	runs.EXPECT().GetJob(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), "7-0-0", int32(2)).Return(job, nil).Once()
-	resp, err := (&runService{runs: runs}).GetJob(ownerCtx(), connect.NewRequest(&pb.GetJobRequest{Repo: "demo", JobId: "7-0-0", Attempt: 2}))
+	resp, err := (&runService{runs: runs}).GetJob(ownerCtx(), &pb.GetJobRequest{Repo: "demo", JobId: "7-0-0", Attempt: 2})
 	require.NoError(t, err)
-	got := resp.Msg.GetJob()
+	got := resp.GetJob()
 	assert.Equal(t, "7-0-0", got.GetId())
 	assert.EqualValues(t, 2, got.GetAttempt())
 	assert.Equal(t, "build (linux)", got.GetName())
@@ -69,7 +70,7 @@ func TestRunServiceGetJob(t *testing.T) {
 			if tc.err != nil {
 				runs.EXPECT().GetJob(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.JobView{}, tc.err).Once()
 			}
-			_, err := (&runService{runs: runs}).GetJob(ownerCtx(), connect.NewRequest(&pb.GetJobRequest{Repo: tc.repo, JobId: "7-0-0"}))
+			_, err := (&runService{runs: runs}).GetJob(ownerCtx(), &pb.GetJobRequest{Repo: tc.repo, JobId: "7-0-0"})
 			requireCode(t, tc.code, err)
 		})
 	}
@@ -85,7 +86,7 @@ func TestRunnerServiceErrors(t *testing.T) {
 	var ce *connect.Error
 	require.ErrorAs(t, err, &ce)
 	require.Len(t, ce.Details(), 1)
-	msg, derr := ce.Details()[0].Value()
+	msg, derr := connectproto.UnmarshalErrorDetail(ce.Details()[0])
 	require.NoError(t, derr)
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, msg.(*pb.JobEnded).GetConclusion())
 	assert.Equal(t, "stopped", msg.(*pb.JobEnded).GetError())
@@ -124,20 +125,20 @@ func TestRunnerServiceAnnotationsAndSummary(t *testing.T) {
 	runners.EXPECT().UploadSummary(mock.Anything, "ermitejob_x", "7-0-0", int32(3), "").Return(&domain.JobEndedError{Conclusion: domain.CIFailure}).Once()
 	s := &runnerService{runners: runners}
 
-	_, err := s.UpdateJob(ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: "7-0-0", Annotations: anns}))
+	_, err := s.UpdateJob(ctx, &pb.UpdateJobRequest{JobId: "7-0-0", Annotations: anns})
 	require.NoError(t, err)
-	_, err = s.CompleteJob(ctx, connect.NewRequest(&pb.CompleteJobRequest{JobId: "7-0-0", Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: anns}))
+	_, err = s.CompleteJob(ctx, &pb.CompleteJobRequest{JobId: "7-0-0", Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: anns})
 	require.NoError(t, err)
-	_, err = s.UploadSummary(ctx, connect.NewRequest(&pb.UploadSummaryRequest{JobId: "7-0-0", StepNumber: 3, Markdown: "# md"}))
+	_, err = s.UploadSummary(ctx, &pb.UploadSummaryRequest{JobId: "7-0-0", StepNumber: 3, Markdown: "# md"})
 	require.NoError(t, err)
-	_, err = s.UploadSummary(ctx, connect.NewRequest(&pb.UploadSummaryRequest{JobId: "7-0-0", StepNumber: 3}))
+	_, err = s.UploadSummary(ctx, &pb.UploadSummaryRequest{JobId: "7-0-0", StepNumber: 3})
 	requireCode(t, connect.CodeFailedPrecondition, err)
 
-	_, err = s.UpdateJob(ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: "7-0-0", Annotations: []*pb.Annotation{{Message: "no level", StepNumber: 1}}}))
+	_, err = s.UpdateJob(ctx, &pb.UpdateJobRequest{JobId: "7-0-0", Annotations: []*pb.Annotation{{Message: "no level", StepNumber: 1}}})
 	requireCode(t, connect.CodeInvalidArgument, err)
-	_, err = s.UpdateJob(ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: "7-0-0", Annotations: []*pb.Annotation{{Level: 99, Message: "x", StepNumber: 1}}}))
+	_, err = s.UpdateJob(ctx, &pb.UpdateJobRequest{JobId: "7-0-0", Annotations: []*pb.Annotation{{Level: 99, Message: "x", StepNumber: 1}}})
 	requireCode(t, connect.CodeInvalidArgument, err)
-	_, err = s.CompleteJob(ctx, connect.NewRequest(&pb.CompleteJobRequest{JobId: "7-0-0", Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: []*pb.Annotation{{Message: "x"}}}))
+	_, err = s.CompleteJob(ctx, &pb.CompleteJobRequest{JobId: "7-0-0", Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: []*pb.Annotation{{Message: "x"}}})
 	requireCode(t, connect.CodeInvalidArgument, err)
 }
 
@@ -181,28 +182,28 @@ func TestRunServiceAnnotationsAndSummaries(t *testing.T) {
 	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(8), int32(0), "").Return(ports.AnnotationList{}, domain.ErrNotFound).Once()
 	s := &runService{runs: runs}
 
-	res, err := s.ListAnnotations(ownerCtx(), connect.NewRequest(&pb.ListAnnotationsRequest{Repo: "demo", RunId: 7, Attempt: 2, JobId: "7-0-0"}))
+	res, err := s.ListAnnotations(ownerCtx(), &pb.ListAnnotationsRequest{Repo: "demo", RunId: 7, Attempt: 2, JobId: "7-0-0"})
 	require.NoError(t, err)
-	require.Len(t, res.Msg.GetAnnotations(), 1)
-	a := res.Msg.GetAnnotations()[0]
+	require.Len(t, res.GetAnnotations(), 1)
+	a := res.GetAnnotations()[0]
 	assert.Equal(t, "7-0-0", a.GetJobId())
 	assert.Equal(t, pb.AnnotationLevel_ANNOTATION_LEVEL_WARNING, a.GetAnnotation().GetLevel())
 	assert.EqualValues(t, 3, a.GetAnnotation().GetStepNumber())
 	assert.EqualValues(t, 4, a.GetAnnotation().GetStartLine())
-	assert.True(t, res.Msg.GetTruncated())
+	assert.True(t, res.GetTruncated())
 
-	sums, err := s.GetStepSummaries(ownerCtx(), connect.NewRequest(&pb.GetStepSummariesRequest{Repo: "demo", JobId: "7-0-0"}))
+	sums, err := s.GetStepSummaries(ownerCtx(), &pb.GetStepSummariesRequest{Repo: "demo", JobId: "7-0-0"})
 	require.NoError(t, err)
-	require.Len(t, sums.Msg.GetSummaries(), 1)
-	assert.EqualValues(t, 2, sums.Msg.GetSummaries()[0].GetStepNumber())
-	assert.Equal(t, "# s", sums.Msg.GetSummaries()[0].GetMarkdown())
-	assert.True(t, sums.Msg.GetTruncated())
+	require.Len(t, sums.GetSummaries(), 1)
+	assert.EqualValues(t, 2, sums.GetSummaries()[0].GetStepNumber())
+	assert.Equal(t, "# s", sums.GetSummaries()[0].GetMarkdown())
+	assert.True(t, sums.GetTruncated())
 
-	_, err = s.ListAnnotations(ownerCtx(), connect.NewRequest(&pb.ListAnnotationsRequest{Repo: "demo", RunId: 8}))
+	_, err = s.ListAnnotations(ownerCtx(), &pb.ListAnnotationsRequest{Repo: "demo", RunId: 8})
 	requireCode(t, connect.CodeNotFound, err)
-	_, err = s.ListAnnotations(ownerCtx(), connect.NewRequest(&pb.ListAnnotationsRequest{Repo: "../x", RunId: 8}))
+	_, err = s.ListAnnotations(ownerCtx(), &pb.ListAnnotationsRequest{Repo: "../x", RunId: 8})
 	requireCode(t, connect.CodeInvalidArgument, err)
-	_, err = s.GetStepSummaries(ownerCtx(), connect.NewRequest(&pb.GetStepSummariesRequest{Repo: "../x"}))
+	_, err = s.GetStepSummaries(ownerCtx(), &pb.GetStepSummariesRequest{Repo: "../x"})
 	requireCode(t, connect.CodeInvalidArgument, err)
 }
 

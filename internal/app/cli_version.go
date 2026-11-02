@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -66,7 +65,7 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Server().GetVersion(env.ctx(cmd), connect.NewRequest(&ermite.GetVersionRequest{}))
+		res, err := c.Server().GetVersion(env.ctx(cmd), &ermite.GetVersionRequest{})
 		if err != nil {
 			// Still show what is known locally before failing.
 			if !*asJSON {
@@ -74,7 +73,7 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 			}
 			return c.Describe(err)
 		}
-		features := res.Msg.GetFeatures()
+		features := res.GetFeatures()
 		if features == nil {
 			features = []string{}
 		}
@@ -85,12 +84,12 @@ func newVersionCmd(env *cliEnv) *cobra.Command {
 			}
 			err = writeJSON(out, jsonVersion{
 				Client: jsonClientVersion{Version: env.version},
-				Server: &jsonServerVersion{URL: c.URL(), Version: res.Msg.GetVersion(), Features: features, MissingFeatures: missing},
+				Server: &jsonServerVersion{URL: c.URL(), Version: res.GetVersion(), Features: features, MissingFeatures: missing},
 			})
 		} else {
 			err = fields(out, [][2]string{
 				{"client", clientLine},
-				{"server", res.Msg.GetVersion() + " at " + c.URL()},
+				{"server", res.GetVersion() + " at " + c.URL()},
 				{"features", strings.Join(features, ", ")},
 			})
 		}

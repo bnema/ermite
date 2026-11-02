@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -155,7 +155,7 @@ func TestJournalNeedsTheFeature(t *testing.T) {
 
 func TestJournalDescribesServerErrors(t *testing.T) {
 	f := journalFeatures(&fakeAPI{listActivity: func(*ermite.ListActivityRequest) (*ermite.ListActivityResponse, error) {
-		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("reading the journal needs owner rights or the journal:read scope"))
+		return nil, connect.Errorf(connect.CodePermissionDenied, "reading the journal needs owner rights or the journal:read scope")
 	}}, "journal")
 	res := runCLI(t, envFor(f.serve(t)), "", "journal")
 	require.Error(t, res.err)

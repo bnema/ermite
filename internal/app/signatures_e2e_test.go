@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -74,20 +75,20 @@ func TestCommitSignaturesEndToEnd(t *testing.T) {
 	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/sig.git"), "main")
 
 	root := h.api(adminToken)
-	trust := ermiteconnect.NewTrustedKeyServiceClient(&http.Client{Transport: bearerTransport{secret: adminToken, next: http.DefaultTransport}}, h.url("/-/api"))
+	trust := ermiteconnect.NewTrustedKeyServiceClient(connect.NewClient(connecthttp.NewTransport(&http.Client{Transport: bearerTransport{secret: adminToken, next: http.DefaultTransport}}, h.url("/-/api"), connecthttp.WithReadMaxBytes(0))))
 	states := func() map[string]*pb.CommitVerification {
-		res, err := root.git.ListCommits(ctx, connect.NewRequest(&pb.ListCommitsRequest{Repo: "sig"}))
+		res, err := root.git.ListCommits(ctx, &pb.ListCommitsRequest{Repo: "sig"})
 		require.NoError(t, err)
 		m := map[string]*pb.CommitVerification{}
-		for _, c := range res.Msg.GetCommits() {
+		for _, c := range res.GetCommits() {
 			m[c.GetId()] = c.GetVerification()
 		}
 		return m
 	}
 
-	v, err := root.server.GetVersion(ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+	v, err := root.server.GetVersion(ctx, &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, v.Msg.GetFeatures(), "commit_signatures")
+	assert.Contains(t, v.GetFeatures(), "commit_signatures")
 
 	s := states()
 	assert.Equal(t, pb.SignatureFormat_SIGNATURE_FORMAT_SSH, s[sshCommit].GetFormat())
@@ -99,13 +100,13 @@ func TestCommitSignaturesEndToEnd(t *testing.T) {
 	// Trust both keys.
 	pub, err := os.ReadFile(sshKey + ".pub")
 	require.NoError(t, err)
-	_, err = trust.AddTrustedKey(ctx, connect.NewRequest(&pb.AddTrustedKeyRequest{
+	_, err = trust.AddTrustedKey(ctx, &pb.AddTrustedKeyRequest{
 		Format: pb.SignatureFormat_SIGNATURE_FORMAT_SSH, Title: "laptop", PublicKey: string(pub), Emails: []string{"T@example.test"},
-	}))
+	})
 	require.NoError(t, err)
-	_, err = trust.AddTrustedKey(ctx, connect.NewRequest(&pb.AddTrustedKeyRequest{
+	_, err = trust.AddTrustedKey(ctx, &pb.AddTrustedKeyRequest{
 		Format: pb.SignatureFormat_SIGNATURE_FORMAT_GPG, Title: "gpg", PublicKey: gpg("--armor", "--export", "t@example.test"), Emails: []string{"t@example.test"},
-	}))
+	})
 	require.NoError(t, err)
 
 	s = states()
@@ -113,16 +114,16 @@ func TestCommitSignaturesEndToEnd(t *testing.T) {
 	assert.Equal(t, "laptop", s[sshCommit].GetKeyTitle())
 	assert.Equal(t, pb.SignatureStatus_SIGNATURE_STATUS_VERIFIED, s[gpgCommit].GetStatus())
 
-	list, err := trust.ListTrustedKeys(ctx, connect.NewRequest(&pb.ListTrustedKeysRequest{}))
+	list, err := trust.ListTrustedKeys(ctx, &pb.ListTrustedKeysRequest{})
 	require.NoError(t, err)
-	require.Len(t, list.Msg.GetKeys(), 3)
-	assert.True(t, list.Msg.GetKeys()[0].GetBuiltin(), "the instance key comes first")
+	require.Len(t, list.GetKeys(), 3)
+	assert.True(t, list.GetKeys()[0].GetBuiltin(), "the instance key comes first")
 
 	// A token without owner rights cannot change the list.
-	weak := ermiteconnect.NewTrustedKeyServiceClient(&http.Client{Transport: bearerTransport{
+	weak := ermiteconnect.NewTrustedKeyServiceClient(connect.NewClient(connecthttp.NewTransport(&http.Client{Transport: bearerTransport{
 		secret: h.token(scopes(domain.ScopeRepoRead)), next: http.DefaultTransport,
-	}}, h.url("/-/api"))
-	_, err = weak.RemoveTrustedKey(ctx, connect.NewRequest(&pb.RemoveTrustedKeyRequest{Id: list.Msg.GetKeys()[1].GetId()}))
+	}}, h.url("/-/api"), connecthttp.WithReadMaxBytes(0))))
+	_, err = weak.RemoveTrustedKey(ctx, &pb.RemoveTrustedKeyRequest{Id: list.GetKeys()[1].GetId()})
 	assert.Equal(t, "permission_denied", codeName(err))
 
 	// The web shows the protocol and the state.
@@ -142,19 +143,19 @@ func TestCommitSignaturesEndToEnd(t *testing.T) {
 	h.mustGit(wt, "-c", "gpg.format=ssh", "-c", "user.signingkey="+sshKey+".pub", "commit", "-q", "--amend", "-S", "--no-edit")
 	feat := strings.TrimSpace(h.mustGit(wt, "rev-parse", "HEAD"))
 	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/sig.git"), "feat")
-	_, err = root.mr.CreateMergeRequest(ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "sig", Title: "d", SourceBranch: "feat"}))
+	_, err = root.mr.CreateMergeRequest(ctx, &pb.CreateMergeRequestRequest{Repo: "sig", Title: "d", SourceBranch: "feat"})
 	require.NoError(t, err)
-	mr, err := root.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "sig", Number: 1}))
+	mr, err := root.mr.GetMergeRequest(ctx, &pb.GetMergeRequestRequest{Repo: "sig", Number: 1})
 	require.NoError(t, err)
-	require.Len(t, mr.Msg.GetCommits(), 1)
-	assert.Equal(t, feat, mr.Msg.GetCommits()[0].GetId())
-	assert.Equal(t, pb.SignatureStatus_SIGNATURE_STATUS_VERIFIED, mr.Msg.GetCommits()[0].GetVerification().GetStatus())
+	require.Len(t, mr.GetCommits(), 1)
+	assert.Equal(t, feat, mr.GetCommits()[0].GetId())
+	assert.Equal(t, pb.SignatureStatus_SIGNATURE_STATUS_VERIFIED, mr.GetCommits()[0].GetVerification().GetStatus())
 	code, _, body = h.get("/sig/merge-requests/1")
 	require.Equal(t, http.StatusOK, code)
 	assert.Contains(t, body, `<span class="sig-ico sig-ok"`)
 
 	// Removing the key turns the commit unknown again.
-	_, err = trust.RemoveTrustedKey(ctx, connect.NewRequest(&pb.RemoveTrustedKeyRequest{Id: list.Msg.GetKeys()[1].GetId()}))
+	_, err = trust.RemoveTrustedKey(ctx, &pb.RemoveTrustedKeyRequest{Id: list.GetKeys()[1].GetId()})
 	require.NoError(t, err)
 	assert.Equal(t, pb.SignatureStatus_SIGNATURE_STATUS_UNKNOWN_KEY, states()[sshCommit].GetStatus())
 }

@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -175,7 +174,7 @@ func TestPullCloseDuringComputeDiscardsTheOpening(t *testing.T) {
 	f1 := c.push("feat", map[string]string{"f.txt": "f\n"}, "")
 
 	hook.run("computed", func() {
-		_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: 1}))
+		_, err := c.root.mr.CloseMergeRequest(c.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: 1})
 		assert.NoError(t, err)
 	})
 	n := c.openMR(c.root, "feat")
@@ -225,12 +224,12 @@ func TestPullSlowRefreshDoesNotDelayPushRuns(t *testing.T) {
 // pushRuns counts the push runs, without failing the test (it runs in the hook
 // of a worker).
 func (c *ciHarness) pushRuns() int {
-	res, err := c.root.run.ListRuns(c.ctx, connect.NewRequest(&pb.ListRunsRequest{Repo: c.repo}))
+	res, err := c.root.run.ListRuns(c.ctx, &pb.ListRunsRequest{Repo: c.repo})
 	if err != nil {
 		return -1
 	}
 	n := 0
-	for _, r := range res.Msg.GetRuns() {
+	for _, r := range res.GetRuns() {
 		if r.GetEvent() == "push" {
 			n++
 		}
@@ -433,7 +432,7 @@ func TestPullPushDoesNotReadHistoricalMergeRequests(t *testing.T) {
 		c.mustGit(c.wt, "checkout", "-q", "-b", b, "main")
 		c.push(b, map[string]string{b + ".txt": "x\n"}, "")
 		n := c.openMR(c.root, b)
-		_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+		_, err := c.root.mr.CloseMergeRequest(c.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: n})
 		require.NoError(t, err)
 	}
 	c.mustGit(c.wt, "checkout", "-q", "-b", "live", "main")
@@ -480,11 +479,11 @@ func TestPullSnapshotBoundSkipsLogsAndMarksDirty(t *testing.T) {
 		t0 := "t" + string(rune('a'+i))
 		c.mustGit(c.wt, "checkout", "-q", "-b", t0, "main")
 		c.push(t0, map[string]string{t0 + ".txt": "t\n"}, "")
-		res, err := c.root.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+		res, err := c.root.mr.CreateMergeRequest(c.ctx, &pb.CreateMergeRequestRequest{
 			Repo: "proj", Title: "t" + t0, SourceBranch: "shared", TargetBranch: t0,
-		}))
+		})
 		require.NoError(t, err)
-		numbers = append(numbers, res.Msg.GetMergeRequest().GetNumber())
+		numbers = append(numbers, res.GetMergeRequest().GetNumber())
 	}
 	c.waitFor("the opened runs", func() bool { return len(c.runs()) == requests })
 

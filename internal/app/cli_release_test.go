@@ -3,9 +3,12 @@
 package app
 
 import (
+	"connectrpc.com/connect/v2/connecthttp"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,7 +16,7 @@ import (
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -36,85 +39,100 @@ type fakeReleaseAPI struct {
 	release   *ermite.Release
 	data      []byte
 	uploadErr error
-	download  func(*ermite.DownloadReleaseAssetRequest, *connect.ServerStream[ermite.DownloadReleaseAssetResponse]) error
+	download  func(*ermite.DownloadReleaseAssetRequest, ermiteconnect.ReleaseServiceDownloadReleaseAssetServerStream) error
 }
 
 func (f *fakeReleaseAPI) serve(t *testing.T, features ...string) string {
 	t.Helper()
 	mux := http.NewServeMux()
-	p, h := ermiteconnect.NewReleaseServiceHandler(f)
-	mux.Handle("/-/api"+p, http.StripPrefix("/-/api", h))
+	{
+		server := connect.NewServer()
+		ermiteconnect.RegisterReleaseServiceHandler(server, f)
+		sub := http.NewServeMux()
+		connecthttp.Mount(sub, server, connecthttp.WithReadMaxBytes(0))
+		mux.Handle("/-/api/ermite.ReleaseService/", http.StripPrefix("/-/api", sub))
+	}
 	v := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
 		return &ermite.GetVersionResponse{Features: features}, nil
 	}}
-	p, h = ermiteconnect.NewServerServiceHandler(v)
-	mux.Handle("/-/api"+p, http.StripPrefix("/-/api", h))
+	{
+		server := connect.NewServer()
+		ermiteconnect.RegisterServerServiceHandler(server, v)
+		sub := http.NewServeMux()
+		connecthttp.Mount(sub, server, connecthttp.WithReadMaxBytes(0))
+		mux.Handle("/-/api/ermite.ServerService/", http.StripPrefix("/-/api", sub))
+	}
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL
 }
-func (f *fakeReleaseAPI) CreateRelease(_ context.Context, r *connect.Request[ermite.CreateReleaseRequest]) (*connect.Response[ermite.CreateReleaseResponse], error) {
+func (f *fakeReleaseAPI) CreateRelease(_ context.Context, r *ermite.CreateReleaseRequest) (*ermite.CreateReleaseResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.create = proto.Clone(r.Msg).(*ermite.CreateReleaseRequest)
-	return connect.NewResponse(&ermite.CreateReleaseResponse{Release: f.release}), nil
+	f.create = proto.Clone(r).(*ermite.CreateReleaseRequest)
+	return &ermite.CreateReleaseResponse{Release: f.release}, nil
 }
-func (f *fakeReleaseAPI) GetRelease(_ context.Context, r *connect.Request[ermite.GetReleaseRequest]) (*connect.Response[ermite.GetReleaseResponse], error) {
+func (f *fakeReleaseAPI) GetRelease(_ context.Context, r *ermite.GetReleaseRequest) (*ermite.GetReleaseResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.gets = append(f.gets, proto.Clone(r.Msg).(*ermite.GetReleaseRequest))
-	return connect.NewResponse(&ermite.GetReleaseResponse{Release: f.release}), nil
+	f.gets = append(f.gets, proto.Clone(r).(*ermite.GetReleaseRequest))
+	return &ermite.GetReleaseResponse{Release: f.release}, nil
 }
-func (f *fakeReleaseAPI) ListReleases(_ context.Context, r *connect.Request[ermite.ListReleasesRequest]) (*connect.Response[ermite.ListReleasesResponse], error) {
+func (f *fakeReleaseAPI) ListReleases(_ context.Context, r *ermite.ListReleasesRequest) (*ermite.ListReleasesResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.lists = append(f.lists, proto.Clone(r.Msg).(*ermite.ListReleasesRequest))
+	f.lists = append(f.lists, proto.Clone(r).(*ermite.ListReleasesRequest))
 	next := ""
-	if r.Msg.GetPageToken() == "" {
+	if r.GetPageToken() == "" {
 		next = "next"
 	}
-	return connect.NewResponse(&ermite.ListReleasesResponse{Releases: []*ermite.Release{f.release}, NextPageToken: next}), nil
+	return &ermite.ListReleasesResponse{Releases: []*ermite.Release{f.release}, NextPageToken: next}, nil
 }
-func (f *fakeReleaseAPI) UpdateRelease(_ context.Context, r *connect.Request[ermite.UpdateReleaseRequest]) (*connect.Response[ermite.UpdateReleaseResponse], error) {
+func (f *fakeReleaseAPI) UpdateRelease(_ context.Context, r *ermite.UpdateReleaseRequest) (*ermite.UpdateReleaseResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.update = proto.Clone(r.Msg).(*ermite.UpdateReleaseRequest)
-	return connect.NewResponse(&ermite.UpdateReleaseResponse{Release: f.release}), nil
+	f.update = proto.Clone(r).(*ermite.UpdateReleaseRequest)
+	return &ermite.UpdateReleaseResponse{Release: f.release}, nil
 }
-func (f *fakeReleaseAPI) DeleteRelease(_ context.Context, r *connect.Request[ermite.DeleteReleaseRequest]) (*connect.Response[ermite.DeleteReleaseResponse], error) {
+func (f *fakeReleaseAPI) DeleteRelease(_ context.Context, r *ermite.DeleteReleaseRequest) (*ermite.DeleteReleaseResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.deleted = proto.Clone(r.Msg).(*ermite.DeleteReleaseRequest)
-	return connect.NewResponse(&ermite.DeleteReleaseResponse{}), nil
+	f.deleted = proto.Clone(r).(*ermite.DeleteReleaseRequest)
+	return &ermite.DeleteReleaseResponse{}, nil
 }
-func (f *fakeReleaseAPI) UploadReleaseAsset(_ context.Context, st *connect.ClientStream[ermite.UploadReleaseAssetRequest]) (*connect.Response[ermite.UploadReleaseAssetResponse], error) {
+func (f *fakeReleaseAPI) UploadReleaseAsset(_ context.Context, st ermiteconnect.ReleaseServiceUploadReleaseAssetServerStream) (*ermite.UploadReleaseAssetResponse, error) {
 	var got []*ermite.UploadReleaseAssetRequest
-	for st.Receive() {
-		got = append(got, proto.Clone(st.Msg()).(*ermite.UploadReleaseAssetRequest))
+	for {
+		msg, err := st.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+		got = append(got, proto.Clone(msg).(*ermite.UploadReleaseAssetRequest))
 	}
-	if err := st.Err(); err != nil {
-		return nil, err
-	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.uploads = append(f.uploads, got...)
 	if f.uploadErr != nil {
 		return nil, f.uploadErr
 	}
-	return connect.NewResponse(&ermite.UploadReleaseAssetResponse{Asset: &ermite.ReleaseAsset{Id: 9, ReleaseId: 7, Name: got[0].GetName(), Size: got[0].GetSize()}}), nil
+	return &ermite.UploadReleaseAssetResponse{Asset: &ermite.ReleaseAsset{Id: 9, ReleaseId: 7, Name: got[0].GetName(), Size: got[0].GetSize()}}, nil
 }
-func (f *fakeReleaseAPI) DownloadReleaseAsset(_ context.Context, r *connect.Request[ermite.DownloadReleaseAssetRequest], st *connect.ServerStream[ermite.DownloadReleaseAssetResponse]) error {
+func (f *fakeReleaseAPI) DownloadReleaseAsset(_ context.Context, r *ermite.DownloadReleaseAssetRequest, st ermiteconnect.ReleaseServiceDownloadReleaseAssetServerStream) error {
 	f.mu.Lock()
-	f.offsets = append(f.offsets, r.Msg.GetOffset())
+	f.offsets = append(f.offsets, r.GetOffset())
 	fn := f.download
 	f.mu.Unlock()
 	if fn != nil {
-		return fn(r.Msg, st)
+		return fn(r, st)
 	}
 	if err := st.Send(&ermite.DownloadReleaseAssetResponse{Asset: f.release.Assets[0]}); err != nil {
 		return err
 	}
-	return st.Send(&ermite.DownloadReleaseAssetResponse{Chunk: f.data[r.Msg.GetOffset():]})
+	return st.Send(&ermite.DownloadReleaseAssetResponse{Chunk: f.data[r.GetOffset():]})
 }
 func releaseFixture() *ermite.Release {
 	return &ermite.Release{Id: 7, Repo: "proj", Tag: "v1", Title: "First", Notes: "# Notes\n", PublishedAt: ts("2026-10-10T12:00:00Z"), Assets: []*ermite.ReleaseAsset{}}
@@ -157,7 +175,7 @@ func TestCLIReleaseUpload(t *testing.T) {
 	assert.True(t, f.uploads[0].GetReplace())
 	assert.Equal(t, "application/test", f.uploads[0].GetContentType())
 	assert.Equal(t, int64(7), f.gets[0].GetId())
-	f.uploadErr = connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("taken"))
+	f.uploadErr = connect.Errorf(connect.CodeAlreadyExists, "taken")
 	f.mu.Unlock()
 	res := runCLI(t, vars, "", "release", "upload", "proj", "v1", file)
 	require.ErrorContains(t, res.err, "--clobber")
@@ -262,7 +280,7 @@ func TestCLIReleaseDownload(t *testing.T) {
 			r.Assets = []*ermite.ReleaseAsset{a}
 			f := &fakeReleaseAPI{release: r, data: data}
 			if mode == "resume" || mode == "twice broken" {
-				f.download = func(req *ermite.DownloadReleaseAssetRequest, st *connect.ServerStream[ermite.DownloadReleaseAssetResponse]) error {
+				f.download = func(req *ermite.DownloadReleaseAssetRequest, st ermiteconnect.ReleaseServiceDownloadReleaseAssetServerStream) error {
 					if err := st.Send(&ermite.DownloadReleaseAssetResponse{Asset: a}); err != nil {
 						return err
 					}
@@ -270,10 +288,10 @@ func TestCLIReleaseDownload(t *testing.T) {
 						if err := st.Send(&ermite.DownloadReleaseAssetResponse{Chunk: data[:4]}); err != nil {
 							return err
 						}
-						return connect.NewError(connect.CodeUnavailable, fmt.Errorf("broken"))
+						return connect.Errorf(connect.CodeUnavailable, "broken")
 					}
 					if mode == "twice broken" {
-						return connect.NewError(connect.CodeUnavailable, fmt.Errorf("broken"))
+						return connect.Errorf(connect.CodeUnavailable, "broken")
 					}
 					return st.Send(&ermite.DownloadReleaseAssetResponse{Chunk: data[req.GetOffset():]})
 				}
@@ -332,14 +350,14 @@ func TestCLIReleaseDownloadProtocolFailures(t *testing.T) {
 			a := &ermite.ReleaseAsset{Id: 9, Name: "a", Size: 3, Digest: fmt.Sprintf("sha256:%x", sha256.Sum256(data))}
 			r := releaseFixture()
 			r.Assets = []*ermite.ReleaseAsset{a}
-			f := &fakeReleaseAPI{release: r, download: func(_ *ermite.DownloadReleaseAssetRequest, st *connect.ServerStream[ermite.DownloadReleaseAssetResponse]) error {
+			f := &fakeReleaseAPI{release: r, download: func(_ *ermite.DownloadReleaseAssetRequest, st ermiteconnect.ReleaseServiceDownloadReleaseAssetServerStream) error {
 				switch mode {
 				case "missing metadata":
 					return st.Send(&ermite.DownloadReleaseAssetResponse{Chunk: data})
 				case "wrong metadata":
 					return st.Send(&ermite.DownloadReleaseAssetResponse{Asset: &ermite.ReleaseAsset{Id: 10}})
 				case "permission denied":
-					return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("denied"))
+					return connect.Errorf(connect.CodePermissionDenied, "denied")
 				}
 				if err := st.Send(&ermite.DownloadReleaseAssetResponse{Asset: a}); err != nil {
 					return err

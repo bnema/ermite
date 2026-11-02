@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -157,9 +157,9 @@ func TestOIDCIDTokens(t *testing.T) {
 	assert.NotContains(t, job.GetContexts(), job.GetIdTokenRequestToken())
 	assert.Empty(t, plain.GetIdTokenUrl(), "no id-token: write")
 	assert.Empty(t, plain.GetIdTokenRequestToken())
-	ver, err := c.root.server.GetVersion(c.ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+	ver, err := c.root.server.GetVersion(c.ctx, &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, ver.Msg.GetFeatures(), "ci.oidc")
+	assert.Contains(t, ver.GetFeatures(), "ci.oidc")
 
 	// Discovery, anonymous and cacheable.
 	status, body, hdr := c.get("/-/oidc/.well-known/openid-configuration", "")
@@ -281,11 +281,11 @@ func TestOIDCWithoutSecretsKey(t *testing.T) {
 		status, _, _ := c.get(path, "")
 		assert.Equal(t, http.StatusNotFound, status, path)
 	}
-	_, err := c.root.server.RotateOIDCKey(c.ctx, connect.NewRequest(&pb.RotateOIDCKeyRequest{}))
+	_, err := c.root.server.RotateOIDCKey(c.ctx, &pb.RotateOIDCKeyRequest{})
 	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-	ver, err := c.root.server.GetVersion(c.ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+	ver, err := c.root.server.GetVersion(c.ctx, &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.NotContains(t, ver.Msg.GetFeatures(), "ci.oidc")
+	assert.NotContains(t, ver.GetFeatures(), "ci.oidc")
 }
 
 // `ermite oidc rotate-key`: owner only; the new key signs at once and the old
@@ -300,7 +300,7 @@ func TestOIDCRotateKey(t *testing.T) {
 	oldHeader, _ := c.verifyIDToken(before)
 
 	limited := c.api(c.token(scopes(domain.ScopeRepoRead, domain.ScopeCIWrite), "proj"))
-	_, err := limited.server.RotateOIDCKey(c.ctx, connect.NewRequest(&pb.RotateOIDCKeyRequest{}))
+	_, err := limited.server.RotateOIDCKey(c.ctx, &pb.RotateOIDCKeyRequest{})
 	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 
 	res := runCLI(t, map[string]string{"ERMITE_URL": c.srv.URL, "ERMITE_TOKEN": adminToken}, "", "oidc", "rotate-key", "--json").ok(t)

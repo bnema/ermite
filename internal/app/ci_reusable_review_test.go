@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -132,7 +131,7 @@ func TestCIReusableFailedRerunKeepsTheCallee(t *testing.T) {
 	r.runJob(j, pb.CiConclusion_CI_CONCLUSION_FAILURE, nil)
 	c.waitRunDone(run.GetId())
 	remote.set("acme/shared", ptrRef("refs/heads/main", shaOther))
-	_, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: run.GetId(), FailedOnly: true}))
+	_, err := c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: run.GetId(), FailedOnly: true})
 	require.NoError(t, err)
 	again := r.await()
 	assert.Contains(t, again.GetContexts(), `"workflow_sha":"`+shaMain+`"`, "failed-job reruns must reuse the first attempt's callee commit")

@@ -6,13 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
 	"syscall"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -74,7 +74,7 @@ func TestAC5RepoLifecycleEvents(t *testing.T) {
 	root := h.api(adminToken)
 	w := h.watch(root, "")
 
-	_, err := root.repo.CreateRepo(h.ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "life", Description: "d", Visibility: pb.Visibility_VISIBILITY_PUBLIC}))
+	_, err := root.repo.CreateRepo(h.ctx, &pb.CreateRepoRequest{Name: "life", Description: "d", Visibility: pb.Visibility_VISIBILITY_PUBLIC})
 	require.NoError(t, err)
 	created := w.next(t, watchWait).GetRepoCreated().GetRepo()
 	require.NotNil(t, created)
@@ -82,15 +82,15 @@ func TestAC5RepoLifecycleEvents(t *testing.T) {
 	assert.Equal(t, pb.Visibility_VISIBILITY_PUBLIC, created.GetVisibility())
 	assert.Equal(t, "main", created.GetDefaultBranch())
 
-	_, err = root.repo.UpdateRepo(h.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err = root.repo.UpdateRepo(h.ctx, &pb.UpdateRepoRequest{
 		Repo: "life", Description: "new", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}},
-	}))
+	})
 	require.NoError(t, err)
 	updated := w.next(t, watchWait).GetRepoUpdated().GetRepo()
 	require.NotNil(t, updated)
 	assert.Equal(t, "new", updated.GetDescription())
 
-	_, err = root.repo.DeleteRepo(h.ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "life"}))
+	_, err = root.repo.DeleteRepo(h.ctx, &pb.DeleteRepoRequest{Repo: "life"})
 	require.NoError(t, err)
 	assert.Equal(t, "life", w.next(t, watchWait).GetRepoDeleted().GetRepo())
 
@@ -198,9 +198,9 @@ func TestAC5NoPrivateEventsToAnonymous(t *testing.T) {
 	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/priv.git"), "main")
 	h.mustGit(wt, "push", "-q", h.urlAuth(adminToken, "/pub.git"), "main")
 	// Metadata events too.
-	_, err := h.api(adminToken).repo.UpdateRepo(h.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err := h.api(adminToken).repo.UpdateRepo(h.ctx, &pb.UpdateRepoRequest{
 		Repo: "priv", Description: "secret plans", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}},
-	}))
+	})
 	require.NoError(t, err)
 
 	// The reader of priv sees its push and its update, and pub's push.
@@ -213,7 +213,7 @@ func TestAC5NoPrivateEventsToAnonymous(t *testing.T) {
 	assert.Equal(t, "priv", root.next(t, watchWait).GetRepoUpdated().GetRepo().GetName())
 
 	// Deleting reaches those who could read the repository before, not others.
-	_, err = h.api(adminToken).repo.DeleteRepo(h.ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "priv"}))
+	_, err = h.api(adminToken).repo.DeleteRepo(h.ctx, &pb.DeleteRepoRequest{Repo: "priv"})
 	require.NoError(t, err)
 	assert.Equal(t, "priv", rd.next(t, watchWait).GetRepoDeleted().GetRepo())
 	assert.Equal(t, "priv", root.next(t, watchWait).GetRepoDeleted().GetRepo())
@@ -303,19 +303,28 @@ func TestServeShutdownEndsWatchStreams(t *testing.T) {
 	c := newClients(base+"/-/api", adminToken)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	st, err := c.event.Watch(ctx, connect.NewRequest(&pb.WatchRequest{}))
+	st, err := c.event.Watch(ctx, &pb.WatchRequest{})
 	require.NoError(t, err)
 	ended := make(chan error, 1)
 	go func() {
-		for st.Receive() {
+		var streamErr error
+		for {
+			_, err := st.Receive()
+			if err != nil {
+				streamErr = err
+				break
+			}
 		}
-		ended <- st.Err()
+		if errors.Is(streamErr, io.EOF) {
+			streamErr = nil
+		}
+		ended <- streamErr
 	}()
 
 	// The server version comes from the real binary.
-	v, err := c.server.GetVersion(ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+	v, err := c.server.GetVersion(ctx, &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.NotEmpty(t, v.Msg.GetVersion())
+	assert.NotEmpty(t, v.GetVersion())
 
 	start := time.Now()
 	require.NoError(t, cmd.Process.Signal(syscall.SIGTERM))

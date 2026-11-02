@@ -9,7 +9,8 @@ import (
 
 	"net/http/httptest"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -23,13 +24,13 @@ func TestServerServiceGetVersion(t *testing.T) {
 	t.Parallel()
 	advertised := []string{"one", "two"}
 	svc := &serverService{version: "v1.2.3", features: advertised, key: mocks.NewSigningKeyService(t)}
-	resp, err := svc.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
+	resp, err := svc.GetVersion(context.Background(), &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.Equal(t, "v1.2.3", resp.Msg.GetVersion())
-	assert.Equal(t, []string{"one", "two"}, resp.Msg.GetFeatures())
+	assert.Equal(t, "v1.2.3", resp.GetVersion())
+	assert.Equal(t, []string{"one", "two"}, resp.GetFeatures())
 
 	// The caller gets a copy: changing it does not change what is advertised.
-	resp.Msg.Features[0] = "tampered"
+	resp.Features[0] = "tampered"
 	assert.Equal(t, []string{"one", "two"}, advertised)
 }
 
@@ -40,13 +41,13 @@ func TestServerServiceGetSigningKey(t *testing.T) {
 		Key:       domain.SigningPublicKey{AuthorizedKey: "ssh-ed25519 AAAA", Fingerprint: "SHA256:xyz"},
 		Committer: domain.Identity{Name: "ermite", Email: "ermite@example.com"},
 	}).Once()
-	resp, err := (&serverService{key: key}).GetSigningKey(context.Background(), connect.NewRequest(&pb.GetSigningKeyRequest{}))
+	resp, err := (&serverService{key: key}).GetSigningKey(context.Background(), &pb.GetSigningKeyRequest{})
 	require.NoError(t, err)
-	assert.Equal(t, "ssh-ed25519 AAAA", resp.Msg.GetPublicKey())
-	assert.Equal(t, "SHA256:xyz", resp.Msg.GetFingerprint())
-	assert.Equal(t, "ermite", resp.Msg.GetCommitterName())
-	assert.Equal(t, "ermite@example.com", resp.Msg.GetCommitterEmail())
-	assert.Equal(t, "ermite@example.com ssh-ed25519 AAAA", resp.Msg.GetAllowedSigners())
+	assert.Equal(t, "ssh-ed25519 AAAA", resp.GetPublicKey())
+	assert.Equal(t, "SHA256:xyz", resp.GetFingerprint())
+	assert.Equal(t, "ermite", resp.GetCommitterName())
+	assert.Equal(t, "ermite@example.com", resp.GetCommitterEmail())
+	assert.Equal(t, "ermite@example.com ssh-ed25519 AAAA", resp.GetAllowedSigners())
 }
 
 // An API built without an OIDC key service answers unimplemented instead of
@@ -55,7 +56,7 @@ func TestRotateOIDCKeyWithoutService(t *testing.T) {
 	t.Parallel()
 	for _, p := range []domain.Principal{domain.Owner(), {}} {
 		ctx := domain.ContextWithPrincipal(context.Background(), p)
-		_, err := (&serverService{}).RotateOIDCKey(ctx, connect.NewRequest(&pb.RotateOIDCKeyRequest{}))
+		_, err := (&serverService{}).RotateOIDCKey(ctx, &pb.RotateOIDCKeyRequest{})
 		assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
 	}
 }
@@ -68,10 +69,10 @@ func TestAPIListsPasskeysFeatureWhenAvailable(t *testing.T) {
 		cfg.SigningKey = mocks.NewSigningKeyService(t)
 		srv := httptest.NewServer(New(cfg).Handler())
 		t.Cleanup(srv.Close)
-		c := ermiteconnect.NewServerServiceClient(srv.Client(), srv.URL)
-		resp, err := c.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
+		c := ermiteconnect.NewServerServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL, connecthttp.WithReadMaxBytes(0))))
+		resp, err := c.GetVersion(context.Background(), &pb.GetVersionRequest{})
 		require.NoError(t, err)
-		return resp.Msg.GetFeatures()
+		return resp.GetFeatures()
 	}
 	assert.Equal(t, Features, list(Config{}))
 	got := list(Config{Passkeys: mocks.NewPasskeyService(t)})

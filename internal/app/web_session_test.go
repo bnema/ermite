@@ -7,12 +7,14 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
-	"net/url"
+
 	"strings"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"net/http/cookiejar"
+	"net/url"
+
 	"bnema.dev/zerowrap"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
@@ -234,18 +236,23 @@ func TestWebLoginEndToEnd(t *testing.T) {
 
 	// The API ignores the cookie: no bearer is anonymous, so nothing private
 	// and nothing that needs a caller.
-	api := c.api("", connect.WithInterceptors(cookieInterceptor(token)))
-	list, err := api.repo.ListRepos(context.Background(), connect.NewRequest(&pb.ListReposRequest{}))
+	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
-	require.Len(t, list.Msg.GetRepos(), 1)
-	assert.Equal(t, "pub", list.Msg.GetRepos()[0].GetName())
-	_, err = api.repo.GetRepo(context.Background(), connect.NewRequest(&pb.GetRepoRequest{Repo: "secret"}))
+	u, err := url.Parse(c.harness.url("/-/api"))
+	require.NoError(t, err)
+	jar.SetCookies(u, []*http.Cookie{{Name: sessionCookie, Value: token}})
+	api := newClientsOn(&http.Client{Jar: jar}, u.String())
+	list, err := api.repo.ListRepos(context.Background(), &pb.ListReposRequest{})
+	require.NoError(t, err)
+	require.Len(t, list.GetRepos(), 1)
+	assert.Equal(t, "pub", list.GetRepos()[0].GetName())
+	_, err = api.repo.GetRepo(context.Background(), &pb.GetRepoRequest{Repo: "secret"})
 	assert.Equal(t, "not_found", codeName(err))
-	_, err = api.token.ListTokens(context.Background(), connect.NewRequest(&pb.ListTokensRequest{}))
+	_, err = api.token.ListTokens(context.Background(), &pb.ListTokensRequest{})
 	assert.Equal(t, "unauthenticated", codeName(err))
-	_, err = api.session.CreateLoginLink(context.Background(), connect.NewRequest(&pb.CreateLoginLinkRequest{}))
+	_, err = api.session.CreateLoginLink(context.Background(), &pb.CreateLoginLinkRequest{})
 	assert.Equal(t, "unauthenticated", codeName(err))
-	_, err = api.session.SignOutEverywhere(context.Background(), connect.NewRequest(&pb.SignOutEverywhereRequest{}))
+	_, err = api.session.SignOutEverywhere(context.Background(), &pb.SignOutEverywhereRequest{})
 	assert.Equal(t, "unauthenticated", codeName(err))
 
 	// Logout: a POST from this site with the session; the cookie is deleted.
@@ -349,17 +356,6 @@ func TestWebRevokingAnOwnerTokenSignsEveryoneOut(t *testing.T) {
 	assert.Contains(t, help.stdout+help.stderr, "signs every browser out")
 }
 
-// cookieInterceptor makes a Connect client send the session cookie, as a
-// browser-made call would, to show the API pays no attention to it.
-func cookieInterceptor(token string) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			req.Header().Set("Cookie", sessionCookie+"="+token)
-			return next(ctx, req)
-		}
-	})
-}
-
 // The cookie must be an unforgeable HS256 token for the key of the server.
 func TestWebRejectsForgedSessions(t *testing.T) {
 	c := newCLIHarness(t)
@@ -420,19 +416,21 @@ func TestWebLoginFailuresAreRateLimited(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, b.do("POST", loginPath(t, link), from("203.0.113.9"), "").status, "the budget is spent")
 	assert.Equal(t, http.StatusSeeOther, b.do("POST", loginPath(t, link), from("203.0.113.10"), "").status, "another client is not affected")
 	// The same budget as the API's: a bad token from this client is refused.
-	_, err := c.api("bad-token", connect.WithInterceptors(forwardedFor("203.0.113.9"))).server.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
+	hc := &http.Client{Transport: forwardedTransport{ip: "203.0.113.9"}}
+	api := newClientsOn(hc, c.harness.url("/-/api"))
+	_, err := api.server.GetVersion(context.Background(), &pb.GetVersionRequest{})
 	require.NoError(t, err, "GetVersion needs no authentication")
-	_, err = c.api("bad-token", connect.WithInterceptors(forwardedFor("203.0.113.9"))).repo.ListRepos(context.Background(), connect.NewRequest(&pb.ListReposRequest{}))
+	_, err = api.repo.ListRepos(context.Background(), &pb.ListReposRequest{})
 	assert.Equal(t, "resource_exhausted", codeName(err))
 }
 
-func forwardedFor(ip string) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			req.Header().Set("X-Forwarded-For", ip)
-			return next(ctx, req)
-		}
-	})
+type forwardedTransport struct{ ip string }
+
+func (f forwardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("X-Forwarded-For", f.ip)
+	r.Header.Set("Authorization", "Bearer bad-token")
+	return http.DefaultTransport.RoundTrip(r)
 }
 
 // Only the owner creates links: the admin token, or a token with every scope
@@ -454,9 +452,9 @@ func TestSessionServiceIsOwnerOnly(t *testing.T) {
 		"admin token":   {adminToken, "ok"},
 	} {
 		a := c.api(tc.secret)
-		_, err := a.session.CreateLoginLink(ctx, connect.NewRequest(&pb.CreateLoginLinkRequest{}))
+		_, err := a.session.CreateLoginLink(ctx, &pb.CreateLoginLinkRequest{})
 		assert.Equal(t, tc.code, codeName(err), name)
-		_, err = a.session.SignOutEverywhere(ctx, connect.NewRequest(&pb.SignOutEverywhereRequest{}))
+		_, err = a.session.SignOutEverywhere(ctx, &pb.SignOutEverywhereRequest{})
 		if tc.code == "unauthenticated" {
 			assert.Equal(t, tc.code, codeName(err), name)
 		} else {
@@ -480,7 +478,7 @@ func TestLoginLinksAreBoundedOverTheAPI(t *testing.T) {
 	a := c.api(adminToken)
 	var code string
 	for range 20 {
-		_, err := a.session.CreateLoginLink(context.Background(), connect.NewRequest(&pb.CreateLoginLinkRequest{}))
+		_, err := a.session.CreateLoginLink(context.Background(), &pb.CreateLoginLinkRequest{})
 		if code = codeName(err); code != "ok" {
 			break
 		}

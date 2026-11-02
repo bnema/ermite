@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,7 +43,7 @@ func TestJournalAPIEndToEnd(t *testing.T) {
 	as := func(secret string) caller {
 		base := h.url("/-/api")
 		hc := &http.Client{Transport: bearerTransport{secret: secret, next: http.DefaultTransport}}
-		return caller{ermiteconnect.NewJournalServiceClient(hc, base), ermiteconnect.NewReleaseServiceClient(hc, base)}
+		return caller{ermiteconnect.NewJournalServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, connecthttp.WithReadMaxBytes(0)))), ermiteconnect.NewReleaseServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, connecthttp.WithReadMaxBytes(0))))}
 	}
 	owner := as(adminToken)
 	reader := as(h.token([]domain.Scope{domain.ScopeJournalRead}))
@@ -55,11 +56,11 @@ func TestJournalAPIEndToEnd(t *testing.T) {
 	future := timestamppb.New(time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC))
 
 	list := func(c caller, req *pb.ListActivityRequest) ([]*pb.ActivityEntry, string, error) {
-		res, err := c.journal.ListActivity(h.ctx, connect.NewRequest(req))
+		res, err := c.journal.ListActivity(h.ctx, req)
 		if err != nil {
 			return nil, "", err
 		}
-		return res.Msg.GetEntries(), res.Msg.GetNextPageToken(), nil
+		return res.GetEntries(), res.GetNextPageToken(), nil
 	}
 	repos := func(es []*pb.ActivityEntry) map[string]int {
 		out := map[string]int{}
@@ -123,11 +124,11 @@ func TestJournalAPIEndToEnd(t *testing.T) {
 	}
 	// Unreleased: two commits after v0.1.0 in each repository.
 	unreleased := func(c caller, repo *string) ([]*pb.UnreleasedRepo, error) {
-		res, err := c.release.ListUnreleased(h.ctx, connect.NewRequest(&pb.ListUnreleasedRequest{Repo: repo}))
+		res, err := c.release.ListUnreleased(h.ctx, &pb.ListUnreleasedRequest{Repo: repo})
 		if err != nil {
 			return nil, err
 		}
-		return res.Msg.GetRepos(), nil
+		return res.GetRepos(), nil
 	}
 	u, err := unreleased(owner, nil)
 	require.NoError(t, err)

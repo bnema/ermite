@@ -13,12 +13,12 @@ tool (
 
 require (
 	bnema.dev/ermite-actions v0.2.1
-	bnema.dev/ermite-api v0.24.0
+	bnema.dev/ermite-api v0.25.0
 	bnema.dev/ermite-git v0.1.1
 	bnema.dev/ermite-kv v0.1.2
 	bnema.dev/kvconf v0.2.0
 	bnema.dev/zerowrap v1.5.0
-	connectrpc.com/connect v1.21.1
+	connectrpc.com/connect/v2 v2.0.2
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/a-h/templ v0.3.1100
 	github.com/alecthomas/chroma/v2 v2.27.0
@@ -59,7 +59,7 @@ require (
 	buf.build/go/standard v0.1.1-0.20260325175353-2b287e071df5 // indirect
 	cel.dev/cel-go v0.33.1 // indirect
 	cel.dev/expr v0.25.3 // indirect
-	connectrpc.com/connect/v2 v2.0.2 // indirect
+	connectrpc.com/connect v1.21.1 // indirect
 	connectrpc.com/otelconnect v0.12.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Microsoft/go-winio v0.6.4 // indirect

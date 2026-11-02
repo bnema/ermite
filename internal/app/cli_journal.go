@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -22,11 +21,11 @@ import (
 var errNoJournal = fmt.Errorf("the server does not support %s, so it has no activity journal (upgrade the server, see `ermite version`)", client.FeatureJournal)
 
 func requireJournal(ctx context.Context, c *client.Client) error {
-	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
 	if err != nil {
 		return c.Describe(err)
 	}
-	if !slices.Contains(res.Msg.GetFeatures(), client.FeatureJournal) {
+	if !slices.Contains(res.GetFeatures(), client.FeatureJournal) {
 		return errNoJournal
 	}
 	return nil
@@ -218,12 +217,12 @@ func newJournalCmd(env *cliEnv) *cobra.Command {
 		seen := map[string]bool{}
 		for len(all) < limit {
 			req.PageSize = int32(min(limit-len(all), 500))
-			res, err := c.Journal().ListActivity(env.ctx(cmd), connect.NewRequest(req))
+			res, err := c.Journal().ListActivity(env.ctx(cmd), req)
 			if err != nil {
 				return c.Describe(err)
 			}
-			all = append(all, res.Msg.GetEntries()...)
-			next := res.Msg.GetNextPageToken()
+			all = append(all, res.GetEntries()...)
+			next := res.GetNextPageToken()
 			if next == "" {
 				break
 			}
@@ -301,13 +300,13 @@ func newReleasePendingCmd(env *cliEnv) *cobra.Command {
 		if len(args) == 1 {
 			req.Repo = &args[0]
 		}
-		res, err := c.Releases().ListUnreleased(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.Releases().ListUnreleased(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
 			out := []jsonUnreleased{}
-			for _, u := range res.Msg.GetRepos() {
+			for _, u := range res.GetRepos() {
 				out = append(out, jsonUnreleased{
 					Repo: u.GetRepo(), LatestTag: u.GetLatestTag(), LatestTagAt: jsonTime(u.GetLatestTagAt()),
 					CommitsSince: u.GetCommitsSince(), CommitsCapped: u.GetCommitsCapped(), DefaultBranch: u.GetDefaultBranch(),
@@ -315,12 +314,12 @@ func newReleasePendingCmd(env *cliEnv) *cobra.Command {
 			}
 			return writeJSON(cmd.OutOrStdout(), out)
 		}
-		if len(res.Msg.GetRepos()) == 0 {
+		if len(res.GetRepos()) == 0 {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), "every tagged repository is released")
 			return err
 		}
-		rows := make([][2]string, 0, len(res.Msg.GetRepos()))
-		for _, u := range res.Msg.GetRepos() {
+		rows := make([][2]string, 0, len(res.GetRepos()))
+		for _, u := range res.GetRepos() {
 			text := commitCount(int(u.GetCommitsSince()), u.GetCommitsCapped()) + " since "
 			if u.GetLatestTag() == "" {
 				text += "the latest tag"

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,11 +40,11 @@ func pullWF(on, jobExtra string) map[string]string {
 // openMR opens a merge request from source into main as client.
 func (c *ciHarness) openMR(cl *clients, source string) int64 {
 	c.t.Helper()
-	res, err := cl.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+	res, err := cl.mr.CreateMergeRequest(c.ctx, &pb.CreateMergeRequestRequest{
 		Repo: c.repo, Title: "Title of " + source, Description: "About " + source, SourceBranch: source, TargetBranch: "main",
-	}))
+	})
 	require.NoError(c.t, err)
-	return res.Msg.GetMergeRequest().GetNumber()
+	return res.GetMergeRequest().GetNumber()
 }
 
 func (c *ciHarness) ghContext(j *pb.Job) map[string]any {
@@ -218,7 +217,7 @@ func TestPullRequestTypesAndClosed(t *testing.T) {
 	require.Equal(t, f1, head1)
 
 	// Closed without merging: merged false, the last computed merge commit.
-	_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n1}))
+	_, err := c.root.mr.CloseMergeRequest(c.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: n1})
 	require.NoError(t, err)
 	job := c.finish(runner)
 	gh := c.ghContext(job)
@@ -235,9 +234,9 @@ func TestPullRequestTypesAndClosed(t *testing.T) {
 	// source branch is deleted and the refs are not computed again.
 	head2 := c.ref(domain.PullHeadRef(n2))
 	merge2 := c.ref(domain.PullMergeRef(n2))
-	_, err = c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+	_, err = c.root.mr.MergeMergeRequest(c.ctx, &pb.MergeMergeRequestRequest{
 		Repo: "proj", Number: n2, HeadId: head2, DeleteSourceBranch: true,
-	}))
+	})
 	require.NoError(t, err)
 	job = c.finish(runner)
 	gh = c.ghContext(job)
@@ -339,7 +338,7 @@ func TestPullRequestTrustFollowsTheHeadsPusher(t *testing.T) {
 	assert.False(t, c.finish(runner).GetTrusted())
 
 	// The owner closes it, the head being the agent's: not trusted.
-	_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+	_, err := c.root.mr.CloseMergeRequest(c.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: n})
 	require.NoError(t, err)
 	job = c.finish(runner)
 	assert.Equal(t, "closed", c.ghContext(job)["event"].(map[string]any)["action"])
@@ -380,9 +379,9 @@ func TestPullRequestMergedByTheOwnerIsTrusted(t *testing.T) {
 	c.mustGit(c.wt, "push", "-q", c.urlAuth(secret, "/proj.git"), "agent/m")
 	n := c.openMR(c.root, "agent/m")
 	c.waitFor("the head ref", func() bool { return c.ref(domain.PullHeadRef(n)) != "" })
-	_, err := c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+	_, err := c.root.mr.MergeMergeRequest(c.ctx, &pb.MergeMergeRequestRequest{
 		Repo: "proj", Number: n, HeadId: c.ref(domain.PullHeadRef(n)), DeleteSourceBranch: true,
-	}))
+	})
 	require.NoError(t, err)
 	job := c.finish(runner)
 	assert.Equal(t, true, c.ghContext(job)["event"].(map[string]any)["pull_request"].(map[string]any)["merged"])
@@ -392,11 +391,11 @@ func TestPullRequestMergedByTheOwnerIsTrusted(t *testing.T) {
 // openMRInto opens a merge request from source into target as the owner.
 func (c *ciHarness) openMRInto(source, target string) int64 {
 	c.t.Helper()
-	res, err := c.root.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+	res, err := c.root.mr.CreateMergeRequest(c.ctx, &pb.CreateMergeRequestRequest{
 		Repo: c.repo, Title: "Title of " + source, SourceBranch: source, TargetBranch: target,
-	}))
+	})
 	require.NoError(c.t, err)
-	return res.Msg.GetMergeRequest().GetNumber()
+	return res.GetMergeRequest().GetNumber()
 }
 
 // The merge commit carries the target's files too: the base of the event must
@@ -437,7 +436,7 @@ func TestPullRequestTrustFollowsTheBasesPusher(t *testing.T) {
 		m := c.ref(domain.PullMergeRef(n))
 		return m != "" && strings.HasPrefix(c.parents(m), agentTip+" ")
 	})
-	_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+	_, err := c.root.mr.CloseMergeRequest(c.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: n})
 	require.NoError(t, err)
 	job = c.finish(runner)
 	assert.Equal(t, "closed", c.ghContext(job)["event"].(map[string]any)["action"])
@@ -502,7 +501,7 @@ func TestPullRequestClosedOnAMergeOfAnOlderHeadIsNotTrusted(t *testing.T) {
 	c.waitFor("the head ref", func() bool { return c.ref(domain.PullHeadRef(n)) == ownerHead })
 	require.Equal(t, main2+" "+agentHead, c.parents(c.ref(domain.PullMergeRef(n))))
 
-	_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+	_, err := c.root.mr.CloseMergeRequest(c.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: n})
 	require.NoError(t, err)
 	job := c.finish(runner)
 	assert.Equal(t, c.ref(domain.PullMergeRef(n)), c.ghContext(job)["sha"], "the run is the merge of the agent's head")
@@ -528,9 +527,9 @@ func TestPullRefsAreServedHiddenAndNotPushable(t *testing.T) {
 	assert.Equal(t, feat, strings.TrimSpace(c.mustGit(dir, "rev-parse", "refs/remotes/pull/1/head")))
 
 	// Hidden from the branch and tag lists.
-	res, err := c.root.git.ListRefs(c.ctx, connect.NewRequest(&pb.ListRefsRequest{Repo: "proj"}))
+	res, err := c.root.git.ListRefs(c.ctx, &pb.ListRefsRequest{Repo: "proj"})
 	require.NoError(t, err)
-	for _, r := range res.Msg.GetRefs() {
+	for _, r := range res.GetRefs() {
 		assert.NotContains(t, r.GetName(), "refs/pull/")
 	}
 

@@ -11,7 +11,6 @@ import (
 	"os"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -229,12 +228,12 @@ func newSecretSetCmd(env *cliEnv) *cobra.Command {
 		}
 		var errs []error
 		for _, p := range pairs {
-			res, err := c.Secrets().SetSecret(env.ctx(cmd), connect.NewRequest(&ermite.SetSecretRequest{Scope: scope, Name: p[0], Value: p[1]}))
+			res, err := c.Secrets().SetSecret(env.ctx(cmd), &ermite.SetSecretRequest{Scope: scope, Name: p[0], Value: p[1]})
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", clean(p[0]), c.Describe(err)))
 				continue
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "set secret %s for %s\n", clean(res.Msg.GetSecret().GetName()), clean(where)); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "set secret %s for %s\n", clean(res.GetSecret().GetName()), clean(where)); err != nil {
 				return err
 			}
 		}
@@ -273,11 +272,11 @@ func newSecretListCmd(env *cliEnv) *cobra.Command {
 		}
 		ctx := env.ctx(cmd)
 		items, err := collect(ctx, func(token string) ([]*ermite.Secret, string, error) {
-			res, err := c.Secrets().ListSecrets(ctx, connect.NewRequest(&ermite.ListSecretsRequest{Scope: scope, PageToken: token}))
+			res, err := c.Secrets().ListSecrets(ctx, &ermite.ListSecretsRequest{Scope: scope, PageToken: token})
 			if err != nil {
 				return nil, "", c.Describe(err)
 			}
-			return res.Msg.GetSecrets(), res.Msg.GetNextPageToken(), nil
+			return res.GetSecrets(), res.GetNextPageToken(), nil
 		})
 		if err != nil {
 			return err
@@ -322,7 +321,7 @@ func newSecretDeleteCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if _, err := c.Secrets().DeleteSecret(env.ctx(cmd), connect.NewRequest(&ermite.DeleteSecretRequest{Scope: scope, Name: args[0]})); err != nil {
+		if _, err := c.Secrets().DeleteSecret(env.ctx(cmd), &ermite.DeleteSecretRequest{Scope: scope, Name: args[0]}); err != nil {
 			return c.Describe(err)
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted secret %s from %s\n", clean(strings.ToUpper(args[0])), clean(where))
@@ -379,12 +378,12 @@ func newVariableSetCmd(env *cliEnv) *cobra.Command {
 		}
 		var errs []error
 		for _, p := range pairs {
-			res, err := c.Variables().SetVariable(env.ctx(cmd), connect.NewRequest(&ermite.SetVariableRequest{Scope: scope, Name: p[0], Value: p[1]}))
+			res, err := c.Variables().SetVariable(env.ctx(cmd), &ermite.SetVariableRequest{Scope: scope, Name: p[0], Value: p[1]})
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", clean(p[0]), c.Describe(err)))
 				continue
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "set variable %s for %s\n", clean(res.Msg.GetVariable().GetName()), clean(where)); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "set variable %s for %s\n", clean(res.GetVariable().GetName()), clean(where)); err != nil {
 				return err
 			}
 		}
@@ -426,14 +425,14 @@ func newVariableGetCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Variables().GetVariable(env.ctx(cmd), connect.NewRequest(&ermite.GetVariableRequest{Scope: scope, Name: args[0]}))
+		res, err := c.Variables().GetVariable(env.ctx(cmd), &ermite.GetVariableRequest{Scope: scope, Name: args[0]})
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), variableJSON(res.Msg.GetVariable()))
+			return writeJSON(cmd.OutOrStdout(), variableJSON(res.GetVariable()))
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), res.Msg.GetVariable().GetValue())
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), res.GetVariable().GetValue())
 		return err
 	}
 	return cmd
@@ -464,11 +463,11 @@ func newVariableListCmd(env *cliEnv) *cobra.Command {
 		}
 		ctx := env.ctx(cmd)
 		items, err := collect(ctx, func(token string) ([]*ermite.Variable, string, error) {
-			res, err := c.Variables().ListVariables(ctx, connect.NewRequest(&ermite.ListVariablesRequest{Scope: scope, PageToken: token}))
+			res, err := c.Variables().ListVariables(ctx, &ermite.ListVariablesRequest{Scope: scope, PageToken: token})
 			if err != nil {
 				return nil, "", c.Describe(err)
 			}
-			return res.Msg.GetVariables(), res.Msg.GetNextPageToken(), nil
+			return res.GetVariables(), res.GetNextPageToken(), nil
 		})
 		if err != nil {
 			return err
@@ -513,7 +512,7 @@ func newVariableDeleteCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if _, err := c.Variables().DeleteVariable(env.ctx(cmd), connect.NewRequest(&ermite.DeleteVariableRequest{Scope: scope, Name: args[0]})); err != nil {
+		if _, err := c.Variables().DeleteVariable(env.ctx(cmd), &ermite.DeleteVariableRequest{Scope: scope, Name: args[0]}); err != nil {
 			return c.Describe(err)
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted variable %s from %s\n", clean(strings.ToUpper(args[0])), clean(where))
@@ -562,11 +561,11 @@ func newEnvironmentCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Environments().CreateEnvironment(env.ctx(cmd), connect.NewRequest(&ermite.CreateEnvironmentRequest{Repo: repo, Name: args[0]}))
+		res, err := c.Environments().CreateEnvironment(env.ctx(cmd), &ermite.CreateEnvironmentRequest{Repo: repo, Name: args[0]})
 		if err != nil {
 			return c.Describe(err)
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "environment %s of %s\n", clean(res.Msg.GetEnvironment().GetName()), clean(repo))
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "environment %s of %s\n", clean(res.GetEnvironment().GetName()), clean(repo))
 		return err
 	}
 	return cmd
@@ -589,11 +588,11 @@ func newEnvironmentListCmd(env *cliEnv) *cobra.Command {
 		}
 		ctx := env.ctx(cmd)
 		items, err := collect(ctx, func(token string) ([]*ermite.Environment, string, error) {
-			res, err := c.Environments().ListEnvironments(ctx, connect.NewRequest(&ermite.ListEnvironmentsRequest{Repo: repo, PageToken: token}))
+			res, err := c.Environments().ListEnvironments(ctx, &ermite.ListEnvironmentsRequest{Repo: repo, PageToken: token})
 			if err != nil {
 				return nil, "", c.Describe(err)
 			}
-			return res.Msg.GetEnvironments(), res.Msg.GetNextPageToken(), nil
+			return res.GetEnvironments(), res.GetNextPageToken(), nil
 		})
 		if err != nil {
 			return err
@@ -631,7 +630,7 @@ func newEnvironmentDeleteCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if _, err := c.Environments().DeleteEnvironment(env.ctx(cmd), connect.NewRequest(&ermite.DeleteEnvironmentRequest{Repo: repo, Name: args[0]})); err != nil {
+		if _, err := c.Environments().DeleteEnvironment(env.ctx(cmd), &ermite.DeleteEnvironmentRequest{Repo: repo, Name: args[0]}); err != nil {
 			return c.Describe(err)
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted environment %s of %s\n", clean(args[0]), clean(repo))

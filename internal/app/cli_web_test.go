@@ -3,10 +3,9 @@
 package app
 
 import (
-	"errors"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -86,7 +85,7 @@ func TestWebPasskeyRemoveErrors(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeAPI{removePasskey: func(*ermite.RemovePasskeyRequest) (*ermite.RemovePasskeyResponse, error) {
-				return nil, connect.NewError(tc.code, errors.New(tc.msg))
+				return nil, connect.NewError(tc.code, tc.msg)
 			}}
 			res := runCLI(t, envFor(f.serve(t)), "", "web", "passkey", "remove", "AQID")
 			require.Error(t, res.err)
@@ -99,7 +98,7 @@ func TestWebPasskeyRemoveErrors(t *testing.T) {
 
 func TestWebPasskeyListUnavailable(t *testing.T) {
 	f := &fakeAPI{listPasskeys: func(*ermite.ListPasskeysRequest) (*ermite.ListPasskeysResponse, error) {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("passkeys are not available on this server"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "passkeys are not available on this server")
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "web", "passkey", "list")
 	require.Error(t, res.err)

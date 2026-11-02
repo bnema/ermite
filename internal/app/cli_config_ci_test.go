@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -17,26 +16,26 @@ import (
 // The RunService calls of the `run` and `runner` commands answer with empty
 // results: these tests look at which address and token reach the server, not
 // at the output.
-func (f *fakeAPI) ListRuns(_ context.Context, r *connect.Request[ermite.ListRunsRequest]) (*connect.Response[ermite.ListRunsResponse], error) {
-	return respond(f, "ListRuns", r, func(*ermite.ListRunsRequest) (*ermite.ListRunsResponse, error) {
+func (f *fakeAPI) ListRuns(ctx context.Context, r *ermite.ListRunsRequest) (*ermite.ListRunsResponse, error) {
+	return respond(ctx, f, "ListRuns", r, func(*ermite.ListRunsRequest) (*ermite.ListRunsResponse, error) {
 		return &ermite.ListRunsResponse{}, nil
 	})
 }
 
-func (f *fakeAPI) CancelRun(_ context.Context, r *connect.Request[ermite.CancelRunRequest]) (*connect.Response[ermite.CancelRunResponse], error) {
-	return respond(f, "CancelRun", r, func(*ermite.CancelRunRequest) (*ermite.CancelRunResponse, error) {
+func (f *fakeAPI) CancelRun(ctx context.Context, r *ermite.CancelRunRequest) (*ermite.CancelRunResponse, error) {
+	return respond(ctx, f, "CancelRun", r, func(*ermite.CancelRunRequest) (*ermite.CancelRunResponse, error) {
 		return &ermite.CancelRunResponse{}, nil
 	})
 }
 
-func (f *fakeAPI) RerunRun(_ context.Context, r *connect.Request[ermite.RerunRunRequest]) (*connect.Response[ermite.RerunRunResponse], error) {
-	return respond(f, "RerunRun", r, func(*ermite.RerunRunRequest) (*ermite.RerunRunResponse, error) {
+func (f *fakeAPI) RerunRun(ctx context.Context, r *ermite.RerunRunRequest) (*ermite.RerunRunResponse, error) {
+	return respond(ctx, f, "RerunRun", r, func(*ermite.RerunRunRequest) (*ermite.RerunRunResponse, error) {
 		return &ermite.RerunRunResponse{}, nil
 	})
 }
 
-func (f *fakeAPI) ListRunners(_ context.Context, r *connect.Request[ermite.ListRunnersRequest]) (*connect.Response[ermite.ListRunnersResponse], error) {
-	return respond(f, "ListRunners", r, func(*ermite.ListRunnersRequest) (*ermite.ListRunnersResponse, error) {
+func (f *fakeAPI) ListRunners(ctx context.Context, r *ermite.ListRunnersRequest) (*ermite.ListRunnersResponse, error) {
+	return respond(ctx, f, "ListRunners", r, func(*ermite.ListRunnersRequest) (*ermite.ListRunnersResponse, error) {
 		if f.runners != nil {
 			return &ermite.ListRunnersResponse{Runners: f.runners}, nil
 		}
@@ -44,8 +43,8 @@ func (f *fakeAPI) ListRunners(_ context.Context, r *connect.Request[ermite.ListR
 	})
 }
 
-func (f *fakeAPI) RemoveRunner(_ context.Context, r *connect.Request[ermite.RemoveRunnerRequest]) (*connect.Response[ermite.RemoveRunnerResponse], error) {
-	return respond(f, "RemoveRunner", r, func(*ermite.RemoveRunnerRequest) (*ermite.RemoveRunnerResponse, error) {
+func (f *fakeAPI) RemoveRunner(ctx context.Context, r *ermite.RemoveRunnerRequest) (*ermite.RemoveRunnerResponse, error) {
+	return respond(ctx, f, "RemoveRunner", r, func(*ermite.RemoveRunnerRequest) (*ermite.RemoveRunnerResponse, error) {
 		return &ermite.RemoveRunnerResponse{}, nil
 	})
 }

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -161,14 +160,14 @@ func newTokenCreateCmd(env *cliEnv) *cobra.Command {
 				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "note: the server has no journal feature, so the token has no journal:read scope")
 			}
 		}
-		res, err := c.Tokens().CreateToken(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.Tokens().CreateToken(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
-		if err := checkBranchPrefixes(req, res.Msg.GetToken()); err != nil {
+		if err := checkBranchPrefixes(req, res.GetToken()); err != nil {
 			return err
 		}
-		return printCreatedToken(cmd, res.Msg, *asJSON)
+		return printCreatedToken(cmd, res, *asJSON)
 	}
 	return cmd
 }
@@ -186,11 +185,11 @@ func explicitScope(flags []string, want ermite.Scope) bool {
 // a server ignores the field. A server whose features cannot be read is refused
 // too (fail closed).
 func requireBranchPrefixes(ctx context.Context, c *client.Client) error {
-	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
 	if err != nil {
 		return c.Describe(err)
 	}
-	if !slices.Contains(res.Msg.GetFeatures(), client.FeatureTokenBranchPrefixes) {
+	if !slices.Contains(res.GetFeatures(), client.FeatureTokenBranchPrefixes) {
 		return fmt.Errorf("the server does not support %s, so it would ignore --branch-prefix and create an unlimited token: nothing was created (upgrade the server, see `ermite version`)", client.FeatureTokenBranchPrefixes)
 	}
 	return nil
@@ -265,11 +264,11 @@ func printCreatedToken(cmd *cobra.Command, res *ermite.CreateTokenResponse, asJS
 
 func listTokens(ctx context.Context, c *client.Client) ([]*ermite.Token, error) {
 	return collect(ctx, func(page string) ([]*ermite.Token, string, error) {
-		res, err := c.Tokens().ListTokens(ctx, connect.NewRequest(&ermite.ListTokensRequest{PageToken: page}))
+		res, err := c.Tokens().ListTokens(ctx, &ermite.ListTokensRequest{PageToken: page})
 		if err != nil {
 			return nil, "", c.Describe(err)
 		}
-		return res.Msg.GetTokens(), res.Msg.GetNextPageToken(), nil
+		return res.GetTokens(), res.GetNextPageToken(), nil
 	})
 }
 
@@ -344,7 +343,7 @@ func newTokenRevokeCmd(env *cliEnv) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := c.Tokens().RevokeToken(env.ctx(cmd), connect.NewRequest(&ermite.RevokeTokenRequest{Id: args[0]})); err != nil {
+			if _, err := c.Tokens().RevokeToken(env.ctx(cmd), &ermite.RevokeTokenRequest{Id: args[0]}); err != nil {
 				return c.Describe(err)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "revoked %s\n", args[0])

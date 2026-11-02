@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -132,7 +131,7 @@ func TestScheduleAfterAMergeIsTheMergersToo(t *testing.T) {
 	head := c.ref(domain.PullHeadRef(n))
 
 	// The owner merges: main is theirs from now on.
-	_, err := c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: head}))
+	_, err := c.root.mr.MergeMergeRequest(c.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: head})
 	require.NoError(t, err)
 	run, job := c.fireAt(clk, runner, "2026-03-04 10:01:00")
 	assert.True(t, run.GetTrusted(), "merged by the owner")
@@ -148,7 +147,7 @@ func TestRefTipRecordsGoWithTheRepository(t *testing.T) {
 	assert.True(t, got.Trusted)
 	assert.Equal(t, c.ref("refs/heads/main"), got.Sha)
 
-	_, err = c.root.repo.DeleteRepo(c.ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "proj"}))
+	_, err = c.root.repo.DeleteRepo(c.ctx, &pb.DeleteRepoRequest{Repo: "proj"})
 	require.NoError(t, err)
 	_, err = tips.GetRefTip(c.ctx, c.name("proj"), "refs/heads/main")
 	assert.ErrorIs(t, err, domain.ErrNotFound, "deleted with the repository")
@@ -226,9 +225,9 @@ func TestMergeRecordsTheTargetAndDropsTheSourceRecord(t *testing.T) {
 	n := c.openMR(c.root, "feat")
 	c.waitFor("the head ref", func() bool { return c.ref(domain.PullHeadRef(n)) != "" })
 
-	_, err = c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+	_, err = c.root.mr.MergeMergeRequest(c.ctx, &pb.MergeMergeRequestRequest{
 		Repo: "proj", Number: n, HeadId: c.ref(domain.PullHeadRef(n)), DeleteSourceBranch: true,
-	}))
+	})
 	require.NoError(t, err)
 
 	// The deletion and the removal of the record run after the merge returned.

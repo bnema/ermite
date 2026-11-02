@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -31,11 +31,11 @@ import (
 var errNoReleases = errors.New("the server has no releases (it lacks the releases feature)")
 
 func requireReleases(ctx context.Context, c *client.Client) error {
-	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
 	if err != nil {
 		return c.Describe(err)
 	}
-	if !slices.Contains(res.Msg.GetFeatures(), client.FeatureReleases) {
+	if !slices.Contains(res.GetFeatures(), client.FeatureReleases) {
 		return errNoReleases
 	}
 	return nil
@@ -112,11 +112,11 @@ func getRelease(ctx context.Context, c *client.Client, repo, selector string, la
 	} else {
 		req.Selector = &ermite.GetReleaseRequest_Tag{Tag: selector}
 	}
-	res, err := c.Releases().GetRelease(ctx, connect.NewRequest(req))
+	res, err := c.Releases().GetRelease(ctx, req)
 	if err != nil {
 		return nil, c.Describe(err)
 	}
-	return res.Msg.GetRelease(), nil
+	return res.GetRelease(), nil
 }
 func releaseState(r *ermite.Release) string {
 	if r.GetDraft() {
@@ -191,11 +191,11 @@ func newReleaseCreateCmd(env *cliEnv) *cobra.Command {
 			return err
 		}
 		ctx := env.ctx(cmd)
-		res, err := c.Releases().CreateRelease(ctx, connect.NewRequest(&ermite.CreateReleaseRequest{Repo: args[0], Tag: args[1], Title: f.title, Notes: f.notes, TargetCommitish: f.target, Draft: f.draft, Prerelease: f.prerelease, MakeLatest: f.latest}))
+		res, err := c.Releases().CreateRelease(ctx, &ermite.CreateReleaseRequest{Repo: args[0], Tag: args[1], Title: f.title, Notes: f.notes, TargetCommitish: f.target, Draft: f.draft, Prerelease: f.prerelease, MakeLatest: f.latest})
 		if err != nil {
 			return c.Describe(err)
 		}
-		r := res.Msg.GetRelease()
+		r := res.GetRelease()
 		for _, spec := range assets {
 			a, err := uploadReleaseFile(ctx, c, args[0], r.GetId(), spec, "", false)
 			if err != nil {
@@ -224,12 +224,12 @@ func newReleaseListCmd(env *cliEnv) *cobra.Command {
 		all := []*ermite.Release{}
 		page := ""
 		for int32(len(all)) < limit {
-			res, err := c.Releases().ListReleases(env.ctx(cmd), connect.NewRequest(&ermite.ListReleasesRequest{Repo: args[0], PageSize: limit - int32(len(all)), PageToken: page}))
+			res, err := c.Releases().ListReleases(env.ctx(cmd), &ermite.ListReleasesRequest{Repo: args[0], PageSize: limit - int32(len(all)), PageToken: page})
 			if err != nil {
 				return c.Describe(err)
 			}
-			all = append(all, res.Msg.GetReleases()...)
-			next := res.Msg.GetNextPageToken()
+			all = append(all, res.GetReleases()...)
+			next := res.GetNextPageToken()
 			if next == "" {
 				break
 			}
@@ -319,11 +319,11 @@ func newReleaseEditCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Releases().UpdateRelease(ctx, connect.NewRequest(&ermite.UpdateReleaseRequest{Repo: args[0], Id: r.GetId(), Tag: f.tag, Title: f.title, Notes: f.notes, TargetCommitish: f.target, Draft: f.draft && !f.publish, Prerelease: f.prerelease && !f.noPrerelease, MakeLatest: f.latest, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}}))
+		res, err := c.Releases().UpdateRelease(ctx, &ermite.UpdateReleaseRequest{Repo: args[0], Id: r.GetId(), Tag: f.tag, Title: f.title, Notes: f.notes, TargetCommitish: f.target, Draft: f.draft && !f.publish, Prerelease: f.prerelease && !f.noPrerelease, MakeLatest: f.latest, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputRelease(cmd, c, res.Msg.GetRelease(), false)
+		return outputRelease(cmd, c, res.GetRelease(), false)
 	}
 	return cmd
 }
@@ -348,7 +348,7 @@ func newReleaseDeleteCmd(env *cliEnv) *cobra.Command {
 				return errors.New("aborted")
 			}
 		}
-		_, err = c.Releases().DeleteRelease(ctx, connect.NewRequest(&ermite.DeleteReleaseRequest{Repo: args[0], Id: r.GetId()}))
+		_, err = c.Releases().DeleteRelease(ctx, &ermite.DeleteReleaseRequest{Repo: args[0], Id: r.GetId()})
 		if err != nil {
 			return c.Describe(err)
 		}
@@ -417,14 +417,13 @@ func uploadReleaseFile(ctx context.Context, c *client.Client, repo string, id in
 		return nil, fmt.Errorf("invalid --content-type: %w", err)
 	}
 	name := filepath.Base(filename)
-	stream := c.Releases().UploadReleaseAsset(ctx)
-	// Always close the stream, including a local read or Send failure.
-	defer func() {
-		if conn, err := stream.Conn(); err == nil {
-			_ = conn.CloseRequest()
-			_ = conn.CloseResponse()
-		}
-	}()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream, err := c.Releases().UploadReleaseAsset(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Cancellation closes the stream, including a local read or Send failure.
 	err = stream.Send(&ermite.UploadReleaseAssetRequest{Repo: repo, ReleaseId: id, Name: name, Label: label, ContentType: contentType, Size: info.Size(), Replace: replace})
 	buf := make([]byte, 1<<20)
 	for err == nil {
@@ -450,7 +449,7 @@ func uploadReleaseFile(ctx context.Context, c *client.Client, repo string, id in
 		}
 		return nil, c.Describe(err)
 	}
-	return res.Msg.GetAsset(), nil
+	return res.GetAsset(), nil
 }
 func newReleaseDownloadCmd(env *cliEnv) *cobra.Command {
 	var names, patterns []string
@@ -547,13 +546,19 @@ func downloadReleaseAsset(ctx context.Context, c *client.Client, repo string, a 
 	w := io.MultiWriter(f, hash)
 	var kept int64
 	for attempt := 0; attempt < 2; attempt++ {
-		stream, openErr := c.Releases().DownloadReleaseAsset(ctx, connect.NewRequest(&ermite.DownloadReleaseAssetRequest{Repo: repo, Selector: &ermite.DownloadReleaseAssetRequest_AssetId{AssetId: a.GetId()}, Offset: kept}))
+		stream, openErr := c.Releases().DownloadReleaseAsset(ctx, &ermite.DownloadReleaseAssetRequest{Repo: repo, Selector: &ermite.DownloadReleaseAssetRequest_AssetId{AssetId: a.GetId()}, Offset: kept})
 		if openErr != nil {
 			err = openErr
 		} else {
 			described := false
-			for stream.Receive() {
-				msg := stream.Msg()
+			var streamErr error
+			for {
+				msg2, err := stream.Receive()
+				if err != nil {
+					streamErr = err
+					break
+				}
+				msg := msg2
 				if !described {
 					meta := msg.GetAsset()
 					if meta == nil || meta.GetId() != a.GetId() || meta.GetSize() != a.GetSize() || meta.GetDigest() != a.GetDigest() {
@@ -574,7 +579,10 @@ func downloadReleaseAsset(ctx context.Context, c *client.Client, repo string, a 
 					return werr
 				}
 			}
-			err = stream.Err()
+			if errors.Is(streamErr, io.EOF) {
+				streamErr = nil
+			}
+			err = streamErr
 			_ = stream.Close()
 			if err == nil && (!described || kept != a.GetSize()) {
 				err = io.ErrUnexpectedEOF

@@ -10,7 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -149,15 +150,15 @@ func TestTrustedKeyServiceList(t *testing.T) {
 			t.Parallel()
 			svc := mocks.NewTrustedKeyService(t)
 			svc.EXPECT().ListTrustedKeys(mock.Anything, domain.Owner()).Return(tt.list, tt.usecase).Once()
-			resp, err := (&trustedKeyService{svc}).ListTrustedKeys(ownerCtx(), connect.NewRequest(&pb.ListTrustedKeysRequest{}))
+			resp, err := (&trustedKeyService{svc}).ListTrustedKeys(ownerCtx(), &pb.ListTrustedKeysRequest{})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			require.Len(t, resp.Msg.GetKeys(), len(tt.list))
+			require.Len(t, resp.GetKeys(), len(tt.list))
 			for i, want := range tt.list {
-				got := resp.Msg.GetKeys()[i]
+				got := resp.GetKeys()[i]
 				assert.Equal(t, want.ID, got.GetId())
 				assert.Equal(t, signatureFormatToPB(want.Format), got.GetFormat())
 				assert.Equal(t, want.Title, got.GetTitle())
@@ -202,16 +203,16 @@ func TestTrustedKeyServiceAdd(t *testing.T) {
 				}
 				svc.EXPECT().AddTrustedKey(mock.Anything, domain.Owner(), domain.FormatSSH, "laptop", "ssh-ed25519 AAAA", []string{"a@b.c"}).Return(ret, tt.usecase).Once()
 			}
-			resp, err := (&trustedKeyService{svc}).AddTrustedKey(ownerCtx(), connect.NewRequest(&pb.AddTrustedKeyRequest{
+			resp, err := (&trustedKeyService{svc}).AddTrustedKey(ownerCtx(), &pb.AddTrustedKeyRequest{
 				Format: tt.format, Title: "laptop", PublicKey: "ssh-ed25519 AAAA", Emails: []string{"a@b.c"},
-			}))
+			})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "SHA256:k", resp.Msg.GetKey().GetId())
-			assert.Equal(t, pb.SignatureFormat_SIGNATURE_FORMAT_SSH, resp.Msg.GetKey().GetFormat())
+			assert.Equal(t, "SHA256:k", resp.GetKey().GetId())
+			assert.Equal(t, pb.SignatureFormat_SIGNATURE_FORMAT_SSH, resp.GetKey().GetFormat())
 		})
 	}
 }
@@ -233,7 +234,7 @@ func TestTrustedKeyServiceRemove(t *testing.T) {
 			t.Parallel()
 			svc := mocks.NewTrustedKeyService(t)
 			svc.EXPECT().RemoveTrustedKey(mock.Anything, domain.Owner(), "SHA256:k").Return(tt.usecase).Once()
-			_, err := (&trustedKeyService{svc}).RemoveTrustedKey(ownerCtx(), connect.NewRequest(&pb.RemoveTrustedKeyRequest{Id: "SHA256:k"}))
+			_, err := (&trustedKeyService{svc}).RemoveTrustedKey(ownerCtx(), &pb.RemoveTrustedKeyRequest{Id: "SHA256:k"})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
@@ -251,16 +252,16 @@ func TestAPICommitSignaturesFeature(t *testing.T) {
 		cfg.SigningKey = mocks.NewSigningKeyService(t)
 		srv := httptest.NewServer(New(cfg).Handler())
 		t.Cleanup(srv.Close)
-		c := ermiteconnect.NewServerServiceClient(srv.Client(), srv.URL)
-		resp, err := c.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
+		c := ermiteconnect.NewServerServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL, connecthttp.WithReadMaxBytes(0))))
+		resp, err := c.GetVersion(context.Background(), &pb.GetVersionRequest{})
 		require.NoError(t, err)
-		return resp.Msg.GetFeatures(), ermiteconnect.NewTrustedKeyServiceClient(srv.Client(), srv.URL)
+		return resp.GetFeatures(), ermiteconnect.NewTrustedKeyServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL, connecthttp.WithReadMaxBytes(0))))
 	}
 
 	features, keys := serve(Config{})
 	assert.NotContains(t, features, "commit_signatures")
 	assert.NotContains(t, Features, "commit_signatures", "the shared list is not modified")
-	_, err := keys.ListTrustedKeys(context.Background(), connect.NewRequest(&pb.ListTrustedKeysRequest{}))
+	_, err := keys.ListTrustedKeys(context.Background(), &pb.ListTrustedKeysRequest{})
 	assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
 
 	svc := mocks.NewTrustedKeyService(t)
@@ -268,6 +269,6 @@ func TestAPICommitSignaturesFeature(t *testing.T) {
 	assert.Contains(t, features, "commit_signatures")
 	// An anonymous caller reaches the use case, which refuses it.
 	svc.EXPECT().ListTrustedKeys(mock.Anything, domain.Anonymous()).Return(nil, domain.ErrUnauthenticated).Once()
-	_, err = keys.ListTrustedKeys(context.Background(), connect.NewRequest(&pb.ListTrustedKeysRequest{}))
+	_, err = keys.ListTrustedKeys(context.Background(), &pb.ListTrustedKeysRequest{})
 	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 }

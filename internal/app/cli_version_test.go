@@ -3,11 +3,10 @@
 package app
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -86,7 +85,7 @@ func TestVersionWarnsAboutMissingPasskeys(t *testing.T) {
 
 func TestVersionServerFailureStillShowsClient(t *testing.T) {
 	f := &fakeAPI{getVersion: func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("boom"))
+		return nil, connect.NewError(connect.CodeInternal, "boom")
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "version")
 	require.Error(t, res.err)

@@ -3,6 +3,7 @@
 package client_test
 
 import (
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"context"
 	"errors"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -42,20 +43,20 @@ func TestWatchResumesAfterLastEventAndBacksOff(t *testing.T) {
 	var mu sync.Mutex
 	var requests []*ermite.WatchRequest
 	f := &fake{}
-	f.watch = func(_ context.Context, req *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
+	f.watch = func(_ context.Context, req *ermite.WatchRequest, st ermiteconnect.EventServiceWatchServerStream) error {
 		mu.Lock()
-		requests = append(requests, req.Msg)
+		requests = append(requests, req)
 		n := len(requests)
 		mu.Unlock()
 		switch n {
 		case 1: // two events, then the connection ends
 			_ = st.Send(pushed("e1"))
 			_ = st.Send(pushed("e2"))
-			return connect.NewError(connect.CodeUnavailable, errors.New("shutting down"))
+			return connect.NewError(connect.CodeUnavailable, "shutting down")
 		case 2: // fails at once, twice
-			return connect.NewError(connect.CodeUnavailable, errors.New("still down"))
+			return connect.NewError(connect.CodeUnavailable, "still down")
 		case 3:
-			return connect.NewError(connect.CodeUnavailable, errors.New("still down"))
+			return connect.NewError(connect.CodeUnavailable, "still down")
 		default: // back: one more event, then the user stops
 			_ = st.Send(pushed("e3"))
 			<-ctx.Done()
@@ -113,12 +114,12 @@ func TestWatchWarnsWhenThereIsNoResumePoint(t *testing.T) {
 	defer cancel()
 	calls := 0
 	f := &fake{}
-	f.watch = func(context.Context, *connect.Request[ermite.WatchRequest], *connect.ServerStream[ermite.WatchResponse]) error {
+	f.watch = func(context.Context, *ermite.WatchRequest, ermiteconnect.EventServiceWatchServerStream) error {
 		calls++
 		if calls == 2 {
 			cancel()
 		}
-		return connect.NewError(connect.CodeUnavailable, errors.New("down"))
+		return connect.NewError(connect.CodeUnavailable, "down")
 	}
 	c := start(t, f, client.Config{})
 	var notices []string
@@ -135,9 +136,9 @@ func TestWatchStopsOnPermanentErrors(t *testing.T) {
 		t.Run(code.String(), func(t *testing.T) {
 			calls := 0
 			f := &fake{}
-			f.watch = func(context.Context, *connect.Request[ermite.WatchRequest], *connect.ServerStream[ermite.WatchResponse]) error {
+			f.watch = func(context.Context, *ermite.WatchRequest, ermiteconnect.EventServiceWatchServerStream) error {
 				calls++
-				return connect.NewError(code, errors.New("nope"))
+				return connect.NewError(code, "nope")
 			}
 			c := start(t, f, client.Config{})
 			err := c.Watch(t.Context(), client.WatchOptions{Sleep: (&sleeps{}).sleep}, func(*ermite.Event) error { return nil })
@@ -152,7 +153,7 @@ func TestWatchStopsOnPermanentErrors(t *testing.T) {
 
 func TestWatchReturnsHandlerError(t *testing.T) {
 	f := &fake{}
-	f.watch = func(ctx context.Context, _ *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
+	f.watch = func(ctx context.Context, _ *ermite.WatchRequest, st ermiteconnect.EventServiceWatchServerStream) error {
 		_ = st.Send(pushed("e1"))
 		<-ctx.Done()
 		return nil
@@ -168,12 +169,12 @@ func TestWatchPassesGapAndIgnoresItAsResumePoint(t *testing.T) {
 	defer cancel()
 	var resumes []string
 	f := &fake{}
-	f.watch = func(_ context.Context, req *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
-		resumes = append(resumes, req.Msg.GetResumeAfter())
+	f.watch = func(_ context.Context, req *ermite.WatchRequest, st ermiteconnect.EventServiceWatchServerStream) error {
+		resumes = append(resumes, req.GetResumeAfter())
 		if len(resumes) == 1 {
 			_ = st.Send(pushed("e1"))
 			_ = st.Send(&ermite.WatchResponse{Event: &ermite.Event{Kind: &ermite.Event_Gap{Gap: &ermite.Gap{}}}})
-			return connect.NewError(connect.CodeUnavailable, errors.New("x"))
+			return connect.NewError(connect.CodeUnavailable, "x")
 		}
 		_ = st.Send(pushed("e2"))
 		<-ctx.Done()
@@ -199,9 +200,9 @@ func TestWatchPassesGapAndIgnoresItAsResumePoint(t *testing.T) {
 func TestWatchResumesFromGivenID(t *testing.T) {
 	var first string
 	f := &fake{}
-	f.watch = func(_ context.Context, req *connect.Request[ermite.WatchRequest], _ *connect.ServerStream[ermite.WatchResponse]) error {
-		first = req.Msg.GetResumeAfter()
-		return connect.NewError(connect.CodePermissionDenied, errors.New("stop"))
+	f.watch = func(_ context.Context, req *ermite.WatchRequest, _ ermiteconnect.EventServiceWatchServerStream) error {
+		first = req.GetResumeAfter()
+		return connect.NewError(connect.CodePermissionDenied, "stop")
 	}
 	c := start(t, f, client.Config{})
 	_ = c.Watch(t.Context(), client.WatchOptions{ResumeAfter: "abc"}, func(*ermite.Event) error { return nil })

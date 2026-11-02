@@ -6,7 +6,8 @@ import (
 	"context"
 	"errors"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
@@ -50,14 +51,14 @@ var runnerSecretProcedures = map[string]bool{
 // failed_precondition with a JobEnded detail, as runner.proto says.
 func ciError(ctx context.Context, err error) error {
 	if ended, ok := domain.IsJobEnded(err); ok {
-		ce := connect.NewError(connect.CodeFailedPrecondition, errors.New("the job has ended"))
-		if d, derr := connect.NewErrorDetail(jobEndedToPB(ended)); derr == nil {
-			ce.AddDetail(d)
+		ce := connect.NewError(connect.CodeFailedPrecondition, "the job has ended")
+		if d, derr := connectproto.NewErrorDetail(jobEndedToPB(ended)); derr == nil {
+			ce = ce.WithDetail(d)
 		}
 		return ce
 	}
 	if errors.Is(err, domain.ErrOutOfRange) {
-		return connect.NewError(connect.CodeOutOfRange, err)
+		return connect.NewError(connect.CodeOutOfRange, err.Error()).WithCause(err)
 	}
 	return connectError(ctx, err)
 }
@@ -79,23 +80,23 @@ func (s *runnerService) failed(ctx context.Context, err error) error {
 	return ciError(ctx, err)
 }
 
-func (s *runnerService) RegisterRunner(ctx context.Context, req *connect.Request[pb.RegisterRunnerRequest]) (*connect.Response[pb.RegisterRunnerResponse], error) {
-	iso, err := isolationFromPB(req.Msg.GetIsolation())
+func (s *runnerService) RegisterRunner(ctx context.Context, req *pb.RegisterRunnerRequest) (*pb.RegisterRunnerResponse, error) {
+	iso, err := isolationFromPB(req.GetIsolation())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
 	out, err := s.runners.Register(ctx, caller(ctx), ports.RegisterRunnerParams{
-		Name: req.Msg.GetName(), Labels: req.Msg.GetLabels(), Version: req.Msg.GetVersion(), Isolation: iso,
-		Arch: req.Msg.GetArch(), OS: req.Msg.GetOs(), Replace: req.Msg.GetReplace(),
+		Name: req.GetName(), Labels: req.GetLabels(), Version: req.GetVersion(), Isolation: iso,
+		Arch: req.GetArch(), OS: req.GetOs(), Replace: req.GetReplace(),
 	})
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.RegisterRunnerResponse{RunnerId: out.Runner.ID, RunnerToken: out.Token}), nil
+	return &pb.RegisterRunnerResponse{RunnerId: out.Runner.ID, RunnerToken: out.Token}, nil
 }
 
-func (s *runnerService) FetchJob(ctx context.Context, req *connect.Request[pb.FetchJobRequest]) (*connect.Response[pb.FetchJobResponse], error) {
-	res, err := s.runners.FetchJob(ctx, secretFrom(ctx), ports.FetchJobParams{Kinds: req.Msg.GetKinds(), Labels: req.Msg.GetLabels(), PollID: req.Msg.GetPollId(), Version: req.Msg.GetVersion()})
+func (s *runnerService) FetchJob(ctx context.Context, req *pb.FetchJobRequest) (*pb.FetchJobResponse, error) {
+	res, err := s.runners.FetchJob(ctx, secretFrom(ctx), ports.FetchJobParams{Kinds: req.GetKinds(), Labels: req.GetLabels(), PollID: req.GetPollId(), Version: req.GetVersion()})
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
@@ -105,53 +106,53 @@ func (s *runnerService) FetchJob(ctx context.Context, req *connect.Request[pb.Fe
 	} else if res.RetryAfter > 0 {
 		out.RetryAfter = durationpb.New(res.RetryAfter)
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *runnerService) UpdateJob(ctx context.Context, req *connect.Request[pb.UpdateJobRequest]) (*connect.Response[pb.UpdateJobResponse], error) {
-	steps, err := stepUpdatesFromPB(req.Msg.GetSteps())
+func (s *runnerService) UpdateJob(ctx context.Context, req *pb.UpdateJobRequest) (*pb.UpdateJobResponse, error) {
+	steps, err := stepUpdatesFromPB(req.GetSteps())
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	anns, err := annotationsFromPB(req.Msg.GetAnnotations())
+	anns, err := annotationsFromPB(req.GetAnnotations())
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	if err := s.runners.UpdateJob(ctx, secretFrom(ctx), req.Msg.GetJobId(), steps, anns); err != nil {
+	if err := s.runners.UpdateJob(ctx, secretFrom(ctx), req.GetJobId(), steps, anns); err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.UpdateJobResponse{}), nil
+	return &pb.UpdateJobResponse{}, nil
 }
 
-func (s *runnerService) AppendLog(ctx context.Context, req *connect.Request[pb.AppendLogRequest]) (*connect.Response[pb.AppendLogResponse], error) {
-	lines := make([]domain.CILogLine, 0, len(req.Msg.GetLines()))
-	for _, l := range req.Msg.GetLines() {
+func (s *runnerService) AppendLog(ctx context.Context, req *pb.AppendLogRequest) (*pb.AppendLogResponse, error) {
+	lines := make([]domain.CILogLine, 0, len(req.GetLines()))
+	for _, l := range req.GetLines() {
 		lines = append(lines, domain.CILogLine{Time: goTime(l.GetTime()), Text: l.GetText(), Continued: l.GetContinued()})
 	}
-	next, err := s.runners.AppendLog(ctx, secretFrom(ctx), req.Msg.GetJobId(), req.Msg.GetStep(), req.Msg.GetOffset(), lines)
+	next, err := s.runners.AppendLog(ctx, secretFrom(ctx), req.GetJobId(), req.GetStep(), req.GetOffset(), lines)
 	if err != nil {
 		var gap *ports.ErrCILogGap
 		if errors.As(err, &gap) {
-			return nil, connect.NewError(connect.CodeOutOfRange, err)
+			return nil, connect.NewError(connect.CodeOutOfRange, err.Error()).WithCause(err)
 		}
 		return nil, s.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.AppendLogResponse{NextOffset: next}), nil
+	return &pb.AppendLogResponse{NextOffset: next}, nil
 }
 
-func (s *runnerService) Heartbeat(ctx context.Context, req *connect.Request[pb.HeartbeatRequest]) (*connect.Response[pb.HeartbeatResponse], error) {
-	if err := s.runners.Heartbeat(ctx, secretFrom(ctx), req.Msg.GetJobId()); err != nil {
+func (s *runnerService) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
+	if err := s.runners.Heartbeat(ctx, secretFrom(ctx), req.GetJobId()); err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.HeartbeatResponse{}), nil
+	return &pb.HeartbeatResponse{}, nil
 }
 
-func (s *runnerService) WatchJob(ctx context.Context, req *connect.Request[pb.WatchJobRequest], stream *connect.ServerStream[pb.WatchJobResponse]) error {
+func (s *runnerService) WatchJob(ctx context.Context, req *pb.WatchJobRequest, stream ermiteconnect.RunnerServiceWatchJobServerStream) error {
 	// A client's call returns when the response begins: send the headers now,
-	// not with the first message, which may be 30 seconds away. Connect
-	// flushes them for a nil message; a failure shows on the first real send.
-	ready := func() { _ = stream.Send(nil) }
-	err := s.runners.WatchJob(ctx, secretFrom(ctx), req.Msg.GetJobId(), ready, func(sig ports.JobSignal) error {
+	// not with the first message, which may be 30 seconds away. SendHeaders
+	// flushes them without sending a message; a failure shows on the first real send.
+	ready := func() { _ = stream.SendHeaders() }
+	err := s.runners.WatchJob(ctx, secretFrom(ctx), req.GetJobId(), ready, func(sig ports.JobSignal) error {
 		switch {
 		case sig.Cancel != nil:
 			return stream.Send(&pb.WatchJobResponse{Msg: &pb.WatchJobResponse_Cancel{Cancel: &pb.CancelRequest{
@@ -165,38 +166,38 @@ func (s *runnerService) WatchJob(ctx context.Context, req *connect.Request[pb.Wa
 	return s.failed(ctx, err)
 }
 
-func (s *runnerService) CompleteJob(ctx context.Context, req *connect.Request[pb.CompleteJobRequest]) (*connect.Response[pb.CompleteJobResponse], error) {
-	concl, err := conclusionFromPB(req.Msg.GetConclusion())
+func (s *runnerService) CompleteJob(ctx context.Context, req *pb.CompleteJobRequest) (*pb.CompleteJobResponse, error) {
+	concl, err := conclusionFromPB(req.GetConclusion())
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	steps, err := stepUpdatesFromPB(req.Msg.GetSteps())
+	steps, err := stepUpdatesFromPB(req.GetSteps())
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	anns, err := annotationsFromPB(req.Msg.GetAnnotations())
+	anns, err := annotationsFromPB(req.GetAnnotations())
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
 	res, err := s.runners.CompleteJob(ctx, secretFrom(ctx), ports.CompleteJobParams{
-		JobID: req.Msg.GetJobId(), Conclusion: concl, Outputs: req.Msg.GetOutputs(),
-		RunnerShutdown: req.Msg.GetRunnerShutdown(), Steps: steps, Annotations: anns,
-		DepsReport: depsReportFromPB(req.Msg.GetDepsReport()),
+		JobID: req.GetJobId(), Conclusion: concl, Outputs: req.GetOutputs(),
+		RunnerShutdown: req.GetRunnerShutdown(), Steps: steps, Annotations: anns,
+		DepsReport: depsReportFromPB(req.GetDepsReport()),
 	})
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.CompleteJobResponse{Conclusion: conclusionToPB(res.Conclusion), Error: res.Error, Applied: res.Applied}), nil
+	return &pb.CompleteJobResponse{Conclusion: conclusionToPB(res.Conclusion), Error: res.Error, Applied: res.Applied}, nil
 }
 
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter maps the references of the request to strings and the answers back to the contract; the rules are the use case's
-func (s *runnerService) ResolveActions(ctx context.Context, req *connect.Request[pb.ResolveActionsRequest]) (*connect.Response[pb.ResolveActionsResponse], error) {
-	uses := make([]string, 0, len(req.Msg.GetRefs()))
-	for _, r := range req.Msg.GetRefs() {
+func (s *runnerService) ResolveActions(ctx context.Context, req *pb.ResolveActionsRequest) (*pb.ResolveActionsResponse, error) {
+	uses := make([]string, 0, len(req.GetRefs()))
+	for _, r := range req.GetRefs() {
 		uses = append(uses, r.GetUses())
 	}
-	res, err := s.runners.ResolveActions(ctx, secretFrom(ctx), req.Msg.GetJobId(), uses)
+	res, err := s.runners.ResolveActions(ctx, secretFrom(ctx), req.GetJobId(), uses)
 	if err != nil {
 		return nil, s.failed(ctx, err)
 	}
@@ -204,15 +205,15 @@ func (s *runnerService) ResolveActions(ctx context.Context, req *connect.Request
 	for _, a := range res {
 		out.Actions = append(out.Actions, resolvedActionToPB(a))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 // UploadSummary stores the summary of a step.
-func (s *runnerService) UploadSummary(ctx context.Context, req *connect.Request[pb.UploadSummaryRequest]) (*connect.Response[pb.UploadSummaryResponse], error) {
-	if err := s.runners.UploadSummary(ctx, secretFrom(ctx), req.Msg.GetJobId(), req.Msg.GetStepNumber(), req.Msg.GetMarkdown()); err != nil {
+func (s *runnerService) UploadSummary(ctx context.Context, req *pb.UploadSummaryRequest) (*pb.UploadSummaryResponse, error) {
+	if err := s.runners.UploadSummary(ctx, secretFrom(ctx), req.GetJobId(), req.GetStepNumber(), req.GetMarkdown()); err != nil {
 		return nil, s.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.UploadSummaryResponse{}), nil
+	return &pb.UploadSummaryResponse{}, nil
 }
 
 // runService implements ermiteconnect.RunServiceHandler.
@@ -223,17 +224,17 @@ type runService struct {
 
 func repoOf(s string) (domain.RepoName, error) { return domain.ParseRepoName(s) }
 
-func (s *runService) ListRuns(ctx context.Context, req *connect.Request[pb.ListRunsRequest]) (*connect.Response[pb.ListRunsResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) ListRuns(ctx context.Context, req *pb.ListRunsRequest) (*pb.ListRunsResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	if _, err := statusFromPB(req.Msg.GetStatus()); err != nil {
+	if _, err := statusFromPB(req.GetStatus()); err != nil {
 		return nil, ciError(ctx, err)
 	}
 	page, err := s.runs.ListRuns(ctx, caller(ctx), name, ports.ListRunsParams{
-		PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken(),
-		Workflow: req.Msg.GetWorkflow(), Branch: req.Msg.GetBranch(), Status: statusOrZero(req.Msg.GetStatus()),
+		PageSize: int(req.GetPageSize()), PageToken: req.GetPageToken(),
+		Workflow: req.GetWorkflow(), Branch: req.GetBranch(), Status: statusOrZero(req.GetStatus()),
 	})
 	if err != nil {
 		return nil, ciError(ctx, err)
@@ -242,7 +243,7 @@ func (s *runService) ListRuns(ctx context.Context, req *connect.Request[pb.ListR
 	for _, r := range page.Runs {
 		out.Runs = append(out.Runs, runToPB(r))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 func statusOrZero(s pb.CiStatus) domain.CIStatus {
@@ -250,12 +251,12 @@ func statusOrZero(s pb.CiStatus) domain.CIStatus {
 	return d
 }
 
-func (s *runService) GetRun(ctx context.Context, req *connect.Request[pb.GetRunRequest]) (*connect.Response[pb.GetRunResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) GetRun(ctx context.Context, req *pb.GetRunRequest) (*pb.GetRunResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	d, err := s.runs.GetRun(ctx, caller(ctx), name, req.Msg.GetRunId(), req.Msg.GetAttempt())
+	d, err := s.runs.GetRun(ctx, caller(ctx), name, req.GetRunId(), req.GetAttempt())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
@@ -263,30 +264,30 @@ func (s *runService) GetRun(ctx context.Context, req *connect.Request[pb.GetRunR
 	for _, j := range d.Jobs {
 		out.Jobs = append(out.Jobs, jobViewToPB(j))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *runService) GetJob(ctx context.Context, req *connect.Request[pb.GetJobRequest]) (*connect.Response[pb.GetJobResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	j, err := s.runs.GetJob(ctx, caller(ctx), name, req.Msg.GetJobId(), req.Msg.GetAttempt())
+	j, err := s.runs.GetJob(ctx, caller(ctx), name, req.GetJobId(), req.GetAttempt())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.GetJobResponse{Job: jobViewToPB(j)}), nil
+	return &pb.GetJobResponse{Job: jobViewToPB(j)}, nil
 }
 
-func (s *runService) GetJobLog(ctx context.Context, req *connect.Request[pb.GetJobLogRequest], stream *connect.ServerStream[pb.GetJobLogResponse]) error {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) GetJobLog(ctx context.Context, req *pb.GetJobLogRequest, stream ermiteconnect.RunServiceGetJobLogServerStream) error {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return ciError(ctx, err)
 	}
 	err = s.runs.GetJobLog(ctx, caller(ctx), name, ports.GetJobLogParams{
-		JobID: req.Msg.GetJobId(), Attempt: req.Msg.GetAttempt(), Offset: req.Msg.GetOffset(), Follow: req.Msg.GetFollow(),
+		JobID: req.GetJobId(), Attempt: req.GetAttempt(), Offset: req.GetOffset(), Follow: req.GetFollow(),
 		Client: clientFromContext(ctx),
-		Ready:  func() { _ = stream.Send(nil) },
+		Ready:  func() { _ = stream.SendHeaders() },
 	}, func(b ports.LogBatch) error {
 		out := &pb.GetJobLogResponse{Offset: b.Offset, Lines: make([]*pb.JobLogLine, 0, len(b.Lines))}
 		for _, l := range b.Lines {
@@ -297,42 +298,42 @@ func (s *runService) GetJobLog(ctx context.Context, req *connect.Request[pb.GetJ
 	return ciError(ctx, err)
 }
 
-func (s *runService) CancelRun(ctx context.Context, req *connect.Request[pb.CancelRunRequest]) (*connect.Response[pb.CancelRunResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) CancelRun(ctx context.Context, req *pb.CancelRunRequest) (*pb.CancelRunResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	run, err := s.runs.CancelRun(ctx, caller(ctx), name, req.Msg.GetRunId())
+	run, err := s.runs.CancelRun(ctx, caller(ctx), name, req.GetRunId())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.CancelRunResponse{Run: runToPB(run)}), nil
+	return &pb.CancelRunResponse{Run: runToPB(run)}, nil
 }
 
-func (s *runService) RerunRun(ctx context.Context, req *connect.Request[pb.RerunRunRequest]) (*connect.Response[pb.RerunRunResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) RerunRun(ctx context.Context, req *pb.RerunRunRequest) (*pb.RerunRunResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	run, err := s.runs.RerunRun(ctx, caller(ctx), name, req.Msg.GetRunId(), req.Msg.GetFailedOnly())
+	run, err := s.runs.RerunRun(ctx, caller(ctx), name, req.GetRunId(), req.GetFailedOnly())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.RerunRunResponse{Run: runToPB(run)}), nil
+	return &pb.RerunRunResponse{Run: runToPB(run)}, nil
 }
 
-func (s *runService) DispatchWorkflow(ctx context.Context, req *connect.Request[pb.DispatchWorkflowRequest]) (*connect.Response[pb.DispatchWorkflowResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) DispatchWorkflow(ctx context.Context, req *pb.DispatchWorkflowRequest) (*pb.DispatchWorkflowResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
 	run, err := s.runs.DispatchWorkflow(ctx, caller(ctx), name, ports.DispatchParams{
-		WorkflowPath: req.Msg.GetWorkflowPath(), Ref: req.Msg.GetRef(), Inputs: req.Msg.GetInputs(),
+		WorkflowPath: req.GetWorkflowPath(), Ref: req.GetRef(), Inputs: req.GetInputs(),
 	})
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DispatchWorkflowResponse{Run: runToPB(run)}), nil
+	return &pb.DispatchWorkflowResponse{Run: runToPB(run)}, nil
 }
 
 func workflowToPB(w ports.WorkflowInfo) *pb.Workflow {
@@ -343,8 +344,8 @@ func workflowToPB(w ports.WorkflowInfo) *pb.Workflow {
 	return &pb.Workflow{Path: w.Path, Name: w.Name, State: state}
 }
 
-func (s *runService) ListWorkflows(ctx context.Context, req *connect.Request[pb.ListWorkflowsRequest]) (*connect.Response[pb.ListWorkflowsResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) ListWorkflows(ctx context.Context, req *pb.ListWorkflowsRequest) (*pb.ListWorkflowsResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
@@ -356,39 +357,39 @@ func (s *runService) ListWorkflows(ctx context.Context, req *connect.Request[pb.
 	for _, w := range list {
 		out.Workflows = append(out.Workflows, workflowToPB(w))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *runService) DisableWorkflow(ctx context.Context, req *connect.Request[pb.DisableWorkflowRequest]) (*connect.Response[pb.DisableWorkflowResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) DisableWorkflow(ctx context.Context, req *pb.DisableWorkflowRequest) (*pb.DisableWorkflowResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	w, err := s.runs.DisableWorkflow(ctx, caller(ctx), name, req.Msg.GetWorkflow())
+	w, err := s.runs.DisableWorkflow(ctx, caller(ctx), name, req.GetWorkflow())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DisableWorkflowResponse{Workflow: workflowToPB(w)}), nil
+	return &pb.DisableWorkflowResponse{Workflow: workflowToPB(w)}, nil
 }
 
-func (s *runService) EnableWorkflow(ctx context.Context, req *connect.Request[pb.EnableWorkflowRequest]) (*connect.Response[pb.EnableWorkflowResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) EnableWorkflow(ctx context.Context, req *pb.EnableWorkflowRequest) (*pb.EnableWorkflowResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	w, err := s.runs.EnableWorkflow(ctx, caller(ctx), name, req.Msg.GetWorkflow())
+	w, err := s.runs.EnableWorkflow(ctx, caller(ctx), name, req.GetWorkflow())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.EnableWorkflowResponse{Workflow: workflowToPB(w)}), nil
+	return &pb.EnableWorkflowResponse{Workflow: workflowToPB(w)}, nil
 }
 
-func (s *runService) ListChecks(ctx context.Context, req *connect.Request[pb.ListChecksRequest]) (*connect.Response[pb.ListChecksResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) ListChecks(ctx context.Context, req *pb.ListChecksRequest) (*pb.ListChecksResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	res, err := s.runs.ListChecks(ctx, caller(ctx), name, req.Msg.GetSha())
+	res, err := s.runs.ListChecks(ctx, caller(ctx), name, req.GetSha())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
@@ -396,11 +397,11 @@ func (s *runService) ListChecks(ctx context.Context, req *connect.Request[pb.Lis
 	for _, c := range res.Checks {
 		out.Checks = append(out.Checks, checkToPB(c.CICheck))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *runService) ListRunners(ctx context.Context, req *connect.Request[pb.ListRunnersRequest]) (*connect.Response[pb.ListRunnersResponse], error) {
-	page, err := s.runs.ListRunners(ctx, caller(ctx), int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+func (s *runService) ListRunners(ctx context.Context, req *pb.ListRunnersRequest) (*pb.ListRunnersResponse, error) {
+	page, err := s.runs.ListRunners(ctx, caller(ctx), int(req.GetPageSize()), req.GetPageToken())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
@@ -408,23 +409,23 @@ func (s *runService) ListRunners(ctx context.Context, req *connect.Request[pb.Li
 	for _, r := range page.Runners {
 		out.Runners = append(out.Runners, runnerToPB(r))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *runService) RemoveRunner(ctx context.Context, req *connect.Request[pb.RemoveRunnerRequest]) (*connect.Response[pb.RemoveRunnerResponse], error) {
-	if err := s.runs.RemoveRunner(ctx, caller(ctx), req.Msg.GetRunnerId()); err != nil {
+func (s *runService) RemoveRunner(ctx context.Context, req *pb.RemoveRunnerRequest) (*pb.RemoveRunnerResponse, error) {
+	if err := s.runs.RemoveRunner(ctx, caller(ctx), req.GetRunnerId()); err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.RemoveRunnerResponse{}), nil
+	return &pb.RemoveRunnerResponse{}, nil
 }
 
 // ListAnnotations lists the annotations of a run attempt.
-func (s *runService) ListAnnotations(ctx context.Context, req *connect.Request[pb.ListAnnotationsRequest]) (*connect.Response[pb.ListAnnotationsResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) ListAnnotations(ctx context.Context, req *pb.ListAnnotationsRequest) (*pb.ListAnnotationsResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	res, err := s.runs.ListAnnotations(ctx, caller(ctx), name, req.Msg.GetRunId(), req.Msg.GetAttempt(), req.Msg.GetJobId())
+	res, err := s.runs.ListAnnotations(ctx, caller(ctx), name, req.GetRunId(), req.GetAttempt(), req.GetJobId())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
@@ -432,16 +433,16 @@ func (s *runService) ListAnnotations(ctx context.Context, req *connect.Request[p
 	for _, a := range res.Annotations {
 		out.Annotations = append(out.Annotations, &pb.JobAnnotation{JobId: a.JobID, Annotation: annotationToPB(a.Annotation)})
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
 // GetStepSummaries returns the summaries of a job.
-func (s *runService) GetStepSummaries(ctx context.Context, req *connect.Request[pb.GetStepSummariesRequest]) (*connect.Response[pb.GetStepSummariesResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *runService) GetStepSummaries(ctx context.Context, req *pb.GetStepSummariesRequest) (*pb.GetStepSummariesResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	res, err := s.runs.GetStepSummaries(ctx, caller(ctx), name, req.Msg.GetJobId(), req.Msg.GetAttempt(), 0)
+	res, err := s.runs.GetStepSummaries(ctx, caller(ctx), name, req.GetJobId(), req.GetAttempt(), 0)
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
@@ -449,5 +450,5 @@ func (s *runService) GetStepSummaries(ctx context.Context, req *connect.Request[
 	for _, m := range res.Summaries {
 		out.Summaries = append(out.Summaries, &pb.StepSummary{StepNumber: m.Step, Markdown: m.Markdown})
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -28,25 +28,25 @@ func wfOn(name, on string) string {
 func (c *ciHarness) setWorkflow(api *clients, disable bool, file string) (*pb.Workflow, error) {
 	c.t.Helper()
 	if disable {
-		res, err := api.run.DisableWorkflow(c.ctx, connect.NewRequest(&pb.DisableWorkflowRequest{Repo: c.repo, Workflow: file}))
+		res, err := api.run.DisableWorkflow(c.ctx, &pb.DisableWorkflowRequest{Repo: c.repo, Workflow: file})
 		if err != nil {
 			return nil, err
 		}
-		return res.Msg.GetWorkflow(), nil
+		return res.GetWorkflow(), nil
 	}
-	res, err := api.run.EnableWorkflow(c.ctx, connect.NewRequest(&pb.EnableWorkflowRequest{Repo: c.repo, Workflow: file}))
+	res, err := api.run.EnableWorkflow(c.ctx, &pb.EnableWorkflowRequest{Repo: c.repo, Workflow: file})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg.GetWorkflow(), nil
+	return res.GetWorkflow(), nil
 }
 
 func (c *ciHarness) listWorkflows(api *clients) map[string]*pb.Workflow {
 	c.t.Helper()
-	res, err := api.run.ListWorkflows(c.ctx, connect.NewRequest(&pb.ListWorkflowsRequest{Repo: c.repo}))
+	res, err := api.run.ListWorkflows(c.ctx, &pb.ListWorkflowsRequest{Repo: c.repo})
 	require.NoError(c.t, err)
 	out := map[string]*pb.Workflow{}
-	for _, w := range res.Msg.GetWorkflows() {
+	for _, w := range res.GetWorkflows() {
 		out[w.GetPath()] = w
 	}
 	return out
@@ -229,12 +229,12 @@ func TestWorkflowStateAccessAndValidation(t *testing.T) {
 
 	assert.Equal(t, pb.WorkflowState_WORKFLOW_STATE_DISABLED, c.listWorkflows(reader)[releaseWF].GetState(), "repo:read lists")
 	assert.Len(t, c.listWorkflows(reader), 1, "the refused changes left nothing")
-	_, err = stranger.run.ListWorkflows(c.ctx, connect.NewRequest(&pb.ListWorkflowsRequest{Repo: c.repo}))
+	_, err = stranger.run.ListWorkflows(c.ctx, &pb.ListWorkflowsRequest{Repo: c.repo})
 	assert.Equal(t, connect.CodeNotFound, ciErrCode(err))
 	_, err = c.setWorkflow(admin, true, ".github/workflows/Odd Name.YAML")
 	require.NoError(t, err, "only the shape is checked")
 
-	_, err = admin.run.DisableWorkflow(c.ctx, connect.NewRequest(&pb.DisableWorkflowRequest{Repo: "nope", Workflow: "a.yml"}))
+	_, err = admin.run.DisableWorkflow(c.ctx, &pb.DisableWorkflowRequest{Repo: "nope", Workflow: "a.yml"})
 	assert.Equal(t, connect.CodeNotFound, ciErrCode(err))
 }
 

@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -80,14 +81,14 @@ func TestJournalServiceListActivity(t *testing.T) {
 	svc.EXPECT().ListActivity(mock.Anything, domain.Owner(), ports.ActivityQuery{
 		Since: since, Repo: repo, Kinds: []domain.JournalKind{domain.JournalMergeRequestMerged, domain.JournalTagCreated}, PageSize: 7, PageToken: "tok",
 	}).Return(ports.ActivityPage{Entries: []domain.JournalEntry{{ID: "x", Repo: repo, Kind: domain.JournalTagCreated, Ref: "v1"}}, NextPageToken: "next"}, nil).Once()
-	res, err := s.ListActivity(ctx, connect.NewRequest(&pb.ListActivityRequest{
+	res, err := s.ListActivity(ctx, &pb.ListActivityRequest{
 		Since: timestamppb.New(since), Repo: &app, PageSize: 7, PageToken: "tok",
 		Kinds: []pb.ActivityKind{pb.ActivityKind_ACTIVITY_KIND_MR_MERGED, pb.ActivityKind_ACTIVITY_KIND_TAG_CREATED},
-	}))
+	})
 	require.NoError(t, err)
-	assert.Equal(t, "next", res.Msg.GetNextPageToken())
-	require.Len(t, res.Msg.GetEntries(), 1)
-	assert.Equal(t, "v1", res.Msg.GetEntries()[0].GetRef())
+	assert.Equal(t, "next", res.GetNextPageToken())
+	require.Len(t, res.GetEntries(), 1)
+	assert.Equal(t, "v1", res.GetEntries()[0].GetRef())
 
 	// Refused before the use case: a bad repository, an unspecified kind, an
 	// invalid timestamp.
@@ -97,7 +98,7 @@ func TestJournalServiceListActivity(t *testing.T) {
 		"kind":  {Since: timestamppb.New(since), Kinds: []pb.ActivityKind{pb.ActivityKind_ACTIVITY_KIND_UNSPECIFIED}},
 		"since": {Since: &timestamppb.Timestamp{Nanos: -1}},
 	} {
-		_, err := s.ListActivity(ctx, connect.NewRequest(req))
+		_, err := s.ListActivity(ctx, req)
 		require.Error(t, err, name)
 		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), name)
 	}
@@ -112,7 +113,7 @@ func TestJournalServiceListActivity(t *testing.T) {
 		{domain.ErrInvalidPageToken, connect.CodeInvalidArgument},
 	} {
 		svc.EXPECT().ListActivity(mock.Anything, domain.Owner(), ports.ActivityQuery{}).Return(ports.ActivityPage{}, tc.err).Once()
-		_, err := s.ListActivity(ctx, connect.NewRequest(&pb.ListActivityRequest{}))
+		_, err := s.ListActivity(ctx, &pb.ListActivityRequest{})
 		requireCode(t, tc.code, err)
 	}
 }
@@ -125,17 +126,17 @@ func TestReleaseServiceListUnreleased(t *testing.T) {
 	repo := mustRepoName(t, "app")
 	svc.EXPECT().ListUnreleased(mock.Anything, domain.Owner(), domain.RepoName{}).
 		Return([]ports.UnreleasedRepo{{Repo: repo, Branch: "main", Distance: domain.TagDistance{Commits: 2, Tag: domain.TagInfo{Name: "v1"}}}}, nil).Once()
-	res, err := s.ListUnreleased(ctx, connect.NewRequest(&pb.ListUnreleasedRequest{}))
+	res, err := s.ListUnreleased(ctx, &pb.ListUnreleasedRequest{})
 	require.NoError(t, err)
-	require.Len(t, res.Msg.GetRepos(), 1)
-	assert.Equal(t, "v1", res.Msg.GetRepos()[0].GetLatestTag())
+	require.Len(t, res.GetRepos(), 1)
+	assert.Equal(t, "v1", res.GetRepos()[0].GetLatestTag())
 
 	app := "app"
 	svc.EXPECT().ListUnreleased(mock.Anything, domain.Owner(), repo).Return(nil, domain.ErrForbidden).Once()
-	_, err = s.ListUnreleased(ctx, connect.NewRequest(&pb.ListUnreleasedRequest{Repo: &app}))
+	_, err = s.ListUnreleased(ctx, &pb.ListUnreleasedRequest{Repo: &app})
 	requireCode(t, connect.CodePermissionDenied, err)
 
-	_, err = (&releaseService{}).ListUnreleased(ctx, connect.NewRequest(&pb.ListUnreleasedRequest{}))
+	_, err = (&releaseService{}).ListUnreleased(ctx, &pb.ListUnreleasedRequest{})
 	requireCode(t, connect.CodeUnimplemented, err)
 }
 
@@ -148,16 +149,16 @@ func TestAPIListsJournalFeature(t *testing.T) {
 		cfg.SigningKey = mocks.NewSigningKeyService(t)
 		srv := httptest.NewServer(New(cfg).Handler())
 		t.Cleanup(srv.Close)
-		c := ermiteconnect.NewServerServiceClient(srv.Client(), srv.URL)
-		resp, err := c.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
+		c := ermiteconnect.NewServerServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL, connecthttp.WithReadMaxBytes(0))))
+		resp, err := c.GetVersion(context.Background(), &pb.GetVersionRequest{})
 		require.NoError(t, err)
-		return resp.Msg.GetFeatures(), srv
+		return resp.GetFeatures(), srv
 	}
 	got, _ := features(Config{Journal: mocks.NewJournalService(t)})
 	assert.NotContains(t, got, FeatureJournal)
 	got, srv := features(Config{Releases: mocks.NewReleaseService(t)})
 	assert.NotContains(t, got, FeatureJournal)
-	_, err := ermiteconnect.NewReleaseServiceClient(srv.Client(), srv.URL).ListUnreleased(context.Background(), connect.NewRequest(&pb.ListUnreleasedRequest{}))
+	_, err := ermiteconnect.NewReleaseServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL, connecthttp.WithReadMaxBytes(0)))).ListUnreleased(context.Background(), &pb.ListUnreleasedRequest{})
 	requireCode(t, connect.CodeUnimplemented, err)
 	got, _ = features(Config{Releases: mocks.NewReleaseService(t), Journal: mocks.NewJournalService(t)})
 	assert.Contains(t, got, FeatureJournal)

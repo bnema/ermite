@@ -3,10 +3,11 @@
 package rpc
 
 import (
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -40,13 +41,13 @@ func TestGitServiceGetTree(t *testing.T) {
 				browse.EXPECT().GetTree(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything, mock.Anything, false).
 					Return(domain.Tree{}, tt.usecase).Once()
 			}
-			resp, err := (&gitService{browse}).GetTree(ownerCtx(), connect.NewRequest(tt.req))
+			resp, err := (&gitService{browse}).GetTree(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Empty(t, resp.Msg.GetEntries())
+			assert.Empty(t, resp.GetEntries())
 		})
 	}
 }
@@ -87,16 +88,16 @@ func TestGitServiceListPaths(t *testing.T) {
 				browse.EXPECT().ListPaths(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).
 					Return(tt.list, tt.usecase).Once()
 			}
-			resp, err := (&gitService{browse}).ListPaths(ownerCtx(), connect.NewRequest(tt.req))
+			resp, err := (&gitService{browse}).ListPaths(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.list.CommitID.String(), resp.Msg.GetCommitId())
-			assert.Equal(t, tt.list.TreeID.String(), resp.Msg.GetTreeId())
-			assert.Equal(t, tt.list.Paths, resp.Msg.GetPaths())
-			assert.Equal(t, tt.list.Truncated, resp.Msg.GetTruncated())
+			assert.Equal(t, tt.list.CommitID.String(), resp.GetCommitId())
+			assert.Equal(t, tt.list.TreeID.String(), resp.GetTreeId())
+			assert.Equal(t, tt.list.Paths, resp.GetPaths())
+			assert.Equal(t, tt.list.Truncated, resp.GetTruncated())
 		})
 	}
 }
@@ -124,13 +125,13 @@ func TestGitServiceListRefs(t *testing.T) {
 				browse.EXPECT().ListRefs(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).
 					Return(ports.RefPage{NextPageToken: "n"}, tt.usecase).Once()
 			}
-			resp, err := (&gitService{browse}).ListRefs(ownerCtx(), connect.NewRequest(tt.req))
+			resp, err := (&gitService{browse}).ListRefs(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "n", resp.Msg.GetNextPageToken())
+			assert.Equal(t, "n", resp.GetNextPageToken())
 		})
 	}
 }
@@ -144,12 +145,12 @@ func TestGitServiceGetCommitAndResolveRevision(t *testing.T) {
 	for _, tt := range invalid {
 		t.Run("GetCommit "+tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := (&gitService{mocks.NewBrowseService(t)}).GetCommit(ownerCtx(), connect.NewRequest(&pb.GetCommitRequest{Repo: tt.repo, Revision: tt.rev}))
+			_, err := (&gitService{mocks.NewBrowseService(t)}).GetCommit(ownerCtx(), &pb.GetCommitRequest{Repo: tt.repo, Revision: tt.rev})
 			requireCode(t, connect.CodeInvalidArgument, err)
 		})
 		t.Run("ResolveRevision "+tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := (&gitService{mocks.NewBrowseService(t)}).ResolveRevision(ownerCtx(), connect.NewRequest(&pb.ResolveRevisionRequest{Repo: tt.repo, Revision: tt.rev}))
+			_, err := (&gitService{mocks.NewBrowseService(t)}).ResolveRevision(ownerCtx(), &pb.ResolveRevisionRequest{Repo: tt.repo, Revision: tt.rev})
 			requireCode(t, connect.CodeInvalidArgument, err)
 		})
 	}
@@ -158,7 +159,7 @@ func TestGitServiceGetCommitAndResolveRevision(t *testing.T) {
 		t.Parallel()
 		browse := mocks.NewBrowseService(t)
 		browse.EXPECT().GetCommit(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything, mock.Anything).Return(domain.CommitDetail{}, domain.ErrNotFound).Once()
-		_, err := (&gitService{browse}).GetCommit(ownerCtx(), connect.NewRequest(&pb.GetCommitRequest{Repo: "demo", Revision: "main"}))
+		_, err := (&gitService{browse}).GetCommit(ownerCtx(), &pb.GetCommitRequest{Repo: "demo", Revision: "main"})
 		requireCode(t, connect.CodeNotFound, err)
 	})
 	t.Run("ResolveRevision ok", func(t *testing.T) {
@@ -166,9 +167,9 @@ func TestGitServiceGetCommitAndResolveRevision(t *testing.T) {
 		browse := mocks.NewBrowseService(t)
 		browse.EXPECT().ResolveRevision(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).
 			Return(domain.ResolvedRevision{Ref: "refs/heads/main"}, nil).Once()
-		resp, err := (&gitService{browse}).ResolveRevision(ownerCtx(), connect.NewRequest(&pb.ResolveRevisionRequest{Repo: "demo", Revision: "main"}))
+		resp, err := (&gitService{browse}).ResolveRevision(ownerCtx(), &pb.ResolveRevisionRequest{Repo: "demo", Revision: "main"})
 		require.NoError(t, err)
-		assert.Equal(t, "refs/heads/main", resp.Msg.GetRef())
+		assert.Equal(t, "refs/heads/main", resp.GetRef())
 	})
 }
 
@@ -194,7 +195,7 @@ func TestGitServiceListCommits(t *testing.T) {
 				browse.EXPECT().ListCommits(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), mock.Anything).
 					Return(ports.HistoryPage{}, tt.usecase).Once()
 			}
-			_, err := (&gitService{browse}).ListCommits(ownerCtx(), connect.NewRequest(tt.req))
+			_, err := (&gitService{browse}).ListCommits(ownerCtx(), tt.req)
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
@@ -218,7 +219,7 @@ func TestGitServiceGetBlobRejectsBadInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := (&gitService{mocks.NewBrowseService(t)}).GetBlob(ownerCtx(), connect.NewRequest(tt.req), nil)
+			err := (&gitService{mocks.NewBrowseService(t)}).GetBlob(ownerCtx(), tt.req, ermiteconnect.GitServiceGetBlobServerStream{})
 			requireCode(t, connect.CodeInvalidArgument, err)
 		})
 	}

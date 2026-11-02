@@ -6,8 +6,9 @@ import (
 	"context"
 	"errors"
 
-	"connectrpc.com/connect"
 	"bnema.dev/zerowrap"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectproto"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
 	"bnema.dev/ermite/internal/domain"
@@ -25,13 +26,13 @@ func connectError(ctx context.Context, err error) error {
 		return err
 	}
 	if code, ok := codeOf(err); ok {
-		ce := connect.NewError(code, err)
-		addFieldDetail(ce, err)
+		ce := connect.NewError(code, err.Error()).WithCause(err)
+		ce = addFieldDetail(ce, err)
 		return ce
 	}
 	log := zerowrap.FromCtx(ctx)
 	log.Error().Err(err).Msg("api request failed")
-	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
+	return connect.NewError(connect.CodeInternal, "internal error")
 }
 
 // codeOf finds the Connect code of a domain error.
@@ -68,16 +69,17 @@ func codeOf(err error) (connect.Code, bool) {
 
 // addFieldDetail attaches the fields a request was rejected for as a
 // BadRequest detail, when err carries them.
-func addFieldDetail(ce *connect.Error, err error) {
+func addFieldDetail(ce *connect.Error, err error) *connect.Error {
 	var fe *domain.InvalidFieldsError
 	if !errors.As(err, &fe) {
-		return
+		return ce
 	}
 	br := &errdetails.BadRequest{}
 	for _, f := range fe.Fields {
 		br.FieldViolations = append(br.FieldViolations, &errdetails.BadRequest_FieldViolation{Field: f.Field, Description: f.Reason})
 	}
-	if d, derr := connect.NewErrorDetail(br); derr == nil {
-		ce.AddDetail(d)
+	if d, derr := connectproto.NewErrorDetail(br); derr == nil {
+		ce = ce.WithDetail(d)
 	}
+	return ce
 }

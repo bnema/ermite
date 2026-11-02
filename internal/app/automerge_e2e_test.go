@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -99,37 +99,37 @@ jobs:
 	number := c.openMR(c.root, "feat")
 
 	// Off by default: the server refuses.
-	_, err := c.root.mr.EnableAutoMerge(c.ctx, connect.NewRequest(&pb.EnableAutoMergeRequest{Repo: c.repo, Number: number, HeadId: head}))
+	_, err := c.root.mr.EnableAutoMerge(c.ctx, &pb.EnableAutoMergeRequest{Repo: c.repo, Number: number, HeadId: head})
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 
-	ver, err := c.root.server.GetVersion(c.ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+	ver, err := c.root.server.GetVersion(c.ctx, &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, ver.Msg.GetFeatures(), "merge_requests.auto_merge")
+	assert.Contains(t, ver.GetFeatures(), "merge_requests.auto_merge")
 
-	up, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	up, err := c.root.repo.UpdateRepo(c.ctx, &pb.UpdateRepoRequest{
 		Repo:       c.repo,
 		Settings:   &pb.RepoSettings{AllowAutoMerge: true},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"settings.allow_auto_merge"}},
-	}))
+	})
 	require.NoError(t, err)
-	assert.True(t, up.Msg.GetRepo().GetSettings().GetAllowAutoMerge())
+	assert.True(t, up.GetRepo().GetSettings().GetAllowAutoMerge())
 
 	w := c.watch(c.root, "", "home")
-	res, err := c.root.mr.EnableAutoMerge(c.ctx, connect.NewRequest(&pb.EnableAutoMergeRequest{
+	res, err := c.root.mr.EnableAutoMerge(c.ctx, &pb.EnableAutoMergeRequest{
 		Repo: c.repo, Number: number, Mode: pb.MergeMode_MERGE_MODE_SQUASH, HeadId: head,
-	}))
+	})
 	require.NoError(t, err)
-	am := res.Msg.GetMergeRequest().GetAutoMerge()
+	am := res.GetMergeRequest().GetAutoMerge()
 	require.NotNil(t, am)
 	assert.Equal(t, pb.MergeMode_MERGE_MODE_SQUASH, am.GetMode())
-	assert.Equal(t, res.Msg.GetMergeRequest().GetHeadId(), am.GetHeadId())
+	assert.Equal(t, res.GetMergeRequest().GetHeadId(), am.GetHeadId())
 	assert.NotEmpty(t, am.GetEnabledBy())
 	assert.NotNil(t, am.GetEnabledAt())
 
-	got, err := c.root.mr.GetMergeRequest(c.ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: c.repo, Number: number}))
+	got, err := c.root.mr.GetMergeRequest(c.ctx, &pb.GetMergeRequestRequest{Repo: c.repo, Number: number})
 	require.NoError(t, err)
-	assert.NotNil(t, got.Msg.GetMergeRequest().GetAutoMerge(), "Get reports the pending auto-merge")
+	assert.NotNil(t, got.GetMergeRequest().GetAutoMerge(), "Get reports the pending auto-merge")
 
 	c.finish(runner)
 	c.finish(runner)
@@ -150,10 +150,10 @@ jobs:
 				assert.True(t, m.GetAuto())
 				assert.True(t, m.GetMergeRequest().GetAutoMerged())
 				assert.Nil(t, m.GetMergeRequest().GetAutoMerge())
-				final, err := c.root.mr.GetMergeRequest(c.ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: c.repo, Number: number}))
+				final, err := c.root.mr.GetMergeRequest(c.ctx, &pb.GetMergeRequestRequest{Repo: c.repo, Number: number})
 				require.NoError(t, err)
-				assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED, final.Msg.GetMergeRequest().GetState())
-				assert.True(t, final.Msg.GetMergeRequest().GetAutoMerged())
+				assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED, final.GetMergeRequest().GetState())
+				assert.True(t, final.GetMergeRequest().GetAutoMerged())
 				return
 			}
 		case <-deadline:

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -76,13 +76,13 @@ jobs:
 
 func (c *ciHarness) dispatch(api *clients, path, ref string, inputs map[string]string) (*pb.Run, error) {
 	c.t.Helper()
-	res, err := api.run.DispatchWorkflow(c.ctx, connect.NewRequest(&pb.DispatchWorkflowRequest{
+	res, err := api.run.DispatchWorkflow(c.ctx, &pb.DispatchWorkflowRequest{
 		Repo: c.repo, WorkflowPath: path, Ref: ref, Inputs: inputs,
-	}))
+	})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg.GetRun(), nil
+	return res.GetRun(), nil
 }
 
 func TestDispatchInputsAreValidatedAndTyped(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -123,7 +122,7 @@ func TestCIReusableMappingUsesTheCallersVars(t *testing.T) {
 	c.setSecret(repoScope("proj"), "PUBLIC", "public-value")
 	c.setSecret(repoScope("proj"), "PRIVATE", "private-value")
 	c.setVar(repoScope("proj"), "KEY", "PUBLIC")
-	_, err := c.root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: "prod"}))
+	_, err := c.root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: "prod"})
 	require.NoError(t, err)
 	c.setVar(envScope("proj", "prod"), "KEY", "PRIVATE")
 	caller := "on: push\njobs:\n  call:\n    uses: ./.github/workflows/callee.yml\n    secrets:\n      TOKEN: ${{ secrets[vars.KEY] }}\n"
@@ -192,7 +191,7 @@ func TestCIReusableRerunAllRefreshesTheCallee(t *testing.T) {
 	c.waitRunDone(run.GetId())
 
 	remote.set("acme/shared", ptrRef("refs/heads/main", shaOther))
-	_, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: run.GetId()}))
+	_, err := c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: run.GetId()})
 	require.NoError(t, err)
 	again := r.await()
 	assert.Contains(t, again.GetContexts(), `"workflow_sha":"`+shaOther+`"`, "the reference is resolved again")
@@ -250,9 +249,9 @@ func TestCIReusableBudgetHoldsOnRerun(t *testing.T) {
 	}
 	c.waitFor("the budget refusal", refused)
 	assert.LessOrEqual(t, len(c.getRun(run.GetId()).GetJobs()), 1000)
-	_, _ = c.root.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()}))
+	_, _ = c.root.run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: run.GetId()})
 	c.waitRunDone(run.GetId())
-	_, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: run.GetId(), FailedOnly: true}))
+	_, err := c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: run.GetId(), FailedOnly: true})
 	require.NoError(t, err)
 	c.waitFor("the refusal again", refused)
 	assert.LessOrEqual(t, len(c.getRun(run.GetId()).GetJobs()), 1000)

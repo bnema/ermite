@@ -14,7 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/require"
 
 	pb "bnema.dev/ermite-api/gen/ermite"
@@ -66,7 +67,7 @@ func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // newClients builds the clients of the API at base for a secret ("" is
 // anonymous), speaking the Connect protocol with the given options.
-func newClients(base, secret string, opts ...connect.ClientOption) *clients {
+func newClients(base, secret string, opts ...connecthttp.Option) *clients {
 	hc := &http.Client{Transport: bearerTransport{secret: secret, next: http.DefaultTransport}}
 	return newClientsOn(hc, base, opts...)
 }
@@ -78,28 +79,28 @@ func newDisposableClients(base, secret string) *clients {
 	return newClientsOn(hc, base)
 }
 
-func newClientsOn(hc connect.HTTPClient, base string, opts ...connect.ClientOption) *clients {
+func newClientsOn(hc connecthttp.HTTPClient, base string, opts ...connecthttp.Option) *clients {
 	return &clients{
-		repo:   ermiteconnect.NewRepoServiceClient(hc, base, opts...),
-		git:    ermiteconnect.NewGitServiceClient(hc, base, opts...),
-		token:  ermiteconnect.NewTokenServiceClient(hc, base, opts...),
-		event:  ermiteconnect.NewEventServiceClient(hc, base, opts...),
-		server: ermiteconnect.NewServerServiceClient(hc, base, opts...),
-		mr:     ermiteconnect.NewMergeRequestServiceClient(hc, base, opts...),
-		issue:  ermiteconnect.NewIssueServiceClient(hc, base, opts...),
+		repo:   ermiteconnect.NewRepoServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		git:    ermiteconnect.NewGitServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		token:  ermiteconnect.NewTokenServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		event:  ermiteconnect.NewEventServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		server: ermiteconnect.NewServerServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		mr:     ermiteconnect.NewMergeRequestServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		issue:  ermiteconnect.NewIssueServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
 
-		session: ermiteconnect.NewSessionServiceClient(hc, base, opts...),
-		runner:  ermiteconnect.NewRunnerServiceClient(hc, base, opts...),
-		run:     ermiteconnect.NewRunServiceClient(hc, base, opts...),
+		session: ermiteconnect.NewSessionServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		runner:  ermiteconnect.NewRunnerServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		run:     ermiteconnect.NewRunServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
 
-		secret: ermiteconnect.NewSecretServiceClient(hc, base, opts...),
-		vars:   ermiteconnect.NewVariableServiceClient(hc, base, opts...),
-		env:    ermiteconnect.NewEnvironmentServiceClient(hc, base, opts...),
+		secret: ermiteconnect.NewSecretServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		vars:   ermiteconnect.NewVariableServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
+		env:    ermiteconnect.NewEnvironmentServiceClient(connect.NewClient(connecthttp.NewTransport(hc, base, append([]connecthttp.Option{connecthttp.WithReadMaxBytes(0)}, opts...)...))),
 	}
 }
 
 // api returns the clients of a caller of the harness' server.
-func (h *harness) api(secret string, opts ...connect.ClientOption) *clients {
+func (h *harness) api(secret string, opts ...connecthttp.Option) *clients {
 	return newClients(h.url("/-/api"), secret, opts...)
 }
 
@@ -152,16 +153,25 @@ func (h *harness) watch(c *clients, resume string, topics ...string) *stream {
 	h.t.Helper()
 	ctx, cancel := context.WithCancel(h.ctx)
 	h.t.Cleanup(cancel)
-	st, err := c.event.Watch(ctx, connect.NewRequest(&pb.WatchRequest{Topics: topics, ResumeAfter: resume}))
+	st, err := c.event.Watch(ctx, &pb.WatchRequest{Topics: topics, ResumeAfter: resume})
 	require.NoError(h.t, err)
 	s := &stream{events: make(chan *pb.Event, 256), done: make(chan struct{}), cancel: cancel}
 	go func() {
 		defer close(s.done)
 		defer close(s.events)
-		for st.Receive() {
-			s.events <- st.Msg().GetEvent()
+		var streamErr error
+		for {
+			msg, err := st.Receive()
+			if err != nil {
+				streamErr = err
+				break
+			}
+			s.events <- msg.GetEvent()
 		}
-		s.err = st.Err()
+		if errors.Is(streamErr, io.EOF) {
+			streamErr = nil
+		}
+		s.err = streamErr
 		_ = st.Close()
 	}()
 	return s
@@ -197,16 +207,25 @@ func (s *stream) nextAny(t *testing.T, d time.Duration) *pb.Event {
 
 // readBlob reads a whole GetBlob stream and returns its messages.
 func readBlob(ctx context.Context, c *clients, req *pb.GetBlobRequest) ([]*pb.GetBlobResponse, error) {
-	st, err := c.git.GetBlob(ctx, connect.NewRequest(req))
+	st, err := c.git.GetBlob(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = st.Close() }()
 	var msgs []*pb.GetBlobResponse
-	for st.Receive() {
-		msgs = append(msgs, st.Msg())
+	var streamErr error
+	for {
+		msg, err := st.Receive()
+		if err != nil {
+			streamErr = err
+			break
+		}
+		msgs = append(msgs, msg)
 	}
-	if err := st.Err(); err != nil && !errors.Is(err, io.EOF) {
+	if errors.Is(streamErr, io.EOF) {
+		streamErr = nil
+	}
+	if err := streamErr; err != nil && !errors.Is(err, io.EOF) {
 		return msgs, err
 	}
 	return msgs, nil

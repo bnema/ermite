@@ -11,7 +11,7 @@ import (
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 	"bnema.dev/ermite/internal/ports/mocks"
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -24,15 +24,15 @@ func TestMirrorConfigPatchPresence(t *testing.T) {
 	patch := ports.MirrorGlobalPatch{Enabled: &disabled, URLTemplate: &empty}
 	service.EXPECT().SetGlobalConfig(mock.Anything, domain.Principal{}, patch).Return(domain.MirrorGlobalConfig{}, nil).Once()
 	s := &mirrorService{service}
-	res, err := s.SetMirrorConfig(context.Background(), connect.NewRequest(&pb.SetMirrorConfigRequest{Enabled: &disabled, UrlTemplate: &empty}))
+	res, err := s.SetMirrorConfig(context.Background(), &pb.SetMirrorConfigRequest{Enabled: &disabled, UrlTemplate: &empty})
 	require.NoError(t, err)
-	assert.False(t, res.Msg.GetConfig().GetEnabled())
+	assert.False(t, res.GetConfig().GetEnabled())
 }
 
 func TestMirrorSyncSelector(t *testing.T) {
 	s := &mirrorService{mocks.NewMirrorService(t)}
 	for _, req := range []*pb.SyncMirrorRequest{{}, {Repo: "repo", All: true}, {Repo: "../invalid"}} {
-		_, err := s.SyncMirror(context.Background(), connect.NewRequest(req))
+		_, err := s.SyncMirror(context.Background(), req)
 		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	}
 }
@@ -46,12 +46,12 @@ func TestMirrorSyncResponse(t *testing.T) {
 	service.EXPECT().Sync(mock.Anything, domain.Principal{}, name, true).Return(ports.MirrorSyncResult{Repo: name, Status: status}, nil).Once()
 	service.EXPECT().GetStatus(mock.Anything, domain.Principal{}, name).Return(ports.MirrorStatusView{Target: target, Status: status}, nil).Once()
 	s := &mirrorService{service}
-	res, err := s.SyncMirror(context.Background(), connect.NewRequest(&pb.SyncMirrorRequest{Repo: "repo", Force: true}))
+	res, err := s.SyncMirror(context.Background(), &pb.SyncMirrorRequest{Repo: "repo", Force: true})
 	require.NoError(t, err)
-	require.Len(t, res.Msg.Results, 1)
-	assert.Equal(t, "repo", res.Msg.Results[0].Repo)
-	assert.Equal(t, pb.MirrorState_MIRROR_STATE_PAUSED, res.Msg.Results[0].Status.State)
-	assert.Equal(t, "diverged", res.Msg.Results[0].Status.FailureClass)
+	require.Len(t, res.Results, 1)
+	assert.Equal(t, "repo", res.Results[0].Repo)
+	assert.Equal(t, pb.MirrorState_MIRROR_STATE_PAUSED, res.Results[0].Status.State)
+	assert.Equal(t, "diverged", res.Results[0].Status.FailureClass)
 }
 
 func TestMirrorEvents(t *testing.T) {
@@ -81,12 +81,12 @@ func TestMirrorSyncAllReportsPerRepositoryErrors(t *testing.T) {
 	}, nil).Once()
 	service.EXPECT().GetStatus(mock.Anything, domain.Principal{}, good).Return(ports.MirrorStatusView{Status: domain.MirrorStatus{Repo: good, State: domain.MirrorOK}}, nil).Once()
 	service.EXPECT().GetStatus(mock.Anything, domain.Principal{}, bad).Return(ports.MirrorStatusView{Status: domain.MirrorStatus{Repo: bad, State: domain.MirrorPaused}}, nil).Once()
-	res, err := (&mirrorService{service}).SyncMirror(context.Background(), connect.NewRequest(&pb.SyncMirrorRequest{All: true}))
+	res, err := (&mirrorService{service}).SyncMirror(context.Background(), &pb.SyncMirrorRequest{All: true})
 	require.NoError(t, err)
-	require.Len(t, res.Msg.Results, 2)
-	assert.Empty(t, res.Msg.Results[0].Error)
-	assert.Equal(t, "mirror diverged: see ermite mirror status", res.Msg.Results[1].Error)
-	assert.Equal(t, pb.MirrorState_MIRROR_STATE_PAUSED, res.Msg.Results[1].Status.State)
+	require.Len(t, res.Results, 2)
+	assert.Empty(t, res.Results[0].Error)
+	assert.Equal(t, "mirror diverged: see ermite mirror status", res.Results[1].Error)
+	assert.Equal(t, pb.MirrorState_MIRROR_STATE_PAUSED, res.Results[1].Status.State)
 }
 
 func TestMirrorRotateReturnsPreviousFingerprint(t *testing.T) {
@@ -94,10 +94,10 @@ func TestMirrorRotateReturnsPreviousFingerprint(t *testing.T) {
 	service.EXPECT().RotateKey(mock.Anything, domain.Principal{}).Return(ports.MirrorKeyRotation{
 		Key: domain.MirrorPublicKey{Fingerprint: "SHA256:new"}, Previous: domain.MirrorPublicKey{Fingerprint: "SHA256:old"},
 	}, nil).Once()
-	res, err := (&mirrorService{service}).RotateMirrorKey(context.Background(), connect.NewRequest(&pb.RotateMirrorKeyRequest{}))
+	res, err := (&mirrorService{service}).RotateMirrorKey(context.Background(), &pb.RotateMirrorKeyRequest{})
 	require.NoError(t, err)
-	assert.Equal(t, "SHA256:new", res.Msg.Key.Fingerprint)
-	assert.Equal(t, "SHA256:old", res.Msg.PreviousFingerprint)
+	assert.Equal(t, "SHA256:new", res.Key.Fingerprint)
+	assert.Equal(t, "SHA256:old", res.PreviousFingerprint)
 }
 
 func repoN(t *testing.T, s string) domain.RepoName {

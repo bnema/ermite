@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -55,13 +55,13 @@ func envScope(r, e string) *pb.SettingsScope {
 
 func (c *ciHarness) setSecret(sc *pb.SettingsScope, name, value string) {
 	c.t.Helper()
-	_, err := c.root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: sc, Name: name, Value: value}))
+	_, err := c.root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: sc, Name: name, Value: value})
 	require.NoError(c.t, err)
 }
 
 func (c *ciHarness) setVar(sc *pb.SettingsScope, name, value string) {
 	c.t.Helper()
-	_, err := c.root.vars.SetVariable(c.ctx, connect.NewRequest(&pb.SetVariableRequest{Scope: sc, Name: name, Value: value}))
+	_, err := c.root.vars.SetVariable(c.ctx, &pb.SetVariableRequest{Scope: sc, Name: name, Value: value})
 	require.NoError(c.t, err)
 }
 
@@ -178,16 +178,16 @@ func TestCIJobReceivesOnlyTheSecretsItRefersTo(t *testing.T) {
 
 	// The environment was created by its first use, and a job that names one
 	// reads the secrets and variables set in it afterwards.
-	envs, err := c.root.env.ListEnvironments(c.ctx, connect.NewRequest(&pb.ListEnvironmentsRequest{Repo: "proj"}))
+	envs, err := c.root.env.ListEnvironments(c.ctx, &pb.ListEnvironmentsRequest{Repo: "proj"})
 	require.NoError(t, err)
-	require.Len(t, envs.Msg.GetEnvironments(), 1)
-	assert.Equal(t, "Production", envs.Msg.GetEnvironments()[0].GetName())
+	require.Len(t, envs.GetEnvironments(), 1)
+	assert.Equal(t, "Production", envs.GetEnvironments()[0].GetName())
 }
 
 func TestCIEnvironmentOverridesVariablesAndSecrets(t *testing.T) {
 	c := newSecretsHarness(t, secretsKeyA)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
-	_, err := c.root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: "production"}))
+	_, err := c.root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: "production"})
 	require.NoError(t, err)
 
 	c.setSecret(instanceScope(), "ENV_ONLY", "instance")
@@ -205,9 +205,9 @@ func TestCIEnvironmentOverridesVariablesAndSecrets(t *testing.T) {
 	assert.Equal(t, "repo", jobs["plain"].GetVars()["GREETING"], "a job without the environment does not see its variables")
 	assert.NotContains(t, jobs["plain"].GetSecrets(), "ENV_ONLY")
 	assert.Contains(t, deploy.GetContexts(), `"GREETING":"environment"`)
-	envs, err := c.root.env.ListEnvironments(c.ctx, connect.NewRequest(&pb.ListEnvironmentsRequest{Repo: "proj"}))
+	envs, err := c.root.env.ListEnvironments(c.ctx, &pb.ListEnvironmentsRequest{Repo: "proj"})
 	require.NoError(t, err)
-	assert.Len(t, envs.Msg.GetEnvironments(), 1, "an existing environment is not created again, whatever the case")
+	assert.Len(t, envs.GetEnvironments(), 1, "an existing environment is not created again, whatever the case")
 }
 
 // D1 / AC1: the run of a token limited to branch prefixes is not trusted: no
@@ -257,7 +257,7 @@ func TestCIUntrustedRunsGetNoSecretsAndRerunsNeverRaiseTrust(t *testing.T) {
 	c.waitFor("agent run done", func() bool { return c.getRun(agentRun.GetId()).GetRun().GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 
 	// The owner re-runs the agent's run: still not trusted.
-	_, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: agentRun.GetId()}))
+	_, err := c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: agentRun.GetId()})
 	require.NoError(t, err)
 	assert.False(t, c.getRun(agentRun.GetId()).GetRun().GetTrusted(), "a re-run never raises trust")
 	for _, j := range runner.jobsByKey(4) {
@@ -269,12 +269,12 @@ func TestCIUntrustedRunsGetNoSecretsAndRerunsNeverRaiseTrust(t *testing.T) {
 	// An agent re-running the owner's run on its branch: only the branches under
 	// its prefix are allowed, so a re-run of main is refused, and the trusted
 	// flag of main is untouched.
-	_, err = agentAPI.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: mainRun.GetId()}))
+	_, err = agentAPI.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: mainRun.GetId()})
 	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	assert.True(t, c.getRun(mainRun.GetId()).GetRun().GetTrusted())
 
 	// The owner re-running their own run keeps it.
-	_, err = c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: mainRun.GetId()}))
+	_, err = c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: mainRun.GetId()})
 	require.NoError(t, err)
 	assert.True(t, c.getRun(mainRun.GetId()).GetRun().GetTrusted())
 	for _, j := range runner.jobsByKey(4) {
@@ -288,10 +288,10 @@ func TestCIUntrustedRunsGetNoSecretsAndRerunsNeverRaiseTrust(t *testing.T) {
 func TestCIWithoutASecretsKey(t *testing.T) {
 	c := newSecretsHarness(t, "")
 	runner := c.registerRunner("alpha", "ubuntu-latest")
-	_, err := c.root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: repoScope("proj"), Name: "A", Value: "v"}))
+	_, err := c.root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: repoScope("proj"), Name: "A", Value: "v"})
 	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 	c.setVar(repoScope("proj"), "GREETING", "still works")
-	_, err = c.root.secret.ListSecrets(c.ctx, connect.NewRequest(&pb.ListSecretsRequest{Scope: repoScope("proj")}))
+	_, err = c.root.secret.ListSecrets(c.ctx, &pb.ListSecretsRequest{Scope: repoScope("proj")})
 	require.NoError(t, err, "names can be listed")
 
 	c.push("main", map[string]string{".github/workflows/s.yml": settingsWorkflow}, "")
@@ -324,9 +324,9 @@ func TestAnotherSecretsKeyRefusesToStart(t *testing.T) {
 	require.NoError(t, err, "the right key starts")
 	srv := httptest.NewServer(f.server.Handler())
 	t.Cleanup(func() { srv.Close(); f.Close(context.WithoutCancel(c.ctx)) })
-	list, err := newClients(srv.URL+"/-/api", adminToken).secret.ListSecrets(c.ctx, connect.NewRequest(&pb.ListSecretsRequest{Scope: repoScope("proj")}))
+	list, err := newClients(srv.URL+"/-/api", adminToken).secret.ListSecrets(c.ctx, &pb.ListSecretsRequest{Scope: repoScope("proj")})
 	require.NoError(t, err)
-	assert.Len(t, list.Msg.GetSecrets(), 1)
+	assert.Len(t, list.GetSecrets(), 1)
 }
 
 // Secret values never appear in a response of the settings services, in the
@@ -337,20 +337,20 @@ func TestCISecretValuesAreNeverReturnedOrLogged(t *testing.T) {
 	const value = "SUPER-SECRET-VALUE-0123456789"
 	c.setSecret(instanceScope(), "I", value+"-i")
 	c.setSecret(repoScope("proj"), "R", value+"-r")
-	_, err := c.root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: "prod"}))
+	_, err := c.root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: "prod"})
 	require.NoError(t, err)
 	c.setSecret(envScope("proj", "prod"), "E", value+"-e")
 
 	var seen []proto.Message
-	set, err := c.root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: repoScope("proj"), Name: "r", Value: value + "-r2"}))
+	set, err := c.root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: repoScope("proj"), Name: "r", Value: value + "-r2"})
 	require.NoError(t, err)
-	seen = append(seen, set.Msg)
+	seen = append(seen, set)
 	for _, sc := range []*pb.SettingsScope{instanceScope(), repoScope("proj"), envScope("proj", "PROD")} {
-		list, err := c.root.secret.ListSecrets(c.ctx, connect.NewRequest(&pb.ListSecretsRequest{Scope: sc}))
+		list, err := c.root.secret.ListSecrets(c.ctx, &pb.ListSecretsRequest{Scope: sc})
 		require.NoError(t, err)
-		require.NotEmpty(t, list.Msg.GetSecrets())
-		seen = append(seen, list.Msg)
-		for _, s := range list.Msg.GetSecrets() {
+		require.NotEmpty(t, list.GetSecrets())
+		seen = append(seen, list)
+		for _, s := range list.GetSecrets() {
 			assert.Equal(t, strings.ToUpper(s.GetName()), s.GetName(), "names are stored in upper case")
 			assert.NotNil(t, s.GetUpdatedAt())
 		}
@@ -360,7 +360,7 @@ func TestCISecretValuesAreNeverReturnedOrLogged(t *testing.T) {
 	}
 
 	// An invalid request echoes no value either.
-	_, err = c.root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: repoScope("proj"), Name: "GITHUB_X", Value: value}))
+	_, err = c.root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: repoScope("proj"), Name: "GITHUB_X", Value: value})
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), value)
 
@@ -406,15 +406,15 @@ func TestSettingsServicesAccessRules(t *testing.T) {
 			}
 			return connect.CodeOf(err)
 		}
-		_, err := api.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: sc, Name: "A", Value: "v"}))
+		_, err := api.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: sc, Name: "A", Value: "v"})
 		set = codeOf(err)
-		_, err = api.secret.ListSecrets(c.ctx, connect.NewRequest(&pb.ListSecretsRequest{Scope: sc}))
+		_, err = api.secret.ListSecrets(c.ctx, &pb.ListSecretsRequest{Scope: sc})
 		list = codeOf(err)
-		_, err = api.vars.SetVariable(c.ctx, connect.NewRequest(&pb.SetVariableRequest{Scope: sc, Name: "A", Value: "v"}))
+		_, err = api.vars.SetVariable(c.ctx, &pb.SetVariableRequest{Scope: sc, Name: "A", Value: "v"})
 		vset = codeOf(err)
-		_, err = api.vars.GetVariable(c.ctx, connect.NewRequest(&pb.GetVariableRequest{Scope: sc, Name: "A"}))
+		_, err = api.vars.GetVariable(c.ctx, &pb.GetVariableRequest{Scope: sc, Name: "A"})
 		vget = codeOf(err)
-		_, err = api.secret.DeleteSecret(c.ctx, connect.NewRequest(&pb.DeleteSecretRequest{Scope: sc, Name: "ZZ"}))
+		_, err = api.secret.DeleteSecret(c.ctx, &pb.DeleteSecretRequest{Scope: sc, Name: "ZZ"})
 		del = codeOf(err)
 		return
 	}
@@ -430,7 +430,7 @@ func TestSettingsServicesAccessRules(t *testing.T) {
 		a, b, d, e, f := code(limited, sc)
 		allOf(connect.CodePermissionDenied, a, b, d, e, f)
 	}
-	_, err = c.api(limited).env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: "x"}))
+	_, err = c.api(limited).env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: "x"})
 	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 
 	// Without secrets:write, a repository the token reads: permission denied.
@@ -461,27 +461,27 @@ func TestSettingsServicesAccessRules(t *testing.T) {
 
 	// Validation.
 	root := c.root
-	_, err = root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: repoScope("proj"), Name: "1BAD", Value: "v"}))
+	_, err = root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: repoScope("proj"), Name: "1BAD", Value: "v"})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
-	_, err = root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: repoScope("proj"), Name: "github_token", Value: "v"}))
+	_, err = root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: repoScope("proj"), Name: "github_token", Value: "v"})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
-	_, err = root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: repoScope("proj"), Name: "OK", Value: ""}))
+	_, err = root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: repoScope("proj"), Name: "OK", Value: ""})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "an empty secret")
-	_, err = root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: repoScope("proj"), Name: "OK", Value: strings.Repeat("x", 49153)}))
+	_, err = root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: repoScope("proj"), Name: "OK", Value: strings.Repeat("x", 49153)})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "over 48 KiB")
-	_, err = root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: repoScope("proj"), Name: "OK", Value: strings.Repeat("x", 49152)}))
+	_, err = root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: repoScope("proj"), Name: "OK", Value: strings.Repeat("x", 49152)})
 	assert.NoError(t, err, "exactly 48 KiB")
-	_, err = root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Name: "OK", Value: "v"}))
+	_, err = root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Name: "OK", Value: "v"})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "no scope")
-	_, err = root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: &pb.SettingsScope{Where: &pb.SettingsScope_Instance{}}, Name: "OK", Value: "v"}))
+	_, err = root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: &pb.SettingsScope{Where: &pb.SettingsScope_Instance{}}, Name: "OK", Value: "v"})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "instance: false")
-	_, err = root.vars.SetVariable(c.ctx, connect.NewRequest(&pb.SetVariableRequest{Scope: repoScope("proj"), Name: "EMPTY", Value: ""}))
+	_, err = root.vars.SetVariable(c.ctx, &pb.SetVariableRequest{Scope: repoScope("proj"), Name: "EMPTY", Value: ""})
 	assert.NoError(t, err, "an empty variable is allowed")
-	_, err = root.secret.SetSecret(c.ctx, connect.NewRequest(&pb.SetSecretRequest{Scope: envScope("proj", "missing"), Name: "OK", Value: "v"}))
+	_, err = root.secret.SetSecret(c.ctx, &pb.SetSecretRequest{Scope: envScope("proj", "missing"), Name: "OK", Value: "v"})
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "an environment that does not exist")
-	_, err = root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: "bad\nname"}))
+	_, err = root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: "bad\nname"})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
-	_, err = root.env.DeleteEnvironment(c.ctx, connect.NewRequest(&pb.DeleteEnvironmentRequest{Repo: "proj", Name: "missing"}))
+	_, err = root.env.DeleteEnvironment(c.ctx, &pb.DeleteEnvironmentRequest{Repo: "proj", Name: "missing"})
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
@@ -494,56 +494,56 @@ func TestSettingsServicesPagingAndCrud(t *testing.T) {
 	var names []string
 	token := ""
 	for range 5 {
-		res, err := c.root.secret.ListSecrets(c.ctx, connect.NewRequest(&pb.ListSecretsRequest{Scope: repoScope("proj"), PageSize: 2, PageToken: token}))
+		res, err := c.root.secret.ListSecrets(c.ctx, &pb.ListSecretsRequest{Scope: repoScope("proj"), PageSize: 2, PageToken: token})
 		require.NoError(t, err)
-		for _, s := range res.Msg.GetSecrets() {
+		for _, s := range res.GetSecrets() {
 			names = append(names, s.GetName())
 		}
-		if token = res.Msg.GetNextPageToken(); token == "" {
+		if token = res.GetNextPageToken(); token == "" {
 			break
 		}
 	}
 	assert.Equal(t, []string{"A", "B", "C"}, names)
 
-	v, err := c.root.vars.GetVariable(c.ctx, connect.NewRequest(&pb.GetVariableRequest{Scope: repoScope("proj"), Name: "b"}))
+	v, err := c.root.vars.GetVariable(c.ctx, &pb.GetVariableRequest{Scope: repoScope("proj"), Name: "b"})
 	require.NoError(t, err)
-	assert.Equal(t, "val-b", v.Msg.GetVariable().GetValue())
-	vl, err := c.root.vars.ListVariables(c.ctx, connect.NewRequest(&pb.ListVariablesRequest{Scope: repoScope("proj")}))
+	assert.Equal(t, "val-b", v.GetVariable().GetValue())
+	vl, err := c.root.vars.ListVariables(c.ctx, &pb.ListVariablesRequest{Scope: repoScope("proj")})
 	require.NoError(t, err)
-	require.Len(t, vl.Msg.GetVariables(), 3)
-	assert.Equal(t, "A", vl.Msg.GetVariables()[0].GetName())
-	_, err = c.root.vars.DeleteVariable(c.ctx, connect.NewRequest(&pb.DeleteVariableRequest{Scope: repoScope("proj"), Name: "A"}))
+	require.Len(t, vl.GetVariables(), 3)
+	assert.Equal(t, "A", vl.GetVariables()[0].GetName())
+	_, err = c.root.vars.DeleteVariable(c.ctx, &pb.DeleteVariableRequest{Scope: repoScope("proj"), Name: "A"})
 	require.NoError(t, err)
-	_, err = c.root.vars.GetVariable(c.ctx, connect.NewRequest(&pb.GetVariableRequest{Scope: repoScope("proj"), Name: "a"}))
+	_, err = c.root.vars.GetVariable(c.ctx, &pb.GetVariableRequest{Scope: repoScope("proj"), Name: "a"})
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
-	_, err = c.root.secret.DeleteSecret(c.ctx, connect.NewRequest(&pb.DeleteSecretRequest{Scope: repoScope("proj"), Name: "b"}))
+	_, err = c.root.secret.DeleteSecret(c.ctx, &pb.DeleteSecretRequest{Scope: repoScope("proj"), Name: "b"})
 	require.NoError(t, err)
-	_, err = c.root.secret.ListSecrets(c.ctx, connect.NewRequest(&pb.ListSecretsRequest{Scope: repoScope("proj"), PageToken: "garbage"}))
+	_, err = c.root.secret.ListSecrets(c.ctx, &pb.ListSecretsRequest{Scope: repoScope("proj"), PageToken: "garbage"})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 
 	// Environments: create twice (any case), list, delete with their content.
-	e1, err := c.root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: "Staging"}))
+	e1, err := c.root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: "Staging"})
 	require.NoError(t, err)
-	e2, err := c.root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: "STAGING"}))
+	e2, err := c.root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: "STAGING"})
 	require.NoError(t, err)
-	assert.Equal(t, "Staging", e2.Msg.GetEnvironment().GetName(), "the case it was given is kept")
-	assert.Equal(t, e1.Msg.GetEnvironment().GetCreatedAt().AsTime(), e2.Msg.GetEnvironment().GetCreatedAt().AsTime())
+	assert.Equal(t, "Staging", e2.GetEnvironment().GetName(), "the case it was given is kept")
+	assert.Equal(t, e1.GetEnvironment().GetCreatedAt().AsTime(), e2.GetEnvironment().GetCreatedAt().AsTime())
 	c.setSecret(envScope("proj", "staging"), "S", "v")
-	_, err = c.root.env.DeleteEnvironment(c.ctx, connect.NewRequest(&pb.DeleteEnvironmentRequest{Repo: "proj", Name: "staging"}))
+	_, err = c.root.env.DeleteEnvironment(c.ctx, &pb.DeleteEnvironmentRequest{Repo: "proj", Name: "staging"})
 	require.NoError(t, err)
-	_, err = c.root.secret.ListSecrets(c.ctx, connect.NewRequest(&pb.ListSecretsRequest{Scope: envScope("proj", "Staging")}))
+	_, err = c.root.secret.ListSecrets(c.ctx, &pb.ListSecretsRequest{Scope: envScope("proj", "Staging")})
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
 	// Deleting the repository removes its scopes.
 	require.NoError(t, c.forge.Repos.Delete(c.ctx, domain.Root(), c.name("proj")))
 	_, err = c.forge.Repos.Create(c.ctx, domain.Root(), ports.CreateRepoParams{Name: c.name("proj"), Visibility: domain.VisibilityPrivate})
 	require.NoError(t, err)
-	res, err := c.root.secret.ListSecrets(c.ctx, connect.NewRequest(&pb.ListSecretsRequest{Scope: repoScope("proj")}))
+	res, err := c.root.secret.ListSecrets(c.ctx, &pb.ListSecretsRequest{Scope: repoScope("proj")})
 	require.NoError(t, err)
-	assert.Empty(t, res.Msg.GetSecrets())
-	vl, err = c.root.vars.ListVariables(c.ctx, connect.NewRequest(&pb.ListVariablesRequest{Scope: repoScope("proj")}))
+	assert.Empty(t, res.GetSecrets())
+	vl, err = c.root.vars.ListVariables(c.ctx, &pb.ListVariablesRequest{Scope: repoScope("proj")})
 	require.NoError(t, err)
-	assert.Empty(t, vl.Msg.GetVariables())
+	assert.Empty(t, vl.GetVariables())
 }
 
 // environment: as a mapping (the url is ignored) and as an expression of the
@@ -551,9 +551,9 @@ func TestSettingsServicesPagingAndCrud(t *testing.T) {
 func TestCIEnvironmentForms(t *testing.T) {
 	c := newSecretsHarness(t, secretsKeyA)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
-	_, err := c.root.vars.SetVariable(c.ctx, connect.NewRequest(&pb.SetVariableRequest{Scope: envScope("proj", "alpha"), Name: "V", Value: "x"}))
+	_, err := c.root.vars.SetVariable(c.ctx, &pb.SetVariableRequest{Scope: envScope("proj", "alpha"), Name: "V", Value: "x"})
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "not an environment yet")
-	_, err = c.root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: "Alpha"}))
+	_, err = c.root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: "Alpha"})
 	require.NoError(t, err)
 	c.setVar(envScope("proj", "alpha"), "V", "from-alpha")
 
@@ -586,10 +586,10 @@ jobs:
 	assert.NotContains(t, jobs["matrix/beta"].GetVars(), "V")
 
 	names := func() []string {
-		res, err := c.root.env.ListEnvironments(c.ctx, connect.NewRequest(&pb.ListEnvironmentsRequest{Repo: "proj"}))
+		res, err := c.root.env.ListEnvironments(c.ctx, &pb.ListEnvironmentsRequest{Repo: "proj"})
 		require.NoError(t, err)
 		var out []string
-		for _, e := range res.Msg.GetEnvironments() {
+		for _, e := range res.GetEnvironments() {
 			out = append(out, e.GetName())
 		}
 		return out
@@ -765,10 +765,10 @@ func TestCIVarsInPlanningAndAtAssignment(t *testing.T) {
 	}
 	assert.Equal(t, "run first", c.runs()[0].GetName(), "the run is not renamed")
 	// The environment named by a variable is created on first use, at assignment.
-	envs, err := c.root.env.ListEnvironments(c.ctx, connect.NewRequest(&pb.ListEnvironmentsRequest{Repo: "proj"}))
+	envs, err := c.root.env.ListEnvironments(c.ctx, &pb.ListEnvironmentsRequest{Repo: "proj"})
 	require.NoError(t, err)
-	require.Len(t, envs.Msg.GetEnvironments(), 1)
-	assert.Equal(t, "Prod", envs.Msg.GetEnvironments()[0].GetName(), "environment name")
+	require.Len(t, envs.GetEnvironments(), 1)
+	assert.Equal(t, "Prod", envs.GetEnvironments()[0].GetName(), "environment name")
 }
 
 // One rule for environment names: what the API accepts is what a workflow can
@@ -778,11 +778,11 @@ func TestCIEnvironmentNameRoundTrip(t *testing.T) {
 	c := newSecretsHarness(t, secretsKeyA)
 	runner := c.registerRunner("alpha", "ubuntu-latest")
 	const name = "Prod EU/2"
-	_, err := c.root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: name}))
+	_, err := c.root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: name})
 	require.NoError(t, err)
 	c.setVar(envScope("proj", name), "WHERE", "eu")
 	for _, bad := range []string{" Prod", "Prod ", "\tProd", "Prod\u00a0"} {
-		_, err := c.root.env.CreateEnvironment(c.ctx, connect.NewRequest(&pb.CreateEnvironmentRequest{Repo: "proj", Name: bad}))
+		_, err := c.root.env.CreateEnvironment(c.ctx, &pb.CreateEnvironmentRequest{Repo: "proj", Name: bad})
 		assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "%q", bad)
 	}
 
@@ -812,9 +812,9 @@ func TestCIEnvironmentNameRoundTrip(t *testing.T) {
 		assert.Contains(t, j.GetError(), "environment name")
 		assert.Contains(t, j.GetError(), "whitespace")
 	}
-	envs, err := c.root.env.ListEnvironments(c.ctx, connect.NewRequest(&pb.ListEnvironmentsRequest{Repo: "proj"}))
+	envs, err := c.root.env.ListEnvironments(c.ctx, &pb.ListEnvironmentsRequest{Repo: "proj"})
 	require.NoError(t, err)
-	assert.Len(t, envs.Msg.GetEnvironments(), 1, "no trimmed copy was created")
+	assert.Len(t, envs.GetEnvironments(), 1, "no trimmed copy was created")
 }
 
 // A settings failure that wraps ErrConflict (an environment creation that ran

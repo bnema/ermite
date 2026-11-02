@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/flate"
+	"connectrpc.com/connect/v2/connecthttp"
 	"context"
 	"fmt"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -29,16 +30,16 @@ type fakeArtifactAPI struct {
 	content map[int64][]byte
 }
 
-func (f *fakeArtifactAPI) ListArtifacts(_ context.Context, r *connect.Request[ermite.ListArtifactsRequest]) (*connect.Response[ermite.ListArtifactsResponse], error) {
-	if r.Msg.GetRepo() != "proj" || r.Msg.GetRunId() != 1 {
-		return nil, connect.NewError(connect.CodeNotFound, nil)
+func (f *fakeArtifactAPI) ListArtifacts(_ context.Context, r *ermite.ListArtifactsRequest) (*ermite.ListArtifactsResponse, error) {
+	if r.GetRepo() != "proj" || r.GetRunId() != 1 {
+		return nil, connect.NewError(connect.CodeNotFound, "")
 	}
-	return connect.NewResponse(&ermite.ListArtifactsResponse{Artifacts: f.arts, UsedBytes: 3 << 20, QuotaBytes: 10 << 30}), nil
+	return &ermite.ListArtifactsResponse{Artifacts: f.arts, UsedBytes: 3 << 20, QuotaBytes: 10 << 30}, nil
 }
 
-func (f *fakeArtifactAPI) DownloadArtifact(_ context.Context, r *connect.Request[ermite.DownloadArtifactRequest], st *connect.ServerStream[ermite.DownloadArtifactResponse]) error {
+func (f *fakeArtifactAPI) DownloadArtifact(_ context.Context, r *ermite.DownloadArtifactRequest, st ermiteconnect.ArtifactServiceDownloadArtifactServerStream) error {
 	for _, a := range f.arts {
-		if a.GetId() != r.Msg.GetArtifactId() {
+		if a.GetId() != r.GetArtifactId() {
 			continue
 		}
 		if err := st.Send(&ermite.DownloadArtifactResponse{Artifact: a}); err != nil {
@@ -54,7 +55,7 @@ func (f *fakeArtifactAPI) DownloadArtifact(_ context.Context, r *connect.Request
 		}
 		return nil
 	}
-	return connect.NewError(connect.CodeNotFound, nil)
+	return connect.NewError(connect.CodeNotFound, "")
 }
 
 func (f *fakeArtifactAPI) add(name, mediaType string, data []byte) {
@@ -72,8 +73,13 @@ func (f *fakeArtifactAPI) add(name, mediaType string, data []byte) {
 func (f *fakeArtifactAPI) serve(t *testing.T) string {
 	t.Helper()
 	mux := http.NewServeMux()
-	p, h := ermiteconnect.NewArtifactServiceHandler(f)
-	mux.Handle("/-/api"+p, http.StripPrefix("/-/api", h))
+	{
+		server := connect.NewServer()
+		ermiteconnect.RegisterArtifactServiceHandler(server, f)
+		sub := http.NewServeMux()
+		connecthttp.Mount(sub, server, connecthttp.WithReadMaxBytes(0))
+		mux.Handle("/-/api/ermite.ArtifactService/", http.StripPrefix("/-/api", sub))
+	}
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL

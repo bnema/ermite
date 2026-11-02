@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -19,60 +17,60 @@ type mergeRequestService struct {
 	mrs ports.MergeRequestService
 }
 
-func (s *mergeRequestService) EnableAutoMerge(ctx context.Context, req *connect.Request[pb.EnableAutoMergeRequest]) (*connect.Response[pb.EnableAutoMergeResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) EnableAutoMerge(ctx context.Context, req *pb.EnableAutoMergeRequest) (*pb.EnableAutoMergeResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mode, err := mergeModeFromPB(req.Msg.GetMode())
+	mode, err := mergeModeFromPB(req.GetMode())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	head, err := headID(req.Msg.GetHeadId())
+	head, err := headID(req.GetHeadId())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mr, err := s.mrs.EnableAutoMerge(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.EnableAutoMergeParams{Mode: mode, HeadID: head})
+	mr, err := s.mrs.EnableAutoMerge(ctx, caller(ctx), name, req.GetNumber(), ports.EnableAutoMergeParams{Mode: mode, HeadID: head})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.EnableAutoMergeResponse{MergeRequest: mergeRequestToPB(mr)}), nil
+	return &pb.EnableAutoMergeResponse{MergeRequest: mergeRequestToPB(mr)}, nil
 }
 
-func (s *mergeRequestService) CancelAutoMerge(ctx context.Context, req *connect.Request[pb.CancelAutoMergeRequest]) (*connect.Response[pb.CancelAutoMergeResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) CancelAutoMerge(ctx context.Context, req *pb.CancelAutoMergeRequest) (*pb.CancelAutoMergeResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mr, err := s.mrs.CancelAutoMerge(ctx, caller(ctx), name, req.Msg.GetNumber())
+	mr, err := s.mrs.CancelAutoMerge(ctx, caller(ctx), name, req.GetNumber())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.CancelAutoMergeResponse{MergeRequest: mergeRequestToPB(mr)}), nil
+	return &pb.CancelAutoMergeResponse{MergeRequest: mergeRequestToPB(mr)}, nil
 }
 
-func (s *mergeRequestService) EditComment(ctx context.Context, req *connect.Request[pb.EditCommentRequest]) (*connect.Response[pb.EditCommentResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) EditComment(ctx context.Context, req *pb.EditCommentRequest) (*pb.EditCommentResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	c, err := s.mrs.EditComment(ctx, caller(ctx), name, req.Msg.GetNumber(), commentID(req.Msg.GetCommentId()), req.Msg.GetText())
+	c, err := s.mrs.EditComment(ctx, caller(ctx), name, req.GetNumber(), commentID(req.GetCommentId()), req.GetText())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.EditCommentResponse{Comment: commentToPB(c)}), nil
+	return &pb.EditCommentResponse{Comment: commentToPB(c)}, nil
 }
 
-func (s *mergeRequestService) DeleteComment(ctx context.Context, req *connect.Request[pb.DeleteCommentRequest]) (*connect.Response[pb.DeleteCommentResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) DeleteComment(ctx context.Context, req *pb.DeleteCommentRequest) (*pb.DeleteCommentResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	c, err := s.mrs.DeleteComment(ctx, caller(ctx), name, req.Msg.GetNumber(), commentID(req.Msg.GetCommentId()))
+	c, err := s.mrs.DeleteComment(ctx, caller(ctx), name, req.GetNumber(), commentID(req.GetCommentId()))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteCommentResponse{Comment: commentToPB(c)}), nil
+	return &pb.DeleteCommentResponse{Comment: commentToPB(c)}, nil
 }
 
 func verdictToPB(v domain.Verdict) pb.Verdict {
@@ -263,32 +261,32 @@ func headID(s string) (domain.ObjectID, error) {
 	return id, v.Err()
 }
 
-func (s *mergeRequestService) CreateMergeRequest(ctx context.Context, req *connect.Request[pb.CreateMergeRequestRequest]) (*connect.Response[pb.CreateMergeRequestResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) CreateMergeRequest(ctx context.Context, req *pb.CreateMergeRequestRequest) (*pb.CreateMergeRequestResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 	mr, err := s.mrs.Create(ctx, caller(ctx), name, ports.CreateMergeRequestParams{
-		Title: req.Msg.GetTitle(), Description: req.Msg.GetDescription(),
-		Source: req.Msg.GetSourceBranch(), Target: req.Msg.GetTargetBranch(),
+		Title: req.GetTitle(), Description: req.GetDescription(),
+		Source: req.GetSourceBranch(), Target: req.GetTargetBranch(),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.CreateMergeRequestResponse{MergeRequest: mergeRequestToPB(mr)}), nil
+	return &pb.CreateMergeRequestResponse{MergeRequest: mergeRequestToPB(mr)}, nil
 }
 
-func (s *mergeRequestService) ListMergeRequests(ctx context.Context, req *connect.Request[pb.ListMergeRequestsRequest]) (*connect.Response[pb.ListMergeRequestsResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) ListMergeRequests(ctx context.Context, req *pb.ListMergeRequestsRequest) (*pb.ListMergeRequestsResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	state, err := mergeRequestStateFromPB(req.Msg.GetState())
+	state, err := mergeRequestStateFromPB(req.GetState())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 	page, err := s.mrs.List(ctx, caller(ctx), name, ports.ListMergeRequestsParams{
-		State: state, PageSize: int(req.Msg.GetPageSize()), PageToken: req.Msg.GetPageToken(),
+		State: state, PageSize: int(req.GetPageSize()), PageToken: req.GetPageToken(),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -297,15 +295,15 @@ func (s *mergeRequestService) ListMergeRequests(ctx context.Context, req *connec
 	for _, mr := range page.MergeRequests {
 		out.MergeRequests = append(out.MergeRequests, mergeRequestWithMergeabilityToPB(mr, page.Mergeability[mr.Number]))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *mergeRequestService) GetMergeRequest(ctx context.Context, req *connect.Request[pb.GetMergeRequestRequest]) (*connect.Response[pb.GetMergeRequestResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) GetMergeRequest(ctx context.Context, req *pb.GetMergeRequestRequest) (*pb.GetMergeRequestResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	d, err := s.mrs.Get(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.GetMergeRequestOptions{SinceLastRead: req.Msg.GetSinceLastRead()})
+	d, err := s.mrs.Get(ctx, caller(ctx), name, req.GetNumber(), ports.GetMergeRequestOptions{SinceLastRead: req.GetSinceLastRead()})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -333,123 +331,123 @@ func (s *mergeRequestService) GetMergeRequest(ctx context.Context, req *connect.
 	for _, v := range d.Verdicts {
 		out.Verdicts = append(out.Verdicts, &pb.AuthorVerdict{Author: v.Author, Verdict: verdictToPB(v.Verdict), CommentId: strconv.FormatInt(v.CommentID, 10), CommitId: v.CommitID.String(), CreatedAt: timestamp(v.At), Stale: v.Stale})
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *mergeRequestService) AddComment(ctx context.Context, req *connect.Request[pb.AddCommentRequest]) (*connect.Response[pb.AddCommentResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) AddComment(ctx context.Context, req *pb.AddCommentRequest) (*pb.AddCommentResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	side, err := diffSideFromPB(req.Msg.GetSide())
+	side, err := diffSideFromPB(req.GetSide())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	verdict, err := verdictFromPB(req.Msg.GetVerdict())
+	verdict, err := verdictFromPB(req.GetVerdict())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	replyTo := commentID(req.Msg.GetReplyTo())
-	if req.Msg.GetReplyTo() != "" && replyTo == 0 {
+	replyTo := commentID(req.GetReplyTo())
+	if req.GetReplyTo() != "" && replyTo == 0 {
 		var v domain.Violations
 		v.Add("reply_to", "is not a note id")
 		return nil, connectError(ctx, v.Err())
 	}
-	c, err := s.mrs.AddComment(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.AddCommentParams{
-		ReplyTo: replyTo, StartLine: int(req.Msg.GetStartLine()), Verdict: verdict,
-		Path: req.Msg.GetPath(), Line: int(req.Msg.GetLine()), Side: side, Text: req.Msg.GetText(),
+	c, err := s.mrs.AddComment(ctx, caller(ctx), name, req.GetNumber(), ports.AddCommentParams{
+		ReplyTo: replyTo, StartLine: int(req.GetStartLine()), Verdict: verdict,
+		Path: req.GetPath(), Line: int(req.GetLine()), Side: side, Text: req.GetText(),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.AddCommentResponse{Comment: commentToPB(c)}), nil
+	return &pb.AddCommentResponse{Comment: commentToPB(c)}, nil
 }
 
-func (s *mergeRequestService) ResolveComment(ctx context.Context, req *connect.Request[pb.ResolveCommentRequest]) (*connect.Response[pb.ResolveCommentResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) ResolveComment(ctx context.Context, req *pb.ResolveCommentRequest) (*pb.ResolveCommentResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 	// An id this server never issued is 0: the use case answers not found, after
 	// the repository and the scope were checked, as for any unknown comment.
-	c, err := s.mrs.ResolveComment(ctx, caller(ctx), name, req.Msg.GetNumber(), commentID(req.Msg.GetCommentId()), req.Msg.GetResolved())
+	c, err := s.mrs.ResolveComment(ctx, caller(ctx), name, req.GetNumber(), commentID(req.GetCommentId()), req.GetResolved())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.ResolveCommentResponse{Comment: commentToPB(c)}), nil
+	return &pb.ResolveCommentResponse{Comment: commentToPB(c)}, nil
 }
 
-func (s *mergeRequestService) CloseMergeRequest(ctx context.Context, req *connect.Request[pb.CloseMergeRequestRequest]) (*connect.Response[pb.CloseMergeRequestResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) CloseMergeRequest(ctx context.Context, req *pb.CloseMergeRequestRequest) (*pb.CloseMergeRequestResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mr, err := s.mrs.Close(ctx, caller(ctx), name, req.Msg.GetNumber())
+	mr, err := s.mrs.Close(ctx, caller(ctx), name, req.GetNumber())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.CloseMergeRequestResponse{MergeRequest: mergeRequestToPB(mr)}), nil
+	return &pb.CloseMergeRequestResponse{MergeRequest: mergeRequestToPB(mr)}, nil
 }
 
-func (s *mergeRequestService) MergeMergeRequest(ctx context.Context, req *connect.Request[pb.MergeMergeRequestRequest]) (*connect.Response[pb.MergeMergeRequestResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) MergeMergeRequest(ctx context.Context, req *pb.MergeMergeRequestRequest) (*pb.MergeMergeRequestResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mode, err := mergeModeFromPB(req.Msg.GetMode())
+	mode, err := mergeModeFromPB(req.GetMode())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	head, err := headID(req.Msg.GetHeadId())
+	head, err := headID(req.GetHeadId())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	res, err := s.mrs.Merge(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.MergeParams{
-		Mode: mode, HeadID: head, DeleteSource: req.Msg.GetDeleteSourceBranch(), IgnoreChecks: req.Msg.GetIgnoreChecks(),
+	res, err := s.mrs.Merge(ctx, caller(ctx), name, req.GetNumber(), ports.MergeParams{
+		Mode: mode, HeadID: head, DeleteSource: req.GetDeleteSourceBranch(), IgnoreChecks: req.GetIgnoreChecks(),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.MergeMergeRequestResponse{
+	return &pb.MergeMergeRequestResponse{
 		MergeRequest: mergeRequestToPB(res.MergeRequest), SourceBranchDeleted: res.SourceDeleted,
-	}), nil
+	}, nil
 }
 
-func (s *mergeRequestService) MarkRead(ctx context.Context, req *connect.Request[pb.MarkReadRequest]) (*connect.Response[pb.MarkReadResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) MarkRead(ctx context.Context, req *pb.MarkReadRequest) (*pb.MarkReadResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	head, err := headID(req.Msg.GetHeadId())
+	head, err := headID(req.GetHeadId())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	if _, err := s.mrs.MarkRead(ctx, caller(ctx), name, req.Msg.GetNumber(), head); err != nil {
+	if _, err := s.mrs.MarkRead(ctx, caller(ctx), name, req.GetNumber(), head); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.MarkReadResponse{}), nil
+	return &pb.MarkReadResponse{}, nil
 }
 
-func (s *mergeRequestService) MarkReady(ctx context.Context, req *connect.Request[pb.MarkReadyRequest]) (*connect.Response[pb.MarkReadyResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) MarkReady(ctx context.Context, req *pb.MarkReadyRequest) (*pb.MarkReadyResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	mr, err := s.mrs.MarkReady(ctx, caller(ctx), name, req.Msg.GetNumber())
+	mr, err := s.mrs.MarkReady(ctx, caller(ctx), name, req.GetNumber())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.MarkReadyResponse{MergeRequest: mergeRequestToPB(mr)}), nil
+	return &pb.MarkReadyResponse{MergeRequest: mergeRequestToPB(mr)}, nil
 }
 
-func (s *mergeRequestService) EditMergeRequest(ctx context.Context, req *connect.Request[pb.EditMergeRequestRequest]) (*connect.Response[pb.EditMergeRequestResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mergeRequestService) EditMergeRequest(ctx context.Context, req *pb.EditMergeRequestRequest) (*pb.EditMergeRequestResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	item, err := s.mrs.Edit(ctx, caller(ctx), name, req.Msg.GetNumber(), ports.EditMergeRequestParams{Title: req.Msg.Title, Description: req.Msg.Description})
+	item, err := s.mrs.Edit(ctx, caller(ctx), name, req.GetNumber(), ports.EditMergeRequestParams{Title: req.Title, Description: req.Description})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.EditMergeRequestResponse{MergeRequest: mergeRequestToPB(item)}), nil
+	return &pb.EditMergeRequestResponse{MergeRequest: mergeRequestToPB(item)}, nil
 }

@@ -3,14 +3,14 @@
 package app
 
 import (
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -48,14 +48,14 @@ func sampleEvents() []*ermite.WatchResponse {
 }
 
 // finishing streams events, then answers permission_denied to end the command.
-func finishing(events []*ermite.WatchResponse) func(context.Context, *ermite.WatchRequest, *connect.ServerStream[ermite.WatchResponse]) error {
-	return func(_ context.Context, _ *ermite.WatchRequest, st *connect.ServerStream[ermite.WatchResponse]) error {
+func finishing(events []*ermite.WatchResponse) func(context.Context, *ermite.WatchRequest, ermiteconnect.EventServiceWatchServerStream) error {
+	return func(_ context.Context, _ *ermite.WatchRequest, st ermiteconnect.EventServiceWatchServerStream) error {
 		for _, e := range events {
 			if err := st.Send(e); err != nil {
 				return err
 			}
 		}
-		return connect.NewError(connect.CodePermissionDenied, errors.New("done"))
+		return connect.NewError(connect.CodePermissionDenied, "done")
 	}
 }
 
@@ -107,19 +107,19 @@ func TestWatchNDJSON(t *testing.T) {
 func TestWatchReconnectsAndResumes(t *testing.T) {
 	calls := 0
 	f := &fakeAPI{}
-	f.watch = func(_ context.Context, req *ermite.WatchRequest, st *connect.ServerStream[ermite.WatchResponse]) error {
+	f.watch = func(_ context.Context, req *ermite.WatchRequest, st ermiteconnect.EventServiceWatchServerStream) error {
 		calls++
 		switch calls {
 		case 1:
 			_ = st.Send(sampleEvents()[0])
-			return connect.NewError(connect.CodeUnavailable, errors.New("restarting"))
+			return connect.NewError(connect.CodeUnavailable, "restarting")
 		case 2:
 			assert.Equal(t, "1", req.GetResumeAfter(), "resumes after the last printed event")
 			_ = st.Send(&ermite.WatchResponse{Event: &ermite.Event{Kind: &ermite.Event_Gap{Gap: &ermite.Gap{}}}})
 			_ = st.Send(sampleEvents()[3])
-			return connect.NewError(connect.CodePermissionDenied, errors.New("done"))
+			return connect.NewError(connect.CodePermissionDenied, "done")
 		}
-		return connect.NewError(connect.CodeInternal, nil)
+		return connect.NewError(connect.CodeInternal, "")
 	}
 	res := runCLI(t, envFor(f.serve(t)), "", "watch")
 	require.Error(t, res.err)
@@ -135,8 +135,8 @@ func TestWatchReconnectsAndResumes(t *testing.T) {
 }
 
 func TestWatchPermanentErrorIsFriendly(t *testing.T) {
-	f := &fakeAPI{watch: func(context.Context, *ermite.WatchRequest, *connect.ServerStream[ermite.WatchResponse]) error {
-		return connect.NewError(connect.CodeNotFound, errors.New("repository \"zzz\" not found"))
+	f := &fakeAPI{watch: func(context.Context, *ermite.WatchRequest, ermiteconnect.EventServiceWatchServerStream) error {
+		return connect.NewError(connect.CodeNotFound, "repository \"zzz\" not found")
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "watch", "zzz")
 	require.Error(t, res.err)

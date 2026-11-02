@@ -4,12 +4,12 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
@@ -32,20 +32,20 @@ type jobArtifactService struct {
 	runner    *runnerService // failed: the failures of job tokens count like the runner's
 }
 
-func (s *jobArtifactService) CreateJobArtifact(ctx context.Context, req *connect.Request[pb.CreateJobArtifactRequest]) (*connect.Response[pb.CreateJobArtifactResponse], error) {
+func (s *jobArtifactService) CreateJobArtifact(ctx context.Context, req *pb.CreateJobArtifactRequest) (*pb.CreateJobArtifactResponse, error) {
 	out, err := s.artifacts.CreateJobArtifact(ctx, secretFrom(ctx), ports.CreateJobArtifactParams{
-		JobID: req.Msg.GetJobId(), Name: req.Msg.GetName(), MediaType: req.Msg.GetMediaType(), ExpiresAt: goTime(req.Msg.GetExpiresAt()),
+		JobID: req.GetJobId(), Name: req.GetName(), MediaType: req.GetMediaType(), ExpiresAt: goTime(req.GetExpiresAt()),
 	})
 	if err != nil {
 		return nil, s.runner.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.CreateJobArtifactResponse{ArtifactId: out.ID, ExpiresAt: timestamp(out.ExpiresAt)}), nil
+	return &pb.CreateJobArtifactResponse{ArtifactId: out.ID, ExpiresAt: timestamp(out.ExpiresAt)}, nil
 }
 
 // blockReader reads the data of a block stream: the first message's, then
 // the following ones', which must carry data only.
 type blockReader struct {
-	stream *connect.ClientStream[pb.UploadJobArtifactBlockRequest]
+	stream ermiteconnect.JobArtifactServiceUploadJobArtifactBlockServerStream
 	buf    []byte
 }
 
@@ -58,13 +58,13 @@ func checkBlockData(data []byte) error {
 
 func (r *blockReader) Read(p []byte) (int, error) {
 	for len(r.buf) == 0 {
-		if !r.stream.Receive() {
-			if err := r.stream.Err(); err != nil {
-				return 0, err
+		m, err := r.stream.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return 0, io.EOF
 			}
-			return 0, io.EOF
+			return 0, err
 		}
-		m := r.stream.Msg()
 		if m.GetJobId() != "" || m.GetArtifactId() != 0 || len(m.GetBlockId()) > 0 {
 			return 0, fmt.Errorf("%w: job_id, artifact_id and block_id are in the first message only", domain.ErrInvalid)
 		}
@@ -78,15 +78,14 @@ func (r *blockReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *jobArtifactService) UploadJobArtifactBlock(ctx context.Context, stream *connect.ClientStream[pb.UploadJobArtifactBlockRequest]) (*connect.Response[pb.UploadJobArtifactBlockResponse], error) {
-	if !stream.Receive() {
-		err := stream.Err()
-		if err == nil {
+func (s *jobArtifactService) UploadJobArtifactBlock(ctx context.Context, stream ermiteconnect.JobArtifactServiceUploadJobArtifactBlockServerStream) (*pb.UploadJobArtifactBlockResponse, error) {
+	first, err := stream.Receive()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
 			err = fmt.Errorf("%w: the stream has no message", domain.ErrInvalid)
 		}
 		return nil, s.runner.failed(ctx, err)
 	}
-	first := stream.Msg()
 	if err := checkBlockData(first.GetData()); err != nil {
 		return nil, s.runner.failed(ctx, err)
 	}
@@ -95,27 +94,27 @@ func (s *jobArtifactService) UploadJobArtifactBlock(ctx context.Context, stream 
 	if err != nil {
 		return nil, s.runner.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.UploadJobArtifactBlockResponse{Size: size}), nil
+	return &pb.UploadJobArtifactBlockResponse{Size: size}, nil
 }
 
-func (s *jobArtifactService) CommitJobArtifact(ctx context.Context, req *connect.Request[pb.CommitJobArtifactRequest]) (*connect.Response[pb.CommitJobArtifactResponse], error) {
-	size, digest, err := s.artifacts.CommitJobArtifact(ctx, secretFrom(ctx), req.Msg.GetJobId(), req.Msg.GetArtifactId(), req.Msg.GetBlockIds())
+func (s *jobArtifactService) CommitJobArtifact(ctx context.Context, req *pb.CommitJobArtifactRequest) (*pb.CommitJobArtifactResponse, error) {
+	size, digest, err := s.artifacts.CommitJobArtifact(ctx, secretFrom(ctx), req.GetJobId(), req.GetArtifactId(), req.GetBlockIds())
 	if err != nil {
 		return nil, s.runner.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.CommitJobArtifactResponse{Size: size, Digest: digest}), nil
+	return &pb.CommitJobArtifactResponse{Size: size, Digest: digest}, nil
 }
 
-func (s *jobArtifactService) FinalizeJobArtifact(ctx context.Context, req *connect.Request[pb.FinalizeJobArtifactRequest]) (*connect.Response[pb.FinalizeJobArtifactResponse], error) {
-	a, err := s.artifacts.FinalizeJobArtifact(ctx, secretFrom(ctx), req.Msg.GetJobId(), req.Msg.GetName(), req.Msg.GetSize(), req.Msg.GetDigest())
+func (s *jobArtifactService) FinalizeJobArtifact(ctx context.Context, req *pb.FinalizeJobArtifactRequest) (*pb.FinalizeJobArtifactResponse, error) {
+	a, err := s.artifacts.FinalizeJobArtifact(ctx, secretFrom(ctx), req.GetJobId(), req.GetName(), req.GetSize(), req.GetDigest())
 	if err != nil {
 		return nil, s.runner.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.FinalizeJobArtifactResponse{Artifact: artifactToPB(a)}), nil
+	return &pb.FinalizeJobArtifactResponse{Artifact: artifactToPB(a)}, nil
 }
 
-func (s *jobArtifactService) ListJobArtifacts(ctx context.Context, req *connect.Request[pb.ListJobArtifactsRequest]) (*connect.Response[pb.ListJobArtifactsResponse], error) {
-	arts, err := s.artifacts.ListJobArtifacts(ctx, secretFrom(ctx), req.Msg.GetJobId(), req.Msg.GetName(), req.Msg.GetArtifactId())
+func (s *jobArtifactService) ListJobArtifacts(ctx context.Context, req *pb.ListJobArtifactsRequest) (*pb.ListJobArtifactsResponse, error) {
+	arts, err := s.artifacts.ListJobArtifacts(ctx, secretFrom(ctx), req.GetJobId(), req.GetName(), req.GetArtifactId())
 	if err != nil {
 		return nil, s.runner.failed(ctx, err)
 	}
@@ -123,11 +122,11 @@ func (s *jobArtifactService) ListJobArtifacts(ctx context.Context, req *connect.
 	for _, a := range arts {
 		out.Artifacts = append(out.Artifacts, artifactToPB(a))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *jobArtifactService) DownloadJobArtifact(ctx context.Context, req *connect.Request[pb.DownloadJobArtifactRequest], stream *connect.ServerStream[pb.DownloadJobArtifactResponse]) error {
-	err := s.artifacts.DownloadJobArtifact(ctx, secretFrom(ctx), req.Msg.GetJobId(), req.Msg.GetArtifactId(), req.Msg.GetOffset(), func(c ports.ArtifactChunk) error {
+func (s *jobArtifactService) DownloadJobArtifact(ctx context.Context, req *pb.DownloadJobArtifactRequest, stream ermiteconnect.JobArtifactServiceDownloadJobArtifactServerStream) error {
+	err := s.artifacts.DownloadJobArtifact(ctx, secretFrom(ctx), req.GetJobId(), req.GetArtifactId(), req.GetOffset(), func(c ports.ArtifactChunk) error {
 		m := &pb.DownloadJobArtifactResponse{Chunk: c.Data}
 		if c.Artifact != nil {
 			m.Artifact = artifactToPB(*c.Artifact)
@@ -137,12 +136,12 @@ func (s *jobArtifactService) DownloadJobArtifact(ctx context.Context, req *conne
 	return s.runner.failed(ctx, err)
 }
 
-func (s *jobArtifactService) DeleteJobArtifact(ctx context.Context, req *connect.Request[pb.DeleteJobArtifactRequest]) (*connect.Response[pb.DeleteJobArtifactResponse], error) {
-	id, err := s.artifacts.DeleteJobArtifact(ctx, secretFrom(ctx), req.Msg.GetJobId(), req.Msg.GetName())
+func (s *jobArtifactService) DeleteJobArtifact(ctx context.Context, req *pb.DeleteJobArtifactRequest) (*pb.DeleteJobArtifactResponse, error) {
+	id, err := s.artifacts.DeleteJobArtifact(ctx, secretFrom(ctx), req.GetJobId(), req.GetName())
 	if err != nil {
 		return nil, s.runner.failed(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteJobArtifactResponse{ArtifactId: id}), nil
+	return &pb.DeleteJobArtifactResponse{ArtifactId: id}, nil
 }
 
 // artifactService implements ermiteconnect.ArtifactServiceHandler.
@@ -150,12 +149,12 @@ type artifactService struct {
 	artifacts ports.ArtifactService
 }
 
-func (s *artifactService) ListArtifacts(ctx context.Context, req *connect.Request[pb.ListArtifactsRequest]) (*connect.Response[pb.ListArtifactsResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *artifactService) ListArtifacts(ctx context.Context, req *pb.ListArtifactsRequest) (*pb.ListArtifactsResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	res, err := s.artifacts.ListArtifacts(ctx, caller(ctx), name, req.Msg.GetRunId())
+	res, err := s.artifacts.ListArtifacts(ctx, caller(ctx), name, req.GetRunId())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
@@ -163,15 +162,15 @@ func (s *artifactService) ListArtifacts(ctx context.Context, req *connect.Reques
 	for _, a := range res.Artifacts {
 		out.Artifacts = append(out.Artifacts, artifactToPB(a))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *artifactService) DownloadArtifact(ctx context.Context, req *connect.Request[pb.DownloadArtifactRequest], stream *connect.ServerStream[pb.DownloadArtifactResponse]) error {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *artifactService) DownloadArtifact(ctx context.Context, req *pb.DownloadArtifactRequest, stream ermiteconnect.ArtifactServiceDownloadArtifactServerStream) error {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return ciError(ctx, err)
 	}
-	err = s.artifacts.DownloadArtifact(ctx, caller(ctx), name, req.Msg.GetArtifactId(), req.Msg.GetOffset(), func(c ports.ArtifactChunk) error {
+	err = s.artifacts.DownloadArtifact(ctx, caller(ctx), name, req.GetArtifactId(), req.GetOffset(), func(c ports.ArtifactChunk) error {
 		m := &pb.DownloadArtifactResponse{Chunk: c.Data}
 		if c.Artifact != nil {
 			m.Artifact = artifactToPB(*c.Artifact)
@@ -181,13 +180,13 @@ func (s *artifactService) DownloadArtifact(ctx context.Context, req *connect.Req
 	return ciError(ctx, err)
 }
 
-func (s *artifactService) DeleteArtifact(ctx context.Context, req *connect.Request[pb.DeleteArtifactRequest]) (*connect.Response[pb.DeleteArtifactResponse], error) {
-	name, err := repoOf(req.Msg.GetRepo())
+func (s *artifactService) DeleteArtifact(ctx context.Context, req *pb.DeleteArtifactRequest) (*pb.DeleteArtifactResponse, error) {
+	name, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, ciError(ctx, err)
 	}
-	if err := s.artifacts.DeleteArtifact(ctx, caller(ctx), name, req.Msg.GetArtifactId()); err != nil {
+	if err := s.artifacts.DeleteArtifact(ctx, caller(ctx), name, req.GetArtifactId()); err != nil {
 		return nil, ciError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteArtifactResponse{}), nil
+	return &pb.DeleteArtifactResponse{}, nil
 }

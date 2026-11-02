@@ -3,12 +3,13 @@
 package rpc
 
 import (
+	"connectrpc.com/connect/v2/connectproto"
 	"context"
 	"fmt"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -277,7 +278,7 @@ func TestConnectErrorCarriesTheFieldsOfARejection(t *testing.T) {
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, connect.CodeInvalidArgument, ce.Code())
 	require.Len(t, ce.Details(), 1)
-	val, derr := ce.Details()[0].Value()
+	val, derr := connectproto.UnmarshalErrorDetail(ce.Details()[0])
 	require.NoError(t, derr)
 	br, ok := val.(*errdetails.BadRequest)
 	require.True(t, ok)

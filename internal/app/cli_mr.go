@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -326,13 +325,13 @@ func completeMRRepoThenNumber(env *cliEnv) func(*cobra.Command, []string, string
 
 func listMergeRequests(ctx context.Context, c *client.Client, repo string, state ermite.MergeRequestState) ([]*ermite.MergeRequest, error) {
 	return collect(ctx, func(token string) ([]*ermite.MergeRequest, string, error) {
-		res, err := c.MergeRequests().ListMergeRequests(ctx, connect.NewRequest(&ermite.ListMergeRequestsRequest{
+		res, err := c.MergeRequests().ListMergeRequests(ctx, &ermite.ListMergeRequestsRequest{
 			Repo: repo, State: state, PageToken: token,
-		}))
+		})
 		if err != nil {
 			return nil, "", c.Describe(err)
 		}
-		return res.Msg.GetMergeRequests(), res.Msg.GetNextPageToken(), nil
+		return res.GetMergeRequests(), res.GetNextPageToken(), nil
 	})
 }
 
@@ -376,11 +375,11 @@ func newMRCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.MergeRequests().CreateMergeRequest(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.MergeRequests().CreateMergeRequest(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "opened", c.URL())
+		return outputMR(cmd, res.GetMergeRequest(), *asJSON, "opened", c.URL())
 	}
 	return cmd
 }
@@ -635,13 +634,13 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 			return err
 		}
 		ctx := env.ctx(cmd)
-		res, err := c.MergeRequests().GetMergeRequest(ctx, connect.NewRequest(&ermite.GetMergeRequestRequest{
+		res, err := c.MergeRequests().GetMergeRequest(ctx, &ermite.GetMergeRequestRequest{
 			Repo: args[0], Number: n, SinceLastRead: sinceLastRead,
-		}))
+		})
 		if err != nil {
 			return c.Describe(err)
 		}
-		d := res.Msg
+		d := res
 		if *asJSON {
 			err = writeJSON(cmd.OutOrStdout(), toJSONDetail(d, withDiff, c.URL()))
 		} else {
@@ -651,9 +650,9 @@ func newMRShowCmd(env *cliEnv) *cobra.Command {
 			return err
 		}
 		if markRead && d.GetMergeRequest().GetHeadId() != "" {
-			_, err = c.MergeRequests().MarkRead(ctx, connect.NewRequest(&ermite.MarkReadRequest{
+			_, err = c.MergeRequests().MarkRead(ctx, &ermite.MarkReadRequest{
 				Repo: args[0], Number: n, HeadId: d.GetMergeRequest().GetHeadId(),
-			}))
+			})
 			if err != nil {
 				return c.Describe(err)
 			}
@@ -954,14 +953,14 @@ func newMRCommentCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.MergeRequests().AddComment(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.MergeRequests().AddComment(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONComment(res.Msg.GetComment()))
+			return writeJSON(cmd.OutOrStdout(), toJSONComment(res.GetComment()))
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "comment %s added to %s!%d\n", res.Msg.GetComment().GetId(), clean(args[0]), n)
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "comment %s added to %s!%d\n", res.GetComment().GetId(), clean(args[0]), n)
 		return err
 	}
 	return cmd
@@ -1036,17 +1035,17 @@ func newMRNoteMutationCmd(env *cliEnv, edit bool) *cobra.Command {
 		}
 		var note *ermite.Comment
 		if edit {
-			res, e := c.MergeRequests().EditComment(env.ctx(cmd), connect.NewRequest(&ermite.EditCommentRequest{Repo: args[0], Number: n, CommentId: id, Text: text}))
+			res, e := c.MergeRequests().EditComment(env.ctx(cmd), &ermite.EditCommentRequest{Repo: args[0], Number: n, CommentId: id, Text: text})
 			if e != nil {
 				return c.Describe(e)
 			}
-			note = res.Msg.GetComment()
+			note = res.GetComment()
 		} else {
-			res, e := c.MergeRequests().DeleteComment(env.ctx(cmd), connect.NewRequest(&ermite.DeleteCommentRequest{Repo: args[0], Number: n, CommentId: id}))
+			res, e := c.MergeRequests().DeleteComment(env.ctx(cmd), &ermite.DeleteCommentRequest{Repo: args[0], Number: n, CommentId: id})
 			if e != nil {
 				return c.Describe(e)
 			}
-			note = res.Msg.GetComment()
+			note = res.GetComment()
 		}
 		if *asJSON {
 			return writeJSON(cmd.OutOrStdout(), toJSONComment(note))
@@ -1083,14 +1082,14 @@ func newMRResolveCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.MergeRequests().ResolveComment(env.ctx(cmd), connect.NewRequest(&ermite.ResolveCommentRequest{
+		res, err := c.MergeRequests().ResolveComment(env.ctx(cmd), &ermite.ResolveCommentRequest{
 			Repo: args[0], Number: n, CommentId: id, Resolved: !undo,
-		}))
+		})
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONComment(res.Msg.GetComment()))
+			return writeJSON(cmd.OutOrStdout(), toJSONComment(res.GetComment()))
 		}
 		verb := "resolved"
 		if undo {
@@ -1191,14 +1190,14 @@ func newMRMergeCmd(env *cliEnv) *cobra.Command {
 				return err
 			}
 		}
-		res, err := c.MergeRequests().MergeMergeRequest(ctx, connect.NewRequest(&ermite.MergeMergeRequestRequest{
+		res, err := c.MergeRequests().MergeMergeRequest(ctx, &ermite.MergeMergeRequestRequest{
 			Repo: args[0], Number: n, Mode: pbMode, HeadId: head, DeleteSourceBranch: deleteBranch, IgnoreChecks: ignoreChecks,
-		}))
+		})
 		if err != nil {
 			return c.Describe(err)
 		}
-		m := res.Msg.GetMergeRequest()
-		deleted := res.Msg.GetSourceBranchDeleted()
+		m := res.GetMergeRequest()
+		deleted := res.GetSourceBranchDeleted()
 		if *asJSON {
 			return writeJSON(cmd.OutOrStdout(), jsonMerged{jsonMergeRequest: toJSONMergeRequest(m, c.URL()), SourceBranchDeleted: deleted})
 		}
@@ -1226,11 +1225,11 @@ func runMREnableAuto(env *cliEnv, cmd *cobra.Command, repo string, n int64, mode
 	if err := requireFeature(ctx, c, client.FeatureAutoMerge, "cannot merge by itself (--auto)"); err != nil {
 		return err
 	}
-	res, err := c.MergeRequests().EnableAutoMerge(ctx, connect.NewRequest(&ermite.EnableAutoMergeRequest{Repo: repo, Number: n, Mode: mode, HeadId: head}))
+	res, err := c.MergeRequests().EnableAutoMerge(ctx, &ermite.EnableAutoMergeRequest{Repo: repo, Number: n, Mode: mode, HeadId: head})
 	if err != nil {
 		return c.Describe(err)
 	}
-	m := res.Msg.GetMergeRequest()
+	m := res.GetMergeRequest()
 	if asJSON {
 		return writeJSON(cmd.OutOrStdout(), toJSONMergeRequest(m, c.URL()))
 	}
@@ -1249,11 +1248,11 @@ func runMRCancelAuto(env *cliEnv, cmd *cobra.Command, repo string, n int64, asJS
 	if err := requireFeature(ctx, c, client.FeatureAutoMerge, "has no auto-merge to cancel (--cancel-auto)"); err != nil {
 		return err
 	}
-	res, err := c.MergeRequests().CancelAutoMerge(ctx, connect.NewRequest(&ermite.CancelAutoMergeRequest{Repo: repo, Number: n}))
+	res, err := c.MergeRequests().CancelAutoMerge(ctx, &ermite.CancelAutoMergeRequest{Repo: repo, Number: n})
 	if err != nil {
 		return c.Describe(err)
 	}
-	m := res.Msg.GetMergeRequest()
+	m := res.GetMergeRequest()
 	if asJSON {
 		return writeJSON(cmd.OutOrStdout(), toJSONMergeRequest(m, c.URL()))
 	}
@@ -1265,21 +1264,21 @@ func runMRCancelAuto(env *cliEnv, cmd *cobra.Command, repo string, n int64, asJS
 // key, with its fingerprint when the server tells it.
 func signedNote(ctx context.Context, c *client.Client) string {
 	const how = "; `ermite signing-key show` prints the key to verify it"
-	res, err := c.Server().GetSigningKey(ctx, connect.NewRequest(&ermite.GetSigningKeyRequest{}))
-	if err != nil || res.Msg.GetFingerprint() == "" {
+	res, err := c.Server().GetSigningKey(ctx, &ermite.GetSigningKeyRequest{})
+	if err != nil || res.GetFingerprint() == "" {
 		return "the commit is signed by the server's key" + how
 	}
-	return "the commit is signed by the server's key " + clean(res.Msg.GetFingerprint()) + how
+	return "the commit is signed by the server's key " + clean(res.GetFingerprint()) + how
 }
 
 // requireFeature refuses to go on with a server that does not list the
 // feature. A server whose features cannot be read is refused too.
 func requireFeature(ctx context.Context, c *client.Client, feature, what string) error {
-	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
 	if err != nil {
 		return c.Describe(err)
 	}
-	if !slices.Contains(res.Msg.GetFeatures(), feature) {
+	if !slices.Contains(res.GetFeatures(), feature) {
 		return fmt.Errorf("the server does not support %s, so it %s (upgrade the server, see `ermite version`)", feature, what)
 	}
 	return nil
@@ -1304,11 +1303,11 @@ func newMRCloseCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.MergeRequests().CloseMergeRequest(env.ctx(cmd), connect.NewRequest(&ermite.CloseMergeRequestRequest{Repo: args[0], Number: n}))
+		res, err := c.MergeRequests().CloseMergeRequest(env.ctx(cmd), &ermite.CloseMergeRequestRequest{Repo: args[0], Number: n})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "closed", c.URL())
+		return outputMR(cmd, res.GetMergeRequest(), *asJSON, "closed", c.URL())
 	}
 	return cmd
 }
@@ -1335,11 +1334,11 @@ func newMRReadyCmd(env *cliEnv) *cobra.Command {
 		if err := requireFeature(ctx, c, client.FeatureMarkReady, "cannot mark drafts ready (mr ready)"); err != nil {
 			return err
 		}
-		res, err := c.MergeRequests().MarkReady(ctx, connect.NewRequest(&ermite.MarkReadyRequest{Repo: args[0], Number: n}))
+		res, err := c.MergeRequests().MarkReady(ctx, &ermite.MarkReadyRequest{Repo: args[0], Number: n})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputMR(cmd, res.Msg.GetMergeRequest(), *asJSON, "marked ready", c.URL())
+		return outputMR(cmd, res.GetMergeRequest(), *asJSON, "marked ready", c.URL())
 	}
 	return cmd
 }

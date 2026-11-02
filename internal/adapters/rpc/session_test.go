@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -36,14 +36,14 @@ func TestSessionServiceCreateLoginLink(t *testing.T) {
 			sessions := mocks.NewSessionService(t)
 			sessions.EXPECT().CreateLoginLink(mock.Anything, domain.Owner()).
 				Return(ports.LoginLink{URL: "https://x/-/login/n", ExpiresAt: exp}, tt.usecase).Once()
-			resp, err := (&sessionService{sessions: sessions}).CreateLoginLink(ownerCtx(), connect.NewRequest(&pb.CreateLoginLinkRequest{}))
+			resp, err := (&sessionService{sessions: sessions}).CreateLoginLink(ownerCtx(), &pb.CreateLoginLinkRequest{})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, "https://x/-/login/n", resp.Msg.GetUrl())
-			assert.True(t, exp.Equal(resp.Msg.GetExpiresAt().AsTime()))
+			assert.Equal(t, "https://x/-/login/n", resp.GetUrl())
+			assert.True(t, exp.Equal(resp.GetExpiresAt().AsTime()))
 		})
 	}
 }
@@ -63,7 +63,7 @@ func TestSessionServiceSignOutEverywhere(t *testing.T) {
 			t.Parallel()
 			sessions := mocks.NewSessionService(t)
 			sessions.EXPECT().SignOutEverywhere(mock.Anything, domain.Owner()).Return(tt.usecase).Once()
-			_, err := (&sessionService{sessions: sessions}).SignOutEverywhere(ownerCtx(), connect.NewRequest(&pb.SignOutEverywhereRequest{}))
+			_, err := (&sessionService{sessions: sessions}).SignOutEverywhere(ownerCtx(), &pb.SignOutEverywhereRequest{})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
@@ -96,15 +96,15 @@ func TestSessionServiceListPasskeys(t *testing.T) {
 			t.Parallel()
 			passkeys := mocks.NewPasskeyService(t)
 			passkeys.EXPECT().List(mock.Anything, domain.Owner()).Return(tt.list, tt.usecase).Once()
-			resp, err := (&sessionService{passkeys: passkeys}).ListPasskeys(ownerCtx(), connect.NewRequest(&pb.ListPasskeysRequest{}))
+			resp, err := (&sessionService{passkeys: passkeys}).ListPasskeys(ownerCtx(), &pb.ListPasskeysRequest{})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
 			}
 			require.NoError(t, err)
-			require.Len(t, resp.Msg.GetPasskeys(), len(tt.list))
+			require.Len(t, resp.GetPasskeys(), len(tt.list))
 			for i, want := range tt.list {
-				got := resp.Msg.GetPasskeys()[i]
+				got := resp.GetPasskeys()[i]
 				assert.Equal(t, base64.RawURLEncoding.EncodeToString(want.ID), got.GetId())
 				assert.Equal(t, want.Name, got.GetName())
 				assert.Equal(t, want.BackupState, got.GetSynced())
@@ -146,7 +146,7 @@ func TestSessionServiceRemovePasskey(t *testing.T) {
 			if tt.called {
 				passkeys.EXPECT().Remove(mock.Anything, domain.Owner(), id).Return(tt.usecase).Once()
 			}
-			_, err := (&sessionService{passkeys: passkeys}).RemovePasskey(ownerCtx(), connect.NewRequest(&pb.RemovePasskeyRequest{Id: tt.id}))
+			_, err := (&sessionService{passkeys: passkeys}).RemovePasskey(ownerCtx(), &pb.RemovePasskeyRequest{Id: tt.id})
 			if tt.wantCode != 0 {
 				requireCode(t, tt.wantCode, err)
 				return
@@ -160,9 +160,9 @@ func TestSessionServiceRemovePasskey(t *testing.T) {
 func TestSessionServicePasskeysUnavailable(t *testing.T) {
 	t.Parallel()
 	svc := &sessionService{sessions: mocks.NewSessionService(t)}
-	_, err := svc.ListPasskeys(ownerCtx(), connect.NewRequest(&pb.ListPasskeysRequest{}))
+	_, err := svc.ListPasskeys(ownerCtx(), &pb.ListPasskeysRequest{})
 	requireCode(t, connect.CodeFailedPrecondition, err)
 	assert.Contains(t, err.Error(), "passkeys are not available on this server")
-	_, err = svc.RemovePasskey(ownerCtx(), connect.NewRequest(&pb.RemovePasskeyRequest{Id: "AQ"}))
+	_, err = svc.RemovePasskey(ownerCtx(), &pb.RemovePasskeyRequest{Id: "AQ"})
 	requireCode(t, connect.CodeFailedPrecondition, err)
 }

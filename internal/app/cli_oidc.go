@@ -3,7 +3,6 @@
 package app
 
 import (
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -48,11 +47,11 @@ func newOIDCRotateKeyCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Server().RotateOIDCKey(env.ctx(cmd), connect.NewRequest(&ermite.RotateOIDCKeyRequest{}))
+		res, err := c.Server().RotateOIDCKey(env.ctx(cmd), &ermite.RotateOIDCKeyRequest{})
 		if err != nil {
 			return c.Describe(err)
 		}
-		r := res.Msg
+		r := res
 		out := cmd.OutOrStdout()
 		if *asJSON {
 			j := jsonOIDCRotation{Issuer: r.GetIssuer(), Kid: r.GetKid(), RetiredUntil: jsonTime(r.GetRetiredUntil())}

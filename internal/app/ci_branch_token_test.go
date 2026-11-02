@@ -3,9 +3,11 @@
 package app
 
 import (
+	"errors"
+	"io"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -69,32 +71,41 @@ func TestCIBranchLimitedToken(t *testing.T) {
 	// The same token without the limit, to prove the refusals come from it.
 	unlimited := c.api(c.token(all, "proj"))
 	cancel := func(api *clients, r *pb.Run) error {
-		_, err := api.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: r.GetId()}))
+		_, err := api.run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: r.GetId()})
 		return err
 	}
 	rerun := func(api *clients, r *pb.Run) error {
-		_, err := api.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: r.GetId()}))
+		_, err := api.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: r.GetId()})
 		return err
 	}
 
 	t.Run("reads", func(t *testing.T) {
-		list, err := limited.run.ListRuns(c.ctx, connect.NewRequest(&pb.ListRunsRequest{Repo: "proj"}))
+		list, err := limited.run.ListRuns(c.ctx, &pb.ListRunsRequest{Repo: "proj"})
 		require.NoError(t, err)
-		assert.Len(t, list.Msg.GetRuns(), 3, "every run is readable, not only those of its prefixes")
-		got, err := limited.run.GetRun(c.ctx, connect.NewRequest(&pb.GetRunRequest{Repo: "proj", RunId: mainRun.GetId()}))
+		assert.Len(t, list.GetRuns(), 3, "every run is readable, not only those of its prefixes")
+		got, err := limited.run.GetRun(c.ctx, &pb.GetRunRequest{Repo: "proj", RunId: mainRun.GetId()})
 		require.NoError(t, err)
-		require.NotEmpty(t, got.Msg.GetJobs())
-		log, err := limited.run.GetJobLog(c.ctx, connect.NewRequest(&pb.GetJobLogRequest{Repo: "proj", JobId: got.Msg.GetJobs()[0].GetId()}))
+		require.NotEmpty(t, got.GetJobs())
+		log, err := limited.run.GetJobLog(c.ctx, &pb.GetJobLogRequest{Repo: "proj", JobId: got.GetJobs()[0].GetId()})
 		require.NoError(t, err)
 		var text string
-		for log.Receive() {
-			for _, l := range log.Msg().GetLines() {
+		var streamErr error
+		for {
+			msg, err := log.Receive()
+			if err != nil {
+				streamErr = err
+				break
+			}
+			for _, l := range msg.GetLines() {
 				text += l.GetText()
 			}
 		}
-		require.NoError(t, log.Err())
+		if errors.Is(streamErr, io.EOF) {
+			streamErr = nil
+		}
+		require.NoError(t, streamErr)
 		assert.Contains(t, text, "log of main")
-		_, err = limited.run.ListChecks(c.ctx, connect.NewRequest(&pb.ListChecksRequest{Repo: "proj", Sha: mainRun.GetSha()}))
+		_, err = limited.run.ListChecks(c.ctx, &pb.ListChecksRequest{Repo: "proj", Sha: mainRun.GetSha()})
 		require.NoError(t, err)
 	})
 
@@ -121,20 +132,20 @@ func TestCIBranchLimitedToken(t *testing.T) {
 		// Not restricted to a repository, so only the branch limit can refuse it.
 		secret, _ := c.branchToken(scopes(domain.ScopeRunnerRegister), []string{"agent/claude/"})
 		limited := c.api(secret)
-		_, err := limited.runner.RegisterRunner(c.ctx, connect.NewRequest(&pb.RegisterRunnerRequest{
+		_, err := limited.runner.RegisterRunner(c.ctx, &pb.RegisterRunnerRequest{
 			Name: "evil", Version: "v1", Isolation: pb.RunnerIsolation_RUNNER_ISOLATION_VM, Arch: "x64", Os: "linux", Replace: true,
-		}))
+		})
 		assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err), "register")
-		_, err = limited.run.ListRunners(c.ctx, connect.NewRequest(&pb.ListRunnersRequest{}))
+		_, err = limited.run.ListRunners(c.ctx, &pb.ListRunnersRequest{})
 		assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err), "list")
-		_, err = limited.run.RemoveRunner(c.ctx, connect.NewRequest(&pb.RemoveRunnerRequest{RunnerId: runner.id}))
+		_, err = limited.run.RemoveRunner(c.ctx, &pb.RemoveRunnerRequest{RunnerId: runner.id})
 		assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err), "remove")
 
 		// The same scopes without the limit manage runners (not restricted to a
 		// repository, which the runner rules already demand).
 		open := c.api(c.token(scopes(domain.ScopeRunnerRegister)))
-		list, err := open.run.ListRunners(c.ctx, connect.NewRequest(&pb.ListRunnersRequest{}))
+		list, err := open.run.ListRunners(c.ctx, &pb.ListRunnersRequest{})
 		require.NoError(t, err)
-		assert.Len(t, list.Msg.GetRunners(), 1, "the runner is still registered")
+		assert.Len(t, list.GetRunners(), 1, "the runner is still registered")
 	})
 }

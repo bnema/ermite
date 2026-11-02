@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -88,21 +87,21 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 			}
 			var k *ermite.MirrorKey
 			if rotate {
-				res, e := c.Mirrors().RotateMirrorKey(env.ctx(cmd), connect.NewRequest(&ermite.RotateMirrorKeyRequest{}))
+				res, e := c.Mirrors().RotateMirrorKey(env.ctx(cmd), &ermite.RotateMirrorKeyRequest{})
 				if e != nil {
 					return c.Describe(e)
 				}
-				k = res.Msg.GetKey()
-				if prev := res.Msg.GetPreviousFingerprint(); prev != "" {
+				k = res.GetKey()
+				if prev := res.GetPreviousFingerprint(); prev != "" {
 					noticef(cmd, "replaced key %s", clean(prev))
 				}
 				noticef(cmd, "remotes refuse pushes until this key is added")
 			} else {
-				res, e := c.Mirrors().GetMirrorKey(env.ctx(cmd), connect.NewRequest(&ermite.GetMirrorKeyRequest{}))
+				res, e := c.Mirrors().GetMirrorKey(env.ctx(cmd), &ermite.GetMirrorKeyRequest{})
 				if e != nil {
 					return c.Describe(e)
 				}
-				k = res.Msg.GetKey()
+				k = res.GetKey()
 			}
 			if *asJSON {
 				return writeJSON(cmd.OutOrStdout(), toJSONMirrorKey(k))
@@ -126,9 +125,9 @@ func newMirrorCmd(env *cliEnv) *cobra.Command {
 				return err
 			}
 			if name == "remove" {
-				_, err = c.Mirrors().RemoveRepoMirror(env.ctx(cmd), connect.NewRequest(&ermite.RemoveRepoMirrorRequest{Repo: args[0]}))
+				_, err = c.Mirrors().RemoveRepoMirror(env.ctx(cmd), &ermite.RemoveRepoMirrorRequest{Repo: args[0]})
 			} else {
-				_, err = c.Mirrors().SetRepoMirrorExcluded(env.ctx(cmd), connect.NewRequest(&ermite.SetRepoMirrorExcludedRequest{Repo: args[0], Excluded: name == "exclude"}))
+				_, err = c.Mirrors().SetRepoMirrorExcluded(env.ctx(cmd), &ermite.SetRepoMirrorExcludedRequest{Repo: args[0], Excluded: name == "exclude"})
 			}
 			if err != nil {
 				return c.Describe(err)
@@ -177,11 +176,11 @@ func newMirrorConfigCmd(env *cliEnv) *cobra.Command {
 		if req.Enabled == nil && req.UrlTemplate == nil && req.Cron == nil && req.AllBranches == nil {
 			return fmt.Errorf("specify at least one config flag, or use `mirror config show`")
 		}
-		res, err := c.Mirrors().SetMirrorConfig(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.Mirrors().SetMirrorConfig(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
-		return output(cmd, res.Msg.GetConfig(), *asJSON)
+		return output(cmd, res.GetConfig(), *asJSON)
 	}
 	show := &cobra.Command{Use: "show", Short: "Show the global mirror policy", Long: "Show the global mirror policy (owner only).\n" + jsonFieldsHelp("the policy", jsonMirrorConfig{}), Args: cobra.NoArgs}
 	showJSON := addJSONFlag(show)
@@ -190,11 +189,11 @@ func newMirrorConfigCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Mirrors().GetMirrorConfig(env.ctx(cmd), connect.NewRequest(&ermite.GetMirrorConfigRequest{}))
+		res, err := c.Mirrors().GetMirrorConfig(env.ctx(cmd), &ermite.GetMirrorConfigRequest{})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return output(cmd, res.Msg.GetConfig(), *showJSON)
+		return output(cmd, res.GetConfig(), *showJSON)
 	}
 	cmd.AddCommand(show)
 	return cmd
@@ -215,7 +214,7 @@ func newMirrorAddCmd(env *cliEnv) *cobra.Command {
 		if cmd.Flags().Changed("all-branches") {
 			req.AllBranches = &all
 		}
-		_, err = c.Mirrors().SetRepoMirror(env.ctx(cmd), connect.NewRequest(req))
+		_, err = c.Mirrors().SetRepoMirror(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
@@ -239,27 +238,27 @@ func newMirrorStatusCmd(env *cliEnv) *cobra.Command {
 		}
 		var statuses []*ermite.MirrorStatus
 		if len(args) == 1 {
-			res, err := c.Mirrors().GetMirrorStatus(env.ctx(cmd), connect.NewRequest(&ermite.GetMirrorStatusRequest{Repo: args[0]}))
+			res, err := c.Mirrors().GetMirrorStatus(env.ctx(cmd), &ermite.GetMirrorStatusRequest{Repo: args[0]})
 			if err != nil {
 				return c.Describe(err)
 			}
 			if *asJSON {
-				return writeJSON(cmd.OutOrStdout(), toJSONMirrorStatus(res.Msg.GetStatus()))
+				return writeJSON(cmd.OutOrStdout(), toJSONMirrorStatus(res.GetStatus()))
 			}
-			statuses = append(statuses, res.Msg.GetStatus())
+			statuses = append(statuses, res.GetStatus())
 		} else {
-			res, err := c.Mirrors().ListMirrorStatus(env.ctx(cmd), connect.NewRequest(&ermite.ListMirrorStatusRequest{}))
+			res, err := c.Mirrors().ListMirrorStatus(env.ctx(cmd), &ermite.ListMirrorStatusRequest{})
 			if err != nil {
 				return c.Describe(err)
 			}
 			if *asJSON {
-				items := make([]jsonMirrorStatus, 0, len(res.Msg.GetStatuses()))
-				for _, st := range res.Msg.GetStatuses() {
+				items := make([]jsonMirrorStatus, 0, len(res.GetStatuses()))
+				for _, st := range res.GetStatuses() {
 					items = append(items, toJSONMirrorStatus(st))
 				}
 				return writeJSON(cmd.OutOrStdout(), items)
 			}
-			statuses = res.Msg.GetStatuses()
+			statuses = res.GetStatuses()
 		}
 		rows := make([][]string, 0, len(statuses))
 		for _, s := range statuses {
@@ -290,13 +289,13 @@ func newMirrorSyncCmd(env *cliEnv) *cobra.Command {
 		if !all {
 			req.Repo = args[0]
 		}
-		res, err := c.Mirrors().SyncMirror(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.Mirrors().SyncMirror(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
 		failed, pending := 0, 0
-		rows := make([][]string, 0, len(res.Msg.GetResults()))
-		for _, r := range res.Msg.GetResults() {
+		rows := make([][]string, 0, len(res.GetResults()))
+		for _, r := range res.GetResults() {
 			if r.GetQueued() {
 				pending++
 			}

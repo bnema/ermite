@@ -3,13 +3,14 @@
 package client_test
 
 import (
+	"connectrpc.com/connect/v2/connecthttp"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 
 	"bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
@@ -23,23 +24,29 @@ type fake struct {
 
 	mu      sync.Mutex
 	headers []http.Header
-	version func(context.Context, *connect.Request[ermite.GetVersionRequest]) (*connect.Response[ermite.GetVersionResponse], error)
-	watch   func(context.Context, *connect.Request[ermite.WatchRequest], *connect.ServerStream[ermite.WatchResponse]) error
+	version func(context.Context, *ermite.GetVersionRequest) (*ermite.GetVersionResponse, error)
+	watch   func(context.Context, *ermite.WatchRequest, ermiteconnect.EventServiceWatchServerStream) error
 }
 
-func (f *fake) record(h http.Header) {
+func (f *fake) record(header *connect.Header) {
+	h := make(http.Header)
+	for k, v := range header.All() {
+		h[k] = v
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.headers = append(f.headers, h.Clone())
 }
 
-func (f *fake) GetVersion(ctx context.Context, req *connect.Request[ermite.GetVersionRequest]) (*connect.Response[ermite.GetVersionResponse], error) {
-	f.record(req.Header())
+func (f *fake) GetVersion(ctx context.Context, req *ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	f.record(info.RequestHeader())
 	return f.version(ctx, req)
 }
 
-func (f *fake) Watch(ctx context.Context, req *connect.Request[ermite.WatchRequest], st *connect.ServerStream[ermite.WatchResponse]) error {
-	f.record(req.Header())
+func (f *fake) Watch(ctx context.Context, req *ermite.WatchRequest, st ermiteconnect.EventServiceWatchServerStream) error {
+	info, _ := connect.CallInfoForServerContext(ctx)
+	f.record(info.RequestHeader())
 	return f.watch(ctx, req, st)
 }
 
@@ -47,10 +54,20 @@ func (f *fake) Watch(ctx context.Context, req *connect.Request[ermite.WatchReque
 func start(t *testing.T, f *fake, cfg client.Config) *client.Client {
 	t.Helper()
 	mux := http.NewServeMux()
-	p, h := ermiteconnect.NewServerServiceHandler(f)
-	mux.Handle("/-/api"+p, http.StripPrefix("/-/api", h))
-	p, h = ermiteconnect.NewEventServiceHandler(f)
-	mux.Handle("/-/api"+p, http.StripPrefix("/-/api", h))
+	{
+		server := connect.NewServer()
+		ermiteconnect.RegisterServerServiceHandler(server, f)
+		sub := http.NewServeMux()
+		connecthttp.Mount(sub, server, connecthttp.WithReadMaxBytes(0))
+		mux.Handle("/-/api/ermite.ServerService/", http.StripPrefix("/-/api", sub))
+	}
+	{
+		server := connect.NewServer()
+		ermiteconnect.RegisterEventServiceHandler(server, f)
+		sub := http.NewServeMux()
+		connecthttp.Mount(sub, server, connecthttp.WithReadMaxBytes(0))
+		mux.Handle("/-/api/ermite.EventService/", http.StripPrefix("/-/api", sub))
+	}
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	cfg.URL = srv.URL

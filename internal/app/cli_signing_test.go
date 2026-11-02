@@ -3,13 +3,12 @@
 package app
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -133,9 +132,9 @@ func TestSigningKeyTrustAdd(t *testing.T) {
 			err  error
 			want string
 		}{
-			"not the owner": {connect.NewError(connect.CodePermissionDenied, errors.New("owner only")), "permission denied"},
-			"duplicate":     {connect.NewError(connect.CodeAlreadyExists, errors.New("key is already trusted")), "already exists"},
-			"invalid":       {connect.NewError(connect.CodeInvalidArgument, errors.New("not a public key")), "not a public key"},
+			"not the owner": {connect.NewError(connect.CodePermissionDenied, "owner only"), "permission denied"},
+			"duplicate":     {connect.NewError(connect.CodeAlreadyExists, "key is already trusted"), "already exists"},
+			"invalid":       {connect.NewError(connect.CodeInvalidArgument, "not a public key"), "not a public key"},
 		} {
 			f := &fakeAPI{getVersion: withCommitSignatures, addTrustedKey: func(*ermite.AddTrustedKeyRequest) (*ermite.AddTrustedKeyResponse, error) { return nil, tt.err }}
 			res := runCLI(t, envFor(f.serve(t)), testSSHKey, "signing-key", "trust", "add", "--format", "ssh", "--title", "t", "--email", "a@b.c", "-")
@@ -156,7 +155,7 @@ func TestSigningKeyTrustRemove(t *testing.T) {
 	assert.Contains(t, res.stderr, "removed trusted key SHA256:abc")
 
 	f = &fakeAPI{getVersion: withCommitSignatures, removeTrustedKey: func(*ermite.RemoveTrustedKeyRequest) (*ermite.RemoveTrustedKeyResponse, error) {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the builtin key cannot be removed"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "the builtin key cannot be removed")
 	}}
 	res = runCLI(t, envFor(f.serve(t)), "", "signing-key", "trust", "remove", "SHA256:builtin")
 	require.Error(t, res.err)
@@ -176,7 +175,7 @@ func TestSigningKeyTrustNeedsServerFeature(t *testing.T) {
 		}, "does not support commit_signatures"},
 		{"version unreadable", nil, "does not implement this call"},
 		{"server unavailable", func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
-			return nil, connect.NewError(connect.CodeUnavailable, errors.New("connection refused"))
+			return nil, connect.NewError(connect.CodeUnavailable, "connection refused")
 		}, "cannot reach the server"},
 	} {
 		for _, args := range [][]string{

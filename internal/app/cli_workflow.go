@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -68,13 +67,13 @@ func newWorkflowRunCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Runs().DispatchWorkflow(env.ctx(cmd), connect.NewRequest(&ermite.DispatchWorkflowRequest{
+		res, err := c.Runs().DispatchWorkflow(env.ctx(cmd), &ermite.DispatchWorkflowRequest{
 			Repo: repo, WorkflowPath: args[0], Ref: ref, Inputs: inputs,
-		}))
+		})
 		if err != nil {
 			return err
 		}
-		run := res.Msg.GetRun()
+		run := res.GetRun()
 		if *asJSON {
 			return writeJSON(cmd.OutOrStdout(), toJSONRun(run))
 		}
@@ -117,11 +116,11 @@ func newWorkflowListCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Runs().ListWorkflows(env.ctx(cmd), connect.NewRequest(&ermite.ListWorkflowsRequest{Repo: args[0]}))
+		res, err := c.Runs().ListWorkflows(env.ctx(cmd), &ermite.ListWorkflowsRequest{Repo: args[0]})
 		if err != nil {
 			return c.Describe(err)
 		}
-		list := res.Msg.GetWorkflows()
+		list := res.GetWorkflows()
 		if *asJSON {
 			out := make([]jsonWorkflow, 0, len(list))
 			for _, w := range list {
@@ -157,11 +156,11 @@ func newWorkflowDisableCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Runs().DisableWorkflow(env.ctx(cmd), connect.NewRequest(&ermite.DisableWorkflowRequest{Repo: args[0], Workflow: args[1]}))
+		res, err := c.Runs().DisableWorkflow(env.ctx(cmd), &ermite.DisableWorkflowRequest{Repo: args[0], Workflow: args[1]})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return printWorkflowState(cmd, *asJSON, args[0], res.Msg.GetWorkflow(), "disabled")
+		return printWorkflowState(cmd, *asJSON, args[0], res.GetWorkflow(), "disabled")
 	}
 	return cmd
 }
@@ -181,11 +180,11 @@ func newWorkflowEnableCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Runs().EnableWorkflow(env.ctx(cmd), connect.NewRequest(&ermite.EnableWorkflowRequest{Repo: args[0], Workflow: args[1]}))
+		res, err := c.Runs().EnableWorkflow(env.ctx(cmd), &ermite.EnableWorkflowRequest{Repo: args[0], Workflow: args[1]})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return printWorkflowState(cmd, *asJSON, args[0], res.Msg.GetWorkflow(), "enabled")
+		return printWorkflowState(cmd, *asJSON, args[0], res.GetWorkflow(), "enabled")
 	}
 	return cmd
 }

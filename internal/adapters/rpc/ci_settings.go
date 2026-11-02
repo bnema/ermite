@@ -5,8 +5,6 @@ package rpc
 import (
 	"context"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -66,24 +64,24 @@ func environmentToPB(e domain.Environment) *pb.Environment {
 // procedures only.
 type secretService struct{ secrets ports.SecretService }
 
-func (s *secretService) SetSecret(ctx context.Context, req *connect.Request[pb.SetSecretRequest]) (*connect.Response[pb.SetSecretResponse], error) {
-	scope, err := settingsScopeFromPB(req.Msg.GetScope())
+func (s *secretService) SetSecret(ctx context.Context, req *pb.SetSecretRequest) (*pb.SetSecretResponse, error) {
+	scope, err := settingsScopeFromPB(req.GetScope())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	sec, err := s.secrets.SetSecret(ctx, caller(ctx), scope, req.Msg.GetName(), req.Msg.GetValue())
+	sec, err := s.secrets.SetSecret(ctx, caller(ctx), scope, req.GetName(), req.GetValue())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.SetSecretResponse{Secret: secretToPB(sec)}), nil
+	return &pb.SetSecretResponse{Secret: secretToPB(sec)}, nil
 }
 
-func (s *secretService) ListSecrets(ctx context.Context, req *connect.Request[pb.ListSecretsRequest]) (*connect.Response[pb.ListSecretsResponse], error) {
-	scope, err := settingsScopeFromPB(req.Msg.GetScope())
+func (s *secretService) ListSecrets(ctx context.Context, req *pb.ListSecretsRequest) (*pb.ListSecretsResponse, error) {
+	scope, err := settingsScopeFromPB(req.GetScope())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	page, err := s.secrets.ListSecrets(ctx, caller(ctx), scope, int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+	page, err := s.secrets.ListSecrets(ctx, caller(ctx), scope, int(req.GetPageSize()), req.GetPageToken())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -91,53 +89,53 @@ func (s *secretService) ListSecrets(ctx context.Context, req *connect.Request[pb
 	for _, x := range page.Secrets {
 		out.Secrets = append(out.Secrets, secretToPB(x))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *secretService) DeleteSecret(ctx context.Context, req *connect.Request[pb.DeleteSecretRequest]) (*connect.Response[pb.DeleteSecretResponse], error) {
-	scope, err := settingsScopeFromPB(req.Msg.GetScope())
+func (s *secretService) DeleteSecret(ctx context.Context, req *pb.DeleteSecretRequest) (*pb.DeleteSecretResponse, error) {
+	scope, err := settingsScopeFromPB(req.GetScope())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	if err := s.secrets.DeleteSecret(ctx, caller(ctx), scope, req.Msg.GetName()); err != nil {
+	if err := s.secrets.DeleteSecret(ctx, caller(ctx), scope, req.GetName()); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteSecretResponse{}), nil
+	return &pb.DeleteSecretResponse{}, nil
 }
 
 // variableService implements ermiteconnect.VariableServiceHandler.
 type variableService struct{ vars ports.VariableService }
 
-func (s *variableService) SetVariable(ctx context.Context, req *connect.Request[pb.SetVariableRequest]) (*connect.Response[pb.SetVariableResponse], error) {
-	scope, err := settingsScopeFromPB(req.Msg.GetScope())
+func (s *variableService) SetVariable(ctx context.Context, req *pb.SetVariableRequest) (*pb.SetVariableResponse, error) {
+	scope, err := settingsScopeFromPB(req.GetScope())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	v, err := s.vars.SetVariable(ctx, caller(ctx), scope, req.Msg.GetName(), req.Msg.GetValue())
+	v, err := s.vars.SetVariable(ctx, caller(ctx), scope, req.GetName(), req.GetValue())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.SetVariableResponse{Variable: variableToPB(v)}), nil
+	return &pb.SetVariableResponse{Variable: variableToPB(v)}, nil
 }
 
-func (s *variableService) GetVariable(ctx context.Context, req *connect.Request[pb.GetVariableRequest]) (*connect.Response[pb.GetVariableResponse], error) {
-	scope, err := settingsScopeFromPB(req.Msg.GetScope())
+func (s *variableService) GetVariable(ctx context.Context, req *pb.GetVariableRequest) (*pb.GetVariableResponse, error) {
+	scope, err := settingsScopeFromPB(req.GetScope())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	v, err := s.vars.GetVariable(ctx, caller(ctx), scope, req.Msg.GetName())
+	v, err := s.vars.GetVariable(ctx, caller(ctx), scope, req.GetName())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.GetVariableResponse{Variable: variableToPB(v)}), nil
+	return &pb.GetVariableResponse{Variable: variableToPB(v)}, nil
 }
 
-func (s *variableService) ListVariables(ctx context.Context, req *connect.Request[pb.ListVariablesRequest]) (*connect.Response[pb.ListVariablesResponse], error) {
-	scope, err := settingsScopeFromPB(req.Msg.GetScope())
+func (s *variableService) ListVariables(ctx context.Context, req *pb.ListVariablesRequest) (*pb.ListVariablesResponse, error) {
+	scope, err := settingsScopeFromPB(req.GetScope())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	page, err := s.vars.ListVariables(ctx, caller(ctx), scope, int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+	page, err := s.vars.ListVariables(ctx, caller(ctx), scope, int(req.GetPageSize()), req.GetPageToken())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -145,41 +143,41 @@ func (s *variableService) ListVariables(ctx context.Context, req *connect.Reques
 	for _, x := range page.Variables {
 		out.Variables = append(out.Variables, variableToPB(x))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *variableService) DeleteVariable(ctx context.Context, req *connect.Request[pb.DeleteVariableRequest]) (*connect.Response[pb.DeleteVariableResponse], error) {
-	scope, err := settingsScopeFromPB(req.Msg.GetScope())
+func (s *variableService) DeleteVariable(ctx context.Context, req *pb.DeleteVariableRequest) (*pb.DeleteVariableResponse, error) {
+	scope, err := settingsScopeFromPB(req.GetScope())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	if err := s.vars.DeleteVariable(ctx, caller(ctx), scope, req.Msg.GetName()); err != nil {
+	if err := s.vars.DeleteVariable(ctx, caller(ctx), scope, req.GetName()); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteVariableResponse{}), nil
+	return &pb.DeleteVariableResponse{}, nil
 }
 
 // environmentService implements ermiteconnect.EnvironmentServiceHandler.
 type environmentService struct{ envs ports.EnvironmentService }
 
-func (s *environmentService) CreateEnvironment(ctx context.Context, req *connect.Request[pb.CreateEnvironmentRequest]) (*connect.Response[pb.CreateEnvironmentResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *environmentService) CreateEnvironment(ctx context.Context, req *pb.CreateEnvironmentRequest) (*pb.CreateEnvironmentResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	e, err := s.envs.CreateEnvironment(ctx, caller(ctx), repo, req.Msg.GetName())
+	e, err := s.envs.CreateEnvironment(ctx, caller(ctx), repo, req.GetName())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.CreateEnvironmentResponse{Environment: environmentToPB(e)}), nil
+	return &pb.CreateEnvironmentResponse{Environment: environmentToPB(e)}, nil
 }
 
-func (s *environmentService) ListEnvironments(ctx context.Context, req *connect.Request[pb.ListEnvironmentsRequest]) (*connect.Response[pb.ListEnvironmentsResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *environmentService) ListEnvironments(ctx context.Context, req *pb.ListEnvironmentsRequest) (*pb.ListEnvironmentsResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	page, err := s.envs.ListEnvironments(ctx, caller(ctx), repo, int(req.Msg.GetPageSize()), req.Msg.GetPageToken())
+	page, err := s.envs.ListEnvironments(ctx, caller(ctx), repo, int(req.GetPageSize()), req.GetPageToken())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -187,16 +185,16 @@ func (s *environmentService) ListEnvironments(ctx context.Context, req *connect.
 	for _, x := range page.Environments {
 		out.Environments = append(out.Environments, environmentToPB(x))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *environmentService) DeleteEnvironment(ctx context.Context, req *connect.Request[pb.DeleteEnvironmentRequest]) (*connect.Response[pb.DeleteEnvironmentResponse], error) {
-	repo, err := repoOf(req.Msg.GetRepo())
+func (s *environmentService) DeleteEnvironment(ctx context.Context, req *pb.DeleteEnvironmentRequest) (*pb.DeleteEnvironmentResponse, error) {
+	repo, err := repoOf(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	if err := s.envs.DeleteEnvironment(ctx, caller(ctx), repo, req.Msg.GetName()); err != nil {
+	if err := s.envs.DeleteEnvironment(ctx, caller(ctx), repo, req.GetName()); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.DeleteEnvironmentResponse{}), nil
+	return &pb.DeleteEnvironmentResponse{}, nil
 }

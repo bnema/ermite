@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -132,11 +131,11 @@ func newIssueCmd(env *cliEnv) *cobra.Command {
 var errNoIssues = errors.New("issues are not available")
 
 func requireIssues(ctx context.Context, c *client.Client) error {
-	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
 	if err != nil {
 		return c.Describe(err)
 	}
-	if !slices.Contains(res.Msg.GetFeatures(), client.FeatureIssues) {
+	if !slices.Contains(res.GetFeatures(), client.FeatureIssues) {
 		return fmt.Errorf("%w: the server does not support %s, so it has no issues (upgrade the server, see `ermite version`)", errNoIssues, client.FeatureIssues)
 	}
 	return nil
@@ -191,13 +190,13 @@ func completeIssueRepoThenNumber(env *cliEnv) func(*cobra.Command, []string, str
 
 func listIssues(ctx context.Context, c *client.Client, repo string, state ermite.IssueState) ([]*ermite.Issue, error) {
 	return collect(ctx, func(token string) ([]*ermite.Issue, string, error) {
-		res, err := c.Issues().ListIssues(ctx, connect.NewRequest(&ermite.ListIssuesRequest{
+		res, err := c.Issues().ListIssues(ctx, &ermite.ListIssuesRequest{
 			Repo: repo, State: state, PageToken: token,
-		}))
+		})
 		if err != nil {
 			return nil, "", c.Describe(err)
 		}
-		return res.Msg.GetIssues(), res.Msg.GetNextPageToken(), nil
+		return res.GetIssues(), res.GetNextPageToken(), nil
 	})
 }
 
@@ -242,13 +241,13 @@ func newIssueCreateCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Issues().CreateIssue(env.ctx(cmd), connect.NewRequest(&ermite.CreateIssueRequest{
+		res, err := c.Issues().CreateIssue(env.ctx(cmd), &ermite.CreateIssueRequest{
 			Repo: args[0], Title: title, Body: text,
-		}))
+		})
 		if err != nil {
 			return c.Describe(err)
 		}
-		return outputIssue(cmd, res.Msg.GetIssue(), *asJSON, "opened", c.URL())
+		return outputIssue(cmd, res.GetIssue(), *asJSON, "opened", c.URL())
 	}
 	return cmd
 }
@@ -325,24 +324,24 @@ func newIssueShowCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Issues().GetIssue(env.ctx(cmd), connect.NewRequest(&ermite.GetIssueRequest{Repo: args[0], Number: n}))
+		res, err := c.Issues().GetIssue(env.ctx(cmd), &ermite.GetIssueRequest{Repo: args[0], Number: n})
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			out := jsonIssueDetail{jsonIssue: toJSONIssue(res.Msg.GetIssue(), c.URL()), Comments: []jsonIssueComment{}, Events: toJSONIssueEvents(res.Msg.GetEvents())}
-			for _, cm := range res.Msg.GetComments() {
+			out := jsonIssueDetail{jsonIssue: toJSONIssue(res.GetIssue(), c.URL()), Comments: []jsonIssueComment{}, Events: toJSONIssueEvents(res.GetEvents())}
+			for _, cm := range res.GetComments() {
 				out.Comments = append(out.Comments, toJSONIssueComment(cm))
 			}
 			out.References = []jsonIssueReference{}
-			for _, r := range res.Msg.GetReferences() {
+			for _, r := range res.GetReferences() {
 				out.References = append(out.References, jsonIssueReference{
 					Number: r.GetNumber(), Title: r.GetTitle(), State: stateName(r.GetState()), Closes: r.GetCloses(),
 				})
 			}
 			return writeJSON(cmd.OutOrStdout(), out)
 		}
-		return printIssueDetail(cmd.OutOrStdout(), res.Msg)
+		return printIssueDetail(cmd.OutOrStdout(), res)
 	}
 	return cmd
 }
@@ -435,16 +434,16 @@ func newIssueCommentCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Issues().AddIssueComment(env.ctx(cmd), connect.NewRequest(&ermite.AddIssueCommentRequest{
+		res, err := c.Issues().AddIssueComment(env.ctx(cmd), &ermite.AddIssueCommentRequest{
 			Repo: args[0], Number: n, Text: text,
-		}))
+		})
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONIssueComment(res.Msg.GetComment()))
+			return writeJSON(cmd.OutOrStdout(), toJSONIssueComment(res.GetComment()))
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "comment %s added to %s#%d\n", res.Msg.GetComment().GetId(), clean(args[0]), n)
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "comment %s added to %s#%d\n", res.GetComment().GetId(), clean(args[0]), n)
 		return err
 	}
 	return cmd
@@ -453,11 +452,11 @@ func newIssueCommentCmd(env *cliEnv) *cobra.Command {
 func newIssueCloseCmd(env *cliEnv) *cobra.Command {
 	return newIssueStateCmd(env, "close", "closed", "Close an issue", "Close an open issue. `ermite issue reopen` opens it again. Needs the issue:write scope.",
 		func(ctx context.Context, c *client.Client, repo string, n int64) (*ermite.Issue, error) {
-			res, err := c.Issues().CloseIssue(ctx, connect.NewRequest(&ermite.CloseIssueRequest{Repo: repo, Number: n}))
+			res, err := c.Issues().CloseIssue(ctx, &ermite.CloseIssueRequest{Repo: repo, Number: n})
 			if err != nil {
 				return nil, err
 			}
-			return res.Msg.GetIssue(), nil
+			return res.GetIssue(), nil
 		})
 }
 
@@ -467,22 +466,22 @@ func newIssueResolveCmd(env *cliEnv) *cobra.Command {
 			if err := requireFeature(ctx, c, "issues.resolve", "cannot resolve issues (issue resolve)"); err != nil {
 				return nil, err
 			}
-			res, err := c.Issues().ResolveIssue(ctx, connect.NewRequest(&ermite.ResolveIssueRequest{Repo: repo, Number: n}))
+			res, err := c.Issues().ResolveIssue(ctx, &ermite.ResolveIssueRequest{Repo: repo, Number: n})
 			if err != nil {
 				return nil, err
 			}
-			return res.Msg.GetIssue(), nil
+			return res.GetIssue(), nil
 		})
 }
 
 func newIssueReopenCmd(env *cliEnv) *cobra.Command {
 	return newIssueStateCmd(env, "reopen", "reopened", "Reopen a closed or resolved issue", "Reopen a closed or resolved issue. Needs the issue:write scope.",
 		func(ctx context.Context, c *client.Client, repo string, n int64) (*ermite.Issue, error) {
-			res, err := c.Issues().ReopenIssue(ctx, connect.NewRequest(&ermite.ReopenIssueRequest{Repo: repo, Number: n}))
+			res, err := c.Issues().ReopenIssue(ctx, &ermite.ReopenIssueRequest{Repo: repo, Number: n})
 			if err != nil {
 				return nil, err
 			}
-			return res.Msg.GetIssue(), nil
+			return res.GetIssue(), nil
 		})
 }
 

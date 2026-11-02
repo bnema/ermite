@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -49,15 +48,15 @@ func newWebLoginCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Sessions().CreateLoginLink(env.ctx(cmd), connect.NewRequest(&ermite.CreateLoginLinkRequest{}))
+		res, err := c.Sessions().CreateLoginLink(env.ctx(cmd), &ermite.CreateLoginLinkRequest{})
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), jsonLoginLink{URL: res.Msg.GetUrl(), ExpiresAt: jsonTime(res.Msg.GetExpiresAt())})
+			return writeJSON(cmd.OutOrStdout(), jsonLoginLink{URL: res.GetUrl(), ExpiresAt: jsonTime(res.GetExpiresAt())})
 		}
-		noticef(cmd, "open this link in your browser; it works once, until %s UTC", shortTime(res.Msg.GetExpiresAt(), "shortly"))
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), res.Msg.GetUrl())
+		noticef(cmd, "open this link in your browser; it works once, until %s UTC", shortTime(res.GetExpiresAt(), "shortly"))
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), res.GetUrl())
 		return err
 	}
 	return cmd
@@ -81,7 +80,7 @@ func newWebLogoutCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if _, err := c.Sessions().SignOutEverywhere(env.ctx(cmd), connect.NewRequest(&ermite.SignOutEverywhereRequest{})); err != nil {
+		if _, err := c.Sessions().SignOutEverywhere(env.ctx(cmd), &ermite.SignOutEverywhereRequest{}); err != nil {
 			return c.Describe(err)
 		}
 		noticef(cmd, "every web session is signed out")
@@ -113,11 +112,11 @@ func newWebPasskeyCmd(env *cliEnv) *cobra.Command {
 }
 
 func listPasskeys(ctx context.Context, c *client.Client) ([]*ermite.Passkey, error) {
-	res, err := c.Sessions().ListPasskeys(ctx, connect.NewRequest(&ermite.ListPasskeysRequest{}))
+	res, err := c.Sessions().ListPasskeys(ctx, &ermite.ListPasskeysRequest{})
 	if err != nil {
 		return nil, c.Describe(err)
 	}
-	return res.Msg.GetPasskeys(), nil
+	return res.GetPasskeys(), nil
 }
 
 func newWebPasskeyListCmd(env *cliEnv) *cobra.Command {
@@ -189,7 +188,7 @@ func newWebPasskeyRemoveCmd(env *cliEnv) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := c.Sessions().RemovePasskey(env.ctx(cmd), connect.NewRequest(&ermite.RemovePasskeyRequest{Id: args[0]})); err != nil {
+			if _, err := c.Sessions().RemovePasskey(env.ctx(cmd), &ermite.RemovePasskeyRequest{Id: args[0]}); err != nil {
 				return c.Describe(err)
 			}
 			noticef(cmd, "passkey removed; every browser is signed out")

@@ -9,7 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 )
@@ -21,7 +22,7 @@ type Client struct {
 	cfg  Config
 	base string
 	http *http.Client
-	opts []connect.ClientOption
+	opts []connect.ClientInterceptor
 }
 
 // New builds a Client from a validated configuration.
@@ -43,7 +44,7 @@ func New(cfg Config) (*Client, error) {
 		cfg:  cfg,
 		base: u.JoinPath(APIPath).String(),
 		http: hc,
-		opts: []connect.ClientOption{connect.WithInterceptors(headers{token: cfg.Token, agent: cfg.UserAgent, timeout: cfg.Timeout})},
+		opts: []connect.ClientInterceptor{headers{token: cfg.Token, agent: cfg.UserAgent, timeout: cfg.Timeout}.intercept},
 	}, nil
 }
 
@@ -62,87 +63,87 @@ func (c *Client) URL() string { return c.cfg.URL }
 
 // Mirrors returns the MirrorService client.
 func (c *Client) Mirrors() ermiteconnect.MirrorServiceClient {
-	return ermiteconnect.NewMirrorServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewMirrorServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Repos returns the RepoService client.
 func (c *Client) Repos() ermiteconnect.RepoServiceClient {
-	return ermiteconnect.NewRepoServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewRepoServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Deps returns the DepsService client.
 func (c *Client) Deps() ermiteconnect.DepsServiceClient {
-	return ermiteconnect.NewDepsServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewDepsServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Journal returns the JournalService client.
 func (c *Client) Journal() ermiteconnect.JournalServiceClient {
-	return ermiteconnect.NewJournalServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewJournalServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Runs returns the RunService client.
 func (c *Client) Runs() ermiteconnect.RunServiceClient {
-	return ermiteconnect.NewRunServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewRunServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Artifacts returns the ArtifactService client.
 func (c *Client) Artifacts() ermiteconnect.ArtifactServiceClient {
-	return ermiteconnect.NewArtifactServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewArtifactServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Releases returns the ReleaseService client.
 func (c *Client) Releases() ermiteconnect.ReleaseServiceClient {
-	return ermiteconnect.NewReleaseServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewReleaseServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Tokens returns the TokenService client.
 func (c *Client) Tokens() ermiteconnect.TokenServiceClient {
-	return ermiteconnect.NewTokenServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewTokenServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Sessions returns the SessionService client.
 func (c *Client) Sessions() ermiteconnect.SessionServiceClient {
-	return ermiteconnect.NewSessionServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewSessionServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Events returns the EventService client.
 func (c *Client) Events() ermiteconnect.EventServiceClient {
-	return ermiteconnect.NewEventServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewEventServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // MergeRequests returns the MergeRequestService client.
 func (c *Client) MergeRequests() ermiteconnect.MergeRequestServiceClient {
-	return ermiteconnect.NewMergeRequestServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewMergeRequestServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Issues returns the IssueService client.
 func (c *Client) Issues() ermiteconnect.IssueServiceClient {
-	return ermiteconnect.NewIssueServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewIssueServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Secrets returns the SecretService client.
 func (c *Client) Secrets() ermiteconnect.SecretServiceClient {
-	return ermiteconnect.NewSecretServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewSecretServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Variables returns the VariableService client.
 func (c *Client) Variables() ermiteconnect.VariableServiceClient {
-	return ermiteconnect.NewVariableServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewVariableServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Environments returns the EnvironmentService client.
 func (c *Client) Environments() ermiteconnect.EnvironmentServiceClient {
-	return ermiteconnect.NewEnvironmentServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewEnvironmentServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // TrustedKeys returns the TrustedKeyService client.
 func (c *Client) TrustedKeys() ermiteconnect.TrustedKeyServiceClient {
-	return ermiteconnect.NewTrustedKeyServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewTrustedKeyServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // Server returns the ServerService client.
 func (c *Client) Server() ermiteconnect.ServerServiceClient {
-	return ermiteconnect.NewServerServiceClient(c.http, c.base, c.opts...)
+	return ermiteconnect.NewServerServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
 // headers sets the credentials and the user agent on every call and bounds the
@@ -153,7 +154,7 @@ type headers struct {
 	timeout time.Duration
 }
 
-func (h headers) set(hd http.Header) {
+func (h headers) set(hd *connect.Header) {
 	if h.token != "" {
 		hd.Set("Authorization", "Bearer "+h.token)
 	}
@@ -162,28 +163,31 @@ func (h headers) set(hd http.Header) {
 	}
 }
 
-func (h headers) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
-	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		if req.Spec().IsClient {
-			h.set(req.Header())
-			if h.timeout > 0 {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, h.timeout)
-				defer cancel()
+func (h headers) intercept(next connect.ClientFunc) connect.ClientFunc {
+	return func(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
+		ctx, info := connect.NewClientContext(ctx)
+		h.set(info.RequestHeader())
+		var cancel context.CancelFunc
+		if spec.StreamType == connect.StreamTypeUnary && h.timeout > 0 {
+			ctx, cancel = context.WithTimeout(ctx, h.timeout)
+		}
+		stream, err := next(ctx, spec)
+		if cancel != nil {
+			if err != nil {
+				cancel()
+			} else {
+				stream = &timedStream{ClientStream: stream, cancel: cancel}
 			}
 		}
-		return next(ctx, req)
+		return stream, err
 	}
 }
 
-func (h headers) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
-		conn := next(ctx, spec)
-		h.set(conn.RequestHeader())
-		return conn
-	}
+// timedStream retains the unary deadline until the response has been read.
+type timedStream struct {
+	connect.ClientStream
+	cancel context.CancelFunc
 }
 
-func (headers) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return next
-}
+func (s *timedStream) Receive(msg any) error { defer s.cancel(); return s.ClientStream.Receive(msg) }
+func (s *timedStream) Close() error          { defer s.cancel(); return s.ClientStream.Close() }

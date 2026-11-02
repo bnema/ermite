@@ -3,14 +3,16 @@
 package app
 
 import (
+	"connectrpc.com/connect/v2/connectproto"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -79,11 +81,11 @@ func (c *ciHarness) push(branch string, files map[string]string, msg string) str
 // registerRunner registers a runner and returns a fake that polls with it.
 func (c *ciHarness) registerRunner(name string, labels ...string) *fakeRunner {
 	c.t.Helper()
-	res, err := c.root.runner.RegisterRunner(c.ctx, connect.NewRequest(&pb.RegisterRunnerRequest{
+	res, err := c.root.runner.RegisterRunner(c.ctx, &pb.RegisterRunnerRequest{
 		Name: name, Labels: labels, Version: "devel", Isolation: pb.RunnerIsolation_RUNNER_ISOLATION_VM, Arch: "x64", Os: "linux",
-	}))
+	})
 	require.NoError(c.t, err)
-	return &fakeRunner{c: c, id: res.Msg.GetRunnerId(), secret: res.Msg.GetRunnerToken(), api: c.api(res.Msg.GetRunnerToken())}
+	return &fakeRunner{c: c, id: res.GetRunnerId(), secret: res.GetRunnerToken(), api: c.api(res.GetRunnerToken())}
 }
 
 // fakeRunner is the runner side of the protocol, as a test.
@@ -99,11 +101,11 @@ func (c *ciHarness) runnerSecret(r *fakeRunner) string { return r.secret }
 
 // fetch polls once for a job.
 func (r *fakeRunner) fetch(pollID string) (*pb.Job, error) {
-	res, err := r.api.runner.FetchJob(r.c.ctx, connect.NewRequest(&pb.FetchJobRequest{PollId: pollID}))
+	res, err := r.api.runner.FetchJob(r.c.ctx, &pb.FetchJobRequest{PollId: pollID})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg.GetJob(), nil
+	return res.GetJob(), nil
 }
 
 // await polls until a job is given.
@@ -130,34 +132,34 @@ func now() *timestamppb.Timestamp { return timestamppb.Now() }
 func (r *fakeRunner) runJob(j *pb.Job, conclusion pb.CiConclusion, outputs map[string]string, text ...string) {
 	r.c.t.Helper()
 	ctx, api := r.c.ctx, r.jobAPI(j)
-	_, err := api.runner.Heartbeat(ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: j.GetJobId()}))
+	_, err := api.runner.Heartbeat(ctx, &pb.HeartbeatRequest{JobId: j.GetJobId()})
 	require.NoError(r.c.t, err)
 	start := now()
-	_, err = api.runner.UpdateJob(ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: j.GetJobId(), Steps: []*pb.StepUpdate{
+	_, err = api.runner.UpdateJob(ctx, &pb.UpdateJobRequest{JobId: j.GetJobId(), Steps: []*pb.StepUpdate{
 		{Number: 1, Name: "Set up job", State: pb.StepState_STEP_STATE_IN_PROGRESS, StartedAt: start},
-	}}))
+	}})
 	require.NoError(r.c.t, err)
 	var lines []*pb.LogLine
 	for _, t := range text {
 		lines = append(lines, &pb.LogLine{Time: now(), Text: t})
 	}
 	if len(lines) > 0 {
-		_, err = api.runner.AppendLog(ctx, connect.NewRequest(&pb.AppendLogRequest{JobId: j.GetJobId(), Step: 2, Offset: 0, Lines: lines}))
+		_, err = api.runner.AppendLog(ctx, &pb.AppendLogRequest{JobId: j.GetJobId(), Step: 2, Offset: 0, Lines: lines})
 		require.NoError(r.c.t, err)
 	}
 	step := pb.CiConclusion_CI_CONCLUSION_SUCCESS
 	if conclusion != pb.CiConclusion_CI_CONCLUSION_SUCCESS {
 		step = conclusion
 	}
-	res, err := api.runner.CompleteJob(ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	res, err := api.runner.CompleteJob(ctx, &pb.CompleteJobRequest{
 		JobId: j.GetJobId(), Conclusion: conclusion, Outputs: outputs,
 		Steps: []*pb.StepUpdate{
 			{Number: 1, Name: "Set up job", State: pb.StepState_STEP_STATE_COMPLETED, Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, StartedAt: start, CompletedAt: now()},
 			{Number: 2, Name: "Run echo", State: pb.StepState_STEP_STATE_COMPLETED, Conclusion: step, StartedAt: start, CompletedAt: now()},
 		},
-	}))
+	})
 	require.NoError(r.c.t, err)
-	assert.True(r.c.t, res.Msg.GetApplied())
+	assert.True(r.c.t, res.GetApplied())
 }
 
 // waitFor polls cond until it holds.
@@ -168,23 +170,23 @@ func (c *ciHarness) waitFor(what string, cond func() bool) {
 
 func (c *ciHarness) runs() []*pb.Run {
 	c.t.Helper()
-	res, err := c.root.run.ListRuns(c.ctx, connect.NewRequest(&pb.ListRunsRequest{Repo: c.repo}))
+	res, err := c.root.run.ListRuns(c.ctx, &pb.ListRunsRequest{Repo: c.repo})
 	require.NoError(c.t, err)
-	return res.Msg.GetRuns()
+	return res.GetRuns()
 }
 
 func (c *ciHarness) checks(sha string) []*pb.Check {
 	c.t.Helper()
-	res, err := c.root.run.ListChecks(c.ctx, connect.NewRequest(&pb.ListChecksRequest{Repo: c.repo, Sha: sha}))
+	res, err := c.root.run.ListChecks(c.ctx, &pb.ListChecksRequest{Repo: c.repo, Sha: sha})
 	require.NoError(c.t, err)
-	return res.Msg.GetChecks()
+	return res.GetChecks()
 }
 
 func (c *ciHarness) getRun(id int64) *pb.GetRunResponse {
 	c.t.Helper()
-	res, err := c.root.run.GetRun(c.ctx, connect.NewRequest(&pb.GetRunRequest{Repo: c.repo, RunId: id}))
+	res, err := c.root.run.GetRun(c.ctx, &pb.GetRunRequest{Repo: c.repo, RunId: id})
 	require.NoError(c.t, err)
-	return res.Msg
+	return res
 }
 
 func ciErrCode(err error) connect.Code {
@@ -258,16 +260,25 @@ func TestCIPushRunsAWorkflowOnARunner(t *testing.T) {
 	assert.EqualValues(t, 2, steps[1].GetLogEnd())
 
 	// The log is streamed back with its steps.
-	stream, err := c.root.run.GetJobLog(c.ctx, connect.NewRequest(&pb.GetJobLogRequest{Repo: "proj", JobId: job.GetJobId()}))
+	stream, err := c.root.run.GetJobLog(c.ctx, &pb.GetJobLogRequest{Repo: "proj", JobId: job.GetJobId()})
 	require.NoError(t, err)
 	var got []string
-	for stream.Receive() {
-		for _, l := range stream.Msg().GetLines() {
+	var streamErr error
+	for {
+		msg, err := stream.Receive()
+		if err != nil {
+			streamErr = err
+			break
+		}
+		for _, l := range msg.GetLines() {
 			got = append(got, l.GetText())
 			assert.EqualValues(t, 2, l.GetStep())
 		}
 	}
-	require.NoError(t, stream.Err())
+	if errors.Is(streamErr, io.EOF) {
+		streamErr = nil
+	}
+	require.NoError(t, streamErr)
 	assert.Equal(t, []string{"hello", "world"}, got)
 }
 
@@ -279,10 +290,10 @@ func TestCIMergeIsBlockedByChecks(t *testing.T) {
 	c.push("main", map[string]string{"README": "x\n"}, "")
 
 	feat := c.push("feat", map[string]string{".github/workflows/ci.yml": strings.ReplaceAll(ciWorkflow, "  test:\n    needs: build\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo test\n", "")}, "")
-	mr, err := c.root.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "Add CI", SourceBranch: "feat"}))
+	mr, err := c.root.mr.CreateMergeRequest(c.ctx, &pb.CreateMergeRequestRequest{Repo: "proj", Title: "Add CI", SourceBranch: "feat"})
 	require.NoError(t, err)
 	merge := func() error {
-		_, err := c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: mr.Msg.GetMergeRequest().GetNumber(), HeadId: feat}))
+		_, err := c.root.mr.MergeMergeRequest(c.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: mr.GetMergeRequest().GetNumber(), HeadId: feat})
 		return err
 	}
 
@@ -304,7 +315,7 @@ func TestCIMergeIsBlockedByChecks(t *testing.T) {
 	assert.Contains(t, err.Error(), "failing checks block the merge")
 
 	// An explicit override by root allows the merge despite failure.
-	_, err = c.root.mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: mr.Msg.GetMergeRequest().GetNumber(), HeadId: feat, IgnoreChecks: true}))
+	_, err = c.root.mr.MergeMergeRequest(c.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: mr.GetMergeRequest().GetNumber(), HeadId: feat, IgnoreChecks: true})
 	require.NoError(t, err)
 }
 
@@ -318,38 +329,38 @@ func TestCIJobTokensAreScopedToTheirJob(t *testing.T) {
 	require.NotEqual(t, j1.GetJobId(), j2.GetJobId())
 
 	// Another job's id with this job's token: permission_denied.
-	_, err := runner.jobAPI(j1).runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: j2.GetJobId()}))
+	_, err := runner.jobAPI(j1).runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: j2.GetJobId()})
 	assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err))
 	// A runner token is not a job token, and a stored token is neither.
-	_, err = runner.api.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: j1.GetJobId()}))
+	_, err = runner.api.runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: j1.GetJobId()})
 	assert.Equal(t, connect.CodeUnauthenticated, ciErrCode(err))
-	_, err = c.root.runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: j1.GetJobId()}))
+	_, err = c.root.runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: j1.GetJobId()})
 	assert.Equal(t, connect.CodeUnauthenticated, ciErrCode(err))
 	// A job token does not poll.
-	_, err = runner.jobAPI(j1).runner.FetchJob(c.ctx, connect.NewRequest(&pb.FetchJobRequest{}))
+	_, err = runner.jobAPI(j1).runner.FetchJob(c.ctx, &pb.FetchJobRequest{})
 	assert.Equal(t, connect.CodeUnauthenticated, ciErrCode(err))
 
 	runner.runJob(j1, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "a")
 	// After the end: failed_precondition with the JobEnded detail; CompleteJob
 	// still answers with the stored result.
-	_, err = runner.jobAPI(j1).runner.AppendLog(c.ctx, connect.NewRequest(&pb.AppendLogRequest{
+	_, err = runner.jobAPI(j1).runner.AppendLog(c.ctx, &pb.AppendLogRequest{
 		JobId: j1.GetJobId(), Step: 2, Offset: 1, Lines: []*pb.LogLine{{Time: now(), Text: "late"}},
-	}))
+	})
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeFailedPrecondition, ciErrCode(err))
 	var ce *connect.Error
 	require.True(t, errors.As(err, &ce))
 	require.Len(t, ce.Details(), 1)
-	msg, derr := ce.Details()[0].Value()
+	msg, derr := connectproto.UnmarshalErrorDetail(ce.Details()[0])
 	require.NoError(t, derr)
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_SUCCESS, msg.(*pb.JobEnded).GetConclusion())
 
-	res, err := runner.jobAPI(j1).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	res, err := runner.jobAPI(j1).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 		JobId: j1.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_FAILURE,
-	}))
+	})
 	require.NoError(t, err)
-	assert.False(t, res.Msg.GetApplied(), "a second CompleteJob changes nothing")
-	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_SUCCESS, res.Msg.GetConclusion(), "and answers the stored conclusion")
+	assert.False(t, res.GetApplied(), "a second CompleteJob changes nothing")
+	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_SUCCESS, res.GetConclusion(), "and answers the stored conclusion")
 }
 
 // AC2: a job is given to exactly one runner, however many poll at once.
@@ -408,7 +419,7 @@ func TestCIUnacknowledgedAssignmentGoesBackToTheQueue(t *testing.T) {
 	second := runner.await()
 	assert.Equal(t, first.GetJobId(), second.GetJobId())
 	assert.NotEqual(t, first.GetJobToken(), second.GetJobToken())
-	_, err := runner.jobAPI(first).runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: first.GetJobId()}))
+	_, err := runner.jobAPI(first).runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: first.GetJobId()})
 	assert.Equal(t, connect.CodeUnauthenticated, ciErrCode(err), "the replaced token is rejected")
 
 	// The third assignment is the last: ignoring it fails the job.
@@ -446,6 +457,6 @@ func TestCIRetriedPollReturnsTheSameAssignment(t *testing.T) {
 func (c *ciHarness) disableAutoCancel() {
 	c.t.Helper()
 	enabled := false
-	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &enabled}))
+	_, err := c.root.repo.UpdateRepo(c.ctx, &pb.UpdateRepoRequest{Repo: c.repo, CiAutoCancel: &enabled})
 	require.NoError(c.t, err)
 }

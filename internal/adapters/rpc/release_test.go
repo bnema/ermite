@@ -5,12 +5,14 @@ package rpc
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -30,7 +32,7 @@ func releaseClient(t *testing.T, rel ports.ReleaseService) (ermiteconnect.Releas
 	srv.EnableHTTP2 = true
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
-	return ermiteconnect.NewReleaseServiceClient(srv.Client(), srv.URL), ermiteconnect.NewServerServiceClient(srv.Client(), srv.URL)
+	return ermiteconnect.NewReleaseServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL, connecthttp.WithReadMaxBytes(0)))), ermiteconnect.NewServerServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL, connecthttp.WithReadMaxBytes(0))))
 }
 
 func TestReleaseRPCUnary(t *testing.T) {
@@ -55,9 +57,9 @@ func TestReleaseRPCUnary(t *testing.T) {
 			case "create":
 				rel.EXPECT().CreateRelease(mock.Anything, p, repo, ports.CreateReleaseParams{Tag: "v1", TargetCommitish: "abc", Title: "title", Notes: "notes", Draft: true, Prerelease: true, MakeLatest: true}).Return(r, nil).Once()
 				hydrate()
-				res, err := c.CreateRelease(ctx, connect.NewRequest(&pb.CreateReleaseRequest{Repo: "demo", Tag: "v1", TargetCommitish: "abc", Title: "title", Notes: "notes", Draft: true, Prerelease: true, MakeLatest: true}))
+				res, err := c.CreateRelease(ctx, &pb.CreateReleaseRequest{Repo: "demo", Tag: "v1", TargetCommitish: "abc", Title: "title", Notes: "notes", Draft: true, Prerelease: true, MakeLatest: true})
 				require.NoError(t, err)
-				assert.True(t, proto.Equal(expected, res.Msg.GetRelease()))
+				assert.True(t, proto.Equal(expected, res.GetRelease()))
 			case "get id", "get tag", "get latest":
 				req := &pb.GetReleaseRequest{Repo: "demo"}
 				ref := ports.ReleaseRef{}
@@ -74,47 +76,47 @@ func TestReleaseRPCUnary(t *testing.T) {
 				}
 				rel.EXPECT().GetRelease(mock.Anything, p, repo, ref).Return(r, nil).Once()
 				hydrate()
-				res, err := c.GetRelease(ctx, connect.NewRequest(req))
+				res, err := c.GetRelease(ctx, req)
 				require.NoError(t, err)
-				assert.True(t, proto.Equal(expected, res.Msg.GetRelease()))
+				assert.True(t, proto.Equal(expected, res.GetRelease()))
 			case "list":
 				rel.EXPECT().ListReleases(mock.Anything, p, repo, 17, "cursor").Return(ports.ReleasePage{Releases: []domain.Release{r}, NextPageToken: "next"}, nil).Once()
 				hydrate()
-				res, err := c.ListReleases(ctx, connect.NewRequest(&pb.ListReleasesRequest{Repo: "demo", PageSize: 17, PageToken: "cursor"}))
+				res, err := c.ListReleases(ctx, &pb.ListReleasesRequest{Repo: "demo", PageSize: 17, PageToken: "cursor"})
 				require.NoError(t, err)
-				require.Len(t, res.Msg.Releases, 1)
-				assert.True(t, proto.Equal(expected, res.Msg.Releases[0]))
-				assert.Equal(t, "next", res.Msg.NextPageToken)
+				require.Len(t, res.Releases, 1)
+				assert.True(t, proto.Equal(expected, res.Releases[0]))
+				assert.Equal(t, "next", res.NextPageToken)
 			case "update":
 				rel.EXPECT().UpdateRelease(mock.Anything, p, repo, int64(7), ports.UpdateReleaseParams{Title: new(""), Draft: new(false)}).Return(r, nil).Once()
 				hydrate()
-				res, err := c.UpdateRelease(ctx, connect.NewRequest(&pb.UpdateReleaseRequest{Repo: "demo", Id: 7, Tag: "ignored", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"title", "draft"}}}))
+				res, err := c.UpdateRelease(ctx, &pb.UpdateReleaseRequest{Repo: "demo", Id: 7, Tag: "ignored", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"title", "draft"}}})
 				require.NoError(t, err)
-				assert.True(t, proto.Equal(expected, res.Msg.GetRelease()))
+				assert.True(t, proto.Equal(expected, res.GetRelease()))
 			case "delete":
 				rel.EXPECT().DeleteRelease(mock.Anything, p, repo, int64(7)).Return(nil).Once()
-				_, err := c.DeleteRelease(ctx, connect.NewRequest(&pb.DeleteReleaseRequest{Repo: "demo", Id: 7}))
+				_, err := c.DeleteRelease(ctx, &pb.DeleteReleaseRequest{Repo: "demo", Id: 7})
 				require.NoError(t, err)
 			case "update asset":
 				rel.EXPECT().UpdateAsset(mock.Anything, p, repo, int64(9), ports.UpdateAssetParams{Name: new("new.zip"), Label: new("")}).Return(a, nil).Once()
-				res, err := c.UpdateReleaseAsset(ctx, connect.NewRequest(&pb.UpdateReleaseAssetRequest{Repo: "demo", AssetId: 9, Name: "new.zip", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name", "label"}}}))
+				res, err := c.UpdateReleaseAsset(ctx, &pb.UpdateReleaseAssetRequest{Repo: "demo", AssetId: 9, Name: "new.zip", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name", "label"}}})
 				require.NoError(t, err)
-				assert.True(t, proto.Equal(assetToPB(a), res.Msg.GetAsset()))
+				assert.True(t, proto.Equal(assetToPB(a), res.GetAsset()))
 			case "delete asset":
 				rel.EXPECT().DeleteAsset(mock.Anything, p, repo, int64(9)).Return(nil).Once()
-				_, err := c.DeleteReleaseAsset(ctx, connect.NewRequest(&pb.DeleteReleaseAssetRequest{Repo: "demo", AssetId: 9}))
+				_, err := c.DeleteReleaseAsset(ctx, &pb.DeleteReleaseAssetRequest{Repo: "demo", AssetId: 9})
 				require.NoError(t, err)
 			case "list assets":
 				rel.EXPECT().ListAssets(mock.Anything, p, repo, int64(7)).Return([]domain.ReleaseAsset{a}, nil).Once()
-				res, err := c.ListReleaseAssets(ctx, connect.NewRequest(&pb.ListReleaseAssetsRequest{Repo: "demo", ReleaseId: 7}))
+				res, err := c.ListReleaseAssets(ctx, &pb.ListReleaseAssetsRequest{Repo: "demo", ReleaseId: 7})
 				require.NoError(t, err)
-				require.Len(t, res.Msg.Assets, 1)
-				assert.True(t, proto.Equal(assetToPB(a), res.Msg.Assets[0]))
+				require.Len(t, res.Assets, 1)
+				assert.True(t, proto.Equal(assetToPB(a), res.Assets[0]))
 			case "usage":
 				rel.EXPECT().Usage(mock.Anything, p, repo).Return(ports.ReleaseUsage{Used: 1, Limits: ports.ReleaseLimits{Quota: 2, AssetMax: 3, AssetsMax: 4}}, nil).Once()
-				res, err := c.GetReleaseUsage(ctx, connect.NewRequest(&pb.GetReleaseUsageRequest{Repo: "demo"}))
+				res, err := c.GetReleaseUsage(ctx, &pb.GetReleaseUsageRequest{Repo: "demo"})
 				require.NoError(t, err)
-				assert.True(t, proto.Equal(&pb.GetReleaseUsageResponse{UsedBytes: 1, QuotaBytes: 2, AssetMaxBytes: 3, AssetsMax: 4}, res.Msg))
+				assert.True(t, proto.Equal(&pb.GetReleaseUsageResponse{UsedBytes: 1, QuotaBytes: 2, AssetMaxBytes: 3, AssetsMax: 4}, res))
 			}
 		})
 	}
@@ -128,12 +130,12 @@ func TestReleaseFeatureAndMount(t *testing.T) {
 				rel = mocks.NewReleaseService(t)
 			}
 			c, server := releaseClient(t, rel)
-			res, err := server.GetVersion(context.Background(), connect.NewRequest(&pb.GetVersionRequest{}))
+			res, err := server.GetVersion(context.Background(), &pb.GetVersionRequest{})
 			require.NoError(t, err)
-			assert.Equal(t, enabled, containsReleaseFeature(res.Msg.Features))
+			assert.Equal(t, enabled, containsReleaseFeature(res.Features))
 			assert.NotContains(t, Features, FeatureReleases)
 			if !enabled {
-				_, err := c.GetReleaseUsage(context.Background(), connect.NewRequest(&pb.GetReleaseUsageRequest{Repo: "demo"}))
+				_, err := c.GetReleaseUsage(context.Background(), &pb.GetReleaseUsageRequest{Repo: "demo"})
 				requireCode(t, connect.CodeUnimplemented, err)
 			}
 		})
@@ -162,7 +164,10 @@ func TestReleaseRPCUpload(t *testing.T) {
 				assert.Equal(t, want, got)
 				return domain.ReleaseAsset{ID: 9, Size: int64(len(got))}, err
 			}).Once()
-			stream := c.UploadReleaseAsset(context.Background())
+			stream, err := c.UploadReleaseAsset(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
 			first := &pb.UploadReleaseAssetRequest{Repo: "demo", ReleaseId: 7, Name: "a", Label: "l", ContentType: "application/octet-stream", Size: int64(len(want)), Replace: true}
 			if firstData {
 				first.Data = full
@@ -174,8 +179,8 @@ func TestReleaseRPCUpload(t *testing.T) {
 			require.NoError(t, stream.Send(&pb.UploadReleaseAssetRequest{Data: tail}))
 			res, err := stream.CloseAndReceive()
 			require.NoError(t, err)
-			assert.EqualValues(t, 9, res.Msg.Asset.Id)
-			assert.EqualValues(t, len(want), res.Msg.Asset.Size)
+			assert.EqualValues(t, 9, res.Asset.Id)
+			assert.EqualValues(t, len(want), res.Asset.Size)
 		})
 	}
 }
@@ -212,13 +217,16 @@ func TestReleaseRPCUploadInvalid(t *testing.T) {
 					return domain.ReleaseAsset{}, err
 				}).Once()
 			}
-			stream := c.UploadReleaseAsset(context.Background())
+			stream, err := c.UploadReleaseAsset(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
 			for _, m := range tt.messages {
 				if err := stream.Send(m); err != nil {
 					break
 				}
 			}
-			_, err := stream.CloseAndReceive()
+			_, err = stream.CloseAndReceive()
 			requireCode(t, tt.code, err)
 		})
 	}
@@ -254,18 +262,28 @@ func TestReleaseRPCDownload(t *testing.T) {
 				}
 				return send(ports.AssetChunk{Data: []byte("345")})
 			}).Once()
-			stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(req))
+			stream, err := c.DownloadReleaseAsset(context.Background(), req)
 			require.NoError(t, err)
 			defer func() { _ = stream.Close() }()
-			require.True(t, stream.Receive())
-			assert.True(t, proto.Equal(assetToPB(a), stream.Msg().Asset))
-			assert.Empty(t, stream.Msg().Chunk)
+			first, err := stream.Receive()
+			require.NoError(t, err)
+			assert.True(t, proto.Equal(assetToPB(a), first.Asset))
+			assert.Empty(t, first.Chunk)
 			var got []byte
-			for stream.Receive() {
-				assert.Nil(t, stream.Msg().Asset)
-				got = append(got, stream.Msg().Chunk...)
+			var streamErr error
+			for {
+				msg, err := stream.Receive()
+				if err != nil {
+					streamErr = err
+					break
+				}
+				assert.Nil(t, msg.Asset)
+				got = append(got, msg.Chunk...)
 			}
-			require.NoError(t, stream.Err())
+			if errors.Is(streamErr, io.EOF) {
+				streamErr = nil
+			}
+			require.NoError(t, streamErr)
 			assert.Equal(t, "12345", string(got))
 		})
 	}
@@ -280,14 +298,13 @@ func TestReleaseRPCErrors(t *testing.T) {
 			rel := mocks.NewReleaseService(t)
 			c, _ := releaseClient(t, rel)
 			rel.EXPECT().GetRelease(mock.Anything, domain.Anonymous(), mustRepoName(t, "demo"), ports.ReleaseRef{ID: 7}).Return(domain.Release{}, tt.err).Once()
-			_, err := c.GetRelease(context.Background(), connect.NewRequest(&pb.GetReleaseRequest{Repo: "demo", Selector: &pb.GetReleaseRequest_Id{Id: 7}}))
+			_, err := c.GetRelease(context.Background(), &pb.GetReleaseRequest{Repo: "demo", Selector: &pb.GetReleaseRequest_Id{Id: 7}})
 			requireCode(t, tt.code, err)
 			rel.EXPECT().DownloadAsset(mock.Anything, domain.Anonymous(), mustRepoName(t, "demo"), ports.AssetRef{ID: 9}, int64(0), int64(-1), mock.Anything).Return(tt.err).Once()
-			stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}}))
+			stream, err := c.DownloadReleaseAsset(context.Background(), &pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}})
 			if err == nil {
 				defer func() { _ = stream.Close() }()
-				assert.False(t, stream.Receive())
-				err = stream.Err()
+				_, err = stream.Receive()
 			}
 			requireCode(t, tt.code, err)
 		})
@@ -356,15 +373,15 @@ func TestReleaseResponseEnrichment(t *testing.T) {
 			if tt.code != connect.CodeUnavailable {
 				rel.EXPECT().ListAssets(mock.Anything, domain.Owner(), repo, int64(7)).Return(nil, tt.assetsErr).Once()
 			}
-			res, err := (&releaseService{rel: rel}).GetRelease(ownerCtx(), connect.NewRequest(&pb.GetReleaseRequest{Repo: "demo", Selector: &pb.GetReleaseRequest_Id{Id: 7}}))
+			res, err := (&releaseService{rel: rel}).GetRelease(ownerCtx(), &pb.GetReleaseRequest{Repo: "demo", Selector: &pb.GetReleaseRequest_Id{Id: 7}})
 			if tt.code != 0 {
 				requireCode(t, tt.code, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantLatest, res.Msg.Release.Latest)
-			assert.Empty(t, res.Msg.Release.Assets)
-			assert.Nil(t, res.Msg.Release.PublishedAt)
+			assert.Equal(t, tt.wantLatest, res.Release.Latest)
+			assert.Empty(t, res.Release.Assets)
+			assert.Nil(t, res.Release.PublishedAt)
 		})
 	}
 }
@@ -376,10 +393,11 @@ func TestReleaseRPCAuthenticatedCaller(t *testing.T) {
 	rel.EXPECT().DeleteRelease(mock.Anything, domain.Owner(), mustRepoName(t, "demo"), int64(7)).Return(nil).Once()
 	srv := httptest.NewServer(New(Config{Releases: rel, Auth: auth, Sessions: mocks.NewSessionService(t)}).Handler())
 	defer srv.Close()
-	c := ermiteconnect.NewReleaseServiceClient(srv.Client(), srv.URL)
-	req := connect.NewRequest(&pb.DeleteReleaseRequest{Repo: "demo", Id: 7})
-	req.Header().Set("Authorization", "Bearer secret")
-	_, err := c.DeleteRelease(context.Background(), req)
+	c := ermiteconnect.NewReleaseServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL, connecthttp.WithReadMaxBytes(0))))
+	req := &pb.DeleteReleaseRequest{Repo: "demo", Id: 7}
+	ctx, info := connect.NewClientContext(context.Background())
+	info.RequestHeader().Set("Authorization", "Bearer secret")
+	_, err := c.DeleteRelease(ctx, req)
 	require.NoError(t, err)
 }
 
@@ -393,30 +411,31 @@ func TestReleaseRPCDownloadFullChunk(t *testing.T) {
 		}
 		return send(ports.AssetChunk{Data: data})
 	}).Once()
-	stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}}))
+	stream, err := c.DownloadReleaseAsset(context.Background(), &pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}})
 	require.NoError(t, err)
 	defer func() { _ = stream.Close() }()
-	require.True(t, stream.Receive())
-	require.NotNil(t, stream.Msg().Asset)
-	require.True(t, stream.Receive())
-	assert.Equal(t, data, stream.Msg().Chunk)
-	assert.False(t, stream.Receive())
-	require.NoError(t, stream.Err())
+	first, err := stream.Receive()
+	require.NoError(t, err)
+	require.NotNil(t, first.Asset)
+	second, err := stream.Receive()
+	require.NoError(t, err)
+	assert.Equal(t, data, second.Chunk)
+	_, err = stream.Receive()
+	require.ErrorIs(t, err, io.EOF)
 }
 
 func TestReleaseRPCRejectsInvalidMasksAndSelectors(t *testing.T) {
 	c, _ := releaseClient(t, mocks.NewReleaseService(t))
-	_, err := c.UpdateRelease(context.Background(), connect.NewRequest(&pb.UpdateReleaseRequest{Repo: "demo", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"unknown"}}}))
+	_, err := c.UpdateRelease(context.Background(), &pb.UpdateReleaseRequest{Repo: "demo", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"unknown"}}})
 	requireCode(t, connect.CodeInvalidArgument, err)
-	_, err = c.UpdateReleaseAsset(context.Background(), connect.NewRequest(&pb.UpdateReleaseAssetRequest{Repo: "demo"}))
+	_, err = c.UpdateReleaseAsset(context.Background(), &pb.UpdateReleaseAssetRequest{Repo: "demo"})
 	requireCode(t, connect.CodeInvalidArgument, err)
-	_, err = c.GetRelease(context.Background(), connect.NewRequest(&pb.GetReleaseRequest{Repo: "demo", Selector: &pb.GetReleaseRequest_Latest{Latest: false}}))
+	_, err = c.GetRelease(context.Background(), &pb.GetReleaseRequest{Repo: "demo", Selector: &pb.GetReleaseRequest_Latest{Latest: false}})
 	requireCode(t, connect.CodeInvalidArgument, err)
-	stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_Latest{Latest: &pb.ReleaseAssetLatest{Name: "a"}}}))
+	stream, err := c.DownloadReleaseAsset(context.Background(), &pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_Latest{Latest: &pb.ReleaseAssetLatest{Name: "a"}}})
 	if err == nil {
 		defer func() { _ = stream.Close() }()
-		assert.False(t, stream.Receive())
-		err = stream.Err()
+		_, err = stream.Receive()
 	}
 	requireCode(t, connect.CodeInvalidArgument, err)
 }
@@ -432,10 +451,10 @@ func TestReleaseRPCListResolvesLatestOnce(t *testing.T) {
 	for _, r := range rows {
 		rel.EXPECT().ListAssets(mock.Anything, p, repo, r.ID).Return(nil, nil).Once()
 	}
-	res, err := c.ListReleases(context.Background(), connect.NewRequest(&pb.ListReleasesRequest{Repo: "demo"}))
+	res, err := c.ListReleases(context.Background(), &pb.ListReleasesRequest{Repo: "demo"})
 	require.NoError(t, err)
-	require.Len(t, res.Msg.Releases, 3)
-	for _, m := range res.Msg.Releases {
+	require.Len(t, res.Releases, 3)
+	for _, m := range res.Releases {
 		assert.Equal(t, m.Id == 2, m.Latest, m.Tag)
 	}
 }
@@ -448,10 +467,10 @@ func TestReleaseRPCListWithoutLatest(t *testing.T) {
 	rel.EXPECT().ListReleases(mock.Anything, p, repo, 0, "").Return(ports.ReleasePage{Releases: []domain.Release{{ID: 1, Repo: repo}}}, nil).Once()
 	rel.EXPECT().GetRelease(mock.Anything, p, repo, ports.ReleaseRef{Latest: true}).Return(domain.Release{}, domain.ErrNotFound).Once()
 	rel.EXPECT().ListAssets(mock.Anything, p, repo, int64(1)).Return(nil, nil).Once()
-	res, err := c.ListReleases(context.Background(), connect.NewRequest(&pb.ListReleasesRequest{Repo: "demo"}))
+	res, err := c.ListReleases(context.Background(), &pb.ListReleasesRequest{Repo: "demo"})
 	require.NoError(t, err)
-	require.Len(t, res.Msg.Releases, 1)
-	assert.False(t, res.Msg.Releases[0].Latest)
+	require.Len(t, res.Releases, 1)
+	assert.False(t, res.Releases[0].Latest)
 }
 
 func TestReleaseRPCDownloadZeroByteAsset(t *testing.T) {
@@ -462,11 +481,12 @@ func TestReleaseRPCDownloadZeroByteAsset(t *testing.T) {
 	rel.EXPECT().DownloadAsset(mock.Anything, domain.Anonymous(), mustRepoName(t, "demo"), ports.AssetRef{ID: 9}, int64(0), int64(-1), mock.Anything).RunAndReturn(func(_ context.Context, _ domain.Principal, _ domain.RepoName, _ ports.AssetRef, _, _ int64, send func(ports.AssetChunk) error) error {
 		return send(ports.AssetChunk{Asset: &a})
 	}).Once()
-	stream, err := c.DownloadReleaseAsset(context.Background(), connect.NewRequest(&pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}}))
+	stream, err := c.DownloadReleaseAsset(context.Background(), &pb.DownloadReleaseAssetRequest{Repo: "demo", Selector: &pb.DownloadReleaseAssetRequest_AssetId{AssetId: 9}})
 	require.NoError(t, err)
 	defer func() { _ = stream.Close() }()
-	require.True(t, stream.Receive())
-	assert.True(t, proto.Equal(assetToPB(a), stream.Msg().Asset))
-	assert.False(t, stream.Receive())
-	require.NoError(t, stream.Err())
+	first, err := stream.Receive()
+	require.NoError(t, err)
+	assert.True(t, proto.Equal(assetToPB(a), first.Asset))
+	_, err = stream.Receive()
+	require.ErrorIs(t, err, io.EOF)
 }

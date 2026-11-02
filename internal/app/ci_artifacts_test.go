@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,7 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2/connectproto"
+
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -65,14 +69,14 @@ type artifactAPI struct {
 
 func (c *ciHarness) artifacts(secret string) artifactAPI {
 	hc := &http.Client{Transport: bearerTransport{secret: secret, next: http.DefaultTransport}}
-	return artifactAPI{ermiteconnect.NewJobArtifactServiceClient(hc, c.url("/-/api")), ermiteconnect.NewArtifactServiceClient(hc, c.url("/-/api"))}
+	return artifactAPI{ermiteconnect.NewJobArtifactServiceClient(connect.NewClient(connecthttp.NewTransport(hc, c.url("/-/api"), connecthttp.WithReadMaxBytes(0)))), ermiteconnect.NewArtifactServiceClient(connect.NewClient(connecthttp.NewTransport(hc, c.url("/-/api"), connecthttp.WithReadMaxBytes(0))))}
 }
 
 // strangerArtifacts are clients whose refused calls do not count against the
 // test's client address.
 func (c *ciHarness) strangerArtifacts(secret string) artifactAPI {
 	hc := &http.Client{Transport: bearerTransport{secret: secret, freshClient: new(atomic.Uint32), next: http.DefaultTransport}}
-	return artifactAPI{ermiteconnect.NewJobArtifactServiceClient(hc, c.url("/-/api")), ermiteconnect.NewArtifactServiceClient(hc, c.url("/-/api"))}
+	return artifactAPI{ermiteconnect.NewJobArtifactServiceClient(connect.NewClient(connecthttp.NewTransport(hc, c.url("/-/api"), connecthttp.WithReadMaxBytes(0)))), ermiteconnect.NewArtifactServiceClient(connect.NewClient(connecthttp.NewTransport(hc, c.url("/-/api"), connecthttp.WithReadMaxBytes(0))))}
 }
 
 // jobArtifacts is the job side of one job.
@@ -87,11 +91,11 @@ func (c *ciHarness) jobArtifacts(j *pb.Job) *jobArtifacts {
 }
 
 func (j *jobArtifacts) create(name string, expires *timestamppb.Timestamp) (*pb.CreateJobArtifactResponse, error) {
-	res, err := j.api.job.CreateJobArtifact(j.c.ctx, connect.NewRequest(&pb.CreateJobArtifactRequest{JobId: j.job.GetJobId(), Name: name, ExpiresAt: expires}))
+	res, err := j.api.job.CreateJobArtifact(j.c.ctx, &pb.CreateJobArtifactRequest{JobId: j.job.GetJobId(), Name: name, ExpiresAt: expires})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg, nil
+	return res, nil
 }
 
 func (j *jobArtifacts) mustCreate(name string) int64 {
@@ -107,7 +111,10 @@ func (j *jobArtifacts) block(id int64, blockID string, data []byte) (int64, erro
 }
 
 func putBlock(ctx context.Context, api artifactAPI, jobID string, id int64, blockID, data []byte) (int64, error) {
-	stream := api.job.UploadJobArtifactBlock(ctx)
+	stream, err := api.job.UploadJobArtifactBlock(ctx)
+	if err != nil {
+		return 0, err
+	}
 	first := &pb.UploadJobArtifactBlockRequest{JobId: jobID, ArtifactId: id, BlockId: blockID}
 	n := min(len(data), domain.CIArtifactChunk)
 	first.Data, data = data[:n], data[n:]
@@ -125,7 +132,7 @@ func putBlock(ctx context.Context, api artifactAPI, jobID string, id int64, bloc
 	if err != nil {
 		return 0, err
 	}
-	return res.Msg.GetSize(), nil
+	return res.GetSize(), nil
 }
 
 func (j *jobArtifacts) commit(id int64, blocks ...string) (*pb.CommitJobArtifactResponse, error) {
@@ -133,48 +140,57 @@ func (j *jobArtifacts) commit(id int64, blocks ...string) (*pb.CommitJobArtifact
 	for _, b := range blocks {
 		ids = append(ids, []byte(b))
 	}
-	res, err := j.api.job.CommitJobArtifact(j.c.ctx, connect.NewRequest(&pb.CommitJobArtifactRequest{JobId: j.job.GetJobId(), ArtifactId: id, BlockIds: ids}))
+	res, err := j.api.job.CommitJobArtifact(j.c.ctx, &pb.CommitJobArtifactRequest{JobId: j.job.GetJobId(), ArtifactId: id, BlockIds: ids})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg, nil
+	return res, nil
 }
 
 func (j *jobArtifacts) finalize(name, digest string) (*pb.Artifact, error) {
-	res, err := j.api.job.FinalizeJobArtifact(j.c.ctx, connect.NewRequest(&pb.FinalizeJobArtifactRequest{JobId: j.job.GetJobId(), Name: name, Digest: digest}))
+	res, err := j.api.job.FinalizeJobArtifact(j.c.ctx, &pb.FinalizeJobArtifactRequest{JobId: j.job.GetJobId(), Name: name, Digest: digest})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg.GetArtifact(), nil
+	return res.GetArtifact(), nil
 }
 
 func (j *jobArtifacts) list(name string) ([]*pb.Artifact, error) {
-	res, err := j.api.job.ListJobArtifacts(j.c.ctx, connect.NewRequest(&pb.ListJobArtifactsRequest{JobId: j.job.GetJobId(), Name: name}))
+	res, err := j.api.job.ListJobArtifacts(j.c.ctx, &pb.ListJobArtifactsRequest{JobId: j.job.GetJobId(), Name: name})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg.GetArtifacts(), nil
+	return res.GetArtifacts(), nil
 }
 
 func (j *jobArtifacts) download(id, offset int64) (*pb.Artifact, []byte, error) {
-	stream, err := j.api.job.DownloadJobArtifact(j.c.ctx, connect.NewRequest(&pb.DownloadJobArtifactRequest{JobId: j.job.GetJobId(), ArtifactId: id, Offset: offset}))
+	stream, err := j.api.job.DownloadJobArtifact(j.c.ctx, &pb.DownloadJobArtifactRequest{JobId: j.job.GetJobId(), ArtifactId: id, Offset: offset})
 	if err != nil {
 		return nil, nil, err
 	}
 	defer func() { _ = stream.Close() }()
 	var a *pb.Artifact
 	var buf bytes.Buffer
-	for stream.Receive() {
-		if m := stream.Msg(); m.GetArtifact() != nil {
+	var streamErr error
+	for {
+		msg, err := stream.Receive()
+		if err != nil {
+			streamErr = err
+			break
+		}
+		if m := msg; m.GetArtifact() != nil {
 			a = m.GetArtifact()
 		}
-		buf.Write(stream.Msg().GetChunk())
+		buf.Write(msg.GetChunk())
 	}
-	return a, buf.Bytes(), stream.Err()
+	if errors.Is(streamErr, io.EOF) {
+		streamErr = nil
+	}
+	return a, buf.Bytes(), streamErr
 }
 
 func (j *jobArtifacts) remove(name string) error {
-	_, err := j.api.job.DeleteJobArtifact(j.c.ctx, connect.NewRequest(&pb.DeleteJobArtifactRequest{JobId: j.job.GetJobId(), Name: name}))
+	_, err := j.api.job.DeleteJobArtifact(j.c.ctx, &pb.DeleteJobArtifactRequest{JobId: j.job.GetJobId(), Name: name})
 	return err
 }
 
@@ -233,7 +249,7 @@ func endedDetail(t *testing.T, err error) {
 	require.True(t, errors.As(err, &ce))
 	found := false
 	for _, d := range ce.Details() {
-		if _, derr := d.Value(); derr == nil && strings.HasSuffix(d.Type(), "JobEnded") {
+		if _, derr := connectproto.UnmarshalErrorDetail(d); derr == nil && strings.HasSuffix(d.Type, "JobEnded") {
 			found = true
 		}
 	}
@@ -263,9 +279,9 @@ func TestCIArtifactsPassBetweenJobs(t *testing.T) {
 	_, upJob, downJob := c.newArtifactRun(runner, map[string]string{".github/workflows/ci.yml": artifactWorkflow})
 	up, down := c.jobArtifacts(upJob), c.jobArtifacts(downJob)
 
-	ver, err := c.root.server.GetVersion(c.ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+	ver, err := c.root.server.GetVersion(c.ctx, &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, ver.Msg.GetFeatures(), "ci.artifacts")
+	assert.Contains(t, ver.GetFeatures(), "ci.artifacts")
 
 	// Blocks of 1.5 MiB (two messages each), uploaded at once in any order.
 	blocks := [][]byte{pattern(3<<19, 1), pattern(3<<19, 2), pattern(3<<19, 3), pattern(10, 4)}
@@ -370,51 +386,69 @@ func TestCIArtifactsPassBetweenJobs(t *testing.T) {
 	})
 
 	t.Run("the owners: repo:read to list and download, ci:write to delete", func(t *testing.T) {
-		res, err := c.artifacts(adminToken).owner.ListArtifacts(c.ctx, connect.NewRequest(&pb.ListArtifactsRequest{Repo: c.repo, RunId: a.GetRunId()}))
+		res, err := c.artifacts(adminToken).owner.ListArtifacts(c.ctx, &pb.ListArtifactsRequest{Repo: c.repo, RunId: a.GetRunId()})
 		require.NoError(t, err)
-		require.Len(t, res.Msg.GetArtifacts(), 1)
-		assert.EqualValues(t, 2, res.Msg.GetUsedBytes())
-		assert.EqualValues(t, domain.DefaultCIArtifactQuota, res.Msg.GetQuotaBytes())
+		require.Len(t, res.GetArtifacts(), 1)
+		assert.EqualValues(t, 2, res.GetUsedBytes())
+		assert.EqualValues(t, domain.DefaultCIArtifactQuota, res.GetQuotaBytes())
 
 		// Anonymous: a private repository does not exist, a public one needs a
 		// signed-in caller.
 		anon := c.strangerArtifacts("")
-		_, err = anon.owner.ListArtifacts(c.ctx, connect.NewRequest(&pb.ListArtifactsRequest{Repo: c.repo, RunId: a.GetRunId()}))
+		_, err = anon.owner.ListArtifacts(c.ctx, &pb.ListArtifactsRequest{Repo: c.repo, RunId: a.GetRunId()})
 		assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 		public := domain.VisibilityPublic
 		_, err = c.forge.Repos.Update(c.ctx, domain.Root(), c.name(c.repo), ports.UpdateRepoParams{Visibility: &public})
 		require.NoError(t, err)
-		_, err = anon.owner.ListArtifacts(c.ctx, connect.NewRequest(&pb.ListArtifactsRequest{Repo: c.repo, RunId: a.GetRunId()}))
+		_, err = anon.owner.ListArtifacts(c.ctx, &pb.ListArtifactsRequest{Repo: c.repo, RunId: a.GetRunId()})
 		assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-		stream, err := anon.owner.DownloadArtifact(c.ctx, connect.NewRequest(&pb.DownloadArtifactRequest{Repo: c.repo, ArtifactId: res.Msg.GetArtifacts()[0].GetId()}))
+		stream, err := anon.owner.DownloadArtifact(c.ctx, &pb.DownloadArtifactRequest{Repo: c.repo, ArtifactId: res.GetArtifacts()[0].GetId()})
 		if err == nil {
-			for stream.Receive() {
+			var streamErr error
+			for {
+				_, err := stream.Receive()
+				if err != nil {
+					streamErr = err
+					break
+				}
 				t.Error("anonymous got content")
 			}
-			err = stream.Err()
+			if errors.Is(streamErr, io.EOF) {
+				streamErr = nil
+			}
+			err = streamErr
 		}
 		assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 
 		// A token with ci:write only reads the repository (public) but not its
 		// artifacts; it may delete them.
-		tok, err := c.root.token.CreateToken(c.ctx, connect.NewRequest(&pb.CreateTokenRequest{Label: "ci", Scopes: []pb.Scope{pb.Scope_SCOPE_CI_WRITE}}))
+		tok, err := c.root.token.CreateToken(c.ctx, &pb.CreateTokenRequest{Label: "ci", Scopes: []pb.Scope{pb.Scope_SCOPE_CI_WRITE}})
 		require.NoError(t, err)
-		ciw := c.strangerArtifacts(tok.Msg.GetSecret())
-		_, err = ciw.owner.ListArtifacts(c.ctx, connect.NewRequest(&pb.ListArtifactsRequest{Repo: c.repo, RunId: a.GetRunId()}))
+		ciw := c.strangerArtifacts(tok.GetSecret())
+		_, err = ciw.owner.ListArtifacts(c.ctx, &pb.ListArtifactsRequest{Repo: c.repo, RunId: a.GetRunId()})
 		assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-		_, err = anon.owner.DeleteArtifact(c.ctx, connect.NewRequest(&pb.DeleteArtifactRequest{Repo: c.repo, ArtifactId: res.Msg.GetArtifacts()[0].GetId()}))
+		_, err = anon.owner.DeleteArtifact(c.ctx, &pb.DeleteArtifactRequest{Repo: c.repo, ArtifactId: res.GetArtifacts()[0].GetId()})
 		assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 
 		root := c.artifacts(adminToken)
-		dl, err := root.owner.DownloadArtifact(c.ctx, connect.NewRequest(&pb.DownloadArtifactRequest{Repo: c.repo, ArtifactId: res.Msg.GetArtifacts()[0].GetId()}))
+		dl, err := root.owner.DownloadArtifact(c.ctx, &pb.DownloadArtifactRequest{Repo: c.repo, ArtifactId: res.GetArtifacts()[0].GetId()})
 		require.NoError(t, err)
 		var body []byte
-		for dl.Receive() {
-			body = append(body, dl.Msg().GetChunk()...)
+		var streamErr error
+		for {
+			msg, err := dl.Receive()
+			if err != nil {
+				streamErr = err
+				break
+			}
+			body = append(body, msg.GetChunk()...)
 		}
-		require.NoError(t, dl.Err())
+		if errors.Is(streamErr, io.EOF) {
+			streamErr = nil
+		}
+		require.NoError(t, streamErr)
 		assert.Equal(t, "v2", string(body))
-		_, err = ciw.owner.DeleteArtifact(c.ctx, connect.NewRequest(&pb.DeleteArtifactRequest{Repo: c.repo, ArtifactId: res.Msg.GetArtifacts()[0].GetId()}))
+		_, err = ciw.owner.DeleteArtifact(c.ctx, &pb.DeleteArtifactRequest{Repo: c.repo, ArtifactId: res.GetArtifacts()[0].GetId()})
 		require.NoError(t, err)
 		got, err := up.list("")
 		require.NoError(t, err)
@@ -623,9 +657,9 @@ func TestCIArtifactsSweep(t *testing.T) {
 
 	// Past its expiry it is invisible at once, then swept.
 	clk.advance(24 * time.Hour)
-	res, err := c.artifacts(adminToken).owner.ListArtifacts(c.ctx, connect.NewRequest(&pb.ListArtifactsRequest{Repo: c.repo, RunId: runID}))
+	res, err := c.artifacts(adminToken).owner.ListArtifacts(c.ctx, &pb.ListArtifactsRequest{Repo: c.repo, RunId: runID})
 	require.NoError(t, err)
-	assert.Empty(t, res.Msg.GetArtifacts(), "expired")
+	assert.Empty(t, res.GetArtifacts(), "expired")
 	c.waitFor("the expired artifact swept", func() bool { return c.usage() == 0 && len(c.artifactFiles()) == 0 })
 	assert.Greater(t, clk.since(start), 48*time.Hour)
 }
@@ -647,13 +681,13 @@ func TestCIArtifactsGoWithTheRepository(t *testing.T) {
 // ERMITE_CI_ARTIFACTS=0 serves neither service.
 func TestCIArtifactsOff(t *testing.T) {
 	h := newHarnessWith(t, harnessOpts{env: map[string]string{"ERMITE_CI_ARTIFACTS": "0"}}, nil)
-	ver, err := h.api("").server.GetVersion(h.ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+	ver, err := h.api("").server.GetVersion(h.ctx, &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.NotContains(t, ver.Msg.GetFeatures(), "ci.artifacts")
+	assert.NotContains(t, ver.GetFeatures(), "ci.artifacts")
 	c := &ciHarness{harness: h}
-	_, err = c.artifacts(adminToken).owner.ListArtifacts(h.ctx, connect.NewRequest(&pb.ListArtifactsRequest{Repo: "x", RunId: 1}))
+	_, err = c.artifacts(adminToken).owner.ListArtifacts(h.ctx, &pb.ListArtifactsRequest{Repo: "x", RunId: 1})
 	assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
-	_, err = c.artifacts("ermitejob_x").job.ListJobArtifacts(h.ctx, connect.NewRequest(&pb.ListJobArtifactsRequest{JobId: "1-0-0"}))
+	_, err = c.artifacts("ermitejob_x").job.ListJobArtifacts(h.ctx, &pb.ListJobArtifactsRequest{JobId: "1-0-0"})
 	assert.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
 }
 
@@ -772,7 +806,7 @@ func TestCIArtifactCaps(t *testing.T) {
 
 		// A caller that gives up at once: the commit still completes.
 		gone, cancel := context.WithTimeout(c.ctx, time.Millisecond)
-		_, _ = down.api.job.CommitJobArtifact(gone, connect.NewRequest(&pb.CommitJobArtifactRequest{JobId: downJob.GetJobId(), ArtifactId: id, BlockIds: [][]byte{[]byte("a"), []byte("b")}}))
+		_, _ = down.api.job.CommitJobArtifact(gone, &pb.CommitJobArtifactRequest{JobId: downJob.GetJobId(), ArtifactId: id, BlockIds: [][]byte{[]byte("a"), []byte("b")}})
 		cancel()
 
 		var wg sync.WaitGroup

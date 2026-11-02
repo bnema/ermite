@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -188,19 +187,19 @@ func newDepsListCmd(env *cliEnv) *cobra.Command {
 		if cmd.Flags().Changed("repo") {
 			req.Repo = &repo
 		}
-		res, err := c.Deps().ListDependencyUpdates(env.ctx(cmd), connect.NewRequest(req))
+		res, err := c.Deps().ListDependencyUpdates(env.ctx(cmd), req)
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
 			out := []jsonDepsRepo{}
-			for _, r := range res.Msg.GetRepos() {
+			for _, r := range res.GetRepos() {
 				out = append(out, toJSONDepsRepo(r))
 			}
 			return writeJSON(cmd.OutOrStdout(), out)
 		}
 		rows := [][]string{}
-		for _, r := range res.Msg.GetRepos() {
+		for _, r := range res.GetRepos() {
 			for _, batch := range depsBatches(r) {
 				for _, row := range depsBatchRows(batch, false) {
 					rows = append(rows, append([]string{r.GetRepo()}, row...))
@@ -221,14 +220,14 @@ func newDepsCheckCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Deps().CheckDependencies(env.ctx(cmd), connect.NewRequest(&ermite.CheckDependenciesRequest{Repo: args[0]}))
+		res, err := c.Deps().CheckDependencies(env.ctx(cmd), &ermite.CheckDependenciesRequest{Repo: args[0]})
 		if err != nil {
 			return c.Describe(err)
 		}
 		if *asJSON {
-			return writeJSON(cmd.OutOrStdout(), toJSONDepsRepo(res.Msg.GetUpdates()))
+			return writeJSON(cmd.OutOrStdout(), toJSONDepsRepo(res.GetUpdates()))
 		}
-		return printDepsRepo(cmd, res.Msg.GetUpdates())
+		return printDepsRepo(cmd, res.GetUpdates())
 	}
 	return cmd
 }
@@ -257,19 +256,19 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 		ctx := env.ctx(cmd)
 		var got *ermite.RepoDependencyUpdates
 		if name == "snooze" {
-			res, err := c.Deps().SnoozeDependencyUpdates(ctx, connect.NewRequest(&ermite.SnoozeDependencyUpdatesRequest{Repo: args[0]}))
+			res, err := c.Deps().SnoozeDependencyUpdates(ctx, &ermite.SnoozeDependencyUpdatesRequest{Repo: args[0]})
 			if err != nil {
 				return c.Describe(err)
 			}
-			got = res.Msg.GetUpdates()
+			got = res.GetUpdates()
 		} else {
 			repo := args[0]
-			list, err := c.Deps().ListDependencyUpdates(ctx, connect.NewRequest(&ermite.ListDependencyUpdatesRequest{Repo: &repo}))
+			list, err := c.Deps().ListDependencyUpdates(ctx, &ermite.ListDependencyUpdatesRequest{Repo: &repo})
 			if err != nil {
 				return c.Describe(err)
 			}
 			var cur *ermite.RepoDependencyUpdates
-			for _, r := range list.Msg.GetRepos() {
+			for _, r := range list.GetRepos() {
 				if r.GetRepo() == repo {
 					cur = r
 				}
@@ -292,17 +291,17 @@ func newDepsActionCmd(env *cliEnv, name string) *cobra.Command {
 			}
 			expected := depsExpected(selected)
 			if name == "open" {
-				res, err := c.Deps().OpenDependencyUpdates(ctx, connect.NewRequest(&ermite.OpenDependencyUpdatesRequest{Repo: repo, Batch: batchKey, ExpectedVersions: expected}))
+				res, err := c.Deps().OpenDependencyUpdates(ctx, &ermite.OpenDependencyUpdatesRequest{Repo: repo, Batch: batchKey, ExpectedVersions: expected})
 				if err != nil {
 					return c.Describe(err)
 				}
-				got = res.Msg.GetUpdates()
+				got = res.GetUpdates()
 			} else {
-				res, err := c.Deps().IgnoreDependencyUpdates(ctx, connect.NewRequest(&ermite.IgnoreDependencyUpdatesRequest{Repo: repo, Batch: batchKey, ExpectedVersions: expected}))
+				res, err := c.Deps().IgnoreDependencyUpdates(ctx, &ermite.IgnoreDependencyUpdatesRequest{Repo: repo, Batch: batchKey, ExpectedVersions: expected})
 				if err != nil {
 					return c.Describe(err)
 				}
-				got = res.Msg.GetUpdates()
+				got = res.GetUpdates()
 			}
 		}
 		if *asJSON {

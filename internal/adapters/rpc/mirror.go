@@ -11,7 +11,6 @@ import (
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
-	"connectrpc.com/connect"
 )
 
 const FeatureMirror = "mirror"
@@ -20,37 +19,37 @@ type mirrorService struct{ mirrors ports.MirrorService }
 
 var _ ermiteconnect.MirrorServiceHandler = (*mirrorService)(nil)
 
-func (s *mirrorService) GetMirrorKey(ctx context.Context, _ *connect.Request[pb.GetMirrorKeyRequest]) (*connect.Response[pb.GetMirrorKeyResponse], error) {
+func (s *mirrorService) GetMirrorKey(ctx context.Context, _ *pb.GetMirrorKeyRequest) (*pb.GetMirrorKeyResponse, error) {
 	k, err := s.mirrors.ShowKey(ctx, caller(ctx))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.GetMirrorKeyResponse{Key: mirrorKeyToPB(k)}), nil
+	return &pb.GetMirrorKeyResponse{Key: mirrorKeyToPB(k)}, nil
 }
-func (s *mirrorService) RotateMirrorKey(ctx context.Context, _ *connect.Request[pb.RotateMirrorKeyRequest]) (*connect.Response[pb.RotateMirrorKeyResponse], error) {
+func (s *mirrorService) RotateMirrorKey(ctx context.Context, _ *pb.RotateMirrorKeyRequest) (*pb.RotateMirrorKeyResponse, error) {
 	r, err := s.mirrors.RotateKey(ctx, caller(ctx))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.RotateMirrorKeyResponse{Key: mirrorKeyToPB(r.Key), PreviousFingerprint: r.Previous.Fingerprint}), nil
+	return &pb.RotateMirrorKeyResponse{Key: mirrorKeyToPB(r.Key), PreviousFingerprint: r.Previous.Fingerprint}, nil
 }
-func (s *mirrorService) GetMirrorConfig(ctx context.Context, _ *connect.Request[pb.GetMirrorConfigRequest]) (*connect.Response[pb.GetMirrorConfigResponse], error) {
+func (s *mirrorService) GetMirrorConfig(ctx context.Context, _ *pb.GetMirrorConfigRequest) (*pb.GetMirrorConfigResponse, error) {
 	g, err := s.mirrors.GetGlobalConfig(ctx, caller(ctx))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.GetMirrorConfigResponse{Config: mirrorConfigToPB(g)}), nil
+	return &pb.GetMirrorConfigResponse{Config: mirrorConfigToPB(g)}, nil
 }
-func (s *mirrorService) SetMirrorConfig(ctx context.Context, req *connect.Request[pb.SetMirrorConfigRequest]) (*connect.Response[pb.SetMirrorConfigResponse], error) {
-	m := req.Msg
+func (s *mirrorService) SetMirrorConfig(ctx context.Context, req *pb.SetMirrorConfigRequest) (*pb.SetMirrorConfigResponse, error) {
+	m := req
 	g, err := s.mirrors.SetGlobalConfig(ctx, caller(ctx), ports.MirrorGlobalPatch{Enabled: m.Enabled, URLTemplate: m.UrlTemplate, Cron: m.Cron, AllBranches: m.AllBranches})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.SetMirrorConfigResponse{Config: mirrorConfigToPB(g)}), nil
+	return &pb.SetMirrorConfigResponse{Config: mirrorConfigToPB(g)}, nil
 }
-func (s *mirrorService) SetRepoMirror(ctx context.Context, req *connect.Request[pb.SetRepoMirrorRequest]) (*connect.Response[pb.SetRepoMirrorResponse], error) {
-	m := req.Msg
+func (s *mirrorService) SetRepoMirror(ctx context.Context, req *pb.SetRepoMirrorRequest) (*pb.SetRepoMirrorResponse, error) {
+	m := req
 	name, err := domain.ParseRepoName(m.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -59,31 +58,31 @@ func (s *mirrorService) SetRepoMirror(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.SetRepoMirrorResponse{Target: mirrorTargetToPB(t)}), nil
+	return &pb.SetRepoMirrorResponse{Target: mirrorTargetToPB(t)}, nil
 }
-func (s *mirrorService) RemoveRepoMirror(ctx context.Context, req *connect.Request[pb.RemoveRepoMirrorRequest]) (*connect.Response[pb.RemoveRepoMirrorResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mirrorService) RemoveRepoMirror(ctx context.Context, req *pb.RemoveRepoMirrorRequest) (*pb.RemoveRepoMirrorResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 	if err := s.mirrors.RemoveRepoMirror(ctx, caller(ctx), name); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.RemoveRepoMirrorResponse{}), nil
+	return &pb.RemoveRepoMirrorResponse{}, nil
 }
-func (s *mirrorService) SetRepoMirrorExcluded(ctx context.Context, req *connect.Request[pb.SetRepoMirrorExcludedRequest]) (*connect.Response[pb.SetRepoMirrorExcludedResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mirrorService) SetRepoMirrorExcluded(ctx context.Context, req *pb.SetRepoMirrorExcludedRequest) (*pb.SetRepoMirrorExcludedResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	t, err := s.mirrors.SetRepoExcluded(ctx, caller(ctx), name, req.Msg.GetExcluded())
+	t, err := s.mirrors.SetRepoExcluded(ctx, caller(ctx), name, req.GetExcluded())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.SetRepoMirrorExcludedResponse{Target: mirrorTargetToPB(t)}), nil
+	return &pb.SetRepoMirrorExcludedResponse{Target: mirrorTargetToPB(t)}, nil
 }
-func (s *mirrorService) GetMirrorStatus(ctx context.Context, req *connect.Request[pb.GetMirrorStatusRequest]) (*connect.Response[pb.GetMirrorStatusResponse], error) {
-	name, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *mirrorService) GetMirrorStatus(ctx context.Context, req *pb.GetMirrorStatusRequest) (*pb.GetMirrorStatusResponse, error) {
+	name, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -91,9 +90,9 @@ func (s *mirrorService) GetMirrorStatus(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.GetMirrorStatusResponse{Status: mirrorStatusToPB(v)}), nil
+	return &pb.GetMirrorStatusResponse{Status: mirrorStatusToPB(v)}, nil
 }
-func (s *mirrorService) ListMirrorStatus(ctx context.Context, _ *connect.Request[pb.ListMirrorStatusRequest]) (*connect.Response[pb.ListMirrorStatusResponse], error) {
+func (s *mirrorService) ListMirrorStatus(ctx context.Context, _ *pb.ListMirrorStatusRequest) (*pb.ListMirrorStatusResponse, error) {
 	list, err := s.mirrors.ListStatus(ctx, caller(ctx))
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -102,10 +101,10 @@ func (s *mirrorService) ListMirrorStatus(ctx context.Context, _ *connect.Request
 	for _, v := range list {
 		out = append(out, mirrorStatusToPB(v))
 	}
-	return connect.NewResponse(&pb.ListMirrorStatusResponse{Statuses: out}), nil
+	return &pb.ListMirrorStatusResponse{Statuses: out}, nil
 }
-func (s *mirrorService) SyncMirror(ctx context.Context, req *connect.Request[pb.SyncMirrorRequest]) (*connect.Response[pb.SyncMirrorResponse], error) {
-	m := req.Msg
+func (s *mirrorService) SyncMirror(ctx context.Context, req *pb.SyncMirrorRequest) (*pb.SyncMirrorResponse, error) {
+	m := req
 	if m.GetAll() == (m.GetRepo() != "") {
 		return nil, connectError(ctx, fmt.Errorf("%w: specify either repo or all", domain.ErrInvalid))
 	}
@@ -143,7 +142,7 @@ func (s *mirrorService) SyncMirror(ctx context.Context, req *connect.Request[pb.
 		}
 		out = append(out, item)
 	}
-	return connect.NewResponse(&pb.SyncMirrorResponse{Results: out}), nil
+	return &pb.SyncMirrorResponse{Results: out}, nil
 }
 
 // syncErrorText is the short reason a repository failed in SyncAll: the failure class only.

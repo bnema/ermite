@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -79,11 +78,11 @@ func toJSONTrustedKey(k *ermite.TrustedKey) jsonTrustedKey {
 // commit_signatures: it has no TrustedKeyService. A server whose features
 // cannot be read is refused too.
 func requireCommitSignatures(ctx context.Context, c *client.Client) error {
-	res, err := c.Server().GetVersion(ctx, connect.NewRequest(&ermite.GetVersionRequest{}))
+	res, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
 	if err != nil {
 		return c.Describe(err)
 	}
-	if !slices.Contains(res.Msg.GetFeatures(), client.FeatureCommitSignatures) {
+	if !slices.Contains(res.GetFeatures(), client.FeatureCommitSignatures) {
 		return fmt.Errorf("the server does not support %s, so it cannot manage trusted keys (upgrade the server, see `ermite version`)", client.FeatureCommitSignatures)
 	}
 	return nil
@@ -120,11 +119,11 @@ func newTrustListCmd(env *cliEnv) *cobra.Command {
 		if err := requireCommitSignatures(ctx, c); err != nil {
 			return err
 		}
-		res, err := c.TrustedKeys().ListTrustedKeys(ctx, connect.NewRequest(&ermite.ListTrustedKeysRequest{}))
+		res, err := c.TrustedKeys().ListTrustedKeys(ctx, &ermite.ListTrustedKeysRequest{})
 		if err != nil {
 			return c.Describe(err)
 		}
-		keys := res.Msg.GetKeys()
+		keys := res.GetKeys()
 		if *asJSON {
 			out := make([]jsonTrustedKey, 0, len(keys))
 			for _, k := range keys {
@@ -202,13 +201,13 @@ func newTrustAddCmd(env *cliEnv) *cobra.Command {
 		if err := requireCommitSignatures(ctx, c); err != nil {
 			return err
 		}
-		res, err := c.TrustedKeys().AddTrustedKey(ctx, connect.NewRequest(&ermite.AddTrustedKeyRequest{
+		res, err := c.TrustedKeys().AddTrustedKey(ctx, &ermite.AddTrustedKeyRequest{
 			Format: pbFormat, Title: title, PublicKey: key, Emails: emails,
-		}))
+		})
 		if err != nil {
 			return c.Describe(err)
 		}
-		k := res.Msg.GetKey()
+		k := res.GetKey()
 		if *asJSON {
 			return writeJSON(cmd.OutOrStdout(), toJSONTrustedKey(k))
 		}
@@ -265,7 +264,7 @@ func newTrustRemoveCmd(env *cliEnv) *cobra.Command {
 		if err := requireCommitSignatures(ctx, c); err != nil {
 			return err
 		}
-		if _, err := c.TrustedKeys().RemoveTrustedKey(ctx, connect.NewRequest(&ermite.RemoveTrustedKeyRequest{Id: args[0]})); err != nil {
+		if _, err := c.TrustedKeys().RemoveTrustedKey(ctx, &ermite.RemoveTrustedKeyRequest{Id: args[0]}); err != nil {
 			return c.Describe(err)
 		}
 		noticef(cmd, "removed trusted key %s", clean(args[0]))
@@ -301,11 +300,11 @@ func newSigningKeyShowCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := c.Server().GetSigningKey(env.ctx(cmd), connect.NewRequest(&ermite.GetSigningKeyRequest{}))
+		res, err := c.Server().GetSigningKey(env.ctx(cmd), &ermite.GetSigningKeyRequest{})
 		if err != nil {
 			return c.Describe(err)
 		}
-		k := res.Msg
+		k := res
 		out := cmd.OutOrStdout()
 		switch {
 		case *asJSON:

@@ -3,13 +3,12 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -110,7 +109,7 @@ func TestTokenCreateBranchPrefixes(t *testing.T) {
 			}, "does not support token.branch_prefixes"},
 			{"version unreadable", nil, "does not implement this call"}, // the fake answers unimplemented
 			{"server unavailable", func(*ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
-				return nil, connect.NewError(connect.CodeUnavailable, errors.New("connection refused"))
+				return nil, connect.NewError(connect.CodeUnavailable, "connection refused")
 			}, "cannot reach the server"},
 		} {
 			f := &fakeAPI{createToken: echo, getVersion: tt.version}

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -426,10 +426,10 @@ func TestMRMergeDeleteBranch(t *testing.T) {
 func TestMRErrorsAreFriendly(t *testing.T) {
 	f := &fakeAPI{
 		listMR: func(*ermite.ListMergeRequestsRequest) (*ermite.ListMergeRequestsResponse, error) {
-			return nil, connect.NewError(connect.CodeUnimplemented, nil)
+			return nil, connect.NewError(connect.CodeUnimplemented, "")
 		},
 		mergeMR: func(*ermite.MergeMergeRequestRequest) (*ermite.MergeMergeRequestResponse, error) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, assert.AnError)
+			return nil, connect.NewError(connect.CodeFailedPrecondition, assert.AnError.Error()).WithCause(assert.AnError)
 		},
 	}
 	url := f.serve(t)

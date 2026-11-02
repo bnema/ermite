@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -25,9 +24,9 @@ func TestWebActionsPages(t *testing.T) {
 	c := &cliHarness{harness: ci.harness, url: ci.srv.URL}
 	b := browser{ci.harness}
 	runner := ci.registerRunner("alpha", "ubuntu-latest")
-	_, err := ci.root.repo.UpdateRepo(ci.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err := ci.root.repo.UpdateRepo(ci.ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", Visibility: pb.Visibility_VISIBILITY_PUBLIC, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
-	}))
+	})
 	require.NoError(t, err)
 	ci.push("main", map[string]string{"README": "x\n"}, "")
 	sha := ci.push("feat", map[string]string{".github/workflows/ci.yml": ciWorkflow}, "add ci")
@@ -43,7 +42,7 @@ func TestWebActionsPages(t *testing.T) {
 	assert.Contains(t, list.body, `aria-current="page">Actions <kbd`, "the tab")
 
 	// The MR page says "waiting for a runner" only when no runner matches.
-	mr, err := ci.root.mr.CreateMergeRequest(ci.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "Add CI", SourceBranch: "feat"}))
+	mr, err := ci.root.mr.CreateMergeRequest(ci.ctx, &pb.CreateMergeRequestRequest{Repo: "proj", Title: "Add CI", SourceBranch: "feat"})
 	require.NoError(t, err)
 	mrPage := b.get("/proj/merge-requests/1", nil)
 	require.Equal(t, 200, mrPage.status)
@@ -101,9 +100,9 @@ func TestWebActionsPages(t *testing.T) {
 	assert.Contains(t, b.get("/proj/refs", nil).body, "checks failed")
 
 	// Private repository: nothing to anonymous.
-	_, err = ci.root.repo.UpdateRepo(ci.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err = ci.root.repo.UpdateRepo(ci.ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", Visibility: pb.Visibility_VISIBILITY_PRIVATE, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
-	}))
+	})
 	require.NoError(t, err)
 	for _, p := range []string{"/proj/actions", "/proj/actions/runs/1", "/proj/actions/runs/1/job/" + job.GetJobId(), "/proj/actions/runs/1/job/" + job.GetJobId() + "/raw", "/proj/actions/runs/1/job/" + job.GetJobId() + "/stream"} {
 		assert.Equal(t, 404, b.get(p, nil).status, p)
@@ -140,9 +139,9 @@ func TestWebActionsLiveFragments(t *testing.T) {
 	ci := newCIHarness(t, nil)
 	c := &cliHarness{harness: ci.harness, url: ci.srv.URL}
 	runner := ci.registerRunner("alpha", "ubuntu-latest")
-	_, err := ci.root.repo.UpdateRepo(ci.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err := ci.root.repo.UpdateRepo(ci.ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", Visibility: pb.Visibility_VISIBILITY_PUBLIC, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
-	}))
+	})
 	require.NoError(t, err)
 	ci.push("main", map[string]string{".github/workflows/ci.yml": strings.Split(ciWorkflow, "  test:")[0]}, "")
 	ci.waitFor("the run", func() bool { return len(ci.runs()) == 1 })

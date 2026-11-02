@@ -5,8 +5,6 @@ package rpc
 import (
 	"context"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite/internal/ports"
 )
@@ -21,7 +19,7 @@ type trustedKeyService struct {
 	keys ports.TrustedKeyService
 }
 
-func (s *trustedKeyService) ListTrustedKeys(ctx context.Context, _ *connect.Request[pb.ListTrustedKeysRequest]) (*connect.Response[pb.ListTrustedKeysResponse], error) {
+func (s *trustedKeyService) ListTrustedKeys(ctx context.Context, _ *pb.ListTrustedKeysRequest) (*pb.ListTrustedKeysResponse, error) {
 	list, err := s.keys.ListTrustedKeys(ctx, caller(ctx))
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -30,24 +28,24 @@ func (s *trustedKeyService) ListTrustedKeys(ctx context.Context, _ *connect.Requ
 	for _, k := range list {
 		out = append(out, trustedKeyToPB(k))
 	}
-	return connect.NewResponse(&pb.ListTrustedKeysResponse{Keys: out}), nil
+	return &pb.ListTrustedKeysResponse{Keys: out}, nil
 }
 
-func (s *trustedKeyService) AddTrustedKey(ctx context.Context, req *connect.Request[pb.AddTrustedKeyRequest]) (*connect.Response[pb.AddTrustedKeyResponse], error) {
-	format, err := signatureFormatFromPB(req.Msg.GetFormat())
+func (s *trustedKeyService) AddTrustedKey(ctx context.Context, req *pb.AddTrustedKeyRequest) (*pb.AddTrustedKeyResponse, error) {
+	format, err := signatureFormatFromPB(req.GetFormat())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	k, err := s.keys.AddTrustedKey(ctx, caller(ctx), format, req.Msg.GetTitle(), req.Msg.GetPublicKey(), req.Msg.GetEmails())
+	k, err := s.keys.AddTrustedKey(ctx, caller(ctx), format, req.GetTitle(), req.GetPublicKey(), req.GetEmails())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.AddTrustedKeyResponse{Key: trustedKeyToPB(k)}), nil
+	return &pb.AddTrustedKeyResponse{Key: trustedKeyToPB(k)}, nil
 }
 
-func (s *trustedKeyService) RemoveTrustedKey(ctx context.Context, req *connect.Request[pb.RemoveTrustedKeyRequest]) (*connect.Response[pb.RemoveTrustedKeyResponse], error) {
-	if err := s.keys.RemoveTrustedKey(ctx, caller(ctx), req.Msg.GetId()); err != nil {
+func (s *trustedKeyService) RemoveTrustedKey(ctx context.Context, req *pb.RemoveTrustedKeyRequest) (*pb.RemoveTrustedKeyResponse, error) {
+	if err := s.keys.RemoveTrustedKey(ctx, caller(ctx), req.GetId()); err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.RemoveTrustedKeyResponse{}), nil
+	return &pb.RemoveTrustedKeyResponse{}, nil
 }

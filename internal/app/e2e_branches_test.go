@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -110,33 +109,33 @@ func TestAC5BranchLimitedToken(t *testing.T) {
 	require.Error(t, err, out)
 	assert.NoDirExists(t, h.repoDir("brand-new"))
 	assert.Equal(t, 404, h.statusAuth("GET", "/brand-new.git/info/refs?service=git-receive-pack", anyRepo))
-	_, err = h.api(anyRepo).repo.CreateRepo(h.ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "via-api"}))
+	_, err = h.api(anyRepo).repo.CreateRepo(h.ctx, &pb.CreateRepoRequest{Name: "via-api"})
 	assert.Equal(t, "permission_denied", codeName(err))
 	assert.NoDirExists(t, h.repoDir("via-api"))
 	// The same token without prefixes does both.
 	free := h.token(scopes(domain.ScopeRepoWrite))
-	_, err = h.api(free).repo.CreateRepo(h.ctx, connect.NewRequest(&pb.CreateRepoRequest{Name: "via-api"}))
+	_, err = h.api(free).repo.CreateRepo(h.ctx, &pb.CreateRepoRequest{Name: "via-api"})
 	require.NoError(t, err)
 
 	// It cannot delete a repository, even with repo:admin.
 	admin, _ := h.branchToken(scopes(domain.ScopeRepoRead, domain.ScopeRepoAdmin), []string{"agent/claude/"}, "via-api")
-	_, err = h.api(admin).repo.DeleteRepo(h.ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "via-api"}))
+	_, err = h.api(admin).repo.DeleteRepo(h.ctx, &pb.DeleteRepoRequest{Repo: "via-api"})
 	assert.Equal(t, "permission_denied", codeName(err))
 	assert.DirExists(t, h.repoDir("via-api"))
 	// ... nor change its settings (default branch, visibility, ...).
-	_, err = h.api(admin).repo.UpdateRepo(h.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err = h.api(admin).repo.UpdateRepo(h.ctx, &pb.UpdateRepoRequest{
 		Repo: "via-api", Visibility: pb.Visibility_VISIBILITY_PUBLIC, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
-	}))
+	})
 	assert.Equal(t, "permission_denied", codeName(err))
-	got, err := h.api(adminToken).repo.GetRepo(h.ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "via-api"}))
+	got, err := h.api(adminToken).repo.GetRepo(h.ctx, &pb.GetRepoRequest{Repo: "via-api"})
 	require.NoError(t, err)
-	assert.Equal(t, pb.Visibility_VISIBILITY_PRIVATE, got.Msg.GetRepo().GetVisibility())
+	assert.Equal(t, pb.Visibility_VISIBILITY_PRIVATE, got.GetRepo().GetVisibility())
 
 	// It never has owner rights, whatever its scopes.
 	all, _ := h.branchToken(domain.AllScopes(), []string{"agent/claude/"})
-	_, err = h.api(all).session.SignOutEverywhere(h.ctx, connect.NewRequest(&pb.SignOutEverywhereRequest{}))
+	_, err = h.api(all).session.SignOutEverywhere(h.ctx, &pb.SignOutEverywhereRequest{})
 	assert.Equal(t, "permission_denied", codeName(err))
-	_, err = h.api(all).session.CreateLoginLink(h.ctx, connect.NewRequest(&pb.CreateLoginLinkRequest{}))
+	_, err = h.api(all).session.CreateLoginLink(h.ctx, &pb.CreateLoginLinkRequest{})
 	assert.Equal(t, "permission_denied", codeName(err))
 }
 
@@ -154,16 +153,16 @@ func TestAC5BranchLimitedMerge(t *testing.T) {
 
 	secret, _ := h.branchToken(scopes(domain.ScopeRepoRead, domain.ScopeMRWrite, domain.ScopeMRMerge), []string{"agent/claude/"}, "proj")
 	c := h.api(secret)
-	created, err := c.mr.CreateMergeRequest(h.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+	created, err := c.mr.CreateMergeRequest(h.ctx, &pb.CreateMergeRequestRequest{
 		Repo: "proj", Title: "feat", SourceBranch: "agent/claude/feat",
-	}))
+	})
 	require.NoError(t, err, "opening a request writes no ref")
-	n := created.Msg.GetMergeRequest().GetNumber()
+	n := created.GetMergeRequest().GetNumber()
 
 	for _, del := range []bool{false, true} {
-		_, err = c.mr.MergeMergeRequest(h.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+		_, err = c.mr.MergeMergeRequest(h.ctx, &pb.MergeMergeRequestRequest{
 			Repo: "proj", Number: n, HeadId: feat, DeleteSourceBranch: del,
-		}))
+		})
 		assert.Equal(t, "permission_denied", codeName(err), "into main, delete=%v", del)
 	}
 	assert.Equal(t, mainID, h.bareGit("proj", "rev-parse", "refs/heads/main"))
@@ -171,7 +170,7 @@ func TestAC5BranchLimitedMerge(t *testing.T) {
 
 	// The merge goes through for a token without prefixes.
 	m := h.api(h.token(scopes(domain.ScopeRepoRead, domain.ScopeMRMerge)))
-	_, err = m.mr.MergeMergeRequest(h.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: feat}))
+	_, err = m.mr.MergeMergeRequest(h.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: feat})
 	require.NoError(t, err)
 	assert.Equal(t, feat, h.bareGit("proj", "rev-parse", "refs/heads/main"))
 }
@@ -181,10 +180,10 @@ func TestAC5BranchLimitedTokenCreation(t *testing.T) {
 	h := newHarness(t, harnessOpts{})
 	secret, _ := h.branchToken(scopes(domain.ScopeTokenAdmin, domain.ScopeRepoWrite), []string{"agent/claude/"})
 	c := h.api(secret)
-	create := func(prefixes ...string) (*connect.Response[pb.CreateTokenResponse], error) {
-		return c.token.CreateToken(h.ctx, connect.NewRequest(&pb.CreateTokenRequest{
+	create := func(prefixes ...string) (*pb.CreateTokenResponse, error) {
+		return c.token.CreateToken(h.ctx, &pb.CreateTokenRequest{
 			Label: "child", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_WRITE}, BranchPrefixes: prefixes,
-		}))
+		})
 	}
 	_, err := create()
 	assert.Equal(t, "permission_denied", codeName(err), "no prefixes")
@@ -196,13 +195,13 @@ func TestAC5BranchLimitedTokenCreation(t *testing.T) {
 	assert.Equal(t, "invalid_argument", codeName(err), "malformed")
 	res, err := create("agent/claude/sub/")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"agent/claude/sub/"}, res.Msg.GetToken().GetBranchPrefixes())
+	assert.Equal(t, []string{"agent/claude/sub/"}, res.GetToken().GetBranchPrefixes())
 
 	// The listing shows the prefixes.
-	list, err := h.api(adminToken).token.ListTokens(h.ctx, connect.NewRequest(&pb.ListTokensRequest{}))
+	list, err := h.api(adminToken).token.ListTokens(h.ctx, &pb.ListTokensRequest{})
 	require.NoError(t, err)
 	var seen int
-	for _, tk := range list.Msg.GetTokens() {
+	for _, tk := range list.GetTokens() {
 		if tk.GetLabel() == "child" {
 			assert.Equal(t, []string{"agent/claude/sub/"}, tk.GetBranchPrefixes())
 			seen++

@@ -3,13 +3,14 @@
 package app
 
 import (
+	"connectrpc.com/connect/v2/connectproto"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -54,13 +55,13 @@ func newMRRig(t *testing.T, vis domain.Visibility) *mrRig {
 }
 
 func (r *mrRig) create(c *clients) (*pb.MergeRequest, error) {
-	res, err := c.mr.CreateMergeRequest(r.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+	res, err := c.mr.CreateMergeRequest(r.ctx, &pb.CreateMergeRequestRequest{
 		Repo: "proj", Title: "Change a", Description: "why", SourceBranch: "feat",
-	}))
+	})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg.GetMergeRequest(), nil
+	return res.GetMergeRequest(), nil
 }
 
 // AC2 for merge requests: who may read and who may write.
@@ -77,11 +78,11 @@ func TestMergeRequestAccessOverTheAPI(t *testing.T) {
 
 	reads := map[string]func(c *clients) error{
 		"ListMergeRequests": func(c *clients) error {
-			_, err := c.mr.ListMergeRequests(ctx, connect.NewRequest(&pb.ListMergeRequestsRequest{Repo: "proj"}))
+			_, err := c.mr.ListMergeRequests(ctx, &pb.ListMergeRequestsRequest{Repo: "proj"})
 			return err
 		},
 		"GetMergeRequest": func(c *clients) error {
-			_, err := c.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: 1}))
+			_, err := c.mr.GetMergeRequest(ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: 1})
 			return err
 		},
 	}
@@ -94,27 +95,27 @@ func TestMergeRequestAccessOverTheAPI(t *testing.T) {
 	}
 	writes := map[string]func(c *clients) error{
 		"CreateMergeRequest": func(c *clients) error {
-			_, err := c.mr.CreateMergeRequest(ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "t", SourceBranch: "nope"}))
+			_, err := c.mr.CreateMergeRequest(ctx, &pb.CreateMergeRequestRequest{Repo: "proj", Title: "t", SourceBranch: "nope"})
 			return err
 		},
 		"AddComment": func(c *clients) error {
-			_, err := c.mr.AddComment(ctx, connect.NewRequest(&pb.AddCommentRequest{Repo: "proj", Number: 1, Text: "x"}))
+			_, err := c.mr.AddComment(ctx, &pb.AddCommentRequest{Repo: "proj", Number: 1, Text: "x"})
 			return err
 		},
 		"ResolveComment": func(c *clients) error {
-			_, err := c.mr.ResolveComment(ctx, connect.NewRequest(&pb.ResolveCommentRequest{Repo: "proj", Number: 1, CommentId: "1", Resolved: true}))
+			_, err := c.mr.ResolveComment(ctx, &pb.ResolveCommentRequest{Repo: "proj", Number: 1, CommentId: "1", Resolved: true})
 			return err
 		},
 		"MarkRead": func(c *clients) error {
-			_, err := c.mr.MarkRead(ctx, connect.NewRequest(&pb.MarkReadRequest{Repo: "proj", Number: 1}))
+			_, err := c.mr.MarkRead(ctx, &pb.MarkReadRequest{Repo: "proj", Number: 1})
 			return err
 		},
 		"MergeMergeRequest": func(c *clients) error {
-			_, err := c.mr.MergeMergeRequest(ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: r.head}))
+			_, err := c.mr.MergeMergeRequest(ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: r.head})
 			return err
 		},
 		"CloseMergeRequest": func(c *clients) error {
-			_, err := c.mr.CloseMergeRequest(ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: 99}))
+			_, err := c.mr.CloseMergeRequest(ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: 99})
 			return err
 		},
 	}
@@ -146,15 +147,15 @@ func TestMergeRequestAccessOverTheAPI(t *testing.T) {
 	assert.Equal(t, "permission_denied", codeName(err))
 	_, err = h2.create(h2.writer)
 	require.NoError(t, err)
-	_, err = h2.anon.mr.GetMergeRequest(h2.ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: 1}))
+	_, err = h2.anon.mr.GetMergeRequest(h2.ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: 1})
 	assert.NoError(t, err)
 
 	// Bad names and numbers.
-	_, err = r.root.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "Proj", Number: 1}))
+	_, err = r.root.mr.GetMergeRequest(ctx, &pb.GetMergeRequestRequest{Repo: "Proj", Number: 1})
 	assert.Equal(t, "invalid_argument", codeName(err))
-	_, err = r.root.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: 0}))
+	_, err = r.root.mr.GetMergeRequest(ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: 0})
 	assert.Equal(t, "not_found", codeName(err))
-	_, err = r.root.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "ghost", Number: 1}))
+	_, err = r.root.mr.GetMergeRequest(ctx, &pb.GetMergeRequestRequest{Repo: "ghost", Number: 1})
 	assert.Equal(t, "not_found", codeName(err))
 }
 
@@ -162,15 +163,15 @@ func TestMergeRequestAccessOverTheAPI(t *testing.T) {
 // BadRequest detail naming the fields.
 func TestMergeRequestRulesCarryABadRequestDetail(t *testing.T) {
 	r := newMRRig(t, domain.VisibilityPublic)
-	_, err := r.root.mr.CreateMergeRequest(r.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+	_, err := r.root.mr.CreateMergeRequest(r.ctx, &pb.CreateMergeRequestRequest{
 		Repo: "proj", Title: "two\nlines", Description: "bidi \u202e", SourceBranch: "feat", TargetBranch: "feat",
-	}))
+	})
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	var ce *connect.Error
 	require.ErrorAs(t, err, &ce)
 	require.Len(t, ce.Details(), 1)
-	v, err := ce.Details()[0].Value()
+	v, err := connectproto.UnmarshalErrorDetail(ce.Details()[0])
 	require.NoError(t, err)
 	br, ok := v.(*errdetails.BadRequest)
 	require.True(t, ok, "%T", v)
@@ -183,18 +184,18 @@ func TestMergeRequestRulesCarryABadRequestDetail(t *testing.T) {
 	assert.Contains(t, fields, "target_branch")
 
 	// Nothing was created.
-	res, err := r.root.mr.ListMergeRequests(r.ctx, connect.NewRequest(&pb.ListMergeRequestsRequest{Repo: "proj"}))
+	res, err := r.root.mr.ListMergeRequests(r.ctx, &pb.ListMergeRequestsRequest{Repo: "proj"})
 	require.NoError(t, err)
-	assert.Empty(t, res.Msg.GetMergeRequests())
+	assert.Empty(t, res.GetMergeRequests())
 
 	// Other bad requests.
-	_, err = r.root.mr.ListMergeRequests(r.ctx, connect.NewRequest(&pb.ListMergeRequestsRequest{Repo: "proj", State: 9}))
+	_, err = r.root.mr.ListMergeRequests(r.ctx, &pb.ListMergeRequestsRequest{Repo: "proj", State: 9})
 	assert.Equal(t, "invalid_argument", codeName(err))
-	_, err = r.root.mr.ListMergeRequests(r.ctx, connect.NewRequest(&pb.ListMergeRequestsRequest{Repo: "proj", PageToken: "x"}))
+	_, err = r.root.mr.ListMergeRequests(r.ctx, &pb.ListMergeRequestsRequest{Repo: "proj", PageToken: "x"})
 	assert.Equal(t, "invalid_argument", codeName(err))
-	_, err = r.root.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: "abc"}))
+	_, err = r.root.mr.MergeMergeRequest(r.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: "abc"})
 	assert.Equal(t, "invalid_argument", codeName(err), "a short id is not a commit id")
-	_, err = r.root.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: 1}))
+	_, err = r.root.mr.MergeMergeRequest(r.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: 1})
 	assert.Equal(t, "invalid_argument", codeName(err), "head_id is required")
 }
 
@@ -208,34 +209,34 @@ func TestMergeRequestLifecycleOverTheAPI(t *testing.T) {
 	assert.Equal(t, "already_exists", codeName(err))
 
 	// A comment on a line of the diff, a general one, and a wrong line.
-	c1, err := r.writer.mr.AddComment(ctx, connect.NewRequest(&pb.AddCommentRequest{
+	c1, err := r.writer.mr.AddComment(ctx, &pb.AddCommentRequest{
 		Repo: "proj", Number: 1, Path: "b.txt", Line: 1, Side: pb.DiffSide_DIFF_SIDE_NEW, Text: "nice",
-	}))
+	})
 	require.NoError(t, err)
-	assert.Equal(t, "1", c1.Msg.GetComment().GetId())
-	assert.Equal(t, r.head, c1.Msg.GetComment().GetCommitId())
-	_, err = r.writer.mr.AddComment(ctx, connect.NewRequest(&pb.AddCommentRequest{Repo: "proj", Number: 1, Text: "general"}))
+	assert.Equal(t, "1", c1.GetComment().GetId())
+	assert.Equal(t, r.head, c1.GetComment().GetCommitId())
+	_, err = r.writer.mr.AddComment(ctx, &pb.AddCommentRequest{Repo: "proj", Number: 1, Text: "general"})
 	require.NoError(t, err)
-	_, err = r.writer.mr.AddComment(ctx, connect.NewRequest(&pb.AddCommentRequest{
+	_, err = r.writer.mr.AddComment(ctx, &pb.AddCommentRequest{
 		Repo: "proj", Number: 1, Path: "b.txt", Line: 7, Side: pb.DiffSide_DIFF_SIDE_NEW, Text: "no such line",
-	}))
+	})
 	assert.Equal(t, "invalid_argument", codeName(err))
 
 	// Resolve, idempotent; an id nobody issued is not found.
 	for range 2 {
-		res, err := r.writer.mr.ResolveComment(ctx, connect.NewRequest(&pb.ResolveCommentRequest{Repo: "proj", Number: 1, CommentId: "1", Resolved: true}))
+		res, err := r.writer.mr.ResolveComment(ctx, &pb.ResolveCommentRequest{Repo: "proj", Number: 1, CommentId: "1", Resolved: true})
 		require.NoError(t, err)
-		assert.True(t, res.Msg.GetComment().GetResolved())
+		assert.True(t, res.GetComment().GetResolved())
 	}
 	for _, id := range []string{"99", "0", "x", "01", ""} {
-		_, err = r.writer.mr.ResolveComment(ctx, connect.NewRequest(&pb.ResolveCommentRequest{Repo: "proj", Number: 1, CommentId: id, Resolved: true}))
+		_, err = r.writer.mr.ResolveComment(ctx, &pb.ResolveCommentRequest{Repo: "proj", Number: 1, CommentId: id, Resolved: true})
 		assert.Equal(t, "not_found", codeName(err), "comment %q", id)
 	}
 
 	// Get, anonymously: the commits, the diff and the comments.
-	got, err := r.anon.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: 1}))
+	got, err := r.anon.mr.GetMergeRequest(ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: 1})
 	require.NoError(t, err)
-	m := got.Msg
+	m := got
 	assert.Equal(t, r.head, m.GetMergeRequest().GetHeadId())
 	assert.Len(t, m.GetCommits(), 2)
 	assert.False(t, m.GetCommitsTruncated())
@@ -248,27 +249,27 @@ func TestMergeRequestLifecycleOverTheAPI(t *testing.T) {
 	assert.Empty(t, m.GetLastReadId())
 
 	// MarkRead, then since_last_read after a push.
-	_, err = r.writer.mr.MarkRead(ctx, connect.NewRequest(&pb.MarkReadRequest{Repo: "proj", Number: 1}))
+	_, err = r.writer.mr.MarkRead(ctx, &pb.MarkReadRequest{Repo: "proj", Number: 1})
 	require.NoError(t, err)
 	r.writeFile(r.wt, "c.txt", []byte("see\n"))
 	r.mustGit(r.wt, "push", "-q", r.urlAuth(adminToken, "/proj.git"), "feat")
-	got, err = r.reader.mr.GetMergeRequest(ctx, connect.NewRequest(&pb.GetMergeRequestRequest{Repo: "proj", Number: 1, SinceLastRead: true}))
+	got, err = r.reader.mr.GetMergeRequest(ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: 1, SinceLastRead: true})
 	require.NoError(t, err)
-	assert.Equal(t, r.head, got.Msg.GetLastReadId())
-	assert.Equal(t, r.head, got.Msg.GetDiffBaseId())
-	require.Len(t, got.Msg.GetDiff().GetFiles(), 1)
-	assert.Equal(t, "c.txt", got.Msg.GetDiff().GetFiles()[0].GetNewPath())
-	assert.False(t, got.Msg.GetLastReadLost())
+	assert.Equal(t, r.head, got.GetLastReadId())
+	assert.Equal(t, r.head, got.GetDiffBaseId())
+	require.Len(t, got.GetDiff().GetFiles(), 1)
+	assert.Equal(t, "c.txt", got.GetDiff().GetFiles()[0].GetNewPath())
+	assert.False(t, got.GetLastReadLost())
 
 	// The old head is refused: the branch moved.
-	_, err = r.merger.mr.MergeMergeRequest(ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: r.head}))
+	_, err = r.merger.mr.MergeMergeRequest(ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: r.head})
 	assert.Equal(t, "failed_precondition", codeName(err))
 	newHead := r.bareGit("proj", "rev-parse", "feat")
-	merged, err := r.merger.mr.MergeMergeRequest(ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+	merged, err := r.merger.mr.MergeMergeRequest(ctx, &pb.MergeMergeRequestRequest{
 		Repo: "proj", Number: 1, Mode: pb.MergeMode_MERGE_MODE_FAST_FORWARD, HeadId: newHead,
-	}))
+	})
 	require.NoError(t, err)
-	mm := merged.Msg.GetMergeRequest()
+	mm := merged.GetMergeRequest()
 	assert.Equal(t, pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED, mm.GetState())
 	assert.Equal(t, newHead, mm.GetMergedCommitId())
 	assert.Equal(t, pb.MergeMode_MERGE_MODE_FAST_FORWARD, mm.GetMergeMode())
@@ -276,16 +277,16 @@ func TestMergeRequestLifecycleOverTheAPI(t *testing.T) {
 
 	// Listing by state; repeating a merge or closing a merged request fails.
 	list := func(st pb.MergeRequestState) int {
-		res, err := r.anon.mr.ListMergeRequests(ctx, connect.NewRequest(&pb.ListMergeRequestsRequest{Repo: "proj", State: st}))
+		res, err := r.anon.mr.ListMergeRequests(ctx, &pb.ListMergeRequestsRequest{Repo: "proj", State: st})
 		require.NoError(t, err)
-		return len(res.Msg.GetMergeRequests())
+		return len(res.GetMergeRequests())
 	}
 	assert.Equal(t, 1, list(pb.MergeRequestState_MERGE_REQUEST_STATE_UNSPECIFIED))
 	assert.Equal(t, 1, list(pb.MergeRequestState_MERGE_REQUEST_STATE_MERGED))
 	assert.Equal(t, 0, list(pb.MergeRequestState_MERGE_REQUEST_STATE_OPEN))
-	_, err = r.merger.mr.MergeMergeRequest(ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: newHead}))
+	_, err = r.merger.mr.MergeMergeRequest(ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: newHead})
 	assert.Equal(t, "failed_precondition", codeName(err))
-	_, err = r.writer.mr.CloseMergeRequest(ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: 1}))
+	_, err = r.writer.mr.CloseMergeRequest(ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: 1})
 	assert.Equal(t, "failed_precondition", codeName(err))
 	_ = mr
 }
@@ -296,19 +297,19 @@ func TestUpdateRepoSettingsOverTheAPI(t *testing.T) {
 	root := h.api(adminToken)
 	ctx := h.ctx
 
-	got, err := h.api("").repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "proj"}))
+	got, err := h.api("").repo.GetRepo(ctx, &pb.GetRepoRequest{Repo: "proj"})
 	require.NoError(t, err)
-	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH, pb.MergeMode_MERGE_MODE_MERGE_COMMIT}, got.Msg.GetRepo().GetSettings().GetAllowedMergeModes())
-	assert.False(t, got.Msg.GetRepo().GetSettings().GetAllowAutoMerge())
+	assert.Equal(t, []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD, pb.MergeMode_MERGE_MODE_SQUASH, pb.MergeMode_MERGE_MODE_MERGE_COMMIT}, got.GetRepo().GetSettings().GetAllowedMergeModes())
+	assert.False(t, got.GetRepo().GetSettings().GetAllowAutoMerge())
 
 	update := func(c *clients, paths []string, s *pb.RepoSettings) (*pb.Repo, error) {
-		res, err := c.repo.UpdateRepo(ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+		res, err := c.repo.UpdateRepo(ctx, &pb.UpdateRepoRequest{
 			Repo: "proj", Settings: s, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
-		}))
+		})
 		if err != nil {
 			return nil, err
 		}
-		return res.Msg.GetRepo(), nil
+		return res.GetRepo(), nil
 	}
 	repo, err := update(root, []string{"settings.allowed_merge_modes"}, &pb.RepoSettings{
 		AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_SQUASH}, AllowAutoMerge: false,
@@ -343,9 +344,9 @@ func TestUpdateRepoSettingsOverTheAPI(t *testing.T) {
 	// repo:admin is needed.
 	_, err = update(h.api(h.token(scopes(domain.ScopeRepoRead, domain.ScopeMRMerge))), []string{"settings.allow_auto_merge"}, &pb.RepoSettings{})
 	assert.Equal(t, "permission_denied", codeName(err))
-	got, err = root.repo.GetRepo(ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "proj"}))
+	got, err = root.repo.GetRepo(ctx, &pb.GetRepoRequest{Repo: "proj"})
 	require.NoError(t, err)
-	assert.True(t, got.Msg.GetRepo().GetSettings().GetAllowAutoMerge())
+	assert.True(t, got.GetRepo().GetSettings().GetAllowAutoMerge())
 }
 
 // AC4 over the API: a mode the settings do not allow is refused.
@@ -353,14 +354,14 @@ func TestMergeModeNotAllowedOverTheAPI(t *testing.T) {
 	r := newMRRig(t, domain.VisibilityPublic)
 	_, err := r.create(r.writer)
 	require.NoError(t, err)
-	_, err = r.root.repo.UpdateRepo(r.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err = r.root.repo.UpdateRepo(r.ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"settings.allowed_merge_modes"}},
 		Settings: &pb.RepoSettings{AllowedMergeModes: []pb.MergeMode{pb.MergeMode_MERGE_MODE_FAST_FORWARD}},
-	}))
+	})
 	require.NoError(t, err)
-	_, err = r.merger.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+	_, err = r.merger.mr.MergeMergeRequest(r.ctx, &pb.MergeMergeRequestRequest{
 		Repo: "proj", Number: 1, Mode: pb.MergeMode_MERGE_MODE_SQUASH, HeadId: r.head,
-	}))
+	})
 	assert.Equal(t, "failed_precondition", codeName(err))
 	assert.Equal(t, r.bareGit("proj", "rev-parse", "main"), r.bareGit("proj", "rev-parse", "feat~2"), "main did not move")
 }
@@ -371,24 +372,24 @@ func TestMergeDeletesTheSourceOverTheAPI(t *testing.T) {
 	r := newMRRig(t, domain.VisibilityPublic)
 	_, err := r.create(r.writer)
 	require.NoError(t, err)
-	res, err := r.merger.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+	res, err := r.merger.mr.MergeMergeRequest(r.ctx, &pb.MergeMergeRequestRequest{
 		Repo: "proj", Number: 1, HeadId: r.head, DeleteSourceBranch: true,
-	}))
+	})
 	require.NoError(t, err)
-	assert.True(t, res.Msg.GetSourceBranchDeleted(), "requested")
+	assert.True(t, res.GetSourceBranchDeleted(), "requested")
 	r.forge.MergeRequests.Wait(r.ctx) // the deletion follows the response
 	assert.Empty(t, r.bareGit("proj", "for-each-ref", "refs/heads/feat"))
 
 	// The default branch as a source: refused before anything changes.
 	r.bareGit("proj", "branch", "old", "main~1")
 	main := r.bareGit("proj", "rev-parse", "main")
-	_, err = r.root.mr.CreateMergeRequest(r.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{
+	_, err = r.root.mr.CreateMergeRequest(r.ctx, &pb.CreateMergeRequestRequest{
 		Repo: "proj", Title: "back", SourceBranch: "main", TargetBranch: "old",
-	}))
+	})
 	require.NoError(t, err)
-	_, err = r.merger.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+	_, err = r.merger.mr.MergeMergeRequest(r.ctx, &pb.MergeMergeRequestRequest{
 		Repo: "proj", Number: 2, HeadId: main, DeleteSourceBranch: true,
-	}))
+	})
 	assert.Equal(t, "failed_precondition", codeName(err))
 	assert.Equal(t, main, r.bareGit("proj", "rev-parse", "main"))
 	assert.NotEqual(t, main, r.bareGit("proj", "rev-parse", "old"), "not merged")
@@ -404,9 +405,9 @@ func TestGetSigningKey(t *testing.T) {
 			"anonymous": h.api(""), "root": h.api(adminToken),
 			"bad token": newDisposableClients(h.url("/-/api"), "ermite_"+strings.Repeat("x", 43)),
 		}[who]
-		res, err := c.server.GetSigningKey(h.ctx, connect.NewRequest(&pb.GetSigningKeyRequest{}))
+		res, err := c.server.GetSigningKey(h.ctx, &pb.GetSigningKeyRequest{})
 		require.NoError(t, err, who)
-		k := res.Msg
+		k := res
 		assert.True(t, strings.HasPrefix(k.GetPublicKey(), "ssh-ed25519 "), who)
 		assert.True(t, strings.HasPrefix(k.GetFingerprint(), "SHA256:"), who)
 		assert.Equal(t, "ermite", k.GetCommitterName())
@@ -434,17 +435,17 @@ func TestSquashCommitVerifiesWithGit(t *testing.T) {
 	r := newMRRig(t, domain.VisibilityPublic)
 	_, err := r.create(r.writer)
 	require.NoError(t, err)
-	merged, err := r.merger.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{
+	merged, err := r.merger.mr.MergeMergeRequest(r.ctx, &pb.MergeMergeRequestRequest{
 		Repo: "proj", Number: 1, Mode: pb.MergeMode_MERGE_MODE_SQUASH, HeadId: r.head,
-	}))
+	})
 	require.NoError(t, err)
-	id := merged.Msg.GetMergeRequest().GetMergedCommitId()
+	id := merged.GetMergeRequest().GetMergedCommitId()
 	require.NotEqual(t, r.head, id)
 
-	key, err := r.anon.server.GetSigningKey(r.ctx, connect.NewRequest(&pb.GetSigningKeyRequest{}))
+	key, err := r.anon.server.GetSigningKey(r.ctx, &pb.GetSigningKeyRequest{})
 	require.NoError(t, err)
 	signers := filepath.Join(t.TempDir(), "allowed_signers")
-	require.NoError(t, os.WriteFile(signers, []byte(key.Msg.GetAllowedSigners()+"\n"), 0o600))
+	require.NoError(t, os.WriteFile(signers, []byte(key.GetAllowedSigners()+"\n"), 0o600))
 	out, err := r.gitEnv(nil, r.repoDir("proj"), "-c", "gpg.format=ssh", "-c", "gpg.ssh.allowedSignersFile="+signers, "verify-commit", id)
 	require.NoError(t, err, out)
 	assert.Contains(t, out, "Good \"git\" signature for ermite@example.test")
@@ -462,7 +463,7 @@ func TestMergeRequestEventsAreFilteredByVisibility(t *testing.T) {
 
 	_, err := r.create(r.writer)
 	require.NoError(t, err)
-	_, err = r.writer.mr.AddComment(r.ctx, connect.NewRequest(&pb.AddCommentRequest{Repo: "proj", Number: 1, Text: "hello"}))
+	_, err = r.writer.mr.AddComment(r.ctx, &pb.AddCommentRequest{Repo: "proj", Number: 1, Text: "hello"})
 	require.NoError(t, err)
 
 	opened := reader.next(t, watchWait)
@@ -476,7 +477,7 @@ func TestMergeRequestEventsAreFilteredByVisibility(t *testing.T) {
 	assert.Equal(t, "hello", added.GetComment().GetText())
 
 	// Merging publishes merged, then pushed.
-	_, err = r.merger.mr.MergeMergeRequest(r.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: r.head}))
+	_, err = r.merger.mr.MergeMergeRequest(r.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: 1, HeadId: r.head})
 	require.NoError(t, err)
 	assert.NotNil(t, reader.next(t, watchWait).GetMergeRequestMerged())
 	pushed := reader.next(t, watchWait).GetPushed()
@@ -489,10 +490,10 @@ func TestMergeRequestEventsAreFilteredByVisibility(t *testing.T) {
 	r.writeFile(r.wt, "two.txt", []byte("2\n"))
 	r.mustGit(r.wt, "push", "-q", r.urlAuth(adminToken, "/proj.git"), "two")
 	reader.next(t, watchWait) // the push of "two"
-	_, err = r.writer.mr.CreateMergeRequest(r.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "two", SourceBranch: "two"}))
+	_, err = r.writer.mr.CreateMergeRequest(r.ctx, &pb.CreateMergeRequestRequest{Repo: "proj", Title: "two", SourceBranch: "two"})
 	require.NoError(t, err)
 	assert.NotNil(t, reader.next(t, watchWait).GetMergeRequestOpened())
-	_, err = r.writer.mr.CloseMergeRequest(r.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: 2}))
+	_, err = r.writer.mr.CloseMergeRequest(r.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: 2})
 	require.NoError(t, err)
 	closed := reader.next(t, watchWait).GetMergeRequestClosed()
 	require.NotNil(t, closed)

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -328,7 +327,7 @@ func TestRerunsNeverRaiseTheJobTokenPermissions(t *testing.T) {
 	agent, _ := c.branchToken(scopes(domain.ScopeRepoRead, domain.ScopeRepoWrite, domain.ScopeCIWrite), []string{"agent/x/"}, "proj")
 	wf := "on: push\npermissions: write-all\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
 	rerun := func(api *clients, id int64) error {
-		_, err := api.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: id}))
+		_, err := api.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: id})
 		return err
 	}
 	byRef := func(ref string) *pb.Run {

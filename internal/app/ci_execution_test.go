@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -104,7 +104,7 @@ func (c *ciHarness) startJob(runner *fakeRunner) *pb.Job {
 
 func (c *ciHarness) heartbeat(runner *fakeRunner, job *pb.Job) {
 	c.t.Helper()
-	_, err := runner.jobAPI(job).runner.Heartbeat(c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: job.GetJobId()}))
+	_, err := runner.jobAPI(job).runner.Heartbeat(c.ctx, &pb.HeartbeatRequest{JobId: job.GetJobId()})
 	require.NoError(c.t, err)
 }
 
@@ -220,17 +220,17 @@ func TestJobTokenReadsItsRepositoryOnly(t *testing.T) {
 
 	// The API takes it as the principal it is (repo:read on one repository): it
 	// lists that repository and no other, and writes nothing.
-	list, err := c.api(tok).repo.ListRepos(c.ctx, connect.NewRequest(&pb.ListReposRequest{}))
+	list, err := c.api(tok).repo.ListRepos(c.ctx, &pb.ListReposRequest{})
 	require.NoError(t, err)
-	require.Len(t, list.Msg.GetRepos(), 1)
-	assert.Equal(t, "proj", list.Msg.GetRepos()[0].GetName())
-	_, err = c.api(tok).repo.DeleteRepo(c.ctx, connect.NewRequest(&pb.DeleteRepoRequest{Repo: "proj"}))
+	require.Len(t, list.GetRepos(), 1)
+	assert.Equal(t, "proj", list.GetRepos()[0].GetName())
+	_, err = c.api(tok).repo.DeleteRepo(c.ctx, &pb.DeleteRepoRequest{Repo: "proj"})
 	assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err))
-	_, err = c.api(tok).token.CreateToken(c.ctx, connect.NewRequest(&pb.CreateTokenRequest{Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}}))
+	_, err = c.api(tok).token.CreateToken(c.ctx, &pb.CreateTokenRequest{Label: "x", Scopes: []pb.Scope{pb.Scope_SCOPE_REPO_READ}})
 	assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err))
-	_, err = c.api(tok).token.ListTokens(c.ctx, connect.NewRequest(&pb.ListTokensRequest{}))
+	_, err = c.api(tok).token.ListTokens(c.ctx, &pb.ListTokensRequest{})
 	assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err))
-	_, err = c.api(tok).run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: c.runs()[0].GetId()}))
+	_, err = c.api(tok).run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: c.runs()[0].GetId()})
 	assert.Equal(t, connect.CodePermissionDenied, ciErrCode(err), "no ci:write")
 
 	// A made-up token of the right shape is refused, and so are wrong ones.
@@ -248,9 +248,9 @@ func TestJobTokenIsNotAStoredToken(t *testing.T) {
 	job := c.startJob(runner)
 	tok := job.GetGithubToken()
 
-	before, err := c.root.token.ListTokens(c.ctx, connect.NewRequest(&pb.ListTokensRequest{}))
+	before, err := c.root.token.ListTokens(c.ctx, &pb.ListTokensRequest{})
 	require.NoError(t, err)
-	assert.Empty(t, before.Msg.GetTokens(), "no stored token exists")
+	assert.Empty(t, before.GetTokens(), "no stored token exists")
 
 	p, err := c.forge.Auth.Authenticate(c.ctx, tok)
 	require.NoError(t, err)
@@ -261,9 +261,9 @@ func TestJobTokenIsNotAStoredToken(t *testing.T) {
 	assert.False(t, p.IsRoot())
 
 	// Revoking by its id (the "job:" id the principal shows) finds nothing.
-	_, err = c.root.token.RevokeToken(c.ctx, connect.NewRequest(&pb.RevokeTokenRequest{Id: strings.TrimPrefix(p.TokenID(), "job:")}))
+	_, err = c.root.token.RevokeToken(c.ctx, &pb.RevokeTokenRequest{Id: strings.TrimPrefix(p.TokenID(), "job:")})
 	assert.Equal(t, connect.CodeNotFound, ciErrCode(err))
-	_, err = c.root.token.RevokeToken(c.ctx, connect.NewRequest(&pb.RevokeTokenRequest{Id: p.TokenID()}))
+	_, err = c.root.token.RevokeToken(c.ctx, &pb.RevokeTokenRequest{Id: p.TokenID()})
 	assert.Equal(t, connect.CodeNotFound, ciErrCode(err))
 	_, err = c.forge.Auth.Authenticate(c.ctx, tok)
 	require.NoError(t, err, "still valid")
@@ -301,7 +301,7 @@ func TestJobTokenEndsWithTheJob(t *testing.T) {
 		c.heartbeat(runner, job)
 		tok := job.GetGithubToken()
 		assert.Equal(t, http.StatusOK, cloneStatus(c, tok))
-		_, err := c.root.run.CancelRun(c.ctx, connect.NewRequest(&pb.CancelRunRequest{Repo: "proj", RunId: c.runs()[0].GetId()}))
+		_, err := c.root.run.CancelRun(c.ctx, &pb.CancelRunRequest{Repo: "proj", RunId: c.runs()[0].GetId()})
 		require.NoError(t, err)
 		// The runner is told to stop, and the job concludes when it answers or
 		// when the grace ends: either way the token goes with it.
@@ -528,11 +528,11 @@ func (c *ciHarness) resolveErr(runner *fakeRunner, job *pb.Job, uses ...string) 
 	for _, u := range uses {
 		refs = append(refs, &pb.ActionRef{Uses: u})
 	}
-	res, err := runner.jobAPI(job).runner.ResolveActions(c.ctx, connect.NewRequest(&pb.ResolveActionsRequest{JobId: job.GetJobId(), Refs: refs}))
+	res, err := runner.jobAPI(job).runner.ResolveActions(c.ctx, &pb.ResolveActionsRequest{JobId: job.GetJobId(), Refs: refs})
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg.GetActions(), nil
+	return res.GetActions(), nil
 }
 
 const (
@@ -638,7 +638,7 @@ func TestResolveActionsAuthentication(t *testing.T) {
 	job := c.startJob(runner)
 	c.heartbeat(runner, job)
 	call := func(secret, id string) error {
-		_, err := c.api(secret).runner.ResolveActions(c.ctx, connect.NewRequest(&pb.ResolveActionsRequest{JobId: id, Refs: []*pb.ActionRef{{Uses: "a/b@" + shaMain}}}))
+		_, err := c.api(secret).runner.ResolveActions(c.ctx, &pb.ResolveActionsRequest{JobId: id, Refs: []*pb.ActionRef{{Uses: "a/b@" + shaMain}}})
 		return err
 	}
 	assert.NoError(t, call(job.GetJobToken(), job.GetJobId()))
@@ -754,7 +754,7 @@ func TestResolveActionsAreCachedPerAttempt(t *testing.T) {
 	assert.Equal(t, 1, remote.count(), "the second call is answered from the attempt's resolution")
 	runner.runJob(job, pb.CiConclusion_CI_CONCLUSION_SUCCESS, nil, "x")
 
-	_, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: c.runs()[0].GetId()}))
+	_, err := c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: c.runs()[0].GetId()})
 	require.NoError(t, err)
 	job2 := runner.await()
 	assert.Equal(t, int32(2), job2.GetAttempt())
@@ -1010,14 +1010,14 @@ func TestArchiveTokenIsBoundToItsCommit(t *testing.T) {
 		assert.Contains(t, []int{http.StatusNotFound, http.StatusUnauthorized}, status, p)
 	}
 	// It lists no repository over the API either, and holds no scope there.
-	list, err := c.api(arch).repo.ListRepos(c.ctx, connect.NewRequest(&pb.ListReposRequest{}))
+	list, err := c.api(arch).repo.ListRepos(c.ctx, &pb.ListReposRequest{})
 	require.NoError(t, err)
 	names := []string{}
-	for _, r := range list.Msg.GetRepos() {
+	for _, r := range list.GetRepos() {
 		names = append(names, r.GetName())
 	}
 	assert.Empty(t, names, "it reads nothing, not even the public repositories an anonymous caller reads")
-	_, err = c.api(arch).repo.GetRepo(c.ctx, connect.NewRequest(&pb.GetRepoRequest{Repo: "myaction"}))
+	_, err = c.api(arch).repo.GetRepo(c.ctx, &pb.GetRepoRequest{Repo: "myaction"})
 	assert.Equal(t, connect.CodeNotFound, ciErrCode(err))
 
 	// The job's own token is the opposite: it reads its repository whole, and
@@ -1193,9 +1193,9 @@ func TestArchiveTokenIsRevokedWithTheJobAfterARestart(t *testing.T) {
 	require.Eventually(t, func() bool { return get(arch) == http.StatusUnauthorized }, 10*time.Second, 50*time.Millisecond)
 	assert.Equal(t, http.StatusUnauthorized, get(job.GetGithubToken()), "the job's own token as well")
 	api := newClients(srv.URL+"/-/api", adminToken)
-	res, err := api.run.GetRun(c.ctx, connect.NewRequest(&pb.GetRunRequest{Repo: "proj", RunId: job.GetRunId()}))
+	res, err := api.run.GetRun(c.ctx, &pb.GetRunRequest{Repo: "proj", RunId: job.GetRunId()})
 	require.NoError(t, err)
-	assert.Contains(t, res.Msg.GetJobs()[0].GetError(), "lost communication")
+	assert.Contains(t, res.GetJobs()[0].GetError(), "lost communication")
 }
 
 // GO-006: the archive tokens that read a repository go when it is deleted, and
@@ -1326,10 +1326,10 @@ func TestMergeResolvesActionsWithTheRightsOfTheMerger(t *testing.T) {
 		runner := c.registerRunner("alpha", "ubuntu-latest")
 		c.push("main", map[string]string{"README": "x\n"}, "")
 		feat := c.push("feat", map[string]string{".github/workflows/m.yml": mergeWorkflow}, "")
-		mr, err := c.root.mr.CreateMergeRequest(c.ctx, connect.NewRequest(&pb.CreateMergeRequestRequest{Repo: "proj", Title: "CI", SourceBranch: "feat"}))
+		mr, err := c.root.mr.CreateMergeRequest(c.ctx, &pb.CreateMergeRequestRequest{Repo: "proj", Title: "CI", SourceBranch: "feat"})
 		require.NoError(c.t, err)
 		require.Empty(c.t, c.runs(), "nothing runs before the merge")
-		require.NoError(c.t, as(mr.Msg.GetMergeRequest().GetNumber(), feat))
+		require.NoError(c.t, as(mr.GetMergeRequest().GetNumber(), feat))
 		job := runner.await()
 		c.heartbeat(runner, job)
 		return job, c.runs()[0]
@@ -1342,7 +1342,7 @@ func TestMergeResolvesActionsWithTheRightsOfTheMerger(t *testing.T) {
 	}
 	asToken := func(c *ciHarness, secret string) func(int64, string) error {
 		return func(n int64, head string) error {
-			_, err := c.api(secret).mr.MergeMergeRequest(c.ctx, connect.NewRequest(&pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: head}))
+			_, err := c.api(secret).mr.MergeMergeRequest(c.ctx, &pb.MergeMergeRequestRequest{Repo: "proj", Number: n, HeadId: head})
 			return err
 		}
 	}

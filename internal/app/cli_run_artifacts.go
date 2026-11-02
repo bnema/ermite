@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -80,14 +80,14 @@ func humanBytes(n int64) string {
 // listRunArtifacts reads the artifacts of a run. A server without them
 // answers unimplemented, said in words here.
 func listRunArtifacts(ctx context.Context, c *client.Client, repo string, runID int64) (*ermite.ListArtifactsResponse, error) {
-	res, err := c.Artifacts().ListArtifacts(ctx, connect.NewRequest(&ermite.ListArtifactsRequest{Repo: repo, RunId: runID}))
+	res, err := c.Artifacts().ListArtifacts(ctx, &ermite.ListArtifactsRequest{Repo: repo, RunId: runID})
 	if connect.CodeOf(err) == connect.CodeUnimplemented {
 		return nil, fmt.Errorf("the server does not keep artifacts (it lacks the ci.artifacts feature)")
 	}
 	if err != nil {
 		return nil, err
 	}
-	return res.Msg, nil
+	return res, nil
 }
 
 func newRunArtifactsCmd(env *cliEnv) *cobra.Command {
@@ -289,15 +289,22 @@ func downloadArtifact(ctx context.Context, c *client.Client, repo string, a *erm
 // streamArtifact writes the content of an artifact to w and returns the
 // artifact, checking that the content has its size.
 func streamArtifact(ctx context.Context, c *client.Client, repo string, id int64, w io.Writer) (*ermite.Artifact, error) {
-	stream, err := c.Artifacts().DownloadArtifact(ctx, connect.NewRequest(&ermite.DownloadArtifactRequest{Repo: repo, ArtifactId: id}))
+	stream, err := c.Artifacts().DownloadArtifact(ctx, &ermite.DownloadArtifactRequest{Repo: repo, ArtifactId: id})
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = stream.Close() }()
 	var a *ermite.Artifact
 	var n int64
-	for stream.Receive() {
-		msg := stream.Msg()
+	for {
+		msg2, err2 := stream.Receive()
+		if err2 != nil {
+			if errors.Is(err2, io.EOF) {
+				break
+			}
+			return nil, err2
+		}
+		msg := msg2
 		if a == nil {
 			if a = msg.GetArtifact(); a == nil {
 				return nil, errors.New("the server did not describe the artifact")
@@ -312,9 +319,7 @@ func streamArtifact(ctx context.Context, c *client.Client, repo string, id int64
 		}
 		n += int64(len(chunk))
 	}
-	if err := stream.Err(); err != nil {
-		return nil, err
-	}
+
 	if a == nil || n != a.GetSize() {
 		return nil, errors.New("the download ended before the end of the artifact")
 	}

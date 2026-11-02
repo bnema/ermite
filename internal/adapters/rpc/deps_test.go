@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -71,29 +71,29 @@ func TestDepsExpectedVersionsAndErrors(t *testing.T) {
 	ctx := context.Background()
 	want := []domain.DepRef{{Ecosystem: domain.EcosystemGoMod, Directory: "sub", Name: "x/y", Version: "v1.2.3"}}
 	svc.EXPECT().Ignore(mock.Anything, mock.Anything, repo, domain.DepBatchKey("major"), want).Return(domain.RepoDeps{Repo: repo}, nil).Once()
-	res, err := s.IgnoreDependencyUpdates(ctx, connect.NewRequest(&pb.IgnoreDependencyUpdatesRequest{
+	res, err := s.IgnoreDependencyUpdates(ctx, &pb.IgnoreDependencyUpdatesRequest{
 		Repo: "app", Batch: "major", ExpectedVersions: []*pb.DependencyVersion{{Ecosystem: "gomod", Directory: "sub", Name: "x/y", Version: "v1.2.3"}},
-	}))
+	})
 	require.NoError(t, err)
-	assert.Equal(t, "app", res.Msg.Updates.Repo)
+	assert.Equal(t, "app", res.Updates.Repo)
 
 	svc.EXPECT().Open(mock.Anything, mock.Anything, repo, domain.DepBatchKey(""), []domain.DepRef{}).Return(domain.RepoDeps{}, domain.ErrPreconditionFailed).Once()
-	_, err = s.OpenDependencyUpdates(ctx, connect.NewRequest(&pb.OpenDependencyUpdatesRequest{Repo: "app"}))
+	_, err = s.OpenDependencyUpdates(ctx, &pb.OpenDependencyUpdatesRequest{Repo: "app"})
 	assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 
 	svc.EXPECT().Check(mock.Anything, mock.Anything, repo).Return(domain.RepoDeps{}, domain.ErrNotFound).Once()
-	_, err = s.CheckDependencies(ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "app"}))
+	_, err = s.CheckDependencies(ctx, &pb.CheckDependenciesRequest{Repo: "app"})
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "a non-owner gets not found")
 
 	svc.EXPECT().Snooze(mock.Anything, mock.Anything, repo).Return(domain.RepoDeps{}, domain.ErrNotFound).Once()
-	_, err = s.SnoozeDependencyUpdates(ctx, connect.NewRequest(&pb.SnoozeDependencyUpdatesRequest{Repo: "app"}))
+	_, err = s.SnoozeDependencyUpdates(ctx, &pb.SnoozeDependencyUpdatesRequest{Repo: "app"})
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
 	svc.EXPECT().List(mock.Anything, mock.Anything, domain.RepoName{}).Return(nil, domain.ErrNotFound).Once()
-	_, err = s.ListDependencyUpdates(ctx, connect.NewRequest(&pb.ListDependencyUpdatesRequest{}))
+	_, err = s.ListDependencyUpdates(ctx, &pb.ListDependencyUpdatesRequest{})
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
-	_, err = s.CheckDependencies(ctx, connect.NewRequest(&pb.CheckDependenciesRequest{Repo: "../bad"}))
+	_, err = s.CheckDependencies(ctx, &pb.CheckDependenciesRequest{Repo: "../bad"})
 	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
 
@@ -103,9 +103,9 @@ func TestDepsListWithRepoFilter(t *testing.T) {
 	svc := mocks.NewDepsService(t)
 	svc.EXPECT().List(mock.Anything, mock.Anything, repo).Return([]domain.RepoDeps{{Repo: repo}}, nil).Once()
 	r := "app"
-	res, err := (&depsService{svc}).ListDependencyUpdates(context.Background(), connect.NewRequest(&pb.ListDependencyUpdatesRequest{Repo: &r}))
+	res, err := (&depsService{svc}).ListDependencyUpdates(context.Background(), &pb.ListDependencyUpdatesRequest{Repo: &r})
 	require.NoError(t, err)
-	require.Len(t, res.Msg.Repos, 1)
+	require.Len(t, res.Repos, 1)
 }
 
 func TestRepoDepsBatchesToPB(t *testing.T) {

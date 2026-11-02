@@ -5,9 +5,8 @@ package rpc
 import (
 	"context"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
 )
@@ -20,14 +19,14 @@ type eventService struct{ events ports.EventService }
 // "server is shutting down". It ends with unauthenticated when the token of
 // the caller is revoked or expires, and a caller that has too many streams
 // open gets resource_exhausted.
-func (s *eventService) Watch(ctx context.Context, req *connect.Request[pb.WatchRequest], stream *connect.ServerStream[pb.WatchResponse]) error {
+func (s *eventService) Watch(ctx context.Context, req *pb.WatchRequest, stream ermiteconnect.EventServiceWatchServerStream) error {
 	params := ports.WatchParams{
-		Topics: req.Msg.GetTopics(), ResumeAfter: req.Msg.GetResumeAfter(),
+		Topics: req.GetTopics(), ResumeAfter: req.GetResumeAfter(),
 		Client: clientFromContext(ctx),
 		// A client's call returns when the response begins: send the headers
-		// now, not with the first event, which may be far away. Connect flushes
-		// them for a nil message. A failure shows on the first real send.
-		Ready: func() { _ = stream.Send(nil) },
+		// now, not with the first event, which may be far away. SendHeaders flushes
+		// them without sending a message. A failure shows on the first real send.
+		Ready: func() { _ = stream.SendHeaders() },
 	}
 	err := s.events.Watch(ctx, caller(ctx), params, func(we ports.WatchEvent) error {
 		ev := watchEventToPB(we)

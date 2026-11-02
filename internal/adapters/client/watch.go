@@ -6,11 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"time"
 
-	"connectrpc.com/connect"
 	"bnema.dev/zerowrap"
+	"connectrpc.com/connect/v2"
 
 	"bnema.dev/ermite-api/gen/ermite"
 )
@@ -75,14 +76,20 @@ func (c *Client) Watch(ctx context.Context, opts WatchOptions, onEvent func(*erm
 	for {
 		started := time.Now()
 		received := false
-		stream, err := events.Watch(ctx, connect.NewRequest(&ermite.WatchRequest{Topics: opts.Topics, ResumeAfter: last}))
+		stream, err := events.Watch(ctx, &ermite.WatchRequest{Topics: opts.Topics, ResumeAfter: last})
 		if err == nil {
-			for stream.Receive() {
+			var streamErr error
+			for {
+				msg, err2 := stream.Receive()
+				if err2 != nil {
+					streamErr = err2
+					break
+				}
 				if !received && retrying {
 					notice("reconnected")
 				}
 				received = true
-				ev := stream.Msg().GetEvent()
+				ev := msg.GetEvent()
 				if ev == nil {
 					continue
 				}
@@ -94,7 +101,10 @@ func (c *Client) Watch(ctx context.Context, opts WatchOptions, onEvent func(*erm
 					last = ev.GetId()
 				}
 			}
-			err = stream.Err()
+			if errors.Is(streamErr, io.EOF) {
+				streamErr = nil
+			}
+			err = streamErr
 			_ = stream.Close()
 		}
 		if ctx.Err() != nil {
@@ -137,7 +147,7 @@ func retryable(err error) bool {
 	// A connection cut in the middle of a stream is reported by Connect as an
 	// invalid_argument "incomplete envelope" error that the server never sent.
 	// Only an invalid_argument that came over the wire (a bad topic) is final.
-	if ce.Code() == connect.CodeInvalidArgument && !connect.IsWireError(err) {
+	if ce.Code() == connect.CodeInvalidArgument && !ce.IsRemote() {
 		return true
 	}
 	switch ce.Code() {

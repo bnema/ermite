@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -46,18 +45,18 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 
 	// Only owner rights see anything: everyone else gets NotFound.
 	for name, c := range map[string]*clients{"anonymous": r.anon, "reader": r.reader, "writer": r.writer, "blind": r.blind, "branch": r.branch} {
-		_, err := c.issue.ListPendingIssues(ctx, connect.NewRequest(&pb.ListPendingIssuesRequest{}))
+		_, err := c.issue.ListPendingIssues(ctx, &pb.ListPendingIssuesRequest{})
 		assert.Equal(t, "not_found", codeName(err), "%s list", name)
-		_, err = c.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "pub", Id: p1.ID.String()}))
+		_, err = c.issue.ApproveIssue(ctx, &pb.ApproveIssueRequest{Repo: "pub", Id: p1.ID.String()})
 		assert.Equal(t, "not_found", codeName(err), "%s approve", name)
-		_, err = c.issue.RejectIssue(ctx, connect.NewRequest(&pb.RejectIssueRequest{Repo: "pub", Id: p1.ID.String(), Ban: true}))
+		_, err = c.issue.RejectIssue(ctx, &pb.RejectIssueRequest{Repo: "pub", Id: p1.ID.String(), Ban: true})
 		assert.Equal(t, "not_found", codeName(err), "%s reject", name)
 		// A malformed repository tells a non-owner nothing more.
-		_, err = c.issue.ListPendingIssues(ctx, connect.NewRequest(&pb.ListPendingIssuesRequest{Repo: "Bad Repo!"}))
+		_, err = c.issue.ListPendingIssues(ctx, &pb.ListPendingIssuesRequest{Repo: "Bad Repo!"})
 		assert.Equal(t, "not_found", codeName(err), "%s list, malformed repo", name)
-		_, err = c.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "Bad Repo!", Id: p1.ID.String()}))
+		_, err = c.issue.ApproveIssue(ctx, &pb.ApproveIssueRequest{Repo: "Bad Repo!", Id: p1.ID.String()})
 		assert.Equal(t, "not_found", codeName(err), "%s approve, malformed repo", name)
-		_, err = c.issue.RejectIssue(ctx, connect.NewRequest(&pb.RejectIssueRequest{Repo: "Bad Repo!", Id: "nope"}))
+		_, err = c.issue.RejectIssue(ctx, &pb.RejectIssueRequest{Repo: "Bad Repo!", Id: "nope"})
 		assert.Equal(t, "not_found", codeName(err), "%s reject, malformed repo", name)
 	}
 	still, err := r.forge.PendingIssues.Count(ctx)
@@ -65,41 +64,41 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 	assert.Equal(t, 2, still, "nothing changed")
 
 	for name, c := range map[string]*clients{"root": r.root, "owner token": owner} {
-		res, err := c.issue.ListPendingIssues(ctx, connect.NewRequest(&pb.ListPendingIssuesRequest{}))
+		res, err := c.issue.ListPendingIssues(ctx, &pb.ListPendingIssuesRequest{})
 		require.NoError(t, err, name)
-		require.Len(t, res.Msg.GetIssues(), 2, name)
-		assert.Equal(t, p1.ID.String(), res.Msg.GetIssues()[0].GetId(), "oldest first")
-		assert.Equal(t, "visitor", res.Msg.GetIssues()[0].GetAuthor())
+		require.Len(t, res.GetIssues(), 2, name)
+		assert.Equal(t, p1.ID.String(), res.GetIssues()[0].GetId(), "oldest first")
+		assert.Equal(t, "visitor", res.GetIssues()[0].GetAuthor())
 	}
-	res, err := owner.issue.ListPendingIssues(ctx, connect.NewRequest(&pb.ListPendingIssuesRequest{Repo: "priv"}))
+	res, err := owner.issue.ListPendingIssues(ctx, &pb.ListPendingIssuesRequest{Repo: "priv"})
 	require.NoError(t, err)
-	assert.Empty(t, res.Msg.GetIssues())
+	assert.Empty(t, res.GetIssues())
 
 	// An owner does learn that a repository name is malformed.
-	_, err = owner.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "Bad Repo!", Id: p1.ID.String()}))
+	_, err = owner.issue.ApproveIssue(ctx, &pb.ApproveIssueRequest{Repo: "Bad Repo!", Id: p1.ID.String()})
 	assert.Equal(t, "invalid_argument", codeName(err))
 
 	// A malformed or unknown id is NotFound.
-	_, err = owner.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "pub", Id: "nope"}))
+	_, err = owner.issue.ApproveIssue(ctx, &pb.ApproveIssueRequest{Repo: "pub", Id: "nope"})
 	assert.Equal(t, "not_found", codeName(err))
 
 	// Approval takes the next number shared with the merge requests and issues.
-	made, err := owner.issue.CreateIssue(ctx, connect.NewRequest(&pb.CreateIssueRequest{Repo: "pub", Title: "by owner"}))
+	made, err := owner.issue.CreateIssue(ctx, &pb.CreateIssueRequest{Repo: "pub", Title: "by owner"})
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), made.Msg.GetIssue().GetNumber())
-	ap, err := owner.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "pub", Id: p1.ID.String()}))
+	assert.Equal(t, int64(1), made.GetIssue().GetNumber())
+	ap, err := owner.issue.ApproveIssue(ctx, &pb.ApproveIssueRequest{Repo: "pub", Id: p1.ID.String()})
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), ap.Msg.GetIssue().GetNumber())
-	assert.Equal(t, pb.IssueState_ISSUE_STATE_OPEN, ap.Msg.GetIssue().GetState())
-	assert.Equal(t, "first", ap.Msg.GetIssue().GetTitle())
-	got, err := r.reader.issue.GetIssue(ctx, connect.NewRequest(&pb.GetIssueRequest{Repo: "pub", Number: 2}))
+	assert.Equal(t, int64(2), ap.GetIssue().GetNumber())
+	assert.Equal(t, pb.IssueState_ISSUE_STATE_OPEN, ap.GetIssue().GetState())
+	assert.Equal(t, "first", ap.GetIssue().GetTitle())
+	got, err := r.reader.issue.GetIssue(ctx, &pb.GetIssueRequest{Repo: "pub", Number: 2})
 	require.NoError(t, err)
-	assert.Equal(t, "visitor", got.Msg.GetIssue().GetAuthor())
-	_, err = owner.issue.ApproveIssue(ctx, connect.NewRequest(&pb.ApproveIssueRequest{Repo: "pub", Id: p1.ID.String()}))
+	assert.Equal(t, "visitor", got.GetIssue().GetAuthor())
+	_, err = owner.issue.ApproveIssue(ctx, &pb.ApproveIssueRequest{Repo: "pub", Id: p1.ID.String()})
 	assert.Equal(t, "not_found", codeName(err), "approved once")
 
 	// Rejecting with a ban stores the ban and removes the record.
-	_, err = owner.issue.RejectIssue(ctx, connect.NewRequest(&pb.RejectIssueRequest{Repo: "pub", Id: p2.ID.String(), Ban: true}))
+	_, err = owner.issue.RejectIssue(ctx, &pb.RejectIssueRequest{Repo: "pub", Id: p2.ID.String(), Ban: true})
 	require.NoError(t, err)
 	banned, err := r.forge.IssueBans.Banned(ctx, p2.IPHash, time.Now())
 	require.NoError(t, err)
@@ -112,7 +111,7 @@ func TestIssueModerationOverTheAPI(t *testing.T) {
 
 	// Rejecting without a ban bans nobody.
 	p3 := r.pending("pub", "third")
-	_, err = owner.issue.RejectIssue(ctx, connect.NewRequest(&pb.RejectIssueRequest{Repo: "pub", Id: p3.ID.String()}))
+	_, err = owner.issue.RejectIssue(ctx, &pb.RejectIssueRequest{Repo: "pub", Id: p3.ID.String()})
 	require.NoError(t, err)
 	banned, err = r.forge.IssueBans.Banned(ctx, p3.IPHash, time.Now())
 	require.NoError(t, err)

@@ -3,11 +3,12 @@
 package app
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -39,33 +40,33 @@ func ann(level pb.AnnotationLevel, step int32, msg string) *pb.Annotation {
 }
 
 func (r *fakeRunner) update(j *pb.Job, steps []*pb.StepUpdate, anns ...*pb.Annotation) error {
-	_, err := r.jobAPI(j).runner.UpdateJob(r.c.ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: j.GetJobId(), Steps: steps, Annotations: anns}))
+	_, err := r.jobAPI(j).runner.UpdateJob(r.c.ctx, &pb.UpdateJobRequest{JobId: j.GetJobId(), Steps: steps, Annotations: anns})
 	return err
 }
 
 func (r *fakeRunner) summary(j *pb.Job, step int32, md string) error {
-	_, err := r.jobAPI(j).runner.UploadSummary(r.c.ctx, connect.NewRequest(&pb.UploadSummaryRequest{JobId: j.GetJobId(), StepNumber: step, Markdown: md}))
+	_, err := r.jobAPI(j).runner.UploadSummary(r.c.ctx, &pb.UploadSummaryRequest{JobId: j.GetJobId(), StepNumber: step, Markdown: md})
 	return err
 }
 
 func (r *fakeRunner) heartbeat(j *pb.Job) {
 	r.c.t.Helper()
-	_, err := r.jobAPI(j).runner.Heartbeat(r.c.ctx, connect.NewRequest(&pb.HeartbeatRequest{JobId: j.GetJobId()}))
+	_, err := r.jobAPI(j).runner.Heartbeat(r.c.ctx, &pb.HeartbeatRequest{JobId: j.GetJobId()})
 	require.NoError(r.c.t, err)
 }
 
 func (c *ciHarness) annotations(runID int64, jobID string) *pb.ListAnnotationsResponse {
 	c.t.Helper()
-	res, err := c.root.run.ListAnnotations(c.ctx, connect.NewRequest(&pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID, JobId: jobID}))
+	res, err := c.root.run.ListAnnotations(c.ctx, &pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID, JobId: jobID})
 	require.NoError(c.t, err)
-	return res.Msg
+	return res
 }
 
 func (c *ciHarness) summaries(jobID string) *pb.GetStepSummariesResponse {
 	c.t.Helper()
-	res, err := c.root.run.GetStepSummaries(c.ctx, connect.NewRequest(&pb.GetStepSummariesRequest{Repo: c.repo, JobId: jobID}))
+	res, err := c.root.run.GetStepSummaries(c.ctx, &pb.GetStepSummariesRequest{Repo: c.repo, JobId: jobID})
 	require.NoError(c.t, err)
-	return res.Msg
+	return res
 }
 
 func code(err error) connect.Code { return connect.CodeOf(err) }
@@ -77,10 +78,10 @@ func TestCIAnnotationsAndSummariesOverTheAPI(t *testing.T) {
 	c.waitFor("a run", func() bool { return len(c.runs()) == 1 })
 	runID := c.runs()[0].GetId()
 
-	ver, err := c.root.server.GetVersion(c.ctx, connect.NewRequest(&pb.GetVersionRequest{}))
+	ver, err := c.root.server.GetVersion(c.ctx, &pb.GetVersionRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, ver.Msg.GetFeatures(), "ci.annotations")
-	assert.Contains(t, ver.Msg.GetFeatures(), "ci.summaries")
+	assert.Contains(t, ver.GetFeatures(), "ci.annotations")
+	assert.Contains(t, ver.GetFeatures(), "ci.summaries")
 
 	a, b := runner.await(), runner.await()
 	runner.heartbeat(a)
@@ -210,16 +211,16 @@ func TestCIAnnotationsAndSummariesOverTheAPI(t *testing.T) {
 
 	t.Run("the token of another job is refused", func(t *testing.T) {
 		other := runner.jobAPI(b).runner
-		_, err := other.UpdateJob(c.ctx, connect.NewRequest(&pb.UpdateJobRequest{JobId: a.GetJobId(), Annotations: []*pb.Annotation{ann(notice, 1, "x")}}))
+		_, err := other.UpdateJob(c.ctx, &pb.UpdateJobRequest{JobId: a.GetJobId(), Annotations: []*pb.Annotation{ann(notice, 1, "x")}})
 		assert.Equal(t, connect.CodePermissionDenied, code(err))
-		_, err = other.UploadSummary(c.ctx, connect.NewRequest(&pb.UploadSummaryRequest{JobId: a.GetJobId(), StepNumber: 1, Markdown: "x"}))
+		_, err = other.UploadSummary(c.ctx, &pb.UploadSummaryRequest{JobId: a.GetJobId(), StepNumber: 1, Markdown: "x"})
 		assert.Equal(t, connect.CodePermissionDenied, code(err))
-		_, err = other.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{JobId: a.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: []*pb.Annotation{ann(notice, 1, "x")}}))
+		_, err = other.CompleteJob(c.ctx, &pb.CompleteJobRequest{JobId: a.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: []*pb.Annotation{ann(notice, 1, "x")}})
 		assert.Equal(t, connect.CodePermissionDenied, code(err))
 		// No credential, a runner token and a stored token are not job tokens either.
 		for _, secret := range []string{"", runner.secret, adminToken} {
 			cl := c.api(secret).runner
-			_, err = cl.UploadSummary(c.ctx, connect.NewRequest(&pb.UploadSummaryRequest{JobId: a.GetJobId(), StepNumber: 1, Markdown: "x"}))
+			_, err = cl.UploadSummary(c.ctx, &pb.UploadSummaryRequest{JobId: a.GetJobId(), StepNumber: 1, Markdown: "x"})
 			assert.Equal(t, connect.CodeUnauthenticated, code(err), secret)
 		}
 		assert.Equal(t, "# two", c.summaries(a.GetJobId()).GetSummaries()[0].GetMarkdown())
@@ -233,10 +234,10 @@ func TestCIAnnotationsAndSummariesOverTheAPI(t *testing.T) {
 				Outcome: pb.CiConclusion_CI_CONCLUSION_FAILURE, StartedAt: start, CompletedAt: now(),
 			},
 		}
-		_, err := runner.jobAPI(a).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+		_, err := runner.jobAPI(a).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 			JobId: a.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Steps: steps,
 			Annotations: []*pb.Annotation{ann(warning, 2, "from complete"), ann(notice, 1, "step one, replaced")},
-		}))
+		})
 		require.NoError(t, err)
 		got := c.annotations(runID, a.GetJobId()).GetAnnotations()
 		var msgs []string
@@ -261,11 +262,11 @@ func TestCIAnnotationsAndSummariesOverTheAPI(t *testing.T) {
 		err = runner.summary(a, 1, "too late")
 		assert.Equal(t, connect.CodeFailedPrecondition, code(err))
 		assert.NotEmpty(t, errDetails(err))
-		res, err := runner.jobAPI(a).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+		res, err := runner.jobAPI(a).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{
 			JobId: a.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Annotations: []*pb.Annotation{ann(notice, 1, "ignored")},
-		}))
+		})
 		require.NoError(t, err)
-		assert.False(t, res.Msg.GetApplied())
+		assert.False(t, res.GetApplied())
 		assert.Len(t, c.annotations(runID, a.GetJobId()).GetAnnotations(), before)
 		for _, x := range c.annotations(runID, a.GetJobId()).GetAnnotations() {
 			assert.NotEqual(t, "too late", x.GetAnnotation().GetMessage())
@@ -283,33 +284,33 @@ func TestCIAnnotationsAndSummariesOverTheAPI(t *testing.T) {
 		assert.Len(t, jobs, 1, "job b has none")
 		assert.Empty(t, c.annotations(runID, b.GetJobId()).GetAnnotations())
 
-		_, err := c.root.run.ListAnnotations(c.ctx, connect.NewRequest(&pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID, JobId: "99-0-0"}))
+		_, err := c.root.run.ListAnnotations(c.ctx, &pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID, JobId: "99-0-0"})
 		assert.Equal(t, connect.CodeNotFound, code(err))
-		_, err = c.root.run.ListAnnotations(c.ctx, connect.NewRequest(&pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID, Attempt: 2}))
+		_, err = c.root.run.ListAnnotations(c.ctx, &pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID, Attempt: 2})
 		assert.Equal(t, connect.CodeNotFound, code(err))
-		_, err = c.root.run.ListAnnotations(c.ctx, connect.NewRequest(&pb.ListAnnotationsRequest{Repo: c.repo, RunId: 99}))
+		_, err = c.root.run.ListAnnotations(c.ctx, &pb.ListAnnotationsRequest{Repo: c.repo, RunId: 99})
 		assert.Equal(t, connect.CodeNotFound, code(err))
-		_, err = c.root.run.GetStepSummaries(c.ctx, connect.NewRequest(&pb.GetStepSummariesRequest{Repo: c.repo, JobId: "99-0-0"}))
+		_, err = c.root.run.GetStepSummaries(c.ctx, &pb.GetStepSummariesRequest{Repo: c.repo, JobId: "99-0-0"})
 		assert.Equal(t, connect.CodeNotFound, code(err))
-		_, err = c.root.run.GetStepSummaries(c.ctx, connect.NewRequest(&pb.GetStepSummariesRequest{Repo: c.repo, JobId: a.GetJobId(), Attempt: 3}))
+		_, err = c.root.run.GetStepSummaries(c.ctx, &pb.GetStepSummariesRequest{Repo: c.repo, JobId: a.GetJobId(), Attempt: 3})
 		assert.Equal(t, connect.CodeNotFound, code(err))
 
 		// The repository is private: an anonymous caller sees nothing of it, a
 		// reader sees everything, as for GetRun.
 		anon := c.api("").run
-		_, err = anon.ListAnnotations(c.ctx, connect.NewRequest(&pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID}))
+		_, err = anon.ListAnnotations(c.ctx, &pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID})
 		assert.Equal(t, connect.CodeNotFound, code(err))
-		_, err = anon.GetStepSummaries(c.ctx, connect.NewRequest(&pb.GetStepSummariesRequest{Repo: c.repo, JobId: a.GetJobId()}))
+		_, err = anon.GetStepSummaries(c.ctx, &pb.GetStepSummariesRequest{Repo: c.repo, JobId: a.GetJobId()})
 		assert.Equal(t, connect.CodeNotFound, code(err))
 		reader := c.api(c.token(scopes(domain.ScopeRepoRead))).run
-		_, err = reader.ListAnnotations(c.ctx, connect.NewRequest(&pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID}))
+		_, err = reader.ListAnnotations(c.ctx, &pb.ListAnnotationsRequest{Repo: c.repo, RunId: runID})
 		assert.NoError(t, err)
-		_, err = reader.GetStepSummaries(c.ctx, connect.NewRequest(&pb.GetStepSummariesRequest{Repo: c.repo, JobId: a.GetJobId()}))
+		_, err = reader.GetStepSummaries(c.ctx, &pb.GetStepSummariesRequest{Repo: c.repo, JobId: a.GetJobId()})
 		assert.NoError(t, err)
 	})
 
 	t.Run("the summaries of an ended job stay readable", func(t *testing.T) {
-		_, err := runner.jobAPI(b).runner.CompleteJob(c.ctx, connect.NewRequest(&pb.CompleteJobRequest{JobId: b.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_FAILURE}))
+		_, err := runner.jobAPI(b).runner.CompleteJob(c.ctx, &pb.CompleteJobRequest{JobId: b.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_FAILURE})
 		require.NoError(t, err)
 		assert.Len(t, c.summaries(b.GetJobId()).GetSummaries(), 20)
 	})
@@ -321,8 +322,8 @@ func errDetails(err error) []*connect.ErrorDetail {
 	if connect.CodeOf(err) == connect.CodeUnknown {
 		return nil
 	}
-	if e, ok := err.(*connect.Error); ok {
-		ce = e
+	if !errors.As(err, &ce) {
+		return nil
 	}
 	if ce == nil {
 		return nil
@@ -337,9 +338,9 @@ func TestWebAnnotationsAndSummaries(t *testing.T) {
 	ci := newCIHarness(t, nil)
 	b := browser{ci.harness}
 	runner := ci.registerRunner("alpha", "ubuntu-latest")
-	_, err := ci.root.repo.UpdateRepo(ci.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err := ci.root.repo.UpdateRepo(ci.ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", Visibility: pb.Visibility_VISIBILITY_PUBLIC, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
-	}))
+	})
 	require.NoError(t, err)
 	sha := ci.push("main", map[string]string{".github/workflows/ci.yml": strings.Split(resultsWorkflow, "  lint:")[0], "src/main.go": "package main\n"}, "")
 	ci.waitFor("the run", func() bool { return len(ci.runs()) == 1 })
@@ -352,7 +353,7 @@ func TestWebAnnotationsAndSummaries(t *testing.T) {
 		{Number: 2, Name: "Run <b>vet</b>", State: pb.StepState_STEP_STATE_COMPLETED, Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, StartedAt: start, CompletedAt: now()},
 	}
 	require.NoError(t, runner.update(job, steps))
-	_, err = runner.jobAPI(job).runner.AppendLog(ci.ctx, connect.NewRequest(&pb.AppendLogRequest{JobId: job.GetJobId(), Step: 2, Lines: []*pb.LogLine{{Time: now(), Text: "vet"}}}))
+	_, err = runner.jobAPI(job).runner.AppendLog(ci.ctx, &pb.AppendLogRequest{JobId: job.GetJobId(), Step: 2, Lines: []*pb.LogLine{{Time: now(), Text: "vet"}}})
 	require.NoError(t, err)
 	evil := `<img src=x onerror=alert(1)>`
 	require.NoError(t, runner.update(job, nil,
@@ -373,9 +374,9 @@ func TestWebAnnotationsAndSummaries(t *testing.T) {
 		"",
 		"| a | b |", "|---|---|", "| 1 | 2 |",
 	}, "\n")))
-	_, err = runner.jobAPI(job).runner.CompleteJob(ci.ctx, connect.NewRequest(&pb.CompleteJobRequest{
+	_, err = runner.jobAPI(job).runner.CompleteJob(ci.ctx, &pb.CompleteJobRequest{
 		JobId: job.GetJobId(), Conclusion: pb.CiConclusion_CI_CONCLUSION_SUCCESS, Steps: steps,
-	}))
+	})
 	require.NoError(t, err)
 	ci.waitFor("the run completes", func() bool { return ci.runs()[0].GetStatus() == pb.CiStatus_CI_STATUS_COMPLETED })
 
@@ -426,9 +427,9 @@ func TestWebAnnotationsAndSummaries(t *testing.T) {
 func TestWebJobAnnotationsAreLive(t *testing.T) {
 	ci := newCIHarness(t, nil)
 	runner := ci.registerRunner("alpha", "ubuntu-latest")
-	_, err := ci.root.repo.UpdateRepo(ci.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err := ci.root.repo.UpdateRepo(ci.ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", Visibility: pb.Visibility_VISIBILITY_PUBLIC, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
-	}))
+	})
 	require.NoError(t, err)
 	ci.push("main", map[string]string{".github/workflows/ci.yml": strings.Split(resultsWorkflow, "  lint:")[0]}, "")
 	ci.waitFor("the run", func() bool { return len(ci.runs()) == 1 })
@@ -457,9 +458,9 @@ func TestWebRunWithoutAnnotationsOrSummaries(t *testing.T) {
 	ci := newCIHarness(t, nil)
 	b := browser{ci.harness}
 	runner := ci.registerRunner("alpha", "ubuntu-latest")
-	_, err := ci.root.repo.UpdateRepo(ci.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err := ci.root.repo.UpdateRepo(ci.ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", Visibility: pb.Visibility_VISIBILITY_PUBLIC, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
-	}))
+	})
 	require.NoError(t, err)
 	ci.push("main", map[string]string{".github/workflows/ci.yml": strings.Split(resultsWorkflow, "  lint:")[0]}, "")
 	ci.waitFor("the run", func() bool { return len(ci.runs()) == 1 })

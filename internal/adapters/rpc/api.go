@@ -12,13 +12,13 @@ import (
 	"net/netip"
 	"slices"
 
-	"bnema.dev/zerowrap"
-	"connectrpc.com/connect"
-
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
+	"bnema.dev/zerowrap"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 )
 
 // MaxRequestBytes bounds the size of a request message. Responses are not
@@ -127,23 +127,20 @@ func New(cfg Config) *API {
 	if cfg.Limiter == nil {
 		cfg.Limiter = clientlimit.NewLimiter(nil)
 	}
-	opts := []connect.HandlerOption{
-		connect.WithInterceptors(newInterceptor(cfg)),
-		connect.WithReadMaxBytes(MaxRequestBytes),
-		connect.WithRecover(func(ctx context.Context, spec connect.Spec, _ http.Header, panicValue any) error {
-			log := zerowrap.FromCtx(ctx)
-			log.Error().Interface("panic", panicValue).Str("procedure", spec.Procedure).Msg("api handler panicked")
-			return connect.NewError(connect.CodeInternal, errInternal)
-		}),
-	}
+	opts := []connecthttp.Option{connecthttp.WithReadMaxBytes(MaxRequestBytes)}
 	mux := http.NewServeMux()
-	mux.Handle(ermiteconnect.NewRepoServiceHandler(&repoService{cfg.Repos}, opts...))
-	mux.Handle(ermiteconnect.NewGitServiceHandler(&gitService{cfg.Browse}, opts...))
-	mux.Handle(ermiteconnect.NewTokenServiceHandler(&tokenService{cfg.Tokens}, opts...))
-	mux.Handle(ermiteconnect.NewEventServiceHandler(&eventService{cfg.Events}, opts...))
+	server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+	ermiteconnect.RegisterRepoServiceHandler(server, &repoService{cfg.Repos})
+	ermiteconnect.RegisterGitServiceHandler(server, &gitService{cfg.Browse})
+	ermiteconnect.RegisterTokenServiceHandler(server, &tokenService{cfg.Tokens})
+	ermiteconnect.RegisterEventServiceHandler(server, &eventService{cfg.Events})
+	connecthttp.Mount(mux, server, opts...)
+
 	features := slices.Clone(Features)
 	if cfg.Mirrors != nil {
-		mux.Handle(ermiteconnect.NewMirrorServiceHandler(&mirrorService{cfg.Mirrors}, opts...))
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterMirrorServiceHandler(server, &mirrorService{cfg.Mirrors})
+		connecthttp.Mount(mux, server, opts...)
 		features = append(features, FeatureMirror)
 	}
 	if cfg.Passkeys != nil {
@@ -167,56 +164,78 @@ func New(cfg Config) *API {
 		features = append(features, FeatureCommitSignatures)
 	}
 	if cfg.Deps != nil {
-		mux.Handle(ermiteconnect.NewDepsServiceHandler(&depsService{cfg.Deps}, opts...))
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterDepsServiceHandler(server, &depsService{cfg.Deps})
+		connecthttp.Mount(mux, server, opts...)
 		features = append(features, FeatureDeps)
 	}
 	if cfg.Journal != nil && cfg.Releases != nil {
-		mux.Handle(ermiteconnect.NewJournalServiceHandler(&journalService{cfg.Journal}, opts...))
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterJournalServiceHandler(server, &journalService{cfg.Journal})
+		connecthttp.Mount(mux, server, opts...)
 		features = append(features, FeatureJournal)
 	} else {
 		cfg.Journal = nil // ListUnreleased answers unimplemented without the feature
 	}
-	mux.Handle(ermiteconnect.NewServerServiceHandler(&serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys}, opts...))
-	mux.Handle(ermiteconnect.NewMergeRequestServiceHandler(&mergeRequestService{mrs: cfg.MergeRequests}, opts...))
-	mux.Handle(ermiteconnect.NewIssueServiceHandler(&issueService{issues: cfg.Issues, moderation: cfg.IssueModeration}, opts...))
+	srv := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+	ermiteconnect.RegisterServerServiceHandler(srv, &serverService{version: cfg.Version, features: features, key: cfg.SigningKey, oidc: cfg.OIDCKeys})
+	ermiteconnect.RegisterMergeRequestServiceHandler(srv, &mergeRequestService{mrs: cfg.MergeRequests})
+	ermiteconnect.RegisterIssueServiceHandler(srv, &issueService{issues: cfg.Issues, moderation: cfg.IssueModeration})
+	connecthttp.Mount(mux, srv, opts...)
+
 	if cfg.Sessions != nil {
-		mux.Handle(ermiteconnect.NewSessionServiceHandler(&sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys}, opts...))
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterSessionServiceHandler(server, &sessionService{sessions: cfg.Sessions, passkeys: cfg.Passkeys})
+		connecthttp.Mount(mux, server, opts...)
 	}
 	if cfg.TrustedKeys != nil {
-		mux.Handle(ermiteconnect.NewTrustedKeyServiceHandler(&trustedKeyService{cfg.TrustedKeys}, opts...))
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterTrustedKeyServiceHandler(server, &trustedKeyService{cfg.TrustedKeys})
+		connecthttp.Mount(mux, server, opts...)
 	}
 	if settings {
-		mux.Handle(ermiteconnect.NewSecretServiceHandler(&secretService{cfg.Secrets}, opts...))
-		mux.Handle(ermiteconnect.NewVariableServiceHandler(&variableService{cfg.Variables}, opts...))
-		mux.Handle(ermiteconnect.NewEnvironmentServiceHandler(&environmentService{cfg.Environments}, opts...))
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterSecretServiceHandler(server, &secretService{cfg.Secrets})
+		ermiteconnect.RegisterVariableServiceHandler(server, &variableService{cfg.Variables})
+		ermiteconnect.RegisterEnvironmentServiceHandler(server, &environmentService{cfg.Environments})
+		connecthttp.Mount(mux, server, opts...)
+
 	}
 	if cfg.Releases != nil {
-		releaseOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))
-		mux.Handle(ermiteconnect.NewReleaseServiceHandler(&releaseService{rel: cfg.Releases, journal: cfg.Journal}, releaseOpts...))
+		releaseOpts := append(slices.Clone(opts), connecthttp.WithReadMaxBytes(RunnerMaxRequestBytes))
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterReleaseServiceHandler(server, &releaseService{rel: cfg.Releases, journal: cfg.Journal})
+		connecthttp.Mount(mux, server, releaseOpts...)
 	}
 	if cfg.Runner != nil {
-		runnerOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(RunnerMaxRequestBytes))
+		runnerOpts := append(slices.Clone(opts), connecthttp.WithReadMaxBytes(RunnerMaxRequestBytes))
 		runners := &runnerService{runners: cfg.Runner, limiter: cfg.Limiter}
-		runnerPath, runnerHandler := ermiteconnect.NewRunnerServiceHandler(runners, runnerOpts...)
-		// Only CompleteJob may carry a large deps report: it gets its own
-		// handler with a larger read limit.
-		completeOpts := append(slices.Clone(opts), connect.WithReadMaxBytes(CompleteJobMaxRequestBytes))
-		_, completeHandler := ermiteconnect.NewRunnerServiceHandler(runners, completeOpts...)
-		mux.Handle(runnerPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == ermiteconnect.RunnerServiceCompleteJobProcedure {
-				completeHandler.ServeHTTP(w, r)
-				return
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterRunnerServiceHandler(server, runners)
+		runnerOpts = append(runnerOpts, connecthttp.WithConditionalOptions(func(spec connect.Spec) []connecthttp.Option {
+			if spec.Procedure == ermiteconnect.RunnerServiceCompleteJobProcedure {
+				return []connecthttp.Option{connecthttp.WithReadMaxBytes(CompleteJobMaxRequestBytes)}
 			}
-			runnerHandler.ServeHTTP(w, r)
+			return nil
 		}))
+		connecthttp.Mount(mux, server, runnerOpts...)
+
 		if artifacts {
-			// A block message carries up to 1 MiB of data, like a summary.
-			mux.Handle(ermiteconnect.NewJobArtifactServiceHandler(&jobArtifactService{artifacts: cfg.JobArtifacts, runner: runners}, runnerOpts...))
-			mux.Handle(ermiteconnect.NewArtifactServiceHandler(&artifactService{artifacts: cfg.Artifacts}, opts...))
+			server :=
+				// A block message carries up to 1 MiB of data, like a summary.
+				connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+
+			ermiteconnect.RegisterJobArtifactServiceHandler(server, &jobArtifactService{artifacts: cfg.JobArtifacts, runner: runners})
+			connecthttp.Mount(mux, server, runnerOpts...)
+			srv := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+			ermiteconnect.RegisterArtifactServiceHandler(srv, &artifactService{artifacts: cfg.Artifacts})
+			connecthttp.Mount(mux, srv, opts...)
 		}
 	}
 	if cfg.Runs != nil {
-		mux.Handle(ermiteconnect.NewRunServiceHandler(&runService{runs: cfg.Runs}, opts...))
+		server := connect.NewServer(newInterceptor(cfg).intercept, recoverPanic)
+		ermiteconnect.RegisterRunServiceHandler(server, &runService{runs: cfg.Runs})
+		connecthttp.Mount(mux, server, opts...)
 	}
 	return &API{handler: mux}
 }
@@ -231,4 +250,20 @@ func (a *API) Handler() http.Handler { return a.handler }
 func caller(ctx context.Context) domain.Principal {
 	p, _ := domain.PrincipalFromContext(ctx)
 	return p
+}
+
+func recoverPanic(next connect.ServerFunc) connect.ServerFunc {
+	return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) (err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				if p == http.ErrAbortHandler {
+					panic(p)
+				}
+				log := zerowrap.FromCtx(ctx)
+				log.Error().Interface("panic", p).Str("procedure", spec.Procedure).Msg("api handler panicked")
+				err = connect.NewError(connect.CodeInternal, "internal error")
+			}
+		}()
+		return next(ctx, spec, stream)
+	}
 }

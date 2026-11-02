@@ -5,8 +5,6 @@ package rpc
 import (
 	"context"
 
-	"connectrpc.com/connect"
-
 	pb "bnema.dev/ermite-api/gen/ermite"
 	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/domain"
@@ -70,11 +68,11 @@ func depRefsFromPB(in []*pb.DependencyVersion) []domain.DepRef {
 	return out
 }
 
-func (s *depsService) ListDependencyUpdates(ctx context.Context, req *connect.Request[pb.ListDependencyUpdatesRequest]) (*connect.Response[pb.ListDependencyUpdatesResponse], error) {
+func (s *depsService) ListDependencyUpdates(ctx context.Context, req *pb.ListDependencyUpdatesRequest) (*pb.ListDependencyUpdatesResponse, error) {
 	var repo domain.RepoName
-	if req.Msg.Repo != nil {
+	if req.Repo != nil {
 		var err error
-		if repo, err = domain.ParseRepoName(req.Msg.GetRepo()); err != nil {
+		if repo, err = domain.ParseRepoName(req.GetRepo()); err != nil {
 			return nil, connectError(ctx, err)
 		}
 	}
@@ -86,11 +84,11 @@ func (s *depsService) ListDependencyUpdates(ctx context.Context, req *connect.Re
 	for _, d := range list {
 		out.Repos = append(out.Repos, repoDepsToPB(d))
 	}
-	return connect.NewResponse(out), nil
+	return out, nil
 }
 
-func (s *depsService) CheckDependencies(ctx context.Context, req *connect.Request[pb.CheckDependenciesRequest]) (*connect.Response[pb.CheckDependenciesResponse], error) {
-	repo, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *depsService) CheckDependencies(ctx context.Context, req *pb.CheckDependenciesRequest) (*pb.CheckDependenciesResponse, error) {
+	repo, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -98,35 +96,35 @@ func (s *depsService) CheckDependencies(ctx context.Context, req *connect.Reques
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.CheckDependenciesResponse{Updates: repoDepsToPB(d)}), nil
+	return &pb.CheckDependenciesResponse{Updates: repoDepsToPB(d)}, nil
 }
 
-func (s *depsService) OpenDependencyUpdates(ctx context.Context, req *connect.Request[pb.OpenDependencyUpdatesRequest]) (*connect.Response[pb.OpenDependencyUpdatesResponse], error) {
-	repo, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *depsService) OpenDependencyUpdates(ctx context.Context, req *pb.OpenDependencyUpdatesRequest) (*pb.OpenDependencyUpdatesResponse, error) {
+	repo, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	d, err := s.deps.Open(ctx, caller(ctx), repo, domain.DepBatchKey(req.Msg.GetBatch()), depRefsFromPB(req.Msg.GetExpectedVersions()))
+	d, err := s.deps.Open(ctx, caller(ctx), repo, domain.DepBatchKey(req.GetBatch()), depRefsFromPB(req.GetExpectedVersions()))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.OpenDependencyUpdatesResponse{Updates: repoDepsToPB(d)}), nil
+	return &pb.OpenDependencyUpdatesResponse{Updates: repoDepsToPB(d)}, nil
 }
 
-func (s *depsService) IgnoreDependencyUpdates(ctx context.Context, req *connect.Request[pb.IgnoreDependencyUpdatesRequest]) (*connect.Response[pb.IgnoreDependencyUpdatesResponse], error) {
-	repo, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *depsService) IgnoreDependencyUpdates(ctx context.Context, req *pb.IgnoreDependencyUpdatesRequest) (*pb.IgnoreDependencyUpdatesResponse, error) {
+	repo, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	d, err := s.deps.Ignore(ctx, caller(ctx), repo, domain.DepBatchKey(req.Msg.GetBatch()), depRefsFromPB(req.Msg.GetExpectedVersions()))
+	d, err := s.deps.Ignore(ctx, caller(ctx), repo, domain.DepBatchKey(req.GetBatch()), depRefsFromPB(req.GetExpectedVersions()))
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.IgnoreDependencyUpdatesResponse{Updates: repoDepsToPB(d)}), nil
+	return &pb.IgnoreDependencyUpdatesResponse{Updates: repoDepsToPB(d)}, nil
 }
 
-func (s *depsService) SnoozeDependencyUpdates(ctx context.Context, req *connect.Request[pb.SnoozeDependencyUpdatesRequest]) (*connect.Response[pb.SnoozeDependencyUpdatesResponse], error) {
-	repo, err := domain.ParseRepoName(req.Msg.GetRepo())
+func (s *depsService) SnoozeDependencyUpdates(ctx context.Context, req *pb.SnoozeDependencyUpdatesRequest) (*pb.SnoozeDependencyUpdatesResponse, error) {
+	repo, err := domain.ParseRepoName(req.GetRepo())
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
@@ -134,7 +132,7 @@ func (s *depsService) SnoozeDependencyUpdates(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
-	return connect.NewResponse(&pb.SnoozeDependencyUpdatesResponse{Updates: repoDepsToPB(d)}), nil
+	return &pb.SnoozeDependencyUpdatesResponse{Updates: repoDepsToPB(d)}, nil
 }
 
 func repoDepsToPBUpdates(ups []domain.DepUpdate) []*pb.DependencyUpdate {

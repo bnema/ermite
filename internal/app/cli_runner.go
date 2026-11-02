@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 
 	"bnema.dev/ermite-api/gen/ermite"
@@ -54,11 +54,11 @@ func newRunnerListCmd(env *cliEnv) *cobra.Command {
 		}
 		ctx := env.ctx(cmd)
 		runners, err := collect(ctx, func(token string) ([]*ermite.Runner, string, error) {
-			res, err := c.Runs().ListRunners(ctx, connect.NewRequest(&ermite.ListRunnersRequest{PageToken: token}))
+			res, err := c.Runs().ListRunners(ctx, &ermite.ListRunnersRequest{PageToken: token})
 			if err != nil {
 				return nil, "", err
 			}
-			return res.Msg.GetRunners(), res.Msg.GetNextPageToken(), nil
+			return res.GetRunners(), res.GetNextPageToken(), nil
 		})
 		if err != nil {
 			return err
@@ -111,11 +111,11 @@ func newRunnerRemoveCmd(env *cliEnv) *cobra.Command {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
 			out := complete(env, cmd, prefix, func(ctx context.Context, c *client.Client) ([]*ermite.Runner, error) {
-				res, err := c.Runs().ListRunners(ctx, connect.NewRequest(&ermite.ListRunnersRequest{}))
+				res, err := c.Runs().ListRunners(ctx, &ermite.ListRunnersRequest{})
 				if err != nil {
 					return nil, err
 				}
-				return res.Msg.GetRunners(), nil
+				return res.GetRunners(), nil
 			}, func(r *ermite.Runner) (string, string) { return r.GetId(), r.GetName() })
 			return out, cobra.ShellCompDirectiveNoFileComp
 		},
@@ -125,7 +125,7 @@ func newRunnerRemoveCmd(env *cliEnv) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if _, err := c.Runs().RemoveRunner(env.ctx(cmd), connect.NewRequest(&ermite.RemoveRunnerRequest{RunnerId: args[0]})); err != nil {
+		if _, err := c.Runs().RemoveRunner(env.ctx(cmd), &ermite.RemoveRunnerRequest{RunnerId: args[0]}); err != nil {
 			var ce *connect.Error
 			if errors.As(err, &ce) && ce.Code() == connect.CodeNotFound {
 				return fmt.Errorf("no runner has the id %q", args[0])

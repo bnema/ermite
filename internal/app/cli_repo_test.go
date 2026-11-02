@@ -3,10 +3,9 @@
 package app
 
 import (
-	"errors"
 	"testing"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -328,7 +327,7 @@ func TestRepoDeleteConfirmation(t *testing.T) {
 
 func TestRepoErrorsAreFriendly(t *testing.T) {
 	f := &fakeAPI{getRepo: func(*ermite.GetRepoRequest) (*ermite.GetRepoResponse, error) {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("repository \"nope\" not found"))
+		return nil, connect.NewError(connect.CodeNotFound, "repository \"nope\" not found")
 	}}
 	res := runCLI(t, envFor(f.serve(t)), "", "repo", "show", "nope")
 	require.Error(t, res.err)
@@ -337,7 +336,7 @@ func TestRepoErrorsAreFriendly(t *testing.T) {
 
 func TestUnauthenticatedHintsAtToken(t *testing.T) {
 	f := &fakeAPI{listRepos: func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error) {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid token"))
+		return nil, connect.NewError(connect.CodeUnauthenticated, "invalid token")
 	}}
 	res := runCLI(t, map[string]string{"ERMITE_URL": f.serve(t)}, "", "repo", "list")
 	require.Error(t, res.err)
@@ -430,7 +429,7 @@ func TestRepoNameCompletion(t *testing.T) {
 
 func TestCompletionIsSilentOnErrors(t *testing.T) {
 	denied := &fakeAPI{listRepos: func(*ermite.ListReposRequest) (*ermite.ListReposResponse, error) {
-		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
+		return nil, connect.NewError(connect.CodeUnauthenticated, "")
 	}}
 	for name, vars := range map[string]map[string]string{
 		"no config":   nil,

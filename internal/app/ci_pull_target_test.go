@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -153,7 +152,7 @@ func TestPullRequestTargetTrustFollowsTheActor(t *testing.T) {
 	agentRun := c.runs()[0].GetId()
 
 	// The owner re-running it does not unlock the secrets.
-	_, err := c.root.run.RerunRun(c.ctx, connect.NewRequest(&pb.RerunRunRequest{Repo: "proj", RunId: agentRun}))
+	_, err := c.root.run.RerunRun(c.ctx, &pb.RerunRunRequest{Repo: "proj", RunId: agentRun})
 	require.NoError(t, err)
 	job = c.finish(runner)
 	assert.False(t, job.GetTrusted())
@@ -171,7 +170,7 @@ func TestPullRequestTargetTrustFollowsTheActor(t *testing.T) {
 	assert.False(t, c.finish(runner).GetTrusted())
 
 	// The owner closes it, the head being the agent's: trusted.
-	_, err = c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+	_, err = c.root.mr.CloseMergeRequest(c.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: n})
 	require.NoError(t, err)
 	job = c.finish(runner)
 	assert.Equal(t, "closed", c.ghContext(job)["event"].(map[string]any)["action"])
@@ -247,7 +246,7 @@ func TestPullRequestTargetTypesAndFilters(t *testing.T) {
 	c.waitFor("the head refs", func() bool { return c.ref(domain.PullHeadRef(n1)) != "" && c.ref(domain.PullHeadRef(n2)) == f2 })
 
 	for _, n := range []int64{n1, n2} {
-		_, err := c.root.mr.CloseMergeRequest(c.ctx, connect.NewRequest(&pb.CloseMergeRequestRequest{Repo: "proj", Number: n}))
+		_, err := c.root.mr.CloseMergeRequest(c.ctx, &pb.CloseMergeRequestRequest{Repo: "proj", Number: n})
 		require.NoError(t, err)
 	}
 	job := c.finish(runner)
@@ -339,9 +338,9 @@ func TestWebShowsTheMergeRequestOfAPullRequestTargetRun(t *testing.T) {
 	c := newCIHarness(t, nil)
 	b := browser{c.harness}
 	runner := c.registerRunner("alpha", "ubuntu-latest")
-	_, err := c.root.repo.UpdateRepo(c.ctx, connect.NewRequest(&pb.UpdateRepoRequest{
+	_, err := c.root.repo.UpdateRepo(c.ctx, &pb.UpdateRepoRequest{
 		Repo: "proj", Visibility: pb.Visibility_VISIBILITY_PUBLIC, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"visibility"}},
-	}))
+	})
 	require.NoError(t, err)
 	c.push("main", targetWF("", "x"), "")
 	c.mustGit(c.wt, "checkout", "-q", "-b", "feat")
