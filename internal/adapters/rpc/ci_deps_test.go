@@ -3,7 +3,9 @@
 package rpc
 
 import (
+	"bnema.dev/ermite/internal/adapters/client"
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -92,4 +94,31 @@ func TestCompleteJobAcceptsLargeDepsReport(t *testing.T) {
 	info.RequestHeader().Set("Authorization", "Bearer ermiterunner_x")
 	_, err = c.FetchJob(ctx, big)
 	requireCode(t, connect.CodeResourceExhausted, err)
+}
+
+// Exercise the production transport and API mount, not hand-built RPC clients.
+func TestProductionClientLargeMessages(t *testing.T) {
+	const size = 5 << 20
+	runners := mocks.NewRunnerService(t)
+	runners.EXPECT().CompleteJob(mock.Anything, "ermitejob_x", mock.MatchedBy(func(p ports.CompleteJobParams) bool {
+		return p.DepsReport != nil && len(p.DepsReport.Files[0].Content) == size
+	})).Return(ports.CompleteJobResult{Applied: true}, nil).Once()
+	version := strings.Repeat("v", size)
+	mux := http.NewServeMux()
+	mux.Handle("/-/api/", http.StripPrefix("/-/api", New(Config{Runner: runners, Version: version}).Handler()))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := client.New(client.Config{URL: srv.URL, Token: "ermitejob_x"})
+	require.NoError(t, err)
+	// Both wire messages exceed Connect v2's default 4 MiB read limit.
+	res, err := c.Server().GetVersion(t.Context(), &pb.GetVersionRequest{})
+	require.NoError(t, err)
+	require.Equal(t, version, res.GetVersion())
+	req := &pb.CompleteJobRequest{JobId: "12-0-0", DepsReport: &pb.DepsReport{Files: []*pb.DepsFile{{Path: "go.sum", Content: make([]byte, size)}}}}
+	result, err := c.Runner().CompleteJob(t.Context(), req)
+	require.NoError(t, err)
+	require.True(t, result.GetApplied())
+	req.DepsReport.Files[0].Content = make([]byte, CompleteJobMaxRequestBytes+1)
+	_, err = c.Runner().CompleteJob(t.Context(), req)
+	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 }

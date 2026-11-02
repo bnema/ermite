@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bnema.dev/ermite-api/gen/ermite"
+	"bnema.dev/ermite-api/gen/ermite/ermiteconnect"
 	"bnema.dev/ermite/internal/adapters/client"
 )
 
@@ -181,4 +182,45 @@ func TestCallerCallInfoSurvivesHeadersInterceptor(t *testing.T) {
 	assert.Equal(t, "17", info.ResponseHeader().Get("Retry-After"))
 	assert.Equal(t, "Bearer secret", f.headers[0].Get("Authorization"))
 	assert.Equal(t, "ermite/test", f.headers[0].Get("User-Agent"))
+}
+
+func TestProductionStreamOutlivesUnaryTimeout(t *testing.T) {
+	const timeout = 50 * time.Millisecond
+	f := &fake{watch: func(ctx context.Context, _ *ermite.WatchRequest, stream ermiteconnect.EventServiceWatchServerStream) error {
+		if err := stream.SendHeaders(); err != nil {
+			return err
+		}
+		select {
+		case <-time.After(4 * timeout):
+			return stream.Send(&ermite.WatchResponse{Event: &ermite.Event{Id: "still-open"}})
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}}
+	c := start(t, f, client.Config{Timeout: timeout})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	stream, err := c.Events().Watch(ctx, &ermite.WatchRequest{})
+	require.NoError(t, err)
+	defer func() { _ = stream.Close() }()
+	msg, err := stream.Receive()
+	require.NoError(t, err)
+	assert.Equal(t, "still-open", msg.GetEvent().GetId())
+}
+
+func TestProductionUnaryDeadlineDuringDelayedResponse(t *testing.T) {
+	const timeout = 50 * time.Millisecond
+	f := &fake{version: func(ctx context.Context, _ *ermite.GetVersionRequest) (*ermite.GetVersionResponse, error) {
+		select {
+		case <-time.After(4 * timeout):
+			return &ermite.GetVersionResponse{Version: "too-late"}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}}
+	c := start(t, f, client.Config{Timeout: timeout})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, err := c.Server().GetVersion(ctx, &ermite.GetVersionRequest{})
+	require.Equal(t, connect.CodeDeadlineExceeded, connect.CodeOf(err))
 }

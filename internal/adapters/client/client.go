@@ -81,6 +81,11 @@ func (c *Client) Journal() ermiteconnect.JournalServiceClient {
 	return ermiteconnect.NewJournalServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
 }
 
+// Runner returns the RunnerService client.
+func (c *Client) Runner() ermiteconnect.RunnerServiceClient {
+	return ermiteconnect.NewRunnerServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
+}
+
 // Runs returns the RunService client.
 func (c *Client) Runs() ermiteconnect.RunServiceClient {
 	return ermiteconnect.NewRunServiceClient(connect.NewClient(connecthttp.NewTransport(c.http, c.base, connecthttp.WithReadMaxBytes(0)), c.opts...))
