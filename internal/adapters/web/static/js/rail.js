@@ -121,16 +121,27 @@
     });
     closeButton.addEventListener('click', () => close());
     backdrop.addEventListener('click', () => close());
+    // The modal drawer owns Escape in capture; the wide column does not.
     document.addEventListener('keydown', e => {
-      if (selected === null && (mobile.matches || wideHidden)) return;
-      if (e.key === 'Escape' && !document.querySelector('dialog[open]')) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (mobile.matches) close();
-        else { hideWide(true); trigger.focus({ preventScroll: true }); }
-      }
+      if (!mobile.matches || selected === null || e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      close();
     }, true);
-    mobile.addEventListener('change', () => close(false));
+    document.addEventListener('keydown', e => {
+      if (mobile.matches || wideHidden || e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
+      const focus = document.activeElement;
+      if (focus !== trigger && !rail.contains(focus)) return;
+      if (focus?.closest?.('details.menu[open]')) return;
+      e.preventDefault();
+      hideWide(true);
+      trigger.focus({ preventScroll: true });
+    });
+    mobile.addEventListener('change', () => {
+      const restore = mobile.matches && rail.contains(document.activeElement);
+      close(false);
+      if (restore) trigger.focus({ preventScroll: true });
+    });
     // Observe content, not attributes: selection changes must not trigger rebuilds.
     new MutationObserver(refresh).observe(rail, { childList: true, subtree: true, characterData: true });
     rail.setAttribute('data-drawer', '');

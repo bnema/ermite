@@ -357,12 +357,25 @@ window.ermiteMR = (() => {
       document.addEventListener('pointerdown', outside);
       document.addEventListener('focusin', outside);
       document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape' || (query.matches ? !isOpen() : wideHidden) || document.querySelector('dialog[open]')) return;
+        if (!query.matches || e.key !== 'Escape' || !isOpen() || document.querySelector('dialog[open]')) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         set(false);
       }, true);
-      query.addEventListener('change', () => set(query.matches ? false : !wideHidden, false));
+      document.addEventListener('keydown', (e) => {
+        if (query.matches || wideHidden || e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
+        const focus = document.activeElement;
+        if (focus !== tab && !rail()?.contains(focus)) return;
+        if (focus?.closest?.('details.menu[open]')) return;
+        e.preventDefault();
+        set(false);
+      });
+      query.addEventListener('change', () => {
+        const open = !query.matches && !wideHidden;
+        const restore = !open && rail()?.contains(document.activeElement);
+        set(open, false);
+        if (restore) tab.focus({ preventScroll: true });
+      });
       addEventListener('scroll', () => { if (isOpen()) place(); }, { passive: true });
       attach();
     }

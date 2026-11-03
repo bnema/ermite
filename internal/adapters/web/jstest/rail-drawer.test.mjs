@@ -35,7 +35,7 @@ function setup({ wide = false, stored = null } = {}) {
   rail.append(section('about', 'About'), section('files', 'Files 12'));
   const classes = new Set();
   const values = new Map(stored ? [['ermite.rail.hidden', stored]] : []);
-  document = { documentElement: { classList: { toggle(k, on) { if (on) classes.add(k); else classes.delete(k); } } }, body, querySelector: s => s === '.hdr' ? header : document.nativeDialog, createElement: t => new Element(t), createTextNode: t => ({ textContent: t }), querySelectorAll: () => [], addEventListener(k, fn) { this[k] = fn; } };
+  document = { documentElement: { classList: { toggle(k, on) { if (on) classes.add(k); else classes.delete(k); } } }, body, querySelector: s => s === '.hdr' ? header : document.nativeDialog, createElement: t => new Element(t), createTextNode: t => ({ textContent: t }), querySelectorAll: () => [], addEventListener(k, fn) { const previous = this[k]; this[k] = e => { previous?.(e); fn(e); }; } };
   const media = { matches: !wide, addEventListener(k, fn) { this.change = fn; } };
   // ermite.js defines ermiteRail (the keys of the rail) before this file runs.
   const keys = { step() {} };
@@ -136,7 +136,8 @@ test('wide rail defaults visible; toggles persist without modal semantics', () =
   s.trigger.events.click();
   assert.equal(s.trigger.getAttribute('aria-expanded'), 'true');
   assert.equal(s.values.get('ermite.rail.hidden'), '0');
-  s.document.keydown({ key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} });
+  s.trigger.focus();
+  s.document.keydown({ key: 'Escape', preventDefault() {}, stopImmediatePropagation() { assert.fail('wide Escape must bubble'); } });
   assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
   assert.equal(s.document.activeElement, s.trigger);
 });
@@ -151,4 +152,29 @@ test('stored hidden preference survives narrow drawer use and breakpoint changes
   s.media.matches = false; s.media.change();
   assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
   assert.equal(s.main.inert, false);
+});
+
+test('wide Escape leaves finder and open menus alone, and respects handled events', () => {
+  const s = setup({ wide: true });
+  const ignored = { key: 'Escape', preventDefault() { assert.fail('not the rail escape'); }, stopImmediatePropagation() { assert.fail('must bubble'); } };
+  s.document.activeElement = { closest: () => null }; // finder input outside rail
+  s.document.keydown(ignored);
+  const inside = s.bar.children[0]; inside.closest = () => ({}); inside.focus();
+  s.document.keydown(ignored); // nested open details.menu
+  inside.closest = () => null;
+  s.document.keydown({ ...ignored, defaultPrevented: true });
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'true');
+  s.document.keydown({ key: 'Escape', preventDefault() {}, stopImmediatePropagation() { assert.fail('must bubble'); } });
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
+});
+
+test('breakpoint restores focus only when the newly hidden rail contains it', () => {
+  const s = setup({ wide: true });
+  s.bar.children[0].focus();
+  s.media.matches = true; s.media.change();
+  assert.equal(s.document.activeElement, s.trigger);
+  s.media.matches = false; s.media.change();
+  s.main.focus();
+  s.media.matches = true; s.media.change();
+  assert.equal(s.document.activeElement, s.main);
 });

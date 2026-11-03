@@ -626,7 +626,7 @@ test('sheet: open / close, survives a refreshed rail, keys and media', () => {
     S.mount();
     S.mount();
     assert.equal(tabs.length, 1, 'one tab, whatever the mounts');
-    assert.equal(docEvents.keydown.length, 1, 'one keydown listener');
+    assert.equal(docEvents.keydown.length, 2, 'one modal and one non-modal listener');
     const tab = tabs[0];
     const closer = () => rail.querySelector('.mr-sheet-close');
     assert.ok(rail.hasAttribute('data-sheet'));
@@ -682,6 +682,25 @@ test('sheet: open / close, survives a refreshed rail, keys and media', () => {
     assert.equal(tab.getAttribute('aria-expanded'), 'true', 'wide toggle restores the column');
     assert.equal(railPrefs.get('ermite.rail.hidden'), '0');
     assert.equal(tab.getAttribute('aria-label'), 'Hide the side panel');
+    document.activeElement = outside; // finder input outside the panel
+    const ignored = { key: 'Escape', preventDefault() { assert.fail('not the panel escape'); }, stopImmediatePropagation() { assert.fail('must bubble'); } };
+    fire('keydown', ignored);
+    const nested = rail.kids.find(k => k.className === 'r-files');
+    nested.closest = () => ({}); nested.focus();
+    fire('keydown', ignored); // open details.menu owns it
+    nested.closest = () => null;
+    fire('keydown', { ...ignored, defaultPrevented: true });
+    assert.equal(tab.getAttribute('aria-expanded'), 'true');
+    fire('keydown', { key: 'Escape', preventDefault() {}, stopImmediatePropagation() { assert.fail('wide must bubble'); } });
+    assert.equal(tab.getAttribute('aria-expanded'), 'false');
+    tab.events.click();
+    nested.focus(); media.matches = true; media.change();
+    assert.equal(document.activeElement, tab, 'shrinking moves focus out of the hidden rail');
+    media.matches = false; media.change();
+    document.activeElement = outside; media.matches = true; media.change();
+    assert.equal(document.activeElement, outside, 'unrelated focus stays put');
+    media.matches = false; media.change();
+
     fire('pointerdown', { target: outside });
     assert.equal(tab.getAttribute('aria-expanded'), 'true', 'outside clicks leave the wide rail alone');
     closer().events.click();
