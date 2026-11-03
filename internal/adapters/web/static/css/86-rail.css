@@ -1,6 +1,21 @@
 @layer components {
   .rail-controls, .rail-context, .rail-backdrop { display: none; }
 
+  @media (width > 1080px) {
+    .rail-context:not([hidden]) { display: inline-flex; position: absolute; right: var(--pad); bottom: 4px; gap: 6px; }
+    .hdr:has(.rail-context:not([hidden])) .tabs { margin-right: 100px; }
+    .hdr:has(.rail-context:not([hidden])):not(:has(.tabs)) { padding-bottom: 39px; }
+    html.rail-hidden .work.has-rail:not(:has(.r-files)) { grid-template-columns: minmax(0, 1fr); }
+    html.rail-hidden .work > .rail:not(:has(.r-files)) { display: none; }
+  }
+  @media (width > 1440px) {
+    html.rail-hidden .work.has-rail:has(.r-files) { grid-template-columns: minmax(0, 1fr); }
+    html.rail-hidden .work > .rail:has(.r-files) { display: none; }
+    .btn.mr-sheet-tab { display: flex; position: fixed; right: 0; top: 50%; z-index: 19; width: 20px; padding: 0; }
+    .btn.mr-sheet-tab .ico { transform: rotate(-90deg); }
+    html.rail-hidden .btn.mr-sheet-tab .ico { transform: rotate(90deg); }
+    .btn.mr-sheet-close { display: inline-flex; align-self: end; }
+  }
   @media (max-width: 1080px) {
     body { --hdr-h: 0px; }
     body:has(.hdr .tabs, .rail-context:not([hidden])) { --hdr-h: 40px; }

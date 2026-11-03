@@ -8,6 +8,8 @@ globalThis.document = { readyState: 'complete', querySelector: () => null, query
 await import('../static/js/lazy.js');
 await import('../static/js/mr.js');
 const C = window.ermiteMR.core;
+const railPrefs = new Map();
+window.ermiteStore = { get: k => railPrefs.get(k), set: (k, v) => railPrefs.set(k, v) };
 
 test('windowOf: the start of the window of a file', () => {
   assert.equal(C.windowOf('f1', 25), 0);
@@ -607,6 +609,7 @@ test('sheet: open / close, survives a refreshed rail, keys and media', () => {
   let dialogOpen = false;
   globalThis.addEventListener = () => {};
   globalThis.document = {
+    documentElement: { classList: { toggle() {} } },
     body: { style: { setProperty() {} } },
     querySelector: (s) => s === '.work > .rail' ? rail : s === 'dialog[open]' ? (dialogOpen ? {} : null) : null,
     querySelectorAll: () => [],
@@ -673,6 +676,19 @@ test('sheet: open / close, survives a refreshed rail, keys and media', () => {
     assert.ok(!open(), 'growing past the breakpoint closes');
     tab.events.click();
     assert.ok(!open(), 'wide: no sheet');
+    assert.equal(tab.getAttribute('aria-expanded'), 'false', 'wide toggle hides the column');
+    assert.equal(railPrefs.get('ermite.rail.hidden'), '1');
+    tab.events.click();
+    assert.equal(tab.getAttribute('aria-expanded'), 'true', 'wide toggle restores the column');
+    assert.equal(railPrefs.get('ermite.rail.hidden'), '0');
+    assert.equal(tab.getAttribute('aria-label'), 'Hide the side panel');
+    fire('pointerdown', { target: outside });
+    assert.equal(tab.getAttribute('aria-expanded'), 'true', 'outside clicks leave the wide rail alone');
+    closer().events.click();
+    assert.equal(tab.getAttribute('aria-expanded'), 'false');
+    media.matches = true; media.change();
+    tab.events.click();
+    assert.ok(open(), 'narrow drawer remains usable after hiding the wide rail');
     media.matches = true;
   } finally { globalThis.document = saved.document; globalThis.matchMedia = saved.matchMedia; globalThis.addEventListener = saved.add; }
 });
@@ -689,6 +705,7 @@ test('sheet: l opens it with focus in the files, h hides it', () => {
   const main = { focus() { globalThis.document.activeElement = main; } };
   globalThis.matchMedia = () => ({ matches: true });
   globalThis.document = {
+    documentElement: { classList: { toggle() {} } },
     body: { style: { setProperty() {} } },
     querySelector: (s) => s === '.work > .rail' ? rail : null,
     querySelectorAll: (s) => s.includes('.files') ? [link] : [],

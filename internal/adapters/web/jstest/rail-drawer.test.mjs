@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-function setup() {
+function setup({ wide = false, stored = null } = {}) {
   let document, observer;
   class Element {
     constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.attrs = {}; this.events = {}; this.id = ''; this.inert = false; this.isConnected = true; this.tabIndex = 0; }
@@ -33,18 +33,20 @@ function setup() {
   rail.setAttribute('aria-label', 'Context');
   rail.setAttribute('role', 'complementary');
   rail.append(section('about', 'About'), section('files', 'Files 12'));
-  document = { body, querySelector: s => s === '.hdr' ? header : document.nativeDialog, createElement: t => new Element(t), createTextNode: t => ({ textContent: t }), querySelectorAll: () => [], addEventListener(k, fn) { this[k] = fn; } };
-  const media = { matches: true, addEventListener(k, fn) { this.change = fn; } };
+  const classes = new Set();
+  const values = new Map(stored ? [['ermite.rail.hidden', stored]] : []);
+  document = { documentElement: { classList: { toggle(k, on) { if (on) classes.add(k); else classes.delete(k); } } }, body, querySelector: s => s === '.hdr' ? header : document.nativeDialog, createElement: t => new Element(t), createTextNode: t => ({ textContent: t }), querySelectorAll: () => [], addEventListener(k, fn) { this[k] = fn; } };
+  const media = { matches: !wide, addEventListener(k, fn) { this.change = fn; } };
   // ermite.js defines ermiteRail (the keys of the rail) before this file runs.
   const keys = { step() {} };
-  const window = { ermiteRail: keys };
+  const window = { ermiteRail: keys, ermiteStore: { get: k => values.get(k), set: (k, v) => values.set(k, v) } };
   vm.runInNewContext(readFileSync(new URL('../static/js/rail.js', import.meta.url), 'utf8'), {
     window, document, matchMedia: () => media,
     MutationObserver: class { constructor(fn) { observer = fn; } observe() {} },
   });
   assert.equal(window.ermiteRail, keys, 'the drawer must not replace the keys of the rail');
   const api = window.ermiteRailDrawer.mount(rail);
-  return { api, rail, trigger: header.children[0], bar: rail.children[0].children[0], closeButton: rail.children[0].children[1], main, document, media, section, refresh: () => observer(), backdrop: body.children.at(-1) };
+  return { api, classes, values, rail, trigger: header.children[0], bar: rail.children[0].children[0], closeButton: rail.children[0].children[1], main, document, media, section, refresh: () => observer(), backdrop: body.children.at(-1) };
 }
 
 test('builds labels and controls without moving sections; opens, switches and closes', () => {
@@ -119,4 +121,34 @@ test('the merge request rail (with .r-files) is left to mr.js', () => {
   const document = { querySelector: () => header, querySelectorAll: s => s === '.work > .rail' ? [mrRail] : [] };
   vm.runInNewContext(readFileSync(new URL('../static/js/rail.js', import.meta.url), 'utf8'), { window, document, matchMedia: () => ({ matches: true, addEventListener() {} }) });
   assert.equal(typeof window.ermiteRailDrawer.mount, 'function');
+});
+
+test('wide rail defaults visible; toggles persist without modal semantics', () => {
+  const s = setup({ wide: true });
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'true');
+  s.trigger.events.click();
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(s.trigger.getAttribute('aria-label'), 'Show the side panel');
+  assert.equal(s.values.get('ermite.rail.hidden'), '1');
+  assert.ok(s.classes.has('rail-hidden'));
+  assert.equal(s.main.inert, false);
+  assert.equal(s.rail.getAttribute('role'), 'complementary');
+  s.trigger.events.click();
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'true');
+  assert.equal(s.values.get('ermite.rail.hidden'), '0');
+  s.document.keydown({ key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} });
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(s.document.activeElement, s.trigger);
+});
+
+test('stored hidden preference survives narrow drawer use and breakpoint changes', () => {
+  const s = setup({ wide: true, stored: '1' });
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
+  s.media.matches = true; s.media.change();
+  s.trigger.events.click();
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'true');
+  assert.equal(s.values.get('ermite.rail.hidden'), '1', 'drawer state is not stored');
+  s.media.matches = false; s.media.change();
+  assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(s.main.inert, false);
 });

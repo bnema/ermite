@@ -83,6 +83,9 @@ window.ermiteStore = (() => {
 // first.
 if (window.ermiteStore.get('wide') === '1') document?.documentElement?.classList?.add('wide');
 
+// Wide side panels share one preference; drawer state is deliberately transient.
+if (window.ermiteStore.get('ermite.rail.hidden') === '1') document?.documentElement?.classList?.add('rail-hidden');
+
 // window.ermiteTheme: the colour theme, "auto" (the system's, the default),
 // "light" or "dark", kept by ermiteStore ("theme"). A forced theme is
 // html[data-theme], which sets color-scheme (00-tokens.css); the

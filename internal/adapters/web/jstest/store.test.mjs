@@ -181,3 +181,18 @@ test('pref.watch gives validated values', () => {
   emit({ key: 'layout', newValue: 'b' });
   assert.equal(seen.length, 3);
 });
+
+test('hidden side panel preference is applied before first paint', () => {
+  const old = globalThis.document;
+  const classes = new Set();
+  globalThis.document = {
+    documentElement: { classList: { add: k => classes.add(k) }, removeAttribute() {} },
+    querySelector: () => null, querySelectorAll: () => [],
+  };
+  try {
+    const storage = fakeStorage();
+    storage.setItem('ermite.rail.hidden', '1');
+    load(storage);
+    assert.ok(classes.has('rail-hidden'));
+  } finally { globalThis.document = old; }
+});

@@ -282,21 +282,29 @@ window.ermiteMR = (() => {
 
   // sheet: up to 1440px the rail is a sheet on the right edge, over the
   // content. A slim rail (<) opens it; > / Esc / a click outside / choosing a
-  // file closes it. Wider, the rail is the second column. rail.js leaves this
+  // file closes it. Wider, the rail is a collapsible second column. rail.js leaves this
   // rail alone.
   const sheet = (() => {
     let tab, query, wasOpen = false;
+    let wideHidden = window.ermiteStore?.get('ermite.rail.hidden') === '1';
     // The rail is looked up live: a refresh replaces it (refreshPage).
     const rail = () => { const r = $('.work > .rail'); return r && $('.r-files', r) ? r : null; };
-    const active = () => !!(tab && rail() && query.matches);
+    const active = () => !!(tab && rail());
     const isOpen = () => !!rail()?.hasAttribute('data-sheet-open');
     function set(open, focus = true) {
       const r = rail();
       if (!r || !tab) return;
       open = open && active();
-      if (open) place();
-      r.toggleAttribute('data-sheet-open', open);
+      if (!query.matches) {
+        wideHidden = !open;
+        window.ermiteStore?.set('ermite.rail.hidden', wideHidden ? '1' : '0');
+        document.documentElement.classList.toggle('rail-hidden', wideHidden);
+      }
+      if (open && query.matches) place();
+      r.toggleAttribute('data-sheet-open', open && query.matches);
       tab.setAttribute('aria-expanded', String(open));
+      tab.setAttribute('aria-label', open ? 'Hide the side panel' : 'Show the side panel');
+      tab.title = open ? 'hide the side panel (esc)' : 'show the side panel';
       if (focus) (open ? $('.mr-sheet-close', r) : tab)?.focus({ preventScroll: true });
     }
     // place starts the sheet under the header, as much of it as is in view.
@@ -323,10 +331,10 @@ window.ermiteMR = (() => {
         b.addEventListener('click', () => set(false));
         r.prepend(b);
         r.addEventListener('click', (e) => {
-          if (isOpen() && e.target.closest?.('.r-files a[href]')) set(false, false);
+          if (query.matches && isOpen() && e.target.closest?.('.r-files a[href]')) set(false, false);
         });
       }
-      set(wasOpen, false);
+      set(query.matches ? wasOpen : !wideHidden, false);
     }
     // mount: once per page. The document listeners and the media query are
     // set here, never in attach.
@@ -342,19 +350,19 @@ window.ermiteMR = (() => {
       tab.setAttribute('aria-expanded', 'false');
       tab.innerHTML = '<span class="ico i-chevron" aria-hidden="true"></span>';
       r.before(tab);
-      tab.addEventListener('click', () => set(true));
+      tab.addEventListener('click', () => set(query.matches ? true : wideHidden));
       const outside = (e) => {
-        if (isOpen() && !rail().contains(e.target) && !tab.contains(e.target)) set(false, false);
+        if (query.matches && isOpen() && !rail().contains(e.target) && !tab.contains(e.target)) set(false, false);
       };
       document.addEventListener('pointerdown', outside);
       document.addEventListener('focusin', outside);
       document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape' || !isOpen() || document.querySelector('dialog[open]')) return;
+        if (e.key !== 'Escape' || (query.matches ? !isOpen() : wideHidden) || document.querySelector('dialog[open]')) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         set(false);
       }, true);
-      query.addEventListener('change', () => set(false, false));
+      query.addEventListener('change', () => set(query.matches ? false : !wideHidden, false));
       addEventListener('scroll', () => { if (isOpen()) place(); }, { passive: true });
       attach();
     }

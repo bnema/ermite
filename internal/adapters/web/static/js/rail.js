@@ -3,6 +3,13 @@
   function mount(rail) {
     const original = { role: rail.getAttribute('role'), label: rail.getAttribute('aria-label') };
     const mobile = matchMedia('(max-width: 1080px)');
+    let wideHidden = window.ermiteStore?.get('ermite.rail.hidden') === '1';
+    function hideWide(hidden) {
+      wideHidden = hidden;
+      window.ermiteStore?.set('ermite.rail.hidden', hidden ? '1' : '0');
+      document.documentElement.classList.toggle('rail-hidden', hidden);
+      paint();
+    }
     const make = (tag, cls) => {
       const el = document.createElement(tag);
       el.className = cls;
@@ -36,7 +43,8 @@
       const open = mobile.matches && selected !== null;
       rail.toggleAttribute('data-drawer-open', open);
       for (const section of sections) section.toggleAttribute('data-rail-selected', section.id === selected);
-      trigger.setAttribute('aria-expanded', String(open));
+      trigger.setAttribute('aria-expanded', String(mobile.matches ? open : !wideHidden));
+      trigger.setAttribute('aria-label', (mobile.matches ? open : !wideHidden) ? 'Hide the side panel' : 'Show the side panel');
       for (const button of buttons()) button.setAttribute('aria-expanded', String(open && button.getAttribute('aria-controls') === selected));
     }
     function close(restore = true) {
@@ -108,16 +116,18 @@
       paint();
     }
     trigger.addEventListener('click', () => {
-      if (sections.length) choose(sections[0].id, buttons()[0]);
+      if (!mobile.matches) hideWide(!wideHidden);
+      else if (sections.length) choose(sections[0].id, buttons()[0]);
     });
     closeButton.addEventListener('click', () => close());
     backdrop.addEventListener('click', () => close());
     document.addEventListener('keydown', e => {
-      if (selected === null) return;
+      if (selected === null && (mobile.matches || wideHidden)) return;
       if (e.key === 'Escape' && !document.querySelector('dialog[open]')) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        close();
+        if (mobile.matches) close();
+        else { hideWide(true); trigger.focus({ preventScroll: true }); }
       }
     }, true);
     mobile.addEventListener('change', () => close(false));
