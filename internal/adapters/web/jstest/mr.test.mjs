@@ -552,7 +552,7 @@ test('intercepted Cancel resets the entire comment form', () => {
 test('live refresh preserves the open button panel even when the hash points elsewhere', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../static/js/mr.js', import.meta.url), 'utf8');
-  const start = src.indexOf('  async function refreshPage(page)');
+  const start = src.indexOf('  async function refreshPage(page,');
   const end = src.indexOf('  function refreshNotice', start);
   const { el, installDom } = await import('./dom.mjs');
   const saved = globalThis.document;
@@ -720,4 +720,41 @@ test('sheet: l opens it with focus in the files, h hides it', () => {
     assert.ok(!('data-sheet-open' in attrs), 'h hides it');
     assert.equal(document.activeElement, main);
   } finally { globalThis.document = saved.document; globalThis.matchMedia = saved.matchMedia; }
+});
+
+test('actions invalidate older snapshots and coalesce a fresh refresh after settling', async () => {
+  const c = clock(); let resolve, fetched = 0; const applied = [];
+  const r = window.ermiteMR.refresher({ blocked: () => false,
+    fetchPage: () => { fetched++; return new Promise(r => { resolve = r; }); },
+    apply: page => applied.push(page), notice() {}, failed: () => assert.fail('unexpected failure') });
+  try {
+    r.request(); const old = c.tick();
+    const a = {}, b = {};
+    r.actionStarted(a); r.actionStarted(b);
+    r.actionFinished(a);
+    resolve('before comment'); await old;
+    assert.deepEqual(applied, []);
+    r.request(); await c.tick();
+    assert.equal(fetched, 1, 'no GET while any action is in flight');
+    r.actionFinished(b); r.actionFinished(b);
+    assert.equal(c.size(), 1, 'one refresh after the last action settles');
+    const fresh = c.tick(); resolve('after comment'); await fresh;
+    assert.deepEqual(applied, ['after comment']);
+    assert.equal(r.pending(), false);
+  } finally { c.restore(); }
+});
+
+test('an action completed during GET invalidates it even with no actions left in flight', async () => {
+  const c = clock(); let resolve; let applied = 0;
+  const r = window.ermiteMR.refresher({ blocked: () => false,
+    fetchPage: () => new Promise(r => { resolve = r; }), apply: () => applied++,
+    notice() {}, failed: () => assert.fail('unexpected failure') });
+  try {
+    r.request(); const old = c.tick();
+    const action = {}; r.actionStarted(action); r.actionFinished(action);
+    resolve('stale'); await old;
+    assert.equal(applied, 0);
+    const fresh = c.tick(); resolve('fresh'); await fresh;
+    assert.equal(applied, 1);
+  } finally { c.restore(); }
 });

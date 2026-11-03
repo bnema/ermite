@@ -522,25 +522,36 @@ window.ermiteMR = (() => {
   // a dirty bit for pushes received during that request. Drafts are checked
   // again after the fetch: typing while the network is slow is safe too.
   function refresher({ blocked, fetchPage, apply, notice, failed, delay = 300 }) {
-    let timer, busy = false, pending = false;
+    let timer, busy = false, pending = false, generation = 0;
+    const actions = new Set();
+    const stale = (started) => actions.size > 0 || generation !== started;
     const schedule = () => { clearTimeout(timer); timer = setTimeout(run, delay); };
     async function run() {
-      if (busy || !pending) return;
+      if (busy || !pending || actions.size) return;
       if (blocked()) { notice(true); return; }
       busy = true;
       pending = false;
       try {
+        const started = generation;
         const page = await fetchPage();
+        if (stale(started)) { pending = true; return; }
         if (blocked()) { pending = true; notice(true); return; }
-        if (await apply(page) === false) { pending = true; notice(true); }
+        if (await apply(page, () => !stale(started)) === false) { pending = true; notice(true); }
         else notice(false);
       } catch { if (blocked()) { pending = true; notice(true); } else failed(); }
       finally {
         busy = false;
-        if (pending && !blocked()) schedule();
+        if (pending && !blocked() && !actions.size) schedule();
       }
     }
     return {
+      actionStarted(request) { actions.add(request); generation++; pending = true; clearTimeout(timer); },
+      actionFinished(request) {
+        if (!actions.delete(request)) return;
+        generation++;
+        pending = true;
+        if (!actions.size) schedule();
+      },
       request() { pending = true; schedule(); },
       resume() { if (pending) schedule(); },
       pending() { return pending || busy; },
@@ -634,7 +645,7 @@ window.ermiteMR = (() => {
     window.htmx.process(node);
   }
 
-  async function refreshPage(page) {
+  async function refreshPage(page, current = () => true) {
     const regions = ['.mr-footer', '#mr-range', '.mr-bar', '#mr-diff-notices', '#diffs', '#mr-comments', '.rail', '.hint-live'];
     for (const sel of regions) if (!$(sel) || !$(sel, page)) throw new Error('missing MR region');
     let anchor = scrollAnchor();
@@ -652,7 +663,7 @@ window.ermiteMR = (() => {
       const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
       if (!res.ok || res.redirected) throw new Error('anchor window changed');
       let windowPage = new DOMParser().parseFromString(await res.text(), 'text/html');
-      if (hasDraft()) return false;
+      if (hasDraft() || !current()) return false;
       anchor = scrollAnchor();
       const windowFiles = $$('details.dfile', windowPage);
       // If the reader moved outside this window, discard it; lazy loading will
@@ -663,7 +674,7 @@ window.ermiteMR = (() => {
       }
       windowPage = null;
     }
-    if (hasDraft()) return false;
+    if (hasDraft() || !current()) return false;
     const files = new Map($$('#diffs details.dfile').map((f) => [f.dataset.file, f.open]));
     const folded = $('.r-files')?.hasAttribute('data-folded');
     sheet.keep();
@@ -741,6 +752,13 @@ window.ermiteMR = (() => {
     // disposable panel/touch hooks below.
     if ($('#diffs').dataset.mrStarted) return;
     $('#diffs').dataset.mrStarted = 'true';
+    // htmx 4's after:request precedes swaps; finally:request also covers
+    // aborts/errors and runs after swaps, including removal of the source form.
+    document.addEventListener?.('htmx:before:request', e => {
+      const ctx = e.detail?.ctx;
+      if (ctx?.sourceElement?.matches?.('form[hx-post][hx-swap="none"]')) headRefresh.actionStarted(ctx);
+    });
+    document.addEventListener?.('htmx:finally:request', e => headRefresh.actionFinished(e.detail?.ctx));
     for (const type of ['input', 'focusout', 'reset', 'submit']) document.addEventListener?.(type, () => headRefresh.resume());
     document.addEventListener?.('click', (e) => {
       const cancel = e.target.closest?.('.cform .f-btns a');
