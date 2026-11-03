@@ -83,7 +83,10 @@ window.ermiteStore = (() => {
 // first.
 if (window.ermiteStore.get('wide') === '1') document?.documentElement?.classList?.add('wide');
 
-// Wide side panels share one preference; drawer state is deliberately transient.
+// The side panel: rail-js marks that rail.js will drive it (without scripts it
+// stays stacked below the content); the wide-screen collapse is the one
+// remembered choice, narrower states are transient.
+globalThis.document?.documentElement?.classList?.add('rail-js');
 if (window.ermiteStore.get('ermite.rail.hidden') === '1') document?.documentElement?.classList?.add('rail-hidden');
 
 // window.ermiteTheme: the colour theme, "auto" (the system's, the default),

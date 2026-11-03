@@ -75,31 +75,31 @@
 <nav class="tabs" aria-label="Sections">
 <ul>
 <li>
-<a href="/long" data-key="g s">Summary <kbd aria-hidden="true">g s</kbd>
+<a href="/long" data-key="g s">Summary <kbd aria-hidden="true">gs</kbd>
 </a>
 </li>
 <li>
-<a href="/long/tree/main" data-key="g f">Files <kbd aria-hidden="true">g f</kbd>
+<a href="/long/tree/main" data-key="g f">Files <kbd aria-hidden="true">gf</kbd>
 </a>
 </li>
 <li>
-<a href="/long/commits/main" data-key="g c" aria-current="page">Commits <kbd aria-hidden="true">g c</kbd>
+<a href="/long/commits/main" data-key="g c" aria-current="page">Commits <kbd aria-hidden="true">gc</kbd>
 </a>
 </li>
 <li>
-<a href="/long/refs" data-key="g b">Branches &amp; tags <kbd aria-hidden="true">g b</kbd>
+<a href="/long/refs" data-key="g b">Branches &amp; tags <kbd aria-hidden="true">gb</kbd>
 </a>
 </li>
 <li>
-<a href="/long/merge-requests" data-key="g m">Merge requests <kbd aria-hidden="true">g m</kbd>
+<a href="/long/merge-requests" data-key="g m">Merge requests <kbd aria-hidden="true">gm</kbd>
 </a>
 </li>
 <li>
-<a href="/long/releases" data-key="g r">Releases <kbd aria-hidden="true">g r</kbd>
+<a href="/long/releases" data-key="g r">Releases <kbd aria-hidden="true">gr</kbd>
 </a>
 </li>
 <li>
-<a href="/long/actions" data-key="g a">Actions <kbd aria-hidden="true">g a</kbd>
+<a href="/long/actions" data-key="g a">Actions <kbd aria-hidden="true">ga</kbd>
 </a>
 </li>
 </ul>
@@ -107,6 +107,8 @@
 </header>
 <div class="work has-rail">
 <main id="main" tabindex="-1">
+<div id="action-status" aria-live="polite">
+</div>
 <div class="filter">
 <label for="commit-filter" class="sr">filter</label>
 <input id="commit-filter" type="search" data-filter=".days tr" data-groups=".days section" placeholder="Filter by subject, sha or author…" autocomplete="off" hx-on:input="ermite.filter(this)">
@@ -164,11 +166,19 @@
 <aside class="rail" aria-label="Context">
 <section aria-labelledby="r-hist">
 <h2 id="r-hist">History</h2>
+<p class="h-ref">
+<span class="ico i-branch" aria-hidden="true">
+</span>
+<span class="h-name">main</span>
+</p>
+<ul class="h-stats">
+<li>
+<b>2</b> commits</li>
+<li>
+<b>1</b> author</li>
+</ul>
+<p class="h-dates">2026-03-02 → 2026-03-16</p>
 <dl class="kv">
-<dt>ref</dt>
-<dd>main</dd>
-<dt>on page</dt>
-<dd>2</dd>
 <dt>path</dt>
 <dd>a.txt</dd>
 <dt>file</dt>
@@ -178,7 +188,8 @@
 </dl>
 </section>
 <section aria-labelledby="r-refs">
-<h2 id="r-refs">Refs on this page</h2>
+<h2 id="r-refs">Refs on this page <span class="count">0</span>
+</h2>
 <p class="dim">no tag or branch head here</p>
 </section>
 </aside>

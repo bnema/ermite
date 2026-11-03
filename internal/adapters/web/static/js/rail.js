@@ -1,155 +1,157 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 (() => {
-  function mount(rail) {
-    const original = { role: rail.getAttribute('role'), label: rail.getAttribute('aria-label') };
-    const mobile = matchMedia('(max-width: 1080px)');
-    let wideHidden = window.ermiteStore?.get('ermite.rail.hidden') === '1';
-    function hideWide(hidden) {
-      wideHidden = hidden;
-      window.ermiteStore?.set('ermite.rail.hidden', hidden ? '1' : '0');
-      document.documentElement.classList.toggle('rail-hidden', hidden);
-      paint();
-    }
-    const make = (tag, cls) => {
-      const el = document.createElement(tag);
-      el.className = cls;
-      return el;
-    };
-    // Keep live swap targets in place; only the controls belong to the drawer.
-    const bar = make('nav', 'rail-tabs');
-    bar.setAttribute('aria-label', 'Panel sections');
-    // "Panel" and a side-panel icon: the button opens what the side panel
-    // shows on a wide screen.
-    const trigger = make('button', 'btn rail-context');
-    trigger.type = 'button';
-    const icon = make('span', 'ico i-panel-right-open');
-    icon.setAttribute('aria-hidden', 'true');
-    trigger.append(icon, document.createTextNode('Panel'));
-    const header = document.querySelector('.hdr');
-    header.append(trigger);
-    const controls = make('div', 'rail-controls');
-    const closeButton = make('button', 'btn rail-close');
-    closeButton.type = 'button';
-    closeButton.textContent = '×';
-    closeButton.setAttribute('aria-label', 'Close');
-    const backdrop = make('div', 'rail-backdrop');
-    backdrop.setAttribute('aria-hidden', 'true');
-    controls.append(bar, closeButton);
-    rail.prepend(controls);
-    document.body.append(backdrop);
-    let sections = [], selected = null, opener = null, signature = '', inert = [], serial = 0;
-    const buttons = () => [...bar.children];
-    function paint() {
-      const open = mobile.matches && selected !== null;
-      rail.toggleAttribute('data-drawer-open', open);
-      for (const section of sections) section.toggleAttribute('data-rail-selected', section.id === selected);
-      trigger.setAttribute('aria-expanded', String(mobile.matches ? open : !wideHidden));
-      trigger.setAttribute('aria-label', (mobile.matches ? open : !wideHidden) ? 'Hide the side panel' : 'Show the side panel');
-      for (const button of buttons()) button.setAttribute('aria-expanded', String(open && button.getAttribute('aria-controls') === selected));
-    }
-    function close(restore = true) {
-      selected = null;
-      for (const [attr, value] of [['role', original.role], ['aria-label', original.label]]) {
+  const narrow = matchMedia('(max-width: 1080px)');
+  const phone = matchMedia('(max-width: 720px)');
+  // the wide-screen choice is shared with store.js, which sets rail-hidden on
+  // <html> before the first paint so a collapsed panel never flashes open
+  const store = window.ermiteStore;
+  let wideOpen = store?.get('ermite.rail.hidden') !== '1';
+  let rail = null, open = narrow.matches ? false : wideOpen, inert = [], original = null;
+  const make = (tag, cls) => {
+    const el = document.createElement(tag);
+    el.className = cls;
+    return el;
+  };
+  const trigger = make('button', 'btn icon rail-context');
+  trigger.type = 'button';
+  trigger.setAttribute('aria-label', 'Toggle side panel');
+  trigger.title = 'side panel';
+  const icon = make('span', 'ico i-panel-right-open');
+  icon.setAttribute('aria-hidden', 'true');
+  trigger.append(icon);
+  const controls = make('div', 'rail-controls');
+  const closeButton = make('button', 'btn icon rail-close');
+  closeButton.type = 'button';
+  // an id lets a live refresh put the focus back on it (refreshPage in mr.js)
+  closeButton.id = 'rail-close';
+  closeButton.textContent = '×';
+  closeButton.setAttribute('aria-label', 'Close side panel');
+  controls.append(closeButton);
+  const backdrop = make('div', 'rail-backdrop');
+  backdrop.setAttribute('aria-hidden', 'true');
+  backdrop.addEventListener('click', () => toggle(false));
+
+  function release() {
+    for (const [el, was] of inert) el.inert = was;
+    inert = [];
+    if (rail && original) {
+      for (const [attr, value] of Object.entries(original)) {
         if (value == null) rail.removeAttribute(attr);
         else rail.setAttribute(attr, value);
       }
       rail.removeAttribute('aria-modal');
-      for (const [el, was] of inert) el.inert = was;
-      inert = [];
-      document.body.classList.remove('rail-open');
-      paint();
-      if (restore && opener?.isConnected) opener.focus({ preventScroll: true });
     }
-    function choose(id, button) {
-      if (!mobile.matches) return;
-      if (selected === id) return close();
-      if (selected === null) {
-        opener = trigger;
-        // Inert the branches outside the aside, without moving swap targets.
-        for (let node = rail; node.parentElement; node = node.parentElement) {
-          for (const sibling of node.parentElement.children) {
-            if (sibling === node || sibling === backdrop) continue;
-            inert.push([sibling, sibling.inert]);
-            sibling.inert = true;
-          }
-          if (node.parentElement === document.body) break;
-        }
-      }
-      selected = id;
-      // All section controls stay inside the modal drawer.
+  }
+  function paint() {
+    release();
+    const modal = open && narrow.matches && phone.matches;
+    document.body.classList.toggle('rail-open', open && !!rail);
+    document.documentElement.classList.toggle('rail-hidden', !wideOpen);
+    document.body.classList.toggle('rail-modal', modal);
+    trigger.hidden = !rail;
+    trigger.setAttribute('aria-expanded', String(open && !!rail));
+    if (!rail) return;
+    if (modal) {
       rail.setAttribute('role', 'dialog');
       rail.setAttribute('aria-modal', 'true');
-      rail.setAttribute('aria-label', button?.textContent || 'Panel');
-      document.body.classList.add('rail-open');
-      paint();
-      buttons().find(b => b.getAttribute('aria-controls') === selected)?.focus();
-    }
-    function refresh() {
-      sections = [...rail.children].filter(el => el.tagName === 'SECTION' && el.querySelector('h2'));
-      const labels = sections.map(section => {
-        if (!section.id) {
-          const headingID = section.querySelector('h2').id;
-          if (headingID) section.id = headingID + '-panel';
-          else do { section.id = 'rail-section-' + serial++; } while (sections.some(other => other !== section && other.id === section.id));
+      for (let node = rail; node.parentElement; node = node.parentElement) {
+        for (const sibling of node.parentElement.children) {
+          if (sibling === node || sibling === backdrop) continue;
+          inert.push([sibling, sibling.inert]);
+          sibling.inert = true;
         }
-        const heading = section.querySelector('h2').cloneNode(true);
-        heading.querySelectorAll('a, kbd, .sr').forEach(el => el.remove());
-        return heading.textContent.trim().replace(/\s+/g, ' ');
-      });
-      const next = JSON.stringify(sections.map((s, i) => [s.id, labels[i]]));
-      if (signature !== next) {
-        signature = next;
-        const focusedTab = bar.contains(document.activeElement);
-        bar.replaceChildren();
-        sections.forEach((section, i) => {
-          const button = make('button', 'btn');
-          button.type = 'button';
-          button.textContent = labels[i];
-          button.setAttribute('aria-controls', section.id);
-          button.addEventListener('click', () => choose(section.id, button));
-          bar.append(button);
-        });
-        if (focusedTab && selected) [...bar.children].find(b => b.getAttribute('aria-controls') === selected)?.focus();
+        if (node.parentElement === document.body) break;
       }
-      if (selected && !sections.some(s => s.id === selected)) close();
-      trigger.hidden = !sections.length;
-      paint();
     }
-    trigger.addEventListener('click', () => {
-      if (!mobile.matches) hideWide(!wideHidden);
-      else if (sections.length) choose(sections[0].id, buttons()[0]);
-    });
-    closeButton.addEventListener('click', () => close());
-    backdrop.addEventListener('click', () => close());
-    // The modal drawer owns Escape in capture; the wide column does not.
-    document.addEventListener('keydown', e => {
-      if (!mobile.matches || selected === null || e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
+  }
+  // set shows or hides the panel for now. Only toggle (the user's own choice)
+  // changes the remembered wide-screen state.
+  function set(value, focus = true) {
+    const was = open, inside = rail?.contains(document.activeElement);
+    open = !!(value && rail);
+    paint();
+    // the slide-in plays when the phone sheet opens, not on a live refresh
+    if (open && !was) rail?.classList.add('rail-enter');
+    if (!focus) return;
+    // a non-modal column keeps the focus on its toggle; the phone sheet is modal
+    if (open && phone.matches) closeButton.focus({ preventScroll: true });
+    else if (!open && inside) trigger.focus({ preventScroll: true });
+  }
+  function toggle(value, focus = true) {
+    if (!narrow.matches) {
+      wideOpen = !!value;
+      store?.set('ermite.rail.hidden', value ? '0' : '1');
+    }
+    set(value, focus);
+  }
+  // State belongs to this controller, not the aside: live refresh can replace
+  // the entire rail. Reattach controls without closing or stealing focus.
+  function refresh() {
+    const next = document.querySelector('.work > .rail');
+    // a region swap removes the old rail before it inserts the new one: keep
+    // the current state until the new rail is there
+    if (next === rail || (!next && rail && !rail.isConnected && document.querySelector('.work.has-rail'))) return;
+    release();
+    rail = next;
+    if (rail) {
+      original = { role: rail.getAttribute('role'), 'aria-label': rail.getAttribute('aria-label') };
+      rail.id ||= 'context-rail';
+      rail.tabIndex = -1;
+      trigger.setAttribute('aria-controls', rail.id);
+      closeButton.setAttribute('aria-controls', rail.id);
+      rail.prepend(controls);
+      rail.addEventListener('animationend', () => rail.classList.remove('rail-enter'));
+      if (!backdrop.parentElement) document.body.append(backdrop);
+      // the tabs row stays on screen when the page scrolls: the toggle lives
+      // at its right end, else at the end of the top row
+      (document.querySelector('.hdr .tabs') ?? document.querySelector('.hdr-acts'))?.append(trigger);
+    }
+    paint();
+  }
+  trigger.addEventListener('click', () => toggle(!open));
+  closeButton.addEventListener('click', () => toggle(false));
+  // The phone sheet is modal: it owns Escape and Tab, in capture.
+  document.addEventListener('keydown', e => {
+    if (!open || !phone.matches || e.isComposing || document.querySelector('dialog[open]')) return;
+    if (e.key === 'Escape') {
       e.preventDefault();
       e.stopImmediatePropagation();
-      close();
-    }, true);
-    document.addEventListener('keydown', e => {
-      if (mobile.matches || wideHidden || e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
-      const focus = document.activeElement;
-      if (focus !== trigger && !rail.contains(focus)) return;
-      if (focus?.closest?.('details.menu[open]')) return;
-      e.preventDefault();
-      hideWide(true);
-      trigger.focus({ preventScroll: true });
-    });
-    mobile.addEventListener('change', () => {
-      const restore = mobile.matches && rail.contains(document.activeElement);
-      close(false);
-      if (restore) trigger.focus({ preventScroll: true });
-    });
-    // Observe content, not attributes: selection changes must not trigger rebuilds.
-    new MutationObserver(refresh).observe(rail, { childList: true, subtree: true, characterData: true });
-    rail.setAttribute('data-drawer', '');
-    refresh();
-    return { refresh, choose, close };
-  }
-  // Not ermiteRail: ermite.js owns that name for the keys of the rail.
-  window.ermiteRailDrawer = { mount };
-  // The merge request rail is a sheet on the right edge instead (mr.js).
-  document.querySelectorAll('.work > .rail').forEach(rail => { if (!rail.querySelector('.r-files')) mount(rail); });
+      toggle(false);
+    } else if (e.key === 'Tab') {
+      const items = [...rail.querySelectorAll('button, a[href], input, select, textarea, summary')]
+        .filter(el => !el.disabled && !el.closest('[hidden]') && el.getClientRects().length);
+      const first = items[0], last = items.at(-1);
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    }
+  }, true);
+  // Wider, the column does not own Escape: it collapses only from its toggle
+  // or its own controls, and after a menu or a field had its say.
+  document.addEventListener('keydown', e => {
+    if (!open || phone.matches || e.isComposing || e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
+    const focus = document.activeElement;
+    if (focus !== trigger && !rail?.contains(focus)) return;
+    if (focus?.closest?.('details.menu[open]')) return;
+    e.preventDefault();
+    toggle(false);
+  });
+  narrow.addEventListener('change', () => {
+    const inside = rail?.contains(document.activeElement);
+    open = narrow.matches ? false : wideOpen;
+    paint();
+    if (inside && !open) trigger.focus({ preventScroll: true });
+  });
+  phone.addEventListener('change', () => {
+    paint();
+    if (open && phone.matches) closeButton.focus({ preventScroll: true });
+  });
+  // For the keys (l / h) and dialogs: open shows the panel for now; close
+  // dismisses it only where it covers or squeezes the content (narrow).
+  window.ermiteRailPanel = {
+    open: (focus = true) => set(true, focus),
+    close: (focus = true) => { if (narrow.matches) set(false, focus); },
+    refresh,
+  };
+  new MutationObserver(refresh).observe(document.body, { childList: true, subtree: true });
+  refresh();
 })();

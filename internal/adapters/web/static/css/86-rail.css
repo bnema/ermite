@@ -1,77 +1,70 @@
 @layer components {
-  .rail-controls, .rail-context, .rail-backdrop { display: none; }
-
+  .rail-controls, .rail-backdrop { display: none; }
+  /* the toggle sits at the right end of the tabs row (sticky), at every width */
+  .rail-context:not([hidden]) { display: inline-flex; order: 99; flex: none; }
+  /* the icon points the way the panel will go: open it, or push it away */
+  .rail-context .ico { transition: transform .2s ease; }
+  .rail-context[aria-expanded="true"] .ico { transform: rotate(180deg); }
+  /* the tabs scroll sideways; the toggle stays pinned at the right end */
+  .tabs:has(> .rail-context:not([hidden])) {
+    display: flex; align-items: center; gap: var(--s2); overflow: visible;
+    & > ul { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    & > .rail-context { margin-left: auto; }
+  }
+  /* rail.js drives the panel (rail-js, set by store.js before the first
+     paint); without scripts the rail stays a column, or stacks below */
+  .rail-js {
+    & .rail { visibility: hidden; min-width: 0; }
+    & body:not(.rail-open) .work > .rail { max-height: 0; overflow: hidden; }
+    & .work.has-rail { grid-template-columns: minmax(0, 1fr) minmax(0, 0px); column-gap: 0; transition: grid-template-columns .2s ease, column-gap .2s ease; }
+    & .rail-open .work.has-rail { grid-template-columns: minmax(0, 1fr) minmax(0, var(--rail)); column-gap: var(--s5); }
+    & .rail-open .rail { visibility: visible; }
+  }
+  /* before rail.js runs: a wide page draws in its remembered state */
   @media (width > 1080px) {
-    .rail-context:not([hidden]) { display: inline-flex; position: absolute; right: var(--pad); bottom: 4px; gap: 6px; }
-    .hdr:has(.rail-context:not([hidden])) .tabs { margin-right: 100px; }
-    .hdr:has(.rail-context:not([hidden])):not(:has(.tabs)) { padding-bottom: 39px; }
-    html.rail-hidden .work.has-rail:not(:has(.r-files)) { grid-template-columns: minmax(0, 1fr); }
-    html.rail-hidden .work > .rail:not(:has(.r-files)) { display: none; }
+    html.rail-js:not(.rail-hidden) body:not(:has(.rail-context)) .work.has-rail { grid-template-columns: minmax(0, 1fr) minmax(0, var(--rail)); column-gap: var(--s5); transition: none; }
+    html.rail-js:not(.rail-hidden) body:not(:has(.rail-context)) .work > .rail { visibility: visible; max-height: none; overflow: visible; }
   }
-  @media (width > 1440px) {
-    html.rail-hidden .work.has-rail:has(.r-files) { grid-template-columns: minmax(0, 1fr); }
-    html.rail-hidden .work > .rail:has(.r-files) { display: none; }
-    .btn.mr-sheet-tab { display: flex; position: fixed; right: 0; top: 50%; z-index: 19; width: 20px; padding: 0; }
-    .btn.mr-sheet-tab .ico { transform: rotate(-90deg); }
-    html.rail-hidden .btn.mr-sheet-tab .ico { transform: rotate(90deg); }
-    .btn.mr-sheet-close { display: inline-flex; align-self: end; }
-  }
+
   @media (max-width: 1080px) {
     body { --hdr-h: 0px; }
-    body:has(.hdr .tabs, .rail-context:not([hidden])) { --hdr-h: 40px; }
+    body:has(.hdr .tabs) { --hdr-h: 40px; }
     /* Review tools scroll away too, leaving file headers directly below the band. */
     body:has(#diffs[data-mr]) { --bar-h: 0px; }
     body:has(#diffs[data-mr]) .mr-bar { position: static; }
     /* The identity row scrolls away; only the compact navigation remains. */
     .hdr { position: static; }
-    .hdr:has(.tabs, .rail-context:not([hidden])) { position: sticky; top: -48px; }
+    .hdr:has(.tabs) { position: sticky; top: -48px; }
     .hdr-top { height: 48px; gap: var(--s2); }
     .tabs { height: 39px; padding-inline: var(--s2); }
     .tabs a { height: 39px; padding-inline: var(--s2); font-size: var(--fs-s); }
     .tabs kbd { display: none; }
-    .hdr:has(.rail-context:not([hidden])) .tabs { margin-right: 88px; }
-    .rail-context:not([hidden]) {
-      display: inline-flex; position: absolute; right: var(--s2); bottom: 4px;
-      gap: 6px; height: 31px; padding-inline: var(--s2); font-size: var(--fs-xs);
+  }
+  @media (max-width: 720px) {
+    /* on a phone the rail never takes a grid column, open or closed: it
+       overlays the page, so the content keeps the full width */
+    .rail-js .work.has-rail { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
+    .rail-js body:not(.rail-open) .work > .rail { position: fixed; }
+    .rail-open .rail {
+      display: flex; position: fixed; inset: 0 0 0 auto; z-index: 41;
+      width: min(var(--rail), calc(100vw - 48px));
+      max-height: none; overflow-y: auto; overscroll-behavior: contain;
+      --rail-x: var(--s4);
+      padding-bottom: max(var(--s4), env(safe-area-inset-bottom));
+      background: var(--bg-canvas); border-left: 1px solid var(--border);
+      box-shadow: -8px 0 24px #0006;
     }
-    .rail-context .ico { width: 14px; height: 14px; }
-    .hdr:has(.rail-context:not([hidden])):not(:has(.tabs)) { padding-bottom: 39px; }
-    .rail[data-drawer] { display: none; }
-    .rail[data-drawer][data-drawer-open] {
-      display: block; position: fixed; inset: auto 0 0; z-index: 41;
-      max-height: 80dvh; overflow-y: auto; overscroll-behavior: contain;
-      padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
-      background: var(--bg-surface); border: 1px solid var(--border-strong);
-      border-radius: var(--r) var(--r) 0 0; box-shadow: var(--shadow);
-    }
-    .rail[data-drawer] > section:not([data-rail-selected]) { display: none; }
-    /* In the drawer, a section is its content: the chips above already name
-       it, and the drawer is its frame. No second title, no inner card whose
-       rounded corners would sit inside the drawer's own. */
-    .rail[data-drawer-open] > section { border: 0; border-radius: 0; background: none; }
-    /* the title text goes (font-size 0), its links and buttons stay: "View
-       all", "History", the fold of the files, on a slim right-aligned row */
-    .rail[data-drawer-open] > section > h2 {
-      justify-content: flex-end; min-height: 0; padding: var(--s2) var(--s4) 0; border: 0;
-      font-size: 0; line-height: 0;
-      & > :is(.count, kbd) { display: none; }
-      & > :is(a, button) { line-height: 20px; }
-    }
-    .rail[data-drawer-open] > section > h2:not(:has(a, button)) { display: none; }
-    .rail[data-drawer-open] > section > h2:not(:has(a, button)) + * { margin-top: var(--s3); }
-    /* Controls stay reachable while long sections scroll. */
-    .rail-controls {
-      display: flex; align-items: center; gap: var(--s2); padding: var(--s2);
-      position: sticky; top: 0; z-index: 1; background: var(--bg-surface);
-      border-bottom: 1px solid var(--border);
-    }
-    .rail-tabs { display: flex; gap: var(--s2); overflow-x: auto; flex: 1; min-width: 0; }
-    .rail-tabs .btn { height: 28px; border-radius: 999px; font-size: var(--fs-xs); }
-    .rail-tabs .btn[aria-expanded="true"] { color: var(--ink-hi); background: var(--bg-strong); border-color: var(--ink-mute); }
-    .rail-close { display: inline-flex; justify-content: center; flex: none; width: 28px; height: 28px; padding: 0; font-size: 18px; }
-    .rail-open { overflow: hidden; }
-    .rail-open > .rail-backdrop {
-      display: block; position: fixed; inset: 0; z-index: 40; background: #0008;
-    }
+    /* rail.js adds rail-enter when the sheet opens: a live refresh of an open
+       sheet does not slide it in again */
+    .rail-open .rail.rail-enter { animation: rail-in .2s ease; }
+    .rail-open .rail-backdrop { display: block; position: fixed; inset: 0; z-index: 40; background: #0008; }
+    .rail-controls { display: flex; justify-content: flex-end; position: sticky; top: 0; z-index: 1; margin-inline: calc(-1 * var(--rail-x)); padding: var(--s2) var(--s3); background: var(--bg-canvas); }
+    .rail-modal { overflow: hidden; }
+  }
+  @keyframes rail-in { from { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .work.has-rail { transition: none; }
+    .rail-open .rail.rail-enter { animation: none; }
+    .rail-context .ico { transition: none; }
   }
 }

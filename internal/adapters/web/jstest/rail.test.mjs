@@ -82,3 +82,15 @@ test('j / k cross section and recent-commit table boundaries in document order',
   assert.equal(active, main);
   assert.equal(R.step(1), false);
 });
+
+test('rail focus keys open and close the shared panel', () => {
+  let opened = 0, closed = 0;
+  window.ermiteRailPanel = { open(focus) { assert.equal(focus, false); opened++; }, close(focus) { assert.equal(focus, false); closed++; } };
+  try {
+    active = main;
+    R.enter(); R.leave();
+    assert.equal(opened, 1);
+    assert.equal(closed, 1);
+    assert.equal(active, main);
+  } finally { delete window.ermiteRailPanel; }
+});

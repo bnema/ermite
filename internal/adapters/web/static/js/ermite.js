@@ -58,8 +58,9 @@
     // Row cursor: j / k. In the side panel they move the focus between its
     // controls instead.
     move(d) {
-      if ($('dialog[open]') || $('[data-drawer-open]')) return;
+      if ($('dialog[open]')) return;
       if (window.ermiteMR?.stepFiles(d) || window.ermiteRail.step(d)) return;
+      if ($('.rail[aria-modal="true"]')) return;
       const rows = visibleRows();
       if (!rows.length) {
         scrollBy(0, d * 180);
@@ -87,7 +88,7 @@
       window.ermiteFinder?.sync();
     },
     open() {
-      if ($('dialog[open]') || $('[data-drawer-open]') || window.ermiteTree?.open()) return;
+      if ($('dialog[open]') || $('.rail[aria-modal="true"]') || window.ermiteTree?.open()) return;
       $('[data-cursor] a')?.click();
     },
     // l / h: in the Files view, open a directory or a file / close a directory
@@ -95,10 +96,9 @@
     // request, else its main action, else its first control) and back to the
     // content. Enter then activates the control.
     rail(into) {
-      if ($('dialog[open]') || $('[data-drawer-open]')) return;
+      if ($('dialog[open]')) return;
       if (window.ermiteTree?.key(into)) return;
       if (into && window.ermiteMR?.focusFiles()) return flash('files · j k move · enter open · h back');
-      if (!into) window.ermiteMR?.sheet?.hide();
       if (!into && window.ermiteMR?.leaveFiles()) return;
       const msg = into ? window.ermiteRail.enter() : window.ermiteRail.leave();
       if (msg) flash(msg);
@@ -137,7 +137,7 @@
     dialog(id, focusId) {
       const d = document.getElementById(id);
       if (!d) return;
-      document.querySelector('[data-drawer-open] .rail-close')?.click();
+      window.ermiteRailPanel?.close(false);
       const opener = document.activeElement;
       ermite.closeDialogs();
       d.addEventListener('close', () => {
@@ -364,6 +364,7 @@
       enter() {
         const r = rail();
         if (!r) return 'no side panel on this page';
+        window.ermiteRailPanel?.open(false);
         const list = items(r);
         const target = list.find((e) => e.matches('.btn.primary')) || list[0];
         if (!target) return 'nothing to act on in the side panel';
@@ -371,7 +372,10 @@
         return 'side panel · j k move · enter act · h back';
       },
       leave() {
-        if (inside(rail())) document.getElementById('main')?.focus({ preventScroll: true });
+        if (inside(rail())) {
+          window.ermiteRailPanel?.close(false);
+          document.getElementById('main')?.focus({ preventScroll: true });
+        }
       },
       // step moves d controls within the panel; false when the focus is not in it.
       step(d) {
@@ -664,8 +668,8 @@
   let pending = 0;
   let pendingTimer = 0;
   addEventListener('keydown', (e) => {
-    // The custom drawer owns its keys just like a native modal.
-    if ($('[data-drawer-open]')) { pending = 0; return; }
+    // The phone panel blocks page shortcuts but keeps its focus keys.
+    if ($('.rail[aria-modal="true"]') && (e.ctrlKey || e.metaKey || e.altKey || !['h', 'j', 'k', 'l', 'Enter'].includes(e.key))) { pending = 0; return; }
     const typing = e.target.closest('input:not([type=checkbox], [type=radio], [type=submit], [type=button]), textarea, select, [contenteditable]');
     // ctrl k / cmd k opens the palette; in a field only cmd k, so that the
     // field keeps ctrl k (kill to end of line on macOS).
@@ -686,7 +690,7 @@
     if (typing) return;
     // An open dialog takes only the keys that move between dialogs: the page
     // behind it does not react (scripted clicks would go through inert).
-    if (($('dialog[open]') || $('[data-drawer-open]')) && !['?', 'b', ':', 'f', 'Enter'].includes(e.key)) { pending = 0; return; }
+    if ($('dialog[open]') && !['?', 'b', ':', 'f', 'Enter'].includes(e.key)) { pending = 0; return; }
     if (e.key === 'Enter' && e.target.closest('a, button, summary')) return;
     // Some layouts report lowercase e.key even with Shift. Uppercase actions
     // also interrupt a pending g rather than being swallowed by it.
@@ -710,7 +714,7 @@
     if (!e.shiftKey && e.target.closest?.('#tree-rows') && window.ermiteTree?.arrow(e.key)) { e.preventDefault(); return; }
     const name = single[e.key];
     if (!name || (name === 'inbox' && !$('[data-inbox]'))) return;
-    if (e.key !== 'Enter' || !($('dialog[open]') || $('[data-drawer-open]'))) e.preventDefault();
+    if (e.key !== 'Enter' || !($('dialog[open]') || $('.rail[aria-modal="true"]'))) e.preventDefault();
     ermite.fire(name);
   });
 

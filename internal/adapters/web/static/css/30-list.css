@@ -426,6 +426,8 @@
     display: flex; align-items: center; gap: var(--s2); margin-top: var(--s5);
     font-size: var(--fs);
     & > :first-child { color: var(--ink-hi); }
+    /* a rule after the title closes the heading off, like the rail dividers */
+    &::after { content: ""; flex: 1; height: 1px; background: var(--border); }
   }
   main > .rule-h:first-child { margin-top: 0; }
 

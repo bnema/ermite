@@ -18,7 +18,7 @@ func TestSectionShortcutSequences(t *testing.T) {
 	for _, section := range sections {
 		assert.Contains(t, header, `data-key="g `+section.Key+`"`)
 		assert.NotContains(t, header, `aria-keyshortcuts="g `+section.Key+`"`)
-		assert.Contains(t, header, `<kbd aria-hidden="true">g `+section.Key+`</kbd>`)
+		assert.Contains(t, header, `<kbd aria-hidden="true">g`+section.Key+`</kbd>`)
 		assert.Contains(t, bindings, "ermite.tab('"+section.Key+"')")
 	}
 	assert.NotContains(t, bindings, "k-gf")

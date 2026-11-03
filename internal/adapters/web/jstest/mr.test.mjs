@@ -572,173 +572,36 @@ test('live refresh preserves the open button panel even when the hash points els
     let selected;
     const lazy = { reset() {}, watch() {} };
     let attached = 0;
-    const refresh = new Function('$', '$$', 'scrollAnchor', 'hasDraft', 'replaceRegion', 'panels', 'watchBar', 'restoreMergePrefs', 'foldFiles', 'touchComments', 'restoreAnchor', 'window', 'document', 'sheet',
+    const refresh = new Function('$', '$$', 'scrollAnchor', 'hasDraft', 'replaceRegion', 'panels', 'watchBar', 'restoreMergePrefs', 'foldFiles', 'touchComments', 'restoreAnchor', 'window', 'document',
       'let revealGen = 0; ' + src.slice(start, end) + '; return refreshPage;')(
-      $, $$, () => ({}), () => false, async () => {}, (i) => { selected = i; }, () => {}, () => {}, () => {}, () => {}, () => {}, { ermiteLazy: lazy }, doc, { keep() {}, attach() { attached++; } });
+      $, $$, () => ({}), () => false, async () => {}, (i) => { selected = i; }, () => {}, () => {}, () => {}, () => {}, () => {}, { ermiteLazy: lazy, ermiteRailPanel: { refresh() { attached++; } } }, doc);
     await refresh(page);
-    assert.equal(attached, 1, 'the fresh rail is a sheet again');
+    assert.equal(attached, 1, 'the shared rail controller is refreshed');
     assert.equal(selected, 1);
     assert.deepEqual(fresh.children.map((p) => p.hidden), [true, false]);
   } finally { h.restore(); globalThis.document = saved; }
 });
 
-test('sheet: open / close, survives a refreshed rail, keys and media', () => {
-  const saved = { document: globalThis.document, matchMedia: globalThis.matchMedia, add: globalThis.addEventListener };
-  class El {
-    constructor(tag) { this.tagName = tag; this.attrs = {}; this.events = {}; this.kids = []; this.id = ''; this.className = ''; }
-    setAttribute(k, v) { this.attrs[k] = String(v); }
-    getAttribute(k) { return this.attrs[k]; }
-    hasAttribute(k) { return k in this.attrs; }
-    toggleAttribute(k, on) { if (on) this.attrs[k] = ''; else delete this.attrs[k]; }
-    addEventListener(k, fn) { this.events[k] = fn; }
-    contains(el) { return el === this || this.kids.some((k) => k.contains?.(el)); }
-    focus() { globalThis.document.activeElement = this; }
-    querySelector(s) {
-      if (s === '.r-files') return this.kids.find((k) => k.className === 'r-files') || null;
-      if (s === '.mr-sheet-close') return this.kids.find((k) => k.className?.includes('mr-sheet-close')) || null;
-      return null;
-    }
-    prepend(el) { this.kids.unshift(el); }
-    before(el) { tabs.push(el); }
-  }
-  const tabs = [];
-  const makeRail = () => { const r = new El('aside'), f = new El('section'); f.className = 'r-files'; r.kids.push(f); return r; };
-  let rail = makeRail();
-  const outside = new El('main');
-  const docEvents = {};
-  let dialogOpen = false;
-  globalThis.addEventListener = () => {};
+test('l and h use the shared panel while retaining MR file focus', () => {
+  const saved = globalThis.document;
+  const panel = window.ermiteRailPanel;
+  let opened = 0, closed = 0;
+  const link = { getAttribute: () => 'true', focus() { document.activeElement = link; }, scrollIntoView() {} };
+  const main = { focus() { document.activeElement = main; } };
   globalThis.document = {
-    documentElement: { classList: { toggle() {} } },
-    body: { style: { setProperty() {} } },
-    querySelector: (s) => s === '.work > .rail' ? rail : s === 'dialog[open]' ? (dialogOpen ? {} : null) : null,
-    querySelectorAll: () => [],
-    createElement: (t) => new El(t),
-    addEventListener: (k, fn) => { (docEvents[k] ||= []).push(fn); },
-  };
-  const fire = (k, e) => docEvents[k].forEach((fn) => fn(e));
-  const media = { matches: true, addEventListener(k, fn) { this.change = fn; } };
-  globalThis.matchMedia = () => media;
-  const esc = { key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} };
-  const open = () => rail.hasAttribute('data-sheet-open');
-  try {
-    const S = window.ermiteMR.sheet;
-    S.mount();
-    S.mount();
-    assert.equal(tabs.length, 1, 'one tab, whatever the mounts');
-    assert.equal(docEvents.keydown.length, 2, 'one modal and one non-modal listener');
-    const tab = tabs[0];
-    const closer = () => rail.querySelector('.mr-sheet-close');
-    assert.ok(rail.hasAttribute('data-sheet'));
-    assert.equal(tab.getAttribute('aria-controls'), 'mr-rail');
-    assert.equal(closer().getAttribute('aria-expanded'), undefined, 'the close control is no disclosure');
-    tab.events.click();
-    assert.ok(open());
-    assert.equal(tab.getAttribute('aria-expanded'), 'true');
-    assert.equal(document.activeElement, closer(), 'focus on the close control');
-    closer().events.click();
-    assert.ok(!open());
-    assert.equal(document.activeElement, tab, 'focus back on the tab');
-
-    tab.events.click();
-    dialogOpen = true; fire('keydown', esc);
-    assert.ok(open(), 'Esc belongs to an open dialog');
-    dialogOpen = false; fire('keydown', esc);
-    assert.ok(!open(), 'Esc closes');
-    tab.events.click();
-    rail.events.click({ target: { closest: (s) => s === '.r-files a[href]' ? {} : null } });
-    assert.ok(!open(), 'a file closes');
-    tab.events.click();
-    fire('pointerdown', { target: outside });
-    assert.ok(!open(), 'a click outside closes');
-    tab.events.click();
-    fire('focusin', { target: outside });
-    assert.ok(!open(), 'focus outside closes');
-
-    // a live refresh replaces the rail: it keeps the sheet open, focus unmoved
-    tab.events.click();
-    S.keep();
-    rail = makeRail(); rail.id = 'mr-rail-2';
-    document.activeElement = outside;
-    S.attach();
-    assert.ok(open(), 'still open on the fresh rail');
-    assert.ok(closer(), 'the fresh rail has its close control');
-    assert.equal(tab.getAttribute('aria-controls'), 'mr-rail-2');
-    assert.equal(closer().getAttribute('aria-controls'), 'mr-rail-2');
-    assert.equal(document.activeElement, outside, 'focus unmoved');
-    closer().events.click();
-    S.keep(); S.attach();
-    assert.equal(rail.kids.filter((k) => k.className?.includes('mr-sheet-close')).length, 1, 'one close control');
-    tab.events.click();
-    assert.ok(open(), 'the tab opens the new rail');
-
-    media.matches = false; media.change();
-    assert.ok(!open(), 'growing past the breakpoint closes');
-    tab.events.click();
-    assert.ok(!open(), 'wide: no sheet');
-    assert.equal(tab.getAttribute('aria-expanded'), 'false', 'wide toggle hides the column');
-    assert.equal(railPrefs.get('ermite.rail.hidden'), '1');
-    tab.events.click();
-    assert.equal(tab.getAttribute('aria-expanded'), 'true', 'wide toggle restores the column');
-    assert.equal(railPrefs.get('ermite.rail.hidden'), '0');
-    assert.equal(tab.getAttribute('aria-label'), 'Hide the side panel');
-    document.activeElement = outside; // finder input outside the panel
-    const ignored = { key: 'Escape', preventDefault() { assert.fail('not the panel escape'); }, stopImmediatePropagation() { assert.fail('must bubble'); } };
-    fire('keydown', ignored);
-    const nested = rail.kids.find(k => k.className === 'r-files');
-    nested.closest = () => ({}); nested.focus();
-    fire('keydown', ignored); // open details.menu owns it
-    nested.closest = () => null;
-    fire('keydown', { ...ignored, defaultPrevented: true });
-    assert.equal(tab.getAttribute('aria-expanded'), 'true');
-    fire('keydown', { key: 'Escape', preventDefault() {}, stopImmediatePropagation() { assert.fail('wide must bubble'); } });
-    assert.equal(tab.getAttribute('aria-expanded'), 'false');
-    tab.events.click();
-    nested.focus(); media.matches = true; media.change();
-    assert.equal(document.activeElement, tab, 'shrinking moves focus out of the hidden rail');
-    media.matches = false; media.change();
-    document.activeElement = outside; media.matches = true; media.change();
-    assert.equal(document.activeElement, outside, 'unrelated focus stays put');
-    media.matches = false; media.change();
-
-    fire('pointerdown', { target: outside });
-    assert.equal(tab.getAttribute('aria-expanded'), 'true', 'outside clicks leave the wide rail alone');
-    closer().events.click();
-    assert.equal(tab.getAttribute('aria-expanded'), 'false');
-    media.matches = true; media.change();
-    tab.events.click();
-    assert.ok(open(), 'narrow drawer remains usable after hiding the wide rail');
-    media.matches = true;
-  } finally { globalThis.document = saved.document; globalThis.matchMedia = saved.matchMedia; globalThis.addEventListener = saved.add; }
-});
-
-test('sheet: l opens it with focus in the files, h hides it', () => {
-  const saved = { document: globalThis.document, matchMedia: globalThis.matchMedia };
-  const attrs = {};
-  const rail = {
-    attrs, querySelector: (s) => s === '.r-files' ? {} : s === '.mr-sheet-close' ? {} : null,
-    hasAttribute: (k) => k in attrs, toggleAttribute: (k, on) => { if (on) attrs[k] = ''; else delete attrs[k]; },
-    contains: () => true,
-  };
-  const link = { getAttribute: () => 'true', focus() { globalThis.document.activeElement = link; }, scrollIntoView() {} };
-  const main = { focus() { globalThis.document.activeElement = main; } };
-  globalThis.matchMedia = () => ({ matches: true });
-  globalThis.document = {
-    documentElement: { classList: { toggle() {} } },
-    body: { style: { setProperty() {} } },
-    querySelector: (s) => s === '.work > .rail' ? rail : null,
-    querySelectorAll: (s) => s.includes('.files') ? [link] : [],
+    querySelector: () => null,
+    querySelectorAll: s => s.includes('.files') ? [link] : [],
     getElementById: () => main,
   };
+  window.ermiteRailPanel = { open(focus) { assert.equal(focus, false); opened++; }, close(focus) { assert.equal(focus, false); closed++; } };
   try {
-    const M = window.ermiteMR;
-    assert.ok(M.focusFiles());
-    assert.ok('data-sheet-open' in attrs, 'l opens the sheet');
+    assert.ok(window.ermiteMR.focusFiles());
+    assert.equal(opened, 1);
     assert.equal(document.activeElement, link);
-    assert.ok(M.leaveFiles());
-    assert.ok(!('data-sheet-open' in attrs), 'h hides it');
+    assert.ok(window.ermiteMR.leaveFiles());
+    assert.equal(closed, 1);
     assert.equal(document.activeElement, main);
-  } finally { globalThis.document = saved.document; globalThis.matchMedia = saved.matchMedia; }
+  } finally { globalThis.document = saved; window.ermiteRailPanel = panel; }
 });
 
 test('actions invalidate older snapshots and coalesce a fresh refresh after settling', async () => {

@@ -70,10 +70,15 @@ func viewLabel(view string) string {
 }
 
 func plural(n int, one, many string) string {
+	return itoa(n) + " " + noun(n, one, many)
+}
+
+// noun is the singular or plural form for a count shown apart from it.
+func noun(n int, one, many string) string {
 	if n == 1 {
-		return "1 " + one
+		return one
 	}
-	return itoa(n) + " " + many
+	return many
 }
 
 // short is the abbreviated form of a commit id.

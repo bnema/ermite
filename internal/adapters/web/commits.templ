@@ -55,27 +55,49 @@ templ Commits(l Layout, p CommitsPage) {
 templ commitsRail(p CommitsPage) {
 	<section aria-labelledby="r-hist">
 		<h2 id="r-hist">History</h2>
-		<dl class="kv">
-			<dt>ref</dt>
-			<dd>{ p.Ref }</dd>
-			<dt>on page</dt>
-			<dd>{ itoa(p.Count) }</dd>
-			if p.Path != "" {
-				<dt>path</dt>
-				<dd>{ p.Path }</dd>
-			}
-			if p.Open != nil {
-				<dt>file</dt>
-				<dd><a href={ templ.SafeURL(p.Open.Href) }>{ p.Open.Label }</a></dd>
-			}
-		</dl>
+		<p class="h-ref"><span class="ico i-branch" aria-hidden="true"></span><span class="h-name">{ p.Ref }</span></p>
+		<ul class="h-stats">
+			<li><b>{ itoa(p.Count) }</b> { noun(p.Count, "commit", "commits") }</li>
+			<li><b>{ itoa(p.Authors) }</b> { noun(p.Authors, "author", "authors") }</li>
+		</ul>
+		if p.From != "" {
+			<p class="h-dates">
+				if p.From == p.To {
+					{ p.From }
+				} else {
+					{ p.From } → { p.To }
+				}
+			</p>
+		}
+		if p.Path != "" || p.Open != nil {
+			<dl class="kv">
+				if p.Path != "" {
+					<dt>path</dt>
+					<dd>{ p.Path }</dd>
+				}
+				if p.Open != nil {
+					<dt>file</dt>
+					<dd><a href={ templ.SafeURL(p.Open.Href) }>{ p.Open.Label }</a></dd>
+				}
+			</dl>
+		}
 	</section>
 	<section aria-labelledby="r-refs">
-		<h2 id="r-refs">Refs on this page</h2>
+		<h2 id="r-refs">Refs on this page <span class="count">{ itoa(len(p.Refs)) }</span></h2>
 		if len(p.Refs) > 0 {
-			<nav class="outline" aria-label="Refs on this page">
+			<nav class="page-refs" aria-label="Refs on this page">
 				for _, r := range p.Refs {
-					<a href={ templ.SafeURL(r.Href) }>{ r.Label }</a>
+					<a href={ templ.SafeURL(r.Href) }>
+						if r.Tag {
+							<span class="ico i-tag" aria-hidden="true"></span>
+							<span class="sr">tag </span>
+						} else {
+							<span class="ico i-branch" aria-hidden="true"></span>
+							<span class="sr">branch </span>
+						}
+						<span class="pr-name">{ r.Name }</span>
+						<span class="pr-meta"><code>{ r.Short }</code> · { r.When }</span>
+					</a>
 				}
 			</nav>
 		} else {

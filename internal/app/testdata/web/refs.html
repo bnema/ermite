@@ -69,31 +69,31 @@
 <nav class="tabs" aria-label="Sections">
 <ul>
 <li>
-<a href="/demo" data-key="g s">Summary <kbd aria-hidden="true">g s</kbd>
+<a href="/demo" data-key="g s">Summary <kbd aria-hidden="true">gs</kbd>
 </a>
 </li>
 <li>
-<a href="/demo/tree/main" data-key="g f">Files <kbd aria-hidden="true">g f</kbd>
+<a href="/demo/tree/main" data-key="g f">Files <kbd aria-hidden="true">gf</kbd>
 </a>
 </li>
 <li>
-<a href="/demo/commits/main" data-key="g c">Commits <kbd aria-hidden="true">g c</kbd>
+<a href="/demo/commits/main" data-key="g c">Commits <kbd aria-hidden="true">gc</kbd>
 </a>
 </li>
 <li>
-<a href="/demo/refs" data-key="g b" aria-current="page">Branches &amp; tags <kbd aria-hidden="true">g b</kbd>
+<a href="/demo/refs" data-key="g b" aria-current="page">Branches &amp; tags <kbd aria-hidden="true">gb</kbd>
 </a>
 </li>
 <li>
-<a href="/demo/merge-requests" data-key="g m">Merge requests <kbd aria-hidden="true">g m</kbd>
+<a href="/demo/merge-requests" data-key="g m">Merge requests <kbd aria-hidden="true">gm</kbd>
 </a>
 </li>
 <li>
-<a href="/demo/releases" data-key="g r">Releases <kbd aria-hidden="true">g r</kbd>
+<a href="/demo/releases" data-key="g r">Releases <kbd aria-hidden="true">gr</kbd>
 </a>
 </li>
 <li>
-<a href="/demo/actions" data-key="g a">Actions <kbd aria-hidden="true">g a</kbd>
+<a href="/demo/actions" data-key="g a">Actions <kbd aria-hidden="true">ga</kbd>
 </a>
 </li>
 </ul>
@@ -101,6 +101,8 @@
 </header>
 <div class="work has-rail">
 <main id="main" tabindex="-1">
+<div id="action-status" aria-live="polite">
+</div>
 <div class="filter">
 <label for="ref-filter" class="sr">filter</label>
 <input id="ref-filter" type="search" data-filter="#ref-rows > tr" placeholder="Filter branches and tags…" autocomplete="off" hx-on:input="ermite.filter(this)">

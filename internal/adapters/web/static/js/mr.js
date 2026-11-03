@@ -233,7 +233,7 @@ window.ermiteMR = (() => {
   // The list of files by keyboard: l focuses the current file.
   const links = () => $$('.r-files .files > li:not([hidden]) > a');
   function focusFiles() {
-    sheet.open(false);
+    window.ermiteRailPanel?.open(false);
     foldFiles(false);
     const all = links();
     if (!all.length) return false;
@@ -254,7 +254,7 @@ window.ermiteMR = (() => {
   }
   function leaveFiles() {
     if (!links().includes(document.activeElement)) return false;
-    sheet.hide();
+    window.ermiteRailPanel?.close(false);
     document.getElementById('main')?.focus({ preventScroll: true });
     return true;
   }
@@ -279,115 +279,6 @@ window.ermiteMR = (() => {
     }
     try { localStorage.setItem('mr-files-folded', fold ? '1' : ''); } catch { /* storage refused: holds for this page */ }
   }
-
-  // sheet: up to 1440px the rail is a sheet on the right edge, over the
-  // content. A slim rail (<) opens it; > / Esc / a click outside / choosing a
-  // file closes it. Wider, the rail is a collapsible second column. rail.js leaves this
-  // rail alone.
-  const sheet = (() => {
-    let tab, query, wasOpen = false;
-    let wideHidden = window.ermiteStore?.get('ermite.rail.hidden') === '1';
-    // The rail is looked up live: a refresh replaces it (refreshPage).
-    const rail = () => { const r = $('.work > .rail'); return r && $('.r-files', r) ? r : null; };
-    const active = () => !!(tab && rail());
-    const isOpen = () => !!rail()?.hasAttribute('data-sheet-open');
-    function set(open, focus = true) {
-      const r = rail();
-      if (!r || !tab) return;
-      open = open && active();
-      if (!query.matches) {
-        wideHidden = !open;
-        window.ermiteStore?.set('ermite.rail.hidden', wideHidden ? '1' : '0');
-        document.documentElement.classList.toggle('rail-hidden', wideHidden);
-      }
-      if (open && query.matches) place();
-      r.toggleAttribute('data-sheet-open', open && query.matches);
-      tab.setAttribute('aria-expanded', String(open));
-      tab.setAttribute('aria-label', open ? 'Hide the side panel' : 'Show the side panel');
-      tab.title = open ? 'hide the side panel (esc)' : 'show the side panel';
-      if (focus) (open ? $('.mr-sheet-close', r) : tab)?.focus({ preventScroll: true });
-    }
-    // place starts the sheet under the header, as much of it as is in view.
-    function place() {
-      const bottom = $('.hdr')?.getBoundingClientRect().bottom || 0;
-      document.body.style.setProperty('--sheet-top', Math.max(0, bottom) + 'px');
-    }
-    // attach marks the current rail as a sheet and gives it its close control;
-    // run again on each fresh rail. An open sheet stays open, focus unmoved.
-    function attach() {
-      const r = rail();
-      if (!r || !tab) return;
-      r.id ||= 'mr-rail';
-      r.setAttribute('data-sheet', '');
-      tab.setAttribute('aria-controls', r.id);
-      if (!$('.mr-sheet-close', r)) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'btn mr-sheet-close';
-        b.title = 'close the side panel (esc)';
-        b.setAttribute('aria-label', 'Close the side panel');
-        b.setAttribute('aria-controls', r.id);
-        b.innerHTML = '<span class="ico i-chevron" aria-hidden="true"></span>';
-        b.addEventListener('click', () => set(false));
-        r.prepend(b);
-        r.addEventListener('click', (e) => {
-          if (query.matches && isOpen() && e.target.closest?.('.r-files a[href]')) set(false, false);
-        });
-      }
-      set(query.matches ? wasOpen : !wideHidden, false);
-    }
-    // mount: once per page. The document listeners and the media query are
-    // set here, never in attach.
-    function mount() {
-      const r = rail();
-      if (tab || !r || !window.matchMedia) return;
-      query = matchMedia('(width <= 1440px)');
-      tab = document.createElement('button');
-      tab.type = 'button';
-      tab.className = 'btn mr-sheet-tab';
-      tab.title = 'open the side panel';
-      tab.setAttribute('aria-label', 'Open the side panel');
-      tab.setAttribute('aria-expanded', 'false');
-      tab.innerHTML = '<span class="ico i-chevron" aria-hidden="true"></span>';
-      r.before(tab);
-      tab.addEventListener('click', () => set(query.matches ? true : wideHidden));
-      const outside = (e) => {
-        if (query.matches && isOpen() && !rail().contains(e.target) && !tab.contains(e.target)) set(false, false);
-      };
-      document.addEventListener('pointerdown', outside);
-      document.addEventListener('focusin', outside);
-      document.addEventListener('keydown', (e) => {
-        if (!query.matches || e.key !== 'Escape' || !isOpen() || document.querySelector('dialog[open]')) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        set(false);
-      }, true);
-      document.addEventListener('keydown', (e) => {
-        if (query.matches || wideHidden || e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]')) return;
-        const focus = document.activeElement;
-        if (focus !== tab && !rail()?.contains(focus)) return;
-        if (focus?.closest?.('details.menu[open]')) return;
-        e.preventDefault();
-        set(false);
-      });
-      query.addEventListener('change', () => {
-        const open = !query.matches && !wideHidden;
-        const restore = !open && rail()?.contains(document.activeElement);
-        set(open, false);
-        if (restore) tab.focus({ preventScroll: true });
-      });
-      addEventListener('scroll', () => { if (isOpen()) place(); }, { passive: true });
-      attach();
-    }
-    return {
-      mount, attach,
-      // before a refresh swaps the rail: remember whether it was open
-      keep: () => { wasOpen = isOpen(); },
-      // open(true) moves the focus to the close control; open(false) leaves it.
-      open: (focus = true) => { if (active()) set(true, focus); },
-      hide: () => set(false, false),
-    };
-  })();
 
   // openFile opens the file of a link of the list (and loads it first).
   function openFile(id) {
@@ -690,7 +581,6 @@ window.ermiteMR = (() => {
     if (hasDraft() || !current()) return false;
     const files = new Map($$('#diffs details.dfile').map((f) => [f.dataset.file, f.open]));
     const folded = $('.r-files')?.hasAttribute('data-folded');
-    sheet.keep();
     const railY = $('.rail')?.scrollTop, filesY = $('.r-files .files')?.scrollTop;
     const openPanel = $$('[data-mr-tabs] button').findIndex((t) => t.getAttribute('aria-expanded') === 'true');
     const active = document.activeElement;
@@ -718,7 +608,7 @@ window.ermiteMR = (() => {
     panels(openPanel);
     watchBar();
     restoreMergePrefs();
-    sheet.attach();
+    window.ermiteRailPanel?.refresh();
     foldFiles(!!folded);
     if ($('.rail')) $('.rail').scrollTop = railY;
     if ($('.r-files .files')) $('.r-files .files').scrollTop = filesY;
@@ -804,7 +694,6 @@ window.ermiteMR = (() => {
       }
     }, true);
     touchComments();
-    sheet.mount();
     let folded = false;
     try { folded = localStorage.getItem('mr-files-folded') === '1'; } catch { /* no storage: open */ }
     if (folded) foldFiles(true);
@@ -833,7 +722,7 @@ window.ermiteMR = (() => {
     });
   }
 
-  return { core, refresher, hasDraft, fetchPage, scrollAnchor, restoreAnchor, headChanged, panels, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile, sheet };
+  return { core, refresher, hasDraft, fetchPage, scrollAnchor, restoreAnchor, headChanged, panels, start, load, reveal, openMerge, menuKey, markRead, focusFiles, stepFiles, leaveFiles, foldFiles, openFile };
 })();
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.ermiteMR.start());

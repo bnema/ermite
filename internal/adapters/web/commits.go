@@ -37,7 +37,11 @@ type CommitsPage struct {
 	// Open links to the file or directory at this ref, when it exists there.
 	Open *Link
 	// Refs are the branch heads and tags among the commits of this page.
-	Refs []Link
+	Refs []PageRef
+	// Authors is the number of distinct authors on this page.
+	Authors int
+	// From and To are the dates of the oldest and newest commits of the page.
+	From, To string
 	// Live is true when the page announces new commits of its branch.
 	Live bool
 }
@@ -99,10 +103,17 @@ func (s *Server) commits(ctx context.Context, r *http.Request) (templ.Component,
 // is one read of the store.
 const maxCheckLookups = 100
 
+// PageRef is a branch head or a tag pointing at a commit of the page.
+type PageRef struct {
+	Name, Href, Short, When string
+	Tag                     bool
+}
+
 // fillDays groups the commits of a page by day and lists the refs among them.
 func (s *Server) fillDays(ctx context.Context, p *CommitsPage, d *repoData, cs []domain.Commit) {
 	now := s.cfg.Now()
 	branchesAt, tagsAt := namesAt(d.branches), namesAt(d.tags)
+	authors := map[string]struct{}{}
 	for i, c := range cs {
 		row := commitRow(d.name(), c, now)
 		row.ID, row.Cursor = "c-"+row.Short, i == 0
@@ -120,11 +131,16 @@ func (s *Server) fillDays(ctx context.Context, p *CommitsPage, d *repoData, cs [
 		g := &p.Days[len(p.Days)-1]
 		g.Rows = append(g.Rows, row)
 		for _, t := range row.Tags {
-			p.Refs = append(p.Refs, Link{Label: "tag " + t, Href: "#" + row.ID})
+			p.Refs = append(p.Refs, PageRef{Name: t, Tag: true, Href: "#" + row.ID, Short: row.Short, When: row.When})
 		}
 		for _, b := range row.Branches {
-			p.Refs = append(p.Refs, Link{Label: "branch " + b, Href: "#" + row.ID})
+			p.Refs = append(p.Refs, PageRef{Name: b, Href: "#" + row.ID, Short: row.Short, When: row.When})
 		}
+		authors[row.Author] = struct{}{}
+	}
+	p.Authors = len(authors)
+	if n := len(p.Days); n > 0 {
+		p.To, p.From = p.Days[0].Day, p.Days[n-1].Day
 	}
 }
 
