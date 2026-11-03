@@ -213,7 +213,6 @@ func depsRefs(r *http.Request) ([]domain.DepRef, error) {
 // depsAction is POST /-/inbox/deps/<repo>/open, ignore or snooze.
 func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request) (ActionResult, error) {
 	return func(ctx context.Context, r *http.Request) (ActionResult, error) {
-		back := depsBack(r)
 		if !SignedIn(ctx) {
 			return ActionResult{}, errNotFound
 		}
@@ -222,8 +221,18 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 			return ActionResult{}, err
 		}
 		if op == depsSnooze {
+			var before ports.InboxOverview
+			if isHX(r) {
+				before, err = s.cfg.Inbox.Overview(ctx, principal(ctx))
+				if err != nil {
+					return ActionResult{}, err
+				}
+			}
 			_, err = s.cfg.Deps.Snooze(ctx, principal(ctx), name)
-			return ActionResult{Redirect: back}, err
+			if err != nil {
+				return ActionResult{}, err
+			}
+			return s.depsResult(ctx, r, op, before)
 		}
 		refs, err := depsRefs(r)
 		if err != nil {
@@ -234,7 +243,10 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 		} else {
 			_, err = s.cfg.Deps.Ignore(ctx, principal(ctx), name, domain.DepBatchKey(r.FormValue("batch")), refs)
 		}
-		return ActionResult{Redirect: back}, err
+		if err != nil {
+			return ActionResult{}, err
+		}
+		return s.depsResult(ctx, r, op, ports.InboxOverview{})
 	}
 }
 
@@ -250,4 +262,50 @@ func depsBack(r *http.Request) string {
 		back += "&sort=" + sort
 	}
 	return back
+}
+
+// depsResult follows the overview's visibility rules instead of guessing which
+// actions remove a batch. Snooze affects every batch of the repository.
+func (s *Server) depsResult(ctx context.Context, r *http.Request, op depsOp, before ports.InboxOverview) (ActionResult, error) {
+	result := ActionResult{Redirect: depsBack(r)}
+	if !isHX(r) {
+		return result, nil
+	}
+	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
+	if err != nil {
+		return ActionResult{}, err
+	}
+	p := s.inboxPage(ctx, ov, ports.InboxJournal{}, "deps", 0, depsSortParam(r.URL.Query().Get("sort")))
+	repo := r.PathValue("repo")
+	key := domain.DepBatchKey(r.PostFormValue("batch"))
+	var rows []InboxDepsRow
+	var removed []string
+	if op == depsSnooze {
+		for _, d := range before.Deps {
+			if d.Rec.Repo.String() == repo {
+				removed = append(removed, s.depsRow(d).ID)
+			}
+		}
+	} else {
+		name, _ := domain.ParseRepoName(repo)
+		id := s.depsRow(ports.InboxDeps{Rec: domain.RepoDeps{Repo: name}, Batch: domain.DepBatch{Key: key}}).ID
+		removed = append(removed, id)
+	}
+	for _, row := range p.Deps {
+		if row.Repo != repo {
+			continue
+		}
+		if op != depsSnooze && row.Batch != string(key) {
+			continue
+		}
+		rows = append(rows, row)
+		for i, id := range removed {
+			if id == row.ID {
+				removed = append(removed[:i], removed[i+1:]...)
+				break
+			}
+		}
+	}
+	result.Fragment = inboxDepsChanged(rows, removed)
+	return result, nil
 }

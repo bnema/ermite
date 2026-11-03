@@ -146,7 +146,7 @@ func TestInboxDepsSortsByUpdates(t *testing.T) {
 	assert.Less(t, a, z, "sort=name orders by repository name")
 	assert.Contains(t, body, `sort=name#inbox-deps" aria-current="page">name</a>`)
 	assert.Contains(t, body, `action="/-/inbox/deps/aaa/snooze?sort=name"`, "the actions keep the order")
-	assert.Contains(t, body[majorAt:], `action="/-/inbox/deps/aaa/open?sort=name"><input type="hidden" name="batch" value="npm/web/react@v19">`, "the batch forms keep the order")
+	assert.Regexp(t, `action="/-/inbox/deps/aaa/open\?sort=name"[^>]*><input type="hidden" name="batch" value="npm/web/react@v19">`, body[majorAt:], "the batch forms keep the order")
 }
 
 func TestInboxDepsSummaryHasNoInteractiveContent(t *testing.T) {
@@ -476,4 +476,63 @@ func TestInboxMajorBatchRow(t *testing.T) {
 	var buf strings.Builder
 	require.NoError(t, depsForm(row, row.Primary.Action, "Open", "btn", true, "").Render(t.Context(), &buf))
 	assert.Contains(t, buf.String(), `name="batch" value="npm/web/@scope/pkg@v2"`)
+}
+
+func TestInboxAsyncDeps(t *testing.T) {
+	for _, op := range []string{"open", "ignore", "snooze"} {
+		for _, key := range []domain.DepBatchKey{"", "npm/web/react@v19"} {
+			t.Run(op+"/"+string(key), func(t *testing.T) {
+				inbox := mocks.NewInboxService(t)
+				deps := mocks.NewDepsService(t)
+				before := depsOverview(t)
+				before.Deps[0].Batch.Key = key
+				before.Deps = append(before.Deps, ports.InboxDeps{Rec: before.Deps[0].Rec, Batch: domain.DepBatch{Key: "npm/web/other@v2"}})
+				after := before
+				if op == "open" {
+					after.Deps = append([]ports.InboxDeps(nil), before.Deps...)
+					after.Deps[0].Batch.State = domain.DepsApplying
+				} else {
+					after.Deps = nil
+				}
+				if op == "snooze" {
+					inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(before, nil).Once()
+				}
+				inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(after, nil).Once()
+				switch op {
+				case "open":
+					deps.EXPECT().Open(mock.Anything, mock.Anything, repoName(t, "alpha"), key, mock.Anything).Return(domain.RepoDeps{}, nil).Once()
+				case "ignore":
+					deps.EXPECT().Ignore(mock.Anything, mock.Anything, repoName(t, "alpha"), key, mock.Anything).Return(domain.RepoDeps{}, nil).Once()
+				case "snooze":
+					deps.EXPECT().Snooze(mock.Anything, mock.Anything, repoName(t, "alpha")).Return(domain.RepoDeps{}, nil).Once()
+				}
+				srv := depsServer(t, inbox, deps)
+				form := url.Values{"batch": {string(key)}}
+				req := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha/"+op+"?sort=name", strings.NewReader(form.Encode()))
+				req.Header.Set("Origin", testPublicURL)
+				req.Header.Set("HX-Request", "true")
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+				w := httptest.NewRecorder()
+				srv.ServeHTTP(w, req)
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Empty(t, w.Header().Get("Location"))
+				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+				id := srv.depsRow(before.Deps[0]).ID
+				body := w.Body.String()
+				if op == "open" {
+					assert.Contains(t, body, `hx-target="#`+id+`" hx-swap="outerMorph"`)
+					assert.Contains(t, body, "applying")
+					assert.NotContains(t, body, `hx-target="#`+srv.depsRow(before.Deps[1]).ID+`"`)
+				} else {
+					assert.Contains(t, body, `hx-target="#`+id+`" hx-swap="delete"`)
+					if op == "snooze" {
+						assert.Contains(t, body, `hx-target="#`+srv.depsRow(before.Deps[1]).ID+`" hx-swap="delete"`)
+					}
+				}
+				assert.NotContains(t, body, "<html")
+				assert.NotContains(t, body, `id="inbox-content"`)
+			})
+		}
+	}
 }

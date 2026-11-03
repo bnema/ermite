@@ -44,6 +44,7 @@ type InboxRow struct {
 // PendingRow is one issue awaiting moderation. Everything in it is plain text:
 // it comes from an anonymous visitor and is never rendered as Markdown.
 type PendingRow struct {
+	ID       string
 	Repo     string
 	RepoHref string
 	Author   string
@@ -434,6 +435,7 @@ func (s *Server) inboxData(ctx context.Context, tab string, rng int, sort string
 func (s *Server) pendingRow(now time.Time, pi domain.PendingIssue) PendingRow {
 	repo := pi.Repo.String()
 	row := PendingRow{
+		ID:   pendingRowID(repo, pi.ID.String()),
 		Repo: repo, RepoHref: repoHref(repo), Author: "anonymous",
 		Title: visibleText(pi.Title.String()),
 	}
@@ -471,7 +473,6 @@ func pendingID(r *http.Request) (domain.RepoName, domain.PendingIssueID, error) 
 
 // pendingApprove is POST /-/inbox/pending/<repo>/<id>/approve.
 func (s *Server) pendingApprove(ctx context.Context, r *http.Request) (ActionResult, error) {
-	back := pendingBack(r)
 	name, id, err := pendingID(r)
 	if err != nil {
 		return ActionResult{}, err
@@ -479,14 +480,13 @@ func (s *Server) pendingApprove(ctx context.Context, r *http.Request) (ActionRes
 	if _, err := s.cfg.Moderation.Approve(ctx, principal(ctx), name, id); err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back}, nil
+	return s.pendingResult(ctx, r)
 }
 
 // pendingReject is POST /-/inbox/pending/<repo>/<id>/reject, or .../ban, which
 // also bans the submitter.
 func (s *Server) pendingReject(ban bool) func(ctx context.Context, r *http.Request) (ActionResult, error) {
 	return func(ctx context.Context, r *http.Request) (ActionResult, error) {
-		back := pendingBack(r)
 		name, id, err := pendingID(r)
 		if err != nil {
 			return ActionResult{}, err
@@ -494,7 +494,7 @@ func (s *Server) pendingReject(ban bool) func(ctx context.Context, r *http.Reque
 		if err := s.cfg.Moderation.Reject(ctx, principal(ctx), name, id, ban); err != nil {
 			return ActionResult{}, err
 		}
-		return ActionResult{Redirect: back}, nil
+		return s.pendingResult(ctx, r)
 	}
 }
 
@@ -574,4 +574,19 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 		out = append(out, f)
 	}
 	return out, nil
+}
+
+func pendingRowID(repo, id string) string { return "pending-" + repo + "-" + id }
+
+func (s *Server) pendingResult(ctx context.Context, r *http.Request) (ActionResult, error) {
+	result := ActionResult{Redirect: pendingBack(r)}
+	if !isHX(r) {
+		return result, nil
+	}
+	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
+	if err != nil {
+		return ActionResult{}, err
+	}
+	result.Fragment = inboxModerated(pendingRowID(r.PathValue("repo"), r.PathValue("id")), ov.Counts.Pending)
+	return result, nil
 }

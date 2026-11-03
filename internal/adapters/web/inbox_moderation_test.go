@@ -135,3 +135,48 @@ func TestInboxModerationActions(t *testing.T) {
 		assert.Equal(t, 403, rec.Code, "anonymous")
 	})
 }
+
+func TestInboxAsyncModeration(t *testing.T) {
+	for _, op := range []string{"approve", "reject", "ban"} {
+		t.Run(op, func(t *testing.T) {
+			inbox := mocks.NewInboxService(t)
+			ov := inboxOverview(t)
+			ov.Counts.Pending = 4
+			inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once()
+			mod := mocks.NewIssueModerationService(t)
+			id, err := domain.ParsePendingIssueID(testPendingID)
+			require.NoError(t, err)
+			if op == "approve" {
+				mod.EXPECT().Approve(mock.Anything, mock.Anything, repoName(t, "alpha"), id).Return(domain.Issue{}, nil).Once()
+			} else {
+				mod.EXPECT().Reject(mock.Anything, mock.Anything, repoName(t, "alpha"), id, op == "ban").Return(nil).Once()
+			}
+			srv := moderationServer(t, inbox, mod)
+			req := httptest.NewRequest(http.MethodPost, "/-/inbox/pending/alpha/"+testPendingID+"/"+op, nil)
+			req.Header.Set("Origin", testPublicURL)
+			req.Header.Set("HX-Request", "true")
+			req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+			assert.Empty(t, w.Header().Get("Location"))
+			assert.Contains(t, w.Body.String(), `hx-target="#pending-alpha-`+testPendingID+`" hx-swap="delete"`)
+			assert.Contains(t, w.Body.String(), `id="inbox-pending-count" class="count" hx-swap-oob="true">4</span>`)
+			assert.Contains(t, w.Body.String(), `id="action-status"`)
+			assert.NotContains(t, w.Body.String(), "<html")
+		})
+	}
+}
+
+func TestInboxModerationEnhancedForms(t *testing.T) {
+	p := testPendingIssue(t)
+	srv := moderationServer(t, mocks.NewInboxService(t), mocks.NewIssueModerationService(t))
+	row := srv.pendingRow(time.Now(), p)
+	html := renderToString(t, InboxPending(InboxPage{Pending: []PendingRow{row}, PendingCount: 1}))
+	assert.Contains(t, html, `id="pending-alpha-`+p.ID.String()+`"`)
+	assert.Contains(t, html, `hx-post="`+row.Approve+`"`)
+	assert.Contains(t, html, `hx-post="`+row.Reject+`"`)
+	assert.Contains(t, html, `hx-post="`+row.Ban+`"`)
+	assert.Contains(t, html, `hx-confirm="Reject and ban this author?"`)
+}

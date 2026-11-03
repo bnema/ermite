@@ -4,34 +4,39 @@ package web
 
 // Inbox is the owner's inbox. The live stream replaces its content as a whole.
 templ Inbox(l Layout, p InboxPage) {
- @Shell(l, nil) {
-  <h1 class="sr">Inbox</h1>
-  @InboxContent(p)
- }
+	@Shell(l, nil) {
+		<h1 class="sr">Inbox</h1>
+		@InboxContent(p)
+	}
 }
 
 templ InboxContent(p InboxPage) {
- <div id="inbox-content" class="inbox" data-keep-open>
-  <nav class="tabs" aria-label="Inbox sections">
-   <ul>
-    for _, t := range p.Tabs {
-     <li><a href={ templ.SafeURL(t.Href) } if t.Current { aria-current="page" }>{ t.Label }</a></li>
-    }
-   </ul>
-  </nav>
-  switch p.Tab {
-   case "deps":
-    @InboxDeps(p)
-   case "activity":
-    @InboxRuns(p)
-    @InboxJournal(p)
-   case "moderation":
-    @InboxPending(p)
-   default:
-    @InboxMRs(p)
-    @InboxIssues(p)
-  }
- </div>
+	<div id="inbox-content" class="inbox" data-keep-open>
+		<nav class="tabs" aria-label="Inbox sections">
+			<ul>
+				for _, t := range p.Tabs {
+					<li><a
+	href={ templ.SafeURL(t.Href) }
+	if t.Current {
+		aria-current="page"
+	}
+>{ t.Label }</a></li>
+				}
+			</ul>
+		</nav>
+		switch p.Tab {
+			case "deps":
+				@InboxDeps(p)
+			case "activity":
+				@InboxRuns(p)
+				@InboxJournal(p)
+			case "moderation":
+				@InboxPending(p)
+			default:
+				@InboxMRs(p)
+				@InboxIssues(p)
+		}
+	</div>
 }
 
 // InboxJournal is the activity of the range, newest first: the repositories
@@ -118,11 +123,11 @@ templ InboxJournal(p InboxPage) {
 // never as Markdown.
 templ InboxPending(p InboxPage) {
 	<section id="inbox-pending" aria-labelledby="inbox-pending-h">
-		<h2 id="inbox-pending-h" class="rule-h"><span>Awaiting moderation</span><span class="count">{ itoa(p.PendingCount) }</span></h2>
+		<h2 id="inbox-pending-h" class="rule-h"><span>Awaiting moderation</span><span id="inbox-pending-count" class="count">{ itoa(p.PendingCount) }</span></h2>
 		if len(p.Pending) > 0 {
 			<ul class="pending-list">
 				for _, m := range p.Pending {
-					<li class="pending">
+					<li class="pending" id={ m.ID }>
 						<div class="p-head">
 							<a href={ templ.SafeURL(m.RepoHref) }>{ m.Repo }</a>
 							<span>{ m.Author }</span>
@@ -136,9 +141,15 @@ templ InboxPending(p InboxPage) {
 						}
 						if m.Approve != "" {
 							<div class="p-btns">
-								<form method="post" action={ templ.SafeURL(m.Approve) }><button type="submit" class="btn primary">Approve</button></form>
-								<form method="post" action={ templ.SafeURL(m.Reject) }><button type="submit" class="btn">Reject</button></form>
-								<form method="post" action={ templ.SafeURL(m.Ban) }><button type="submit" class="btn danger">Reject and ban</button></form>
+								@ActionForm(ActionProps{Action: m.Approve}) {
+									<button type="submit" class="btn primary">Approve</button>
+								}
+								@ActionForm(ActionProps{Action: m.Reject}) {
+									<button type="submit" class="btn">Reject</button>
+								}
+								@ActionForm(ActionProps{Action: m.Ban, Confirm: "Reject and ban this author?"}) {
+									<button type="submit" class="btn danger">Reject and ban</button>
+								}
 							</div>
 						}
 					</li>
@@ -193,11 +204,13 @@ templ inboxRows(rows []InboxRow, label string) {
 
 // InboxRuns stays as an empty fragment when CI is disabled.
 templ InboxRuns(p InboxPage) {
-	<section id="inbox-runs" hidden?={ !p.RunsEnabled }
-        if p.RunsEnabled {
-            aria-labelledby="inbox-runs-h"
-        }
-    >
+	<section
+		id="inbox-runs"
+		hidden?={ !p.RunsEnabled }
+		if p.RunsEnabled {
+			aria-labelledby="inbox-runs-h"
+		}
+	>
 		if p.RunsEnabled {
 			<h2 id="inbox-runs-h" class="rule-h"><span>Running</span><span class="count">{ itoa(len(p.Runs)) }</span></h2>
 			if len(p.Runs) == 0 {
@@ -262,78 +275,7 @@ templ InboxDeps(p InboxPage) {
 			</nav>
 			<ul class="deps-rows">
 				for _, d := range p.Deps {
-					<li class="deps-row" id={ d.ID }>
-						<details class="deps-main">
-							<summary id={ d.ID + "-sum" }>
-								<span class="deps-repo">{ d.Repo }</span>
-								<span>{ d.Title }</span>
-								if d.Outdated {
-									<span class="pill">outdated</span>
-								}
-								<span class="count">{ itoa(d.Count) }</span><span class="sr">{ " updates" }</span>
-								<span class="dim">{ d.Breakdown }</span>
-								if d.New > 0 {
-									<span class="pill deps-new">new { itoa(d.New) }</span>
-								}
-							</summary>
-							if d.Status.Title != "" {
-								<div class="deps-output prose" role="region" aria-label="Last output">
-									<p class="dim">Last output</p>
-									<pre>{ d.Status.Title }</pre>
-									if d.Status.Href != "" {
-										<a id={ d.ID + "-log" } href={ templ.SafeURL(d.Status.Href) }>View log · { d.Status.Text }</a>
-									}
-								</div>
-							}
-							<p class="deps-repolink"><a href={ templ.SafeURL(d.RepoHref) }>{ d.Repo }</a></p>
-							<table class="deps-sub" aria-label={ "Updates of " + d.Repo }>
-								<thead class="sr">
-									<tr><th>name</th><th>version</th><th>kind</th><th>new</th><th>directory</th></tr>
-								</thead>
-								<tbody>
-									for _, u := range d.Updates {
-										<tr>
-											<td><code>{ u.Name }</code></td>
-											<td>{ u.Current } → { u.Latest }</td>
-											<td class="dim">{ u.Kind }</td>
-											<td>
-												if u.New {
-													<span class="pill">new</span>
-												}
-											</td>
-											<td class="mute">{ u.Directory }</td>
-										</tr>
-									}
-								</tbody>
-							</table>
-						</details>
-						<span class="deps-status">
-							@depsStatusCell(d.Status)
-							if d.Status.Title != "" {
-								<span class="deps-error-tail" title={ d.Status.Title }>{ depsErrorTail(d.Status.Title) }</span>
-							}
-						</span>
-						<span class="deps-act">
-							if d.Primary.Href != "" {
-								<a id={ d.ID + "-act" } class="btn primary" href={ templ.SafeURL(d.Primary.Href) }>{ d.Primary.Label }</a>
-							} else if d.Primary.Action != "" {
-								@depsForm(d, d.Primary.Action, d.Primary.Label, "btn primary", true, d.ID+"-act")
-							}
-							if d.Ignore != "" || d.Snooze != "" {
-								<details class="menu deps-menu">
-									<summary id={ d.ID + "-more" } class="btn icon" aria-label={ "More actions for " + d.Repo }>⋯</summary>
-									<div class="menu-pop">
-										if d.Ignore != "" {
-											@depsForm(d, d.Ignore, "Ignore", "btn", true, "")
-										}
-										if d.Snooze != "" {
-											@depsForm(d, d.Snooze, "Snooze", "btn", false, "")
-										}
-									</div>
-								</details>
-							}
-						</span>
-					</li>
+					@inboxDepsRow(d)
 				}
 			</ul>
 		}
@@ -362,7 +304,7 @@ templ depsStatusCell(s InboxDepsStatus) {
 // depsForm is one POST button of a row. The expected versions go in hidden
 // fields (four per update, in the same order) for Open MR and Ignore.
 templ depsForm(d InboxDepsRow, action, label, class string, refs bool, id string) {
-	<form method="post" action={ templ.SafeURL(action) }>
+	@ActionForm(ActionProps{Action: action}) {
 		if refs {
 			<input type="hidden" name="batch" value={ d.Batch }/>
 			for _, u := range d.Updates {
@@ -379,5 +321,94 @@ templ depsForm(d InboxDepsRow, action, label, class string, refs bool, id string
 				id={ id }
 			}
 		>{ label }</button>
-	</form>
+	}
+}
+
+templ inboxDepsRow(d InboxDepsRow) {
+	<li class="deps-row" id={ d.ID }>
+		<details class="deps-main">
+			<summary id={ d.ID + "-sum" }>
+				<span class="deps-repo">{ d.Repo }</span>
+				<span>{ d.Title }</span>
+				if d.Outdated {
+					<span class="pill">outdated</span>
+				}
+				<span class="count">{ itoa(d.Count) }</span><span class="sr">{ " updates" }</span>
+				<span class="dim">{ d.Breakdown }</span>
+				if d.New > 0 {
+					<span class="pill deps-new">new { itoa(d.New) }</span>
+				}
+			</summary>
+			if d.Status.Title != "" {
+				<div class="deps-output prose" role="region" aria-label="Last output">
+					<p class="dim">Last output</p>
+					<pre>{ d.Status.Title }</pre>
+					if d.Status.Href != "" {
+						<a id={ d.ID + "-log" } href={ templ.SafeURL(d.Status.Href) }>View log · { d.Status.Text }</a>
+					}
+				</div>
+			}
+			<p class="deps-repolink"><a href={ templ.SafeURL(d.RepoHref) }>{ d.Repo }</a></p>
+			<table class="deps-sub" aria-label={ "Updates of " + d.Repo }>
+				<thead class="sr">
+					<tr><th>name</th><th>version</th><th>kind</th><th>new</th><th>directory</th></tr>
+				</thead>
+				<tbody>
+					for _, u := range d.Updates {
+						<tr>
+							<td><code>{ u.Name }</code></td>
+							<td>{ u.Current } → { u.Latest }</td>
+							<td class="dim">{ u.Kind }</td>
+							<td>
+								if u.New {
+									<span class="pill">new</span>
+								}
+							</td>
+							<td class="mute">{ u.Directory }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</details>
+		<span class="deps-status">
+			@depsStatusCell(d.Status)
+			if d.Status.Title != "" {
+				<span class="deps-error-tail" title={ d.Status.Title }>{ depsErrorTail(d.Status.Title) }</span>
+			}
+		</span>
+		<span class="deps-act">
+			if d.Primary.Href != "" {
+				<a id={ d.ID + "-act" } class="btn primary" href={ templ.SafeURL(d.Primary.Href) }>{ d.Primary.Label }</a>
+			} else if d.Primary.Action != "" {
+				@depsForm(d, d.Primary.Action, d.Primary.Label, "btn primary", true, d.ID+"-act")
+			}
+			if d.Ignore != "" || d.Snooze != "" {
+				<details class="menu deps-menu">
+					<summary id={ d.ID + "-more" } class="btn icon" aria-label={ "More actions for " + d.Repo }>⋯</summary>
+					<div class="menu-pop">
+						if d.Ignore != "" {
+							@depsForm(d, d.Ignore, "Ignore", "btn", true, "")
+						}
+						if d.Snooze != "" {
+							@depsForm(d, d.Snooze, "Snooze", "btn", false, "")
+						}
+					</div>
+				</details>
+			}
+		</span>
+	</li>
+}
+
+templ inboxModerated(id string, count int) {
+	@RemoveEl(id)
+	@CountOOB("inbox-pending-count", count)
+}
+
+templ inboxDepsChanged(rows []InboxDepsRow, removed []string) {
+	for _, id := range removed {
+		@RemoveEl(id)
+	}
+	for _, row := range rows {
+		<hx-partial hx-target={ "#" + row.ID } hx-swap="outerMorph">@inboxDepsRow(row)</hx-partial>
+	}
 }
