@@ -312,7 +312,7 @@ func (s *Server) mrClose(ctx context.Context, r *http.Request) (ActionResult, er
 	if _, err := s.cfg.MergeRequests.Close(ctx, principal(ctx), name, n); err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back}, nil
+	return s.mrStateResult(ctx, r, back)
 }
 
 // mrReady is POST /<repo>/merge-requests/<n>/ready: the draft prefix leaves
@@ -331,7 +331,7 @@ func (s *Server) mrReady(ctx context.Context, r *http.Request) (ActionResult, er
 	if _, err := s.cfg.MergeRequests.MarkReady(ctx, principal(ctx), name, n); err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back}, nil
+	return s.mrStateResult(ctx, r, back)
 }
 
 // mrMerge is POST /<repo>/merge-requests/<n>/merge. The form carries the mode,
@@ -375,21 +375,11 @@ func (s *Server) mrMerge(ctx context.Context, r *http.Request) (ActionResult, er
 	case err != nil:
 		return ActionResult{}, err
 	}
-	result := ActionResult{Redirect: back}
+	to := back
 	if res.SourceDeleted {
-		result.Redirect += "?deleting=1"
+		to += "?deleting=1"
 	}
-	if isHX(r) {
-		c, _, err := s.mrPageView(ctx, r, false, true)
-		if err != nil {
-			id := requestID()
-			log := zerowrap.FromCtx(ctx)
-			log.Error().Err(err).Str("request_id", id).Msg("web merged state failed")
-			c = ActionStatus("merged, but the updated page could not be loaded. reload to see the result. reference: "+id, back)
-		}
-		result.Fragment = c
-	}
-	return result, nil
+	return s.mrStateResult(ctx, r, to)
 }
 
 // mrAutoMerge is POST /<repo>/merge-requests/<n>/auto-merge: the form of the
@@ -429,7 +419,7 @@ func (s *Server) mrAutoMerge(ctx context.Context, r *http.Request) (ActionResult
 	case err != nil:
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back}, nil
+	return s.mrStateResult(ctx, r, back)
 }
 
 // mrCancelAutoMerge is POST /<repo>/merge-requests/<n>/auto-merge/cancel.
@@ -451,7 +441,7 @@ func (s *Server) mrCancelAutoMerge(ctx context.Context, r *http.Request) (Action
 	case err != nil:
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back}, nil
+	return s.mrStateResult(ctx, r, back)
 }
 
 // mrRead is POST /<repo>/merge-requests/<n>/read: the owner marks the head
@@ -474,7 +464,7 @@ func (s *Server) mrRead(ctx context.Context, r *http.Request) (ActionResult, err
 	if _, err := s.cfg.MergeRequests.MarkRead(ctx, principal(ctx), name, n, head); err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back}, nil
+	return s.mrStateResult(ctx, r, back)
 }
 
 // formBool reads the "true" or "false" a form field carries.
@@ -539,4 +529,25 @@ func mrHrefFromPath(r *http.Request) string {
 
 func mrCreateBack(r *http.Request) string {
 	return repoHref(r.PathValue("repo"), "compare", r.PostFormValue("source"))
+}
+
+// mrStateResult refreshes only the state and controls, preserving review drafts.
+func (s *Server) mrStateResult(ctx context.Context, r *http.Request, redirect string) (ActionResult, error) {
+	result := ActionResult{Redirect: redirect}
+	if !isHX(r) {
+		return result, nil
+	}
+	c, _, err := s.mrPageView(ctx, r, false, true)
+	if err != nil {
+		id := requestID()
+		log := zerowrap.FromCtx(ctx)
+		log.Error().Err(err).Str("request_id", id).Msg("web updated state failed")
+		message := "updated, but the updated page could not be loaded. reload to see the result. reference: "
+		if strings.HasSuffix(r.URL.Path, "/merge") {
+			message = "merged, but the updated page could not be loaded. reload to see the result. reference: "
+		}
+		c = ActionStatus(message+id, mrHrefFromPath(r))
+	}
+	result.Fragment = c
+	return result, nil
 }

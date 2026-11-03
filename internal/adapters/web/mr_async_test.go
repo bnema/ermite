@@ -164,3 +164,80 @@ func TestNonHXMergeRefusalHasOneAlert(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, w.Code)
 	assert.Equal(t, 1, strings.Count(w.Body.String(), `role="alert"`))
 }
+
+func TestAsyncMRStateActions(t *testing.T) {
+	for _, action := range []string{"ready", "auto-merge", "auto-merge/cancel", "close", "read"} {
+		for _, hx := range []bool{false, true} {
+			t.Run(action+"/"+boolText(hx), func(t *testing.T) {
+				s, svc := asyncMergeServer(t, domain.MRStateOpen)
+				if action == "ready" && hx {
+					title, err := domain.ParseMRTitle("Ready for review")
+					require.NoError(t, err)
+					svc.On("Get", mock.Anything, mock.Anything, repoName(t, "demo"), int64(3), mock.Anything).Unset()
+					svc.EXPECT().Get(mock.Anything, mock.Anything, repoName(t, "demo"), int64(3), mock.Anything).Return(ports.MergeRequestDetail{MergeRequest: domain.MergeRequest{Repo: repoName(t, "demo"), Number: 3, State: domain.MRStateOpen, Title: title, Source: "feature", Target: "main"}}, nil).Once()
+				}
+				switch action {
+				case "ready":
+					svc.EXPECT().MarkReady(mock.Anything, mock.Anything, repoName(t, "demo"), int64(3)).Return(domain.MergeRequest{}, nil).Once()
+				case "auto-merge":
+					svc.EXPECT().EnableAutoMerge(mock.Anything, mock.Anything, repoName(t, "demo"), int64(3), mock.Anything).Return(domain.MergeRequest{}, nil).Once()
+				case "auto-merge/cancel":
+					svc.EXPECT().CancelAutoMerge(mock.Anything, mock.Anything, repoName(t, "demo"), int64(3)).Return(domain.MergeRequest{}, nil).Once()
+				case "close":
+					svc.EXPECT().Close(mock.Anything, mock.Anything, repoName(t, "demo"), int64(3)).Return(domain.MergeRequest{}, nil).Once()
+				case "read":
+					svc.EXPECT().MarkRead(mock.Anything, mock.Anything, repoName(t, "demo"), int64(3), mock.Anything).Return(domain.ObjectID{}, nil).Once()
+				}
+				handlers := map[string]ActionFunc{"ready": s.mrReady, "auto-merge": s.mrAutoMerge, "auto-merge/cancel": s.mrCancelAutoMerge, "close": s.mrClose, "read": s.mrRead}
+				r := autoMergeRequest("/demo/merge-requests/3/"+action, "mode=squash")
+				if hx {
+					r.Header.Set("HX-Request", "true")
+				}
+				w := httptest.NewRecorder()
+				s.action(mrHrefFromPath, handlers[action])(w, r)
+				if !hx {
+					assert.Equal(t, http.StatusSeeOther, w.Code)
+					assert.Equal(t, "/demo/merge-requests/3", w.Header().Get("Location"))
+					return
+				}
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Empty(t, w.Header().Get("Location"))
+				assert.Contains(t, w.Body.String(), `id="mr-state" hx-swap-oob="outerMorph"`)
+				assert.Contains(t, w.Body.String(), `id="mr-actions" hx-swap-oob="outerMorph"`)
+				assert.Contains(t, w.Body.String(), `id="mr-title" hx-swap-oob="outerMorph"`)
+				assert.Contains(t, w.Body.String(), "<title>")
+				if action == "ready" {
+					assert.Contains(t, w.Body.String(), "<title>#3 Ready for review · demo ·")
+					assert.Contains(t, w.Body.String(), `<span class="mute">#3</span> Ready for review</h1>`)
+				}
+				assert.NotContains(t, w.Body.String(), "WIP:")
+				assert.NotContains(t, w.Body.String(), "<html")
+				assert.NotContains(t, w.Body.String(), `id="diffs"`)
+			})
+		}
+	}
+}
+
+func TestMRStateActionForms(t *testing.T) {
+	p := MRPage{Box: &MergeBox{
+		ReadyAction: "/ready", AutoAction: "/auto", CancelAutoAction: "/cancel",
+		CloseAction: "/close", ReadAction: "/read", MergeAction: "/merge",
+		CanMarkRead: true, CanAutoMerge: true,
+	}}
+	html := renderToString(t, mrActions(p, false))
+	for _, action := range []string{"ready", "close", "read"} {
+		assert.Contains(t, html, `hx-post="/`+action+`"`)
+	}
+	assert.Contains(t, html, `hx-confirm="Close this merge request?"`)
+	p.Box.ReadyAction = ""
+	html = renderToString(t, mrActions(p, false))
+	assert.Contains(t, html, `hx-post="/auto"`)
+	p.Box.AutoMerge = &AutoMergeView{}
+	html = renderToString(t, mrActions(p, false))
+	assert.Contains(t, html, `hx-post="/cancel"`)
+	p.Box = nil
+	p.CloseAction = "/archived-close"
+	html = renderToString(t, mrActions(p, false))
+	assert.Contains(t, html, `hx-post="/archived-close"`)
+	assert.Contains(t, html, `hx-confirm="Close this merge request?"`)
+}

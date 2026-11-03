@@ -256,6 +256,7 @@ type SinceNav struct {
 
 // MRPage is a merge request with its diff and comments.
 type MRPage struct {
+	DocTitle       string
 	CloseAction    string
 	Number         string
 	Title          string
@@ -705,12 +706,13 @@ func (s *Server) mrPageView(ctx context.Context, r *http.Request, since, fragmen
 		}
 	}
 
+	p.DocTitle = p.Number + " " + p.Title + " · " + d.name() + " · " + s.instance
 	if fragment {
 		return MRStateFragment(p), http.StatusOK, nil
 	}
 	l := s.repoLayout(ctx, d, "merge-requests")
 	l.MDEditor = true
-	l.Title = p.Number + " " + p.Title + " · " + d.name() + " · " + s.instance
+	l.Title = p.DocTitle
 	if head != "" {
 		pinRef(&l, target{rev: head, name: m.Source})
 		if !d.hasBranch(m.Source) {

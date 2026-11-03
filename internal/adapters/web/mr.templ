@@ -130,7 +130,7 @@ templ MergeRequest(l Layout, p MRPage) {
 	@Shell(l, mrRail(p)) {
 		<section class="mr-card">
 			<header class="show mr-h">
-				<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
+				<h1 id="mr-title"><span class="mute">{ p.Number }</span> { p.Title }</h1>
 				<dl class="kv show-kv">
 					<dt>state</dt>
 					@mrState(p)
@@ -279,8 +279,9 @@ templ commentView(c CommentView, suffix string) {
 			}
 		</p>
 		if len(c.Parts) > 0 {
-			<p class="c-text">@userText(c.Parts)
-</p>
+			<p class="c-text">
+				@userText(c.Parts)
+			</p>
 		} else if c.Deleted {
 			if c.Verdict != "" {
 				<p class="mute">text deleted</p>
@@ -345,7 +346,8 @@ func boolText(b bool) string {
 templ commentForm(f CommentForm, suffix string) {
 	<form class="cform" method="post" action={ templ.SafeURL(f.Action) }>
 		<label for={ f.ID + suffix }>{ f.Title }</label>
-		<textarea data-md
+		<textarea
+			data-md
 			id={ f.ID + suffix }
 			name="text"
 			rows="3"
@@ -517,13 +519,13 @@ templ mergeMenu(p MRPage) {
 			}
 			if p.Box.ReadyAction != "" {
 				<p class="d-draft">this is a draft: it cannot be merged until it is ready for review.</p>
-				<form class="d-btns" method="post" action={ templ.SafeURL(p.Box.ReadyAction) }>
+				@ActionForm(ActionProps{Action: p.Box.ReadyAction, Class: "d-btns"}) {
 					<button type="submit" class="btn primary" data-default title="remove the draft prefix from the title">Ready for review</button>
-				</form>
+				}
 			} else if !p.Box.HeadGone {
 				@mrMergeabilitySlot(p.Box.Mergeability)
 				if p.Box.AutoMerge != nil {
-					<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.CancelAutoAction) }>
+					@ActionForm(ActionProps{Action: p.Box.CancelAutoAction, Class: "d-acts"}) {
 						<p class="dim" role="status">
 							Auto-merge: { p.Box.AutoMerge.Mode } when ready, enabled by { p.Box.AutoMerge.EnabledBy }
 							if p.Box.AutoMerge.When != "" {
@@ -534,7 +536,7 @@ templ mergeMenu(p MRPage) {
 						<div class="d-btns">
 							<button type="submit" class="btn">Cancel auto-merge</button>
 						</div>
-					</form>
+					}
 				}
 				@ActionForm(ActionProps{Action: p.Box.MergeAction, Class: "d-acts"}) {
 					<input type="hidden" name="head_id" value={ p.Box.Head }/>
@@ -577,7 +579,7 @@ templ mergeMenu(p MRPage) {
 					</div>
 				}
 				if p.Box.CanAutoMerge {
-					<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.AutoAction) }>
+					@ActionForm(ActionProps{Action: p.Box.AutoAction, Class: "d-acts"}) {
 						<input type="hidden" name="head_id" value={ p.Box.Head }/>
 						<fieldset class="d-modes">
 							<legend>Auto-merge mode</legend>
@@ -588,7 +590,7 @@ templ mergeMenu(p MRPage) {
 						<div class="d-btns">
 							<button type="submit" class="btn" disabled?={ len(p.Box.Modes) == 0 } title="merge once the checks pass">Merge when ready</button>
 						</div>
-					</form>
+					}
 				}
 			}
 		</div>
@@ -668,14 +670,14 @@ templ moreMenu(p MRPage) {
 					</p>
 				}
 				if p.Box.CanMarkRead {
-					<form method="post" action={ templ.SafeURL(p.Box.ReadAction) }>
+					@ActionForm(ActionProps{Action: p.Box.ReadAction}) {
 						<input type="hidden" name="head_id" value={ p.Box.Head }/>
 						<button type="submit" title="the next visit can show only what changed after this head" class="btn" aria-keyshortcuts="Shift+R" data-read>Mark read <kbd aria-hidden="true">R</kbd></button>
-					</form>
+					}
 				}
-				<form method="post" action={ templ.SafeURL(p.Box.CloseAction) }>
+				@ActionForm(ActionProps{Action: p.Box.CloseAction, Confirm: "Close this merge request?"}) {
 					<button type="submit" title="close without merging; the branch is kept" class="btn danger">Close</button>
-				</form>
+				}
 				if !p.Box.HeadGone && p.Box.ReadyAction == "" {
 					<details class="d-or">
 						<summary class="mute">or from a terminal</summary>
@@ -798,12 +800,15 @@ templ MRMergeChecks(c ChecksSummary) {
 
 // MRStateFragment updates only state and actions, leaving review drafts alone.
 templ MRStateFragment(p MRPage) {
+	@TitleOOB(p.DocTitle)
+	<h1 id="mr-title" hx-swap-oob="outerMorph"><span class="mute">{ p.Number }</span> { p.Title }</h1>
+	@ActionStatusClear()
 	@mrState(p)
 	@mrActions(p, true)
 }
 
 templ mrState(p MRPage) {
-	<dd id="mr-state" hx-swap-oob="true" class="mr-state" data-state={ p.State }>
+	<dd id="mr-state" hx-swap-oob="outerMorph" class="mr-state" data-state={ p.State }>
 		{ p.State }
 		if p.MergedShort != "" {
 			{ " · " }<a href={ templ.SafeURL(p.MergedHref) }>{ p.MergedShort }</a>{ " · " + p.MergeMode }
@@ -812,14 +817,16 @@ templ mrState(p MRPage) {
 }
 
 templ mrActions(p MRPage, fragment bool) {
-	<div id="mr-actions" hx-swap-oob="true" class="mr-acts">
+	<div id="mr-actions" hx-swap-oob="outerMorph" class="mr-acts">
 		@MRChecksSum(p.ChecksSum)
 		if p.Box != nil {
 			@mergeMenu(p)
 		}
 		@moreMenu(p)
 		if p.CloseAction != "" {
-			<form method="post" action={ templ.SafeURL(p.CloseAction) }><button type="submit" class="btn danger">Close</button></form>
+			@ActionForm(ActionProps{Action: p.CloseAction, Confirm: "Close this merge request?"}) {
+				<button type="submit" class="btn danger">Close</button>
+			}
 		}
 		if fragment && p.MergeError != "" {
 			<p class="d-err" role="alert">{ p.MergeError }</p>
