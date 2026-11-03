@@ -5,6 +5,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -251,4 +252,25 @@ func TestContentDisposition(t *testing.T) {
 	}
 	assert.Equal(t, "ab", attachmentName("a\"\x00\r\n\\b"))
 	assert.Equal(t, "artifact", attachmentName(".."))
+}
+
+func TestArtifactAsyncDelete(t *testing.T) {
+	arts := newFakeArtifacts(t, `dist <unsafe>.zip`, domain.CIArtifactZip, []byte("PK"))
+	f := artifactsServer(t, arts)
+	page := f.do(t, req{method: "GET", target: "/proj/actions/runs/1", cookie: "tok"})
+	assert.Contains(t, page.Body.String(), `id="artifact-7"`)
+	assert.Contains(t, page.Body.String(), `hx-post="/proj/actions/runs/1/artifacts/7/delete"`)
+	assert.Contains(t, page.Body.String(), `hx-confirm="Delete artifact dist &lt;unsafe&gt;.zip?"`)
+	r := httptest.NewRequest(http.MethodPost, "/proj/actions/runs/1/artifacts/7/delete", nil)
+	r.Header.Set("Origin", forgeOrigin)
+	r.Header.Set("HX-Request", "true")
+	r.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+	w := httptest.NewRecorder()
+	f.srv.ServeHTTP(w, r)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, w.Header().Get("Location"))
+	assert.Contains(t, w.Body.String(), `hx-target="#artifact-7" hx-swap="delete"`)
+	assert.Contains(t, w.Body.String(), `id="action-status"`)
+	assert.NotContains(t, w.Body.String(), "<html")
+	assert.Equal(t, []int64{7}, arts.deleted)
 }

@@ -482,7 +482,7 @@ func (s *Server) runCancel(ctx context.Context, r *http.Request) (ActionResult, 
 	if _, err := s.cfg.Runs.CancelRun(ctx, principal(ctx), name, id); err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: runHref(name.String(), id)}, nil
+	return s.runActionResult(ctx, r, id)
 }
 
 func (s *Server) runRerun(failedOnly bool) func(ctx context.Context, r *http.Request) (ActionResult, error) {
@@ -494,7 +494,7 @@ func (s *Server) runRerun(failedOnly bool) func(ctx context.Context, r *http.Req
 		if _, err := s.cfg.Runs.RerunRun(ctx, principal(ctx), name, id, failedOnly); err != nil {
 			return ActionResult{}, err
 		}
-		return ActionResult{Redirect: runHref(name.String(), id)}, nil
+		return s.runActionResult(ctx, r, id)
 	}
 }
 
@@ -530,3 +530,20 @@ func pullNumber(ref string) (int64, bool) {
 }
 
 func actionsBack(r *http.Request) string { return actionsBase(r.PathValue("repo")) }
+
+func (s *Server) runActionResult(ctx context.Context, r *http.Request, id int64) (ActionResult, error) {
+	result := ActionResult{Redirect: runHref(r.PathValue("repo"), id)}
+	if !isHX(r) {
+		return result, nil
+	}
+	d, err := s.loadRepo(ctx, r.PathValue("repo"))
+	if err != nil {
+		return ActionResult{}, err
+	}
+	p, err := s.runPage(ctx, d, id, 0)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	result.Fragment = runActionFragment(p)
+	return result, nil
+}

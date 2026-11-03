@@ -33,6 +33,7 @@ func artifactHref(repo string, runID, id int64) string {
 
 // ArtifactRow is an artifact of the run page.
 type ArtifactRow struct {
+	ID               string
 	Name, Href, Size string
 	// Expires is the expiry for the eye, ExpiresAt as RFC 3339.
 	Expires, ExpiresAt string
@@ -81,6 +82,7 @@ func (s *Server) runArtifacts(ctx context.Context, repo domain.RepoName, p RunPa
 	}
 	for _, a := range list.Artifacts {
 		row := ArtifactRow{
+			ID:   artifactRowID(a.ID),
 			Name: visibleText(a.Name), Href: artifactHref(name, runID, a.ID), Size: humanSize(a.Size),
 			Expires: a.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"), ExpiresAt: rfc3339(a.ExpiresAt),
 			Job: visibleText(a.JobID),
@@ -262,5 +264,11 @@ func (s *Server) artifactDelete(ctx context.Context, r *http.Request) (ActionRes
 	if err := s.cfg.Artifacts.DeleteArtifact(ctx, principal(ctx), repo, id); err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: runHref(repo.String(), runID)}, nil
+	result := ActionResult{Redirect: runHref(repo.String(), runID)}
+	if isHX(r) {
+		result.Fragment = RemoveEl(artifactRowID(id))
+	}
+	return result, nil
 }
+
+func artifactRowID(id int64) string { return "artifact-" + strconv.FormatInt(id, 10) }

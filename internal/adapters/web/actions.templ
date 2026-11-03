@@ -13,7 +13,8 @@ templ CheckIcon(kind, state string) {
 templ Actions(l Layout, p ActionsPage) {
 	@Shell(l, nil) {
 		if len(p.Disabled) > 0 {
-			<p class="dim wf-off">disabled workflows (they start no run):
+			<p class="dim wf-off">
+				disabled workflows (they start no run):
 				for _, f := range p.Disabled {
 					<span class="pill">{ f }</span>{ " " }
 				}
@@ -105,7 +106,7 @@ templ RunDetail(l Layout, p RunPage) {
 
 // runBodyFragment is the body of the run page as a live fragment.
 templ runBodyFragment(p RunPage) {
-	<div id="run-body">
+	<div id="run-body" hx-swap-oob="outerMorph">
 		@RunBody(p)
 	</div>
 }
@@ -226,7 +227,7 @@ templ RunArtifacts(a ArtifactsView) {
 			</thead>
 			<tbody>
 				for _, r := range a.Rows {
-					<tr>
+					<tr id={ r.ID }>
 						<td class="c-name c-main"><a href={ templ.SafeURL(r.Href) } download>{ r.Name }</a></td>
 						<td class="c-sub dim">{ r.Size }</td>
 						<td class="c-who">
@@ -245,7 +246,9 @@ templ RunArtifacts(a ArtifactsView) {
 						</td>
 						<td>
 							if r.DeleteAction != "" {
-								<form method="post" action={ templ.SafeURL(r.DeleteAction) }><button type="submit" class="btn" aria-label={ "Delete " + r.Name }>Delete</button></form>
+								@ActionForm(ActionProps{Action: r.DeleteAction, Confirm: "Delete artifact " + r.Name + "?"}) {
+									<button type="submit" class="btn" aria-label={ "Delete " + r.Name }>Delete</button>
+								}
 							}
 						</td>
 					</tr>
@@ -321,22 +324,7 @@ templ runRail(p RunPage) {
 			</ul>
 		}
 	</section>
-	if p.CancelAction != "" || p.RerunAction != "" {
-		<section aria-labelledby="r-act" class="decide">
-			<h2 id="r-act">Actions</h2>
-			<div class="d-btns">
-				if p.CancelAction != "" {
-					<form method="post" action={ templ.SafeURL(p.CancelAction) }><button type="submit" class="btn">Cancel run</button></form>
-				}
-				if p.RerunAction != "" {
-					<form method="post" action={ templ.SafeURL(p.RerunAction) }><button type="submit" class="btn primary">Re-run all jobs</button></form>
-				}
-				if p.CanRerunFailed {
-					<form method="post" action={ templ.SafeURL(p.RerunFailedAction) }><button type="submit" class="btn">Re-run failed jobs</button></form>
-				}
-			</div>
-		</section>
-	}
+	@runActions(p, false)
 }
 
 // JobHead is the title of the job page with its state and its error, replaced
@@ -478,4 +466,41 @@ templ MRChecks(c ChecksSection) {
 			<p class="rule-note"><span class="sr">note: </span>{ c.Note }</p>
 		}
 	</section>
+}
+
+templ runActions(p RunPage, fragment bool) {
+	<section
+		id="run-actions"
+		if fragment {
+			hx-swap-oob="outerMorph"
+		}
+	>
+		if p.CancelAction != "" || p.RerunAction != "" {
+			<div aria-labelledby="r-act" class="decide">
+				<h2 id="r-act">Actions</h2>
+				<div class="d-btns">
+					if p.CancelAction != "" {
+						@ActionForm(ActionProps{Action: p.CancelAction}) {
+							<button type="submit" class="btn">Cancel run</button>
+						}
+					}
+					if p.RerunAction != "" {
+						@ActionForm(ActionProps{Action: p.RerunAction}) {
+							<button type="submit" class="btn primary">Re-run all jobs</button>
+						}
+					}
+					if p.CanRerunFailed {
+						@ActionForm(ActionProps{Action: p.RerunFailedAction}) {
+							<button type="submit" class="btn">Re-run failed jobs</button>
+						}
+					}
+				</div>
+			</div>
+		}
+	</section>
+}
+
+templ runActionFragment(p RunPage) {
+	@runBodyFragment(p)
+	@runActions(p, true)
 }

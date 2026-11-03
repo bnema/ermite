@@ -147,3 +147,57 @@ func TestRunPageOffersNoRerunOnDependencyRuns(t *testing.T) {
 		})
 	}
 }
+
+func TestRunActionsProgressive(t *testing.T) {
+	for _, op := range []string{"cancel", "rerun", "rerun-failed"} {
+		for _, hx := range []bool{false, true} {
+			t.Run(op+"/hx="+boolText(hx), func(t *testing.T) {
+				repo := repoName(t, "proj")
+				runs := mocks.NewRunService(t)
+				if op == "cancel" {
+					runs.EXPECT().CancelRun(mock.Anything, mock.Anything, repo, int64(1)).Return(domain.CIRun{}, nil).Once()
+				} else {
+					runs.EXPECT().RerunRun(mock.Anything, mock.Anything, repo, int64(1), op == "rerun-failed").Return(domain.CIRun{}, nil).Once()
+				}
+				if hx {
+					status := domain.CIInProgress
+					if op == "cancel" {
+						status = domain.CICompleted
+					}
+					runs.EXPECT().GetRun(mock.Anything, mock.Anything, repo, int64(1), int32(0)).Return(ports.RunDetail{Run: domain.CIRun{ID: 1, Repo: repo, Attempt: 1, Status: status}, LatestAttempt: 1, Jobs: []ports.JobView{{CIJob: domain.CIJob{ID: "build", Conclusion: domain.CIFailure}}}}, nil).Once()
+					runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), int32(1), "").Return(ports.AnnotationList{}, nil).Once()
+				}
+				browse := mocks.NewBrowseService(t)
+				browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
+				srv := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs, Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{}})
+				req := httptest.NewRequest(http.MethodPost, "/proj/actions/runs/1/"+op, nil)
+				req.Header.Set("Origin", testPublicURL)
+				req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+				if hx {
+					req.Header.Set("HX-Request", "true")
+				}
+				w := httptest.NewRecorder()
+				srv.ServeHTTP(w, req)
+				if !hx {
+					assert.Equal(t, http.StatusSeeOther, w.Code)
+					assert.Equal(t, "/proj/actions/runs/1", w.Header().Get("Location"))
+					return
+				}
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+				assert.Empty(t, w.Header().Get("Location"))
+				body := w.Body.String()
+				assert.Contains(t, body, `id="run-body" hx-swap-oob="outerMorph"`)
+				assert.Contains(t, body, `id="run-actions" hx-swap-oob="outerMorph"`)
+				assert.Contains(t, body, `id="action-status"`)
+				assert.NotContains(t, body, "<html")
+				assert.NotContains(t, body, "sse-connect")
+				if op == "cancel" {
+					assert.Contains(t, body, `hx-post="/proj/actions/runs/1/rerun"`)
+				} else {
+					assert.Contains(t, body, `hx-post="/proj/actions/runs/1/cancel"`)
+				}
+			})
+		}
+	}
+}
