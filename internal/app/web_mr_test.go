@@ -132,7 +132,7 @@ func TestWebMergeRequestPagesRender(t *testing.T) {
 	require.Equal(t, 200, mr.status, mr.body)
 	assert.Equal(t, "no-cache", mr.hdr.Get("Cache-Control"))
 	assert.Equal(t, []string{"Accept-Encoding"}, mr.hdr.Values("Vary"))
-	assert.Contains(t, mr.body, "<h1><span class=\"mute\">#1</span> Add &lt;b&gt;search&lt;/b&gt;</h1>")
+	assert.Contains(t, mr.body, "<h1 id=\"mr-title\"><span class=\"mute\">#1</span> Add &lt;b&gt;search&lt;/b&gt;</h1>")
 	assert.NotContains(t, mr.body, "<b>search</b>")
 	assert.Contains(t, mr.body, "feat/search")
 	assert.Contains(t, mr.body, `<span class="kn">package</span> search</td>`)
