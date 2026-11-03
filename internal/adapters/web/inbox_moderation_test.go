@@ -180,3 +180,26 @@ func TestInboxModerationEnhancedForms(t *testing.T) {
 	assert.Contains(t, html, `hx-post="`+row.Ban+`"`)
 	assert.Contains(t, html, `hx-confirm="Reject and ban this author?"`)
 }
+
+func TestInboxDottedRepoPendingIDs(t *testing.T) {
+	inbox := mocks.NewInboxService(t)
+	ov := inboxOverview(t)
+	inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once()
+	srv := moderationServer(t, inbox, mocks.NewIssueModerationService(t))
+	p := testPendingIssue(t)
+	p.Repo = repoName(t, "alpha.beta")
+	p.ID, _ = domain.ParsePendingIssueID(testPendingID)
+	row := srv.pendingRow(time.Now(), p)
+	require.Equal(t, "pending-alpha_2ebeta-"+testPendingID, row.ID)
+	html := renderToString(t, InboxPending(InboxPage{Pending: []PendingRow{row}}))
+	assert.Contains(t, html, `id="`+row.ID+`"`)
+	assert.Contains(t, html, `/pending/alpha.beta/`)
+	r := httptest.NewRequest(http.MethodPost, "/-/inbox/pending/alpha.beta/"+testPendingID+"/approve", nil)
+	r.SetPathValue("repo", "alpha.beta")
+	r.SetPathValue("id", testPendingID)
+	r.Header.Set("HX-Request", "true")
+	result, err := srv.pendingResult(t.Context(), r)
+	require.NoError(t, err)
+	fragment := renderToString(t, result.Fragment)
+	assert.Contains(t, fragment, `hx-target="#`+row.ID+`"`)
+}

@@ -147,7 +147,7 @@ func (s *Server) depsRow(in ports.InboxDeps) InboxDepsRow {
 	batch := in.Batch
 	repo := d.Repo.String()
 	row := InboxDepsRow{
-		Repo: repo, RepoHref: repoHref(repo), ID: "deps-" + repo,
+		Repo: repo, RepoHref: repoHref(repo), ID: "deps-" + inboxIDPart(repo),
 		Count: len(batch.Updates), Breakdown: depsBreakdown(batch.Updates),
 	}
 	row.Batch, row.Title = string(batch.Key), "Updates"

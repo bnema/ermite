@@ -5,6 +5,7 @@ package web
 import (
 	"cmp"
 	"context"
+	"encoding/hex"
 	"net/http"
 	"net/url"
 	"slices"
@@ -576,7 +577,7 @@ func (l *liveStream) inbox(ctx context.Context, we ports.WatchEvent) ([]fragment
 	return out, nil
 }
 
-func pendingRowID(repo, id string) string { return "pending-" + repo + "-" + id }
+func pendingRowID(repo, id string) string { return "pending-" + inboxIDPart(repo) + "-" + id }
 
 func (s *Server) pendingResult(ctx context.Context, r *http.Request) (ActionResult, error) {
 	result := ActionResult{Redirect: pendingBack(r)}
@@ -589,4 +590,19 @@ func (s *Server) pendingResult(ctx context.Context, r *http.Request) (ActionResu
 	}
 	result.Fragment = inboxModerated(pendingRowID(r.PathValue("repo"), r.PathValue("id")), ov.Counts.Pending)
 	return result, nil
+}
+
+// inboxIDPart is an injective encoding for repository names used in #selectors.
+// Keep ordinary names readable; encode punctuation (including the escape marker).
+func inboxIDPart(name string) string {
+	var b strings.Builder
+	for _, c := range []byte(name) {
+		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' {
+			b.WriteByte(c)
+		} else {
+			b.WriteByte('_')
+			b.WriteString(hex.EncodeToString([]byte{c}))
+		}
+	}
+	return b.String()
 }

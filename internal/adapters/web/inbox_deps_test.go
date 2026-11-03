@@ -536,3 +536,50 @@ func TestInboxAsyncDeps(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxDottedRepoDepsIDs(t *testing.T) {
+	for _, key := range []domain.DepBatchKey{"", "npm/web/react@v19"} {
+		for _, removed := range []bool{false, true} {
+			t.Run(string(key)+"/removed="+boolText(removed), func(t *testing.T) {
+				inbox := mocks.NewInboxService(t)
+				ov := depsOverview(t)
+				ov.Deps[0].Rec.Repo = repoName(t, "alpha.beta")
+				ov.Deps[0].Batch.Key = key
+				srv := depsServer(t, inbox, mocks.NewDepsService(t))
+				row := srv.depsRow(ov.Deps[0])
+				assert.Regexp(t, `^[a-zA-Z0-9_-]+$`, row.ID)
+				html := renderToString(t, inboxDepsRow(row))
+				assert.Contains(t, html, `id="`+row.ID+`"`)
+				assert.Contains(t, html, `/deps/alpha.beta/open`)
+				if removed {
+					ov.Deps = nil
+				}
+				inbox.EXPECT().Overview(mock.Anything, mock.Anything).Return(ov, nil).Once()
+				r := httptest.NewRequest(http.MethodPost, "/-/inbox/deps/alpha.beta/open", strings.NewReader(url.Values{"batch": {string(key)}}.Encode()))
+				r.SetPathValue("repo", "alpha.beta")
+				r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				r.Header.Set("HX-Request", "true")
+				require.NoError(t, r.ParseForm())
+				result, err := srv.depsResult(t.Context(), r, depsOpen, ports.InboxOverview{})
+				require.NoError(t, err)
+				fragment := renderToString(t, result.Fragment)
+				swap := "outerMorph"
+				if removed {
+					swap = "delete"
+				}
+				assert.Contains(t, fragment, `hx-target="#`+row.ID+`" hx-swap="`+swap+`"`)
+			})
+		}
+	}
+}
+
+func TestInboxIDPartEncoding(t *testing.T) {
+	seen := map[string]bool{}
+	for _, name := range []string{"alpha", "alpha-beta", "alpha.beta", "alpha_2ebeta", "alpha_beta"} {
+		id := inboxIDPart(name)
+		assert.Regexp(t, `^[a-z0-9_-]+$`, id)
+		assert.False(t, seen[id], "encoding collision for %s", name)
+		seen[id] = true
+	}
+	assert.Equal(t, "alpha-beta", inboxIDPart("alpha-beta"))
+}
