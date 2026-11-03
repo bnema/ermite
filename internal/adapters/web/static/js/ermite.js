@@ -924,6 +924,22 @@ window.ermiteLive = (() => {
   });
   let reloading = false;
   let stopped = false;
+  // The page's own actions (htmx action forms) already show their result:
+  // the "… — reload" notice of the event they cause is dropped while one is
+  // in flight and for OWN_GRACE after it settles.
+  const OWN_GRACE = 3000;
+  let ownInFlight = 0;
+  let ownUntil = 0;
+  const isAction = (ctx) => ctx?.sourceElement?.matches?.('form[hx-post][hx-swap="none"]');
+  window.addEventListener?.('htmx:before:request', (event) => {
+    if (isAction(event.detail?.ctx)) ownInFlight++;
+  });
+  window.addEventListener?.('htmx:finally:request', (event) => {
+    if (!isAction(event.detail?.ctx)) return;
+    ownInFlight = Math.max(0, ownInFlight - 1);
+    ownUntil = Date.now() + OWN_GRACE;
+  });
+  const ownNotice = (el) => el.id === 'mr-notice' && (ownInFlight > 0 || Date.now() < ownUntil);
   // A stream that drops and comes back within LOST_AFTER (a proxy or the
   // server closing it, a network hiccup) is not worth a message.
   const LOST_AFTER = 5000;
@@ -1012,6 +1028,7 @@ window.ermiteLive = (() => {
       const cursor = document.querySelector('[data-rows] > [data-cursor]');
       const cursorKey = cursor?.id || cursor?.querySelector('a')?.getAttribute('href');
       for (const el of [...t.content.children]) {
+        if (ownNotice(el)) continue;
         // Each fresh fragment owns its timer; an older swap cannot expire it.
         // No animation, including for visitors who prefer reduced motion.
         if (el.id.startsWith('repo-') && el.hasAttribute('data-activity')) {

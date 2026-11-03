@@ -128,3 +128,39 @@ test('fresh home rows expire after a minute; later swaps still prepend and get a
   t.mock.timers.tick(60000);
   assert.equal(current.pill.removed, true);
 });
+
+test('the notice of an event caused by the page\'s own action is dropped', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const listeners = {};
+  globalThis.window = { addEventListener: (name, fn) => { listeners[name] = fn; } };
+  const slot = { id: 'mr-notice', hasAttribute: (n) => n === 'data-slot', filled: 0,
+    replaceChildren() { this.filled++; } };
+  const notice = { id: 'mr-notice', childNodes: [], hasAttribute: () => false };
+  globalThis.document = {
+    querySelector: () => null,
+    createElement: () => ({ set innerHTML(_) {}, content: { get children() { return [notice]; } } }),
+    getElementById: (id) => (id === 'mr-notice' ? slot : null),
+    querySelectorAll: () => [],
+    activeElement: null,
+  };
+  new Function(live)();
+  const ermiteLive = globalThis.window.ermiteLive;
+  const form = { matches: (sel) => sel === 'form[hx-post][hx-swap="none"]' };
+  const ev = { detail: { ctx: { sourceElement: form } } };
+
+  listeners['htmx:before:request'](ev);
+  ermiteLive.swap('during');
+  assert.equal(slot.filled, 0, 'no notice while the action runs');
+  listeners['htmx:finally:request'](ev);
+  ermiteLive.swap('just after');
+  assert.equal(slot.filled, 0, 'no notice for the event of the action just done');
+  t.mock.timers.tick(3001);
+  ermiteLive.swap('someone else');
+  assert.equal(slot.filled, 1, 'a later change from elsewhere still shows');
+
+  const other = { detail: { ctx: { sourceElement: { matches: () => false } } } };
+  t.mock.timers.tick(10000);
+  listeners['htmx:before:request'](other);
+  ermiteLive.swap('unrelated request');
+  assert.equal(slot.filled, 2, 'other htmx requests do not hide notices');
+});
