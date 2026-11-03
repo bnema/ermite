@@ -97,10 +97,7 @@ templ RunDetail(l Layout, p RunPage) {
 		<div id="run-body">
 			@RunBody(p)
 		</div>
-		if p.Artifacts != nil {
-			@RunArtifacts(*p.Artifacts)
-		}
-		@RunSummaries(p.Summaries, p.SummariesMore)
+		@runOutputs(p, false)
 	}
 }
 
@@ -293,8 +290,14 @@ templ RunSummaries(sums []JobSummaries, more bool) {
 	}
 }
 
-templ runRail(p RunPage) {
-	<section aria-labelledby="r-run">
+templ runMetadata(p RunPage, fragment bool) {
+	<section
+		id="run-metadata"
+		aria-labelledby="r-run"
+		if fragment {
+			hx-swap-oob="outerMorph"
+		}
+	>
 		<h2 id="r-run">Run</h2>
 		<dl class="kv">
 			<dt>result</dt>
@@ -324,6 +327,10 @@ templ runRail(p RunPage) {
 			</ul>
 		}
 	</section>
+}
+
+templ runRail(p RunPage) {
+	@runMetadata(p, false)
 	@runActions(p, false)
 }
 
@@ -501,6 +508,30 @@ templ runActions(p RunPage, fragment bool) {
 }
 
 templ runActionFragment(p RunPage) {
+	@runMetadata(p, true)
+	@runOutputs(p, true)
 	@runBodyFragment(p)
 	@runActions(p, true)
+}
+
+// Stable containers also clear content when the refreshed run has no outputs.
+templ runOutputs(p RunPage, fragment bool) {
+	<div
+		id="run-artifact-region"
+		if fragment {
+			hx-swap-oob="outerHTML"
+		}
+	>
+		if p.Artifacts != nil {
+			@RunArtifacts(*p.Artifacts)
+		}
+	</div>
+	<div
+		id="run-summary-region"
+		if fragment {
+			hx-swap-oob="outerHTML"
+		}
+	>
+		@RunSummaries(p.Summaries, p.SummariesMore)
+	</div>
 }

@@ -201,3 +201,52 @@ func TestRunActionsProgressive(t *testing.T) {
 		}
 	}
 }
+
+func TestRerunRefreshesAttemptAndOutputs(t *testing.T) {
+	repo := repoName(t, "proj")
+	runs := mocks.NewRunService(t)
+	detail := func(attempt int32) ports.RunDetail {
+		status := domain.CICompleted
+		if attempt == 2 {
+			status = domain.CIQueued
+		}
+		return ports.RunDetail{Run: domain.CIRun{ID: 1, Repo: repo, Attempt: attempt, Status: status}, LatestAttempt: attempt}
+	}
+	runs.EXPECT().GetRun(mock.Anything, mock.Anything, repo, int64(1), int32(0)).Return(detail(1), nil).Once()
+	runs.EXPECT().GetRun(mock.Anything, mock.Anything, repo, int64(1), int32(0)).Return(detail(2), nil).Once()
+	runs.EXPECT().ListAnnotations(mock.Anything, mock.Anything, repo, int64(1), mock.Anything, "").Return(ports.AnnotationList{}, nil)
+	runs.EXPECT().RerunRun(mock.Anything, mock.Anything, repo, int64(1), false).Return(detail(2).Run, nil).Once()
+	arts := mocks.NewArtifactService(t)
+	arts.EXPECT().ListArtifacts(mock.Anything, mock.Anything, repo, int64(1)).Return(ports.ArtifactList{}, nil).Once()
+	browse := mocks.NewBrowseService(t)
+	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, repo, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
+	s := newTestServer(t, Config{Repos: reposServing(t, publicRepo(t, "proj")), Browse: browse, Runs: runs, Artifacts: arts})
+	p, err := s.runPage(withOwner(t.Context()), &repoData{repo: publicRepo(t, "proj")}, 1, 0)
+	require.NoError(t, err)
+	p.Artifacts = &ArtifactsView{Rows: []ArtifactRow{{ID: "artifact-7", Name: "old artifact"}}}
+	p.Summaries = []JobSummaries{{Job: "old summary job"}}
+	old := renderToString(t, RunDetail(Layout{HasRail: true}, p))
+	assert.Contains(t, old, "1 of 1")
+	assert.Contains(t, old, "old artifact")
+	assert.Contains(t, old, "old summary job")
+	assert.Contains(t, old, `id="run-artifact-region"`)
+	assert.Contains(t, old, `id="run-summary-region"`)
+	r := httptest.NewRequest(http.MethodPost, "/proj/actions/runs/1/rerun", nil)
+	r.SetPathValue("repo", "proj")
+	r.SetPathValue("id", "1")
+	r.Header.Set("HX-Request", "true")
+	r = r.WithContext(withOwner(r.Context()))
+	w := httptest.NewRecorder()
+	s.action(actionsBack, s.runRerun(false))(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `id="run-metadata" aria-labelledby="r-run" hx-swap-oob="outerMorph"`)
+	assert.Contains(t, body, "2 of 2")
+	assert.Contains(t, body, "queued")
+	assert.Contains(t, body, `href="/proj/actions/runs/1?attempt=1"`)
+	assert.Contains(t, body, `aria-current="page">attempt 2</span>`)
+	assert.Contains(t, body, `<div id="run-artifact-region" hx-swap-oob="outerHTML"></div>`)
+	assert.Contains(t, body, `<div id="run-summary-region" hx-swap-oob="outerHTML"></div>`)
+	assert.NotContains(t, body, "old artifact")
+	assert.NotContains(t, body, "old summary job")
+}

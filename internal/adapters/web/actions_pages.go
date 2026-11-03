@@ -544,6 +544,10 @@ func (s *Server) runActionResult(ctx context.Context, r *http.Request, id int64)
 	if err != nil {
 		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
+	if p.Summaries, p.SummariesMore, err = s.jobSummaries(ctx, d, p.detail.Run, p.detail.Jobs, p.Attempt == p.Latest, maxSummaryPageBytes); err != nil {
+		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
+	}
+	p.Artifacts = s.runArtifacts(ctx, d.repo.Name, p)
 	result.Fragment = runActionFragment(p)
 	return result, nil
 }
