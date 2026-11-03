@@ -474,36 +474,27 @@ func (s *Server) job(ctx context.Context, r *http.Request) (templ.Component, int
 	return Job(l, p), http.StatusOK, nil
 }
 
-// ciAction wraps a POST of the actions pages: the form gate, the bounded
-// context and the mapping of a refusal to a page.
-func (s *Server) ciAction(h func(ctx context.Context, r *http.Request) (to string, err error)) http.HandlerFunc {
-	return s.mrAction(func(ctx context.Context, r *http.Request) (string, string, error) {
-		to, err := h(ctx, r)
-		return to, actionsBase(r.PathValue("repo")), err
-	})
-}
-
-func (s *Server) runCancel(ctx context.Context, r *http.Request) (string, error) {
+func (s *Server) runCancel(ctx context.Context, r *http.Request) (ActionResult, error) {
 	name, id, err := s.runTarget(r)
 	if err != nil {
-		return "", err
+		return ActionResult{}, err
 	}
 	if _, err := s.cfg.Runs.CancelRun(ctx, principal(ctx), name, id); err != nil {
-		return "", err
+		return ActionResult{}, err
 	}
-	return runHref(name.String(), id), nil
+	return ActionResult{Redirect: runHref(name.String(), id)}, nil
 }
 
-func (s *Server) runRerun(failedOnly bool) func(ctx context.Context, r *http.Request) (string, error) {
-	return func(ctx context.Context, r *http.Request) (string, error) {
+func (s *Server) runRerun(failedOnly bool) func(ctx context.Context, r *http.Request) (ActionResult, error) {
+	return func(ctx context.Context, r *http.Request) (ActionResult, error) {
 		name, id, err := s.runTarget(r)
 		if err != nil {
-			return "", err
+			return ActionResult{}, err
 		}
 		if _, err := s.cfg.Runs.RerunRun(ctx, principal(ctx), name, id, failedOnly); err != nil {
-			return "", err
+			return ActionResult{}, err
 		}
-		return runHref(name.String(), id), nil
+		return ActionResult{Redirect: runHref(name.String(), id)}, nil
 	}
 }
 
@@ -537,3 +528,5 @@ func pullNumber(ref string) (int64, bool) {
 	n, err := strconv.ParseInt(num, 10, 64)
 	return n, err == nil
 }
+
+func actionsBack(r *http.Request) string { return actionsBase(r.PathValue("repo")) }

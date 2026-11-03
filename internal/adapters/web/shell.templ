@@ -63,6 +63,7 @@ templ Shell(l Layout, rail templ.Component) {
 					<section class="work-lede" aria-label="Description"><p class="lede">{ l.Lede }</p></section>
 				}
 				<main id="main" tabindex="-1">
+<div id="action-status" aria-live="polite"></div>
 					{ children... }
 				</main>
 				if l.HasRail && rail != nil {

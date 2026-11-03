@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package web
+
+type ActionProps struct{ Action, Class, Confirm, Label string }
+
+templ ActionForm(p ActionProps) {
+	<form
+		class={ p.Class }
+		method="post"
+		action={ templ.SafeURL(p.Action) }
+		hx-post={ p.Action }
+		hx-swap="none"
+		hx-sync="this:drop"
+		hx-disable="find button[type=submit]"
+		if p.Confirm != "" {
+			hx-confirm={ p.Confirm }
+		}
+		if p.Label != "" {
+			aria-label={ p.Label }
+		}
+	>
+		{ children... }
+	</form>
+}
+
+templ ActionStatus(message, href string) {
+	<div id="action-status" hx-swap-oob="true" role="alert" class="d-err">{ message } <a href={ templ.SafeURL(href) }>reload</a></div>
+}
+
+templ ActionStatusClear() {
+	<div id="action-status" hx-swap-oob="true"></div>
+}
+
+templ RemoveEl(id string) {
+	<hx-partial hx-target={ "#" + id } hx-swap="delete"></hx-partial>
+}
+
+templ CountOOB(id string, n int) {
+	<span id={ id } class="count" hx-swap-oob="true">{ itoa(n) }</span>
+}
+
+templ TitleOOB(title string) {
+	<title>{ title }</title>
+}
+
+templ actionSuccess(c templ.Component) {
+	@ActionStatusClear()
+	@c
+}

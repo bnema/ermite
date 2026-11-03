@@ -43,7 +43,7 @@ func TestAsyncMergePost(t *testing.T) {
 					r.Header.Set("HX-Request", "true")
 				}
 				w := httptest.NewRecorder()
-				s.mrAction(s.mrMerge)(w, r)
+				s.action(mrHrefFromPath, s.mrMerge)(w, r)
 				if !hx {
 					assert.Equal(t, http.StatusSeeOther, w.Code)
 					return
@@ -67,7 +67,7 @@ func TestAsyncMergeRefusal(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), signedInKey{}, struct{}{}))
 	r.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
-	s.mrAction(s.mrMerge)(w, r)
+	s.action(mrHrefFromPath, s.mrMerge)(w, r)
 	assert.Equal(t, http.StatusConflict, w.Code)
 	assert.Contains(t, w.Body.String(), `role="alert"`)
 	assert.Contains(t, w.Body.String(), domain.ErrConflict.Error())
@@ -114,9 +114,9 @@ func TestAsyncMergeOtherFailures(t *testing.T) {
 			r := autoMergeRequest("/demo/merge-requests/3/merge", "mode=squash")
 			r.Header.Set("HX-Request", "true")
 			w := httptest.NewRecorder()
-			s.mrAction(s.mrMerge)(w, r)
+			s.action(mrHrefFromPath, s.mrMerge)(w, r)
 			assert.Equal(t, tt.status, w.Code)
-			assert.Contains(t, w.Body.String(), `id="mr-actions"`)
+			assert.Contains(t, w.Body.String(), `id="action-status"`)
 			assert.Contains(t, w.Body.String(), `hx-swap-oob="true"`)
 			assert.Contains(t, w.Body.String(), `role="alert"`)
 			assert.Contains(t, w.Body.String(), tt.message)
@@ -141,7 +141,7 @@ func TestMergeGateRefusalFragment(t *testing.T) {
 			assert.Equal(t, http.StatusForbidden, w.Code)
 			if hx {
 				assert.Contains(t, w.Body.String(), `hx-swap-oob="true"`)
-				assert.Contains(t, w.Body.String(), `id="mr-actions"`)
+				assert.Contains(t, w.Body.String(), `id="action-status"`)
 				if origin == testPublicURL {
 					assert.Contains(t, w.Body.String(), "your session has expired")
 				} else {
@@ -160,7 +160,7 @@ func TestNonHXMergeRefusalHasOneAlert(t *testing.T) {
 	svc.EXPECT().Merge(mock.Anything, mock.Anything, mock.Anything, int64(3), mock.Anything).Return(ports.MergeResult{}, domain.ErrConflict).Once()
 	r := autoMergeRequest("/demo/merge-requests/3/merge", "mode=squash")
 	w := httptest.NewRecorder()
-	s.mrAction(s.mrMerge)(w, r)
+	s.action(mrHrefFromPath, s.mrMerge)(w, r)
 	assert.Equal(t, http.StatusConflict, w.Code)
 	assert.Equal(t, 1, strings.Count(w.Body.String(), `role="alert"`))
 }

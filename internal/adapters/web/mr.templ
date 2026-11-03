@@ -536,15 +536,7 @@ templ mergeMenu(p MRPage) {
 						</div>
 					</form>
 				}
-				<form
-					class="d-acts"
-					method="post"
-					action={ templ.SafeURL(p.Box.MergeAction) }
-					hx-post={ p.Box.MergeAction }
-					hx-swap="none"
-					hx-sync="this:drop"
-					hx-disable="find button[type=submit]"
-				>
+				@ActionForm(ActionProps{Action: p.Box.MergeAction, Class: "d-acts"}) {
 					<input type="hidden" name="head_id" value={ p.Box.Head }/>
 					<fieldset class="d-modes">
 						<legend class="sr">merge mode</legend>
@@ -583,7 +575,7 @@ templ mergeMenu(p MRPage) {
 						>Merge into { p.Target }</button>
 						<span class="htmx-indicator" role="status">Merging…</span>
 					</div>
-				</form>
+				}
 				if p.Box.CanAutoMerge {
 					<form class="d-acts" method="post" action={ templ.SafeURL(p.Box.AutoAction) }>
 						<input type="hidden" name="head_id" value={ p.Box.Head }/>
@@ -832,12 +824,5 @@ templ mrActions(p MRPage, fragment bool) {
 		if fragment && p.MergeError != "" {
 			<p class="d-err" role="alert">{ p.MergeError }</p>
 		}
-	</div>
-}
-
-// MRActionStatus remains visible even when the request detail cannot be read.
-templ MRActionStatus(message, href string) {
-	<div id="mr-actions" class="mr-acts" hx-swap-oob="true">
-		<p class="d-err" role="alert">{ message } <a href={ templ.SafeURL(href) }>reload</a></p>
 	</div>
 }

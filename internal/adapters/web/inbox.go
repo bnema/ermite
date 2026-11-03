@@ -470,31 +470,31 @@ func pendingID(r *http.Request) (domain.RepoName, domain.PendingIssueID, error) 
 }
 
 // pendingApprove is POST /-/inbox/pending/<repo>/<id>/approve.
-func (s *Server) pendingApprove(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) pendingApprove(ctx context.Context, r *http.Request) (ActionResult, error) {
 	back := pendingBack(r)
 	name, id, err := pendingID(r)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	if _, err := s.cfg.Moderation.Approve(ctx, principal(ctx), name, id); err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return back, back, nil
+	return ActionResult{Redirect: back}, nil
 }
 
 // pendingReject is POST /-/inbox/pending/<repo>/<id>/reject, or .../ban, which
 // also bans the submitter.
-func (s *Server) pendingReject(ban bool) func(ctx context.Context, r *http.Request) (string, string, error) {
-	return func(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) pendingReject(ban bool) func(ctx context.Context, r *http.Request) (ActionResult, error) {
+	return func(ctx context.Context, r *http.Request) (ActionResult, error) {
 		back := pendingBack(r)
 		name, id, err := pendingID(r)
 		if err != nil {
-			return "", back, err
+			return ActionResult{}, err
 		}
 		if err := s.cfg.Moderation.Reject(ctx, principal(ctx), name, id, ban); err != nil {
-			return "", back, err
+			return ActionResult{}, err
 		}
-		return back, back, nil
+		return ActionResult{Redirect: back}, nil
 	}
 }
 

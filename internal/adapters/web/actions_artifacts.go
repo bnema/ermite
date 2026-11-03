@@ -250,17 +250,17 @@ func rfc5987(s string) string {
 }
 
 // artifactDelete is POST /<repo>/actions/runs/<id>/artifacts/<artifact id>/delete.
-func (s *Server) artifactDelete(ctx context.Context, r *http.Request) (string, error) {
+func (s *Server) artifactDelete(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo, runID, err := s.runTarget(r)
 	if err != nil {
-		return "", err
+		return ActionResult{}, err
 	}
 	id, err := parseArtifactPath(r)
 	if err != nil {
-		return "", err
+		return ActionResult{}, err
 	}
 	if err := s.cfg.Artifacts.DeleteArtifact(ctx, principal(ctx), repo, id); err != nil {
-		return "", err
+		return ActionResult{}, err
 	}
-	return runHref(repo.String(), runID), nil
+	return ActionResult{Redirect: runHref(repo.String(), runID)}, nil
 }

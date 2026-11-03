@@ -92,23 +92,23 @@ func TestNotePosts(t *testing.T) {
 		return r
 	}
 	svc.EXPECT().AddComment(mock.Anything, mock.Anything, repo, int64(1), mock.MatchedBy(func(p ports.AddCommentParams) bool { return p.ReplyTo == 2 && p.Text == "reply" })).Return(domain.Comment{ID: 7}, nil).Once()
-	to, _, err := s.mrComment(ctx, request(url.Values{"reply_to": {"2"}, "text": {"reply"}}))
+	to, err := s.mrComment(ctx, request(url.Values{"reply_to": {"2"}, "text": {"reply"}}))
 	require.NoError(t, err)
-	assert.Equal(t, "/demo/merge-requests/1#c7", to)
+	assert.Equal(t, "/demo/merge-requests/1#c7", to.Redirect)
 	svc.EXPECT().AddComment(mock.Anything, mock.Anything, repo, int64(1), mock.MatchedBy(func(p ports.AddCommentParams) bool {
 		return p.StartLine == 10 && p.Line == 24 && p.Path == "a.go" && p.Verdict == domain.VerdictApprove
 	})).Return(domain.Comment{ID: 8}, nil).Once()
-	to, _, err = s.mrComment(ctx, request(url.Values{"path": {"a.go"}, "line": {"24"}, "start_line": {"10"}, "side": {"new"}, "verdict": {"approve"}}))
+	to, err = s.mrComment(ctx, request(url.Values{"path": {"a.go"}, "line": {"24"}, "start_line": {"10"}, "side": {"new"}, "verdict": {"approve"}}))
 	require.NoError(t, err)
-	assert.Equal(t, "/demo/merge-requests/1#c8", to)
+	assert.Equal(t, "/demo/merge-requests/1#c8", to.Redirect)
 	svc.EXPECT().EditComment(mock.Anything, mock.Anything, repo, int64(1), int64(2), "new\ntext").Return(domain.Comment{ID: 2}, nil).Once()
-	to, _, err = s.mrEditComment(ctx, request(url.Values{"text": {"new\r\ntext"}}))
+	to, err = s.mrEditComment(ctx, request(url.Values{"text": {"new\r\ntext"}}))
 	require.NoError(t, err)
-	assert.Equal(t, "/demo/merge-requests/1#c2", to)
+	assert.Equal(t, "/demo/merge-requests/1#c2", to.Redirect)
 	svc.EXPECT().DeleteComment(mock.Anything, mock.Anything, repo, int64(1), int64(2)).Return(domain.Comment{ID: 2}, nil).Once()
-	to, _, err = s.mrDeleteComment(ctx, request(nil))
+	to, err = s.mrDeleteComment(ctx, request(nil))
 	require.NoError(t, err)
-	assert.Equal(t, "/demo/merge-requests/1#c2", to)
+	assert.Equal(t, "/demo/merge-requests/1#c2", to.Redirect)
 }
 
 func TestDeletedNoteRendering(t *testing.T) {

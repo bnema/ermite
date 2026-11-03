@@ -29,8 +29,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a-h/templ"
 	"bnema.dev/zerowrap"
+	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/domain"
 	"bnema.dev/ermite/internal/ports"
@@ -211,14 +211,14 @@ func (s *Server) routes() *http.ServeMux {
 	if s.cfg.Inbox != nil {
 		mux.HandleFunc("GET "+inboxPath, s.page(s.inbox))
 		if s.cfg.Deps != nil {
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/open", s.mrAction(s.depsAction(depsOpen)))
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/ignore", s.mrAction(s.depsAction(depsIgnore)))
-			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/snooze", s.mrAction(s.depsAction(depsSnooze)))
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/open", s.action(depsBack, s.depsAction(depsOpen)))
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/ignore", s.action(depsBack, s.depsAction(depsIgnore)))
+			mux.HandleFunc("POST "+inboxPath+"/deps/{repo}/snooze", s.action(depsBack, s.depsAction(depsSnooze)))
 		}
 		if s.cfg.Moderation != nil {
-			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/approve", s.mrAction(s.pendingApprove))
-			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/reject", s.mrAction(s.pendingReject(false)))
-			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/ban", s.mrAction(s.pendingReject(true)))
+			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/approve", s.action(pendingBack, s.pendingApprove))
+			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/reject", s.action(pendingBack, s.pendingReject(false)))
+			mux.HandleFunc("POST "+inboxPath+"/pending/{repo}/{id}/ban", s.action(pendingBack, s.pendingReject(true)))
 		}
 	}
 	mux.HandleFunc("GET /{$}", s.page(s.home))
@@ -243,17 +243,17 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /{repo}/merge-requests/{n}/files", s.page(s.mrFiles))
 		mux.HandleFunc("GET /{repo}/compare/{rest...}", s.page(s.compare))
 		// The writes: POST only, behind the gate (ServeHTTP).
-		mux.HandleFunc("POST /{repo}/merge-requests", s.mrAction(s.mrCreate))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments", s.mrAction(s.mrComment))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/resolve", s.mrAction(s.mrResolve))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/edit", s.mrAction(s.mrEditComment))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/delete", s.mrAction(s.mrDeleteComment))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/merge", s.mrAction(s.mrMerge))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/auto-merge", s.mrAction(s.mrAutoMerge))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/auto-merge/cancel", s.mrAction(s.mrCancelAutoMerge))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/close", s.mrAction(s.mrClose))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/ready", s.mrAction(s.mrReady))
-		mux.HandleFunc("POST /{repo}/merge-requests/{n}/read", s.mrAction(s.mrRead))
+		mux.HandleFunc("POST /{repo}/merge-requests", s.action(mrCreateBack, s.mrCreate))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments", s.action(mrHrefFromPath, s.mrComment))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/resolve", s.action(mrHrefFromPath, s.mrResolve))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/edit", s.action(mrHrefFromPath, s.mrEditComment))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/comments/{id}/delete", s.action(mrHrefFromPath, s.mrDeleteComment))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/merge", s.action(mrHrefFromPath, s.mrMerge))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/auto-merge", s.action(mrHrefFromPath, s.mrAutoMerge))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/auto-merge/cancel", s.action(mrHrefFromPath, s.mrCancelAutoMerge))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/close", s.action(mrHrefFromPath, s.mrClose))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/ready", s.action(mrHrefFromPath, s.mrReady))
+		mux.HandleFunc("POST /{repo}/merge-requests/{n}/read", s.action(mrHrefFromPath, s.mrRead))
 	}
 	if s.cfg.Issues != nil {
 		mux.HandleFunc("GET /{repo}/issues", s.page(s.issueList))
@@ -261,10 +261,10 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /{repo}/issues/new", s.issueNewRoute)
 		mux.HandleFunc("GET /{repo}/issues/{n}", s.pageOrRedirect(s.issueShow, s.issueToMR))
 		// The writes: POST only, behind the gate (ServeHTTP).
-		mux.HandleFunc("POST /{repo}/issues", s.issueAction(s.issueCreate))
-		mux.HandleFunc("POST /{repo}/issues/{n}/comments", s.issueAction(s.issueComment))
-		mux.HandleFunc("POST /{repo}/issues/{n}/close", s.issueAction(s.issueClose))
-		mux.HandleFunc("POST /{repo}/issues/{n}/reopen", s.issueAction(s.issueReopen))
+		mux.HandleFunc("POST /{repo}/issues", s.action(issueCreateBack, s.issueCreate))
+		mux.HandleFunc("POST /{repo}/issues/{n}/comments", s.action(issueHrefFromPath, s.issueComment))
+		mux.HandleFunc("POST /{repo}/issues/{n}/close", s.action(issueHrefFromPath, s.issueClose))
+		mux.HandleFunc("POST /{repo}/issues/{n}/reopen", s.action(issueHrefFromPath, s.issueReopen))
 	}
 	if s.cfg.IssueForm != nil {
 		mux.HandleFunc("GET /{repo}/issues/submitted", s.issueSubmittedPage)
@@ -286,12 +286,12 @@ func (s *Server) routes() *http.ServeMux {
 		mux.HandleFunc("GET /{repo}/actions/runs/{id}/job/{job}", s.page(s.job))
 		mux.HandleFunc("GET /{repo}/actions/runs/{id}/job/{job}/raw", s.rawLog)
 		mux.HandleFunc("GET /{repo}/actions/runs/{id}/job/{job}/stream", s.logStream)
-		mux.HandleFunc("POST /{repo}/actions/runs/{id}/cancel", s.ciAction(s.runCancel))
-		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun", s.ciAction(s.runRerun(false)))
-		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun-failed", s.ciAction(s.runRerun(true)))
+		mux.HandleFunc("POST /{repo}/actions/runs/{id}/cancel", s.action(actionsBack, s.runCancel))
+		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun", s.action(actionsBack, s.runRerun(false)))
+		mux.HandleFunc("POST /{repo}/actions/runs/{id}/rerun-failed", s.action(actionsBack, s.runRerun(true)))
 		if s.cfg.Artifacts != nil {
 			mux.HandleFunc("GET /{repo}/actions/runs/{id}/artifacts/{artifact}", s.artifactDownload)
-			mux.HandleFunc("POST /{repo}/actions/runs/{id}/artifacts/{artifact}/delete", s.ciAction(s.artifactDelete))
+			mux.HandleFunc("POST /{repo}/actions/runs/{id}/artifacts/{artifact}/delete", s.action(actionsBack, s.artifactDelete))
 		}
 	}
 	mux.HandleFunc(catchAll, s.page(s.notFound))

@@ -266,15 +266,15 @@ func TestAutoMergeHandlers(t *testing.T) {
 		Return(domain.MergeRequest{}, nil).Once()
 	svc.EXPECT().CancelAutoMerge(mock.Anything, mock.Anything, name, int64(3)).Return(domain.MergeRequest{}, nil).Once()
 	s := &Server{cfg: Config{MergeRequests: svc}}
-	to, _, err := s.mrAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge", "mode=squash&head_id="+head.String()))
+	to, err := s.mrAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge", "mode=squash&head_id="+head.String()))
 	require.NoError(t, err)
-	assert.Equal(t, mrHref("demo", 3), to)
-	to, _, err = s.mrCancelAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge/cancel", ""))
+	assert.Equal(t, mrHref("demo", 3), to.Redirect)
+	to, err = s.mrCancelAutoMerge(ctx, autoMergeRequest("/demo/merge-requests/3/auto-merge/cancel", ""))
 	require.NoError(t, err)
-	assert.Equal(t, mrHref("demo", 3), to)
+	assert.Equal(t, mrHref("demo", 3), to.Redirect)
 
 	// A bad mode is refused before the service.
-	_, _, err = s.mrAutoMerge(ctx, autoMergeRequest("/x", "mode=rebase"))
+	_, err = s.mrAutoMerge(ctx, autoMergeRequest("/x", "mode=rebase"))
 	var re *rerender
 	require.ErrorAs(t, err, &re)
 	assert.Equal(t, http.StatusBadRequest, re.status)
@@ -286,10 +286,10 @@ func TestAutoMergeHandlers(t *testing.T) {
 	svc2.EXPECT().CancelAutoMerge(mock.Anything, mock.Anything, name, int64(3)).
 		Return(domain.MergeRequest{}, domain.ErrNotFound).Once()
 	s2 := &Server{cfg: Config{MergeRequests: svc2}}
-	_, _, err = s2.mrAutoMerge(ctx, autoMergeRequest("/x", "mode=squash&head_id="+head.String()))
+	_, err = s2.mrAutoMerge(ctx, autoMergeRequest("/x", "mode=squash&head_id="+head.String()))
 	require.ErrorAs(t, err, &re)
 	assert.Equal(t, http.StatusConflict, re.status)
-	_, _, err = s2.mrCancelAutoMerge(ctx, autoMergeRequest("/x", ""))
+	_, err = s2.mrCancelAutoMerge(ctx, autoMergeRequest("/x", ""))
 	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
@@ -327,9 +327,9 @@ func TestMergeIgnoreChecks(t *testing.T) {
 			body += "&ignore_checks=on"
 		}
 		s := &Server{cfg: Config{MergeRequests: svc}}
-		to, _, err := s.mrMerge(context.Background(), autoMergeRequest("/demo/merge-requests/3/merge", body))
+		to, err := s.mrMerge(context.Background(), autoMergeRequest("/demo/merge-requests/3/merge", body))
 		require.NoError(t, err)
-		assert.Equal(t, mrHref("demo", 3), to)
+		assert.Equal(t, mrHref("demo", 3), to.Redirect)
 	}
 }
 

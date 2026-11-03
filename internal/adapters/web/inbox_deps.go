@@ -211,33 +211,30 @@ func depsRefs(r *http.Request) ([]domain.DepRef, error) {
 }
 
 // depsAction is POST /-/inbox/deps/<repo>/open, ignore or snooze.
-func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request) (string, string, error) {
-	return func(ctx context.Context, r *http.Request) (string, string, error) {
-		back := inboxHref("deps", 0)
-		if sort := depsSortParam(r.URL.Query().Get("sort")); sort != "" {
-			back += "&sort=" + sort
-		}
+func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request) (ActionResult, error) {
+	return func(ctx context.Context, r *http.Request) (ActionResult, error) {
+		back := depsBack(r)
 		if !SignedIn(ctx) {
-			return "", back, errNotFound
+			return ActionResult{}, errNotFound
 		}
 		name, err := domain.ParseRepoName(r.PathValue("repo"))
 		if err != nil {
-			return "", back, err
+			return ActionResult{}, err
 		}
 		if op == depsSnooze {
 			_, err = s.cfg.Deps.Snooze(ctx, principal(ctx), name)
-			return back, back, err
+			return ActionResult{Redirect: back}, err
 		}
 		refs, err := depsRefs(r)
 		if err != nil {
-			return "", back, err
+			return ActionResult{}, err
 		}
 		if op == depsOpen {
 			_, err = s.cfg.Deps.Open(ctx, principal(ctx), name, domain.DepBatchKey(r.FormValue("batch")), refs)
 		} else {
 			_, err = s.cfg.Deps.Ignore(ctx, principal(ctx), name, domain.DepBatchKey(r.FormValue("batch")), refs)
 		}
-		return back, back, err
+		return ActionResult{Redirect: back}, err
 	}
 }
 
@@ -245,4 +242,12 @@ func (s *Server) depsAction(op depsOp) func(ctx context.Context, r *http.Request
 func depsErrorTail(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+func depsBack(r *http.Request) string {
+	back := inboxHref("deps", 0)
+	if sort := depsSortParam(r.URL.Query().Get("sort")); sort != "" {
+		back += "&sort=" + sort
+	}
+	return back
 }

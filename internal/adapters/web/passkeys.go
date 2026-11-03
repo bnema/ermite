@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/a-h/templ"
 	"bnema.dev/zerowrap"
+	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
@@ -51,7 +51,7 @@ func (s *Server) passkeyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+passkeysPath, s.page(s.passkeysPage))
 	mux.HandleFunc("POST "+passkeysPath+"/register/begin", s.passkeyRegisterBegin)
 	mux.HandleFunc("POST "+passkeysPath+"/register/finish", s.passkeyRegisterFinish)
-	mux.HandleFunc("POST "+passkeysPath+"/{id}/remove", s.passkeyRemove)
+	mux.HandleFunc("POST "+passkeysPath+"/{id}/remove", s.action(func(*http.Request) string { return passkeysPath }, s.passkeyRemove))
 }
 
 // isPasskeyLoginPath tells whether u is exactly one of the two endpoints an
@@ -313,17 +313,13 @@ func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 // passkeyRemove is POST /-/passkeys/{id}/remove: it removes the passkey, which
 // signs every browser out, this one included: the answer sends it to the
 // sign-in page.
-func (s *Server) passkeyRemove(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
-	defer cancel()
+func (s *Server) passkeyRemove(ctx context.Context, r *http.Request) (ActionResult, error) {
 	id, err := base64.RawURLEncoding.DecodeString(r.PathValue("id"))
 	if err != nil || len(id) == 0 {
-		s.actionFailed(ctx, w, r, errNotFound, passkeysPath)
-		return
+		return ActionResult{}, errNotFound
 	}
 	if err := s.cfg.Passkeys.Remove(ctx, principal(ctx), id); err != nil {
-		s.actionFailed(ctx, w, r, err, passkeysPath)
-		return
+		return ActionResult{}, err
 	}
-	seeOther(w, r, passkeyLoginPath)
+	return ActionResult{Redirect: passkeyLoginPath}, nil
 }

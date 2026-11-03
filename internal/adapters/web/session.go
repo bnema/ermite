@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a-h/templ"
 	"bnema.dev/zerowrap"
+	"github.com/a-h/templ"
 
 	"bnema.dev/ermite/internal/clientlimit"
 	"bnema.dev/ermite/internal/domain"
@@ -338,10 +338,10 @@ func (s *Server) loginRejectedPage() templ.Component {
 
 // denyMergeGate keeps gate refusals visible to the enhanced merge form.
 func (s *Server) denyMergeGate(w http.ResponseWriter, r *http.Request, message string) {
-	if !isHXMerge(r) {
+	if !isHX(r) {
 		denyForbidden(w)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	s.write(r.Context(), w, r, http.StatusForbidden, MRActionStatus(message, strings.TrimSuffix(r.URL.Path, "/merge")))
+	s.write(r.Context(), w, r, http.StatusForbidden, ActionStatus(message, strings.TrimSuffix(r.URL.Path, "/merge")))
 }

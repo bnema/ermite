@@ -50,42 +50,6 @@ func seeOther(w http.ResponseWriter, r *http.Request, to string) {
 	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
-// mrAction wraps a POST handler: it bounds the use case calls, reads the form
-// and maps the error of the use case to a page.
-func (s *Server) mrAction(h func(ctx context.Context, r *http.Request) (to string, back string, err error)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
-		defer cancel()
-		if !s.form(w, r) {
-			return
-		}
-		to, back, err := h(ctx, r)
-		var re *rerender
-		if errors.As(err, &re) && s.rerenderMR(ctx, w, r, re) {
-			return
-		}
-		if err != nil {
-			s.actionFailed(ctx, w, r, err, back)
-			return
-		}
-		if isHXMerge(r) {
-			c, _, err := s.mrPageView(ctx, r, false, true)
-			if err != nil {
-				id := requestID()
-				log := zerowrap.FromCtx(ctx)
-				log.Error().Err(err).Str("request_id", id).Msg("web merged state failed")
-				w.Header().Set("Cache-Control", "no-store")
-				s.write(ctx, w, r, http.StatusOK, MRActionStatus("merged, but the updated page could not be loaded. reload to see the result. reference: "+id, back))
-				return
-			}
-			w.Header().Set("Cache-Control", "no-store")
-			s.write(ctx, w, r, http.StatusOK, c)
-			return
-		}
-		seeOther(w, r, to)
-	}
-}
-
 // rerender is the error of a merge the use case refused for a reason the
 // owner reads on the page of the request: the page is shown again, with the
 // status, and the reason in its merge box. Any other error keeps actionFailed.
@@ -114,7 +78,7 @@ func mergeErrorOf(ctx context.Context) string {
 // It reports false when the page cannot be built; the caller then answers as
 // for any refused action.
 func (s *Server) rerenderMR(ctx context.Context, w http.ResponseWriter, r *http.Request, re *rerender) bool {
-	c, _, err := s.mrPageView(withMergeError(ctx, re.msg), r, false, isHXMerge(r))
+	c, _, err := s.mrPageView(withMergeError(ctx, re.msg), r, false, isHX(r))
 	if err != nil {
 		return false
 	}
@@ -134,8 +98,8 @@ func (s *Server) actionFailed(ctx context.Context, w http.ResponseWriter, r *htt
 		// The browser is gone.
 	case errors.Is(err, domain.ErrNotFound):
 		w.Header().Set("Cache-Control", "no-store")
-		if isHXMerge(r) {
-			s.write(ctx, w, r, http.StatusNotFound, MRActionStatus("the merge request was not found. reload to check its state.", back))
+		if isHX(r) {
+			s.write(ctx, w, r, http.StatusNotFound, ActionStatus("the merge request was not found. reload to check its state.", back))
 			return
 		}
 		s.write(ctx, w, r, http.StatusNotFound, s.notFoundPage())
@@ -161,8 +125,8 @@ func (s *Server) internalFailure(ctx context.Context, w http.ResponseWriter, r *
 	log := zerowrap.FromCtx(ctx)
 	log.Error().Err(err).Str("request_id", id).Str("path", logPath(r.URL.Path)).Msg("web action failed")
 	w.Header().Set("Cache-Control", "no-store")
-	if isHXMerge(r) {
-		s.write(ctx, w, r, http.StatusInternalServerError, MRActionStatus("the merge could not be completed. reload to check its state. reference: "+id, strings.TrimSuffix(r.URL.Path, "/merge")))
+	if isHX(r) {
+		s.write(ctx, w, r, http.StatusInternalServerError, ActionStatus("the merge could not be completed. reload to check its state. reference: "+id, strings.TrimSuffix(r.URL.Path, "/merge")))
 		return
 	}
 	s.write(ctx, w, r, http.StatusInternalServerError, s.errorPage(id))
@@ -183,9 +147,9 @@ func (s *Server) reject(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	if back == "" {
 		back = "/"
 	}
-	if isHXMerge(r) {
+	if isHX(r) {
 		w.Header().Set("Cache-Control", "no-store")
-		s.write(ctx, w, r, status, MRActionStatus(line, back))
+		s.write(ctx, w, r, status, ActionStatus(line, back))
 		return
 	}
 	l := s.stateLayout(title, []Crumb{{Label: title, Current: true}})
@@ -201,22 +165,21 @@ func (s *Server) reject(ctx context.Context, w http.ResponseWriter, r *http.Requ
 func number(r *http.Request) (int64, error) { return mrNumber(r) }
 
 // mrCreate is POST /<repo>/merge-requests: it opens a merge request.
-func (s *Server) mrCreate(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrCreate(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	source := r.PostFormValue("source")
-	back := repoHref(repo, "compare", source)
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	mr, err := s.cfg.MergeRequests.Create(ctx, principal(ctx), name, ports.CreateMergeRequestParams{
 		Title: r.PostFormValue("title"), Description: normalizeNewlines(r.PostFormValue("description")),
 		Source: source, Target: r.PostFormValue("target"),
 	})
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return mrHref(repo, mr.Number), back, nil
+	return ActionResult{Redirect: mrHref(repo, mr.Number)}, nil
 }
 
 // formError is a form the server refuses before asking a use case: it matches
@@ -229,18 +192,18 @@ func (formError) Unwrap() error { return domain.ErrInvalid }
 
 // mrComment is POST /<repo>/merge-requests/<n>/comments: a general comment, or
 // one on a line (path, line and side).
-func (s *Server) mrComment(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrComment(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := mrHref(repo, n)
 	params := ports.AddCommentParams{Text: normalizeNewlines(r.PostFormValue("text")), Path: r.PostFormValue("path")}
 	if params.Path != "" || r.PostFormValue("line") != "" || r.PostFormValue("side") != "" {
 		line, err := strconv.ParseInt(r.PostFormValue("line"), 10, 32)
 		if err != nil {
-			return "", back, formError("line is not a number")
+			return ActionResult{}, formError("line is not a number")
 		}
 		params.Line = int(line)
 		switch r.PostFormValue("side") {
@@ -249,55 +212,55 @@ func (s *Server) mrComment(ctx context.Context, r *http.Request) (string, string
 		case "old":
 			params.Side = domain.SideOld
 		default:
-			return "", back, formError("side must be new or old")
+			return ActionResult{}, formError("side must be new or old")
 		}
 	}
 	if raw := r.PostFormValue("reply_to"); raw != "" {
 		params.ReplyTo = commentID(raw)
 		if params.ReplyTo == 0 {
-			return "", back, formError("reply_to is not a note id")
+			return ActionResult{}, formError("reply_to is not a note id")
 		}
 	}
 	if raw := r.PostFormValue("start_line"); raw != "" {
 		v, e := strconv.ParseInt(raw, 10, 32)
 		if e != nil {
-			return "", back, formError("start_line is not a number")
+			return ActionResult{}, formError("start_line is not a number")
 		}
 		params.StartLine = int(v)
 	}
 	params.Verdict, err = domain.ParseVerdict(r.PostFormValue("verdict"))
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	back = withFrom(back, formFrom(r))
 	c, err := s.cfg.MergeRequests.AddComment(ctx, principal(ctx), name, n, params)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return back + "#c" + strconv.FormatInt(c.ID, 10), back, nil
+	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, nil
 }
 
 // mrResolve is POST /<repo>/merge-requests/<n>/comments/<id>/resolve.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter reads two form fields into a use case call; the state of the comment is decided by the use case
-func (s *Server) mrResolve(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrResolve(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := mrHref(repo, n)
 	resolved, err := formBool(r.PostFormValue("resolved"))
 	if err != nil {
-		return "", back, formError("resolved: " + err.Error())
+		return ActionResult{}, formError("resolved: " + err.Error())
 	}
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	// An id this server never issued is 0: the use case answers not found,
 	// after the repository and the scope were checked, as for any unknown
@@ -305,9 +268,9 @@ func (s *Server) mrResolve(ctx context.Context, r *http.Request) (string, string
 	back = withFrom(back, formFrom(r))
 	c, err := s.cfg.MergeRequests.ResolveComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")), resolved)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return back + "#c" + strconv.FormatInt(c.ID, 10), back, nil
+	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, nil
 }
 
 // commentID parses the id of a comment in a path: a positive decimal number,
@@ -335,51 +298,51 @@ func headID(s string) (domain.ObjectID, error) {
 }
 
 // mrClose is POST /<repo>/merge-requests/<n>/close.
-func (s *Server) mrClose(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrClose(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := mrHref(repo, n)
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	if _, err := s.cfg.MergeRequests.Close(ctx, principal(ctx), name, n); err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return back, back, nil
+	return ActionResult{Redirect: back}, nil
 }
 
 // mrReady is POST /<repo>/merge-requests/<n>/ready: the draft prefix leaves
 // the title.
-func (s *Server) mrReady(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrReady(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := mrHref(repo, n)
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	if _, err := s.cfg.MergeRequests.MarkReady(ctx, principal(ctx), name, n); err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return back, back, nil
+	return ActionResult{Redirect: back}, nil
 }
 
 // mrMerge is POST /<repo>/merge-requests/<n>/merge. The form carries the mode,
 // the head the owner was shown (head_id): the server merges only if the
 // branch still points to it, and delete_branch when the owner asked to delete
 // the source branch after the merge.
-func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrMerge(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := mrHref(repo, n)
 	var mode domain.MergeMode
@@ -392,15 +355,15 @@ func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, 
 		mode = domain.MergeModeMerge
 	default:
 		err := formError("mode must be fast-forward, squash or merge")
-		return "", back, &rerender{status: http.StatusBadRequest, msg: err.Error(), err: err}
+		return ActionResult{}, &rerender{status: http.StatusBadRequest, msg: err.Error(), err: err}
 	}
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	head, err := headID(r.PostFormValue("head_id"))
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	res, err := s.cfg.MergeRequests.Merge(ctx, principal(ctx), name, n, ports.MergeParams{
 		Mode: mode, HeadID: head, DeleteSource: r.PostFormValue("delete_branch") == "1",
@@ -408,25 +371,35 @@ func (s *Server) mrMerge(ctx context.Context, r *http.Request) (string, string, 
 	})
 	switch {
 	case errors.Is(err, domain.ErrPreconditionFailed), errors.Is(err, domain.ErrConflict):
-		return "", back, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
+		return ActionResult{}, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
 	case err != nil:
-		return "", back, err
+		return ActionResult{}, err
 	}
+	result := ActionResult{Redirect: back}
 	if res.SourceDeleted {
-		// The deletion follows the answer: the page says it is being done.
-		return back + "?deleting=1", back, nil
+		result.Redirect += "?deleting=1"
 	}
-	return back, back, nil
+	if isHX(r) {
+		c, _, err := s.mrPageView(ctx, r, false, true)
+		if err != nil {
+			id := requestID()
+			log := zerowrap.FromCtx(ctx)
+			log.Error().Err(err).Str("request_id", id).Msg("web merged state failed")
+			c = ActionStatus("merged, but the updated page could not be loaded. reload to see the result. reference: "+id, back)
+		}
+		result.Fragment = c
+	}
+	return result, nil
 }
 
 // mrAutoMerge is POST /<repo>/merge-requests/<n>/auto-merge: the form of the
 // merge (mode, head_id) asks to merge once the checks pass. The server records
 // refuses to enable when the source branch is no longer at head_id.
-func (s *Server) mrAutoMerge(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrAutoMerge(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := mrHref(repo, n)
 	var mode domain.MergeMode
@@ -439,69 +412,69 @@ func (s *Server) mrAutoMerge(ctx context.Context, r *http.Request) (string, stri
 		mode = domain.MergeModeMerge
 	default:
 		err := formError("mode must be fast-forward, squash or merge")
-		return "", back, &rerender{status: http.StatusBadRequest, msg: err.Error(), err: err}
+		return ActionResult{}, &rerender{status: http.StatusBadRequest, msg: err.Error(), err: err}
 	}
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	head, err := headID(r.PostFormValue("head_id"))
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	_, err = s.cfg.MergeRequests.EnableAutoMerge(ctx, principal(ctx), name, n, ports.EnableAutoMergeParams{Mode: mode, HeadID: head})
 	switch {
 	case errors.Is(err, domain.ErrPreconditionFailed), errors.Is(err, domain.ErrConflict):
-		return "", back, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
+		return ActionResult{}, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
 	case err != nil:
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return back, back, nil
+	return ActionResult{Redirect: back}, nil
 }
 
 // mrCancelAutoMerge is POST /<repo>/merge-requests/<n>/auto-merge/cancel.
-func (s *Server) mrCancelAutoMerge(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrCancelAutoMerge(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := mrHref(repo, n)
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	_, err = s.cfg.MergeRequests.CancelAutoMerge(ctx, principal(ctx), name, n)
 	switch {
 	case errors.Is(err, domain.ErrPreconditionFailed), errors.Is(err, domain.ErrConflict):
-		return "", back, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
+		return ActionResult{}, &rerender{status: http.StatusConflict, msg: rule(err.Error(), "the merge request is not in a state that allows this."), err: err}
 	case err != nil:
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return back, back, nil
+	return ActionResult{Redirect: back}, nil
 }
 
 // mrRead is POST /<repo>/merge-requests/<n>/read: the owner marks the head
 // they were shown as read. Reading a page never does it (see the top of mr.go).
-func (s *Server) mrRead(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrRead(ctx context.Context, r *http.Request) (ActionResult, error) {
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := mrHref(repo, n)
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	head, err := headID(r.PostFormValue("head_id"))
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	if _, err := s.cfg.MergeRequests.MarkRead(ctx, principal(ctx), name, n, head); err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
-	return back, back, nil
+	return ActionResult{Redirect: back}, nil
 }
 
 // formBool reads the "true" or "false" a form field carries.
@@ -522,36 +495,48 @@ func normalizeNewlines(s string) string {
 }
 
 // mrEditComment passes source text to the author-checked use case.
-func (s *Server) mrEditComment(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrEditComment(ctx context.Context, r *http.Request) (ActionResult, error) {
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := withFrom(mrHref(r.PathValue("repo"), n), formFrom(r))
 	name, err := domain.ParseRepoName(r.PathValue("repo"))
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	c, err := s.cfg.MergeRequests.EditComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")), normalizeNewlines(r.PostFormValue("text")))
-	return back + "#c" + strconv.FormatInt(c.ID, 10), back, err
+	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, err
 }
 
 // mrDeleteComment passes the note id to the author-checked use case.
-func (s *Server) mrDeleteComment(ctx context.Context, r *http.Request) (string, string, error) {
+func (s *Server) mrDeleteComment(ctx context.Context, r *http.Request) (ActionResult, error) {
 	n, err := number(r)
 	if err != nil {
-		return "", "", err
+		return ActionResult{}, err
 	}
 	back := withFrom(mrHref(r.PathValue("repo"), n), formFrom(r))
 	name, err := domain.ParseRepoName(r.PathValue("repo"))
 	if err != nil {
-		return "", back, err
+		return ActionResult{}, err
 	}
 	c, err := s.cfg.MergeRequests.DeleteComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")))
-	return back + "#c" + strconv.FormatInt(c.ID, 10), back, err
+	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, err
 }
 
-// isHXMerge limits fragment responses to the progressively enhanced merge form.
-func isHXMerge(r *http.Request) bool {
-	return r.Header.Get("HX-Request") == "true" && strings.HasSuffix(r.URL.Path, "/merge")
+func mrHrefFromPath(r *http.Request) string {
+	n, err := number(r)
+	if err != nil {
+		return ""
+	}
+	back := mrHref(r.PathValue("repo"), n)
+	switch {
+	case strings.Contains(r.URL.Path, "/comments"):
+		back = withFrom(back, formFrom(r))
+	}
+	return back
+}
+
+func mrCreateBack(r *http.Request) string {
+	return repoHref(r.PathValue("repo"), "compare", r.PostFormValue("source"))
 }
