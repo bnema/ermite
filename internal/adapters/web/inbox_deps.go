@@ -273,7 +273,7 @@ func (s *Server) depsResult(ctx context.Context, r *http.Request, op depsOp, bef
 	}
 	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
 	p := s.inboxPage(ctx, ov, ports.InboxJournal{}, "deps", 0, depsSortParam(r.URL.Query().Get("sort")))
 	repo := r.PathValue("repo")

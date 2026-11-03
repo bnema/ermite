@@ -54,11 +54,11 @@ func (s *Server) issueComment(ctx context.Context, r *http.Request) (ActionResul
 	}
 	d, err := s.issueRepo(ctx, repo)
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, back, err)
 	}
 	detail, err := s.cfg.Issues.Get(ctx, principal(ctx), name, n)
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, back, err)
 	}
 	views := s.issueCommentViews(ctx, d, []domain.IssueComment{c})
 	result.Fragment = issueCommentCreated(views[0], len(detail.Comments), CommentForm{ID: "cf-general", Action: issueHref(repo, n, "comments"), Title: "comment on the issue", Issue: true})
@@ -96,7 +96,7 @@ func (s *Server) issueTransition(ctx context.Context, r *http.Request, do func(c
 	}
 	d, err := s.issueRepo(ctx, repo)
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, back, err)
 	}
 	result.Fragment = issueStateFragment(IssuePage{State: string(i.State), Transition: issueTransitionAction(repo, i, d.repo.Archived)})
 	return result, nil

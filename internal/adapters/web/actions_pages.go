@@ -538,11 +538,11 @@ func (s *Server) runActionResult(ctx context.Context, r *http.Request, id int64)
 	}
 	d, err := s.loadRepo(ctx, r.PathValue("repo"))
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
 	p, err := s.runPage(ctx, d, id, 0)
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
 	result.Fragment = runActionFragment(p)
 	return result, nil

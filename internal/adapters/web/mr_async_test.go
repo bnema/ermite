@@ -102,7 +102,7 @@ func TestAsyncMergeOtherFailures(t *testing.T) {
 	}{
 		{"forbidden", domain.ErrForbidden, false, http.StatusForbidden, "the session is not allowed"},
 		{"internal", errors.New("private backend detail"), false, http.StatusInternalServerError, "reload to check its state"},
-		{"post-merge read", nil, true, http.StatusOK, "merged, but the updated page could not be loaded"},
+		{"post-merge read", nil, true, http.StatusOK, "saved, but the page could not refresh"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s, svc := asyncMergeServer(t, domain.MRStateMerged)

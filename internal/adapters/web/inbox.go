@@ -586,7 +586,7 @@ func (s *Server) pendingResult(ctx context.Context, r *http.Request) (ActionResu
 	}
 	ov, err := s.cfg.Inbox.Overview(ctx, principal(ctx))
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, result.Redirect, err)
 	}
 	result.Fragment = inboxModerated(pendingRowID(r.PathValue("repo"), r.PathValue("id")), ov.Counts.Pending)
 	return result, nil

@@ -100,7 +100,7 @@ func (s *Server) actionFailed(ctx context.Context, w http.ResponseWriter, r *htt
 	case errors.Is(err, domain.ErrNotFound):
 		w.Header().Set("Cache-Control", "no-store")
 		if isHX(r) {
-			s.write(ctx, w, r, http.StatusNotFound, ActionStatus("the merge request was not found. reload to check its state.", back))
+			s.write(ctx, w, r, http.StatusNotFound, ActionStatus("the requested item was not found. reload to check its state.", back))
 			return
 		}
 		s.write(ctx, w, r, http.StatusNotFound, s.notFoundPage())
@@ -115,19 +115,19 @@ func (s *Server) actionFailed(ctx context.Context, w http.ResponseWriter, r *htt
 	case domain.IsInvalid(err):
 		s.reject(ctx, w, r, http.StatusBadRequest, "not accepted", rule(msg, "the server refused what was sent."), back)
 	default:
-		s.internalFailure(ctx, w, r, err)
+		s.internalFailure(ctx, w, r, err, back)
 	}
 }
 
 // internalFailure answers a failure of an action that is not the owner's to
 // fix: the 500 page with an id, and the cause in the log.
-func (s *Server) internalFailure(ctx context.Context, w http.ResponseWriter, r *http.Request, err error) {
+func (s *Server) internalFailure(ctx context.Context, w http.ResponseWriter, r *http.Request, err error, back string) {
 	id := requestID()
 	log := zerowrap.FromCtx(ctx)
 	log.Error().Err(err).Str("request_id", id).Str("path", logPath(r.URL.Path)).Msg("web action failed")
 	w.Header().Set("Cache-Control", "no-store")
 	if isHX(r) {
-		s.write(ctx, w, r, http.StatusInternalServerError, ActionStatus("the merge could not be completed. reload to check its state. reference: "+id, strings.TrimSuffix(r.URL.Path, "/merge")))
+		s.write(ctx, w, r, http.StatusInternalServerError, ActionStatus("the action could not be completed. reload to check its state. reference: "+id, back))
 		return
 	}
 	s.write(ctx, w, r, http.StatusInternalServerError, s.errorPage(id))
@@ -561,15 +561,9 @@ func (s *Server) mrStateResult(ctx context.Context, r *http.Request, redirect st
 	}
 	c, _, err := s.mrPageView(ctx, r, false, true)
 	if err != nil {
-		id := requestID()
-		log := zerowrap.FromCtx(ctx)
-		log.Error().Err(err).Str("request_id", id).Msg("web updated state failed")
-		message := "updated, but the updated page could not be loaded. reload to see the result. reference: "
-		if strings.HasSuffix(r.URL.Path, "/merge") {
-			message = "merged, but the updated page could not be loaded. reload to see the result. reference: "
-		}
-		c = ActionStatus(message+id, mrHrefFromPath(r))
+		return s.actionRefreshFailed(ctx, r, result, mrHrefFromPath(r), err)
 	}
+
 	result.Fragment = c
 	return result, nil
 }
@@ -584,15 +578,15 @@ func (s *Server) mrCommentResult(ctx context.Context, r *http.Request, changed d
 	}
 	name, err := domain.ParseRepoName(r.PathValue("repo"))
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, back, err)
 	}
 	n, err := number(r)
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, back, err)
 	}
 	detail, err := s.cfg.MergeRequests.Get(ctx, principal(ctx), name, n, ports.GetMergeRequestOptions{Files: &ports.FileWindow{From: formFrom(r), To: formFrom(r) + mrWindow}, DiffOnly: true})
 	if err != nil {
-		return ActionResult{}, err
+		return s.actionRefreshFailed(ctx, r, result, back, err)
 	}
 	p := MRPage{NoteAuthor: domain.AuthorName(principal(ctx))}
 	s.placeComments(ctx, &p, name.String(), n, detail.Comments, detail.MergeRequest.HeadID.String(), false, true, nil)

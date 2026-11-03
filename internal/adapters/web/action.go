@@ -3,9 +3,11 @@
 package web
 
 import (
+	"bnema.dev/zerowrap"
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/a-h/templ"
 )
@@ -50,3 +52,42 @@ func (s *Server) action(back func(*http.Request) string, h ActionFunc) http.Hand
 }
 
 func isHX(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }
+
+// actionRefreshFailed reports a presentation failure without denying a committed write.
+func (s *Server) actionRefreshFailed(ctx context.Context, r *http.Request, result ActionResult, back string, err error) (ActionResult, error) {
+	id := requestID()
+	log := zerowrap.FromCtx(ctx)
+	log.Error().Err(err).Str("request_id", id).Str("path", logPath(r.URL.Path)).Msg("web action refresh failed")
+	result.Fragment = ActionStatus("saved, but the page could not refresh. reload to see the result. reference: "+id, back)
+	return result, nil
+}
+
+// actionBack also works at the session gate, before routing binds path values.
+func actionBack(r *http.Request) string {
+	path := r.URL.Path
+	if strings.HasPrefix(path, inboxPath+"/pending/") {
+		return pendingBack(r)
+	}
+	if strings.HasPrefix(path, inboxPath+"/deps/") {
+		return depsBack(r)
+	}
+	if strings.HasPrefix(path, passkeysPath+"/") {
+		return passkeysPath
+	}
+	for _, section := range []string{"/merge-requests", "/issues", "/actions/runs/"} {
+		if at := strings.Index(path, section); at > 0 {
+			tail := path[at+len(section):]
+			if section == "/actions/runs/" {
+				id, _, _ := strings.Cut(tail, "/")
+				return path[:at] + section + id
+			}
+			tail = strings.TrimPrefix(tail, "/")
+			n, _, _ := strings.Cut(tail, "/")
+			if n == "" {
+				return path[:at] + section
+			}
+			return path[:at] + section + "/" + n
+		}
+	}
+	return "/"
+}

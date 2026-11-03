@@ -158,7 +158,7 @@ func (s *Server) formFailed(ctx context.Context, w http.ResponseWriter, r *http.
 		s.refusal(ctx, w, r, http.StatusBadRequest, "not verified",
 			"The submission could not be verified. Reload the page and try again.", back)
 	default:
-		s.internalFailure(ctx, w, r, err)
+		s.internalFailure(ctx, w, r, err, back)
 	}
 }
 

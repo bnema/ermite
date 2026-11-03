@@ -336,12 +336,12 @@ func (s *Server) loginRejectedPage() templ.Component {
 		"this link has expired, was already used, or never existed.", "run `ermite web login` for a new one.")
 }
 
-// denyMergeGate keeps gate refusals visible to the enhanced merge form.
+// denyMergeGate keeps gate refusals visible to enhanced action forms.
 func (s *Server) denyMergeGate(w http.ResponseWriter, r *http.Request, message string) {
 	if !isHX(r) {
 		denyForbidden(w)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	s.write(r.Context(), w, r, http.StatusForbidden, ActionStatus(message, strings.TrimSuffix(r.URL.Path, "/merge")))
+	s.write(r.Context(), w, r, http.StatusForbidden, ActionStatus(message, actionBack(r)))
 }
