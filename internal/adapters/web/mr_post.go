@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -193,6 +194,12 @@ func (formError) Unwrap() error { return domain.ErrInvalid }
 // mrComment is POST /<repo>/merge-requests/<n>/comments: a general comment, or
 // one on a line (path, line and side).
 func (s *Server) mrComment(ctx context.Context, r *http.Request) (ActionResult, error) {
+	if isHX(r) {
+		if !commentThreadPattern.MatchString(r.PostFormValue("thread")) {
+			return ActionResult{}, formError("invalid comment thread")
+		}
+	}
+
 	repo := r.PathValue("repo")
 	n, err := number(r)
 	if err != nil {
@@ -232,6 +239,15 @@ func (s *Server) mrComment(ctx context.Context, r *http.Request) (ActionResult, 
 	if err != nil {
 		return ActionResult{}, err
 	}
+	if isHX(r) {
+		f := CommentForm{Path: params.Path}
+		if params.ReplyTo != 0 {
+			f.ReplyTo = strconv.FormatInt(params.ReplyTo, 10)
+		}
+		if strings.TrimSuffix(r.PostFormValue("thread"), "-s") != commentThread(f) {
+			return ActionResult{}, formError("invalid comment thread")
+		}
+	}
 	name, err := domain.ParseRepoName(repo)
 	if err != nil {
 		return ActionResult{}, err
@@ -241,7 +257,7 @@ func (s *Server) mrComment(ctx context.Context, r *http.Request) (ActionResult, 
 	if err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, nil
+	return s.mrCommentResult(ctx, r, c, back, "mrComment")
 }
 
 // mrResolve is POST /<repo>/merge-requests/<n>/comments/<id>/resolve.
@@ -270,7 +286,7 @@ func (s *Server) mrResolve(ctx context.Context, r *http.Request) (ActionResult, 
 	if err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, nil
+	return s.mrCommentResult(ctx, r, c, back, "mrResolve")
 }
 
 // commentID parses the id of a comment in a path: a positive decimal number,
@@ -496,7 +512,10 @@ func (s *Server) mrEditComment(ctx context.Context, r *http.Request) (ActionResu
 		return ActionResult{}, err
 	}
 	c, err := s.cfg.MergeRequests.EditComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")), normalizeNewlines(r.PostFormValue("text")))
-	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, err
+	if err != nil {
+		return ActionResult{}, err
+	}
+	return s.mrCommentResult(ctx, r, c, back, "mrEditComment")
 }
 
 // mrDeleteComment passes the note id to the author-checked use case.
@@ -511,7 +530,10 @@ func (s *Server) mrDeleteComment(ctx context.Context, r *http.Request) (ActionRe
 		return ActionResult{}, err
 	}
 	c, err := s.cfg.MergeRequests.DeleteComment(ctx, principal(ctx), name, n, commentID(r.PathValue("id")))
-	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, err
+	if err != nil {
+		return ActionResult{}, err
+	}
+	return s.mrCommentResult(ctx, r, c, back, "mrDeleteComment")
 }
 
 func mrHrefFromPath(r *http.Request) string {
@@ -549,5 +571,100 @@ func (s *Server) mrStateResult(ctx context.Context, r *http.Request, redirect st
 		c = ActionStatus(message+id, mrHrefFromPath(r))
 	}
 	result.Fragment = c
+	return result, nil
+}
+
+var commentThreadPattern = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
+
+// mrCommentResult reuses the page's comment presentation, not a second renderer.
+func (s *Server) mrCommentResult(ctx context.Context, r *http.Request, changed domain.Comment, back, op string) (ActionResult, error) {
+	result := ActionResult{Redirect: back + "#c" + strconv.FormatInt(changed.ID, 10)}
+	if !isHX(r) {
+		return result, nil
+	}
+	name, err := domain.ParseRepoName(r.PathValue("repo"))
+	if err != nil {
+		return ActionResult{}, err
+	}
+	n, err := number(r)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	detail, err := s.cfg.MergeRequests.Get(ctx, principal(ctx), name, n, ports.GetMergeRequestOptions{Files: &ports.FileWindow{From: formFrom(r), To: formFrom(r) + mrWindow}, DiffOnly: true})
+	if err != nil {
+		return ActionResult{}, err
+	}
+	p := MRPage{NoteAuthor: domain.AuthorName(principal(ctx))}
+	s.placeComments(ctx, &p, name.String(), n, detail.Comments, detail.MergeRequest.HeadID.String(), false, true, nil)
+	var find func([]CommentView) *CommentView
+	find = func(cs []CommentView) *CommentView {
+		for i := range cs {
+			if cs[i].ID == strconv.FormatInt(changed.ID, 10) {
+				return &cs[i]
+			}
+			if v := find(cs[i].Replies); v != nil {
+				return v
+			}
+		}
+		return nil
+	}
+	v := find(p.General)
+	if v == nil {
+		v = find(p.Loose)
+	}
+	line := changed.Path != ""
+	for _, c := range detail.Comments {
+		if c.ID == changed.ReplyTo && c.Path != "" {
+			line = true
+		}
+	}
+	if v == nil {
+		if op != "mrDeleteComment" {
+			result.Fragment = ActionStatus("saved, but the updated comment could not be loaded. reload to see the result.", back)
+			return result, nil
+		}
+		v = &CommentView{ID: strconv.FormatInt(changed.ID, 10)}
+	}
+	// Retain the current window in controls rebuilt by the fragment.
+	var window func(*CommentView)
+	window = func(v *CommentView) {
+		if v.Edit != nil {
+			v.Edit.From = formFrom(r)
+		}
+		if v.Delete != nil {
+			v.Delete.From = formFrom(r)
+		}
+		if v.Resolve != nil {
+			v.Resolve.From = formFrom(r)
+		}
+		if v.Reply != nil {
+			v.Reply.From = formFrom(r)
+		}
+		for i := range v.Replies {
+			window(&v.Replies[i])
+		}
+	}
+	window(v)
+	if op != "mrComment" {
+		// Deleted roots with replies/verdicts remain as tombstones, as on a reload.
+		remove := op == "mrDeleteComment" && len(v.Replies) == 0 && v.Verdict == ""
+		result.Fragment = mrCommentChanged(*v, p.NComments, p.NUnresolved, line, remove)
+		return result, nil
+	}
+	f := CommentForm{ID: "cf-general", Action: mrHref(name.String(), n, "comments"), Title: "comment on the merge request"}
+	if changed.ReplyTo != 0 {
+		f.ID = "reply-" + strconv.FormatInt(changed.ReplyTo, 10)
+		f.ReplyTo = strconv.FormatInt(changed.ReplyTo, 10)
+		f.Title = "Reply"
+		f.From = formFrom(r)
+	} else if changed.Path != "" {
+		f.ID = "cf-line"
+		f.Path = changed.Path
+	}
+	thread := strings.TrimSuffix(r.PostFormValue("thread"), "-s")
+	if thread != commentThread(f) {
+		return ActionResult{}, formError("invalid comment thread")
+	}
+	result.Fragment = mrCommentCreated(*v, thread, f, p.NComments, p.NUnresolved, line)
 	return result, nil
 }

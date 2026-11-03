@@ -1199,3 +1199,14 @@ func optionalLine(n int) string {
 	}
 	return itoa(n)
 }
+
+// commentThread names only containers owned by the comment UI.
+func commentThread(f CommentForm) string {
+	if f.ReplyTo != "" {
+		return "replies-" + f.ReplyTo
+	}
+	if f.Path != "" {
+		return "mr-line-thread"
+	}
+	return "mr-comment-thread"
+}

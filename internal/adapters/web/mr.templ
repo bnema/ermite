@@ -224,13 +224,23 @@ templ MergeRequest(l Layout, p MRPage) {
 			}
 		</div>
 		<div id="mr-comments">
-			<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(p.NUnresolved) } open / { itoa(p.NComments) }</span></h2>
+			<h2 class="rule-h" id="comments"><span>Comments</span><span class="count"><span id="mr-unresolved-count" class="count">{ itoa(p.NUnresolved) }</span> open / <span id="mr-comment-count" class="count">{ itoa(p.NComments) }</span></span></h2>
 			for _, c := range p.Loose {
 				@commentView(c, "")
 			}
-			@issueTimeline(p.Timeline)
+			<ol id="mr-comment-thread" class="timeline" aria-label="Conversation history">
+				for _, item := range p.Timeline {
+					<li>
+						if item.Comment != nil {
+							@commentView(*item.Comment, "")
+						} else if item.Event != nil {
+							@issueEventRow(*item.Event)
+						}
+					</li>
+				}
+			</ol>
 			if p.NComments == 0 {
-				<p class="dim">no comments yet.</p>
+				<p id="mr-no-comments" class="dim">no comments yet.</p>
 			}
 			if p.GeneralForm != nil {
 				@commentForm(*p.GeneralForm, "")
@@ -251,12 +261,18 @@ templ branchLink(name, href string) {
 // one when the reader asked for it. The diff is in the page twice (unified and
 // split); the suffix keeps the ids unique, the unified table having none.
 templ lineNotes(notes []CommentView, form *CommentForm, suffix string) {
-	for _, c := range notes {
-		@commentView(c, suffix)
-	}
-	if form != nil {
-		@commentForm(*form, suffix)
-	}
+	<div
+		if form != nil {
+			id={ "mr-line-thread" + suffix }
+		}
+	>
+		for _, c := range notes {
+			@commentView(c, suffix)
+		}
+		if form != nil {
+			@commentForm(*form, suffix)
+		}
+	</div>
 }
 
 // commentView is a note: a ruled block, under its line in the diff or in the
@@ -310,27 +326,43 @@ templ commentView(c CommentView, suffix string) {
 			<button type="button" class="btn" data-js data-quote={ c.Quote }>Quote</button>
 		}
 		if c.Edit != nil {
-			<details><summary>Edit</summary><form method="post" action={ templ.SafeURL(c.Edit.Action) }><input type="hidden" name="from" value={ itoa(c.Edit.From) }/><textarea data-md name="text" maxlength="8000" aria-label="Edit note">{ c.Edit.Text }</textarea><button class="btn" type="submit">Save</button></form></details>
+			<details>
+				<summary>Edit</summary>
+				@ActionForm(ActionProps{Action: c.Edit.Action, Class: "c-act"}) {
+					<input type="hidden" name="from" value={ itoa(c.Edit.From) }/>
+					<textarea data-md name="text" maxlength="8000" aria-label="Edit note">{ c.Edit.Text }</textarea>
+					<button class="btn" type="submit">Save</button>
+				}
+			</details>
 		}
 		if c.Delete != nil {
-			<details><summary>Delete</summary><form method="post" action={ templ.SafeURL(c.Delete.Action) }><input type="hidden" name="from" value={ itoa(c.Delete.From) }/><p>Delete this note?</p><button class="btn" type="submit">Confirm delete</button></form></details>
+			<details>
+				<summary>Delete</summary>
+				@ActionForm(ActionProps{Action: c.Delete.Action, Class: "c-act"}) {
+					<input type="hidden" name="from" value={ itoa(c.Delete.From) }/>
+					<p>Delete this note?</p>
+					<button class="btn" type="submit">Confirm delete</button>
+				}
+			</details>
 		}
-		for _, reply := range c.Replies {
-			@commentView(reply, suffix)
-		}
+		<div data-replies id={ "replies-" + c.ID + suffix }>
+			for _, reply := range c.Replies {
+				@commentView(reply, suffix)
+			}
+		</div>
 		if c.Reply != nil {
 			<details data-reply>
 				<summary>Reply</summary>@commentForm(*c.Reply, suffix)
 			</details>
 		}
 		if c.Resolve != nil {
-			<form class="c-act" method="post" action={ templ.SafeURL(c.Resolve.Action) }>
+			@ActionForm(ActionProps{Action: c.Resolve.Action, Class: "c-act"}) {
 				<input type="hidden" name="resolved" value={ boolText(c.Resolve.Value) }/>
 				if c.Resolve.From > 0 {
 					<input type="hidden" name="from" value={ itoa(c.Resolve.From) }/>
 				}
 				<button type="submit" class="btn">{ c.Resolve.Label }</button>
-			</form>
+			}
 		}
 	</div>
 }
@@ -344,44 +376,57 @@ func boolText(b bool) string {
 
 // commentForm writes a comment, general or on a line.
 templ commentForm(f CommentForm, suffix string) {
-	<form class="cform" method="post" action={ templ.SafeURL(f.Action) }>
-		<label for={ f.ID + suffix }>{ f.Title }</label>
-		<textarea
-			data-md
-			id={ f.ID + suffix }
-			name="text"
-			rows="3"
-			maxlength="8000"
-			if f.Issue {
-				required
-			}
-			placeholder="Markdown, 8000 characters at most"
-			if f.Focus {
-				autofocus
-			}
-		></textarea>
-		if f.Path != "" {
-			<input type="hidden" name="path" value={ f.Path }/>
-			<input type="hidden" name="line" value={ f.Line }/>
-			<input type="hidden" name="side" value={ f.Side }/>
-			<label>from line <input type="number" name="start_line" min="1" value={ f.StartLine }/></label>
-		}
-		if f.ReplyTo != "" {
-			<input type="hidden" name="reply_to" value={ f.ReplyTo }/>
-		}
-		if f.Path == "" && f.ReplyTo == "" && !f.Issue {
-			<fieldset><legend>Verdict</legend><label><input type="radio" name="verdict" value="" checked/>Note</label><label><input type="radio" name="verdict" value="approve"/>Approve</label><label><input type="radio" name="verdict" value="changes_requested"/>Request changes</label></fieldset>
-		}
-		if f.From > 0 {
-			<input type="hidden" name="from" value={ itoa(f.From) }/>
-		}
-		<div class="f-btns">
-			<button type="submit" class="btn primary">Comment</button>
-			if f.Cancel != "" {
-				<a class="btn" href={ templ.SafeURL(f.Cancel) }>Cancel</a>
+	if f.Issue {
+		<form class="cform" method="post" action={ templ.SafeURL(f.Action) }>
+			@commentFields(f, suffix)
+		</form>
+	} else {
+		<div id={ "form-" + f.ID + suffix }>
+			@ActionForm(ActionProps{Action: f.Action, Class: "cform"}) {
+				<input type="hidden" name="thread" value={ commentThread(f) + suffix }/>
+				@commentFields(f, suffix)
 			}
 		</div>
-	</form>
+	}
+}
+
+templ commentFields(f CommentForm, suffix string) {
+	<label for={ f.ID + suffix }>{ f.Title }</label>
+	<textarea
+		data-md
+		id={ f.ID + suffix }
+		name="text"
+		rows="3"
+		maxlength="8000"
+		if f.Issue {
+			required
+		}
+		placeholder="Markdown, 8000 characters at most"
+		if f.Focus {
+			autofocus
+		}
+	></textarea>
+	if f.Path != "" {
+		<input type="hidden" name="path" value={ f.Path }/>
+		<input type="hidden" name="line" value={ f.Line }/>
+		<input type="hidden" name="side" value={ f.Side }/>
+		<label>from line <input type="number" name="start_line" min="1" value={ f.StartLine }/></label>
+	}
+	if f.ReplyTo != "" {
+		<input type="hidden" name="reply_to" value={ f.ReplyTo }/>
+	}
+	if f.Path == "" && f.ReplyTo == "" && !f.Issue {
+		<fieldset><legend>Verdict</legend><label><input type="radio" name="verdict" value="" checked/>Note</label><label><input type="radio" name="verdict" value="approve"/>Approve</label><label><input type="radio" name="verdict" value="changes_requested"/>Request changes</label></fieldset>
+	}
+	if f.From > 0 {
+		<input type="hidden" name="from" value={ itoa(f.From) }/>
+	}
+	<div class="f-btns">
+		<button type="submit" class="btn primary">Comment</button>
+		if f.Cancel != "" {
+			<a class="btn" href={ templ.SafeURL(f.Cancel) }>Cancel</a>
+		}
+	</div>
 }
 
 templ mrFooter(p MRPage) {
@@ -832,4 +877,41 @@ templ mrActions(p MRPage, fragment bool) {
 			<p class="d-err" role="alert">{ p.MergeError }</p>
 		}
 	</div>
+}
+
+// mrCommentCreated appends without touching other drafts or the diff.
+templ mrCommentCreated(c CommentView, thread string, f CommentForm, n, unresolved int, line bool) {
+	@CountOOB("mr-comment-count", n)
+	@CountOOB("mr-unresolved-count", unresolved)
+	@RemoveEl("mr-no-comments")
+	for _, suffix := range []string{"", "-s"} {
+		if line || suffix == "" {
+			<hx-partial hx-target={ "#" + thread + suffix } hx-swap="beforeend">
+				if thread == "mr-comment-thread" {
+					<li>@commentView(c, suffix)</li>
+				} else {
+					@commentView(c, suffix)
+				}
+			</hx-partial>
+			if f.Path != "" {
+				@RemoveEl("form-" + f.ID + suffix)
+			} else {
+				<hx-partial hx-target={ "#form-" + f.ID + suffix } hx-swap="outerHTML">@commentForm(f, suffix)</hx-partial>
+			}
+		}
+	}
+}
+
+templ mrCommentChanged(c CommentView, n, unresolved int, line, remove bool) {
+	@CountOOB("mr-comment-count", n)
+	@CountOOB("mr-unresolved-count", unresolved)
+	for _, suffix := range []string{"", "-s"} {
+		if line || suffix == "" {
+			if remove {
+				@RemoveEl("c" + c.ID + suffix)
+			} else {
+				<hx-partial hx-target={ "#c" + c.ID + suffix } hx-swap="outerMorph">@commentView(c, suffix)</hx-partial>
+			}
+		}
+	}
 }
