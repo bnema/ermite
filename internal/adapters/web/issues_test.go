@@ -497,3 +497,88 @@ func TestIssueCommentsShareReferenceCache(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, 2, strings.Count(rec.Body.String(), `href="/proj/issues/7"`))
 }
+
+func TestIssueAsyncActions(t *testing.T) {
+	for _, op := range []string{"comments", "close", "reopen"} {
+		for _, hx := range []bool{false, true} {
+			t.Run(op+"/hx="+boolText(hx), func(t *testing.T) {
+				rig := newIssueRig(t, domain.IssuesOwner, false)
+				i := testIssue(t, 3, domain.IssueStateOpen, "a title", "")
+				text, err := domain.ParseIssueBody("hello & <script>unsafe</script>")
+				require.NoError(t, err)
+				c := domain.IssueComment{ID: 7, Text: text, Author: "owner"}
+				switch op {
+				case "comments":
+					rig.issues.EXPECT().AddComment(mock.Anything, mock.Anything, repoName(t, "proj"), int64(3), text.String()).Return(c, nil).Once()
+					if hx {
+						rig.issues.EXPECT().Get(mock.Anything, mock.Anything, repoName(t, "proj"), int64(3)).Return(ports.IssueDetail{Issue: i, Comments: []domain.IssueComment{c}}, nil).Once()
+					}
+				case "close":
+					i.State = domain.IssueStateClosed
+					rig.issues.EXPECT().Close(mock.Anything, mock.Anything, repoName(t, "proj"), int64(3)).Return(i, nil).Once()
+				case "reopen":
+					rig.issues.EXPECT().Reopen(mock.Anything, mock.Anything, repoName(t, "proj"), int64(3)).Return(i, nil).Once()
+				}
+				req := httptest.NewRequest(http.MethodPost, "/proj/issues/3/"+op, strings.NewReader(url.Values{"text": {text.String()}}.Encode()))
+				req.Header.Set("Origin", testPublicURL)
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+				if hx {
+					req.Header.Set("HX-Request", "true")
+				}
+				w := httptest.NewRecorder()
+				rig.srv.ServeHTTP(w, req)
+				if !hx {
+					assert.Equal(t, http.StatusSeeOther, w.Code)
+					to := "/proj/issues/3"
+					if op == "comments" {
+						to += "#c7"
+					}
+					assert.Equal(t, to, w.Header().Get("Location"))
+					return
+				}
+				assert.Equal(t, http.StatusOK, w.Code)
+				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+				assert.Empty(t, w.Header().Get("Location"))
+				body := w.Body.String()
+				assert.NotContains(t, body, "<html")
+				assert.Contains(t, body, `id="action-status"`)
+				if op == "comments" {
+					assert.Contains(t, body, `hx-target="#issue-timeline" hx-swap="beforeend"`)
+					assert.Contains(t, body, `id="c7"`)
+					assert.Contains(t, body, "hello &amp;")
+					assert.NotContains(t, body, "<script>")
+					assert.Contains(t, body, `id="issue-comment-count" class="count" hx-swap-oob="true">1</span>`)
+					assert.Contains(t, body, `hx-target="#form-cf-general" hx-swap="outerHTML"`)
+					assert.Contains(t, body, `hx-post="/proj/issues/3/comments"`)
+					assert.Contains(t, body, `></textarea>`)
+					assert.NotContains(t, body, `name="thread"`)
+				} else {
+					assert.Contains(t, body, `id="issue-state"`)
+					assert.Contains(t, body, `data-state="`+string(i.State)+`" hx-swap-oob="outerMorph"`)
+					assert.Contains(t, body, `id="issue-actions" hx-swap-oob="outerMorph"`)
+					next := "close"
+					if op == "close" {
+						next = "reopen"
+					}
+					assert.Contains(t, body, `hx-post="/proj/issues/3/`+next+`"`)
+					assert.NotContains(t, body, "textarea")
+				}
+			})
+		}
+	}
+}
+
+func TestIssueAsyncFailure(t *testing.T) {
+	rig := newIssueRig(t, domain.IssuesOwner, false)
+	rig.issues.EXPECT().Close(mock.Anything, mock.Anything, repoName(t, "proj"), int64(3)).Return(domain.Issue{}, domain.ErrNotFound).Once()
+	req := httptest.NewRequest(http.MethodPost, "/proj/issues/3/close", nil)
+	req.Header.Set("Origin", testPublicURL)
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: "tok"})
+	w := httptest.NewRecorder()
+	rig.srv.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), `id="action-status"`)
+	assert.NotContains(t, w.Body.String(), "<html")
+}

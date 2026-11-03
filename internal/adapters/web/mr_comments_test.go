@@ -175,7 +175,7 @@ func TestMRReplyAndDeletedThread(t *testing.T) {
 	}
 }
 
-func TestMRCommentFormResetAndIssueFallback(t *testing.T) {
+func TestCommentFormResetAndIssueEnhancement(t *testing.T) {
 	f := CommentForm{ID: "cf-general", Action: "/demo/merge-requests/3/comments", Title: "Comment"}
 	html := renderToString(t, commentForm(f, ""))
 	assert.Contains(t, html, `hx-post="/demo/merge-requests/3/comments"`)
@@ -185,6 +185,6 @@ func TestMRCommentFormResetAndIssueFallback(t *testing.T) {
 	assert.Contains(t, html, `placeholder="Markdown, 8000 characters at most"></textarea>`)
 	f.Issue = true
 	html = renderToString(t, commentForm(f, ""))
-	assert.NotContains(t, html, "hx-post")
+	assert.Contains(t, html, `hx-post="/demo/merge-requests/3/comments"`)
 	assert.NotContains(t, html, `name="thread"`)
 }

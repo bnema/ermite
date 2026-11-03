@@ -376,18 +376,14 @@ func boolText(b bool) string {
 
 // commentForm writes a comment, general or on a line.
 templ commentForm(f CommentForm, suffix string) {
-	if f.Issue {
-		<form class="cform" method="post" action={ templ.SafeURL(f.Action) }>
-			@commentFields(f, suffix)
-		</form>
-	} else {
-		<div id={ "form-" + f.ID + suffix }>
-			@ActionForm(ActionProps{Action: f.Action, Class: "cform"}) {
-				<input type="hidden" name="thread" value={ commentThread(f) + suffix }/>
-				@commentFields(f, suffix)
-			}
-		</div>
-	}
+ <div id={ "form-" + f.ID + suffix }>
+ @ActionForm(ActionProps{Action: f.Action, Class: "cform"}) {
+ if !f.Issue {
+ <input type="hidden" name="thread" value={ commentThread(f) + suffix }/>
+ }
+ @commentFields(f, suffix)
+ }
+ </div>
 }
 
 templ commentFields(f CommentForm, suffix string) {

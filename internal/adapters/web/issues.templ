@@ -138,7 +138,7 @@ templ IssueShow(l Layout, p IssuePage) {
 				<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>
 				<dl class="kv show-kv">
 					<dt>state</dt>
-					<dd class="mr-state" data-state={ p.State }>{ p.State }</dd>
+					@issueState(p, false)
 					<dt>opened</dt>
 					<dd>
 						{ p.Opened.Name }
@@ -165,10 +165,20 @@ templ IssueShow(l Layout, p IssuePage) {
 		if p.Live {
 			@LiveSlot("mr-notice")
 		}
-		<h2 class="rule-h" id="comments"><span>Comments</span><span class="count">{ itoa(len(p.Comments)) }</span></h2>
-		@issueTimeline(p.Timeline)
+		<h2 class="rule-h" id="comments"><span>Comments</span><span id="issue-comment-count" class="count">{ itoa(len(p.Comments)) }</span></h2>
+		<ol id="issue-timeline" class="timeline" aria-label="Conversation history">
+			for _, item := range p.Timeline {
+				<li>
+					if item.Comment != nil {
+						@commentView(*item.Comment, "")
+					} else if item.Event != nil {
+						@issueEventRow(*item.Event)
+					}
+				</li>
+			}
+		</ol>
 		if len(p.Comments) == 0 {
-			<p class="dim">no comments yet.</p>
+			<p id="issue-no-comments" class="dim">no comments yet.</p>
 		}
 		if p.Form != nil {
 			@commentForm(*p.Form, "")
@@ -194,12 +204,46 @@ templ issueRail(p IssuePage) {
 			</ul>
 		</section>
 	}
-	if p.Transition != nil {
-		<section aria-labelledby="r-act">
-			<h2 id="r-act">Issue</h2>
-			<form method="post" action={ templ.SafeURL(p.Transition.Action) }>
-				<button type="submit" class="btn">{ p.Transition.Label }</button>
-			</form>
-		</section>
-	}
+	@issueActions(p, false)
+}
+
+templ issueActions(p IssuePage, fragment bool) {
+	<section
+		id="issue-actions"
+		if fragment {
+			hx-swap-oob="outerMorph"
+		}
+	>
+		if p.Transition != nil {
+			<div aria-labelledby="r-act">
+				<h2 id="r-act">Issue</h2>
+				@ActionForm(ActionProps{Action: p.Transition.Action}) {
+					<button type="submit" class="btn">{ p.Transition.Label }</button>
+				}
+			</div>
+		}
+	</section>
+}
+
+templ issueState(p IssuePage, fragment bool) {
+	<dd
+		id="issue-state"
+		class="mr-state"
+		data-state={ p.State }
+		if fragment {
+			hx-swap-oob="outerMorph"
+		}
+	>{ p.State }</dd>
+}
+
+templ issueStateFragment(p IssuePage) {
+	@issueState(p, true)
+	@issueActions(p, true)
+}
+
+templ issueCommentCreated(c CommentView, n int, f CommentForm) {
+	<hx-partial hx-target="#issue-timeline" hx-swap="beforeend"><li>@commentView(c, "")</li></hx-partial>
+	@CountOOB("issue-comment-count", n)
+	@RemoveEl("issue-no-comments")
+	<hx-partial hx-target={ "#form-" + f.ID } hx-swap="outerHTML">@commentForm(f, "")</hx-partial>
 }

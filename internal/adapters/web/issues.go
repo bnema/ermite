@@ -309,35 +309,13 @@ func (s *Server) issueShow(ctx context.Context, r *http.Request) (templ.Componen
 		p.Opened.Abs = absolute(i.CreatedAt)
 	}
 	p.Updated, p.UpdatedAt = whenOf(now, i.UpdatedAt)
-	refs := s.referenceResolver(ctx, d.name())
-	for _, c := range res.Comments {
-		v := CommentView{
-			createdAt: c.CreatedAt, ID: strconv.FormatInt(c.ID, 10), Author: s.who(c.Author),
-		}
-		if body, err := s.md.renderNote([]byte(c.Text.String()), d.name(), d.repo.DefaultBranch, "c"+v.ID+"-", refs); err == nil {
-			v.Body = body
-		} else {
-			v.Parts = plainParts(c.Text.String())
-		}
-		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
-		if !c.CreatedAt.IsZero() {
-			v.Abs = absolute(c.CreatedAt)
-		}
-		p.Comments = append(p.Comments, v)
-	}
+	p.Comments = s.issueCommentViews(ctx, d, res.Comments)
 	p.Timeline = s.issueTimeline(d.name(), p.Comments, res.Events, false)
 	if signed {
 		if !d.repo.Archived {
 			p.Form = &CommentForm{ID: "cf-general", Action: issueHref(d.name(), n, "comments"), Title: "comment on the issue", Issue: true}
 		}
-		switch i.State {
-		case domain.IssueStateOpen:
-			p.Transition = &IssueActions{Action: issueHref(d.name(), n, "close"), Label: "Close issue"}
-		case domain.IssueStateClosed, domain.IssueStateResolved:
-			if !d.repo.Archived {
-				p.Transition = &IssueActions{Action: issueHref(d.name(), n, "reopen"), Label: "Reopen issue"}
-			}
-		}
+		p.Transition = issueTransitionAction(d.name(), i, d.repo.Archived)
 	}
 
 	l := s.repoLayout(ctx, d, "issues")
@@ -451,4 +429,40 @@ func (s *Server) mrToIssue(ctx context.Context, r *http.Request) (string, error)
 		return "", err
 	}
 	return issueHref(r.PathValue("repo"), n), nil
+}
+
+// issueCommentViews is shared by the page and progressive comment responses.
+func (s *Server) issueCommentViews(ctx context.Context, d *repoData, comments []domain.IssueComment) []CommentView {
+	now := s.cfg.Now()
+	refs := s.referenceResolver(ctx, d.name())
+	var views []CommentView
+
+	for _, c := range comments {
+		v := CommentView{
+			createdAt: c.CreatedAt, ID: strconv.FormatInt(c.ID, 10), Author: s.who(c.Author),
+		}
+		if body, err := s.md.renderNote([]byte(c.Text.String()), d.name(), d.repo.DefaultBranch, "c"+v.ID+"-", refs); err == nil {
+			v.Body = body
+		} else {
+			v.Parts = plainParts(c.Text.String())
+		}
+		v.When, v.WhenAt = whenOf(now, c.CreatedAt)
+		if !c.CreatedAt.IsZero() {
+			v.Abs = absolute(c.CreatedAt)
+		}
+		views = append(views, v)
+	}
+	return views
+}
+
+func issueTransitionAction(repo string, i domain.Issue, archived bool) *IssueActions {
+	switch i.State {
+	case domain.IssueStateOpen:
+		return &IssueActions{Action: issueHref(repo, i.Number, "close"), Label: "Close issue"}
+	case domain.IssueStateClosed, domain.IssueStateResolved:
+		if !archived {
+			return &IssueActions{Action: issueHref(repo, i.Number, "reopen"), Label: "Reopen issue"}
+		}
+	}
+	return nil
 }

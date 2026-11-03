@@ -48,7 +48,21 @@ func (s *Server) issueComment(ctx context.Context, r *http.Request) (ActionResul
 	if err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}, nil
+	result := ActionResult{Redirect: back + "#c" + strconv.FormatInt(c.ID, 10)}
+	if !isHX(r) {
+		return result, nil
+	}
+	d, err := s.issueRepo(ctx, repo)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	detail, err := s.cfg.Issues.Get(ctx, principal(ctx), name, n)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	views := s.issueCommentViews(ctx, d, []domain.IssueComment{c})
+	result.Fragment = issueCommentCreated(views[0], len(detail.Comments), CommentForm{ID: "cf-general", Action: issueHref(repo, n, "comments"), Title: "comment on the issue", Issue: true})
+	return result, nil
 }
 
 // issueClose is POST /<repo>/issues/<n>/close.
@@ -72,10 +86,20 @@ func (s *Server) issueTransition(ctx context.Context, r *http.Request, do func(c
 	if err != nil {
 		return ActionResult{}, err
 	}
-	if _, err := do(ctx, principal(ctx), name, n); err != nil {
+	i, err := do(ctx, principal(ctx), name, n)
+	if err != nil {
 		return ActionResult{}, err
 	}
-	return ActionResult{Redirect: back}, nil
+	result := ActionResult{Redirect: back}
+	if !isHX(r) {
+		return result, nil
+	}
+	d, err := s.issueRepo(ctx, repo)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	result.Fragment = issueStateFragment(IssuePage{State: string(i.State), Transition: issueTransitionAction(repo, i, d.repo.Archived)})
+	return result, nil
 }
 
 func issueHrefFromPath(r *http.Request) string {
