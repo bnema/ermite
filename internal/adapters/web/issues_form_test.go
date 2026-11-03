@@ -31,6 +31,7 @@ func newFormRig(t *testing.T, mode domain.IssuesMode) *formRig {
 	browse := mocks.NewBrowseService(t)
 	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
 	r.mrs.EXPECT().CountOpen(mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Maybe()
+	r.issues.EXPECT().CountOpen(mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Maybe()
 	r.srv = newTestServer(t, Config{
 		Repos: reposServing(t, issueRepoView(t, mode)), Browse: browse, MergeRequests: r.mrs, Issues: r.issues,
 		IssueForm: r.form, Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},

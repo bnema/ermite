@@ -53,6 +53,7 @@ func newIssueRig(t *testing.T, mode domain.IssuesMode, withNumbers bool) *issueR
 	browse := mocks.NewBrowseService(t)
 	browse.EXPECT().ListRefs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ports.RefPage{}, nil).Maybe()
 	r.mrs.EXPECT().CountOpen(mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Maybe()
+	r.issues.EXPECT().CountOpen(mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Maybe()
 	cfg := Config{
 		Repos: reposServing(t, issueRepoView(t, mode)), Browse: browse, MergeRequests: r.mrs, Issues: r.issues,
 		Sessions: newSessions(t, "tok"), Limiter: &countingLimiter{},
@@ -581,4 +582,37 @@ func TestIssueAsyncFailure(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Contains(t, w.Body.String(), `id="action-status"`)
 	assert.NotContains(t, w.Body.String(), "<html")
+}
+
+func TestIssuesTabCount(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		mode  domain.IssuesMode
+		count int
+		err   error
+		want  string
+	}{
+		{"open", domain.IssuesOwner, 7, nil, "7"},
+		{"zero", domain.IssuesOwner, 0, nil, ""},
+		{"error", domain.IssuesPublic, 0, domain.ErrNotFound, ""},
+		{"off", domain.IssuesOff, 0, nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := mocks.NewIssueService(t)
+			repo := issueRepoView(t, tc.mode)
+			if tc.mode != domain.IssuesOff {
+				svc.EXPECT().CountOpen(mock.Anything, domain.Anonymous(), repo.Name).Return(tc.count, tc.err).Once()
+			}
+			s := newTestServer(t, Config{Issues: svc, Repos: reposServing(t, repo), Browse: mocks.NewBrowseService(t)})
+			layout := s.repoLayout(t.Context(), &repoData{repo: repo}, "issues")
+			found := false
+			for _, section := range layout.Sections {
+				if section.Label == "Issues" {
+					found = true
+					assert.Equal(t, tc.want, section.Count)
+				}
+			}
+			assert.Equal(t, tc.mode != domain.IssuesOff, found)
+		})
+	}
 }

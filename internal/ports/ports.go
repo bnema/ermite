@@ -255,6 +255,8 @@ type TokenStore interface {
 // the repository does not exist, so that deleting a repository leaves nothing
 // for one created again under its name. *kvstore.Issues implements it.
 type IssueStore interface {
+	// CountOpen returns the number of open issues from the repository index.
+	CountOpen(ctx context.Context, repo domain.RepoName) (int, error)
 	// Create stores the issue under the next number of its repository (the
 	// one merge requests draw from), which it sets, and returns it. A number
 	// is never given twice, to an issue or to a merge request, even by a

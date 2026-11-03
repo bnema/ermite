@@ -142,6 +142,8 @@ type MergeRequestService interface {
 
 // IssueService is the issue use cases. *usecase.Issues implements it.
 type IssueService interface {
+	// CountOpen counts open issues of a repository the principal can read.
+	CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error)
 	Edit(ctx context.Context, p domain.Principal, name domain.RepoName, number int64, params EditIssueParams) (domain.Issue, error)
 	Create(ctx context.Context, p domain.Principal, name domain.RepoName, params CreateIssueParams) (domain.Issue, error)
 	List(ctx context.Context, p domain.Principal, name domain.RepoName, params ListIssuesParams) (IssuePage, error)

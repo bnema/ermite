@@ -148,6 +148,18 @@ func (i *Issues) Create(ctx context.Context, p domain.Principal, name domain.Rep
 	return issue, nil
 }
 
+// CountOpen implements ports.IssueService.
+func (i *Issues) CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error) {
+	if _, err := i.readable(ctx, p, name); err != nil {
+		return 0, err
+	}
+	n, err := i.store.CountOpen(ctx, name)
+	if err != nil {
+		return 0, fmt.Errorf("count open issues of %q: %w", name, err)
+	}
+	return n, nil
+}
+
 // List returns a page of the issues of a repository, highest number first.
 func (i *Issues) List(ctx context.Context, p domain.Principal, name domain.RepoName, params ports.ListIssuesParams) (ports.IssuePage, error) {
 	size, err := pageSize(params.PageSize)

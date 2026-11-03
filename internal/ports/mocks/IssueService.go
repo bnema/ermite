@@ -210,6 +210,78 @@ func (_c *IssueService_Close_Call) RunAndReturn(run func(ctx context.Context, p 
 	return _c
 }
 
+// CountOpen provides a mock function for the type IssueService
+func (_mock *IssueService) CountOpen(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error) {
+	ret := _mock.Called(ctx, p, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountOpen")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) (int, error)); ok {
+		return returnFunc(ctx, p, name)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.Principal, domain.RepoName) int); ok {
+		r0 = returnFunc(ctx, p, name)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.Principal, domain.RepoName) error); ok {
+		r1 = returnFunc(ctx, p, name)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// IssueService_CountOpen_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountOpen'
+type IssueService_CountOpen_Call struct {
+	*mock.Call
+}
+
+// CountOpen is a helper method to define mock.On call
+//   - ctx context.Context
+//   - p domain.Principal
+//   - name domain.RepoName
+func (_e *IssueService_Expecter) CountOpen(ctx any, p any, name any) *IssueService_CountOpen_Call {
+	return &IssueService_CountOpen_Call{Call: _e.mock.On("CountOpen", ctx, p, name)}
+}
+
+func (_c *IssueService_CountOpen_Call) Run(run func(ctx context.Context, p domain.Principal, name domain.RepoName)) *IssueService_CountOpen_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.Principal
+		if args[1] != nil {
+			arg1 = args[1].(domain.Principal)
+		}
+		var arg2 domain.RepoName
+		if args[2] != nil {
+			arg2 = args[2].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *IssueService_CountOpen_Call) Return(n int, err error) *IssueService_CountOpen_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *IssueService_CountOpen_Call) RunAndReturn(run func(ctx context.Context, p domain.Principal, name domain.RepoName) (int, error)) *IssueService_CountOpen_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Create provides a mock function for the type IssueService
 func (_mock *IssueService) Create(ctx context.Context, p domain.Principal, name domain.RepoName, params ports.CreateIssueParams) (domain.Issue, error) {
 	ret := _mock.Called(ctx, p, name, params)

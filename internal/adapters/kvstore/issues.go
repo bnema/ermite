@@ -177,6 +177,18 @@ func (i *Issues) List(ctx context.Context, repo domain.RepoName, params ports.Li
 	return page, nil
 }
 
+// CountOpen counts index keys without decoding issues.
+func (i *Issues) CountOpen(ctx context.Context, repo domain.RepoName) (int, error) {
+	n := 0
+	for range i.db.Snapshot(ctx).Prefix(ctx, []byte(issueOpenRepoPrefix(repo))) {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		n++
+	}
+	return n, ctx.Err()
+}
+
 // ListOpenAll returns the open issues of every repository through the isopen/
 // index: the issues it names are read, no other.
 //

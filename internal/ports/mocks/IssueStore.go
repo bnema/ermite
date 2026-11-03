@@ -48,6 +48,72 @@ func (_m *IssueStore) EXPECT() *IssueStore_Expecter {
 	return &IssueStore_Expecter{mock: &_m.Mock}
 }
 
+// CountOpen provides a mock function for the type IssueStore
+func (_mock *IssueStore) CountOpen(ctx context.Context, repo domain.RepoName) (int, error) {
+	ret := _mock.Called(ctx, repo)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountOpen")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) (int, error)); ok {
+		return returnFunc(ctx, repo)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.RepoName) int); ok {
+		r0 = returnFunc(ctx, repo)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.RepoName) error); ok {
+		r1 = returnFunc(ctx, repo)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// IssueStore_CountOpen_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountOpen'
+type IssueStore_CountOpen_Call struct {
+	*mock.Call
+}
+
+// CountOpen is a helper method to define mock.On call
+//   - ctx context.Context
+//   - repo domain.RepoName
+func (_e *IssueStore_Expecter) CountOpen(ctx any, repo any) *IssueStore_CountOpen_Call {
+	return &IssueStore_CountOpen_Call{Call: _e.mock.On("CountOpen", ctx, repo)}
+}
+
+func (_c *IssueStore_CountOpen_Call) Run(run func(ctx context.Context, repo domain.RepoName)) *IssueStore_CountOpen_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 domain.RepoName
+		if args[1] != nil {
+			arg1 = args[1].(domain.RepoName)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *IssueStore_CountOpen_Call) Return(n int, err error) *IssueStore_CountOpen_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *IssueStore_CountOpen_Call) RunAndReturn(run func(ctx context.Context, repo domain.RepoName) (int, error)) *IssueStore_CountOpen_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Create provides a mock function for the type IssueStore
 func (_mock *IssueStore) Create(ctx context.Context, issue domain.Issue) (domain.Issue, error) {
 	ret := _mock.Called(ctx, issue)

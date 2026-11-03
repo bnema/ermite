@@ -354,3 +354,34 @@ func TestResolveAccess(t *testing.T) {
 		})
 	}
 }
+
+func TestIssueCountOpenAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		vis     domain.Visibility
+		mode    domain.IssuesMode
+		p       domain.Principal
+		allowed bool
+	}{
+		{"public", domain.VisibilityPublic, domain.IssuesOwner, domain.Anonymous(), true},
+		{"private owner", domain.VisibilityPrivate, domain.IssuesOwner, domain.Owner(), true},
+		{"private anonymous", domain.VisibilityPrivate, domain.IssuesOwner, domain.Anonymous(), false},
+		{"write is not read", domain.VisibilityPrivate, domain.IssuesOwner, issuePrincipal(domain.ScopeIssueWrite), false},
+		{"disabled owner", domain.VisibilityPublic, domain.IssuesOff, domain.Owner(), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := newIssueUnit(t, tc.vis, tc.mode)
+			if tc.allowed {
+				u.store.EXPECT().CountOpen(mock.Anything, u.repo.Name).Return(3, nil).Once()
+			}
+			n, err := u.issues.CountOpen(t.Context(), tc.p, u.repo.Name)
+			if tc.allowed {
+				require.NoError(t, err)
+				assert.Equal(t, 3, n)
+			} else {
+				require.ErrorIs(t, err, domain.ErrNotFound)
+				assert.Zero(t, n)
+			}
+		})
+	}
+}

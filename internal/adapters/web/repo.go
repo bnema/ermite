@@ -124,6 +124,16 @@ func (s *Server) openMRCount(ctx context.Context, name domain.RepoName) string {
 	return itoa(n)
 }
 
+// openIssueCount is the number of open issues shown on the tab, empty when
+// there are none or they cannot be counted (the tab still works).
+func (s *Server) openIssueCount(ctx context.Context, name domain.RepoName) string {
+	n, err := s.cfg.Issues.CountOpen(ctx, principal(ctx), name)
+	if err != nil || n == 0 {
+		return ""
+	}
+	return itoa(n)
+}
+
 // layout is the Layout of the pages of a repository: the sections, the ref
 // switcher on the head ref and the ":" targets. The caller sets the title,
 // the crumbs, the status and the rail.
@@ -155,7 +165,9 @@ func (s *Server) repoLayout(ctx context.Context, d *repoData, section string) La
 		l.Sections = append(l.Sections, mrs)
 	}
 	if s.cfg.Issues != nil && d.repo.EffectiveSettings().IssuesEnabled() {
-		l.Sections = append(l.Sections, mk("i", "Issues", issuesBase(d.name()), "issues"))
+		issues := mk("i", "Issues", issuesBase(d.name()), "issues")
+		issues.Count = s.openIssueCount(ctx, d.repo.Name)
+		l.Sections = append(l.Sections, issues)
 	}
 	if s.cfg.Releases != nil {
 		l.Sections = append(l.Sections, mk("r", "Releases", releasesBase(d.name()), "releases"))

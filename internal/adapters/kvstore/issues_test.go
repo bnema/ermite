@@ -618,3 +618,41 @@ func TestSchema5UpgradesOwnerEquivalentTokens(t *testing.T) {
 		assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
 	}
 }
+
+func TestIssueCountOpen(t *testing.T) {
+	ctx := context.Background()
+	s, _, repo := repoWithMRs(t)
+	store := s.Issues()
+	check := func(want int) {
+		t.Helper()
+		n, err := store.CountOpen(ctx, repo)
+		require.NoError(t, err)
+		assert.Equal(t, want, n)
+	}
+	check(0)
+	issue, err := store.Create(ctx, newIssue(t, repo, "one"))
+	require.NoError(t, err)
+	_, err = store.Create(ctx, newIssue(t, repo, "two"))
+	require.NoError(t, err)
+	check(2)
+	for _, state := range []domain.IssueState{domain.IssueStateClosed, domain.IssueStateResolved, domain.IssueStateOpen} {
+		issue, err = store.Get(ctx, repo, issue.Number)
+		require.NoError(t, err)
+		issue.State = state
+		require.NoError(t, store.Update(ctx, issue))
+		want := 1
+		if state == domain.IssueStateOpen {
+			want = 2
+		}
+		check(want)
+	}
+	other, err := domain.ParseRepoName("other")
+	require.NoError(t, err)
+	n, err := store.CountOpen(ctx, other)
+	require.NoError(t, err)
+	assert.Zero(t, n)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = store.CountOpen(cancelled, repo)
+	require.ErrorIs(t, err, context.Canceled)
+}
