@@ -20,9 +20,11 @@ func BotDraftTitle(b DepBatch) string {
 }
 
 // DepsRepro returns the shell lines that redo ups by hand, grouped by
-// ecosystem then directory, in a deterministic order. Actions updates are
-// applied by the server and yield no command. The npm lines are written for
-// npm even though the runner picks the package manager from the lockfile.
+// ecosystem then directory, in a deterministic order, from the repository
+// root (each group after the first goes back to it). Every argument is
+// single-quoted for a POSIX shell. Actions updates are applied by the server
+// and yield no command. The npm lines are written for npm even though the
+// runner picks the package manager from the lockfile.
 func DepsRepro(ups []DepUpdate) []string {
 	type group struct {
 		eco DepsEcosystem
@@ -47,32 +49,48 @@ func DepsRepro(ups []DepUpdate) []string {
 	for i, g := range keys {
 		us := slices.Clone(byGroup[g])
 		slices.SortFunc(us, func(a, b DepUpdate) int { return cmp.Compare(a.Name, b.Name) })
-		if i > 0 && g.dir != "" {
+		if i > 0 {
 			lines = append(lines, "cd \"$(git rev-parse --show-toplevel)\"")
 		}
 		if g.dir != "" {
-			lines = append(lines, "cd "+asciiLine(g.dir))
+			lines = append(lines, "cd -- "+shellQuote(g.dir))
 		}
 		switch g.eco {
 		case EcosystemGoMod:
 			for _, u := range us {
 				name := u.Name
 				if u.NewName != "" {
-					lines = append(lines, fmt.Sprintf("# rewrite imports %s -> %s", asciiLine(u.Name), asciiLine(u.NewName)))
+					lines = append(lines, fmt.Sprintf("# rewrite imports %s -> %s", oneLine(u.Name), oneLine(u.NewName)))
 					name = u.NewName
 				}
-				lines = append(lines, fmt.Sprintf("go get %s@%s", asciiLine(name), asciiLine(u.Version)))
+				lines = append(lines, "go get "+shellQuote(name+"@"+u.Version))
 			}
 			lines = append(lines, "go mod tidy")
 		case EcosystemNPM:
 			args := make([]string, len(us))
 			for j, u := range us {
-				args[j] = asciiLine(u.Name) + "@" + asciiLine(u.Version)
+				args[j] = shellQuote(u.Name + "@" + u.Version)
 			}
 			lines = append(lines, "npm install --ignore-scripts "+strings.Join(args, " "))
 		}
 	}
 	return lines
+}
+
+// shellQuote is s as one POSIX shell word: single-quoted, each ' written as
+// '\'', control characters dropped (a word stays on its line). Unicode is kept.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(oneLine(s), "'", `'\''`) + "'"
+}
+
+// oneLine drops the control characters of s.
+func oneLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // BotMRBodyFor is BotMRBody for batch b, followed by a failure section when b

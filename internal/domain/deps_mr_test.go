@@ -38,11 +38,15 @@ func TestDepsRepro(t *testing.T) {
 		{"empty", nil, nil},
 		{"actions only", []DepUpdate{act}, nil},
 		{"gomod root", []DepUpdate{gm("", "b.io/x", "v1.2.0", ""), gm("", "a.io/y", "v0.3.0", "")},
-			[]string{"go get a.io/y@v0.3.0", "go get b.io/x@v1.2.0", "go mod tidy"}},
+			[]string{"go get 'a.io/y@v0.3.0'", "go get 'b.io/x@v1.2.0'", "go mod tidy"}},
 		{"gomod path major", []DepUpdate{gm("tools", "a.io/y", "v2.0.0", "a.io/y/v2")},
-			[]string{"cd tools", "# rewrite imports a.io/y -> a.io/y/v2", "go get a.io/y/v2@v2.0.0", "go mod tidy"}},
+			[]string{"cd -- 'tools'", "# rewrite imports a.io/y -> a.io/y/v2", "go get 'a.io/y/v2@v2.0.0'", "go mod tidy"}},
 		{"mixed", []DepUpdate{np("web", "react", "19.0.0"), act, gm("", "a.io/y", "v0.3.0", ""), np("web", "left-pad", "1.3.0")},
-			[]string{"go get a.io/y@v0.3.0", "go mod tidy", "cd \"$(git rev-parse --show-toplevel)\"", "cd web", "npm install --ignore-scripts left-pad@1.3.0 react@19.0.0"}},
+			[]string{"go get 'a.io/y@v0.3.0'", "go mod tidy", "cd \"$(git rev-parse --show-toplevel)\"", "cd -- 'web'", "npm install --ignore-scripts 'left-pad@1.3.0' 'react@19.0.0'"}},
+		{"go in a directory then npm at the root", []DepUpdate{gm("tools", "a.io/y", "v0.3.0", ""), np("", "ms", "2.1.3")},
+			[]string{"cd -- 'tools'", "go get 'a.io/y@v0.3.0'", "go mod tidy", "cd \"$(git rev-parse --show-toplevel)\"", "npm install --ignore-scripts 'ms@2.1.3'"}},
+		{"quoted", []DepUpdate{np("it's; rm -rf ~/dé\n", "@a/b", "1.0.0$(x)")},
+			[]string{"cd -- 'it'\\''s; rm -rf ~/dé'", "npm install --ignore-scripts '@a/b@1.0.0$(x)'"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
