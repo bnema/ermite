@@ -57,3 +57,15 @@ func (b *Bernard) EnableAutoOpenForTest(git ports.MergeGit, repos ports.GitRepos
 	b.cfg.AutoOpen = true
 	b.cfg.Git, b.cfg.Repos, b.cfg.Signer, b.cfg.MRs, b.cfg.MRStore = git, repos, signer, mrs, mrst
 }
+
+// WriteDraftForTest takes the server step of the batch key of repo as the
+// queue does, without the run step.
+func (b *Bernard) WriteDraftForTest(ctx context.Context, repo domain.RepoName, key domain.DepBatchKey) (domain.RepoDeps, error) {
+	defer b.repoLock(repo)()
+	d, err := b.cfg.Store.Get(ctx, repo)
+	if err != nil {
+		return domain.RepoDeps{}, err
+	}
+	batch, _, _ := d.Batch(key)
+	return b.writeDraft(ctx, repo, batch, batch.Refs())
+}

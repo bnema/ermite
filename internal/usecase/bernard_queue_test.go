@@ -4,6 +4,7 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sync"
 	"testing"
@@ -90,6 +91,14 @@ type queueRig struct {
 	mu      sync.Mutex
 	started []domain.RepoName
 	waiting []domain.CIJob
+	jobsErr error
+	reads   int
+}
+
+func (q *queueRig) jobReads() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.reads
 }
 
 var queueUp = domain.DepUpdate{DepRef: domain.DepRef{Ecosystem: "custom", Name: "lib", Version: "v2"}, Current: "v1"}
@@ -108,7 +117,8 @@ func newQueueRig(t *testing.T, limit int) *queueRig {
 	jobs.EXPECT().ListReadyJobs(mock.Anything, mock.Anything).RunAndReturn(func(context.Context, int) ([]domain.CIJob, error) {
 		q.mu.Lock()
 		defer q.mu.Unlock()
-		return slices.Clone(q.waiting), nil
+		q.reads++
+		return slices.Clone(q.waiting), q.jobsErr
 	}).Maybe()
 	runs.EXPECT().StartDepsRun(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, p ports.DepsRunParams) (domain.CIRun, error) {
 		q.mu.Lock()
@@ -237,4 +247,34 @@ func TestBernardCloseWhileQueued(t *testing.T) {
 		q.b.Drain(t.Context())
 		assert.Empty(t, q.startedRepos())
 	})
+}
+
+// Normal jobs behind many dependency jobs still hold an automatic run back;
+// jobs that cannot be read hold it back too; the jobs are read only when an
+// automatic batch would take a slot.
+func TestBernardAutoWaitsForEveryReadyJob(t *testing.T) {
+	q := newQueueRig(t, 1)
+	for range 100 {
+		q.waiting = append(q.waiting, domain.CIJob{Deps: &domain.CIDepsJob{}})
+	}
+	q.waiting = append(q.waiting, domain.CIJob{})
+	auto := q.drafted("auto", false, 1)
+	q.b.Drain(t.Context())
+	assert.Empty(t, q.startedRepos())
+
+	q.mu.Lock()
+	q.waiting, q.jobsErr = nil, errors.New("store down")
+	q.mu.Unlock()
+	q.b.Drain(t.Context())
+	assert.Empty(t, q.startedRepos(), "an unreadable queue of jobs holds automatic runs")
+
+	q.mu.Lock()
+	q.jobsErr = nil
+	q.mu.Unlock()
+	q.b.Drain(t.Context())
+	assert.Equal(t, []domain.RepoName{auto}, q.startedRepos())
+	reads := q.jobReads()
+	q.drafted("manual", true, 2)
+	q.b.Drain(t.Context())
+	assert.Equal(t, reads, q.jobReads(), "a manual batch does not read the jobs")
 }

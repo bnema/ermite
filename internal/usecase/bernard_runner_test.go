@@ -896,13 +896,15 @@ func TestBernardHumanPushAdopts(t *testing.T) {
 	rr.branches["bernard/deps"] = oid("5")
 	rr.mu.Unlock()
 	rr.events <- domain.PushEvent{Repo: rr.repo, Updates: []domain.RefUpdate{{Ref: "refs/heads/bernard/deps", Old: oid("d").String(), New: oid("5").String()}}}
-	require.Eventually(t, func() bool { return rr.snapshot().Batches[0].Adopted }, 5*time.Second, 5*time.Millisecond)
-	assert.Contains(t, rr.mr(7).Description.String(), "changed by hand")
+	// The description is edited after the record is saved: wait for both.
+	require.Eventually(t, func() bool {
+		return rr.snapshot().Batches[0].Adopted && strings.Contains(rr.mr(7).Description.String(), "changed by hand")
+	}, 5*time.Second, 5*time.Millisecond)
 	assert.False(t, rr.b.Held(t.Context(), rr.repo, "bernard/deps", oid("d")))
 
 	// The MR ends: the branch is Bernard's again.
+	rr.runs.EXPECT().CancelDepsRun(mock.Anything, rr.repo, int64(runnerRunID)).Return(nil).Maybe() // before the event that calls it
 	rr.events <- domain.MergeRequestClosed{MergeRequest: domain.MergeRequest{Repo: rr.repo, Number: 7}}
-	rr.runs.EXPECT().CancelDepsRun(mock.Anything, rr.repo, int64(runnerRunID)).Return(nil).Maybe()
 	require.Eventually(t, func() bool { return !rr.snapshot().Batches[0].Adopted }, 5*time.Second, 5*time.Millisecond)
 }
 
@@ -940,4 +942,50 @@ func TestBernardAdoptedBranchNotRewritten(t *testing.T) {
 		assert.Zero(t, rr.starts)
 		assert.Empty(t, rr.commits)
 	})
+}
+
+// A drafted batch whose branch a human took gets no run: it settles Idle
+// and only its description changes.
+func TestBernardRunStepSkipsAnAdoptedBranch(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		setup func(*runnerRig)
+	}{
+		{"marked adopted", func(rr *runnerRig) { rr.rec.Base().Adopted = true }},
+		{"branch moved", func(rr *runnerRig) { rr.branches["bernard/deps"] = oid("5") }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+			rr.rec.Base().Updates = []domain.DepUpdate{goUpdate()}
+			_, err := rr.b.WriteDraftForTest(t.Context(), rr.repo, "")
+			require.NoError(t, err)
+			require.Equal(t, domain.DepsDrafted, rr.rec.Base().State)
+			c.setup(rr)
+			rr.b.Drain(t.Context())
+			assert.Zero(t, rr.starts, "no run")
+			assert.Equal(t, domain.DepsIdle, rr.rec.Base().State)
+			assert.True(t, rr.rec.Base().Adopted)
+			assert.True(t, rr.mr(7).IsDraft(), "the title is left alone")
+			assert.Contains(t, rr.mr(7).Description.String(), "changed by hand")
+		})
+	}
+}
+
+// A failure of a batch adopted while its run went keeps the failure and
+// only refreshes the description.
+func TestBernardFailureOfAnAdoptedBatchEditsOnlyTheDescription(t *testing.T) {
+	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
+	rr.open(goUpdate())
+	rr.mu.Lock()
+	rr.rec.Base().Adopted = true
+	rr.mu.Unlock()
+	edits := len(rr.edits)
+	rr.end(&ports.DepsReport{Error: "tidy failed"}, domain.CIFailure)
+	snap := rr.snapshot()
+	assert.Equal(t, domain.DepsFailed, snap.Base().State)
+	assert.Equal(t, "tidy failed", snap.Base().Error)
+	require.Len(t, rr.edits, edits+1)
+	assert.Nil(t, rr.edits[edits].Title, "description only")
+	assert.Contains(t, rr.mr(7).Description.String(), "changed by hand")
+	assert.Contains(t, rr.mr(7).Description.String(), "tidy failed")
 }

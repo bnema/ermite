@@ -77,9 +77,14 @@ func (b *Bernard) drain(ctx context.Context) {
 			ctxLog(ctx).Error().Err(err).Msg("bernard: list the records of the queue")
 			return
 		}
-		repo, key, ok := domain.NextDepsWork(recs, domain.DepsRunning(recs), b.cfg.Concurrency, b.workflowsWaiting(ctx))
+		// The ready jobs are read only when an automatic batch would take a
+		// slot: what the queue does without them is decided first.
+		running := domain.DepsRunning(recs)
+		repo, key, ok := domain.NextDepsWork(recs, running, b.cfg.Concurrency, true)
 		if !ok {
-			return
+			if repo, key, ok = domain.NextDepsWork(recs, running, b.cfg.Concurrency, false); !ok || b.workflowsWaiting(ctx) {
+				return
+			}
 		}
 		state := domain.DepsQueued
 		for _, d := range recs {
@@ -99,15 +104,17 @@ func (b *Bernard) drain(ctx context.Context) {
 }
 
 // workflowsWaiting reports whether a normal (non-dependency) workflow job
-// waits for a runner: automatic dependency runs let it go first.
+// waits for a runner: automatic dependency runs let it go first. Every ready
+// job is looked at (a limit would hide normal jobs behind dependency ones);
+// when they cannot be read, the automatic run waits too.
 func (b *Bernard) workflowsWaiting(ctx context.Context) bool {
 	if b.cfg.Jobs == nil {
 		return false
 	}
-	jobs, err := b.cfg.Jobs.ListReadyJobs(ctx, 64)
+	jobs, err := b.cfg.Jobs.ListReadyJobs(ctx, 0)
 	if err != nil {
 		ctxLog(ctx).Error().Err(err).Msg("bernard: list the jobs waiting for a runner")
-		return false
+		return true
 	}
 	return slices.ContainsFunc(jobs, func(j domain.CIJob) bool { return j.Deps == nil })
 }
@@ -178,6 +185,20 @@ func (b *Bernard) serverStep(ctx context.Context, repo domain.RepoName, batch do
 // batch's versions: otherwise a manual batch fails and an automatic one goes
 // back to Queued for a new draft.
 func (b *Bernard) runStep(ctx context.Context, d domain.RepoDeps, batch domain.DepBatch) error {
+	// A human's branch gets no run: the batch settles Idle, its merge
+	// request description says why.
+	if batch.Adopted {
+		return errBranchAdopted
+	}
+	if !batch.Head.IsZero() {
+		cur, err := b.cfg.Git.BranchHead(ctx, d.Repo, batch.BranchName())
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return fmt.Errorf("read %s: %w", batch.BranchName(), err)
+		}
+		if cur != batch.Head {
+			return errBranchAdopted
+		}
+	}
 	if !domain.SameRefs(refsOf(batch.MRUpdates), batch.Refs()) {
 		if batch.Manual {
 			return errQueueChanged

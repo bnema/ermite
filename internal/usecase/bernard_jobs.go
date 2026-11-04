@@ -86,7 +86,13 @@ func (b *Bernard) failRun(ctx context.Context, repo domain.RepoName, runID int64
 	}
 	if failed != nil {
 		if batch, _, ok := rec.Batch(failed.Key); ok {
-			b.refreshDraft(context.WithoutCancel(ctx), repo, batch)
+			if batch.Adopted {
+				// The title and the branch are the human's: the description
+				// alone tells the failure.
+				b.noteAdopted(context.WithoutCancel(ctx), repo, batch)
+			} else {
+				b.refreshDraft(context.WithoutCancel(ctx), repo, batch)
+			}
 		}
 		b.changed(ctx, repo)
 	}
