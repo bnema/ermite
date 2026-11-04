@@ -192,7 +192,7 @@ func (s *Server) blob(ctx context.Context, r *http.Request) (templ.Component, in
 	pinRef(&l, t)
 	l.Crumbs = pathCrumbs(d.name(), "blob", t)
 	l.Title = visibleText(t.path) + " · " + d.name() + " · " + s.instance
-	l.HasRail = true
+	l.HasRail = len(p.Outline) > 0
 	return Blob(l, p), http.StatusOK, nil
 }
 

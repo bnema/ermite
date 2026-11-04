@@ -387,6 +387,8 @@ func TestIssueShowWithoutReferences(t *testing.T) {
 	}, nil)
 	body := r.do("GET", "/proj/issues/5", false, nil).Body.String()
 	assert.NotContains(t, body, "r-refs")
+	assert.NotContains(t, body, `<aside class="rail"`)
+	assert.Contains(t, body, `class="mr-card issue-card"`)
 	assert.NotContains(t, body, "resolved by")
 }
 

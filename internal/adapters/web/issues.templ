@@ -133,7 +133,7 @@ templ issueNewRail() {
 // owner, the form to comment and the button that closes or reopens it.
 templ IssueShow(l Layout, p IssuePage) {
 	@Shell(l, issueRail(p)) {
-		<section class="mr-card">
+		<section class="mr-card issue-card">
 			<header class="show mr-h">
 				<div class="mr-title">
 					<h1><span class="mute">{ p.Number }</span> { p.Title }</h1>

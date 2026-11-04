@@ -570,7 +570,7 @@ func IssueShow(l Layout, p IssuePage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<section class=\"mr-card\"><header class=\"show mr-h\"><div class=\"mr-title\"><h1><span class=\"mute\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<section class=\"mr-card issue-card\"><header class=\"show mr-h\"><div class=\"mr-title\"><h1><span class=\"mute\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

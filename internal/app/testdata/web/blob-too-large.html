@@ -24,8 +24,6 @@
 </script>
 <script src="/-/static/js/ermite.HASH.js" defer>
 </script>
-<script src="/-/static/js/rail.HASH.js" defer>
-</script>
 <script src="/-/static/js/files.HASH.js" defer>
 </script>
 <script src="/-/static/js/passkey.HASH.js" defer>
@@ -105,7 +103,7 @@
 </ul>
 </nav>
 </header>
-<div class="work has-rail">
+<div class="work">
 <main id="main" tabindex="-1">
 <div id="action-status" aria-live="polite">
 </div>
@@ -114,6 +112,13 @@
 <span class="file-facts">
 <span title="size">1.1 MiB</span>
 <span title="type">text/plain</span>
+<span class="file-last">
+<a href="/files/commit/SHA40" title="add big.txt">add big.txt</a>
+</span>
+<span>T</span>
+<span>
+<time datetime="STAMP" title="STAMP">AGO</time>
+</span>
 </span>
 <span class="acts">
 <a class="btn" href="/files/raw/main/big.txt">Raw</a>
@@ -123,16 +128,6 @@
 </h1>
 <p class="notice" role="note">file too large to show (1.1 MiB, the limit is 1.0 MiB). use raw.</p>
 </main>
-<aside class="rail" aria-label="Context">
-<section aria-labelledby="r-last">
-<h2 id="r-last">Last change <a href="/files/commits/main/big.txt">History</a>
-</h2>
-<p>
-<a href="/files/commit/SHA40">SHA7</a> add big.txt</p>
-<p class="dim">T · <time datetime="STAMP" title="STAMP">AGO</time>
-</p>
-</section>
-</aside>
 </div>
 <footer class="foot">
 <span>ermite devel</span>
@@ -258,7 +253,7 @@
 <dt>
 <kbd>y</kbd>
 </dt>
-<dd>copy a permalink pinned to the commit</dd>
+<dd>copy a permalink pinned to the commit; in a file, click a line number to select it, shift-click for a range</dd>
 </div>
 <div>
 <dt>

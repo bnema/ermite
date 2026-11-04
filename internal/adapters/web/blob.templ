@@ -6,8 +6,7 @@ import "html/template"
 
 // Blob is a file: its title with the actions, the notice of a state (too
 // large, binary, empty), the code, the rendered Markdown with its source
-// under a fold, or the image; the rail holds the facts, the last change, the
-// outline and the line selection.
+// under a fold, or the image. Facts and the last change sit beside the title.
 templ Blob(l Layout, p BlobPage) {
 	@Shell(l, blobRail(p)) {
 		<h1 class="file-h">
@@ -15,6 +14,13 @@ templ Blob(l Layout, p BlobPage) {
 			<span class="file-facts">
 				for _, f := range p.Facts {
 					<span title={ f.Key }>{ f.Val }</span>
+				}
+				if p.Last != nil {
+					<span class="file-last"><a href={ templ.SafeURL(p.Last.CHref) } title={ p.Last.Subject }>{ p.Last.Subject }</a></span>
+					<span>{ p.Last.Author }</span>
+					if p.Last.WhenAt != "" {
+						<span><time datetime={ p.Last.WhenAt } title={ p.Last.WhenAt }>{ p.Last.When }</time></span>
+					}
 				}
 			</span>
 			<span class="acts"><a class="btn" href={ templ.SafeURL(p.RawHref) }>Raw</a><a class="btn" href={ templ.SafeURL(p.HistHref) }>History</a><a class="btn" href={ templ.SafeURL(p.DirHref) }>Folder</a></span>
@@ -44,7 +50,7 @@ templ Blob(l Layout, p BlobPage) {
 // CodeView is the highlighted lines with a link on each number. A click on a
 // number selects the line, shift-click extends the selection to a range; the
 // URL hash (#L10 or #L10-L24) is the state, so a page loaded with a hash is
-// painted the same way. body[data-sel] feeds the hint badge and the rail.
+// painted the same way. body[data-sel] feeds the selection hint badge.
 templ CodeView(h template.HTML) {
 	<pre
 		class="chroma code"
@@ -62,29 +68,12 @@ templ CodeView(h template.HTML) {
 	><code hx-ignore>@templ.Raw(string(h))</code></pre>
 }
 
+// Markdown keeps its outline rail; file facts and last change live in the title.
 templ blobRail(p BlobPage) {
-	if p.Last != nil {
-		<section aria-labelledby="r-last">
-			<h2 id="r-last">Last change <a href={ templ.SafeURL(p.HistHref) }>History</a></h2>
-			<p><a href={ templ.SafeURL(p.Last.CHref) }>{ p.Last.Short }</a> { p.Last.Subject }</p>
-			<p class="dim">
-				{ p.Last.Author } ·
-				if p.Last.WhenAt != "" {
-					<time datetime={ p.Last.WhenAt } title={ p.Last.WhenAt }>{ p.Last.When }</time>
-				}
-			</p>
-		</section>
-	}
 	if len(p.Outline) > 0 {
 		<section aria-labelledby="r-outline">
 			<h2 id="r-outline">On this page</h2>
 			@Outline(p.Outline)
-		</section>
-	}
-	if p.HasCode {
-		<section aria-labelledby="r-sel" class="r-hint">
-			<h2 id="r-sel" class="sr">Selection</h2>
-			<p class="dim" :text="document.body.dataset.sel ? document.body.dataset.sel + ' · y copies a permalink' : 'Click a line number to select it, shift-click for a range; y copies a permalink.'">Click a line number to select it, shift-click for a range; y copies a permalink.</p>
 		</section>
 	}
 }

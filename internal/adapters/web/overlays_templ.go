@@ -58,7 +58,7 @@ func OverlayHelp(mr bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div><dt><kbd>g h</kbd></dt><dd>home</dd></div><div><dt><kbd>w</kbd></dt><dd>wide mode: use the whole width of the screen, or not (remembered)</dd></div><div><dt><kbd>y</kbd></dt><dd>copy a permalink pinned to the commit</dd></div><div><dt><kbd>d</kbd> <kbd>u</kbd> <kbd>x</kbd></dt><dd>diff: split / unified / collapse or expand all</dd></div><div><dt><kbd>e</kbd> <kbd>E</kbd></dt><dd>diff: the whole file in view / every file, with the lines the hunks hide</dd></div><div><dt><kbd>n</kbd></dt><dd>merge request: next note in the diff</dd></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div><dt><kbd>g h</kbd></dt><dd>home</dd></div><div><dt><kbd>w</kbd></dt><dd>wide mode: use the whole width of the screen, or not (remembered)</dd></div><div><dt><kbd>y</kbd></dt><dd>copy a permalink pinned to the commit; in a file, click a line number to select it, shift-click for a range</dd></div><div><dt><kbd>d</kbd> <kbd>u</kbd> <kbd>x</kbd></dt><dd>diff: split / unified / collapse or expand all</dd></div><div><dt><kbd>e</kbd> <kbd>E</kbd></dt><dd>diff: the whole file in view / every file, with the lines the hunks hide</dd></div><div><dt><kbd>n</kbd></dt><dd>merge request: next note in the diff</dd></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -101,6 +101,15 @@ func TestWebFilesGolden(t *testing.T) {
 			assert.Equal(t, "no-cache", hdr.Get("Cache-Control"))
 			assert.Contains(t, hdr.Get("Content-Type"), "text/html")
 			assertNoInline(t, body)
+			if strings.HasPrefix(tt.name, "blob-") {
+				if tt.name == "blob-markdown" {
+					assert.Contains(t, body, `<aside class="rail"`)
+					assert.Contains(t, body, `id="r-outline"`)
+				} else {
+					assert.NotContains(t, body, `<aside class="rail"`)
+				}
+				assert.Contains(t, body, `class="file-last"`)
+			}
 			golden(t, tt.name, normalise(body))
 		})
 	}
@@ -456,7 +465,9 @@ func TestWebBlobCode(t *testing.T) {
 	_, _, body = h.get("/files/blob/main/docs/guide.md")
 	assert.Contains(t, body, `<details class="source">`)
 	assert.Contains(t, body, "<h1 id=\"md-guide\">Guide</h1>")
-	assert.Contains(t, body, `href="#md-steps"`, "outline")
+	assert.Contains(t, body, `<h2 id="md-steps">Steps</h2>`, "heading anchors remain without the rail outline")
+	assert.Contains(t, body, `href="#md-steps"`, "outline navigation remains available")
+	assert.Contains(t, body, `<aside class="rail"`)
 }
 
 // AC6 on the new pages: the CSP of the site, the security headers, nothing
