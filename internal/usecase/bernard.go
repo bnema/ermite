@@ -153,14 +153,6 @@ func (b *Bernard) SetAutoOpen(_ context.Context, p domain.Principal, _ domain.Re
 	return domain.RepoDeps{}, fmt.Errorf("%w: SetAutoOpen not implemented", domain.ErrPreconditionFailed)
 }
 
-// Split is not implemented yet.
-func (b *Bernard) Split(_ context.Context, p domain.Principal, _ domain.RepoName, _ domain.DepName, _ bool) (domain.RepoDeps, error) {
-	if !p.HasOwnerRights() {
-		return domain.RepoDeps{}, domain.ErrNotFound
-	}
-	return domain.RepoDeps{}, fmt.Errorf("%w: Split not implemented", domain.ErrPreconditionFailed)
-}
-
 // Start starts the daily schedule, once.
 func (b *Bernard) Start() {
 	b.start.Do(func() {
@@ -288,51 +280,8 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 	fresh := 0
 	moved := false
 	rec, err := b.cfg.Store.Mutate(ctx, name, func(d *domain.RepoDeps) (bool, error) {
-		base, majors := domain.SplitBatches(carrySkipped(d, ups, skipped, allowed))
-		next := []domain.DepBatch{{Updates: base}}
-		for _, u := range majors {
-			next = append(next, domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}})
-		}
-		fresh, moved = 0, false
-		for i := range next {
-			batch := &next[i]
-			old, _, exists := d.Batch(batch.Key)
-			if !domain.SameRefs(old.Refs(), batch.Refs()) {
-				moved = true
-			}
-			updates := batch.Updates
-			if exists {
-				*batch = old
-			}
-			batch.Updates = slices.Clone(updates)
-			for j := range batch.Updates {
-				batch.Updates[j].New = !slices.Contains(old.Refs(), batch.Updates[j].DepRef)
-				if batch.Updates[j].New {
-					fresh++
-				}
-			}
-			// Same versions from another current version (an overlapping
-			// batch merged) change what the owner sees, and maybe Outdated.
-			if !sameCurrents(old.Updates, batch.Updates) || old.Outdated() != batch.Outdated() {
-				moved = true
-			}
-		}
-		for _, old := range d.Batches {
-			if slices.ContainsFunc(next, func(batch domain.DepBatch) bool { return batch.Key == old.Key }) {
-				continue
-			}
-			if old.MR != 0 || old.State == domain.DepsApplying {
-				// Kept for its merge request or run: a change only when it
-				// loses its updates.
-				moved = moved || len(old.Updates) != 0
-				old.Updates = nil
-				next = append(next, old)
-			} else {
-				moved = true // dropped
-			}
-		}
-		slices.SortFunc(next[1:], func(a, b domain.DepBatch) int { return strings.Compare(string(a.Key), string(b.Key)) })
-		d.Repo, d.Batches = name, next
+		fresh, moved = rebatch(d, carrySkipped(d, ups, skipped, allowed))
+		d.Repo = name
 		d.CheckedAt = now
 		return true, nil
 	})
@@ -346,6 +295,56 @@ func (b *Bernard) check(ctx context.Context, reg ports.DepsRegistry, name domain
 		b.changed(ctx, name)
 	}
 	return rec, nil
+}
+
+// rebatch distributes ups into the base batch and the family batches of
+// d (honouring d.SplitOut). A batch whose key still exists keeps its run and
+// merge request state; one that disappears is kept, emptied, while it has a
+// merge request or an applying run. It returns the number of new versions and
+// whether the batches changed.
+func rebatch(d *domain.RepoDeps, ups []domain.DepUpdate) (fresh int, moved bool) {
+	base, majors := domain.SplitBatches(ups, d.SplitOut)
+	next := append([]domain.DepBatch{{Updates: base}}, majors...)
+	for i := range next {
+		batch := &next[i]
+		old, _, exists := d.Batch(batch.Key)
+		if !domain.SameRefs(old.Refs(), batch.Refs()) {
+			moved = true
+		}
+		updates := batch.Updates
+		if exists {
+			*batch = old
+		}
+		batch.Updates = slices.Clone(updates)
+		for j := range batch.Updates {
+			batch.Updates[j].New = !slices.Contains(old.Refs(), batch.Updates[j].DepRef)
+			if batch.Updates[j].New {
+				fresh++
+			}
+		}
+		// Same versions from another current version (an overlapping
+		// batch merged) change what the owner sees, and maybe Outdated.
+		if !sameCurrents(old.Updates, batch.Updates) || old.Outdated() != batch.Outdated() {
+			moved = true
+		}
+	}
+	for _, old := range d.Batches {
+		if slices.ContainsFunc(next, func(batch domain.DepBatch) bool { return batch.Key == old.Key }) {
+			continue
+		}
+		if old.MR != 0 || old.State == domain.DepsApplying {
+			// Kept for its merge request or run: a change only when it
+			// loses its updates.
+			moved = moved || len(old.Updates) != 0
+			old.Updates = nil
+			next = append(next, old)
+		} else {
+			moved = true // dropped
+		}
+	}
+	slices.SortFunc(next[1:], func(a, b domain.DepBatch) int { return strings.Compare(string(a.Key), string(b.Key)) })
+	d.Batches = next
+	return fresh, moved
 }
 
 // depKey identifies a dependency, whatever its versions.

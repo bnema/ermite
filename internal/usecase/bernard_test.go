@@ -534,7 +534,7 @@ func TestBernardIgnoreMajorBatchByKey(t *testing.T) {
 	r := newBernardRig(t, "0 6 * * *")
 	r.meta.EXPECT().Get(mock.Anything, r.repo).Return(domain.Repo{Name: r.repo}, nil)
 	up := domain.DepUpdate{DepRef: depRef("pkg", "v2.0.0")}
-	key := domain.MajorBatchKey(up)
+	key := domain.FamilyBatchKey(up, nil)
 	base := domain.DepBatch{State: domain.DepsApplying, RunID: 99}
 	r.rec.Batches = []domain.DepBatch{base, {Key: key, Updates: []domain.DepUpdate{up}}}
 	_, err := r.b.Ignore(t.Context(), domain.Owner(), r.repo, "missing", nil)
@@ -555,7 +555,7 @@ func TestBernardCheckMergesMajorBatches(t *testing.T) {
 	c.Current = "v0.9.0"
 	r.cands = []domain.DepCandidate{c}
 	major := domain.DepUpdate{DepRef: depRef("pkg", "v1.2.0")}
-	key := domain.MajorBatchKey(major)
+	key := domain.FamilyBatchKey(major, nil)
 	kept := domain.DepBatch{Key: key, MR: 4, State: domain.DepsApplying, RunID: 10, Error: "keep", RunUpdates: []domain.DepUpdate{major}, MRVersions: []domain.DepRef{major.DepRef}}
 	r.rec.Batches = []domain.DepBatch{{}, kept, {Key: "gone"}, {Key: "stale-mr", MR: 9}, {Key: "stale-run", State: domain.DepsApplying, RunID: 11}}
 	r.store.EXPECT().IsIgnored(mock.Anything, r.repo, mock.Anything).Return(false, nil)
@@ -614,7 +614,7 @@ func TestBernardCheckKeepsSkippedDependencies(t *testing.T) {
 	stale := domain.DepUpdate{DepRef: depRef("stale/mod", "v1.1.0"), Current: "v1.0.0", Kind: domain.DepMinor}
 	r.rec = domain.RepoDeps{Repo: r.repo, Batches: []domain.DepBatch{
 		{Updates: []domain.DepUpdate{known, minor, stale}},
-		{Key: domain.MajorBatchKey(major), Updates: []domain.DepUpdate{major}},
+		{Key: domain.FamilyBatchKey(major, nil), Updates: []domain.DepUpdate{major}},
 	}}
 	got, err := r.b.Check(context.Background(), domain.Owner(), r.repo) // the bus mock refuses DependencyUpdatesFound
 	require.NoError(t, err)
@@ -644,7 +644,7 @@ func (r *bernardRig) skipRecord(ups ...domain.DepUpdate) {
 	var base []domain.DepUpdate
 	for _, u := range ups {
 		if semver.Major(u.Version) != semver.Major(u.Current) {
-			r.rec.Batches = append(r.rec.Batches, domain.DepBatch{Key: domain.MajorBatchKey(u), Updates: []domain.DepUpdate{u}})
+			r.rec.Batches = append(r.rec.Batches, domain.DepBatch{Key: domain.FamilyBatchKey(u, nil), Updates: []domain.DepUpdate{u}})
 		} else {
 			base = append(base, u)
 		}

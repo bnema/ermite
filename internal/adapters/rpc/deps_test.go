@@ -119,7 +119,7 @@ func TestRepoDepsBatchesToPB(t *testing.T) {
 		{"no MR", 0, nil, false}, {"outdated", 3, nil, true}, {"current", 3, []domain.DepRef{up.DepRef}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			d := domain.RepoDeps{Batches: []domain.DepBatch{{MR: 1}, {Key: domain.MajorBatchKey(up), Updates: []domain.DepUpdate{up}, State: domain.DepsFailed, Error: "failed major", RunID: 12, MR: tc.mr, MRVersions: tc.refs}}}
+			d := domain.RepoDeps{Batches: []domain.DepBatch{{MR: 1}, {Key: domain.FamilyBatchKey(up, nil), Updates: []domain.DepUpdate{up}, State: domain.DepsFailed, Error: "failed major", RunID: 12, MR: tc.mr, MRVersions: tc.refs}}}
 			got := repoDepsToPB(d)
 			require.Len(t, got.Batches, 2)
 			require.EqualValues(t, 1, got.Batches[0].MergeRequestNumber)

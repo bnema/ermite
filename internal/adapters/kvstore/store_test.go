@@ -529,3 +529,47 @@ func TestSchema12UpgradesDepsRecords(t *testing.T) {
 		})
 	}
 }
+
+func TestUpgradeDepsFamilies(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	putRaw(t, dir, "meta/schema", mustProto(t, &storagepb.SchemaVersion{Version: 12}))
+	up := func(dir, name string) *storagepb.DepUpdate {
+		return &storagepb.DepUpdate{Ref: &storagepb.DepRef{Ecosystem: "gomod", Directory: dir, Name: name, Version: "v2.0.0"}, Current: "v1.0.0"}
+	}
+	oldKey := func(dir, name string) string { return "gomod/" + dir + "/" + name + "@v2" }
+	otelA, otelB, otelC := up("", "go.opentelemetry.io/otel"), up("", "go.opentelemetry.io/otel/sdk"), up("tools", "go.opentelemetry.io/otel/trace")
+	charm1, charm2 := up("", "github.com/charmbracelet/bubbletea"), up("", "github.com/charmbracelet/lipgloss")
+	putRaw(t, dir, "dpend/fam", mustProto(t, &storagepb.RepoDeps{Repo: "fam", Batches: []*storagepb.DepBatch{
+		{},
+		// Two open MRs in one family: MR 4 wins, MR 8 keeps its key.
+		{Key: oldKey("", "go.opentelemetry.io/otel/sdk"), Mr: 8, Updates: []*storagepb.DepUpdate{otelB}},
+		{Key: oldKey("", "go.opentelemetry.io/otel"), Mr: 4, Updates: []*storagepb.DepUpdate{otelA}},
+		{Key: oldKey("tools", "go.opentelemetry.io/otel/trace"), Updates: []*storagepb.DepUpdate{otelC}},
+		// No MR: merged together.
+		{Key: oldKey("", "github.com/charmbracelet/bubbletea"), Updates: []*storagepb.DepUpdate{charm1}},
+		{Key: oldKey("", "github.com/charmbracelet/lipgloss"), Updates: []*storagepb.DepUpdate{charm2}, Branch: "custom"},
+	}}))
+	s, err := kvstore.Open(ctx, dir)
+	require.NoError(t, err)
+	got, err := s.Deps().Get(ctx, name(t, "fam"))
+	require.NoError(t, err)
+	require.NoError(t, s.Close(ctx))
+	assert.Equal(t, uint32(kvstore.SchemaVersion), readSchema(t, dir))
+	byKey := map[domain.DepBatchKey]domain.DepBatch{}
+	for _, b := range got.Batches {
+		byKey[b.Key] = b
+	}
+	require.Len(t, byKey, 4)
+	otel := byKey["major:gomod:go.opentelemetry.io/"]
+	assert.Equal(t, int64(4), otel.MR)
+	assert.Equal(t, domain.DepBatchKey(oldKey("", "go.opentelemetry.io/otel")).Branch(), otel.Branch)
+	require.Len(t, otel.Updates, 2, "the batch without MR merged in")
+	stale := byKey[domain.DepBatchKey(oldKey("", "go.opentelemetry.io/otel/sdk"))]
+	assert.Equal(t, int64(8), stale.MR)
+	assert.Equal(t, domain.DepBatchKey(oldKey("", "go.opentelemetry.io/otel/sdk")).Branch(), stale.Branch)
+	charm := byKey["major:gomod:github.com/charmbracelet/"]
+	assert.Zero(t, charm.MR)
+	assert.Len(t, charm.Updates, 2)
+	assert.Equal(t, domain.DepBatchKey(oldKey("", "github.com/charmbracelet/bubbletea")).Branch(), charm.Branch)
+}

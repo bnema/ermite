@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -61,7 +62,9 @@ import (
 // and shortens the failed ones, see upgradeDepsRecords.
 // Version 12 moves Bernard application state into independent batches. The upgrade
 // preserves the legacy base batch and fails interrupted dependency runs.
-const SchemaVersion = 12
+// Version 13 groups the major batches by family (domain.FamilyBatchKey), see
+// upgradeDepsFamilies.
+const SchemaVersion = 13
 
 const schemaKey = "meta/schema"
 
@@ -193,7 +196,7 @@ func (s *Store) checkSchema(ctx context.Context) error {
 					return err
 				}
 			}
-			if target == SchemaVersion && sv.GetVersion() < 12 {
+			if target == SchemaVersion && sv.GetVersion() < 13 {
 				if err := s.upgradeDepsRecords(ctx, &b, sv.GetVersion()); err != nil {
 					return err
 				}
@@ -356,7 +359,7 @@ func (s *Store) upgradeResolvedIssues(ctx context.Context, b *kv.Batch) error {
 // 12 upgrade meets: its in-memory job was lost with the previous process.
 const depsUpgradeError = "interrupted by an upgrade: open the merge request again"
 
-// upgradeDepsRecords runs once in the schema batch (schemas 11 and 12): the record of a job
+// upgradeDepsRecords runs once in the schema batch (schemas 11 to 13): the record of a job
 // that was applying fails, because the job lived in memory and is gone, and a
 // failed record keeps the first line of its error, not the log tail it held.
 // There is one record per repository, far below the batch limit. Idempotent.
@@ -392,6 +395,9 @@ func (s *Store) upgradeDepsRecords(ctx context.Context, b *kv.Batch, from uint32
 			pb.Updates, pb.State, pb.Error, pb.RunId, pb.RunUpdates, pb.Mr, pb.MrVersions = nil, 0, "", 0, nil, 0, nil                                                                                        //nolint:staticcheck // the schema upgrade reads the deprecated fields
 			changed = true
 		}
+		if from < 13 && upgradeDepsFamilies(&pb) {
+			changed = true
+		}
 		if !changed {
 			continue
 		}
@@ -399,4 +405,96 @@ func (s *Store) upgradeDepsRecords(ctx context.Context, b *kv.Batch, from uint32
 		b.Put(slices.Clone(key), mustMarshal(&pb))
 	}
 	return ctx.Err()
+}
+
+// upgradeDepsFamilies moves the per-dependency major batches of schema 12 to
+// their family batch (domain.FamilyBatchKey). A batch keeps its branch: an
+// empty Branch is set to the old key's. Within a family, the batch holding a
+// merge request (or a run) with the lowest MR number takes the family key; the
+// other holders keep their old key until their merge request ends. Batches
+// that hold nothing merge their updates into the family batch. It reports
+// whether pb changed.
+func upgradeDepsFamilies(pb *storagepb.RepoDeps) bool {
+	var split []domain.DepName
+	for _, n := range pb.GetSplitOut() {
+		split = append(split, domain.DepName{Ecosystem: domain.DepsEcosystem(n.GetEcosystem()), Name: n.GetName()})
+	}
+	familyOf := func(bt *storagepb.DepBatch) (domain.DepBatchKey, bool) {
+		for _, ups := range [][]*storagepb.DepUpdate{bt.GetUpdates(), bt.GetMrUpdates(), bt.GetRunUpdates()} {
+			if len(ups) != 0 {
+				return domain.FamilyBatchKey(decodeDepUpdate(ups[0]), split), true
+			}
+		}
+		if refs := bt.GetMrVersions(); len(refs) != 0 {
+			return domain.FamilyBatchKey(domain.DepUpdate{DepRef: decodeDepRef(refs[0])}, split), true
+		}
+		return "", false
+	}
+	holds := func(bt *storagepb.DepBatch) bool {
+		st := domain.DepsState(bt.GetState())
+		return bt.GetMr() != 0 || st == domain.DepsApplying || st == domain.DepsQueued
+	}
+	groups := map[domain.DepBatchKey][]*storagepb.DepBatch{}
+	var order []domain.DepBatchKey
+	changed := false
+	for _, bt := range pb.GetBatches() {
+		if bt.GetKey() == "" || strings.HasPrefix(bt.GetKey(), "major:") {
+			continue
+		}
+		fam, ok := familyOf(bt)
+		if !ok {
+			continue
+		}
+		if bt.GetBranch() == "" {
+			bt.Branch, changed = domain.DepBatchKey(bt.GetKey()).Branch(), true
+		}
+		if _, seen := groups[fam]; !seen {
+			order = append(order, fam)
+		}
+		groups[fam] = append(groups[fam], bt)
+	}
+	drop := map[*storagepb.DepBatch]bool{}
+	for _, fam := range order {
+		members := groups[fam]
+		var target *storagepb.DepBatch
+		for _, bt := range pb.GetBatches() {
+			if bt.GetKey() == string(fam) {
+				target = bt // already there (a family key from a split)
+			}
+		}
+		if target == nil {
+			for _, bt := range members {
+				if holds(bt) && (target == nil || mrRank(bt) < mrRank(target)) {
+					target = bt
+				}
+			}
+		}
+		for _, bt := range members {
+			if target == nil {
+				target = bt
+			}
+			if bt == target {
+				bt.Key, changed = string(fam), true
+				continue
+			}
+			if holds(bt) {
+				continue // keeps its old key until its merge request ends
+			}
+			target.Updates = append(target.Updates, bt.GetUpdates()...)
+			drop[bt], changed = true, true
+		}
+	}
+	if len(drop) != 0 {
+		pb.Batches = slices.DeleteFunc(pb.Batches, func(bt *storagepb.DepBatch) bool { return drop[bt] })
+	}
+	return changed
+}
+
+// mrRank orders the batches holding a merge request by number, the ones
+// holding only a run after them.
+func mrRank(bt *storagepb.DepBatch) int64 {
+	if bt.GetMr() == 0 {
+		return math.MaxInt64
+	}
+	return bt.GetMr()
 }
