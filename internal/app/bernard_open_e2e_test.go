@@ -510,10 +510,15 @@ func TestBernardCancelingTheRunFailsTheCard(t *testing.T) {
 	assert.NotContains(t, depsBase(rec).GetError(), "\n")
 	// The draft stays, with the failure in its description.
 	require.NotZero(t, depsBase(rec).GetMergeRequestNumber())
-	mr, err := c.root.mr.GetMergeRequest(c.ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: depsBase(rec).GetMergeRequestNumber()})
-	require.NoError(t, err)
+	// The record is saved Failed (state and error at once) before Bernard
+	// edits the description: wait for the edit.
+	var mr *pb.GetMergeRequestResponse
+	c.waitFor("the draft description to show the failure", func() bool {
+		mr, err = c.root.mr.GetMergeRequest(c.ctx, &pb.GetMergeRequestRequest{Repo: "proj", Number: depsBase(rec).GetMergeRequestNumber()})
+		require.NoError(t, err)
+		return strings.Contains(mr.GetMergeRequest().GetDescription(), "the run ended: cancelled")
+	})
 	assert.True(t, strings.HasPrefix(mr.GetMergeRequest().GetTitle(), "WIP: "))
-	assert.Contains(t, mr.GetMergeRequest().GetDescription(), "the run ended: cancelled")
 	assert.Equal(t, "1", c.bareGit("proj", "rev-list", "--count", "refs/heads/main..refs/heads/bernard/deps"), "only the draft commit")
 	assert.Equal(t, pb.CiConclusion_CI_CONCLUSION_CANCELLED, c.getRun(run.GetId()).GetRun().GetConclusion())
 }
