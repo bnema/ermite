@@ -84,13 +84,20 @@ func (r *Registry) GoVersions(ctx context.Context, name, current string) ([]doma
 	if len(versions) > 50 {
 		versions = versions[:50]
 	}
+	// A listed version the proxy cannot describe (no .info) is skipped, not
+	// the module; when none can be described, the module is not found.
 	out := make([]domain.DepVersion, 0, len(versions))
+	missing := 0
 	for _, v := range versions {
 		escaped, err := module.EscapeVersion(v)
 		if err != nil {
 			return nil, err
 		}
 		data, err := get(path + "/@v/" + escaped + ".info")
+		if errors.Is(err, domain.ErrNotFound) {
+			missing++
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -99,6 +106,9 @@ func (r *Registry) GoVersions(ctx context.Context, name, current string) ([]doma
 			return nil, fmt.Errorf("go proxy info: %w", err)
 		}
 		out = append(out, domain.DepVersion{Version: v, Published: info.Time})
+	}
+	if missing > 0 && len(out) == 0 {
+		return nil, fmt.Errorf("go proxy info of %s: %w", name, domain.ErrNotFound)
 	}
 	return out, nil
 }

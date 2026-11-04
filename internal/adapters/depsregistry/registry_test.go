@@ -515,3 +515,37 @@ func TestRequestLargeBodyTimeoutNotRetried(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A listed version without .info (github.com/hashicorp/golang-lru lists
+// v1.0.0 but serves no v1.0.0.info) is skipped; the module keeps its other
+// versions. Only when no listed version can be described is it not found.
+func TestGoVersionsSkipsVersionsWithoutInfo(t *testing.T) {
+	missing := map[string]bool{"/m.example/x/@v/v1.0.0.info": true}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/@v/list"):
+			_, _ = fmt.Fprint(w, "v0.5.4\nv0.6.0\nv1.0.0\n")
+		case missing[r.URL.Path]:
+			http.NotFound(w, r)
+		default:
+			_, _ = fmt.Fprint(w, `{"Time":"2026-01-01T00:00:00Z"}`)
+		}
+	}))
+	defer s.Close()
+	reg := NewCached(New(Config{GoProxyURL: s.URL}))
+	vs, err := reg.GoVersions(t.Context(), "m.example/x", "v0.5.4")
+	if err != nil || len(vs) != 1 || vs[0].Version != "v0.6.0" {
+		t.Fatalf("%v %v", vs, err)
+	}
+	missing["/m.example/x/@v/v0.6.0.info"] = true
+	if again, err := reg.GoVersions(t.Context(), "m.example/x", "v0.5.4"); err != nil || len(again) != 1 {
+		t.Fatalf("the check's cache keeps the first answer: %v %v", again, err)
+	}
+	_, err = New(Config{GoProxyURL: s.URL}).GoVersions(t.Context(), "m.example/x", "v0.5.4")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("no describable version: %v", err)
+	}
+	if vs, err := New(Config{GoProxyURL: s.URL}).GoVersions(t.Context(), "m.example/x", "v1.0.0"); err != nil || len(vs) != 0 {
+		t.Fatalf("nothing newer is no error: %v %v", vs, err)
+	}
+}
