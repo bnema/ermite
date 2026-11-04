@@ -211,19 +211,67 @@ func TestDepBatchVisible(t *testing.T) {
 	assert.True(t, DepBatch{State: DepsApplying}.Visible())
 }
 
-func TestMajorBatchKey(t *testing.T) {
+func TestFamilyOf(t *testing.T) {
 	for _, tc := range []struct {
-		eco                      DepsEcosystem
-		dir, name, version, want string
+		eco        DepsEcosystem
+		name, want string
 	}{
-		{"npm", "web", "@scope/pkg", "v19.2.0", "npm/web/@scope/pkg@v19"},
-		{EcosystemGoMod, "", "gopkg.in/yaml.v2", "v3.0.1+incompatible", "gomod//gopkg.in/yaml.v2@v3"},
-		{EcosystemActions, ".github/workflows/ci.yml", "actions/checkout", "v5", "github-actions/.github/workflows/ci.yml/actions/checkout@v5"},
+		{EcosystemNPM, "@scope/pkg", "@scope/"},
+		{EcosystemNPM, "@babel/core", "@babel/"},
+		{EcosystemNPM, "react", "react"},
+		{EcosystemActions, "actions/checkout", "actions/"},
+		{EcosystemActions, "github/codeql-action/init", "github/"},
+		{EcosystemActions, "local", "local"},
+		{EcosystemGoMod, "github.com/charmbracelet/bubbletea", "github.com/charmbracelet/"},
+		{EcosystemGoMod, "github.com/charmbracelet/lipgloss/v2", "github.com/charmbracelet/"},
+		{EcosystemGoMod, "git.bnema.dev/brice/lib", "git.bnema.dev/brice/"},
+		{EcosystemGoMod, "codeberg.org/owner/x", "codeberg.org/owner/"},
+		{EcosystemGoMod, "go.opentelemetry.io/otel", "go.opentelemetry.io/"},
+		{EcosystemGoMod, "go.opentelemetry.io/otel/sdk/metric", "go.opentelemetry.io/"},
+		{EcosystemGoMod, "golang.org/x/mod", "golang.org/x/"},
+		{EcosystemGoMod, "gopkg.in/yaml.v3", "gopkg.in/yaml.v3"},
+		{EcosystemGoMod, "github.com/solo", "github.com/solo"},
+		{EcosystemGoMod, "single", "single"},
 	} {
-		t.Run(tc.want, func(t *testing.T) {
-			assert.Equal(t, DepBatchKey(tc.want), MajorBatchKey(DepUpdate{DepRef: DepRef{Ecosystem: tc.eco, Directory: tc.dir, Name: tc.name, Version: tc.version}, NewName: "ignored"}))
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, FamilyOf(DepUpdate{DepRef: DepRef{Ecosystem: tc.eco, Name: tc.name}}))
 		})
 	}
+}
+
+func TestFamilyBatchKey(t *testing.T) {
+	u := DepUpdate{DepRef: DepRef{Ecosystem: EcosystemNPM, Directory: "web", Name: "@scope/pkg", Version: "v2.0.0"}}
+	assert.Equal(t, DepBatchKey("major:npm:@scope/"), FamilyBatchKey(u, nil))
+	other := u
+	other.Directory = "api"
+	assert.Equal(t, FamilyBatchKey(u, nil), FamilyBatchKey(other, nil), "directory is not part of the key")
+	split := []DepName{{Ecosystem: EcosystemNPM, Name: "@scope/pkg"}}
+	assert.Equal(t, DepBatchKey("major:npm:@scope/pkg"), FamilyBatchKey(u, split))
+	assert.Equal(t, DepBatchKey("major:npm:@scope/"), FamilyBatchKey(u, []DepName{{Ecosystem: EcosystemGoMod, Name: "@scope/pkg"}}))
+	assert.NotEqual(t, FamilyBatchKey(u, nil).Branch(), FamilyBatchKey(u, split).Branch())
+	assert.Regexp(t, `^bernard/deps-major/major-npm-scope-[0-9a-f]{8}$`, FamilyBatchKey(u, nil).Branch())
+}
+
+func TestSplitBatchesGroupsFamilies(t *testing.T) {
+	u := func(eco DepsEcosystem, dir, name string) DepUpdate {
+		return DepUpdate{DepRef: DepRef{Ecosystem: eco, Directory: dir, Name: name, Version: "v2.0.0"}, Current: "v1.0.0"}
+	}
+	otel := u(EcosystemGoMod, "", "go.opentelemetry.io/otel")
+	otelSDK := u(EcosystemGoMod, "tools", "go.opentelemetry.io/otel/sdk")
+	charm := u(EcosystemGoMod, "", "github.com/charmbracelet/bubbletea")
+	react := u(EcosystemNPM, "web", "react")
+	_, majors := SplitBatches([]DepUpdate{react, otelSDK, charm, otel}, nil)
+	require.Len(t, majors, 3)
+	assert.Equal(t, DepBatch{Key: "major:gomod:github.com/charmbracelet/", Updates: []DepUpdate{charm}}, majors[0])
+	assert.Equal(t, DepBatch{Key: "major:gomod:go.opentelemetry.io/", Updates: []DepUpdate{otel, otelSDK}}, majors[1])
+	assert.Equal(t, DepBatch{Key: "major:npm:react", Updates: []DepUpdate{react}}, majors[2])
+	assert.Equal(t, "build(deps): update go.opentelemetry.io/* to new majors", BotSubject(majors[1]))
+	assert.Equal(t, "build(deps): update github.com/charmbracelet/bubbletea to v2", BotSubject(majors[0]))
+
+	_, majors = SplitBatches([]DepUpdate{otelSDK, otel}, []DepName{{Ecosystem: EcosystemGoMod, Name: "go.opentelemetry.io/otel/sdk"}})
+	require.Len(t, majors, 2)
+	assert.Equal(t, DepBatchKey("major:gomod:go.opentelemetry.io/"), majors[0].Key)
+	assert.Equal(t, DepBatchKey("major:gomod:go.opentelemetry.io/otel/sdk"), majors[1].Key)
 }
 
 func TestDepsStates(t *testing.T) {
@@ -331,8 +379,12 @@ func TestSplitBatches(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before := append([]DepUpdate(nil), tc.input...)
-			base, majors := SplitBatches(tc.input)
+			base, batches := SplitBatches(tc.input, nil)
 			assert.Equal(t, tc.base, base)
+			var majors []DepUpdate
+			for _, b := range batches {
+				majors = append(majors, b.Updates...)
+			}
 			assert.Equal(t, tc.majors, majors)
 			assert.Equal(t, before, tc.input)
 		})

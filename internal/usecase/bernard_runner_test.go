@@ -620,7 +620,7 @@ func TestBernardCheckDepsReportClassifiesReadFailures(t *testing.T) {
 func TestBernardOpenMajorBatchByKey(t *testing.T) {
 	rr := newRunnerRig(t, goModText("go 1.24", "", textOld))
 	up := goUpdate()
-	key := domain.MajorBatchKey(up)
+	key := domain.FamilyBatchKey(up, nil)
 	base := domain.DepBatch{State: domain.DepsApplying, RunID: 900, MR: 17}
 	rr.rec.Batches = []domain.DepBatch{base, {Key: key, Updates: []domain.DepUpdate{up}}}
 	rr.b.SetConcurrencyForTest(2) // the base batch holds one slot

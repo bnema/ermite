@@ -310,9 +310,64 @@ func (d RepoDeps) Pending() bool {
 	return slices.ContainsFunc(d.Batches, func(b DepBatch) bool { return len(b.Updates) != 0 })
 }
 
-// MajorBatchKey uses the current dependency name, even for path-major updates.
-func MajorBatchKey(u DepUpdate) DepBatchKey {
-	return DepBatchKey(string(u.Ecosystem) + "/" + u.Directory + "/" + u.Name + "@" + semver.Major(u.Version))
+// majorKeyPrefix starts every major batch key: "major:<ecosystem>:<family>"
+// or, for a dependency split out of its family, "major:<ecosystem>:<name>".
+const majorKeyPrefix = "major:"
+
+// multiOwnerGoHosts are Go module hosts where the first path element is an
+// owner: their family is host/owner/.
+var multiOwnerGoHosts = map[string]bool{
+	"github.com": true, "gitlab.com": true, "codeberg.org": true, "bitbucket.org": true,
+	"git.bnema.dev": true, "gitea.com": true, "git.sr.ht": true, "salsa.debian.org": true,
+}
+
+// FamilyOf returns the family a major update is grouped with. Families end
+// with "/"; a dependency without a family returns its own name.
+//   - npm: a scoped package "@scope/x" belongs to "@scope/".
+//   - Actions: "owner/repo[/path]" belongs to "owner/".
+//   - Go: on a multi-owner host (github.com, gitlab.com, codeberg.org, ...)
+//     "host/owner/"; "golang.org/x/..." is "golang.org/x/"; gopkg.in has no
+//     family; any other host is a vanity domain with one owner, so "host/"
+//     (go.opentelemetry.io/, k8s.io/).
+//
+// Anything else (unscoped npm, single-segment names) has no family.
+func FamilyOf(u DepUpdate) string {
+	name := u.Name
+	segs := strings.Split(name, "/")
+	switch u.Ecosystem {
+	case EcosystemNPM:
+		if strings.HasPrefix(name, "@") && len(segs) >= 2 && segs[0] != "@" {
+			return segs[0] + "/"
+		}
+	case EcosystemActions:
+		if len(segs) >= 2 && segs[0] != "" && !strings.Contains(name, "://") {
+			return segs[0] + "/"
+		}
+	case EcosystemGoMod:
+		host := segs[0]
+		switch {
+		case len(segs) < 2 || !strings.Contains(host, ".") || host == "gopkg.in":
+		case multiOwnerGoHosts[host]:
+			if len(segs) >= 3 && segs[1] != "" {
+				return host + "/" + segs[1] + "/"
+			}
+		case host == "golang.org" && segs[1] == "x" && len(segs) >= 3:
+			return "golang.org/x/"
+		default:
+			return host + "/"
+		}
+	}
+	return name
+}
+
+// FamilyBatchKey is the key of the major batch of u: its family across all
+// directories, or the dependency alone when it is in split.
+func FamilyBatchKey(u DepUpdate, split []DepName) DepBatchKey {
+	group := FamilyOf(u)
+	if slices.Contains(split, DepName{Ecosystem: u.Ecosystem, Name: u.Name}) {
+		group = u.Name
+	}
+	return DepBatchKey(majorKeyPrefix + string(u.Ecosystem) + ":" + group)
 }
 
 // Branch returns a safe, stable branch name with a collision-resistant suffix.
@@ -339,28 +394,54 @@ func (k DepBatchKey) Branch() string {
 	return fmt.Sprintf("bernard/deps-major/%s-%x", s, sum[:4])
 }
 
-// BotSubject describes a batch. A major batch without updates takes the name
-// and major from its merge request or run versions, and from its key last.
+// BotSubject describes a batch. A major batch names its package and major
+// when it holds one package, its family otherwise. Without updates it takes
+// the names from its merge request or run versions, and from its key last.
 func BotSubject(b DepBatch) string {
 	if b.Key == "" {
 		return BotCommitSubject(len(b.Updates))
 	}
-	var ref DepRef
+	var refs []DepRef
 	switch {
 	case len(b.Updates) != 0:
-		ref = b.Updates[0].DepRef
+		refs = b.Refs()
 	case len(b.MRVersions) != 0:
-		ref = b.MRVersions[0]
+		refs = b.MRVersions
 	case len(b.RunUpdates) != 0:
-		ref = b.RunUpdates[0].DepRef
-	default:
+		for _, u := range b.RunUpdates {
+			refs = append(refs, u.DepRef)
+		}
+	}
+	if len(refs) == 0 {
+		if rest, ok := strings.CutPrefix(string(b.Key), majorKeyPrefix); ok {
+			_, group, _ := strings.Cut(rest, ":")
+			if strings.HasSuffix(group, "/") {
+				return "build(deps): update " + group + "* to new majors"
+			}
+			return "build(deps): update " + group + " to a new major"
+		}
 		name, major := parseMajorBatchKey(b.Key)
 		return "build(deps): update " + name + " to " + major
 	}
-	return "build(deps): update " + ref.Name + " to " + semver.Major(ref.Version)
+	names := map[string]bool{}
+	majors := map[string]bool{}
+	for _, r := range refs {
+		names[r.Name] = true
+		majors[semver.Major(r.Version)] = true
+	}
+	if len(names) == 1 && len(majors) == 1 {
+		return "build(deps): update " + refs[0].Name + " to " + semver.Major(refs[0].Version)
+	}
+	if len(names) == 1 {
+		return "build(deps): update " + refs[0].Name + " to new majors"
+	}
+	family := FamilyOf(DepUpdate{DepRef: refs[0]})
+	return "build(deps): update " + family + "* to new majors"
 }
 
-// parseMajorBatchKey reverses MajorBatchKey. The major follows the last @,
+// parseMajorBatchKey reverses the per-dependency keys of schema 12
+// ("<eco>/<dir>/<name>@<major>"), which batches with an open merge request
+// may keep after the family upgrade. The major follows the last @,
 // which keeps scoped npm names whole. The directory may hold slashes, so the
 // name is cut by ecosystem: the owner/repo after an action file, the last
 // segment (two for a scoped npm package) for npm, and from the first segment
@@ -393,8 +474,10 @@ func parseMajorBatchKey(k DepBatchKey) (name, major string) {
 }
 
 // SplitBatches selects the highest same-major and cross-major version per
-// dependency. It does not modify the input or consult the update's Kind.
-func SplitBatches(ups []DepUpdate) (base, majors []DepUpdate) {
+// dependency, and groups the cross-major ones into batches by FamilyBatchKey
+// (sorted by key, updates by ecosystem, directory and name). It does not
+// modify the input or consult the update's Kind.
+func SplitBatches(ups []DepUpdate, split []DepName) (base []DepUpdate, majors []DepBatch) {
 	type identity struct {
 		eco       DepsEcosystem
 		dir, name string
@@ -410,13 +493,7 @@ func SplitBatches(ups []DepUpdate) (base, majors []DepUpdate) {
 			target[k] = u
 		}
 	}
-	for _, u := range same {
-		base = append(base, u)
-	}
-	for _, u := range cross {
-		majors = append(majors, u)
-	}
-	slices.SortFunc(base, func(a, b DepUpdate) int {
+	byName := func(a, b DepUpdate) int {
 		if c := strings.Compare(string(a.Ecosystem), string(b.Ecosystem)); c != 0 {
 			return c
 		}
@@ -424,7 +501,20 @@ func SplitBatches(ups []DepUpdate) (base, majors []DepUpdate) {
 			return c
 		}
 		return strings.Compare(a.Name, b.Name)
-	})
-	slices.SortFunc(majors, func(a, b DepUpdate) int { return strings.Compare(string(MajorBatchKey(a)), string(MajorBatchKey(b))) })
-	return
+	}
+	for _, u := range same {
+		base = append(base, u)
+	}
+	slices.SortFunc(base, byName)
+	groups := map[DepBatchKey][]DepUpdate{}
+	for _, u := range cross {
+		k := FamilyBatchKey(u, split)
+		groups[k] = append(groups[k], u)
+	}
+	for k, g := range groups {
+		slices.SortFunc(g, byName)
+		majors = append(majors, DepBatch{Key: k, Updates: g})
+	}
+	slices.SortFunc(majors, func(a, b DepBatch) int { return strings.Compare(string(a.Key), string(b.Key)) })
+	return base, majors
 }
